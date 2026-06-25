@@ -7,11 +7,13 @@ export function PreviewFrame({ activeProject, previewTimestamp, viewMode, stream
     return 'w-full';
   };
 
+  // حل المسار الفعلي والمباشر للباك إند على منفذ 4000 لتجاوز قيود Vite HTML Interceptor
+  const directPreviewUrl = `http://${window.location.hostname}:4000/workspace/index.html?project=${activeProject}&t=${previewTimestamp}`;
+
   return (
     <div className="w-full h-full relative flex justify-center items-center">
-      {/* 🛡️ التعديل الشبكي الحاسم: استخدام المسار النسبي الآمن ليعبر تلقائياً عبر بروكسي Vite المطور */}
       <iframe
-        src={`/workspace/index.html?project=${activeProject}&t=${previewTimestamp}`}
+        src={directPreviewUrl}
         className={`h-full border-0 bg-slate-900 transition-all duration-300 ${getIframeWidthClass()}`}
         sandbox="allow-scripts allow-same-origin"
       />

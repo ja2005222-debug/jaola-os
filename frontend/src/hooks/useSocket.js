@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 
-// 🛠️ الاتصال المباشر والديناميكي بمنفذ الباك إند (بفضل تفعيل CORS: * في السيرفر) لتفادي مشاكل بروكسي فيت للـ WebSockets
-const BACKEND_URL = `http://${window.location.hostname}:4000`;
-export const socket = io(BACKEND_URL, { autoConnect: false });
+// 🛠️ تفعيل البروكسي العكسي لـ Vite لربط الوكلاء وبث الأكواد والملفات حياً عبر منفذ الـ Frontend
+export const socket = io({ 
+  autoConnect: false,
+  transports: ['polling', 'websocket'] 
+});
 
 export function useSocket(currentUser, activeProject, isAuthenticated, handleAuthError) {
   const [files, setFiles] = useState([]);
@@ -20,7 +22,6 @@ export function useSocket(currentUser, activeProject, isAuthenticated, handleAut
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    // استعادة الأحداث والمستمعات على نفس السوكيت الموحد المشترك
     socket.off('workspace_files').on('workspace_files', (workspaceFiles) => {
       setFiles(workspaceFiles);
     });

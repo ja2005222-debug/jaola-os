@@ -2,10 +2,6 @@ import { useEffect, useState, useRef } from 'react';
 import { useAuth } from './hooks/useAuth.js';
 import { useSocket, socket } from './hooks/useSocket.js';
 import { PreviewFrame } from './components/PreviewFrame.jsx';
-import Editor from '@monaco-editor/react';
-
-// حساب عنوان الباك إند ديناميكياً لتفادي مشاكل الـ Localhost في الكروم بوك
-const BACKEND_URL = `http://${window.location.hostname}:4000`;
 
 export default function App() {
   const [activeProject, setActiveProject] = useState('sandbox_app');
@@ -23,7 +19,11 @@ export default function App() {
   const [projects, setProjects] = useState([]);
   const [vercelUrl, setVercelUrl] = useState('');
 
-  // مصفوفة لتخزين فقاعات المحادثة التفاعلية بين المستخدم والذكاء الاصطناعي
+  // نافذة المشاريع المدمجة لتفادي حظر المتصفحات للـ prompts
+  const [showProjectModal, setShowProjectModal] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+
+  // مصفوفة فقاعات المحادثة التفاعلية
   const [chatMessages, setChatMessages] = useState([
     { sender: 'ai', text: '👋 مرحباً بك في نواة JAOLA OS الذكية! أنا مستشارك الذكاء الاصطناعي، كيف يمكنني مساعدتك في تطوير وتحديث شفرات مشروعك اليوم؟' }
   ]);
@@ -31,7 +31,7 @@ export default function App() {
   const logsEndRef = useRef(null);
   const chatEndRef = useRef(null);
 
-  // 🔌 استهلاك حالات السوكيت المغلفة والمعزولة بالكامل
+  // 🔌 استهلاك حالات السوكيت المغلفة والمعزولة والنشطة بالبروكسي العكسي لـ Vite
   const { 
     files, 
     logs, 
@@ -47,7 +47,6 @@ export default function App() {
     socket.off('log').on('log', (newLog) => {
       setLogs((prev) => [...prev.slice(-100), newLog]);
 
-      // إذا كان اللوج عبارة عن رد استشاري عام من الـ CEO، قم بحقنه حياً في شاشة الشات
       if (newLog.message.includes('[INFO]')) {
         const cleanReply = newLog.message.replace('🤖 [INFO]:', '').trim();
         setChatMessages((prev) => [...prev, { sender: 'ai', text: cleanReply }]);
@@ -87,7 +86,7 @@ export default function App() {
 
   const fetchFileContent = async (fileName) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/file-content?fileName=${fileName}&project=${activeProject}`, {
+      const res = await fetch(`/api/file-content?fileName=${fileName}&project=${activeProject}`, {
         headers: getHeaders()
       });
       if (res.status === 401 || res.status === 403) {
@@ -103,7 +102,7 @@ export default function App() {
 
   const handleSaveCodeManual = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/file-content/save`, {
+      const res = await fetch('/api/file-content/save', {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ fileName: activeFile, content: editorContent, project: activeProject, username: currentUser })
@@ -128,10 +127,9 @@ export default function App() {
       setPrompt('');
       setStreamingContent(''); 
       
-      // حقن رسالة المستخدم فوراً في واجهة الشات الفقاعية
       setChatMessages((prev) => [...prev, { sender: 'user', text: userPrompt }]);
 
-      const res = await fetch(`${BACKEND_URL}/api/chat`, {
+      const res = await fetch('/api/chat', {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ message: userPrompt, project: activeProject, username: currentUser })
@@ -146,7 +144,7 @@ export default function App() {
 
   const handleSwitchProject = async (projName) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/project-context/switch`, {
+      const res = await fetch('/api/project-context/switch', {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ project: projName })
@@ -160,6 +158,67 @@ export default function App() {
       console.error(err);
     }
   };
+
+  // 🛠️ دالة معالجة وإنشاء المشاريع التفاعلية
+  const handleCreateProjectSubmit = async () => {
+    if (!newProjectName.trim()) return;
+    const sanitized = newProjectName.trim().toLowerCase().replace(/\s+/g, '-');
+    setShowProjectModal(false);
+    setNewProjectName('');
+
+    try {
+      const res = await fetch('/api/project-context/switch', {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ project: sanitized })
+      });
+      if (res.status === 401 || res.status === 403) {
+        handleAuthError(res.status);
+        return;
+      }
+      setActiveProject(sanitized);
+      socket.emit('join_project', { project: sanitized });
+      setLogs((prev) => [...prev, { message: `📁 [SYSTEM]: تم إنشاء وتبديل مساحة العمل للمشروع الجديد: (${sanitized})` }]);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // === 🔐 مصادقة حركية على الـ IP النشط ===
+  useEffect(() => {
+    const initializeSecureSession = async () => {
+      let activeToken = localStorage.getItem('token');
+      let username = localStorage.getItem('currentUser') || 'guest_user';
+
+      if (!activeToken) {
+        try {
+          const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username })
+          });
+          const data = await res.json();
+          if (data.success && data.token) {
+            activeToken = data.token;
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('currentUser', data.currentUser);
+            setCurrentUser(data.currentUser);
+          }
+        } catch (err) {
+          console.error('Failed to initialize secure session:', err);
+        }
+      }
+
+      if (activeToken) {
+        socket.auth = { token: activeToken };
+        socket.connect();
+        socket.emit('join_project', { project: activeProject });
+        setIsAuthenticated(true);
+      }
+    };
+
+    initializeSecureSession();
+  }, [activeProject]);
 
   const getLogColorClass = (text) => {
     if (text.includes('[SUCCESS]')) return 'text-emerald-400 font-semibold';
@@ -178,51 +237,56 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#080B11] text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-slate-900">
+    <div className="min-h-screen bg-[#060913] text-slate-100 flex flex-col font-sans relative overflow-x-hidden selection:bg-cyan-500 selection:text-slate-900">
       
-      {/* 🔮 الهيدر العلوي */}
-      <header className="border-b border-slate-900 bg-[#090D16]/90 backdrop-blur-md px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 sticky top-0 z-50">
+      {/* هالات النيون */}
+      <div className="absolute top-[-200px] left-[-100px] w-[600px] h-[600px] rounded-full bg-cyan-500/5 blur-[150px] pointer-events-none"></div>
+      <div className="absolute bottom-[-200px] right-[-100px] w-[700px] h-[700px] rounded-full bg-indigo-500/5 blur-[180px] pointer-events-none"></div>
+      <div className="absolute top-[40%] left-[50%] -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full bg-violet-500/3 blur-[140px] pointer-events-none"></div>
+
+      <header className="border-b border-slate-900/60 bg-[#070b14]/90 backdrop-blur-md px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 sticky top-0 z-50">
         <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-tr from-cyan-500 to-indigo-600 p-2 rounded-xl text-white shadow-lg shadow-cyan-500/15 animate-pulse">⚡</div>
+          <div className="bg-gradient-to-tr from-cyan-500 to-indigo-600 p-2.5 rounded-xl text-white shadow-lg animate-pulse">⚡</div>
           <div>
-            <h1 className="text-base font-bold tracking-wide">JAOLA OS <span className="text-xs text-cyan-400 bg-cyan-950 px-2 py-0.5 rounded-md border border-cyan-900/40">v1.9</span></h1>
-            <p className="text-[10px] text-emerald-400 font-medium mt-0.5">● ENTERPRISE SECURITY SECURE</p>
+            <h1 className="text-base font-bold">JAOLA OS <span className="text-[10px] text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded-md border border-cyan-900/40">v1.9</span></h1>
+            <p className="text-[9px] text-emerald-400 font-bold tracking-wider mt-0.5">● ENTERPRISE SECURITY SECURE</p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          {vercelUrl && <a href={vercelUrl} target="_blank" rel="noreferrer" className="text-xs bg-emerald-950/40 border border-emerald-900/60 text-emerald-400 px-3 py-2 rounded-xl hover:bg-emerald-950/70 transition-all">🌍 الرابط المنشور حياً</a>}
-          <button className="text-xs bg-[#0F172A] border border-slate-800 text-slate-300 px-3 py-2 rounded-xl hover:bg-slate-900">😺 GitHub Login</button>
-          <button className="text-xs bg-white text-slate-950 px-3 py-2 rounded-xl font-semibold hover:bg-slate-100 shadow-md">🌐 Google Login</button>
-          <div className="flex items-center gap-1.5 bg-[#0D121F] border border-slate-800 rounded-xl px-2 py-1">
-            <span className="text-[10px] text-slate-500">المشاريع:</span>
-            <select value={activeProject} onChange={(e) => handleSwitchProject(e.target.value)} className="bg-transparent text-xs text-slate-200 outline-none border-0 cursor-pointer">
-              {projects.map((p) => <option key={p} value={p} className="bg-[#0D121F]">{p}</option>)}
+        <div className="flex flex-wrap items-center gap-4 w-full lg:w-auto justify-end">
+          {vercelUrl && <a href={vercelUrl} target="_blank" rel="noreferrer" className="text-xs bg-emerald-950/40 border border-emerald-900/60 text-emerald-400 px-3.5 py-2.5 rounded-xl hover:scale-[1.01] transition-all">🌍 الرابط المنشور حياً</a>}
+          <button className="text-xs bg-[#0F172A]/80 border border-slate-800 text-slate-300 px-3.5 py-2.5 rounded-xl hover:bg-slate-900 transition-all">😺 GitHub Login</button>
+          <button className="text-xs bg-white text-slate-950 px-3.5 py-2.5 rounded-xl font-bold hover:bg-slate-100 shadow-lg transition-all">🌐 Google Login</button>
+
+          <div className="flex items-center gap-2.5 bg-[#0D121F] border border-slate-800 rounded-xl px-3 py-2 min-w-[200px] shrink-0">
+            <span className="text-[10px] text-slate-500 font-bold shrink-0">المشروع الحالي:</span>
+            <select value={activeProject} onChange={(e) => handleSwitchProject(e.target.value)} className="bg-transparent text-xs text-slate-200 outline-none border-0 cursor-pointer font-bold w-full">
+              {projects.length === 0 ? (
+                <option value="sandbox_app" className="bg-[#0D121F]">sandbox_app</option>
+              ) : (
+                projects.map((p) => <option key={p} value={p} className="bg-[#0D121F]">{p}</option>)
+              )}
             </select>
           </div>
+
+          <button 
+            onClick={() => setShowProjectModal(true)}
+            className="text-xs bg-gradient-to-r from-cyan-500 to-indigo-500 text-slate-950 font-extrabold px-4 py-2.5 rounded-xl shadow-lg shadow-cyan-500/10 hover:scale-[1.02] hover:shadow-cyan-500/25 transition-all duration-300 shrink-0 border border-cyan-400/20"
+          >
+            + مشروع جديد
+          </button>
         </div>
       </header>
 
-      {/* 🚀 مساحة العمل الرئيسية الموزعة سيمترياً (5 أعمدة) */}
-      <main className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-5 gap-6 max-w-[1750px] w-full mx-auto">
+      <main className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-5 gap-6 max-w-[1700px] w-full mx-auto relative z-10">
         
-        {/* 1. العمود الأيسر (1/5): شاشة المحادثة التفاعلية الفخمة والحديثة (Chat Assistant) */}
-        <section className="lg:col-span-1 flex flex-col bg-[#090D16]/80 border border-slate-900/50 rounded-2xl p-4 shadow-xl backdrop-blur-md h-[calc(100vh-180px)] min-h-[500px]">
-          <h3 className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-cyan-400 animate-ping"></span>
-            🤖 المحادثة والاستشاري الذكي (AI Chat Assistant)
-          </h3>
-          
-          {/* فقاعات الشات */}
-          <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-1 scrollbar-thin">
+        {/* 1. العمود الأيسر (1/5): شاشة المحادثة الممتدة بالكامل للأعلى وبكتابة مرنة ومباشرة */}
+        <section className="lg:col-span-1 flex flex-col bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-4.5 shadow-2xl backdrop-blur-xl h-[calc(100vh-180px)] min-h-[500px]">
+          <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-1 scrollbar-thin">
             {chatMessages.map((msg, idx) => (
               <div key={idx} className={`flex ${msg.sender === 'user' ? 'justify-start' : 'justify-end'}`}>
-                <div className={`max-w-[85%] rounded-2xl p-3.5 text-xs leading-relaxed ${
-                  msg.sender === 'user' 
-                    ? 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tr-none' 
-                    : 'bg-gradient-to-tr from-cyan-950/40 to-indigo-950/40 border border-cyan-500/20 text-cyan-300 rounded-tl-none shadow-[0_0_10px_rgba(6,182,212,0.05)]'
-                }`}>
-                  <div className="text-[9px] font-bold text-slate-500 mb-1 tracking-wider">
+                <div className={`max-w-[85%] rounded-2xl p-3.5 text-xs leading-relaxed ${msg.sender === 'user' ? 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tr-none' : 'bg-gradient-to-tr from-cyan-950/30 to-indigo-950/30 border border-cyan-500/15 text-cyan-300 rounded-tl-none shadow-[0_0_15px_rgba(6,182,212,0.03)]'}`}>
+                  <div className="text-[9px] font-bold text-slate-500 mb-1">
                     {msg.sender === 'user' ? '👤 أنت' : '🤖 المستشار المساعد'}
                   </div>
                   <p className="whitespace-pre-wrap">{msg.text}</p>
@@ -232,22 +296,15 @@ export default function App() {
             <div ref={chatEndRef} />
           </div>
 
-          {/* صندوق كتابة الأوامر بالأسفل للدردشة بسهولة */}
           <div className="border-t border-slate-900/60 pt-3">
-            <textarea 
-              value={prompt} 
-              onChange={(e) => setPrompt(e.target.value)} 
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendPrompt(); } }}
-              placeholder="اكتب فكرتك أو اطلب تعديلاً هنا..." 
-              className="w-full h-20 bg-slate-950 border border-slate-900 rounded-xl p-3 text-xs text-slate-200 placeholder-slate-600 focus:ring-1 focus:ring-cyan-500 outline-none resize-none leading-relaxed" 
-            />
-            <button onClick={handleSendPrompt} className="w-full mt-2 py-3 bg-gradient-to-r from-cyan-600 to-indigo-700 text-white rounded-xl text-xs font-bold shadow-lg hover:opacity-95 transition-all">🚀 حقن التعديل حياً</button>
+            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendPrompt(); } }} placeholder="اكتب فكرتك أو اطلب تعديلاً هنا..." className="w-full h-20 bg-slate-950 border border-slate-900 rounded-xl p-3 text-xs text-slate-200 placeholder-slate-600 focus:ring-1 focus:ring-cyan-500 outline-none resize-none leading-relaxed" />
+            <button onClick={handleSendPrompt} className="w-full mt-2 py-3 bg-gradient-to-r from-cyan-600 to-indigo-700 text-white rounded-xl text-xs font-bold shadow-lg hover:opacity-95 hover:scale-[1.01] transition-all">🚀 حقن التعديل حياً</button>
           </div>
         </section>
 
         {/* 2. الأعمدة الوسطى (3/5): المعاينة أو المحرر والـ Graph */}
         <section className="lg:col-span-3 flex flex-col gap-6 h-[calc(100vh-180px)]">
-          <div className="bg-[#090D16]/80 border border-slate-900/50 rounded-2xl p-5 shadow-xl flex-1 flex flex-col">
+          <div className="bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-5 shadow-2xl backdrop-blur-xl flex-1 flex flex-col">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-900 pb-4 mb-4">
               <div className="flex items-center bg-slate-950 p-1.5 rounded-xl border">
                 <button onClick={() => setActiveTab('preview')} className={`px-4 py-2 rounded-lg text-xs font-semibold ${activeTab === 'preview' ? 'bg-[#090D16] text-cyan-400' : 'text-slate-500'}`}>🖥️ المعاينة الحية</button>
@@ -257,21 +314,28 @@ export default function App() {
 
             <div className="flex-1 flex justify-center items-center bg-slate-950 rounded-xl overflow-hidden min-h-[300px] relative border border-slate-900">
               {activeTab === 'preview' ? (
-                <PreviewFrame 
-                  activeProject={activeProject} 
-                  previewTimestamp={previewTimestamp} 
-                  viewMode={viewMode} 
-                  streamingContent={streamingContent}
-                  backendUrl="" 
-                />
+                <PreviewFrame activeProject={activeProject} previewTimestamp={previewTimestamp} viewMode={viewMode} streamingContent={streamingContent} backendUrl="" />
               ) : (
                 <div className="w-full h-full flex flex-col p-4">
                   <div className="flex items-center justify-between mb-2 text-xs text-slate-500">
-                    <span>محرر موناكو الذكي: <span className="text-cyan-400 font-mono font-bold">{activeFile}</span></span>
+                    <span>محرر الأكواد النيوني: <span className="text-cyan-400 font-mono font-bold">{activeFile}</span></span>
                     <button onClick={handleSaveCodeManual} className="bg-cyan-950 border border-cyan-900/50 text-cyan-400 hover:bg-cyan-900 px-3 py-1 rounded-lg font-bold">💾 حفظ وحقن</button>
                   </div>
-                  <div className="flex-1 rounded-xl overflow-hidden border border-slate-900 mt-2 bg-[#1e1e1e]">
-                    <Editor height="100%" language={getFileLanguage(activeFile)} theme="vs-dark" value={editorContent} onChange={(value) => setEditorContent(value || '')} options={{ minimap: { enabled: false }, fontSize: 12, automaticLayout: true }} />
+                  
+                  {/* 🛠️ تفادي انهيار الارتفاع ومشاكل الـ CDN عبر استخدام صندوق الأكواد المحلي الفاخر (Offline-Resilient Code Area) */}
+                  <div className="flex-1 rounded-xl overflow-hidden border border-slate-900 mt-2 bg-[#0C0F19] h-[450px] relative flex">
+                    {/* عمود الأرقام الجانبي لترقيم الأسطر لمحاكاة Monaco يدوياً ومستقراً 100% */}
+                    <div className="w-12 bg-slate-950 border-r border-slate-900/60 text-right pr-3 pt-4 select-none font-mono text-[10px] text-slate-600 leading-relaxed">
+                      {Array.from({ length: Math.max(15, editorContent.split('\n').length) }).map((_, i) => (
+                        <div key={i} className="h-5">{i + 1}</div>
+                      ))}
+                    </div>
+                    <textarea
+                      value={editorContent}
+                      onChange={(e) => setEditorContent(e.target.value)}
+                      className="flex-1 bg-transparent p-4 font-mono text-xs text-slate-200 outline-none resize-none leading-relaxed overflow-auto scrollbar-thin"
+                      spellCheck="false"
+                    />
                   </div>
                 </div>
               )}
@@ -282,29 +346,43 @@ export default function App() {
 
         {/* 3. العمود الأيمن (1/5): متصفح الملفات والتوأم الرقمي */}
         <section className="lg:col-span-1 flex flex-col gap-6 h-[calc(100vh-180px)] overflow-y-auto">
-          {/* متصفح الملفات في الأعلى */}
-          <div className="bg-[#090D16]/80 border border-slate-900/50 rounded-2xl p-5 shadow-xl flex flex-col max-h-[220px]">
+          <div className="bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-5 shadow-2xl backdrop-blur-xl flex flex-col max-h-[220px]">
             <h3 className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">📁 WORKSPACE EXPLORER</h3>
-            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
+            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
               {files.map((file) => (
                 <button key={file} onClick={() => { setActiveFile(file); setActiveTab('editor'); }} className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-left border ${activeFile === file ? 'bg-slate-950 border-slate-800 text-cyan-400 font-medium' : 'border-transparent text-slate-400 hover:bg-slate-950/40'}`}>{file}</button>
               ))}
             </div>
           </div>
 
-          {/* التوأم الرقمي بالأسفل */}
           <div className="flex-1">
-            <DigitalTwinPanel 
-              activeFileContent={editorContent} 
-              activeFile={activeFile} 
-              filesCount={files.length}
-            />
+            <DigitalTwinPanel activeFileContent={editorContent} activeFile={activeFile} filesCount={files.length} />
           </div>
         </section>
-
       </main>
 
-      <footer className="border-t border-slate-900 bg-[#090D16]/50 p-6">
+      {/* 🛠️ النافذة المنبثقة المدمجة (Interactive Custom Modal) لإنشاء المشاريع وتفادي حظر الـ Popups */}
+      {showProjectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md transition-all">
+          <div className="bg-[#0D121F] border border-slate-800 p-6 rounded-2xl max-w-sm w-full shadow-2xl">
+            <h3 className="text-sm font-bold mb-1.5 text-slate-200">📁 إنشاء مشروع جديد</h3>
+            <p className="text-[10px] text-slate-500 mb-4 leading-relaxed">أدخل اسماً معبراً لمساحة العمل الجديدة باللغة الإنجليزية للبدء فورا في تجميع الأكواد.</p>
+            <input 
+              type="text" 
+              value={newProjectName} 
+              onChange={(e) => setNewProjectName(e.target.value)}
+              placeholder="مثال: company-portal" 
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 outline-none focus:ring-1 focus:ring-cyan-500 mb-4 font-mono"
+            />
+            <div className="flex items-center justify-end gap-2.5">
+              <button onClick={() => setShowProjectModal(false)} className="text-xs text-slate-400 hover:text-slate-200 px-3 py-2">إلغاء</button>
+              <button onClick={handleCreateProjectSubmit} className="text-xs bg-gradient-to-r from-cyan-600 to-indigo-600 text-white font-bold px-4 py-2.5 rounded-xl hover:scale-[1.01] transition-all">إنشاء وتدشين</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <footer className="border-t border-slate-900 bg-[#090D16]/50 p-6 relative z-10">
         <div className="max-w-[1700px] w-full mx-auto">
           <h3 className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">⏱️ Stream Timeline Log</h3>
           <div className="bg-slate-950/80 border border-slate-900 rounded-2xl p-4 font-mono text-xs h-32 overflow-y-auto space-y-2 shadow-inner">
@@ -364,7 +442,7 @@ function DigitalTwinPanel({ activeFileContent, activeFile, filesCount }) {
   const estimatedKB = activeFileContent ? (activeFileContent.length / 1024).toFixed(2) : '0.00';
 
   return (
-    <div className="bg-[#090D16]/80 border border-slate-900/50 rounded-2xl p-5 shadow-xl backdrop-blur-md flex flex-col h-full min-h-[300px]">
+    <div className="bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-5 shadow-2xl backdrop-blur-xl flex flex-col h-full min-h-[300px]">
       <h3 className="text-xs font-bold text-slate-400 mb-4 uppercase tracking-wider flex items-center gap-2">
         <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
         Digital Twin Working
@@ -430,14 +508,14 @@ function AgentNetworkGraph({ states }) {
   const getAgentStyle = (state) => {
     switch (state) {
       case 'running':
-        return 'border-cyan-500 bg-cyan-950/30 text-cyan-400 ring-2 ring-cyan-500/30 scale-105 shadow-[0_0_20px_rgba(6,182,212,0.3)] animate-pulse';
+        return 'border-cyan-500 bg-cyan-950/20 text-cyan-400 ring-2 ring-cyan-500/40 scale-[1.03] shadow-[0_0_30px_rgba(6,182,212,0.3)] animate-pulse';
       case 'completed':
-        return 'border-emerald-500/80 bg-emerald-950/20 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.1)]';
+        return 'border-emerald-500/60 bg-emerald-950/20 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]';
       case 'error':
-        return 'border-rose-500 bg-rose-950/30 text-rose-400 shadow-[0_0_20px_rgba(239,68,68,0.4)] animate-bounce';
+        return 'border-rose-500 bg-rose-950/20 text-rose-400 shadow-[0_0_30px_rgba(239,68,68,0.3)] animate-bounce';
       case 'waiting':
       default:
-        return 'border-slate-900/80 bg-slate-950/40 text-slate-600 opacity-60';
+        return 'border-slate-800/80 bg-slate-900/20 text-slate-500 hover:border-slate-700/60 hover:text-slate-400 transition-all';
     }
   };
 
@@ -462,7 +540,7 @@ function AgentNetworkGraph({ states }) {
   };
 
   return (
-    <div className="w-full bg-[#090D16]/80 border border-slate-900/50 rounded-2xl p-6 shadow-xl backdrop-blur-md">
+    <div className="w-full bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-6 shadow-2xl backdrop-blur-xl">
       <div className="flex items-center justify-between mb-6 border-b border-slate-900 pb-3">
         <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
           <span className="flex h-2 w-2 relative">

@@ -1,1 +1,3 @@
 body { background-color: #ADD8E6; }
+.bg-azref { background-image: linear-gradient(to bottom, #56B3FA, #FFFFFF); }
+.card { box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
