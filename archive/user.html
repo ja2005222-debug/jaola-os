@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JAOLA OS | تسجيل الدخول</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white">
+    <div class="flex items-center justify-center min-h-screen">
+        <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-96">
+            <h1 class="text-3xl font-bold text-center text-indigo-400 mb-6">JAOLA OS</h1>
+
+            <div id="authScreen">
+                <div class="mb-4">
+                    <input type="text" id="loginUsername" placeholder="اسم المستخدم" class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div class="mb-6">
+                    <input type="password" id="loginPassword" placeholder="كلمة المرور" class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <button onclick="login()" class="w-full bg-indigo-600 hover:bg-indigo-700 p-3 rounded-lg transition font-medium">دخول</button>
+                <div class="text-center mt-4">
+                    <button onclick="showRegister()" class="text-indigo-400 hover:text-indigo-300 text-sm">إنشاء حساب جديد</button>
+                </div>
+                <div id="loginMessage" class="mt-3 text-sm text-red-400 text-center"></div>
+            </div>
+
+            <div id="registerScreen" class="hidden">
+                <div class="mb-4">
+                    <input type="text" id="regUsername" placeholder="اسم المستخدم" class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div class="mb-6">
+                    <input type="password" id="regPassword" placeholder="كلمة المرور" class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <button onclick="register()" class="w-full bg-green-600 hover:bg-green-700 p-3 rounded-lg transition font-medium">تسجيل</button>
+                <div class="text-center mt-4">
+                    <button onclick="showLogin()" class="text-indigo-400 hover:text-indigo-300 text-sm">عودة</button>
+                </div>
+                <div id="registerMessage" class="mt-3 text-sm text-green-400 text-center"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+
+        function showLogin() {
+            document.getElementById('authScreen').classList.remove('hidden');
+            document.getElementById('registerScreen').classList.add('hidden');
+            document.getElementById('loginMessage').innerText = '';
+        }
+
+        function showRegister() {
+            document.getElementById('authScreen').classList.add('hidden');
+            document.getElementById('registerScreen').classList.remove('hidden');
+            document.getElementById('registerMessage').innerText = '';
+        }
+
+        async function login() {
+            const username = document.getElementById('loginUsername').value.trim();
+            const password = document.getElementById('loginPassword').value.trim();
+            const msg = document.getElementById('loginMessage');
+
+            if (!username || !password) {
+                msg.innerText = 'الرجاء إدخال اسم المستخدم وكلمة المرور';
+                return;
+            }
+
+            msg.innerText = '⏳ جاري تسجيل الدخول...';
+            msg.className = 'mt-3 text-sm text-blue-400 text-center';
+
+            try {
+                const res = await fetch(API_BASE + '/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data.error || 'فشل تسجيل الدخول');
+                }
+
+                if (data.token) {
+                    // حفظ التوكن في localStorage
+                    localStorage.setItem('token', data.token);
+                    console.log('✅ Token saved successfully');
+                    // التوجيه إلى الصفحة الرئيسية
+                    window.location.href = '/jaola-platform.html';
+                } else {
+                    throw new Error('لم يتم استلام توكن');
+                }
+            } catch (err) {
+                msg.innerText = '❌ ' + err.message;
+                msg.className = 'mt-3 text-sm text-red-400 text-center';
+                console.error('Login error:', err);
+            }
+        }
+
+        async function register() {
+            const username = document.getElementById('regUsername').value.trim();
+            const password = document.getElementById('regPassword').value.trim();
+            const msg = document.getElementById('registerMessage');
+
+            if (!username || !password) {
+                msg.innerText = 'الرجاء إدخال اسم المستخدم وكلمة المرور';
+                return;
+            }
+
+            msg.innerText = '⏳ جاري التسجيل...';
+            msg.className = 'mt-3 text-sm text-blue-400 text-center';
+
+            try {
+                const res = await fetch(API_BASE + '/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data.error || 'فشل التسجيل');
+                }
+
+                msg.innerText = '✅ تم التسجيل بنجاح! يمكنك الآن تسجيل الدخول.';
+                msg.className = 'mt-3 text-sm text-green-400 text-center';
+
+                setTimeout(() => {
+                    showLogin();
+                    document.getElementById('loginUsername').value = username;
+                    document.getElementById('loginMessage').innerText = '';
+                }, 1500);
+            } catch (err) {
+                msg.innerText = '❌ ' + err.message;
+                msg.className = 'mt-3 text-sm text-red-400 text-center';
+                console.error('Register error:', err);
+            }
+        }
+
+        // دعم إرسال النموذج بالضغط على Enter
+        document.getElementById('loginUsername').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') document.getElementById('loginPassword').focus();
+        });
+        document.getElementById('loginPassword').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') login();
+        });
+        document.getElementById('regUsername').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') document.getElementById('regPassword').focus();
+        });
+        document.getElementById('regPassword').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') register();
+        });
+
+        console.log('📄 user.html loaded, API_BASE:', API_BASE);
+    </script>
+</body>
+</html>

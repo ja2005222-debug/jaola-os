@@ -1,0 +1,52 @@
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import { Groq } from 'groq-sdk';
+import { editFile } from './fileEditor.js';
+
+const execPromise = promisify(exec);
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+export async function tryBuild() {
+  try {
+    const { stdout, stderr } = await execPromise('npm run build', { cwd: process.env.JAOLA_PATH });
+    return { success: true, output: stdout };
+  } catch (err) {
+    return { success: false, error: err.message, details: err.stderr };
+  }
+}
+
+export async function autoFixBuildErrors() {
+  const buildResult = await tryBuild();
+  if (buildResult.success) return { fixed: false, message: 'البناء ناجح' };
+
+  console.log('🔧 Build failed, attempting auto-fix...');
+  const errorMsg = buildResult.error + '\n' + (buildResult.details || '');
+  
+  // استخدم Groq لاقتراح الإصلاح
+  const prompt = `
+أخطاء البناء التالية ظهرت في مشروع Next.js:
+${errorMsg.substring(0, 1500)}
+
+اقترح إصلاحاً واحداً محدداً (على شكل كود أو أمر). أخرج JSON:
+{
+  "fileToEdit": "app/page.tsx",
+  "newContent": "...",
+  "explanation": "..."
+}
+إذا لم يمكن الإصلاح، أخرج {"cannotFix": true}
+`;
+
+  const response = await groq.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    temperature: 0.2,
+    messages: [{ role: "user", content: prompt }]
+  });
+  const suggestion = JSON.parse(response.choices[0].message.content);
+  if (suggestion.cannotFix) return { fixed: false, message: 'لا يمكن إصلاحه تلقائياً' };
+
+  // تطبيق الإصلاح
+  await editFile(suggestion.fileToEdit, suggestion.newContent);
+  // حاول البناء مرة أخرى
+  const retry = await tryBuild();
+  return { fixed: retry.success, appliedFix: suggestion, retryResult: retry };
+}

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JAOLA OS | CEO Command Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+        body { font-family: 'Inter', sans-serif; background: #020617; color: #f8fafc; }
+        .glass { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.05); }
+        .glow { box-shadow: 0 0 20px rgba(14, 165, 233, 0.15); }
+    </style>
+</head>
+<body class="p-6">
+
+    <div class="max-w-[1600px] mx-auto grid grid-cols-12 gap-6 h-[95vh]">
+        
+        <!-- Sidebar: CEO Brief & Activity -->
+        <aside class="col-span-3 space-y-6 overflow-y-auto pr-2">
+            <header class="mb-8">
+                <h1 class="text-3xl font-black text-white">JAOLA <span class="text-sky-500">OS</span></h1>
+                <p class="text-zinc-400 text-xs tracking-widest mt-1 uppercase">Autonomous Software Firm</p>
+            </header>
+
+            <!-- CEO Brief Card -->
+            <div class="glass rounded-3xl p-6 glow">
+                <h2 class="text-sm font-bold text-sky-400 mb-4">ملخص المدير التنفيذي</h2>
+                <div class="space-y-4">
+                    <div class="flex justify-between"><span>نسبة الإنجاز</span><span class="font-bold">78%</span></div>
+                    <div class="w-full bg-zinc-800 h-2 rounded-full overflow-hidden"><div class="bg-sky-500 w-[78%] h-full"></div></div>
+                </div>
+            </div>
+
+            <!-- Agent Activity Stream -->
+            <div class="glass rounded-3xl p-6">
+                <h2 class="text-sm font-bold text-emerald-400 mb-4">تدفق الوكلاء</h2>
+                <div id="agentStream" class="space-y-3 text-xs">
+                    <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> Planner: Completed</div>
+                    <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-sky-500 animate-pulse"></span> Architect: Running</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Workspace: Command Center & Product Preview -->
+        <main class="col-span-6 flex flex-col gap-6">
+            <!-- Command Center -->
+            <div class="glass rounded-3xl p-8">
+                <h2 class="text-xl font-bold mb-4">ماذا تريد أن نبني اليوم؟</h2>
+                <textarea id="mission" class="w-full h-24 bg-black/40 border border-zinc-700 rounded-2xl p-4 focus:ring-2 focus:ring-sky-500 outline-none transition-all" placeholder="ابنِ منصة سفر عالمية..."></textarea>
+                <button onclick="startMission()" class="w-full mt-4 bg-white text-black font-bold py-3 rounded-xl hover:bg-zinc-200 transition">بدء التنفيذ التلقائي</button>
+            </div>
+
+            <!-- Live Product Preview -->
+            <div class="flex-grow glass rounded-3xl p-4 flex flex-col">
+                <div class="flex justify-between items-center mb-4 px-2">
+                    <h3 class="text-xs font-bold text-zinc-500 uppercase">Live Product Preview</h3>
+                    <div class="flex gap-2">
+                        <button class="px-3 py-1 bg-zinc-800 rounded-lg text-[10px]">Desktop</button>
+                        <button class="px-3 py-1 bg-zinc-800 rounded-lg text-[10px]">Mobile</button>
+                    </div>
+                </div>
+                <div class="flex-grow bg-white rounded-2xl overflow-hidden shadow-inner border border-zinc-800">
+                    <iframe id="preview" class="w-full h-full" src="about:blank"></iframe>
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Side: What Changed & AI Review -->
+        <aside class="col-span-3 space-y-6">
+            <div class="glass rounded-3xl p-6 h-full">
+                <h2 class="text-sm font-bold text-amber-400 mb-6">سجل التغييرات</h2>
+                <div id="changes" class="space-y-6 text-sm">
+                    <div class="border-r border-zinc-700 pr-4">
+                        <p class="font-bold">Coder Agent</p>
+                        <p class="text-zinc-400 text-xs">تم إنشاء هيكلية صفحة المنتجات الرئيسية</p>
+                        <span class="text-[10px] text-zinc-600">منذ 30 ثانية</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+    </div>
+
+    <script>
+        function startMission() {
+            const mission = document.getElementById('mission').value;
+            if(!mission) return;
+            
+            // محاكاة بدء عمل الوكلاء وتحديث الواجهة
+            document.getElementById('agentStream').innerHTML += `<div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-yellow-500"></span> Coder: Initializing...</div>`;
+            document.getElementById('changes').innerHTML = `<div class="border-r border-sky-700 pr-4 animate-fade-in"><p class="font-bold">Planner</p><p class="text-zinc-400 text-xs">تم اعتماد خطة البناء الأولية</p></div>` + document.getElementById('changes').innerHTML;
+        }
+    </script>
+</body>
+</html>

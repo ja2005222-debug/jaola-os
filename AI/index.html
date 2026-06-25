@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JAOLA AI - Autonomous Engineering Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * { font-family: 'Inter', 'Tajawal', sans-serif; }
+        body { background: #0a0c10; color: #e5e7eb; }
+        .glass-card { background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(8px); border: 1px solid rgba(79, 130, 246, 0.3); border-radius: 1rem; }
+        .gradient-text { background: linear-gradient(135deg, #a78bfa, #4F46E5); background-clip: text; -webkit-background-clip: text; color: transparent; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-left: 6px; background: #10b981; }
+        .error-dot { background: #ef4444; }
+        .warning-dot { background: #f59e0b; }
+    </style>
+</head>
+<body class="flex flex-col h-screen overflow-hidden">
+    <!-- Header -->
+    <header class="bg-[#0a0c10] border-b border-[#27272A] px-6 py-4 flex justify-between items-center flex-shrink-0">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center">
+                <i class="fas fa-robot text-white text-lg"></i>
+            </div>
+            <div>
+                <h1 class="text-2xl font-bold gradient-text">JAOLA<span class="text-indigo-400">AI</span></h1>
+                <p class="text-xs text-gray-500">Autonomous Software Engineering</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-4">
+            <div class="text-sm" id="connectionStatus">
+                <span class="status-dot"></span>
+                <span class="text-gray-400">Initializing...</span>
+            </div>
+            <div id="usernameDisplay" class="text-sm text-gray-300">User</div>
+            <button id="logoutBtn" class="text-gray-400 hover:text-white text-xs"><i class="fas fa-sign-out-alt"></i></button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="flex flex-1 overflow-hidden gap-4 p-4">
+        <!-- Left Panel: Chat & Info -->
+        <aside class="w-80 flex-shrink-0 flex flex-col gap-4 overflow-y-auto">
+            <!-- Mission Input -->
+            <div class="glass-card p-4">
+                <h3 class="text-sm font-bold mb-3 flex items-center gap-2">
+                    <i class="fas fa-keyboard text-indigo-400"></i>
+                    New Mission
+                </h3>
+                <div class="space-y-2">
+                    <input type="text" id="missionInput" placeholder="Describe your task..." 
+                        class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <button id="submitBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded text-sm font-medium transition">
+                        <i class="fas fa-paper-plane mr-2"></i> Submit
+                    </button>
+                </div>
+            </div>
+
+            <!-- Chat Messages -->
+            <div class="glass-card p-4 flex-1 flex flex-col overflow-hidden">
+                <h3 class="text-sm font-bold mb-3 flex items-center gap-2">
+                    <i class="fas fa-comments text-indigo-400"></i>
+                    Conversation
+                </h3>
+                <div id="chatMessages" class="flex-1 overflow-y-auto space-y-3 text-xs"></div>
+            </div>
+
+            <!-- KPIs -->
+            <div class="glass-card p-4">
+                <h3 class="text-sm font-bold mb-3">📊 KPIs</h3>
+                <div class="space-y-2 text-xs">
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Total Tasks</span>
+                        <span id="kpiTasks" class="font-bold text-indigo-400">0</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Success Rate</span>
+                        <span id="kpiSuccess" class="font-bold text-green-400">0%</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Active Projects</span>
+                        <span id="kpiProjects" class="font-bold text-blue-400">0</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Center Panel: Tasks & Progress -->
+        <main class="flex-1 flex flex-col gap-4 overflow-hidden min-w-0">
+            <!-- Progress -->
+            <div class="glass-card p-4">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-sm font-bold">🎯 Current Progress</h3>
+                    <span id="progressPercent" class="text-sm text-indigo-400 font-bold">0%</span>
+                </div>
+                <div class="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+                    <div id="progressBar" class="bg-indigo-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+                </div>
+                <div class="flex justify-between mt-2 text-[10px] text-gray-500">
+                    <span>Planning</span>
+                    <span>Building</span>
+                    <span>Testing</span>
+                    <span>Deploying</span>
+                </div>
+            </div>
+
+            <!-- Tasks Timeline -->
+            <div class="glass-card p-4 flex-1 flex flex-col overflow-hidden">
+                <h3 class="text-sm font-bold mb-3 flex items-center gap-2">
+                    <i class="fas fa-list-check text-indigo-400"></i>
+                    Execution Timeline
+                </h3>
+                <div id="tasksList" class="flex-1 overflow-y-auto space-y-2 text-xs">
+                    <div class="text-gray-500 text-center py-8">Waiting for tasks...</div>
+                </div>
+            </div>
+
+            <!-- AI Review -->
+            <div class="glass-card p-4">
+                <h3 class="text-sm font-bold mb-2 flex items-center gap-2">
+                    <i class="fas fa-check-double text-indigo-400"></i>
+                    AI Review Scores
+                </h3>
+                <div class="grid grid-cols-5 gap-2 text-xs">
+                    <div class="text-center">
+                        <div id="securityScore" class="text-lg font-bold text-green-400">-</div>
+                        <div class="text-gray-500">Security</div>
+                    </div>
+                    <div class="text-center">
+                        <div id="performanceScore" class="text-lg font-bold text-blue-400">-</div>
+                        <div class="text-gray-500">Performance</div>
+                    </div>
+                    <div class="text-center">
+                        <div id="seoScore" class="text-lg font-bold text-purple-400">-</div>
+                        <div class="text-gray-500">SEO</div>
+                    </div>
+                    <div class="text-center">
+                        <div id="accessibilityScore" class="text-lg font-bold text-yellow-400">-</div>
+                        <div class="text-gray-500">A11y</div>
+                    </div>
+                    <div class="text-center">
+                        <div id="codeQualityScore" class="text-lg font-bold text-pink-400">-</div>
+                        <div class="text-gray-500">Quality</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Panel: Agents & Status -->
+        <aside class="w-80 flex-shrink-0 flex flex-col gap-4 overflow-y-auto">
+            <!-- Active Project -->
+            <div class="glass-card p-4">
+                <h3 class="text-sm font-bold mb-3 flex items-center gap-2">
+                    <i class="fas fa-folder-open text-indigo-400"></i>
+                    Active Project
+                </h3>
+                <div id="projectInfo" class="space-y-2 text-xs">
+                    <div class="text-gray-500">No active project</div>
+                </div>
+            </div>
+
+            <!-- Agents Status -->
+            <div class="glass-card p-4 flex-1 flex flex-col overflow-hidden">
+                <h3 class="text-sm font-bold mb-3 flex items-center gap-2">
+                    <i class="fas fa-microchip text-indigo-400"></i>
+                    AI Agents (Live)
+                </h3>
+                <div id="agentsList" class="flex-1 overflow-y-auto space-y-2">
+                    <div class="text-gray-500 text-xs text-center py-4">Loading agents...</div>
+                </div>
+            </div>
+
+            <!-- Git Status -->
+            <div class="glass-card p-4">
+                <h3 class="text-sm font-bold mb-3 flex items-center gap-2">
+                    <i class="fas fa-code-branch text-indigo-400"></i>
+                    Git Status
+                </h3>
+                <div id="gitStatus" class="space-y-2 text-xs">
+                    <div><span class="text-gray-400">Branch:</span> <span id="gitBranch" class="text-indigo-300">-</span></div>
+                    <div><span class="text-gray-400">Changes:</span> <span id="gitChanges" class="text-yellow-300">0</span></div>
+                    <div><span class="text-gray-400">Last Commit:</span> <span id="gitLastCommit" class="text-gray-400 text-[10px]">-</span></div>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <script type="module">
+        // ============================================
+        // JAOLA AI - UNIFIED ARCHITECTURE
+        // ============================================
+
+        import { APIClient, initializeAPIClient } from './utils/api.js';
+        import { escapeHtml, validateFilePath, validateEmail } from './utils/security.js';
+        import { debounce, throttle, Cache, PerformanceMonitor } from './utils/performance.js';
+        import RealtimeUpdater from './utils/realtime.js';
+        import { useUser, useProjects, useTasks, useActiveProject, useAgentsHealth, useGitStatus, useClearCache } from './utils/hooks.js';
+
+        // ============================================
+        // INITIALIZATION
+        // ============================================
+
+        let token = sessionStorage.getItem('token');
+        if (!token) {
+            window.location.href = '/user.html';
+        }
+
+        const api = initializeAPIClient(token);
+        const updater = new RealtimeUpdater();
+        const perf = new PerformanceMonitor('JAOLA');
+
+        // ============================================
+        // STATE MANAGEMENT
+        // ============================================
+
+        let currentMission = null;
+        let tasks = [];
+        let projects = [];
+        let activeProject = null;
+
+        // ============================================
+        // UI HELPERS
+        // ============================================
+
+        function addChatMessage(role, message) {
+            const container = document.getElementById('chatMessages');
+            const div = document.createElement('div');
+            
+            if (role === 'user') {
+                div.className = 'bg-indigo-900/30 p-2 rounded text-right text-indigo-200';
+                div.innerHTML = `<strong>You:</strong> ${escapeHtml(message)}`;
+            } else if (role === 'ai') {
+                div.className = 'bg-gray-800/50 p-2 rounded text-left text-gray-300';
+                div.innerHTML = `<i class="fas fa-robot text-indigo-400 mr-1"></i> <strong>AI:</strong> ${escapeHtml(message)}`;
+            } else {
+                div.className = 'text-gray-500 text-xs text-center italic';
+                div.innerHTML = escapeHtml(message);
+            }
+            
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function updateProgress(completed, total) {
+            const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
+            document.getElementById('progressPercent').innerText = percent + '%';
+            document.getElementById('progressBar').style.width = percent + '%';
+        }
+
+        function updateKPIs(stats) {
+            document.getElementById('kpiTasks').innerText = stats.totalTasks || 0;
+            document.getElementById('kpiSuccess').innerText = (stats.successRate || 0) + '%';
+            document.getElementById('kpiProjects').innerText = stats.activeProjects || 0;
+        }
+
+        // ============================================
+        // DATA FETCHING (WITH UTILITIES)
+        // ============================================
+
+        async function loadInitialData() {
+            try {
+                perf.start('load_initial_data');
+
+                // جلب البيانات بطريقة موحدة
+                const user = await useUser(api);
+                projects = await useProjects(api);
+                activeProject = await useActiveProject(api);
+                tasks = await useTasks(api);
+                const agents = await useAgentsHealth(api);
+                const gitStatus = await useGitStatus(api);
+
+                // تحديث الـ UI
+                if (user) {
+                    document.getElementById('usernameDisplay').innerText = user.username || 'User';
+                }
+
+                updateProjectInfo(activeProject);
+                updateAgentsList(agents);
+                updateGitStatus(gitStatus);
+                updateTasksList(tasks);
+                updateKPIs({
+                    totalTasks: tasks.length,
+                    successRate: Math.round((tasks.filter(t => t.status === 'completed').length / Math.max(1, tasks.length)) * 100),
+                    activeProjects: projects.length
+                });
+
+                perf.end('load_initial_data');
+                updateConnectionStatus(true);
+                addChatMessage('system', '✅ Connected and ready');
+            } catch (error) {
+                console.error('Failed to load initial data:', error);
+                updateConnectionStatus(false);
+                addChatMessage('system', '❌ Failed to load data: ' + error.message);
+            }
+        }
+
+        function updateProjectInfo(project) {
+            const container = document.getElementById('projectInfo');
+            if (project) {
+                container.innerHTML = `
+                    <div><span class="text-gray-400">Name:</span> <span class="font-bold text-indigo-300">${escapeHtml(project.name)}</span></div>
+                    <div><span class="text-gray-400">Status:</span> <span class="text-green-400">Active</span></div>
+                    <div><span class="text-gray-400">Port:</span> <span class="text-blue-300">${project.port || 'N/A'}</span></div>
+                `;
+            }
+        }
+
+        function updateAgentsList(agents) {
+            const container = document.getElementById('agentsList');
+            if (!agents || Object.keys(agents).length === 0) {
+                container.innerHTML = '<div class="text-gray-500 text-xs text-center">No agents available</div>';
+                return;
+            }
+
+            container.innerHTML = Object.entries(agents)
+                .slice(0, 6)
+                .map(([name, info]) => {
+                    const statusClass = info.status === 'healthy' ? 'text-green-400' : info.status === 'running' ? 'text-yellow-400' : 'text-gray-500';
+                    const dotClass = info.status === 'healthy' ? 'bg-green-500' : info.status === 'running' ? 'bg-yellow-500' : 'bg-gray-500';
+                    return `
+                        <div class="border-l-2 border-indigo-500 pl-2 pb-2">
+                            <div class="flex items-center justify-between">
+                                <span class="font-mono text-xs">${name}</span>
+                                <span class="w-2 h-2 rounded-full ${dotClass}"></span>
+                            </div>
+                            <div class="text-[10px] ${statusClass}">${info.status || 'unknown'}</div>
+                            <div class="text-[10px] text-gray-500">Success: ${info.successRate || 0}%</div>
+                        </div>
+                    `;
+                })
+                .join('');
+        }
+
+        function updateGitStatus(status) {
+            if (status) {
+                document.getElementById('gitBranch').innerText = status.branch || '-';
+                document.getElementById('gitChanges').innerText = status.uncommitted || '0';
+                document.getElementById('gitLastCommit').innerText = (status.lastCommit || '-').substring(0, 20);
+            }
+        }
+
+        function updateTasksList(tasksList) {
+            const container = document.getElementById('tasksList');
+            if (!tasksList || tasksList.length === 0) {
+                container.innerHTML = '<div class="text-gray-500 text-center text-xs py-8">No tasks yet</div>';
+                return;
+            }
+
+            const completed = tasksList.filter(t => t.status === 'completed').length;
+            updateProgress(completed, tasksList.length);
+
+            container.innerHTML = tasksList
+                .slice(-10)
+                .reverse()
+                .map(task => {
+                    let icon = '⏳';
+                    let color = 'text-gray-500';
+                    if (task.status === 'completed') {
+                        icon = '✅';
+                        color = 'text-green-400';
+                    } else if (task.status === 'failed') {
+                        icon = '❌';
+                        color = 'text-red-400';
+                    } else if (task.status === 'running') {
+                        icon = '⏱️';
+                        color = 'text-yellow-400';
+                    }
+
+                    return `
+                        <div class="border-l-2 border-indigo-500 pl-2 pb-2">
+                            <div class="flex items-center gap-2">
+                                <span>${icon}</span>
+                                <span class="text-xs font-mono">${escapeHtml(task.agent || 'Unknown')}</span>
+                                <span class="text-[10px] ${color}">${task.status}</span>
+                            </div>
+                            <div class="text-[10px] text-gray-500 ml-4">${escapeHtml(task.action || '-')}</div>
+                        </div>
+                    `;
+                })
+                .join('');
+        }
+
+        function updateConnectionStatus(connected) {
+            const status = document.getElementById('connectionStatus');
+            if (connected) {
+                status.innerHTML = '<span class="status-dot"></span><span class="text-gray-400">Connected</span>';
+            } else {
+                status.innerHTML = '<span class="status-dot error-dot"></span><span class="text-red-400">Disconnected</span>';
+            }
+        }
+
+        // ============================================
+        // MISSION SUBMISSION (WITH DEBOUNCE)
+        // ============================================
+
+        async function submitMission(mission) {
+            if (!mission.trim()) return;
+
+            addChatMessage('user', mission);
+            currentMission = mission;
+
+            try {
+                addChatMessage('system', 'Processing mission...');
+                const response = await api.post('/user/request', { message: mission });
+                
+                addChatMessage('ai', response.reply || 'Mission accepted and queued');
+                
+                if (response.planId) {
+                    addChatMessage('system', `✅ Plan created with ${response.tasksCount || 0} tasks`);
+                }
+
+                // تحديث المهام
+                await new Promise(r => setTimeout(r, 1000));
+                tasks = await useTasks(api);
+                updateTasksList(tasks);
+            } catch (error) {
+                addChatMessage('ai', '❌ Error: ' + error.message);
+            }
+        }
+
+        // استخدام Debounce لتجنب الطلبات المتكررة
+        const debouncedSubmit = debounce(submitMission, 300);
+
+        // ============================================
+        // WEBSOCKET REAL-TIME UPDATES
+        // ============================================
+
+        updater.on('task.updated', async (data) => {
+            console.log('Task updated:', data);
+            addChatMessage('system', `🔄 ${data.agent}: ${data.action} (${data.status})`);
+            tasks = await useTasks(api);
+            updateTasksList(tasks);
+        });
+
+        updater.on('agent.status', async (data) => {
+            console.log('Agent status changed:', data);
+            const agents = await useAgentsHealth(api);
+            updateAgentsList(agents);
+        });
+
+        updater.on('connected', () => {
+            console.log('WebSocket connected');
+            updateConnectionStatus(true);
+        });
+
+        updater.on('disconnected', () => {
+            console.log('WebSocket disconnected');
+            updateConnectionStatus(false);
+        });
+
+        updater.connect();
+
+        // ============================================
+        // EVENT LISTENERS
+        // ============================================
+
+        document.getElementById('submitBtn').addEventListener('click', () => {
+            const input = document.getElementById('missionInput');
+            submitMission(input.value);
+            input.value = '';
+        });
+
+        document.getElementById('missionInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('submitBtn').click();
+            }
+        });
+
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            sessionStorage.removeItem('token');
+            localStorage.removeItem('token');
+            window.location.href = '/user.html';
+        });
+
+        // ============================================
+        // PERIODIC UPDATES (WITH THROTTLE)
+        // ============================================
+
+        const throttledRefresh = throttle(async () => {
+            try {
+                const tasks = await useTasks(api);
+                const agents = await useAgentsHealth(api);
+                const gitStatus = await useGitStatus(api);
+                
+                updateTasksList(tasks);
+                updateAgentsList(agents);
+                updateGitStatus(gitStatus);
+            } catch (error) {
+                console.error('Error refreshing data:', error);
+            }
+        }, 5000); // كل 5 ثوانٍ على الأقل
+
+        setInterval(throttledRefresh, 10000);
+
+        // ============================================
+        // PERFORMANCE MONITORING
+        // ============================================
+
+        perf.report();
+
+        // ============================================
+        // STARTUP
+        // ============================================
+
+        addChatMessage('system', 'Initializing JAOLA AI...');
+        loadInitialData();
+        
+        // Global cleanup on unload
+        window.addEventListener('beforeunload', () => {
+            updater.close();
+            useClearCache();
+        });
+    </script>
+</body>
+</html>

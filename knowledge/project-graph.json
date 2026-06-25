@@ -1,0 +1,318 @@
+{
+  "functions": [
+    {
+      "name": "processPayment",
+      "file": "app/services/payments.ts"
+    },
+    {
+      "name": "processPayment",
+      "file": "services/payments.ts"
+    }
+  ],
+  "classes": [],
+  "routes": [
+    {
+      "route": "/JAOLA-PIZZA",
+      "file": "JAOLA-PIZZA/app/page.tsx"
+    },
+    {
+      "route": "/jaola-pizza",
+      "file": "jaola-pizza/app/page.tsx"
+    },
+    {
+      "route": "/jaola-project",
+      "file": "jaola-project/app/page.tsx"
+    },
+    {
+      "route": "/jaola-project-122576",
+      "file": "jaola-project-122576/app/page.tsx"
+    },
+    {
+      "route": "/jaola-project-432616",
+      "file": "jaola-project-432616/app/page.tsx"
+    },
+    {
+      "route": "/jaola-project-550211",
+      "file": "jaola-project-550211/app/page.tsx"
+    },
+    {
+      "route": "/jaola-taxi-466652",
+      "file": "jaola-taxi-466652/app/page.tsx"
+    }
+  ],
+  "database": [],
+  "components": [
+    {
+      "name": "FlightCard",
+      "file": "app/components/FlightCard.tsx"
+    },
+    {
+      "name": "FlightSearch",
+      "file": "app/components/FlightSearch.tsx"
+    },
+    {
+      "name": "Navbar",
+      "file": "app/components/Navbar.tsx"
+    }
+  ],
+  "imports": {
+    "JAOLA-PIZZA/app/layout.tsx": [
+      "next",
+      "next/font/google"
+    ],
+    "JAOLA-PIZZA/app/page.tsx": [
+      "next/image"
+    ],
+    "JAOLA-PIZZA/next.config.ts": [
+      "next"
+    ],
+    "app/App.tsx": [
+      "react",
+      "./page"
+    ],
+    "app/access/page.tsx": [
+      "react"
+    ],
+    "app/api/auth/route.ts": [
+      "next",
+      "jsonwebtoken"
+    ],
+    "app/api/deepseek-chat/route.ts": [
+      "next/server"
+    ],
+    "app/api/files/route.ts": [
+      "next",
+      "fs",
+      "path"
+    ],
+    "app/api/payments/route.ts": [
+      "next",
+      "../../services/payments"
+    ],
+    "app/api/photos/route.ts": [
+      "next",
+      "../../data/photos"
+    ],
+    "app/api/posts/route.ts": [
+      "next",
+      "../../types"
+    ],
+    "app/api/status/route.ts": [
+      "next"
+    ],
+    "app/api/test/route.ts": [
+      "@/lib/api/travelpayouts",
+      "next/server"
+    ],
+    "app/deebsk/page.tsx": [
+      "react"
+    ],
+    "app/destinations/page.tsx": [
+      "@/lib/api/travelpayouts"
+    ],
+    "app/fix-site/page.tsx": [
+      "react"
+    ],
+    "app/layout.tsx": [
+      "next"
+    ],
+    "app/membership/page.tsx": [
+      "react"
+    ],
+    "app/page.tsx": [
+      "react"
+    ],
+    "app/photos/page.tsx": [
+      "react"
+    ],
+    "app/services/auth/auth.ts": [
+      "bcrypt"
+    ],
+    "app/services/auth.ts": [
+      "jsonwebtoken"
+    ],
+    "app/services/files.ts": [
+      "fs/promises",
+      "path"
+    ],
+    "app/services/logs.ts": [
+      "winston"
+    ],
+    "app/services/payment.ts": [
+      "stripe"
+    ],
+    "app/services/payments.ts": [
+      "stripe"
+    ],
+    "components/flights/FlightCard.tsx": [
+      "next/link",
+      "@/types/flight"
+    ],
+    "components/flights/FlightSearch.tsx": [
+      "react",
+      "next/navigation"
+    ],
+    "jaola-pizza/app/layout.tsx": [
+      "next",
+      "next/font/google"
+    ],
+    "jaola-pizza/app/page.tsx": [
+      "next/image"
+    ],
+    "jaola-pizza/next.config.ts": [
+      "next"
+    ],
+    "jaola-project/app/layout.tsx": [
+      "next",
+      "next/font/google"
+    ],
+    "jaola-project/app/page.tsx": [
+      "next/image"
+    ],
+    "jaola-project/next.config.ts": [
+      "next"
+    ],
+    "jaola-project-122576/app/layout.tsx": [
+      "next",
+      "next/font/google"
+    ],
+    "jaola-project-122576/app/page.tsx": [
+      "next/image"
+    ],
+    "jaola-project-122576/next.config.ts": [
+      "next"
+    ],
+    "jaola-project-432616/app/layout.tsx": [
+      "next",
+      "next/font/google"
+    ],
+    "jaola-project-432616/app/page.tsx": [
+      "next/image"
+    ],
+    "jaola-project-432616/next.config.ts": [
+      "next"
+    ],
+    "jaola-project-550211/app/layout.tsx": [
+      "next",
+      "next/font/google"
+    ],
+    "jaola-project-550211/app/page.tsx": [
+      "next/image"
+    ],
+    "jaola-project-550211/next.config.ts": [
+      "next"
+    ],
+    "jaola-taxi-466652/app/layout.tsx": [
+      "next",
+      "next/font/google"
+    ],
+    "jaola-taxi-466652/app/page.tsx": [
+      "next/image"
+    ],
+    "jaola-taxi-466652/next.config.ts": [
+      "next"
+    ],
+    "next.config.ts": [
+      "next"
+    ],
+    "services/payments.ts": [
+      "stripe"
+    ],
+    "services/projectStatus.ts": [
+      "axios"
+    ],
+    "services/scanner.js": [
+      "fs/promises",
+      "path"
+    ]
+  },
+  "exports": {
+    "JAOLA-PIZZA/app/layout.tsx": [
+      "metadata",
+      "RootLayout"
+    ],
+    "JAOLA-PIZZA/app/page.tsx": [
+      "Home"
+    ],
+    "app/about/page.tsx": [
+      "AboutPage"
+    ],
+    "app/cars/page.tsx": [
+      "CarsPage"
+    ],
+    "app/data/photos.ts": [
+      "photos"
+    ],
+    "app/fix-site/page.tsx": [
+      "FixSitePage"
+    ],
+    "app/hotels/page.tsx": [
+      "HotelsPage"
+    ],
+    "app/layout.tsx": [
+      "metadata",
+      "RootLayout"
+    ],
+    "app/page.tsx": [
+      "Home"
+    ],
+    "app/services/payments.ts": [
+      "processPayment"
+    ],
+    "components/flights/FlightCard.tsx": [
+      "FlightCard"
+    ],
+    "components/flights/FlightSearch.tsx": [
+      "FlightSearchForm"
+    ],
+    "jaola-pizza/app/layout.tsx": [
+      "metadata",
+      "RootLayout"
+    ],
+    "jaola-pizza/app/page.tsx": [
+      "Home"
+    ],
+    "jaola-project/app/layout.tsx": [
+      "metadata",
+      "RootLayout"
+    ],
+    "jaola-project/app/page.tsx": [
+      "Home"
+    ],
+    "jaola-project-122576/app/layout.tsx": [
+      "metadata",
+      "RootLayout"
+    ],
+    "jaola-project-122576/app/page.tsx": [
+      "Home"
+    ],
+    "jaola-project-432616/app/layout.tsx": [
+      "metadata",
+      "RootLayout"
+    ],
+    "jaola-project-432616/app/page.tsx": [
+      "Home"
+    ],
+    "jaola-project-550211/app/layout.tsx": [
+      "metadata",
+      "RootLayout"
+    ],
+    "jaola-project-550211/app/page.tsx": [
+      "Home"
+    ],
+    "jaola-taxi-466652/app/layout.tsx": [
+      "metadata",
+      "RootLayout"
+    ],
+    "jaola-taxi-466652/app/page.tsx": [
+      "Home"
+    ],
+    "services/payments.ts": [
+      "processPayment"
+    ],
+    "src/app/layout.tsx": [
+      "RootLayout"
+    ]
+  },
+  "lastScan": "2026-06-15T21:55:21.456Z"
+}

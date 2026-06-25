@@ -1,0 +1,37 @@
+{
+  "projectDetails": "| طلب العميل: ابني موقع بيتزا (المجال: realestate) \n[6:50:49 PM] طلب: ابني موقع بيتزا (مجال: restaurant)\n[6:53:58 PM] طلب: ابني موقع لبحث الطيران (مجال: portfolio)\n[6:56:07 PM] طلب: { \"userId\": \"jamal\", \"projectId\": \"my_site\", \"message\": \"ابن لي موقع مطعم\" } (مجال: restaurant)\n[7:00:58 PM] طلب: ابني موقع لمطعم بيتزا (مجال: restaurant)\n[7:14:23 PM] طلب: POST /api/chat\n{ \"userId\": \"jamal\", \"projectId\": \"test\", \"message\": \"ابن موقع مطعم فاخر\" } (مجال: restaurant)| طلب العميل: انشي موقع بيع بيتزا (المجال: realestate) ",
+  "timeline": [
+    {
+      "time": "2026-06-23T16:46:18.693Z",
+      "prompt": "ابني موقع بيتزا"
+    },
+    {
+      "time": "2026-06-23T16:50:49.215Z",
+      "prompt": "ابني موقع بيتزا"
+    },
+    {
+      "time": "2026-06-23T16:53:58.016Z",
+      "prompt": "ابني موقع لبحث الطيران"
+    },
+    {
+      "time": "2026-06-23T16:56:07.042Z",
+      "prompt": "{ \"userId\": \"jamal\", \"projectId\": \"my_site\", \"message\": \"ابن لي موقع مطعم\" }"
+    },
+    {
+      "time": "2026-06-23T17:00:58.237Z",
+      "prompt": "ابني موقع لمطعم بيتزا",
+      "category": "restaurant"
+    },
+    {
+      "time": "2026-06-23T17:14:23.076Z",
+      "prompt": "POST /api/chat\n{ \"userId\": \"jamal\", \"projectId\": \"test\", \"message\": \"ابن موقع مطعم فاخر\" }",
+      "category": "restaurant"
+    },
+    {
+      "time": "2026-06-23T17:37:00.208Z",
+      "prompt": "انشي موقع بيع بيتزا"
+    }
+  ],
+  "lastUpdate": 1782236220208,
+  "lastCategory": "restaurant"
+}

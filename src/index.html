@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JAOLA OS – نظام تشغيل الذكاء الاصطناعي لتطوير البرمجيات</title>
+    <!-- Tailwind CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome (للأيقونات) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap');
+        * { font-family: 'Cairo', sans-serif; scroll-behavior: smooth; }
+        .bg-grid {
+            background-image: radial-gradient(rgba(52, 211, 153, 0.1) 1px, transparent 1px);
+            background-size: 30px 30px;
+        }
+        .glow-text {
+            text-shadow: 0 0 40px rgba(52, 211, 153, 0.15);
+        }
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        .card-hover:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 20px 40px -12px rgba(52, 211, 153, 0.25);
+        }
+        .gradient-border {
+            position: relative;
+            background: linear-gradient(135deg, #0f172a, #1e293b);
+            border-radius: 16px;
+            border: 1px solid rgba(52, 211, 153, 0.15);
+        }
+        .gradient-border::before {
+            content: '';
+            position: absolute;
+            inset: -1px;
+            border-radius: 16px;
+            padding: 1px;
+            background: linear-gradient(135deg, rgba(52, 211, 153, 0.3), rgba(6, 182, 212, 0.3));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #10b981, #06b6d4);
+            transition: all 0.3s ease;
+        }
+        .btn-primary:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 30px rgba(16, 185, 129, 0.4);
+        }
+        .animate-float {
+            animation: float 6s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-15px); }
+        }
+        .animate-pulse-slow {
+            animation: pulseSlow 3s ease-in-out infinite;
+        }
+        @keyframes pulseSlow {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+        .agent-badge {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            backdrop-filter: blur(4px);
+        }
+        .section-title {
+            background: linear-gradient(135deg, #10b981, #06b6d4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .feature-icon {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(6, 182, 212, 0.15));
+            border-radius: 12px;
+            padding: 12px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #10b981;
+            font-size: 24px;
+            width: 52px;
+            height: 52px;
+        }
+        .code-block {
+            background: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 12px;
+            padding: 16px 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            color: #94a3b8;
+            direction: ltr;
+            text-align: left;
+            overflow-x: auto;
+        }
+        .code-block .cmd { color: #10b981; }
+        .code-block .str { color: #fbbf24; }
+        .code-block .cmt { color: #64748b; }
+        .code-block .key { color: #60a5fa; }
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #10b981, #06b6d4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        @media (max-width: 768px) {
+            .stat-number { font-size: 2rem; }
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased">
+
+    <!-- ====== NAVBAR ====== -->
+    <nav class="fixed top-0 left-0 right-0 z-50 bg-slate-950/80 backdrop-blur-xl border-b border-slate-800/50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center font-bold text-slate-950 text-sm">J</div>
+                <span class="text-xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-500 bg-clip-text text-transparent">JAOLA OS</span>
+                <span class="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/30">v3.1</span>
+            </div>
+            <div class="hidden md:flex items-center gap-8 text-sm text-slate-400">
+                <a href="#features" class="hover:text-emerald-400 transition">الميزات</a>
+                <a href="#agents" class="hover:text-emerald-400 transition">الوكلاء</a>
+                <a href="#demo" class="hover:text-emerald-400 transition">العرض الحي</a>
+                <a href="#stats" class="hover:text-emerald-400 transition">الإحصائيات</a>
+            </div>
+            <a href="#try" class="btn-primary text-white text-sm font-semibold px-5 py-2 rounded-full transition shadow-lg shadow-emerald-500/20">
+                <i class="fas fa-rocket ml-2"></i> جرب الآن
+            </a>
+        </div>
+    </nav>
+
+    <!-- ====== HERO ====== -->
+    <section class="relative min-h-screen flex items-center overflow-hidden pt-20 bg-grid">
+        <div class="absolute inset-0 bg-gradient-to-b from-emerald-500/5 via-transparent to-transparent pointer-events-none"></div>
+        <div class="absolute top-20 left-10 w-72 h-72 bg-emerald-500/10 rounded-full blur-3xl animate-float"></div>
+        <div class="absolute bottom-20 right-10 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl animate-float" style="animation-delay: 3s;"></div>
+
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 relative z-10">
+            <div class="grid lg:grid-cols-2 gap-12 items-center">
+                <div class="text-center lg:text-right">
+                    <div class="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-4 py-1.5 text-xs text-emerald-400 mb-6">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        نظام تشغيل ذكي لتطوير البرمجيات
+                    </div>
+                    <h1 class="text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-tight glow-text">
+                        ابنِ مشاريعك
+                        <span class="section-title">بذكاء</span>
+                        <br />
+                        <span class="text-slate-300">وسرعة لا مثيل لها</span>
+                    </h1>
+                    <p class="text-lg text-slate-400 mt-6 max-w-2xl lg:max-w-full leading-relaxed">
+                        JAOLA OS ليس مجرد أداة، بل <span class="text-emerald-400 font-semibold">شركة برمجيات ذاتية التشغيل</span> تعمل أمام عينيك. وكلاء ذكيون، معاينة حية، وتكامل فوري مع بيئتك.
+                    </p>
+                    <div class="flex flex-wrap gap-4 mt-8 justify-center lg:justify-start">
+                        <a href="#try" class="btn-primary text-white font-semibold px-8 py-4 rounded-full transition shadow-xl shadow-emerald-500/30 flex items-center gap-3">
+                            <i class="fas fa-play-circle text-xl"></i>
+                            ابدأ الآن – مجاناً
+                        </a>
+                        <a href="#demo" class="border border-slate-700 hover:border-emerald-500/50 text-slate-300 font-semibold px-8 py-4 rounded-full transition flex items-center gap-3">
+                            <i class="fas fa-eye text-emerald-400"></i>
+                            شاهد العرض
+                        </a>
+                    </div>
+                    <div class="flex items-center gap-6 mt-10 justify-center lg:justify-start text-sm text-slate-500">
+                        <span class="flex items-center gap-2"><i class="fas fa-check-circle text-emerald-400"></i> لا حاجة لتثبيت</span>
+                        <span class="flex items-center gap-2"><i class="fas fa-check-circle text-emerald-400"></i> يعمل في المتصفح</span>
+                        <span class="flex items-center gap-2"><i class="fas fa-check-circle text-emerald-400"></i> تكامل مع Groq AI</span>
+                    </div>
+                </div>
+                <div class="relative hidden lg:block">
+                    <div class="gradient-border p-6">
+                        <div class="bg-slate-900/50 rounded-xl p-4 backdrop-blur-sm">
+                            <div class="flex items-center gap-2 mb-4">
+                                <div class="w-3 h-3 rounded-full bg-red-400"></div>
+                                <div class="w-3 h-3 rounded-full bg-yellow-400"></div>
+                                <div class="w-3 h-3 rounded-full bg-green-400"></div>
+                                <span class="text-xs text-slate-500 mr-3">JAOLA OS – Live Preview</span>
+                            </div>
+                            <div class="bg-slate-950 rounded-lg p-4 border border-slate-800">
+                                <div class="flex items-center gap-3 text-sm text-slate-400 border-b border-slate-800 pb-3 mb-3">
+                                    <i class="fas fa-terminal text-emerald-400"></i>
+                                    <span>جاري تنفيذ: <span class="text-white">بناء متجر بيتزا</span></span>
+                                    <span class="mr-auto text-emerald-400 text-xs">● 72%</span>
+                                </div>
+                                <div class="space-y-2 text-xs font-mono">
+                                    <div class="text-emerald-400">> 🧠 Planner: تحليل المتطلبات...</div>
+                                    <div class="text-cyan-400">> 🏗 Architect: تصميم قاعدة البيانات...</div>
+                                    <div class="text-yellow-400">> 💻 Coder: إنشاء ProductCard.tsx...</div>
+                                    <div class="text-slate-500 animate-pulse-slow">> █</div>
+                                </div>
+                            </div>
+                            <div class="mt-4 flex gap-3 text-xs">
+                                <span class="agent-badge px-3 py-1.5 rounded-full flex items-center gap-2"><span class="text-emerald-400">🧠</span> Planner</span>
+                                <span class="agent-badge px-3 py-1.5 rounded-full flex items-center gap-2"><span class="text-cyan-400">🏗</span> Architect</span>
+                                <span class="agent-badge px-3 py-1.5 rounded-full flex items-center gap-2"><span class="text-yellow-400">💻</span> Coder</span>
+                                <span class="agent-badge px-3 py-1.5 rounded-full flex items-center gap-2"><span class="text-purple-400">🔍</span> QA</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="absolute -bottom-6 -right-6 w-20 h-20 bg-emerald-500/10 rounded-full blur-2xl"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== FEATURES ====== -->
+    <section id="features" class="py-20 bg-slate-900/30 border-t border-slate-800/50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl sm:text-4xl font-bold mb-4">
+                    <span class="section-title">ميزات</span> تجعل JAOLA OS فريداً
+                </h2>
+                <p class="text-slate-400 max-w-2xl mx-auto">
+                    كل ما تحتاجه لإدارة مشاريعك البرمجية في مكان واحد، مع وكلاء ذكاء اصطناعي يعملون معاً.
+                </p>
+            </div>
+            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div class="card-hover gradient-border p-6">
+                    <div class="feature-icon"><i class="fas fa-brain"></i></div>
+                    <h3 class="text-lg font-bold mt-4 text-white">Conversation Brain</h3>
+                    <p class="text-sm text-slate-400 mt-2 leading-relaxed">يتذكر سياق مشروعك بالكامل، ويفهم نواياك، ويرد بذكاء بناءً على الحالة الحالية.</p>
+                </div>
+                <div class="card-hover gradient-border p-6">
+                    <div class="feature-icon"><i class="fas fa-users"></i></div>
+                    <h3 class="text-lg font-bold mt-4 text-white">فريق وكلاء متكامل</h3>
+                    <p class="text-sm text-slate-400 mt-2 leading-relaxed">CEO، Planner، Architect، Coder، QA، Deploy – كل وكيل له دور محدد يعمل بتناغم تام.</p>
+                </div>
+                <div class="card-hover gradient-border p-6">
+                    <div class="feature-icon"><i class="fas fa-eye"></i></div>
+                    <h3 class="text-lg font-bold mt-4 text-white">معاينة حية (Live Preview)</h3>
+                    <p class="text-sm text-slate-400 mt-2 leading-relaxed">شاهد تغييراتك فوراً، مع تحديث لحظي لكل تعديل يطرأ على المشروع.</p>
+                </div>
+                <div class="card-hover gradient-border p-6">
+                    <div class="feature-icon"><i class="fas fa-code-branch"></i></div>
+                    <h3 class="text-lg font-bold mt-4 text-white">Digital Twin</h3>
+                    <p class="text-sm text-slate-400 mt-2 leading-relaxed">نسخة رقمية متطابقة لمشروعك، مع هيكل ملفات حقيقي وإحصائيات محدثة تلقائياً.</p>
+                </div>
+                <div class="card-hover gradient-border p-6">
+                    <div class="feature-icon"><i class="fas fa-clock"></i></div>
+                    <h3 class="text-lg font-bold mt-4 text-white">Agent Stream & Timeline</h3>
+                    <p class="text-sm text-slate-400 mt-2 leading-relaxed">تابع كل خطوة يقوم بها الوكلاء، مع توقيت دقيق وسجل تغييرات كامل.</p>
+                </div>
+                <div class="card-hover gradient-border p-6">
+                    <div class="feature-icon"><i class="fas fa-robot"></i></div>
+                    <h3 class="text-lg font-bold mt-4 text-white">تكامل مع Groq AI</h3>
+                    <p class="text-sm text-slate-400 mt-2 leading-relaxed">استخدم نماذج الذكاء الاصطناعي الأسرع في السوق لتحليل وكتابة الكود بجودة استثنائية.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== AGENTS ====== -->
+    <section id="agents" class="py-20 border-t border-slate-800/50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl sm:text-4xl font-bold mb-4">
+                    قابل فريق <span class="section-title">الوكلاء</span>
+                </h2>
+                <p class="text-slate-400 max-w-2xl mx-auto">
+                    كل وكيل متخصص في مجاله، يعملون بتناغم لإنجاز مشروعك من الصفر إلى النشر.
+                </p>
+            </div>
+            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div class="gradient-border p-6 text-center">
+                    <div class="text-5xl mb-3">👔</div>
+                    <h3 class="text-lg font-bold text-white">CEO</h3>
+                    <p class="text-sm text-slate-400 mt-1">التخطيط الاستراتيجي، تقسيم المشروع، تقدير التكلفة والمدة.</p>
+                </div>
+                <div class="gradient-border p-6 text-center">
+                    <div class="text-5xl mb-3">🧠</div>
+                    <h3 class="text-lg font-bold text-white">Planner</h3>
+                    <p class="text-sm text-slate-400 mt-1">تحليل المتطلبات، استخراج الكيانات، تحديد الأولويات.</p>
+                </div>
+                <div class="gradient-border p-6 text-center">
+                    <div class="text-5xl mb-3">🏗</div>
+                    <h3 class="text-lg font-bold text-white">Architect</h3>
+                    <p class="text-sm text-slate-400 mt-1">تصميم قاعدة البيانات، اختيار التقنيات، هيكلة التطبيق.</p>
+                </div>
+                <div class="gradient-border p-6 text-center">
+                    <div class="text-5xl mb-3">💻</div>
+                    <h3 class="text-lg font-bold text-white">Coder</h3>
+                    <p class="text-sm text-slate-400 mt-1">كتابة الكود، إنشاء المكونات، ربط واجهات API.</p>
+                </div>
+                <div class="gradient-border p-6 text-center">
+                    <div class="text-5xl mb-3">🔍</div>
+                    <h3 class="text-lg font-bold text-white">QA</h3>
+                    <p class="text-sm text-slate-400 mt-1">اختبار التكامل، تحليل الأداء، فحص الأمان وسهولة الاستخدام.</p>
+                </div>
+                <div class="gradient-border p-6 text-center">
+                    <div class="text-5xl mb-3">🚀</div>
+                    <h3 class="text-lg font-bold text-white">Deploy</h3>
+                    <p class="text-sm text-slate-400 mt-1">إعداد بيئة الإنتاج، النشر، مراقبة الأداء.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== DEMO / TRY ====== -->
+    <section id="try" class="py-20 bg-slate-900/30 border-t border-slate-800/50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl sm:text-4xl font-bold mb-4">
+                    جرب <span class="section-title">JAOLA OS</span> الآن
+                </h2>
+                <p class="text-slate-400 max-w-2xl mx-auto">
+                    اكتب أمراً بالعربية وشاهد الفريق الذكي يعمل أمام عينيك.
+                </p>
+            </div>
+            <div class="gradient-border p-6 max-w-3xl mx-auto">
+                <div class="bg-slate-950 rounded-xl p-6 border border-slate-800">
+                    <div class="flex items-center gap-3 mb-4">
+                        <i class="fas fa-terminal text-emerald-400"></i>
+                        <span class="text-sm font-mono text-slate-400">JAOLA OS Terminal</span>
+                        <span class="mr-auto text-xs text-emerald-400">● جاهز للعمل</span>
+                    </div>
+                    <div class="code-block">
+                        <div><span class="cmd">$</span> ابني متجر إلكتروني متكامل</div>
+                        <div class="text-emerald-400 mt-2">> 🧠 Planner: تم تحليل المتطلبات...</div>
+                        <div class="text-cyan-400">> 🏗 Architect: جاري تصميم قاعدة البيانات...</div>
+                        <div class="text-yellow-400">> 💻 Coder: إنشاء المكونات...</div>
+                        <div class="text-slate-500 animate-pulse-slow mt-2">> █</div>
+                    </div>
+                    <div class="flex flex-wrap gap-3 mt-4">
+                        <button class="text-xs bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-full border border-slate-700 transition text-slate-300">
+                            <i class="fas fa-utensils ml-1"></i> متجر بيتزا
+                        </button>
+                        <button class="text-xs bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-full border border-slate-700 transition text-slate-300">
+                            <i class="fas fa-plane ml-1"></i> منصة سفر
+                        </button>
+                        <button class="text-xs bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-full border border-slate-700 transition text-slate-300">
+                            <i class="fas fa-hotel ml-1"></i> منصة حجوزات
+                        </button>
+                        <button class="text-xs bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-full border border-slate-700 transition text-slate-300">
+                            <i class="fas fa-chart-line ml-1"></i> SaaS
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== STATS ====== -->
+    <section id="stats" class="py-20 border-t border-slate-800/50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+                <div>
+                    <div class="stat-number">10+</div>
+                    <div class="text-sm text-slate-500 mt-1">وكيل ذكي</div>
+                </div>
+                <div>
+                    <div class="stat-number">100%</div>
+                    <div class="text-sm text-slate-500 mt-1">تكامل مع AI</div>
+                </div>
+                <div>
+                    <div class="stat-number">0</div>
+                    <div class="text-sm text-slate-500 mt-1">حاجة للتثبيت</div>
+                </div>
+                <div>
+                    <div class="stat-number">∞</div>
+                    <div class="text-sm text-slate-500 mt-1">إمكانيات غير محدودة</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== FOOTER ====== -->
+    <footer class="border-t border-slate-800/50 py-8 bg-slate-950/50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-slate-500">
+                <div class="flex items-center gap-3">
+                    <div class="w-6 h-6 rounded-lg bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center font-bold text-slate-950 text-[10px]">J</div>
+                    <span class="font-bold text-slate-300">JAOLA OS</span>
+                    <span class="text-xs">v3.1</span>
+                </div>
+                <div class="flex gap-6">
+                    <a href="#" class="hover:text-emerald-400 transition"><i class="fab fa-github"></i></a>
+                    <a href="#" class="hover:text-emerald-400 transition"><i class="fab fa-twitter"></i></a>
+                    <a href="#" class="hover:text-emerald-400 transition"><i class="fab fa-youtube"></i></a>
+                    <a href="#" class="hover:text-emerald-400 transition"><i class="fab fa-discord"></i></a>
+                </div>
+                <p class="text-xs">© 2026 JAOLA OS – نظام تشغيل الذكاء الاصطناعي</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- ====== SCRIPT (للتفاعل البسيط) ====== -->
+    <script>
+        // تأثير تمرير سلس
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        });
+        // إضافة تأثير على أزرار التجربة
+        document.querySelectorAll('#try .btn-primary, #try button').forEach(btn => {
+            btn.addEventListener('click', function() {
+                this.textContent = '⏳ جاري التنفيذ...';
+                this.disabled = true;
+                setTimeout(() => {
+                    this.textContent = '✅ اكتمل!';
+                    this.style.background = '#10b981';
+                }, 2000);
+            });
+        });
+    </script>
+</body>
+</html>

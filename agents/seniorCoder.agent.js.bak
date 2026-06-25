@@ -1,0 +1,13 @@
+async function generateWithRetry(filePath, instruction, oldContent, maxRetries = 2) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const newCode = await generateProfessionalCode(filePath, instruction, oldContent);
+    // فحص بسيط للكود: هل يحتوي على export default أو export function؟
+    if ((filePath.endsWith('.tsx') || filePath.endsWith('.jsx')) && !newCode.includes('export default')) {
+      console.warn(`Attempt ${attempt}: missing export default, retrying...`);
+      instruction += " Ensure the component has 'export default' at the end.";
+      continue;
+    }
+    return newCode;
+  }
+  throw new Error('Failed to generate valid code after retries');
+}

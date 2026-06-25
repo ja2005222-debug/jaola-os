@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JAOLA Debug - System Health</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold mb-6">🔧 System Health</h1>
+        <div class="grid grid-cols-2 gap-4">
+            <div class="bg-gray-800 p-4 rounded-lg">
+                <h3 class="font-bold text-indigo-400">🤖 Agents</h3>
+                <div id="agentsHealth" class="space-y-2 mt-2 text-sm"></div>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-lg">
+                <h3 class="font-bold text-indigo-400">📊 Queue</h3>
+                <div id="queueInfo" class="space-y-2 mt-2 text-sm"></div>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-lg">
+                <h3 class="font-bold text-indigo-400">📁 Projects</h3>
+                <div id="projectsInfo" class="space-y-2 mt-2 text-sm"></div>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-lg">
+                <h3 class="font-bold text-indigo-400">🔌 Connections</h3>
+                <div id="connectionsInfo" class="space-y-2 mt-2 text-sm"></div>
+            </div>
+        </div>
+        <div class="mt-6">
+            <button id="refreshBtn" class="bg-indigo-600 px-4 py-2 rounded">Refresh</button>
+            <pre id="debugLog" class="mt-4 bg-black p-4 rounded-lg text-xs font-mono h-64 overflow-y-auto"></pre>
+        </div>
+    </div>
+    <script>
+        let token = localStorage.getItem('token');
+        if (!token) {
+            window.location.href = '/user.html';
+        }
+
+        async function fetchDebug() {
+            try {
+                const [agents, tasks, projects, active] = await Promise.all([
+                    fetch('/api/agents/health', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+                    fetch('/api/tasks', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+                    fetch('/api/projects', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+                    fetch('/api/projects/active', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json())
+                ]);
+
+                // Agents
+                const agentsDiv = document.getElementById('agentsHealth');
+                agentsDiv.innerHTML = Object.entries(agents).map(([name, info]) => 
+                    `<div class="flex justify-between"><span>${name}</span><span class="${info.status === 'healthy' ? 'text-green-400' : 'text-yellow-400'}">${info.status || 'unknown'}</span></div>`
+                ).join('') || '<div class="text-gray-500">No agents</div>';
+
+                // Queue
+                const pending = tasks.filter(t => t.status === 'pending').length;
+                const running = tasks.filter(t => t.status === 'running').length;
+                const completed = tasks.filter(t => t.status === 'completed').length;
+                document.getElementById('queueInfo').innerHTML = `
+                    <div>Pending: <span class="text-yellow-400">${pending}</span></div>
+                    <div>Running: <span class="text-blue-400">${running}</span></div>
+                    <div>Completed: <span class="text-green-400">${completed}</span></div>
+                    <div>Total: <span class="text-white">${tasks.length}</span></div>
+                `;
+
+                // Projects
+                document.getElementById('projectsInfo').innerHTML = `
+                    <div>Total: <span class="text-white">${projects.length}</span></div>
+                    <div>Active: <span class="text-green-400">${active ? active.name : 'None'}</span></div>
+                    <div>Port: <span class="text-blue-400">${active?.port || 'N/A'}</span></div>
+                `;
+
+                // Connections
+                const wsStatus = await fetch('/api/system/ws').then(r => r.json()).catch(() => ({ connected: false }));
+                document.getElementById('connectionsInfo').innerHTML = `
+                    <div>WebSocket: <span class="${wsStatus.connected ? 'text-green-400' : 'text-red-400'}">${wsStatus.connected ? '🟢 Connected' : '🔴 Disconnected'}</span></div>
+                    <div>Database: <span class="text-green-400">🟢 Connected</span></div>
+                `;
+
+                // Log
+                document.getElementById('debugLog').innerHTML = JSON.stringify({ agents, tasks, projects, active }, null, 2);
+
+            } catch(e) {
+                document.getElementById('debugLog').innerHTML = 'Error: ' + e.message;
+            }
+        }
+
+        document.getElementById('refreshBtn').onclick = fetchDebug;
+        fetchDebug();
+        setInterval(fetchDebug, 5000);
+    </script>
+</body>
+</html>

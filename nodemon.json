@@ -1,0 +1,24 @@
+{
+  "ignore": [
+    "tenants/*",
+    "data/*",
+    "logs/*",
+    "knowledge/*",
+    "memory/*",
+    "twins/*",
+    "*.log",
+    "*.db",
+    "*.db-journal"
+  ],
+  "watch": [
+    "server.js",
+    "routes/",
+    "services/",
+    "agents/",
+    "middleware/",
+    "public/"
+  ],
+  "ext": "js,json,html,css",
+  "delay": 2000,
+  "verbose": true
+}

@@ -1,0 +1,57 @@
+!/bin/bash
+
+# JAOLA OS - سكربت إعادة الهيكلة التلقائي
+echo "🚀 بدء عملية نقل وإعادة هيكلة ملفات JAOLA OS..."
+
+# 1. إنشاء المجلدات الفرعية داخل backend
+mkdir -p backend/agents
+mkdir -p backend/services
+mkdir -p backend/websocket
+mkdir -p backend/utils
+
+# 2. نقل ملفات الوكلاء (Agents)
+echo "📦 نقل الوكلاء (Agents)..."
+if [ -d "agents" ]; then
+    mv agents/*.js backend/agents/ 2>/dev/null
+    rmdir agents 2>/dev/null
+fi
+# نقل أي ملفات وكلاء مبعثرة في الجذر
+mv autoFix.agent.js backend/agents/ 2>/dev/null
+
+# 3. نقل الخدمات (Services)
+echo "📦 نقل الخدمات (Services)..."
+if [ -d "services" ]; then
+    mv services/*.js backend/services/ 2>/dev/null
+    rmdir services 2>/dev/null
+fi
+# نقل خدمات قواعد البيانات والتنسيق التي قد تكون في الجذر
+mv db.js backend/services/ 2>/dev/null
+mv orchestrator.js backend/services/ 2>/dev/null
+
+# 4. نقل أدوات الـ Utilities والـ WebSocket
+echo "📦 نقل ملفات الربط والـ WebSocket..."
+if [ -d "utils" ]; then
+    mv utils/*.js backend/utils/ 2>/dev/null
+    rmdir utils 2>/dev/null
+fi
+
+if [ -d "websocket" ]; then
+    mv websocket/*.js backend/websocket/ 2>/dev/null
+    rmdir websocket 2>/dev/null
+fi
+
+# 5. نقل الخادم الرئيسي (server.js) وتهيئة قواعد البيانات
+echo "📦 نقل ملفات التشغيل الأساسية..."
+mv server.js backend/server.js 2>/dev/null
+mv init_db.js backend/ 2>/dev/null
+mv setup.js backend/setup.js 2>/dev/null
+mv health_check.js backend/ 2>/dev/null
+mv check_everything.js backend/ 2>/dev/null
+
+# 6. نقل ملف قاعدة البيانات ليكون مع السيرفر
+mv jaola_os.db backend/ 2>/dev/null
+
+echo "=================================================="
+echo "✅ اكتملت عملية نقل الملفات بنجاح!"
+echo "بنيتك الآن نظيفة ومعزولة تماماً داخل مجلد /backend."
+echo "===========

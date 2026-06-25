@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>JAOLA OS | AI Operating System</title>
+
+    <!-- Tailwind + Fonts + Icons -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800;14..32,900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+
+    <style>
+        /* ─── Reset & Base ─── */
+        *,
+        *::before,
+        *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #020202;
+            color: #e8edf5;
+            min-height: 100vh;
+            overflow: hidden;
+            background-image:
+                radial-gradient(circle at 50% 50%, rgba(14, 165, 233, 0.03) 0%, transparent 60%),
+                linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 100% 100%, 40px 40px, 40px 40px;
+        }
+
+        ::-webkit-scrollbar {
+            width: 3px;
+            height: 3px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(14, 165, 233, 0.3);
+            border-radius: 10px;
+        }
+
+        /* ─── Scanline Overlay ─── */
+        .scanline-overlay {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background: linear-gradient(to bottom, transparent, rgba(14, 165, 233, 0.04), transparent);
+            animation: scanline 8s linear infinite;
+            height: 10vh;
+            z-index: 9999;
+        }
+
+        @keyframes scanline {
+            0% {
+                transform: translateY(-100%);
+            }
+            100% {
+                transform: translateY(100vh);
+            }
+        }
+
+        /* ─── Glass / OS Panel ─── */
+        .os-panel {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border-radius: 0.75rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+            transition: border-color 0.3s ease;
+        }
+
+        .os-panel:hover {
+            border-color: rgba(255, 255, 255, 0.08);
+        }
+
+        .hud-text {
+            font-family: 'Inter', monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-size: 0.6rem;
+            color: #6b7280;
+        }
+
+        /* ─── Data Stream Animation ─── */
+        .data-stream {
+            stroke-dasharray: 10;
+            animation: flow 20s linear infinite;
+        }
+
+        @keyframes flow {
+            to {
+                stroke-dashoffset: -1000;
+            }
+        }
+
+        /* ─── HUD Agent Nodes ─── */
+        .agent-node {
+            transition: all 0.3s ease;
+        }
+        .agent-node .ring {
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            border: 1px solid rgba(14, 165, 233, 0.15);
+            animation: ringPulse 3s ease-in-out infinite;
+        }
+
+        .agent-node .ring:nth-child(2) {
+            animation-delay: 1s;
+        }
+        .agent-node .ring:nth-child(3) {
+            animation-delay: 2s;
+        }
+
+        @keyframes ringPulse {
+            0%,
+            100% {
+                transform: scale(1);
+                opacity: 0.3;
+            }
+            50% {
+                transform: scale(1.3);
+                opacity: 0.05;
+            }
+        }
+
+        .agent-node.active .core {
+            background: rgba(14, 165, 233, 0.15);
+            border-color: rgba(14, 165, 233, 0.4);
+            box-shadow: 0 0 20px rgba(14, 165, 233, 0.15);
+        }
+
+        .agent-node.thinking .core {
+            background: rgba(99, 102, 241, 0.15);
+            border-color: rgba(99, 102, 241, 0.3);
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.1);
+        }
+
+        .agent-node.idle .core {
+            background: rgba(255, 255, 255, 0.02);
+            border-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-left: 4px;
+        }
+        .status-dot.online {
+            background: #34d399;
+            box-shadow: 0 0 8px rgba(52, 211, 153, 0.4);
+        }
+        .status-dot.busy {
+            background: #fbbf24;
+            animation: pulse-dot 1.2s ease-in-out infinite;
+        }
+        .status-dot.idle {
+            background: #4b5563;
+        }
+
+        @keyframes pulse-dot {
+            0%,
+            100% {
+                opacity: 0.5;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 1;
+                transform: scale(1.3);
+            }
+        }
+
+        /* ─── Omnibar ─── */
+        .omnibar {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100%;
+            max-width: 640px;
+            z-index: 50;
+        }
+
+        .omnibar .glow-ring {
+            position: absolute;
+            inset: -2px;
+            background: linear-gradient(135deg, rgba(14, 165, 233, 0.15), rgba(99, 102, 241, 0.15));
+            border-radius: 0.75rem;
+            filter: blur(12px);
+            opacity: 0.3;
+            transition: opacity 0.4s ease;
+        }
+
+        .omnibar:focus-within .glow-ring {
+            opacity: 0.8;
+        }
+
+        .omnibar input {
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 0.75rem;
+            padding: 0.9rem 1.2rem;
+            color: #e8edf5;
+            font-family: 'Inter', monospace;
+            font-size: 0.85rem;
+            width: 100%;
+            outline: none;
+            transition: border-color 0.3s ease;
+        }
+
+        .omnibar input:focus {
+            border-color: rgba(14, 165, 233, 0.3);
+        }
+
+        .omnibar input::placeholder {
+            color: #4b5563;
+            font-weight: 300;
+        }
+
+        .omnibar .execute-btn {
+            background: rgba(14, 165, 233, 0.1);
+            border: 1px solid rgba(14, 165, 233, 0.15);
+            color: #38bdf8;
+            padding: 0.5rem 1.2rem;
+            border-radius: 0.5rem;
+            font-size: 0.6rem;
+            font-family: 'Inter', monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .omnibar .execute-btn:hover {
+            background: rgba(14, 165, 233, 0.2);
+            box-shadow: 0 0 20px rgba(14, 165, 233, 0.15);
+        }
+
+        .omnibar kbd {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.2rem;
+            padding: 0.15rem 0.6rem;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 0.3rem;
+            font-size: 0.55rem;
+            font-family: 'Inter', monospace;
+            color: #6b7280;
+        }
+
+        /* ─── Thinking Stream ─── */
+        .thinking-entry {
+            border-right: 2px solid rgba(14, 165, 233, 0.2);
+            padding-right: 0.8rem;
+            padding-bottom: 0.4rem;
+            margin-bottom: 0.4rem;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(6px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        /* ─── Telemetry ─── */
+        .telemetry-value {
+            font-size: 1.2rem;
+            font-weight: 700;
+            font-feature-settings: "tnum";
+        }
+
+        /* ─── Responsive ─── */
+        @media (max-width: 1024px) {
+            .omnibar {
+                max-width: 90%;
+                bottom: 1rem;
+            }
+            .omnibar input {
+                font-size: 0.75rem;
+                padding: 0.6rem 1rem;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .omnibar kbd {
+                display: none;
+            }
+            .omnibar .execute-btn {
+                padding: 0.3rem 0.8rem;
+                font-size: 0.5rem;
+            }
+            .telemetry-value {
+                font-size: 1rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ─── Scanline Overlay ─── -->
+    <div class="scanline-overlay"></div>
+
+    <!-- ──────────────────────────────────────────────── -->
+    <!-- MAIN OS INTERFACE                                 -->
+    <!-- ──────────────────────────────────────────────── -->
+
+    <div class="relative min-h-screen flex flex-col p-4 md:p-6 overflow-hidden">
+
+        <!-- ═══ TOP HUD ═══ -->
+        <header class="flex items-center justify-between z-10 mb-4 md:mb-6 px-2">
+            <div class="flex items-center gap-4">
+                <div class="w-8 h-8 rounded border border-white/10 bg-white/5 flex items-center justify-center backdrop-blur-md">
+                    <div class="w-3 h-3 bg-white rounded-sm shadow-[0_0_10px_rgba(255,255,255,0.2)]"></div>
+                </div>
+                <div>
+                    <h1 class="font-mono text-sm tracking-widest text-white uppercase">JAOLA OS</h1>
+                    <div class="hud-text text-sky-400 flex items-center gap-2 mt-0.5">
+                        <i class="fas fa-circle text-[6px] text-sky-400 animate-pulse"></i>
+                        <span id="systemStatus">Core Systems Nominal</span>
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center gap-4 md:gap-6 font-mono text-xs">
+                <div class="flex flex-col items-end">
+                    <span class="hud-text">المهمة النشطة</span>
+                    <span id="activeMissionName" class="text-white text-xs">—</span>
+                </div>
+                <div class="flex flex-col items-end border-r border-white/10 pl-4 md:pl-6">
+                    <span class="hud-text">حالة الأسطول</span>
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span id="fleetStatus" class="text-emerald-400 text-[10px] md:text-xs">7/7 وكلاء نشطون</span>
+                    </div>
+                </div>
+                <button id="logoutBtn" class="text-zinc-500 hover:text-white transition text-xs">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- ═══ MAIN GRID: Neural Canvas + Peripherals ═══ -->
+        <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 z-10 min-h-0">
+
+            <!-- ─── Left: Live Workspace ─── -->
+            <div class="lg:col-span-3 h-full flex flex-col">
+                <div class="os-panel p-4 flex-1 flex flex-col gap-3 overflow-hidden">
+                    <div class="flex items-center justify-between border-b border-white/5 pb-2">
+                        <h2 class="hud-text text-white text-[10px]">مساحة العمل الحية</h2>
+                        <span class="w-2 h-2 relative">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
+                        </span>
+                    </div>
+                    <div id="liveWorkspace" class="flex-1 overflow-y-auto space-y-2 text-xs font-mono">
+                        <div class="text-zinc-500 text-center py-8">في انتظار النشاط...</div>
+                    </div>
+                    <div class="border-t border-white/5 pt-3">
+                        <span class="hud-text text-purple-400 block mb-2">المقاييس التنفيذية</span>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="bg-white/5 p-2 rounded">
+                                <div class="hud-text">السرعة</div>
+                                <div class="telemetry-value text-white" id="velocityMetric">0 LOC/m</div>
+                            </div>
+                            <div class="bg-white/5 p-2 rounded">
+                                <div class="hud-text">احتمال النجاح</div>
+                                <div class="telemetry-value text-emerald-400" id="successMetric">0%</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ─── Center: Neural Canvas ─── -->
+            <div class="lg:col-span-6 h-full os-panel relative overflow-hidden flex flex-col">
+                <div class="absolute top-3 left-4 hud-text text-white z-20 text-[10px]">مخطط المهمة الحي</div>
+                <div id="neuralCanvas" class="flex-1 relative min-h-[350px] md:min-h-[400px]">
+                    <!-- SVG canvas for connections -->
+                    <svg id="agentSvg" class="absolute inset-0 w-full h-full pointer-events-none">
+                        <defs>
+                            <linearGradient id="flowGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                                <stop offset="0%" stop-color="rgba(14,165,233,0)" />
+                                <stop offset="50%" stop-color="rgba(14,165,233,0.6)" />
+                                <stop offset="100%" stop-color="rgba(14,165,233,0)" />
+                            </linearGradient>
+                        </defs>
+                        <!-- سيتم رسم الخطوط بواسطة JavaScript -->
+                    </svg>
+                    <!-- Agent nodes will be rendered by JavaScript -->
+                    <div id="agentNodes" class="relative w-full h-full"></div>
+                    <!-- Central holographic rings -->
+                    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[200px] md:w-[280px] h-[200px] md:h-[280px] border border-sky-500/10 rounded-full animate-[spin_20s_linear_infinite] pointer-events-none"></div>
+                    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[280px] md:w-[380px] h-[280px] md:h-[380px] border border-white/5 rounded-full border-dashed animate-[spin_30s_linear_infinite_reverse] pointer-events-none"></div>
+                </div>
+            </div>
+
+            <!-- ─── Right: Thinking Stream ─── -->
+            <div class="lg:col-span-3 h-full flex flex-col">
+                <div class="os-panel p-4 flex-1 flex flex-col gap-3 overflow-hidden">
+                    <div class="flex items-center justify-between border-b border-white/5 pb-2">
+                        <h2 class="hud-text text-white text-[10px]">تيار التفكير الحي</h2>
+                        <span class="w-2 h-2 relative">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
+                        </span>
+                    </div>
+                    <div id="thinkingStream" class="flex-1 overflow-y-auto space-y-2 text-xs">
+                        <div class="text-zinc-500 text-center py-8">في انتظار القرارات...</div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ═══ OMNIBAR (Command Center) ═══ -->
+        <div class="omnibar">
+            <div class="glow-ring"></div>
+            <div class="relative flex items-center bg-black/80 border border-white/10 backdrop-blur-3xl rounded-xl p-1.5 pl-4">
+                <i class="fas fa-terminal text-sky-400 text-sm mr-3 animate-pulse"></i>
+                <input type="text" id="commandInput" placeholder="أطلق مهمة (مثال: 'انشر منصة سفر')..."
+                class="flex-1 bg-transparent border-none outline-none text-white font-mono placeholder:text-zinc-600 text-sm py-2 md:py-3" />
+                <div class="flex items-center gap-2 mr-1">
+                    <kbd>⌘</kbd>
+                    <kbd>↵</kbd>
+                    <button id="executeCommandBtn" class="execute-btn text-[10px] md:text-xs px-3 md:px-4 py-1.5">
+                        <i class="fas fa-rocket ml-1"></i> إطلاق
+                    </button>
+                </div>
+            </div>
+            <div class="flex justify-center gap-2 mt-3 flex-wrap">
+                <span class="text-[9px] md:text-[10px] font-mono text-zinc-600 hover:text-zinc-400 cursor-pointer transition mission-launcher" data-mission="build-saas-crm">🚀 SaaS CRM</span>
+                <span class="text-[9px] md:text-[10px] font-mono text-zinc-600 hover:text-zinc-400 cursor-pointer transition mission-launcher" data-mission="deploy-travel-platform">✈️ منصة سفر</span>
+                <span class="text-[9px] md:text-[10px] font-mono text-zinc-600 hover:text-zinc-400 cursor-pointer transition mission-launcher" data-mission="create-ai-startup">🤖 شركة AI</span>
+                <span class="text-[9px] md:text-[10px] font-mono text-zinc-600 hover:text-zinc-400 cursor-pointer transition mission-launcher" data-mission="ecommerce-shop">🛒 متجر</span>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ──────────────────────────────────────────────── -->
+    <!-- JAVASCRIPT                                        -->
+    <!-- ──────────────────────────────────────────────── -->
+
+    <script>
+        (function() {
+            'use strict';
+
+            // ─── Configuration ───
+            const API_BASE = 'http://localhost:5000/api';
+            let token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/user.html';
+                return;
+            }
+
+            let sessionId = localStorage.getItem('chat_session_id') || crypto.randomUUID();
+            localStorage.setItem('chat_session_id', sessionId);
+
+            // ─── DOM refs ───
+            const $ = (sel) => document.querySelector(sel);
+            const $$ = (sel) => document.querySelectorAll(sel);
+
+            const commandInput = $('#commandInput');
+            const executeBtn = $('#executeCommandBtn');
+            const logoutBtn = $('#logoutBtn');
+            const agentNodes = $('#agentNodes');
+            const agentSvg = $('#agentSvg');
+            const liveWorkspace = $('#liveWorkspace');
+            const thinkingStream = $('#thinkingStream');
+            const systemStatus = $('#systemStatus');
+            const activeMissionName = $('#activeMissionName');
+            const fleetStatus = $('#fleetStatus');
+            const velocityMetric = $('#velocityMetric');
+            const successMetric = $('#successMetric');
+
+            // ─── Agent configuration ───
+            const AGENTS = [
+                { id: 'ceo', label: 'CEO Core', icon: 'fa-crown', x: 50, y: 12 },
+                { id: 'planner', label: 'Planner', icon: 'fa-list-check', x: 20, y: 40 },
+                { id: 'architect', label: 'Architect', icon: 'fa-layer-group', x: 80, y: 40 },
+                { id: 'coder', label: 'Coder', icon: 'fa-code', x: 50, y: 70 },
+                { id: 'reviewer', label: 'Reviewer', icon: 'fa-magnifying-glass', x: 20, y: 85 },
+                { id: 'qa', label: 'QA Validate', icon: 'fa-flask', x: 50, y: 90 },
+                { id: 'deployer', label: 'Deployer', icon: 'fa-rocket', x: 80, y: 85 }
+            ];
+
+            let agentsStatus = {};
+            let tasks = [];
+            let projects = [];
+            let thinkingEntries = [];
+            let workspaceEntries = [];
+
+            // ─── Helpers ───
+            function escapeHtml(str) {
+                if (!str) return '';
+                return str.replace(/[&<>"]/g, m => {
+                    if (m === '&') return '&amp;';
+                    if (m === '<') return '&lt;';
+                    if (m === '>') return '&gt;';
+                    if (m === '"') return '&quot;';
+                    return m;
+                });
+            }
+
+            function formatTime(d) {
+                const date = new Date(d);
+                return date.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+            }
+
+            function getStatusDotClass(status) {
+                if (status === 'healthy' || status === 'online' || status === 'completed' || status === 'active') return 'online';
+                if (status === 'running' || status === 'busy' || status === 'thinking') return 'busy';
+                return 'idle';
+            }
+
+            function getStatusLabel(status) {
+                if (status === 'healthy' || status === 'online' || status === 'active') return 'نشط';
+                if (status === 'running' || status === 'busy' || status === 'thinking') return 'يعمل';
+                return 'في انتظار';
+            }
+
+            function getNodeClass(status) {
+                if (status === 'healthy' || status === 'online' || status === 'active' || status === 'running') return 'active';
+                if (status === 'thinking') return 'thinking';
+                return 'idle';
+            }
+
+            // ─── API calls ───
+            async function apiGet(endpoint) {
+                const res = await fetch(API_BASE + endpoint, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (res.status === 401) {
+                    localStorage.removeItem('token');
+                    window.location.href = '/user.html';
+                    throw new Error('Unauthorized');
+                }
+                if (!res.ok) throw new Error(await res.text());
+                return res.json();
+            }
+
+            async function apiPost(endpoint, body) {
+                const res = await fetch(API_BASE + endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify(body)
+                });
+                if (res.status === 401) {
+                    localStorage.removeItem('token');
+                    window.location.href = '/user.html';
+                    throw new Error('Unauthorized');
+                }
+                if (!res.ok) throw new Error(await res.text());
+                return res.json();
+            }
+
+            // ─── Load user ───
+            async function loadUser() {
+                try {
+                    const user = await apiGet('/user/profile');
+                    if (user && user.username) {
+                        // update anywhere username is needed
+                    }
+                } catch (e) { console.warn(e); }
+            }
+
+            // ─── Load agents ───
+            async function loadAgents() {
+                try {
+                    const data = await apiGet('/agents/health');
+                    agentsStatus = data;
+                    renderAgents(data);
+                    drawConnections(data);
+                    updateFleetStatus(data);
+                    updateMetrics(data);
+                } catch (e) {
+                    console.warn(e);
+                    const mock = {
+                        CEO: { status: 'healthy', successRate: 98, currentTask: 'تحليل الطلب' },
+                        Planner: { status: 'healthy', successRate: 92, currentTask: 'تخطيط المهام' },
+                        Architect: { status: 'running', successRate: 88, currentTask: 'تصميم الهيكل' },
+                        Coder: { status: 'running', successRate: 85, currentTask: 'كتابة الأكواد' },
+                        Reviewer: { status: 'idle', successRate: 90, currentTask: 'في انتظار' },
+                        QA: { status: 'idle', successRate: 87, currentTask: 'في انتظار' },
+                        Deployer: { status: 'idle', successRate: 95, currentTask: 'في انتظار' }
+                    };
+                    agentsStatus = mock;
+                    renderAgents(mock);
+                    drawConnections(mock);
+                    updateFleetStatus(mock);
+                    updateMetrics(mock);
+                }
+            }
+
+            function renderAgents(data) {
+                const map = {
+                    'CEO': 'ceo',
+                    'Planner': 'planner',
+                    'Architect': 'architect',
+                    'Coder': 'coder',
+                    'Reviewer': 'reviewer',
+                    'QA': 'qa',
+                    'Deployer': 'deployer'
+                };
+
+                agentNodes.innerHTML = AGENTS.map(agent => {
+                    const info = data[agent.label] || { status: 'idle', successRate: 0, currentTask: '—' };
+                    const statusClass = getNodeClass(info.status);
+                    const dotClass = getStatusDotClass(info.status);
+                    const label = getStatusLabel(info.status);
+                    const rate = info.successRate || 0;
+                    const task = info.currentTask || '—';
+                    return `
+                        <div class="agent-node ${statusClass} absolute transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1.5"
+                             style="left:${agent.x}%; top:${agent.y}%;">
+                            <div class="relative">
+                                <div class="ring"></div>
+                                <div class="ring"></div>
+                                <div class="ring"></div>
+                                <div class="core relative w-10 h-10 md:w-12 md:h-12 rounded-full border flex items-center justify-center bg-white/5 border-white/10 transition-all duration-300">
+                                    <i class="fas ${agent.icon} text-sm md:text-base ${statusClass === 'active' ? 'text-sky-400' : statusClass === 'thinking' ? 'text-indigo-400' : 'text-zinc-600'}"></i>
+                                    ${statusClass !== 'idle' ? `
+                                        <div class="absolute -inset-1 rounded-full border border-sky-500/20 animate-[spin_4s_linear_infinite]"></div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                            <span class="text-[8px] md:text-[10px] font-mono text-white/70">${agent.label}</span>
+                            <div class="flex items-center gap-1">
+                                <span class="status-dot ${dotClass}"></span>
+                                <span class="text-[6px] md:text-[8px] text-zinc-500">${rate}%</span>
+                            </div>
+                            <span class="text-[6px] md:text-[8px] text-zinc-600 truncate max-w-[60px] md:max-w-[80px] text-center">${escapeHtml(task)}</span>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            function drawConnections(data) {
+                const active = AGENTS.filter(a => data[a.label] && (data[a.label].status === 'healthy' || data[a.label].status === 'running'));
+                if (active.length < 2) {
+                    agentSvg.innerHTML = `<defs><linearGradient id="flowGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" stop-color="rgba(14,165,233,0)" />
+                            <stop offset="50%" stop-color="rgba(14,165,233,0.4)" />
+                            <stop offset="100%" stop-color="rgba(14,165,233,0)" />
+                        </linearGradient></defs>`;
+                    return;
+                }
+
+                // Draw connections between active agents (simplified: CEO to all active)
+                const ceo = AGENTS.find(a => a.id === 'ceo');
+                const others = AGENTS.filter(a => a.id !== 'ceo' && data[a.label] && (data[a.label].status === 'healthy' || data[a.label]
+                .status === 'running'));
+
+                let paths = '';
+                if (ceo && others.length > 0) {
+                    others.forEach(agent => {
+                        const x1 = ceo.x,
+                            y1 = ceo.y;
+                        const x2 = agent.x,
+                            y2 = agent.y;
+                        // Convert percentage to SVG coordinates (0-100%)
+                        paths += `<line x1="${x1}%" y1="${y1}%" x2="${x2}%" y2="${y2}%" stroke="url(#flowGrad)" stroke-width="1.5" class="data-stream" />`;
+                    });
+                }
+
+                // Also connect Planner -> Coder -> QA (if active)
+                const planner = AGENTS.find(a => a.id === 'planner');
+                const coder = AGENTS.find(a => a.id === 'coder');
+                const qa = AGENTS.find(a => a.id === 'qa');
+                if (planner && coder && data[planner.label] && (data[planner.label].status === 'healthy' || data[planner.label].status ===
+                        'running')) {
+                    paths += `<line x1="${planner.x}%" y1="${planner.y}%" x2="${coder.x}%" y2="${coder.y}%" stroke="rgba(255,255,255,0.05)" stroke-width="1" />`;
+                }
+                if (coder && qa && data[coder.label] && (data[coder.label].status === 'healthy' || data[coder.label].status ===
+                        'running')) {
+                    paths += `<line x1="${coder.x}%" y1="${coder.y}%" x2="${qa.x}%" y2="${qa.y}%" stroke="rgba(255,255,255,0.05)" stroke-width="1" />`;
+                }
+
+                agentSvg.innerHTML = `
+                    <defs>
+                        <linearGradient id="flowGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" stop-color="rgba(14,165,233,0)" />
+                            <stop offset="50%" stop-color="rgba(14,165,233,0.6)" />
+                            <stop offset="100%" stop-color="rgba(14,165,233,0)" />
+                        </linearGradient>
+                    </defs>
+                    ${paths}
+                `;
+            }
+
+            function updateFleetStatus(data) {
+                const active = Object.values(data).filter(a => a.status === 'healthy' || a.status === 'running').length;
+                const total = Object.keys(data).length || 7;
+                fleetStatus.textContent = `${active}/${total} وكلاء نشطون`;
+                systemStatus.textContent = active > 0 ? 'Core Systems Nominal' : 'في انتظار التنشيط';
+            }
+
+            function updateMetrics(data) {
+                const values = Object.values(data);
+                const avgSuccess = values.reduce((s, a) => s + (a.successRate || 0), 0) / values.length || 0;
+                const active = values.filter(a => a.status === 'healthy' || a.status === 'running').length;
+                const total = values.length || 1;
+                const efficiency = Math.round((active / total) * 100);
+                const success = Math.min(100, Math.round(avgSuccess));
+                const velocity = Math.min(100, Math.round(70 + Math.random() * 25));
+                velocityMetric.textContent = velocity + ' LOC/m';
+                successMetric.textContent = success + '%';
+            }
+
+            // ─── Load projects ───
+            async function loadProjects() {
+                try {
+                    const data = await apiGet('/projects');
+                    projects = data || [];
+                    updateWorkspace('📦', 'المشاريع', projects.length + ' مشاريع نشطة');
+                } catch (e) { console.warn(e); }
+            }
+
+            // ─── Load tasks ───
+            async function loadTasks() {
+                try {
+                    const data = await apiGet('/tasks');
+                    tasks = data || [];
+                    updateThinkingStream(tasks);
+                    updateWorkspaceFromTasks(tasks);
+                    updateActiveMission(tasks);
+                } catch (e) { console.warn(e); }
+            }
+
+            function updateThinkingStream(taskList) {
+                if (!taskList || taskList.length === 0) {
+                    thinkingStream.innerHTML = `<div class="text-zinc-500 text-center py-8">في انتظار القرارات...</div>`;
+                    return;
+                }
+                const recent = taskList.slice(-5).reverse();
+                thinkingStream.innerHTML = recent.map(t => {
+                    const decision = t.agent || 'نظام';
+                    const action = t.action || 'تنفيذ';
+                    const result = t.status || 'معلق';
+                    const conf = Math.floor(Math.random() * 20 + 80);
+                    return `
+                        <div class="thinking-entry">
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="text-sky-400 font-mono text-[10px]">[${formatTime(t.createdAt || Date.now())}]</span>
+                                <span class="text-emerald-400/80 text-[8px]">CONF: ${conf}%</span>
+                            </div>
+                            <div class="flex items-center gap-2 mt-0.5">
+                                <span class="text-white/80 text-[10px]">${escapeHtml(decision)}</span>
+                            </div>
+                            <div class="text-zinc-500 text-[9px] space-y-0.5 mt-0.5">
+                                <div><span class="text-zinc-600 text-[8px] uppercase">القرار:</span> ${escapeHtml(action)}</div>
+                                <div><span class="text-zinc-600 text-[8px] uppercase">النتيجة:</span> <span class="text-white/60">${escapeHtml(result)}</span></div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            function updateWorkspaceFromTasks(taskList) {
+                if (!taskList || taskList.length === 0) {
+                    if (!workspaceEntries.length) {
+                        liveWorkspace.innerHTML = `<div class="text-zinc-500 text-center py-8">في انتظار النشاط...</div>`;
+                    }
+                    return;
+                }
+                const recent = taskList.slice(-3).reverse();
+                let html = '';
+                recent.forEach(t => {
+                    const icon = t.status === 'completed' ? 'fa-check-circle text-emerald-400' : t.status === 'running' ?
+                        'fa-spinner fa-spin text-sky-400' : 'fa-clock text-zinc-500';
+                    const label = t.agent || 'نظام';
+                    const action = t.action || 'مهمة';
+                    html += `
+                        <div class="flex items-center gap-2 text-[10px] md:text-xs font-mono text-zinc-300 border-b border-white/5 pb-1.5">
+                            <i class="fas ${icon} w-4"></i>
+                            <span class="flex-1 truncate">${escapeHtml(label)} — ${escapeHtml(action)}</span>
+                            <span class="text-[8px] text-zinc-600">${formatTime(t.createdAt || Date.now())}</span>
+                        </div>
+                    `;
+                });
+                if (html) {
+                    liveWorkspace.innerHTML = html;
+                }
+            }
+
+            function updateActiveMission(taskList) {
+                const active = taskList?.find(t => t.status === 'running' || t.status === 'pending');
+                if (active) {
+                    activeMissionName.textContent = active.action || 'مهمة قيد التنفيذ';
+                } else if (taskList && taskList.length > 0) {
+                    const last = taskList[taskList.length - 1];
+                    activeMissionName.textContent = last.action || 'مكتمل';
+                } else {
+                    activeMissionName.textContent = '—';
+                }
+            }
+
+            function updateWorkspace(icon, label, text) {
+                const entry = document.createElement('div');
+                entry.className =
+                'flex items-center gap-2 text-[10px] md:text-xs font-mono text-zinc-300 border-b border-white/5 pb-1.5';
+                entry.innerHTML = `
+                    <i class="fas ${icon} text-sky-400 w-4"></i>
+                    <span class="flex-1 truncate">${escapeHtml(label)} — ${escapeHtml(text)}</span>
+                    <span class="text-[8px] text-zinc-600">${formatTime(Date.now())}</span>
+                `;
+                liveWorkspace.prepend(entry);
+                if (liveWorkspace.children.length > 20) {
+                    liveWorkspace.removeChild(liveWorkspace.lastChild);
+                }
+                // Remove empty state
+                const empty = liveWorkspace.querySelector('.text-zinc-500.text-center');
+                if (empty) empty.remove();
+            }
+
+            function addThinkingEntry(agent, decision, action, result, conf) {
+                const entry = document.createElement('div');
+                entry.className = 'thinking-entry';
+                const time = formatTime(Date.now());
+                entry.innerHTML = `
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="text-sky-400 font-mono text-[10px]">[${time}]</span>
+                        <span class="text-emerald-400/80 text-[8px]">CONF: ${conf || Math.floor(Math.random() * 20 + 80)}%</span>
+                    </div>
+                    <div class="flex items-center gap-2 mt-0.5">
+                        <span class="text-white/80 text-[10px]">${escapeHtml(agent)}</span>
+                    </div>
+                    <div class="text-zinc-500 text-[9px] space-y-0.5 mt-0.5">
+                        <div><span class="text-zinc-600 text-[8px] uppercase">القرار:</span> ${escapeHtml(decision)}</div>
+                        <div><span class="text-zinc-600 text-[8px] uppercase">النتيجة:</span> <span class="text-white/60">${escapeHtml(result)}</span></div>
+                    </div>
+                `;
+                thinkingStream.prepend(entry);
+                if (thinkingStream.children.length > 20) {
+                    thinkingStream.removeChild(thinkingStream.lastChild);
+                }
+                const empty = thinkingStream.querySelector('.text-zinc-500.text-center');
+                if (empty) empty.remove();
+            }
+
+            // ─── Execute mission ───
+            async function executeMission(message) {
+                if (!message || !message.trim()) return;
+                const text = message.trim();
+
+                addThinkingEntry('🧠 المستخدم', 'إطلاق مهمة', text, 'قيد التنفيذ', 99);
+                updateWorkspace('🚀', 'إرسال المهمة', text);
+
+                try {
+                    const result = await apiPost('/user/request', { message: text, sessionId });
+                    const reply = result.message || result.reply || '✅ تم التنفيذ';
+                    addThinkingEntry('✅ JAOLA OS', 'استجابة المهمة', reply, 'مكتمل', 98);
+                    updateWorkspace('📥', 'استجابة', reply);
+                    await refreshAll();
+                } catch (e) {
+                    addThinkingEntry('❌ خطأ', 'فشل التنفيذ', e.message || 'خطأ غير معروف', 'فشل', 0);
+                    updateWorkspace('❌', 'خطأ', e.message || 'فشل');
+                }
+            }
+
+            // ─── Refresh all ───
+            async function refreshAll() {
+                await loadAgents();
+                await loadProjects();
+                await loadTasks();
+            }
+
+            // ─── WebSocket ───
+            let ws = null;
+            let reconnectTimer = null;
+
+            function connectWS() {
+                const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                ws = new WebSocket(`ws://localhost:5000`);
+                ws.onopen = () => {
+                    console.log('🔌 WebSocket connected');
+                };
+                ws.onmessage = (e) => {
+                    try {
+                        const data = JSON.parse(e.data);
+                        if (data.type === 'task_update') {
+                            refreshAll();
+                            const agent = data.agent || 'نظام';
+                            const status = data.status || 'محدث';
+                            addThinkingEntry('⚡ ' + agent, 'تحديث المهمة', data.action || 'جاري التنفيذ', status, 92);
+                            updateWorkspace('🔄', agent, status + ' - ' + (data.action || ''));
+                        }
+                        if (data.type === 'plan_update') {
+                            addThinkingEntry('📋 خطة', 'خطة جديدة', data.goal || 'مهمة', 'تم التخطيط', 95);
+                        }
+                    } catch (err) {}
+                };
+                ws.onclose = () => {
+                    console.log('🔌 WebSocket disconnected');
+                    if (reconnectTimer) clearTimeout(reconnectTimer);
+                    reconnectTimer = setTimeout(connectWS, 3000);
+                };
+            }
+
+            // ─── Mission launchers ───
+            document.querySelectorAll('.mission-launcher').forEach(el => {
+                el.addEventListener('click', () => {
+                    const mission = el.dataset.mission;
+                    let prompt = '';
+                    if (mission === 'build-saas-crm') prompt = 'بناء نظام CRM كامل مع لوحة تحكم';
+                    else if (mission === 'deploy-travel-platform') prompt = 'إنشاء منصة سفر مع حجوزات ودفع';
+                    else if (mission === 'create-ai-startup') prompt = 'بناء شركة ذكاء اصطناعي مع مساعد ذكي';
+                    else if (mission === 'ecommerce-shop') prompt = 'بناء متجر إلكتروني متكامل';
+                    else prompt = mission;
+                    commandInput.value = prompt;
+                    executeBtn.click();
+                });
+            });
+
+            // ─── Event bindings ───
+            executeBtn.addEventListener('click', () => {
+                const msg = commandInput.value.trim();
+                if (msg) {
+                    executeMission(msg);
+                    commandInput.value = '';
+                }
+            });
+
+            commandInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') executeBtn.click();
+            });
+
+            logoutBtn.addEventListener('click', () => {
+                localStorage.removeItem('token');
+                window.location.href = '/user.html';
+            });
+
+            // ─── Init ───
+            async function init() {
+                await loadUser();
+                connectWS();
+                await refreshAll();
+                setInterval(refreshAll, 10000);
+
+                // Add initial thinking entries
+                setTimeout(() => {
+                    addThinkingEntry('🚀 النظام', 'جاهزية الأسطول', 'جميع الوكلاء في وضع الاستعداد', 'جاهز', 100);
+                }, 500);
+                setTimeout(() => {
+                    addThinkingEntry('💡 تلميح', 'ابدأ مهمة', 'اكتب أمراً في شريط الأوامر', 'في انتظار', 99);
+                }, 1500);
+            }
+
+            init();
+
+        })();
+    </script>
+
+</body>
+</html>

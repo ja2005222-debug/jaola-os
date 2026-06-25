@@ -1,0 +1,73 @@
+{
+  "pages": [
+    "/about",
+    "/access",
+    "/blog",
+    "/cars",
+    "/deals",
+    "/deebsk",
+    "/destinations",
+    "/fix-site",
+    "/flights",
+    "/flights/search",
+    "/hotels",
+    "/membership",
+    "/page.tsx",
+    "/pages/files",
+    "/pages/status",
+    "/photos",
+    "/my-jaola-app"
+  ],
+  "components": [
+    "FlightCard",
+    "FlightSearch",
+    "LoginForm",
+    "Navbar",
+    "Vegetables"
+  ],
+  "exports": {
+    "app/about/page.tsx": [
+      "AboutPage"
+    ],
+    "app/cars/page.tsx": [
+      "CarsPage"
+    ],
+    "app/data/photos.ts": [
+      "photos"
+    ],
+    "app/fix-site/page.tsx": [
+      "FixSitePage"
+    ],
+    "app/hotels/page.tsx": [
+      "HotelsPage"
+    ],
+    "app/layout.tsx": [
+      "metadata",
+      "RootLayout"
+    ],
+    "app/services/payments.ts": [
+      "processPayment"
+    ],
+    "components/flights/FlightCard.tsx": [
+      "FlightCard"
+    ],
+    "components/flights/FlightSearch.tsx": [
+      "FlightSearchForm"
+    ],
+    "my-jaola-app/app/layout.tsx": [
+      "metadata",
+      "RootLayout"
+    ],
+    "my-jaola-app/app/page.tsx": [
+      "Home"
+    ],
+    "services/payments.ts": [
+      "processPayment"
+    ],
+    "src/app/layout.tsx": [
+      "RootLayout"
+    ]
+  },
+  "imports": {},
+  "lastScan": "2026-06-14T15:48:47.129Z"
+}

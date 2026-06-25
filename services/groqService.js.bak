@@ -1,0 +1,155 @@
+import { Groq } from 'groq-sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { OpenAI } from 'openai';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.join(__dirname, '../.env') });
+
+export const usageStats = {
+    Groq: { requests: 0, tokens: 0 },
+    Gemini: { requests: 0, tokens: 0 },
+    GitHub: { requests: 0, tokens: 0 },
+};
+
+function recordUsage(provider, tokens = 0) {
+    if (usageStats[provider]) {
+        usageStats[provider].requests++;
+        usageStats[provider].tokens += tokens;
+    }
+}
+
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+let genAI = null;
+if (process.env.GEMINI_API_KEY) {
+    try {
+        genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        console.log('✅ Google Gemini client initialized');
+    } catch (err) { console.warn('⚠️ Gemini init failed'); }
+}
+
+let githubClient = null;
+if (process.env.GITHUB_TOKEN) {
+    try {
+        githubClient = new OpenAI({
+            baseURL: 'https://models.inference.ai.azure.com',
+            apiKey: process.env.GITHUB_TOKEN,
+        });
+        console.log('✅ GitHub Models client initialized');
+    } catch (err) { console.warn('⚠️ GitHub Models init failed'); }
+}
+
+async function callGroq(prompt, temperature, systemPrompt) {
+    const messages = [];
+    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
+    messages.push({ role: "user", content: prompt });
+    const response = await groq.chat.completions.create({
+        model: "llama-3.3-70b-versatile",
+        temperature,
+        messages
+    });
+    const usage = response.usage?.total_tokens || 0;
+    recordUsage('Groq', usage);
+    return response.choices[0].message.content;
+}
+
+async function callGemini(prompt, temperature, systemPrompt) {
+    if (!genAI) throw new Error('Gemini not configured');
+    const modelNames = ['gemini-1.5-flash', 'gemini-1.5-pro'];
+    let lastError = null;
+    for (const modelName of modelNames) {
+        try {
+            const model = genAI.getGenerativeModel({ model: modelName });
+            let fullPrompt = prompt;
+            if (systemPrompt) fullPrompt = `${systemPrompt}\n\n${prompt}`;
+            const result = await model.generateContent({
+                contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
+                generationConfig: { temperature }
+            });
+            const response = await result.response;
+            const usage = response.usageMetadata?.totalTokenCount || 0;
+            recordUsage('Gemini', usage);
+            return response.text();
+        } catch (err) {
+            lastError = err;
+            console.warn(`Gemini model ${modelName} failed: ${err.message}`);
+        }
+    }
+    throw new Error(`All Gemini models failed: ${lastError.message}`);
+}
+
+async function callGitHub(prompt, temperature, systemPrompt) {
+    if (!githubClient) throw new Error('GitHub Models not configured');
+    const messages = [];
+    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
+    messages.push({ role: "user", content: prompt });
+    const response = await githubClient.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages,
+        temperature
+    });
+    const usage = response.usage?.total_tokens || 0;
+    recordUsage('GitHub', usage);
+    return response.choices[0].message.content;
+}
+
+export async function queryGroq(prompt, temperature = 0.2, systemPrompt = null) {
+    const providers = [
+        { name: 'Groq', fn: () => callGroq(prompt, temperature, systemPrompt) },
+        { name: 'Gemini', fn: () => callGemini(prompt, temperature, systemPrompt) },
+        { name: 'GitHub', fn: () => callGitHub(prompt, temperature, systemPrompt) },
+    ];
+    for (const provider of providers) {
+        try {
+            const result = await provider.fn();
+            console.log(`✅ Used ${provider.name} for query`);
+            if (result && typeof result === 'string') return result;
+            else throw new Error('Provider returned invalid result');
+        } catch (err) {
+            console.warn(`${provider.name} failed: ${err.message}`);
+        }
+    }
+    console.error('All AI providers failed, returning fallback message');
+    return "عذراً، جميع مزودي الذكاء الاصطناعي غير متاحين حالياً. يرجى المحاولة لاحقاً.";
+}
+
+export function cleanAndParseJSON(rawText) {
+    try {
+        const firstOpenBrace = rawText.indexOf('{');
+        const lastCloseBrace = rawText.lastIndexOf('}');
+        if (firstOpenBrace !== -1 && lastCloseBrace !== -1) {
+            const jsonCandidate = rawText.substring(firstOpenBrace, lastCloseBrace + 1);
+            return JSON.parse(jsonCandidate);
+        }
+        const firstOpenBracket = rawText.indexOf('[');
+        const lastCloseBracket = rawText.lastIndexOf(']');
+        if (firstOpenBracket !== -1 && lastCloseBracket !== -1) {
+            const jsonCandidate = rawText.substring(firstOpenBracket, lastCloseBracket + 1);
+            return JSON.parse(jsonCandidate);
+        }
+        return JSON.parse(rawText);
+    } catch (err) {
+        throw new Error(`JSON extraction/parse failed: ${err.message}`);
+    }
+}
+
+export async function queryGroqJSON(prompt, temperature = 0.1, systemPrompt = null) {
+    const response = await queryGroq(prompt, temperature, systemPrompt);
+    try {
+        return cleanAndParseJSON(response);
+    } catch (err) {
+        console.error("JSON parsing failed. Falling back to empty object.");
+        return { affectedModules: [], newFiles: [], dependencies: [], risks: [], suggestions: [] };
+    }
+}
+
+// Helper function that guarantees a string return (no undefined)
+export async function safeQueryGroq(prompt, temperature = 0.2, systemPrompt = null) {
+    const result = await queryGroq(prompt, temperature, systemPrompt);
+    if (typeof result === 'string' && result.trim().length > 0) return result;
+    return "عذراً، لم أستطع معالجة طلبك حالياً.";
+}

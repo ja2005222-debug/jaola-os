@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Redirecting...</title>
+</head>
+<body>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+        if (token) {
+            localStorage.setItem('token', token);
+            window.location.href = '/jaola-platform.html';
+        } else {
+            window.location.href = '/user.html';
+        }
+    </script>
+</body>
+</html>
+

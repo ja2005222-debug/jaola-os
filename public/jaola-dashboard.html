@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JAOLA AI DEV BOT | لوحة التحكم الذكية</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', 'Tajawal', sans-serif; }
+        .gradient-bg { background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%); }
+        .card-hover { transition: all 0.3s ease; }
+        .card-hover:hover { transform: translateY(-5px); box-shadow: 0 20px 40px rgba(0,0,0,0.1); }
+        .task-status-pending { border-right-color: #9ca3af; }
+        .task-status-running { border-right-color: #3b82f6; animation: pulse 1.5s infinite; }
+        .task-status-completed { border-right-color: #10b981; }
+        .task-status-failed { border-right-color: #ef4444; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4F46E5; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <!-- Header -->
+    <header class="sticky top-0 z-50 bg-white shadow-md">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center flex-wrap">
+            <div class="flex items-center gap-2">
+                <div class="w-10 h-10 rounded-full gradient-bg flex items-center justify-center">
+                    <i class="fas fa-robot text-white text-xl"></i>
+                </div>
+                <h1 class="text-2xl font-bold text-gray-800">JAOLA<span class="text-indigo-600">AI</span> <span class="text-sm font-normal text-gray-500">DEV BOT</span></h1>
+            </div>
+            <div class="flex gap-3">
+                <span id="usernameDisplay" class="text-sm text-gray-600 self-center">مرحباً، مطور</span>
+                <button id="logoutBtn" class="text-red-600 border border-red-600 px-3 py-1 rounded-lg hover:bg-red-50 transition text-sm">خروج</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero + Mission Input -->
+    <section class="gradient-bg text-white py-12 md:py-16">
+        <div class="container mx-auto px-4 text-center">
+            <h2 class="text-3xl md:text-4xl font-bold mb-4">اكتب مهمتك، <span class="text-yellow-300">الوكلاء ينفذون</span></h2>
+            <p class="text-lg opacity-90 max-w-2xl mx-auto mb-8">أخبر وكلاء JAOLA بما تريد بناءه أو تعديله، وسيقومون بذلك فوراً.</p>
+            
+            <div class="max-w-2xl mx-auto bg-white rounded-xl p-2 shadow-2xl">
+                <div class="flex flex-col md:flex-row">
+                    <input type="text" id="missionInput" placeholder="مثال: غيّر لون لوحة التحكم إلى الأحمر" class="flex-1 p-4 text-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <button id="executeBtn" class="mt-3 md:mt-0 md:ml-3 bg-indigo-600 text-white px-8 py-4 rounded-lg hover:bg-indigo-700 transition font-semibold text-lg">
+                        <i class="fas fa-paper-plane ml-2"></i> تنفيذ المهمة
+                    </button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Agent Timeline (الحية) -->
+    <section class="py-8 bg-white border-b">
+        <div class="container mx-auto px-4">
+            <div class="flex items-center gap-2 mb-4">
+                <i class="fas fa-history text-indigo-600 text-xl"></i>
+                <h3 class="text-xl font-bold">Agent Timeline</h3>
+                <span class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">مباشر</span>
+            </div>
+            <div id="agentTimeline" class="space-y-2 max-h-64 overflow-y-auto bg-gray-50 p-4 rounded-xl border border-gray-200">
+                <div class="text-gray-500 text-center">⏳ انتظار الأوامر...</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Key Metrics (KPIs) -->
+    <section class="py-8 bg-gray-100">
+        <div class="container mx-auto px-4">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div class="bg-white p-4 rounded-xl shadow text-center">
+                    <div class="text-2xl font-bold text-indigo-600" id="kpiProjects">0</div>
+                    <div class="text-gray-600">المشاريع النشطة</div>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow text-center">
+                    <div class="text-2xl font-bold text-green-600" id="kpiTasks">0</div>
+                    <div class="text-gray-600">المهام الكلية</div>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow text-center">
+                    <div class="text-2xl font-bold text-blue-600" id="kpiRunning">0</div>
+                    <div class="text-gray-600">جارية الآن</div>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow text-center">
+                    <div class="text-2xl font-bold text-purple-600" id="kpiSuccess">0%</div>
+                    <div class="text-gray-600">نسبة النجاح</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Main Dashboard: Projects & Tasks & Agents -->
+    <div class="container mx-auto px-4 py-8">
+        <div class="grid lg:grid-cols-3 gap-6">
+            <!-- المشاريع -->
+            <div class="bg-white rounded-2xl shadow-md p-5">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-bold text-lg flex items-center gap-2"><i class="fas fa-folder-open text-indigo-600"></i> المشاريع</h3>
+                    <button id="newProjectBtn" class="text-xs bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full hover:bg-indigo-200"><i class="fas fa-plus ml-1"></i> جديد</button>
+                </div>
+                <div id="projectsList" class="space-y-2 max-h-80 overflow-y-auto">
+                    <div class="text-gray-500 text-center">جاري التحميل...</div>
+                </div>
+            </div>
+
+            <!-- قائمة المهام -->
+            <div class="bg-white rounded-2xl shadow-md p-5">
+                <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><i class="fas fa-tasks text-indigo-600"></i> المهام الأخيرة</h3>
+                <div id="tasksList" class="space-y-2 max-h-80 overflow-y-auto">
+                    <div class="text-gray-500 text-center">لا توجد مهام بعد</div>
+                </div>
+            </div>
+
+            <!-- حالة الوكلاء المباشرة -->
+            <div class="bg-white rounded-2xl shadow-md p-5">
+                <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><i class="fas fa-microchip text-indigo-600"></i> حالة الوكلاء (Live)</h3>
+                <div id="agentsStatus" class="space-y-3">
+                    <div class="text-gray-500 text-center">جاري الاتصال...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Deployment Status (Ngrok, Vercel, Local) -->
+    <div class="container mx-auto px-4 pb-10">
+        <div class="bg-white rounded-2xl shadow-md p-5">
+            <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><i class="fas fa-cloud-upload-alt text-indigo-600"></i> حالة النشر</h3>
+            <div id="deploymentStatus" class="grid md:grid-cols-3 gap-4">
+                <div class="border rounded-lg p-3 text-center">🟢 محلي: <span id="localUrl" class="font-mono text-sm">-</span></div>
+                <div class="border rounded-lg p-3 text-center">🌐 ngrok: <span id="ngrokUrl" class="font-mono text-sm">-</span></div>
+                <div class="border rounded-lg p-3 text-center">🚀 Vercel: <span id="vercelUrl" class="font-mono text-sm">-</span></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ---------- تكامل JAOLA OS ----------
+        let token = localStorage.getItem('token');
+        if (!token) {
+            window.location.href = '/user.html';
+        }
+
+        let ws = null;
+        let timelineEvents = [];
+
+        // دوال مساعدة
+        function escapeHtml(str) {
+            return str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;');
+        }
+
+        function addTimelineEvent(message, type = 'info') {
+            timelineEvents.unshift({ time: new Date().toLocaleTimeString(), message, type });
+            if (timelineEvents.length > 50) timelineEvents.pop();
+            const borderClasses = { 'error': 'border-red-500', 'success': 'border-green-500', 'info': 'border-blue-500' };
+            const activeClass = borderClasses[type] || 'border-blue-500';
+            const container = document.getElementById('agentTimeline');
+            container.innerHTML = timelineEvents.map(e => `<div class="border-r-2 ${activeClass} pr-2 pb-2 mb-2 text-sm">${e.time} — ${escapeHtml(e.message)}</div>`).join('');
+            if (!container.innerHTML) container.innerHTML = '<div class="text-gray-500">⏳ لا توجد أحداث بعد...</div>';
+        }
+
+        async function apiGet(endpoint) {
+            const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
+            if (!res.ok) throw new Error(`Error ${res.status}`);
+            return res.json();
+        }
+        async function apiPost(endpoint, body) {
+            const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+            if (!res.ok) throw new Error(await res.text());
+            return res.json();
+        }
+
+        // WebSocket
+        function connectWebSocket() {
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${location.host}`);
+            ws.onopen = () => addTimelineEvent('✅ متصل بالخادم مباشرة', 'success');
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'task_update') {
+                        addTimelineEvent(`${data.agent || 'وكيل'} ${data.status} ${data.action || ''}`, data.status === 'failed' ? 'error' : 'info');
+                        refreshTasks(); // تحديث قائمة المهام
+                        refreshKPIs();
+                    }
+                    if (data.type === 'plan_update') {
+                        addTimelineEvent(`📋 خطة جديدة: ${data.goal}`, 'info');
+                    }
+                } catch(e) {}
+            };
+            ws.onclose = () => setTimeout(connectWebSocket, 3000);
+        }
+
+        // جلب البيانات
+        async function refreshProjects() {
+            try {
+                const projects = await apiGet('/api/projects');
+                const container = document.getElementById('projectsList');
+                if (!projects.length) {
+                    container.innerHTML = '<div class="text-gray-500 text-center">لا توجد مشاريع. اضف مشروعاً جديداً</div>';
+                    return;
+                }
+                container.innerHTML = projects.map(p => `
+                    <div class="flex justify-between items-center p-2 bg-gray-50 rounded-lg">
+                        <div><i class="fas fa-code-branch text-indigo-500 ml-2"></i>${escapeHtml(p.name)}</div>
+                        <div class="text-xs text-gray-500">${p.active ? '🟢 نشط' : '⚪ غير نشط'}</div>
+                    </div>
+                `).join('');
+                document.getElementById('kpiProjects').innerText = projects.length;
+            } catch(e) { console.error(e); }
+        }
+
+        async function refreshTasks() {
+            try {
+                const tasks = await apiGet('/api/tasks');
+                const recent = tasks.slice(0, 10);
+                const container = document.getElementById('tasksList');
+                if (!recent.length) {
+                    container.innerHTML = '<div class="text-gray-500 text-center">لا توجد مهام</div>';
+                    return;
+                }
+                container.innerHTML = recent.map(t => {
+                    let statusClass = 'task-status-pending';
+                    if (t.status === 'running') statusClass = 'task-status-running';
+                    else if (t.status === 'completed') statusClass = 'task-status-completed';
+                    else if (t.status === 'failed') statusClass = 'task-status-failed';
+                    return `<div class="border-r-4 p-2 bg-gray-50 rounded-lg ${statusClass} text-sm">
+                        <div class="font-mono">${t.agent} → ${t.action}</div>
+                        <div class="text-xs text-gray-500">${t.status} - ${new Date(t.createdAt).toLocaleTimeString()}</div>
+                    </div>`;
+                }).join('');
+                // تحديث الإحصائيات
+                const total = tasks.length;
+                const running = tasks.filter(t => t.status === 'running').length;
+                const completed = tasks.filter(t => t.status === 'completed').length;
+                const successRate = total === 0 ? 0 : Math.round((completed / total) * 100);
+                document.getElementById('kpiTasks').innerText = total;
+                document.getElementById('kpiRunning').innerText = running;
+                document.getElementById('kpiSuccess').innerText = successRate + '%';
+            } catch(e) { console.error(e); }
+        }
+
+        async function refreshAgentsStatus() {
+            try {
+                const health = await apiGet('/api/agents/health');
+                const container = document.getElementById('agentsStatus');
+                if (!Object.keys(health).length) {
+                    container.innerHTML = '<div class="text-gray-500">لا توجد بيانات</div>';
+                    return;
+                }
+                container.innerHTML = Object.entries(health).slice(0,6).map(([name, info]) => `
+                    <div class="flex justify-between items-center border-b pb-2">
+                        <div><i class="fas fa-robot text-indigo-500 ml-2"></i>${name}</div>
+                        <div class="text-xs ${info.status === 'healthy' ? 'text-green-600' : 'text-red-600'}">${info.status}</div>
+                        <div class="text-xs">نجاح: ${info.successRate}%</div>
+                    </div>
+                `).join('');
+            } catch(e) { console.error(e); }
+        }
+
+        async function refreshDeploymentStatus() {
+            try {
+                // الحصول على المشروع النشط
+                const active = await apiGet('/api/projects/active');
+                if (active && active.id) {
+                    document.getElementById('localUrl').innerText = active.port ? `http://localhost:${active.port}` : 'غير مشغل';
+                    // محاولة جلب ngrok url (الموجود في قاعدة البيانات)
+                    if (active.ngrok_url) document.getElementById('ngrokUrl').innerText = active.ngrok_url;
+                    else document.getElementById('ngrokUrl').innerText = 'غير متاح';
+                    // vercel يمكن إضافته لاحقاً
+                } else {
+                    document.getElementById('localUrl').innerText = 'لا مشروع نشط';
+                    document.getElementById('ngrokUrl').innerText = 'لا مشروع نشط';
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        async function refreshAll() {
+            await refreshProjects();
+            await refreshTasks();
+            await refreshAgentsStatus();
+            await refreshDeploymentStatus();
+        }
+
+        // إرسال المهمة
+        async function executeMission(message) {
+            if (!message.trim()) return;
+            addTimelineEvent(`🚀 إرسال المهمة: ${message}`, 'info');
+            try {
+                const data = await apiPost('/api/user/request', { message });
+                if (data.planId) {
+                    addTimelineEvent(`✅ تم إنشاء الخطة (${data.tasksCount} مهمة)`, 'success');
+                    refreshTasks();
+                } else {
+                    addTimelineEvent(`❌ فشل: ${data.error || 'خطأ غير معروف'}`, 'error');
+                }
+            } catch (err) {
+                addTimelineEvent(`❌ خطأ في الشبكة: ${err.message}`, 'error');
+            }
+        }
+
+        // مستمعي الأزرار
+        document.getElementById('executeBtn').onclick = () => {
+            const input = document.getElementById('missionInput');
+            if (input.value.trim()) executeMission(input.value);
+            input.value = '';
+        };
+        document.getElementById('missionInput').onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('executeBtn').click(); };
+        document.getElementById('logoutBtn').onclick = () => { localStorage.removeItem('token'); window.location.href = '/user.html'; };
+        document.getElementById('newProjectBtn').onclick = async () => {
+            const name = prompt('اسم المشروع:');
+            const path = prompt('المسار المطلق للمشروع:');
+            if (name && path) {
+                await fetch('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ name, path }) });
+                refreshProjects();
+            }
+        };
+
+        // تحميل اسم المستخدم
+        async function loadUser() {
+            try {
+                const user = await apiGet('/api/user/profile');
+                document.getElementById('usernameDisplay').innerText = `مرحباً، ${user.username || 'مطور'}`;
+            } catch(e) {}
+        }
+
+        // بدء التشغيل
+        async function init() {
+            await loadUser();
+            connectWebSocket();
+            await refreshAll();
+            setInterval(refreshAll, 10000);
+        }
+        init();
+    </script>
+</body>
+</html>

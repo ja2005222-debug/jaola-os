@@ -1,0 +1,45 @@
+import { Groq } from 'groq-sdk';
+import { loadKnowledge, isExportValid } from '../services/knowledgeService.js';
+
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+export async function reviewCode(filePath, newContent, oldContent = '') {
+  const kb = await loadKnowledge();
+
+  // 1. فحص سريع: هل الاستيرادات صحيحة؟
+  const importRegex = /import\s+.*?from\s+['"](.+?)['"]/g;
+  let match;
+  while ((match = importRegex.exec(newContent)) !== null) {
+    const importedPath = match[1];
+    if (importedPath.startsWith('@/')) {
+      const localPath = importedPath.replace('@/', '');
+      const fullExists = kb.exports[localPath] !== undefined;
+      if (!fullExists) {
+        return { approved: false, reason: `الاستيراد ${importedPath} غير موجود في قاعدة المعرفة.` };
+      }
+    }
+  }
+
+  // 2. مراجعة الجودة باستخدام Groq
+  const prompt = `
+أنت مراجع كود خبير. الملف: ${filePath}
+
+المحتوى القديم:
+${oldContent.substring(0, 800)}
+
+المحتوى الجديد المقترح:
+${newContent.substring(0, 800)}
+
+هل هذا التعديل آمن؟ أجب بـ "نعم" أو "لا" مع سبب مختصر.
+`;
+  const response = await groq.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    temperature: 0.2,
+    messages: [{ role: "user", content: prompt }]
+  });
+  const verdict = response.choices[0].message.content.toLowerCase();
+  if (verdict.includes('لا')) {
+    return { approved: false, reason: verdict };
+  }
+  return { approved: true, reason: 'تمت المراجعة بنجاح' };
+}

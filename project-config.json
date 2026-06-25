@@ -1,0 +1,11 @@
+{
+  "projectPath": "/home/jamalalfaki28/jaola-travel",
+  "allowedFolders": [
+    "app",
+    "components",
+    "lib",
+    "services",
+    "types",
+    "hooks"
+  ]
+}

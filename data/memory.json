@@ -1,0 +1,912 @@
+{
+  "fixes": [],
+  "errors": [],
+  "decisions": [
+    {
+      "agent": "Planner",
+      "decision": "Plan created: تعديل الصفحة الرئيسية لإضافة قسم ترحيبي مميز مع دمج نموذج تسجيل الدخول للمستخدمين بتصميم متجاوب وجذاب يتبع نظام التصميم المحدد.",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T16:54:02.797Z"
+    },
+    {
+      "agent": "Architect",
+      "decision": "تصميم معماري: [\"app/about/page.tsx\",\"app/access/page.tsx\",\"app/blog/page.tsx\",\"components/flights/FlightCard.tsx\",\"components/flights/FlightSearch.tsx\",\"components/Navbar.tsx\",\"components/LoginForm.tsx\"]",
+      "details": {
+        "affectedModules": [
+          "app/about/page.tsx",
+          "app/access/page.tsx",
+          "app/blog/page.tsx",
+          "components/flights/FlightCard.tsx",
+          "components/flights/FlightSearch.tsx",
+          "components/Navbar.tsx",
+          "components/LoginForm.tsx"
+        ],
+        "newFiles": [
+          "app/layout.tsx",
+          "app/theme.tsx",
+          "components/UI/Button.tsx",
+          "components/UI/Card.tsx"
+        ],
+        "dependencies": [
+          "tailwindcss",
+          "react-icons"
+        ],
+        "risks": [
+          "قد يؤدي إلى تضارب في التوجيه إذا لم تتم مراجعة ملفات التوجيه",
+          "قد يؤدي إلى مشاكل في التوافق مع المتصفحات المختلفة"
+        ],
+        "suggestions": [
+          "قم بمراجعة ملفات التوجيه لضمان عدم وجود تضارب",
+          "قم بتحديث المكونات لاستخدام Tailwind CSS",
+          "قم بإنشاء نظام تصميم موحد لتحسين تجربة المستخدم"
+        ]
+      },
+      "timestamp": "2026-06-13T17:42:54.570Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: رتب المظعر",
+      "details": {
+        "tasksCount": 2
+      },
+      "timestamp": "2026-06-13T17:42:55.563Z"
+    },
+    {
+      "agent": "Architect",
+      "decision": "تصميم معماري: [\"app/hotels/page.tsx\",\"components/hotels/HotelCard.tsx\",\"components/hotels/HotelRating.tsx\"]",
+      "details": {
+        "affectedModules": [
+          "app/hotels/page.tsx",
+          "components/hotels/HotelCard.tsx",
+          "components/hotels/HotelRating.tsx"
+        ],
+        "newFiles": [
+          "components/hotels/HotelCard.tsx",
+          "components/hotels/HotelRating.tsx",
+          "app/hotels/rating.ts"
+        ],
+        "dependencies": [
+          "react-icons",
+          "axios"
+        ],
+        "risks": [
+          "قد يؤدي إلى تضارب في التصميم إذا لم يتم اتباع نظام التصميم بدقة",
+          "قد تكون هناك مشاكل في الأداء إذا كانت البيانات غير مُحسّنة"
+        ],
+        "suggestions": [
+          "قم بإضافة اختبار للوحدات لضمان جودة المكونات الجديدة",
+          "تأكد من أن جميع البيانات المسترجعة من API تتوافق مع التصميم المعتمد"
+        ]
+      },
+      "timestamp": "2026-06-13T17:45:43.272Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إنشاء نظام تصنيف للفنادق (5 نجوم) في صفحة الفندق.",
+      "details": {
+        "tasksCount": 2
+      },
+      "timestamp": "2026-06-13T17:45:49.954Z"
+    },
+    {
+      "agent": "Architect",
+      "decision": "تصميم معماري: [\"app/page.tsx\",\"components/flights/FlightCard.tsx\",\"components/flights/FlightSearch.tsx\",\"app/layout.tsx\"]",
+      "details": {
+        "affectedModules": [
+          "app/page.tsx",
+          "components/flights/FlightCard.tsx",
+          "components/flights/FlightSearch.tsx",
+          "app/layout.tsx"
+        ],
+        "newFiles": [
+          "app/styles/homepage.css",
+          "components/flights/FlightCardVariants.tsx"
+        ],
+        "dependencies": [
+          "tailwindcss"
+        ],
+        "risks": [
+          "قد يؤدي إلى تضارب في التنسيق إذا لم تتم مراجعة ملفات التنسيق الحالية",
+          "تحديث المكونات قد يؤثر على الوظائف الحالية"
+        ],
+        "suggestions": [
+          "استخدم Tailwind CSS لتحديث التنسيق ليتوافق مع نظام التصميم",
+          "قم بمراجعة وتحديث المكونات لضمان توافقها مع التصميم الجديد",
+          "أضف اختبارات وحدة لضمان استقرار الوظائف بعد التحديث"
+        ]
+      },
+      "timestamp": "2026-06-13T18:08:40.233Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: تحسين مظهر الصفحة الرئيسية",
+      "details": {
+        "tasksCount": 7
+      },
+      "timestamp": "2026-06-13T18:08:41.419Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: عدل ملف app/page.tsx وغير لون الخلفية إلى الأزر",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T18:16:30.533Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: عدل ملف app/page.tsx وغير لون الخلفية إلى الأزرق",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T18:27:04.318Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: عدل ملف app/page.tsx وغير لون الخلفية إلى الأزرق",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T18:27:11.553Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: عدل ملف app/page.tsx وغير لون الخلفية إلى الأزر",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T18:37:39.995Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: اضف مصفوفة اهم المدن واختار ثلاث مدن عشواتبة",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T18:49:49.515Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created:  عدل ملف app/page.tsx وغير لون الخلفية إلى الأزر",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T19:01:15.716Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: حسن مظهر الموقع",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T19:32:53.216Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: حسن مظهر الموقع",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T19:34:14.985Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: اضف بخث طيران",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T19:34:54.853Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: افحص الموقع",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T19:43:06.941Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: اضف محرك بحث للصفحات",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T19:43:40.741Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: اضف محرك بحث للصفحات",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T19:43:51.238Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: اصف امكانيو التسجيل بخاصية قوقل",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T19:44:51.882Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: اصف امكانيو التسجيل بخاصية قوقل",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T19:45:26.047Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: انقل الموقع الي gothub",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T19:45:54.075Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: عدل ملف app/page.tsx وغير لون الخلفية إلى الأزرق",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T19:48:25.227Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: ثقلبسرءؤ سبلثلثبل",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T19:52:58.229Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: add photo from london in london page",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T19:53:44.759Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: add photo from london in london page",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T19:54:06.523Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: !/^[a-z0-9-]",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T20:14:13.967Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: عدل ملف app/page.tsx وغير لون الخلفية إلى الأزرق",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T20:16:19.352Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: عدل ملف app/page.tsx وغير لون الخلفية إلى الأزرق",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T20:17:07.181Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: اعد تشفبل الموقع",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T20:19:15.992Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: اعرض الموفع",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T20:27:52.468Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: ٦٧٨لبر تخنم",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T20:28:34.807Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: اضفصغخة حجيدز وسمها الترفيه وادخل غيها عدة متاشط مفارحة ",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T20:29:44.778Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: تغيير لون خلفية الصفحة إلى الأزرق",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T21:11:01.924Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: تغيير لون الخلفية إلى الأزرق في ملف app/page.tsx",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T21:21:51.043Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: تغيير لون الخلفية إلى أخضر",
+      "details": {
+        "tasksCount": 2
+      },
+      "timestamp": "2026-06-13T21:28:52.473Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إضافة دعم WebSocket على المنفذ 3001 لصفحة التحكم",
+      "details": {
+        "tasksCount": 4
+      },
+      "timestamp": "2026-06-13T21:41:01.931Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: اعرض الصفحة الأولى",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-13T21:59:55.931Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: تعديل ملف app/page.tsx لتغيير لون الخلفية إلى الأزرق، وإنشاء صفحة تسجيل دخول كاملة، وإضافة نظام حجوزات طيران، وإصلاح جميع أخطاء TypeScript.",
+      "details": {
+        "tasksCount": 4
+      },
+      "timestamp": "2026-06-13T22:00:44.539Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: اصلاح اخطاء الموقع",
+      "details": {
+        "tasksCount": 5
+      },
+      "timestamp": "2026-06-13T22:22:43.219Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إنشاء موقع تاليا للرحلات",
+      "details": {
+        "tasksCount": 10
+      },
+      "timestamp": "2026-06-14T04:23:21.594Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: نفذ المشروع",
+      "details": {
+        "tasksCount": 5
+      },
+      "timestamp": "2026-06-14T04:26:01.596Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إنشاء صفحة تجربة سفاري في السودان",
+      "details": {
+        "tasksCount": 8
+      },
+      "timestamp": "2026-06-14T04:33:16.422Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إنشاء صفحة بلابلايب",
+      "details": {
+        "tasksCount": 3
+      },
+      "timestamp": "2026-06-14T06:59:22.702Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إنشاء صفحة جديدة سميت 'مدزنة سفر' في مشروع 'JAOLA OS'",
+      "details": {
+        "tasksCount": 2
+      },
+      "timestamp": "2026-06-14T07:00:21.936Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إنشاء مفكرة بها كالندر",
+      "details": {
+        "tasksCount": 3
+      },
+      "timestamp": "2026-06-14T07:05:24.787Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: بناء موقع بيع قهوة",
+      "details": {
+        "tasksCount": 8
+      },
+      "timestamp": "2026-06-14T07:08:16.203Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إنشاء صفحة ترحيبية مكتوب بالاحمر اهلا بكم",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-14T10:18:53.197Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إنشاء موقع إحتياطي لمطعم",
+      "details": {
+        "tasksCount": 7
+      },
+      "timestamp": "2026-06-14T10:22:55.304Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: تغيير لون الصفحة إلى أحمر",
+      "details": {
+        "tasksCount": 5
+      },
+      "timestamp": "2026-06-14T10:27:06.598Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: تعديل الصفحة وإنشاء حقل تسجيل الدخول",
+      "details": {
+        "tasksCount": 3
+      },
+      "timestamp": "2026-06-14T10:35:07.748Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: بناء موقع إلكتروني احترافي لمطعم",
+      "details": {
+        "tasksCount": 7
+      },
+      "timestamp": "2026-06-14T10:41:45.701Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إنشاء موقع إلكتروني لبيع الخضروات",
+      "details": {
+        "tasksCount": 7
+      },
+      "timestamp": "2026-06-14T10:46:22.543Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إضافة نص ترحيبي في الصفحة الرئيسية",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-14T11:06:35.536Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إضافة صفحة جديدة مع خلفية خضراء وكتابة 'Jaola test' في منتصف اليمين",
+      "details": {
+        "tasksCount": 2
+      },
+      "timestamp": "2026-06-14T11:25:04.158Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: بناء موقع لبيع البيخ اللزيز",
+      "details": {
+        "tasksCount": 4
+      },
+      "timestamp": "2026-06-14T11:42:28.828Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: تحديث الصفحة الرئيسية للموقع",
+      "details": {
+        "tasksCount": 3
+      },
+      "timestamp": "2026-06-14T11:57:46.772Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: تغيير لون الصفحة إلى أصفر",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-14T11:58:26.061Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إضافة حقل تسجيل الدخول إلى تطبيق JAOLA OS",
+      "details": {
+        "tasksCount": 4
+      },
+      "timestamp": "2026-06-14T12:14:40.105Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إضافة وظيفة تغيير اللغة",
+      "details": {
+        "tasksCount": 14
+      },
+      "timestamp": "2026-06-14T13:13:44.357Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إنشاء صفحة لتقديم البيتزا",
+      "details": {
+        "tasksCount": 3
+      },
+      "timestamp": "2026-06-14T13:27:49.791Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إنشاء صفحة حجز تذاكر",
+      "details": {
+        "tasksCount": 5
+      },
+      "timestamp": "2026-06-14T13:51:21.140Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Design and develop a website for renting tools",
+      "details": {
+        "tasksCount": 7
+      },
+      "timestamp": "2026-06-14T16:39:55.189Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Create a new page about football",
+      "details": {
+        "tasksCount": 3
+      },
+      "timestamp": "2026-06-14T16:56:11.058Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Build a website for selling cigars",
+      "details": {
+        "tasksCount": 7
+      },
+      "timestamp": "2026-06-14T17:01:12.326Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Create a new project named clean-test",
+      "details": {
+        "tasksCount": 0
+      },
+      "timestamp": "2026-06-14T17:22:57.653Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Create a new project named clean-test",
+      "details": {
+        "tasksCount": 3
+      },
+      "timestamp": "2026-06-14T17:27:06.310Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Create a sales page for ice cream",
+      "details": {
+        "tasksCount": 4
+      },
+      "timestamp": "2026-06-14T18:02:24.575Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Create a website for a bookstore with pages to display and sell books",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-14T18:16:03.397Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Create a tourism page",
+      "details": {
+        "tasksCount": 4
+      },
+      "timestamp": "2026-06-14T20:10:32.438Z"
+    },
+    {
+      "agent": "Architect",
+      "decision": "Plan for اضف صفحة طيران",
+      "details": {
+        "frontend": {
+          "framework": "Next.js",
+          "styling": "Tailwind CSS",
+          "language": "TypeScript"
+        },
+        "backend": {
+          "runtime": "Node.js",
+          "api": "Next.js API routes"
+        },
+        "database": {
+          "type": "PostgreSQL",
+          "orm": "Prisma"
+        },
+        "features": [
+          "Flight search"
+        ],
+        "estimatedFiles": 20,
+        "estimatedTimeMinutes": 240,
+        "cost": 1500
+      },
+      "timestamp": "2026-06-14T20:22:58.229Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Add a flight page to the existing project",
+      "details": {
+        "tasksCount": 3
+      },
+      "timestamp": "2026-06-14T20:23:39.356Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Create a new page for the user",
+      "details": {
+        "tasksCount": 2
+      },
+      "timestamp": "2026-06-14T20:28:50.487Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Organize pages and improve the layout by creating necessary pages and arranging components",
+      "details": {
+        "tasksCount": 4
+      },
+      "timestamp": "2026-06-14T20:40:18.837Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Add a new section for school books",
+      "details": {
+        "tasksCount": 0
+      },
+      "timestamp": "2026-06-14T20:53:04.920Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Edit the books page and add old English books",
+      "details": {
+        "tasksCount": 2
+      },
+      "timestamp": "2026-06-14T21:40:58.005Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Identify and potentially resolve the error encountered by the user in JAOLA OS",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-14T21:42:55.599Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Build a website named كلاكيت for selling vegetables",
+      "details": {
+        "tasksCount": 2
+      },
+      "timestamp": "2026-06-14T21:46:46.263Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Create a blog for Lam Al-Tajareb to share her life experiences",
+      "details": {
+        "tasksCount": 2
+      },
+      "timestamp": "2026-06-14T21:52:18.944Z"
+    },
+    {
+      "agent": "Architect",
+      "decision": "Plan for امسح الصفحات الجديدة وانشي مدزمة سفر",
+      "details": {
+        "frontend": {
+          "framework": "Next.js",
+          "styling": "Tailwind CSS",
+          "language": "TypeScript"
+        },
+        "backend": {
+          "runtime": "Node.js",
+          "api": "Next.js API routes"
+        },
+        "database": {
+          "type": "PostgreSQL",
+          "orm": "Prisma"
+        },
+        "features": [
+          "Page deletion",
+          "Travel package creation"
+        ],
+        "estimatedFiles": 50,
+        "estimatedTimeMinutes": 240,
+        "cost": 1500
+      },
+      "timestamp": "2026-06-14T22:13:23.517Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Add a page for London with a tourist offer",
+      "details": {
+        "tasksCount": 2
+      },
+      "timestamp": "2026-06-14T22:34:02.079Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Respond to the user's greeting and prepare a basic project structure for potential future development",
+      "details": {
+        "tasksCount": 0
+      },
+      "timestamp": "2026-06-15T07:18:41.671Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: [chat] انا فقط القي التخية",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-15T07:19:12.563Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Initiate a basic JAOLA OS project setup",
+      "details": {
+        "tasksCount": 0
+      },
+      "timestamp": "2026-06-15T07:19:56.691Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Implement a basic chat functionality within the JAOLA OS project",
+      "details": {
+        "tasksCount": 3
+      },
+      "timestamp": "2026-06-15T07:41:57.065Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: [chat] read",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-15T07:42:14.155Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إنشاء صفحة تسجيل دخول",
+      "details": {
+        "tasksCount": 3
+      },
+      "timestamp": "2026-06-15T07:43:17.955Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Create a basic page and edit it to include or modify existing components",
+      "details": {
+        "tasksCount": 2
+      },
+      "timestamp": "2026-06-15T08:05:30.819Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Create a new page and edit it to include the available components",
+      "details": {
+        "tasksCount": 0
+      },
+      "timestamp": "2026-06-15T08:08:22.975Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Edit the file",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-15T08:11:21.851Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Change the color of the page",
+      "details": {
+        "tasksCount": 0
+      },
+      "timestamp": "2026-06-15T08:14:52.483Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Create a new page and enable editing with available components",
+      "details": {
+        "tasksCount": 0
+      },
+      "timestamp": "2026-06-15T08:15:31.004Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Create a splash screen",
+      "details": {
+        "tasksCount": 0
+      },
+      "timestamp": "2026-06-15T08:21:18.142Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: Edit a file in the project",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-15T08:34:25.601Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إنشاء موقع إلكتروني لطلب البيتزا عبر الإنترنت",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-15T14:53:00.877Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إنشاء موقع إلكتروني لبيع البيتزا",
+      "details": {
+        "tasksCount": 1
+      },
+      "timestamp": "2026-06-15T15:08:00.581Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: إضافة طلب أونلاين ودفع إلكتروني إلى نظام JAOLA OS",
+      "details": {
+        "tasksCount": 0
+      },
+      "timestamp": "2026-06-15T15:08:55.636Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: estimate the cost of a taxi company management project",
+      "details": {
+        "tasksCount": 0
+      },
+      "timestamp": "2026-06-15T16:41:31.607Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: estimate the cost of a taxi company management project",
+      "details": {
+        "tasksCount": 0
+      },
+      "timestamp": "2026-06-15T16:46:18.556Z"
+    },
+    {
+      "agent": "Planner",
+      "decision": "Plan created: estimate the cost of a taxi company management project",
+      "details": {
+        "tasksCount": 0
+      },
+      "timestamp": "2026-06-15T16:49:26.621Z"
+    }
+  ]
+}

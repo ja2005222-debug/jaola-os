@@ -1,0 +1,60 @@
+import { queryGroqJSON } from '../services/groqService.js';
+import { loadKnowledge } from '../services/knowledgeService.js';
+import { rememberDecision } from './memory.agent.js';
+
+const VALID_AGENTS = ['architect', 'planner', 'coder', 'deployer', 'projectInitializer'];
+
+function sanitizePlan(plan) {
+    if (!plan.tasks) plan.tasks = [];
+    plan.tasks = plan.tasks.filter(task => VALID_AGENTS.includes(task.agent));
+    return plan;
+}
+
+export async function createPlan(userMessage, history = []) {
+    let context = await loadKnowledge();
+    const historyText = history.map(h => `${h.role === 'user' ? 'المستخدم' : 'النظام'}: ${h.content}`).join('\n');
+    const prompt = `سياق المحادثة السابقة:\n${historyText}\nالطلب الحالي: ${userMessage}\n...`;
+أنت مخطط استراتيجي (Planner Agent) لـ "JAOLA OS".
+المستخدم يطلب: "${userMessage}"
+
+سياق المشروع:
+- الصفحات: ${context.pages?.join(', ') || 'لا توجد'}
+- المكونات: ${context.components?.join(', ') || 'لا توجد'}
+
+أخرج خطة JSON بالصيغة:
+{
+  "goal": "وصف الهدف",
+  "tasks": [
+    { "agent": "coder", "action": "edit_file", "params": { "path": "app/page.tsx", "content": "..." } }
+  ]
+}
+`;
+
+    let plan;
+    try {
+        plan = await queryGroqJSON(prompt, 0.3);
+        if (!plan.tasks || plan.tasks.length === 0) throw new Error('No tasks');
+    } catch (err) {
+        console.warn("Groq planning failed, using fallback:", err.message);
+        const msg = userMessage.toLowerCase();
+        let tasks = [];
+        if (msg.includes('عدل') || msg.includes('edit')) {
+            tasks.push({ agent: "coder", action: "edit_file", params: { path: "app/page.tsx", content: "" } });
+        } else if (msg.includes('اقرأ') || msg.includes('read')) {
+            tasks.push({ agent: "coder", action: "read_file", params: { path: "app/page.tsx" } });
+        } else if (msg.includes('بني') || msg.includes('build')) {
+            tasks.push({ agent: "deployer", action: "run_build", params: {} });
+        } else if (msg.includes('شغل') || msg.includes('run')) {
+            tasks.push({ agent: "deployer", action: "run_dev", params: {} });
+        } else if (msg.includes('انشر') || msg.includes('deploy')) {
+            tasks.push({ agent: "deployer", action: "deploy_to_vercel", params: {} });
+        } else {
+            tasks.push({ agent: "coder", action: "list_files", params: {} });
+        }
+        plan = { goal: userMessage, tasks };
+    }
+
+    plan = sanitizePlan(plan);
+    await rememberDecision('Planner', `Plan created: ${plan.goal}`, { tasksCount: plan.tasks.length });
+    return plan;
+}

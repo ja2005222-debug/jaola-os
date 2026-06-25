@@ -1,0 +1,353 @@
+[
+  {
+    "path": "/app/globals.css",
+    "type": ".css",
+    "exports": [],
+    "imports": [],
+    "components": [],
+    "description": ""
+  },
+  {
+    "path": "/app/page.tsx",
+    "type": ".tsx",
+    "exports": [
+      "HomePage"
+    ],
+    "imports": [
+      "@/components/flights/FlightSearch"
+    ],
+    "components": [
+      "HomePage"
+    ],
+    "description": ""
+  },
+  {
+    "path": "/app/layout.tsx",
+    "type": ".tsx",
+    "exports": [
+      "RootLayout"
+    ],
+    "imports": [
+      "@/components/Navbar"
+    ],
+    "components": [
+      "RootLayout"
+    ],
+    "description": ""
+  },
+  {
+    "path": "/app/about/page.tsx",
+    "type": ".tsx",
+    "exports": [
+      "AboutPage"
+    ],
+    "imports": [],
+    "components": [
+      "AboutPage"
+    ],
+    "description": "srcappaboutpage.tsx"
+  },
+  {
+    "path": "/app/deals/page.tsx",
+    "type": ".tsx",
+    "exports": [],
+    "imports": [
+      "@/lib/api/travelpayouts"
+    ],
+    "components": [
+      "DealsPage"
+    ],
+    "description": ""
+  },
+  {
+    "path": "/app/api/test/route.ts",
+    "type": ".ts",
+    "exports": [],
+    "imports": [
+      "@/lib/api/travelpayouts",
+      "next/server"
+    ],
+    "components": [
+      "GET"
+    ],
+    "description": ""
+  },
+  {
+    "path": "/app/api/flights/search/route.ts",
+    "type": ".ts",
+    "exports": [],
+    "imports": [
+      "next/server",
+      "@/lib/travelpayouts/flights"
+    ],
+    "components": [
+      "GET"
+    ],
+    "description": "appapiflightssearchroute.ts"
+  },
+  {
+    "path": "/app/api/deepseek-chat.js",
+    "type": ".js",
+    "exports": [],
+    "imports": [],
+    "components": [
+      "POST"
+    ],
+    "description": "appapideepseek-chatroute.js"
+  },
+  {
+    "path": "/app/api/deepseek-chat/route.ts",
+    "type": ".ts",
+    "exports": [],
+    "imports": [
+      "next/server"
+    ],
+    "components": [
+      "POST"
+    ],
+    "description": ""
+  },
+  {
+    "path": "/app/flights/page.tsx",
+    "type": ".tsx",
+    "exports": [
+      "FlightsPage"
+    ],
+    "imports": [
+      "@/components/flights/FlightSearch"
+    ],
+    "components": [
+      "FlightsPage"
+    ],
+    "description": ""
+  },
+  {
+    "path": "/app/flights/search/page.tsx",
+    "type": ".tsx",
+    "exports": [],
+    "imports": [],
+    "components": [
+      "FlightResultsPage"
+    ],
+    "description": ""
+  },
+  {
+    "path": "/app/hotels/page.tsx",
+    "type": ".tsx",
+    "exports": [
+      "HotelsPage"
+    ],
+    "imports": [],
+    "components": [
+      "HotelsPage"
+    ],
+    "description": ""
+  },
+  {
+    "path": "/app/cars/page.tsx",
+    "type": ".tsx",
+    "exports": [
+      "CarsPage"
+    ],
+    "imports": [],
+    "components": [
+      "CarsPage"
+    ],
+    "description": ""
+  },
+  {
+    "path": "/app/destinations/page.tsx",
+    "type": ".tsx",
+    "exports": [],
+    "imports": [
+      "@/lib/api/travelpayouts"
+    ],
+    "components": [
+      "FlightsPage"
+    ],
+    "description": ""
+  },
+  {
+    "path": "/app/fix-site/page.tsx",
+    "type": ".tsx",
+    "exports": [
+      "FixSitePage"
+    ],
+    "imports": [
+      "react"
+    ],
+    "components": [
+      "FixSitePage"
+    ],
+    "description": ""
+  },
+  {
+    "path": "/README.md",
+    "type": ".md",
+    "exports": [],
+    "imports": [],
+    "components": [],
+    "description": ""
+  },
+  {
+    "path": "/tsconfig.json",
+    "type": ".json",
+    "exports": [],
+    "imports": [],
+    "components": [],
+    "description": ""
+  },
+  {
+    "path": "/package.json",
+    "type": ".json",
+    "exports": [],
+    "imports": [],
+    "components": [],
+    "description": ""
+  },
+  {
+    "path": "/package-lock.json",
+    "type": ".json",
+    "exports": [],
+    "imports": [],
+    "components": [],
+    "description": ""
+  },
+  {
+    "path": "/AGENTS.md",
+    "type": ".md",
+    "exports": [],
+    "imports": [],
+    "components": [],
+    "description": ""
+  },
+  {
+    "path": "/CLAUDE.md",
+    "type": ".md",
+    "exports": [],
+    "imports": [],
+    "components": [],
+    "description": ""
+  },
+  {
+    "path": "/src/lib/api/travelpayouts.ts",
+    "type": ".ts",
+    "exports": [],
+    "imports": [],
+    "components": [
+      "API_TOKEN",
+      "AFFILIATE_LINK"
+    ],
+    "description": "srclibapitravelpayouts.ts"
+  },
+  {
+    "path": "/src/app/layout.tsx",
+    "type": ".tsx",
+    "exports": [
+      "RootLayout"
+    ],
+    "imports": [],
+    "components": [
+      "RootLayout"
+    ],
+    "description": "srcapplayout.tsx"
+  },
+  {
+    "path": "/components/Navbar.tsx",
+    "type": ".tsx",
+    "exports": [
+      "Navbar"
+    ],
+    "imports": [
+      "next/link"
+    ],
+    "components": [
+      "Navbar"
+    ],
+    "description": ""
+  },
+  {
+    "path": "/components/flights/FlightSearch.tsx",
+    "type": ".tsx",
+    "exports": [
+      "FlightSearchForm"
+    ],
+    "imports": [
+      "react",
+      "next/navigation"
+    ],
+    "components": [
+      "FlightSearchForm"
+    ],
+    "description": ""
+  },
+  {
+    "path": "/components/flights/FlightCard.tsx",
+    "type": ".tsx",
+    "exports": [
+      "FlightCard"
+    ],
+    "imports": [
+      "next/link",
+      "@/types/flight"
+    ],
+    "components": [
+      "FlightCard"
+    ],
+    "description": "componentsflightsFlightCard.tsx"
+  },
+  {
+    "path": "/lib/travelpayouts/flights.ts",
+    "type": ".ts",
+    "exports": [],
+    "imports": [],
+    "components": [
+      "API_KEY",
+      "MARKER",
+      "BASE_URL"
+    ],
+    "description": "libtravelpayoutsflights.ts"
+  },
+  {
+    "path": "/lib/api/travelpayouts.ts",
+    "type": ".ts",
+    "exports": [],
+    "imports": [],
+    "components": [
+      "TOKEN"
+    ],
+    "description": ""
+  },
+  {
+    "path": "/lib/services/flightService.ts",
+    "type": ".ts",
+    "exports": [],
+    "imports": [],
+    "components": [],
+    "description": ""
+  },
+  {
+    "path": "/types/flight.ts",
+    "type": ".ts",
+    "exports": [],
+    "imports": [],
+    "components": [],
+    "description": "typesflight.ts"
+  },
+  {
+    "path": "/vercel.json",
+    "type": ".json",
+    "exports": [],
+    "imports": [],
+    "components": [],
+    "description": ""
+  },
+  {
+    "path": "/.vercel/repo.json",
+    "type": ".json",
+    "exports": [],
+    "imports": [],
+    "components": [],
+    "description": ""
+  }
+]
