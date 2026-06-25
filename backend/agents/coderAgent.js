@@ -18,7 +18,6 @@ const handleApiError = (error) => {
     return { error: 'API_ERROR', details: msg };
 };
 
-// إضافة المعامل الخامس "onChunk" لاستقبال دفق الأكواد لحظة بلحظة
 export async function coreGenerateCodePlan(userPrompt, currentCodeContext, category, chatHistory, onChunk) {
     const safeCategory = category || 'default';
     const baseTemplate = (typeof generateTemplate === 'function') 
@@ -43,16 +42,26 @@ export async function coreGenerateCodePlan(userPrompt, currentCodeContext, categ
     - اكتب كود JavaScript نظيف، خالي من الأخطاء المنطقية، ومبني لتفادي تعارض أحداث DOM.
     - أضف تفاعلات ديناميكية ملهمة (مثل حركات فتح القوائم، تحديثات حية للبيانات، رسائل تأكيدية Toast عصرية عند الحفظ، وتأثيرات تحميل Spinner).
 
-    4. التعامل مع القوالب والمجالات:
-    - في حال كان الكود الحالي فارغاً (بداية المشروع)، استخدم الهياكل الأساسية للقالب المصنعي المرفق كنتقة انطلاق قوية تتوافق مع هوية وطبيعة المجال المحدد (Category).
-    - قم بحقن الميزات التي طلبها المستخدم مع دمجها بشكل متناسق مع القالب من حيث الألوان والنبرة البصرية.
+    4. التعامل مع الصور الفنية بالذكاء الاصطناعي (Imagen 3):
+    - أنت قادر على طلب صور فنية مخصصة تخدم هوية الموقع.
+    - عندما تحتاج صورة (مثل صورة غلاف بطل hero banner، أو خلفيات ميزات)، قم بوضع رابطها في الـ HTML هكذا: "assets/hero.png" أو "assets/feature1.png" وهكذا.
+    - قم بإدراج طلب توليد هذه الصور في حقل الـ "images" بداخل رد الـ JSON الخاص بك، مع كتابة وصف فني دقيق جداً (باللغة الإنجليزية) لكيفية رسم الصورة عبر Imagen 3 لتكون بدقة نيونية فخمة ومتناسقة مع الموقع.
 
     [القالب المصنعي المعتمد للمجال في حال البدء من الصفر]:
     HTML BASE: ${baseTemplate.html}
     CSS BASE: ${baseTemplate.css}
 
-    رد بصيغة JSON صافية فقط بدون مقدمات أو شرح كالتالي:
-    { "files": [ {"name": "index.html", "content": "..."} ] }`;
+    صيغة الرد إلزامية ولا تقبل أي نقاش أو نصوص توضيحية خارجها. يجب أن يكون الرد عبارة عن كود JSON نقي وصالح للتحليل المباشر (Valid JSON):
+    {
+      "files": [
+        { "name": "index.html", "content": "HTML المحدث بالكامل" },
+        { "name": "styles.css", "content": "CSS المحدث بالكامل" },
+        { "name": "script.js", "content": "JS المحدث بالكامل" }
+      ],
+      "images": [
+        { "fileName": "assets/hero.png", "prompt": "A professional high-resolution, futuristic dark themed digital art of pizza baking in a clay oven with neon orange glows, widescreen 16:9, concept design" }
+      ]
+    }`;
 
     let messagesPayload = [{ role: "system", content: systemInstruction }];
 
@@ -65,7 +74,6 @@ export async function coreGenerateCodePlan(userPrompt, currentCodeContext, categ
 
     if (groq) {
         try {
-            // تفعيل البث في محرك Groq
             const completion = await groq.chat.completions.create({
                 messages: messagesPayload,
                 model: "llama-3.3-70b-versatile",
@@ -78,7 +86,7 @@ export async function coreGenerateCodePlan(userPrompt, currentCodeContext, categ
                 const text = chunk.choices[0]?.delta?.content || "";
                 fullContent += text;
                 if (typeof onChunk === 'function' && text) {
-                    onChunk(text); // إرسال الجزء المولد في نفس اللحظة
+                    onChunk(text);
                 }
             }
 
@@ -86,7 +94,7 @@ export async function coreGenerateCodePlan(userPrompt, currentCodeContext, categ
             chatHistory.push({ role: "assistant", content: fullContent });
             return JSON.parse(fullContent);
         } catch (e) { 
-            console.log('⚠️ خطأ في بث Groq، جاري التحويل لـ Gemini البديل المتدفق...'); 
+            console.log('⚠️ خطأ في بث Groq، التحويل لـ Gemini البديل المتدفق...'); 
             const errRes = handleApiError(e);
             if (errRes.error === 'API_QUOTA_EXHAUSTED' && !ai) return errRes;
         }
@@ -94,7 +102,6 @@ export async function coreGenerateCodePlan(userPrompt, currentCodeContext, categ
 
     if (ai) {
         try {
-            // تفعيل البث في محرك Gemini
             const responseStream = await ai.models.generateContentStream({
                 model: 'gemini-2.5-flash',
                 contents: geminiContents,
@@ -109,7 +116,7 @@ export async function coreGenerateCodePlan(userPrompt, currentCodeContext, categ
                 const text = chunk.text;
                 fullContent += text;
                 if (typeof onChunk === 'function' && text) {
-                    onChunk(text); // إرسال الجزء المولد في نفس اللحظة
+                    onChunk(text);
                 }
             }
 
@@ -127,6 +134,7 @@ export async function coreGenerateCodePlan(userPrompt, currentCodeContext, categ
             { name: 'index.html', content: baseTemplate.html }, 
             { name: 'styles.css', content: baseTemplate.css }, 
             { name: 'script.js', content: '// default safety mode' }
-        ]
+        ],
+        images: []
     };
 }

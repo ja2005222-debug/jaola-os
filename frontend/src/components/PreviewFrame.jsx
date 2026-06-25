@@ -7,7 +7,7 @@ export function PreviewFrame({ activeProject, previewTimestamp, viewMode, stream
     return 'w-full';
   };
 
-  // حل المسار الفعلي والمباشر للباك إند على منفذ 4000 لتجاوز قيود Vite HTML Interceptor
+  // 🛠️ الحل الجذري الشامل: حساب عنوان المعاينة ديناميكياً ليعمل من الـ IP المباشر والـ Localhost معاً دون تضارب
   const directPreviewUrl = `http://${window.location.hostname}:4000/workspace/index.html?project=${activeProject}&t=${previewTimestamp}`;
 
   return (

@@ -1,4 +1,4 @@
-console.log('مطعم البيتزا تم تحميله بنجاح');
+console.log('مطعم حمال للأسماك تم تحميله بنجاح');
 
 const menuButton = document.getElementById('menu-button');
 const menuModal = document.getElementById('menu-modal');

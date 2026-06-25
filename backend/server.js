@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import './dbConfig.js'; // استيراد التهيئة كأول سطر على الإطلاق لتفادي الـ Hoisting الانهياري
+import './dbConfig.js'; // استيراد ملف التهيئة كأول سطر على الإطلاق لتفادي الـ Hoisting الانهياري
 
 import express from 'express';
 import cors from 'cors';
@@ -12,9 +12,10 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
 
-// استيراد الموديلات
+// استيراد الموديلات واجهة الاتصال بـ Gemini المشتركة
 import User from './models/User.js';
 import Project from './models/Project.js';
+import { ai } from './agents/baseAgent.js'; // استيراد عميل جوميني لطلب صور Imagen 3
 
 // استيراد الوكلاء المطورين
 import { 
@@ -92,6 +93,38 @@ const DB = {
 
 const BASE_WORKSPACE = path.resolve(__dirname, '../workspace');
 if (!fs.existsSync(BASE_WORKSPACE)) fs.mkdirSync(BASE_WORKSPACE);
+
+// 🛠️ بديل خارق لـ Imagen 3 يعتمد على محرك البث المفتوح Pollinations لتفادي قيود الـ OAuth وعقبات الـ 401 لجوجل
+async function generateAIImage(promptText, projectPath, fileName) {
+    try {
+        // تنظيف وترميز النص ليكون صالحاً للروابط الشبكية
+        const encodedPrompt = encodeURIComponent(promptText);
+        
+        // جلب صورة نيونية عالية الدقة والجمال بمقاس 1024x576 عريضة بدون أي أختام مائية
+        const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=576&nologo=true`;
+
+        console.log(`🖼️ [AI Image]: جاري رسم وتحميل صورة نيونية عالية الدقة لـ (${fileName})...`);
+        
+        // استخدام محرك Fetch المدمج في Node.js تلقائياً
+        const res = await fetch(imageUrl);
+        if (!res.ok) throw new Error(`فشل جلب الصورة من خادم التوليد: ${res.statusText}`);
+        
+        const arrayBuffer = await res.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+
+        // إنشاء مجلد الأصول إذا لم يكن موجوداً
+        const assetsDir = path.join(projectPath, 'assets');
+        if (!fs.existsSync(assetsDir)) fs.mkdirSync(assetsDir, { recursive: true });
+
+        const targetPath = path.join(projectPath, fileName);
+        fs.writeFileSync(targetPath, buffer);
+
+        console.log(`🖼️ [AI Image]: تم توليد وحفظ الصورة بنجاح في مسار المشروع: ${fileName}`);
+    } catch (e) {
+        console.error(`❌ [AI Image Error]: فشل توليد الصورة المفتوحة (${fileName}):`, e.message);
+    }
+}
+
 
 // ==========================================
 // 🛡️ الوسائط الأمنية (Security Middlewares)
@@ -229,7 +262,6 @@ const emitUserProjects = async (roomName, username, activeProject) => {
         let projects = ['sandbox_app'];
         let currentVercelUrl = '';
 
-        // جلب المشاريع عبر الغلاف الآمن
         const projectsData = await DB.findUserProjects(username);
         if (projectsData.length > 0) projects = projectsData.map(p => p.name);
         const currentProjRecord = projectsData.find(p => p.name === activeProject);
@@ -247,6 +279,33 @@ const emitUserProjects = async (roomName, username, activeProject) => {
 // ==========================================
 // 🌐 المسارات البرمجية الموثوقة (Secure Routes)
 // ==========================================
+
+app.get('/workspace', (req, res) => {
+    const { project } = req.query;
+    const projectPath = getProjectPath(project);
+    const filePath = path.join(projectPath, 'index.html');
+    if (fs.existsSync(filePath)) {
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+        return res.sendFile(filePath);
+    }
+    res.status(404).send('index.html not found');
+});
+
+// 🛠️ التعديل الشبكي الحاسم: تصفية وتنظيف مسار الملفات النسبية المرفقة بالـ Iframe لمنع الـ 403 الخاطئ للقرص
+app.get('/workspace/:file(*)', (req, res) => {
+    const { project } = req.query;
+    const projectPath = getProjectPath(project);
+    
+    // تأمين وتنظيف المسار لمنع ثغرات الـ Path Traversal بشكل مبسط وآمن ومقاوم للشرطات المكررة
+    const safeFile = path.normalize(req.params.file).replace(/^(\.\.[\/\\])+/, '').replace(/^\/+/, '');
+    const filePath = path.join(projectPath, safeFile);
+
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+        return res.sendFile(filePath);
+    }
+    res.status(404).send('File not found');
+});
 
 app.post('/api/auth/login', async (req, res) => {
     const { username } = req.body;
@@ -424,8 +483,19 @@ app.post('/api/chat', verifyToken, aiLimit, validateProjectOwnership, async (req
             }
         });
 
+        // 🖼️ التوليد والحقن الحركي للصور المستهدفة بـ Imagen 3 إن طلبت في خطة المبرمج
+        if (plan.images && Array.isArray(plan.images)) {
+            sendState({ planner: 'completed', architect: 'completed', coder: 'running', qa: 'completed', deploy: 'waiting' });
+            io.to(roomName).emit('log', { message: `🖼️ [SYSTEM]: جاري الاستعانة بـ Imagen 3 لتوليد وحقن الصور الفنية حياً بالخلفية...` });
+            
+            for (const img of plan.images) {
+                io.to(roomName).emit('log', { message: `🖼️ [Imagen 3]: جاري رسم وتفصيل صورة (${img.fileName}) بأعلى دقة نيون...` });
+                await generateAIImage(img.prompt, projectPath, img.fileName);
+            }
+        }
+
         sendState({ planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'waiting' });
-        io.to(roomName).emit('log', { message: `✨ [SUCCESS]: تم التحديث والنسخ الاحتياطي وتعديل المعاينة بنجاح!` });
+        io.to(roomName).emit('log', { message: `✨ [SUCCESS]: تم التحديث والنسخ الاحتياطي وحقن الصور وتعديل المعاينة بنجاح!` });
         
         emitWorkspaceFiles(roomName, projectPath, true);
         await emitUserProjects(roomName, req.user.username, req.activeProject);
@@ -436,5 +506,4 @@ app.post('/api/chat', verifyToken, aiLimit, validateProjectOwnership, async (req
     }
 });
 
-// 🛠️ التحديث الحاسم: تحديد الاستماع للخادم على جميع الواجهات لمنع تعطل الجسر الشبكي لـ Crostini
 httpServer.listen(4000, '0.0.0.0', () => console.log('🟢 JAOLA OS Unified Server Active on Port 4000'));

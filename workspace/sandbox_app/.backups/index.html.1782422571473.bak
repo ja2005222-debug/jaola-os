@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.2.1/flowbite.min.css" rel="stylesheet"/>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.2.1/flowbite.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;700;900&family=Tajawal:wght@300;500;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        * { font-family: 'Tajawal', 'Cairo', sans-serif; scroll-behavior: smooth; }
+    </style>
+    <title>مطعم حمال</title>
+</head>
+<body class="bg-[#05070f] text-slate-100 min-h-screen relative overflow-x-hidden selection:bg-cyan-500 selection:text-slate-950">
+    <!-- توهج نيون خلفي ناعم -->
+    <div class="absolute top-[-150px] left-[-150px] w-[500px] h-[500px] rounded-full bg-cyan-500/10 blur-[130px] pointer-events-none"></div>
+    <div class="absolute bottom-[-200px] right-[-150px] w-[600px] h-[600px] rounded-full bg-indigo-500/8 blur-[160px] pointer-events-none"></div>
+
+    <!-- نافبار زجاجي شفاف ومحاذاة دقيقة -->
+    <header class="border-b border-slate-900 bg-[#05070f]/80 backdrop-blur-xl sticky top-0 z-50 px-8 py-4 flex items-center justify-between">
+        <div class="text-xl font-black bg-gradient-to-r from-cyan-400 to-indigo-500 bg-clip-text text-transparent tracking-wide">مطعم حمال</div>
+        <nav class="hidden md:flex items-center gap-8 text-xs font-semibold text-slate-400">
+            <a href="#menu" class="hover:text-cyan-400 transition-all">قائمة الطعام</a>
+            <a href="#about" class="hover:text-cyan-400 transition-all">قصتنا</a>
+            <a href="#reviews" class="hover:text-cyan-400 transition-all">آراء العملاء</a>
+            <a href="#about-us" class="hover:text-cyan-400 transition-all">من نحن</a>
+        </nav>
+        <button class="bg-gradient-to-r from-cyan-500 to-indigo-600 text-white font-extrabold text-xs px-5 py-2.5 rounded-xl shadow-lg shadow-cyan-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all" id="menu-button">استعرض قائمة الطعام</button>
+    </header>
+
+    <!-- قسم العرض الرئيسي الفاخر -->
+    <main class="max-w-5xl mx-auto text-center px-6 py-28 flex flex-col items-center justify-center">
+        <div class="inline-flex items-center gap-1.5 bg-cyan-950/40 border border-cyan-800/30 text-cyan-400 px-3.5 py-1.5 rounded-full text-[10px] font-bold tracking-wider mb-6 animate-pulse">
+            🚀 ثورة الأطعمة البحرية
+        </div>
+        <h1 class="text-4xl md:text-6xl font-black leading-tight mb-6">مطعم حمال <br/><span class="bg-gradient-to-r from-cyan-400 via-teal-400 to-indigo-500 bg-clip-text text-transparent">الأفضل دائمًا</span></h1>
+        <p class="text-slate-400 text-sm md:text-base leading-relaxed max-w-xl mb-12">نقدم لك أطيب الأطباق البحرية مع أشهر الخيارات غير البحرية.</p>
+
+        <img src="assets/fried-fish.jpg" alt="سمك مقلي" class="w-64 h-64 rounded-2xl mb-8 object-cover"/>
+
+        <div class="flex flex-col sm:flex-row items-center gap-4">
+            <button class="bg-gradient-to-r from-cyan-500 to-indigo-600 text-white font-extrabold text-xs px-8 py-3.5 rounded-xl shadow-lg shadow-cyan-500/25 hover:scale-[1.02] transition-all">استعرض قائمة الطعام 📜</button>
+            <button class="border border-slate-800 hover:bg-slate-900 text-xs text-slate-300 font-extrabold px-8 py-3.5 rounded-xl transition-all">تواصل معنا</button>
+        </div>
+    </main>
+
+    <!-- القائمة -->
+    <div id="menu-modal" class="hidden">
+        <div class="fixed top-0 left-0 w-full h-full bg-[#05070f]/80 backdrop-blur-md flex justify-center items-center">
+            <div class="max-w-5xl w-full bg-[#05070f] p-10 rounded-2xl text-center relative z-10">
+                <h2 class="text-3xl font-black mb-4">قائمة الطعام</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div class="bg-[#0d121f] p-4 rounded-2xl flex flex-col items-center">
+                        <img src="assets/menu1.jpg" class="w-24 h-24 rounded-full mb-4">
+                        <h3 class="text-lg font-bold mb-2">السمك المشوي</h3>
+                        <p class="text-slate-400 text-xs leading-relaxed mb-4">سمك مشوي مع الليمون والثوم.</p>
+                        <button class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-5 py-2.5 rounded-xl shadow-lg shadow-amber-500/10 transition-all">اطلب الآن</button>
+                    </div>
+                    <div class="bg-[#0d121f] p-4 rounded-2xl flex flex-col items-center">
+                        <img src="assets/menu2.jpg" class="w-24 h-24 rounded-full mb-4">
+                        <h3 class="text-lg font-bold mb-2">السي فود</h3>
+                        <p class="text-slate-400 text-xs leading-relaxed mb-4">مأكولات بحرية متنوعة.</p>
+                        <button class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-5 py-2.5 rounded-xl shadow-lg shadow-amber-500/10 transition-all">اطلب الآن</button>
+                    </div>
+                    <div class="bg-[#0d121f] p-4 rounded-2xl flex flex-col items-center">
+                        <img src="assets/menu3.jpg" class="w-24 h-24 rounded-full mb-4">
+                        <h3 class="text-lg font-bold mb-2">الوجبات الخفيفة</h3>
+                        <p class="text-slate-400 text-xs leading-relaxed mb-4">وجبات خفيفة متنوعة.</p>
+                        <button class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-5 py-2.5 rounded-xl shadow-lg shadow-amber-500/10 transition-all">اطلب الآن</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <section class="max-w-4xl mx-auto px-6 py-20 text-center flex flex-col items-center" id="about">
+        <h1 class="text-4xl md:text-6xl font-black leading-tight mb-6">قصتنا</h1>
+        <p class="text-slate-400 text-sm leading-relaxed max-w-lg mb-10">نحن فريق من المحترفين في مجال الأطعمة البحرية. نحن نهدف إلى تقديم أطيب الأطباق البحرية والخدمة الأفضل لعملائنا.</p>
+        <div class="flex items-center gap-4">
+            <button class="bg-gradient-to-r from-cyan-500 to-indigo-600 text-white font-extrabold text-xs px-8 py-3.5 rounded-xl shadow-lg shadow-cyan-500/20 hover:scale-[1.02] transition-all">تعرف علينا أكثر</button>
+        </div>
+    </section>
+
+    <section class="max-w-4xl mx-auto px-6 py-20 text-center flex flex-col items-center" id="reviews">
+        <h1 class="text-4xl md:text-6xl font-black leading-tight mb-6">آراء العملاء</h1>
+        <p class="text-slate-400 text-sm leading-relaxed max-w-lg mb-10">نحن فريق من المحترفين في مجال الأطعمة البحرية. نحن نهدف إلى تقديم أطيب الأطباق البحرية والخدمة الأفضل لعملائنا.</p>
+        <div class="flex items-center gap-4">
+            <button class="bg-gradient-to-r from-cyan-500 to-indigo-600 text-white font-extrabold text-xs px-8 py-3.5 rounded-xl shadow-lg shadow-cyan-500/20 hover:scale-[1.02] transition-all">تعرف علينا أكثر</button>
+        </div>
+    </section>
+
+    <section class="max-w-4xl mx-auto px-6 py-20 text-center flex flex-col items-center" id="about-us">
+        <h1 class="text-4xl md:text-6xl font-black leading-tight mb-6">من نحن</h1>
+        <p class="text-slate-400 text-sm leading-relaxed max-w-lg mb-10">نحن فريق من المحترفين في مجال الأطعمة البحرية. نحن نهدف إلى تقديم أطيب الأطباق البحرية والخدمة الأفضل لعملائنا. تم تأسيس مطعمنا في عام 2022 مع نخبة من الطهاة والفنيين في المجال. نقدم أطباقًا متنوعة من المأكولات البحرية والغير بحرية. نرحب بكم في مطعم حمال للأسماك.</p>
+        <div class="flex items-center gap-4">
+            <button class="bg-gradient-to-r from-cyan-500 to-indigo-600 text-white font-extrabold text-xs px-8 py-3.5 rounded-xl shadow-lg shadow-cyan-500/20 hover:scale-[1.02] transition-all">تعرف علينا أكثر</button>
+        </div>
+    </section>
+
+    <script src="script.js"></script>
+</body>
+</html>

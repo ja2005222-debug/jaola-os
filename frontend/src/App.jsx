@@ -1,7 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
 import { useAuth } from './hooks/useAuth.js';
+// استيراد خطاف السوكيت وكائن السوكيت الموحد والمشترك معاً لمنع التضارب والتعطل
 import { useSocket, socket } from './hooks/useSocket.js';
 import { PreviewFrame } from './components/PreviewFrame.jsx';
+import Editor from '@monaco-editor/react';
+
+const BACKEND_URL = `http://${window.location.hostname}:4000`;
 
 export default function App() {
   const [activeProject, setActiveProject] = useState('sandbox_app');
@@ -19,7 +23,7 @@ export default function App() {
   const [projects, setProjects] = useState([]);
   const [vercelUrl, setVercelUrl] = useState('');
 
-  // نافذة المشاريع المدمجة لتفادي حظر المتصفحات للـ prompts
+  // نائبة المشاريع المدمجة لتفادي حظر المتصفحات للـ prompts
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
 
@@ -31,7 +35,7 @@ export default function App() {
   const logsEndRef = useRef(null);
   const chatEndRef = useRef(null);
 
-  // 🔌 استهلاك حالات السوكيت المغلفة والمعزولة والنشطة بالبروكسي العكسي لـ Vite
+  // 🔌 استهلاك حالات السوكيت المغلفة والمعزولة والنشطة بالاتصال المباشر لـ useSocket
   const { 
     files, 
     logs, 
@@ -86,7 +90,7 @@ export default function App() {
 
   const fetchFileContent = async (fileName) => {
     try {
-      const res = await fetch(`/api/file-content?fileName=${fileName}&project=${activeProject}`, {
+      const res = await fetch(`${BACKEND_URL}/api/file-content?fileName=${fileName}&project=${activeProject}`, {
         headers: getHeaders()
       });
       if (res.status === 401 || res.status === 403) {
@@ -102,7 +106,7 @@ export default function App() {
 
   const handleSaveCodeManual = async () => {
     try {
-      const res = await fetch('/api/file-content/save', {
+      const res = await fetch(`${BACKEND_URL}/api/file-content/save`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ fileName: activeFile, content: editorContent, project: activeProject, username: currentUser })
@@ -129,7 +133,7 @@ export default function App() {
       
       setChatMessages((prev) => [...prev, { sender: 'user', text: userPrompt }]);
 
-      const res = await fetch('/api/chat', {
+      const res = await fetch(`${BACKEND_URL}/api/chat`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ message: userPrompt, project: activeProject, username: currentUser })
@@ -144,7 +148,7 @@ export default function App() {
 
   const handleSwitchProject = async (projName) => {
     try {
-      const res = await fetch('/api/project-context/switch', {
+      const res = await fetch(`${BACKEND_URL}/api/project-context/switch`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ project: projName })
@@ -159,7 +163,6 @@ export default function App() {
     }
   };
 
-  // 🛠️ دالة معالجة وإنشاء المشاريع التفاعلية
   const handleCreateProjectSubmit = async () => {
     if (!newProjectName.trim()) return;
     const sanitized = newProjectName.trim().toLowerCase().replace(/\s+/g, '-');
@@ -167,7 +170,7 @@ export default function App() {
     setNewProjectName('');
 
     try {
-      const res = await fetch('/api/project-context/switch', {
+      const res = await fetch(`${BACKEND_URL}/api/project-context/switch`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ project: sanitized })
@@ -184,7 +187,7 @@ export default function App() {
     }
   };
 
-  // === 🔐 مصادقة حركية على الـ IP النشط ===
+  // === 🔐 مصادقة حركية تلقائية لتفعيل السيرفر ===
   useEffect(() => {
     const initializeSecureSession = async () => {
       let activeToken = localStorage.getItem('token');
@@ -192,7 +195,7 @@ export default function App() {
 
       if (!activeToken) {
         try {
-          const res = await fetch('/api/auth/login', {
+          const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username })
@@ -213,7 +216,7 @@ export default function App() {
         socket.auth = { token: activeToken };
         socket.connect();
         socket.emit('join_project', { project: activeProject });
-        setIsAuthenticated(true);
+        // 🛠️ تم إزالة السطر المسبب للـ Reference Error والتعطل الصامت هنا بنجاح
       }
     };
 
@@ -226,14 +229,6 @@ export default function App() {
     if (text.includes('[QA REPORT]')) return 'text-amber-400 font-medium';
     if (text.includes('[SYSTEM]')) return 'text-sky-400';
     return 'text-slate-300';
-  };
-
-  const getFileLanguage = (fileName) => {
-    if (fileName.endsWith('.html')) return 'html';
-    if (fileName.endsWith('.css')) return 'css';
-    if (fileName.endsWith('.js')) return 'javascript';
-    if (fileName.endsWith('.json')) return 'json';
-    return 'plaintext';
   };
 
   return (
@@ -253,7 +248,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4 w-full lg:w-auto justify-end">
+        <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto justify-end">
           {vercelUrl && <a href={vercelUrl} target="_blank" rel="noreferrer" className="text-xs bg-emerald-950/40 border border-emerald-900/60 text-emerald-400 px-3.5 py-2.5 rounded-xl hover:scale-[1.01] transition-all">🌍 الرابط المنشور حياً</a>}
           <button className="text-xs bg-[#0F172A]/80 border border-slate-800 text-slate-300 px-3.5 py-2.5 rounded-xl hover:bg-slate-900 transition-all">😺 GitHub Login</button>
           <button className="text-xs bg-white text-slate-950 px-3.5 py-2.5 rounded-xl font-bold hover:bg-slate-100 shadow-lg transition-all">🌐 Google Login</button>
@@ -278,10 +273,8 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-5 gap-6 max-w-[1700px] w-full mx-auto relative z-10">
-        
-        {/* 1. العمود الأيسر (1/5): شاشة المحادثة الممتدة بالكامل للأعلى وبكتابة مرنة ومباشرة */}
-        <section className="lg:col-span-1 flex flex-col bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-4.5 shadow-2xl backdrop-blur-xl h-[calc(100vh-180px)] min-h-[500px]">
+      <main className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-5 gap-6 max-w-[1750px] w-full mx-auto">
+        <section className="lg:col-span-1 flex flex-col bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-4.5 shadow-2xl backdrop-blur-xl h-[calc(100vh-230px)] min-h-[450px]">
           <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-1 scrollbar-thin">
             {chatMessages.map((msg, idx) => (
               <div key={idx} className={`flex ${msg.sender === 'user' ? 'justify-start' : 'justify-end'}`}>
@@ -302,11 +295,10 @@ export default function App() {
           </div>
         </section>
 
-        {/* 2. الأعمدة الوسطى (3/5): المعاينة أو المحرر والـ Graph */}
-        <section className="lg:col-span-3 flex flex-col gap-6 h-[calc(100vh-180px)]">
+        <section className="lg:col-span-3 flex flex-col gap-6 h-[calc(100vh-280px)]">
           <div className="bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-5 shadow-2xl backdrop-blur-xl flex-1 flex flex-col">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-900 pb-4 mb-4">
-              <div className="flex items-center bg-slate-950 p-1.5 rounded-xl border">
+              <div className="flex items-center bg-slate-950 p-1.5 rounded-xl border border-slate-900">
                 <button onClick={() => setActiveTab('preview')} className={`px-4 py-2 rounded-lg text-xs font-semibold ${activeTab === 'preview' ? 'bg-[#090D16] text-cyan-400' : 'text-slate-500'}`}>🖥️ المعاينة الحية</button>
                 <button onClick={() => setActiveTab('editor')} className={`px-4 py-2 rounded-lg text-xs font-semibold ${activeTab === 'editor' ? 'bg-[#090D16] text-cyan-400' : 'text-slate-500'}`}>💻 مراجعة الكود الصافي</button>
               </div>
@@ -314,19 +306,17 @@ export default function App() {
 
             <div className="flex-1 flex justify-center items-center bg-slate-950 rounded-xl overflow-hidden min-h-[300px] relative border border-slate-900">
               {activeTab === 'preview' ? (
-                <PreviewFrame activeProject={activeProject} previewTimestamp={previewTimestamp} viewMode={viewMode} streamingContent={streamingContent} backendUrl="" />
+                <PreviewFrame activeProject={activeProject} previewTimestamp={previewTimestamp} viewMode={viewMode} streamingContent={streamingContent} />
               ) : (
                 <div className="w-full h-full flex flex-col p-4">
                   <div className="flex items-center justify-between mb-2 text-xs text-slate-500">
-                    <span>محرر الأكواد النيوني: <span className="text-cyan-400 font-mono font-bold">{activeFile}</span></span>
+                    <span>محرر موناكو الذكي: <span className="text-cyan-400 font-mono font-bold">{activeFile}</span></span>
                     <button onClick={handleSaveCodeManual} className="bg-cyan-950 border border-cyan-900/50 text-cyan-400 hover:bg-cyan-900 px-3 py-1 rounded-lg font-bold">💾 حفظ وحقن</button>
                   </div>
                   
-                  {/* 🛠️ تفادي انهيار الارتفاع ومشاكل الـ CDN عبر استخدام صندوق الأكواد المحلي الفاخر (Offline-Resilient Code Area) */}
                   <div className="flex-1 rounded-xl overflow-hidden border border-slate-900 mt-2 bg-[#0C0F19] h-[450px] relative flex">
-                    {/* عمود الأرقام الجانبي لترقيم الأسطر لمحاكاة Monaco يدوياً ومستقراً 100% */}
                     <div className="w-12 bg-slate-950 border-r border-slate-900/60 text-right pr-3 pt-4 select-none font-mono text-[10px] text-slate-600 leading-relaxed">
-                      {Array.from({ length: Math.max(15, editorContent.split('\n').length) }).map((_, i) => (
+                      {Array.from({ length: Math.max(15, (editorContent || '').split('\n').length) }).map((_, i) => (
                         <div key={i} className="h-5">{i + 1}</div>
                       ))}
                     </div>
@@ -345,7 +335,7 @@ export default function App() {
         </section>
 
         {/* 3. العمود الأيمن (1/5): متصفح الملفات والتوأم الرقمي */}
-        <section className="lg:col-span-1 flex flex-col gap-6 h-[calc(100vh-180px)] overflow-y-auto">
+        <section className="lg:col-span-1 flex flex-col gap-6 h-[calc(100vh-230px)] overflow-y-auto">
           <div className="bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-5 shadow-2xl backdrop-blur-xl flex flex-col max-h-[220px]">
             <h3 className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">📁 WORKSPACE EXPLORER</h3>
             <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
@@ -361,7 +351,7 @@ export default function App() {
         </section>
       </main>
 
-      {/* 🛠️ النافذة المنبثقة المدمجة (Interactive Custom Modal) لإنشاء المشاريع وتفادي حظر الـ Popups */}
+      {/* النافذة المنبثقة المدمجة (Interactive Custom Modal) لإنشاء المشاريع */}
       {showProjectModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md transition-all">
           <div className="bg-[#0D121F] border border-slate-800 p-6 rounded-2xl max-w-sm w-full shadow-2xl">
@@ -382,10 +372,11 @@ export default function App() {
         </div>
       )}
 
+      {/* رفع وتوسيع شاشة السجلات (Log Terminal) بالأسفل لتكون بارزة ومقروءة ومكشوفة بالكامل */}
       <footer className="border-t border-slate-900 bg-[#090D16]/50 p-6 relative z-10">
         <div className="max-w-[1700px] w-full mx-auto">
           <h3 className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">⏱️ Stream Timeline Log</h3>
-          <div className="bg-slate-950/80 border border-slate-900 rounded-2xl p-4 font-mono text-xs h-32 overflow-y-auto space-y-2 shadow-inner">
+          <div className="bg-slate-950/80 border border-slate-900 rounded-2xl p-4 font-mono text-xs h-48 overflow-y-auto space-y-2 shadow-inner">
             {logs.length === 0 ? (
               <div className="text-slate-600 italic">بانتظار استقبال السجلات والأحداث من نواة المعالجة...</div>
             ) : (
@@ -512,7 +503,7 @@ function AgentNetworkGraph({ states }) {
       case 'completed':
         return 'border-emerald-500/60 bg-emerald-950/20 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]';
       case 'error':
-        return 'border-rose-500 bg-rose-950/20 text-rose-400 shadow-[0_0_30px_rgba(239,68,68,0.3)] animate-bounce';
+        return 'border-rose-500 bg-rose-950/30 text-rose-400 shadow-[0_0_20px_rgba(239,68,68,0.4)] animate-bounce';
       case 'waiting':
       default:
         return 'border-slate-800/80 bg-slate-900/20 text-slate-500 hover:border-slate-700/60 hover:text-slate-400 transition-all';

@@ -1,5 +1,8 @@
-body { background-color: #0b0c10; }
+body { background-color: #05070f; }
 
+.bg-azref { background-image: linear-gradient(to bottom, #56B3FA, #FFFFFF); }
+
+.card { box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
 #gallery > div {
     width: calc(33.33% - 1rem);
     aspect-ratio: 1;
