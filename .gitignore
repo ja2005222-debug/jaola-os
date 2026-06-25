@@ -9,3 +9,33 @@ __pycache__/
 dist/
 build/
 *.tmp
+# مجلدات التبعيات (الأكبر حجماً)
+node_modules/
+vendor/
+.venv/
+env/
+
+# ملفات البيئة والأسرار
+.env
+.env.local
+
+# ملفات نظام التشغيل والسجلات
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.cache
+
+# مجلدات البناء والتجميع
+dist/
+build/
+__pycache__/
+*.pyc
+target/
+out/
+
+# الملفات المضغوطة (تجنباً لتكرار مشكلة الحجم)
+*.zip
+*.tar.gz
+*.rar
+jaola.zip
