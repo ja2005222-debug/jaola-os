@@ -5,7 +5,11 @@ import { useSocket, socket } from './hooks/useSocket.js';
 import { PreviewFrame } from './components/PreviewFrame.jsx';
 import Editor from '@monaco-editor/react';
 
-const BACKEND_URL = `http://${window.location.hostname}:4000`;
+
+// 🛠️ تحديث ديناميكي للرابط البرمجى في الإنتاج السحابي
+const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname.startsWith('100.115')
+  ? `http://${window.location.hostname}:4000`
+  : 'https://jaola-os.onrender.com'; // 👈 استبدل هذا برابط سيرفر الباك إند الذي يمنحه لك Render!
 
 export default function App() {
   const [activeProject, setActiveProject] = useState('sandbox_app');

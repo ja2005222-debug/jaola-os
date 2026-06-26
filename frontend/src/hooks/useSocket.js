@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 
-// 🛠️ تفعيل البروكسي العكسي لـ Vite لربط الوكلاء وبث الأكواد والملفات حياً عبر منفذ الـ Frontend
-export const socket = io({ 
+// 🛠️ تبديل ديناميكي ذكي للاتصال بالسوكيت سحابياً أو محلياً
+const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname.startsWith('100.115')
+  ? `http://${window.location.hostname}:4000`
+  : 'https://jaola-os-backend.onrender.com'; // 👈 استبدل هذا برابط سيرفر الباك إند الذي يمنحه لك Render!
+
+export const socket = io(BACKEND_URL, { 
   autoConnect: false,
   transports: ['polling', 'websocket'] 
 });

@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 
-// 🛠️ حساب عنوان الباك إند ديناميكياً لتفادي قيود الـ Localhost في الكروم بوك
-const BACKEND_URL = `http://${window.location.hostname}:4000`;
+// 🛠️ تبديل ديناميكي ذكي: يتصل محلياً بـ 4000، ويتصل سحابياً برابط سيرفر الـ Render الخاص بك
+const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname.startsWith('100.115')
+  ? `http://${window.location.hostname}:4000`
+  : 'https://jaola-os-backend.onrender.com'; // 👈 استبدل هذا برابط سيرفر الباك إند الذي يمنحه لك Render!
 
 export function useAuth(activeProject) {
   const [currentUser, setCurrentUser] = useState('guest_user');
@@ -15,7 +17,6 @@ export function useAuth(activeProject) {
 
       if (!currentToken) {
         try {
-          // استدعاء المصادقة التلقائية على الرابط الديناميكي الصحيح
           const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
