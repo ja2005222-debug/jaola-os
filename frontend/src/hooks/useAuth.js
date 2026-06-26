@@ -13,8 +13,16 @@ export function useAuth(activeProject) {
     const loginSession = async () => {
       let currentToken = localStorage.getItem('token');
       let username = localStorage.getItem('currentUser') || 'guest_user';
+      
+      // 🛡️ فحص حارس الخروج: إذا سجل المستخدم خروجه يدوياً، امنع الدخول التلقائي كضيف
+      const isLoggedOut = localStorage.getItem('loggedOut') === 'true';
 
       if (!currentToken) {
+        if (isLoggedOut) {
+          setIsAuthenticated(false);
+          return; // ابقَ بأمان على شاشة تسجيل الدخول
+        }
+
         try {
           const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
             method: 'POST',
@@ -45,11 +53,12 @@ export function useAuth(activeProject) {
   const handleAuthError = (status) => {
     if (status === 401 || status === 403) {
       localStorage.removeItem('token');
+      localStorage.removeItem('currentUser');
       setToken(null);
       setIsAuthenticated(false);
       window.location.reload(); 
     }
   };
 
-  return { currentUser, token, isAuthenticated, handleAuthError };
+  return { currentUser, token, isAuthenticated, handleAuthError, setIsAuthenticated, setCurrentUser, setToken };
 }

@@ -1,5 +1,6 @@
+
 import 'dotenv/config';
-import './dbConfig.js'; // استيراد ملف التهيئة كأول سطر على الإطلاق لتفادي الـ Hoisting الانهياري
+import './dbConfig.js'; // استيراد التهيئة كأول سطر على الإطلاق لتفادي الـ Hoisting الانهياري
 
 import express from 'express';
 import cors from 'cors';
@@ -15,15 +16,15 @@ import rateLimit from 'express-rate-limit';
 // استيراد الموديلات واجهة الاتصال بـ Gemini المشتركة
 import User from './models/User.js';
 import Project from './models/Project.js';
-import { ai } from './agents/baseAgent.js'; // استيراد عميل جوميني لطلب صور Imagen 3
 
-// استيراد الوكلاء المطورين
+// استيراد الوكلاء المطورين ومحرك الـ Runtime الجديد
 import { 
     coreClassifyIntent, 
     coreGenerateCodePlan, 
     architectReview, 
     qaVerify, 
-    deployProject 
+    deployProject,
+    JaolaAgentRuntime // 🛠️ استيراد محرك تشغيل الوكلاء
 } from './agents/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -39,6 +40,9 @@ const io = new Server(httpServer, {
 
 app.use(cors()); // فتح الـ CORS لجميع مسارات Express
 app.use(express.json());
+
+// تهيئة وإطلاق محرك تشغيل وإدارة دورة حياة الوكلاء حياً بالباك إند
+const runtime = new JaolaAgentRuntime(io);
 
 // مفتاح التحقق الصارم والذكي من نجاح الاتصال الفعلي بقاعدة البيانات
 let isDbConnected = false;
@@ -56,7 +60,7 @@ mongoose.connect(MONGO_URI)
     });
 
 // ==========================================
-// 🛡️ غلاف البيانات المحصن أمنياً (DB Isolation Wrapper)
+// 🛡_ غلاف البيانات المحصن أمنياً (DB Isolation Wrapper)
 // ==========================================
 const DB = {
     async findUser(username) {
@@ -94,40 +98,19 @@ const DB = {
 const BASE_WORKSPACE = path.resolve(__dirname, '../workspace');
 if (!fs.existsSync(BASE_WORKSPACE)) fs.mkdirSync(BASE_WORKSPACE);
 
-// 🛠️ بديل خارق لـ Imagen 3 يعتمد على محرك البث المفتوح Pollinations لتفادي قيود الـ OAuth وعقبات الـ 401 لجوجل
-async function generateAIImage(promptText, projectPath, fileName) {
-    try {
-        // تنظيف وترميز النص ليكون صالحاً للروابط الشبكية
-        const encodedPrompt = encodeURIComponent(promptText);
-        
-        // جلب صورة نيونية عالية الدقة والجمال بمقاس 1024x576 عريضة بدون أي أختام مائية
-        const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=576&nologo=true`;
+// إعادة هيكلة المسار ليكون معزولاً فيزيائياً بإنشاء مجلد مخصص لكل مستخدم وبداخله مشاريعه (True Isolation)
+const getProjectPath = (username, activeProject) => {
+    const user = username || 'guest_user';
+    const userPath = path.join(BASE_WORKSPACE, user);
+    if (!fs.existsSync(userPath)) fs.mkdirSync(userPath, { recursive: true });
 
-        console.log(`🖼️ [AI Image]: جاري رسم وتحميل صورة نيونية عالية الدقة لـ (${fileName})...`);
-        
-        // استخدام محرك Fetch المدمج في Node.js تلقائياً
-        const res = await fetch(imageUrl);
-        if (!res.ok) throw new Error(`فشل جلب الصورة من خادم التوليد: ${res.statusText}`);
-        
-        const arrayBuffer = await res.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-
-        // إنشاء مجلد الأصول إذا لم يكن موجوداً
-        const assetsDir = path.join(projectPath, 'assets');
-        if (!fs.existsSync(assetsDir)) fs.mkdirSync(assetsDir, { recursive: true });
-
-        const targetPath = path.join(projectPath, fileName);
-        fs.writeFileSync(targetPath, buffer);
-
-        console.log(`🖼️ [AI Image]: تم توليد وحفظ الصورة بنجاح في مسار المشروع: ${fileName}`);
-    } catch (e) {
-        console.error(`❌ [AI Image Error]: فشل توليد الصورة المفتوحة (${fileName}):`, e.message);
-    }
-}
-
+    const projectPath = path.join(userPath, activeProject || 'sandbox_app');
+    if (!fs.existsSync(projectPath)) fs.mkdirSync(projectPath, { recursive: true });
+    return projectPath;
+};
 
 // ==========================================
-// 🛡️ الوسائط الأمنية (Security Middlewares)
+// 🛡_ الوسائط الأمنية (Security Middlewares)
 // ==========================================
 
 const aiLimit = rateLimit({
@@ -159,95 +142,20 @@ export function verifyToken(req, res, next) {
     });
 }
 
-// وسيط مطابقة ملكية وصلاحية الوصول للمشروع مع حارس حظر الانهيار المعزول بالـ DB Wrapper
 async function validateProjectOwnership(req, res, next) {
     const { project } = req.body;
     const activeProj = project || req.query.project || 'sandbox_app';
     const username = req.user.username;
 
-    // الفحص عبر الغلاف الآمن بدلاً من الاتصال المباشر لضمان الصمود
     const projectRecord = await DB.findProject(activeProj, username);
     if (!projectRecord && activeProj !== 'sandbox_app') {
         return res.status(403).json({ error: 'غير مصرح بالوصول: هذا المشروع لا يخص حسابك.' });
     }
     
-    req.projectPath = getProjectPath(activeProj);
+    req.projectPath = getProjectPath(username, activeProj); 
     req.activeProject = activeProj;
     next();
 }
-
-function createBackupSnapshot(projectPath, fileName) {
-    const filePath = path.join(projectPath, fileName);
-    if (!fs.existsSync(filePath)) return;
-
-    const backupDir = path.join(projectPath, '.backups');
-    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
-
-    const timestamp = Date.now();
-    const backupPath = path.join(backupDir, `${fileName}.${timestamp}.bak`);
-    fs.copyFileSync(filePath, backupPath);
-
-    try {
-        const backups = fs.readdirSync(backupDir)
-            .filter(f => f.startsWith(fileName))
-            .map(f => ({ name: f, time: fs.statSync(path.join(backupDir, f)).mtimeMs }))
-            .sort((a, b) => b.time - a.time);
-
-        if (backups.length > 5) {
-            backups.slice(5).forEach(b => fs.unlinkSync(path.join(backupDir, b.name)));
-        }
-    } catch (e) {}
-}
-
-const getProjectPath = (activeProject) => {
-    const projectPath = path.join(BASE_WORKSPACE, activeProject || 'sandbox_app');
-    if (!fs.existsSync(projectPath)) fs.mkdirSync(projectPath, { recursive: true });
-    return projectPath;
-};
-
-// ==========================================
-// 🔌 تأمين اتصالات ومصادقة الـ WebSockets
-// ==========================================
-
-io.use((socket, next) => {
-    const token = socket.handshake.auth?.token;
-    if (!token) return next(new Error('صلاحية الاتصال مفقودة (Token Required)'));
-
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return next(new Error('اتصال سوكيت غير مصرح به (Unauthorized)'));
-        socket.user = user; 
-        next();
-    });
-});
-
-io.on('connection', (socket) => {
-    
-    socket.on('join_project', async ({ project }) => {
-        const username = socket.user.username;
-        const sanitizedProject = (project || 'sandbox_app').trim().toLowerCase().replace(/\s+/g, '-');
-        
-        // التحقق عبر الغلاف الآمن لحظر الانهيار الصامت
-        const projectRecord = await DB.findProject(sanitizedProject, username);
-        if (!projectRecord && sanitizedProject !== 'sandbox_app') {
-            socket.emit('log', { message: `❌ [ERROR]: غير مصرح لك بالانضمام للمشروع (${sanitizedProject}).` });
-            return;
-        }
-
-        const roomName = `${username}-${sanitizedProject}`;
-        
-        socket.rooms.forEach(room => {
-            if (room !== socket.id) socket.leave(room);
-        });
-
-        socket.join(roomName);
-        socket.roomName = roomName;
-        socket.activeProject = sanitizedProject;
-
-        const projectPath = getProjectPath(sanitizedProject);
-        emitWorkspaceFiles(roomName, projectPath, true);
-        await emitUserProjects(roomName, username, sanitizedProject);
-    });
-});
 
 const emitWorkspaceFiles = (roomName, projectPath, force = false) => {
     try {
@@ -277,12 +185,55 @@ const emitUserProjects = async (roomName, username, activeProject) => {
 };
 
 // ==========================================
+// 🔌 تأمين اتصالات ومصادقة الـ WebSockets
+// ==========================================
+
+io.use((socket, next) => {
+    const token = socket.handshake.auth?.token;
+    if (!token) return next(new Error('صلاحية الاتصال مفقودة (Token Required)'));
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return next(new Error('اتصال سوكيت غير مصرح به (Unauthorized)'));
+        socket.user = user; 
+        next();
+    });
+});
+
+io.on('connection', (socket) => {
+    
+    socket.on('join_project', async ({ project }) => {
+        const username = socket.user.username;
+        const sanitizedProject = (project || 'sandbox_app').trim().toLowerCase().replace(/\s+/g, '-');
+        
+        const projectRecord = await DB.findProject(sanitizedProject, username);
+        if (!projectRecord && sanitizedProject !== 'sandbox_app') {
+            socket.emit('log', { message: `❌ [ERROR]: غير مصرح لك بالانضمام للمشروع (${sanitizedProject}).` });
+            return;
+        }
+
+        const roomName = `${username}-${sanitizedProject}`;
+        
+        socket.rooms.forEach(room => {
+            if (room !== socket.id) socket.leave(room);
+        });
+
+        socket.join(roomName);
+        socket.roomName = roomName;
+        socket.activeProject = sanitizedProject;
+
+        const projectPath = getProjectPath(username, sanitizedProject); 
+        emitWorkspaceFiles(roomName, projectPath, true);
+        await emitUserProjects(roomName, username, sanitizedProject);
+    });
+});
+
+// ==========================================
 // 🌐 المسارات البرمجية الموثوقة (Secure Routes)
 // ==========================================
 
 app.get('/workspace', (req, res) => {
-    const { project } = req.query;
-    const projectPath = getProjectPath(project);
+    const { project, username } = req.query;
+    const projectPath = getProjectPath(username, project);
     const filePath = path.join(projectPath, 'index.html');
     if (fs.existsSync(filePath)) {
         res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
@@ -291,12 +242,10 @@ app.get('/workspace', (req, res) => {
     res.status(404).send('index.html not found');
 });
 
-// 🛠️ التعديل الشبكي الحاسم: تصفية وتنظيف مسار الملفات النسبية المرفقة بالـ Iframe لمنع الـ 403 الخاطئ للقرص
 app.get('/workspace/:file(*)', (req, res) => {
-    const { project } = req.query;
-    const projectPath = getProjectPath(project);
+    const { project, username } = req.query;
+    const projectPath = getProjectPath(username, project);
     
-    // تأمين وتنظيف المسار لمنع ثغرات الـ Path Traversal بشكل مبسط وآمن ومقاوم للشرطات المكررة
     const safeFile = path.normalize(req.params.file).replace(/^(\.\.[\/\\])+/, '').replace(/^\/+/, '');
     const filePath = path.join(projectPath, safeFile);
 
@@ -312,10 +261,17 @@ app.post('/api/auth/login', async (req, res) => {
     if (!username) return res.status(400).json({ error: 'Username required' });
     try {
         const sanitizedUser = username.trim().toLowerCase().replace(/\s+/g, '_');
-        
-        // استدعاء المستخدم عبر الغلاف الآمن
-        const userRecord = await DB.findUser(sanitizedUser);
-        const tokenUserPayload = { id: userRecord.id || userRecord._id, username: sanitizedUser, email: userRecord.email };
+        let tokenUserPayload = { id: 'guest_user_id', username: sanitizedUser, email: `${sanitizedUser}@jaola-twin.io` };
+
+        if (isDbConnected && mongoose.connection.readyState === 1) {
+            try {
+                let userRecord = await User.findOne({ username: sanitizedUser });
+                if (!userRecord) {
+                    userRecord = await User.create({ username: sanitizedUser, email: `${sanitizedUser}@jaola-twin.io` });
+                }
+                tokenUserPayload = { id: userRecord._id, username: userRecord.username, email: userRecord.email };
+            } catch (e) {}
+        }
 
         const token = jwt.sign(tokenUserPayload, JWT_SECRET, { expiresIn: '7d' });
         res.json({ success: true, token, currentUser: sanitizedUser, activeProject: 'sandbox_app' });
@@ -334,13 +290,12 @@ app.get('/api/file-content', verifyToken, async (req, res) => {
         const username = req.user.username;
         const activeProj = project || 'sandbox_app';
 
-        // التحقق عبر الغلاف الآمن
         const projectRecord = await DB.findProject(activeProj, username);
         if (!projectRecord && activeProj !== 'sandbox_app') {
             return res.status(403).json({ error: 'Access Denied: You do not own this project.' });
         }
 
-        const projectPath = getProjectPath(activeProj);
+        const projectPath = getProjectPath(username, activeProj);
         const filePath = path.resolve(projectPath, fileName || 'index.html');
 
         if (!filePath.startsWith(projectPath)) {
@@ -365,7 +320,6 @@ app.post('/api/file-content/save', verifyToken, validateProjectOwnership, async 
             return res.status(403).json({ error: 'Access denied' });
         }
 
-        createBackupSnapshot(projectPath, fileName);
         fs.writeFileSync(filePath, content);
         
         const roomName = `${req.user.username}-${req.activeProject}`;
@@ -378,131 +332,29 @@ app.post('/api/file-content/save', verifyToken, validateProjectOwnership, async 
     }
 });
 
+// 🛠️ تبسيط مسار الشات بالكامل وتفويض محرك تشغيل الوكلاء (JAR Engine) بالإدارة الذاتية والمستقلة لخطوات التنفيذ
 app.post('/api/chat', verifyToken, aiLimit, validateProjectOwnership, async (req, res) => {
     const { message } = req.body;
     const projectPath = req.projectPath;
     const roomName = `${req.user.username}-${req.activeProject}`;
     
-    res.json({ accepted: true });
+    res.json({ accepted: true }); // رد فوري لمنع تجمد المتصفح
 
-    const sendState = (states) => {
-        io.to(roomName).emit('agent_states', states);
-    };
+    // تجميع الوكلاء في حزمة واحدة لتفويضها للـ Runtime
+    const agents = { coreClassifyIntent, coreGenerateCodePlan, architectReview, qaVerify, deployProject };
 
     try {
-        sendState({ planner: 'running', architect: 'waiting', coder: 'waiting', qa: 'waiting', deploy: 'waiting' });
-        io.to(roomName).emit('log', { message: `⚙️ [SYSTEM]: جاري معالجة طلبك بمسار آمن ومعزول ومصادق بالكامل...` });
-        
-        const intent = await coreClassifyIntent(message);
-        
-        if (intent.error) {
-            sendState({ planner: 'error', architect: 'waiting', coder: 'waiting', qa: 'waiting', deploy: 'waiting' });
-            io.to(roomName).emit('log', { message: `❌ [ERROR]: خطأ في وكيل الـ Planner: ${intent.details}` });
-            return;
-        }
-
-        if (intent.type === "DEPLOY_APPROVAL") {
-            sendState({ planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'running' });
-            io.to(roomName).emit('log', { message: `🚀 [DEPLOY]: تم استقبال موافقتك! جاري النشر السحابي الآن...` });
-            
-            deployProject({ projectPath, activeProject: req.activeProject, currentUser: req.user.username }, io, () => {
-                emitUserProjects(roomName, req.user.username, req.activeProject);
-                sendState({ planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
-            });
-            return;
-        }
-
-        if (intent.type === "GENERAL_CHAT") {
-            sendState({ planner: 'completed', architect: 'waiting', coder: 'waiting', qa: 'waiting', deploy: 'waiting' });
-            io.to(roomName).emit('log', { message: `🤖 [INFO]: ${intent.reply}` });
-            return;
-        }
-
-        sendState({ planner: 'completed', architect: 'running', coder: 'waiting', qa: 'waiting', deploy: 'waiting' });
-        const category = intent.category;
-
-        let currentCodeContext = "";
-        try {
-            const files = fs.readdirSync(projectPath);
-            files.forEach(f => {
-                if (['index.html', 'styles.css', 'script.js'].includes(f)) {
-                    currentCodeContext += `\n--- FILE: ${f} ---\n${fs.readFileSync(path.join(projectPath, f), 'utf-8')}\n`;
-                }
-            });
-        } catch (e) {}
-
-        io.to(roomName).emit('log', { message: `🧠 [PLANNER]: تم التحقق من المجال المعتمد (${category}). جاري صياغة خطة التعديل التراكمي...` });
-        
-        sendState({ planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
-        io.to(roomName).emit('log', { message: `💻 [CODER]: جاري الآن توليد وبث الأكواد حياً...` });
-        
-        const plan = await coreGenerateCodePlan(
+        // إطلاق المهمة البرمجية بأعلى موثوقية وتناسق وحلقة تصحيح ارتدادية ذاتية!
+        await runtime.executeMission(
             message, 
-            currentCodeContext, 
-            category, 
-            [], 
-            (chunkText) => {
-                io.to(roomName).emit('code_stream_chunk', chunkText);
-            }
+            projectPath, 
+            req.user.username, 
+            req.activeProject, 
+            roomName, 
+            agents
         );
-
-        if (plan.error) {
-            sendState({ planner: 'completed', architect: 'completed', coder: 'error', qa: 'waiting', deploy: 'waiting' });
-            io.to(roomName).emit('log', { message: `❌ [ERROR]: خطأ في وكيل الـ Coder: ${plan.details}` });
-            return;
-        }
-
-        sendState({ planner: 'completed', architect: 'running', coder: 'completed', qa: 'waiting', deploy: 'waiting' });
-        io.to(roomName).emit('log', { message: `🏗️ [ARCHITECT]: جاري مراجعة قواعد البناء البصري...` });
-        
-        const archCheck = architectReview(plan);
-        if (!archCheck.approved) {
-            sendState({ planner: 'completed', architect: 'error', coder: 'completed', qa: 'waiting', deploy: 'waiting' });
-            io.to(roomName).emit('log', { message: `⚠️ [ERROR]: فشل مطابقة المعايير الهيكلية: ${archCheck.feedback}` });
-            return;
-        }
-
-        sendState({ planner: 'completed', architect: 'completed', coder: 'completed', qa: 'running', deploy: 'waiting' });
-        io.to(roomName).emit('log', { message: `🔍 [QA]: إجراء فحوصات الجودة والترابط محلياً...` });
-        
-        const qaCheck = qaVerify(plan);
-        qaCheck.logs.forEach(logMsg => {
-            io.to(roomName).emit('log', { message: `🔍 [QA REPORT]: ${logMsg}` });
-        });
-        if (!qaCheck.passed) {
-            sendState({ planner: 'completed', architect: 'completed', coder: 'completed', qa: 'error', deploy: 'waiting' });
-            io.to(roomName).emit('log', { message: `❌ [ERROR]: تم إلغاء حقن الكود لوجود أخطاء هيكلية رصدها وكيل الجودة.` });
-            return;
-        }
-
-        plan.files.forEach(file => {
-            if (['index.html', 'styles.css', 'script.js'].includes(file.name) && typeof file.content === 'string') {
-                createBackupSnapshot(projectPath, file.name); 
-                const filePath = path.join(projectPath, file.name);
-                fs.writeFileSync(filePath, file.content);
-            }
-        });
-
-        // 🖼️ التوليد والحقن الحركي للصور المستهدفة بـ Imagen 3 إن طلبت في خطة المبرمج
-        if (plan.images && Array.isArray(plan.images)) {
-            sendState({ planner: 'completed', architect: 'completed', coder: 'running', qa: 'completed', deploy: 'waiting' });
-            io.to(roomName).emit('log', { message: `🖼️ [SYSTEM]: جاري الاستعانة بـ Imagen 3 لتوليد وحقن الصور الفنية حياً بالخلفية...` });
-            
-            for (const img of plan.images) {
-                io.to(roomName).emit('log', { message: `🖼️ [Imagen 3]: جاري رسم وتفصيل صورة (${img.fileName}) بأعلى دقة نيون...` });
-                await generateAIImage(img.prompt, projectPath, img.fileName);
-            }
-        }
-
-        sendState({ planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'waiting' });
-        io.to(roomName).emit('log', { message: `✨ [SUCCESS]: تم التحديث والنسخ الاحتياطي وحقن الصور وتعديل المعاينة بنجاح!` });
-        
-        emitWorkspaceFiles(roomName, projectPath, true);
-        await emitUserProjects(roomName, req.user.username, req.activeProject);
-        
     } catch (error) {
-        sendState({ planner: 'error', coder: 'error', qa: 'error' });
-        io.to(roomName).emit('log', { message: `❌ [ERROR]: حدث خطأ في منصة المعالجة: ${error.message}` });
+        io.to(roomName).emit('log', { message: `❌ [ERROR]: فشل إطلاق المهمة البرمجية: ${error.message}` });
     }
 });
 

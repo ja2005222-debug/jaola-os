@@ -4,16 +4,13 @@ import { useSocket, socket } from './hooks/useSocket.js';
 import { PreviewFrame } from './components/PreviewFrame.jsx';
 import Editor from '@monaco-editor/react';
 
-// حساب عنوان الباك إند ديناميكياً لتفادي مشاكل الـ Localhost في الكروم بوك
-const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname.startsWith('100.115')
-  ? `http://${window.location.hostname}:4000`
-  : 'https://jaola-os.onrender.com';
+const BACKEND_URL = `http://${window.location.hostname}:4000`;
 
 export default function App() {
-  const [activeProject, setActiveProject] = useState('sandbox_app');
+  const [projectTrigger, setProjectTrigger] = useState('sandbox_app');
   
   // 🛡️ استدعاء خطاف المصادقة وحارس الـ JWT
-  const { currentUser, token, isAuthenticated, handleAuthError } = useAuth(activeProject);
+  const { currentUser: authUser, token, isAuthenticated, handleAuthError, setIsAuthenticated, setCurrentUser, setToken } = useAuth(projectTrigger);
 
   // === 📊 حالات الـ State ===
   const [activeFile, setActiveFile] = useState('index.html');
@@ -22,31 +19,38 @@ export default function App() {
   const [viewMode, setViewMode] = useState('desktop'); 
   const [prompt, setPrompt] = useState('');
   const [previewTimestamp, setPreviewTimestamp] = useState(Date.now());
-  const [projects, setProjects] = useState([]);
-  const [vercelUrl, setVercelUrl] = useState('');
 
   // نائبة المشاريع المدمجة لتفادي حظر المتصفحات للـ prompts
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
 
-  // مصفوفة فقاعات المحادثة التفاعلية
-  const [chatMessages, setChatMessages] = useState([
-    { sender: 'ai', text: '👋 مرحباً بك في نواة JAOLA OS الذكية! أنا مستشارك الذكاء الاصطناعي، كيف يمكنني مساعدتك في تطوير وتحديث شفرات مشروعك اليوم؟' }
-  ]);
+  // حقول شاشة تسجيل الدخول التفاعلية المخصصة
+  const [loginUsername, setLoginUsername] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const logsEndRef = useRef(null);
   const chatEndRef = useRef(null);
 
-  // 🔌 استهلاك حالات السوكيت المغلفة والمعزولة والنشطة بالبروكسي العكسي لـ Vite بآلية ترتيب الاتصال الآمنة
+  // 🔌 استهلاك حالات السوكيت والشات والملفات الجاهزة والمفروزة مسبقاً من الـ useSocket
   const { 
     files, 
     logs, 
     streamingContent, 
     agentStates, 
+    projects, 
+    activeProject, 
+    currentUser, 
+    vercelUrl, 
+    chatMessages, // استيراد المحادثة المفروزة
+    setChatMessages,
+    setProjects, 
+    setActiveProject, 
+    setSocketUser, 
+    setVercelUrl, 
     setStreamingContent, 
     setFiles, 
     setLogs 
-  } = useSocket(currentUser, activeProject, isAuthenticated, handleAuthError);
+  } = useSocket(isAuthenticated, handleAuthError);
 
   // استلام إشارة تحديث البرفيو وتخطي الكاش عبر الأحداث المحلية المعزولة
   useEffect(() => {
@@ -149,6 +153,8 @@ export default function App() {
         return;
       }
       setActiveProject(projName);
+      localStorage.setItem('activeProject', projName);
+      socket.emit('join_project', { project: projName });
     } catch (err) {
       console.error(err);
     }
@@ -171,41 +177,49 @@ export default function App() {
         return;
       }
       setActiveProject(sanitized);
+      localStorage.setItem('activeProject', sanitized);
+      socket.emit('join_project', { project: sanitized });
     } catch (err) {
       console.error(err);
     }
   };
 
-  // === 🔐 مصادقة حركية تلقائية مخصصة فقط للتوكن والجلسة دون تضارب مع السوكيت ===
-  useEffect(() => {
-    const initializeSecureSession = async () => {
-      let activeToken = localStorage.getItem('token');
-      let username = localStorage.getItem('currentUser') || 'guest_user';
-
-      if (!activeToken) {
-        try {
-          const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username })
-          });
-          const data = await res.json();
-          if (data.success && data.token) {
-            activeToken = data.token;
-            localStorage.setItem('token', data.token);
-            localStorage.setItem('currentUser', data.currentUser);
-            setCurrentUser(data.currentUser);
-          }
-        } catch (err) {
-          console.error('Failed to initialize secure session:', err);
-        }
-      } else {
-        setCurrentUser(username);
+  const handleManualLogin = async (e) => {
+    e.preventDefault();
+    if (!loginUsername.trim()) return;
+    setIsLoggingIn(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: loginUsername })
+      });
+      const data = await res.json();
+      if (data.success && data.token) {
+        localStorage.removeItem('loggedOut'); 
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('currentUser', data.currentUser);
+        setToken(data.token);
+        setCurrentUser(data.currentUser);
+        setIsAuthenticated(true);
+        window.location.reload(); 
       }
-    };
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
 
-    initializeSecureSession();
-  }, [activeProject]);
+  const handleLogout = () => {
+    localStorage.setItem('loggedOut', 'true'); 
+    localStorage.removeItem('token');
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('activeProject');
+    setToken(null);
+    setIsAuthenticated(false);
+    window.location.reload();
+  };
 
   const getLogColorClass = (text) => {
     if (text.includes('[SUCCESS]')) return 'text-emerald-400 font-semibold';
@@ -214,6 +228,46 @@ export default function App() {
     if (text.includes('[SYSTEM]')) return 'text-sky-400';
     return 'text-slate-300';
   };
+
+  const getFileLanguage = (fileName) => {
+    if (fileName.endsWith('.html')) return 'html';
+    if (fileName.endsWith('.css')) return 'css';
+    if (fileName.endsWith('.js')) return 'javascript';
+    if (fileName.endsWith('.json')) return 'json';
+    return 'plaintext';
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#060913] text-slate-100 flex items-center justify-center p-6 relative overflow-hidden">
+        <div className="absolute top-[-100px] left-[-100px] w-[500px] h-[500px] rounded-full bg-cyan-500/5 blur-[120px] pointer-events-none"></div>
+        <div className="absolute bottom-[-150px] right-[-100px] w-[600px] h-[600px] rounded-full bg-indigo-500/5 blur-[140px] pointer-events-none"></div>
+        
+        <form onSubmit={handleManualLogin} className="max-w-md w-full bg-[#0d121f]/75 border border-slate-800 p-8 rounded-2xl text-center shadow-2xl backdrop-blur-xl relative z-10">
+          <div className="text-4xl mb-4 animate-bounce">⚡</div>
+          <h2 className="text-xl font-black mb-1 bg-gradient-to-r from-cyan-400 to-indigo-500 bg-clip-text text-transparent">JAOLA OS Portal</h2>
+          <p className="text-[10px] text-slate-500 mb-6 leading-relaxed">يرجى تسجيل الدخول باسم مستخدم فريد لإنشاء وتأمين مساحة عملك المعزولة بالكامل سحابياً.</p>
+          
+          <input 
+            type="text" 
+            required
+            value={loginUsername}
+            onChange={(e) => setLoginUsername(e.target.value)}
+            placeholder="أدخل اسم المستخدم الخاص بك (بالإنجليزي)..."
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-xs text-slate-200 outline-none focus:ring-1 focus:ring-cyan-500 mb-4 font-semibold text-center placeholder-slate-600"
+          />
+
+          <button 
+            type="submit" 
+            disabled={isLoggingIn}
+            className="w-full bg-gradient-to-r from-cyan-500 to-indigo-600 text-white font-extrabold text-xs py-3.5 rounded-xl hover:scale-[1.01] hover:opacity-95 shadow-lg shadow-cyan-500/10 transition-all duration-300"
+          >
+            {isLoggingIn ? 'جاري الاتصال والتحقق...' : 'تسجيل الدخول والتشغيل 🚀'}
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#060913] text-slate-100 flex flex-col font-sans relative overflow-x-hidden selection:bg-cyan-500 selection:text-slate-900">
@@ -228,23 +282,21 @@ export default function App() {
           <div className="bg-gradient-to-tr from-cyan-500 to-indigo-600 p-2.5 rounded-xl text-white shadow-lg animate-pulse">⚡</div>
           <div>
             <h1 className="text-base font-bold">JAOLA OS <span className="text-[10px] text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded-md border border-cyan-900/40">v1.9</span></h1>
-            <p className="text-[9px] text-emerald-400 font-bold tracking-wider mt-0.5">● ENTERPRISE SECURITY SECURE</p>
+            <p className="text-[9px] text-emerald-400 font-bold mt-0.5">👤 USER: {currentUser.toUpperCase()}</p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto justify-end">
           {vercelUrl && <a href={vercelUrl} target="_blank" rel="noreferrer" className="text-xs bg-emerald-950/40 border border-emerald-900/60 text-emerald-400 px-3.5 py-2.5 rounded-xl hover:scale-[1.01] transition-all">🌍 الرابط المنشور حياً</a>}
-          <button className="text-xs bg-[#0F172A]/80 border border-slate-800 text-slate-300 px-3.5 py-2.5 rounded-xl hover:bg-slate-900 transition-all">😺 GitHub Login</button>
-          <button className="text-xs bg-white text-slate-950 px-3.5 py-2.5 rounded-xl font-bold hover:bg-slate-100 shadow-lg transition-all">🌐 Google Login</button>
+          
+          <button onClick={handleLogout} className="text-xs bg-[#1A0B13]/80 border border-rose-950 text-rose-400 px-3.5 py-2.5 rounded-xl hover:bg-rose-950/30 transition-all font-bold">
+            🚪 خروج
+          </button>
 
           <div className="flex items-center gap-2.5 bg-[#0D121F] border border-slate-800 rounded-xl px-3 py-2 min-w-[200px] shrink-0">
             <span className="text-[10px] text-slate-500 font-bold shrink-0">المشروع الحالي:</span>
             <select value={activeProject} onChange={(e) => handleSwitchProject(e.target.value)} className="bg-transparent text-xs text-slate-200 outline-none border-0 cursor-pointer font-bold w-full">
-              {projects.length === 0 ? (
-                <option value="sandbox_app" className="bg-[#0D121F]">sandbox_app</option>
-              ) : (
-                projects.map((p) => <option key={p} value={p} className="bg-[#0D121F]">{p}</option>)
-              )}
+              {projects.map((p) => <option key={p} value={p} className="bg-[#0D121F]">{p}</option>)}
             </select>
           </div>
 
@@ -291,7 +343,7 @@ export default function App() {
 
             <div className="flex-1 flex justify-center items-center bg-slate-950 rounded-xl overflow-hidden min-h-[300px] relative border border-slate-900">
               {activeTab === 'preview' ? (
-                <PreviewFrame activeProject={activeProject} previewTimestamp={previewTimestamp} viewMode={viewMode} streamingContent={streamingContent} />
+                <PreviewFrame activeProject={activeProject} previewTimestamp={previewTimestamp} viewMode={viewMode} streamingContent={streamingContent} currentUser={currentUser} />
               ) : (
                 <div className="w-full h-full flex flex-col p-4">
                   <div className="flex items-center justify-between mb-2 text-xs text-slate-500">
@@ -304,12 +356,7 @@ export default function App() {
                         <div key={i} className="h-5">{i + 1}</div>
                       ))}
                     </div>
-                    <textarea
-                      value={editorContent}
-                      onChange={(e) => setEditorContent(e.target.value)}
-                      className="flex-1 bg-transparent p-4 font-mono text-xs text-slate-200 outline-none resize-none leading-relaxed overflow-auto scrollbar-thin"
-                      spellCheck="false"
-                    />
+                    <textarea value={editorContent} onChange={(e) => setEditorContent(e.target.value)} className="flex-1 bg-transparent p-4 font-mono text-xs text-slate-200 outline-none resize-none leading-relaxed overflow-auto scrollbar-thin" spellCheck="false" />
                   </div>
                 </div>
               )}
@@ -355,7 +402,7 @@ export default function App() {
         </div>
       )}
 
-      {/* الـ Timeline */}
+      {/* رفع وتوسيع شاشة السجلات (Log Terminal) بالأسفل لتكون بارزة ومقروءة ومكشوفة بالكامل */}
       <footer className="border-t border-slate-900 bg-[#090D16]/50 p-6 relative z-10">
         <div className="max-w-[1700px] w-full mx-auto">
           <h3 className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">⏱️ Stream Timeline Log</h3>
@@ -489,7 +536,7 @@ function AgentNetworkGraph({ states }) {
         return 'border-rose-500 bg-rose-950/30 text-rose-400 shadow-[0_0_20px_rgba(239,68,68,0.4)] animate-bounce';
       case 'waiting':
       default:
-        return 'border-slate-800/80 bg-slate-900/20 text-slate-500 hover:border-slate-700/60 hover:text-slate-400 transition-all';
+        return 'border-slate-900/80 bg-slate-950/40 text-slate-600 opacity-60';
     }
   };
 
@@ -545,7 +592,7 @@ function AgentNetworkGraph({ states }) {
               </div>
 
               {index < agents.length - 1 && (
-                <div className="flex justify-center items-center py-2 xl:py-0 xl:px-2">
+                <div className="flex justify-center items-center py-2 xl:py-0 xl:px-2 shrink-0">
                   <span className={`text-xl xl:text-2xl ${getArrowStyle(currentState)}`}>
                     →
                   </span>
