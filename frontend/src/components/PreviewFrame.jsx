@@ -1,5 +1,10 @@
 import React from 'react';
 
+// حساب رابط الباك إند ديناميكياً للبرفيو ليعمل سحابياً ومحلياً تلقائياً
+const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname.startsWith('100.115')
+  ? `http://${window.location.hostname}:4000`
+  : 'https://jaola-os.onrender.com';
+
 export function PreviewFrame({ activeProject, previewTimestamp, viewMode, streamingContent }) {
   const getIframeWidthClass = () => {
     if (viewMode === 'tablet') return 'w-[768px] max-w-full';
@@ -7,8 +12,7 @@ export function PreviewFrame({ activeProject, previewTimestamp, viewMode, stream
     return 'w-full';
   };
 
-  // 🛠️ الحل الجذري الشامل: حساب عنوان المعاينة ديناميكياً ليعمل من الـ IP المباشر والـ Localhost معاً دون تضارب
-  const directPreviewUrl = `http://${window.location.hostname}:4000/workspace/index.html?project=${activeProject}&t=${previewTimestamp}`;
+  const directPreviewUrl = `${BACKEND_URL}/workspace/index.html?project=${activeProject}&t=${previewTimestamp}`;
 
   return (
     <div className="w-full h-full relative flex justify-center items-center">

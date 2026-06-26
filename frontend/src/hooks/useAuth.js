@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 
-// 🛠️ تبديل ديناميكي ذكي: يتصل محلياً بـ 4000، ويتصل سحابياً برابط سيرفر الـ Render الخاص بك
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname.startsWith('100.115')
   ? `http://${window.location.hostname}:4000`
-  : 'https://jaola-os.onrender.com'; // 👈 استبدل هذا برابط سيرفر الباك إند الذي يمنحه لك Render!
+  : 'https://jaola-os.onrender.com';
 
 export function useAuth(activeProject) {
   const [currentUser, setCurrentUser] = useState('guest_user');

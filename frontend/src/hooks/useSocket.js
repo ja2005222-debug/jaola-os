@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 
-// 🛠️ تبديل ديناميكي ذكي للاتصال بالسوكيت سحابياً أو محلياً
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname.startsWith('100.115')
   ? `http://${window.location.hostname}:4000`
-  : 'https://jaola-os.onrender.com'; // 👈 استبدل هذا برابط سيرفر الباك إند الذي يمنحه لك Render!
+  : 'https://jaola-os.onrender.com';
 
 export const socket = io(BACKEND_URL, { 
   autoConnect: false,
@@ -26,40 +25,51 @@ export function useSocket(currentUser, activeProject, isAuthenticated, handleAut
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    socket.off('workspace_files').on('workspace_files', (workspaceFiles) => {
-      setFiles(workspaceFiles);
-    });
+    const token = localStorage.getItem('token');
+    if (token) {
+      socket.auth = { token };
 
-    socket.off('preview_updated').on('preview_updated', (data) => {
-      setStreamingContent('');
-      window.dispatchEvent(new CustomEvent('preview_updated', { detail: data }));
-    });
+      // 🛠️ الخطوة الأهم: تسجيل وتفعيل جميع المستمعات أولاً لضمان عدم فوات أي حدث برمجى
+      socket.off('workspace_files').on('workspace_files', (workspaceFiles) => {
+        setFiles(workspaceFiles);
+      });
 
-    socket.off('code_stream_chunk').on('code_stream_chunk', (chunk) => {
-      setStreamingContent((prev) => prev + chunk);
-    });
+      socket.off('preview_updated').on('preview_updated', (data) => {
+        setStreamingContent('');
+        window.dispatchEvent(new CustomEvent('preview_updated', { detail: data }));
+      });
 
-    socket.off('agent_states').on('agent_states', (states) => {
-      setAgentStates(states);
-    });
+      socket.off('code_stream_chunk').on('code_stream_chunk', (chunk) => {
+        setStreamingContent((prev) => prev + chunk);
+      });
 
-    socket.off('log').on('log', (newLog) => {
-      setLogs((prev) => [...prev.slice(-100), newLog]);
-    });
+      socket.off('agent_states').on('agent_states', (states) => {
+        setAgentStates(states);
+      });
 
-    socket.off('connect_error').on('connect_error', (err) => {
-      console.error('Socket Connection Rejected:', err.message);
-      localStorage.removeItem('token');
-      localStorage.removeItem('currentUser');
-      
-      setLogs((prev) => [...prev, { message: `⚠️ [SYSTEM]: تم رصد توكن منتهي أو غير صالح. جاري إعادة تهيئة الجلسة أمنياً...` }]);
-      
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
-    });
+      socket.off('log').on('log', (newLog) => {
+        setLogs((prev) => [...prev.slice(-100), newLog]);
+      });
+
+      socket.off('connect_error').on('connect_error', (err) => {
+        console.error('Socket Connection Rejected:', err.message);
+        localStorage.removeItem('token');
+        localStorage.removeItem('currentUser');
+        setLogs((prev) => [...prev, { message: `⚠️ [SYSTEM]: تم رصد توكن منتهي أو غير صالح. جاري إعادة تهيئة الجلسة...` }]);
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
+      });
+
+      // 🛠️ الاتصال وإرسال طلب الانضمام للروم بعد تأمين تفعيل جميع المستمعات بنجاح
+      socket.connect();
+      socket.emit('join_project', { project: activeProject });
+    }
 
     return () => {
+      if (socket.connected) {
+        socket.disconnect();
+      }
       socket.off('workspace_files');
       socket.off('preview_updated');
       socket.off('code_stream_chunk');
