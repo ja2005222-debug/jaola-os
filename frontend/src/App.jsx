@@ -1,15 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
 import { useAuth } from './hooks/useAuth.js';
-// استيراد خطاف السوكيت وكائن السوكيت الموحد والمشترك معاً لمنع التضارب والتعطل
 import { useSocket, socket } from './hooks/useSocket.js';
 import { PreviewFrame } from './components/PreviewFrame.jsx';
 import Editor from '@monaco-editor/react';
 
-
-// 🛠️ تحديث ديناميكي للرابط البرمجى في الإنتاج السحابي
-const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname.startsWith('100.115')
-  ? `http://${window.location.hostname}:4000`
-  : 'https://jaola-os.onrender.com'; // 👈 استبدل هذا برابط سيرفر الباك إند الذي يمنحه لك Render!
+const BACKEND_URL = `http://${window.location.hostname}:4000`;
 
 export default function App() {
   const [activeProject, setActiveProject] = useState('sandbox_app');
@@ -39,7 +34,7 @@ export default function App() {
   const logsEndRef = useRef(null);
   const chatEndRef = useRef(null);
 
-  // 🔌 استهلاك حالات السوكيت المغلفة والمعزولة والنشطة بالاتصال المباشر لـ useSocket
+  // 🔌 استهلاك حالات السوكيت المغلفة والمعزولة والنشطة بالبروكسي العكسي لـ Vite
   const { 
     files, 
     logs, 
@@ -191,48 +186,20 @@ export default function App() {
     }
   };
 
-  // === 🔐 مصادقة حركية تلقائية لتفعيل السيرفر ===
-  useEffect(() => {
-    const initializeSecureSession = async () => {
-      let activeToken = localStorage.getItem('token');
-      let username = localStorage.getItem('currentUser') || 'guest_user';
-
-      if (!activeToken) {
-        try {
-          const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username })
-          });
-          const data = await res.json();
-          if (data.success && data.token) {
-            activeToken = data.token;
-            localStorage.setItem('token', data.token);
-            localStorage.setItem('currentUser', data.currentUser);
-            setCurrentUser(data.currentUser);
-          }
-        } catch (err) {
-          console.error('Failed to initialize secure session:', err);
-        }
-      }
-
-      if (activeToken) {
-        socket.auth = { token: activeToken };
-        socket.connect();
-        socket.emit('join_project', { project: activeProject });
-        // 🛠️ تم إزالة السطر المسبب للـ Reference Error والتعطل الصامت هنا بنجاح
-      }
-    };
-
-    initializeSecureSession();
-  }, [activeProject]);
-
   const getLogColorClass = (text) => {
     if (text.includes('[SUCCESS]')) return 'text-emerald-400 font-semibold';
     if (text.includes('[ERROR]')) return 'text-rose-400 font-bold';
     if (text.includes('[QA REPORT]')) return 'text-amber-400 font-medium';
     if (text.includes('[SYSTEM]')) return 'text-sky-400';
     return 'text-slate-300';
+  };
+
+  const getFileLanguage = (fileName) => {
+    if (fileName.endsWith('.html')) return 'html';
+    if (fileName.endsWith('.css')) return 'css';
+    if (fileName.endsWith('.js')) return 'javascript';
+    if (fileName.endsWith('.json')) return 'json';
+    return 'plaintext';
   };
 
   return (
@@ -243,22 +210,23 @@ export default function App() {
       <div className="absolute bottom-[-200px] right-[-100px] w-[700px] h-[700px] rounded-full bg-indigo-500/5 blur-[180px] pointer-events-none"></div>
       <div className="absolute top-[40%] left-[50%] -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full bg-violet-500/3 blur-[140px] pointer-events-none"></div>
 
-      <header className="border-b border-slate-900/60 bg-[#070b14]/90 backdrop-blur-md px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 sticky top-0 z-50">
+      {/* الهيدر المطور بأبعاد عريضة صريحة متجاوبة للكومبيوتر والجوال */}
+      <header className="border-b border-slate-900/60 bg-[#070b14]/90 backdrop-blur-md px-4 sm:px-6 py-4 flex flex-col xl:flex-row items-center justify-between gap-4 sticky top-0 z-50">
         <div className="flex items-center gap-3">
           <div className="bg-gradient-to-tr from-cyan-500 to-indigo-600 p-2.5 rounded-xl text-white shadow-lg animate-pulse">⚡</div>
           <div>
-            <h1 className="text-base font-bold">JAOLA OS <span className="text-[10px] text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded-md border border-cyan-900/40">v1.9</span></h1>
+            <h1 className="text-base font-bold">JAOLA OS <span className="text-[10px] text-cyan-400 bg-cyan-950 px-2 py-0.5 rounded-md border border-cyan-900/40">v1.9</span></h1>
             <p className="text-[9px] text-emerald-400 font-bold tracking-wider mt-0.5">● ENTERPRISE SECURITY SECURE</p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto justify-end">
-          {vercelUrl && <a href={vercelUrl} target="_blank" rel="noreferrer" className="text-xs bg-emerald-950/40 border border-emerald-900/60 text-emerald-400 px-3.5 py-2.5 rounded-xl hover:scale-[1.01] transition-all">🌍 الرابط المنشور حياً</a>}
-          <button className="text-xs bg-[#0F172A]/80 border border-slate-800 text-slate-300 px-3.5 py-2.5 rounded-xl hover:bg-slate-900 transition-all">😺 GitHub Login</button>
-          <button className="text-xs bg-white text-slate-950 px-3.5 py-2.5 rounded-xl font-bold hover:bg-slate-100 shadow-lg transition-all">🌐 Google Login</button>
+        <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto justify-center sm:justify-end">
+          {vercelUrl && <a href={vercelUrl} target="_blank" rel="noreferrer" className="text-xs bg-emerald-950/40 border border-emerald-900/60 text-emerald-400 px-3 py-2 rounded-xl hover:scale-[1.01] transition-all">🌍 الرابط المنشور حياً</a>}
+          <button className="text-xs bg-[#0F172A]/80 border border-slate-800 text-slate-300 px-3.5 py-2 rounded-xl hover:bg-slate-900 transition-all">😺 GitHub Login</button>
+          <button className="text-xs bg-white text-slate-950 px-3.5 py-2 rounded-xl font-bold hover:bg-slate-100 shadow-lg transition-all">🌐 Google Login</button>
 
-          <div className="flex items-center gap-2.5 bg-[#0D121F] border border-slate-800 rounded-xl px-3 py-2 min-w-[200px] shrink-0">
-            <span className="text-[10px] text-slate-500 font-bold shrink-0">المشروع الحالي:</span>
+          <div className="flex items-center gap-2 bg-[#0D121F] border border-slate-800 rounded-xl px-3 py-2 min-w-[180px] shrink-0">
+            <span className="text-[10px] text-slate-500 font-bold shrink-0">المشروع:</span>
             <select value={activeProject} onChange={(e) => handleSwitchProject(e.target.value)} className="bg-transparent text-xs text-slate-200 outline-none border-0 cursor-pointer font-bold w-full">
               {projects.length === 0 ? (
                 <option value="sandbox_app" className="bg-[#0D121F]">sandbox_app</option>
@@ -270,15 +238,18 @@ export default function App() {
 
           <button 
             onClick={() => setShowProjectModal(true)}
-            className="text-xs bg-gradient-to-r from-cyan-500 to-indigo-500 text-slate-950 font-extrabold px-4 py-2.5 rounded-xl shadow-lg shadow-cyan-500/10 hover:scale-[1.02] hover:shadow-cyan-500/25 transition-all duration-300 shrink-0 border border-cyan-400/20"
+            className="text-xs bg-gradient-to-r from-cyan-500 to-indigo-500 text-slate-950 font-extrabold px-4 py-2 rounded-xl shadow-lg hover:scale-[1.02] transition-all duration-300 shrink-0 border border-cyan-400/20"
           >
             + مشروع جديد
           </button>
         </div>
       </header>
 
-      <main className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-5 gap-6 max-w-[1750px] w-full mx-auto">
-        <section className="lg:col-span-1 flex flex-col bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-4.5 shadow-2xl backdrop-blur-xl h-[calc(100vh-230px)] min-h-[450px]">
+      {/* مساحة العمل الرئيسية المتجاوبة كلياً */}
+      <main className="flex-1 p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-5 gap-6 max-w-[1750px] w-full mx-auto relative z-10">
+        
+        {/* 1. العمود الأيسر (1/5): شاشة المحادثة (تم ضبط الارتفاع ليكون متجاوباً على الهواتف والأجهزة الكبيرة) */}
+        <section className="lg:col-span-1 flex flex-col bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-4.5 shadow-2xl backdrop-blur-xl h-[450px] lg:h-[calc(100vh-230px)]">
           <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-1 scrollbar-thin">
             {chatMessages.map((msg, idx) => (
               <div key={idx} className={`flex ${msg.sender === 'user' ? 'justify-start' : 'justify-end'}`}>
@@ -294,13 +265,14 @@ export default function App() {
           </div>
 
           <div className="border-t border-slate-900/60 pt-3">
-            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendPrompt(); } }} placeholder="اكتب فكرتك أو اطلب تعديلاً هنا..." className="w-full h-20 bg-slate-950 border border-slate-900 rounded-xl p-3 text-xs text-slate-200 placeholder-slate-600 focus:ring-1 focus:ring-cyan-500 outline-none resize-none leading-relaxed" />
+            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendPrompt(); } }} placeholder="اكتب فكرتك أو اطلب تعديلاً هنا..." className="w-full h-16 bg-slate-950 border border-slate-900 rounded-xl p-3 text-xs text-slate-200 placeholder-slate-600 focus:ring-1 focus:ring-cyan-500 outline-none resize-none leading-relaxed" />
             <button onClick={handleSendPrompt} className="w-full mt-2 py-3 bg-gradient-to-r from-cyan-600 to-indigo-700 text-white rounded-xl text-xs font-bold shadow-lg hover:opacity-95 hover:scale-[1.01] transition-all">🚀 حقن التعديل حياً</button>
           </div>
         </section>
 
-        <section className="lg:col-span-3 flex flex-col gap-6 h-[calc(100vh-280px)]">
-          <div className="bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-5 shadow-2xl backdrop-blur-xl flex-1 flex flex-col">
+        {/* 2. الأعمدة الوسطى (3/5): المعاينة ومحرر الأكواد والـ Graph */}
+        <section className="lg:col-span-3 flex flex-col gap-6 h-auto lg:h-[calc(100vh-280px)]">
+          <div className="bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-5 shadow-2xl backdrop-blur-xl flex-1 flex flex-col h-[480px] lg:h-full">
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-900 pb-4 mb-4">
               <div className="flex items-center bg-slate-950 p-1.5 rounded-xl border border-slate-900">
                 <button onClick={() => setActiveTab('preview')} className={`px-4 py-2 rounded-lg text-xs font-semibold ${activeTab === 'preview' ? 'bg-[#090D16] text-cyan-400' : 'text-slate-500'}`}>🖥️ المعاينة الحية</button>
@@ -317,19 +289,8 @@ export default function App() {
                     <span>محرر موناكو الذكي: <span className="text-cyan-400 font-mono font-bold">{activeFile}</span></span>
                     <button onClick={handleSaveCodeManual} className="bg-cyan-950 border border-cyan-900/50 text-cyan-400 hover:bg-cyan-900 px-3 py-1 rounded-lg font-bold">💾 حفظ وحقن</button>
                   </div>
-                  
-                  <div className="flex-1 rounded-xl overflow-hidden border border-slate-900 mt-2 bg-[#0C0F19] h-[450px] relative flex">
-                    <div className="w-12 bg-slate-950 border-r border-slate-900/60 text-right pr-3 pt-4 select-none font-mono text-[10px] text-slate-600 leading-relaxed">
-                      {Array.from({ length: Math.max(15, (editorContent || '').split('\n').length) }).map((_, i) => (
-                        <div key={i} className="h-5">{i + 1}</div>
-                      ))}
-                    </div>
-                    <textarea
-                      value={editorContent}
-                      onChange={(e) => setEditorContent(e.target.value)}
-                      className="flex-1 bg-transparent p-4 font-mono text-xs text-slate-200 outline-none resize-none leading-relaxed overflow-auto scrollbar-thin"
-                      spellCheck="false"
-                    />
+                  <div className="flex-1 rounded-xl overflow-hidden border border-slate-900 mt-2 bg-[#1e1e1e] h-[400px] lg:h-[450px]">
+                    <Editor height="100%" language={getFileLanguage(activeFile)} theme="vs-dark" value={editorContent} onChange={(value) => setEditorContent(value || '')} options={{ minimap: { enabled: false }, fontSize: 12, automaticLayout: true }} />
                   </div>
                 </div>
               )}
@@ -339,8 +300,8 @@ export default function App() {
         </section>
 
         {/* 3. العمود الأيمن (1/5): متصفح الملفات والتوأم الرقمي */}
-        <section className="lg:col-span-1 flex flex-col gap-6 h-[calc(100vh-230px)] overflow-y-auto">
-          <div className="bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-5 shadow-2xl backdrop-blur-xl flex flex-col max-h-[220px]">
+        <section className="lg:col-span-1 flex flex-col gap-6 h-auto lg:h-[calc(100vh-230px)]">
+          <div className="bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-5 shadow-2xl backdrop-blur-xl flex flex-col h-[220px]">
             <h3 className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">📁 WORKSPACE EXPLORER</h3>
             <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
               {files.map((file) => (
@@ -349,7 +310,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex-1">
+          <div className="h-auto lg:flex-1">
             <DigitalTwinPanel activeFileContent={editorContent} activeFile={activeFile} filesCount={files.length} />
           </div>
         </section>
@@ -510,7 +471,7 @@ function AgentNetworkGraph({ states }) {
         return 'border-rose-500 bg-rose-950/30 text-rose-400 shadow-[0_0_20px_rgba(239,68,68,0.4)] animate-bounce';
       case 'waiting':
       default:
-        return 'border-slate-800/80 bg-slate-900/20 text-slate-500 hover:border-slate-700/60 hover:text-slate-400 transition-all';
+        return 'border-slate-900/80 bg-slate-950/40 text-slate-600 opacity-60';
     }
   };
 
@@ -546,12 +507,13 @@ function AgentNetworkGraph({ states }) {
         </h3>
       </div>
 
-      <div className="flex flex-col xl:flex-row items-center justify-center gap-4 xl:gap-2">
+      {/* 🛠️ التعديل الحركي الحذر: تمكين التمرير الأفقي الشريطي على الجوال والتابلت لتفادي التكدس الرأسي العشوائي */}
+      <div className="flex flex-row overflow-x-auto w-full gap-4 pb-2 xl:pb-0 xl:overflow-x-visible xl:justify-center scrollbar-thin select-none">
         {agents.map((agent, index) => {
           const currentState = states[agent.key] || 'waiting';
           
           return (
-            <div key={agent.key} className="flex flex-col xl:flex-row items-center gap-2">
+            <div key={agent.key} className="flex flex-row items-center gap-2 shrink-0">
               <div className={`flex flex-col items-center p-4 rounded-xl border w-40 transition-all duration-500 ${getAgentStyle(currentState)}`}>
                 <div className="text-2xl mb-2 filter drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)]">
                   {agent.emoji}
@@ -566,10 +528,9 @@ function AgentNetworkGraph({ states }) {
               </div>
 
               {index < agents.length - 1 && (
-                <div className="flex justify-center items-center py-2 xl:py-0 xl:px-2">
+                <div className="flex justify-center items-center py-2 xl:py-0 xl:px-2 shrink-0">
                   <span className={`text-xl xl:text-2xl ${getArrowStyle(currentState)}`}>
-                    <span className="block xl:hidden">↓</span>
-                    <span className="hidden xl:block">→</span>
+                    →
                   </span>
                 </div>
               )}
