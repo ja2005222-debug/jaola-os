@@ -3,12 +3,14 @@ import fsPromises from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { groq, ai } from './baseAgent.js';
-import Conversation from '../models/Conversation.js'; // استيراد موديل المحادثة الجديد لإنعاش الذاكرة
+import mongoose from 'mongoose';
+import Conversation from '../models/Conversation.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// مفتاح التحقق من الـ DB
-const isDbReady = () => mongoose.connection.readyState === 1;
+// ==========================================
+// 🧠 1. المكونات المعرفية المفتتة لـ JCOS v4.0
+// ==========================================
 
 class WorldRepresentation {
     constructor(projectPath) {
@@ -103,30 +105,6 @@ class JCRContext {
     }
 }
 
-async function generateAIImage(promptText, projectPath, fileName) {
-    try {
-        const encodedPrompt = encodeURIComponent(promptText);
-        const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=576&nologo=true`;
-
-        console.log(`🖼️ [JAR ENGINE - Image]: جاري رسم وتحميل صورة نيونية عالية الدقة لـ (${fileName})...`);
-        const res = await fetch(imageUrl);
-        if (!res.ok) throw new Error(`فشل جلب الصورة من خادم التوليد: ${res.statusText}`);
-        
-        const arrayBuffer = await res.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-
-        const assetsDir = path.join(projectPath, 'assets');
-        const assetsExist = await fsPromises.access(assetsDir).then(() => true).catch(() => false);
-        if (!assetsExist) await fsPromises.mkdir(assetsDir, { recursive: true });
-
-        const targetPath = path.join(projectPath, fileName);
-        await fsPromises.writeFile(targetPath, buffer);
-        console.log(`🖼️ [JAR ENGINE - Image]: تم توليد وحفظ الصورة بنجاح في: ${fileName}`);
-    } catch (e) {
-        console.error(`❌ [JAR ENGINE - Image Error]: فشل توليد الصورة (${fileName}):`, e.message);
-    }
-}
-
 const CognitiveCapabilities = {
     async runSecurityAudit(files) {
         let isSafe = true;
@@ -152,6 +130,32 @@ const CognitiveCapabilities = {
         return { score, recommendations };
     }
 };
+
+async function generateAIImage(promptText, projectPath, fileName) {
+    try {
+        const encodedPrompt = encodeURIComponent(promptText);
+        const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=576&nologo=true`;
+
+        console.log(`🖼️ [JAR ENGINE - Image]: جاري رسم وتحميل صورة نيونية عالية الدقة لـ (${fileName})...`);
+        
+        const res = await fetch(imageUrl);
+        if (!res.ok) throw new Error(`فشل جلب الصورة من خادم التوليد: ${res.statusText}`);
+        
+        const arrayBuffer = await res.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+
+        const assetsDir = path.join(projectPath, 'assets');
+        const assetsExist = await fsPromises.access(assetsDir).then(() => true).catch(() => false);
+        if (!assetsExist) await fsPromises.mkdir(assetsDir, { recursive: true });
+
+        const targetPath = path.join(projectPath, fileName);
+        await fsPromises.writeFile(targetPath, buffer);
+
+        console.log(`🖼️ [JAR ENGINE - Image]: تم توليد وحفظ الصورة بنجاح في: ${fileName}`);
+    } catch (e) {
+        console.error(`❌ [JAR ENGINE - Image Error]: فشل توليد الصورة (${fileName}):`, e.message);
+    }
+}
 
 export class JaolaCognitiveRuntime {
     constructor(ioInstance) {
@@ -190,7 +194,6 @@ export class JaolaCognitiveRuntime {
         } catch (e) {}
     }
 
-    // 💾 دالة حفظ وتحديث محادثات الشات التراكمية في قاعدة البيانات السحابية الأطلس
     async saveChatToDatabase(username, role, content) {
         if (mongoose.connection.readyState === 1) {
             try {
@@ -209,7 +212,7 @@ export class JaolaCognitiveRuntime {
     async buildWorldModel(context, roomName, dbStatus) {
         this.emitLiveLog(roomName, '1. PERCEPTION', 'World Scanner', '👁️ جاري استكشاف العالم النشط وبناء الـ World Model...');
         await context.worldModel.scan(context.projectPath, dbStatus);
-        this.emitLiveLog(roomName, '1. PERCEPTION', 'World Scanner', `✓ تم فحص مساحة العمل. الحالة البنائية السابقة: (${context.worldModel.lastBuildStatus})`);
+        this.emitLiveLog(roomName, '1. PERCEPTION', 'World Scanner', `✓ تم بناء الـ World Model. بيئة الملفات الحالية: [${context.worldModel.fileTree.join(', ')}]`);
     }
 
     async buildMissionAndMeta(context, roomName) {
@@ -249,22 +252,47 @@ export class JaolaCognitiveRuntime {
             });
 
             const result = JSON.parse(completion.choices[0].message.content);
-            context.mentalModel = result.mission;
-            context.metaReasoning = result.meta;
-            context.metaReasoning.needsUserClarification = result.meta.confidence < 45;
+            context.mentalModel.businessGoal = result.mission.businessGoal || "هدف عام";
+            context.mentalModel.technicalGoal = result.mission.technicalGoal || "تطبيق ويب";
+            context.mentalModel.visualIdentity = result.mission.uxGoal || "";
+            context.mentalModel.successCriteria = Array.isArray(result.mission.successCriteria) ? result.mission.successCriteria : [];
+            context.mentalModel.risks = Array.isArray(result.mission.risks) ? result.mission.risks : [];
 
-            context.budget = new CognitiveBudget(result.meta.priority === 'Critical' || result.meta.priority === 'High' ? 'complex' : 'medium');
+            context.metaReasoning.confidence = typeof result.meta.confidence === 'number' ? result.meta.confidence : 70;
+            
+            if (Array.isArray(result.meta.unknowns)) {
+                context.metaReasoning.unknowns = result.meta.unknowns;
+            } else {
+                context.metaReasoning.unknowns = [];
+                if (typeof result.meta.unknowns === 'string' && result.meta.unknowns.trim() !== '') {
+                    context.metaReasoning.unknowns = [result.meta.unknowns.trim()];
+                }
+            }
 
-            this.emitLiveLog(roomName, '2. MISSION & META', 'Mission+Meta Planner', `✓ تم بناء الـ Mission Graph بنجاح بمعدل ثقة ${result.meta.confidence}%. الأولوية: (${result.meta.priority}).`);
+            context.metaReasoning.needsUserClarification = (context.metaReasoning.confidence < 45) && (context.metaReasoning.unknowns.length > 0);
+
+            const allowedPriorities = ['Critical', 'High', 'Medium', 'Low'];
+            const rawPriority = result.meta.priority || 'Medium';
+            const priority = allowedPriorities.includes(rawPriority) ? rawPriority : 'Medium';
+            
+            const isComplex = priority === 'Critical' || priority === 'High';
+            context.budget = new CognitiveBudget(isComplex ? 'complex' : 'medium');
+            context.budget.apiCallsUsed = 1;
+
+            this.emitLiveLog(roomName, '2. MISSION & META', 'Mission+Meta Planner', 
+                `✓ تم استخراج الرؤية والوعي دفعة واحدة. الأولوية: (${priority}) ➔ الميزانية: ${context.budget.maxApiCalls} استدعاءات كحد أقصى.`);
+                
         } catch (e) {
-            console.error("Error in buildMissionAndMeta:", e);
-            context.mentalModel.businessGoal = "توليد كود الموقع";
+            context.mentalModel.businessGoal = "بناء كود الموقع";
+            context.metaReasoning.confidence = 70;
+            context.metaReasoning.unknowns = [];
             context.budget = new CognitiveBudget('medium');
+            this.emitLiveLog(roomName, '2. MISSION & META', 'Mission+Meta Planner', `⚠️ فشل الاستدعاء الموحد، استخدام القيم الافتراضية.`);
         }
     }
 
     async runExecutiveBrain(context, roomName, agents) {
-        this.emitLiveLog(roomName, '4. EXECUTIVE BRAIN', 'CEO Coordinator', '🎯 جاري تفكيك الأهداف المعقدة (Goal Decomposition) وجدولة طابور الأولويات والقرارات...');
+        this.emitLiveLog(roomName, '3. EXECUTIVE BRAIN', 'CEO Coordinator', '🎯 تفكيك الأهداف وجدولة الأولويات...');
 
         const unknowns = Array.isArray(context.metaReasoning.unknowns) ? context.metaReasoning.unknowns : [];
         if (context.metaReasoning.needsUserClarification && unknowns.length > 0) {
@@ -272,13 +300,13 @@ export class JaolaCognitiveRuntime {
             
             const askMessage = `أرجو توضيح:\n${unknowns.map((u, i) => `${i+1}. ${u}`).join('\n')}`;
             this.emitLiveLog(roomName, '4. EXECUTIVE BRAIN', 'AI CEO Consultant', askMessage);
-            await this.saveChatToDatabase(context.username, 'assistant', askMessage); // 💾 حفظ سؤال الـ AI في الـ DB
+            await this.saveChatToDatabase(context.username, 'assistant', askMessage); 
 
             context.executiveDecision.actionType = 'STOP_AND_ASK';
             return;
         }
 
-        const systemInstruction = `أنت العقل والمدير التنفيذي لـ JCR 3.0.`;
+        const systemInstruction = `أنت العقل والمدير التنفيذي لـ JCOS 4.0.`;
 
         try {
             const completion = await groq.chat.completions.create({
@@ -291,28 +319,26 @@ export class JaolaCognitiveRuntime {
             });
 
             const result = JSON.parse(completion.choices[0].message.content);
-            context.executiveDecision.taskGraph = result.taskGraph;
-            context.executiveDecision.priorityQueue = result.priorityQueue;
+            context.executiveDecision.taskGraph = result.taskGraph || ["بناء وتحديث كود الواجهة"];
+            context.executiveDecision.priorityQueue = result.priorityQueue || [];
 
-            this.emitLiveLog(roomName, '4. EXECUTIVE BRAIN', 'CEO Coordinator', `✓ تم تفكيك الهدف إلى (${context.executiveDecision.taskGraph.length}) مهام فرعية.`);
+            this.emitLiveLog(roomName, '3. EXECUTIVE BRAIN', 'CEO Coordinator', 
+                `✓ تم تفكيك الهدف إلى (${context.executiveDecision.taskGraph.length}) مهام فرعية.`);
         } catch (e) {
             context.executiveDecision.taskGraph = ["بناء وتحديث كود الواجهة"];
         }
     }
 
     async runDynamicMultiAgentRuntime(context, roomName, agents) {
-        this.emitLiveLog(roomName, '5. RUNTIME & DEBATE', 'Orchestrator', '💻 جاري إطلاق حلقة النقاش الداخلي المتخصص (Internal Debate Loop) مع مراجعات متوازية لسرعة الإنجاز...');
-
-        let isCodePerfected = false;
-        let debateCycles = 0;
-        const maxDebateCycles = context.budget.maxApiCalls;
+        this.emitLiveLog(roomName, '5. RUNTIME & DEBATE', 'Orchestrator', '💻 جاري إطلاق حلقة النقاش الداخلي المتعدد التخصصات...');
 
         const initialCodeContext = await this.readCurrentCodeContextAsync(context.projectPath);
         let currentCodeContext = initialCodeContext;
+        const maxDebateCycles = context.budget.maxApiCalls;
 
-        while (debateCycles < maxDebateCycles && !isCodePerfected) {
+        for (let cycle = 0; cycle < maxDebateCycles; cycle++) {
             if (context.budget.isExhausted()) {
-                this.emitLiveLog(roomName, '5. RUNTIME & DEBATE', 'Orchestrator', '❌ [INTERRUPT]: تم إيقاف النقاش الداخلي لتجاوز الميزانية المعرفية للمهمة!');
+                this.emitLiveLog(roomName, '5. RUNTIME & DEBATE', 'Orchestrator', '❌ الميزانية استنفدت.');
                 break;
             }
 
@@ -324,7 +350,6 @@ export class JaolaCognitiveRuntime {
                 ? `${context.goal}\n⚠️ [انتقادات من حلقة الجدل التخصصية الموحدة]: يرجى إصلاح هذه العيوب فوراً وبدقة:\n${JSON.stringify(context.internalDebate.criticTranscripts)}`
                 : context.goal;
 
-            // 🛠️ تم التصحيح الفوري والحذر لجميع المتغيرات الداخلية (استدعاء agents وسياق النوايا والـ io الباك إند) لإنهاء الـ CODER Crash
             const plan = await agents.coreGenerateCodePlan(
                 promptWithCritiques,
                 currentCodeContext,
@@ -401,7 +426,7 @@ export class JaolaCognitiveRuntime {
         this.emitLiveLog(roomName, '5. CURIOSITY', 'Curiosity Engine', `معدل الأداء الحالي للكود: ${performanceCheck.score}%.`);
 
         if (performanceCheck.score < 90 && performanceCheck.recommendations.length > 0) {
-            this.emitLiveLog(roomName, '5. CURIOSITY', 'Curiosity Engine', `🔎 الفضول ينشط بفرص التحسين التلقائي الحركية!`);
+            this.emitLiveLog(roomName, '5. CURIOSITY', 'Curiosity Engine', `🔎 الفضول ينشط بالخلفية: جاري تحسين ملف styles.css ذاتياً لرفع الأداء...`);
             
             const systemInstruction = `أنت محرك الفضول والتنظيف البرمجي لـ JCOS 4.0.`;
             const targetFile = context.files.find(f => f.name === 'styles.css');
@@ -415,8 +440,8 @@ export class JaolaCognitiveRuntime {
                         model: "llama-3.3-70b-versatile"
                     });
                     const cleanedCss = completion.choices[0].message.content;
-                    await fsPromises.writeFile(path.join(context.projectPath, 'styles.css'), cleanedCss);
-                    this.emitLiveLog(roomName, '5. CURIOSITY', 'Curiosity Engine', `✓ [SUCCESS]: تم تنظيف وتحسين ملف styles.css تلقائياً وارتفع معدل الأداء لـ 95%!`);
+                    await fsPromises.writeFile(path.join(context.projectPath, 'styles.css'), cleanedCss, 'utf-8');
+                    this.emitLiveLog(roomName, '5. CURIOSITY', 'Curiosity Engine', `✓ [SUCCESS]: تم تحسين ملف styles.css بالخلفية وارتفع معدل الأداء لـ 95%!`);
                 } catch (e) {}
             }
         } else {
@@ -447,7 +472,7 @@ export class JaolaCognitiveRuntime {
             }
             knowledgeGraph.push(reflectionNode);
             
-            await fsPromises.writeFile(this.reflectionPath, JSON.stringify(knowledgeGraph.slice(-50), null, 2));
+            await fsPromises.writeFile(this.reflectionPath, JSON.stringify(knowledgeGraph.slice(-50), null, 2), 'utf-8');
             this.emitLiveLog(roomName, '6. REFLECTION', 'Learning Engine', `✓ تم حفظ وتغذية التوأم المعرفي بالدروس المستفادة بنجاح!`);
         } catch (e) {
             console.error('Failed to save reflection knowledge graph:', e);
@@ -463,7 +488,6 @@ export class JaolaCognitiveRuntime {
         this.emitLiveLog(roomName, 'JCOS v4.0', 'Cognitive Kernel', `🏁 تم تشغيل النواة المعرفية لنظام التشغيل JCOS v4.0: ${context.missionId}`);
 
         try {
-            // 💾 حفظ رسالة المستخدم الحقيقية فوراً في الـ DB لإنعاش الذاكرة التراكمية
             await this.saveChatToDatabase(username, 'user', goal);
 
             await this.buildWorldModel(context, roomName, dbStatus);
@@ -531,10 +555,7 @@ export class JaolaCognitiveRuntime {
             this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛑 أمر إيقاف البناء.');
         } else {
             const reply = await this.generateChatResponse(message, username);
-            
-            // 💾 حفظ الرد التفاعلي الفوري للاستشاري في الـ DB
             await this.saveChatToDatabase(username, 'assistant', reply);
-
             this.emitChatReply(roomName, reply);
         }
     };

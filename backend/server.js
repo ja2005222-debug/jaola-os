@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import './dbConfig.js'; 
+import './dbConfig.js'; // استيراد ملف التهيئة كأول سطر على الإطلاق لتفادي الـ Hoisting الانهياري
 
 import express from 'express';
 import cors from 'cors';
@@ -15,10 +15,9 @@ import rateLimit from 'express-rate-limit';
 // استيراد الموديلات
 import User from './models/User.js';
 import Project from './models/Project.js';
-import Conversation from './models/Conversation.js'; // 🛠️ استيراد الموديل الجديد لإنعاش ذاكرة الشات
-import { ai } from './agents/baseAgent.js'; 
+import Conversation from './models/Conversation.js'; // استيراد الموديل لإنعاش ذاكرة الشات
 
-// استيراد الوكلاء ومحرك الـ JCOS 
+// استيراد الوكلاء المطورين ومحرك الـ JCOS 
 import { 
     coreClassifyIntent, 
     coreGenerateCodePlan, 
@@ -35,14 +34,16 @@ const httpServer = createServer(app);
 const JWT_SECRET = process.env.JWT_SECRET || 'jaola-super-secret-key-98745';
 
 const io = new Server(httpServer, {
-    cors: { origin: "*", methods: ["GET", "POST"] } 
+    cors: { origin: "*", methods: ["GET", "POST"] } // فتح الـ CORS للسوكيت بالكامل عبر البروكسي
 });
 
-app.use(cors()); 
+app.use(cors()); // فتح الـ CORS لجميع مسارات Express
 app.use(express.json());
 
+// تهيئة محرك الإدراك المعرفي الشامل لـ JCOS v4.0
 const runtime = new JaolaCognitiveRuntime(io);
 
+// مفتاح التحقق الصارم والذكي من نجاح الاتصال الفعلي بقاعدة البيانات
 let isDbConnected = false;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/jaola_os';
 
@@ -56,6 +57,7 @@ mongoose.connect(MONGO_URI)
         isDbConnected = false;
     });
 
+// غلاف البيانات الموحد لحظر الانهيارات الصامتة لمونجوس عند غياب الـ DB
 const DB = {
     async findUser(username) {
         if (isDbConnected && mongoose.connection.readyState === 1) {
@@ -92,6 +94,7 @@ const DB = {
 const BASE_WORKSPACE = path.resolve(__dirname, '../workspace');
 if (!fs.existsSync(BASE_WORKSPACE)) fs.mkdirSync(BASE_WORKSPACE);
 
+// إعادة هيكلة المسار ليكون معزولاً فيزيائياً بإنشاء مجلد مخصص لكل مستخدم وبداخله مشاريعه (True Isolation)
 const getProjectPath = (username, activeProject) => {
     const user = username || 'guest_user';
     const userPath = path.join(BASE_WORKSPACE, user);
@@ -173,6 +176,33 @@ function createBackupSnapshot(projectPath, fileName) {
     } catch (e) {}
 }
 
+const emitWorkspaceFiles = (roomName, projectPath, force = false) => {
+    try {
+        const files = fs.readdirSync(projectPath).filter(f => f !== '.backups');
+        io.to(roomName).emit('workspace_files', files);
+        io.to(roomName).emit('preview_updated', { timestamp: Date.now() }); 
+    } catch (e) {}
+};
+
+const emitUserProjects = async (roomName, username, activeProject) => {
+    try {
+        let projects = ['sandbox_app'];
+        let currentVercelUrl = '';
+
+        const projectsData = await DB.findUserProjects(username);
+        if (projectsData.length > 0) projects = projectsData.map(p => p.name);
+        const currentProjRecord = projectsData.find(p => p.name === activeProject);
+        if (currentProjRecord) currentVercelUrl = currentProjRecord.vercelUrl || '';
+        
+        io.to(roomName).emit('user_projects', { 
+            projects, 
+            activeProject, 
+            currentUser: username, 
+            vercelUrl: currentVercelUrl 
+        });
+    } catch (err) {}
+};
+
 // ==========================================
 // 🔌 تأمين اتصالات ومصادقة الـ WebSockets
 // ==========================================
@@ -214,12 +244,12 @@ io.on('connection', (socket) => {
         emitWorkspaceFiles(roomName, projectPath, true);
         await emitUserProjects(roomName, username, sanitizedProject);
 
-        // 💾 3. جلب وبث تاريخ المحادثة التراكمي للمستخدم من الأطلس لإنعاش الذاكرة المعرفية حراً
+        // جلب وبث تاريخ المحادثة التراكمي للمستخدم من الأطلس لإنعاش الذاكرة المعرفية حراً
         if (isDbConnected && mongoose.connection.readyState === 1) {
             try {
                 const convo = await Conversation.findOne({ username });
                 if (convo && convo.messages.length > 0) {
-                    socket.emit('chat_history', convo.messages); // بث التاريخ التراكمي للواجهة
+                    socket.emit('chat_history', convo.messages); 
                 }
             } catch (e) {
                 console.error('Failed to emit chat history:', e);
@@ -227,33 +257,6 @@ io.on('connection', (socket) => {
         }
     });
 });
-
-const emitWorkspaceFiles = (roomName, projectPath, force = false) => {
-    try {
-        const files = fs.readdirSync(projectPath).filter(f => f !== '.backups');
-        io.to(roomName).emit('workspace_files', files);
-        io.to(roomName).emit('preview_updated', { timestamp: Date.now() }); 
-    } catch (e) {}
-};
-
-const emitUserProjects = async (roomName, username, activeProject) => {
-    try {
-        let projects = ['sandbox_app'];
-        let currentVercelUrl = '';
-
-        const projectsData = await DB.findUserProjects(username);
-        if (projectsData.length > 0) projects = projectsData.map(p => p.name);
-        const currentProjRecord = projectsData.find(p => p.name === activeProject);
-        if (currentProjRecord) currentVercelUrl = currentProjRecord.vercelUrl || '';
-        
-        io.to(roomName).emit('user_projects', { 
-            projects, 
-            activeProject, 
-            currentUser: username, 
-            vercelUrl: currentVercelUrl 
-        });
-    } catch (err) {}
-};
 
 // ==========================================
 // 🌐 المسارات البرمجية الموثوقة (Secure Routes)
@@ -289,17 +292,8 @@ app.post('/api/auth/login', async (req, res) => {
     if (!username) return res.status(400).json({ error: 'Username required' });
     try {
         const sanitizedUser = username.trim().toLowerCase().replace(/\s+/g, '_');
-        let tokenUserPayload = { id: 'guest_user_id', username: sanitizedUser, email: `${sanitizedUser}@jaola-twin.io` };
-
-        if (isDbConnected && mongoose.connection.readyState === 1) {
-            try {
-                let userRecord = await User.findOne({ username: sanitizedUser });
-                if (!userRecord) {
-                    userRecord = await User.create({ username: sanitizedUser, email: `${sanitizedUser}@jaola-twin.io` });
-                }
-                tokenUserPayload = { id: userRecord._id, username: userRecord.username, email: userRecord.email };
-            } catch (e) {}
-        }
+        const userRecord = await DB.findUser(sanitizedUser);
+        const tokenUserPayload = { id: userRecord.id || userRecord._id, username: sanitizedUser, email: userRecord.email };
 
         const token = jwt.sign(tokenUserPayload, JWT_SECRET, { expiresIn: '7d' });
         res.json({ success: true, token, currentUser: sanitizedUser, activeProject: 'sandbox_app' });
@@ -311,7 +305,6 @@ app.post('/api/project-context/switch', verifyToken, async (req, res) => {
     const username = req.user.username;
     const activeProject = project ? project.trim().toLowerCase().replace(/\s+/g, '-') : 'sandbox_app';
 
-    // 🛠️ ميزة التثبيت والتسجيل الفوري للمشروع الجديد في قاعدة البيانات سحابياً أو محلياً عند تبديل السياق
     try {
         const projectRecord = await DB.findProject(activeProject, username);
         if (!projectRecord) {
@@ -328,13 +321,9 @@ app.get('/api/file-content', verifyToken, async (req, res) => {
         const username = req.user.username;
         const activeProj = project || 'sandbox_app';
 
-        if (isDbConnected && mongoose.connection.readyState === 1) {
-            try {
-                const projectRecord = await Project.findOne({ name: activeProj, owner: username });
-                if (!projectRecord && activeProj !== 'sandbox_app') {
-                    return res.status(403).json({ error: 'Access Denied: You do not own this project.' });
-                }
-            } catch (e) {}
+        const projectRecord = await DB.findProject(activeProj, username);
+        if (!projectRecord && activeProj !== 'sandbox_app') {
+            return res.status(403).json({ error: 'Access Denied: You do not own this project.' });
         }
 
         const projectPath = getProjectPath(username, activeProj);
