@@ -21,7 +21,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
   const [currentUser, setCurrentUser] = useState('guest_user');
   const [vercelUrl, setVercelUrl] = useState('');
 
-  // ✅ مصفوفة رسائل الشات (مضافة الآن بشكل صحيح)
+  // مصفوفة رسائل الشات
   const [chatMessages, setChatMessages] = useState([]);
 
   const [agentStates, setAgentStates] = useState({
@@ -41,7 +41,6 @@ export function useSocket(isAuthenticated, handleAuthError) {
     if (token) {
       socket.auth = { token };
 
-      // مستمعات السوكيت الأصلية (بدون تغيير)
       socket.off('workspace_files').on('workspace_files', (workspaceFiles) => {
         setFiles(workspaceFiles);
       });
@@ -72,7 +71,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
 
         if (newLog.message.includes('AI CEO Consultant') || newLog.message.includes('[INFO]')) {
           const cleanReply = newLog.message
-            .replace(/.*AI CEO Consultant\]:/, '')
+            .replace(/.*AI CEO Consultant\]:\s*/, '')
             .replace('🤖 [AI CEO Consultant]:', '')
             .replace('🤖 [INFO]:', '')
             .trim();
@@ -81,13 +80,23 @@ export function useSocket(isAuthenticated, handleAuthError) {
         }
       });
 
-      // ✅ مستمع chat_reply الجديد (منفصل وآمن)
       socket.off('chat_reply').on('chat_reply', (data) => {
         setChatMessages((prev) => [...prev, { 
           sender: 'assistant', 
           text: data.message, 
           timestamp: Date.now() 
         }]);
+      });
+
+      // 💾 4. استقبال وحقن تاريخ الدردشة التراكمي المصدق بالكامل من الـ DB لإنعاش ذاكرة الشات حركياً
+      socket.off('chat_history').on('chat_history', (history) => {
+        if (history && history.length > 0) {
+          const formattedHistory = history.map(msg => ({
+            sender: msg.role === 'user' ? 'user' : 'ai',
+            text: msg.content
+          }));
+          setChatMessages(formattedHistory); // تحديث واجهة الشات بالتاريخ التراكمي
+        }
       });
 
       socket.off('connect_error').on('connect_error', (err) => {
@@ -112,7 +121,8 @@ export function useSocket(isAuthenticated, handleAuthError) {
       socket.off('code_stream_chunk');
       socket.off('agent_states');
       socket.off('log');
-      socket.off('chat_reply');        // تنظيف المستمع الجديد
+      socket.off('chat_reply');        
+      socket.off('chat_history'); // تنظيف المستمع الجديد
       socket.off('connect_error');
     };
   }, [currentUser, activeProject, isAuthenticated]);
@@ -126,7 +136,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
     activeProject, 
     currentUser, 
     vercelUrl, 
-    chatMessages,          // ✅ تصدير مصفوفة المحادثة
+    chatMessages,          
     setChatMessages,
     setProjects, 
     setActiveProject, 
