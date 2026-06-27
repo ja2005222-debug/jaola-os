@@ -1,0 +1,39 @@
+/* CSS الافتراضي */
+body { background-color: #080b11; }
+
+/* إضافة أنماط لجعل الصفحة أكثر جاذبية */
+.max-w-md {
+    max-width: 600px;
+}
+
+.w-full {
+    width: 100%;
+}
+
+.bg-[#0d121f]/80 {
+    background-color: rgba(13, 18, 31, 0.8);
+}
+
+.border {
+    border: 1px solid #2f343a;
+}
+
+.p-8 {
+    padding: 32px;
+}
+
+.rounded-2xl {
+    border-radius: 24px;
+}
+
+.text-center {
+    text-align: center;
+}
+
+.shadow-2xl {
+    box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.2);
+}
+
+.backdrop-blur-xl {
+    backdrop-filter: blur(10px);
+}

@@ -1,6 +1,5 @@
-
 import 'dotenv/config';
-import './dbConfig.js'; // استيراد التهيئة كأول سطر على الإطلاق لتفادي الـ Hoisting الانهياري
+import './dbConfig.js';
 
 import express from 'express';
 import cors from 'cors';
@@ -13,40 +12,34 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
 
-// استيراد الموديلات واجهة الاتصال بـ Gemini المشتركة
 import User from './models/User.js';
 import Project from './models/Project.js';
 
-// استيراد الوكلاء المطورين ومحرك الـ Runtime الجديد
 import { 
     coreClassifyIntent, 
     coreGenerateCodePlan, 
     architectReview, 
     qaVerify, 
     deployProject,
-    JaolaAgentRuntime // 🛠️ استيراد محرك تشغيل الوكلاء
+    JaolaCognitiveRuntime
 } from './agents/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const httpServer = createServer(app);
 
-// مفتاح التوقيع والتشفير للـ JWT
 const JWT_SECRET = process.env.JWT_SECRET || 'jaola-super-secret-key-98745';
 
 const io = new Server(httpServer, {
-    cors: { origin: "*", methods: ["GET", "POST"] } // فتح الـ CORS للسوكيت بالكامل عبر البروكسي
+    cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-app.use(cors()); // فتح الـ CORS لجميع مسارات Express
+app.use(cors());
 app.use(express.json());
 
-// تهيئة وإطلاق محرك تشغيل وإدارة دورة حياة الوكلاء حياً بالباك إند
-const runtime = new JaolaAgentRuntime(io);
+const runtime = new JaolaCognitiveRuntime(io);
 
-// مفتاح التحقق الصارم والذكي من نجاح الاتصال الفعلي بقاعدة البيانات
 let isDbConnected = false;
-
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/jaola_os';
 
 mongoose.connect(MONGO_URI)
@@ -59,9 +52,6 @@ mongoose.connect(MONGO_URI)
         isDbConnected = false;
     });
 
-// ==========================================
-// 🛡_ غلاف البيانات المحصن أمنياً (DB Isolation Wrapper)
-// ==========================================
 const DB = {
     async findUser(username) {
         if (isDbConnected && mongoose.connection.readyState === 1) {
@@ -98,7 +88,6 @@ const DB = {
 const BASE_WORKSPACE = path.resolve(__dirname, '../workspace');
 if (!fs.existsSync(BASE_WORKSPACE)) fs.mkdirSync(BASE_WORKSPACE);
 
-// إعادة هيكلة المسار ليكون معزولاً فيزيائياً بإنشاء مجلد مخصص لكل مستخدم وبداخله مشاريعه (True Isolation)
 const getProjectPath = (username, activeProject) => {
     const user = username || 'guest_user';
     const userPath = path.join(BASE_WORKSPACE, user);
@@ -108,10 +97,6 @@ const getProjectPath = (username, activeProject) => {
     if (!fs.existsSync(projectPath)) fs.mkdirSync(projectPath, { recursive: true });
     return projectPath;
 };
-
-// ==========================================
-// 🛡_ الوسائط الأمنية (Security Middlewares)
-// ==========================================
 
 const aiLimit = rateLimit({
     windowMs: 60 * 1000, 
@@ -184,10 +169,6 @@ const emitUserProjects = async (roomName, username, activeProject) => {
     } catch (err) {}
 };
 
-// ==========================================
-// 🔌 تأمين اتصالات ومصادقة الـ WebSockets
-// ==========================================
-
 io.use((socket, next) => {
     const token = socket.handshake.auth?.token;
     if (!token) return next(new Error('صلاحية الاتصال مفقودة (Token Required)'));
@@ -226,10 +207,6 @@ io.on('connection', (socket) => {
         await emitUserProjects(roomName, username, sanitizedProject);
     });
 });
-
-// ==========================================
-// 🌐 المسارات البرمجية الموثوقة (Secure Routes)
-// ==========================================
 
 app.get('/workspace', (req, res) => {
     const { project, username } = req.query;
@@ -332,29 +309,30 @@ app.post('/api/file-content/save', verifyToken, validateProjectOwnership, async 
     }
 });
 
-// 🛠️ تبسيط مسار الشات بالكامل وتفويض محرك تشغيل الوكلاء (JAR Engine) بالإدارة الذاتية والمستقلة لخطوات التنفيذ
+// ✅ المسار المُحدث – الآن يستخدم طبقة تصنيف النوايا
 app.post('/api/chat', verifyToken, aiLimit, validateProjectOwnership, async (req, res) => {
     const { message } = req.body;
     const projectPath = req.projectPath;
     const roomName = `${req.user.username}-${req.activeProject}`;
     
-    res.json({ accepted: true }); // رد فوري لمنع تجمد المتصفح
+    res.json({ accepted: true });
 
-    // تجميع الوكلاء في حزمة واحدة لتفويضها للـ Runtime
     const agents = { coreClassifyIntent, coreGenerateCodePlan, architectReview, qaVerify, deployProject };
+    const dbStatus = isDbConnected && mongoose.connection.readyState === 1;
+
+    const data = {
+        message,
+        roomName,
+        projectPath,
+        username: req.user.username,
+        activeProject: req.activeProject
+    };
 
     try {
-        // إطلاق المهمة البرمجية بأعلى موثوقية وتناسق وحلقة تصحيح ارتدادية ذاتية!
-        await runtime.executeMission(
-            message, 
-            projectPath, 
-            req.user.username, 
-            req.activeProject, 
-            roomName, 
-            agents
-        );
+        // تمرير null كـ socket لأن handleUserMessage لا تحتاجه فعلياً
+        await runtime.handleUserMessage(null, data, agents, dbStatus);
     } catch (error) {
-        io.to(roomName).emit('log', { message: `❌ [ERROR]: فشل إطلاق المهمة البرمجية: ${error.message}` });
+        io.to(roomName).emit('log', { message: `❌ [ERROR]: فشل تشغيل المحادثة: ${error.message}` });
     }
 });
 

@@ -1,0 +1,8 @@
+body { background-color: #080b11; }
+.max-w-md { max-width: 600px; }
+.w-full { width: 100%; }
+.h-screen { height: 100vh; }
+.text-center { text-align: center; }
+.text-lg { font-size: 1.125rem; }
+.text-slate-100 { color: #f8f9fa; }
+.text-slate-400 { color: #718096; }

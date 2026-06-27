@@ -1,10 +1,14 @@
 import { useEffect, useState, useRef } from 'react';
 import { useAuth } from './hooks/useAuth.js';
+// استيراد خطاف السوكيت وكائن السوكيت الموحد والمشترك معاً لمنع التضارب والتعطل
 import { useSocket, socket } from './hooks/useSocket.js';
 import { PreviewFrame } from './components/PreviewFrame.jsx';
 import Editor from '@monaco-editor/react';
 
-const BACKEND_URL = `http://${window.location.hostname}:4000`;
+// حساب عنوان الباك إند ديناميكياً لتفادي مشاكل الـ Localhost في الكروم بوك
+const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname.startsWith('100.115')
+  ? `http://${window.location.hostname}:4000`
+  : 'https://jaola-os.onrender.com';
 
 export default function App() {
   const [projectTrigger, setProjectTrigger] = useState('sandbox_app');
@@ -41,7 +45,7 @@ export default function App() {
     activeProject, 
     currentUser, 
     vercelUrl, 
-    chatMessages, // استيراد المحادثة المفروزة
+    chatMessages, // استيراد المحادثة المفروزة من الـ hook مباشرة لمنع تكرار الـ render
     setChatMessages,
     setProjects, 
     setActiveProject, 
@@ -220,6 +224,37 @@ export default function App() {
     setIsAuthenticated(false);
     window.location.reload();
   };
+
+  // مصادقة حركية تلقائية مخصصة فقط للتوكن والجلسة دون تضارب مع السوكيت
+  useEffect(() => {
+    const initializeSecureSession = async () => {
+      let activeToken = localStorage.getItem('token');
+      let username = localStorage.getItem('currentUser') || 'guest_user';
+
+      if (!activeToken) {
+        try {
+          const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username })
+          });
+          const data = await res.json();
+          if (data.success && data.token) {
+            activeToken = data.token;
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('currentUser', data.currentUser);
+            setCurrentUser(data.currentUser);
+          }
+        } catch (err) {
+          console.error('Failed to initialize secure session:', err);
+        }
+      } else {
+        setCurrentUser(username);
+      }
+    };
+
+    initializeSecureSession();
+  }, [activeProject]);
 
   const getLogColorClass = (text) => {
     if (text.includes('[SUCCESS]')) return 'text-emerald-400 font-semibold';

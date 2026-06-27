@@ -5,7 +5,6 @@ const BACKEND_URL = window.location.hostname === 'localhost' || window.location.
   ? `http://${window.location.hostname}:4000`
   : 'https://jaola-os.onrender.com';
 
-// الاستدعاء الديناميكي الصامد بمنفذ 4000 لتجاوز جدران الحماية للـ WebSockets
 export const socket = io(BACKEND_URL, { 
   autoConnect: false,
   transports: ['polling', 'websocket'] 
@@ -16,16 +15,14 @@ export function useSocket(isAuthenticated, handleAuthError) {
   const [logs, setLogs] = useState([]);
   const [streamingContent, setStreamingContent] = useState('');
   
-  // إدارة حالات المشاريع والمستخدم والروابط المصدقة داخل خطاف السوكيت لمنع الـ Reference Error
+  // إدارة حالات المشاريع والمستخدم والروابط المصدقة داخل خطاف السوكيت
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState('sandbox_app');
   const [currentUser, setCurrentUser] = useState('guest_user');
   const [vercelUrl, setVercelUrl] = useState('');
 
-  // 🛡️ نقل وإدارة مصفوفة الشات بداخل السوكيت لمنع التكرار والـ Re-render Loops
-  const [chatMessages, setChatMessages] = useState([
-    { sender: 'ai', text: '👋 مرحباً بك في نواة JAOLA OS الذكية! أنا مستشارك الذكاء الاصطناعي، كيف يمكنني مساعدتك في تطوير وتحديث شفرات مشروعك اليوم؟' }
-  ]);
+  // ✅ مصفوفة رسائل الشات (مضافة الآن بشكل صحيح)
+  const [chatMessages, setChatMessages] = useState([]);
 
   const [agentStates, setAgentStates] = useState({
     planner: 'waiting',
@@ -44,7 +41,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
     if (token) {
       socket.auth = { token };
 
-      // تسجيل وتفعيل المستمعات لمرة واحدة فقط لمنع التضارب
+      // مستمعات السوكيت الأصلية (بدون تغيير)
       socket.off('workspace_files').on('workspace_files', (workspaceFiles) => {
         setFiles(workspaceFiles);
       });
@@ -69,7 +66,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
         setAgentStates(states);
       });
 
-      // 🛡️ الفلترة الذكية والموحدة للسجلات وحقنها بداخل فقاعات المحادثة دون حدوث تكرار
+      // السجلات (مع فلترة الرسائل الموجهة للشات إن وُجدت)
       socket.off('log').on('log', (newLog) => {
         setLogs((prev) => [...prev.slice(-100), newLog]);
 
@@ -84,6 +81,15 @@ export function useSocket(isAuthenticated, handleAuthError) {
         }
       });
 
+      // ✅ مستمع chat_reply الجديد (منفصل وآمن)
+      socket.off('chat_reply').on('chat_reply', (data) => {
+        setChatMessages((prev) => [...prev, { 
+          sender: 'assistant', 
+          text: data.message, 
+          timestamp: Date.now() 
+        }]);
+      });
+
       socket.off('connect_error').on('connect_error', (err) => {
         console.error('Socket Connection Rejected:', err.message);
         localStorage.removeItem('token');
@@ -94,7 +100,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
         }, 1000);
       });
 
-      // الاتصال وإرسال طلب الانضمام المعزول للغرفة
+      // الاتصال والانضمام للغرفة
       socket.connect();
       socket.emit('join_project', { project: savedProject });
     }
@@ -106,6 +112,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
       socket.off('code_stream_chunk');
       socket.off('agent_states');
       socket.off('log');
+      socket.off('chat_reply');        // تنظيف المستمع الجديد
       socket.off('connect_error');
     };
   }, [currentUser, activeProject, isAuthenticated]);
@@ -119,7 +126,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
     activeProject, 
     currentUser, 
     vercelUrl, 
-    chatMessages, // تصدير مصفوفة المحادثة التفاعلية
+    chatMessages,          // ✅ تصدير مصفوفة المحادثة
     setChatMessages,
     setProjects, 
     setActiveProject, 

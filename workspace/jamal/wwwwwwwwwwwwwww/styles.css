@@ -1,0 +1,53 @@
+body { background-color: #080b11; }
+
+.max-w-md { max-width: 90%; }
+
+.text-slate-100 { color: #f8fafc; }
+
+.selection\:bg-cyan-500 { background-color: #06b6d4; }
+
+.selection\:text-slate-900 { color: #1a1d23; }
+
+.w-full { width: 100%; }
+
+.bg-\[\#0d121f\] { background-color: #0d121f; }
+
+.p-8 { padding: 2rem; }
+
+.text-center { text-align: center; }
+
+.shadow-2xl { box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
+
+.backdrop-blur-xl { backdrop-filter: blur(20px); }
+
+.relative { position: relative; }
+
+.z-10 { z-index: 10; }
+
+.w-full { width: 100%; }
+
+.text-white { color: #ffffff; }
+
+.mb-4 { margin-bottom: 1rem; }
+
+.text-4xl { font-size: 2.25rem; }
+
+.py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+
+.rounded-xl { border-radius: 0.5rem; }
+
+.hover\:opacity-90 { transition: opacity 0.3s; }
+
+.shadow-lg { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
+
+.shadow-cyan-500\/20 { box-shadow: 0 10px 15px -3px rgba(92, 252, 158, 0.2), 0 4px 6px -2px rgba(92, 252, 158, 0.05); }
+
+.bg-gradient-to-r { background-image: linear-gradient(to right, #06b6d4, #1d4ed8); }
+
+.text-4xl{font-size: 40px;}
+
+.bg-cyan-500\/5 { background-color: #06b6d4; }
+
+.mb-4 { margin-bottom: 16px; }
+
+#request-edit{cursor: pointer;}
