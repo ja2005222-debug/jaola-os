@@ -16,13 +16,11 @@ export function useSocket(isAuthenticated, handleAuthError) {
   const [logs, setLogs] = useState([]);
   const [streamingContent, setStreamingContent] = useState('');
   
-  // إدارة حالات المشاريع والمستخدم والروابط المصدقة داخل خطاف السوكيت
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState('sandbox_app');
   const [currentUser, setCurrentUser] = useState('guest_user');
   const [vercelUrl, setVercelUrl] = useState('');
 
-  // مصفوفة رسائل الشات
   const [chatMessages, setChatMessages] = useState([]);
 
   const [agentStates, setAgentStates] = useState({
@@ -93,6 +91,8 @@ export function useSocket(isAuthenticated, handleAuthError) {
       socket.off('chat_history').on('chat_history', (history) => {
         if (history && history.length > 0) {
           // جلب آخر 50 رسالة فقط من المحادثات التراكمية التاريخية للمطور
+      socket.off('chat_history').on('chat_history', (history) => {
+        if (history && history.length > 0) {
           const recentHistory = history.slice(-50);
           const formattedHistory = recentHistory.map(msg => ({
             sender: msg.role === 'user' ? 'user' : 'ai',
@@ -112,7 +112,6 @@ export function useSocket(isAuthenticated, handleAuthError) {
         }, 1000);
       });
 
-      // الاتصال والانضمام للغرفة
       socket.connect();
       socket.emit('join_project', { project: savedProject });
     }
@@ -144,6 +143,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
     setProjects, 
     setActiveProject, 
     setCurrentUser, 
+    setSocketUser: setCurrentUser,   // ✅ لإرضاء Dashboard
     setVercelUrl, 
     setStreamingContent, 
     setFiles, 
