@@ -180,15 +180,12 @@ export class JaolaCognitiveRuntime {
             context.mentalModel.successCriteria = Array.isArray(result.mission.successCriteria) ? result.mission.successCriteria : [];
             context.mentalModel.risks = Array.isArray(result.mission.risks) ? result.mission.risks : [];
             
-            // 🟢 تطبيع الثقة: إذا كانت بين 0-1 نعتبرها نسبة مئوية
             let confidence = result.meta.confidence;
             if (typeof confidence === 'number' && confidence <= 1) {
                 confidence = Math.round(confidence * 100);
             }
             context.metaReasoning.confidence = confidence || 70;
             context.metaReasoning.unknowns = Array.isArray(result.meta.unknowns) ? result.meta.unknowns : [];
-            
-            // نطلب توضيحاً فقط إذا الثقة ضعيفة جداً (أقل من 45) والمجاهيل موجودة
             context.metaReasoning.needsUserClarification = (context.metaReasoning.confidence < 45) && (context.metaReasoning.unknowns.length > 0);
             
             const allowed = ['Critical', 'High', 'Medium', 'Low'];
@@ -208,12 +205,9 @@ export class JaolaCognitiveRuntime {
         this.emitLiveLog(roomName, '3. EXECUTIVE BRAIN', 'CEO', '🎯 تفكيك الأهداف...');
         const unknowns = Array.isArray(context.metaReasoning.unknowns) ? context.metaReasoning.unknowns : [];
         
-        // 🟢 تعديل: لا نطلب توضيحاً بشكل صارم، بل نستمر إذا كانت الثقة معقولة
         if (context.metaReasoning.needsUserClarification && unknowns.length > 0) {
-            // عرض الأسئلة ولكن مع خيار المتابعة التلقائية
             this.emitLiveLog(roomName, '3. EXECUTIVE BRAIN', 'CEO', '🟡 ملاحظة: توجد مجاهيل، لكننا سنحاول المتابعة.');
             this.emitLiveLog(roomName, '3. EXECUTIVE BRAIN', 'CEO', `الأسئلة المحتملة:\n${unknowns.map((u,i)=>`${i+1}. ${u}`).join('\n')}`);
-            // لا نوقف التنفيذ، بل نستمر
         }
         
         if (!context.budget.consumeCall()) {
@@ -224,11 +218,15 @@ export class JaolaCognitiveRuntime {
         try {
             const completion = await groq.chat.completions.create({
                 messages: [
-                    { role: "system", content: "أنتج JSON: taskGraph, priorityQueue" },
-                    { role: "user", content: JSON.stringify(context.mentalModel) }
+                    { 
+                        role: "system", 
+                        content: "أنت مخطط مهام. أعد كائن JSON يحتوي على 'taskGraph' (مصفوفة من سلاسل تصف المهام الفرعية) و 'priorityQueue' (مصفوفة من كائنات تحتوي على 'taskName' و 'priority' و 'estimatedTime'). مثال: {\"taskGraph\": [\"تصميم الهيكل\", \"كتابة الكود\"], \"priorityQueue\": [{\"taskName\": \"تصميم الهيكل\", \"priority\": \"High\", \"estimatedTime\": 2}]}" 
+                    },
+                    { role: "user", content: `المشروع: ${JSON.stringify(context.mentalModel)}` }
                 ],
                 model: "llama-3.3-70b-versatile",
-                response_format: { type: "json_object" }
+                response_format: { type: "json_object" },   // ✅ ضمان JSON سليم
+                temperature: 0.2
             });
             const result = JSON.parse(completion.choices[0].message.content);
             context.executiveDecision.taskGraph = result.taskGraph || [];
@@ -280,7 +278,6 @@ export class JaolaCognitiveRuntime {
                 continue;
             }
 
-            // مراجعة متوازية
             const secAudit = CognitiveCapabilities.runSecurityAudit(plan.files);
             const archPromise = context.budget.consumeCall() ? agents.architectReview(plan) : Promise.resolve({ approved: true, feedback: '' });
             const qaPromise = context.budget.consumeCall() ? agents.qaVerify(plan) : Promise.resolve({ passed: true, logs: [] });
@@ -297,7 +294,6 @@ export class JaolaCognitiveRuntime {
                 continue;
             }
 
-            // نجاح
             await Promise.all(plan.files
                 .filter(f => ['index.html', 'styles.css', 'script.js'].includes(f.name) && typeof f.content === 'string')
                 .map(f => fsPromises.writeFile(path.join(context.projectPath, f.name), f.content))
@@ -351,7 +347,6 @@ export class JaolaCognitiveRuntime {
                 max_tokens: 100, temperature: 0.1
             });
             const result = JSON.parse(completion.choices[0].message.content);
-            // تطبيع الثقة إذا كانت بين 0-1
             if (result.confidence && result.confidence <= 1) {
                 result.confidence = Math.round(result.confidence * 100);
             }

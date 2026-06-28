@@ -1,140 +1,112 @@
-import { groq, ai } from './baseAgent.js';
-import * as templateGenerator from '../lib/templateGenerator.js';
+import { deepseek } from './baseAgent.js';
 
-const generateTemplate = templateGenerator.generateTemplate || templateGenerator.default?.generateTemplate;
-
-const handleApiError = (error) => {
-    const msg = error.message || '';
-    const isQuota = error.status === 429 || 
-                    msg.toLowerCase().includes('quota') || 
-                    msg.toLowerCase().includes('rate limit') || 
-                    msg.toLowerCase().includes('limit');
-    if (isQuota) {
-        return { 
-            error: 'API_QUOTA_EXHAUSTED', 
-            details: 'لقد نفدت الحصة اليومية لتوليد الكود عبر الذكاء الاصطناعي. يرجى التعديل يدوياً أو استخدام مفتاح API آخر.' 
-        };
+/**
+ * تحليل استجابة النموذج إلى كائنات ملفات { name, content }
+ * يفترض أن الاستجابة تحتوي على أقسام محددة مثل:
+ * // FILE: index.html
+ * المحتوى ...
+ * // FILE: styles.css
+ * المحتوى ...
+ */
+function parseResponseToFiles(responseText) {
+    const files = [];
+    const fileRegex = /\/\/\s*FILE:\s*(\S+)\s*\n([\s\S]*?)(?=\/\/\s*FILE:|$)/g;
+    let match;
+    while ((match = fileRegex.exec(responseText)) !== null) {
+        files.push({
+            name: match[1],
+            content: match[2].trim()
+        });
     }
-    return { error: 'API_ERROR', details: msg };
-};
+    // إذا لم نجد أي ملفات، نعيد المصفوفة فارغة
+    if (files.length === 0) {
+        // ربما النموذج أرجع HTML مباشرة، نحاول استخراج وسوم <html> ... </html>
+        const htmlMatch = responseText.match(/<html[\s\S]*?<\/html>/i);
+        if (htmlMatch) {
+            files.push({ name: 'index.html', content: htmlMatch[0] });
+        }
+    }
+    return files;
+}
 
-export async function coreGenerateCodePlan(userPrompt, currentCodeContext, category, chatHistory, onChunk) {
-    const safeCategory = category || 'default';
-    const baseTemplate = (typeof generateTemplate === 'function') 
-        ? generateTemplate(safeCategory, 'light') 
-        : { html: '<h1>JAOLA OS Sandbox Ready</h1>', css: 'body { font-family: sans-serif; }' };
+/**
+ * توليد خطة الكود باستخدام DeepSeek Coder
+ * @param {string} prompt - وصف المستخدم للمشروع
+ * @param {string} currentCodeContext - محتوى الملفات الحالية (إن وجدت)
+ * @param {string} visualIdentity - الهوية البصرية المفضلة
+ * @param {Array} images - صور مطلوبة (غير مستخدمة عادة في هذه الدالة)
+ * @param {Function} onChunk - callback للبث المباشر (اختياري)
+ * @returns {Promise<{files: Array, images: Array} | {error: boolean, details: string}>}
+ */
+export async function coreGenerateCodePlan(prompt, currentCodeContext, visualIdentity, images, onChunk) {
+    const systemMessage = `أنت خبير برمجة مواقع ويب متكاملة. أنشئ كود HTML/CSS/JavaScript حديثاً وجميلاً ومتجاوباً مع جميع الأجهزة.
 
-    const systemInstruction = `أنت مهندس البرمجيات الأول وخبير واجهات وتجربة المستخدم (Lead UI/UX Engineer) لمنصة JAOLA OS المتقدمة.
-    دورك هو قيادة التطوير وصياغة الكود التنفيذي النهائي المكتوب بحرفية بالغة وجودة فائقة.
+اتبع التعليمات بدقة:
+- التصميم يجب أن يكون عصرياً، باستخدام ألوان متناسقة، وتأثيرات زجاجية (glassmorphism) أو نيون حسب الطلب: "${visualIdentity || 'عصري نظيف'}".
+- اجعل الموقع متجاوباً (responsive) ويعمل على الهواتف والأجهزة اللوحية.
+- استخدم خطوط عصرية (مثل Google Fonts) ورموز تعبيرية عند الحاجة.
+- أضف تعليقات توضيحية بالعربية في الكود.
+- هيكل الكود يجب أن يكون نظيفاً ومنظماً.
 
-    🚨 [بروتوكول التطوير الصارم والقوانين الإلزامية]:
+مخرجاتك يجب أن تكون على الشكل التالي بالضبط (استخدم التعليقات كما هي):
 
-    1. مبدأ الحفاظ على المكتسبات (State Preservation):
-    - يمنع منعاً باتاً إلغاء أو حذف أو تبسيط أي ميزات، أكواد، أو عناصر تم بناؤها في المراحل السابقة داخل "الكود الفعلي الحالي".
-    - يمنع استخدام تعليقات نائبة مثل "// كودك السابق هنا" أو "// باقي الكود لا يتغير". يجب كتابة الكود كاملاً (كامل الملف) وبشكل جاهز تماماً للعمل فوراً دون أي قطع أو اختزال.
+// FILE: index.html
+(كود HTML كاملاً)
 
-    2. مبدأ الحرفية البصرية والجمالية (UI/UX Craftsmanship):
-    - التزم بتصميم عصري فخم وسريع الاستجابة (Responsive) ومريح للعين (استخدم خطوط عربية أنيقة مثل Cairo أو Tajawal عبر Google Fonts).
-    - استخدم تنسيقات CSS حديثة: Flexbox و Grid لتنظيم المحاذاة، ألوان متناغمة، تباين لوني ممتاز، تأثيرات Hover تفاعلية، وانتقالات ناعمة (Transitions).
-    - استخدم تدرجات لونية عصرية، تأثيرات Glassmorphism خفيفة، وظلال تمنح الواجهة عمقاً بصرياً فخماً.
+// FILE: styles.css
+(كود CSS كاملاً)
 
-    3. مبدأ التفاعل والصلابة (Interactive JS & Resilience):
-    - اكتب كود JavaScript نظيف، خالي من الأخطاء المنطقية، ومبني لتفادي تعارض أحداث DOM.
-    - أضف تفاعلات ديناميكية ملهمة (مثل حركات فتح القوائم، تحديثات حية للبيانات، رسائل تأكيدية Toast عصرية عند الحفظ، وتأثيرات تحميل Spinner).
+// FILE: script.js
+(كود JavaScript كاملاً)
 
-    4. التعامل مع الصور الفنية بالذكاء الاصطناعي (Imagen 3):
-    - أنت قادر على طلب صور فنية مخصصة تخدم هوية الموقع.
-    - عندما تحتاج صورة (مثل صورة غلاف بطل hero banner، أو خلفيات ميزات)، قم بوضع رابطها في الـ HTML هكذا: "assets/hero.png" أو "assets/feature1.png" وهكذا.
-    - قم بإدراج طلب توليد هذه الصور في حقل الـ "images" بداخل رد الـ JSON الخاص بك، مع كتابة وصف فني دقيق جداً (باللغة الإنجليزية) لكيفية رسم الصورة عبر Imagen 3 لتكون بدقة نيونية فخمة ومتناسقة مع الموقع.
+لا تكتب أي شيء خارج هذه الملفات.`;
 
-    [القالب المصنعي المعتمد للمجال في حال البدء من الصفر]:
-    HTML BASE: ${baseTemplate.html}
-    CSS BASE: ${baseTemplate.css}
+    const userMessage = `المشروع المطلوب: ${prompt}\n\nالكود الحالي للمشروع (إن وجد):\n${currentCodeContext || 'لا يوجد كود سابق'}`;
 
-    صيغة الرد إلزامية ولا تقبل أي نقاش أو نصوص توضيحية خارجها. يجب أن يكون الرد عبارة عن كود JSON نقي وصالح للتحليل المباشر (Valid JSON):
-    {
-      "files": [
-        { "name": "index.html", "content": "HTML المحدث بالكامل" },
-        { "name": "styles.css", "content": "CSS المحدث بالكامل" },
-        { "name": "script.js", "content": "JS المحدث بالكامل" }
-      ],
-      "images": [
-        { "fileName": "assets/hero.png", "prompt": "A professional high-resolution, futuristic dark themed digital art of pizza baking in a clay oven with neon orange glows, widescreen 16:9, concept design" }
-      ]
-    }`;
-
-    let messagesPayload = [{ role: "system", content: systemInstruction }];
-
-    chatHistory.forEach(hist => {
-        messagesPayload.push({ role: hist.role, content: hist.content });
-    });
-
-    const userContent = `[الكود الفعلي الحالي في المجلد]:\n${currentCodeContext || ""}\n\n[طلب التعديل الجديد للعميل]: "${userPrompt}"`;
-    messagesPayload.push({ role: "user", content: userContent });
-
-    if (groq) {
-        try {
-            const completion = await groq.chat.completions.create({
-                messages: messagesPayload,
-                model: "llama-3.3-70b-versatile",
-                response_format: { type: "json_object" },
-                stream: true 
+    try {
+        // إذا كان هناك دالة onChunk، نفعل البث المباشر
+        if (onChunk) {
+            const stream = await deepseek.chat.completions.create({
+                model: "deepseek-coder",
+                messages: [
+                    { role: "system", content: systemMessage },
+                    { role: "user", content: userMessage }
+                ],
+                temperature: 0.3,
+                max_tokens: 4096,
+                stream: true,
             });
-            
-            let fullContent = "";
-            for await (const chunk of completion) {
-                const text = chunk.choices[0]?.delta?.content || "";
-                fullContent += text;
-                if (typeof onChunk === 'function' && text) {
-                    onChunk(text);
+
+            let fullResponse = '';
+            for await (const chunk of stream) {
+                const content = chunk.choices[0]?.delta?.content || '';
+                if (content) {
+                    fullResponse += content;
+                    onChunk(content); // بث مباشر للواجهة
                 }
             }
 
-            chatHistory.push({ role: "user", content: userPrompt });
-            chatHistory.push({ role: "assistant", content: fullContent });
-            return JSON.parse(fullContent);
-        } catch (e) { 
-            console.log('⚠️ خطأ في بث Groq، التحويل لـ Gemini البديل المتدفق...'); 
-            const errRes = handleApiError(e);
-            if (errRes.error === 'API_QUOTA_EXHAUSTED' && !ai) return errRes;
-        }
-    }
-
-    if (ai) {
-        try {
-            const responseStream = await ai.models.generateContentStream({
-                model: 'gemini-2.5-flash',
-                contents: geminiContents,
-                config: { 
-                    systemInstruction: systemInstruction,
-                    responseMimeType: "application/json" 
-                }
+            const files = parseResponseToFiles(fullResponse);
+            return { files, images: [] };
+        } else {
+            // بدون بث
+            const completion = await deepseek.chat.completions.create({
+                model: "deepseek-coder",
+                messages: [
+                    { role: "system", content: systemMessage },
+                    { role: "user", content: userMessage }
+                ],
+                temperature: 0.3,
+                max_tokens: 4096,
+                stream: false,
             });
 
-            let fullContent = "";
-            for await (const chunk of responseStream) {
-                const text = chunk.text;
-                fullContent += text;
-                if (typeof onChunk === 'function' && text) {
-                    onChunk(text);
-                }
-            }
-
-            chatHistory.push({ role: "user", content: userPrompt });
-            chatHistory.push({ role: "assistant", content: fullContent });
-            return JSON.parse(fullContent);
-        } catch (e) { 
-            console.log('⚠️ فشل البث عبر محرك Gemini البديل أيضاً:', e.message); 
-            return handleApiError(e);
+            const responseText = completion.choices[0].message.content;
+            const files = parseResponseToFiles(responseText);
+            return { files, images: [] };
         }
+    } catch (error) {
+        console.error('DeepSeek Coder Error:', error);
+        return { error: true, details: error.message };
     }
-
-    return { 
-        files: [
-            { name: 'index.html', content: baseTemplate.html }, 
-            { name: 'styles.css', content: baseTemplate.css }, 
-            { name: 'script.js', content: '// default safety mode' }
-        ],
-        images: []
-    };
 }
