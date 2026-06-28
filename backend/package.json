@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "main": "server.js",
-"postinstall": "cd ../frontend && npm install && npm run build"
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "postinstall": "cd ../frontend && npm install && npm run build"
   },
   "dependencies": {
     "@google/genai": "^2.9.0",
