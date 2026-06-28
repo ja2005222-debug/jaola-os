@@ -39,6 +39,18 @@ const io = new Server(httpServer, {
 
 app.use(cors()); // فتح الـ CORS لجميع مسارات Express
 app.use(express.json());
+// 🟢 تقديم ملفات الواجهة الأمامية الثابتة
+const frontendDistPath = path.join(__dirname, '../frontend/dist');
+app.use(express.static(frontendDistPath));
+
+// 🟢 إعادة جميع المسارات غير المعروفة إلى index.html (لتطبيقات SPA)
+app.get('*', (req, res, next) => {
+  // استثناء مسارات الـ API حتى لا يتعارض
+  if (req.path.startsWith('/api') || req.path.startsWith('/workspace')) {
+    return next();
+  }
+  res.sendFile(path.join(frontendDistPath, 'index.html'));
+});
 
 // تهيئة محرك الإدراك المعرفي الشامل لـ JCOS v4.0
 const runtime = new JaolaCognitiveRuntime(io);
