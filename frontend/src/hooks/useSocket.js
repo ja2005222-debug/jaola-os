@@ -5,6 +5,7 @@ const BACKEND_URL = window.location.hostname === 'localhost' || window.location.
   ? `http://${window.location.hostname}:4000`
   : 'https://jaola-os.onrender.com';
 
+// استخدام الـ transports المتجاوزة لجدران الحماية
 export const socket = io(BACKEND_URL, { 
   autoConnect: false,
   transports: ['polling', 'websocket'] 
@@ -65,7 +66,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
         setAgentStates(states);
       });
 
-      // السجلات (مع فلترة الرسائل الموجهة للشات إن وُجدت)
+      // السجلات (مع فلترة الرسائل الموجهة للشات)
       socket.off('log').on('log', (newLog) => {
         setLogs((prev) => [...prev.slice(-100), newLog]);
 
@@ -88,14 +89,16 @@ export function useSocket(isAuthenticated, handleAuthError) {
         }]);
       });
 
-      // 💾 4. استقبال وحقن تاريخ الدردشة التراكمي المصدق بالكامل من الـ DB لإنعاش ذاكرة الشات حركياً
+      // 🛠️ تفعيل المزامنة المعززة لجلب أحدث 50 محادثة للوراء من الـ DB لإنعاش ذاكرة الشات حركياً
       socket.off('chat_history').on('chat_history', (history) => {
         if (history && history.length > 0) {
-          const formattedHistory = history.map(msg => ({
+          // جلب آخر 50 رسالة فقط من المحادثات التراكمية التاريخية للمطور
+          const recentHistory = history.slice(-50);
+          const formattedHistory = recentHistory.map(msg => ({
             sender: msg.role === 'user' ? 'user' : 'ai',
             text: msg.content
           }));
-          setChatMessages(formattedHistory); // تحديث واجهة الشات بالتاريخ التراكمي
+          setChatMessages(formattedHistory); 
         }
       });
 
@@ -122,7 +125,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
       socket.off('agent_states');
       socket.off('log');
       socket.off('chat_reply');        
-      socket.off('chat_history'); // تنظيف المستمع الجديد
+      socket.off('chat_history'); 
       socket.off('connect_error');
     };
   }, [currentUser, activeProject, isAuthenticated]);

@@ -39,3 +39,6 @@ out/
 *.tar.gz
 *.rar
 jaola.zip
+.env
+.env.save
+.env.backup
