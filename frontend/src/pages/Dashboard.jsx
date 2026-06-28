@@ -5,7 +5,9 @@ import { PreviewFrame } from '../components/PreviewFrame.jsx';
 import Editor from '@monaco-editor/react';
 
 // حساب عنوان الباك إند ديناميكياً لتفادي مشاكل الـ Localhost في الكروم بوك
-const BACKEND_URL = `http://${window.location.hostname}:4000`;
+const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname.startsWith('100.115')
+  ? `http://${window.location.hostname}:4000`
+  : 'https://jaola-os.onrender.com';
 
 export default function Dashboard() {
   const [projectTrigger, setProjectTrigger] = useState('sandbox_app');
