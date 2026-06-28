@@ -5,7 +5,6 @@ const BACKEND_URL = window.location.hostname === 'localhost' || window.location.
   ? `http://${window.location.hostname}:4000`
   : 'https://jaola-os.onrender.com';
 
-// استخدام الـ transports المتجاوزة لجدران الحماية
 export const socket = io(BACKEND_URL, { 
   autoConnect: false,
   transports: ['polling', 'websocket'] 
@@ -64,7 +63,6 @@ export function useSocket(isAuthenticated, handleAuthError) {
         setAgentStates(states);
       });
 
-      // السجلات (مع فلترة الرسائل الموجهة للشات)
       socket.off('log').on('log', (newLog) => {
         setLogs((prev) => [...prev.slice(-100), newLog]);
 
@@ -87,10 +85,6 @@ export function useSocket(isAuthenticated, handleAuthError) {
         }]);
       });
 
-      // 🛠️ تفعيل المزامنة المعززة لجلب أحدث 50 محادثة للوراء من الـ DB لإنعاش ذاكرة الشات حركياً
-      socket.off('chat_history').on('chat_history', (history) => {
-        if (history && history.length > 0) {
-          // جلب آخر 50 رسالة فقط من المحادثات التراكمية التاريخية للمطور
       socket.off('chat_history').on('chat_history', (history) => {
         if (history && history.length > 0) {
           const recentHistory = history.slice(-50);
@@ -143,7 +137,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
     setProjects, 
     setActiveProject, 
     setCurrentUser, 
-    setSocketUser: setCurrentUser,   // ✅ لإرضاء Dashboard
+    setSocketUser: setCurrentUser,   // لأجل Dashboard
     setVercelUrl, 
     setStreamingContent, 
     setFiles, 
