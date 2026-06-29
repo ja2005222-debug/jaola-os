@@ -42,3 +42,7 @@ jaola.zip
 .env
 .env.save
 .env.backup
+workspace/
+tenants/
+.env
+backend/memory/

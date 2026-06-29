@@ -1,6 +1,0 @@
-const openGalleryBtn = document.getElementById('openGalleryBtn');
-const gallery = document.getElementById('gallery');
-
-openGalleryBtn.addEventListener('click', () => {
-    gallery.classList.toggle('gallery-open');
-});

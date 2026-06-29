@@ -1,1 +1,0 @@
-function showSweetMenu() { document.getElementById('sweetMenu').classList.toggle('hidden'); }
