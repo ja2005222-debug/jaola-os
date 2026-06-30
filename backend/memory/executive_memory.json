@@ -1,6 +1,56 @@
 {
+  "4444": {
+    "preferredUi": "تسهيل استخدام الموقع",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "123456": {
+    "preferredUi": "تحسين تجربة المستخدم",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "223344": {
+    "preferredUi": "توفير تجربة 유저 ممتعة وسهلة لتشجيع العملاء على الشراء",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
   "jamal": {
-    "preferredUi": "تطوير الواجهة بشكل جذاب ويجعل المستخدم يشعر بالاهتمام مع تجنب استخدام Bootstrap",
+    "preferredUi": "توفير واجهة مستخدم سهلة و تفاعلية تساعد المرضى على العثور على المعلومات الضرورية وخدمات المستشفى",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "guest_user": {
+    "preferredUi": "جعل الواجهة أكثر جاذبية",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "جمال": {
+    "preferredUi": "تحسين الشكل العام",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "nana": {
+    "preferredUi": "تصميم واجهة مستخدم بسيطة وسهلة الاستخدام ويمكن الوصول إليها",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "testuser": {
+    "preferredUi": "تجربة مستخدم سهلة وممتعة",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "musa": {
+    "preferredUi": "تطوير واجهة مستخدم متجاوبة وسهلة الاستخدام لعمليات الحذف",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "nanana": {
+    "preferredUi": "تجربة مستخدم ممتعة وسهلة التصفح",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "dfd": {
+    "preferredUi": "تصميم واجهة مستخدم جذابة وسهلة الاستخدام",
     "dislikedTech": "Bootstrap",
     "language": "Arabic"
   }

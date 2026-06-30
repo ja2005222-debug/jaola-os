@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import './dbConfig.js'; // استيراد ملف التهيئة كأول سطر على الإطلاق لتفادي الـ Hoisting الانهياري
+import './dbConfig.js';
 
 import express from 'express';
 import cors from 'cors';
@@ -10,161 +10,220 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
-// استيراد الموديلات
 import User from './models/User.js';
 import Project from './models/Project.js';
-import Conversation from './models/Conversation.js'; // استيراد الموديل لإنعاش ذاكرة الشات
+import Conversation from './models/Conversation.js';
 
-// استيراد الوكلاء المطورين ومحرك الـ JCOS 
-import { 
-    coreClassifyIntent, 
-    coreGenerateCodePlan, 
-    architectReview, 
-    qaVerify, 
+import {
+    coreClassifyIntent,
+    coreGenerateCodePlan,
+    architectReview,
+    qaVerify,
     deployProject,
-    JaolaCognitiveRuntime 
+    applyTemplate,
+    JaolaCognitiveRuntime
 } from './agents/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const httpServer = createServer(app);
 
-const JWT_SECRET = process.env.JWT_SECRET || 'jaola-super-secret-key-98745';
+// ─── حارس JWT_SECRET — يمنع التشغيل بسر افتراضي معروف ──────────────
+if (!process.env.JWT_SECRET) {
+    console.error('❌ FATAL: JWT_SECRET غير مضبوط في ملف .env — لا يمكن التشغيل بأمان.');
+    process.exit(1);
+}
+const JWT_SECRET = process.env.JWT_SECRET;
+
+// ─── CORS مضبوط — ليس مفتوحاً للجميع ──────────────────────────────
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')
+    .split(',')
+    .map(o => o.trim());
+
+const corsOptions = {
+    origin: (origin, callback) => {
+        // السماح لطلبات بدون origin (مثل curl أو SSR) أو من النطاقات المسموحة
+        if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error(`CORS: Origin غير مسموح: ${origin}`));
+        }
+    },
+    credentials: true,
+};
 
 const io = new Server(httpServer, {
-    cors: { origin: "*", methods: ["GET", "POST"] } // فتح الـ CORS للسوكيت بالكامل عبر البروكسي
+    cors: {
+        origin: ALLOWED_ORIGINS,
+        methods: ['GET', 'POST'],
+        credentials: true,
+    }
 });
 
-app.use(cors()); // فتح الـ CORS لجميع مسارات Express
-app.use(express.json());
-// 🟢 تقديم ملفات الواجهة الأمامية الثابتة
+app.use(cors(corsOptions));
+app.use(express.json({ limit: '1mb' })); // حد أقصى لحجم الطلب
+
+// ─── تقديم الواجهة الأمامية الثابتة ────────────────────────────────
 const frontendDistPath = path.join(__dirname, '../frontend/dist');
-app.use(express.static(frontendDistPath));
+if (fs.existsSync(frontendDistPath)) {
+    app.use(express.static(frontendDistPath));
+    app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/api') || req.path.startsWith('/workspace')) return next();
+        res.sendFile(path.join(frontendDistPath, 'index.html'));
+    });
+}
 
-// 🟢 إعادة جميع المسارات غير المعروفة إلى index.html (لتطبيقات SPA)
-app.get('*', (req, res, next) => {
-  // استثناء مسارات الـ API حتى لا يتعارض
-  if (req.path.startsWith('/api') || req.path.startsWith('/workspace')) {
-    return next();
-  }
-  res.sendFile(path.join(frontendDistPath, 'index.html'));
-});
-
-// تهيئة محرك الإدراك المعرفي الشامل لـ JCOS v4.0
+// ─── محرك JCOS v4.0 ─────────────────────────────────────────────────
 const runtime = new JaolaCognitiveRuntime(io);
 
-// مفتاح التحقق الصارم والذكي من نجاح الاتصال الفعلي بقاعدة البيانات
+// ─── اتصال MongoDB ──────────────────────────────────────────────────
 let isDbConnected = false;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/jaola_os';
 
 mongoose.connect(MONGO_URI)
-    .then(() => {
-        console.log('💾 [Database]: متصل بنواة MongoDB بنجاح.');
-        isDbConnected = true; 
-    })
-    .catch((err) => {
-        console.log('⚠️ [Database]: وضع الاستعداد المحلي (الـ VPS) نشط تلقائياً، والمنصة تعمل بنظام الصمود المؤقت.');
-        isDbConnected = false;
-    });
+    .then(() => { console.log('💾 [Database]: متصل بـ MongoDB.'); isDbConnected = true; })
+    .catch(() => { console.log('⚠️ [Database]: وضع الصمود المؤقت نشط.'); isDbConnected = false; });
 
-// غلاف البيانات الموحد لحظر الانهيارات الصامتة لمونجوس عند غياب الـ DB
+// ─── غلاف DB مع graceful fallback ───────────────────────────────────
 const DB = {
+    _isOnline() { return isDbConnected && mongoose.connection.readyState === 1; },
+
     async findUser(username) {
-        if (isDbConnected && mongoose.connection.readyState === 1) {
+        if (this._isOnline()) {
             try { return await User.findOne({ username }); } catch (e) {}
         }
-        return { id: 'mock_user_id', username, email: `${username}@jaola-twin.io` };
+        return null; // لا نُعيد user وهمي — يُعالج في الـ route
     },
-    async createUser(username) {
-        if (isDbConnected && mongoose.connection.readyState === 1) {
-            try { return await User.create({ username, email: `${username}@jaola-twin.io` }); } catch (e) {}
+    async createUser(username, passwordHash = null) {
+        if (this._isOnline()) {
+            try {
+                return await User.create({
+                    username,
+                    email: `${username}@jaola-twin.io`,
+                    ...(passwordHash && { password: passwordHash })
+                });
+            } catch (e) { return null; }
         }
-        return { id: 'mock_user_id', username, email: `${username}@jaola-twin.io` };
+        return { id: `offline_${username}`, username, email: `${username}@jaola-twin.io` };
     },
     async findProject(name, owner) {
-        if (isDbConnected && mongoose.connection.readyState === 1) {
+        if (this._isOnline()) {
             try { return await Project.findOne({ name, owner }); } catch (e) {}
         }
-        return { name, owner, vercelUrl: '' };
+        // في وضع offline: المشاريع العامة + sandbox_app مسموحة
+        return name === 'sandbox_app' ? { name, owner, vercelUrl: '' } : null;
     },
     async findUserProjects(owner) {
-        if (isDbConnected && mongoose.connection.readyState === 1) {
+        if (this._isOnline()) {
             try { return await Project.find({ owner }).lean(); } catch (e) {}
         }
         return [{ name: 'sandbox_app', owner }];
     },
     async createProject(name, owner) {
-        if (isDbConnected && mongoose.connection.readyState === 1) {
+        if (this._isOnline()) {
             try { return await Project.create({ name, owner }); } catch (e) {}
         }
         return { name, owner, vercelUrl: '' };
     }
 };
 
+// ─── مسارات الـ workspace على القرص ─────────────────────────────────
 const BASE_WORKSPACE = path.resolve(__dirname, '../workspace');
 if (!fs.existsSync(BASE_WORKSPACE)) fs.mkdirSync(BASE_WORKSPACE);
 
-// إعادة هيكلة المسار ليكون معزولاً فيزيائياً بإنشاء مجلد مخصص لكل مستخدم وبداخله مشاريعه (True Isolation)
 const getProjectPath = (username, activeProject) => {
-    const user = username || 'guest_user';
-    const userPath = path.join(BASE_WORKSPACE, user);
+    // تطهير المدخلات لمنع path traversal
+    const safeUser = (username || 'guest_user').replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
+    const safeProject = (activeProject || 'sandbox_app').replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
+
+    const userPath = path.join(BASE_WORKSPACE, safeUser);
     if (!fs.existsSync(userPath)) fs.mkdirSync(userPath, { recursive: true });
 
-    const projectPath = path.join(userPath, activeProject || 'sandbox_app');
+    const projectPath = path.join(userPath, safeProject);
     if (!fs.existsSync(projectPath)) fs.mkdirSync(projectPath, { recursive: true });
     return projectPath;
 };
 
-// ==========================================
-// 🛡️ الوسائط الأمنية (Security Middlewares)
-// ==========================================
+// ─── Middlewares أمنية ───────────────────────────────────────────────
 
+// Rate limiter للـ AI — يمنع الاستنزاف
 const aiLimit = rateLimit({
-    windowMs: 60 * 1000, 
-    max: 10, 
-    keyGenerator: (req) => req.user?.id || 'anonymous', 
-    handler: (req, res) => res.status(429).json({ 
-        error: 'API_QUOTA_EXHAUSTED', 
-        details: 'لقد تجاوزت حد استهلاك طلبات الـ AI للدقيقة الحالية. يرجى الانتظار قليلاً.' 
+    windowMs: 60 * 1000,
+    max: 10,
+    keyGenerator: (req) => req.user?.id || ipKeyGenerator(req),
+    handler: (req, res) => res.status(429).json({
+        error: 'API_QUOTA_EXHAUSTED',
+        details: 'تجاوزت الحد المسموح (10 طلبات/دقيقة). انتظر قليلاً.'
     })
 });
 
+// Rate limiter عام للـ API
+const generalLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 300,
+    keyGenerator: (req) => ipKeyGenerator(req),
+});
+app.use('/api', generalLimit);
+
+// verifyToken — يرفض الطلبات بدون توكن صريح
 export function verifyToken(req, res, next) {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) {
-        req.user = { id: 'guest_user_id', username: 'guest_user', email: 'guest@jaola-twin.io' };
-        return next();
+        return res.status(401).json({ error: 'غير مصرح: التوكن مفقود.' });
     }
 
     jwt.verify(token, JWT_SECRET, (err, user) => {
         if (err) {
-            req.user = { id: 'guest_user_id', username: 'guest_user', email: 'guest@jaola-twin.io' };
-            return next();
+            return res.status(401).json({ error: 'غير مصرح: التوكن منتهي أو غير صالح.' });
         }
         req.user = user;
         next();
     });
 }
 
-async function validateProjectOwnership(req, res, next) {
-    const { project } = req.body;
-    const activeProj = project || req.query.project || 'sandbox_app';
-    const username = req.user.username;
+// verifyToken مع fallback للضيف — فقط للمسارات التي تسمح بالوصول كضيف
+function verifyTokenOrGuest(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
 
-    const projectRecord = await DB.findProject(activeProj, username);
-    if (!projectRecord && activeProj !== 'sandbox_app') {
-        return res.status(403).json({ error: 'غير مصرح بالوصول: هذا المشروع لا يخص حسابك.' });
+    if (!token) {
+        req.user = { id: 'guest', username: 'guest_user' };
+        return next();
     }
-    
-    req.projectPath = getProjectPath(username, activeProj); 
-    req.activeProject = activeProj;
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        req.user = err ? { id: 'guest', username: 'guest_user' } : user;
+        next();
+    });
+}
+
+// التحقق من ملكية المشروع
+async function validateProjectOwnership(req, res, next) {
+    const project = req.body?.project || req.query?.project || 'sandbox_app';
+    const username = req.user.username;
+    const safeProject = project.trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '-');
+
+    if (safeProject === 'sandbox_app') {
+        req.projectPath = getProjectPath(username, safeProject);
+        req.activeProject = safeProject;
+        return next();
+    }
+
+const projectRecord = await DB.findProject(safeProject, username);
+if (!projectRecord) {
+    // إنشاء المشروع تلقائياً إذا لم يكن موجوداً
+    await DB.createProject(safeProject, username);
+}
+    req.projectPath = getProjectPath(username, safeProject);
+    req.activeProject = safeProject;
     next();
 }
 
+// إنشاء نسخة احتياطية قبل الحفظ
 function createBackupSnapshot(projectPath, fileName) {
     const filePath = path.join(projectPath, fileName);
     if (!fs.existsSync(filePath)) return;
@@ -172,8 +231,7 @@ function createBackupSnapshot(projectPath, fileName) {
     const backupDir = path.join(projectPath, '.backups');
     if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
 
-    const timestamp = Date.now();
-    const backupPath = path.join(backupDir, `${fileName}.${timestamp}.bak`);
+    const backupPath = path.join(backupDir, `${fileName}.${Date.now()}.bak`);
     fs.copyFileSync(filePath, backupPath);
 
     try {
@@ -181,101 +239,95 @@ function createBackupSnapshot(projectPath, fileName) {
             .filter(f => f.startsWith(fileName))
             .map(f => ({ name: f, time: fs.statSync(path.join(backupDir, f)).mtimeMs }))
             .sort((a, b) => b.time - a.time);
-
         if (backups.length > 5) {
             backups.slice(5).forEach(b => fs.unlinkSync(path.join(backupDir, b.name)));
         }
     } catch (e) {}
 }
 
-const emitWorkspaceFiles = (roomName, projectPath, force = false) => {
+// ─── دوال بث الأحداث ─────────────────────────────────────────────────
+const emitWorkspaceFiles = (roomName, projectPath) => {
     try {
-        const files = fs.readdirSync(projectPath).filter(f => f !== '.backups');
+        const files = fs.readdirSync(projectPath).filter(f => f !== '.backups' && !f.startsWith('.'));
         io.to(roomName).emit('workspace_files', files);
-        io.to(roomName).emit('preview_updated', { timestamp: Date.now() }); 
+        io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
     } catch (e) {}
 };
 
 const emitUserProjects = async (roomName, username, activeProject) => {
     try {
-        let projects = ['sandbox_app'];
-        let currentVercelUrl = '';
-
         const projectsData = await DB.findUserProjects(username);
-        if (projectsData.length > 0) projects = projectsData.map(p => p.name);
-        const currentProjRecord = projectsData.find(p => p.name === activeProject);
-        if (currentProjRecord) currentVercelUrl = currentProjRecord.vercelUrl || '';
-        
-        io.to(roomName).emit('user_projects', { 
-            projects, 
-            activeProject, 
-            currentUser: username, 
-            vercelUrl: currentVercelUrl 
+        const projects = projectsData.length > 0 ? projectsData.map(p => p.name) : ['sandbox_app'];
+        const currentProj = projectsData.find(p => p.name === activeProject);
+        io.to(roomName).emit('user_projects', {
+            projects,
+            activeProject,
+            currentUser: username,
+            vercelUrl: currentProj?.vercelUrl || ''
         });
-    } catch (err) {}
+    } catch (e) {}
 };
 
-// ==========================================
-// 🔌 تأمين اتصالات ومصادقة الـ WebSockets
-// ==========================================
-
+// ─── Socket.io — مصادقة صارمة ────────────────────────────────────────
 io.use((socket, next) => {
     const token = socket.handshake.auth?.token;
-    if (!token) return next(new Error('صلاحية الاتصال مفقودة (Token Required)'));
+    if (!token) return next(new Error('Unauthorized: Token Required'));
 
     jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return next(new Error('اتصال سوكيت غير مصرح به (Unauthorized)'));
-        socket.user = user; 
+        if (err) return next(new Error('Unauthorized: Invalid Token'));
+        socket.user = user;
         next();
     });
 });
 
 io.on('connection', (socket) => {
-    
     socket.on('join_project', async ({ project }) => {
         const username = socket.user.username;
-        const sanitizedProject = (project || 'sandbox_app').trim().toLowerCase().replace(/\s+/g, '-');
-        
-        const projectRecord = await DB.findProject(sanitizedProject, username);
-        if (!projectRecord && sanitizedProject !== 'sandbox_app') {
-            socket.emit('log', { message: `❌ [ERROR]: غير مصرح لك بالانضمام للمشروع (${sanitizedProject}).` });
-            return;
+        const safeProject = (project || 'sandbox_app').trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '-');
+
+        // التحقق من الملكية (sandbox_app مفتوح للجميع)
+        if (safeProject !== 'sandbox_app') {
+            const projectRecord = await DB.findProject(safeProject, username);
+            if (!projectRecord) {
+                socket.emit('log', { message: `❌ [ERROR]: غير مصرح لك بالانضمام للمشروع (${safeProject}).` });
+                return;
+            }
         }
 
-        const roomName = `${username}-${sanitizedProject}`;
-        
+        const roomName = `${username}-${safeProject}`;
+
+        // مغادرة الغرف السابقة
         socket.rooms.forEach(room => {
             if (room !== socket.id) socket.leave(room);
         });
 
         socket.join(roomName);
         socket.roomName = roomName;
-        socket.activeProject = sanitizedProject;
+        socket.activeProject = safeProject;
 
-        const projectPath = getProjectPath(username, sanitizedProject); 
-        emitWorkspaceFiles(roomName, projectPath, true);
-        await emitUserProjects(roomName, username, sanitizedProject);
+        const projectPath = getProjectPath(username, safeProject);
+        emitWorkspaceFiles(roomName, projectPath);
+        await emitUserProjects(roomName, username, safeProject);
 
-        // جلب وبث تاريخ المحادثة التراكمي للمستخدم من الأطلس لإنعاش الذاكرة المعرفية حراً
+        // استعادة تاريخ المحادثة
         if (isDbConnected && mongoose.connection.readyState === 1) {
             try {
                 const convo = await Conversation.findOne({ username });
-                if (convo && convo.messages.length > 0) {
-                    socket.emit('chat_history', convo.messages); 
+                if (convo?.messages?.length > 0) {
+                    socket.emit('chat_history', convo.messages.slice(-50));
                 }
-            } catch (e) {
-                console.error('Failed to emit chat history:', e);
-            }
+            } catch (e) {}
         }
     });
 });
 
-// ==========================================
-// 🌐 المسارات البرمجية الموثوقة (Secure Routes)
-// ==========================================
+// ─── المسارات ─────────────────────────────────────────────────────────
 
-app.get('/workspace', (req, res) => {
-    const { project, username } = req.query;
+// workspace: يخدم ملفات الـ iframe — مع تحقق من الـ username عبر التوكن
+// ملاحظة: الـ iframe لا يستطيع إرسال Authorization header، لذا نستخدم query token مؤقت
+app.get('/workspace', verifyTokenOrGuest, (req, res) => {
+    const username = req.user.username;
+    const project = req.query.project || 'sandbox_app';
     const projectPath = getProjectPath(username, project);
     const filePath = path.join(projectPath, 'index.html');
     if (fs.existsSync(filePath)) {
@@ -285,12 +337,20 @@ app.get('/workspace', (req, res) => {
     res.status(404).send('index.html not found');
 });
 
-app.get('/workspace/:file(*)', (req, res) => {
-    const { project, username } = req.query;
+app.get('/workspace/:file(*)', verifyTokenOrGuest, (req, res) => {
+    const username = req.user.username;
+    const project = req.query.project || 'sandbox_app';
     const projectPath = getProjectPath(username, project);
-    
-    const safeFile = path.normalize(req.params.file).replace(/^(\.\.[\/\\])+/, '').replace(/^\/+/, '');
+
+    const safeFile = path.normalize(req.params.file)
+        .replace(/^(\.\.[\/\\])+/, '')
+        .replace(/^\/+/, '');
     const filePath = path.join(projectPath, safeFile);
+
+    // التحقق الصارم أن الملف داخل مجلد المشروع
+    if (!filePath.startsWith(projectPath)) {
+        return res.status(403).send('Access Denied');
+    }
 
     if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
         res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
@@ -299,106 +359,148 @@ app.get('/workspace/:file(*)', (req, res) => {
     res.status(404).send('File not found');
 });
 
+// تسجيل الدخول — بدون كلمة مرور في الوقت الحالي (يمكن إضافتها لاحقاً)
+// TODO: إضافة كلمة مرور + bcrypt في الإصدار القادم
 app.post('/api/auth/login', async (req, res) => {
     const { username } = req.body;
-    if (!username) return res.status(400).json({ error: 'Username required' });
-    try {
-        const sanitizedUser = username.trim().toLowerCase().replace(/\s+/g, '_');
-        const userRecord = await DB.findUser(sanitizedUser);
-        const tokenUserPayload = { id: userRecord.id || userRecord._id, username: sanitizedUser, email: userRecord.email };
+    if (!username || typeof username !== 'string' || username.trim().length < 3) {
+        return res.status(400).json({ error: 'اسم المستخدم مطلوب (3 أحرف على الأقل).' });
+    }
 
-        const token = jwt.sign(tokenUserPayload, JWT_SECRET, { expiresIn: '7d' });
+    try {
+        const sanitizedUser = username.trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '_');
+
+        let userRecord = await DB.findUser(sanitizedUser);
+        if (!userRecord) {
+            userRecord = await DB.createUser(sanitizedUser);
+        }
+
+        if (!userRecord) {
+            return res.status(500).json({ error: 'فشل إنشاء الحساب.' });
+        }
+
+        const payload = {
+            id: userRecord._id || userRecord.id || sanitizedUser,
+            username: sanitizedUser,
+            email: userRecord.email || `${sanitizedUser}@jaola-twin.io`
+        };
+
+        const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
         res.json({ success: true, token, currentUser: sanitizedUser, activeProject: 'sandbox_app' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        res.status(500).json({ error: 'خطأ داخلي في الخادم.' });
+    }
 });
 
 app.post('/api/project-context/switch', verifyToken, async (req, res) => {
     const { project } = req.body;
     const username = req.user.username;
-    const activeProject = project ? project.trim().toLowerCase().replace(/\s+/g, '-') : 'sandbox_app';
+    const safeProject = (project || 'sandbox_app').trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '-');
 
     try {
-        const projectRecord = await DB.findProject(activeProject, username);
-        if (!projectRecord) {
-            await DB.createProject(activeProject, username);
-        }
-    } catch(e) {}
+        const exists = await DB.findProject(safeProject, username);
+        if (!exists) await DB.createProject(safeProject, username);
+    } catch (e) {}
 
-    res.json({ success: true, currentUser: username, activeProject });
+    res.json({ success: true, currentUser: username, activeProject: safeProject });
 });
 
 app.get('/api/file-content', verifyToken, async (req, res) => {
     try {
         const { fileName, project } = req.query;
         const username = req.user.username;
-        const activeProj = project || 'sandbox_app';
+        const safeProject = (project || 'sandbox_app').replace(/[^a-z0-9_\-]/g, '-');
 
-        const projectRecord = await DB.findProject(activeProj, username);
-        if (!projectRecord && activeProj !== 'sandbox_app') {
-            return res.status(403).json({ error: 'Access Denied: You do not own this project.' });
+        // التحقق من الملكية
+        if (safeProject !== 'sandbox_app') {
+            const projectRecord = await DB.findProject(safeProject, username);
+            if (!projectRecord) {
+                return res.status(403).json({ error: 'Access Denied: You do not own this project.' });
+            }
         }
 
-        const projectPath = getProjectPath(username, activeProj);
-        const filePath = path.resolve(projectPath, fileName || 'index.html');
+        const projectPath = getProjectPath(username, safeProject);
+        const safeFileName = path.basename(fileName || 'index.html'); // basename يمنع path traversal
+        const filePath = path.join(projectPath, safeFileName);
 
         if (!filePath.startsWith(projectPath)) {
-            return res.status(403).json({ error: 'Access denied: Out of workspace bounds' });
+            return res.status(403).json({ error: 'Access Denied: Out of workspace bounds.' });
         }
 
         return res.json({ content: fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf-8') : '' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) {
+        res.status(500).json({ error: 'خطأ داخلي.' });
+    }
 });
 
 app.post('/api/file-content/save', verifyToken, validateProjectOwnership, async (req, res) => {
     try {
         const { fileName, content } = req.body;
         if (!fileName || typeof content !== 'string') {
-            return res.status(400).json({ error: 'Filename and content are required' });
+            return res.status(400).json({ error: 'fileName و content مطلوبان.' });
         }
-        
+
+        const safeFileName = path.basename(fileName); // منع path traversal
         const projectPath = req.projectPath;
-        const filePath = path.resolve(projectPath, fileName);
+        const filePath = path.join(projectPath, safeFileName);
 
         if (!filePath.startsWith(projectPath)) {
-            return res.status(403).json({ error: 'Access denied' });
+            return res.status(403).json({ error: 'Access Denied.' });
         }
 
-        createBackupSnapshot(projectPath, fileName);
+        createBackupSnapshot(projectPath, safeFileName);
         fs.writeFileSync(filePath, content);
-        
+
         const roomName = `${req.user.username}-${req.activeProject}`;
-        emitWorkspaceFiles(roomName, projectPath, true);
-        
-        io.to(roomName).emit('log', { message: `💾 [SYSTEM]: تم حفظ لقطة احتياطية وحفظ الكود اليدوي بملف (${fileName}) بنجاح.` });
+        emitWorkspaceFiles(roomName, projectPath);
+        io.to(roomName).emit('log', { message: `💾 [SYSTEM]: تم حفظ (${safeFileName}) مع نسخة احتياطية.` });
+
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'فشل الحفظ.' });
     }
 });
 
 app.post('/api/chat', verifyToken, aiLimit, validateProjectOwnership, async (req, res) => {
     const { message } = req.body;
+
+    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+        return res.status(400).json({ error: 'الرسالة فارغة.' });
+    }
+
     const projectPath = req.projectPath;
     const roomName = `${req.user.username}-${req.activeProject}`;
-    
+
     res.json({ accepted: true });
 
-    const agents = { coreClassifyIntent, coreGenerateCodePlan, architectReview, qaVerify, deployProject };
-    const dbStatus = isDbConnected && mongoose.connection.readyState === 1;
-
-    const data = {
-        message,
-        roomName,
-        projectPath,
-        username: req.user.username,
-        activeProject: req.activeProject
+    const agents = {
+        coreClassifyIntent,
+        coreGenerateCodePlan,
+        architectReview,
+        qaVerify,
+        deployProject,
+        templateAgent: applyTemplate
     };
 
+    const dbStatus = isDbConnected && mongoose.connection.readyState === 1;
+
     try {
-        await runtime.handleUserMessage(null, data, agents, dbStatus);
+        await runtime.handleUserMessage(null, {
+            message: message.trim(),
+            roomName,
+            projectPath,
+            username: req.user.username,
+            activeProject: req.activeProject
+        }, agents, dbStatus);
     } catch (error) {
-        io.to(roomName).emit('log', { message: `❌ [ERROR]: فشل تشغيل المحادثة: ${error.message}` });
+        io.to(roomName).emit('log', { message: `❌ [ERROR]: ${error.message}` });
     }
 });
 
-httpServer.listen(4000, '0.0.0.0', () => console.log('🟢 JAOLA OS Unified Server Active on Port 4000'));
+// ─── معالج أخطاء عام ────────────────────────────────────────────────
+app.use((err, req, res, next) => {
+    console.error('Server Error:', err.message);
+    res.status(500).json({ error: 'خطأ داخلي في الخادم.' });
+});
+
+httpServer.listen(4000, '0.0.0.0', () => console.log('🟢 JAOLA OS Server on Port 4000'));

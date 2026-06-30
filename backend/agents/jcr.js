@@ -225,7 +225,7 @@ export class JaolaCognitiveRuntime {
                     { role: "user", content: `المشروع: ${JSON.stringify(context.mentalModel)}` }
                 ],
                 model: "llama-3.3-70b-versatile",
-                response_format: { type: "json_object" },   // ✅ ضمان JSON سليم
+                response_format: { type: "json_object" },
                 temperature: 0.2
             });
             const result = JSON.parse(completion.choices[0].message.content);
@@ -240,8 +240,26 @@ export class JaolaCognitiveRuntime {
 
     async runDynamicMultiAgentRuntime(context, roomName, agents) {
         this.emitLiveLog(roomName, '5. RUNTIME & DEBATE', 'Orchestrator', '💻 إطلاق حلقة النقاش...');
-        const initialCodeContext = await this.readCurrentCodeContextAsync(context.projectPath);
+        let initialCodeContext = await this.readCurrentCodeContextAsync(context.projectPath);
         const maxDebateCycles = context.budget.maxApiCalls;
+
+        // 🧩 تطبيق القالب المناسب إذا كان المشروع فارغاً
+        try {
+            const dirFiles = await fsPromises.readdir(context.projectPath);
+            const currentFilesCount = dirFiles.filter(f => f !== '.backups' && f !== 'template.zip').length;
+            if (currentFilesCount <= 1 && agents.templateAgent) {
+                this.emitLiveLog(roomName, '5. RUNTIME', 'TemplateAgent', '📥 جاري تحميل القالب...');
+                const result = await agents.templateAgent(context.goal, context.projectPath);
+                if (result && result.success) {
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'TemplateAgent', `✅ تم تطبيق قالب ${result.template} (${result.source})`);
+                    initialCodeContext = await this.readCurrentCodeContextAsync(context.projectPath);
+                } else {
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'TemplateAgent', `❌ فشل: ${result?.error || 'سبب غير معروف'}`);
+                }
+            }
+        } catch (e) {
+            this.emitLiveLog(roomName, '5. RUNTIME', 'TemplateAgent', `❌ خطأ: ${e.message}`);
+        }
 
         for (let cycle = 0; cycle < maxDebateCycles; cycle++) {
             if (context.budget.isExhausted()) {
@@ -339,19 +357,25 @@ export class JaolaCognitiveRuntime {
         try {
             const completion = await groq.chat.completions.create({
                 messages: [
-                    { role: "system", content: "صنف النية: build, modify, query, chat, stop. أعد JSON: { intent, confidence }" },
+                    {
+                        role: "system",
+                        content: `صنف النية: build, modify, query, chat, stop. أعد JSON: { intent, confidence }`
+                    },
                     { role: "user", content: `تفضيلات: ${JSON.stringify(execMemory)}\nالرسالة: "${userMessage}"` }
                 ],
                 model: "llama-3.3-70b-versatile",
                 response_format: { type: "json_object" },
-                max_tokens: 100, temperature: 0.1
+                max_tokens: 100,
+                temperature: 0.1
             });
             const result = JSON.parse(completion.choices[0].message.content);
             if (result.confidence && result.confidence <= 1) {
                 result.confidence = Math.round(result.confidence * 100);
             }
             return result;
-        } catch (e) { return { intent: "chat", confidence: 50 }; }
+        } catch (e) {
+            return { intent: "chat", confidence: 50 };
+        }
     }
 
     async generateChatResponse(userMessage, username, roomName) {
@@ -408,10 +432,15 @@ export class JaolaCognitiveRuntime {
                 return { success: true };
             }
             const execResult = await this.runDynamicMultiAgentRuntime(context, roomName, agents);
-            this.runCuriosityInBackground(context, roomName);
-            if (execResult.success && context.images?.length) {
-                await Promise.all(context.images.map(img => generateAIImage(img.prompt, projectPath, img.fileName)));
+
+            if (execResult.success) {
+                this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+                this.runCuriosityInBackground(context, roomName);
+                if (context.images?.length) {
+                    await Promise.all(context.images.map(img => generateAIImage(img.prompt, projectPath, img.fileName)));
+                }
             }
+
             await this.runReflectionAndSelfImprovement(context, roomName, execResult.success);
             this.emitLiveLog(roomName, 'JCOS', 'Kernel', execResult.success ? '✨ نجاح' : '❌ فشل');
         } catch (error) {
@@ -435,6 +464,15 @@ export class JaolaCognitiveRuntime {
 
     async handleUserMessage(socket, data, agents, dbStatus) {
         const { message, roomName, projectPath, username, activeProject } = data;
+
+        // كشف مباشر عن أوامر التعديل
+        const modifyPattern = /^(غير|عدل|بدل|أضف|احذف|صحح|أصلح|تعديل|حوّل|اجعل)\s+/i;
+        if (modifyPattern.test(message.trim())) {
+            this.emitLiveLog(roomName, 'INTENT', 'Classifier', 'نية: modify (ثقة: 100%) - قاعدة مباشرة');
+            this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);
+            return;
+        }
+
         const intentResult = await this.classifyIntent(message, username);
         this.emitLiveLog(roomName, 'INTENT', 'Classifier', `نية: ${intentResult.intent} (ثقة: ${intentResult.confidence}%)`);
         if (intentResult.intent === 'build' || intentResult.intent === 'modify') {

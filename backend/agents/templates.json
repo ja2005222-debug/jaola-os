@@ -1,0 +1,47 @@
+[
+  {
+    "name": "medical",
+    "type": "medical",
+    "keywords": ["medical", "hospital", "clinic", "doctor", "health", "طبي", "مستشفى", "عيادة", "صحة"],
+    "urls": [
+      "https://github.com/templatemo/templatemo_566_medicio/archive/master.zip",
+      "https://github.com/templatemo/templatemo_566_medicio/archive/main.zip"
+    ]
+  },
+  {
+    "name": "restaurant",
+    "type": "restaurant",
+    "keywords": ["restaurant", "cafe", "food", "menu", "مطعم", "كوفي", "طعام", "قهوة"],
+    "urls": [
+      "https://github.com/templatemo/templatemo_568_cafe/archive/master.zip",
+      "https://github.com/templatemo/templatemo_568_cafe/archive/main.zip"
+    ]
+  },
+  {
+    "name": "ecommerce",
+    "type": "ecommerce",
+    "keywords": ["shop", "store", "ecommerce", "product", "buy", "متجر", "شراء", "بيع", "منتجات"],
+    "urls": [
+      "https://github.com/templatemo/templatemo_571_hexashop/archive/master.zip",
+      "https://github.com/templatemo/templatemo_571_hexashop/archive/main.zip"
+    ]
+  },
+  {
+    "name": "business",
+    "type": "business",
+    "keywords": ["business", "company", "corporate", "startup", "شركة", "أعمال", "خدمات"],
+    "urls": [
+      "https://github.com/templatemo/templatemo_574_mexant/archive/master.zip",
+      "https://github.com/templatemo/templatemo_574_mexant/archive/main.zip"
+    ]
+  },
+  {
+    "name": "personal",
+    "type": "personal",
+    "keywords": ["portfolio", "personal", "resume", "cv", "سيرة", "شخصي", "أعمال"],
+    "urls": [
+      "https://github.com/templatemo/templatemo_578_first_portfolio/archive/master.zip",
+      "https://github.com/templatemo/templatemo_578_first_portfolio/archive/main.zip"
+    ]
+  }
+]

@@ -1,374 +1,5 @@
 [
   {
-    "missionId": "mission_1782550423822",
-    "timestamp": "2026-06-27T08:53:45.284Z",
-    "goal": "kojk",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوليد البصري النيوني وتفادي تعارضات الملفات بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782550544982",
-    "timestamp": "2026-06-27T08:55:46.033Z",
-    "goal": "هل تستطيع بناء موقع لتصحصح الكود؟",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوليد البصري النيوني وتفادي تعارضات الملفات بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782550575691",
-    "timestamp": "2026-06-27T08:56:16.952Z",
-    "goal": "انت اهتار انا لا اعلم يالامر",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوليد البصري النيوني وتفادي تعارضات الملفات بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782550677790",
-    "timestamp": "2026-06-27T08:57:59.138Z",
-    "goal": "اريد موقع يساعد طلاب البرمجة على اختبار اكوادهم الني يكتبونها",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوليد البصري النيوني وتفادي تعارضات الملفات بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782550752226",
-    "timestamp": "2026-06-27T08:59:13.285Z",
-    "goal": "بلا ثرثرة ابني الموقع",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوليد البصري النيوني وتفادي تعارضات الملفات بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782550821342",
-    "timestamp": "2026-06-27T09:00:22.809Z",
-    "goal": "انا غير ملم بهذه التفاصيل انت افعل الضح",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوليد البصري النيوني وتفادي تعارضات الملفات بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782550863594",
-    "timestamp": "2026-06-27T09:01:04.719Z",
-    "goal": "انسى الامر",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوليد البصري النيوني وتفادي تعارضات الملفات بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782557347295",
-    "timestamp": "2026-06-27T10:49:08.987Z",
-    "goal": "من هنا",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوليد البصري النيوني وتفادي تعارضات الملفات بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782557469516",
-    "timestamp": "2026-06-27T10:51:10.631Z",
-    "goal": "انشي موقع لمطعم بيتزا",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوليد البصري النيوني وتفادي تعارضات الملفات بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782557583657",
-    "timestamp": "2026-06-27T10:53:04.707Z",
-    "goal": "١-مطعم بيتزا جمال ٢-مرغريتا ٣-١٢٣٤٥٦٧٨٩ ٤- مجانا",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوليد البصري النيوني وتفادي تعارضات الملفات بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782557602162",
-    "timestamp": "2026-06-27T10:53:23.295Z",
-    "goal": "تلغون",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوليد البصري النيوني وتفادي تعارضات الملفات بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782557626854",
-    "timestamp": "2026-06-27T10:53:47.917Z",
-    "goal": "اكتبه كرقم",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوليد البصري النيوني وتفادي تعارضات الملفات بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782557711844",
-    "timestamp": "2026-06-27T10:55:13.006Z",
-    "goal": "دعك من الرقم لا داعي له",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوليد البصري النيوني وتفادي تعارضات الملفات بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782558478224",
-    "timestamp": "2026-06-27T11:07:59.712Z",
-    "goal": "jkn",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوليد البصري النيوني وتفادي تعارضات الملفات بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782558478224",
-    "timestamp": "2026-06-27T11:07:59.719Z",
-    "goal": "jkn",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت الاستراتيجية بسبب تعطل دالات الإقلاع أو عدم تطابق بنيوي بروتوكولي."
-  },
-  {
-    "missionId": "mission_1782558629855",
-    "timestamp": "2026-06-27T11:10:31.142Z",
-    "goal": "ابني موقع لمتجر بيتزا",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوليد البصري النيوني وتفادي تعارضات الملفات بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782558629855",
-    "timestamp": "2026-06-27T11:10:31.149Z",
-    "goal": "ابني موقع لمتجر بيتزا",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت الاستراتيجية بسبب تعطل دالات الإقلاع أو عدم تطابق بنيوي بروتوكولي."
-  },
-  {
-    "missionId": "mission_1782561066596",
-    "timestamp": "2026-06-27T11:51:07.683Z",
-    "goal": "dslfsd",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوليد البصري النيوني وتفادي تعارضات الملفات بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782561066596",
-    "timestamp": "2026-06-27T11:51:07.686Z",
-    "goal": "dslfsd",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت الاستراتيجية بسبب تعطل دالات الإقلاع أو عدم تطابق بنيوي بروتوكولي."
-  },
-  {
-    "missionId": "mission_1782561753807",
-    "timestamp": "2026-06-27T12:02:35.211Z",
-    "goal": "hrhe",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوليد البصري النيوني وتفادي تعارضات الملفات بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782561753807",
-    "timestamp": "2026-06-27T12:02:35.215Z",
-    "goal": "hrhe",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت الاستراتيجية بسبب تعطل دالات الإقلاع أو عدم تطابق بنيوي بروتوكولي."
-  },
-  {
-    "missionId": "mission_1782573554293",
-    "timestamp": "2026-06-27T15:19:18.907Z",
-    "goal": "hg",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوجيه المعرفي النيوني بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782573554293",
-    "timestamp": "2026-06-27T15:19:18.912Z",
-    "goal": "hg",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت الاستراتيجية بسبب تعطل دالات الإقلاع أو عدم تطابق بنيوي بروتوكولي."
-  },
-  {
-    "missionId": "mission_1782573637507",
-    "timestamp": "2026-06-27T15:20:43.050Z",
-    "goal": "ماذا تفعل؟",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوجيه المعرفي النيوني بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782573637507",
-    "timestamp": "2026-06-27T15:20:43.054Z",
-    "goal": "ماذا تفعل؟",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت الاستراتيجية بسبب تعطل دالات الإقلاع أو عدم تطابق بنيوي بروتوكولي."
-  },
-  {
-    "missionId": "mission_1782573871099",
-    "timestamp": "2026-06-27T15:24:35.831Z",
-    "goal": "يب",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوجيه المعرفي النيوني بـ (0) دورات نقاش داخلي."
-  },
-  {
-    "missionId": "mission_1782573871099",
-    "timestamp": "2026-06-27T15:24:35.834Z",
-    "goal": "يب",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت الاستراتيجية بسبب تعطل دالات الإقلاع أو عدم تطابق بنيوي بروتوكولي."
-  },
-  {
-    "missionId": "mission_1782574862684",
-    "timestamp": "2026-06-27T15:41:05.998Z",
-    "goal": "cv",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت الاستراتيجية بسبب تعطل دالات الإقلاع."
-  },
-  {
-    "missionId": "mission_1782574960259",
-    "timestamp": "2026-06-27T15:42:43.042Z",
-    "goal": "ابني موقع لمطعم بيتزا مع منيو فاخر",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت الاستراتيجية بسبب تعطل دالات الإقلاع."
-  },
-  {
-    "missionId": "mission_1782575027651",
-    "timestamp": "2026-06-27T15:43:50.714Z",
-    "goal": "كم السعر؟",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت استراتيجية التوجيه المعرفي بعد 0 دورة نقاش."
-  },
-  {
-    "missionId": "mission_1782575202509",
-    "timestamp": "2026-06-27T15:46:45.797Z",
-    "goal": "من انتم",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت الاستراتيجية بسبب تعطل دالات الإقلاع."
-  },
-  {
-    "missionId": "mission_1782576105101",
-    "timestamp": "2026-06-27T16:01:46.078Z",
-    "goal": "hi",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت."
-  },
-  {
-    "missionId": "mission_1782576213479",
-    "timestamp": "2026-06-27T16:03:34.559Z",
-    "goal": "امسح الموقع القديمةوابني واحد افضل",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت."
-  },
-  {
-    "missionId": "mission_1782576337667",
-    "timestamp": "2026-06-27T16:05:38.777Z",
-    "goal": "ابني موقع لمدرسة اطفال",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت."
-  },
-  {
-    "missionId": "mission_1782576513789",
-    "timestamp": "2026-06-27T16:08:34.631Z",
-    "goal": "رلارلا",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت بعد 0 دورة."
-  },
-  {
-    "missionId": "mission_1782576549895",
-    "timestamp": "2026-06-27T16:09:11.462Z",
-    "goal": "كيف ابني موقع لمدرسة",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت."
-  },
-  {
-    "missionId": "mission_1782576854673",
-    "timestamp": "2026-06-27T16:14:19.418Z",
-    "goal": "hi",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت بعد 0 دورة."
-  },
-  {
-    "missionId": "mission_1782577379268",
-    "timestamp": "2026-06-27T16:23:03.601Z",
-    "goal": "اكتب ورقه عن نشاط البراكين",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت بعد 0 دورة."
-  },
-  {
-    "missionId": "mission_1782580542782",
-    "timestamp": "2026-06-27T17:15:46.579Z",
-    "goal": "ممتاز .. حدث نسخ القوالب لديكم بقوالب حديثة",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت بعد 0 دورة."
-  },
-  {
-    "missionId": "mission_1782581663692",
-    "timestamp": "2026-06-27T17:34:28.002Z",
-    "goal": "احتاج الي رفع معدل اداء الايجنت",
-    "success": true,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "نجحت بعد 0 دورة."
-  },
-  {
-    "missionId": "mission_1782581997582",
-    "timestamp": "2026-06-27T17:40:01.887Z",
-    "goal": "اضف زر في الاعلي من نحن",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت الاستراتيجية بسبب تعطل دالات الإقلاع أو عدم تطابق بنيوي بروتوكولي."
-  },
-  {
     "missionId": "mission_1782583266232",
     "timestamp": "2026-06-27T18:01:11.260Z",
     "goal": "ابني موقع لمدرسة ثانوية خديثة اسمها مدارس الاجيال",
@@ -430,5 +61,349 @@
     "retries": 0,
     "failures": [],
     "takeaways": "فشلت الاستراتيجية بسبب تعطل دالات الإقلاع أو عدم تطابق بنيوي بروتوكولي."
+  },
+  {
+    "missionId": "mission_1782680653226",
+    "timestamp": "2026-06-28T21:04:43.820Z",
+    "goal": "انشي متجر لبيع العطور",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782680812544",
+    "timestamp": "2026-06-28T21:07:22.766Z",
+    "goal": "انشي متجر بيع ملابس اطفال باسم الطفل السعيد مع عروض ",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782680940453",
+    "timestamp": "2026-06-28T21:09:26.034Z",
+    "goal": "اظهر الموقع بالوان جميلة زاهية",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782681076650",
+    "timestamp": "2026-06-28T21:11:44.000Z",
+    "goal": "استبدل لون الخلفية الي لون بني فاتح",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782724856295",
+    "timestamp": "2026-06-29T09:21:23.992Z",
+    "goal": "قم ببناء موقع لمدرسة الامل للاطفال",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782725278746",
+    "timestamp": "2026-06-29T09:28:25.307Z",
+    "goal": "ابني موقع لشركة تاجير المنازل",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782725346037",
+    "timestamp": "2026-06-29T09:29:29.170Z",
+    "goal": "حول الخلفية للون الابيض",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782725509929",
+    "timestamp": "2026-06-29T09:32:13.710Z",
+    "goal": "غير لون الخلفية للأصفر الفاتح",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782726955429",
+    "timestamp": "2026-06-29T09:55:57.410Z",
+    "goal": "موقع عيادة طبية",
+    "success": false,
+    "retries": 0,
+    "takeaways": "فشلت"
+  },
+  {
+    "missionId": "mission_1782727651452",
+    "timestamp": "2026-06-29T10:07:59.786Z",
+    "goal": "موقع عيادة طبية",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782750214374",
+    "timestamp": "2026-06-29T16:23:57.260Z",
+    "goal": "مستشفى  امراض جلدية باسم مستشفى دكتور ايات للامراض الجلدية",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782750745539",
+    "timestamp": "2026-06-29T16:32:53.635Z",
+    "goal": "بخلفية بيضا مع الازرق الفاتح ابني موقع لمستشفى امراض جلدية باسم دكتورة ايات",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782751331990",
+    "timestamp": "2026-06-29T16:42:35.394Z",
+    "goal": "ابني موقع لعيادة طبية",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782752400129",
+    "timestamp": "2026-06-29T17:00:27.350Z",
+    "goal": "ابني موقع لمستشفي طواري",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782752674652",
+    "timestamp": "2026-06-29T17:05:00.407Z",
+    "goal": "ابني مشروع رياضي ",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782753742791",
+    "timestamp": "2026-06-29T17:22:48.106Z",
+    "goal": "تفذ المشروع",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782754074051",
+    "timestamp": "2026-06-29T17:28:21.171Z",
+    "goal": "ابني موقع متجر لبيع الملابس الحديثة",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782754371976",
+    "timestamp": "2026-06-29T17:33:18.607Z",
+    "goal": "موقع عيادة طبية",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782754807217",
+    "timestamp": "2026-06-29T17:40:34.719Z",
+    "goal": "نسق الهيدر افقي بلون ازرق فاثح والكتابة باللون الاصفر",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782754884124",
+    "timestamp": "2026-06-29T17:41:50.309Z",
+    "goal": "غير لون الخلفية الى الاصفر",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782756266113",
+    "timestamp": "2026-06-29T18:05:11.637Z",
+    "goal": "ممناز نفذ",
+    "success": true,
+    "retries": 1,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782756377385",
+    "timestamp": "2026-06-29T18:06:38.137Z",
+    "goal": "قم بتحويل الهيدر الى اعلى باللون الاصفر ",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782756488286",
+    "timestamp": "2026-06-29T18:08:34.611Z",
+    "goal": "قم بتصميم عصري حديث لموقع بيع العطور الباريسية وراعي في التصمصم الفخامة",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782756562242",
+    "timestamp": "2026-06-29T18:09:46.756Z",
+    "goal": "اضف بعض الصور والعروض الترويجية ونظم الصفحة الى الافضل",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782756674261",
+    "timestamp": "2026-06-29T18:11:38.649Z",
+    "goal": "اجعل الخلفية مخملية متناسقة مع فخامة العطور",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782756808847",
+    "timestamp": "2026-06-29T18:13:52.432Z",
+    "goal": "رتب الرئيسية مجموعتنا العروض عن العطور اتصل بنا بصورة اجمل وبخلفية ثلاثية الابعاد",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782757151449",
+    "timestamp": "2026-06-29T18:19:39.629Z",
+    "goal": "ابني متجر لبيع الاحزية الايطالية",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782757217349",
+    "timestamp": "2026-06-29T18:20:39.953Z",
+    "goal": "اجعل الخلفية باللون الازرق الفاتح المتدرج الى الابيض",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782757287180",
+    "timestamp": "2026-06-29T18:21:49.860Z",
+    "goal": "غير لون العنوان الي اللون الاصفر",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782757535032",
+    "timestamp": "2026-06-29T18:25:58.349Z",
+    "goal": "نفيذ التغييرات واظهرها",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782758153147",
+    "timestamp": "2026-06-29T18:36:17.182Z",
+    "goal": "بدل لون الخلفية الى الاصفر",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782769121946",
+    "timestamp": "2026-06-29T21:38:56.312Z",
+    "goal": "اضف قايمة في الهيدر الريسية من نحن المنيو",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782769239809",
+    "timestamp": "2026-06-29T21:41:07.759Z",
+    "goal": "غير لمشروع جديد وانشي صفحة للعطور الباريسية الفخمة",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782769486132",
+    "timestamp": "2026-06-29T21:45:15.968Z",
+    "goal": "ابني موقع لمستشفى جامعي",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782770087556",
+    "timestamp": "2026-06-29T21:55:15.709Z",
+    "goal": "ابني مشروع مستشفى",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782770869476",
+    "timestamp": "2026-06-29T22:08:13.559Z",
+    "goal": "ابني مشروع متجر سجاير",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782771055498",
+    "timestamp": "2026-06-29T22:11:15.491Z",
+    "goal": "اصنع موقع بسيط",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782771375138",
+    "timestamp": "2026-06-29T22:16:40.273Z",
+    "goal": "ابني مستشفى خاص تحصصي",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782772954680",
+    "timestamp": "2026-06-29T22:43:02.924Z",
+    "goal": "ابني مشروع مدرسة تموذجية",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782775583958",
+    "timestamp": "2026-06-29T23:26:49.947Z",
+    "goal": "ابني مشروع لمطعم مشويات",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782775645073",
+    "timestamp": "2026-06-29T23:27:48.210Z",
+    "goal": "امسح كل المشاريع السابقة",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782801181059",
+    "timestamp": "2026-06-30T06:33:25.182Z",
+    "goal": "ابني موقع لفرقة لامونا الموسيقية",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782801339995",
+    "timestamp": "2026-06-30T06:36:06.664Z",
+    "goal": "ابني متجر لبيع التحف",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
   }
 ]

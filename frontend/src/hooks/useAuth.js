@@ -1,64 +1,38 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
-const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname.startsWith('100.115')
-  ? `http://${window.location.hostname}:4000`
-  : 'https://jaola-os.onrender.com';
-
-export function useAuth(activeProject) {
-  const [currentUser, setCurrentUser] = useState('guest_user');
-  const [token, setToken] = useState(localStorage.getItem('token'));
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-
-  useEffect(() => {
-    const loginSession = async () => {
-      let currentToken = localStorage.getItem('token');
-      let username = localStorage.getItem('currentUser') || 'guest_user';
-      
-      // 🛡️ فحص حارس الخروج: إذا سجل المستخدم خروجه يدوياً، امنع الدخول التلقائي كضيف
-      const isLoggedOut = localStorage.getItem('loggedOut') === 'true';
-
-      if (!currentToken) {
-        if (isLoggedOut) {
-          setIsAuthenticated(false);
-          return; // ابقَ بأمان على شاشة تسجيل الدخول
-        }
-
-        try {
-          const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username })
-          });
-          const data = await res.json();
-          if (data.success && data.token) {
-            localStorage.setItem('token', data.token);
-            localStorage.setItem('currentUser', data.currentUser);
-            setToken(data.token);
-            setCurrentUser(data.currentUser);
-            setIsAuthenticated(true);
-          }
-        } catch (err) {
-          console.error('Failed auto login:', err);
-        }
-      } else {
-        setCurrentUser(username);
-        setToken(currentToken);
-        setIsAuthenticated(true);
-      }
-    };
-
-    loginSession();
-  }, [activeProject]);
+export function useAuth() {
+  const [currentUser, setCurrentUser] = useState(
+    () => localStorage.getItem('currentUser') || ''
+  );
+  const [token, setToken] = useState(
+    () => localStorage.getItem('token') || null
+  );
+  const [isAuthenticated, setIsAuthenticated] = useState(
+    () => {
+      const t = localStorage.getItem('token');
+      const u = localStorage.getItem('currentUser');
+      const loggedOut = localStorage.getItem('loggedOut') === 'true';
+      return !loggedOut && !!t && !!u;
+    }
+  );
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleAuthError = (status) => {
     if (status === 401 || status === 403) {
       localStorage.removeItem('token');
       localStorage.removeItem('currentUser');
       setToken(null);
+      setCurrentUser('');
       setIsAuthenticated(false);
-      window.location.reload(); 
     }
   };
 
-  return { currentUser, token, isAuthenticated, handleAuthError, setIsAuthenticated, setCurrentUser, setToken };
+  return {
+    currentUser, setCurrentUser,
+    token, setToken,
+    isAuthenticated, setIsAuthenticated,
+    isLoading,
+    handleAuthError,
+  };
 }
+

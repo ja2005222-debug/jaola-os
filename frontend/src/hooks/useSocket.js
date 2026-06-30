@@ -1,114 +1,145 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { io } from 'socket.io-client';
 
 const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname.startsWith('100.115')
   ? `http://${window.location.hostname}:4000`
   : 'https://jaola-os.onrender.com';
 
-export const socket = io(BACKEND_URL, { 
+export const socket = io(BACKEND_URL, {
   autoConnect: false,
-  transports: ['polling', 'websocket'] 
+  transports: ['polling', 'websocket'],
+  reconnectionAttempts: 3,       // حد أقصى 3 محاولات إعادة اتصال
+  reconnectionDelay: 2000,       // انتظر ثانيتين بين كل محاولة
+  timeout: 10000,
 });
 
 export function useSocket(isAuthenticated, handleAuthError) {
-  const [files, setFiles] = useState([]);
-  const [logs, setLogs] = useState([]);
+  const [files, setFiles]               = useState([]);
+  const [logs, setLogs]                 = useState([]);
   const [streamingContent, setStreamingContent] = useState('');
-  
-  const [projects, setProjects] = useState([]);
-  const [activeProject, setActiveProject] = useState('sandbox_app');
-  const [currentUser, setCurrentUser] = useState('guest_user');
-  const [vercelUrl, setVercelUrl] = useState('');
-
+  const [projects, setProjects]         = useState([]);
+  const [activeProject, setActiveProject] = useState(
+    () => localStorage.getItem('activeProject') || 'sandbox_app'
+  );
+  const [currentUser, setCurrentUser]   = useState('guest_user');
+  const [vercelUrl, setVercelUrl]       = useState('');
   const [chatMessages, setChatMessages] = useState([]);
-
-  const [agentStates, setAgentStates] = useState({
-    planner: 'waiting',
-    architect: 'waiting',
-    coder: 'waiting',
-    qa: 'waiting',
-    deploy: 'waiting'
+  const [connectionError, setConnectionError] = useState('');
+  const [previewTimestamp, setPreviewTimestamp] = useState(Date.now());
+  const [agentStates, setAgentStates]   = useState({
+    planner: 'waiting', architect: 'waiting',
+    coder: 'waiting', qa: 'waiting', deploy: 'waiting'
   });
+
+  // مرجع لتتبع عدد أخطاء الاتصال لمنع حلقة الـ reload
+  const connectErrorCountRef = useRef(0);
 
   useEffect(() => {
     if (!isAuthenticated) return;
 
     const token = localStorage.getItem('token');
+    if (!token) return;
+
     const savedProject = localStorage.getItem('activeProject') || activeProject;
 
-    if (token) {
-      socket.auth = { token };
+    socket.auth = { token };
 
-      socket.off('workspace_files').on('workspace_files', (workspaceFiles) => {
-        setFiles(workspaceFiles);
-      });
+    // ─── أحداث Socket ──────────────────────────────────────────────
+    socket.off('workspace_files').on('workspace_files', setFiles);
 
-      socket.off('user_projects').on('user_projects', (data) => {
-        setProjects(data.projects || []);
-        setActiveProject(data.activeProject);
-        setCurrentUser(data.currentUser);
-        setVercelUrl(data.vercelUrl || '');
-      });
+    socket.off('user_projects').on('user_projects', (data) => {
+      setProjects(data.projects || []);
+      setActiveProject(data.activeProject);
+      setCurrentUser(data.currentUser);
+      setVercelUrl(data.vercelUrl || '');
+    });
 
-      socket.off('preview_updated').on('preview_updated', (data) => {
-        setStreamingContent('');
-        window.dispatchEvent(new CustomEvent('preview_updated', { detail: data }));
-      });
+    socket.off('preview_updated').on('preview_updated', (data) => {
+      setStreamingContent('');
+      setPreviewTimestamp(data.timestamp || Date.now());
+    });
 
-      socket.off('code_stream_chunk').on('code_stream_chunk', (chunk) => {
-        setStreamingContent((prev) => prev + chunk);
-      });
+    socket.off('code_stream_chunk').on('code_stream_chunk', (chunk) => {
+      setStreamingContent((prev) => prev + chunk);
+    });
 
-      socket.off('agent_states').on('agent_states', (states) => {
-        setAgentStates(states);
-      });
+    socket.off('agent_states').on('agent_states', setAgentStates);
 
-      socket.off('log').on('log', (newLog) => {
-        setLogs((prev) => [...prev.slice(-100), newLog]);
+    socket.off('log').on('log', (newLog) => {
+      setLogs((prev) => [...prev.slice(-100), newLog]);
 
-        if (newLog.message.includes('AI CEO Consultant') || newLog.message.includes('[INFO]')) {
-          const cleanReply = newLog.message
-            .replace(/.*AI CEO Consultant\]:\s*/, '')
-            .replace('🤖 [AI CEO Consultant]:', '')
-            .replace('🤖 [INFO]:', '')
-            .trim();
-          
+      // استخراج ردود الـ AI من السجلات للعرض في الشات
+      if (newLog.message.includes('AI CEO Consultant') || newLog.message.includes('[INFO]')) {
+        const cleanReply = newLog.message
+          .replace(/.*\[AI CEO Consultant\]:\s*/, '')
+          .replace(/^🤖\s*\[.*?\]:\s*/, '')
+          .trim();
+        if (cleanReply) {
           setChatMessages((prev) => [...prev, { sender: 'ai', text: cleanReply }]);
         }
-      });
+      }
+    });
 
-      socket.off('chat_reply').on('chat_reply', (data) => {
-        setChatMessages((prev) => [...prev, { 
-          sender: 'assistant', 
-          text: data.message, 
-          timestamp: Date.now() 
-        }]);
-      });
+    socket.off('chat_reply').on('chat_reply', (data) => {
+      setChatMessages((prev) => [...prev, {
+        sender: 'assistant',
+        text: data.message,
+        timestamp: Date.now()
+      }]);
+    });
 
-      socket.off('chat_history').on('chat_history', (history) => {
-        if (history && history.length > 0) {
-          const recentHistory = history.slice(-50);
-          const formattedHistory = recentHistory.map(msg => ({
-            sender: msg.role === 'user' ? 'user' : 'ai',
-            text: msg.content
-          }));
-          setChatMessages(formattedHistory); 
-        }
-      });
+    socket.off('chat_history').on('chat_history', (history) => {
+      if (!history?.length) return;
+      const formatted = history.slice(-50).map(msg => ({
+        sender: msg.role === 'user' ? 'user' : 'ai',
+        text: msg.content
+      }));
+      setChatMessages(formatted);
+    });
 
-      socket.off('connect_error').on('connect_error', (err) => {
-        console.error('Socket Connection Rejected:', err.message);
+    // ─── معالجة أخطاء الاتصال — بدون حلقة reload لا نهاية لها ─────
+    socket.off('connect_error').on('connect_error', (err) => {
+      connectErrorCountRef.current += 1;
+      console.error('Socket Error:', err.message);
+
+      // توكن منتهي أو غير صالح
+      if (err.message.includes('Unauthorized') || err.message.includes('Token')) {
+        setConnectionError('انتهت صلاحية الجلسة. سيتم تسجيل خروجك...');
         localStorage.removeItem('token');
         localStorage.removeItem('currentUser');
-        setLogs((prev) => [...prev, { message: `⚠️ [SYSTEM]: تم رصد توكن منتهي أو غير صالح. جاري إعادة تهيئة الجلسة...` }]);
-        setTimeout(() => {
-          window.location.reload();
-        }, 1000);
-      });
+        // reload مرة واحدة فقط
+        setTimeout(() => window.location.reload(), 2000);
+        return;
+      }
 
-      socket.connect();
-      socket.emit('join_project', { project: savedProject });
-    }
+      // بعد 3 محاولات فاشلة — أظهر رسالة بدلاً من reload
+      if (connectErrorCountRef.current >= 3) {
+        setConnectionError('تعذّر الاتصال بالخادم. تحقق من اتصالك وحاول تحديث الصفحة.');
+        setLogs((prev) => [...prev, {
+          message: '⚠️ [SYSTEM]: فشل الاتصال بالخادم بعد 3 محاولات. يرجى تحديث الصفحة يدوياً.'
+        }]);
+      } else {
+        setLogs((prev) => [...prev, {
+          message: `⚠️ [SYSTEM]: محاولة اتصال ${connectErrorCountRef.current}/3...`
+        }]);
+      }
+    });
+
+    socket.off('connect').on('connect', () => {
+      // إعادة تعيين عداد الأخطاء عند الاتصال الناجح
+      connectErrorCountRef.current = 0;
+      setConnectionError('');
+    });
+
+    socket.off('disconnect').on('disconnect', (reason) => {
+      if (reason === 'io server disconnect') {
+        // الخادم قطع الاتصال عمداً (مثلاً انتهاء التوكن)
+        setLogs((prev) => [...prev, { message: '🔌 [SYSTEM]: انقطع الاتصال بالخادم.' }]);
+      }
+    });
+
+    socket.connect();
+    socket.emit('join_project', { project: savedProject });
 
     return () => {
       socket.off('workspace_files');
@@ -117,30 +148,34 @@ export function useSocket(isAuthenticated, handleAuthError) {
       socket.off('code_stream_chunk');
       socket.off('agent_states');
       socket.off('log');
-      socket.off('chat_reply');        
-      socket.off('chat_history'); 
+      socket.off('chat_reply');
+      socket.off('chat_history');
       socket.off('connect_error');
+      socket.off('connect');
+      socket.off('disconnect');
     };
-  }, [currentUser, activeProject, isAuthenticated]);
+  }, [isAuthenticated]);
 
-  return { 
-    files, 
-    logs, 
-    streamingContent, 
-    agentStates, 
-    projects, 
-    activeProject, 
-    currentUser, 
-    vercelUrl, 
-    chatMessages,          
+  return {
+    files,
+    logs,
+    streamingContent,
+    agentStates,
+    projects,
+    activeProject,
+    currentUser,
+    vercelUrl,
+    chatMessages,
+    connectionError,
+    previewTimestamp,
     setChatMessages,
-    setProjects, 
-    setActiveProject, 
-    setCurrentUser, 
-    setSocketUser: setCurrentUser,   // لأجل Dashboard
-    setVercelUrl, 
-    setStreamingContent, 
-    setFiles, 
-    setLogs 
+    setProjects,
+    setActiveProject,
+    setCurrentUser,
+    setSocketUser: setCurrentUser,
+    setVercelUrl,
+    setStreamingContent,
+    setFiles,
+    setLogs,
   };
 }
