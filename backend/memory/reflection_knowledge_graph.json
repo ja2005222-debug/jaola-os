@@ -1,164 +1,5 @@
 [
   {
-    "missionId": "mission_1782583266232",
-    "timestamp": "2026-06-27T18:01:11.260Z",
-    "goal": "ابني موقع لمدرسة ثانوية خديثة اسمها مدارس الاجيال",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت الاستراتيجية بسبب تعطل دالات الإقلاع أو عدم تطابق بنيوي بروتوكولي."
-  },
-  {
-    "missionId": "mission_1782585381271",
-    "timestamp": "2026-06-27T18:36:24.504Z",
-    "goal": "build web to school",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت الاستراتيجية بسبب تعطل دالات الإقلاع أو عدم تطابق بنيوي بروتوكولي."
-  },
-  {
-    "missionId": "mission_1782589197652",
-    "timestamp": "2026-06-27T19:39:57.655Z",
-    "goal": "ابني",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت الاستراتيجية بسبب تعطل دالات الإقلاع أو عدم تطابق بنيوي بروتوكولي."
-  },
-  {
-    "missionId": "mission_1782590285277",
-    "timestamp": "2026-06-27T19:58:05.429Z",
-    "goal": "عدل في الموقع",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت الاستراتيجية بسبب تعطل دالات الإقلاع أو عدم تطابق بنيوي بروتوكولي."
-  },
-  {
-    "missionId": "mission_1782629852032",
-    "timestamp": "2026-06-28T06:57:33.200Z",
-    "goal": "\"أنشئ لي صفحة هبوط احترافية لمنصة JAOLA OS، بتصميم Glassmorphism نيُوني، تحتوي على Hero، Features، How It Works، Stats، Testimonials، وFooter. استخدم HTML/Tailwind CSS واجعله متجاوباً.\"\n\n",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت الاستراتيجية بسبب تعطل دالات الإقلاع أو عدم تطابق بنيوي بروتوكولي."
-  },
-  {
-    "missionId": "mission_1782634216382",
-    "timestamp": "2026-06-28T08:10:17.257Z",
-    "goal": "عدل نوع الخط العربي الى نوع افضل وهادي في صفحة LandingPage.jsx",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت الاستراتيجية بسبب تعطل دالات الإقلاع أو عدم تطابق بنيوي بروتوكولي."
-  },
-  {
-    "missionId": "mission_1782634283544",
-    "timestamp": "2026-06-28T08:11:24.506Z",
-    "goal": "عدل نوع الخط العربي الى نوع افضل وهادي في صفحة LandingPage.jsx\n\n",
-    "success": false,
-    "retries": 0,
-    "failures": [],
-    "takeaways": "فشلت الاستراتيجية بسبب تعطل دالات الإقلاع أو عدم تطابق بنيوي بروتوكولي."
-  },
-  {
-    "missionId": "mission_1782680653226",
-    "timestamp": "2026-06-28T21:04:43.820Z",
-    "goal": "انشي متجر لبيع العطور",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782680812544",
-    "timestamp": "2026-06-28T21:07:22.766Z",
-    "goal": "انشي متجر بيع ملابس اطفال باسم الطفل السعيد مع عروض ",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782680940453",
-    "timestamp": "2026-06-28T21:09:26.034Z",
-    "goal": "اظهر الموقع بالوان جميلة زاهية",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782681076650",
-    "timestamp": "2026-06-28T21:11:44.000Z",
-    "goal": "استبدل لون الخلفية الي لون بني فاتح",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782724856295",
-    "timestamp": "2026-06-29T09:21:23.992Z",
-    "goal": "قم ببناء موقع لمدرسة الامل للاطفال",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782725278746",
-    "timestamp": "2026-06-29T09:28:25.307Z",
-    "goal": "ابني موقع لشركة تاجير المنازل",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782725346037",
-    "timestamp": "2026-06-29T09:29:29.170Z",
-    "goal": "حول الخلفية للون الابيض",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782725509929",
-    "timestamp": "2026-06-29T09:32:13.710Z",
-    "goal": "غير لون الخلفية للأصفر الفاتح",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782726955429",
-    "timestamp": "2026-06-29T09:55:57.410Z",
-    "goal": "موقع عيادة طبية",
-    "success": false,
-    "retries": 0,
-    "takeaways": "فشلت"
-  },
-  {
-    "missionId": "mission_1782727651452",
-    "timestamp": "2026-06-29T10:07:59.786Z",
-    "goal": "موقع عيادة طبية",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782750214374",
-    "timestamp": "2026-06-29T16:23:57.260Z",
-    "goal": "مستشفى  امراض جلدية باسم مستشفى دكتور ايات للامراض الجلدية",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782750745539",
-    "timestamp": "2026-06-29T16:32:53.635Z",
-    "goal": "بخلفية بيضا مع الازرق الفاتح ابني موقع لمستشفى امراض جلدية باسم دكتورة ايات",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
     "missionId": "mission_1782751331990",
     "timestamp": "2026-06-29T16:42:35.394Z",
     "goal": "ابني موقع لعيادة طبية",
@@ -404,6 +245,158 @@
     "goal": "ابني متجر لبيع التحف",
     "success": true,
     "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782802205156",
+    "timestamp": "2026-06-30T06:50:29.206Z",
+    "goal": "عدل في الخلفية باللون الابيض",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782803030459",
+    "timestamp": "2026-06-30T07:04:17.369Z",
+    "goal": "غير لون الخلفية الى الاصفر",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782803130576",
+    "timestamp": "2026-06-30T07:05:58.432Z",
+    "goal": "بدل لون الكتابة الى الاحمر",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782803330117",
+    "timestamp": "2026-06-30T07:09:16.923Z",
+    "goal": "غير لون الخط الى الاحمر",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782803883657",
+    "timestamp": "2026-06-30T07:18:32.262Z",
+    "goal": "ابني موقع لمتجر عطور فاخر",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782808576732",
+    "timestamp": "2026-06-30T08:37:07.115Z",
+    "goal": "مشروع مدرسة",
+    "success": true,
+    "retries": 1,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782829340317",
+    "timestamp": "2026-06-30T14:22:50.293Z",
+    "goal": "انشي موقع لعيادة طبية",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782830601675",
+    "timestamp": "2026-06-30T14:43:42.150Z",
+    "goal": "ابدا",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782831133159",
+    "timestamp": "2026-06-30T14:52:41.410Z",
+    "goal": "انشي له موقع",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782831574829",
+    "timestamp": "2026-06-30T15:00:03.055Z",
+    "goal": "ابني متجر عطور فاخر باريسية مع الصور",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782831962199",
+    "timestamp": "2026-06-30T15:06:55.518Z",
+    "goal": "قم ببناء موقع لملابس فاخرة",
+    "success": true,
+    "retries": 1,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782833278481",
+    "timestamp": "2026-06-30T15:28:28.528Z",
+    "goal": "انشي موقع لتعليم الكميوتر",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782833664459",
+    "timestamp": "2026-06-30T15:36:41.132Z",
+    "goal": "ابني موقع لمستشفى تخصصي",
+    "success": true,
+    "retries": 4,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782835691861",
+    "timestamp": "2026-06-30T16:08:34.650Z",
+    "goal": "كيف ابني موقع لمتجري؟",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782835795499",
+    "timestamp": "2026-06-30T16:10:17.055Z",
+    "goal": "غير لون الخلفية الي الاصفر",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782835906040",
+    "timestamp": "2026-06-30T16:12:06.957Z",
+    "goal": "عدل في لون الخلفية الي اللون الازرق",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782836491730",
+    "timestamp": "2026-06-30T16:21:58.837Z",
+    "goal": "ابني متجر بيع ملابس عصرية مع الوان زاهية باللون الازر المتدرج الى الابيض واجعل الهيدر باللون الاصفر واستخدم صور جميله في العرض",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782842095086",
+    "timestamp": "2026-06-30T17:55:19.871Z",
+    "goal": "ابني موقع لمستشفى الشفاء التخصصي",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782842189737",
+    "timestamp": "2026-06-30T17:58:27.488Z",
+    "goal": "اضف عنوان باسم التخصصات",
+    "success": true,
+    "retries": 4,
     "takeaways": "نجحت"
   }
 ]

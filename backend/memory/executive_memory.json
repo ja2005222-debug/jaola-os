@@ -15,7 +15,7 @@
     "language": "Arabic"
   },
   "jamal": {
-    "preferredUi": "توفير واجهة مستخدم سهلة و تفاعلية تساعد المرضى على العثور على المعلومات الضرورية وخدمات المستشفى",
+    "preferredUi": "توفير واجهة سهلة وممتعة لجذب المزيد من العملاء",
     "dislikedTech": "Bootstrap",
     "language": "Arabic"
   },
@@ -50,7 +50,42 @@
     "language": "Arabic"
   },
   "dfd": {
-    "preferredUi": "تصميم واجهة مستخدم جذابة وسهلة الاستخدام",
+    "preferredUi": "تحسين قرون الإشعار",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "asdfgh": {
+    "preferredUi": "توفير تجربة مستخدم سهلة ومتوافقة مع تفضيلات الطلاب والمدرسين",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "pppppp": {
+    "preferredUi": "تصميم موقع سهل الاستخدام وسهل التنقل",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "start-new": {
+    "preferredUi": "تجربة مستخدم ممتعة",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "user1": {
+    "preferredUi": "توفير تجربة مستخدم أنيقة وممتعة",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "__________________________________": {
+    "preferredUi": "توفير تجربة مستخدم لطيفة وممتعة",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "test3": {
+    "preferredUi": "تعزيز تجربة المستخدم",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "jamal123": {
+    "preferredUi": "تجربة مستخدم سهلة مع صور جميلة في العرض",
     "dislikedTech": "Bootstrap",
     "language": "Arabic"
   }

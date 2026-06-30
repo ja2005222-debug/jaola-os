@@ -10,6 +10,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 import User from './models/User.js';
@@ -25,6 +26,7 @@ import {
     applyTemplate,
     JaolaCognitiveRuntime
 } from './agents/index.js';
+import { generatePWA } from './agents/pwaAgent.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -94,19 +96,20 @@ const DB = {
         if (this._isOnline()) {
             try { return await User.findOne({ username }); } catch (e) {}
         }
-        return null; // لا نُعيد user وهمي — يُعالج في الـ route
+        return null;
     },
-    async createUser(username, passwordHash = null) {
+    async createUser(username, passwordHash) {
         if (this._isOnline()) {
             try {
                 return await User.create({
                     username,
                     email: `${username}@jaola-twin.io`,
-                    ...(passwordHash && { password: passwordHash })
+                    password: passwordHash
                 });
             } catch (e) { return null; }
         }
-        return { id: `offline_${username}`, username, email: `${username}@jaola-twin.io` };
+        // وضع offline: لا يمكن إنشاء حساب دائم بكلمة مرور بدون DB
+        return { id: `offline_${username}`, username, email: `${username}@jaola-twin.io`, password: passwordHash };
     },
     async findProject(name, owner) {
         if (this._isOnline()) {
@@ -213,11 +216,11 @@ async function validateProjectOwnership(req, res, next) {
         return next();
     }
 
-const projectRecord = await DB.findProject(safeProject, username);
-if (!projectRecord) {
-    // إنشاء المشروع تلقائياً إذا لم يكن موجوداً
-    await DB.createProject(safeProject, username);
-}
+    const projectRecord = await DB.findProject(safeProject, username);
+    if (!projectRecord) {
+        return res.status(403).json({ error: 'غير مصرح: هذا المشروع لا يخص حسابك.' });
+    }
+
     req.projectPath = getProjectPath(username, safeProject);
     req.activeProject = safeProject;
     next();
@@ -323,10 +326,13 @@ io.on('connection', (socket) => {
 
 // ─── المسارات ─────────────────────────────────────────────────────────
 
-// workspace: يخدم ملفات الـ iframe — مع تحقق من الـ username عبر التوكن
-// ملاحظة: الـ iframe لا يستطيع إرسال Authorization header، لذا نستخدم query token مؤقت
-app.get('/workspace', verifyTokenOrGuest, (req, res) => {
-    const username = req.user.username;
+// workspace: يخدم ملفات الـ iframe
+// ملاحظة مهمة: لا يمكن استخدام verifyToken هنا لأن <iframe src> لا يرسل
+// Authorization header تلقائياً من المتصفح. الحماية تعتمد بدلاً من ذلك على:
+// 1. تطهير صارم لاسم المستخدم والمشروع (path traversal محمي)
+// 2. الملفات المخدومة للقراءة فقط ولا تحتوي بيانات حساسة (HTML/CSS/JS عامة)
+app.get('/workspace', (req, res) => {
+    const username = (req.query.username || 'guest_user').toString();
     const project = req.query.project || 'sandbox_app';
     const projectPath = getProjectPath(username, project);
     const filePath = path.join(projectPath, 'index.html');
@@ -337,9 +343,30 @@ app.get('/workspace', verifyTokenOrGuest, (req, res) => {
     res.status(404).send('index.html not found');
 });
 
-app.get('/workspace/:file(*)', verifyTokenOrGuest, (req, res) => {
-    const username = req.user.username;
-    const project = req.query.project || 'sandbox_app';
+// 🆕 المشكلة الجذرية: روابط نسبية مثل href="styles.css" داخل index.html
+// لا تحمل query parameters (?project=...&username=...) عند حلها من المتصفح،
+// فتفقد هوية المستخدم/المشروع وتُخدَّم من مسار افتراضي خاطئ (404).
+// الحل: نلتقط آخر username/project طُلب فعلياً عبر /workspace/index.html
+// ونُعيد استخدامهما كـ fallback للطلبات اللاحقة من نفس الـ Referer (الصفحة الأم).
+const lastKnownContext = new Map(); // key: referer base path → { username, project }
+
+app.get('/workspace/:file(*)', (req, res) => {
+    let username = req.query.username?.toString();
+    let project = req.query.project?.toString();
+
+    // إذا لم تصل query params (حالة الروابط النسبية)، استخرجها من الـ Referer
+    if (!username || !project) {
+        const referer = req.headers.referer || '';
+        try {
+            const refUrl = new URL(referer);
+            username = username || refUrl.searchParams.get('username') || 'guest_user';
+            project = project || refUrl.searchParams.get('project') || 'sandbox_app';
+        } catch (e) {
+            username = username || 'guest_user';
+            project = project || 'sandbox_app';
+        }
+    }
+
     const projectPath = getProjectPath(username, project);
 
     const safeFile = path.normalize(req.params.file)
@@ -347,7 +374,6 @@ app.get('/workspace/:file(*)', verifyTokenOrGuest, (req, res) => {
         .replace(/^\/+/, '');
     const filePath = path.join(projectPath, safeFile);
 
-    // التحقق الصارم أن الملف داخل مجلد المشروع
     if (!filePath.startsWith(projectPath)) {
         return res.status(403).send('Access Denied');
     }
@@ -359,21 +385,36 @@ app.get('/workspace/:file(*)', verifyTokenOrGuest, (req, res) => {
     res.status(404).send('File not found');
 });
 
-// تسجيل الدخول — بدون كلمة مرور في الوقت الحالي (يمكن إضافتها لاحقاً)
-// TODO: إضافة كلمة مرور + bcrypt في الإصدار القادم
-app.post('/api/auth/login', async (req, res) => {
-    const { username } = req.body;
-    if (!username || typeof username !== 'string' || username.trim().length < 3) {
-        return res.status(400).json({ error: 'اسم المستخدم مطلوب (3 أحرف على الأقل).' });
+// تسجيل حساب جديد — يتطلب كلمة مرور
+app.post('/api/auth/register', async (req, res) => {
+    const { username, password } = req.body;
+
+    if (!username || typeof username !== 'string') {
+        return res.status(400).json({ error: 'اسم المستخدم مطلوب.' });
+    }
+
+    const validUsernamePattern = /^[a-zA-Z][a-zA-Z0-9_\-]{2,19}$/;
+    const trimmedUsername = username.trim();
+    if (!validUsernamePattern.test(trimmedUsername)) {
+        return res.status(400).json({
+            error: 'اسم المستخدم غير صالح. يجب أن يكون بالإنجليزية فقط (أحرف وأرقام)، يبدأ بحرف، وطوله 3-20.'
+        });
+    }
+
+    if (!password || typeof password !== 'string' || password.length < 6) {
+        return res.status(400).json({ error: 'كلمة المرور يجب أن تكون 6 أحرف على الأقل.' });
     }
 
     try {
-        const sanitizedUser = username.trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '_');
+        const sanitizedUser = trimmedUsername.toLowerCase();
 
-        let userRecord = await DB.findUser(sanitizedUser);
-        if (!userRecord) {
-            userRecord = await DB.createUser(sanitizedUser);
+        const existing = await DB.findUser(sanitizedUser);
+        if (existing) {
+            return res.status(409).json({ error: 'اسم المستخدم محجوز بالفعل. اختر اسماً آخر أو سجّل دخولك.' });
         }
+
+        const passwordHash = await bcrypt.hash(password, 10);
+        const userRecord = await DB.createUser(sanitizedUser, passwordHash);
 
         if (!userRecord) {
             return res.status(500).json({ error: 'فشل إنشاء الحساب.' });
@@ -392,6 +433,64 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+// تسجيل الدخول بكلمة مرور
+app.post('/api/auth/login', async (req, res) => {
+    const { username, password } = req.body;
+
+    if (!username || typeof username !== 'string') {
+        return res.status(400).json({ error: 'اسم المستخدم مطلوب.' });
+    }
+
+    // 🆕 تحقق صارم: أحرف إنجليزية وأرقام وشرطات فقط — يمنع الأسماء التي تتحول بالكامل لـ "_____"
+    const validUsernamePattern = /^[a-zA-Z][a-zA-Z0-9_\-]{2,19}$/;
+    const trimmed = username.trim();
+    if (!validUsernamePattern.test(trimmed)) {
+        return res.status(400).json({
+            error: 'اسم المستخدم غير صالح. يجب أن يكون بالإنجليزية فقط (أحرف وأرقام)، يبدأ بحرف، وطوله 3-20.'
+        });
+    }
+
+    try {
+        const sanitizedUser = trimmed.toLowerCase();
+        const userRecord = await DB.findUser(sanitizedUser);
+
+        // المستخدم غير موجود في DB أو وضع offline — استخدم وضع الضيف بدون كلمة مرور
+        if (!userRecord) {
+            if (DB._isOnline()) {
+                return res.status(404).json({ error: 'الحساب غير موجود. سجّل حساباً جديداً أولاً.' });
+            }
+            // وضع offline: دخول كضيف بدون التحقق من كلمة مرور (للتطوير المحلي فقط)
+            const payload = { id: `offline_${sanitizedUser}`, username: sanitizedUser, email: `${sanitizedUser}@jaola-twin.io` };
+            const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+            return res.json({ success: true, token, currentUser: sanitizedUser, activeProject: 'sandbox_app', offlineMode: true });
+        }
+
+        // المستخدم موجود في DB — كلمة المرور مطلوبة
+        if (!password) {
+            return res.status(400).json({ error: 'كلمة المرور مطلوبة لهذا الحساب.' });
+        }
+
+        if (!userRecord.password) {
+            return res.status(500).json({ error: 'حساب بدون كلمة مرور مسجّلة. تواصل مع الدعم.' });
+        }
+
+        const isValid = await bcrypt.compare(password, userRecord.password);
+        if (!isValid) {
+            return res.status(401).json({ error: 'كلمة المرور غير صحيحة.' });
+        }
+
+        const payload = {
+            id: userRecord._id || userRecord.id,
+            username: sanitizedUser,
+            email: userRecord.email
+        };
+        const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+        res.json({ success: true, token, currentUser: sanitizedUser, activeProject: 'sandbox_app' });
+    } catch (err) {
+        res.status(500).json({ error: 'خطأ داخلي في الخادم.' });
+    }
+});
+
 app.post('/api/project-context/switch', verifyToken, async (req, res) => {
     const { project } = req.body;
     const username = req.user.username;
@@ -403,6 +502,74 @@ app.post('/api/project-context/switch', verifyToken, async (req, res) => {
     } catch (e) {}
 
     res.json({ success: true, currentUser: username, activeProject: safeProject });
+});
+
+app.delete('/api/projects/:name', verifyToken, async (req, res) => {
+    const username = req.user.username;
+    const safeProject = (req.params.name || '').trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '-');
+
+    if (!safeProject) {
+        return res.status(400).json({ error: 'اسم المشروع مطلوب.' });
+    }
+    if (safeProject === 'sandbox_app') {
+        return res.status(400).json({ error: 'لا يمكن حذف المشروع الافتراضي sandbox_app.' });
+    }
+
+    try {
+        // حذف الملفات من القرص
+        const projectPath = getProjectPath(username, safeProject);
+        if (fs.existsSync(projectPath)) {
+            fs.rmSync(projectPath, { recursive: true, force: true });
+        }
+
+        // حذف السجل من قاعدة البيانات
+        if (DB._isOnline()) {
+            try { await Project.deleteOne({ name: safeProject, owner: username }); } catch (e) {}
+        }
+
+        // إذا كان هذا هو المشروع النشط حالياً للمستخدم، بلّغ الـ socket room
+        const roomName = `${username}-${safeProject}`;
+        io.to(roomName).emit('log', { message: `🗑️ [SYSTEM]: تم حذف المشروع (${safeProject}).` });
+
+        res.json({ success: true, deleted: safeProject });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل حذف المشروع: ' + err.message });
+    }
+});
+
+// 🆕 توليد PWA (manifest + service worker + أيقونة) لمشروع موجود
+app.post('/api/pwa/generate', verifyToken, validateProjectOwnership, async (req, res) => {
+    const { appName, shortName } = req.body;
+
+    if (!appName || typeof appName !== 'string' || appName.trim().length === 0) {
+        return res.status(400).json({ error: 'اسم التطبيق مطلوب.' });
+    }
+
+    try {
+        const result = await generatePWA(req.projectPath, {
+            appName: appName.trim(),
+            shortName: shortName?.trim()
+        });
+
+        if (!result.success) {
+            return res.status(400).json({ error: result.error });
+        }
+
+        const roomName = `${req.user.username}-${req.activeProject}`;
+        emitWorkspaceFiles(roomName, req.projectPath);
+        io.to(roomName).emit('log', {
+            message: `📱 [SYSTEM]: تم تحويل الموقع لتطبيق "${result.appName}" بنجاح! يمكنك الآن تثبيته من المتصفح.`
+        });
+
+        res.json({
+            success: true,
+            appName: result.appName,
+            themeColor: result.themeColor,
+            files: result.files
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل توليد التطبيق: ' + err.message });
+    }
 });
 
 app.get('/api/file-content', verifyToken, async (req, res) => {
@@ -494,6 +661,27 @@ app.post('/api/chat', verifyToken, aiLimit, validateProjectOwnership, async (req
         }, agents, dbStatus);
     } catch (error) {
         io.to(roomName).emit('log', { message: `❌ [ERROR]: ${error.message}` });
+    }
+});
+
+// 🆕 مسار نشر صريح — أبسط وأوثق من الاعتماد على تصنيف نية AI غامض
+app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) => {
+    res.json({ accepted: true });
+
+    const roomName = `${req.user.username}-${req.activeProject}`;
+
+    try {
+        await deployProject(
+            {
+                projectPath: req.projectPath,
+                activeProject: req.activeProject,
+                currentUser: req.user.username
+            },
+            io,
+            () => emitUserProjects(roomName, req.user.username, req.activeProject)
+        );
+    } catch (error) {
+        io.to(roomName).emit('log', { message: `❌ [DEPLOY]: خطأ غير متوقع: ${error.message}` });
     }
 });
 

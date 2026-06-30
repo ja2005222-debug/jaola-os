@@ -130,6 +130,12 @@ export class JaolaCognitiveRuntime {
         this.io.to(roomName).emit('log', { message: `[${layer}] ➔ [${agent}]: ${message}` });
     }
 
+    emitAgentError(roomName, failedAgentKey) {
+        const states = { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'waiting' };
+        states[failedAgentKey] = 'error';
+        this.io.to(roomName).emit('agent_states', states);
+    }
+
     async loadExecutiveMemory(username) {
         try {
             if (fs.existsSync(this.executiveMemoryPath)) {
@@ -179,7 +185,7 @@ export class JaolaCognitiveRuntime {
             context.mentalModel.visualIdentity = result.mission.uxGoal || '';
             context.mentalModel.successCriteria = Array.isArray(result.mission.successCriteria) ? result.mission.successCriteria : [];
             context.mentalModel.risks = Array.isArray(result.mission.risks) ? result.mission.risks : [];
-            
+
             let confidence = result.meta.confidence;
             if (typeof confidence === 'number' && confidence <= 1) {
                 confidence = Math.round(confidence * 100);
@@ -187,7 +193,7 @@ export class JaolaCognitiveRuntime {
             context.metaReasoning.confidence = confidence || 70;
             context.metaReasoning.unknowns = Array.isArray(result.meta.unknowns) ? result.meta.unknowns : [];
             context.metaReasoning.needsUserClarification = (context.metaReasoning.confidence < 45) && (context.metaReasoning.unknowns.length > 0);
-            
+
             const allowed = ['Critical', 'High', 'Medium', 'Low'];
             const priority = allowed.includes(result.meta.priority) ? result.meta.priority : 'Medium';
             context.budget = new CognitiveBudget(priority === 'Critical' || priority === 'High' ? 'complex' : 'medium');
@@ -204,12 +210,12 @@ export class JaolaCognitiveRuntime {
     async runExecutiveBrain(context, roomName, agents) {
         this.emitLiveLog(roomName, '3. EXECUTIVE BRAIN', 'CEO', '🎯 تفكيك الأهداف...');
         const unknowns = Array.isArray(context.metaReasoning.unknowns) ? context.metaReasoning.unknowns : [];
-        
+
         if (context.metaReasoning.needsUserClarification && unknowns.length > 0) {
             this.emitLiveLog(roomName, '3. EXECUTIVE BRAIN', 'CEO', '🟡 ملاحظة: توجد مجاهيل، لكننا سنحاول المتابعة.');
             this.emitLiveLog(roomName, '3. EXECUTIVE BRAIN', 'CEO', `الأسئلة المحتملة:\n${unknowns.map((u,i)=>`${i+1}. ${u}`).join('\n')}`);
         }
-        
+
         if (!context.budget.consumeCall()) {
             this.emitLiveLog(roomName, '3. EXECUTIVE BRAIN', 'CEO', '❌ الميزانية استنفدت.');
             context.executiveDecision.actionType = 'STOP_AND_ASK';
@@ -218,9 +224,9 @@ export class JaolaCognitiveRuntime {
         try {
             const completion = await groq.chat.completions.create({
                 messages: [
-                    { 
-                        role: "system", 
-                        content: "أنت مخطط مهام. أعد كائن JSON يحتوي على 'taskGraph' (مصفوفة من سلاسل تصف المهام الفرعية) و 'priorityQueue' (مصفوفة من كائنات تحتوي على 'taskName' و 'priority' و 'estimatedTime'). مثال: {\"taskGraph\": [\"تصميم الهيكل\", \"كتابة الكود\"], \"priorityQueue\": [{\"taskName\": \"تصميم الهيكل\", \"priority\": \"High\", \"estimatedTime\": 2}]}" 
+                    {
+                        role: "system",
+                        content: "أنت مخطط مهام. أعد كائن JSON يحتوي على 'taskGraph' (مصفوفة من سلاسل تصف المهام الفرعية) و 'priorityQueue' (مصفوفة من كائنات تحتوي على 'taskName' و 'priority' و 'estimatedTime'). مثال: {\"taskGraph\": [\"تصميم الهيكل\", \"كتابة الكود\"], \"priorityQueue\": [{\"taskName\": \"تصميم الهيكل\", \"priority\": \"High\", \"estimatedTime\": 2}]}"
                     },
                     { role: "user", content: `المشروع: ${JSON.stringify(context.mentalModel)}` }
                 ],
@@ -243,7 +249,6 @@ export class JaolaCognitiveRuntime {
         let initialCodeContext = await this.readCurrentCodeContextAsync(context.projectPath);
         const maxDebateCycles = context.budget.maxApiCalls;
 
-        // 🧩 تطبيق القالب المناسب إذا كان المشروع فارغاً
         try {
             const dirFiles = await fsPromises.readdir(context.projectPath);
             const currentFilesCount = dirFiles.filter(f => f !== '.backups' && f !== 'template.zip').length;
@@ -296,6 +301,15 @@ export class JaolaCognitiveRuntime {
                 continue;
             }
 
+            if (!plan.files || plan.files.length === 0) {
+                this.emitLiveLog(roomName, '5. RUNTIME', 'Coder', `⚠️ لم يتم استخراج أي ملفات من رد النموذج. إعادة المحاولة...`);
+                context.internalDebate.criticTranscripts.push({
+                    agent: 'CODER_EMPTY_RESPONSE',
+                    critique: 'النموذج أعاد رداً لم يحتوِ على ملفات بالتنسيق المتوقع (// FILE: name)'
+                });
+                continue;
+            }
+
             const secAudit = CognitiveCapabilities.runSecurityAudit(plan.files);
             const archPromise = context.budget.consumeCall() ? agents.architectReview(plan) : Promise.resolve({ approved: true, feedback: '' });
             const qaPromise = context.budget.consumeCall() ? agents.qaVerify(plan) : Promise.resolve({ passed: true, logs: [] });
@@ -322,7 +336,19 @@ export class JaolaCognitiveRuntime {
             return { success: true };
         }
 
-        throw new Error(`فشل الفريق بعد ${maxDebateCycles} دورات. آخر الانتقادات: ${JSON.stringify(context.internalDebate.criticTranscripts.slice(-2))}`);
+        const lastCritiques = context.internalDebate.criticTranscripts.slice(-3);
+        const reasonsText = lastCritiques.length > 0
+            ? lastCritiques.map(c => `• [${c.agent}] ${c.critique}`).join('\n')
+            : 'لم يتم تسجيل أسباب محددة.';
+
+        this.emitLiveLog(roomName, '5. RUNTIME', 'Orchestrator',
+            `❌ فشل بناء الموقع بعد ${maxDebateCycles} محاولة. الأسباب الأخيرة:\n${reasonsText}`
+        );
+        this.emitLiveLog(roomName, '5. RUNTIME', 'Orchestrator',
+            `💡 جرّب صياغة طلبك بشكل أبسط أو أوضح، أو حاول مرة أخرى — أحياناً يكون السبب ضغطاً مؤقتاً على خدمة الذكاء الاصطناعي.`
+        );
+
+        throw new Error(`فشل الفريق بعد ${maxDebateCycles} دورات. آخر الانتقادات: ${JSON.stringify(lastCritiques)}`);
     }
 
     async runCuriosityInBackground(context, roomName) {
@@ -428,10 +454,19 @@ export class JaolaCognitiveRuntime {
             await this.runExecutiveBrain(context, roomName, agents);
             if (context.executiveDecision.actionType !== 'EXECUTE') {
                 await this.runReflectionAndSelfImprovement(context, roomName, true);
-                this.io.to(roomName).emit('agent_state', { planner: 'completed', architect: 'waiting', coder: 'waiting', qa: 'waiting', deploy: 'waiting' });
+                this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'waiting', coder: 'waiting', qa: 'waiting', deploy: 'waiting' });
                 return { success: true };
             }
-            const execResult = await this.runDynamicMultiAgentRuntime(context, roomName, agents);
+
+            let execResult;
+            try {
+                execResult = await this.runDynamicMultiAgentRuntime(context, roomName, agents);
+            } catch (runtimeError) {
+                this.emitAgentError(roomName, 'coder');
+                await this.runReflectionAndSelfImprovement(context, roomName, false);
+                this.emitLiveLog(roomName, 'JCOS', 'Kernel', `❌ فشل نهائياً: ${runtimeError.message}`);
+                return { success: false, error: runtimeError.message };
+            }
 
             if (execResult.success) {
                 this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
@@ -443,9 +478,12 @@ export class JaolaCognitiveRuntime {
 
             await this.runReflectionAndSelfImprovement(context, roomName, execResult.success);
             this.emitLiveLog(roomName, 'JCOS', 'Kernel', execResult.success ? '✨ نجاح' : '❌ فشل');
+            return execResult;
         } catch (error) {
-            this.emitLiveLog(roomName, 'JCOS', 'Kernel', `❌ تعطلت: ${error.message}`);
+            this.emitAgentError(roomName, 'planner');
+            this.emitLiveLog(roomName, 'JCOS', 'Kernel', `❌ تعطلت المهمة: ${error.message}`);
             await this.runReflectionAndSelfImprovement(context, roomName, false);
+            return { success: false, error: error.message };
         }
     }
 
@@ -465,7 +503,6 @@ export class JaolaCognitiveRuntime {
     async handleUserMessage(socket, data, agents, dbStatus) {
         const { message, roomName, projectPath, username, activeProject } = data;
 
-        // كشف مباشر عن أوامر التعديل
         const modifyPattern = /^(غير|عدل|بدل|أضف|احذف|صحح|أصلح|تعديل|حوّل|اجعل)\s+/i;
         if (modifyPattern.test(message.trim())) {
             this.emitLiveLog(roomName, 'INTENT', 'Classifier', 'نية: modify (ثقة: 100%) - قاعدة مباشرة');

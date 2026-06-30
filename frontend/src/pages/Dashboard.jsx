@@ -17,6 +17,10 @@ export default function Dashboard() {
   const [prompt, setPrompt]               = useState('');
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [newProjectName, setNewProjectName]     = useState('');
+  const [showPwaModal, setShowPwaModal]         = useState(false);
+  const [pwaAppName, setPwaAppName]             = useState('');
+  const [isGeneratingPwa, setIsGeneratingPwa]   = useState(false);
+  const [isDeploying, setIsDeploying]           = useState(false);
   const [loginUsername, setLoginUsername] = useState('');
   const [isLoggingIn, setIsLoggingIn]     = useState(false);
 
@@ -109,15 +113,108 @@ export default function Dashboard() {
     await handleSwitchProject(sanitized);
   };
 
+  const handleDeleteProject = async (projName) => {
+    if (projName === 'sandbox_app') {
+      alert('لا يمكن حذف المشروع الافتراضي sandbox_app.');
+      return;
+    }
+    if (!window.confirm(`هل أنت متأكد من حذف المشروع "${projName}"؟ لا يمكن التراجع عن هذا الإجراء.`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/projects/${encodeURIComponent(projName)}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+      if (res.status === 401 || res.status === 403) { handleAuthError(res.status); return; }
+      const data = await res.json();
+      if (data.success) {
+        // إذا كان المشروع المحذوف هو النشط، بدّل إلى sandbox_app
+        if (projName === activeProject) {
+          await handleSwitchProject('sandbox_app');
+        } else {
+          // أعد جلب قائمة المشاريع المحدّثة
+          socket.emit('join_project', { project: activeProject });
+        }
+      } else {
+        alert(data.error || 'فشل حذف المشروع.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('حدث خطأ أثناء حذف المشروع.');
+    }
+  };
+
+  const handlePwaSubmit = async () => {
+    if (!pwaAppName.trim()) {
+      alert('أدخل اسماً للتطبيق.');
+      return;
+    }
+    setIsGeneratingPwa(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/pwa/generate`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ appName: pwaAppName.trim(), project: activeProject })
+      });
+      if (res.status === 401 || res.status === 403) { handleAuthError(res.status); return; }
+      const data = await res.json();
+      if (data.success) {
+        setShowPwaModal(false);
+        setPwaAppName('');
+        // ملاحظة: لا حاجة لتحديث يدوي — emitWorkspaceFiles في الباك إند
+        // يبث preview_updated تلقائياً فيُحدِّث previewTimestamp عبر useSocket
+      } else {
+        alert(data.error || 'فشل تحويل الموقع لتطبيق.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('حدث خطأ أثناء التحويل.');
+    } finally {
+      setIsGeneratingPwa(false);
+    }
+  };
+
+  const handleDeploy = async () => {
+    if (isDeploying) return; // منع نقرات متكررة سريعة
+    setIsDeploying(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/deploy`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ project: activeProject })
+      });
+      if (res.status === 401 || res.status === 403) { handleAuthError(res.status); return; }
+      // النتيجة الفعلية (نجاح/فشل + الرابط) تصل عبر السجل الحي (Socket log)،
+      // وليس عبر هذا الرد المباشر، لأن النشر قد يستغرق ثوانٍ عدة.
+    } catch (err) {
+      console.error(err);
+      alert('تعذّر بدء عملية النشر. تحقق من اتصالك بالخادم.');
+    } finally {
+      // نُبقي الزر معطّلاً لثوانٍ قليلة لمنع الضغط المتكرر أثناء معالجة الطلب في الخلفية
+      setTimeout(() => setIsDeploying(false), 5000);
+    }
+  };
+
   const handleManualLogin = async (e) => {
     e.preventDefault();
-    if (!loginUsername.trim()) return;
+    const trimmed = loginUsername.trim();
+
+    if (!trimmed) return;
+
+    // 🆕 تحقق صارم: أحرف إنجليزية وأرقام وشرطات فقط، يبدأ بحرف
+    const validUsernamePattern = /^[a-zA-Z][a-zA-Z0-9_\-]{2,19}$/;
+    if (!validUsernamePattern.test(trimmed)) {
+      alert('اسم المستخدم يجب أن يكون بالإنجليزية فقط (أحرف وأرقام)، يبدأ بحرف، وطوله بين 3 و20 حرفاً. مثال: ahmed_2024');
+      return;
+    }
+
     setIsLoggingIn(true);
     try {
       const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: loginUsername })
+        body: JSON.stringify({ username: trimmed })
       });
       const data = await res.json();
       if (data.success && data.token) {
@@ -129,6 +226,8 @@ export default function Dashboard() {
         setCurrentUser(data.currentUser);
         setIsAuthenticated(true);
         window.location.reload();
+      } else {
+        alert(data.error || 'فشل تسجيل الدخول.');
       }
     } catch (err) { console.error(err); }
     finally { setIsLoggingIn(false); }
@@ -183,7 +282,9 @@ export default function Dashboard() {
           <input
             type="text" required value={loginUsername}
             onChange={(e) => setLoginUsername(e.target.value)}
-            placeholder="اسم المستخدم (بالإنجليزي)..."
+            pattern="[a-zA-Z][a-zA-Z0-9_\-]{2,19}"
+            title="أحرف إنجليزية وأرقام فقط، يبدأ بحرف، 3-20 حرفاً"
+            placeholder="مثال: ahmed_2024 (إنجليزي فقط)"
             className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-xs text-slate-200 outline-none focus:ring-1 focus:ring-cyan-500 mb-4 font-semibold text-center placeholder-slate-600"
           />
           <button type="submit" disabled={isLoggingIn}
@@ -216,12 +317,29 @@ export default function Dashboard() {
         </div>
 
         <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto justify-end">
-          {vercelUrl && (
+          {vercelUrl ? (
             <a href={vercelUrl} target="_blank" rel="noreferrer"
               className="text-xs bg-emerald-950/40 border border-emerald-900/60 text-emerald-400 px-3.5 py-2.5 rounded-xl hover:scale-[1.01] transition-all">
               🌍 الرابط المنشور
             </a>
+          ) : (
+            <button
+              onClick={handleDeploy}
+              disabled={isDeploying}
+              className="text-xs bg-emerald-950/40 border border-emerald-900/60 text-emerald-400 px-3.5 py-2.5 rounded-xl hover:scale-[1.01] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              title="انشر هذا الموقع على الإنترنت"
+            >
+              {isDeploying ? '⏳ جاري النشر...' : '🚀 انشر الموقع'}
+            </button>
           )}
+
+          <button
+            onClick={() => { setPwaAppName(activeProject); setShowPwaModal(true); }}
+            className="text-xs bg-violet-950/40 border border-violet-900/60 text-violet-300 px-3.5 py-2.5 rounded-xl hover:bg-violet-950/70 transition-all"
+            title="حوّل هذا الموقع إلى تطبيق قابل للتثبيت"
+          >
+            📱 حوّل لتطبيق
+          </button>
 
           <button onClick={handleLogout}
             className="text-xs bg-[#1A0B13]/80 border border-rose-950 text-rose-400 px-3.5 py-2.5 rounded-xl hover:bg-rose-950/30 transition-all font-bold">
@@ -234,6 +352,15 @@ export default function Dashboard() {
               className="bg-transparent text-xs text-slate-200 outline-none border-0 cursor-pointer font-bold w-full">
               {projects.map((p) => <option key={p} value={p} className="bg-[#0D121F]">{p}</option>)}
             </select>
+            {activeProject !== 'sandbox_app' && (
+              <button
+                onClick={() => handleDeleteProject(activeProject)}
+                title="حذف هذا المشروع"
+                className="text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg p-1 transition-all shrink-0"
+              >
+                🗑️
+              </button>
+            )}
           </div>
 
           <button onClick={() => setShowProjectModal(true)}
@@ -375,6 +502,48 @@ export default function Dashboard() {
               <button onClick={handleCreateProjectSubmit}
                 className="text-xs bg-gradient-to-r from-cyan-600 to-indigo-600 text-white font-bold px-4 py-2.5 rounded-xl hover:scale-[1.01] transition-all">
                 إنشاء ✓
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── مودال تحويل الموقع إلى تطبيق (PWA) ─────────────────────── */}
+      {showPwaModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md">
+          <div className="bg-[#0D121F] border border-violet-900/40 p-6 rounded-2xl max-w-sm w-full shadow-2xl">
+            <h3 className="text-sm font-bold mb-1.5 text-slate-200">📱 تحويل الموقع إلى تطبيق</h3>
+            <p className="text-[10px] text-slate-500 mb-4 leading-relaxed">
+              سيُنشأ تطبيق ويب تقدمي (PWA) قابل للتثبيت على الجوال أو الكمبيوتر،
+              بأيقونة تلقائية مستخرجة من ألوان موقعك.
+            </p>
+            <label className="text-[10px] text-slate-500 mb-1.5 block">اسم التطبيق</label>
+            <input
+              type="text" value={pwaAppName}
+              onChange={(e) => setPwaAppName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handlePwaSubmit()}
+              placeholder="مثال: متجر الأناقة"
+              maxLength={45}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 outline-none focus:ring-1 focus:ring-violet-500 mb-4"
+            />
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                onClick={() => setShowPwaModal(false)}
+                disabled={isGeneratingPwa}
+                className="text-xs text-slate-400 px-3 py-2 disabled:opacity-40"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handlePwaSubmit}
+                disabled={isGeneratingPwa}
+                className="text-xs bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-bold px-4 py-2.5 rounded-xl hover:scale-[1.01] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+              >
+                {isGeneratingPwa ? (
+                  <>⏳ جاري التحويل...</>
+                ) : (
+                  <>📱 تحويل الآن</>
+                )}
               </button>
             </div>
           </div>
