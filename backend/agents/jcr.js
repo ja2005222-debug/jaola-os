@@ -8,6 +8,7 @@ import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, 
 import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
 import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
 import { generateDatabase, selectDatabase } from './databaseAgent.js';
+import { generateAuth, needsAuth } from './authAgent.js';
 import Conversation from '../models/Conversation.js';
 import mongoose from 'mongoose';
 
@@ -437,6 +438,28 @@ export class JaolaCognitiveRuntime {
                     }
                 } catch (e) {
                     this.emitLiveLog(roomName, '5. RUNTIME', 'DatabaseAgent', `⚠️ تخطّي: ${e.message}`);
+                }
+
+                // 🆕 Auth Agent — يُضيف نظام تسجيل دخول إذا احتاجه المشروع
+                if (needsAuth(context.originalGoal)) {
+                    try {
+                        this.emitLiveLog(roomName, '5. RUNTIME', 'AuthAgent', '🔐 جاري توليد نظام المصادقة...');
+                        const authResult = await generateAuth(context.originalGoal, context.projectPath);
+                        if (authResult.success) {
+                            const { promises: fsp } = await import('fs');
+                            const pathMod = await import('path');
+                            for (const file of authResult.files) {
+                                const filePath = pathMod.default.join(context.projectPath, file.name);
+                                await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
+                                await fsp.writeFile(filePath, file.content);
+                            }
+                            this.emitLiveLog(roomName, '5. RUNTIME', 'AuthAgent',
+                                `✅ ${authResult.summary}`
+                            );
+                        }
+                    } catch (e) {
+                        this.emitLiveLog(roomName, '5. RUNTIME', 'AuthAgent', `⚠️ تخطّي: ${e.message}`);
+                    }
                 }
             }
 
