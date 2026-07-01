@@ -354,7 +354,7 @@ export class JaolaCognitiveRuntime {
             }
 
             // 🆕 مرحلة Backend — إذا كان المشروع يحتاج خادماً
-            if (agents.needsBackend && agents.needsBackend(context.goal)) {
+            if (agents.needsBackend && agents.needsBackend(context.originalGoal)) {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', '⚙️ المشروع يحتاج خادماً — جاري توليد APIs...');
                 try {
                     const frontendContext = await this.readCurrentCodeContextAsync(context.projectPath);
@@ -538,11 +538,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
     async executeMission(goal, projectPath, username, activeProject, roomName, agents, dbStatus) {
         // 🆕 إضافة سياق Project Memory للهدف
         const memoryContext = buildMemoryContext(username, activeProject);
-        const enrichedGoal = memoryContext ? `${goal}\n${memoryContext}` : goal;
-
-        // تسجيل هذا الطلب في تاريخ المشروع
-        addToHistory(username, activeProject, goal.slice(0, 80));
-
+const enrichedGoal = memoryContext ? `${goal}\n${memoryContext}` : goal;
         const context = new JCRContext(enrichedGoal, projectPath, username, activeProject);
         this.emitLiveLog(roomName, 'JCOS', 'Kernel', `🏁 بدء المهمة: ${context.missionId}`);
         try {
