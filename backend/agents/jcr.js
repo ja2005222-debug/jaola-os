@@ -7,6 +7,7 @@ import { initUserLanguage, getUserLanguage, getLangInfo } from './languageDetect
 import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure } from './projectMemory.js';
 import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
 import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
+import { generateDatabase, selectDatabase } from './databaseAgent.js';
 import Conversation from '../models/Conversation.js';
 import mongoose from 'mongoose';
 
@@ -415,6 +416,27 @@ export class JaolaCognitiveRuntime {
                     }
                 } catch (e) {
                     this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', `❌ خطأ في BackendAgent: ${e.message}`);
+                }
+
+                // 🆕 DatabaseAgent — يُولّد Schema + Seed Data مع Backend
+                try {
+                    const projectType = context.mentalModel?.designBrief?.projectType || 'business';
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'DatabaseAgent', '🗄️ جاري توليد قاعدة البيانات...');
+                    const dbResult = await generateDatabase(context.originalGoal, projectType, context.projectPath);
+                    if (dbResult.success) {
+                        const { promises: fsp } = await import('fs');
+                        const pathMod = await import('path');
+                        for (const file of dbResult.files) {
+                            const filePath = pathMod.default.join(context.projectPath, file.name);
+                            await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
+                            await fsp.writeFile(filePath, file.content);
+                        }
+                        this.emitLiveLog(roomName, '5. RUNTIME', 'DatabaseAgent',
+                            `✅ ${dbResult.summary}`
+                        );
+                    }
+                } catch (e) {
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'DatabaseAgent', `⚠️ تخطّي: ${e.message}`);
                 }
             }
 
