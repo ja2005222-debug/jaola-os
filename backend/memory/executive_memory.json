@@ -15,7 +15,7 @@
     "language": "Arabic"
   },
   "jamal": {
-    "preferredUi": "توفير تجربة مستخدم ممتعة وسهلة الاستخدام",
+    "preferredUi": "## تعليمات التصميم الإلزامية:\n- استخدم CSS Variables من :root في كل الألوان (لا hardcoded colors)\n- الخط الرئيسي: Cairo للعناوين، Tajawal للنص\n- الصورة الرئيسية: https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=1200&q=80&auto=format&fit=crop\n- الأسلوب: فاخر وراقٍ\n- الأنيميشن: تأثير hover للأزرار، fade-in للأقسام، تأثير زوم للصور في معرض الصور\n- شعار الـ hero: \"إستمتع بالإقامة الفاخرة في النخيل الملكي\"\n- اللمسة المميزة: تصميم ثلاثي الأبعاد لجناح الفندق في الصفحة الرئيسية",
     "dislikedTech": "Bootstrap",
     "language": "Arabic"
   },

@@ -6,6 +6,7 @@ import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo } from './languageDetector.js';
 import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure } from './projectMemory.js';
 import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
+import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
 import Conversation from '../models/Conversation.js';
 import mongoose from 'mongoose';
 
@@ -274,6 +275,27 @@ export class JaolaCognitiveRuntime {
             this.emitLiveLog(roomName, '5. RUNTIME', 'TemplateAgent', `❌ خطأ: ${e.message}`);
         }
 
+        // 🆕 مرحلة Designer Agent — قرار بصري قبل Coder
+        try {
+            this.emitLiveLog(roomName, '5. RUNTIME', 'DesignerAgent', '🎨 جاري توليد الـ Design Brief...');
+            const designResult = await generateDesignBrief(
+                context.goal,
+                context.username,
+                context.activeProject
+            );
+            if (designResult.success) {
+                const brief = designResult.brief;
+                saveDesignBrief(context.projectPath, brief);
+                context.mentalModel.visualIdentity = brief.coderInstructions;
+                context.mentalModel.designBrief = brief;
+                this.emitLiveLog(roomName, '5. RUNTIME', 'DesignerAgent',
+                    `✅ Design Brief — ${brief.paletteName} palette`
+                );
+            }
+        } catch (e) {
+            this.emitLiveLog(roomName, '5. RUNTIME', 'DesignerAgent', `⚠️ تخطّي: ${e.message}`);
+        }
+
         for (let cycle = 0; cycle < maxDebateCycles; cycle++) {
             if (context.budget.isExhausted()) {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'Orchestrator', '❌ الميزانية استنفدت.');
@@ -345,13 +367,13 @@ export class JaolaCognitiveRuntime {
 
             // 🆕 تحديث Project Memory بهيكل الموقع المبني
             if (context.mentalModel?.templateSections?.length) {
-                updateStructure(username, activeProject,
+                updateStructure(context.username, context.activeProject,
                     context.mentalModel.templateSections,
                     context.executiveDecision?.subTasks?.map(t => t.description) || []
                 );
             }
             if (context.mentalModel?.visualIdentity) {
-                updateDesign(username, activeProject, { style: context.mentalModel.visualIdentity });
+                updateDesign(context.username, context.activeProject, { style: context.mentalModel.visualIdentity });
             }
 
             // 🆕 مرحلة Backend — إذا كان المشروع يحتاج خادماً
