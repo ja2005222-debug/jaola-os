@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { groq } from './baseAgent.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo } from './languageDetector.js';
+import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure } from './projectMemory.js';
 import Conversation from '../models/Conversation.js';
 import mongoose from 'mongoose';
 
@@ -341,6 +342,17 @@ export class JaolaCognitiveRuntime {
             context.files = plan.files;
             context.images = plan.images;
 
+            // 🆕 تحديث Project Memory بهيكل الموقع المبني
+            if (context.mentalModel?.templateSections?.length) {
+                updateStructure(context.username, context.activeProject,
+                    context.mentalModel.templateSections,
+                    context.executiveDecision?.subTasks?.map(t => t.description) || []
+                );
+            }
+            if (context.mentalModel?.visualIdentity) {
+                updateDesign(context.username, context.activeProject, { style: context.mentalModel.visualIdentity });
+            }
+
             // 🆕 مرحلة Backend — إذا كان المشروع يحتاج خادماً
             if (agents.needsBackend && agents.needsBackend(context.goal)) {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', '⚙️ المشروع يحتاج خادماً — جاري توليد APIs...');
@@ -524,7 +536,14 @@ User preferences: ${JSON.stringify(execMemory)}` },
     }
 
     async executeMission(goal, projectPath, username, activeProject, roomName, agents, dbStatus) {
-        const context = new JCRContext(goal, projectPath, username, activeProject);
+        // 🆕 إضافة سياق Project Memory للهدف
+        const memoryContext = buildMemoryContext(username, activeProject);
+        const enrichedGoal = memoryContext ? `${goal}\n${memoryContext}` : goal;
+
+        // تسجيل هذا الطلب في تاريخ المشروع
+        addToHistory(username, activeProject, goal.slice(0, 80));
+
+        const context = new JCRContext(enrichedGoal, projectPath, username, activeProject);
         this.emitLiveLog(roomName, 'JCOS', 'Kernel', `🏁 بدء المهمة: ${context.missionId}`);
         try {
             await this.buildWorldModel(context, roomName, dbStatus);
@@ -600,10 +619,20 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // إذا كنا في مرحلة الخطة — ننتظر تأكيد أو تعديل
         if (clarifierState?.stage === 'planning') {
             if (agents.isConfirmation?.(message)) {
+                const clarifierData = agents.getState(username);
                 const finalGoal = agents.getFinalGoal(username);
                 const lang = clarifierState.lang || userLang;
                 const startMsg = lang === 'ar' ? '🚀 ممتاز! بدأت البناء الآن...' : '🚀 Great! Building now...';
                 this.io.to(roomName).emit('chat_reply', { message: startMsg });
+
+                // 🆕 تهيئة Project Memory من نتائج Clarifier
+                if (clarifierData?.plan) {
+                    initFromClarifier(username, activeProject, {
+                        originalGoal: clarifierData.originalGoal,
+                        plan: clarifierData.plan,
+                    });
+                }
+
                 this.executeMission(finalGoal, projectPath, username, activeProject, roomName, agents, dbStatus);
             } else {
                 // تمييز: هل هو سؤال عن الخطة أم تعديل عليها؟
