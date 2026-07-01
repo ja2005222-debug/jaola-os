@@ -9,7 +9,7 @@
  * Clarifier → Designer → Architect → Coder → QA
  */
 
-import { groq } from './baseAgent.js';
+import { smartChat } from './baseAgent.js';
 import { getProjectContext } from './knowledgeEngine.js';
 import { getUserProfile } from './userProfile.js';
 import { getProjectMemory } from './projectMemory.js';

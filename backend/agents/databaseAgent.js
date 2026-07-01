@@ -8,7 +8,7 @@
  * - Connection setup
  */
 
-import { groq } from './baseAgent.js';
+import { smartChat } from './baseAgent.js';
 
 // ═══════════════════════════════════════════════════════
 // 🔍 تحديد نوع قاعدة البيانات المناسبة

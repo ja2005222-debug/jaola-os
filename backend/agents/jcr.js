@@ -10,6 +10,8 @@ import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
 import { generateDatabase, selectDatabase } from './databaseAgent.js';
 import { generateAuth, needsAuth } from './authAgent.js';
 import { reviewCode } from './reviewAgent.js';
+import { commitBuild, initProjectRepo, getProjectStats } from './gitAgent.js';
+import { backupProject, listSnapshots } from './fileManager.js';
 import Conversation from '../models/Conversation.js';
 import mongoose from 'mongoose';
 
@@ -389,6 +391,23 @@ export class JaolaCognitiveRuntime {
             await this.saveExecutiveMemory(context.username, context.mentalModel.visualIdentity);
             context.files = plan.files;
             context.images = plan.images;
+
+            // 🆕 Git Agent — commit تلقائي + نسخة احتياطية
+            try {
+                await backupProject(context.projectPath, 'build');
+                const commitResult = await commitBuild(
+                    context.projectPath,
+                    context.originalGoal?.slice(0, 60) || context.goal.slice(0, 60),
+                    'build'
+                );
+                if (commitResult.success && !commitResult.skipped) {
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'GitAgent',
+                        `✅ تم الحفظ [${commitResult.hash}]`
+                    );
+                }
+            } catch (e) {
+                // Git اختياري — لا يوقف البناء
+            }
 
             // 🆕 تحديث Project Memory بهيكل الموقع المبني
             if (context.mentalModel?.templateSections?.length) {
@@ -830,6 +849,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         } else if (intentResult.intent === 'modify') {
             recordEdit(username, message);
             this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);
+            // Git commit للتعديل يحدث داخل executeMission بعد النجاح
         } else if (intentResult.intent === 'stop') {
             this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛑 أمر إيقاف.');
             agents.clearState?.(username);

@@ -1,4 +1,4 @@
-import { groq } from './baseAgent.js';
+import { groq, smartChat } from './baseAgent.js';
 import { detectProjectType } from './knowledgeEngine.js';
 import { detectLanguage, initUserLanguage, getUserLanguage } from './languageDetector.js';
 
