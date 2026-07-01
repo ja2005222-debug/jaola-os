@@ -27,6 +27,8 @@ import {
     JaolaCognitiveRuntime
 } from './agents/index.js';
 import { generatePWA } from './agents/pwaAgent.js';
+import { generateBackend, generateFrontendAPIIntegration } from './agents/backendAgent.js';
+import { needsBackend } from './agents/knowledgeEngine.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -646,7 +648,10 @@ app.post('/api/chat', verifyToken, aiLimit, validateProjectOwnership, async (req
         architectReview,
         qaVerify,
         deployProject,
-        templateAgent: applyTemplate
+        templateAgent: applyTemplate,
+        needsBackend,
+        generateBackend,
+        generateFrontendAPIIntegration,
     };
 
     const dbStatus = isDbConnected && mongoose.connection.readyState === 1;

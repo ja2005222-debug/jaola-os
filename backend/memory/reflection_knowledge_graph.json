@@ -1,213 +1,5 @@
 [
   {
-    "missionId": "mission_1782751331990",
-    "timestamp": "2026-06-29T16:42:35.394Z",
-    "goal": "ابني موقع لعيادة طبية",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782752400129",
-    "timestamp": "2026-06-29T17:00:27.350Z",
-    "goal": "ابني موقع لمستشفي طواري",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782752674652",
-    "timestamp": "2026-06-29T17:05:00.407Z",
-    "goal": "ابني مشروع رياضي ",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782753742791",
-    "timestamp": "2026-06-29T17:22:48.106Z",
-    "goal": "تفذ المشروع",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782754074051",
-    "timestamp": "2026-06-29T17:28:21.171Z",
-    "goal": "ابني موقع متجر لبيع الملابس الحديثة",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782754371976",
-    "timestamp": "2026-06-29T17:33:18.607Z",
-    "goal": "موقع عيادة طبية",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782754807217",
-    "timestamp": "2026-06-29T17:40:34.719Z",
-    "goal": "نسق الهيدر افقي بلون ازرق فاثح والكتابة باللون الاصفر",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782754884124",
-    "timestamp": "2026-06-29T17:41:50.309Z",
-    "goal": "غير لون الخلفية الى الاصفر",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782756266113",
-    "timestamp": "2026-06-29T18:05:11.637Z",
-    "goal": "ممناز نفذ",
-    "success": true,
-    "retries": 1,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782756377385",
-    "timestamp": "2026-06-29T18:06:38.137Z",
-    "goal": "قم بتحويل الهيدر الى اعلى باللون الاصفر ",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782756488286",
-    "timestamp": "2026-06-29T18:08:34.611Z",
-    "goal": "قم بتصميم عصري حديث لموقع بيع العطور الباريسية وراعي في التصمصم الفخامة",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782756562242",
-    "timestamp": "2026-06-29T18:09:46.756Z",
-    "goal": "اضف بعض الصور والعروض الترويجية ونظم الصفحة الى الافضل",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782756674261",
-    "timestamp": "2026-06-29T18:11:38.649Z",
-    "goal": "اجعل الخلفية مخملية متناسقة مع فخامة العطور",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782756808847",
-    "timestamp": "2026-06-29T18:13:52.432Z",
-    "goal": "رتب الرئيسية مجموعتنا العروض عن العطور اتصل بنا بصورة اجمل وبخلفية ثلاثية الابعاد",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782757151449",
-    "timestamp": "2026-06-29T18:19:39.629Z",
-    "goal": "ابني متجر لبيع الاحزية الايطالية",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782757217349",
-    "timestamp": "2026-06-29T18:20:39.953Z",
-    "goal": "اجعل الخلفية باللون الازرق الفاتح المتدرج الى الابيض",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782757287180",
-    "timestamp": "2026-06-29T18:21:49.860Z",
-    "goal": "غير لون العنوان الي اللون الاصفر",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782757535032",
-    "timestamp": "2026-06-29T18:25:58.349Z",
-    "goal": "نفيذ التغييرات واظهرها",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782758153147",
-    "timestamp": "2026-06-29T18:36:17.182Z",
-    "goal": "بدل لون الخلفية الى الاصفر",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782769121946",
-    "timestamp": "2026-06-29T21:38:56.312Z",
-    "goal": "اضف قايمة في الهيدر الريسية من نحن المنيو",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782769239809",
-    "timestamp": "2026-06-29T21:41:07.759Z",
-    "goal": "غير لمشروع جديد وانشي صفحة للعطور الباريسية الفخمة",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782769486132",
-    "timestamp": "2026-06-29T21:45:15.968Z",
-    "goal": "ابني موقع لمستشفى جامعي",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782770087556",
-    "timestamp": "2026-06-29T21:55:15.709Z",
-    "goal": "ابني مشروع مستشفى",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782770869476",
-    "timestamp": "2026-06-29T22:08:13.559Z",
-    "goal": "ابني مشروع متجر سجاير",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782771055498",
-    "timestamp": "2026-06-29T22:11:15.491Z",
-    "goal": "اصنع موقع بسيط",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
-    "missionId": "mission_1782771375138",
-    "timestamp": "2026-06-29T22:16:40.273Z",
-    "goal": "ابني مستشفى خاص تحصصي",
-    "success": true,
-    "retries": 0,
-    "takeaways": "نجحت"
-  },
-  {
     "missionId": "mission_1782772954680",
     "timestamp": "2026-06-29T22:43:02.924Z",
     "goal": "ابني مشروع مدرسة تموذجية",
@@ -397,6 +189,214 @@
     "goal": "اضف عنوان باسم التخصصات",
     "success": true,
     "retries": 4,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782860538594",
+    "timestamp": "2026-06-30T23:02:43.870Z",
+    "goal": "ابني موقع مطعم راقٍ",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782860673274",
+    "timestamp": "2026-06-30T23:04:56.800Z",
+    "goal": "غير القالب الى احدث ويكون يحمل روح",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782861353759",
+    "timestamp": "2026-06-30T23:16:20.508Z",
+    "goal": "اجعل الالوان زاهية واصف صورة للمنيو",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782861420727",
+    "timestamp": "2026-06-30T23:17:27.114Z",
+    "goal": "اضف صور",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782886305741",
+    "timestamp": "2026-07-01T06:12:09.627Z",
+    "goal": "هل يمكنك تطوير موفع جولا",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782886430428",
+    "timestamp": "2026-07-01T06:14:14.443Z",
+    "goal": "اريد اضافة ايجنت جديد .. ماهي الصفات التي على اصافتها وتعديلها ؟؟",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782886654373",
+    "timestamp": "2026-07-01T06:18:03.171Z",
+    "goal": "نعم ميزة الايجنت الذيين يقومون بكل شي يطلب منهم",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782886843138",
+    "timestamp": "2026-07-01T06:21:07.791Z",
+    "goal": "اريد انشاء موقع مثل جولا backend /frontend مع ذكاء اصطناعي عبر ايجنت يفومون بالمهام البرمجية والتطوير لمستوى على جدا",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782886954454",
+    "timestamp": "2026-07-01T06:22:58.645Z",
+    "goal": "اضف بايب لاين للايجنت في backend",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782894621037",
+    "timestamp": "2026-07-01T08:30:21.695Z",
+    "goal": "اريد موقعا",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782894701360",
+    "timestamp": "2026-07-01T08:31:41.858Z",
+    "goal": "اريد موقعا (توضيح: بناء سيرفر لصناعة المواقع وتوليد الكود وتطوير المواثع عن طريق الذكاء الاصطناعي)",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782894768235",
+    "timestamp": "2026-07-01T08:32:48.726Z",
+    "goal": "اريد موقعا (توضيح: بناء سيرفر لصناعة المواقع وتوليد الكود وتطوير المواثع عن طريق الذكاء الاصطناعي) (توضيح: لا اعلم اي لغة ماذا تقترح انت؟)",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782894902209",
+    "timestamp": "2026-07-01T08:35:02.875Z",
+    "goal": "اريد موقعا (توضيح: بناء سيرفر لصناعة المواقع وتوليد الكود وتطوير المواثع عن طريق الذكاء الاصطناعي) (توضيح: لا اعلم اي لغة ماذا تقترح انت؟) (توضيح: بناء موقا عن طريق الذكاء الاصطناعي اعم الميزات ان يكون كاملا معتمد على عمل الايجنت)",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782894927321",
+    "timestamp": "2026-07-01T08:35:27.751Z",
+    "goal": "اريد موقعا (توضيح: بناء سيرفر لصناعة المواقع وتوليد الكود وتطوير المواثع عن طريق الذكاء الاصطناعي) (توضيح: لا اعلم اي لغة ماذا تقترح انت؟) (توضيح: بناء موقا عن طريق الذكاء الاصطناعي اعم الميزات ان يكون كاملا معتمد على عمل الايجنت) (توضيح: ابدا)",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782894985044",
+    "timestamp": "2026-07-01T08:36:25.578Z",
+    "goal": "اريد موقعا (توضيح: بناء سيرفر لصناعة المواقع وتوليد الكود وتطوير المواثع عن طريق الذكاء الاصطناعي) (توضيح: لا اعلم اي لغة ماذا تقترح انت؟) (توضيح: بناء موقا عن طريق الذكاء الاصطناعي اعم الميزات ان يكون كاملا معتمد على عمل الايجنت) (توضيح: ابدا) (توضيح: ايني متجر بطيخ)",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782895223894",
+    "timestamp": "2026-07-01T08:40:24.406Z",
+    "goal": "اريد موقع",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782895250402",
+    "timestamp": "2026-07-01T08:40:50.827Z",
+    "goal": "اريد موقع (توضيح: موقع لبناء المواقع)",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782895300307",
+    "timestamp": "2026-07-01T08:41:40.997Z",
+    "goal": "اريد موقع (توضيح: موقع لبناء المواقع) (توضيح: موقع بطيخ احمر)",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782895338796",
+    "timestamp": "2026-07-01T08:42:19.312Z",
+    "goal": "اريد موقع (توضيح: موقع لبناء المواقع) (توضيح: موقع بطيخ احمر) (توضيح: لازم يكون احمر من الداخل)",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782896455691",
+    "timestamp": "2026-07-01T09:00:56.018Z",
+    "goal": "قم بتعديل في هذا المشروع",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782896575710",
+    "timestamp": "2026-07-01T09:03:46.439Z",
+    "goal": "ابني موقع إلكتروني لمطعم راقٍ باسم 'الذواق'، يحتوي على قائمة شاملة لأطباق المطعم، نظام حجز طاولات عبر الإنترنت، وتصميم جذاب يعكس جودة المطعم وخدماته. يجب أن يكون الموقع سهل الاستخدام، ويحتوي على صفحات لتقديم الأطباق، وصفحة للحجز مع خيار اختيار التاريخ والوقت، بالإضافة إلى معلومات الاتصال والعنوان. يجب أن يكون التصميم متجاوبًا ليعمل بشكل جيد على الأجهزة المحمولة والكمبيوتر.",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782897180415",
+    "timestamp": "2026-07-01T09:13:52.865Z",
+    "goal": "\"ابني موقع فندق فاخر باسم النخيل",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782899000495",
+    "timestamp": "2026-07-01T09:44:10.619Z",
+    "goal": "ابني متجر إلكتروني باسم سوق العرب مع سلة تسوق وحجز طلبات",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782899524290",
+    "timestamp": "2026-07-01T09:52:52.520Z",
+    "goal": "ابني متجر إلكتروني باسم سوق العرب مع سلة تسوق وحجز طلبات",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782899564206",
+    "timestamp": "2026-07-01T09:53:37.811Z",
+    "goal": "ابني متجر إلكتروني باسم سوق العرب مع سلة تسوق وحجز طلبات",
+    "success": true,
+    "retries": 0,
+    "takeaways": "نجحت"
+  },
+  {
+    "missionId": "mission_1782901616438",
+    "timestamp": "2026-07-01T10:27:49.593Z",
+    "goal": "ابني موقع جيم رياضي باسم Power House",
+    "success": true,
+    "retries": 0,
     "takeaways": "نجحت"
   }
 ]

@@ -1,0 +1,274 @@
+{
+  "global": {
+    "fonts": {
+      "arabic": ["Cairo", "Tajawal", "Almarai", "Noto Kufi Arabic"],
+      "heading": "Cairo",
+      "body": "Tajawal",
+      "google_import": "@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Tajawal:wght@400;500;700&display=swap');"
+    },
+    "icons": "Font Awesome 6 (CDN: https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css)",
+    "images": {
+      "source": "Unsplash",
+      "pattern": "https://images.unsplash.com/photo-{ID}?w=800&q=80&auto=format&fit=crop",
+      "rule": "استخدم صور واقعية ومناسبة للمحتوى، لا placeholder"
+    },
+    "css_rules": [
+      "استخدم CSS Variables في :root لكل الألوان",
+      "Reset CSS في البداية (* { box-sizing: border-box; margin: 0; padding: 0; })",
+      "Mobile-first: ابدأ بالجوال، استخدم @media للشاشات الكبيرة",
+      "Smooth transitions على كل التفاعلات (transition: all 0.3s ease)",
+      "Hover effects واضحة على كل العناصر التفاعلية",
+      "حدد لون النص صراحةً لكل element رئيسي لتجنب مشاكل التباين",
+      "استخدم CSS Grid للتخطيط العام وFlexbox للمكونات الصغيرة"
+    ],
+    "html_rules": [
+      "DOCTYPE html وmeta charset وviewport إلزامية",
+      "dir=rtl lang=ar على الـ html",
+      "هيكل HTML5 معنوي: header, main, section, footer",
+      "محتوى واقعي ومفصّل: أسماء حقيقية، أرقام، وصف — لا placeholder",
+      "اربط Google Fonts وFont Awesome وstyles.css وscript.js"
+    ],
+    "js_rules": [
+      "'use strict' في البداية",
+      "DOMContentLoaded للتهيئة",
+      "Vanilla JS فقط — لا jQuery",
+      "قائمة متحركة للجوال (hamburger menu)",
+      "Smooth scroll للروابط الداخلية",
+      "Form validation للنماذج"
+    ]
+  },
+  "types": {
+    "medical": {
+      "color_palette": {
+        "primary": "#0ea5e9",
+        "secondary": "#06b6d4",
+        "accent": "#10b981",
+        "bg": "#f0f9ff",
+        "text": "#0c4a6e",
+        "dark_bg": "#0f172a"
+      },
+      "mood": "نظيف، احترافي، موثوق، هادئ",
+      "must_have_sections": [
+        "navbar ثابت مع logo وروابط",
+        "hero كبير مع CTA حجز موعد",
+        "الخدمات الطبية (3-6 cards)",
+        "فريق الأطباء مع صور وتخصصات",
+        "إحصائيات (سنوات خبرة، مرضى، عمليات)",
+        "نموذج حجز موعد",
+        "شهادات المرضى",
+        "footer مع ساعات العمل والعنوان"
+      ],
+      "unsplash_queries": ["doctor hospital", "medical clinic", "healthcare professional", "surgery team"],
+      "icons": ["fa-heartbeat", "fa-stethoscope", "fa-hospital", "fa-pills", "fa-ambulance", "fa-user-md"]
+    },
+    "restaurant": {
+      "color_palette": {
+        "primary": "#d97706",
+        "secondary": "#92400e",
+        "accent": "#fbbf24",
+        "bg": "#fffbeb",
+        "text": "#1c1917",
+        "dark_bg": "#1c1917"
+      },
+      "mood": "دافئ، شهي، راقٍ، مرحّب",
+      "must_have_sections": [
+        "navbar مع logo وروابط وزر احجز طاولة",
+        "hero كبير مع صورة خلفية شهية",
+        "أبرز الأطباق (menu cards مع أسعار)",
+        "قصتنا (about مع صورة المطبخ)",
+        "نموذج حجز طاولة",
+        "آراء الزبائن (testimonials)",
+        "ساعات العمل والموقع",
+        "footer مع روابط التواصل"
+      ],
+      "unsplash_queries": ["restaurant food", "fine dining", "chef cooking", "arabic food"],
+      "icons": ["fa-utensils", "fa-wine-glass", "fa-star", "fa-clock", "fa-map-marker", "fa-phone"]
+    },
+    "ecommerce": {
+      "color_palette": {
+        "primary": "#7c3aed",
+        "secondary": "#5b21b6",
+        "accent": "#a78bfa",
+        "bg": "#fafafa",
+        "text": "#1a1a2e",
+        "sale_color": "#ef4444"
+      },
+      "mood": "عصري، نظيف، موثوق، جذاب",
+      "must_have_sections": [
+        "navbar مع logo وبحث وسلة تسوق (0 items badge)",
+        "hero slider أو banner مع عرض خاص",
+        "الفئات (categories grid)",
+        "المنتجات المميزة (product cards مع سعر وزر إضافة للسلة)",
+        "بانر عرض محدود الوقت (countdown timer)",
+        "مميزات المتجر (توصيل مجاني، ضمان، دفع آمن)",
+        "آراء العملاء",
+        "footer مع links وpayment methods"
+      ],
+      "unsplash_queries": ["shopping products", "fashion store", "ecommerce", "retail store"],
+      "icons": ["fa-shopping-cart", "fa-tag", "fa-truck", "fa-shield-alt", "fa-star", "fa-heart"]
+    },
+    "hotel": {
+      "color_palette": {
+        "primary": "#b45309",
+        "secondary": "#78350f",
+        "accent": "#fcd34d",
+        "bg": "#fffdf7",
+        "text": "#1c1917",
+        "dark_bg": "#0c0a09"
+      },
+      "mood": "فاخر، راقٍ، هادئ، مريح",
+      "must_have_sections": [
+        "navbar شفاف مع logo وروابط",
+        "hero fullscreen مع صورة فندق فاخرة",
+        "نموذج بحث حجز (تاريخ وصول، مغادرة، أشخاص)",
+        "الغرف والأجنحة (room cards مع أسعار ومميزات)",
+        "المرافق والخدمات (pool, spa, restaurant, gym)",
+        "معرض الصور (gallery grid)",
+        "آراء الضيوف (testimonials مع تقييم نجوم)",
+        "الموقع والتواصل",
+        "footer فاخر"
+      ],
+      "unsplash_queries": ["luxury hotel room", "hotel pool", "resort beach", "hotel lobby"],
+      "icons": ["fa-concierge-bell", "fa-swimming-pool", "fa-spa", "fa-wifi", "fa-car", "fa-star"]
+    },
+    "education": {
+      "color_palette": {
+        "primary": "#2563eb",
+        "secondary": "#1d4ed8",
+        "accent": "#f59e0b",
+        "bg": "#eff6ff",
+        "text": "#1e3a5f",
+        "dark_bg": "#0f172a"
+      },
+      "mood": "محفّز، احترافي، موثوق، منظم",
+      "must_have_sections": [
+        "navbar مع logo وروابط وزر سجّل الآن",
+        "hero مع شعار وإحصائيات (طلاب، دورات، مدربون)",
+        "الدورات المتاحة (course cards مع مستوى وساعات وسعر)",
+        "لماذا نختارنا (features مع icons)",
+        "المدربون (instructor cards)",
+        "آراء المتعلمين (testimonials)",
+        "CTA التسجيل",
+        "footer"
+      ],
+      "unsplash_queries": ["online learning", "students classroom", "education technology", "teacher student"],
+      "icons": ["fa-graduation-cap", "fa-book", "fa-certificate", "fa-chalkboard-teacher", "fa-laptop", "fa-award"]
+    },
+    "portfolio": {
+      "color_palette": {
+        "primary": "#8b5cf6",
+        "secondary": "#6d28d9",
+        "accent": "#06b6d4",
+        "bg": "#030712",
+        "text": "#f9fafb",
+        "card_bg": "#111827"
+      },
+      "mood": "إبداعي، جريء، عصري، مميز",
+      "must_have_sections": [
+        "navbar minimal مع اسم وروابط",
+        "hero مع مقدمة شخصية وtitle وCTA",
+        "الأعمال (projects grid مع hover overlay)",
+        "المهارات (skills مع progress bars أو tags)",
+        "الخدمات",
+        "شهادات العملاء",
+        "نموذج تواصل",
+        "footer minimal"
+      ],
+      "unsplash_queries": ["designer workspace", "creative studio", "laptop coding", "modern office"],
+      "icons": ["fa-code", "fa-paint-brush", "fa-mobile-alt", "fa-globe", "fa-github", "fa-linkedin"]
+    },
+    "business": {
+      "color_palette": {
+        "primary": "#1e40af",
+        "secondary": "#1e3a8a",
+        "accent": "#3b82f6",
+        "bg": "#f8fafc",
+        "text": "#0f172a",
+        "dark_bg": "#0f172a"
+      },
+      "mood": "موثوق، احترافي، راسخ، منظم",
+      "must_have_sections": [
+        "navbar احترافي مع logo وخدمات وتواصل",
+        "hero مع شعار الشركة وCTA",
+        "الخدمات (service cards)",
+        "من نحن (about مع فريق العمل)",
+        "أرقامنا (stats: سنوات، عملاء، مشاريع)",
+        "شركاؤنا (client logos)",
+        "شهادات العملاء",
+        "تواصل معنا",
+        "footer احترافي"
+      ],
+      "unsplash_queries": ["business office", "corporate team", "meeting professional", "modern workspace"],
+      "icons": ["fa-briefcase", "fa-chart-line", "fa-handshake", "fa-users", "fa-cog", "fa-award"]
+    },
+    "realestate": {
+      "color_palette": {
+        "primary": "#065f46",
+        "secondary": "#064e3b",
+        "accent": "#10b981",
+        "bg": "#ecfdf5",
+        "text": "#064e3b",
+        "dark_bg": "#022c22"
+      },
+      "mood": "موثوق، فاخر، هادئ، راسخ",
+      "must_have_sections": [
+        "navbar مع logo وبحث عقارات",
+        "hero مع نموذج بحث (نوع، موقع، سعر)",
+        "العقارات المميزة (property cards مع سعر ومساحة وغرف)",
+        "الخدمات (بيع، إيجار، استثمار)",
+        "آخر المشاريع (projects)",
+        "آراء العملاء",
+        "تواصل مع وكيل",
+        "footer مع فروع"
+      ],
+      "unsplash_queries": ["luxury house", "modern apartment", "real estate building", "villa pool"],
+      "icons": ["fa-home", "fa-building", "fa-map-marker", "fa-bed", "fa-bath", "fa-ruler-combined"]
+    },
+    "gym": {
+      "color_palette": {
+        "primary": "#dc2626",
+        "secondary": "#991b1b",
+        "accent": "#f59e0b",
+        "bg": "#0a0a0a",
+        "text": "#f9fafb",
+        "card_bg": "#1a1a1a"
+      },
+      "mood": "قوي، محفّز، طاقة، جريء",
+      "must_have_sections": [
+        "navbar داكن مع logo",
+        "hero fullscreen مع خلفية تمرين وشعار قوي",
+        "الخدمات (classes, personal training, nutrition)",
+        "جداول الحصص (timetable)",
+        "الأسعار والاشتراكات (pricing cards)",
+        "المدربون",
+        "قبل وبعد (transformations)",
+        "تسجيل عضوية"
+      ],
+      "unsplash_queries": ["gym workout", "fitness training", "bodybuilding", "crossfit"],
+      "icons": ["fa-dumbbell", "fa-running", "fa-fire", "fa-trophy", "fa-heartbeat", "fa-fist-raised"]
+    },
+    "clinic": {
+      "color_palette": {
+        "primary": "#0891b2",
+        "secondary": "#0e7490",
+        "accent": "#22d3ee",
+        "bg": "#ecfeff",
+        "text": "#0c4a6e",
+        "dark_bg": "#0a1929"
+      },
+      "mood": "نظيف، مطمئن، احترافي، دقيق",
+      "must_have_sections": [
+        "navbar مع logo وساعات العمل",
+        "hero مع صورة طبية نظيفة وCTA حجز موعد",
+        "التخصصات (specialty cards)",
+        "الأطباء (doctor profiles)",
+        "كيفية الحجز (steps)",
+        "نموذج حجز موعد",
+        "شهادات المرضى",
+        "الموقع والتواصل"
+      ],
+      "unsplash_queries": ["dental clinic", "eye clinic", "specialist doctor", "modern medical"],
+      "icons": ["fa-tooth", "fa-eye", "fa-brain", "fa-baby", "fa-heart", "fa-lungs"]
+    }
+  }
+}

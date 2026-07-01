@@ -15,7 +15,7 @@
     "language": "Arabic"
   },
   "jamal": {
-    "preferredUi": "توفير واجهة سهلة وممتعة لجذب المزيد من العملاء",
+    "preferredUi": "توفير واجهة مستخدم سهلة الاستخدام",
     "dislikedTech": "Bootstrap",
     "language": "Arabic"
   },
@@ -86,6 +86,36 @@
   },
   "jamal123": {
     "preferredUi": "تجربة مستخدم سهلة مع صور جميلة في العرض",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "jaola": {
+    "preferredUi": "تحسين تجربة المستخدم للايجنت",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "eeeeee": {
+    "preferredUi": "تجربة مستخدم سهلة وعملية مع واجهة مستخدم جذابة وتفاعلية",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "nnnnnnn": {
+    "preferredUi": "تصميم فندقي فاخر: ألوان ذهبية وداكنة راقية، صور غرف فاخرة ومرافق من Unsplash",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "sssssssss": {
+    "preferredUi": "تجربة مستخدم سهلة وممتعة",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "ppppp": {
+    "preferredUi": "تصميم متجر عصري: ألوان نظيفة (أبيض وأسود مع لكنة لونية مميزة)، عرض المنتجات بشكل جذاب",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "vvvvvv": {
+    "preferredUi": "موثوق، فاخر، هادئ، راسخ",
     "dislikedTech": "Bootstrap",
     "language": "Arabic"
   }

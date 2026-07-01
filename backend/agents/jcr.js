@@ -257,6 +257,11 @@ export class JaolaCognitiveRuntime {
                 const result = await agents.templateAgent(context.goal, context.projectPath);
                 if (result && result.success) {
                     this.emitLiveLog(roomName, '5. RUNTIME', 'TemplateAgent', `✅ تم تطبيق قالب ${result.template} (${result.source})`);
+                    // 🆕 حقن توجيهات القالب في الهوية البصرية لـ coderAgent
+                    if (result.context) {
+                        context.mentalModel.visualIdentity = result.context.visualGuide || context.mentalModel.visualIdentity;
+                        context.mentalModel.templateSections = result.context.sections || [];
+                    }
                     initialCodeContext = await this.readCurrentCodeContextAsync(context.projectPath);
                 } else {
                     this.emitLiveLog(roomName, '5. RUNTIME', 'TemplateAgent', `❌ فشل: ${result?.error || 'سبب غير معروف'}`);
@@ -287,7 +292,8 @@ export class JaolaCognitiveRuntime {
                     initialCodeContext,
                     context.mentalModel.visualIdentity,
                     [],
-                    (chunk) => this.io.to(roomName).emit('code_stream_chunk', chunk)
+                    (chunk) => this.io.to(roomName).emit('code_stream_chunk', chunk),
+                    context.mentalModel.templateSections || []
                 );
             } catch (e) {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'Coder', `❌ استثناء: ${e.message}`);
@@ -333,6 +339,49 @@ export class JaolaCognitiveRuntime {
             await this.saveExecutiveMemory(context.username, context.mentalModel.visualIdentity);
             context.files = plan.files;
             context.images = plan.images;
+
+            // 🆕 مرحلة Backend — إذا كان المشروع يحتاج خادماً
+            if (agents.needsBackend && agents.needsBackend(context.goal)) {
+                this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', '⚙️ المشروع يحتاج خادماً — جاري توليد APIs...');
+                try {
+                    const frontendContext = await this.readCurrentCodeContextAsync(context.projectPath);
+                    const backendResult = await agents.generateBackend(context.goal, frontendContext);
+
+                    if (backendResult.success && backendResult.files.length > 0) {
+                        // حفظ ملفات الـ Backend
+                        for (const file of backendResult.files) {
+                            const filePath = path.join(context.projectPath, file.name);
+                            // تأكد من وجود المجلد (مثل api/)
+                            await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
+                            await fsPromises.writeFile(filePath, file.content);
+                        }
+                        this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent',
+                            `✅ تم توليد ${backendResult.files.length} ملف (${backendResult.files.map(f => f.name).join(', ')})`
+                        );
+
+                        // تحديث script.js ليستدعي الـ APIs
+                        if (agents.generateFrontendAPIIntegration) {
+                            const updatedScript = await agents.generateFrontendAPIIntegration(
+                                context.goal,
+                                backendResult.files,
+                                plan.files.find(f => f.name === 'script.js')?.content || ''
+                            );
+                            if (updatedScript) {
+                                await fsPromises.writeFile(
+                                    path.join(context.projectPath, 'script.js'),
+                                    updatedScript
+                                );
+                                this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', '🔗 تم تحديث script.js ليستدعي الـ APIs');
+                            }
+                        }
+                    } else {
+                        this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', `⚠️ تعذّر توليد الخادم: ${backendResult.error}`);
+                    }
+                } catch (e) {
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', `❌ خطأ في BackendAgent: ${e.message}`);
+                }
+            }
+
             return { success: true };
         }
 
@@ -380,12 +429,28 @@ export class JaolaCognitiveRuntime {
 
     async classifyIntent(userMessage, username) {
         const execMemory = await this.loadExecutiveMemory(username);
+
+        // 🆕 كشف مباشر بالكلمات المفتاحية القوية — يتفادى استشارة النموذج لحالات واضحة
+        const strongBuildPattern = /^(ابني|اصنع|انشئ|أنشئ|ابدأ|اعمل|صمم|طور|build|create|start building|go ahead|نفذ|ابدأ البناء|ابدأ التنفيذ)\b/i;
+        if (strongBuildPattern.test(userMessage.trim())) {
+            return { intent: 'build', confidence: 100 };
+        }
+
         try {
             const completion = await groq.chat.completions.create({
                 messages: [
                     {
                         role: "system",
-                        content: `صنف النية: build, modify, query, chat, stop. أعد JSON: { intent, confidence }`
+                        content: `صنف نية المستخدم بدقة. القواعد:
+- "build": طلب صريح لبناء أو إنشاء أو تنفيذ موقع/ميزة الآن (مثل "اصنع موقعاً لمطعم بيتزا"، "ابدأ البناء")
+- "modify": طلب تعديل على كود موجود
+- "query": سؤال عن معلومة أو نقاش حول الفكرة قبل التنفيذ
+- "chat": محادثة عامة
+- "stop": طلب إيقاف
+- "acknowledge": رد قصير بالموافقة فقط دون طلب فعلي جديد
+
+مهم: إذا كانت الرسالة تحتوي طلباً صريحاً لبدء العمل الفعلي (حتى لو مسبوقة بنقاش)، صنّفها "build" وليس "query" أو "acknowledge".
+أعد JSON: { intent, confidence }`
                     },
                     { role: "user", content: `تفضيلات: ${JSON.stringify(execMemory)}\nالرسالة: "${userMessage}"` }
                 ],
