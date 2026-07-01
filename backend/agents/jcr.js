@@ -9,6 +9,7 @@ import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfile
 import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
 import { generateDatabase, selectDatabase } from './databaseAgent.js';
 import { generateAuth, needsAuth } from './authAgent.js';
+import { reviewCode } from './reviewAgent.js';
 import Conversation from '../models/Conversation.js';
 import mongoose from 'mongoose';
 
@@ -363,6 +364,28 @@ export class JaolaCognitiveRuntime {
                 .filter(f => ['index.html', 'styles.css', 'script.js'].includes(f.name) && typeof f.content === 'string')
                 .map(f => fsPromises.writeFile(path.join(context.projectPath, f.name), f.content))
             );
+
+            // 🆕 Review Agent — يراجع ويُصلح تلقائياً قبل العرض النهائي
+            try {
+                this.emitLiveLog(roomName, '5. RUNTIME', 'ReviewAgent', '🔍 مراجعة جودة الكود...');
+                const reviewResult = await reviewCode(plan.files, context.originalGoal);
+
+                if (reviewResult.fixedCount > 0) {
+                    // حفظ الملفات المُصلحة
+                    await Promise.all(reviewResult.fixedFiles
+                        .filter(f => ['index.html', 'styles.css', 'script.js'].includes(f.name) && typeof f.content === 'string')
+                        .map(f => fsPromises.writeFile(path.join(context.projectPath, f.name), f.content))
+                    );
+                    plan.files = reviewResult.fixedFiles;
+                }
+
+                const statusEmoji = reviewResult.grade === 'A' ? '✅' : reviewResult.grade === 'B' ? '🟡' : '🟠';
+                this.emitLiveLog(roomName, '5. RUNTIME', 'ReviewAgent',
+                    `${statusEmoji} الجودة: ${reviewResult.grade} (${reviewResult.score}/100) — ${reviewResult.overallQuality}${reviewResult.fixedCount > 0 ? ` — تم إصلاح ${reviewResult.fixedCount} مشكلة` : ''}`
+                );
+            } catch (e) {
+                this.emitLiveLog(roomName, '5. RUNTIME', 'ReviewAgent', `⚠️ تخطّي: ${e.message}`);
+            }
             await this.saveExecutiveMemory(context.username, context.mentalModel.visualIdentity);
             context.files = plan.files;
             context.images = plan.images;
