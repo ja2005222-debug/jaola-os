@@ -55,7 +55,7 @@ export function detectProjectType(userGoal) {
 
 function getKeywordsForType(typeName) {
     const keywordMap = {
-        medical:    ['طبي', 'مستشفى', 'مستشفي', 'عيادة', 'صحة', 'دكتور', 'طبيب', 'مرضى', 'تخصصي', 'تخصص', 'medical', 'hospital', 'specialist', 'clinic', 'doctor', 'health'],
+        medical:    ['طبي', 'مستشفى', 'عيادة', 'صحة', 'دكتور', 'طبيب', 'مرضى', 'medical', 'hospital', 'clinic', 'doctor', 'health'],
         restaurant: ['مطعم', 'قهوة', 'كافيه', 'طعام', 'أكل', 'وجبة', 'شيف', 'مقهى', 'restaurant', 'cafe', 'food', 'menu', 'coffee'],
         ecommerce:  ['متجر', 'بيع', 'شراء', 'منتج', 'تسوق', 'ماركة', 'ازياء', 'ملابس', 'سلة', 'shop', 'store', 'product', 'buy', 'ecommerce', 'cart'],
         hotel:      ['فندق', 'نزل', 'سكن', 'غرفة', 'حجز', 'إقامة', 'منتجع', 'hotel', 'resort', 'room', 'booking', 'accommodation'],
@@ -63,7 +63,7 @@ function getKeywordsForType(typeName) {
         portfolio:  ['بورتفوليو', 'معرض', 'أعمال', 'مصمم', 'مطور', 'فريلانسر', 'portfolio', 'design', 'developer', 'freelance'],
         realestate: ['عقار', 'شقة', 'فيلا', 'منزل', 'أرض', 'مبنى', 'real estate', 'property', 'apartment', 'villa', 'house'],
         gym:        ['جيم', 'نادي', 'رياضة', 'لياقة', 'تمرين', 'كمال', 'gym', 'fitness', 'sport', 'workout', 'training'],
-        clinic:     ['عيادة', 'أسنان', 'نظارة', 'نظارات', 'تجميل', 'جلدية', 'dermatology', 'dental', 'eye', 'skin', 'beauty', 'clinic', 'specialist'],
+        clinic:     ['عيادة', 'أسنان', 'نظارة', 'تجميل', 'dermatology', 'dental', 'eye', 'skin', 'beauty', 'clinic'],
         business:   ['شركة', 'مؤسسة', 'أعمال', 'خدمات', 'حلول', 'company', 'business', 'services', 'solutions', 'agency']
     };
     return keywordMap[typeName] || [];
@@ -127,6 +127,19 @@ export function buildContextPrompt(userGoal) {
         .map((s, i) => `   ${i + 1}. ${s}`)
         .join('\n');
 
+    // 🆕 استخراج Components المناسبة من المكتبة
+    let componentsHint = '';
+    if (COMPONENTS?.components) {
+        const projectType = ctx.projectType;
+        const relevant = Object.entries(COMPONENTS.components)
+            .filter(([, c]) => c.tags?.includes(projectType) || c.tags?.includes('all'))
+            .map(([name, c]) => `- ${name}: ${c.description}`)
+            .join('\n');
+        if (relevant) {
+            componentsHint = `\n\n### Components المتاحة من المكتبة (استخدم CSS patterns مشابهة لها):\n${relevant}`;
+        }
+    }
+
     return `## سياق المشروع من Knowledge Engine:
 
 **نوع المشروع:** ${ctx.projectType}
@@ -152,6 +165,7 @@ ${ctx.suggestedIcons}
 
 ### الأقسام الإلزامية (ابنِ كل قسم كاملاً ومفصّلاً):
 ${sectionsText}
+${componentsHint}
 
 ### قواعد CSS الإلزامية:
 ${ctx.globalCssRules.map(r => `- ${r}`).join('\n')}
