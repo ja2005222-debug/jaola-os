@@ -55,7 +55,7 @@ export function detectProjectType(userGoal) {
 
 function getKeywordsForType(typeName) {
     const keywordMap = {
-        medical:    ['طبي', 'مستشفى', 'عيادة', 'صحة', 'دكتور', 'طبيب', 'مرضى', 'medical', 'hospital', 'clinic', 'doctor', 'health'],
+        medical:    ['طبي', 'مستشفى', 'مستشفي', 'عيادة', 'صحة', 'دكتور', 'طبيب', 'مرضى', 'تخصصي', 'تخصص', 'medical', 'hospital', 'specialist', 'clinic', 'doctor', 'health'],
         restaurant: ['مطعم', 'قهوة', 'كافيه', 'طعام', 'أكل', 'وجبة', 'شيف', 'مقهى', 'restaurant', 'cafe', 'food', 'menu', 'coffee'],
         ecommerce:  ['متجر', 'بيع', 'شراء', 'منتج', 'تسوق', 'ماركة', 'ازياء', 'ملابس', 'سلة', 'shop', 'store', 'product', 'buy', 'ecommerce', 'cart'],
         hotel:      ['فندق', 'نزل', 'سكن', 'غرفة', 'حجز', 'إقامة', 'منتجع', 'hotel', 'resort', 'room', 'booking', 'accommodation'],
@@ -63,7 +63,7 @@ function getKeywordsForType(typeName) {
         portfolio:  ['بورتفوليو', 'معرض', 'أعمال', 'مصمم', 'مطور', 'فريلانسر', 'portfolio', 'design', 'developer', 'freelance'],
         realestate: ['عقار', 'شقة', 'فيلا', 'منزل', 'أرض', 'مبنى', 'real estate', 'property', 'apartment', 'villa', 'house'],
         gym:        ['جيم', 'نادي', 'رياضة', 'لياقة', 'تمرين', 'كمال', 'gym', 'fitness', 'sport', 'workout', 'training'],
-        clinic:     ['عيادة', 'أسنان', 'نظارة', 'تجميل', 'dermatology', 'dental', 'eye', 'skin', 'beauty', 'clinic'],
+        clinic:     ['عيادة', 'أسنان', 'نظارة', 'نظارات', 'تجميل', 'جلدية', 'dermatology', 'dental', 'eye', 'skin', 'beauty', 'clinic', 'specialist'],
         business:   ['شركة', 'مؤسسة', 'أعمال', 'خدمات', 'حلول', 'company', 'business', 'services', 'solutions', 'agency']
     };
     return keywordMap[typeName] || [];

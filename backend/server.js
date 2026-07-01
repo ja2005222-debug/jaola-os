@@ -29,6 +29,14 @@ import {
 import { generatePWA } from './agents/pwaAgent.js';
 import { generateBackend, generateFrontendAPIIntegration } from './agents/backendAgent.js';
 import { needsBackend } from './agents/knowledgeEngine.js';
+import {
+    startClarification,
+    processAnswer,
+    isConfirmation,
+    getFinalGoal,
+    clearState,
+    getState
+} from './agents/clarifierAgent.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -652,6 +660,12 @@ app.post('/api/chat', verifyToken, aiLimit, validateProjectOwnership, async (req
         needsBackend,
         generateBackend,
         generateFrontendAPIIntegration,
+        startClarification,
+        processAnswer,
+        isConfirmation,
+        getFinalGoal,
+        clearState,
+        getState,
     };
 
     const dbStatus = isDbConnected && mongoose.connection.readyState === 1;

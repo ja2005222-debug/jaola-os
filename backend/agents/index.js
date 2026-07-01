@@ -5,4 +5,4 @@ export { architectReview } from './architectAgent.js';
 export { qaVerify } from './qaAgent.js';
 export { deployProject } from './deployAgent.js';
 export { applyTemplate } from './template.agent.js';
-export { clarifyProject } from './clarifierAgent.js';
+export { startClarification, processAnswer, isConfirmation, getFinalGoal, clearState, getState } from './clarifierAgent.js';

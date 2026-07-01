@@ -118,5 +118,10 @@
     "preferredUi": "موثوق، فاخر، هادئ، راسخ",
     "dislikedTech": "Bootstrap",
     "language": "Arabic"
+  },
+  "asker": {
+    "preferredUi": "جعل الموقع أكثر جاذبية",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
   }
 }

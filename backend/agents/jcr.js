@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { groq } from './baseAgent.js';
 import { promises as fsPromises } from 'fs';
+import { initUserLanguage, getUserLanguage, getLangInfo } from './languageDetector.js';
 import Conversation from '../models/Conversation.js';
 import mongoose from 'mongoose';
 
@@ -469,7 +470,8 @@ export class JaolaCognitiveRuntime {
         }
     }
 
-    async generateChatResponse(userMessage, username, roomName) {
+    async generateChatResponse(userMessage, username, roomName, userLang = 'en') {
+        const langInfo = getLangInfo(userLang);
         const execMemory = await this.loadExecutiveMemory(username);
         const MAX_HISTORY = 30;
         let history;
@@ -483,7 +485,17 @@ export class JaolaCognitiveRuntime {
         } catch (e) { history = this.conversationBuffer.get(username) || []; }
         history.push({ role: 'user', content: userMessage });
         const messages = [
-            { role: "system", content: `أنت مساعد تطوير ويب. تذكر التفضيلات: ${JSON.stringify(execMemory)}. استمر من السياق.` },
+            { role: "system", content: `You are JAOLA — a smart web building assistant.
+
+CRITICAL LANGUAGE RULE: The user's language is "${userLang}" (${langInfo.label}). You MUST reply ONLY in this language for the entire conversation. Never switch languages even if the user writes a word in another language.
+
+RESPONSE RULES:
+- Keep replies SHORT: 1-3 sentences maximum
+- Be direct and friendly
+- Your specialty: websites, design, web development
+- When user wants to build: tell them to type "${userLang === 'ar' ? 'ابني [اسم المشروع]' : 'build [project name]'}" to start the official build system
+
+User preferences: ${JSON.stringify(execMemory)}` },
             ...history
         ];
         let reply = "عذراً، حدث خطأ في معالجة رسالتك. حاول مرة أخرى.";
@@ -491,7 +503,8 @@ export class JaolaCognitiveRuntime {
             const completion = await groq.chat.completions.create({
                 messages,
                 model: "llama-3.3-70b-versatile",
-                max_tokens: 500, temperature: 0.7
+                max_tokens: 200,
+                temperature: 0.6
             });
             reply = completion.choices[0].message.content;
         } catch (e) { console.error('Chat error:', e); }
@@ -568,21 +581,131 @@ export class JaolaCognitiveRuntime {
     async handleUserMessage(socket, data, agents, dbStatus) {
         const { message, roomName, projectPath, username, activeProject } = data;
 
-        const modifyPattern = /^(غير|عدل|بدل|أضف|احذف|صحح|أصلح|تعديل|حوّل|اجعل)\s+/i;
+        // ── 0. Language Detector — تسجيل اللغة من أول رسالة ────────────
+        const userLang = initUserLanguage(username, message);
+        const langInfo = getLangInfo(userLang);
+
+        // ── 1. تحقق من حالة Clarifier ────────────────────────────────────
+        const clarifierState = agents.getState?.(username);
+
+        // إذا كنا في مرحلة التوضيح — معالجة الإجابة
+        if (clarifierState?.stage === 'clarifying') {
+            const result = await agents.processAnswer(username, message);
+            if (result) {
+                this.io.to(roomName).emit('chat_reply', { message: result.message });
+            }
+            return;
+        }
+
+        // إذا كنا في مرحلة الخطة — ننتظر تأكيد أو تعديل
+        if (clarifierState?.stage === 'planning') {
+            if (agents.isConfirmation?.(message)) {
+                const finalGoal = agents.getFinalGoal(username);
+                const lang = clarifierState.lang || userLang;
+                const startMsg = lang === 'ar' ? '🚀 ممتاز! بدأت البناء الآن...' : '🚀 Great! Building now...';
+                this.io.to(roomName).emit('chat_reply', { message: startMsg });
+                this.executeMission(finalGoal, projectPath, username, activeProject, roomName, agents, dbStatus);
+            } else {
+                // تمييز: هل هو سؤال عن الخطة أم تعديل عليها؟
+                const lang = clarifierState.lang || userLang;
+                const isQuestion = /\?|ماهي|ماذا|كيف|هل|what|how|why|when|can you|tell me/i.test(message);
+
+                if (isQuestion) {
+                    // أجب على السؤال بسياق الخطة
+                    const plan = clarifierState.plan;
+                    const planSummary = plan
+                        ? `الأقسام: ${(plan.sections||[]).join('، ')} | الميزات: ${(plan.features||[]).join('، ')}`
+                        : 'لم تُبنَ خطة بعد';
+                    const replyMsg = lang === 'ar'
+                        ? `الخطة الحالية تشمل: ${planSummary}\n\nاكتب **"ابدأ"** للتنفيذ أو أخبرني بأي تعديل.`
+                        : `Current plan includes: ${planSummary}\n\nType **"start"** to build or tell me any changes.`;
+                    this.io.to(roomName).emit('chat_reply', { message: replyMsg });
+                } else {
+                    // كشف أوامر الإيقاف في مرحلة Planning
+                    const isStop = /^(لا|توقف|الغ|إلغاء|cancel|stop|no|لا تبد|وقف)/i.test(message.trim());
+                    if (isStop) {
+                        agents.clearState?.(username);
+                        const stopMsg = lang === 'ar'
+                            ? 'تم إلغاء الخطة. يمكنك البدء من جديد متى شئت.'
+                            : 'Plan cancelled. You can start over anytime.';
+                        this.io.to(roomName).emit('chat_reply', { message: stopMsg });
+                        return;
+                    }
+
+                    // كشف طلبات تغيير اللون
+                    const isColorChange = /color|لون|colour|ألوان|colors/i.test(message);
+                    if (isColorChange) {
+                        const colorMsg = lang === 'ar'
+                            ? 'ما اللون أو التدرج اللوني الذي تفضله؟ (مثال: أزرق داكن، أخضر طبيعي، ذهبي فاخر...)'
+                            : 'What color or theme do you prefer? (e.g., dark blue, natural green, luxury gold...)';
+                        this.io.to(roomName).emit('chat_reply', { message: colorMsg });
+                        const state = agents.getState(username);
+                        if (state) state.answers.push(`color change requested: ${message}`);
+                        return;
+                    }
+
+                    // تعديل عام على الخطة
+                    const editMsg = lang === 'ar'
+                        ? `فهمت! سأراعي: "${message}"\n\nاكتب **"ابدأ"** عندما تكون جاهزاً.`
+                        : `Got it! I'll include: "${message}"\n\nType **"start"** when ready.`;
+                    this.io.to(roomName).emit('chat_reply', { message: editMsg });
+                    const state = agents.getState(username);
+                    if (state) state.answers.push(`edit: ${message}`);
+                }
+            }
+            return;
+        }
+
+        // ── 1. كشف التعديل المباشر ───────────────────────────────────────
+        const modifyPattern = /^(غير|عدل|بدل|أضف|احذف|صحح|أصلح|تعديل|حوّل|اجعل|change|modify|update|add|remove)\s+/i;
         if (modifyPattern.test(message.trim())) {
+            // إذا كنا في مرحلة Planning — عالج كتعديل على الخطة وليس بناء
+            if (clarifierState?.stage === 'planning') {
+                const lang = clarifierState.lang || userLang;
+                const isColorChange = /color|لون|colour|ألوان/i.test(message);
+                if (isColorChange) {
+                    const colorMsg = lang === 'ar'
+                        ? 'ما اللون المفضل؟ (مثال: أزرق داكن، أخضر، ذهبي...)'
+                        : 'What color do you prefer? (e.g., dark blue, green, gold...)';
+                    this.io.to(roomName).emit('chat_reply', { message: colorMsg });
+                } else {
+                    const editMsg = lang === 'ar'
+                        ? `فهمت! سأراعي: "${message}"\n\nاكتب **"ابدأ"** عندما تكون جاهزاً.`
+                        : `Got it! I'll include: "${message}"\n\nType **"start"** when ready.`;
+                    this.io.to(roomName).emit('chat_reply', { message: editMsg });
+                    const state = agents.getState(username);
+                    if (state) state.answers.push(`edit: ${message}`);
+                }
+                return;
+            }
             this.emitLiveLog(roomName, 'INTENT', 'Classifier', 'نية: modify (ثقة: 100%) - قاعدة مباشرة');
             this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);
             return;
         }
 
+        // ── 2. تصنيف النية ───────────────────────────────────────────────
         const intentResult = await this.classifyIntent(message, username);
         this.emitLiveLog(roomName, 'INTENT', 'Classifier', `نية: ${intentResult.intent} (ثقة: ${intentResult.confidence}%)`);
-        if (intentResult.intent === 'build' || intentResult.intent === 'modify') {
+
+        if (intentResult.intent === 'build') {
+            // 🆕 ابدأ Clarifier بدلاً من البناء المباشر
+            if (agents.startClarification) {
+                const clarifyResult = agents.startClarification(username, message);
+                // أضف رسالة المستخدم للشات أولاً
+                this.io.to(roomName).emit('chat_reply', { 
+                    message: clarifyResult.message,
+                    type: 'clarification'
+                });
+            } else {
+                this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);
+            }
+        } else if (intentResult.intent === 'modify') {
             this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);
         } else if (intentResult.intent === 'stop') {
             this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛑 أمر إيقاف.');
+            agents.clearState?.(username);
         } else {
-            await this.generateChatResponse(message, username, roomName);
+            await this.generateChatResponse(message, username, roomName, userLang);
         }
     }
 }
