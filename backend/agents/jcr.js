@@ -5,6 +5,7 @@ import { groq } from './baseAgent.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo } from './languageDetector.js';
 import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure } from './projectMemory.js';
+import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
 import Conversation from '../models/Conversation.js';
 import mongoose from 'mongoose';
 
@@ -344,17 +345,17 @@ export class JaolaCognitiveRuntime {
 
             // 🆕 تحديث Project Memory بهيكل الموقع المبني
             if (context.mentalModel?.templateSections?.length) {
-                updateStructure(context.username, context.activeProject,
+                updateStructure(username, activeProject,
                     context.mentalModel.templateSections,
                     context.executiveDecision?.subTasks?.map(t => t.description) || []
                 );
             }
             if (context.mentalModel?.visualIdentity) {
-                updateDesign(context.username, context.activeProject, { style: context.mentalModel.visualIdentity });
+                updateDesign(username, activeProject, { style: context.mentalModel.visualIdentity });
             }
 
             // 🆕 مرحلة Backend — إذا كان المشروع يحتاج خادماً
-            if (agents.needsBackend && agents.needsBackend(context.originalGoal)) {
+            if (agents.needsBackend && agents.needsBackend(context.goal)) {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', '⚙️ المشروع يحتاج خادماً — جاري توليد APIs...');
                 try {
                     const frontendContext = await this.readCurrentCodeContextAsync(context.projectPath);
@@ -536,9 +537,16 @@ User preferences: ${JSON.stringify(execMemory)}` },
     }
 
     async executeMission(goal, projectPath, username, activeProject, roomName, agents, dbStatus) {
-        // 🆕 إضافة سياق Project Memory للهدف
+        // 🆕 دمج Project Memory + User Profile في سياق الهدف
         const memoryContext = buildMemoryContext(username, activeProject);
-const enrichedGoal = memoryContext ? `${goal}\n${memoryContext}` : goal;
+        const profileContext = buildProfileContext(username);
+        const enrichedGoal = (memoryContext || profileContext)
+            ? `${goal}\n${memoryContext}${profileContext}`
+            : goal;
+
+        // تسجيل هذا الطلب في تاريخ المشروع
+        addToHistory(username, activeProject, goal.slice(0, 80));
+
         const context = new JCRContext(enrichedGoal, projectPath, username, activeProject);
         this.emitLiveLog(roomName, 'JCOS', 'Kernel', `🏁 بدء المهمة: ${context.missionId}`);
         try {
@@ -600,6 +608,9 @@ const enrichedGoal = memoryContext ? `${goal}\n${memoryContext}` : goal;
         const userLang = initUserLanguage(username, message);
         const langInfo = getLangInfo(userLang);
 
+        // 🆕 تحديث لغة ملف المستخدم
+        updateLanguage(username, userLang);
+
         // ── 1. تحقق من حالة Clarifier ────────────────────────────────────
         const clarifierState = agents.getState?.(username);
 
@@ -627,6 +638,8 @@ const enrichedGoal = memoryContext ? `${goal}\n${memoryContext}` : goal;
                         originalGoal: clarifierData.originalGoal,
                         plan: clarifierData.plan,
                     });
+                    // تسجيل المشروع في ملف المستخدم
+                    recordProject(username, activeProject, clarifierData.projectType || 'business');
                 }
 
                 this.executeMission(finalGoal, projectPath, username, activeProject, roomName, agents, dbStatus);
@@ -725,6 +738,7 @@ const enrichedGoal = memoryContext ? `${goal}\n${memoryContext}` : goal;
                 this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);
             }
         } else if (intentResult.intent === 'modify') {
+            recordEdit(username, message);
             this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);
         } else if (intentResult.intent === 'stop') {
             this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛑 أمر إيقاف.');
