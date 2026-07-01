@@ -1,4 +1,4 @@
-import { groq } from './baseAgent.js';
+import { groq, smartChat } from './baseAgent.js';
 
 // ============================================================
 // 🔍 كلمات مفتاحية تُشير أن المشروع يحتاج خادماً
@@ -83,17 +83,11 @@ ${frontendContext ? frontendContext.substring(0, 3000) : 'موقع ويب عام
 تذكر: استخدم التنسيق // FILE: api/name.js لكل ملف`;
 
     try {
-        const completion = await groq.chat.completions.create({
-            model: 'llama-3.3-70b-versatile',
-            messages: [
-                { role: 'system', content: BACKEND_SYSTEM_PROMPT },
-                { role: 'user', content: userMessage }
-            ],
-            temperature: 0.2,
-            max_tokens: 6000,
-        });
+        const responseText = await smartChat([
+            { role: 'system', content: BACKEND_SYSTEM_PROMPT },
+            { role: 'user', content: userMessage }
+        ], { max_tokens: 6000, temperature: 0.2 });
 
-        const responseText = completion.choices[0].message.content;
         const files = parseBackendFiles(responseText);
 
         return { success: true, files };
@@ -160,17 +154,10 @@ ${(currentScript || '').substring(0, 2000)}
 أخرج الكود مباشرة بدون تنسيق // FILE:`;
 
     try {
-        const completion = await groq.chat.completions.create({
-            model: 'llama-3.3-70b-versatile',
-            messages: [
-                { role: 'system', content: 'أنت مطور Frontend متخصص في استدعاء APIs بـ JavaScript. اكتب كوداً نظيفاً يستدعي الـ APIs المعطاة.' },
-                { role: 'user', content: userMessage }
-            ],
-            temperature: 0.2,
-            max_tokens: 3000,
-        });
-
-        return completion.choices[0].message.content;
+        return await smartChat([
+            { role: 'system', content: 'أنت مطور Frontend متخصص في استدعاء APIs بـ JavaScript. اكتب كوداً نظيفاً يستدعي الـ APIs المعطاة.' },
+            { role: 'user', content: userMessage }
+        ], { max_tokens: 3000, temperature: 0.2 });
     } catch (e) {
         return null;
     }

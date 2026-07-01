@@ -8,7 +8,7 @@
  * - Connection setup
  */
 
-import { smartChat } from './baseAgent.js';
+import { groq, smartChat } from './baseAgent.js';
 
 // ═══════════════════════════════════════════════════════
 // 🔍 تحديد نوع قاعدة البيانات المناسبة
@@ -248,19 +248,13 @@ export async function connectDB() {
 // توليد Schema ديناميكي للأنواع غير المغطاة
 async function generateDynamicSchema(userGoal, projectType) {
     try {
-        const completion = await groq.chat.completions.create({
-            model: 'llama-3.3-70b-versatile',
-            messages: [{
-                role: 'system',
-                content: 'أنت مهندس قواعد بيانات. اكتب MongoDB Schema بـ Mongoose لهذا المشروع. كود فقط بدون شرح.'
-            }, {
-                role: 'user',
-                content: `المشروع: ${userGoal}\nالنوع: ${projectType}\nاكتب Schema مناسباً بـ Mongoose.`
-            }],
-            max_tokens: 600,
-            temperature: 0.2,
-        });
-        return completion.choices[0].message.content;
+        return await smartChat([{
+            role: 'system',
+            content: 'أنت مهندس قواعد بيانات. اكتب MongoDB Schema بـ Mongoose لهذا المشروع. كود فقط بدون شرح.'
+        }, {
+            role: 'user',
+            content: `المشروع: ${userGoal}\nالنوع: ${projectType}\nاكتب Schema مناسباً بـ Mongoose.`
+        }], { max_tokens: 600, temperature: 0.2 });
     } catch (e) {
         return null;
     }

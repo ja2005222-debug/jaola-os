@@ -11,7 +11,7 @@
  * يُنتج تقرير مختصر ويُصلح المشاكل البسيطة تلقائياً.
  */
 
-import { smartChat } from './baseAgent.js';
+import { groq, smartChat } from './baseAgent.js';
 
 // ═══════════════════════════════════════════════════════
 // 🔎 فحوصات ثابتة (بدون AI)
@@ -105,30 +105,12 @@ export async function runAIReview(files, projectGoal) {
     const snippet = `HTML:\n${htmlFile.content?.slice(0, 1000)}\n\nCSS:\n${cssFile?.content?.slice(0, 800) || ''}`;
 
     try {
-        const completion = await groq.chat.completions.create({
-            model: 'llama-3.3-70b-versatile',
-            messages: [{
-                role: 'system',
-                content: 'أنت مراجع كود ويب خبير. أجب بـ JSON فقط بدون أي نص خارجه.'
-            }, {
-                role: 'user',
-                content: `راجع هذا الكود للمشروع: "${projectGoal}"
+        const _aiRes = await smartChat([
+            { role: 'system', content: 'أنت مراجع كود ويب خبير. أجب بـ JSON فقط.' },
+            { role: 'user', content: `راجع هذا الكود للمشروع: "${projectGoal}"\n\n${snippet}\n\nأعطني JSON: { "strengths": ["قوة"], "improvements": ["تحسين"], "overallQuality": "ممتاز" }` }
+        ], { max_tokens: 300, temperature: 0.3, json: true });
 
-${snippet}
-
-أعطني JSON:
-{
-  "strengths": ["نقطة قوة 1", "نقطة قوة 2"],
-  "improvements": ["تحسين مقترح 1", "تحسين مقترح 2"],
-  "overallQuality": "ممتاز|جيد|مقبول|يحتاج تحسين"
-}`
-            }],
-            max_tokens: 300,
-            temperature: 0.3,
-            response_format: { type: 'json_object' },
-        });
-
-        return JSON.parse(completion.choices[0].message.content);
+        return JSON.parse(_aiRes);
     } catch (e) {
         return null;
     }

@@ -1,4 +1,4 @@
-import { groq, smartChat } from './baseAgent.js';
+import { groq } from './baseAgent.js';
 import { detectProjectType } from './knowledgeEngine.js';
 import { detectLanguage, initUserLanguage, getUserLanguage } from './languageDetector.js';
 
@@ -184,32 +184,17 @@ async function buildProjectPlan(state) {
     const qaText = questions.map((q, i) => `س: ${q}\nج: ${answers[i] || 'لم يُجَب'}`).join('\n\n');
 
     try {
-        const completion = await groq.chat.completions.create({
-            model: 'llama-3.3-70b-versatile',
-            messages: [
+        const _resp = await smartChat([
                 {
                     role: 'system',
-                    content: `أنت مخطط مشاريع ويب. بناءً على طلب المستخدم وإجاباته، أنشئ خطة مشروع موجزة.
-أعد JSON بهذا الشكل بالضبط:
-{
-  "projectName": "اسم المشروع المقترح",
-  "sections": ["قسم 1", "قسم 2", "قسم 3", "..."],
-  "features": ["ميزة 1", "ميزة 2", "..."],
-  "colorMood": "وصف قصير للألوان (مثال: أزرق طبي نظيف مع لمسات فيروزية)",
-  "estimatedTime": "ثوانٍ / دقيقة"
-}`
+                    content: `أنت مخطط مشاريع ويب. أنشئ خطة موجزة بـ JSON: { "projectName": "اسم", "sections": [], "features": [], "colorMood": "وصف", "estimatedTime": "ثوانٍ" }`
                 },
                 {
                     role: 'user',
-                    content: `الطلب: ${originalGoal}\nالنوع: ${projectType}\n\nالأسئلة والإجابات:\n${qaText}`
+                    content: `الطلب: ${originalGoal}\nالنوع: ${projectType}\n\n${qaText}`
                 }
-            ],
-            response_format: { type: 'json_object' },
-            max_tokens: 500,
-            temperature: 0.3,
-        });
-
-        return JSON.parse(completion.choices[0].message.content);
+            ], { max_tokens: 500, temperature: 0.3, json: true });
+        return JSON.parse(_resp);
     } catch (e) {
         // خطة افتراضية إذا فشل الـ AI
         return {
