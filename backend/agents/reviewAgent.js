@@ -130,6 +130,13 @@ export function autoFix(files) {
         if (!file.content) return file;
         let content = file.content;
 
+        // 🆕 إصلاح تباين CSS تلقائياً
+        if (file.name === 'styles.css') {
+            const hasDarkBg = /--bg[^:]*:\s*#(0[0-2])/i.test(content) || content.includes('--bg-dark');
+            if (hasDarkBg && !content.includes('color: #f') && !content.includes('color: white')) {
+                content = content.replace(/(body\s*\{)/, (m) => m + "\n    color: #f1f5f9;");
+            }
+        }
         if (file.name === 'index.html' || file.name.endsWith('.html')) {
             // إضافة dir=rtl إذا مفقود
             if (!content.includes('dir="rtl"') && !content.includes("dir='rtl'")) {

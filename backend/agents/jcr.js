@@ -11,6 +11,8 @@ import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
 import { generateDatabase, selectDatabase } from './databaseAgent.js';
 import { generateAuth, needsAuth } from './authAgent.js';
 import { generateAdvancedModules } from './backendAgent.js';
+import { generatePrismaSetup, needsPostgres } from './postgresAgent.js';
+import { prepareRenderDeploy } from './renderAgent.js';
 import { reviewCode } from './reviewAgent.js';
 import { runTests } from './testingAgent.js';
 import { commitBuild, initProjectRepo, getProjectStats } from './gitAgent.js';
@@ -433,13 +435,13 @@ export class JaolaCognitiveRuntime {
 
             // 🆕 تحديث Project Memory بهيكل الموقع المبني
             if (context.mentalModel?.templateSections?.length) {
-                updateStructure(username, activeProject,
+                updateStructure(context.username, context.activeProject,
                     context.mentalModel.templateSections,
                     context.executiveDecision?.subTasks?.map(t => t.description) || []
                 );
             }
             if (context.mentalModel?.visualIdentity) {
-                updateDesign(username, activeProject, { style: context.mentalModel.visualIdentity });
+                updateDesign(context.username, context.activeProject, { style: context.mentalModel.visualIdentity });
             }
 
             // 🆕 مرحلة Backend — إذا كان المشروع يحتاج خادماً
@@ -504,6 +506,29 @@ export class JaolaCognitiveRuntime {
                     this.emitLiveLog(roomName, '5. RUNTIME', 'DatabaseAgent', `⚠️ تخطّي: ${e.message}`);
                 }
 
+                // 🆕 PostgreSQL + Prisma — للمشاريع التي تحتاج قاعدة بيانات علاقية
+                if (needsPostgres(context.originalGoal)) {
+                    try {
+                        this.emitLiveLog(roomName, '5. RUNTIME', 'PostgresAgent', '🐘 جاري توليد Prisma Schema...');
+                        const projectType = context.mentalModel?.designBrief?.projectType || 'ecommerce';
+                        const pgResult = await generatePrismaSetup(context.originalGoal, projectType);
+                        if (pgResult.success) {
+                            const { promises: fsp } = await import('fs');
+                            const pathMod = await import('path');
+                            for (const file of pgResult.files) {
+                                const filePath = pathMod.default.join(context.projectPath, file.name);
+                                await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
+                                await fsp.writeFile(filePath, file.content);
+                            }
+                            this.emitLiveLog(roomName, '5. RUNTIME', 'PostgresAgent',
+                                `✅ ${pgResult.summary}`
+                            );
+                        }
+                    } catch (e) {
+                        this.emitLiveLog(roomName, '5. RUNTIME', 'PostgresAgent', `⚠️ تخطّي: ${e.message}`);
+                    }
+                }
+
                 // 🆕 Auth Agent — يُضيف نظام تسجيل دخول إذا احتاجه المشروع
                 if (needsAuth(context.originalGoal)) {
                     try {
@@ -544,6 +569,25 @@ export class JaolaCognitiveRuntime {
                         .join(', ');
                     this.emitLiveLog(roomName, '5. RUNTIME', 'AdvancedAgent',
                         `✅ ${features} (${advResult.files.length} ملف)`
+                    );
+                }
+            } catch (e) { /* اختياري */ }
+
+            // 🆕 Render Deploy Config — يُعدّ المشروع للنشر على Render
+            try {
+                const projectName = context.activeProject
+                    .toLowerCase()
+                    .replace(/[^a-z0-9-]/g, '-')
+                    .slice(0, 50);
+                const hasBackend = needsBackend(context.originalGoal);
+                const renderResult = await prepareRenderDeploy(
+                    context.projectPath,
+                    `${context.username}-${projectName}`,
+                    hasBackend
+                );
+                if (renderResult.success) {
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'RenderAgent',
+                        `✅ ${renderResult.summary}`
                     );
                 }
             } catch (e) { /* اختياري */ }
