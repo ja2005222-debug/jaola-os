@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { buildTemplateContext } from './templateLibrary.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KNOWLEDGE_DIR = path.join(__dirname, '../knowledge');
@@ -140,6 +141,9 @@ export function buildContextPrompt(userGoal) {
         }
     }
 
+    // 🆕 Template Library context
+    const templateContext = buildTemplateContext(ctx.projectType);
+
     return `## سياق المشروع من Knowledge Engine:
 
 **نوع المشروع:** ${ctx.projectType}
@@ -171,7 +175,9 @@ ${componentsHint}
 ${ctx.globalCssRules.map(r => `- ${r}`).join('\n')}
 
 ### قواعد HTML الإلزامية:
-${ctx.globalHtmlRules.map(r => `- ${r}`).join('\n')}`;
+${ctx.globalHtmlRules.map(r => `- ${r}`).join('\n')}
+
+${templateContext}`;
 }
 
 // ═══════════════════════════════════════════════════════
