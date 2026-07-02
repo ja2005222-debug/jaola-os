@@ -15,6 +15,8 @@ import { generatePrismaSetup, needsPostgres } from './postgresAgent.js';
 import { prepareRenderDeploy } from './renderAgent.js';
 import { generateDependencies } from './dependencyAgent.js';
 import { transitionState, markAgentComplete, getProjectSummary, STATES, isBuilding, canStartNewBuild } from './stateMachine.js';
+import { runSEO } from './seoAgent.js';
+import { runSecurity } from './securityAgent.js';
 import { reviewCode } from './reviewAgent.js';
 import { runTests } from './testingAgent.js';
 import { commitBuild, initProjectRepo, getProjectStats } from './gitAgent.js';
@@ -398,6 +400,49 @@ export class JaolaCognitiveRuntime {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'ReviewAgent', `⚠️ تخطّي: ${e.message}`);
             }
 
+            // 🆕 SEO Agent
+            try {
+                const projectName = context.originalGoal?.split(' ').slice(0, 3).join(' ') || context.activeProject;
+                const seoResult = await runSEO(plan.files, {
+                    name: projectName,
+                    description: context.originalGoal?.slice(0, 150) || projectName,
+                    url: `https://${context.username}-${context.activeProject}.vercel.app`,
+                    lang: getUserLanguage(context.username) || 'ar',
+                });
+                if (seoResult.success) {
+                    plan.files = seoResult.files;
+                    // حفظ robots.txt و sitemap.xml
+                    const { promises: fsp } = await import('fs');
+                    const pathMod = await import('path');
+                    for (const file of seoResult.newFiles) {
+                        await fsp.writeFile(pathMod.default.join(context.projectPath, file.name), file.content);
+                    }
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'SEOAgent', `✅ ${seoResult.summary}`);
+                }
+            } catch (e) {
+                this.emitLiveLog(roomName, '5. RUNTIME', 'SEOAgent', `⚠️ تخطّي: ${e.message}`);
+            }
+
+            // 🆕 Security Agent
+            try {
+                const secResult = await runSecurity(plan.files);
+                if (secResult.success) {
+                    plan.files = secResult.fixedFiles;
+                    const { promises: fsp } = await import('fs');
+                    const pathMod = await import('path');
+                    for (const file of secResult.newFiles) {
+                        await fsp.writeFile(pathMod.default.join(context.projectPath, file.name), file.content);
+                    }
+                    const secEmoji = secResult.grade === 'A' ? '✅' : secResult.grade === 'B' ? '🟡' : '🟠';
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'SecurityAgent',
+                        `${secEmoji} ${secResult.summary}`
+                    );
+                }
+            } catch (e) {
+                this.emitLiveLog(roomName, '5. RUNTIME', 'SecurityAgent', `⚠️ تخطّي: ${e.message}`);
+            }
+
+
             // 🆕 Testing Agent — اختبار شامل للكود المُنتج
             try {
                 const testResult = await runTests(plan.files);
@@ -593,29 +638,6 @@ export class JaolaCognitiveRuntime {
                     );
                 }
             } catch (e) { /* اختياري */ }
-
-            // 🆕 Dependency Agent
-            try {
-                const { promises: fsp3 } = await import("fs");
-                const pathMod3 = await import("path");
-                let dFiles = [...(plan.files || [])];
-                const apiDir3 = pathMod3.default.join(context.projectPath, "api");
-                const apiStat = await fsp3.stat(apiDir3).catch(() => null);
-                if (apiStat?.isDirectory()) {
-                    const apiFs = await fsp3.readdir(apiDir3);
-                    for (const f of apiFs.filter(f => f.endsWith(".js"))) {
-                        const cnt = await fsp3.readFile(pathMod3.default.join(apiDir3, f), "utf-8").catch(() => "");
-                        dFiles.push({ name: "api/" + f, content: cnt });
-                    }
-                }
-                const depRes = await generateDependencies(dFiles, context.activeProject, context.mentalModel?.designBrief?.projectType || "web");
-                if (depRes.success) {
-                    for (const file of depRes.files) {
-                        await fsp3.writeFile(pathMod3.default.join(context.projectPath, file.name), file.content);
-                    }
-                    this.emitLiveLog(roomName, "5. RUNTIME", "DependencyAgent", "✅ " + depRes.summary);
-                }
-            } catch (e) { }
 
             return { success: true };
         }
