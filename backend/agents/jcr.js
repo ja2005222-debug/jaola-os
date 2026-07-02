@@ -1,10 +1,11 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { groq } from './baseAgent.js';
+import { groq, smartChat } from './baseAgent.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo } from './languageDetector.js';
 import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure } from './projectMemory.js';
+import { detectProjectType } from './knowledgeEngine.js';
 import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
 import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
 import { generateDatabase, selectDatabase } from './databaseAgent.js';
@@ -12,6 +13,7 @@ import { generateAuth, needsAuth } from './authAgent.js';
 import { reviewCode } from './reviewAgent.js';
 import { commitBuild, initProjectRepo, getProjectStats } from './gitAgent.js';
 import { backupProject, listSnapshots } from './fileManager.js';
+import { analyzeRequirements, buildRequirementsContext } from './requirementAnalyzer.js';
 import Conversation from '../models/Conversation.js';
 import mongoose from 'mongoose';
 
@@ -560,35 +562,35 @@ export class JaolaCognitiveRuntime {
         }
 
         try {
-            const completion = await groq.chat.completions.create({
-                messages: [
-                    {
-                        role: "system",
-                        content: `صنف نية المستخدم بدقة. القواعد:
-- "build": طلب صريح لبناء أو إنشاء أو تنفيذ موقع/ميزة الآن (مثل "اصنع موقعاً لمطعم بيتزا"، "ابدأ البناء")
-- "modify": طلب تعديل على كود موجود
-- "query": سؤال عن معلومة أو نقاش حول الفكرة قبل التنفيذ
-- "chat": محادثة عامة
-- "stop": طلب إيقاف
-- "acknowledge": رد قصير بالموافقة فقط دون طلب فعلي جديد
-
-مهم: إذا كانت الرسالة تحتوي طلباً صريحاً لبدء العمل الفعلي (حتى لو مسبوقة بنقاش)، صنّفها "build" وليس "query" أو "acknowledge".
-أعد JSON: { intent, confidence }`
-                    },
-                    { role: "user", content: `تفضيلات: ${JSON.stringify(execMemory)}\nالرسالة: "${userMessage}"` }
-                ],
-                model: "llama-3.3-70b-versatile",
-                response_format: { type: "json_object" },
-                max_tokens: 100,
-                temperature: 0.1
-            });
-            const result = JSON.parse(completion.choices[0].message.content);
+            const _intentRes = await smartChat([
+                { role: "system", content: 'Classify user intent. Reply ONLY with JSON: { "intent": "build|modify|query|chat|stop|acknowledge", "confidence": 0-100 }. build=create new site/feature, modify=edit existing, stop=stop/cancel, chat=general talk' },
+                { role: "user", content: `Message: "${userMessage}"` }
+            ], { max_tokens: 80, temperature: 0.1, json: true });
+            
+            let result;
+            try {
+                // محاولة parse مباشرة
+                const clean = _intentRes.replace(/```json|```/g, '').trim();
+                result = JSON.parse(clean);
+            } catch (parseErr) {
+                // fallback: كشف الكلمات المفتاحية من النص
+                const txt = (_intentRes || '').toLowerCase();
+                if (/build|create|make|ابني|اصنع|انشئ/.test(txt)) result = { intent: 'build', confidence: 80 };
+                else if (/modify|edit|change|غير|عدل|بدل/.test(txt)) result = { intent: 'modify', confidence: 80 };
+                else if (/stop|cancel|وقف|توقف|الغ/.test(txt)) result = { intent: 'stop', confidence: 90 };
+                else result = { intent: 'chat', confidence: 60 };
+            }
+            
             if (result.confidence && result.confidence <= 1) {
                 result.confidence = Math.round(result.confidence * 100);
             }
             return result;
         } catch (e) {
-            return { intent: "chat", confidence: 50 };
+            // fallback نهائي بالكلمات المفتاحية
+            const msg = userMessage.toLowerCase();
+            if (/^(ابني|اصنع|انشئ|build|create|make|design)/.test(msg.trim())) return { intent: 'build', confidence: 85 };
+            if (/^(غير|عدل|بدل|أضف|change|modify|update)/.test(msg.trim())) return { intent: 'modify', confidence: 85 };
+            return { intent: 'chat', confidence: 50 };
         }
     }
 
@@ -622,13 +624,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         ];
         let reply = "عذراً، حدث خطأ في معالجة رسالتك. حاول مرة أخرى.";
         try {
-            const completion = await groq.chat.completions.create({
-                messages,
-                model: "llama-3.3-70b-versatile",
-                max_tokens: 200,
-                temperature: 0.6
-            });
-            reply = completion.choices[0].message.content;
+            reply = await smartChat(messages, { max_tokens: 200, temperature: 0.6 });
         } catch (e) { console.error('Chat error:', e); }
         history.push({ role: 'assistant', content: reply });
         if (mongoose.connection.readyState === 1) {
@@ -653,10 +649,23 @@ User preferences: ${JSON.stringify(execMemory)}` },
             ? `${goal}\n${memoryContext}${profileContext}`
             : goal;
 
+        // 🆕 Smart Requirement Analyzer — يُثري الهدف بمتطلبات ضمنية
+        let requirementsContext = '';
+        try {
+            const projectType = detectProjectType(goal);
+            const reqAnalysis = await analyzeRequirements(goal, projectType);
+            requirementsContext = buildRequirementsContext(reqAnalysis);
+        } catch (e) { /* اختياري */ }
+
+        const finalGoalWithRequirements = requirementsContext
+            ? `${enrichedGoal}\n${requirementsContext}`
+            : enrichedGoal;
+
         // تسجيل هذا الطلب في تاريخ المشروع
         addToHistory(username, activeProject, goal.slice(0, 80));
 
-        const context = new JCRContext(enrichedGoal, projectPath, username, activeProject);
+        const context = new JCRContext(finalGoalWithRequirements || enrichedGoal, projectPath, username, activeProject);
+        context.originalGoal = goal;
         this.emitLiveLog(roomName, 'JCOS', 'Kernel', `🏁 بدء المهمة: ${context.missionId}`);
         try {
             await this.buildWorldModel(context, roomName, dbStatus);
@@ -672,6 +681,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
             try {
                 execResult = await this.runDynamicMultiAgentRuntime(context, roomName, agents);
             } catch (runtimeError) {
+                console.error('=== JAOLA STACK TRACE ===');
+                console.error(runtimeError.stack);
                 this.emitAgentError(roomName, 'coder');
                 await this.runReflectionAndSelfImprovement(context, roomName, false);
                 this.emitLiveLog(roomName, 'JCOS', 'Kernel', `❌ فشل نهائياً: ${runtimeError.message}`);
