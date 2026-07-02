@@ -13,6 +13,8 @@ import { generateAuth, needsAuth } from './authAgent.js';
 import { generateAdvancedModules } from './backendAgent.js';
 import { generatePrismaSetup, needsPostgres } from './postgresAgent.js';
 import { prepareRenderDeploy } from './renderAgent.js';
+import { generateDependencies } from './dependencyAgent.js';
+import { transitionState, markAgentComplete, getProjectSummary, STATES, isBuilding, canStartNewBuild } from './stateMachine.js';
 import { reviewCode } from './reviewAgent.js';
 import { runTests } from './testingAgent.js';
 import { commitBuild, initProjectRepo, getProjectStats } from './gitAgent.js';
@@ -591,6 +593,29 @@ export class JaolaCognitiveRuntime {
                     );
                 }
             } catch (e) { /* اختياري */ }
+
+            // 🆕 Dependency Agent
+            try {
+                const { promises: fsp3 } = await import("fs");
+                const pathMod3 = await import("path");
+                let dFiles = [...(plan.files || [])];
+                const apiDir3 = pathMod3.default.join(context.projectPath, "api");
+                const apiStat = await fsp3.stat(apiDir3).catch(() => null);
+                if (apiStat?.isDirectory()) {
+                    const apiFs = await fsp3.readdir(apiDir3);
+                    for (const f of apiFs.filter(f => f.endsWith(".js"))) {
+                        const cnt = await fsp3.readFile(pathMod3.default.join(apiDir3, f), "utf-8").catch(() => "");
+                        dFiles.push({ name: "api/" + f, content: cnt });
+                    }
+                }
+                const depRes = await generateDependencies(dFiles, context.activeProject, context.mentalModel?.designBrief?.projectType || "web");
+                if (depRes.success) {
+                    for (const file of depRes.files) {
+                        await fsp3.writeFile(pathMod3.default.join(context.projectPath, file.name), file.content);
+                    }
+                    this.emitLiveLog(roomName, "5. RUNTIME", "DependencyAgent", "✅ " + depRes.summary);
+                }
+            } catch (e) { }
 
             return { success: true };
         }
