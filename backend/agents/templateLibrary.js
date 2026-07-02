@@ -1006,30 +1006,18 @@ export function buildTemplateContext(projectType) {
     if (!template) return '';
 
     const sectionNames = Object.keys(template.sections || {}).join('، ');
-    const firstSection = Object.values(template.sections || {})[0] || '';
-
     return `
 ## Template Library — قالب ${projectType}:
 
-### CSS Variables الإلزامية:
-\`\`\`css
+### CSS Variables الإلزامية (انسخها في :root):
 ${template.css_vars}
 
-${CSS_RESET}
-\`\`\`
-
-### الأقسام المتاحة في المكتبة: ${sectionNames}
-
-### مثال على هيكل القسم الأول (navbar/hero):
-\`\`\`html
-${firstSection.slice(0, 800)}
-\`\`\`
+### الأقسام المطلوبة: ${sectionNames}
 
 ### تعليمات إلزامية:
-- استخدم CSS Variables من :root في كل الألوان
-- اتبع نفس أسلوب HTML الموضح أعلاه
-- أضف محتوى واقعي (أسماء، أسعار، أوصاف حقيقية)
-- تأكد من dir="rtl" على <html>`;
+- استخدم CSS Variables أعلاه في كل الألوان
+- أضف محتوى واقعي (أسماء، أسعار، أوصاف)
+- تأكد من dir="rtl" على html`;
 }
 
 /** قائمة بجميع أنواع المشاريع المتاحة */
