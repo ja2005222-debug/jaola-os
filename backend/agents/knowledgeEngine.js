@@ -188,8 +188,22 @@ const BACKEND_KEYWORDS = [
     'قاعدة بيانات', 'إدارة', 'سلة', 'طلبات', 'مخزون', 'فاتورة',
     'اشتراك', 'عضوية', 'login', 'signup', 'payment', 'checkout',
     'cart', 'order', 'dashboard', 'admin', 'database', 'booking',
-    'upload', 'inventory', 'subscription', 'members', 'crud'
+    'upload', 'inventory', 'subscription', 'members', 'crud',
+    'stripe', 'paypal', 'oauth', 'google login', 'رفع صور', 'دفع إلكتروني'
 ];
+
+// كشف الميزات المتقدمة المطلوبة
+export function detectAdvancedFeatures(userGoal) {
+    const goal = (userGoal || '').toLowerCase();
+    return {
+        needsStripe: /stripe|دفع إلكتروني|بطاقة ائتمان|credit card|payment gateway/i.test(goal),
+        needsUpload: /رفع صور|upload|صور منتجات|file upload|media/i.test(goal),
+        needsOAuth: /google login|تسجيل بجوجل|oauth|social login/i.test(goal),
+        needsPostgres: /postgres|postgresql|prisma|relational|علاقية/i.test(goal),
+        needsRedis: /redis|cache|كاش|real.?time|realtime/i.test(goal),
+        needsGraphQL: /graphql/i.test(goal),
+    };
+}
 
 export function needsBackend(userGoal) {
     const goal = (userGoal || '').toLowerCase();

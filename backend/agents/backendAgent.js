@@ -162,3 +162,174 @@ ${(currentScript || '').substring(0, 2000)}
         return null;
     }
 }
+
+// ═══════════════════════════════════════════════════════
+// 💳 Stripe Payment Module
+// ═══════════════════════════════════════════════════════
+export function generateStripeModule() {
+    return {
+        name: 'api/stripe.js',
+        content: `
+import Stripe from 'stripe';
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+// إنشاء Payment Intent
+export default async function handler(req, res) {
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+    
+    try {
+        const { amount, currency = 'sar', metadata = {} } = req.body;
+        
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: Math.round(amount * 100), // تحويل للهللات
+            currency,
+            metadata,
+            automatic_payment_methods: { enabled: true },
+        });
+        
+        res.json({ 
+            success: true,
+            clientSecret: paymentIntent.client_secret,
+            paymentIntentId: paymentIntent.id
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+}`.trim(),
+        readme: `
+## Stripe Setup
+\`\`\`bash
+npm install stripe
+\`\`\`
+\`.env\`:
+\`\`\`
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_PUBLISHABLE_KEY=pk_test_...
+\`\`\``
+    };
+}
+
+// ═══════════════════════════════════════════════════════
+// 📁 Upload API Module
+// ═══════════════════════════════════════════════════════
+export function generateUploadModule() {
+    return {
+        name: 'api/upload.js',
+        content: `
+import formidable from 'formidable';
+import fs from 'fs';
+import path from 'path';
+
+export const config = { api: { bodyParser: false } };
+
+export default async function handler(req, res) {
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+    
+    const uploadDir = path.join(process.cwd(), 'public/uploads');
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+    
+    const form = formidable({
+        uploadDir,
+        keepExtensions: true,
+        maxFileSize: 5 * 1024 * 1024, // 5MB
+        filter: ({ mimetype }) => mimetype && mimetype.includes('image'),
+    });
+    
+    form.parse(req, (err, fields, files) => {
+        if (err) return res.status(500).json({ error: err.message });
+        
+        const file = files.file?.[0] || files.file;
+        if (!file) return res.status(400).json({ error: 'لم يتم رفع أي ملف' });
+        
+        const fileName = path.basename(file.filepath || file.path);
+        const fileUrl = \`/uploads/\${fileName}\`;
+        
+        res.json({ success: true, url: fileUrl, name: fileName });
+    });
+}`.trim(),
+        readme: `
+## Upload Setup
+\`\`\`bash
+npm install formidable
+\`\`\``
+    };
+}
+
+// ═══════════════════════════════════════════════════════
+// 🔐 OAuth Google Module
+// ═══════════════════════════════════════════════════════
+export function generateOAuthModule() {
+    return {
+        name: 'api/auth/google.js',
+        content: `
+import { OAuth2Client } from 'google-auth-library';
+import jwt from 'jsonwebtoken';
+
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const JWT_SECRET = process.env.JWT_SECRET || 'jaola-secret';
+
+export default async function handler(req, res) {
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+    
+    try {
+        const { credential } = req.body; // Google ID Token
+        
+        const ticket = await client.verifyIdToken({
+            idToken: credential,
+            audience: process.env.GOOGLE_CLIENT_ID,
+        });
+        
+        const payload = ticket.getPayload();
+        const { sub: googleId, email, name, picture } = payload;
+        
+        // هنا يمكنك حفظ المستخدم في قاعدة البيانات
+        const token = jwt.sign(
+            { googleId, email, name, picture },
+            JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+        
+        res.json({ success: true, token, user: { email, name, picture } });
+    } catch (error) {
+        res.status(401).json({ error: 'فشل التحقق من Google' });
+    }
+}`.trim(),
+        readme: `
+## Google OAuth Setup
+\`\`\`bash
+npm install google-auth-library
+\`\`\`
+\`.env\`:
+\`\`\`
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+\`\`\``
+    };
+}
+
+// ═══════════════════════════════════════════════════════
+// 🚀 توليد الـ modules المطلوبة حسب المشروع
+// ═══════════════════════════════════════════════════════
+export async function generateAdvancedModules(userGoal, projectPath) {
+    const { detectAdvancedFeatures } = await import('./knowledgeEngine.js');
+    const features = detectAdvancedFeatures(userGoal);
+    const files = [];
+
+    if (features.needsStripe) {
+        const stripe = generateStripeModule();
+        files.push(stripe);
+        files.push({ name: 'STRIPE_README.md', content: stripe.readme });
+    }
+
+    if (features.needsUpload) {
+        const upload = generateUploadModule();
+        files.push(upload);
+    }
+
+    if (features.needsOAuth) {
+        const oauth = generateOAuthModule();
+        files.push(oauth);
+        files.push({ name: 'OAUTH_README.md', content: oauth.readme });
+    }
+
+    return { files, features };
+}

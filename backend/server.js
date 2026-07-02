@@ -684,6 +684,28 @@ app.post('/api/chat', verifyToken, aiLimit, validateProjectOwnership, async (req
 });
 
 // 🆕 مسار نشر صريح — أبسط وأوثق من الاعتماد على تصنيف نية AI غامض
+import { pushToGitHub } from './agents/gitAgent.js';
+
+app.post('/api/github/push', verifyToken, validateProjectOwnership, async (req, res) => {
+    const { repoUrl, branch = 'main' } = req.body;
+    if (!repoUrl) return res.status(400).json({ error: 'repoUrl مطلوب' });
+
+    const roomName = `${req.user.username}-${req.activeProject}`;
+    res.json({ accepted: true });
+
+    try {
+        io.to(roomName).emit('log', { message: '🐙 [GitHub]: جاري الرفع على GitHub...' });
+        const result = await pushToGitHub(req.projectPath, repoUrl, branch);
+        if (result.success) {
+            io.to(roomName).emit('log', { message: `✅ [GitHub]: تم الرفع على ${repoUrl}` });
+        } else {
+            io.to(roomName).emit('log', { message: `❌ [GitHub]: فشل — ${result.error}` });
+        }
+    } catch (e) {
+        io.to(roomName).emit('log', { message: `❌ [GitHub]: ${e.message}` });
+    }
+});
+
 app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) => {
     res.json({ accepted: true });
 

@@ -10,6 +10,7 @@ import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfile
 import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
 import { generateDatabase, selectDatabase } from './databaseAgent.js';
 import { generateAuth, needsAuth } from './authAgent.js';
+import { generateAdvancedModules } from './backendAgent.js';
 import { reviewCode } from './reviewAgent.js';
 import { runTests } from './testingAgent.js';
 import { commitBuild, initProjectRepo, getProjectStats } from './gitAgent.js';
@@ -525,6 +526,27 @@ export class JaolaCognitiveRuntime {
                     }
                 }
             }
+
+            // 🆕 Advanced Modules — Stripe, Upload, OAuth
+            try {
+                const advResult = await generateAdvancedModules(context.originalGoal, context.projectPath);
+                if (advResult.files.length > 0) {
+                    const { promises: fsp } = await import('fs');
+                    const pathMod = await import('path');
+                    for (const file of advResult.files) {
+                        const filePath = pathMod.default.join(context.projectPath, file.name);
+                        await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
+                        await fsp.writeFile(filePath, file.content);
+                    }
+                    const features = Object.entries(advResult.features)
+                        .filter(([, v]) => v)
+                        .map(([k]) => k.replace('needs', ''))
+                        .join(', ');
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'AdvancedAgent',
+                        `✅ ${features} (${advResult.files.length} ملف)`
+                    );
+                }
+            } catch (e) { /* اختياري */ }
 
             return { success: true };
         }

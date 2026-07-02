@@ -140,3 +140,38 @@ export async function getProjectStats(projectPath) {
         lastCommit: { message: lastMsg, time: lastTime },
     };
 }
+
+// ═══════════════════════════════════════════════════════
+// 🐙 GitHub Push
+// ═══════════════════════════════════════════════════════
+export async function pushToGitHub(projectPath, repoUrl, branch = 'main') {
+    try {
+        // تحقق هل remote موجود
+        const remoteCheck = await runGit('remote -v', projectPath);
+        
+        if (!remoteCheck.output.includes('origin')) {
+            // أضف remote
+            await runGit(`remote add origin ${repoUrl}`, projectPath);
+        } else {
+            // حدّث remote
+            await runGit(`remote set-url origin ${repoUrl}`, projectPath);
+        }
+
+        // تأكد أن كل شيء مُضاف
+        await runGit('add -A', projectPath);
+        
+        const status = await runGit('status --porcelain', projectPath);
+        if (status.output) {
+            await runGit(`commit -m "🚀 JAOLA OS auto-push [${new Date().toLocaleTimeString()}]"`, projectPath);
+        }
+
+        // Push
+        const push = await runGit(`push -u origin ${branch} --force`, projectPath);
+        
+        if (!push.success) return { success: false, error: push.error };
+        
+        return { success: true, url: repoUrl, branch };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+}
