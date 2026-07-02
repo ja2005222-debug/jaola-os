@@ -432,13 +432,13 @@ export class JaolaCognitiveRuntime {
 
             // 🆕 تحديث Project Memory بهيكل الموقع المبني
             if (context.mentalModel?.templateSections?.length) {
-                updateStructure(context.username, context.activeProject,
+                updateStructure(username, activeProject,
                     context.mentalModel.templateSections,
                     context.executiveDecision?.subTasks?.map(t => t.description) || []
                 );
             }
             if (context.mentalModel?.visualIdentity) {
-                updateDesign(context.username, context.activeProject, { style: context.mentalModel.visualIdentity });
+                updateDesign(username, activeProject, { style: context.mentalModel.visualIdentity });
             }
 
             // 🆕 مرحلة Backend — إذا كان المشروع يحتاج خادماً
@@ -673,6 +673,24 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
         const context = new JCRContext(finalGoalWithRequirements || enrichedGoal, projectPath, username, activeProject);
         context.originalGoal = goal;
+
+        // 🆕 Personality — CEO يتحدث كمهندس يفهم السياق
+        const existingFiles = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
+        const hasExistingProject = existingFiles && existingFiles.trim().length > 100;
+        const userLangForMsg = getUserLanguage(username) || 'ar';
+
+        let personalityMsg;
+        if (hasExistingProject) {
+            personalityMsg = userLangForMsg === 'ar'
+                ? `فهمت طلبك.\nراجعت المشروع الحالي — وجدت ملفات موجودة.\nسأُعدّل الكود الحالي بدلاً من البناء من صفر.\nسأبدأ الآن...`
+                : `Got it.\nI reviewed the current project — found existing files.\nI'll modify the existing code instead of rebuilding from scratch.\nStarting now...`;
+        } else {
+            personalityMsg = userLangForMsg === 'ar'
+                ? `فهمت طلبك.\nمشروع جديد — سأبني من الصفر بأفضل المعايير.\nسأبدأ الآن...`
+                : `Got it.\nNew project — I'll build from scratch with best practices.\nStarting now...`;
+        }
+        this.io.to(roomName).emit('chat_reply', { message: personalityMsg });
+
         this.emitLiveLog(roomName, 'JCOS', 'Kernel', `🏁 بدء المهمة: ${context.missionId}`);
         try {
             await this.buildWorldModel(context, roomName, dbStatus);
@@ -703,6 +721,13 @@ User preferences: ${JSON.stringify(execMemory)}` },
             }
 
             await this.runReflectionAndSelfImprovement(context, roomName, execResult.success);
+            if (execResult.success) {
+                const langMsg = getUserLanguage(username) || 'ar';
+                const successMsg = langMsg === 'ar'
+                    ? `✅ اكتملت المهمة.\nتم بناء موقعك بنجاح — راجع المعاينة الحية.\nيمكنك طلب أي تعديل الآن.`
+                    : `✅ Mission complete.\nYour website has been built successfully — check the live preview.\nFeel free to request any changes.`;
+                this.io.to(roomName).emit('chat_reply', { message: successMsg });
+            }
             this.emitLiveLog(roomName, 'JCOS', 'Kernel', execResult.success ? '✨ نجاح' : '❌ فشل');
             return execResult;
         } catch (error) {
@@ -861,7 +886,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         if (finalIntent.intent === 'build') {
             // 🆕 ابدأ Clarifier بدلاً من البناء المباشر
             if (agents.startClarification) {
-                const clarifyResult = agents.startClarification(username, normalizedMessage || message);
+                const clarifyResult = await agents.startClarification(username, normalizedMessage || message);
                 // أضف رسالة المستخدم للشات أولاً
                 this.io.to(roomName).emit('chat_reply', { 
                     message: clarifyResult.message,

@@ -96,11 +96,13 @@ export function initUserLanguage(username, message) {
         return lang;
     }
 
-    // إذا الرسالة الجديدة أوضح (أكثر من كلمتين) — أعد التقييم
-    if (words > 2) {
+    // 🆕 Language Lock — إذا اللغة المحفوظة عربية، لا تغيّرها حتى لو كتب المستخدم إنجليزي
+    // فقط حدّث إذا كانت الرسالة الجديدة أوضح وأطول (أكثر من 3 كلمات) وغير إنجليزية
+    if (words > 3) {
         const lang = detectLanguage(message);
-        // فقط حدّث إذا كانت اللغة الجديدة مختلفة وواضحة
-        if (lang !== current) {
+        // لا تغيّر من عربي إلى إنجليزي (قد يكتب كلمة تقنية بالإنجليزي)
+        const isDowngrade = current !== 'en' && lang === 'en';
+        if (lang !== current && !isDowngrade) {
             sessionLanguages.set(username, lang);
             return lang;
         }

@@ -1,6 +1,36 @@
-import { groq } from './baseAgent.js';
+import { groq, smartChat } from './baseAgent.js';
 import { detectProjectType } from './knowledgeEngine.js';
-import { detectLanguage, initUserLanguage, getUserLanguage } from './languageDetector.js';
+import { detectLanguage, initUserLanguage, getUserLanguage, setUserLanguage } from './languageDetector.js';
+
+// ═══════════════════════════════════════════════════════
+// 🤖 Dynamic Question Generator — يولّد أسئلة ذكية بـ AI
+// ═══════════════════════════════════════════════════════
+async function generateDynamicQuestions(userGoal, projectType, lang = 'ar') {
+    try {
+        const systemPrompt = lang === 'ar'
+            ? `أنت مهندس برمجيات خبير. المستخدم يريد بناء موقع. 
+اطرح 3 أسئلة ذكية ومخصصة لهذا المشروع تحديداً.
+الأسئلة يجب أن تكشف: الميزات الأساسية، التقنيات المطلوبة، الجمهور المستهدف.
+أعد JSON فقط: { "questions": ["سؤال 1", "سؤال 2", "سؤال 3"] }`
+            : `You are an expert software engineer. The user wants to build a website.
+Ask 3 smart, specific questions for this exact project.
+Questions should reveal: core features, required tech, target audience.
+Return JSON only: { "questions": ["question 1", "question 2", "question 3"] }`;
+
+        const response = await smartChat([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `المشروع: "${userGoal}" (النوع: ${projectType})` }
+        ], { max_tokens: 300, temperature: 0.6, json: true });
+
+        const parsed = JSON.parse(response);
+        if (parsed.questions && parsed.questions.length >= 2) {
+            return parsed.questions.slice(0, 3);
+        }
+    } catch (e) {
+        // fallback للأسئلة الثابتة
+    }
+    return null;
+}
 
 // ═══════════════════════════════════════════════════════
 // 🧠 أسئلة ذكية مخصصة لكل نوع مشروع
@@ -106,13 +136,19 @@ export function isBuildRequest(message) {
 // ═══════════════════════════════════════════════════════
 // 💬 بدء مرحلة التوضيح
 // ═══════════════════════════════════════════════════════
-export function startClarification(username, userGoal) {
+export async function startClarification(username, userGoal) {
     const projectType = detectProjectType(userGoal);
-    // استخدام اللغة المحفوظة للجلسة (مسجّلة من أول رسالة)
     const lang = getUserLanguage(username) || detectLanguage(userGoal);
-    const questions = lang === 'ar'
-        ? (CLARIFIER_QUESTIONS[projectType] || DEFAULT_QUESTIONS)
-        : (CLARIFIER_QUESTIONS_EN[projectType] || DEFAULT_QUESTIONS_EN);
+
+    // 🆕 جرّب الأسئلة الديناميكية أولاً
+    let questions = await generateDynamicQuestions(userGoal, projectType, lang);
+
+    // Fallback للأسئلة الثابتة إذا فشل AI
+    if (!questions) {
+        questions = lang === 'ar'
+            ? (CLARIFIER_QUESTIONS[projectType] || DEFAULT_QUESTIONS)
+            : (CLARIFIER_QUESTIONS_EN[projectType] || DEFAULT_QUESTIONS_EN);
+    }
 
     conversationState.set(username, {
         stage: STAGES.CLARIFYING,
@@ -122,12 +158,15 @@ export function startClarification(username, userGoal) {
         currentQuestion: 0,
         answers: [],
         lang,
+        isDynamic: true,
     });
 
     const totalQuestions = questions.length;
     const intro = lang === 'ar'
         ? `قبل أن أبدأ البناء، لدي ${totalQuestions} أسئلة سريعة 🎯\n\n**السؤال 1/${totalQuestions}:**\n${questions[0]}`
         : `Before I start building, I have ${totalQuestions} quick questions 🎯\n\n**Question 1/${totalQuestions}:**\n${questions[0]}`;
+
+    return { type: 'clarification', message: intro, projectType, questionIndex: 0, totalQuestions };
 
     return { type: 'clarification', message: intro, projectType, questionIndex: 0, totalQuestions };
 }
@@ -183,11 +222,9 @@ async function buildProjectPlan(state) {
     const { originalGoal, projectType, questions, answers } = state;
 
     // استخراج اسم ذكي من الإجابات والطلب
-    const goalWords = originalGoal.replace(/^(ابني|اصنع|انشئ|بني|سوي|اعمل)\s+(لي\s+)?(موقع\s+)?/i, '').trim();
-    // نستخدم إجابة المطبخ فقط إذا كانت كلمة حقيقية (أقل من 15 حرف وليست عشوائية)
     const cuisineAnswer = answers[2] || '';
-    const isValidCuisine = cuisineAnswer.length > 0 && cuisineAnswer.length < 15 && /[\u0600-\u06FFa-zA-Z]/.test(cuisineAnswer);
-    const smartName = isValidCuisine
+    const goalWords = originalGoal.replace(/^(ابني|اصنع|انشئ|بني|سوي|اعمل)\s+(لي\s+)?(موقع\s+)?/i, '').trim();
+    const smartName = cuisineAnswer && cuisineAnswer.length < 20
         ? `${goalWords} ${cuisineAnswer}`.trim()
         : goalWords || originalGoal.split(' ').slice(-3).join(' ');
 
@@ -256,7 +293,7 @@ ${features}
 
 **🎨 الهوية البصرية:** ${plan.colorMood}
 
-**⏱️ الوقت المتوقع:** ${plan.estimatedTime}
+**⏱️ الوقت المتوقع:** ${(isNaN(plan.estimatedTime) ? plan.estimatedTime : 'دقائق') || 'دقائق'}
 
 ---
 هل تريد البدء بالبناء الآن؟ اكتب **"ابدأ"** للتنفيذ، أو أخبرني بأي تعديل تريده على الخطة.`;

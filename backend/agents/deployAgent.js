@@ -22,7 +22,7 @@ async function collectProjectFiles(projectPath) {
         const entries = await fs.readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
             // تجاهل مجلدات النظام الداخلية وليست جزءاً من الموقع المنشور
-            if (entry.name === '.backups' || entry.name === 'node_modules' || entry.name.startsWith('.')) {
+            if (entry.name === '.backups' || entry.name === 'node_modules' || entry.name.startsWith('.') || entry.name === 'api' || entry.name === 'AUTH_README.md') {
                 continue;
             }
             const fullPath = path.join(dir, entry.name);
@@ -79,6 +79,33 @@ export async function deployProject({ projectPath, activeProject, currentUser },
     io.to(roomName).emit('log', { message: '🚀 [DEPLOY]: جاري تجميع ملفات المشروع...' });
 
     try {
+        // 🆕 دمج API files إذا تجاوزت 12 (حد Vercel Hobby)
+        const apiDir = path.join(projectPath, 'api');
+        const { existsSync } = await import('fs');
+        if (existsSync(apiDir)) {
+            const apiFiles = (await fs.readdir(apiDir)).filter(f => f.endsWith('.js') && !['db.js','schema.js','seed.js'].includes(f));
+            if (apiFiles.length > 10) {
+                // ادمج كل الـ routes في ملف واحد
+                let combined = `import express from 'express';\nconst router = express.Router();\n`;
+                for (const file of apiFiles) {
+                    const name = file.replace('.js','');
+                    combined += `\n// === ${name} ===\n`;
+                    try {
+                        const content = await fs.readFile(path.join(apiDir, file), 'utf-8');
+                        combined += content.replace(/export default.*router/g, '').replace(/import express.*\n/g,'') + '\n';
+                    } catch(e) {}
+                }
+                combined += '\nexport default router;';
+                await fs.writeFile(path.join(apiDir, 'routes.js'), combined);
+                // احذف الملفات القديمة واحتفظ فقط بـ routes.js و db.js
+                for (const file of apiFiles) {
+                    if (file !== 'routes.js') {
+                        try { await fs.unlink(path.join(apiDir, file)); } catch(e) {}
+                    }
+                }
+                io.to(roomName).emit('log', { message: `📦 [DEPLOY]: تم دمج ${apiFiles.length} API في ملف واحد` });
+            }
+        }
         const files = await collectProjectFiles(projectPath);
 
         if (files.length === 0) {
