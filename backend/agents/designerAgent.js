@@ -43,6 +43,10 @@ const FONT_PAIRS = {
 // ═══════════════════════════════════════════════════════
 function selectPalette(projectType, userGoal, userProfile) {
     // خريطة النوع → لوحة الألوان الافتراضية
+    // نوع المشروع له الأولوية القصوى على أي كلمات في الوصف
+    const FORCED_TYPES = { medical: 'medical', clinic: 'medical' };
+    if (FORCED_TYPES[projectType]) return FORCED_TYPES[projectType];
+
     const typeDefaults = {
         medical:    'medical',
         clinic:     'medical',

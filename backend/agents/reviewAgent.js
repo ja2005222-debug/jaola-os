@@ -59,6 +59,12 @@ export function runStaticReview(files) {
         }
 
         if (name === 'styles.css') {
+            // فحص تباين الألوان — نص فاتح على خلفية فاتحة
+            const hasDarkBg = content.includes('--bg: #0') || content.includes('--bg:#0') || content.includes('background: #0') || content.includes('background:#0');
+            const hasDarkText = content.includes('color: #0') || content.includes('color:#0') || content.includes('--text: #0');
+            if (hasDarkBg && hasDarkText) {
+                issues.push({ file: name, type: 'contrast', msg: 'تباين ألوان ضعيف — نص داكن على خلفية داكنة' });
+            }
             // فحص CSS Variables
             if (!content.includes(':root') || !content.includes('--')) {
                 issues.push({ file: name, type: 'maintainability', msg: 'لا يستخدم CSS Variables في :root' });

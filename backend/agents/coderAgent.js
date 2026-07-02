@@ -139,6 +139,9 @@ ${currentCodeContext && currentCodeContext.trim().length > 50
 
 ## تذكير إلزامي:
 - اكتب الكود كاملاً بدون اختصار
+- تباين الألوان إلزامي: خلفية داكنة → نص فاتح (#fff أو #f1f5f9)، خلفية فاتحة → نص داكن (#111 أو #1a1a2e)
+- إذا استخدمت --bg-dark أو background داكن في body، يجب أن يكون color: #ffffff أو color: #f1f5f9
+- لا تضع نصاً داكناً على خلفية داكنة أبداً
 - استخدم CSS Variables من :root في كل الألوان
 - استخدم التنسيق: // FILE: name
 - ثلاثة ملفات: index.html وstyles.css وscript.js`;
