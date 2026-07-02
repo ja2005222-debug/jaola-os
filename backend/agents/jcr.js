@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { groq, smartChat } from './baseAgent.js';
+import { groq } from './baseAgent.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo } from './languageDetector.js';
 import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure } from './projectMemory.js';
@@ -14,6 +14,7 @@ import { reviewCode } from './reviewAgent.js';
 import { commitBuild, initProjectRepo, getProjectStats } from './gitAgent.js';
 import { backupProject, listSnapshots } from './fileManager.js';
 import { analyzeRequirements, buildRequirementsContext } from './requirementAnalyzer.js';
+import { normalizeText, detectIntentFromMeaning } from './textNormalizer.js';
 import Conversation from '../models/Conversation.js';
 import mongoose from 'mongoose';
 
@@ -413,13 +414,13 @@ export class JaolaCognitiveRuntime {
 
             // 🆕 تحديث Project Memory بهيكل الموقع المبني
             if (context.mentalModel?.templateSections?.length) {
-                updateStructure(context.username, context.activeProject,
+                updateStructure(username, activeProject,
                     context.mentalModel.templateSections,
                     context.executiveDecision?.subTasks?.map(t => t.description) || []
                 );
             }
             if (context.mentalModel?.visualIdentity) {
-                updateDesign(context.username, context.activeProject, { style: context.mentalModel.visualIdentity });
+                updateDesign(username, activeProject, { style: context.mentalModel.visualIdentity });
             }
 
             // 🆕 مرحلة Backend — إذا كان المشروع يحتاج خادماً
@@ -563,34 +564,16 @@ export class JaolaCognitiveRuntime {
 
         try {
             const _intentRes = await smartChat([
-                { role: "system", content: 'Classify user intent. Reply ONLY with JSON: { "intent": "build|modify|query|chat|stop|acknowledge", "confidence": 0-100 }. build=create new site/feature, modify=edit existing, stop=stop/cancel, chat=general talk' },
-                { role: "user", content: `Message: "${userMessage}"` }
+                { role: "system", content: 'صنف نية المستخدم. أعد JSON فقط: { "intent": "build|modify|query|chat|stop|acknowledge", "confidence": 0-100 }' },
+                { role: "user", content: `الرسالة: "${userMessage}"` }
             ], { max_tokens: 80, temperature: 0.1, json: true });
-            
-            let result;
-            try {
-                // محاولة parse مباشرة
-                const clean = _intentRes.replace(/```json|```/g, '').trim();
-                result = JSON.parse(clean);
-            } catch (parseErr) {
-                // fallback: كشف الكلمات المفتاحية من النص
-                const txt = (_intentRes || '').toLowerCase();
-                if (/build|create|make|ابني|اصنع|انشئ/.test(txt)) result = { intent: 'build', confidence: 80 };
-                else if (/modify|edit|change|غير|عدل|بدل/.test(txt)) result = { intent: 'modify', confidence: 80 };
-                else if (/stop|cancel|وقف|توقف|الغ/.test(txt)) result = { intent: 'stop', confidence: 90 };
-                else result = { intent: 'chat', confidence: 60 };
-            }
-            
+            const result = JSON.parse(_intentRes);
             if (result.confidence && result.confidence <= 1) {
                 result.confidence = Math.round(result.confidence * 100);
             }
             return result;
         } catch (e) {
-            // fallback نهائي بالكلمات المفتاحية
-            const msg = userMessage.toLowerCase();
-            if (/^(ابني|اصنع|انشئ|build|create|make|design)/.test(msg.trim())) return { intent: 'build', confidence: 85 };
-            if (/^(غير|عدل|بدل|أضف|change|modify|update)/.test(msg.trim())) return { intent: 'modify', confidence: 85 };
-            return { intent: 'chat', confidence: 50 };
+            return { intent: "chat", confidence: 50 };
         }
     }
 
@@ -624,7 +607,13 @@ User preferences: ${JSON.stringify(execMemory)}` },
         ];
         let reply = "عذراً، حدث خطأ في معالجة رسالتك. حاول مرة أخرى.";
         try {
-            reply = await smartChat(messages, { max_tokens: 200, temperature: 0.6 });
+            const completion = await groq.chat.completions.create({
+                messages,
+                model: "llama-3.3-70b-versatile",
+                max_tokens: 200,
+                temperature: 0.6
+            });
+            reply = completion.choices[0].message.content;
         } catch (e) { console.error('Chat error:', e); }
         history.push({ role: 'assistant', content: reply });
         if (mongoose.connection.readyState === 1) {
@@ -681,8 +670,6 @@ User preferences: ${JSON.stringify(execMemory)}` },
             try {
                 execResult = await this.runDynamicMultiAgentRuntime(context, roomName, agents);
             } catch (runtimeError) {
-                console.error('=== JAOLA STACK TRACE ===');
-                console.error(runtimeError.stack);
                 this.emitAgentError(roomName, 'coder');
                 await this.runReflectionAndSelfImprovement(context, roomName, false);
                 this.emitLiveLog(roomName, 'JCOS', 'Kernel', `❌ فشل نهائياً: ${runtimeError.message}`);
@@ -727,6 +714,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // ── 0. Language Detector — تسجيل اللغة من أول رسالة ────────────
         const userLang = initUserLanguage(username, message);
         const langInfo = getLangInfo(userLang);
+
+        // 🆕 Text Normalizer — يفهم المعنى بغض النظر عن الأخطاء
+        const normalizedMessage = normalizeText(message);
+        const meaningIntent = detectIntentFromMeaning(message);
 
         // 🆕 تحديث لغة ملف المستخدم
         updateLanguage(username, userLang);
@@ -842,13 +833,17 @@ User preferences: ${JSON.stringify(execMemory)}` },
         }
 
         // ── 2. تصنيف النية ───────────────────────────────────────────────
-        const intentResult = await this.classifyIntent(message, username);
-        this.emitLiveLog(roomName, 'INTENT', 'Classifier', `نية: ${intentResult.intent} (ثقة: ${intentResult.confidence}%)`);
+        const intentResult = await this.classifyIntent(normalizedMessage || message, username);
+        // إذا كشف Text Normalizer النية بثقة عالية — استخدمها
+        const finalIntent = meaningIntent.confidence >= 90
+            ? { intent: meaningIntent.intent, confidence: meaningIntent.confidence }
+            : intentResult;
+        this.emitLiveLog(roomName, 'INTENT', 'Classifier', `نية: ${finalIntent.intent} (ثقة: ${finalIntent.confidence}%)`);
 
-        if (intentResult.intent === 'build') {
+        if (finalIntent.intent === 'build') {
             // 🆕 ابدأ Clarifier بدلاً من البناء المباشر
             if (agents.startClarification) {
-                const clarifyResult = agents.startClarification(username, message);
+                const clarifyResult = agents.startClarification(username, normalizedMessage || message);
                 // أضف رسالة المستخدم للشات أولاً
                 this.io.to(roomName).emit('chat_reply', { 
                     message: clarifyResult.message,
@@ -857,11 +852,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
             } else {
                 this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);
             }
-        } else if (intentResult.intent === 'modify') {
+        } else if (finalIntent.intent === 'modify') {
             recordEdit(username, message);
             this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);
             // Git commit للتعديل يحدث داخل executeMission بعد النجاح
-        } else if (intentResult.intent === 'stop') {
+        } else if (finalIntent.intent === 'stop') {
             this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛑 أمر إيقاف.');
             agents.clearState?.(username);
         } else {

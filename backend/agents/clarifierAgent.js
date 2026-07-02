@@ -93,6 +93,7 @@ const STAGES = {
 // ═══════════════════════════════════════════════════════
 // 🔍 هل الرسالة طلب بناء؟
 // ═══════════════════════════════════════════════════════
+// كشف لغة المستخدم
 
 // فقط طلبات البناء الصريحة — "build me a X" وليس "can you build"
 const BUILD_PATTERNS_AR = /^(ابني|اصنع|انشئ|أنشئ|ابدأ|اعمل|صمم|طور)\s+/i;
@@ -181,6 +182,15 @@ export async function processAnswer(username, answer) {
 async function buildProjectPlan(state) {
     const { originalGoal, projectType, questions, answers } = state;
 
+    // استخراج اسم ذكي من الإجابات والطلب
+    const goalWords = originalGoal.replace(/^(ابني|اصنع|انشئ|بني|سوي|اعمل)\s+(لي\s+)?(موقع\s+)?/i, '').trim();
+    // نستخدم إجابة المطبخ فقط إذا كانت كلمة حقيقية (أقل من 15 حرف وليست عشوائية)
+    const cuisineAnswer = answers[2] || '';
+    const isValidCuisine = cuisineAnswer.length > 0 && cuisineAnswer.length < 15 && /[\u0600-\u06FFa-zA-Z]/.test(cuisineAnswer);
+    const smartName = isValidCuisine
+        ? `${goalWords} ${cuisineAnswer}`.trim()
+        : goalWords || originalGoal.split(' ').slice(-3).join(' ');
+
     const qaText = questions.map((q, i) => `س: ${q}\nج: ${answers[i] || 'لم يُجَب'}`).join('\n\n');
 
     try {
@@ -198,7 +208,7 @@ async function buildProjectPlan(state) {
     } catch (e) {
         // خطة افتراضية إذا فشل الـ AI
         return {
-            projectName: originalGoal.split(' ').slice(1, 4).join(' '),
+            projectName: smartName || originalGoal.split(' ').slice(-3).join(' '),
             sections: ['navbar', 'hero', 'الخدمات', 'من نحن', 'تواصل', 'footer'],
             features: ['تصميم متجاوب', 'صور احترافية', 'نموذج تواصل'],
             colorMood: 'ألوان متناسقة واحترافية',
@@ -255,7 +265,7 @@ ${features}
 // ═══════════════════════════════════════════════════════
 // ✅ تأكيد البناء بعد عرض الخطة
 // ═══════════════════════════════════════════════════════
-const CONFIRM_PATTERNS = /^(ابدأ|نفذ|تمام|موافق|نعم|اكمل|يلا|go|yes|ok|okay|start|proceed|build it|let's go|do it|اكيد|بالتوفيق)/i;
+const CONFIRM_PATTERNS = /^(ابدأ|ابدا|ابد|نفذ|تمام|موافق|نعم|اكمل|يلا|امشي|هيا|اوكي|اوك|يس|go|yes|ok|okay|start|proceed|build it|let's go|do it|اكيد|صح|بالتوفيق|كمل|وين|هيه|اه|آه|يي|yep|sure|alright)/i;
 
 export function isConfirmation(message) {
     return CONFIRM_PATTERNS.test(message.trim());
