@@ -591,7 +591,386 @@ const BUSINESS_TEMPLATE = {
 };
 
 // ═══════════════════════════════════════════════════════
-// 📚 فهرس المكتبة
+// 🏨 قوالب الفندق
+// ═══════════════════════════════════════════════════════
+const HOTEL_TEMPLATE = {
+    css_vars: `
+:root {
+    --primary: #b45309;
+    --secondary: #78350f;
+    --accent: #fcd34d;
+    --bg: #fffdf7;
+    --bg-dark: #0c0a09;
+    --text: #1c1917;
+    --text-light: #78716c;
+    --border: #e7e5e4;
+    --card-bg: #ffffff;
+    --gold: #d4af37;
+}`,
+    sections: {
+        navbar: `
+<header class="navbar hotel-nav" id="navbar">
+    <div class="container">
+        <div class="logo">
+            <i class="fas fa-concierge-bell" aria-hidden="true"></i>
+            <span>{اسم الفندق}</span>
+        </div>
+        <nav class="nav-links" id="navLinks">
+            <a href="#home">الرئيسية</a>
+            <a href="#rooms">الغرف</a>
+            <a href="#amenities">المرافق</a>
+            <a href="#gallery">المعرض</a>
+            <a href="#booking">الحجز</a>
+        </nav>
+        <a href="#booking" class="btn btn-gold">احجز الآن</a>
+    </div>
+</header>`,
+        hero: `
+<section class="hero hotel-hero" id="home">
+    <div class="hero-bg">
+        <img src="https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=1600&q=80&auto=format&fit=crop" alt="فندق فاخر">
+    </div>
+    <div class="hero-overlay"></div>
+    <div class="hero-content">
+        <p class="hero-subtitle">تجربة إقامة استثنائية</p>
+        <h1>مرحباً بك في <span>{اسم الفندق}</span></h1>
+        <p>استمتع بأفخم تجارب الإقامة في أجواء راقية تجمع بين الفخامة والراحة</p>
+        <form class="quick-booking" onsubmit="searchRooms(event)">
+            <div class="booking-fields">
+                <div class="field"><label>تاريخ الوصول</label><input type="date" required></div>
+                <div class="field"><label>تاريخ المغادرة</label><input type="date" required></div>
+                <div class="field"><label>عدد الأشخاص</label><select><option>1</option><option>2</option><option>3</option><option>4+</option></select></div>
+                <button type="submit" class="btn btn-gold">بحث</button>
+            </div>
+        </form>
+    </div>
+</section>`,
+        rooms: `
+<section class="rooms" id="rooms">
+    <div class="container">
+        <div class="section-header">
+            <h2>غرفنا وأجنحتنا</h2>
+            <p>اختر من مجموعتنا المتميزة من الغرف والأجنحة الفاخرة</p>
+        </div>
+        <div class="rooms-grid">
+            <div class="room-card">
+                <div class="room-img">
+                    <img src="https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=600&q=80&auto=format&fit=crop" alt="غرفة ديلوكس">
+                    <span class="room-badge">الأكثر طلباً</span>
+                </div>
+                <div class="room-info">
+                    <h3>غرفة ديلوكس</h3>
+                    <div class="room-features">
+                        <span><i class="fas fa-bed" aria-hidden="true"></i> سرير مزدوج</span>
+                        <span><i class="fas fa-wifi" aria-hidden="true"></i> واي فاي</span>
+                        <span><i class="fas fa-swimming-pool" aria-hidden="true"></i> إطلالة مسبح</span>
+                    </div>
+                    <div class="room-price">
+                        <strong>450 ر.س</strong><span>/ليلة</span>
+                    </div>
+                    <a href="#booking" class="btn btn-primary">احجز الآن</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>`
+    }
+};
+
+// ═══════════════════════════════════════════════════════
+// 🎓 قوالب التعليم
+// ═══════════════════════════════════════════════════════
+const EDUCATION_TEMPLATE = {
+    css_vars: `
+:root {
+    --primary: #2563eb;
+    --secondary: #1d4ed8;
+    --accent: #f59e0b;
+    --bg: #eff6ff;
+    --bg-light: #dbeafe;
+    --text: #1e3a5f;
+    --text-light: #64748b;
+    --border: #bfdbfe;
+    --card-bg: #ffffff;
+    --success: #10b981;
+}`,
+    sections: {
+        hero: `
+<section class="hero edu-hero" id="home">
+    <div class="container">
+        <div class="grid-2">
+            <div class="hero-text">
+                <span class="hero-badge">🎓 +500 دورة تدريبية</span>
+                <h1>طوّر مهاراتك <span class="text-accent">ابدأ مستقبلك</span></h1>
+                <p>انضم لأكثر من 50,000 متعلم يطورون مهاراتهم مع أفضل المدربين المعتمدين</p>
+                <div class="hero-search">
+                    <input type="text" placeholder="ابحث عن دورة...">
+                    <button class="btn btn-primary">بحث</button>
+                </div>
+                <div class="hero-stats">
+                    <div class="stat"><strong>+500</strong><span>دورة</span></div>
+                    <div class="stat"><strong>+50,000</strong><span>طالب</span></div>
+                    <div class="stat"><strong>+200</strong><span>مدرب</span></div>
+                </div>
+            </div>
+            <div class="hero-image">
+                <img src="https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=600&q=80&auto=format&fit=crop" alt="تعليم إلكتروني">
+            </div>
+        </div>
+    </div>
+</section>`,
+        courses: `
+<section class="courses" id="courses">
+    <div class="container">
+        <div class="section-header">
+            <h2>الدورات المميزة</h2>
+            <p>ابدأ رحلتك التعليمية مع أفضل الدورات</p>
+        </div>
+        <div class="courses-grid">
+            <div class="course-card">
+                <div class="course-img">
+                    <img src="https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=400&q=80&auto=format&fit=crop" alt="برمجة">
+                    <span class="course-badge">جديد</span>
+                </div>
+                <div class="course-info">
+                    <span class="course-cat">تقنية</span>
+                    <h3>تطوير الويب من الصفر</h3>
+                    <div class="course-meta">
+                        <span><i class="fas fa-clock" aria-hidden="true"></i> 40 ساعة</span>
+                        <span><i class="fas fa-users" aria-hidden="true"></i> 1,234 طالب</span>
+                        <span class="rating">⭐ 4.9</span>
+                    </div>
+                    <div class="course-footer">
+                        <strong class="price">299 ر.س</strong>
+                        <a href="#" class="btn btn-primary">سجّل الآن</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>`
+    }
+};
+
+// ═══════════════════════════════════════════════════════
+// 💼 قوالب البورتفوليو
+// ═══════════════════════════════════════════════════════
+const PORTFOLIO_TEMPLATE = {
+    css_vars: `
+:root {
+    --primary: #8b5cf6;
+    --secondary: #6d28d9;
+    --accent: #06b6d4;
+    --bg: #030712;
+    --bg-card: #111827;
+    --bg-light: #1f2937;
+    --text: #f9fafb;
+    --text-light: #9ca3af;
+    --border: #374151;
+    --glow: rgba(139, 92, 246, 0.3);
+}`,
+    sections: {
+        hero: `
+<section class="hero portfolio-hero" id="home">
+    <div class="hero-bg-effect"></div>
+    <div class="container">
+        <div class="hero-content">
+            <p class="greeting">مرحباً، أنا 👋</p>
+            <h1>{الاسم الكامل}</h1>
+            <div class="typed-text">
+                <span id="typedText">{التخصص}</span>
+            </div>
+            <p class="bio">أبني تجارب رقمية استثنائية بشغف وإبداع. متخصص في {المجال} مع خبرة +{سنوات} سنوات</p>
+            <div class="hero-actions">
+                <a href="#projects" class="btn btn-primary">اعرف أعمالي</a>
+                <a href="#contact" class="btn btn-outline">تواصل معي</a>
+            </div>
+            <div class="social-links">
+                <a href="#"><i class="fab fa-github" aria-hidden="true"></i></a>
+                <a href="#"><i class="fab fa-linkedin" aria-hidden="true"></i></a>
+                <a href="#"><i class="fab fa-twitter" aria-hidden="true"></i></a>
+            </div>
+        </div>
+    </div>
+</section>`,
+        projects: `
+<section class="projects" id="projects">
+    <div class="container">
+        <div class="section-header">
+            <h2>أعمالي</h2>
+            <p>مجموعة من أبرز مشاريعي</p>
+        </div>
+        <div class="projects-filters">
+            <button class="filter active" onclick="filterProjects('all')">الكل</button>
+            <button class="filter" onclick="filterProjects('web')">ويب</button>
+            <button class="filter" onclick="filterProjects('mobile')">موبايل</button>
+            <button class="filter" onclick="filterProjects('design')">تصميم</button>
+        </div>
+        <div class="projects-grid" id="projectsGrid">
+            <div class="project-card" data-category="web">
+                <div class="project-img">
+                    <img src="https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=600&q=80&auto=format&fit=crop" alt="مشروع">
+                    <div class="project-overlay">
+                        <a href="#" class="btn btn-primary">عرض المشروع</a>
+                        <a href="#" class="btn btn-outline">GitHub</a>
+                    </div>
+                </div>
+                <div class="project-info">
+                    <span class="project-cat">تطوير ويب</span>
+                    <h3>{اسم المشروع}</h3>
+                    <p>{وصف المشروع}</p>
+                    <div class="project-tags">
+                        <span>React</span><span>Node.js</span><span>MongoDB</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>`
+    }
+};
+
+// ═══════════════════════════════════════════════════════
+// 🏠 قوالب العقارات
+// ═══════════════════════════════════════════════════════
+const REALESTATE_TEMPLATE = {
+    css_vars: `
+:root {
+    --primary: #065f46;
+    --secondary: #064e3b;
+    --accent: #10b981;
+    --bg: #f0fdf4;
+    --bg-light: #dcfce7;
+    --text: #064e3b;
+    --text-light: #6b7280;
+    --border: #bbf7d0;
+    --card-bg: #ffffff;
+    --sale: #ef4444;
+    --rent: #3b82f6;
+}`,
+    sections: {
+        hero: `
+<section class="hero realestate-hero" id="home">
+    <div class="hero-bg">
+        <img src="https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=1600&q=80&auto=format&fit=crop" alt="عقارات فاخرة">
+    </div>
+    <div class="hero-overlay"></div>
+    <div class="hero-content">
+        <h1>ابحث عن <span>منزل أحلامك</span></h1>
+        <p>أكثر من 5,000 عقار متاح للبيع والإيجار في أفضل المواقع</p>
+        <form class="property-search" onsubmit="searchProperties(event)">
+            <div class="search-tabs">
+                <button type="button" class="tab active" onclick="setType('buy')">للبيع</button>
+                <button type="button" class="tab" onclick="setType('rent')">للإيجار</button>
+            </div>
+            <div class="search-fields">
+                <select><option>نوع العقار</option><option>شقة</option><option>فيلا</option><option>أرض</option></select>
+                <select><option>المدينة</option><option>الرياض</option><option>جدة</option><option>الدمام</option></select>
+                <select><option>السعر</option><option>أقل من 500K</option><option>500K - 1M</option><option>أكثر من 1M</option></select>
+                <button type="submit" class="btn btn-primary">بحث <i class="fas fa-search" aria-hidden="true"></i></button>
+            </div>
+        </form>
+    </div>
+</section>`,
+        properties: `
+<section class="properties" id="properties">
+    <div class="container">
+        <div class="section-header">
+            <h2>العقارات المميزة</h2>
+            <p>اختر من أفضل العقارات في المواقع الاستراتيجية</p>
+        </div>
+        <div class="properties-grid" id="propertiesGrid">
+            <div class="property-card">
+                <div class="property-img">
+                    <img src="https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=600&q=80&auto=format&fit=crop" alt="فيلا">
+                    <span class="property-badge sale">للبيع</span>
+                    <button class="wishlist-btn"><i class="fas fa-heart" aria-hidden="true"></i></button>
+                </div>
+                <div class="property-info">
+                    <h3>فيلا فاخرة في حي النرجس</h3>
+                    <p class="property-location"><i class="fas fa-map-marker-alt" aria-hidden="true"></i> حي النرجس، الرياض</p>
+                    <div class="property-features">
+                        <span><i class="fas fa-bed" aria-hidden="true"></i> 5 غرف</span>
+                        <span><i class="fas fa-bath" aria-hidden="true"></i> 4 حمامات</span>
+                        <span><i class="fas fa-ruler-combined" aria-hidden="true"></i> 600 م²</span>
+                    </div>
+                    <div class="property-footer">
+                        <strong class="price">2,500,000 ر.س</strong>
+                        <a href="#contact" class="btn btn-primary">تواصل</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>`
+    }
+};
+
+// ═══════════════════════════════════════════════════════
+// 🦷 قوالب العيادات المتخصصة
+// ═══════════════════════════════════════════════════════
+const CLINIC_TEMPLATE = {
+    css_vars: `
+:root {
+    --primary: #0891b2;
+    --secondary: #0e7490;
+    --accent: #22d3ee;
+    --bg: #ecfeff;
+    --bg-light: #cffafe;
+    --text: #0c4a6e;
+    --text-light: #64748b;
+    --border: #a5f3fc;
+    --card-bg: #ffffff;
+    --success: #10b981;
+}`,
+    sections: {
+        hero: `
+<section class="hero clinic-hero" id="home">
+    <div class="container">
+        <div class="grid-2">
+            <div class="hero-text">
+                <span class="hero-badge">✨ عيادة معتمدة</span>
+                <h1>ابتسامتك <span class="text-accent">تستحق</span> الأفضل</h1>
+                <p>نقدم أحدث تقنيات علاج {التخصص} في بيئة مريحة وآمنة مع فريق طبي متخصص</p>
+                <div class="hero-actions">
+                    <a href="#booking" class="btn btn-primary">احجز موعدك</a>
+                    <a href="#services" class="btn btn-outline">خدماتنا</a>
+                </div>
+                <div class="trust-badges">
+                    <span>✓ معتمد من وزارة الصحة</span>
+                    <span>✓ أحدث الأجهزة</span>
+                    <span>✓ +10 سنوات خبرة</span>
+                </div>
+            </div>
+            <div class="hero-image">
+                <img src="https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=600&q=80&auto=format&fit=crop" alt="عيادة متخصصة">
+            </div>
+        </div>
+    </div>
+</section>`,
+        services: `
+<section class="clinic-services" id="services">
+    <div class="container">
+        <div class="section-header">
+            <h2>خدماتنا</h2>
+            <p>نقدم مجموعة شاملة من الخدمات المتخصصة</p>
+        </div>
+        <div class="services-grid">
+            <div class="service-card">
+                <div class="service-icon"><i class="fas fa-tooth" aria-hidden="true"></i></div>
+                <h3>{اسم الخدمة 1}</h3>
+                <p>{وصف الخدمة}</p>
+                <span class="service-price">من {السعر} ر.س</span>
+                <a href="#booking" class="btn btn-outline">احجز</a>
+            </div>
+        </div>
+    </div>
+</section>`
+    }
+};
+
+// ═══════════════════════════════════════════════════════
+// 📚 فهرس المكتبة — محدّث
 // ═══════════════════════════════════════════════════════
 const TEMPLATE_LIBRARY = {
     ecommerce: ECOMMERCE_TEMPLATE,
@@ -599,6 +978,11 @@ const TEMPLATE_LIBRARY = {
     restaurant: RESTAURANT_TEMPLATE,
     gym: GYM_TEMPLATE,
     business: BUSINESS_TEMPLATE,
+    hotel: HOTEL_TEMPLATE,
+    education: EDUCATION_TEMPLATE,
+    portfolio: PORTFOLIO_TEMPLATE,
+    realestate: REALESTATE_TEMPLATE,
+    clinic: CLINIC_TEMPLATE,
 };
 
 // ═══════════════════════════════════════════════════════
