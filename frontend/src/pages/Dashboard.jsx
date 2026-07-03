@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth.js';
 import { useSocket, socket } from '../hooks/useSocket.js';
 import { PreviewFrame } from '../components/PreviewFrame.jsx';
@@ -7,708 +7,626 @@ const BACKEND_URL = window.location.hostname === 'localhost' || window.location.
   ? `http://${window.location.hostname}:4000`
   : 'https://jaola-os.onrender.com';
 
+const QUICK_BUILDS = [
+  { icon: '🛒', label: 'متجر إلكتروني', prompt: 'ابني متجر إلكتروني احترافي' },
+  { icon: '🏥', label: 'عيادة طبية', prompt: 'ابني موقع عيادة طبية متخصصة' },
+  { icon: '🍽️', label: 'مطعم', prompt: 'ابني موقع مطعم فاخر مع حجز طاولات' },
+  { icon: '🏨', label: 'فندق', prompt: 'ابني موقع فندق فاخر مع نظام حجز' },
+  { icon: '💼', label: 'بورتفوليو', prompt: 'ابني معرض أعمال احترافي' },
+  { icon: '🎓', label: 'منصة تعليمية', prompt: 'ابني منصة تعليمية مع دورات ودفع' },
+];
+
+const BOOT_MESSAGES = [
+  'Initializing JAOLA OS...',
+  'Connecting AI Company...',
+  'Loading Knowledge Base...',
+  'Hiring AI Agents...',
+  'Mission Control Ready ✓',
+];
+
+function BootScreen({ onComplete }) {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    if (step < BOOT_MESSAGES.length) {
+      const t = setTimeout(() => setStep(s => s + 1), step === BOOT_MESSAGES.length - 1 ? 800 : 600);
+      return () => clearTimeout(t);
+    } else {
+      setTimeout(onComplete, 400);
+    }
+  }, [step, onComplete]);
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: '#050810',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      zIndex: 9999, gap: '32px'
+    }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{
+          width: 64, height: 64, borderRadius: 16,
+          background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 28, margin: '0 auto 20px', boxShadow: '0 0 40px rgba(59,130,246,0.4)'
+        }}>⚡</div>
+        <div style={{ fontSize: 22, fontWeight: 700, color: '#fff', letterSpacing: '-0.5px' }}>JAOLA OS</div>
+        <div style={{ fontSize: 12, color: '#4b5563', marginTop: 4 }}>Autonomous Software Engineering</div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: 280 }}>
+        {BOOT_MESSAGES.slice(0, step).map((msg, i) => (
+          <div key={i} style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            opacity: i < step - 1 ? 0.5 : 1,
+            transition: 'opacity 0.3s'
+          }}>
+            <div style={{
+              width: 6, height: 6, borderRadius: '50%',
+              background: i < step - 1 ? '#10b981' : '#3b82f6',
+              boxShadow: i === step - 1 ? '0 0 8px #3b82f6' : 'none'
+            }} />
+            <span style={{ fontSize: 12, color: i < step - 1 ? '#6b7280' : '#d1d5db', fontFamily: 'monospace' }}>
+              {msg}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ width: 200, height: 2, background: '#111827', borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{
+          height: '100%', borderRadius: 2,
+          background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)',
+          width: `${(step / BOOT_MESSAGES.length) * 100}%`,
+          transition: 'width 0.5s ease'
+        }} />
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { currentUser: authUser, token, isAuthenticated, handleAuthError, setIsAuthenticated, setCurrentUser, setToken, isLoading } = useAuth();
-
-  const [activeFile, setActiveFile]       = useState('index.html');
+  const [booted, setBooted] = useState(false);
+  const [activeTab, setActiveTab] = useState('preview');
+  const [prompt, setPrompt] = useState('');
+  const [activeFile, setActiveFile] = useState('index.html');
   const [editorContent, setEditorContent] = useState('');
-  const [activeTab, setActiveTab]         = useState('preview');
-  const [viewMode, setViewMode]           = useState('desktop');
-  const [prompt, setPrompt]               = useState('');
   const [showProjectModal, setShowProjectModal] = useState(false);
-  const [newProjectName, setNewProjectName]     = useState('');
-  const [showPwaModal, setShowPwaModal]         = useState(false);
-  const [pwaAppName, setPwaAppName]             = useState('');
-  const [isGeneratingPwa, setIsGeneratingPwa]   = useState(false);
-  const [isDeploying, setIsDeploying]           = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [isDeploying, setIsDeploying] = useState(false);
   const [loginUsername, setLoginUsername] = useState('');
-  const [isLoggingIn, setIsLoggingIn]     = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const logsEndRef = useRef(null);
   const chatEndRef = useRef(null);
+  const textareaRef = useRef(null);
 
   const {
     files, logs, streamingContent, agentStates,
     projects, activeProject, currentUser, vercelUrl,
     chatMessages, setChatMessages,
     setActiveProject, setStreamingContent,
-    previewTimestamp,   // ← من useSocket مباشرة
+    previewTimestamp,
   } = useSocket(isAuthenticated, handleAuthError);
 
-  useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
+  useEffect(() => { if (activeTab === 'logs') logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs, activeTab]);
+  useEffect(() => { if (isAuthenticated && activeFile) fetchFileContent(activeFile); }, [activeFile, activeProject, isAuthenticated]);
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
+  const getHeaders = () => ({ 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' });
 
-  useEffect(() => {
-    if (isAuthenticated && activeFile) fetchFileContent(activeFile);
-  }, [activeFile, activeProject, isAuthenticated]);
-
-  const getHeaders = () => ({
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token || localStorage.getItem('token') || ''}`
-  });
-
-  const fetchFileContent = async (fileName) => {
+  const fetchFileContent = async (file) => {
     try {
-      const res = await fetch(
-        `${BACKEND_URL}/api/file-content?fileName=${fileName}&project=${activeProject}`,
-        { headers: getHeaders() }
-      );
-      if (res.status === 401 || res.status === 403) { handleAuthError(res.status); return; }
-      const data = await res.json();
-      setEditorContent(data.content || '');
-    } catch (err) { console.error(err); }
-  };
-
-  const handleSaveCodeManual = async () => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/file-content/save`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ fileName: activeFile, content: editorContent, project: activeProject })
-      });
-      if (res.status === 401 || res.status === 403) { handleAuthError(res.status); return; }
-    } catch (err) { console.error(err); }
+      const res = await fetch(`${BACKEND_URL}/api/file?name=${encodeURIComponent(file)}&project=${activeProject}`, { headers: getHeaders() });
+      if (res.ok) { const d = await res.json(); setEditorContent(d.content || ''); }
+    } catch {}
   };
 
   const handleSendPrompt = async () => {
     if (!prompt.trim()) return;
-    const userPrompt = prompt;
+    const msg = prompt.trim();
     setPrompt('');
-    setStreamingContent('');
-    setChatMessages((prev) => [...prev, { sender: 'user', text: userPrompt }]);
+    setChatMessages(prev => [...prev, { sender: 'user', text: msg }]);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/chat`, {
+      await fetch(`${BACKEND_URL}/api/chat`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ message: userPrompt, project: activeProject })
+        body: JSON.stringify({ message: msg, project: activeProject }),
       });
-      if (res.status === 401 || res.status === 403) handleAuthError(res.status);
-    } catch (err) { console.error(err); }
-  };
-
-  const handleSwitchProject = async (projName) => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/project-context/switch`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ project: projName })
-      });
-      if (res.status === 401 || res.status === 403) { handleAuthError(res.status); return; }
-      setActiveProject(projName);
-      localStorage.setItem('activeProject', projName);
-      socket.emit('join_project', { project: projName });
-    } catch (err) { console.error(err); }
-  };
-
-  const handleCreateProjectSubmit = async () => {
-    if (!newProjectName.trim()) return;
-    const sanitized = newProjectName.trim().toLowerCase().replace(/\s+/g, '-');
-    setShowProjectModal(false);
-    setNewProjectName('');
-    await handleSwitchProject(sanitized);
-  };
-
-  const handleDeleteProject = async (projName) => {
-    if (projName === 'sandbox_app') {
-      alert('لا يمكن حذف المشروع الافتراضي sandbox_app.');
-      return;
-    }
-    if (!window.confirm(`هل أنت متأكد من حذف المشروع "${projName}"؟ لا يمكن التراجع عن هذا الإجراء.`)) {
-      return;
-    }
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/projects/${encodeURIComponent(projName)}`, {
-        method: 'DELETE',
-        headers: getHeaders(),
-      });
-      if (res.status === 401 || res.status === 403) { handleAuthError(res.status); return; }
-      const data = await res.json();
-      if (data.success) {
-        // إذا كان المشروع المحذوف هو النشط، بدّل إلى sandbox_app
-        if (projName === activeProject) {
-          await handleSwitchProject('sandbox_app');
-        } else {
-          // أعد جلب قائمة المشاريع المحدّثة
-          socket.emit('join_project', { project: activeProject });
-        }
-      } else {
-        alert(data.error || 'فشل حذف المشروع.');
-      }
-    } catch (err) {
-      console.error(err);
-      alert('حدث خطأ أثناء حذف المشروع.');
-    }
-  };
-
-  const handlePwaSubmit = async () => {
-    if (!pwaAppName.trim()) {
-      alert('أدخل اسماً للتطبيق.');
-      return;
-    }
-    setIsGeneratingPwa(true);
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/pwa/generate`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ appName: pwaAppName.trim(), project: activeProject })
-      });
-      if (res.status === 401 || res.status === 403) { handleAuthError(res.status); return; }
-      const data = await res.json();
-      if (data.success) {
-        setShowPwaModal(false);
-        setPwaAppName('');
-        // ملاحظة: لا حاجة لتحديث يدوي — emitWorkspaceFiles في الباك إند
-        // يبث preview_updated تلقائياً فيُحدِّث previewTimestamp عبر useSocket
-      } else {
-        alert(data.error || 'فشل تحويل الموقع لتطبيق.');
-      }
-    } catch (err) {
-      console.error(err);
-      alert('حدث خطأ أثناء التحويل.');
-    } finally {
-      setIsGeneratingPwa(false);
-    }
+    } catch {}
   };
 
   const handleDeploy = async () => {
-    if (isDeploying) return; // منع نقرات متكررة سريعة
     setIsDeploying(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/deploy`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ project: activeProject })
-      });
-      if (res.status === 401 || res.status === 403) { handleAuthError(res.status); return; }
-      // النتيجة الفعلية (نجاح/فشل + الرابط) تصل عبر السجل الحي (Socket log)،
-      // وليس عبر هذا الرد المباشر، لأن النشر قد يستغرق ثوانٍ عدة.
-    } catch (err) {
-      console.error(err);
-      alert('تعذّر بدء عملية النشر. تحقق من اتصالك بالخادم.');
-    } finally {
-      // نُبقي الزر معطّلاً لثوانٍ قليلة لمنع الضغط المتكرر أثناء معالجة الطلب في الخلفية
-      setTimeout(() => setIsDeploying(false), 5000);
-    }
+      await fetch(`${BACKEND_URL}/api/deploy`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ project: activeProject }) });
+    } catch {}
+    setTimeout(() => setIsDeploying(false), 5000);
   };
 
-  const handleManualLogin = async (e) => {
+  const handleSaveCode = async () => {
+    try {
+      await fetch(`${BACKEND_URL}/api/file`, {
+        method: 'POST', headers: getHeaders(),
+        body: JSON.stringify({ name: activeFile, content: editorContent, project: activeProject }),
+      });
+    } catch {}
+  };
+
+  const handleSwitchProject = (p) => { setActiveProject(p); setEditorContent(''); };
+
+  const handleCreateProject = async () => {
+    if (!newProjectName.trim()) return;
+    try {
+      await fetch(`${BACKEND_URL}/api/projects`, {
+        method: 'POST', headers: getHeaders(),
+        body: JSON.stringify({ name: newProjectName }),
+      });
+      setActiveProject(newProjectName);
+      setShowProjectModal(false);
+      setNewProjectName('');
+    } catch {}
+  };
+
+  const handleLogin = async (e) => {
     e.preventDefault();
-    const trimmed = loginUsername.trim();
-
-    if (!trimmed) return;
-
-    // 🆕 تحقق صارم: أحرف إنجليزية وأرقام وشرطات فقط، يبدأ بحرف
-    const validUsernamePattern = /^[a-zA-Z][a-zA-Z0-9_\-]{2,19}$/;
-    if (!validUsernamePattern.test(trimmed)) {
-      alert('اسم المستخدم يجب أن يكون بالإنجليزية فقط (أحرف وأرقام)، يبدأ بحرف، وطوله بين 3 و20 حرفاً. مثال: ahmed_2024');
-      return;
-    }
-
+    if (!loginUsername.trim()) return;
     setIsLoggingIn(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: trimmed })
+      const res = await fetch(`${BACKEND_URL}/api/auth/offline-login`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: loginUsername }),
       });
-      const data = await res.json();
-      if (data.success && data.token) {
-        localStorage.removeItem('loggedOut');
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('currentUser', data.currentUser);
-        localStorage.setItem('activeProject', 'sandbox_app');
-        setToken(data.token);
-        setCurrentUser(data.currentUser);
-        setIsAuthenticated(true);
-        window.location.reload();
-      } else {
-        alert(data.error || 'فشل تسجيل الدخول.');
+      if (res.ok) {
+        const d = await res.json();
+        setToken(d.token); setCurrentUser(d.username); setIsAuthenticated(true);
+        localStorage.setItem('token', d.token); localStorage.setItem('currentUser', d.username);
       }
-    } catch (err) { console.error(err); }
-    finally { setIsLoggingIn(false); }
+    } catch {}
+    setIsLoggingIn(false);
   };
 
   const handleLogout = () => {
-    localStorage.setItem('loggedOut', 'true');
-    localStorage.removeItem('token');
-    localStorage.removeItem('currentUser');
-    localStorage.removeItem('activeProject');
-    setToken(null);
-    setIsAuthenticated(false);
-    window.location.reload();
+    setIsAuthenticated(false); setCurrentUser(''); setToken('');
+    localStorage.removeItem('token'); localStorage.removeItem('currentUser');
   };
 
-  const getLogColorClass = (text = '') => {
-    if (text.includes('[SUCCESS]'))  return 'text-emerald-400 font-semibold';
-    if (text.includes('[ERROR]'))    return 'text-rose-400 font-bold';
-    if (text.includes('[QA REPORT]')) return 'text-amber-400 font-medium';
-    if (text.includes('[SYSTEM]'))   return 'text-sky-400';
-    return 'text-slate-300';
+  const getLogColor = (msg = '') => {
+    if (msg.includes('✅') || msg.includes('نجاح')) return '#10b981';
+    if (msg.includes('❌') || msg.includes('فشل')) return '#ef4444';
+    if (msg.includes('⚠️')) return '#f59e0b';
+    if (msg.includes('🎨') || msg.includes('Designer')) return '#a78bfa';
+    if (msg.includes('💻') || msg.includes('Coder')) return '#60a5fa';
+    return '#6b7280';
   };
 
-  const getFileLanguage = (fileName) => {
-    if (fileName.endsWith('.html')) return 'html';
-    if (fileName.endsWith('.css'))  return 'css';
-    if (fileName.endsWith('.js'))   return 'javascript';
-    if (fileName.endsWith('.json')) return 'json';
-    return 'plaintext';
-  };
+  if (isLoading) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#050810' }}>
+      <div style={{ width: 32, height: 32, border: '2px solid #3b82f6', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+    </div>
+  );
 
-  // ─── شاشة التحميل ────────────────────────────────────────────────
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-[#060913] flex items-center justify-center">
-        <div className="text-cyan-400 text-sm animate-pulse">جاري التحقق من الجلسة...</div>
-      </div>
-    );
-  }
-
-  // ─── شاشة تسجيل الدخول ───────────────────────────────────────────
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-[#060913] text-slate-100 flex items-center justify-center p-6 relative overflow-hidden">
-        <div className="absolute top-[-100px] left-[-100px] w-[500px] h-[500px] rounded-full bg-cyan-500/5 blur-[120px] pointer-events-none"></div>
-        <div className="absolute bottom-[-150px] right-[-100px] w-[600px] h-[600px] rounded-full bg-indigo-500/5 blur-[140px] pointer-events-none"></div>
-
-        <form onSubmit={handleManualLogin} className="max-w-md w-full bg-[#0d121f]/75 border border-slate-800 p-8 rounded-2xl text-center shadow-2xl backdrop-blur-xl relative z-10">
-          <div className="text-4xl mb-4 animate-bounce">⚡</div>
-          <h2 className="text-xl font-black mb-1 bg-gradient-to-r from-cyan-400 to-indigo-500 bg-clip-text text-transparent">JAOLA OS Portal</h2>
-          <p className="text-[10px] text-slate-500 mb-6 leading-relaxed">سجّل دخولك لإنشاء مساحة عمل معزولة خاصة بك.</p>
-          <input
-            type="text" required value={loginUsername}
-            onChange={(e) => setLoginUsername(e.target.value)}
-            pattern="[a-zA-Z][a-zA-Z0-9_\-]{2,19}"
-            title="أحرف إنجليزية وأرقام فقط، يبدأ بحرف، 3-20 حرفاً"
-            placeholder="مثال: ahmed_2024 (إنجليزي فقط)"
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-xs text-slate-200 outline-none focus:ring-1 focus:ring-cyan-500 mb-4 font-semibold text-center placeholder-slate-600"
-          />
+  if (!isAuthenticated) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#050810' }}>
+      <div style={{ background: '#0d1117', border: '1px solid #1f2937', borderRadius: 16, padding: '40px', width: 380, textAlign: 'center' }}>
+        <div style={{ fontSize: 32, marginBottom: 16 }}>⚡</div>
+        <h1 style={{ color: '#fff', fontSize: 20, fontWeight: 700, marginBottom: 8 }}>JAOLA OS</h1>
+        <p style={{ color: '#6b7280', fontSize: 13, marginBottom: 28 }}>Autonomous Software Engineering</p>
+        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <input value={loginUsername} onChange={e => setLoginUsername(e.target.value)}
+            placeholder="اسم المستخدم" required
+            style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '10px 14px', color: '#fff', fontSize: 14, outline: 'none' }} />
           <button type="submit" disabled={isLoggingIn}
-            className="w-full bg-gradient-to-r from-cyan-500 to-indigo-600 text-white font-extrabold text-xs py-3.5 rounded-xl hover:scale-[1.01] hover:opacity-95 shadow-lg transition-all duration-300 disabled:opacity-50"
-          >
-            {isLoggingIn ? 'جاري الاتصال...' : 'تسجيل الدخول 🚀'}
+            style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', border: 'none', borderRadius: 8, padding: '11px', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 14 }}>
+            {isLoggingIn ? 'جاري الدخول...' : 'دخول إلى JAOLA OS'}
           </button>
         </form>
       </div>
-    );
-  }
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
 
-  // ─── لوحة التحكم الرئيسية ─────────────────────────────────────────
+  if (!booted) return <BootScreen onComplete={() => setBooted(true)} />;
+
   return (
-    <div className="min-h-screen bg-[#060913] text-slate-100 flex flex-col font-sans relative overflow-x-hidden selection:bg-cyan-500 selection:text-slate-900">
+    <div style={{ height: '100vh', maxHeight: '100vh', background: '#050810', color: '#e2e8f0', display: 'flex', flexDirection: 'column', fontFamily: 'system-ui, -apple-system, sans-serif', overflow: 'hidden' }}>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.5 } }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(4px) } to { opacity:1; transform:translateY(0) } }
+        * { box-sizing: border-box; }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 2px; }
+        textarea:focus, input:focus { outline: none; }
+        button { cursor: pointer; transition: all 0.15s; }
+        button:hover { opacity: 0.85; }
+      `}</style>
 
-      <div className="absolute top-[-200px] left-[-100px] w-[600px] h-[600px] rounded-full bg-cyan-500/5 blur-[150px] pointer-events-none"></div>
-      <div className="absolute bottom-[-200px] right-[-100px] w-[700px] h-[700px] rounded-full bg-indigo-500/5 blur-[180px] pointer-events-none"></div>
-
-      {/* ── الهيدر ─────────────────────────────────────────────────── */}
-      <header className="border-b border-slate-900/60 bg-[#070b14]/90 backdrop-blur-md px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 sticky top-0 z-50">
-        <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-tr from-cyan-500 to-indigo-600 p-2.5 rounded-xl text-white shadow-lg animate-pulse">⚡</div>
-          <div>
-            <h1 className="text-base font-bold">
-              JAOLA OS <span className="text-[10px] text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded-md border border-cyan-900/40">v2.0</span>
-            </h1>
-            <p className="text-[9px] text-emerald-400 font-bold mt-0.5">👤 {authUser.toUpperCase()}</p>
-          </div>
+      {/* TOP NAV */}
+      <nav style={{ height: 48, background: '#0d1117', borderBottom: '1px solid #1f2937', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 12, flexShrink: 0, zIndex: 100 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 8 }}>
+          <div style={{ width: 26, height: 26, borderRadius: 6, background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>⚡</div>
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#fff', letterSpacing: '-0.3px' }}>JAOLA OS</span>
+          <span style={{ fontSize: 10, color: '#3b82f6', background: '#1e3a5f', padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>v2.0</span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto justify-end">
-          {vercelUrl ? (
-            <a href={vercelUrl} target="_blank" rel="noreferrer"
-              className="text-xs bg-emerald-950/40 border border-emerald-900/60 text-emerald-400 px-3.5 py-2.5 rounded-xl hover:scale-[1.01] transition-all">
-              🌍 الرابط المنشور
-            </a>
-          ) : (
-            <button
-              onClick={handleDeploy}
-              disabled={isDeploying}
-              className="text-xs bg-emerald-950/40 border border-emerald-900/60 text-emerald-400 px-3.5 py-2.5 rounded-xl hover:scale-[1.01] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              title="انشر هذا الموقع على الإنترنت"
-            >
-              {isDeploying ? '⏳ جاري النشر...' : '🚀 انشر الموقع'}
-            </button>
-          )}
+        <div style={{ width: 1, height: 20, background: '#1f2937', margin: '0 4px' }} />
 
-          <button
-            onClick={() => { setPwaAppName(activeProject); setShowPwaModal(true); }}
-            className="text-xs bg-violet-950/40 border border-violet-900/60 text-violet-300 px-3.5 py-2.5 rounded-xl hover:bg-violet-950/70 transition-all"
-            title="حوّل هذا الموقع إلى تطبيق قابل للتثبيت"
-          >
-            📱 حوّل لتطبيق
-          </button>
-
-          <button onClick={handleLogout}
-            className="text-xs bg-[#1A0B13]/80 border border-rose-950 text-rose-400 px-3.5 py-2.5 rounded-xl hover:bg-rose-950/30 transition-all font-bold">
-            🚪 خروج
-          </button>
-
-          <div className="flex items-center gap-2.5 bg-[#0D121F] border border-slate-800 rounded-xl px-3 py-2 min-w-[200px]">
-            <span className="text-[10px] text-slate-500 font-bold shrink-0">المشروع:</span>
-            <select value={activeProject} onChange={(e) => handleSwitchProject(e.target.value)}
-              className="bg-transparent text-xs text-slate-200 outline-none border-0 cursor-pointer font-bold w-full">
-              {projects.map((p) => <option key={p} value={p} className="bg-[#0D121F]">{p}</option>)}
-            </select>
-            {activeProject !== 'sandbox_app' && (
-              <button
-                onClick={() => handleDeleteProject(activeProject)}
-                title="حذف هذا المشروع"
-                className="text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg p-1 transition-all shrink-0"
-              >
-                🗑️
-              </button>
-            )}
-          </div>
-
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '4px 10px', flex: 1, maxWidth: 260 }}>
+          <span style={{ fontSize: 11, color: '#4b5563' }}>المشروع:</span>
+          <select value={activeProject} onChange={e => handleSwitchProject(e.target.value)}
+            style={{ background: 'transparent', border: 'none', color: '#d1d5db', fontSize: 12, fontWeight: 600, flex: 1, cursor: 'pointer' }}>
+            {projects.map(p => <option key={p} value={p} style={{ background: '#161b22' }}>{p}</option>)}
+          </select>
           <button onClick={() => setShowProjectModal(true)}
-            className="text-xs bg-gradient-to-r from-cyan-500 to-indigo-500 text-slate-950 font-extrabold px-4 py-2.5 rounded-xl shadow-lg hover:scale-[1.02] transition-all border border-cyan-400/20">
-            + مشروع جديد
+            style={{ background: '#21262d', border: '1px solid #30363d', borderRadius: 5, padding: '2px 8px', color: '#8b949e', fontSize: 11 }}>
+            + جديد
           </button>
         </div>
-      </header>
 
-      {/* ── مساحة العمل ───────────────────────────────────────────── */}
-      <main className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-5 gap-6 max-w-[1750px] w-full mx-auto">
+        <div style={{ flex: 1 }} />
 
-        {/* العمود الأيسر — الشات */}
-        <section className="lg:col-span-1 flex flex-col bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-4 shadow-2xl backdrop-blur-xl h-[calc(100vh-230px)] min-h-[450px]">
-          <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-1">
-            {chatMessages.map((msg, idx) => (
-              <div key={idx} className={`flex ${msg.sender === 'user' ? 'justify-start' : 'justify-end'}`}>
-                <div className={`max-w-[85%] rounded-2xl p-3.5 text-xs leading-relaxed ${
-                  msg.sender === 'user'
-                    ? 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tr-none'
-                    : 'bg-gradient-to-tr from-cyan-950/30 to-indigo-950/30 border border-cyan-500/15 text-cyan-300 rounded-tl-none'
-                }`}>
-                  <div className="text-[9px] font-bold text-slate-500 mb-1">
-                    {msg.sender === 'user' ? '👤 أنت' : '🤖 JAOLA'}
+        {vercelUrl ? (
+          <a href={vercelUrl} target="_blank" rel="noreferrer"
+            style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#0d2818', border: '1px solid #16a34a', borderRadius: 7, padding: '5px 12px', color: '#4ade80', fontSize: 12, textDecoration: 'none' }}>
+            🌍 الموقع المنشور
+          </a>
+        ) : (
+          <button onClick={handleDeploy} disabled={isDeploying}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'linear-gradient(135deg,#065f46,#0d9488)', border: 'none', borderRadius: 7, padding: '5px 14px', color: '#fff', fontSize: 12, fontWeight: 600 }}>
+            {isDeploying ? '⏳ جاري النشر...' : '🚀 نشر الموقع'}
+          </button>
+        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#161b22', border: '1px solid #30363d', borderRadius: 7, padding: '5px 10px' }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', animation: 'pulse 2s infinite' }} />
+          <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 600 }}>{(authUser || '').toUpperCase()}</span>
+        </div>
+
+        <button onClick={handleLogout}
+          style={{ background: 'transparent', border: '1px solid #374151', borderRadius: 7, padding: '5px 10px', color: '#6b7280', fontSize: 11 }}>
+          خروج
+        </button>
+      </nav>
+
+      {/* MAIN AREA */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', height: 'calc(100vh - 48px)' }}>
+
+        {/* LEFT: COMMAND CENTER */}
+        <div style={{ width: sidebarCollapsed ? 48 : 360, minWidth: sidebarCollapsed ? 48 : 360, background: '#0d1117', borderRight: '1px solid #1f2937', display: 'flex', flexDirection: 'column', transition: 'width 0.2s, min-width 0.2s', overflow: 'hidden', position: 'relative', height: '100%' }}>
+
+          {/* Collapse toggle */}
+          <button onClick={() => setSidebarCollapsed(v => !v)}
+            style={{ position: 'absolute', top: 12, right: -12, width: 24, height: 24, borderRadius: '50%', background: '#1f2937', border: '1px solid #374151', color: '#6b7280', fontSize: 12, zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {sidebarCollapsed ? '›' : '‹'}
+          </button>
+
+          {!sidebarCollapsed && <>
+            {/* Chat Messages - في الأعلى */}
+            <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0 }}>
+              {chatMessages.length === 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 16, textAlign: 'center', padding: '20px 0' }}>
+                  <div style={{ width: 48, height: 48, borderRadius: 12, background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>⚡</div>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>JAOLA OS جاهز</div>
+                    <div style={{ fontSize: 12, color: '#4b5563' }}>صف ما تريد بناءه</div>
                   </div>
-                  <p className="whitespace-pre-wrap">{msg.text}</p>
-                </div>
-              </div>
-            ))}
-            <div ref={chatEndRef} />
-          </div>
-
-          <div className="border-t border-slate-900/60 pt-3">
-            <textarea
-              value={prompt} onChange={(e) => setPrompt(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendPrompt(); } }}
-              placeholder="اكتب فكرتك أو اطلب تعديلاً... (Enter للإرسال)"
-              className="w-full h-20 bg-slate-950 border border-slate-900 rounded-xl p-3 text-xs text-slate-200 placeholder-slate-600 focus:ring-1 focus:ring-cyan-500 outline-none resize-none"
-            />
-            <button onClick={handleSendPrompt}
-              className="w-full mt-2 py-3 bg-gradient-to-r from-cyan-600 to-indigo-700 text-white rounded-xl text-xs font-bold shadow-lg hover:opacity-95 hover:scale-[1.01] transition-all">
-              🚀 حقن التعديل حياً
-            </button>
-          </div>
-        </section>
-
-        {/* الأعمدة الوسطى — المعاينة والمحرر */}
-        <section className="lg:col-span-3 flex flex-col gap-6 h-[calc(100vh-280px)]">
-          <div className="bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-5 shadow-2xl backdrop-blur-xl flex-1 flex flex-col">
-            <div className="flex items-center gap-2 border-b border-slate-900 pb-4 mb-4">
-              <div className="flex items-center bg-slate-950 p-1.5 rounded-xl border border-slate-900">
-                <button onClick={() => setActiveTab('preview')}
-                  className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${activeTab === 'preview' ? 'bg-[#090D16] text-cyan-400' : 'text-slate-500'}`}>
-                  🖥️ المعاينة الحية
-                </button>
-                <button onClick={() => setActiveTab('editor')}
-                  className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${activeTab === 'editor' ? 'bg-[#090D16] text-cyan-400' : 'text-slate-500'}`}>
-                  💻 محرر الكود
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 flex justify-center items-center bg-slate-950 rounded-xl overflow-hidden min-h-[300px] relative border border-slate-900">
-              {activeTab === 'preview' ? (
-                <PreviewFrame
-                  activeProject={activeProject}
-                  previewTimestamp={previewTimestamp}
-                  viewMode={viewMode}
-                  streamingContent={streamingContent}
-                  currentUser={authUser}
-                />
-              ) : (
-                <div className="w-full h-full flex flex-col p-4">
-                  <div className="flex items-center justify-between mb-2 text-xs text-slate-500">
-                    <span>محرر: <span className="text-cyan-400 font-mono font-bold">{activeFile}</span></span>
-                    <button onClick={handleSaveCodeManual}
-                      className="bg-cyan-950 border border-cyan-900/50 text-cyan-400 hover:bg-cyan-900 px-3 py-1 rounded-lg font-bold">
-                      💾 حفظ وحقن
-                    </button>
-                  </div>
-                  <div className="flex-1 rounded-xl overflow-hidden border border-slate-900 mt-2 bg-[#0C0F19] h-[450px] relative flex">
-                    <div className="w-12 bg-slate-950 border-r border-slate-900/60 text-right pr-3 pt-4 select-none font-mono text-[10px] text-slate-600 leading-relaxed">
-                      {Array.from({ length: Math.max(15, (editorContent || '').split('\n').length) }).map((_, i) => (
-                        <div key={i} className="h-5">{i + 1}</div>
-                      ))}
-                    </div>
-                    <textarea
-                      value={editorContent} onChange={(e) => setEditorContent(e.target.value)}
-                      className="flex-1 bg-transparent p-4 font-mono text-xs text-slate-200 outline-none resize-none leading-relaxed overflow-auto"
-                      spellCheck="false"
-                    />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, width: '100%' }}>
+                    {QUICK_BUILDS.map((b, i) => (
+                      <button key={i} onClick={() => { setPrompt(b.prompt); textareaRef.current?.focus(); }}
+                        style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 8, padding: '8px 10px', color: '#9ca3af', fontSize: 11, textAlign: 'right', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span>{b.icon}</span><span>{b.label}</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}
+              {chatMessages.map((msg, i) => (
+                <div key={i} style={{ animation: 'fadeIn 0.2s ease', flexShrink: 0 }}>
+                  {msg.sender === 'user' ? (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <div style={{ background: '#1d4ed8', borderRadius: '12px 12px 2px 12px', padding: '8px 12px', maxWidth: '85%', fontSize: 12, color: '#fff', lineHeight: 1.6 }}>
+                        {msg.text}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <div style={{ width: 22, height: 22, borderRadius: 6, background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, flexShrink: 0, marginTop: 2 }}>⚡</div>
+                      <div style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: '2px 12px 12px 12px', padding: '8px 12px', maxWidth: '85%', fontSize: 12, color: '#d1d5db', lineHeight: 1.7 }}>
+                        <div style={{ fontSize: 9, color: '#3b82f6', fontWeight: 700, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px' }}>JAOLA</div>
+                        <span style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Mission Input - في الأسفل */}
+            <div style={{ padding: '12px 16px', borderTop: '1px solid #1f2937', flexShrink: 0 }}>
+              <div style={{ fontSize: 10, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600, marginBottom: 10 }}>
+                ⚡ Mission Control
+              </div>
+              <div style={{ position: 'relative' }}>
+                <textarea
+                  ref={textareaRef}
+                  value={prompt}
+                  onChange={e => setPrompt(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendPrompt(); } }}
+                  placeholder="ما الذي تريد شركتك الذكية أن تبني اليوم؟"
+                  rows={3}
+                  style={{
+                    width: '100%', background: '#161b22', border: '1px solid #30363d', borderRadius: 10,
+                    padding: '12px', color: '#e2e8f0', fontSize: 13, resize: 'none',
+                    lineHeight: 1.6, paddingBottom: 40
+                  }}
+                />
+                <button onClick={handleSendPrompt}
+                  style={{
+                    position: 'absolute', bottom: 8, left: 8, right: 8,
+                    background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', border: 'none', borderRadius: 7,
+                    padding: '8px', color: '#fff', fontSize: 12, fontWeight: 700,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
+                  }}>
+                  <span>إرسال المهمة</span><span style={{ opacity: 0.7 }}>↵</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Builds */}
+            {chatMessages.length === 0 && (
+              <div style={{ padding: '0 16px 12px' }}>
+                <div style={{ fontSize: 10, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600, marginBottom: 8 }}>بناء سريع</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                  {QUICK_BUILDS.map((b, i) => (
+                    <button key={i} onClick={() => { setPrompt(b.prompt); textareaRef.current?.focus(); }}
+                      style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 8, padding: '8px 10px', color: '#9ca3af', fontSize: 11, textAlign: 'right', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>{b.icon}</span><span>{b.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div style={{ width: 1, height: 1, background: '#1f2937', margin: '0 16px' }} />
+
+            {/* Chat Messages */}
+            <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0 }}>
+              {chatMessages.map((msg, i) => (
+                <div key={i} style={{ animation: 'fadeIn 0.2s ease' }}>
+                  {msg.sender === 'user' ? (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <div style={{ background: '#1d4ed8', borderRadius: '12px 12px 2px 12px', padding: '8px 12px', maxWidth: '85%', fontSize: 12, color: '#fff', lineHeight: 1.6 }}>
+                        {msg.text}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <div style={{ width: 22, height: 22, borderRadius: 6, background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, flexShrink: 0, marginTop: 2 }}>⚡</div>
+                      <div style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: '2px 12px 12px 12px', padding: '8px 12px', maxWidth: '85%', fontSize: 12, color: '#d1d5db', lineHeight: 1.7 }}>
+                        <div style={{ fontSize: 9, color: '#3b82f6', fontWeight: 700, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px' }}>JAOLA</div>
+                        <span style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Quick Actions */}
+            <div style={{ padding: '10px 16px', borderTop: '1px solid #1f2937', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {['غير الألوان', 'أضف قسماً', 'اجعله أبسط', 'أضف قسم تواصل'].map(a => (
+                <button key={a} onClick={() => setPrompt(a)}
+                  style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 20, padding: '4px 10px', color: '#6b7280', fontSize: 11 }}>
+                  {a}
+                </button>
+              ))}
+            </div>
+          </>}
+
+          {sidebarCollapsed && (
+            <div style={{ padding: '16px 0', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+              <span style={{ fontSize: 16 }}>⚡</span>
+              <span style={{ fontSize: 14 }}>💬</span>
+              <span style={{ fontSize: 14 }}>📁</span>
+            </div>
+          )}
+        </div>
+
+        {/* CENTER: PREVIEW */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+          {/* Tabs */}
+          <div style={{ height: 44, background: '#0d1117', borderBottom: '1px solid #1f2937', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 2, flexShrink: 0 }}>
+            {[
+              { id: 'preview', label: '🖥️ معاينة' },
+              { id: 'editor', label: '💻 كود' },
+              { id: 'logs', label: '📋 سجل' },
+            ].map(tab => (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                style={{
+                  background: activeTab === tab.id ? '#161b22' : 'transparent',
+                  border: activeTab === tab.id ? '1px solid #30363d' : '1px solid transparent',
+                  borderRadius: 7, padding: '5px 14px', color: activeTab === tab.id ? '#e2e8f0' : '#6b7280',
+                  fontSize: 12, fontWeight: activeTab === tab.id ? 600 : 400
+                }}>
+                {tab.label}
+              </button>
+            ))}
+            {logs.length > 0 && activeTab !== 'logs' && (
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3b82f6', marginRight: 4, animation: 'pulse 1.5s infinite' }} />
+            )}
+          </div>
+
+          {/* Content */}
+          <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+            {activeTab === 'preview' && (
+              <PreviewFrame activeProject={activeProject} previewTimestamp={previewTimestamp} streamingContent={streamingContent} currentUser={authUser} />
+            )}
+
+            {activeTab === 'editor' && (
+              <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#0d1117' }}>
+                <div style={{ display: 'flex', alignItems: 'center', padding: '8px 16px', gap: 8, borderBottom: '1px solid #1f2937', flexShrink: 0 }}>
+                  <div style={{ display: 'flex', gap: 4, flex: 1, flexWrap: 'wrap' }}>
+                    {files.map(f => (
+                      <button key={f} onClick={() => setActiveFile(f)}
+                        style={{
+                          background: activeFile === f ? '#1d4ed8' : '#161b22',
+                          border: `1px solid ${activeFile === f ? '#3b82f6' : '#30363d'}`,
+                          borderRadius: 6, padding: '3px 10px', color: activeFile === f ? '#fff' : '#9ca3af', fontSize: 11
+                        }}>
+                        {f.endsWith('.html') ? '🧡' : f.endsWith('.css') ? '💙' : f.endsWith('.js') ? '💛' : '📄'} {f}
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={handleSaveCode}
+                    style={{ background: '#0d2818', border: '1px solid #166534', borderRadius: 7, padding: '5px 14px', color: '#4ade80', fontSize: 12, fontWeight: 600 }}>
+                    💾 حفظ
+                  </button>
+                </div>
+                <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+                  <div style={{ width: 40, background: '#0a0f17', borderRight: '1px solid #1f2937', padding: '12px 0', textAlign: 'center', userSelect: 'none', overflowY: 'hidden' }}>
+                    {(editorContent || '').split('\n').slice(0, 500).map((_, i) => (
+                      <div key={i} style={{ fontSize: 10, color: '#374151', lineHeight: '20px', height: 20 }}>{i + 1}</div>
+                    ))}
+                  </div>
+                  <textarea value={editorContent} onChange={e => setEditorContent(e.target.value)}
+                    style={{ flex: 1, background: '#0d1117', border: 'none', padding: '12px 16px', color: '#e2e8f0', fontFamily: 'monospace', fontSize: 12, resize: 'none', lineHeight: '20px', overflowY: 'auto' }}
+                    spellCheck={false} />
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'logs' && (
+              <div style={{ height: '100%', overflowY: 'auto', padding: '12px 16px', background: '#0d1117', fontFamily: 'monospace', fontSize: 11 }}>
+                {logs.length === 0 && <div style={{ color: '#374151', textAlign: 'center', marginTop: 40 }}>في انتظار المهام...</div>}
+                {logs.map((log, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 10, padding: '3px 0', borderBottom: '1px solid #0f1923', animation: 'fadeIn 0.15s ease' }}>
+                    <span style={{ color: '#374151', flexShrink: 0, fontSize: 10 }}>{new Date().toLocaleTimeString()}</span>
+                    <span style={{ color: getLogColor(log.message) }}>{log.message}</span>
+                  </div>
+                ))}
+                <div ref={logsEndRef} />
+              </div>
+            )}
+          </div>
+
+          {/* Agent Timeline */}
+          <div style={{ height: 56, background: '#0a0f17', borderTop: '1px solid #1f2937', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 0, overflowX: 'auto', flexShrink: 0 }}>
+            {Object.entries(agentStates || {}).map(([name, state], i, arr) => (
+              <div key={name} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '0 12px' }}>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: 8,
+                    background: state === 'completed' ? '#0d2818' : state === 'running' ? 'rgba(59,130,246,0.15)' : '#161b22',
+                    border: `1px solid ${state === 'completed' ? '#166534' : state === 'running' ? '#3b82f6' : '#21262d'}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11,
+                    animation: state === 'running' ? 'pulse 1s infinite' : 'none',
+                    boxShadow: state === 'running' ? '0 0 8px rgba(59,130,246,0.3)' : 'none'
+                  }}>
+                    {state === 'completed' ? '✓' : state === 'running' ? '⟳' : '·'}
+                  </div>
+                  <span style={{ fontSize: 9, color: state === 'completed' ? '#4ade80' : state === 'running' ? '#60a5fa' : '#374151', fontWeight: state !== 'waiting' ? 600 : 400 }}>
+                    {name}
+                  </span>
+                </div>
+                {i < arr.length - 1 && <div style={{ width: 20, height: 1, background: '#1f2937', flexShrink: 0 }} />}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* RIGHT: INTELLIGENCE PANEL */}
+        <div style={{ width: 220, minWidth: 220, background: '#0d1117', borderLeft: '1px solid #1f2937', display: 'flex', flexDirection: 'column', overflowY: 'auto', flexShrink: 0 }}>
+          {/* Digital Twin Header */}
+          <div style={{ padding: '14px 14px 10px', borderBottom: '1px solid #1f2937' }}>
+            <div style={{ fontSize: 10, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600, marginBottom: 10 }}>⬡ Digital Twin</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+              <span style={{ fontSize: 22, fontWeight: 700, color: '#10b981' }}>99.98%</span>
+              <span style={{ fontSize: 11, color: '#4b5563' }}>Active</span>
             </div>
           </div>
 
-          <AgentNetworkGraph states={agentStates} />
-        </section>
+          {/* Metrics */}
+          <div style={{ padding: 14, borderBottom: '1px solid #1f2937', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[
+              { label: 'حمل الخادم', value: '14%', bar: 14 },
+              { label: 'RAM', value: '42 MB', bar: 28 },
+              { label: 'الاستجابة', value: '11 ms', bar: 8 },
+            ].map(m => (
+              <div key={m.label}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 10, color: '#6b7280' }}>{m.label}</span>
+                  <span style={{ fontSize: 10, color: '#e2e8f0', fontWeight: 600 }}>{m.value}</span>
+                </div>
+                <div style={{ height: 3, background: '#161b22', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${m.bar}%`, background: 'linear-gradient(90deg,#3b82f6,#8b5cf6)', borderRadius: 2, transition: 'width 0.5s' }} />
+                </div>
+              </div>
+            ))}
+          </div>
 
-        {/* العمود الأيمن — explorer + twin */}
-        <section className="lg:col-span-1 flex flex-col gap-6 h-[calc(100vh-230px)] overflow-y-auto">
-          <div className="bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-5 shadow-2xl backdrop-blur-xl flex flex-col max-h-[220px]">
-            <h3 className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">📁 WORKSPACE EXPLORER</h3>
-            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
-              {files.map((file) => (
-                <button key={file}
-                  onClick={() => { setActiveFile(file); setActiveTab('editor'); }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-left border ${
-                    activeFile === file ? 'bg-slate-950 border-slate-800 text-cyan-400 font-medium' : 'border-transparent text-slate-400 hover:bg-slate-950/40'
-                  }`}>
-                  {file.endsWith('.html') ? '🧡' : file.endsWith('.css') ? '💙' : file.endsWith('.js') ? '💛' : '📄'} {file}
+          {/* Stats */}
+          {files.length > 0 && (
+            <div style={{ padding: 14, borderBottom: '1px solid #1f2937' }}>
+              <div style={{ fontSize: 10, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600, marginBottom: 10 }}>إحصائيات</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {[
+                  { label: 'الأسطر', value: editorContent.split('\n').length },
+                  { label: 'الملفات', value: files.length },
+                ].map(s => (
+                  <div key={s.label} style={{ background: '#161b22', border: '1px solid #21262d', borderRadius: 8, padding: '8px 10px' }}>
+                    <div style={{ fontSize: 10, color: '#4b5563' }}>{s.label}</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: '#e2e8f0', marginTop: 2 }}>{s.value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Files Explorer */}
+          <div style={{ padding: 14, flex: 1 }}>
+            <div style={{ fontSize: 10, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600, marginBottom: 10 }}>📁 الملفات</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {files.map(f => (
+                <button key={f} onClick={() => { setActiveFile(f); setActiveTab('editor'); }}
+                  style={{
+                    background: activeFile === f ? '#1d4ed820' : 'transparent',
+                    border: `1px solid ${activeFile === f ? '#3b82f640' : 'transparent'}`,
+                    borderRadius: 6, padding: '5px 8px', color: activeFile === f ? '#93c5fd' : '#6b7280',
+                    fontSize: 11, textAlign: 'right', display: 'flex', alignItems: 'center', gap: 6
+                  }}>
+                  <span style={{ fontSize: 12 }}>{f.endsWith('.html') ? '🧡' : f.endsWith('.css') ? '💙' : f.endsWith('.js') ? '💛' : '📄'}</span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f}</span>
                 </button>
               ))}
             </div>
           </div>
+        </div>
+      </div>
 
-          <div className="flex-1">
-            <DigitalTwinPanel activeFileContent={editorContent} activeFile={activeFile} filesCount={files.length} />
-          </div>
-        </section>
-      </main>
-
-      {/* ── مودال المشروع الجديد ─────────────────────────────────── */}
+      {/* Project Modal */}
       {showProjectModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md">
-          <div className="bg-[#0D121F] border border-slate-800 p-6 rounded-2xl max-w-sm w-full shadow-2xl">
-            <h3 className="text-sm font-bold mb-1.5 text-slate-200">📁 مشروع جديد</h3>
-            <p className="text-[10px] text-slate-500 mb-4">اسم المشروع بالإنجليزية</p>
-            <input
-              type="text" value={newProjectName}
-              onChange={(e) => setNewProjectName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreateProjectSubmit()}
-              placeholder="مثال: my-portfolio"
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 outline-none focus:ring-1 focus:ring-cyan-500 mb-4 font-mono"
-            />
-            <div className="flex items-center justify-end gap-2.5">
-              <button onClick={() => setShowProjectModal(false)} className="text-xs text-slate-400 px-3 py-2">إلغاء</button>
-              <button onClick={handleCreateProjectSubmit}
-                className="text-xs bg-gradient-to-r from-cyan-600 to-indigo-600 text-white font-bold px-4 py-2.5 rounded-xl hover:scale-[1.01] transition-all">
-                إنشاء ✓
-              </button>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+          onClick={e => e.target === e.currentTarget && setShowProjectModal(false)}>
+          <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 14, padding: 28, width: 360 }}>
+            <h3 style={{ margin: '0 0 16px', color: '#fff', fontSize: 16, fontWeight: 700 }}>مشروع جديد</h3>
+            <input value={newProjectName} onChange={e => setNewProjectName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleCreateProject()}
+              placeholder="اسم المشروع (بالإنجليزية)"
+              autoFocus
+              style={{ width: '100%', background: '#0d1117', border: '1px solid #30363d', borderRadius: 8, padding: '10px 14px', color: '#fff', fontSize: 14, marginBottom: 14 }} />
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowProjectModal(false)}
+                style={{ background: 'transparent', border: '1px solid #30363d', borderRadius: 8, padding: '8px 16px', color: '#6b7280', fontSize: 13 }}>إلغاء</button>
+              <button onClick={handleCreateProject}
+                style={{ background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', border: 'none', borderRadius: 8, padding: '8px 20px', color: '#fff', fontWeight: 700, fontSize: 13 }}>إنشاء</button>
             </div>
           </div>
         </div>
       )}
-
-      {/* ── مودال تحويل الموقع إلى تطبيق (PWA) ─────────────────────── */}
-      {showPwaModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md">
-          <div className="bg-[#0D121F] border border-violet-900/40 p-6 rounded-2xl max-w-sm w-full shadow-2xl">
-            <h3 className="text-sm font-bold mb-1.5 text-slate-200">📱 تحويل الموقع إلى تطبيق</h3>
-            <p className="text-[10px] text-slate-500 mb-4 leading-relaxed">
-              سيُنشأ تطبيق ويب تقدمي (PWA) قابل للتثبيت على الجوال أو الكمبيوتر،
-              بأيقونة تلقائية مستخرجة من ألوان موقعك.
-            </p>
-            <label className="text-[10px] text-slate-500 mb-1.5 block">اسم التطبيق</label>
-            <input
-              type="text" value={pwaAppName}
-              onChange={(e) => setPwaAppName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handlePwaSubmit()}
-              placeholder="مثال: متجر الأناقة"
-              maxLength={45}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 outline-none focus:ring-1 focus:ring-violet-500 mb-4"
-            />
-            <div className="flex items-center justify-end gap-2.5">
-              <button
-                onClick={() => setShowPwaModal(false)}
-                disabled={isGeneratingPwa}
-                className="text-xs text-slate-400 px-3 py-2 disabled:opacity-40"
-              >
-                إلغاء
-              </button>
-              <button
-                onClick={handlePwaSubmit}
-                disabled={isGeneratingPwa}
-                className="text-xs bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-bold px-4 py-2.5 rounded-xl hover:scale-[1.01] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-              >
-                {isGeneratingPwa ? (
-                  <>⏳ جاري التحويل...</>
-                ) : (
-                  <>📱 تحويل الآن</>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── السجلات ──────────────────────────────────────────────── */}
-      <footer className="border-t border-slate-900 bg-[#090D16]/50 p-6 relative z-10">
-        <div className="max-w-[1700px] w-full mx-auto">
-          <h3 className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">⏱️ Stream Timeline Log</h3>
-          <div className="bg-slate-950/80 border border-slate-900 rounded-2xl p-4 font-mono text-xs h-48 overflow-y-auto space-y-2 shadow-inner">
-            {logs.length === 0 ? (
-              <div className="text-slate-600 italic">بانتظار السجلات...</div>
-            ) : (
-              logs.map((log, idx) => (
-                <div key={idx} className={`border-b border-slate-900/40 pb-1.5 flex items-start gap-2 ${getLogColorClass(log.message)}`}>
-                  <span className="text-slate-600 shrink-0">[{new Date().toLocaleTimeString()}]</span>
-                  <span>{log.message}</span>
-                </div>
-              ))
-            )}
-            <div ref={logsEndRef} />
-          </div>
-        </div>
-      </footer>
-    </div>
-  );
-}
-
-// ─── التوأم الرقمي ────────────────────────────────────────────────
-function DigitalTwinPanel({ activeFileContent, activeFile, filesCount }) {
-  const [metrics, setMetrics] = useState({ cpu: 14, ram: 42.1, latency: 12 });
-  const [twinLogs, setTwinLogs] = useState([
-    '🟢 مزامنة التوأم الرقمي...', '🔍 فحص التجاوب: 1280px', '⏱️ زمن الاستجابة < 0.3s'
-  ]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setMetrics({
-        cpu: Math.floor(Math.random() * 12 + 6),
-        ram: parseFloat((41 + Math.random() * 2).toFixed(1)),
-        latency: Math.floor(Math.random() * 12 + 8),
-      });
-      const actions = [
-        '👥 محاكاة Scroll.', '📱 التجاوب ممتاز.', '♿ التباين AA ممتاز.',
-        '⏱️ الموارد محملة.', '🔒 فحص الحماية... آمن.'
-      ];
-      setTwinLogs(prev => [actions[Math.floor(Math.random() * actions.length)], ...prev.slice(0, 4)]);
-    }, 4500);
-    return () => clearInterval(interval);
-  }, []);
-
-  const linesOfCode = activeFileContent ? activeFileContent.split('\n').length : 0;
-  const estimatedKB = activeFileContent ? (activeFileContent.length / 1024).toFixed(2) : '0.00';
-
-  return (
-    <div className="bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-5 shadow-2xl backdrop-blur-xl flex flex-col h-full min-h-[300px]">
-      <h3 className="text-xs font-bold text-slate-400 mb-4 uppercase tracking-wider flex items-center gap-2">
-        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-        Digital Twin
-      </h3>
-      <div className="bg-slate-950/60 border border-slate-900 rounded-xl p-3 mb-4 text-center">
-        <div className="text-[10px] text-slate-500 mb-1">مطابقة التوأم</div>
-        <div className="text-xl font-extrabold text-emerald-400">99.98% Active</div>
-      </div>
-      <div className="space-y-3 mb-4">
-        {[
-          { label: 'حمل الخادم', value: `${metrics.cpu}% CPU`, color: 'text-cyan-400' },
-          { label: 'RAM', value: `${metrics.ram} MB`, color: 'text-indigo-400' },
-          { label: 'الاستجابة', value: `${metrics.latency} ms`, color: 'text-emerald-400' },
-        ].map(({ label, value, color }) => (
-          <div key={label} className="bg-slate-950/40 border border-slate-900/50 p-2.5 rounded-xl flex items-center justify-between">
-            <span className="text-[10px] text-slate-500">{label}</span>
-            <span className={`text-xs font-mono font-bold ${color}`}>{value}</span>
-          </div>
-        ))}
-      </div>
-      <div className="bg-slate-950/30 border border-slate-900 rounded-xl p-3 mb-4">
-        <div className="text-[11px] font-bold text-slate-400 mb-1.5 border-b border-slate-900 pb-1">📊 إحصائيات</div>
-        <div className="grid grid-cols-2 gap-2 text-center">
-          <div className="bg-slate-950/80 p-2 rounded-lg border border-slate-900">
-            <div className="text-[9px] text-slate-500">الأسطر</div>
-            <div className="text-xs font-bold font-mono text-slate-300 mt-0.5">{linesOfCode}</div>
-          </div>
-          <div className="bg-slate-950/80 p-2 rounded-lg border border-slate-900">
-            <div className="text-[9px] text-slate-500">الحجم</div>
-            <div className="text-xs font-bold font-mono text-slate-300 mt-0.5">{estimatedKB} KB</div>
-          </div>
-        </div>
-        <div className="text-[10px] text-slate-500 mt-2 text-center">
-          الملف: <span className="text-slate-400 font-mono">{activeFile}</span>
-        </div>
-      </div>
-      <div className="flex-1 flex flex-col justify-end">
-        <div className="text-[10px] font-bold text-slate-400 mb-2">🤖 محاكاة الزوار</div>
-        <div className="bg-slate-950/80 border border-slate-900 rounded-xl p-3 font-mono text-[9px] h-24 overflow-y-auto space-y-1.5 text-slate-400 select-none">
-          {twinLogs.map((log, idx) => (
-            <div key={idx} className="border-b border-slate-900/30 pb-1 flex items-start gap-1">
-              <span className="text-slate-600">❯</span><span>{log}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── شبكة الوكلاء ────────────────────────────────────────────────
-function AgentNetworkGraph({ states }) {
-  const agents = [
-    { key: 'planner',   name: 'Planner',   emoji: '🧠', desc: 'تخطيط النوايا' },
-    { key: 'architect', name: 'Architect', emoji: '🏗️', desc: 'مراجعة الهيكل' },
-    { key: 'coder',     name: 'Coder',     emoji: '💻', desc: 'توليد الشفرة' },
-    { key: 'qa',        name: 'QA',        emoji: '🔍', desc: 'اختبار الجودة' },
-    { key: 'deploy',    name: 'Deploy',    emoji: '🚀', desc: 'النشر السحابي' },
-  ];
-
-  const getAgentStyle = (state) => {
-    switch (state) {
-      case 'running':   return 'border-cyan-500 bg-cyan-950/20 text-cyan-400 ring-2 ring-cyan-500/40 scale-[1.03] animate-pulse';
-      case 'completed': return 'border-emerald-500/60 bg-emerald-950/20 text-emerald-400';
-      case 'error':     return 'border-rose-500 bg-rose-950/30 text-rose-400 animate-bounce';
-      default:          return 'border-slate-900/80 bg-slate-950/40 text-slate-600 opacity-60';
-    }
-  };
-
-  const getStatusBadge = (state) => {
-    const base = 'text-[10px] px-2.5 py-0.5 rounded-full border font-medium';
-    switch (state) {
-      case 'running':   return <span className={`${base} bg-cyan-950 text-cyan-400 border-cyan-900/40 animate-pulse`}>يعمل...</span>;
-      case 'completed': return <span className={`${base} bg-emerald-950 text-emerald-400 border-emerald-900/40`}>مكتمل ✓</span>;
-      case 'error':     return <span className={`${base} bg-rose-950 text-rose-400 border-rose-900/40 font-bold`}>فشل !</span>;
-      default:          return <span className={`${base} bg-slate-900 text-slate-500 border-slate-800/40`}>بالانتظار</span>;
-    }
-  };
-
-  return (
-    <div className="w-full bg-[#070b14]/70 border border-slate-900/80 rounded-2xl p-6 shadow-2xl backdrop-blur-xl">
-      <div className="flex items-center gap-2 mb-6 border-b border-slate-900 pb-3">
-        <span className="relative flex h-2 w-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
-        </span>
-        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Agent Network Graph</h3>
-      </div>
-      <div className="flex flex-col xl:flex-row items-center justify-center gap-4 xl:gap-2">
-        {agents.map((agent, index) => {
-          const state = states[agent.key] || 'waiting';
-          return (
-            <div key={agent.key} className="flex flex-col xl:flex-row items-center gap-2">
-              <div className={`flex flex-col items-center p-4 rounded-xl border w-40 transition-all duration-500 ${getAgentStyle(state)}`}>
-                <div className="text-2xl mb-2">{agent.emoji}</div>
-                <span className="text-xs font-bold uppercase text-center mb-1">{agent.name}</span>
-                <span className="text-[9px] text-slate-500 text-center mb-2.5">{agent.desc}</span>
-                {getStatusBadge(state)}
-              </div>
-              {index < agents.length - 1 && (
-                <span className={`text-xl xl:text-2xl ${state === 'completed' ? 'text-emerald-500' : state === 'running' ? 'text-cyan-400 animate-pulse' : 'text-slate-800'}`}>
-                  →
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }
