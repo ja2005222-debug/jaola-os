@@ -3,18 +3,23 @@ export function architectReview(plan) {
         return { approved: false, feedback: "خطة الملفات تالفة أو غير مكتملة البنية." };
     }
 
-    const hasHtml = plan.files.some(f => f.name === 'index.html');
-    const hasCss = plan.files.some(f => f.name === 'styles.css');
+    // قبول أي ملف HTML وليس فقط index.html
+    const hasHtml = plan.files.some(f => f.name.endsWith('.html') && f.content && f.content.length > 100);
+    const hasCss = plan.files.some(f => f.name.endsWith('.css') && f.content && f.content.length > 50);
 
-    if (!hasHtml || !hasCss) {
-        return { 
-            approved: false, 
-            feedback: "البنية البصرية غير معتمدة؛ يفتقر القالب لملفات index.html أو styles.css الأساسية." 
-        };
+    if (!hasHtml) {
+        return { approved: false, feedback: "يفتقر القالب لملف HTML أساسي." };
     }
 
-    return { 
-        approved: true, 
-        feedback: "تمت مطابقة خطوط المعايير وضمان حماية الهيكل البصري بنجاح." 
-    };
+    if (!hasCss) {
+        return { approved: false, feedback: "يفتقر القالب لملف CSS أساسي." };
+    }
+
+    // تحقق من محتوى HTML
+    const htmlFile = plan.files.find(f => f.name.endsWith('.html'));
+    if (htmlFile && htmlFile.content.length < 200) {
+        return { approved: false, feedback: "ملف HTML قصير جداً — المحتوى غير مكتمل." };
+    }
+
+    return { approved: true, feedback: "تمت مطابقة معايير البنية بنجاح." };
 }

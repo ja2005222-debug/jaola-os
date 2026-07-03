@@ -17,6 +17,9 @@ import { generateDependencies } from './dependencyAgent.js';
 import { transitionState, markAgentComplete, getProjectSummary, STATES, isBuilding, canStartNewBuild } from './stateMachine.js';
 import { runSEO } from './seoAgent.js';
 import { runSecurity } from './securityAgent.js';
+import { refactorCode } from './refactorAgent.js';
+import { migrateDatabase } from './migrationAgent.js';
+import { buildMarketplaceContext } from './componentMarketplace.js';
 import { reviewCode } from './reviewAgent.js';
 import { runTests } from './testingAgent.js';
 import { commitBuild, initProjectRepo, getProjectStats } from './gitAgent.js';
@@ -399,6 +402,39 @@ export class JaolaCognitiveRuntime {
             } catch (e) {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'ReviewAgent', `⚠️ تخطّي: ${e.message}`);
             }
+            // 🆕 Refactor Agent — تنظيف الكود
+            try {
+                const refactorResult = await refactorCode(plan.files);
+                if (refactorResult.success) {
+                    plan.files = refactorResult.files;
+                    if (refactorResult.totalReduction > 0) {
+                        this.emitLiveLog(roomName, '5. RUNTIME', 'RefactorAgent',
+                            `✅ ${refactorResult.summary}`
+                        );
+                    }
+                }
+            } catch (e) { /* اختياري */ }
+
+            // 🆕 Testing Agent — اختبار شامل للكود المُنتج
+            try {
+                if (!plan?.files) throw new Error('plan is not defined');
+                const testResult = await runTests(plan.files);
+                const emoji = testResult.grade === 'A' ? '✅' : testResult.grade === 'B' ? '🟡' : '🟠';
+                this.emitLiveLog(roomName, '5. RUNTIME', 'TestingAgent',
+                    `${emoji} ${testResult.report}`
+                );
+                // إذا كان هناك اختبارات فاشلة — سجّلها كتحذير
+                if (testResult.failedTests.length > 0) {
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'TestingAgent',
+                        `⚠️ اختبارات فاشلة: ${testResult.failedTests.join(' | ')}`
+                    );
+                }
+            } catch (e) {
+                this.emitLiveLog(roomName, '5. RUNTIME', 'TestingAgent', `⚠️ تخطّي: ${e.message}`);
+            }
+            await this.saveExecutiveMemory(context.username, context.mentalModel.visualIdentity);
+            context.files = plan?.files || [];
+            context.images = plan?.images || [];
 
             // 🆕 SEO Agent
             try {
@@ -442,27 +478,7 @@ export class JaolaCognitiveRuntime {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'SecurityAgent', `⚠️ تخطّي: ${e.message}`);
             }
 
-
-            // 🆕 Testing Agent — اختبار شامل للكود المُنتج
-            try {
-                const testResult = await runTests(plan.files);
-                const emoji = testResult.grade === 'A' ? '✅' : testResult.grade === 'B' ? '🟡' : '🟠';
-                this.emitLiveLog(roomName, '5. RUNTIME', 'TestingAgent',
-                    `${emoji} ${testResult.report}`
-                );
-                // إذا كان هناك اختبارات فاشلة — سجّلها كتحذير
-                if (testResult.failedTests.length > 0) {
-                    this.emitLiveLog(roomName, '5. RUNTIME', 'TestingAgent',
-                        `⚠️ اختبارات فاشلة: ${testResult.failedTests.join(' | ')}`
-                    );
-                }
-            } catch (e) {
-                this.emitLiveLog(roomName, '5. RUNTIME', 'TestingAgent', `⚠️ تخطّي: ${e.message}`);
-            }
-            await this.saveExecutiveMemory(context.username, context.mentalModel.visualIdentity);
-            context.files = plan.files;
-            context.images = plan.images;
-
+            // 🆕 Refactor Agent
             // 🆕 Git Agent — commit تلقائي + نسخة احتياطية
             try {
                 await backupProject(context.projectPath, 'build');
@@ -786,6 +802,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
         const context = new JCRContext(finalGoalWithRequirements || enrichedGoal, projectPath, username, activeProject);
         context.originalGoal = goal;
+        transitionState(username, activeProject, STATES.GENERATING);
 
         // 🆕 Personality — CEO يتحدث كمهندس يفهم السياق
         const existingFiles = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
@@ -835,6 +852,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
             await this.runReflectionAndSelfImprovement(context, roomName, execResult.success);
             if (execResult.success) {
+                transitionState(username, activeProject, STATES.COMPLETED);
                 const langMsg = getUserLanguage(username) || 'ar';
                 const successMsg = langMsg === 'ar'
                     ? `✅ اكتملت المهمة.\nتم بناء موقعك بنجاح — راجع المعاينة الحية.\nيمكنك طلب أي تعديل الآن.`

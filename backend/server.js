@@ -686,6 +686,13 @@ app.post('/api/chat', verifyToken, aiLimit, validateProjectOwnership, async (req
 // 🆕 مسار نشر صريح — أبسط وأوثق من الاعتماد على تصنيف نية AI غامض
 import { pushToGitHub } from './agents/gitAgent.js';
 
+import { getProjectSummary } from './agents/stateMachine.js';
+
+app.get('/api/project/state', verifyToken, validateProjectOwnership, async (req, res) => {
+    const summary = getProjectSummary(req.user.username, req.activeProject);
+    res.json({ success: true, ...summary });
+});
+
 app.post('/api/github/push', verifyToken, validateProjectOwnership, async (req, res) => {
     const { repoUrl, branch = 'main' } = req.body;
     if (!repoUrl) return res.status(400).json({ error: 'repoUrl مطلوب' });
