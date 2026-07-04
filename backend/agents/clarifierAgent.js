@@ -8,13 +8,17 @@ import { detectLanguage, initUserLanguage, getUserLanguage, setUserLanguage } fr
 async function generateDynamicQuestions(userGoal, projectType, lang = 'ar') {
     try {
         const systemPrompt = lang === 'ar'
-            ? `أنت مهندس برمجيات خبير. المستخدم يريد بناء موقع. 
-اطرح 3 أسئلة ذكية ومخصصة لهذا المشروع تحديداً.
-الأسئلة يجب أن تكشف: الميزات الأساسية، التقنيات المطلوبة، الجمهور المستهدف.
+            ? `أنت مصمم مواقع خبير. المستخدم يريد بناء موقع ويب.
+اطرح 3 أسئلة قصيرة وعملية تساعدك على تصميم الموقع المناسب.
+الأسئلة يجب أن تكون عن: شكل الموقع، الميزات المرئية، الجمهور.
+لا تسأل عن التقنيات أو البرمجة — المستخدم لا يعرفها.
+أمثلة جيدة: "هل تريد قائمة طعام مع صور وأسعار؟" / "هل تريد نموذج حجز؟" / "ما لون الهوية البصرية؟"
 أعد JSON فقط: { "questions": ["سؤال 1", "سؤال 2", "سؤال 3"] }`
-            : `You are an expert software engineer. The user wants to build a website.
-Ask 3 smart, specific questions for this exact project.
-Questions should reveal: core features, required tech, target audience.
+            : `You are an expert web designer. The user wants a website.
+Ask 3 short practical questions to design the right website.
+Questions should be about: visual design, key features, target audience.
+Do NOT ask about tech/programming — user doesn't know that.
+Good examples: "Do you want a menu with photos and prices?" / "Do you need a booking form?" / "What color theme?"
 Return JSON only: { "questions": ["question 1", "question 2", "question 3"] }`;
 
         const response = await smartChat([
@@ -302,7 +306,7 @@ ${features}
 // ═══════════════════════════════════════════════════════
 // ✅ تأكيد البناء بعد عرض الخطة
 // ═══════════════════════════════════════════════════════
-const CONFIRM_PATTERNS = /^(ابدأ|ابدا|ابد|نفذ|تمام|موافق|نعم|اكمل|يلا|امشي|هيا|اوكي|اوك|يس|go|yes|ok|okay|start|proceed|build it|let's go|do it|اكيد|صح|بالتوفيق|كمل|وين|هيه|اه|آه|يي|yep|sure|alright)/i;
+const CONFIRM_PATTERNS = /^(ابدأ|ابدا|ابد|نفذ|تمام|موافق|نعم|اكمل|يلا|امشي|هيا|اوكي|اوك|يس|go|yes|ok|okay|start|proceed|build|build it|let's go|do it|اكيد|صح|بالتوفيق|كمل|هيه|اه|آه|يي|yep|sure|alright|begin|execute|run|launch|deploy|lets go|let go|يلا|هلا)/i;
 
 export function isConfirmation(message) {
     return CONFIRM_PATTERNS.test(message.trim());

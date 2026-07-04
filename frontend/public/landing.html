@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JAOLA OS — Autonomous Software Engineering</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#030508;
+  --bg2:#070b12;
+  --bg3:#0d1220;
+  --blue:#3b82f6;
+  --purple:#8b5cf6;
+  --cyan:#06b6d4;
+  --text:#f1f5f9;
+  --muted:#64748b;
+  --border:#1e2d45;
+  --glass:rgba(255,255,255,0.03);
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overflow-x:hidden}
+/* NAV */
+nav{position:fixed;top:0;width:100%;z-index:100;padding:16px 40px;display:flex;align-items:center;justify-content:space-between;background:rgba(3,5,8,0.8);backdrop-filter:blur(20px);border-bottom:1px solid var(--border)}
+.nav-logo{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:800;letter-spacing:-0.5px}
+.nav-logo-icon{width:32px;height:32px;background:linear-gradient(135deg,var(--blue),var(--purple));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px}
+.nav-links{display:flex;gap:32px;list-style:none}
+.nav-links a{color:var(--muted);text-decoration:none;font-size:14px;font-weight:500;transition:color 0.2s}
+.nav-links a:hover{color:var(--text)}
+.nav-actions{display:flex;gap:12px;align-items:center}
+.btn-ghost{padding:8px 18px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--muted);font-size:13px;cursor:pointer;transition:all 0.2s;font-family:'Inter',sans-serif}
+.btn-ghost:hover{border-color:var(--blue);color:var(--text)}
+.btn-primary{padding:8px 20px;background:linear-gradient(135deg,var(--blue),var(--purple));border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s}
+.btn-primary:hover{opacity:0.9;transform:translateY(-1px)}
+/* HERO */
+.hero{min-height:100vh;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;padding:120px 40px 80px}
+.hero-bg{position:absolute;inset:0;z-index:0}
+.grid-bg{position:absolute;inset:0;background-image:linear-gradient(rgba(59,130,246,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(59,130,246,0.04) 1px,transparent 1px);background-size:60px 60px}
+.glow-1{position:absolute;top:-200px;left:50%;transform:translateX(-50%);width:800px;height:800px;background:radial-gradient(circle,rgba(59,130,246,0.08) 0%,transparent 70%);pointer-events:none}
+.glow-2{position:absolute;bottom:-300px;right:-200px;width:600px;height:600px;background:radial-gradient(circle,rgba(139,92,246,0.06) 0%,transparent 70%)}
+canvas#neural{position:absolute;inset:0;opacity:0.4}
+.hero-content{position:relative;z-index:1;text-align:center;max-width:900px;margin:0 auto}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 16px;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.2);border-radius:100px;font-size:12px;color:var(--blue);font-weight:600;margin-bottom:32px;letter-spacing:0.5px}
+.hero-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--blue);animation:pulse 2s infinite}
+.hero-title{font-size:clamp(40px,6vw,80px);font-weight:900;line-height:1.05;letter-spacing:-2px;margin-bottom:24px}
+.hero-title .gradient{background:linear-gradient(135deg,var(--blue),var(--purple),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-sub{font-size:18px;color:var(--muted);line-height:1.7;max-width:600px;margin:0 auto 48px;font-weight:400}
+.hero-ctas{display:flex;gap:16px;justify-content:center;flex-wrap:wrap}
+.cta-primary{padding:16px 36px;background:linear-gradient(135deg,var(--blue),var(--purple));border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.3s;box-shadow:0 0 40px rgba(59,130,246,0.3)}
+.cta-primary:hover{transform:translateY(-2px);box-shadow:0 0 60px rgba(59,130,246,0.5)}
+.cta-secondary{padding:16px 36px;border:1px solid var(--border);border-radius:12px;background:var(--glass);color:var(--text);font-size:15px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;backdrop-filter:blur(10px);transition:all 0.3s}
+.cta-secondary:hover{border-color:rgba(59,130,246,0.4);background:rgba(59,130,246,0.05)}
+.hero-preview{margin-top:80px;position:relative;max-width:900px;margin-left:auto;margin-right:auto}
+.preview-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:0 40px 100px rgba(0,0,0,0.6)}
+.preview-bar{height:40px;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:8px}
+.preview-dot{width:10px;height:10px;border-radius:50%}
+.preview-content{padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.preview-log{background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:8px;padding:14px;font-family:monospace;font-size:11px}
+.log-line{padding:3px 0;color:var(--muted);display:flex;gap:8px}
+.log-line.active{color:#4ade80}
+.log-line.blue{color:var(--blue)}
+.log-line.purple{color:#a78bfa}
+.log-prefix{color:#374151;flex-shrink:0}
+/* SECTIONS */
+section{padding:100px 40px;position:relative}
+.section-label{font-size:11px;font-weight:700;color:var(--blue);letter-spacing:2px;text-transform:uppercase;margin-bottom:16px}
+.section-title{font-size:clamp(28px,4vw,48px);font-weight:800;letter-spacing:-1px;line-height:1.1;margin-bottom:16px}
+.section-sub{font-size:16px;color:var(--muted);max-width:500px;line-height:1.7}
+/* HOW IT WORKS */
+.how-grid{display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:center;max-width:1100px;margin:60px auto 0}
+.steps{display:flex;flex-direction:column;gap:0}
+.step{display:flex;gap:20px;padding:24px 0;position:relative}
+.step:not(:last-child)::after{content:'';position:absolute;bottom:0;right:36px;width:1px;height:calc(100% - 24px);background:linear-gradient(to bottom,var(--border),transparent);top:56px}
+.step-num{width:32px;height:32px;border-radius:8px;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--blue);flex-shrink:0;margin-top:4px}
+.step-title{font-size:15px;font-weight:700;margin-bottom:6px}
+.step-desc{font-size:13px;color:var(--muted);line-height:1.6}
+.how-visual{background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:32px;min-height:400px;display:flex;flex-direction:column;gap:12px}
+.agent-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:10px;transition:all 0.3s}
+.agent-bar.active{background:rgba(59,130,246,0.08);border-color:rgba(59,130,246,0.3)}
+.agent-dot{width:8px;height:8px;border-radius:50%;background:var(--border);flex-shrink:0}
+.agent-bar.active .agent-dot{background:#4ade80;box-shadow:0 0 8px #4ade80;animation:pulse 1.5s infinite}
+.agent-name{font-size:13px;font-weight:600;flex:1}
+.agent-status{font-size:11px;color:var(--muted)}
+.agent-bar.active .agent-status{color:#4ade80}
+.agent-progress{width:80px;height:3px;background:var(--border);border-radius:2px;overflow:hidden}
+.agent-progress-bar{height:100%;background:linear-gradient(90deg,var(--blue),var(--purple));border-radius:2px;transition:width 0.5s}
+/* AGENTS */
+.agents-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;max-width:1200px;margin:60px auto 0}
+.agent-card{background:var(--glass);border:1px solid var(--border);border-radius:16px;padding:24px;backdrop-filter:blur(10px);transition:all 0.3s;cursor:default}
+.agent-card:hover{border-color:rgba(59,130,246,0.3);background:rgba(59,130,246,0.04);transform:translateY(-4px)}
+.agent-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.agent-icon{font-size:24px}
+.agent-badge{font-size:10px;padding:3px 8px;border-radius:100px;font-weight:600}
+.badge-online{background:rgba(74,222,128,0.1);color:#4ade80;border:1px solid rgba(74,222,128,0.2)}
+.badge-busy{background:rgba(59,130,246,0.1);color:var(--blue);border:1px solid rgba(59,130,246,0.2)}
+.agent-card-name{font-size:15px;font-weight:700;margin-bottom:4px}
+.agent-card-role{font-size:12px;color:var(--muted);margin-bottom:16px}
+.agent-skills{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.skill-tag{font-size:10px;padding:3px 8px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:100px;color:var(--muted)}
+.agent-perf{display:flex;align-items:center;justify-content:space-between}
+.perf-label{font-size:11px;color:var(--muted)}
+.perf-value{font-size:13px;font-weight:700;color:#4ade80}
+/* CAPABILITIES */
+.cap-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;max-width:1100px;margin:60px auto 0}
+.cap-card{background:var(--glass);border:1px solid var(--border);border-radius:12px;padding:20px;transition:all 0.3s}
+.cap-card:hover{border-color:rgba(59,130,246,0.3);background:rgba(59,130,246,0.04);transform:translateY(-2px)}
+.cap-icon{font-size:24px;margin-bottom:12px}
+.cap-name{font-size:13px;font-weight:700;margin-bottom:6px}
+.cap-desc{font-size:11px;color:var(--muted);line-height:1.5}
+/* ENTERPRISE */
+.enterprise-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:1100px;margin:60px auto 0}
+.ent-card{background:var(--glass);border:1px solid var(--border);border-radius:12px;padding:24px;display:flex;gap:16px;align-items:flex-start;transition:all 0.3s}
+.ent-card:hover{border-color:rgba(59,130,246,0.2);background:rgba(59,130,246,0.03)}
+.ent-icon{width:40px;height:40px;border-radius:10px;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.15);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.ent-title{font-size:14px;font-weight:700;margin-bottom:6px}
+.ent-desc{font-size:12px;color:var(--muted);line-height:1.6}
+/* PRICING */
+.pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:1000px;margin:60px auto 0}
+.price-card{background:var(--glass);border:1px solid var(--border);border-radius:20px;padding:32px;position:relative;transition:all 0.3s}
+.price-card.featured{border-color:rgba(59,130,246,0.4);background:rgba(59,130,246,0.05)}
+.price-card.featured::before{content:'Recommended';position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,var(--blue),var(--purple));color:#fff;font-size:11px;font-weight:700;padding:4px 16px;border-radius:100px}
+.price-name{font-size:14px;font-weight:700;color:var(--muted);margin-bottom:8px;letter-spacing:1px;text-transform:uppercase}
+.price-amount{font-size:48px;font-weight:900;letter-spacing:-2px;margin-bottom:4px}
+.price-period{font-size:13px;color:var(--muted)}
+.price-desc{font-size:13px;color:var(--muted);margin:16px 0;line-height:1.6;padding-bottom:16px;border-bottom:1px solid var(--border)}
+.price-features{display:flex;flex-direction:column;gap:10px;margin-bottom:28px}
+.price-feature{display:flex;align-items:center;gap:10px;font-size:13px}
+.feature-check{color:#4ade80;font-size:12px}
+.feature-x{color:var(--muted);font-size:12px}
+.price-btn{width:100%;padding:12px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.3s}
+.price-btn-outline{background:transparent;border:1px solid var(--border);color:var(--text)}
+.price-btn-outline:hover{border-color:var(--blue);color:var(--blue)}
+.price-btn-solid{background:linear-gradient(135deg,var(--blue),var(--purple));border:none;color:#fff}
+.price-btn-solid:hover{opacity:0.9;transform:translateY(-1px)}
+/* TESTIMONIALS */
+.test-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:1100px;margin:60px auto 0}
+.test-card{background:var(--glass);border:1px solid var(--border);border-radius:16px;padding:28px;transition:all 0.3s}
+.test-card:hover{border-color:rgba(59,130,246,0.2)}
+.test-quote{font-size:15px;line-height:1.7;margin-bottom:24px;font-style:italic;color:#cbd5e1}
+.test-author{display:flex;align-items:center;gap:12px}
+.test-avatar{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff}
+.test-name{font-size:14px;font-weight:700}
+.test-title{font-size:12px;color:var(--muted)}
+/* FOOTER */
+footer{border-top:1px solid var(--border);padding:60px 40px 40px;background:var(--bg2)}
+.footer-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:40px;max-width:1100px;margin:0 auto 60px}
+.footer-brand p{font-size:13px;color:var(--muted);margin:12px 0 20px;line-height:1.7;max-width:260px}
+.footer-col h4{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:16px}
+.footer-col a{display:block;font-size:13px;color:var(--muted);text-decoration:none;margin-bottom:10px;transition:color 0.2s}
+.footer-col a:hover{color:var(--text)}
+.footer-bottom{border-top:1px solid var(--border);padding-top:24px;display:flex;align-items:center;justify-content:space-between;max-width:1100px;margin:0 auto}
+.footer-status{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.status-dot{width:6px;height:6px;border-radius:50%;background:#4ade80;animation:pulse 2s infinite}
+/* ANIMATIONS */
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+.fade-up{animation:fadeUp 0.7s ease forwards;opacity:0}
+.delay-1{animation-delay:0.1s}
+.delay-2{animation-delay:0.2s}
+.delay-3{animation-delay:0.3s}
+.delay-4{animation-delay:0.4s}
+@media(max-width:768px){
+  .hero-title{font-size:36px;letter-spacing:-1px}
+  .how-grid,.pricing-grid,.enterprise-grid,.test-grid{grid-template-columns:1fr}
+  .footer-grid{grid-template-columns:1fr 1fr}
+  nav{padding:12px 20px}
+  .nav-links{display:none}
+  section{padding:60px 20px}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo">
+    <div class="nav-logo-icon">⚡</div>
+    JAOLA OS
+  </div>
+  <ul class="nav-links">
+    <li><a href="#how">كيف يعمل</a></li>
+    <li><a href="#agents">الوكلاء</a></li>
+    <li><a href="#capabilities">القدرات</a></li>
+    <li><a href="#pricing">الأسعار</a></li>
+  </ul>
+  <div class="nav-actions">
+    <button class="btn-ghost">تسجيل الدخول</button>
+    <button class="btn-primary" onclick="window.location.href='/dashboard'">ابدأ الآن</button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-bg">
+    <div class="grid-bg"></div>
+    <div class="glow-1"></div>
+    <div class="glow-2"></div>
+    <canvas id="neural"></canvas>
+  </div>
+  <div class="hero-content">
+    <div class="hero-badge fade-up">
+      ✦ منصة هندسة برمجيات مستقلة
+    </div>
+    <h1 class="hero-title fade-up delay-1">
+      ابنِ برمجياتك<br>
+      <span class="gradient">كأنك تمتلك شركة AI</span>
+    </h1>
+    <p class="hero-sub fade-up delay-2">
+      JAOLA OS يحوّل فكرتك إلى منتج برمجي متكامل من خلال فرق AI مستقلة تخطط، تصمم، تبرمج، تختبر، وتنشر في الوقت الفعلي.
+    </p>
+    <div class="hero-ctas fade-up delay-3">
+      <button class="cta-primary" onclick="window.location.href='/dashboard'">⚡ ابدأ البناء</button>
+      <button class="cta-secondary">▶ شاهد العرض المباشر</button>
+    </div>
+    <div class="hero-preview fade-up delay-4">
+      <div class="preview-card">
+        <div class="preview-bar">
+          <div class="preview-dot" style="background:#ef4444"></div>
+          <div class="preview-dot" style="background:#f59e0b"></div>
+          <div class="preview-dot" style="background:#10b981"></div>
+          <span style="margin-right:12px;font-size:11px;color:var(--muted)">jaola-os — Mission Control</span>
+        </div>
+        <div class="preview-content">
+          <div class="preview-log">
+            <div class="log-line blue"><span class="log-prefix">[CEO]</span> تحليل المهمة: منصة سفر فاخرة</div>
+            <div class="log-line active"><span class="log-prefix">[Planner]</span> ✓ الاستراتيجية جاهزة — 12 مرحلة</div>
+            <div class="log-line purple"><span class="log-prefix">[Architect]</span> تصميم البنية التقنية...</div>
+            <div class="log-line active"><span class="log-prefix">[Frontend]</span> ✓ كتابة الشفرة (دورة 3/15)</div>
+            <div class="log-line blue"><span class="log-prefix">[Backend]</span> توليد 8 APIs...</div>
+            <div class="log-line active"><span class="log-prefix">[Database]</span> ✓ MongoDB Schema جاهز</div>
+            <div class="log-line purple"><span class="log-prefix">[QA]</span> اختبار 16 نقطة...</div>
+            <div class="log-line active"><span class="log-prefix">[Deploy]</span> ✓ منشور على Vercel</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:8px;padding:12px">
+              <div style="font-size:10px;color:var(--muted);margin-bottom:8px">AGENT NETWORK</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <div style="font-size:10px;background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.2);border-radius:4px;padding:3px 8px;color:#4ade80">CEO ●</div>
+                <div style="font-size:10px;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.2);border-radius:4px;padding:3px 8px;color:var(--blue)">Frontend ●</div>
+                <div style="font-size:10px;background:rgba(139,92,246,0.1);border:1px solid rgba(139,92,246,0.2);border-radius:4px;padding:3px 8px;color:#a78bfa">Backend ●</div>
+                <div style="font-size:10px;background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.2);border-radius:4px;padding:3px 8px;color:#4ade80">QA ●</div>
+                <div style="font-size:10px;background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.2);border-radius:4px;padding:3px 8px;color:#4ade80">Deploy ●</div>
+              </div>
+            </div>
+            <div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:8px;padding:12px;flex:1">
+              <div style="font-size:10px;color:var(--muted);margin-bottom:8px">DIGITAL TWIN</div>
+              <div style="font-size:22px;font-weight:900;color:#4ade80">99.98%</div>
+              <div style="font-size:10px;color:var(--muted)">Active</div>
+              <div style="margin-top:10px;height:3px;background:var(--border);border-radius:2px"><div style="height:100%;width:92%;background:linear-gradient(90deg,var(--blue),var(--purple));border-radius:2px"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section id="how" style="background:var(--bg2)">
+  <div style="max-width:1100px;margin:0 auto">
+    <div class="section-label">كيف يعمل</div>
+    <h2 class="section-title">شركة برمجيات كاملة<br>تعمل بأمرك</h2>
+    <p class="section-sub">من فكرة واحدة إلى منتج متكامل في دقائق</p>
+    <div class="how-grid">
+      <div class="steps">
+        <div class="step"><div class="step-num">01</div><div><div class="step-title">الفكرة</div><div class="step-desc">تصف ما تريد بناءه بلغتك الطبيعية</div></div></div>
+        <div class="step"><div class="step-num">02</div><div><div class="step-title">CEO يحلل المهمة</div><div class="step-desc">وكيل CEO يفهم الهدف ويضع استراتيجية شاملة</div></div></div>
+        <div class="step"><div class="step-num">03</div><div><div class="step-title">Planner يبني الخطة</div><div class="step-desc">تحليل المتطلبات وتقسيم المشروع لمراحل قابلة للتنفيذ</div></div></div>
+        <div class="step"><div class="step-num">04</div><div><div class="step-title">Architect يصمم النظام</div><div class="step-desc">اختيار التقنيات وتصميم البنية التقنية الأمثل</div></div></div>
+        <div class="step"><div class="step-num">05</div><div><div class="step-title">Engineers يكتبون الكود</div><div class="step-desc">Frontend + Backend + Database + APIs في وقت واحد</div></div></div>
+        <div class="step"><div class="step-num">06</div><div><div class="step-title">QA يختبر ويراجع</div><div class="step-desc">16 اختبار تلقائي + مراجعة الأمان والأداء</div></div></div>
+        <div class="step"><div class="step-num">07</div><div><div class="step-title">Deploy ينشر المنتج</div><div class="step-desc">نشر تلقائي على Vercel أو Render مع رابط حي فوري</div></div></div>
+      </div>
+      <div class="how-visual" id="agentVisual">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:700;letter-spacing:1px">LIVE EXECUTION</div>
+        <div class="agent-bar active" id="bar-ceo"><div class="agent-dot"></div><div class="agent-name">CEO</div><div class="agent-status">تحليل المهمة</div><div class="agent-progress"><div class="agent-progress-bar" style="width:100%"></div></div></div>
+        <div class="agent-bar active" id="bar-planner"><div class="agent-dot"></div><div class="agent-name">Planner</div><div class="agent-status">بناء الاستراتيجية</div><div class="agent-progress"><div class="agent-progress-bar" style="width:85%"></div></div></div>
+        <div class="agent-bar active" id="bar-architect"><div class="agent-dot"></div><div class="agent-name">Architect</div><div class="agent-status">تصميم النظام</div><div class="agent-progress"><div class="agent-progress-bar" style="width:70%"></div></div></div>
+        <div class="agent-bar active" id="bar-frontend"><div class="agent-dot"></div><div class="agent-name">Frontend</div><div class="agent-status">كتابة الشفرة</div><div class="agent-progress"><div class="agent-progress-bar" style="width:55%"></div></div></div>
+        <div class="agent-bar" id="bar-backend"><div class="agent-dot"></div><div class="agent-name">Backend</div><div class="agent-status">في الانتظار</div><div class="agent-progress"><div class="agent-progress-bar" style="width:0%"></div></div></div>
+        <div class="agent-bar" id="bar-db"><div class="agent-dot"></div><div class="agent-name">Database</div><div class="agent-status">في الانتظار</div><div class="agent-progress"><div class="agent-progress-bar" style="width:0%"></div></div></div>
+        <div class="agent-bar" id="bar-qa"><div class="agent-dot"></div><div class="agent-name">QA</div><div class="agent-status">في الانتظار</div><div class="agent-progress"><div class="agent-progress-bar" style="width:0%"></div></div></div>
+        <div class="agent-bar" id="bar-deploy"><div class="agent-dot"></div><div class="agent-name">Deploy</div><div class="agent-status">في الانتظار</div><div class="agent-progress"><div class="agent-progress-bar" style="width:0%"></div></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- AGENTS -->
+<section id="agents">
+  <div style="max-width:1200px;margin:0 auto">
+    <div class="section-label">الفريق</div>
+    <h2 class="section-title">قابل شركتك من AI</h2>
+    <p class="section-sub">12 وكيل متخصص يعملون معاً كشركة برمجيات حقيقية</p>
+    <div class="agents-grid">
+      <div class="agent-card"><div class="agent-card-header"><span class="agent-icon">👔</span><span class="agent-badge badge-online">Online</span></div><div class="agent-card-name">CEO</div><div class="agent-card-role">Chief Executive Officer</div><div class="agent-skills"><span class="skill-tag">Strategy</span><span class="skill-tag">Analysis</span><span class="skill-tag">Decision</span></div><div class="agent-perf"><span class="perf-label">Performance</span><span class="perf-value">98%</span></div></div>
+      <div class="agent-card"><div class="agent-card-header"><span class="agent-icon">🗺️</span><span class="agent-badge badge-busy">Active</span></div><div class="agent-card-name">Planner</div><div class="agent-card-role">Strategic Planner</div><div class="agent-skills"><span class="skill-tag">Roadmap</span><span class="skill-tag">Tasks</span><span class="skill-tag">Timeline</span></div><div class="agent-perf"><span class="perf-label">Performance</span><span class="perf-value">95%</span></div></div>
+      <div class="agent-card"><div class="agent-card-header"><span class="agent-icon">🏗️</span><span class="agent-badge badge-online">Online</span></div><div class="agent-card-name">Architect</div><div class="agent-card-role">System Architect</div><div class="agent-skills"><span class="skill-tag">Design</span><span class="skill-tag">APIs</span><span class="skill-tag">Patterns</span></div><div class="agent-perf"><span class="perf-label">Performance</span><span class="perf-value">97%</span></div></div>
+      <div class="agent-card"><div class="agent-card-header"><span class="agent-icon">🎨</span><span class="agent-badge badge-busy">Active</span></div><div class="agent-card-name">Designer</div><div class="agent-card-role">UI/UX Designer</div><div class="agent-skills"><span class="skill-tag">UI</span><span class="skill-tag">UX</span><span class="skill-tag">Branding</span></div><div class="agent-perf"><span class="perf-label">Performance</span><span class="perf-value">94%</span></div></div>
+      <div class="agent-card"><div class="agent-card-header"><span class="agent-icon">💻</span><span class="agent-badge badge-busy">Active</span></div><div class="agent-card-name">Frontend</div><div class="agent-card-role">Frontend Engineer</div><div class="agent-skills"><span class="skill-tag">HTML</span><span class="skill-tag">CSS</span><span class="skill-tag">JS</span></div><div class="agent-perf"><span class="perf-label">Performance</span><span class="perf-value">96%</span></div></div>
+      <div class="agent-card"><div class="agent-card-header"><span class="agent-icon">⚙️</span><span class="agent-badge badge-online">Online</span></div><div class="agent-card-name">Backend</div><div class="agent-card-role">Backend Engineer</div><div class="agent-skills"><span class="skill-tag">Node.js</span><span class="skill-tag">APIs</span><span class="skill-tag">Auth</span></div><div class="agent-perf"><span class="perf-label">Performance</span><span class="perf-value">95%</span></div></div>
+      <div class="agent-card"><div class="agent-card-header"><span class="agent-icon">🗄️</span><span class="agent-badge badge-online">Online</span></div><div class="agent-card-name">Database</div><div class="agent-card-role">Database Engineer</div><div class="agent-skills"><span class="skill-tag">MongoDB</span><span class="skill-tag">PostgreSQL</span><span class="skill-tag">Prisma</span></div><div class="agent-perf"><span class="perf-label">Performance</span><span class="perf-value">99%</span></div></div>
+      <div class="agent-card"><div class="agent-card-header"><span class="agent-icon">🔐</span><span class="agent-badge badge-online">Online</span></div><div class="agent-card-name">Security</div><div class="agent-card-role">Security Engineer</div><div class="agent-skills"><span class="skill-tag">XSS</span><span class="skill-tag">Auth</span><span class="skill-tag">CORS</span></div><div class="agent-perf"><span class="perf-label">Performance</span><span class="perf-value">100%</span></div></div>
+      <div class="agent-card"><div class="agent-card-header"><span class="agent-icon">🧪</span><span class="agent-badge badge-busy">Active</span></div><div class="agent-card-name">QA</div><div class="agent-card-role">Quality Assurance</div><div class="agent-skills"><span class="skill-tag">Testing</span><span class="skill-tag">Review</span><span class="skill-tag">Grading</span></div><div class="agent-perf"><span class="perf-label">Performance</span><span class="perf-value">93%</span></div></div>
+      <div class="agent-card"><div class="agent-card-header"><span class="agent-icon">🚀</span><span class="agent-badge badge-online">Online</span></div><div class="agent-card-name">DevOps</div><div class="agent-card-role">Deployment Engineer</div><div class="agent-skills"><span class="skill-tag">Vercel</span><span class="skill-tag">Render</span><span class="skill-tag">Git</span></div><div class="agent-perf"><span class="perf-label">Performance</span><span class="perf-value">98%</span></div></div>
+      <div class="agent-card"><div class="agent-card-header"><span class="agent-icon">📈</span><span class="agent-badge badge-online">Online</span></div><div class="agent-card-name">SEO</div><div class="agent-card-role">SEO & Marketing</div><div class="agent-skills"><span class="skill-tag">Meta</span><span class="skill-tag">Sitemap</span><span class="skill-tag">Schema</span></div><div class="agent-perf"><span class="perf-label">Performance</span><span class="perf-value">97%</span></div></div>
+      <div class="agent-card"><div class="agent-card-header"><span class="agent-icon">🎬</span><span class="agent-badge badge-online">Online</span></div><div class="agent-card-name">Cinema</div><div class="agent-card-role">Creative Director</div><div class="agent-skills"><span class="skill-tag">Video</span><span class="skill-tag">Motion</span><span class="skill-tag">Content</span></div><div class="agent-perf"><span class="perf-label">Performance</span><span class="perf-value">91%</span></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- CAPABILITIES -->
+<section style="background:var(--bg2)" id="capabilities">
+  <div style="max-width:1100px;margin:0 auto">
+    <div class="section-label">القدرات</div>
+    <h2 class="section-title">ابنِ أي شيء</h2>
+    <p class="section-sub">من منصات SaaS إلى تطبيقات المحمول</p>
+    <div class="cap-grid">
+      <div class="cap-card"><div class="cap-icon">⚡</div><div class="cap-name">SaaS Platforms</div><div class="cap-desc">منصات برمجيات متكاملة مع اشتراكات ودفع</div></div>
+      <div class="cap-card"><div class="cap-icon">✈️</div><div class="cap-name">Travel Platforms</div><div class="cap-desc">منصات سياحية مع حجز وتكاملات خارجية</div></div>
+      <div class="cap-card"><div class="cap-icon">🛒</div><div class="cap-name">Ecommerce</div><div class="cap-desc">متاجر إلكترونية مع Stripe وإدارة مخزون</div></div>
+      <div class="cap-card"><div class="cap-icon">🎬</div><div class="cap-name">Cinema</div><div class="cap-desc">منصات إعلامية وترفيهية متكاملة</div></div>
+      <div class="cap-card"><div class="cap-icon">📊</div><div class="cap-name">Dashboards</div><div class="cap-desc">لوحات تحكم تحليلية مع بيانات حية</div></div>
+      <div class="cap-card"><div class="cap-icon">🤖</div><div class="cap-name">Automation</div><div class="cap-desc">أنظمة أتمتة وسير عمل ذكية</div></div>
+      <div class="cap-card"><div class="cap-icon">🔗</div><div class="cap-name">REST APIs</div><div class="cap-desc">واجهات برمجية موثقة وجاهزة للإنتاج</div></div>
+      <div class="cap-card"><div class="cap-icon">📱</div><div class="cap-name">Mobile Apps</div><div class="cap-desc">تطبيقات جوال بأحدث التقنيات</div></div>
+      <div class="cap-card"><div class="cap-icon">💼</div><div class="cap-name">CRM Systems</div><div class="cap-desc">أنظمة إدارة علاقات عملاء متكاملة</div></div>
+      <div class="cap-card"><div class="cap-icon">🏢</div><div class="cap-name">ERP</div><div class="cap-desc">أنظمة تخطيط موارد المؤسسات</div></div>
+      <div class="cap-card"><div class="cap-icon">🔧</div><div class="cap-name">Internal Tools</div><div class="cap-desc">أدوات داخلية مخصصة للفرق</div></div>
+      <div class="cap-card"><div class="cap-icon">📣</div><div class="cap-name">Marketing</div><div class="cap-desc">صفحات هبوط ومنصات تسويقية</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ENTERPRISE -->
+<section>
+  <div style="max-width:1100px;margin:0 auto">
+    <div class="section-label">المؤسسات</div>
+    <h2 class="section-title">مزايا المستوى<br>المؤسسي</h2>
+    <div class="enterprise-grid">
+      <div class="ent-card"><div class="ent-icon">👥</div><div><div class="ent-title">تعاون حي</div><div class="ent-desc">تعاون الفريق بالوقت الفعلي مع مزامنة فورية</div></div></div>
+      <div class="ent-card"><div class="ent-icon">🧠</div><div><div class="ent-title">ذاكرة مستمرة</div><div class="ent-desc">يتذكر النظام كل قرار وتفضيل سابق</div></div></div>
+      <div class="ent-card"><div class="ent-icon">📚</div><div><div class="ent-title">قاعدة المعرفة</div><div class="ent-desc">10 أنواع مشاريع + 18 component + 50 قالب</div></div></div>
+      <div class="ent-card"><div class="ent-icon">🔀</div><div><div class="ent-title">Git Integration</div><div class="ent-desc">commit تلقائي + GitHub push بعد كل بناء</div></div></div>
+      <div class="ent-card"><div class="ent-icon">⏪</div><div><div class="ent-title">Rollback</div><div class="ent-desc">5 نسخ احتياطية تلقائية مع استرجاع فوري</div></div></div>
+      <div class="ent-card"><div class="ent-icon">☁️</div><div><div class="ent-title">Cloud Deploy</div><div class="ent-desc">نشر تلقائي على Vercel + Render في ثوانٍ</div></div></div>
+      <div class="ent-card"><div class="ent-icon">📡</div><div><div class="ent-title">Monitoring</div><div class="ent-desc">Digital Twin بمطابقة 99.98% حية</div></div></div>
+      <div class="ent-card"><div class="ent-icon">📈</div><div><div class="ent-title">Analytics</div><div class="ent-desc">تقارير أداء وجودة بعد كل عملية بناء</div></div></div>
+      <div class="ent-card"><div class="ent-icon">🔐</div><div><div class="ent-title">Security Reviews</div><div class="ent-desc">Security Agent — A (100/100) في كل مشروع</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- TESTIMONIALS -->
+<section style="background:var(--bg2)">
+  <div style="max-width:1100px;margin:0 auto">
+    <div class="section-label">شهادات</div>
+    <h2 class="section-title">ما يقوله<br>قادة الصناعة</h2>
+    <div class="test-grid">
+      <div class="test-card">
+        <p class="test-quote">"JAOLA OS غيّر طريقة تعاملنا مع تطوير البرمجيات. ما كان يستغرق أسابيع أصبح يستغرق دقائق. النظام يفهم متطلبات العمل بدقة مذهلة."</p>
+        <div class="test-author"><div class="test-avatar" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8)">SK</div><div><div class="test-name">Sarah Kline</div><div class="test-title">CTO, Nexus Technologies</div></div></div>
+      </div>
+      <div class="test-card">
+        <p class="test-quote">"استثمرنا في JAOLA OS ووفّرنا 70% من تكاليف الفريق الهندسي. الجودة التي يُنتجها تتجاوز ما يمكن لفريق بشري عادي تحقيقه في نفس الوقت."</p>
+        <div class="test-author"><div class="test-avatar" style="background:linear-gradient(135deg,#8b5cf6,#6d28d9)">MR</div><div><div class="test-name">Marcus Reid</div><div class="test-title">CEO, Quantum Ventures</div></div></div>
+      </div>
+      <div class="test-card">
+        <p class="test-quote">"المنصة الوحيدة التي تعامل معها المطورون المتمرسون كأداة حقيقية وليس مجرد مولد كود. البنية التقنية التي تنتجها تحترم معايير المؤسسات الكبرى."</p>
+        <div class="test-author"><div class="test-avatar" style="background:linear-gradient(135deg,#06b6d4,#0284c7)">AT</div><div><div class="test-name">Aisha Thompson</div><div class="test-title">VP Engineering, CloudScale</div></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section id="pricing">
+  <div style="max-width:1000px;margin:0 auto;text-align:center">
+    <div class="section-label">الأسعار</div>
+    <h2 class="section-title">استثمار في المستقبل</h2>
+    <p class="section-sub" style="margin:0 auto 0">اختر الخطة المناسبة لحجم مشاريعك</p>
+    <div class="pricing-grid">
+      <div class="price-card">
+        <div class="price-name">Starter</div>
+        <div class="price-amount">$49</div>
+        <div class="price-period">/ شهر</div>
+        <p class="price-desc">مثالي للمبدعين والشركات الناشئة التي تريد الانطلاق بسرعة</p>
+        <div class="price-features">
+          <div class="price-feature"><span class="feature-check">✓</span>5 مشاريع / شهر</div>
+          <div class="price-feature"><span class="feature-check">✓</span>جميع الوكلاء الأساسية</div>
+          <div class="price-feature"><span class="feature-check">✓</span>MongoDB + PostgreSQL</div>
+          <div class="price-feature"><span class="feature-check">✓</span>نشر على Vercel</div>
+          <div class="price-feature"><span class="feature-x">✗</span>Git Auto-push</div>
+          <div class="price-feature"><span class="feature-x">✗</span>Priority Support</div>
+        </div>
+        <button class="price-btn price-btn-outline">ابدأ مجاناً</button>
+      </div>
+      <div class="price-card featured">
+        <div class="price-name">Professional</div>
+        <div class="price-amount">$149</div>
+        <div class="price-period">/ شهر</div>
+        <p class="price-desc">للفرق والشركات التي تريد قوة كاملة مع ذاكرة وتعاون</p>
+        <div class="price-features">
+          <div class="price-feature"><span class="feature-check">✓</span>مشاريع غير محدودة</div>
+          <div class="price-feature"><span class="feature-check">✓</span>جميع 32 وكيل</div>
+          <div class="price-feature"><span class="feature-check">✓</span>Git + GitHub تلقائي</div>
+          <div class="price-feature"><span class="feature-check">✓</span>Stripe + OAuth + Upload</div>
+          <div class="price-feature"><span class="feature-check">✓</span>Project Memory</div>
+          <div class="price-feature"><span class="feature-check">✓</span>Priority Support</div>
+        </div>
+        <button class="price-btn price-btn-solid">ابدأ الآن</button>
+      </div>
+      <div class="price-card">
+        <div class="price-name">Enterprise</div>
+        <div class="price-amount">Custom</div>
+        <div class="price-period">تسعير مخصص</div>
+        <p class="price-desc">للمؤسسات الكبرى مع متطلبات خاصة ودعم مخصص</p>
+        <div class="price-features">
+          <div class="price-feature"><span class="feature-check">✓</span>كل مزايا Professional</div>
+          <div class="price-feature"><span class="feature-check">✓</span>On-premise deployment</div>
+          <div class="price-feature"><span class="feature-check">✓</span>Custom AI models</div>
+          <div class="price-feature"><span class="feature-check">✓</span>SLA مضمون 99.9%</div>
+          <div class="price-feature"><span class="feature-check">✓</span>Dedicated support</div>
+          <div class="price-feature"><span class="feature-check">✓</span>Security audit</div>
+        </div>
+        <button class="price-btn price-btn-outline">تواصل معنا</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section style="text-align:center;padding:80px 40px;background:var(--bg2)">
+  <div style="max-width:700px;margin:0 auto">
+    <h2 style="font-size:clamp(32px,5vw,56px);font-weight:900;letter-spacing:-2px;margin-bottom:20px">ابدأ بناء<br><span style="background:linear-gradient(135deg,var(--blue),var(--purple),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">شركة البرمجيات</span><br>الخاصة بك</h2>
+    <p style="color:var(--muted);font-size:16px;margin-bottom:40px;line-height:1.7">انضم لآلاف المبدعين والشركات التي تبني بالذكاء الاصطناعي</p>
+    <button class="cta-primary" onclick="window.location.href='/dashboard'" style="font-size:17px;padding:18px 48px">⚡ ابدأ الآن مجاناً</button>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-grid">
+    <div class="footer-brand">
+      <div class="nav-logo" style="margin-bottom:12px"><div class="nav-logo-icon">⚡</div>JAOLA OS</div>
+      <p>منصة هندسة البرمجيات المستقلة. حوّل فكرتك إلى منتج متكامل.</p>
+      <div style="display:flex;gap:12px">
+        <a href="#" style="color:var(--muted);text-decoration:none;font-size:13px">Twitter</a>
+        <a href="#" style="color:var(--muted);text-decoration:none;font-size:13px">GitHub</a>
+        <a href="#" style="color:var(--muted);text-decoration:none;font-size:13px">LinkedIn</a>
+      </div>
+    </div>
+    <div class="footer-col"><h4>المنتج</h4><a href="#">المزايا</a><a href="#">الأسعار</a><a href="#">Changelog</a><a href="#">Roadmap</a></div>
+    <div class="footer-col"><h4>المنصة</h4><a href="#">الوكلاء</a><a href="#">API</a><a href="#">Integrations</a><a href="#">Status</a></div>
+    <div class="footer-col"><h4>الشركة</h4><a href="#">من نحن</a><a href="#">Blog</a><a href="#">Careers</a><a href="#">Press</a></div>
+    <div class="footer-col"><h4>الدعم</h4><a href="#">Documentation</a><a href="#">Community</a><a href="#">Contact</a><a href="#">Privacy</a></div>
+  </div>
+  <div class="footer-bottom">
+    <div style="font-size:13px;color:var(--muted)">© 2025 JAOLA OS. All rights reserved.</div>
+    <div class="footer-status"><div class="status-dot"></div>All systems operational</div>
+  </div>
+</footer>
+
+<script>
+// Neural Network Canvas
+const canvas = document.getElementById('neural');
+const ctx = canvas.getContext('2d');
+let nodes = [], animFrame;
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+
+function initNodes() {
+  nodes = [];
+  for (let i = 0; i < 60; i++) {
+    nodes.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: (Math.random() - 0.5) * 0.3,
+      r: Math.random() * 2 + 1
+    });
+  }
+}
+
+function drawNeural() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  nodes.forEach(n => {
+    n.x += n.vx; n.y += n.vy;
+    if (n.x < 0 || n.x > canvas.width) n.vx *= -1;
+    if (n.y < 0 || n.y > canvas.height) n.vy *= -1;
+  });
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const dx = nodes[i].x - nodes[j].x;
+      const dy = nodes[i].y - nodes[j].y;
+      const d = Math.sqrt(dx*dx+dy*dy);
+      if (d < 120) {
+        ctx.beginPath();
+        ctx.moveTo(nodes[i].x, nodes[i].y);
+        ctx.lineTo(nodes[j].x, nodes[j].y);
+        ctx.strokeStyle = `rgba(59,130,246,${0.15*(1-d/120)})`;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+    }
+    ctx.beginPath();
+    ctx.arc(nodes[i].x, nodes[i].y, nodes[i].r, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(59,130,246,0.4)';
+    ctx.fill();
+  }
+  animFrame = requestAnimationFrame(drawNeural);
+}
+
+window.addEventListener('resize', () => { resize(); initNodes(); });
+resize(); initNodes(); drawNeural();
+
+// Agent animation
+const agentData = [
+  {id:'bar-ceo',label:'CEO',done:true},
+  {id:'bar-planner',label:'Planner',done:true},
+  {id:'bar-architect',label:'Architect',done:false},
+  {id:'bar-frontend',label:'Frontend',done:false},
+  {id:'bar-backend',label:'Backend',done:false},
+  {id:'bar-db',label:'Database',done:false},
+  {id:'bar-qa',label:'QA',done:false},
+  {id:'bar-deploy',label:'Deploy',done:false},
+];
+let currentAgent = 2;
+setInterval(() => {
+  if (currentAgent < agentData.length) {
+    const bar = document.getElementById(agentData[currentAgent].id);
+    if (bar) {
+      bar.classList.add('active');
+      bar.querySelector('.agent-status').textContent = 'جاري التنفيذ...';
+      const prog = bar.querySelector('.agent-progress-bar');
+      let w = 0;
+      const interval = setInterval(() => {
+        w += 5;
+        if (prog) prog.style.width = w + '%';
+        if (w >= 100) {
+          clearInterval(interval);
+          bar.querySelector('.agent-status').textContent = '✓ مكتمل';
+          currentAgent++;
+        }
+      }, 50);
+    }
+  } else {
+    currentAgent = 0;
+    document.querySelectorAll('.agent-bar').forEach(b => {
+      b.classList.remove('active');
+      b.querySelector('.agent-status').textContent = 'في الانتظار';
+      const p = b.querySelector('.agent-progress-bar');
+      if (p) p.style.width = '0%';
+    });
+  }
+}, 2000);
+
+// Intersection Observer for fade-up
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => { if (e.isIntersecting) { e.target.style.animationPlayState = 'running'; } });
+}, { threshold: 0.1 });
+document.querySelectorAll('.fade-up').forEach(el => {
+  el.style.animationPlayState = 'paused';
+  observer.observe(el);
+});
+</script>
+</body>
+</html>
+EOF

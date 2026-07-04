@@ -1,223 +1,166 @@
-import React, { useEffect, useState, useRef } from 'react';
 
-export default function LandingPage({ navigateTo }) {
-  const [isScrolled, setIsScrolled] = useState(false);
+import { motion } from 'framer-motion'
+import { ArrowRight, Play, Code2, Shield, Cloud, BarChart3, Network, Cpu, Database } from 'lucide-react'
 
-  useEffect(() => {
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 60);
-    };
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+const agents = ['CEO','Planner','Architect','Designer','Frontend','Backend','Database','Security','QA','DevOps','Marketing','Cinema']
+const capabilities = ['Generate SaaS','Travel Platforms','Ecommerce','Cinema','Marketing','Dashboards','Automation','APIs','Mobile Apps','CRM','ERP','Internal Tools']
+const steps = ['Idea','CEO analyzes mission','Planner builds strategy','Architect designs system','Engineers write code','QA tests','Deploy publishes']
 
-  const handleGetStarted = () => navigateTo('dashboard');
-
+export default function LandingPage({ onStart = () => {} }) {
+  
   return (
-    <div className="min-h-screen bg-[#03050A] text-slate-100 font-sans overflow-x-hidden selection:bg-cyan-500/50 selection:text-white">
-      
-      {/* خلفية ديناميكية */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute top-[-300px] right-[-200px] w-[800px] h-[800px] rounded-full bg-cyan-600/10 blur-[180px] animate-pulse" />
-        <div className="absolute bottom-[-300px] left-[-200px] w-[700px] h-[700px] rounded-full bg-indigo-700/10 blur-[160px]" />
-        <div className="absolute top-[50%] left-[50%] -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-violet-600/5 blur-[200px]" />
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wMTUiPjxjaXJjbGUgY3g9IjMwIiBjeT0iMzAiIHI9IjAiLz48L2c+PC9nPjwvc3ZnPg==')] opacity-40" />
-      </div>
-
-      {/* شريط التنقل */}
-      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${
-        isScrolled ? 'bg-[#03050A]/80 backdrop-blur-2xl border-b border-white/[0.05] shadow-2xl' : 'bg-transparent'
-      }`}>
-        <div className="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between">
-          <div className="flex items-center gap-3 group cursor-pointer">
-            <div className="bg-gradient-to-br from-cyan-400 to-indigo-600 p-2.5 rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.3)] group-hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] transition-all duration-300">
-              <span className="text-xl font-black text-white">⚡</span>
-            </div>
-            <div>
-              <h1 className="text-xl font-extrabold tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">JAOLA OS</h1>
-              <p className="text-[9px] font-medium text-cyan-400 tracking-widest uppercase">Cognitive Kernel</p>
-            </div>
+    <main className="min-h-screen overflow-hidden bg-[#05070f] text-white">
+      {/* HERO */}
+      <section className="relative min-h-screen px-6 py-8 grid-bg">
+        <div className="absolute inset-0 gradient-orb opacity-70" />
+        <nav className="relative z-10 mx-auto flex max-w-7xl items-center justify-between rounded-2xl glass px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 pulse-node flex items-center justify-center">⚡</div>
+            <span className="text-lg font-semibold tracking-tight">JAOLA OS</span>
           </div>
-          
-          <nav className="hidden lg:flex items-center gap-10 text-[13px] font-medium text-slate-400">
-            <a href="#features" className="hover:text-white transition-colors">القدرات</a>
-            <a href="#how-it-works" className="hover:text-white transition-colors">آلية العمل</a>
-            <a href="#testimonials" className="hover:text-white transition-colors">التجارب</a>
-            <a href="#faq" className="hover:text-white transition-colors">الأسئلة</a>
-          </nav>
-
-          <div className="flex items-center gap-4">
-            <button 
-              onClick={handleGetStarted}
-              className="bg-white text-slate-950 font-bold text-sm px-5 py-2.5 rounded-xl hover:bg-slate-200 transition-all duration-300 shadow-lg shadow-white/5"
-            >
-              دخول المنصة 🚀
-            </button>
+          <div className="hidden md:flex items-center gap-8 text-sm text-slate-400">
+            <a href="#how" className="hover:text-white transition">Platform</a>
+            <a href="#agents" className="hover:text-white transition">Agents</a>
+            <a href="#pricing" className="hover:text-white transition">Pricing</a>
           </div>
-        </div>
-      </header>
-
-      {/* Hero */}
-      <section className="relative z-10 pt-40 pb-24 md:pt-48 md:pb-32 max-w-7xl mx-auto px-6 text-center">
-        <div className="inline-flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 px-4 py-1.5 rounded-full text-xs font-semibold mb-8">
-          <span className="h-2 w-2 rounded-full bg-cyan-400 animate-ping" />
-          الإصدار المعرفي JCOS v4.0 متاح الآن
-        </div>
-        
-        <h1 className="text-5xl md:text-7xl xl:text-8xl font-black tracking-tight leading-[1.1] mb-8">
-          فريق من الوكلاء<br/>
-          <span className="bg-gradient-to-r from-cyan-400 via-indigo-400 to-violet-500 bg-clip-text text-transparent">
-            يفكر، يبني، وينشر
-          </span>
-        </h1>
-        
-        <p className="text-slate-400 text-base md:text-lg max-w-2xl mx-auto mb-10 leading-relaxed">
-          أول نظام تشغيل معرفي لتطوير الويب. اكتب فكرتك بالعربية، ودع الوكلاء المتخصصين يتجادلون وينتجون كودًا احترافيًا آمنًا وجاهزًا للنشر في ثوانٍ.
-        </p>
-
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <button 
-            onClick={handleGetStarted}
-            className="bg-gradient-to-r from-cyan-500 to-indigo-600 text-white font-bold text-base px-10 py-4 rounded-2xl shadow-[0_0_30px_rgba(99,102,241,0.3)] hover:scale-105 transition-transform duration-300"
-          >
-            ابدأ البناء الآن ⚡
+          <button onClick={() => onStart()} className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-slate-200 transition">
+            Start Building
           </button>
-          <a href="#how-it-works" className="text-slate-300 font-semibold text-sm px-8 py-4 rounded-2xl border border-white/10 hover:bg-white/5 transition-all duration-300">
-            شاهد كيف يعمل ←
-          </a>
-        </div>
+        </nav>
 
-        {/* شريط إحصاءات سريع */}
-        <div className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl mx-auto text-center">
-          <div className="space-y-1">
-            <div className="text-3xl font-black text-white">20+</div>
-            <div className="text-xs text-slate-500">مشروع يومياً</div>
-          </div>
-          <div className="space-y-1">
-            <div className="text-3xl font-black text-white">0.8s</div>
-            <div className="text-xs text-slate-500">زمن التوليد</div>
-          </div>
-          <div className="space-y-1">
-            <div className="text-3xl font-black text-white">99.9%</div>
-            <div className="text-xs text-slate-500">دقة الكود</div>
-          </div>
-          <div className="space-y-1">
-            <div className="text-3xl font-black text-white">24/7</div>
-            <div className="text-xs text-slate-500">نشر تلقائي</div>
-          </div>
-        </div>
-      </section>
-
-      {/* الميزات */}
-      <section id="features" className="relative z-10 py-24 border-t border-white/[0.03]">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-20">
-            <h2 className="text-4xl md:text-5xl font-black mb-5">قدرات معرفية <span className="text-cyan-400">ثورية</span></h2>
-            <p className="text-slate-400 max-w-xl mx-auto text-sm">ليست مجرد أداة توليد أكواد، بل عقل جماعي من الوكلاء المتخصصين يعمل بتناغم.</p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-8">
-            <div className="group bg-white/[0.02] border border-white/[0.05] rounded-3xl p-8 hover:bg-white/[0.04] hover:border-cyan-500/30 transition-all duration-500">
-              <div className="w-14 h-14 bg-cyan-500/10 rounded-2xl flex items-center justify-center text-2xl mb-6 group-hover:scale-110 transition-transform">🧠</div>
-              <h3 className="text-lg font-bold mb-3">التخطيط الواعي (Meta-Reasoning)</h3>
-              <p className="text-sm text-slate-400 leading-relaxed">النواة تشك في فهمها للطلب، تطرح الأسئلة الذكية، وتفكك الهدف إلى مهام صغيرة مرتبة بالأولوية.</p>
+        <div className="relative z-10 mx-auto grid max-w-7xl grid-cols-1 items-center gap-16 pt-28 lg:grid-cols-2">
+          <motion.div initial={{ opacity:0, y:24 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.7 }}>
+            <div className="mb-6 inline-flex rounded-full glass px-4 py-2 text-sm text-slate-300">
+              ✦ Autonomous Software Engineering Company
             </div>
-
-            <div className="group bg-white/[0.02] border border-white/[0.05] rounded-3xl p-8 hover:bg-white/[0.04] hover:border-violet-500/30 transition-all duration-500">
-              <div className="w-14 h-14 bg-violet-500/10 rounded-2xl flex items-center justify-center text-2xl mb-6 group-hover:scale-110 transition-transform">⚔️</div>
-              <h3 className="text-lg font-bold mb-3">الجدال التخصصي (Multi-Agent Debate)</h3>
-              <p className="text-sm text-slate-400 leading-relaxed">خبراء الأمان، التصميم، والأداء يراجعون الكود معاً في جولة واحدة، ويصرون على الكمال قبل التسليم.</p>
+            <h1 className="text-5xl font-semibold tracking-tight md:text-7xl leading-tight">
+              Build Software Like You Own an <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">AI Company.</span>
+            </h1>
+            <p className="mt-7 text-lg leading-8 text-slate-400">
+              JAOLA OS transforms your idea into a complete software product using autonomous AI teams that plan, design, code, test, deploy, and optimize your business in real time.
+            </p>
+            <div className="mt-10 flex flex-col gap-4 sm:flex-row">
+              <button onClick={() => onStart()} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-6 py-4 font-semibold text-black hover:bg-slate-200 transition">
+                Start Building <ArrowRight size={18} />
+              </button>
+              <button className="inline-flex items-center justify-center gap-2 rounded-2xl glass px-6 py-4 font-semibold hover:bg-white/10 transition">
+                <Play size={18} /> Watch Demo
+              </button>
             </div>
+          </motion.div>
 
-            <div className="group bg-white/[0.02] border border-white/[0.05] rounded-3xl p-8 hover:bg-white/[0.04] hover:border-emerald-500/30 transition-all duration-500">
-              <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center text-2xl mb-6 group-hover:scale-110 transition-transform">✨</div>
-              <h3 className="text-lg font-bold mb-3">التحسين الذاتي (Curiosity Engine)</h3>
-              <p className="text-sm text-slate-400 leading-relaxed">حتى بعد النشر، يتساءل النظام: "هل هناك كود أنظف؟" ويعيد هيكلة الملفات تلقائياً لرفع الأداء.</p>
+          <motion.div initial={{ opacity:0, scale:0.96 }} animate={{ opacity:1, scale:1 }} transition={{ duration:0.8 }}>
+            <div className="glass scanline rounded-3xl p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <div><p className="text-sm text-slate-400">Mission Control</p><h3 className="font-semibold">Building Travel SaaS</h3></div>
+                <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-xs text-emerald-300">● Live</span>
+              </div>
+              <div className="space-y-3">
+                {[['Planner','Strategy generated','100%'],['Architect','System design complete','92%'],['Frontend','Building interface','68%'],['Backend','Creating APIs','54%'],['QA','Waiting for build','18%']].map(([a,t,p]) => (
+                  <div key={a} className="rounded-2xl bg-white/[0.04] p-4">
+                    <div className="mb-2 flex justify-between text-sm"><span>{a}</span><span className="text-slate-400">{p}</span></div>
+                    <p className="mb-3 text-sm text-slate-400">{t}</p>
+                    <div className="h-1.5 rounded-full bg-white/10"><div className="h-1.5 rounded-full bg-gradient-to-r from-blue-500 to-purple-500" style={{width:p}} /></div>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          </motion.div>
         </div>
       </section>
 
-      {/* كيفية العمل */}
-      <section id="how-it-works" className="relative z-10 py-24 border-t border-white/[0.03]">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-20">
-            <h2 className="text-4xl md:text-5xl font-black mb-5">ثلاث خطوات <span className="text-indigo-400">فقط</span></h2>
-            <p className="text-slate-400 max-w-xl mx-auto text-sm">لا تحتاج لتعلم البرمجة. فقط عبّر عن فكرتك.</p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-10">
-            <div className="text-center group">
-              <div className="w-20 h-20 mx-auto bg-cyan-500/10 border border-cyan-500/20 rounded-3xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">✍️</div>
-              <h3 className="text-xl font-bold mb-3">اكتب فكرتك</h3>
-              <p className="text-sm text-slate-400">باللغة العربية أو الإنجليزية. صف موقع أحلامك بجملة واحدة.</p>
-            </div>
-            <div className="text-center group">
-              <div className="w-20 h-20 mx-auto bg-violet-500/10 border border-violet-500/20 rounded-3xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">⚙️</div>
-              <h3 className="text-xl font-bold mb-3">الوكلاء يخططون ويبنون</h3>
-              <p className="text-sm text-slate-400">شاهد الوكلاء وهم يتحاورون وينتجون الكود حياً أمام عينيك.</p>
-            </div>
-            <div className="text-center group">
-              <div className="w-20 h-20 mx-auto bg-emerald-500/10 border border-emerald-500/20 rounded-3xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">🚀</div>
-              <h3 className="text-xl font-bold mb-3">انشر بضغطة زر</h3>
-              <p className="text-sm text-slate-400">موقعك يصبح حياً على الإنترنت تلقائياً، جاهز للمشاركة.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* شهادات */}
-      <section id="testimonials" className="relative z-10 py-24 border-t border-white/[0.03]">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-20">
-            <h2 className="text-4xl md:text-5xl font-black mb-5">ماذا يقول <span className="text-cyan-400">المطورون؟</span></h2>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-8">
-            {[
-              { text: "أسرع طريقة لبناء MVP رأيتها. الجدال بين الوكلاء أنتج كوداً أفضل مما كنت سأكتبه بنفسي.", name: "أحمد م. — مطور React" },
-              { text: "محرك الفضول أذهلني. نظف ملفات CSS تلقائياً ورفع درجة الأداء دون أن أطلب ذلك.", name: "سارة ك. — مصممة UI/UX" },
-              { text: "كنت أحتاج موقعاً لمدرستي في يومين. JAOLA بناه في 30 ثانية. ثورة حقيقية.", name: "خالد و. — رائد أعمال" }
-            ].map((t, i) => (
-              <div key={i} className="bg-white/[0.02] border border-white/[0.05] rounded-3xl p-8 relative">
-                <div className="text-5xl text-cyan-500/30 absolute top-4 right-6">“</div>
-                <p className="text-sm text-slate-300 leading-relaxed mb-6 relative z-10">{t.text}</p>
-                <div className="text-xs font-bold text-slate-500">{t.name}</div>
+      {/* HOW IT WORKS */}
+      <section id="how" className="px-6 py-28">
+        <div className="mx-auto max-w-7xl">
+          <p className="mb-4 text-sm font-medium text-blue-300">How It Works</p>
+          <h2 className="text-4xl font-semibold tracking-tight md:text-5xl mb-16">From idea to deployed software.</h2>
+          <div className="grid gap-4 md:grid-cols-7">
+            {steps.map((step, i) => (
+              <div key={step} className="rounded-3xl glass p-5">
+                <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/15 text-blue-300 font-bold">{i+1}</div>
+                <p className="text-sm font-medium">{step}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="relative z-10 py-32">
-        <div className="max-w-4xl mx-auto px-6 text-center">
-          <div className="bg-gradient-to-br from-cyan-500/10 to-indigo-600/10 border border-white/[0.08] rounded-[3rem] p-16 backdrop-blur-xl shadow-2xl">
-            <h2 className="text-3xl md:text-5xl font-black mb-6">هل أنت مستعد <span className="text-cyan-400">للقفزة التقنية؟</span></h2>
-            <p className="text-slate-400 max-w-lg mx-auto mb-10 text-sm">انضم إلى مئات المطورين الذين يستخدمون JAOLA OS لبناء ونشر المواقع في ثوانٍ.</p>
-            <button 
-              onClick={handleGetStarted}
-              className="bg-white text-slate-950 font-extrabold text-base px-10 py-5 rounded-2xl shadow-[0_0_40px_rgba(255,255,255,0.1)] hover:scale-105 transition-transform duration-300"
-            >
-              ابدأ الآن مجاناً 🚀
-            </button>
+      {/* AGENTS */}
+      <section id="agents" className="px-6 py-28 bg-white/[0.015]">
+        <div className="mx-auto max-w-7xl">
+          <p className="mb-4 text-sm font-medium text-blue-300">Meet Your AI Company</p>
+          <h2 className="text-4xl font-semibold tracking-tight md:text-5xl mb-16">AI employees with real responsibilities.</h2>
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {agents.map((agent, i) => (
+              <div key={agent} className="rounded-3xl glass p-5 hover:bg-white/10 transition">
+                <div className="mb-5 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-500/80 to-purple-500/80" />
+                    <h3 className="font-semibold">{agent}</h3>
+                  </div>
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 pulse-node" />
+                </div>
+                <div className="space-y-2 text-sm text-slate-400">
+                  <p>Status: <span className="text-emerald-300">Online</span></p>
+                  <p>Performance: <span className="text-white">{92 + (i % 7)}%</span></p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="relative z-10 border-t border-white/[0.03] py-12">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-600">
-          <div className="flex items-center gap-2">
-            <span className="text-base">⚡</span> JAOLA OS — جميع الحقوق محفوظة © 2025
+      {/* CAPABILITIES */}
+      <section className="px-6 py-28">
+        <div className="mx-auto max-w-7xl">
+          <p className="mb-4 text-sm font-medium text-blue-300">Capabilities</p>
+          <h2 className="text-4xl font-semibold tracking-tight md:text-5xl mb-16">Build full software businesses.</h2>
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {capabilities.map(item => (
+              <div key={item} className="rounded-3xl glass p-6 hover:bg-white/[0.08] transition cursor-default">
+                <Code2 className="mb-5 text-blue-300" />
+                <h3 className="font-semibold">{item}</h3>
+                <p className="mt-3 text-sm text-slate-400">Autonomous planning, design, engineering, QA, and deployment.</p>
+              </div>
+            ))}
           </div>
-          <div className="flex gap-6">
-            <a href="#" className="hover:text-slate-400 transition-colors">الخصوصية</a>
-            <a href="#" className="hover:text-slate-400 transition-colors">الشروط</a>
-            <a href="#" className="hover:text-slate-400 transition-colors">تواصل</a>
+        </div>
+      </section>
+
+      {/* PRICING */}
+      <section id="pricing" className="px-6 py-28 bg-white/[0.015]">
+        <div className="mx-auto max-w-7xl">
+          <p className="mb-4 text-sm font-medium text-blue-300">Pricing</p>
+          <h2 className="text-4xl font-semibold tracking-tight md:text-5xl mb-16">Choose your plan.</h2>
+          <div className="grid gap-6 lg:grid-cols-3 max-w-4xl">
+            {[['Starter','$49','For solo builders and startups'],['Professional','$149','For teams building real products'],['Enterprise','Custom','For companies scaling AI engineering']].map(([plan,price,desc],i) => (
+              <div key={plan} className={`rounded-3xl p-7 ${i===1?'border border-blue-400/40 bg-blue-500/10':'glass'}`}>
+                {i===1 && <div className="text-xs text-blue-300 font-bold mb-4 tracking-widest">RECOMMENDED</div>}
+                <h3 className="text-xl font-semibold">{plan}</h3>
+                <p className="mt-3 text-slate-400 text-sm">{desc}</p>
+                <div className="mt-6 text-4xl font-bold">{price}</div>
+                <button onClick={() => onStart()} className={`mt-8 w-full rounded-2xl px-5 py-3 font-semibold transition ${i===1?'bg-white text-black hover:bg-slate-200':'glass hover:bg-white/10 text-white'}`}>
+                  Get Started
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FOOTER */}
+      <footer className="border-t border-white/10 px-6 py-10">
+        <div className="mx-auto flex max-w-7xl flex-col justify-between gap-6 md:flex-row">
+          <div>
+            <div className="flex items-center gap-2 mb-3"><span className="text-xl">⚡</span><h3 className="font-semibold">JAOLA OS</h3></div>
+            <p className="text-sm text-slate-500">Autonomous Software Engineering Company.</p>
+          </div>
+          <div className="flex gap-6 text-sm text-slate-400">
+            <span>Product</span><span>Platform</span><span>Company</span>
+            <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-emerald-400 pulse-node" /><span className="text-emerald-400">All systems operational</span></div>
           </div>
         </div>
       </footer>
-    </div>
-  );
+    </main>
+  )
 }

@@ -147,3 +147,30 @@ export const LANGUAGE_INFO = {
 export function getLangInfo(code) {
     return LANGUAGE_INFO[code] || LANGUAGE_INFO['en'];
 }
+
+export function detectExplicitLanguageSwitch(text) {
+    const t = (text || '').toLowerCase().trim();
+    if (/تكلم بالانجليزي|رد بالانجليزي|باللغة الانجليزية|باللغة الإنجليزية|english|إنجليزي|انجليزي/.test(t)) return 'en';
+    if (/speak english|reply in english|continue in english/i.test(t)) return 'en';
+    if (/تكلم بالعربي|رد بالعربي|باللغة العربية|عربي|arabic/.test(t)) return 'ar';
+    if (/speak arabic|reply in arabic|تحدث عربي|تكلم عربي/.test(t)) return 'ar';
+    if (/^عربي$|^arabic$|^english$|^إنجليزي$/.test(t)) return t.includes('عرب') || t === 'arabic' ? 'ar' : 'en';
+    if (/speak dutch|in het nederlands/i.test(t)) return 'nl';
+    if (/speak french|en français/i.test(t)) return 'fr';
+    return null;
+}
+
+export function getReplyLanguage(userMessage, username) {
+    const explicitSwitch = detectExplicitLanguageSwitch(userMessage);
+    if (explicitSwitch) {
+        sessionLanguages.set(username, explicitSwitch);
+        return explicitSwitch;
+    }
+    const current = sessionLanguages.get(username);
+    if (!current) {
+        const detected = detectLanguage(userMessage);
+        sessionLanguages.set(username, detected);
+        return detected;
+    }
+    return current;
+}

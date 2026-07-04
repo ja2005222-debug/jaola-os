@@ -15,7 +15,7 @@
     "language": "Arabic"
   },
   "jamal": {
-    "preferredUi": "## تعليمات التصميم الإلزامية:\n- استخدم CSS Variables من :root في كل الألوان (لا hardcoded colors)\n- الخط الرئيسي: Cairo للعناوين، Tajawal للنص\n- الصورة الرئيسية: https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&q=80&auto=format&fit=crop\n- الأسلوب: مهني ورسمي\n- الأنيميشن: fade-in",
+    "preferredUi": "## تعليمات التصميم الإلزامية:\n- استخدم CSS Variables من :root في كل الألوان (لا hardcoded colors)\n- الخط الرئيسي: Cairo للعناوين، Tajawal للنص\n- الصورة الرئيسية: https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=1200&q=80&auto=format&fit=crop\n- الأسلوب: طبيعي وأخضر\n- الأنيميشن: fade-in",
     "dislikedTech": "Bootstrap",
     "language": "Arabic"
   },
@@ -146,6 +146,11 @@
   },
   "doma": {
     "preferredUi": "## تعليمات التصميم الإلزامية:\n- استخدم CSS Variables من :root في كل الألوان (لا hardcoded colors)\n- الخط الرئيسي: Cairo للعناوين، Tajawal للنص\n- الصورة الرئيسية: https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=1200&q=80&auto=format&fit=crop\n- الأسلوب: نابض بالحياة\n- الأنيميشن: fade-in",
+    "dislikedTech": "Bootstrap",
+    "language": "Arabic"
+  },
+  "bbbbbb": {
+    "preferredUi": "## تعليمات التصميم الإلزامية:\n- استخدم CSS Variables من :root في كل الألوان (لا hardcoded colors)\n- الخط الرئيسي: Cairo للعناوين، Tajawal للنص\n- الصورة الرئيسية: https://images.unsplash.com/photo-1559757148-5c350d0d3c56?w=1200&q=80&auto=format&fit=crop\n- الأسلوب: طبي نظيف\n- الأنيميشن: fade-in",
     "dislikedTech": "Bootstrap",
     "language": "Arabic"
   }

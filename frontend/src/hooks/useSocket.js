@@ -69,32 +69,27 @@ export function useSocket(isAuthenticated, handleAuthError) {
       setLogs((prev) => [...prev.slice(-100), newLog]);
 
       // استخراج ردود الـ AI من السجلات للعرض في الشات
-      if (newLog.message.includes('AI CEO Consultant') || newLog.message.includes('[INFO]')) {
-        const cleanReply = newLog.message
-          .replace(/.*\[AI CEO Consultant\]:\s*/, '')
-          .replace(/^🤖\s*\[.*?\]:\s*/, '')
-          .trim();
-        if (cleanReply) {
-          setChatMessages((prev) => [...prev, { sender: 'ai', text: cleanReply }]);
-        }
-      }
+
     });
 
     socket.off('chat_reply').on('chat_reply', (data) => {
-      setChatMessages((prev) => [...prev, {
-        sender: 'assistant',
-        text: data.message,
-        timestamp: Date.now()
-      }]);
+      setChatMessages((prev) => {
+        // منع التكرار — تحقق من آخر رسالة
+        const last = prev[prev.length - 1];
+        if (last && last.sender !== 'user' && last.text === data.message) return prev;
+        return [...prev, { sender: 'assistant', text: data.message, timestamp: Date.now() }];
+      });
     });
 
     socket.off('chat_history').on('chat_history', (history) => {
       if (!history?.length) return;
-      const formatted = history.slice(-50).map(msg => ({
-        sender: msg.role === 'user' ? 'user' : 'ai',
-        text: msg.content
-      }));
-      setChatMessages(formatted);
+      setChatMessages(prev => {
+        if (prev.length > 0) return prev; // لا تُعيد التحميل إذا يوجد رسائل
+        return history.slice(-50).map(msg => ({
+          sender: msg.role === 'user' ? 'user' : 'ai',
+          text: msg.content
+        }));
+      });
     });
 
     // ─── معالجة أخطاء الاتصال — بدون حلقة reload لا نهاية لها ─────

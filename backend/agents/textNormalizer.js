@@ -32,6 +32,14 @@ export function normalizeArabic(text) {
 const COMMON_CORRECTIONS = {
     // أخطاء في كلمات البناء
     'بني': 'ابني',
+    'build': 'build',
+    'build me': 'build',
+    'create': 'build',
+    'make': 'build',
+    'design': 'build',
+    'develop': 'build',
+    'maak': 'build',
+    'maak een': 'build',
     'بنى': 'ابني',
     'انشي': 'انشئ',
     'انشا': 'انشئ',
@@ -92,6 +100,7 @@ const COMMON_CORRECTIONS = {
 const BUILD_INTENT_PATTERNS = [
     // عربي — أوامر بناء صريحة
     /^(ابني|اصنع|انشئ|أنشئ|اعمل|صمم|طور|بني|بنى|سوي|حط|اعمللي|اصنعلي|ابنيلي)\s+/i,
+    /^(build|create|make|design|develop|generate|maak|erstelle|créer|construire)\s+/i,
     // عربي — طلب غير مباشر
     /^(اريد|أريد|ابغى|أبغى|محتاج|بحاجة)\s+(موقع|متجر|تطبيق|صفحة|مدونة)/i,
     // عربي — "عايز/عاوز" (مصري)
@@ -158,6 +167,14 @@ export function detectIntentFromMeaning(text) {
         }
     }
 
+    // Multi-language intent detection
+    const lowerNorm = normalized.toLowerCase();
+    const buildWords = ['build','create','make','design','develop','generate','maak','maak een','ontwerp','bouw','créer','crée','faire','concevoir','construire','erstelle','erstellen','machen','bauen','crear','crea','hacer','diseñar','fare','criar','fazer','yap','oluştur','buat','buatkan','build me','make me','create me','i want a','i need a','can you build','ich möchte','je veux','quiero','voglio','istiyorum','ik wil'];
+    const modifyWords = ['change','update','modify','edit','fix','improve','add','remove','alter','verander','wijzig','changer','modifier','ajouter','ändern','bearbeiten','cambiar','modificar','değiştir','cambia','modifica'];
+    const stopWords = ['stop','cancel','halt','pause','abort','stoppen','arrêter','stopp','parar','dur','ferma'];
+    if (buildWords.some(w => lowerNorm.startsWith(w + ' ') || lowerNorm === w)) return { intent: 'build', confidence: 95, normalized };
+    if (modifyWords.some(w => lowerNorm.startsWith(w + ' '))) return { intent: 'modify', confidence: 85, normalized };
+    if (stopWords.some(w => lowerNorm.startsWith(w))) return { intent: 'stop', confidence: 95, normalized };
     return { intent: null, confidence: 0, normalized };
 }
 

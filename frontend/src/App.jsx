@@ -1,32 +1,24 @@
-import { useEffect, useState } from 'react';
-import { useAuth } from './hooks/useAuth.js';
-import LandingPage from './pages/LandingPage.jsx';
-import Dashboard from './pages/Dashboard.jsx';
+import { useState } from 'react'
+import LandingPage from './pages/LandingPage'
+import BootSequence from './pages/BootSequence'
+import Dashboard from './pages/Dashboard'
 
 export default function App() {
-  const [activeProject] = useState('sandbox_app');
-  const { isAuthenticated } = useAuth(activeProject);
+  const [page, setPage] = useState(() => {
+    const path = window.location.pathname
+    if (path === '/boot') return 'boot'
+    if (path === '/dashboard') return 'dashboard'
+    return 'landing'
+  })
 
-  const [currentRoute, setCurrentRoute] = useState(() => {
-    return window.location.pathname === '/dashboard' ? 'dashboard' : 'landing';
-  });
-
-  const navigateTo = (route) => {
-    setCurrentRoute(route);
-    window.history.pushState(null, '', route === 'dashboard' ? '/dashboard' : '/');
-  };
-
-  useEffect(() => {
-    const handlePopState = () => {
-      setCurrentRoute(window.location.pathname === '/dashboard' ? 'dashboard' : 'landing');
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
-  if (currentRoute === 'landing') {
-    return <LandingPage navigateTo={navigateTo} />;
+  const navigate = (to) => {
+    window.history.pushState({}, '', to)
+    if (to === '/boot') setPage('boot')
+    else if (to === '/dashboard') setPage('dashboard')
+    else setPage('landing')
   }
 
-  return <Dashboard />;
+  if (page === 'boot') return <BootSequence onDone={() => navigate('/dashboard')} />
+  if (page === 'dashboard') return <Dashboard />
+  return <LandingPage onStart={() => navigate('/boot')} />
 }
