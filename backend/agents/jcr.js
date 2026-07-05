@@ -27,6 +27,8 @@ import { commitBuild, initProjectRepo, getProjectStats } from './gitAgent.js';
 import { backupProject, listSnapshots } from './fileManager.js';
 import { analyzeRequirements, buildRequirementsContext } from './requirementAnalyzer.js';
 import { normalizeText, detectIntentFromMeaning } from './textNormalizer.js';
+import { registerMission, throwIfAborted, clearMission } from '../services/abortRegistry.js';
+import { autoPushIfEnabled } from '../services/githubSync.js';
 import Conversation from '../models/Conversation.js';
 import mongoose from 'mongoose';
 
@@ -805,6 +807,9 @@ User preferences: ${JSON.stringify(execMemory)}` },
         context.originalGoal = goal;
         transitionState(username, activeProject, STATES.GENERATING);
 
+        // ⏹️ تسجيل المهمة في سجل الإيقاف — تسمح للمستخدم بإيقافها من الواجهة
+        registerMission(roomName);
+
         // 🆕 Personality — CEO يتحدث كمهندس يفهم السياق
         const existingFiles = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
         const hasExistingProject = existingFiles && existingFiles.trim().length > 100;
@@ -825,8 +830,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
         this.emitLiveLog(roomName, 'JCOS', 'Kernel', `🏁 بدء المهمة: ${context.missionId}`);
         try {
             await this.buildWorldModel(context, roomName, dbStatus);
+            throwIfAborted(roomName);
             await this.buildMissionAndMeta(context, roomName);
+            throwIfAborted(roomName);
             await this.runExecutiveBrain(context, roomName, agents);
+            throwIfAborted(roomName);
             if (context.executiveDecision.actionType !== 'EXECUTE') {
                 await this.runReflectionAndSelfImprovement(context, roomName, true);
                 this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'waiting', coder: 'waiting', qa: 'waiting', deploy: 'waiting' });
@@ -837,6 +845,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             try {
                 execResult = await this.runDynamicMultiAgentRuntime(context, roomName, agents);
             } catch (runtimeError) {
+                if (runtimeError.aborted) throw runtimeError; // الإيقاف ليس فشلاً — يُعالج في الأسفل
                 this.emitAgentError(roomName, 'coder');
                 await this.runReflectionAndSelfImprovement(context, roomName, false);
                 this.emitLiveLog(roomName, 'JCOS', 'Kernel', `❌ فشل نهائياً: ${runtimeError.message}`);
@@ -859,14 +868,33 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     ? `✅ اكتملت المهمة.\nتم بناء موقعك بنجاح — راجع المعاينة الحية.\nيمكنك طلب أي تعديل الآن.`
                     : `✅ Mission complete.\nYour website has been built successfully — check the live preview.\nFeel free to request any changes.`;
                 this.io.to(roomName).emit('chat_reply', { message: successMsg });
+
+                // 🐙 الدفع التلقائي لـ GitHub إذا كان مفعلاً لهذا المشروع
+                autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
             }
             this.emitLiveLog(roomName, 'JCOS', 'Kernel', execResult.success ? '✨ نجاح' : '❌ فشل');
             return execResult;
         } catch (error) {
+            // ⏹️ إيقاف بطلب المستخدم — ليس فشلاً
+            if (error.aborted) {
+                transitionState(username, activeProject, STATES.PAUSED);
+                this.io.to(roomName).emit('agent_states', {
+                    planner: 'waiting', architect: 'waiting', coder: 'waiting', qa: 'waiting', deploy: 'waiting'
+                });
+                const langAbort = getUserLanguage(username) || 'ar';
+                const abortMsg = langAbort === 'ar'
+                    ? '⏹️ تم إيقاف المهمة بناءً على طلبك.\nأخبرني بما تريد فعله الآن.'
+                    : '⏹️ Mission stopped at your request.\nTell me what you want to do next.';
+                this.io.to(roomName).emit('chat_reply', { message: abortMsg });
+                this.emitLiveLog(roomName, 'JCOS', 'Kernel', '⏹️ المهمة أُوقفت من قبل المستخدم');
+                return { success: false, aborted: true };
+            }
             this.emitAgentError(roomName, 'planner');
             this.emitLiveLog(roomName, 'JCOS', 'Kernel', `❌ تعطلت المهمة: ${error.message}`);
             await this.runReflectionAndSelfImprovement(context, roomName, false);
             return { success: false, error: error.message };
+        } finally {
+            clearMission(roomName);
         }
     }
 

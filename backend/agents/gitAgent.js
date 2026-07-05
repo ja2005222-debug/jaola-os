@@ -144,32 +144,42 @@ export async function getProjectStats(projectPath) {
 // ═══════════════════════════════════════════════════════
 // 🐙 GitHub Push
 // ═══════════════════════════════════════════════════════
-export async function pushToGitHub(projectPath, repoUrl, branch = 'main') {
+export async function pushToGitHub(projectPath, repoUrl, branch = 'main', options = {}) {
     try {
-        // تحقق هل remote موجود
+        // تهيئة repo إذا لم يكن موجوداً (يشمل .gitignore)
+        await initProjectRepo(projectPath);
+
+        // الـ remote يُخزَّن دائماً بالرابط النظيف — التوكن لا يُكتب في .git/config
         const remoteCheck = await runGit('remote -v', projectPath);
-        
-        if (!remoteCheck.output.includes('origin')) {
+
+        if (!remoteCheck.output?.includes('origin')) {
             // أضف remote
-            await runGit(`remote add origin ${repoUrl}`, projectPath);
+            await runGit(`remote add origin "${repoUrl}"`, projectPath);
         } else {
             // حدّث remote
-            await runGit(`remote set-url origin ${repoUrl}`, projectPath);
+            await runGit(`remote set-url origin "${repoUrl}"`, projectPath);
         }
 
         // تأكد أن كل شيء مُضاف
         await runGit('add -A', projectPath);
-        
+
         const status = await runGit('status --porcelain', projectPath);
         if (status.output) {
             await runGit(`commit -m "🚀 JAOLA OS auto-push [${new Date().toLocaleTimeString()}]"`, projectPath);
         }
 
-        // Push
-        const push = await runGit(`push -u origin ${branch} --force`, projectPath);
-        
-        if (!push.success) return { success: false, error: push.error };
-        
+        // Push — نستخدم الرابط المُصادق (بالتوكن) مباشرة إن وُجد، بدون حفظه
+        const pushTarget = options.authUrl ? `"${options.authUrl}"` : 'origin';
+        const push = await runGit(`push ${pushTarget} HEAD:${branch} --force`, projectPath);
+
+        if (!push.success) {
+            // لا نُسرّب التوكن في رسالة الخطأ
+            const safeError = options.authUrl
+                ? (push.error || '').replaceAll(options.authUrl, repoUrl)
+                : push.error;
+            return { success: false, error: safeError };
+        }
+
         return { success: true, url: repoUrl, branch };
     } catch (e) {
         return { success: false, error: e.message };

@@ -38,6 +38,11 @@ import {
     getState
 } from './agents/clarifierAgent.js';
 
+import { schemas, validate, sanitizePath } from './middleware/security.js';
+import { abortMission, hasActiveMission } from './services/abortRegistry.js';
+import { pushProject, getIntegration } from './services/githubSync.js';
+import { encryptSecret } from './utils/secretVault.js';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const httpServer = createServer(app);
@@ -244,12 +249,15 @@ function createBackupSnapshot(projectPath, fileName) {
     const backupDir = path.join(projectPath, '.backups');
     if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
 
-    const backupPath = path.join(backupDir, `${fileName}.${Date.now()}.bak`);
-    fs.copyFileSync(filePath, backupPath);
+    // تسطيح المسارات المتداخلة (css/styles.css → css__styles.css) حتى لا تكسر مجلد النسخ
+    const flatName = fileName.split(path.sep).join('__').split('/').join('__');
+    const backupPath = path.join(backupDir, `${flatName}.${Date.now()}.bak`);
 
     try {
+        fs.copyFileSync(filePath, backupPath);
+
         const backups = fs.readdirSync(backupDir)
-            .filter(f => f.startsWith(fileName))
+            .filter(f => f.startsWith(flatName))
             .map(f => ({ name: f, time: fs.statSync(path.join(backupDir, f)).mtimeMs }))
             .sort((a, b) => b.time - a.time);
         if (backups.length > 5) {
@@ -330,6 +338,15 @@ io.on('connection', (socket) => {
                     socket.emit('chat_history', convo.messages.slice(-50));
                 }
             } catch (e) {}
+        }
+    });
+
+    // ⏹️ إيقاف المهمة الجارية عبر الـ socket (بديل فوري لمسار /api/ai/abort)
+    socket.on('abort_mission', () => {
+        if (!socket.roomName) return;
+        const wasActive = abortMission(socket.roomName);
+        if (wasActive) {
+            io.to(socket.roomName).emit('log', { message: '⏹️ [SYSTEM]: تم استلام طلب إيقاف المهمة...' });
         }
     });
 });
@@ -597,10 +614,12 @@ app.get('/api/file-content', verifyToken, async (req, res) => {
         }
 
         const projectPath = getProjectPath(username, safeProject);
-        const safeFileName = path.basename(fileName || 'index.html'); // basename يمنع path traversal
-        const filePath = path.join(projectPath, safeFileName);
 
-        if (!filePath.startsWith(projectPath)) {
+        // sanitizePath يدعم المسارات المتداخلة (css/styles.css) ويمنع path traversal
+        let filePath;
+        try {
+            filePath = sanitizePath(fileName || 'index.html', projectPath);
+        } catch (e) {
             return res.status(403).json({ error: 'Access Denied: Out of workspace bounds.' });
         }
 
@@ -610,27 +629,29 @@ app.get('/api/file-content', verifyToken, async (req, res) => {
     }
 });
 
-app.post('/api/file-content/save', verifyToken, validateProjectOwnership, async (req, res) => {
+app.post('/api/file-content/save', verifyToken, validate(schemas.saveFile), validateProjectOwnership, async (req, res) => {
     try {
         const { fileName, content } = req.body;
-        if (!fileName || typeof content !== 'string') {
-            return res.status(400).json({ error: 'fileName و content مطلوبان.' });
-        }
-
-        const safeFileName = path.basename(fileName); // منع path traversal
         const projectPath = req.projectPath;
-        const filePath = path.join(projectPath, safeFileName);
 
-        if (!filePath.startsWith(projectPath)) {
+        // sanitizePath يدعم المسارات المتداخلة ويمنع path traversal
+        let filePath;
+        try {
+            filePath = sanitizePath(fileName, projectPath);
+        } catch (e) {
             return res.status(403).json({ error: 'Access Denied.' });
         }
 
-        createBackupSnapshot(projectPath, safeFileName);
+        const relativeName = path.relative(projectPath, filePath);
+        createBackupSnapshot(projectPath, relativeName);
+
+        // إنشاء المجلدات الفرعية إذا كان الملف متداخلاً
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
         fs.writeFileSync(filePath, content);
 
         const roomName = `${req.user.username}-${req.activeProject}`;
         emitWorkspaceFiles(roomName, projectPath);
-        io.to(roomName).emit('log', { message: `💾 [SYSTEM]: تم حفظ (${safeFileName}) مع نسخة احتياطية.` });
+        io.to(roomName).emit('log', { message: `💾 [SYSTEM]: تم حفظ (${relativeName}) مع نسخة احتياطية.` });
 
         res.json({ success: true });
     } catch (err) {
@@ -638,12 +659,8 @@ app.post('/api/file-content/save', verifyToken, validateProjectOwnership, async 
     }
 });
 
-app.post('/api/chat', verifyToken, aiLimit, validateProjectOwnership, async (req, res) => {
+app.post('/api/chat', verifyToken, aiLimit, validate(schemas.sendMessage), validateProjectOwnership, async (req, res) => {
     const { message } = req.body;
-
-    if (!message || typeof message !== 'string' || message.trim().length === 0) {
-        return res.status(400).json({ error: 'الرسالة فارغة.' });
-    }
 
     const projectPath = req.projectPath;
     const roomName = `${req.user.username}-${req.activeProject}`;
@@ -693,24 +710,88 @@ app.get('/api/project/state', verifyToken, validateProjectOwnership, async (req,
     res.json({ success: true, ...summary });
 });
 
-app.post('/api/github/push', verifyToken, validateProjectOwnership, async (req, res) => {
-    const { repoUrl, branch = 'main' } = req.body;
-    if (!repoUrl) return res.status(400).json({ error: 'repoUrl مطلوب' });
-
+app.post('/api/github/push', verifyToken, validate(schemas.githubPush), validateProjectOwnership, async (req, res) => {
+    const { repoUrl, branch } = req.body;
     const roomName = `${req.user.username}-${req.activeProject}`;
+
+    // repoUrl اختياري الآن — إن لم يُرسل نستخدم التكامل المحفوظ للمشروع
+    const integration = await getIntegration(req.user.username, req.activeProject);
+    if (!repoUrl && !integration?.repoUrl) {
+        return res.status(400).json({ error: 'لا يوجد مستودع مرتبط. اربط المشروع بـ GitHub أولاً أو أرسل repoUrl.' });
+    }
+
     res.json({ accepted: true });
 
     try {
         io.to(roomName).emit('log', { message: '🐙 [GitHub]: جاري الرفع على GitHub...' });
-        const result = await pushToGitHub(req.projectPath, repoUrl, branch);
+        const result = await pushProject(req.user.username, req.activeProject, req.projectPath, { repoUrl, branch });
         if (result.success) {
-            io.to(roomName).emit('log', { message: `✅ [GitHub]: تم الرفع على ${repoUrl}` });
+            io.to(roomName).emit('log', { message: `✅ [GitHub]: تم الرفع على ${result.url} (${result.branch})` });
         } else {
             io.to(roomName).emit('log', { message: `❌ [GitHub]: فشل — ${result.error}` });
         }
     } catch (e) {
         io.to(roomName).emit('log', { message: `❌ [GitHub]: ${e.message}` });
     }
+});
+
+// 🆕 ربط المشروع بمستودع GitHub — يحفظ PAT مشفراً + إعدادات الدفع التلقائي
+app.post('/api/github/connect', verifyToken, validate(schemas.githubConnect), validateProjectOwnership, async (req, res) => {
+    const { pat, repoUrl, branch, autoCommit } = req.body;
+
+    if (!isDbConnected || mongoose.connection.readyState !== 1) {
+        return res.status(503).json({ error: 'قاعدة البيانات غير متصلة — لا يمكن حفظ إعدادات GitHub حالياً.' });
+    }
+
+    try {
+        const update = {
+            'github.branch': branch,
+            'github.autoCommit': autoCommit,
+        };
+        if (repoUrl !== undefined) update['github.repoUrl'] = repoUrl;
+        if (pat) update['github.patEncrypted'] = encryptSecret(pat); // لا يُخزن التوكن خاماً أبداً
+
+        await Project.findOneAndUpdate(
+            { name: req.activeProject, owner: req.user.username },
+            {
+                $set: update,
+                $setOnInsert: { name: req.activeProject, owner: req.user.username, localPath: req.projectPath },
+            },
+            { upsert: true, new: true }
+        );
+
+        const roomName = `${req.user.username}-${req.activeProject}`;
+        io.to(roomName).emit('log', { message: `🐙 [GitHub]: تم ربط المشروع${repoUrl ? ` بـ ${repoUrl}` : ''} — الدفع التلقائي ${autoCommit ? 'مفعّل ✅' : 'معطّل'}.` });
+
+        res.json({ success: true, repoUrl: repoUrl || null, branch, autoCommit });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل حفظ إعدادات GitHub: ' + err.message });
+    }
+});
+
+// 🆕 حالة تكامل GitHub للمشروع الحالي — لا يُعيد التوكن أبداً
+app.get('/api/github/status', verifyToken, validateProjectOwnership, async (req, res) => {
+    const integration = await getIntegration(req.user.username, req.activeProject);
+    res.json({
+        connected: !!integration?.repoUrl,
+        repoUrl: integration?.repoUrl || '',
+        branch: integration?.branch || 'main',
+        autoCommit: integration?.autoCommit ?? true,
+        lastCommit: integration?.lastCommit || null,
+        hasToken: !!integration?.patEncrypted,
+    });
+});
+
+// 🆕 إيقاف مهمة الـ AI الجارية للمشروع الحالي
+app.post('/api/ai/abort', verifyToken, validate(schemas.abortMission), validateProjectOwnership, (req, res) => {
+    const roomName = `${req.user.username}-${req.activeProject}`;
+    const wasActive = abortMission(roomName);
+
+    if (wasActive) {
+        io.to(roomName).emit('log', { message: '⏹️ [SYSTEM]: تم استلام طلب إيقاف المهمة...' });
+    }
+
+    res.json({ success: true, aborted: wasActive, message: wasActive ? 'جاري إيقاف المهمة.' : 'لا توجد مهمة نشطة.' });
 });
 
 app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) => {

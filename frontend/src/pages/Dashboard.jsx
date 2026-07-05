@@ -2,10 +2,9 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth.js';
 import { useSocket, socket } from '../hooks/useSocket.js';
 import { PreviewFrame } from '../components/PreviewFrame.jsx';
-
-const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname.startsWith('100.115')
-  ? `http://${window.location.hostname}:4000`
-  : 'https://jaola-os.onrender.com';
+import { MonacoWorkspace } from '../components/editor/MonacoWorkspace.jsx';
+import { useJaolaStore } from '../store/useJaolaStore.js';
+import { BACKEND_URL } from '../config.js';
 
 const QUICK_BUILDS = [
   { icon: '⚡', label: 'SaaS', prompt: 'ابني منصة SaaS متكاملة مع اشتراكات' },
@@ -151,8 +150,6 @@ export default function Dashboard() {
   const [activeNav, setActiveNav] = useState('mission');
   const [activeTab, setActiveTab] = useState('preview');
   const [prompt, setPrompt] = useState('');
-  const [activeFile, setActiveFile] = useState('index.html');
-  const [editorContent, setEditorContent] = useState('');
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [isDeploying, setIsDeploying] = useState(false);
@@ -160,6 +157,10 @@ export default function Dashboard() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [showGithubModal, setShowGithubModal] = useState(false);
+  const [ghForm, setGhForm] = useState({ repoUrl: '', pat: '', branch: 'main', autoCommit: true });
+  const [ghStatus, setGhStatus] = useState(null);
+  const [isGhSaving, setIsGhSaving] = useState(false);
 
   const feedEndRef = useRef(null);
   const textareaRef = useRef(null);
@@ -167,8 +168,23 @@ export default function Dashboard() {
 
   const { files, logs, streamingContent, agentStates, projects, activeProject, currentUser, vercelUrl, chatMessages, setChatMessages, setActiveProject, setStreamingContent, previewTimestamp } = useSocket(isAuthenticated, handleAuthError);
 
+  // ── Monaco Workspace Store ──────────────────────────────────────
+  const openJaolaFile = useJaolaStore(s => s.openFile);
+  const openFiles = useJaolaStore(s => s.openFiles);
+  const activeFilePath = useJaolaStore(s => s.activeFilePath);
+  const activeFileContent = openFiles.find(f => f.path === activeFilePath)?.content || '';
+  const activeFile = activeFilePath;
+
+  // مزامنة سياق المتجر (توكن + مشروع) — تغيير المشروع يغلق التابات تلقائياً
+  useEffect(() => {
+    if (isAuthenticated && token) {
+      useJaolaStore.getState().setContext({ token, project: activeProject });
+    }
+  }, [token, activeProject, isAuthenticated]);
+
+  const isBuilding = Object.values(agentStates || {}).some(s => s === 'running');
+
   useEffect(() => { feedEndRef.current?.scrollIntoView({ behavior:'smooth' }); }, [chatMessages]);
-  useEffect(() => { if (isAuthenticated && activeFile) fetchFileContent(activeFile); }, [activeFile, activeProject, isAuthenticated]);
 
   // Auto-switch to logs tab during build
   useEffect(() => {
@@ -188,13 +204,6 @@ export default function Dashboard() {
   };
 
   const getHeaders = () => ({ 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' });
-
-  const fetchFileContent = async (file) => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/file-content?fileName=${file}&project=${activeProject}`, { headers: getHeaders() });
-      if (res.ok) { const d = await res.json(); setEditorContent(d.content || ''); }
-    } catch {}
-  };
 
   const handleSend = async () => {
     if (!prompt.trim() || isSending) return;
@@ -217,14 +226,58 @@ export default function Dashboard() {
     setTimeout(() => { setIsDeploying(false); addNotification('✅ تم النشر بنجاح!', 'success'); }, 8000);
   };
 
-  const handleSaveCode = async () => {
+  // ⏹️ إيقاف المهمة الجارية
+  const handleAbort = async () => {
     try {
-      await fetch(`${BACKEND_URL}/api/file-content/save`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ fileName: activeFile, content: editorContent, project: activeProject }) });
-      addNotification('💾 تم الحفظ', 'success');
+      const res = await fetch(`${BACKEND_URL}/api/ai/abort`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ project: activeProject }) });
+      const d = await res.json();
+      addNotification(d.aborted ? '⏹️ جاري إيقاف المهمة...' : 'لا توجد مهمة نشطة', 'info');
     } catch {}
   };
 
-  const handleSwitchProject = (p) => { setActiveProject(p); setEditorContent(''); };
+  // 🐙 GitHub — جلب الحالة وفتح النافذة
+  const openGithubModal = async () => {
+    setShowGithubModal(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/github/status?project=${activeProject}`, { headers: getHeaders() });
+      if (res.ok) {
+        const d = await res.json();
+        setGhStatus(d);
+        setGhForm(f => ({ ...f, repoUrl: d.repoUrl || '', branch: d.branch || 'main', autoCommit: d.autoCommit ?? true, pat: '' }));
+      }
+    } catch {}
+  };
+
+  const handleGithubConnect = async () => {
+    if (!ghForm.repoUrl.trim() && !ghForm.pat.trim()) return;
+    setIsGhSaving(true);
+    try {
+      const body = { project: activeProject, branch: ghForm.branch || 'main', autoCommit: ghForm.autoCommit };
+      if (ghForm.repoUrl.trim()) body.repoUrl = ghForm.repoUrl.trim();
+      if (ghForm.pat.trim()) body.pat = ghForm.pat.trim();
+      const res = await fetch(`${BACKEND_URL}/api/github/connect`, { method: 'POST', headers: getHeaders(), body: JSON.stringify(body) });
+      const d = await res.json();
+      if (res.ok) {
+        addNotification('🐙 تم ربط GitHub بنجاح', 'success');
+        setGhForm(f => ({ ...f, pat: '' }));
+        setShowGithubModal(false);
+      } else {
+        addNotification(`❌ ${d.error || 'فشل الربط'}`, 'info');
+      }
+    } catch {}
+    setIsGhSaving(false);
+  };
+
+  const handleGithubPush = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/github/push`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ project: activeProject }) });
+      const d = await res.json();
+      addNotification(res.ok ? '🐙 جاري الدفع إلى GitHub... تابع السجلات' : `❌ ${d.error || 'فشل الدفع'}`, res.ok ? 'info' : 'info');
+      if (res.ok) { setShowGithubModal(false); setActiveTab('logs'); }
+    } catch {}
+  };
+
+  const handleSwitchProject = (p) => { setActiveProject(p); };
 
   const handleCreateProject = async () => {
     if (!newProjectName.trim()) return;
@@ -358,6 +411,12 @@ export default function Dashboard() {
 
         <div style={{ width:1, height:20, background:S.border }} />
 
+        {/* GitHub */}
+        <button onClick={openGithubModal} title="ربط المشروع بـ GitHub"
+          style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 12px', color:'#94a3b8', fontSize:11, fontWeight:600 }}>
+          🐙 GitHub
+        </button>
+
         {/* Deploy */}
         {vercelUrl ? (
           <a href={vercelUrl} target="_blank" rel="noreferrer"
@@ -429,6 +488,16 @@ export default function Dashboard() {
                 <span>{isSending ? 'Sending...' : 'Execute Mission'}</span>
                 {!isSending && <span style={{ opacity:0.6, fontSize:10 }}>↵</span>}
               </button>
+              {(isBuilding || isSending) && (
+                <button onClick={handleAbort} title="إيقاف المهمة الجارية"
+                  style={{
+                    background:'rgba(239,68,68,0.12)', border:'1px solid rgba(239,68,68,0.35)',
+                    borderRadius:7, padding:'8px 14px', color:'#f87171', fontSize:12, fontWeight:700,
+                    display:'flex', alignItems:'center', gap:5
+                  }}>
+                  ⏹ Stop
+                </button>
+              )}
             </div>
           </div>
 
@@ -496,33 +565,7 @@ export default function Dashboard() {
               <PreviewFrame activeProject={activeProject} previewTimestamp={previewTimestamp} streamingContent={streamingContent} currentUser={authUser} />
             )}
 
-            {activeTab === 'editor' && (
-              <div style={{ height:'100%', display:'flex', flexDirection:'column', background:'#060a10' }}>
-                <div style={{ display:'flex', alignItems:'center', padding:'8px 16px', gap:6, borderBottom:`1px solid ${S.border}`, flexShrink:0, flexWrap:'wrap' }}>
-                  {files.slice(0, 6).map(f => (
-                    <button key={f} onClick={() => setActiveFile(f)}
-                      style={{ background: activeFile === f ? 'rgba(59,130,246,0.12)' : 'transparent', border:`1px solid ${activeFile === f ? 'rgba(59,130,246,0.3)' : 'transparent'}`, borderRadius:6, padding:'3px 10px', color: activeFile === f ? '#93c5fd' : S.muted, fontSize:11 }}>
-                      {f.endsWith('.html') ? '🧡' : f.endsWith('.css') ? '💙' : f.endsWith('.js') ? '💛' : '📄'} {f}
-                    </button>
-                  ))}
-                  <div style={{ flex:1 }} />
-                  <button onClick={handleSaveCode}
-                    style={{ background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.2)', borderRadius:7, padding:'4px 12px', color:'#10b981', fontSize:11, fontWeight:700 }}>
-                    💾 Save
-                  </button>
-                </div>
-                <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
-                  <div style={{ width:40, background:'#040810', borderRight:`1px solid ${S.border}`, padding:'12px 0', textAlign:'center', userSelect:'none', overflowY:'hidden', flexShrink:0 }}>
-                    {(editorContent || '').split('\n').slice(0, 300).map((_, i) => (
-                      <div key={i} style={{ fontSize:10, color:'#1e2d45', lineHeight:'20px', height:20 }}>{i + 1}</div>
-                    ))}
-                  </div>
-                  <textarea value={editorContent} onChange={e => setEditorContent(e.target.value)}
-                    style={{ flex:1, background:'#060a10', border:'none', padding:'12px 16px', color:'#e2e8f0', fontFamily:'monospace', fontSize:12, resize:'none', lineHeight:'20px', overflowY:'auto' }}
-                    spellCheck={false} />
-                </div>
-              </div>
-            )}
+            {activeTab === 'editor' && <MonacoWorkspace />}
 
             {activeTab === 'logs' && (
               <div style={{ height:'100%', overflowY:'auto', padding:'12px 16px', background:'#060a10', fontFamily:'monospace', fontSize:11 }}>
@@ -609,7 +652,7 @@ export default function Dashboard() {
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
                 {[
                   { label:'Files', value: files.length },
-                  { label:'Lines', value: editorContent.split('\n').length },
+                  { label:'Lines', value: activeFileContent.split('\n').length },
                 ].map(s => (
                   <div key={s.label} style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px' }}>
                     <div style={{ fontSize:9, color:S.muted }}>{s.label}</div>
@@ -624,7 +667,7 @@ export default function Dashboard() {
           <div style={{ padding:14, flex:1 }}>
             <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:10 }}>Files</div>
             {files.map(f => (
-              <button key={f} onClick={() => { setActiveFile(f); setActiveTab('editor'); }}
+              <button key={f} onClick={() => { openJaolaFile(f); setActiveTab('editor'); }}
                 style={{ width:'100%', background: activeFile === f ? 'rgba(59,130,246,0.08)' : 'transparent', border:`1px solid ${activeFile === f ? 'rgba(59,130,246,0.2)' : 'transparent'}`, borderRadius:6, padding:'5px 8px', color: activeFile === f ? '#93c5fd' : S.muted, fontSize:10, textAlign:'right', display:'flex', alignItems:'center', gap:6, marginBottom:2 }}>
                 <span>{f.endsWith('.html') ? '🧡' : f.endsWith('.css') ? '💙' : f.endsWith('.js') ? '💛' : '📄'}</span>
                 <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontSize:11 }}>{f}</span>
@@ -648,6 +691,66 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {/* GITHUB MODAL */}
+      {showGithubModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)' }}
+          onClick={e => e.target === e.currentTarget && setShowGithubModal(false)}>
+          <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:28, width:420 }}>
+            <h3 style={{ color:'#fff', fontSize:15, fontWeight:800, marginBottom:6 }}>🐙 GitHub Integration</h3>
+            <p style={{ color:S.muted, fontSize:12, marginBottom:16 }}>
+              اربط المشروع ({activeProject}) بمستودع GitHub — مع دفع تلقائي بعد كل بناء ناجح.
+              {ghStatus?.connected && <span style={{ color:'#10b981' }}> ● مرتبط حالياً</span>}
+            </p>
+
+            <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>REPOSITORY URL</label>
+            <input value={ghForm.repoUrl} onChange={e => setGhForm(f => ({ ...f, repoUrl: e.target.value }))}
+              placeholder="https://github.com/username/repo.git" dir="ltr"
+              style={{ width:'100%', background:'#161b22', border:`1px solid ${S.border}`, borderRadius:8, padding:'9px 12px', color:'#fff', fontSize:12, margin:'6px 0 12px', fontFamily:'monospace' }} />
+
+            <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>
+              PERSONAL ACCESS TOKEN {ghStatus?.hasToken && <span style={{ color:'#10b981', fontWeight:400 }}>(محفوظ مشفراً — اتركه فارغاً للإبقاء عليه)</span>}
+            </label>
+            <input value={ghForm.pat} onChange={e => setGhForm(f => ({ ...f, pat: e.target.value }))}
+              placeholder="ghp_..." type="password" dir="ltr"
+              style={{ width:'100%', background:'#161b22', border:`1px solid ${S.border}`, borderRadius:8, padding:'9px 12px', color:'#fff', fontSize:12, margin:'6px 0 12px', fontFamily:'monospace' }} />
+
+            <div style={{ display:'flex', gap:12, alignItems:'center', marginBottom:16 }}>
+              <div style={{ flex:1 }}>
+                <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>BRANCH</label>
+                <input value={ghForm.branch} onChange={e => setGhForm(f => ({ ...f, branch: e.target.value }))}
+                  placeholder="main" dir="ltr"
+                  style={{ width:'100%', background:'#161b22', border:`1px solid ${S.border}`, borderRadius:8, padding:'9px 12px', color:'#fff', fontSize:12, marginTop:6, fontFamily:'monospace' }} />
+              </div>
+              <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', marginTop:18, fontSize:12, color:'#94a3b8' }}>
+                <input type="checkbox" checked={ghForm.autoCommit}
+                  onChange={e => setGhForm(f => ({ ...f, autoCommit: e.target.checked }))}
+                  style={{ accentColor:'#3b82f6', width:15, height:15 }} />
+                Auto-push بعد البناء
+              </label>
+            </div>
+
+            {ghStatus?.lastCommit && (
+              <p style={{ color:S.muted, fontSize:10, marginBottom:12 }}>آخر دفع: {new Date(ghStatus.lastCommit).toLocaleString('ar')}</p>
+            )}
+
+            <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
+              <button onClick={() => setShowGithubModal(false)}
+                style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 16px', color:S.muted, fontSize:13 }}>Cancel</button>
+              {ghStatus?.connected && (
+                <button onClick={handleGithubPush}
+                  style={{ background:'rgba(16,185,129,0.1)', border:'1px solid rgba(16,185,129,0.3)', borderRadius:8, padding:'8px 16px', color:'#10b981', fontWeight:700, fontSize:13 }}>
+                  ⬆ Push Now
+                </button>
+              )}
+              <button onClick={handleGithubConnect} disabled={isGhSaving}
+                style={{ background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', border:'none', borderRadius:8, padding:'8px 20px', color:'#fff', fontWeight:700, fontSize:13, opacity: isGhSaving ? 0.7 : 1 }}>
+                {isGhSaving ? 'جاري الحفظ...' : 'Save & Connect'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* PROJECT MODAL */}
       {showProjectModal && (
