@@ -178,7 +178,7 @@ export default function Dashboard() {
   const textareaRef = useRef(null);
   const notifId = useRef(0);
 
-  const { files, logs, streamingContent, agentStates, projects, activeProject, currentUser, vercelUrl, chatMessages, setChatMessages, setActiveProject, previewTimestamp, refreshPreview } = useSocket(isAuthenticated, handleAuthError);
+  const { files, logs, streamingContent, agentStates, projects, activeProject, currentUser, vercelUrl, chatMessages, setChatMessages, setActiveProject, previewTimestamp, refreshPreview, isConnected, connectionError } = useSocket(isAuthenticated, handleAuthError);
 
   // ── Monaco Workspace Store ──────────────────────────────────────
   const openJaolaFile = useJaolaStore(s => s.openFile);
@@ -397,6 +397,19 @@ export default function Dashboard() {
 
   // ═══ الأجزاء المشتركة (سطح المكتب + الجوال) ═══════════════════
 
+  // شريط حالة الاتصال — يظهر فقط عند الانقطاع، ويطمئن المستخدم أن الإرجاع تلقائي
+  const connectionBanner = !isConnected && (
+    <div style={{
+      background:'rgba(245,158,11,0.1)', borderBottom:'1px solid rgba(245,158,11,0.3)',
+      padding:'6px 14px', display:'flex', alignItems:'center', gap:8, flexShrink:0,
+    }}>
+      <div style={{ width:7, height:7, borderRadius:'50%', background:'#f59e0b', animation:'pulse 1s infinite', flexShrink:0 }} />
+      <span style={{ fontSize:11, color:'#fbbf24', fontWeight:600 }}>
+        {connectionError || 'انقطع الاتصال بالخادم — جاري إعادة الاتصال تلقائياً...'}
+      </span>
+    </div>
+  );
+
   // بث المهمة داخل الشات: الرسائل + بطاقة التقدم الحية
   const missionFeed = (
     <div style={{ flex:1, overflowY:'auto', padding:'12px 16px', display:'flex', flexDirection:'column', gap:8, minHeight:0 }}>
@@ -589,6 +602,8 @@ export default function Dashboard() {
           </button>
         </nav>
 
+        {connectionBanner}
+
         {/* المحتوى النشط */}
         <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column', minHeight:0 }}>
           {mobileView === 'mission' && (
@@ -700,9 +715,9 @@ export default function Dashboard() {
         <div style={{ flex:1 }} />
 
         {/* Status */}
-        <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color: isBuilding ? '#60a5fa' : S.muted }}>
-          <div style={{ width:6, height:6, borderRadius:'50%', background: isBuilding ? '#3b82f6' : '#10b981', animation:'pulse 2s infinite' }} />
-          {isBuilding ? 'Mission Running...' : 'All Systems Operational'}
+        <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color: !isConnected ? '#f59e0b' : isBuilding ? '#60a5fa' : S.muted }}>
+          <div style={{ width:6, height:6, borderRadius:'50%', background: !isConnected ? '#f59e0b' : isBuilding ? '#3b82f6' : '#10b981', animation:'pulse 2s infinite' }} />
+          {!isConnected ? 'Reconnecting...' : isBuilding ? 'Mission Running...' : 'All Systems Operational'}
         </div>
 
         <div style={{ width:1, height:20, background:S.border }} />
@@ -739,6 +754,8 @@ export default function Dashboard() {
           Exit
         </button>
       </nav>
+
+      {connectionBanner}
 
       {/* MAIN BODY */}
       <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
