@@ -891,6 +891,36 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const langInfo = getLangInfo(userLang);
 
         // 🆕 Text Normalizer — يفهم المعنى بغض النظر عن الأخطاء
+        // فحص إذا كان المستخدم يؤكد pending goal
+        if (this._pendingGoals?.has(username)) {
+            const pendingGoal = this._pendingGoals.get(username);
+            const isYes = /^(نعم|yes|ok|okay|يلا|ايوه|اه|go|نعم ✓|yes.*build|ابنه|ابدأ|start|sure|yep)/i.test(message.trim());
+            const isNo = /^(لا|no|cancel|لا.*|not now)/i.test(message.trim()) && message.trim().length < 10;
+            if (isYes) {
+                this._pendingGoals.delete(username);
+                const lang = getUserLanguage(username) || userLang;
+                const msg = lang === 'ar' ? '⚡ ممتاز! أبني الآن...' : '⚡ Building now...';
+                this.io.to(roomName).emit('chat_reply', { message: msg });
+                this.executeMission(pendingGoal, projectPath, username, activeProject, roomName, agents, dbStatus);
+                return;
+            } else if (isNo) {
+                this._pendingGoals.delete(username);
+                const msg = userLang === 'ar' ? 'تم الإلغاء. أخبرني بما تريد.' : 'Cancelled. Tell me what you need.';
+                this.io.to(roomName).emit('chat_reply', { message: msg });
+                return;
+            }
+        }
+
+        // معالجة تأكيد البناء
+        if (message.startsWith('__CONFIRM_BUILD__')) {
+            const goal = message.replace('__CONFIRM_BUILD__', '');
+            const lang = getUserLanguage(username) || userLang;
+            const msg = lang === 'ar' ? '⚡ ممتاز! أبني الآن...' : '⚡ Building now...';
+            this.io.to(roomName).emit('chat_reply', { message: msg });
+            this.executeMission(goal, projectPath, username, activeProject, roomName, agents, dbStatus);
+            return;
+        }
+
         const normalizedMessage = normalizeText(message);
         const meaningIntent = detectIntentFromMeaning(message);
 
@@ -1010,23 +1040,24 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // ── 2. تصنيف النية ───────────────────────────────────────────────
         const intentResult = await this.classifyIntent(normalizedMessage || message, username);
         // إذا كشف Text Normalizer النية بثقة عالية — استخدمها
-        const finalIntent = meaningIntent.confidence >= 90
+        const finalIntent = meaningIntent.confidence >= 75
             ? { intent: meaningIntent.intent, confidence: meaningIntent.confidence }
             : intentResult;
         this.emitLiveLog(roomName, 'INTENT', 'Classifier', `نية: ${finalIntent.intent} (ثقة: ${finalIntent.confidence}%)`);
 
         if (finalIntent.intent === 'build') {
-            // 🆕 ابدأ Clarifier بدلاً من البناء المباشر
-            if (agents.startClarification) {
-                const clarifyResult = await agents.startClarification(username, normalizedMessage || message);
-                // أضف رسالة المستخدم للشات أولاً
-                this.io.to(roomName).emit('chat_reply', { 
-                    message: clarifyResult.message,
-                    type: 'clarification'
-                });
-            } else {
-                this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);
-            }
+            const userGoal = normalizedMessage || message;
+            const lang = getUserLanguage(username) || userLang;
+            const projectHint = userGoal.replace(/^(ابني|اصنع|انشئ|بني|سوي|build|create|make)\s+/i, '').trim();
+            const confirmQ = lang === 'ar'
+                ? `هل تريد بناء موقع لـ "${projectHint}"؟`
+                : `Do you want me to build a website for "${projectHint}"?`;
+            const opts = lang === 'ar'
+                ? ['نعم، ابنه الآن ⚡', 'لا، أخبرني أكثر']
+                : ['Yes, build it now ⚡', 'No, tell me more'];
+            this.io.to(roomName).emit('chat_reply', { message: confirmQ, options: opts, pendingGoal: userGoal });
+            if (!this._pendingGoals) this._pendingGoals = new Map();
+            this._pendingGoals.set(username, userGoal);
         } else if (finalIntent.intent === 'modify') {
             recordEdit(username, message);
             this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);

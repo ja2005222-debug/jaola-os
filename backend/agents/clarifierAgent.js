@@ -141,40 +141,14 @@ export function isBuildRequest(message) {
 // 💬 بدء مرحلة التوضيح
 // ═══════════════════════════════════════════════════════
 export async function startClarification(username, userGoal) {
-    const projectType = detectProjectType(userGoal);
-    const lang = getUserLanguage(username) || detectLanguage(userGoal);
-
-    // 🆕 جرّب الأسئلة الديناميكية أولاً
-    let questions = await generateDynamicQuestions(userGoal, projectType, lang);
-
-    // Fallback للأسئلة الثابتة إذا فشل AI
-    if (!questions) {
-        questions = lang === 'ar'
-            ? (CLARIFIER_QUESTIONS[projectType] || DEFAULT_QUESTIONS)
-            : (CLARIFIER_QUESTIONS_EN[projectType] || DEFAULT_QUESTIONS_EN);
-    }
-
-    conversationState.set(username, {
-        stage: STAGES.CLARIFYING,
-        originalGoal: userGoal,
-        projectType,
-        questions,
-        currentQuestion: 0,
-        answers: [],
-        lang,
-        isDynamic: true,
-    });
-
-    const totalQuestions = questions.length;
-    const intro = lang === 'ar'
-        ? `قبل أن أبدأ البناء، لدي ${totalQuestions} أسئلة سريعة 🎯\n\n**السؤال 1/${totalQuestions}:**\n${questions[0]}`
-        : `Before I start building, I have ${totalQuestions} quick questions 🎯\n\n**Question 1/${totalQuestions}:**\n${questions[0]}`;
-
-    return { type: 'clarification', message: intro, projectType, questionIndex: 0, totalQuestions };
-
-    return { type: 'clarification', message: intro, projectType, questionIndex: 0, totalQuestions };
+    const lang = getUserLanguage(username) || 'ar';
+    conversationState.set(username, { stage: 'done', originalGoal: userGoal, lang });
+    const cleanName = userGoal.replace(/^(ابني|اصنع|انشئ|بني|سوي|اعمل|build|create|make)\s+/i, '').trim();
+    const msg = lang === 'ar'
+        ? `⚡ ممتاز! سأبني "${cleanName.slice(0,25)}" الآن فوراً...`
+        : `⚡ Got it! Building "${cleanName.slice(0,25)}" right now...`;
+    return { type: 'build_direct', message: msg, readyToBuild: true, finalGoal: userGoal };
 }
-
 // ═══════════════════════════════════════════════════════
 // 📝 معالجة إجابة المستخدم
 // ═══════════════════════════════════════════════════════

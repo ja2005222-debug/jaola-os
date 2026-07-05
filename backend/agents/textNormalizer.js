@@ -175,6 +175,13 @@ export function detectIntentFromMeaning(text) {
     if (buildWords.some(w => lowerNorm.startsWith(w + ' ') || lowerNorm === w)) return { intent: 'build', confidence: 95, normalized };
     if (modifyWords.some(w => lowerNorm.startsWith(w + ' '))) return { intent: 'modify', confidence: 85, normalized };
     if (stopWords.some(w => lowerNorm.startsWith(w))) return { intent: 'stop', confidence: 95, normalized };
+    // كلمة وحيدة تصف مشروعاً → build intent
+    const singleWord = normalized.trim().split(/\s+/);
+    const projectTypes = ['مستشفى','مستشفي','مطعم','متجر','فندق','عيادة','مقهى','مدرسة','جيم','صيدلية',
+        'restaurant','hotel','hospital','clinic','cafe','store','shop','gym'];
+    if (singleWord.length <= 2 && projectTypes.some(p => normalized.includes(p))) {
+        return { intent: 'build', confidence: 80, normalized };
+    }
     return { intent: null, confidence: 0, normalized };
 }
 

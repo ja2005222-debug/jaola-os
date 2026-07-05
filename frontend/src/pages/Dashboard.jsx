@@ -407,7 +407,7 @@ export default function Dashboard() {
         <div style={{ width:380, minWidth:340, background:S.bg2, borderRight:`1px solid ${S.border}`, display:'flex', flexDirection:'column', overflow:'hidden' }}>
 
           {/* Mission Input */}
-          <div style={{ order:2, padding:'16px', borderTop:`1px solid ${S.border}`, flexShrink:0 }}>
+          <div style={{ order:3, padding:'16px', borderTop:`1px solid ${S.border}`, flexShrink:0 }}>
             <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:10 }}>⚡ Mission Control</div>
             <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
@@ -448,13 +448,13 @@ export default function Dashboard() {
           )}
 
           {/* Execution Feed */}
-          <div style={{ flex:1, overflowY:'auto', order:0, padding:'12px 16px', display:'flex', flexDirection:'column', gap:8, minHeight:0 }}>
+          <div style={{ order:0, flex:1, overflowY:'auto', padding:'12px 16px', display:'flex', flexDirection:'column', gap:8, minHeight:0 }}>
             {chatMessages.map((msg, i) => <FeedItem key={i} msg={msg} />)}
             <div ref={feedEndRef} />
           </div>
 
           {/* Quick Actions */}
-          <div style={{ order:1, padding:'10px 16px', borderTop:`1px solid ${S.border}`, display:'flex', gap:6, flexWrap:'wrap', flexShrink:0 }}>
+          <div style={{ order:2, padding:'10px 16px', borderTop:`1px solid ${S.border}`, display:'flex', gap:6, flexWrap:'wrap', flexShrink:0 }}>
             {['غير الألوان', 'أضف قسماً', 'اجعله أسرع', 'انشر الآن'].map(a => (
               <button key={a} onClick={() => setPrompt(a)}
                 style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:20, padding:'4px 10px', color:S.muted, fontSize:10, fontWeight:600 }}>

@@ -74,10 +74,15 @@ export function useSocket(isAuthenticated, handleAuthError) {
 
     socket.off('chat_reply').on('chat_reply', (data) => {
       setChatMessages((prev) => {
-        // منع التكرار — تحقق من آخر رسالة
         const last = prev[prev.length - 1];
         if (last && last.sender !== 'user' && last.text === data.message) return prev;
-        return [...prev, { sender: 'assistant', text: data.message, timestamp: Date.now() }];
+        return [...prev, {
+          sender: 'assistant',
+          text: data.message,
+          options: data.options || null,
+          pendingGoal: data.pendingGoal || null,
+          timestamp: Date.now()
+        }];
       });
     });
 
