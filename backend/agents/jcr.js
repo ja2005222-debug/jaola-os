@@ -27,8 +27,10 @@ import { commitBuild, initProjectRepo, getProjectStats } from './gitAgent.js';
 import { backupProject, listSnapshots } from './fileManager.js';
 import { analyzeRequirements, buildRequirementsContext } from './requirementAnalyzer.js';
 import { normalizeText, detectIntentFromMeaning } from './textNormalizer.js';
+import { classifyIntentFast, decide, buildContinuationGoal, buildStatusReply, missionBriefing, greetingReply } from './ceoBrain.js';
+import { setUserLanguage } from './languageDetector.js';
 import { registerMission, throwIfAborted, clearMission } from '../services/abortRegistry.js';
-import { autoPushIfEnabled } from '../services/githubSync.js';
+import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import Conversation from '../models/Conversation.js';
 import mongoose from 'mongoose';
 
@@ -810,22 +812,14 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // ⏹️ تسجيل المهمة في سجل الإيقاف — تسمح للمستخدم بإيقافها من الواجهة
         registerMission(roomName);
 
-        // 🆕 Personality — CEO يتحدث كمهندس يفهم السياق
+        // 🧠 CEO Personality — إحاطة مهمة كاملة: تحليل + تعيين وكلاء + وقت متوقع
         const existingFiles = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
         const hasExistingProject = existingFiles && existingFiles.trim().length > 100;
         const userLangForMsg = getUserLanguage(username) || 'ar';
 
-        let personalityMsg;
-        if (hasExistingProject) {
-            personalityMsg = userLangForMsg === 'ar'
-                ? `فهمت طلبك.\nراجعت المشروع الحالي — وجدت ملفات موجودة.\nسأُعدّل الكود الحالي بدلاً من البناء من صفر.\nسأبدأ الآن...`
-                : `Got it.\nI reviewed the current project — found existing files.\nI'll modify the existing code instead of rebuilding from scratch.\nStarting now...`;
-        } else {
-            personalityMsg = userLangForMsg === 'ar'
-                ? `فهمت طلبك.\nمشروع جديد — سأبني من الصفر بأفضل المعايير.\nسأبدأ الآن...`
-                : `Got it.\nNew project — I'll build from scratch with best practices.\nStarting now...`;
-        }
-        this.io.to(roomName).emit('chat_reply', { message: personalityMsg });
+        this.io.to(roomName).emit('chat_reply', {
+            message: missionBriefing({ lang: userLangForMsg, goal, hasExisting: hasExistingProject })
+        });
 
         this.emitLiveLog(roomName, 'JCOS', 'Kernel', `🏁 بدء المهمة: ${context.missionId}`);
         try {
@@ -955,6 +949,18 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // 🆕 تحديث لغة ملف المستخدم
         updateLanguage(username, userLang);
 
+        // ── 🌐 Language Lock — تبديل صريح للغة يُحفظ ويُطبّق فوراً ────────
+        const explicitLang = detectExplicitLanguageSwitch(message);
+        if (explicitLang && explicitLang !== getUserLanguage(username)) {
+            setUserLanguage(username, explicitLang);
+            updateLanguage(username, explicitLang);
+            const confirmMsg = explicitLang === 'ar'
+                ? 'تم. سأتحدث معك بالعربية من الآن فصاعداً. 🇸🇦'
+                : 'Done. I will speak English from now on. 🇬🇧';
+            this.io.to(roomName).emit('chat_reply', { message: confirmMsg });
+            return;
+        }
+
         // ── 1. تحقق من حالة Clarifier ────────────────────────────────────
         const clarifierState = agents.getState?.(username);
 
@@ -1036,6 +1042,94 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 }
             }
             return;
+        }
+
+        // ── 🧠 CEO Brain: Intent Engine → Decision Engine → Execution ─────
+        // النوايا الإدارية (كمل/أين وصلنا/انشر/ادفع/تحية) تُعالج هنا قبل أي LLM
+        const fastIntent = classifyIntentFast(normalizedMessage || message);
+        if (fastIntent) {
+            const lang = getUserLanguage(username) || userLang;
+            const decision = decide(fastIntent.intent, username, activeProject);
+
+            // النية والقرار يظهران للمستخدم في بث المهمة — شفافية كاملة
+            this.emitLiveLog(roomName, 'INTENT', 'Engine',
+                `🎯 ${JSON.stringify({ intent: fastIntent.intent, project: activeProject, confidence: fastIntent.confidence })}`);
+            this.emitLiveLog(roomName, 'DECISION', 'Engine', `⚙️ ${decision.action} — ${decision.reason}`);
+
+            switch (fastIntent.intent) {
+                case 'status': {
+                    this.io.to(roomName).emit('chat_reply', { message: buildStatusReply(username, activeProject, lang) });
+                    return;
+                }
+
+                case 'greeting': {
+                    this.io.to(roomName).emit('chat_reply', { message: greetingReply(username, activeProject, lang) });
+                    return;
+                }
+
+                case 'continue': {
+                    if (decision.action === 'reply') {
+                        const busyMsg = lang === 'ar'
+                            ? '⚙️ الفريق يعمل على المشروع الآن بالفعل — تابع التقدم الحي هنا.'
+                            : '⚙️ The team is already working on it — watch the live progress here.';
+                        this.io.to(roomName).emit('chat_reply', { message: busyMsg });
+                        return;
+                    }
+                    const continuationGoal = buildContinuationGoal(username, activeProject);
+                    if (!continuationGoal) {
+                        // لا ذاكرة — نعرض الحالة ونسأل سؤالاً محدداً بدل "ماذا تقصد؟"
+                        const noMemMsg = lang === 'ar'
+                            ? `لا أجد مشروعاً سابقاً في (${activeProject}) لأكمله.\nأخبرني: ماذا تريد أن نبني؟ (مثال: "متجر بيض بلدي مع سلة وطلب أونلاين")`
+                            : `I don't find a previous project in (${activeProject}) to continue.\nTell me: what should we build? (e.g., "an egg store with cart and online ordering")`;
+                        this.io.to(roomName).emit('chat_reply', { message: noMemMsg });
+                        return;
+                    }
+                    const resumeMsg = lang === 'ar'
+                        ? '📂 وجدت المشروع في الذاكرة — الفريق يستأنف من حيث توقف...'
+                        : '📂 Project found in memory — the team is resuming where it left off...';
+                    this.io.to(roomName).emit('chat_reply', { message: resumeMsg });
+                    this.executeMission(continuationGoal, projectPath, username, activeProject, roomName, agents, dbStatus);
+                    return;
+                }
+
+                case 'deploy': {
+                    if (decision.action === 'reply') {
+                        const waitMsg = lang === 'ar'
+                            ? '⏳ البناء جارٍ الآن — سأنشر تلقائياً بعد اكتماله، أو اطلب النشر لاحقاً.'
+                            : '⏳ Build in progress — deploy after it completes.';
+                        this.io.to(roomName).emit('chat_reply', { message: waitMsg });
+                        return;
+                    }
+                    const deployMsg = lang === 'ar'
+                        ? '🚀 أمر النشر مقبول — جاري الرفع للإنتاج الآن...'
+                        : '🚀 Deploy order accepted — shipping to production...';
+                    this.io.to(roomName).emit('chat_reply', { message: deployMsg });
+                    agents.deployProject?.(
+                        { projectPath, activeProject, currentUser: username },
+                        this.io,
+                        () => {}
+                    ).catch(err => {
+                        this.io.to(roomName).emit('log', { message: `❌ [DEPLOY]: ${err.message}` });
+                    });
+                    return;
+                }
+
+                case 'github_push': {
+                    const pushMsg = lang === 'ar'
+                        ? '🐙 جاري الدفع إلى GitHub...'
+                        : '🐙 Pushing to GitHub...';
+                    this.io.to(roomName).emit('chat_reply', { message: pushMsg });
+                    pushProject(username, activeProject, projectPath).then(result => {
+                        const doneMsg = result.success
+                            ? (lang === 'ar' ? `✅ تم الدفع إلى ${result.url} (${result.branch})` : `✅ Pushed to ${result.url} (${result.branch})`)
+                            : (lang === 'ar' ? `❌ فشل الدفع — ${result.error}` : `❌ Push failed — ${result.error}`);
+                        this.io.to(roomName).emit('chat_reply', { message: doneMsg });
+                    }).catch(err => {
+                        this.io.to(roomName).emit('chat_reply', { message: `❌ GitHub: ${err.message}` });
+                    });
+                    return;
+                }
+            }
         }
 
         // ── 1. كشف التعديل المباشر ───────────────────────────────────────
