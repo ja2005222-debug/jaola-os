@@ -7,10 +7,15 @@ const BACKEND_URL = window.location.hostname === 'localhost' || window.location.
 
 export const socket = io(BACKEND_URL, {
   autoConnect: false,
-  transports: ['polling', 'websocket'],
-  reconnectionAttempts: 3,       // حد أقصى 3 محاولات إعادة اتصال
-  reconnectionDelay: 2000,       // انتظر ثانيتين بين كل محاولة
-  timeout: 10000,
+  // websocket أولاً — أسرع وأقل عرضة لمشاكل الـ polling، مع polling كاحتياط
+  transports: ['websocket', 'polling'],
+  // 🛠️ إصلاح جذري: كانت 3 محاولات فقط (6 ثوانٍ) ثم استسلام نهائي — الآن لا يستسلم أبداً
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000,        // أول محاولة بعد ثانية
+  reconnectionDelayMax: 10000,    // ثم تصاعدياً حتى 10 ثوانٍ
+  randomizationFactor: 0.5,
+  timeout: 20000,                 // مهلة أطول — Render المجاني قد يستيقظ ببطء
 });
 
 export function useSocket(isAuthenticated, handleAuthError) {
@@ -30,9 +35,22 @@ export function useSocket(isAuthenticated, handleAuthError) {
     planner: 'waiting', architect: 'waiting',
     coder: 'waiting', qa: 'waiting', deploy: 'waiting'
   });
+  const [isConnected, setIsConnected]   = useState(socket.connected);
 
   // مرجع لتتبع عدد أخطاء الاتصال لمنع حلقة الـ reload
   const connectErrorCountRef = useRef(0);
+  // مرجع للمشروع النشط — حتى تعيد معالجات الأحداث الانضمام للغرفة الصحيحة
+  const activeProjectRef = useRef(activeProject);
+  useEffect(() => { activeProjectRef.current = activeProject; }, [activeProject]);
+
+  // 🛠️ إعادة الانضمام للغرفة عند تبديل المشروع + حفظه للجلسات القادمة
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    localStorage.setItem('activeProject', activeProject);
+    if (socket.connected) {
+      socket.emit('join_project', { project: activeProject });
+    }
+  }, [activeProject, isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -107,46 +125,74 @@ export function useSocket(isAuthenticated, handleAuthError) {
       });
     });
 
-    // ─── معالجة أخطاء الاتصال — بدون حلقة reload لا نهاية لها ─────
+    // ─── معالجة أخطاء الاتصال — إعادة محاولة لا نهائية بدون reload ──
     socket.off('connect_error').on('connect_error', (err) => {
       connectErrorCountRef.current += 1;
       console.error('Socket Error:', err.message);
 
-      // توكن منتهي أو غير صالح
+      // توكن منتهي أو غير صالح — الحالة الوحيدة التي توجب إعادة تسجيل الدخول
       if (err.message.includes('Unauthorized') || err.message.includes('Token')) {
         setConnectionError('انتهت صلاحية الجلسة. سيتم تسجيل خروجك...');
         localStorage.removeItem('token');
         localStorage.removeItem('currentUser');
-        // reload مرة واحدة فقط
         setTimeout(() => window.location.reload(), 2000);
         return;
       }
 
-      // بعد 3 محاولات فاشلة — أظهر رسالة بدلاً من reload
-      if (connectErrorCountRef.current >= 3) {
-        setConnectionError('تعذّر الاتصال بالخادم. تحقق من اتصالك وحاول تحديث الصفحة.');
-        setLogs((prev) => [...prev, {
-          message: '⚠️ [SYSTEM]: فشل الاتصال بالخادم بعد 3 محاولات. يرجى تحديث الصفحة يدوياً.'
-        }]);
-      } else {
-        setLogs((prev) => [...prev, {
-          message: `⚠️ [SYSTEM]: محاولة اتصال ${connectErrorCountRef.current}/3...`
+      // socket.io يستمر بإعادة المحاولة تلقائياً (Infinity) — نعرض الحالة فقط
+      setIsConnected(false);
+      if (connectErrorCountRef.current === 1 || connectErrorCountRef.current % 5 === 0) {
+        setConnectionError('جاري إعادة الاتصال بالخادم...');
+        setLogs((prev) => [...prev.slice(-100), {
+          message: `⚠️ [SYSTEM]: انقطع الاتصال — إعادة المحاولة (${connectErrorCountRef.current})...`
         }]);
       }
     });
 
     socket.off('connect').on('connect', () => {
-      // إعادة تعيين عداد الأخطاء عند الاتصال الناجح
+      const wasReconnect = connectErrorCountRef.current > 0;
       connectErrorCountRef.current = 0;
       setConnectionError('');
+      setIsConnected(true);
+
+      // 🛠️ الإصلاح الجوهري: إعادة الانضمام لغرفة المشروع بعد *كل* اتصال.
+      // بدون هذا، أي إعادة اتصال تترك الـ socket خارج الغرفة فتتوقف كل
+      // الأحداث (شات/سجلات/ملفات) بصمت — وهذا ما كان يبدو كـ "فقدان اتصال".
+      socket.emit('join_project', { project: activeProjectRef.current || 'sandbox_app' });
+
+      if (wasReconnect) {
+        setLogs((prev) => [...prev.slice(-100), { message: '✅ [SYSTEM]: عاد الاتصال بالخادم واستُعيدت الغرفة.' }]);
+      }
     });
 
     socket.off('disconnect').on('disconnect', (reason) => {
+      setIsConnected(false);
       if (reason === 'io server disconnect') {
-        // الخادم قطع الاتصال عمداً (مثلاً انتهاء التوكن)
-        setLogs((prev) => [...prev, { message: '🔌 [SYSTEM]: انقطع الاتصال بالخادم.' }]);
+        // الخادم أنهى الاتصال (إعادة نشر مثلاً) — auto-reconnect لا يعمل هنا، نعيد يدوياً
+        setLogs((prev) => [...prev.slice(-100), { message: '🔌 [SYSTEM]: أعاد الخادم تشغيل الاتصال — جاري الرجوع...' }]);
+        setTimeout(() => socket.connect(), 1500);
       }
     });
+
+    // 🛠️ تحديث التوكن قبل كل محاولة إعادة اتصال (Manager events)
+    socket.io.off('reconnect_attempt').on('reconnect_attempt', () => {
+      socket.auth = { token: localStorage.getItem('token') };
+    });
+
+    // 🛠️ الجوال: المتصفح يجمّد الـ socket في الخلفية — عند العودة نعيد الاتصال فوراً
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !socket.connected) {
+        socket.auth = { token: localStorage.getItem('token') };
+        socket.connect();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('online', onVisibilityChange);
+
+    // 🛠️ نبض حياة كل 4 دقائق: يبقي خدمة Render المجانية مستيقظة أثناء فتح الصفحة
+    const keepAlive = setInterval(() => {
+      fetch(`${BACKEND_URL}/api/health`).catch(() => {});
+    }, 4 * 60 * 1000);
 
     socket.connect();
     socket.emit('join_project', { project: savedProject });
@@ -163,6 +209,10 @@ export function useSocket(isAuthenticated, handleAuthError) {
       socket.off('connect_error');
       socket.off('connect');
       socket.off('disconnect');
+      socket.io.off('reconnect_attempt');
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('online', onVisibilityChange);
+      clearInterval(keepAlive);
     };
   }, [isAuthenticated]);
 
@@ -180,6 +230,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
     vercelUrl,
     chatMessages,
     connectionError,
+    isConnected,
     previewTimestamp,
     refreshPreview,
     setChatMessages,

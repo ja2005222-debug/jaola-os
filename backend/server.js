@@ -59,6 +59,12 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,h
     .split(',')
     .map(o => o.trim());
 
+// 🛠️ Render يوفر رابط الخدمة تلقائياً — نضيفه للأصول المسموحة حتى لا يفشل
+// الـ socket بسبب CORS إذا نُسي ضبط ALLOWED_ORIGINS في بيئة الإنتاج
+if (process.env.RENDER_EXTERNAL_URL && !ALLOWED_ORIGINS.includes(process.env.RENDER_EXTERNAL_URL)) {
+    ALLOWED_ORIGINS.push(process.env.RENDER_EXTERNAL_URL);
+}
+
 const corsOptions = {
     origin: (origin, callback) => {
         // السماح لطلبات بدون origin (مثل curl أو SSR) أو من النطاقات المسموحة
@@ -76,7 +82,17 @@ const io = new Server(httpServer, {
         origin: ALLOWED_ORIGINS,
         methods: ['GET', 'POST'],
         credentials: true,
-    }
+    },
+    // 🛠️ تحمّل أعلى لشبكات الجوال المتقلبة: ping كل 25 ثانية ومهلة دقيقة كاملة
+    // قبل اعتبار الاتصال ميتاً (الافتراضي 20 ثانية كان يقطع اتصالات الجوال البطيئة)
+    pingInterval: 25000,
+    pingTimeout: 60000,
+    // 🛠️ استرجاع حالة الاتصال: الانقطاعات القصيرة (< دقيقتين) تستعيد الغرف
+    // والأحداث الفائتة تلقائياً بدون فقدان أي رسالة
+    connectionStateRecovery: {
+        maxDisconnectionDuration: 2 * 60 * 1000,
+        skipMiddlewares: false,
+    },
 });
 
 app.use(cors(corsOptions));
@@ -352,6 +368,16 @@ io.on('connection', (socket) => {
 });
 
 // ─── المسارات ─────────────────────────────────────────────────────────
+
+// 🛠️ نبض حياة — يبقي خدمة Render مستيقظة ويتيح فحص الحالة (بدون توكن)
+app.get('/api/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        uptime: Math.floor(process.uptime()),
+        db: isDbConnected && mongoose.connection.readyState === 1 ? 'connected' : 'offline',
+        timestamp: Date.now(),
+    });
+});
 
 // workspace: يخدم ملفات الـ iframe
 // ملاحظة مهمة: لا يمكن استخدام verifyToken هنا لأن <iframe src> لا يرسل
