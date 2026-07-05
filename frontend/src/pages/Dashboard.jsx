@@ -1,8 +1,10 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth.js';
 import { useSocket, socket } from '../hooks/useSocket.js';
-import { PreviewFrame } from '../components/PreviewFrame.jsx';
+import { useIsMobile } from '../hooks/useIsMobile.js';
 import { MonacoWorkspace } from '../components/editor/MonacoWorkspace.jsx';
+import { MissionProgress } from '../components/MissionProgress.jsx';
+import { PreviewPanel } from '../components/PreviewPanel.jsx';
 import { useJaolaStore } from '../store/useJaolaStore.js';
 import { BACKEND_URL } from '../config.js';
 
@@ -39,6 +41,13 @@ const SIDEBAR_ITEMS = [
   { icon: '⚙️', label: 'Settings', id: 'settings' },
 ];
 
+const MOBILE_TABS = [
+  { id: 'mission', icon: '⚡', label: 'المهمة' },
+  { id: 'preview', icon: '🖥️', label: 'معاينة' },
+  { id: 'editor', icon: '💻', label: 'الكود' },
+  { id: 'logs', icon: '📋', label: 'السجل' },
+];
+
 // ── Boot Screen ──────────────────────────────────────────────────
 function BootScreen({ onDone }) {
   const [step, setStep] = useState(0);
@@ -53,18 +62,16 @@ function BootScreen({ onDone }) {
   }, [step, onDone]);
 
   return (
-    <div style={{ position:'fixed', inset:0, background:'#030508', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', zIndex:9999, gap:40 }}>
+    <div style={{ position:'fixed', inset:0, background:'#030508', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', zIndex:9999, gap:40, padding:20 }}>
       <style>{`@keyframes glow{0%,100%{box-shadow:0 0 20px rgba(59,130,246,0.3)}50%{box-shadow:0 0 60px rgba(59,130,246,0.7)}} @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}`}</style>
 
-      {/* Logo */}
       <div style={{ textAlign:'center' }}>
         <div style={{ width:72, height:72, borderRadius:20, background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:32, margin:'0 auto 20px', animation:'glow 2s infinite' }}>⚡</div>
         <div style={{ fontSize:26, fontWeight:900, color:'#fff', letterSpacing:'-1px', fontFamily:'system-ui' }}>JAOLA OS</div>
         <div style={{ fontSize:12, color:'#475569', marginTop:6, letterSpacing:'2px', textTransform:'uppercase' }}>Autonomous Software Engineering</div>
       </div>
 
-      {/* Boot Messages */}
-      <div style={{ display:'flex', flexDirection:'column', gap:8, width:320 }}>
+      <div style={{ display:'flex', flexDirection:'column', gap:8, width:'min(320px, 90vw)' }}>
         {BOOT_STEPS.slice(0, step).map((msg, i) => (
           <div key={i} style={{ display:'flex', alignItems:'center', gap:12, animation:'fadeIn 0.3s ease', opacity: i < step - 1 ? 0.4 : 1, transition:'opacity 0.3s' }}>
             <div style={{ width:6, height:6, borderRadius:'50%', background: i < step - 1 ? '#10b981' : '#3b82f6', boxShadow: i === step - 1 ? '0 0 10px #3b82f6' : 'none', flexShrink:0 }} />
@@ -73,7 +80,6 @@ function BootScreen({ onDone }) {
         ))}
       </div>
 
-      {/* Progress */}
       <div style={{ width:240, height:2, background:'#1e293b', borderRadius:2, overflow:'hidden' }}>
         <div style={{ height:'100%', width:`${(step/BOOT_STEPS.length)*100}%`, background:'linear-gradient(90deg,#3b82f6,#8b5cf6)', borderRadius:2, transition:'width 0.4s ease' }} />
       </div>
@@ -82,12 +88,10 @@ function BootScreen({ onDone }) {
 }
 
 // ── Execution Feed Item ─────────────────────────────────────────
-function FeedItem({ msg, type }) {
-  const icons = { user:'👤', assistant:'⚡', system:'🔧' };
-  const colors = { user:'#1d4ed8', assistant:'#0f172a', system:'#1a1a2e' };
-  const borders = { user:'rgba(29,78,216,0.3)', assistant:'rgba(59,130,246,0.15)', system:'rgba(100,116,139,0.15)' };
-
-  const isStatus = msg.text && (msg.text.includes('✅') || msg.text.includes('❌') || msg.text.includes('🎯') || msg.text.includes('🚀') || msg.text.includes('⚙️') || msg.text.includes('🔍'));
+function FeedItem({ msg }) {
+  // رسائل النظام (أحداث البناء الحية) — سطر حالة مضغوط
+  const isStatus = msg.sender === 'system' ||
+    (msg.text && (msg.text.includes('✅') || msg.text.includes('❌') || msg.text.includes('🎯') || msg.text.includes('🚀') || msg.text.includes('⚙️') || msg.text.includes('🔍')));
 
   if (msg.sender === 'user') {
     return (
@@ -102,9 +106,14 @@ function FeedItem({ msg, type }) {
 
   if (isStatus) {
     return (
-      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'6px 0', animation:'fadeIn 0.2s ease' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'4px 0', animation:'fadeIn 0.2s ease' }}>
         <div style={{ width:1, background:'rgba(59,130,246,0.3)', alignSelf:'stretch', marginRight:4, flexShrink:0 }} />
-        <div style={{ fontSize:12, color:'#64748b', fontFamily:'monospace', flex:1 }}>{msg.text}</div>
+        <div style={{ fontSize:11.5, color:'#64748b', fontFamily:'monospace', flex:1, wordBreak:'break-word' }}>{msg.text}</div>
+        {msg.timestamp && (
+          <span style={{ fontSize:9, color:'#334155', fontFamily:'monospace', flexShrink:0, direction:'ltr' }}>
+            {new Date(msg.timestamp).toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' })}
+          </span>
+        )}
       </div>
     );
   }
@@ -120,7 +129,7 @@ function FeedItem({ msg, type }) {
   );
 }
 
-// ── Agent Node ──────────────────────────────────────────────────
+// ── Agent Node (شريط الوكلاء السفلي — سطح المكتب) ───────────────
 function AgentNode({ name, state, icon }) {
   const isActive = state === 'running';
   const isDone = state === 'completed';
@@ -145,10 +154,12 @@ function AgentNode({ name, state, icon }) {
 // ── Main Dashboard ──────────────────────────────────────────────
 export default function Dashboard() {
   const { currentUser: authUser, token, isAuthenticated, handleAuthError, setIsAuthenticated, setCurrentUser, setToken, isLoading } = useAuth();
+  const isMobile = useIsMobile();
 
   const [booted, setBooted] = useState(() => sessionStorage.getItem('booted') === '1');
   const [activeNav, setActiveNav] = useState('mission');
-  const [activeTab, setActiveTab] = useState('preview');
+  const [activeTab, setActiveTab] = useState('preview');       // سطح المكتب: تاب العمود الأوسط
+  const [mobileView, setMobileView] = useState('mission');     // الجوال: الشاشة النشطة
   const [prompt, setPrompt] = useState('');
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
@@ -161,12 +172,13 @@ export default function Dashboard() {
   const [ghForm, setGhForm] = useState({ repoUrl: '', pat: '', branch: 'main', autoCommit: true });
   const [ghStatus, setGhStatus] = useState(null);
   const [isGhSaving, setIsGhSaving] = useState(false);
+  const [buildStartedAt, setBuildStartedAt] = useState(null);
 
   const feedEndRef = useRef(null);
   const textareaRef = useRef(null);
   const notifId = useRef(0);
 
-  const { files, logs, streamingContent, agentStates, projects, activeProject, currentUser, vercelUrl, chatMessages, setChatMessages, setActiveProject, setStreamingContent, previewTimestamp } = useSocket(isAuthenticated, handleAuthError);
+  const { files, logs, streamingContent, agentStates, projects, activeProject, currentUser, vercelUrl, chatMessages, setChatMessages, setActiveProject, previewTimestamp, refreshPreview } = useSocket(isAuthenticated, handleAuthError);
 
   // ── Monaco Workspace Store ──────────────────────────────────────
   const openJaolaFile = useJaolaStore(s => s.openFile);
@@ -175,7 +187,6 @@ export default function Dashboard() {
   const activeFileContent = openFiles.find(f => f.path === activeFilePath)?.content || '';
   const activeFile = activeFilePath;
 
-  // مزامنة سياق المتجر (توكن + مشروع) — تغيير المشروع يغلق التابات تلقائياً
   useEffect(() => {
     if (isAuthenticated && token) {
       useJaolaStore.getState().setContext({ token, project: activeProject });
@@ -183,16 +194,25 @@ export default function Dashboard() {
   }, [token, activeProject, isAuthenticated]);
 
   const isBuilding = Object.values(agentStates || {}).some(s => s === 'running');
+  const lastLogMsg = logs[logs.length - 1]?.message || '';
 
-  useEffect(() => { feedEndRef.current?.scrollIntoView({ behavior:'smooth' }); }, [chatMessages]);
+  // تتبع بداية البناء لعرض المؤقت في بطاقة التقدم
+  useEffect(() => {
+    setBuildStartedAt(prev => {
+      if (isBuilding && !prev) return Date.now();
+      if (!isBuilding && prev) return null;
+      return prev;
+    });
+  }, [isBuilding]);
 
-  // Auto-switch to logs tab during build
+  useEffect(() => { feedEndRef.current?.scrollIntoView({ behavior:'smooth' }); }, [chatMessages, isBuilding]);
+
   useEffect(() => {
     if (logs.length > 0) {
       const last = logs[logs.length - 1];
       if (last?.message?.includes('✨ نجاح')) {
         addNotification('✅ البناء اكتمل بنجاح!', 'success');
-        setActiveTab('preview');
+        if (isMobile) setMobileView('preview'); else setActiveTab('preview');
       }
     }
   }, [logs]);
@@ -235,7 +255,7 @@ export default function Dashboard() {
     } catch {}
   };
 
-  // 🐙 GitHub — جلب الحالة وفتح النافذة
+  // 🐙 GitHub
   const openGithubModal = async () => {
     setShowGithubModal(true);
     try {
@@ -272,8 +292,8 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${BACKEND_URL}/api/github/push`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ project: activeProject }) });
       const d = await res.json();
-      addNotification(res.ok ? '🐙 جاري الدفع إلى GitHub... تابع السجلات' : `❌ ${d.error || 'فشل الدفع'}`, res.ok ? 'info' : 'info');
-      if (res.ok) { setShowGithubModal(false); setActiveTab('logs'); }
+      addNotification(res.ok ? '🐙 جاري الدفع إلى GitHub... تابع الشات' : `❌ ${d.error || 'فشل الدفع'}`, 'info');
+      if (res.ok) setShowGithubModal(false);
     } catch {}
   };
 
@@ -334,24 +354,24 @@ export default function Dashboard() {
 
   // ── LOGIN ────────────────────────────────────────────────────
   if (isLoading) return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:S.bg }}>
+    <div style={{ minHeight:'100dvh', display:'flex', alignItems:'center', justifyContent:'center', background:S.bg }}>
       <div style={{ width:28, height:28, border:'2px solid #3b82f6', borderTopColor:'transparent', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} />
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 
   if (!isAuthenticated) return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:S.bg, fontFamily:S.font }}>
+    <div style={{ minHeight:'100dvh', display:'flex', alignItems:'center', justifyContent:'center', background:S.bg, fontFamily:S.font, padding:16 }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}} input{outline:none!important;} input:focus{border-color:#3b82f6!important;}`}</style>
-      <div style={{ background:'#0d1117', border:'1px solid #1f2937', borderRadius:16, padding:40, width:380, textAlign:'center' }}>
+      <div style={{ background:'#0d1117', border:'1px solid #1f2937', borderRadius:16, padding:'40px 28px', width:'min(380px, 100%)', textAlign:'center' }}>
         <div style={{ width:56, height:56, borderRadius:14, background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24, margin:'0 auto 20px' }}>⚡</div>
         <h2 style={{ color:'#fff', fontSize:20, fontWeight:800, letterSpacing:'-0.5px', marginBottom:6 }}>JAOLA OS</h2>
         <p style={{ color:S.muted, fontSize:13, marginBottom:28 }}>Autonomous Software Engineering</p>
         <form onSubmit={handleLogin} style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <input value={loginUsername} onChange={e => setLoginUsername(e.target.value)} placeholder="اسم المستخدم" required
-            style={{ background:'#161b22', border:'1px solid #21262d', borderRadius:8, padding:'11px 14px', color:'#fff', fontSize:14, fontFamily:S.font, transition:'border-color 0.2s' }} />
+            style={{ background:'#161b22', border:'1px solid #21262d', borderRadius:8, padding:'12px 14px', color:'#fff', fontSize:16, fontFamily:S.font, transition:'border-color 0.2s' }} />
           <button type="submit" disabled={isLoggingIn}
-            style={{ background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', border:'none', borderRadius:8, padding:12, color:'#fff', fontWeight:700, cursor:'pointer', fontSize:14, fontFamily:S.font, opacity: isLoggingIn ? 0.7 : 1 }}>
+            style={{ background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', border:'none', borderRadius:8, padding:13, color:'#fff', fontWeight:700, cursor:'pointer', fontSize:14, fontFamily:S.font, opacity: isLoggingIn ? 0.7 : 1 }}>
             {isLoggingIn ? 'جاري الدخول...' : '⚡ دخول إلى Mission Control'}
           </button>
         </form>
@@ -361,29 +381,305 @@ export default function Dashboard() {
 
   if (!booted) return <BootScreen onDone={handleBoot} />;
 
-  // ── MAIN UI ──────────────────────────────────────────────────
+  const globalStyles = `
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+    @keyframes agentPulse{0%,100%{box-shadow:0 0 8px rgba(59,130,246,0.2)}50%{box-shadow:0 0 20px rgba(59,130,246,0.5)}}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+    *{box-sizing:border-box}
+    ::-webkit-scrollbar{width:3px;height:3px}
+    ::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:#1f2937;border-radius:2px}
+    button{cursor:pointer;transition:all 0.15s;font-family:system-ui}
+    textarea,input{font-family:system-ui;outline:none}
+  `;
+
+  // ═══ الأجزاء المشتركة (سطح المكتب + الجوال) ═══════════════════
+
+  // بث المهمة داخل الشات: الرسائل + بطاقة التقدم الحية
+  const missionFeed = (
+    <div style={{ flex:1, overflowY:'auto', padding:'12px 16px', display:'flex', flexDirection:'column', gap:8, minHeight:0 }}>
+      {chatMessages.length === 0 && !isBuilding && (
+        <div style={{ textAlign:'center', color:S.muted, fontSize:12, marginTop:40, lineHeight:2 }}>
+          <div style={{ fontSize:28, marginBottom:8 }}>⚡</div>
+          أخبرني ماذا تريد أن نبني اليوم؟<br/>
+          <span style={{ fontSize:11, color:'#334155' }}>سأعرض لك هنا كل خطوة أثناء التنفيذ — لحظة بلحظة</span>
+        </div>
+      )}
+      {chatMessages.map((msg, i) => <FeedItem key={i} msg={msg} />)}
+      {isBuilding && buildStartedAt && (
+        <MissionProgress agentStates={agentStates} lastLog={lastLogMsg} startedAt={buildStartedAt} />
+      )}
+      {isSending && !isBuilding && (
+        <div style={{ display:'flex', alignItems:'center', gap:8, padding:'4px 0' }}>
+          <div style={{ width:6, height:6, borderRadius:'50%', background:'#3b82f6', animation:'pulse 0.9s infinite' }} />
+          <span style={{ fontSize:11, color:'#64748b' }}>JAOLA يستلم المهمة...</span>
+        </div>
+      )}
+      <div ref={feedEndRef} />
+    </div>
+  );
+
+  const quickBuilds = chatMessages.length === 0 && (
+    <div style={{ padding:'12px 16px', borderBottom:`1px solid ${S.border}`, flexShrink:0 }}>
+      <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:8 }}>Quick Launch</div>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
+        {QUICK_BUILDS.map((b, i) => (
+          <button key={i} onClick={() => { setPrompt(b.prompt); textareaRef.current?.focus(); }}
+            style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 10px', color:'#64748b', fontSize:11, textAlign:'right', display:'flex', alignItems:'center', gap:6 }}>
+            <span style={{ fontSize:14 }}>{b.icon}</span><span>{b.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  const logsView = (
+    <div style={{ height:'100%', overflowY:'auto', padding:'12px 16px', background:'#060a10', fontFamily:'monospace', fontSize:11 }}>
+      {logs.length === 0 && <div style={{ color:S.muted, textAlign:'center', marginTop:60, fontSize:13 }}>Awaiting mission orders...</div>}
+      {logs.map((log, i) => (
+        <div key={i} style={{ display:'flex', gap:12, padding:'3px 0', borderBottom:`1px solid rgba(255,255,255,0.02)`, animation:'fadeIn 0.1s ease' }}>
+          <span style={{ color:'#1e2d45', flexShrink:0, fontSize:10, minWidth:60 }}>{new Date().toLocaleTimeString()}</span>
+          <span style={{ color: getLogColor(log.message), wordBreak:'break-word' }}>{log.message}</span>
+        </div>
+      ))}
+    </div>
+  );
+
+  const previewView = (
+    <PreviewPanel
+      activeProject={activeProject}
+      previewTimestamp={previewTimestamp}
+      streamingContent={streamingContent}
+      currentUser={authUser}
+      onRefresh={refreshPreview}
+      compact={isMobile}
+    />
+  );
+
+  const notificationsOverlay = (
+    <div style={{ position:'fixed', bottom: isMobile ? 76 : 20, left:20, right: isMobile ? 20 : 'auto', display:'flex', flexDirection:'column', gap:8, zIndex:1000 }}>
+      {notifications.map(n => (
+        <div key={n.id} style={{
+          background: n.type === 'success' ? 'rgba(16,185,129,0.15)' : 'rgba(59,130,246,0.15)',
+          border: `1px solid ${n.type === 'success' ? 'rgba(16,185,129,0.3)' : 'rgba(59,130,246,0.3)'}`,
+          borderRadius:10, padding:'10px 16px', fontSize:12, color: n.type === 'success' ? '#10b981' : '#93c5fd',
+          backdropFilter:'blur(10px)', animation:'slideIn 0.3s ease', fontWeight:600,
+          boxShadow:'0 4px 20px rgba(0,0,0,0.3)'
+        }}>
+          {n.msg}
+        </div>
+      ))}
+    </div>
+  );
+
+  const githubModal = showGithubModal && (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
+      onClick={e => e.target === e.currentTarget && setShowGithubModal(false)}>
+      <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:'24px 22px', width:'min(420px, 100%)', maxHeight:'90dvh', overflowY:'auto' }}>
+        <h3 style={{ color:'#fff', fontSize:15, fontWeight:800, marginBottom:6 }}>🐙 GitHub Integration</h3>
+        <p style={{ color:S.muted, fontSize:12, marginBottom:16 }}>
+          اربط المشروع ({activeProject}) بمستودع GitHub — مع دفع تلقائي بعد كل بناء ناجح.
+          {ghStatus?.connected && <span style={{ color:'#10b981' }}> ● مرتبط حالياً</span>}
+        </p>
+
+        <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>REPOSITORY URL</label>
+        <input value={ghForm.repoUrl} onChange={e => setGhForm(f => ({ ...f, repoUrl: e.target.value }))}
+          placeholder="https://github.com/username/repo.git" dir="ltr"
+          style={{ width:'100%', background:'#161b22', border:`1px solid ${S.border}`, borderRadius:8, padding:'10px 12px', color:'#fff', fontSize:13, margin:'6px 0 12px', fontFamily:'monospace' }} />
+
+        <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>
+          PERSONAL ACCESS TOKEN {ghStatus?.hasToken && <span style={{ color:'#10b981', fontWeight:400 }}>(محفوظ مشفراً — اتركه فارغاً للإبقاء عليه)</span>}
+        </label>
+        <input value={ghForm.pat} onChange={e => setGhForm(f => ({ ...f, pat: e.target.value }))}
+          placeholder="ghp_..." type="password" dir="ltr"
+          style={{ width:'100%', background:'#161b22', border:`1px solid ${S.border}`, borderRadius:8, padding:'10px 12px', color:'#fff', fontSize:13, margin:'6px 0 12px', fontFamily:'monospace' }} />
+
+        <div style={{ display:'flex', gap:12, alignItems:'center', marginBottom:16, flexWrap:'wrap' }}>
+          <div style={{ flex:1, minWidth:120 }}>
+            <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>BRANCH</label>
+            <input value={ghForm.branch} onChange={e => setGhForm(f => ({ ...f, branch: e.target.value }))}
+              placeholder="main" dir="ltr"
+              style={{ width:'100%', background:'#161b22', border:`1px solid ${S.border}`, borderRadius:8, padding:'10px 12px', color:'#fff', fontSize:13, marginTop:6, fontFamily:'monospace' }} />
+          </div>
+          <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', marginTop:18, fontSize:12, color:'#94a3b8' }}>
+            <input type="checkbox" checked={ghForm.autoCommit}
+              onChange={e => setGhForm(f => ({ ...f, autoCommit: e.target.checked }))}
+              style={{ accentColor:'#3b82f6', width:15, height:15 }} />
+            Auto-push بعد البناء
+          </label>
+        </div>
+
+        {ghStatus?.lastCommit && (
+          <p style={{ color:S.muted, fontSize:10, marginBottom:12 }}>آخر دفع: {new Date(ghStatus.lastCommit).toLocaleString('ar')}</p>
+        )}
+
+        <div style={{ display:'flex', gap:10, justifyContent:'flex-end', flexWrap:'wrap' }}>
+          <button onClick={() => setShowGithubModal(false)}
+            style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 16px', color:S.muted, fontSize:13 }}>Cancel</button>
+          {ghStatus?.connected && (
+            <button onClick={handleGithubPush}
+              style={{ background:'rgba(16,185,129,0.1)', border:'1px solid rgba(16,185,129,0.3)', borderRadius:8, padding:'8px 16px', color:'#10b981', fontWeight:700, fontSize:13 }}>
+              ⬆ Push Now
+            </button>
+          )}
+          <button onClick={handleGithubConnect} disabled={isGhSaving}
+            style={{ background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', border:'none', borderRadius:8, padding:'8px 20px', color:'#fff', fontWeight:700, fontSize:13, opacity: isGhSaving ? 0.7 : 1 }}>
+            {isGhSaving ? 'جاري الحفظ...' : 'Save & Connect'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const projectModal = showProjectModal && (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
+      onClick={e => e.target === e.currentTarget && setShowProjectModal(false)}>
+      <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:28, width:'min(360px, 100%)' }}>
+        <h3 style={{ color:'#fff', fontSize:15, fontWeight:800, marginBottom:6 }}>New Project</h3>
+        <p style={{ color:S.muted, fontSize:12, marginBottom:16 }}>اسم المشروع بالإنجليزية (بدون مسافات)</p>
+        <input value={newProjectName} onChange={e => setNewProjectName(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleCreateProject()}
+          placeholder="my-awesome-project" autoFocus
+          style={{ width:'100%', background:'#161b22', border:`1px solid ${S.border}`, borderRadius:8, padding:'10px 14px', color:'#fff', fontSize:13, marginBottom:14, fontFamily:'monospace' }} />
+        <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
+          <button onClick={() => setShowProjectModal(false)}
+            style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 16px', color:S.muted, fontSize:13 }}>Cancel</button>
+          <button onClick={handleCreateProject}
+            style={{ background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', border:'none', borderRadius:8, padding:'8px 20px', color:'#fff', fontWeight:700, fontSize:13 }}>Create</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ═══════════════════════════════════════════════════════════════
+  // 📱 تخطيط الجوال — شاشة واحدة + تنقل سفلي
+  // ═══════════════════════════════════════════════════════════════
+  if (isMobile) {
+    return (
+      <div style={{ height:'100dvh', background:S.bg, color:S.text, display:'flex', flexDirection:'column', fontFamily:S.font, overflow:'hidden' }}>
+        <style>{globalStyles}</style>
+
+        {/* رأس مضغوط */}
+        <nav style={{ height:52, background:S.bg2, borderBottom:`1px solid ${S.border}`, display:'flex', alignItems:'center', padding:'0 12px', gap:8, flexShrink:0 }}>
+          <div style={{ width:28, height:28, borderRadius:7, background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, flexShrink:0 }}>⚡</div>
+          <select value={activeProject} onChange={e => handleSwitchProject(e.target.value)}
+            style={{ background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:7, color:S.text, fontSize:12, fontWeight:700, padding:'5px 8px', maxWidth:130, outline:'none' }}>
+            {projects.map(p => <option key={p} value={p} style={{ background:'#161b22' }}>{p}</option>)}
+          </select>
+          <button onClick={() => setShowProjectModal(true)}
+            style={{ background:'rgba(59,130,246,0.1)', border:'1px solid rgba(59,130,246,0.2)', borderRadius:6, padding:'4px 8px', color:S.blue, fontSize:11, fontWeight:700, flexShrink:0 }}>+</button>
+
+          {isBuilding && (
+            <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:10, color:'#60a5fa', fontWeight:700 }}>
+              <span style={{ width:6, height:6, borderRadius:'50%', background:'#3b82f6', animation:'pulse 1s infinite' }} />
+              يبني...
+            </span>
+          )}
+
+          <div style={{ flex:1 }} />
+
+          <button onClick={openGithubModal} style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 9px', color:'#94a3b8', fontSize:13 }}>🐙</button>
+          {vercelUrl
+            ? <a href={vercelUrl} target="_blank" rel="noreferrer" style={{ fontSize:13, textDecoration:'none', padding:'5px 9px', border:'1px solid rgba(16,185,129,0.3)', borderRadius:7 }}>🌍</a>
+            : <button onClick={handleDeploy} disabled={isDeploying} style={{ background:'linear-gradient(135deg,#1d4ed8,#4f46e5)', border:'none', borderRadius:7, padding:'5px 9px', color:'#fff', fontSize:13, opacity:isDeploying?0.6:1 }}>🚀</button>}
+          <button onClick={handleLogout} style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 8px', color:S.muted, fontSize:11 }}>
+            {(authUser || 'U')[0].toUpperCase()} ✕
+          </button>
+        </nav>
+
+        {/* المحتوى النشط */}
+        <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column', minHeight:0 }}>
+          {mobileView === 'mission' && (
+            <>
+              {missionFeed}
+              {quickBuilds}
+              {/* إدخال المهمة — أسلوب تطبيقات المحادثة */}
+              <div style={{ padding:'10px 12px', borderTop:`1px solid ${S.border}`, flexShrink:0, display:'flex', gap:8, alignItems:'flex-end', background:S.bg2 }}>
+                <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                  placeholder="ماذا تريد أن نبني؟"
+                  rows={2}
+                  style={{ flex:1, background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:12, padding:'10px 12px', color:S.text, fontSize:16, resize:'none', lineHeight:1.5 }} />
+                {(isBuilding || isSending) && (
+                  <button onClick={handleAbort} title="إيقاف"
+                    style={{ width:44, height:44, borderRadius:12, background:'rgba(239,68,68,0.12)', border:'1px solid rgba(239,68,68,0.35)', color:'#f87171', fontSize:16, flexShrink:0 }}>⏹</button>
+                )}
+                <button onClick={handleSend} disabled={isSending || !prompt.trim()}
+                  style={{ width:44, height:44, borderRadius:12, background: prompt.trim() ? 'linear-gradient(135deg,#3b82f6,#8b5cf6)' : 'rgba(255,255,255,0.05)', border:'none', color:'#fff', fontSize:17, flexShrink:0, opacity: isSending ? 0.6 : 1 }}>
+                  {isSending ? '…' : '⚡'}
+                </button>
+              </div>
+            </>
+          )}
+
+          {mobileView === 'preview' && previewView}
+
+          {mobileView === 'editor' && (
+            <div style={{ flex:1, display:'flex', flexDirection:'column', minHeight:0 }}>
+              {/* قائمة ملفات أفقية سريعة */}
+              {files.length > 0 && (
+                <div style={{ display:'flex', gap:6, padding:'8px 12px', overflowX:'auto', borderBottom:`1px solid ${S.border}`, flexShrink:0 }}>
+                  {files.map(f => (
+                    <button key={f} onClick={() => openJaolaFile(f)}
+                      style={{ background: activeFile === f ? 'rgba(59,130,246,0.12)' : 'rgba(255,255,255,0.02)', border:`1px solid ${activeFile === f ? 'rgba(59,130,246,0.3)' : S.border}`, borderRadius:7, padding:'4px 10px', color: activeFile === f ? '#93c5fd' : S.muted, fontSize:11, whiteSpace:'nowrap', flexShrink:0 }}>
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div style={{ flex:1, minHeight:0 }}><MonacoWorkspace /></div>
+            </div>
+          )}
+
+          {mobileView === 'logs' && logsView}
+        </div>
+
+        {/* التنقل السفلي */}
+        <nav style={{
+          height:'calc(58px + env(safe-area-inset-bottom))', paddingBottom:'env(safe-area-inset-bottom)',
+          background:S.bg2, borderTop:`1px solid ${S.border}`, display:'flex', flexShrink:0,
+        }}>
+          {MOBILE_TABS.map(tab => {
+            const isActive = mobileView === tab.id;
+            const showBadge = tab.id === 'logs' && logs.length > 0;
+            return (
+              <button key={tab.id} onClick={() => setMobileView(tab.id)}
+                style={{
+                  flex:1, background:'transparent', border:'none', display:'flex', flexDirection:'column',
+                  alignItems:'center', justifyContent:'center', gap:3, position:'relative',
+                  color: isActive ? '#60a5fa' : '#475569',
+                }}>
+                <span style={{ fontSize:18, filter: isActive ? 'none' : 'grayscale(0.6)' }}>{tab.icon}</span>
+                <span style={{ fontSize:9, fontWeight:700 }}>{tab.label}</span>
+                {isActive && <span style={{ position:'absolute', top:0, left:'25%', right:'25%', height:2, background:'linear-gradient(90deg,#3b82f6,#8b5cf6)', borderRadius:2 }} />}
+                {showBadge && !isActive && <span style={{ position:'absolute', top:8, left:'calc(50% - 16px)', width:6, height:6, borderRadius:'50%', background: isBuilding ? '#3b82f6' : '#1f2937' }} />}
+              </button>
+            );
+          })}
+        </nav>
+
+        {notificationsOverlay}
+        {githubModal}
+        {projectModal}
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // 🖥️ تخطيط سطح المكتب
+  // ═══════════════════════════════════════════════════════════════
   return (
     <div style={{ height:'100vh', background:S.bg, color:S.text, display:'flex', flexDirection:'column', fontFamily:S.font, overflow:'hidden' }}>
-      <style>{`
-        @keyframes spin{to{transform:rotate(360deg)}}
-        @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
-        @keyframes agentPulse{0%,100%{box-shadow:0 0 8px rgba(59,130,246,0.2)}50%{box-shadow:0 0 20px rgba(59,130,246,0.5)}}
-        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
-        *{box-sizing:border-box}
-        ::-webkit-scrollbar{width:3px;height:3px}
-        ::-webkit-scrollbar-track{background:transparent}
-        ::-webkit-scrollbar-thumb{background:#1f2937;border-radius:2px}
-        button{cursor:pointer;transition:all 0.15s;font-family:system-ui}
-        textarea,input{font-family:system-ui;outline:none}
-      `}</style>
+      <style>{globalStyles}</style>
 
       {/* TOP NAV */}
       <nav style={{ height:48, background:S.bg2, borderBottom:`1px solid ${S.border}`, display:'flex', alignItems:'center', padding:'0 16px', gap:12, flexShrink:0, zIndex:50 }}>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
           <div style={{ width:28, height:28, borderRadius:7, background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14 }}>⚡</div>
           <span style={{ fontSize:14, fontWeight:800, letterSpacing:'-0.5px' }}>JAOLA OS</span>
-          <span style={{ fontSize:9, color:S.blue, background:'rgba(59,130,246,0.1)', border:'1px solid rgba(59,130,246,0.2)', padding:'1px 6px', borderRadius:4, fontWeight:700, letterSpacing:'0.5px' }}>v2.0</span>
+          <span style={{ fontSize:9, color:S.blue, background:'rgba(59,130,246,0.1)', border:'1px solid rgba(59,130,246,0.2)', padding:'1px 6px', borderRadius:4, fontWeight:700, letterSpacing:'0.5px' }}>v2.3</span>
         </div>
 
         <div style={{ width:1, height:20, background:S.border, margin:'0 4px' }} />
@@ -404,9 +700,9 @@ export default function Dashboard() {
         <div style={{ flex:1 }} />
 
         {/* Status */}
-        <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color:S.muted }}>
-          <div style={{ width:6, height:6, borderRadius:'50%', background:'#10b981', animation:'pulse 2s infinite' }} />
-          All Systems Operational
+        <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color: isBuilding ? '#60a5fa' : S.muted }}>
+          <div style={{ width:6, height:6, borderRadius:'50%', background: isBuilding ? '#3b82f6' : '#10b981', animation:'pulse 2s infinite' }} />
+          {isBuilding ? 'Mission Running...' : 'All Systems Operational'}
         </div>
 
         <div style={{ width:1, height:20, background:S.border }} />
@@ -465,8 +761,24 @@ export default function Dashboard() {
         {/* MISSION CONTROL — CENTER-LEFT */}
         <div style={{ width:380, minWidth:340, background:S.bg2, borderRight:`1px solid ${S.border}`, display:'flex', flexDirection:'column', overflow:'hidden' }}>
 
+          {/* Execution Feed */}
+          {missionFeed}
+
+          {/* Quick Builds */}
+          {quickBuilds}
+
+          {/* Quick Actions */}
+          <div style={{ padding:'10px 16px', borderTop:`1px solid ${S.border}`, display:'flex', gap:6, flexWrap:'wrap', flexShrink:0 }}>
+            {['غير الألوان', 'أضف قسماً', 'اجعله أسرع', 'انشر الآن'].map(a => (
+              <button key={a} onClick={() => setPrompt(a)}
+                style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:20, padding:'4px 10px', color:S.muted, fontSize:10, fontWeight:600 }}>
+                {a}
+              </button>
+            ))}
+          </div>
+
           {/* Mission Input */}
-          <div style={{ order:3, padding:'16px', borderTop:`1px solid ${S.border}`, flexShrink:0 }}>
+          <div style={{ padding:'16px', borderTop:`1px solid ${S.border}`, flexShrink:0 }}>
             <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:10 }}>⚡ Mission Control</div>
             <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
@@ -500,37 +812,6 @@ export default function Dashboard() {
               )}
             </div>
           </div>
-
-          {/* Quick Builds */}
-          {chatMessages.length === 0 && (
-            <div style={{ padding:'12px 16px', borderBottom:`1px solid ${S.border}`, flexShrink:0 }}>
-              <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:8 }}>Quick Launch</div>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
-                {QUICK_BUILDS.map((b, i) => (
-                  <button key={i} onClick={() => { setPrompt(b.prompt); textareaRef.current?.focus(); }}
-                    style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 10px', color:'#64748b', fontSize:11, textAlign:'right', display:'flex', alignItems:'center', gap:6 }}>
-                    <span style={{ fontSize:14 }}>{b.icon}</span><span>{b.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Execution Feed */}
-          <div style={{ order:0, flex:1, overflowY:'auto', padding:'12px 16px', display:'flex', flexDirection:'column', gap:8, minHeight:0 }}>
-            {chatMessages.map((msg, i) => <FeedItem key={i} msg={msg} />)}
-            <div ref={feedEndRef} />
-          </div>
-
-          {/* Quick Actions */}
-          <div style={{ order:2, padding:'10px 16px', borderTop:`1px solid ${S.border}`, display:'flex', gap:6, flexWrap:'wrap', flexShrink:0 }}>
-            {['غير الألوان', 'أضف قسماً', 'اجعله أسرع', 'انشر الآن'].map(a => (
-              <button key={a} onClick={() => setPrompt(a)}
-                style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:20, padding:'4px 10px', color:S.muted, fontSize:10, fontWeight:600 }}>
-                {a}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* CENTER — PREVIEW */}
@@ -561,23 +842,9 @@ export default function Dashboard() {
 
           {/* Content */}
           <div style={{ flex:1, overflow:'hidden', position:'relative' }}>
-            {activeTab === 'preview' && (
-              <PreviewFrame activeProject={activeProject} previewTimestamp={previewTimestamp} streamingContent={streamingContent} currentUser={authUser} />
-            )}
-
+            {activeTab === 'preview' && previewView}
             {activeTab === 'editor' && <MonacoWorkspace />}
-
-            {activeTab === 'logs' && (
-              <div style={{ height:'100%', overflowY:'auto', padding:'12px 16px', background:'#060a10', fontFamily:'monospace', fontSize:11 }}>
-                {logs.length === 0 && <div style={{ color:S.muted, textAlign:'center', marginTop:60, fontSize:13 }}>Awaiting mission orders...</div>}
-                {logs.map((log, i) => (
-                  <div key={i} style={{ display:'flex', gap:12, padding:'3px 0', borderBottom:`1px solid rgba(255,255,255,0.02)`, animation:'fadeIn 0.1s ease' }}>
-                    <span style={{ color:'#1e2d45', flexShrink:0, fontSize:10, minWidth:60 }}>{new Date().toLocaleTimeString()}</span>
-                    <span style={{ color: getLogColor(log.message) }}>{log.message}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            {activeTab === 'logs' && logsView}
           </div>
 
           {/* Agent Timeline */}
@@ -677,101 +944,9 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* FLOATING NOTIFICATIONS */}
-      <div style={{ position:'fixed', bottom:20, left:20, display:'flex', flexDirection:'column', gap:8, zIndex:1000 }}>
-        {notifications.map(n => (
-          <div key={n.id} style={{
-            background: n.type === 'success' ? 'rgba(16,185,129,0.1)' : 'rgba(59,130,246,0.1)',
-            border: `1px solid ${n.type === 'success' ? 'rgba(16,185,129,0.3)' : 'rgba(59,130,246,0.3)'}`,
-            borderRadius:10, padding:'10px 16px', fontSize:12, color: n.type === 'success' ? '#10b981' : '#93c5fd',
-            backdropFilter:'blur(10px)', animation:'slideIn 0.3s ease', fontWeight:600,
-            boxShadow:'0 4px 20px rgba(0,0,0,0.3)'
-          }}>
-            {n.msg}
-          </div>
-        ))}
-      </div>
-
-      {/* GITHUB MODAL */}
-      {showGithubModal && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)' }}
-          onClick={e => e.target === e.currentTarget && setShowGithubModal(false)}>
-          <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:28, width:420 }}>
-            <h3 style={{ color:'#fff', fontSize:15, fontWeight:800, marginBottom:6 }}>🐙 GitHub Integration</h3>
-            <p style={{ color:S.muted, fontSize:12, marginBottom:16 }}>
-              اربط المشروع ({activeProject}) بمستودع GitHub — مع دفع تلقائي بعد كل بناء ناجح.
-              {ghStatus?.connected && <span style={{ color:'#10b981' }}> ● مرتبط حالياً</span>}
-            </p>
-
-            <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>REPOSITORY URL</label>
-            <input value={ghForm.repoUrl} onChange={e => setGhForm(f => ({ ...f, repoUrl: e.target.value }))}
-              placeholder="https://github.com/username/repo.git" dir="ltr"
-              style={{ width:'100%', background:'#161b22', border:`1px solid ${S.border}`, borderRadius:8, padding:'9px 12px', color:'#fff', fontSize:12, margin:'6px 0 12px', fontFamily:'monospace' }} />
-
-            <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>
-              PERSONAL ACCESS TOKEN {ghStatus?.hasToken && <span style={{ color:'#10b981', fontWeight:400 }}>(محفوظ مشفراً — اتركه فارغاً للإبقاء عليه)</span>}
-            </label>
-            <input value={ghForm.pat} onChange={e => setGhForm(f => ({ ...f, pat: e.target.value }))}
-              placeholder="ghp_..." type="password" dir="ltr"
-              style={{ width:'100%', background:'#161b22', border:`1px solid ${S.border}`, borderRadius:8, padding:'9px 12px', color:'#fff', fontSize:12, margin:'6px 0 12px', fontFamily:'monospace' }} />
-
-            <div style={{ display:'flex', gap:12, alignItems:'center', marginBottom:16 }}>
-              <div style={{ flex:1 }}>
-                <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>BRANCH</label>
-                <input value={ghForm.branch} onChange={e => setGhForm(f => ({ ...f, branch: e.target.value }))}
-                  placeholder="main" dir="ltr"
-                  style={{ width:'100%', background:'#161b22', border:`1px solid ${S.border}`, borderRadius:8, padding:'9px 12px', color:'#fff', fontSize:12, marginTop:6, fontFamily:'monospace' }} />
-              </div>
-              <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', marginTop:18, fontSize:12, color:'#94a3b8' }}>
-                <input type="checkbox" checked={ghForm.autoCommit}
-                  onChange={e => setGhForm(f => ({ ...f, autoCommit: e.target.checked }))}
-                  style={{ accentColor:'#3b82f6', width:15, height:15 }} />
-                Auto-push بعد البناء
-              </label>
-            </div>
-
-            {ghStatus?.lastCommit && (
-              <p style={{ color:S.muted, fontSize:10, marginBottom:12 }}>آخر دفع: {new Date(ghStatus.lastCommit).toLocaleString('ar')}</p>
-            )}
-
-            <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
-              <button onClick={() => setShowGithubModal(false)}
-                style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 16px', color:S.muted, fontSize:13 }}>Cancel</button>
-              {ghStatus?.connected && (
-                <button onClick={handleGithubPush}
-                  style={{ background:'rgba(16,185,129,0.1)', border:'1px solid rgba(16,185,129,0.3)', borderRadius:8, padding:'8px 16px', color:'#10b981', fontWeight:700, fontSize:13 }}>
-                  ⬆ Push Now
-                </button>
-              )}
-              <button onClick={handleGithubConnect} disabled={isGhSaving}
-                style={{ background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', border:'none', borderRadius:8, padding:'8px 20px', color:'#fff', fontWeight:700, fontSize:13, opacity: isGhSaving ? 0.7 : 1 }}>
-                {isGhSaving ? 'جاري الحفظ...' : 'Save & Connect'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* PROJECT MODAL */}
-      {showProjectModal && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)' }}
-          onClick={e => e.target === e.currentTarget && setShowProjectModal(false)}>
-          <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:28, width:360 }}>
-            <h3 style={{ color:'#fff', fontSize:15, fontWeight:800, marginBottom:6 }}>New Project</h3>
-            <p style={{ color:S.muted, fontSize:12, marginBottom:16 }}>اسم المشروع بالإنجليزية (بدون مسافات)</p>
-            <input value={newProjectName} onChange={e => setNewProjectName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleCreateProject()}
-              placeholder="my-awesome-project" autoFocus
-              style={{ width:'100%', background:'#161b22', border:`1px solid ${S.border}`, borderRadius:8, padding:'10px 14px', color:'#fff', fontSize:13, marginBottom:14, fontFamily:'monospace' }} />
-            <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
-              <button onClick={() => setShowProjectModal(false)}
-                style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 16px', color:S.muted, fontSize:13 }}>Cancel</button>
-              <button onClick={handleCreateProject}
-                style={{ background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', border:'none', borderRadius:8, padding:'8px 20px', color:'#fff', fontWeight:700, fontSize:13 }}>Create</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {notificationsOverlay}
+      {githubModal}
+      {projectModal}
     </div>
   );
 }

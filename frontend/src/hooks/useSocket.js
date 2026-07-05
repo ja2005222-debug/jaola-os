@@ -68,8 +68,18 @@ export function useSocket(isAuthenticated, handleAuthError) {
     socket.off('log').on('log', (newLog) => {
       setLogs((prev) => [...prev.slice(-100), newLog]);
 
-      // استخراج ردود الـ AI من السجلات للعرض في الشات
-
+      // 🆕 إحياء دور الشات: الأحداث المهمة تظهر كأسطر حالة داخل الشات مباشرة
+      // بدل أن تبقى مدفونة في تاب Logs — المستخدم يرى ماذا يحدث لحظة بلحظة
+      const msg = newLog?.message || '';
+      const significant = /✅|❌|⚠️|🎯|🚀|⚙️|🔍|🎨|💻|🧪|🐙|📦|🔐|⏹|✨|🏁|🗺️|🏗️/.test(msg);
+      if (significant) {
+        setChatMessages((prev) => {
+          const last = prev[prev.length - 1];
+          // منع تكرار نفس السطر مرتين متتاليتين
+          if (last?.sender === 'system' && last.text === msg) return prev;
+          return [...prev.slice(-150), { sender: 'system', text: msg, timestamp: Date.now() }];
+        });
+      }
     });
 
     socket.off('chat_reply').on('chat_reply', (data) => {
@@ -156,6 +166,9 @@ export function useSocket(isAuthenticated, handleAuthError) {
     };
   }, [isAuthenticated]);
 
+  // 🆕 تحديث المعاينة يدوياً من شريط الأدوات
+  const refreshPreview = () => setPreviewTimestamp(Date.now());
+
   return {
     files,
     logs,
@@ -168,6 +181,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
     chatMessages,
     connectionError,
     previewTimestamp,
+    refreshPreview,
     setChatMessages,
     setProjects,
     setActiveProject,
