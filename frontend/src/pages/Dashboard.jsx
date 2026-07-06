@@ -339,8 +339,11 @@ export default function Dashboard() {
       const res = await fetch(`${BACKEND_URL}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: loginUsername }) });
       if (res.ok) {
         const d = await res.json();
-        setToken(d.token); setCurrentUser(d.username); setIsAuthenticated(true);
-        localStorage.setItem('token', d.token); localStorage.setItem('currentUser', d.username);
+        // 🛠️ السيرفر يرجع الحقل باسم currentUser — قراءة d.username كانت تخزن
+        // "undefined" فتكسر رابط المعاينة (مجلد مستخدم خاطئ → 404)
+        const uname = d.currentUser || d.username || loginUsername.trim().toLowerCase();
+        setToken(d.token); setCurrentUser(uname); setIsAuthenticated(true);
+        localStorage.setItem('token', d.token); localStorage.setItem('currentUser', uname);
       }
     } catch {}
     setIsLoggingIn(false);
@@ -488,7 +491,7 @@ export default function Dashboard() {
       activeProject={activeProject}
       previewTimestamp={previewTimestamp}
       streamingContent={streamingContent}
-      currentUser={authUser}
+      currentUser={currentUser && currentUser !== 'guest_user' ? currentUser : authUser}
       onRefresh={refreshPreview}
       compact={isMobile}
     />

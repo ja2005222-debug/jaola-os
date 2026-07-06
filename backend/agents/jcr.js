@@ -900,6 +900,9 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     options: suggestions,
                 });
 
+                // 🛠️ تحديث قائمة الملفات في الواجهة بعد البناء (كانت تبقى فارغة)
+                this.io.to(roomName).emit('workspace_files', builtFiles);
+
                 // 🐙 الدفع التلقائي لـ GitHub إذا كان مفعلاً لهذا المشروع
                 autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
             }

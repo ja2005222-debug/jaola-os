@@ -70,6 +70,15 @@ export function useSocket(isAuthenticated, handleAuthError) {
       setActiveProject(data.activeProject);
       setCurrentUser(data.currentUser);
       setVercelUrl(data.vercelUrl || '');
+
+      // 🛠️ تحصين ذاتي: اسم المستخدم من السيرفر هو الحقيقة المطلقة —
+      // يصحح أي قيمة تالفة مخزنة سابقاً ("undefined") كانت تكسر المعاينة
+      if (data.currentUser && data.currentUser !== 'guest_user') {
+        const stored = localStorage.getItem('currentUser');
+        if (stored !== data.currentUser) {
+          localStorage.setItem('currentUser', data.currentUser);
+        }
+      }
     });
 
     socket.off('preview_updated').on('preview_updated', (data) => {
