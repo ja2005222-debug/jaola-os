@@ -180,6 +180,9 @@ export default function Dashboard() {
   const [newProjectName, setNewProjectName] = useState('');
   const [isDeploying, setIsDeploying] = useState(false);
   const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [authMode, setAuthMode] = useState('login'); // login | register
+  const [authError, setAuthError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [notifications, setNotifications] = useState([]);
@@ -335,17 +338,28 @@ export default function Dashboard() {
     e.preventDefault();
     if (!loginUsername.trim()) return;
     setIsLoggingIn(true);
+    setAuthError('');
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: loginUsername }) });
+      const endpoint = authMode === 'register' ? '/api/auth/register' : '/api/auth/login';
+      const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: loginUsername, password: loginPassword || undefined }),
+      });
+      const d = await res.json().catch(() => ({}));
       if (res.ok) {
-        const d = await res.json();
         // 🛠️ السيرفر يرجع الحقل باسم currentUser — قراءة d.username كانت تخزن
         // "undefined" فتكسر رابط المعاينة (مجلد مستخدم خاطئ → 404)
         const uname = d.currentUser || d.username || loginUsername.trim().toLowerCase();
         setToken(d.token); setCurrentUser(uname); setIsAuthenticated(true);
         localStorage.setItem('token', d.token); localStorage.setItem('currentUser', uname);
+        localStorage.removeItem('loggedOut');
+      } else {
+        setAuthError(d.error || (authMode === 'register' ? 'فشل إنشاء الحساب.' : 'فشل تسجيل الدخول.'));
       }
-    } catch {}
+    } catch {
+      setAuthError('تعذّر الاتصال بالخادم — حاول مرة أخرى.');
+    }
     setIsLoggingIn(false);
   };
 
@@ -392,13 +406,41 @@ export default function Dashboard() {
       <div style={{ background:'#0d1117', border:'1px solid #1f2937', borderRadius:16, padding:'40px 28px', width:'min(380px, 100%)', textAlign:'center' }}>
         <div style={{ width:56, height:56, borderRadius:14, background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24, margin:'0 auto 20px' }}>⚡</div>
         <h2 style={{ color:'#fff', fontSize:20, fontWeight:800, letterSpacing:'-0.5px', marginBottom:6 }}>JAOLA OS</h2>
-        <p style={{ color:S.muted, fontSize:13, marginBottom:28 }}>Autonomous Software Engineering</p>
+        <p style={{ color:S.muted, fontSize:13, marginBottom:20 }}>Autonomous Software Engineering</p>
+
+        {/* تبويب دخول / حساب جديد */}
+        <div style={{ display:'flex', background:'rgba(255,255,255,0.04)', borderRadius:9, padding:3, marginBottom:18 }}>
+          {[['login','دخول'],['register','حساب جديد']].map(([mode, label]) => (
+            <button key={mode} type="button" onClick={() => { setAuthMode(mode); setAuthError(''); }}
+              style={{
+                flex:1, padding:'8px', borderRadius:7, border:'none', fontSize:13, fontWeight:700, cursor:'pointer',
+                background: authMode === mode ? 'linear-gradient(135deg,#3b82f6,#8b5cf6)' : 'transparent',
+                color: authMode === mode ? '#fff' : '#64748b',
+              }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
         <form onSubmit={handleLogin} style={{ display:'flex', flexDirection:'column', gap:12 }}>
-          <input value={loginUsername} onChange={e => setLoginUsername(e.target.value)} placeholder="اسم المستخدم" required
-            style={{ background:'#161b22', border:'1px solid #21262d', borderRadius:8, padding:'12px 14px', color:'#fff', fontSize:16, fontFamily:S.font, transition:'border-color 0.2s' }} />
+          <input value={loginUsername} onChange={e => setLoginUsername(e.target.value)} placeholder="اسم المستخدم (إنجليزي)" required dir="ltr"
+            style={{ background:'#161b22', border:'1px solid #21262d', borderRadius:8, padding:'12px 14px', color:'#fff', fontSize:16, fontFamily:S.font, transition:'border-color 0.2s', textAlign:'left' }} />
+          <input value={loginPassword} onChange={e => setLoginPassword(e.target.value)} type="password" dir="ltr"
+            placeholder={authMode === 'register' ? 'كلمة المرور (6 أحرف فأكثر)' : 'كلمة المرور'}
+            required={authMode === 'register'} minLength={authMode === 'register' ? 6 : undefined}
+            style={{ background:'#161b22', border:'1px solid #21262d', borderRadius:8, padding:'12px 14px', color:'#fff', fontSize:16, fontFamily:S.font, transition:'border-color 0.2s', textAlign:'left' }} />
+
+          {authError && (
+            <div style={{ background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.3)', borderRadius:8, padding:'9px 12px', color:'#f87171', fontSize:12, textAlign:'right' }}>
+              {authError}
+            </div>
+          )}
+
           <button type="submit" disabled={isLoggingIn}
             style={{ background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', border:'none', borderRadius:8, padding:13, color:'#fff', fontWeight:700, cursor:'pointer', fontSize:14, fontFamily:S.font, opacity: isLoggingIn ? 0.7 : 1 }}>
-            {isLoggingIn ? 'جاري الدخول...' : '⚡ دخول إلى Mission Control'}
+            {isLoggingIn
+              ? (authMode === 'register' ? 'جاري إنشاء الحساب...' : 'جاري الدخول...')
+              : (authMode === 'register' ? '✨ إنشاء حساب والدخول' : '⚡ دخول إلى Mission Control')}
           </button>
         </form>
       </div>

@@ -46,3 +46,8 @@ workspace/
 tenants/
 .env
 backend/memory/
+
+# ملفات حالة التشغيل — تتغير مع كل جلسة، لا تُرفع
+backend/memory/*.json
+backend/jaola_os.db
+workspace/

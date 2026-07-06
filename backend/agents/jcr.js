@@ -31,6 +31,9 @@ import { classifyIntentFast, decide, buildContinuationGoal, buildStatusReply, mi
 import { setUserLanguage } from './languageDetector.js';
 import { registerMission, throwIfAborted, clearMission } from '../services/abortRegistry.js';
 import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
+import { snapshotWorkspace } from '../services/workspaceStore.js';
+import { guardFiles, guardSingleJS } from '../services/codeGuard.js';
+import { buildImageContext } from '../services/imageService.js';
 import Conversation from '../models/Conversation.js';
 import mongoose from 'mongoose';
 
@@ -381,6 +384,10 @@ export class JaolaCognitiveRuntime {
                 continue;
             }
 
+            // 🛡️ Code Guard — فحص syntax وإصلاح ذاتي قبل أي حفظ
+            plan.files = await guardFiles(plan.files,
+                (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m));
+
             await Promise.all(plan.files
                 .filter(f => ['index.html', 'styles.css', 'script.js'].includes(f.name) && typeof f.content === 'string')
                 .map(f => fsPromises.writeFile(path.join(context.projectPath, f.name), f.content))
@@ -520,6 +527,10 @@ export class JaolaCognitiveRuntime {
                     const backendResult = await agents.generateBackend(context.goal, frontendContext);
 
                     if (backendResult.success && backendResult.files.length > 0) {
+                        // 🛡️ فحص ملفات الـ Backend قبل الحفظ
+                        backendResult.files = await guardFiles(backendResult.files,
+                            (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m));
+
                         // حفظ ملفات الـ Backend
                         for (const file of backendResult.files) {
                             const filePath = path.join(context.projectPath, file.name);
@@ -539,9 +550,12 @@ export class JaolaCognitiveRuntime {
                                 plan.files.find(f => f.name === 'script.js')?.content || ''
                             );
                             if (updatedScript) {
+                                // 🛡️ فحص script.js المحدَّث قبل الحفظ
+                                const guardedScript = await guardSingleJS('script.js', updatedScript,
+                                    (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m));
                                 await fsPromises.writeFile(
                                     path.join(context.projectPath, 'script.js'),
-                                    updatedScript
+                                    guardedScript
                                 );
                                 this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', '🔗 تم تحديث script.js ليستدعي الـ APIs');
                             }
@@ -804,15 +818,19 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
         // 🆕 Smart Requirement Analyzer — يُثري الهدف بمتطلبات ضمنية
         let requirementsContext = '';
+        let imageContext = '';
         try {
             const projectType = detectProjectType(goal);
             const reqAnalysis = await analyzeRequirements(goal, projectType);
             requirementsContext = buildRequirementsContext(reqAnalysis);
+
+            // 🖼️ صور حقيقية مطابقة للموضوع تُحقن في سياق البناء
+            const img = await buildImageContext(goal, projectType, activeProject);
+            imageContext = img.context;
+            this.emitLiveLog(roomName, 'ASSETS', 'ImageService', `🖼️ جُهزت ${img.count} صور (${img.source})`);
         } catch (e) { /* اختياري */ }
 
-        const finalGoalWithRequirements = requirementsContext
-            ? `${enrichedGoal}\n${requirementsContext}`
-            : enrichedGoal;
+        const finalGoalWithRequirements = `${enrichedGoal}\n${requirementsContext}${imageContext}`;
 
         // تسجيل هذا الطلب في تاريخ المشروع
         addToHistory(username, activeProject, goal.slice(0, 80));
@@ -917,6 +935,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
                 // 🐙 الدفع التلقائي لـ GitHub إذا كان مفعلاً لهذا المشروع
                 autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
+
+                // 🗄️ لقطة دائمة لملفات المشروع في MongoDB — تنجو من إعادة نشر Render
+                snapshotWorkspace(username, activeProject, projectPath)
+                    .then(r => { if (r.success) this.emitLiveLog(roomName, 'STORAGE', 'Snapshot', `🗄️ حُفظت نسخة دائمة (${r.count} ملف)`); })
+                    .catch(() => {});
             }
             this.emitLiveLog(roomName, 'JCOS', 'Kernel', execResult.success ? '✨ نجاح' : '❌ فشل');
             return execResult;
@@ -1019,11 +1042,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // ── 1. تحقق من حالة Clarifier ────────────────────────────────────
         const clarifierState = agents.getState?.(username);
 
-        // إذا كنا في مرحلة التوضيح — معالجة الإجابة
+        // إذا كنا في مرحلة التوضيح — معالجة الإجابة (مع أزرار الخيارات إن وُجدت)
         if (clarifierState?.stage === 'clarifying') {
             const result = await agents.processAnswer(username, message);
             if (result) {
-                this.io.to(roomName).emit('chat_reply', { message: result.message });
+                this.io.to(roomName).emit('chat_reply', { message: result.message, options: result.options });
             }
             return;
         }

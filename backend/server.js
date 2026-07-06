@@ -42,6 +42,7 @@ import { schemas, validate, sanitizePath } from './middleware/security.js';
 import { abortMission, hasActiveMission } from './services/abortRegistry.js';
 import { pushProject, getIntegration } from './services/githubSync.js';
 import { encryptSecret } from './utils/secretVault.js';
+import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -343,6 +344,15 @@ io.on('connection', (socket) => {
         socket.activeProject = safeProject;
 
         const projectPath = getProjectPath(username, safeProject);
+
+        // 🗄️ استعادة ملفات المشروع من MongoDB إذا مُسح القرص (إعادة نشر Render)
+        try {
+            const restored = await restoreWorkspaceIfEmpty(username, safeProject, projectPath);
+            if (restored.restored > 0) {
+                socket.emit('log', { message: `🗄️ [SYSTEM]: استُعيد مشروعك (${restored.restored} ملف) من النسخة الدائمة.` });
+            }
+        } catch (e) {}
+
         emitWorkspaceFiles(roomName, projectPath);
         await emitUserProjects(roomName, username, safeProject);
 
@@ -678,6 +688,9 @@ app.post('/api/file-content/save', verifyToken, validate(schemas.saveFile), vali
         const roomName = `${req.user.username}-${req.activeProject}`;
         emitWorkspaceFiles(roomName, projectPath);
         io.to(roomName).emit('log', { message: `💾 [SYSTEM]: تم حفظ (${relativeName}) مع نسخة احتياطية.` });
+
+        // 🗄️ تحديث النسخة الدائمة في MongoDB
+        snapshotWorkspace(req.user.username, req.activeProject, projectPath).catch(() => {});
 
         res.json({ success: true });
     } catch (err) {

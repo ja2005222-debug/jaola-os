@@ -10,6 +10,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { persistEntry, hydrateStore, onMongoReady } from '../services/persistence.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MEMORY_FILE = path.join(__dirname, '../memory/project_memory.json');
@@ -76,10 +77,24 @@ function saveToFile() {
     } catch (e) {
         console.warn('[ProjectMemory] فشل حفظ الذاكرة:', e.message);
     }
+
+    // 💾 حفظ دائم في MongoDB — الملف وحده يُمسح مع كل إعادة نشر على Render
+    for (const [key, value] of memoryCache) {
+        persistEntry('projectMemory', key, value);
+    }
 }
 
 // تحميل عند بدء التشغيل
 loadFromFile();
+
+// 💾 استرجاع الذاكرة الدائمة من MongoDB عند توفر الاتصال —
+// المدخل الأحدث (updatedAt) يفوز حتى لا نستبدل تعديلات الجلسة الحالية
+onMongoReady(() => hydrateStore('projectMemory', (key, value) => {
+    const current = memoryCache.get(key);
+    if (!current || (value?.updatedAt || 0) > (current.updatedAt || 0)) {
+        memoryCache.set(key, value);
+    }
+}));
 
 // ═══════════════════════════════════════════════════════
 // 🔑 دوال أساسية

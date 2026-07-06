@@ -180,7 +180,7 @@ export async function processAnswer(username, answer) {
         const label = lang === 'ar'
             ? `**السؤال ${state.currentQuestion + 1}/${state.questions.length}:**\n${nextQuestion}`
             : `**Question ${state.currentQuestion + 1}/${state.questions.length}:**\n${nextQuestion}`;
-        return { type: 'clarification', message: label };
+        return { type: 'clarification', message: label, options: questionQuickOptions(nextQuestion, lang) };
     }
 
     state.stage = STAGES.PLANNING;
@@ -190,7 +190,19 @@ export async function processAnswer(username, answer) {
     state.plan = plan;
     conversationState.set(username, state);
 
-    return { type: 'plan', message: formatPlan(plan, state), plan, readyToBuild: true };
+    const planOptions = lang === 'ar'
+        ? ['🚀 ابدأ البناء', '🎨 غيّر الألوان', '✏️ أريد تعديلاً']
+        : ['🚀 Start building', '🎨 Change colors', '✏️ I want a change'];
+    return { type: 'plan', message: formatPlan(plan, state), plan, readyToBuild: true, options: planOptions };
+}
+
+// 🆕 أزرار سريعة للأسئلة — أسئلة "هل..." تحصل على نعم/لا/قرر أنت
+function questionQuickOptions(question, lang = 'ar') {
+    const isYesNo = /^(هل|do you|would you|are you|should)/i.test((question || '').trim());
+    if (!isYesNo) return undefined;
+    return lang === 'ar'
+        ? ['نعم ✅', 'لا', 'قرر أنت 🤖']
+        : ['Yes ✅', 'No', 'You decide 🤖'];
 }
 
 // ═══════════════════════════════════════════════════════
