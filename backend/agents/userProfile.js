@@ -14,6 +14,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { persistEntry, hydrateStore, onMongoReady } from '../services/persistence.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROFILES_FILE = path.join(__dirname, '../memory/user_profiles.json');
@@ -92,9 +93,22 @@ function saveProfiles() {
     } catch (e) {
         console.warn('[UserProfile] فشل الحفظ:', e.message);
     }
+
+    // 💾 حفظ دائم في MongoDB
+    for (const [key, value] of profilesCache) {
+        persistEntry('userProfiles', key, value);
+    }
 }
 
 loadProfiles();
+
+// 💾 استرجاع ملفات المستخدمين الدائمة من MongoDB
+onMongoReady(() => hydrateStore('userProfiles', (key, value) => {
+    const current = profilesCache.get(key);
+    if (!current || (value?.updatedAt || 0) > (current.updatedAt || 0)) {
+        profilesCache.set(key, value);
+    }
+}));
 
 // ═══════════════════════════════════════════════════════
 // 🔑 دوال أساسية

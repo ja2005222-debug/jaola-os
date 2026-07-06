@@ -40,7 +40,17 @@ const TRANSITIONS = {
 // ═══════════════════════════════════════════════════════
 // 💾 تخزين حالات المشاريع
 // ═══════════════════════════════════════════════════════
+import { persistEntry, hydrateStore, onMongoReady } from '../services/persistence.js';
+
 const projectStates = new Map(); // key: `${username}:${project}` → ProjectState
+
+// 💾 استرجاع الحالات الدائمة من MongoDB عند توفر الاتصال
+onMongoReady(() => hydrateStore('projectStates', (key, value) => {
+    const current = projectStates.get(key);
+    if (!current || (value?.updatedAt || 0) > (current.updatedAt || 0)) {
+        projectStates.set(key, value);
+    }
+}));
 
 function createProjectState(username, project) {
     return {
@@ -112,6 +122,7 @@ export function transitionState(username, project, newState, meta = {}) {
     }
 
     projectStates.set(getKey(username, project), state);
+    persistEntry('projectStates', getKey(username, project), state);
     return true;
 }
 
@@ -122,11 +133,14 @@ export function markAgentComplete(username, project, agentName) {
     }
     state.currentAgent = null;
     state.updatedAt = Date.now();
+    persistEntry('projectStates', getKey(username, project), state);
 }
 
 export function resetProjectState(username, project) {
     const key = getKey(username, project);
-    projectStates.set(key, createProjectState(username, project));
+    const fresh = createProjectState(username, project);
+    projectStates.set(key, fresh);
+    persistEntry('projectStates', key, fresh);
 }
 
 // ═══════════════════════════════════════════════════════
