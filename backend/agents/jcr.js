@@ -26,7 +26,7 @@ import { runTests } from './testingAgent.js';
 import { commitBuild, initProjectRepo, getProjectStats } from './gitAgent.js';
 import { backupProject, listSnapshots } from './fileManager.js';
 import { analyzeRequirements, buildRequirementsContext } from './requirementAnalyzer.js';
-import { normalizeText, detectIntentFromMeaning } from './textNormalizer.js';
+import { normalizeText, normalizeArabic, detectIntentFromMeaning } from './textNormalizer.js';
 import { classifyIntentFast, decide, buildContinuationGoal, buildStatusReply, missionBriefing, greetingReply } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
 import { registerMission, throwIfAborted, clearMission } from '../services/abortRegistry.js';
@@ -757,16 +757,28 @@ RESPONSE RULES:
 User preferences: ${JSON.stringify(execMemory)}` },
             ...history
         ];
-        let reply = "عذراً، حدث خطأ في معالجة رسالتك. حاول مرة أخرى.";
-        try {
-            const completion = await groq.chat.completions.create({
-                messages,
-                model: "llama-3.3-70b-versatile",
-                max_tokens: 200,
-                temperature: 0.6
-            });
-            reply = completion.choices[0].message.content;
-        } catch (e) { console.error('Chat error:', e); }
+        // رسالة صادقة بدل "حدث خطأ" الغامضة — السبب الشائع هو ضغط حصة الذكاء (rate limit)
+        let reply = userLang === 'ar'
+            ? '⚠️ خدمة الذكاء مشغولة مؤقتاً (ضغط طلبات بعد البناء) — أعد إرسال رسالتك بعد ثوانٍ قليلة وسأنفذها فوراً.'
+            : '⚠️ AI service is momentarily busy (rate limited after the build) — resend your message in a few seconds.';
+
+        // محاولتان مع مهلة قصيرة — أغلب حالات rate limit تنجح في الثانية
+        for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+                const completion = await groq.chat.completions.create({
+                    messages,
+                    model: "llama-3.3-70b-versatile",
+                    max_tokens: 200,
+                    temperature: 0.6
+                });
+                reply = completion.choices[0].message.content;
+                break;
+            } catch (e) {
+                console.error(`Chat error (attempt ${attempt}):`, e.message || e);
+                this.emitLiveLog(roomName, 'CHAT', 'Groq', `⚠️ محاولة ${attempt}/2 فشلت: ${(e.message || '').slice(0, 120)}`);
+                if (attempt < 2) await new Promise(r => setTimeout(r, 2500));
+            }
+        }
         history.push({ role: 'assistant', content: reply });
         if (mongoose.connection.readyState === 1) {
             await Conversation.findOneAndUpdate({ username }, { messages: history.slice(-MAX_HISTORY) }, { upsert: true });
@@ -1176,8 +1188,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
         }
 
         // ── 1. كشف التعديل المباشر ───────────────────────────────────────
-        const modifyPattern = /^(غير|عدل|بدل|أضف|احذف|صحح|أصلح|تعديل|حوّل|اجعل|change|modify|update|add|remove)\s+/i;
-        if (modifyPattern.test(message.trim())) {
+        // النمط مكتوب بدون همزات لأننا نفحص النص المطبّع (اضف = أضف = إضف)
+        const modifyPattern = /^(غير|عدل|بدل|اضف|احذف|امسح|شيل|صحح|اصلح|تعديل|حول|اجعل|ضع|حط|زد|كبر|صغر|change|modify|update|add|remove|put|fix|make|delete)\s+/i;
+        const normalizedForModify = normalizeArabic(message.trim());
+        if (modifyPattern.test(message.trim()) || modifyPattern.test(normalizedForModify)) {
             // إذا كنا في مرحلة Planning — عالج كتعديل على الخطة وليس بناء
             if (clarifierState?.stage === 'planning') {
                 const lang = clarifierState.lang || userLang;
