@@ -1189,7 +1189,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
         // ── 1. كشف التعديل المباشر ───────────────────────────────────────
         // النمط مكتوب بدون همزات لأننا نفحص النص المطبّع (اضف = أضف = إضف)
-        const modifyPattern = /^(غير|عدل|بدل|اضف|احذف|امسح|شيل|صحح|اصلح|تعديل|حول|اجعل|ضع|حط|زد|كبر|صغر|change|modify|update|add|remove|put|fix|make|delete)\s+/i;
+        const modifyPattern = /^(غير|عدل|بدل|اضف|ضف|زود|احذف|امسح|شيل|صحح|اصلح|تعديل|حول|اجعل|ضع|حط|زد|كبر|صغر|change|modify|update|add|remove|put|fix|make|delete)\s+/i;
         const normalizedForModify = normalizeArabic(message.trim());
         if (modifyPattern.test(message.trim()) || modifyPattern.test(normalizedForModify)) {
             // إذا كنا في مرحلة Planning — عالج كتعديل على الخطة وليس بناء
