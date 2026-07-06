@@ -27,7 +27,10 @@ const INTENT_RULES = [
         intent: 'continue',
         patterns: [
             /^(كمل|أكمل|اكمل|كمّل|واصل|تابع|استمر|استانف|استأنف)(?:\s|$|[!؟?.])/,
-            /^(continue|resume|proceed|keep going|carry on)\b/i,
+            // "نفذ" وحدها = أمر تنفيذ عام → استئناف من الذاكرة
+            /^(نفذ|نفّذ)(?:\s*(الان|الآن|now))?\s*[!؟?.]*$/,
+            /^(تمام\s*)?(نفذ|نفّذ)(?:\s|$|[!؟?.])/,
+            /^(continue|resume|proceed|keep going|carry on|do it|execute|go ahead|run it)\b/i,
             /(كمل|أكمل|اكمل|واصل).*(المشروع|الموقع|الشغل|البناء|مشروع)/,
             /(continue|resume).*(project|website|work|build)/i,
         ],
