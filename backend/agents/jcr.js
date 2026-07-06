@@ -858,10 +858,47 @@ User preferences: ${JSON.stringify(execMemory)}` },
             if (execResult.success) {
                 transitionState(username, activeProject, STATES.COMPLETED);
                 const langMsg = getUserLanguage(username) || 'ar';
-                const successMsg = langMsg === 'ar'
-                    ? `✅ اكتملت المهمة.\nتم بناء موقعك بنجاح — راجع المعاينة الحية.\nيمكنك طلب أي تعديل الآن.`
-                    : `✅ Mission complete.\nYour website has been built successfully — check the live preview.\nFeel free to request any changes.`;
-                this.io.to(roomName).emit('chat_reply', { message: successMsg });
+
+                // 9️⃣ تقرير التسليم التنفيذي — ماذا أُنجز بالضبط
+                let builtFiles = [];
+                try {
+                    builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules');
+                } catch (e) {}
+                const durationSec = getProjectSummary(username, activeProject).duration || 0;
+                const durText = durationSec >= 60
+                    ? `${Math.floor(durationSec / 60)}:${String(durationSec % 60).padStart(2, '0')} د`
+                    : `${durationSec} ث`;
+                const memSections = getProjectMemory(username, activeProject)?.structure?.sections || [];
+
+                const reportLines = langMsg === 'ar'
+                    ? [
+                        '✅ اكتملت المهمة — تقرير التسليم:',
+                        `⏱️ مدة التنفيذ: ${durText}`,
+                        builtFiles.length ? `📁 الملفات (${builtFiles.length}): ${builtFiles.slice(0, 8).join('، ')}` : null,
+                        memSections.length ? `🧱 الأقسام: ${memSections.join('، ')}` : null,
+                        '',
+                        '🖥️ المعاينة الحية تحدّثت وفُتحت تلقائياً — راجعها الآن.',
+                        'ما الخطوة التالية؟',
+                    ].filter(Boolean)
+                    : [
+                        '✅ Mission complete — Delivery report:',
+                        `⏱️ Duration: ${durText}`,
+                        builtFiles.length ? `📁 Files (${builtFiles.length}): ${builtFiles.slice(0, 8).join(', ')}` : null,
+                        memSections.length ? `🧱 Sections: ${memSections.join(', ')}` : null,
+                        '',
+                        '🖥️ Live preview updated and opened automatically.',
+                        'What is the next step?',
+                    ].filter(Boolean);
+
+                // 🔟 اقتراحات استباقية — أزرار الخطوة التالية داخل الشات
+                const suggestions = langMsg === 'ar'
+                    ? ['🚀 انشر الآن', '🐙 ادفع إلى GitHub', '📊 أين وصلنا']
+                    : ['🚀 Deploy now', '🐙 Push to GitHub', '📊 Status'];
+
+                this.io.to(roomName).emit('chat_reply', {
+                    message: reportLines.join('\n'),
+                    options: suggestions,
+                });
 
                 // 🐙 الدفع التلقائي لـ GitHub إذا كان مفعلاً لهذا المشروع
                 autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
@@ -889,6 +926,9 @@ User preferences: ${JSON.stringify(execMemory)}` },
             return { success: false, error: error.message };
         } finally {
             clearMission(roomName);
+            // 🛠️ إنهاء بث الكود دائماً (نجاح/فشل/إيقاف) — بدونها تبقى طبقة
+            // "يكتب الكود الآن" تغطي المعاينة للأبد عند أي فشل أو إيقاف
+            this.io.to(roomName).emit('stream_done', { timestamp: Date.now() });
         }
     }
 

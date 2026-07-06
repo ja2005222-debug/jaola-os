@@ -6,12 +6,24 @@ import { BACKEND_URL } from '../config.js';
 
 export function PreviewPanel({ activeProject, previewTimestamp, streamingContent, currentUser, onRefresh, compact = false }) {
   const [viewMode, setViewMode] = useState('desktop'); // desktop | mobile
+  const [streamStale, setStreamStale] = useState(false);
   const streamRef = useRef(null);
 
   // تمرير تلقائي لأسفل بث الكود
   useEffect(() => {
     if (streamRef.current) streamRef.current.scrollTop = streamRef.current.scrollHeight;
   }, [streamingContent]);
+
+  // 🛡️ حارس أمان: إذا توقف البث 12 ثانية بلا جديد، أخفِ الطبقة واكشف المعاينة
+  // (حماية إضافية إذا ضاع حدث stream_done بسبب انقطاع الاتصال)
+  useEffect(() => {
+    if (!streamingContent) { setStreamStale(false); return; }
+    setStreamStale(false);
+    const t = setTimeout(() => setStreamStale(true), 12000);
+    return () => clearTimeout(t);
+  }, [streamingContent]);
+
+  const showStreamOverlay = streamingContent && !streamStale;
 
   const savedUser = currentUser || localStorage.getItem('currentUser') || 'guest_user';
   const externalUrl = `${BACKEND_URL}/workspace/index.html?project=${activeProject}&username=${savedUser}&t=${previewTimestamp}`;
@@ -54,7 +66,7 @@ export function PreviewPanel({ activeProject, previewTimestamp, streamingContent
         />
 
         {/* أثناء البناء: طبقة بث الكود المكتوب مباشرة */}
-        {streamingContent && (
+        {showStreamOverlay && (
           <div style={{
             position: 'absolute', inset: 0, background: 'rgba(4,8,16,0.96)',
             display: 'flex', flexDirection: 'column', zIndex: 5,

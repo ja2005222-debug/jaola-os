@@ -77,6 +77,11 @@ export function useSocket(isAuthenticated, handleAuthError) {
       setPreviewTimestamp(data.timestamp || Date.now());
     });
 
+    // 🛠️ نهاية بث الكود (نجاح/فشل/إيقاف) — يزيل طبقة "يكتب الكود" عن المعاينة دائماً
+    socket.off('stream_done').on('stream_done', () => {
+      setStreamingContent('');
+    });
+
     socket.off('code_stream_chunk').on('code_stream_chunk', (chunk) => {
       setStreamingContent((prev) => prev + chunk);
     });
@@ -201,6 +206,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
       socket.off('workspace_files');
       socket.off('user_projects');
       socket.off('preview_updated');
+      socket.off('stream_done');
       socket.off('code_stream_chunk');
       socket.off('agent_states');
       socket.off('log');

@@ -88,7 +88,7 @@ function BootScreen({ onDone }) {
 }
 
 // ── Execution Feed Item ─────────────────────────────────────────
-function FeedItem({ msg }) {
+function FeedItem({ msg, onOption }) {
   // رسائل النظام (أحداث البناء الحية) — سطر حالة مضغوط
   const isStatus = msg.sender === 'system' ||
     (msg.text && (msg.text.includes('✅') || msg.text.includes('❌') || msg.text.includes('🎯') || msg.text.includes('🚀') || msg.text.includes('⚙️') || msg.text.includes('🔍')));
@@ -124,6 +124,21 @@ function FeedItem({ msg }) {
       <div style={{ background:'rgba(15,23,42,0.8)', border:'1px solid rgba(59,130,246,0.15)', borderRadius:'2px 12px 12px 12px', padding:'10px 14px', maxWidth:'85%', fontSize:12, color:'#cbd5e1', lineHeight:1.7 }}>
         <div style={{ fontSize:9, color:'#3b82f6', fontWeight:700, marginBottom:4, letterSpacing:'0.5px', textTransform:'uppercase' }}>JAOLA OS</div>
         <span style={{ whiteSpace:'pre-wrap' }}>{msg.text}</span>
+
+        {/* 🔟 اقتراحات استباقية — أزرار الخطوة التالية */}
+        {Array.isArray(msg.options) && msg.options.length > 0 && (
+          <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:10 }}>
+            {msg.options.map((opt, i) => (
+              <button key={i} onClick={() => onOption?.(opt)}
+                style={{
+                  background:'rgba(59,130,246,0.1)', border:'1px solid rgba(59,130,246,0.3)',
+                  borderRadius:8, padding:'6px 12px', color:'#93c5fd', fontSize:11, fontWeight:700,
+                }}>
+                {opt}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -225,16 +240,24 @@ export default function Dashboard() {
 
   const getHeaders = () => ({ 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' });
 
-  const handleSend = async () => {
-    if (!prompt.trim() || isSending) return;
+  const handleSend = async (overrideText) => {
+    // overrideText: نص مباشر من زر اقتراح (وليس حدث onClick)
+    const raw = typeof overrideText === 'string' ? overrideText : prompt;
+    const msg = raw.trim();
+    if (!msg || isSending) return;
     setIsSending(true);
-    const msg = prompt.trim();
-    setPrompt('');
+    if (typeof overrideText !== 'string') setPrompt('');
     setChatMessages(prev => [...prev, { sender: 'user', text: msg }]);
     try {
       await fetch(`${BACKEND_URL}/api/chat`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ message: msg, project: activeProject }) });
     } catch {}
     setTimeout(() => setIsSending(false), 1000);
+  };
+
+  // 🔟 ضغطة زر اقتراح → تُرسل كرسالة (بعد إزالة الرموز التعبيرية من البداية)
+  const handleOptionClick = (opt) => {
+    const clean = opt.replace(/^[^\p{L}\p{N}]+/u, '').trim();
+    handleSend(clean || opt);
   };
 
   const handleDeploy = async () => {
@@ -420,7 +443,7 @@ export default function Dashboard() {
           <span style={{ fontSize:11, color:'#334155' }}>سأعرض لك هنا كل خطوة أثناء التنفيذ — لحظة بلحظة</span>
         </div>
       )}
-      {chatMessages.map((msg, i) => <FeedItem key={i} msg={msg} />)}
+      {chatMessages.map((msg, i) => <FeedItem key={i} msg={msg} onOption={handleOptionClick} />)}
       {isBuilding && buildStartedAt && (
         <MissionProgress agentStates={agentStates} lastLog={lastLogMsg} startedAt={buildStartedAt} />
       )}
