@@ -18,8 +18,14 @@ import { groq } from '../agents/baseAgent.js';
 // 🔍 الفحوص
 // ═══════════════════════════════════════════════════════
 export function checkJS(content) {
+    // vm.Script يحلل CommonJS فقط — لكن ملفات الـ API المولّدة تستخدم ESM
+    // (import/export). نحيّد صيغة الوحدة (مع الحفاظ على أرقام الأسطر) حتى
+    // نتحقق من صحة المنطق دون إنذار كاذب على export/import صحيحين.
+    const isModule = /^\s*(import\s|export\s|export\{|export\s*default)/m.test(content);
+    const toCheck = isModule ? neutralizeModuleSyntax(content) : content;
+
     try {
-        new vm.Script(content, { filename: 'generated.js' });
+        new vm.Script(toCheck, { filename: 'generated.js' });
         return { valid: true };
     } catch (e) {
         const lineMatch = /generated\.js:(\d+)/.exec(e.stack || '');
@@ -28,6 +34,19 @@ export function checkJS(content) {
             error: `${e.message}${lineMatch ? ` (سطر ${lineMatch[1]})` : ''}`,
         };
     }
+}
+
+// تحييد صيغة ESM لأغراض فحص الصياغة فقط (يحافظ على عدد الأسطر)
+function neutralizeModuleSyntax(src) {
+    return src
+        // import ... from '...';  و  import '...';  (سطر واحد)
+        .replace(/^\s*import\b[^\n]*$/gm, '')
+        // export default ...  →  void ...
+        .replace(/^(\s*)export\s+default\s+/gm, '$1void ')
+        // export { ... } (from '...')?;
+        .replace(/^\s*export\s*\{[^}]*\}[^\n]*$/gm, '')
+        // export const|let|var|function|class|async  →  إزالة الكلمة فقط
+        .replace(/^(\s*)export\s+(const|let|var|function|class|async|default)\b/gm, '$1$2');
 }
 
 export function checkHTML(content) {

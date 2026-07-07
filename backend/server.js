@@ -161,7 +161,12 @@ const DB = {
     },
     async createProject(name, owner) {
         if (this._isOnline()) {
-            try { return await Project.create({ name, owner }); } catch (e) {}
+            // localPath مطلوب في المخطط — بدونه كان الإنشاء يفشل صامتاً
+            try {
+                return await Project.create({ name, owner, localPath: `workspace/${owner}/${name}` });
+            } catch (e) {
+                console.warn('[DB.createProject] فشل:', e.message);
+            }
         }
         return { name, owner, vercelUrl: '' };
     }
@@ -251,7 +256,23 @@ async function validateProjectOwnership(req, res, next) {
         return next();
     }
 
-    const projectRecord = await DB.findProject(safeProject, username);
+    // 🛠️ وضع offline (MongoDB غير متصل): المستخدم المصادق يملك مشاريعه —
+    // العزل يتم بمجلده (workspace/<username>/...) لا بقاعدة البيانات.
+    // بدون هذا كان كل مشروع مخصص يُرفض إذا لم يتصل Mongo على Render.
+    if (!DB._isOnline()) {
+        if (req.user.id === 'guest' || username === 'guest_user') {
+            return res.status(403).json({ error: 'سجّل الدخول للعمل على المشاريع المخصصة.' });
+        }
+        req.projectPath = getProjectPath(username, safeProject);
+        req.activeProject = safeProject;
+        return next();
+    }
+
+    let projectRecord = await DB.findProject(safeProject, username);
+    // إذا لم يُسجَّل بعد (أُنشئ لكن فشل الحفظ سابقاً) — سجّله الآن بدل الرفض
+    if (!projectRecord) {
+        projectRecord = await DB.createProject(safeProject, username);
+    }
     if (!projectRecord) {
         return res.status(403).json({ error: 'غير مصرح: هذا المشروع لا يخص حسابك.' });
     }
@@ -327,8 +348,10 @@ io.on('connection', (socket) => {
         const safeProject = (project || 'sandbox_app').trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '-');
 
         // التحقق من الملكية (sandbox_app مفتوح للجميع)
-        if (safeProject !== 'sandbox_app') {
-            const projectRecord = await DB.findProject(safeProject, username);
+        // وضع offline: المستخدم المصادق يملك مشاريعه (معزولة بمجلده) — لا نرفضه
+        if (safeProject !== 'sandbox_app' && DB._isOnline()) {
+            let projectRecord = await DB.findProject(safeProject, username);
+            if (!projectRecord) projectRecord = await DB.createProject(safeProject, username);
             if (!projectRecord) {
                 socket.emit('log', { message: `❌ [ERROR]: غير مصرح لك بالانضمام للمشروع (${safeProject}).` });
                 return;
@@ -561,6 +584,39 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+// 🆕 إنشاء مشروع جديد — كان المسار مفقوداً بالكامل (الواجهة تناديه فيرجع 404
+// فلا يُسجَّل المشروع، ثم كل طلب لاحق عليه يُرفض بـ"غير مصرح").
+app.post('/api/projects', verifyToken, async (req, res) => {
+    const username = req.user.username;
+    if (username === 'guest_user' || req.user.id === 'guest') {
+        return res.status(403).json({ error: 'سجّل حساباً للعمل على مشاريع مخصصة.' });
+    }
+
+    const { name } = req.body;
+    if (!name || typeof name !== 'string') {
+        return res.status(400).json({ error: 'اسم المشروع مطلوب.' });
+    }
+    const safeProject = name.trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '-').replace(/^-+|-+$/g, '');
+    if (!safeProject || safeProject.length < 2) {
+        return res.status(400).json({ error: 'اسم المشروع غير صالح (حرفان على الأقل بالإنجليزية والأرقام).' });
+    }
+    if (safeProject === 'sandbox_app') {
+        return res.status(400).json({ error: 'هذا الاسم محجوز للمشروع الافتراضي.' });
+    }
+
+    try {
+        const exists = await DB.findProject(safeProject, username);
+        if (!exists) await DB.createProject(safeProject, username);
+
+        // إنشاء مجلد المشروع على القرص فوراً
+        getProjectPath(username, safeProject);
+
+        res.json({ success: true, currentUser: username, activeProject: safeProject });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل إنشاء المشروع: ' + err.message });
+    }
+});
+
 app.post('/api/project-context/switch', verifyToken, async (req, res) => {
     const { project } = req.body;
     const username = req.user.username;
@@ -648,8 +704,8 @@ app.get('/api/file-content', verifyToken, async (req, res) => {
         const username = req.user.username;
         const safeProject = (project || 'sandbox_app').replace(/[^a-z0-9_\-]/g, '-');
 
-        // التحقق من الملكية
-        if (safeProject !== 'sandbox_app') {
+        // التحقق من الملكية (offline: المستخدم المصادق يملك مشاريعه المعزولة بمجلده)
+        if (safeProject !== 'sandbox_app' && DB._isOnline()) {
             const projectRecord = await DB.findProject(safeProject, username);
             if (!projectRecord) {
                 return res.status(403).json({ error: 'Access Denied: You do not own this project.' });

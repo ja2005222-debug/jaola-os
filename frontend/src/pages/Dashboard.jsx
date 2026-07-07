@@ -333,15 +333,36 @@ export default function Dashboard() {
     } catch {}
   };
 
-  const handleSwitchProject = (p) => { setActiveProject(p); };
+  const handleSwitchProject = (p) => {
+    setActiveProject(p);
+    // إعادة الانضمام لغرفة المشروع الجديد عبر الـ socket فوراً
+    if (socket.connected) socket.emit('join_project', { project: p });
+  };
+
+  const [createError, setCreateError] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
 
   const handleCreateProject = async () => {
-    if (!newProjectName.trim()) return;
+    const name = newProjectName.trim();
+    if (!name || isCreating) return;
+    setIsCreating(true);
+    setCreateError('');
     try {
-      await fetch(`${BACKEND_URL}/api/projects`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ name: newProjectName }) });
-      handleSwitchProject(newProjectName);
-      setShowProjectModal(false); setNewProjectName('');
-    } catch {}
+      const res = await fetch(`${BACKEND_URL}/api/projects`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ name }) });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) {
+        // نستخدم الاسم المُطهَّر من السيرفر (قد يختلف عن المُدخل)
+        handleSwitchProject(d.activeProject || name);
+        setShowProjectModal(false);
+        setNewProjectName('');
+        addNotification(`✅ تم إنشاء المشروع "${d.activeProject || name}"`, 'success');
+      } else {
+        setCreateError(d.error || 'فشل إنشاء المشروع.');
+      }
+    } catch {
+      setCreateError('تعذّر الاتصال بالخادم.');
+    }
+    setIsCreating(false);
   };
 
   const handleLogin = async (e) => {
@@ -630,15 +651,20 @@ export default function Dashboard() {
       <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:28, width:'min(360px, 100%)' }}>
         <h3 style={{ color:'#fff', fontSize:15, fontWeight:800, marginBottom:6 }}>New Project</h3>
         <p style={{ color:S.muted, fontSize:12, marginBottom:16 }}>اسم المشروع بالإنجليزية (بدون مسافات)</p>
-        <input value={newProjectName} onChange={e => setNewProjectName(e.target.value)}
+        <input value={newProjectName} onChange={e => { setNewProjectName(e.target.value); setCreateError(''); }}
           onKeyDown={e => e.key === 'Enter' && handleCreateProject()}
-          placeholder="my-awesome-project" autoFocus
-          style={{ width:'100%', background:'#161b22', border:`1px solid ${S.border}`, borderRadius:8, padding:'10px 14px', color:'#fff', fontSize:13, marginBottom:14, fontFamily:'monospace' }} />
+          placeholder="my-awesome-project" autoFocus dir="ltr"
+          style={{ width:'100%', background:'#161b22', border:`1px solid ${createError ? 'rgba(239,68,68,0.5)' : S.border}`, borderRadius:8, padding:'10px 14px', color:'#fff', fontSize:14, marginBottom: createError ? 8 : 14, fontFamily:'monospace', textAlign:'left' }} />
+        {createError && (
+          <div style={{ color:'#f87171', fontSize:12, marginBottom:14 }}>{createError}</div>
+        )}
         <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
-          <button onClick={() => setShowProjectModal(false)}
+          <button onClick={() => { setShowProjectModal(false); setCreateError(''); }}
             style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 16px', color:S.muted, fontSize:13 }}>Cancel</button>
-          <button onClick={handleCreateProject}
-            style={{ background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', border:'none', borderRadius:8, padding:'8px 20px', color:'#fff', fontWeight:700, fontSize:13 }}>Create</button>
+          <button onClick={handleCreateProject} disabled={isCreating}
+            style={{ background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', border:'none', borderRadius:8, padding:'8px 20px', color:'#fff', fontWeight:700, fontSize:13, opacity: isCreating ? 0.6 : 1 }}>
+            {isCreating ? 'جاري الإنشاء...' : 'Create'}
+          </button>
         </div>
       </div>
     </div>
