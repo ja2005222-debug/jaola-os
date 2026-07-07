@@ -861,6 +861,13 @@ User preferences: ${JSON.stringify(execMemory)}` },
             const kindLabel = { webapp: 'تطبيق تفاعلي', tool: 'أداة', landing: 'صفحة هبوط', brochure: 'موقع تعريفي' }[blueprint.kind] || blueprint.kind;
             this.emitLiveLog(roomName, 'BLUEPRINT', 'AppAnalyzer',
                 `🧭 ${blueprint.appType} — ${kindLabel}${blueprint.functionalComponents?.length ? ` (${blueprint.functionalComponents.length} مكوّن وظيفي)` : ''}`);
+
+            // تحديث ذاكرة المشروع بأقسام المخطط الحقيقية — يمنع بقاء أقسام قديمة
+            // خاطئة في تقرير التسليم (كانت تظهر أقسام طبية لمشروع طيران)
+            if (blueprint.keySections?.length) {
+                updateStructure(username, activeProject, blueprint.keySections,
+                    (blueprint.functionalComponents || []).map(c => c.name));
+            }
         } catch (e) { /* اختياري */ }
 
         // 🆕 Smart Requirement Analyzer — يُثري الهدف بمتطلبات ضمنية
@@ -1333,6 +1340,20 @@ User preferences: ${JSON.stringify(execMemory)}` },
             agents.clearState?.(username);
             clearDialog(username);
         } else {
+            // 🆕 على مشروع قائم: أي طلب غير استفهامي يُعامَل كتعديل تلقائياً
+            // (المستخدم لا يجب أن يكتب "عدل على نفس الموقع" في كل مرة —
+            //  "قم بربط..."، "استخدم قالب..." كلها تعديلات على الموجود)
+            const existing = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
+            const hasProject = existing && existing.trim().length > 100;
+            const isQuestion = /(^|\s)(هل|ما|ماذا|كيف|لماذا|ليش|وش|ايش|إيش|متى|اين|أين|وين|كم|مين|من هو|شنو)\b|\?|؟|^(what|how|why|when|where|who|can you|could you|is it|do you|does)\b/i.test(message.trim());
+            const isSmalltalk = message.trim().length < 4;
+
+            if (hasProject && !isQuestion && !isSmalltalk) {
+                this.emitLiveLog(roomName, 'INTENT', 'Classifier', '✏️ طلب على مشروع قائم → تعديل تلقائي');
+                recordEdit(username, message);
+                this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);
+                return;
+            }
             await this.generateChatResponse(message, username, roomName, userLang);
         }
     }
