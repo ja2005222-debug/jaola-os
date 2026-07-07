@@ -35,6 +35,8 @@ import { snapshotWorkspace } from '../services/workspaceStore.js';
 import { guardFiles, guardSingleJS } from '../services/codeGuard.js';
 import { buildImageContext } from '../services/imageService.js';
 import { recordScore, recordBuild, buildMetricsPayload } from '../services/metricsStore.js';
+import { setPendingGoal, getPendingGoal, consumePendingGoal, clearDialog } from '../services/conversationManager.js';
+import { enqueueMission } from '../services/missionQueue.js';
 import Conversation from '../models/Conversation.js';
 import mongoose from 'mongoose';
 
@@ -815,7 +817,32 @@ User preferences: ${JSON.stringify(execMemory)}` },
         this.io.to(roomName).emit('chat_reply', { message: replyMessage });
     }
 
-    async executeMission(goal, projectPath, username, activeProject, roomName, agents, dbStatus) {
+    // 🚦 كل المهام تمر عبر صف التنفيذ: لا توازي لنفس المشروع + حد توازٍ كلي
+    // يحمي حصة الـ LLM — كل مواقع الاستدعاء تبقى كما هي
+    executeMission(goal, projectPath, username, activeProject, roomName, agents, dbStatus) {
+        const lang = getUserLanguage(username) || 'ar';
+        const result = enqueueMission({
+            username,
+            project: activeProject,
+            run: () => this._runMissionNow(goal, projectPath, username, activeProject, roomName, agents, dbStatus),
+            onWait: (position) => {
+                const msg = lang === 'ar'
+                    ? `⏳ الفريق مشغول بمهمة أخرى — مهمتك في الصف (المركز ${position}) وستبدأ تلقائياً.`
+                    : `⏳ The team is busy — your mission is queued (position ${position}) and will start automatically.`;
+                this.io.to(roomName).emit('chat_reply', { message: msg });
+            },
+        });
+
+        if (!result.accepted) {
+            const busyMsg = lang === 'ar'
+                ? '⚙️ يوجد بناء جارٍ لهذا المشروع بالفعل — تابع التقدم الحي أو اضغط ⏹ لإيقافه أولاً.'
+                : '⚙️ A build is already running for this project — watch the progress or press ⏹ to stop it first.';
+            this.io.to(roomName).emit('chat_reply', { message: busyMsg });
+        }
+        return result;
+    }
+
+    async _runMissionNow(goal, projectPath, username, activeProject, roomName, agents, dbStatus) {
         // 🆕 دمج Project Memory + User Profile في سياق الهدف
         const memoryContext = buildMemoryContext(username, activeProject);
         const profileContext = buildProfileContext(username);
@@ -1012,21 +1039,20 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const userLang = initUserLanguage(username, message);
         const langInfo = getLangInfo(userLang);
 
-        // 🆕 Text Normalizer — يفهم المعنى بغض النظر عن الأخطاء
-        // فحص إذا كان المستخدم يؤكد pending goal
-        if (this._pendingGoals?.has(username)) {
-            const pendingGoal = this._pendingGoals.get(username);
-            const isYes = /^(نعم|yes|ok|okay|يلا|ايوه|اه|go|نعم ✓|yes.*build|ابنه|ابدأ|start|sure|yep)/i.test(message.trim());
+        // 🆕 Conversation Manager — فحص الهدف المعلق (دائم، ينجو من إعادة النشر)
+        if (getPendingGoal(username)) {
+            // "نفذ/كمل" وغيرها من أوامر التنفيذ تؤكد الهدف المعلق أيضاً
+            const isYes = /^(نعم|yes|ok|okay|يلا|ايوه|اه|go|نعم ✓|yes.*build|ابنه|ابدأ|start|sure|yep|نفذ|نفّذ|كمل|أكمل|اكمل|تمام)/i.test(message.trim());
             const isNo = /^(لا|no|cancel|لا.*|not now)/i.test(message.trim()) && message.trim().length < 10;
             if (isYes) {
-                this._pendingGoals.delete(username);
+                const pendingGoal = consumePendingGoal(username);
                 const lang = getUserLanguage(username) || userLang;
                 const msg = lang === 'ar' ? '⚡ ممتاز! أبني الآن...' : '⚡ Building now...';
                 this.io.to(roomName).emit('chat_reply', { message: msg });
                 this.executeMission(pendingGoal, projectPath, username, activeProject, roomName, agents, dbStatus);
                 return;
             } else if (isNo) {
-                this._pendingGoals.delete(username);
+                clearDialog(username);
                 const msg = userLang === 'ar' ? 'تم الإلغاء. أخبرني بما تريد.' : 'Cancelled. Tell me what you need.';
                 this.io.to(roomName).emit('chat_reply', { message: msg });
                 return;
@@ -1280,8 +1306,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 ? ['نعم، ابنه الآن ⚡', 'لا، أخبرني أكثر']
                 : ['Yes, build it now ⚡', 'No, tell me more'];
             this.io.to(roomName).emit('chat_reply', { message: confirmQ, options: opts, pendingGoal: userGoal });
-            if (!this._pendingGoals) this._pendingGoals = new Map();
-            this._pendingGoals.set(username, userGoal);
+            setPendingGoal(username, userGoal, activeProject);
         } else if (finalIntent.intent === 'modify') {
             recordEdit(username, message);
             this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);
@@ -1289,6 +1314,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         } else if (finalIntent.intent === 'stop') {
             this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛑 أمر إيقاف.');
             agents.clearState?.(username);
+            clearDialog(username);
         } else {
             await this.generateChatResponse(message, username, roomName, userLang);
         }
