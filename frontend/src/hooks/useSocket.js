@@ -36,6 +36,8 @@ export function useSocket(isAuthenticated, handleAuthError) {
     coder: 'waiting', qa: 'waiting', deploy: 'waiting'
   });
   const [isConnected, setIsConnected]   = useState(socket.connected);
+  const [metrics, setMetrics]           = useState(null);   // 📊 المقاييس الحقيقية من السيرفر
+  const [latencyMs, setLatencyMs]       = useState(null);   // زمن الاستجابة المقاس فعلياً
 
   // مرجع لتتبع عدد أخطاء الاتصال لمنع حلقة الـ reload
   const connectErrorCountRef = useRef(0);
@@ -96,6 +98,9 @@ export function useSocket(isAuthenticated, handleAuthError) {
     });
 
     socket.off('agent_states').on('agent_states', setAgentStates);
+
+    // 📊 المقاييس الحقيقية (درجات الوكلاء + مؤشرات النظام)
+    socket.off('project_metrics').on('project_metrics', setMetrics);
 
     socket.off('log').on('log', (newLog) => {
       setLogs((prev) => [...prev.slice(-100), newLog]);
@@ -203,10 +208,16 @@ export function useSocket(isAuthenticated, handleAuthError) {
     document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('online', onVisibilityChange);
 
-    // 🛠️ نبض حياة كل 4 دقائق: يبقي خدمة Render المجانية مستيقظة أثناء فتح الصفحة
-    const keepAlive = setInterval(() => {
-      fetch(`${BACKEND_URL}/api/health`).catch(() => {});
-    }, 4 * 60 * 1000);
+    // 🛠️ نبض حياة كل 4 دقائق: يبقي خدمة Render مستيقظة + يقيس زمن الاستجابة الفعلي
+    const pingHealth = async () => {
+      const t0 = performance.now();
+      try {
+        await fetch(`${BACKEND_URL}/api/health`);
+        setLatencyMs(Math.round(performance.now() - t0));
+      } catch {}
+    };
+    pingHealth();
+    const keepAlive = setInterval(pingHealth, 4 * 60 * 1000);
 
     socket.connect();
     socket.emit('join_project', { project: savedProject });
@@ -218,6 +229,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
       socket.off('stream_done');
       socket.off('code_stream_chunk');
       socket.off('agent_states');
+      socket.off('project_metrics');
       socket.off('log');
       socket.off('chat_reply');
       socket.off('chat_history');
@@ -246,6 +258,8 @@ export function useSocket(isAuthenticated, handleAuthError) {
     chatMessages,
     connectionError,
     isConnected,
+    metrics,
+    latencyMs,
     previewTimestamp,
     refreshPreview,
     setChatMessages,
