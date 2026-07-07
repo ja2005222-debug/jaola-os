@@ -44,6 +44,7 @@ import { pushProject, getIntegration } from './services/githubSync.js';
 import { encryptSecret } from './utils/secretVault.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
 import { buildMetricsPayload } from './services/metricsStore.js';
+import { queueStatus } from './services/missionQueue.js';
 import { getCommitHistory, rollbackToCommit } from './agents/gitAgent.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -390,6 +391,7 @@ app.get('/api/health', (req, res) => {
         status: 'ok',
         uptime: Math.floor(process.uptime()),
         db: isDbConnected && mongoose.connection.readyState === 1 ? 'connected' : 'offline',
+        queue: queueStatus(),
         timestamp: Date.now(),
     });
 });
