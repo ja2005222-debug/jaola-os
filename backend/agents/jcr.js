@@ -34,6 +34,7 @@ import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import { snapshotWorkspace } from '../services/workspaceStore.js';
 import { guardFiles, guardSingleJS } from '../services/codeGuard.js';
 import { buildImageContext } from '../services/imageService.js';
+import { generateBlueprint, buildBlueprintContext } from './appBlueprint.js';
 import { recordScore, recordBuild, buildMetricsPayload } from '../services/metricsStore.js';
 import { setPendingGoal, getPendingGoal, consumePendingGoal, clearDialog } from '../services/conversationManager.js';
 import { enqueueMission } from '../services/missionQueue.js';
@@ -288,7 +289,7 @@ export class JaolaCognitiveRuntime {
             const currentFilesCount = dirFiles.filter(f => f !== '.backups' && f !== 'template.zip').length;
             if (currentFilesCount <= 1 && agents.templateAgent) {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'TemplateAgent', '📥 جاري تحميل القالب...');
-                const result = await agents.templateAgent(context.goal, context.projectPath);
+                const result = await agents.templateAgent(context.goal, context.projectPath, context.blueprint?.category);
                 if (result && result.success) {
                     this.emitLiveLog(roomName, '5. RUNTIME', 'TemplateAgent', `✅ تم تطبيق قالب ${result.template} (${result.source})`);
                     // 🆕 حقن توجيهات القالب في الهوية البصرية لـ coderAgent
@@ -850,11 +851,26 @@ User preferences: ${JSON.stringify(execMemory)}` },
             ? `${goal}\n${memoryContext}${profileContext}`
             : goal;
 
+        // 🧭 App Blueprint — يفهم نوع التطبيق ومكوّناته الوظيفية (أول وأهم خطوة)
+        // يمنع تحويل كل شيء لبروشور ويضمن بناء ميزات عاملة (بحث/فلترة/حجز...)
+        let blueprintContext = '';
+        let blueprint = null;
+        try {
+            blueprint = await generateBlueprint(goal);
+            blueprintContext = buildBlueprintContext(blueprint);
+            const kindLabel = { webapp: 'تطبيق تفاعلي', tool: 'أداة', landing: 'صفحة هبوط', brochure: 'موقع تعريفي' }[blueprint.kind] || blueprint.kind;
+            this.emitLiveLog(roomName, 'BLUEPRINT', 'AppAnalyzer',
+                `🧭 ${blueprint.appType} — ${kindLabel}${blueprint.functionalComponents?.length ? ` (${blueprint.functionalComponents.length} مكوّن وظيفي)` : ''}`);
+        } catch (e) { /* اختياري */ }
+
         // 🆕 Smart Requirement Analyzer — يُثري الهدف بمتطلبات ضمنية
         let requirementsContext = '';
         let imageContext = '';
         try {
-            const projectType = detectProjectType(goal);
+            // نوع المشروع من المخطط الذكي (أدق من كشف الكلمات المفتاحية) مع احتياط
+            const projectType = blueprint?.category && blueprint.category !== 'other'
+                ? blueprint.category
+                : detectProjectType(goal);
             const reqAnalysis = await analyzeRequirements(goal, projectType);
             requirementsContext = buildRequirementsContext(reqAnalysis);
 
@@ -864,13 +880,14 @@ User preferences: ${JSON.stringify(execMemory)}` },
             this.emitLiveLog(roomName, 'ASSETS', 'ImageService', `🖼️ جُهزت ${img.count} صور (${img.source})`);
         } catch (e) { /* اختياري */ }
 
-        const finalGoalWithRequirements = `${enrichedGoal}\n${requirementsContext}${imageContext}`;
+        const finalGoalWithRequirements = `${enrichedGoal}${blueprintContext}\n${requirementsContext}${imageContext}`;
 
         // تسجيل هذا الطلب في تاريخ المشروع
         addToHistory(username, activeProject, goal.slice(0, 80));
 
         const context = new JCRContext(finalGoalWithRequirements || enrichedGoal, projectPath, username, activeProject);
         context.originalGoal = goal;
+        context.blueprint = blueprint;   // متاح للـ template agent وباقي المراحل
         transitionState(username, activeProject, STATES.GENERATING);
 
         // ⏹️ تسجيل المهمة في سجل الإيقاف — تسمح للمستخدم بإيقافها من الواجهة
