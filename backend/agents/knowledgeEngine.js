@@ -34,7 +34,9 @@ loadKnowledge();
 // ═══════════════════════════════════════════════════════
 // 🔍 كشف نوع المشروع من وصف المستخدم
 // ═══════════════════════════════════════════════════════
-export function detectProjectType(userGoal) {
+export function detectProjectType(userGoal, typeHint = null) {
+    // تلميح صريح من App Blueprint (LLM) — أدق من كشف الكلمات المفتاحية
+    if (typeHint && DESIGN_RULES?.types?.[typeHint]) return typeHint;
     if (!DESIGN_RULES) return 'business';
 
     const goal = (userGoal || '').toLowerCase();
@@ -74,8 +76,8 @@ function getKeywordsForType(typeName) {
 // ═══════════════════════════════════════════════════════
 // 🎨 استخراج السياق الكامل لنوع مشروع معين
 // ═══════════════════════════════════════════════════════
-export function getProjectContext(userGoal) {
-    const projectType = detectProjectType(userGoal);
+export function getProjectContext(userGoal, typeHint = null) {
+    const projectType = detectProjectType(userGoal, typeHint);
     const globalRules = DESIGN_RULES?.global || {};
     const typeRules = DESIGN_RULES?.types?.[projectType] || {};
 

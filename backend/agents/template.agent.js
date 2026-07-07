@@ -3,9 +3,9 @@ import path from 'path';
 import { promises as fsPromises } from 'fs';
 import { getProjectContext } from './knowledgeEngine.js';
 
-export async function applyTemplate(userGoal, projectPath) {
+export async function applyTemplate(userGoal, projectPath, typeHint = null) {
     try {
-        const ctx = getProjectContext(userGoal);
+        const ctx = getProjectContext(userGoal, typeHint);
 
         const initialCSS = `/* JAOLA OS — قالب بداية: ${ctx.projectType} */\n${ctx.cssVariables}\n\n* { box-sizing: border-box; margin: 0; padding: 0; }\nbody { font-family: var(--font); color: var(--text); background: var(--bg); line-height: 1.6; }\n`;
 
