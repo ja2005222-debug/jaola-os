@@ -5,6 +5,7 @@ import { useIsMobile } from '../hooks/useIsMobile.js';
 import { MonacoWorkspace } from '../components/editor/MonacoWorkspace.jsx';
 import { MissionProgress } from '../components/MissionProgress.jsx';
 import { PreviewPanel } from '../components/PreviewPanel.jsx';
+import { TimelinePanel } from '../components/TimelinePanel.jsx';
 import { useJaolaStore } from '../store/useJaolaStore.js';
 import { BACKEND_URL } from '../config.js';
 
@@ -175,6 +176,7 @@ export default function Dashboard() {
   const [activeNav, setActiveNav] = useState('mission');
   const [activeTab, setActiveTab] = useState('preview');       // سطح المكتب: تاب العمود الأوسط
   const [mobileView, setMobileView] = useState('mission');     // الجوال: الشاشة النشطة
+  const [mobileLogsMode, setMobileLogsMode] = useState('logs'); // الجوال: سجل حي / خط زمني
   const [prompt, setPrompt] = useState('');
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
@@ -196,7 +198,15 @@ export default function Dashboard() {
   const textareaRef = useRef(null);
   const notifId = useRef(0);
 
-  const { files, logs, streamingContent, agentStates, projects, activeProject, currentUser, vercelUrl, chatMessages, setChatMessages, setActiveProject, previewTimestamp, refreshPreview, isConnected, connectionError } = useSocket(isAuthenticated, handleAuthError);
+  const { files, logs, streamingContent, agentStates, projects, activeProject, currentUser, vercelUrl, chatMessages, setChatMessages, setActiveProject, previewTimestamp, refreshPreview, isConnected, connectionError, metrics, latencyMs } = useSocket(isAuthenticated, handleAuthError);
+
+  // 📊 قيم لوحة الذكاء الحقيقية (مع بدائل عند غياب البيانات)
+  const gradeColor = (g) => g === 'A' ? '#10b981' : g === 'B' ? '#fbbf24' : g ? '#f97316' : '#334155';
+  const fmtScore = (s) => s ? `${s.grade}${s.score != null ? ` ${s.score}%` : ''}` : '—';
+  const sysUptime = metrics?.system?.uptimeSec ?? null;
+  const fmtUptime = sysUptime == null ? '—'
+    : sysUptime >= 3600 ? `${Math.floor(sysUptime/3600)}س ${Math.floor((sysUptime%3600)/60)}د`
+    : `${Math.floor(sysUptime/60)}د`;
 
   // ── Monaco Workspace Store ──────────────────────────────────────
   const openJaolaFile = useJaolaStore(s => s.openFile);
@@ -716,7 +726,30 @@ export default function Dashboard() {
             </div>
           )}
 
-          {mobileView === 'logs' && logsView}
+          {mobileView === 'logs' && (
+            <div style={{ flex:1, display:'flex', flexDirection:'column', minHeight:0 }}>
+              {/* تبديل: السجل الحي / الخط الزمني */}
+              <div style={{ display:'flex', gap:4, padding:'8px 12px', borderBottom:`1px solid ${S.border}`, flexShrink:0 }}>
+                {[['logs','📋 السجل الحي'],['timeline','🕘 الخط الزمني']].map(([mode, label]) => (
+                  <button key={mode} onClick={() => setMobileLogsMode(mode)}
+                    style={{
+                      flex:1, padding:'6px', borderRadius:7, fontSize:11, fontWeight:700,
+                      background: mobileLogsMode === mode ? 'rgba(59,130,246,0.12)' : 'transparent',
+                      border:`1px solid ${mobileLogsMode === mode ? 'rgba(59,130,246,0.3)' : S.border}`,
+                      color: mobileLogsMode === mode ? '#93c5fd' : S.muted,
+                    }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div style={{ flex:1, minHeight:0, overflow:'hidden' }}>
+                {mobileLogsMode === 'logs' ? logsView : (
+                  <TimelinePanel activeProject={activeProject} token={token}
+                    onRestored={(h) => { addNotification(`⏪ استُرجع المشروع إلى (${h})`, 'success'); refreshPreview(); }} />
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* التنقل السفلي */}
@@ -907,6 +940,7 @@ export default function Dashboard() {
               { id:'preview', label:'🖥️ Preview' },
               { id:'editor', label:'💻 Code' },
               { id:'logs', label:`📋 Logs${logs.length > 0 ? ` (${logs.length})` : ''}` },
+              { id:'timeline', label:'🕘 Timeline' },
             ].map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                 style={{
@@ -930,6 +964,10 @@ export default function Dashboard() {
             {activeTab === 'preview' && previewView}
             {activeTab === 'editor' && <MonacoWorkspace />}
             {activeTab === 'logs' && logsView}
+            {activeTab === 'timeline' && (
+              <TimelinePanel activeProject={activeProject} token={token}
+                onRestored={(h) => { addNotification(`⏪ استُرجع المشروع إلى (${h})`, 'success'); refreshPreview(); }} />
+            )}
           </div>
 
           {/* Agent Timeline */}
@@ -948,24 +986,26 @@ export default function Dashboard() {
         {/* RIGHT — INTELLIGENCE */}
         <div style={{ width:220, background:S.bg2, borderLeft:`1px solid ${S.border}`, display:'flex', flexDirection:'column', overflowY:'auto', flexShrink:0 }}>
 
-          {/* Digital Twin */}
+          {/* Digital Twin — حالة السيرفر الحقيقية */}
           <div style={{ padding:'14px', borderBottom:`1px solid ${S.border}` }}>
             <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:10 }}>⬡ Digital Twin</div>
-            <div style={{ display:'flex', alignItems:'baseline', gap:4, marginBottom:4 }}>
-              <span style={{ fontSize:24, fontWeight:900, color:'#10b981' }}>99.98%</span>
-              <span style={{ fontSize:10, color:S.muted }}>Active</span>
+            <div style={{ display:'flex', alignItems:'baseline', gap:6, marginBottom:4 }}>
+              <span style={{ fontSize:22, fontWeight:900, color: isConnected ? '#10b981' : '#f59e0b' }}>
+                {isConnected ? 'ONLINE' : 'OFFLINE'}
+              </span>
+              <span style={{ fontSize:10, color:S.muted }}>Uptime {fmtUptime}</span>
             </div>
             <div style={{ height:2, background:S.border, borderRadius:1, overflow:'hidden' }}>
-              <div style={{ height:'100%', width:'99.98%', background:'linear-gradient(90deg,#10b981,#059669)', borderRadius:1 }} />
+              <div style={{ height:'100%', width: isConnected ? '100%' : '15%', background: isConnected ? 'linear-gradient(90deg,#10b981,#059669)' : '#f59e0b', borderRadius:1, transition:'all 0.5s' }} />
             </div>
           </div>
 
-          {/* Metrics */}
+          {/* Metrics — مؤشرات النظام الحقيقية */}
           <div style={{ padding:14, borderBottom:`1px solid ${S.border}`, display:'flex', flexDirection:'column', gap:10 }}>
             {[
-              { label:'CPU', value:'14%', pct:14, color:'#3b82f6' },
-              { label:'RAM', value:'42 MB', pct:22, color:'#8b5cf6' },
-              { label:'Latency', value:'11 ms', pct:8, color:'#10b981' },
+              { label:'CPU', value: metrics?.system?.cpuPct != null ? `${metrics.system.cpuPct}%` : '—', pct: metrics?.system?.cpuPct ?? 0, color:'#3b82f6' },
+              { label:'RAM', value: metrics?.system?.rssMb != null ? `${metrics.system.rssMb} MB` : '—', pct: Math.min(100, (metrics?.system?.rssMb ?? 0) / 5), color:'#8b5cf6' },
+              { label:'Latency', value: latencyMs != null ? `${latencyMs} ms` : '—', pct: Math.min(100, (latencyMs ?? 0) / 10), color: (latencyMs ?? 0) > 500 ? '#f59e0b' : '#10b981' },
             ].map(m => (
               <div key={m.label}>
                 <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
@@ -984,10 +1024,11 @@ export default function Dashboard() {
             <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:10 }}>📊 Intelligence</div>
             <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
               {[
-                { label:'SEO Score', value:'A', color:'#10b981' },
-                { label:'Security', value:'A 100%', color:'#10b981' },
-                { label:'Quality', value:'A 92%', color:'#10b981' },
-                { label:'Completion', value:`${Math.min(100, logs.length * 5)}%`, color:'#3b82f6' },
+                { label:'SEO', value: fmtScore(metrics?.seo), color: gradeColor(metrics?.seo?.grade) },
+                { label:'Security', value: fmtScore(metrics?.security), color: gradeColor(metrics?.security?.grade) },
+                { label:'Quality', value: fmtScore(metrics?.quality), color: gradeColor(metrics?.quality?.grade) },
+                { label:'Builds', value: metrics?.totalBuilds ?? 0, color:'#3b82f6' },
+                { label:'Edits', value: metrics?.totalEdits ?? 0, color:'#8b5cf6' },
               ].map(m => (
                 <div key={m.label} style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                   <span style={{ fontSize:10, color:S.muted }}>{m.label}</span>

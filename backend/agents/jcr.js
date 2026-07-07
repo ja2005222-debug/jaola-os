@@ -34,6 +34,7 @@ import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import { snapshotWorkspace } from '../services/workspaceStore.js';
 import { guardFiles, guardSingleJS } from '../services/codeGuard.js';
 import { buildImageContext } from '../services/imageService.js';
+import { recordScore, recordBuild, buildMetricsPayload } from '../services/metricsStore.js';
 import Conversation from '../models/Conversation.js';
 import mongoose from 'mongoose';
 
@@ -411,6 +412,8 @@ export class JaolaCognitiveRuntime {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'ReviewAgent',
                     `${statusEmoji} الجودة: ${reviewResult.grade} (${reviewResult.score}/100) — ${reviewResult.overallQuality}${reviewResult.fixedCount > 0 ? ` — تم إصلاح ${reviewResult.fixedCount} مشكلة` : ''}`
                 );
+                // 📊 تسجيل درجة الجودة الفعلية للوحة الذكاء
+                recordScore(context.username, context.activeProject, 'quality', reviewResult);
             } catch (e) {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'ReviewAgent', `⚠️ تخطّي: ${e.message}`);
             }
@@ -466,6 +469,8 @@ export class JaolaCognitiveRuntime {
                         await fsp.writeFile(pathMod.default.join(context.projectPath, file.name), file.content);
                     }
                     this.emitLiveLog(roomName, '5. RUNTIME', 'SEOAgent', `✅ ${seoResult.summary}`);
+                    // 📊 حزمة SEO كاملة طُبقت (robots + sitemap + meta + schema)
+                    recordScore(context.username, context.activeProject, 'seo', { grade: 'A', score: 100 });
                 }
             } catch (e) {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'SEOAgent', `⚠️ تخطّي: ${e.message}`);
@@ -485,6 +490,8 @@ export class JaolaCognitiveRuntime {
                     this.emitLiveLog(roomName, '5. RUNTIME', 'SecurityAgent',
                         `${secEmoji} ${secResult.summary}`
                     );
+                    // 📊 تسجيل درجة الأمان الفعلية
+                    recordScore(context.username, context.activeProject, 'security', secResult);
                 }
             } catch (e) {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'SecurityAgent', `⚠️ تخطّي: ${e.message}`);
@@ -940,6 +947,21 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 snapshotWorkspace(username, activeProject, projectPath)
                     .then(r => { if (r.success) this.emitLiveLog(roomName, 'STORAGE', 'Snapshot', `🗄️ حُفظت نسخة دائمة (${r.count} ملف)`); })
                     .catch(() => {});
+
+                // 📊 تسجيل البناء + بث المقاييس الحقيقية للوحة الذكاء
+                recordBuild(username, activeProject, {
+                    success: true, durationSec, filesCount: builtFiles.length, goal: goal || '',
+                });
+                this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
+            }
+            if (!execResult.success) {
+                // 📊 البنايات الفاشلة تُسجل أيضاً — التاريخ الصادق جزء من الذكاء
+                recordBuild(username, activeProject, {
+                    success: false,
+                    durationSec: getProjectSummary(username, activeProject).duration || 0,
+                    filesCount: 0, goal: goal || '',
+                });
+                this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
             }
             this.emitLiveLog(roomName, 'JCOS', 'Kernel', execResult.success ? '✨ نجاح' : '❌ فشل');
             return execResult;

@@ -43,6 +43,8 @@ import { abortMission, hasActiveMission } from './services/abortRegistry.js';
 import { pushProject, getIntegration } from './services/githubSync.js';
 import { encryptSecret } from './utils/secretVault.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
+import { buildMetricsPayload } from './services/metricsStore.js';
+import { getCommitHistory, rollbackToCommit } from './agents/gitAgent.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -355,6 +357,9 @@ io.on('connection', (socket) => {
 
         emitWorkspaceFiles(roomName, projectPath);
         await emitUserProjects(roomName, username, safeProject);
+
+        // 📊 المقاييس الحقيقية للوحة الذكاء عند الانضمام
+        socket.emit('project_metrics', buildMetricsPayload(username, safeProject));
 
         // استعادة تاريخ المحادثة
         if (isDbConnected && mongoose.connection.readyState === 1) {
@@ -819,6 +824,43 @@ app.get('/api/github/status', verifyToken, validateProjectOwnership, async (req,
         lastCommit: integration?.lastCommit || null,
         hasToken: !!integration?.patEncrypted,
     });
+});
+
+// 🆕 الخط الزمني: تاريخ git commits + سجل البنايات الحقيقي
+app.get('/api/project/timeline', verifyToken, validateProjectOwnership, async (req, res) => {
+    try {
+        const commits = await getCommitHistory(req.projectPath, 20);
+        const metrics = buildMetricsPayload(req.user.username, req.activeProject);
+        res.json({ success: true, commits, metrics });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل جلب الخط الزمني: ' + err.message });
+    }
+});
+
+// 🆕 الاسترجاع لنقطة سابقة (rollback) — يحفظ الحالة الحالية أولاً ثم يسترجع
+app.post('/api/project/rollback', verifyToken, validateProjectOwnership, async (req, res) => {
+    const { hash } = req.body || {};
+    if (!hash || !/^[0-9a-f]{6,40}$/i.test(hash)) {
+        return res.status(400).json({ error: 'hash غير صالح.' });
+    }
+
+    try {
+        const result = await rollbackToCommit(req.projectPath, hash);
+        if (!result.success) {
+            return res.status(400).json({ error: result.error || 'فشل الاسترجاع.' });
+        }
+
+        const roomName = `${req.user.username}-${req.activeProject}`;
+        emitWorkspaceFiles(roomName, req.projectPath);
+        io.to(roomName).emit('log', { message: `⏪ [SYSTEM]: تم الاسترجاع إلى النقطة (${hash}).` });
+
+        // تحديث النسخة الدائمة بعد الاسترجاع
+        snapshotWorkspace(req.user.username, req.activeProject, req.projectPath).catch(() => {});
+
+        res.json({ success: true, restoredTo: hash });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل الاسترجاع: ' + err.message });
+    }
 });
 
 // 🆕 إيقاف مهمة الـ AI الجارية للمشروع الحالي
