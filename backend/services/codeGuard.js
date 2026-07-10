@@ -58,13 +58,51 @@ export function checkHTML(content) {
     return { valid: warnings.length === 0, warnings };
 }
 
+// عدّ الأقواس بعد تجريد التعليقات والسلاسل النصية (content: "{" لا يُحسب)
+function stripCssNoise(css) {
+    return css
+        .replace(/\/\*[\s\S]*?\*\//g, '')       // تعليقات /* */
+        .replace(/"(?:\\.|[^"\\])*"/g, '""')     // سلاسل مزدوجة
+        .replace(/'(?:\\.|[^'\\])*'/g, "''");    // سلاسل مفردة
+}
+
 export function checkCSS(content) {
-    const open = (content.match(/{/g) || []).length;
-    const close = (content.match(/}/g) || []).length;
+    const clean = stripCssNoise(content);
+    const open = (clean.match(/{/g) || []).length;
+    const close = (clean.match(/}/g) || []).length;
     return {
         valid: open === close,
+        open, close,
         warnings: open === close ? [] : [`أقواس غير متوازنة ({: ${open}, }: ${close})`],
     };
+}
+
+// إصلاح CSS: إضافة/تصحيح الأقواس. أولاً محاولة LLM (وضع دقيق)،
+// ثم احتياط حتمي (إلحاق } الناقصة في النهاية) — أفضل من ملف مكسور
+async function repairCSS(name, content, check) {
+    // احتياط حتمي فوري للحالة الشائعة: } واحدة أو اثنتان ناقصة في النهاية
+    const deterministic = () => {
+        const diff = check.open - check.close;
+        if (diff > 0 && diff <= 3) return content.replace(/\s*$/, '') + '\n' + '}'.repeat(diff) + '\n';
+        return null;
+    };
+
+    try {
+        const completion = await groq.chat.completions.create({
+            model: 'llama-3.3-70b-versatile',
+            temperature: 0.1,
+            max_tokens: 8000,
+            messages: [
+                { role: 'system', content: 'You are a CSS repair tool. The file has unbalanced braces. Return ONLY the complete corrected CSS — no markdown fences, no explanations. Preserve every rule and value; only fix the brace structure by placing the missing/extra brace where it belongs.' },
+                { role: 'user', content: `File: ${name}\nIssue: ${check.warnings[0]}\n\n--- CSS ---\n${content}` },
+            ],
+        });
+        let fixed = (completion.choices[0]?.message?.content || '')
+            .replace(/^```(?:css)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+        if (fixed && checkCSS(fixed).valid) return fixed;
+    } catch { /* ننتقل للاحتياط */ }
+
+    return deterministic();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -132,7 +170,20 @@ export async function guardFiles(files, emit = () => {}) {
 
         } else if (name.endsWith('.css')) {
             const check = checkCSS(file.content);
-            if (!check.valid) emit(`⚠️ تحذير CSS في ${name}: ${check.warnings.join('، ')}`);
+            if (check.valid) { result.push(file); continue; }
+
+            emit(`🛡️ CSS غير متوازن في ${name}: ${check.warnings[0]} — جاري الإصلاح الذاتي...`);
+            try {
+                const fixed = await repairCSS(name, file.content, check);
+                if (fixed && checkCSS(fixed).valid) {
+                    emit(`✅ أُصلح ${name} تلقائياً وتم التحقق من توازن الأقواس.`);
+                    result.push({ ...file, content: fixed });
+                    continue;
+                }
+                emit(`⚠️ تعذّر إصلاح ${name} تلقائياً — يُحفظ الأصل مع تحذير.`);
+            } catch (e) {
+                emit(`⚠️ تعذّر إصلاح ${name}: ${e.message}`);
+            }
             result.push(file);
 
         } else {
