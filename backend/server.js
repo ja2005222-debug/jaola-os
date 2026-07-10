@@ -46,6 +46,9 @@ import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspace
 import { buildMetricsPayload } from './services/metricsStore.js';
 import { queueStatus } from './services/missionQueue.js';
 import { getCommitHistory, rollbackToCommit } from './agents/gitAgent.js';
+import { adminOnly } from './middleware/adminOnly.js';
+import { orchestrator } from './core/PluginOrchestrator.js';
+import { runSystemDiagnostics } from './agents/systemDoctorAgent.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -953,10 +956,29 @@ app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) 
     }
 });
 
+// ─── 🩺 مسارات المشرف: فحص النظام + إدارة الإضافات ──────────────────
+app.get('/api/admin/health', verifyToken, adminOnly, (req, res) => {
+    res.json({ success: true, report: runSystemDiagnostics() });
+});
+
+app.get('/api/admin/plugins', verifyToken, adminOnly, (req, res) => {
+    res.json({ success: true, ...orchestrator.status() });
+});
+
+app.post('/api/admin/plugins/:name/toggle', verifyToken, adminOnly, (req, res) => {
+    const { enabled } = req.body || {};
+    const ok = orchestrator.setEnabled(req.params.name, enabled !== false);
+    if (!ok) return res.status(404).json({ error: 'الإضافة غير موجودة.' });
+    res.json({ success: true, name: req.params.name, enabled: enabled !== false });
+});
+
 // ─── معالج أخطاء عام ────────────────────────────────────────────────
 app.use((err, req, res, next) => {
     console.error('Server Error:', err.message);
     res.status(500).json({ error: 'خطأ داخلي في الخادم.' });
 });
 
-httpServer.listen(4000, '0.0.0.0', () => console.log('🟢 JAOLA OS Server on Port 4000'));
+// 🔌 تحميل الإضافات ثم تشغيل الخادم
+orchestrator.init().catch(e => console.warn('[Plugins] init فشل:', e.message)).finally(() => {
+    httpServer.listen(4000, '0.0.0.0', () => console.log('🟢 JAOLA OS Server on Port 4000'));
+});
