@@ -25,6 +25,7 @@ class PluginOrchestrator {
     }
 
     async init(pluginsDir = DEFAULT_PLUGINS_DIR) {
+        this._pluginsDir = pluginsDir;
         const { loaded, errors } = await loadPluginsFrom(pluginsDir);
         this.errors = errors;
 
@@ -53,6 +54,16 @@ class PluginOrchestrator {
         this.initialized = true;
         console.log(`🔌 [Plugins]: حُمّلت ${this.plugins.size} إضافة${this.errors.length ? ` (${this.errors.length} خطأ)` : ''}`);
         return this.status();
+    }
+
+    // إعادة تحميل كاملة — يمسح السجل ويعيد المسح (بعد إنشاء/حذف/تعديل إضافة)
+    // cache-busting: import مع طابع زمني ليقرأ النسخة الجديدة من القرص
+    async reload() {
+        this.plugins.clear();
+        this.agents.clear();
+        this.errors = [];
+        this.initialized = false;
+        return this.init(this._pluginsDir);
     }
 
     async _safeHook(manifest, hookName, ctx) {

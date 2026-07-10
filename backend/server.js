@@ -49,6 +49,7 @@ import { getCommitHistory, rollbackToCommit } from './agents/gitAgent.js';
 import { adminOnly } from './middleware/adminOnly.js';
 import { orchestrator } from './core/PluginOrchestrator.js';
 import { runSystemDiagnostics } from './agents/systemDoctorAgent.js';
+import * as adminSvc from './services/adminService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -970,6 +971,92 @@ app.post('/api/admin/plugins/:name/toggle', verifyToken, adminOnly, (req, res) =
     const ok = orchestrator.setEnabled(req.params.name, enabled !== false);
     if (!ok) return res.status(404).json({ error: 'الإضافة غير موجودة.' });
     res.json({ success: true, name: req.params.name, enabled: enabled !== false });
+});
+
+// 🤖 صناعة وكيل جديد (اسم + تعليمات → إضافة عاملة) ثم إعادة التحميل
+app.post('/api/admin/agents', verifyToken, adminOnly, async (req, res) => {
+    try {
+        const { name, description, instructions, rawCode, temperature } = req.body || {};
+        if (!name) return res.status(400).json({ error: 'اسم الوكيل مطلوب.' });
+        const result = await adminSvc.createAgentPlugin({ name, description, instructions, rawCode, temperature });
+        const status = await orchestrator.reload();
+        res.json({ success: true, ...result, plugins: status });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+// 📄 قراءة/تعديل/حذف كود إضافة
+app.get('/api/admin/plugins/:file/code', verifyToken, adminOnly, async (req, res) => {
+    try {
+        res.json({ success: true, code: await adminSvc.readPluginCode(req.params.file) });
+    } catch (err) { res.status(404).json({ error: err.message }); }
+});
+
+app.put('/api/admin/plugins/:file/code', verifyToken, adminOnly, async (req, res) => {
+    try {
+        await adminSvc.writePluginCode(req.params.file, req.body?.code);
+        const status = await orchestrator.reload();
+        res.json({ success: true, plugins: status });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+app.delete('/api/admin/plugins/:file', verifyToken, adminOnly, async (req, res) => {
+    try {
+        const r = await adminSvc.deletePluginFile(req.params.file);
+        const status = await orchestrator.reload();
+        res.json({ success: true, ...r, plugins: status });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+// 🔄 إعادة تحميل كل الإضافات يدوياً
+app.post('/api/admin/plugins/reload', verifyToken, adminOnly, async (req, res) => {
+    const status = await orchestrator.reload();
+    res.json({ success: true, plugins: status });
+});
+
+// 🧪 تجربة وكيل مباشرة من اللوحة
+app.post('/api/admin/agents/:name/run', verifyToken, adminOnly, async (req, res) => {
+    const handler = orchestrator.getAgent(req.params.name);
+    if (!handler) return res.status(404).json({ error: 'الوكيل غير مسجّل.' });
+    try {
+        const result = await handler(req.body?.input ?? {});
+        res.json({ success: true, result });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 🗂️ إدارة ملفات المشاريع
+app.get('/api/admin/files/tree', verifyToken, adminOnly, (req, res) => {
+    res.json({ success: true, tree: adminSvc.listWorkspaceTree() });
+});
+
+app.get('/api/admin/files/list', verifyToken, adminOnly, (req, res) => {
+    const { user, project } = req.query;
+    if (!user || !project) return res.status(400).json({ error: 'user و project مطلوبان.' });
+    res.json({ success: true, files: adminSvc.listProjectFiles(user, project) });
+});
+
+app.get('/api/admin/files/read', verifyToken, adminOnly, async (req, res) => {
+    try {
+        const { user, project, path: p } = req.query;
+        res.json({ success: true, content: await adminSvc.readProjectFile(user, project, p) });
+    } catch (err) { res.status(404).json({ error: err.message }); }
+});
+
+app.post('/api/admin/files/write', verifyToken, adminOnly, async (req, res) => {
+    try {
+        const { user, project, path: p, content } = req.body || {};
+        await adminSvc.writeProjectFile(user, project, p, content);
+        res.json({ success: true });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+app.delete('/api/admin/files', verifyToken, adminOnly, async (req, res) => {
+    try {
+        const { user, project, path: p } = req.body || {};
+        const r = await adminSvc.deleteProjectFile(user, project, p);
+        res.json({ success: true, ...r });
+    } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
 // ─── معالج أخطاء عام ────────────────────────────────────────────────
