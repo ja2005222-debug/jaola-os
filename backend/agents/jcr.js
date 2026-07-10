@@ -38,8 +38,7 @@ import { generateBlueprint, buildBlueprintContext } from './appBlueprint.js';
 import { recordScore, recordBuild, buildMetricsPayload } from '../services/metricsStore.js';
 import { setPendingGoal, getPendingGoal, consumePendingGoal, clearDialog } from '../services/conversationManager.js';
 import { enqueueMission } from '../services/missionQueue.js';
-import Conversation from '../models/Conversation.js';
-import mongoose from 'mongoose';
+import { loadForPrompt as loadConversation, recordTurn } from '../services/conversationStore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -157,7 +156,6 @@ export class JaolaCognitiveRuntime {
         this.memoryDir = path.resolve(__dirname, '../memory');
         this.reflectionPath = path.join(this.memoryDir, 'reflection_knowledge_graph.json');
         this.executiveMemoryPath = path.join(this.memoryDir, 'executive_memory.json');
-        this.conversationBuffer = new Map();
         if (!fs.existsSync(this.memoryDir)) fs.mkdirSync(this.memoryDir, { recursive: true });
     }
 
@@ -753,20 +751,44 @@ export class JaolaCognitiveRuntime {
         }
     }
 
-    async generateChatResponse(userMessage, username, roomName, userLang = 'en') {
+    // 🧠 يطوي رسائل قديمة (خرجت من نافذة السياق) داخل ملخّص متدحرج —
+    // بهذا يبقى موضوع المحادثة حاضراً مهما طالت، بلا فقدان للسياق.
+    async summarizeConversation(previousSummary, olderMessages, userLang = 'ar') {
+        const transcript = olderMessages
+            .map(m => `${m.role === 'user' ? '👤' : '🤖'} ${m.content}`)
+            .join('\n');
+        const instruction = userLang === 'ar'
+            ? 'حدّث ملخّص الذاكرة التالي بدمج الرسائل الجديدة. احتفظ بكل الحقائق الدائمة (اسم المشروع، القرارات، التفضيلات، الالتزامات، ما يريده المستخدم وما رفضه). اكتب فقرة مركّزة بالعربية دون تحية أو مقدمات.'
+            : 'Update the memory summary below by merging the new messages. Preserve all durable facts (project name, decisions, preferences, commitments, what the user wants and rejected). Write one focused paragraph, no greeting.';
+        const completion = await groq.chat.completions.create({
+            messages: [
+                { role: 'system', content: instruction },
+                { role: 'user', content: `الملخّص الحالي:\n${previousSummary || '(لا يوجد)'}\n\nرسائل جديدة:\n${transcript}` }
+            ],
+            model: 'llama-3.3-70b-versatile',
+            max_tokens: 400,
+            temperature: 0.3
+        });
+        return completion.choices?.[0]?.message?.content || previousSummary;
+    }
+
+    async generateChatResponse(userMessage, username, roomName, userLang = 'en', activeProject = null) {
         const langInfo = getLangInfo(userLang);
         const execMemory = await this.loadExecutiveMemory(username);
-        const MAX_HISTORY = 30;
-        let history;
-        try {
-            if (mongoose.connection.readyState === 1) {
-                const conv = await Conversation.findOne({ username });
-                history = conv ? conv.messages.slice(-MAX_HISTORY) : [];
-            } else {
-                history = this.conversationBuffer.get(username) || [];
-            }
-        } catch (e) { history = this.conversationBuffer.get(username) || []; }
-        history.push({ role: 'user', content: userMessage });
+
+        // 🧠 نافذة السياق الأخيرة + الملخّص طويل المدى (لا يُفقد الموضوع بعد فترة)
+        const { window: history, summary } = await loadConversation(username);
+
+        // ذاكرة المشروع + ملف المستخدم — تُحقن في الحوار أيضاً لا في البناء فقط
+        const projectMem = activeProject ? buildMemoryContext(username, activeProject) : '';
+        const profileMem = buildProfileContext(username) || '';
+
+        const longTermMemory = [
+            summary ? `LONG-TERM CONVERSATION MEMORY (do not lose this context):\n${summary}` : '',
+            projectMem,
+            profileMem,
+        ].filter(Boolean).join('\n\n');
+
         const messages = [
             { role: "system", content: `You are JAOLA — a smart web building assistant.
 
@@ -776,15 +798,18 @@ RESPONSE RULES:
 - Keep replies SHORT: 1-3 sentences maximum
 - Be direct and friendly
 - Your specialty: websites, design, web development
+- Stay consistent with everything remembered below — never contradict earlier decisions or ask again for facts already known
 - When user wants to build: tell them to type "${userLang === 'ar' ? 'ابني [اسم المشروع]' : 'build [project name]'}" to start the official build system
 
-User preferences: ${JSON.stringify(execMemory)}` },
-            ...history
+User preferences: ${JSON.stringify(execMemory)}${longTermMemory ? `\n\n${longTermMemory}` : ''}` },
+            ...history,
+            { role: 'user', content: userMessage }
         ];
         // رسالة صادقة بدل "حدث خطأ" الغامضة — السبب الشائع هو ضغط حصة الذكاء (rate limit)
         let reply = userLang === 'ar'
             ? '⚠️ خدمة الذكاء مشغولة مؤقتاً (ضغط طلبات بعد البناء) — أعد إرسال رسالتك بعد ثوانٍ قليلة وسأنفذها فوراً.'
             : '⚠️ AI service is momentarily busy (rate limited after the build) — resend your message in a few seconds.';
+        let ok = false;
 
         // محاولتان مع مهلة قصيرة — أغلب حالات rate limit تنجح في الثانية
         for (let attempt = 1; attempt <= 2; attempt++) {
@@ -796,6 +821,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     temperature: 0.6
                 });
                 reply = completion.choices[0].message.content;
+                ok = true;
                 break;
             } catch (e) {
                 console.error(`Chat error (attempt ${attempt}):`, e.message || e);
@@ -803,11 +829,13 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 if (attempt < 2) await new Promise(r => setTimeout(r, 2500));
             }
         }
-        history.push({ role: 'assistant', content: reply });
-        if (mongoose.connection.readyState === 1) {
-            await Conversation.findOneAndUpdate({ username }, { messages: history.slice(-MAX_HISTORY) }, { upsert: true });
-        } else {
-            this.conversationBuffer.set(username, history.slice(-MAX_HISTORY));
+
+        // نحفظ الدورة فقط عند نجاح الرد — لا نلوّث الذاكرة برسائل خطأ rate-limit
+        if (ok) {
+            await recordTurn(
+                username, userMessage, reply,
+                (prev, older) => this.summarizeConversation(prev, older, userLang)
+            );
         }
         this.emitChatReply(roomName, reply);
         this.emitLiveLog(roomName, '💬 Assistant', 'Chat Reply', reply);
@@ -1354,7 +1382,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);
                 return;
             }
-            await this.generateChatResponse(message, username, roomName, userLang);
+            await this.generateChatResponse(message, username, roomName, userLang, activeProject);
         }
     }
 }
