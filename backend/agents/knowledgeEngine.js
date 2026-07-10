@@ -34,9 +34,22 @@ loadKnowledge();
 // ═══════════════════════════════════════════════════════
 // 🔍 كشف نوع المشروع من وصف المستخدم
 // ═══════════════════════════════════════════════════════
+// خريطة فئات App Blueprint → أنواع القوالب المتاحة
+// (فئات ليس لها قالب مباشر تُوجَّه لأقرب نوع مناسب بدل السقوط لكلمات خاطئة)
+const CATEGORY_TO_TYPE = {
+    travel: 'travel', saas: 'saas', tool: 'tool',
+    dashboard: 'saas', social: 'saas', game: 'saas',
+    ecommerce: 'ecommerce', medical: 'medical', restaurant: 'restaurant',
+    education: 'education', realestate: 'realestate', portfolio: 'portfolio',
+    business: 'business',
+};
+
 export function detectProjectType(userGoal, typeHint = null) {
     // تلميح صريح من App Blueprint (LLM) — أدق من كشف الكلمات المفتاحية
-    if (typeHint && DESIGN_RULES?.types?.[typeHint]) return typeHint;
+    if (typeHint) {
+        const mapped = CATEGORY_TO_TYPE[typeHint] || typeHint;
+        if (DESIGN_RULES?.types?.[mapped]) return mapped;
+    }
     if (!DESIGN_RULES) return 'business';
 
     const goal = (userGoal || '').toLowerCase();
@@ -59,6 +72,9 @@ export function detectProjectType(userGoal, typeHint = null) {
 
 function getKeywordsForType(typeName) {
     const keywordMap = {
+        travel:     ['طيران', 'رحلات', 'سفر', 'حجز طيران', 'تذاكر', 'وجهة', 'سياحة', 'flight', 'travel', 'trip', 'booking flight', 'airline', 'tourism', 'vacation'],
+        saas:       ['saas', 'منصة', 'اشتراك', 'تطبيق ويب', 'لوحة تحكم', 'نظام إدارة', 'platform', 'dashboard', 'subscription', 'web app', 'startup'],
+        tool:       ['أداة', 'حاسبة', 'محول', 'مولد', 'converter', 'calculator', 'generator', 'tool', 'utility'],
         medical:    ['طبي', 'مستشفى', 'عيادة', 'صحة', 'دكتور', 'طبيب', 'مرضى', 'medical', 'hospital', 'clinic', 'doctor', 'health'],
         restaurant: ['مطعم', 'قهوة', 'كافيه', 'طعام', 'أكل', 'وجبة', 'شيف', 'مقهى', 'restaurant', 'cafe', 'food', 'menu', 'coffee'],
         ecommerce:  ['متجر', 'بيع', 'شراء', 'منتج', 'تسوق', 'ماركة', 'ازياء', 'ملابس', 'سلة', 'shop', 'store', 'product', 'buy', 'ecommerce', 'cart'],
@@ -92,6 +108,9 @@ export function getProjectContext(userGoal, typeHint = null) {
 
     // اختيار مثال صورة من Unsplash
     const photoIds = {
+        travel: 'photo-1436491865332-7a61a109cc05',
+        saas: 'photo-1551288049-bebda4e38f71',
+        tool: 'photo-1454165804606-c3d57bc86b40',
         medical: 'photo-1559757148-5c350d0d3c56',
         restaurant: 'photo-1504674900247-0877df9cc836',
         ecommerce: 'photo-1556742049-0cfed4f6a45d',

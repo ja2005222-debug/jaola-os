@@ -38,6 +38,73 @@
     ]
   },
   "types": {
+    "travel": {
+      "color_palette": {
+        "primary": "#0284c7",
+        "secondary": "#0369a1",
+        "accent": "#f59e0b",
+        "bg": "#f0f9ff",
+        "text": "#0c4a6e",
+        "dark_bg": "#082f49"
+      },
+      "mood": "منعش، مغامر، موثوق، عالمي",
+      "must_have_sections": [
+        "navbar مع logo وروابط وتبديل لغة/عملة",
+        "hero مع نموذج بحث بارز (وجهة، تاريخ، مسافرون)",
+        "نتائج البحث (بطاقات رحلات/فنادق تُعرض ديناميكياً)",
+        "وجهات شائعة (destination cards مع أسعار)",
+        "عروض وباقات",
+        "لماذا نحن (مميزات الخدمة)",
+        "آراء المسافرين (testimonials)",
+        "footer مع روابط ودعم"
+      ],
+      "unsplash_queries": ["airplane travel", "tropical destination", "airport terminal", "vacation resort"],
+      "icons": ["fa-plane", "fa-hotel", "fa-car", "fa-suitcase-rolling", "fa-map-marked-alt", "fa-globe"]
+    },
+    "saas": {
+      "color_palette": {
+        "primary": "#6366f1",
+        "secondary": "#4f46e5",
+        "accent": "#22d3ee",
+        "bg": "#ffffff",
+        "text": "#0f172a",
+        "dark_bg": "#0b1120"
+      },
+      "mood": "عصري، تقني، نظيف، احترافي",
+      "must_have_sections": [
+        "navbar مع logo وروابط وزر تسجيل/تجربة",
+        "hero مع عنوان قيمة قوي وCTA ولقطة للمنتج",
+        "الميزات الأساسية (feature grid مع أيقونات)",
+        "كيف يعمل (خطوات 1-2-3)",
+        "لوحة/عرض تفاعلي للمنتج",
+        "الأسعار (pricing cards مع باقات)",
+        "آراء العملاء والشعارات",
+        "footer مع روابط ودعم"
+      ],
+      "unsplash_queries": ["saas dashboard", "technology startup", "software team", "data analytics"],
+      "icons": ["fa-rocket", "fa-chart-line", "fa-bolt", "fa-shield-alt", "fa-plug", "fa-cog"]
+    },
+    "tool": {
+      "color_palette": {
+        "primary": "#2563eb",
+        "secondary": "#1e40af",
+        "accent": "#10b981",
+        "bg": "#f8fafc",
+        "text": "#0f172a",
+        "dark_bg": "#0f172a"
+      },
+      "mood": "بسيط، عملي، سريع، واضح",
+      "must_have_sections": [
+        "navbar بسيط مع logo واسم الأداة",
+        "hero مختصر يشرح ما تفعله الأداة",
+        "الأداة نفسها بارزة في الأعلى (مدخلات ← نتيجة فورية)",
+        "أمثلة/حالات استخدام",
+        "شرح مختصر لكيفية العمل",
+        "footer بسيط"
+      ],
+      "unsplash_queries": ["workspace tool", "productivity", "minimal desk", "calculator"],
+      "icons": ["fa-calculator", "fa-sliders-h", "fa-magic", "fa-check-circle", "fa-redo", "fa-download"]
+    },
     "medical": {
       "color_palette": {
         "primary": "#0ea5e9",
