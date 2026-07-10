@@ -50,6 +50,9 @@ import { adminOnly } from './middleware/adminOnly.js';
 import { orchestrator } from './core/PluginOrchestrator.js';
 import { runSystemDiagnostics } from './agents/systemDoctorAgent.js';
 import * as adminSvc from './services/adminService.js';
+import { publicPlans, getPlan } from './config/plans.js';
+import { getUserSubscription, getUsage, canCreateProject } from './services/subscriptionService.js';
+import { isStripeConfigured, createCheckoutSession, createPortalSession, constructWebhookEvent, interpretWebhookEvent } from './services/stripeService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -104,6 +107,8 @@ const io = new Server(httpServer, {
 });
 
 app.use(cors(corsOptions));
+// 💳 Stripe webhook يحتاج الجسم الخام للتحقق من التوقيع — يُسجَّل قبل express.json
+app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '1mb' })); // حد أقصى لحجم الطلب
 
 // ─── تقديم الواجهة الأمامية الثابتة ────────────────────────────────
@@ -610,7 +615,18 @@ app.post('/api/projects', verifyToken, async (req, res) => {
 
     try {
         const exists = await DB.findProject(safeProject, username);
-        if (!exists) await DB.createProject(safeProject, username);
+        if (!exists) {
+            // 💳 فرض حدّ الخطة قبل إنشاء مشروع جديد
+            const userDoc = await DB.findUser(username);
+            const projects = await DB.findUserProjects(username);
+            // لا نحسب sandbox_app الافتراضي ضمن الحدّ
+            const count = (projects || []).filter(p => p.name !== 'sandbox_app').length;
+            const gate = canCreateProject(userDoc, count);
+            if (!gate.allowed) {
+                return res.status(402).json({ error: gate.reason, code: 'plan_limit', planId: gate.planId, limit: gate.limit });
+            }
+            await DB.createProject(safeProject, username);
+        }
 
         // إنشاء مجلد المشروع على القرص فوراً
         getProjectPath(username, safeProject);
@@ -955,6 +971,90 @@ app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) 
     } catch (error) {
         io.to(roomName).emit('log', { message: `❌ [DEPLOY]: خطأ غير متوقع: ${error.message}` });
     }
+});
+
+// ─── 💳 مسارات الاشتراكات والدفع (Stripe) ──────────────────────────
+// قائمة الخطط — عامة (تُعرض في صفحة الأسعار/الإعدادات)
+app.get('/api/billing/plans', (req, res) => {
+    res.json({ success: true, plans: publicPlans(), stripeEnabled: isStripeConfigured() });
+});
+
+// اشتراك المستخدم الحالي + استهلاكه — للوحة التحكم
+app.get('/api/billing/subscription', verifyToken, async (req, res) => {
+    try {
+        const username = req.user.username;
+        const userDoc = await DB.findUser(username);
+        const projects = await DB.findUserProjects(username);
+        const count = (projects || []).filter(p => p.name !== 'sandbox_app').length;
+        res.json({ success: true, ...getUsage(userDoc, count), stripeEnabled: isStripeConfigured() });
+    } catch (err) {
+        res.status(500).json({ error: 'تعذّر جلب الاشتراك: ' + err.message });
+    }
+});
+
+// إنشاء جلسة Checkout للترقية إلى خطة مدفوعة
+app.post('/api/billing/checkout', verifyToken, async (req, res) => {
+    const { planId } = req.body || {};
+    if (!['pro', 'enterprise'].includes(planId)) {
+        return res.status(400).json({ error: 'خطة غير صالحة للاشتراك.' });
+    }
+    if (!isStripeConfigured()) {
+        return res.status(503).json({ error: 'نظام الدفع غير مُفعّل حالياً.' });
+    }
+    try {
+        const username = req.user.username;
+        const userDoc = await DB.findUser(username);
+        const session = await createCheckoutSession({
+            planId,
+            username,
+            email: userDoc?.email,
+            customerId: userDoc?.subscription?.stripeCustomerId || null,
+        });
+        res.json({ success: true, url: session.url });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+// بوابة إدارة الاشتراك (تحديث/إلغاء) عبر Stripe
+app.post('/api/billing/portal', verifyToken, async (req, res) => {
+    try {
+        const userDoc = await DB.findUser(req.user.username);
+        const session = await createPortalSession({ customerId: userDoc?.subscription?.stripeCustomerId || null });
+        res.json({ success: true, url: session.url });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+// Webhook — يُحدّث اشتراك المستخدم بناءً على أحداث Stripe (جسم خام)
+app.post('/api/billing/webhook', async (req, res) => {
+    const signature = req.headers['stripe-signature'];
+    let event;
+    try {
+        event = await constructWebhookEvent(req.body, signature);
+    } catch (err) {
+        return res.status(400).send(`Webhook signature verification failed: ${err.message}`);
+    }
+
+    try {
+        const update = interpretWebhookEvent(event);
+        if (update?.username && mongoose.connection.readyState === 1) {
+            const set = {};
+            if (update.plan) set['subscription.plan'] = update.plan;
+            if (update.status) set['subscription.status'] = update.status;
+            if (update.customerId) set['subscription.stripeCustomerId'] = update.customerId;
+            if (update.subscriptionId) set['subscription.stripeSubscriptionId'] = update.subscriptionId;
+            if (update.currentPeriodEnd) set['subscription.currentPeriodEnd'] = update.currentPeriodEnd;
+            set['subscription.cancelAtPeriodEnd'] = !!update.cancelAtPeriodEnd;
+            await User.updateOne({ username: update.username }, { $set: set });
+            console.log(`💳 [Billing] تحديث اشتراك ${update.username} → ${update.plan || '?'} (${update.status})`);
+        }
+    } catch (err) {
+        console.warn('[Billing] فشل تطبيق حدث webhook:', err.message);
+        // نُعيد 200 مع ذلك كي لا يعيد Stripe المحاولة إلى ما لا نهاية على خطأ داخلي
+    }
+    res.json({ received: true });
 });
 
 // ─── 🩺 مسارات المشرف: فحص النظام + إدارة الإضافات ──────────────────
