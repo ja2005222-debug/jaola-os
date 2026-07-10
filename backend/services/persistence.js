@@ -44,6 +44,18 @@ export function persistEntry(store, key, value) {
     }, 1500));
 }
 
+export async function removeEntry(store, key) {
+    if (!online()) return;
+    const k = `${store}:${key}`;
+    clearTimeout(pendingWrites.get(k));   // ألغِ أي كتابة مؤجلة لنفس المفتاح
+    pendingWrites.delete(k);
+    try {
+        await KV.deleteOne({ store, key });
+    } catch (e) {
+        console.warn(`[Persistence] فشل حذف ${k}:`, e.message);
+    }
+}
+
 export async function hydrateStore(store, applyFn) {
     if (!online()) return 0;
     try {

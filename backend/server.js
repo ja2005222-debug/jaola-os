@@ -50,6 +50,7 @@ import { adminOnly } from './middleware/adminOnly.js';
 import { orchestrator } from './core/PluginOrchestrator.js';
 import { runSystemDiagnostics } from './agents/systemDoctorAgent.js';
 import * as adminSvc from './services/adminService.js';
+import { onMongoReady } from './services/persistence.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -1068,4 +1069,15 @@ app.use((err, req, res, next) => {
 // 🔌 تحميل الإضافات ثم تشغيل الخادم
 orchestrator.init().catch(e => console.warn('[Plugins] init فشل:', e.message)).finally(() => {
     httpServer.listen(4000, '0.0.0.0', () => console.log('🟢 JAOLA OS Server on Port 4000'));
+});
+
+// ♻️ عند جاهزية قاعدة البيانات: استرجع الوكلاء المُنشأة من MongoDB إلى القرص
+// ثم أعد تحميل الـ orchestrator — فتبقى الوكلاء الجديدة موجودة بعد كل إعادة نشر.
+onMongoReady(async () => {
+    try {
+        const restored = await adminSvc.restorePluginsFromDB();
+        if (restored) await orchestrator.reload();
+    } catch (e) {
+        console.warn('[Plugins] استرجاع الوكلاء الدائمة فشل:', e.message);
+    }
 });

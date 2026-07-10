@@ -14,6 +14,7 @@ import { promises as fsp } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { sanitizePath } from '../middleware/security.js';
+import { persistEntry, removeEntry, hydrateStore } from './persistence.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PLUGINS_DIR = path.resolve(__dirname, '../plugins');
@@ -99,6 +100,9 @@ export async function createAgentPlugin({ name, description, instructions, rawCo
 
     await fsp.mkdir(PLUGINS_DIR, { recursive: true });
     await fsp.writeFile(target, code);
+    // 💾 حفظ دائم في MongoDB — قرص Render يُمسح مع كل إعادة نشر، وبدون هذا
+    // يختفي الوكيل الجديد بعد إعادة التشغيل.
+    persistEntry('plugins', fileName, { code, updatedAt: Date.now() });
     return { file: fileName, created: true };
 }
 
@@ -125,16 +129,53 @@ export async function readPluginCode(fileName) {
 
 export async function writePluginCode(fileName, code) {
     if (typeof code !== 'string' || code.length < 10) throw new Error('الكود قصير جداً أو غير صالح.');
-    const target = sanitizePath(path.basename(fileName), PLUGINS_DIR);
+    const base = path.basename(fileName);
+    const target = sanitizePath(base, PLUGINS_DIR);
     await fsp.writeFile(target, code);
-    return { file: path.basename(fileName), saved: true };
+    // 💾 تحديث النسخة الدائمة كي لا يعود التعديل للخلف بعد إعادة النشر
+    persistEntry('plugins', base, { code, updatedAt: Date.now() });
+    return { file: base, saved: true };
 }
 
 export async function deletePluginFile(fileName) {
-    const target = sanitizePath(path.basename(fileName), PLUGINS_DIR);
-    if (!fs.existsSync(target)) return { deleted: false };
-    await fsp.rm(target, { force: true });
-    return { deleted: true };
+    const base = path.basename(fileName);
+    const target = sanitizePath(base, PLUGINS_DIR);
+    const existed = fs.existsSync(target);
+    if (existed) await fsp.rm(target, { force: true });
+    // 🗑️ احذف النسخة الدائمة أيضاً وإلا عاد الوكيل بعد إعادة التشغيل
+    removeEntry('plugins', base);
+    return { deleted: existed };
+}
+
+// ═══════════════════════════════════════════════════════
+// ♻️ استرجاع الوكلاء المُنشأة من MongoDB إلى القرص
+//    يُستدعى عند جاهزية قاعدة البيانات قبل مسح الـ orchestrator،
+//    فتبقى الوكلاء الجديدة موجودة بعد كل إعادة نشر/تشغيل.
+// ═══════════════════════════════════════════════════════
+export async function restorePluginsFromDB() {
+    await fsp.mkdir(PLUGINS_DIR, { recursive: true });
+    let restored = 0;
+    await hydrateStore('plugins', (fileName, value) => {
+        try {
+            if (!value?.code) return;
+            const base = path.basename(fileName);
+            const target = sanitizePath(base, PLUGINS_DIR);
+            // اكتب فقط إذا كان الملف مفقوداً أو نسخة القاعدة أحدث — لا نطمس تعديلاً محلياً أحدث
+            let write = true;
+            if (fs.existsSync(target)) {
+                const mtime = fs.statSync(target).mtimeMs;
+                write = (value.updatedAt || 0) > mtime;
+            }
+            if (write) {
+                fs.writeFileSync(target, value.code);
+                restored++;
+            }
+        } catch (e) {
+            console.warn(`[AdminService] فشل استرجاع الإضافة ${fileName}:`, e.message);
+        }
+    });
+    if (restored) console.log(`♻️ [Plugins] استُعيد ${restored} وكيل من قاعدة البيانات`);
+    return restored;
 }
 
 // ═══════════════════════════════════════════════════════
