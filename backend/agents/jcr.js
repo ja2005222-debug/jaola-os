@@ -32,6 +32,7 @@ import { setUserLanguage } from './languageDetector.js';
 import { registerMission, throwIfAborted, clearMission } from '../services/abortRegistry.js';
 import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import { snapshotWorkspace } from '../services/workspaceStore.js';
+import { orchestrator } from '../core/PluginOrchestrator.js';
 import { guardFiles, guardSingleJS } from '../services/codeGuard.js';
 import { buildImageContext } from '../services/imageService.js';
 import { generateBlueprint, buildBlueprintContext } from './appBlueprint.js';
@@ -887,7 +888,24 @@ User preferences: ${JSON.stringify(execMemory)}` },
             this.emitLiveLog(roomName, 'ASSETS', 'ImageService', `🖼️ جُهزت ${img.count} صور (${img.source})`);
         } catch (e) { /* اختياري */ }
 
-        const finalGoalWithRequirements = `${enrichedGoal}${blueprintContext}\n${requirementsContext}${imageContext}`;
+        // 🔌 وكلاء الإضافات: hook beforeBuild — يشاركون فعلياً في البناء
+        // كل وكيل يُرجع نصاً يُحقن في سياق البناء (توجيهات، متطلبات إضافية...)
+        let pluginContext = '';
+        try {
+            const hookResults = await orchestrator.runHook('beforeBuild', {
+                goal, username, project: activeProject, projectPath, blueprint,
+            });
+            const guidance = hookResults
+                .map(r => (typeof r.result === 'string' ? r.result : r.result?.guidance || r.result?.reply))
+                .filter(Boolean);
+            if (guidance.length) {
+                pluginContext = `\n## 🔌 توجيهات وكلاء إضافيين (التزم بها):\n${guidance.map(g => `- ${g}`).join('\n')}`;
+                this.emitLiveLog(roomName, 'PLUGINS', 'beforeBuild',
+                    `🔌 شارك ${guidance.length} وكيل إضافي في التوجيه`);
+            }
+        } catch (e) { /* الإضافات اختيارية */ }
+
+        const finalGoalWithRequirements = `${enrichedGoal}${blueprintContext}\n${requirementsContext}${imageContext}${pluginContext}`;
 
         // تسجيل هذا الطلب في تاريخ المشروع
         addToHistory(username, activeProject, goal.slice(0, 80));
@@ -1004,6 +1022,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     success: true, durationSec, filesCount: builtFiles.length, goal: goal || '',
                 });
                 this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
+
+                // 🔌 وكلاء الإضافات: hook afterBuild — تنفيذ ما بعد البناء
+                orchestrator.runHook('afterBuild', {
+                    success: true, goal, username, project: activeProject, projectPath, files: builtFiles,
+                }).catch(() => {});
             }
             if (!execResult.success) {
                 // 📊 البنايات الفاشلة تُسجل أيضاً — التاريخ الصادق جزء من الذكاء

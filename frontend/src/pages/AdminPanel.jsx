@@ -140,7 +140,7 @@ function HealthTab({ api }) {
 // ── 🤖 الوكلاء والإضافات ──────────────────────────────────────
 function AgentsTab({ api }) {
   const [status, setStatus] = useState(null);
-  const [form, setForm] = useState({ name: '', description: '', instructions: '' });
+  const [form, setForm] = useState({ name: '', description: '', instructions: '', runsOnBuild: false });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [testInput, setTestInput] = useState('');
@@ -158,8 +158,8 @@ function AgentsTab({ api }) {
     setBusy(true); setMsg('');
     try {
       await api('/api/admin/agents', { method: 'POST', body: JSON.stringify(form) });
-      setMsg(`✅ أُنشئ الوكيل "${form.name}" وفُعّل فوراً.`);
-      setForm({ name: '', description: '', instructions: '' });
+      setMsg(`✅ أُنشئ الوكيل "${form.name}" وفُعّل فوراً${form.runsOnBuild ? ' — سيشارك في كل بناء.' : '.'}`);
+      setForm({ name: '', description: '', instructions: '', runsOnBuild: false });
       load();
     } catch (e) { setMsg('❌ ' + e.message); }
     setBusy(false);
@@ -206,6 +206,28 @@ function AgentsTab({ api }) {
               value={form.instructions} placeholder="أنت خبير تسويق. اكتب نصوصاً إعلانية قصيرة ومقنعة بالعربية الفصحى، بنبرة حماسية..."
               onChange={e => setForm(f => ({ ...f, instructions: e.target.value }))} />
           </div>
+          {/* متى يعمل الوكيل؟ — نقطة الدمج في منظومة جولا */}
+          <div>
+            <span style={label}>متى يعمل هذا الوكيل؟</span>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              {[
+                { v: false, icon: '🧪', t: 'عند الطلب', d: 'تشغيل يدوي وتجربة من اللوحة' },
+                { v: true, icon: '🔗', t: 'في كل بناء', d: 'يشارك تلقائياً بتوجيه كل مشروع يُبنى' },
+              ].map(o => (
+                <button key={String(o.v)} onClick={() => setForm(f => ({ ...f, runsOnBuild: o.v }))}
+                  style={{
+                    flex: 1, textAlign: 'right', padding: '10px 12px', borderRadius: 9, cursor: 'pointer',
+                    background: form.runsOnBuild === o.v ? 'rgba(59,130,246,0.12)' : 'transparent',
+                    border: `1px solid ${form.runsOnBuild === o.v ? 'rgba(59,130,246,0.4)' : S.border}`,
+                    color: form.runsOnBuild === o.v ? '#93c5fd' : S.muted,
+                  }}>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>{o.icon} {o.t}</div>
+                  <div style={{ fontSize: 11, color: S.muted, marginTop: 3 }}>{o.d}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <button onClick={createAgent} disabled={busy} style={{ ...btnPrimary, opacity: busy ? 0.6 : 1 }}>
               {busy ? 'جاري الإنشاء...' : '✨ إنشاء وتفعيل'}

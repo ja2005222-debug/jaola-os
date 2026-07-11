@@ -978,9 +978,9 @@ app.post('/api/admin/plugins/:name/toggle', verifyToken, adminOnly, (req, res) =
 // 🤖 صناعة وكيل جديد (اسم + تعليمات → إضافة عاملة) ثم إعادة التحميل
 app.post('/api/admin/agents', verifyToken, adminOnly, async (req, res) => {
     try {
-        const { name, description, instructions, rawCode, temperature } = req.body || {};
+        const { name, description, instructions, rawCode, temperature, runsOnBuild } = req.body || {};
         if (!name) return res.status(400).json({ error: 'اسم الوكيل مطلوب.' });
-        const result = await adminSvc.createAgentPlugin({ name, description, instructions, rawCode, temperature });
+        const result = await adminSvc.createAgentPlugin({ name, description, instructions, rawCode, temperature, runsOnBuild });
         const status = await orchestrator.reload();
         res.json({ success: true, ...result, plugins: status });
     } catch (err) {
