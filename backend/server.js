@@ -50,6 +50,8 @@ import { adminOnly } from './middleware/adminOnly.js';
 import { orchestrator } from './core/PluginOrchestrator.js';
 import { runSystemDiagnostics } from './agents/systemDoctorAgent.js';
 import * as adminSvc from './services/adminService.js';
+import { restorePluginsToDisk } from './services/pluginStore.js';
+import { onMongoReady } from './services/persistence.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -1068,4 +1070,13 @@ app.use((err, req, res, next) => {
 // 🔌 تحميل الإضافات ثم تشغيل الخادم
 orchestrator.init().catch(e => console.warn('[Plugins] init فشل:', e.message)).finally(() => {
     httpServer.listen(4000, '0.0.0.0', () => console.log('🟢 JAOLA OS Server on Port 4000'));
+});
+
+// 🗄️ عند جاهزية MongoDB: استعادة الإضافات الدائمة للقرص ثم إعادة تحميلها
+// (وكلاؤك المصنوعون من اللوحة ينجون من إعادة نشر Render)
+onMongoReady(async () => {
+    try {
+        const r = await restorePluginsToDisk();
+        if (r.restored > 0) await orchestrator.reload();
+    } catch (e) { console.warn('[PluginStore] استعادة فشلت:', e.message); }
 });
