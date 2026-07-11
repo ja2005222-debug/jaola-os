@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { groq } from './baseAgent.js';
 import { promises as fsPromises } from 'fs';
-import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detectExplicitLanguageSwitch } from './languageDetector.js';
+import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO } from './languageDetector.js';
 import { getLanguageDecision, buildLanguagePrompt } from './languageManager.js';
 import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure } from './projectMemory.js';
 import { detectProjectType } from './knowledgeEngine.js';
@@ -1080,9 +1080,14 @@ User preferences: ${JSON.stringify(execMemory)}` },
     }
 
     async handleUserMessage(socket, data, agents, dbStatus) {
-        const { message, roomName, projectPath, username, activeProject } = data;
+        const { message, roomName, projectPath, username, activeProject, uiLang } = data;
 
         // ── 0. Language Detector — تسجيل اللغة من أول رسالة ────────────
+        // لغة الواجهة (uiLang) بذرة أولية: إذا لم تُسجَّل لغة بعد والرسالة قصيرة
+        // (غامضة يصعب كشفها)، نبدأ بلغة الواجهة — ثم تفوز لغة الكتابة الفعلية لاحقاً.
+        if (uiLang && !hasUserLanguage(username) && LANGUAGE_INFO[uiLang] && message.trim().length < 6) {
+            setUserLanguage(username, uiLang);
+        }
         const userLang = initUserLanguage(username, message);
         const langInfo = getLangInfo(userLang);
 

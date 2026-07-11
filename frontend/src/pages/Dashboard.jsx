@@ -8,6 +8,8 @@ import { PreviewPanel } from '../components/PreviewPanel.jsx';
 import { TimelinePanel } from '../components/TimelinePanel.jsx';
 import { useJaolaStore } from '../store/useJaolaStore.js';
 import { BACKEND_URL } from '../config.js';
+import { useI18n } from '../i18n.js';
+import { LanguageSwitcher } from '../components/LanguageSwitcher.jsx';
 
 const QUICK_BUILDS = [
   { icon: '⚡', label: 'SaaS', prompt: 'ابني منصة SaaS متكاملة مع اشتراكات' },
@@ -43,10 +45,10 @@ const SIDEBAR_ITEMS = [
 ];
 
 const MOBILE_TABS = [
-  { id: 'mission', icon: '⚡', label: 'المهمة' },
-  { id: 'preview', icon: '🖥️', label: 'معاينة' },
-  { id: 'editor', icon: '💻', label: 'الكود' },
-  { id: 'logs', icon: '📋', label: 'السجل' },
+  { id: 'mission', icon: '⚡', key: 'mMission' },
+  { id: 'preview', icon: '🖥️', key: 'preview' },
+  { id: 'editor', icon: '💻', key: 'code' },
+  { id: 'logs', icon: '📋', key: 'logs' },
 ];
 
 // ── Boot Screen ──────────────────────────────────────────────────
@@ -221,6 +223,9 @@ export default function Dashboard() {
     }
   }, [token, activeProject, isAuthenticated]);
 
+  const t = useI18n(s => s.t);
+  const uiLang = useI18n(s => s.lang);
+
   const isBuilding = Object.values(agentStates || {}).some(s => s === 'running');
   const lastLogMsg = logs[logs.length - 1]?.message || '';
 
@@ -262,7 +267,7 @@ export default function Dashboard() {
     if (typeof overrideText !== 'string') setPrompt('');
     setChatMessages(prev => [...prev, { sender: 'user', text: msg }]);
     try {
-      await fetch(`${BACKEND_URL}/api/chat`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ message: msg, project: activeProject }) });
+      await fetch(`${BACKEND_URL}/api/chat`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ message: msg, project: activeProject, uiLang }) });
     } catch {}
     setTimeout(() => setIsSending(false), 1000);
   };
@@ -439,9 +444,11 @@ export default function Dashboard() {
         <h2 style={{ color:'#fff', fontSize:20, fontWeight:800, letterSpacing:'-0.5px', marginBottom:6 }}>JAOLA OS</h2>
         <p style={{ color:S.muted, fontSize:13, marginBottom:20 }}>Autonomous Software Engineering</p>
 
+        <div style={{ display:'flex', justifyContent:'center', marginBottom:14 }}><LanguageSwitcher /></div>
+
         {/* تبويب دخول / حساب جديد */}
         <div style={{ display:'flex', background:'rgba(255,255,255,0.04)', borderRadius:9, padding:3, marginBottom:18 }}>
-          {[['login','دخول'],['register','حساب جديد']].map(([mode, label]) => (
+          {[['login', t('login')],['register', t('register')]].map(([mode, label]) => (
             <button key={mode} type="button" onClick={() => { setAuthMode(mode); setAuthError(''); }}
               style={{
                 flex:1, padding:'8px', borderRadius:7, border:'none', fontSize:13, fontWeight:700, cursor:'pointer',
@@ -454,15 +461,15 @@ export default function Dashboard() {
         </div>
 
         <form onSubmit={handleLogin} style={{ display:'flex', flexDirection:'column', gap:12 }}>
-          <input value={loginUsername} onChange={e => setLoginUsername(e.target.value)} placeholder="اسم المستخدم (إنجليزي)" required dir="ltr"
+          <input value={loginUsername} onChange={e => setLoginUsername(e.target.value)} placeholder={t('username')} required dir="ltr"
             style={{ background:'#161b22', border:'1px solid #21262d', borderRadius:8, padding:'12px 14px', color:'#fff', fontSize:16, fontFamily:S.font, transition:'border-color 0.2s', textAlign:'left' }} />
           <input value={loginPassword} onChange={e => setLoginPassword(e.target.value)} type="password" dir="ltr"
-            placeholder={authMode === 'register' ? 'كلمة المرور (6 أحرف فأكثر)' : 'كلمة المرور'}
+            placeholder={t('password')}
             required={authMode === 'register'} minLength={authMode === 'register' ? 6 : undefined}
             style={{ background:'#161b22', border:'1px solid #21262d', borderRadius:8, padding:'12px 14px', color:'#fff', fontSize:16, fontFamily:S.font, transition:'border-color 0.2s', textAlign:'left' }} />
 
           {authError && (
-            <div style={{ background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.3)', borderRadius:8, padding:'9px 12px', color:'#f87171', fontSize:12, textAlign:'right' }}>
+            <div style={{ background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.3)', borderRadius:8, padding:'9px 12px', color:'#f87171', fontSize:12, textAlign:'center' }}>
               {authError}
             </div>
           )}
@@ -470,8 +477,8 @@ export default function Dashboard() {
           <button type="submit" disabled={isLoggingIn}
             style={{ background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', border:'none', borderRadius:8, padding:13, color:'#fff', fontWeight:700, cursor:'pointer', fontSize:14, fontFamily:S.font, opacity: isLoggingIn ? 0.7 : 1 }}>
             {isLoggingIn
-              ? (authMode === 'register' ? 'جاري إنشاء الحساب...' : 'جاري الدخول...')
-              : (authMode === 'register' ? '✨ إنشاء حساب والدخول' : '⚡ دخول إلى Mission Control')}
+              ? (authMode === 'register' ? '...' : '...')
+              : (authMode === 'register' ? `✨ ${t('register')}` : `⚡ ${t('enterMission')}`)}
           </button>
         </form>
       </div>
@@ -535,7 +542,7 @@ export default function Dashboard() {
 
   const quickBuilds = chatMessages.length === 0 && (
     <div style={{ padding:'12px 16px', borderBottom:`1px solid ${S.border}`, flexShrink:0 }}>
-      <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:8 }}>Quick Launch</div>
+      <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:8 }}>{t('quickLaunch')}</div>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
         {QUICK_BUILDS.map((b, i) => (
           <button key={i} onClick={() => { setPrompt(b.prompt); textareaRef.current?.focus(); }}
@@ -697,6 +704,7 @@ export default function Dashboard() {
 
           <div style={{ flex:1 }} />
 
+          <LanguageSwitcher compact />
           <button onClick={openGithubModal} style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 9px', color:'#94a3b8', fontSize:13 }}>🐙</button>
           {vercelUrl
             ? <a href={vercelUrl} target="_blank" rel="noreferrer" style={{ fontSize:13, textDecoration:'none', padding:'5px 9px', border:'1px solid rgba(16,185,129,0.3)', borderRadius:7 }}>🌍</a>
@@ -794,7 +802,7 @@ export default function Dashboard() {
                   color: isActive ? '#60a5fa' : '#475569',
                 }}>
                 <span style={{ fontSize:18, filter: isActive ? 'none' : 'grayscale(0.6)' }}>{tab.icon}</span>
-                <span style={{ fontSize:9, fontWeight:700 }}>{tab.label}</span>
+                <span style={{ fontSize:9, fontWeight:700 }}>{t(tab.key)}</span>
                 {isActive && <span style={{ position:'absolute', top:0, left:'25%', right:'25%', height:2, background:'linear-gradient(90deg,#3b82f6,#8b5cf6)', borderRadius:2 }} />}
                 {showBadge && !isActive && <span style={{ position:'absolute', top:8, left:'calc(50% - 16px)', width:6, height:6, borderRadius:'50%', background: isBuilding ? '#3b82f6' : '#1f2937' }} />}
               </button>
@@ -844,7 +852,7 @@ export default function Dashboard() {
         {/* Status */}
         <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color: !isConnected ? '#f59e0b' : isBuilding ? '#60a5fa' : S.muted }}>
           <div style={{ width:6, height:6, borderRadius:'50%', background: !isConnected ? '#f59e0b' : isBuilding ? '#3b82f6' : '#10b981', animation:'pulse 2s infinite' }} />
-          {!isConnected ? 'Reconnecting...' : isBuilding ? 'Mission Running...' : 'All Systems Operational'}
+          {!isConnected ? t('reconnecting') : isBuilding ? t('missionRunning') : t('operational')}
         </div>
 
         <div style={{ width:1, height:20, background:S.border }} />
@@ -881,9 +889,11 @@ export default function Dashboard() {
           ⚙️
         </a>
 
+        <LanguageSwitcher />
+
         <button onClick={handleLogout}
           style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 10px', color:S.muted, fontSize:11 }}>
-          Exit
+          {t('exit')}
         </button>
       </nav>
 
@@ -918,7 +928,7 @@ export default function Dashboard() {
 
           {/* Quick Actions */}
           <div style={{ padding:'10px 16px', borderTop:`1px solid ${S.border}`, display:'flex', gap:6, flexWrap:'wrap', flexShrink:0 }}>
-            {['غير الألوان', 'أضف قسماً', 'اجعله أسرع', 'انشر الآن'].map(a => (
+            {[t('qaColors'), t('qaSection'), t('qaFaster'), t('qaDeploy')].map(a => (
               <button key={a} onClick={() => setPrompt(a)}
                 style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:20, padding:'4px 10px', color:S.muted, fontSize:10, fontWeight:600 }}>
                 {a}
@@ -931,7 +941,7 @@ export default function Dashboard() {
             <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:10 }}>⚡ Mission Control</div>
             <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-              placeholder="What do you want your AI company to build today?"
+              placeholder={t('promptPlaceholder')}
               rows={3}
               style={{
                 width:'100%', background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`,
@@ -946,7 +956,7 @@ export default function Dashboard() {
                   border:'none', borderRadius:7, padding:'8px', color:'#fff', fontSize:12, fontWeight:700,
                   display:'flex', alignItems:'center', justifyContent:'center', gap:6, opacity: !prompt.trim() ? 0.4 : 1
                 }}>
-                <span>{isSending ? 'Sending...' : 'Execute Mission'}</span>
+                <span>{isSending ? t('sending') : t('execute')}</span>
                 {!isSending && <span style={{ opacity:0.6, fontSize:10 }}>↵</span>}
               </button>
               {(isBuilding || isSending) && (
@@ -968,10 +978,10 @@ export default function Dashboard() {
           {/* Tab Bar */}
           <div style={{ height:44, background:S.bg2, borderBottom:`1px solid ${S.border}`, display:'flex', alignItems:'center', padding:'0 16px', gap:2, flexShrink:0 }}>
             {[
-              { id:'preview', label:'🖥️ Preview' },
-              { id:'editor', label:'💻 Code' },
-              { id:'logs', label:`📋 Logs${logs.length > 0 ? ` (${logs.length})` : ''}` },
-              { id:'timeline', label:'🕘 Timeline' },
+              { id:'preview', label:`🖥️ ${t('preview')}` },
+              { id:'editor', label:`💻 ${t('code')}` },
+              { id:'logs', label:`📋 ${t('logs')}${logs.length > 0 ? ` (${logs.length})` : ''}` },
+              { id:'timeline', label:`🕘 ${t('timeline')}` },
             ].map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                 style={{
@@ -1052,7 +1062,7 @@ export default function Dashboard() {
 
           {/* Business Intelligence */}
           <div style={{ padding:14, borderBottom:`1px solid ${S.border}` }}>
-            <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:10 }}>📊 Intelligence</div>
+            <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:10 }}>📊 {t('intelligence')}</div>
             <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
               {[
                 { label:'SEO', value: fmtScore(metrics?.seo), color: gradeColor(metrics?.seo?.grade) },

@@ -801,7 +801,8 @@ app.post('/api/chat', verifyToken, aiLimit, validate(schemas.sendMessage), valid
             roomName,
             projectPath,
             username: req.user.username,
-            activeProject: req.activeProject
+            activeProject: req.activeProject,
+            uiLang: req.body.uiLang,
         }, agents, dbStatus);
     } catch (error) {
         io.to(roomName).emit('log', { message: `❌ [ERROR]: ${error.message}` });
