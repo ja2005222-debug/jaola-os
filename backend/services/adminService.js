@@ -14,6 +14,7 @@ import { promises as fsp } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { sanitizePath } from '../middleware/security.js';
+import { persistPlugin, removePlugin } from './pluginStore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PLUGINS_DIR = path.resolve(__dirname, '../plugins');
@@ -99,6 +100,7 @@ export async function createAgentPlugin({ name, description, instructions, rawCo
 
     await fsp.mkdir(PLUGINS_DIR, { recursive: true });
     await fsp.writeFile(target, code);
+    await persistPlugin(fileName, code);   // 🗄️ دائم في MongoDB
     return { file: fileName, created: true };
 }
 
@@ -125,13 +127,17 @@ export async function readPluginCode(fileName) {
 
 export async function writePluginCode(fileName, code) {
     if (typeof code !== 'string' || code.length < 10) throw new Error('الكود قصير جداً أو غير صالح.');
-    const target = sanitizePath(path.basename(fileName), PLUGINS_DIR);
+    const base = path.basename(fileName);
+    const target = sanitizePath(base, PLUGINS_DIR);
     await fsp.writeFile(target, code);
-    return { file: path.basename(fileName), saved: true };
+    await persistPlugin(base, code);       // 🗄️ حفظ التعديل دائماً
+    return { file: base, saved: true };
 }
 
 export async function deletePluginFile(fileName) {
-    const target = sanitizePath(path.basename(fileName), PLUGINS_DIR);
+    const base = path.basename(fileName);
+    const target = sanitizePath(base, PLUGINS_DIR);
+    await removePlugin(base);               // 🗄️ حذف من MongoDB أيضاً
     if (!fs.existsSync(target)) return { deleted: false };
     await fsp.rm(target, { force: true });
     return { deleted: true };
