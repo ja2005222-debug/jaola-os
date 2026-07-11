@@ -45,6 +45,7 @@ export const schemas = {
     sendMessage: z.object({
         message: z.string().min(1, 'الرسالة فارغة.').max(10000, 'الرسالة أطول من المسموح.'),
         project: projectField,
+        uiLang: z.string().max(5).optional(),   // لغة الواجهة — بذرة لكشف لغة الرد
     }),
 
     saveFile: z.object({

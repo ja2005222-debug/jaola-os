@@ -116,6 +116,11 @@ export function getUserLanguage(username) {
     return sessionLanguages.get(username) || 'en';
 }
 
+/** هل سُجّلت لغة لهذا المستخدم فعلاً؟ (يميّز "غير مضبوط" عن "en") */
+export function hasUserLanguage(username) {
+    return sessionLanguages.has(username);
+}
+
 /** يُغيّر اللغة يدوياً (مثلاً إذا طلب المستخدم صراحةً) */
 export function setUserLanguage(username, lang) {
     sessionLanguages.set(username, lang);
