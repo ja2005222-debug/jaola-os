@@ -313,7 +313,8 @@ export class JaolaCognitiveRuntime {
             const designResult = await generateDesignBrief(
                 context.goal,
                 context.username,
-                context.activeProject
+                context.activeProject,
+                getUserLanguage(context.username) || 'en'
             );
             if (designResult.success) {
                 const brief = designResult.brief;
@@ -350,7 +351,8 @@ export class JaolaCognitiveRuntime {
                     context.mentalModel.visualIdentity,
                     [],
                     (chunk) => this.io.to(roomName).emit('code_stream_chunk', chunk),
-                    context.mentalModel.templateSections || []
+                    context.mentalModel.templateSections || [],
+                    getUserLanguage(context.username) || 'en'
                 );
             } catch (e) {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'Coder', `❌ استثناء: ${e.message}`);
@@ -401,7 +403,7 @@ export class JaolaCognitiveRuntime {
             // 🆕 Review Agent — يراجع ويُصلح تلقائياً قبل العرض النهائي
             try {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'ReviewAgent', '🔍 مراجعة جودة الكود...');
-                const reviewResult = await reviewCode(plan.files, context.originalGoal);
+                const reviewResult = await reviewCode(plan.files, context.originalGoal, getUserLanguage(context.username) || 'en');
 
                 if (reviewResult.fixedCount > 0) {
                     // حفظ الملفات المُصلحة
@@ -423,7 +425,7 @@ export class JaolaCognitiveRuntime {
             }
             // 🆕 Refactor Agent — تنظيف الكود
             try {
-                const refactorResult = await refactorCode(plan.files);
+                const refactorResult = await refactorCode(plan.files, getUserLanguage(context.username) || 'en');
                 if (refactorResult.success) {
                     plan.files = refactorResult.files;
                     if (refactorResult.totalReduction > 0) {
@@ -437,7 +439,7 @@ export class JaolaCognitiveRuntime {
             // 🆕 Testing Agent — اختبار شامل للكود المُنتج
             try {
                 if (!plan?.files) throw new Error('plan is not defined');
-                const testResult = await runTests(plan.files);
+                const testResult = await runTests(plan.files, getUserLanguage(context.username) || 'en');
                 const emoji = testResult.grade === 'A' ? '✅' : testResult.grade === 'B' ? '🟡' : '🟠';
                 this.emitLiveLog(roomName, '5. RUNTIME', 'TestingAgent',
                     `${emoji} ${testResult.report}`
@@ -626,7 +628,7 @@ export class JaolaCognitiveRuntime {
                 if (needsAuth(context.originalGoal)) {
                     try {
                         this.emitLiveLog(roomName, '5. RUNTIME', 'AuthAgent', '🔐 جاري توليد نظام المصادقة...');
-                        const authResult = await generateAuth(context.originalGoal, context.projectPath);
+                        const authResult = await generateAuth(context.originalGoal, context.projectPath, getUserLanguage(context.username) || 'en');
                         if (authResult.success) {
                             const { promises: fsp } = await import('fs');
                             const pathMod = await import('path');
