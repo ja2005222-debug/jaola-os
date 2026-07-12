@@ -45,6 +45,7 @@ import { encryptSecret, decryptSecret } from './utils/secretVault.js';
 import * as oauth from './services/oauthLite.js';
 import * as ghFiles from './services/githubFiles.js';
 import { teamPlan, BACKEND_TEAM } from './agents/backendTeam/index.js';
+import { frontendTeamPlan, FRONTEND_TEAM } from './agents/frontendTeam/index.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
 import { buildMetricsPayload } from './services/metricsStore.js';
 import { queueStatus } from './services/missionQueue.js';
@@ -1151,17 +1152,23 @@ app.post('/api/admin/agents/:name/run', verifyToken, adminOnly, async (req, res)
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 👥 فريق الوكلاء الخلفي — عرض العقود وخطة التنفيذ
+// 👥 فرق الوكلاء (خلفية + أمامية) — عرض العقود وخطة التنفيذ
+const serializeAgent = (a) => ({
+    id: a.id, role: a.role, icon: a.icon, mission: a.mission,
+    responsibilities: a.responsibilities, inputs: a.inputs, outputs: a.outputs,
+    rules: a.rules, qualityStandards: a.qualityStandards, cooperation: a.cooperation,
+    selfReview: a.selfReview, neverDo: a.neverDo, dependsOn: a.dependsOn,
+});
 app.get('/api/admin/backend-team', verifyToken, adminOnly, (req, res) => {
     res.json({
         success: true,
+        teams: [
+            { key: 'backend', label: 'Backend', plan: teamPlan(), agents: BACKEND_TEAM.map(serializeAgent) },
+            { key: 'frontend', label: 'Frontend', plan: frontendTeamPlan(), agents: FRONTEND_TEAM.map(serializeAgent) },
+        ],
+        // توافق خلفي: الحقول القديمة تُشير للفريق الخلفي
         plan: teamPlan(),
-        agents: BACKEND_TEAM.map(a => ({
-            id: a.id, role: a.role, icon: a.icon, mission: a.mission,
-            responsibilities: a.responsibilities, inputs: a.inputs, outputs: a.outputs,
-            rules: a.rules, qualityStandards: a.qualityStandards, cooperation: a.cooperation,
-            selfReview: a.selfReview, neverDo: a.neverDo, dependsOn: a.dependsOn,
-        })),
+        agents: BACKEND_TEAM.map(serializeAgent),
     });
 });
 

@@ -14,6 +14,7 @@ import path from 'path';
 import { promises as fsp } from 'fs';
 import { compileSpecToPrompt } from './agentSpec.js';
 import { BACKEND_TEAM, TEAM_BY_ID, BACKEND_DEBUG_AGENT } from './specs.js';
+import { syntaxCheckFiles } from './backendVerify.js';
 
 /** يطهّر مساراً نسبياً: يمنع الجذر المطلق و.. وأحرف خطيرة، ويوحّد الفواصل */
 export function safeRelPath(p) {
@@ -92,37 +93,33 @@ export function teamPlan(team = BACKEND_TEAM) {
 }
 
 /** يجمع مخرجات الوكلاء الذين يعتمد عليهم هذا الوكيل (التعاون) */
-function gatherCooperationInputs(agent, artifacts) {
+function gatherCooperationInputs(agent, artifacts, byId) {
     const parts = [];
     for (const dep of agent.dependsOn || []) {
         if (artifacts[dep]) {
-            const a = TEAM_BY_ID[dep];
+            const a = byId[dep];
             parts.push(`### مخرجات ${a ? a.role : dep}:\n${artifacts[dep].summary || JSON.stringify(artifacts[dep].output).slice(0, 1500)}`);
         }
     }
     return parts.join('\n\n');
 }
 
-// الوكلاء الذين يُعدّلون ملفات سابقة (تعاون فعلي) بدل إنشاء ملفات جديدة فقط
-const MODIFIER_AGENTS = new Set(['security-engineer', 'backend-debug-agent']);
-
-async function runAgent(agent, { goal, lang, artifacts, fileMap, llm }) {
+async function runAgent(agent, { goal, lang, artifacts, fileMap, llm, byId }) {
     const system = compileSpecToPrompt(agent, { lang });
-    const coop = gatherCooperationInputs(agent, artifacts);
-    const isModifier = MODIFIER_AGENTS.has(agent.id);
+    const coop = gatherCooperationInputs(agent, artifacts, byId || TEAM_BY_ID);
 
-    // المُعدِّلون يستقبلون الملفات الحالية ليصلحوها/يحصّنوها
+    // المُعدِّلون يستقبلون الملفات الحالية ليصلحوها/يحصّنوها (عام عبر flag العقد)
     let currentFilesBlock = '';
-    if (isModifier) {
+    if (agent.modifier) {
         const files = Object.values(fileMap);
         if (files.length) {
             currentFilesBlock = `\n## الملفات الحالية (عدّل ما يلزم منها وأعِدها بنفس المسار مع action="modify"):\n` +
                 files.map((f) => `### ${f.path}\n\`\`\`\n${(f.content || '').slice(0, 1200)}\n\`\`\``).join('\n');
         }
-        // Debug: زوّده بأخطاء QA تحديداً
-        if (agent.id === 'backend-debug-agent') {
-            const qa = artifacts['backend-qa-engineer'];
-            if (qa?.issues?.length) currentFilesBlock += `\n## أخطاء QA لإصلاحها:\n${qa.issues.map((i) => `- ${i}`).join('\n')}`;
+        // وكيل الـ debug: زوّده بأخطاء وكيل QA المرتبط تحديداً
+        if (agent.debugFor) {
+            const qa = artifacts[agent.debugFor];
+            if (qa?.issues?.length) currentFilesBlock += `\n## أخطاء لإصلاحها:\n${qa.issues.map((i) => `- ${i}`).join('\n')}`;
         }
     }
 
@@ -173,6 +170,7 @@ ${coop ? `## مخرجات الوكلاء السابقين (استخدمها كم
  */
 export async function runBackendTeam(goal, opts = {}) {
     const team = opts.team || BACKEND_TEAM;
+    const byId = Object.fromEntries(team.map((a) => [a.id, a]));
     const lang = opts.lang || 'ar';
     const onEvent = typeof opts.onEvent === 'function' ? opts.onEvent : () => {};
     const order = planExecution(team);
@@ -186,10 +184,10 @@ export async function runBackendTeam(goal, opts = {}) {
     const results = [];
     const fileMap = {}; // path → { path, content, kind, by }  (المُعدِّلون يستبدلون السابق)
     for (const id of order) {
-        const agent = TEAM_BY_ID[id] || team.find((a) => a.id === id);
-        // Debug Agent يُشغّل فقط عند وجود فشل من QA
-        if (agent.id === 'backend-debug-agent') {
-            const qa = artifacts['backend-qa-engineer'];
+        const agent = byId[id] || team.find((a) => a.id === id);
+        // وكيل الـ debug يُشغّل فقط عند وجود فشل من وكيل QA المرتبط (عام عبر debugFor)
+        if (agent.debugFor) {
+            const qa = artifacts[agent.debugFor];
             const hasFailures = qa && qa.issues && qa.issues.length > 0;
             if (!hasFailures) {
                 onEvent({ type: 'agent_skipped', agent: agent.id, role: agent.role, reason: 'لا أخطاء من QA' });
@@ -199,7 +197,7 @@ export async function runBackendTeam(goal, opts = {}) {
         }
         onEvent({ type: 'agent_start', agent: agent.id, role: agent.role, icon: agent.icon });
         try {
-            const res = await runAgent(agent, { goal, lang, artifacts, fileMap, llm: opts.llm });
+            const res = await runAgent(agent, { goal, lang, artifacts, fileMap, llm: opts.llm, byId });
             artifacts[agent.id] = res;
             results.push(res);
             // دمج الملفات: create يضيف، modify يستبدل ما سبق بنفس المسار (تعاون فعلي)
@@ -214,6 +212,41 @@ export async function runBackendTeam(goal, opts = {}) {
         }
     }
 
+    // ✅ فحص تنفيذي حقيقي: node --check على الكود المولّد، والأخطاء تُغذّى Debug ليصلحها
+    let verification = null;
+    const debug = team.find((a) => a.debugFor); // وكيل الإصلاح (عام)
+    if (opts.verify && debug) {
+        const qaKey = debug.debugFor;
+        const maxRounds = Number.isInteger(opts.maxVerifyRounds) ? opts.maxVerifyRounds : 2;
+        let ver = await syntaxCheckFiles(Object.values(fileMap));
+        let round = 0;
+        while (!ver.ok && round < maxRounds) {
+            onEvent({ type: 'verify_failed', round: round + 1, failures: ver.failures.length });
+            const dbgArtifacts = {
+                ...artifacts,
+                [qaKey]: {
+                    ...(artifacts[qaKey] || {}),
+                    issues: [
+                        ...((artifacts[qaKey] || {}).issues || []),
+                        ...ver.failures.map((f) => `${f.path}: ${f.error}`),
+                    ],
+                },
+            };
+            try {
+                const res = await runAgent(debug, { goal, lang, artifacts: dbgArtifacts, fileMap, llm: opts.llm, byId });
+                for (const f of res.files) fileMap[f.path] = { path: f.path, content: f.content, kind: f.kind, by: debug.id, action: f.action };
+                results.push({ ...res, phase: 'verify-fix', round: round + 1 });
+            } catch (e) {
+                onEvent({ type: 'agent_error', agent: debug.id, role: debug.role, error: e.message });
+                break;
+            }
+            ver = await syntaxCheckFiles(Object.values(fileMap));
+            round++;
+        }
+        verification = { ok: ver.ok, checked: ver.checked, failures: ver.failures, rounds: round };
+        onEvent({ type: 'verify_done', ok: ver.ok, failures: ver.failures.length, rounds: round });
+    }
+
     const files = Object.values(fileMap);
     const openIssues = results.flatMap((r) => (r.issues || []).map((i) => ({ issue: i, by: r.agent })));
     return {
@@ -221,7 +254,8 @@ export async function runBackendTeam(goal, opts = {}) {
         order,
         results,
         files,
+        verification,
         openIssues,
-        summary: `فريق خلفي: ${results.filter((r) => !r.skipped && !r.error).length}/${team.length} وكيل أنجز، ${files.length} ملف، ${openIssues.length} مشكلة مفتوحة`,
+        summary: `فريق خلفي: ${results.filter((r) => !r.skipped && !r.error).length}/${team.length} وكيل أنجز، ${files.length} ملف، ${openIssues.length} مشكلة مفتوحة${verification ? `، فحص: ${verification.ok ? 'نجح' : verification.failures.length + ' خطأ'}` : ''}`,
     };
 }

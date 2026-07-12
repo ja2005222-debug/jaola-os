@@ -183,6 +183,7 @@ export const SECURITY_ENGINEER = defineAgent({
         'لا تثق بأي مدخل بلا تحقّق',
     ],
     dependsOn: ['api-engineer'],
+    modifier: true,
 });
 
 export const BACKEND_QA_ENGINEER = defineAgent({
@@ -315,6 +316,8 @@ export const BACKEND_DEBUG_AGENT = defineAgent({
         'لا تُجرِ تعديلاً واسعاً غير مبرّر',
     ],
     dependsOn: ['backend-qa-engineer'],
+    modifier: true,
+    debugFor: 'backend-qa-engineer',
 });
 
 /** الفريق كاملاً بترتيب الاعتماد المنطقي */
