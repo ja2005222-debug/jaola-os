@@ -1423,6 +1423,16 @@ User preferences: ${JSON.stringify(execMemory)}` },
         if (finalIntent.intent === 'build') {
             const userGoal = normalizedMessage || message;
             const lang = getUserLanguage(username) || userLang;
+
+            // 🎯 طلب واسع وغامض → حوار استراتيجي أولاً (لا يبدأ مباشرة)
+            const clar = await agents.startClarification?.(username, userGoal);
+            if (clar?.type === 'clarification') {
+                this.emitLiveLog(roomName, 'INTENT', 'Clarifier', '🎯 طلب استراتيجي — بدء حوار التخطيط');
+                this.io.to(roomName).emit('chat_reply', { message: clar.message, options: clar.options });
+                return;
+            }
+
+            // ⚡ طلب واضح → تأكيد سريع ثم بناء
             const projectHint = userGoal.replace(/^(ابني|اصنع|انشئ|بني|سوي|build|create|make)\s+/i, '').trim();
             const confirmQ = lang === 'ar'
                 ? `هل تريد بناء موقع لـ "${projectHint}"؟`
