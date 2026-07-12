@@ -10,8 +10,40 @@
  * قابل للاختبار: يقبل حاقن llm(messages, opts) → نص، فيُختبر المنطق بلا نموذج حي.
  */
 
+import path from 'path';
+import { promises as fsp } from 'fs';
 import { compileSpecToPrompt } from './agentSpec.js';
 import { BACKEND_TEAM, TEAM_BY_ID, BACKEND_DEBUG_AGENT } from './specs.js';
+
+/** يطهّر مساراً نسبياً: يمنع الجذر المطلق و.. وأحرف خطيرة، ويوحّد الفواصل */
+export function safeRelPath(p) {
+    if (typeof p !== 'string') return null;
+    let clean = p.trim().replace(/\\/g, '/').replace(/^\/+/, '');
+    if (!clean || clean.includes('..') || /[<>:"|?*\0]/.test(clean)) return null;
+    // احصر الطول والأحرف المسموحة
+    if (clean.length > 200 || !/^[\w.\-\/ ]+$/.test(clean)) return null;
+    return clean;
+}
+
+/** يكتب ملفات الفريق إلى مجلد المشروع بأمان (خارج المشروع = مرفوض) */
+export async function writeBackendTeamFiles(files, projectPath, { transform } = {}) {
+    const written = [];
+    const root = path.resolve(projectPath);
+    for (const f of files) {
+        const rel = safeRelPath(f.path);
+        if (!rel) continue;
+        const abs = path.resolve(root, rel);
+        if (abs !== root && !abs.startsWith(root + path.sep)) continue; // منع الخروج من المشروع
+        let content = f.content;
+        if (typeof transform === 'function') {
+            try { content = await transform(rel, content); } catch { /* أبقِ الأصل */ }
+        }
+        await fsp.mkdir(path.dirname(abs), { recursive: true });
+        await fsp.writeFile(abs, content);
+        written.push(rel);
+    }
+    return written;
+}
 
 /** ترتيب التنفيذ عبر فرز طوبولوجي لاعتماديات dependsOn (Kahn) */
 export function planExecution(team = BACKEND_TEAM) {
@@ -71,35 +103,62 @@ function gatherCooperationInputs(agent, artifacts) {
     return parts.join('\n\n');
 }
 
-async function runAgent(agent, { goal, lang, artifacts, llm }) {
+// الوكلاء الذين يُعدّلون ملفات سابقة (تعاون فعلي) بدل إنشاء ملفات جديدة فقط
+const MODIFIER_AGENTS = new Set(['security-engineer', 'backend-debug-agent']);
+
+async function runAgent(agent, { goal, lang, artifacts, fileMap, llm }) {
     const system = compileSpecToPrompt(agent, { lang });
     const coop = gatherCooperationInputs(agent, artifacts);
+    const isModifier = MODIFIER_AGENTS.has(agent.id);
+
+    // المُعدِّلون يستقبلون الملفات الحالية ليصلحوها/يحصّنوها
+    let currentFilesBlock = '';
+    if (isModifier) {
+        const files = Object.values(fileMap);
+        if (files.length) {
+            currentFilesBlock = `\n## الملفات الحالية (عدّل ما يلزم منها وأعِدها بنفس المسار مع action="modify"):\n` +
+                files.map((f) => `### ${f.path}\n\`\`\`\n${(f.content || '').slice(0, 1200)}\n\`\`\``).join('\n');
+        }
+        // Debug: زوّده بأخطاء QA تحديداً
+        if (agent.id === 'backend-debug-agent') {
+            const qa = artifacts['backend-qa-engineer'];
+            if (qa?.issues?.length) currentFilesBlock += `\n## أخطاء QA لإصلاحها:\n${qa.issues.map((i) => `- ${i}`).join('\n')}`;
+        }
+    }
+
     const user = `## المشروع
 ${goal}
 
-${coop ? `## مخرجات الوكلاء السابقين (استخدمها كمدخلات):\n${coop}\n` : ''}
-أنجز مهمتك بحسب Outputs في عقدك. أعِد **JSON فقط** بهذا الشكل:
+${coop ? `## مخرجات الوكلاء السابقين (استخدمها كمدخلات):\n${coop}\n` : ''}${currentFilesBlock}
+
+أنجز مهمتك بحسب Outputs في عقدك، وأنتج **ملفات حقيقية** بمسارات صحيحة.
+أعِد **JSON فقط** بهذا الشكل:
 {
   "summary": "ملخص ما أنجزته (سطران)",
-  "artifacts": [ { "name": "اسم المخرج", "kind": "doc|schema|code|config|report|tests", "content": "..." } ],
+  "files": [ { "path": "api/routes/users.js", "kind": "code|schema|migration|config|tests|doc", "action": "create|modify", "content": "المحتوى الكامل للملف" } ],
   "issues": [ "مشاكل مكتشفة إن وُجدت" ],
   "selfReviewPassed": true
 }`;
 
     const raw = await llm(
         [{ role: 'system', content: system }, { role: 'user', content: user }],
-        { max_tokens: 1500, temperature: 0.2, json: true }
+        { max_tokens: 2500, temperature: 0.2, json: true }
     );
     let parsed;
     try { parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; }
-    catch { parsed = { summary: String(raw).slice(0, 300), artifacts: [], issues: ['رد غير صالح JSON'], selfReviewPassed: false }; }
+    catch { parsed = { summary: String(raw).slice(0, 300), files: [], issues: ['رد غير صالح JSON'], selfReviewPassed: false }; }
+
+    const files = (Array.isArray(parsed.files) ? parsed.files : [])
+        .map((f) => ({ path: safeRelPath(f.path), kind: f.kind || 'code', action: f.action === 'modify' ? 'modify' : 'create', content: typeof f.content === 'string' ? f.content : '' }))
+        .filter((f) => f.path && f.content);
 
     return {
         agent: agent.id,
         role: agent.role,
         summary: parsed.summary || '',
         output: parsed,
-        artifacts: Array.isArray(parsed.artifacts) ? parsed.artifacts : [],
+        files,
+        artifacts: files.map((f) => ({ name: f.path, kind: f.kind })), // توافق خلفي
         issues: Array.isArray(parsed.issues) ? parsed.issues : [],
         selfReviewPassed: parsed.selfReviewPassed !== false,
     };
@@ -125,6 +184,7 @@ export async function runBackendTeam(goal, opts = {}) {
 
     const artifacts = {};
     const results = [];
+    const fileMap = {}; // path → { path, content, kind, by }  (المُعدِّلون يستبدلون السابق)
     for (const id of order) {
         const agent = TEAM_BY_ID[id] || team.find((a) => a.id === id);
         // Debug Agent يُشغّل فقط عند وجود فشل من QA
@@ -139,10 +199,14 @@ export async function runBackendTeam(goal, opts = {}) {
         }
         onEvent({ type: 'agent_start', agent: agent.id, role: agent.role, icon: agent.icon });
         try {
-            const res = await runAgent(agent, { goal, lang, artifacts, llm: opts.llm });
+            const res = await runAgent(agent, { goal, lang, artifacts, fileMap, llm: opts.llm });
             artifacts[agent.id] = res;
             results.push(res);
-            onEvent({ type: 'agent_done', agent: agent.id, role: agent.role, summary: res.summary, selfReviewPassed: res.selfReviewPassed, issues: res.issues.length });
+            // دمج الملفات: create يضيف، modify يستبدل ما سبق بنفس المسار (تعاون فعلي)
+            for (const f of res.files) {
+                fileMap[f.path] = { path: f.path, content: f.content, kind: f.kind, by: agent.id, action: f.action };
+            }
+            onEvent({ type: 'agent_done', agent: agent.id, role: agent.role, summary: res.summary, files: res.files.length, selfReviewPassed: res.selfReviewPassed, issues: res.issues.length });
         } catch (e) {
             const failed = { agent: agent.id, role: agent.role, error: e.message };
             results.push(failed);
@@ -150,14 +214,14 @@ export async function runBackendTeam(goal, opts = {}) {
         }
     }
 
-    const allArtifacts = results.flatMap((r) => (r.artifacts || []).map((a) => ({ ...a, by: r.agent })));
+    const files = Object.values(fileMap);
     const openIssues = results.flatMap((r) => (r.issues || []).map((i) => ({ issue: i, by: r.agent })));
     return {
         mode: 'execute',
         order,
         results,
-        artifacts: allArtifacts,
+        files,
         openIssues,
-        summary: `فريق خلفي: ${results.filter((r) => !r.skipped && !r.error).length}/${team.length} وكيل أنجز، ${allArtifacts.length} مخرج، ${openIssues.length} مشكلة مفتوحة`,
+        summary: `فريق خلفي: ${results.filter((r) => !r.skipped && !r.error).length}/${team.length} وكيل أنجز، ${files.length} ملف، ${openIssues.length} مشكلة مفتوحة`,
     };
 }
