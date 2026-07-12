@@ -48,6 +48,7 @@ export default function AdminPanel({ onExit }) {
       {tab === 'health' && <HealthTab api={api} />}
       {tab === 'agents' && <AgentsTab api={api} />}
       {tab === 'files' && <FilesTab api={api} />}
+      {tab === 'github' && <GitHubTab api={api} />}
     </Shell>
   );
 }
@@ -60,6 +61,7 @@ function Shell({ children, onExit, tab, setTab }) {
     { id: 'health', icon: '🩺', label: tr('admTabHealth') },
     { id: 'agents', icon: '🤖', label: tr('admTabAgents') },
     { id: 'files', icon: '🗂️', label: tr('admTabFiles') },
+    { id: 'github', icon: '🐙', label: tr('admTabGithub') },
   ];
   return (
     <div style={{ minHeight: '100dvh', background: S.bg, color: S.text, fontFamily: 'system-ui, sans-serif', direction: dir }}>
@@ -380,6 +382,143 @@ function FilesTab({ api }) {
             </>
           ) : (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: S.muted, fontSize: 13 }}>{tr('admPickFile')}</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 🐙 ملفات GitHub ───────────────────────────────────────────
+function GitHubTab({ api }) {
+  const tr = useI18n(s => s.t);
+  const [status, setStatus] = useState(null); // { linked, githubLogin }
+  const [repos, setRepos] = useState(null);
+  const [repo, setRepo] = useState(null); // { fullName, defaultBranch }
+  const [pathStack, setPathStack] = useState([]); // مسار المجلد الحالي
+  const [items, setItems] = useState([]);
+  const [file, setFile] = useState(null); // { path, sha }
+  const [content, setContent] = useState('');
+  const [dirty, setDirty] = useState(false);
+  const [commitMsg, setCommitMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const curPath = pathStack.join('/');
+
+  useEffect(() => { api('/api/admin/github/status').then(setStatus).catch(() => setStatus({ linked: false })); }, [api]);
+  useEffect(() => {
+    if (status?.linked && repos === null) {
+      api('/api/admin/github/repos').then(d => setRepos(d.repos || [])).catch(e => { setMsg(e.message); setRepos([]); });
+    }
+  }, [status, repos, api]);
+
+  const openRepo = async (r) => {
+    setRepo(r); setPathStack([]); setFile(null); setContent(''); setMsg('');
+    try { const d = await api(`/api/admin/github/contents?repo=${encodeURIComponent(r.fullName)}`); setItems(d.items || []); }
+    catch (e) { setMsg(e.message); }
+  };
+  const openDir = async (p) => {
+    const stack = p.split('/');
+    setPathStack(stack); setFile(null); setContent('');
+    try { const d = await api(`/api/admin/github/contents?repo=${encodeURIComponent(repo.fullName)}&path=${encodeURIComponent(p)}`); setItems(d.items || []); }
+    catch (e) { setMsg(e.message); }
+  };
+  const goUp = () => {
+    const stack = pathStack.slice(0, -1);
+    openDir(stack.join('/'));
+  };
+  const openFile = async (p) => {
+    try {
+      const d = await api(`/api/admin/github/file?repo=${encodeURIComponent(repo.fullName)}&path=${encodeURIComponent(p)}`);
+      setFile({ path: p, sha: d.sha }); setContent(d.content); setDirty(false); setCommitMsg('');
+    } catch (e) { setMsg(e.message); }
+  };
+  const push = async () => {
+    setBusy(true); setMsg('');
+    try {
+      const d = await api('/api/admin/github/file', { method: 'PUT', body: JSON.stringify({
+        repo: repo.fullName, path: file.path, content,
+        message: commitMsg || `Update ${file.path} via JAOLA`,
+        sha: file.sha, branch: repo.defaultBranch,
+      }) });
+      setFile(f => ({ ...f, sha: d.sha })); setDirty(false); setMsg(tr('admGhPushed'));
+      setTimeout(() => setMsg(''), 2500);
+    } catch (e) { setMsg('❌ ' + e.message); }
+    setBusy(false);
+  };
+
+  if (status && !status.linked) return (
+    <div>
+      <Header title={tr('admGhTitle')} />
+      <div style={{ ...cardStyle, textAlign: 'center', padding: 40 }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>🐙</div>
+        <p style={{ color: S.muted, fontSize: 14, lineHeight: 1.9, marginBottom: 18 }}>{tr('admGhNotLinked')}</p>
+        <a href={`${BACKEND_URL}/api/auth/github`}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: '10px 18px', color: '#fff', fontWeight: 700, textDecoration: 'none', fontSize: 13 }}>
+          🐙 {tr('continueWithGithub')}
+        </a>
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <Header title={tr('admGhTitle')} action={
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {msg && <span style={{ fontSize: 12, color: msg.startsWith('❌') ? S.red : S.green }}>{msg}</span>}
+          {status?.githubLogin && <span style={{ fontSize: 12, color: S.muted }}>{tr('admGhLinkedAs')} <b style={{ color: S.blue }}>@{status.githubLogin}</b></span>}
+        </span>
+      } />
+      <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 14, height: 'calc(100dvh - 170px)' }}>
+        {/* عمود المستودعات/الملفات */}
+        <div style={{ ...cardStyle, padding: 10, overflow: 'auto' }}>
+          {!repo && (
+            <>
+              <div style={{ fontSize: 11, color: S.muted, fontWeight: 700, marginBottom: 8 }}>{tr('admGhRepos')}</div>
+              {repos === null && <Muted>{tr('admGhLoadingRepos')}</Muted>}
+              {repos?.length === 0 && <Muted>{tr('admGhNoRepos')}</Muted>}
+              {repos?.map(r => (
+                <button key={r.fullName} onClick={() => openRepo(r)}
+                  style={{ width: '100%', textAlign: 'start', background: 'transparent', border: 'none', color: S.text, fontSize: 12.5, padding: '6px 8px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>📦</span>
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'ltr' }}>{r.fullName}</span>
+                  {r.private && <span style={{ fontSize: 9, color: S.amber }}>{tr('admGhPrivate')}</span>}
+                </button>
+              ))}
+            </>
+          )}
+          {repo && (
+            <>
+              <button onClick={() => { setRepo(null); setItems([]); setFile(null); }} style={{ background: 'transparent', border: 'none', color: S.muted, fontSize: 12, marginBottom: 6 }}>{tr('admGhBackRepos')}</button>
+              <div style={{ fontSize: 11, color: S.blue, marginBottom: 6, direction: 'ltr', wordBreak: 'break-all' }}>{repo.fullName}{curPath ? `/${curPath}` : ''}</div>
+              {pathStack.length > 0 && <button onClick={goUp} style={{ background: 'transparent', border: 'none', color: S.muted, fontSize: 12, marginBottom: 4 }}>{tr('admGhBackDir')}</button>}
+              {items.map(it => (
+                <button key={it.path} onClick={() => it.type === 'dir' ? openDir(it.path) : openFile(it.path)}
+                  style={{ width: '100%', textAlign: 'start', background: file?.path === it.path ? 'rgba(59,130,246,0.1)' : 'transparent', border: 'none', color: file?.path === it.path ? '#93c5fd' : S.text, fontSize: 12.5, padding: '5px 8px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>{it.type === 'dir' ? '📁' : '📄'}</span>
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'ltr' }}>{it.name}</span>
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+        {/* محرر الملف */}
+        <div style={{ ...cardStyle, padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {file ? (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${S.border}`, gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, color: S.muted, direction: 'ltr', flex: 1, minWidth: 120 }}>{file.path}{dirty ? ' •' : ''}</span>
+                <input value={commitMsg} onChange={e => setCommitMsg(e.target.value)} placeholder={tr('admGhCommitMsg')}
+                  style={{ ...inputStyle, width: 200, marginTop: 0, padding: '6px 10px', fontSize: 12 }} />
+                <button onClick={push} disabled={!dirty || busy} style={{ ...btnPrimary, padding: '6px 14px', opacity: (!dirty || busy) ? 0.5 : 1 }}>
+                  {busy ? tr('admGhPushing') : tr('admGhCommitPush')}
+                </button>
+              </div>
+              <textarea value={content} onChange={e => { setContent(e.target.value); setDirty(true); }} spellCheck={false}
+                style={{ flex: 1, background: '#0a0f1e', border: 'none', padding: 16, color: '#e2e8f0', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, resize: 'none', lineHeight: 1.6, direction: 'ltr' }} />
+            </>
+          ) : (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: S.muted, fontSize: 13 }}>{tr('admGhPickFile')}</div>
           )}
         </div>
       </div>

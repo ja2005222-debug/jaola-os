@@ -218,6 +218,28 @@ const STRINGS = {
   connectionLost: { en: 'Connection to the server lost — reconnecting automatically...', ar: 'انقطع الاتصال بالخادم — جاري إعادة الاتصال تلقائياً...' },
   liveLog: { en: '📋 Live Log', ar: '📋 السجل الحي' },
   timelineTab: { en: '🕘 Timeline', ar: '🕘 الخط الزمني' },
+
+  // OAuth
+  continueWithGithub: { en: 'Continue with GitHub', ar: 'المتابعة عبر GitHub' },
+  continueWithGoogle: { en: 'Continue with Google', ar: 'المتابعة عبر Google' },
+  orDivider: { en: 'or', ar: 'أو' },
+
+  // GitHub files admin tab
+  admTabGithub: { en: 'GitHub Files', ar: 'ملفات GitHub' },
+  admGhTitle: { en: '🐙 GitHub Files', ar: '🐙 ملفات GitHub' },
+  admGhNotLinked: { en: 'No GitHub account linked. Sign in with GitHub to browse and edit your repositories.', ar: 'لا يوجد حساب GitHub مرتبط. سجّل الدخول عبر GitHub لتصفّح وتعديل مستودعاتك.' },
+  admGhLinkedAs: { en: 'Linked as', ar: 'مرتبط باسم' },
+  admGhRepos: { en: 'Repositories', ar: 'المستودعات' },
+  admGhLoadingRepos: { en: 'Loading repositories...', ar: 'جاري تحميل المستودعات...' },
+  admGhNoRepos: { en: 'No repositories found.', ar: 'لا مستودعات.' },
+  admGhBackRepos: { en: '← Repositories', ar: '← المستودعات' },
+  admGhBackDir: { en: '← Up', ar: '← للأعلى' },
+  admGhCommitMsg: { en: 'Commit message', ar: 'رسالة الـ commit' },
+  admGhCommitPush: { en: '⬆ Commit & Push', ar: '⬆ حفظ ورفع' },
+  admGhPushing: { en: 'Pushing...', ar: 'جاري الرفع...' },
+  admGhPushed: { en: '✅ Pushed', ar: '✅ تم الرفع' },
+  admGhPickFile: { en: 'Pick a file to view and edit', ar: 'اختر ملفاً لعرضه وتعديله' },
+  admGhPrivate: { en: 'private', ar: 'خاص' },
 };
 
 const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('uiLang') : null;

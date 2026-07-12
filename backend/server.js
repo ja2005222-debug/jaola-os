@@ -41,7 +41,9 @@ import {
 import { schemas, validate, sanitizePath } from './middleware/security.js';
 import { abortMission, hasActiveMission } from './services/abortRegistry.js';
 import { pushProject, getIntegration } from './services/githubSync.js';
-import { encryptSecret } from './utils/secretVault.js';
+import { encryptSecret, decryptSecret } from './utils/secretVault.js';
+import * as oauth from './services/oauthLite.js';
+import * as ghFiles from './services/githubFiles.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
 import { buildMetricsPayload } from './services/metricsStore.js';
 import { queueStatus } from './services/missionQueue.js';
@@ -175,8 +177,64 @@ const DB = {
             }
         }
         return { name, owner, vercelUrl: '' };
+    },
+
+    // ─── OAuth: إنشاء/ربط مستخدم بمزوّد خارجي ───────────────────────────
+    async upsertOAuthUser({ provider, providerId, username, email, avatar }) {
+        const base = (username || `${provider}_user`).replace(/[^a-z0-9_\-]/gi, '_').toLowerCase().slice(0, 20) || `${provider}_user`;
+        if (this._isOnline()) {
+            try {
+                // مطابقة بالمزوّد+المعرّف أولاً، ثم بالبريد لربط حساب موجود
+                let user = await User.findOne({ provider, providerId });
+                if (!user && email) {
+                    user = await User.findOne({ email });
+                    if (user) { user.provider = provider; user.providerId = providerId; if (avatar) user.avatar = avatar; await user.save(); }
+                }
+                if (!user) {
+                    // ضمان تفرّد اسم المستخدم
+                    let uname = base; let n = 1;
+                    while (await User.findOne({ username: uname })) uname = `${base}${n++}`;
+                    user = await User.create({ username: uname, email, provider, providerId, avatar });
+                }
+                return user;
+            } catch (e) { console.warn('[DB.upsertOAuthUser] فشل:', e.message); }
+        }
+        // offline: مستخدم مؤقت في الذاكرة
+        const rec = { id: `oauth_${provider}_${providerId}`, username: base, email, provider, providerId, avatar };
+        OFFLINE_USERS.set(base, rec);
+        return rec;
+    },
+
+    // ─── تخزين توكن GitHub مشفّراً (AES-256-GCM) للوصول للملفات ─────────
+    async setGithubToken(username, tokenPlain, githubLogin) {
+        const enc = tokenPlain ? encryptSecret(tokenPlain) : null;
+        if (this._isOnline()) {
+            try { await User.updateOne({ username }, { $set: { githubToken: enc, githubLogin } }); return true; }
+            catch (e) { console.warn('[DB.setGithubToken] فشل:', e.message); }
+        }
+        OFFLINE_GH_TOKENS.set(username, { enc, githubLogin });
+        return true;
+    },
+    async getGithubToken(username) {
+        let enc = null, githubLogin = null;
+        if (this._isOnline()) {
+            try {
+                const u = await User.findOne({ username }).select('githubToken githubLogin').lean();
+                enc = u?.githubToken || null; githubLogin = u?.githubLogin || null;
+            } catch (e) { /* fallthrough */ }
+        }
+        if (!enc && OFFLINE_GH_TOKENS.has(username)) {
+            const rec = OFFLINE_GH_TOKENS.get(username); enc = rec.enc; githubLogin = rec.githubLogin;
+        }
+        if (!enc) return null;
+        try { return { token: decryptSecret(enc), githubLogin }; }
+        catch { return null; }
     }
 };
+
+// مخازن offline مؤقتة (بلا Mongo) — لا تدوم بعد إعادة التشغيل
+const OFFLINE_USERS = new Map();
+const OFFLINE_GH_TOKENS = new Map();
 
 // ─── مسارات الـ workspace على القرص ─────────────────────────────────
 const BASE_WORKSPACE = path.resolve(__dirname, '../workspace');
@@ -587,6 +645,70 @@ app.post('/api/auth/login', async (req, res) => {
         res.json({ success: true, token, currentUser: sanitizedUser, activeProject: 'sandbox_app' });
     } catch (err) {
         res.status(500).json({ error: 'خطأ داخلي في الخادم.' });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 🔑 OAuth — الدخول عبر GitHub / Google
+// ═══════════════════════════════════════════════════════════════════
+
+// أي مزوّدين مُهيّئين؟ — الواجهة تُظهر أزرارهم فقط
+app.get('/api/auth/providers', (req, res) => {
+    res.json({ providers: oauth.configuredProviders() });
+});
+
+const oauthRedirectUri = (req, provider) => {
+    const proto = req.headers['x-forwarded-proto'] || req.protocol;
+    return `${proto}://${req.get('host')}/api/auth/${provider}/callback`;
+};
+const frontendBase = () => (process.env.FRONTEND_URL || '').replace(/\/$/, '');
+
+// 1) بدء التدفّق — إعادة توجيه لصفحة موافقة المزوّد
+app.get('/api/auth/:provider', (req, res) => {
+    const { provider } = req.params;
+    if (!oauth.isProvider(provider)) return res.status(404).json({ error: 'مزوّد غير مدعوم' });
+    if (!oauth.providerConfigured(provider)) {
+        return res.status(503).json({ error: `${provider} OAuth غير مُهيّأ على الخادم` });
+    }
+    // state موقّع قصير العمر يمنع CSRF بلا حاجة لجلسة
+    const state = jwt.sign({ provider, n: Math.random().toString(36).slice(2) }, JWT_SECRET, { expiresIn: '10m' });
+    const url = oauth.getAuthUrl(provider, { state, redirectUri: oauthRedirectUri(req, provider) });
+    res.redirect(url);
+});
+
+// 2) الـ callback — تبادل الكود، إنشاء/ربط المستخدم، إصدار JWT، العودة للواجهة
+app.get('/api/auth/:provider/callback', async (req, res) => {
+    const { provider } = req.params;
+    const { code, state } = req.query;
+    const fail = (msg) => res.redirect(`${frontendBase()}/dashboard?authError=${encodeURIComponent(msg)}`);
+
+    if (!oauth.isProvider(provider) || !oauth.providerConfigured(provider)) return fail('مزوّد غير متاح');
+    if (!code) return fail('لم يصل كود المصادقة');
+    try {
+        const decoded = jwt.verify(state, JWT_SECRET);
+        if (decoded.provider !== provider) return fail('state غير صالح');
+    } catch { return fail('انتهت صلاحية طلب الدخول — حاول مجدداً'); }
+
+    try {
+        const accessToken = await oauth.exchangeCode(provider, { code, redirectUri: oauthRedirectUri(req, provider) });
+        const profile = await oauth.fetchProfile(provider, accessToken);
+        const user = await DB.upsertOAuthUser({ provider, ...profile });
+        const username = (user.username || profile.username || '').toLowerCase();
+
+        // خزّن توكن GitHub مشفّراً لتمكين الوصول للملفات لاحقاً
+        if (provider === 'github') {
+            await DB.setGithubToken(username, accessToken, profile.username);
+        }
+
+        const token = jwt.sign(
+            { id: user._id || user.id || username, username, email: user.email || profile.email },
+            JWT_SECRET, { expiresIn: '7d' }
+        );
+        const params = new URLSearchParams({ token, user: username });
+        res.redirect(`${frontendBase()}/dashboard?${params.toString()}`);
+    } catch (err) {
+        console.error('[OAuth callback] فشل:', err.message);
+        fail('فشل الدخول عبر ' + provider);
     }
 });
 
@@ -1060,6 +1182,59 @@ app.delete('/api/admin/files', verifyToken, adminOnly, async (req, res) => {
         const r = await adminSvc.deleteProjectFile(user, project, p);
         res.json({ success: true, ...r });
     } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 🐙 إدارة ملفات GitHub من لوحة الأدمِن (عبر توكن المستخدم المخزّن)
+// ═══════════════════════════════════════════════════════════════════
+const REPO_RE = /^[\w.\-]+\/[\w.\-]+$/;      // owner/repo
+const SAFE_PATH_RE = /^[\w.\-\/ ]*$/;         // لا .. ولا أحرف خطيرة
+const isSafePath = (p) => typeof p === 'string' && SAFE_PATH_RE.test(p) && !p.includes('..');
+
+async function requireGithubToken(req, res) {
+    const rec = await DB.getGithubToken(req.user.username);
+    if (!rec || !rec.token) {
+        res.status(409).json({ error: 'GITHUB_NOT_LINKED', details: 'لا يوجد حساب GitHub مرتبط. سجّل الدخول عبر GitHub أولاً.' });
+        return null;
+    }
+    return rec;
+}
+
+app.get('/api/admin/github/status', verifyToken, adminOnly, async (req, res) => {
+    const rec = await DB.getGithubToken(req.user.username);
+    res.json({ linked: !!(rec && rec.token), githubLogin: rec?.githubLogin || null });
+});
+
+app.get('/api/admin/github/repos', verifyToken, adminOnly, async (req, res) => {
+    const rec = await requireGithubToken(req, res); if (!rec) return;
+    try { res.json({ repos: await ghFiles.listRepos(rec.token) }); }
+    catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+
+app.get('/api/admin/github/contents', verifyToken, adminOnly, async (req, res) => {
+    const rec = await requireGithubToken(req, res); if (!rec) return;
+    const { repo, path: p = '' } = req.query;
+    if (!REPO_RE.test(repo || '') || !isSafePath(p)) return res.status(400).json({ error: 'مدخلات غير صالحة' });
+    try { res.json({ items: await ghFiles.listContents(rec.token, repo, p) }); }
+    catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+
+app.get('/api/admin/github/file', verifyToken, adminOnly, async (req, res) => {
+    const rec = await requireGithubToken(req, res); if (!rec) return;
+    const { repo, path: p } = req.query;
+    if (!REPO_RE.test(repo || '') || !isSafePath(p) || !p) return res.status(400).json({ error: 'مدخلات غير صالحة' });
+    try { res.json(await ghFiles.getFile(rec.token, repo, p)); }
+    catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+
+app.put('/api/admin/github/file', verifyToken, adminOnly, async (req, res) => {
+    const rec = await requireGithubToken(req, res); if (!rec) return;
+    const { repo, path: p, content, message, sha, branch } = req.body || {};
+    if (!REPO_RE.test(repo || '') || !isSafePath(p) || !p) return res.status(400).json({ error: 'مدخلات غير صالحة' });
+    if (typeof content !== 'string') return res.status(400).json({ error: 'المحتوى مطلوب' });
+    if (content.length > 1_000_000) return res.status(413).json({ error: 'الملف كبير جداً (>1MB)' });
+    try { res.json({ success: true, ...(await ghFiles.putFile(rec.token, repo, p, content, message, sha, branch)) }); }
+    catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
 // ─── معالج أخطاء عام ────────────────────────────────────────────────
