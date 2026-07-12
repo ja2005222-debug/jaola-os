@@ -533,10 +533,15 @@ function BackendTeamTab({ api }) {
   const tr = useI18n(s => s.t);
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
+  const [active, setActive] = useState('backend');
   useEffect(() => { api('/api/admin/backend-team').then(setData).catch(e => setErr(e.message)); }, [api]);
 
   if (err) return <div><Header title={tr('admTeamTitle')} /><Muted>{err}</Muted></div>;
   if (!data) return <div><Header title={tr('admTeamTitle')} /><Muted>{tr('admTeamLoading')}</Muted></div>;
+
+  // توافق: إن لم يرجع الخادم teams، ابنِ واحداً من الحقول القديمة
+  const teams = data.teams || [{ key: 'backend', label: 'Backend', plan: data.plan, agents: data.agents }];
+  const team = teams.find(t => t.key === active) || teams[0];
 
   const Section = ({ label, items }) => (
     <div style={{ marginTop: 8 }}>
@@ -551,21 +556,34 @@ function BackendTeamTab({ api }) {
     <div>
       <Header title={tr('admTeamTitle')} />
       <p style={{ color: S.muted, fontSize: 13, lineHeight: 1.8, marginBottom: 12 }}>{tr('admTeamIntro')}</p>
+      {/* مبدّل الفرق */}
+      {teams.length > 1 && (
+        <div style={{ display: 'inline-flex', background: 'rgba(255,255,255,0.04)', borderRadius: 9, padding: 3, marginBottom: 14 }}>
+          {teams.map(t => (
+            <button key={t.key} onClick={() => setActive(t.key)}
+              style={{ padding: '7px 16px', borderRadius: 7, border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                background: active === t.key ? 'linear-gradient(135deg,#3b82f6,#8b5cf6)' : 'transparent',
+                color: active === t.key ? '#fff' : S.muted }}>
+              {t.key === 'frontend' ? '🎨' : '🏛️'} {t.label} ({t.agents.length})
+            </button>
+          ))}
+        </div>
+      )}
       {/* ترتيب التنفيذ */}
       <div style={{ ...cardStyle, padding: 12, marginBottom: 16 }}>
         <div style={{ fontSize: 11, color: S.muted, fontWeight: 700, marginBottom: 8 }}>{tr('admTeamOrder')}</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-          {data.plan.map((p, i) => (
+          {team.plan.map((p, i) => (
             <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
               <span style={{ background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: 7, padding: '4px 10px', fontSize: 12, color: '#93c5fd', fontWeight: 700 }}>{p.icon} {p.role}</span>
-              {i < data.plan.length - 1 && <span style={{ color: S.muted }}>→</span>}
+              {i < team.plan.length - 1 && <span style={{ color: S.muted }}>→</span>}
             </span>
           ))}
         </div>
       </div>
       {/* بطاقات الوكلاء */}
       <div style={{ display: 'grid', gap: 12 }}>
-        {data.agents.map(a => (
+        {team.agents.map(a => (
           <div key={a.id} style={{ ...cardStyle }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
               <span style={{ fontSize: 20 }}>{a.icon}</span>

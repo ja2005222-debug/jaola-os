@@ -78,6 +78,9 @@ export function defineAgent(spec) {
         neverDo: [...spec.neverDo],
         // اختياري: ترتيب التنفيذ ومتطلّباته
         dependsOn: Array.isArray(spec.dependsOn) ? [...spec.dependsOn] : [],
+        // اختياري: سلوك التنفيذ (يجعل المنسّق عاماً بلا معرّفات مثبّتة)
+        modifier: spec.modifier === true,           // يعدّل ملفات سابقة (يستقبل الملفات الحالية)
+        debugFor: typeof spec.debugFor === 'string' ? spec.debugFor : null, // id لوكيل QA؛ يعمل فقط عند فشله
     };
 }
 
