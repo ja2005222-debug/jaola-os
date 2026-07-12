@@ -4,6 +4,7 @@ import { useSocket, socket } from '../hooks/useSocket.js';
 import { useIsMobile } from '../hooks/useIsMobile.js';
 import { MonacoWorkspace } from '../components/editor/MonacoWorkspace.jsx';
 import { MissionProgress } from '../components/MissionProgress.jsx';
+import { Markdown } from '../components/Markdown.jsx';
 import { PreviewPanel } from '../components/PreviewPanel.jsx';
 import { TimelinePanel } from '../components/TimelinePanel.jsx';
 import { useJaolaStore } from '../store/useJaolaStore.js';
@@ -126,7 +127,7 @@ function FeedItem({ msg, onOption }) {
       <div style={{ width:28, height:28, borderRadius:8, background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, flexShrink:0, marginTop:2 }}>⚡</div>
       <div style={{ background:'rgba(15,23,42,0.8)', border:'1px solid rgba(59,130,246,0.15)', borderRadius:'2px 12px 12px 12px', padding:'10px 14px', maxWidth:'85%', fontSize:12, color:'#cbd5e1', lineHeight:1.7 }}>
         <div style={{ fontSize:9, color:'#3b82f6', fontWeight:700, marginBottom:4, letterSpacing:'0.5px', textTransform:'uppercase' }}>JAOLA OS</div>
-        <span style={{ whiteSpace:'pre-wrap' }}>{msg.text}</span>
+        <Markdown text={msg.text} />
 
         {/* 🔟 اقتراحات استباقية — أزرار الخطوة التالية */}
         {Array.isArray(msg.options) && msg.options.length > 0 && (
