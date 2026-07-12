@@ -12,14 +12,14 @@ import { useI18n } from '../i18n.js';
 import { LanguageSwitcher } from '../components/LanguageSwitcher.jsx';
 
 const QUICK_BUILDS = [
-  { icon: '⚡', label: 'SaaS', prompt: 'ابني منصة SaaS متكاملة مع اشتراكات' },
-  { icon: '✈️', label: 'Travel', prompt: 'ابني منصة سفر فاخرة مع حجز' },
-  { icon: '🍽️', label: 'Restaurant', prompt: 'ابني موقع مطعم فاخر مع حجز طاولات' },
-  { icon: '🎬', label: 'Cinema', prompt: 'ابني منصة سينما مع حجز تذاكر' },
-  { icon: '📊', label: 'Dashboard', prompt: 'ابني لوحة تحكم تحليلية احترافية' },
-  { icon: '📱', label: 'Mobile App', prompt: 'ابني تطبيق جوال عصري' },
-  { icon: '💼', label: 'CRM', prompt: 'ابني نظام إدارة علاقات عملاء' },
-  { icon: '🏢', label: 'ERP', prompt: 'ابني نظام تخطيط موارد مؤسسة' },
+  { icon: '⚡', label: 'SaaS', promptKey: 'qbSaaS' },
+  { icon: '✈️', label: 'Travel', promptKey: 'qbTravel' },
+  { icon: '🍽️', label: 'Restaurant', promptKey: 'qbRestaurant' },
+  { icon: '🎬', label: 'Cinema', promptKey: 'qbCinema' },
+  { icon: '📊', label: 'Dashboard', promptKey: 'qbDashboard' },
+  { icon: '📱', label: 'Mobile App', promptKey: 'qbMobile' },
+  { icon: '💼', label: 'CRM', promptKey: 'qbCRM' },
+  { icon: '🏢', label: 'ERP', promptKey: 'qbERP' },
 ];
 
 const BOOT_STEPS = [
@@ -244,7 +244,7 @@ export default function Dashboard() {
     if (logs.length > 0) {
       const last = logs[logs.length - 1];
       if (last?.message?.includes('✨ نجاح')) {
-        addNotification('✅ البناء اكتمل بنجاح!', 'success');
+        addNotification(t('nBuildDone'), 'success');
         if (isMobile) setMobileView('preview'); else setActiveTab('preview');
       }
     }
@@ -280,11 +280,11 @@ export default function Dashboard() {
 
   const handleDeploy = async () => {
     setIsDeploying(true);
-    addNotification('🚀 جاري النشر على Vercel...', 'info');
+    addNotification(t('nDeploying'), 'info');
     try {
       await fetch(`${BACKEND_URL}/api/deploy`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ project: activeProject }) });
     } catch {}
-    setTimeout(() => { setIsDeploying(false); addNotification('✅ تم النشر بنجاح!', 'success'); }, 8000);
+    setTimeout(() => { setIsDeploying(false); addNotification(t('nDeployed'), 'success'); }, 8000);
   };
 
   // ⏹️ إيقاف المهمة الجارية
@@ -292,7 +292,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${BACKEND_URL}/api/ai/abort`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ project: activeProject }) });
       const d = await res.json();
-      addNotification(d.aborted ? '⏹️ جاري إيقاف المهمة...' : 'لا توجد مهمة نشطة', 'info');
+      addNotification(d.aborted ? t('nStopping') : t('nNoMission'), 'info');
     } catch {}
   };
 
@@ -319,11 +319,11 @@ export default function Dashboard() {
       const res = await fetch(`${BACKEND_URL}/api/github/connect`, { method: 'POST', headers: getHeaders(), body: JSON.stringify(body) });
       const d = await res.json();
       if (res.ok) {
-        addNotification('🐙 تم ربط GitHub بنجاح', 'success');
+        addNotification(t('nGithubLinked'), 'success');
         setGhForm(f => ({ ...f, pat: '' }));
         setShowGithubModal(false);
       } else {
-        addNotification(`❌ ${d.error || 'فشل الربط'}`, 'info');
+        addNotification(`❌ ${d.error || t('linkFail')}`, 'info');
       }
     } catch {}
     setIsGhSaving(false);
@@ -333,7 +333,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${BACKEND_URL}/api/github/push`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ project: activeProject }) });
       const d = await res.json();
-      addNotification(res.ok ? '🐙 جاري الدفع إلى GitHub... تابع الشات' : `❌ ${d.error || 'فشل الدفع'}`, 'info');
+      addNotification(res.ok ? t('pushingGithub') : `❌ ${d.error || t('pushFail')}`, 'info');
       if (res.ok) setShowGithubModal(false);
     } catch {}
   };
@@ -360,12 +360,12 @@ export default function Dashboard() {
         handleSwitchProject(d.activeProject || name);
         setShowProjectModal(false);
         setNewProjectName('');
-        addNotification(`✅ تم إنشاء المشروع "${d.activeProject || name}"`, 'success');
+        addNotification(`${t('nProjectCreated')} "${d.activeProject || name}"`, 'success');
       } else {
-        setCreateError(d.error || 'فشل إنشاء المشروع.');
+        setCreateError(d.error || t('createProjectFail'));
       }
     } catch {
-      setCreateError('تعذّر الاتصال بالخادم.');
+      setCreateError(t('serverConnFail'));
     }
     setIsCreating(false);
   };
@@ -391,10 +391,10 @@ export default function Dashboard() {
         localStorage.setItem('token', d.token); localStorage.setItem('currentUser', uname);
         localStorage.removeItem('loggedOut');
       } else {
-        setAuthError(d.error || (authMode === 'register' ? 'فشل إنشاء الحساب.' : 'فشل تسجيل الدخول.'));
+        setAuthError(d.error || (authMode === 'register' ? t('registerFail') : t('loginFail')));
       }
     } catch {
-      setAuthError('تعذّر الاتصال بالخادم — حاول مرة أخرى.');
+      setAuthError(t('serverConnRetry'));
     }
     setIsLoggingIn(false);
   };
@@ -477,7 +477,7 @@ export default function Dashboard() {
           <button type="submit" disabled={isLoggingIn}
             style={{ background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', border:'none', borderRadius:8, padding:13, color:'#fff', fontWeight:700, cursor:'pointer', fontSize:14, fontFamily:S.font, opacity: isLoggingIn ? 0.7 : 1 }}>
             {isLoggingIn
-              ? (authMode === 'register' ? '...' : '...')
+              ? (authMode === 'register' ? t('registering') : t('signingIn'))
               : (authMode === 'register' ? `✨ ${t('register')}` : `⚡ ${t('enterMission')}`)}
           </button>
         </form>
@@ -511,7 +511,7 @@ export default function Dashboard() {
     }}>
       <div style={{ width:7, height:7, borderRadius:'50%', background:'#f59e0b', animation:'pulse 1s infinite', flexShrink:0 }} />
       <span style={{ fontSize:11, color:'#fbbf24', fontWeight:600 }}>
-        {connectionError || 'انقطع الاتصال بالخادم — جاري إعادة الاتصال تلقائياً...'}
+        {connectionError || t('connectionLost')}
       </span>
     </div>
   );
@@ -522,8 +522,8 @@ export default function Dashboard() {
       {chatMessages.length === 0 && !isBuilding && (
         <div style={{ textAlign:'center', color:S.muted, fontSize:12, marginTop:40, lineHeight:2 }}>
           <div style={{ fontSize:28, marginBottom:8 }}>⚡</div>
-          أخبرني ماذا تريد أن نبني اليوم؟<br/>
-          <span style={{ fontSize:11, color:'#334155' }}>سأعرض لك هنا كل خطوة أثناء التنفيذ — لحظة بلحظة</span>
+          {t('feedAsk')}<br/>
+          <span style={{ fontSize:11, color:'#334155' }}>{t('feedHint')}</span>
         </div>
       )}
       {chatMessages.map((msg, i) => <FeedItem key={i} msg={msg} onOption={handleOptionClick} />)}
@@ -533,7 +533,7 @@ export default function Dashboard() {
       {isSending && !isBuilding && (
         <div style={{ display:'flex', alignItems:'center', gap:8, padding:'4px 0' }}>
           <div style={{ width:6, height:6, borderRadius:'50%', background:'#3b82f6', animation:'pulse 0.9s infinite' }} />
-          <span style={{ fontSize:11, color:'#64748b' }}>JAOLA يستلم المهمة...</span>
+          <span style={{ fontSize:11, color:'#64748b' }}>{t('receiving')}</span>
         </div>
       )}
       <div ref={feedEndRef} />
@@ -545,8 +545,8 @@ export default function Dashboard() {
       <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:8 }}>{t('quickLaunch')}</div>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
         {QUICK_BUILDS.map((b, i) => (
-          <button key={i} onClick={() => { setPrompt(b.prompt); textareaRef.current?.focus(); }}
-            style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 10px', color:'#64748b', fontSize:11, textAlign:'right', display:'flex', alignItems:'center', gap:6 }}>
+          <button key={i} onClick={() => { setPrompt(t(b.promptKey)); textareaRef.current?.focus(); }}
+            style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 10px', color:'#64748b', fontSize:11, textAlign:'start', display:'flex', alignItems:'center', gap:6 }}>
             <span style={{ fontSize:14 }}>{b.icon}</span><span>{b.label}</span>
           </button>
         ))}
@@ -597,19 +597,19 @@ export default function Dashboard() {
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
       onClick={e => e.target === e.currentTarget && setShowGithubModal(false)}>
       <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:'24px 22px', width:'min(420px, 100%)', maxHeight:'90dvh', overflowY:'auto' }}>
-        <h3 style={{ color:'#fff', fontSize:15, fontWeight:800, marginBottom:6 }}>🐙 GitHub Integration</h3>
+        <h3 style={{ color:'#fff', fontSize:15, fontWeight:800, marginBottom:6 }}>🐙 {t('ghIntegration')}</h3>
         <p style={{ color:S.muted, fontSize:12, marginBottom:16 }}>
-          اربط المشروع ({activeProject}) بمستودع GitHub — مع دفع تلقائي بعد كل بناء ناجح.
-          {ghStatus?.connected && <span style={{ color:'#10b981' }}> ● مرتبط حالياً</span>}
+          {activeProject}
+          {ghStatus?.connected && <span style={{ color:'#10b981' }}> {t('ghConnected')}</span>}
         </p>
 
-        <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>REPOSITORY URL</label>
+        <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>{t('ghRepoUrl')}</label>
         <input value={ghForm.repoUrl} onChange={e => setGhForm(f => ({ ...f, repoUrl: e.target.value }))}
           placeholder="https://github.com/username/repo.git" dir="ltr"
           style={{ width:'100%', background:'#161b22', border:`1px solid ${S.border}`, borderRadius:8, padding:'10px 12px', color:'#fff', fontSize:13, margin:'6px 0 12px', fontFamily:'monospace' }} />
 
         <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>
-          PERSONAL ACCESS TOKEN {ghStatus?.hasToken && <span style={{ color:'#10b981', fontWeight:400 }}>(محفوظ مشفراً — اتركه فارغاً للإبقاء عليه)</span>}
+          {t('ghToken')} {ghStatus?.hasToken && <span style={{ color:'#10b981', fontWeight:400 }}>{t('ghTokenSaved')}</span>}
         </label>
         <input value={ghForm.pat} onChange={e => setGhForm(f => ({ ...f, pat: e.target.value }))}
           placeholder="ghp_..." type="password" dir="ltr"
@@ -617,7 +617,7 @@ export default function Dashboard() {
 
         <div style={{ display:'flex', gap:12, alignItems:'center', marginBottom:16, flexWrap:'wrap' }}>
           <div style={{ flex:1, minWidth:120 }}>
-            <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>BRANCH</label>
+            <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>{t('ghBranch')}</label>
             <input value={ghForm.branch} onChange={e => setGhForm(f => ({ ...f, branch: e.target.value }))}
               placeholder="main" dir="ltr"
               style={{ width:'100%', background:'#161b22', border:`1px solid ${S.border}`, borderRadius:8, padding:'10px 12px', color:'#fff', fontSize:13, marginTop:6, fontFamily:'monospace' }} />
@@ -626,26 +626,26 @@ export default function Dashboard() {
             <input type="checkbox" checked={ghForm.autoCommit}
               onChange={e => setGhForm(f => ({ ...f, autoCommit: e.target.checked }))}
               style={{ accentColor:'#3b82f6', width:15, height:15 }} />
-            Auto-push بعد البناء
+            {t('ghAutoPush')}
           </label>
         </div>
 
         {ghStatus?.lastCommit && (
-          <p style={{ color:S.muted, fontSize:10, marginBottom:12 }}>آخر دفع: {new Date(ghStatus.lastCommit).toLocaleString('ar')}</p>
+          <p style={{ color:S.muted, fontSize:10, marginBottom:12 }}>{t('ghLastPush')} {new Date(ghStatus.lastCommit).toLocaleString()}</p>
         )}
 
         <div style={{ display:'flex', gap:10, justifyContent:'flex-end', flexWrap:'wrap' }}>
           <button onClick={() => setShowGithubModal(false)}
-            style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 16px', color:S.muted, fontSize:13 }}>Cancel</button>
+            style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 16px', color:S.muted, fontSize:13 }}>{t('cancel')}</button>
           {ghStatus?.connected && (
             <button onClick={handleGithubPush}
               style={{ background:'rgba(16,185,129,0.1)', border:'1px solid rgba(16,185,129,0.3)', borderRadius:8, padding:'8px 16px', color:'#10b981', fontWeight:700, fontSize:13 }}>
-              ⬆ Push Now
+              {t('ghPushNow')}
             </button>
           )}
           <button onClick={handleGithubConnect} disabled={isGhSaving}
             style={{ background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', border:'none', borderRadius:8, padding:'8px 20px', color:'#fff', fontWeight:700, fontSize:13, opacity: isGhSaving ? 0.7 : 1 }}>
-            {isGhSaving ? 'جاري الحفظ...' : 'Save & Connect'}
+            {isGhSaving ? t('ghSaving') : t('ghSaveConnect')}
           </button>
         </div>
       </div>
@@ -656,8 +656,8 @@ export default function Dashboard() {
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
       onClick={e => e.target === e.currentTarget && setShowProjectModal(false)}>
       <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:28, width:'min(360px, 100%)' }}>
-        <h3 style={{ color:'#fff', fontSize:15, fontWeight:800, marginBottom:6 }}>New Project</h3>
-        <p style={{ color:S.muted, fontSize:12, marginBottom:16 }}>اسم المشروع بالإنجليزية (بدون مسافات)</p>
+        <h3 style={{ color:'#fff', fontSize:15, fontWeight:800, marginBottom:6 }}>{t('newProjectTitle')}</h3>
+        <p style={{ color:S.muted, fontSize:12, marginBottom:16 }}>{t('projectNameHint')}</p>
         <input value={newProjectName} onChange={e => { setNewProjectName(e.target.value); setCreateError(''); }}
           onKeyDown={e => e.key === 'Enter' && handleCreateProject()}
           placeholder="my-awesome-project" autoFocus dir="ltr"
@@ -667,10 +667,10 @@ export default function Dashboard() {
         )}
         <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
           <button onClick={() => { setShowProjectModal(false); setCreateError(''); }}
-            style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 16px', color:S.muted, fontSize:13 }}>Cancel</button>
+            style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 16px', color:S.muted, fontSize:13 }}>{t('cancel')}</button>
           <button onClick={handleCreateProject} disabled={isCreating}
             style={{ background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', border:'none', borderRadius:8, padding:'8px 20px', color:'#fff', fontWeight:700, fontSize:13, opacity: isCreating ? 0.6 : 1 }}>
-            {isCreating ? 'جاري الإنشاء...' : 'Create'}
+            {isCreating ? t('creating') : t('create')}
           </button>
         </div>
       </div>
@@ -726,11 +726,11 @@ export default function Dashboard() {
               <div style={{ padding:'10px 12px', borderTop:`1px solid ${S.border}`, flexShrink:0, display:'flex', gap:8, alignItems:'flex-end', background:S.bg2 }}>
                 <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                  placeholder="ماذا تريد أن نبني؟"
+                  placeholder={t('mobilePrompt')}
                   rows={2}
                   style={{ flex:1, background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:12, padding:'10px 12px', color:S.text, fontSize:16, resize:'none', lineHeight:1.5 }} />
                 {(isBuilding || isSending) && (
-                  <button onClick={handleAbort} title="إيقاف"
+                  <button onClick={handleAbort} title={t('stopTitle')}
                     style={{ width:44, height:44, borderRadius:12, background:'rgba(239,68,68,0.12)', border:'1px solid rgba(239,68,68,0.35)', color:'#f87171', fontSize:16, flexShrink:0 }}>⏹</button>
                 )}
                 <button onClick={handleSend} disabled={isSending || !prompt.trim()}
@@ -764,7 +764,7 @@ export default function Dashboard() {
             <div style={{ flex:1, display:'flex', flexDirection:'column', minHeight:0 }}>
               {/* تبديل: السجل الحي / الخط الزمني */}
               <div style={{ display:'flex', gap:4, padding:'8px 12px', borderBottom:`1px solid ${S.border}`, flexShrink:0 }}>
-                {[['logs','📋 السجل الحي'],['timeline','🕘 الخط الزمني']].map(([mode, label]) => (
+                {[['logs',t('liveLog')],['timeline',t('timelineTab')]].map(([mode, label]) => (
                   <button key={mode} onClick={() => setMobileLogsMode(mode)}
                     style={{
                       flex:1, padding:'6px', borderRadius:7, fontSize:11, fontWeight:700,
@@ -779,7 +779,7 @@ export default function Dashboard() {
               <div style={{ flex:1, minHeight:0, overflow:'hidden' }}>
                 {mobileLogsMode === 'logs' ? logsView : (
                   <TimelinePanel activeProject={activeProject} token={token}
-                    onRestored={(h) => { addNotification(`⏪ استُرجع المشروع إلى (${h})`, 'success'); refreshPreview(); }} />
+                    onRestored={(h) => { addNotification(`${t('nRestored')} (${h})`, 'success'); refreshPreview(); }} />
                 )}
               </div>
             </div>
@@ -858,7 +858,7 @@ export default function Dashboard() {
         <div style={{ width:1, height:20, background:S.border }} />
 
         {/* GitHub */}
-        <button onClick={openGithubModal} title="ربط المشروع بـ GitHub"
+        <button onClick={openGithubModal} title={t('githubTitle')}
           style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 12px', color:'#94a3b8', fontSize:11, fontWeight:600 }}>
           🐙 GitHub
         </button>
@@ -884,7 +884,7 @@ export default function Dashboard() {
           <span style={{ fontSize:11, fontWeight:700, color:'#94a3b8' }}>{(authUser || '').toUpperCase()}</span>
         </div>
 
-        <a href="/admin" title="لوحة التحكم (للمشرفين)"
+        <a href="/admin" title={t('adminTitle')}
           style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 10px', color:S.muted, fontSize:13, textDecoration:'none' }}>
           ⚙️
         </a>
@@ -960,7 +960,7 @@ export default function Dashboard() {
                 {!isSending && <span style={{ opacity:0.6, fontSize:10 }}>↵</span>}
               </button>
               {(isBuilding || isSending) && (
-                <button onClick={handleAbort} title="إيقاف المهمة الجارية"
+                <button onClick={handleAbort} title={t('stopMission')}
                   style={{
                     background:'rgba(239,68,68,0.12)', border:'1px solid rgba(239,68,68,0.35)',
                     borderRadius:7, padding:'8px 14px', color:'#f87171', fontSize:12, fontWeight:700,
@@ -995,7 +995,7 @@ export default function Dashboard() {
             ))}
             {logs.some(l => l.message?.includes('✨')) && (
               <div style={{ marginRight:4, display:'flex', alignItems:'center', gap:4, fontSize:11, color:'#10b981', marginLeft:8 }}>
-                <div style={{ width:5, height:5, borderRadius:'50%', background:'#10b981', animation:'pulse 1s infinite' }} /> Build Complete
+                <div style={{ width:5, height:5, borderRadius:'50%', background:'#10b981', animation:'pulse 1s infinite' }} /> {t('buildComplete')}
               </div>
             )}
           </div>
@@ -1007,7 +1007,7 @@ export default function Dashboard() {
             {activeTab === 'logs' && logsView}
             {activeTab === 'timeline' && (
               <TimelinePanel activeProject={activeProject} token={token}
-                onRestored={(h) => { addNotification(`⏪ استُرجع المشروع إلى (${h})`, 'success'); refreshPreview(); }} />
+                onRestored={(h) => { addNotification(`${t('nRestored')} (${h})`, 'success'); refreshPreview(); }} />
             )}
           </div>
 
