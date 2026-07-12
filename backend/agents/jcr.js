@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { groq } from './baseAgent.js';
+import { groq, smartChat } from './baseAgent.js';
+import { runBackendTeam } from './backendTeam/index.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO } from './languageDetector.js';
 import { getLanguageDecision, buildLanguagePrompt } from './languageManager.js';
@@ -535,9 +536,35 @@ export class JaolaCognitiveRuntime {
             // 🆕 مرحلة Backend — إذا كان المشروع يحتاج خادماً
             if (agents.needsBackend && agents.needsBackend(context.goal)) {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', '⚙️ المشروع يحتاج خادماً — جاري توليد APIs...');
+
+                // 👥 فريق الوكلاء الخلفي المتخصص — تخطيط تعاوني قبل التوليد (best-effort)
+                let teamGuidance = '';
+                try {
+                    const buildLang = getUserLanguage(context.username) || 'en';
+                    const team = await runBackendTeam(context.goal, {
+                        lang: buildLang,
+                        llm: (messages, options) => smartChat(messages, options),
+                        onEvent: (evt) => {
+                            if (evt.type === 'agent_start') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `${evt.icon} ${evt.role} يعمل...`);
+                            else if (evt.type === 'agent_done') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `✅ ${evt.role}: ${evt.summary}`);
+                            else if (evt.type === 'agent_skipped') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `⏭️ ${evt.role} (${evt.reason})`);
+                            else if (evt.type === 'agent_error') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `⚠️ ${evt.role}: ${evt.error}`);
+                        },
+                    });
+                    if (team.mode === 'execute') {
+                        // احفظ خطة الفريق ومخرجاته كوثيقة مرجعية
+                        const doc = [`# Backend Team Plan\n`, `> ${team.summary}\n`,
+                            ...team.results.filter(r => !r.skipped && !r.error).map(r => `## ${r.role}\n${r.summary}\n`)].join('\n');
+                        await fsPromises.writeFile(path.join(context.projectPath, 'BACKEND_TEAM.md'), doc).catch(() => {});
+                        teamGuidance = `\n\n## توجيهات فريق الخلفية المتخصص (اتبعها):\n${team.results.filter(r => r.summary).map(r => `- ${r.role}: ${r.summary}`).join('\n')}`;
+                    }
+                } catch (e) {
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `⚠️ تخطّي فريق الخلفية: ${e.message}`);
+                }
+
                 try {
                     const frontendContext = await this.readCurrentCodeContextAsync(context.projectPath);
-                    const backendResult = await agents.generateBackend(context.goal, frontendContext);
+                    const backendResult = await agents.generateBackend(context.goal + teamGuidance, frontendContext);
 
                     if (backendResult.success && backendResult.files.length > 0) {
                         // 🛡️ فحص ملفات الـ Backend قبل الحفظ
