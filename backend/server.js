@@ -46,6 +46,8 @@ import * as oauth from './services/oauthLite.js';
 import * as ghFiles from './services/githubFiles.js';
 import { teamPlan, BACKEND_TEAM } from './agents/backendTeam/index.js';
 import { frontendTeamPlan, FRONTEND_TEAM } from './agents/frontendTeam/index.js';
+import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
+import { getProjectMemory } from './agents/projectMemory.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
 import { buildMetricsPayload } from './services/metricsStore.js';
 import { queueStatus } from './services/missionQueue.js';
@@ -941,6 +943,17 @@ import { getProjectSummary } from './agents/stateMachine.js';
 app.get('/api/project/state', verifyToken, validateProjectOwnership, async (req, res) => {
     const summary = getProjectSummary(req.user.username, req.activeProject);
     res.json({ success: true, ...summary });
+});
+
+// 🧠 Project Brain — فهم المشروع كاملاً (ملفات + قرارات + أُنجز/متبقٍّ)
+app.get('/api/project/brain', verifyToken, validateProjectOwnership, async (req, res) => {
+    try {
+        const files = await scanProjectFiles(req.projectPath);
+        const mem = getProjectMemory(req.user.username, req.activeProject);
+        res.json({ success: true, brain: buildProjectBrain(mem, files) });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 app.post('/api/github/push', verifyToken, validate(schemas.githubPush), validateProjectOwnership, async (req, res) => {
