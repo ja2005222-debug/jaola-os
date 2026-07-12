@@ -127,7 +127,16 @@ function FeedItem({ msg, onOption }) {
       <div style={{ width:28, height:28, borderRadius:8, background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, flexShrink:0, marginTop:2 }}>⚡</div>
       <div style={{ background:'rgba(15,23,42,0.8)', border:'1px solid rgba(59,130,246,0.15)', borderRadius:'2px 12px 12px 12px', padding:'10px 14px', maxWidth:'85%', fontSize:12, color:'#cbd5e1', lineHeight:1.7 }}>
         <div style={{ fontSize:9, color:'#3b82f6', fontWeight:700, marginBottom:4, letterSpacing:'0.5px', textTransform:'uppercase' }}>JAOLA OS</div>
-        <Markdown text={msg.text} />
+        {msg.streaming && !msg.text
+          ? <span style={{ display:'inline-flex', gap:3 }}>
+              <span style={{ width:5, height:5, borderRadius:'50%', background:'#60a5fa', animation:'typing 1s infinite' }} />
+              <span style={{ width:5, height:5, borderRadius:'50%', background:'#60a5fa', animation:'typing 1s infinite 0.2s' }} />
+              <span style={{ width:5, height:5, borderRadius:'50%', background:'#60a5fa', animation:'typing 1s infinite 0.4s' }} />
+            </span>
+          : <span style={{ display:'inline' }}>
+              <Markdown text={msg.text} />
+              {msg.streaming && <span style={{ display:'inline-block', width:7, height:14, background:'#60a5fa', marginInlineStart:2, verticalAlign:'text-bottom', animation:'blink 1s step-end infinite' }} />}
+            </span>}
 
         {/* 🔟 اقتراحات استباقية — أزرار الخطوة التالية */}
         {Array.isArray(msg.options) && msg.options.length > 0 && (
@@ -529,6 +538,8 @@ export default function Dashboard() {
     @keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
     @keyframes agentPulse{0%,100%{box-shadow:0 0 8px rgba(59,130,246,0.2)}50%{box-shadow:0 0 20px rgba(59,130,246,0.5)}}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+    @keyframes typing{0%,60%,100%{transform:translateY(0);opacity:0.5}30%{transform:translateY(-4px);opacity:1}}
     *{box-sizing:border-box}
     ::-webkit-scrollbar{width:3px;height:3px}
     ::-webkit-scrollbar-track{background:transparent}

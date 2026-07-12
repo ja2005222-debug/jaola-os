@@ -133,6 +133,32 @@ export function useSocket(isAuthenticated, handleAuthError) {
       });
     });
 
+    // 🔴 البثّ الحيّ للرد — يظهر حرفاً-بحرف
+    socket.off('chat_stream_start').on('chat_stream_start', () => {
+      setChatMessages((prev) => [...prev, { sender: 'assistant', text: '', streaming: true, timestamp: Date.now() }]);
+    });
+    socket.off('chat_stream_chunk').on('chat_stream_chunk', (data) => {
+      const delta = data?.delta || '';
+      if (!delta) return;
+      setChatMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (!last || !last.streaming) return prev;
+        const copy = prev.slice(0, -1);
+        return [...copy, { ...last, text: last.text + delta }];
+      });
+    });
+    socket.off('chat_stream_end').on('chat_stream_end', (data) => {
+      setChatMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (!last || !last.streaming) {
+          // لم تصل بداية البثّ لأي سبب — أضِف الرد النهائي كرسالة عادية
+          return [...prev, { sender: 'assistant', text: data?.message || '', timestamp: Date.now() }];
+        }
+        const copy = prev.slice(0, -1);
+        return [...copy, { ...last, text: data?.message ?? last.text, streaming: false }];
+      });
+    });
+
     socket.off('chat_history').on('chat_history', (history) => {
       if (!history?.length) return;
       setChatMessages(prev => {
@@ -232,6 +258,9 @@ export function useSocket(isAuthenticated, handleAuthError) {
       socket.off('project_metrics');
       socket.off('log');
       socket.off('chat_reply');
+      socket.off('chat_stream_start');
+      socket.off('chat_stream_chunk');
+      socket.off('chat_stream_end');
       socket.off('chat_history');
       socket.off('connect_error');
       socket.off('connect');
