@@ -861,15 +861,24 @@ User preferences: ${JSON.stringify(execMemory)}` },
             : '⚠️ AI service is momentarily busy (rate limited after the build) — resend your message in a few seconds.';
 
         // محاولتان مع مهلة قصيرة — أغلب حالات rate limit تنجح في الثانية
+        // 🔴 بثّ حيّ: الرد يظهر حرفاً-بحرف بدل دفعة واحدة (إحساس بالحياة)
+        let streamed = false;
         for (let attempt = 1; attempt <= 2; attempt++) {
             try {
-                const completion = await groq.chat.completions.create({
+                const stream = await groq.chat.completions.create({
                     messages,
                     model: "llama-3.3-70b-versatile",
                     max_tokens: 200,
-                    temperature: 0.6
+                    temperature: 0.6,
+                    stream: true,
                 });
-                reply = completion.choices[0].message.content;
+                this.io.to(roomName).emit('chat_stream_start', {});
+                let acc = '';
+                for await (const chunk of stream) {
+                    const delta = chunk.choices?.[0]?.delta?.content || '';
+                    if (delta) { acc += delta; this.io.to(roomName).emit('chat_stream_chunk', { delta }); }
+                }
+                if (acc.trim()) { reply = acc; streamed = true; }
                 break;
             } catch (e) {
                 console.error(`Chat error (attempt ${attempt}):`, e.message || e);
@@ -883,7 +892,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
         } else {
             this.conversationBuffer.set(username, history.slice(-MAX_HISTORY));
         }
-        this.emitChatReply(roomName, reply);
+        // أنهِ البثّ بالنسخة النهائية (يستبدل النص المتراكم ويثبّته)؛
+        // وإن لم ينجح البثّ (rate limit) أرسل الرد دفعة واحدة كالمعتاد
+        if (streamed) this.io.to(roomName).emit('chat_stream_end', { message: reply });
+        else this.emitChatReply(roomName, reply);
         this.emitLiveLog(roomName, '💬 Assistant', 'Chat Reply', reply);
         return reply;
     }
