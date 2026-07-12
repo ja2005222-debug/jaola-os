@@ -64,18 +64,19 @@ function refactorCSS(content) {
 // ═══════════════════════════════════════════════════════
 // 📄 تنظيف HTML
 // ═══════════════════════════════════════════════════════
-function refactorHTML(content) {
+function refactorHTML(content, lang = 'en') {
     if (!content) return content;
     let result = content;
+    const code = (lang || 'en').toLowerCase();
 
     // إزالة attributes فارغة
     result = result.replace(/\s+class=""\s*/g, ' ');
     result = result.replace(/\s+style=""\s*/g, ' ');
     result = result.replace(/\s+id=""\s*/g, ' ');
 
-    // تأكد من وجود lang
+    // تأكد من وجود lang (بلغة المستخدم لا العربية افتراضياً)
     if (!result.includes('lang=')) {
-        result = result.replace('<html', '<html lang="ar"');
+        result = result.replace('<html', `<html lang="${code}"`);
     }
 
     // تأكد من وجود charset
@@ -101,7 +102,7 @@ function analyzeCode(before, after) {
 // ═══════════════════════════════════════════════════════
 // 🚀 الدالة الرئيسية
 // ═══════════════════════════════════════════════════════
-export async function refactorCode(files) {
+export async function refactorCode(files, lang = 'en') {
     const results = [];
     let totalReduction = 0;
     const improvements = [];
@@ -127,7 +128,7 @@ export async function refactorCode(files) {
                 improvements.push(`${name}: -${analysis.reduction} سطر`);
             }
         } else if (name.endsWith('.html')) {
-            newContent = refactorHTML(file.content);
+            newContent = refactorHTML(file.content, lang);
         }
 
         return { ...file, content: newContent };
