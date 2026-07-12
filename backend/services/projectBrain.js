@@ -1,66 +1,139 @@
-import fs from 'fs/promises';
+/**
+ * 🧠 Project Brain — فهم المشروع كاملاً (لا الرسالة الأخيرة فقط)
+ *
+ * يدمج ثلاثة مصادر في صورة واحدة يجيب منها الشات:
+ *   1) الملفات الفعلية على القرص  2) ذاكرة المشروع (قرارات/تاريخ)  3) دفتر ما أُنجز/ما تبقّى
+ *
+ * buildProjectBrain دالة نقية (تقبل mem + files) → قابلة للاختبار بلا قرص.
+ */
+
+import { promises as fsp } from 'fs';
 import path from 'path';
-import { getActiveProject } from './projectManager.js';
-import { loadKnowledge } from './knowledgeService.js';
 
-const BRAIN_FILE = './memory/project-brain.json';
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.cache', 'coverage']);
+const kindOf = (p) => {
+    if (/\.html?$/i.test(p)) return 'html';
+    if (/\.(css|scss)$/i.test(p)) return 'style';
+    if (/\.(jsx?|mjs|cjs|tsx?)$/i.test(p)) return 'script';
+    if (/\.json$/i.test(p)) return 'config';
+    if (/\.(sql|prisma)$/i.test(p)) return 'schema';
+    if (/\.md$/i.test(p)) return 'doc';
+    return 'other';
+};
 
-async function ensureDir() {
-    await fs.mkdir('./memory', { recursive: true });
-}
-
-export async function loadProjectBrain() {
-    await ensureDir();
-    try {
-        const data = await fs.readFile(BRAIN_FILE, 'utf8');
-        return JSON.parse(data);
-    } catch {
-        return {
-            name: 'Unknown',
-            framework: 'Next.js',
-            database: 'PostgreSQL',
-            language: 'TypeScript',
-            design: 'Modern',
-            business: 'Generic',
-            features: [],
-            lastUpdated: new Date().toISOString()
-        };
+/** يمسح ملفات المشروع على القرص (يتخطّى مجلدات الضجيج) */
+export async function scanProjectFiles(projectPath, { maxFiles = 500 } = {}) {
+    const out = [];
+    async function walk(dir, rel) {
+        if (out.length >= maxFiles) return;
+        let entries;
+        try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
+        for (const e of entries) {
+            if (out.length >= maxFiles) break;
+            if (e.name.startsWith('.') && e.name !== '.env.example') continue;
+            const abs = path.join(dir, e.name);
+            const r = rel ? `${rel}/${e.name}` : e.name;
+            if (e.isDirectory()) {
+                if (SKIP_DIRS.has(e.name)) continue;
+                await walk(abs, r);
+            } else if (e.isFile()) {
+                let size = 0;
+                try { size = (await fsp.stat(abs)).size; } catch {}
+                out.push({ path: r, size, kind: kindOf(r) });
+            }
+        }
     }
+    await walk(projectPath, '');
+    return out.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export async function saveProjectBrain(brain) {
-    await ensureDir();
-    brain.lastUpdated = new Date().toISOString();
-    await fs.writeFile(BRAIN_FILE, JSON.stringify(brain, null, 2));
+const has = (files, re) => files.some((f) => re.test(f.path));
+
+/**
+ * يبني صورة المشروع من الذاكرة + الملفات (نقية وقابلة للاختبار).
+ * @param {object} mem ذاكرة المشروع (design/tech/structure/history)
+ * @param {Array} files [{ path, size, kind }]
+ */
+export function buildProjectBrain(mem = {}, files = []) {
+    const design = mem.design || {};
+    const tech = mem.tech || {};
+    const structure = mem.structure || {};
+    const plannedFeatures = structure.features || [];
+
+    // أدلّة الإنجاز من الملفات الفعلية
+    const evidence = {
+        frontend: has(files, /(^|\/)index\.html$/i),
+        styles: has(files, /\.css$/i),
+        script: has(files, /(^|\/)script\.js$/i) || has(files, /\.jsx?$/i),
+        backend: has(files, /(^|\/)api\//i) || !!tech.hasBackend,
+        database: has(files, /(^|\/)(db|prisma)\//i) || has(files, /schema\.(sql|prisma)$/i),
+        auth: has(files, /auth/i),
+        tests: has(files, /(^|\/)(tests?|__tests__)\//i) || has(files, /\.test\.[jt]sx?$/i),
+        deploy: has(files, /(^|\/)Dockerfile/i) || has(files, /render\.yaml$/i) || has(files, /\.github\/workflows/i),
+    };
+
+    const done = [];
+    if (evidence.frontend) done.push('واجهة أساسية (index.html)');
+    if (evidence.styles) done.push('تنسيقات CSS');
+    if (evidence.script) done.push('تفاعل JavaScript');
+    if (evidence.backend) done.push('خادم / واجهات API');
+    if (evidence.database) done.push('قاعدة بيانات / مخطط');
+    if (evidence.auth) done.push('نظام مصادقة');
+    if (evidence.tests) done.push('اختبارات');
+    if (evidence.deploy) done.push('تجهيز نشر');
+
+    // ما تبقّى: ميزات مخطّطة بلا دليل + خطوات جوهرية ناقصة
+    const remaining = [];
+    for (const feat of plannedFeatures) {
+        const f = String(feat).toLowerCase();
+        const covered =
+            (/(auth|login|تسجيل|مصادقة)/.test(f) && evidence.auth) ||
+            (/(cart|checkout|سلة|دفع|payment)/.test(f) && evidence.backend) ||
+            (/(booking|حجز|reservation)/.test(f) && evidence.backend);
+        if (!covered) remaining.push(feat);
+    }
+    if (tech.hasBackend && !evidence.database) remaining.push('قاعدة بيانات للخادم');
+    if (evidence.backend && !evidence.tests) remaining.push('اختبارات للـ APIs');
+    if (files.length > 0 && !evidence.deploy) remaining.push('تجهيز النشر (Docker/CI)');
+    const remainingUnique = [...new Set(remaining)];
+
+    // القرارات المتّخذة (للنقطة: شرح القرارات)
+    const decisions = [];
+    if (design.style) decisions.push(`الأسلوب البصري: ${design.style}`);
+    if (design.colors) decisions.push(`الألوان: ${design.colors}`);
+    if (tech.framework && tech.framework !== 'vanilla') decisions.push(`الإطار: ${tech.framework}`);
+    if (tech.apis?.length) decisions.push(`واجهات API: ${tech.apis.join('، ')}`);
+
+    const denom = done.length + remainingUnique.length;
+    return {
+        filesCount: files.length,
+        files: files.map((f) => f.path),
+        structure: {
+            sections: structure.sections || [],
+            features: plannedFeatures,
+            pages: structure.pages || [],
+        },
+        decisions,
+        progress: {
+            done,
+            remaining: remainingUnique,
+            percent: denom > 0 ? Math.round((done.length / denom) * 100) : 0,
+        },
+        lastActivity: (mem.history || []).slice(-3),
+        updatedAt: mem.updatedAt || null,
+    };
 }
 
-export async function updateProjectBrainFromTwin() {
-    const active = getActiveProject();
-    if (!active) return;
-    const knowledge = await loadKnowledge();
-    const brain = await loadProjectBrain();
-    
-    // تحديث من الـ Knowledge Graph
-    brain.framework = 'Next.js'; // افتراضي
-    brain.pages = knowledge.pages || [];
-    brain.components = knowledge.components || [];
-    brain.features = brain.features || [];
-    
-    await saveProjectBrain(brain);
-    return brain;
-}
-
-// دالة للحصول على سياق المشروع كـ string للـ prompts
-export async function getProjectContext() {
-    const brain = await loadProjectBrain();
-    return `
-Project Name: ${brain.name}
-Framework: ${brain.framework}
-Database: ${brain.database}
-Language: ${brain.language}
-Business Type: ${brain.business}
-Features: ${brain.features.join(', ')}
-Pages: ${brain.pages?.length || 0} pages
-Components: ${brain.components?.length || 0} components
-`;
+/** ملخّص نصّي موجز يُحقن في سياق الشات (يفهم كامل المشروع) */
+export function summarizeBrain(brain, lang = 'ar') {
+    if (!brain || brain.filesCount === 0) {
+        return lang === 'ar' ? 'المشروع فارغ — لم يُبنَ بعد.' : 'Project is empty — nothing built yet.';
+    }
+    const L = lang === 'ar';
+    const lines = [];
+    lines.push(L ? `📦 المشروع: ${brain.filesCount} ملف (${brain.progress.percent}% مكتمل)` : `📦 Project: ${brain.filesCount} files (${brain.progress.percent}% complete)`);
+    if (brain.progress.done.length) lines.push((L ? '✅ أُنجز: ' : '✅ Done: ') + brain.progress.done.join('، '));
+    if (brain.progress.remaining.length) lines.push((L ? '🔜 متبقٍّ: ' : '🔜 Remaining: ') + brain.progress.remaining.join('، '));
+    if (brain.decisions.length) lines.push((L ? '🧭 قرارات: ' : '🧭 Decisions: ') + brain.decisions.join('، '));
+    return lines.join('\n');
 }

@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { groq, smartChat } from './baseAgent.js';
 import { runBackendTeam, writeBackendTeamFiles } from './backendTeam/index.js';
+import { scanProjectFiles, buildProjectBrain, summarizeBrain } from '../services/projectBrain.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO } from './languageDetector.js';
 import { getLanguageDecision, buildLanguagePrompt } from './languageManager.js';
@@ -821,6 +822,21 @@ export class JaolaCognitiveRuntime {
             }
         } catch (e) { history = this.conversationBuffer.get(username) || []; }
         history.push({ role: 'user', content: userMessage });
+
+        // 🧠 Project Brain — يفهم كامل المشروع (ملفات + قرارات + أُنجز/متبقٍّ) لا الرسالة الأخيرة فقط
+        let brainContext = '';
+        try {
+            const project = roomName.startsWith(username + '-') ? roomName.slice(username.length + 1) : null;
+            if (project) {
+                const safeUser = username.replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
+                const safeProject = project.replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
+                const projectPath = path.resolve(__dirname, '../../workspace', safeUser, safeProject);
+                const files = await scanProjectFiles(projectPath, { maxFiles: 300 });
+                const brain = buildProjectBrain(getProjectMemory(username, project), files);
+                brainContext = summarizeBrain(brain, userLang);
+            }
+        } catch { /* الشات يعمل حتى لو تعذّر بناء الصورة */ }
+
         const messages = [
             { role: "system", content: `You are JAOLA — a smart web building assistant.
 
@@ -831,6 +847,10 @@ RESPONSE RULES:
 - Be direct and friendly
 - Your specialty: websites, design, web development
 - When user wants to build: tell them to type "${userLang === 'ar' ? 'ابني [اسم المشروع]' : 'build [project name]'}" to start the official build system
+- Answer about the WHOLE project using the state below — not just the last message. If asked what's done or remaining, use it.
+
+## Current project state (Project Brain):
+${brainContext || 'No project files yet.'}
 
 User preferences: ${JSON.stringify(execMemory)}` },
             ...history
