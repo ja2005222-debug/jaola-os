@@ -112,6 +112,58 @@ const DEFAULT_QUESTIONS_EN = [
 ];
 
 // ═══════════════════════════════════════════════════════
+// 🎯 أسئلة استراتيجية — للطلبات الواسعة التي تتفرّع قراراتها كثيراً
+// (لا يبدأ البناء مباشرة، بل يفهم الاتجاه أولاً ثم يحوّله لخطة تنفيذ)
+// ═══════════════════════════════════════════════════════
+const BROAD_TYPES = new Set(['travel', 'saas', 'ecommerce', 'marketplace', 'platform', 'app', 'realestate', 'education', 'fintech']);
+
+const AUDIENCE = { ar: { q: 'من جمهورك المستهدف؟', options: ['أفراد (B2C)', 'شركات (B2B)', 'كلاهما', 'قرر أنت 🤖'] }, en: { q: 'Who is your target audience?', options: ['Consumers (B2C)', 'Businesses (B2B)', 'Both', 'You decide 🤖'] } };
+const PLATFORM = { ar: { q: 'أي منصّة تريد؟', options: ['موقع ويب', 'تطبيق جوال أيضاً (PWA)', 'قرر أنت 🤖'] }, en: { q: 'Which platform?', options: ['Web only', 'Mobile app too (PWA)', 'You decide 🤖'] } };
+const SCOPE = { ar: { q: 'ما نطاق الإطلاق؟', options: ['نسخة أولى سريعة (MVP)', 'منصّة متكاملة', 'قرر أنت 🤖'] }, en: { q: 'Launch scope?', options: ['Fast MVP', 'Full platform', 'You decide 🤖'] } };
+
+// أسئلة خاصة بالنوع (فوق الأسئلة الاستراتيجية العامة)
+const STRATEGIC_BY_TYPE = {
+    travel: {
+        ar: [{ q: 'ما محور المنصّة؟', options: ['طيران', 'فنادق', 'باقات سياحية', 'الكل'] }, { q: 'هل تريد نظام حجز فعلي أم استعلام وتواصل؟', options: ['حجز فعلي', 'استعلام فقط', 'قرر أنت 🤖'] }, { q: 'هل تريد نظام نقاط/ولاء؟', options: ['نعم ✅', 'لا', 'قرر أنت 🤖'] }],
+        en: [{ q: 'Platform focus?', options: ['Flights', 'Hotels', 'Tour packages', 'All'] }, { q: 'Real booking or inquiry & contact?', options: ['Real booking', 'Inquiry only', 'You decide 🤖'] }, { q: 'Loyalty/points system?', options: ['Yes ✅', 'No', 'You decide 🤖'] }],
+    },
+    saas: {
+        ar: [{ q: 'ما نموذج التسعير؟', options: ['اشتراك شهري', 'مجاني + مدفوع', 'لمرة واحدة', 'قرر أنت 🤖'] }, { q: 'هل تريد لوحة تحكم للمستخدم؟', options: ['نعم ✅', 'لا', 'قرر أنت 🤖'] }, { q: 'هل يدعم فرق/مؤسسات؟', options: ['نعم ✅', 'لا', 'قرر أنت 🤖'] }],
+        en: [{ q: 'Pricing model?', options: ['Monthly subscription', 'Freemium', 'One-time', 'You decide 🤖'] }, { q: 'User dashboard?', options: ['Yes ✅', 'No', 'You decide 🤖'] }, { q: 'Support teams/orgs?', options: ['Yes ✅', 'No', 'You decide 🤖'] }],
+    },
+    ecommerce: {
+        ar: [{ q: 'كم عدد المنتجات تقريباً؟', options: ['أقل من 20', '20-50', 'أكثر من 50'] }, { q: 'هل تريد دفعاً إلكترونياً فعلياً؟', options: ['نعم ✅', 'لاحقاً', 'قرر أنت 🤖'] }],
+        en: [{ q: 'Approx. number of products?', options: ['Under 20', '20-50', '50+'] }, { q: 'Real online payments?', options: ['Yes ✅', 'Later', 'You decide 🤖'] }],
+    },
+    marketplace: {
+        ar: [{ q: 'من يبيع على المنصّة؟', options: ['بائعون متعدّدون', 'أنت فقط', 'قرر أنت 🤖'] }, { q: 'هل تأخذ عمولة على المعاملات؟', options: ['نعم ✅', 'لا', 'قرر أنت 🤖'] }],
+        en: [{ q: 'Who sells on it?', options: ['Multiple vendors', 'Only you', 'You decide 🤖'] }, { q: 'Take commission on transactions?', options: ['Yes ✅', 'No', 'You decide 🤖'] }],
+    },
+    realestate: {
+        ar: [{ q: 'عرض للبيع، للإيجار، أم الاثنين؟', options: ['بيع', 'إيجار', 'كلاهما'] }, { q: 'هل تريد بحثاً بالخريطة والتصفية؟', options: ['نعم ✅', 'لا', 'قرر أنت 🤖'] }],
+        en: [{ q: 'For sale, rent, or both?', options: ['Sale', 'Rent', 'Both'] }, { q: 'Map search & filters?', options: ['Yes ✅', 'No', 'You decide 🤖'] }],
+    },
+};
+
+/** هل يحتاج الطلب حواراً استراتيجياً؟ (نوع واسع + طلب مقتضب غير مفصّل) */
+export function needsStrategicClarification(goal, projectType) {
+    if (!BROAD_TYPES.has(projectType)) return false;
+    const clean = (goal || '').replace(/^(ابني|اصنع|انشئ|بني|سوي|اعمل|build|create|make|a|an)\s+/gi, '').trim();
+    const words = clean.split(/\s+/).filter(Boolean).length;
+    // طلب مفصّل (كلمات كثيرة) = يعرف ما يريد → لا نُثقل عليه بأسئلة
+    return words <= 6;
+}
+
+/** يبني قائمة الأسئلة الاستراتيجية لنوع ما */
+function strategicQuestions(projectType, lang = 'ar') {
+    const L = lang === 'en' ? 'en' : 'ar';
+    const typeQs = (STRATEGIC_BY_TYPE[projectType]?.[L] || []);
+    // عام: الجمهور + المنصّة + النطاق، ثم أسئلة النوع (نحدّها بـ 5 إجمالاً)
+    const universal = [AUDIENCE[L], PLATFORM[L], SCOPE[L]];
+    return [...universal, ...typeQs].slice(0, 5);
+}
+
+// ═══════════════════════════════════════════════════════
 // 📋 حالة المحادثة — يتتبع مرحلة كل مستخدم
 // ═══════════════════════════════════════════════════════
 // conversationState: Map<username, { stage, originalGoal, answers, projectType, plan }>
@@ -142,12 +194,34 @@ export function isBuildRequest(message) {
 // ═══════════════════════════════════════════════════════
 export async function startClarification(username, userGoal) {
     const lang = getUserLanguage(username) || 'ar';
+    const projectType = detectProjectType(userGoal);
+
+    // 🎯 طلب واسع وغامض → حوار استراتيجي (لا يبدأ مباشرة)
+    if (needsStrategicClarification(userGoal, projectType)) {
+        const questions = strategicQuestions(projectType, lang);
+        conversationState.set(username, {
+            stage: STAGES.CLARIFYING, originalGoal: userGoal, projectType, lang,
+            questions, answers: [], currentQuestion: 0,
+        });
+        const first = questions[0];
+        const intro = lang === 'ar'
+            ? `فهمت أنك تريد ${projectTypeLabelAr(projectType)}. أسئلة سريعة لأصمّم الخطة الصحيحة:\n\n**السؤال 1/${questions.length}:** ${first.q}`
+            : `Got it — a ${projectType} project. A few quick questions to plan it right:\n\n**Question 1/${questions.length}:** ${first.q}`;
+        return { type: 'clarification', message: intro, options: first.options };
+    }
+
+    // ⚡ طلب واضح/بسيط → بناء مباشر (نحافظ على السرعة)
     conversationState.set(username, { stage: 'done', originalGoal: userGoal, lang });
     const cleanName = userGoal.replace(/^(ابني|اصنع|انشئ|بني|سوي|اعمل|build|create|make)\s+/i, '').trim();
     const msg = lang === 'ar'
         ? `⚡ ممتاز! سأبني "${cleanName.slice(0,25)}" الآن فوراً...`
         : `⚡ Got it! Building "${cleanName.slice(0,25)}" right now...`;
     return { type: 'build_direct', message: msg, readyToBuild: true, finalGoal: userGoal };
+}
+
+function projectTypeLabelAr(t) {
+    const m = { travel: 'منصّة سفر', saas: 'منصّة SaaS', ecommerce: 'متجراً إلكترونياً', marketplace: 'سوقاً متعدّد البائعين', realestate: 'منصّة عقارات', education: 'منصّة تعليمية', app: 'تطبيقاً', platform: 'منصّة', fintech: 'منصّة مالية' };
+    return m[t] || 'مشروعاً';
 }
 // ═══════════════════════════════════════════════════════
 // 📝 معالجة إجابة المستخدم
@@ -177,10 +251,13 @@ export async function processAnswer(username, answer) {
 
     if (state.currentQuestion < state.questions.length) {
         const nextQuestion = state.questions[state.currentQuestion];
+        // الأسئلة قد تكون كائنات {q, options} (استراتيجية) أو نصوصاً (قديمة)
+        const qText = typeof nextQuestion === 'string' ? nextQuestion : nextQuestion.q;
+        const qOptions = typeof nextQuestion === 'string' ? questionQuickOptions(nextQuestion, lang) : nextQuestion.options;
         const label = lang === 'ar'
-            ? `**السؤال ${state.currentQuestion + 1}/${state.questions.length}:**\n${nextQuestion}`
-            : `**Question ${state.currentQuestion + 1}/${state.questions.length}:**\n${nextQuestion}`;
-        return { type: 'clarification', message: label, options: questionQuickOptions(nextQuestion, lang) };
+            ? `**السؤال ${state.currentQuestion + 1}/${state.questions.length}:**\n${qText}`
+            : `**Question ${state.currentQuestion + 1}/${state.questions.length}:**\n${qText}`;
+        return { type: 'clarification', message: label, options: qOptions };
     }
 
     state.stage = STAGES.PLANNING;
@@ -208,40 +285,66 @@ function questionQuickOptions(question, lang = 'ar') {
 // ═══════════════════════════════════════════════════════
 // 🗺️ بناء خطة المشروع بناءً على الإجابات
 // ═══════════════════════════════════════════════════════
+const qText = (q) => (typeof q === 'string' ? q : q.q);
+
+/** يشتقّ القرارات الاستراتيجية من إجابات المستخدم (حتمي وقابل للاختبار) */
+export function deriveStrategicDecisions(answers = []) {
+    const a = answers.map((x) => (x || '').toString().toLowerCase());
+    const pick = (i, map, dflt) => {
+        const ans = a[i] || '';
+        if (/قرر أنت|you decide/.test(ans)) return dflt;
+        for (const [re, val] of map) if (re.test(ans)) return val;
+        return dflt;
+    };
+    const audience = pick(0, [[/b2b|شركات|business/, 'B2B'], [/كلا|both/, 'B2C+B2B'], [/b2c|أفراد|consumer/, 'B2C']], 'B2C');
+    const platform = pick(1, [[/تطبيق|app|pwa|mobile/, 'Web+PWA'], [/ويب|web/, 'Web']], 'Web');
+    const scope = pick(2, [[/mvp|سريع|أولى|fast/, 'MVP'], [/متكامل|full|منصّ/, 'Full']], 'MVP');
+    return { audience, platform, scope };
+}
+
+function planPhases(decisions, lang = 'ar') {
+    const L = lang === 'ar';
+    const phases = L
+        ? ['المرحلة 1 (MVP): الواجهة الأساسية + الميزة المحورية', 'المرحلة 2: الحسابات والمصادقة', 'المرحلة 3: لوحة التحكم والتحليلات']
+        : ['Phase 1 (MVP): core UI + key feature', 'Phase 2: accounts & auth', 'Phase 3: dashboard & analytics'];
+    if (decisions.scope === 'MVP') return phases.slice(0, 2);
+    return phases;
+}
+
 async function buildProjectPlan(state) {
-    const { originalGoal, projectType, questions, answers } = state;
+    const { originalGoal, projectType, questions, answers, lang } = state;
+    const decisions = deriveStrategicDecisions(answers);
 
-    // استخراج اسم ذكي من الإجابات والطلب
-    const cuisineAnswer = answers[2] || '';
-    const goalWords = originalGoal.replace(/^(ابني|اصنع|انشئ|بني|سوي|اعمل)\s+(لي\s+)?(موقع\s+)?/i, '').trim();
-    const smartName = cuisineAnswer && cuisineAnswer.length < 20
-        ? `${goalWords} ${cuisineAnswer}`.trim()
-        : goalWords || originalGoal.split(' ').slice(-3).join(' ');
+    const goalWords = originalGoal.replace(/^(ابني|اصنع|انشئ|بني|سوي|اعمل|build|create|make)\s+(لي\s+)?(موقع\s+)?/i, '').trim();
+    const smartName = goalWords || originalGoal.split(' ').slice(-3).join(' ');
+    const qaText = questions.map((q, i) => `س: ${qText(q)}\nج: ${answers[i] || 'لم يُجَب'}`).join('\n\n');
 
-    const qaText = questions.map((q, i) => `س: ${q}\nج: ${answers[i] || 'لم يُجَب'}`).join('\n\n');
-
+    let plan;
     try {
         const _resp = await smartChat([
-                {
-                    role: 'system',
-                    content: `أنت مخطط مشاريع ويب. أنشئ خطة موجزة بـ JSON: { "projectName": "اسم", "sections": [], "features": [], "colorMood": "وصف", "estimatedTime": "ثوانٍ" }`
-                },
-                {
-                    role: 'user',
-                    content: `الطلب: ${originalGoal}\nالنوع: ${projectType}\n\n${qaText}`
-                }
-            ], { max_tokens: 500, temperature: 0.3, json: true });
-        return JSON.parse(_resp);
+            { role: 'system', content: `أنت مخطط مشاريع ويب. أنشئ خطة موجزة بـ JSON: { "projectName": "اسم", "sections": [], "features": [], "colorMood": "وصف" }` },
+            { role: 'user', content: `الطلب: ${originalGoal}\nالنوع: ${projectType}\nالقرارات: ${JSON.stringify(decisions)}\n\n${qaText}` },
+        ], { max_tokens: 500, temperature: 0.3, json: true });
+        plan = JSON.parse(_resp);
     } catch (e) {
-        // خطة افتراضية إذا فشل الـ AI
-        return {
-            projectName: smartName || originalGoal.split(' ').slice(-3).join(' '),
+        plan = {
+            projectName: smartName,
             sections: ['navbar', 'hero', 'الخدمات', 'من نحن', 'تواصل', 'footer'],
             features: ['تصميم متجاوب', 'صور احترافية', 'نموذج تواصل'],
             colorMood: 'ألوان متناسقة واحترافية',
-            estimatedTime: 'ثوانٍ'
         };
     }
+    // القرارات الاستراتيجية والمراحل تُضاف دائماً (حتمية) فوق مخرجات الـ AI
+    plan.audience = decisions.audience;
+    plan.platform = decisions.platform;
+    plan.scope = decisions.scope;
+    plan.phases = planPhases(decisions, lang);
+    plan.estimatedTime = lang === 'en' ? 'minutes' : 'دقائق';
+    // ميزات مشتقّة من القرارات
+    plan.features = plan.features || [];
+    if (decisions.audience.includes('B2B') && !plan.features.some(f => /إدارة|admin|dashboard|لوحة/.test(f))) plan.features.push('لوحة إدارة للشركات');
+    if (decisions.platform.includes('PWA') && !plan.features.some(f => /PWA|جوال|offline/.test(f))) plan.features.push('دعم تطبيق جوال (PWA)');
+    return plan;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -251,10 +354,16 @@ function formatPlan(plan, state) {
     const lang = state.lang || 'ar';
     const sections = (plan.sections || []).map(s => `   ✦ ${s}`).join('\n');
     const features = (plan.features || []).map(f => `   • ${f}`).join('\n');
+    const phases = (plan.phases || []).map(p => `   ${p}`).join('\n');
+    const strat = plan.audience
+        ? (lang === 'en'
+            ? `\n**🎯 Strategy:** ${plan.audience} · ${plan.platform} · ${plan.scope}\n`
+            : `\n**🎯 الاستراتيجية:** ${plan.audience} · ${plan.platform} · ${plan.scope}\n`)
+        : '';
 
     if (lang === 'en') {
         return `Got it! Here's your project plan 📋
-
+${strat}
 **🏷️ Project Name:** ${plan.projectName || state.originalGoal}
 
 **📐 Sections:**
@@ -262,17 +371,15 @@ ${sections}
 
 **⚡ Features:**
 ${features}
-
+${phases ? `\n**🗺️ Roadmap:**\n${phases}\n` : ''}
 **🎨 Visual Identity:** ${plan.colorMood}
 
-**⏱️ Estimated Time:** ${plan.estimatedTime}
-
 ---
-Ready to build? Type **"start"** to proceed, or tell me any changes you'd like.`;
+Ready to build? Type **"start"** to proceed, or tell me any changes.`;
     }
 
     return `ممتاز! فهمت ما تريد. إليك خطة مشروعك 📋
-
+${strat}
 **🏷️ اسم المشروع:** ${plan.projectName || state.originalGoal}
 
 **📐 الأقسام:**
@@ -280,13 +387,11 @@ ${sections}
 
 **⚡ الميزات:**
 ${features}
-
+${phases ? `\n**🗺️ خارطة الطريق:**\n${phases}\n` : ''}
 **🎨 الهوية البصرية:** ${plan.colorMood}
 
-**⏱️ الوقت المتوقع:** ${(isNaN(plan.estimatedTime) ? plan.estimatedTime : 'دقائق') || 'دقائق'}
-
 ---
-هل تريد البدء بالبناء الآن؟ اكتب **"ابدأ"** للتنفيذ، أو أخبرني بأي تعديل تريده على الخطة.`;
+هل تريد البدء بالبناء الآن؟ اكتب **"ابدأ"** للتنفيذ، أو أخبرني بأي تعديل.`;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -304,11 +409,15 @@ export function getFinalGoal(username) {
 
     const { originalGoal, answers, questions, plan } = state;
 
-    // دمج الطلب الأصلي مع الإجابات في prompt غني
+    // دمج الطلب الأصلي مع الإجابات والقرارات الاستراتيجية في prompt غني تقرؤه الفرق
+    const stratLine = plan?.audience
+        ? `\nالقرارات الاستراتيجية (التزم بها):\n- الجمهور: ${plan.audience}\n- المنصّة: ${plan.platform}\n- النطاق: ${plan.scope}\n- خارطة الطريق: ${(plan.phases || []).join(' ← ')}`
+        : '';
     const enrichedGoal = `${originalGoal}
+${stratLine}
 
 تفاصيل إضافية من المستخدم:
-${questions.map((q, i) => `- ${q}\n  الجواب: ${answers[i] || 'لا يوجد'}`).join('\n')}
+${questions.map((q, i) => `- ${qText(q)}\n  الجواب: ${answers[i] || 'لا يوجد'}`).join('\n')}
 
 خطة المشروع المتفق عليها:
 - الأقسام: ${(plan?.sections || []).join('، ')}
