@@ -3,6 +3,7 @@ import Editor from '@monaco-editor/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Save, Loader2 } from 'lucide-react';
 import { useJaolaStore } from '../../store/useJaolaStore.js';
+import { useI18n } from '../../i18n.js';
 import { FileTabs } from './FileTabs.jsx';
 
 export function MonacoWorkspace() {
@@ -11,6 +12,7 @@ export function MonacoWorkspace() {
   const updateFileContent = useJaolaStore((s) => s.updateFileContent);
   const saveFile = useJaolaStore((s) => s.saveFile);
   const closeFile = useJaolaStore((s) => s.closeFile);
+  const t = useI18n((s) => s.t);
 
   const activeFile = openFiles.find((f) => f.path === activeFilePath);
 
@@ -72,8 +74,8 @@ export function MonacoWorkspace() {
           <div className="w-16 h-16 mx-auto border-2 border-dashed border-gray-700 rounded-xl flex items-center justify-center">
             <span className="text-2xl" dir="ltr">{'</>'}</span>
           </div>
-          <p className="text-sm font-medium">اختر ملفاً من قائمة الملفات</p>
-          <p className="text-xs text-gray-600">أو اطلب من JAOLA توليد الكود</p>
+          <p className="text-sm font-medium">{t('selectFile')}</p>
+          <p className="text-xs text-gray-600">{t('orAskJaola')}</p>
         </div>
       </div>
     );
@@ -128,7 +130,7 @@ export function MonacoWorkspace() {
             {activeFile.isSaving
               ? <Loader2 className="w-3 h-3 animate-spin" />
               : <Save className="w-3 h-3" />}
-            <span>{activeFile.isSaving ? 'جاري الحفظ...' : 'تغييرات غير محفوظة (Ctrl+S)'}</span>
+            <span>{activeFile.isSaving ? t('savingFile') : t('unsavedChanges')}</span>
           </motion.div>
         )}
       </div>

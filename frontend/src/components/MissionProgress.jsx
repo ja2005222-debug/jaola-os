@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react';
+import { useI18n } from '../i18n.js';
 
 // بطاقة تقدم المهمة الحية — تُعرض داخل الشات أثناء البناء
 // تحوّل الشات من "صامت" إلى مركز تقارير مباشر: مرحلة حالية، نسبة، آخر حدث، مؤقت
 
 const AGENT_META = {
-  planner:   { icon: '🗺️', label: 'التخطيط' },
-  architect: { icon: '🏗️', label: 'الهندسة' },
-  coder:     { icon: '💻', label: 'البرمجة' },
-  qa:        { icon: '🧪', label: 'الفحص' },
-  deploy:    { icon: '🚀', label: 'النشر' },
+  planner:   { icon: '🗺️', key: 'phasePlanner' },
+  architect: { icon: '🏗️', key: 'phaseArchitect' },
+  coder:     { icon: '💻', key: 'phaseCoder' },
+  qa:        { icon: '🧪', key: 'phaseQa' },
+  deploy:    { icon: '🚀', key: 'phaseDeploy' },
 };
 
 export function MissionProgress({ agentStates, lastLog, startedAt }) {
+  const t = useI18n(s => s.t);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -23,7 +25,7 @@ export function MissionProgress({ agentStates, lastLog, startedAt }) {
   const doneCount = entries.filter(([, s]) => s === 'completed').length;
   const pct = entries.length ? Math.round((doneCount / entries.length) * 100) : 0;
   const running = entries.find(([, s]) => s === 'running');
-  const currentMeta = running ? (AGENT_META[running[0]] || { icon: '⚙️', label: running[0] }) : null;
+  const currentMeta = running ? (AGENT_META[running[0]] ? { icon: AGENT_META[running[0]].icon, label: t(AGENT_META[running[0]].key) } : { icon: '⚙️', label: running[0] }) : null;
 
   const elapsed = Math.max(0, Math.floor((now - startedAt) / 1000));
   const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
@@ -43,8 +45,8 @@ export function MissionProgress({ agentStates, lastLog, startedAt }) {
         }} />
         <span style={{ fontSize: 12, fontWeight: 700, color: '#93c5fd', flex: 1 }}>
           {currentMeta
-            ? `${currentMeta.icon} جاري ${currentMeta.label}...`
-            : '⚡ جاري تجهيز المهمة...'}
+            ? `${currentMeta.icon} ${t('inProgress')} ${currentMeta.label}...`
+            : t('preparingMission')}
         </span>
         <span style={{
           fontSize: 11, color: '#64748b', fontFamily: 'monospace',
@@ -66,7 +68,7 @@ export function MissionProgress({ agentStates, lastLog, startedAt }) {
       {/* سلسلة الوكلاء */}
       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: lastLog ? 10 : 0 }}>
         {entries.map(([name, state]) => {
-          const meta = AGENT_META[name] || { icon: '⚙️', label: name };
+          const meta = AGENT_META[name] ? { icon: AGENT_META[name].icon, label: t(AGENT_META[name].key) } : { icon: '⚙️', label: name };
           const isDone = state === 'completed';
           const isRunning = state === 'running';
           return (

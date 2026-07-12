@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { BACKEND_URL } from '../config.js';
+import { useI18n } from '../i18n.js';
 
 // 🕘 الخط الزمني التاريخي: سجل البنايات الحقيقي + نقاط git مع استرجاع لأي نقطة
 
-const fmtDuration = (s) => (s >= 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} د` : `${s} ث`);
-const fmtWhen = (ts) => new Date(ts).toLocaleString('ar', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-
 export function TimelinePanel({ activeProject, token, onRestored }) {
+  const t = useI18n(s => s.t);
+  const lang = useI18n(s => s.lang);
+  const fmtDuration = (s) => (s >= 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} ${t('unitMin')}` : `${s} ${t('unitSec')}`);
+  const fmtWhen = (ts) => new Date(ts).toLocaleString(lang, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   const [commits, setCommits] = useState([]);
   const [builds, setBuilds] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -23,15 +25,15 @@ export function TimelinePanel({ activeProject, token, onRestored }) {
       if (res.ok) {
         setCommits(d.commits || []);
         setBuilds(d.metrics?.builds || []);
-      } else setError(d.error || 'فشل جلب الخط الزمني');
-    } catch { setError('تعذر الاتصال بالخادم'); }
+      } else setError(d.error || t('timelineLoadFail'));
+    } catch { setError(t('serverUnreachable')); }
     setLoading(false);
   }, [activeProject, token]);
 
   useEffect(() => { load(); }, [load]);
 
   const handleRestore = async (hash) => {
-    if (!window.confirm(`استرجاع المشروع إلى النقطة (${hash})؟\nسيُحفظ الوضع الحالي تلقائياً قبل الاسترجاع — يمكنك العودة إليه لاحقاً.`)) return;
+    if (!window.confirm(`(${hash})\n${t('restoreConfirm')}`)) return;
     setRestoring(hash);
     try {
       const res = await fetch(`${BACKEND_URL}/api/project/rollback`, {
@@ -40,8 +42,8 @@ export function TimelinePanel({ activeProject, token, onRestored }) {
       });
       const d = await res.json();
       if (res.ok) { onRestored?.(hash); await load(); }
-      else alert(d.error || 'فشل الاسترجاع');
-    } catch { alert('تعذر الاتصال بالخادم'); }
+      else alert(d.error || t('restoreFail'));
+    } catch { alert(t('serverUnreachable')); }
     setRestoring(null);
   };
 
@@ -49,7 +51,7 @@ export function TimelinePanel({ activeProject, token, onRestored }) {
 
   if (loading) return (
     <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center', color:S.muted, fontSize:13 }}>
-      جاري تحميل الخط الزمني...
+      {t('loadingTimeline')}
     </div>
   );
 
@@ -59,9 +61,9 @@ export function TimelinePanel({ activeProject, token, onRestored }) {
 
       {/* سجل البنايات */}
       <div style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:10 }}>
-        🏗️ سجل البنايات ({builds.length})
+        🏗️ {t('buildsLog')} ({builds.length})
       </div>
-      {builds.length === 0 && <div style={{ color:'#334155', fontSize:12, marginBottom:16 }}>لا بنايات مسجلة بعد.</div>}
+      {builds.length === 0 && <div style={{ color:'#334155', fontSize:12, marginBottom:16 }}>{t('noBuildsYet')}</div>}
       <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:24 }}>
         {builds.map((b, i) => (
           <div key={i} style={{
@@ -71,7 +73,7 @@ export function TimelinePanel({ activeProject, token, onRestored }) {
           }}>
             <span style={{ fontSize:13 }}>{b.success ? '✅' : '❌'}</span>
             <span style={{ flex:1, color:'#94a3b8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-              {b.goal || 'بناء'}
+              {b.goal || t('buildLabel')}
             </span>
             <span style={{ color:S.muted, fontVariantNumeric:'tabular-nums', flexShrink:0 }}>⏱ {fmtDuration(b.durationSec || 0)}</span>
             {b.filesCount > 0 && <span style={{ color:S.muted, flexShrink:0 }}>📁 {b.filesCount}</span>}
@@ -82,9 +84,9 @@ export function TimelinePanel({ activeProject, token, onRestored }) {
 
       {/* نقاط git — قابلة للاسترجاع */}
       <div style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:10 }}>
-        ⏪ نقاط الاسترجاع ({commits.length})
+        ⏪ {t('restorePoints')} ({commits.length})
       </div>
-      {commits.length === 0 && <div style={{ color:'#334155', fontSize:12 }}>لا نقاط حفظ بعد — تُنشأ تلقائياً مع كل بناء.</div>}
+      {commits.length === 0 && <div style={{ color:'#334155', fontSize:12 }}>{t('noRestorePoints')}</div>}
       <div style={{ display:'flex', flexDirection:'column', gap:0 }}>
         {commits.map((c, i) => (
           <div key={c.hash} style={{ display:'flex', gap:12, position:'relative' }}>
@@ -97,7 +99,7 @@ export function TimelinePanel({ activeProject, token, onRestored }) {
               <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
                 <code style={{ fontSize:10, color:'#60a5fa', background:'rgba(59,130,246,0.08)', padding:'1px 6px', borderRadius:4, direction:'ltr' }}>{c.hash}</code>
                 <span style={{ fontSize:10, color:'#334155' }}>{c.time}</span>
-                {i === 0 && <span style={{ fontSize:9, color:'#10b981', fontWeight:700 }}>● الحالي</span>}
+                {i === 0 && <span style={{ fontSize:9, color:'#10b981', fontWeight:700 }}>{t('currentPoint')}</span>}
                 {i > 0 && (
                   <button onClick={() => handleRestore(c.hash)} disabled={!!restoring}
                     style={{
@@ -105,7 +107,7 @@ export function TimelinePanel({ activeProject, token, onRestored }) {
                       borderRadius:6, padding:'2px 10px', color:'#fbbf24', fontSize:10, fontWeight:700,
                       opacity: restoring ? 0.5 : 1,
                     }}>
-                    {restoring === c.hash ? 'جاري الاسترجاع...' : '⏪ استرجاع'}
+                    {restoring === c.hash ? t('restoring') : t('restore')}
                   </button>
                 )}
               </div>

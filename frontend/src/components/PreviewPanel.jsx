@@ -1,10 +1,12 @@
 import { useRef, useEffect, useState } from 'react';
 import { PreviewFrame } from './PreviewFrame.jsx';
 import { BACKEND_URL } from '../config.js';
+import { useI18n } from '../i18n.js';
 
 // معاينة محسّنة: شريط أدوات (جهاز/تحديث/فتح خارجي) + بث الكود الحي أثناء الكتابة
 
 export function PreviewPanel({ activeProject, previewTimestamp, streamingContent, currentUser, onRefresh, compact = false }) {
+  const t = useI18n(s => s.t);
   const [viewMode, setViewMode] = useState('desktop'); // desktop | mobile
   const [streamStale, setStreamStale] = useState(false);
   const streamRef = useRef(null);
@@ -41,8 +43,8 @@ export function PreviewPanel({ activeProject, previewTimestamp, streamingContent
         height: 38, display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px',
         borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0,
       }}>
-        <button style={viewMode === 'desktop' ? btnActive : btn} onClick={() => setViewMode('desktop')} title="عرض سطح المكتب">🖥️</button>
-        <button style={viewMode === 'mobile' ? btnActive : btn} onClick={() => setViewMode('mobile')} title="عرض الجوال">📱</button>
+        <button style={viewMode === 'desktop' ? btnActive : btn} onClick={() => setViewMode('desktop')} title={t('desktopView')}>🖥️</button>
+        <button style={viewMode === 'mobile' ? btnActive : btn} onClick={() => setViewMode('mobile')} title={t('mobileView')}>📱</button>
         <div style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'center' }}>
           <span style={{
             fontSize: 10, color: '#374151', fontFamily: 'monospace', direction: 'ltr',
@@ -51,8 +53,8 @@ export function PreviewPanel({ activeProject, previewTimestamp, streamingContent
             /workspace/{activeProject}
           </span>
         </div>
-        <button style={btn} onClick={onRefresh} title="تحديث المعاينة">⟳</button>
-        <a href={externalUrl} target="_blank" rel="noreferrer" style={{ ...btn, textDecoration: 'none', display: 'flex', alignItems: 'center' }} title="فتح في تبويب جديد">↗</a>
+        <button style={btn} onClick={onRefresh} title={t('refreshPreview')}>⟳</button>
+        <a href={externalUrl} target="_blank" rel="noreferrer" style={{ ...btn, textDecoration: 'none', display: 'flex', alignItems: 'center' }} title={t('openNewTab')}>↗</a>
       </div>
 
       {/* المعاينة + بث الكود الحي */}
@@ -76,9 +78,9 @@ export function PreviewPanel({ activeProject, previewTimestamp, streamingContent
               borderBottom: '1px solid rgba(59,130,246,0.2)', flexShrink: 0,
             }}>
               <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#3b82f6', animation: 'pulse 1s infinite' }} />
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#93c5fd' }}>💻 JAOLA يكتب الكود الآن مباشرة...</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#93c5fd' }}>{t('jaolaWriting')}</span>
               <span style={{ fontSize: 10, color: '#475569', fontFamily: 'monospace', marginRight: 'auto', direction: 'ltr' }}>
-                {streamingContent.length.toLocaleString()} حرف
+                {streamingContent.length.toLocaleString()} {t('charCount')}
               </span>
             </div>
             <pre ref={streamRef} dir="ltr" style={{
