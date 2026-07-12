@@ -44,6 +44,7 @@ import { pushProject, getIntegration } from './services/githubSync.js';
 import { encryptSecret, decryptSecret } from './utils/secretVault.js';
 import * as oauth from './services/oauthLite.js';
 import * as ghFiles from './services/githubFiles.js';
+import { teamPlan, BACKEND_TEAM } from './agents/backendTeam/index.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
 import { buildMetricsPayload } from './services/metricsStore.js';
 import { queueStatus } from './services/missionQueue.js';
@@ -1148,6 +1149,20 @@ app.post('/api/admin/agents/:name/run', verifyToken, adminOnly, async (req, res)
         const result = await handler(req.body?.input ?? {});
         res.json({ success: true, result });
     } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 👥 فريق الوكلاء الخلفي — عرض العقود وخطة التنفيذ
+app.get('/api/admin/backend-team', verifyToken, adminOnly, (req, res) => {
+    res.json({
+        success: true,
+        plan: teamPlan(),
+        agents: BACKEND_TEAM.map(a => ({
+            id: a.id, role: a.role, icon: a.icon, mission: a.mission,
+            responsibilities: a.responsibilities, inputs: a.inputs, outputs: a.outputs,
+            rules: a.rules, qualityStandards: a.qualityStandards, cooperation: a.cooperation,
+            selfReview: a.selfReview, neverDo: a.neverDo, dependsOn: a.dependsOn,
+        })),
+    });
 });
 
 // 🗂️ إدارة ملفات المشاريع

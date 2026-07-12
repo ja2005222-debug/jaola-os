@@ -240,6 +240,19 @@ const STRINGS = {
   admGhPushed: { en: '✅ Pushed', ar: '✅ تم الرفع' },
   admGhPickFile: { en: 'Pick a file to view and edit', ar: 'اختر ملفاً لعرضه وتعديله' },
   admGhPrivate: { en: 'private', ar: 'خاص' },
+
+  // Backend team tab
+  admTabTeam: { en: 'Backend Team', ar: 'فريق الخلفية' },
+  admTeamTitle: { en: '👥 Backend Agent Team', ar: '👥 فريق وكلاء الخلفية' },
+  admTeamIntro: { en: 'Specialized agents that cooperate on backend builds — each follows the same 9-section contract for stable behavior across AI models.', ar: 'وكلاء متخصصون يتعاونون في بناء الخلفية — كلٌّ يتبع العقد الموحّد (9 أقسام) لسلوك مستقر عبر نماذج الذكاء.' },
+  admTeamLoading: { en: 'Loading team...', ar: 'جاري تحميل الفريق...' },
+  admTeamMission: { en: 'Mission', ar: 'المهمة' },
+  admTeamResponsibilities: { en: 'Responsibilities', ar: 'المسؤوليات' },
+  admTeamOutputs: { en: 'Outputs', ar: 'المخرجات' },
+  admTeamCooperation: { en: 'Cooperation', ar: 'التعاون' },
+  admTeamNeverDo: { en: 'Never Do', ar: 'ممنوع' },
+  admTeamDependsOn: { en: 'Depends on', ar: 'يعتمد على' },
+  admTeamOrder: { en: 'Execution order', ar: 'ترتيب التنفيذ' },
 };
 
 const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('uiLang') : null;

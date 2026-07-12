@@ -49,6 +49,7 @@ export default function AdminPanel({ onExit }) {
       {tab === 'agents' && <AgentsTab api={api} />}
       {tab === 'files' && <FilesTab api={api} />}
       {tab === 'github' && <GitHubTab api={api} />}
+      {tab === 'team' && <BackendTeamTab api={api} />}
     </Shell>
   );
 }
@@ -62,6 +63,7 @@ function Shell({ children, onExit, tab, setTab }) {
     { id: 'agents', icon: '🤖', label: tr('admTabAgents') },
     { id: 'files', icon: '🗂️', label: tr('admTabFiles') },
     { id: 'github', icon: '🐙', label: tr('admTabGithub') },
+    { id: 'team', icon: '👥', label: tr('admTabTeam') },
   ];
   return (
     <div style={{ minHeight: '100dvh', background: S.bg, color: S.text, fontFamily: 'system-ui, sans-serif', direction: dir }}>
@@ -521,6 +523,64 @@ function GitHubTab({ api }) {
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: S.muted, fontSize: 13 }}>{tr('admGhPickFile')}</div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 👥 فريق وكلاء الخلفية ──────────────────────────────────────
+function BackendTeamTab({ api }) {
+  const tr = useI18n(s => s.t);
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  useEffect(() => { api('/api/admin/backend-team').then(setData).catch(e => setErr(e.message)); }, [api]);
+
+  if (err) return <div><Header title={tr('admTeamTitle')} /><Muted>{err}</Muted></div>;
+  if (!data) return <div><Header title={tr('admTeamTitle')} /><Muted>{tr('admTeamLoading')}</Muted></div>;
+
+  const Section = ({ label, items }) => (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ fontSize: 10, color: S.muted, fontWeight: 700, letterSpacing: '0.5px', marginBottom: 3 }}>{label}</div>
+      <ul style={{ margin: 0, paddingInlineStart: 18, color: S.text, fontSize: 12, lineHeight: 1.7 }}>
+        {items.map((x, i) => <li key={i}>{x}</li>)}
+      </ul>
+    </div>
+  );
+
+  return (
+    <div>
+      <Header title={tr('admTeamTitle')} />
+      <p style={{ color: S.muted, fontSize: 13, lineHeight: 1.8, marginBottom: 12 }}>{tr('admTeamIntro')}</p>
+      {/* ترتيب التنفيذ */}
+      <div style={{ ...cardStyle, padding: 12, marginBottom: 16 }}>
+        <div style={{ fontSize: 11, color: S.muted, fontWeight: 700, marginBottom: 8 }}>{tr('admTeamOrder')}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+          {data.plan.map((p, i) => (
+            <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: 7, padding: '4px 10px', fontSize: 12, color: '#93c5fd', fontWeight: 700 }}>{p.icon} {p.role}</span>
+              {i < data.plan.length - 1 && <span style={{ color: S.muted }}>→</span>}
+            </span>
+          ))}
+        </div>
+      </div>
+      {/* بطاقات الوكلاء */}
+      <div style={{ display: 'grid', gap: 12 }}>
+        {data.agents.map(a => (
+          <div key={a.id} style={{ ...cardStyle }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+              <span style={{ fontSize: 20 }}>{a.icon}</span>
+              <span style={{ fontWeight: 800, fontSize: 15 }}>{a.role}</span>
+              {a.dependsOn?.length > 0 && (
+                <span style={{ fontSize: 10, color: S.muted, marginInlineStart: 'auto' }}>{tr('admTeamDependsOn')}: {a.dependsOn.join(', ')}</span>
+              )}
+            </div>
+            <div style={{ fontSize: 12.5, color: S.text, lineHeight: 1.7 }}>{a.mission}</div>
+            <Section label={tr('admTeamResponsibilities')} items={a.responsibilities} />
+            <Section label={tr('admTeamOutputs')} items={a.outputs} />
+            <Section label={tr('admTeamCooperation')} items={a.cooperation.map(c => `${c.with} — ${c.how}`)} />
+            <Section label={tr('admTeamNeverDo')} items={a.neverDo} />
+          </div>
+        ))}
       </div>
     </div>
   );
