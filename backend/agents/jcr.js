@@ -544,11 +544,14 @@ export class JaolaCognitiveRuntime {
                     const buildLang = getUserLanguage(context.username) || 'en';
                     const team = await runBackendTeam(context.goal, {
                         lang: buildLang,
+                        verify: true, // فحص تنفيذي حقيقي + إصلاح Debug تلقائي
                         llm: (messages, options) => smartChat(messages, options),
                         onEvent: (evt) => {
                             if (evt.type === 'agent_start') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `${evt.icon} ${evt.role} يعمل...`);
                             else if (evt.type === 'agent_done') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `✅ ${evt.role}: ${evt.summary} (${evt.files} ملف)`);
                             else if (evt.type === 'agent_skipped') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `⏭️ ${evt.role} (${evt.reason})`);
+                            else if (evt.type === 'verify_failed') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendVerify', `🔎 فحص: ${evt.failures} خطأ — Debug يصلح (جولة ${evt.round})...`);
+                            else if (evt.type === 'verify_done') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendVerify', evt.ok ? `✅ الكود المولّد اجتاز الفحص` : `⚠️ بقي ${evt.failures} خطأ بعد ${evt.rounds} جولة`);
                             else if (evt.type === 'agent_error') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `⚠️ ${evt.role}: ${evt.error}`);
                         },
                     });

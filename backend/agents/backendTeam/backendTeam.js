@@ -14,6 +14,7 @@ import path from 'path';
 import { promises as fsp } from 'fs';
 import { compileSpecToPrompt } from './agentSpec.js';
 import { BACKEND_TEAM, TEAM_BY_ID, BACKEND_DEBUG_AGENT } from './specs.js';
+import { syntaxCheckFiles } from './backendVerify.js';
 
 /** يطهّر مساراً نسبياً: يمنع الجذر المطلق و.. وأحرف خطيرة، ويوحّد الفواصل */
 export function safeRelPath(p) {
@@ -214,6 +215,40 @@ export async function runBackendTeam(goal, opts = {}) {
         }
     }
 
+    // ✅ فحص تنفيذي حقيقي: node --check على الكود المولّد، والأخطاء تُغذّى Debug ليصلحها
+    let verification = null;
+    if (opts.verify) {
+        const maxRounds = Number.isInteger(opts.maxVerifyRounds) ? opts.maxVerifyRounds : 2;
+        let ver = await syntaxCheckFiles(Object.values(fileMap));
+        let round = 0;
+        while (!ver.ok && round < maxRounds) {
+            onEvent({ type: 'verify_failed', round: round + 1, failures: ver.failures.length });
+            const debug = TEAM_BY_ID['backend-debug-agent'];
+            const dbgArtifacts = {
+                ...artifacts,
+                'backend-qa-engineer': {
+                    ...(artifacts['backend-qa-engineer'] || {}),
+                    issues: [
+                        ...((artifacts['backend-qa-engineer'] || {}).issues || []),
+                        ...ver.failures.map((f) => `${f.path}: ${f.error}`),
+                    ],
+                },
+            };
+            try {
+                const res = await runAgent(debug, { goal, lang, artifacts: dbgArtifacts, fileMap, llm: opts.llm });
+                for (const f of res.files) fileMap[f.path] = { path: f.path, content: f.content, kind: f.kind, by: debug.id, action: f.action };
+                results.push({ ...res, phase: 'verify-fix', round: round + 1 });
+            } catch (e) {
+                onEvent({ type: 'agent_error', agent: debug.id, role: debug.role, error: e.message });
+                break;
+            }
+            ver = await syntaxCheckFiles(Object.values(fileMap));
+            round++;
+        }
+        verification = { ok: ver.ok, checked: ver.checked, failures: ver.failures, rounds: round };
+        onEvent({ type: 'verify_done', ok: ver.ok, failures: ver.failures.length, rounds: round });
+    }
+
     const files = Object.values(fileMap);
     const openIssues = results.flatMap((r) => (r.issues || []).map((i) => ({ issue: i, by: r.agent })));
     return {
@@ -221,7 +256,8 @@ export async function runBackendTeam(goal, opts = {}) {
         order,
         results,
         files,
+        verification,
         openIssues,
-        summary: `فريق خلفي: ${results.filter((r) => !r.skipped && !r.error).length}/${team.length} وكيل أنجز، ${files.length} ملف، ${openIssues.length} مشكلة مفتوحة`,
+        summary: `فريق خلفي: ${results.filter((r) => !r.skipped && !r.error).length}/${team.length} وكيل أنجز، ${files.length} ملف، ${openIssues.length} مشكلة مفتوحة${verification ? `، فحص: ${verification.ok ? 'نجح' : verification.failures.length + ' خطأ'}` : ''}`,
     };
 }
