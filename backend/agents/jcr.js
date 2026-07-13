@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { groq, smartChat } from './baseAgent.js';
 import { runBackendTeam, writeBackendTeamFiles } from './backendTeam/index.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from '../services/projectBrain.js';
+import { selectStarter, resolveStack } from './starterRegistry.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO } from './languageDetector.js';
 import { getLanguageDecision, buildLanguagePrompt } from './languageManager.js';
@@ -953,6 +954,22 @@ User preferences: ${JSON.stringify(execMemory)}` },
             if (blueprint.keySections?.length) {
                 updateStructure(username, activeProject, blueprint.keySections,
                     (blueprint.functionalComponents || []).map(c => c.name));
+            }
+        } catch (e) { /* اختياري */ }
+
+        // 🧰 المسار الهجين — يقرّر Vanilla vs React/Next ويختار قالباً منسّقاً (Starter Registry)
+        try {
+            const ptype = blueprint?.category && blueprint.category !== 'other' ? blueprint.category : detectProjectType(goal);
+            const scope = getProjectMemory(username, activeProject)?.plan?.scope || '';
+            const stack = resolveStack({ projectType: ptype, scope });
+            const starter = selectStarter({ projectType: ptype, scope });
+            if (stack === 'react-next') {
+                // مسار المشاريع الكبيرة — سكافولد React الفعلي خطوة تالية؛ الآن نُصرّح بالخطة بشفافية
+                this.emitLiveLog(roomName, 'STACK', 'HybridRouter',
+                    `🧰 مشروع كبير → مسار React/Next${starter ? ` (قالب مقترح: ${starter.name})` : ''} — يُبنى حالياً Vanilla ريثما يُفعّل مولّد React`);
+            } else {
+                this.emitLiveLog(roomName, 'STACK', 'HybridRouter',
+                    `🧰 مسار سريع → Vanilla${starter ? ` (قالب: ${starter.name})` : ''}`);
             }
         } catch (e) { /* اختياري */ }
 
