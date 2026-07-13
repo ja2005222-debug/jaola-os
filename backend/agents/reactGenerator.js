@@ -25,21 +25,21 @@ const compName = (section, i) => {
     return latin && /^[A-Za-z]/.test(latin) ? latin : `Section${i + 1}`;
 };
 
+// المكوّنات تقرأ محتواها من lib/content.js (يملؤه الذكاء) — فالهيكل حتمي والمحتوى مخصّص
 function componentSource(name, lang) {
     const rtl = RTL_LANGS.has(lang);
     const align = rtl ? 'text-right' : 'text-left';
+    const head = `import { content } from '../lib/content';\n\n`;
     if (name === 'Navbar') {
-        return `export default function Navbar() {
+        return `${head}export default function Navbar() {
   return (
     <header className="sticky top-0 z-50 backdrop-blur bg-white/70 dark:bg-slate-900/70 border-b border-slate-200 dark:border-slate-800">
       <nav className="mx-auto max-w-6xl flex items-center justify-between px-6 py-4">
-        <span className="text-xl font-extrabold bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">Brand</span>
+        <span className="text-xl font-extrabold bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">{content.brand}</span>
         <div className="hidden md:flex gap-6 text-sm font-medium text-slate-600 dark:text-slate-300">
-          <a href="#" className="hover:text-blue-600">Home</a>
-          <a href="#" className="hover:text-blue-600">Features</a>
-          <a href="#" className="hover:text-blue-600">Contact</a>
+          {(content.nav || []).map((n) => (<a key={n} href="#" className="hover:text-blue-600">{n}</a>))}
         </div>
-        <button className="rounded-lg bg-gradient-to-r from-blue-600 to-violet-600 px-4 py-2 text-sm font-semibold text-white">Get Started</button>
+        <button className="rounded-lg bg-gradient-to-r from-blue-600 to-violet-600 px-4 py-2 text-sm font-semibold text-white">{content.hero?.cta1 || 'Start'}</button>
       </nav>
     </header>
   );
@@ -47,18 +47,15 @@ function componentSource(name, lang) {
 `;
     }
     if (name === 'Hero') {
-        return `export default function Hero() {
+        return `${head}export default function Hero() {
+  const h = content.hero || {};
   return (
     <section className="mx-auto max-w-6xl px-6 py-24 ${align}">
-      <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-        Build something great
-      </h1>
-      <p className="mt-6 max-w-2xl text-lg text-slate-600 dark:text-slate-300">
-        A modern, fast, production-ready starting point — customized by JAOLA to your needs.
-      </p>
+      <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight text-slate-900 dark:text-white">{h.title}</h1>
+      <p className="mt-6 max-w-2xl text-lg text-slate-600 dark:text-slate-300">{h.subtitle}</p>
       <div className="mt-8 flex gap-4">
-        <button className="rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 px-6 py-3 font-semibold text-white">Start now</button>
-        <button className="rounded-xl border border-slate-300 dark:border-slate-700 px-6 py-3 font-semibold text-slate-700 dark:text-slate-200">Learn more</button>
+        <button className="rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 px-6 py-3 font-semibold text-white">{h.cta1}</button>
+        {h.cta2 ? <button className="rounded-xl border border-slate-300 dark:border-slate-700 px-6 py-3 font-semibold text-slate-700 dark:text-slate-200">{h.cta2}</button> : null}
       </div>
     </section>
   );
@@ -66,32 +63,33 @@ function componentSource(name, lang) {
 `;
     }
     if (name === 'Footer') {
-        return `export default function Footer() {
+        return `${head}export default function Footer() {
+  const f = content.footer || {};
   return (
     <footer className="border-t border-slate-200 dark:border-slate-800 py-10">
       <div className="mx-auto max-w-6xl px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-slate-500">
-        <span>© {new Date().getFullYear()} Brand. All rights reserved.</span>
-        <div className="flex gap-6"><a href="#" className="hover:text-blue-600">Privacy</a><a href="#" className="hover:text-blue-600">Terms</a></div>
+        <span>© {new Date().getFullYear()} {content.brand}. {f.rights}</span>
+        <div className="flex gap-6">{(f.links || []).map((l) => (<a key={l} href="#" className="hover:text-blue-600">{l}</a>))}</div>
       </div>
     </footer>
   );
 }
 `;
     }
-    // قسم عام: بطاقات شبكية
-    const title = name.replace(/([a-z])([A-Z])/g, '$1 $2');
-    return `export default function ${name}() {
-  const items = [1, 2, 3];
+    // قسم عام: عنوان + وصف + بطاقات من content.sections[name]
+    return `${head}export default function ${name}() {
+  const s = (content.sections && content.sections['${name}']) || {};
+  const items = s.items || [];
   return (
     <section className="mx-auto max-w-6xl px-6 py-20 ${align}">
-      <h2 className="text-3xl font-bold text-slate-900 dark:text-white">${title}</h2>
-      <p className="mt-3 text-slate-600 dark:text-slate-300">Section content — customized by JAOLA.</p>
+      <h2 className="text-3xl font-bold text-slate-900 dark:text-white">{s.heading}</h2>
+      {s.subheading ? <p className="mt-3 text-slate-600 dark:text-slate-300">{s.subheading}</p> : null}
       <div className="mt-10 grid gap-6 md:grid-cols-3">
-        {items.map((i) => (
+        {items.map((it, i) => (
           <div key={i} className="rounded-2xl border border-slate-200 dark:border-slate-800 p-6 hover:shadow-lg transition">
             <div className="h-10 w-10 rounded-xl bg-gradient-to-r from-blue-600 to-violet-600" />
-            <h3 className="mt-4 font-semibold text-slate-900 dark:text-white">Item {i}</h3>
-            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Concise, useful description goes here.</p>
+            <h3 className="mt-4 font-semibold text-slate-900 dark:text-white">{it.title}</h3>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{it.desc}</p>
           </div>
         ))}
       </div>
@@ -101,11 +99,60 @@ function componentSource(name, lang) {
 `;
 }
 
+// محتوى افتراضي (يُستبدل بمحتوى الذكاء) — بلغة المستخدم
+function defaultContent(pageTitle, comps, lang) {
+    const ar = lang === 'ar';
+    const generic = comps.filter((c) => !['Navbar', 'Hero', 'Footer'].includes(c));
+    const sections = {};
+    for (const c of generic) {
+        const label = c.replace(/([a-z])([A-Z])/g, '$1 $2');
+        sections[c] = {
+            heading: label,
+            subheading: ar ? 'محتوى هذا القسم — يخصّصه الذكاء حسب مشروعك.' : 'Section content — customized to your project.',
+            items: [1, 2, 3].map((i) => ({
+                title: ar ? `عنصر ${i}` : `Item ${i}`,
+                desc: ar ? 'وصف موجز ومفيد.' : 'Concise, useful description.',
+            })),
+        };
+    }
+    return {
+        brand: pageTitle,
+        nav: ar ? ['الرئيسية', 'المزايا', 'تواصل'] : ['Home', 'Features', 'Contact'],
+        hero: {
+            title: ar ? 'ابنِ شيئاً رائعاً' : 'Build something great',
+            subtitle: ar ? 'انطلاقة عصرية وسريعة وجاهزة للإنتاج — يخصّصها JAOLA لاحتياجك.' : 'A modern, fast, production-ready start — customized by JAOLA.',
+            cta1: ar ? 'ابدأ الآن' : 'Start now',
+            cta2: ar ? 'اعرف أكثر' : 'Learn more',
+        },
+        sections,
+        footer: { rights: ar ? 'كل الحقوق محفوظة.' : 'All rights reserved.', links: ar ? ['الخصوصية', 'الشروط'] : ['Privacy', 'Terms'] },
+    };
+}
+
+/** يدمج محتوى الذكاء فوق الافتراضي (يضمن اكتمال الحقول → لا أعطال) */
+function mergeContent(base, model) {
+    if (!model || typeof model !== 'object') return base;
+    return {
+        brand: model.brand || base.brand,
+        nav: Array.isArray(model.nav) && model.nav.length ? model.nav : base.nav,
+        hero: { ...base.hero, ...(model.hero || {}) },
+        sections: (() => {
+            const out = { ...base.sections };
+            for (const k of Object.keys(base.sections)) {
+                const m = model.sections?.[k];
+                if (m) out[k] = { heading: m.heading || base.sections[k].heading, subheading: m.subheading ?? base.sections[k].subheading, items: Array.isArray(m.items) && m.items.length ? m.items : base.sections[k].items };
+            }
+            return out;
+        })(),
+        footer: { ...base.footer, ...(model.footer || {}) },
+    };
+}
+
 /**
  * يولّد مشروع Next.js + Tailwind كاملاً.
  * @returns {{ files: {name,content}[] }}
  */
-export function generateNextScaffold({ projectName = 'jaola-app', sections = [], features = [], lang = 'en', title } = {}) {
+export function generateNextScaffold({ projectName = 'jaola-app', sections = [], features = [], lang = 'en', title, content } = {}) {
     const code = (lang || 'en').toLowerCase();
     const dir = RTL_LANGS.has(code) ? 'rtl' : 'ltr';
     const safeName = (projectName || 'jaola-app').toString().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'jaola-app';
@@ -122,7 +169,11 @@ export function generateNextScaffold({ projectName = 'jaola-app', sections = [],
         return n;
     });
 
+    // 🧠 المحتوى: افتراضي مدموج فوقه نموذج الذكاء (إن وُجد) — يضمن اكتمال الحقول
+    const finalContent = mergeContent(defaultContent(pageTitle, comps, code), content);
+
     const files = [];
+    files.push({ name: 'lib/content.js', content: `// محتوى الموقع — عدّله بحرّية. يملؤه JAOLA بالذكاء حسب مشروعك.\nexport const content = ${JSON.stringify(finalContent, null, 2)};\n` });
 
     files.push({ name: 'package.json', content: JSON.stringify({
         name: safeName, version: '0.1.0', private: true,
@@ -189,5 +240,32 @@ npm run build && npm start
 
     files.push({ name: '.gitignore', content: `node_modules\n.next\n.env\n` });
 
-    return { files, meta: { stack: 'react-next', components: comps, dir, lang: code } };
+    return { files, meta: { stack: 'react-next', components: comps, dir, lang: code, content: finalContent } };
+}
+
+/**
+ * 🧠 نموذج المحتوى بالذكاء — يملأ هيكل React بمحتوى المشروع الفعلي بلغة المستخدم.
+ * يُرجع كائن content (أو null عند الفشل → يُستخدم الافتراضي). @param llm async(messages,opts)=>text
+ */
+export async function generateContentModel(goal, { sections = [], lang = 'en', llm } = {}) {
+    if (typeof llm !== 'function') return null;
+    const comps = sections.map((s, i) => compName(s, i));
+    const generic = comps.filter((c) => !['Navbar', 'Hero', 'Footer'].includes(c));
+    const sys = `أنت كاتب محتوى ويب محترف. أعِد **JSON فقط** يملأ محتوى موقع بلغة: ${lang}.
+اكتب محتوى واقعياً ومقنعاً لمشروع المستخدم (لا نصوصاً عامة). الشكل:
+{
+  "brand": "اسم العلامة",
+  "nav": ["رابط","رابط","رابط"],
+  "hero": { "title": "...", "subtitle": "...", "cta1": "...", "cta2": "..." },
+  "sections": { ${generic.map((c) => `"${c}": { "heading": "...", "subheading": "...", "items": [ { "title": "...", "desc": "..." } ] }`).join(', ')} },
+  "footer": { "rights": "...", "links": ["...","..."] }
+}`;
+    try {
+        const raw = await llm(
+            [{ role: 'system', content: sys }, { role: 'user', content: `المشروع: ${goal}` }],
+            { max_tokens: 1200, temperature: 0.5, json: true }
+        );
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch { return null; }
 }
