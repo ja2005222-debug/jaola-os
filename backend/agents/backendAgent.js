@@ -314,6 +314,14 @@ export async function generateAdvancedModules(userGoal, projectPath) {
     const features = detectAdvancedFeatures(userGoal);
     const files = [];
 
+    // ✈️ تكامل Travelpayouts — وسيط بحث طيران آمن (توكن على الخادم + marker إحالة)
+    const { needsTravelpayouts, generateTravelpayoutsModule } = await import('./integrations/travelpayouts.js');
+    if (needsTravelpayouts(userGoal)) {
+        const tp = generateTravelpayoutsModule();
+        for (const f of tp.files) files.push(f);
+        features.needsTravelpayouts = true;
+    }
+
     if (features.needsStripe) {
         const stripe = generateStripeModule();
         files.push(stripe);

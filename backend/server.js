@@ -49,6 +49,7 @@ import { teamPlan, BACKEND_TEAM } from './agents/backendTeam/index.js';
 import { frontendTeamPlan, FRONTEND_TEAM } from './agents/frontendTeam/index.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
 import { getProjectMemory } from './agents/projectMemory.js';
+import { setProjectSecret, deleteProjectSecret, getProjectSecretNames } from './services/projectSecrets.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
 import { buildMetricsPayload } from './services/metricsStore.js';
 import { queueStatus } from './services/missionQueue.js';
@@ -945,6 +946,25 @@ import { getProjectSummary } from './agents/stateMachine.js';
 app.get('/api/project/state', verifyToken, validateProjectOwnership, async (req, res) => {
     const summary = getProjectSummary(req.user.username, req.activeProject);
     res.json({ success: true, ...summary });
+});
+
+// 🔑 أسرار المشروع (مفاتيح أطراف ثالثة مثل Travelpayouts) — مشفّرة، تُكتب في .env
+app.get('/api/project/secrets', verifyToken, validateProjectOwnership, (req, res) => {
+    res.json({ success: true, keys: getProjectSecretNames(req.user.username, req.activeProject) });
+});
+app.post('/api/project/secret', verifyToken, validateProjectOwnership, async (req, res) => {
+    try {
+        const { key, value } = req.body || {};
+        await setProjectSecret(req.user.username, req.activeProject, req.projectPath, key, value);
+        res.json({ success: true, keys: getProjectSecretNames(req.user.username, req.activeProject) });
+    } catch (e) { res.status(400).json({ error: e.message }); }
+});
+app.delete('/api/project/secret', verifyToken, validateProjectOwnership, async (req, res) => {
+    try {
+        const { key } = req.body || {};
+        await deleteProjectSecret(req.user.username, req.activeProject, req.projectPath, key);
+        res.json({ success: true, keys: getProjectSecretNames(req.user.username, req.activeProject) });
+    } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 // 🧠 Project Brain — فهم المشروع كاملاً (ملفات + قرارات + أُنجز/متبقٍّ)
