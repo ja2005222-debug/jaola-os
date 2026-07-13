@@ -47,6 +47,7 @@ import * as oauth from './services/oauthLite.js';
 import * as ghFiles from './services/githubFiles.js';
 import { teamPlan, BACKEND_TEAM } from './agents/backendTeam/index.js';
 import { frontendTeamPlan, FRONTEND_TEAM } from './agents/frontendTeam/index.js';
+import { listStarters, selectStarter, resolveStack } from './agents/starterRegistry.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
 import { getProjectMemory } from './agents/projectMemory.js';
 import { setProjectSecret, deleteProjectSecret, getProjectSecretNames } from './services/projectSecrets.js';
@@ -1205,6 +1206,11 @@ app.get('/api/admin/backend-team', verifyToken, adminOnly, (req, res) => {
         plan: teamPlan(),
         agents: BACKEND_TEAM.map(serializeAgent),
     });
+});
+
+// 🧰 Starter Registry (بذرة Marketplace) — القوالب المنسّقة + اختيار المسار
+app.get('/api/admin/starters', verifyToken, adminOnly, (req, res) => {
+    res.json({ success: true, starters: listStarters() });
 });
 
 // 🗂️ إدارة ملفات المشاريع
