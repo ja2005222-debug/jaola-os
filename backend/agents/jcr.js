@@ -5,6 +5,8 @@ import { groq, smartChat } from './baseAgent.js';
 import { runBackendTeam, writeBackendTeamFiles } from './backendTeam/index.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from '../services/projectBrain.js';
 import { selectStarter, resolveStack } from './starterRegistry.js';
+import { generateNextScaffold } from './reactGenerator.js';
+import { reactPreviewFile } from '../services/reactPreview.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO } from './languageDetector.js';
 import { getLanguageDecision, buildLanguagePrompt } from './languageManager.js';
@@ -957,21 +959,23 @@ User preferences: ${JSON.stringify(execMemory)}` },
             }
         } catch (e) { /* اختياري */ }
 
-        // 🧰 المسار الهجين — يقرّر Vanilla vs React/Next ويختار قالباً منسّقاً (Starter Registry)
+        // 🧰 المسار الهجين — مشروع كبير → React/Next حقيقي بمعاينة حيّة؛ غيره → Vanilla سريع
         try {
             const ptype = blueprint?.category && blueprint.category !== 'other' ? blueprint.category : detectProjectType(goal);
             const scope = getProjectMemory(username, activeProject)?.plan?.scope || '';
             const stack = resolveStack({ projectType: ptype, scope });
             const starter = selectStarter({ projectType: ptype, scope });
-            if (stack === 'react-next') {
-                // مسار المشاريع الكبيرة — سكافولد React الفعلي خطوة تالية؛ الآن نُصرّح بالخطة بشفافية
-                this.emitLiveLog(roomName, 'STACK', 'HybridRouter',
-                    `🧰 مشروع كبير → مسار React/Next${starter ? ` (قالب مقترح: ${starter.name})` : ''} — يُبنى حالياً Vanilla ريثما يُفعّل مولّد React`);
-            } else {
-                this.emitLiveLog(roomName, 'STACK', 'HybridRouter',
-                    `🧰 مسار سريع → Vanilla${starter ? ` (قالب: ${starter.name})` : ''}`);
+            // فقط لبناء جديد (لا تعديل على مشروع قائم)
+            const existingCtx = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
+            const isFreshBuild = !existingCtx || existingCtx.trim().length < 80;
+            if (stack === 'react-next' && isFreshBuild) {
+                this.emitLiveLog(roomName, 'STACK', 'HybridRouter', `🧰 مشروع كبير → React/Next${starter ? ` (${starter.name})` : ''}`);
+                return await this._buildReactProject(goal, projectPath, username, activeProject, roomName, {
+                    sections: blueprint?.keySections || [], starter,
+                });
             }
-        } catch (e) { /* اختياري */ }
+            this.emitLiveLog(roomName, 'STACK', 'HybridRouter', `🧰 مسار سريع → Vanilla${starter ? ` (قالب: ${starter.name})` : ''}`);
+        } catch (e) { /* اختياري — نُكمل بالمسار الافتراضي */ }
 
         // 🆕 Smart Requirement Analyzer — يُثري الهدف بمتطلبات ضمنية
         let requirementsContext = '';
@@ -1264,6 +1268,62 @@ User preferences: ${JSON.stringify(execMemory)}` },
             : `✅ Applied the change to **${changedNames}** only (no full rebuild) — preview updated.`;
         this.io.to(roomName).emit('chat_reply', { message: msg, options: lang === 'ar' ? ['🚀 انشر الآن', '📊 أين وصلنا'] : ['🚀 Deploy now', '📊 Status'] });
         return { success: true, edited: guarded.map(f => f.name) };
+    }
+
+    // ⚛️ بناء مشروع React/Next حقيقي + معاينة حيّة في الـ iframe + خيار النشر
+    async _buildReactProject(goal, projectPath, username, activeProject, roomName, { sections = [], starter } = {}) {
+        const lang = getUserLanguage(username) || 'ar';
+        const t0 = Date.now();
+        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
+        this.emitLiveLog(roomName, '5. RUNTIME', 'ReactGen', '⚛️ توليد مشروع Next.js + Tailwind...');
+
+        // 1) سكافولد Next الحقيقي (للنشر/التنزيل)
+        const scaffold = generateNextScaffold({ projectName: activeProject, sections, lang });
+        for (const f of scaffold.files) {
+            const p = path.join(projectPath, f.name);
+            await fsPromises.mkdir(path.dirname(p), { recursive: true });
+            await fsPromises.writeFile(p, f.content);
+        }
+
+        // 2) معاينة حيّة مكتفية ذاتياً (index.html) تصيّر المكوّنات فعلياً في الـ iframe
+        const preview = reactPreviewFile(scaffold.files, { title: activeProject, lang });
+        await fsPromises.writeFile(path.join(projectPath, 'index.html'), preview.content);
+
+        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
+        transitionState(username, activeProject, STATES.COMPLETED);
+        updateStructure(username, activeProject, sections, scaffold.meta.components);
+        addToHistory(username, activeProject, `بناء React/Next: ${(goal || '').slice(0, 60)}`);
+
+        // 3) تحديث المعاينة + قائمة الملفات + لقطة
+        this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        let builtFiles = [];
+        try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
+        this.io.to(roomName).emit('workspace_files', builtFiles);
+        snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
+        autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
+        const durationSec = Math.round((Date.now() - t0) / 1000);
+        recordBuild(username, activeProject, { success: true, durationSec, filesCount: builtFiles.length, goal: goal || '' });
+        this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
+
+        const report = lang === 'ar'
+            ? [
+                '✅ مشروع React/Next جاهز — معاينة حيّة تعمل الآن.',
+                `⚛️ Next.js + Tailwind · ${scaffold.meta.components.length} مكوّن${starter ? ` · قالب: ${starter.name}` : ''}`,
+                '🖥️ المعاينة الحيّة تعرض المكوّنات فعلياً — عدّل ثم شاهد التغيير مباشرة.',
+                '⬇️ للتشغيل محلياً: npm install && npm run dev · وجاهز للنشر على Vercel.',
+              ].join('\n')
+            : [
+                '✅ React/Next project ready — live preview running now.',
+                `⚛️ Next.js + Tailwind · ${scaffold.meta.components.length} components${starter ? ` · template: ${starter.name}` : ''}`,
+                '🖥️ Live preview renders the real components — edit and see changes instantly.',
+                '⬇️ Local run: npm install && npm run dev · Ready to deploy on Vercel.',
+              ].join('\n');
+        this.io.to(roomName).emit('chat_reply', {
+            message: report,
+            options: lang === 'ar' ? ['🚀 انشر على Vercel', '🐙 ادفع إلى GitHub', '✏️ عدّل قسماً'] : ['🚀 Deploy to Vercel', '🐙 Push to GitHub', '✏️ Edit a section'],
+        });
+        this.emitLiveLog(roomName, 'JCOS', 'Kernel', '✨ نجاح');
+        return { success: true, stack: 'react-next', files: builtFiles };
     }
 
     async handleUserMessage(socket, data, agents, dbStatus) {
