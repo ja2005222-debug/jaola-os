@@ -8,6 +8,8 @@
 
 const RTL_LANGS = new Set(['ar', 'ur', 'he', 'fa']);
 const cap = (s) => (s || '').charAt(0).toUpperCase() + (s || '').slice(1);
+// اسم مكوّن (PascalCase) → مسار صفحة (slug): DataTable → data-table
+const slugify = (comp) => (comp || '').replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'page';
 // اسم مكوّن صالح من اسم قسم (عربي/إنجليزي) → PascalCase لاتيني آمن
 const compName = (section, i) => {
     const map = {
@@ -31,13 +33,15 @@ function componentSource(name, lang) {
     const align = rtl ? 'text-right' : 'text-left';
     const head = `import { content } from '../lib/content';\n\n`;
     if (name === 'Navbar') {
-        return `${head}export default function Navbar() {
+        // روابط تنقّل حقيقية بين الصفحات عبر next/link (وجهات من content.routes)
+        return `import Link from 'next/link';\n${head}export default function Navbar() {
+  const routes = content.routes || [];
   return (
     <header className="sticky top-0 z-50 backdrop-blur bg-white/70 dark:bg-slate-900/70 border-b border-slate-200 dark:border-slate-800">
       <nav className="mx-auto max-w-6xl flex items-center justify-between px-6 py-4">
-        <span className="text-xl font-extrabold bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">{content.brand}</span>
+        <Link href="/" className="text-xl font-extrabold bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">{content.brand}</Link>
         <div className="hidden md:flex gap-6 text-sm font-medium text-slate-600 dark:text-slate-300">
-          {(content.nav || []).map((n) => (<a key={n} href="#" className="hover:text-blue-600">{n}</a>))}
+          {routes.map((r) => (<Link key={r.href} href={r.href} className="hover:text-blue-600">{r.label}</Link>))}
         </div>
         <button className="rounded-lg bg-gradient-to-r from-blue-600 to-violet-600 px-4 py-2 text-sm font-semibold text-white">{content.hero?.cta1 || 'Start'}</button>
       </nav>
@@ -161,6 +165,13 @@ export function generateNextScaffold({ projectName = 'jaola-app', sections = [],
 
     // أقسام افتراضية إن لم تُمرَّر
     let secs = (sections && sections.length ? sections : ['navbar', 'hero', 'features', 'about', 'contact', 'footer']).slice(0, 12);
+    // ضمِن هيكل الموقع (شريط علوي + بطل + تذييل) حتى لو لم تُمرَّر — فكل موقع متعدّد
+    // الصفحات يحتاج تنقّلاً وتذييلاً، والرئيسية تحتاج بطلاً.
+    const mapped = secs.map((s, i) => compName(s, i));
+    if (!mapped.includes('Navbar')) secs.unshift('navbar');
+    if (!secs.map((s, i) => compName(s, i)).includes('Hero')) secs.splice(1, 0, 'hero');
+    if (!secs.map((s, i) => compName(s, i)).includes('Footer')) secs.push('footer');
+
     // اسم مكوّن فريد لكل قسم + احتفظ بالتسمية الأصلية (لعنوان ذي معنى)
     const seen = new Set();
     const labels = {};
@@ -173,8 +184,19 @@ export function generateNextScaffold({ projectName = 'jaola-app', sections = [],
         return n;
     });
 
+    // 🗺️ الصفحات: الرئيسية (بطل) + صفحة مستقلّة لكل قسم وظيفي — تنقّل حقيقي
+    const CHROME = new Set(['Navbar', 'Hero', 'Footer']);
+    const hasNav = comps.includes('Navbar');
+    const hasFooter = comps.includes('Footer');
+    const pageComps = comps.filter((c) => !CHROME.has(c));   // كل قسم = صفحة
+    const homeLabel = code === 'ar' ? 'الرئيسية' : 'Home';
+    const routes = [{ label: homeLabel, href: '/' }].concat(
+        pageComps.map((c) => ({ label: labels[c] || c.replace(/([a-z])([A-Z])/g, '$1 $2'), href: '/' + slugify(c) }))
+    );
+
     // 🧠 المحتوى: افتراضي مدموج فوقه نموذج الذكاء (إن وُجد) — يضمن اكتمال الحقول
     const finalContent = mergeContent(defaultContent(pageTitle, comps, code, labels), content);
+    finalContent.routes = routes;   // وجهات التنقّل (حتمية، لا يلمسها الذكاء)
 
     const files = [];
     files.push({ name: 'lib/content.js', content: `// محتوى الموقع — عدّله بحرّية. يملؤه JAOLA بالذكاء حسب مشروعك.\nexport const content = ${JSON.stringify(finalContent, null, 2)};\n` });
@@ -208,18 +230,25 @@ export default function RootLayout({ children }) {
 }
 ` });
 
-    const imports = comps.map((c) => `import ${c} from '../components/${c}';`).join('\n');
-    const usage = comps.map((c) => `      <${c} />`).join('\n');
-    files.push({ name: 'app/page.jsx', content: `${imports}
+    // 📄 مولّد صفحة: يركّب الشريط العلوي + المحتوى + التذييل، ويضع علامة للمعاينة
+    // depth = عمق المجلد تحت app/ (لتصحيح مسار الاستيراد النسبي)
+    const pageFile = (route, compName, bodyComps, depth) => {
+        const rel = depth <= 1 ? '../components' : '../'.repeat(depth) + 'components';
+        const imports = bodyComps.map((c) => `import ${c} from '${rel}/${c}';`).join('\n');
+        const usage = bodyComps.map((c) => `      <${c} />`).join('\n');
+        // العلامة تُمكّن المعاينة الحيّة من بناء جدول توجيه فعلي
+        return `/* jaola:route=${route} comp=${compName} */\n${imports}\n\nexport default function ${compName}() {\n  return (\n    <main>\n${usage}\n    </main>\n  );\n}\n`;
+    };
 
-export default function Page() {
-  return (
-    <main>
-${usage}
-    </main>
-  );
-}
-` });
+    // الرئيسية: شريط + بطل + تذييل
+    const homeBody = comps.filter((c) => c === 'Navbar' || c === 'Hero' || c === 'Footer');
+    files.push({ name: 'app/page.jsx', content: pageFile('/', 'HomePage', homeBody, 1) });
+
+    // صفحة مستقلّة لكل قسم وظيفي: شريط + القسم + تذييل
+    for (const c of pageComps) {
+        const body = [hasNav ? 'Navbar' : null, c, hasFooter ? 'Footer' : null].filter(Boolean);
+        files.push({ name: `app/${slugify(c)}/page.jsx`, content: pageFile('/' + slugify(c), `${c}Page`, body, 2) });
+    }
 
     comps.forEach((c, i) => {
         files.push({ name: `components/${c}.jsx`, content: componentSource(c, code) });
@@ -244,7 +273,7 @@ npm run build && npm start
 
     files.push({ name: '.gitignore', content: `node_modules\n.next\n.env\n` });
 
-    return { files, meta: { stack: 'react-next', components: comps, dir, lang: code, content: finalContent } };
+    return { files, meta: { stack: 'react-next', components: comps, pages: routes, dir, lang: code, content: finalContent } };
 }
 
 /**

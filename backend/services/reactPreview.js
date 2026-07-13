@@ -92,24 +92,45 @@ export function buildReactPreviewHtml(files = [], opts = {}) {
     const dir = RTL_LANGS.has(lang) ? 'rtl' : 'ltr';
     const root = opts.rootComponent || 'Page';
 
-    // اجمع المكوّنات ثم الصفحة (الصفحة تعتمد عليها)
+    // اجمع المكوّنات ثم الصفحات (الصفحات تعتمد عليها)
     const comps = files.filter(f => /^components\/.+\.jsx$/.test(f.name));
-    const page = files.find(f => f.name === 'app/page.jsx' || f.name === 'app/page.js');
     const contentMod = files.find(f => f.name === 'lib/content.js' || f.name === 'lib/content.jsx');
+    // صفحات تحمل علامة توجيه (متعدّد الصفحات) — نبني منها راوتراً فعلياً
+    const pageFiles = files.filter(f => /^app\/(?:[^/]+\/)?page\.jsx?$/.test(f.name));
+    const pages = pageFiles
+        .map(f => { const m = f.content.match(/jaola:route=(\S+)\s+comp=(\w+)/); return m ? { route: m[1], comp: m[2], src: f.content } : null; })
+        .filter(Boolean);
 
     const parts = [];
     // محتوى الموقع أولاً (المكوّنات تستورده) — نُضمّنه لأن المعاينة تزيل الـ imports
     if (contentMod) parts.push(stripModuleSyntax(contentMod.content));
     for (const c of comps) parts.push(stripModuleSyntax(c.content));
-    if (page) parts.push(stripModuleSyntax(page.content));
-    // نقطة التصيير: نمسح محتوى fallback ثم نصيّر React فوقه؛ وأي خطأ يظهر بدل ابتلاعه
-    parts.push(`try {
-  const __el = document.getElementById('root');
-  const __root = ReactDOM.createRoot(__el);
-  __root.render(React.createElement(${root}));
-} catch (e) {
-  __showError(e && (e.stack || e.message) || String(e));
-}`);
+
+    if (pages.length) {
+        // 🗺️ متعدّد الصفحات: بديل next/link + راوتر هاش يعيد التصيير عند تغيّر المسار
+        for (const p of pages) parts.push(stripModuleSyntax(p.src));
+        const table = pages.map(p => `${JSON.stringify(p.route)}: ${p.comp}`).join(', ');
+        parts.push(`
+function Link(props){ var href = props.href || '/'; var rest = Object.assign({}, props); delete rest.href; delete rest.children; return React.createElement('a', Object.assign({ href: '#' + href }, rest), props.children); }
+var __routes = { ${table} };
+function __curRoute(){ var h = (location.hash || '').replace(/^#/, ''); return __routes[h] ? h : '/'; }
+function __Router(){
+  var st = React.useState(__curRoute()); var route = st[0], setRoute = st[1];
+  React.useEffect(function(){ function on(){ setRoute(__curRoute()); window.scrollTo(0, 0); } window.addEventListener('hashchange', on); return function(){ window.removeEventListener('hashchange', on); }; }, []);
+  var C = __routes[route] || __routes['/'];
+  return React.createElement(C);
+}
+try {
+  ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(__Router));
+} catch (e) { __showError(e && (e.stack || e.message) || String(e)); }`);
+    } else {
+        // صفحة واحدة (توافق خلفي)
+        const page = files.find(f => f.name === 'app/page.jsx' || f.name === 'app/page.js');
+        if (page) parts.push(stripModuleSyntax(page.content));
+        parts.push(`try {
+  ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(${root}));
+} catch (e) { __showError(e && (e.stack || e.message) || String(e)); }`);
+    }
 
     const script = parts.join('\n\n');
     const title = opts.title || 'Preview';
