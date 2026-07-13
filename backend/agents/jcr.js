@@ -6,7 +6,7 @@ import { runBackendTeam, writeBackendTeamFiles } from './backendTeam/index.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from '../services/projectBrain.js';
 import { selectStarter, resolveStack } from './starterRegistry.js';
 import { generateNextScaffold, generateContentModel } from './reactGenerator.js';
-import { reactPreviewFile } from '../services/reactPreview.js';
+import { buildStaticSite, buildStaticSiteFromSource } from '../services/reactPreview.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO } from './languageDetector.js';
 import { getLanguageDecision, buildLanguagePrompt } from './languageManager.js';
@@ -1224,12 +1224,17 @@ User preferences: ${JSON.stringify(execMemory)}` },
             return this._runMissionNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus);
         }
 
+        // مشروع React؟ نوجّه التعديل للمصدر (lib/content.js، المكوّنات) لا لصفحات
+        // HTML المولّدة (index.html/*.html) — فتلك نُعيد توليدها من المحتوى بعد التعديل.
+        const isReact = files.some(f => f.name === 'lib/content.js' || f.name === 'app/page.jsx');
+        const editFiles = isReact ? files.filter(f => !/^[^/]+\.html$/.test(f.name)) : files;
+
         this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', '✂️ تعديل دقيق (لا إعادة بناء كاملة)...');
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
 
         let plan;
         try {
-            plan = await agents.coreEditCodePlan(instruction, files, lang,
+            plan = await agents.coreEditCodePlan(instruction, editFiles, lang,
                 (chunk) => this.io.to(roomName).emit('code_stream_chunk', chunk));
         } catch (e) {
             this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', `⚠️ تعذّر — عودة للبناء الكامل: ${e.message}`);
@@ -1248,6 +1253,17 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const guarded = await guardFiles(plan.files, (m) => this.emitLiveLog(roomName, 'EDIT', 'CodeGuard', m));
         for (const file of guarded) {
             await fsPromises.writeFile(path.join(projectPath, file.name), file.content);
+        }
+
+        // React: أعِد توليد صفحات المعاينة الثابتة من المحتوى المحدَّث — فينعكس
+        // التعديل على كل الصفحات (لا على index وحده).
+        if (isReact) {
+            try {
+                const src = await fsPromises.readFile(path.join(projectPath, 'lib/content.js'), 'utf8');
+                for (const pg of buildStaticSiteFromSource(src, lang)) {
+                    await fsPromises.writeFile(path.join(projectPath, pg.name), pg.content);
+                }
+            } catch (e) { this.emitLiveLog(roomName, 'EDIT', 'Preview', `⚠️ تعذّر تحديث المعاينة: ${e.message}`); }
         }
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
 
@@ -1292,9 +1308,12 @@ User preferences: ${JSON.stringify(execMemory)}` },
             await fsPromises.writeFile(p, f.content);
         }
 
-        // 2) معاينة حيّة مكتفية ذاتياً (index.html) تصيّر المكوّنات فعلياً في الـ iframe
-        const preview = reactPreviewFile(scaffold.files, { title: activeProject, lang });
-        await fsPromises.writeFile(path.join(projectPath, 'index.html'), preview.content);
+        // 2) معاينة ثابتة متعدّدة الصفحات: صفحة HTML حقيقية لكل مسار بروابط تعمل
+        //    (index.html + <slug>.html) — بلا CDN، فالتنقّل يفتح صفحات فعلية.
+        const staticPages = buildStaticSite(scaffold.meta.content, lang);
+        for (const pg of staticPages) {
+            await fsPromises.writeFile(path.join(projectPath, pg.name), pg.content);
+        }
 
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
         transitionState(username, activeProject, STATES.COMPLETED);
@@ -1312,17 +1331,18 @@ User preferences: ${JSON.stringify(execMemory)}` },
         recordBuild(username, activeProject, { success: true, durationSec, filesCount: builtFiles.length, goal: goal || '' });
         this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
 
+        const pageCount = scaffold.meta.pages?.length || staticPages.length;
         const report = lang === 'ar'
             ? [
-                '✅ مشروع React/Next جاهز — معاينة حيّة تعمل الآن.',
-                `⚛️ Next.js + Tailwind · ${scaffold.meta.components.length} مكوّن${starter ? ` · قالب: ${starter.name}` : ''}`,
-                '🖥️ المعاينة الحيّة تعرض المكوّنات فعلياً — عدّل ثم شاهد التغيير مباشرة.',
+                '✅ مشروع React/Next جاهز — معاينة متعدّدة الصفحات تعمل الآن.',
+                `⚛️ Next.js + Tailwind · ${pageCount} صفحة · ${scaffold.meta.components.length} مكوّن${starter ? ` · قالب: ${starter.name}` : ''}`,
+                '🖥️ اضغط روابط الشريط للتنقّل بين صفحات حقيقية — كل تعديل ينعكس فوراً.',
                 '⬇️ للتشغيل محلياً: npm install && npm run dev · وجاهز للنشر على Vercel.',
               ].join('\n')
             : [
-                '✅ React/Next project ready — live preview running now.',
-                `⚛️ Next.js + Tailwind · ${scaffold.meta.components.length} components${starter ? ` · template: ${starter.name}` : ''}`,
-                '🖥️ Live preview renders the real components — edit and see changes instantly.',
+                '✅ React/Next project ready — multi-page preview running now.',
+                `⚛️ Next.js + Tailwind · ${pageCount} pages · ${scaffold.meta.components.length} components${starter ? ` · template: ${starter.name}` : ''}`,
+                '🖥️ Click the nav links to move between real pages — every edit reflects instantly.',
                 '⬇️ Local run: npm install && npm run dev · Ready to deploy on Vercel.',
               ].join('\n');
         this.io.to(roomName).emit('chat_reply', {
