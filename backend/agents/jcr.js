@@ -5,7 +5,7 @@ import { groq, smartChat } from './baseAgent.js';
 import { runBackendTeam, writeBackendTeamFiles } from './backendTeam/index.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from '../services/projectBrain.js';
 import { selectStarter, resolveStack } from './starterRegistry.js';
-import { generateNextScaffold } from './reactGenerator.js';
+import { generateNextScaffold, generateContentModel } from './reactGenerator.js';
 import { reactPreviewFile } from '../services/reactPreview.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO } from './languageDetector.js';
@@ -1277,8 +1277,15 @@ User preferences: ${JSON.stringify(execMemory)}` },
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
         this.emitLiveLog(roomName, '5. RUNTIME', 'ReactGen', '⚛️ توليد مشروع Next.js + Tailwind...');
 
-        // 1) سكافولد Next الحقيقي (للنشر/التنزيل)
-        const scaffold = generateNextScaffold({ projectName: activeProject, sections, lang });
+        // 🧠 محتوى بالذكاء (best-effort) يملأ الهيكل بمحتوى المشروع الفعلي
+        let content = null;
+        try {
+            this.emitLiveLog(roomName, '5. RUNTIME', 'ContentWriter', '✍️ كتابة محتوى المشروع...');
+            content = await generateContentModel(goal, { sections, lang, llm: (m, o) => smartChat(m, o) });
+        } catch { /* افتراضي */ }
+
+        // 1) سكافولد Next الحقيقي (للنشر/التنزيل) — بمحتوى مخصّص
+        const scaffold = generateNextScaffold({ projectName: activeProject, sections, lang, content });
         for (const f of scaffold.files) {
             const p = path.join(projectPath, f.name);
             await fsPromises.mkdir(path.dirname(p), { recursive: true });

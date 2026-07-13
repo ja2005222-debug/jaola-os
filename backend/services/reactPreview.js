@@ -34,8 +34,11 @@ export function buildReactPreviewHtml(files = [], opts = {}) {
     // اجمع المكوّنات ثم الصفحة (الصفحة تعتمد عليها)
     const comps = files.filter(f => /^components\/.+\.jsx$/.test(f.name));
     const page = files.find(f => f.name === 'app/page.jsx' || f.name === 'app/page.js');
+    const contentMod = files.find(f => f.name === 'lib/content.js' || f.name === 'lib/content.jsx');
 
     const parts = [];
+    // محتوى الموقع أولاً (المكوّنات تستورده) — نُضمّنه لأن المعاينة تزيل الـ imports
+    if (contentMod) parts.push(stripModuleSyntax(contentMod.content));
     for (const c of comps) parts.push(stripModuleSyntax(c.content));
     if (page) parts.push(stripModuleSyntax(page.content));
     // نقطة التصيير
