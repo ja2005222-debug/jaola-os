@@ -100,12 +100,13 @@ function componentSource(name, lang) {
 }
 
 // محتوى افتراضي (يُستبدل بمحتوى الذكاء) — بلغة المستخدم
-function defaultContent(pageTitle, comps, lang) {
+// labels: خريطة اسم المكوّن → التسمية الأصلية للقسم (عربي/إنجليزي) لعنوان ذي معنى
+function defaultContent(pageTitle, comps, lang, labels = {}) {
     const ar = lang === 'ar';
     const generic = comps.filter((c) => !['Navbar', 'Hero', 'Footer'].includes(c));
     const sections = {};
     for (const c of generic) {
-        const label = c.replace(/([a-z])([A-Z])/g, '$1 $2');
+        const label = labels[c] || c.replace(/([a-z])([A-Z])/g, '$1 $2');
         sections[c] = {
             heading: label,
             subheading: ar ? 'محتوى هذا القسم — يخصّصه الذكاء حسب مشروعك.' : 'Section content — customized to your project.',
@@ -160,17 +161,20 @@ export function generateNextScaffold({ projectName = 'jaola-app', sections = [],
 
     // أقسام افتراضية إن لم تُمرَّر
     let secs = (sections && sections.length ? sections : ['navbar', 'hero', 'features', 'about', 'contact', 'footer']).slice(0, 12);
-    // اسم مكوّن فريد لكل قسم
+    // اسم مكوّن فريد لكل قسم + احتفظ بالتسمية الأصلية (لعنوان ذي معنى)
     const seen = new Set();
+    const labels = {};
     const comps = secs.map((s, i) => {
         let n = compName(s, i);
         while (seen.has(n)) n = n + (i + 1);
         seen.add(n);
+        const orig = (s || '').toString().trim();
+        if (orig) labels[n] = orig.charAt(0).toUpperCase() + orig.slice(1);
         return n;
     });
 
     // 🧠 المحتوى: افتراضي مدموج فوقه نموذج الذكاء (إن وُجد) — يضمن اكتمال الحقول
-    const finalContent = mergeContent(defaultContent(pageTitle, comps, code), content);
+    const finalContent = mergeContent(defaultContent(pageTitle, comps, code, labels), content);
 
     const files = [];
     files.push({ name: 'lib/content.js', content: `// محتوى الموقع — عدّله بحرّية. يملؤه JAOLA بالذكاء حسب مشروعك.\nexport const content = ${JSON.stringify(finalContent, null, 2)};\n` });
