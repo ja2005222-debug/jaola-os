@@ -229,6 +229,53 @@ ${currentCodeContext && currentCodeContext.trim().length > 50
 }
 
 // ============================================================
+// ✂️ تعديل جراحي — يُعيد فقط الملفات المتغيّرة (لا يعيد بناء كل شيء)
+// ============================================================
+export async function coreEditCodePlan(instruction, currentFiles = [], lang = 'en', onChunk) {
+    const L = langMeta(lang);
+    const filesBlock = currentFiles
+        .map(f => `// FILE: ${f.name}\n${(f.content || '').slice(0, 8000)}`)
+        .join('\n\n');
+
+    const systemPrompt = `أنت محرّر كود جراحي خبير. لديك ملفات مشروع ويب قائم، والمستخدم يريد **تعديلاً محدداً**.
+
+## قواعد صارمة:
+- طبّق **أقل تغيير ممكن** لتحقيق طلب المستخدم — لا تُعِد تصميم أو إعادة كتابة ما لم يُطلب.
+- أعِد **فقط الملفات التي تغيّرت فعلاً**، كل ملف كاملاً، بصيغة: // FILE: name
+- **لا تُعِد** الملفات غير المتغيّرة إطلاقاً.
+- حافظ على كل شيء آخر كما هو تماماً (المحتوى، البنية، الأسماء، الاتجاه، اللغة ${L.name}).
+- إن كان التعديل في ملف واحد فقط، أعِد ذلك الملف فقط.
+- لا تشرح، أخرِج الملفات فقط بالصيغة المطلوبة.`;
+
+    const userMessage = `## طلب التعديل:
+${instruction}
+
+## ملفات المشروع الحالية:
+${filesBlock || '(لا ملفات)'}
+
+أعِد الملفات المتغيّرة فقط بصيغة // FILE: name`;
+
+    const pipeline = [
+        () => callDeepSeek(userMessage, onChunk, systemPrompt),
+        () => callGroq(userMessage, onChunk, systemPrompt),
+        () => callGemini(userMessage, systemPrompt),
+    ];
+    for (const call of pipeline) {
+        try {
+            const responseText = await call();
+            if (!responseText || responseText.length < 30) continue;
+            const files = parseResponseToFiles(responseText);
+            // احتفظ فقط بالملفات ذات المحتوى الفعلي
+            const changed = files.filter(f => f.content && f.content.trim().length > 5);
+            if (changed.length > 0) return { files: changed };
+        } catch (err) {
+            console.warn(`[CoderAgent:edit] فشل نموذج: ${err.message}`);
+        }
+    }
+    return { error: true, details: 'تعذّر تطبيق التعديل الجراحي.' };
+}
+
+// ============================================================
 // 🤖 دوال استدعاء النماذج
 // ============================================================
 async function callDeepSeek(userMessage, onChunk, systemPrompt = buildCoderSystemPrompt('en')) {

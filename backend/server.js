@@ -20,6 +20,7 @@ import Conversation from './models/Conversation.js';
 import {
     coreClassifyIntent,
     coreGenerateCodePlan,
+    coreEditCodePlan,
     architectReview,
     qaVerify,
     deployProject,
@@ -904,6 +905,7 @@ app.post('/api/chat', verifyToken, aiLimit, validate(schemas.sendMessage), valid
     const agents = {
         coreClassifyIntent,
         coreGenerateCodePlan,
+        coreEditCodePlan,
         architectReview,
         qaVerify,
         deployProject,

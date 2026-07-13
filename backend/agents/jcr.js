@@ -1164,6 +1164,91 @@ User preferences: ${JSON.stringify(execMemory)}` },
         return context;
     }
 
+    /** يقرأ الملفات الأساسية كمصفوفة {name, content} للتعديل الجراحي */
+    async readProjectFilesArray(projectPath) {
+        try {
+            const files = await fsPromises.readdir(projectPath);
+            const relevant = files.filter(f => ['index.html', 'styles.css', 'script.js'].includes(f));
+            return await Promise.all(relevant.map(async f => ({
+                name: f, content: await fsPromises.readFile(path.join(projectPath, f), 'utf-8')
+            })));
+        } catch { return []; }
+    }
+
+    // ✂️ التعديل الجراحي — يمرّ عبر صف التنفيذ كالبناء (حماية التوازي)
+    surgicalEdit(instruction, projectPath, username, activeProject, roomName, agents, dbStatus) {
+        const lang = getUserLanguage(username) || 'ar';
+        const result = enqueueMission({
+            username, project: activeProject,
+            run: () => this._runSurgicalEditNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus),
+            onWait: (position) => this.io.to(roomName).emit('chat_reply', {
+                message: lang === 'ar' ? `⏳ مهمتك في الصف (المركز ${position}).` : `⏳ Queued (position ${position}).`,
+            }),
+        });
+        if (!result.accepted) {
+            this.io.to(roomName).emit('chat_reply', {
+                message: lang === 'ar' ? '⚙️ يوجد عمل جارٍ لهذا المشروع — انتظر أو اضغط ⏹.' : '⚙️ A task is already running — wait or press ⏹.',
+            });
+        }
+        return result;
+    }
+
+    async _runSurgicalEditNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus) {
+        const lang = getUserLanguage(username) || 'ar';
+        const files = await this.readProjectFilesArray(projectPath);
+
+        // لا مشروع قائم، أو تعديل كبير (إعادة تصميم/بناء) → البناء الكامل بدل الجراحي
+        const bigChange = /أعد التصميم|اعد التصميم|أعد البناء|اعد البناء|من جديد|صفحة جديدة|صفحات|redesign|rebuild|from scratch|new page/i.test(instruction);
+        if (files.length === 0 || bigChange || !agents.coreEditCodePlan) {
+            return this._runMissionNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus);
+        }
+
+        this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', '✂️ تعديل دقيق (لا إعادة بناء كاملة)...');
+        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
+
+        let plan;
+        try {
+            plan = await agents.coreEditCodePlan(instruction, files, lang,
+                (chunk) => this.io.to(roomName).emit('code_stream_chunk', chunk));
+        } catch (e) {
+            this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', `⚠️ تعذّر — عودة للبناء الكامل: ${e.message}`);
+            this.io.to(roomName).emit('stream_done', {});
+            return this._runMissionNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus);
+        }
+        this.io.to(roomName).emit('stream_done', {});
+
+        // فشل الجراحي → عودة آمنة للبناء الكامل
+        if (!plan || plan.error || !plan.files?.length) {
+            this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', '⚠️ بلا نتيجة — عودة للبناء الكامل');
+            return this._runMissionNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus);
+        }
+
+        // فحص الملفات المتغيّرة عبر CodeGuard ثم كتابتها فقط
+        const guarded = await guardFiles(plan.files, (m) => this.emitLiveLog(roomName, 'EDIT', 'CodeGuard', m));
+        for (const file of guarded) {
+            await fsPromises.writeFile(path.join(projectPath, file.name), file.content);
+        }
+        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
+
+        const changedNames = guarded.map(f => f.name).join('، ');
+        recordEdit(username, instruction);
+        addToHistory(username, activeProject, `تعديل: ${instruction.slice(0, 60)}`);
+
+        // تحديث المعاينة + قائمة الملفات + لقطة دائمة
+        this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        let builtFiles = [];
+        try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
+        this.io.to(roomName).emit('workspace_files', builtFiles);
+        snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
+        autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
+
+        const msg = lang === 'ar'
+            ? `✅ طبّقت التعديل على: **${changedNames}** فقط (بلا إعادة بناء الموقع) — المعاينة تحدّثت.`
+            : `✅ Applied the change to **${changedNames}** only (no full rebuild) — preview updated.`;
+        this.io.to(roomName).emit('chat_reply', { message: msg, options: lang === 'ar' ? ['🚀 انشر الآن', '📊 أين وصلنا'] : ['🚀 Deploy now', '📊 Status'] });
+        return { success: true, edited: guarded.map(f => f.name) };
+    }
+
     async handleUserMessage(socket, data, agents, dbStatus) {
         const { message, roomName, projectPath, username, activeProject, uiLang } = data;
 
@@ -1420,7 +1505,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 return;
             }
             this.emitLiveLog(roomName, 'INTENT', 'Classifier', 'نية: modify (ثقة: 100%) - قاعدة مباشرة');
-            this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);
+            this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
             return;
         }
 
@@ -1456,8 +1541,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
             setPendingGoal(username, userGoal, activeProject);
         } else if (finalIntent.intent === 'modify') {
             recordEdit(username, message);
-            this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);
-            // Git commit للتعديل يحدث داخل executeMission بعد النجاح
+            this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
+            // Git commit للتعديل يحدث داخل المهمة بعد النجاح
         } else if (finalIntent.intent === 'stop') {
             this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛑 أمر إيقاف.');
             agents.clearState?.(username);
@@ -1472,9 +1557,9 @@ User preferences: ${JSON.stringify(execMemory)}` },
             const isSmalltalk = message.trim().length < 4;
 
             if (hasProject && !isQuestion && !isSmalltalk) {
-                this.emitLiveLog(roomName, 'INTENT', 'Classifier', '✏️ طلب على مشروع قائم → تعديل تلقائي');
+                this.emitLiveLog(roomName, 'INTENT', 'Classifier', '✏️ طلب على مشروع قائم → تعديل جراحي');
                 recordEdit(username, message);
-                this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);
+                this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
                 return;
             }
             await this.generateChatResponse(message, username, roomName, userLang);
