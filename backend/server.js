@@ -47,7 +47,8 @@ import * as oauth from './services/oauthLite.js';
 import * as ghFiles from './services/githubFiles.js';
 import { teamPlan, BACKEND_TEAM } from './agents/backendTeam/index.js';
 import { frontendTeamPlan, FRONTEND_TEAM } from './agents/frontendTeam/index.js';
-import { listStarters, selectStarter, resolveStack } from './agents/starterRegistry.js';
+import { listStarters, selectStarter, resolveStack, STARTERS } from './agents/starterRegistry.js';
+import { fetchStarter, fetchRepoFiles, parseRepoUrl } from './agents/starterFetch.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
 import { getProjectMemory } from './agents/projectMemory.js';
 import { setProjectSecret, deleteProjectSecret, getProjectSecretNames } from './services/projectSecrets.js';
@@ -1211,6 +1212,35 @@ app.get('/api/admin/backend-team', verifyToken, adminOnly, (req, res) => {
 // 🧰 Starter Registry (بذرة Marketplace) — القوالب المنسّقة + اختيار المسار
 app.get('/api/admin/starters', verifyToken, adminOnly, (req, res) => {
     res.json({ success: true, starters: listStarters() });
+});
+
+// 📥 استيراد كود قالب حقيقي من GitHub (نصوص فقط، بحدود آمنة)
+// يقبل { id } لقالب من السجلّ، أو { repo } لرابط مستودع مباشر.
+// يستخدم توكن GitHub المخزّن مشفّراً إن وُجد (يرفع الحدّ + يصل للخاص).
+app.post('/api/admin/starters/import', verifyToken, adminOnly, async (req, res) => {
+    const { id, repo, ref } = req.body || {};
+    try {
+        const rec = await DB.getGithubToken(req.user.username).catch(() => null);
+        const token = rec?.token || undefined;      // اختياري: القوالب عامة MIT
+        const opts = { token, ...(ref ? { ref } : {}) };
+
+        let result;
+        if (id) {
+            const starter = STARTERS.find((s) => s.id === id);
+            if (!starter) return res.status(404).json({ error: 'قالب غير موجود' });
+            if (!starter.repo) return res.status(400).json({ error: 'قالب داخليّ (Vanilla) — يُولّده JAOLA مباشرة، لا يُجلب من GitHub.' });
+            result = await fetchStarter(starter, opts);
+        } else if (repo) {
+            const { owner, repo: name } = parseRepoUrl(repo);
+            const r = await fetchRepoFiles(owner, name, opts);
+            result = { ...r, starter: { repo: `${owner}/${name}` } };
+        } else {
+            return res.status(400).json({ error: 'أرسل id (من السجلّ) أو repo (رابط مستودع).' });
+        }
+        res.json({ success: true, ...result });
+    } catch (err) {
+        res.status(err.status || 500).json({ error: err.message });
+    }
 });
 
 // 🗂️ إدارة ملفات المشاريع
