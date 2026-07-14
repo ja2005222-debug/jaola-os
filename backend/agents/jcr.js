@@ -1318,6 +1318,101 @@ User preferences: ${JSON.stringify(execMemory)}` },
         return { success: true, addedPage: slug, label: pageLabel };
     }
 
+    // ينظّف اسم صفحة ملتقَط من أمر (يزيل الاقتباس/الترقيم/كلمة صفحة الزائدة)
+    _cleanPageName(s) {
+        return String(s || '')
+            .replace(/["'«»]/g, '')
+            .replace(/^\s*(?:صفحة|صفحه|the|page)\s+/i, '')
+            .replace(/[.،,!?\s]+$/g, '')
+            .trim();
+    }
+
+    // يقرأ محتوى مشروع React من القرص (أو null)
+    async _readReactContent(projectPath) {
+        try {
+            const src = await fsPromises.readFile(path.join(projectPath, 'lib/content.js'), 'utf8');
+            return JSON.parse(src.slice(src.indexOf('{'), src.lastIndexOf('}') + 1));
+        } catch { return null; }
+    }
+
+    // يجد صفحة بالاسم (تطابق تسمية الوجهة، ثم تضمين، ثم المسار)
+    _findPage(content, name) {
+        const t = String(name || '').trim().toLowerCase();
+        const routes = (content.routes || []).filter(r => r.href !== '/');
+        const compBySlug = {};
+        for (const c of Object.keys(content.sections || {})) compBySlug[slugify(c)] = c;
+        const route = routes.find(r => (r.label || '').trim().toLowerCase() === t)
+            || routes.find(r => (r.label || '').trim().toLowerCase().includes(t) && t.length >= 2)
+            || routes.find(r => r.href.replace(/^\//, '') === slugify(t));
+        if (!route) return null;
+        const slug = route.href.replace(/^\//, '');
+        return { route, slug, comp: compBySlug[slug] };
+    }
+
+    // كتابة المحتوى + إعادة توليد الموقع الثابت + بثّ التحديث (مشترك لعمليات الصفحات)
+    async _persistReactContent(projectPath, content, username, activeProject, roomName, lang, historyMsg) {
+        await fsPromises.writeFile(path.join(projectPath, 'lib/content.js'),
+            `// محتوى الموقع — عدّله بحرّية. يملؤه JAOLA بالذكاء حسب مشروعك.\nexport const content = ${JSON.stringify(content, null, 2)};\n`);
+        for (const pg of buildStaticSite(content, lang)) {
+            await fsPromises.writeFile(path.join(projectPath, pg.name), pg.content);
+        }
+        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
+        addToHistory(username, activeProject, historyMsg);
+        this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        let builtFiles = [];
+        try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
+        this.io.to(roomName).emit('workspace_files', builtFiles);
+        snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
+        autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
+    }
+
+    // 🖊️ إعادة تسمية صفحة (تسمية الوجهة + عنوان القسم) — تحفظ المسار والملفات
+    async _renamePageNow(projectPath, username, activeProject, roomName, lang, oldName, newName) {
+        const content = await this._readReactContent(projectPath);
+        if (!content) return this.io.to(roomName).emit('chat_reply', { message: lang === 'ar' ? '⚠️ تعذّر قراءة المشروع.' : '⚠️ Could not read project.' });
+        const found = this._findPage(content, oldName);
+        if (!found || !found.comp) return this._pageNotFound(content, roomName, lang, oldName);
+        found.route.label = newName;
+        if (content.sections[found.comp]) content.sections[found.comp].heading = newName;
+        await this._persistReactContent(projectPath, content, username, activeProject, roomName, lang, `إعادة تسمية صفحة: ${oldName} → ${newName}`);
+        this.io.to(roomName).emit('chat_reply', {
+            message: lang === 'ar' ? `✅ أعدت تسمية الصفحة إلى **${newName}** — حُدِّث الشريط في كل الصفحات.` : `✅ Renamed the page to **${newName}** — nav updated across all pages.`,
+            options: lang === 'ar' ? ['➕ أضف صفحة', '🚀 انشر الآن'] : ['➕ Add a page', '🚀 Deploy now'],
+        });
+        return { success: true, renamed: found.slug, label: newName };
+    }
+
+    // 🗑️ حذف صفحة (الوجهة + القسم + الملفات) — لا يمكن حذف الرئيسية
+    async _deletePageNow(projectPath, username, activeProject, roomName, lang, name) {
+        const content = await this._readReactContent(projectPath);
+        if (!content) return this.io.to(roomName).emit('chat_reply', { message: lang === 'ar' ? '⚠️ تعذّر قراءة المشروع.' : '⚠️ Could not read project.' });
+        const found = this._findPage(content, name);
+        if (!found || !found.comp) return this._pageNotFound(content, roomName, lang, name);
+        // احذف من المحتوى
+        content.routes = (content.routes || []).filter(r => r.href !== found.route.href);
+        delete content.sections[found.comp];
+        // احذف الملفات (المكوّن + صفحة Next + صفحة المعاينة)
+        await fsPromises.rm(path.join(projectPath, `components/${found.comp}.jsx`), { force: true });
+        await fsPromises.rm(path.join(projectPath, `app/${found.slug}`), { recursive: true, force: true });
+        await fsPromises.rm(path.join(projectPath, `${found.slug}.html`), { force: true });
+        await this._persistReactContent(projectPath, content, username, activeProject, roomName, lang, `حذف صفحة: ${found.route.label}`);
+        this.io.to(roomName).emit('chat_reply', {
+            message: lang === 'ar' ? `✅ حذفت صفحة **${found.route.label}** وأزلتها من شريط التنقّل — المعاينة تحدّثت.` : `✅ Deleted page **${found.route.label}** and removed it from the nav — preview updated.`,
+            options: lang === 'ar' ? ['➕ أضف صفحة', '🚀 انشر الآن'] : ['➕ Add a page', '🚀 Deploy now'],
+        });
+        return { success: true, deleted: found.slug };
+    }
+
+    _pageNotFound(content, roomName, lang, name) {
+        const names = (content.routes || []).filter(r => r.href !== '/').map(r => r.label).join('، ');
+        this.io.to(roomName).emit('chat_reply', {
+            message: lang === 'ar'
+                ? `⚠️ لم أجد صفحة باسم «${name}». الصفحات الحالية: ${names || '—'}`
+                : `⚠️ No page named "${name}". Current pages: ${names || '—'}`,
+        });
+        return { success: false, notFound: name };
+    }
+
     async _runSurgicalEditNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus) {
         const lang = getUserLanguage(username) || 'ar';
         const files = await this.readProjectFilesArray(projectPath);
@@ -1325,11 +1420,18 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // مشروع React؟ (يحوي lib/content.js أو app/page.jsx)
         const isReact = files.some(f => f.name === 'lib/content.js' || f.name === 'app/page.jsx');
 
-        // ➕ "أضف صفحة" لمشروع React: إضافة تزايدية تحفظ المحتوى القائم — قبل فحص
-        // "التغيير الكبير" (الذي يلتقط "صفحة جديدة" ويعيد البناء بالكامل).
-        const wantsAddPage = /(?:أضف|اضف|أضِف|ضيف|زد|أنشئ|انشئ|اضافة|إضافة)\s+(?:لي\s+)?(?:صفحة|صفحه)|صفحة\s*جديدة|add\s+(?:a\s+|an\s+)?page|new\s+page|create\s+(?:a\s+)?page/i.test(instruction);
-        if (isReact && wantsAddPage) {
-            return this._addPageNow(instruction, projectPath, username, activeProject, roomName, lang);
+        // 🗂️ عمليات الصفحات لمشروع React (تزايدية، تحفظ باقي المحتوى) — قبل فحص
+        // "التغيير الكبير" (الذي يلتقط "صفحة/صفحات" ويعيد البناء بالكامل).
+        if (isReact) {
+            // إعادة تسمية: "أعد تسمية صفحة X إلى Y" / "rename page X to Y"
+            const ren = instruction.match(/(?:أعد\s*تسمية|اعد\s*تسمية|غيّر\s*اسم|غير\s*اسم|rename)\s+(?:صفحة|صفحه|page\s+)?(.+?)\s+(?:إلى|الى|to)\s+(.+)/i);
+            if (ren) return this._renamePageNow(projectPath, username, activeProject, roomName, lang, this._cleanPageName(ren[1]), this._cleanPageName(ren[2]));
+            // حذف: "احذف صفحة X" / "delete page X"
+            const del = instruction.match(/(?:احذف|امسح|إحذف|delete|remove)\s+(?:صفحة|صفحه|page)\s+(.+)/i);
+            if (del) return this._deletePageNow(projectPath, username, activeProject, roomName, lang, this._cleanPageName(del[1]));
+            // إضافة: "أضف صفحة …"
+            const wantsAddPage = /(?:أضف|اضف|أضِف|ضيف|زد|أنشئ|انشئ|اضافة|إضافة)\s+(?:لي\s+)?(?:صفحة|صفحه)|صفحة\s*جديدة|add\s+(?:a\s+|an\s+)?page|new\s+page|create\s+(?:a\s+)?page/i.test(instruction);
+            if (wantsAddPage) return this._addPageNow(instruction, projectPath, username, activeProject, roomName, lang);
         }
 
         // لا مشروع قائم، أو تعديل كبير (إعادة تصميم/بناء) → البناء الكامل بدل الجراحي
