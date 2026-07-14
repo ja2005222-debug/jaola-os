@@ -13,12 +13,17 @@
 
 import { groq, smartChat } from './baseAgent.js';
 
+// اللغات ذات الاتجاه من اليمين لليسار
+const RTL_LANGS = new Set(['ar', 'ur', 'he', 'fa']);
+const isRTLLang = (lang) => RTL_LANGS.has((lang || 'en').toLowerCase());
+
 // ═══════════════════════════════════════════════════════
 // 🔎 فحوصات ثابتة (بدون AI)
 // ═══════════════════════════════════════════════════════
-export function runStaticReview(files) {
+export function runStaticReview(files, lang = 'en') {
     const issues = [];
     const fixes = [];
+    const rtl = isRTLLang(lang);
 
     for (const file of files) {
         if (!file.content) continue;
@@ -26,8 +31,8 @@ export function runStaticReview(files) {
         const name = file.name;
 
         if (name === 'index.html' || name.endsWith('.html')) {
-            // فحص RTL
-            if (!content.includes('dir="rtl"') && !content.includes("dir='rtl'")) {
+            // فحص الاتجاه — فقط للّغات RTL (لا نفرض rtl على الإنجليزية وغيرها)
+            if (rtl && !content.includes('dir="rtl"') && !content.includes("dir='rtl'")) {
                 issues.push({ file: name, type: 'rtl', msg: 'مفقود dir="rtl" على <html>' });
             }
 
@@ -125,7 +130,11 @@ export async function runAIReview(files, projectGoal) {
 // ═══════════════════════════════════════════════════════
 // 🔧 إصلاح تلقائي للمشاكل البسيطة
 // ═══════════════════════════════════════════════════════
-export function autoFix(files) {
+export function autoFix(files, lang = 'en') {
+    const rtl = isRTLLang(lang);
+    const code = (lang || 'en').toLowerCase();
+    const dir = rtl ? 'rtl' : 'ltr';
+    const altText = rtl ? 'صورة' : 'image';
     return files.map(file => {
         if (!file.content) return file;
         let content = file.content;
@@ -138,9 +147,9 @@ export function autoFix(files) {
             }
         }
         if (file.name === 'index.html' || file.name.endsWith('.html')) {
-            // إضافة dir=rtl إذا مفقود
-            if (!content.includes('dir="rtl"') && !content.includes("dir='rtl'")) {
-                content = content.replace('<html', '<html dir="rtl" lang="ar"');
+            // ضبط الاتجاه واللغة حسب لغة المستخدم — فقط إذا لم يحددها الـ Coder
+            if (!/\bdir\s*=/.test(content) && !/<html[^>]*\blang\s*=/.test(content)) {
+                content = content.replace('<html', `<html dir="${dir}" lang="${code}"`);
             }
 
             // إضافة viewport إذا مفقود
@@ -153,8 +162,8 @@ export function autoFix(files) {
                 content = content.replace('<head>', '<head>\n    <meta charset="UTF-8">');
             }
 
-            // إضافة alt للصور بدون alt
-            content = content.replace(/<img(?![^>]*alt=)([^>]*)>/gi, '<img$1 alt="صورة">');
+            // إضافة alt للصور بدون alt (بلغة المستخدم)
+            content = content.replace(/<img(?![^>]*alt=)([^>]*)>/gi, `<img$1 alt="${altText}">`);
         }
 
         if (file.name === 'script.js') {
@@ -173,12 +182,12 @@ export function autoFix(files) {
 // ═══════════════════════════════════════════════════════
 // 🚀 الدالة الرئيسية
 // ═══════════════════════════════════════════════════════
-export async function reviewCode(files, projectGoal) {
+export async function reviewCode(files, projectGoal, lang = 'en') {
     // الفحص الثابت السريع
-    const staticResult = runStaticReview(files);
+    const staticResult = runStaticReview(files, lang);
 
     // الإصلاح التلقائي للمشاكل البسيطة
-    const fixedFiles = autoFix(files);
+    const fixedFiles = autoFix(files, lang);
 
     // مراجعة AI للجودة العامة (اختيارية)
     const aiResult = await runAIReview(fixedFiles, projectGoal);

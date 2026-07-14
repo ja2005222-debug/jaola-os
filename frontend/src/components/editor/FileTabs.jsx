@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useJaolaStore } from '../../store/useJaolaStore.js';
+import { useI18n } from '../../i18n.js';
 
 const getFileIcon = (filename = '') => {
   if (/\.(tsx|ts)$/.test(filename)) return '🔷';
@@ -14,6 +15,7 @@ const getFileIcon = (filename = '') => {
 
 export function FileTabs({ files, activePath, onClose }) {
   const setActive = useJaolaStore((s) => s.openFile);
+  const t = useI18n((s) => s.t);
 
   return (
     <div className="h-10 bg-[#0B0D14] border-b border-white/5 flex items-center overflow-x-auto flex-shrink-0">
@@ -34,14 +36,14 @@ export function FileTabs({ files, activePath, onClose }) {
               <span className="text-xs font-medium truncate flex-1" dir="ltr">{filename}</span>
 
               {file.isDirty && (
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" title="تغييرات غير محفوظة" />
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" title={t('unsavedTooltip')} />
               )}
 
               <button
                 onClick={(e) => { e.stopPropagation(); onClose(file.path); }}
                 className={`p-0.5 rounded-md hover:bg-white/10 transition-all
                   ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-                title="إغلاق"
+                title={t('closeTooltip')}
               >
                 <X className="w-3 h-3" />
               </button>

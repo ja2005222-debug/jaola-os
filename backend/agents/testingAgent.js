@@ -28,18 +28,22 @@ class TestResult {
 // ═══════════════════════════════════════════════════════
 // 📄 اختبارات HTML
 // ═══════════════════════════════════════════════════════
-function testHTML(content) {
+const RTL_LANGS = new Set(['ar', 'ur', 'he', 'fa']);
+
+function testHTML(content, lang = 'en') {
     const results = [];
+    const rtl = RTL_LANGS.has((lang || 'en').toLowerCase());
 
     // اختبار 1: DOCTYPE
     const t1 = new TestResult('DOCTYPE صحيح', 'html');
     if (!content.includes('<!DOCTYPE html>')) t1.fail('مفقود <!DOCTYPE html>');
     results.push(t1);
 
-    // اختبار 2: RTL
-    const t2 = new TestResult('اتجاه RTL', 'html');
-    if (!content.includes('dir="rtl"') && !content.includes("dir='rtl'")) {
-        t2.fail('مفقود dir="rtl" على <html>');
+    // اختبار 2: الاتجاه — نتحقق من dir صحيح حسب لغة المستخدم
+    const t2 = new TestResult('اتجاه الصفحة', 'html');
+    const expectedDir = rtl ? 'rtl' : 'ltr';
+    if (!content.includes(`dir="${expectedDir}"`) && !content.includes(`dir='${expectedDir}'`)) {
+        t2.warn(`يُفضّل ضبط dir="${expectedDir}" على <html> لهذه اللغة`);
     }
     results.push(t2);
 
@@ -195,13 +199,13 @@ function calculateScore(allResults) {
 // ═══════════════════════════════════════════════════════
 // 🚀 الدالة الرئيسية
 // ═══════════════════════════════════════════════════════
-export async function runTests(files) {
+export async function runTests(files, lang = 'en') {
     const htmlFile = files.find(f => f.name === 'index.html');
     const cssFile = files.find(f => f.name === 'styles.css');
     const jsFile = files.find(f => f.name === 'script.js');
 
     const allResults = [
-        ...(htmlFile ? testHTML(htmlFile.content || '') : [new TestResult('HTML', 'html').fail('index.html مفقود')]),
+        ...(htmlFile ? testHTML(htmlFile.content || '', lang) : [new TestResult('HTML', 'html').fail('index.html مفقود')]),
         ...(cssFile ? testCSS(cssFile.content || '') : [new TestResult('CSS', 'css').fail('styles.css مفقود')]),
         ...(jsFile ? testJS(jsFile.content || '') : [new TestResult('JS', 'js').warn('script.js مفقود')]),
     ];

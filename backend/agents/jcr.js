@@ -1,9 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { groq } from './baseAgent.js';
+import { groq, smartChat } from './baseAgent.js';
+import { runBackendTeam, writeBackendTeamFiles } from './backendTeam/index.js';
+import { scanProjectFiles, buildProjectBrain, summarizeBrain } from '../services/projectBrain.js';
+import { selectStarter, resolveStack } from './starterRegistry.js';
+import { generateNextScaffold, generateContentModel, generateSectionContent, compName, slugify, componentSource, defaultSection, pageFileSource } from './reactGenerator.js';
+import { buildStaticSite, buildStaticSiteFromSource, buildDashboardPage } from '../services/reactPreview.js';
 import { promises as fsPromises } from 'fs';
-import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detectExplicitLanguageSwitch } from './languageDetector.js';
+import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO } from './languageDetector.js';
 import { getLanguageDecision, buildLanguagePrompt } from './languageManager.js';
 import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure } from './projectMemory.js';
 import { detectProjectType } from './knowledgeEngine.js';
@@ -32,9 +37,11 @@ import { setUserLanguage } from './languageDetector.js';
 import { registerMission, throwIfAborted, clearMission } from '../services/abortRegistry.js';
 import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import { snapshotWorkspace } from '../services/workspaceStore.js';
+import { orchestrator } from '../core/PluginOrchestrator.js';
 import { guardFiles, guardSingleJS } from '../services/codeGuard.js';
 import { buildImageContext } from '../services/imageService.js';
 import { generateBlueprint, buildBlueprintContext } from './appBlueprint.js';
+import { recommendFullStack, buildFullStackProject } from './fullstackTemplates.js';
 import { recordScore, recordBuild, buildMetricsPayload } from '../services/metricsStore.js';
 import { setPendingGoal, getPendingGoal, consumePendingGoal, clearDialog } from '../services/conversationManager.js';
 import { enqueueMission } from '../services/missionQueue.js';
@@ -312,7 +319,8 @@ export class JaolaCognitiveRuntime {
             const designResult = await generateDesignBrief(
                 context.goal,
                 context.username,
-                context.activeProject
+                context.activeProject,
+                getUserLanguage(context.username) || 'en'
             );
             if (designResult.success) {
                 const brief = designResult.brief;
@@ -349,7 +357,8 @@ export class JaolaCognitiveRuntime {
                     context.mentalModel.visualIdentity,
                     [],
                     (chunk) => this.io.to(roomName).emit('code_stream_chunk', chunk),
-                    context.mentalModel.templateSections || []
+                    context.mentalModel.templateSections || [],
+                    getUserLanguage(context.username) || 'en'
                 );
             } catch (e) {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'Coder', `❌ استثناء: ${e.message}`);
@@ -400,7 +409,7 @@ export class JaolaCognitiveRuntime {
             // 🆕 Review Agent — يراجع ويُصلح تلقائياً قبل العرض النهائي
             try {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'ReviewAgent', '🔍 مراجعة جودة الكود...');
-                const reviewResult = await reviewCode(plan.files, context.originalGoal);
+                const reviewResult = await reviewCode(plan.files, context.originalGoal, getUserLanguage(context.username) || 'en');
 
                 if (reviewResult.fixedCount > 0) {
                     // حفظ الملفات المُصلحة
@@ -422,7 +431,7 @@ export class JaolaCognitiveRuntime {
             }
             // 🆕 Refactor Agent — تنظيف الكود
             try {
-                const refactorResult = await refactorCode(plan.files);
+                const refactorResult = await refactorCode(plan.files, getUserLanguage(context.username) || 'en');
                 if (refactorResult.success) {
                     plan.files = refactorResult.files;
                     if (refactorResult.totalReduction > 0) {
@@ -436,7 +445,7 @@ export class JaolaCognitiveRuntime {
             // 🆕 Testing Agent — اختبار شامل للكود المُنتج
             try {
                 if (!plan?.files) throw new Error('plan is not defined');
-                const testResult = await runTests(plan.files);
+                const testResult = await runTests(plan.files, getUserLanguage(context.username) || 'en');
                 const emoji = testResult.grade === 'A' ? '✅' : testResult.grade === 'B' ? '🟡' : '🟠';
                 this.emitLiveLog(roomName, '5. RUNTIME', 'TestingAgent',
                     `${emoji} ${testResult.report}`
@@ -532,9 +541,59 @@ export class JaolaCognitiveRuntime {
             // 🆕 مرحلة Backend — إذا كان المشروع يحتاج خادماً
             if (agents.needsBackend && agents.needsBackend(context.goal)) {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', '⚙️ المشروع يحتاج خادماً — جاري توليد APIs...');
+
+                // 👥 فريق الوكلاء الخلفي المتخصص — ينتج ملفات الخلفية الحقيقية تعاونياً (best-effort)
+                let teamGuidance = '';
+                let teamWroteFiles = 0;
                 try {
+                    const buildLang = getUserLanguage(context.username) || 'en';
+                    const team = await runBackendTeam(context.goal, {
+                        lang: buildLang,
+                        verify: true, // فحص تنفيذي حقيقي + إصلاح Debug تلقائي
+                        llm: (messages, options) => smartChat(messages, options),
+                        onEvent: (evt) => {
+                            if (evt.type === 'agent_start') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `${evt.icon} ${evt.role} يعمل...`);
+                            else if (evt.type === 'agent_done') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `✅ ${evt.role}: ${evt.summary} (${evt.files} ملف)`);
+                            else if (evt.type === 'agent_skipped') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `⏭️ ${evt.role} (${evt.reason})`);
+                            else if (evt.type === 'verify_failed') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendVerify', `🔎 فحص: ${evt.failures} خطأ — Debug يصلح (جولة ${evt.round})...`);
+                            else if (evt.type === 'verify_done') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendVerify', evt.ok ? `✅ الكود المولّد اجتاز الفحص` : `⚠️ بقي ${evt.failures} خطأ بعد ${evt.rounds} جولة`);
+                            else if (evt.type === 'agent_error') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `⚠️ ${evt.role}: ${evt.error}`);
+                        },
+                    });
+                    if (team.mode === 'execute') {
+                        // احفظ وثيقة مرجعية موجزة
+                        const doc = [`# Backend Team\n`, `> ${team.summary}\n`,
+                            ...team.results.filter(r => !r.skipped && !r.error).map(r => `## ${r.role}\n${r.summary}\n`)].join('\n');
+                        await fsPromises.writeFile(path.join(context.projectPath, 'BACKEND_TEAM.md'), doc).catch(() => {});
+
+                        // اكتب ملفات الفريق الحقيقية عبر CodeGuard (فحص/إصلاح قبل الحفظ)
+                        if (team.files.length > 0) {
+                            const guarded = await guardFiles(
+                                team.files.map(f => ({ name: f.path, content: f.content })),
+                                (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m)
+                            );
+                            const byPath = Object.fromEntries(guarded.map(g => [g.name, g.content]));
+                            teamWroteFiles = await writeBackendTeamFiles(
+                                team.files.map(f => ({ ...f, content: byPath[f.path] ?? f.content })),
+                                context.projectPath
+                            ).then(w => w.length);
+                            this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `📦 كتب الفريق ${teamWroteFiles} ملف خلفية`);
+                        }
+                        teamGuidance = `\n\n## توجيهات فريق الخلفية المتخصص (اتبعها ولا تكرّر ملفاته):\n${team.results.filter(r => r.summary).map(r => `- ${r.role}: ${r.summary}`).join('\n')}`;
+                    }
+                } catch (e) {
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `⚠️ تخطّي فريق الخلفية: ${e.message}`);
+                }
+
+                // إن أنتج الفريق ملفات كافية، نكتفي بها؛ وإلا نُكمل بالمولّد التقليدي (fallback)
+                try {
+                    if (teamWroteFiles >= 2) {
+                        this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', `✅ اعتمد ملفات فريق الخلفية (${teamWroteFiles})`);
+                    }
                     const frontendContext = await this.readCurrentCodeContextAsync(context.projectPath);
-                    const backendResult = await agents.generateBackend(context.goal, frontendContext);
+                    const backendResult = teamWroteFiles >= 2
+                        ? { success: false, files: [] }   // الفريق كفى — تخطّى المولّد التقليدي
+                        : await agents.generateBackend(context.goal + teamGuidance, frontendContext);
 
                     if (backendResult.success && backendResult.files.length > 0) {
                         // 🛡️ فحص ملفات الـ Backend قبل الحفظ
@@ -625,7 +684,7 @@ export class JaolaCognitiveRuntime {
                 if (needsAuth(context.originalGoal)) {
                     try {
                         this.emitLiveLog(roomName, '5. RUNTIME', 'AuthAgent', '🔐 جاري توليد نظام المصادقة...');
-                        const authResult = await generateAuth(context.originalGoal, context.projectPath);
+                        const authResult = await generateAuth(context.originalGoal, context.projectPath, getUserLanguage(context.username) || 'en');
                         if (authResult.success) {
                             const { promises: fsp } = await import('fs');
                             const pathMod = await import('path');
@@ -661,6 +720,28 @@ export class JaolaCognitiveRuntime {
                         .join(', ');
                     this.emitLiveLog(roomName, '5. RUNTIME', 'AdvancedAgent',
                         `✅ ${features} (${advResult.files.length} ملف)`
+                    );
+                }
+            } catch (e) { /* اختياري */ }
+
+            // 🏗️ Full-Stack Scaffold — للفئات المتقدمة (متجر/حجوزات/عقارات…)
+            // يُولّد مشروع Next.js + API + Prisma كامل في مجلد fullstack/ بجانب
+            // الموقع الثابت (لا يتعارض معه) — نقطة انطلاق جاهزة للتشغيل والنشر.
+            try {
+                const fsRec = recommendFullStack(
+                    context.originalGoal, context.blueprint?.category, context.blueprint?.kind
+                );
+                if (fsRec.fullstack) {
+                    const { promises: fsp } = await import('fs');
+                    const pathMod = await import('path');
+                    const { category, files } = buildFullStackProject(fsRec.category, context.activeProject);
+                    for (const file of files) {
+                        const filePath = pathMod.default.join(context.projectPath, 'fullstack', file.name);
+                        await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
+                        await fsp.writeFile(filePath, file.content);
+                    }
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'FullStackAgent',
+                        `🏗️ نسخة Full-Stack (${category}) في مجلد fullstack/ — Next.js + API + Prisma (${files.length} ملف)`
                     );
                 }
             } catch (e) { /* اختياري */ }
@@ -767,6 +848,21 @@ export class JaolaCognitiveRuntime {
             }
         } catch (e) { history = this.conversationBuffer.get(username) || []; }
         history.push({ role: 'user', content: userMessage });
+
+        // 🧠 Project Brain — يفهم كامل المشروع (ملفات + قرارات + أُنجز/متبقٍّ) لا الرسالة الأخيرة فقط
+        let brainContext = '';
+        try {
+            const project = roomName.startsWith(username + '-') ? roomName.slice(username.length + 1) : null;
+            if (project) {
+                const safeUser = username.replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
+                const safeProject = project.replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
+                const projectPath = path.resolve(__dirname, '../../workspace', safeUser, safeProject);
+                const files = await scanProjectFiles(projectPath, { maxFiles: 300 });
+                const brain = buildProjectBrain(getProjectMemory(username, project), files);
+                brainContext = summarizeBrain(brain, userLang);
+            }
+        } catch { /* الشات يعمل حتى لو تعذّر بناء الصورة */ }
+
         const messages = [
             { role: "system", content: `You are JAOLA — a smart web building assistant.
 
@@ -777,6 +873,10 @@ RESPONSE RULES:
 - Be direct and friendly
 - Your specialty: websites, design, web development
 - When user wants to build: tell them to type "${userLang === 'ar' ? 'ابني [اسم المشروع]' : 'build [project name]'}" to start the official build system
+- Answer about the WHOLE project using the state below — not just the last message. If asked what's done or remaining, use it.
+
+## Current project state (Project Brain):
+${brainContext || 'No project files yet.'}
 
 User preferences: ${JSON.stringify(execMemory)}` },
             ...history
@@ -787,15 +887,24 @@ User preferences: ${JSON.stringify(execMemory)}` },
             : '⚠️ AI service is momentarily busy (rate limited after the build) — resend your message in a few seconds.';
 
         // محاولتان مع مهلة قصيرة — أغلب حالات rate limit تنجح في الثانية
+        // 🔴 بثّ حيّ: الرد يظهر حرفاً-بحرف بدل دفعة واحدة (إحساس بالحياة)
+        let streamed = false;
         for (let attempt = 1; attempt <= 2; attempt++) {
             try {
-                const completion = await groq.chat.completions.create({
+                const stream = await groq.chat.completions.create({
                     messages,
                     model: "llama-3.3-70b-versatile",
                     max_tokens: 200,
-                    temperature: 0.6
+                    temperature: 0.6,
+                    stream: true,
                 });
-                reply = completion.choices[0].message.content;
+                this.io.to(roomName).emit('chat_stream_start', {});
+                let acc = '';
+                for await (const chunk of stream) {
+                    const delta = chunk.choices?.[0]?.delta?.content || '';
+                    if (delta) { acc += delta; this.io.to(roomName).emit('chat_stream_chunk', { delta }); }
+                }
+                if (acc.trim()) { reply = acc; streamed = true; }
                 break;
             } catch (e) {
                 console.error(`Chat error (attempt ${attempt}):`, e.message || e);
@@ -809,7 +918,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
         } else {
             this.conversationBuffer.set(username, history.slice(-MAX_HISTORY));
         }
-        this.emitChatReply(roomName, reply);
+        // أنهِ البثّ بالنسخة النهائية (يستبدل النص المتراكم ويثبّته)؛
+        // وإن لم ينجح البثّ (rate limit) أرسل الرد دفعة واحدة كالمعتاد
+        if (streamed) this.io.to(roomName).emit('chat_stream_end', { message: reply });
+        else this.emitChatReply(roomName, reply);
         this.emitLiveLog(roomName, '💬 Assistant', 'Chat Reply', reply);
         return reply;
     }
@@ -870,6 +982,24 @@ User preferences: ${JSON.stringify(execMemory)}` },
             }
         } catch (e) { /* اختياري */ }
 
+        // 🧰 المسار الهجين — مشروع كبير → React/Next حقيقي بمعاينة حيّة؛ غيره → Vanilla سريع
+        try {
+            const ptype = blueprint?.category && blueprint.category !== 'other' ? blueprint.category : detectProjectType(goal);
+            const scope = getProjectMemory(username, activeProject)?.plan?.scope || '';
+            const stack = resolveStack({ projectType: ptype, scope });
+            const starter = selectStarter({ projectType: ptype, scope });
+            // فقط لبناء جديد (لا تعديل على مشروع قائم)
+            const existingCtx = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
+            const isFreshBuild = !existingCtx || existingCtx.trim().length < 80;
+            if (stack === 'react-next' && isFreshBuild) {
+                this.emitLiveLog(roomName, 'STACK', 'HybridRouter', `🧰 مشروع كبير → React/Next${starter ? ` (${starter.name})` : ''}`);
+                return await this._buildReactProject(goal, projectPath, username, activeProject, roomName, {
+                    sections: blueprint?.keySections || [], starter,
+                });
+            }
+            this.emitLiveLog(roomName, 'STACK', 'HybridRouter', `🧰 مسار سريع → Vanilla${starter ? ` (قالب: ${starter.name})` : ''}`);
+        } catch (e) { /* اختياري — نُكمل بالمسار الافتراضي */ }
+
         // 🆕 Smart Requirement Analyzer — يُثري الهدف بمتطلبات ضمنية
         let requirementsContext = '';
         let imageContext = '';
@@ -887,7 +1017,24 @@ User preferences: ${JSON.stringify(execMemory)}` },
             this.emitLiveLog(roomName, 'ASSETS', 'ImageService', `🖼️ جُهزت ${img.count} صور (${img.source})`);
         } catch (e) { /* اختياري */ }
 
-        const finalGoalWithRequirements = `${enrichedGoal}${blueprintContext}\n${requirementsContext}${imageContext}`;
+        // 🔌 وكلاء الإضافات: hook beforeBuild — يشاركون فعلياً في البناء
+        // كل وكيل يُرجع نصاً يُحقن في سياق البناء (توجيهات، متطلبات إضافية...)
+        let pluginContext = '';
+        try {
+            const hookResults = await orchestrator.runHook('beforeBuild', {
+                goal, username, project: activeProject, projectPath, blueprint,
+            });
+            const guidance = hookResults
+                .map(r => (typeof r.result === 'string' ? r.result : r.result?.guidance || r.result?.reply))
+                .filter(Boolean);
+            if (guidance.length) {
+                pluginContext = `\n## 🔌 توجيهات وكلاء إضافيين (التزم بها):\n${guidance.map(g => `- ${g}`).join('\n')}`;
+                this.emitLiveLog(roomName, 'PLUGINS', 'beforeBuild',
+                    `🔌 شارك ${guidance.length} وكيل إضافي في التوجيه`);
+            }
+        } catch (e) { /* الإضافات اختيارية */ }
+
+        const finalGoalWithRequirements = `${enrichedGoal}${blueprintContext}\n${requirementsContext}${imageContext}${pluginContext}`;
 
         // تسجيل هذا الطلب في تاريخ المشروع
         addToHistory(username, activeProject, goal.slice(0, 80));
@@ -1004,6 +1151,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     success: true, durationSec, filesCount: builtFiles.length, goal: goal || '',
                 });
                 this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
+
+                // 🔌 وكلاء الإضافات: hook afterBuild — تنفيذ ما بعد البناء
+                orchestrator.runHook('afterBuild', {
+                    success: true, goal, username, project: activeProject, projectPath, files: builtFiles,
+                }).catch(() => {});
             }
             if (!execResult.success) {
                 // 📊 البنايات الفاشلة تُسجل أيضاً — التاريخ الصادق جزء من الذكاء
@@ -1056,10 +1208,431 @@ User preferences: ${JSON.stringify(execMemory)}` },
         return context;
     }
 
+    /** يقرأ الملفات الأساسية كمصفوفة {name, content} للتعديل الجراحي */
+    async readProjectFilesArray(projectPath) {
+        try {
+            const files = await fsPromises.readdir(projectPath);
+            const relevant = files.filter(f => ['index.html', 'styles.css', 'script.js'].includes(f));
+            return await Promise.all(relevant.map(async f => ({
+                name: f, content: await fsPromises.readFile(path.join(projectPath, f), 'utf-8')
+            })));
+        } catch { return []; }
+    }
+
+    // ✂️ التعديل الجراحي — يمرّ عبر صف التنفيذ كالبناء (حماية التوازي)
+    surgicalEdit(instruction, projectPath, username, activeProject, roomName, agents, dbStatus) {
+        const lang = getUserLanguage(username) || 'ar';
+        const result = enqueueMission({
+            username, project: activeProject,
+            run: () => this._runSurgicalEditNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus),
+            onWait: (position) => this.io.to(roomName).emit('chat_reply', {
+                message: lang === 'ar' ? `⏳ مهمتك في الصف (المركز ${position}).` : `⏳ Queued (position ${position}).`,
+            }),
+        });
+        if (!result.accepted) {
+            this.io.to(roomName).emit('chat_reply', {
+                message: lang === 'ar' ? '⚙️ يوجد عمل جارٍ لهذا المشروع — انتظر أو اضغط ⏹.' : '⚙️ A task is already running — wait or press ⏹.',
+            });
+        }
+        return result;
+    }
+
+    // يستخرج اسم الصفحة من أمر "أضف صفحة …" (عربي/إنجليزي)
+    _extractPageName(instruction, lang) {
+        let s = String(instruction || '').trim();
+        s = s.replace(/^[^\p{L}]+/u, '');   // أزل الرموز/الإيموجي في البداية (زر "➕ أضف صفحة")
+        s = s.replace(/^\s*(?:من فضلك|رجاء[ًا]?|please)\s+/i, '');
+        s = s.replace(/^\s*(?:أضف|اضف|أضِف|ضيف|زد|أنشئ|انشئ|اضافة|إضافة|add|create|make)\s+/i, '');
+        s = s.replace(/^\s*(?:لي|me)\s+/i, '');
+        s = s.replace(/^\s*(?:a|an)\s+/i, '');
+        s = s.replace(/^\s*(?:جديدة|جديد|new)\s+/i, '');
+        s = s.replace(/^\s*(?:صفحة|صفحه|page)\s+/i, '');
+        s = s.replace(/^\s*(?:جديدة|جديد|new)\s+/i, '');
+        s = s.replace(/^\s*(?:اسمها|بعنوان|باسم|تسمى|عنوانها|بـ|called|named|titled|about|for)\s+/i, '');
+        s = s.replace(/["'«»]/g, '').replace(/[.،,!?]+$/g, '').trim();
+        // بقايا من كلمات دالّة فقط (زر "أضف صفحة" بلا اسم) → افتراضي
+        s = s.replace(/^(?:صفحة|صفحه|page|جديدة|جديد|new)(?:\s+(?:صفحة|صفحه|page|جديدة|جديد|new))*$/i, '').trim();
+        if (!s || s.length > 60) return lang === 'ar' ? 'صفحة جديدة' : 'New Page';
+        return s;
+    }
+
+    // ➕ يضيف صفحة جديدة لمشروع React قائم دون إعادة بناء — يحفظ المحتوى الحالي:
+    //    قسم + وجهة في lib/content.js، مكوّن، صفحة Next، ثم إعادة توليد الموقع الثابت.
+    async _addPageNow(instruction, projectPath, username, activeProject, roomName, lang) {
+        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
+        this.emitLiveLog(roomName, 'EDIT', 'AddPage', '➕ إضافة صفحة جديدة (بلا إعادة بناء)...');
+
+        // اقرأ المحتوى الحالي (lib/content.js: export const content = {...})
+        let content;
+        try {
+            const src = await fsPromises.readFile(path.join(projectPath, 'lib/content.js'), 'utf8');
+            content = JSON.parse(src.slice(src.indexOf('{'), src.lastIndexOf('}') + 1));
+        } catch (e) {
+            this.emitLiveLog(roomName, 'EDIT', 'AddPage', `⚠️ تعذّر قراءة المحتوى — عودة للبناء: ${e.message}`);
+            return this._runMissionNow(instruction, projectPath, username, activeProject, roomName, {}, null);
+        }
+
+        const pageLabel = this._extractPageName(instruction, lang);
+
+        // اسم مكوّن + مسار (slug) فريدان
+        const existingComps = new Set(Object.keys(content.sections || {}));
+        const existingSlugs = new Set((content.routes || []).map(r => (r.href || '').replace(/^\//, '')));
+        let n = existingComps.size + 1;
+        let comp = compName(pageLabel, n);
+        while (existingComps.has(comp)) comp = compName(pageLabel, ++n);
+        let slug = slugify(comp), k = 1;
+        while (existingSlugs.has(slug) || slug === '' ) { slug = slugify(comp) + '-' + (++k); }
+
+        // محتوى الصفحة: قالبي افتراضياً، ويخصّصه الذكاء بمحتوى واقعي (best-effort)
+        let section = defaultSection(pageLabel, lang);
+        try {
+            this.emitLiveLog(roomName, 'EDIT', 'ContentWriter', '✍️ تخصيص محتوى الصفحة بالذكاء...');
+            const model = await generateSectionContent(pageLabel, {
+                brand: content.brand || activeProject,
+                goal: content.hero?.title || content.hero?.subtitle || '',
+                lang, llm: (m, o) => smartChat(m, o),
+            });
+            if (model) section = {
+                heading: model.heading || section.heading,
+                subheading: model.subheading || section.subheading,
+                items: (model.items && model.items.length) ? model.items : section.items,
+            };
+        } catch { /* الافتراضي */ }
+
+        // حدّث المحتوى: قسم جديد + وجهة تنقّل
+        content.sections = content.sections || {};
+        content.sections[comp] = section;
+        content.routes = content.routes || [{ label: lang === 'ar' ? 'الرئيسية' : 'Home', href: '/' }];
+        content.routes.push({ label: pageLabel, href: '/' + slug });
+
+        // اكتب: content.js + مكوّن القسم + صفحة Next
+        await fsPromises.writeFile(path.join(projectPath, 'lib/content.js'),
+            `// محتوى الموقع — عدّله بحرّية. يملؤه JAOLA بالذكاء حسب مشروعك.\nexport const content = ${JSON.stringify(content, null, 2)};\n`);
+        await fsPromises.writeFile(path.join(projectPath, `components/${comp}.jsx`), componentSource(comp, lang));
+        await fsPromises.mkdir(path.join(projectPath, `app/${slug}`), { recursive: true });
+        const hasNav = fs.existsSync(path.join(projectPath, 'components/Navbar.jsx'));
+        const hasFooter = fs.existsSync(path.join(projectPath, 'components/Footer.jsx'));
+        const body = [hasNav ? 'Navbar' : null, comp, hasFooter ? 'Footer' : null].filter(Boolean);
+        await fsPromises.writeFile(path.join(projectPath, `app/${slug}/page.jsx`), pageFileSource('/' + slug, `${comp}Page`, body, 2));
+
+        // أعِد توليد الموقع الثابت كله (الصفحة الجديدة + الشريط المحدَّث في كل صفحة)
+        for (const pg of buildStaticSite(content, lang)) {
+            await fsPromises.writeFile(path.join(projectPath, pg.name), pg.content);
+        }
+
+        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
+        addToHistory(username, activeProject, `إضافة صفحة: ${pageLabel}`);
+        recordEdit(username, instruction);
+
+        this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        let builtFiles = [];
+        try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
+        this.io.to(roomName).emit('workspace_files', builtFiles);
+        snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
+        autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
+
+        const msg = lang === 'ar'
+            ? `✅ أضفت صفحة **${pageLabel}** (\`${slug}.html\`) وربطتها بشريط التنقّل في كل الصفحات — المعاينة تحدّثت. اضغط رابطها لفتحها.`
+            : `✅ Added page **${pageLabel}** (\`${slug}.html\`), linked in the nav across all pages — preview updated. Click its link to open it.`;
+        this.io.to(roomName).emit('chat_reply', {
+            message: msg,
+            options: lang === 'ar' ? ['➕ أضف صفحة أخرى', '✏️ عدّل محتواها', '🚀 انشر الآن'] : ['➕ Add another page', '✏️ Edit its content', '🚀 Deploy now'],
+        });
+        return { success: true, addedPage: slug, label: pageLabel };
+    }
+
+    // ينظّف اسم صفحة ملتقَط من أمر (يزيل الاقتباس/الترقيم/كلمة صفحة الزائدة)
+    _cleanPageName(s) {
+        return String(s || '')
+            .replace(/["'«»]/g, '')
+            .replace(/^\s*(?:صفحة|صفحه|the|page)\s+/i, '')
+            .replace(/[.،,!?\s]+$/g, '')
+            .trim();
+    }
+
+    // يقرأ محتوى مشروع React من القرص (أو null)
+    async _readReactContent(projectPath) {
+        try {
+            const src = await fsPromises.readFile(path.join(projectPath, 'lib/content.js'), 'utf8');
+            return JSON.parse(src.slice(src.indexOf('{'), src.lastIndexOf('}') + 1));
+        } catch { return null; }
+    }
+
+    // يجد صفحة بالاسم (تطابق تسمية الوجهة، ثم تضمين، ثم المسار)
+    _findPage(content, name) {
+        const t = String(name || '').trim().toLowerCase();
+        const routes = (content.routes || []).filter(r => r.href !== '/');
+        const compBySlug = {};
+        for (const c of Object.keys(content.sections || {})) compBySlug[slugify(c)] = c;
+        const route = routes.find(r => (r.label || '').trim().toLowerCase() === t)
+            || routes.find(r => (r.label || '').trim().toLowerCase().includes(t) && t.length >= 2)
+            || routes.find(r => r.href.replace(/^\//, '') === slugify(t));
+        if (!route) return null;
+        const slug = route.href.replace(/^\//, '');
+        return { route, slug, comp: compBySlug[slug] };
+    }
+
+    // كتابة المحتوى + إعادة توليد الموقع الثابت + بثّ التحديث (مشترك لعمليات الصفحات)
+    async _persistReactContent(projectPath, content, username, activeProject, roomName, lang, historyMsg) {
+        await fsPromises.writeFile(path.join(projectPath, 'lib/content.js'),
+            `// محتوى الموقع — عدّله بحرّية. يملؤه JAOLA بالذكاء حسب مشروعك.\nexport const content = ${JSON.stringify(content, null, 2)};\n`);
+        for (const pg of buildStaticSite(content, lang)) {
+            await fsPromises.writeFile(path.join(projectPath, pg.name), pg.content);
+        }
+        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
+        addToHistory(username, activeProject, historyMsg);
+        this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        let builtFiles = [];
+        try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
+        this.io.to(roomName).emit('workspace_files', builtFiles);
+        snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
+        autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
+    }
+
+    // 🖊️ إعادة تسمية صفحة (تسمية الوجهة + عنوان القسم) — تحفظ المسار والملفات
+    async _renamePageNow(projectPath, username, activeProject, roomName, lang, oldName, newName) {
+        const content = await this._readReactContent(projectPath);
+        if (!content) return this.io.to(roomName).emit('chat_reply', { message: lang === 'ar' ? '⚠️ تعذّر قراءة المشروع.' : '⚠️ Could not read project.' });
+        const found = this._findPage(content, oldName);
+        if (!found || !found.comp) return this._pageNotFound(content, roomName, lang, oldName);
+        found.route.label = newName;
+        if (content.sections[found.comp]) content.sections[found.comp].heading = newName;
+        await this._persistReactContent(projectPath, content, username, activeProject, roomName, lang, `إعادة تسمية صفحة: ${oldName} → ${newName}`);
+        this.io.to(roomName).emit('chat_reply', {
+            message: lang === 'ar' ? `✅ أعدت تسمية الصفحة إلى **${newName}** — حُدِّث الشريط في كل الصفحات.` : `✅ Renamed the page to **${newName}** — nav updated across all pages.`,
+            options: lang === 'ar' ? ['➕ أضف صفحة', '🚀 انشر الآن'] : ['➕ Add a page', '🚀 Deploy now'],
+        });
+        return { success: true, renamed: found.slug, label: newName };
+    }
+
+    // 🗑️ حذف صفحة (الوجهة + القسم + الملفات) — لا يمكن حذف الرئيسية
+    async _deletePageNow(projectPath, username, activeProject, roomName, lang, name) {
+        const content = await this._readReactContent(projectPath);
+        if (!content) return this.io.to(roomName).emit('chat_reply', { message: lang === 'ar' ? '⚠️ تعذّر قراءة المشروع.' : '⚠️ Could not read project.' });
+        const found = this._findPage(content, name);
+        if (!found || !found.comp) return this._pageNotFound(content, roomName, lang, name);
+        // احذف من المحتوى
+        content.routes = (content.routes || []).filter(r => r.href !== found.route.href);
+        delete content.sections[found.comp];
+        // احذف الملفات (المكوّن + صفحة Next + صفحة المعاينة)
+        await fsPromises.rm(path.join(projectPath, `components/${found.comp}.jsx`), { force: true });
+        await fsPromises.rm(path.join(projectPath, `app/${found.slug}`), { recursive: true, force: true });
+        await fsPromises.rm(path.join(projectPath, `${found.slug}.html`), { force: true });
+        await this._persistReactContent(projectPath, content, username, activeProject, roomName, lang, `حذف صفحة: ${found.route.label}`);
+        this.io.to(roomName).emit('chat_reply', {
+            message: lang === 'ar' ? `✅ حذفت صفحة **${found.route.label}** وأزلتها من شريط التنقّل — المعاينة تحدّثت.` : `✅ Deleted page **${found.route.label}** and removed it from the nav — preview updated.`,
+            options: lang === 'ar' ? ['➕ أضف صفحة', '🚀 انشر الآن'] : ['➕ Add a page', '🚀 Deploy now'],
+        });
+        return { success: true, deleted: found.slug };
+    }
+
+    _pageNotFound(content, roomName, lang, name) {
+        const names = (content.routes || []).filter(r => r.href !== '/').map(r => r.label).join('، ');
+        this.io.to(roomName).emit('chat_reply', {
+            message: lang === 'ar'
+                ? `⚠️ لم أجد صفحة باسم «${name}». الصفحات الحالية: ${names || '—'}`
+                : `⚠️ No page named "${name}". Current pages: ${names || '—'}`,
+        });
+        return { success: false, notFound: name };
+    }
+
+    async _runSurgicalEditNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus) {
+        const lang = getUserLanguage(username) || 'ar';
+        const files = await this.readProjectFilesArray(projectPath);
+
+        // مشروع React؟ (يحوي lib/content.js أو app/page.jsx)
+        const isReact = files.some(f => f.name === 'lib/content.js' || f.name === 'app/page.jsx');
+
+        // 🗂️ عمليات الصفحات لمشروع React (تزايدية، تحفظ باقي المحتوى) — قبل فحص
+        // "التغيير الكبير" (الذي يلتقط "صفحة/صفحات" ويعيد البناء بالكامل).
+        if (isReact) {
+            // إعادة تسمية: "أعد تسمية صفحة X إلى Y" / "rename page X to Y"
+            const ren = instruction.match(/(?:أعد\s*تسمية|اعد\s*تسمية|غيّر\s*اسم|غير\s*اسم|rename)\s+(?:صفحة|صفحه|page\s+)?(.+?)\s+(?:إلى|الى|to)\s+(.+)/i);
+            if (ren) return this._renamePageNow(projectPath, username, activeProject, roomName, lang, this._cleanPageName(ren[1]), this._cleanPageName(ren[2]));
+            // حذف: "احذف صفحة X" / "delete page X"
+            const del = instruction.match(/(?:احذف|امسح|إحذف|delete|remove)\s+(?:صفحة|صفحه|page)\s+(.+)/i);
+            if (del) return this._deletePageNow(projectPath, username, activeProject, roomName, lang, this._cleanPageName(del[1]));
+            // إضافة: "أضف صفحة …"
+            const wantsAddPage = /(?:أضف|اضف|أضِف|ضيف|زد|أنشئ|انشئ|اضافة|إضافة)\s+(?:لي\s+)?(?:صفحة|صفحه)|صفحة\s*جديدة|add\s+(?:a\s+|an\s+)?page|new\s+page|create\s+(?:a\s+)?page/i.test(instruction);
+            if (wantsAddPage) return this._addPageNow(instruction, projectPath, username, activeProject, roomName, lang);
+        }
+
+        // لا مشروع قائم، أو تعديل كبير (إعادة تصميم/بناء) → البناء الكامل بدل الجراحي
+        const bigChange = /أعد التصميم|اعد التصميم|أعد البناء|اعد البناء|من جديد|صفحة جديدة|صفحات|redesign|rebuild|from scratch|new page/i.test(instruction);
+        if (files.length === 0 || bigChange || !agents.coreEditCodePlan) {
+            return this._runMissionNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus);
+        }
+
+        // نوجّه التعديل للمصدر (lib/content.js، المكوّنات) لا لصفحات HTML المولّدة
+        // (index.html/*.html) — فتلك نُعيد توليدها من المحتوى بعد التعديل.
+        const editFiles = isReact ? files.filter(f => !/^[^/]+\.html$/.test(f.name)) : files;
+
+        this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', '✂️ تعديل دقيق (لا إعادة بناء كاملة)...');
+        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
+
+        let plan;
+        try {
+            plan = await agents.coreEditCodePlan(instruction, editFiles, lang,
+                (chunk) => this.io.to(roomName).emit('code_stream_chunk', chunk));
+        } catch (e) {
+            this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', `⚠️ تعذّر — عودة للبناء الكامل: ${e.message}`);
+            this.io.to(roomName).emit('stream_done', {});
+            return this._runMissionNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus);
+        }
+        this.io.to(roomName).emit('stream_done', {});
+
+        // فشل الجراحي → عودة آمنة للبناء الكامل
+        if (!plan || plan.error || !plan.files?.length) {
+            this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', '⚠️ بلا نتيجة — عودة للبناء الكامل');
+            return this._runMissionNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus);
+        }
+
+        // فحص الملفات المتغيّرة عبر CodeGuard ثم كتابتها فقط
+        const guarded = await guardFiles(plan.files, (m) => this.emitLiveLog(roomName, 'EDIT', 'CodeGuard', m));
+        for (const file of guarded) {
+            await fsPromises.writeFile(path.join(projectPath, file.name), file.content);
+        }
+
+        // React: أعِد توليد صفحات المعاينة الثابتة من المحتوى المحدَّث — فينعكس
+        // التعديل على كل الصفحات (لا على index وحده).
+        if (isReact) {
+            try {
+                const src = await fsPromises.readFile(path.join(projectPath, 'lib/content.js'), 'utf8');
+                for (const pg of buildStaticSiteFromSource(src, lang)) {
+                    await fsPromises.writeFile(path.join(projectPath, pg.name), pg.content);
+                }
+            } catch (e) { this.emitLiveLog(roomName, 'EDIT', 'Preview', `⚠️ تعذّر تحديث المعاينة: ${e.message}`); }
+        }
+        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
+
+        const changedNames = guarded.map(f => f.name).join('، ');
+        recordEdit(username, instruction);
+        addToHistory(username, activeProject, `تعديل: ${instruction.slice(0, 60)}`);
+
+        // تحديث المعاينة + قائمة الملفات + لقطة دائمة
+        this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        let builtFiles = [];
+        try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
+        this.io.to(roomName).emit('workspace_files', builtFiles);
+        snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
+        autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
+
+        const msg = lang === 'ar'
+            ? `✅ طبّقت التعديل على: **${changedNames}** فقط (بلا إعادة بناء الموقع) — المعاينة تحدّثت.`
+            : `✅ Applied the change to **${changedNames}** only (no full rebuild) — preview updated.`;
+        this.io.to(roomName).emit('chat_reply', { message: msg, options: lang === 'ar' ? ['🚀 انشر الآن', '📊 أين وصلنا'] : ['🚀 Deploy now', '📊 Status'] });
+        return { success: true, edited: guarded.map(f => f.name) };
+    }
+
+    // ⚛️ بناء مشروع React/Next حقيقي + معاينة حيّة في الـ iframe + خيار النشر
+    async _buildReactProject(goal, projectPath, username, activeProject, roomName, { sections = [], starter } = {}) {
+        const lang = getUserLanguage(username) || 'ar';
+        const t0 = Date.now();
+        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
+        this.emitLiveLog(roomName, '5. RUNTIME', 'ReactGen', '⚛️ توليد مشروع Next.js + Tailwind...');
+
+        // 🧠 محتوى بالذكاء (best-effort) يملأ الهيكل بمحتوى المشروع الفعلي
+        let content = null;
+        try {
+            this.emitLiveLog(roomName, '5. RUNTIME', 'ContentWriter', '✍️ كتابة محتوى المشروع...');
+            content = await generateContentModel(goal, { sections, lang, llm: (m, o) => smartChat(m, o) });
+        } catch { /* افتراضي */ }
+
+        // 1) سكافولد Next الحقيقي (للنشر/التنزيل) — بمحتوى مخصّص
+        const scaffold = generateNextScaffold({ projectName: activeProject, sections, lang, content });
+        for (const f of scaffold.files) {
+            const p = path.join(projectPath, f.name);
+            await fsPromises.mkdir(path.dirname(p), { recursive: true });
+            await fsPromises.writeFile(p, f.content);
+        }
+
+        // 1.5) تخصيص محتوى **كل صفحة** بالذكاء: النموذج الدفعي قد يترك أقساماً
+        //      افتراضية (خاصة مع كثرة الصفحات). نملأ كل قسم بقي افتراضياً فردياً
+        //      (best-effort، تراجع آمن للافتراضي) — فلا صفحة بمحتوى قالبي.
+        const finalContent = scaffold.meta.content;
+        try {
+            const CHROME = new Set(['Navbar', 'Hero', 'Footer']);
+            const pageComps = (scaffold.meta.components || []).filter((c) => !CHROME.has(c));
+            const routes = scaffold.meta.pages || [];
+            for (const comp of pageComps) {
+                const cur = finalContent.sections?.[comp];
+                if (!cur) continue;
+                const label = (routes.find((r) => r.href === '/' + slugify(comp)) || {}).label || cur.heading;
+                // لم يخصّصه النموذج الدفعي؟ (لا يزال مطابقاً للافتراضي) → خصّصه فردياً
+                if (JSON.stringify(cur) !== JSON.stringify(defaultSection(label, lang))) continue;
+                this.emitLiveLog(roomName, '5. RUNTIME', 'ContentWriter', `✍️ محتوى صفحة: ${label}...`);
+                const model = await generateSectionContent(label, {
+                    brand: finalContent.brand || activeProject, goal, lang, llm: (m, o) => smartChat(m, o),
+                });
+                if (model) finalContent.sections[comp] = {
+                    heading: model.heading || cur.heading,
+                    subheading: model.subheading || cur.subheading,
+                    items: (model.items && model.items.length) ? model.items : cur.items,
+                };
+            }
+            // أعِد كتابة lib/content.js بالمحتوى المُثرى (المكوّنات تقرأ منه)
+            await fsPromises.writeFile(path.join(projectPath, 'lib/content.js'),
+                `// محتوى الموقع — عدّله بحرّية. يملؤه JAOLA بالذكاء حسب مشروعك.\nexport const content = ${JSON.stringify(finalContent, null, 2)};\n`);
+        } catch (e) { this.emitLiveLog(roomName, '5. RUNTIME', 'ContentWriter', `⚠️ تخصيص جزئي: ${e.message}`); }
+
+        // 2) معاينة ثابتة متعدّدة الصفحات: صفحة HTML حقيقية لكل مسار بروابط تعمل
+        //    (index.html + <slug>.html) — بلا CDN، فالتنقّل يفتح صفحات فعلية.
+        const staticPages = buildStaticSite(finalContent, lang);
+        for (const pg of staticPages) {
+            await fsPromises.writeFile(path.join(projectPath, pg.name), pg.content);
+        }
+        // 🛠️ لوحة تحكم يديرها العميل لموقعه (dashboard.html) — يضبط كلمة مرورها أول مرة
+        await fsPromises.writeFile(path.join(projectPath, 'dashboard.html'),
+            buildDashboardPage(finalContent, { project: activeProject, username, lang }));
+
+        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
+        transitionState(username, activeProject, STATES.COMPLETED);
+        updateStructure(username, activeProject, sections, scaffold.meta.components);
+        addToHistory(username, activeProject, `بناء React/Next: ${(goal || '').slice(0, 60)}`);
+
+        // 3) تحديث المعاينة + قائمة الملفات + لقطة
+        this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        let builtFiles = [];
+        try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
+        this.io.to(roomName).emit('workspace_files', builtFiles);
+        snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
+        autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
+        const durationSec = Math.round((Date.now() - t0) / 1000);
+        recordBuild(username, activeProject, { success: true, durationSec, filesCount: builtFiles.length, goal: goal || '' });
+        this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
+
+        const pageCount = scaffold.meta.pages?.length || staticPages.length;
+        const report = lang === 'ar'
+            ? [
+                '✅ مشروع React/Next جاهز — معاينة متعدّدة الصفحات تعمل الآن.',
+                `⚛️ Next.js + Tailwind · ${pageCount} صفحة · ${scaffold.meta.components.length} مكوّن${starter ? ` · قالب: ${starter.name}` : ''}`,
+                '🖥️ اضغط روابط الشريط للتنقّل بين صفحات حقيقية — كل تعديل ينعكس فوراً.',
+                '🛠️ لوحة إدارة موقعك: افتح `dashboard.html` وعيّن كلمة مرور — تدير بها النصوص والصور والمنتجات بنفسك.',
+                '⬇️ للتشغيل محلياً: npm install && npm run dev · وجاهز للنشر على Vercel.',
+              ].join('\n')
+            : [
+                '✅ React/Next project ready — multi-page preview running now.',
+                `⚛️ Next.js + Tailwind · ${pageCount} pages · ${scaffold.meta.components.length} components${starter ? ` · template: ${starter.name}` : ''}`,
+                '🖥️ Click the nav links to move between real pages — every edit reflects instantly.',
+                '⬇️ Local run: npm install && npm run dev · Ready to deploy on Vercel.',
+              ].join('\n');
+        this.io.to(roomName).emit('chat_reply', {
+            message: report,
+            options: lang === 'ar' ? ['➕ أضف صفحة', '🚀 انشر على Vercel', '🐙 ادفع إلى GitHub', '✏️ عدّل قسماً'] : ['➕ Add a page', '🚀 Deploy to Vercel', '🐙 Push to GitHub', '✏️ Edit a section'],
+        });
+        this.emitLiveLog(roomName, 'JCOS', 'Kernel', '✨ نجاح');
+        return { success: true, stack: 'react-next', files: builtFiles };
+    }
+
     async handleUserMessage(socket, data, agents, dbStatus) {
-        const { message, roomName, projectPath, username, activeProject } = data;
+        const { message, roomName, projectPath, username, activeProject, uiLang } = data;
 
         // ── 0. Language Detector — تسجيل اللغة من أول رسالة ────────────
+        // لغة الواجهة (uiLang) بذرة أولية: إذا لم تُسجَّل لغة بعد والرسالة قصيرة
+        // (غامضة يصعب كشفها)، نبدأ بلغة الواجهة — ثم تفوز لغة الكتابة الفعلية لاحقاً.
+        if (uiLang && !hasUserLanguage(username) && LANGUAGE_INFO[uiLang] && message.trim().length < 6) {
+            setUserLanguage(username, uiLang);
+        }
         const userLang = initUserLanguage(username, message);
         const langInfo = getLangInfo(userLang);
 
@@ -1307,7 +1880,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 return;
             }
             this.emitLiveLog(roomName, 'INTENT', 'Classifier', 'نية: modify (ثقة: 100%) - قاعدة مباشرة');
-            this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);
+            this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
             return;
         }
 
@@ -1322,6 +1895,16 @@ User preferences: ${JSON.stringify(execMemory)}` },
         if (finalIntent.intent === 'build') {
             const userGoal = normalizedMessage || message;
             const lang = getUserLanguage(username) || userLang;
+
+            // 🎯 طلب واسع وغامض → حوار استراتيجي أولاً (لا يبدأ مباشرة)
+            const clar = await agents.startClarification?.(username, userGoal);
+            if (clar?.type === 'clarification') {
+                this.emitLiveLog(roomName, 'INTENT', 'Clarifier', '🎯 طلب استراتيجي — بدء حوار التخطيط');
+                this.io.to(roomName).emit('chat_reply', { message: clar.message, options: clar.options });
+                return;
+            }
+
+            // ⚡ طلب واضح → تأكيد سريع ثم بناء
             const projectHint = userGoal.replace(/^(ابني|اصنع|انشئ|بني|سوي|build|create|make)\s+/i, '').trim();
             const confirmQ = lang === 'ar'
                 ? `هل تريد بناء موقع لـ "${projectHint}"؟`
@@ -1333,8 +1916,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
             setPendingGoal(username, userGoal, activeProject);
         } else if (finalIntent.intent === 'modify') {
             recordEdit(username, message);
-            this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);
-            // Git commit للتعديل يحدث داخل executeMission بعد النجاح
+            this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
+            // Git commit للتعديل يحدث داخل المهمة بعد النجاح
         } else if (finalIntent.intent === 'stop') {
             this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛑 أمر إيقاف.');
             agents.clearState?.(username);
@@ -1349,9 +1932,9 @@ User preferences: ${JSON.stringify(execMemory)}` },
             const isSmalltalk = message.trim().length < 4;
 
             if (hasProject && !isQuestion && !isSmalltalk) {
-                this.emitLiveLog(roomName, 'INTENT', 'Classifier', '✏️ طلب على مشروع قائم → تعديل تلقائي');
+                this.emitLiveLog(roomName, 'INTENT', 'Classifier', '✏️ طلب على مشروع قائم → تعديل جراحي');
                 recordEdit(username, message);
-                this.executeMission(message, projectPath, username, activeProject, roomName, agents, dbStatus);
+                this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
                 return;
             }
             await this.generateChatResponse(message, username, roomName, userLang);

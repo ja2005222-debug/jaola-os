@@ -36,7 +36,16 @@ const FONT_PAIRS = {
     arabic_modern:  { heading: 'Cairo',   body: 'Tajawal',  import: 'Cairo:wght@700;900&family=Tajawal:wght@400;500' },
     arabic_elegant: { heading: 'Almarai', body: 'Almarai',  import: 'Almarai:wght@400;700;800' },
     arabic_bold:    { heading: 'Cairo',   body: 'Cairo',    import: 'Cairo:wght@400;600;700;900' },
+    // خطوط لاتينية للّغات غير العربية
+    latin_modern:   { heading: 'Poppins', body: 'Inter',    import: 'Poppins:wght@600;700;800&family=Inter:wght@400;500;600' },
+    latin_elegant:  { heading: 'Montserrat', body: 'Inter', import: 'Montserrat:wght@600;700;800&family=Inter:wght@400;500' },
 };
+
+const RTL_LANGS = new Set(['ar', 'ur', 'he', 'fa']);
+/** يختار زوج خطوط مناسباً لاتجاه لغة المستخدم */
+function pickFonts(lang = 'en') {
+    return RTL_LANGS.has((lang || 'en').toLowerCase()) ? FONT_PAIRS.arabic_modern : FONT_PAIRS.latin_modern;
+}
 
 // ═══════════════════════════════════════════════════════
 // 🔍 اختيار لوحة الألوان حسب نوع المشروع والسياق
@@ -103,7 +112,7 @@ function getImages(projectType, count = 3) {
 // ═══════════════════════════════════════════════════════
 // 📐 بناء design-brief كامل
 // ═══════════════════════════════════════════════════════
-export async function generateDesignBrief(userGoal, username, activeProject) {
+export async function generateDesignBrief(userGoal, username, activeProject, lang = 'en') {
     try {
         const ctx = getProjectContext(userGoal);
         const userProfile = getUserProfile(username);
@@ -113,8 +122,8 @@ export async function generateDesignBrief(userGoal, username, activeProject) {
         const paletteName = selectPalette(ctx.projectType, userGoal, userProfile);
         const palette = COLOR_PALETTES[paletteName];
 
-        // اختيار الخطوط
-        const fonts = FONT_PAIRS.arabic_modern;
+        // اختيار الخطوط حسب لغة المستخدم (لاتيني لغير العربية)
+        const fonts = pickFonts(lang);
 
         // الصور
         const images = getImages(ctx.projectType, 4);
@@ -131,13 +140,14 @@ export async function generateDesignBrief(userGoal, username, activeProject) {
                     model: 'llama-3.3-70b-versatile',
                     messages: [{
                         role: 'system',
-                        content: 'أنت مصمم ويب خبير. أجب فقط بـ JSON صالح بدون أي نص خارجه.'
+                        content: `أنت مصمم ويب خبير. أجب فقط بـ JSON صالح بدون أي نص خارجه. اكتب قيم heroSlogan وuniqueTouch بلغة المستخدم: ${(lang || 'en')}.`
                     }, {
                         role: 'user',
                         content: `للمشروع: "${userGoal}"
 النوع: ${ctx.projectType}، لوحة الألوان: ${paletteName}
+لغة المحتوى المطلوبة: ${(lang || 'en')}
 
-أعطني JSON بهذا الشكل فقط:
+أعطني JSON بهذا الشكل فقط (heroSlogan وuniqueTouch بلغة ${(lang || 'en')}):
 {
   "heroSlogan": "شعار قصير وجذاب للـ hero section",
   "uniqueTouch": "لمسة تصميمية مميزة ومختلفة لهذا الموقع تحديداً",

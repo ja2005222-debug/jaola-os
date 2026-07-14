@@ -14,6 +14,7 @@ import { promises as fsp } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { sanitizePath } from '../middleware/security.js';
+import { persistPlugin, removePlugin } from './pluginStore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PLUGINS_DIR = path.resolve(__dirname, '../plugins');
@@ -42,14 +43,28 @@ function escapeForTemplate(str) {
 // ═══════════════════════════════════════════════════════
 // 🤖 صناعة وكيل بأبسط طريقة: اسم + وصف + تعليمات
 // ═══════════════════════════════════════════════════════
-export function generateAgentPluginCode({ name, description = '', instructions = '', temperature = 0.4 }) {
+export function generateAgentPluginCode({ name, description = '', instructions = '', temperature = 0.4, runsOnBuild = false }) {
     const camel = toCamel(name);
-    const safeName = name.trim();
     const temp = Math.min(1, Math.max(0, Number(temperature) || 0.4));
+    const sys = escapeForTemplate(instructions || 'أنت وكيل مساعد. نفّذ ما يطلبه المستخدم بدقة.');
+
+    // hook beforeBuild — يجعل الوكيل يشارك في كل عملية بناء تلقائياً:
+    // يستقبل هدف المشروع ويُرجع توجيهاً يُحقن في سياق البناء
+    const beforeBuildHook = runsOnBuild ? `
+    async beforeBuild({ goal, blueprint } = {}) {
+      const { smartChat } = await import('../agents/baseAgent.js');
+      const ctx = \`المشروع المطلوب: \${goal}\${blueprint ? \` (نوع: \${blueprint.appType || blueprint.category})\` : ''}\`;
+      const guidance = await smartChat([
+        { role: 'system', content: \`${sys}\\n\\nمهمتك: أعطِ توجيهاً موجزاً (سطر أو سطران) يُضاف لتعليمات بناء الموقع بناءً على تخصصك. لا تكتب كوداً — فقط توجيه واضح.\` },
+        { role: 'user', content: ctx },
+      ], { max_tokens: 400, temperature: ${temp} });
+      return { guidance };
+    },` : '';
 
     return `/**
- * 🤖 ${escapeForTemplate(safeName)} — وكيل مُنشأ من لوحة التحكم
+ * 🤖 ${escapeForTemplate(name.trim())} — وكيل مُنشأ من لوحة التحكم
  * ${escapeForTemplate(description)}
+ * ${runsOnBuild ? 'يعمل في كل عملية بناء (beforeBuild) + عند الطلب.' : 'يعمل عند الطلب فقط.'}
  */
 
 export default {
@@ -69,13 +84,13 @@ export default {
             ? input
             : (input.text || input.message || JSON.stringify(input));
           const reply = await smartChat([
-            { role: 'system', content: \`${escapeForTemplate(instructions || 'أنت وكيل مساعد. نفّذ ما يطلبه المستخدم بدقة.')}\` },
+            { role: 'system', content: \`${sys}\` },
             { role: 'user', content: userText },
           ], { max_tokens: 1500, temperature: ${temp} });
           return { agent: ${JSON.stringify(name.trim())}, reply };
         },
       };
-    },
+    },${beforeBuildHook}
   },
 };
 `;
@@ -84,7 +99,7 @@ export default {
 // ═══════════════════════════════════════════════════════
 // 📁 إدارة ملفات الإضافات
 // ═══════════════════════════════════════════════════════
-export async function createAgentPlugin({ name, description, instructions, rawCode, temperature }) {
+export async function createAgentPlugin({ name, description, instructions, rawCode, temperature, runsOnBuild }) {
     const fileName = toPluginFileName(name);
     const target = sanitizePath(fileName, PLUGINS_DIR);
 
@@ -95,10 +110,11 @@ export async function createAgentPlugin({ name, description, instructions, rawCo
     // rawCode للوضع المتقدم، وإلا نولّد وكيل LLM من التعليمات
     const code = (rawCode && rawCode.trim().length > 20)
         ? rawCode
-        : generateAgentPluginCode({ name, description, instructions, temperature });
+        : generateAgentPluginCode({ name, description, instructions, temperature, runsOnBuild });
 
     await fsp.mkdir(PLUGINS_DIR, { recursive: true });
     await fsp.writeFile(target, code);
+    await persistPlugin(fileName, code);   // 🗄️ دائم في MongoDB
     return { file: fileName, created: true };
 }
 
@@ -125,13 +141,17 @@ export async function readPluginCode(fileName) {
 
 export async function writePluginCode(fileName, code) {
     if (typeof code !== 'string' || code.length < 10) throw new Error('الكود قصير جداً أو غير صالح.');
-    const target = sanitizePath(path.basename(fileName), PLUGINS_DIR);
+    const base = path.basename(fileName);
+    const target = sanitizePath(base, PLUGINS_DIR);
     await fsp.writeFile(target, code);
-    return { file: path.basename(fileName), saved: true };
+    await persistPlugin(base, code);       // 🗄️ حفظ التعديل دائماً
+    return { file: base, saved: true };
 }
 
 export async function deletePluginFile(fileName) {
-    const target = sanitizePath(path.basename(fileName), PLUGINS_DIR);
+    const base = path.basename(fileName);
+    const target = sanitizePath(base, PLUGINS_DIR);
+    await removePlugin(base);               // 🗄️ حذف من MongoDB أيضاً
     if (!fs.existsSync(target)) return { deleted: false };
     await fsp.rm(target, { force: true });
     return { deleted: true };

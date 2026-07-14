@@ -4,20 +4,23 @@ import { useSocket, socket } from '../hooks/useSocket.js';
 import { useIsMobile } from '../hooks/useIsMobile.js';
 import { MonacoWorkspace } from '../components/editor/MonacoWorkspace.jsx';
 import { MissionProgress } from '../components/MissionProgress.jsx';
+import { Markdown } from '../components/Markdown.jsx';
 import { PreviewPanel } from '../components/PreviewPanel.jsx';
 import { TimelinePanel } from '../components/TimelinePanel.jsx';
 import { useJaolaStore } from '../store/useJaolaStore.js';
 import { BACKEND_URL } from '../config.js';
+import { useI18n } from '../i18n.js';
+import { LanguageSwitcher } from '../components/LanguageSwitcher.jsx';
 
 const QUICK_BUILDS = [
-  { icon: '⚡', label: 'SaaS', prompt: 'ابني منصة SaaS متكاملة مع اشتراكات' },
-  { icon: '✈️', label: 'Travel', prompt: 'ابني منصة سفر فاخرة مع حجز' },
-  { icon: '🍽️', label: 'Restaurant', prompt: 'ابني موقع مطعم فاخر مع حجز طاولات' },
-  { icon: '🎬', label: 'Cinema', prompt: 'ابني منصة سينما مع حجز تذاكر' },
-  { icon: '📊', label: 'Dashboard', prompt: 'ابني لوحة تحكم تحليلية احترافية' },
-  { icon: '📱', label: 'Mobile App', prompt: 'ابني تطبيق جوال عصري' },
-  { icon: '💼', label: 'CRM', prompt: 'ابني نظام إدارة علاقات عملاء' },
-  { icon: '🏢', label: 'ERP', prompt: 'ابني نظام تخطيط موارد مؤسسة' },
+  { icon: '⚡', label: 'SaaS', promptKey: 'qbSaaS' },
+  { icon: '✈️', label: 'Travel', promptKey: 'qbTravel' },
+  { icon: '🍽️', label: 'Restaurant', promptKey: 'qbRestaurant' },
+  { icon: '🎬', label: 'Cinema', promptKey: 'qbCinema' },
+  { icon: '📊', label: 'Dashboard', promptKey: 'qbDashboard' },
+  { icon: '📱', label: 'Mobile App', promptKey: 'qbMobile' },
+  { icon: '💼', label: 'CRM', promptKey: 'qbCRM' },
+  { icon: '🏢', label: 'ERP', promptKey: 'qbERP' },
 ];
 
 const BOOT_STEPS = [
@@ -43,10 +46,10 @@ const SIDEBAR_ITEMS = [
 ];
 
 const MOBILE_TABS = [
-  { id: 'mission', icon: '⚡', label: 'المهمة' },
-  { id: 'preview', icon: '🖥️', label: 'معاينة' },
-  { id: 'editor', icon: '💻', label: 'الكود' },
-  { id: 'logs', icon: '📋', label: 'السجل' },
+  { id: 'mission', icon: '⚡', key: 'mMission' },
+  { id: 'preview', icon: '🖥️', key: 'preview' },
+  { id: 'editor', icon: '💻', key: 'code' },
+  { id: 'logs', icon: '📋', key: 'logs' },
 ];
 
 // ── Boot Screen ──────────────────────────────────────────────────
@@ -124,7 +127,16 @@ function FeedItem({ msg, onOption }) {
       <div style={{ width:28, height:28, borderRadius:8, background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, flexShrink:0, marginTop:2 }}>⚡</div>
       <div style={{ background:'rgba(15,23,42,0.8)', border:'1px solid rgba(59,130,246,0.15)', borderRadius:'2px 12px 12px 12px', padding:'10px 14px', maxWidth:'85%', fontSize:12, color:'#cbd5e1', lineHeight:1.7 }}>
         <div style={{ fontSize:9, color:'#3b82f6', fontWeight:700, marginBottom:4, letterSpacing:'0.5px', textTransform:'uppercase' }}>JAOLA OS</div>
-        <span style={{ whiteSpace:'pre-wrap' }}>{msg.text}</span>
+        {msg.streaming && !msg.text
+          ? <span style={{ display:'inline-flex', gap:3 }}>
+              <span style={{ width:5, height:5, borderRadius:'50%', background:'#60a5fa', animation:'typing 1s infinite' }} />
+              <span style={{ width:5, height:5, borderRadius:'50%', background:'#60a5fa', animation:'typing 1s infinite 0.2s' }} />
+              <span style={{ width:5, height:5, borderRadius:'50%', background:'#60a5fa', animation:'typing 1s infinite 0.4s' }} />
+            </span>
+          : <span style={{ display:'inline' }}>
+              <Markdown text={msg.text} />
+              {msg.streaming && <span style={{ display:'inline-block', width:7, height:14, background:'#60a5fa', marginInlineStart:2, verticalAlign:'text-bottom', animation:'blink 1s step-end infinite' }} />}
+            </span>}
 
         {/* 🔟 اقتراحات استباقية — أزرار الخطوة التالية */}
         {Array.isArray(msg.options) && msg.options.length > 0 && (
@@ -169,7 +181,7 @@ function AgentNode({ name, state, icon }) {
 
 // ── Main Dashboard ──────────────────────────────────────────────
 export default function Dashboard() {
-  const { currentUser: authUser, token, isAuthenticated, handleAuthError, setIsAuthenticated, setCurrentUser, setToken, isLoading } = useAuth();
+  const { currentUser: authUser, token, isAuthenticated, handleAuthError, setIsAuthenticated, setCurrentUser, setToken, isLoading, oauthError } = useAuth();
   const isMobile = useIsMobile();
 
   const [booted, setBooted] = useState(() => sessionStorage.getItem('booted') === '1');
@@ -185,6 +197,7 @@ export default function Dashboard() {
   const [loginPassword, setLoginPassword] = useState('');
   const [authMode, setAuthMode] = useState('login'); // login | register
   const [authError, setAuthError] = useState('');
+  const [oauthProviders, setOauthProviders] = useState([]);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [notifications, setNotifications] = useState([]);
@@ -197,6 +210,13 @@ export default function Dashboard() {
   const feedEndRef = useRef(null);
   const textareaRef = useRef(null);
   const notifId = useRef(0);
+
+  // 🔑 اكتشاف مزوّدي OAuth المُهيّئين + عرض خطأ ارتداد OAuth إن وُجد
+  useEffect(() => {
+    fetch(`${BACKEND_URL}/api/auth/providers`)
+      .then(r => r.json()).then(d => setOauthProviders(d.providers || [])).catch(() => {});
+  }, []);
+  useEffect(() => { if (oauthError) setAuthError(oauthError); }, [oauthError]);
 
   const { files, logs, streamingContent, agentStates, projects, activeProject, currentUser, vercelUrl, chatMessages, setChatMessages, setActiveProject, previewTimestamp, refreshPreview, isConnected, connectionError, metrics, latencyMs } = useSocket(isAuthenticated, handleAuthError);
 
@@ -221,6 +241,9 @@ export default function Dashboard() {
     }
   }, [token, activeProject, isAuthenticated]);
 
+  const t = useI18n(s => s.t);
+  const uiLang = useI18n(s => s.lang);
+
   const isBuilding = Object.values(agentStates || {}).some(s => s === 'running');
   const lastLogMsg = logs[logs.length - 1]?.message || '';
 
@@ -239,7 +262,7 @@ export default function Dashboard() {
     if (logs.length > 0) {
       const last = logs[logs.length - 1];
       if (last?.message?.includes('✨ نجاح')) {
-        addNotification('✅ البناء اكتمل بنجاح!', 'success');
+        addNotification(t('nBuildDone'), 'success');
         if (isMobile) setMobileView('preview'); else setActiveTab('preview');
       }
     }
@@ -262,7 +285,7 @@ export default function Dashboard() {
     if (typeof overrideText !== 'string') setPrompt('');
     setChatMessages(prev => [...prev, { sender: 'user', text: msg }]);
     try {
-      await fetch(`${BACKEND_URL}/api/chat`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ message: msg, project: activeProject }) });
+      await fetch(`${BACKEND_URL}/api/chat`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ message: msg, project: activeProject, uiLang }) });
     } catch {}
     setTimeout(() => setIsSending(false), 1000);
   };
@@ -275,11 +298,11 @@ export default function Dashboard() {
 
   const handleDeploy = async () => {
     setIsDeploying(true);
-    addNotification('🚀 جاري النشر على Vercel...', 'info');
+    addNotification(t('nDeploying'), 'info');
     try {
       await fetch(`${BACKEND_URL}/api/deploy`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ project: activeProject }) });
     } catch {}
-    setTimeout(() => { setIsDeploying(false); addNotification('✅ تم النشر بنجاح!', 'success'); }, 8000);
+    setTimeout(() => { setIsDeploying(false); addNotification(t('nDeployed'), 'success'); }, 8000);
   };
 
   // ⏹️ إيقاف المهمة الجارية
@@ -287,7 +310,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${BACKEND_URL}/api/ai/abort`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ project: activeProject }) });
       const d = await res.json();
-      addNotification(d.aborted ? '⏹️ جاري إيقاف المهمة...' : 'لا توجد مهمة نشطة', 'info');
+      addNotification(d.aborted ? t('nStopping') : t('nNoMission'), 'info');
     } catch {}
   };
 
@@ -314,11 +337,11 @@ export default function Dashboard() {
       const res = await fetch(`${BACKEND_URL}/api/github/connect`, { method: 'POST', headers: getHeaders(), body: JSON.stringify(body) });
       const d = await res.json();
       if (res.ok) {
-        addNotification('🐙 تم ربط GitHub بنجاح', 'success');
+        addNotification(t('nGithubLinked'), 'success');
         setGhForm(f => ({ ...f, pat: '' }));
         setShowGithubModal(false);
       } else {
-        addNotification(`❌ ${d.error || 'فشل الربط'}`, 'info');
+        addNotification(`❌ ${d.error || t('linkFail')}`, 'info');
       }
     } catch {}
     setIsGhSaving(false);
@@ -328,7 +351,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${BACKEND_URL}/api/github/push`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ project: activeProject }) });
       const d = await res.json();
-      addNotification(res.ok ? '🐙 جاري الدفع إلى GitHub... تابع الشات' : `❌ ${d.error || 'فشل الدفع'}`, 'info');
+      addNotification(res.ok ? t('pushingGithub') : `❌ ${d.error || t('pushFail')}`, 'info');
       if (res.ok) setShowGithubModal(false);
     } catch {}
   };
@@ -355,12 +378,12 @@ export default function Dashboard() {
         handleSwitchProject(d.activeProject || name);
         setShowProjectModal(false);
         setNewProjectName('');
-        addNotification(`✅ تم إنشاء المشروع "${d.activeProject || name}"`, 'success');
+        addNotification(`${t('nProjectCreated')} "${d.activeProject || name}"`, 'success');
       } else {
-        setCreateError(d.error || 'فشل إنشاء المشروع.');
+        setCreateError(d.error || t('createProjectFail'));
       }
     } catch {
-      setCreateError('تعذّر الاتصال بالخادم.');
+      setCreateError(t('serverConnFail'));
     }
     setIsCreating(false);
   };
@@ -386,10 +409,10 @@ export default function Dashboard() {
         localStorage.setItem('token', d.token); localStorage.setItem('currentUser', uname);
         localStorage.removeItem('loggedOut');
       } else {
-        setAuthError(d.error || (authMode === 'register' ? 'فشل إنشاء الحساب.' : 'فشل تسجيل الدخول.'));
+        setAuthError(d.error || (authMode === 'register' ? t('registerFail') : t('loginFail')));
       }
     } catch {
-      setAuthError('تعذّر الاتصال بالخادم — حاول مرة أخرى.');
+      setAuthError(t('serverConnRetry'));
     }
     setIsLoggingIn(false);
   };
@@ -439,9 +462,11 @@ export default function Dashboard() {
         <h2 style={{ color:'#fff', fontSize:20, fontWeight:800, letterSpacing:'-0.5px', marginBottom:6 }}>JAOLA OS</h2>
         <p style={{ color:S.muted, fontSize:13, marginBottom:20 }}>Autonomous Software Engineering</p>
 
+        <div style={{ display:'flex', justifyContent:'center', marginBottom:14 }}><LanguageSwitcher /></div>
+
         {/* تبويب دخول / حساب جديد */}
         <div style={{ display:'flex', background:'rgba(255,255,255,0.04)', borderRadius:9, padding:3, marginBottom:18 }}>
-          {[['login','دخول'],['register','حساب جديد']].map(([mode, label]) => (
+          {[['login', t('login')],['register', t('register')]].map(([mode, label]) => (
             <button key={mode} type="button" onClick={() => { setAuthMode(mode); setAuthError(''); }}
               style={{
                 flex:1, padding:'8px', borderRadius:7, border:'none', fontSize:13, fontWeight:700, cursor:'pointer',
@@ -454,15 +479,15 @@ export default function Dashboard() {
         </div>
 
         <form onSubmit={handleLogin} style={{ display:'flex', flexDirection:'column', gap:12 }}>
-          <input value={loginUsername} onChange={e => setLoginUsername(e.target.value)} placeholder="اسم المستخدم (إنجليزي)" required dir="ltr"
+          <input value={loginUsername} onChange={e => setLoginUsername(e.target.value)} placeholder={t('username')} required dir="ltr"
             style={{ background:'#161b22', border:'1px solid #21262d', borderRadius:8, padding:'12px 14px', color:'#fff', fontSize:16, fontFamily:S.font, transition:'border-color 0.2s', textAlign:'left' }} />
           <input value={loginPassword} onChange={e => setLoginPassword(e.target.value)} type="password" dir="ltr"
-            placeholder={authMode === 'register' ? 'كلمة المرور (6 أحرف فأكثر)' : 'كلمة المرور'}
+            placeholder={t('password')}
             required={authMode === 'register'} minLength={authMode === 'register' ? 6 : undefined}
             style={{ background:'#161b22', border:'1px solid #21262d', borderRadius:8, padding:'12px 14px', color:'#fff', fontSize:16, fontFamily:S.font, transition:'border-color 0.2s', textAlign:'left' }} />
 
           {authError && (
-            <div style={{ background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.3)', borderRadius:8, padding:'9px 12px', color:'#f87171', fontSize:12, textAlign:'right' }}>
+            <div style={{ background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.3)', borderRadius:8, padding:'9px 12px', color:'#f87171', fontSize:12, textAlign:'center' }}>
               {authError}
             </div>
           )}
@@ -470,10 +495,37 @@ export default function Dashboard() {
           <button type="submit" disabled={isLoggingIn}
             style={{ background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', border:'none', borderRadius:8, padding:13, color:'#fff', fontWeight:700, cursor:'pointer', fontSize:14, fontFamily:S.font, opacity: isLoggingIn ? 0.7 : 1 }}>
             {isLoggingIn
-              ? (authMode === 'register' ? 'جاري إنشاء الحساب...' : 'جاري الدخول...')
-              : (authMode === 'register' ? '✨ إنشاء حساب والدخول' : '⚡ دخول إلى Mission Control')}
+              ? (authMode === 'register' ? t('registering') : t('signingIn'))
+              : (authMode === 'register' ? `✨ ${t('register')}` : `⚡ ${t('enterMission')}`)}
           </button>
         </form>
+
+        {/* 🔑 الدخول عبر مزوّدي OAuth (يظهر فقط إذا هُيّئ على الخادم) */}
+        {oauthProviders.length > 0 && (
+          <>
+            <div style={{ display:'flex', alignItems:'center', gap:10, margin:'18px 0 14px' }}>
+              <div style={{ flex:1, height:1, background:'#1f2937' }} />
+              <span style={{ color:S.muted, fontSize:11 }}>{t('orDivider')}</span>
+              <div style={{ flex:1, height:1, background:'#1f2937' }} />
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              {oauthProviders.includes('github') && (
+                <a href={`${BACKEND_URL}/api/auth/github`}
+                  style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:10, background:'#161b22', border:'1px solid #30363d', borderRadius:8, padding:'11px', color:'#fff', fontSize:14, fontWeight:600, textDecoration:'none' }}>
+                  <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+                  {t('continueWithGithub')}
+                </a>
+              )}
+              {oauthProviders.includes('google') && (
+                <a href={`${BACKEND_URL}/api/auth/google`}
+                  style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:10, background:'#fff', border:'1px solid #30363d', borderRadius:8, padding:'11px', color:'#1f2937', fontSize:14, fontWeight:600, textDecoration:'none' }}>
+                  <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.92c1.71-1.57 2.68-3.88 2.68-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.02-3.7H.96v2.34A9 9 0 009 18z"/><path fill="#FBBC05" d="M3.98 10.72a5.4 5.4 0 010-3.44V4.94H.96a9 9 0 000 8.12l3.02-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.9 11.43 0 9 0A9 9 0 00.96 4.94l3.02 2.34C4.68 5.16 6.66 3.58 9 3.58z"/></svg>
+                  {t('continueWithGoogle')}
+                </a>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -486,6 +538,8 @@ export default function Dashboard() {
     @keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
     @keyframes agentPulse{0%,100%{box-shadow:0 0 8px rgba(59,130,246,0.2)}50%{box-shadow:0 0 20px rgba(59,130,246,0.5)}}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+    @keyframes typing{0%,60%,100%{transform:translateY(0);opacity:0.5}30%{transform:translateY(-4px);opacity:1}}
     *{box-sizing:border-box}
     ::-webkit-scrollbar{width:3px;height:3px}
     ::-webkit-scrollbar-track{background:transparent}
@@ -504,7 +558,7 @@ export default function Dashboard() {
     }}>
       <div style={{ width:7, height:7, borderRadius:'50%', background:'#f59e0b', animation:'pulse 1s infinite', flexShrink:0 }} />
       <span style={{ fontSize:11, color:'#fbbf24', fontWeight:600 }}>
-        {connectionError || 'انقطع الاتصال بالخادم — جاري إعادة الاتصال تلقائياً...'}
+        {connectionError || t('connectionLost')}
       </span>
     </div>
   );
@@ -515,8 +569,8 @@ export default function Dashboard() {
       {chatMessages.length === 0 && !isBuilding && (
         <div style={{ textAlign:'center', color:S.muted, fontSize:12, marginTop:40, lineHeight:2 }}>
           <div style={{ fontSize:28, marginBottom:8 }}>⚡</div>
-          أخبرني ماذا تريد أن نبني اليوم؟<br/>
-          <span style={{ fontSize:11, color:'#334155' }}>سأعرض لك هنا كل خطوة أثناء التنفيذ — لحظة بلحظة</span>
+          {t('feedAsk')}<br/>
+          <span style={{ fontSize:11, color:'#334155' }}>{t('feedHint')}</span>
         </div>
       )}
       {chatMessages.map((msg, i) => <FeedItem key={i} msg={msg} onOption={handleOptionClick} />)}
@@ -526,7 +580,7 @@ export default function Dashboard() {
       {isSending && !isBuilding && (
         <div style={{ display:'flex', alignItems:'center', gap:8, padding:'4px 0' }}>
           <div style={{ width:6, height:6, borderRadius:'50%', background:'#3b82f6', animation:'pulse 0.9s infinite' }} />
-          <span style={{ fontSize:11, color:'#64748b' }}>JAOLA يستلم المهمة...</span>
+          <span style={{ fontSize:11, color:'#64748b' }}>{t('receiving')}</span>
         </div>
       )}
       <div ref={feedEndRef} />
@@ -535,11 +589,11 @@ export default function Dashboard() {
 
   const quickBuilds = chatMessages.length === 0 && (
     <div style={{ padding:'12px 16px', borderBottom:`1px solid ${S.border}`, flexShrink:0 }}>
-      <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:8 }}>Quick Launch</div>
+      <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:8 }}>{t('quickLaunch')}</div>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
         {QUICK_BUILDS.map((b, i) => (
-          <button key={i} onClick={() => { setPrompt(b.prompt); textareaRef.current?.focus(); }}
-            style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 10px', color:'#64748b', fontSize:11, textAlign:'right', display:'flex', alignItems:'center', gap:6 }}>
+          <button key={i} onClick={() => { setPrompt(t(b.promptKey)); textareaRef.current?.focus(); }}
+            style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 10px', color:'#64748b', fontSize:11, textAlign:'start', display:'flex', alignItems:'center', gap:6 }}>
             <span style={{ fontSize:14 }}>{b.icon}</span><span>{b.label}</span>
           </button>
         ))}
@@ -590,19 +644,19 @@ export default function Dashboard() {
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
       onClick={e => e.target === e.currentTarget && setShowGithubModal(false)}>
       <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:'24px 22px', width:'min(420px, 100%)', maxHeight:'90dvh', overflowY:'auto' }}>
-        <h3 style={{ color:'#fff', fontSize:15, fontWeight:800, marginBottom:6 }}>🐙 GitHub Integration</h3>
+        <h3 style={{ color:'#fff', fontSize:15, fontWeight:800, marginBottom:6 }}>🐙 {t('ghIntegration')}</h3>
         <p style={{ color:S.muted, fontSize:12, marginBottom:16 }}>
-          اربط المشروع ({activeProject}) بمستودع GitHub — مع دفع تلقائي بعد كل بناء ناجح.
-          {ghStatus?.connected && <span style={{ color:'#10b981' }}> ● مرتبط حالياً</span>}
+          {activeProject}
+          {ghStatus?.connected && <span style={{ color:'#10b981' }}> {t('ghConnected')}</span>}
         </p>
 
-        <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>REPOSITORY URL</label>
+        <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>{t('ghRepoUrl')}</label>
         <input value={ghForm.repoUrl} onChange={e => setGhForm(f => ({ ...f, repoUrl: e.target.value }))}
           placeholder="https://github.com/username/repo.git" dir="ltr"
           style={{ width:'100%', background:'#161b22', border:`1px solid ${S.border}`, borderRadius:8, padding:'10px 12px', color:'#fff', fontSize:13, margin:'6px 0 12px', fontFamily:'monospace' }} />
 
         <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>
-          PERSONAL ACCESS TOKEN {ghStatus?.hasToken && <span style={{ color:'#10b981', fontWeight:400 }}>(محفوظ مشفراً — اتركه فارغاً للإبقاء عليه)</span>}
+          {t('ghToken')} {ghStatus?.hasToken && <span style={{ color:'#10b981', fontWeight:400 }}>{t('ghTokenSaved')}</span>}
         </label>
         <input value={ghForm.pat} onChange={e => setGhForm(f => ({ ...f, pat: e.target.value }))}
           placeholder="ghp_..." type="password" dir="ltr"
@@ -610,7 +664,7 @@ export default function Dashboard() {
 
         <div style={{ display:'flex', gap:12, alignItems:'center', marginBottom:16, flexWrap:'wrap' }}>
           <div style={{ flex:1, minWidth:120 }}>
-            <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>BRANCH</label>
+            <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>{t('ghBranch')}</label>
             <input value={ghForm.branch} onChange={e => setGhForm(f => ({ ...f, branch: e.target.value }))}
               placeholder="main" dir="ltr"
               style={{ width:'100%', background:'#161b22', border:`1px solid ${S.border}`, borderRadius:8, padding:'10px 12px', color:'#fff', fontSize:13, marginTop:6, fontFamily:'monospace' }} />
@@ -619,26 +673,26 @@ export default function Dashboard() {
             <input type="checkbox" checked={ghForm.autoCommit}
               onChange={e => setGhForm(f => ({ ...f, autoCommit: e.target.checked }))}
               style={{ accentColor:'#3b82f6', width:15, height:15 }} />
-            Auto-push بعد البناء
+            {t('ghAutoPush')}
           </label>
         </div>
 
         {ghStatus?.lastCommit && (
-          <p style={{ color:S.muted, fontSize:10, marginBottom:12 }}>آخر دفع: {new Date(ghStatus.lastCommit).toLocaleString('ar')}</p>
+          <p style={{ color:S.muted, fontSize:10, marginBottom:12 }}>{t('ghLastPush')} {new Date(ghStatus.lastCommit).toLocaleString()}</p>
         )}
 
         <div style={{ display:'flex', gap:10, justifyContent:'flex-end', flexWrap:'wrap' }}>
           <button onClick={() => setShowGithubModal(false)}
-            style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 16px', color:S.muted, fontSize:13 }}>Cancel</button>
+            style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 16px', color:S.muted, fontSize:13 }}>{t('cancel')}</button>
           {ghStatus?.connected && (
             <button onClick={handleGithubPush}
               style={{ background:'rgba(16,185,129,0.1)', border:'1px solid rgba(16,185,129,0.3)', borderRadius:8, padding:'8px 16px', color:'#10b981', fontWeight:700, fontSize:13 }}>
-              ⬆ Push Now
+              {t('ghPushNow')}
             </button>
           )}
           <button onClick={handleGithubConnect} disabled={isGhSaving}
             style={{ background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', border:'none', borderRadius:8, padding:'8px 20px', color:'#fff', fontWeight:700, fontSize:13, opacity: isGhSaving ? 0.7 : 1 }}>
-            {isGhSaving ? 'جاري الحفظ...' : 'Save & Connect'}
+            {isGhSaving ? t('ghSaving') : t('ghSaveConnect')}
           </button>
         </div>
       </div>
@@ -649,8 +703,8 @@ export default function Dashboard() {
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
       onClick={e => e.target === e.currentTarget && setShowProjectModal(false)}>
       <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:28, width:'min(360px, 100%)' }}>
-        <h3 style={{ color:'#fff', fontSize:15, fontWeight:800, marginBottom:6 }}>New Project</h3>
-        <p style={{ color:S.muted, fontSize:12, marginBottom:16 }}>اسم المشروع بالإنجليزية (بدون مسافات)</p>
+        <h3 style={{ color:'#fff', fontSize:15, fontWeight:800, marginBottom:6 }}>{t('newProjectTitle')}</h3>
+        <p style={{ color:S.muted, fontSize:12, marginBottom:16 }}>{t('projectNameHint')}</p>
         <input value={newProjectName} onChange={e => { setNewProjectName(e.target.value); setCreateError(''); }}
           onKeyDown={e => e.key === 'Enter' && handleCreateProject()}
           placeholder="my-awesome-project" autoFocus dir="ltr"
@@ -660,10 +714,10 @@ export default function Dashboard() {
         )}
         <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
           <button onClick={() => { setShowProjectModal(false); setCreateError(''); }}
-            style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 16px', color:S.muted, fontSize:13 }}>Cancel</button>
+            style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 16px', color:S.muted, fontSize:13 }}>{t('cancel')}</button>
           <button onClick={handleCreateProject} disabled={isCreating}
             style={{ background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', border:'none', borderRadius:8, padding:'8px 20px', color:'#fff', fontWeight:700, fontSize:13, opacity: isCreating ? 0.6 : 1 }}>
-            {isCreating ? 'جاري الإنشاء...' : 'Create'}
+            {isCreating ? t('creating') : t('create')}
           </button>
         </div>
       </div>
@@ -697,6 +751,7 @@ export default function Dashboard() {
 
           <div style={{ flex:1 }} />
 
+          <LanguageSwitcher compact />
           <button onClick={openGithubModal} style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 9px', color:'#94a3b8', fontSize:13 }}>🐙</button>
           {vercelUrl
             ? <a href={vercelUrl} target="_blank" rel="noreferrer" style={{ fontSize:13, textDecoration:'none', padding:'5px 9px', border:'1px solid rgba(16,185,129,0.3)', borderRadius:7 }}>🌍</a>
@@ -718,11 +773,11 @@ export default function Dashboard() {
               <div style={{ padding:'10px 12px', borderTop:`1px solid ${S.border}`, flexShrink:0, display:'flex', gap:8, alignItems:'flex-end', background:S.bg2 }}>
                 <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                  placeholder="ماذا تريد أن نبني؟"
+                  placeholder={t('mobilePrompt')}
                   rows={2}
                   style={{ flex:1, background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:12, padding:'10px 12px', color:S.text, fontSize:16, resize:'none', lineHeight:1.5 }} />
                 {(isBuilding || isSending) && (
-                  <button onClick={handleAbort} title="إيقاف"
+                  <button onClick={handleAbort} title={t('stopTitle')}
                     style={{ width:44, height:44, borderRadius:12, background:'rgba(239,68,68,0.12)', border:'1px solid rgba(239,68,68,0.35)', color:'#f87171', fontSize:16, flexShrink:0 }}>⏹</button>
                 )}
                 <button onClick={handleSend} disabled={isSending || !prompt.trim()}
@@ -756,7 +811,7 @@ export default function Dashboard() {
             <div style={{ flex:1, display:'flex', flexDirection:'column', minHeight:0 }}>
               {/* تبديل: السجل الحي / الخط الزمني */}
               <div style={{ display:'flex', gap:4, padding:'8px 12px', borderBottom:`1px solid ${S.border}`, flexShrink:0 }}>
-                {[['logs','📋 السجل الحي'],['timeline','🕘 الخط الزمني']].map(([mode, label]) => (
+                {[['logs',t('liveLog')],['timeline',t('timelineTab')]].map(([mode, label]) => (
                   <button key={mode} onClick={() => setMobileLogsMode(mode)}
                     style={{
                       flex:1, padding:'6px', borderRadius:7, fontSize:11, fontWeight:700,
@@ -771,7 +826,7 @@ export default function Dashboard() {
               <div style={{ flex:1, minHeight:0, overflow:'hidden' }}>
                 {mobileLogsMode === 'logs' ? logsView : (
                   <TimelinePanel activeProject={activeProject} token={token}
-                    onRestored={(h) => { addNotification(`⏪ استُرجع المشروع إلى (${h})`, 'success'); refreshPreview(); }} />
+                    onRestored={(h) => { addNotification(`${t('nRestored')} (${h})`, 'success'); refreshPreview(); }} />
                 )}
               </div>
             </div>
@@ -794,7 +849,7 @@ export default function Dashboard() {
                   color: isActive ? '#60a5fa' : '#475569',
                 }}>
                 <span style={{ fontSize:18, filter: isActive ? 'none' : 'grayscale(0.6)' }}>{tab.icon}</span>
-                <span style={{ fontSize:9, fontWeight:700 }}>{tab.label}</span>
+                <span style={{ fontSize:9, fontWeight:700 }}>{t(tab.key)}</span>
                 {isActive && <span style={{ position:'absolute', top:0, left:'25%', right:'25%', height:2, background:'linear-gradient(90deg,#3b82f6,#8b5cf6)', borderRadius:2 }} />}
                 {showBadge && !isActive && <span style={{ position:'absolute', top:8, left:'calc(50% - 16px)', width:6, height:6, borderRadius:'50%', background: isBuilding ? '#3b82f6' : '#1f2937' }} />}
               </button>
@@ -844,13 +899,13 @@ export default function Dashboard() {
         {/* Status */}
         <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:11, color: !isConnected ? '#f59e0b' : isBuilding ? '#60a5fa' : S.muted }}>
           <div style={{ width:6, height:6, borderRadius:'50%', background: !isConnected ? '#f59e0b' : isBuilding ? '#3b82f6' : '#10b981', animation:'pulse 2s infinite' }} />
-          {!isConnected ? 'Reconnecting...' : isBuilding ? 'Mission Running...' : 'All Systems Operational'}
+          {!isConnected ? t('reconnecting') : isBuilding ? t('missionRunning') : t('operational')}
         </div>
 
         <div style={{ width:1, height:20, background:S.border }} />
 
         {/* GitHub */}
-        <button onClick={openGithubModal} title="ربط المشروع بـ GitHub"
+        <button onClick={openGithubModal} title={t('githubTitle')}
           style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 12px', color:'#94a3b8', fontSize:11, fontWeight:600 }}>
           🐙 GitHub
         </button>
@@ -881,14 +936,16 @@ export default function Dashboard() {
           💳
         </a>
 
-        <a href="/admin" title="لوحة التحكم (للمشرفين)"
+        <a href="/admin" title={t('adminTitle')}
           style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 10px', color:S.muted, fontSize:13, textDecoration:'none' }}>
           ⚙️
         </a>
 
+        <LanguageSwitcher />
+
         <button onClick={handleLogout}
           style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 10px', color:S.muted, fontSize:11 }}>
-          Exit
+          {t('exit')}
         </button>
       </nav>
 
@@ -923,7 +980,7 @@ export default function Dashboard() {
 
           {/* Quick Actions */}
           <div style={{ padding:'10px 16px', borderTop:`1px solid ${S.border}`, display:'flex', gap:6, flexWrap:'wrap', flexShrink:0 }}>
-            {['غير الألوان', 'أضف قسماً', 'اجعله أسرع', 'انشر الآن'].map(a => (
+            {[t('qaColors'), t('qaSection'), t('qaFaster'), t('qaDeploy')].map(a => (
               <button key={a} onClick={() => setPrompt(a)}
                 style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:20, padding:'4px 10px', color:S.muted, fontSize:10, fontWeight:600 }}>
                 {a}
@@ -936,7 +993,7 @@ export default function Dashboard() {
             <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:10 }}>⚡ Mission Control</div>
             <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-              placeholder="What do you want your AI company to build today?"
+              placeholder={t('promptPlaceholder')}
               rows={3}
               style={{
                 width:'100%', background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`,
@@ -951,11 +1008,11 @@ export default function Dashboard() {
                   border:'none', borderRadius:7, padding:'8px', color:'#fff', fontSize:12, fontWeight:700,
                   display:'flex', alignItems:'center', justifyContent:'center', gap:6, opacity: !prompt.trim() ? 0.4 : 1
                 }}>
-                <span>{isSending ? 'Sending...' : 'Execute Mission'}</span>
+                <span>{isSending ? t('sending') : t('execute')}</span>
                 {!isSending && <span style={{ opacity:0.6, fontSize:10 }}>↵</span>}
               </button>
               {(isBuilding || isSending) && (
-                <button onClick={handleAbort} title="إيقاف المهمة الجارية"
+                <button onClick={handleAbort} title={t('stopMission')}
                   style={{
                     background:'rgba(239,68,68,0.12)', border:'1px solid rgba(239,68,68,0.35)',
                     borderRadius:7, padding:'8px 14px', color:'#f87171', fontSize:12, fontWeight:700,
@@ -973,10 +1030,10 @@ export default function Dashboard() {
           {/* Tab Bar */}
           <div style={{ height:44, background:S.bg2, borderBottom:`1px solid ${S.border}`, display:'flex', alignItems:'center', padding:'0 16px', gap:2, flexShrink:0 }}>
             {[
-              { id:'preview', label:'🖥️ Preview' },
-              { id:'editor', label:'💻 Code' },
-              { id:'logs', label:`📋 Logs${logs.length > 0 ? ` (${logs.length})` : ''}` },
-              { id:'timeline', label:'🕘 Timeline' },
+              { id:'preview', label:`🖥️ ${t('preview')}` },
+              { id:'editor', label:`💻 ${t('code')}` },
+              { id:'logs', label:`📋 ${t('logs')}${logs.length > 0 ? ` (${logs.length})` : ''}` },
+              { id:'timeline', label:`🕘 ${t('timeline')}` },
             ].map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                 style={{
@@ -990,7 +1047,7 @@ export default function Dashboard() {
             ))}
             {logs.some(l => l.message?.includes('✨')) && (
               <div style={{ marginRight:4, display:'flex', alignItems:'center', gap:4, fontSize:11, color:'#10b981', marginLeft:8 }}>
-                <div style={{ width:5, height:5, borderRadius:'50%', background:'#10b981', animation:'pulse 1s infinite' }} /> Build Complete
+                <div style={{ width:5, height:5, borderRadius:'50%', background:'#10b981', animation:'pulse 1s infinite' }} /> {t('buildComplete')}
               </div>
             )}
           </div>
@@ -1002,7 +1059,7 @@ export default function Dashboard() {
             {activeTab === 'logs' && logsView}
             {activeTab === 'timeline' && (
               <TimelinePanel activeProject={activeProject} token={token}
-                onRestored={(h) => { addNotification(`⏪ استُرجع المشروع إلى (${h})`, 'success'); refreshPreview(); }} />
+                onRestored={(h) => { addNotification(`${t('nRestored')} (${h})`, 'success'); refreshPreview(); }} />
             )}
           </div>
 
@@ -1057,7 +1114,7 @@ export default function Dashboard() {
 
           {/* Business Intelligence */}
           <div style={{ padding:14, borderBottom:`1px solid ${S.border}` }}>
-            <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:10 }}>📊 Intelligence</div>
+            <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:10 }}>📊 {t('intelligence')}</div>
             <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
               {[
                 { label:'SEO', value: fmtScore(metrics?.seo), color: gradeColor(metrics?.seo?.grade) },
