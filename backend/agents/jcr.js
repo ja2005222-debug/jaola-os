@@ -6,7 +6,7 @@ import { runBackendTeam, writeBackendTeamFiles } from './backendTeam/index.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from '../services/projectBrain.js';
 import { selectStarter, resolveStack } from './starterRegistry.js';
 import { generateNextScaffold, generateContentModel, generateSectionContent, compName, slugify, componentSource, defaultSection, pageFileSource } from './reactGenerator.js';
-import { buildStaticSite, buildStaticSiteFromSource } from '../services/reactPreview.js';
+import { buildStaticSite, buildStaticSiteFromSource, buildDashboardPage } from '../services/reactPreview.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO } from './languageDetector.js';
 import { getLanguageDecision, buildLanguagePrompt } from './languageManager.js';
@@ -1558,6 +1558,9 @@ User preferences: ${JSON.stringify(execMemory)}` },
         for (const pg of staticPages) {
             await fsPromises.writeFile(path.join(projectPath, pg.name), pg.content);
         }
+        // 🛠️ لوحة تحكم يديرها العميل لموقعه (dashboard.html) — يضبط كلمة مرورها أول مرة
+        await fsPromises.writeFile(path.join(projectPath, 'dashboard.html'),
+            buildDashboardPage(finalContent, { project: activeProject, username, lang }));
 
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
         transitionState(username, activeProject, STATES.COMPLETED);
@@ -1581,6 +1584,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 '✅ مشروع React/Next جاهز — معاينة متعدّدة الصفحات تعمل الآن.',
                 `⚛️ Next.js + Tailwind · ${pageCount} صفحة · ${scaffold.meta.components.length} مكوّن${starter ? ` · قالب: ${starter.name}` : ''}`,
                 '🖥️ اضغط روابط الشريط للتنقّل بين صفحات حقيقية — كل تعديل ينعكس فوراً.',
+                '🛠️ لوحة إدارة موقعك: افتح `dashboard.html` وعيّن كلمة مرور — تدير بها النصوص والصور والمنتجات بنفسك.',
                 '⬇️ للتشغيل محلياً: npm install && npm run dev · وجاهز للنشر على Vercel.',
               ].join('\n')
             : [

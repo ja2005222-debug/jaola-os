@@ -49,6 +49,8 @@ import { teamPlan, BACKEND_TEAM } from './agents/backendTeam/index.js';
 import { frontendTeamPlan, FRONTEND_TEAM } from './agents/frontendTeam/index.js';
 import { listStarters, selectStarter, resolveStack, STARTERS } from './agents/starterRegistry.js';
 import { fetchStarter, fetchRepoFiles, parseRepoUrl } from './agents/starterFetch.js';
+import * as siteCms from './services/siteCms.js';
+import { buildStaticSiteFromSource, buildDashboardPage } from './services/reactPreview.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
 import { getProjectMemory } from './agents/projectMemory.js';
 import { setProjectSecret, deleteProjectSecret, getProjectSecretNames } from './services/projectSecrets.js';
@@ -540,6 +542,10 @@ app.get('/workspace/:file(*)', (req, res) => {
     const filePath = path.join(projectPath, safeFile);
 
     if (!filePath.startsWith(projectPath)) {
+        return res.status(403).send('Access Denied');
+    }
+    // لا تُخدَّم الملفات المخفية (.env، .sitecms…) — حماية من تسريب الأسرار
+    if (path.basename(safeFile).startsWith('.')) {
         return res.status(403).send('Access Denied');
     }
 
@@ -1328,6 +1334,102 @@ app.put('/api/admin/github/file', verifyToken, adminOnly, async (req, res) => {
     if (content.length > 1_000_000) return res.status(413).json({ error: 'الملف كبير جداً (>1MB)' });
     try { res.json({ success: true, ...(await ghFiles.putFile(rec.token, repo, p, content, message, sha, branch)) }); }
     catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 🛠️ Site CMS — لوحة تحكم يديرها عميل الموقع المولَّد (منفصلة عن أدمِن جولا)
+//    محميّة بكلمة مرور خاصة بالموقع؛ تحفظ في lib/content.js وتعيد توليد الموقع.
+// ═══════════════════════════════════════════════════════════════════
+const SITECMS_DIR = path.join(BASE_WORKSPACE, '.sitecms');
+const cmsKey = (u, p) => `${String(u || '').replace(/[^a-zA-Z0-9_-]/g, '_')}__${String(p || '').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+const cmsCredPath = (u, p) => path.join(SITECMS_DIR, cmsKey(u, p) + '.json');
+function readSiteCred(u, p) { try { return JSON.parse(fs.readFileSync(cmsCredPath(u, p), 'utf8')); } catch { return null; } }
+function writeSiteCred(u, p, obj) { fs.mkdirSync(SITECMS_DIR, { recursive: true }); fs.writeFileSync(cmsCredPath(u, p), JSON.stringify(obj)); }
+function readSiteContent(projectPath) {
+    try { const s = fs.readFileSync(path.join(projectPath, 'lib/content.js'), 'utf8'); return JSON.parse(s.slice(s.indexOf('{'), s.lastIndexOf('}') + 1)); }
+    catch { return null; }
+}
+// حارس توكن الموقع: يطابق {user,project} في التوكن مع الطلب
+function siteAuth(req, res) {
+    const h = req.headers.authorization || '';
+    const tok = h.startsWith('Bearer ') ? h.slice(7) : (req.body?.token || req.query?.token);
+    const v = siteCms.verifySiteToken(tok, JWT_SECRET);
+    const project = req.body?.project || req.query?.project;
+    const username = req.body?.username || req.query?.username;
+    if (!v || v.project !== project || v.user !== username) { res.status(401).json({ error: 'غير مصرّح' }); return null; }
+    return v;
+}
+function langOf(username) { try { return getUserLanguage(username) || 'ar'; } catch { return 'ar'; } }
+
+// حالة كلمة المرور (هل عُيّنت؟) — يقرّر الواجهة بين تسجيل الدخول أو التعيين الأول
+app.get('/api/site/status', (req, res) => {
+    const { username, project } = req.query;
+    if (!username || !project) return res.status(400).json({ error: 'مدخلات ناقصة' });
+    const cred = readSiteCred(username, project);
+    res.json({ hasPassword: !!(cred && cred.password) });
+});
+
+// التعيين الأول لكلمة المرور (يتطلّب وجود المشروع، ولا كلمة مرور سابقة)
+app.post('/api/site/password', (req, res) => {
+    const { username, project, password } = req.body || {};
+    if (!username || !project) return res.status(400).json({ error: 'مدخلات ناقصة' });
+    if (!fs.existsSync(getProjectPath(username, project))) return res.status(404).json({ error: 'المشروع غير موجود' });
+    if (readSiteCred(username, project)?.password) return res.status(409).json({ error: 'كلمة المرور معيّنة — استخدم الدخول' });
+    if (typeof password !== 'string' || password.length < 4) return res.status(400).json({ error: 'كلمة مرور قصيرة (٤ أحرف على الأقل)' });
+    writeSiteCred(username, project, { password: siteCms.hashPassword(password) });
+    res.json({ token: siteCms.signSiteToken({ user: username, project }, JWT_SECRET) });
+});
+
+// تسجيل دخول العميل — يتحقّق من كلمة المرور ويُصدر توكناً
+app.post('/api/site/auth', (req, res) => {
+    const { username, project, password } = req.body || {};
+    const cred = readSiteCred(username, project);
+    if (!cred || !cred.password || !siteCms.verifyPassword(password, cred.password)) return res.status(401).json({ error: 'كلمة المرور غير صحيحة' });
+    res.json({ token: siteCms.signSiteToken({ user: username, project }, JWT_SECRET) });
+});
+
+// قراءة محتوى الموقع (للوحة)
+app.get('/api/site/content', (req, res) => {
+    if (!siteAuth(req, res)) return;
+    const content = readSiteContent(getProjectPath(req.query.username, req.query.project));
+    if (!content) return res.status(404).json({ error: 'لا يوجد محتوى موقع' });
+    res.json({ content });
+});
+
+// حفظ تعديلات العميل → دمج بقائمة سماح + إعادة توليد الموقع + اللوحة
+app.post('/api/site/content', (req, res) => {
+    const v = siteAuth(req, res); if (!v) return;
+    const { username, project, content: patch } = req.body || {};
+    const projectPath = getProjectPath(username, project);
+    const cur = readSiteContent(projectPath);
+    if (!cur) return res.status(404).json({ error: 'لا يوجد محتوى موقع' });
+    try {
+        const next = siteCms.applyContentPatch(cur, patch || {});
+        const lang = langOf(username);
+        fs.writeFileSync(path.join(projectPath, 'lib/content.js'),
+            `// محتوى الموقع — عدّله بحرّية. يملؤه JAOLA بالذكاء حسب مشروعك.\nexport const content = ${JSON.stringify(next, null, 2)};\n`);
+        for (const pg of buildStaticSiteFromSource(fs.readFileSync(path.join(projectPath, 'lib/content.js'), 'utf8'), lang)) {
+            fs.writeFileSync(path.join(projectPath, pg.name), pg.content);
+        }
+        fs.writeFileSync(path.join(projectPath, 'dashboard.html'), buildDashboardPage(next, { project, username, lang }));
+        try { io.to(`${username}-${sanitizePath(project)}`).emit('preview_updated', { timestamp: Date.now() }); } catch {}
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// رفع صورة → assets/ داخل المشروع → رابط نسبي
+app.post('/api/site/asset', (req, res) => {
+    const v = siteAuth(req, res); if (!v) return;
+    const { username, project, name, dataUrl } = req.body || {};
+    const dec = siteCms.decodeDataUrl(dataUrl);
+    if (dec.error) return res.status(400).json({ error: dec.error });
+    try {
+        const projectPath = getProjectPath(username, project);
+        fs.mkdirSync(path.join(projectPath, 'assets'), { recursive: true });
+        const file = siteCms.safeAssetName(name, dec.ext);
+        fs.writeFileSync(path.join(projectPath, 'assets', file), dec.buf);
+        res.json({ url: `assets/${file}` });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ─── معالج أخطاء عام ────────────────────────────────────────────────
