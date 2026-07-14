@@ -41,6 +41,7 @@ import { orchestrator } from '../core/PluginOrchestrator.js';
 import { guardFiles, guardSingleJS } from '../services/codeGuard.js';
 import { buildImageContext } from '../services/imageService.js';
 import { generateBlueprint, buildBlueprintContext } from './appBlueprint.js';
+import { recommendFullStack, buildFullStackProject } from './fullstackTemplates.js';
 import { recordScore, recordBuild, buildMetricsPayload } from '../services/metricsStore.js';
 import { setPendingGoal, getPendingGoal, consumePendingGoal, clearDialog } from '../services/conversationManager.js';
 import { enqueueMission } from '../services/missionQueue.js';
@@ -719,6 +720,28 @@ export class JaolaCognitiveRuntime {
                         .join(', ');
                     this.emitLiveLog(roomName, '5. RUNTIME', 'AdvancedAgent',
                         `✅ ${features} (${advResult.files.length} ملف)`
+                    );
+                }
+            } catch (e) { /* اختياري */ }
+
+            // 🏗️ Full-Stack Scaffold — للفئات المتقدمة (متجر/حجوزات/عقارات…)
+            // يُولّد مشروع Next.js + API + Prisma كامل في مجلد fullstack/ بجانب
+            // الموقع الثابت (لا يتعارض معه) — نقطة انطلاق جاهزة للتشغيل والنشر.
+            try {
+                const fsRec = recommendFullStack(
+                    context.originalGoal, context.blueprint?.category, context.blueprint?.kind
+                );
+                if (fsRec.fullstack) {
+                    const { promises: fsp } = await import('fs');
+                    const pathMod = await import('path');
+                    const { category, files } = buildFullStackProject(fsRec.category, context.activeProject);
+                    for (const file of files) {
+                        const filePath = pathMod.default.join(context.projectPath, 'fullstack', file.name);
+                        await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
+                        await fsp.writeFile(filePath, file.content);
+                    }
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'FullStackAgent',
+                        `🏗️ نسخة Full-Stack (${category}) في مجلد fullstack/ — Next.js + API + Prisma (${files.length} ملف)`
                     );
                 }
             } catch (e) { /* اختياري */ }
