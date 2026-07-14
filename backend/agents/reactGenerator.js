@@ -307,3 +307,28 @@ export async function generateContentModel(goal, { sections = [], lang = 'en', l
         return parsed && typeof parsed === 'object' ? parsed : null;
     } catch { return null; }
 }
+
+/**
+ * 🧠 محتوى قسم واحد بالذكاء — لصفحة تُضاف لاحقاً (heading + subheading + بطاقات)
+ * بلغة المستخدم وسياق المشروع. يُرجع كائن قسم أو null (فيُستخدم الافتراضي).
+ * @param {string} label   عنوان الصفحة (مثل "الأسئلة الشائعة")
+ * @param {{ brand?, goal?, lang?, llm? }} opts   llm: async(messages,opts)=>text
+ */
+export async function generateSectionContent(label, { brand = '', goal = '', lang = 'en', llm } = {}) {
+    if (typeof llm !== 'function') return null;
+    const sys = `أنت كاتب محتوى ويب محترف. أعِد **JSON فقط** لقسم صفحة عنوانها "${label}"${brand ? ` في موقع "${brand}"` : ''}، بلغة: ${lang}.
+اكتب محتوى واقعياً ومقنعاً ملائماً لعنوان الصفحة (لا نصوصاً عامة). 3 بطاقات. الشكل:
+{ "heading": "...", "subheading": "...", "items": [ { "title": "...", "desc": "..." }, { "title": "...", "desc": "..." }, { "title": "...", "desc": "..." } ] }`;
+    try {
+        const raw = await llm(
+            [{ role: 'system', content: sys }, { role: 'user', content: `الصفحة: ${label}${goal ? ` — سياق المشروع: ${goal}` : ''}` }],
+            { max_tokens: 700, temperature: 0.5, json: true }
+        );
+        const p = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (!p || typeof p !== 'object' || (!p.heading && !Array.isArray(p.items))) return null;
+        const items = Array.isArray(p.items) && p.items.length
+            ? p.items.filter((it) => it && (it.title || it.desc)).map((it) => ({ title: String(it.title || ''), desc: String(it.desc || '') }))
+            : null;
+        return { heading: p.heading || label, subheading: typeof p.subheading === 'string' ? p.subheading : '', items };
+    } catch { return null; }
+}

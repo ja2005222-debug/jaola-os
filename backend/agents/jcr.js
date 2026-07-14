@@ -5,7 +5,7 @@ import { groq, smartChat } from './baseAgent.js';
 import { runBackendTeam, writeBackendTeamFiles } from './backendTeam/index.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from '../services/projectBrain.js';
 import { selectStarter, resolveStack } from './starterRegistry.js';
-import { generateNextScaffold, generateContentModel, compName, slugify, componentSource, defaultSection, pageFileSource } from './reactGenerator.js';
+import { generateNextScaffold, generateContentModel, generateSectionContent, compName, slugify, componentSource, defaultSection, pageFileSource } from './reactGenerator.js';
 import { buildStaticSite, buildStaticSiteFromSource } from '../services/reactPreview.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO } from './languageDetector.js';
@@ -1260,9 +1260,25 @@ User preferences: ${JSON.stringify(execMemory)}` },
         let slug = slugify(comp), k = 1;
         while (existingSlugs.has(slug) || slug === '' ) { slug = slugify(comp) + '-' + (++k); }
 
+        // محتوى الصفحة: قالبي افتراضياً، ويخصّصه الذكاء بمحتوى واقعي (best-effort)
+        let section = defaultSection(pageLabel, lang);
+        try {
+            this.emitLiveLog(roomName, 'EDIT', 'ContentWriter', '✍️ تخصيص محتوى الصفحة بالذكاء...');
+            const model = await generateSectionContent(pageLabel, {
+                brand: content.brand || activeProject,
+                goal: content.hero?.title || content.hero?.subtitle || '',
+                lang, llm: (m, o) => smartChat(m, o),
+            });
+            if (model) section = {
+                heading: model.heading || section.heading,
+                subheading: model.subheading || section.subheading,
+                items: (model.items && model.items.length) ? model.items : section.items,
+            };
+        } catch { /* الافتراضي */ }
+
         // حدّث المحتوى: قسم جديد + وجهة تنقّل
         content.sections = content.sections || {};
-        content.sections[comp] = defaultSection(pageLabel, lang);
+        content.sections[comp] = section;
         content.routes = content.routes || [{ label: lang === 'ar' ? 'الرئيسية' : 'Home', href: '/' }];
         content.routes.push({ label: pageLabel, href: '/' + slug });
 
