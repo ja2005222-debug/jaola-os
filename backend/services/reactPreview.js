@@ -202,6 +202,18 @@ a{color:inherit}img{max-width:100%}
 .links a.active{color:var(--g1);background:color-mix(in srgb,var(--g1) 10%,transparent);font-weight:700}
 .cta{border:0;border-radius:11px;background:linear-gradient(90deg,var(--g1),var(--g2));color:#fff;padding:10px 18px;font-weight:600;font-size:14px;text-decoration:none;display:inline-block;box-shadow:0 6px 18px -6px var(--ring);transition:.18s}
 .cta:hover{transform:translateY(-1px);box-shadow:0 10px 24px -8px var(--ring)}
+/* قائمة الجوّال (☰) — CSS فقط، بلا JS (خدعة checkbox) */
+.navtog{display:none}
+.burger{display:none;cursor:pointer;font-size:22px;line-height:1;padding:6px 11px;border-radius:9px;color:var(--fg);user-select:none}
+.burger:hover{background:var(--soft)}
+@media(max-width:820px){
+  .nav .row{position:relative}
+  .burger{display:inline-flex}
+  .nav .cta{display:none}
+  .links{display:none;order:3;flex-basis:100%;flex-direction:column;align-items:stretch;gap:4px;padding:8px 0 4px}
+  .links a{padding:11px 12px}
+  .navtog:checked ~ .links{display:flex}
+}
 /* hero */
 .hero{position:relative;padding:104px 0 92px;overflow:hidden}
 .hero::before{content:"";position:absolute;inset:-40% 0 auto 0;height:520px;background:radial-gradient(60% 60% at 50% 0,color-mix(in srgb,var(--g1) 20%,transparent),transparent 70%);pointer-events:none;z-index:-1}
@@ -249,7 +261,8 @@ function navBar(content, currentHref) {
         return `<a class="${cls}" href="${hrefToFile(r.href)}">${esc(r.label)}</a>`;
     }).join('');
     const cta = content.hero?.cta1 ? `<a class="cta" href="${hrefToFile((routes.find((r) => r.href !== '/') || {}).href)}">${esc(content.hero.cta1)}</a>` : '';
-    return `<header class="nav"><div class="wrap row"><a class="brand" href="index.html">${esc(content.brand)}</a><nav class="links">${links}</nav>${cta}</div></header>`;
+    // checkbox + label ☰ يبدّلان القائمة على الجوّال بلا JS
+    return `<header class="nav"><div class="wrap row"><a class="brand" href="index.html">${esc(content.brand)}</a><input type="checkbox" id="navtog" class="navtog" /><label for="navtog" class="burger" aria-label="menu">☰</label><nav class="links">${links}</nav>${cta}</div></header>`;
 }
 function heroBlock(content) {
     const h = content.hero || {};
