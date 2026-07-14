@@ -45,8 +45,7 @@ import { recommendFullStack, buildFullStackProject } from './fullstackTemplates.
 import { recordScore, recordBuild, buildMetricsPayload } from '../services/metricsStore.js';
 import { setPendingGoal, getPendingGoal, consumePendingGoal, clearDialog } from '../services/conversationManager.js';
 import { enqueueMission } from '../services/missionQueue.js';
-import Conversation from '../models/Conversation.js';
-import mongoose from 'mongoose';
+import { loadForPrompt as loadConversation, recordTurn } from '../services/conversationStore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -164,7 +163,6 @@ export class JaolaCognitiveRuntime {
         this.memoryDir = path.resolve(__dirname, '../memory');
         this.reflectionPath = path.join(this.memoryDir, 'reflection_knowledge_graph.json');
         this.executiveMemoryPath = path.join(this.memoryDir, 'executive_memory.json');
-        this.conversationBuffer = new Map();
         if (!fs.existsSync(this.memoryDir)) fs.mkdirSync(this.memoryDir, { recursive: true });
     }
 
@@ -834,20 +832,38 @@ export class JaolaCognitiveRuntime {
         }
     }
 
+    // 🧠 يطوي رسائل قديمة (خرجت من نافذة السياق) داخل ملخّص متدحرج —
+    // بهذا يبقى موضوع المحادثة حاضراً مهما طالت، بلا فقدان للسياق.
+    async summarizeConversation(previousSummary, olderMessages, userLang = 'ar') {
+        const transcript = olderMessages
+            .map(m => `${m.role === 'user' ? '👤' : '🤖'} ${m.content}`)
+            .join('\n');
+        const instruction = userLang === 'ar'
+            ? 'حدّث ملخّص الذاكرة التالي بدمج الرسائل الجديدة. احتفظ بكل الحقائق الدائمة (اسم المشروع، القرارات، التفضيلات، الالتزامات، ما يريده المستخدم وما رفضه). اكتب فقرة مركّزة بالعربية دون تحية أو مقدمات.'
+            : 'Update the memory summary below by merging the new messages. Preserve all durable facts (project name, decisions, preferences, commitments, what the user wants and rejected). Write one focused paragraph, no greeting.';
+        try {
+            const completion = await groq.chat.completions.create({
+                messages: [
+                    { role: 'system', content: instruction },
+                    { role: 'user', content: `الملخّص الحالي:\n${previousSummary || '(لا يوجد)'}\n\nرسائل جديدة:\n${transcript}` }
+                ],
+                model: 'llama-3.3-70b-versatile',
+                max_tokens: 400,
+                temperature: 0.3
+            });
+            return completion.choices?.[0]?.message?.content || previousSummary;
+        } catch (e) {
+            return previousSummary; // فشل التلخيص لا يُفقد أي رسالة — تبقى مخزّنة كاملة
+        }
+    }
+
     async generateChatResponse(userMessage, username, roomName, userLang = 'en') {
         const langInfo = getLangInfo(userLang);
         const execMemory = await this.loadExecutiveMemory(username);
-        const MAX_HISTORY = 30;
-        let history;
-        try {
-            if (mongoose.connection.readyState === 1) {
-                const conv = await Conversation.findOne({ username });
-                history = conv ? conv.messages.slice(-MAX_HISTORY) : [];
-            } else {
-                history = this.conversationBuffer.get(username) || [];
-            }
-        } catch (e) { history = this.conversationBuffer.get(username) || []; }
-        history.push({ role: 'user', content: userMessage });
+
+        // 🧠 نافذة السياق الأخيرة + الملخّص طويل المدى — يبقي الموضوع حاضراً
+        // مهما طالت المحادثة بدل اقتطاعها لآخر 30 رسالة وفقدان السياق.
+        const { window: history, summary: convSummary } = await loadConversation(username);
 
         // 🧠 Project Brain — يفهم كامل المشروع (ملفات + قرارات + أُنجز/متبقٍّ) لا الرسالة الأخيرة فقط
         let brainContext = '';
@@ -877,9 +893,10 @@ RESPONSE RULES:
 
 ## Current project state (Project Brain):
 ${brainContext || 'No project files yet.'}
-
+${convSummary ? `\n## LONG-TERM CONVERSATION MEMORY (do not lose this context; never contradict earlier decisions or re-ask known facts):\n${convSummary}\n` : ''}
 User preferences: ${JSON.stringify(execMemory)}` },
-            ...history
+            ...history,
+            { role: 'user', content: userMessage }
         ];
         // رسالة صادقة بدل "حدث خطأ" الغامضة — السبب الشائع هو ضغط حصة الذكاء (rate limit)
         let reply = userLang === 'ar'
@@ -912,11 +929,13 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 if (attempt < 2) await new Promise(r => setTimeout(r, 2500));
             }
         }
-        history.push({ role: 'assistant', content: reply });
-        if (mongoose.connection.readyState === 1) {
-            await Conversation.findOneAndUpdate({ username }, { messages: history.slice(-MAX_HISTORY) }, { upsert: true });
-        } else {
-            this.conversationBuffer.set(username, history.slice(-MAX_HISTORY));
+        // 🧠 نحفظ الدورة (ونطوي الملخّص) فقط عند نجاح الرد — لا نلوّث الذاكرة
+        // برسائل خطأ الـ rate-limit. conversationStore يحفظ كامل الحوار دائماً.
+        if (streamed) {
+            await recordTurn(
+                username, userMessage, reply,
+                (prev, older) => this.summarizeConversation(prev, older, userLang)
+            );
         }
         // أنهِ البثّ بالنسخة النهائية (يستبدل النص المتراكم ويثبّته)؛
         // وإن لم ينجح البثّ (rate limit) أرسل الرد دفعة واحدة كالمعتاد
