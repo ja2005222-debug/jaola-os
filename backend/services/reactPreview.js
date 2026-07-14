@@ -186,25 +186,61 @@ export function reactPreviewFile(files, opts) {
 // /workspace/<file> الموجود. مشروع Next الحقيقي يبقى للنشر الفعلي.
 // ════════════════════════════════════════════════════════════════════
 
-const PAGE_CSS = `*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans Arabic',sans-serif;background:#fff;color:#0f172a}
-a{color:inherit}.wrap{max-width:1100px;margin:0 auto;padding:0 24px}
-.nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(8px);background:rgba(255,255,255,.8);border-bottom:1px solid #e2e8f0}
-.nav .row{display:flex;align-items:center;justify-content:space-between;padding:15px 0;gap:16px;flex-wrap:wrap}
-.brand{font-size:20px;font-weight:800;text-decoration:none;background:linear-gradient(90deg,#2563eb,#7c3aed);-webkit-background-clip:text;background-clip:text;color:transparent}
-.links{display:flex;gap:20px;flex-wrap:wrap}.links a{text-decoration:none;font-size:14px;font-weight:500;color:#475569}
-.links a:hover{color:#2563eb}.links a.active{color:#2563eb;font-weight:700}
-.cta{border:0;border-radius:10px;background:linear-gradient(90deg,#2563eb,#7c3aed);color:#fff;padding:9px 18px;font-weight:600;font-size:14px;text-decoration:none;display:inline-block}
-.hero{padding:88px 0}.hero h1{font-size:44px;line-height:1.1;font-weight:800;margin:0}
-.hero p{margin:22px 0 0;max-width:640px;font-size:18px;color:#475569}.hero .btns{display:flex;gap:14px;margin-top:30px;flex-wrap:wrap}
-.ghost{border:1px solid #cbd5e1;border-radius:12px;background:#fff;color:#334155;padding:12px 26px;font-weight:600;text-decoration:none;display:inline-block}
-.big{border:0;border-radius:12px;background:linear-gradient(90deg,#2563eb,#7c3aed);color:#fff;padding:13px 28px;font-weight:600;text-decoration:none;display:inline-block}
-.sec{padding:64px 0}.sec h2{font-size:30px;font-weight:700;margin:0}.sec .sub{margin:10px 0 0;color:#475569}
-.grid{display:grid;gap:20px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-top:36px}
-.card{border:1px solid #e2e8f0;border-radius:16px;padding:24px;background:#fff}
-.card .ic{height:40px;width:40px;border-radius:12px;background:linear-gradient(135deg,#2563eb,#7c3aed)}
-.card h3{margin:16px 0 6px;font-size:18px;font-weight:600}.card p{margin:0;font-size:14px;color:#475569}
-.foot{border-top:1px solid #e2e8f0;padding:40px 0;color:#64748b;font-size:14px;text-align:center}
-@media(prefers-color-scheme:dark){body{background:#0b1120;color:#e2e8f0}.nav{background:rgba(11,17,32,.8);border-color:#1e293b}.card,.nav{border-color:#1e293b}.card{background:#0f172a}.ghost{background:#0f172a;border-color:#334155;color:#cbd5e1}.foot{border-color:#1e293b}.links a{color:#94a3b8}}`;
+const PAGE_CSS = `*{box-sizing:border-box}
+:root{--bg:#ffffff;--fg:#0f172a;--muted:#5b6472;--line:#e6e9ef;--card:#ffffff;--soft:#f7f8fb;--g1:#4f46e5;--g2:#9333ea;--ring:rgba(79,70,229,.35)}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Noto Kufi Arabic','Noto Sans Arabic','Cairo',sans-serif;background:var(--bg);color:var(--fg);line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:inherit}img{max-width:100%}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+/* nav */
+.nav{position:sticky;top:0;z-index:50;backdrop-filter:saturate(1.4) blur(12px);background:color-mix(in srgb,var(--bg) 78%,transparent);border-bottom:1px solid var(--line)}
+.nav .row{display:flex;align-items:center;justify-content:space-between;padding:14px 0;gap:16px;flex-wrap:wrap}
+.brand{font-size:21px;font-weight:800;letter-spacing:-.02em;text-decoration:none;background:linear-gradient(90deg,var(--g1),var(--g2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.links{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.links a{text-decoration:none;font-size:14px;font-weight:500;color:var(--muted);padding:7px 12px;border-radius:9px;transition:.18s}
+.links a:hover{color:var(--fg);background:var(--soft)}
+.links a.active{color:var(--g1);background:color-mix(in srgb,var(--g1) 10%,transparent);font-weight:700}
+.cta{border:0;border-radius:11px;background:linear-gradient(90deg,var(--g1),var(--g2));color:#fff;padding:10px 18px;font-weight:600;font-size:14px;text-decoration:none;display:inline-block;box-shadow:0 6px 18px -6px var(--ring);transition:.18s}
+.cta:hover{transform:translateY(-1px);box-shadow:0 10px 24px -8px var(--ring)}
+/* hero */
+.hero{position:relative;padding:104px 0 92px;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:-40% 0 auto 0;height:520px;background:radial-gradient(60% 60% at 50% 0,color-mix(in srgb,var(--g1) 20%,transparent),transparent 70%);pointer-events:none;z-index:-1}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--g1);background:color-mix(in srgb,var(--g1) 9%,transparent);border:1px solid color-mix(in srgb,var(--g1) 22%,transparent);padding:6px 13px;border-radius:999px;margin-bottom:22px}
+.eyebrow .dot{width:7px;height:7px;border-radius:50%;background:linear-gradient(90deg,var(--g1),var(--g2))}
+.hero h1{font-size:clamp(34px,5.4vw,58px);line-height:1.06;font-weight:800;letter-spacing:-.03em;margin:0;max-width:15ch}
+.hero h1 .grad{background:linear-gradient(90deg,var(--g1),var(--g2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p{margin:24px 0 0;max-width:60ch;font-size:clamp(16px,2.1vw,20px);color:var(--muted)}
+.btns{display:flex;gap:14px;margin-top:34px;flex-wrap:wrap}
+.big{border:0;border-radius:13px;background:linear-gradient(90deg,var(--g1),var(--g2));color:#fff;padding:14px 30px;font-weight:600;font-size:16px;text-decoration:none;display:inline-block;box-shadow:0 12px 30px -10px var(--ring);transition:.18s}
+.big:hover{transform:translateY(-2px);box-shadow:0 18px 40px -12px var(--ring)}
+.ghost{border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--fg);padding:13px 28px;font-weight:600;font-size:16px;text-decoration:none;display:inline-block;transition:.18s}
+.ghost:hover{border-color:var(--g1);color:var(--g1)}
+/* sections */
+.sec{padding:80px 0}
+.sec .head{max-width:64ch}
+.sec h2{font-size:clamp(26px,3.4vw,36px);font-weight:800;letter-spacing:-.02em;margin:0}
+.sec .sub{margin:12px 0 0;color:var(--muted);font-size:17px}
+.grid{display:grid;gap:22px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-top:44px}
+.card{border:1px solid var(--line);border-radius:20px;padding:26px;background:var(--card);transition:.2s;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.card:hover{transform:translateY(-4px);border-color:color-mix(in srgb,var(--g1) 40%,var(--line));box-shadow:0 22px 44px -22px var(--ring)}
+.card .ic{height:46px;width:46px;border-radius:14px;background:linear-gradient(135deg,var(--g1),var(--g2));box-shadow:0 8px 20px -8px var(--ring);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:800}
+.card h3{margin:18px 0 7px;font-size:19px;font-weight:700;letter-spacing:-.01em}
+.card p{margin:0;font-size:15px;color:var(--muted)}
+/* footer */
+.foot{border-top:1px solid var(--line);padding:44px 0;background:var(--soft)}
+.foot .row{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:14px}
+.foot .fl{display:flex;gap:18px;flex-wrap:wrap}.foot .fl a{text-decoration:none;color:var(--muted)}.foot .fl a:hover{color:var(--g1)}
+@media(max-width:640px){.hero{padding:72px 0 64px}.sec{padding:56px 0}}
+@media(prefers-color-scheme:dark){:root{--bg:#0a0f1c;--fg:#e8ecf4;--muted:#94a0b4;--line:#1e2637;--card:#0f1626;--soft:#0c1220;--ring:rgba(129,110,247,.28);--g1:#6366f1;--g2:#a855f7}}`;
+
+// أول كلمة/كلمتان تُلوَّن بتدرّج داخل العنوان لإحساس أرقى
+function gradientTitle(title) {
+    const words = String(title || '').trim().split(/\s+/);
+    if (words.length <= 1) return `<span class="grad">${esc(title)}</span>`;
+    const tail = words.slice(-Math.min(2, words.length - 1)).join(' ');
+    const head = words.slice(0, words.length - Math.min(2, words.length - 1)).join(' ');
+    return `${esc(head)} <span class="grad">${esc(tail)}</span>`;
+}
 
 function navBar(content, currentHref) {
     const routes = content.routes || [];
@@ -220,7 +256,8 @@ function heroBlock(content) {
     const routes = content.routes || [];
     const first = (routes.find((r) => r.href !== '/') || {}).href;
     return `<section class="hero"><div class="wrap">
-    <h1>${esc(h.title)}</h1>
+    <span class="eyebrow"><span class="dot"></span>${esc(content.brand)}</span>
+    <h1>${gradientTitle(h.title)}</h1>
     ${h.subtitle ? `<p>${esc(h.subtitle)}</p>` : ''}
     <div class="btns">
       ${h.cta1 ? `<a class="big" href="${hrefToFile(first)}">${esc(h.cta1)}</a>` : ''}
@@ -229,12 +266,13 @@ function heroBlock(content) {
 }
 function sectionBlock(sec) {
     if (!sec) return '';
-    const items = (sec.items || []).map((it) => `<div class="card"><div class="ic"></div><h3>${esc(it.title)}</h3><p>${esc(it.desc)}</p></div>`).join('');
-    return `<section class="sec"><div class="wrap"><h2>${esc(sec.heading)}</h2>${sec.subheading ? `<p class="sub">${esc(sec.subheading)}</p>` : ''}<div class="grid">${items}</div></div></section>`;
+    const items = (sec.items || []).map((it, i) => `<div class="card"><div class="ic">${i + 1}</div><h3>${esc(it.title)}</h3><p>${esc(it.desc)}</p></div>`).join('');
+    return `<section class="sec"><div class="wrap"><div class="head"><h2>${esc(sec.heading)}</h2>${sec.subheading ? `<p class="sub">${esc(sec.subheading)}</p>` : ''}</div><div class="grid">${items}</div></div></section>`;
 }
 function footBlock(content) {
     const f = content.footer || {};
-    return `<footer class="foot"><div class="wrap">© ${new Date().getFullYear()} ${esc(content.brand)}. ${esc(f.rights || '')}</div></footer>`;
+    const links = (f.links || []).map((l) => `<a href="#">${esc(l)}</a>`).join('');
+    return `<footer class="foot"><div class="wrap row"><span>© ${new Date().getFullYear()} ${esc(content.brand)}. ${esc(f.rights || '')}</span><span class="fl">${links}</span></div></footer>`;
 }
 function pageDoc({ lang, dir, title, body }) {
     return `<!doctype html>\n<html lang="${lang}" dir="${dir}">\n<head>\n  <meta charset="utf-8" />\n  <meta name="viewport" content="width=device-width, initial-scale=1" />\n  <title>${esc(title)}</title>\n  <style>${PAGE_CSS}</style>\n</head>\n<body>\n${body}\n</body>\n</html>\n`;

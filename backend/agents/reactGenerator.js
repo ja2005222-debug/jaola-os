@@ -103,16 +103,25 @@ export function componentSource(name, lang) {
 `;
 }
 
-// محتوى قسم افتراضي واحد (عنوان + وصف + بطاقات) بلغة المستخدم — يخصّصه الذكاء
+// محتوى قسم افتراضي واحد (عنوان + وصف + بطاقات) بلغة المستخدم — يبدو مكتملاً
+// لا كملاحظة نظام؛ ويخصّصه الذكاء لاحقاً بمحتوى مشروعك الفعلي.
 export function defaultSection(label, lang) {
     const ar = lang === 'ar';
+    const cards = ar
+        ? [
+            { title: 'تجربة سلسة', desc: 'واجهة واضحة وسريعة تجعل كل خطوة بسيطة ومريحة.' },
+            { title: 'أداء موثوق', desc: 'سرعة واستقرار تعتمد عليهما في كل وقت.' },
+            { title: 'دعم متواصل', desc: 'فريق جاهز لمساعدتك متى احتجت.' },
+        ]
+        : [
+            { title: 'Seamless experience', desc: 'A clear, fast interface that makes every step simple.' },
+            { title: 'Reliable performance', desc: 'Speed and stability you can count on.' },
+            { title: 'Dedicated support', desc: 'A team ready to help whenever you need it.' },
+        ];
     return {
         heading: label,
-        subheading: ar ? 'محتوى هذا القسم — يخصّصه الذكاء حسب مشروعك.' : 'Section content — customized to your project.',
-        items: [1, 2, 3].map((i) => ({
-            title: ar ? `عنصر ${i}` : `Item ${i}`,
-            desc: ar ? 'وصف موجز ومفيد.' : 'Concise, useful description.',
-        })),
+        subheading: ar ? 'نظرة سريعة على أهمّ ما يميّزنا.' : 'A quick look at what makes us stand out.',
+        items: cards,
     };
 }
 
