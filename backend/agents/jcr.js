@@ -5,7 +5,7 @@ import { groq, smartChat } from './baseAgent.js';
 import { runBackendTeam, writeBackendTeamFiles } from './backendTeam/index.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from '../services/projectBrain.js';
 import { selectStarter, resolveStack } from './starterRegistry.js';
-import { generateNextScaffold, generateContentModel } from './reactGenerator.js';
+import { generateNextScaffold, generateContentModel, compName, slugify, componentSource, defaultSection, pageFileSource } from './reactGenerator.js';
 import { buildStaticSite, buildStaticSiteFromSource } from '../services/reactPreview.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO } from './languageDetector.js';
@@ -1214,9 +1214,107 @@ User preferences: ${JSON.stringify(execMemory)}` },
         return result;
     }
 
+    // يستخرج اسم الصفحة من أمر "أضف صفحة …" (عربي/إنجليزي)
+    _extractPageName(instruction, lang) {
+        let s = String(instruction || '').trim();
+        s = s.replace(/^[^\p{L}]+/u, '');   // أزل الرموز/الإيموجي في البداية (زر "➕ أضف صفحة")
+        s = s.replace(/^\s*(?:من فضلك|رجاء[ًا]?|please)\s+/i, '');
+        s = s.replace(/^\s*(?:أضف|اضف|أضِف|ضيف|زد|أنشئ|انشئ|اضافة|إضافة|add|create|make)\s+/i, '');
+        s = s.replace(/^\s*(?:لي|me)\s+/i, '');
+        s = s.replace(/^\s*(?:a|an)\s+/i, '');
+        s = s.replace(/^\s*(?:جديدة|جديد|new)\s+/i, '');
+        s = s.replace(/^\s*(?:صفحة|صفحه|page)\s+/i, '');
+        s = s.replace(/^\s*(?:جديدة|جديد|new)\s+/i, '');
+        s = s.replace(/^\s*(?:اسمها|بعنوان|باسم|تسمى|عنوانها|بـ|called|named|titled|about|for)\s+/i, '');
+        s = s.replace(/["'«»]/g, '').replace(/[.،,!?]+$/g, '').trim();
+        // بقايا من كلمات دالّة فقط (زر "أضف صفحة" بلا اسم) → افتراضي
+        s = s.replace(/^(?:صفحة|صفحه|page|جديدة|جديد|new)(?:\s+(?:صفحة|صفحه|page|جديدة|جديد|new))*$/i, '').trim();
+        if (!s || s.length > 60) return lang === 'ar' ? 'صفحة جديدة' : 'New Page';
+        return s;
+    }
+
+    // ➕ يضيف صفحة جديدة لمشروع React قائم دون إعادة بناء — يحفظ المحتوى الحالي:
+    //    قسم + وجهة في lib/content.js، مكوّن، صفحة Next، ثم إعادة توليد الموقع الثابت.
+    async _addPageNow(instruction, projectPath, username, activeProject, roomName, lang) {
+        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
+        this.emitLiveLog(roomName, 'EDIT', 'AddPage', '➕ إضافة صفحة جديدة (بلا إعادة بناء)...');
+
+        // اقرأ المحتوى الحالي (lib/content.js: export const content = {...})
+        let content;
+        try {
+            const src = await fsPromises.readFile(path.join(projectPath, 'lib/content.js'), 'utf8');
+            content = JSON.parse(src.slice(src.indexOf('{'), src.lastIndexOf('}') + 1));
+        } catch (e) {
+            this.emitLiveLog(roomName, 'EDIT', 'AddPage', `⚠️ تعذّر قراءة المحتوى — عودة للبناء: ${e.message}`);
+            return this._runMissionNow(instruction, projectPath, username, activeProject, roomName, {}, null);
+        }
+
+        const pageLabel = this._extractPageName(instruction, lang);
+
+        // اسم مكوّن + مسار (slug) فريدان
+        const existingComps = new Set(Object.keys(content.sections || {}));
+        const existingSlugs = new Set((content.routes || []).map(r => (r.href || '').replace(/^\//, '')));
+        let n = existingComps.size + 1;
+        let comp = compName(pageLabel, n);
+        while (existingComps.has(comp)) comp = compName(pageLabel, ++n);
+        let slug = slugify(comp), k = 1;
+        while (existingSlugs.has(slug) || slug === '' ) { slug = slugify(comp) + '-' + (++k); }
+
+        // حدّث المحتوى: قسم جديد + وجهة تنقّل
+        content.sections = content.sections || {};
+        content.sections[comp] = defaultSection(pageLabel, lang);
+        content.routes = content.routes || [{ label: lang === 'ar' ? 'الرئيسية' : 'Home', href: '/' }];
+        content.routes.push({ label: pageLabel, href: '/' + slug });
+
+        // اكتب: content.js + مكوّن القسم + صفحة Next
+        await fsPromises.writeFile(path.join(projectPath, 'lib/content.js'),
+            `// محتوى الموقع — عدّله بحرّية. يملؤه JAOLA بالذكاء حسب مشروعك.\nexport const content = ${JSON.stringify(content, null, 2)};\n`);
+        await fsPromises.writeFile(path.join(projectPath, `components/${comp}.jsx`), componentSource(comp, lang));
+        await fsPromises.mkdir(path.join(projectPath, `app/${slug}`), { recursive: true });
+        const hasNav = fs.existsSync(path.join(projectPath, 'components/Navbar.jsx'));
+        const hasFooter = fs.existsSync(path.join(projectPath, 'components/Footer.jsx'));
+        const body = [hasNav ? 'Navbar' : null, comp, hasFooter ? 'Footer' : null].filter(Boolean);
+        await fsPromises.writeFile(path.join(projectPath, `app/${slug}/page.jsx`), pageFileSource('/' + slug, `${comp}Page`, body, 2));
+
+        // أعِد توليد الموقع الثابت كله (الصفحة الجديدة + الشريط المحدَّث في كل صفحة)
+        for (const pg of buildStaticSite(content, lang)) {
+            await fsPromises.writeFile(path.join(projectPath, pg.name), pg.content);
+        }
+
+        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
+        addToHistory(username, activeProject, `إضافة صفحة: ${pageLabel}`);
+        recordEdit(username, instruction);
+
+        this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        let builtFiles = [];
+        try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
+        this.io.to(roomName).emit('workspace_files', builtFiles);
+        snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
+        autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
+
+        const msg = lang === 'ar'
+            ? `✅ أضفت صفحة **${pageLabel}** (\`${slug}.html\`) وربطتها بشريط التنقّل في كل الصفحات — المعاينة تحدّثت. اضغط رابطها لفتحها.`
+            : `✅ Added page **${pageLabel}** (\`${slug}.html\`), linked in the nav across all pages — preview updated. Click its link to open it.`;
+        this.io.to(roomName).emit('chat_reply', {
+            message: msg,
+            options: lang === 'ar' ? ['➕ أضف صفحة أخرى', '✏️ عدّل محتواها', '🚀 انشر الآن'] : ['➕ Add another page', '✏️ Edit its content', '🚀 Deploy now'],
+        });
+        return { success: true, addedPage: slug, label: pageLabel };
+    }
+
     async _runSurgicalEditNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus) {
         const lang = getUserLanguage(username) || 'ar';
         const files = await this.readProjectFilesArray(projectPath);
+
+        // مشروع React؟ (يحوي lib/content.js أو app/page.jsx)
+        const isReact = files.some(f => f.name === 'lib/content.js' || f.name === 'app/page.jsx');
+
+        // ➕ "أضف صفحة" لمشروع React: إضافة تزايدية تحفظ المحتوى القائم — قبل فحص
+        // "التغيير الكبير" (الذي يلتقط "صفحة جديدة" ويعيد البناء بالكامل).
+        const wantsAddPage = /(?:أضف|اضف|أضِف|ضيف|زد|أنشئ|انشئ|اضافة|إضافة)\s+(?:لي\s+)?(?:صفحة|صفحه)|صفحة\s*جديدة|add\s+(?:a\s+|an\s+)?page|new\s+page|create\s+(?:a\s+)?page/i.test(instruction);
+        if (isReact && wantsAddPage) {
+            return this._addPageNow(instruction, projectPath, username, activeProject, roomName, lang);
+        }
 
         // لا مشروع قائم، أو تعديل كبير (إعادة تصميم/بناء) → البناء الكامل بدل الجراحي
         const bigChange = /أعد التصميم|اعد التصميم|أعد البناء|اعد البناء|من جديد|صفحة جديدة|صفحات|redesign|rebuild|from scratch|new page/i.test(instruction);
@@ -1224,9 +1322,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
             return this._runMissionNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus);
         }
 
-        // مشروع React؟ نوجّه التعديل للمصدر (lib/content.js، المكوّنات) لا لصفحات
-        // HTML المولّدة (index.html/*.html) — فتلك نُعيد توليدها من المحتوى بعد التعديل.
-        const isReact = files.some(f => f.name === 'lib/content.js' || f.name === 'app/page.jsx');
+        // نوجّه التعديل للمصدر (lib/content.js، المكوّنات) لا لصفحات HTML المولّدة
+        // (index.html/*.html) — فتلك نُعيد توليدها من المحتوى بعد التعديل.
         const editFiles = isReact ? files.filter(f => !/^[^/]+\.html$/.test(f.name)) : files;
 
         this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', '✂️ تعديل دقيق (لا إعادة بناء كاملة)...');
@@ -1347,7 +1444,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
               ].join('\n');
         this.io.to(roomName).emit('chat_reply', {
             message: report,
-            options: lang === 'ar' ? ['🚀 انشر على Vercel', '🐙 ادفع إلى GitHub', '✏️ عدّل قسماً'] : ['🚀 Deploy to Vercel', '🐙 Push to GitHub', '✏️ Edit a section'],
+            options: lang === 'ar' ? ['➕ أضف صفحة', '🚀 انشر على Vercel', '🐙 ادفع إلى GitHub', '✏️ عدّل قسماً'] : ['➕ Add a page', '🚀 Deploy to Vercel', '🐙 Push to GitHub', '✏️ Edit a section'],
         });
         this.emitLiveLog(roomName, 'JCOS', 'Kernel', '✨ نجاح');
         return { success: true, stack: 'react-next', files: builtFiles };

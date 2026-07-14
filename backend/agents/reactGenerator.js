@@ -9,9 +9,9 @@
 const RTL_LANGS = new Set(['ar', 'ur', 'he', 'fa']);
 const cap = (s) => (s || '').charAt(0).toUpperCase() + (s || '').slice(1);
 // اسم مكوّن (PascalCase) → مسار صفحة (slug): DataTable → data-table
-const slugify = (comp) => (comp || '').replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'page';
+export const slugify = (comp) => (comp || '').replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'page';
 // اسم مكوّن صالح من اسم قسم (عربي/إنجليزي) → PascalCase لاتيني آمن
-const compName = (section, i) => {
+export const compName = (section, i) => {
     const map = {
         navbar: 'Navbar', hero: 'Hero', services: 'Services', features: 'Features',
         about: 'About', contact: 'Contact', footer: 'Footer', pricing: 'Pricing',
@@ -28,7 +28,7 @@ const compName = (section, i) => {
 };
 
 // المكوّنات تقرأ محتواها من lib/content.js (يملؤه الذكاء) — فالهيكل حتمي والمحتوى مخصّص
-function componentSource(name, lang) {
+export function componentSource(name, lang) {
     const rtl = RTL_LANGS.has(lang);
     const align = rtl ? 'text-right' : 'text-left';
     const head = `import { content } from '../lib/content';\n\n`;
@@ -103,6 +103,28 @@ function componentSource(name, lang) {
 `;
 }
 
+// محتوى قسم افتراضي واحد (عنوان + وصف + بطاقات) بلغة المستخدم — يخصّصه الذكاء
+export function defaultSection(label, lang) {
+    const ar = lang === 'ar';
+    return {
+        heading: label,
+        subheading: ar ? 'محتوى هذا القسم — يخصّصه الذكاء حسب مشروعك.' : 'Section content — customized to your project.',
+        items: [1, 2, 3].map((i) => ({
+            title: ar ? `عنصر ${i}` : `Item ${i}`,
+            desc: ar ? 'وصف موجز ومفيد.' : 'Concise, useful description.',
+        })),
+    };
+}
+
+// صفحة Next تركّب الشريط + المحتوى + التذييل، مع علامة توجيه للمعاينة
+// depth = عمق المجلد تحت app/ (لتصحيح مسار الاستيراد النسبي)
+export function pageFileSource(route, compName, bodyComps, depth) {
+    const rel = depth <= 1 ? '../components' : '../'.repeat(depth) + 'components';
+    const imports = bodyComps.map((c) => `import ${c} from '${rel}/${c}';`).join('\n');
+    const usage = bodyComps.map((c) => `      <${c} />`).join('\n');
+    return `/* jaola:route=${route} comp=${compName} */\n${imports}\n\nexport default function ${compName}() {\n  return (\n    <main>\n${usage}\n    </main>\n  );\n}\n`;
+}
+
 // محتوى افتراضي (يُستبدل بمحتوى الذكاء) — بلغة المستخدم
 // labels: خريطة اسم المكوّن → التسمية الأصلية للقسم (عربي/إنجليزي) لعنوان ذي معنى
 function defaultContent(pageTitle, comps, lang, labels = {}) {
@@ -111,14 +133,7 @@ function defaultContent(pageTitle, comps, lang, labels = {}) {
     const sections = {};
     for (const c of generic) {
         const label = labels[c] || c.replace(/([a-z])([A-Z])/g, '$1 $2');
-        sections[c] = {
-            heading: label,
-            subheading: ar ? 'محتوى هذا القسم — يخصّصه الذكاء حسب مشروعك.' : 'Section content — customized to your project.',
-            items: [1, 2, 3].map((i) => ({
-                title: ar ? `عنصر ${i}` : `Item ${i}`,
-                desc: ar ? 'وصف موجز ومفيد.' : 'Concise, useful description.',
-            })),
-        };
+        sections[c] = defaultSection(label, lang);
     }
     return {
         brand: pageTitle,
@@ -230,24 +245,14 @@ export default function RootLayout({ children }) {
 }
 ` });
 
-    // 📄 مولّد صفحة: يركّب الشريط العلوي + المحتوى + التذييل، ويضع علامة للمعاينة
-    // depth = عمق المجلد تحت app/ (لتصحيح مسار الاستيراد النسبي)
-    const pageFile = (route, compName, bodyComps, depth) => {
-        const rel = depth <= 1 ? '../components' : '../'.repeat(depth) + 'components';
-        const imports = bodyComps.map((c) => `import ${c} from '${rel}/${c}';`).join('\n');
-        const usage = bodyComps.map((c) => `      <${c} />`).join('\n');
-        // العلامة تُمكّن المعاينة الحيّة من بناء جدول توجيه فعلي
-        return `/* jaola:route=${route} comp=${compName} */\n${imports}\n\nexport default function ${compName}() {\n  return (\n    <main>\n${usage}\n    </main>\n  );\n}\n`;
-    };
-
     // الرئيسية: شريط + بطل + تذييل
     const homeBody = comps.filter((c) => c === 'Navbar' || c === 'Hero' || c === 'Footer');
-    files.push({ name: 'app/page.jsx', content: pageFile('/', 'HomePage', homeBody, 1) });
+    files.push({ name: 'app/page.jsx', content: pageFileSource('/', 'HomePage', homeBody, 1) });
 
     // صفحة مستقلّة لكل قسم وظيفي: شريط + القسم + تذييل
     for (const c of pageComps) {
         const body = [hasNav ? 'Navbar' : null, c, hasFooter ? 'Footer' : null].filter(Boolean);
-        files.push({ name: `app/${slugify(c)}/page.jsx`, content: pageFile('/' + slugify(c), `${c}Page`, body, 2) });
+        files.push({ name: `app/${slugify(c)}/page.jsx`, content: pageFileSource('/' + slugify(c), `${c}Page`, body, 2) });
     }
 
     comps.forEach((c, i) => {
