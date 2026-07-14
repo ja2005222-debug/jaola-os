@@ -1,7 +1,12 @@
 {
   "global": {
     "fonts": {
-      "arabic": ["Cairo", "Tajawal", "Almarai", "Noto Kufi Arabic"],
+      "arabic": [
+        "Cairo",
+        "Tajawal",
+        "Almarai",
+        "Noto Kufi Arabic"
+      ],
       "heading": "Cairo",
       "body": "Tajawal",
       "google_import": "@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Tajawal:wght@400;500;700&display=swap');"
@@ -58,8 +63,20 @@
         "آراء المسافرين (testimonials)",
         "footer مع روابط ودعم"
       ],
-      "unsplash_queries": ["airplane travel", "tropical destination", "airport terminal", "vacation resort"],
-      "icons": ["fa-plane", "fa-hotel", "fa-car", "fa-suitcase-rolling", "fa-map-marked-alt", "fa-globe"]
+      "unsplash_queries": [
+        "airplane travel",
+        "tropical destination",
+        "airport terminal",
+        "vacation resort"
+      ],
+      "icons": [
+        "fa-plane",
+        "fa-hotel",
+        "fa-car",
+        "fa-suitcase-rolling",
+        "fa-map-marked-alt",
+        "fa-globe"
+      ]
     },
     "saas": {
       "color_palette": {
@@ -81,8 +98,20 @@
         "آراء العملاء والشعارات",
         "footer مع روابط ودعم"
       ],
-      "unsplash_queries": ["saas dashboard", "technology startup", "software team", "data analytics"],
-      "icons": ["fa-rocket", "fa-chart-line", "fa-bolt", "fa-shield-alt", "fa-plug", "fa-cog"]
+      "unsplash_queries": [
+        "saas dashboard",
+        "technology startup",
+        "software team",
+        "data analytics"
+      ],
+      "icons": [
+        "fa-rocket",
+        "fa-chart-line",
+        "fa-bolt",
+        "fa-shield-alt",
+        "fa-plug",
+        "fa-cog"
+      ]
     },
     "tool": {
       "color_palette": {
@@ -102,8 +131,20 @@
         "شرح مختصر لكيفية العمل",
         "footer بسيط"
       ],
-      "unsplash_queries": ["workspace tool", "productivity", "minimal desk", "calculator"],
-      "icons": ["fa-calculator", "fa-sliders-h", "fa-magic", "fa-check-circle", "fa-redo", "fa-download"]
+      "unsplash_queries": [
+        "workspace tool",
+        "productivity",
+        "minimal desk",
+        "calculator"
+      ],
+      "icons": [
+        "fa-calculator",
+        "fa-sliders-h",
+        "fa-magic",
+        "fa-check-circle",
+        "fa-redo",
+        "fa-download"
+      ]
     },
     "medical": {
       "color_palette": {
@@ -125,8 +166,20 @@
         "شهادات المرضى",
         "footer مع ساعات العمل والعنوان"
       ],
-      "unsplash_queries": ["doctor hospital", "medical clinic", "healthcare professional", "surgery team"],
-      "icons": ["fa-heartbeat", "fa-stethoscope", "fa-hospital", "fa-pills", "fa-ambulance", "fa-user-md"]
+      "unsplash_queries": [
+        "doctor hospital",
+        "medical clinic",
+        "healthcare professional",
+        "surgery team"
+      ],
+      "icons": [
+        "fa-heartbeat",
+        "fa-stethoscope",
+        "fa-hospital",
+        "fa-pills",
+        "fa-ambulance",
+        "fa-user-md"
+      ]
     },
     "restaurant": {
       "color_palette": {
@@ -148,8 +201,20 @@
         "ساعات العمل والموقع",
         "footer مع روابط التواصل"
       ],
-      "unsplash_queries": ["restaurant food", "fine dining", "chef cooking", "arabic food"],
-      "icons": ["fa-utensils", "fa-wine-glass", "fa-star", "fa-clock", "fa-map-marker", "fa-phone"]
+      "unsplash_queries": [
+        "restaurant food",
+        "fine dining",
+        "chef cooking",
+        "arabic food"
+      ],
+      "icons": [
+        "fa-utensils",
+        "fa-wine-glass",
+        "fa-star",
+        "fa-clock",
+        "fa-map-marker",
+        "fa-phone"
+      ]
     },
     "ecommerce": {
       "color_palette": {
@@ -171,8 +236,20 @@
         "آراء العملاء",
         "footer مع links وpayment methods"
       ],
-      "unsplash_queries": ["shopping products", "fashion store", "ecommerce", "retail store"],
-      "icons": ["fa-shopping-cart", "fa-tag", "fa-truck", "fa-shield-alt", "fa-star", "fa-heart"]
+      "unsplash_queries": [
+        "shopping products",
+        "fashion store",
+        "ecommerce",
+        "retail store"
+      ],
+      "icons": [
+        "fa-shopping-cart",
+        "fa-tag",
+        "fa-truck",
+        "fa-shield-alt",
+        "fa-star",
+        "fa-heart"
+      ]
     },
     "hotel": {
       "color_palette": {
@@ -195,8 +272,20 @@
         "الموقع والتواصل",
         "footer فاخر"
       ],
-      "unsplash_queries": ["luxury hotel room", "hotel pool", "resort beach", "hotel lobby"],
-      "icons": ["fa-concierge-bell", "fa-swimming-pool", "fa-spa", "fa-wifi", "fa-car", "fa-star"]
+      "unsplash_queries": [
+        "luxury hotel room",
+        "hotel pool",
+        "resort beach",
+        "hotel lobby"
+      ],
+      "icons": [
+        "fa-concierge-bell",
+        "fa-swimming-pool",
+        "fa-spa",
+        "fa-wifi",
+        "fa-car",
+        "fa-star"
+      ]
     },
     "education": {
       "color_palette": {
@@ -218,8 +307,20 @@
         "CTA التسجيل",
         "footer"
       ],
-      "unsplash_queries": ["online learning", "students classroom", "education technology", "teacher student"],
-      "icons": ["fa-graduation-cap", "fa-book", "fa-certificate", "fa-chalkboard-teacher", "fa-laptop", "fa-award"]
+      "unsplash_queries": [
+        "online learning",
+        "students classroom",
+        "education technology",
+        "teacher student"
+      ],
+      "icons": [
+        "fa-graduation-cap",
+        "fa-book",
+        "fa-certificate",
+        "fa-chalkboard-teacher",
+        "fa-laptop",
+        "fa-award"
+      ]
     },
     "portfolio": {
       "color_palette": {
@@ -241,8 +342,20 @@
         "نموذج تواصل",
         "footer minimal"
       ],
-      "unsplash_queries": ["designer workspace", "creative studio", "laptop coding", "modern office"],
-      "icons": ["fa-code", "fa-paint-brush", "fa-mobile-alt", "fa-globe", "fa-github", "fa-linkedin"]
+      "unsplash_queries": [
+        "designer workspace",
+        "creative studio",
+        "laptop coding",
+        "modern office"
+      ],
+      "icons": [
+        "fa-code",
+        "fa-paint-brush",
+        "fa-mobile-alt",
+        "fa-globe",
+        "fa-github",
+        "fa-linkedin"
+      ]
     },
     "business": {
       "color_palette": {
@@ -265,8 +378,20 @@
         "تواصل معنا",
         "footer احترافي"
       ],
-      "unsplash_queries": ["business office", "corporate team", "meeting professional", "modern workspace"],
-      "icons": ["fa-briefcase", "fa-chart-line", "fa-handshake", "fa-users", "fa-cog", "fa-award"]
+      "unsplash_queries": [
+        "business office",
+        "corporate team",
+        "meeting professional",
+        "modern workspace"
+      ],
+      "icons": [
+        "fa-briefcase",
+        "fa-chart-line",
+        "fa-handshake",
+        "fa-users",
+        "fa-cog",
+        "fa-award"
+      ]
     },
     "realestate": {
       "color_palette": {
@@ -288,8 +413,20 @@
         "تواصل مع وكيل",
         "footer مع فروع"
       ],
-      "unsplash_queries": ["luxury house", "modern apartment", "real estate building", "villa pool"],
-      "icons": ["fa-home", "fa-building", "fa-map-marker", "fa-bed", "fa-bath", "fa-ruler-combined"]
+      "unsplash_queries": [
+        "luxury house",
+        "modern apartment",
+        "real estate building",
+        "villa pool"
+      ],
+      "icons": [
+        "fa-home",
+        "fa-building",
+        "fa-map-marker",
+        "fa-bed",
+        "fa-bath",
+        "fa-ruler-combined"
+      ]
     },
     "gym": {
       "color_palette": {
@@ -311,8 +448,20 @@
         "قبل وبعد (transformations)",
         "تسجيل عضوية"
       ],
-      "unsplash_queries": ["gym workout", "fitness training", "bodybuilding", "crossfit"],
-      "icons": ["fa-dumbbell", "fa-running", "fa-fire", "fa-trophy", "fa-heartbeat", "fa-fist-raised"]
+      "unsplash_queries": [
+        "gym workout",
+        "fitness training",
+        "bodybuilding",
+        "crossfit"
+      ],
+      "icons": [
+        "fa-dumbbell",
+        "fa-running",
+        "fa-fire",
+        "fa-trophy",
+        "fa-heartbeat",
+        "fa-fist-raised"
+      ]
     },
     "clinic": {
       "color_palette": {
@@ -334,8 +483,614 @@
         "شهادات المرضى",
         "الموقع والتواصل"
       ],
-      "unsplash_queries": ["dental clinic", "eye clinic", "specialist doctor", "modern medical"],
-      "icons": ["fa-tooth", "fa-eye", "fa-brain", "fa-baby", "fa-heart", "fa-lungs"]
+      "unsplash_queries": [
+        "dental clinic",
+        "eye clinic",
+        "specialist doctor",
+        "modern medical"
+      ],
+      "icons": [
+        "fa-tooth",
+        "fa-eye",
+        "fa-brain",
+        "fa-baby",
+        "fa-heart",
+        "fa-lungs"
+      ]
+    },
+    "startup": {
+      "color_palette": {
+        "primary": "#7c3aed",
+        "secondary": "#6d28d9",
+        "accent": "#f472b6",
+        "bg": "#0f0e1a",
+        "text": "#f8fafc",
+        "dark_bg": "#0f0e1a"
+      },
+      "mood": "عصري، جريء، تقني، مُلهم",
+      "must_have_sections": [
+        "navbar مع logo وروابط وزر انضمام",
+        "hero مع عنوان قوي ونموذج قائمة انتظار (بريد)",
+        "كيف يعمل (3 خطوات)",
+        "أرقام وإنجازات (metrics)",
+        "آراء المستخدمين",
+        "footer مع روابط ووسائل تواصل"
+      ],
+      "unsplash_queries": [
+        "startup team",
+        "modern office",
+        "technology abstract",
+        "product launch"
+      ],
+      "icons": [
+        "fa-rocket",
+        "fa-bolt",
+        "fa-chart-line",
+        "fa-users",
+        "fa-star",
+        "fa-check"
+      ]
+    },
+    "entertainment": {
+      "color_palette": {
+        "primary": "#db2777",
+        "secondary": "#9d174d",
+        "accent": "#fbbf24",
+        "bg": "#12081f",
+        "text": "#fdf4ff",
+        "dark_bg": "#12081f"
+      },
+      "mood": "حيوي، نيون، مبهج، جريء",
+      "must_have_sections": [
+        "navbar مع logo وروابط وزر حجز",
+        "hero مع عنوان جذاب وأزرار حجز",
+        "الفعاليات القادمة (بطاقات بتواريخ)",
+        "فئات التذاكر (regular/VIP/platinum)",
+        "معرض صور",
+        "footer"
+      ],
+      "unsplash_queries": [
+        "concert crowd",
+        "live event stage",
+        "festival lights",
+        "nightlife party"
+      ],
+      "icons": [
+        "fa-masks-theater",
+        "fa-ticket",
+        "fa-music",
+        "fa-star",
+        "fa-calendar",
+        "fa-fire"
+      ]
+    },
+    "booking": {
+      "color_palette": {
+        "primary": "#0d9488",
+        "secondary": "#0f766e",
+        "accent": "#f59e0b",
+        "bg": "#f0fdfa",
+        "text": "#134e4a",
+        "dark_bg": "#134e4a"
+      },
+      "mood": "نظيف، موثوق، عملي، هادئ",
+      "must_have_sections": [
+        "navbar مع logo وروابط وزر حجز",
+        "hero مع دعوة واضحة للحجز",
+        "قائمة الخدمات (بطاقات بأسعار ومدة)",
+        "نموذج حجز (اسم/جوال/خدمة/تاريخ/وقت)",
+        "كيف نعمل",
+        "footer"
+      ],
+      "unsplash_queries": [
+        "appointment calendar",
+        "professional service",
+        "clean office",
+        "consultation"
+      ],
+      "icons": [
+        "fa-calendar-check",
+        "fa-clock",
+        "fa-star",
+        "fa-gem",
+        "fa-crown",
+        "fa-check"
+      ]
+    },
+    "blog": {
+      "color_palette": {
+        "primary": "#ea580c",
+        "secondary": "#c2410c",
+        "accent": "#0ea5e9",
+        "bg": "#fffbf7",
+        "text": "#1c1917",
+        "dark_bg": "#1c1917"
+      },
+      "mood": "دافئ، قرائي، أنيق، بسيط",
+      "must_have_sections": [
+        "navbar مع logo وروابط واشتراك",
+        "hero بمقال مميز (featured post)",
+        "أحدث المقالات (شبكة بطاقات)",
+        "التصنيفات",
+        "صندوق اشتراك النشرة البريدية",
+        "footer"
+      ],
+      "unsplash_queries": [
+        "writing desk",
+        "coffee reading",
+        "notebook workspace",
+        "library books"
+      ],
+      "icons": [
+        "fa-feather-pointed",
+        "fa-book-open",
+        "fa-tag",
+        "fa-envelope",
+        "fa-user-pen",
+        "fa-clock"
+      ]
+    },
+    "news": {
+      "color_palette": {
+        "primary": "#dc2626",
+        "secondary": "#991b1b",
+        "accent": "#1d4ed8",
+        "bg": "#ffffff",
+        "text": "#0f172a",
+        "dark_bg": "#0f172a"
+      },
+      "mood": "جاد، إخباري، كثيف، موثوق",
+      "must_have_sections": [
+        "navbar بأقسام (سياسة/اقتصاد/رياضة/تقنية)",
+        "شريط عاجل متحرك",
+        "الأخبار الرئيسية (خبر قائد + أخبار جانبية)",
+        "شبكة أخبار حسب القسم",
+        "النشرة البريدية",
+        "footer"
+      ],
+      "unsplash_queries": [
+        "newsroom",
+        "journalist writing",
+        "breaking news",
+        "press conference"
+      ],
+      "icons": [
+        "fa-newspaper",
+        "fa-bolt",
+        "fa-globe",
+        "fa-chart-simple",
+        "fa-futbol",
+        "fa-microchip"
+      ]
+    },
+    "law": {
+      "color_palette": {
+        "primary": "#1e3a5f",
+        "secondary": "#0f2440",
+        "accent": "#c9a227",
+        "bg": "#f8fafc",
+        "text": "#0f2440",
+        "dark_bg": "#0f2440"
+      },
+      "mood": "رسمي، موثوق، راقٍ، محافظ",
+      "must_have_sections": [
+        "navbar مع logo وروابط واستشارة",
+        "hero بعنوان ثقة وأزرار",
+        "مجالات الممارسة (بطاقات خدمات)",
+        "فريق المحامين",
+        "نموذج استشارة قانونية",
+        "footer"
+      ],
+      "unsplash_queries": [
+        "law office",
+        "lawyer desk",
+        "courthouse",
+        "legal books"
+      ],
+      "icons": [
+        "fa-scale-balanced",
+        "fa-gavel",
+        "fa-briefcase",
+        "fa-building-columns",
+        "fa-handshake",
+        "fa-shield"
+      ]
+    },
+    "beauty": {
+      "color_palette": {
+        "primary": "#db2777",
+        "secondary": "#be185d",
+        "accent": "#f5c9b8",
+        "bg": "#fff5f8",
+        "text": "#4a2530",
+        "dark_bg": "#4a2530"
+      },
+      "mood": "أنثوي، ناعم، راقٍ، دافئ",
+      "must_have_sections": [
+        "navbar مع logo وروابط وزر حجز",
+        "hero بدعوة للعناية",
+        "خدمات (شعر/بشرة/مكياج/أظافر)",
+        "عروض حصرية",
+        "معرض قبل/بعد",
+        "نموذج حجز"
+      ],
+      "unsplash_queries": [
+        "beauty salon",
+        "spa treatment",
+        "makeup artist",
+        "hair styling"
+      ],
+      "icons": [
+        "fa-spa",
+        "fa-scissors",
+        "fa-hand-sparkles",
+        "fa-paint-brush",
+        "fa-gem",
+        "fa-heart"
+      ]
+    },
+    "automotive": {
+      "color_palette": {
+        "primary": "#dc2626",
+        "secondary": "#b91c1c",
+        "accent": "#facc15",
+        "bg": "#0a0a0a",
+        "text": "#f5f5f5",
+        "dark_bg": "#0a0a0a"
+      },
+      "mood": "قوي، فاخر، رياضي، جريء",
+      "must_have_sections": [
+        "navbar مع logo وروابط وقيادة تجريبية",
+        "hero بسيارة بارزة",
+        "المعروضات (بطاقات سيارات بمواصفات وسعر)",
+        "حاسبة تمويل",
+        "الماركات",
+        "footer"
+      ],
+      "unsplash_queries": [
+        "luxury car",
+        "sports car",
+        "car showroom",
+        "suv vehicle"
+      ],
+      "icons": [
+        "fa-car-side",
+        "fa-gauge-high",
+        "fa-gas-pump",
+        "fa-calculator",
+        "fa-key",
+        "fa-wrench"
+      ]
+    },
+    "wedding": {
+      "color_palette": {
+        "primary": "#b08d57",
+        "secondary": "#8a6d3b",
+        "accent": "#e8b4b8",
+        "bg": "#fdfbf7",
+        "text": "#3d3428",
+        "dark_bg": "#3d3428"
+      },
+      "mood": "راقٍ، رومانسي، ذهبي، ناعم",
+      "must_have_sections": [
+        "navbar مع logo وروابط وحجز",
+        "hero رومانسي بدعوة للتخطيط",
+        "باقات المناسبات (classic/royal/custom)",
+        "معرض حفلات",
+        "نموذج حجز مناسبة",
+        "footer"
+      ],
+      "unsplash_queries": [
+        "wedding ceremony",
+        "bridal bouquet",
+        "elegant reception",
+        "wedding rings"
+      ],
+      "icons": [
+        "fa-ring",
+        "fa-heart",
+        "fa-champagne-glasses",
+        "fa-camera",
+        "fa-music",
+        "fa-star"
+      ]
+    },
+    "photography": {
+      "color_palette": {
+        "primary": "#18181b",
+        "secondary": "#000000",
+        "accent": "#eab308",
+        "bg": "#fafafa",
+        "text": "#18181b",
+        "dark_bg": "#18181b"
+      },
+      "mood": "فني، أنيق، بصري، مونوكروم",
+      "must_have_sections": [
+        "navbar مع logo وروابط وحجز",
+        "hero بصري بعنوان فني",
+        "معرض أعمال (masonry مع فلترة)",
+        "باقات التصوير",
+        "عن المصور",
+        "نموذج تواصل"
+      ],
+      "unsplash_queries": [
+        "photographer camera",
+        "portrait photography",
+        "photo studio",
+        "wedding photography"
+      ],
+      "icons": [
+        "fa-camera-retro",
+        "fa-image",
+        "fa-user",
+        "fa-heart",
+        "fa-box",
+        "fa-star"
+      ]
+    },
+    "music": {
+      "color_palette": {
+        "primary": "#8b5cf6",
+        "secondary": "#7c3aed",
+        "accent": "#22d3ee",
+        "bg": "#0c0a1d",
+        "text": "#f5f3ff",
+        "dark_bg": "#0c0a1d"
+      },
+      "mood": "نيون، حيوي، عصري، جريء",
+      "must_have_sections": [
+        "navbar مع logo وروابط وتذاكر",
+        "hero بترويج الألبوم الجديد",
+        "قائمة الأغاني (مع أزرار تشغيل)",
+        "جولة الحفلات (تواريخ ومدن)",
+        "عن الفنان",
+        "footer"
+      ],
+      "unsplash_queries": [
+        "music artist",
+        "concert stage",
+        "recording studio",
+        "dj performance"
+      ],
+      "icons": [
+        "fa-music",
+        "fa-play",
+        "fa-headphones",
+        "fa-guitar",
+        "fa-calendar",
+        "fa-fire"
+      ]
+    },
+    "nonprofit": {
+      "color_palette": {
+        "primary": "#059669",
+        "secondary": "#047857",
+        "accent": "#f59e0b",
+        "bg": "#f0fdf4",
+        "text": "#14532d",
+        "dark_bg": "#14532d"
+      },
+      "mood": "دافئ، إنساني، ملهم، موثوق",
+      "must_have_sections": [
+        "navbar مع logo وروابط وتبرع",
+        "hero بدعوة عاطفية للتبرع",
+        "الحملات الحالية (بطاقات بأشرطة تقدم)",
+        "قسم التبرع (مبالغ سريعة)",
+        "تطوّع",
+        "footer"
+      ],
+      "unsplash_queries": [
+        "charity volunteers",
+        "helping hands",
+        "community aid",
+        "donation"
+      ],
+      "icons": [
+        "fa-hand-holding-heart",
+        "fa-heart",
+        "fa-users",
+        "fa-hands-helping",
+        "fa-globe",
+        "fa-seedling"
+      ]
+    },
+    "agency": {
+      "color_palette": {
+        "primary": "#84cc16",
+        "secondary": "#65a30d",
+        "accent": "#f43f5e",
+        "bg": "#0a0a0a",
+        "text": "#fafafa",
+        "dark_bg": "#0a0a0a"
+      },
+      "mood": "إبداعي، جريء، عصري، حيوي",
+      "must_have_sections": [
+        "navbar مع logo وروابط وابدأ مشروعك",
+        "hero بعنوان إبداعي جريء",
+        "خدمات (هوية/تسويق/ويب/محتوى)",
+        "أعمال مختارة (portfolio grid)",
+        "آراء العملاء",
+        "footer"
+      ],
+      "unsplash_queries": [
+        "creative agency",
+        "design studio",
+        "marketing team",
+        "branding"
+      ],
+      "icons": [
+        "fa-bezier-curve",
+        "fa-palette",
+        "fa-bullhorn",
+        "fa-code",
+        "fa-film",
+        "fa-lightbulb"
+      ]
+    },
+    "finance": {
+      "color_palette": {
+        "primary": "#1d4ed8",
+        "secondary": "#1e3a8a",
+        "accent": "#10b981",
+        "bg": "#f8fafc",
+        "text": "#0f172a",
+        "dark_bg": "#0f172a"
+      },
+      "mood": "موثوق، رصين، احترافي، آمن",
+      "must_have_sections": [
+        "navbar مع logo وروابط واستشارة",
+        "hero بعنوان ثقة مالية",
+        "الخدمات (ثروات/محاسبة/تأمين)",
+        "حاسبة استثمار",
+        "لماذا نحن",
+        "footer"
+      ],
+      "unsplash_queries": [
+        "financial advisor",
+        "investment chart",
+        "business finance",
+        "banking"
+      ],
+      "icons": [
+        "fa-chart-pie",
+        "fa-piggy-bank",
+        "fa-file-invoice-dollar",
+        "fa-shield-halved",
+        "fa-coins",
+        "fa-percent"
+      ]
+    },
+    "construction": {
+      "color_palette": {
+        "primary": "#ea580c",
+        "secondary": "#9a3412",
+        "accent": "#facc15",
+        "bg": "#fafaf9",
+        "text": "#1c1917",
+        "dark_bg": "#1c1917"
+      },
+      "mood": "قوي، متين، عملي، موثوق",
+      "must_have_sections": [
+        "navbar مع logo وروابط وعرض سعر",
+        "hero بعنوان بناء قوي",
+        "الخدمات (بناء/تشطيب/إشراف)",
+        "مشاريع منجزة (معرض)",
+        "لماذا نحن",
+        "نموذج عرض سعر"
+      ],
+      "unsplash_queries": [
+        "construction site",
+        "building project",
+        "architecture",
+        "engineer blueprint"
+      ],
+      "icons": [
+        "fa-helmet-safety",
+        "fa-building",
+        "fa-trowel-bricks",
+        "fa-ruler-combined",
+        "fa-truck",
+        "fa-hard-hat"
+      ]
+    },
+    "interior": {
+      "color_palette": {
+        "primary": "#7c6a54",
+        "secondary": "#5c4f3e",
+        "accent": "#a3b18a",
+        "bg": "#faf8f5",
+        "text": "#33302b",
+        "dark_bg": "#33302b"
+      },
+      "mood": "أنيق، هادئ، دافئ، راقٍ",
+      "must_have_sections": [
+        "navbar مع logo وروابط واستشارة",
+        "hero بعنوان تصميم راقٍ",
+        "معرض التصاميم (شبكة)",
+        "الخدمات (مخططات/خامات/تنفيذ)",
+        "آراء العملاء",
+        "نموذج تواصل"
+      ],
+      "unsplash_queries": [
+        "interior design",
+        "modern living room",
+        "home decor",
+        "luxury interior"
+      ],
+      "icons": [
+        "fa-couch",
+        "fa-pencil-ruler",
+        "fa-swatchbook",
+        "fa-lightbulb",
+        "fa-truck-ramp-box",
+        "fa-vector-square"
+      ]
+    },
+    "gaming": {
+      "color_palette": {
+        "primary": "#22c55e",
+        "secondary": "#16a34a",
+        "accent": "#a855f7",
+        "bg": "#08090d",
+        "text": "#e5f9ed",
+        "dark_bg": "#08090d"
+      },
+      "mood": "نيون، حماسي، تقني، جريء",
+      "must_have_sections": [
+        "navbar مع logo وروابط وانضمام",
+        "hero بترويج البطولة",
+        "البطولات القادمة (بطاقات بجوائز)",
+        "إحصائيات (metrics)",
+        "الفريق",
+        "footer"
+      ],
+      "unsplash_queries": [
+        "esports arena",
+        "gaming setup",
+        "video game",
+        "gamer tournament"
+      ],
+      "icons": [
+        "fa-gamepad",
+        "fa-trophy",
+        "fa-headset",
+        "fa-crown",
+        "fa-bolt",
+        "fa-star"
+      ]
+    },
+    "crypto": {
+      "color_palette": {
+        "primary": "#f7931a",
+        "secondary": "#d97706",
+        "accent": "#22d3ee",
+        "bg": "#0b1120",
+        "text": "#f1f5f9",
+        "dark_bg": "#0b1120"
+      },
+      "mood": "تقني، حديث، موثوق، جريء",
+      "must_have_sections": [
+        "navbar مع logo وروابط وابدأ التداول",
+        "hero بعنوان المال الرقمي",
+        "جدول أسعار السوق (live)",
+        "المميزات (أمان/سرعة/رسوم)",
+        "خطوات البدء",
+        "footer"
+      ],
+      "unsplash_queries": [
+        "cryptocurrency",
+        "bitcoin trading",
+        "blockchain technology",
+        "digital finance"
+      ],
+      "icons": [
+        "fa-coins",
+        "fa-bitcoin-sign",
+        "fa-lock",
+        "fa-bolt",
+        "fa-chart-line",
+        "fa-wallet"
+      ]
     }
   }
 }

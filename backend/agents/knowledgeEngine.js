@@ -38,10 +38,19 @@ loadKnowledge();
 // (فئات ليس لها قالب مباشر تُوجَّه لأقرب نوع مناسب بدل السقوط لكلمات خاطئة)
 const CATEGORY_TO_TYPE = {
     travel: 'travel', saas: 'saas', tool: 'tool',
-    dashboard: 'saas', social: 'saas', game: 'saas',
+    dashboard: 'saas', social: 'saas', game: 'gaming',
     ecommerce: 'ecommerce', medical: 'medical', restaurant: 'restaurant',
     education: 'education', realestate: 'realestate', portfolio: 'portfolio',
     business: 'business',
+    // 📚➕ تعيينات الفئات الموسّعة (تلميحات الـ Blueprint → نوع قالب)
+    startup: 'startup', entertainment: 'entertainment', events: 'entertainment',
+    booking: 'booking', appointments: 'booking', blog: 'blog', news: 'news',
+    magazine: 'news', law: 'law', legal: 'law', beauty: 'beauty', salon: 'beauty',
+    spa: 'beauty', automotive: 'automotive', cars: 'automotive', wedding: 'wedding',
+    photography: 'photography', music: 'music', artist: 'music', nonprofit: 'nonprofit',
+    charity: 'nonprofit', agency: 'agency', finance: 'finance', insurance: 'finance',
+    construction: 'construction', interior: 'interior', gaming: 'gaming',
+    esports: 'gaming', crypto: 'crypto', web3: 'crypto',
 };
 
 export function detectProjectType(userGoal, typeHint = null) {
@@ -72,8 +81,6 @@ export function detectProjectType(userGoal, typeHint = null) {
 
 function getKeywordsForType(typeName) {
     const keywordMap = {
-        travel:     ['طيران', 'رحلات', 'سفر', 'حجز طيران', 'تذاكر', 'وجهة', 'سياحة', 'flight', 'travel', 'trip', 'booking flight', 'airline', 'tourism', 'vacation'],
-        saas:       ['saas', 'منصة', 'اشتراك', 'تطبيق ويب', 'لوحة تحكم', 'نظام إدارة', 'platform', 'dashboard', 'subscription', 'web app', 'startup'],
         tool:       ['أداة', 'حاسبة', 'محول', 'مولد', 'converter', 'calculator', 'generator', 'tool', 'utility'],
         medical:    ['طبي', 'مستشفى', 'عيادة', 'صحة', 'دكتور', 'طبيب', 'مرضى', 'medical', 'hospital', 'clinic', 'doctor', 'health'],
         restaurant: ['مطعم', 'قهوة', 'كافيه', 'طعام', 'أكل', 'وجبة', 'شيف', 'مقهى', 'restaurant', 'cafe', 'food', 'menu', 'coffee'],
@@ -83,8 +90,29 @@ function getKeywordsForType(typeName) {
         portfolio:  ['بورتفوليو', 'معرض', 'أعمال', 'مصمم', 'مطور', 'فريلانسر', 'portfolio', 'design', 'developer', 'freelance'],
         realestate: ['عقار', 'شقة', 'فيلا', 'منزل', 'أرض', 'مبنى', 'real estate', 'property', 'apartment', 'villa', 'house'],
         gym:        ['جيم', 'نادي', 'رياضة', 'لياقة', 'تمرين', 'كمال', 'gym', 'fitness', 'sport', 'workout', 'training'],
-        clinic:     ['عيادة', 'أسنان', 'نظارة', 'تجميل', 'dermatology', 'dental', 'eye', 'skin', 'beauty', 'clinic'],
-        business:   ['شركة', 'مؤسسة', 'أعمال', 'خدمات', 'حلول', 'company', 'business', 'services', 'solutions', 'agency']
+        clinic:     ['عيادة', 'أسنان', 'نظارة', 'dermatology', 'dental', 'eye', 'skin', 'clinic'],
+        business:   ['شركة', 'مؤسسة', 'أعمال', 'خدمات', 'حلول', 'company', 'business', 'services', 'solutions'],
+        // 📚➕ الفئات الموسّعة
+        saas:       ['saas', 'منصة', 'اشتراك', 'تطبيق ويب', 'لوحة تحكم', 'نظام إدارة', 'platform', 'dashboard', 'subscription', 'web app'],
+        startup:    ['شركة ناشئة', 'ناشئة', 'ستارت اب', 'قائمة انتظار', 'منتج جديد', 'startup', 'waitlist', 'mvp', 'launch', 'landing'],
+        entertainment: ['ترفيه', 'فعالية', 'فعاليات', 'حفلة', 'حفل', 'عرض', 'مهرجان', 'تذاكر', 'entertainment', 'event', 'concert', 'festival', 'show'],
+        booking:    ['حجز', 'حجوزات', 'موعد', 'مواعيد', 'احجز', 'appointment', 'booking', 'reservation', 'schedule'],
+        blog:       ['مدونة', 'مقالات', 'مقال', 'تدوين', 'كاتب', 'blog', 'article', 'post', 'writer'],
+        news:       ['أخبار', 'خبر', 'صحيفة', 'مجلة', 'إعلام', 'جريدة', 'news', 'magazine', 'newspaper', 'press', 'media'],
+        law:        ['محاماة', 'محامي', 'قانون', 'قانوني', 'استشارة قانونية', 'قضايا', 'law', 'lawyer', 'legal', 'attorney', 'firm'],
+        beauty:     ['تجميل', 'صالون', 'سبا', 'مكياج', 'شعر', 'عناية', 'حلاقة', 'beauty', 'salon', 'spa', 'makeup', 'barber'],
+        automotive: ['سيارات', 'سيارة', 'معرض سيارات', 'مركبات', 'تمويل سيارة', 'car', 'cars', 'automotive', 'vehicle', 'dealership'],
+        wedding:    ['زفاف', 'عرس', 'زواج', 'مناسبات', 'عروس', 'حفل زفاف', 'wedding', 'marriage', 'bride'],
+        photography:['تصوير', 'مصور', 'فوتوغرافي', 'استوديو تصوير', 'جلسة تصوير', 'photography', 'photographer', 'photo', 'studio'],
+        music:      ['موسيقى', 'فنان', 'أغاني', 'ألبوم', 'حفلات', 'مطرب', 'music', 'artist', 'band', 'album', 'singer'],
+        nonprofit:  ['جمعية', 'خيرية', 'تبرع', 'تبرعات', 'غير ربحية', 'تطوع', 'إغاثة', 'nonprofit', 'charity', 'donate', 'ngo', 'volunteer'],
+        agency:     ['وكالة', 'إبداعية', 'تسويق', 'إعلان', 'براندنج', 'هوية بصرية', 'agency', 'creative', 'marketing', 'branding'],
+        finance:    ['مالية', 'استثمار', 'تأمين', 'محاسبة', 'بنك', 'تمويل', 'ثروات', 'finance', 'investment', 'insurance', 'accounting', 'bank'],
+        construction:['مقاولات', 'مقاول', 'بناء', 'إنشاءات', 'تشطيب', 'هندسي', 'construction', 'contractor', 'building', 'engineering'],
+        interior:   ['تصميم داخلي', 'ديكور', 'أثاث', 'ديكورات', 'مساحات', 'interior', 'decor', 'furniture', 'design studio'],
+        gaming:     ['ألعاب', 'لعبة', 'قيمنق', 'رياضات إلكترونية', 'بطولة', 'لاعبين', 'gaming', 'game', 'esports', 'tournament', 'gamers'],
+        crypto:     ['عملات رقمية', 'كريبتو', 'بيتكوين', 'تداول', 'بلوكتشين', 'محفظة رقمية', 'crypto', 'bitcoin', 'blockchain', 'web3', 'trading', 'nft'],
+        travel:     ['طيران', 'رحلات', 'سفر', 'حجز طيران', 'تذاكر', 'وجهة', 'سياحة', 'flight', 'travel', 'trip', 'airline', 'tourism', 'vacation']
     };
     return keywordMap[typeName] || [];
 }
@@ -120,7 +148,26 @@ export function getProjectContext(userGoal, typeHint = null) {
         realestate: 'photo-1580587771525-78b9dba3b914',
         gym: 'photo-1534438327276-14e5300c3a48',
         clinic: 'photo-1631217868264-e5b90bb7e133',
-        business: 'photo-1497366216548-37526070297c'
+        business: 'photo-1497366216548-37526070297c',
+        // 📚➕ صور hero للفئات الموسّعة
+        startup: 'photo-1519389950473-47ba0277781c',
+        entertainment: 'photo-1470229722913-7c0e2dbbafd3',
+        booking: 'photo-1506784983877-45594efa4cbe',
+        blog: 'photo-1499750310107-5fef28a66643',
+        news: 'photo-1495020689067-958852a7765e',
+        law: 'photo-1589829545856-d10d557cf95f',
+        beauty: 'photo-1560066984-138dadb4c035',
+        automotive: 'photo-1503376780353-7e6692767b70',
+        wedding: 'photo-1519741497674-611481863552',
+        photography: 'photo-1452587925148-ce544e77e70d',
+        music: 'photo-1493225457124-a3eb161ffa5f',
+        nonprofit: 'photo-1488521787991-ed7bbaae773c',
+        agency: 'photo-1522071820081-009f0129c71c',
+        finance: 'photo-1611974789855-9c2a0a7236a3',
+        construction: 'photo-1503387762-592deb58ef4e',
+        interior: 'photo-1618221195710-dd6b41faaea6',
+        gaming: 'photo-1542751371-adc38448a05e',
+        crypto: 'photo-1621761191319-c6fb62004040'
     };
 
     const heroPhotoId = photoIds[projectType] || photoIds.business;
