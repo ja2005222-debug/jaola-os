@@ -1421,9 +1421,38 @@ User preferences: ${JSON.stringify(execMemory)}` },
             await fsPromises.writeFile(p, f.content);
         }
 
+        // 1.5) تخصيص محتوى **كل صفحة** بالذكاء: النموذج الدفعي قد يترك أقساماً
+        //      افتراضية (خاصة مع كثرة الصفحات). نملأ كل قسم بقي افتراضياً فردياً
+        //      (best-effort، تراجع آمن للافتراضي) — فلا صفحة بمحتوى قالبي.
+        const finalContent = scaffold.meta.content;
+        try {
+            const CHROME = new Set(['Navbar', 'Hero', 'Footer']);
+            const pageComps = (scaffold.meta.components || []).filter((c) => !CHROME.has(c));
+            const routes = scaffold.meta.pages || [];
+            for (const comp of pageComps) {
+                const cur = finalContent.sections?.[comp];
+                if (!cur) continue;
+                const label = (routes.find((r) => r.href === '/' + slugify(comp)) || {}).label || cur.heading;
+                // لم يخصّصه النموذج الدفعي؟ (لا يزال مطابقاً للافتراضي) → خصّصه فردياً
+                if (JSON.stringify(cur) !== JSON.stringify(defaultSection(label, lang))) continue;
+                this.emitLiveLog(roomName, '5. RUNTIME', 'ContentWriter', `✍️ محتوى صفحة: ${label}...`);
+                const model = await generateSectionContent(label, {
+                    brand: finalContent.brand || activeProject, goal, lang, llm: (m, o) => smartChat(m, o),
+                });
+                if (model) finalContent.sections[comp] = {
+                    heading: model.heading || cur.heading,
+                    subheading: model.subheading || cur.subheading,
+                    items: (model.items && model.items.length) ? model.items : cur.items,
+                };
+            }
+            // أعِد كتابة lib/content.js بالمحتوى المُثرى (المكوّنات تقرأ منه)
+            await fsPromises.writeFile(path.join(projectPath, 'lib/content.js'),
+                `// محتوى الموقع — عدّله بحرّية. يملؤه JAOLA بالذكاء حسب مشروعك.\nexport const content = ${JSON.stringify(finalContent, null, 2)};\n`);
+        } catch (e) { this.emitLiveLog(roomName, '5. RUNTIME', 'ContentWriter', `⚠️ تخصيص جزئي: ${e.message}`); }
+
         // 2) معاينة ثابتة متعدّدة الصفحات: صفحة HTML حقيقية لكل مسار بروابط تعمل
         //    (index.html + <slug>.html) — بلا CDN، فالتنقّل يفتح صفحات فعلية.
-        const staticPages = buildStaticSite(scaffold.meta.content, lang);
+        const staticPages = buildStaticSite(finalContent, lang);
         for (const pg of staticPages) {
             await fsPromises.writeFile(path.join(projectPath, pg.name), pg.content);
         }
