@@ -1911,6 +1911,24 @@ User preferences: ${JSON.stringify(execMemory)}` },
             : intentResult;
         this.emitLiveLog(roomName, 'INTENT', 'Classifier', `نية: ${finalIntent.intent} (ثقة: ${finalIntent.confidence}%)`);
 
+        // 🛡️ حارس (ب): جملة وصفية على مشروع قائم ليست طلب بناء جديد.
+        // "نحن نعمل على موقع تاكسي" وصف لا أمر — أمر البناء يبدأ بفعل صريح.
+        // بدونه كان المصنّف يعرض "هل تريد بناء موقع لـ..." في منتصف العمل.
+        if (finalIntent.intent === 'build') {
+            // ملاحظة: \b لا يعمل مع الحروف العربية في JS — نستخدم lookahead يونيكود
+            const explicitBuild = /^\s*(?:ابني|ابن|اصنع|أنشئ|انشئ|صمم|طوّر|طور|بني|سوّي|سوي|اعمل\s+لي|ابدأ\s+البناء|build|create|make|design|develop|generate|start\s+building)(?=\s|$|[^\p{L}\p{N}])/iu
+                .test((normalizedMessage || message).trim());
+            if (!explicitBuild) {
+                const existingCode = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
+                if (existingCode && existingCode.trim().length > 100) {
+                    this.emitLiveLog(roomName, 'INTENT', 'Classifier',
+                        '🛡️ جملة غير آمرة على مشروع قائم — ليست بناءً جديداً؛ رد محادثة بدل تأكيد بناء.');
+                    await this.generateChatResponse(message, username, roomName, userLang);
+                    return;
+                }
+            }
+        }
+
         if (finalIntent.intent === 'build') {
             const userGoal = normalizedMessage || message;
             const lang = getUserLanguage(username) || userLang;
@@ -1925,9 +1943,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
             // ⚡ طلب واضح → تأكيد سريع ثم بناء
             const projectHint = userGoal.replace(/^(ابني|اصنع|انشئ|بني|سوي|build|create|make)\s+/i, '').trim();
+            // 🏷️ (أ) نُظهر المشروع الهدف صراحةً كي لا يُبنى المحتوى في مشروع
+            // باسم مختلف دون أن ينتبه المستخدم (مثل بناء تاكسي داخل hotel-control).
             const confirmQ = lang === 'ar'
-                ? `هل تريد بناء موقع لـ "${projectHint}"؟`
-                : `Do you want me to build a website for "${projectHint}"?`;
+                ? `هل تريد بناء موقع لـ "${projectHint}"؟\n📂 سيُبنى داخل المشروع الحالي: «${activeProject}» — لمشروع منفصل أنشئ واحداً جديداً أولاً.`
+                : `Do you want me to build a website for "${projectHint}"?\n📂 It will build into your current project: "${activeProject}" — create a new project first if you want it separate.`;
             const opts = lang === 'ar'
                 ? ['نعم، ابنه الآن ⚡', 'لا، أخبرني أكثر']
                 : ['Yes, build it now ⚡', 'No, tell me more'];
