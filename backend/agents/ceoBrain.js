@@ -14,7 +14,8 @@
  */
 
 import { getProjectMemory } from './projectMemory.js';
-import { getProjectState, getProjectSummary, isBuilding, STATES } from './stateMachine.js';
+import { getProjectState, getProjectSummary, STATES } from './stateMachine.js';
+import { isMissionActive } from '../services/missionQueue.js';
 import { normalizeArabic } from './textNormalizer.js';
 
 // ═══════════════════════════════════════════════════════
@@ -87,7 +88,10 @@ export function classifyIntentFast(message) {
 // 2️⃣ Decision Engine — أجيب أم أنفذ؟
 // ═══════════════════════════════════════════════════════
 export function decide(intent, username, project) {
-    const building = isBuilding(username, project);
+    // القفل يعتمد على وجود بناء *فعلي* جارٍ الآن (صف المهام) — لا على حالة
+    // الآلة المُخزّنة التي قد تبقى عالقة عند GENERATING بعد تعطّل/إعادة تشغيل،
+    // فتحجب "أكمل" إلى الأبد. isBuilding يبقى للتوافق مع مسارات أخرى.
+    const building = isMissionActive(username, project);
 
     switch (intent) {
         case 'status':
