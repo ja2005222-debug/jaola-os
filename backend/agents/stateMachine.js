@@ -166,9 +166,29 @@ export function getProjectSummary(username, project) {
 // ═══════════════════════════════════════════════════════
 // 🔍 التحقق من الحالة
 // ═══════════════════════════════════════════════════════
+// بناء لم تتغيّر حالته منذ هذه المدة يُعتبر ميتاً (تعطّلت العملية أو أُعيد
+// تشغيلها وتُركت الحالة عالقة عند GENERATING) — نحرّر القفل تلقائياً كي لا
+// يبقى المستخدم محجوباً بـ "مهمة تعمل بالفعل" إلى الأبد.
+const BUILD_STALE_MS = 10 * 60 * 1000; // 10 دقائق
+
 export function isBuilding(username, project) {
     const state = getProjectState(username, project);
-    return [STATES.GENERATING, STATES.REVIEWING, STATES.DEPLOYING].includes(state.state);
+    const active = [STATES.GENERATING, STATES.REVIEWING, STATES.DEPLOYING].includes(state.state);
+    if (!active) return false;
+
+    // قفل عالق: حرّره واعتبره فشلاً قابلاً للاستئناف
+    if (Date.now() - (state.updatedAt || 0) > BUILD_STALE_MS) {
+        console.warn(`[StateMachine] بناء عالق لـ ${getKey(username, project)} — تحرير تلقائي.`);
+        state.previousState = state.state;
+        state.state = STATES.FAILED;
+        state.error = 'stale_build_auto_recovered';
+        state.currentAgent = null;
+        state.updatedAt = Date.now();
+        projectStates.set(getKey(username, project), state);
+        persistEntry('projectStates', getKey(username, project), state);
+        return false;
+    }
+    return true;
 }
 
 export function canStartNewBuild(username, project) {

@@ -66,3 +66,13 @@ export function enqueueMission({ username, project, run, onWait }) {
 export function queueStatus() {
     return { running: runningCount, waiting: waiting.length, maxConcurrent: MAX_CONCURRENT };
 }
+
+/**
+ * هل يوجد بناء *فعلي* جارٍ لهذا المشروع الآن؟ (المصدر الحقيقي للحقيقة)
+ * يعتمد على حالة العملية الحالية — يعود false بعد أي إعادة تشغيل/تعطّل،
+ * بعكس حالة الآلة المُخزّنة التي قد تبقى عالقة عند GENERATING.
+ */
+export function isMissionActive(username, project) {
+    const key = `${username}:${project}`;
+    return activeKeys.has(key) || waiting.some(j => j.key === key);
+}
