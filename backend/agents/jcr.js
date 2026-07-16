@@ -884,18 +884,22 @@ export class JaolaCognitiveRuntime {
         } catch { /* الشات يعمل حتى لو تعذّر بناء الصورة */ }
 
         const messages = [
-            { role: "system", content: `You are JAOLA — a smart web building assistant.
+            { role: "system", content: `You are JAOLA — the conversational voice of an AI web-building platform.
 
 CRITICAL LANGUAGE RULE: The user's language is "${userLang}" (${langInfo.label}). You MUST reply ONLY in this language for the entire conversation. Never switch languages even if the user writes a word in another language.
+
+⛔ HARD BOUNDARIES — you are the CHAT voice, NOT the builder:
+- You CANNOT build, edit, or write code yourself. A separate build system does that. NEVER role-play building ("let's start with the Navbar...") or announce work you cannot do.
+- NEVER collect specs step-by-step (asking for site name, then menu items, then hero text...). The build system gathers everything itself from one request.
+- NEVER invent progress numbers or remaining-parts lists. ONLY state what the Project Brain below explicitly says. If it shows files/sections, they EXIST — do not claim they are missing. If unsure, say you're not sure.
+- When the user wants to build, continue, or change something: tell them in ONE sentence what to type — "${userLang === 'ar' ? 'اكمل' : 'continue'}" to resume the build, "${userLang === 'ar' ? 'ابني [وصف الموقع]' : 'build [site description]'}" for a new site, or simply describe the specific change (e.g. "${userLang === 'ar' ? 'غيّر الألوان إلى أزرق' : 'change the colors to blue'}") and the build system executes it directly.
 
 RESPONSE RULES:
 - Keep replies SHORT: 1-3 sentences maximum
 - Be direct and friendly
-- Your specialty: websites, design, web development
-- When user wants to build: tell them to type "${userLang === 'ar' ? 'ابني [اسم المشروع]' : 'build [project name]'}" to start the official build system
-- Answer about the WHOLE project using the state below — not just the last message. If asked what's done or remaining, use it.
+- Answer about the WHOLE project using the state below — not just the last message. If asked what's done or remaining, use ONLY it.
 
-## Current project state (Project Brain):
+## Current project state (Project Brain — the ONLY source of truth about the project):
 ${brainContext || 'No project files yet.'}
 ${convSummary ? `\n## LONG-TERM CONVERSATION MEMORY (do not lose this context; never contradict earlier decisions or re-ask known facts):\n${convSummary}\n` : ''}
 User preferences: ${JSON.stringify(execMemory)}` },
@@ -1790,6 +1794,25 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 }
             }
             return;
+        }
+
+        // 🆕 "نعم/تمام/ok" مجرّدة بلا هدف معلق ولا clarifier: موافقة على
+        // المتابعة — إن وُجد مشروع قابل للاستئناف نكمله فعلياً بدل إسقاطها
+        // في الشات ليرتجل حواراً (سجل تاكسي: "نعم" كانت تدور بلا فعل).
+        const bareYes = /^\s*(نعم|ايوه|أيوه|اه|آه|تمام|طيب|يلا|ok|okay|yes|sure|yep|go)\s*[.!؟?]*\s*$/i.test(message);
+        if (bareYes) {
+            const contGoal = buildContinuationGoal(username, activeProject);
+            const d = decide('continue', username, activeProject);
+            if (contGoal && d.action === 'execute') {
+                const lang = getUserLanguage(username) || userLang;
+                this.emitLiveLog(roomName, 'INTENT', 'Engine',
+                    `🎯 ${JSON.stringify({ intent: 'continue', project: activeProject, confidence: 90 })} — تأكيد مجرّد → استئناف فعلي`);
+                this.io.to(roomName).emit('chat_reply', {
+                    message: lang === 'ar' ? '⚡ تمام — أكمل من حيث توقفنا...' : '⚡ Alright — resuming where we left off...'
+                });
+                this.executeMission(contGoal, projectPath, username, activeProject, roomName, agents, dbStatus);
+                return;
+            }
         }
 
         // ── 🧠 CEO Brain: Intent Engine → Decision Engine → Execution ─────
