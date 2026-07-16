@@ -896,6 +896,7 @@ CRITICAL LANGUAGE RULE: The user's language is "${userLang}" (${langInfo.label})
 - Your own earlier replies in this conversation may contain MISTAKES. NEVER repeat a past claim (e.g. "I added api.js") unless the Project Brain below confirms it — the Project Brain ALWAYS overrides conversation history. If you previously claimed something the Brain doesn't show, admit the earlier reply was wrong.
 - Do NOT append "type build [name]" (or similar) to every reply. Mention what to type ONLY when the user is actually asking to build, continue, or change something.
 - When the user wants to build, continue, or change something: tell them in ONE sentence what to type — "${userLang === 'ar' ? 'اكمل' : 'continue'}" to resume the build, "${userLang === 'ar' ? 'ابني [وصف الموقع]' : 'build [site description]'}" for a new site, or simply describe the specific change (e.g. "${userLang === 'ar' ? 'غيّر الألوان إلى أزرق' : 'change the colors to blue'}") and the build system executes it directly.
+- To DELETE the current project: the user types "${userLang === 'ar' ? 'احذف المشروع' : 'delete the project'}" and the system will ask for explicit confirmation. These are the ONLY commands that exist — NEVER invent or promise any other command or capability.
 
 RESPONSE RULES:
 - Keep replies SHORT: 1-3 sentences maximum
@@ -1713,6 +1714,48 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 ? 'تم. سأتحدث معك بالعربية من الآن فصاعداً. 🇸🇦'
                 : 'Done. I will speak English from now on. 🇬🇧';
             this.io.to(roomName).emit('chat_reply', { message: confirmMsg });
+            return;
+        }
+
+        // ── 🗑️ نية حذف المشروع — قبل أي تصنيف/تعديل ─────────────────────
+        // (سجل حقيقي: "امسح المشروع" كانت تسقط في تعديل المحتوى وتشوّه
+        // الملفات، والشات يعد بأمر غير موجود ويكرر الوعد بلا نهاية.)
+        // فعل مدمّر → تأكيد صريح باسم المشروع (stateless — لا حالة تُفقد).
+        const deleteConfirm = message.trim().match(/^(?:نعم\s+)?(?:احذف|امسح|delete)\s+(?:نهائيا?ً?|permanently)\s+([a-z0-9_\-]+)\s*$/i);
+        if (deleteConfirm && agents.deleteProject) {
+            const target = deleteConfirm[1].toLowerCase();
+            const lang = getUserLanguage(username) || userLang;
+            if (target !== (activeProject || '').toLowerCase()) {
+                this.io.to(roomName).emit('chat_reply', {
+                    message: lang === 'ar'
+                        ? `⚠️ الاسم لا يطابق المشروع الحالي «${activeProject}». للتأكيد اكتب حرفياً: احذف نهائياً ${activeProject}`
+                        : `⚠️ Name doesn't match the current project "${activeProject}". To confirm, type exactly: delete permanently ${activeProject}`,
+                });
+                return;
+            }
+            const result = await agents.deleteProject(username, target);
+            this.io.to(roomName).emit('chat_reply', {
+                message: result.success
+                    ? (lang === 'ar'
+                        ? `🗑️ تم حذف المشروع «${target}» نهائياً (الملفات والسجل).\nبدّل لمشروع آخر أو أنشئ واحداً جديداً من القائمة.`
+                        : `🗑️ Project "${target}" permanently deleted (files + record).\nSwitch to another project or create a new one from the list.`)
+                    : `❌ ${result.error}`,
+            });
+            return;
+        }
+        const deleteIntent = /(?:^|\s)(?:امسح|احذف|شيل|delete|remove)\s*(?:هذا\s*)?(?:المشروع|المشروع\s+كله|الموقع\s+كله|the\s+project|this\s+project)\s*(?:كامل|بالكامل|نهائيا|نهائياً)?\s*[.!؟?]*\s*$/iu.test(message.trim());
+        if (deleteIntent) {
+            const lang = getUserLanguage(username) || userLang;
+            this.emitLiveLog(roomName, 'INTENT', 'Engine', '🗑️ نية حذف مشروع — طلب تأكيد صريح (لا تعديل محتوى).');
+            this.io.to(roomName).emit('chat_reply', {
+                message: activeProject === 'sandbox_app'
+                    ? (lang === 'ar'
+                        ? '⚠️ لا يمكن حذف المشروع الافتراضي sandbox_app.'
+                        : '⚠️ The default sandbox_app project cannot be deleted.')
+                    : (lang === 'ar'
+                        ? `⚠️ حذف المشروع «${activeProject}» **نهائي** — الملفات والسجل، ولا يمكن التراجع.\nللتأكيد اكتب حرفياً: **احذف نهائياً ${activeProject}**`
+                        : `⚠️ Deleting "${activeProject}" is **permanent** — files and record, no undo.\nTo confirm, type exactly: **delete permanently ${activeProject}**`),
+            });
             return;
         }
 
