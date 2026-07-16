@@ -163,6 +163,9 @@ export class JaolaCognitiveRuntime {
         this.memoryDir = path.resolve(__dirname, '../memory');
         this.reflectionPath = path.join(this.memoryDir, 'reflection_knowledge_graph.json');
         this.executiveMemoryPath = path.join(this.memoryDir, 'executive_memory.json');
+        // 🔁 كاسر الحلقات: آخر رسالة حُجبت عن التعديل (بوابة الفعل) لكل مستخدم —
+        // تكرارها حرفياً = إصرار صريح → تُنفَّذ كتعديل بدل حلقة "اكتب X" اللانهائية.
+        this.gatedMessages = new Map();
         if (!fs.existsSync(this.memoryDir)) fs.mkdirSync(this.memoryDir, { recursive: true });
     }
 
@@ -884,7 +887,7 @@ export class JaolaCognitiveRuntime {
         } catch { /* الشات يعمل حتى لو تعذّر بناء الصورة */ }
 
         const messages = [
-            { role: "system", content: `You are JAOLA — the conversational voice of an AI web-building platform.
+            { role: "system", content: `You are JAOLA — the chat assistant of an AI web-building platform. (You are a TEXT chat assistant — never describe yourself as a "voice assistant" / "مساعد صوتي".)
 
 CRITICAL LANGUAGE RULE: The user's language is "${userLang}" (${langInfo.label}). You MUST reply ONLY in this language for the entire conversation. Never switch languages even if the user writes a word in another language.
 
@@ -895,6 +898,7 @@ CRITICAL LANGUAGE RULE: The user's language is "${userLang}" (${langInfo.label})
 - NEVER fabricate a list of "changes applied" or files you edited. If asked what changed, cite ONLY edit history explicitly present in the Project Brain below; if none is listed, say you have no record of specific changes.
 - Your own earlier replies in this conversation may contain MISTAKES. NEVER repeat a past claim (e.g. "I added api.js") unless the Project Brain below confirms it — the Project Brain ALWAYS overrides conversation history. If you previously claimed something the Brain doesn't show, admit the earlier reply was wrong.
 - Do NOT append "type build [name]" (or similar) to every reply. Mention what to type ONLY when the user is actually asking to build, continue, or change something.
+- NEVER tell the user to type the exact same words they just sent — that creates an infinite loop. If their message already describes a change, tell them to send it again once to confirm, or rephrase it starting with an action verb (e.g. "${userLang === 'ar' ? 'غيّر / اضف / نسّق' : 'change / add / format'}").
 - When the user wants to build, continue, or change something: tell them in ONE sentence what to type — "${userLang === 'ar' ? 'اكمل' : 'continue'}" to resume the build, "${userLang === 'ar' ? 'ابني [وصف الموقع]' : 'build [site description]'}" for a new site, or simply describe the specific change (e.g. "${userLang === 'ar' ? 'غيّر الألوان إلى أزرق' : 'change the colors to blue'}") and the build system executes it directly.
 - To DELETE the current project: the user types "${userLang === 'ar' ? 'احذف المشروع' : 'delete the project'}" and the system will ask for explicit confirmation. These are the ONLY commands that exist — NEVER invent or promise any other command or capability.
 
@@ -1723,16 +1727,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // فعل مدمّر → تأكيد صريح باسم المشروع (stateless — لا حالة تُفقد).
         const deleteConfirm = message.trim().match(/^(?:نعم\s+)?(?:احذف|امسح|delete)\s+(?:نهائيا?ً?|permanently)\s+([a-z0-9_\-]+)\s*$/i);
         if (deleteConfirm && agents.deleteProject) {
+            // كتابة الاسم الحرفي هي التأكيد — يحذف المشروع المسمّى (ملك المستخدم
+            // بحكم النطاق)، سواء كان النشِط أو غيره. sandbox_app محمي في المنفّذ.
             const target = deleteConfirm[1].toLowerCase();
             const lang = getUserLanguage(username) || userLang;
-            if (target !== (activeProject || '').toLowerCase()) {
-                this.io.to(roomName).emit('chat_reply', {
-                    message: lang === 'ar'
-                        ? `⚠️ الاسم لا يطابق المشروع الحالي «${activeProject}». للتأكيد اكتب حرفياً: احذف نهائياً ${activeProject}`
-                        : `⚠️ Name doesn't match the current project "${activeProject}". To confirm, type exactly: delete permanently ${activeProject}`,
-                });
-                return;
-            }
             const result = await agents.deleteProject(username, target);
             this.io.to(roomName).emit('chat_reply', {
                 message: result.success
@@ -1743,18 +1741,21 @@ User preferences: ${JSON.stringify(execMemory)}` },
             });
             return;
         }
-        const deleteIntent = /(?:^|\s)(?:امسح|احذف|شيل|delete|remove)\s*(?:هذا\s*)?(?:المشروع|المشروع\s+كله|الموقع\s+كله|the\s+project|this\s+project)\s*(?:كامل|بالكامل|نهائيا|نهائياً)?\s*[.!؟?]*\s*$/iu.test(message.trim());
+        // «احذف المشروع newline» — حذف مشروع مسمّى (كانت تسقط في تعديل المحتوى)
+        const namedDelete = message.trim().match(/^(?:امسح|احذف|delete|remove)\s+(?:المشروع|مشروع|project)\s+([a-z0-9_\-]+)\s*[.!؟?]*$/i);
+        const deleteIntent = namedDelete || /(?:^|\s)(?:امسح|احذف|شيل|delete|remove)\s*(?:هذا\s*)?(?:المشروع|المشروع\s+كله|الموقع\s+كله|the\s+project|this\s+project)\s*(?:كامل|بالكامل|نهائيا|نهائياً)?\s*[.!؟?]*\s*$/iu.test(message.trim());
         if (deleteIntent) {
+            const target = namedDelete ? namedDelete[1].toLowerCase() : activeProject;
             const lang = getUserLanguage(username) || userLang;
-            this.emitLiveLog(roomName, 'INTENT', 'Engine', '🗑️ نية حذف مشروع — طلب تأكيد صريح (لا تعديل محتوى).');
+            this.emitLiveLog(roomName, 'INTENT', 'Engine', `🗑️ نية حذف مشروع (${target}) — طلب تأكيد صريح (لا تعديل محتوى).`);
             this.io.to(roomName).emit('chat_reply', {
-                message: activeProject === 'sandbox_app'
+                message: target === 'sandbox_app'
                     ? (lang === 'ar'
                         ? '⚠️ لا يمكن حذف المشروع الافتراضي sandbox_app.'
                         : '⚠️ The default sandbox_app project cannot be deleted.')
                     : (lang === 'ar'
-                        ? `⚠️ حذف المشروع «${activeProject}» **نهائي** — الملفات والسجل، ولا يمكن التراجع.\nللتأكيد اكتب حرفياً: **احذف نهائياً ${activeProject}**`
-                        : `⚠️ Deleting "${activeProject}" is **permanent** — files and record, no undo.\nTo confirm, type exactly: **delete permanently ${activeProject}**`),
+                        ? `⚠️ حذف المشروع «${target}» **نهائي** — الملفات والسجل، ولا يمكن التراجع.\nللتأكيد اكتب حرفياً: **احذف نهائياً ${target}**`
+                        : `⚠️ Deleting "${target}" is **permanent** — files and record, no undo.\nTo confirm, type exactly: **delete permanently ${target}**`),
             });
             return;
         }
@@ -2033,10 +2034,17 @@ User preferences: ${JSON.stringify(execMemory)}` },
             // (سجل حقيقي: "ماذا يمكن أن نضيف للمشروع؟" عدّلت الموقع فعلاً!)
             // 🛡️ والجملة الإخبارية بلا فعل أمر/رغبة كذلك — ("ولكن قائمة
             // الأصدقاء موجودة" تصحيحٌ من المستخدم، ليست طلب تعديل).
-            if (isQuestionMessage(message) || !hasActionIntent(message)) {
+            const repeatedGated = this.gatedMessages.get(username) === message.trim();
+            if (!repeatedGated && (isQuestionMessage(message) || !hasActionIntent(message))) {
+                if (!isQuestionMessage(message)) this.gatedMessages.set(username, message.trim());
                 this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛡️ صُنّفت modify لكنها سؤال/جملة إخبارية — رد محادثة (لا تعديل).');
                 await this.generateChatResponse(message, username, roomName, userLang);
                 return;
+            }
+            // 🔁 رسالة مُعادة بعد حجبها = إصرار → نفّذ (يمنع حلقة "اكتب X")
+            if (repeatedGated) {
+                this.gatedMessages.delete(username);
+                this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🔁 تكرار رسالة محجوبة — إصرار المستخدم → تنفيذ التعديل.');
             }
             recordEdit(username, message);
             this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
@@ -2054,13 +2062,18 @@ User preferences: ${JSON.stringify(execMemory)}` },
             // كاشف أسئلة واعٍ بالعربية — \b القديم لم يكن يطابق "ماذا/هل..." أبداً
             const isQuestion = isQuestionMessage(message);
             const isSmalltalk = message.trim().length < 4;
+            // 🔁 تكرار رسالة حُجبت سابقاً = إصرار → تعديل (يكسر حلقة "اكتب X")
+            const repeated = this.gatedMessages.get(username) === message.trim();
 
-            if (hasProject && !isQuestion && !isSmalltalk && hasActionIntent(message)) {
-                this.emitLiveLog(roomName, 'INTENT', 'Classifier', '✏️ طلب على مشروع قائم → تعديل جراحي');
+            if (hasProject && !isQuestion && !isSmalltalk && (hasActionIntent(message) || repeated)) {
+                this.gatedMessages.delete(username);
+                this.emitLiveLog(roomName, 'INTENT', 'Classifier',
+                    repeated ? '🔁 تكرار رسالة محجوبة — إصرار → تعديل جراحي' : '✏️ طلب على مشروع قائم → تعديل جراحي');
                 recordEdit(username, message);
                 this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
                 return;
             }
+            if (hasProject && !isQuestion && !isSmalltalk) this.gatedMessages.set(username, message.trim());
             await this.generateChatResponse(message, username, roomName, userLang);
         }
     }
