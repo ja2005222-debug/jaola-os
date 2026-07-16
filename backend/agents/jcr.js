@@ -38,7 +38,7 @@ import { registerMission, throwIfAborted, clearMission } from '../services/abort
 import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import { snapshotWorkspace } from '../services/workspaceStore.js';
 import { orchestrator } from '../core/PluginOrchestrator.js';
-import { guardFiles, guardSingleJS } from '../services/codeGuard.js';
+import { guardFiles, guardSingleJS, scrubPlaceholders } from '../services/codeGuard.js';
 import { buildImageContext } from '../services/imageService.js';
 import { generateBlueprint, buildBlueprintContext } from './appBlueprint.js';
 import { recommendFullStack, buildFullStackProject } from './fullstackTemplates.js';
@@ -378,6 +378,10 @@ export class JaolaCognitiveRuntime {
                 });
                 continue;
             }
+
+            // 🧹 تنظيف حتمي أولاً: placeholders القوالب تُستبدل باسم المشروع
+            // قبل فحص النقّاد — إصلاح مجاني لا يحرق دورة إعادة توليد.
+            plan.files = scrubPlaceholders(plan.files, context.activeProject);
 
             const secAudit = CognitiveCapabilities.runSecurityAudit(plan.files);
             const archPromise = context.budget.consumeCall() ? agents.architectReview(plan) : Promise.resolve({ approved: true, feedback: '' });
@@ -1507,7 +1511,9 @@ User preferences: ${JSON.stringify(execMemory)}` },
         }
 
         // فحص الملفات المتغيّرة عبر CodeGuard ثم كتابتها فقط
-        const guarded = await guardFiles(plan.files, (m) => this.emitLiveLog(roomName, 'EDIT', 'CodeGuard', m));
+        // (مع تنظيف أي placeholder قوالب تسرّب أثناء التعديل)
+        const guarded = await guardFiles(scrubPlaceholders(plan.files, activeProject),
+            (m) => this.emitLiveLog(roomName, 'EDIT', 'CodeGuard', m));
         for (const file of guarded) {
             await fsPromises.writeFile(path.join(projectPath, file.name), file.content);
         }
