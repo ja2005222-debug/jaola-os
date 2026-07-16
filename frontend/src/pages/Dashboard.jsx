@@ -931,7 +931,7 @@ export default function Dashboard() {
           <span style={{ fontSize:11, fontWeight:700, color:'#94a3b8' }}>{(authUser || '').toUpperCase()}</span>
         </div>
 
-        <a href="/billing" title="الاشتراك والفوترة"
+        <a href="/billing" title={t('billingTitle')}
           style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 10px', color:S.muted, fontSize:13, textDecoration:'none' }}>
           💳
         </a>

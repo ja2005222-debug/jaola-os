@@ -253,6 +253,30 @@ const STRINGS = {
   admTeamNeverDo: { en: 'Never Do', ar: 'ممنوع' },
   admTeamDependsOn: { en: 'Depends on', ar: 'يعتمد على' },
   admTeamOrder: { en: 'Execution order', ar: 'ترتيب التنفيذ' },
+
+  // billing page
+  billingTitle: { en: 'Billing & Subscription', ar: 'الاشتراك والفوترة', es: 'Facturación y suscripción', fr: 'Facturation et abonnement' },
+  billingBack: { en: '← Back to dashboard', ar: '← الرجوع للوحة', es: '← Volver al panel', fr: '← Retour au tableau de bord' },
+  billingDemoMode: { en: 'Payments are in demo mode (Stripe keys not configured on the server yet).', ar: 'نظام الدفع في وضع العرض فقط (لم تُضبط مفاتيح Stripe على الخادم بعد).', es: 'Los pagos están en modo demo (claves de Stripe sin configurar).', fr: 'Paiements en mode démo (clés Stripe non configurées).' },
+  billingLoading: { en: 'Loading…', ar: 'جارٍ التحميل…', es: 'Cargando…', fr: 'Chargement…' },
+  billingCurrentPlan: { en: 'Your current plan', ar: 'خطتك الحالية', es: 'Tu plan actual', fr: 'Votre forfait actuel' },
+  billingUsedProjects: { en: 'Projects used', ar: 'المشاريع المستخدمة', es: 'Proyectos usados', fr: 'Projets utilisés' },
+  billingMaxLimit: { en: 'Limit', ar: 'الحدّ الأقصى', es: 'Límite', fr: 'Limite' },
+  billingRemaining: { en: 'Remaining', ar: 'المتبقي', es: 'Restante', fr: 'Restant' },
+  billingAutoDeploy: { en: 'Auto deploy', ar: 'نشر تلقائي', es: 'Despliegue automático', fr: 'Déploiement auto' },
+  billingEnabled: { en: 'Enabled ✅', ar: 'مفعّل ✅', es: 'Activado ✅', fr: 'Activé ✅' },
+  billingNotAvailable: { en: 'Not available', ar: 'غير متاح', es: 'No disponible', fr: 'Non disponible' },
+  billingUnlimited: { en: 'Unlimited', ar: 'غير محدود', es: 'Ilimitado', fr: 'Illimité' },
+  billingManage: { en: 'Manage subscription', ar: 'إدارة الاشتراك', es: 'Gestionar suscripción', fr: 'Gérer l’abonnement' },
+  billingPerMonth: { en: '/mo', ar: '/شهر', es: '/mes', fr: '/mois' },
+  billingFree: { en: 'Free', ar: 'مجاناً', es: 'Gratis', fr: 'Gratuit' },
+  billingYourPlan: { en: 'Your plan', ar: 'خطتك', es: 'Tu plan', fr: 'Votre forfait' },
+  billingCurrentBtn: { en: 'Current plan', ar: 'خطتك الحالية', es: 'Plan actual', fr: 'Forfait actuel' },
+  billingUpgrade: { en: 'Upgrade now', ar: 'ترقية الآن', es: 'Mejorar ahora', fr: 'Passer au niveau supérieur' },
+  billingBasePlan: { en: 'Base plan', ar: 'الخطة الأساسية', es: 'Plan básico', fr: 'Forfait de base' },
+  planFree: { en: 'Free', ar: 'مجانية', es: 'Gratis', fr: 'Gratuit' },
+  planPro: { en: 'Pro', ar: 'احترافية', es: 'Pro', fr: 'Pro' },
+  planEnterprise: { en: 'Enterprise', ar: 'المؤسسات', es: 'Empresas', fr: 'Entreprise' },
 };
 
 const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('uiLang') : null;
