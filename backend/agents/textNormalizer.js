@@ -207,3 +207,16 @@ export function inferProjectType(text) {
     }
     return null;
 }
+
+// ═══════════════════════════════════════════════════════
+// ❓ كشف الأسئلة — واعٍ بالعربية (\b لا يعمل مع الحروف العربية في JS)
+// يُستخدم كحماية: السؤال لا يُعامل أبداً كأمر تعديل/بناء مهما قال المصنّف.
+// ═══════════════════════════════════════════════════════
+const QUESTION_STARTERS = /(?:^|\s)(?:هل|ما|ماذا|ماهي|ما هي|ماهو|ما هو|كيف|لماذا|ليش|ليه|وش|ايش|إيش|شو|متى|امتى|أين|اين|وين|فين|كم|بكم|مين|من هو|من هي|شنو|علاش|what|how|why|when|where|which|who|whose|can you|could you|would you|should i|is it|is there|are there|do you|does|did|tell me about)(?=\s|$|[؟?!.،,])/iu;
+
+export function isQuestionMessage(text) {
+    const t = (text || '').trim();
+    if (!t) return false;
+    if (t.includes('?') || t.includes('؟')) return true;
+    return QUESTION_STARTERS.test(t);
+}
