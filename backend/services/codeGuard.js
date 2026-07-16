@@ -131,6 +131,23 @@ async function repairJS(name, content, error) {
 }
 
 // ═══════════════════════════════════════════════════════
+// 🧹 منظّف placeholders القوالب — شبكة أمان حتمية قبل الكتابة
+// القوالب تحوي رموزاً مثل {اسم المتجر}؛ إن نسخها المولّد رغم رفض QA
+// (نفدت محاولات إعادة التوليد) نستبدلها هنا باسم المشروع كي لا تظهر
+// للمستخدم حرفياً في موقعه.
+// ═══════════════════════════════════════════════════════
+export function scrubPlaceholders(files, projectName = '') {
+    const pretty = (projectName || '').replace(/[-_]+/g, ' ').trim();
+    if (!pretty) return files;
+    return files.map(f => {
+        if (!f || typeof f.content !== 'string' || !/\.(html|htm)$/.test(f.name || '')) return f;
+        // {اسم ...} وأشباهها بحروف عربية داخل أقواس معقوصة
+        const scrubbed = f.content.replace(/\{[؀-ۿ][^}\n]{0,40}\}/g, pretty);
+        return scrubbed === f.content ? f : { ...f, content: scrubbed };
+    });
+}
+
+// ═══════════════════════════════════════════════════════
 // 🚦 نقطة الدخول: فحص (وإصلاح) قائمة ملفات قبل الحفظ
 // files: [{ name, content }] — يُرجع نفس الشكل مع محتوى مُصلح عند الحاجة
 // ═══════════════════════════════════════════════════════
