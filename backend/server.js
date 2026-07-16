@@ -788,15 +788,12 @@ app.post('/api/project-context/switch', verifyToken, async (req, res) => {
     res.json({ success: true, currentUser: username, activeProject: safeProject });
 });
 
-app.delete('/api/projects/:name', verifyToken, async (req, res) => {
-    const username = req.user.username;
-    const safeProject = (req.params.name || '').trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '-');
-
-    if (!safeProject) {
-        return res.status(400).json({ error: 'اسم المشروع مطلوب.' });
-    }
+// 🗑️ منطق الحذف الكامل — مشترك بين مسار REST ونية الحذف في الشات
+async function deleteProjectCompletely(username, project) {
+    const safeProject = (project || '').trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '-');
+    if (!safeProject) return { success: false, error: 'اسم المشروع مطلوب.' };
     if (safeProject === 'sandbox_app') {
-        return res.status(400).json({ error: 'لا يمكن حذف المشروع الافتراضي sandbox_app.' });
+        return { success: false, error: 'لا يمكن حذف المشروع الافتراضي sandbox_app.' };
     }
 
     try {
@@ -815,10 +812,16 @@ app.delete('/api/projects/:name', verifyToken, async (req, res) => {
         const roomName = `${username}-${safeProject}`;
         io.to(roomName).emit('log', { message: `🗑️ [SYSTEM]: تم حذف المشروع (${safeProject}).` });
 
-        res.json({ success: true, deleted: safeProject });
+        return { success: true, deleted: safeProject };
     } catch (err) {
-        res.status(500).json({ error: 'فشل حذف المشروع: ' + err.message });
+        return { success: false, error: 'فشل حذف المشروع: ' + err.message };
     }
+}
+
+app.delete('/api/projects/:name', verifyToken, async (req, res) => {
+    const result = await deleteProjectCompletely(req.user.username, req.params.name);
+    if (!result.success) return res.status(400).json({ error: result.error });
+    res.json(result);
 });
 
 // 🆕 توليد PWA (manifest + service worker + أيقونة) لمشروع موجود
@@ -944,6 +947,8 @@ app.post('/api/chat', verifyToken, aiLimit, validate(schemas.sendMessage), valid
         getFinalGoal,
         clearState,
         getState,
+        // 🗑️ حذف مشروع كامل من الشات (بعد تأكيد صريح داخل jcr)
+        deleteProject: (username, project) => deleteProjectCompletely(username, project),
     };
 
     const dbStatus = isDbConnected && mongoose.connection.readyState === 1;
