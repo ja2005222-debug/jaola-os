@@ -31,7 +31,7 @@ import { runTests } from './testingAgent.js';
 import { commitBuild, initProjectRepo, getProjectStats } from './gitAgent.js';
 import { backupProject, listSnapshots } from './fileManager.js';
 import { analyzeRequirements, buildRequirementsContext } from './requirementAnalyzer.js';
-import { normalizeText, normalizeArabic, detectIntentFromMeaning } from './textNormalizer.js';
+import { normalizeText, normalizeArabic, detectIntentFromMeaning, isQuestionMessage } from './textNormalizer.js';
 import { classifyIntentFast, decide, buildContinuationGoal, buildStatusReply, missionBriefing, greetingReply } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
 import { registerMission, throwIfAborted, clearMission } from '../services/abortRegistry.js';
@@ -892,6 +892,7 @@ CRITICAL LANGUAGE RULE: The user's language is "${userLang}" (${langInfo.label})
 - You CANNOT build, edit, or write code yourself. A separate build system does that. NEVER role-play building ("let's start with the Navbar...") or announce work you cannot do.
 - NEVER collect specs step-by-step (asking for site name, then menu items, then hero text...). The build system gathers everything itself from one request.
 - NEVER invent progress numbers or remaining-parts lists. ONLY state what the Project Brain below explicitly says. If it shows files/sections, they EXIST — do not claim they are missing. If unsure, say you're not sure.
+- NEVER fabricate a list of "changes applied" or files you edited. If asked what changed, cite ONLY edit history explicitly present in the Project Brain below; if none is listed, say you have no record of specific changes.
 - When the user wants to build, continue, or change something: tell them in ONE sentence what to type — "${userLang === 'ar' ? 'اكمل' : 'continue'}" to resume the build, "${userLang === 'ar' ? 'ابني [وصف الموقع]' : 'build [site description]'}" for a new site, or simply describe the specific change (e.g. "${userLang === 'ar' ? 'غيّر الألوان إلى أزرق' : 'change the colors to blue'}") and the build system executes it directly.
 
 RESPONSE RULES:
@@ -1983,6 +1984,13 @@ User preferences: ${JSON.stringify(execMemory)}` },
             this.io.to(roomName).emit('chat_reply', { message: confirmQ, options: opts, pendingGoal: userGoal });
             setPendingGoal(username, userGoal, activeProject);
         } else if (finalIntent.intent === 'modify') {
+            // 🛡️ السؤال لا يُعامل أبداً كأمر تعديل حتى لو صنّفه النموذج modify —
+            // (سجل حقيقي: "ماذا يمكن أن نضيف للمشروع؟" عدّلت الموقع فعلاً!)
+            if (isQuestionMessage(message)) {
+                this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛡️ سؤال صُنّف modify — تحويل لرد محادثة (لا تعديل).');
+                await this.generateChatResponse(message, username, roomName, userLang);
+                return;
+            }
             recordEdit(username, message);
             this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
             // Git commit للتعديل يحدث داخل المهمة بعد النجاح
@@ -1996,7 +2004,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
             //  "قم بربط..."، "استخدم قالب..." كلها تعديلات على الموجود)
             const existing = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
             const hasProject = existing && existing.trim().length > 100;
-            const isQuestion = /(^|\s)(هل|ما|ماذا|كيف|لماذا|ليش|وش|ايش|إيش|متى|اين|أين|وين|كم|مين|من هو|شنو)\b|\?|؟|^(what|how|why|when|where|who|can you|could you|is it|do you|does)\b/i.test(message.trim());
+            // كاشف أسئلة واعٍ بالعربية — \b القديم لم يكن يطابق "ماذا/هل..." أبداً
+            const isQuestion = isQuestionMessage(message);
             const isSmalltalk = message.trim().length < 4;
 
             if (hasProject && !isQuestion && !isSmalltalk) {
