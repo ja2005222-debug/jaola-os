@@ -29,6 +29,7 @@ export const PLANS = {
             privateHosting: false,
         },
         featuresAr: ['حتى 5 مشاريع', 'القوالب الأساسية', 'دعم عبر المجتمع'],
+        featuresEn: ['Up to 5 projects', 'Core templates', 'Community support'],
     },
     pro: {
         id: 'pro',
@@ -45,6 +46,7 @@ export const PLANS = {
             privateHosting: false,
         },
         featuresAr: ['مشاريع غير محدودة', 'نشر تلقائي', 'دعم أولوية', 'كل القوالب المتقدمة'],
+        featuresEn: ['Unlimited projects', 'Auto deploy', 'Priority support', 'All advanced templates'],
     },
     enterprise: {
         id: 'enterprise',
@@ -61,6 +63,7 @@ export const PLANS = {
             privateHosting: true,
         },
         featuresAr: ['كل مزايا Pro', 'وكلاء مخصّصون', 'استضافة خاصة', 'مدير حساب مخصص'],
+        featuresEn: ['Everything in Pro', 'Custom agents', 'Private hosting', 'Dedicated account manager'],
     },
 };
 
@@ -98,6 +101,7 @@ export function publicPlans() {
         priceMonthly: p.priceMonthly,
         currency: p.currency,
         featuresAr: p.featuresAr,
+        featuresEn: p.featuresEn || p.featuresAr,
         limits: {
             ...p.limits,
             projects: p.limits.projects === UNLIMITED ? null : p.limits.projects,
