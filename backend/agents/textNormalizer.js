@@ -220,3 +220,17 @@ export function isQuestionMessage(text) {
     if (t.includes('?') || t.includes('؟')) return true;
     return QUESTION_STARTERS.test(t);
 }
+
+// ═══════════════════════════════════════════════════════
+// 🔨 كشف نيّة الفعل — هل الرسالة تطلب تنفيذ تغيير فعلاً؟
+// التعديل التلقائي كان ينفّذ أي جملة غير استفهامية — حتى الإخبارية
+// ("ولكن قائمة الأصدقاء موجودة" عدّلت الموقع!). البوابة: لا تعديل
+// بلا فعل أمر أو تعبير رغبة صريح.
+// ═══════════════════════════════════════════════════════
+const ACTION_SIGNALS = /(?:^|\s)(?:غيّ?ر|عدّ?ل|بدّ?ل|اضف|أضف|ضف|زوّ?د|زد|احذف|امسح|شيل|صحّ?ح|اصلح|أصلح|حوّ?ل|اجعل|إجعل|ضع|حط|كبّ?ر|صغّ?ر|لوّ?ن|انقل|رتّ?ب|حسّ?ن|طوّ?ر|اربط|فعّ?ل|عطّ?ل|خلّ?ي|خليه|سوّ?ي|اعمل|أعمل|اكتب|ترجم|وسّ?ع|قلّ?ل|ارفع|انزل|ثبّ?ت|اعرض|أخفِ|اخفي|استبدل|أريد|اريد|أبغى|ابغى|أبي|ابي|عايز|عاوز|محتاج|نحتاج|نبي|ممكن تضيف|ممكن تغير|ممكن تعدل|make|add|change|remove|delete|set|update|fix|translate|resize|move|link|connect|enable|disable|replace|insert|rename|adjust|increase|decrease|show|hide|i want|i need|please add|please change|can you add|can you change)(?=\s|$|[؟?!.،,])/iu;
+
+export function hasActionIntent(text) {
+    const t = (text || '').trim();
+    if (!t) return false;
+    return ACTION_SIGNALS.test(t);
+}
