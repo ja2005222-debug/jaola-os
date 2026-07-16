@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { BACKEND_URL } from '../config.js';
 import { useI18n } from '../i18n.js';
-import LanguageSwitcher from '../components/LanguageSwitcher.jsx';
+import { LanguageSwitcher } from '../components/LanguageSwitcher.jsx';
 
 // 💳 صفحة الاشتراكات — الخطط + استهلاك المستخدم + الدفع عبر Stripe
 // كل النصوص عبر نظام i18n (8 لغات مع سقوط للإنجليزية).
