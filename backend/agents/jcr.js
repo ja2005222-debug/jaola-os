@@ -31,7 +31,7 @@ import { runTests } from './testingAgent.js';
 import { commitBuild, initProjectRepo, getProjectStats } from './gitAgent.js';
 import { backupProject, listSnapshots } from './fileManager.js';
 import { analyzeRequirements, buildRequirementsContext } from './requirementAnalyzer.js';
-import { normalizeText, normalizeArabic, detectIntentFromMeaning, isQuestionMessage } from './textNormalizer.js';
+import { normalizeText, normalizeArabic, detectIntentFromMeaning, isQuestionMessage, hasActionIntent } from './textNormalizer.js';
 import { classifyIntentFast, decide, buildContinuationGoal, buildStatusReply, missionBriefing, greetingReply } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
 import { registerMission, throwIfAborted, clearMission } from '../services/abortRegistry.js';
@@ -893,6 +893,8 @@ CRITICAL LANGUAGE RULE: The user's language is "${userLang}" (${langInfo.label})
 - NEVER collect specs step-by-step (asking for site name, then menu items, then hero text...). The build system gathers everything itself from one request.
 - NEVER invent progress numbers or remaining-parts lists. ONLY state what the Project Brain below explicitly says. If it shows files/sections, they EXIST — do not claim they are missing. If unsure, say you're not sure.
 - NEVER fabricate a list of "changes applied" or files you edited. If asked what changed, cite ONLY edit history explicitly present in the Project Brain below; if none is listed, say you have no record of specific changes.
+- Your own earlier replies in this conversation may contain MISTAKES. NEVER repeat a past claim (e.g. "I added api.js") unless the Project Brain below confirms it — the Project Brain ALWAYS overrides conversation history. If you previously claimed something the Brain doesn't show, admit the earlier reply was wrong.
+- Do NOT append "type build [name]" (or similar) to every reply. Mention what to type ONLY when the user is actually asking to build, continue, or change something.
 - When the user wants to build, continue, or change something: tell them in ONE sentence what to type — "${userLang === 'ar' ? 'اكمل' : 'continue'}" to resume the build, "${userLang === 'ar' ? 'ابني [وصف الموقع]' : 'build [site description]'}" for a new site, or simply describe the specific change (e.g. "${userLang === 'ar' ? 'غيّر الألوان إلى أزرق' : 'change the colors to blue'}") and the build system executes it directly.
 
 RESPONSE RULES:
@@ -1986,8 +1988,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
         } else if (finalIntent.intent === 'modify') {
             // 🛡️ السؤال لا يُعامل أبداً كأمر تعديل حتى لو صنّفه النموذج modify —
             // (سجل حقيقي: "ماذا يمكن أن نضيف للمشروع؟" عدّلت الموقع فعلاً!)
-            if (isQuestionMessage(message)) {
-                this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛡️ سؤال صُنّف modify — تحويل لرد محادثة (لا تعديل).');
+            // 🛡️ والجملة الإخبارية بلا فعل أمر/رغبة كذلك — ("ولكن قائمة
+            // الأصدقاء موجودة" تصحيحٌ من المستخدم، ليست طلب تعديل).
+            if (isQuestionMessage(message) || !hasActionIntent(message)) {
+                this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛡️ صُنّفت modify لكنها سؤال/جملة إخبارية — رد محادثة (لا تعديل).');
                 await this.generateChatResponse(message, username, roomName, userLang);
                 return;
             }
@@ -2008,7 +2012,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             const isQuestion = isQuestionMessage(message);
             const isSmalltalk = message.trim().length < 4;
 
-            if (hasProject && !isQuestion && !isSmalltalk) {
+            if (hasProject && !isQuestion && !isSmalltalk && hasActionIntent(message)) {
                 this.emitLiveLog(roomName, 'INTENT', 'Classifier', '✏️ طلب على مشروع قائم → تعديل جراحي');
                 recordEdit(username, message);
                 this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
