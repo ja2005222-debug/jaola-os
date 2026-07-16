@@ -141,7 +141,14 @@ export async function deployProject({ projectPath, activeProject, currentUser },
         const result = await response.json();
 
         if (!response.ok) {
-            const errorMsg = result?.error?.message || `خطأ HTTP ${response.status}`;
+            let errorMsg = result?.error?.message || `خطأ HTTP ${response.status}`;
+            // 🩺 تشخيص أوضح لأخطاء الصلاحية بدل "Not authorized" الغامضة
+            if (response.status === 401 || response.status === 403 || /not authorized|forbidden|invalid token/i.test(errorMsg)) {
+                errorMsg = `${errorMsg} — صلاحية Vercel مرفوضة. تحقّق أن VERCEL_TOKEN صالح وغير منتهٍ، `
+                    + (VERCEL_TEAM_ID
+                        ? `وأن التوكن يملك صلاحية الفريق (VERCEL_TEAM_ID=${VERCEL_TEAM_ID}).`
+                        : `وإن كان حسابك ضمن Team فاضبط VERCEL_TEAM_ID (وإلا احذفه).`);
+            }
             throw new Error(errorMsg);
         }
 
