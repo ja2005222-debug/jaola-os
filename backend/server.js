@@ -62,9 +62,9 @@ import { adminOnly } from './middleware/adminOnly.js';
 import { orchestrator } from './core/PluginOrchestrator.js';
 import { runSystemDiagnostics } from './agents/systemDoctorAgent.js';
 import * as adminSvc from './services/adminService.js';
-import { publicPlans, getPlan } from './config/plans.js';
-import { getUserSubscription, getUsage, canCreateProject } from './services/subscriptionService.js';
-import { isStripeConfigured, createCheckoutSession, createPortalSession, constructWebhookEvent, interpretWebhookEvent } from './services/stripeService.js';
+import { canCreateProject } from './services/subscriptionService.js';
+import { createBillingRouter } from './routes/billing.js';
+import { setStateEmitter } from './agents/stateMachine.js';
 import { restorePluginsToDisk } from './services/pluginStore.js';
 import { onMongoReady } from './services/persistence.js';
 
@@ -137,6 +137,12 @@ if (fs.existsSync(frontendDistPath)) {
 
 // ─── محرك JCOS v4.0 ─────────────────────────────────────────────────
 const runtime = new JaolaCognitiveRuntime(io);
+
+// 📡 بث انتقالات آلة الحالات كأحداث موحدة (MissionAccepted، CodingStarted،
+// MissionCompleted...) لغرفة المشروع — لغة واحدة للواجهة بدل الصياغات المتفرقة
+setStateEmitter(({ username, project, state, event }) => {
+    io.to(`${username}-${project}`).emit('project_state', { project, state, event, at: Date.now() });
+});
 
 // ─── اتصال MongoDB ──────────────────────────────────────────────────
 let isDbConnected = false;
@@ -1166,89 +1172,10 @@ app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) 
     }
 });
 
-// ─── 💳 مسارات الاشتراكات والدفع (Stripe) ──────────────────────────
-// قائمة الخطط — عامة (تُعرض في صفحة الأسعار/الإعدادات)
-app.get('/api/billing/plans', (req, res) => {
-    res.json({ success: true, plans: publicPlans(), stripeEnabled: isStripeConfigured() });
-});
-
-// اشتراك المستخدم الحالي + استهلاكه — للوحة التحكم
-app.get('/api/billing/subscription', verifyToken, async (req, res) => {
-    try {
-        const username = req.user.username;
-        const userDoc = await DB.findUser(username);
-        const projects = await DB.findUserProjects(username);
-        const count = (projects || []).filter(p => p.name !== 'sandbox_app').length;
-        res.json({ success: true, ...getUsage(userDoc, count), stripeEnabled: isStripeConfigured() });
-    } catch (err) {
-        res.status(500).json({ error: 'تعذّر جلب الاشتراك: ' + err.message });
-    }
-});
-
-// إنشاء جلسة Checkout للترقية إلى خطة مدفوعة
-app.post('/api/billing/checkout', verifyToken, async (req, res) => {
-    const { planId } = req.body || {};
-    if (!['pro', 'enterprise'].includes(planId)) {
-        return res.status(400).json({ error: 'خطة غير صالحة للاشتراك.' });
-    }
-    if (!isStripeConfigured()) {
-        return res.status(503).json({ error: 'نظام الدفع غير مُفعّل حالياً.' });
-    }
-    try {
-        const username = req.user.username;
-        const userDoc = await DB.findUser(username);
-        const session = await createCheckoutSession({
-            planId,
-            username,
-            email: userDoc?.email,
-            customerId: userDoc?.subscription?.stripeCustomerId || null,
-        });
-        res.json({ success: true, url: session.url });
-    } catch (err) {
-        res.status(400).json({ error: err.message });
-    }
-});
-
-// بوابة إدارة الاشتراك (تحديث/إلغاء) عبر Stripe
-app.post('/api/billing/portal', verifyToken, async (req, res) => {
-    try {
-        const userDoc = await DB.findUser(req.user.username);
-        const session = await createPortalSession({ customerId: userDoc?.subscription?.stripeCustomerId || null });
-        res.json({ success: true, url: session.url });
-    } catch (err) {
-        res.status(400).json({ error: err.message });
-    }
-});
-
-// Webhook — يُحدّث اشتراك المستخدم بناءً على أحداث Stripe (جسم خام)
-app.post('/api/billing/webhook', async (req, res) => {
-    const signature = req.headers['stripe-signature'];
-    let event;
-    try {
-        event = await constructWebhookEvent(req.body, signature);
-    } catch (err) {
-        return res.status(400).send(`Webhook signature verification failed: ${err.message}`);
-    }
-
-    try {
-        const update = interpretWebhookEvent(event);
-        if (update?.username && mongoose.connection.readyState === 1) {
-            const set = {};
-            if (update.plan) set['subscription.plan'] = update.plan;
-            if (update.status) set['subscription.status'] = update.status;
-            if (update.customerId) set['subscription.stripeCustomerId'] = update.customerId;
-            if (update.subscriptionId) set['subscription.stripeSubscriptionId'] = update.subscriptionId;
-            if (update.currentPeriodEnd) set['subscription.currentPeriodEnd'] = update.currentPeriodEnd;
-            set['subscription.cancelAtPeriodEnd'] = !!update.cancelAtPeriodEnd;
-            await User.updateOne({ username: update.username }, { $set: set });
-            console.log(`💳 [Billing] تحديث اشتراك ${update.username} → ${update.plan || '?'} (${update.status})`);
-        }
-    } catch (err) {
-        console.warn('[Billing] فشل تطبيق حدث webhook:', err.message);
-        // نُعيد 200 مع ذلك كي لا يعيد Stripe المحاولة إلى ما لا نهاية على خطأ داخلي
-    }
-    res.json({ received: true });
-});
+// ─── 💳 مسارات الاشتراكات والدفع (Stripe) — مستخرجة إلى routes/billing.js
+// (أول قطعة من التفكيك التزايدي لـ server.js؛ raw middleware للـ webhook
+// يبقى مسجلاً أعلاه قبل express.json لأن الترتيب هو ما يحميه)
+app.use('/api/billing', createBillingRouter({ verifyToken, DB }));
 
 // ─── 🩺 مسارات المشرف: فحص النظام + إدارة الإضافات ──────────────────
 app.get('/api/admin/health', verifyToken, adminOnly, (req, res) => {
