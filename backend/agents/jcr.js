@@ -32,6 +32,7 @@ import { commitBuild, initProjectRepo, getProjectStats } from './gitAgent.js';
 import { backupProject, listSnapshots } from './fileManager.js';
 import { analyzeRequirements, buildRequirementsContext } from './requirementAnalyzer.js';
 import { normalizeText, normalizeArabic, detectIntentFromMeaning, isQuestionMessage, hasActionIntent } from './textNormalizer.js';
+import { routeMessage } from './router.js';
 import { classifyIntentFast, decide, buildContinuationGoal, buildStatusReply, missionBriefing, greetingReply } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
 import { registerMission, throwIfAborted, clearMission } from '../services/abortRegistry.js';
@@ -1982,7 +1983,58 @@ User preferences: ${JSON.stringify(execMemory)}` },
             }
         }
 
-        // ── 1. كشف التعديل المباشر ───────────────────────────────────────
+        // ── 🧭 الموجّه الموحّد — نداء LLM منظّم واحد بدل شبكة الـ regex ────
+        // المسارات الحتمية الحسّاسة (الحذف، القفل، اكمل، اللغة، clarifier)
+        // عملت أعلاه. فشل الموجّه → يسقط بصمت للمسار القديم أدناه (احتياط كامل).
+        if (!agents.getState?.(username)?.stage) { // ليس داخل حوار clarifier
+            try {
+                const existingCode = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
+                const { window: hist } = await loadConversation(username);
+                const lastAssistant = [...hist].reverse().find(m => m.role === 'assistant')?.content || '';
+                const route = await routeMessage(message, {
+                    projectName: activeProject,
+                    hasProject: existingCode.trim().length > 100,
+                    lastAssistant,
+                    lang: userLang,
+                });
+                if (route) {
+                    this.emitLiveLog(roomName, 'ROUTER', 'Unified',
+                        `🧭 ${route.action} (${route.confidence}%)${route.reason ? ` — ${route.reason}` : ''}`);
+                    if (route.action === 'chat') {
+                        await this.generateChatResponse(message, username, roomName, userLang);
+                        return;
+                    }
+                    if (route.action === 'edit') {
+                        recordEdit(username, message);
+                        this.surgicalEdit(route.instruction || message, projectPath, username, activeProject, roomName, agents, dbStatus);
+                        return;
+                    }
+                    if (route.action === 'delete_project') {
+                        const lang = getUserLanguage(username) || userLang;
+                        this.io.to(roomName).emit('chat_reply', {
+                            message: activeProject === 'sandbox_app'
+                                ? (lang === 'ar' ? '⚠️ لا يمكن حذف المشروع الافتراضي sandbox_app.' : '⚠️ The default sandbox_app project cannot be deleted.')
+                                : (lang === 'ar'
+                                    ? `⚠️ حذف المشروع «${activeProject}» **نهائي** — الملفات والسجل، ولا يمكن التراجع.\nللتأكيد اكتب حرفياً: **احذف نهائياً ${activeProject}**`
+                                    : `⚠️ Deleting "${activeProject}" is **permanent**.\nTo confirm, type exactly: **delete permanently ${activeProject}**`),
+                        });
+                        return;
+                    }
+                    if (route.action === 'stop') {
+                        agents.clearState?.(username);
+                        clearDialog(username);
+                        const lang = getUserLanguage(username) || userLang;
+                        this.io.to(roomName).emit('chat_reply', {
+                            message: lang === 'ar' ? '🛑 تم الإيقاف. أخبرني بما تريد.' : '🛑 Stopped. Tell me what you need.',
+                        });
+                        return;
+                    }
+                    // 'build' → يسقط عمداً للمسار القديم (حوار التوضيح + التأكيد بالهدف)
+                }
+            } catch (e) { /* فشل الموجّه → المسار القديم أدناه */ }
+        }
+
+        // ── 1. كشف التعديل المباشر (مسار احتياطي عند فشل الموجّه) ─────────
         // النمط مكتوب بدون همزات لأننا نفحص النص المطبّع (اضف = أضف = إضف)
         const modifyPattern = /^(غير|عدل|بدل|اضف|ضف|زود|احذف|امسح|شيل|صحح|اصلح|تعديل|حول|اجعل|ضع|حط|زد|كبر|صغر|change|modify|update|add|remove|put|fix|make|delete)\s+/i;
         const normalizedForModify = normalizeArabic(message.trim());
