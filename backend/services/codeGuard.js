@@ -12,6 +12,8 @@
  */
 
 import vm from 'vm';
+import fsPromises from 'fs/promises';
+import path from 'path';
 import { groq } from '../agents/baseAgent.js';
 
 // ═══════════════════════════════════════════════════════
@@ -145,6 +147,124 @@ export function scrubPlaceholders(files, projectName = '') {
         const scrubbed = f.content.replace(/\{[؀-ۿ][^}\n]{0,40}\}/g, pretty);
         return scrubbed === f.content ? f : { ...f, content: scrubbed };
     });
+}
+
+// ═══════════════════════════════════════════════════════
+// 🧷 حارس سلامة التعديلات الجراحية — حتمي، بلا LLM
+//
+// المشكلة الحقيقية (مشروع test17-7-5): تعديل جراحي «أضف نظام جلسات فيديو»
+// أعاد index.html بدون <link rel="stylesheet"> فظهر الموقع HTML خاماً.
+// guardFiles يفحص الـ syntax فقط — لا يعرف أن رابط التنسيق سقط.
+//
+// هذا الحارس يقارن كل ملف HTML معدَّل بنسخته على القرص (قبل الكتابة):
+// - DOCTYPE سقط → يُعاد
+// - روابط stylesheet المحلية سقطت (بلا <style> بديل) → تُعاد إلى <head>
+// - وسم <script src> محلي سقط → يُعاد قبل </body>
+// - مرجع محلي (css/js) يشير لملف غير موجود → يُصحَّح إن وُجد مرشح وحيد،
+//   وإلا يُبلَّغ تحذير ظاهر
+// يجب استدعاؤه قبل الكتابة — فالقرص لحظتها ما يزال يحمل النسخة السابقة.
+// ═══════════════════════════════════════════════════════
+const STYLESHEET_LINK = /<link\b[^>]*\brel\s*=\s*["']?stylesheet["']?[^>]*>/gi;
+const SCRIPT_SRC = /<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>\s*<\/script>/gi;
+
+function localHrefOf(linkTag) {
+    const href = /href\s*=\s*["']([^"']+)["']/i.exec(linkTag)?.[1];
+    if (!href || /^(?:https?:)?\/\//i.test(href) || href.startsWith('data:')) return null;
+    return href;
+}
+
+function normalizeRef(ref) {
+    return ref.replace(/^\.\//, '').split(/[?#]/)[0];
+}
+
+export async function ensureEditIntegrity(files, projectPath, emit = () => { }) {
+    let diskFiles = [];
+    try {
+        diskFiles = (await fsPromises.readdir(projectPath, { recursive: true }))
+            .map(f => f.split(path.sep).join('/'));
+    } catch { /* مشروع جديد — لا نسخة سابقة للمقارنة */ }
+    const changedNames = new Set(files.map(f => f?.name).filter(Boolean));
+    const refExists = (ref) => {
+        const clean = normalizeRef(ref);
+        return changedNames.has(clean) || diskFiles.includes(clean);
+    };
+    const cssOnDisk = diskFiles.filter(f => f.endsWith('.css') && !f.includes('node_modules/'));
+
+    const out = [];
+    for (const file of files) {
+        if (!file || typeof file.content !== 'string' || !/\.(html|htm)$/i.test(file.name || '')) {
+            out.push(file);
+            continue;
+        }
+        let content = file.content;
+        const fixes = [];
+
+        let oldContent = '';
+        try { oldContent = await fsPromises.readFile(path.join(projectPath, file.name), 'utf8'); } catch { }
+
+        // 1) DOCTYPE سقط من مستند كامل
+        if (!/^\s*<!doctype/i.test(content) && /<html[\s>]/i.test(content)) {
+            content = '<!DOCTYPE html>\n' + content;
+            fixes.push('DOCTYPE');
+        }
+
+        // 2) روابط التنسيق المحلية سقطت — وهي جوهر عطل «الموقع بلا تصميم»
+        const newLinks = (content.match(STYLESHEET_LINK) || []).map(localHrefOf).filter(Boolean);
+        if (newLinks.length === 0 && !/<style[\s>]/i.test(content) && /<\/head>/i.test(content)) {
+            const oldLinks = (oldContent.match(STYLESHEET_LINK) || []).map(localHrefOf).filter(Boolean);
+            let restore = oldLinks.filter(refExists);
+            if (!restore.length) {
+                // لا نسخة سابقة يُستدل بها → المرشح المعتاد أو ملف CSS الوحيد
+                const candidate = cssOnDisk.find(c => /^(?:css\/)?styles?\.css$/.test(c))
+                    || (cssOnDisk.length === 1 ? cssOnDisk[0] : null);
+                if (candidate) restore = [candidate];
+            }
+            if (restore.length) {
+                const tags = restore.map(h => `    <link rel="stylesheet" href="${h}">`).join('\n');
+                content = content.replace(/<\/head>/i, `${tags}\n</head>`);
+                fixes.push(`رابط التنسيق (${restore.join('، ')})`);
+            }
+        }
+
+        // 3) وسم <script src> محلي كان موجوداً وسقط كلياً → يُعاد قبل </body>
+        if (oldContent && /<\/body>/i.test(content)) {
+            const collectScripts = (html) => {
+                const found = [];
+                for (const m of html.matchAll(SCRIPT_SRC)) {
+                    const src = m[1];
+                    if (!/^(?:https?:)?\/\//i.test(src) && !src.startsWith('data:')) found.push(normalizeRef(src));
+                }
+                return found;
+            };
+            const newScripts = new Set(collectScripts(content));
+            const lost = collectScripts(oldContent).filter(s => !newScripts.has(s) && refExists(s));
+            if (lost.length) {
+                const tags = [...new Set(lost)].map(s => `    <script src="${s}"></script>`).join('\n');
+                content = content.replace(/<\/body>/i, `${tags}\n</body>`);
+                fixes.push(`سكربتات (${[...new Set(lost)].join('، ')})`);
+            }
+        }
+
+        // 4) مراجع محلية لملفات غير موجودة — تصحيح المرشح الوحيد أو تحذير
+        const brokenRefs = [];
+        for (const m of content.matchAll(/<(?:link\b[^>]*\bhref|script\b[^>]*\bsrc)\s*=\s*["']([^"']+)["']/gi)) {
+            const ref = m[1];
+            if (/^(?:https?:)?\/\//i.test(ref) || ref.startsWith('data:') || ref.startsWith('#')) continue;
+            if (!refExists(ref)) brokenRefs.push(ref);
+        }
+        for (const ref of [...new Set(brokenRefs)]) {
+            if (ref.endsWith('.css') && cssOnDisk.length === 1) {
+                content = content.split(ref).join(cssOnDisk[0]);
+                fixes.push(`مسار CSS: ${ref} ← ${cssOnDisk[0]}`);
+            } else {
+                emit(`⚠️ ${file.name} يشير إلى "${ref}" وهو غير موجود في المشروع.`);
+            }
+        }
+
+        if (fixes.length) emit(`🧷 حارس التعديل أصلح ${file.name}: ${fixes.join('، ')}`);
+        out.push(content === file.content ? file : { ...file, content });
+    }
+    return out;
 }
 
 // ═══════════════════════════════════════════════════════

@@ -41,7 +41,7 @@ import { registerMission, throwIfAborted, clearMission } from '../services/abort
 import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import { snapshotWorkspace } from '../services/workspaceStore.js';
 import { orchestrator } from '../core/PluginOrchestrator.js';
-import { guardFiles, guardSingleJS, scrubPlaceholders } from '../services/codeGuard.js';
+import { guardFiles, guardSingleJS, scrubPlaceholders, ensureEditIntegrity } from '../services/codeGuard.js';
 import { buildImageContext } from '../services/imageService.js';
 import { generateBlueprint, buildBlueprintContext } from './appBlueprint.js';
 import { recommendFullStack, buildFullStackProject } from './fullstackTemplates.js';
@@ -488,10 +488,13 @@ export class JaolaCognitiveRuntime {
                             buildFixInstruction(verdict.missing), plan.files, lang
                         );
                         if (fixPlan?.files?.length && !fixPlan.error) {
-                            const guardedFix = await guardFiles(
-                                scrubPlaceholders(fixPlan.files, context.activeProject),
-                                (m) => this.emitLiveLog(roomName, '6. VERIFY', 'CodeGuard', m)
-                            );
+                            const emitFixGuard = (m) => this.emitLiveLog(roomName, '6. VERIFY', 'CodeGuard', m);
+                            const guardedFix = await ensureEditIntegrity(
+                                await guardFiles(
+                                    scrubPlaceholders(fixPlan.files, context.activeProject),
+                                    emitFixGuard
+                                ),
+                                context.projectPath, emitFixGuard);
                             // دمج الملفات المُصلحة في الخطة وكتابتها على القرص
                             for (const f of guardedFix) {
                                 if (!f?.name || typeof f.content !== 'string') continue;
@@ -1588,9 +1591,13 @@ User preferences: ${JSON.stringify(execMemory)}` },
         }
 
         // فحص الملفات المتغيّرة عبر CodeGuard ثم كتابتها فقط
-        // (مع تنظيف أي placeholder قوالب تسرّب أثناء التعديل)
-        const guarded = await guardFiles(scrubPlaceholders(plan.files, activeProject),
-            (m) => this.emitLiveLog(roomName, 'EDIT', 'CodeGuard', m));
+        // (مع تنظيف أي placeholder قوالب تسرّب أثناء التعديل).
+        // ensureEditIntegrity قبل الكتابة حتماً — يقارن بالنسخة السابقة على
+        // القرص ويعيد ما أسقطه التعديل (رابط التنسيق، DOCTYPE، السكربتات).
+        const emitGuard = (m) => this.emitLiveLog(roomName, 'EDIT', 'CodeGuard', m);
+        const guarded = await ensureEditIntegrity(
+            await guardFiles(scrubPlaceholders(plan.files, activeProject), emitGuard),
+            projectPath, emitGuard);
         for (const file of guarded) {
             await fsPromises.writeFile(path.join(projectPath, file.name), file.content);
         }
