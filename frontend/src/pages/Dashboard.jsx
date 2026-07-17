@@ -97,13 +97,18 @@ function FeedItem({ msg, onOption }) {
   const isStatus = msg.sender === 'system' ||
     (msg.text && (msg.text.includes('✅') || msg.text.includes('❌') || msg.text.includes('🎯') || msg.text.includes('🚀') || msg.text.includes('⚙️') || msg.text.includes('🔍')));
 
+  const timeStr = msg.timestamp
+    ? new Date(msg.timestamp).toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' })
+    : null;
+
   if (msg.sender === 'user') {
     return (
-      <div style={{ display:'flex', justifyContent:'flex-end', animation:'fadeIn 0.2s ease' }}>
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', animation:'msgIn 0.25s ease' }}>
         <div style={{ background:'linear-gradient(135deg,#1d4ed8,#4f46e5)', borderRadius:'12px 12px 2px 12px', padding:'10px 16px', maxWidth:'80%', fontSize:13, color:'#fff', lineHeight:1.6 }}>
           <div style={{ fontSize:9, color:'rgba(255,255,255,0.5)', fontWeight:700, marginBottom:4, letterSpacing:'0.5px' }}>YOU — CEO</div>
           {msg.text}
         </div>
+        {timeStr && <span style={{ fontSize:9, color:'#334155', marginTop:3, direction:'ltr' }}>{timeStr}</span>}
       </div>
     );
   }
@@ -123,10 +128,19 @@ function FeedItem({ msg, onOption }) {
   }
 
   return (
-    <div style={{ display:'flex', gap:10, alignItems:'flex-start', animation:'fadeIn 0.2s ease' }}>
-      <div style={{ width:28, height:28, borderRadius:8, background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, flexShrink:0, marginTop:2 }}>⚡</div>
-      <div style={{ background:'rgba(15,23,42,0.8)', border:'1px solid rgba(59,130,246,0.15)', borderRadius:'2px 12px 12px 12px', padding:'10px 14px', maxWidth:'85%', fontSize:12, color:'#cbd5e1', lineHeight:1.7 }}>
-        <div style={{ fontSize:9, color:'#3b82f6', fontWeight:700, marginBottom:4, letterSpacing:'0.5px', textTransform:'uppercase' }}>JAOLA OS</div>
+    <div className="feed-msg" style={{ display:'flex', gap:10, alignItems:'flex-start', animation:'msgIn 0.25s ease' }}>
+      <div style={{ width:28, height:28, borderRadius:8, background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, flexShrink:0, marginTop:2, animation: msg.streaming ? 'avatarGlow 1.2s infinite' : 'none' }}>⚡</div>
+      <div style={{ background:'rgba(15,23,42,0.8)', border:'1px solid rgba(59,130,246,0.15)', borderRadius:'2px 12px 12px 12px', padding:'10px 14px', maxWidth:'85%', fontSize:12, color:'#cbd5e1', lineHeight:1.7, position:'relative' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
+          <span style={{ fontSize:9, color:'#3b82f6', fontWeight:700, letterSpacing:'0.5px', textTransform:'uppercase' }}>JAOLA OS</span>
+          {timeStr && <span style={{ fontSize:9, color:'#334155', direction:'ltr' }}>{timeStr}</span>}
+          {!msg.streaming && msg.text && (
+            <button className="msg-copy" onClick={() => navigator.clipboard?.writeText(msg.text)} title="نسخ"
+              style={{ background:'transparent', border:'none', color:'#64748b', fontSize:11, padding:'0 2px', marginInlineStart:'auto' }}>
+              ⧉
+            </button>
+          )}
+        </div>
         {msg.streaming && !msg.text
           ? <span style={{ display:'inline-flex', gap:3 }}>
               <span style={{ width:5, height:5, borderRadius:'50%', background:'#60a5fa', animation:'typing 1s infinite' }} />
@@ -283,7 +297,7 @@ export default function Dashboard() {
     if (!msg || isSending) return;
     setIsSending(true);
     if (typeof overrideText !== 'string') setPrompt('');
-    setChatMessages(prev => [...prev, { sender: 'user', text: msg }]);
+    setChatMessages(prev => [...prev, { sender: 'user', text: msg, timestamp: Date.now() }]);
     try {
       await fetch(`${BACKEND_URL}/api/chat`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ message: msg, project: activeProject, uiLang }) });
     } catch {}
@@ -541,11 +555,29 @@ export default function Dashboard() {
     @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
     @keyframes typing{0%,60%,100%{transform:translateY(0);opacity:0.5}30%{transform:translateY(-4px);opacity:1}}
     *{box-sizing:border-box}
-    ::-webkit-scrollbar{width:3px;height:3px}
+    ::-webkit-scrollbar{width:5px;height:5px}
     ::-webkit-scrollbar-track{background:transparent}
-    ::-webkit-scrollbar-thumb{background:#1f2937;border-radius:2px}
-    button{cursor:pointer;transition:all 0.15s;font-family:system-ui}
-    textarea,input{font-family:system-ui;outline:none}
+    ::-webkit-scrollbar-thumb{background:#1f2937;border-radius:3px}
+    ::-webkit-scrollbar-thumb:hover{background:#334155}
+
+    /* 🖱️ طبقة التفاعل الموحدة — كل زر ورابط في التطبيق يستجيب للمس */
+    button{cursor:pointer;transition:all 0.15s ease;font-family:system-ui}
+    button:hover:not(:disabled){filter:brightness(1.2);transform:translateY(-1px)}
+    button:active:not(:disabled){transform:translateY(0) scale(0.97);filter:brightness(0.95)}
+    button:disabled{cursor:not-allowed}
+    a{transition:all 0.15s ease}
+    a:hover{filter:brightness(1.25)}
+    button:focus-visible,a:focus-visible,select:focus-visible{outline:2px solid rgba(59,130,246,0.6);outline-offset:2px}
+    select{cursor:pointer}
+    textarea,input{font-family:system-ui;outline:none;transition:border-color 0.2s}
+    textarea:focus,input:focus{border-color:rgba(59,130,246,0.5)!important}
+
+    /* 💬 حيوية الشات: زر النسخ يظهر عند المرور، والفقاعات تنساب */
+    .feed-msg .msg-copy{opacity:0;transition:opacity 0.15s}
+    .feed-msg:hover .msg-copy{opacity:0.7}
+    .feed-msg .msg-copy:hover{opacity:1}
+    @keyframes msgIn{from{opacity:0;transform:translateY(8px) scale(0.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+    @keyframes avatarGlow{0%,100%{box-shadow:0 0 6px rgba(59,130,246,0.3)}50%{box-shadow:0 0 14px rgba(139,92,246,0.6)}}
   `;
 
   // ═══ الأجزاء المشتركة (سطح المكتب + الجوال) ═══════════════════
@@ -739,7 +771,7 @@ export default function Dashboard() {
             style={{ background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:7, color:S.text, fontSize:12, fontWeight:700, padding:'5px 8px', maxWidth:130, outline:'none' }}>
             {projects.map(p => <option key={p} value={p} style={{ background:'#161b22' }}>{p}</option>)}
           </select>
-          <button onClick={() => setShowProjectModal(true)}
+          <button onClick={() => setShowProjectModal(true)} title={t('newProject')}
             style={{ background:'rgba(59,130,246,0.1)', border:'1px solid rgba(59,130,246,0.2)', borderRadius:6, padding:'4px 8px', color:S.blue, fontSize:11, fontWeight:700, flexShrink:0 }}>+</button>
 
           {isBuilding && (
@@ -917,7 +949,7 @@ export default function Dashboard() {
             🌍 Live Site
           </a>
         ) : (
-          <button onClick={handleDeploy} disabled={isDeploying}
+          <button onClick={handleDeploy} disabled={isDeploying} title={t('deploy')}
             style={{ background: isDeploying ? 'rgba(59,130,246,0.1)' : 'linear-gradient(135deg,#1d4ed8,#4f46e5)', border:'none', borderRadius:7, padding:'5px 14px', color:'#fff', fontSize:11, fontWeight:700, opacity: isDeploying ? 0.7 : 1 }}>
             {isDeploying ? '⏳ Deploying...' : '🚀 Deploy'}
           </button>
