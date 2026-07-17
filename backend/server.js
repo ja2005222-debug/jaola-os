@@ -503,8 +503,30 @@ app.get('/api/health', (req, res) => {
 // Authorization header تلقائياً من المتصفح. الحماية تعتمد بدلاً من ذلك على:
 // 1. تطهير صارم لاسم المستخدم والمشروع (path traversal محمي)
 // 2. الملفات المخدومة للقراءة فقط ولا تحتوي بيانات حساسة (HTML/CSS/JS عامة)
-app.get('/workspace', (req, res) => {
-    const username = (req.query.username || 'guest_user').toString();
+// 🔐 مصادقة المعاينة — كانت /workspace بلا أي تحقق: أي زائر يقرأ ملفات أي
+// مستخدم بتغيير query! الهوية الآن من التوكن حصراً (query ?auth= أو من
+// Referer للأصول النسبية داخل الـ iframe). الزائر بلا توكن يُحصر في
+// sandbox الضيف العامة فقط.
+function verifyPreviewAccess(req, res, next) {
+    let token = req.query.auth?.toString();
+    if (!token) {
+        try {
+            token = new URL(req.headers.referer || '').searchParams.get('auth');
+        } catch (e) { /* لا referer صالح */ }
+    }
+    if (!token) {
+        req.previewUser = 'guest_user'; // زائر: معاينة sandbox الضيف فقط
+        return next();
+    }
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.status(401).send('Unauthorized');
+        req.previewUser = user.username; // من التوكن حصراً — لا من query أبداً
+        next();
+    });
+}
+
+app.get('/workspace', verifyPreviewAccess, (req, res) => {
+    const username = req.previewUser;
     const project = req.query.project || 'sandbox_app';
     const projectPath = getProjectPath(username, project);
     const filePath = path.join(projectPath, 'index.html');
@@ -522,20 +544,16 @@ app.get('/workspace', (req, res) => {
 // ونُعيد استخدامهما كـ fallback للطلبات اللاحقة من نفس الـ Referer (الصفحة الأم).
 const lastKnownContext = new Map(); // key: referer base path → { username, project }
 
-app.get('/workspace/:file(*)', (req, res) => {
-    let username = req.query.username?.toString();
+app.get('/workspace/:file(*)', verifyPreviewAccess, (req, res) => {
+    const username = req.previewUser; // 🔐 من التوكن حصراً
     let project = req.query.project?.toString();
 
-    // إذا لم تصل query params (حالة الروابط النسبية)، استخرجها من الـ Referer
-    if (!username || !project) {
-        const referer = req.headers.referer || '';
+    // إذا لم يصل project (حالة الروابط النسبية)، استخرجه من الـ Referer
+    if (!project) {
         try {
-            const refUrl = new URL(referer);
-            username = username || refUrl.searchParams.get('username') || 'guest_user';
-            project = project || refUrl.searchParams.get('project') || 'sandbox_app';
+            project = new URL(req.headers.referer || '').searchParams.get('project') || 'sandbox_app';
         } catch (e) {
-            username = username || 'guest_user';
-            project = project || 'sandbox_app';
+            project = 'sandbox_app';
         }
     }
 

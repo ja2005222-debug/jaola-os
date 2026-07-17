@@ -432,9 +432,15 @@ export default function Dashboard() {
   };
 
   const handleLogout = () => {
-    setIsAuthenticated(false); setCurrentUser(''); setToken('');
-    localStorage.removeItem('token'); localStorage.removeItem('currentUser');
+    // 🔐 هدم كامل للجلسة — الـ socket مفرد ويبقى موثّقاً بالحساب القديم،
+    // وحالة React (شات/مشاريع/ملفات) تعيش لأن المكوّن لا يُفكك. بدون هذا
+    // كان الحساب التالي يرى كل بيانات السابق (تسريب حقيقي مُبلغ عنه).
+    try { socket.disconnect(); } catch { /* لا يهم */ }
+    localStorage.removeItem('token');
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('activeProject');
     sessionStorage.removeItem('booted');
+    window.location.replace('/'); // تصفير كل حالة الذاكرة — عزل تام بين الحسابات
   };
 
   const handleBoot = useCallback(() => {
