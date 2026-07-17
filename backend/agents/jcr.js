@@ -33,6 +33,7 @@ import { backupProject, listSnapshots } from './fileManager.js';
 import { analyzeRequirements, buildRequirementsContext } from './requirementAnalyzer.js';
 import { normalizeText, normalizeArabic, detectIntentFromMeaning, isQuestionMessage, hasActionIntent } from './textNormalizer.js';
 import { routeMessage } from './router.js';
+import { matchDeleteCommand, isBareYes, isBareExecute } from './chatCommands.js';
 import { verifyRequirements, buildFixInstruction, formatChecklist } from './requirementsVerifier.js';
 import { classifyIntentFast, decide, buildContinuationGoal, buildStatusReply, missionBriefing, greetingReply } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
@@ -201,7 +202,7 @@ export class JaolaCognitiveRuntime {
             }
             mem[username] = { preferredUi, dislikedTech: 'Bootstrap', language: 'Arabic' };
             await fsPromises.writeFile(this.executiveMemoryPath, JSON.stringify(mem, null, 2));
-        } catch (e) {}
+        } catch (e) { console.warn('[saveExecutiveMemory]', 'فشل حفظ الذاكرة التنفيذية:', e.message); }
     }
 
     async buildWorldModel(context, roomName, dbStatus) {
@@ -344,8 +345,11 @@ export class JaolaCognitiveRuntime {
                 break;
             }
 
-            const critiquesText = context.internalDebate.criticTranscripts.length > 0
-                ? `\n⚠️ انتقادات سابقة:\n${JSON.stringify(context.internalDebate.criticTranscripts, null, 2)}\n`
+            // آخر 3 انتقادات فقط — حقن المصفوفة كاملة كان يضخّم الـ prompt مع كل
+            // دورة فشل (تكلفة + تشتيت للنموذج) دون فائدة من النقد القديم المُعالج
+            const recentCritiques = context.internalDebate.criticTranscripts.slice(-3);
+            const critiquesText = recentCritiques.length > 0
+                ? `\n⚠️ انتقادات يجب معالجتها:\n${JSON.stringify(recentCritiques, null, 2)}\n`
                 : '';
             const prompt = `${context.goal}\n${critiquesText}\nالسياق الحالي:\n${initialCodeContext}`;
 
@@ -447,7 +451,7 @@ export class JaolaCognitiveRuntime {
                         );
                     }
                 }
-            } catch (e) { /* اختياري */ }
+            } catch (e) { console.warn('[RefactorAgent]', 'فشل التحسين (تخطٍّ):', e.message); }
 
             // 🆕 Testing Agent — اختبار شامل للكود المُنتج
             try {
@@ -786,7 +790,7 @@ export class JaolaCognitiveRuntime {
                         `✅ ${features} (${advResult.files.length} ملف)`
                     );
                 }
-            } catch (e) { /* اختياري */ }
+            } catch (e) { console.warn('[AdvancedModules]', 'فشل كتابة الوحدات المتقدمة:', e.message); }
 
             // 🏗️ Full-Stack Scaffold — للفئات المتقدمة (متجر/حجوزات/عقارات…)
             // يُولّد مشروع Next.js + API + Prisma كامل في مجلد fullstack/ بجانب
@@ -808,7 +812,7 @@ export class JaolaCognitiveRuntime {
                         `🏗️ نسخة Full-Stack (${category}) في مجلد fullstack/ — Next.js + API + Prisma (${files.length} ملف)`
                     );
                 }
-            } catch (e) { /* اختياري */ }
+            } catch (e) { console.warn('[FullStack]', 'فشل كتابة سكافولد fullstack/:', e.message); }
 
             // 🆕 Render Deploy Config — يُعدّ المشروع للنشر على Render
             try {
@@ -827,7 +831,7 @@ export class JaolaCognitiveRuntime {
                         `✅ ${renderResult.summary}`
                     );
                 }
-            } catch (e) { /* اختياري */ }
+            } catch (e) { console.warn('[RenderDeploy]', 'فشل إعداد النشر:', e.message); }
 
             return { success: true };
         }
@@ -871,7 +875,7 @@ export class JaolaCognitiveRuntime {
             kg.push(node);
             await fsPromises.writeFile(this.reflectionPath, JSON.stringify(kg.slice(-50), null, 2));
             this.emitLiveLog(roomName, '6. REFLECTION', 'Learning', '✓ تم الحفظ.');
-        } catch (e) {}
+        } catch (e) { console.warn('[Reflection]', 'فشل حفظ رسم المعرفة:', e.message); }
     }
 
     async classifyIntent(userMessage, username) {
@@ -1076,7 +1080,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 updateStructure(username, activeProject, blueprint.keySections,
                     (blueprint.functionalComponents || []).map(c => c.name));
             }
-        } catch (e) { /* اختياري */ }
+        } catch (e) { console.warn('[ProjectMemory]', 'فشل تحديث هيكل المشروع:', e.message); }
 
         // 🧰 المسار الهجين — مشروع كبير → React/Next حقيقي بمعاينة حيّة؛ غيره → Vanilla سريع
         try {
@@ -1783,30 +1787,24 @@ User preferences: ${JSON.stringify(execMemory)}` },
         }
 
         // ── 🗑️ نية حذف المشروع — قبل أي تصنيف/تعديل ─────────────────────
-        // (سجل حقيقي: "امسح المشروع" كانت تسقط في تعديل المحتوى وتشوّه
-        // الملفات، والشات يعد بأمر غير موجود ويكرر الوعد بلا نهاية.)
-        // فعل مدمّر → تأكيد صريح باسم المشروع (stateless — لا حالة تُفقد).
-        const deleteConfirm = message.trim().match(/^(?:نعم\s+)?(?:احذف|امسح|delete)\s+(?:نهائيا?ً?|permanently)\s+([a-z0-9_\-]+)\s*$/i);
-        if (deleteConfirm && agents.deleteProject) {
-            // كتابة الاسم الحرفي هي التأكيد — يحذف المشروع المسمّى (ملك المستخدم
-            // بحكم النطاق)، سواء كان النشِط أو غيره. sandbox_app محمي في المنفّذ.
-            const target = deleteConfirm[1].toLowerCase();
+        // الأنماط في chatCommands.js (نقية ومغطاة باختبارات). فعل مدمّر →
+        // تأكيد صريح باسم المشروع (stateless — لا حالة تُفقد مع إعادة التشغيل).
+        const delCmd = matchDeleteCommand(message, activeProject);
+        if (delCmd?.kind === 'confirm' && agents.deleteProject) {
+            // كتابة الاسم الحرفي هي التأكيد — sandbox_app محمي في المنفّذ.
             const lang = getUserLanguage(username) || userLang;
-            const result = await agents.deleteProject(username, target);
+            const result = await agents.deleteProject(username, delCmd.target);
             this.io.to(roomName).emit('chat_reply', {
                 message: result.success
                     ? (lang === 'ar'
-                        ? `🗑️ تم حذف المشروع «${target}» نهائياً (الملفات والسجل).\nبدّل لمشروع آخر أو أنشئ واحداً جديداً من القائمة.`
-                        : `🗑️ Project "${target}" permanently deleted (files + record).\nSwitch to another project or create a new one from the list.`)
+                        ? `🗑️ تم حذف المشروع «${delCmd.target}» نهائياً (الملفات والسجل).\nبدّل لمشروع آخر أو أنشئ واحداً جديداً من القائمة.`
+                        : `🗑️ Project "${delCmd.target}" permanently deleted (files + record).\nSwitch to another project or create a new one from the list.`)
                     : `❌ ${result.error}`,
             });
             return;
         }
-        // «احذف المشروع newline» — حذف مشروع مسمّى (كانت تسقط في تعديل المحتوى)
-        const namedDelete = message.trim().match(/^(?:امسح|احذف|delete|remove)\s+(?:المشروع|مشروع|project)\s+([a-z0-9_\-]+)\s*[.!؟?]*$/i);
-        const deleteIntent = namedDelete || /(?:^|\s)(?:امسح|احذف|شيل|delete|remove)\s*(?:هذا\s*)?(?:المشروع|المشروع\s+كله|الموقع\s+كله|the\s+project|this\s+project)\s*(?:كامل|بالكامل|نهائيا|نهائياً)?\s*[.!؟?]*\s*$/iu.test(message.trim());
-        if (deleteIntent) {
-            const target = namedDelete ? namedDelete[1].toLowerCase() : activeProject;
+        if (delCmd?.kind === 'intent') {
+            const target = delCmd.target || activeProject;
             const lang = getUserLanguage(username) || userLang;
             this.emitLiveLog(roomName, 'INTENT', 'Engine', `🗑️ نية حذف مشروع (${target}) — طلب تأكيد صريح (لا تعديل محتوى).`);
             this.io.to(roomName).emit('chat_reply', {
@@ -1907,7 +1905,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // 🆕 "نعم/تمام/ok" مجرّدة بلا هدف معلق ولا clarifier: موافقة على
         // المتابعة — إن وُجد مشروع قابل للاستئناف نكمله فعلياً بدل إسقاطها
         // في الشات ليرتجل حواراً (سجل تاكسي: "نعم" كانت تدور بلا فعل).
-        const bareYes = /^\s*(نعم|ايوه|أيوه|اه|آه|تمام|طيب|يلا|ok|okay|yes|sure|yep|go)\s*[.!؟?]*\s*$/i.test(message);
+        const bareYes = isBareYes(message); // النمط في chatCommands.js (مُختبَر)
         if (bareYes) {
             const contGoal = buildContinuationGoal(username, activeProject);
             const d = decide('continue', username, activeProject);
@@ -1926,7 +1924,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // 🆕 "نفذ/نفذهما/طبقها/do it" مجرّدة: أمر تنفيذ يشير لما نوقش للتو في
         // الشات — ننفّذ آخر ما وصفه المساعد كتعليمة تعديل فعلية بدل وعود
         // "سيقوم نظام البناء..." المتكررة (سجل: "تمام نفذهما" دارت بلا فعل ×3).
-        const bareExecute = /^\s*(?:تمام|طيب|اوكي?|ok|okay|نعم|يلا)?\s*(?:نفّ?ذ(?:ها|هم|هما|ه|وا)?|طبّ?ق(?:ها|هم|هما|ه)?|اعملها|سوّ?ها|قم\s+بذلك|قم\s+بها|نفذ\s+ذلك|do\s+it|execute(?:\s+it)?|go\s+ahead|implement(?:\s+it)?|apply(?:\s+it)?)\s*[.!؟?]*\s*$/iu.test(message);
+        const bareExecute = isBareExecute(message); // النمط في chatCommands.js (مُختبَر)
         if (bareExecute) {
             const lang = getUserLanguage(username) || userLang;
             try {
