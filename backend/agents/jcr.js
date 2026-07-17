@@ -356,6 +356,7 @@ export class JaolaCognitiveRuntime {
             this.emitLiveLog(roomName, '5. RUNTIME', 'DesignerAgent', `⚠️ تخطّي: ${e.message}`);
         }
 
+        transitionState(context.username, context.activeProject, STATES.GENERATING, { agent: 'Coder' });
         for (let cycle = 0; cycle < maxDebateCycles; cycle++) {
             if (context.budget.isExhausted()) {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'Orchestrator', '❌ الميزانية استنفدت.');
@@ -436,6 +437,7 @@ export class JaolaCognitiveRuntime {
             await writePlanFiles(context.projectPath, plan.files);
 
             // 🆕 Review Agent — يراجع ويُصلح تلقائياً قبل العرض النهائي
+            transitionState(context.username, context.activeProject, STATES.REVIEWING, { agent: 'ReviewAgent' });
             try {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'ReviewAgent', '🔍 مراجعة جودة الكود...');
                 const reviewResult = await reviewCode(plan.files, context.originalGoal, getUserLanguage(context.username) || 'en');
@@ -492,6 +494,7 @@ export class JaolaCognitiveRuntime {
             try {
                 if (context.blueprint?.functionalComponents?.length && plan?.files?.length) {
                     const lang = getUserLanguage(context.username) || 'ar';
+                    transitionState(context.username, context.activeProject, STATES.VERIFYING, { agent: 'Requirements' });
                     this.emitLiveLog(roomName, '6. VERIFY', 'Requirements', '📋 التحقق من تنفيذ متطلبات المشروع...');
                     let verdict = await verifyRequirements(context.blueprint, plan.files);
                     let fixedNames = [];
@@ -1160,7 +1163,9 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const context = new JCRContext(finalGoalWithRequirements || enrichedGoal, projectPath, username, activeProject);
         context.originalGoal = goal;
         context.blueprint = blueprint;   // متاح للـ template agent وباقي المراحل
-        transitionState(username, activeProject, STATES.GENERATING);
+        // 🔄 المهمة تبدأ بمرحلة المعمارية (نموذج العالم + المخطط + القرار) —
+        // GENERATING تُعلن لاحقاً عند دخول حلقة كتابة الشفرة فعلاً
+        transitionState(username, activeProject, STATES.ARCHITECTURE, { agent: 'Architect' });
 
         // ⏹️ تسجيل المهمة في سجل الإيقاف — تسمح للمستخدم بإيقافها من الواجهة
         registerMission(roomName);
@@ -1193,6 +1198,9 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 execResult = await this.runDynamicMultiAgentRuntime(context, roomName, agents);
             } catch (runtimeError) {
                 if (runtimeError.aborted) throw runtimeError; // الإيقاف ليس فشلاً — يُعالج في الأسفل
+                // الحالة تتحول FAILED فوراً — كانت تبقى GENERATING فيُحجب المستخدم
+                // بقفل "مهمة تعمل" حتى ينقذه مؤقت العشر دقائق
+                transitionState(username, activeProject, STATES.FAILED, { error: runtimeError.message });
                 this.emitAgentError(roomName, 'coder');
                 await this.runReflectionAndSelfImprovement(context, roomName, false);
                 this.emitLiveLog(roomName, 'JCOS', 'Kernel', `❌ فشل نهائياً: ${runtimeError.message}`);
@@ -1276,6 +1284,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 }).catch(() => {});
             }
             if (!execResult.success) {
+                // الحالة FAILED فوراً — لا انتظار لمؤقت القفل العالق
+                transitionState(username, activeProject, STATES.FAILED, { error: execResult.error || 'build_failed' });
                 // 📊 البنايات الفاشلة تُسجل أيضاً — التاريخ الصادق جزء من الذكاء
                 recordBuild(username, activeProject, {
                     success: false,

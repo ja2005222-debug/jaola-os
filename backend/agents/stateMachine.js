@@ -15,27 +15,54 @@
 // 📋 States المتاحة
 // ═══════════════════════════════════════════════════════
 export const STATES = {
-    IDLE:       'idle',        // لا يوجد مشروع نشط
-    PLANNING:   'planning',    // Clarifier يسأل
-    GENERATING: 'generating',  // Coder يكتب
-    REVIEWING:  'reviewing',   // Review + Testing
-    DEPLOYING:  'deploying',   // Deploy على Vercel
-    COMPLETED:  'completed',   // اكتمل بنجاح
-    FAILED:     'failed',      // فشل
-    PAUSED:     'paused',      // متوقف بأمر المستخدم
+    IDLE:         'idle',         // لا يوجد مشروع نشط
+    PLANNING:     'planning',     // Clarifier يسأل
+    ARCHITECTURE: 'architecture', // نموذج العالم + المخطط + القرار التنفيذي
+    GENERATING:   'generating',   // Coder يكتب (حلقة النقاش)
+    REVIEWING:    'reviewing',    // Review + Refactor + Testing
+    VERIFYING:    'verifying',    // التحقق من متطلبات المشروع (المرحلة 6)
+    DEPLOYING:    'deploying',    // Deploy على Vercel
+    COMPLETED:    'completed',    // اكتمل بنجاح
+    FAILED:       'failed',       // فشل
+    PAUSED:       'paused',       // متوقف بأمر المستخدم
 };
 
-// الانتقالات المسموح بها
+// الانتقالات المسموح بها — صادقة مع المسار الفعلي: المراحل الاختيارية
+// (مراجعة/تحقق/نشر) قد تُتخطى عند استنفاد الميزانية، فالوصول المباشر
+// للاكتمال مسموح. (كان GENERATING → COMPLETED مرفوضاً فيبقى المشروع
+// عالقاً "قيد البناء" 10 دقائق بعد كل بناء ناجح — أصل القفل الوهمي.)
 const TRANSITIONS = {
-    [STATES.IDLE]:       [STATES.PLANNING, STATES.GENERATING],
-    [STATES.PLANNING]:   [STATES.GENERATING, STATES.IDLE],
-    [STATES.GENERATING]: [STATES.REVIEWING, STATES.FAILED, STATES.PAUSED],
-    [STATES.REVIEWING]:  [STATES.DEPLOYING, STATES.GENERATING, STATES.FAILED],
-    [STATES.DEPLOYING]:  [STATES.COMPLETED, STATES.FAILED],
-    [STATES.COMPLETED]:  [STATES.GENERATING, STATES.IDLE],
-    [STATES.FAILED]:     [STATES.GENERATING, STATES.IDLE],
-    [STATES.PAUSED]:     [STATES.GENERATING, STATES.IDLE],
+    [STATES.IDLE]:         [STATES.PLANNING, STATES.ARCHITECTURE, STATES.GENERATING],
+    [STATES.PLANNING]:     [STATES.ARCHITECTURE, STATES.GENERATING, STATES.IDLE],
+    [STATES.ARCHITECTURE]: [STATES.GENERATING, STATES.COMPLETED, STATES.FAILED, STATES.PAUSED, STATES.IDLE],
+    [STATES.GENERATING]:   [STATES.REVIEWING, STATES.VERIFYING, STATES.DEPLOYING, STATES.COMPLETED, STATES.FAILED, STATES.PAUSED],
+    [STATES.REVIEWING]:    [STATES.VERIFYING, STATES.GENERATING, STATES.DEPLOYING, STATES.COMPLETED, STATES.FAILED, STATES.PAUSED],
+    [STATES.VERIFYING]:    [STATES.DEPLOYING, STATES.GENERATING, STATES.COMPLETED, STATES.FAILED, STATES.PAUSED],
+    [STATES.DEPLOYING]:    [STATES.COMPLETED, STATES.FAILED],
+    [STATES.COMPLETED]:    [STATES.PLANNING, STATES.ARCHITECTURE, STATES.GENERATING, STATES.IDLE],
+    [STATES.FAILED]:       [STATES.PLANNING, STATES.ARCHITECTURE, STATES.GENERATING, STATES.IDLE],
+    [STATES.PAUSED]:       [STATES.ARCHITECTURE, STATES.GENERATING, STATES.IDLE],
 };
+
+// 📡 أسماء الأحداث القانونية لكل حالة — لغة موحدة للواجهة والسجلات
+// بدل الصياغات المتفرقة في كل نقطة بث
+export const STATE_EVENTS = {
+    [STATES.PLANNING]:     'MissionAccepted',
+    [STATES.ARCHITECTURE]: 'ArchitectureStarted',
+    [STATES.GENERATING]:   'CodingStarted',
+    [STATES.REVIEWING]:    'ReviewStarted',
+    [STATES.VERIFYING]:    'VerificationStarted',
+    [STATES.DEPLOYING]:    'DeployStarted',
+    [STATES.COMPLETED]:    'MissionCompleted',
+    [STATES.FAILED]:       'MissionFailed',
+    [STATES.PAUSED]:       'MissionPaused',
+    [STATES.IDLE]:         'MissionReset',
+};
+
+// ناقل حالة اختياري: يُسجَّل مرة عند الإقلاع (server.js) فيُبَث كل انتقال
+// ناجح للواجهة كحدث موحد — دون أن تعرف آلة الحالات شيئاً عن Socket.io
+let stateEmitter = null;
+export function setStateEmitter(fn) { stateEmitter = typeof fn === 'function' ? fn : null; }
 
 // ═══════════════════════════════════════════════════════
 // 💾 تخزين حالات المشاريع
@@ -101,7 +128,7 @@ export function transitionState(username, project, newState, meta = {}) {
     state.state = newState;
     state.updatedAt = Date.now();
 
-    if (newState === STATES.GENERATING && !state.startedAt) {
+    if ((newState === STATES.ARCHITECTURE || newState === STATES.GENERATING) && !state.startedAt) {
         state.startedAt = Date.now();
     }
 
@@ -112,10 +139,12 @@ export function transitionState(username, project, newState, meta = {}) {
 
     // تحديث التقدم
     const progressMap = {
-        [STATES.PLANNING]:   'planning',
-        [STATES.GENERATING]: 'coding',
-        [STATES.REVIEWING]:  'reviewing',
-        [STATES.DEPLOYING]:  'deploying',
+        [STATES.PLANNING]:     'planning',
+        [STATES.ARCHITECTURE]: 'designing',
+        [STATES.GENERATING]:   'coding',
+        [STATES.REVIEWING]:    'reviewing',
+        [STATES.VERIFYING]:    'testing',
+        [STATES.DEPLOYING]:    'deploying',
     };
     if (progressMap[newState]) {
         state.progress[progressMap[newState]] = true;
@@ -123,6 +152,14 @@ export function transitionState(username, project, newState, meta = {}) {
 
     projectStates.set(getKey(username, project), state);
     persistEntry('projectStates', getKey(username, project), state);
+    try {
+        stateEmitter?.({
+            username, project,
+            state: newState,
+            previous: state.previousState,
+            event: STATE_EVENTS[newState] || newState,
+        });
+    } catch { /* البث لا يُفشل الانتقال أبداً */ }
     return true;
 }
 
@@ -173,7 +210,7 @@ const BUILD_STALE_MS = 10 * 60 * 1000; // 10 دقائق
 
 export function isBuilding(username, project) {
     const state = getProjectState(username, project);
-    const active = [STATES.GENERATING, STATES.REVIEWING, STATES.DEPLOYING].includes(state.state);
+    const active = [STATES.ARCHITECTURE, STATES.GENERATING, STATES.REVIEWING, STATES.VERIFYING, STATES.DEPLOYING].includes(state.state);
     if (!active) return false;
 
     // قفل عالق: حرّره واعتبره فشلاً قابلاً للاستئناف
