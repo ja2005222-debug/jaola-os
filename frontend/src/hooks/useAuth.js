@@ -41,6 +41,7 @@ export function useAuth() {
     if (status === 401 || status === 403) {
       localStorage.removeItem('token');
       localStorage.removeItem('currentUser');
+      localStorage.removeItem('activeProject'); // لا يورَّث للحساب التالي
       setToken(null);
       setCurrentUser('');
       setIsAuthenticated(false);

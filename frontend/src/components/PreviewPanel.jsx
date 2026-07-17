@@ -28,7 +28,8 @@ export function PreviewPanel({ activeProject, previewTimestamp, streamingContent
   const showStreamOverlay = streamingContent && !streamStale;
 
   const savedUser = currentUser || localStorage.getItem('currentUser') || 'guest_user';
-  const externalUrl = `${BACKEND_URL}/workspace/index.html?project=${activeProject}&username=${savedUser}&t=${previewTimestamp}`;
+  const authToken = localStorage.getItem('token') || '';
+  const externalUrl = `${BACKEND_URL}/workspace/index.html?project=${activeProject}&auth=${encodeURIComponent(authToken)}&t=${previewTimestamp}`;
 
   const btn = {
     background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6,

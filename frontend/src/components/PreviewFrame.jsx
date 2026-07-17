@@ -9,8 +9,9 @@ const BACKEND_URL = window.location.hostname === 'localhost' || window.location.
 
 export function PreviewFrame({ activeProject, previewTimestamp, viewMode, streamingContent, currentUser }) {
   const iframeRef = useRef(null);
-  const savedUser = currentUser || localStorage.getItem('currentUser') || 'guest_user';
-  const directPreviewUrl = `${BACKEND_URL}/workspace/index.html?project=${activeProject}&username=${savedUser}&t=${previewTimestamp}`;
+  const authToken = localStorage.getItem('token') || '';
+  // 🔐 الهوية من التوكن (auth) — الخادم يتجاهل username تماماً ويأخذها من التوكن
+  const directPreviewUrl = `${BACKEND_URL}/workspace/index.html?project=${activeProject}&auth=${encodeURIComponent(authToken)}&t=${previewTimestamp}`;
 
   // 🆕 حل مستهدف لمشكلة عناصر الإدخال البيضاء على خلفيات داكنة:
   // بدلاً من فرض لون على الموقع بالكامل (الذي كان يكسر التصاميم الملوّنة)،
