@@ -188,7 +188,12 @@ export async function ensureEditIntegrity(files, projectPath, emit = () => { }) 
         const clean = normalizeRef(ref);
         return changedNames.has(clean) || diskFiles.includes(clean);
     };
-    const cssOnDisk = diskFiles.filter(f => f.endsWith('.css') && !f.includes('node_modules/'));
+    // مرشحو CSS من الدفعة المتغيّرة نفسها ومن القرص معاً — في البناء الأول
+    // القرص فارغ والملفات كلها في الدفعة، فلا بد من عدّها
+    const cssCandidates = [...new Set([
+        ...files.map(f => f?.name).filter(n => n && n.endsWith('.css')),
+        ...diskFiles.filter(f => f.endsWith('.css') && !f.includes('node_modules/')),
+    ])];
 
     const out = [];
     for (const file of files) {
@@ -215,8 +220,8 @@ export async function ensureEditIntegrity(files, projectPath, emit = () => { }) 
             let restore = oldLinks.filter(refExists);
             if (!restore.length) {
                 // لا نسخة سابقة يُستدل بها → المرشح المعتاد أو ملف CSS الوحيد
-                const candidate = cssOnDisk.find(c => /^(?:css\/)?styles?\.css$/.test(c))
-                    || (cssOnDisk.length === 1 ? cssOnDisk[0] : null);
+                const candidate = cssCandidates.find(c => /^(?:css\/)?styles?\.css$/.test(c))
+                    || (cssCandidates.length === 1 ? cssCandidates[0] : null);
                 if (candidate) restore = [candidate];
             }
             if (restore.length) {
@@ -253,9 +258,9 @@ export async function ensureEditIntegrity(files, projectPath, emit = () => { }) 
             if (!refExists(ref)) brokenRefs.push(ref);
         }
         for (const ref of [...new Set(brokenRefs)]) {
-            if (ref.endsWith('.css') && cssOnDisk.length === 1) {
-                content = content.split(ref).join(cssOnDisk[0]);
-                fixes.push(`مسار CSS: ${ref} ← ${cssOnDisk[0]}`);
+            if (ref.endsWith('.css') && cssCandidates.length === 1) {
+                content = content.split(ref).join(cssCandidates[0]);
+                fixes.push(`مسار CSS: ${ref} ← ${cssCandidates[0]}`);
             } else {
                 emit(`⚠️ ${file.name} يشير إلى "${ref}" وهو غير موجود في المشروع.`);
             }

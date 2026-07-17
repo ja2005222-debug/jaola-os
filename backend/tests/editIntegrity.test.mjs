@@ -75,6 +75,42 @@ test('الملفات غير HTML والقيم الشاذة تمرّ كما هي'
     assert.deepEqual(out, input);
 });
 
+// ─── وضع البناء الأول: القرص فارغ والملفات كلها في الدفعة (test17-7-6) ───
+
+test('بناء أول: index.html بلا <link> وملف styles.css في الدفعة → يُحقن الرابط', async () => {
+    const fresh = await fs.mkdtemp(path.join(os.tmpdir(), 'jaola-fresh-'));
+    const batch = [
+        { name: 'index.html', content: '<!DOCTYPE html>\n<html><head><title>السكرتير الذكي</title></head><body><nav>المواعيد</nav></body></html>' },
+        { name: 'styles.css', content: 'body { direction: rtl; }' },
+    ];
+    const [fixed] = await ensureEditIntegrity(batch, fresh);
+    assert.match(fixed.content, /<link rel="stylesheet" href="styles\.css">/);
+    await fs.rm(fresh, { recursive: true, force: true });
+});
+
+test('بناء أول: مسار مطلق href="/styles.css" → يُصحَّح لمسار نسبي', async () => {
+    const fresh = await fs.mkdtemp(path.join(os.tmpdir(), 'jaola-fresh-'));
+    const batch = [
+        { name: 'index.html', content: '<!DOCTYPE html>\n<html><head><link rel="stylesheet" href="/styles.css"></head><body>x</body></html>' },
+        { name: 'styles.css', content: 'body{}' },
+    ];
+    const [fixed] = await ensureEditIntegrity(batch, fresh);
+    assert.match(fixed.content, /href="styles\.css"/);
+    assert.doesNotMatch(fixed.content, /href="\/styles\.css"/);
+    await fs.rm(fresh, { recursive: true, force: true });
+});
+
+test('بناء أول: النموذج ربط style.css والملف الفعلي styles.css → يُصحَّح الاسم', async () => {
+    const fresh = await fs.mkdtemp(path.join(os.tmpdir(), 'jaola-fresh-'));
+    const batch = [
+        { name: 'index.html', content: '<!DOCTYPE html>\n<html><head><link rel="stylesheet" href="style.css"></head><body>x</body></html>' },
+        { name: 'styles.css', content: 'body{}' },
+    ];
+    const [fixed] = await ensureEditIntegrity(batch, fresh);
+    assert.match(fixed.content, /href="styles\.css"/);
+    await fs.rm(fresh, { recursive: true, force: true });
+});
+
 test('مشروع بلا نسخة سابقة (مجلد غير موجود) → لا انهيار ولا حقن أعمى', async () => {
     const edited = '<html><head><title>x</title></head><body>y</body></html>';
     const [out] = await ensureEditIntegrity([{ name: 'index.html', content: edited }], path.join(dir, 'ghost-dir'));
