@@ -846,8 +846,8 @@ export class JaolaCognitiveRuntime {
             .map(m => `${m.role === 'user' ? '👤' : '🤖'} ${m.content}`)
             .join('\n');
         const instruction = userLang === 'ar'
-            ? 'حدّث ملخّص الذاكرة التالي بدمج الرسائل الجديدة. احتفظ بكل الحقائق الدائمة (اسم المشروع، القرارات، التفضيلات، الالتزامات، ما يريده المستخدم وما رفضه). اكتب فقرة مركّزة بالعربية دون تحية أو مقدمات.'
-            : 'Update the memory summary below by merging the new messages. Preserve all durable facts (project name, decisions, preferences, commitments, what the user wants and rejected). Write one focused paragraph, no greeting.';
+            ? 'حدّث ملخّص الذاكرة التالي بدمج الرسائل الجديدة. احتفظ بكل الحقائق الدائمة (اسم المشروع، القرارات، التفضيلات، الالتزامات، ما يريده المستخدم وما رفضه). ⚠️ لا تسجّل ادّعاءات المساعد عن عمليات نفّذها أو فشلت (مثل "أضفت ملف X" أو "لم يعمل الحذف") — قد تكون خاطئة وتلوّث الذاكرة؛ سجّل طلبات المستخدم وقراراته فقط. اكتب فقرة مركّزة بالعربية دون تحية أو مقدمات.'
+            : 'Update the memory summary below by merging the new messages. Preserve all durable facts (project name, decisions, preferences, commitments, what the user wants and rejected). ⚠️ Do NOT record assistant claims about operations it performed or that failed (e.g. "I added file X", "the delete didn\'t work") — they may be wrong and would poison memory; record only user requests and decisions. Write one focused paragraph, no greeting.';
         try {
             const completion = await groq.chat.completions.create({
                 messages: [
@@ -874,8 +874,8 @@ export class JaolaCognitiveRuntime {
 
         // 🧠 Project Brain — يفهم كامل المشروع (ملفات + قرارات + أُنجز/متبقٍّ) لا الرسالة الأخيرة فقط
         let brainContext = '';
+        const project = roomName.startsWith(username + '-') ? roomName.slice(username.length + 1) : null;
         try {
-            const project = roomName.startsWith(username + '-') ? roomName.slice(username.length + 1) : null;
             if (project) {
                 const safeUser = username.replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
                 const safeProject = project.replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
@@ -901,11 +901,13 @@ CRITICAL LANGUAGE RULE: The user's language is "${userLang}" (${langInfo.label})
 - NEVER tell the user to type the exact same words they just sent — that creates an infinite loop. If their message already describes a change, tell them to send it again once to confirm, or rephrase it starting with an action verb (e.g. "${userLang === 'ar' ? 'غيّر / اضف / نسّق' : 'change / add / format'}").
 - When the user wants to build, continue, or change something: tell them in ONE sentence what to type — "${userLang === 'ar' ? 'اكمل' : 'continue'}" to resume the build, "${userLang === 'ar' ? 'ابني [وصف الموقع]' : 'build [site description]'}" for a new site, or simply describe the specific change (e.g. "${userLang === 'ar' ? 'غيّر الألوان إلى أزرق' : 'change the colors to blue'}") and the build system executes it directly.
 - To DELETE the current project: the user types "${userLang === 'ar' ? 'احذف المشروع' : 'delete the project'}" and the system will ask for explicit confirmation. These are the ONLY commands that exist — NEVER invent or promise any other command or capability.
+- RENAMING a project is NOT supported. If asked to rename, say so honestly and suggest creating a new project with the desired name from the projects list. NEVER promise "the project will be named X".
 
 RESPONSE RULES:
 - Keep replies SHORT: 1-3 sentences maximum
 - Be direct and friendly
 - Answer about the WHOLE project using the state below — not just the last message. If asked what's done or remaining, use ONLY it.
+- The current project's NAME is "${project || 'sandbox_app'}" — if asked the project name, answer with it directly.
 
 ## Current project state (Project Brain — the ONLY source of truth about the project):
 ${brainContext || 'No project files yet.'}
@@ -1860,6 +1862,36 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 this.executeMission(contGoal, projectPath, username, activeProject, roomName, agents, dbStatus);
                 return;
             }
+        }
+
+        // 🆕 "نفذ/نفذهما/طبقها/do it" مجرّدة: أمر تنفيذ يشير لما نوقش للتو في
+        // الشات — ننفّذ آخر ما وصفه المساعد كتعليمة تعديل فعلية بدل وعود
+        // "سيقوم نظام البناء..." المتكررة (سجل: "تمام نفذهما" دارت بلا فعل ×3).
+        const bareExecute = /^\s*(?:تمام|طيب|اوكي?|ok|okay|نعم|يلا)?\s*(?:نفّ?ذ(?:ها|هم|هما|ه|وا)?|طبّ?ق(?:ها|هم|هما|ه)?|اعملها|سوّ?ها|قم\s+بذلك|قم\s+بها|نفذ\s+ذلك|do\s+it|execute(?:\s+it)?|go\s+ahead|implement(?:\s+it)?|apply(?:\s+it)?)\s*[.!؟?]*\s*$/iu.test(message);
+        if (bareExecute) {
+            const lang = getUserLanguage(username) || userLang;
+            try {
+                const { window: hist } = await loadConversation(username);
+                const lastAssistant = [...hist].reverse().find(m => m.role === 'assistant' && !/^⚠️|^⚡|^🗑️/.test(m.content || ''));
+                if (lastAssistant?.content) {
+                    this.emitLiveLog(roomName, 'INTENT', 'Engine', '⚡ أمر تنفيذ مجرّد → تنفيذ ما نوقش للتو كتعديل فعلي.');
+                    this.io.to(roomName).emit('chat_reply', {
+                        message: lang === 'ar' ? '⚡ تمام — أنفّذ ما اتفقنا عليه الآن...' : '⚡ On it — executing what we just discussed...'
+                    });
+                    const instruction = (lang === 'ar'
+                        ? `نفّذ على الموقع الحالي ما تم الاتفاق عليه في المحادثة التالية (طلب المستخدم الأصلي ثم وصف المساعد):\n"${message.trim()}" يشير إلى:\n${lastAssistant.content.slice(0, 600)}`
+                        : `Apply to the current site what was agreed in chat:\n"${message.trim()}" refers to:\n${lastAssistant.content.slice(0, 600)}`);
+                    recordEdit(username, instruction.slice(0, 100));
+                    this.surgicalEdit(instruction, projectPath, username, activeProject, roomName, agents, dbStatus);
+                    return;
+                }
+            } catch (e) { /* سقوط آمن للشات */ }
+            this.io.to(roomName).emit('chat_reply', {
+                message: lang === 'ar'
+                    ? 'ماذا تريد أن أنفّذ بالضبط؟ صِف التغيير بجملة (مثال: "اضف صفحة للسائق وصفحة للعميل").'
+                    : 'What exactly should I execute? Describe the change in one sentence.'
+            });
+            return;
         }
 
         // ── 🧠 CEO Brain: Intent Engine → Decision Engine → Execution ─────
