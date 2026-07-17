@@ -157,6 +157,23 @@ async function generateAIImage(prompt, projectPath, fileName) {
     } catch (error) { console.error('[IMAGE] فشل:', error); }
 }
 
+// 💾 كتابة آمنة لكل ملفات الخطة — القائمة البيضاء القديمة
+// ['index.html','styles.css','script.js'] كانت تُسقط بصمت أي ملف باسم مختلف
+// (style.css بلا s، css/styles.css، صفحات إضافية) فيصل الموقع للمستخدم
+// خاماً بلا تصميم. الآن يُكتب كل ملف بعد تعقيم مساره فقط.
+async function writePlanFiles(projectPath, files) {
+    for (const f of files || []) {
+        if (!f?.name || typeof f.content !== 'string') continue;
+        const safe = path.normalize(f.name).replace(/\\/g, '/');
+        // لا مسارات مطلقة، لا صعود خارج المشروع، لا ملفات مخفية (لن تُخدَّم أصلاً)
+        if (path.isAbsolute(safe) || safe.split('/').some(p => p === '..' || p.startsWith('.'))) continue;
+        const fp = path.join(projectPath, safe);
+        if (!fp.startsWith(projectPath)) continue;
+        await fsPromises.mkdir(path.dirname(fp), { recursive: true });
+        await fsPromises.writeFile(fp, f.content);
+    }
+}
+
 // ==========================================
 // 🚀 JAOLA Cognitive Runtime
 // ==========================================
@@ -411,11 +428,12 @@ export class JaolaCognitiveRuntime {
             // 🛡️ Code Guard — فحص syntax وإصلاح ذاتي قبل أي حفظ
             plan.files = await guardFiles(plan.files,
                 (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m));
+            // 🧷 سلامة المراجع قبل الكتابة: رابط تنسيق مفقود/مكسور (href="/styles.css"
+            // أو style.css غير الموجود) كان يصل للمستخدم موقعاً خاماً بلا تصميم
+            plan.files = await ensureEditIntegrity(plan.files, context.projectPath,
+                (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m));
 
-            await Promise.all(plan.files
-                .filter(f => ['index.html', 'styles.css', 'script.js'].includes(f.name) && typeof f.content === 'string')
-                .map(f => fsPromises.writeFile(path.join(context.projectPath, f.name), f.content))
-            );
+            await writePlanFiles(context.projectPath, plan.files);
 
             // 🆕 Review Agent — يراجع ويُصلح تلقائياً قبل العرض النهائي
             try {
@@ -423,11 +441,8 @@ export class JaolaCognitiveRuntime {
                 const reviewResult = await reviewCode(plan.files, context.originalGoal, getUserLanguage(context.username) || 'en');
 
                 if (reviewResult.fixedCount > 0) {
-                    // حفظ الملفات المُصلحة
-                    await Promise.all(reviewResult.fixedFiles
-                        .filter(f => ['index.html', 'styles.css', 'script.js'].includes(f.name) && typeof f.content === 'string')
-                        .map(f => fsPromises.writeFile(path.join(context.projectPath, f.name), f.content))
-                    );
+                    // حفظ الملفات المُصلحة — كل الملفات، لا القائمة البيضاء
+                    await writePlanFiles(context.projectPath, reviewResult.fixedFiles);
                     plan.files = reviewResult.fixedFiles;
                 }
 
