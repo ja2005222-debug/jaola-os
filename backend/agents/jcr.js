@@ -33,6 +33,7 @@ import { backupProject, listSnapshots } from './fileManager.js';
 import { analyzeRequirements, buildRequirementsContext } from './requirementAnalyzer.js';
 import { normalizeText, normalizeArabic, detectIntentFromMeaning, isQuestionMessage, hasActionIntent } from './textNormalizer.js';
 import { routeMessage } from './router.js';
+import { verifyRequirements, buildFixInstruction, formatChecklist } from './requirementsVerifier.js';
 import { classifyIntentFast, decide, buildContinuationGoal, buildStatusReply, missionBriefing, greetingReply } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
 import { registerMission, throwIfAborted, clearMission } from '../services/abortRegistry.js';
@@ -464,6 +465,63 @@ export class JaolaCognitiveRuntime {
                 }
             } catch (e) {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'TestingAgent', `⚠️ تخطّي: ${e.message}`);
+            }
+
+            // 📋 Requirements Verifier — الأهم: هل نُفِّذت متطلبات المشروع فعلاً؟
+            // يفحص كل مكوّن وظيفي من الـ Blueprint ضد الكود المبني، يُصلح الناقص
+            // تلقائياً (جولة واحدة مستهدفة)، ويعرض قائمة تحقق صادقة للمستخدم.
+            try {
+                if (context.blueprint?.functionalComponents?.length && plan?.files?.length) {
+                    const lang = getUserLanguage(context.username) || 'ar';
+                    this.emitLiveLog(roomName, '6. VERIFY', 'Requirements', '📋 التحقق من تنفيذ متطلبات المشروع...');
+                    let verdict = await verifyRequirements(context.blueprint, plan.files);
+                    let fixedNames = [];
+
+                    if (verdict?.missing?.length && agents.coreEditCodePlan && context.budget.consumeCall()) {
+                        this.emitLiveLog(roomName, '6. VERIFY', 'Requirements',
+                            `🔧 ${verdict.missing.length} متطلب ناقص — جولة إصلاح مستهدفة: ${verdict.missing.map(m => m.name).join('، ')}`);
+                        const fixPlan = await agents.coreEditCodePlan(
+                            buildFixInstruction(verdict.missing), plan.files, lang
+                        );
+                        if (fixPlan?.files?.length && !fixPlan.error) {
+                            const guardedFix = await guardFiles(
+                                scrubPlaceholders(fixPlan.files, context.activeProject),
+                                (m) => this.emitLiveLog(roomName, '6. VERIFY', 'CodeGuard', m)
+                            );
+                            // دمج الملفات المُصلحة في الخطة وكتابتها على القرص
+                            for (const f of guardedFix) {
+                                if (!f?.name || typeof f.content !== 'string') continue;
+                                const idx = plan.files.findIndex(p => p.name === f.name);
+                                if (idx >= 0) plan.files[idx] = f; else plan.files.push(f);
+                                const fp = path.join(context.projectPath, f.name);
+                                await fsPromises.mkdir(path.dirname(fp), { recursive: true });
+                                await fsPromises.writeFile(fp, f.content);
+                            }
+                            const before = new Set(verdict.missing.map(m => m.name));
+                            // إعادة تحقق سريعة — الصادق فقط يُعرض كمُصلَح
+                            const recheck = context.budget.consumeCall()
+                                ? await verifyRequirements(context.blueprint, plan.files)
+                                : null;
+                            if (recheck) {
+                                fixedNames = recheck.results
+                                    .filter(r => r.implemented && before.has(r.name))
+                                    .map(r => r.name);
+                                verdict = recheck;
+                            }
+                        }
+                    }
+
+                    if (verdict) {
+                        const checklist = formatChecklist(verdict, lang, fixedNames);
+                        this.emitLiveLog(roomName, '6. VERIFY', 'Requirements',
+                            `📋 ${verdict.implementedCount}/${verdict.results.length} متطلب منفّذ${fixedNames.length ? ` (+${fixedNames.length} أُصلح تلقائياً)` : ''}`);
+                        if (checklist) this.io.to(roomName).emit('chat_reply', { message: checklist });
+                        addToHistory(context.username, context.activeProject,
+                            `تحقق المتطلبات: ${verdict.implementedCount}/${verdict.results.length} منفّذ`);
+                    }
+                }
+            } catch (e) {
+                this.emitLiveLog(roomName, '6. VERIFY', 'Requirements', `⚠️ تخطّي التحقق: ${e.message}`);
             }
             await this.saveExecutiveMemory(context.username, context.mentalModel.visualIdentity);
             context.files = plan?.files || [];
