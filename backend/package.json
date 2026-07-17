@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "test": "node --test 'tests/*.test.mjs'",
     "postinstall": "cd ../frontend && npm install && npm run build"
   },
   "dependencies": {

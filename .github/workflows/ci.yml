@@ -1,0 +1,45 @@
+# 🛡️ شبكة أمان الاستقرار — كل درس مدفوع الثمن محمي باختبار دائم.
+# أي PR يكسر سلوكاً مُصلَحاً سابقاً يُرفض هنا قبل الدمج.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backend-tests:
+    name: اختبارات الخادم
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      # postinstall يبني الواجهة — نتخطاه هنا (لها job مستقل)
+      - name: تثبيت تبعيات الخادم
+        working-directory: backend
+        run: npm ci --ignore-scripts
+      - name: تشغيل الاختبارات
+        working-directory: backend
+        run: npm test
+
+  frontend-build:
+    name: بناء الواجهة
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: تثبيت تبعيات الواجهة
+        working-directory: frontend
+        run: npm ci
+      # يصطاد أخطاء الاستيراد/التصدير التي لا يراها فحص الصياغة (درس #59)
+      - name: بناء إنتاجي كامل
+        working-directory: frontend
+        run: npm run build
