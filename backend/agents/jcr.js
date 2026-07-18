@@ -42,6 +42,7 @@ import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import { snapshotWorkspace } from '../services/workspaceStore.js';
 import { orchestrator } from '../core/PluginOrchestrator.js';
 import { guardFiles, guardSingleJS, scrubPlaceholders, ensureEditIntegrity } from '../services/codeGuard.js';
+import { recordLesson } from '../services/platformLessons.js';
 import { buildImageContext } from '../services/imageService.js';
 import { generateBlueprint, buildBlueprintContext } from './appBlueprint.js';
 import { recommendFullStack, buildFullStackProject } from './fullstackTemplates.js';
@@ -418,7 +419,11 @@ export class JaolaCognitiveRuntime {
             const newCritiques = [];
             if (!archResult.approved) newCritiques.push({ agent: 'Architect', critique: archResult.feedback });
             if (!secAudit.isSafe) newCritiques.push({ agent: 'Security', critique: secAudit.critique });
-            if (!qaResult.passed) newCritiques.push({ agent: 'QA', critique: qaResult.logs.join(' | ') });
+            if (!qaResult.passed) {
+                newCritiques.push({ agent: 'QA', critique: qaResult.logs.join(' | ') });
+                // 📚 كل سبب رفض درسٌ للمنصة — الأنماط المتكررة تُحقن مستقبلاً في المولّد
+                for (const log of qaResult.logs || []) recordLesson('qa_failure', log);
+            }
 
             if (newCritiques.length > 0) {
                 context.internalDebate.criticTranscripts.push(...newCritiques);
@@ -498,6 +503,9 @@ export class JaolaCognitiveRuntime {
                     this.emitLiveLog(roomName, '6. VERIFY', 'Requirements', '📋 التحقق من تنفيذ متطلبات المشروع...');
                     let verdict = await verifyRequirements(context.blueprint, plan.files);
                     let fixedNames = [];
+
+                    // 📚 المتطلبات التي تُسلَّم ناقصة دروسٌ متراكمة للمنصة
+                    for (const m of verdict?.missing || []) recordLesson('verifier_missing', m.name);
 
                     if (verdict?.missing?.length && agents.coreEditCodePlan && context.budget.consumeCall()) {
                         this.emitLiveLog(roomName, '6. VERIFY', 'Requirements',
