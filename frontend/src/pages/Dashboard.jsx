@@ -1,103 +1,115 @@
 import React, { useState } from 'react';
-import { useAuth } from '../hooks/useAuth.js';
-import { useSocket } from '../hooks/useSocket.js';
-import { useIsMobile } from '../hooks/useIsMobile.js';
 
-// استيراد المكونات (سنقوم بإنشائها في الخطوات القادمة)
-// import AuthScreen from '../components/auth/AuthScreen';
-// import Topbar from '../components/layout/Topbar';
-// import Sidebar from '../components/layout/Sidebar';
-// import MissionControl from '../components/dashboard/MissionControl';
-// import Workspace from '../components/dashboard/Workspace';
-// import Intelligence from '../components/dashboard/Intelligence';
-// import PipelineVisualizer from '../components/dashboard/PipelineVisualizer';
+// استيراد المكونات التي قمت بإنشائها
+import AuthScreen from './auth/AuthScreen';
+import PipelineVisualizer from './dashboard/PipelineVisualizer';
+import MissionControl from './dashboard/MissionControl';
+import Intelligence from './dashboard/Intelligence';
+
+// استيراد الـ Hook الخاص بالاتصال
+import useSocket from '../hooks/useSocket';
 
 export default function Dashboard() {
-  const { isAuthenticated, isLoading, handleAuthError } = useAuth();
-  const isMobile = useIsMobile();
-  const socketData = useSocket(isAuthenticated, handleAuthError);
+  // حالة المصادقة (Authentication State)
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authToken, setAuthToken] = useState(null);
 
-  // حالة التنقل الداخلي
-  const [activeNav, setActiveNav] = useState('mission');
-  const [activeTab, setActiveTab] = useState('preview');
+  // جلب البيانات من JCR عبر الـ Socket
+  // ملاحظة: الـ Hook سيعمل ويحاول الاتصال بناءً على وجود التوكن
+  const { 
+    isConnected, 
+    logs, 
+    metrics, 
+    pipelineStage, 
+    sendCommand 
+  } = useSocket(isAuthenticated ? authToken : null);
 
-  // شاشة التحميل
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950">
-        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
+  // دالة التعامل مع تسجيل الدخول
+  const handleLogin = (token) => {
+    setAuthToken(token);
+    setIsAuthenticated(true);
+  };
 
-  // شاشة تسجيل الدخول (سنفصلها لاحقاً في مكون AuthScreen)
+  // إذا لم يقم الـ CEO بتسجيل الدخول، نعرض شاشة المصادقة
   if (!isAuthenticated) {
-    return <div className="text-white p-10">TODO: Render AuthScreen Component</div>;
+    return <AuthScreen onLogin={handleLogin} />;
   }
 
-  // 📱 تخطيط الجوال (Mobile Layout)
-  if (isMobile) {
-    return (
-      <div className="h-[100dvh] bg-slate-950 text-slate-100 flex flex-col font-sans overflow-hidden">
-        {/* سيتم وضع تخطيط الجوال هنا لاحقاً */}
-        <div className="p-4">Mobile view is under construction...</div>
-      </div>
-    );
-  }
-
-  // 🖥️ تخطيط سطح المكتب (Desktop Layout - Ultra Premium)
+  // الواجهة الرئيسية لـ JAOLA OS (NASA-Style)
   return (
-    <div className="h-screen bg-slate-950 text-slate-200 flex flex-col font-sans overflow-hidden selection:bg-blue-500/30">
+    <div className="min-h-screen bg-[#020408] text-slate-300 font-sans selection:bg-emerald-500/30 overflow-hidden flex flex-col">
       
-      {/* 1. الشريط العلوي */}
-      {/* <Topbar {...socketData} /> */}
-      <header className="h-14 bg-slate-900/80 backdrop-blur-md border-b border-slate-800/80 flex items-center px-4 justify-between shrink-0 z-50">
-         <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-sm shadow-[0_0_15px_rgba(59,130,246,0.3)]">⚡</div>
-            <span className="font-extrabold tracking-tight text-lg">JAOLA OS</span>
-            <span className="text-[10px] text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded-md font-bold uppercase tracking-wider">v3.0</span>
-         </div>
-         {/* باقي عناصر Topbar ستأتي هنا */}
+      {/* 🌟 شريط المهام العلوي (Top Navigation) */}
+      <header className="h-14 bg-[#050810]/80 border-b border-slate-800/80 backdrop-blur-xl flex items-center justify-between px-6 z-50 shrink-0">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-blue-600 shadow-lg shadow-emerald-500/20">
+            <span className="text-white font-bold text-lg">J</span>
+          </div>
+          <div>
+            <h1 className="text-sm font-bold text-slate-200 tracking-wide">JAOLA OS</h1>
+            <p className="text-[10px] text-emerald-400 font-mono">Cognitive Runtime v2.1</p>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-6">
+          {/* مؤشر حالة الاتصال العلوية */}
+          <div className="flex items-center gap-2">
+             <span className="text-xs text-slate-500 font-mono">JCR CORE:</span>
+             {isConnected ? (
+               <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
+                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> ONLINE
+               </span>
+             ) : (
+               <span className="flex items-center gap-1.5 text-xs font-bold text-red-400">
+                 <span className="w-2 h-2 rounded-full bg-red-400"></span> OFFLINE
+               </span>
+             )}
+          </div>
+          
+          <div className="w-px h-6 bg-slate-800"></div>
+          
+          {/* ملف الـ CEO */}
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-xs font-bold text-slate-300 uppercase">System CEO</p>
+              <p className="text-[10px] text-slate-500 font-mono">Admin Privileges</p>
+            </div>
+            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </div>
+          </div>
+        </div>
       </header>
 
-      {/* 2. منطقة المحتوى الرئيسية */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* 🌟 شبكة لوحة القيادة (Dashboard Grid) */}
+      <main className="flex-1 p-4 grid grid-cols-12 gap-4 h-[calc(100vh-3.5rem)] overflow-hidden">
         
-        {/* الشريط الجانبي الأيسر (Sidebar) */}
-        {/* <Sidebar activeNav={activeNav} setActiveNav={setActiveNav} /> */}
-        <aside className="w-16 bg-slate-900/50 border-r border-slate-800/80 flex flex-col items-center py-4 gap-4 shrink-0 backdrop-blur-sm">
-          {['⚡', '📁', '🤖', '📚', '🚀', '⚙️'].map((icon, i) => (
-            <button key={i} className="w-10 h-10 rounded-xl hover:bg-blue-500/10 hover:text-blue-400 text-slate-400 transition-all flex items-center justify-center text-xl">
-              {icon}
-            </button>
-          ))}
-        </aside>
+        {/* الشريط العلوي: متتبع الأنابيب (Pipeline Visualizer) */}
+        <div className="col-span-12 shrink-0">
+          <PipelineVisualizer currentStage={pipelineStage || 'planner'} />
+        </div>
 
-        {/* القسم الأوسط الأيسر (Mission Control - الشات) */}
-        <section className="w-[400px] min-w-[340px] bg-slate-900/30 border-r border-slate-800/80 flex flex-col relative">
-          {/* <MissionControl {...socketData} /> */}
-          <div className="flex-1 p-4 overflow-y-auto flex items-center justify-center text-slate-500">Mission Control Area</div>
-        </section>
+        {/* القسم المركزي: غرفة التحكم (Mission Control) */}
+        <div className="col-span-12 lg:col-span-8 h-full min-h-0">
+          <MissionControl 
+            logs={logs} 
+            onSendCommand={sendCommand} 
+            isConnected={isConnected} 
+          />
+        </div>
 
-        {/* القسم الأوسط الأيمن (Workspace - المحرر والمعاينة) */}
-        <main className="flex-1 flex flex-col min-w-0 bg-[#030508] relative shadow-inner">
-          {/* <Workspace activeTab={activeTab} setActiveTab={setActiveTab} {...socketData} /> */}
-          <div className="flex-1 flex items-center justify-center text-slate-500">Workspace (Monaco / Preview) Area</div>
-          
-          {/* شريط تتبع الوكلاء (Pipeline Visualizer) في الأسفل */}
-          {/* <PipelineVisualizer agentStates={socketData.agentStates} /> */}
-          <div className="h-16 bg-slate-950 border-t border-slate-800/80 shrink-0 flex items-center justify-center text-slate-600 text-sm">
-            Pipeline Visualizer Area
-          </div>
-        </main>
+        {/* القسم الجانبي: لوحة الذكاء (Intelligence Panel) */}
+        <div className="col-span-12 lg:col-span-4 h-full min-h-0">
+          <Intelligence 
+            metrics={metrics} 
+            activeAgents={22} 
+            systemHealth={isConnected ? 100 : 0} 
+          />
+        </div>
 
-        {/* الشريط الأيمن (Intelligence - المؤشرات والذكاء) */}
-        <aside className="w-[280px] bg-slate-900/40 border-l border-slate-800/80 flex flex-col overflow-y-auto shrink-0 backdrop-blur-sm">
-          {/* <Intelligence {...socketData} /> */}
-          <div className="flex-1 p-4 flex items-center justify-center text-slate-500 text-center">Intelligence & Digital Twin Area</div>
-        </aside>
-      </div>
-
+      </main>
     </div>
   );
 }
