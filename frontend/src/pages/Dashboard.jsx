@@ -203,6 +203,7 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('preview');       // سطح المكتب: تاب العمود الأوسط
   const [mobileView, setMobileView] = useState('mission');     // الجوال: الشاشة النشطة
   const [mobileLogsMode, setMobileLogsMode] = useState('logs'); // الجوال: سجل حي / خط زمني
+  const [showMobileMenu, setShowMobileMenu] = useState(false);  // الجوال: قائمة الإجراءات الثانوية
   const [prompt, setPrompt] = useState('');
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
@@ -787,33 +788,61 @@ export default function Dashboard() {
       <div style={{ height:'100dvh', background:S.bg, color:S.text, display:'flex', flexDirection:'column', fontFamily:S.font, overflow:'hidden' }}>
         <style>{globalStyles}</style>
 
-        {/* رأس مضغوط */}
-        <nav style={{ height:52, background:S.bg2, borderBottom:`1px solid ${S.border}`, display:'flex', alignItems:'center', padding:'0 12px', gap:8, flexShrink:0 }}>
-          <div style={{ width:28, height:28, borderRadius:7, background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, flexShrink:0 }}>⚡</div>
-          <select value={activeProject} onChange={e => handleSwitchProject(e.target.value)}
-            style={{ background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:7, color:S.text, fontSize:12, fontWeight:700, padding:'5px 8px', maxWidth:130, outline:'none' }}>
-            {projects.map(p => <option key={p} value={p} style={{ background:'#161b22' }}>{p}</option>)}
-          </select>
-          <button onClick={() => setShowProjectModal(true)} title={t('newProject')}
-            style={{ background:'rgba(59,130,246,0.1)', border:'1px solid rgba(59,130,246,0.2)', borderRadius:6, padding:'4px 8px', color:S.blue, fontSize:11, fontWeight:700, flexShrink:0 }}>+</button>
+        {/* رأس مضغوط — الأساسي ظاهر، الثانوي في قائمة ⋯ (تفريغ الازدحام) */}
+        <nav style={{ height:56, background:S.bg2, borderBottom:`1px solid ${S.border}`, display:'flex', alignItems:'center', padding:'0 12px', gap:8, flexShrink:0, position:'relative', zIndex:60 }}>
+          <div style={{ width:32, height:32, borderRadius:8, background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, flexShrink:0 }}>⚡</div>
+
+          {/* منتقي المشروع — يأخذ المساحة المرنة ولا يطفح */}
+          <div style={{ flex:1, display:'flex', alignItems:'center', gap:4, background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:10, paddingInlineStart:10, minWidth:0, height:40 }}>
+            <select value={activeProject} onChange={e => handleSwitchProject(e.target.value)}
+              style={{ flex:1, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:700, outline:'none', minWidth:0, textOverflow:'ellipsis' }}>
+              {projects.map(p => <option key={p} value={p} style={{ background:'#161b22' }}>{p}</option>)}
+            </select>
+            <button onClick={() => setShowProjectModal(true)} title={t('newProject')}
+              style={{ width:32, height:32, borderRadius:8, background:'rgba(59,130,246,0.12)', border:'1px solid rgba(59,130,246,0.25)', color:S.blue, fontSize:17, fontWeight:700, flexShrink:0, marginInlineEnd:3 }}>+</button>
+          </div>
 
           {isBuilding && (
-            <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:10, color:'#60a5fa', fontWeight:700 }}>
-              <span style={{ width:6, height:6, borderRadius:'50%', background:'#3b82f6', animation:'pulse 1s infinite' }} />
-              يبني...
+            <span style={{ display:'flex', alignItems:'center', flexShrink:0 }} title={t('building')}>
+              <span style={{ width:8, height:8, borderRadius:'50%', background:'#3b82f6', boxShadow:'0 0 8px #3b82f6', animation:'pulse 1s infinite' }} />
             </span>
           )}
 
-          <div style={{ flex:1 }} />
-
-          <LanguageSwitcher compact />
-          <button onClick={openGithubModal} style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 9px', color:'#94a3b8', fontSize:13 }}>🐙</button>
+          {/* نشر — إجراء أساسي يبقى ظاهراً */}
           {vercelUrl
-            ? <a href={vercelUrl} target="_blank" rel="noreferrer" style={{ fontSize:13, textDecoration:'none', padding:'5px 9px', border:'1px solid rgba(16,185,129,0.3)', borderRadius:7 }}>🌍</a>
-            : <button onClick={handleDeploy} disabled={isDeploying} style={{ background:'linear-gradient(135deg,#1d4ed8,#4f46e5)', border:'none', borderRadius:7, padding:'5px 9px', color:'#fff', fontSize:13, opacity:isDeploying?0.6:1 }}>🚀</button>}
-          <button onClick={handleLogout} style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 8px', color:S.muted, fontSize:11 }}>
-            {(authUser || 'U')[0].toUpperCase()} ✕
-          </button>
+            ? <a href={vercelUrl} target="_blank" rel="noreferrer" title={t('openSite') || 'Open'} style={{ width:40, height:40, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, textDecoration:'none', border:'1px solid rgba(16,185,129,0.35)', borderRadius:10, flexShrink:0 }}>🌍</a>
+            : <button onClick={handleDeploy} disabled={isDeploying} title={t('deploy') || 'Deploy'} style={{ width:40, height:40, background:'linear-gradient(135deg,#1d4ed8,#4f46e5)', border:'none', borderRadius:10, color:'#fff', fontSize:16, opacity:isDeploying?0.6:1, flexShrink:0 }}>🚀</button>}
+
+          {/* قائمة الإجراءات الثانوية */}
+          <button onClick={() => setShowMobileMenu(v => !v)} title="•••"
+            style={{ width:40, height:40, borderRadius:10, background: showMobileMenu ? 'rgba(59,130,246,0.14)' : 'rgba(255,255,255,0.03)', border:`1px solid ${showMobileMenu ? 'rgba(59,130,246,0.3)' : S.border}`, color:S.text, fontSize:20, lineHeight:1, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>⋯</button>
+
+          {showMobileMenu && (
+            <>
+              <div onClick={() => setShowMobileMenu(false)} style={{ position:'fixed', inset:0, zIndex:59 }} />
+              <div style={{ position:'absolute', top:'calc(100% + 6px)', insetInlineEnd:12, background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:8, minWidth:210, zIndex:61, boxShadow:'0 14px 44px rgba(0,0,0,0.55)', display:'flex', flexDirection:'column', gap:2, animation:'fadeIn 0.15s ease' }}>
+                <div style={{ padding:'8px 10px 10px', display:'flex', alignItems:'center', gap:9, borderBottom:`1px solid ${S.border}`, marginBottom:5 }}>
+                  <div style={{ width:34, height:34, borderRadius:10, background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, fontWeight:800, color:'#fff', flexShrink:0 }}>{(authUser || 'U')[0].toUpperCase()}</div>
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ fontSize:13, fontWeight:700, color:S.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{authUser || 'guest'}</div>
+                    <div style={{ fontSize:10, color: isConnected ? S.good : S.warn, fontWeight:600 }}>{isConnected ? '● ONLINE' : '● OFFLINE'}</div>
+                  </div>
+                </div>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 10px', borderRadius:9, background:'rgba(255,255,255,0.02)' }}>
+                  <span style={{ fontSize:13, color:S.text }}>🌐 {t('language') || 'Language'}</span>
+                  <LanguageSwitcher compact />
+                </div>
+                <button onClick={() => { setShowMobileMenu(false); openGithubModal(); }}
+                  style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
+                  <span style={{ fontSize:16 }}>🐙</span> GitHub
+                </button>
+                <button onClick={() => { setShowMobileMenu(false); handleLogout(); }}
+                  style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.2)', color:'#f87171', fontSize:13, fontWeight:700, textAlign:'start', marginTop:3 }}>
+                  <span style={{ fontSize:16 }}>🚪</span> {t('exit') || 'Exit'}
+                </button>
+              </div>
+            </>
+          )}
         </nav>
 
         {connectionBanner}
