@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 
-// 🚀 التحديث الذكي:
-// في الإنتاج (Render): يتصل بالنطاق الحالي مباشرة
-// في التطوير (جهازك المحلي): يتصل بالبورت 4000
+// 🚀 التحديث الذكي والآمن:
+// نعتمد فقط على VITE_BACKEND_URL في الإنتاج 
+// (أزلنا window.location.origin لأنه يسبب اتصالاً ذاتياً خاطئاً إذا لم يجد الرابط)
 const SOCKET_URL = import.meta.env.MODE === "production" 
-  ? (import.meta.env.VITE_BACKEND_URL || window.location.origin) 
+  ? import.meta.env.VITE_BACKEND_URL 
   : "http://localhost:4000";
 
 const useSocket = () => {
@@ -18,10 +18,11 @@ const useSocket = () => {
     const newSocket = io(SOCKET_URL, {
       transports: ['websocket', 'polling'], // دعم الاتصال
       reconnectionAttempts: 5,
+      withCredentials: true, // 👈 🔴 هذا هو السطر السحري الذي كان ينقصك!
     });
 
     newSocket.on('connect', () => {
-      console.log('🟢 JCR Link: ONLINE');
+      console.log('🟢 JCR Link: ONLINE', newSocket.id);
       setIsConnected(true);
       // الانضمام لغرفة المشروع
       newSocket.emit('join_project', 'jaola-core-main');
