@@ -22,12 +22,14 @@
     "socket.io-client": "^4.8.3",
     "zustand": "^5.0.14"
   },
-    "devDependencies": {
+      "devDependencies": {
     "@tailwindcss/postcss": "latest",
+    "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.19",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.4",
     "vite": "^8.0.16"
-  
+  }
+
   }
 }
