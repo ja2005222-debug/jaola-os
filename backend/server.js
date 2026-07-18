@@ -59,7 +59,7 @@ import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspace
 import { buildMetricsPayload } from './services/metricsStore.js';
 import { queueStatus } from './services/missionQueue.js';
 import { getCommitHistory, rollbackToCommit } from './agents/gitAgent.js';
-import { adminOnly } from './middleware/adminOnly.js';
+import { adminOnly, isAdminUser } from './middleware/adminOnly.js';
 import { orchestrator } from './core/PluginOrchestrator.js';
 import { runSystemDiagnostics } from './agents/systemDoctorAgent.js';
 import * as adminSvc from './services/adminService.js';
@@ -1189,10 +1189,16 @@ app.get('/api/admin/lessons', verifyToken, adminOnly, (req, res) => {
     res.json({ success: true, lessons: topLessons(30) });
 });
 
-// 🩺 فحص صلاحية Vercel — يؤكّد إعداد التوكن/الفريق قبل النشر (بلا كشف التوكن)
-app.get('/api/admin/vercel-check', verifyToken, adminOnly, async (req, res) => {
+// 🩺 فحص صلاحية Vercel — يؤكّد إعداد التوكن/الفريق قبل النشر (بلا كشف التوكن).
+// متاح لأي مستخدم مسجّل (النشر متاح للجميع)، لكن تفاصيل الحساب/الفريق
+// تُخفى عن غير المشرف — يرى الجاهزية فقط لا اسم حساب Vercel للمالك.
+app.get('/api/deploy/vercel-check', verifyToken, async (req, res) => {
     try {
         const result = await verifyVercelAuth();
+        if (!isAdminUser(req.user)) {
+            const { account, team, status, ...safe } = result;
+            return res.json({ success: true, ...safe });
+        }
         res.json({ success: true, ...result });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
