@@ -1,115 +1,81 @@
 import React, { useState } from 'react';
+import { Shield, Activity, Terminal } from 'lucide-react';
 
-// استيراد المكونات التي قمت بإنشائها
-import AuthScreen from './auth/AuthScreen';
-import PipelineVisualizer from './dashboard/PipelineVisualizer';
-import MissionControl from './dashboard/MissionControl';
-import Intelligence from './dashboard/Intelligence';
-
-// استيراد الـ Hook الخاص بالاتصال
+// المسارات الصحيحة 100% للرجوع لمجلد المكونات (components)
+import AuthScreen from '../components/auth/AuthScreen';
+import PipelineVisualizer from '../components/dashboard/PipelineVisualizer';
+import MissionControl from '../components/dashboard/MissionControl';
+import Intelligence from '../components/dashboard/Intelligence';
 import useSocket from '../hooks/useSocket';
 
-export default function Dashboard() {
-  // حالة المصادقة (Authentication State)
+const Dashboard = () => {
+  // حالة المصادقة (مغلق افتراضياً حتى يتم إدخال الـ PAT)
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authToken, setAuthToken] = useState(null);
+  
+  // استدعاء السوكت والمقاييس من الهوك المخصص
+  const { socket, connected, metrics } = useSocket();
 
-  // جلب البيانات من JCR عبر الـ Socket
-  // ملاحظة: الـ Hook سيعمل ويحاول الاتصال بناءً على وجود التوكن
-  const { 
-    isConnected, 
-    logs, 
-    metrics, 
-    pipelineStage, 
-    sendCommand 
-  } = useSocket(isAuthenticated ? authToken : null);
-
-  // دالة التعامل مع تسجيل الدخول
-  const handleLogin = (token) => {
-    setAuthToken(token);
-    setIsAuthenticated(true);
-  };
-
-  // إذا لم يقم الـ CEO بتسجيل الدخول، نعرض شاشة المصادقة
+  // إذا لم يقم بتسجيل الدخول، اعرض شاشة المصادقة
   if (!isAuthenticated) {
-    return <AuthScreen onLogin={handleLogin} />;
+    return <AuthScreen onLogin={() => setIsAuthenticated(true)} />;
   }
 
-  // الواجهة الرئيسية لـ JAOLA OS (NASA-Style)
+  // الواجهة الرئيسية لـ JAOLA OS (بعد تسجيل الدخول)
   return (
-    <div className="min-h-screen bg-[#020408] text-slate-300 font-sans selection:bg-emerald-500/30 overflow-hidden flex flex-col">
+    <div className="min-h-screen bg-gray-950 text-white p-6 font-sans relative overflow-hidden">
       
-      {/* 🌟 شريط المهام العلوي (Top Navigation) */}
-      <header className="h-14 bg-[#050810]/80 border-b border-slate-800/80 backdrop-blur-xl flex items-center justify-between px-6 z-50 shrink-0">
+      {/* تأثيرات الإضاءة الخلفية (Glowing Effects) */}
+      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-cyan-600/20 rounded-full blur-[120px] pointer-events-none"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-blue-600/20 rounded-full blur-[120px] pointer-events-none"></div>
+
+      {/* الشريط العلوي (Header) */}
+      <header className="relative flex justify-between items-center mb-8 bg-gray-900/40 backdrop-blur-xl p-5 rounded-2xl border border-gray-800 shadow-[0_0_30px_rgba(0,255,255,0.05)] z-10">
         <div className="flex items-center gap-4">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-blue-600 shadow-lg shadow-emerald-500/20">
-            <span className="text-white font-bold text-lg">J</span>
+          <div className="p-2 bg-cyan-500/10 rounded-lg border border-cyan-500/30">
+            <Terminal className="text-cyan-400 w-7 h-7" />
           </div>
           <div>
-            <h1 className="text-sm font-bold text-slate-200 tracking-wide">JAOLA OS</h1>
-            <p className="text-[10px] text-emerald-400 font-mono">Cognitive Runtime v2.1</p>
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent tracking-wider">
+              JAOLA OS
+            </h1>
+            <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">Autonomous Engineering Core</p>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-6">
-          {/* مؤشر حالة الاتصال العلوية */}
-          <div className="flex items-center gap-2">
-             <span className="text-xs text-slate-500 font-mono">JCR CORE:</span>
-             {isConnected ? (
-               <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
-                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> ONLINE
-               </span>
-             ) : (
-               <span className="flex items-center gap-1.5 text-xs font-bold text-red-400">
-                 <span className="w-2 h-2 rounded-full bg-red-400"></span> OFFLINE
-               </span>
-             )}
-          </div>
-          
-          <div className="w-px h-6 bg-slate-800"></div>
-          
-          {/* ملف الـ CEO */}
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-xs font-bold text-slate-300 uppercase">System CEO</p>
-              <p className="text-[10px] text-slate-500 font-mono">Admin Privileges</p>
+          {/* مؤشر حالة الاتصال */}
+          <div className="flex items-center gap-3 bg-gray-950/50 px-4 py-2 rounded-lg border border-gray-800">
+            <div className="relative">
+              <Activity className={`w-5 h-5 ${connected ? "text-green-400" : "text-red-400"}`} />
+              {connected && (
+                <span className="absolute top-0 left-0 w-full h-full bg-green-400 rounded-full animate-ping opacity-20"></span>
+              )}
             </div>
-            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-            </div>
+            <span className="text-xs font-mono font-semibold tracking-wider text-gray-300">
+              {connected ? "JCR LINK: ONLINE" : "JCR LINK: OFFLINE"}
+            </span>
           </div>
+          <Shield className="text-cyan-500 w-6 h-6 opacity-80" />
         </div>
       </header>
 
-      {/* 🌟 شبكة لوحة القيادة (Dashboard Grid) */}
-      <main className="flex-1 p-4 grid grid-cols-12 gap-4 h-[calc(100vh-3.5rem)] overflow-hidden">
+      {/* شبكة لوحة القيادة (Dashboard Grid) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 relative z-10">
         
-        {/* الشريط العلوي: متتبع الأنابيب (Pipeline Visualizer) */}
-        <div className="col-span-12 shrink-0">
-          <PipelineVisualizer currentStage={pipelineStage || 'planner'} />
+        {/* العمود الأيسر (Mission Control & Intelligence) - يأخذ 4 أعمدة */}
+        <div className="lg:col-span-4 flex flex-col gap-6">
+          <MissionControl socket={socket} metrics={metrics} />
+          <Intelligence socket={socket} />
         </div>
 
-        {/* القسم المركزي: غرفة التحكم (Mission Control) */}
-        <div className="col-span-12 lg:col-span-8 h-full min-h-0">
-          <MissionControl 
-            logs={logs} 
-            onSendCommand={sendCommand} 
-            isConnected={isConnected} 
-          />
+        {/* العمود الأيمن (Pipeline Visualizer) - يأخذ 8 أعمدة */}
+        <div className="lg:col-span-8 flex flex-col h-[calc(100vh-140px)]">
+          <PipelineVisualizer socket={socket} />
         </div>
-
-        {/* القسم الجانبي: لوحة الذكاء (Intelligence Panel) */}
-        <div className="col-span-12 lg:col-span-4 h-full min-h-0">
-          <Intelligence 
-            metrics={metrics} 
-            activeAgents={22} 
-            systemHealth={isConnected ? 100 : 0} 
-          />
-        </div>
-
-      </main>
+        
+      </div>
     </div>
   );
-}
+};
+
+export default Dashboard;
