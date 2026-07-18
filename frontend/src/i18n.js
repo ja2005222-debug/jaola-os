@@ -136,6 +136,16 @@ const STRINGS = {
   phaseDeploy: { en: 'Deploying', ar: 'النشر' },
   inProgress: { en: 'In progress', ar: 'جاري' },
   preparingMission: { en: '⚡ Preparing mission...', ar: '⚡ جاري تجهيز المهمة...' },
+  // مراحل آلة الحالات الحقيقية — من أحداث project_state الموحدة
+  mstate_planning: { en: 'Planning the mission', ar: 'تخطيط المهمة' },
+  mstate_architecture: { en: 'Designing the architecture', ar: 'تصميم المعمارية' },
+  mstate_generating: { en: 'Writing the code', ar: 'كتابة الشفرة' },
+  mstate_reviewing: { en: 'Reviewing quality', ar: 'مراجعة الجودة' },
+  mstate_verifying: { en: 'Verifying requirements', ar: 'التحقق من المتطلبات' },
+  mstate_deploying: { en: 'Deploying', ar: 'النشر' },
+  mstate_completed: { en: 'Mission completed', ar: 'اكتملت المهمة' },
+  mstate_failed: { en: 'Mission failed', ar: 'فشلت المهمة' },
+  mstate_paused: { en: 'Mission paused', ar: 'المهمة متوقفة' },
 
   // Preview panel
   desktopView: { en: 'Desktop view', ar: 'عرض سطح المكتب' },
