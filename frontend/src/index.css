@@ -1,3 +1,4 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -5,15 +6,9 @@
 html, body {
   margin: 0;
   padding: 0;
-  background-color: #0f172a; /* لون داكن كخلفية احتياطية */
-  color: white;
+  width: 100%;
+  height: 100%;
+  background-color: #050505; /* خلفية داكنة لتناسب نظامك */
+  color: #ffffff;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-}
-
-/* تأثيرات الزجاج للإشعارات والعناصر */
-.glass-panel {
-  background: rgba(15, 23, 42, 0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
 }
