@@ -1,10 +1,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import Dashboard from './pages/Dashboard';
-import './index.css'; // 🪄 هذا هو السطر السحري الذي سيصلح التصميم!
+import App from './App.jsx'; // تأكد من وجود ./ قبل اسم الملف
+import './index.css'; // تأكد من وجود ملف التنسيقات
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <Dashboard />
-  </React.StrictMode>
+    <App />
+  </React.StrictMode>,
 );
