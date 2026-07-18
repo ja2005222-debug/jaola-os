@@ -129,6 +129,29 @@ export function ensureStaticDeploy(files) {
 }
 
 /**
+ * 🔗 يختار الرابط النظيف الثابت للموقع المنشور.
+ *
+ * مشكلة الرابط الطويل: ردّ Vercel الفوري يعطي غالباً رابط النشرة المُجزّأ
+ * (name-<hash>-<team>.vercel.app) الذي يتغيّر كل نشرة، بينما نطاق الإنتاج
+ * الثابت (<name>.vercel.app) يُسنَد لاحقاً وقد لا يصل في الرد.
+ * الحل: نفضّل alias إنتاج نظيفاً إن وصل، وإلا نبنيه حتمياً من اسم المشروع.
+ *
+ * @param {object} result رد Vercel (قد يحوي alias[] و url)
+ * @param {string} projectName اسم مشروع Vercel المعروف
+ * @returns {string} النطاق النظيف (بلا https://)
+ */
+export function cleanDeployUrl(result, projectName) {
+    // رابط نشرة مُجزّأ: يحوي مقطع hash طويلاً بين شرطتين
+    const isHashed = (u) => /-[a-z0-9]{8,}-/i.test(u);
+    const aliases = Array.isArray(result?.alias) ? result.alias.filter(a => typeof a === 'string') : [];
+    const cleanAlias = aliases.find(a => !isHashed(a));
+    if (cleanAlias) return cleanAlias;
+    // لا alias نظيف في الرد → نطاق الإنتاج الحتمي من اسم المشروع
+    if (projectName) return `${projectName}.vercel.app`;
+    return result?.url || '';
+}
+
+/**
  * 🚀 نشر مشروع على Vercel عبر REST API مباشرة (بدون CLI، بدون exec)
  * @param {object} params - { projectPath, activeProject, currentUser }
  * @param {object} io - Socket.io instance للبث الحي
@@ -241,12 +264,8 @@ export async function deployProject({ projectPath, activeProject, currentUser },
             throw new Error(errorMsg);
         }
 
-        // الرابط النظيف الثابت (alias الإنتاج) مفضّل على رابط النشرة المُجزّأ
-        // العشوائي — يبقى ثابتاً عبر عمليات النشر المتتالية
-        const productionAlias = Array.isArray(result.alias)
-            ? result.alias.find(a => typeof a === 'string' && !/-[a-z0-9]{8,}-/i.test(a))
-            : null;
-        const vercelProductionUrl = `https://${productionAlias || result.url}`;
+        // الرابط النظيف الثابت — يبقى ثابتاً عبر عمليات النشر المتتالية
+        const vercelProductionUrl = `https://${cleanDeployUrl(result, vercelProjectName)}`;
 
         // تحديث قاعدة البيانات
         try {
