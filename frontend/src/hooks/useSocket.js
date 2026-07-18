@@ -1,11 +1,10 @@
+
 import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 
-// 🚀 التحديث الذكي والآمن:
-// نعتمد فقط على VITE_BACKEND_URL في الإنتاج 
-// (أزلنا window.location.origin لأنه يسبب اتصالاً ذاتياً خاطئاً إذا لم يجد الرابط)
+// 🚀 توجيه مباشر للخادم (تجاوزنا متغيرات البيئة لضمان الاتصال)
 const SOCKET_URL = import.meta.env.MODE === "production" 
-  ? import.meta.env.VITE_BACKEND_URL 
+  ? "https://jaola-os.onrender.com" // 👈 رابط الخادم الذي ظهر في سجلاتك
   : "http://localhost:4000";
 
 const useSocket = () => {
@@ -14,17 +13,15 @@ const useSocket = () => {
   const [metrics, setMetrics] = useState({ cpu: 0, ram: 0, latency: 0 });
 
   useEffect(() => {
-    // الاتصال بالخادم
     const newSocket = io(SOCKET_URL, {
-      transports: ['websocket', 'polling'], // دعم الاتصال
+      transports: ['websocket', 'polling'],
       reconnectionAttempts: 5,
-      withCredentials: true, // 👈 🔴 هذا هو السطر السحري الذي كان ينقصك!
+      withCredentials: true, // 👈 ضروري جداً
     });
 
     newSocket.on('connect', () => {
-      console.log('🟢 JCR Link: ONLINE', newSocket.id);
+      console.log('🟢 JCR Link: ONLINE');
       setIsConnected(true);
-      // الانضمام لغرفة المشروع
       newSocket.emit('join_project', 'jaola-core-main');
     });
 
@@ -38,8 +35,6 @@ const useSocket = () => {
     });
 
     setSocket(newSocket);
-
-    // تنظيف الاتصال عند إغلاق المكون
     return () => newSocket.close();
   }, []);
 
