@@ -24,6 +24,7 @@ import {
     architectReview,
     qaVerify,
     deployProject,
+    verifyVercelAuth,
     applyTemplate,
     JaolaCognitiveRuntime
 } from './agents/index.js';
@@ -1186,6 +1187,16 @@ app.get('/api/admin/health', verifyToken, adminOnly, (req, res) => {
 // 📚 ذاكرة دروس المنصة — ما تعلّمته من كل المشاريع (الأكثر تكراراً أولاً)
 app.get('/api/admin/lessons', verifyToken, adminOnly, (req, res) => {
     res.json({ success: true, lessons: topLessons(30) });
+});
+
+// 🩺 فحص صلاحية Vercel — يؤكّد إعداد التوكن/الفريق قبل النشر (بلا كشف التوكن)
+app.get('/api/admin/vercel-check', verifyToken, adminOnly, async (req, res) => {
+    try {
+        const result = await verifyVercelAuth();
+        res.json({ success: true, ...result });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 app.get('/api/admin/plugins', verifyToken, adminOnly, (req, res) => {
