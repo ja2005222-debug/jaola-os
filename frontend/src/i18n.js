@@ -23,6 +23,7 @@ const STRINGS = {
   reconnecting: { en: 'Reconnecting...', ar: 'جاري إعادة الاتصال...', es: 'Reconectando...', fr: 'Reconnexion...', de: 'Wiederverbindung...', tr: 'Yeniden bağlanılıyor...', pt: 'Reconectando...', ur: 'دوبارہ منسلک ہو رہا ہے...' },
   missionRunning: { en: 'Mission Running...', ar: 'المهمة جارية...', es: 'Misión en curso...', fr: 'Mission en cours...', de: 'Mission läuft...', tr: 'Görev çalışıyor...', pt: 'Missão em andamento...', ur: 'مشن جاری ہے...' },
   deploy: { en: 'Deploy', ar: 'نشر', es: 'Desplegar', fr: 'Déployer', de: 'Bereitstellen', tr: 'Yayınla', pt: 'Implantar', ur: 'تعیناتی' },
+  redeploy: { en: 'Re-deploy', ar: 'إعادة النشر', es: 'Redesplegar', fr: 'Redéployer', de: 'Neu bereitstellen', tr: 'Yeniden yayınla', pt: 'Reimplantar', ur: 'دوبارہ تعیناتی' },
   deploying: { en: 'Deploying...', ar: 'جاري النشر...', es: 'Desplegando...', fr: 'Déploiement...', de: 'Bereitstellung...', tr: 'Yayınlanıyor...', pt: 'Implantando...', ur: 'تعینات جاری...' },
   liveSite: { en: 'Live Site', ar: 'الموقع المباشر', es: 'Sitio en vivo', fr: 'Site en direct', de: 'Live-Site', tr: 'Canlı Site', pt: 'Site ao vivo', ur: 'لائیو سائٹ' },
   vercelCheck: { en: 'Deploy check (Vercel)', ar: 'فحص النشر (Vercel)', es: 'Verificar despliegue', fr: 'Vérifier le déploiement', de: 'Deploy prüfen', tr: 'Dağıtım kontrolü', pt: 'Verificar deploy', ur: 'تعیناتی جانچ' },
