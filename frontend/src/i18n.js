@@ -25,6 +25,8 @@ const STRINGS = {
   deploy: { en: 'Deploy', ar: 'نشر', es: 'Desplegar', fr: 'Déployer', de: 'Bereitstellen', tr: 'Yayınla', pt: 'Implantar', ur: 'تعیناتی' },
   deploying: { en: 'Deploying...', ar: 'جاري النشر...', es: 'Desplegando...', fr: 'Déploiement...', de: 'Bereitstellung...', tr: 'Yayınlanıyor...', pt: 'Implantando...', ur: 'تعینات جاری...' },
   liveSite: { en: 'Live Site', ar: 'الموقع المباشر', es: 'Sitio en vivo', fr: 'Site en direct', de: 'Live-Site', tr: 'Canlı Site', pt: 'Site ao vivo', ur: 'لائیو سائٹ' },
+  vercelCheck: { en: 'Deploy check (Vercel)', ar: 'فحص النشر (Vercel)', es: 'Verificar despliegue', fr: 'Vérifier le déploiement', de: 'Deploy prüfen', tr: 'Dağıtım kontrolü', pt: 'Verificar deploy', ur: 'تعیناتی جانچ' },
+  vercelChecking: { en: 'Checking Vercel setup...', ar: 'جاري فحص إعداد Vercel...', es: 'Verificando Vercel...', fr: 'Vérification de Vercel...', de: 'Vercel wird geprüft...', tr: 'Vercel kontrol ediliyor...', pt: 'Verificando Vercel...', ur: 'ورسل جانچ جاری...' },
   exit: { en: 'Exit', ar: 'خروج', es: 'Salir', fr: 'Quitter', de: 'Beenden', tr: 'Çıkış', pt: 'Sair', ur: 'باہر' },
 
   // tabs

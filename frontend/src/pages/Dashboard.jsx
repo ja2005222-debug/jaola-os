@@ -320,6 +320,18 @@ export default function Dashboard() {
     setTimeout(() => { setIsDeploying(false); addNotification(t('nDeployed'), 'success'); }, 8000);
   };
 
+  // 🩺 فحص جاهزية النشر على Vercel — يعرض تشخيصاً دقيقاً بدل تخمين "Not authorized"
+  const handleVercelCheck = async () => {
+    addNotification(t('vercelChecking') || 'جاري فحص إعداد Vercel...', 'info');
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/deploy/vercel-check`, { headers: getHeaders() });
+      const d = await res.json();
+      addNotification(d.message || (d.ok ? '✅' : '❌'), d.ok ? 'success' : 'info');
+    } catch (e) {
+      addNotification('❌ تعذّر الوصول للخادم للفحص.', 'info');
+    }
+  };
+
   // ⏹️ إيقاف المهمة الجارية
   const handleAbort = async () => {
     try {
@@ -835,6 +847,10 @@ export default function Dashboard() {
                 <button onClick={() => { setShowMobileMenu(false); openGithubModal(); }}
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>🐙</span> GitHub
+                </button>
+                <button onClick={() => { setShowMobileMenu(false); handleVercelCheck(); }}
+                  style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
+                  <span style={{ fontSize:16 }}>🩺</span> {t('vercelCheck') || 'فحص النشر (Vercel)'}
                 </button>
                 <button onClick={() => { setShowMobileMenu(false); handleLogout(); }}
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.2)', color:'#f87171', fontSize:13, fontWeight:700, textAlign:'start', marginTop:3 }}>
