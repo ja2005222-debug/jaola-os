@@ -460,9 +460,12 @@ export default function Dashboard() {
 
   const S = {
     bg: '#030508', bg2: '#070b12', bg3: '#0d1220',
-    border: '#1a2332', border2: '#0f1a2a',
-    text: '#f1f5f9', muted: '#475569',
+    surface: 'rgba(255,255,255,0.025)', surfaceHi: 'rgba(255,255,255,0.045)',
+    border: '#1a2332', border2: '#0f1a2a', borderHi: 'rgba(59,130,246,0.25)',
+    text: '#f1f5f9', muted: '#64748b', dim: '#475569',
     blue: '#3b82f6', purple: '#8b5cf6',
+    good: '#10b981', warn: '#f59e0b', danger: '#ef4444',
+    accent: 'linear-gradient(135deg,#3b82f6,#8b5cf6)',
     font: 'system-ui,-apple-system,sans-serif',
   };
 
@@ -584,6 +587,19 @@ export default function Dashboard() {
     .feed-msg .msg-copy:hover{opacity:1}
     @keyframes msgIn{from{opacity:0;transform:translateY(8px) scale(0.98)}to{opacity:1;transform:translateY(0) scale(1)}}
     @keyframes avatarGlow{0%,100%{box-shadow:0 0 6px rgba(59,130,246,0.3)}50%{box-shadow:0 0 14px rgba(139,92,246,0.6)}}
+
+    /* 🎴 نظام بطاقات موحّد — سطح زجاجي يرتفع قليلاً عند المرور */
+    .jaola-card{background:rgba(255,255,255,0.025);border:1px solid #1a2332;border-radius:12px;transition:transform .18s ease,border-color .18s ease,background .18s ease}
+    .jaola-card:hover{border-color:rgba(59,130,246,0.28);background:rgba(255,255,255,0.045)}
+    .stat-tile{background:rgba(255,255,255,0.025);border:1px solid #1a2332;border-radius:10px;padding:10px 12px;transition:border-color .18s ease,background .18s ease}
+    .stat-tile:hover{border-color:rgba(59,130,246,0.28);background:rgba(255,255,255,0.045)}
+    /* 📊 مؤشر: أطراف مدوّرة، حركة انسيابية — بديل الشريط المسطّح 2px */
+    .meter{height:6px;background:rgba(255,255,255,0.05);border-radius:999px;overflow:hidden}
+    .meter>span{display:block;height:100%;border-radius:999px;transition:width .7s cubic-bezier(.4,0,.2,1)}
+    .sec-title{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase}
+    /* توهّج خلفي ناعم يعطي عمقاً بلا ضجيج */
+    .glow-bg{position:relative}
+    .glow-bg::before{content:'';position:absolute;inset:0;background:radial-gradient(60% 45% at 50% 0%,rgba(59,130,246,0.06),transparent 70%);pointer-events:none;z-index:0}
   `;
 
   // ═══ الأجزاء المشتركة (سطح المكتب + الجوال) ═══════════════════
@@ -627,11 +643,12 @@ export default function Dashboard() {
 
   const quickBuilds = chatMessages.length === 0 && (
     <div style={{ padding:'12px 16px', borderBottom:`1px solid ${S.border}`, flexShrink:0 }}>
-      <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:8 }}>{t('quickLaunch')}</div>
+      <div className="sec-title" style={{ color:S.muted, marginBottom:8 }}>{t('quickLaunch')}</div>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
         {QUICK_BUILDS.map((b, i) => (
           <button key={i} onClick={() => { setPrompt(t(b.promptKey)); textareaRef.current?.focus(); }}
-            style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 10px', color:'#64748b', fontSize:11, textAlign:'start', display:'flex', alignItems:'center', gap:6 }}>
+            className="stat-tile"
+            style={{ color:S.muted, fontSize:11, textAlign:'start', display:'flex', alignItems:'center', gap:6, padding:'8px 10px' }}>
             <span style={{ fontSize:14 }}>{b.icon}</span><span>{b.label}</span>
           </button>
         ))}
@@ -1028,7 +1045,7 @@ export default function Dashboard() {
 
           {/* Mission Input */}
           <div style={{ padding:'16px', borderTop:`1px solid ${S.border}`, flexShrink:0 }}>
-            <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:10 }}>⚡ Mission Control</div>
+            <div className="sec-title" style={{ color:S.muted, marginBottom:10 }}>⚡ Mission Control</div>
             <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
               placeholder={t('promptPlaceholder')}
@@ -1119,51 +1136,55 @@ export default function Dashboard() {
 
           {/* Digital Twin — حالة السيرفر الحقيقية */}
           <div style={{ padding:'14px', borderBottom:`1px solid ${S.border}` }}>
-            <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:10 }}>⬡ Digital Twin</div>
-            <div style={{ display:'flex', alignItems:'baseline', gap:6, marginBottom:4 }}>
-              <span style={{ fontSize:22, fontWeight:900, color: isConnected ? '#10b981' : '#f59e0b' }}>
+            <div className="sec-title" style={{ color:S.muted, marginBottom:10 }}>⬡ Digital Twin</div>
+            <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:8 }}>
+              <span style={{ width:8, height:8, borderRadius:'50%', background: isConnected ? S.good : S.warn, boxShadow:`0 0 8px ${isConnected ? S.good : S.warn}`, animation:'pulse 1.6s infinite', flexShrink:0 }} />
+              <span style={{ fontSize:20, fontWeight:900, letterSpacing:'0.5px', color: isConnected ? S.good : S.warn }}>
                 {isConnected ? 'ONLINE' : 'OFFLINE'}
               </span>
-              <span style={{ fontSize:10, color:S.muted }}>Uptime {fmtUptime}</span>
+              <span style={{ fontSize:10, color:S.muted, marginInlineStart:'auto' }}>Uptime {fmtUptime}</span>
             </div>
-            <div style={{ height:2, background:S.border, borderRadius:1, overflow:'hidden' }}>
-              <div style={{ height:'100%', width: isConnected ? '100%' : '15%', background: isConnected ? 'linear-gradient(90deg,#10b981,#059669)' : '#f59e0b', borderRadius:1, transition:'all 0.5s' }} />
+            <div className="meter">
+              <span style={{ width: isConnected ? '100%' : '15%', background: isConnected ? 'linear-gradient(90deg,#10b981,#059669)' : S.warn, boxShadow:`0 0 8px ${isConnected ? S.good : S.warn}66` }} />
             </div>
           </div>
 
-          {/* Metrics — مؤشرات النظام الحقيقية */}
-          <div style={{ padding:14, borderBottom:`1px solid ${S.border}`, display:'flex', flexDirection:'column', gap:10 }}>
+          {/* Metrics — مؤشرات النظام الحقيقية (مؤشرات مدوّرة، القيمة بالحبر النصّي) */}
+          <div style={{ padding:14, borderBottom:`1px solid ${S.border}`, display:'flex', flexDirection:'column', gap:12 }}>
             {[
-              { label:'CPU', value: metrics?.system?.cpuPct != null ? `${metrics.system.cpuPct}%` : '—', pct: metrics?.system?.cpuPct ?? 0, color:'#3b82f6' },
-              { label:'RAM', value: metrics?.system?.rssMb != null ? `${metrics.system.rssMb} MB` : '—', pct: Math.min(100, (metrics?.system?.rssMb ?? 0) / 5), color:'#8b5cf6' },
-              { label:'Latency', value: latencyMs != null ? `${latencyMs} ms` : '—', pct: Math.min(100, (latencyMs ?? 0) / 10), color: (latencyMs ?? 0) > 500 ? '#f59e0b' : '#10b981' },
+              { label:'CPU', value: metrics?.system?.cpuPct != null ? `${metrics.system.cpuPct}%` : '—', pct: metrics?.system?.cpuPct ?? 0, color:S.blue },
+              { label:'RAM', value: metrics?.system?.rssMb != null ? `${metrics.system.rssMb} MB` : '—', pct: Math.min(100, (metrics?.system?.rssMb ?? 0) / 5), color:S.purple },
+              { label:'Latency', value: latencyMs != null ? `${latencyMs} ms` : '—', pct: Math.min(100, (latencyMs ?? 0) / 10), color: (latencyMs ?? 0) > 500 ? S.warn : S.good },
             ].map(m => (
               <div key={m.label}>
-                <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
-                  <span style={{ fontSize:10, color:S.muted }}>{m.label}</span>
-                  <span style={{ fontSize:10, color:S.text, fontWeight:700 }}>{m.value}</span>
+                <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
+                  <span style={{ fontSize:10, color:S.muted, fontWeight:600 }}>{m.label}</span>
+                  <span style={{ fontSize:11, color:S.text, fontWeight:700, fontVariantNumeric:'tabular-nums' }}>{m.value}</span>
                 </div>
-                <div style={{ height:2, background:S.border, borderRadius:1, overflow:'hidden' }}>
-                  <div style={{ height:'100%', width:`${m.pct}%`, background:m.color, borderRadius:1 }} />
+                <div className="meter">
+                  <span style={{ width:`${Math.max(m.pct, 2)}%`, background:m.color, boxShadow:`0 0 8px ${m.color}66` }} />
                 </div>
               </div>
             ))}
           </div>
 
-          {/* Business Intelligence */}
+          {/* Business Intelligence — بطاقات إحصاء: القيمة بالحبر، لون الحالة على النقطة */}
           <div style={{ padding:14, borderBottom:`1px solid ${S.border}` }}>
-            <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:10 }}>📊 {t('intelligence')}</div>
-            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            <div className="sec-title" style={{ color:S.muted, marginBottom:10 }}>📊 {t('intelligence')}</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
               {[
                 { label:'SEO', value: fmtScore(metrics?.seo), color: gradeColor(metrics?.seo?.grade) },
                 { label:'Security', value: fmtScore(metrics?.security), color: gradeColor(metrics?.security?.grade) },
                 { label:'Quality', value: fmtScore(metrics?.quality), color: gradeColor(metrics?.quality?.grade) },
-                { label:'Builds', value: metrics?.totalBuilds ?? 0, color:'#3b82f6' },
-                { label:'Edits', value: metrics?.totalEdits ?? 0, color:'#8b5cf6' },
+                { label:'Builds', value: metrics?.totalBuilds ?? 0, color:S.blue },
+                { label:'Edits', value: metrics?.totalEdits ?? 0, color:S.purple },
               ].map(m => (
-                <div key={m.label} style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                  <span style={{ fontSize:10, color:S.muted }}>{m.label}</span>
-                  <span style={{ fontSize:11, fontWeight:700, color:m.color }}>{m.value}</span>
+                <div key={m.label} className="stat-tile">
+                  <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:4 }}>
+                    <span style={{ width:6, height:6, borderRadius:'50%', background:m.color, boxShadow:`0 0 6px ${m.color}88`, flexShrink:0 }} />
+                    <span style={{ fontSize:9, color:S.muted, fontWeight:600, letterSpacing:'0.3px' }}>{m.label}</span>
+                  </div>
+                  <div style={{ fontSize:14, fontWeight:800, color:S.text, fontVariantNumeric:'tabular-nums' }}>{m.value}</div>
                 </div>
               ))}
             </div>
@@ -1172,15 +1193,15 @@ export default function Dashboard() {
           {/* Stats */}
           {files.length > 0 && (
             <div style={{ padding:14, borderBottom:`1px solid ${S.border}` }}>
-              <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:10 }}>📁 Workspace</div>
+              <div className="sec-title" style={{ color:S.muted, marginBottom:10 }}>📁 Workspace</div>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
                 {[
                   { label:'Files', value: files.length },
                   { label:'Lines', value: activeFileContent.split('\n').length },
                 ].map(s => (
-                  <div key={s.label} style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px' }}>
-                    <div style={{ fontSize:9, color:S.muted }}>{s.label}</div>
-                    <div style={{ fontSize:18, fontWeight:800, color:S.text, marginTop:2 }}>{s.value}</div>
+                  <div key={s.label} className="stat-tile">
+                    <div style={{ fontSize:9, color:S.muted, fontWeight:600 }}>{s.label}</div>
+                    <div style={{ fontSize:18, fontWeight:800, color:S.text, marginTop:2, fontVariantNumeric:'tabular-nums' }}>{s.value}</div>
                   </div>
                 ))}
               </div>
@@ -1189,7 +1210,7 @@ export default function Dashboard() {
 
           {/* Files */}
           <div style={{ padding:14, flex:1 }}>
-            <div style={{ fontSize:9, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:10 }}>Files</div>
+            <div className="sec-title" style={{ color:S.muted, marginBottom:10 }}>Files</div>
             {files.map(f => (
               <button key={f} onClick={() => { openJaolaFile(f); setActiveTab('editor'); }}
                 style={{ width:'100%', background: activeFile === f ? 'rgba(59,130,246,0.08)' : 'transparent', border:`1px solid ${activeFile === f ? 'rgba(59,130,246,0.2)' : 'transparent'}`, borderRadius:6, padding:'5px 8px', color: activeFile === f ? '#93c5fd' : S.muted, fontSize:10, textAlign:'right', display:'flex', alignItems:'center', gap:6, marginBottom:2 }}>
