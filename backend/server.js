@@ -102,12 +102,6 @@ const corsOptions = {
     },
     credentials: true,
 };
-const io = new Server(server, {
-  cors: {
-    origin: "*", // ⚠️ يسمح للواجهة بالاتصال بالخادم
-    methods: ["GET", "POST"]
-  }
-});
 
 const io = new Server(httpServer, {
     cors: {
