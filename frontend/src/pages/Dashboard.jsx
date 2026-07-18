@@ -820,10 +820,11 @@ export default function Dashboard() {
             </span>
           )}
 
-          {/* نشر — إجراء أساسي يبقى ظاهراً */}
-          {vercelUrl
-            ? <a href={vercelUrl} target="_blank" rel="noreferrer" title={t('openSite') || 'Open'} style={{ width:40, height:40, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, textDecoration:'none', border:'1px solid rgba(16,185,129,0.35)', borderRadius:10, flexShrink:0 }}>🌍</a>
-            : <button onClick={handleDeploy} disabled={isDeploying} title={t('deploy') || 'Deploy'} style={{ width:40, height:40, background:'linear-gradient(135deg,#1d4ed8,#4f46e5)', border:'none', borderRadius:10, color:'#fff', fontSize:16, opacity:isDeploying?0.6:1, flexShrink:0 }}>🚀</button>}
+          {/* رابط الموقع (إن وُجد) + زر النشر/إعادة النشر — الأخير يبقى دائماً */}
+          {vercelUrl && (
+            <a href={vercelUrl} target="_blank" rel="noreferrer" title={t('liveSite')} style={{ width:40, height:40, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, textDecoration:'none', border:'1px solid rgba(16,185,129,0.35)', borderRadius:10, flexShrink:0 }}>🌍</a>
+          )}
+          <button onClick={handleDeploy} disabled={isDeploying} title={vercelUrl ? t('redeploy') : t('deploy')} style={{ width:40, height:40, background: vercelUrl ? 'rgba(59,130,246,0.14)' : 'linear-gradient(135deg,#1d4ed8,#4f46e5)', border: vercelUrl ? '1px solid rgba(59,130,246,0.3)' : 'none', borderRadius:10, color:'#fff', fontSize:16, opacity:isDeploying?0.6:1, flexShrink:0 }}>{isDeploying ? '⏳' : (vercelUrl ? '🔄' : '🚀')}</button>
 
           {/* قائمة الإجراءات الثانوية */}
           <button onClick={() => setShowMobileMenu(v => !v)} title="•••"
@@ -1010,18 +1011,17 @@ export default function Dashboard() {
           🐙 GitHub
         </button>
 
-        {/* Deploy */}
-        {vercelUrl ? (
-          <a href={vercelUrl} target="_blank" rel="noreferrer"
+        {/* Deploy — رابط الموقع (إن وُجد) + زر النشر/إعادة النشر دائماً حاضر */}
+        {vercelUrl && (
+          <a href={vercelUrl} target="_blank" rel="noreferrer" title={t('liveSite')}
             style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.2)', borderRadius:7, padding:'5px 12px', color:'#10b981', fontSize:11, textDecoration:'none', fontWeight:600 }}>
-            🌍 Live Site
+            🌍 {t('liveSite')}
           </a>
-        ) : (
-          <button onClick={handleDeploy} disabled={isDeploying} title={t('deploy')}
-            style={{ background: isDeploying ? 'rgba(59,130,246,0.1)' : 'linear-gradient(135deg,#1d4ed8,#4f46e5)', border:'none', borderRadius:7, padding:'5px 14px', color:'#fff', fontSize:11, fontWeight:700, opacity: isDeploying ? 0.7 : 1 }}>
-            {isDeploying ? '⏳ Deploying...' : '🚀 Deploy'}
-          </button>
         )}
+        <button onClick={handleDeploy} disabled={isDeploying} title={vercelUrl ? t('redeploy') : t('deploy')}
+          style={{ background: isDeploying ? 'rgba(59,130,246,0.1)' : (vercelUrl ? 'rgba(59,130,246,0.12)' : 'linear-gradient(135deg,#1d4ed8,#4f46e5)'), border: vercelUrl ? '1px solid rgba(59,130,246,0.3)' : 'none', borderRadius:7, padding:'5px 14px', color: vercelUrl ? '#93c5fd' : '#fff', fontSize:11, fontWeight:700, opacity: isDeploying ? 0.7 : 1 }}>
+          {isDeploying ? `⏳ ${t('deploying')}` : (vercelUrl ? `🔄 ${t('redeploy')}` : `🚀 ${t('deploy')}`)}
+        </button>
 
         {/* User */}
         <div style={{ display:'flex', alignItems:'center', gap:8, background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`, borderRadius:8, padding:'5px 12px' }}>
