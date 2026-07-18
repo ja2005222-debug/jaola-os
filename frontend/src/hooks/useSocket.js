@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 
-// 🚀 تحديث مهم هنا: إذا كان لدينا رابط للخادم نضعه هنا، وإلا نستخدم النطاق الحالي
-const SOCKET_URL = import.meta.env.VITE_BACKEND_URL || "https://رابط-الخادم-الخلفي-الخاص-بك.onrender.com"; 
+// 🚀 التحديث الذكي:
+// في الإنتاج (Render): يتصل بالنطاق الحالي مباشرة
+// في التطوير (جهازك المحلي): يتصل بالبورت 4000
+const SOCKET_URL = import.meta.env.MODE === "production" 
+  ? (import.meta.env.VITE_BACKEND_URL || window.location.origin) 
+  : "http://localhost:4000";
 
 const useSocket = () => {
   const [socket, setSocket] = useState(null);
@@ -34,6 +38,7 @@ const useSocket = () => {
 
     setSocket(newSocket);
 
+    // تنظيف الاتصال عند إغلاق المكون
     return () => newSocket.close();
   }, []);
 
