@@ -106,6 +106,29 @@ async function collectProjectFiles(projectPath) {
 }
 
 /**
+ * 🧩 يضمن نشراً ثابتاً صحيحاً — يمنع عطل 404 من محاولة Vercel بناء مشروع
+ * فيه package.json بدل خدمة صفحات HTML الجاهزة. دالة نقية قابلة للاختبار:
+ * تُرجع قائمة الملفات مع vercel.json الثابت مضافاً (إن لزم).
+ * @throws إذا لم يوجد أي HTML في الجذر
+ */
+export function ensureStaticDeploy(files) {
+    const rootHtml = files.filter(f => /^[^/]+\.html$/i.test(f.file));
+    const hasIndex = rootHtml.some(f => f.file.toLowerCase() === 'index.html');
+    if (!hasIndex && rootHtml.length === 0) {
+        throw new Error('لا يوجد ملف HTML في جذر المشروع لنشره — تأكد من بناء الموقع أولاً.');
+    }
+    if (files.some(f => f.file === 'vercel.json')) return files;
+
+    const cfg = { version: 2, builds: [{ src: '**/*', use: '@vercel/static' }] };
+    if (!hasIndex) cfg.routes = [{ src: '/', dest: `/${rootHtml[0].file}` }];
+    return [...files, {
+        file: 'vercel.json',
+        data: Buffer.from(JSON.stringify(cfg)).toString('base64'),
+        encoding: 'base64',
+    }];
+}
+
+/**
  * 🚀 نشر مشروع على Vercel عبر REST API مباشرة (بدون CLI، بدون exec)
  * @param {object} params - { projectPath, activeProject, currentUser }
  * @param {object} io - Socket.io instance للبث الحي
@@ -172,6 +195,12 @@ export async function deployProject({ projectPath, activeProject, currentUser },
             throw new Error('لا توجد ملفات قابلة للنشر في هذا المشروع.');
         }
 
+        // 🧩 إصلاح 404: نحن ننشر صفحات HTML جاهزة (ثابتة). لكن إن حوى المشروع
+        // package.json (مشاريع React) ظنّ Vercel أنه يحتاج بناءً فحاول بناءه
+        // بدل خدمة الصفحات الجاهزة → لا مخرجات → 404. نحقن vercel.json يثبّت
+        // الخدمة الثابتة لكل الملفات ويعطّل كشف الـ framework نهائياً.
+        const deployFiles = ensureStaticDeploy(files);
+
         // اسم مشروع صالح في Vercel: أحرف صغيرة وأرقام وشرطات فقط
         const vercelProjectName = `${currentUser}-${activeProject}`
             .toLowerCase()
@@ -179,7 +208,7 @@ export async function deployProject({ projectPath, activeProject, currentUser },
             .replace(/-+/g, '-')
             .slice(0, 100);
 
-        io.to(roomName).emit('log', { message: `📡 [DEPLOY]: جاري الرفع إلى Vercel (${files.length} ملف)...` });
+        io.to(roomName).emit('log', { message: `📡 [DEPLOY]: جاري الرفع إلى Vercel (${deployFiles.length} ملف)...` });
 
         const teamQuery = VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : '';
         const response = await fetch(`${VERCEL_API}/v13/deployments${teamQuery}`, {
@@ -190,7 +219,7 @@ export async function deployProject({ projectPath, activeProject, currentUser },
             },
             body: JSON.stringify({
                 name: vercelProjectName,
-                files,
+                files: deployFiles,
                 target: 'production',
                 projectSettings: {
                     framework: null, // موقع ثابت بدون framework
@@ -212,7 +241,12 @@ export async function deployProject({ projectPath, activeProject, currentUser },
             throw new Error(errorMsg);
         }
 
-        const vercelProductionUrl = `https://${result.url}`;
+        // الرابط النظيف الثابت (alias الإنتاج) مفضّل على رابط النشرة المُجزّأ
+        // العشوائي — يبقى ثابتاً عبر عمليات النشر المتتالية
+        const productionAlias = Array.isArray(result.alias)
+            ? result.alias.find(a => typeof a === 'string' && !/-[a-z0-9]{8,}-/i.test(a))
+            : null;
+        const vercelProductionUrl = `https://${productionAlias || result.url}`;
 
         // تحديث قاعدة البيانات
         try {
