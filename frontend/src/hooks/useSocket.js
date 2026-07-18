@@ -1,313 +1,61 @@
-import { useEffect, useState, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 
-const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname.startsWith('100.115')
-  ? `http://${window.location.hostname}:4000`
-  : 'https://jaola-os.onrender.com';
+// تحديد مسار الخادم تلقائياً (سواء على بيئة التطوير أو الإنتاج في Render)
+const SOCKET_URL = import.meta.env.VITE_BACKEND_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : '/');
 
-export const socket = io(BACKEND_URL, {
-  autoConnect: false,
-  // websocket أولاً — أسرع وأقل عرضة لمشاكل الـ polling، مع polling كاحتياط
-  transports: ['websocket', 'polling'],
-  // 🛠️ إصلاح جذري: كانت 3 محاولات فقط (6 ثوانٍ) ثم استسلام نهائي — الآن لا يستسلم أبداً
-  reconnection: true,
-  reconnectionAttempts: Infinity,
-  reconnectionDelay: 1000,        // أول محاولة بعد ثانية
-  reconnectionDelayMax: 10000,    // ثم تصاعدياً حتى 10 ثوانٍ
-  randomizationFactor: 0.5,
-  timeout: 20000,                 // مهلة أطول — Render المجاني قد يستيقظ ببطء
-});
-
-export function useSocket(isAuthenticated, handleAuthError) {
-  const [files, setFiles]               = useState([]);
-  const [logs, setLogs]                 = useState([]);
-  const [streamingContent, setStreamingContent] = useState('');
-  const [projects, setProjects]         = useState([]);
-  const [activeProject, setActiveProject] = useState(
-    () => localStorage.getItem('activeProject') || 'sandbox_app'
-  );
-  const [currentUser, setCurrentUser]   = useState('guest_user');
-  const [vercelUrl, setVercelUrl]       = useState('');
-  const [chatMessages, setChatMessages] = useState([]);
-  const [connectionError, setConnectionError] = useState('');
-  const [previewTimestamp, setPreviewTimestamp] = useState(Date.now());
-  const [agentStates, setAgentStates]   = useState({
-    planner: 'waiting', architect: 'waiting',
-    coder: 'waiting', qa: 'waiting', deploy: 'waiting'
-  });
-  const [isConnected, setIsConnected]   = useState(socket.connected);
-  const [metrics, setMetrics]           = useState(null);   // 📊 المقاييس الحقيقية من السيرفر
-  const [latencyMs, setLatencyMs]       = useState(null);   // زمن الاستجابة المقاس فعلياً
-  const [missionPhase, setMissionPhase] = useState(null);   // 🔄 المرحلة الحقيقية من آلة الحالات
-
-  // مرجع لتتبع عدد أخطاء الاتصال لمنع حلقة الـ reload
-  const connectErrorCountRef = useRef(0);
-  // مرجع للمشروع النشط — حتى تعيد معالجات الأحداث الانضمام للغرفة الصحيحة
-  const activeProjectRef = useRef(activeProject);
-  useEffect(() => { activeProjectRef.current = activeProject; }, [activeProject]);
-
-  // 🛠️ إعادة الانضمام للغرفة عند تبديل المشروع + حفظه للجلسات القادمة
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    localStorage.setItem('activeProject', activeProject);
-    if (socket.connected) {
-      socket.emit('join_project', { project: activeProject });
-    }
-  }, [activeProject, isAuthenticated]);
+const useSocket = () => {
+  const [socket, setSocket] = useState(null);
+  const [connected, setConnected] = useState(false);
+  const [metrics, setMetrics] = useState({ latency: 0, memory: 0, cpu: 0 });
 
   useEffect(() => {
-    if (!isAuthenticated) return;
-
-    const token = localStorage.getItem('token');
-    if (!token) return;
-
-    const savedProject = localStorage.getItem('activeProject') || activeProject;
-
-    socket.auth = { token };
-
-    // ─── أحداث Socket ──────────────────────────────────────────────
-    socket.off('workspace_files').on('workspace_files', setFiles);
-
-    socket.off('user_projects').on('user_projects', (data) => {
-      setProjects(data.projects || []);
-      setActiveProject(data.activeProject);
-      setCurrentUser(data.currentUser);
-      setVercelUrl(data.vercelUrl || '');
-
-      // 🛠️ تحصين ذاتي: اسم المستخدم من السيرفر هو الحقيقة المطلقة —
-      // يصحح أي قيمة تالفة مخزنة سابقاً ("undefined") كانت تكسر المعاينة
-      if (data.currentUser && data.currentUser !== 'guest_user') {
-        const stored = localStorage.getItem('currentUser');
-        if (stored !== data.currentUser) {
-          localStorage.setItem('currentUser', data.currentUser);
-        }
-      }
+    // تهيئة الاتصال
+    const newSocket = io(SOCKET_URL, {
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 10,
+      reconnectionDelay: 2000,
     });
 
-    socket.off('preview_updated').on('preview_updated', (data) => {
-      setStreamingContent('');
-      setPreviewTimestamp(data.timestamp || Date.now());
+    setSocket(newSocket);
+
+    // عند نجاح الاتصال
+    newSocket.on('connect', () => {
+      setConnected(true);
+      console.log('🟢 [JCR Socket] Connected to JAOLA Core');
+      // الانضمام لغرفة المشروع لاستقبال التحديثات
+      newSocket.emit('join_project_room', { projectId: 'jaola-core-main' });
     });
 
-    // 🛠️ نهاية بث الكود (نجاح/فشل/إيقاف) — يزيل طبقة "يكتب الكود" عن المعاينة دائماً
-    socket.off('stream_done').on('stream_done', () => {
-      setStreamingContent('');
+    // عند انقطاع الاتصال
+    newSocket.on('disconnect', () => {
+      setConnected(false);
+      console.log('🔴 [JCR Socket] Disconnected from Core');
     });
 
-    socket.off('code_stream_chunk').on('code_stream_chunk', (chunk) => {
-      setStreamingContent((prev) => prev + chunk);
+    // استقبال المقاييس الحية من الخادم
+    newSocket.on('system_metrics', (data) => {
+      setMetrics(prev => ({ ...prev, ...data }));
     });
 
-    socket.off('agent_states').on('agent_states', setAgentStates);
-
-    // 📊 المقاييس الحقيقية (درجات الوكلاء + مؤشرات النظام)
-    socket.off('project_metrics').on('project_metrics', setMetrics);
-
-    // 🔄 المرحلة الحقيقية من آلة الحالات (أحداث project_state الموحدة):
-    // معمارية → كتابة → مراجعة → تحقق → اكتمال/فشل
-    socket.off('project_state').on('project_state', (data) => {
-      setMissionPhase(data || null);
-    });
-
-    socket.off('log').on('log', (newLog) => {
-      setLogs((prev) => [...prev.slice(-100), newLog]);
-
-      // 🆕 إحياء دور الشات: الأحداث المهمة تظهر كأسطر حالة داخل الشات مباشرة
-      // بدل أن تبقى مدفونة في تاب Logs — المستخدم يرى ماذا يحدث لحظة بلحظة
-      const msg = newLog?.message || '';
-      const significant = /✅|❌|⚠️|🎯|🚀|⚙️|🔍|🎨|💻|🧪|🐙|📦|🔐|⏹|✨|🏁|🗺️|🏗️/.test(msg);
-      if (significant) {
-        setChatMessages((prev) => {
-          const last = prev[prev.length - 1];
-          // منع تكرار نفس السطر مرتين متتاليتين
-          if (last?.sender === 'system' && last.text === msg) return prev;
-          return [...prev.slice(-150), { sender: 'system', text: msg, timestamp: Date.now() }];
-        });
-      }
-    });
-
-    socket.off('chat_reply').on('chat_reply', (data) => {
-      setChatMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (last && last.sender !== 'user' && last.text === data.message) return prev;
-        return [...prev, {
-          sender: 'assistant',
-          text: data.message,
-          options: data.options || null,
-          pendingGoal: data.pendingGoal || null,
-          timestamp: Date.now()
-        }];
+    // حساب سرعة الاستجابة (Ping/Pong)
+    let pingInterval = setInterval(() => {
+      const start = Date.now();
+      newSocket.emit('ping', () => {
+        const duration = Date.now() - start;
+        setMetrics(prev => ({ ...prev, latency: duration }));
       });
-    });
+    }, 5000);
 
-    // 🔴 البثّ الحيّ للرد — يظهر حرفاً-بحرف
-    socket.off('chat_stream_start').on('chat_stream_start', () => {
-      setChatMessages((prev) => [...prev, { sender: 'assistant', text: '', streaming: true, timestamp: Date.now() }]);
-    });
-    socket.off('chat_stream_chunk').on('chat_stream_chunk', (data) => {
-      const delta = data?.delta || '';
-      if (!delta) return;
-      setChatMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (!last || !last.streaming) return prev;
-        const copy = prev.slice(0, -1);
-        return [...copy, { ...last, text: last.text + delta }];
-      });
-    });
-    socket.off('chat_stream_end').on('chat_stream_end', (data) => {
-      setChatMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (!last || !last.streaming) {
-          // لم تصل بداية البثّ لأي سبب — أضِف الرد النهائي كرسالة عادية
-          return [...prev, { sender: 'assistant', text: data?.message || '', timestamp: Date.now() }];
-        }
-        const copy = prev.slice(0, -1);
-        return [...copy, { ...last, text: data?.message ?? last.text, streaming: false }];
-      });
-    });
-
-    socket.off('chat_history').on('chat_history', (history) => {
-      if (!history?.length) return;
-      setChatMessages(prev => {
-        if (prev.length > 0) return prev; // لا تُعيد التحميل إذا يوجد رسائل
-        return history.slice(-50).map(msg => ({
-          sender: msg.role === 'user' ? 'user' : 'ai',
-          text: msg.content
-        }));
-      });
-    });
-
-    // ─── معالجة أخطاء الاتصال — إعادة محاولة لا نهائية بدون reload ──
-    socket.off('connect_error').on('connect_error', (err) => {
-      connectErrorCountRef.current += 1;
-      console.error('Socket Error:', err.message);
-
-      // توكن منتهي أو غير صالح — الحالة الوحيدة التي توجب إعادة تسجيل الدخول
-      if (err.message.includes('Unauthorized') || err.message.includes('Token')) {
-        setConnectionError('انتهت صلاحية الجلسة. سيتم تسجيل خروجك...');
-        localStorage.removeItem('token');
-        localStorage.removeItem('currentUser');
-        setTimeout(() => window.location.reload(), 2000);
-        return;
-      }
-
-      // socket.io يستمر بإعادة المحاولة تلقائياً (Infinity) — نعرض الحالة فقط
-      setIsConnected(false);
-      if (connectErrorCountRef.current === 1 || connectErrorCountRef.current % 5 === 0) {
-        setConnectionError('جاري إعادة الاتصال بالخادم...');
-        setLogs((prev) => [...prev.slice(-100), {
-          message: `⚠️ [SYSTEM]: انقطع الاتصال — إعادة المحاولة (${connectErrorCountRef.current})...`
-        }]);
-      }
-    });
-
-    socket.off('connect').on('connect', () => {
-      const wasReconnect = connectErrorCountRef.current > 0;
-      connectErrorCountRef.current = 0;
-      setConnectionError('');
-      setIsConnected(true);
-
-      // 🛠️ الإصلاح الجوهري: إعادة الانضمام لغرفة المشروع بعد *كل* اتصال.
-      // بدون هذا، أي إعادة اتصال تترك الـ socket خارج الغرفة فتتوقف كل
-      // الأحداث (شات/سجلات/ملفات) بصمت — وهذا ما كان يبدو كـ "فقدان اتصال".
-      socket.emit('join_project', { project: activeProjectRef.current || 'sandbox_app' });
-
-      if (wasReconnect) {
-        setLogs((prev) => [...prev.slice(-100), { message: '✅ [SYSTEM]: عاد الاتصال بالخادم واستُعيدت الغرفة.' }]);
-      }
-    });
-
-    socket.off('disconnect').on('disconnect', (reason) => {
-      setIsConnected(false);
-      if (reason === 'io server disconnect') {
-        // الخادم أنهى الاتصال (إعادة نشر مثلاً) — auto-reconnect لا يعمل هنا، نعيد يدوياً
-        setLogs((prev) => [...prev.slice(-100), { message: '🔌 [SYSTEM]: أعاد الخادم تشغيل الاتصال — جاري الرجوع...' }]);
-        setTimeout(() => socket.connect(), 1500);
-      }
-    });
-
-    // 🛠️ تحديث التوكن قبل كل محاولة إعادة اتصال (Manager events)
-    socket.io.off('reconnect_attempt').on('reconnect_attempt', () => {
-      socket.auth = { token: localStorage.getItem('token') };
-    });
-
-    // 🛠️ الجوال: المتصفح يجمّد الـ socket في الخلفية — عند العودة نعيد الاتصال فوراً
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && !socket.connected) {
-        socket.auth = { token: localStorage.getItem('token') };
-        socket.connect();
-      }
-    };
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    window.addEventListener('online', onVisibilityChange);
-
-    // 🛠️ نبض حياة كل 4 دقائق: يبقي خدمة Render مستيقظة + يقيس زمن الاستجابة الفعلي
-    const pingHealth = async () => {
-      const t0 = performance.now();
-      try {
-        await fetch(`${BACKEND_URL}/api/health`);
-        setLatencyMs(Math.round(performance.now() - t0));
-      } catch {}
-    };
-    pingHealth();
-    const keepAlive = setInterval(pingHealth, 4 * 60 * 1000);
-
-    socket.connect();
-    socket.emit('join_project', { project: savedProject });
-
+    // تنظيف الاتصال عند إغلاق الصفحة
     return () => {
-      socket.off('workspace_files');
-      socket.off('user_projects');
-      socket.off('preview_updated');
-      socket.off('stream_done');
-      socket.off('code_stream_chunk');
-      socket.off('agent_states');
-      socket.off('project_metrics');
-      socket.off('project_state');
-      socket.off('log');
-      socket.off('chat_reply');
-      socket.off('chat_stream_start');
-      socket.off('chat_stream_chunk');
-      socket.off('chat_stream_end');
-      socket.off('chat_history');
-      socket.off('connect_error');
-      socket.off('connect');
-      socket.off('disconnect');
-      socket.io.off('reconnect_attempt');
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      window.removeEventListener('online', onVisibilityChange);
-      clearInterval(keepAlive);
+      clearInterval(pingInterval);
+      newSocket.disconnect();
     };
-  }, [isAuthenticated]);
+  }, []);
 
-  // 🆕 تحديث المعاينة يدوياً من شريط الأدوات
-  const refreshPreview = () => setPreviewTimestamp(Date.now());
+  return { socket, connected, metrics };
+};
 
-  return {
-    files,
-    logs,
-    streamingContent,
-    agentStates,
-    projects,
-    activeProject,
-    currentUser,
-    vercelUrl,
-    chatMessages,
-    connectionError,
-    isConnected,
-    metrics,
-    latencyMs,
-    missionPhase,
-    previewTimestamp,
-    refreshPreview,
-    setChatMessages,
-    setProjects,
-    setActiveProject,
-    setCurrentUser,
-    setSocketUser: setCurrentUser,
-    setVercelUrl,
-    setStreamingContent,
-    setFiles,
-    setLogs,
-  };
-}
+// هذا هو السطر الذي كان يشتكي منه نظام البناء!
+export default useSocket; 
