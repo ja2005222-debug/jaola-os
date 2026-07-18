@@ -15,6 +15,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { persistEntry, hydrateStore, onMongoReady } from '../services/persistence.js';
+import { recordEditLesson } from '../services/platformLessons.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROFILES_FILE = path.join(__dirname, '../memory/user_profiles.json');
@@ -183,6 +184,10 @@ export function recordEdit(username, editMessage) {
 
     // استنتاج تفضيل PWA
     if (/pwa|تطبيق|app/i.test(editMessage)) profile.preferences.wantsPWA = true;
+
+    // 📚 كل تعديل بعد البناء درسٌ للمنصة كلها — النقطة المركزية الوحيدة
+    // التي تمر منها جميع مسارات التعديل
+    recordEditLesson(editMessage);
 
     profile.updatedAt = Date.now();
     saveProfiles();

@@ -1,5 +1,6 @@
 import { deepseek, groq, ai } from './baseAgent.js';
 import { buildContextPrompt } from './knowledgeEngine.js';
+import { buildLessonsPromptBlock } from '../services/platformLessons.js';
 
 // ============================================================
 // 🌐 لغة الموقع المُولَّد — يجب أن تطابق لغة المستخدم
@@ -173,6 +174,7 @@ export async function coreGenerateCodePlan(prompt, currentCodeContext, visualIde
 ${prompt}
 
 ${knowledgeContext}
+${buildLessonsPromptBlock()}
 
 ## الهوية البصرية الإضافية المطلوبة:
 ${visualIdentity || 'اتبع الروح التصميمية من Knowledge Engine أعلاه'}

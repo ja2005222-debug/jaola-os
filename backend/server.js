@@ -64,6 +64,7 @@ import { runSystemDiagnostics } from './agents/systemDoctorAgent.js';
 import * as adminSvc from './services/adminService.js';
 import { canCreateProject } from './services/subscriptionService.js';
 import { createBillingRouter } from './routes/billing.js';
+import { topLessons } from './services/platformLessons.js';
 import { setStateEmitter } from './agents/stateMachine.js';
 import { restorePluginsToDisk } from './services/pluginStore.js';
 import { onMongoReady } from './services/persistence.js';
@@ -1180,6 +1181,11 @@ app.use('/api/billing', createBillingRouter({ verifyToken, DB }));
 // ─── 🩺 مسارات المشرف: فحص النظام + إدارة الإضافات ──────────────────
 app.get('/api/admin/health', verifyToken, adminOnly, (req, res) => {
     res.json({ success: true, report: runSystemDiagnostics() });
+});
+
+// 📚 ذاكرة دروس المنصة — ما تعلّمته من كل المشاريع (الأكثر تكراراً أولاً)
+app.get('/api/admin/lessons', verifyToken, adminOnly, (req, res) => {
+    res.json({ success: true, lessons: topLessons(30) });
 });
 
 app.get('/api/admin/plugins', verifyToken, adminOnly, (req, res) => {
