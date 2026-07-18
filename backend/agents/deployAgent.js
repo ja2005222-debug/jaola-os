@@ -12,6 +12,66 @@ const VERCEL_TEAM_ID = process.env.VERCEL_TEAM_ID; // اختياري — فقط 
 const deploysInProgress = new Set();
 
 /**
+ * 🩺 فحص تحقق مسبق لصلاحية Vercel — يحوّل "Not authorized" الغامضة إلى
+ * تشخيص دقيق قابل للتنفيذ قبل أي محاولة نشر:
+ * - هل VERCEL_TOKEN مضبوط أصلاً؟
+ * - هل التوكن صالح وغير منتهٍ؟ (يُختبر ضد GET /v2/user)
+ * - إن ضُبط VERCEL_TEAM_ID: هل التوكن يملك صلاحية ذلك الفريق؟
+ * لا يكشف التوكن أبداً — يعيد حكماً واضحاً فقط.
+ */
+export async function verifyVercelAuth() {
+    if (!VERCEL_TOKEN) {
+        return {
+            ok: false, stage: 'token_missing',
+            message: 'VERCEL_TOKEN غير مضبوط في إعدادات الخادم (Render → Environment). أضِفه ثم أعد النشر.',
+        };
+    }
+
+    // 1) صلاحية التوكن نفسه
+    let account = null;
+    try {
+        const res = await fetch(`${VERCEL_API}/v2/user`, {
+            headers: { Authorization: `Bearer ${VERCEL_TOKEN}` },
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            return {
+                ok: false, stage: 'token_invalid', status: res.status,
+                message: `التوكن مرفوض من Vercel (${res.status}: ${body?.error?.message || 'غير مصرّح'}). التوكن غالباً منتهٍ أو خاطئ — أنشئ توكناً جديداً من Vercel → Account Settings → Tokens.`,
+            };
+        }
+        account = body?.user?.username || body?.user?.email || 'unknown';
+    } catch (e) {
+        return { ok: false, stage: 'network', message: `تعذّر الوصول إلى Vercel: ${e.message}` };
+    }
+
+    // 2) صلاحية الفريق (إن ضُبط)
+    if (VERCEL_TEAM_ID) {
+        try {
+            const res = await fetch(`${VERCEL_API}/v2/teams/${VERCEL_TEAM_ID}`, {
+                headers: { Authorization: `Bearer ${VERCEL_TOKEN}` },
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                return {
+                    ok: false, stage: 'team_invalid', status: res.status, account,
+                    message: `التوكن صالح (الحساب: ${account}) لكن VERCEL_TEAM_ID=${VERCEL_TEAM_ID} مرفوض `
+                        + `(${res.status}). تحقّق أن المعرّف صحيح وأن التوكن يملك صلاحية هذا الفريق، أو احذف المتغير إن لم يكن حسابك ضمن Team.`,
+                };
+            }
+            return {
+                ok: true, account, team: body?.name || VERCEL_TEAM_ID,
+                message: `✅ جاهز للنشر — الحساب: ${account}، الفريق: ${body?.name || VERCEL_TEAM_ID}.`,
+            };
+        } catch (e) {
+            return { ok: false, stage: 'network', account, message: `تعذّر التحقق من الفريق: ${e.message}` };
+        }
+    }
+
+    return { ok: true, account, message: `✅ جاهز للنشر — الحساب: ${account} (بلا فريق).` };
+}
+
+/**
  * 📦 قراءة جميع ملفات المشروع وتحويلها لتنسيق Vercel Deployment API
  * Vercel يتطلب كل ملف كـ { file: "اسم", data: "base64 content" }
  */
@@ -63,11 +123,11 @@ export async function deployProject({ projectPath, activeProject, currentUser },
         return;
     }
 
-    if (!VERCEL_TOKEN) {
-        io.to(roomName).emit('log', {
-            message: '❌ [DEPLOY]: لم يُضبط VERCEL_TOKEN في إعدادات الخادم. تواصل مع المسؤول لتفعيل النشر السحابي.'
-        });
-        return;
+    // 🩺 تحقق مسبق: افشل مبكراً برسالة دقيقة بدل رفعٍ كامل ينتهي بـ "Not authorized"
+    const auth = await verifyVercelAuth();
+    if (!auth.ok) {
+        io.to(roomName).emit('log', { message: `❌ [DEPLOY]: ${auth.message}` });
+        return { success: false, error: auth.message };
     }
 
     if (!fsSync.existsSync(projectPath)) {
