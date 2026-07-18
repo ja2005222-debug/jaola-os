@@ -232,7 +232,7 @@ export default function Dashboard() {
   }, []);
   useEffect(() => { if (oauthError) setAuthError(oauthError); }, [oauthError]);
 
-  const { files, logs, streamingContent, agentStates, projects, activeProject, currentUser, vercelUrl, chatMessages, setChatMessages, setActiveProject, previewTimestamp, refreshPreview, isConnected, connectionError, metrics, latencyMs } = useSocket(isAuthenticated, handleAuthError);
+  const { files, logs, streamingContent, agentStates, projects, activeProject, currentUser, vercelUrl, chatMessages, setChatMessages, setActiveProject, previewTimestamp, refreshPreview, isConnected, connectionError, metrics, latencyMs, missionPhase } = useSocket(isAuthenticated, handleAuthError);
 
   // 📊 قيم لوحة الذكاء الحقيقية (مع بدائل عند غياب البيانات)
   const gradeColor = (g) => g === 'A' ? '#10b981' : g === 'B' ? '#fbbf24' : g ? '#f97316' : '#334155';
@@ -613,7 +613,7 @@ export default function Dashboard() {
       )}
       {chatMessages.map((msg, i) => <FeedItem key={i} msg={msg} onOption={handleOptionClick} />)}
       {isBuilding && buildStartedAt && (
-        <MissionProgress agentStates={agentStates} lastLog={lastLogMsg} startedAt={buildStartedAt} />
+        <MissionProgress agentStates={agentStates} lastLog={lastLogMsg} startedAt={buildStartedAt} phase={missionPhase} />
       )}
       {isSending && !isBuilding && (
         <div style={{ display:'flex', alignItems:'center', gap:8, padding:'4px 0' }}>

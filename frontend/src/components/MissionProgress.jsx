@@ -12,7 +12,20 @@ const AGENT_META = {
   deploy:    { icon: '🚀', key: 'phaseDeploy' },
 };
 
-export function MissionProgress({ agentStates, lastLog, startedAt }) {
+// 🔄 مراحل آلة الحالات الحقيقية (أحداث project_state) — أدق من تخمين الوكلاء
+const PHASE_META = {
+  planning:     { icon: '🗺️', key: 'mstate_planning' },
+  architecture: { icon: '🏗️', key: 'mstate_architecture' },
+  generating:   { icon: '💻', key: 'mstate_generating' },
+  reviewing:    { icon: '🔍', key: 'mstate_reviewing' },
+  verifying:    { icon: '📋', key: 'mstate_verifying' },
+  deploying:    { icon: '🚀', key: 'mstate_deploying' },
+  completed:    { icon: '✅', key: 'mstate_completed' },
+  failed:       { icon: '❌', key: 'mstate_failed' },
+  paused:       { icon: '⏸️', key: 'mstate_paused' },
+};
+
+export function MissionProgress({ agentStates, lastLog, startedAt, phase }) {
   const t = useI18n(s => s.t);
   const [now, setNow] = useState(Date.now());
 
@@ -25,7 +38,11 @@ export function MissionProgress({ agentStates, lastLog, startedAt }) {
   const doneCount = entries.filter(([, s]) => s === 'completed').length;
   const pct = entries.length ? Math.round((doneCount / entries.length) * 100) : 0;
   const running = entries.find(([, s]) => s === 'running');
-  const currentMeta = running ? (AGENT_META[running[0]] ? { icon: AGENT_META[running[0]].icon, label: t(AGENT_META[running[0]].key) } : { icon: '⚙️', label: running[0] }) : null;
+  // مرحلة آلة الحالات الحقيقية لها الأولوية — تخمين الوكلاء احتياط فقط
+  const phaseMeta = phase?.state && PHASE_META[phase.state] ? PHASE_META[phase.state] : null;
+  const currentMeta = phaseMeta
+    ? { icon: phaseMeta.icon, label: t(phaseMeta.key) }
+    : running ? (AGENT_META[running[0]] ? { icon: AGENT_META[running[0]].icon, label: t(AGENT_META[running[0]].key) } : { icon: '⚙️', label: running[0] }) : null;
 
   const elapsed = Math.max(0, Math.floor((now - startedAt) / 1000));
   const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');

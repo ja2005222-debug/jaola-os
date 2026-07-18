@@ -38,6 +38,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
   const [isConnected, setIsConnected]   = useState(socket.connected);
   const [metrics, setMetrics]           = useState(null);   // 📊 المقاييس الحقيقية من السيرفر
   const [latencyMs, setLatencyMs]       = useState(null);   // زمن الاستجابة المقاس فعلياً
+  const [missionPhase, setMissionPhase] = useState(null);   // 🔄 المرحلة الحقيقية من آلة الحالات
 
   // مرجع لتتبع عدد أخطاء الاتصال لمنع حلقة الـ reload
   const connectErrorCountRef = useRef(0);
@@ -101,6 +102,12 @@ export function useSocket(isAuthenticated, handleAuthError) {
 
     // 📊 المقاييس الحقيقية (درجات الوكلاء + مؤشرات النظام)
     socket.off('project_metrics').on('project_metrics', setMetrics);
+
+    // 🔄 المرحلة الحقيقية من آلة الحالات (أحداث project_state الموحدة):
+    // معمارية → كتابة → مراجعة → تحقق → اكتمال/فشل
+    socket.off('project_state').on('project_state', (data) => {
+      setMissionPhase(data || null);
+    });
 
     socket.off('log').on('log', (newLog) => {
       setLogs((prev) => [...prev.slice(-100), newLog]);
@@ -256,6 +263,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
       socket.off('code_stream_chunk');
       socket.off('agent_states');
       socket.off('project_metrics');
+      socket.off('project_state');
       socket.off('log');
       socket.off('chat_reply');
       socket.off('chat_stream_start');
@@ -289,6 +297,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
     isConnected,
     metrics,
     latencyMs,
+    missionPhase,
     previewTimestamp,
     refreshPreview,
     setChatMessages,
