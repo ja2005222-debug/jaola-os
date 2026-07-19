@@ -2108,6 +2108,19 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     this.emitLiveLog(roomName, 'ROUTER', 'Unified',
                         `🧭 ${route.action} (${route.confidence}%)${route.reason ? ` — ${route.reason}` : ''}`);
                     if (route.action === 'chat') {
+                        // 🛡️ شبكة أمان: الموجّه قد يصنّف تعديلاً صريحاً كمحادثة (حدث فعلاً مع
+                        // "عدّل: ..."). أمرٌ صريح أو تكرار مُصِرّ على مشروع قائم يُنفَّذ تعديلاً
+                        // بدل الدخول في حلقة "أعد إرسال نفس الجملة" التي يهلوسها الـ LLM.
+                        const hasProj = existingCode.trim().length > 100;
+                        const repeatedGate = this.gatedMessages.get(username) === message.trim();
+                        if (hasProj && !isQuestionMessage(message) && (hasActionIntent(message) || repeatedGate)) {
+                            this.gatedMessages.delete(username);
+                            recordEdit(username, message);
+                            recordEditAction(username, activeProject);
+                            this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
+                            return;
+                        }
+                        if (hasProj && !isQuestionMessage(message)) this.gatedMessages.set(username, message.trim());
                         await this.generateChatResponse(message, username, roomName, userLang);
                         return;
                     }
@@ -2143,7 +2156,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
         // ── 1. كشف التعديل المباشر (مسار احتياطي عند فشل الموجّه) ─────────
         // النمط مكتوب بدون همزات لأننا نفحص النص المطبّع (اضف = أضف = إضف)
-        const modifyPattern = /^(غير|عدل|بدل|اضف|ضف|زود|احذف|امسح|شيل|صحح|اصلح|تعديل|حول|اجعل|ضع|حط|زد|كبر|صغر|change|modify|update|add|remove|put|fix|make|delete)\s+/i;
+        // يقبل النقطتين بعد الفعل ("عدّل: ..." التي يقترحها المساعد نفسه) لا المسافة فقط
+        const modifyPattern = /^(غير|عدل|بدل|اضف|ضف|زود|احذف|امسح|شيل|صحح|اصلح|تعديل|حول|اجعل|ضع|حط|زد|كبر|صغر|change|modify|update|add|remove|put|fix|make|delete)[\s:：]+/i;
         const normalizedForModify = normalizeArabic(message.trim());
         if (modifyPattern.test(message.trim()) || modifyPattern.test(normalizedForModify)) {
             // إذا كنا في مرحلة Planning — عالج كتعديل على الخطة وليس بناء

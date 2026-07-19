@@ -85,6 +85,20 @@ test('انهيار الناقل لا يُفشل الانتقال أبداً', ()
     }
 });
 
+test('بداية مهمة جديدة تُصفّر ساعة المدة — لا مدة خيالية (4052 د)', () => {
+    const P = 'duration_reset';
+    resetProjectState(U, P);
+    // مهمة قديمة بدأت قبل يومين
+    const st = getProjectState(U, P);
+    transitionState(U, P, STATES.ARCHITECTURE);
+    st.startedAt = Date.now() - 2 * 24 * 60 * 60 * 1000; // نزيّف بداية قديمة
+    transitionState(U, P, STATES.COMPLETED);
+    // مهمة جديدة → ARCHITECTURE يجب أن يُصفّر الساعة
+    transitionState(U, P, STATES.ARCHITECTURE);
+    const fresh = getProjectState(U, P).startedAt;
+    assert.ok(Date.now() - fresh < 5000, 'الساعة صُفّرت لبداية المهمة الجديدة');
+});
+
 test('كل حالة لها حدث قانوني معرّف', () => {
     for (const s of Object.values(STATES)) {
         assert.ok(STATE_EVENTS[s], `حدث ${s} مفقود`);

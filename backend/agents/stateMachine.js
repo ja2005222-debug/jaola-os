@@ -128,7 +128,11 @@ export function transitionState(username, project, newState, meta = {}) {
     state.state = newState;
     state.updatedAt = Date.now();
 
-    if ((newState === STATES.ARCHITECTURE || newState === STATES.GENERATING) && !state.startedAt) {
+    // بداية مهمة جديدة (ARCHITECTURE) تُصفّر ساعة المدة — وإلا بقيت من أول
+    // بناء قبل أيام فتظهر مدة خيالية (مثال حقيقي: "4052:05 د").
+    if (newState === STATES.ARCHITECTURE) {
+        state.startedAt = Date.now();
+    } else if (newState === STATES.GENERATING && !state.startedAt) {
         state.startedAt = Date.now();
     }
 
