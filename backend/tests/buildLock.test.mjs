@@ -2,7 +2,7 @@
 // تعطّل/إعادة تشغيل. القرار يعتمد على البناء الفعلي الجاري لا الحالة المخزّنة.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decide } from '../agents/ceoBrain.js';
+import { decide, classifyIntentFast } from '../agents/ceoBrain.js';
 import { transitionState, getProjectState, STATES, isBuilding } from '../agents/stateMachine.js';
 import { enqueueMission, isMissionActive } from '../services/missionQueue.js';
 
@@ -31,4 +31,12 @@ test('بناء فعلي جارٍ → حجب صحيح، وبعد الانتهاء
 
     assert.equal(isMissionActive(U, P), false);
     assert.equal(decide('continue', U, P).action, 'execute', 'بعد الانتهاء: "أكمل" تعمل');
+});
+
+test('الاستئناف يلتقط اللواحق: "اكملها/اكمله/كملوا" (سجل التوصيل)', () => {
+    for (const m of ['اكملها', 'اكمله', 'كملوا', 'اكمل', 'واصلها', 'تابعها']) {
+        assert.equal(classifyIntentFast(m)?.intent, 'continue', `"${m}" استئناف`);
+    }
+    // لا يُكسر: كلمات لا علاقة لها
+    assert.notEqual(classifyIntentFast('اكتب رسالة')?.intent, 'continue');
 });

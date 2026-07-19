@@ -1612,7 +1612,9 @@ User preferences: ${JSON.stringify(execMemory)}` },
         }
 
         // لا مشروع قائم، أو تعديل كبير (إعادة تصميم/بناء) → البناء الكامل بدل الجراحي
-        const bigChange = /أعد التصميم|اعد التصميم|أعد البناء|اعد البناء|من جديد|صفحة جديدة|صفحات|redesign|rebuild|from scratch|new page/i.test(instruction);
+        // أوامر البناء الصريحة ("ابنِ تطبيق...") تعني بناءً كاملاً لا تعديلاً
+        // جراحياً على المشروع الحالي — منعاً لتشويه مشروع بنمط مختلف تماماً.
+        const bigChange = /أعد التصميم|اعد التصميم|أعد البناء|اعد البناء|من جديد|صفحة جديدة|صفحات|ابنِ?\s|ابن\s|أبنِ?\s|تطبيق\s+جديد|موقع\s+جديد|redesign|rebuild|from scratch|new page/i.test(instruction);
         if (files.length === 0 || bigChange || !agents.coreEditCodePlan) {
             return this._runMissionNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus);
         }
