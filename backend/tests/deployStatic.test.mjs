@@ -77,19 +77,22 @@ test('كشف full-stack: دالة API حقيقية vs ملفات بيانات ف
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('نشر full-stack: rewrites صالحة (لا negative-lookahead) ولا @vercel/static', () => {
+test('نشر full-stack: framework null + rewrites صالحة، لا @vercel/static', () => {
     const out = ensureFullStackDeploy([f('index.html'), f('api/orders.js'), f('styles.css')]);
     const cfg = cfgOf(out);
+    assert.equal(cfg.framework, null, 'framework null يمنع كشف Next.js الخاطئ');
     assert.ok(cfg.rewrites, 'rewrites موجودة');
     assert.equal(cfg.builds, undefined, 'لا @vercel/static — لا يعطّل الدوال');
-    // النمط السابق (?! كان يرفضه Vercel فيفشل البناء → DEPLOYMENT_NOT_FOUND
     for (const r of cfg.rewrites) assert.doesNotMatch(r.source, /\(\?\!/, 'لا negative-lookahead غير صالح');
 });
 
-test('نشر full-stack: يحترم vercel.json موجوداً (من المولّد)', () => {
+test('نشر full-stack: vercel.json موجود → يُدمج فيه framework null مع حفظ محتواه', () => {
     const existing = f('vercel.json', '{"rewrites":[{"source":"/x","destination":"/y"}]}');
     const out = ensureFullStackDeploy([f('index.html'), f('api/orders.js'), existing]);
     assert.equal(out.filter(x => x.file === 'vercel.json').length, 1, 'لا ازدواج');
+    const cfg = cfgOf(out);
+    assert.equal(cfg.framework, null, 'framework null مدموج');
+    assert.equal(cfg.rewrites[0].source, '/x', 'محتوى المستخدم محفوظ');
 });
 
 test('نشر full-stack بلا index.html → خطأ واضح', () => {

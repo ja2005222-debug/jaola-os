@@ -186,12 +186,13 @@ export function isFullStackProject(projectPath) {
 }
 
 /**
- * 🧩 يضمن نشر full-stack صحيحاً — يبقي api/ كدوال Serverless ولا يفرض
- * @vercel/static (الذي يعطّل الدوال). دالة نقية قابلة للاختبار:
+ * 🧩 يضمن نشر full-stack صحيحاً — يبقي api/ كدوال Serverless، ويفرض
+ * framework: null في vercel.json (يتجاوز أي framework مخزّن في مشروع Vercel).
+ * دالة نقية قابلة للاختبار:
  * - يتطلب index.html في الجذر (وإلا خطأ واضح)
- * - يحترم vercel.json موجوداً (المولّد يُنتج rewrites صحيحة)
- * - وإلا يضيف vercel.json برواسم توجيه: /api/* للدوال، والباقي للصفحات
- *   (rewrites الحديثة تُطبَّق بعد الملفات الثابتة، فلا تُكسر styles.css/الصفحات)
+ * - framework: null إلزامي — بدونه يحاول Vercel بناءه كـ Next.js فيفشل
+ *   ("No Next.js version detected")
+ * - يدمج framework: null في vercel.json موجود بدل تجاهله
  * @throws إذا لم يوجد index.html في الجذر
  */
 export function ensureFullStackDeploy(files) {
@@ -199,20 +200,27 @@ export function ensureFullStackDeploy(files) {
     if (!hasIndex) {
         throw new Error('لا يوجد index.html في جذر المشروع — الواجهة مطلوبة مع الخادم.');
     }
-    if (files.some(f => f.file === 'vercel.json')) return files;
 
-    // توجيه صالح في Vercel (path-to-regexp): الدوال في api/ تُطابَق أولاً
-    // تلقائياً، والملفات الثابتة تُخدَم قبل الـ rewrites، فهذا مجرد fallback
-    // للمسارات غير الموجودة. (النمط السابق بـ negative-lookahead كان يرفضه
-    // Vercel فيفشل البناء → DEPLOYMENT_NOT_FOUND.)
+    const encode = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64');
+    const idx = files.findIndex(f => f.file === 'vercel.json');
+
+    if (idx >= 0) {
+        // ادمج framework: null في الموجود (قد يفتقده فيُكشف Next.js خطأً)
+        let cfg = {};
+        try { cfg = JSON.parse(Buffer.from(files[idx].data, 'base64').toString()); } catch { cfg = {}; }
+        if (cfg.framework === undefined) cfg.framework = null;
+        const out = [...files];
+        out[idx] = { ...files[idx], data: encode(cfg) };
+        return out;
+    }
+
+    // framework: null يمنع كشف الإطار؛ الدوال والملفات الثابتة تُكتشف تلقائياً.
+    // rewrite fallback للمسارات غير الموجودة (الملفات والدوال تُطابَق أولاً).
     const cfg = {
+        framework: null,
         rewrites: [{ source: '/(.*)', destination: '/index.html' }],
     };
-    return [...files, {
-        file: 'vercel.json',
-        data: Buffer.from(JSON.stringify(cfg)).toString('base64'),
-        encoding: 'base64',
-    }];
+    return [...files, { file: 'vercel.json', data: encode(cfg), encoding: 'base64' }];
 }
 
 /**
