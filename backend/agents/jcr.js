@@ -47,7 +47,7 @@ import { getPlatformKnowledge } from '../services/platformKnowledge.js';
 import { buildImageContext } from '../services/imageService.js';
 import { generateBlueprint, buildBlueprintContext } from './appBlueprint.js';
 import { recommendFullStack, buildFullStackProject } from './fullstackTemplates.js';
-import { recordScore, recordBuild, buildMetricsPayload } from '../services/metricsStore.js';
+import { recordScore, recordBuild, recordEditAction, buildMetricsPayload } from '../services/metricsStore.js';
 import { setPendingGoal, getPendingGoal, consumePendingGoal, clearDialog } from '../services/conversationManager.js';
 import { enqueueMission } from '../services/missionQueue.js';
 import { loadForPrompt as loadConversation, recordTurn } from '../services/conversationStore.js';
@@ -1466,8 +1466,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
         addToHistory(username, activeProject, `إضافة صفحة: ${pageLabel}`);
         recordEdit(username, instruction);
+        recordEditAction(username, activeProject); // عدّاد تعديلات اللوحة
 
         this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
         let builtFiles = [];
         try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
         this.io.to(roomName).emit('workspace_files', builtFiles);
@@ -1656,10 +1658,12 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
         const changedNames = guarded.map(f => f.name).join('، ');
         recordEdit(username, instruction);
+        recordEditAction(username, activeProject); // عدّاد تعديلات اللوحة — كان لا يُستدعى أبداً
         addToHistory(username, activeProject, `تعديل: ${instruction.slice(0, 60)}`);
 
         // تحديث المعاينة + قائمة الملفات + لقطة دائمة
         this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
         let builtFiles = [];
         try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
         this.io.to(roomName).emit('workspace_files', builtFiles);
