@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>سفرة - عامل التوصيل</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Tajawal:wght@400;500;700&display=swap">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header class="navbar" id="navbar">
+        <div class="container">
+            <div class="navbar-content">
+                <a href="index.html" class="logo">
+                    <i class="fas fa-utensils"></i>
+                    <span>سفرة</span>
+                </a>
+                <nav class="nav-links" id="navLinks">
+                    <a href="index.html" class="nav-link">الرئيسية</a>
+                    <a href="control.html" class="nav-link">التحكم</a>
+                    <a href="delivery.html" class="nav-link active">عامل التوصيل</a>
+                </nav>
+                <div class="navbar-actions">
+                    <button class="hamburger" id="hamburger">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <section class="delivery-section">
+            <div class="container">
+                <div class="section-header">
+                    <h2>لوحة عامل التوصيل</h2>
+                    <p>إدارة الطلبات والتوصيل</p>
+                </div>
+                <div class="delivery-content">
+                    <div class="delivery-sidebar">
+                        <div class="delivery-profile">
+                            <i class="fas fa-user-circle"></i>
+                            <h3 id="driverName">أحمد علي</h3>
+                            <p>عامل توصيل</p>
+                            <p><i class="fas fa-motorcycle"></i> متاح</p>
+                        </div>
+                        <div class="delivery-stats">
+                            <div class="stat"><span id="totalDeliveries">١٢</span> توصيلات اليوم</div>
+                            <div class="stat"><span id="rating">٤.٨</span> التقييم</div>
+                        </div>
+                        <div class="delivery-actions">
+                            <button class="delivery-action-btn" id="toggleAvailability"><i class="fas fa-toggle-on"></i> تغيير الحالة</button>
+                        </div>
+                    </div>
+                    <div class="delivery-main">
+                        <div class="delivery-orders">
+                            <h3>الطلبات الحالية</h3>
+                            <div class="delivery-order-card">
+                                <div class="order-header">
+                                    <span>طلب #١٠١</span>
+                                    <span class="order-status preparing">قيد التحضير</span>
+                                </div>
+                                <p><i class="fas fa-store"></i> بيتزا ماما - وسط البلد</p>
+                                <p><i class="fas fa-map-pin"></i> ١٢ شارع التحرير</p>
+                                <p><i class="fas fa-clock"></i> الوقت المتبقي: ٢٠ دقيقة</p>
+                                <button class="delivery-action-btn small" onclick="updateOrderStatus(101, 'out')"><i class="fas fa-motorcycle"></i> بدء التوصيل</button>
+                            </div>
+                            <div class="delivery-order-card">
+                                <div class="order-header">
+                                    <span>طلب #١٠٢</span>
+                                    <span class="order-status out">في الطريق</span>
+                                </div>
+                                <p><i class="fas fa-store"></i> برجر كينج - المعادي</p>
+                                <p><i class="fas fa-map-pin"></i> ٥ شارع النيل</p>
+                                <p><i class="fas fa-clock"></i> الوقت المتبقي: ١٠ دقائق</p>
+                                <button class="delivery-action-btn small" onclick="updateOrderStatus(102, 'delivered')"><i class="fas fa-check-circle"></i> تم التوصيل</button>
+                            </div>
+                        </div>
+                        <div class="delivery-map">
+                            <h3>خريطة التتبع</h3>
+                            <div class="map-placeholder">
+                                <i class="fas fa-map-marked-alt"></i>
+                                <p>خريطة التوصيل المباشر</p>
+                                <div class="map-info">
+                                    <p><i class="fas fa-store"></i> المطعم: <span>بيتزا ماما</span></p>
+                                    <p><i class="fas fa-map-pin"></i> وجهتك: <span>١٢ شارع التحرير</span></p>
+                                    <p><i class="fas fa-motorcycle"></i> موقعك: <span>شارع النيل</span></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>© ٢٠٢٥ سفرة - جميع الحقوق محفوظة</p>
+        </div>
+    </footer>
+
+    <script>
+        function updateOrderStatus(orderId, status) {
+            alert(`تم تحديث الطلب #${orderId} إلى الحالة: ${status === 'out' ? 'في الطريق' : 'تم التوصيل'}`);
+        }
+
+        document.getElementById('toggleAvailability').addEventListener('click', function() {
+            const statusEl = document.querySelector('.delivery-profile p:last-child');
+            if (statusEl.innerHTML.includes('متاح')) {
+                statusEl.innerHTML = '<i class="fas fa-motorcycle"></i> غير متاح';
+                this.innerHTML = '<i class="fas fa-toggle-off"></i> تغيير الحالة';
+            } else {
+                statusEl.innerHTML = '<i class="fas fa-motorcycle"></i> متاح';
+                this.innerHTML = '<i class="fas fa-toggle-on"></i> تغيير الحالة';
+            }
+        });
+
+        document.getElementById('hamburger').addEventListener('click', function() {
+            document.getElementById('navLinks').classList.toggle('active');
+        });
+    </script>
+</body>
+</html>

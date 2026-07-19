@@ -1,0 +1,25 @@
+// Prisma schema — منصة SaaS
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  name      String
+  plan      String   @default("free")
+  createdAt DateTime @default(now())
+}
+
+model Subscription {
+  id        Int      @id @default(autoincrement())
+  plan      String
+  status    String   @default("active")
+  renewsAt  DateTime
+  createdAt DateTime @default(now())
+}

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>سفرة - تطبيق توصيل طعام</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Tajawal:wght@400;500;700&display=swap">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header class="navbar" id="navbar">
+        <div class="container">
+            <div class="navbar-content">
+                <a href="#" class="logo">
+                    <i class="fas fa-utensils"></i>
+                    <span>سفرة</span>
+                </a>
+                <nav class="nav-links" id="navLinks">
+                    <a href="#hero" class="nav-link">الرئيسية</a>
+                    <a href="#restaurants" class="nav-link">المطاعم</a>
+                    <a href="#cart" class="nav-link">سلة التسوق</a>
+                    <a href="#tracking" class="nav-link">تتبع الطلب</a>
+                    <a href="#about" class="nav-link">عن سفرة</a>
+                    <a href="#contact" class="nav-link">اتصل بنا</a>
+                    <a href="#login" class="nav-link" id="loginNavLink">تسجيل الدخول</a>
+                    <a href="#dashboard" class="nav-link" id="dashboardNavLink" style="display:none;">لوحة التحكم</a>
+                    <a href="#" class="nav-link" id="logoutNavLink" style="display:none;">تسجيل الخروج</a>
+                </nav>
+                <div class="navbar-actions">
+                    <button class="cart-btn" id="cartBtn">
+                        <i class="fas fa-shopping-cart"></i>
+                        <span class="cart-count" id="cartCount">0</span>
+                    </button>
+                    <button class="hamburger" id="hamburger">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <!-- Hero Section -->
+        <section class="hero" id="hero">
+            <div class="hero-overlay"></div>
+            <div class="container">
+                <div class="hero-content">
+                    <h1>أشهى الوجبات من أفضل المطاعم</h1>
+                    <p>اطلب طعامك المفضل من مطاعم مدينتك واستمتع بتوصيل سريع ومجاني</p>
+                    <div class="hero-search">
+                        <div class="search-box">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="searchInput" placeholder="ابحث عن مطعم أو وجبة...">
+                        </div>
+                        <div class="search-filters">
+                            <select id="filterRating">
+                                <option value="">جميع التقييمات</option>
+                                <option value="4">٤ نجوم فأكثر</option>
+                                <option value="3">٣ نجوم فأكثر</option>
+                                <option value="2">نجمتان فأكثر</option>
+                            </select>
+                            <select id="filterArea">
+                                <option value="">جميع المناطق</option>
+                                <option value="وسط البلد">وسط البلد</option>
+                                <option value="المعادي">المعادي</option>
+                                <option value="مدينة نصر">مدينة نصر</option>
+                                <option value="المهندسين">المهندسين</option>
+                                <option value="الزمالك">الزمالك</option>
+                            </select>
+                            <button class="search-btn" id="searchBtn">بحث</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Login Section -->
+        <section class="auth-section" id="loginSection" style="display:none;">
+            <div class="container">
+                <div class="auth-card">
+                    <h2>تسجيل الدخول</h2>
+                    <form id="loginForm">
+                        <div class="form-group">
+                            <label for="loginEmail">البريد الإلكتروني</label>
+                            <input type="email" id="loginEmail" placeholder="أدخل بريدك الإلكتروني" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="loginPassword">كلمة المرور</label>
+                            <input type="password" id="loginPassword" placeholder="أدخل كلمة المرور" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="loginRole">نوع الحساب</label>
+                            <select id="loginRole" required>
+                                <option value="">اختر نوع الحساب</option>
+                                <option value="admin">مشرف</option>
+                                <option value="delivery">عامل توصيل</option>
+                                <option value="restaurant">مطعم</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="auth-btn">تسجيل الدخول</button>
+                        <p class="auth-switch">ليس لديك حساب؟ <a href="#" id="switchToRegister">إنشاء حساب</a></p>
+                    </form>
+                    <div id="loginError" class="auth-error" style="display:none;"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Register Section -->
+        <section class="auth-section" id="registerSection" style="display:none;">
+            <div class="container">
+                <div class="auth-card">
+                    <h2>إنشاء حساب جديد</h2>
+                    <form id="registerForm">
+                        <div class="form-group">
+                            <label for="registerName">الاسم</label>
+                            <input type="text" id="registerName" placeholder="أدخل اسمك" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="registerEmail">البريد الإلكتروني</label>
+                            <input type="email" id="registerEmail" placeholder="أدخل بريدك الإلكتروني" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="registerPassword">كلمة المرور</label>
+                            <input type="password" id="registerPassword" placeholder="أدخل كلمة المرور" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="registerRole">نوع الحساب</label>
+                            <select id="registerRole" required>
+                                <option value="">اختر نوع الحساب</option>
+                                <option value="admin">مشرف</option>
+                                <option value="delivery">عامل توصيل</option>
+                                <option value="restaurant">مطعم</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="auth-btn">إنشاء حساب</button>
+                        <p class="auth-switch">لديك حساب بالفعل؟ <a href="#" id="switchToLogin">تسجيل الدخول</a></p>
+                    </form>
+                    <div id="registerError" class="auth-error" style="display:none;"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Dashboard Section -->
+        <section class="dashboard-section" id="dashboardSection" style="display:none;">
+            <div class="container">
+                <div class="dashboard-header">
+                    <h2>لوحة التحكم</h2>
+                    <p id="dashboardUserInfo"></p>

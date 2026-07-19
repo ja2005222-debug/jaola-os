@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>سفرة - لوحة التحكم</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Tajawal:wght@400;500;700&display=swap">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header class="navbar" id="navbar">
+        <div class="container">
+            <div class="navbar-content">
+                <a href="index.html" class="logo">
+                    <i class="fas fa-utensils"></i>
+                    <span>سفرة</span>
+                </a>
+                <nav class="nav-links" id="navLinks">
+                    <a href="index.html" class="nav-link">الرئيسية</a>
+                    <a href="control.html" class="nav-link active">التحكم</a>
+                    <a href="delivery.html" class="nav-link">عامل التوصيل</a>
+                </nav>
+                <div class="navbar-actions">
+                    <button class="hamburger" id="hamburger">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <section class="control-section">
+            <div class="container">
+                <div class="section-header">
+                    <h2>لوحة التحكم</h2>
+                    <p>إدارة المطاعم وعمال التوصيل والدول</p>
+                </div>
+                <div class="control-tabs">
+                    <button class="control-tab active" data-tab="restaurants">المطاعم</button>
+                    <button class="control-tab" data-tab="drivers">عمال التوصيل</button>
+                    <button class="control-tab" data-tab="countries">الدول</button>
+                </div>
+                <div class="control-content">
+                    <!-- Restaurants Tab -->
+                    <div class="control-panel active" id="panel-restaurants">
+                        <h3>إدارة المطاعم</h3>
+                        <div class="control-list">
+                            <div class="control-item">
+                                <span>بيتزا ماما</span>
+                                <span>وسط البلد</span>
+                                <span>مصر</span>
+                                <button class="control-btn edit">تعديل</button>
+                                <button class="control-btn delete">حذف</button>
+                            </div>
+                            <div class="control-item">
+                                <span>برجر كينج</span>
+                                <span>المعادي</span>
+                                <span>مصر</span>
+                                <button class="control-btn edit">تعديل</button>
+                                <button class="control-btn delete">حذف</button>
+                            </div>
+                            <div class="control-item">
+                                <span>سوشي بار</span>
+                                <span>الزمالك</span>
+                                <span>مصر</span>
+                                <button class="control-btn edit">تعديل</button>
+                                <button class="control-btn delete">حذف</button>
+                            </div>
+                        </div>
+                        <button class="control-add-btn"><i class="fas fa-plus"></i> إضافة مطعم</button>
+                    </div>
+                    <!-- Drivers Tab -->
+                    <div class="control-panel" id="panel-drivers">
+                        <h3>إدارة عمال التوصيل</h3>
+                        <div class="control-list">
+                            <div class="control-item">
+                                <span>أحمد علي</span>
+                                <span>مصر</span>
+                                <span>متاح</span>
+                                <button class="control-btn edit">تعديل</button>
+                                <button class="control-btn delete">حذف</button>
+                            </div>
+                            <div class="control-item">
+                                <span>محمد حسن</span>
+                                <span>مصر</span>
+                                <span>مشغول</span>
+                                <button class="control-btn edit">تعديل</button>
+                                <button class="control-btn delete">حذف</button>
+                            </div>
+                        </div>
+                        <button class="control-add-btn"><i class="fas fa-plus"></i> إضافة عامل توصيل</button>
+                    </div>
+                    <!-- Countries Tab -->
+                    <div class="control-panel" id="panel-countries">
+                        <h3>إدارة الدول</h3>
+                        <div class="control-list">
+                            <div class="control-item">
+                                <span>مصر</span>
+                                <span>القاهرة</span>
+                                <span>نشط</span>
+                                <button class="control-btn edit">تعديل</button>
+                                <button class="control-btn delete">حذف</button>
+                            </div>
+                            <div class="control-item">
+                                <span>السعودية</span>
+                                <span>الرياض</span>
+                                <span>نشط</span>
+                                <button class="control-btn edit">تعديل</button>
+                                <button class="control-btn delete">حذف</button>
+                            </div>
+                            <div class="control-item">
+                                <span>الإمارات</span>
+                                <span>دبي</span>
+                                <span>نشط</span>
+                                <button class="control-btn edit">تعديل</button>
+                                <button class="control-btn delete">حذف</button>
+                            </div>
+                        </div>
+                        <button class="control-add-btn"><i class="fas fa-plus"></i> إضافة دولة</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>© ٢٠٢٥ سفرة - جميع الحقوق محفوظة</p>
+        </div>
+    </footer>
+
+    <script>
+        document.querySelectorAll('.control-tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.control-tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+                document.querySelectorAll('.control-panel').forEach(p => p.classList.remove('active'));
+                document.getElementById('panel-' + this.dataset.tab).classList.add('active');
+            });
+        });
+
+        document.getElementById('hamburger').addEventListener('click', function() {
+            document.getElementById('navLinks').classList.toggle('active');
+        });
+    </script>
+</body>
+</html>

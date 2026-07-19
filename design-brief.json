@@ -1,0 +1,38 @@
+{
+  "projectType": "tool",
+  "paletteName": "ocean",
+  "generatedAt": 1784496716767,
+  "colors": {
+    "primary": "#0891b2",
+    "secondary": "#0e7490",
+    "accent": "#22d3ee",
+    "bg": "#ecfeff",
+    "text": "#0c4a6e",
+    "mood": "هادئ كالبحر"
+  },
+  "cssVariables": ":root {\n    --primary: #0891b2;\n    --secondary: #0e7490;\n    --accent: #22d3ee;\n    --bg: #ecfeff;\n    --text: #0c4a6e;\n    --font-heading: 'Cairo', sans-serif;\n    --font-body: 'Tajawal', sans-serif;\n    --radius: 12px;\n    --shadow: 0 4px 20px rgba(0,0,0,0.1);\n    --transition: all 0.3s ease;\n}",
+  "googleFontsURL": "https://fonts.googleapis.com/css2?family=Cairo:wght@700;900&family=Tajawal:wght@400;500&display=swap",
+  "sections": [
+    "navbar بسيط مع logo واسم الأداة",
+    "hero مختصر يشرح ما تفعله الأداة",
+    "الأداة نفسها بارزة في الأعلى (مدخلات ← نتيجة فورية)",
+    "أمثلة/حالات استخدام",
+    "شرح مختصر لكيفية العمل",
+    "footer بسيط"
+  ],
+  "images": {
+    "hero": "https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&q=80&auto=format&fit=crop",
+    "secondary": "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=1200&q=80&auto=format&fit=crop",
+    "gallery": [
+      "https://images.unsplash.com/photo-1559136555-9303baea8ebd?w=1200&q=80&auto=format&fit=crop"
+    ]
+  },
+  "mood": "## تعليمات التصميم الإلزامية:\n- استخدم CSS Variables من :root في كل الألوان (لا hardcoded colors)\n- الخط الرئيسي: Cairo للعناوين، Tajawal للنص\n- الصورة الرئيسية: https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=1200&q=80&auto=format&fit=crop\n- الأسلوب: ## تعليمات التصميم الإلزامية:\n- استخدم CSS Variables من :root في كل الألوان (لا hardcoded colors)\n- الخط الرئيسي: Cairo للعناوين، Tajawal للنص\n- الصورة الرئيسية: https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=1200&q=80&auto=format&fit=crop\n- الأسلوب: ## تعليمات التصميم الإلزامية:\n- استخدم CSS Variables من :root في كل الألوان (لا hardcoded colors)\n- الخط الرئيسي: Cairo للعناوين، Tajawal للنص\n- الصورة الرئيسية: https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1200&q=80&auto=format&fit=crop\n- الأسلوب: ## تعليمات التصميم الإلزامية:\n- استخدم CSS Variables من :root في كل الألوان (لا hardcoded colors)\n- الخط الرئيسي: Cairo للعناوين، Tajawal للنص\n- الصورة الرئيسية: https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1200&q=80&auto=format&fit=crop\n- الأسلوب: دافئ وودّي\n- الأنيميشن: fade-in\n- الأنيميشن: fade-in\n- الأنيميشن: fade-in\n- الأنيميشن: fade-in",
+  "heroSlogan": null,
+  "uniqueTouch": null,
+  "animations": [
+    "fade-in للأقسام عند الـ scroll",
+    "hover smooth على الأزرار"
+  ],
+  "coderInstructions": "## تعليمات التصميم الإلزامية:\n- استخدم CSS Variables من :root في كل الألوان (لا hardcoded colors)\n- الخط الرئيسي: Cairo للعناوين، Tajawal للنص\n- الصورة الرئيسية: https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&q=80&auto=format&fit=crop\n- الأسلوب: ## تعليمات التصميم الإلزامية:\n- استخدم CSS Variables من :root في كل الألوان (لا hardcoded colors)\n- الخط الرئيسي: Cairo للعناوين، Tajawal للنص\n- الصورة الرئيسية: https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=1200&q=80&auto=format&fit=crop\n- الأسلوب: ## تعليمات التصميم الإلزامية:\n- استخدم CSS Variables من :root في كل الألوان (لا hardcoded colors)\n- الخط الرئيسي: Cairo للعناوين، Tajawal للنص\n- الصورة الرئيسية: https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=1200&q=80&auto=format&fit=crop\n- الأسلوب: ## تعليمات التصميم الإلزامية:\n- استخدم CSS Variables من :root في كل الألوان (لا hardcoded colors)\n- الخط الرئيسي: Cairo للعناوين، Tajawal للنص\n- الصورة الرئيسية: https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1200&q=80&auto=format&fit=crop\n- الأسلوب: ## تعليمات التصميم الإلزامية:\n- استخدم CSS Variables من :root في كل الألوان (لا hardcoded colors)\n- الخط الرئيسي: Cairo للعناوين، Tajawal للنص\n- الصورة الرئيسية: https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1200&q=80&auto=format&fit=crop\n- الأسلوب: دافئ وودّي\n- الأنيميشن: fade-in\n- الأنيميشن: fade-in\n- الأنيميشن: fade-in\n- الأنيميشن: fade-in\n- الأنيميشن: fade-in"
+}
