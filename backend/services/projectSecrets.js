@@ -10,11 +10,18 @@
 import { promises as fsp } from 'fs';
 import path from 'path';
 import { encryptSecret, decryptSecret } from '../utils/secretVault.js';
+import { persistEntry, hydrateStore, onMongoReady } from './persistence.js';
 
 // user:project → { KEY: encryptedValue }
 const store = new Map();
 const keyOf = (user, project) => `${user}:${project}`;
 const VALID_KEY = /^[A-Z][A-Z0-9_]{1,48}$/;
+
+// 💾 ثبات: القيم مشفّرة (AES-256-GCM) فآمن حفظها في Mongo — تنجو من إعادة
+// نشر Render، فيبقى MONGODB_URI متاحاً للنشر بعد أي إعادة تشغيل.
+onMongoReady(() => hydrateStore('projectSecrets', (key, value) => {
+    if (value && typeof value === 'object') store.set(key, value);
+}));
 
 /** يحفظ سرّاً مشفّراً ويكتب .env المشروع */
 export async function setProjectSecret(user, project, projectPath, key, value) {
@@ -24,6 +31,7 @@ export async function setProjectSecret(user, project, projectPath, key, value) {
     const secrets = store.get(k) || {};
     secrets[key] = encryptSecret(value.trim());
     store.set(k, secrets);
+    persistEntry('projectSecrets', k, secrets);
     await writeEnvFile(projectPath, decryptAll(secrets));
     return true;
 }
@@ -34,6 +42,7 @@ export async function deleteProjectSecret(user, project, projectPath, key) {
     const secrets = store.get(k) || {};
     delete secrets[key];
     store.set(k, secrets);
+    persistEntry('projectSecrets', k, secrets);
     await writeEnvFile(projectPath, decryptAll(secrets));
     return true;
 }
