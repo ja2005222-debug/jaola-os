@@ -8,6 +8,16 @@
  * - يعرف ما يحتاجه كل ميزة تلقائياً
  */
 
+// 🚫 وحدات Node المدمجة — ليست حزم npm، لا تُضاف للتبعيات أبداً
+const NODE_BUILTINS = new Set([
+    'assert', 'buffer', 'child_process', 'cluster', 'console', 'constants',
+    'crypto', 'dgram', 'diagnostics_channel', 'dns', 'domain', 'events', 'fs',
+    'http', 'http2', 'https', 'inspector', 'module', 'net', 'os', 'path',
+    'perf_hooks', 'process', 'punycode', 'querystring', 'readline', 'repl',
+    'stream', 'string_decoder', 'sys', 'timers', 'tls', 'trace_events', 'tty',
+    'url', 'util', 'v8', 'vm', 'wasi', 'worker_threads', 'zlib', 'async_hooks',
+]);
+
 // ═══════════════════════════════════════════════════════
 // 📚 خريطة الميزات → dependencies
 // ═══════════════════════════════════════════════════════
@@ -82,9 +92,13 @@ export function detectDependencies(files) {
     // كشف import/require مباشر
     const importMatches = allCode.matchAll(/(?:import\s+.*?from\s+['"]|require\s*\(\s*['"])([^'"./][^'"]*)['"]/g);
     for (const match of importMatches) {
-        const pkg = match[1].split('/')[0]; // مثال: @prisma/client → @prisma
+        const spec = match[1];
+        // 🚫 وحدات Node المدمجة (crypto/fs/path/node:*) ليست حزم npm — إضافتها
+        // للتبعيات تُفشل "npm install" (exit 1) وتُسقط النشر كله.
+        if (spec.startsWith('node:') || NODE_BUILTINS.has(spec.split('/')[0])) continue;
+        const pkg = spec.split('/')[0]; // مثال: @prisma/client → @prisma
         if (!pkg.startsWith('.') && pkg.length > 1) {
-            detected.add(match[1].includes('/') ? match[1].split('/').slice(0,2).join('/') : pkg);
+            detected.add(spec.includes('/') ? spec.split('/').slice(0, 2).join('/') : pkg);
         }
     }
 
