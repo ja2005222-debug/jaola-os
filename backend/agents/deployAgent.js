@@ -134,12 +134,22 @@ export function ensureStaticDeploy(files) {
 /**
  * 📦 يضمن package.json بتبعيات الخادم — بدونه تفشل دوال Serverless في
  * البناء على Vercel (import mongoose/express بلا تعريف) → DEPLOYMENT_NOT_FOUND.
- * يكتشف التبعيات من كود المشروع فعلياً. يحترم package.json موجوداً.
- * @returns {Promise<boolean>} true إن وُلّد جديداً
+ * يكتشف التبعيات من كود المشروع فعلياً.
+ * يُعيد توليد ملفنا التلقائي (يحمل بصمة "JAOLA OS —") ليلتقط إصلاحات الكشف؛
+ * لكن يحترم package.json كتبه المستخدم/قالب حقيقي.
+ * @returns {Promise<boolean>} true إن وُلّد/جُدّد
  */
 export async function ensurePackageJson(projectPath, projectName) {
     const pkgPath = path.join(projectPath, 'package.json');
-    if (fsSync.existsSync(pkgPath)) return false;
+    if (fsSync.existsSync(pkgPath)) {
+        // ملفنا التلقائي فقط يُعاد توليده (قد يكون من محاولة سابقة مكسورة)؛
+        // ملف حقيقي (Next/قالب) يُترك — نشره كدوال ليس مساره أصلاً.
+        try {
+            const existing = JSON.parse(fsSync.readFileSync(pkgPath, 'utf8'));
+            const isOurs = typeof existing.description === 'string' && existing.description.includes('JAOLA OS');
+            if (!isOurs) return false;
+        } catch { return false; } // JSON تالف — لا نلمسه بأمان
+    }
 
     const codeFiles = [];
     async function walk(dir, rel = '') {
@@ -206,6 +216,28 @@ export function ensureFullStackDeploy(files) {
 }
 
 /**
+ * 🔎 يجلب أسطر الخطأ الفعلية من سجلّ بناء Vercel — يحوّل "exited with 1"
+ * الغامضة إلى السبب الحقيقي (أي حزمة/سطر فشل).
+ */
+async function fetchBuildErrorLogs(deploymentId) {
+    const teamQuery = VERCEL_TEAM_ID ? `&teamId=${VERCEL_TEAM_ID}` : '';
+    try {
+        const res = await fetch(`${VERCEL_API}/v3/deployments/${deploymentId}/events?direction=backward&limit=200${teamQuery}`, {
+            headers: { Authorization: `Bearer ${VERCEL_TOKEN}` },
+        });
+        const body = await res.json().catch(() => null);
+        const events = Array.isArray(body) ? body : (body?.events || []);
+        const lines = events
+            .map(e => (e?.payload?.text || e?.text || '').toString().trim())
+            .filter(Boolean)
+            .filter(t => /error|err!|npm err|not found|cannot find|failed|no matching version|E404|ENOENT/i.test(t));
+        // آخر 4 أسطر خطأ ذات دلالة (بلا تكرار)، مختصرة
+        const uniq = [...new Set(lines)].slice(-4);
+        return uniq.join(' | ').slice(0, 500);
+    } catch { return ''; }
+}
+
+/**
  * ⏳ يراقب حالة بناء النشر حتى READY أو ERROR (أو مهلة). يمنع تسليم رابط
  * لنشرة ما زالت تُبنى أو فشلت (سبب DEPLOYMENT_NOT_FOUND).
  * @returns {Promise<{readyState:string, errorMessage?:string}|null>}
@@ -222,7 +254,9 @@ async function waitForDeployment(deploymentId, roomName, io, { attempts = 30, in
             const state = d?.readyState || d?.status;
             if (state === 'READY') return { readyState: 'READY' };
             if (state === 'ERROR' || state === 'CANCELED') {
-                return { readyState: 'ERROR', errorMessage: d?.errorMessage || d?.error?.message };
+                // نجلب سجلّ البناء الحقيقي — "exited with 1" وحدها لا تكفي للتشخيص
+                const logDetail = await fetchBuildErrorLogs(deploymentId).catch(() => '');
+                return { readyState: 'ERROR', errorMessage: [d?.errorMessage || d?.error?.message, logDetail].filter(Boolean).join(' — ') };
             }
             // QUEUED / BUILDING / INITIALIZING → نواصل الانتظار
         } catch { /* شبكة — نعيد المحاولة */ }
