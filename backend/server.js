@@ -54,7 +54,7 @@ import * as siteCms from './services/siteCms.js';
 import { buildStaticSiteFromSource, buildDashboardPage } from './services/reactPreview.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
 import { getProjectMemory } from './agents/projectMemory.js';
-import { setProjectSecret, deleteProjectSecret, getProjectSecretNames } from './services/projectSecrets.js';
+import { setProjectSecret, deleteProjectSecret, getProjectSecretNames, getProjectSecrets } from './services/projectSecrets.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
 import { buildMetricsPayload } from './services/metricsStore.js';
 import { queueStatus } from './services/missionQueue.js';
@@ -1164,7 +1164,9 @@ app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) 
             {
                 projectPath: req.projectPath,
                 activeProject: req.activeProject,
-                currentUser: req.user.username
+                currentUser: req.user.username,
+                // 🔑 أسرار المشروع (MONGODB_URI...) تُحقن في دوال Serverless الحيّة
+                env: getProjectSecrets(req.user.username, req.activeProject),
             },
             io,
             () => emitUserProjects(roomName, req.user.username, req.activeProject)

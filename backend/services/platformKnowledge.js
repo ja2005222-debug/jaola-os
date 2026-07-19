@@ -28,6 +28,7 @@ export function capabilitiesBlock(lang = 'en') {
 - DEPLOY / HOSTING: sites are published to **Vercel**. Click the 🚀 Deploy button or type "${deploy}". Each project gets its own stable public link of the form <username>-<project>.vercel.app.
 - RE-DEPLOY: after editing, click 🔄 Re-deploy (or type "${deploy}") to push changes to the live site — the link stays the same.
 - CUSTOM DOMAIN: added from Vercel → Project → Settings → Domains.
+- FULL-STACK / DATABASE: projects that need a backend (orders, accounts, dashboards) generate real Serverless API functions and deploy them live on Vercel. For DATA to actually persist (save orders, users), the user adds a MongoDB connection string named MONGODB_URI in the project Secrets (a free database from MongoDB Atlas). Once set, deploying connects the live database. Without it, the site works but data is not saved.
 - GITHUB: the project can be pushed to GitHub (🐙 button).
 - FILES: the user can view and open project files in the Editor tab.
 - PROJECTS: create a new project (+), switch between projects, or delete the current one ("${del}").

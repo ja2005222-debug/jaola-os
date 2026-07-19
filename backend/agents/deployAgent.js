@@ -269,6 +269,11 @@ export async function deployProject({ projectPath, activeProject, currentUser, e
         const deployFiles = fullStack ? ensureFullStackDeploy(files) : ensureStaticDeploy(files);
         if (fullStack) {
             io.to(roomName).emit('log', { message: '⚙️ [DEPLOY]: مشروع full-stack — نشر الخادم (Serverless) مع الواجهة.' });
+            if (!env.MONGODB_URI && !env.DATABASE_URL) {
+                io.to(roomName).emit('log', { message: '⚠️ [DEPLOY]: لا يوجد MONGODB_URI في أسرار المشروع — الواجهة والخادم سيعملان، لكن حفظ البيانات (الطلبات/الأصناف) لن يعمل حتى تضيف رابط قاعدة MongoDB. أنشئ قاعدة مجانية من MongoDB Atlas وأضِف MONGODB_URI في أسرار المشروع.' });
+            } else {
+                io.to(roomName).emit('log', { message: '🗄️ [DEPLOY]: قاعدة البيانات مربوطة — البيانات ستُحفظ فعلياً.' });
+            }
         }
 
         // اسم مشروع صالح في Vercel: أحرف صغيرة وأرقام وشرطات فقط

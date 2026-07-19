@@ -44,6 +44,7 @@ import { orchestrator } from '../core/PluginOrchestrator.js';
 import { guardFiles, guardSingleJS, scrubPlaceholders, ensureEditIntegrity } from '../services/codeGuard.js';
 import { recordLesson } from '../services/platformLessons.js';
 import { getPlatformKnowledge } from '../services/platformKnowledge.js';
+import { getProjectSecrets } from '../services/projectSecrets.js';
 import { buildImageContext } from '../services/imageService.js';
 import { generateBlueprint, buildBlueprintContext } from './appBlueprint.js';
 import { recommendFullStack, buildFullStackProject } from './fullstackTemplates.js';
@@ -2074,7 +2075,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         : '🚀 Deploy order accepted — shipping to production...';
                     this.io.to(roomName).emit('chat_reply', { message: deployMsg });
                     agents.deployProject?.(
-                        { projectPath, activeProject, currentUser: username },
+                        { projectPath, activeProject, currentUser: username, env: getProjectSecrets(username, activeProject) },
                         this.io,
                         () => {}
                     ).catch(err => {
