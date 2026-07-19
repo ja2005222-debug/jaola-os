@@ -26,6 +26,8 @@ import {
     deployProject,
     verifyVercelAuth,
     applyTemplate,
+    isFullStackProject,
+    deployToRender,
     JaolaCognitiveRuntime
 } from './agents/index.js';
 import { generatePWA } from './agents/pwaAgent.js';
@@ -1155,9 +1157,34 @@ app.post('/api/ai/abort', verifyToken, validate(schemas.abortMission), validateP
 });
 
 app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) => {
-    res.json({ accepted: true });
-
     const roomName = `${req.user.username}-${req.activeProject}`;
+
+    // 🧭 مشاريع full-stack (فيها دوال api/ حقيقية) تُنشر على Render (خادم دائم،
+    // بلا حدّ 12 دالة، DB متصلة). نُعيد للواجهة نوع النشر ورابط الزر إن جاهز.
+    if (isFullStackProject(req.projectPath)) {
+        try {
+            const projectSlug = `${req.user.username}-${req.activeProject}`
+                .toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 50);
+            const r = await deployToRender(
+                { projectPath: req.projectPath, projectName: projectSlug, username: req.user.username, activeProject: req.activeProject, hasBackend: true },
+                io, roomName
+            );
+            if (r.success) {
+                io.to(roomName).emit('log', { message: `✅ [Render]: جاهز للنشر كخادم دائم — افتح الرابط لإنشائه: ${r.deployUrl}` });
+                return res.json({ accepted: true, target: 'render', deployUrl: r.deployUrl, repoUrl: r.repoUrl });
+            }
+            if (r.needsGitHub) {
+                return res.status(409).json({ target: 'render', needsGitHub: true, error: r.error });
+            }
+            io.to(roomName).emit('log', { message: `❌ [Render]: ${r.error}` });
+            return res.status(502).json({ target: 'render', error: r.error });
+        } catch (error) {
+            io.to(roomName).emit('log', { message: `❌ [Render]: ${error.message}` });
+            return res.status(500).json({ target: 'render', error: error.message });
+        }
+    }
+
+    res.json({ accepted: true, target: 'vercel' });
 
     try {
         await deployProject(
