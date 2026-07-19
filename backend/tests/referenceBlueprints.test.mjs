@@ -18,6 +18,22 @@ test('يطابق بقية الأنماط', () => {
     assert.equal(matchBlueprint('موقع حجز مواعيد لعيادة')?.id, 'appointments');
 });
 
+test('يطابق توصيل الطعام متعدّد المطاعم — دون اختطاف موقع مطعم واحد', () => {
+    for (const g of ['تطبيق توصيل الطعام من مطاعم مختلفة', 'موقع طلب طعام ودليفري', 'a multi restaurant food delivery app', 'مثل talabat']) {
+        assert.equal(matchBlueprint(g)?.id, 'food_delivery', g);
+    }
+    // موقع مطعم واحد تعريفي ليس نمط التوصيل → لا يُلتقط
+    assert.notEqual(matchBlueprint('موقع تعريفي لمطعمي')?.id, 'food_delivery');
+});
+
+test('مخطط التوصيل: 4 أدوار + سلة عاملة + خريطة مندوب', () => {
+    const block = buildBlueprintPrompt('تطبيق توصيل طعام من مطاعم متعددة');
+    assert.match(block, /Talabat|Uber Eats/);
+    assert.match(block, /المطعم|المندوب/);
+    assert.match(block, /سلة تعمل بالكامل|رسوم التوصيل/);
+    assert.match(block, /Leaflet/);
+});
+
 test('لا نمط مطابق → null (لا حقن عشوائي)', () => {
     assert.equal(matchBlueprint('موقع تعريفي لمخبز'), null);
     assert.equal(matchBlueprint(''), null);
