@@ -204,6 +204,7 @@ export default function Dashboard() {
   const [mobileView, setMobileView] = useState('mission');     // الجوال: الشاشة النشطة
   const [mobileLogsMode, setMobileLogsMode] = useState('logs'); // الجوال: سجل حي / خط زمني
   const [showMobileMenu, setShowMobileMenu] = useState(false);  // الجوال: قائمة الإجراءات الثانوية
+  const [showSiteHealth, setShowSiteHealth] = useState(false);  // الجوال: بطاقة حالة الموقع (مؤشرات الجودة)
   const [prompt, setPrompt] = useState('');
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
@@ -845,6 +846,10 @@ export default function Dashboard() {
                   <span style={{ fontSize:13, color:S.text }}>🌐 {t('language') || 'Language'}</span>
                   <LanguageSwitcher compact />
                 </div>
+                <button onClick={() => { setShowMobileMenu(false); setShowSiteHealth(true); }}
+                  style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
+                  <span style={{ fontSize:16 }}>📊</span> {t('siteHealth')}
+                </button>
                 <button onClick={() => { setShowMobileMenu(false); openGithubModal(); }}
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>🐙</span> GitHub
@@ -961,6 +966,43 @@ export default function Dashboard() {
         {notificationsOverlay}
         {githubModal}
         {projectModal}
+
+        {/* 📊 بطاقة حالة الموقع — مؤشرات الجودة على الجوال (بديل الشريط الجانبي) */}
+        {showSiteHealth && (
+          <div onClick={() => setShowSiteHealth(false)}
+            style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:200, display:'flex', alignItems:'flex-end', backdropFilter:'blur(3px)' }}>
+            <div onClick={e => e.stopPropagation()}
+              style={{ width:'100%', background:'#0d1117', borderTop:`1px solid ${S.border}`, borderRadius:'18px 18px 0 0', padding:'16px 16px calc(20px + env(safe-area-inset-bottom))', animation:'fadeIn 0.2s ease' }}>
+              <div style={{ width:38, height:4, borderRadius:2, background:S.border, margin:'0 auto 14px' }} />
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:14 }}>
+                <span style={{ fontSize:17 }}>📊</span>
+                <span style={{ fontSize:15, fontWeight:800, color:S.text, flex:1 }}>{t('siteHealth')}</span>
+                <button onClick={() => setShowSiteHealth(false)} style={{ width:32, height:32, borderRadius:9, background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, color:S.muted, fontSize:15 }}>✕</button>
+              </div>
+              {metrics && (metrics.seo || metrics.security || metrics.quality || metrics.totalBuilds) ? (
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                  {[
+                    { label:'SEO', value: fmtScore(metrics?.seo), color: gradeColor(metrics?.seo?.grade) },
+                    { label:'Security', value: fmtScore(metrics?.security), color: gradeColor(metrics?.security?.grade) },
+                    { label:'Quality', value: fmtScore(metrics?.quality), color: gradeColor(metrics?.quality?.grade) },
+                    { label:t('mBuilds'), value: metrics?.totalBuilds ?? 0, color:S.blue },
+                    { label:t('mEdits'), value: metrics?.totalEdits ?? 0, color:S.purple },
+                  ].map(m => (
+                    <div key={m.label} className="stat-tile">
+                      <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:5 }}>
+                        <span style={{ width:7, height:7, borderRadius:'50%', background:m.color, boxShadow:`0 0 6px ${m.color}88`, flexShrink:0 }} />
+                        <span style={{ fontSize:10, color:S.muted, fontWeight:600 }}>{m.label}</span>
+                      </div>
+                      <div style={{ fontSize:16, fontWeight:800, color:S.text, fontVariantNumeric:'tabular-nums' }}>{m.value}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ padding:'24px 12px', textAlign:'center', color:S.muted, fontSize:13 }}>{t('noMetricsYet')}</div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
