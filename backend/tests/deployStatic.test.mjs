@@ -105,7 +105,10 @@ test('ensurePackageJson: يولّد package.json بتبعية mongoose (سبب D
     const pkg = JSON.parse(fs.readFileSync(pathMod.join(dir, 'package.json'), 'utf8'));
     assert.ok(pkg.dependencies.mongoose, 'mongoose في التبعيات');
     assert.equal(pkg.type, 'module', 'ESM لدوال export default');
-    // موجود مسبقاً → يُحترم ولا يُستبدل
-    assert.equal(await ensurePackageJson(dir, 'jamal-delv'), false);
+    // ملفنا التلقائي يُعاد توليده (ليلتقط إصلاحات الكشف من محاولة مكسورة)
+    assert.equal(await ensurePackageJson(dir, 'jamal-delv'), true, 'ملفنا يُجدَّد');
+    // لكن package.json حقيقي (بلا بصمتنا) يُحترم ولا يُلمَس
+    fs.writeFileSync(pathMod.join(dir, 'package.json'), JSON.stringify({ name: 'user-app', dependencies: { next: '^14' } }));
+    assert.equal(await ensurePackageJson(dir, 'jamal-delv'), false, 'ملف المستخدم يُحترم');
     fs.rmSync(dir, { recursive: true, force: true });
 });
