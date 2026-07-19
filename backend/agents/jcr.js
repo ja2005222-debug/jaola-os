@@ -16,9 +16,10 @@ import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfile
 import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
 import { generateDatabase, selectDatabase } from './databaseAgent.js';
 import { generateAuth, needsAuth } from './authAgent.js';
-import { generateAdvancedModules } from './backendAgent.js';
+import { generateAdvancedModules, needsBackend } from './backendAgent.js';
 import { generatePrismaSetup, needsPostgres } from './postgresAgent.js';
-import { prepareRenderDeploy } from './renderAgent.js';
+import { prepareRenderDeploy, deployToRender } from './renderAgent.js';
+import { isFullStackProject } from './deployAgent.js';
 import { generateDependencies } from './dependencyAgent.js';
 import { transitionState, markAgentComplete, getProjectSummary, STATES, isBuilding, canStartNewBuild } from './stateMachine.js';
 import { runSEO } from './seoAgent.js';
@@ -2070,6 +2071,39 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         this.io.to(roomName).emit('chat_reply', { message: waitMsg });
                         return;
                     }
+                    // 🧭 المشاريع full-stack (فيها دوال api/ حقيقية) تُنشر على Render
+                    // كخادم دائم — يزيل حدّ Vercel Hobby (12 دالة) ويُبقي DB متصلة.
+                    // المواقع الثابتة تبقى على Vercel (أسرع وأبسط).
+                    if (isFullStackProject(projectPath)) {
+                        const renderMsg = lang === 'ar'
+                            ? '🖥️ مشروع full-stack — سأجهّزه لخادم دائم على Render (بلا حدّ دوال)...'
+                            : '🖥️ Full-stack project — preparing a persistent server on Render...';
+                        this.io.to(roomName).emit('chat_reply', { message: renderMsg });
+                        const projectSlug = `${username}-${activeProject}`
+                            .toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 50);
+                        deployToRender(
+                            { projectPath, projectName: projectSlug, username, activeProject, hasBackend: true },
+                            this.io, roomName
+                        ).then(r => {
+                            if (r.success) {
+                                const okMsg = lang === 'ar'
+                                    ? `✅ جاهز للنشر على Render (خادم دائم). اضغط الزر لإنشائه بضغطة واحدة — سيقرأ الإعداد تلقائياً ويطلب MONGODB_URI:\n\n👉 ${r.deployUrl}\n\nبعدها يُعيد Render النشر تلقائياً مع كل تعديل.`
+                                    : `✅ Ready for Render (persistent server). One click to create it:\n\n👉 ${r.deployUrl}`;
+                                this.io.to(roomName).emit('chat_reply', { message: okMsg });
+                            } else if (r.needsGitHub) {
+                                const ghMsg = lang === 'ar'
+                                    ? `🔗 لنشر خادم دائم على Render نحتاج ربط المشروع بمستودع GitHub أولاً (Render ينشر من GitHub). افتح ⋯ → GitHub في الداش واربط المستودع، ثم اطلب النشر مجدداً.`
+                                    : `🔗 Render deploys from GitHub — connect a repo first (⋯ → GitHub), then deploy again.`;
+                                this.io.to(roomName).emit('chat_reply', { message: ghMsg });
+                            } else {
+                                this.io.to(roomName).emit('log', { message: `❌ [Render]: ${r.error}` });
+                            }
+                        }).catch(err => {
+                            this.io.to(roomName).emit('log', { message: `❌ [Render]: ${err.message}` });
+                        });
+                        return;
+                    }
+
                     const deployMsg = lang === 'ar'
                         ? '🚀 أمر النشر مقبول — جاري الرفع للإنتاج الآن...'
                         : '🚀 Deploy order accepted — shipping to production...';

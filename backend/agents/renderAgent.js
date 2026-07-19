@@ -97,6 +97,62 @@ app.listen(PORT, () => console.log('🚀 Server running on port ' + PORT));
 }
 
 // ═══════════════════════════════════════════════════════
+// 🔗 رابط "Deploy to Render" بضغطة واحدة (نصف-أتمتة، بلا مفتاح API)
+// Render ينشر من مستودع GitHub فقط ويقرأ render.yaml تلقائياً، ويُعيد
+// النشر مع كل دفعة جديدة. هذا يزيل حدّ Vercel Hobby (12 دالة) نهائياً.
+// ═══════════════════════════════════════════════════════
+export function buildRenderDeployUrl(repoUrl, branch = 'main') {
+    if (!repoUrl || !/^https:\/\/github\.com\/[^/]+\/[^/]+/i.test(repoUrl)) return null;
+    // نطاق GitHub نظيف بلا .git ولا شرطة أخيرة
+    const clean = repoUrl.replace(/\.git$/i, '').replace(/\/+$/, '');
+    let url = `https://render.com/deploy?repo=${encodeURIComponent(clean)}`;
+    if (branch && branch !== 'main') url += `&branch=${encodeURIComponent(branch)}`;
+    return url;
+}
+
+// ═══════════════════════════════════════════════════════
+// 🖥️ نشر full-stack على Render (خادم دائم): يجهّز الملفات، يدفع إلى
+// GitHub، ثم يُعطي رابط النشر بضغطة واحدة. حقن التبعيات (pushProject/
+// getIntegration) يُبقي الدالة قابلة للاختبار بلا قاعدة بيانات.
+// ═══════════════════════════════════════════════════════
+export async function deployToRender(
+    { projectPath, projectName, username, activeProject, hasBackend = true },
+    io,
+    roomName,
+    deps = {}
+) {
+    const emit = (message) => { try { io?.to?.(roomName)?.emit('log', { message }); } catch { /* بث اختياري */ } };
+
+    // 1) جهّز server.js + render.yaml فعلياً في مجلد المشروع
+    const prep = await prepareRenderDeploy(projectPath, projectName, hasBackend);
+    if (!prep.success) return { success: false, error: `تعذّر تجهيز إعداد Render: ${prep.error}` };
+    emit(`🖥️ [Render]: جُهّز الخادم الدائم (${prep.summary})`);
+
+    // 2) Render ينشر من GitHub — تأكّد من وجود مستودع مرتبط ثم ادفع
+    const githubSync = (deps.pushProject && deps.getIntegration)
+        ? deps
+        : await import('../services/githubSync.js');
+    const integration = await githubSync.getIntegration(username, activeProject);
+    if (!integration?.repoUrl) {
+        return {
+            success: false,
+            needsGitHub: true,
+            error: 'اربط المشروع بمستودع GitHub أولاً — Render ينشر من GitHub. افتح إعدادات GitHub في الداش.',
+        };
+    }
+
+    emit('🐙 [Render]: رفع أحدث نسخة إلى GitHub قبل النشر...');
+    const push = await githubSync.pushProject(username, activeProject, projectPath);
+    if (!push.success) return { success: false, error: `فشل الدفع إلى GitHub: ${push.error}` };
+
+    // 3) رابط النشر بضغطة واحدة
+    const deployUrl = buildRenderDeployUrl(integration.repoUrl, integration.branch);
+    if (!deployUrl) return { success: false, error: 'رابط مستودع GitHub غير صالح.' };
+
+    return { success: true, deployUrl, repoUrl: integration.repoUrl, branch: integration.branch || 'main' };
+}
+
+// ═══════════════════════════════════════════════════════
 // 🚀 الدالة الرئيسية
 // ═══════════════════════════════════════════════════════
 export async function prepareRenderDeploy(projectPath, projectName, hasBackend = false) {

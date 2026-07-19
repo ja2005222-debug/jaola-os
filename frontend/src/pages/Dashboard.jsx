@@ -322,7 +322,25 @@ export default function Dashboard() {
     setIsDeploying(true);
     addNotification(t('nDeploying'), 'info');
     try {
-      await fetch(`${BACKEND_URL}/api/deploy`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ project: activeProject }) });
+      const res = await fetch(`${BACKEND_URL}/api/deploy`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ project: activeProject }) });
+      const d = await res.json().catch(() => ({}));
+      // 🖥️ مشروع full-stack → خادم دائم على Render (زر بضغطة واحدة)
+      if (d.target === 'render') {
+        setIsDeploying(false);
+        if (d.needsGitHub) {
+          // Render ينشر من GitHub — نفتح ربط GitHub مباشرةً (الخطوة الوحيدة المتبقية)
+          addNotification(t('renderNeedsGithub'), 'info');
+          openGithubModal();
+          return;
+        }
+        if (d.deployUrl) {
+          addNotification(t('renderReady'), 'success');
+          window.open(d.deployUrl, '_blank', 'noopener');
+          return;
+        }
+        addNotification(`❌ ${d.error || t('deployFail')}`, 'info');
+        return;
+      }
     } catch {}
     setTimeout(() => { setIsDeploying(false); addNotification(t('nDeployed'), 'success'); }, 8000);
   };
@@ -748,9 +766,13 @@ export default function Dashboard() {
       onClick={e => e.target === e.currentTarget && setShowGithubModal(false)}>
       <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:'24px 22px', width:'min(420px, 100%)', maxHeight:'90dvh', overflowY:'auto' }}>
         <h3 style={{ color:'#fff', fontSize:15, fontWeight:800, marginBottom:6 }}>🐙 {t('ghIntegration')}</h3>
-        <p style={{ color:S.muted, fontSize:12, marginBottom:16 }}>
+        <p style={{ color:S.muted, fontSize:12, marginBottom:12 }}>
           {activeProject}
           {ghStatus?.connected && <span style={{ color:'#10b981' }}> {t('ghConnected')}</span>}
+        </p>
+
+        <p style={{ color:'#93c5fd', fontSize:11, lineHeight:1.6, background:'rgba(59,130,246,0.08)', border:'1px solid rgba(59,130,246,0.2)', borderRadius:8, padding:'8px 10px', marginBottom:16 }}>
+          🖥️ {t('ghRenderHint')}
         </p>
 
         <label style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px' }}>{t('ghRepoUrl')}</label>

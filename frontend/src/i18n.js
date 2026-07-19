@@ -120,6 +120,12 @@ const STRINGS = {
   ghPushNow: { en: '⬆ Push Now', ar: '⬆ ادفع الآن' },
   ghSaveConnect: { en: 'Save & Connect', ar: 'حفظ وربط' },
   ghSaving: { en: 'Saving...', ar: 'جاري الحفظ...' },
+  ghRenderHint: { en: 'Full-stack projects deploy to a persistent server on Render — which deploys from GitHub. Connect a repo here, then hit Deploy for a one-click Render setup.', ar: 'مشاريع full-stack تُنشر على خادم دائم في Render — وRender ينشر من GitHub. اربط المستودع هنا، ثم اضغط «نشر» لإعداد Render بضغطة واحدة.' },
+
+  // Render (persistent server) deploy
+  renderNeedsGithub: { en: '🔗 Render deploys from GitHub — connect a repo first, then deploy again.', ar: '🔗 Render ينشر من GitHub — اربط المستودع أولاً ثم أعد النشر.' },
+  renderReady: { en: '✅ Ready on Render — opening one-click setup...', ar: '✅ جاهز على Render — يُفتح الإعداد بضغطة واحدة...' },
+  deployFail: { en: 'Deploy failed', ar: 'فشل النشر' },
 
   // Timeline panel
   loadingTimeline: { en: 'Loading timeline...', ar: 'جاري تحميل الخط الزمني...' },
