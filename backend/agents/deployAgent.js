@@ -2,6 +2,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import fsSync from 'fs';
 import Project from '../models/Project.js';
+import { generatePackageJson } from './dependencyAgent.js';
 
 const VERCEL_API = 'https://api.vercel.com';
 const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
@@ -131,6 +132,37 @@ export function ensureStaticDeploy(files) {
 }
 
 /**
+ * 📦 يضمن package.json بتبعيات الخادم — بدونه تفشل دوال Serverless في
+ * البناء على Vercel (import mongoose/express بلا تعريف) → DEPLOYMENT_NOT_FOUND.
+ * يكتشف التبعيات من كود المشروع فعلياً. يحترم package.json موجوداً.
+ * @returns {Promise<boolean>} true إن وُلّد جديداً
+ */
+export async function ensurePackageJson(projectPath, projectName) {
+    const pkgPath = path.join(projectPath, 'package.json');
+    if (fsSync.existsSync(pkgPath)) return false;
+
+    const codeFiles = [];
+    async function walk(dir, rel = '') {
+        let entries = [];
+        try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
+        for (const e of entries) {
+            if (e.name === 'node_modules' || e.name === '.backups' || e.name.startsWith('.')) continue;
+            const fp = path.join(dir, e.name);
+            const r = rel ? `${rel}/${e.name}` : e.name;
+            if (e.isDirectory()) await walk(fp, r);
+            else if (/\.(js|mjs)$/.test(e.name)) {
+                try { codeFiles.push({ name: r, content: await fs.readFile(fp, 'utf8') }); } catch { }
+            }
+        }
+    }
+    await walk(projectPath);
+
+    const pkg = generatePackageJson(projectName || 'jaola-app', codeFiles, 'web');
+    await fs.writeFile(pkgPath, pkg);
+    return true;
+}
+
+/**
  * ⚙️ هل المشروع full-stack؟ — يملك دوال Serverless حقيقية في api/.
  * (ملفات البيانات db.js/schema.js/seed.js وحدها ليست دوالاً — نتجاهلها.)
  */
@@ -159,17 +191,43 @@ export function ensureFullStackDeploy(files) {
     }
     if (files.some(f => f.file === 'vercel.json')) return files;
 
+    // توجيه صالح في Vercel (path-to-regexp): الدوال في api/ تُطابَق أولاً
+    // تلقائياً، والملفات الثابتة تُخدَم قبل الـ rewrites، فهذا مجرد fallback
+    // للمسارات غير الموجودة. (النمط السابق بـ negative-lookahead كان يرفضه
+    // Vercel فيفشل البناء → DEPLOYMENT_NOT_FOUND.)
     const cfg = {
-        rewrites: [
-            { source: '/api/(.*)', destination: '/api/$1' },
-            { source: '/((?!api/).*)', destination: '/index.html' },
-        ],
+        rewrites: [{ source: '/(.*)', destination: '/index.html' }],
     };
     return [...files, {
         file: 'vercel.json',
         data: Buffer.from(JSON.stringify(cfg)).toString('base64'),
         encoding: 'base64',
     }];
+}
+
+/**
+ * ⏳ يراقب حالة بناء النشر حتى READY أو ERROR (أو مهلة). يمنع تسليم رابط
+ * لنشرة ما زالت تُبنى أو فشلت (سبب DEPLOYMENT_NOT_FOUND).
+ * @returns {Promise<{readyState:string, errorMessage?:string}|null>}
+ */
+async function waitForDeployment(deploymentId, roomName, io, { attempts = 30, intervalMs = 4000 } = {}) {
+    const teamQuery = VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : '';
+    for (let i = 0; i < attempts; i++) {
+        await new Promise(r => setTimeout(r, intervalMs));
+        try {
+            const res = await fetch(`${VERCEL_API}/v13/deployments/${deploymentId}${teamQuery}`, {
+                headers: { Authorization: `Bearer ${VERCEL_TOKEN}` },
+            });
+            const d = await res.json().catch(() => ({}));
+            const state = d?.readyState || d?.status;
+            if (state === 'READY') return { readyState: 'READY' };
+            if (state === 'ERROR' || state === 'CANCELED') {
+                return { readyState: 'ERROR', errorMessage: d?.errorMessage || d?.error?.message };
+            }
+            // QUEUED / BUILDING / INITIALIZING → نواصل الانتظار
+        } catch { /* شبكة — نعيد المحاولة */ }
+    }
+    return null; // مهلة — لا نُفشل، نترك الرابط (قد يكتمل بعد قليل)
 }
 
 /**
@@ -258,6 +316,11 @@ export async function deployProject({ projectPath, activeProject, currentUser, e
         }
         // ⚙️ full-stack؟ → نُبقي api/ ونستخدم إعداد Serverless بدل الثابت
         const fullStack = isFullStackProject(projectPath);
+        if (fullStack) {
+            // 📦 ضمان package.json بالتبعيات — بدونه تفشل الدوال في البناء
+            const created = await ensurePackageJson(projectPath, `${currentUser}-${activeProject}`).catch(() => false);
+            if (created) io.to(roomName).emit('log', { message: '📦 [DEPLOY]: وُلّد package.json بتبعيات الخادم (كان مفقوداً).' });
+        }
         const files = await collectProjectFiles(projectPath, { includeApi: fullStack });
 
         if (files.length === 0) {
@@ -306,6 +369,18 @@ export async function deployProject({ projectPath, activeProject, currentUser, e
         });
 
         const result = await response.json();
+
+        // ⏳ ننتظر اكتمال البناء فعلياً — v13 يقبل النشر (200) ثم يبني لاحقاً،
+        // وقد يفشل (خاصة full-stack بدوال Serverless). بلا انتظار نعطي رابطاً
+        // لنشرة فاشلة → DEPLOYMENT_NOT_FOUND. نراقب readyState حتى READY/ERROR.
+        if (response.ok && result?.id && fullStack) {
+            io.to(roomName).emit('log', { message: '⏳ [DEPLOY]: جاري بناء الخادم على Vercel (قد يستغرق دقيقة)...' });
+            const build = await waitForDeployment(result.id, roomName, io);
+            if (build && build.readyState === 'ERROR') {
+                throw new Error(`فشل بناء النشر على Vercel: ${build.errorMessage || 'راجع سجلّ Vercel'}. `
+                    + 'غالباً دالة Serverless بها خطأ أو تبعية ناقصة في package.json.');
+            }
+        }
 
         if (!response.ok) {
             let errorMsg = result?.error?.message || `خطأ HTTP ${response.status}`;
