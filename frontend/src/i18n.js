@@ -130,6 +130,11 @@ const STRINGS = {
   restore: { en: '⏪ Restore', ar: '⏪ استرجاع' },
   unitMin: { en: 'm', ar: 'د' },
   unitSec: { en: 's', ar: 'ث' },
+  // Site health (mobile ⋯ card)
+  siteHealth: { en: 'Site health', ar: 'حالة الموقع', es: 'Estado del sitio', fr: 'État du site', de: 'Website-Status', tr: 'Site durumu', pt: 'Estado do site', ur: 'سائٹ کی حالت' },
+  mBuilds: { en: 'Builds', ar: 'عمليات البناء', es: 'Compilaciones', fr: 'Constructions', de: 'Builds', tr: 'Yapılar', pt: 'Builds', ur: 'بلڈز' },
+  mEdits: { en: 'Edits', ar: 'التعديلات', es: 'Ediciones', fr: 'Modifications', de: 'Änderungen', tr: 'Düzenlemeler', pt: 'Edições', ur: 'ترامیم' },
+  noMetricsYet: { en: 'Build your site to see its scores.', ar: 'ابنِ موقعك لتظهر درجاته.', es: 'Crea tu sitio para ver sus puntuaciones.', fr: 'Créez votre site pour voir ses scores.', de: 'Erstellen Sie Ihre Website, um die Werte zu sehen.', tr: 'Puanları görmek için sitenizi oluşturun.', pt: 'Crie seu site para ver as pontuações.', ur: 'اسکور دیکھنے کے لیے اپنی سائٹ بنائیں۔' },
 
   // Mission progress
   phasePlanner: { en: 'Planning', ar: 'التخطيط' },
