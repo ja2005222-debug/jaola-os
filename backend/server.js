@@ -1069,17 +1069,23 @@ app.post('/api/github/connect', verifyToken, validate(schemas.githubConnect), va
     }
 
     try {
-        const update = {
-            'github.branch': branch,
-            'github.autoCommit': autoCommit,
-        };
-        if (repoUrl !== undefined) update['github.repoUrl'] = repoUrl;
-        if (pat) update['github.patEncrypted'] = encryptSecret(pat); // لا يُخزن التوكن خاماً أبداً
+        // نبني كائن github كاملاً في الذاكرة بدل المسارات المنقّطة: إن كان
+        // الحقل مخزّناً كـ null (مشروع قديم) يفشل "$set: { 'github.autoCommit' }"
+        // بخطأ "Cannot create field 'autoCommit' in element {github: null}".
+        // الدمج يحفظ الحقول الموجودة (كالتوكن) عند ترك الحقل فارغاً.
+        const existing = await Project.findOne(
+            { name: req.activeProject, owner: req.user.username }
+        ).lean();
+        const github = { ...(existing?.github || {}) };
+        github.branch = branch;
+        github.autoCommit = autoCommit;
+        if (repoUrl !== undefined) github.repoUrl = repoUrl;
+        if (pat) github.patEncrypted = encryptSecret(pat); // لا يُخزن التوكن خاماً أبداً
 
         await Project.findOneAndUpdate(
             { name: req.activeProject, owner: req.user.username },
             {
-                $set: update,
+                $set: { github },
                 $setOnInsert: { name: req.activeProject, owner: req.user.username, localPath: req.projectPath },
             },
             { upsert: true, new: true }
