@@ -31,3 +31,13 @@ test('package.json الناتج لا يحوي وحدات مدمجة (npm install
     assert.equal(pkg.dependencies.crypto, undefined, 'crypto ليست تبعية');
     assert.equal(pkg.dependencies['node:fs'], undefined);
 });
+
+test('حزم native والمجهولة تُستبعد (خطأ .lzz/v8 + npm install exit 1)', () => {
+    const files = [{ name: 'api/x.js', content: 'import bcrypt from "bcrypt"; import sharp from "sharp"; import mongoose from "mongoose"; import z from "totally-unknown-pkg-xyz";' }];
+    const pkg = JSON.parse(generatePackageJson('app', files, 'web'));
+    assert.equal(pkg.dependencies.bcrypt, undefined, 'bcrypt native → مستبعد');
+    assert.equal(pkg.dependencies.sharp, undefined, 'sharp native → مستبعد');
+    assert.equal(pkg.dependencies['totally-unknown-pkg-xyz'], undefined, 'مجهول → مستبعد لا latest');
+    assert.ok(pkg.dependencies.mongoose, 'النقية المعروفة محفوظة');
+    assert.ok(pkg.dependencies.bcryptjs, 'استخدام bcrypt → يُضاف البديل النقي bcryptjs');
+});
