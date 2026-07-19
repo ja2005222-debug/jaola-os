@@ -8,6 +8,14 @@
  * - يعرف ما يحتاجه كل ميزة تلقائياً
  */
 
+// 🚫 حزم تحتاج ترجمة C++ (native) — تفشل على Vercel Serverless (خطأ .lzz/v8).
+// نستبعدها؛ البدائل النقية (bcryptjs بدل bcrypt) كافية للنماذج.
+const NATIVE_BLOCKLIST = new Set([
+    'bcrypt', 'sharp', 'canvas', 'better-sqlite3', 'sqlite3', 'node-sass',
+    'grpc', 'bufferutil', 'utf-8-validate', 'node-gyp', 'bignum', 'microtime',
+    'sodium', 'sodium-native', 're2', 'zeromq', 'usb', 'serialport',
+]);
+
 // 🚫 وحدات Node المدمجة — ليست حزم npm، لا تُضاف للتبعيات أبداً
 const NODE_BUILTINS = new Set([
     'assert', 'buffer', 'child_process', 'cluster', 'console', 'constants',
@@ -164,14 +172,17 @@ export function generatePackageJson(projectName, files, projectType = 'web') {
 
     const depsObj = { ...baseDeps };
     dependencies.forEach(pkg => {
+        // 🚫 حزم native تحتاج ترجمة C++ — تفشل على Serverless (خطأ .lzz/v8)
+        if (NATIVE_BLOCKLIST.has(pkg)) return;
+        // ✅ معروفة فقط — تجاهل المجهولة بدل "latest" (قد تكون غير موجودة/native
+        // فتُفشل npm install وتُسقط النشر كله)
         if (VERSIONS[pkg]) depsObj[pkg] = VERSIONS[pkg];
-        else depsObj[pkg] = 'latest';
     });
 
     const devDepsObj = { 'nodemon': '^3.0.2' };
     devDependencies.forEach(pkg => {
+        if (NATIVE_BLOCKLIST.has(pkg)) return;
         if (VERSIONS[pkg]) devDepsObj[pkg] = VERSIONS[pkg];
-        else devDepsObj[pkg] = 'latest';
     });
 
     const safeName = projectName.toLowerCase().replace(/[^a-z0-9-]/g, '-');
