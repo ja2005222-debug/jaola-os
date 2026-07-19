@@ -727,15 +727,20 @@ export class JaolaCognitiveRuntime {
                                 this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', '🔗 تم تحديث script.js ليستدعي الـ APIs');
                             }
                         }
-                    } else {
-                        this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', `⚠️ تعذّر توليد الخادم: ${backendResult.error}`);
+                    } else if (teamWroteFiles < 2) {
+                        // إنذار حقيقي فقط حين يفشل المولّد التقليدي فعلاً — لا حين
+                        // يكون الفريق قد كفى (كنا نطبع "undefined" في تلك الحالة)
+                        this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', `⚠️ تعذّر توليد الخادم: ${backendResult.error || 'لم يُنتج ملفات صالحة'}`);
                     }
                 } catch (e) {
                     this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', `❌ خطأ في BackendAgent: ${e.message}`);
                 }
 
-                // 🆕 DatabaseAgent — يُولّد Schema + Seed Data مع Backend
-                try {
+                // 🆕 DatabaseAgent — يُولّد Schema + Seed Data مع Backend.
+                // ⛔ فقط إن لم يتكفّل فريق الخلفية بطبقة البيانات — وإلا نُنتج
+                // قاعدتَي بيانات متضاربتين (SQLite من الفريق + MongoDB من هنا).
+                if (teamWroteFiles < 2) {
+                  try {
                     const projectType = context.mentalModel?.designBrief?.projectType || 'business';
                     this.emitLiveLog(roomName, '5. RUNTIME', 'DatabaseAgent', '🗄️ جاري توليد قاعدة البيانات...');
                     const dbResult = await generateDatabase(context.originalGoal, projectType, context.projectPath);
@@ -751,12 +756,16 @@ export class JaolaCognitiveRuntime {
                             `✅ ${dbResult.summary}`
                         );
                     }
-                } catch (e) {
+                  } catch (e) {
                     this.emitLiveLog(roomName, '5. RUNTIME', 'DatabaseAgent', `⚠️ تخطّي: ${e.message}`);
+                  }
+                } else {
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'DatabaseAgent', 'ℹ️ فريق الخلفية تكفّل بقاعدة البيانات — تخطّي المولّد المستقل.');
                 }
 
-                // 🆕 PostgreSQL + Prisma — للمشاريع التي تحتاج قاعدة بيانات علاقية
-                if (needsPostgres(context.originalGoal)) {
+                // 🆕 PostgreSQL + Prisma — للمشاريع التي تحتاج قاعدة علاقية
+                // (أيضاً فقط إن لم يتكفّل الفريق — منعاً لتكدّس قواعد البيانات)
+                if (teamWroteFiles < 2 && needsPostgres(context.originalGoal)) {
                     try {
                         this.emitLiveLog(roomName, '5. RUNTIME', 'PostgresAgent', '🐘 جاري توليد Prisma Schema...');
                         const projectType = context.mentalModel?.designBrief?.projectType || 'ecommerce';
