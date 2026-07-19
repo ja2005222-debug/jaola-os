@@ -75,14 +75,16 @@ export async function verifyVercelAuth() {
  * 📦 قراءة جميع ملفات المشروع وتحويلها لتنسيق Vercel Deployment API
  * Vercel يتطلب كل ملف كـ { file: "اسم", data: "base64 content" }
  */
-async function collectProjectFiles(projectPath) {
+async function collectProjectFiles(projectPath, { includeApi = false } = {}) {
     const files = [];
 
     async function walk(dir, relativePath = '') {
         const entries = await fs.readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
-            // تجاهل مجلدات النظام الداخلية وليست جزءاً من الموقع المنشور
-            if (entry.name === '.backups' || entry.name === 'node_modules' || entry.name.startsWith('.') || entry.name === 'api' || entry.name === 'AUTH_README.md') {
+            // تجاهل مجلدات النظام الداخلية وليست جزءاً من الموقع المنشور.
+            // 🆕 full-stack: نُبقي api/ (دوال Serverless) — كانت تُجرَّد فلا يُنشر خادم.
+            const skipApi = !includeApi && entry.name === 'api';
+            if (entry.name === '.backups' || entry.name === 'node_modules' || entry.name.startsWith('.') || skipApi || entry.name === 'AUTH_README.md') {
                 continue;
             }
             const fullPath = path.join(dir, entry.name);
@@ -129,6 +131,48 @@ export function ensureStaticDeploy(files) {
 }
 
 /**
+ * ⚙️ هل المشروع full-stack؟ — يملك دوال Serverless حقيقية في api/.
+ * (ملفات البيانات db.js/schema.js/seed.js وحدها ليست دوالاً — نتجاهلها.)
+ */
+export function isFullStackProject(projectPath) {
+    const apiDir = path.join(projectPath, 'api');
+    if (!fsSync.existsSync(apiDir)) return false;
+    try {
+        return fsSync.readdirSync(apiDir)
+            .some(f => /\.(js|mjs|ts)$/.test(f) && !['db.js', 'schema.js', 'seed.js', 'connection.js'].includes(f));
+    } catch { return false; }
+}
+
+/**
+ * 🧩 يضمن نشر full-stack صحيحاً — يبقي api/ كدوال Serverless ولا يفرض
+ * @vercel/static (الذي يعطّل الدوال). دالة نقية قابلة للاختبار:
+ * - يتطلب index.html في الجذر (وإلا خطأ واضح)
+ * - يحترم vercel.json موجوداً (المولّد يُنتج rewrites صحيحة)
+ * - وإلا يضيف vercel.json برواسم توجيه: /api/* للدوال، والباقي للصفحات
+ *   (rewrites الحديثة تُطبَّق بعد الملفات الثابتة، فلا تُكسر styles.css/الصفحات)
+ * @throws إذا لم يوجد index.html في الجذر
+ */
+export function ensureFullStackDeploy(files) {
+    const hasIndex = files.some(f => /^index\.html$/i.test(f.file));
+    if (!hasIndex) {
+        throw new Error('لا يوجد index.html في جذر المشروع — الواجهة مطلوبة مع الخادم.');
+    }
+    if (files.some(f => f.file === 'vercel.json')) return files;
+
+    const cfg = {
+        rewrites: [
+            { source: '/api/(.*)', destination: '/api/$1' },
+            { source: '/((?!api/).*)', destination: '/index.html' },
+        ],
+    };
+    return [...files, {
+        file: 'vercel.json',
+        data: Buffer.from(JSON.stringify(cfg)).toString('base64'),
+        encoding: 'base64',
+    }];
+}
+
+/**
  * 🔗 يختار الرابط النظيف الثابت للموقع المنشور.
  *
  * مشكلة الرابط الطويل: ردّ Vercel الفوري يعطي غالباً رابط النشرة المُجزّأ
@@ -157,7 +201,7 @@ export function cleanDeployUrl(result, projectName) {
  * @param {object} io - Socket.io instance للبث الحي
  * @param {function} emitUserProjects - دالة لإعادة بث قائمة مشاريع المستخدم بعد التحديث
  */
-export async function deployProject({ projectPath, activeProject, currentUser }, io, emitUserProjects) {
+export async function deployProject({ projectPath, activeProject, currentUser, env = {} }, io, emitUserProjects) {
     const deployKey = `${currentUser}-${activeProject}`;
     const roomName = deployKey;
 
@@ -212,17 +256,20 @@ export async function deployProject({ projectPath, activeProject, currentUser },
                 io.to(roomName).emit('log', { message: `📦 [DEPLOY]: تم دمج ${apiFiles.length} API في ملف واحد` });
             }
         }
-        const files = await collectProjectFiles(projectPath);
+        // ⚙️ full-stack؟ → نُبقي api/ ونستخدم إعداد Serverless بدل الثابت
+        const fullStack = isFullStackProject(projectPath);
+        const files = await collectProjectFiles(projectPath, { includeApi: fullStack });
 
         if (files.length === 0) {
             throw new Error('لا توجد ملفات قابلة للنشر في هذا المشروع.');
         }
 
-        // 🧩 إصلاح 404: نحن ننشر صفحات HTML جاهزة (ثابتة). لكن إن حوى المشروع
-        // package.json (مشاريع React) ظنّ Vercel أنه يحتاج بناءً فحاول بناءه
-        // بدل خدمة الصفحات الجاهزة → لا مخرجات → 404. نحقن vercel.json يثبّت
-        // الخدمة الثابتة لكل الملفات ويعطّل كشف الـ framework نهائياً.
-        const deployFiles = ensureStaticDeploy(files);
+        // full-stack: يبقي دوال Serverless (api/) ولا يفرض @vercel/static.
+        // static: يثبّت الخدمة الثابتة (إصلاح 404 من محاولة Vercel بناء المشروع).
+        const deployFiles = fullStack ? ensureFullStackDeploy(files) : ensureStaticDeploy(files);
+        if (fullStack) {
+            io.to(roomName).emit('log', { message: '⚙️ [DEPLOY]: مشروع full-stack — نشر الخادم (Serverless) مع الواجهة.' });
+        }
 
         // اسم مشروع صالح في Vercel: أحرف صغيرة وأرقام وشرطات فقط
         const vercelProjectName = `${currentUser}-${activeProject}`
@@ -244,8 +291,11 @@ export async function deployProject({ projectPath, activeProject, currentUser },
                 name: vercelProjectName,
                 files: deployFiles,
                 target: 'production',
+                // متغيّرات البيئة للنشر (مثل MONGODB_URI لمشاريع full-stack) —
+                // تُحقن في دوال Serverless. v13 يقبلها كـ key-value مباشر.
+                ...(Object.keys(env).length ? { env } : {}),
                 projectSettings: {
-                    framework: null, // موقع ثابت بدون framework
+                    framework: null, // لا framework — الثابت يُخدَم كما هو، ودوال api/ تُكتشف تلقائياً
                 }
             })
         });

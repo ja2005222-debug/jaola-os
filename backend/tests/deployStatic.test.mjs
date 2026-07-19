@@ -3,7 +3,10 @@
 // vercel.json يثبّت الخدمة الثابتة.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ensureStaticDeploy, cleanDeployUrl } from '../agents/deployAgent.js';
+import { ensureStaticDeploy, ensureFullStackDeploy, isFullStackProject, cleanDeployUrl } from '../agents/deployAgent.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import pathMod from 'node:path';
 
 const f = (name, content = 'x') => ({ file: name, data: Buffer.from(content).toString('base64'), encoding: 'base64' });
 const cfgOf = (files) => {
@@ -59,4 +62,35 @@ test('نطاق مخصّص في alias يُفضَّل على .vercel.app', () => {
 
 test('بلا alias وبلا اسم مشروع → يعود لرابط الرد', () => {
     assert.equal(cleanDeployUrl({ url: 'fallback.vercel.app' }, ''), 'fallback.vercel.app');
+});
+
+// ─── المرحلة ١: نشر full-stack (دوال Serverless) ───────────────────
+test('كشف full-stack: دالة API حقيقية vs ملفات بيانات فقط', () => {
+    const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'jaola-fs-'));
+    fs.writeFileSync(pathMod.join(dir, 'index.html'), '<html></html>');
+    assert.equal(isFullStackProject(dir), false, 'بلا api/');
+    fs.mkdirSync(pathMod.join(dir, 'api'));
+    fs.writeFileSync(pathMod.join(dir, 'api', 'db.js'), 'x');
+    assert.equal(isFullStackProject(dir), false, 'ملف بيانات وحده ليس دالة');
+    fs.writeFileSync(pathMod.join(dir, 'api', 'orders.js'), 'export default (req,res)=>{}');
+    assert.equal(isFullStackProject(dir), true, 'دالة orders حقيقية → full-stack');
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('نشر full-stack: يحقن vercel.json برواسم توجيه /api ولا يفرض @vercel/static', () => {
+    const out = ensureFullStackDeploy([f('index.html'), f('api/orders.js'), f('styles.css')]);
+    const cfg = cfgOf(out);
+    assert.ok(cfg.rewrites, 'rewrites موجودة');
+    assert.equal(cfg.builds, undefined, 'لا @vercel/static — لا يعطّل الدوال');
+    assert.ok(cfg.rewrites.some(r => r.source.includes('api')), 'توجيه /api للدوال');
+});
+
+test('نشر full-stack: يحترم vercel.json موجوداً (من المولّد)', () => {
+    const existing = f('vercel.json', '{"rewrites":[{"source":"/x","destination":"/y"}]}');
+    const out = ensureFullStackDeploy([f('index.html'), f('api/orders.js'), existing]);
+    assert.equal(out.filter(x => x.file === 'vercel.json').length, 1, 'لا ازدواج');
+});
+
+test('نشر full-stack بلا index.html → خطأ واضح', () => {
+    assert.throws(() => ensureFullStackDeploy([f('api/orders.js')]), /index\.html/);
 });
