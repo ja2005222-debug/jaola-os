@@ -218,6 +218,12 @@ export default function Dashboard() {
   const [isSending, setIsSending] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [showGithubModal, setShowGithubModal] = useState(false);
+  const [showSecretsModal, setShowSecretsModal] = useState(false);
+  const [secretKeys, setSecretKeys] = useState([]);
+  const [newSecretKey, setNewSecretKey] = useState('');
+  const [newSecretVal, setNewSecretVal] = useState('');
+  const [secretBusy, setSecretBusy] = useState(false);
+  const [secretError, setSecretError] = useState('');
   const [ghForm, setGhForm] = useState({ repoUrl: '', pat: '', branch: 'main', autoCommit: true });
   const [ghStatus, setGhStatus] = useState(null);
   const [isGhSaving, setIsGhSaving] = useState(false);
@@ -352,6 +358,34 @@ export default function Dashboard() {
         setGhStatus(d);
         setGhForm(f => ({ ...f, repoUrl: d.repoUrl || '', branch: d.branch || 'main', autoCommit: d.autoCommit ?? true, pat: '' }));
       }
+    } catch {}
+  };
+
+  // 🔑 أسرار المشروع (متغيّرات البيئة مثل MONGODB_URI)
+  const openSecretsModal = async () => {
+    setShowSecretsModal(true); setSecretError(''); setNewSecretKey(''); setNewSecretVal('');
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/project/secrets?project=${activeProject}`, { headers: getHeaders() });
+      if (res.ok) { const d = await res.json(); setSecretKeys(d.keys || []); }
+    } catch {}
+  };
+  const handleAddSecret = async () => {
+    const key = newSecretKey.trim(), value = newSecretVal.trim();
+    if (!key || !value) return;
+    setSecretBusy(true); setSecretError('');
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/project/secret`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ project: activeProject, key, value }) });
+      const d = await res.json();
+      if (res.ok) { setSecretKeys(d.keys || []); setNewSecretKey(''); setNewSecretVal(''); addNotification(t('secretSaved'), 'success'); }
+      else setSecretError(d.error || 'خطأ');
+    } catch { setSecretError('تعذّر الحفظ'); }
+    setSecretBusy(false);
+  };
+  const handleDeleteSecret = async (key) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/project/secret`, { method: 'DELETE', headers: getHeaders(), body: JSON.stringify({ project: activeProject, key }) });
+      const d = await res.json();
+      if (res.ok) setSecretKeys(d.keys || []);
     } catch {}
   };
 
@@ -793,6 +827,56 @@ export default function Dashboard() {
     </div>
   );
 
+  // 🔑 نافذة أسرار المشروع (متغيّرات البيئة) — MONGODB_URI وغيرها
+  const secretsModal = showSecretsModal && (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
+      onClick={e => e.target === e.currentTarget && setShowSecretsModal(false)}>
+      <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:24, width:'min(440px, 100%)', maxHeight:'90dvh', overflowY:'auto' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+          <span style={{ fontSize:18 }}>🔑</span>
+          <h3 style={{ color:'#fff', fontSize:15, fontWeight:800, flex:1 }}>{t('secretsTitle')}</h3>
+          <button onClick={() => setShowSecretsModal(false)} style={{ width:30, height:30, borderRadius:8, background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, color:S.muted, fontSize:14 }}>✕</button>
+        </div>
+        <p style={{ color:S.muted, fontSize:12, lineHeight:1.7, marginBottom:14 }}>{t('secretsHint')}</p>
+
+        {/* تلميح MONGODB_URI للمشاريع full-stack */}
+        <div style={{ background:'rgba(16,185,129,0.06)', border:'1px solid rgba(16,185,129,0.2)', borderRadius:10, padding:'10px 12px', marginBottom:16, fontSize:11.5, color:'#6ee7b7', lineHeight:1.7 }}>
+          🗄️ {t('secretsMongoHint')}
+        </div>
+
+        {/* المفاتيح الحالية */}
+        {secretKeys.length > 0 && (
+          <div style={{ marginBottom:16 }}>
+            {secretKeys.map(k => (
+              <div key={k} style={{ display:'flex', alignItems:'center', gap:8, background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 12px', marginBottom:6 }}>
+                <span style={{ fontSize:13 }}>🔒</span>
+                <span style={{ flex:1, fontSize:12.5, color:S.text, fontFamily:'monospace' }}>{k}</span>
+                <span style={{ fontSize:10, color:S.dim }}>••••••••</span>
+                <button onClick={() => handleDeleteSecret(k)} title={t('delete')} style={{ background:'transparent', border:'none', color:'#f87171', fontSize:13, padding:'2px 6px' }}>🗑️</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* إضافة سرّ */}
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          <input value={newSecretKey} onChange={e => { setNewSecretKey(e.target.value.toUpperCase()); setSecretError(''); }}
+            placeholder="MONGODB_URI" dir="ltr"
+            style={{ width:'100%', background:'#161b22', border:`1px solid ${S.border}`, borderRadius:8, padding:'10px 12px', color:'#fff', fontSize:13, fontFamily:'monospace', textAlign:'left' }} />
+          <input value={newSecretVal} onChange={e => { setNewSecretVal(e.target.value); setSecretError(''); }}
+            onKeyDown={e => e.key === 'Enter' && handleAddSecret()}
+            placeholder={t('secretValuePlaceholder')} dir="ltr" type="password"
+            style={{ width:'100%', background:'#161b22', border:`1px solid ${secretError ? 'rgba(239,68,68,0.5)' : S.border}`, borderRadius:8, padding:'10px 12px', color:'#fff', fontSize:13, fontFamily:'monospace', textAlign:'left' }} />
+          {secretError && <div style={{ color:'#f87171', fontSize:12 }}>{secretError}</div>}
+          <button onClick={handleAddSecret} disabled={secretBusy || !newSecretKey.trim() || !newSecretVal.trim()}
+            style={{ background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', border:'none', borderRadius:8, padding:'10px', color:'#fff', fontWeight:700, fontSize:13, opacity: (secretBusy || !newSecretKey.trim() || !newSecretVal.trim()) ? 0.5 : 1 }}>
+            {secretBusy ? '…' : `➕ ${t('secretAdd')}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   // ═══════════════════════════════════════════════════════════════
   // 📱 تخطيط الجوال — شاشة واحدة + تنقل سفلي
   // ═══════════════════════════════════════════════════════════════
@@ -853,6 +937,10 @@ export default function Dashboard() {
                 <button onClick={() => { setShowMobileMenu(false); openGithubModal(); }}
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>🐙</span> GitHub
+                </button>
+                <button onClick={() => { setShowMobileMenu(false); openSecretsModal(); }}
+                  style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
+                  <span style={{ fontSize:16 }}>🔑</span> {t('secretsTitle')}
                 </button>
                 <button onClick={() => { setShowMobileMenu(false); handleVercelCheck(); }}
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
@@ -966,6 +1054,7 @@ export default function Dashboard() {
         {notificationsOverlay}
         {githubModal}
         {projectModal}
+        {secretsModal}
 
         {/* 📊 بطاقة حالة الموقع — مؤشرات الجودة على الجوال (بديل الشريط الجانبي) */}
         {showSiteHealth && (
@@ -1051,6 +1140,12 @@ export default function Dashboard() {
         <button onClick={openGithubModal} title={t('githubTitle')}
           style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 12px', color:'#94a3b8', fontSize:11, fontWeight:600 }}>
           🐙 GitHub
+        </button>
+
+        {/* الأسرار (متغيّرات البيئة) */}
+        <button onClick={openSecretsModal} title={t('secretsTitle')}
+          style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 12px', color:'#94a3b8', fontSize:11, fontWeight:600 }}>
+          🔑 {t('secretsShort')}
         </button>
 
         {/* Deploy — رابط الموقع (إن وُجد) + زر النشر/إعادة النشر دائماً حاضر */}
@@ -1312,6 +1407,7 @@ export default function Dashboard() {
       {notificationsOverlay}
       {githubModal}
       {projectModal}
+      {secretsModal}
     </div>
   );
 }
