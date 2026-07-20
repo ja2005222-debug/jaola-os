@@ -8,6 +8,7 @@ import {
     summarizeVerdict,
     runBehaviorChecks,
     buildBehaviorFixInstruction,
+    detectUndefinedFunctions,
 } from '../agents/behaviorVerifier.js';
 
 test('inlineLocalScripts: يُضمّن السكربت المحلي ويترك الخارجي', () => {
@@ -101,6 +102,53 @@ test('runBehaviorChecks: تطبيق تفاعلي بلا أي عنصر تفاعل
     });
     assert.equal(v.checks.find(c => c.name === 'interactive-wired').status, 'fail');
     assert.equal(v.ok, false);
+});
+
+// ─── كشف الدوال المعلّقة: "قشرة بلا منطق" (سجل مستخدم حقيقي — التوصيل) ──
+test('detectUndefinedFunctions: يمسك الدوال المُشار إليها وغير المعرّفة', () => {
+    // سيناريو المستخدم الفعلي: أزرار + DOMContentLoaded تستدعي دوالّ غير موجودة
+    const html = `<button id="submitOrderBtn" onclick="submitOrder()">تقديم الطلب</button>
+                  <button id="trackBtn" onclick="trackOrder()">تتبع</button>`;
+    const js = `document.addEventListener('DOMContentLoaded', () => {
+        renderRestaurantOrders();
+        renderDeliveryOrders();
+    });
+    const orders = [{id:1}];
+    function helper(){ return orders.length; }`;
+    const missing = detectUndefinedFunctions({ html, js });
+    for (const fn of ['submitOrder', 'trackOrder', 'renderRestaurantOrders', 'renderDeliveryOrders'])
+        assert.ok(missing.includes(fn), `يجب كشف ${fn} كناقص`);
+    assert.ok(!missing.includes('helper'), 'المعرّفة لا تُعدّ ناقصة');
+});
+
+test('detectUndefinedFunctions: لا إيجابيات كاذبة (مبنيّات + طرق كائنات + معرّفة)', () => {
+    const js = `function submitOrder(){
+        const el = document.getElementById('x');
+        el.addEventListener('click', () => console.log('ok'));
+        const arr = [1,2].map(n => n*2);
+        setTimeout(() => submitOrder(), 100);
+        JSON.stringify(arr); parseInt('5'); arr.forEach(x => x);
+    }`;
+    assert.deepEqual(detectUndefinedFunctions({ html: '', js }), [], 'لا مبنيّات ولا طرق كائنات ولا معرّفة');
+});
+
+test('analyzeStatic: دوال معلّقة → فشل wiring-complete', () => {
+    const checks = analyzeStatic({
+        html: `<button onclick="submitOrder()">أرسل</button>`,
+        js: `const data=[{id:1}];`,
+        blueprint: { kind: 'webapp' },
+    });
+    const w = checks.find(c => c.name === 'wiring-complete');
+    assert.equal(w.status, 'fail');
+    assert.match(w.detail, /submitOrder/);
+});
+
+test('buildBehaviorFixInstruction: wiring-complete → توجيه بتنفيذ الدوال', () => {
+    const ins = buildBehaviorFixInstruction({ checks: [
+        { name: 'wiring-complete', status: 'fail', detail: 'دوال غير معرّفة: submitOrder، renderRestaurantOrders' },
+    ] });
+    assert.match(ins, /عرّف كل دالة/);
+    assert.match(ins, /submitOrder/);
 });
 
 // ─── جولة الإصلاح التلقائية: من الحكم إلى تعليمة إصلاح مستهدفة ───────
