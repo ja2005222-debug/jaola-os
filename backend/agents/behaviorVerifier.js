@@ -38,12 +38,17 @@ export function inlineLocalScripts(html, assets = {}) {
  */
 // كلمات/دوال مبنية لا تُعدّ "غير معرّفة" (لغة + DOM + شائعات)
 const BUILTIN_CALLS = new Set([
-    'if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'typeof', 'await', 'else', 'do', 'with', 'new', 'delete', 'void', 'in', 'instanceof', 'yield', 'super', 'this',
+    'if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'typeof', 'await', 'else', 'do', 'with', 'new', 'delete', 'void', 'in', 'instanceof', 'yield', 'super', 'this', 'import', 'export', 'require', 'class', 'extends', 'throw', 'try', 'finally', 'case', 'default',
     'console', 'alert', 'confirm', 'prompt', 'fetch', 'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'requestAnimationFrame', 'cancelAnimationFrame',
     'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'encodeURIComponent', 'decodeURIComponent', 'encodeURI', 'decodeURI', 'structuredClone', 'queueMicrotask', 'btoa', 'atob',
     'String', 'Number', 'Boolean', 'Array', 'Object', 'JSON', 'Math', 'Date', 'RegExp', 'Promise', 'Map', 'Set', 'WeakMap', 'WeakSet', 'Symbol', 'Error', 'Proxy', 'Reflect', 'BigInt',
     'Event', 'CustomEvent', 'MouseEvent', 'KeyboardEvent', 'FormData', 'URL', 'URLSearchParams', 'Intl', 'Image', 'Audio', 'Blob', 'FileReader', 'Notification', 'IntersectionObserver', 'MutationObserver', 'ResizeObserver',
-    'querySelector', 'querySelectorAll', 'getElementById', 'getElementsByClassName', 'getElementsByTagName', 'createElement', 'addEventListener', 'removeEventListener', 'getComputedStyle', 'matchMedia', 'scrollTo', 'gtag', 'require',
+    'querySelector', 'querySelectorAll', 'getElementById', 'getElementsByClassName', 'getElementsByTagName', 'createElement', 'addEventListener', 'removeEventListener', 'getComputedStyle', 'matchMedia', 'scrollTo', 'gtag',
+    // دوال CSS (تظهر داخل قوالب نصّية للأنماط) — ليست دوالّ JS
+    'rgba', 'rgb', 'hsl', 'hsla', 'calc', 'url', 'var', 'clamp', 'min', 'max', 'minmax', 'repeat', 'cubic-bezier',
+    'translate', 'translateX', 'translateY', 'translate3d', 'translateZ', 'scale', 'scaleX', 'scaleY', 'rotate', 'rotateX', 'rotateY', 'rotateZ', 'skew', 'skewX', 'skewY', 'matrix', 'perspective',
+    'blur', 'brightness', 'contrast', 'saturate', 'grayscale', 'sepia', 'invert', 'opacity', 'drop-shadow', 'hue-rotate',
+    'linear-gradient', 'radial-gradient', 'conic-gradient', 'attr', 'counter', 'env',
 ]);
 
 /**
@@ -52,22 +57,33 @@ const BUILTIN_CALLS = new Set([
  * هذا بالضبط ما يجعل "زر تقديم الطلب" لا يعمل ولوحة المطعم فارغة.
  */
 export function detectUndefinedFunctions({ html = '', js = '' } = {}) {
-    // 1) الأسماء المعرّفة (بسخاء لتقليل الإيجابيات الكاذبة)
+    // 1) الأسماء المعرّفة (بسخاء لتقليل الإيجابيات الكاذبة): أي تصريح/صنف/دالة
     const defined = new Set();
     const defPatterns = [
-        /function\s+([A-Za-z_$][\w$]*)/g,                                   // function foo()
-        /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)/g, // const foo = () =>
+        /function\s*\*?\s*([A-Za-z_$][\w$]*)/g,                             // function foo() / function* foo()
+        /class\s+([A-Za-z_$][\w$]*)/g,                                      // class Foo
+        /(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g,                          // أي تصريح: const foo = require(...) / = ...
         /([A-Za-z_$][\w$]*)\s*:\s*(?:async\s*)?function/g,                  // foo: function
-        /\bwindow\.([A-Za-z_$][\w$]*)\s*=/g,                                // window.foo =
-        /([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{/g,                             // foo(...) { (method shorthand)
+        /\b(?:window|globalThis|self)\.([A-Za-z_$][\w$]*)\s*=/g,           // window.foo =
+        /([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{/g,                             // foo(...) { (method shorthand / declaration)
     ];
     for (const re of defPatterns) { let m; while ((m = re.exec(js))) defined.add(m[1]); }
+    // التفكيك: const { a, b } = ... / import { a, b } — كلّها معرّفة
+    for (const m of js.matchAll(/(?:const|let|var|import)\s*\{([^}]*)\}/g)) {
+        for (const part of m[1].split(',')) {
+            const name = part.split(/[:\s]/).map(s => s.trim()).filter(Boolean).pop();
+            if (name && /^[A-Za-z_$][\w$]*$/.test(name)) defined.add(name);
+        }
+    }
+    // import foo from '...' / import * as foo
+    for (const m of js.matchAll(/import\s+(?:\*\s+as\s+)?([A-Za-z_$][\w$]*)\s+from/g)) defined.add(m[1]);
 
     // 2) الأسماء المُشار إليها كمعالجات/نداءات
     const referenced = new Set();
-    // نداءات مجرّدة في JS: name(  غير مسبوقة بنقطة/حرف (فتستبعد obj.method())
+    // نداءات مجرّدة في JS: name(  غير مسبوقة بنقطة/حرف/شرطة (فتستبعد
+    // obj.method() ودوال CSS الموصولة بشرطة مثل linear-gradient/drop-shadow)
     let m;
-    const callRe = /(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(/g;
+    const callRe = /(?<![-.\w$])([A-Za-z_$][\w$]*)\s*\(/g;
     while ((m = callRe.exec(js))) referenced.add(m[1]);
     // معالجات HTML السطرية: onclick="foo(" / onsubmit='foo('
     const onRe = /\son[a-z]+\s*=\s*["']\s*([A-Za-z_$][\w$]*)\s*\(/gi;
@@ -250,9 +266,14 @@ async function runInJsdom(html, { timeoutMs = 4000 } = {}) {
  * @returns {Promise<{ok, score, checks, summary, ran}>}
  */
 export async function runBehaviorChecks({ html = '', assets = {}, blueprint = null, domainModel = null, timeoutMs = 4000 } = {}) {
-    const js = Object.entries(assets)
+    // مجموعة JS للواجهة: السكربتات الخارجية + محتوى <script> السطري (كلاهما
+    // يُعرّف/يستدعي دوالّ، فيجب فحصهما معاً لدقّة كشف الدوال المعلّقة).
+    const external = Object.entries(assets)
         .filter(([k]) => /\.(m?js)$/i.test(k))
         .map(([, v]) => v).join('\n');
+    const inlineJs = [...html.matchAll(/<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)]
+        .map(m => m[1]).join('\n');
+    const js = `${inlineJs}\n${external}`;
 
     const checks = analyzeStatic({ html, js, blueprint, domainModel });
 
@@ -297,11 +318,20 @@ export async function verifyBehavior({ projectPath, blueprint = null, domainMode
             return { ok: true, score: 100, checks: [], summary: 'لا index.html للتحقّق منه.', ran: false, skipped: true };
         }
         const html = fs.readFileSync(indexPath, 'utf8');
+        // نقتصر على السكربتات التي تُحمّلها الصفحة فعلاً (الواجهة) — لا ملفات
+        // الخادم (server.js/api) التي تستعمل require/express فتُحرَّم خطأً.
         const assets = {};
-        for (const f of fs.readdirSync(projectPath)) {
-            if (/\.(m?js)$/i.test(f)) {
-                try { assets[f] = fs.readFileSync(p.join(projectPath, f), 'utf8'); } catch {}
-            }
+        const srcRe = /<script\b[^>]*\bsrc=["']([^"']+)["']/gi;
+        let sm;
+        while ((sm = srcRe.exec(html))) {
+            const src = sm[1];
+            if (/^(https?:)?\/\//i.test(src)) continue; // خارجي
+            const rel = src.replace(/^\.?\//, '').split('?')[0];
+            if (!/\.(m?js)$/i.test(rel)) continue;
+            try {
+                const fp = p.join(projectPath, rel);
+                if (fs.existsSync(fp)) assets[rel] = fs.readFileSync(fp, 'utf8');
+            } catch {}
         }
         return await runBehaviorChecks({ html, assets, blueprint, domainModel, timeoutMs });
     } catch (e) {
