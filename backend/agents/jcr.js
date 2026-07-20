@@ -877,12 +877,15 @@ export class JaolaCognitiveRuntime {
             } catch (e) { console.warn('[RenderDeploy]', 'فشل إعداد النشر:', e.message); }
 
             // 🔬 التحقّق السلوكي + جولة إصلاح تلقائية (طريقة مشتركة مع مسار التعديل)
-            await this._verifyAndAutofix({
-                projectPath: context.projectPath, blueprint: context.blueprint,
-                username, activeProject, roomName, agents,
-                lang: getUserLanguage(username) || 'ar',
-                canFix: !!context.budget?.consumeCall?.(),
-            });
+            // محاط بحارس: خطأ في التحقّق يجب ألّا يُسقط بناءً ناجحاً أبداً.
+            try {
+                await this._verifyAndAutofix({
+                    projectPath: context.projectPath, blueprint: context.blueprint,
+                    username: context.username, activeProject: context.activeProject, roomName, agents,
+                    lang: getUserLanguage(context.username) || 'ar',
+                    canFix: !!context.budget?.consumeCall?.(),
+                });
+            } catch (e) { console.warn('[BehaviorVerify]', 'تخطّي التحقّق (لا يُسقط البناء):', e.message); }
 
             return { success: true };
         }
@@ -1746,9 +1749,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
         }
         // 🔬 تحقّق سلوكي بعد التعديل — يمسك إن كسر التعديل تشغيل الصفحة أو
         // ترك دوراً بلا واجهة، ويُصلح جولةً واحدة قبل إعلان النجاح.
-        await this._verifyAndAutofix({
-            projectPath, blueprint: null, username, activeProject, roomName, agents, lang, canFix: true,
-        });
+        try {
+            await this._verifyAndAutofix({
+                projectPath, blueprint: null, username, activeProject, roomName, agents, lang, canFix: true,
+            });
+        } catch (e) { console.warn('[BehaviorVerify]', 'تخطّي التحقّق بعد التعديل:', e.message); }
 
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
 
@@ -1852,10 +1857,13 @@ User preferences: ${JSON.stringify(execMemory)}` },
         snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
         autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
         // 🔬 تحقّق سلوكي على المعاينة (تقرير صادق؛ بلا إصلاح تلقائي لأن بنية
-        // React تختلف عن ملفات vanilla الثلاثة التي يعدّلها المُصلِح).
-        await this._verifyAndAutofix({
-            projectPath, blueprint: null, username, activeProject, roomName, agents, lang, canFix: false,
-        });
+        // React تختلف عن ملفات vanilla الثلاثة التي يعدّلها المُصلِح). لا يوجد
+        // agents في هذا المسار (canFix=false) — نمرّر null صراحةً.
+        try {
+            await this._verifyAndAutofix({
+                projectPath, blueprint: null, username, activeProject, roomName, agents: null, lang, canFix: false,
+            });
+        } catch (e) { console.warn('[BehaviorVerify]', 'تخطّي تحقّق React:', e.message); }
 
         const durationSec = Math.round((Date.now() - t0) / 1000);
         recordBuild(username, activeProject, { success: true, durationSec, filesCount: builtFiles.length, goal: goal || '' });
