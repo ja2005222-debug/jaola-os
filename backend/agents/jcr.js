@@ -876,45 +876,13 @@ export class JaolaCognitiveRuntime {
                 }
             } catch (e) { console.warn('[RenderDeploy]', 'فشل إعداد النشر:', e.message); }
 
-            // 🔬 التحقّق السلوكي + جولة إصلاح تلقائية — نُشغّل الصفحة فعلاً،
-            // وإن كُشفت ثغرة (خطأ JS/زر ميت/دور بلا واجهة) نُصلحها ونُعيد
-            // التحقّق قبل إعلان النجاح. حلقة مغلقة تقفل باب "الوعود بلا إنجاز".
-            try {
-                const domainModel = getDomainModel(username, activeProject);
-                const emitVerdict = (v, note = '') => {
-                    const gaps = v.checks.filter(c => c.status !== 'pass')
-                        .map(c => `${c.status === 'fail' ? '❌' : '⚠️'} ${c.detail}`);
-                    this.emitLiveLog(roomName, '6. VERIFY', 'BehaviorVerifier',
-                        v.ok
-                            ? `🔬 التحقّق السلوكي: يعمل (${v.summary})${note}${gaps.length ? '\n' + gaps.join('\n') : ''}`
-                            : `🔬 ثغرات سلوكية (${v.summary})${note} — لم يُعلَن النجاح أجوفاً:\n${gaps.join('\n')}`);
-                };
-
-                let verdict = await verifyBehavior({ projectPath: context.projectPath, blueprint: context.blueprint, domainModel });
-                if (verdict.ran && !verdict.skipped) {
-                    emitVerdict(verdict);
-
-                    // جولة إصلاح واحدة مستهدفة إن وُجد فشل والميزانية تسمح
-                    if (!verdict.ok && agents.coreEditCodePlan && context.budget?.consumeCall?.()) {
-                        const instruction = buildBehaviorFixInstruction(verdict, domainModel);
-                        if (instruction) {
-                            this.emitLiveLog(roomName, '6. VERIFY', 'BehaviorVerifier', '🔧 جولة إصلاح سلوكية مستهدفة...');
-                            const lang = getUserLanguage(username) || 'ar';
-                            const files = await this.readProjectFilesArray(context.projectPath);
-                            const fixPlan = await agents.coreEditCodePlan(instruction, files, lang);
-                            if (fixPlan?.files?.length && !fixPlan.error) {
-                                const emitG = (m) => this.emitLiveLog(roomName, '6. VERIFY', 'CodeGuard', m);
-                                const guarded = await ensureEditIntegrity(
-                                    await guardFiles(scrubPlaceholders(fixPlan.files, activeProject), emitG),
-                                    context.projectPath, emitG);
-                                await writePlanFiles(context.projectPath, guarded);
-                                const recheck = await verifyBehavior({ projectPath: context.projectPath, blueprint: context.blueprint, domainModel });
-                                emitVerdict(recheck, recheck.ok ? ' (أُصلح تلقائياً)' : ' (بعد الإصلاح — يحتاج مراجعتك)');
-                            }
-                        }
-                    }
-                }
-            } catch (e) { console.warn('[BehaviorVerify]', 'تعذّر التحقّق السلوكي:', e.message); }
+            // 🔬 التحقّق السلوكي + جولة إصلاح تلقائية (طريقة مشتركة مع مسار التعديل)
+            await this._verifyAndAutofix({
+                projectPath: context.projectPath, blueprint: context.blueprint,
+                username, activeProject, roomName, agents,
+                lang: getUserLanguage(username) || 'ar',
+                canFix: !!context.budget?.consumeCall?.(),
+            });
 
             return { success: true };
         }
@@ -1419,6 +1387,46 @@ User preferences: ${JSON.stringify(execMemory)}` },
     }
 
     /** يقرأ الملفات الأساسية كمصفوفة {name, content} للتعديل الجراحي */
+    // 🔬 التحقّق السلوكي + جولة إصلاح تلقائية — مشتركة بين البناء والتعديل.
+    // نُشغّل الصفحة فعلاً؛ إن كُشفت ثغرة (خطأ JS/زر ميت/دور بلا واجهة) وأُتيح
+    // الإصلاح، نبني تعليمة مستهدفة ونُصلح ونُعيد التحقّق. جولة واحدة (لا حلقة).
+    async _verifyAndAutofix({ projectPath, blueprint = null, username, activeProject, roomName, agents, lang = 'ar', canFix = true }) {
+        try {
+            const domainModel = getDomainModel(username, activeProject);
+            const emitVerdict = (v, note = '') => {
+                const gaps = v.checks.filter(c => c.status !== 'pass')
+                    .map(c => `${c.status === 'fail' ? '❌' : '⚠️'} ${c.detail}`);
+                this.emitLiveLog(roomName, '6. VERIFY', 'BehaviorVerifier',
+                    v.ok
+                        ? `🔬 التحقّق السلوكي: يعمل (${v.summary})${note}${gaps.length ? '\n' + gaps.join('\n') : ''}`
+                        : `🔬 ثغرات سلوكية (${v.summary})${note} — لم يُعلَن النجاح أجوفاً:\n${gaps.join('\n')}`);
+            };
+
+            let verdict = await verifyBehavior({ projectPath, blueprint, domainModel });
+            if (!verdict.ran || verdict.skipped) return verdict;
+            emitVerdict(verdict);
+
+            if (!verdict.ok && canFix && agents?.coreEditCodePlan) {
+                const instruction = buildBehaviorFixInstruction(verdict, domainModel);
+                if (instruction) {
+                    this.emitLiveLog(roomName, '6. VERIFY', 'BehaviorVerifier', '🔧 جولة إصلاح سلوكية مستهدفة...');
+                    const files = await this.readProjectFilesArray(projectPath);
+                    const fixPlan = await agents.coreEditCodePlan(instruction, files, lang);
+                    if (fixPlan?.files?.length && !fixPlan.error) {
+                        const emitG = (m) => this.emitLiveLog(roomName, '6. VERIFY', 'CodeGuard', m);
+                        const guarded = await ensureEditIntegrity(
+                            await guardFiles(scrubPlaceholders(fixPlan.files, activeProject), emitG),
+                            projectPath, emitG);
+                        await writePlanFiles(projectPath, guarded);
+                        verdict = await verifyBehavior({ projectPath, blueprint, domainModel });
+                        emitVerdict(verdict, verdict.ok ? ' (أُصلح تلقائياً)' : ' (بعد الإصلاح — يحتاج مراجعتك)');
+                    }
+                }
+            }
+            return verdict;
+        } catch (e) { console.warn('[BehaviorVerify]', 'تعذّر التحقّق السلوكي:', e.message); return null; }
+    }
+
     // 🚪 ردّ حتمي عند حجب رسالة غامضة — لا يطلب "إعادة إرسال نفس الجملة"
     // (كان الـ LLM يهلوس ذلك فيدخل حلقة لا تنتهي). أي رسالة تالية ستُنفَّذ.
     gateConfirmReply(lang) {
@@ -1692,9 +1700,14 @@ User preferences: ${JSON.stringify(execMemory)}` },
         this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', '✂️ تعديل دقيق (لا إعادة بناء كاملة)...');
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
 
+        // 🧩 نحقن نموذج المشروع في التعديل — يبقى التعديل متماسكاً مع كيانات
+        // وأدوار وتدفّقات النظام (لا رقعة نصّية معزولة تكسر التماسك).
+        const editModelCtx = buildProjectModelContext(getDomainModel(username, activeProject));
+        const editInstruction = editModelCtx ? `${instruction}\n${editModelCtx}` : instruction;
+
         let plan;
         try {
-            plan = await agents.coreEditCodePlan(instruction, editFiles, lang,
+            plan = await agents.coreEditCodePlan(editInstruction, editFiles, lang,
                 (chunk) => this.io.to(roomName).emit('code_stream_chunk', chunk));
         } catch (e) {
             this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', `⚠️ تعذّر — عودة للبناء الكامل: ${e.message}`);
@@ -1731,6 +1744,12 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 }
             } catch (e) { this.emitLiveLog(roomName, 'EDIT', 'Preview', `⚠️ تعذّر تحديث المعاينة: ${e.message}`); }
         }
+        // 🔬 تحقّق سلوكي بعد التعديل — يمسك إن كسر التعديل تشغيل الصفحة أو
+        // ترك دوراً بلا واجهة، ويُصلح جولةً واحدة قبل إعلان النجاح.
+        await this._verifyAndAutofix({
+            projectPath, blueprint: null, username, activeProject, roomName, agents, lang, canFix: true,
+        });
+
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
 
         const changedNames = guarded.map(f => f.name).join('، ');
@@ -1761,11 +1780,16 @@ User preferences: ${JSON.stringify(execMemory)}` },
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
         this.emitLiveLog(roomName, '5. RUNTIME', 'ReactGen', '⚛️ توليد مشروع Next.js + Tailwind...');
 
+        // 🧩 نموذج المشروع يُثري هدف كتابة المحتوى — فيَعِي الكيانات والأدوار
+        // والتدفّقات حتى في مسار React (كان يُشتقّ ويُحفظ لكن لا يُحقن هنا).
+        const reactModelCtx = buildProjectModelContext(getDomainModel(username, activeProject));
+        const modelAwareGoal = reactModelCtx ? `${goal}\n${reactModelCtx}` : goal;
+
         // 🧠 محتوى بالذكاء (best-effort) يملأ الهيكل بمحتوى المشروع الفعلي
         let content = null;
         try {
             this.emitLiveLog(roomName, '5. RUNTIME', 'ContentWriter', '✍️ كتابة محتوى المشروع...');
-            content = await generateContentModel(goal, { sections, lang, llm: (m, o) => smartChat(m, o) });
+            content = await generateContentModel(modelAwareGoal, { sections, lang, llm: (m, o) => smartChat(m, o) });
         } catch { /* افتراضي */ }
 
         // 1) سكافولد Next الحقيقي (للنشر/التنزيل) — بمحتوى مخصّص
@@ -1827,6 +1851,12 @@ User preferences: ${JSON.stringify(execMemory)}` },
         this.io.to(roomName).emit('workspace_files', builtFiles);
         snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
         autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
+        // 🔬 تحقّق سلوكي على المعاينة (تقرير صادق؛ بلا إصلاح تلقائي لأن بنية
+        // React تختلف عن ملفات vanilla الثلاثة التي يعدّلها المُصلِح).
+        await this._verifyAndAutofix({
+            projectPath, blueprint: null, username, activeProject, roomName, agents, lang, canFix: false,
+        });
+
         const durationSec = Math.round((Date.now() - t0) / 1000);
         recordBuild(username, activeProject, { success: true, durationSec, filesCount: builtFiles.length, goal: goal || '' });
         this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
