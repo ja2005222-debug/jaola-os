@@ -55,7 +55,8 @@ import { fetchStarter, fetchRepoFiles, parseRepoUrl } from './agents/starterFetc
 import * as siteCms from './services/siteCms.js';
 import { buildStaticSiteFromSource, buildDashboardPage } from './services/reactPreview.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
-import { getProjectMemory } from './agents/projectMemory.js';
+import { getProjectMemory, getDomainModel } from './agents/projectMemory.js';
+import { summarizeModel } from './agents/projectModel.js';
 import { setProjectSecret, deleteProjectSecret, getProjectSecretNames, getProjectSecrets } from './services/projectSecrets.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
 import { buildMetricsPayload } from './services/metricsStore.js';
@@ -1127,6 +1128,17 @@ app.get('/api/project/timeline', verifyToken, validateProjectOwnership, async (r
     } catch (err) {
         res.status(500).json({ error: 'فشل جلب الخط الزمني: ' + err.message });
     }
+});
+
+// 🧩 نموذج المشروع المُهيكَل (طبقة الفهم) — كيانات + أدوار + تدفّقات.
+// يجعل "فهم" المنصّة للمشروع قابلاً للمعاينة بدل أن يكون ضمنياً.
+app.get('/api/project/model', verifyToken, validateProjectOwnership, (req, res) => {
+    const model = getDomainModel(req.user.username, req.activeProject);
+    res.json({
+        success: true,
+        model: model || null,
+        summary: model ? summarizeModel(model) : null,
+    });
 });
 
 // 🆕 الاسترجاع لنقطة سابقة (rollback) — يحفظ الحالة الحالية أولاً ثم يسترجع

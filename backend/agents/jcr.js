@@ -10,7 +10,8 @@ import { buildStaticSite, buildStaticSiteFromSource, buildDashboardPage } from '
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO } from './languageDetector.js';
 import { getLanguageDecision, buildLanguagePrompt } from './languageManager.js';
-import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure } from './projectMemory.js';
+import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure, setDomainModel, getDomainModel } from './projectMemory.js';
+import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel } from './projectModel.js';
 import { detectProjectType } from './knowledgeEngine.js';
 import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
 import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
@@ -1129,6 +1130,20 @@ User preferences: ${JSON.stringify(execMemory)}` },
             }
         } catch (e) { console.warn('[ProjectMemory]', 'فشل تحديث هيكل المشروع:', e.message); }
 
+        // 🧩 نموذج المشروع (طبقة الفهم) — يستخلص كيانات + أدوار + تدفّقات،
+        // يُدمج مع النموذج المحفوظ (فهم متراكم لا يُستبدل)، ويُحقن في التوليد
+        // ليبني الفريق على نظام متماسك لا على تخمين. لا يفشل أبداً (احتياطي مفيد).
+        let domainModelContext = '';
+        try {
+            const derived = await deriveProjectModel(goal, blueprint);
+            const prior = getDomainModel(username, activeProject);
+            const model = prior ? mergeProjectModel(prior, derived) : derived;
+            setDomainModel(username, activeProject, model);
+            domainModelContext = buildProjectModelContext(model);
+            this.emitLiveLog(roomName, 'MODEL', 'DomainAnalyst',
+                `🧩 نموذج المشروع: ${summarizeModel(model)}`);
+        } catch (e) { console.warn('[ProjectModel]', 'فشل استخلاص نموذج المشروع:', e.message); }
+
         // 🧰 المسار الهجين — مشروع كبير → React/Next حقيقي بمعاينة حيّة؛ غيره → Vanilla سريع
         try {
             const ptype = blueprint?.category && blueprint.category !== 'other' ? blueprint.category : detectProjectType(goal);
@@ -1181,7 +1196,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             }
         } catch (e) { /* الإضافات اختيارية */ }
 
-        const finalGoalWithRequirements = `${enrichedGoal}${blueprintContext}\n${requirementsContext}${imageContext}${pluginContext}`;
+        const finalGoalWithRequirements = `${enrichedGoal}${blueprintContext}${domainModelContext}\n${requirementsContext}${imageContext}${pluginContext}`;
 
         // تسجيل هذا الطلب في تاريخ المشروع
         addToHistory(username, activeProject, goal.slice(0, 80));
