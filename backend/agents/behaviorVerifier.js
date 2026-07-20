@@ -36,9 +36,61 @@ export function inlineLocalScripts(html, assets = {}) {
  * فحوص ساكنة على النصّ (لا تشغيل) — تغطية الأدوار ووجود البيانات.
  * تكمّل التشغيل الفعلي وتُعطي دلائل حين يتعذّر التشغيل. دالة نقية.
  */
+// كلمات/دوال مبنية لا تُعدّ "غير معرّفة" (لغة + DOM + شائعات)
+const BUILTIN_CALLS = new Set([
+    'if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'typeof', 'await', 'else', 'do', 'with', 'new', 'delete', 'void', 'in', 'instanceof', 'yield', 'super', 'this',
+    'console', 'alert', 'confirm', 'prompt', 'fetch', 'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'requestAnimationFrame', 'cancelAnimationFrame',
+    'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'encodeURIComponent', 'decodeURIComponent', 'encodeURI', 'decodeURI', 'structuredClone', 'queueMicrotask', 'btoa', 'atob',
+    'String', 'Number', 'Boolean', 'Array', 'Object', 'JSON', 'Math', 'Date', 'RegExp', 'Promise', 'Map', 'Set', 'WeakMap', 'WeakSet', 'Symbol', 'Error', 'Proxy', 'Reflect', 'BigInt',
+    'Event', 'CustomEvent', 'MouseEvent', 'KeyboardEvent', 'FormData', 'URL', 'URLSearchParams', 'Intl', 'Image', 'Audio', 'Blob', 'FileReader', 'Notification', 'IntersectionObserver', 'MutationObserver', 'ResizeObserver',
+    'querySelector', 'querySelectorAll', 'getElementById', 'getElementsByClassName', 'getElementsByTagName', 'createElement', 'addEventListener', 'removeEventListener', 'getComputedStyle', 'matchMedia', 'scrollTo', 'gtag', 'require',
+]);
+
+/**
+ * يكشف الدوال المُشار إليها (معالجات onclick / addEventListener / نداءات
+ * DOMContentLoaded) لكنها **غير معرّفة** في الكود — قشرة بلا منطق. دالة نقية.
+ * هذا بالضبط ما يجعل "زر تقديم الطلب" لا يعمل ولوحة المطعم فارغة.
+ */
+export function detectUndefinedFunctions({ html = '', js = '' } = {}) {
+    // 1) الأسماء المعرّفة (بسخاء لتقليل الإيجابيات الكاذبة)
+    const defined = new Set();
+    const defPatterns = [
+        /function\s+([A-Za-z_$][\w$]*)/g,                                   // function foo()
+        /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)/g, // const foo = () =>
+        /([A-Za-z_$][\w$]*)\s*:\s*(?:async\s*)?function/g,                  // foo: function
+        /\bwindow\.([A-Za-z_$][\w$]*)\s*=/g,                                // window.foo =
+        /([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{/g,                             // foo(...) { (method shorthand)
+    ];
+    for (const re of defPatterns) { let m; while ((m = re.exec(js))) defined.add(m[1]); }
+
+    // 2) الأسماء المُشار إليها كمعالجات/نداءات
+    const referenced = new Set();
+    // نداءات مجرّدة في JS: name(  غير مسبوقة بنقطة/حرف (فتستبعد obj.method())
+    let m;
+    const callRe = /(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(/g;
+    while ((m = callRe.exec(js))) referenced.add(m[1]);
+    // معالجات HTML السطرية: onclick="foo(" / onsubmit='foo('
+    const onRe = /\son[a-z]+\s*=\s*["']\s*([A-Za-z_$][\w$]*)\s*\(/gi;
+    while ((m = onRe.exec(html))) referenced.add(m[1]);
+    // معالج مُمرَّر بالاسم: addEventListener('click', foo)
+    const listenerRe = /addEventListener\s*\(\s*[^,]+,\s*([A-Za-z_$][\w$]*)\s*[,)]/g;
+    while ((m = listenerRe.exec(js))) referenced.add(m[1]);
+
+    // 3) الناقص = مُشار إليه، غير معرّف، وليس مبنيّاً
+    return [...referenced].filter(n => !defined.has(n) && !BUILTIN_CALLS.has(n));
+}
+
 export function analyzeStatic({ html = '', js = '', blueprint = null, domainModel = null } = {}) {
     const hay = `${html}\n${js}`.toLowerCase();
     const checks = [];
+
+    // 🔌 اكتمال التوصيل: دوال مُشار إليها لكن غير معرّفة (قشرة بلا منطق) —
+    // "زر تقديم الطلب موجود لكن submitOrder غير معرّفة".
+    const undefinedFns = detectUndefinedFunctions({ html, js });
+    if (undefinedFns.length) {
+        checks.push({ name: 'wiring-complete', status: 'fail',
+            detail: `دوال مُشار إليها وغير معرّفة (قشرة بلا منطق): ${undefinedFns.join('، ')}` });
+    }
 
     // تغطية الأدوار: نموذج بأكثر من دور يجب أن يظهر كلّ دور في الواجهة/الكود
     const roles = Array.isArray(domainModel?.roles) ? domainModel.roles : [];
@@ -94,7 +146,9 @@ export function buildBehaviorFixInstruction(verdict, domainModel = null) {
 
     const directives = [];
     for (const c of gaps) {
-        if (c.name === 'no-js-errors') {
+        if (c.name === 'wiring-complete') {
+            directives.push(`أكمل المنطق الناقص: هناك دوال مُشار إليها (أزرار/معالجات/DOMContentLoaded) لكنها **غير معرّفة** — ${c.detail}. **عرّف كل دالة منها ونفّذها فعلياً** بحيث تعمل على البيانات وتُحدّث الصفحة (submitOrder يُنشئ طلباً ويحفظه، renderRestaurantOrders يعرض طلبات المطعم، renderDeliveryOrders يعرض طلبات التوصيل، trackOrder يعرض حالة الطلب... حسب أسمائها). لا تترك أي مرجع معلّق.`);
+        } else if (c.name === 'no-js-errors') {
             directives.push(`أصلح أخطاء JavaScript التي تمنع الصفحة من العمل (${c.detail}). يجب أن تُحمّل الصفحة وتعمل بلا أي خطأ في وحدة التحكّم.`);
         } else if (c.name === 'interactive-wired') {
             directives.push(c.status === 'fail'
