@@ -132,6 +132,21 @@ test('detectUndefinedFunctions: لا إيجابيات كاذبة (مبنيّات
     assert.deepEqual(detectUndefinedFunctions({ html: '', js }), [], 'لا مبنيّات ولا طرق كائنات ولا معرّفة');
 });
 
+test('detectUndefinedFunctions: لا يُحرّم require/import/class/CSS (إيجابيات سجل المستخدم)', () => {
+    // ملف خادم/ESM + قالب CSS — كلّها كانت تُحرَّم خطأً (express/rgba/MenuItem...)
+    const js = `import express from 'express';
+        import { fileURLToPath, pathToFileURL } from 'url';
+        const { existsSync, readdirSync } = require('fs');
+        class MenuItem {}
+        class Order {}
+        const app = express();
+        const item = new MenuItem();
+        const o = new Order();
+        const css = \`color: rgba(0,0,0,.5); background: linear-gradient(90deg,#000,#fff); transform: translateY(10px); width: calc(100% - 2rem);\`;
+        export default function handler(req, res) { res.end(); }`;
+    assert.deepEqual(detectUndefinedFunctions({ html: '', js }), [], 'استيرادات/أصناف/دوال CSS ليست دوالّ معلّقة');
+});
+
 test('analyzeStatic: دوال معلّقة → فشل wiring-complete', () => {
     const checks = analyzeStatic({
         html: `<button onclick="submitOrder()">أرسل</button>`,
