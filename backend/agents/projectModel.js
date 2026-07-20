@@ -191,6 +191,18 @@ export function summarizeModel(model) {
 }
 
 /**
+ * يشتقّ أقسام/شاشات التطبيق من النموذج (شاشة لكل دور + كل تدفّق) — تحلّ محلّ
+ * أقسام القالب التعريفية للتطبيقات التفاعلية. دالة نقية.
+ */
+export function buildAppSections(model) {
+    const m = normalizeProjectModel(model || {});
+    return [
+        ...m.roles.map(r => `واجهة ${r.name}${r.description ? ` (${r.description})` : ''}`),
+        ...m.flows.map(f => f.name),
+    ].filter(Boolean);
+}
+
+/**
  * يبني فقرة سياق تُحقن في هدف البناء — تفرض البناء على النموذج لا التخمين.
  * دالة نقية قابلة للاختبار.
  */
