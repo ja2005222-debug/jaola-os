@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@google/genai": "^2.9.0",
-    "adm-zip": "^0.5.18",
+    "adm-zip": "^0.6.0",
     "axios": "^1.18.0",
     "bcrypt": "^6.0.0",
     "chokidar": "^5.0.0",
