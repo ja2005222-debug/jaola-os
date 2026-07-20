@@ -12,6 +12,7 @@ import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detec
 import { getLanguageDecision, buildLanguagePrompt } from './languageManager.js';
 import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure, setDomainModel, getDomainModel } from './projectMemory.js';
 import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel } from './projectModel.js';
+import { verifyBehavior } from './behaviorVerifier.js';
 import { detectProjectType } from './knowledgeEngine.js';
 import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
 import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
@@ -874,6 +875,25 @@ export class JaolaCognitiveRuntime {
                     );
                 }
             } catch (e) { console.warn('[RenderDeploy]', 'فشل إعداد النشر:', e.message); }
+
+            // 🔬 التحقّق السلوكي — نُشغّل الصفحة فعلاً ونتحقّق أن التدفّق يعمل
+            // قبل إعلان النجاح. لا "نجاح" أجوف: نبثّ حكماً صادقاً بثغراته.
+            try {
+                const verdict = await verifyBehavior({
+                    projectPath: context.projectPath,
+                    blueprint: context.blueprint,
+                    domainModel: getDomainModel(username, activeProject),
+                });
+                if (verdict.ran && !verdict.skipped) {
+                    const gaps = verdict.checks
+                        .filter(c => c.status === 'fail' || c.status === 'warn')
+                        .map(c => `${c.status === 'fail' ? '❌' : '⚠️'} ${c.detail}`);
+                    this.emitLiveLog(roomName, '6. VERIFY', 'BehaviorVerifier',
+                        verdict.ok
+                            ? `🔬 التحقّق السلوكي: يعمل (${verdict.summary})${gaps.length ? '\n' + gaps.join('\n') : ''}`
+                            : `🔬 التحقّق السلوكي كشف ثغرات (${verdict.summary}) — لم يُعلَن النجاح أجوفاً:\n${gaps.join('\n')}`);
+                }
+            } catch (e) { console.warn('[BehaviorVerify]', 'تعذّر التحقّق السلوكي:', e.message); }
 
             return { success: true };
         }
