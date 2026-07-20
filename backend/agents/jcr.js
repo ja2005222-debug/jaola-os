@@ -11,7 +11,7 @@ import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO } from './languageDetector.js';
 import { getLanguageDecision, buildLanguagePrompt } from './languageManager.js';
 import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure, setDomainModel, getDomainModel } from './projectMemory.js';
-import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel } from './projectModel.js';
+import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel, buildAppSections } from './projectModel.js';
 import { getLibraryModel, recordModel } from './modelLibrary.js';
 import { verifyBehavior, buildBehaviorFixInstruction } from './behaviorVerifier.js';
 import { detectProjectType } from './knowledgeEngine.js';
@@ -331,6 +331,22 @@ export class JaolaCognitiveRuntime {
                     if (result.context) {
                         context.mentalModel.visualIdentity = result.context.visualGuide || context.mentalModel.visualIdentity;
                         context.mentalModel.templateSections = result.context.sections || [];
+                    }
+
+                    // 🧩 تصحيح جوهري: أقسام القالب "التعريفية" (قائمة/عنّا/حجز طاولة/
+                    // آراء) خاطئة لتطبيق تفاعلي متعدّد الأدوار — كانت تحوّل تطبيق
+                    // توصيل الطعام إلى بروشور مطعم. للتطبيقات نستبدلها بشاشات الأدوار
+                    // والتدفّقات من نموذج المجال (واجهة زبون/مطعم/توصيل/تتبّع).
+                    const dm = getDomainModel(context.username, context.activeProject);
+                    const isApp = context.blueprint?.kind === 'webapp' || context.blueprint?.kind === 'tool'
+                        || (Array.isArray(dm?.roles) && dm.roles.length > 1);
+                    if (isApp && dm) {
+                        const appSections = buildAppSections(dm);
+                        if (appSections.length) {
+                            context.mentalModel.templateSections = appSections;
+                            this.emitLiveLog(roomName, '5. RUNTIME', 'TemplateAgent',
+                                `🧩 تطبيق تفاعلي — استُبدلت أقسام البروشور بشاشات الأدوار: ${appSections.join('، ')}`);
+                        }
                     }
                     initialCodeContext = await this.readCurrentCodeContextAsync(context.projectPath);
                 } else {
