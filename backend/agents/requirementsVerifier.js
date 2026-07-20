@@ -70,12 +70,21 @@ export async function verifyRequirements(blueprint, files, llm = smartChat) {
 }
 
 /** تعليمة إصلاح مجمّعة لكل النواقص — جولة تنفيذ واحدة */
-export function buildFixInstruction(missing) {
+export function buildFixInstruction(missing, domainModel = null) {
     if (!missing?.length) return '';
     const items = missing
-        .map((m, i) => `${i + 1}. ${m.name}: ${m.fixInstruction || `نفّذ "${m.name}" كميزة عاملة فعلياً (UI + منطق JS ببيانات حقيقية)`}`)
+        .map((m, i) => `${i + 1}. ${m.name}: ${m.fixInstruction || `نفّذ "${m.name}" كشاشة/قسم عامل فعلياً (UI + منطق JS ببيانات حقيقية)`}`)
         .join('\n');
-    return `نفّذ المتطلبات الوظيفية الناقصة التالية كميزات **عاملة فعلياً** (عناصر UI + منطق JavaScript حقيقي على بيانات وهمية واقعية — ليست زخرفة):\n${items}\nحافظ على كل ما هو موجود ويعمل كما هو.`;
+
+    // 🧩 إرشاد بنموذج المجال: كل دور = شاشته، وكل كيان = تمثيل بيانات فعلي.
+    let modelHint = '';
+    const roles = Array.isArray(domainModel?.roles) ? domainModel.roles.map(r => r.name).filter(Boolean) : [];
+    const ents = Array.isArray(domainModel?.entities) ? domainModel.entities.map(e => e.name).filter(Boolean) : [];
+    if (roles.length || ents.length) {
+        modelHint = `\n\nنموذج المشروع: الأدوار [${roles.join('، ') || '—'}] والكيانات [${ents.join('، ') || '—'}]. ابنِ **لكل دور شاشته/قسمه المستقل** يعمل على الكيانات (مثال: قسم الزبون لتقديم الطلب، قسم المطعم لعرض الطلبات وتغيير حالتها، قسم التوصيل، قسم التتبّع) — كلها على نفس مصدر البيانات المشترك في script.js.`;
+    }
+
+    return `نفّذ المتطلبات/الشاشات الناقصة التالية كميزات **عاملة فعلياً** — عناصر UI حقيقية (نماذج، قوائم، أزرار) + منطق JavaScript يعمل على بيانات مشتركة واقعية، لا زخرفة ولا نصّ فقط:\n${items}${modelHint}\nأضِف ما ينقص دون حذف ما يعمل، واربط الأزرار بمعالجات فعلية (لا تترك دوالّ معلّقة).`;
 }
 
 /** قائمة تحقق صادقة للمستخدم */
