@@ -122,6 +122,19 @@ const STRINGS = {
   ghSaving: { en: 'Saving...', ar: 'جاري الحفظ...' },
   ghRenderHint: { en: 'Full-stack projects deploy to a persistent server on Render — which deploys from GitHub. Connect a repo here, then hit Deploy for a one-click Render setup.', ar: 'مشاريع full-stack تُنشر على خادم دائم في Render — وRender ينشر من GitHub. اربط المستودع هنا، ثم اضغط «نشر» لإعداد Render بضغطة واحدة.' },
 
+  // 📚 لوحة معرفة المنصّة (الفهم المتراكم)
+  knTitle: { en: 'Platform Knowledge', ar: 'معرفة المنصّة' },
+  knLoading: { en: 'Loading knowledge...', ar: 'جاري تحميل المعرفة...' },
+  knProject: { en: 'This project\'s understanding', ar: 'فهم هذا المشروع' },
+  knNoModel: { en: 'No model yet — build something and it will appear.', ar: 'لا نموذج بعد — ابنِ شيئاً وسيظهر هنا.' },
+  kn_entities: { en: 'Entities', ar: 'الكيانات' },
+  kn_roles: { en: 'Roles', ar: 'الأدوار' },
+  kn_flows: { en: 'Flows', ar: 'التدفّقات' },
+  knLibrary: { en: 'Category model library (cross-project)', ar: 'مكتبة نماذج الفئات (عبر المشاريع)' },
+  knLibraryEmpty: { en: 'Empty — successful builds enrich it over time.', ar: 'فارغة — كل بناء ناجح يُغنيها تدريجياً.' },
+  knLessons: { en: 'Accumulated lessons', ar: 'الدروس المتراكمة' },
+  knLessonsEmpty: { en: 'No lessons recorded yet.', ar: 'لا دروس مسجّلة بعد.' },
+
   // Render (persistent server) deploy
   renderNeedsGithub: { en: '🔗 Render deploys from GitHub — connect a repo first, then deploy again.', ar: '🔗 Render ينشر من GitHub — اربط المستودع أولاً ثم أعد النشر.' },
   renderReady: { en: '✅ Ready on Render — opening one-click setup...', ar: '✅ جاهز على Render — يُفتح الإعداد بضغطة واحدة...' },

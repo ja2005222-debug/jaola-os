@@ -57,6 +57,7 @@ import { buildStaticSiteFromSource, buildDashboardPage } from './services/reactP
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
 import { getProjectMemory, getDomainModel } from './agents/projectMemory.js';
 import { summarizeModel } from './agents/projectModel.js';
+import { librarySummary } from './agents/modelLibrary.js';
 import { setProjectSecret, deleteProjectSecret, getProjectSecretNames, getProjectSecrets } from './services/projectSecrets.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
 import { buildMetricsPayload } from './services/metricsStore.js';
@@ -1138,6 +1139,20 @@ app.get('/api/project/model', verifyToken, validateProjectOwnership, (req, res) 
         success: true,
         model: model || null,
         summary: model ? summarizeModel(model) : null,
+    });
+});
+
+// 📚 معرفة المنصّة التراكمية — فهم المشروع الحالي + مكتبة نماذج الفئات + الدروس.
+// تجعل ما تعلّمته المنصّة مرئياً وقابلاً للفهم بدل أن يكون خفياً.
+app.get('/api/platform/knowledge', verifyToken, (req, res) => {
+    const project = req.query.project;
+    const projectModel = project ? getDomainModel(req.user.username, project) : null;
+    res.json({
+        success: true,
+        projectModel: projectModel || null,
+        projectSummary: projectModel ? summarizeModel(projectModel) : null,
+        library: librarySummary().sort((a, b) => b.contributions - a.contributions),
+        lessons: topLessons(15),
     });
 });
 
