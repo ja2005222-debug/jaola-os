@@ -1419,6 +1419,14 @@ User preferences: ${JSON.stringify(execMemory)}` },
     }
 
     /** يقرأ الملفات الأساسية كمصفوفة {name, content} للتعديل الجراحي */
+    // 🚪 ردّ حتمي عند حجب رسالة غامضة — لا يطلب "إعادة إرسال نفس الجملة"
+    // (كان الـ LLM يهلوس ذلك فيدخل حلقة لا تنتهي). أي رسالة تالية ستُنفَّذ.
+    gateConfirmReply(lang) {
+        return lang === 'ar'
+            ? '📝 لو كنت تقصد تعديلاً على المشروع، أكّد بإرسال «نعم» أو أعد صياغة طلبك كأمر — وسأطبّقه فوراً. ولو كان سؤالاً، اسألني مباشرة.'
+            : '📝 If you meant a change to the project, confirm by sending "yes" or rephrase it as a command — I\'ll apply it right away. If it was a question, just ask.';
+    }
+
     async readProjectFilesArray(projectPath) {
         try {
             const files = await fsPromises.readdir(projectPath);
@@ -2214,15 +2222,22 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         // "عدّل: ..."). أمرٌ صريح أو تكرار مُصِرّ على مشروع قائم يُنفَّذ تعديلاً
                         // بدل الدخول في حلقة "أعد إرسال نفس الجملة" التي يهلوسها الـ LLM.
                         const hasProj = existingCode.trim().length > 100;
-                        const repeatedGate = this.gatedMessages.get(username) === message.trim();
-                        if (hasProj && !isQuestionMessage(message) && (hasActionIntent(message) || repeatedGate)) {
+                        // 🔁 أي رسالة محجوبة سابقاً = إصرار (لا نطابق النصّ حرفياً —
+                        // المساعد قد يقترح صياغة مختلفة فلا يتطابق الحرفي أبداً → حلقة).
+                        const pendingGate = this.gatedMessages.has(username);
+                        if (hasProj && !isQuestionMessage(message) && (hasActionIntent(message) || pendingGate)) {
                             this.gatedMessages.delete(username);
                             recordEdit(username, message);
                             recordEditAction(username, activeProject);
                             this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
                             return;
                         }
-                        if (hasProj && !isQuestionMessage(message)) this.gatedMessages.set(username, message.trim());
+                        if (hasProj && !isQuestionMessage(message)) {
+                            // نحجب مرة واحدة بردّ حتمي (لا LLM يهلوس "أعد الإرسال")
+                            this.gatedMessages.set(username, message.trim());
+                            this.io.to(roomName).emit('chat_reply', { message: this.gateConfirmReply(userLang) });
+                            return;
+                        }
                         await this.generateChatResponse(message, username, roomName, userLang);
                         return;
                     }
@@ -2341,10 +2356,15 @@ User preferences: ${JSON.stringify(execMemory)}` },
             // (سجل حقيقي: "ماذا يمكن أن نضيف للمشروع؟" عدّلت الموقع فعلاً!)
             // 🛡️ والجملة الإخبارية بلا فعل أمر/رغبة كذلك — ("ولكن قائمة
             // الأصدقاء موجودة" تصحيحٌ من المستخدم، ليست طلب تعديل).
-            const repeatedGated = this.gatedMessages.get(username) === message.trim();
+            const repeatedGated = this.gatedMessages.has(username); // أي رسالة محجوبة = إصرار
             if (!repeatedGated && (isQuestionMessage(message) || !hasActionIntent(message))) {
-                if (!isQuestionMessage(message)) this.gatedMessages.set(username, message.trim());
-                this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛡️ صُنّفت modify لكنها سؤال/جملة إخبارية — رد محادثة (لا تعديل).');
+                if (!isQuestionMessage(message)) {
+                    this.gatedMessages.set(username, message.trim());
+                    this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛡️ صُنّفت modify لكنها جملة إخبارية — حجب لمرة واحدة (الرسالة التالية تُنفَّذ).');
+                    this.io.to(roomName).emit('chat_reply', { message: this.gateConfirmReply(userLang) });
+                    return;
+                }
+                this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛡️ سؤال — رد محادثة (لا تعديل).');
                 await this.generateChatResponse(message, username, roomName, userLang);
                 return;
             }
@@ -2369,18 +2389,22 @@ User preferences: ${JSON.stringify(execMemory)}` },
             // كاشف أسئلة واعٍ بالعربية — \b القديم لم يكن يطابق "ماذا/هل..." أبداً
             const isQuestion = isQuestionMessage(message);
             const isSmalltalk = message.trim().length < 4;
-            // 🔁 تكرار رسالة حُجبت سابقاً = إصرار → تعديل (يكسر حلقة "اكتب X")
-            const repeated = this.gatedMessages.get(username) === message.trim();
+            // 🔁 أي رسالة محجوبة سابقاً = إصرار → تعديل (يكسر الحلقة بلا مطابقة حرفية)
+            const repeated = this.gatedMessages.has(username);
 
             if (hasProject && !isQuestion && !isSmalltalk && (hasActionIntent(message) || repeated)) {
                 this.gatedMessages.delete(username);
                 this.emitLiveLog(roomName, 'INTENT', 'Classifier',
-                    repeated ? '🔁 تكرار رسالة محجوبة — إصرار → تعديل جراحي' : '✏️ طلب على مشروع قائم → تعديل جراحي');
+                    repeated ? '🔁 رسالة بعد حجب — إصرار → تعديل جراحي' : '✏️ طلب على مشروع قائم → تعديل جراحي');
                 recordEdit(username, message);
                 this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
                 return;
             }
-            if (hasProject && !isQuestion && !isSmalltalk) this.gatedMessages.set(username, message.trim());
+            if (hasProject && !isQuestion && !isSmalltalk) {
+                this.gatedMessages.set(username, message.trim());
+                this.io.to(roomName).emit('chat_reply', { message: this.gateConfirmReply(userLang) });
+                return;
+            }
             await this.generateChatResponse(message, username, roomName, userLang);
         }
     }
