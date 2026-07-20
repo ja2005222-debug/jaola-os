@@ -12,6 +12,7 @@ import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detec
 import { getLanguageDecision, buildLanguagePrompt } from './languageManager.js';
 import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure, setDomainModel, getDomainModel } from './projectMemory.js';
 import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel } from './projectModel.js';
+import { getLibraryModel, recordModel } from './modelLibrary.js';
 import { verifyBehavior, buildBehaviorFixInstruction } from './behaviorVerifier.js';
 import { detectProjectType } from './knowledgeEngine.js';
 import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
@@ -879,12 +880,23 @@ export class JaolaCognitiveRuntime {
             // 🔬 التحقّق السلوكي + جولة إصلاح تلقائية (طريقة مشتركة مع مسار التعديل)
             // محاط بحارس: خطأ في التحقّق يجب ألّا يُسقط بناءً ناجحاً أبداً.
             try {
-                await this._verifyAndAutofix({
+                const verdict = await this._verifyAndAutofix({
                     projectPath: context.projectPath, blueprint: context.blueprint,
                     username: context.username, activeProject: context.activeProject, roomName, agents,
                     lang: getUserLanguage(context.username) || 'ar',
                     canFix: !!context.budget?.consumeCall?.(),
                 });
+                // 📚 مساهمة في مكتبة النماذج — فهم مُجرَّب (مرّ بالتحقّق) يُغني فئته
+                // فيبدأ كل مشروع لاحق من نضجٍ أعلى. نساهم فقط بما نجح تحقّقه.
+                if (verdict?.ok && context.blueprint?.category) {
+                    const contributed = recordModel(
+                        context.blueprint.category,
+                        getDomainModel(context.username, context.activeProject),
+                        { verified: true }
+                    );
+                    if (contributed) this.emitLiveLog(roomName, '6. VERIFY', 'ModelLibrary',
+                        `📚 أُغني فهم فئة «${context.blueprint.category}» بنموذج مُجرَّب — يستفيد منه كل مشروع لاحق.`);
+                }
             } catch (e) { console.warn('[BehaviorVerify]', 'تخطّي التحقّق (لا يُسقط البناء):', e.message); }
 
             return { success: true };
@@ -1147,13 +1159,18 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // ليبني الفريق على نظام متماسك لا على تخمين. لا يفشل أبداً (احتياطي مفيد).
         let domainModelContext = '';
         try {
+            // 📚 بذرة من مكتبة النماذج: فهم فئة المشروع المتراكم عبر كل المشاريع
+            // السابقة الناجحة — فلا نبدأ من الصفر. الأولوية: المشروع نفسه > اشتقاق
+            // هذه الجولة > مكتبة الفئة العامة.
+            const seed = getLibraryModel(blueprint?.category);
             const derived = await deriveProjectModel(goal, blueprint);
             const prior = getDomainModel(username, activeProject);
-            const model = prior ? mergeProjectModel(prior, derived) : derived;
+            let model = seed ? mergeProjectModel(seed, derived) : derived;
+            if (prior) model = mergeProjectModel(model, prior);
             setDomainModel(username, activeProject, model);
             domainModelContext = buildProjectModelContext(model);
             this.emitLiveLog(roomName, 'MODEL', 'DomainAnalyst',
-                `🧩 نموذج المشروع: ${summarizeModel(model)}`);
+                `🧩 نموذج المشروع: ${summarizeModel(model)}${seed ? ' (مبذور من مكتبة الفئة)' : ''}`);
         } catch (e) { console.warn('[ProjectModel]', 'فشل استخلاص نموذج المشروع:', e.message); }
 
         // 🧰 المسار الهجين — مشروع كبير → React/Next حقيقي بمعاينة حيّة؛ غيره → Vanilla سريع
