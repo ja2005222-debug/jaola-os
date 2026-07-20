@@ -49,6 +49,8 @@ function createProjectMemory(username, project, goal = '') {
         },
         // تاريخ التعديلات
         history: [],             // آخر 10 تعديلات
+        // 🧩 نموذج المجال المُهيكَل (كيانات + أدوار + تدفّقات) — طبقة الفهم
+        domainModel: null,
     };
 }
 
@@ -133,6 +135,20 @@ export function updateStructure(username, project, sections = [], features = [])
     if (features.length) mem.structure.features = features;
     mem.updatedAt = Date.now();
     saveToFile();
+}
+
+/** حفظ/تحديث نموذج المجال المُهيكَل للمشروع (يُدمج بشكل تراكمي في jcr) */
+export function setDomainModel(username, project, model) {
+    const mem = getProjectMemory(username, project);
+    mem.domainModel = model || null;
+    mem.updatedAt = Date.now();
+    saveToFile();
+    return mem.domainModel;
+}
+
+/** استرجاع نموذج المجال المحفوظ (أو null) */
+export function getDomainModel(username, project) {
+    return getProjectMemory(username, project).domainModel || null;
 }
 
 /** تسجيل تعديل جديد في التاريخ */
