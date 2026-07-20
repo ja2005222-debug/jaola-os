@@ -218,6 +218,9 @@ export default function Dashboard() {
   const [isSending, setIsSending] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [showGithubModal, setShowGithubModal] = useState(false);
+  const [showKnowledgeModal, setShowKnowledgeModal] = useState(false);
+  const [knowledge, setKnowledge] = useState(null);
+  const [knowledgeLoading, setKnowledgeLoading] = useState(false);
   const [showSecretsModal, setShowSecretsModal] = useState(false);
   const [secretKeys, setSecretKeys] = useState([]);
   const [newSecretKey, setNewSecretKey] = useState('');
@@ -355,6 +358,20 @@ export default function Dashboard() {
     } catch (e) {
       addNotification('❌ تعذّر الوصول للخادم للفحص.', 'info');
     }
+  };
+
+  // 📚 معرفة المنصّة — فهم المشروع الحالي + مكتبة الفئات + الدروس المتراكمة
+  const openKnowledgeModal = async () => {
+    setShowKnowledgeModal(true);
+    setKnowledgeLoading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/platform/knowledge?project=${encodeURIComponent(activeProject || '')}`, { headers: getHeaders() });
+      const d = await res.json();
+      setKnowledge(d);
+    } catch {
+      setKnowledge({ error: true });
+    }
+    setKnowledgeLoading(false);
   };
 
   // ⏹️ إيقاف المهمة الجارية
@@ -824,6 +841,82 @@ export default function Dashboard() {
     </div>
   );
 
+  // 📚 لوحة «معرفة المنصّة» — تجعل الفهم المتراكم مرئياً (المشروع + الفئات + الدروس)
+  const knowledgeModal = showKnowledgeModal && (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
+      onClick={e => e.target === e.currentTarget && setShowKnowledgeModal(false)}>
+      <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:'22px 20px', width:'min(560px, 100%)', maxHeight:'90dvh', overflowY:'auto' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+          <h3 style={{ color:'#fff', fontSize:15, fontWeight:800 }}>📚 {t('knTitle')}</h3>
+          <button onClick={() => setShowKnowledgeModal(false)}
+            style={{ background:'transparent', border:'none', color:S.muted, fontSize:20, cursor:'pointer', lineHeight:1 }}>×</button>
+        </div>
+
+        {knowledgeLoading && <p style={{ color:S.muted, fontSize:13 }}>{t('knLoading')}</p>}
+        {!knowledgeLoading && knowledge?.error && <p style={{ color:S.danger, fontSize:13 }}>{t('serverUnreachable')}</p>}
+
+        {!knowledgeLoading && knowledge && !knowledge.error && (
+          <>
+            {/* فهم المشروع الحالي */}
+            <div style={{ marginBottom:18 }}>
+              <p style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px', marginBottom:8 }}>{t('knProject')} — {activeProject}</p>
+              {knowledge.projectModel ? (
+                <div style={{ background:'#161b22', border:`1px solid ${S.border}`, borderRadius:10, padding:'12px 14px' }}>
+                  <p style={{ color:S.accent, fontSize:12, marginBottom:10 }}>{knowledge.projectSummary}</p>
+                  {['entities','roles','flows'].map(kind => (knowledge.projectModel[kind]?.length > 0) && (
+                    <div key={kind} style={{ marginBottom:8 }}>
+                      <span style={{ fontSize:10, color:S.muted, fontWeight:700 }}>{t('kn_'+kind)}: </span>
+                      <span style={{ fontSize:12, color:'#cbd5e1' }}>
+                        {knowledge.projectModel[kind].map(x => x.name).join('، ')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ color:S.muted, fontSize:12 }}>{t('knNoModel')}</p>
+              )}
+            </div>
+
+            {/* مكتبة نماذج الفئات المتراكمة */}
+            <div style={{ marginBottom:18 }}>
+              <p style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px', marginBottom:8 }}>{t('knLibrary')}</p>
+              {knowledge.library?.length ? (
+                <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                  {knowledge.library.map(c => (
+                    <div key={c.category} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', background:'#161b22', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 12px' }}>
+                      <span style={{ color:'#fff', fontSize:12, fontWeight:700 }}>{c.category}</span>
+                      <span style={{ color:S.muted, fontSize:11 }}>
+                        {c.entities}🧩 · {c.roles}👤 · {c.flows}🔀 · <span style={{ color:S.good }}>{c.verified}✓</span>/{c.contributions}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ color:S.muted, fontSize:12 }}>{t('knLibraryEmpty')}</p>
+              )}
+            </div>
+
+            {/* الدروس المتراكمة */}
+            <div>
+              <p style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px', marginBottom:8 }}>{t('knLessons')}</p>
+              {knowledge.lessons?.length ? (
+                <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                  {knowledge.lessons.map((l, i) => (
+                    <span key={i} style={{ background:'rgba(139,92,246,0.12)', border:'1px solid rgba(139,92,246,0.25)', borderRadius:14, padding:'4px 10px', fontSize:11, color:'#c4b5fd' }}>
+                      {l.key} <span style={{ opacity:0.7 }}>×{l.count}</span>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ color:S.muted, fontSize:12 }}>{t('knLessonsEmpty')}</p>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   const projectModal = showProjectModal && (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
       onClick={e => e.target === e.currentTarget && setShowProjectModal(false)}>
@@ -960,6 +1053,10 @@ export default function Dashboard() {
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>🐙</span> GitHub
                 </button>
+                <button onClick={() => { setShowMobileMenu(false); openKnowledgeModal(); }}
+                  style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
+                  <span style={{ fontSize:16 }}>📚</span> {t('knTitle')}
+                </button>
                 <button onClick={() => { setShowMobileMenu(false); openSecretsModal(); }}
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>🔑</span> {t('secretsTitle')}
@@ -1075,6 +1172,7 @@ export default function Dashboard() {
 
         {notificationsOverlay}
         {githubModal}
+        {knowledgeModal}
         {projectModal}
         {secretsModal}
 
@@ -1157,6 +1255,12 @@ export default function Dashboard() {
         </div>
 
         <div style={{ width:1, height:20, background:S.border }} />
+
+        {/* معرفة المنصّة */}
+        <button onClick={openKnowledgeModal} title={t('knTitle')}
+          style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 12px', color:'#94a3b8', fontSize:11, fontWeight:600 }}>
+          📚 {t('knTitle')}
+        </button>
 
         {/* GitHub */}
         <button onClick={openGithubModal} title={t('githubTitle')}
@@ -1428,6 +1532,7 @@ export default function Dashboard() {
 
       {notificationsOverlay}
       {githubModal}
+      {knowledgeModal}
       {projectModal}
       {secretsModal}
     </div>
