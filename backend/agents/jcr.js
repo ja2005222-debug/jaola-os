@@ -12,7 +12,7 @@ import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detec
 import { getLanguageDecision, buildLanguagePrompt } from './languageManager.js';
 import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure, setDomainModel, getDomainModel } from './projectMemory.js';
 import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel } from './projectModel.js';
-import { verifyBehavior } from './behaviorVerifier.js';
+import { verifyBehavior, buildBehaviorFixInstruction } from './behaviorVerifier.js';
 import { detectProjectType } from './knowledgeEngine.js';
 import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
 import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
@@ -876,22 +876,43 @@ export class JaolaCognitiveRuntime {
                 }
             } catch (e) { console.warn('[RenderDeploy]', 'فشل إعداد النشر:', e.message); }
 
-            // 🔬 التحقّق السلوكي — نُشغّل الصفحة فعلاً ونتحقّق أن التدفّق يعمل
-            // قبل إعلان النجاح. لا "نجاح" أجوف: نبثّ حكماً صادقاً بثغراته.
+            // 🔬 التحقّق السلوكي + جولة إصلاح تلقائية — نُشغّل الصفحة فعلاً،
+            // وإن كُشفت ثغرة (خطأ JS/زر ميت/دور بلا واجهة) نُصلحها ونُعيد
+            // التحقّق قبل إعلان النجاح. حلقة مغلقة تقفل باب "الوعود بلا إنجاز".
             try {
-                const verdict = await verifyBehavior({
-                    projectPath: context.projectPath,
-                    blueprint: context.blueprint,
-                    domainModel: getDomainModel(username, activeProject),
-                });
-                if (verdict.ran && !verdict.skipped) {
-                    const gaps = verdict.checks
-                        .filter(c => c.status === 'fail' || c.status === 'warn')
+                const domainModel = getDomainModel(username, activeProject);
+                const emitVerdict = (v, note = '') => {
+                    const gaps = v.checks.filter(c => c.status !== 'pass')
                         .map(c => `${c.status === 'fail' ? '❌' : '⚠️'} ${c.detail}`);
                     this.emitLiveLog(roomName, '6. VERIFY', 'BehaviorVerifier',
-                        verdict.ok
-                            ? `🔬 التحقّق السلوكي: يعمل (${verdict.summary})${gaps.length ? '\n' + gaps.join('\n') : ''}`
-                            : `🔬 التحقّق السلوكي كشف ثغرات (${verdict.summary}) — لم يُعلَن النجاح أجوفاً:\n${gaps.join('\n')}`);
+                        v.ok
+                            ? `🔬 التحقّق السلوكي: يعمل (${v.summary})${note}${gaps.length ? '\n' + gaps.join('\n') : ''}`
+                            : `🔬 ثغرات سلوكية (${v.summary})${note} — لم يُعلَن النجاح أجوفاً:\n${gaps.join('\n')}`);
+                };
+
+                let verdict = await verifyBehavior({ projectPath: context.projectPath, blueprint: context.blueprint, domainModel });
+                if (verdict.ran && !verdict.skipped) {
+                    emitVerdict(verdict);
+
+                    // جولة إصلاح واحدة مستهدفة إن وُجد فشل والميزانية تسمح
+                    if (!verdict.ok && agents.coreEditCodePlan && context.budget?.consumeCall?.()) {
+                        const instruction = buildBehaviorFixInstruction(verdict, domainModel);
+                        if (instruction) {
+                            this.emitLiveLog(roomName, '6. VERIFY', 'BehaviorVerifier', '🔧 جولة إصلاح سلوكية مستهدفة...');
+                            const lang = getUserLanguage(username) || 'ar';
+                            const files = await this.readProjectFilesArray(context.projectPath);
+                            const fixPlan = await agents.coreEditCodePlan(instruction, files, lang);
+                            if (fixPlan?.files?.length && !fixPlan.error) {
+                                const emitG = (m) => this.emitLiveLog(roomName, '6. VERIFY', 'CodeGuard', m);
+                                const guarded = await ensureEditIntegrity(
+                                    await guardFiles(scrubPlaceholders(fixPlan.files, activeProject), emitG),
+                                    context.projectPath, emitG);
+                                await writePlanFiles(context.projectPath, guarded);
+                                const recheck = await verifyBehavior({ projectPath: context.projectPath, blueprint: context.blueprint, domainModel });
+                                emitVerdict(recheck, recheck.ok ? ' (أُصلح تلقائياً)' : ' (بعد الإصلاح — يحتاج مراجعتك)');
+                            }
+                        }
+                    }
                 }
             } catch (e) { console.warn('[BehaviorVerify]', 'تعذّر التحقّق السلوكي:', e.message); }
 

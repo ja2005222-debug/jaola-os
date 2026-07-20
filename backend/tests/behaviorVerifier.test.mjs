@@ -7,6 +7,7 @@ import {
     analyzeStatic,
     summarizeVerdict,
     runBehaviorChecks,
+    buildBehaviorFixInstruction,
 } from '../agents/behaviorVerifier.js';
 
 test('inlineLocalScripts: يُضمّن السكربت المحلي ويترك الخارجي', () => {
@@ -100,4 +101,31 @@ test('runBehaviorChecks: تطبيق تفاعلي بلا أي عنصر تفاعل
     });
     assert.equal(v.checks.find(c => c.name === 'interactive-wired').status, 'fail');
     assert.equal(v.ok, false);
+});
+
+// ─── جولة الإصلاح التلقائية: من الحكم إلى تعليمة إصلاح مستهدفة ───────
+test('buildBehaviorFixInstruction: دور ناقص → تعليمة ببناء واجهته + النموذج', () => {
+    const verdict = { checks: [
+        { name: 'role-coverage', status: 'fail', detail: 'أدوار بلا واجهة: RestaurantOwner' },
+        { name: 'no-js-errors', status: 'pass' },
+    ] };
+    const ins = buildBehaviorFixInstruction(verdict, { roles: [{ name: 'Customer' }, { name: 'RestaurantOwner' }], entities: [{ name: 'Order' }] });
+    assert.match(ins, /RestaurantOwner/);
+    assert.match(ins, /واجهة استقبال الطلبات/, 'توجيه ملموس لبناء واجهة الدور');
+    assert.match(ins, /Order/, 'يستأنس بالنموذج');
+});
+
+test('buildBehaviorFixInstruction: أخطاء JS + أزرار ميتة → توجيهان', () => {
+    const verdict = { checks: [
+        { name: 'no-js-errors', status: 'fail', detail: 'ReferenceError: x' },
+        { name: 'interactive-wired', status: 'warn', detail: 'أزرار بلا استجابة' },
+    ] };
+    const ins = buildBehaviorFixInstruction(verdict);
+    assert.match(ins, /أخطاء JavaScript/);
+    assert.match(ins, /معالجات/);
+});
+
+test('buildBehaviorFixInstruction: لا ثغرات → نص فارغ (لا جولة إصلاح)', () => {
+    assert.equal(buildBehaviorFixInstruction({ checks: [{ name: 'a', status: 'pass' }] }), '');
+    assert.equal(buildBehaviorFixInstruction({ checks: [] }), '');
 });

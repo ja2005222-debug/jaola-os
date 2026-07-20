@@ -84,6 +84,39 @@ export function summarizeVerdict(checks) {
     };
 }
 
+/**
+ * يحوّل ثغرات الحكم السلوكي إلى تعليمة إصلاح مستهدفة للمولّد. دالة نقية.
+ * تُغذّي جولة الإصلاح التلقائية (verify → fix → re-verify).
+ */
+export function buildBehaviorFixInstruction(verdict, domainModel = null) {
+    const gaps = (verdict?.checks || []).filter(c => c.status === 'fail' || c.status === 'warn');
+    if (!gaps.length) return '';
+
+    const directives = [];
+    for (const c of gaps) {
+        if (c.name === 'no-js-errors') {
+            directives.push(`أصلح أخطاء JavaScript التي تمنع الصفحة من العمل (${c.detail}). يجب أن تُحمّل الصفحة وتعمل بلا أي خطأ في وحدة التحكّم.`);
+        } else if (c.name === 'interactive-wired') {
+            directives.push(c.status === 'fail'
+                ? 'التطبيق تفاعلي لكن بلا عناصر تفاعل حقيقية — أضف الحقول/الأزرار/النماذج اللازمة وصِلها بمعالجات (addEventListener) تعمل فعلاً على البيانات وتُحدّث الصفحة عند التفاعل.'
+                : 'توجد عناصر تفاعل لكنها لا تستجيب (أزرار/نماذج ميتة) — أضف معالجات تُحدّث الـ DOM فعلياً عند التفاعل. لا تترك أي عنصر تفاعل بلا وظيفة.');
+        } else if (c.name === 'role-coverage') {
+            directives.push(`${c.detail} ابنِ واجهة كل دور ناقص بمنظوره وعناصره — مثال: واجهة استقبال الطلبات لصاحب المطعم منفصلة عن واجهة الزبون، كلٌّ يعمل على نفس البيانات.`);
+        } else if (c.name === 'data-presence') {
+            directives.push('أضف بيانات وهمية واقعية (مصفوفة كائنات) في script.js لتشغيل المكوّنات فعلياً.');
+        }
+    }
+
+    let modelHint = '';
+    const roles = Array.isArray(domainModel?.roles) ? domainModel.roles.map(r => r.name).filter(Boolean) : [];
+    const ents = Array.isArray(domainModel?.entities) ? domainModel.entities.map(e => e.name).filter(Boolean) : [];
+    if (roles.length || ents.length) {
+        modelHint = `\n\nنموذج المشروع للاسترشاد — الأدوار: ${roles.join('، ') || '—'}؛ الكيانات: ${ents.join('، ') || '—'}. حافظ على تماسك النظام: كل دور له واجهته، وكل كيان له تمثيل بيانات فعلي.`;
+    }
+
+    return `أصلح المشكلات السلوكية التالية دون كسر التصميم القائم أو حذف ما يعمل:\n- ${directives.join('\n- ')}${modelHint}`;
+}
+
 // ── التشغيل الفعلي في jsdom ────────────────────────────────────────────
 
 /**
