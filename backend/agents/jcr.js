@@ -508,46 +508,50 @@ export class JaolaCognitiveRuntime {
                     transitionState(context.username, context.activeProject, STATES.VERIFYING, { agent: 'Requirements' });
                     this.emitLiveLog(roomName, '6. VERIFY', 'Requirements', '📋 التحقق من تنفيذ متطلبات المشروع...');
                     let verdict = await verifyRequirements(context.blueprint, plan.files);
-                    let fixedNames = [];
+                    const fixedNames = [];
 
                     // 📚 المتطلبات التي تُسلَّم ناقصة دروسٌ متراكمة للمنصة
                     for (const m of verdict?.missing || []) recordLesson('verifier_missing', m.name);
 
-                    if (verdict?.missing?.length && agents.coreEditCodePlan && context.budget.consumeCall()) {
+                    // 🏗️ إكمال الشاشات الناقصة — بناءُ الشاشات هو *جوهر* المشروع، فلا
+                    // نتركه رهين ميزانية النقاش (تُستنزف قبله بفريق الخلفية والمراجعة).
+                    // جولات محدودة (احتياطي مخصّص) تبني شاشةً فشاشة مدفوعةً بالنموذج،
+                    // وتتوقّف عند اكتمالها أو انعدام التقدّم. سجل المستخدم: 4 شاشات
+                    // ناقصة (طلب/مطعم/توصيل/تتبّع) لم تُبنَ لأن الجولة الواحدة تعذّرت.
+                    const domainModel = getDomainModel(context.username, context.activeProject);
+                    const MAX_COMPLETION_ROUNDS = 3;
+                    for (let round = 1; round <= MAX_COMPLETION_ROUNDS && verdict?.missing?.length && agents.coreEditCodePlan; round++) {
+                        const beforeCount = verdict.missing.length;
                         this.emitLiveLog(roomName, '6. VERIFY', 'Requirements',
-                            `🔧 ${verdict.missing.length} متطلب ناقص — جولة إصلاح مستهدفة: ${verdict.missing.map(m => m.name).join('، ')}`);
+                            `🏗️ إكمال الشاشات ${round}/${MAX_COMPLETION_ROUNDS} — ${beforeCount} ناقصة: ${verdict.missing.map(m => m.name).join('، ')}`);
                         const fixPlan = await agents.coreEditCodePlan(
-                            buildFixInstruction(verdict.missing), plan.files, lang
+                            buildFixInstruction(verdict.missing, domainModel), plan.files, lang
                         );
-                        if (fixPlan?.files?.length && !fixPlan.error) {
-                            const emitFixGuard = (m) => this.emitLiveLog(roomName, '6. VERIFY', 'CodeGuard', m);
-                            const guardedFix = await ensureEditIntegrity(
-                                await guardFiles(
-                                    scrubPlaceholders(fixPlan.files, context.activeProject),
-                                    emitFixGuard
-                                ),
-                                context.projectPath, emitFixGuard);
-                            // دمج الملفات المُصلحة في الخطة وكتابتها على القرص
-                            for (const f of guardedFix) {
-                                if (!f?.name || typeof f.content !== 'string') continue;
-                                const idx = plan.files.findIndex(p => p.name === f.name);
-                                if (idx >= 0) plan.files[idx] = f; else plan.files.push(f);
-                                const fp = path.join(context.projectPath, f.name);
-                                await fsPromises.mkdir(path.dirname(fp), { recursive: true });
-                                await fsPromises.writeFile(fp, f.content);
-                            }
-                            const before = new Set(verdict.missing.map(m => m.name));
-                            // إعادة تحقق سريعة — الصادق فقط يُعرض كمُصلَح
-                            const recheck = context.budget.consumeCall()
-                                ? await verifyRequirements(context.blueprint, plan.files)
-                                : null;
-                            if (recheck) {
-                                fixedNames = recheck.results
-                                    .filter(r => r.implemented && before.has(r.name))
-                                    .map(r => r.name);
-                                verdict = recheck;
-                            }
+                        if (!fixPlan?.files?.length || fixPlan.error) break;
+
+                        const emitFixGuard = (m) => this.emitLiveLog(roomName, '6. VERIFY', 'CodeGuard', m);
+                        const guardedFix = await ensureEditIntegrity(
+                            await guardFiles(
+                                scrubPlaceholders(fixPlan.files, context.activeProject),
+                                emitFixGuard
+                            ),
+                            context.projectPath, emitFixGuard);
+                        // دمج الملفات المُصلحة في الخطة وكتابتها على القرص
+                        for (const f of guardedFix) {
+                            if (!f?.name || typeof f.content !== 'string') continue;
+                            const idx = plan.files.findIndex(p => p.name === f.name);
+                            if (idx >= 0) plan.files[idx] = f; else plan.files.push(f);
+                            const fp = path.join(context.projectPath, f.name);
+                            await fsPromises.mkdir(path.dirname(fp), { recursive: true });
+                            await fsPromises.writeFile(fp, f.content);
                         }
+                        const before = new Set(verdict.missing.map(m => m.name));
+                        verdict = await verifyRequirements(context.blueprint, plan.files);
+                        for (const r of verdict.results.filter(r => r.implemented && before.has(r.name))) {
+                            if (!fixedNames.includes(r.name)) fixedNames.push(r.name);
+                        }
+                        // توقّف إن لم يتقدّم شيء (تجنّب جولات بلا فائدة)
+                        if (verdict.missing.length >= beforeCount) break;
                     }
 
                     if (verdict) {
