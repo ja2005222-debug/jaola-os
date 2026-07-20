@@ -44,7 +44,7 @@ import {
 
 import { schemas, validate, sanitizePath } from './middleware/security.js';
 import { abortMission, hasActiveMission } from './services/abortRegistry.js';
-import { pushProject, getIntegration } from './services/githubSync.js';
+import { pushProject, getIntegration, isPlatformRepo } from './services/githubSync.js';
 import { encryptSecret, decryptSecret } from './utils/secretVault.js';
 import * as oauth from './services/oauthLite.js';
 import * as ghFiles from './services/githubFiles.js';
@@ -1066,6 +1066,11 @@ app.post('/api/github/connect', verifyToken, validate(schemas.githubConnect), va
 
     if (!isDbConnected || mongoose.connection.readyState !== 1) {
         return res.status(503).json({ error: 'قاعدة البيانات غير متصلة — لا يمكن حفظ إعدادات GitHub حالياً.' });
+    }
+
+    // 🛡️ منع ربط المشروع بمستودع المنصّة نفسه — الدفع force على main يمحوها
+    if (repoUrl && isPlatformRepo(repoUrl)) {
+        return res.status(400).json({ error: 'لا يمكن ربط مشروعك بمستودع المنصّة نفسه (jaola-os). أنشئ مستودعاً جديداً فارغاً خاصاً بمشروعك واربطه به.' });
     }
 
     try {

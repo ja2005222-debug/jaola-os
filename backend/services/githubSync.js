@@ -27,6 +27,24 @@ export async function getIntegration(username, projectName) {
     }
 }
 
+// 🛡️ حارس أمان حاسم: يمنع الدفع إلى مستودع المنصّة نفسه.
+// الدفع يتم بـ "HEAD:main --force" — فربط مشروع مستخدم بمستودع المنصّة
+// (jaola-os) يمحو كودها بالكامل عند أول دفعة. كل مشروع يحتاج مستودعه المنفصل.
+export function isPlatformRepo(repoUrl) {
+    const slug = (url) => {
+        const m = /github\.com[:/]+([^/]+)\/([^/\s]+?)(?:\.git)?\/?$/i.exec(url || '');
+        return m ? `${m[1]}/${m[2]}`.toLowerCase() : '';
+    };
+    const target = slug(repoUrl);
+    if (!target) return false;
+    const platformSlug = (process.env.PLATFORM_REPO_SLUG || 'ja2005222-debug/jaola-os').toLowerCase();
+    if (target === platformSlug) return true;
+    // احتياط ضد الـ forks: أي مستودع بنفس الاسم الأساسي للمنصّة يُمنع أيضاً
+    return target.split('/')[1] === platformSlug.split('/')[1];
+}
+
+const PLATFORM_REPO_ERROR = 'لا يمكن ربط مشروعك بمستودع المنصّة نفسه (jaola-os) — الدفع سيمحو كود المنصّة بالكامل. أنشئ مستودعاً جديداً فارغاً خاصاً بمشروعك على GitHub واربطه به.';
+
 // بناء رابط push مُصادق عليه بالتوكن — لا يُخزَّن أبداً في .git/config
 export function buildAuthUrl(repoUrl, patEncrypted) {
     if (!patEncrypted || !repoUrl?.startsWith('https://')) return null;
@@ -50,6 +68,11 @@ export async function pushProject(username, projectName, projectPath, overrides 
 
     if (!repoUrl) {
         return { success: false, error: 'لا يوجد مستودع مرتبط. اربط المشروع بـ GitHub أولاً.' };
+    }
+
+    // 🛡️ لا نسمح أبداً بالدفع إلى مستودع المنصّة (force على main يمحو كل شيء)
+    if (isPlatformRepo(repoUrl)) {
+        return { success: false, error: PLATFORM_REPO_ERROR };
     }
 
     const authUrl = buildAuthUrl(repoUrl, integration?.patEncrypted);
