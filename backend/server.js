@@ -58,6 +58,7 @@ import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/
 import { getProjectMemory, getDomainModel } from './agents/projectMemory.js';
 import { summarizeModel } from './agents/projectModel.js';
 import { librarySummary } from './agents/modelLibrary.js';
+import { listClones } from './agents/cloneTemplates/index.js';
 import { setProjectSecret, deleteProjectSecret, getProjectSecretNames, getProjectSecrets } from './services/projectSecrets.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
 import { buildMetricsPayload } from './services/metricsStore.js';
@@ -1153,6 +1154,7 @@ app.get('/api/platform/knowledge', verifyToken, (req, res) => {
         projectSummary: projectModel ? summarizeModel(projectModel) : null,
         library: librarySummary().sort((a, b) => b.contributions - a.contributions),
         lessons: topLessons(15),
+        clones: listClones(), // قوالب التطبيقات العاملة المتاحة (كلون + بصمة)
     });
 });
 

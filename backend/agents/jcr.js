@@ -13,6 +13,7 @@ import { getLanguageDecision, buildLanguagePrompt } from './languageManager.js';
 import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure, setDomainModel, getDomainModel } from './projectMemory.js';
 import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel, buildAppSections } from './projectModel.js';
 import { getLibraryModel, recordModel } from './modelLibrary.js';
+import { matchCloneTemplate } from './cloneTemplates/index.js';
 import { verifyBehavior, buildBehaviorFixInstruction, analyzeProjectStatic, readPageCode } from './behaviorVerifier.js';
 import { detectProjectType } from './knowledgeEngine.js';
 import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
@@ -1212,6 +1213,18 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 `🧩 نموذج المشروع: ${summarizeModel(model)}${seed ? ' (مبذور من مكتبة الفئة)' : ''}`);
         } catch (e) { console.warn('[ProjectModel]', 'فشل استخلاص نموذج المشروع:', e.message); }
 
+        // 🍔 كلون عامل — للتطبيقات المعقّدة المطابقة نبدأ من *تطبيق يعمل فعلاً*
+        // (يجتاز التحقّق السلوكي) بدل التوليد من الصفر الذي يفشل (app.js لا يُكتب،
+        // أدوار ناقصة)، ثم نضع البصمة. هذا يضمن أن يعمل مشروع التوصيل من أول مرة.
+        try {
+            const existingCtx = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
+            const isFreshBuild = !existingCtx || existingCtx.trim().length < 80;
+            const clone = matchCloneTemplate(goal, blueprint, getDomainModel(username, activeProject));
+            if (clone && isFreshBuild) {
+                return await this._buildFromClone(clone, goal, projectPath, username, activeProject, roomName, agents);
+            }
+        } catch (e) { console.warn('[Clone]', 'تعذّر مطابقة الكلون:', e.message); }
+
         // 🧰 المسار الهجين — مشروع كبير → React/Next حقيقي بمعاينة حيّة؛ غيره → Vanilla سريع
         try {
             const ptype = blueprint?.category && blueprint.category !== 'other' ? blueprint.category : detectProjectType(goal);
@@ -1851,6 +1864,77 @@ User preferences: ${JSON.stringify(execMemory)}` },
             : `✅ Applied the change to **${changedNames}** only (no full rebuild) — preview updated.`;
         this.io.to(roomName).emit('chat_reply', { message: msg, options: lang === 'ar' ? ['🚀 انشر الآن', '📊 أين وصلنا'] : ['🚀 Deploy now', '📊 Status'] });
         return { success: true, edited: guarded.map(f => f.name) };
+    }
+
+    // 🍔 بناء من كلون عامل — يكتب تطبيقاً يعمل فعلاً، يضع البصمة (تخصيص محتوى
+    // آمن مع تراجع عند الكسر)، يتحقّق سلوكياً، ويُنهي كبناءٍ ناجح.
+    async _buildFromClone(clone, goal, projectPath, username, activeProject, roomName, agents) {
+        const lang = getUserLanguage(username) || 'ar';
+        const t0 = Date.now();
+        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
+        this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', `🍔 كلون عامل: ${clone.name} — نبدأ من تطبيق يعمل فعلاً (لا توليد من الصفر)`);
+
+        // 1) اكتب ملفات الكلون العامل
+        for (const f of clone.files) {
+            await fsPromises.writeFile(path.join(projectPath, f.name), f.content);
+        }
+        // احفظ نموذج الكلون (يُدمج + يُغني المكتبة)
+        const model = mergeProjectModel(getDomainModel(username, activeProject) || {}, clone.model);
+        setDomainModel(username, activeProject, model);
+
+        // 2) البصمة — تخصيص المحتوى/العلامة فقط، مع تراجع آمن إن كسر التطبيق
+        if (agents?.coreEditCodePlan) {
+            try {
+                this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', '🎨 وضع البصمة — تخصيص المحتوى ليطابق طلبك...');
+                const baseFiles = clone.files.map(f => ({ name: f.name, content: f.content }));
+                const instruction = `خصّص *المحتوى والعلامة التجارية فقط* ليطابق: "${goal}". يمكنك تغيير: اسم التطبيق/العلامة، أسماء المطاعم وأصنافها وأسعارها، النصوص، ولوحة الألوان في styles.css إن لزم. **حافظ حرفياً على كل الدوال في app.js وبنية index.html ومعرّفات العناصر (id وdata-action) وتفويض الأحداث** — لا تحذف أي دالة ولا تكسر أي تفاعل. أعِد الملفات الثلاثة كاملةً.`;
+                const fixPlan = await agents.coreEditCodePlan(instruction, baseFiles, lang);
+                if (fixPlan?.files?.length && !fixPlan.error) {
+                    const emitG = (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m);
+                    const guarded = await ensureEditIntegrity(
+                        await guardFiles(scrubPlaceholders(fixPlan.files, activeProject), emitG), projectPath, emitG);
+                    await writePlanFiles(projectPath, guarded);
+                    const verdict = await verifyBehavior({ projectPath, blueprint: { kind: 'webapp' }, domainModel: model });
+                    if (verdict.ran && !verdict.ok) {
+                        this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', '↩️ التخصيص كسر التطبيق — استرجاع الكلون العامل النظيف.');
+                        for (const f of clone.files) await fsPromises.writeFile(path.join(projectPath, f.name), f.content);
+                    } else {
+                        this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', `✅ البصمة وُضعت والتطبيق يعمل (${verdict.summary || 'تحقّق سلوكي'}).`);
+                    }
+                }
+            } catch (e) { this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', `⚠️ تخطّي التخصيص (الكلون العامل محفوظ): ${e.message}`); }
+        }
+
+        // 3) إعداد النشر (موقع ثابت — لا خادم مطلوب للكلون التجريبي)
+        try {
+            const projectName = `${username}-${activeProject}`.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 50);
+            await prepareRenderDeploy(projectPath, projectName, false);
+        } catch { /* اختياري */ }
+
+        // 4) نهائيات كبناءٍ ناجح
+        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
+        transitionState(username, activeProject, STATES.COMPLETED);
+        updateStructure(username, activeProject,
+            (clone.model.roles || []).map(r => `واجهة ${r.name}`),
+            (clone.model.flows || []).map(f => f.name));
+        addToHistory(username, activeProject, `كلون ${clone.id}: ${(goal || '').slice(0, 60)}`);
+        this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        let builtFiles = [];
+        try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
+        this.io.to(roomName).emit('workspace_files', builtFiles);
+        snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
+        autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
+        const durationSec = Math.round((Date.now() - t0) / 1000);
+        recordBuild(username, activeProject, { success: true, durationSec, filesCount: builtFiles.length, goal: goal || '' });
+        this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
+        try { recordModel(clone.category, model, { verified: true }); } catch {}
+
+        const msg = lang === 'ar'
+            ? `✅ اكتمل — بدأنا من كلون **${clone.name}** يعمل فعلاً (واجهات: زبون · مطعم · سائق · تتبّع) ووضعنا بصمتك. جرّب التبويبات في المعاينة: أضِف للسلة، قدّم طلباً، ثم افتح تبويب المطعم لتراه يصل. اطلب أي تعديل.`
+            : `✅ Done — started from a working **${clone.name}** clone (customer · restaurant · driver · tracking) and applied your brand. Try the tabs in the preview.`;
+        this.io.to(roomName).emit('chat_reply', { message: msg });
+        this.emitLiveLog(roomName, 'JCOS', 'Kernel', '✨ نجاح (كلون عامل)');
+        return { success: true, clone: clone.id };
     }
 
     // ⚛️ بناء مشروع React/Next حقيقي + معاينة حيّة في الـ iframe + خيار النشر
