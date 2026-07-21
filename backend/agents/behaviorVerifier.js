@@ -162,7 +162,9 @@ export function buildBehaviorFixInstruction(verdict, domainModel = null) {
 
     const directives = [];
     for (const c of gaps) {
-        if (c.name === 'wiring-complete') {
+        if (c.name === 'missing-script') {
+            directives.push(`أنشئ ملف السكربت المفقود المُشار إليه في index.html (${c.detail}) ونفّذ فيه **كل** منطق التطبيق: تعريف كل الدوال المستدعاة (معالجات الأزرار والنماذج) وبيانات وهمية واقعية — بنفس اسم الملف الذي يشير إليه index.html بالضبط.`);
+        } else if (c.name === 'wiring-complete') {
             directives.push(`أكمل المنطق الناقص: هناك دوال مُشار إليها (أزرار/معالجات/DOMContentLoaded) لكنها **غير معرّفة** — ${c.detail}. **عرّف كل دالة منها ونفّذها فعلياً** بحيث تعمل على البيانات وتُحدّث الصفحة (submitOrder يُنشئ طلباً ويحفظه، renderRestaurantOrders يعرض طلبات المطعم، renderDeliveryOrders يعرض طلبات التوصيل، trackOrder يعرض حالة الطلب... حسب أسمائها). لا تترك أي مرجع معلّق.`);
         } else if (c.name === 'no-js-errors') {
             directives.push(`أصلح أخطاء JavaScript التي تمنع الصفحة من العمل (${c.detail}). يجب أن تُحمّل الصفحة وتعمل بلا أي خطأ في وحدة التحكّم.`);
@@ -265,7 +267,7 @@ async function runInJsdom(html, { timeoutMs = 4000 } = {}) {
  * الحكم السلوكي الكامل: فحوص ساكنة + تشغيل فعلي في jsdom.
  * @returns {Promise<{ok, score, checks, summary, ran}>}
  */
-export async function runBehaviorChecks({ html = '', assets = {}, blueprint = null, domainModel = null, timeoutMs = 4000 } = {}) {
+export async function runBehaviorChecks({ html = '', assets = {}, blueprint = null, domainModel = null, missingScripts = [], timeoutMs = 4000 } = {}) {
     // مجموعة JS للواجهة: السكربتات الخارجية + محتوى <script> السطري (كلاهما
     // يُعرّف/يستدعي دوالّ، فيجب فحصهما معاً لدقّة كشف الدوال المعلّقة).
     const external = Object.entries(assets)
@@ -276,6 +278,13 @@ export async function runBehaviorChecks({ html = '', assets = {}, blueprint = nu
     const js = `${inlineJs}\n${external}`;
 
     const checks = analyzeStatic({ html, js, blueprint, domainModel });
+
+    // 📄 سكربت مُشار إليه في index.html لكنه مفقود على القرص → كل دواله معدومة
+    // (سجل مستخدم: index.html يشير إلى app.js وهو غير موجود → التطبيق ميّت).
+    if (Array.isArray(missingScripts) && missingScripts.length) {
+        checks.push({ name: 'missing-script', status: 'fail',
+            detail: `الصفحة تشير إلى سكربت مفقود على القرص: ${missingScripts.join('، ')} — يجب إنشاؤه بكل منطق التطبيق.` });
+    }
 
     const inlined = inlineLocalScripts(html, assets);
     const run = await runInJsdom(inlined, { timeoutMs });
@@ -317,6 +326,7 @@ export async function readPageCode(projectPath) {
     if (!fs.existsSync(indexPath)) return null;
     const html = fs.readFileSync(indexPath, 'utf8');
     const assets = {};
+    const missingScripts = [];
     const srcRe = /<script\b[^>]*\bsrc=["']([^"']+)["']/gi;
     let sm;
     while ((sm = srcRe.exec(html))) {
@@ -327,9 +337,10 @@ export async function readPageCode(projectPath) {
         try {
             const fp = p.join(projectPath, rel);
             if (fs.existsSync(fp)) assets[rel] = fs.readFileSync(fp, 'utf8');
+            else missingScripts.push(rel); // مُشار إليه لكن غير موجود على القرص
         } catch {}
     }
-    return { html, assets };
+    return { html, assets, missingScripts };
 }
 
 /**
@@ -339,7 +350,7 @@ export async function verifyBehavior({ projectPath, blueprint = null, domainMode
     try {
         const page = await readPageCode(projectPath);
         if (!page) return { ok: true, score: 100, checks: [], summary: 'لا index.html للتحقّق منه.', ran: false, skipped: true };
-        return await runBehaviorChecks({ html: page.html, assets: page.assets, blueprint, domainModel, timeoutMs });
+        return await runBehaviorChecks({ html: page.html, assets: page.assets, blueprint, domainModel, missingScripts: page.missingScripts, timeoutMs });
     } catch (e) {
         return { ok: true, score: 0, checks: [{ name: 'runtime', status: 'warn', detail: `تعذّر التحقّق: ${(e?.message || e).toString().slice(0, 120)}` }], summary: 'تعذّر التحقّق', ran: false };
     }
@@ -359,7 +370,12 @@ export async function analyzeProjectStatic({ projectPath, domainModel = null, bl
         const inlineJs = [...page.html.matchAll(/<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)]
             .map(m => m[1]).join('\n');
         const js = `${inlineJs}\n${external}`;
-        return { hasProject: true, checks: analyzeStatic({ html: page.html, js, blueprint, domainModel }) };
+        const checks = analyzeStatic({ html: page.html, js, blueprint, domainModel });
+        if (page.missingScripts?.length) {
+            checks.push({ name: 'missing-script', status: 'fail',
+                detail: `الصفحة تشير إلى سكربت مفقود: ${page.missingScripts.join('، ')} — غير موجود على القرص.` });
+        }
+        return { hasProject: true, checks };
     } catch {
         return { hasProject: false, checks: [] };
     }
