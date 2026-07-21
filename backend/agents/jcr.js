@@ -13,7 +13,7 @@ import { getLanguageDecision, buildLanguagePrompt } from './languageManager.js';
 import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure, setDomainModel, getDomainModel } from './projectMemory.js';
 import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel, buildAppSections } from './projectModel.js';
 import { getLibraryModel, recordModel } from './modelLibrary.js';
-import { verifyBehavior, buildBehaviorFixInstruction } from './behaviorVerifier.js';
+import { verifyBehavior, buildBehaviorFixInstruction, analyzeProjectStatic } from './behaviorVerifier.js';
 import { detectProjectType } from './knowledgeEngine.js';
 import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
 import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
@@ -1023,6 +1023,9 @@ export class JaolaCognitiveRuntime {
 
         // 🧠 Project Brain — يفهم كامل المشروع (ملفات + قرارات + أُنجز/متبقٍّ) لا الرسالة الأخيرة فقط
         let brainContext = '';
+        // 🔬 فجوات محقّقة من الكود الفعلي — تُؤرّض «ماذا تبقى» على الواقع لا على
+        // خطة مخزّنة (المستخدم: الردّ يقرأ الخطة لا الملفات، فيجهل ما يجب عمله).
+        let verifiedGaps = '';
         const project = roomName.startsWith(username + '-') ? roomName.slice(username.length + 1) : null;
         try {
             if (project) {
@@ -1032,6 +1035,17 @@ export class JaolaCognitiveRuntime {
                 const files = await scanProjectFiles(projectPath, { maxFiles: 300 });
                 const brain = buildProjectBrain(getProjectMemory(username, project), files);
                 brainContext = summarizeBrain(brain, userLang);
+
+                // فحص ساكن حقيقي على كود الواجهة (أدوار بلا واجهة، دوال معلّقة...)
+                const { hasProject, checks } = await analyzeProjectStatic({
+                    projectPath, domainModel: getDomainModel(username, project),
+                });
+                if (hasProject) {
+                    const gaps = checks.filter(c => c.status !== 'pass').map(c => `- ${c.detail}`);
+                    verifiedGaps = gaps.length
+                        ? `\n## VERIFIED FROM ACTUAL CODE (authoritative — OVERRIDES any planned/remaining list; report THESE as the real remaining work):\n${gaps.join('\n')}`
+                        : `\n## VERIFIED FROM ACTUAL CODE: the built screens work — no structural gaps (all roles have UI, no dangling functions). Do NOT claim planned items are missing unless you see them absent here.`;
+                }
             }
         } catch { /* الشات يعمل حتى لو تعذّر بناء الصورة */ }
 
@@ -1066,6 +1080,7 @@ RESPONSE RULES:
 
 ## Current project state (Project Brain — the ONLY source of truth about the project):
 ${brainContext || 'No project files yet.'}
+${verifiedGaps}
 ${convSummary ? `\n## LONG-TERM CONVERSATION MEMORY (do not lose this context; never contradict earlier decisions or re-ask known facts):\n${convSummary}\n` : ''}
 User preferences: ${JSON.stringify(execMemory)}` },
             ...history,

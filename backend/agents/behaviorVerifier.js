@@ -306,35 +306,61 @@ export async function runBehaviorChecks({ html = '', assets = {}, blueprint = nu
 }
 
 /**
+ * يقرأ كود الواجهة من القرص: index.html + السكربتات المحلية التي تُحمّلها
+ * فعلاً (لا ملفات الخادم). يعود بـ null إن لا index.html. آمن.
+ */
+export async function readPageCode(projectPath) {
+    const fs = await import('fs');
+    const path = await import('path');
+    const p = path.default || path;
+    const indexPath = p.join(projectPath, 'index.html');
+    if (!fs.existsSync(indexPath)) return null;
+    const html = fs.readFileSync(indexPath, 'utf8');
+    const assets = {};
+    const srcRe = /<script\b[^>]*\bsrc=["']([^"']+)["']/gi;
+    let sm;
+    while ((sm = srcRe.exec(html))) {
+        const src = sm[1];
+        if (/^(https?:)?\/\//i.test(src)) continue; // خارجي
+        const rel = src.replace(/^\.?\//, '').split('?')[0];
+        if (!/\.(m?js)$/i.test(rel)) continue;
+        try {
+            const fp = p.join(projectPath, rel);
+            if (fs.existsSync(fp)) assets[rel] = fs.readFileSync(fp, 'utf8');
+        } catch {}
+    }
+    return { html, assets };
+}
+
+/**
  * غلاف يقرأ ملفات المشروع من القرص ويُشغّل التحقّق. آمن (لا يرمي أبداً).
  */
 export async function verifyBehavior({ projectPath, blueprint = null, domainModel = null, timeoutMs = 4000 } = {}) {
     try {
-        const fs = await import('fs');
-        const path = await import('path');
-        const p = path.default || path;
-        const indexPath = p.join(projectPath, 'index.html');
-        if (!fs.existsSync(indexPath)) {
-            return { ok: true, score: 100, checks: [], summary: 'لا index.html للتحقّق منه.', ran: false, skipped: true };
-        }
-        const html = fs.readFileSync(indexPath, 'utf8');
-        // نقتصر على السكربتات التي تُحمّلها الصفحة فعلاً (الواجهة) — لا ملفات
-        // الخادم (server.js/api) التي تستعمل require/express فتُحرَّم خطأً.
-        const assets = {};
-        const srcRe = /<script\b[^>]*\bsrc=["']([^"']+)["']/gi;
-        let sm;
-        while ((sm = srcRe.exec(html))) {
-            const src = sm[1];
-            if (/^(https?:)?\/\//i.test(src)) continue; // خارجي
-            const rel = src.replace(/^\.?\//, '').split('?')[0];
-            if (!/\.(m?js)$/i.test(rel)) continue;
-            try {
-                const fp = p.join(projectPath, rel);
-                if (fs.existsSync(fp)) assets[rel] = fs.readFileSync(fp, 'utf8');
-            } catch {}
-        }
-        return await runBehaviorChecks({ html, assets, blueprint, domainModel, timeoutMs });
+        const page = await readPageCode(projectPath);
+        if (!page) return { ok: true, score: 100, checks: [], summary: 'لا index.html للتحقّق منه.', ran: false, skipped: true };
+        return await runBehaviorChecks({ html: page.html, assets: page.assets, blueprint, domainModel, timeoutMs });
     } catch (e) {
         return { ok: true, score: 0, checks: [{ name: 'runtime', status: 'warn', detail: `تعذّر التحقّق: ${(e?.message || e).toString().slice(0, 120)}` }], summary: 'تعذّر التحقّق', ran: false };
+    }
+}
+
+/**
+ * تحليل ساكن سريع للمشروع الفعلي (بلا jsdom) — يُعطي فجوات حقيقية من الكود
+ * (أدوار بلا واجهة، دوال معلّقة، لا بيانات) لتأريض ردّ الشات على «ماذا تبقى»
+ * بدل خطة مخزّنة. آمن (لا يرمي).
+ */
+export async function analyzeProjectStatic({ projectPath, domainModel = null, blueprint = null } = {}) {
+    try {
+        const page = await readPageCode(projectPath);
+        if (!page) return { hasProject: false, checks: [] };
+        const external = Object.entries(page.assets)
+            .filter(([k]) => /\.(m?js)$/i.test(k)).map(([, v]) => v).join('\n');
+        const inlineJs = [...page.html.matchAll(/<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)]
+            .map(m => m[1]).join('\n');
+        const js = `${inlineJs}\n${external}`;
+        return { hasProject: true, checks: analyzeStatic({ html: page.html, js, blueprint, domainModel }) };
+    } catch {
+        return { hasProject: false, checks: [] };
     }
 }
