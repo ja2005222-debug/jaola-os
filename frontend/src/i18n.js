@@ -130,6 +130,8 @@ const STRINGS = {
   kn_entities: { en: 'Entities', ar: 'الكيانات' },
   kn_roles: { en: 'Roles', ar: 'الأدوار' },
   kn_flows: { en: 'Flows', ar: 'التدفّقات' },
+  knClones: { en: 'Working app templates (clone + brand)', ar: 'قوالب تطبيقات عاملة (كلون + بصمة)' },
+  knClonesEmpty: { en: 'No templates yet.', ar: 'لا قوالب بعد.' },
   knLibrary: { en: 'Category model library (cross-project)', ar: 'مكتبة نماذج الفئات (عبر المشاريع)' },
   knLibraryEmpty: { en: 'Empty — successful builds enrich it over time.', ar: 'فارغة — كل بناء ناجح يُغنيها تدريجياً.' },
   knLessons: { en: 'Accumulated lessons', ar: 'الدروس المتراكمة' },

@@ -877,6 +877,24 @@ export default function Dashboard() {
               )}
             </div>
 
+            {/* قوالب التطبيقات العاملة (كلون + بصمة) */}
+            <div style={{ marginBottom:18 }}>
+              <p style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px', marginBottom:8 }}>{t('knClones')}</p>
+              {knowledge.clones?.length ? (
+                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                  {knowledge.clones.map(c => (
+                    <div key={c.id} style={{ background:'#161b22', border:'1px solid rgba(255,107,53,0.25)', borderRadius:10, padding:'10px 12px' }}>
+                      <div style={{ color:'#fff', fontSize:13, fontWeight:800 }}>🍔 {c.name}</div>
+                      <div style={{ color:S.muted, fontSize:11, marginTop:3 }}>{c.description}</div>
+                      <div style={{ color:'#ff9d6b', fontSize:10, marginTop:5 }}>{(c.roles||[]).join(' · ')}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ color:S.muted, fontSize:12 }}>{t('knClonesEmpty')}</p>
+              )}
+            </div>
+
             {/* مكتبة نماذج الفئات المتراكمة */}
             <div style={{ marginBottom:18 }}>
               <p style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px', marginBottom:8 }}>{t('knLibrary')}</p>
