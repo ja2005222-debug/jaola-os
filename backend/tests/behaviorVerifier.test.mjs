@@ -243,3 +243,21 @@ test('buildBehaviorFixInstruction: missing-script → توجيه بإنشاء ا
     assert.match(ins, /أنشئ ملف السكربت المفقود/);
     assert.match(ins, /app\.js/);
 });
+
+// ─── jsdom لا يطبّق requestSubmit → كان يُحسب خطأ JS كاذباً ──────────
+test('runBehaviorChecks: form.requestSubmit() لا يُحسب خطأ JS (بديل jsdom)', async () => {
+    const html = `<!doctype html><html><body>
+      <form id="f"><input name="q"><button type="submit">إرسال</button></form>
+      <button id="go">go</button><script src="app.js"></script></body></html>`;
+    const js = `
+      document.getElementById('go').addEventListener('click', () => {
+        document.getElementById('f').requestSubmit();
+      });
+      const data = [{id:1}];`;
+    const v = await runBehaviorChecks({
+        html, assets: { 'app.js': js },
+        blueprint: { kind: 'webapp', functionalComponents: [{ name: 'submit' }] },
+    });
+    assert.equal(v.ran, true);
+    assert.notEqual(v.checks.find(c => c.name === 'no-js-errors').status, 'fail', 'requestSubmit ليس عطلاً');
+});
