@@ -1884,6 +1884,34 @@ User preferences: ${JSON.stringify(execMemory)}` },
             });
         } catch (e) { console.warn('[BehaviorVerify]', 'تخطّي التحقّق بعد التعديل:', e.message); }
 
+        // 🛡️ حارس ارتداد الميزات — سجل المستخدم: تعديل كبير بُتر مخرَجه، فالإصلاح
+        // التلقائي أنتج نسخة أصغر حذفت المحاسبة. أي تعديل يحذف دوالّ موجودة (ولم
+        // يُطلب حذفها) يُرفض ويُسترجع الأصل الكامل — لا تُفقد ميزة بصمت أبداً.
+        try {
+            const afterJs = (await this.readProjectFilesArray(projectPath))
+                .filter(f => /\.(m?js)$/i.test(f.name)).map(f => f.content).join('\n');
+            const afterFns = extractDefinedFunctions(afterJs);
+            const lost = existingFns.filter(n => !afterFns.has(n));
+            const isRemoval = /احذف|امسح|أزل|إزالة|شيل|بسّ?ط|remove|delete|drop|simplify/i.test(instruction);
+            if (lost.length >= 2 && !isRemoval) {
+                this.emitLiveLog(roomName, 'EDIT', 'RegressionGuard',
+                    `↩️ التعديل حذف ${lost.length} ميزة (${lost.slice(0, 5).join('، ')}) — استرجاع نسختك الكاملة.`);
+                for (const f of files) await fsPromises.writeFile(path.join(projectPath, f.name), f.content);
+                if (isReact) {
+                    try {
+                        const src = await fsPromises.readFile(path.join(projectPath, 'lib/content.js'), 'utf8');
+                        for (const pg of buildStaticSiteFromSource(src, lang)) await fsPromises.writeFile(path.join(projectPath, pg.name), pg.content);
+                    } catch {}
+                }
+                this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+                const warn = lang === 'en'
+                    ? `⚠️ This change would have dropped existing features (${lost.slice(0, 4).join(', ')}) — likely the file grew and the output was cut off. I kept your full working version. Try a smaller, more specific change (one feature at a time).`
+                    : `⚠️ هذا التعديل كان سيحذف ميزات موجودة (${lost.slice(0, 4).join('، ')}) — غالباً لأن الملف كبر وانقطع الناتج. أبقيتُ نسختك الكاملة سليمة. جرّب طلباً **أصغر وأكثر تحديداً** (ميزة واحدة كل مرة).`;
+                this.io.to(roomName).emit('chat_reply', { message: warn });
+                return { success: false, reverted: true, lost };
+            }
+        } catch (e) { console.warn('[RegressionGuard]', 'تعذّر فحص الارتداد:', e.message); }
+
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
 
         const changedNames = guarded.map(f => f.name).join('، ');
