@@ -131,9 +131,19 @@ export function summarizeBrain(brain, lang = 'ar') {
     }
     const L = lang === 'ar';
     const lines = [];
-    lines.push(L ? `📦 المشروع: ${brain.filesCount} ملف (${brain.progress.percent}% مكتمل)` : `📦 Project: ${brain.filesCount} files (${brain.progress.percent}% complete)`);
+    // إن توفّر تحقّق فعلي من الكود (works=false) لا نعرض نسبة مخترعة — التطبيق
+    // لا يعمل فعلاً مهما بلغت "نسبة الخطة". الصدق أهمّ من رقمٍ يطمئن زوراً.
+    if (brain.progress.works === false) {
+        lines.push(L
+            ? `📦 المشروع: ${brain.filesCount} ملف — ⚠️ لا يعمل بعد (ثغرات حقيقية في الكود، ليست نسبة خطة)`
+            : `📦 Project: ${brain.filesCount} files — ⚠️ NOT working yet (real code gaps, not a plan percentage)`);
+    } else if (brain.progress.works === true) {
+        lines.push(L ? `📦 المشروع: ${brain.filesCount} ملف — ✅ يعمل (اجتاز التحقّق السلوكي)` : `📦 Project: ${brain.filesCount} files — ✅ working (passed behavior check)`);
+    } else {
+        lines.push(L ? `📦 المشروع: ${brain.filesCount} ملف (${brain.progress.percent}% مكتمل)` : `📦 Project: ${brain.filesCount} files (${brain.progress.percent}% complete)`);
+    }
     if (brain.progress.done.length) lines.push((L ? '✅ أُنجز: ' : '✅ Done: ') + brain.progress.done.join('، '));
-    if (brain.progress.remaining.length) lines.push((L ? '🔜 متبقٍّ: ' : '🔜 Remaining: ') + brain.progress.remaining.join('، '));
+    if (brain.progress.remaining.length) lines.push((L ? '🔜 متبقٍّ (من الكود الفعلي): ' : '🔜 Remaining (from actual code): ') + brain.progress.remaining.join(' | '));
     if (brain.decisions.length) lines.push((L ? '🧭 قرارات: ' : '🧭 Decisions: ') + brain.decisions.join('، '));
     return lines.join('\n');
 }
