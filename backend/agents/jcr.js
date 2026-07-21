@@ -1219,22 +1219,37 @@ User preferences: ${JSON.stringify(execMemory)}` },
         try {
             const existingCtx = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
             const isFreshBuild = !existingCtx || existingCtx.trim().length < 80;
+            const explicitRebuild = /أعد البناء|اعد البناء|أعد بناء|اعد بناء|من جديد|من الصفر|rebuild|from scratch|start over|أعد التصميم|اعد التصميم/i.test(goal);
             const clone = matchCloneTemplate(goal, blueprint, getDomainModel(username, activeProject));
             if (clone) {
-                // نبدأ من الكلون العامل إن: (أ) بناء جديد، أو (ب) المشروع القائم
-                // معطّل فعلاً (نُصلح المكسور، لا نكلبر عملاً يعمل). سجل المستخدم:
-                // delev قائم لكن معطّل — كان يتخطّى الكلون بسبب isFreshBuild.
-                let apply = isFreshBuild;
+                // نبدأ من الكلون العامل إن: (أ) بناء جديد، أو (ب) إعادة بناء صريحة،
+                // أو (ج) المشروع القائم معطّل فعلاً (نُصلح المكسور).
+                let apply = isFreshBuild || explicitRebuild;
+                let worksNow = false;
                 if (!apply) {
                     const chk = await analyzeProjectStatic({
                         projectPath, domainModel: getDomainModel(username, activeProject),
                     });
-                    apply = !chk.hasProject || chk.checks.some(c => c.status === 'fail');
+                    const broken = !chk.hasProject || chk.checks.some(c => c.status === 'fail');
+                    worksNow = chk.hasProject && !broken;
+                    apply = broken;
                 }
                 if (apply) {
                     return await this._buildFromClone(clone, goal, projectPath, username, activeProject, roomName, agents);
                 }
-                this.emitLiveLog(roomName, 'STACK', 'CloneTemplate', 'ℹ️ يوجد كلون مطابق لكن المشروع القائم يعمل — لا نكلبره (اطلب «أعد البناء» للاستبدال).');
+                // 🛡️ المشروع القائم يعمل وليس طلب إعادة بناء صريح → لا نُعيد البناء
+                // الكامل (كان مسار Vanilla يدهس الكلون العامل عند «اكمل»). نُبلغ
+                // ونتوقّف — التعديلات المحدّدة تمرّ عبر التعديل الجراحي.
+                if (worksNow) {
+                    const okMsg = getUserLanguage(username) === 'en'
+                        ? '✅ Your app is already working (customer + staff panels with role-based login). Tell me a specific change to add (e.g. "add a ratings section"), or "rebuild" to start fresh.'
+                        : '✅ تطبيقك يعمل بالفعل (واجهة الزبون + لوحات الطاقم بدخول موجَّه حسب الصلاحية). أخبرني بتعديل محدّد لإضافته (مثل: «أضف قسم تقييمات»)، أو اكتب «أعد البناء» للبدء من جديد.';
+                    this.io.to(roomName).emit('chat_reply', { message: okMsg });
+                    transitionState(username, activeProject, STATES.COMPLETED);
+                    this.emitLiveLog(roomName, 'STACK', 'CloneTemplate', 'ℹ️ المشروع يعمل — تفادينا إعادة بناء تدهسه.');
+                    return { success: true, skipped: 'works' };
+                }
+                this.emitLiveLog(roomName, 'STACK', 'CloneTemplate', 'ℹ️ يوجد كلون مطابق لكن المشروع القائم يعمل — لا نكلبره.');
             }
         } catch (e) { console.warn('[Clone]', 'تعذّر مطابقة الكلون:', e.message); }
 
