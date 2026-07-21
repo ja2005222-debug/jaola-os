@@ -1220,8 +1220,21 @@ User preferences: ${JSON.stringify(execMemory)}` },
             const existingCtx = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
             const isFreshBuild = !existingCtx || existingCtx.trim().length < 80;
             const clone = matchCloneTemplate(goal, blueprint, getDomainModel(username, activeProject));
-            if (clone && isFreshBuild) {
-                return await this._buildFromClone(clone, goal, projectPath, username, activeProject, roomName, agents);
+            if (clone) {
+                // نبدأ من الكلون العامل إن: (أ) بناء جديد، أو (ب) المشروع القائم
+                // معطّل فعلاً (نُصلح المكسور، لا نكلبر عملاً يعمل). سجل المستخدم:
+                // delev قائم لكن معطّل — كان يتخطّى الكلون بسبب isFreshBuild.
+                let apply = isFreshBuild;
+                if (!apply) {
+                    const chk = await analyzeProjectStatic({
+                        projectPath, domainModel: getDomainModel(username, activeProject),
+                    });
+                    apply = !chk.hasProject || chk.checks.some(c => c.status === 'fail');
+                }
+                if (apply) {
+                    return await this._buildFromClone(clone, goal, projectPath, username, activeProject, roomName, agents);
+                }
+                this.emitLiveLog(roomName, 'STACK', 'CloneTemplate', 'ℹ️ يوجد كلون مطابق لكن المشروع القائم يعمل — لا نكلبره (اطلب «أعد البناء» للاستبدال).');
             }
         } catch (e) { console.warn('[Clone]', 'تعذّر مطابقة الكلون:', e.message); }
 

@@ -24,11 +24,19 @@ export function listClones() {
  * فئة المخطّط. مخصّص للتطبيقات التفاعلية فقط (لا البروشورات).
  */
 export function matchCloneTemplate(goal = '', blueprint = null, domainModel = null) {
-    const g = (goal || '').toLowerCase();
     const category = blueprint?.category;
     const isApp = blueprint?.kind === 'webapp' || blueprint?.kind === 'tool'
         || (Array.isArray(domainModel?.roles) && domainModel.roles.length > 1);
     if (!isApp) return null; // البروشورات لا تحتاج كلون تطبيق
+
+    // نبني نصّ بحث من الهدف + أسماء النموذج المحفوظ (كيانات/أدوار/تدفّقات) —
+    // فيطابق حتى لو كان الهدف ضعيفاً («اكمل») لأن النموذج يحمل هوية المشروع.
+    const modelText = [
+        ...(domainModel?.entities || []).map(e => e?.name),
+        ...(domainModel?.roles || []).map(r => r?.name),
+        ...(domainModel?.flows || []).map(f => f?.name),
+    ].filter(Boolean).join(' ');
+    const hay = `${goal || ''} ${modelText}`.toLowerCase();
 
     let best = null, bestScore = 0;
     for (const build of BUILDERS) {
@@ -36,7 +44,7 @@ export function matchCloneTemplate(goal = '', blueprint = null, domainModel = nu
         let score = 0;
         if (category && c.category === category) score += 2;
         for (const kw of c.keywords || []) {
-            if (kw && g.includes(kw.toLowerCase())) score += 1;
+            if (kw && hay.includes(kw.toLowerCase())) score += 1;
         }
         if (score > bestScore) { bestScore = score; best = c; }
     }
