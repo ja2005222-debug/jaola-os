@@ -14,6 +14,7 @@ import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, 
 import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel, buildAppSections } from './projectModel.js';
 import { getLibraryModel, recordModel } from './modelLibrary.js';
 import { matchCloneTemplate } from './cloneTemplates/index.js';
+import { patchEditPlan } from './patchEditor.js';
 import { verifyBehavior, buildBehaviorFixInstruction, analyzeProjectStatic, readPageCode, extractDefinedFunctions } from './behaviorVerifier.js';
 import { detectProjectType } from './knowledgeEngine.js';
 import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
@@ -1835,16 +1836,33 @@ User preferences: ${JSON.stringify(execMemory)}` },
             ? `\n\n🔒 عقد الحفظ (إلزامي): الكود الحالي يعرّف هذه الدوال/الميزات — **احتفظ بها جميعاً كاملةً** ولا تحذف ولا تُبسّط أياً منها (خاصةً الميزات المُضافة سابقاً كالتقارير المالية). أضِف المطلوب فوقها، وأعِد الملف **كاملاً** بكل دواله السابقة + الإضافة الجديدة:\n${existingFns.join('، ')}`
             : '';
 
-        const editInstruction = `${instruction}${editModelCtx || ''}${preserveCtx}`;
+        const editInstruction = `${instruction}${editModelCtx || ''}`;
 
-        let plan;
+        // 🩹 المسار النموذجي أولاً: تعديل موضعي (patch) — يُعيد الجزء المتغيّر
+        // فقط، فلا بتر مهما كبر المشروع، وما لا يُذكر لا يُلمس (حفظ حتمي). نسقط
+        // للمسار الكامل فقط إن تعذّر التطبيق الموضعي.
+        let plan = null;
         try {
-            plan = await agents.coreEditCodePlan(editInstruction, editFiles, lang,
-                (chunk) => this.io.to(roomName).emit('code_stream_chunk', chunk));
-        } catch (e) {
-            this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', `⚠️ تعذّر — عودة للبناء الكامل: ${e.message}`);
-            this.io.to(roomName).emit('stream_done', {});
-            return this._runMissionNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus);
+            const patch = await patchEditPlan(instruction, editFiles, lang);
+            if (patch.ok && patch.files.length) {
+                plan = { files: patch.files };
+                this.emitLiveLog(roomName, 'EDIT', 'PatchEditor',
+                    `🩹 تعديل موضعي — ${patch.applied} تغيير على ${patch.files.map(f => f.name).join('، ')} (بلا إعادة كتابة كاملة).`);
+            } else if (patch.failed?.length) {
+                this.emitLiveLog(roomName, 'EDIT', 'PatchEditor', `↩️ التعديل الموضعي لم يُطابِق — عودة للتعديل الكامل.`);
+            }
+        } catch (e) { console.warn('[PatchEditor]', e.message); }
+
+        // مسار كامل (احتياط): إعادة كتابة الملف مع عقد الحفظ + حارس الارتداد.
+        if (!plan) {
+            try {
+                plan = await agents.coreEditCodePlan(`${editInstruction}${preserveCtx}`, editFiles, lang,
+                    (chunk) => this.io.to(roomName).emit('code_stream_chunk', chunk));
+            } catch (e) {
+                this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', `⚠️ تعذّر — عودة للبناء الكامل: ${e.message}`);
+                this.io.to(roomName).emit('stream_done', {});
+                return this._runMissionNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus);
+            }
         }
         this.io.to(roomName).emit('stream_done', {});
 
