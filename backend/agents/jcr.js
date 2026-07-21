@@ -1023,9 +1023,8 @@ export class JaolaCognitiveRuntime {
 
         // 🧠 Project Brain — يفهم كامل المشروع (ملفات + قرارات + أُنجز/متبقٍّ) لا الرسالة الأخيرة فقط
         let brainContext = '';
-        // 🔬 فجوات محقّقة من الكود الفعلي — تُؤرّض «ماذا تبقى» على الواقع لا على
-        // خطة مخزّنة (المستخدم: الردّ يقرأ الخطة لا الملفات، فيجهل ما يجب عمله).
-        let verifiedGaps = '';
+        // 🔬 الدماغ يُؤرَّض على الكود الفعلي (المتبقّي/يعمل) لا على خطة مخزّنة —
+        // المستخدم: الردّ كان يقرأ الخطة لا الملفات فيجهل ما يجب عمله ويخترع 67%.
         const project = roomName.startsWith(username + '-') ? roomName.slice(username.length + 1) : null;
         try {
             if (project) {
@@ -1034,18 +1033,24 @@ export class JaolaCognitiveRuntime {
                 const projectPath = path.resolve(__dirname, '../../workspace', safeUser, safeProject);
                 const files = await scanProjectFiles(projectPath, { maxFiles: 300 });
                 const brain = buildProjectBrain(getProjectMemory(username, project), files);
-                brainContext = summarizeBrain(brain, userLang);
 
-                // فحص ساكن حقيقي على كود الواجهة (أدوار بلا واجهة، دوال معلّقة...)
+                // 🔬 فحص ساكن حقيقي على الكود قبل التلخيص — نُصحّح «المتبقّي»
+                // و«النسبة» في الدماغ نفسه ليكون صادقاً (لا يكفي إلحاق قسم؛
+                // النموذج يثق بأرقام الدماغ الواثقة فيردّدها). الكود هو الحكم.
                 const { hasProject, checks } = await analyzeProjectStatic({
                     projectPath, domainModel: getDomainModel(username, project),
                 });
                 if (hasProject) {
-                    const gaps = checks.filter(c => c.status !== 'pass').map(c => `- ${c.detail}`);
-                    verifiedGaps = gaps.length
-                        ? `\n## VERIFIED FROM ACTUAL CODE (authoritative — OVERRIDES any planned/remaining list; report THESE as the real remaining work):\n${gaps.join('\n')}`
-                        : `\n## VERIFIED FROM ACTUAL CODE: the built screens work — no structural gaps (all roles have UI, no dangling functions). Do NOT claim planned items are missing unless you see them absent here.`;
+                    const fails = checks.filter(c => c.status === 'fail');
+                    const gapDetails = checks.filter(c => c.status !== 'pass').map(c => c.detail);
+                    if (gapDetails.length) {
+                        brain.progress.remaining = gapDetails;      // فجوات حقيقية بدل الخطة
+                        brain.progress.works = fails.length === 0;  // fail = لا يعمل → لا نسبة مطمئنة
+                    } else {
+                        brain.progress.works = true;                // اجتاز التحقّق
+                    }
                 }
+                brainContext = summarizeBrain(brain, userLang);
             }
         } catch { /* الشات يعمل حتى لو تعذّر بناء الصورة */ }
 
@@ -1078,9 +1083,8 @@ RESPONSE RULES:
 - Answer about the WHOLE project using the state below — not just the last message. If asked what's done or remaining, use ONLY it.
 - The current project's NAME is "${project || 'sandbox_app'}" — if asked the project name, answer with it directly.
 
-## Current project state (Project Brain — the ONLY source of truth about the project):
+## Current project state (Project Brain — the ONLY source of truth; its "Remaining" and working-status come from the ACTUAL code, so report them verbatim — never invent a percentage or a different remaining list):
 ${brainContext || 'No project files yet.'}
-${verifiedGaps}
 ${convSummary ? `\n## LONG-TERM CONVERSATION MEMORY (do not lose this context; never contradict earlier decisions or re-ask known facts):\n${convSummary}\n` : ''}
 User preferences: ${JSON.stringify(execMemory)}` },
             ...history,
