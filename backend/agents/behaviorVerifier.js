@@ -58,27 +58,34 @@ const BUILTIN_CALLS = new Set([
  * DOMContentLoaded) لكنها **غير معرّفة** في الكود — قشرة بلا منطق. دالة نقية.
  * هذا بالضبط ما يجعل "زر تقديم الطلب" لا يعمل ولوحة المطعم فارغة.
  */
-export function detectUndefinedFunctions({ html = '', js = '' } = {}) {
-    // 1) الأسماء المعرّفة (بسخاء لتقليل الإيجابيات الكاذبة): أي تصريح/صنف/دالة
+/**
+ * يجمع أسماء الدوال/التصاريح المعرّفة في كود JS (بسخاء). دالة نقية —
+ * تُستخدم لكشف المعلّق وأيضاً لعقد الحفظ في التعديل (لا تحذف الموجود).
+ */
+export function extractDefinedFunctions(js = '') {
     const defined = new Set();
     const defPatterns = [
-        /function\s*\*?\s*([A-Za-z_$][\w$]*)/g,                             // function foo() / function* foo()
+        /function\s*\*?\s*([A-Za-z_$][\w$]*)/g,                             // function foo()
         /class\s+([A-Za-z_$][\w$]*)/g,                                      // class Foo
-        /(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g,                          // أي تصريح: const foo = require(...) / = ...
+        /(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g,                          // const foo = ...
         /([A-Za-z_$][\w$]*)\s*:\s*(?:async\s*)?function/g,                  // foo: function
         /\b(?:window|globalThis|self)\.([A-Za-z_$][\w$]*)\s*=/g,           // window.foo =
-        /([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{/g,                             // foo(...) { (method shorthand / declaration)
+        /([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{/g,                             // foo(...) {
     ];
     for (const re of defPatterns) { let m; while ((m = re.exec(js))) defined.add(m[1]); }
-    // التفكيك: const { a, b } = ... / import { a, b } — كلّها معرّفة
     for (const m of js.matchAll(/(?:const|let|var|import)\s*\{([^}]*)\}/g)) {
         for (const part of m[1].split(',')) {
             const name = part.split(/[:\s]/).map(s => s.trim()).filter(Boolean).pop();
             if (name && /^[A-Za-z_$][\w$]*$/.test(name)) defined.add(name);
         }
     }
-    // import foo from '...' / import * as foo
     for (const m of js.matchAll(/import\s+(?:\*\s+as\s+)?([A-Za-z_$][\w$]*)\s+from/g)) defined.add(m[1]);
+    return defined;
+}
+
+export function detectUndefinedFunctions({ html = '', js = '' } = {}) {
+    // 1) الأسماء المعرّفة (بسخاء لتقليل الإيجابيات الكاذبة)
+    const defined = extractDefinedFunctions(js);
 
     // 2) الأسماء المُشار إليها كمعالجات/نداءات
     const referenced = new Set();

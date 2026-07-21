@@ -14,7 +14,7 @@ import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, 
 import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel, buildAppSections } from './projectModel.js';
 import { getLibraryModel, recordModel } from './modelLibrary.js';
 import { matchCloneTemplate } from './cloneTemplates/index.js';
-import { verifyBehavior, buildBehaviorFixInstruction, analyzeProjectStatic, readPageCode } from './behaviorVerifier.js';
+import { verifyBehavior, buildBehaviorFixInstruction, analyzeProjectStatic, readPageCode, extractDefinedFunctions } from './behaviorVerifier.js';
 import { detectProjectType } from './knowledgeEngine.js';
 import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
 import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
@@ -1825,7 +1825,17 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // 🧩 نحقن نموذج المشروع في التعديل — يبقى التعديل متماسكاً مع كيانات
         // وأدوار وتدفّقات النظام (لا رقعة نصّية معزولة تكسر التماسك).
         const editModelCtx = buildProjectModelContext(getDomainModel(username, activeProject));
-        const editInstruction = editModelCtx ? `${instruction}\n${editModelCtx}` : instruction;
+
+        // 🔒 عقد الحفظ — التعديلات ليست تراكمية بطبيعتها: «أضف 3 مطاعم» أعاد
+        // كتابة app.js فحذف التفاصيل المالية السابقة (سجل المستخدم). نُلزم
+        // المولّد بقائمة الدوال/الميزات الحالية: احتفظ بها كلّها، أضِف فقط المطلوب.
+        const currentJs = editFiles.filter(f => /\.(m?js)$/i.test(f.name)).map(f => f.content).join('\n');
+        const existingFns = [...extractDefinedFunctions(currentJs)].filter(n => n.length > 2);
+        const preserveCtx = existingFns.length
+            ? `\n\n🔒 عقد الحفظ (إلزامي): الكود الحالي يعرّف هذه الدوال/الميزات — **احتفظ بها جميعاً كاملةً** ولا تحذف ولا تُبسّط أياً منها (خاصةً الميزات المُضافة سابقاً كالتقارير المالية). أضِف المطلوب فوقها، وأعِد الملف **كاملاً** بكل دواله السابقة + الإضافة الجديدة:\n${existingFns.join('، ')}`
+            : '';
+
+        const editInstruction = `${instruction}${editModelCtx || ''}${preserveCtx}`;
 
         let plan;
         try {
