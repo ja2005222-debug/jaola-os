@@ -202,11 +202,15 @@ async function runInJsdom(html, { timeoutMs = 4000 } = {}) {
 
     const jsErrors = [];
     let dom;
+    // "Not implemented" / navigation من jsdom ثغرات محرّك لا أعطال تطبيق —
+    // نتجاهلها كي لا تُحسب أخطاء JS كاذبة (سجل المستخدم: requestSubmit).
+    const isEngineGap = (m) => /not implemented|navigation \(except|is not a function\s*$/i.test(m || '');
+    const pushErr = (m) => { const s = (m || '').toString().slice(0, 200); if (s && !isEngineGap(s)) jsErrors.push(s); };
     try {
         const { VirtualConsole } = await import('jsdom');
         const vc = new VirtualConsole();
-        vc.on('jsdomError', e => jsErrors.push((e?.message || String(e)).slice(0, 200)));
-        vc.on('error', (...a) => jsErrors.push(a.map(String).join(' ').slice(0, 200)));
+        vc.on('jsdomError', e => pushErr(e?.message || String(e)));
+        vc.on('error', (...a) => pushErr(a.map(String).join(' ')));
 
         dom = new JSDOM(html, {
             runScripts: 'dangerously',
@@ -220,9 +224,14 @@ async function runInJsdom(html, { timeoutMs = 4000 } = {}) {
         // كتم/تعطيل ما قد يُعلّق أو يصل للشبكة
         window.alert = () => {}; window.confirm = () => true; window.prompt = () => '';
         window.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve([]), text: () => Promise.resolve('') });
-        window.onerror = (msg) => { jsErrors.push(String(msg).slice(0, 200)); return true; };
-        window.addEventListener('error', e => jsErrors.push((e?.error?.message || e?.message || 'error').slice(0, 200)));
-        window.addEventListener('unhandledrejection', e => jsErrors.push(('promise: ' + (e?.reason?.message || e?.reason || '')).slice(0, 200)));
+        // jsdom لا يطبّق requestSubmit/scrollIntoView → يرمي "Not implemented"
+        // فيُحسب خطأ JS كاذباً. نوفّر بدائل غير ضارّة (ليست أعطالاً حقيقية).
+        try { window.HTMLFormElement.prototype.requestSubmit = function () { this.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })); }; } catch {}
+        try { window.HTMLElement.prototype.scrollIntoView = function () {}; window.Element.prototype.scrollIntoView = function () {}; } catch {}
+        try { window.scrollTo = () => {}; window.HTMLElement.prototype.animate = window.HTMLElement.prototype.animate || (() => ({ cancel() {}, finished: Promise.resolve() })); } catch {}
+        window.onerror = (msg) => { pushErr(String(msg)); return true; };
+        window.addEventListener('error', e => pushErr(e?.error?.message || e?.message || 'error'));
+        window.addEventListener('unhandledrejection', e => pushErr('promise: ' + (e?.reason?.message || e?.reason || '')));
 
         // مهلة تحميل قصيرة (للـ DOMContentLoaded والمؤقّتات)
         await new Promise(r => setTimeout(r, Math.min(timeoutMs, 500)));
