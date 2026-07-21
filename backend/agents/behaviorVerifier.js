@@ -49,6 +49,8 @@ const BUILTIN_CALLS = new Set([
     'translate', 'translateX', 'translateY', 'translate3d', 'translateZ', 'scale', 'scaleX', 'scaleY', 'rotate', 'rotateX', 'rotateY', 'rotateZ', 'skew', 'skewX', 'skewY', 'matrix', 'perspective',
     'blur', 'brightness', 'contrast', 'saturate', 'grayscale', 'sepia', 'invert', 'opacity', 'drop-shadow', 'hue-rotate',
     'linear-gradient', 'radial-gradient', 'conic-gradient', 'attr', 'counter', 'env',
+    // أصناف CSS الزائفة داخل نصوص المحدّدات (:not( / :is( / :has(...)
+    'not', 'is', 'where', 'has', 'nth', 'lang', 'dir',
 ]);
 
 /**
