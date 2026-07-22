@@ -90,8 +90,17 @@ const INDEX_HTML = `<!DOCTYPE html>
       <h2 class="sec-title">لوحة الإدارة</h2>
       <div class="stat-row" id="adminStats"></div>
       <div class="panel">
-        <h3>كل المناسبات</h3>
+        <div class="panel-head"><h3>كل المناسبات</h3>
+          <input id="adminSearch" class="mini-search" placeholder="بحث بالعنوان/المنظّم..."></div>
         <div id="adminEvents" class="mini-list"></div>
+      </div>
+      <div class="panel">
+        <h3>المنظّمون</h3>
+        <div id="adminOrganizers" class="mini-list"></div>
+      </div>
+      <div class="panel">
+        <h3>أحدث المبيعات</h3>
+        <div id="adminSales" class="mini-list"></div>
       </div>
     </section>
   </main>
@@ -449,15 +458,47 @@ function addEvent() {
 /* ---------- لوحة الإدارة ---------- */
 function renderAdmin() {
   var live = orders.filter(function (o) { return o.status !== 'ملغاة'; });
+  var cancelled = orders.length - live.length;
   var revenue = live.reduce(function (s, o) { return s + o.total; }, 0);
+  var soldTickets = live.reduce(function (s, o) { return s + o.qty; }, 0);
   byId('adminStats').innerHTML =
-    stat('المناسبات', events.length) + stat('التذاكر المُباعة', live.reduce(function (s, o) { return s + o.qty; }, 0)) +
-    stat('المنظّمون', uniqueOrganizers().length) + stat('الإيراد', money(revenue));
-  byId('adminEvents').innerHTML = events.map(function (e) {
+    stat('المناسبات', events.length) + stat('التذاكر المُباعة', soldTickets) +
+    stat('المنظّمون', uniqueOrganizers().length) + stat('الإيراد', money(revenue)) +
+    stat('الملغاة', cancelled);
+  renderAdminEvents();
+
+  // المنظّمون: تجميع عدد المناسبات + المبيعات + الإيراد لكل منظّم
+  var byOrg = {};
+  events.forEach(function (e) { if (!byOrg[e.organizer]) byOrg[e.organizer] = { events: 0, sold: 0, rev: 0 }; byOrg[e.organizer].events++; });
+  live.forEach(function (o) { var ev = eventById(o.eventId); var org = ev && ev.organizer; if (org && byOrg[org]) { byOrg[org].sold += o.qty; byOrg[org].rev += o.total; } });
+  byId('adminOrganizers').innerHTML = Object.keys(byOrg).map(function (name) {
+    var d = byOrg[name];
+    return '<div class="mini-row"><span>🏢 ' + name + '</span>' +
+      '<span class="pill">' + d.events + ' مناسبة · بيع ' + d.sold + '</span>' +
+      '<span class="mr-price">' + money(d.rev) + '</span></div>';
+  }).join('');
+
+  // أحدث المبيعات: كل الحجوزات (المشتري/الحدث/الفئة/المبلغ/الحالة)
+  byId('adminSales').innerHTML = orders.length ? orders.slice().reverse().slice(0, 30).map(function (o) {
+    return '<div class="mini-row"><span>' + o.emoji + ' ' + o.eventTitle + ' — ' + o.buyer + '</span>' +
+      '<span class="pill">' + o.tierName + ' × ' + o.qty + '</span>' +
+      '<span class="mr-price">' + money(o.total) + '</span>' +
+      '<span class="pill ' + (o.status === 'ملغاة' ? 'wait' : 'ok') + '">' + o.status + '</span></div>';
+  }).join('') : '<p class="empty">لا مبيعات بعد.</p>';
+}
+function renderAdminEvents() {
+  var q = (byId('adminSearch') && byId('adminSearch').value || '').trim().toLowerCase();
+  var list = q ? events.filter(function (e) { return e.title.toLowerCase().includes(q) || e.organizer.toLowerCase().includes(q); }) : events;
+  byId('adminEvents').innerHTML = list.length ? list.map(function (e) {
+    var s = salesOf(e);
+    var sold = s.reduce(function (a, o) { return a + o.qty; }, 0);
+    var rev = s.reduce(function (a, o) { return a + o.total; }, 0);
+    var left = e.tiers.reduce(function (a, t) { return a + t.qty; }, 0);
     return '<div class="mini-row"><span>' + e.emoji + ' ' + e.title + ' — ' + e.organizer + '</span>' +
+      '<span class="pill">بيع ' + sold + ' · متبقّي ' + left + ' · ' + money(rev) + '</span>' +
       '<span class="pill ' + (e.approved ? 'ok' : 'wait') + '">' + (e.approved ? 'منشور' : 'موقوف') + '</span>' +
       '<button class="btn sm" data-action="toggleEvent" data-id="' + e.id + '">' + (e.approved ? 'إيقاف' : 'نشر') + '</button></div>';
-  }).join('');
+  }).join('') : '<p class="empty">لا مناسبات مطابقة.</p>';
 }
 function uniqueOrganizers() { var set = {}; events.forEach(function (e) { set[e.organizer] = 1; }); return Object.keys(set); }
 function toggleEvent(id) { var e = eventById(id); if (!e) return; e.approved = !e.approved; save('events', events); renderAdmin(); }
@@ -531,6 +572,7 @@ function handleChange(e) {
 function handleInput(e) {
   if (!e.target) return;
   if (e.target.id === 'search') { state.search = e.target.value; renderExplore(); }
+  else if (e.target.id === 'adminSearch') renderAdminEvents();
   else if (e.target.id === 'coPromo') updateCoTotal();
 }
 
@@ -635,6 +677,10 @@ main{max-width:1160px;margin:0 auto;padding:20px 18px}
 .fld input,.fld select{width:100%;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px;color:var(--text)}
 .mini-list{display:flex;flex-direction:column;gap:8px}
 .mini-row{display:flex;align-items:center;gap:10px;justify-content:space-between;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;flex-wrap:wrap}
+.mr-price{color:var(--accent);font-weight:800;font-size:14px}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.panel-head h3{margin-bottom:0}
+.mini-search{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:8px 12px;color:var(--text);font-size:13px;min-width:180px}
 /* نوافذ */
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;z-index:60;padding:16px}
 .modal-box{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:26px;width:min(440px,100%);position:relative;max-height:92dvh;overflow:auto}
