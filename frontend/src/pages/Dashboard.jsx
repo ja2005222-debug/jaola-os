@@ -210,6 +210,7 @@ export default function Dashboard() {
   const [newProjectName, setNewProjectName] = useState('');
   const [isDeploying, setIsDeploying] = useState(false);
   const [isAddingBot, setIsAddingBot] = useState(false);
+  const [applyingTemplate, setApplyingTemplate] = useState('');
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [authMode, setAuthMode] = useState('login'); // login | register
@@ -370,6 +371,30 @@ export default function Dashboard() {
       addNotification(`❌ ${t('botFail')}`, 'info');
     }
     setIsAddingBot(false);
+  };
+
+  // 🧩 «ابدأ من قالب» — يطبّق كلوناً عاملاً على المشروع مباشرةً (حتميّ، بلا ذكاء)
+  const handleApplyTemplate = async (cloneId) => {
+    if (applyingTemplate) return;
+    setApplyingTemplate(cloneId);
+    addNotification(t('applyingTemplate'), 'info');
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/template/apply`, {
+        method: 'POST', headers: getHeaders(),
+        body: JSON.stringify({ project: activeProject, cloneId }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.success) {
+        addNotification(`${t('templateApplied')} «${d.name}»`, 'success');
+        setShowKnowledgeModal(false);
+        refreshPreview();
+      } else {
+        addNotification(`❌ ${d.error || t('templateFail')}`, 'info');
+      }
+    } catch {
+      addNotification(`❌ ${t('templateFail')}`, 'info');
+    }
+    setApplyingTemplate('');
   };
 
   // 🩺 فحص جاهزية النشر على Vercel — يعرض تشخيصاً دقيقاً بدل تخمين "Not authorized"
@@ -903,7 +928,8 @@ export default function Dashboard() {
 
             {/* قوالب التطبيقات العاملة (كلون + بصمة) */}
             <div style={{ marginBottom:18 }}>
-              <p style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px', marginBottom:8 }}>{t('knClones')}</p>
+              <p style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px', marginBottom:2 }}>{t('knClones')}</p>
+              <p style={{ fontSize:10, color:S.muted, marginBottom:8 }}>{t('galleryHint')}</p>
               {knowledge.clones?.length ? (
                 <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                   {knowledge.clones.map(c => (
@@ -914,7 +940,13 @@ export default function Dashboard() {
                         {c.externalApi && <span style={{ background:'rgba(56,189,248,0.15)', border:'1px solid rgba(56,189,248,0.3)', color:'#7dd3fc', fontSize:9, padding:'1px 6px', borderRadius:8 }}>🌐 API: {c.externalApi}</span>}
                       </div>
                       <div style={{ color:S.muted, fontSize:11, marginTop:3 }}>{c.description}</div>
-                      <div style={{ color:'#ff9d6b', fontSize:10, marginTop:5 }}>{(c.roles||[]).join(' · ')}</div>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, marginTop:6, flexWrap:'wrap' }}>
+                        <span style={{ color:'#ff9d6b', fontSize:10 }}>{(c.roles||[]).join(' · ')}</span>
+                        <button onClick={() => handleApplyTemplate(c.id)} disabled={!!applyingTemplate}
+                          style={{ background:'linear-gradient(135deg,#ff6b35,#f7931e)', border:'none', borderRadius:8, padding:'6px 12px', color:'#fff', fontSize:11, fontWeight:800, cursor: applyingTemplate ? 'default' : 'pointer', opacity: applyingTemplate && applyingTemplate !== c.id ? 0.4 : 1, whiteSpace:'nowrap' }}>
+                          {applyingTemplate === c.id ? `⏳ ${t('applyingTemplate')}` : `🚀 ${t('useTemplate')}`}
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
