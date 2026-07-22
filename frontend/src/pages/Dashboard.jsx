@@ -209,6 +209,7 @@ export default function Dashboard() {
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [isDeploying, setIsDeploying] = useState(false);
+  const [isAddingBot, setIsAddingBot] = useState(false);
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [authMode, setAuthMode] = useState('login'); // login | register
@@ -346,6 +347,29 @@ export default function Dashboard() {
       }
     } catch {}
     setTimeout(() => { setIsDeploying(false); addNotification(t('nDeployed'), 'success'); }, 8000);
+  };
+
+  // 🤖 إضافة «جولا بوت» بضغطة — يرث اسم/لون الموقع، يعمل بقاعدة معرفة داخلية
+  const handleAddBot = async () => {
+    if (isAddingBot) return;
+    setIsAddingBot(true);
+    addNotification(t('addingBot'), 'info');
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/jaola-bot/generate`, {
+        method: 'POST', headers: getHeaders(),
+        body: JSON.stringify({ project: activeProject, brandName: activeProject }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.success) {
+        addNotification(t('botAdded'), 'success');
+        refreshPreview();
+      } else {
+        addNotification(`❌ ${d.error || t('botFail')}`, 'info');
+      }
+    } catch {
+      addNotification(`❌ ${t('botFail')}`, 'info');
+    }
+    setIsAddingBot(false);
   };
 
   // 🩺 فحص جاهزية النشر على Vercel — يعرض تشخيصاً دقيقاً بدل تخمين "Not authorized"
@@ -1303,6 +1327,11 @@ export default function Dashboard() {
             🌍 {t('liveSite')}
           </a>
         )}
+        <button onClick={handleAddBot} disabled={isAddingBot} title={t('addBot')}
+          style={{ background:'rgba(139,92,246,0.12)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:7, padding:'5px 12px', color:'#c4b5fd', fontSize:11, fontWeight:700, opacity: isAddingBot ? 0.7 : 1 }}>
+          {isAddingBot ? `⏳ ${t('addingBot')}` : `➕🤖 ${t('addBot')}`}
+        </button>
+
         <button onClick={handleDeploy} disabled={isDeploying} title={vercelUrl ? t('redeploy') : t('deploy')}
           style={{ background: isDeploying ? 'rgba(59,130,246,0.1)' : (vercelUrl ? 'rgba(59,130,246,0.12)' : 'linear-gradient(135deg,#1d4ed8,#4f46e5)'), border: vercelUrl ? '1px solid rgba(59,130,246,0.3)' : 'none', borderRadius:7, padding:'5px 14px', color: vercelUrl ? '#93c5fd' : '#fff', fontSize:11, fontWeight:700, opacity: isDeploying ? 0.7 : 1 }}>
           {isDeploying ? `⏳ ${t('deploying')}` : (vercelUrl ? `🔄 ${t('redeploy')}` : `🚀 ${t('deploy')}`)}
