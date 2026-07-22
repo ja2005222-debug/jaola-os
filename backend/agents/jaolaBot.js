@@ -55,6 +55,7 @@ function buildConfig(options, themeColor) {
         emoji: (options.emoji || '🤖').toString().trim().slice(0, 4),
         color: themeColor,
         apiBase: options.apiBase && typeof options.apiBase === 'string' ? options.apiBase.trim() : null,
+        token: options.token && typeof options.token === 'string' ? options.token : null,
         welcome: (options.welcome || 'مرحباً! أنا مساعدك الآلي — اسألني عمّا تريد.').toString(),
         placeholder: 'اكتب رسالتك...',
         sendLabel: 'إرسال',
@@ -97,7 +98,7 @@ const WIDGET_BODY = `(function () {
   function botRespond(text) {
     if (CFG.apiBase) {
       var thinking = addMsg('bot', '…');
-      fetch(CFG.apiBase, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text, brand: CFG.name }) })
+      fetch(CFG.apiBase, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text, brand: CFG.name, token: CFG.token }) })
         .then(function (r) { return r && r.ok ? r.json() : null; })
         .then(function (data) {
           if (thinking && thinking.parentNode) thinking.parentNode.removeChild(thinking);
