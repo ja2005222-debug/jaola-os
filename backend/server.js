@@ -61,7 +61,11 @@ import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/
 import { getProjectMemory, getDomainModel } from './agents/projectMemory.js';
 import { summarizeModel } from './agents/projectModel.js';
 import { librarySummary } from './agents/modelLibrary.js';
-import { listClones } from './agents/cloneTemplates/index.js';
+import { listClones, getCloneById } from './agents/cloneTemplates/index.js';
+import { setDomainModel } from './agents/projectMemory.js';
+import { mergeProjectModel } from './agents/projectModel.js';
+import { prepareRenderDeploy } from './agents/renderAgent.js';
+import { assetsFor, injectFaviconTag } from './agents/cloneAssets.js';
 import { setProjectSecret, deleteProjectSecret, getProjectSecretNames, getProjectSecrets } from './services/projectSecrets.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
 import { buildMetricsPayload } from './services/metricsStore.js';
@@ -1235,6 +1239,47 @@ app.get('/api/platform/knowledge', verifyToken, (req, res) => {
         lessons: topLessons(15),
         clones: listClones(), // قوالب التطبيقات العاملة المتاحة (كلون + بصمة)
     });
+});
+
+// 🧩 «ابدأ من قالب» — يطبّق كلوناً عاملاً مباشرةً على المشروع (حتميّ، بلا ذكاء):
+// يكتب الملفات + يضبط النموذج + يضيف الهوية البصرية + يهيّئ النشر. التخصيص لاحقاً بالشات.
+app.post('/api/template/apply', verifyToken, validateProjectOwnership, async (req, res) => {
+    const { cloneId } = req.body || {};
+    const clone = cloneId && typeof cloneId === 'string' ? getCloneById(cloneId) : null;
+    if (!clone) return res.status(400).json({ error: 'قالب غير معروف.' });
+    try {
+        const projectPath = req.projectPath;
+        fs.mkdirSync(projectPath, { recursive: true });
+        // 1) اكتب ملفات الكلون العامل
+        for (const f of clone.files) fs.writeFileSync(path.join(projectPath, f.name), f.content);
+        // 2) اضبط نموذج المشروع (دمج مع أي نموذج سابق)
+        const model = mergeProjectModel(getDomainModel(req.user.username, req.activeProject) || {}, clone.model);
+        setDomainModel(req.user.username, req.activeProject, model);
+        // 3) الهوية البصرية (أيقونة مطابقة للمجال) — حتميّ
+        try {
+            const assets = assetsFor(clone.name || clone.id);
+            fs.writeFileSync(path.join(projectPath, 'brand.svg'), assets.favicon);
+            const idxPath = path.join(projectPath, 'index.html');
+            if (fs.existsSync(idxPath)) {
+                const html = fs.readFileSync(idxPath, 'utf8');
+                const withIcon = injectFaviconTag(html, 'brand.svg');
+                if (withIcon !== html) fs.writeFileSync(idxPath, withIcon);
+            }
+        } catch { /* الأيقونة اختيارية */ }
+        // 4) تهيئة النشر (موقع ثابت) — أفضل جهد
+        try {
+            const projectName = `${req.user.username}-${req.activeProject}`.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 50);
+            await prepareRenderDeploy(projectPath, projectName, false);
+        } catch { /* اختياري */ }
+
+        const roomName = `${req.user.username}-${req.activeProject}`;
+        emitWorkspaceFiles(roomName, projectPath);
+        io.to(roomName).emit('log', { message: `🧩 [SYSTEM]: بدأتَ من قالب «${clone.name}» — التطبيق يعمل فوراً. اطلب أي تخصيص في الشات.` });
+        io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        res.json({ success: true, cloneId: clone.id, name: clone.name, files: clone.files.map(f => f.name) });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل تطبيق القالب: ' + err.message });
+    }
 });
 
 // 🆕 الاسترجاع لنقطة سابقة (rollback) — يحفظ الحالة الحالية أولاً ثم يسترجع
