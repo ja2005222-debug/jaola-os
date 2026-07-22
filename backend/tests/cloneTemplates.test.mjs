@@ -14,12 +14,13 @@ import { jaolaRealestate } from '../agents/cloneTemplates/jaolaRealestate.js';
 import { jaolaCurrency } from '../agents/cloneTemplates/jaolaCurrency.js';
 import { jaolaMarketplace } from '../agents/cloneTemplates/jaolaMarketplace.js';
 import { jaolaTaxi } from '../agents/cloneTemplates/jaolaTaxi.js';
+import { jaolaTravel } from '../agents/cloneTemplates/jaolaTravel.js';
 import { matchCloneTemplate, listClones, getCloneById } from '../agents/cloneTemplates/index.js';
 import { verifyBehavior, detectUndefinedFunctions } from '../agents/behaviorVerifier.js';
 
 // كل قوالب jaola يجب أن تجتاز التحقّق السلوكي فعلاً (jsdom) — لا دوال معلّقة،
 // ولا انهيار حتى مع كتم fetch (قوالب الـ API تصمد بالوصول المحميّ).
-for (const build of [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaWeather, jaolaCrypto, jaolaCurrency]) {
+for (const build of [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaWeather, jaolaCrypto, jaolaCurrency]) {
     const c = build();
     test(`قالب ${c.id}: لا دوال معلّقة`, () => {
         const html = c.files.find(f => f.name === 'index.html').content;
@@ -69,6 +70,23 @@ test('matchCloneTemplate: تطبيق تاكسي → jaola-taxi', () => {
     const c = matchCloneTemplate('تطبيق تاكسي لطلب سيارة وتوصيل ركاب',
         { category: 'ridehailing', kind: 'webapp' }, { roles: [{ name: 'Rider' }, { name: 'Driver' }] });
     assert.equal(c?.id, 'jaola-taxi');
+});
+
+test('matchCloneTemplate: منصّة سفر → jaola-travel', () => {
+    const c = matchCloneTemplate('منصة حجز طيران وفنادق وتأجير سيارات وسياحة',
+        { category: 'travel', kind: 'webapp' }, { roles: [{ name: 'Traveler' }, { name: 'Admin' }] });
+    assert.equal(c?.id, 'jaola-travel');
+});
+
+test('jaola-travel: API-ready + white-label — externalApi معلن وطبقة مزوّد موجودة', () => {
+    const c = jaolaTravel();
+    assert.ok(c.externalApi, 'externalApi معلن');
+    const js = c.files.find(f => f.name === 'app.js').content;
+    assert.ok(/CONFIG\.api\.base/.test(js), 'طبقة API (base) موجودة');
+    assert.ok(/const BRAND\s*=/.test(js), 'كائن BRAND للـ white-label موجود');
+    assert.ok(/setProperty\('--brand'/.test(js), 'تطبيق العلامة على متغيّرات CSS حيّاً');
+    const list = listClones();
+    assert.ok(list.find(x => x.id === 'jaola-travel')?.externalApi, 'مسجّل مع externalApi');
 });
 
 test('قوالب متعدّدة الأدوار: marketplace + taxi لها 3 أدوار وتغطية أدوار سليمة', async () => {
