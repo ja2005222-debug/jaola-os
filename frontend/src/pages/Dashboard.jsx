@@ -884,7 +884,11 @@ export default function Dashboard() {
                 <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                   {knowledge.clones.map(c => (
                     <div key={c.id} style={{ background:'#161b22', border:'1px solid rgba(255,107,53,0.25)', borderRadius:10, padding:'10px 12px' }}>
-                      <div style={{ color:'#fff', fontSize:13, fontWeight:800 }}>🍔 {c.name}</div>
+                      <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+                        <span style={{ color:'#fff', fontSize:13, fontWeight:800 }}>🧩 {c.name}</span>
+                        <span style={{ color:'#64748b', fontSize:9, fontFamily:'monospace' }}>{c.id}</span>
+                        {c.externalApi && <span style={{ background:'rgba(56,189,248,0.15)', border:'1px solid rgba(56,189,248,0.3)', color:'#7dd3fc', fontSize:9, padding:'1px 6px', borderRadius:8 }}>🌐 API: {c.externalApi}</span>}
+                      </div>
                       <div style={{ color:S.muted, fontSize:11, marginTop:3 }}>{c.description}</div>
                       <div style={{ color:'#ff9d6b', fontSize:10, marginTop:5 }}>{(c.roles||[]).join(' · ')}</div>
                     </div>

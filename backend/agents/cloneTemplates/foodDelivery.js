@@ -429,7 +429,7 @@ h2{margin-bottom:6px}
 /** يعيد قالب كلون توصيل الطعام: بيانات وصفية + نموذج المجال + الملفات العاملة. */
 export function foodDeliveryClone() {
     return {
-        id: 'food-delivery',
+        id: 'jaola-delivery',
         category: 'restaurant',
         name: 'توصيل طعام من مطاعم متعددة',
         description: 'تطبيق توصيل عامل بصلاحيات: زبون (عام) · مطعم/سائق/إدارة (لوحات مخفية بدخول موجَّه حسب الصلاحية) · تتبّع.',
