@@ -15,12 +15,14 @@ import { jaolaCurrency } from '../agents/cloneTemplates/jaolaCurrency.js';
 import { jaolaMarketplace } from '../agents/cloneTemplates/jaolaMarketplace.js';
 import { jaolaTaxi } from '../agents/cloneTemplates/jaolaTaxi.js';
 import { jaolaTravel } from '../agents/cloneTemplates/jaolaTravel.js';
+import { jaolaLms } from '../agents/cloneTemplates/jaolaLms.js';
+import { jaolaSchool } from '../agents/cloneTemplates/jaolaSchool.js';
 import { matchCloneTemplate, listClones, getCloneById } from '../agents/cloneTemplates/index.js';
 import { verifyBehavior, detectUndefinedFunctions } from '../agents/behaviorVerifier.js';
 
 // كل قوالب jaola يجب أن تجتاز التحقّق السلوكي فعلاً (jsdom) — لا دوال معلّقة،
 // ولا انهيار حتى مع كتم fetch (قوالب الـ API تصمد بالوصول المحميّ).
-for (const build of [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaWeather, jaolaCrypto, jaolaCurrency]) {
+for (const build of [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaLms, jaolaSchool, jaolaWeather, jaolaCrypto, jaolaCurrency]) {
     const c = build();
     test(`قالب ${c.id}: لا دوال معلّقة`, () => {
         const html = c.files.find(f => f.name === 'index.html').content;
@@ -89,8 +91,20 @@ test('jaola-travel: API-ready + white-label — externalApi معلن وطبقة 
     assert.ok(list.find(x => x.id === 'jaola-travel')?.externalApi, 'مسجّل مع externalApi');
 });
 
-test('قوالب متعدّدة الأدوار: marketplace + taxi لها 3 أدوار وتغطية أدوار سليمة', async () => {
-    for (const build of [jaolaMarketplace, jaolaTaxi]) {
+test('matchCloneTemplate: منصّة تعليمية أونلاين → jaola-lms', () => {
+    const c = matchCloneTemplate('منصة تعليمية أونلاين لبيع الدورات والكورسات',
+        { category: 'education', kind: 'webapp' }, { roles: [{ name: 'Student' }, { name: 'Instructor' }] });
+    assert.equal(c?.id, 'jaola-lms');
+});
+
+test('matchCloneTemplate: بوّابة مدرسة → jaola-school', () => {
+    const c = matchCloneTemplate('بوابة مدرسة لعرض الجدول والدرجات والواجبات',
+        { category: 'education', kind: 'webapp' }, { roles: [{ name: 'Student' }, { name: 'Teacher' }, { name: 'Admin' }] });
+    assert.equal(c?.id, 'jaola-school');
+});
+
+test('قوالب متعدّدة الأدوار: marketplace + taxi + lms + school لها 3 أدوار وتغطية سليمة', async () => {
+    for (const build of [jaolaMarketplace, jaolaTaxi, jaolaLms, jaolaSchool]) {
         const c = build();
         assert.equal(c.model.roles.length, 3, `${c.id}: ثلاثة أدوار`);
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaola-role-'));
