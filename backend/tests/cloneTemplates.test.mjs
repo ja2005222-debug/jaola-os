@@ -8,12 +8,14 @@ import path from 'node:path';
 import { foodDeliveryClone } from '../agents/cloneTemplates/foodDelivery.js';
 import { jaolaWeather } from '../agents/cloneTemplates/jaolaWeather.js';
 import { jaolaCrypto } from '../agents/cloneTemplates/jaolaCrypto.js';
+import { jaolaStore } from '../agents/cloneTemplates/jaolaStore.js';
+import { jaolaBooking } from '../agents/cloneTemplates/jaolaBooking.js';
 import { matchCloneTemplate, listClones, getCloneById } from '../agents/cloneTemplates/index.js';
 import { verifyBehavior, detectUndefinedFunctions } from '../agents/behaviorVerifier.js';
 
 // كل قوالب jaola يجب أن تجتاز التحقّق السلوكي فعلاً (jsdom) — لا دوال معلّقة،
 // ولا انهيار حتى مع كتم fetch (قوالب الـ API تصمد بالوصول المحميّ).
-for (const build of [foodDeliveryClone, jaolaWeather, jaolaCrypto]) {
+for (const build of [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaWeather, jaolaCrypto]) {
     const c = build();
     test(`قالب ${c.id}: لا دوال معلّقة`, () => {
         const html = c.files.find(f => f.name === 'index.html').content;
@@ -44,6 +46,18 @@ test('قوالب API خارجي: طقس + عملات مسجّلة مع externalA
 test('matchCloneTemplate: هدف طقس → jaola-weather', () => {
     const c = matchCloneTemplate('تطبيق طقس ومناخ', { category: 'tool', kind: 'tool' }, null);
     assert.equal(c?.id, 'jaola-weather');
+});
+
+test('matchCloneTemplate: متجر إلكتروني → jaola-store', () => {
+    const c = matchCloneTemplate('متجر إلكتروني لبيع المنتجات مع سلة',
+        { category: 'ecommerce', kind: 'webapp' }, { roles: [{ name: 'Customer' }] });
+    assert.equal(c?.id, 'jaola-store');
+});
+
+test('matchCloneTemplate: حجز مواعيد → jaola-booking', () => {
+    const c = matchCloneTemplate('تطبيق حجز مواعيد لعيادة',
+        { category: 'appointments', kind: 'webapp' }, { roles: [{ name: 'Customer' }, { name: 'Admin' }] });
+    assert.equal(c?.id, 'jaola-booking');
 });
 
 test('كلون التوصيل: لا دوال معلّقة (كل مرجع معرّف)', () => {
