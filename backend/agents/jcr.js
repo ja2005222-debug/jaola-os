@@ -15,6 +15,7 @@ import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summar
 import { getLibraryModel, recordModel } from './modelLibrary.js';
 import { matchCloneTemplate } from './cloneTemplates/index.js';
 import { patchEditPlan } from './patchEditor.js';
+import { assetsFor, injectFaviconTag, paletteHint } from './cloneAssets.js';
 import { verifyBehavior, buildBehaviorFixInstruction, analyzeProjectStatic, readPageCode, extractDefinedFunctions } from './behaviorVerifier.js';
 import { detectProjectType } from './knowledgeEngine.js';
 import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
@@ -1984,6 +1985,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             const instruction = `خصّص *المحتوى والعلامة التجارية فقط* ليطابق: "${goal}".
 غيّر فقط: اسم التطبيق/العلامة (brandName والعنوان)، بيانات العيّنة (مصفوفات المنتجات/المطاعم/الأصناف/الأسعار/الوجهات… إلخ)، النصوص الظاهرة للمستخدم، ولوحة الألوان (متغيّرات CSS مثل --accent/--brand) في styles.css.
 🚫 ممنوع لمسه: أسماء الدوال أو أجسامها في app.js، بنية index.html، معرّفات العناصر (id) وسمات data-action، وتفويض الأحداث — لا تحذف أو تعيد تسمية أي دالة، ولا تكسر أي تفاعل.
+🎨 الهوية البصرية: ${paletteHint(goal)}
 أعِد التعديلات كتغييرات موضعية دقيقة (SEARCH/REPLACE) على المقاطع المذكورة فقط، لا إعادة كتابة كاملة.`;
 
             // (أ) مسار موضعي أولاً — الجذر: يعدّل الأجزاء المذكورة فقط فلا بتر مهما كبر الملف
@@ -2030,6 +2032,20 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 }
             }
         } catch (e) { this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', `⚠️ تخطّي التخصيص (الكلون العامل محفوظ): ${e.message}`); }
+
+        // 2.5) أصول العلامة (توسيع بيانات العيّنة): أيقونة/شعار مطابق للمجال —
+        //      تُطبَّق حتمياً هنا (بعد أي ارتداد) فتحصل كل نسخة على هوية بصرية ثابتة.
+        try {
+            const assets = assetsFor(goal);
+            await fsPromises.writeFile(path.join(projectPath, 'brand.svg'), assets.favicon);
+            const idxPath = path.join(projectPath, 'index.html');
+            if (fs.existsSync(idxPath)) {
+                const html = await fsPromises.readFile(idxPath, 'utf8');
+                const withIcon = injectFaviconTag(html, 'brand.svg');
+                if (withIcon !== html) await fsPromises.writeFile(idxPath, withIcon);
+            }
+            this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', '🎨 أُضيفت أيقونة العلامة (هوية بصرية مطابقة للمجال).');
+        } catch { /* الأيقونة اختيارية */ }
 
         // 3) إعداد النشر (موقع ثابت — لا خادم مطلوب للكلون التجريبي)
         try {
