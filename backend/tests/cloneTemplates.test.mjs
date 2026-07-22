@@ -17,12 +17,13 @@ import { jaolaTaxi } from '../agents/cloneTemplates/jaolaTaxi.js';
 import { jaolaTravel } from '../agents/cloneTemplates/jaolaTravel.js';
 import { jaolaLms } from '../agents/cloneTemplates/jaolaLms.js';
 import { jaolaSchool } from '../agents/cloneTemplates/jaolaSchool.js';
+import { jaolaEvents } from '../agents/cloneTemplates/jaolaEvents.js';
 import { matchCloneTemplate, listClones, getCloneById } from '../agents/cloneTemplates/index.js';
 import { verifyBehavior, detectUndefinedFunctions } from '../agents/behaviorVerifier.js';
 
 // كل قوالب jaola يجب أن تجتاز التحقّق السلوكي فعلاً (jsdom) — لا دوال معلّقة،
 // ولا انهيار حتى مع كتم fetch (قوالب الـ API تصمد بالوصول المحميّ).
-for (const build of [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaLms, jaolaSchool, jaolaWeather, jaolaCrypto, jaolaCurrency]) {
+for (const build of [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaEvents, jaolaLms, jaolaSchool, jaolaWeather, jaolaCrypto, jaolaCurrency]) {
     const c = build();
     test(`قالب ${c.id}: لا دوال معلّقة`, () => {
         const html = c.files.find(f => f.name === 'index.html').content;
@@ -103,8 +104,14 @@ test('matchCloneTemplate: بوّابة مدرسة → jaola-school', () => {
     assert.equal(c?.id, 'jaola-school');
 });
 
-test('قوالب متعدّدة الأدوار: marketplace + taxi + lms + school لها 3 أدوار وتغطية سليمة', async () => {
-    for (const build of [jaolaMarketplace, jaolaTaxi, jaolaLms, jaolaSchool]) {
+test('matchCloneTemplate: بيع تذاكر مناسبات → jaola-events', () => {
+    const c = matchCloneTemplate('منصة بيع تذاكر المناسبات والفعاليات والحفلات',
+        { category: 'events', kind: 'webapp' }, { roles: [{ name: 'Buyer' }, { name: 'Organizer' }] });
+    assert.equal(c?.id, 'jaola-events');
+});
+
+test('قوالب متعدّدة الأدوار: marketplace + taxi + lms + school + events لها 3 أدوار وتغطية سليمة', async () => {
+    for (const build of [jaolaMarketplace, jaolaTaxi, jaolaLms, jaolaSchool, jaolaEvents]) {
         const c = build();
         assert.equal(c.model.roles.length, 3, `${c.id}: ثلاثة أدوار`);
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaola-role-'));
