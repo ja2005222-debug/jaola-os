@@ -15,6 +15,7 @@ import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summar
 import { getLibraryModel, recordModel } from './modelLibrary.js';
 import { matchCloneTemplate } from './cloneTemplates/index.js';
 import { patchEditPlan } from './patchEditor.js';
+import { stampSeed } from './seedStamp.js';
 import { assetsFor, injectFaviconTag, paletteHint } from './cloneAssets.js';
 import { verifyBehavior, buildBehaviorFixInstruction, analyzeProjectStatic, readPageCode, extractDefinedFunctions } from './behaviorVerifier.js';
 import { detectProjectType } from './knowledgeEngine.js';
@@ -1974,36 +1975,56 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const model = mergeProjectModel(getDomainModel(username, activeProject) || {}, clone.model);
         setDomainModel(username, activeProject, model);
 
-        // 2) البصمة — تخصيص المحتوى/العلامة فقط. مسار موضعي (patch) أولاً: لا بتر
-        //    ولا إعادة كتابة كاملة (الجذر الذي كان يكسر البصمة على الملفات الكبيرة)،
-        //    ثم حارس ارتداد (لا دالة تُفقد) + تحقّق سلوكي + تراجع آمن للكلون النظيف.
+        // 2) البصمة — تخصيص محدود المخرَج فقط (لا إعادة كتابة كاملة أبداً — هو
+        //    جذر «التخصيص لا يحدث»: الملف الكبير يُبتَر فتُفقد الدوال ويُرتدّ):
+        //    (أ) بيانات العيّنة: مصفوفة واحدة عبر نداء ذكاء صغير محدود.
+        //    (ب) العلامة/الألوان: تعديل موضعي (patch) دقيق.
+        //    ثم حارس فقد الدوال + تحقّق سلوكي + تراجع آمن للكلون النظيف.
         try {
             this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', '🎨 وضع البصمة — تخصيص المحتوى ليطابق طلبك...');
-            const baseFiles = clone.files.map(f => ({ name: f.name, content: f.content }));
-            const appBefore = baseFiles.find(f => f.name === 'app.js');
+            let workFiles = clone.files.map(f => ({ name: f.name, content: f.content }));
+            const appBefore = workFiles.find(f => f.name === 'app.js');
             const fnsBefore = new Set(appBefore ? extractDefinedFunctions(appBefore.content) : []);
-            const instruction = `خصّص *المحتوى والعلامة التجارية فقط* ليطابق: "${goal}".
-غيّر فقط: اسم التطبيق/العلامة (brandName والعنوان)، بيانات العيّنة (مصفوفات المنتجات/المطاعم/الأصناف/الأسعار/الوجهات… إلخ)، النصوص الظاهرة للمستخدم، ولوحة الألوان (متغيّرات CSS مثل --accent/--brand) في styles.css.
-🚫 ممنوع لمسه: أسماء الدوال أو أجسامها في app.js، بنية index.html، معرّفات العناصر (id) وسمات data-action، وتفويض الأحداث — لا تحذف أو تعيد تسمية أي دالة، ولا تكسر أي تفاعل.
-🎨 الهوية البصرية: ${paletteHint(goal)}
-أعِد التعديلات كتغييرات موضعية دقيقة (SEARCH/REPLACE) على المقاطع المذكورة فقط، لا إعادة كتابة كاملة.`;
-
-            // (أ) مسار موضعي أولاً — الجذر: يعدّل الأجزاء المذكورة فقط فلا بتر مهما كبر الملف
-            let stamped = null;
-            try {
-                const patch = await patchEditPlan(instruction, baseFiles, lang);
-                if (patch.ok && patch.files.length) {
-                    stamped = patch.files;
-                    this.emitLiveLog(roomName, '5. RUNTIME', 'PatchEditor',
-                        `🩹 بصمة موضعية — ${patch.applied} تغيير على ${patch.files.map(f => f.name).join('، ')} (بلا إعادة كتابة كاملة).`);
+            let changed = false;
+            const mergeFileList = (base, changes) => {
+                const out = base.map(f => ({ ...f }));
+                for (const c of changes) {
+                    const idx = out.findIndex(f => f.name === c.name);
+                    if (idx >= 0) out[idx] = { name: c.name, content: c.content };
+                    else out.push({ name: c.name, content: c.content });
                 }
-            } catch (e) { console.warn('[Stamp/Patch]', e.message); }
+                return out;
+            };
 
-            // (ب) احتياط محروس: إعادة كتابة كاملة فقط إن لم يُطابِق الموضعي شيئاً
-            if ((!stamped || !stamped.length) && agents?.coreEditCodePlan) {
-                const fixPlan = await agents.coreEditCodePlan(`${instruction}\nأعِد الملفات الثلاثة كاملةً.`, baseFiles, lang);
-                if (fixPlan?.files?.length && !fixPlan.error) stamped = fixPlan.files;
-            }
+            // (أ) بيانات العيّنة — مصفوفة محدودة (مخرَج صغير = لا بتر مهما كبر app.js)
+            try {
+                const seed = await stampSeed(workFiles, goal, { chat: smartChat, category: clone.category });
+                if (seed.ok && seed.files.length) {
+                    workFiles = mergeFileList(workFiles, seed.files);
+                    changed = true;
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'SeedStamp', `🌱 خُصّصت بيانات العيّنة (${seed.name}) لتطابق طلبك — بلا مساس بالدوال.`);
+                }
+            } catch (e) { console.warn('[Stamp/Seed]', e.message); }
+
+            // (ب) العلامة/الألوان — تعديل موضعي دقيق (اسم العلامة + العنوان + --accent فقط)
+            const brandInstruction = `عدّل *العلامة والألوان فقط* لتطابق: "${goal}".
+غيّر: نصّ brandName والعنوان (title) في index.html، ومتغيّر اللون --accent/--brand في styles.css إن لزم. ${paletteHint(goal)}
+🚫 لا تلمس app.js إطلاقاً، ولا بنية index.html أو معرّفات id/data-action.
+أعِد كتل SEARCH/REPLACE موضعية دقيقة فقط.`;
+            try {
+                const brandFiles = workFiles.filter(f => f.name !== 'app.js'); // لا نمسّ المنطق
+                const patch = await patchEditPlan(brandInstruction, brandFiles, lang);
+                if (patch.ok && patch.files.length) {
+                    workFiles = mergeFileList(workFiles, patch.files);
+                    changed = true;
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'PatchEditor', `🩹 خُصّصت العلامة/الألوان موضعياً (${patch.files.map(f => f.name).join('، ')}).`);
+                }
+            } catch (e) { console.warn('[Stamp/Brand]', e.message); }
+
+            const stamped = changed ? workFiles.filter(f => {
+                const orig = clone.files.find(o => o.name === f.name);
+                return !orig || orig.content !== f.content;
+            }) : [];
 
             if (stamped && stamped.length) {
                 const emitG = (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m);
