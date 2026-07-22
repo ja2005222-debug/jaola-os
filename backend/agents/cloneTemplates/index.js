@@ -3,9 +3,11 @@
  * كل مشروع معقّد يبدأ من كلون مطابق (يجتاز التحقّق السلوكي)، ثم يخصّصه الذكاء.
  */
 import { foodDeliveryClone } from './foodDelivery.js';
+import { jaolaWeather } from './jaolaWeather.js';
+import { jaolaCrypto } from './jaolaCrypto.js';
 
-// كل القوالب المتاحة (تُبنى مرة عند الحاجة)
-const BUILDERS = [foodDeliveryClone];
+// كل قوالب jaola المتاحة (تُبنى مرة عند الحاجة)
+const BUILDERS = [foodDeliveryClone, jaolaWeather, jaolaCrypto];
 
 /** بيانات وصفية للعرض (لوحة «معرفة المنصّة») — بلا محتوى الملفات الثقيل. */
 export function listClones() {
@@ -15,6 +17,7 @@ export function listClones() {
             id: c.id, name: c.name, category: c.category, description: c.description,
             roles: (c.model?.roles || []).map(r => r.name),
             files: c.files.map(f => f.name),
+            externalApi: c.externalApi || null,
         };
     });
 }

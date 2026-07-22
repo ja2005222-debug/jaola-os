@@ -84,6 +84,10 @@ export function extractDefinedFunctions(js = '') {
 }
 
 export function detectUndefinedFunctions({ html = '', js = '' } = {}) {
+    // نزيل التعليقات أولاً — نصّها ليس كوداً (تعليق «يستهلك CoinGecko (…)» كان
+    // يُحسب نداءً). نحمي «://» في الروابط من قصّها كتعليق سطري.
+    js = js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(?<!:)\/\/[^\n]*/g, '');
+
     // 1) الأسماء المعرّفة (بسخاء لتقليل الإيجابيات الكاذبة)
     const defined = extractDefinedFunctions(js);
 

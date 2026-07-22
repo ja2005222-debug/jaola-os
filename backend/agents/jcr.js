@@ -1963,7 +1963,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const lang = getUserLanguage(username) || 'ar';
         const t0 = Date.now();
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
-        this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', `🍔 كلون عامل: ${clone.name} — نبدأ من تطبيق يعمل فعلاً (لا توليد من الصفر)`);
+        this.emitLiveLog(roomName, '5. RUNTIME', 'JaolaTemplate', `🧩 قالب jaola عامل: ${clone.name} (${clone.id})${clone.externalApi ? ` — API خارجي: ${clone.externalApi}` : ''} — نبدأ من تطبيق يعمل فعلاً (لا توليد من الصفر)`);
 
         // 1) اكتب ملفات الكلون العامل
         for (const f of clone.files) {
@@ -2020,11 +2020,13 @@ User preferences: ${JSON.stringify(execMemory)}` },
         this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
         try { recordModel(clone.category, model, { verified: true }); } catch {}
 
+        const rolesLabel = (clone.model?.roles || []).map(r => r.name).join(' · ');
+        const apiNote = clone.externalApi ? (lang === 'ar' ? ` (متصل بـ API خارجي حيّ: ${clone.externalApi})` : ` (live external API: ${clone.externalApi})`) : '';
         const msg = lang === 'ar'
-            ? `✅ اكتمل — بدأنا من كلون **${clone.name}** يعمل فعلاً (واجهات: زبون · مطعم · سائق · تتبّع) ووضعنا بصمتك. جرّب التبويبات في المعاينة: أضِف للسلة، قدّم طلباً، ثم افتح تبويب المطعم لتراه يصل. اطلب أي تعديل.`
-            : `✅ Done — started from a working **${clone.name}** clone (customer · restaurant · driver · tracking) and applied your brand. Try the tabs in the preview.`;
+            ? `✅ اكتمل — بدأنا من قالب **${clone.name}** (jaola) يعمل فعلاً${rolesLabel ? ` — ${rolesLabel}` : ''}${apiNote} ووضعنا بصمتك. جرّبه في المعاينة، ثم اطلب أي تعديل.`
+            : `✅ Done — started from a working **${clone.name}** jaola template${apiNote} and applied your brand. Try it in the preview, then request any change.`;
         this.io.to(roomName).emit('chat_reply', { message: msg });
-        this.emitLiveLog(roomName, 'JCOS', 'Kernel', '✨ نجاح (كلون عامل)');
+        this.emitLiveLog(roomName, 'JCOS', 'Kernel', '✨ نجاح (قالب jaola عامل)');
         return { success: true, clone: clone.id };
     }
 
