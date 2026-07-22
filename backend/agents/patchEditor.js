@@ -116,12 +116,14 @@ export async function patchEditPlan(instruction, files = [], lang = 'ar', { chat
         raw = await chat([
             { role: 'system', content: SYSTEM },
             { role: 'user', content: user },
-        ], { max_tokens: 2000, temperature: 0.1 });
+        ], { max_tokens: 4000, temperature: 0.1 });
     } catch (e) {
         return { files: [], applied: 0, failed: [], ok: false, error: e.message, raw: '' };
     }
     const blocks = parseEditBlocks(raw);
     if (!blocks.length) return { files: [], applied: 0, failed: [], ok: false, raw };
     const { files: changed, applied, failed } = applyEdits(files, blocks);
-    return { files: changed, applied, failed, ok: applied > 0 && failed.length === 0, raw };
+    // نقبل التطبيق ما دام تغيّر شيء فعلاً — الكتل غير المطابِقة لا تُسقط الباقي
+    // (البتر يستحيل هنا؛ ما لا يُطبَّق لا يُلمس، فلا فقدان). partial ⇒ نُبلغ.
+    return { files: changed, applied, failed, ok: applied > 0, partial: failed.length > 0, raw };
 }
