@@ -32,6 +32,8 @@ import {
 } from './agents/index.js';
 import { generatePWA } from './agents/pwaAgent.js';
 import { generateJaolaBot } from './agents/jaolaBot.js';
+import { signBotToken, verifyBotToken } from './agents/jaolaBotToken.js';
+import { smartChat } from './agents/baseAgent.js';
 import { generateBackend, generateFrontendAPIIntegration } from './agents/backendAgent.js';
 import { needsBackend } from './agents/knowledgeEngine.js';
 import {
@@ -128,7 +130,13 @@ const io = new Server(httpServer, {
     },
 });
 
-app.use(cors(corsOptions));
+// نقطة دردشة جولا بوت عامّة: تُستدعى من مواقع الزوّار (origins متعدّدة) —
+// نسمح لأي origin لهذا المسار وحده؛ بقيّة المسارات تبقى مقيّدة بـ ALLOWED_ORIGINS.
+const corsDelegate = (req, callback) => {
+    if (req.path === '/api/jaola-bot/chat') return callback(null, { origin: true, credentials: false, methods: ['POST', 'OPTIONS'] });
+    callback(null, corsOptions);
+};
+app.use(cors(corsDelegate));
 // 💳 Stripe webhook يحتاج الجسم الخام للتحقق من التوقيع — يُسجَّل قبل express.json
 app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '1mb' })); // حد أقصى لحجم الطلب
@@ -293,6 +301,15 @@ const aiLimit = rateLimit({
         error: 'API_QUOTA_EXHAUSTED',
         details: 'تجاوزت الحد المسموح (10 طلبات/دقيقة). انتظر قليلاً.'
     })
+});
+
+// Rate limiter لدردشة جولا بوت العامّة (زوّار غير مسجّلين) — مفتاحه IP،
+// أشدّ من aiLimit لأن النداء عامّ ويستهلك رصيد الذكاء الاصطناعي.
+const botChatLimit = rateLimit({
+    windowMs: 60 * 1000,
+    max: 20,
+    keyGenerator: (req) => ipKeyGenerator(req),
+    handler: (req, res) => res.status(200).json({ reply: null }), // تجاوز الحد → يرتدّ الودجت لقاعدته
 });
 
 // Rate limiter عام للـ API
@@ -893,12 +910,22 @@ app.post('/api/pwa/generate', verifyToken, validateProjectOwnership, async (req,
 
 // 🤖 إضافة «جولا بوت» عند الطلب لمشروع موجود (مساعد محادثة offline + API-ready)
 app.post('/api/jaola-bot/generate', verifyToken, validateProjectOwnership, async (req, res) => {
-    const { brandName, emoji, apiBase, faq, quick, welcome, fallback } = req.body || {};
+    const { brandName, emoji, apiBase, faq, quick, welcome, fallback, ai } = req.body || {};
     try {
+        // عند تفعيل الذكاء: نضبط apiBase لنقطة الدردشة العامّة ونضمّن توكناً موقّعاً
+        // يحمل هوية المشروع — فيردّ البوت بذكاء حيّ مع بقاء قاعدته احتياطاً.
+        let liveApiBase, botToken;
+        if (ai === true) {
+            const publicBase = process.env.PUBLIC_BACKEND_URL || process.env.RENDER_EXTERNAL_URL
+                || `${req.protocol}://${req.get('host')}`;
+            liveApiBase = `${publicBase.replace(/\/$/, '')}/api/jaola-bot/chat`;
+            botToken = signBotToken({ u: req.user.username, p: req.activeProject, b: typeof brandName === 'string' ? brandName.slice(0, 40) : req.activeProject });
+        }
         const result = await generateJaolaBot(req.projectPath, {
             brandName: typeof brandName === 'string' ? brandName : undefined,
             emoji: typeof emoji === 'string' ? emoji : undefined,
-            apiBase: typeof apiBase === 'string' ? apiBase : undefined,
+            apiBase: liveApiBase || (typeof apiBase === 'string' ? apiBase : undefined),
+            token: botToken,
             faq: Array.isArray(faq) ? faq : undefined,
             quick: Array.isArray(quick) ? quick : undefined,
             welcome: typeof welcome === 'string' ? welcome : undefined,
@@ -909,11 +936,36 @@ app.post('/api/jaola-bot/generate', verifyToken, validateProjectOwnership, async
         const roomName = `${req.user.username}-${req.activeProject}`;
         emitWorkspaceFiles(roomName, req.projectPath);
         io.to(roomName).emit('log', {
-            message: `🤖 [SYSTEM]: تم إضافة المساعد «${result.brandName}» إلى موقعك${result.apiBase ? ' (مربوط بـ API)' : ' (يعمل بقاعدة معرفة داخلية)'}.`
+            message: `🤖 [SYSTEM]: تم إضافة المساعد «${result.brandName}» إلى موقعك${result.apiBase ? ' (ذكاء حيّ + قاعدة احتياطية)' : ' (يعمل بقاعدة معرفة داخلية)'}.`
         });
-        res.json({ success: true, brandName: result.brandName, apiBase: result.apiBase, files: result.files });
+        res.json({ success: true, brandName: result.brandName, apiBase: result.apiBase, ai: !!liveApiBase, files: result.files });
     } catch (err) {
         res.status(500).json({ error: 'فشل إضافة البوت: ' + err.message });
+    }
+});
+
+// 🤖 دردشة جولا بوت الحيّة — نقطة عامّة يستدعيها الودجت من موقع الزائر.
+// آمنة عبر: توكن موقّع (هوية المشروع) + محدّد معدّل صارم + سقف طول الرسالة.
+// أي خطأ يعيد reply=null فيرتدّ الودجت لقاعدته الداخلية (لا انقطاع للخدمة).
+app.post('/api/jaola-bot/chat', botChatLimit, async (req, res) => {
+    try {
+        const { message, token } = req.body || {};
+        if (!message || typeof message !== 'string' || !message.trim()) {
+            return res.status(400).json({ reply: null });
+        }
+        const claims = verifyBotToken(token);
+        if (!claims || !claims.p) return res.status(401).json({ reply: null });
+
+        const brand = (claims.b || claims.p).toString().slice(0, 40);
+        const msg = message.trim().slice(0, 500);
+        const system = `أنت مساعد خدمة عملاء لموقع «${brand}». أجب بإيجاز واحترافية وبنفس لغة الزائر (عربي أو إنجليزي حسب سؤاله). التزم بنطاق الموقع وخدماته، ولا تختلق معلومات أو أسعاراً؛ إن لم تكن متأكّداً، اقترح بلطف التواصل المباشر مع الموقع.`;
+        const reply = await smartChat(
+            [{ role: 'system', content: system }, { role: 'user', content: msg }],
+            { max_tokens: 300, temperature: 0.4 }
+        );
+        res.json({ reply: (reply || '').toString().trim() || null });
+    } catch {
+        res.status(200).json({ reply: null });
     }
 });
 

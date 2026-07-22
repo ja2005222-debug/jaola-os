@@ -357,7 +357,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${BACKEND_URL}/api/jaola-bot/generate`, {
         method: 'POST', headers: getHeaders(),
-        body: JSON.stringify({ project: activeProject, brandName: activeProject }),
+        body: JSON.stringify({ project: activeProject, brandName: activeProject, ai: true }),
       });
       const d = await res.json().catch(() => ({}));
       if (res.ok && d.success) {
