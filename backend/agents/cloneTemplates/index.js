@@ -12,9 +12,11 @@ import { jaolaCurrency } from './jaolaCurrency.js';
 import { jaolaMarketplace } from './jaolaMarketplace.js';
 import { jaolaTaxi } from './jaolaTaxi.js';
 import { jaolaTravel } from './jaolaTravel.js';
+import { jaolaLms } from './jaolaLms.js';
+import { jaolaSchool } from './jaolaSchool.js';
 
 // كل قوالب jaola المتاحة (تُبنى مرة عند الحاجة)
-const BUILDERS = [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaWeather, jaolaCrypto, jaolaCurrency];
+const BUILDERS = [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaLms, jaolaSchool, jaolaWeather, jaolaCrypto, jaolaCurrency];
 
 /** بيانات وصفية للعرض (لوحة «معرفة المنصّة») — بلا محتوى الملفات الثقيل. */
 export function listClones() {
