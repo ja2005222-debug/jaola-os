@@ -109,6 +109,43 @@ export function detectUndefinedFunctions({ html = '', js = '' } = {}) {
     return [...referenced].filter(n => !defined.has(n) && !BUILTIN_CALLS.has(n));
 }
 
+// تطبيع عربي/لاتيني للمطابقة (إزالة تشكيل + توحيد الهمزات/التاء/الياء).
+function normRole(s) {
+    return (s || '').toString().toLowerCase()
+        .replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه')
+        .replace(/[ًٌٍَُِّْ]/g, '').trim();
+}
+
+// مجموعات مرادفات الأدوار (عربي/إنجليزي) — الدور يُعدّ ممثَّلاً إن ظهر أيٌّ من
+// مرادفاته في الكود/الواجهة. يمنع شكوى زائفة مثل «Customer» بينما القالب يمثّله
+// كـ «Buyer/مشترٍ».
+const ROLE_SYNONYMS = [
+    ['customer', 'client', 'buyer', 'shopper', 'attendee', 'عميل', 'زبون', 'مشتر', 'مستخدم', 'user'],
+    ['driver', 'captain', 'courier', 'سائق', 'كابتن', 'مندوب'],
+    ['rider', 'passenger', 'راكب'],
+    ['admin', 'administrator', 'manager', 'owner', 'مدير', 'اداره', 'مشرف', 'مالك'],
+    ['seller', 'vendor', 'merchant', 'بائع', 'تاجر', 'متجر'],
+    ['organizer', 'organiser', 'منظم'],
+    ['restaurant', 'مطعم'],
+    ['student', 'طالب', 'متعلم'],
+    ['teacher', 'معلم', 'مدرس'],
+    ['instructor', 'trainer', 'مدرب'],
+    ['traveler', 'traveller', 'guest', 'مسافر', 'ضيف', 'نزيل'],
+    ['patient', 'مريض'],
+    ['doctor', 'physician', 'طبيب'],
+];
+
+// كل رموز المطابقة لدور: اسمه + مرادفات مجموعته (مطبَّعة، بطول ≥ 3 لتجنّب الضجيج).
+function roleMatchTokens(name) {
+    const n = normRole(name);
+    const tokens = new Set(n ? [n] : []);
+    for (const group of ROLE_SYNONYMS) {
+        const norm = group.map(normRole);
+        if (norm.some(t => t && (t === n || n.includes(t) || t.includes(n)))) norm.forEach(t => tokens.add(t));
+    }
+    return [...tokens].filter(t => t && t.length >= 3);
+}
+
 export function analyzeStatic({ html = '', js = '', blueprint = null, domainModel = null } = {}) {
     const hay = `${html}\n${js}`.toLowerCase();
     const checks = [];
@@ -124,11 +161,15 @@ export function analyzeStatic({ html = '', js = '', blueprint = null, domainMode
     // تغطية الأدوار: نموذج بأكثر من دور يجب أن يظهر كلّ دور في الواجهة/الكود
     const roles = Array.isArray(domainModel?.roles) ? domainModel.roles : [];
     if (roles.length > 1) {
+        const hayN = normRole(hay); // مطبَّع لمطابقة المرادفات العربية بلا تشكيل
         const missing = roles.filter(r => {
-            const name = (r?.name || '').toLowerCase();
+            const name = normRole(r?.name);
             if (!name) return false;
-            const caps = (r?.capabilities || []).map(c => (c || '').toLowerCase());
-            return !hay.includes(name) && !caps.some(c => c && hay.includes(c.split(' ')[0]));
+            // ممثَّل إن ظهر اسمه أو أيّ مرادف من مجموعته
+            if (roleMatchTokens(r?.name).some(t => hayN.includes(t))) return false;
+            // أو ظهرت أولى كلمات إحدى قدراته (fallback)
+            const caps = (r?.capabilities || []).map(c => normRole(c));
+            return !caps.some(c => c && hayN.includes(c.split(' ')[0]));
         }).map(r => r.name);
         checks.push(missing.length
             ? { name: 'role-coverage', status: 'fail', detail: `أدوار بلا واجهة/تمثيل: ${missing.join('، ')} — النموذج متعدّد الأدوار لكن بعضها غير مبنيّ.` }

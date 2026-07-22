@@ -34,6 +34,40 @@ test('analyzeStatic: نموذج متعدّد الأدوار وأحدها غير 
     assert.match(role.detail, /RestaurantOwner/);
 });
 
+test('analyzeStatic: مرادف الدور — Customer يمرّ إن مُثِّل كـ Buyer/مشترٍ', () => {
+    // نموذج المستخدم يسمّي الدور Customer، لكن القالب يمثّله كـ buyer/مشترٍ
+    const checks = analyzeStatic({
+        html: '<button data-action="openAuth">دخول مشترٍ</button><div id="view-tickets"></div>',
+        js: 'const orders=[]; function submitAuth(){ state.user={role:"buyer"}; } function renderAdmin(){}',
+        blueprint: { kind: 'webapp' },
+        domainModel: { roles: [{ name: 'Customer' }, { name: 'Admin' }] },
+    });
+    const role = checks.find(c => c.name === 'role-coverage');
+    assert.equal(role.status, 'pass', 'Customer≈Buyer/مشترٍ يُعدّ ممثَّلاً');
+});
+
+test('analyzeStatic: مرادفات عربية — Driver≈سائق، Admin≈مدير', () => {
+    const checks = analyzeStatic({
+        html: '<div class="سائق-view"></div><section id="لوحة-مدير"></section>',
+        js: 'const rides=[];',
+        blueprint: { kind: 'webapp' },
+        domainModel: { roles: [{ name: 'Driver' }, { name: 'Admin' }] },
+    });
+    assert.equal(checks.find(c => c.name === 'role-coverage').status, 'pass');
+});
+
+test('analyzeStatic: المرادفات لا تُخفي دوراً غائباً فعلاً', () => {
+    const checks = analyzeStatic({
+        html: '<div id="buyer-view"></div>',
+        js: 'const orders=[];',
+        blueprint: { kind: 'webapp' },
+        domainModel: { roles: [{ name: 'Customer' }, { name: 'Organizer' }] },
+    });
+    const role = checks.find(c => c.name === 'role-coverage');
+    assert.equal(role.status, 'fail', 'Organizer غائب فعلاً');
+    assert.match(role.detail, /Organizer/);
+});
+
 test('analyzeStatic: كل الأدوار ممثّلة → pass', () => {
     const checks = analyzeStatic({
         html: '<div id="customer"></div><section class="restaurantowner-panel"></section>',
