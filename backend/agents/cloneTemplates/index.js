@@ -7,9 +7,11 @@ import { jaolaWeather } from './jaolaWeather.js';
 import { jaolaCrypto } from './jaolaCrypto.js';
 import { jaolaStore } from './jaolaStore.js';
 import { jaolaBooking } from './jaolaBooking.js';
+import { jaolaRealestate } from './jaolaRealestate.js';
+import { jaolaCurrency } from './jaolaCurrency.js';
 
 // كل قوالب jaola المتاحة (تُبنى مرة عند الحاجة)
-const BUILDERS = [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaWeather, jaolaCrypto];
+const BUILDERS = [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaWeather, jaolaCrypto, jaolaCurrency];
 
 /** بيانات وصفية للعرض (لوحة «معرفة المنصّة») — بلا محتوى الملفات الثقيل. */
 export function listClones() {
