@@ -12,12 +12,14 @@ import { jaolaStore } from '../agents/cloneTemplates/jaolaStore.js';
 import { jaolaBooking } from '../agents/cloneTemplates/jaolaBooking.js';
 import { jaolaRealestate } from '../agents/cloneTemplates/jaolaRealestate.js';
 import { jaolaCurrency } from '../agents/cloneTemplates/jaolaCurrency.js';
+import { jaolaMarketplace } from '../agents/cloneTemplates/jaolaMarketplace.js';
+import { jaolaTaxi } from '../agents/cloneTemplates/jaolaTaxi.js';
 import { matchCloneTemplate, listClones, getCloneById } from '../agents/cloneTemplates/index.js';
 import { verifyBehavior, detectUndefinedFunctions } from '../agents/behaviorVerifier.js';
 
 // كل قوالب jaola يجب أن تجتاز التحقّق السلوكي فعلاً (jsdom) — لا دوال معلّقة،
 // ولا انهيار حتى مع كتم fetch (قوالب الـ API تصمد بالوصول المحميّ).
-for (const build of [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaWeather, jaolaCrypto, jaolaCurrency]) {
+for (const build of [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaWeather, jaolaCrypto, jaolaCurrency]) {
     const c = build();
     test(`قالب ${c.id}: لا دوال معلّقة`, () => {
         const html = c.files.find(f => f.name === 'index.html').content;
@@ -55,6 +57,31 @@ test('matchCloneTemplate: هدف عقارات → jaola-realestate', () => {
 test('matchCloneTemplate: هدف محوّل عملات → jaola-currency', () => {
     const c = matchCloneTemplate('محوّل عملات وسعر الصرف', { category: 'tool', kind: 'tool' }, null);
     assert.equal(c?.id, 'jaola-currency');
+});
+
+test('matchCloneTemplate: سوق متعدّد البائعين → jaola-marketplace', () => {
+    const c = matchCloneTemplate('منصة سوق متعدد البائعين متاجر وباعة',
+        { category: 'marketplace', kind: 'webapp' }, { roles: [{ name: 'Customer' }, { name: 'Seller' }, { name: 'Admin' }] });
+    assert.equal(c?.id, 'jaola-marketplace');
+});
+
+test('matchCloneTemplate: تطبيق تاكسي → jaola-taxi', () => {
+    const c = matchCloneTemplate('تطبيق تاكسي لطلب سيارة وتوصيل ركاب',
+        { category: 'ridehailing', kind: 'webapp' }, { roles: [{ name: 'Rider' }, { name: 'Driver' }] });
+    assert.equal(c?.id, 'jaola-taxi');
+});
+
+test('قوالب متعدّدة الأدوار: marketplace + taxi لها 3 أدوار وتغطية أدوار سليمة', async () => {
+    for (const build of [jaolaMarketplace, jaolaTaxi]) {
+        const c = build();
+        assert.equal(c.model.roles.length, 3, `${c.id}: ثلاثة أدوار`);
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaola-role-'));
+        for (const f of c.files) fs.writeFileSync(path.join(dir, f.name), f.content);
+        const v = await verifyBehavior({ projectPath: dir, blueprint: { kind: 'webapp', functionalComponents: [{ name: 'x' }] }, domainModel: c.model });
+        const byName = Object.fromEntries(v.checks.map(x => [x.name, x.status]));
+        assert.notEqual(byName['role-coverage'], 'fail', `${c.id}: كل الأدوار ممثّلة`);
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
 });
 
 test('matchCloneTemplate: هدف طقس → jaola-weather', () => {
