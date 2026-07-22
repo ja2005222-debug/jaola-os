@@ -1973,28 +1973,63 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const model = mergeProjectModel(getDomainModel(username, activeProject) || {}, clone.model);
         setDomainModel(username, activeProject, model);
 
-        // 2) البصمة — تخصيص المحتوى/العلامة فقط، مع تراجع آمن إن كسر التطبيق
-        if (agents?.coreEditCodePlan) {
+        // 2) البصمة — تخصيص المحتوى/العلامة فقط. مسار موضعي (patch) أولاً: لا بتر
+        //    ولا إعادة كتابة كاملة (الجذر الذي كان يكسر البصمة على الملفات الكبيرة)،
+        //    ثم حارس ارتداد (لا دالة تُفقد) + تحقّق سلوكي + تراجع آمن للكلون النظيف.
+        try {
+            this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', '🎨 وضع البصمة — تخصيص المحتوى ليطابق طلبك...');
+            const baseFiles = clone.files.map(f => ({ name: f.name, content: f.content }));
+            const appBefore = baseFiles.find(f => f.name === 'app.js');
+            const fnsBefore = new Set(appBefore ? extractDefinedFunctions(appBefore.content) : []);
+            const instruction = `خصّص *المحتوى والعلامة التجارية فقط* ليطابق: "${goal}".
+غيّر فقط: اسم التطبيق/العلامة (brandName والعنوان)، بيانات العيّنة (مصفوفات المنتجات/المطاعم/الأصناف/الأسعار/الوجهات… إلخ)، النصوص الظاهرة للمستخدم، ولوحة الألوان (متغيّرات CSS مثل --accent/--brand) في styles.css.
+🚫 ممنوع لمسه: أسماء الدوال أو أجسامها في app.js، بنية index.html، معرّفات العناصر (id) وسمات data-action، وتفويض الأحداث — لا تحذف أو تعيد تسمية أي دالة، ولا تكسر أي تفاعل.
+أعِد التعديلات كتغييرات موضعية دقيقة (SEARCH/REPLACE) على المقاطع المذكورة فقط، لا إعادة كتابة كاملة.`;
+
+            // (أ) مسار موضعي أولاً — الجذر: يعدّل الأجزاء المذكورة فقط فلا بتر مهما كبر الملف
+            let stamped = null;
             try {
-                this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', '🎨 وضع البصمة — تخصيص المحتوى ليطابق طلبك...');
-                const baseFiles = clone.files.map(f => ({ name: f.name, content: f.content }));
-                const instruction = `خصّص *المحتوى والعلامة التجارية فقط* ليطابق: "${goal}". يمكنك تغيير: اسم التطبيق/العلامة، أسماء المطاعم وأصنافها وأسعارها، النصوص، ولوحة الألوان في styles.css إن لزم. **حافظ حرفياً على كل الدوال في app.js وبنية index.html ومعرّفات العناصر (id وdata-action) وتفويض الأحداث** — لا تحذف أي دالة ولا تكسر أي تفاعل. أعِد الملفات الثلاثة كاملةً.`;
-                const fixPlan = await agents.coreEditCodePlan(instruction, baseFiles, lang);
-                if (fixPlan?.files?.length && !fixPlan.error) {
-                    const emitG = (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m);
-                    const guarded = await ensureEditIntegrity(
-                        await guardFiles(scrubPlaceholders(fixPlan.files, activeProject), emitG), projectPath, emitG);
-                    await writePlanFiles(projectPath, guarded);
-                    const verdict = await verifyBehavior({ projectPath, blueprint: { kind: 'webapp' }, domainModel: model });
-                    if (verdict.ran && !verdict.ok) {
-                        this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', '↩️ التخصيص كسر التطبيق — استرجاع الكلون العامل النظيف.');
-                        for (const f of clone.files) await fsPromises.writeFile(path.join(projectPath, f.name), f.content);
-                    } else {
-                        this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', `✅ البصمة وُضعت والتطبيق يعمل (${verdict.summary || 'تحقّق سلوكي'}).`);
-                    }
+                const patch = await patchEditPlan(instruction, baseFiles, lang);
+                if (patch.ok && patch.files.length) {
+                    stamped = patch.files;
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'PatchEditor',
+                        `🩹 بصمة موضعية — ${patch.applied} تغيير على ${patch.files.map(f => f.name).join('، ')} (بلا إعادة كتابة كاملة).`);
                 }
-            } catch (e) { this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', `⚠️ تخطّي التخصيص (الكلون العامل محفوظ): ${e.message}`); }
-        }
+            } catch (e) { console.warn('[Stamp/Patch]', e.message); }
+
+            // (ب) احتياط محروس: إعادة كتابة كاملة فقط إن لم يُطابِق الموضعي شيئاً
+            if ((!stamped || !stamped.length) && agents?.coreEditCodePlan) {
+                const fixPlan = await agents.coreEditCodePlan(`${instruction}\nأعِد الملفات الثلاثة كاملةً.`, baseFiles, lang);
+                if (fixPlan?.files?.length && !fixPlan.error) stamped = fixPlan.files;
+            }
+
+            if (stamped && stamped.length) {
+                const emitG = (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m);
+                const guarded = await ensureEditIntegrity(
+                    await guardFiles(scrubPlaceholders(stamped, activeProject), emitG), projectPath, emitG);
+                await writePlanFiles(projectPath, guarded);
+
+                // حارس ارتداد: لا دالة تُفقد بالتخصيص (belt & suspenders مع التحقّق السلوكي)
+                let lostFn = [];
+                try {
+                    const appPath = path.join(projectPath, 'app.js');
+                    const appAfterContent = (guarded.find(f => f.name === 'app.js') || {}).content
+                        || (fs.existsSync(appPath) ? fs.readFileSync(appPath, 'utf8') : '');
+                    const fnsAfter = new Set(extractDefinedFunctions(appAfterContent));
+                    lostFn = [...fnsBefore].filter(n => !fnsAfter.has(n));
+                } catch { /* تجاهل */ }
+
+                const verdict = await verifyBehavior({ projectPath, blueprint: { kind: 'webapp' }, domainModel: model });
+                const broke = (verdict.ran && !verdict.ok) || lostFn.length > 0;
+                if (broke) {
+                    const why = lostFn.length ? `فقد دوال (${lostFn.slice(0, 3).join('، ')})` : (verdict.summary || 'كسر سلوكي');
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', `↩️ التخصيص كسر التطبيق (${why}) — استرجاع الكلون العامل النظيف.`);
+                    for (const f of clone.files) await fsPromises.writeFile(path.join(projectPath, f.name), f.content);
+                } else {
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', `✅ البصمة وُضعت والتطبيق يعمل (${verdict.summary || 'تحقّق سلوكي'}).`);
+                }
+            }
+        } catch (e) { this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', `⚠️ تخطّي التخصيص (الكلون العامل محفوظ): ${e.message}`); }
 
         // 3) إعداد النشر (موقع ثابت — لا خادم مطلوب للكلون التجريبي)
         try {
