@@ -10,12 +10,14 @@ import { jaolaWeather } from '../agents/cloneTemplates/jaolaWeather.js';
 import { jaolaCrypto } from '../agents/cloneTemplates/jaolaCrypto.js';
 import { jaolaStore } from '../agents/cloneTemplates/jaolaStore.js';
 import { jaolaBooking } from '../agents/cloneTemplates/jaolaBooking.js';
+import { jaolaRealestate } from '../agents/cloneTemplates/jaolaRealestate.js';
+import { jaolaCurrency } from '../agents/cloneTemplates/jaolaCurrency.js';
 import { matchCloneTemplate, listClones, getCloneById } from '../agents/cloneTemplates/index.js';
 import { verifyBehavior, detectUndefinedFunctions } from '../agents/behaviorVerifier.js';
 
 // كل قوالب jaola يجب أن تجتاز التحقّق السلوكي فعلاً (jsdom) — لا دوال معلّقة،
 // ولا انهيار حتى مع كتم fetch (قوالب الـ API تصمد بالوصول المحميّ).
-for (const build of [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaWeather, jaolaCrypto]) {
+for (const build of [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaWeather, jaolaCrypto, jaolaCurrency]) {
     const c = build();
     test(`قالب ${c.id}: لا دوال معلّقة`, () => {
         const html = c.files.find(f => f.name === 'index.html').content;
@@ -36,11 +38,23 @@ for (const build of [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaWeather, 
     });
 }
 
-test('قوالب API خارجي: طقس + عملات مسجّلة مع externalApi', () => {
+test('قوالب API خارجي: طقس + عملات (crypto/currency) مسجّلة مع externalApi', () => {
     const list = listClones();
     assert.ok(list.find(c => c.id === 'jaola-weather')?.externalApi, 'weather API');
     assert.ok(list.find(c => c.id === 'jaola-crypto')?.externalApi, 'crypto API');
+    assert.ok(list.find(c => c.id === 'jaola-currency')?.externalApi, 'currency API');
     assert.ok(list.find(c => c.id === 'jaola-delivery'), 'delivery مُعاد التسمية');
+});
+
+test('matchCloneTemplate: هدف عقارات → jaola-realestate', () => {
+    const c = matchCloneTemplate('موقع عقارات لعرض شقق وفلل مع فلاتر',
+        { category: 'realestate', kind: 'webapp' }, { roles: [{ name: 'User' }] });
+    assert.equal(c?.id, 'jaola-realestate');
+});
+
+test('matchCloneTemplate: هدف محوّل عملات → jaola-currency', () => {
+    const c = matchCloneTemplate('محوّل عملات وسعر الصرف', { category: 'tool', kind: 'tool' }, null);
+    assert.equal(c?.id, 'jaola-currency');
 });
 
 test('matchCloneTemplate: هدف طقس → jaola-weather', () => {
