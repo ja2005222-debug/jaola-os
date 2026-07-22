@@ -31,6 +31,7 @@ import {
     JaolaCognitiveRuntime
 } from './agents/index.js';
 import { generatePWA } from './agents/pwaAgent.js';
+import { generateJaolaBot } from './agents/jaolaBot.js';
 import { generateBackend, generateFrontendAPIIntegration } from './agents/backendAgent.js';
 import { needsBackend } from './agents/knowledgeEngine.js';
 import {
@@ -887,6 +888,32 @@ app.post('/api/pwa/generate', verifyToken, validateProjectOwnership, async (req,
         });
     } catch (err) {
         res.status(500).json({ error: 'فشل توليد التطبيق: ' + err.message });
+    }
+});
+
+// 🤖 إضافة «جولا بوت» عند الطلب لمشروع موجود (مساعد محادثة offline + API-ready)
+app.post('/api/jaola-bot/generate', verifyToken, validateProjectOwnership, async (req, res) => {
+    const { brandName, emoji, apiBase, faq, quick, welcome, fallback } = req.body || {};
+    try {
+        const result = await generateJaolaBot(req.projectPath, {
+            brandName: typeof brandName === 'string' ? brandName : undefined,
+            emoji: typeof emoji === 'string' ? emoji : undefined,
+            apiBase: typeof apiBase === 'string' ? apiBase : undefined,
+            faq: Array.isArray(faq) ? faq : undefined,
+            quick: Array.isArray(quick) ? quick : undefined,
+            welcome: typeof welcome === 'string' ? welcome : undefined,
+            fallback: typeof fallback === 'string' ? fallback : undefined,
+        });
+        if (!result.success) return res.status(400).json({ error: result.error });
+
+        const roomName = `${req.user.username}-${req.activeProject}`;
+        emitWorkspaceFiles(roomName, req.projectPath);
+        io.to(roomName).emit('log', {
+            message: `🤖 [SYSTEM]: تم إضافة المساعد «${result.brandName}» إلى موقعك${result.apiBase ? ' (مربوط بـ API)' : ' (يعمل بقاعدة معرفة داخلية)'}.`
+        });
+        res.json({ success: true, brandName: result.brandName, apiBase: result.apiBase, files: result.files });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل إضافة البوت: ' + err.message });
     }
 });
 
