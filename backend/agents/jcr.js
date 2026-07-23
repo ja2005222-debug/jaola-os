@@ -2706,6 +2706,16 @@ User preferences: ${JSON.stringify(execMemory)}` },
             if (!explicitBuild) {
                 const existingCode = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
                 if (existingCode && existingCode.trim().length > 100) {
+                    // 🔧 طلب فعل صريح على مشروع قائم («فعّل الأزرار»، «أضف الفوترة») =
+                    // تعديل جراحي مباشر — لا حوار تأكيد يُعيد على المستخدم كلماته
+                    // (جذر حلقة «اكتب الجملة التالية»). الأسئلة/الجمل الإخبارية تبقى محادثة.
+                    if (hasActionIntent(message) && !isQuestionMessage(message)) {
+                        this.emitLiveLog(roomName, 'INTENT', 'Classifier',
+                            '✏️ طلب فعل على مشروع قائم (صُنّف build) → تعديل جراحي مباشر (لا حلقة تأكيد).');
+                        recordEdit(username, message);
+                        this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
+                        return;
+                    }
                     this.emitLiveLog(roomName, 'INTENT', 'Classifier',
                         '🛡️ جملة غير آمرة على مشروع قائم — ليست بناءً جديداً؛ رد محادثة بدل تأكيد بناء.');
                     await this.generateChatResponse(message, username, roomName, userLang);
