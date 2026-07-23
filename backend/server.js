@@ -67,6 +67,7 @@ import { mergeProjectModel } from './agents/projectModel.js';
 import { prepareRenderDeploy } from './agents/renderAgent.js';
 import { assetsFor, injectFaviconTag } from './agents/cloneAssets.js';
 import { listLibraries, getLibraryById, injectLibrary } from './agents/libraryRegistry.js';
+import { polishHtml } from './agents/polishPack.js';
 import { setProjectSecret, deleteProjectSecret, getProjectSecretNames, getProjectSecrets } from './services/projectSecrets.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
 import { buildMetricsPayload } from './services/metricsStore.js';
@@ -1243,6 +1244,26 @@ app.get('/api/platform/knowledge', verifyToken, (req, res) => {
     });
 });
 
+// ✨ «اجعله احترافياً» — باقة تلميع حتميّة (خطّ + حركات + تحسينات) على المشروع
+app.post('/api/polish/apply', verifyToken, validateProjectOwnership, async (req, res) => {
+    try {
+        const idxPath = path.join(req.projectPath, 'index.html');
+        if (!fs.existsSync(idxPath)) return res.status(400).json({ error: 'index.html غير موجود — ابنِ موقعك أولاً.' });
+        const html = fs.readFileSync(idxPath, 'utf8');
+        const updated = polishHtml(html);
+        const already = updated === html;
+        if (!already) fs.writeFileSync(idxPath, updated);
+
+        const roomName = `${req.user.username}-${req.activeProject}`;
+        emitWorkspaceFiles(roomName, req.projectPath);
+        io.to(roomName).emit('log', { message: `✨ [SYSTEM]: ${already ? 'موقعك مُلمَّع مسبقاً' : 'أُضيفت لمسة احترافية (خطّ أنيق + حركات ظهور)'}.` });
+        io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        res.json({ success: true, already });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل التلميع: ' + err.message });
+    }
+});
+
 // 🔗 «أضف مكتبة» — يحقن مكتبة جاهزة (CDN) في index.html للمشروع (idempotent)
 app.post('/api/library/add', verifyToken, validateProjectOwnership, async (req, res) => {
     const { libraryId } = req.body || {};
@@ -1280,17 +1301,18 @@ app.post('/api/template/apply', verifyToken, validateProjectOwnership, async (re
         // 2) اضبط نموذج المشروع (دمج مع أي نموذج سابق)
         const model = mergeProjectModel(getDomainModel(req.user.username, req.activeProject) || {}, clone.model);
         setDomainModel(req.user.username, req.activeProject, model);
-        // 3) الهوية البصرية (أيقونة مطابقة للمجال) — حتميّ
+        // 3) الهوية البصرية (أيقونة) + باقة التلميع (نضج فوري) — حتميّ
         try {
             const assets = assetsFor(clone.name || clone.id);
             fs.writeFileSync(path.join(projectPath, 'brand.svg'), assets.favicon);
             const idxPath = path.join(projectPath, 'index.html');
             if (fs.existsSync(idxPath)) {
-                const html = fs.readFileSync(idxPath, 'utf8');
-                const withIcon = injectFaviconTag(html, 'brand.svg');
-                if (withIcon !== html) fs.writeFileSync(idxPath, withIcon);
+                let html = fs.readFileSync(idxPath, 'utf8');
+                html = injectFaviconTag(html, 'brand.svg');
+                html = polishHtml(html); // خطّ أنيق + حركات ظهور + تحسينات أساسية
+                fs.writeFileSync(idxPath, html);
             }
-        } catch { /* الأيقونة اختيارية */ }
+        } catch { /* اختياري */ }
         // 4) تهيئة النشر (موقع ثابت) — أفضل جهد
         try {
             const projectName = `${req.user.username}-${req.activeProject}`.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 50);

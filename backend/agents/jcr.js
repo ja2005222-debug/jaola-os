@@ -17,6 +17,7 @@ import { matchCloneTemplate } from './cloneTemplates/index.js';
 import { patchEditPlan } from './patchEditor.js';
 import { stampSeed } from './seedStamp.js';
 import { assetsFor, injectFaviconTag, paletteHint } from './cloneAssets.js';
+import { polishHtml } from './polishPack.js';
 import { verifyBehavior, buildBehaviorFixInstruction, analyzeProjectStatic, readPageCode, extractDefinedFunctions } from './behaviorVerifier.js';
 import { detectProjectType } from './knowledgeEngine.js';
 import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
@@ -2065,19 +2066,20 @@ User preferences: ${JSON.stringify(execMemory)}` },
             }
         } catch (e) { this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', `⚠️ تخطّي التخصيص (الكلون العامل محفوظ): ${e.message}`); }
 
-        // 2.5) أصول العلامة (توسيع بيانات العيّنة): أيقونة/شعار مطابق للمجال —
-        //      تُطبَّق حتمياً هنا (بعد أي ارتداد) فتحصل كل نسخة على هوية بصرية ثابتة.
+        // 2.5) هوية بصرية + نضج: أيقونة مطابقة للمجال + باقة تلميع (خطّ أنيق +
+        //      حركات ظهور + تحسينات) — حتميّ هنا (بعد أي ارتداد) فتخرج كل نسخة ناضجة.
         try {
             const assets = assetsFor(goal);
             await fsPromises.writeFile(path.join(projectPath, 'brand.svg'), assets.favicon);
             const idxPath = path.join(projectPath, 'index.html');
             if (fs.existsSync(idxPath)) {
-                const html = await fsPromises.readFile(idxPath, 'utf8');
-                const withIcon = injectFaviconTag(html, 'brand.svg');
-                if (withIcon !== html) await fsPromises.writeFile(idxPath, withIcon);
+                let html = await fsPromises.readFile(idxPath, 'utf8');
+                html = injectFaviconTag(html, 'brand.svg');
+                html = polishHtml(html);
+                await fsPromises.writeFile(idxPath, html);
             }
-            this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', '🎨 أُضيفت أيقونة العلامة (هوية بصرية مطابقة للمجال).');
-        } catch { /* الأيقونة اختيارية */ }
+            this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', '🎨 أُضيفت هوية العلامة ولمسة احترافية (خطّ + حركات ظهور).');
+        } catch { /* اختياري */ }
 
         // 3) إعداد النشر (موقع ثابت — لا خادم مطلوب للكلون التجريبي)
         try {
