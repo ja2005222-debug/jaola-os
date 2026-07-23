@@ -212,6 +212,7 @@ export default function Dashboard() {
   const [isAddingBot, setIsAddingBot] = useState(false);
   const [applyingTemplate, setApplyingTemplate] = useState('');
   const [addingLibrary, setAddingLibrary] = useState('');
+  const [isPolishing, setIsPolishing] = useState(false);
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [authMode, setAuthMode] = useState('login'); // login | register
@@ -419,6 +420,29 @@ export default function Dashboard() {
       addNotification(`❌ ${t('libraryFail')}`, 'info');
     }
     setAddingLibrary('');
+  };
+
+  // ✨ «اجعله احترافياً» — باقة تلميع حتميّة على الموقع
+  const handlePolish = async () => {
+    if (isPolishing) return;
+    setIsPolishing(true);
+    addNotification(t('polishing'), 'info');
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/polish/apply`, {
+        method: 'POST', headers: getHeaders(),
+        body: JSON.stringify({ project: activeProject }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.success) {
+        addNotification(d.already ? t('polishedAlready') : t('polished'), 'success');
+        refreshPreview();
+      } else {
+        addNotification(`❌ ${d.error || t('polishFail')}`, 'info');
+      }
+    } catch {
+      addNotification(`❌ ${t('polishFail')}`, 'info');
+    }
+    setIsPolishing(false);
   };
 
   // 🩺 فحص جاهزية النشر على Vercel — يعرض تشخيصاً دقيقاً بدل تخمين "Not authorized"
@@ -1408,6 +1432,11 @@ export default function Dashboard() {
             🌍 {t('liveSite')}
           </a>
         )}
+        <button onClick={handlePolish} disabled={isPolishing} title={t('polish')}
+          style={{ background:'rgba(56,189,248,0.12)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:7, padding:'5px 12px', color:'#7dd3fc', fontSize:11, fontWeight:700, opacity: isPolishing ? 0.7 : 1 }}>
+          {isPolishing ? `⏳ ${t('polishing')}` : `✨ ${t('polish')}`}
+        </button>
+
         <button onClick={handleAddBot} disabled={isAddingBot} title={t('addBot')}
           style={{ background:'rgba(139,92,246,0.12)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:7, padding:'5px 12px', color:'#c4b5fd', fontSize:11, fontWeight:700, opacity: isAddingBot ? 0.7 : 1 }}>
           {isAddingBot ? `⏳ ${t('addingBot')}` : `➕🤖 ${t('addBot')}`}
