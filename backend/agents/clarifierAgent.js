@@ -147,11 +147,16 @@ const STRATEGIC_BY_TYPE = {
 
 /** هل يحتاج الطلب حواراً استراتيجياً؟ (نوع واسع + طلب مقتضب غير مفصّل) */
 export function needsStrategicClarification(goal, projectType) {
+    // 🚫 مُعطّل بقرار المستخدم — حوار الأسئلة («السؤال 1/5…») لا يقدّم ولا يؤخّر في
+    // البناء الفعلي، ويناقض فلسفة المنصّة (طلب واحد → بناء من قالب عامل فوراً).
+    // كل طلب بناء يمضي مباشرةً للبناء. (يُعاد التفعيل بإرجاع الشرط القديم أدناه.)
+    return false;
+    /* eslint-disable no-unreachable */
     if (!BROAD_TYPES.has(projectType)) return false;
     const clean = (goal || '').replace(/^(ابني|اصنع|انشئ|بني|سوي|اعمل|build|create|make|a|an)\s+/gi, '').trim();
     const words = clean.split(/\s+/).filter(Boolean).length;
-    // طلب مفصّل (كلمات كثيرة) = يعرف ما يريد → لا نُثقل عليه بأسئلة
     return words <= 6;
+    /* eslint-enable no-unreachable */
 }
 
 /** يبني قائمة الأسئلة الاستراتيجية لنوع ما */
