@@ -20,6 +20,18 @@ test('projectFacts: يحسب عدد الملفات وصفحات HTML وأكبر 
     assert.equal(f.top[0].path, 'app.js');
 });
 
+test('summarizeBrain: percent=null → سطر صادق بلا نسبة مخترعة (لا 67%)', () => {
+    const brain = buildProjectBrain({ structure: { features: ['خطة أ', 'خطة ب'] } },
+        [{ path: 'app/page.jsx', size: 100, kind: 'jsx' }]);
+    brain.progress.percent = null;      // تعذّر التحقّق الساكن
+    brain.progress.works = undefined;
+    brain.progress.remaining = [];
+    const ar = summarizeBrain(brain, 'ar');
+    assert.ok(ar.includes('تعذّر التحقّق التلقائي'), 'سطر صادق');
+    assert.ok(!/\d+%/.test(ar), 'لا نسبة مئوية مخترعة');
+    assert.ok(summarizeBrain(brain, 'en').includes('automatic check unavailable'));
+});
+
 test('summarizeFacts: نصّ عربي يحمل الأرقام الفعلية', () => {
     const files = [
         { path: 'index.html', size: 5120, kind: 'html' },

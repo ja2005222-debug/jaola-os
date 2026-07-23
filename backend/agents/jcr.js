@@ -1054,6 +1054,12 @@ export class JaolaCognitiveRuntime {
                     } else {
                         brain.progress.works = true;                // اجتاز التحقّق
                     }
+                } else if (files.length) {
+                    // مشروع بملفات لكن تعذّر التحليل الساكن (React/Next بلا index.html
+                    // جذري) — لا نخترع نسبة/قائمة من الخطة (جذر «67%» الوهمي).
+                    brain.progress.works = null;
+                    brain.progress.percent = null;
+                    brain.progress.remaining = [];
                 }
                 brainContext = summarizeBrain(brain, userLang);
                 // حقائق ملفات دقيقة (عدد الصفحات/الملفات/أكبر ملف) — يجيب الشات

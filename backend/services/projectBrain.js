@@ -180,6 +180,12 @@ export function summarizeBrain(brain, lang = 'ar') {
             : `📦 Project: ${brain.filesCount} files — ⚠️ NOT working yet (real code gaps, not a plan percentage)`);
     } else if (brain.progress.works === true) {
         lines.push(L ? `📦 المشروع: ${brain.filesCount} ملف — ✅ يعمل (اجتاز التحقّق السلوكي)` : `📦 Project: ${brain.filesCount} files — ✅ working (passed behavior check)`);
+    } else if (brain.progress.percent == null) {
+        // تعذّر التحقّق الساكن (مثل مشروع React/Next بلا index.html جذري) — لا نخترع
+        // نسبة/قائمة من الخطة (كانت مصدر «67%» الوهمي).
+        lines.push(L
+            ? `📦 المشروع: ${brain.filesCount} ملف — تعذّر التحقّق التلقائي (افتح تبويب Editor للتفاصيل)`
+            : `📦 Project: ${brain.filesCount} files — automatic check unavailable (open the Editor tab)`);
     } else {
         lines.push(L ? `📦 المشروع: ${brain.filesCount} ملف (${brain.progress.percent}% مكتمل)` : `📦 Project: ${brain.filesCount} files (${brain.progress.percent}% complete)`);
     }
