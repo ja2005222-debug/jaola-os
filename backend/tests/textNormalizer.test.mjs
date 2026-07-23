@@ -2,7 +2,30 @@
 // أفعال ناقصة خلقت حلقات (#63، #64). كل حالة هنا من سجل مستخدم حقيقي.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isQuestionMessage, hasActionIntent } from '../agents/textNormalizer.js';
+import { isQuestionMessage, hasActionIntent, isExplicitRebuild, isExplicitNewBuild } from '../agents/textNormalizer.js';
+
+test('isExplicitNewBuild: أمر بناء يصف موضوعاً → هوية جديدة', () => {
+    assert.equal(isExplicitNewBuild('ابني متجر عطور فخم مع صور'), true);
+    assert.equal(isExplicitNewBuild('أنشئ موقع مطعم'), true);
+    assert.equal(isExplicitNewBuild('build a perfume store'), true);
+    assert.equal(isExplicitNewBuild('أعد بناء الموقع'), true, 'إعادة البناء هوية جديدة أيضاً');
+});
+
+test('isExplicitNewBuild: متابعة/تعديل → ليست هوية جديدة', () => {
+    assert.equal(isExplicitNewBuild('اكمل'), false);
+    assert.equal(isExplicitNewBuild('اكمل المشروع'), false);
+    assert.equal(isExplicitNewBuild('غيّر الألوان إلى أزرق'), false);
+    assert.equal(isExplicitNewBuild('أضف صفحة تواصل'), false);
+    assert.equal(isExplicitNewBuild('ابنِ'), false, 'أمر بلا وصف ليس هوية جديدة');
+});
+
+test('isExplicitRebuild: إعادة بناء صريحة فقط', () => {
+    assert.equal(isExplicitRebuild('أعد البناء'), true);
+    assert.equal(isExplicitRebuild('من جديد'), true);
+    assert.equal(isExplicitRebuild('rebuild from scratch'), true);
+    assert.equal(isExplicitRebuild('ابني متجر عطور'), false, 'بناء جديد ليس إعادة بناء');
+    assert.equal(isExplicitRebuild('اكمل'), false);
+});
 
 test('كاشف الأسئلة: رسائل السجلات الحقيقية تُكشف أسئلةً', () => {
     const questions = [
