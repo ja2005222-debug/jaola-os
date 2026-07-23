@@ -225,6 +225,22 @@ const BRAND_STOPWORDS = new Set([
     'for', 'لـ', 'ل', 'شركة', 'لشركة', 'مع', 'a', 'an', 'the',
 ]);
 
+/** يختار مجموعة الأقسام الأنسب حسب نوع الطلب (اختيار ذكيّ لا preset ثابت). */
+export function selectBlocks(goal = '') {
+    const g = (goal || '').toString().toLowerCase();
+    if (/قريبا|قريباً|coming soon|\bsoon\b|قيد الإنشاء|تحت الإنشاء|under construction/.test(g)) {
+        return ['nav', 'hero', 'cta', 'footer'];
+    }
+    if (/بورتفوليو|portfolio|معرض اعمال|معرض أعمال|أعمالي|اعمالي|مصمم|مصمّم|freelance/.test(g)) {
+        return ['nav', 'hero', 'features', 'testimonials', 'cta', 'footer'];
+    }
+    if (/بروشور|brochure|تعريفي|تعريفية|شركة|company|corporate|وكالة|agency/.test(g)) {
+        return ['nav', 'hero', 'logos', 'features', 'stats', 'testimonials', 'cta', 'footer'];
+    }
+    // افتراضي (SaaS/هبوط/عام): صفحة تسويقيّة كاملة
+    return LANDING_PRESET.slice();
+}
+
 /** يستخرج اسم علامة تقريبيّاً من الهدف (لتخصيص العنوان/الترويسة). */
 export function brandFromGoal(goal = '', fallback = 'JAOLA') {
     const toks = (goal || '').toString().replace(/["'«»]/g, ' ').split(/\s+/).filter(Boolean)

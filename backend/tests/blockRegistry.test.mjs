@@ -4,7 +4,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { listBlocks, getBlock, composePage, composeLanding, isMarketingPageGoal, brandFromGoal } from '../agents/blockRegistry.js';
+import { listBlocks, getBlock, composePage, composeLanding, isMarketingPageGoal, brandFromGoal, selectBlocks } from '../agents/blockRegistry.js';
+
+test('selectBlocks: يختار الأقسام حسب نوع الطلب', () => {
+    assert.deepEqual(selectBlocks('صفحة قريباً coming soon'), ['nav', 'hero', 'cta', 'footer']);
+    const port = selectBlocks('بورتفوليو لمصمّم');
+    assert.ok(port.includes('testimonials') && !port.includes('pricing'), 'بورتفوليو بلا أسعار');
+    const full = selectBlocks('منصة SaaS باشتراك');
+    assert.ok(full.includes('pricing') && full.includes('faq'), 'SaaS كامل بالأسعار');
+    // كل المعرّفات المختارة موجودة فعلاً في السجلّ
+    for (const id of selectBlocks('شركة تعريفية')) assert.ok(getBlock(id), id + ' موجود');
+});
 import { polishHtml } from '../agents/polishPack.js';
 import { verifyBehavior, detectUndefinedFunctions } from '../agents/behaviorVerifier.js';
 
