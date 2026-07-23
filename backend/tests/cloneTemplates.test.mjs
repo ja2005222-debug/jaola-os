@@ -104,6 +104,19 @@ test('matchCloneTemplate: بوّابة مدرسة → jaola-school', () => {
     assert.equal(c?.id, 'jaola-school');
 });
 
+test('jaola-store: صار مكتملاً بدورين (Customer + Admin) وتغطية أدوار سليمة', async () => {
+    const c = jaolaStore();
+    const names = c.model.roles.map(r => r.name);
+    assert.deepEqual(names, ['Customer', 'Admin'], 'دوران معلَنان');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jstore-role-'));
+    for (const f of c.files) fs.writeFileSync(path.join(dir, f.name), f.content);
+    const v = await verifyBehavior({ projectPath: dir, blueprint: { kind: 'webapp', functionalComponents: [{ name: 'x' }] }, domainModel: c.model });
+    const byName = Object.fromEntries(v.checks.map(x => [x.name, x.status]));
+    assert.notEqual(byName['role-coverage'], 'fail', 'كل الأدوار ممثّلة (لا 1❌ Admin بعد الآن)');
+    assert.equal(v.ok, true, 'المتجر المكتمل يعمل — ' + v.summary);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('matchCloneTemplate: بيع تذاكر مناسبات → jaola-events', () => {
     const c = matchCloneTemplate('منصة بيع تذاكر المناسبات والفعاليات والحفلات',
         { category: 'events', kind: 'webapp' }, { roles: [{ name: 'Buyer' }, { name: 'Organizer' }] });
