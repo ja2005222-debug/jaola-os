@@ -40,7 +40,7 @@ import { runTests } from './testingAgent.js';
 import { commitBuild, initProjectRepo, getProjectStats } from './gitAgent.js';
 import { backupProject, listSnapshots } from './fileManager.js';
 import { analyzeRequirements, buildRequirementsContext } from './requirementAnalyzer.js';
-import { normalizeText, normalizeArabic, detectIntentFromMeaning, isQuestionMessage, hasActionIntent } from './textNormalizer.js';
+import { normalizeText, normalizeArabic, detectIntentFromMeaning, isQuestionMessage, hasActionIntent, isExplicitRebuild, isExplicitNewBuild } from './textNormalizer.js';
 import { routeMessage } from './router.js';
 import { matchDeleteCommand, isBareYes, isBareExecute } from './chatCommands.js';
 import { verifyRequirements, buildFixInstruction, formatChecklist } from './requirementsVerifier.js';
@@ -1212,12 +1212,15 @@ User preferences: ${JSON.stringify(execMemory)}` },
             const seed = getLibraryModel(blueprint?.category);
             const derived = await deriveProjectModel(goal, blueprint);
             const prior = getDomainModel(username, activeProject);
+            // 🆕 بناء بهوية جديدة («ابني متجر عطور») يستبدل النموذج القديم — لا يدمجه،
+            // كي لا يرث المتجر أدوار مشروع سابق (TeamMember/Driver) فيبني الشيء الخطأ.
+            const newIdentity = isExplicitNewBuild(goal);
             let model = seed ? mergeProjectModel(seed, derived) : derived;
-            if (prior) model = mergeProjectModel(model, prior);
+            if (prior && !newIdentity) model = mergeProjectModel(model, prior);
             setDomainModel(username, activeProject, model);
             domainModelContext = buildProjectModelContext(model);
             this.emitLiveLog(roomName, 'MODEL', 'DomainAnalyst',
-                `🧩 نموذج المشروع: ${summarizeModel(model)}${seed ? ' (مبذور من مكتبة الفئة)' : ''}`);
+                `🧩 نموذج المشروع: ${summarizeModel(model)}${newIdentity ? ' (هوية جديدة — استُبدل النموذج القديم)' : seed ? ' (مبذور من مكتبة الفئة)' : ''}`);
         } catch (e) { console.warn('[ProjectModel]', 'فشل استخلاص نموذج المشروع:', e.message); }
 
         // 🍔 كلون عامل — للتطبيقات المعقّدة المطابقة نبدأ من *تطبيق يعمل فعلاً*
@@ -1226,11 +1229,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
         try {
             const existingCtx = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
             const isFreshBuild = !existingCtx || existingCtx.trim().length < 80;
-            const explicitRebuild = /أعد البناء|اعد البناء|أعد بناء|اعد بناء|من جديد|من الصفر|rebuild|from scratch|start over|أعد التصميم|اعد التصميم/i.test(goal);
+            const explicitRebuild = isExplicitRebuild(goal) || isExplicitNewBuild(goal);
             const clone = matchCloneTemplate(goal, blueprint, getDomainModel(username, activeProject));
             if (clone) {
-                // نبدأ من الكلون العامل إن: (أ) بناء جديد، أو (ب) إعادة بناء صريحة،
-                // أو (ج) المشروع القائم معطّل فعلاً (نُصلح المكسور).
+                // نبدأ من الكلون العامل إن: (أ) بناء جديد/هوية جديدة، أو (ب) إعادة بناء
+                // صريحة، أو (ج) المشروع القائم معطّل فعلاً (نُصلح المكسور).
                 let apply = isFreshBuild || explicitRebuild;
                 let worksNow = false;
                 if (!apply) {

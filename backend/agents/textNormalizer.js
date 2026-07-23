@@ -234,3 +234,27 @@ export function hasActionIntent(text) {
     if (!t) return false;
     return ACTION_SIGNALS.test(t);
 }
+
+// ═══════════════════════════════════════════════════════
+// 🏗️ كشف «بناء بهوية جديدة» — يميّز طلب موقع جديد (يستبدل الهوية) عن المتابعة
+// («اكمل»). عند البناء الجديد يجب *عدم* دمج النموذج القديم كي لا يرث المتجر
+// أدوار مشروع سابق (TeamMember/Driver) — جذر «متجر عطور بنى إدارة مشاريع».
+// ═══════════════════════════════════════════════════════
+// ملاحظة: \b لا يعمل مع الحروف العربية في JS — نستخدم lookahead لمسافة/نهاية/ترقيم.
+const REBUILD_SIGNALS = /(?:أعد|اعد)\s+(?:ال)?(?:بناء|تصميم|إنشاء|انشاء)|من\s+جديد|من\s+الصفر|rebuild|from\s+scratch|start\s+over|redo/iu;
+const NEW_BUILD_STARTERS = /^\s*["'«]?\s*(?:ابني|أبني|ابنِ|أبنِ|ابن|انشئ|أنشئ|اصنع|صمّم|صمم|build|create|make|generate|design)(?=\s|$|[؟?!.،,:])/iu;
+
+/** طلب إعادة بناء صريح للمشروع الحالي (نفس الهوية، من جديد). */
+export function isExplicitRebuild(text) {
+    const t = (text || '').trim();
+    return !!t && REBUILD_SIGNALS.test(normalizeArabic(t));
+}
+
+/** طلب بناء موقع جديد بهوية جديدة (أمر بناء يصف موضوعاً) → يستبدل النموذج. */
+export function isExplicitNewBuild(text) {
+    const t = (text || '').trim();
+    if (!t) return false;
+    if (isExplicitRebuild(t)) return true;
+    // أمر بناء في البداية + وصف كافٍ (كلمتان فأكثر) = موقع جديد، لا مجرّد «ابنِ»
+    return NEW_BUILD_STARTERS.test(t) && t.split(/\s+/).length >= 2;
+}
