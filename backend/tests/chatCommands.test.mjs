@@ -23,6 +23,17 @@ test('حذف: تعديلات المحتوى المشروعة لا تُلتقط',
     }
 });
 
+test('حذف: "احذف <اسم> نهائيا" (الاسم قبل نهائيا) → نيّة حذف لا تعديل', () => {
+    // العطل من السجلّ: "احذف online-shop نهائيا" كانت تُوجَّه لتعديل index.html
+    assert.deepEqual(matchDeleteCommand('احذف online-shop نهائيا', 'online-shop'), { kind: 'intent', target: 'online-shop' });
+    assert.deepEqual(matchDeleteCommand('احذف online-shop نهائياً', 'other'), { kind: 'intent', target: 'online-shop' }, 'لفظ الحذف القويّ يكفي');
+    assert.equal(matchDeleteCommand('delete my-shop completely', 'x').kind, 'intent');
+    // "احذف <اسم>" بلا لفظ قويّ وليس المشروع النشط → لا يُعامل كحذف (قد يكون تعديلاً)
+    assert.equal(matchDeleteCommand('احذف banner', 'p1'), null);
+    // لكن إن كان الاسم = المشروع النشط → نيّة حذف
+    assert.deepEqual(matchDeleteCommand('احذف banner', 'banner'), { kind: 'intent', target: 'banner' });
+});
+
 test('التأكيد المجرّد: يُلتقط وحده فقط', () => {
     for (const m of ['نعم', 'تمام', 'ok', 'اه', 'يلا!']) assert.equal(isBareYes(m), true, m);
     for (const m of ['نعم، لكن غيّر الألوان', 'نعم ابنه الآن', 'لا', 'اكمل']) assert.equal(isBareYes(m), false, m);
