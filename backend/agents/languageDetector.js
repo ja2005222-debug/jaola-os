@@ -116,6 +116,17 @@ export function getUserLanguage(username) {
     return sessionLanguages.get(username) || 'en';
 }
 
+/**
+ * لغة الردّ على طلب بناء: لا نردّ بالإنجليزية على طلب *عربيّ واضح* حتى لو كانت
+ * لغة الجلسة غير مضبوطة (تعود en افتراضياً بعد إعادة تشغيل الخادم). لا يمسّ
+ * اللغات الأخرى المضبوطة صراحةً (fr/es/…). دالة نقية.
+ */
+export function resolveGoalLanguage(goal, sessionLang) {
+    const s = sessionLang || 'en';
+    if (s === 'en' && detectLanguage(goal || '') === 'ar') return 'ar';
+    return s;
+}
+
 /** هل سُجّلت لغة لهذا المستخدم فعلاً؟ (يميّز "غير مضبوط" عن "en") */
 export function hasUserLanguage(username) {
     return sessionLanguages.has(username);
