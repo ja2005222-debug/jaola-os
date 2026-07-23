@@ -50,6 +50,47 @@ export async function scanProjectFiles(projectPath, { maxFiles = 500 } = {}) {
 const has = (files, re) => files.some((f) => re.test(f.path));
 
 /**
+ * حقائق ملفات دقيقة من القرص (لا من الخطة): إجمالي الملفات، صفحات HTML، أكبر
+ * ملف، والأكبر حجماً. تُمكّن الشات من الإجابة عن «كم صفحة / كم ملف / أكبر ملف»
+ * بدل «غير محدد في السجل». دالة نقية.
+ * @param {Array} files [{ path, size, kind }]
+ */
+export function projectFacts(files = []) {
+    const real = files.filter((f) => f && f.path && !f.path.startsWith('.'));
+    const html = real.filter((f) => /\.html?$/i.test(f.path)).map((f) => f.path);
+    const sorted = real.slice().sort((a, b) => (b.size || 0) - (a.size || 0));
+    const largest = sorted[0] || null;
+    return {
+        totalFiles: real.length,
+        htmlPages: html,
+        largest: largest ? { path: largest.path, size: largest.size || 0 } : null,
+        top: sorted.slice(0, 5).map((f) => ({ path: f.path, size: f.size || 0 })),
+    };
+}
+
+/** يصوغ كتلة حقائق الملفات لسياق الشات (عربي/إنجليزي). */
+export function summarizeFacts(files = [], lang = 'ar') {
+    const f = projectFacts(files);
+    if (!f.totalFiles) return '';
+    const kb = (n) => (n / 1024).toFixed(1) + 'KB';
+    const pages = f.htmlPages.length;
+    if (lang === 'ar') {
+        let s = `\n\n📁 حقائق الملفات (من القرص، دقيقة — استعملها للإجابة عن عدد الصفحات/الملفات/أكبر ملف):`;
+        s += `\n- إجمالي الملفات: ${f.totalFiles}`;
+        s += `\n- صفحات HTML: ${pages}${pages ? ' (' + f.htmlPages.join('، ') + ')' : ''}`;
+        if (f.largest) s += `\n- أكبر ملف: ${f.largest.path} (${kb(f.largest.size)})`;
+        if (f.top.length) s += `\n- الأكبر حجماً: ${f.top.map((t) => `${t.path} ${kb(t.size)}`).join(' · ')}`;
+        return s;
+    }
+    let s = `\n\n📁 File facts (from disk, exact — use for questions about page/file count or largest file):`;
+    s += `\n- Total files: ${f.totalFiles}`;
+    s += `\n- HTML pages: ${pages}${pages ? ' (' + f.htmlPages.join(', ') + ')' : ''}`;
+    if (f.largest) s += `\n- Largest file: ${f.largest.path} (${kb(f.largest.size)})`;
+    if (f.top.length) s += `\n- Biggest: ${f.top.map((t) => `${t.path} ${kb(t.size)}`).join(' · ')}`;
+    return s;
+}
+
+/**
  * يبني صورة المشروع من الذاكرة + الملفات (نقية وقابلة للاختبار).
  * @param {object} mem ذاكرة المشروع (design/tech/structure/history)
  * @param {Array} files [{ path, size, kind }]
