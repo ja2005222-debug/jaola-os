@@ -26,8 +26,8 @@ test('البصمة لا تُدخل فشلاً جديداً مقابل الكلو
 
     // خصّص البيانات (chat محقون) — عطور بنفس المفاتيح
     const chat = async () => `[
-      { id: 'p1', name: 'عطر باريسي', cat: 'عطور', price: 480, rating: 4.9, emoji: '🧴', stock: 10, desc: 'شرقي فرنسي.' },
-      { id: 'p2', name: 'عود ملكي', cat: 'عطور', price: 950, rating: 4.8, emoji: '🌸', stock: 6, desc: 'عود أصيل.' }
+      { id: 'p1', name: 'عطر باريسي', cat: 'عطور', price: 480, rating: 4.9, emoji: '🧴', stock: 10, img: '', desc: 'شرقي فرنسي.' },
+      { id: 'p2', name: 'عود ملكي', cat: 'عطور', price: 950, rating: 4.8, emoji: '🌸', stock: 6, img: '', desc: 'عود أصيل.' }
     ]`;
     const seed = await stampSeed(base, 'متجر عطور', { chat, category: 'ecommerce' });
     assert.equal(seed.ok, true);

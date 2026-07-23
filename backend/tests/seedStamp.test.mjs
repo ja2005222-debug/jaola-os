@@ -41,8 +41,8 @@ test('stampSeed: يخصّص PRODUCTS لعطور بلا فقد أي دالة (cha
     const seed = primarySeedArray(APP);
     // chat وهمي: يعيد نفس البنية بقيَم عطور (نفس المفاتيح)
     const chat = async () => `[
-      { id: 'p1', name: 'عطر باريسي فاخر', cat: 'عطور', price: 480, rating: 4.9, emoji: '🧴', stock: 10, desc: 'عطر شرقي فرنسي بثبات عالٍ.' },
-      { id: 'p2', name: 'عود ملكي', cat: 'عطور', price: 950, rating: 4.8, emoji: '🌸', stock: 6, desc: 'عود كمبودي أصيل.' }
+      { id: 'p1', name: 'عطر باريسي فاخر', cat: 'عطور', price: 480, rating: 4.9, emoji: '🧴', stock: 10, img: '', desc: 'عطر شرقي فرنسي بثبات عالٍ.' },
+      { id: 'p2', name: 'عود ملكي', cat: 'عطور', price: 950, rating: 4.8, emoji: '🌸', stock: 6, img: '', desc: 'عود كمبودي أصيل.' }
     ]`;
     const files = [{ name: 'app.js', content: APP }];
     const res = await stampSeed(files, 'متجر عطور باريسية فاخرة', { chat, category: 'ecommerce' });
