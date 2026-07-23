@@ -18,7 +18,7 @@ import { patchEditPlan } from './patchEditor.js';
 import { stampSeed } from './seedStamp.js';
 import { assetsFor, injectFaviconTag, paletteHint, pickPalette } from './cloneAssets.js';
 import { polishHtml } from './polishPack.js';
-import { composePage, isMarketingPageGoal, brandFromGoal, selectBlocks } from './blockRegistry.js';
+import { composePage, isMarketingPageGoal, brandFromGoal, selectBlocks, applyBrandName } from './blockRegistry.js';
 import { verifyBehavior, buildBehaviorFixInstruction, analyzeProjectStatic, readPageCode, extractDefinedFunctions } from './behaviorVerifier.js';
 import { detectProjectType } from './knowledgeEngine.js';
 import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
@@ -2096,6 +2096,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 let html = await fsPromises.readFile(idxPath, 'utf8');
                 html = injectFaviconTag(html, 'brand.svg');
                 html = polishHtml(html);
+                // اسم علامة نظيف حتميّاً على البناء الجديد — يزيل فعل الأمر (لا «Build Pizza Chop»)
+                if (isExplicitNewBuild(goal)) {
+                    const brand = brandFromGoal(goal, '');
+                    if (brand && brand.length >= 2) html = applyBrandName(html, brand);
+                }
                 await fsPromises.writeFile(idxPath, html);
             }
             this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', '🎨 أُضيفت هوية العلامة ولمسة احترافية (خطّ + حركات ظهور).');

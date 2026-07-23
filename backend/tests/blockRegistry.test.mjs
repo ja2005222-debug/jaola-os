@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { listBlocks, getBlock, composePage, composeLanding, isMarketingPageGoal, brandFromGoal, selectBlocks } from '../agents/blockRegistry.js';
+import { listBlocks, getBlock, composePage, composeLanding, isMarketingPageGoal, brandFromGoal, selectBlocks, applyBrandName } from '../agents/blockRegistry.js';
 
 test('selectBlocks: يختار الأقسام حسب نوع الطلب', () => {
     assert.deepEqual(selectBlocks('صفحة قريباً coming soon'), ['nav', 'hero', 'cta', 'footer']);
@@ -33,6 +33,19 @@ test('brandFromGoal: يستخرج علامة مختصرة أو fallback', () => 
     assert.ok(brandFromGoal('ابني صفحة هبوط لشركة نجم').length > 0);
     assert.equal(brandFromGoal('', 'proj-1'), 'proj-1');
     assert.ok(!/ابني|صفحة|موقع/.test(brandFromGoal('ابني موقع تعريفي عطور')), 'أزال كلمات البناء/النوع');
+    // العطل من اللقطة: «Build Pizza Chop» يجب أن يصبح «Pizza Chop» (بلا فعل الأمر)
+    assert.equal(brandFromGoal('Build Pizza Chop'), 'Pizza Chop');
+    assert.equal(brandFromGoal('create My Store'), 'My Store');
+});
+
+test('applyBrandName: يضبط #brandName و<title> حتميّاً', () => {
+    const html = '<head><title>متجر jaola</title></head><body><span id="brandName">متجر jaola</span></body>';
+    const out = applyBrandName(html, 'Pizza Chop');
+    assert.ok(out.includes('>Pizza Chop</span>'), 'brandName مضبوط');
+    assert.ok(out.includes('<title>Pizza Chop</title>'), 'العنوان مضبوط');
+    assert.ok(!out.includes('متجر jaola'), 'لا بقايا الاسم القديم');
+    // علامة فارغة → لا تغيير
+    assert.equal(applyBrandName(html, ''), html);
 });
 
 test('listBlocks: قائمة عرض بحقول أساسية بلا تسريب HTML/CSS', () => {

@@ -225,6 +225,15 @@ const BRAND_STOPWORDS = new Set([
     'for', 'لـ', 'ل', 'شركة', 'لشركة', 'مع', 'a', 'an', 'the',
 ]);
 
+/** يضبط اسم العلامة في index.html حتمياً: نصّ #brandName و<title> (لا LLM). */
+export function applyBrandName(html = '', brand = '') {
+    const b = (brand || '').toString().trim();
+    if (!b || !html) return html;
+    let out = html.replace(/(<[^>]*id=["']brandName["'][^>]*>)[\s\S]*?(<\/)/i, (m, a, c) => a + b + c);
+    out = out.replace(/<title>[\s\S]*?<\/title>/i, '<title>' + b + '</title>');
+    return out;
+}
+
 /** يختار مجموعة الأقسام الأنسب حسب نوع الطلب (اختيار ذكيّ لا preset ثابت). */
 export function selectBlocks(goal = '') {
     const g = (goal || '').toString().toLowerCase();
