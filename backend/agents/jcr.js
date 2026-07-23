@@ -2027,6 +2027,15 @@ User preferences: ${JSON.stringify(execMemory)}` },
             }) : [];
 
             if (stamped && stamped.length) {
+                // خطّ الأساس: نقيس *الارتداد* لا المطلق — نتحقّق من الكلون النظيف (على
+                // القرص من الخطوة 1) بنفس النموذج، فأي فشل موجود أصلاً (مثل دور Admin
+                // غير مبنيّ في قالب متجر) لا يُحسب على البصمة ولا يُبرّر الاسترجاع.
+                let baseFails = new Set();
+                try {
+                    const bv = await verifyBehavior({ projectPath, blueprint: { kind: 'webapp' }, domainModel: model });
+                    if (bv.ran) baseFails = new Set(bv.checks.filter(c => c.status === 'fail').map(c => c.name));
+                } catch { /* تجاهل */ }
+
                 const emitG = (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m);
                 const guarded = await ensureEditIntegrity(
                     await guardFiles(scrubPlaceholders(stamped, activeProject), emitG), projectPath, emitG);
@@ -2043,10 +2052,12 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 } catch { /* تجاهل */ }
 
                 const verdict = await verifyBehavior({ projectPath, blueprint: { kind: 'webapp' }, domainModel: model });
-                const broke = (verdict.ran && !verdict.ok) || lostFn.length > 0;
+                const stampFails = verdict.ran ? verdict.checks.filter(c => c.status === 'fail').map(c => c.name) : [];
+                const newFails = stampFails.filter(n => !baseFails.has(n)); // ما أدخلته البصمة فقط
+                const broke = newFails.length > 0 || lostFn.length > 0;
                 if (broke) {
-                    const why = lostFn.length ? `فقد دوال (${lostFn.slice(0, 3).join('، ')})` : (verdict.summary || 'كسر سلوكي');
-                    this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', `↩️ التخصيص كسر التطبيق (${why}) — استرجاع الكلون العامل النظيف.`);
+                    const why = lostFn.length ? `فقد دوال (${lostFn.slice(0, 3).join('، ')})` : `فشل جديد: ${newFails.join('، ')}`;
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', `↩️ التخصيص أدخل عطلاً (${why}) — استرجاع الكلون العامل النظيف.`);
                     for (const f of clone.files) await fsPromises.writeFile(path.join(projectPath, f.name), f.content);
                 } else {
                     this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', `✅ البصمة وُضعت والتطبيق يعمل (${verdict.summary || 'تحقّق سلوكي'}).`);
