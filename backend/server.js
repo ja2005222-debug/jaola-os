@@ -66,6 +66,7 @@ import { setDomainModel } from './agents/projectMemory.js';
 import { mergeProjectModel } from './agents/projectModel.js';
 import { prepareRenderDeploy } from './agents/renderAgent.js';
 import { assetsFor, injectFaviconTag } from './agents/cloneAssets.js';
+import { listLibraries, getLibraryById, injectLibrary } from './agents/libraryRegistry.js';
 import { setProjectSecret, deleteProjectSecret, getProjectSecretNames, getProjectSecrets } from './services/projectSecrets.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
 import { buildMetricsPayload } from './services/metricsStore.js';
@@ -1238,7 +1239,31 @@ app.get('/api/platform/knowledge', verifyToken, (req, res) => {
         library: librarySummary().sort((a, b) => b.contributions - a.contributions),
         lessons: topLessons(15),
         clones: listClones(), // قوالب التطبيقات العاملة المتاحة (كلون + بصمة)
+        libraries: listLibraries(), // مكتبات جاهزة تُحقن عبر CDN عند الطلب
     });
+});
+
+// 🔗 «أضف مكتبة» — يحقن مكتبة جاهزة (CDN) في index.html للمشروع (idempotent)
+app.post('/api/library/add', verifyToken, validateProjectOwnership, async (req, res) => {
+    const { libraryId } = req.body || {};
+    const lib = libraryId && typeof libraryId === 'string' ? getLibraryById(libraryId) : null;
+    if (!lib) return res.status(400).json({ error: 'مكتبة غير معروفة.' });
+    try {
+        const idxPath = path.join(req.projectPath, 'index.html');
+        if (!fs.existsSync(idxPath)) return res.status(400).json({ error: 'index.html غير موجود — ابنِ موقعك أولاً.' });
+        const html = fs.readFileSync(idxPath, 'utf8');
+        const updated = injectLibrary(html, lib);
+        const already = updated === html;
+        if (!already) fs.writeFileSync(idxPath, updated);
+
+        const roomName = `${req.user.username}-${req.activeProject}`;
+        emitWorkspaceFiles(roomName, req.projectPath);
+        io.to(roomName).emit('log', { message: `🔗 [SYSTEM]: ${already ? 'المكتبة موجودة مسبقاً' : 'أُضيفت مكتبة'} «${lib.name}»${already ? '.' : ' — متاحة الآن في موقعك.'}` });
+        io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        res.json({ success: true, libraryId: lib.id, name: lib.name, already });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل إضافة المكتبة: ' + err.message });
+    }
 });
 
 // 🧩 «ابدأ من قالب» — يطبّق كلوناً عاملاً مباشرةً على المشروع (حتميّ، بلا ذكاء):
