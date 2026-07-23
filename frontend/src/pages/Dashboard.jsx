@@ -211,6 +211,7 @@ export default function Dashboard() {
   const [isDeploying, setIsDeploying] = useState(false);
   const [isAddingBot, setIsAddingBot] = useState(false);
   const [applyingTemplate, setApplyingTemplate] = useState('');
+  const [addingLibrary, setAddingLibrary] = useState('');
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [authMode, setAuthMode] = useState('login'); // login | register
@@ -395,6 +396,29 @@ export default function Dashboard() {
       addNotification(`❌ ${t('templateFail')}`, 'info');
     }
     setApplyingTemplate('');
+  };
+
+  // 🔗 «أضف مكتبة» — يحقن مكتبة جاهزة (CDN) في موقع المشروع
+  const handleAddLibrary = async (libraryId) => {
+    if (addingLibrary) return;
+    setAddingLibrary(libraryId);
+    addNotification(t('addingLibrary'), 'info');
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/library/add`, {
+        method: 'POST', headers: getHeaders(),
+        body: JSON.stringify({ project: activeProject, libraryId }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.success) {
+        addNotification(d.already ? t('libraryExists') : `${t('libraryAdded')} «${d.name}»`, 'success');
+        refreshPreview();
+      } else {
+        addNotification(`❌ ${d.error || t('libraryFail')}`, 'info');
+      }
+    } catch {
+      addNotification(`❌ ${t('libraryFail')}`, 'info');
+    }
+    setAddingLibrary('');
   };
 
   // 🩺 فحص جاهزية النشر على Vercel — يعرض تشخيصاً دقيقاً بدل تخمين "Not authorized"
@@ -952,6 +976,31 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <p style={{ color:S.muted, fontSize:12 }}>{t('knClonesEmpty')}</p>
+              )}
+            </div>
+
+            {/* المكتبات الجاهزة (CDN) — تُحقن عند الطلب */}
+            <div style={{ marginBottom:18 }}>
+              <p style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'0.5px', marginBottom:2 }}>{t('knLibraries')}</p>
+              <p style={{ fontSize:10, color:S.muted, marginBottom:8 }}>{t('librariesHint')}</p>
+              {knowledge.libraries?.length ? (
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                  {knowledge.libraries.map(l => (
+                    <div key={l.id} style={{ background:'#161b22', border:'1px solid rgba(56,189,248,0.2)', borderRadius:10, padding:'9px 11px', display:'flex', flexDirection:'column', gap:5 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:5, flexWrap:'wrap' }}>
+                        <span style={{ color:'#fff', fontSize:12, fontWeight:800 }}>🔗 {l.name}</span>
+                        <span style={{ background:'rgba(56,189,248,0.12)', color:'#7dd3fc', fontSize:9, padding:'1px 6px', borderRadius:8 }}>{l.category}</span>
+                      </div>
+                      <div style={{ color:S.muted, fontSize:10, lineHeight:1.5, flex:1 }}>{l.description}</div>
+                      <button onClick={() => handleAddLibrary(l.id)} disabled={!!addingLibrary}
+                        style={{ background:'rgba(56,189,248,0.15)', border:'1px solid rgba(56,189,248,0.35)', borderRadius:7, padding:'5px 10px', color:'#7dd3fc', fontSize:10, fontWeight:800, cursor: addingLibrary ? 'default' : 'pointer', opacity: addingLibrary && addingLibrary !== l.id ? 0.4 : 1, alignSelf:'flex-start' }}>
+                        {addingLibrary === l.id ? `⏳ ${t('addingLibrary')}` : `➕ ${t('addLibrary')}`}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ color:S.muted, fontSize:12 }}>—</p>
               )}
             </div>
 
