@@ -1,8 +1,29 @@
 // 🧱 JAOLA Registry / Blocks: أقسام مكتفية ذاتياً + إعادة تركيب صفحة صالحة.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { listBlocks, getBlock, composePage, composeLanding } from '../agents/blockRegistry.js';
-import { detectUndefinedFunctions } from '../agents/behaviorVerifier.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { listBlocks, getBlock, composePage, composeLanding, isMarketingPageGoal, brandFromGoal } from '../agents/blockRegistry.js';
+import { polishHtml } from '../agents/polishPack.js';
+import { verifyBehavior, detectUndefinedFunctions } from '../agents/behaviorVerifier.js';
+
+test('isMarketingPageGoal: صفحات تسويقيّة/تعريفيّة → true؛ التطبيقات → false', () => {
+    assert.equal(isMarketingPageGoal('ابني صفحة هبوط لشركة AI'), true);
+    assert.equal(isMarketingPageGoal('موقع تعريفي لمطعم'), true);
+    assert.equal(isMarketingPageGoal('بورتفوليو لمصمّم'), true);
+    assert.equal(isMarketingPageGoal('landing page for a startup'), true);
+    assert.equal(isMarketingPageGoal('أي هدف', { kind: 'brochure' }), true);
+    // تطبيقات تفاعلية → ليست صفحة تسويق
+    assert.equal(isMarketingPageGoal('متجر عطور فخم'), false);
+    assert.equal(isMarketingPageGoal('تطبيق توصيل طعام'), false);
+});
+
+test('brandFromGoal: يستخرج علامة مختصرة أو fallback', () => {
+    assert.ok(brandFromGoal('ابني صفحة هبوط لشركة نجم').length > 0);
+    assert.equal(brandFromGoal('', 'proj-1'), 'proj-1');
+    assert.ok(!/ابني|صفحة|موقع/.test(brandFromGoal('ابني موقع تعريفي عطور')), 'أزال كلمات البناء/النوع');
+});
 
 test('listBlocks: قائمة عرض بحقول أساسية بلا تسريب HTML/CSS', () => {
     const list = listBlocks();
@@ -45,4 +66,18 @@ test('composePage: افتراضيّ = صفحة هبوط كاملة عند غيا
     // معرّف مجهول يُتجاهَل بأمان
     const { blocks: b2 } = composePage({ blocks: ['hero', 'ghost-block', 'footer'] });
     assert.deepEqual(b2, ['hero', 'footer']);
+});
+
+test('تكامل: صفحة مركّبة + مُلمَّعة تعمل بلا أخطاء (jsdom)', async () => {
+    const { files } = composeLanding('سينما نجم', '#e11d48');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jreg-'));
+    for (const f of files) {
+        const content = f.name === 'index.html' ? polishHtml(f.content) : f.content;
+        fs.writeFileSync(path.join(dir, f.name), content);
+    }
+    const v = await verifyBehavior({ projectPath: dir, blueprint: { kind: 'webapp', functionalComponents: [{ name: 'x' }] }, domainModel: { roles: [{ name: 'Visitor' }] } });
+    assert.equal(v.ran, true);
+    const byName = Object.fromEntries(v.checks.map(x => [x.name, x.status]));
+    assert.notEqual(byName['no-js-errors'], 'fail', 'الصفحة المركّبة+المُلمَّعة بلا أخطاء JS');
+    fs.rmSync(dir, { recursive: true, force: true });
 });

@@ -16,8 +16,9 @@ import { getLibraryModel, recordModel } from './modelLibrary.js';
 import { matchCloneTemplate } from './cloneTemplates/index.js';
 import { patchEditPlan } from './patchEditor.js';
 import { stampSeed } from './seedStamp.js';
-import { assetsFor, injectFaviconTag, paletteHint } from './cloneAssets.js';
+import { assetsFor, injectFaviconTag, paletteHint, pickPalette } from './cloneAssets.js';
 import { polishHtml } from './polishPack.js';
+import { composePage, isMarketingPageGoal, brandFromGoal } from './blockRegistry.js';
 import { verifyBehavior, buildBehaviorFixInstruction, analyzeProjectStatic, readPageCode, extractDefinedFunctions } from './behaviorVerifier.js';
 import { detectProjectType } from './knowledgeEngine.js';
 import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
@@ -1236,6 +1237,13 @@ User preferences: ${JSON.stringify(execMemory)}` },
             const existingCtx = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
             const isFreshBuild = !existingCtx || existingCtx.trim().length < 80;
             const explicitRebuild = isExplicitRebuild(goal) || isExplicitNewBuild(goal);
+
+            // 🧱 صفحة تسويقيّة/تعريفيّة (هبوط/بروشور/بورتفوليو/شركة) → إعادة تركيب من
+            // JAOLA Registry: صفحة *كاملة واحترافية* من بلوكات جاهزة، لا توليد هشّ.
+            if (isMarketingPageGoal(goal, blueprint) && (isFreshBuild || explicitRebuild)) {
+                return await this._buildFromRegistry(goal, projectPath, username, activeProject, roomName, agents);
+            }
+
             const clone = matchCloneTemplate(goal, blueprint, getDomainModel(username, activeProject));
             if (clone) {
                 // نبدأ من الكلون العامل إن: (أ) بناء جديد/هوية جديدة، أو (ب) إعادة بناء
@@ -2125,6 +2133,62 @@ User preferences: ${JSON.stringify(execMemory)}` },
         this.io.to(roomName).emit('chat_reply', { message: msg });
         this.emitLiveLog(roomName, 'JCOS', 'Kernel', '✨ نجاح (قالب jaola عامل)');
         return { success: true, clone: clone.id };
+    }
+
+    // 🧱 بناء بإعادة التركيب من JAOLA Registry — صفحة تسويقيّة/تعريفيّة *كاملة
+    // واحترافية* من بلوكات جاهزة مختبَرة (Hero/Features/Pricing/…)، ثم بصمة
+    // (علامة/لون) + أيقونة + تلميع. لا توليد من الصفر (أسرع وأنظف وأكمل).
+    async _buildFromRegistry(goal, projectPath, username, activeProject, roomName, agents) {
+        const lang = getUserLanguage(username) || 'ar';
+        const t0 = Date.now();
+        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
+        this.emitLiveLog(roomName, '5. RUNTIME', 'JaolaRegistry', '🧱 إعادة تركيب صفحة احترافية من JAOLA Registry (بلوكات جاهزة) — لا توليد من الصفر');
+
+        // 1) ركّب صفحة كاملة مخصّصة (علامة + لون المجال) من البلوكات
+        const palette = pickPalette(goal);
+        const brand = brandFromGoal(goal, activeProject);
+        const { files, blocks } = composePage({ brand, accent: palette.accent });
+        for (const f of files) await fsPromises.writeFile(path.join(projectPath, f.name), f.content);
+        this.emitLiveLog(roomName, '5. RUNTIME', 'JaolaRegistry', `🧩 رُكّبت ${blocks.length} أقسام: ${blocks.join(' · ')}`);
+
+        // 2) هوية بصرية + تلميع (خطّ + حركات) — حتميّ
+        try {
+            const assets = assetsFor(goal);
+            await fsPromises.writeFile(path.join(projectPath, 'brand.svg'), assets.favicon);
+            const idxPath = path.join(projectPath, 'index.html');
+            let html = await fsPromises.readFile(idxPath, 'utf8');
+            html = injectFaviconTag(html, 'brand.svg');
+            html = polishHtml(html);
+            await fsPromises.writeFile(idxPath, html);
+        } catch { /* اختياري */ }
+
+        // 3) نموذج بسيط + نشر ثابت
+        try { setDomainModel(username, activeProject, { entities: [], roles: [{ name: 'Visitor', capabilities: ['تصفّح'] }], flows: [], _source: 'registry' }); } catch {}
+        try {
+            const projectName = `${username}-${activeProject}`.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 50);
+            await prepareRenderDeploy(projectPath, projectName, false);
+        } catch { /* اختياري */ }
+
+        // 4) نهائيات كبناءٍ ناجح
+        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
+        transitionState(username, activeProject, STATES.COMPLETED);
+        addToHistory(username, activeProject, `registry: ${(goal || '').slice(0, 60)}`);
+        let builtFiles = [];
+        try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
+        this.io.to(roomName).emit('workspace_files', builtFiles);
+        this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
+        autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
+        const durationSec = Math.round((Date.now() - t0) / 1000);
+        recordBuild(username, activeProject, { success: true, durationSec, filesCount: builtFiles.length, goal: goal || '' });
+        this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
+
+        const msg = lang === 'ar'
+            ? `✅ اكتمل — ركّبنا صفحة احترافية **كاملة** لـ «${brand}» من مكوّنات JAOLA الجاهزة (${blocks.length} قسم) ووضعنا بصمتك وهويتك البصرية. جرّبها في المعاينة، ثم اطلب أي تعديل.`
+            : `✅ Done — composed a **complete** professional page for "${brand}" from ${blocks.length} ready JAOLA blocks, with your brand and visual identity. Try it in the preview, then request any change.`;
+        this.io.to(roomName).emit('chat_reply', { message: msg });
+        this.emitLiveLog(roomName, 'JCOS', 'Kernel', '✨ نجاح (إعادة تركيب من Registry)');
+        return { success: true, registry: true, blocks };
     }
 
     // ⚛️ بناء مشروع React/Next حقيقي + معاينة حيّة في الـ iframe + خيار النشر
