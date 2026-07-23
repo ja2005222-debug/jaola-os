@@ -18,7 +18,7 @@ import { patchEditPlan } from './patchEditor.js';
 import { stampSeed } from './seedStamp.js';
 import { assetsFor, injectFaviconTag, paletteHint, pickPalette } from './cloneAssets.js';
 import { polishHtml } from './polishPack.js';
-import { composePage, isMarketingPageGoal, brandFromGoal } from './blockRegistry.js';
+import { composePage, isMarketingPageGoal, brandFromGoal, selectBlocks } from './blockRegistry.js';
 import { verifyBehavior, buildBehaviorFixInstruction, analyzeProjectStatic, readPageCode, extractDefinedFunctions } from './behaviorVerifier.js';
 import { detectProjectType } from './knowledgeEngine.js';
 import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
@@ -2147,7 +2147,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // 1) ركّب صفحة كاملة مخصّصة (علامة + لون المجال) من البلوكات
         const palette = pickPalette(goal);
         const brand = brandFromGoal(goal, activeProject);
-        const { files, blocks } = composePage({ brand, accent: palette.accent });
+        const { files, blocks } = composePage({ brand, accent: palette.accent, blocks: selectBlocks(goal) });
         for (const f of files) await fsPromises.writeFile(path.join(projectPath, f.name), f.content);
         this.emitLiveLog(roomName, '5. RUNTIME', 'JaolaRegistry', `🧩 رُكّبت ${blocks.length} أقسام: ${blocks.join(' · ')}`);
 
