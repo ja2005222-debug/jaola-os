@@ -199,3 +199,36 @@ ${bodyHtml}
 export function composeLanding(brand = 'JAOLA', accent = '#6366f1') {
     return composePage({ brand, accent, blocks: LANDING_PRESET });
 }
+
+// كلمات تدلّ على صفحة تسويقيّة/تعريفيّة ثابتة (لا تطبيق تفاعليّ) — تُبنى بإعادة
+// تركيب من الـ Registry (كاملة واحترافية) بدل التوليد الهشّ.
+const MARKETING_HINTS = [
+    'landing', 'هبوط', 'لاندنج', 'لاندنق', 'بروشور', 'brochure', 'تعريفي', 'تعريفية',
+    'بورتفوليو', 'portfolio', 'معرض اعمال', 'معرض أعمال', 'شركة', 'company', 'corporate',
+    'وكالة', 'agency', 'صفحة تسويق', 'marketing page', 'one page', 'ونبيج', 'onepage',
+    'صفحة هبوط', 'موقع تعريفي', 'coming soon', 'قريبا', 'startup', 'ستارت اب',
+];
+
+/** هل الهدف صفحة تسويقيّة/تعريفيّة ثابتة → إعادة تركيب من الـ Registry؟ */
+export function isMarketingPageGoal(goal = '', blueprint = null) {
+    const k = blueprint?.kind;
+    if (k === 'landing' || k === 'brochure') return true;
+    const hay = (goal || '').toString().toLowerCase();
+    return MARKETING_HINTS.some(h => hay.includes(h.toLowerCase()));
+}
+
+// كلمات تُستبعَد عند استخراج العلامة (أفعال بناء + كلمات نوع عامّة). تصفية بالرمز
+// لا بـ \b (لا يعمل مع العربية).
+const BRAND_STOPWORDS = new Set([
+    'ابني', 'ابن', 'أبني', 'أنشئ', 'انشئ', 'اصنع', 'صمم', 'صمّم', 'اعمل', 'build', 'create', 'make', 'design', 'generate',
+    'موقع', 'صفحة', 'منصة', 'منصّة', 'تطبيق', 'هبوط', 'تعريفي', 'تعريفية', 'بروشور', 'landing', 'page', 'website', 'site',
+    'for', 'لـ', 'ل', 'شركة', 'لشركة', 'مع', 'a', 'an', 'the',
+]);
+
+/** يستخرج اسم علامة تقريبيّاً من الهدف (لتخصيص العنوان/الترويسة). */
+export function brandFromGoal(goal = '', fallback = 'JAOLA') {
+    const toks = (goal || '').toString().replace(/["'«»]/g, ' ').split(/\s+/).filter(Boolean)
+        .filter(w => !BRAND_STOPWORDS.has(w.toLowerCase()));
+    const s = toks.slice(0, 3).join(' ').trim();
+    return s || fallback || 'JAOLA';
+}
