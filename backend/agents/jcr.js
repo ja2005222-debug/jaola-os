@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { groq, smartChat } from './baseAgent.js';
 import { runBackendTeam, writeBackendTeamFiles } from './backendTeam/index.js';
-import { scanProjectFiles, buildProjectBrain, summarizeBrain } from '../services/projectBrain.js';
+import { scanProjectFiles, buildProjectBrain, summarizeBrain, summarizeFacts } from '../services/projectBrain.js';
 import { selectStarter, resolveStack } from './starterRegistry.js';
 import { generateNextScaffold, generateContentModel, generateSectionContent, compName, slugify, componentSource, defaultSection, pageFileSource } from './reactGenerator.js';
 import { buildStaticSite, buildStaticSiteFromSource, buildDashboardPage } from '../services/reactPreview.js';
@@ -1056,6 +1056,9 @@ export class JaolaCognitiveRuntime {
                     }
                 }
                 brainContext = summarizeBrain(brain, userLang);
+                // حقائق ملفات دقيقة (عدد الصفحات/الملفات/أكبر ملف) — يجيب الشات
+                // بدل «غير محدد في السجل».
+                brainContext += summarizeFacts(files, userLang);
             }
         } catch { /* الشات يعمل حتى لو تعذّر بناء الصورة */ }
 
