@@ -8,7 +8,7 @@ import { selectStarter, resolveStack } from './starterRegistry.js';
 import { generateNextScaffold, generateContentModel, generateSectionContent, compName, slugify, componentSource, defaultSection, pageFileSource } from './reactGenerator.js';
 import { buildStaticSite, buildStaticSiteFromSource, buildDashboardPage } from '../services/reactPreview.js';
 import { promises as fsPromises } from 'fs';
-import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO } from './languageDetector.js';
+import { initUserLanguage, getUserLanguage, getLangInfo, getReplyLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO, resolveGoalLanguage } from './languageDetector.js';
 import { getLanguageDecision, buildLanguagePrompt } from './languageManager.js';
 import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure, setDomainModel, getDomainModel } from './projectMemory.js';
 import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel, buildAppSections } from './projectModel.js';
@@ -1159,7 +1159,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
     // 🚦 كل المهام تمر عبر صف التنفيذ: لا توازي لنفس المشروع + حد توازٍ كلي
     // يحمي حصة الـ LLM — كل مواقع الاستدعاء تبقى كما هي
     executeMission(goal, projectPath, username, activeProject, roomName, agents, dbStatus) {
-        const lang = getUserLanguage(username) || 'ar';
+        const lang = resolveGoalLanguage(goal, getUserLanguage(username)); // لا ردّ إنجليزي على طلب عربيّ
         const result = enqueueMission({
             username,
             project: activeProject,
@@ -1983,7 +1983,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
     // 🍔 بناء من كلون عامل — يكتب تطبيقاً يعمل فعلاً، يضع البصمة (تخصيص محتوى
     // آمن مع تراجع عند الكسر)، يتحقّق سلوكياً، ويُنهي كبناءٍ ناجح.
     async _buildFromClone(clone, goal, projectPath, username, activeProject, roomName, agents) {
-        const lang = getUserLanguage(username) || 'ar';
+        const lang = resolveGoalLanguage(goal, getUserLanguage(username)); // لا ردّ إنجليزي على طلب عربيّ
         const t0 = Date.now();
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
         this.emitLiveLog(roomName, '5. RUNTIME', 'JaolaTemplate', `🧩 قالب jaola عامل: ${clone.name} (${clone.id})${clone.externalApi ? ` — API خارجي: ${clone.externalApi}` : ''} — نبدأ من تطبيق يعمل فعلاً (لا توليد من الصفر)`);
@@ -2139,7 +2139,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
     // واحترافية* من بلوكات جاهزة مختبَرة (Hero/Features/Pricing/…)، ثم بصمة
     // (علامة/لون) + أيقونة + تلميع. لا توليد من الصفر (أسرع وأنظف وأكمل).
     async _buildFromRegistry(goal, projectPath, username, activeProject, roomName, agents) {
-        const lang = getUserLanguage(username) || 'ar';
+        const lang = resolveGoalLanguage(goal, getUserLanguage(username)); // لا ردّ إنجليزي على طلب عربيّ
         const t0 = Date.now();
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
         this.emitLiveLog(roomName, '5. RUNTIME', 'JaolaRegistry', '🧱 إعادة تركيب صفحة احترافية من JAOLA Registry (بلوكات جاهزة) — لا توليد من الصفر');
