@@ -22,17 +22,21 @@ const INDEX_HTML = `<!DOCTYPE html>
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">🎟️ <span id="brandName">تذاكر jaola</span></div>
+    <div class="brand"><span class="mk">🎟️</span> <span id="brandName">تذاكر jaola</span></div>
     <nav class="tabs" id="tabs"></nav>
-    <button class="btn" id="authBtn" data-action="openAuth">دخول</button>
+    <button class="btn ghost" id="authBtn" data-action="openAuth">دخول</button>
   </header>
 
   <main>
     <!-- استكشاف -->
     <section id="view-explore" class="view">
       <div class="hero">
-        <h1>عِش اللحظة — احجز تذكرتك</h1>
-        <p class="hero-tag">حفلات · رياضة · مؤتمرات · مسرح · ورش — كل المناسبات في مكان واحد.</p>
+        <div class="ph hero-bg"><img src="https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=1400&q=80&auto=format&fit=crop" alt="" onerror="this.style.display='none'"></div>
+        <div class="hero-in">
+          <span class="eyebrow">كل المناسبات في مكان واحد</span>
+          <h1>عِش اللحظة<br><span class="accent">احجز تذكرتك</span></h1>
+          <p class="hero-tag">حفلات · رياضة · مؤتمرات · مسرح · ورش — تذاكرك بلمسة واحدة.</p>
+        </div>
       </div>
       <div class="toolbar">
         <input id="search" class="search" placeholder="ابحث عن حدث أو مكان...">
@@ -160,19 +164,19 @@ const PROMOS = [
 
 function grad(a, b) { return 'linear-gradient(135deg,' + a + ',' + b + ')'; }
 const SEED_EVENTS = [
-  { id: 'e1', title: 'ليلة الطرب العربي', category: 'حفلات موسيقية', city: 'الرياض', venue: 'المسرح الكبير', date: '2026-08-20', time: '21:00', emoji: '🎤', g: grad('#7c3aed', '#db2777'), organizer: 'شركة الفعّاليات', approved: true, featured: true,
+  { id: 'e1', title: 'ليلة الطرب العربي', category: 'حفلات موسيقية', city: 'الرياض', venue: 'المسرح الكبير', date: '2026-08-20', time: '21:00', emoji: '🎤', img: '1470229722913-7c0e2dbbafd3', g: grad('#7c3aed', '#db2777'), organizer: 'شركة الفعّاليات', approved: true, featured: true,
     desc: 'أمسية غنائية استثنائية مع نخبة الفنانين وأوركسترا حيّة.',
     tiers: [{ id: 't1', name: 'عادي', price: 150, qty: 300 }, { id: 't2', name: 'VIP', price: 400, qty: 80 }, { id: 't3', name: 'بلاتيني', price: 750, qty: 20 }] },
-  { id: 'e2', title: 'نهائي كأس المدينة', category: 'رياضة', city: 'جدة', venue: 'الملعب الأولمبي', date: '2026-09-05', time: '19:30', emoji: '⚽', g: grad('#059669', '#0ea5e9'), organizer: 'شركة الفعّاليات', approved: true, featured: true,
+  { id: 'e2', title: 'نهائي كأس المدينة', category: 'رياضة', city: 'جدة', venue: 'الملعب الأولمبي', date: '2026-09-05', time: '19:30', emoji: '⚽', img: '1522778119026-d647f0596c20', g: grad('#059669', '#0ea5e9'), organizer: 'شركة الفعّاليات', approved: true, featured: true,
     desc: 'المباراة النهائية المرتقبة — أجواء حماسية ومدرّجات كاملة.',
     tiers: [{ id: 't1', name: 'مدرّج عام', price: 80, qty: 500 }, { id: 't2', name: 'الفئة الأولى', price: 200, qty: 150 }, { id: 't3', name: 'المقصورة', price: 500, qty: 40 }] },
-  { id: 'e3', title: 'مؤتمر التقنية 2026', category: 'مؤتمرات', city: 'الرياض', venue: 'مركز المؤتمرات', date: '2026-10-12', time: '09:00', emoji: '💡', g: grad('#2563eb', '#7c3aed'), organizer: 'شركة الفعّاليات', approved: true, featured: false,
+  { id: 'e3', title: 'مؤتمر التقنية 2026', category: 'مؤتمرات', city: 'الرياض', venue: 'مركز المؤتمرات', date: '2026-10-12', time: '09:00', emoji: '💡', img: '1505373877841-8d25f7d46678', g: grad('#2563eb', '#7c3aed'), organizer: 'شركة الفعّاليات', approved: true, featured: false,
     desc: 'ثلاثة أيّام من الجلسات وورش العمل مع روّاد التقنية.',
     tiers: [{ id: 't1', name: 'حضور', price: 300, qty: 400 }, { id: 't2', name: 'محترف', price: 700, qty: 120 }] },
-  { id: 'e4', title: 'مسرحية «الرحلة»', category: 'مسرح', city: 'الدمام', venue: 'مسرح الواجهة', date: '2026-08-28', time: '20:30', emoji: '🎭', g: grad('#b45309', '#dc2626'), organizer: 'شركة الفعّاليات', approved: true, featured: false,
+  { id: 'e4', title: 'مسرحية «الرحلة»', category: 'مسرح', city: 'الدمام', venue: 'مسرح الواجهة', date: '2026-08-28', time: '20:30', emoji: '🎭', img: '1503095396549-807759245b35', g: grad('#b45309', '#dc2626'), organizer: 'شركة الفعّاليات', approved: true, featured: false,
     desc: 'عمل مسرحي كوميدي درامي يناسب العائلة.',
     tiers: [{ id: 't1', name: 'عادي', price: 100, qty: 200 }, { id: 't2', name: 'أمامي', price: 220, qty: 60 }] },
-  { id: 'e5', title: 'ورشة التصوير الاحترافي', category: 'ورش عمل', city: 'أبها', venue: 'استوديو الضوء', date: '2026-09-18', time: '16:00', emoji: '📷', g: grad('#0891b2', '#4f46e5'), organizer: 'شركة الفعّاليات', approved: true, featured: false,
+  { id: 'e5', title: 'ورشة التصوير الاحترافي', category: 'ورش عمل', city: 'أبها', venue: 'استوديو الضوء', date: '2026-09-18', time: '16:00', emoji: '📷', img: '1452587925148-ce544e77e70d', g: grad('#0891b2', '#4f46e5'), organizer: 'شركة الفعّاليات', approved: true, featured: false,
     desc: 'ورشة عملية ليوم كامل مع مدرّب معتمد — أدوات وشهادة.',
     tiers: [{ id: 't1', name: 'مقعد', price: 250, qty: 40 }] },
 ];
@@ -198,6 +202,9 @@ function ticketCode() { var s = 'JEV-'; var c = 'ABCDEFGHJKLMNPQRSTUVWXYZ2345678
 function promoByCode(code) { var q = String(code || '').trim().toUpperCase(); return PROMOS.find(function (p) { return p.code === q; }) || null; }
 function dayName(dateStr) { try { var d = new Date(dateStr); return ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'][d.getDay()]; } catch { return ''; } }
 function soldOut(ev) { return ev.tiers.every(function (t) { return t.qty <= 0; }); }
+function imgUrl(id) { return 'https://images.unsplash.com/photo-' + id + '?w=700&q=80&auto=format&fit=crop'; }
+// صورة الحدث فوق التدرّج؛ إن فشلت يظهر تدرّج الحدث الأنيق بديلاً.
+function posterImg(e, cls) { return e.img ? '<img class="' + (cls || 'poster-img') + '" loading="lazy" src="' + imgUrl(e.img) + '" alt="' + (e.title || '') + '" onerror="this.style.display=&#39;none&#39;">' : ''; }
 function toast(msg) {
   var t = byId('toast'); if (!t) return;
   t.textContent = msg; show(t, true);
@@ -272,7 +279,7 @@ function renderExplore() {
   byId('eventGrid').innerHTML = list.map(function (e) {
     var out = soldOut(e);
     return '<div class="card ' + (out ? 'is-out' : '') + '" data-action="openEvent" data-id="' + e.id + '">' +
-      '<div class="poster" style="background:' + e.g + '"><span class="poster-emoji">' + e.emoji + '</span>' +
+      '<div class="poster" style="background:' + e.g + '"><span class="poster-emoji">' + e.emoji + '</span>' + posterImg(e) +
       (e.featured ? '<span class="badge-feat">مميّز</span>' : '') +
       (out ? '<span class="badge-out">نفدت التذاكر</span>' : '') + '</div>' +
       '<div class="ev-body"><div class="ev-cat">' + e.category + '</div>' +
@@ -303,7 +310,7 @@ function renderEvent() {
   var total = eventCartTotal();
   var count = cartCount();
   byId('eventDetail').innerHTML =
-    '<div class="event-hero" style="background:' + e.g + '"><span class="eh-emoji">' + e.emoji + '</span></div>' +
+    '<div class="event-hero" style="background:' + e.g + '"><span class="eh-emoji">' + e.emoji + '</span>' + posterImg(e, 'eh-img') + '</div>' +
     '<div class="event-info">' +
     '<div class="ev-cat">' + e.category + '</div>' +
     '<h1 class="event-title">' + e.title + '</h1>' +
@@ -586,42 +593,55 @@ function init() {
 document.addEventListener('DOMContentLoaded', init);
 `;
 
-const STYLES_CSS = `:root{--bg:#0a0e17;--surface:#121826;--card:#18202f;--accent:#e11d48;--accent2:#7c3aed;--good:#22c55e;--warn:#f59e0b;--text:#eef2f8;--muted:#8a95a8;--border:#242d40;--font:'Segoe UI',Tahoma,system-ui,sans-serif}
+const STYLES_CSS = `:root{--bg:#080b12;--surface:#111826;--card:#161e2d;--accent:#e11d48;--accent2:#7c3aed;--good:#22c55e;--warn:#f59e0b;--text:#eef2f8;--muted:#8a95a8;--border:#222b3d;--line:rgba(225,29,72,.16);--font:'Segoe UI',Tahoma,system-ui,sans-serif;--shadow:0 30px 70px -24px rgba(0,0,0,.8)}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6}
-.topbar{display:flex;align-items:center;gap:16px;padding:12px 20px;background:rgba(18,24,38,.9);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);flex-wrap:wrap;position:sticky;top:0;z-index:30}
-.brand{font-size:19px;font-weight:800;white-space:nowrap}
+body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+body::before{content:"";position:fixed;inset:0;z-index:-1;background:radial-gradient(50% 40% at 85% 0%,rgba(225,29,72,.10),transparent 60%),radial-gradient(50% 40% at 0% 100%,rgba(124,58,237,.09),transparent 60%),var(--bg)}
+.topbar{display:flex;align-items:center;gap:16px;padding:12px 20px;background:rgba(17,24,38,.72);backdrop-filter:blur(14px);border-bottom:1px solid var(--border);flex-wrap:wrap;position:sticky;top:0;z-index:30}
+.brand{font-size:19px;font-weight:800;white-space:nowrap;display:flex;align-items:center;gap:9px}
+.brand .mk{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;font-size:17px}
 .tabs{flex:1;display:flex;gap:6px;flex-wrap:wrap}
-.tab{background:transparent;border:1px solid transparent;color:var(--muted);padding:7px 13px;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer}
+.tab{background:transparent;border:1px solid transparent;color:var(--muted);padding:7px 14px;border-radius:99px;font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font)}
 .tab.active{background:var(--card);color:var(--text);border-color:var(--border)}
-.btn{background:var(--card);border:1px solid var(--border);color:var(--text);padding:8px 16px;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-.btn.primary[disabled]{opacity:.5;cursor:not-allowed}
-.btn.sm{padding:5px 12px;font-size:12px}
+.btn{background:var(--card);border:1px solid var(--border);color:var(--text);padding:9px 16px;border-radius:11px;font-weight:700;font-size:13px;cursor:pointer;transition:.18s;font-family:var(--font)}
+.btn.primary{background:linear-gradient(105deg,var(--accent),var(--accent2));border-color:transparent;color:#fff}
+.btn.primary:hover{transform:translateY(-2px);box-shadow:0 12px 30px -10px rgba(225,29,72,.5)}
+.btn.ghost{background:rgba(255,255,255,.04)}
+.btn.primary[disabled]{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+.btn.sm{padding:6px 12px;font-size:12px}
 .btn.block{width:100%;margin-top:6px}
 .icon-btn{background:none;border:none;color:var(--text);font-size:19px;cursor:pointer;width:30px;height:30px;border-radius:8px}
 .icon-btn:hover{background:var(--surface)}
-main{max-width:1160px;margin:0 auto;padding:20px 18px}
-.sec-title{margin-bottom:16px;font-size:18px}
-.back-btn{background:none;border:none;color:var(--muted);font-weight:700;font-size:14px;cursor:pointer;margin-bottom:14px}
-.hero{background:linear-gradient(120deg,var(--accent),var(--accent2));border-radius:22px;padding:36px 26px;margin-bottom:18px}
-.hero h1{font-size:27px;margin-bottom:6px}
-.hero-tag{color:#fce7ef;opacity:.95}
+main{max-width:1160px;margin:0 auto;padding:0 18px 40px}
+.sec-title{margin:22px 0 16px;font-size:18px}
+.back-btn{background:none;border:none;color:var(--muted);font-weight:700;font-size:14px;cursor:pointer;margin:20px 0 14px}
+.eyebrow{font-size:12px;font-weight:800;letter-spacing:2.5px;color:var(--accent);text-transform:uppercase}
+.accent{background:linear-gradient(105deg,#fb7185,var(--accent2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.hero{position:relative;min-height:46vh;display:flex;align-items:center;overflow:hidden;border-radius:0 0 28px 28px;margin:0 -18px 20px}
+.hero .hero-bg{position:absolute;inset:0;z-index:0}
+.hero .hero-bg::after{content:"";position:absolute;inset:0;z-index:2;background:linear-gradient(90deg,rgba(8,11,18,.94) 32%,rgba(8,11,18,.42))}
+.hero-in{position:relative;z-index:3;padding:50px 30px}
+.hero h1{font-size:clamp(30px,5.5vw,54px);line-height:1.08;font-weight:800;margin:12px 0 12px;letter-spacing:-1px}
+.hero-tag{color:#d7dce8;font-size:16px;max-width:460px}
+.ph{position:relative;overflow:hidden;background:linear-gradient(135deg,#161e2d,#2a2140)}
+.ph img{position:relative;z-index:1;width:100%;height:100%;object-fit:cover;display:block}
 .toolbar{display:flex;flex-direction:column;gap:12px;margin-bottom:20px}
 .search{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px;color:var(--text);font-size:15px}
 .filters-row{display:flex;gap:10px;flex-wrap:wrap}
 .sel,select{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--text);flex:1;min-width:140px}
 .chips{display:flex;gap:8px;flex-wrap:wrap}
 .chip{background:transparent;border:1px solid var(--border);color:var(--muted);padding:7px 14px;border-radius:20px;font-weight:700;font-size:12px;cursor:pointer}
-.chip.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.chip.active{background:linear-gradient(105deg,var(--accent),var(--accent2));border-color:transparent;color:#fff}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:18px}
 .card{background:var(--card);border:1px solid var(--border);border-radius:18px;overflow:hidden;cursor:pointer;transition:.18s}
 .card:hover{border-color:var(--accent);transform:translateY(-3px);box-shadow:0 12px 30px rgba(0,0,0,.35)}
 .card.is-out{opacity:.72}
-.poster{height:140px;position:relative;display:flex;align-items:center;justify-content:center}
+.poster{height:150px;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden}
 .poster-emoji{font-size:60px;filter:drop-shadow(0 4px 12px rgba(0,0,0,.4))}
-.badge-feat{position:absolute;top:10px;right:10px;background:rgba(0,0,0,.55);color:#ffd166;font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px}
-.badge-out{position:absolute;bottom:10px;right:10px;background:rgba(0,0,0,.7);color:#fff;font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px}
+.poster-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;transition:transform .5s}
+.card:hover .poster-img{transform:scale(1.06)}
+.badge-feat{position:absolute;top:10px;right:10px;z-index:2;background:rgba(0,0,0,.62);color:#ffd166;font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px}
+.badge-out{position:absolute;bottom:10px;right:10px;z-index:2;background:rgba(0,0,0,.72);color:#fff;font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px}
 .ev-body{padding:14px}
 .ev-cat{color:var(--accent);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px}
 .ev-title{font-weight:800;font-size:16px;margin:3px 0 8px}
@@ -630,8 +650,9 @@ main{max-width:1160px;margin:0 auto;padding:20px 18px}
 .empty{text-align:center;color:var(--muted);padding:30px}
 .hidden{display:none !important}
 /* صفحة الحدث */
-.event-hero{height:200px;border-radius:22px;display:flex;align-items:center;justify-content:center;margin-bottom:-40px}
+.event-hero{height:220px;border-radius:22px;display:flex;align-items:center;justify-content:center;margin-bottom:-40px;position:relative;overflow:hidden}
 .eh-emoji{font-size:96px;filter:drop-shadow(0 6px 18px rgba(0,0,0,.5))}
+.eh-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1}
 .event-info{background:var(--surface);border:1px solid var(--border);border-radius:22px;padding:26px 22px;position:relative}
 .event-title{font-size:26px;margin:4px 0 16px}
 .event-facts{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:16px}
@@ -698,7 +719,7 @@ main{max-width:1160px;margin:0 auto;padding:20px 18px}
 .switch a{color:var(--accent);text-decoration:none;font-weight:700}
 .demo{text-align:center;color:var(--muted);font-size:11px;margin-top:10px}
 .demo code{background:var(--card);padding:1px 6px;border-radius:5px}
-.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:11px 22px;border-radius:12px;font-weight:700;font-size:14px;z-index:70;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:linear-gradient(105deg,var(--accent),var(--accent2));color:#fff;padding:11px 22px;border-radius:12px;font-weight:700;font-size:14px;z-index:70;box-shadow:var(--shadow)}
 h1,h2,h3{color:var(--text)}
 `;
 
