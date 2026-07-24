@@ -145,6 +145,7 @@ const STRINGS = {
   ghRenderHint: { en: 'Full-stack projects deploy to a persistent server on Render — which deploys from GitHub. Connect a repo here, then hit Deploy for a one-click Render setup.', ar: 'مشاريع full-stack تُنشر على خادم دائم في Render — وRender ينشر من GitHub. اربط المستودع هنا، ثم اضغط «نشر» لإعداد Render بضغطة واحدة.' },
 
   // 📚 لوحة معرفة المنصّة (الفهم المتراكم)
+  jumpLatest: { en: 'Latest', ar: 'الأحدث' },
   healthTitle: { en: 'Project Health', ar: 'صحّة المشروع' },
   healthChecking: { en: 'Checking your project...', ar: 'جاري فحص مشروعك...' },
   healthNoProject: { en: 'No project to check yet.', ar: 'لا مشروع بعد للفحص.' },
