@@ -18,15 +18,22 @@ const INDEX_HTML = `<!DOCTYPE html>
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">🏫 <span id="brandName">مدرسة jaola</span></div>
+    <div class="brand"><span class="mk">🏫</span> <span id="brandName">مدرسة jaola</span></div>
     <nav class="tabs" id="tabs"></nav>
-    <button class="btn" id="authBtn" data-action="openAuth">دخول</button>
+    <button class="btn ghost" id="authBtn" data-action="openAuth">دخول</button>
   </header>
 
   <main>
     <!-- الطالب: الرئيسية -->
     <section id="view-home" class="view">
-      <h2 class="sec-title">أهلاً بك <span id="studentName"></span></h2>
+      <div class="hero">
+        <div class="ph hero-bg"><img src="https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=1400&q=80&auto=format&fit=crop" alt="" onerror="this.style.display='none'"></div>
+        <div class="hero-in">
+          <span class="eyebrow">بوّابتك الدراسية</span>
+          <h1>أهلاً <span class="accent" id="studentName"></span></h1>
+          <p>جدولك ودرجاتك وواجباتك وإعلانات مدرستك — في مكان واحد.</p>
+        </div>
+      </div>
       <div class="grid2">
         <div class="panel">
           <h3>📢 الإعلانات</h3>
@@ -358,20 +365,35 @@ function init() {
 document.addEventListener('DOMContentLoaded', init);
 `;
 
-const STYLES_CSS = `:root{--bg:#0d1220;--surface:#141b2b;--card:#1a2334;--accent:#0ea5e9;--good:#22c55e;--warn:#f59e0b;--bad:#ef4444;--text:#e8edf6;--muted:#8b97ad;--border:#26314a;--font:'Segoe UI',Tahoma,system-ui,sans-serif}
+const STYLES_CSS = `:root{--bg:#0a0f1a;--surface:#111827;--card:#161f30;--accent:#0ea5e9;--accent2:#2563eb;--good:#22c55e;--warn:#f59e0b;--bad:#ef4444;--text:#e8edf6;--muted:#8b97ad;--border:#233046;--line:rgba(14,165,233,.16);--font:'Segoe UI',Tahoma,system-ui,sans-serif;--shadow:0 30px 70px -24px rgba(0,0,0,.8)}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6}
-.topbar{display:flex;align-items:center;gap:16px;padding:12px 20px;background:var(--surface);border-bottom:1px solid var(--border);flex-wrap:wrap;position:sticky;top:0;z-index:30}
-.brand{font-size:19px;font-weight:800;white-space:nowrap}
+body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+body::before{content:"";position:fixed;inset:0;z-index:-1;background:radial-gradient(50% 40% at 85% 0%,rgba(14,165,233,.10),transparent 60%),radial-gradient(50% 40% at 0% 100%,rgba(37,99,235,.08),transparent 60%),var(--bg)}
+.topbar{display:flex;align-items:center;gap:16px;padding:12px 20px;background:rgba(17,24,39,.72);backdrop-filter:blur(14px);border-bottom:1px solid var(--border);flex-wrap:wrap;position:sticky;top:0;z-index:30}
+.brand{font-size:19px;font-weight:800;white-space:nowrap;display:flex;align-items:center;gap:9px}
+.brand .mk{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;font-size:17px}
 .tabs{flex:1;display:flex;gap:6px;flex-wrap:wrap}
-.tab{background:transparent;border:1px solid transparent;color:var(--muted);padding:7px 13px;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer}
+.tab{background:transparent;border:1px solid transparent;color:var(--muted);padding:7px 14px;border-radius:99px;font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font)}
 .tab.active{background:var(--card);color:var(--text);border-color:var(--border)}
-.btn{background:var(--card);border:1px solid var(--border);color:var(--text);padding:8px 16px;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:#04283a}
+.btn{background:var(--card);border:1px solid var(--border);color:var(--text);padding:9px 16px;border-radius:11px;font-weight:700;font-size:13px;cursor:pointer;transition:.18s;font-family:var(--font)}
+.btn.primary{background:linear-gradient(105deg,var(--accent),var(--accent2));border-color:transparent;color:#fff}
+.btn.primary:hover{transform:translateY(-2px);box-shadow:0 12px 30px -10px rgba(14,165,233,.5)}
+.btn.ghost{background:rgba(255,255,255,.04)}
 .btn.block{width:100%;margin-top:6px}
 .icon-btn{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer}
-main{max-width:1040px;margin:0 auto;padding:20px 18px}
-.sec-title{margin-bottom:16px;font-size:18px}
+main{max-width:1040px;margin:0 auto;padding:0 18px 40px}
+.sec-title{margin:22px 0 16px;font-size:18px}
+/* البطل */
+.hero{position:relative;min-height:38vh;display:flex;align-items:center;overflow:hidden;border-radius:0 0 26px 26px;margin:0 -18px 20px}
+.hero .hero-bg{position:absolute;inset:0;z-index:0}
+.hero .hero-bg::after{content:"";position:absolute;inset:0;z-index:2;background:linear-gradient(90deg,rgba(10,15,26,.94) 32%,rgba(10,15,26,.42))}
+.hero-in{position:relative;z-index:3;padding:44px 30px}
+.eyebrow{font-size:12px;font-weight:800;letter-spacing:2.5px;color:var(--accent);text-transform:uppercase}
+.accent{background:linear-gradient(105deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.hero h1{font-size:clamp(28px,5vw,46px);line-height:1.1;font-weight:800;margin:10px 0 10px;letter-spacing:-.5px}
+.hero p{font-size:16px;color:#d3ddec;max-width:440px}
+.ph{position:relative;overflow:hidden;background:linear-gradient(135deg,#161f30,#233046)}
+.ph img{position:relative;z-index:1;width:100%;height:100%;object-fit:cover;display:block}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @media(max-width:720px){.grid2{grid-template-columns:1fr}}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px;margin-bottom:16px}
@@ -406,7 +428,7 @@ main{max-width:1040px;margin:0 auto;padding:20px 18px}
 .err-msg{color:#ef4444;font-size:13px;margin-bottom:8px}
 .demo{text-align:center;color:var(--muted);font-size:11px;margin-top:10px;line-height:1.9}
 .demo code{background:var(--card);padding:1px 6px;border-radius:5px}
-.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#04283a;padding:11px 20px;border-radius:12px;font-weight:700;font-size:14px;z-index:70;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:linear-gradient(105deg,var(--accent),var(--accent2));color:#fff;padding:11px 20px;border-radius:12px;font-weight:700;font-size:14px;z-index:70;box-shadow:var(--shadow)}
 h2,h3{color:var(--text)}
 `;
 
