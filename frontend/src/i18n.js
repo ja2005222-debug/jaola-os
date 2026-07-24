@@ -146,6 +146,9 @@ const STRINGS = {
 
   // 📚 لوحة معرفة المنصّة (الفهم المتراكم)
   jumpLatest: { en: 'Latest', ar: 'الأحدث' },
+  galleryTitle: { en: 'Template Gallery', ar: 'معرض القوالب' },
+  gallerySubtitle: { en: 'Complete, working products — pick one and start customizing in seconds.', ar: 'منتجات كاملة تعمل فعلاً — اختر قالباً وابدأ التخصيص خلال ثوانٍ. المعاينات لقطات حقيقية من القوالب نفسها.' },
+  galleryAll: { en: 'All', ar: 'الكل' },
   healthTitle: { en: 'Project Health', ar: 'صحّة المشروع' },
   healthChecking: { en: 'Checking your project...', ar: 'جاري فحص مشروعك...' },
   healthNoProject: { en: 'No project to check yet.', ar: 'لا مشروع بعد للفحص.' },
