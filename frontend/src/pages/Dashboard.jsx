@@ -225,6 +225,9 @@ export default function Dashboard() {
   const [showKnowledgeModal, setShowKnowledgeModal] = useState(false);
   const [knowledge, setKnowledge] = useState(null);
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
+  const [showHealthModal, setShowHealthModal] = useState(false);
+  const [health, setHealth] = useState(null);
+  const [healthLoading, setHealthLoading] = useState(false);
   const [showSecretsModal, setShowSecretsModal] = useState(false);
   const [secretKeys, setSecretKeys] = useState([]);
   const [newSecretKey, setNewSecretKey] = useState('');
@@ -469,6 +472,20 @@ export default function Dashboard() {
       setKnowledge({ error: true });
     }
     setKnowledgeLoading(false);
+  };
+
+  // 🩺 صحّة المشروع — يعرض نتيجة التحقّق السلوكي (يعمل / يحتاج مراجعة + تفصيل الفحوص)
+  const openHealthModal = async () => {
+    setShowHealthModal(true);
+    setHealthLoading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/project/health?project=${encodeURIComponent(activeProject || '')}`, { headers: getHeaders() });
+      const d = await res.json();
+      setHealth(d);
+    } catch {
+      setHealth({ error: true });
+    }
+    setHealthLoading(false);
   };
 
   // ⏹️ إيقاف المهمة الجارية
@@ -939,6 +956,66 @@ export default function Dashboard() {
   );
 
   // 📚 لوحة «معرفة المنصّة» — تجعل الفهم المتراكم مرئياً (المشروع + الفئات + الدروس)
+  const healthCheckMeta = { pass: { icon:'✅', color:'#22c55e', bg:'rgba(34,197,94,0.1)', bd:'rgba(34,197,94,0.25)' },
+    warn: { icon:'⚠️', color:'#f59e0b', bg:'rgba(245,158,11,0.1)', bd:'rgba(245,158,11,0.25)' },
+    fail: { icon:'❌', color:'#ef4444', bg:'rgba(239,68,68,0.1)', bd:'rgba(239,68,68,0.25)' } };
+  const healthModal = showHealthModal && (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
+      onClick={e => e.target === e.currentTarget && setShowHealthModal(false)}>
+      <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:'22px 20px', width:'min(520px, 100%)', maxHeight:'90dvh', overflowY:'auto' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+          <h3 style={{ color:'#fff', fontSize:15, fontWeight:800 }}>🩺 {t('healthTitle')}</h3>
+          <button onClick={() => setShowHealthModal(false)}
+            style={{ background:'transparent', border:'none', color:S.muted, fontSize:20, cursor:'pointer', lineHeight:1 }}>×</button>
+        </div>
+        {healthLoading && <p style={{ color:S.muted, fontSize:13 }}>{t('healthChecking')}</p>}
+        {!healthLoading && health?.error && <p style={{ color:S.danger, fontSize:13 }}>{t('serverUnreachable')}</p>}
+        {!healthLoading && health && !health.error && (
+          <>
+            {health.ran === false ? (
+              <p style={{ color:S.muted, fontSize:13 }}>{health.summary || t('healthNoProject')}</p>
+            ) : (
+              <>
+                {/* الشريط العام */}
+                <div style={{ background: health.ok ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)',
+                  border:`1px solid ${health.ok ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}`,
+                  borderRadius:11, padding:'14px 16px', marginBottom:14, display:'flex', alignItems:'center', gap:12 }}>
+                  <span style={{ fontSize:26 }}>{health.ok ? '✅' : '⚠️'}</span>
+                  <div>
+                    <div style={{ color:'#fff', fontSize:14, fontWeight:800 }}>
+                      {health.ok ? t('healthOk') : t('healthNeedsReview')}
+                      {typeof health.score === 'number' && <span style={{ color:S.muted, fontWeight:600, fontSize:12 }}> · {health.score}%</span>}
+                    </div>
+                    <div style={{ color:S.muted, fontSize:11, marginTop:2 }}>{health.summary}</div>
+                  </div>
+                </div>
+                {/* تفصيل الفحوص */}
+                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                  {(health.checks || []).map((c, i) => {
+                    const m = healthCheckMeta[c.status] || healthCheckMeta.warn;
+                    return (
+                      <div key={i} style={{ background:m.bg, border:`1px solid ${m.bd}`, borderRadius:10, padding:'10px 12px' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+                          <span style={{ fontSize:14 }}>{m.icon}</span>
+                          <span style={{ color:'#fff', fontSize:13, fontWeight:700 }}>{c.label}</span>
+                        </div>
+                        {c.detail && <div style={{ color:S.muted, fontSize:11, marginTop:4, paddingInlineStart:21 }}>{c.detail}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+                <button onClick={openHealthModal}
+                  style={{ marginTop:14, width:'100%', background:'rgba(56,189,248,0.12)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:9, padding:'9px', color:'#7dd3fc', fontSize:12, fontWeight:700, cursor:'pointer' }}>
+                  🔄 {t('healthRecheck')}
+                </button>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   const knowledgeModal = showKnowledgeModal && (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
       onClick={e => e.target === e.currentTarget && setShowKnowledgeModal(false)}>
@@ -1208,6 +1285,10 @@ export default function Dashboard() {
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>📚</span> {t('knTitle')}
                 </button>
+                <button onClick={() => { setShowMobileMenu(false); openHealthModal(); }}
+                  style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
+                  <span style={{ fontSize:16 }}>🩺</span> {t('healthTitle')}
+                </button>
                 <button onClick={() => { setShowMobileMenu(false); openSecretsModal(); }}
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>🔑</span> {t('secretsTitle')}
@@ -1324,6 +1405,7 @@ export default function Dashboard() {
         {notificationsOverlay}
         {githubModal}
         {knowledgeModal}
+        {healthModal}
         {projectModal}
         {secretsModal}
 
@@ -1411,6 +1493,12 @@ export default function Dashboard() {
         <button onClick={openKnowledgeModal} title={t('knTitle')}
           style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 12px', color:'#94a3b8', fontSize:11, fontWeight:600 }}>
           📚 {t('knTitle')}
+        </button>
+
+        {/* صحّة المشروع */}
+        <button onClick={openHealthModal} title={t('healthTitle')}
+          style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(34,197,94,0.08)', border:'1px solid rgba(34,197,94,0.22)', borderRadius:7, padding:'5px 12px', color:'#4ade80', fontSize:11, fontWeight:700 }}>
+          🩺 {t('healthTitle')}
         </button>
 
         {/* GitHub */}
@@ -1694,6 +1782,7 @@ export default function Dashboard() {
       {notificationsOverlay}
       {githubModal}
       {knowledgeModal}
+      {healthModal}
       {projectModal}
       {secretsModal}
     </div>

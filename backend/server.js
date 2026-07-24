@@ -62,6 +62,7 @@ import { getProjectMemory, getDomainModel } from './agents/projectMemory.js';
 import { summarizeModel } from './agents/projectModel.js';
 import { librarySummary } from './agents/modelLibrary.js';
 import { listClones, getCloneById } from './agents/cloneTemplates/index.js';
+import { verifyBehavior } from './agents/behaviorVerifier.js';
 import { setDomainModel } from './agents/projectMemory.js';
 import { mergeProjectModel } from './agents/projectModel.js';
 import { prepareRenderDeploy } from './agents/renderAgent.js';
@@ -1242,6 +1243,49 @@ app.get('/api/platform/knowledge', verifyToken, (req, res) => {
         clones: listClones(), // قوالب التطبيقات العاملة المتاحة (كلون + بصمة)
         libraries: listLibraries(), // مكتبات جاهزة تُحقن عبر CDN عند الطلب
     });
+});
+
+// 🩺 صحّة المشروع — يُظهر نتيجة التحقّق السلوكي للمستخدم بدل إخفائها.
+// «يعمل / يحتاج مراجعة» + تفصيل كل فحص (أخطاء JS، أزرار غير موصولة، أدوار ناقصة…).
+// يُشغَّل عند الطلب على المشروع الحالي (المحرّك نفسه المستخدَم أثناء البناء).
+const HEALTH_LABELS = {
+    'no-js-errors': 'يعمل بلا أخطاء برمجية',
+    'wiring-complete': 'كل الأزرار موصولة بوظائفها',
+    'role-coverage': 'كل الأدوار ممثَّلة في الواجهة',
+    'data-presence': 'يوجد محتوى/مصدر بيانات',
+    'interactive-wired': 'التفاعل يعمل فعلاً (استجابة حيّة)',
+    'missing-script': 'ملفّات السكربت موجودة',
+    'runtime': 'التشغيل الفعليّ',
+};
+app.get('/api/project/health', verifyToken, async (req, res) => {
+    try {
+        const username = req.user.username;
+        const safeProject = (req.query.project || 'sandbox_app').replace(/[^a-z0-9_\-]/g, '-');
+        if (safeProject !== 'sandbox_app' && DB._isOnline()) {
+            const rec = await DB.findProject(safeProject, username);
+            if (!rec) return res.status(403).json({ success: false, error: 'Access Denied: You do not own this project.' });
+        }
+        const projectPath = getProjectPath(username, safeProject);
+        if (!fs.existsSync(path.join(projectPath, 'index.html'))) {
+            return res.json({ success: true, ran: false, skipped: true, summary: 'لا مشروع بعد للفحص.', checks: [] });
+        }
+        const domainModel = getDomainModel(username, safeProject);
+        const mem = getProjectMemory(username, safeProject);
+        const features = ((mem && mem.structure && mem.structure.features) || []).map(name => ({ name }));
+        const blueprint = features.length ? { kind: 'webapp', functionalComponents: features } : { kind: 'webapp' };
+        const v = await verifyBehavior({ projectPath, blueprint, domainModel });
+        return res.json({
+            success: true, ran: !!v.ran, ok: !!v.ok, skipped: !!v.skipped,
+            score: typeof v.score === 'number' ? v.score : null, summary: v.summary || '',
+            checks: (v.checks || []).map(c => ({
+                name: c.name, status: c.status,
+                label: HEALTH_LABELS[c.name] || c.name, detail: c.detail,
+            })),
+        });
+    } catch (e) {
+        console.warn('[ProjectHealth]', e.message);
+        return res.status(500).json({ success: false, error: 'تعذّر فحص صحّة المشروع.' });
+    }
 });
 
 // ✨ «اجعله احترافياً» — باقة تلميع حتميّة (خطّ + حركات + تحسينات) على المشروع
