@@ -177,6 +177,8 @@ export function jaolaCurrency() {
         category: 'tool',
         name: 'محوّل العملات (API خارجي حيّ)',
         description: 'محوّل عملات عامل يستهلك Frankfurter مباشرةً (بلا مفتاح): تحويل فوري + جدول أسعار مقابل عملة الأساس.',
+        nameEn: 'Currency Converter (Live external API)',
+        descriptionEn: 'Working currency converter consuming Frankfurter directly (no key): instant conversion plus a rates table.',
         keywords: ['عملات', 'عملة', 'تحويل', 'صرف', 'سعر الصرف', 'currency', 'exchange', 'converter', 'forex', 'دولار', 'يورو', 'ريال'],
         externalApi: 'Frankfurter (بلا مفتاح)',
         model: {

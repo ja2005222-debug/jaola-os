@@ -438,6 +438,8 @@ export function jaolaSchool() {
         category: 'education',
         name: 'بوّابة مدرسة',
         description: 'بوّابة مدرسة عاملة بثلاثة أدوار وصلاحيات: طالب (جدول+درجات+واجبات+إعلانات) · معلّم (رصد درجات+إضافة واجب+نشر إعلان) · مدير (إحصاءات+الطلاب+الإعلانات). لوحات مخفيّة عن الطالب، توجيه بالدور.',
+        nameEn: 'School Portal',
+        descriptionEn: 'Working school portal with three roles: student (schedule + grades + homework + announcements), teacher (record grades + homework + announcements), admin (stats).',
         keywords: ['مدرسة', 'مدارس', 'school', 'طلاب', 'معلم', 'معلّم', 'درجات', 'جدول حصص', 'واجبات', 'بوابة مدرسية', 'تعليم مدرسي', 'صف', 'حصص', 'روضة', 'ثانوية'],
         model: {
             entities: [

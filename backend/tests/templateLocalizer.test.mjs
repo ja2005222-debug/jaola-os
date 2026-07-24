@@ -66,3 +66,11 @@ test('تكامل jsdom: المتجر المُوطَّن بالإنجليزية �
     assert.equal(v.ok, true, 'القالب الإنجليزي يعمل — ' + v.summary);
     fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('بيانات المعرض الوصفية: nameEn/descriptionEn إنجليزية فعلاً لكل القوالب', () => {
+    for (const c of listClones()) {
+        assert.ok(c.nameEn && c.descriptionEn, `${c.id}: الحقول الإنجليزية موجودة`);
+        assert.equal((c.nameEn.match(/[؀-ۿ]/g) || []).length, 0, `${c.id}: nameEn بلا عربية`);
+        assert.equal((c.descriptionEn.match(/[؀-ۿ]/g) || []).length, 0, `${c.id}: descriptionEn بلا عربية`);
+    }
+});

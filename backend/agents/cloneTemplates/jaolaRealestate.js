@@ -424,6 +424,8 @@ export function jaolaRealestate() {
         category: 'realestate',
         name: 'قوائم عقارية',
         description: 'موقع عقارات فاخر مكتمل بدورين: زائر (بطل + قوائم بصور + فلاتر متعدّدة (نوع/مدينة/غرف/شريط سعر) + فرز + تفاصيل + نموذج تواصل يُحفَظ) ومدير (لوحة مخفيّة: إدارة العقارات + طلبات التواصل + إحصاءات). الإدارة بدخول، والزائر يتصفّح بلا تسجيل.',
+        nameEn: 'Real Estate Listings',
+        descriptionEn: 'Complete premium listings site: hero + photo cards + multi-filters (type/city/rooms/price) + sort + details + saved contact requests reaching a hidden admin panel.',
         keywords: ['عقار', 'عقارات', 'شقق', 'فلل', 'فيلا', 'شقة', 'real estate', 'property', 'listings', 'إيجار', 'بيع', 'أرض', 'housing'],
         model: {
             entities: [

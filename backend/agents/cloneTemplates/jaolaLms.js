@@ -530,6 +530,8 @@ export function jaolaLms() {
         category: 'education',
         name: 'منصّة تعليمية (دورات أونلاين)',
         description: 'منصّة تعلّم عاملة بثلاثة أدوار وصلاحيات: طالب (تصفّح+اشتراك+متابعة دروس+تقدّم) · مدرّب (إضافة دورات/دروس+مشتركون) · مدير (نشر+إحصاءات). لوحات مخفيّة عن الطالب، توجيه بالدور، تقدّم محفوظ.',
+        nameEn: 'Online Academy (LMS)',
+        descriptionEn: 'Learning platform with three roles: student (browse + enroll + lesson progress), instructor (courses + lessons + enrollments), admin (publish + stats).',
         keywords: ['تعليم', 'تعليمية', 'دورات', 'كورسات', 'أونلاين', 'اونلاين', 'منصة تعليمية', 'تعلم', 'lms', 'course', 'courses', 'e-learning', 'elearning', 'academy', 'أكاديمية', 'دروس', 'تدريب'],
         model: {
             entities: [

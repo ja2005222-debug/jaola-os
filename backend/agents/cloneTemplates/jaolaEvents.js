@@ -729,6 +729,8 @@ export function jaolaEvents() {
         category: 'events',
         name: 'بيع تذاكر المناسبات',
         description: 'منصّة تذاكر مناسبات احترافية ومترابطة: استكشاف بفلاتر → صفحة حدث بفئات تذاكر ومقاعد متبقّية → دفع بكود خصم → تذكرة مرئيّة برمز حجز في «تذاكري». ثلاثة أدوار: مشترٍ · منظّم (ينشئ أحداثاً تظهر فوراً) · مدير (نشر+إحصاءات). لوحات مخفيّة عن المشتري وتوجيه بالدور.',
+        nameEn: 'Event Tickets',
+        descriptionEn: 'Ticketing platform: explore with filters, event pages with ticket tiers and remaining seats, checkout with promo codes, my tickets, organizer and admin panels.',
         keywords: ['تذاكر', 'تذكرة', 'مناسبات', 'مناسبة', 'فعاليات', 'فعالية', 'حفلات', 'حفلة', 'حجز تذاكر', 'ايفنت', 'إيفنت', 'event', 'events', 'ticket', 'tickets', 'ticketing', 'concert', 'venue', 'حضور', 'أمسية'],
         model: {
             entities: [

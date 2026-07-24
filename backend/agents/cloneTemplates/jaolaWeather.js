@@ -163,6 +163,8 @@ export function jaolaWeather() {
         category: 'tool',
         name: 'الطقس (API خارجي حيّ)',
         description: 'تطبيق طقس عامل يستهلك Open-Meteo مباشرةً (بلا مفتاح): بحث مدينة → الطقس الحالي + توقّعات 7 أيام.',
+        nameEn: 'Weather (Live external API)',
+        descriptionEn: 'Working weather app consuming Open-Meteo directly (no key): city search, current weather, and a 7-day forecast.',
         keywords: ['طقس', 'الجو', 'مناخ', 'weather', 'forecast', 'توقعات', 'حرارة', 'الطقس', 'temperature', 'climate'],
         externalApi: 'Open-Meteo (بلا مفتاح)',
         model: {
