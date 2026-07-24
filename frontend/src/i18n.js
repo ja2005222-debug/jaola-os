@@ -145,6 +145,12 @@ const STRINGS = {
   ghRenderHint: { en: 'Full-stack projects deploy to a persistent server on Render — which deploys from GitHub. Connect a repo here, then hit Deploy for a one-click Render setup.', ar: 'مشاريع full-stack تُنشر على خادم دائم في Render — وRender ينشر من GitHub. اربط المستودع هنا، ثم اضغط «نشر» لإعداد Render بضغطة واحدة.' },
 
   // 📚 لوحة معرفة المنصّة (الفهم المتراكم)
+  healthTitle: { en: 'Project Health', ar: 'صحّة المشروع' },
+  healthChecking: { en: 'Checking your project...', ar: 'جاري فحص مشروعك...' },
+  healthNoProject: { en: 'No project to check yet.', ar: 'لا مشروع بعد للفحص.' },
+  healthOk: { en: 'Works — no blocking issues', ar: 'يعمل — لا مشاكل حاجبة' },
+  healthNeedsReview: { en: 'Needs your review', ar: 'يحتاج مراجعتك' },
+  healthRecheck: { en: 'Re-check', ar: 'إعادة الفحص' },
   knTitle: { en: 'Platform Knowledge', ar: 'معرفة المنصّة' },
   knLoading: { en: 'Loading knowledge...', ar: 'جاري تحميل المعرفة...' },
   knProject: { en: 'This project\'s understanding', ar: 'فهم هذا المشروع' },
