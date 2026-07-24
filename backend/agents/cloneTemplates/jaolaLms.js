@@ -20,17 +20,21 @@ const INDEX_HTML = `<!DOCTYPE html>
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">🎓 <span id="brandName">أكاديمية jaola</span></div>
+    <div class="brand"><span class="mk">🎓</span> <span id="brandName">أكاديمية jaola</span></div>
     <nav class="tabs" id="tabs"></nav>
-    <button class="btn" id="authBtn" data-action="openAuth">دخول</button>
+    <button class="btn ghost" id="authBtn" data-action="openAuth">دخول</button>
   </header>
 
   <main>
     <!-- كتالوج الدورات (عام) -->
     <section id="view-catalog" class="view">
       <div class="hero">
-        <h1>تعلّم مهارة جديدة اليوم</h1>
-        <p class="hero-tag">دورات عملية بشهادات إتمام — تعلّم بوتيرتك.</p>
+        <div class="ph hero-bg"><img src="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=1400&q=80&auto=format&fit=crop" alt="" onerror="this.style.display='none'"></div>
+        <div class="hero-in">
+          <span class="eyebrow">تعلّم بوتيرتك</span>
+          <h1>مهارة جديدة<br><span class="accent">تبدأ اليوم</span></h1>
+          <p class="hero-tag">دورات عملية بشهادات إتمام، ومتابعة لتقدّمك درساً بدرس.</p>
+        </div>
       </div>
       <div class="toolbar">
         <input id="search" class="search" placeholder="ابحث عن دورة أو مدرّب...">
@@ -125,13 +129,13 @@ const STAFF = {
 const CATEGORIES = ['برمجة', 'تصميم', 'تسويق', 'أعمال', 'لغات'];
 
 const SEED_COURSES = [
-  { id: 'c1', title: 'أساسيات جافاسكربت', category: 'برمجة', instructor: 'أ. سارة', emoji: '📘', level: 'مبتدئ', rating: 4.8, approved: true,
+  { id: 'c1', title: 'أساسيات جافاسكربت', category: 'برمجة', instructor: 'أ. سارة', emoji: '📘', img: '1517180102446-f3ece451e9d8', level: 'مبتدئ', rating: 4.8, approved: true,
     lessons: [{ id: 'l1', title: 'مقدمة', dur: 8 }, { id: 'l2', title: 'المتغيّرات', dur: 12 }, { id: 'l3', title: 'الدوال', dur: 15 }] },
-  { id: 'c2', title: 'تصميم واجهات UI/UX', category: 'تصميم', instructor: 'أ. سارة', emoji: '🎨', level: 'متوسّط', rating: 4.6, approved: true,
+  { id: 'c2', title: 'تصميم واجهات UI/UX', category: 'تصميم', instructor: 'أ. سارة', emoji: '🎨', img: '1561070791-2526d30994b5', level: 'متوسّط', rating: 4.6, approved: true,
     lessons: [{ id: 'l1', title: 'مبادئ التصميم', dur: 10 }, { id: 'l2', title: 'الألوان', dur: 9 }] },
-  { id: 'c3', title: 'التسويق الرقمي', category: 'تسويق', instructor: 'أ. خالد', emoji: '📈', level: 'مبتدئ', rating: 4.7, approved: true,
+  { id: 'c3', title: 'التسويق الرقمي', category: 'تسويق', instructor: 'أ. خالد', emoji: '📈', img: '1460925895917-afdab827c52f', level: 'مبتدئ', rating: 4.7, approved: true,
     lessons: [{ id: 'l1', title: 'أساسيات', dur: 11 }, { id: 'l2', title: 'وسائل التواصل', dur: 14 }, { id: 'l3', title: 'الإعلانات', dur: 13 }] },
-  { id: 'c4', title: 'الإنجليزية للأعمال', category: 'لغات', instructor: 'أ. منى', emoji: '🗣️', level: 'متوسّط', rating: 4.5, approved: true,
+  { id: 'c4', title: 'الإنجليزية للأعمال', category: 'لغات', instructor: 'أ. منى', emoji: '🗣️', img: '1543269865-cbf427effbad', level: 'متوسّط', rating: 4.5, approved: true,
     lessons: [{ id: 'l1', title: 'المراسلات', dur: 12 }, { id: 'l2', title: 'الاجتماعات', dur: 16 }] },
 ];
 
@@ -151,6 +155,12 @@ function show(el, on) { if (el) el.classList.toggle('hidden', !on); }
 function courseById(id) { return courses.find(c => c.id === id) || null; }
 function uid(p) { return p + Math.random().toString(36).slice(2, 7); }
 function stars(n) { var s = ''; for (var i = 0; i < 5; i++) s += i < Math.round(n) ? '★' : '☆'; return s; }
+function imgUrl(id) { return 'https://images.unsplash.com/photo-' + id + '?w=600&q=80&auto=format&fit=crop'; }
+function photo(o, cls) {
+  var emoji = '<span class="ph-emoji-fb">' + (o.emoji || '🎓') + '</span>';
+  var img = o.img ? '<img loading="lazy" src="' + imgUrl(o.img) + '" alt="' + (o.title || '') + '" onerror="this.style.display=&#39;none&#39;">' : '';
+  return '<div class="ph ' + (cls || '') + '">' + emoji + img + '</div>';
+}
 function toast(msg) {
   var t = byId('toast'); if (!t) return;
   t.textContent = msg; show(t, true);
@@ -218,12 +228,11 @@ function renderCatalog() {
   byId('courseGrid').innerHTML = list.map(function (c) {
     var mins = c.lessons.reduce(function (s, l) { return s + l.dur; }, 0);
     return '<div class="card" data-action="openCourse" data-id="' + c.id + '">' +
-      '<div class="ph-emoji">' + c.emoji + '</div>' +
+      '<div class="card-media">' + photo(c) + '<span class="cat-tag">' + c.category + '</span></div>' +
       '<div class="ph-body"><div class="ph-title">' + c.title + '</div>' +
       '<div class="ph-meta">' + c.instructor + ' · ' + c.level + '</div>' +
       '<div class="ph-stats"><span class="rate">' + stars(c.rating) + '</span>' +
-      '<span class="mins">' + c.lessons.length + ' دروس · ' + mins + ' د</span></div>' +
-      '<div class="ph-cat">' + c.category + '</div></div></div>';
+      '<span class="mins">' + c.lessons.length + ' دروس · ' + mins + ' د</span></div></div></div>';
   }).join('');
 }
 
@@ -245,7 +254,7 @@ function openCourse(id) {
   }).join('');
   byId('courseBox').innerHTML =
     '<button class="icon-btn close-x" data-action="closeCourse">×</button>' +
-    '<div class="detail-emoji">' + c.emoji + '</div>' +
+    photo(c, 'detail-media') +
     '<h2>' + c.title + '</h2>' +
     '<div class="detail-meta">' + c.instructor + ' · ' + c.level + ' · ' + c.category + ' · ' + stars(c.rating) + '</div>' +
     (enr ? '<div class="progress"><div class="bar" style="width:' + pct + '%"></div></div><div class="pct">' + pct + '% مكتمل</div>' : '') +
@@ -311,7 +320,7 @@ function addCourse() {
   var cat = byId('ncCat').value || CATEGORIES[0];
   var emoji = (byId('ncEmoji').value || '📘').trim() || '📘';
   if (!title) { toast('اكتب عنوان الدورة'); return; }
-  courses.push({ id: uid('c'), title: title, category: cat, instructor: state.user.name, emoji: emoji, level: 'مبتدئ', rating: 5, approved: true, lessons: [] });
+  courses.push({ id: uid('c'), title: title, category: cat, instructor: state.user.name, emoji: emoji, img: '', level: 'مبتدئ', rating: 5, approved: true, lessons: [] });
   save('courses', courses);
   byId('ncTitle').value = ''; byId('ncEmoji').value = '';
   renderTeach(); toast('أُضيفت الدورة');
@@ -419,40 +428,55 @@ function init() {
 document.addEventListener('DOMContentLoaded', init);
 `;
 
-const STYLES_CSS = `:root{--bg:#0d1117;--surface:#151b26;--card:#1b2230;--accent:#6366f1;--good:#22c55e;--warn:#f59e0b;--text:#e8edf6;--muted:#8b93a3;--border:#272d3a;--font:'Segoe UI',Tahoma,system-ui,sans-serif}
+const STYLES_CSS = `:root{--bg:#0b0c14;--surface:#13141f;--card:#181a29;--accent:#6366f1;--accent2:#8b5cf6;--good:#22c55e;--warn:#f59e0b;--text:#e8edf6;--muted:#8b93a3;--border:#242739;--line:rgba(99,102,241,.16);--font:'Segoe UI',Tahoma,system-ui,sans-serif;--shadow:0 30px 70px -24px rgba(0,0,0,.8)}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6}
-.topbar{display:flex;align-items:center;gap:16px;padding:12px 20px;background:var(--surface);border-bottom:1px solid var(--border);flex-wrap:wrap;position:sticky;top:0;z-index:30}
-.brand{font-size:19px;font-weight:800;white-space:nowrap}
+body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+body::before{content:"";position:fixed;inset:0;z-index:-1;background:radial-gradient(50% 40% at 85% 0%,rgba(99,102,241,.10),transparent 60%),radial-gradient(50% 40% at 0% 100%,rgba(139,92,246,.08),transparent 60%),var(--bg)}
+.topbar{display:flex;align-items:center;gap:16px;padding:12px 20px;background:rgba(19,20,31,.72);backdrop-filter:blur(14px);border-bottom:1px solid var(--border);flex-wrap:wrap;position:sticky;top:0;z-index:30}
+.brand{font-size:19px;font-weight:800;white-space:nowrap;display:flex;align-items:center;gap:9px}
+.brand .mk{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;font-size:17px}
 .tabs{flex:1;display:flex;gap:6px;flex-wrap:wrap}
-.tab{background:transparent;border:1px solid transparent;color:var(--muted);padding:7px 13px;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer}
+.tab{background:transparent;border:1px solid transparent;color:var(--muted);padding:7px 14px;border-radius:99px;font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font)}
 .tab.active{background:var(--card);color:var(--text);border-color:var(--border)}
-.btn{background:var(--card);border:1px solid var(--border);color:var(--text);padding:8px 16px;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-.btn.sm{padding:5px 11px;font-size:12px}
+.btn{background:var(--card);border:1px solid var(--border);color:var(--text);padding:9px 16px;border-radius:11px;font-weight:700;font-size:13px;cursor:pointer;transition:.18s;font-family:var(--font)}
+.btn.primary{background:linear-gradient(105deg,var(--accent),var(--accent2));border-color:transparent;color:#fff}
+.btn.primary:hover{transform:translateY(-2px);box-shadow:0 12px 30px -10px rgba(99,102,241,.55)}
+.btn.ghost{background:rgba(255,255,255,.04)}
+.btn.sm{padding:6px 12px;font-size:12px}
 .btn.block{width:100%;margin-top:6px}
 .icon-btn{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer}
-main{max-width:1140px;margin:0 auto;padding:20px 18px}
-.sec-title{margin-bottom:16px;font-size:18px}
-.hero{background:linear-gradient(120deg,var(--accent),var(--surface));border:1px solid var(--border);border-radius:20px;padding:30px 24px;margin-bottom:18px}
-.hero h1{font-size:24px;margin-bottom:6px}
-.hero-tag{color:#e7e9ff;opacity:.92}
+main{max-width:1140px;margin:0 auto;padding:0 18px 40px}
+.sec-title{margin:22px 0 16px;font-size:18px}
+/* البطل */
+.hero{position:relative;min-height:44vh;display:flex;align-items:center;overflow:hidden;border-radius:0 0 28px 28px;margin:0 -18px 20px}
+.hero .hero-bg{position:absolute;inset:0;z-index:0}
+.hero .hero-bg::after{content:"";position:absolute;inset:0;z-index:2;background:linear-gradient(90deg,rgba(11,12,20,.94) 32%,rgba(11,12,20,.42))}
+.hero-in{position:relative;z-index:3;padding:48px 30px}
+.eyebrow{font-size:12px;font-weight:800;letter-spacing:2.5px;color:var(--accent2);text-transform:uppercase}
+.accent{background:linear-gradient(105deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.hero h1{font-size:clamp(30px,5.5vw,52px);line-height:1.08;font-weight:800;margin:12px 0 12px;letter-spacing:-1px}
+.hero-tag{color:#d7d9ee;font-size:16px;max-width:440px}
+.ph{position:relative;overflow:hidden;background:linear-gradient(135deg,#181a29,#26263d)}
+.ph .ph-emoji-fb{position:absolute;inset:0;display:grid;place-items:center;font-size:44px;opacity:.9}
+.ph img{position:relative;z-index:1;width:100%;height:100%;object-fit:cover;display:block;transition:transform .5s}
 .toolbar{display:flex;flex-direction:column;gap:12px;margin-bottom:18px}
 .search{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px;color:var(--text);font-size:15px}
 .chips{display:flex;gap:8px;flex-wrap:wrap}
-.chip{background:transparent;border:1px solid var(--border);color:var(--muted);padding:7px 14px;border-radius:20px;font-weight:700;font-size:12px;cursor:pointer}
-.chip.active{background:var(--accent);border-color:var(--accent);color:#fff}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px}
-.card{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden;cursor:pointer;transition:.15s;position:relative}
-.card:hover{border-color:var(--accent);transform:translateY(-2px)}
-.ph-emoji{font-size:46px;text-align:center;padding:22px;background:var(--surface)}
-.ph-body{padding:14px}
+.chip{background:transparent;border:1px solid var(--border);color:var(--muted);padding:7px 15px;border-radius:99px;font-weight:700;font-size:12px;cursor:pointer;transition:.15s}
+.chip.active{background:linear-gradient(105deg,var(--accent),var(--accent2));border-color:transparent;color:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:18px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:18px;overflow:hidden;cursor:pointer;transition:.2s;position:relative}
+.card:hover{border-color:rgba(99,102,241,.4);transform:translateY(-4px)}
+.card:hover .ph img{transform:scale(1.06)}
+.card-media{position:relative;height:150px}
+.card-media .ph{height:100%}
+.cat-tag{position:absolute;bottom:10px;inset-inline-start:10px;z-index:3;background:rgba(11,12,20,.82);border:1px solid var(--line);color:#c7c9ff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px}
+.ph-body{padding:14px 16px 16px}
 .ph-title{font-weight:700;font-size:15px;margin-bottom:3px}
 .ph-meta{color:var(--muted);font-size:12px}
-.ph-stats{display:flex;justify-content:space-between;align-items:center;margin:8px 0 6px}
+.ph-stats{display:flex;justify-content:space-between;align-items:center;margin:8px 0 2px}
 .rate{color:var(--warn);font-size:13px}
 .mins{color:var(--muted);font-size:11px}
-.ph-cat{display:inline-block;background:var(--surface);border:1px solid var(--border);color:var(--muted);font-size:11px;padding:2px 9px;border-radius:12px}
 .empty{text-align:center;color:var(--muted);padding:26px}
 .hidden{display:none !important}
 .results{display:flex;flex-direction:column;gap:12px}
@@ -481,7 +505,7 @@ main{max-width:1140px;margin:0 auto;padding:20px 18px}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:60;padding:16px}
 .modal-box{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:26px;width:min(480px,100%);position:relative;max-height:92dvh;overflow:auto}
 .close-x{position:absolute;top:12px;left:14px;font-size:22px}
-.detail-emoji{font-size:56px;text-align:center}
+.detail-media{height:200px;border-radius:14px;margin-bottom:14px}
 .modal-box h2{font-size:20px;text-align:center;margin-bottom:4px}
 .detail-meta{color:var(--muted);font-size:13px;text-align:center;margin-bottom:14px}
 .modal-box h3{margin:14px 0 10px;font-size:15px}
@@ -496,7 +520,7 @@ main{max-width:1140px;margin:0 auto;padding:20px 18px}
 .switch a{color:var(--accent);text-decoration:none;font-weight:700}
 .demo{text-align:center;color:var(--muted);font-size:11px;margin-top:10px}
 .demo code{background:var(--card);padding:1px 6px;border-radius:5px}
-.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:11px 20px;border-radius:12px;font-weight:700;font-size:14px;z-index:70;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:linear-gradient(105deg,var(--accent),var(--accent2));color:#fff;padding:11px 20px;border-radius:12px;font-weight:700;font-size:14px;z-index:70;box-shadow:var(--shadow)}
 h1,h2,h3{color:var(--text)}
 `;
 
