@@ -114,7 +114,7 @@ export function groupFeed(messages = []) {
 }
 
 // كتلة خطوات التنفيذ: مطويّة تلقائياً حين تنتهي، حيّة ومفتوحة أثناء البناء
-export function StepsGroup({ msgs, live }) {
+export function StepsGroup({ msgs, live, t }) {
   const [open, setOpen] = useState(live);
   const shown = open || live;
   const last = msgs[msgs.length - 1];
@@ -123,7 +123,7 @@ export function StepsGroup({ msgs, live }) {
       <button onClick={() => setOpen(v => !v)}
         style={{ width:'100%', display:'flex', alignItems:'center', gap:8, padding:'7px 12px', background:'transparent', border:'none', color:'#64748b', fontSize:11, fontWeight:700, textAlign:'start' }}>
         <span style={{ display:'inline-block', transition:'transform 0.2s', transform: shown ? 'rotate(90deg)' : 'none', fontSize:9, color:'#3b82f6' }}>▶</span>
-        <span style={{ color:'#94a3b8' }}>⚙️ خطوات التنفيذ</span>
+        <span style={{ color:'#94a3b8' }}>⚙️ {t?.('execSteps') || 'خطوات التنفيذ'}</span>
         <span style={{ background:'rgba(59,130,246,0.12)', color:'#93c5fd', borderRadius:10, padding:'0 7px', fontSize:9.5, fontWeight:800 }}>{msgs.length}</span>
         {live && <span style={{ width:6, height:6, borderRadius:'50%', background:'#3b82f6', animation:'pulse 1s infinite' }} />}
         {!shown && last?.text && (
@@ -149,7 +149,7 @@ export function StepsGroup({ msgs, live }) {
   );
 }
 
-export function FeedItem({ msg, onOption, onEdit, onRegenerate, canRegenerate }) {
+export function FeedItem({ msg, onOption, onEdit, onRegenerate, canRegenerate, t }) {
   const [copied, setCopied] = useState(false);
   const copy = async (text) => {
     try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1400); } catch {}
@@ -168,8 +168,8 @@ export function FeedItem({ msg, onOption, onEdit, onRegenerate, canRegenerate })
         {/* أدوات تظهر عند المرور — نسخ + تعديل (يعيد النص لصندوق الكتابة) */}
         <div className="msg-tools" style={{ display:'flex', alignItems:'center', gap:6, marginTop:4 }}>
           {timeStr && <span style={{ fontSize:9, color:'#334155', direction:'ltr' }}>{timeStr}</span>}
-          <button onClick={() => copy(msg.text)} style={actionBtn}>{copied ? '✓ نُسخ' : '⧉ نسخ'}</button>
-          {onEdit && <button onClick={() => onEdit(msg.text)} style={actionBtn}>✏️ تعديل</button>}
+          <button onClick={() => copy(msg.text)} style={actionBtn}>{copied ? `✓ ${t?.('msgCopied') || 'نُسخ'}` : `⧉ ${t?.('msgCopy') || 'نسخ'}`}</button>
+          {onEdit && <button onClick={() => onEdit(msg.text)} style={actionBtn}>✏️ {t?.('msgEdit') || 'تعديل'}</button>}
         </div>
       </div>
     );
@@ -182,7 +182,7 @@ export function FeedItem({ msg, onOption, onEdit, onRegenerate, canRegenerate })
         <div style={{ background:'rgba(15,23,42,0.65)', border:'1px solid rgba(59,130,246,0.13)', borderRadius:'4px 14px 14px 14px', padding:'10px 14px', fontSize:12.5, color:'#cbd5e1', lineHeight:1.75, position:'relative', transition:'border-color 0.2s' }}>
           {msg.streaming && !msg.text
             ? <span style={{ display:'inline-flex', alignItems:'center', gap:8 }}>
-                <span className="thinking-shimmer" style={{ fontSize:12, fontWeight:600 }}>يفكّر</span>
+                <span className="thinking-shimmer" style={{ fontSize:12, fontWeight:600 }}>{t?.('thinking') || 'يفكّر'}</span>
                 <span style={{ display:'inline-flex', gap:3 }}>
                   <span style={{ width:5, height:5, borderRadius:'50%', background:'#60a5fa', animation:'typing 1s infinite' }} />
                   <span style={{ width:5, height:5, borderRadius:'50%', background:'#60a5fa', animation:'typing 1s infinite 0.2s' }} />
@@ -212,8 +212,8 @@ export function FeedItem({ msg, onOption, onEdit, onRegenerate, canRegenerate })
         {/* شريط أدوات الرد — يظهر عند المرور */}
         {!msg.streaming && msg.text && (
           <div className="msg-tools" style={{ display:'flex', alignItems:'center', gap:6, marginTop:4 }}>
-            <button onClick={() => copy(msg.text)} style={actionBtn}>{copied ? '✓ نُسخ' : '⧉ نسخ'}</button>
-            {canRegenerate && onRegenerate && <button onClick={onRegenerate} style={actionBtn}>🔄 إعادة التوليد</button>}
+            <button onClick={() => copy(msg.text)} style={actionBtn}>{copied ? `✓ ${t?.('msgCopied') || 'نُسخ'}` : `⧉ ${t?.('msgCopy') || 'نسخ'}`}</button>
+            {canRegenerate && onRegenerate && <button onClick={onRegenerate} style={actionBtn}>🔄 {t?.('msgRegenerate') || 'إعادة التوليد'}</button>}
             {timeStr && <span style={{ fontSize:9, color:'#334155', direction:'ltr' }}>{timeStr}</span>}
           </div>
         )}
@@ -458,12 +458,13 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${BACKEND_URL}/api/template/apply`, {
         method: 'POST', headers: getHeaders(),
-        body: JSON.stringify({ project: activeProject, cloneId }),
+        body: JSON.stringify({ project: activeProject, cloneId, lang: uiLang }),
       });
       const d = await res.json().catch(() => ({}));
       if (res.ok && d.success) {
         addNotification(`${t('templateApplied')} «${d.name}»`, 'success');
         setShowKnowledgeModal(false);
+        setShowGalleryModal(false);
         refreshPreview();
       } else {
         addNotification(`❌ ${d.error || t('templateFail')}`, 'info');
@@ -927,8 +928,8 @@ export default function Dashboard() {
           </div>
         )}
         {feedGroups.map((g, i) => g.type === 'steps'
-          ? <StepsGroup key={i} msgs={g.msgs} live={isBuilding && i === feedGroups.length - 1} />
-          : <FeedItem key={i} msg={g.msg} onOption={handleOptionClick}
+          ? <StepsGroup key={i} msgs={g.msgs} live={isBuilding && i === feedGroups.length - 1} t={t} />
+          : <FeedItem key={i} msg={g.msg} onOption={handleOptionClick} t={t}
               onEdit={(text) => { setPrompt(text); textareaRef.current?.focus(); }}
               canRegenerate={i === lastRealMsgIdx && !isBuilding && !isSending && !!lastUserText}
               onRegenerate={() => handleSend(lastUserText)} />)}

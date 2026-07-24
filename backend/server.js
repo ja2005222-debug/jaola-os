@@ -63,6 +63,8 @@ import { summarizeModel } from './agents/projectModel.js';
 import { librarySummary } from './agents/modelLibrary.js';
 import { listClones, getCloneById } from './agents/cloneTemplates/index.js';
 import { verifyBehavior } from './agents/behaviorVerifier.js';
+import { localizeTemplateFiles } from './agents/templateLocalizer.js';
+import { getUserLanguage } from './agents/languageDetector.js';
 import { setDomainModel } from './agents/projectMemory.js';
 import { mergeProjectModel } from './agents/projectModel.js';
 import { prepareRenderDeploy } from './agents/renderAgent.js';
@@ -1347,8 +1349,11 @@ app.post('/api/template/apply', verifyToken, validateProjectOwnership, async (re
     try {
         const projectPath = req.projectPath;
         fs.mkdirSync(projectPath, { recursive: true });
-        // 1) اكتب ملفات الكلون العامل
-        for (const f of clone.files) fs.writeFileSync(path.join(projectPath, f.name), f.content);
+        // 1) اكتب ملفات الكلون العامل — بلغة المستخدم المختارة (توطين حتميّ).
+        //    لغة الواجهة المُرسلة صراحةً تتقدّم (لا افتراض en على مستخدم عربي لم يتحدّث بعد)
+        const uiLang = (req.body?.lang === 'en' || req.body?.lang === 'ar') ? req.body.lang : getUserLanguage(req.user.username);
+        const localized = localizeTemplateFiles(clone.files, uiLang);
+        for (const f of localized) fs.writeFileSync(path.join(projectPath, f.name), f.content);
         // 2) اضبط نموذج المشروع (دمج مع أي نموذج سابق)
         const model = mergeProjectModel(getDomainModel(req.user.username, req.activeProject) || {}, clone.model);
         setDomainModel(req.user.username, req.activeProject, model);

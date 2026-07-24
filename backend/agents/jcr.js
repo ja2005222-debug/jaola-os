@@ -17,6 +17,7 @@ import { matchCloneTemplate } from './cloneTemplates/index.js';
 import { patchEditPlan } from './patchEditor.js';
 import { stampSeed } from './seedStamp.js';
 import { forgeSeedImages } from './imageForge.js';
+import { localizeTemplateFiles } from './templateLocalizer.js';
 import { assetsFor, injectFaviconTag, paletteHint, pickPalette } from './cloneAssets.js';
 import { polishHtml } from './polishPack.js';
 import { composePage, isMarketingPageGoal, brandFromGoal, selectBlocks, applyBrandName } from './blockRegistry.js';
@@ -1995,8 +1996,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
         this.emitLiveLog(roomName, '5. RUNTIME', 'JaolaTemplate', `🧩 قالب jaola عامل: ${clone.name} (${clone.id})${clone.externalApi ? ` — API خارجي: ${clone.externalApi}` : ''} — نبدأ من تطبيق يعمل فعلاً (لا توليد من الصفر)`);
 
-        // 1) اكتب ملفات الكلون العامل
-        for (const f of clone.files) {
+        // 1) اكتب ملفات الكلون العامل — بلغة المستخدم (توطين حتميّ للسلاسل
+        //    الظاهرة + قلب lang/dir؛ العربية هي الأصل فلا تغيير لها)
+        const baseFiles = localizeTemplateFiles(clone.files, lang);
+        if (lang === 'en') this.emitLiveLog(roomName, '5. RUNTIME', 'Localizer', '🌐 Template delivered in English (your selected language).');
+        for (const f of baseFiles) {
             await fsPromises.writeFile(path.join(projectPath, f.name), f.content);
         }
         // احفظ نموذج الكلون (يُدمج + يُغني المكتبة)
@@ -2010,7 +2014,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         //    ثم حارس فقد الدوال + تحقّق سلوكي + تراجع آمن للكلون النظيف.
         try {
             this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', '🎨 وضع البصمة — تخصيص المحتوى ليطابق طلبك...');
-            let workFiles = clone.files.map(f => ({ name: f.name, content: f.content }));
+            let workFiles = baseFiles.map(f => ({ name: f.name, content: f.content }));
             const appBefore = workFiles.find(f => f.name === 'app.js');
             const fnsBefore = new Set(appBefore ? extractDefinedFunctions(appBefore.content) : []);
             let changed = false;
@@ -2061,7 +2065,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             } catch (e) { console.warn('[Stamp/Brand]', e.message); }
 
             const stamped = changed ? workFiles.filter(f => {
-                const orig = clone.files.find(o => o.name === f.name);
+                const orig = baseFiles.find(o => o.name === f.name);
                 return !orig || orig.content !== f.content;
             }) : [];
 
@@ -2097,7 +2101,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 if (broke) {
                     const why = lostFn.length ? `فقد دوال (${lostFn.slice(0, 3).join('، ')})` : `فشل جديد: ${newFails.join('، ')}`;
                     this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', `↩️ التخصيص أدخل عطلاً (${why}) — استرجاع الكلون العامل النظيف.`);
-                    for (const f of clone.files) await fsPromises.writeFile(path.join(projectPath, f.name), f.content);
+                    for (const f of baseFiles) await fsPromises.writeFile(path.join(projectPath, f.name), f.content);
                 } else {
                     this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', `✅ البصمة وُضعت والتطبيق يعمل (${verdict.summary || 'تحقّق سلوكي'}).`);
                 }
