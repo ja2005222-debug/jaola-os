@@ -52,18 +52,20 @@ export function matchCloneTemplate(goal = '', blueprint = null, domainModel = nu
     ].filter(Boolean).join(' ');
     const hay = `${goal || ''} ${modelText}`.toLowerCase();
 
-    let best = null, bestScore = 0;
+    let best = null, bestScore = 0, bestKw = 0;
     for (const build of BUILDERS) {
         const c = build();
-        let score = 0;
+        let score = 0, kwHits = 0;
         if (category && c.category === category) score += 2;
         for (const kw of c.keywords || []) {
-            if (kw && hay.includes(kw.toLowerCase())) score += 1;
+            if (kw && hay.includes(kw.toLowerCase())) { score += 1; kwHits += 1; }
         }
-        if (score > bestScore) { bestScore = score; best = c; }
+        if (score > bestScore) { bestScore = score; best = c; bestKw = kwHits; }
     }
-    // نطلب دليلاً كافياً (كلمة مفتاحية أو تطابق فئة + دور متعدّد) لتجنّب الفرض
-    return bestScore >= 2 ? best : null;
+    // 🛡️ دليل كافٍ = كلمة مفتاحية واحدة على الأقل *إلزامية* + مجموع ≥ 2.
+    // الفئة وحدها لا تكفي: تصنيف مهلوس من المخطّط (مثل travel على نظام مخزون)
+    // كان يفرض قالباً لا علاقة له بالطلب — عطل إنتاجي حقيقي.
+    return bestKw >= 1 && bestScore >= 2 ? best : null;
 }
 
 /** يجلب كلوناً بمعرّفه (للتطبيق المباشر/الاختبار). */
