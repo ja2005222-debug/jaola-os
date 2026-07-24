@@ -56,6 +56,8 @@ import { frontendTeamPlan, FRONTEND_TEAM } from './agents/frontendTeam/index.js'
 import { listStarters, selectStarter, resolveStack, STARTERS } from './agents/starterRegistry.js';
 import { fetchStarter, fetchRepoFiles, parseRepoUrl } from './agents/starterFetch.js';
 import * as siteCms from './services/siteCms.js';
+import { recordMessage, recordVisit, readInbox, markSeen, visitSummary, unreadCount } from './services/siteInbox.js';
+import { installSiteConnect } from './services/siteConnect.js';
 import { buildStaticSiteFromSource, buildDashboardPage } from './services/reactPreview.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
 import { getProjectMemory, getDomainModel } from './agents/projectMemory.js';
@@ -142,8 +144,9 @@ const io = new Server(httpServer, {
 
 // نقطة دردشة جولا بوت عامّة: تُستدعى من مواقع الزوّار (origins متعدّدة) —
 // نسمح لأي origin لهذا المسار وحده؛ بقيّة المسارات تبقى مقيّدة بـ ALLOWED_ORIGINS.
+const OPEN_CORS_PATHS = new Set(['/api/jaola-bot/chat', '/api/public/site-hit', '/api/public/site-message']);
 const corsDelegate = (req, callback) => {
-    if (req.path === '/api/jaola-bot/chat') return callback(null, { origin: true, credentials: false, methods: ['POST', 'OPTIONS'] });
+    if (OPEN_CORS_PATHS.has(req.path)) return callback(null, { origin: true, credentials: false, methods: ['POST', 'OPTIONS'] });
     callback(null, corsOptions);
 };
 app.use(cors(corsDelegate));
@@ -320,6 +323,14 @@ const botChatLimit = rateLimit({
     max: 20,
     keyGenerator: (req) => ipKeyGenerator(req),
     handler: (req, res) => res.status(200).json({ reply: null }), // تجاوز الحد → يرتدّ الودجت لقاعدته
+});
+
+// Rate limiter لنقاط الموقع العامّة (زيارات + رسائل تواصل من مواقع العملاء)
+const publicSiteLimit = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    keyGenerator: (req) => ipKeyGenerator(req),
+    handler: (req, res) => res.status(204).end(), // تجاوز الحد → صمت (الموقع لا يتأثر)
 });
 
 // Rate limiter عام للـ API
@@ -1441,6 +1452,17 @@ app.post('/api/ai/abort', verifyToken, validate(schemas.abortMission), validateP
 app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) => {
     const roomName = `${req.user.username}-${req.activeProject}`;
 
+    // 📬 قبل النشر: تثبيت وصلة الموقع (عدّاد زيارات + إيصال نماذج التواصل
+    // لصندوق المالك) في صفحات HTML — idempotent ولا يعطّل النشر أبداً.
+    try {
+        const publicBase = (process.env.PUBLIC_BACKEND_URL || process.env.RENDER_EXTERNAL_URL
+            || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+        installSiteConnect(req.projectPath, {
+            apiBase: publicBase,
+            token: signBotToken({ u: req.user.username, p: req.activeProject }),
+        });
+    } catch { /* اختياري — النشر يمضي */ }
+
     // 🧭 مشاريع full-stack (فيها دوال api/ حقيقية) تُنشر على Render (خادم دائم،
     // بلا حدّ 12 دالة، DB متصلة). نُعيد للواجهة نوع النشر ورابط الزر إن جاهز.
     if (isFullStackProject(req.projectPath)) {
@@ -1843,6 +1865,46 @@ app.post('/api/site/asset', (req, res) => {
         fs.writeFileSync(path.join(projectPath, 'assets', file), dec.buf);
         res.json({ url: `assets/${file}` });
     } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 📬 صندوق الموقع + عدّاد الزيارات — نقاط عامّة من مواقع العملاء المنشورة
+//    (توكن موقّع بهوية المشروع + rate limit) ولوحة قراءة للمالك.
+// ═══════════════════════════════════════════════════════════════════
+const SITEDATA_DIR = path.join(BASE_WORKSPACE, '.sitedata');
+
+// زيارة من موقع منشور (snippet يرسل مرّة لكل جلسة زائر) — الردّ صامت دائماً
+app.post('/api/public/site-hit', publicSiteLimit, (req, res) => {
+    const v = verifyBotToken(req.body?.token);
+    if (v?.u && v?.p) { try { recordVisit(SITEDATA_DIR, v.u, v.p); } catch { /* صامت */ } }
+    res.status(204).end();
+});
+
+// رسالة «تواصل معنا» من موقع منشور → صندوق المالك
+app.post('/api/public/site-message', publicSiteLimit, (req, res) => {
+    const v = verifyBotToken(req.body?.token);
+    if (!v?.u || !v?.p) return res.status(204).end();
+    try {
+        const r = recordMessage(SITEDATA_DIR, v.u, v.p, req.body || {});
+        res.json({ success: !r.error });
+    } catch { res.json({ success: false }); }
+});
+
+// المالك يقرأ صندوقه: الرسائل + ملخّص الزيارات + غير المقروء
+app.get('/api/site/inbox', verifyToken, validateProjectOwnership, (req, res) => {
+    const store = readInbox(SITEDATA_DIR, req.user.username, req.activeProject);
+    res.json({
+        success: true,
+        messages: store.messages,
+        unread: unreadCount(store),
+        visits: visitSummary(store),
+    });
+});
+
+// المالك فتح الصندوق → كل الرسائل مقروءة
+app.post('/api/site/inbox/seen', verifyToken, validateProjectOwnership, (req, res) => {
+    markSeen(SITEDATA_DIR, req.user.username, req.activeProject);
+    res.json({ success: true });
 });
 
 // ─── معالج أخطاء عام ────────────────────────────────────────────────

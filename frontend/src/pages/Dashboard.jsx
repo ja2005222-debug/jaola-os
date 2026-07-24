@@ -279,6 +279,10 @@ export default function Dashboard() {
   const [showHealthModal, setShowHealthModal] = useState(false);
   const [health, setHealth] = useState(null);
   const [healthLoading, setHealthLoading] = useState(false);
+  const [showInboxModal, setShowInboxModal] = useState(false);
+  const [inbox, setInbox] = useState(null);
+  const [inboxLoading, setInboxLoading] = useState(false);
+  const [inboxUnread, setInboxUnread] = useState(0);
   const [showGalleryModal, setShowGalleryModal] = useState(false);
   const [galleryTemplates, setGalleryTemplates] = useState(null);
   const [galleryFilter, setGalleryFilter] = useState('all');
@@ -573,6 +577,34 @@ export default function Dashboard() {
     }
     setHealthLoading(false);
   };
+
+  // 📬 بريد الموقع — رسائل «تواصل معنا» من الموقع المنشور + عدّاد الزيارات
+  const openInboxModal = async () => {
+    setShowInboxModal(true);
+    setInboxLoading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/site/inbox?project=${encodeURIComponent(activeProject || '')}`, { headers: getHeaders() });
+      const d = await res.json();
+      setInbox(res.ok ? d : { error: true });
+      // فتح الصندوق = قراءة الكل (الشارة تُصفَّر)
+      if (res.ok && d.unread > 0) {
+        fetch(`${BACKEND_URL}/api/site/inbox/seen`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ project: activeProject }) }).catch(() => {});
+      }
+      setInboxUnread(0);
+    } catch {
+      setInbox({ error: true });
+    }
+    setInboxLoading(false);
+  };
+
+  // شارة غير المقروء — تُحدَّث مع تبديل المشروع
+  useEffect(() => {
+    if (!activeProject || !token) { setInboxUnread(0); return; }
+    fetch(`${BACKEND_URL}/api/site/inbox?project=${encodeURIComponent(activeProject)}`, { headers: getHeaders() })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => setInboxUnread(d?.unread || 0))
+      .catch(() => {});
+  }, [activeProject, token]);
 
   // ⏹️ إيقاف المهمة الجارية
   const handleAbort = async () => {
@@ -1210,6 +1242,74 @@ export default function Dashboard() {
     </div>
   );
 
+  // 📬 بريد الموقع: رسائل نماذج التواصل + ملخّص الزيارات
+  const inboxModal = showInboxModal && (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
+      onClick={e => e.target === e.currentTarget && setShowInboxModal(false)}>
+      <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:'22px 20px', width:'min(560px, 100%)', maxHeight:'90dvh', overflowY:'auto' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+          <h3 style={{ color:'#fff', fontSize:15, fontWeight:800 }}>📬 {t('inboxTitle')}</h3>
+          <button onClick={() => setShowInboxModal(false)}
+            style={{ background:'transparent', border:'none', color:S.muted, fontSize:20, cursor:'pointer', lineHeight:1 }}>×</button>
+        </div>
+        <p style={{ color:S.muted, fontSize:11, marginBottom:14 }}>{t('inboxSubtitle')}</p>
+
+        {inboxLoading && <p style={{ color:S.muted, fontSize:13 }}>{t('inboxLoading')}</p>}
+        {!inboxLoading && inbox?.error && <p style={{ color:S.danger, fontSize:13 }}>{t('serverUnreachable')}</p>}
+
+        {!inboxLoading && inbox && !inbox.error && (
+          <>
+            {/* الزيارات: إجمالي + اليوم + أعمدة آخر ٧ أيام */}
+            <div style={{ display:'flex', gap:10, marginBottom:16 }}>
+              <div style={{ flex:1, background:'rgba(59,130,246,0.07)', border:'1px solid rgba(59,130,246,0.2)', borderRadius:11, padding:'12px 14px' }}>
+                <div style={{ color:'#60a5fa', fontSize:20, fontWeight:800, fontVariantNumeric:'tabular-nums' }}>{inbox.visits?.total ?? 0}</div>
+                <div style={{ color:S.muted, fontSize:10, fontWeight:700 }}>{t('inboxVisitsTotal')}</div>
+              </div>
+              <div style={{ flex:1, background:'rgba(16,185,129,0.07)', border:'1px solid rgba(16,185,129,0.2)', borderRadius:11, padding:'12px 14px' }}>
+                <div style={{ color:'#34d399', fontSize:20, fontWeight:800, fontVariantNumeric:'tabular-nums' }}>{inbox.visits?.today ?? 0}</div>
+                <div style={{ color:S.muted, fontSize:10, fontWeight:700 }}>{t('inboxVisitsToday')}</div>
+              </div>
+              <div style={{ flex:1.4, background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:11, padding:'12px 14px' }}>
+                <div style={{ display:'flex', alignItems:'flex-end', gap:3, height:24 }}>
+                  {(inbox.visits?.last7 || []).map((d, i) => {
+                    const max = Math.max(1, ...(inbox.visits?.last7 || []).map(x => x.count));
+                    return <div key={i} title={`${d.day}: ${d.count}`}
+                      style={{ flex:1, borderRadius:2, background: d.count ? '#3b82f6' : '#1e293b', height: `${Math.max(12, (d.count / max) * 100)}%` }} />;
+                  })}
+                </div>
+                <div style={{ color:S.muted, fontSize:10, fontWeight:700, marginTop:5 }}>{t('inboxVisits7d')}</div>
+              </div>
+            </div>
+
+            {/* الرسائل */}
+            {(inbox.messages || []).length === 0 && (
+              <div style={{ color:S.muted, fontSize:12, background:'rgba(255,255,255,0.02)', border:`1px dashed ${S.border}`, borderRadius:11, padding:'18px 16px', textAlign:'center' }}>
+                {t('inboxEmpty')}
+                <div style={{ marginTop:6, fontSize:10, color:'#334155' }}>{t('inboxHint')}</div>
+              </div>
+            )}
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              {(inbox.messages || []).map((m, i) => (
+                <div key={m.id || i} style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${i < (inbox.unread || 0) ? 'rgba(59,130,246,0.35)' : S.border}`, borderRadius:10, padding:'10px 12px' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                    <span style={{ color:'#fff', fontSize:12, fontWeight:700 }}>{m.name || t('inboxAnon')}</span>
+                    {m.contact && <span style={{ color:'#60a5fa', fontSize:11, direction:'ltr' }}>{m.contact}</span>}
+                    {i < (inbox.unread || 0) && <span style={{ fontSize:9, color:'#60a5fa', fontWeight:800, background:'rgba(59,130,246,0.12)', borderRadius:5, padding:'1px 7px' }}>{t('inboxNew')}</span>}
+                    <span style={{ marginInlineStart:'auto', color:'#334155', fontSize:10, direction:'ltr' }}>
+                      {new Date(m.at).toLocaleString(uiLang, { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}
+                    </span>
+                  </div>
+                  <div style={{ color:'#94a3b8', fontSize:12, marginTop:5, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{m.message}</div>
+                  {m.page && <div style={{ color:'#334155', fontSize:10, marginTop:4, direction:'ltr' }}>{m.page}</div>}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   const knowledgeModal = showKnowledgeModal && (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
       onClick={e => e.target === e.currentTarget && setShowKnowledgeModal(false)}>
@@ -1483,6 +1583,15 @@ export default function Dashboard() {
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>🩺</span> {t('healthTitle')}
                 </button>
+                <button onClick={() => { setShowMobileMenu(false); openInboxModal(); }}
+                  style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
+                  <span style={{ fontSize:16 }}>📬</span> {t('inboxTitle')}
+                  {inboxUnread > 0 && (
+                    <span style={{ background:'#3b82f6', color:'#fff', fontSize:10, fontWeight:800, borderRadius:9, minWidth:17, height:17, display:'inline-flex', alignItems:'center', justifyContent:'center', padding:'0 5px' }}>
+                      {inboxUnread > 99 ? '99+' : inboxUnread}
+                    </span>
+                  )}
+                </button>
                 <button onClick={() => { setShowMobileMenu(false); openGalleryModal(); }}
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>🖼️</span> {t('galleryTitle')}
@@ -1604,6 +1713,7 @@ export default function Dashboard() {
         {githubModal}
         {knowledgeModal}
         {healthModal}
+        {inboxModal}
         {galleryModal}
         {projectModal}
         {secretsModal}
@@ -1698,6 +1808,17 @@ export default function Dashboard() {
         <button onClick={openHealthModal} title={t('healthTitle')}
           style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(34,197,94,0.08)', border:'1px solid rgba(34,197,94,0.22)', borderRadius:7, padding:'5px 12px', color:'#4ade80', fontSize:11, fontWeight:700 }}>
           🩺 {t('healthTitle')}
+        </button>
+
+        {/* بريد الموقع (رسائل التواصل + الزيارات) */}
+        <button onClick={openInboxModal} title={t('inboxTitle')}
+          style={{ position:'relative', display:'flex', alignItems:'center', gap:6, background:'rgba(59,130,246,0.08)', border:'1px solid rgba(59,130,246,0.25)', borderRadius:7, padding:'5px 12px', color:'#93c5fd', fontSize:11, fontWeight:700 }}>
+          📬 {t('inboxTitle')}
+          {inboxUnread > 0 && (
+            <span style={{ position:'absolute', top:-6, insetInlineEnd:-6, background:'#3b82f6', color:'#fff', fontSize:9, fontWeight:800, borderRadius:9, minWidth:16, height:16, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 4px' }}>
+              {inboxUnread > 99 ? '99+' : inboxUnread}
+            </span>
+          )}
         </button>
 
         {/* معرض القوالب البصري */}
@@ -1988,6 +2109,7 @@ export default function Dashboard() {
       {githubModal}
       {knowledgeModal}
       {healthModal}
+      {inboxModal}
       {galleryModal}
       {projectModal}
       {secretsModal}
