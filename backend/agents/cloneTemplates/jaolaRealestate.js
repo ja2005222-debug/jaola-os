@@ -1,8 +1,8 @@
 /**
- * 🏠 jaola-realestate — موقع عقارات *عامل ومكتمل* بدورين وصلاحيات.
+ * 🏠 jaola-realestate — موقع عقارات *عامل ومكتمل* بدورين، بتصميم فاخر.
  *
- * زائر (عام): قوائم + فلاتر متعدّدة (نوع/مدينة/غرف/سعر) + فرز + تفاصيل عقار +
- * نموذج تواصل يُحفَظ فيصل للأدمن (ترابط حقيقي).
+ * زائر (عام): بطل + قوائم بصور حقيقية (ببديل) + فلاتر متعدّدة (نوع/مدينة/غرف/
+ * سعر) + فرز + تفاصيل عقار + نموذج تواصل يُحفَظ فيصل للأدمن (ترابط حقيقي).
  * مدير (admin/1234، لوحة مخفيّة): إدارة العقارات (إضافة/حذف) + طلبات التواصل +
  * إحصاءات. اللوحة لا تظهر إلا بعد الدخول؛ الزائر يتصفّح بلا تسجيل. كل الدوال
  * معرّفة (تفويض أحداث)، حالة في localStorage، يجتاز التحقّق السلوكي 100%.
@@ -18,13 +18,25 @@ const INDEX_HTML = `<!DOCTYPE html>
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">🏠 <span id="brandName">عقارات jaola</span></div>
+    <div class="brand"><span class="mk">🏠</span> <span id="brandName">عقارات jaola</span></div>
     <div class="count" id="resultCount"></div>
-    <button class="btn small" id="authBtn" data-action="open-auth">دخول</button>
+    <button class="btn small ghost" id="authBtn" data-action="open-auth">دخول</button>
   </header>
 
   <!-- واجهة الزائر -->
   <div id="view-shop">
+    <!-- البطل -->
+    <section class="hero">
+      <div class="ph hero-bg"><img src="https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=1400&q=80&auto=format&fit=crop" alt="" onerror="this.style.display='none'"></div>
+      <div class="hero-in">
+        <span class="eyebrow">عقارك القادم بانتظارك</span>
+        <h1>ابحث عن<br><span class="accent">بيت أحلامك</span></h1>
+        <p>شقق وفلل وأراضٍ مختارة في أبرز المدن — بفلاتر دقيقة وتفاصيل كاملة.</p>
+        <a href="#listings" class="btn primary lg">تصفّح العقارات</a>
+        <div class="rate">★★★★★ <b>4.9</b> · أكثر من 1,500 صفقة ناجحة</div>
+      </div>
+    </section>
+
     <div class="layout">
       <aside class="filters">
         <h3>تصفية</h3>
@@ -98,6 +110,8 @@ const INDEX_HTML = `<!DOCTYPE html>
       <p class="demo">تجربة: <code>admin / 1234</code></p>
     </div>
   </div>
+
+  <div class="toast" id="toast"></div>
   <script src="app.js"></script>
 </body>
 </html>
@@ -107,12 +121,12 @@ const APP_JS = `// 🏠 منطق العقارات — زائر + مدير بصل
 'use strict';
 
 const PROPERTIES = [
-  { id: 'h1', title: 'شقة عصرية بإطلالة', type: 'شقة', city: 'الرياض', price: 850000, area: 140, rooms: 3, emoji: '🏢', desc: 'شقة حديثة بتشطيب فاخر قرب الخدمات.', features: ['مصعد', 'موقف', 'تكييف مركزي'] },
-  { id: 'h2', title: 'فيلا فاخرة بمسبح', type: 'فيلا', city: 'جدة', price: 2400000, area: 420, rooms: 6, emoji: '🏡', desc: 'فيلا مستقلة بحديقة ومسبح خاص.', features: ['مسبح', 'حديقة', 'غرفة سائق'] },
-  { id: 'h3', title: 'أرض سكنية', type: 'أرض', city: 'الدمام', price: 1100000, area: 600, rooms: 0, emoji: '🟩', desc: 'أرض بمخطط معتمد وواجهتين.', features: ['واجهتان', 'مخطط معتمد'] },
-  { id: 'h4', title: 'شقة اقتصادية', type: 'شقة', city: 'الرياض', price: 480000, area: 95, rooms: 2, emoji: '🏬', desc: 'مناسبة للعائلات الصغيرة قرب المترو.', features: ['قرب المترو', 'موقف'] },
-  { id: 'h5', title: 'دوبلكس عائلي', type: 'فيلا', city: 'الرياض', price: 1600000, area: 300, rooms: 5, emoji: '🏘️', desc: 'دوبلكس بمدخلين ومجلس منفصل.', features: ['مدخلان', 'مجلس', 'حديقة'] },
-  { id: 'h6', title: 'شقة بحرية', type: 'شقة', city: 'جدة', price: 1250000, area: 160, rooms: 4, emoji: '🌊', desc: 'إطلالة بحرية مباشرة بتشطيب راقٍ.', features: ['إطلالة بحرية', 'مسبح مشترك'] },
+  { id: 'h1', title: 'شقة عصرية بإطلالة', type: 'شقة', city: 'الرياض', price: 850000, area: 140, rooms: 3, emoji: '🏢', img: '1502672260266-1c1ef2d93688', desc: 'شقة حديثة بتشطيب فاخر قرب الخدمات.', features: ['مصعد', 'موقف', 'تكييف مركزي'] },
+  { id: 'h2', title: 'فيلا فاخرة بمسبح', type: 'فيلا', city: 'جدة', price: 2400000, area: 420, rooms: 6, emoji: '🏡', img: '1613977257363-707ba9348227', desc: 'فيلا مستقلة بحديقة ومسبح خاص.', features: ['مسبح', 'حديقة', 'غرفة سائق'] },
+  { id: 'h3', title: 'أرض سكنية', type: 'أرض', city: 'الدمام', price: 1100000, area: 600, rooms: 0, emoji: '🟩', img: '', desc: 'أرض بمخطط معتمد وواجهتين.', features: ['واجهتان', 'مخطط معتمد'] },
+  { id: 'h4', title: 'شقة اقتصادية', type: 'شقة', city: 'الرياض', price: 480000, area: 95, rooms: 2, emoji: '🏬', img: '1522708323590-d24dbb6b0267', desc: 'مناسبة للعائلات الصغيرة قرب المترو.', features: ['قرب المترو', 'موقف'] },
+  { id: 'h5', title: 'دوبلكس عائلي', type: 'فيلا', city: 'الرياض', price: 1600000, area: 300, rooms: 5, emoji: '🏘️', img: '1600585154340-be6161a56a0c', desc: 'دوبلكس بمدخلين ومجلس منفصل.', features: ['مدخلان', 'مجلس', 'حديقة'] },
+  { id: 'h6', title: 'شقة بحرية', type: 'شقة', city: 'جدة', price: 1250000, area: 160, rooms: 4, emoji: '🌊', img: '1512917774080-9991f1c4c750', desc: 'إطلالة بحرية مباشرة بتشطيب راقٍ.', features: ['إطلالة بحرية', 'مسبح مشترك'] },
 ];
 const TYPES = ['الكل', 'شقة', 'فيلا', 'أرض'];
 const STAFF = { admin: { pass: '1234', role: 'admin', name: 'مدير المكتب' } };
@@ -130,6 +144,15 @@ function money(n) { return Number(n || 0).toLocaleString('en-US'); }
 function findProperty(id) { return properties.find(p => p.id === id) || null; }
 function uid(p) { return p + Math.random().toString(36).slice(2, 7); }
 function cities() { const set = {}; properties.forEach(p => { set[p.city] = 1; }); return ['الكل'].concat(Object.keys(set)); }
+function imgUrl(id) { return 'https://images.unsplash.com/photo-' + id + '?w=700&q=80&auto=format&fit=crop'; }
+// حاوية صورة .ph ببديل تدرّجيّ+رمز خلفها؛ الصورة فوقها وتختفي إن فشلت.
+function photo(p, cls) {
+  var emoji = '<span class="ph-emoji">' + (p.emoji || '🏠') + '</span>';
+  var img = p.img ? '<img loading="lazy" src="' + imgUrl(p.img) + '" alt="' + (p.title || '') + '" onerror="this.style.display=&#39;none&#39;">' : '';
+  return '<div class="ph ' + (cls || '') + '">' + emoji + img + '</div>';
+}
+var _toastT;
+function toast(m) { const t = byId('toast'); if (!t) return; t.textContent = m; t.classList.add('on'); clearTimeout(_toastT); _toastT = setTimeout(() => t.classList.remove('on'), 2200); }
 
 function renderFilters() {
   byId('typeChips').innerHTML = TYPES.map(t =>
@@ -157,19 +180,19 @@ function renderListings() {
   show(byId('emptyState'), list.length === 0);
   byId('listings').innerHTML = list.map(p =>
     '<div class="card" data-action="open" data-id="' + p.id + '">' +
-    '<div class="ph-emoji">' + p.emoji + '</div>' +
+    '<div class="card-media">' + photo(p) + '<span class="type-tag">' + p.type + '</span></div>' +
     '<div class="ph-body"><div class="ph-title">' + p.title + '</div>' +
     '<div class="ph-price">' + money(p.price) + ' ﷼</div>' +
-    '<div class="ph-meta">' + p.type + ' · ' + p.city + ' · ' + p.area + ' م²' + (p.rooms ? ' · ' + p.rooms + ' غرف' : '') + '</div></div></div>').join('');
+    '<div class="ph-meta">📍 ' + p.city + ' · ' + p.area + ' م²' + (p.rooms ? ' · ' + p.rooms + ' غرف' : '') + '</div></div></div>').join('');
 }
 
 function openDetail(id) {
   const p = findProperty(id); if (!p) return;
   byId('detailBox').innerHTML =
     '<button class="icon-btn close-x" data-action="close">×</button>' +
-    '<div class="detail-emoji">' + p.emoji + '</div>' +
+    photo(p, 'detail-media') +
     '<h2>' + p.title + '</h2><div class="detail-price">' + money(p.price) + ' ﷼</div>' +
-    '<div class="detail-meta">' + p.type + ' · ' + p.city + ' · ' + p.area + ' م²' + (p.rooms ? ' · ' + p.rooms + ' غرف' : '') + '</div>' +
+    '<div class="detail-meta">' + p.type + ' · 📍 ' + p.city + ' · ' + p.area + ' م²' + (p.rooms ? ' · ' + p.rooms + ' غرف' : '') + '</div>' +
     '<p class="detail-desc">' + p.desc + '</p>' +
     '<div class="features">' + p.features.map(f => '<span class="feat">✔ ' + f + '</span>').join('') + '</div>' +
     '<h3>تواصل مع المعلن</h3>' +
@@ -187,6 +210,7 @@ function sendContact(id) {
     phone: (byId('cPhone') && byId('cPhone').value || '').trim(), status: 'جديد' });
   save('inquiries', inquiries);
   show(byId('contactMsg'), true);
+  toast('✅ وصل طلبك للمعلن');
   if (byId('cName')) byId('cName').value = '';
   if (byId('cPhone')) byId('cPhone').value = '';
 }
@@ -256,7 +280,7 @@ function addProperty() {
   const type = byId('npType').value || TYPES[1];
   const emoji = (byId('npEmoji').value || '🏢').trim() || '🏢';
   if (!title || !(price > 0) || !city) { byId('npTitle').classList.add('err'); return; }
-  properties.push({ id: uid('h'), title: title, type: type, city: city, price: price, area: area, rooms: rooms, emoji: emoji, desc: 'عقار جديد.', features: [] });
+  properties.push({ id: uid('h'), title: title, type: type, city: city, price: price, area: area, rooms: rooms, emoji: emoji, img: '', desc: 'عقار جديد.', features: [] });
   save('properties', properties);
   byId('npTitle').value = ''; byId('npPrice').value = ''; byId('npCity').value = '';
   byId('npArea').value = ''; byId('npRooms').value = ''; byId('npEmoji').value = '';
@@ -304,40 +328,62 @@ function init() {
 document.addEventListener('DOMContentLoaded', init);
 `;
 
-const STYLES_CSS = `:root{--bg:#0f1218;--surface:#171b24;--card:#1d2230;--accent:#f59e0b;--good:#22c55e;--text:#e8edf6;--muted:#8b93a3;--border:#272d3a;--font:'Segoe UI',Tahoma,system-ui,sans-serif}
+const STYLES_CSS = `:root{--bg:#0d1017;--surface:#141924;--card:#1a2030;--accent:#f0a63a;--accent2:#d97706;--good:#22c55e;--warn:#f59e0b;--danger:#ef4444;--text:#eaeff8;--muted:#8b93a3;--border:#252c3b;--line:rgba(240,166,58,.15);--font:'Segoe UI',Tahoma,system-ui,sans-serif;--shadow:0 30px 70px -24px rgba(0,0,0,.8)}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6}
-.topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 22px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:20}
-.brand{font-size:19px;font-weight:800;white-space:nowrap}
+body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+body::before{content:"";position:fixed;inset:0;z-index:-1;background:radial-gradient(50% 40% at 85% 0%,rgba(240,166,58,.10),transparent 60%),radial-gradient(50% 40% at 0% 100%,rgba(217,119,6,.07),transparent 60%),var(--bg)}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 22px;background:rgba(20,25,36,.72);backdrop-filter:blur(14px);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:30}
+.brand{font-size:19px;font-weight:800;white-space:nowrap;display:flex;align-items:center;gap:9px}
+.brand .mk{width:33px;height:33px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;font-size:17px}
 .count{color:var(--muted);font-size:14px;flex:1}
-.layout{display:grid;grid-template-columns:250px 1fr;gap:20px;max-width:1200px;margin:0 auto;padding:20px}
+/* البطل */
+.hero{position:relative;min-height:52vh;display:flex;align-items:center;overflow:hidden;border-radius:0 0 30px 30px}
+.hero .hero-bg{position:absolute;inset:0;z-index:0}
+.hero .hero-bg::after{content:"";position:absolute;inset:0;z-index:2;background:linear-gradient(90deg,rgba(13,16,23,.94) 32%,rgba(13,16,23,.4))}
+.hero-in{position:relative;z-index:3;max-width:1200px;margin:0 auto;width:100%;padding:60px 22px}
+.eyebrow{font-size:12px;font-weight:800;letter-spacing:2.5px;color:var(--accent);text-transform:uppercase}
+.accent{background:linear-gradient(105deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.hero h1{font-size:clamp(34px,6vw,58px);line-height:1.08;font-weight:800;margin:14px 0 14px;letter-spacing:-1px}
+.hero p{font-size:17px;color:#d7dcea;max-width:440px;margin-bottom:22px}
+.rate{margin-top:22px;color:var(--muted);font-size:14px}.rate b{color:var(--accent)}
+/* صور ببديل تدرّجيّ */
+.ph{position:relative;overflow:hidden;background:linear-gradient(135deg,#1c2333,#28304a)}
+.ph .ph-emoji{position:absolute;inset:0;display:grid;place-items:center;font-size:50px;opacity:.9}
+.ph img{position:relative;z-index:1;width:100%;height:100%;object-fit:cover;display:block;transition:transform .5s}
+.layout{display:grid;grid-template-columns:260px 1fr;gap:22px;max-width:1200px;margin:0 auto;padding:26px 22px 40px}
 @media(max-width:780px){.layout{grid-template-columns:1fr}}
-.filters{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px;align-self:start;position:sticky;top:80px}
+.filters{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:20px;align-self:start;position:sticky;top:80px}
 .filters h3{margin-bottom:14px}
 .filters label{display:block;font-size:12px;color:var(--muted);font-weight:700;margin:12px 0 6px}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
-.chip{background:transparent;border:1px solid var(--border);color:var(--muted);padding:6px 12px;border-radius:20px;font-weight:700;font-size:12px;cursor:pointer}
-.chip.active{background:var(--accent);border-color:var(--accent);color:#231603}
-.sel,select{width:100%;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:9px}
+.chip{background:transparent;border:1px solid var(--border);color:var(--muted);padding:6px 13px;border-radius:99px;font-weight:700;font-size:12px;cursor:pointer;transition:.15s}
+.chip.active{background:linear-gradient(105deg,var(--accent),var(--accent2));border-color:transparent;color:#231603}
+.sel,select{width:100%;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:10px}
 input[type=range]{width:100%;accent-color:var(--accent)}
-.btn{background:var(--card);border:1px solid var(--border);color:var(--text);padding:9px 16px;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer;margin-top:14px;width:100%}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:#231603}
-.btn.small{padding:6px 10px;font-size:12px;width:auto;margin-top:0}
+.btn{background:var(--card);border:1px solid var(--border);color:var(--text);padding:11px 18px;border-radius:11px;font-weight:700;font-size:13px;cursor:pointer;margin-top:14px;width:100%;transition:.18s;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-family:var(--font)}
+.btn.primary{background:linear-gradient(105deg,var(--accent),var(--accent2));border-color:transparent;color:#231603}
+.btn.primary:hover{transform:translateY(-2px);box-shadow:0 12px 30px -10px rgba(240,166,58,.5)}
+.btn.ghost{background:rgba(255,255,255,.04)}
+.btn.small{padding:7px 12px;font-size:12px;width:auto;margin-top:0}
 .btn.auto{width:auto}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px}
-.card{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden;cursor:pointer;transition:.15s}
-.card:hover{border-color:var(--accent);transform:translateY(-2px)}
-.ph-emoji{font-size:52px;text-align:center;padding:24px;background:var(--surface)}
-.ph-body{padding:14px}
-.ph-title{font-weight:700;font-size:14px;margin-bottom:4px}
-.ph-price{color:var(--accent);font-weight:800;font-size:17px}
-.ph-meta{color:var(--muted);font-size:12px;margin-top:4px}
+.btn.lg{width:auto;padding:14px 30px;font-size:15px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:18px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:18px;overflow:hidden;cursor:pointer;transition:.2s}
+.card:hover{border-color:rgba(240,166,58,.4);transform:translateY(-4px)}
+.card:hover .ph img{transform:scale(1.06)}
+.card-media{position:relative;height:170px}
+.card-media .ph{height:100%}
+.type-tag{position:absolute;top:10px;inset-inline-start:10px;z-index:3;background:rgba(13,16,23,.82);border:1px solid var(--line);color:var(--accent);font-size:11px;font-weight:800;padding:4px 11px;border-radius:20px}
+.ph-body{padding:14px 16px 16px}
+.ph-title{font-weight:700;font-size:15px;margin-bottom:5px}
+.ph-price{color:var(--accent);font-weight:800;font-size:18px}
+.ph-meta{color:var(--muted);font-size:12px;margin-top:5px}
 .empty{text-align:center;color:var(--muted);padding:40px}
 .hidden{display:none !important}
 .muted{color:var(--muted);font-size:13px}
 /* لوحة المدير */
-.admin-wrap{max-width:1000px;margin:0 auto;padding:18px 20px 40px}
-.sec-title{margin-bottom:16px;font-size:19px}
+.admin-wrap{max-width:1000px;margin:0 auto;padding:26px 22px 40px}
+.sec-title{margin-bottom:18px;font-size:22px}
 .stat-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px;margin-bottom:18px}
 .stat{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;text-align:center}
 .stat-val{font-size:19px;font-weight:800;color:var(--accent)}.stat-label{color:var(--muted);font-size:12px;margin-top:2px}
@@ -345,28 +391,31 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .panel h3{margin-bottom:12px;font-size:15px}
 .form-row{display:flex;gap:8px;flex-wrap:wrap}
 .form-row input,.form-row select{flex:1;min-width:110px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px;color:var(--text)}
-.form-row input.err{border-color:#ef4444}
+.form-row input.err{border-color:var(--danger)}
 .mini-list{display:flex;flex-direction:column;gap:8px}
 .mini-row{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px}
 .mr-meta{color:var(--muted);font-size:12px}
 .mr-price{color:var(--accent);font-weight:700}
 .pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:rgba(34,197,94,.15);color:var(--good)}
-.err-msg{color:#ef4444;font-size:13px;margin-bottom:8px}
+.err-msg{color:var(--danger);font-size:13px;margin-bottom:8px}
 .demo{text-align:center;color:var(--muted);font-size:11px;margin-top:10px}.demo code{background:var(--card);padding:1px 6px;border-radius:5px}
-.modal{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:60;padding:16px}
 .modal-box{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:26px;width:min(460px,100%);position:relative;max-height:90dvh;overflow:auto}
-.icon-btn{background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer}.close-x{position:absolute;top:12px;left:14px}
-.detail-emoji{font-size:66px;text-align:center}
+.icon-btn{background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer}.close-x{position:absolute;top:12px;left:14px;z-index:4}
+.detail-media{height:220px;border-radius:14px;margin-bottom:14px}
 .detail-price{color:var(--accent);font-weight:800;font-size:24px;text-align:center;margin:6px 0}
 .detail-meta{color:var(--muted);font-size:13px;text-align:center;margin-bottom:12px}
 .detail-desc{margin-bottom:14px}
 .features{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
 .feat{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:5px 10px;font-size:12px;color:var(--good)}
 .modal-box input{width:100%;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px;color:var(--text);margin-bottom:10px}
-.modal-box input.err{border-color:#ef4444}
+.modal-box input.err{border-color:var(--danger)}
 .modal-box h3{margin:8px 0 10px;font-size:15px}
 .ok-msg{color:var(--good);font-size:13px;margin-bottom:8px}
-h2{font-size:19px;text-align:center}
+.toast{position:fixed;bottom:22px;inset-inline-start:50%;transform:translateX(50%);background:linear-gradient(105deg,var(--accent),var(--accent2));color:#231603;padding:12px 22px;border-radius:12px;font-weight:800;z-index:90;opacity:0;pointer-events:none;transition:.25s}
+html[dir=rtl] .toast{transform:translateX(-50%)}
+.toast.on{opacity:1}
+h2{font-size:20px;text-align:center}
 `;
 
 export function jaolaRealestate() {
@@ -374,7 +423,7 @@ export function jaolaRealestate() {
         id: 'jaola-realestate',
         category: 'realestate',
         name: 'قوائم عقارية',
-        description: 'موقع عقارات عامل مكتمل بدورين: زائر (قوائم + فلاتر متعدّدة (نوع/مدينة/غرف/شريط سعر) + فرز + تفاصيل + نموذج تواصل يُحفَظ) ومدير (لوحة مخفيّة: إدارة العقارات + طلبات التواصل + إحصاءات). الإدارة بدخول، والزائر يتصفّح بلا تسجيل.',
+        description: 'موقع عقارات فاخر مكتمل بدورين: زائر (بطل + قوائم بصور + فلاتر متعدّدة (نوع/مدينة/غرف/شريط سعر) + فرز + تفاصيل + نموذج تواصل يُحفَظ) ومدير (لوحة مخفيّة: إدارة العقارات + طلبات التواصل + إحصاءات). الإدارة بدخول، والزائر يتصفّح بلا تسجيل.',
         keywords: ['عقار', 'عقارات', 'شقق', 'فلل', 'فيلا', 'شقة', 'real estate', 'property', 'listings', 'إيجار', 'بيع', 'أرض', 'housing'],
         model: {
             entities: [
