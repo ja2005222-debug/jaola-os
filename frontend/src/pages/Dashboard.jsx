@@ -279,6 +279,9 @@ export default function Dashboard() {
   const [showHealthModal, setShowHealthModal] = useState(false);
   const [health, setHealth] = useState(null);
   const [healthLoading, setHealthLoading] = useState(false);
+  const [showGalleryModal, setShowGalleryModal] = useState(false);
+  const [galleryTemplates, setGalleryTemplates] = useState(null);
+  const [galleryFilter, setGalleryFilter] = useState('all');
   const [showSecretsModal, setShowSecretsModal] = useState(false);
   const [secretKeys, setSecretKeys] = useState([]);
   const [newSecretKey, setNewSecretKey] = useState('');
@@ -541,6 +544,19 @@ export default function Dashboard() {
       setKnowledge({ error: true });
     }
     setKnowledgeLoading(false);
+  };
+
+  // 🖼️ معرض القوالب البصري — بطاقات بمعاينات حقيقية، يبدأ منها المستخدم بضغطة
+  const openGalleryModal = async () => {
+    setShowGalleryModal(true);
+    if (galleryTemplates) return; // القائمة ثابتة — لا إعادة جلب
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/templates`, { headers: getHeaders() });
+      const d = await res.json();
+      setGalleryTemplates(d.templates || []);
+    } catch {
+      setGalleryTemplates([]);
+    }
   };
 
   // 🩺 صحّة المشروع — يعرض نتيجة التحقّق السلوكي (يعمل / يحتاج مراجعة + تفصيل الفحوص)
@@ -857,6 +873,9 @@ export default function Dashboard() {
     @keyframes shimmer{0%{background-position:180% 0}100%{background-position:-20% 0}}
     /* رقائق الاقتراحات: رفعة وإنارة عند المرور */
     .chip-suggest:hover{background:rgba(59,130,246,0.2)!important;border-color:rgba(59,130,246,0.55)!important;box-shadow:0 4px 14px -6px rgba(59,130,246,0.5)}
+    /* 🖼️ بطاقات معرض القوالب: رفعة + تقريب المعاينة عند المرور */
+    .tpl-card:hover{transform:translateY(-3px);border-color:rgba(139,92,246,0.45)!important}
+    .tpl-card:hover .tpl-shot{transform:scale(1.045)}
 
     /* 🎴 نظام بطاقات موحّد — سطح زجاجي يرتفع قليلاً عند المرور */
     .jaola-card{background:rgba(255,255,255,0.025);border:1px solid #1a2332;border-radius:12px;transition:transform .18s ease,border-color .18s ease,background .18s ease}
@@ -1052,6 +1071,77 @@ export default function Dashboard() {
   );
 
   // 📚 لوحة «معرفة المنصّة» — تجعل الفهم المتراكم مرئياً (المشروع + الفئات + الدروس)
+  // 🖼️ معرض القوالب — بطاقات بمعاينات حقيقية (لقطات من القوالب نفسها)
+  const CAT_LABELS = {
+    restaurant:'مطاعم وتوصيل', ecommerce:'متاجر', marketplace:'أسواق', realestate:'عقارات',
+    appointments:'حجوزات', education:'تعليم', events:'فعاليات وتذاكر', travel:'سفر',
+    ridehailing:'تنقّل', tool:'أدوات', weather:'أدوات', crypto:'أدوات', finance:'مالية',
+  };
+  const galleryCats = galleryTemplates
+    ? ['all', ...new Set(galleryTemplates.map(c => CAT_LABELS[c.category] || 'أخرى'))]
+    : ['all'];
+  const galleryList = (galleryTemplates || []).filter(c =>
+    galleryFilter === 'all' || (CAT_LABELS[c.category] || 'أخرى') === galleryFilter);
+  const galleryModal = showGalleryModal && (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(5px)', padding:16 }}
+      onClick={e => e.target === e.currentTarget && setShowGalleryModal(false)}>
+      <div style={{ background:'#0b0f17', border:`1px solid ${S.border}`, borderRadius:16, padding:'22px 20px', width:'min(920px, 100%)', maxHeight:'92dvh', overflowY:'auto' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+          <h3 style={{ color:'#fff', fontSize:16, fontWeight:800 }}>🖼️ {t('galleryTitle')}</h3>
+          <button onClick={() => setShowGalleryModal(false)}
+            style={{ background:'transparent', border:'none', color:S.muted, fontSize:20, cursor:'pointer', lineHeight:1 }}>×</button>
+        </div>
+        <p style={{ color:S.muted, fontSize:11.5, marginBottom:14 }}>{t('gallerySubtitle')}</p>
+
+        {/* فلاتر الفئات */}
+        <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:16 }}>
+          {galleryCats.map(cat => (
+            <button key={cat} onClick={() => setGalleryFilter(cat)}
+              style={{ background: galleryFilter === cat ? 'linear-gradient(135deg,#3b82f6,#8b5cf6)' : 'rgba(255,255,255,0.04)',
+                border:`1px solid ${galleryFilter === cat ? 'transparent' : S.border}`, borderRadius:99, padding:'5px 14px',
+                color: galleryFilter === cat ? '#fff' : S.muted, fontSize:11, fontWeight:700 }}>
+              {cat === 'all' ? t('galleryAll') : cat}
+            </button>
+          ))}
+        </div>
+
+        {!galleryTemplates && <p style={{ color:S.muted, fontSize:13, textAlign:'center', padding:30 }}>{t('knLoading')}</p>}
+        {galleryTemplates && (
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(250px, 1fr))', gap:14 }}>
+            {galleryList.map(c => (
+              <div key={c.id} className="tpl-card" style={{ background:'#121826', border:`1px solid ${S.border}`, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', transition:'transform 0.2s, border-color 0.2s' }}>
+                <div style={{ position:'relative', aspectRatio:'11/7', overflow:'hidden', background:'#0a0f1a' }}>
+                  <img src={`/templates/${c.id}.jpg`} alt={c.name} loading="lazy"
+                    className="tpl-shot" style={{ width:'100%', height:'100%', objectFit:'cover', objectPosition:'top', transition:'transform 0.4s' }}
+                    onError={e => { e.currentTarget.style.display = 'none'; }} />
+                  <span style={{ position:'absolute', top:8, insetInlineStart:8, background:'rgba(6,10,18,0.85)', border:'1px solid rgba(59,130,246,0.3)', color:'#93c5fd', fontSize:9.5, fontWeight:800, padding:'3px 9px', borderRadius:20 }}>
+                    {CAT_LABELS[c.category] || 'أخرى'}
+                  </span>
+                  {c.externalApi && (
+                    <span style={{ position:'absolute', top:8, insetInlineEnd:8, background:'rgba(56,189,248,0.15)', border:'1px solid rgba(56,189,248,0.35)', color:'#7dd3fc', fontSize:9, fontWeight:700, padding:'3px 8px', borderRadius:20 }}>🌐 API</span>
+                  )}
+                </div>
+                <div style={{ padding:'12px 13px 13px', display:'flex', flexDirection:'column', gap:7, flex:1 }}>
+                  <div style={{ color:'#fff', fontSize:13.5, fontWeight:800 }}>{c.name}</div>
+                  <div style={{ color:S.muted, fontSize:11, lineHeight:1.6, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{c.description}</div>
+                  <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
+                    {(c.roles || []).map(r => (
+                      <span key={r} style={{ background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)', color:'#94a3b8', fontSize:9, fontWeight:700, padding:'2px 8px', borderRadius:10 }}>{r}</span>
+                    ))}
+                  </div>
+                  <button onClick={() => handleApplyTemplate(c.id)} disabled={!!applyingTemplate}
+                    style={{ marginTop:'auto', background: applyingTemplate === c.id ? 'rgba(59,130,246,0.15)' : 'linear-gradient(135deg,#3b82f6,#8b5cf6)', border:'none', borderRadius:9, padding:'8px 12px', color:'#fff', fontSize:12, fontWeight:800, opacity: applyingTemplate && applyingTemplate !== c.id ? 0.4 : 1 }}>
+                    {applyingTemplate === c.id ? `⏳ ${t('applyingTemplate')}` : `🚀 ${t('useTemplate')}`}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   const healthCheckMeta = { pass: { icon:'✅', color:'#22c55e', bg:'rgba(34,197,94,0.1)', bd:'rgba(34,197,94,0.25)' },
     warn: { icon:'⚠️', color:'#f59e0b', bg:'rgba(245,158,11,0.1)', bd:'rgba(245,158,11,0.25)' },
     fail: { icon:'❌', color:'#ef4444', bg:'rgba(239,68,68,0.1)', bd:'rgba(239,68,68,0.25)' } };
@@ -1385,6 +1475,10 @@ export default function Dashboard() {
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>🩺</span> {t('healthTitle')}
                 </button>
+                <button onClick={() => { setShowMobileMenu(false); openGalleryModal(); }}
+                  style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
+                  <span style={{ fontSize:16 }}>🖼️</span> {t('galleryTitle')}
+                </button>
                 <button onClick={() => { setShowMobileMenu(false); openSecretsModal(); }}
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>🔑</span> {t('secretsTitle')}
@@ -1502,6 +1596,7 @@ export default function Dashboard() {
         {githubModal}
         {knowledgeModal}
         {healthModal}
+        {galleryModal}
         {projectModal}
         {secretsModal}
 
@@ -1595,6 +1690,12 @@ export default function Dashboard() {
         <button onClick={openHealthModal} title={t('healthTitle')}
           style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(34,197,94,0.08)', border:'1px solid rgba(34,197,94,0.22)', borderRadius:7, padding:'5px 12px', color:'#4ade80', fontSize:11, fontWeight:700 }}>
           🩺 {t('healthTitle')}
+        </button>
+
+        {/* معرض القوالب البصري */}
+        <button onClick={openGalleryModal} title={t('galleryTitle')}
+          style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.28)', borderRadius:7, padding:'5px 12px', color:'#c4b5fd', fontSize:11, fontWeight:700 }}>
+          🖼️ {t('galleryTitle')}
         </button>
 
         {/* GitHub */}
@@ -1879,6 +1980,7 @@ export default function Dashboard() {
       {githubModal}
       {knowledgeModal}
       {healthModal}
+      {galleryModal}
       {projectModal}
       {secretsModal}
     </div>
