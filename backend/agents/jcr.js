@@ -16,6 +16,7 @@ import { getLibraryModel, recordModel } from './modelLibrary.js';
 import { matchCloneTemplate } from './cloneTemplates/index.js';
 import { patchEditPlan } from './patchEditor.js';
 import { stampSeed } from './seedStamp.js';
+import { forgeSeedImages } from './imageForge.js';
 import { assetsFor, injectFaviconTag, paletteHint, pickPalette } from './cloneAssets.js';
 import { polishHtml } from './polishPack.js';
 import { composePage, isMarketingPageGoal, brandFromGoal, selectBlocks, applyBrandName } from './blockRegistry.js';
@@ -2026,6 +2027,17 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     this.emitLiveLog(roomName, '5. RUNTIME', 'SeedStamp', `🌱 خُصّصت بيانات العيّنة (${seed.name}) لتطابق طلبك — بلا مساس بالدوال.`);
                 }
             } catch (e) { console.warn('[Stamp/Seed]', e.message); }
+
+            // (أ٢) 🖼️ توليد الصور المضمون: أي عنصر بلا صورة (المبصوم يُفرِّغها
+            // عمداً كي لا تظهر صور غير مطابقة) → SVG مولَّد بلون المجال ورمزه.
+            try {
+                const forged = forgeSeedImages(workFiles, { goal, category: clone.category });
+                if (forged.changed) {
+                    workFiles = mergeFileList(workFiles, forged.files);
+                    changed = true;
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'ImageForge', `🖼️ وُلّدت ${forged.count} صورة للعناصر بلا صور — هوية بصرية كاملة بلا انتظار.`);
+                }
+            } catch (e) { console.warn('[ImageForge]', e.message); }
 
             // (ب) العلامة/الألوان — تعديل موضعي دقيق (اسم العلامة + العنوان + --accent فقط)
             const brandInstruction = `عدّل *العلامة والألوان فقط* لتطابق: "${goal}".
