@@ -146,6 +146,9 @@ const STRINGS = {
 
   // 📚 لوحة معرفة المنصّة (الفهم المتراكم)
   jumpLatest: { en: 'Latest', ar: 'الأحدث' },
+  exportZip: { en: 'Download my project (zip)', ar: 'تنزيل مشروعي (zip)' },
+  exporting: { en: 'Preparing file...', ar: 'جاري تجهيز الملف...' },
+  exportFail: { en: 'Could not prepare the download.', ar: 'تعذّر تجهيز ملف التنزيل.' },
   execSteps: { en: 'Execution steps', ar: 'خطوات التنفيذ' },
   thinking: { en: 'Thinking', ar: 'يفكّر' },
   msgCopy: { en: 'Copy', ar: 'نسخ' },

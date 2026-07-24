@@ -32,6 +32,24 @@ export function TimelinePanel({ activeProject, token, onRestored }) {
 
   useEffect(() => { load(); }, [load]);
 
+  // 📦 «كودك ملكك» — تنزيل المشروع كاملاً zip (بلا أسرار ولا داخليات)
+  const [exporting, setExporting] = useState(false);
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/project/export?project=${encodeURIComponent(activeProject)}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || t('exportFail')); setExporting(false); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${activeProject || 'project'}.zip`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch { alert(t('serverUnreachable')); }
+    setExporting(false);
+  };
+
   const handleRestore = async (hash) => {
     if (!window.confirm(`(${hash})\n${t('restoreConfirm')}`)) return;
     setRestoring(hash);
@@ -58,6 +76,13 @@ export function TimelinePanel({ activeProject, token, onRestored }) {
   return (
     <div style={{ height:'100%', overflowY:'auto', padding:'16px', background:'#060a10' }}>
       {error && <div style={{ color:'#f87171', fontSize:12, marginBottom:12 }}>{error}</div>}
+
+      {/* 📦 كودك ملكك — تنزيل كامل بضغطة */}
+      <button onClick={handleExport} disabled={exporting}
+        style={{ width:'100%', marginBottom:16, background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)',
+          borderRadius:9, padding:'9px 12px', color:'#34d399', fontSize:12, fontWeight:800, opacity: exporting ? 0.6 : 1 }}>
+        {exporting ? `⏳ ${t('exporting')}` : `⬇️ ${t('exportZip')}`}
+      </button>
 
       {/* سجل البنايات */}
       <div style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'1.5px', textTransform:'uppercase', marginBottom:10 }}>
