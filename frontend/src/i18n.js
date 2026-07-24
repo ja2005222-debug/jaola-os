@@ -146,6 +146,12 @@ const STRINGS = {
 
   // 📚 لوحة معرفة المنصّة (الفهم المتراكم)
   jumpLatest: { en: 'Latest', ar: 'الأحدث' },
+  execSteps: { en: 'Execution steps', ar: 'خطوات التنفيذ' },
+  thinking: { en: 'Thinking', ar: 'يفكّر' },
+  msgCopy: { en: 'Copy', ar: 'نسخ' },
+  msgCopied: { en: 'Copied', ar: 'نُسخ' },
+  msgEdit: { en: 'Edit', ar: 'تعديل' },
+  msgRegenerate: { en: 'Regenerate', ar: 'إعادة التوليد' },
   galleryTitle: { en: 'Template Gallery', ar: 'معرض القوالب' },
   gallerySubtitle: { en: 'Complete, working products — pick one and start customizing in seconds.', ar: 'منتجات كاملة تعمل فعلاً — اختر قالباً وابدأ التخصيص خلال ثوانٍ. المعاينات لقطات حقيقية من القوالب نفسها.' },
   galleryAll: { en: 'All', ar: 'الكل' },
