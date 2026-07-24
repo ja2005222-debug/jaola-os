@@ -1,0 +1,173 @@
+/**
+ * 🌐 Log Localizer — سجلّ البناء الحي بلغة المستخدم.
+ *
+ * كل رسائل خطوات التنفيذ تمرّ من قمع emitLiveLog الواحد — نترجم هناك حتميّاً
+ * بقاموس شظايا (الأجزاء الثابتة حول القيم المُقحمة) بالأطول-أولاً.
+ * العربية هي الأصل؛ الترجمة تُطبَّق فقط لمن لغته الإنجليزية.
+ * قاعدة صارمة: لا فواصل عليا مفردة في الترجمات.
+ */
+
+const LOG_DICT = [
+    // ── التحقّق السلوكي (تظهر تفاصيله في السجلّ ولوحة الصحّة) ─────────
+    ['التحقّق السلوكي: يعمل', 'Behavior check: working'],
+    ['ثغرات سلوكية', 'Behavior gaps'],
+    ['لم يُعلَن النجاح أجوفاً', 'success is not declared hollow'],
+    ['أُصلح تلقائياً', 'auto-fixed'],
+    ['بعد الإصلاح — يحتاج مراجعتك', 'after the fix — needs your review'],
+    ['جولة إصلاح سلوكية مستهدفة', 'Targeted behavior fix round'],
+    ['كل الأدوار', 'All roles'],
+    ['ممثَّلة', 'represented'],
+    ['أدوار بلا واجهة/تمثيل', 'Roles with no UI/representation'],
+    ['النموذج متعدّد الأدوار لكن بعضها غير مبنيّ', 'the model is multi-role but some roles are not built'],
+    ['الصفحة تعمل بلا أخطاء JS', 'Page runs with no JS errors'],
+    ['أخطاء JS وقت التشغيل', 'Runtime JS errors'],
+    ['دوال مُشار إليها وغير معرّفة (قشرة بلا منطق)', 'Referenced but undefined functions (shell without logic)'],
+    ['يوجد مصدر بيانات (مصفوفة/‏API)', 'Data source present (array/API)'],
+    ['لا دليل على مصدر بيانات — قد تكون المكوّنات بلا ما تعمل عليه', 'No sign of a data source — components may have nothing to work on'],
+    ['التفاعل يُحدث تغييراً حيّاً في الصفحة', 'Interactions produce live page changes'],
+    ['عنصر تفاعل لكن لا استجابة مرئية عند التحريك — قد تكون غير موصولة بمعالجات', 'interactive elements but no visible response — handlers may be unwired'],
+    ['تطبيق تفاعلي بلا أي عنصر تفاعل (أزرار/نماذج/حقول)', 'Interactive app with no interactive elements (buttons/forms/fields)'],
+    ['تعذّر التشغيل الفعلي (jsdom غير متاح) — اكتُفي بالفحوص الساكنة', 'Could not run live (jsdom unavailable) — static checks only'],
+    ['تغيير،', 'changes,'],
+    ['عنصر)', 'elements)'],
+
+    // ── مراحل البناء والقوالب ────────────────────────────────────────
+    ['قالب jaola عامل:', 'Working jaola template:'],
+    ['نبدأ من تطبيق يعمل فعلاً (لا توليد من الصفر)', 'starting from an app that actually works (no from-scratch generation)'],
+    ['وضع البصمة — تخصيص المحتوى ليطابق طلبك...', 'Stamping — customizing content to match your request...'],
+    ['خُصّصت بيانات العيّنة (', 'Seed data customized ('],
+    [') لتطابق طلبك — بلا مساس بالدوال.', ') to match your request — functions untouched.'],
+    ['وُلّدت', 'Generated'],
+    ['صورة للعناصر بلا صور — هوية بصرية كاملة بلا انتظار.', 'images for items without photos — complete visual identity instantly.'],
+    ['خُصّصت العلامة/الألوان موضعياً.', 'Brand/colors patched in place.'],
+    ['التخصيص أدخل عطلاً (', 'Customization introduced a defect ('],
+    [') — استرجاع الكلون العامل النظيف.', ') — restoring the clean working clone.'],
+    ['فقد دوال (', 'lost functions ('],
+    ['فشل جديد:', 'new failures:'],
+    ['البصمة وُضعت والتطبيق يعمل', 'Stamp applied and the app works'],
+    ['تخطّي التخصيص (الكلون العامل محفوظ):', 'Skipping customization (working clone preserved):'],
+    ['أُضيفت هوية العلامة ولمسة احترافية (خطّ + حركات ظهور).', 'Brand identity and polish added (font + entrance animations).'],
+    ['نجاح (قالب', 'Success (template'],
+    ['المشروع يعمل — تفادينا إعادة بناء تدهسه.', 'Project works — avoided a rebuild that would crush it.'],
+    ['يوجد كلون مطابق لكن المشروع القائم يعمل — لا نكلبره.', 'A matching template exists but the current project works — not overwriting it.'],
+    ['إعادة تركيب صفحة احترافية من', 'Recomposing a professional page from'],
+    ['بلوكات جاهزة) — لا توليد من الصفر', 'ready blocks) — no from-scratch generation'],
+    ['رُكّبت أقسام:', 'Composed sections:'],
+    ['نجاح (إعادة تركيب من', 'Success (recomposed from'],
+    ['جاري تحميل القالب', 'Loading template'],
+    ['تم تطبيق قالب', 'Template applied'],
+    ['Template delivered in English (your selected language).', 'Template delivered in English (your selected language).'],
+
+    // ── التخطيط والتفكيك ─────────────────────────────────────────────
+    ['تفكيك الهدف والوعي الذاتي', 'Goal decomposition and self-awareness'],
+    ['الأولوية:', 'Priority:'],
+    ['الميزانية:', 'budget:'],
+    ['استدعاءات', 'calls'],
+    ['الميزانية استنفدت', 'budget exhausted'],
+    ['فشل الاستدعاء الموحد', 'Unified call failed'],
+    ['تفكيك الأهداف', 'Goal breakdown'],
+    ['ملاحظة: توجد مجاهيل، لكننا سنحاول المتابعة', 'Note: there are unknowns, but we will try to continue'],
+    ['الأسئلة المحتملة', 'Possible questions'],
+    ['مهام فرعية', 'subtasks'],
+    ['فشل التفكيك', 'Breakdown failed'],
+    ['إطلاق حلقة النقاش', 'Starting the discussion loop'],
+    ['استكشاف العالم', 'Exploring the workspace'],
+    ['طلب استراتيجي — بدء حوار التخطيط', 'Strategic request — starting the planning dialog'],
+
+    // ── الكتابة والمراجعة ────────────────────────────────────────────
+    ['جاري توليد الـ', 'Generating '],
+    ['كتابة الشفرة (دورة', 'Writing code (round'],
+    ['لم يتم استخراج أي ملفات من رد النموذج. إعادة المحاولة', 'No files extracted from the model reply. Retrying'],
+    ['رُفض من متخصص', 'Rejected by specialist'],
+    ['مراجعة جودة الكود', 'Code quality review'],
+    ['التحقق من تنفيذ متطلبات المشروع', 'Verifying project requirements'],
+    ['تخطّي التحقق', 'Skipping verification'],
+    ['الكود المولّد اجتاز الفحص', 'Generated code passed checks'],
+    ['بقي خطأ بعد جولة', 'errors remain after round'],
+    ['يصلح (جولة', 'fixing (round'],
+    ['فحص: خطأ', 'check: error'],
+    ['محاولة /2 فشلت', 'attempt /2 failed'],
+    ['كتابة محتوى المشروع', 'Writing project content'],
+    ['محتوى صفحة', 'Page content'],
+    ['توليد مشروع', 'Generating project'],
+    ['تخصيص جزئي', 'Partial customization'],
+    ['تخصيص محتوى الصفحة بالذكاء', 'AI-customizing page content'],
+    ['إضافة صفحة جديدة (بلا إعادة بناء)', 'Adding a new page (no rebuild)'],
+    ['تعديل دقيق (لا إعادة بناء كاملة)', 'Surgical edit (no full rebuild)'],
+    ['التعديل الموضعي لم يُطابِق — عودة للتعديل الكامل', 'Patch did not match — falling back to full edit'],
+    ['تعذّر قراءة المحتوى — عودة للبناء', 'Could not read content — falling back to build'],
+    ['تعذّر — عودة للبناء الكامل', 'Failed — falling back to full build'],
+    ['بلا نتيجة — عودة للبناء الكامل', 'No result — falling back to full build'],
+    ['تنفيذ التعديل', 'Applying the edit'],
+    ['تنفيذ ما نوقش للتو كتعديل فعلي', 'Applying what was just discussed as a real edit'],
+
+    // ── الخلفية وقاعدة البيانات ──────────────────────────────────────
+    ['المشروع يحتاج خادماً — جاري توليد', 'Project needs a server — generating'],
+    ['كتب الفريق ملف خلفية', 'Backend team wrote files'],
+    ['تخطّي فريق الخلفية', 'Skipping backend team'],
+    ['اعتمد ملفات فريق الخلفية', 'Backend team files approved'],
+    ['تعذّر توليد الخادم', 'Server generation failed'],
+    ['جاري توليد قاعدة البيانات', 'Generating the database'],
+    ['فريق الخلفية تكفّل بقاعدة البيانات — تخطّي المولّد المستقل', 'Backend team covered the database — skipping the standalone generator'],
+    ['جاري توليد نظام المصادقة', 'Generating the auth system'],
+    ['جاري توليد', 'Generating'],
+    ['ليستدعي الـ', 'to call the '],
+    ['تم تحديث', 'Updated'],
+
+    // ── الحالة والنيات ───────────────────────────────────────────────
+    ['بدء المهمة', 'Mission started'],
+    ['فشل نهائياً', 'failed permanently'],
+    ['حُفظت نسخة دائمة (', 'Persistent snapshot saved ('],
+    ['المهمة أُوقفت من قبل المستخدم', 'Mission stopped by the user'],
+    ['تعطلت المهمة', 'Mission crashed'],
+    ['تعذّر تحديث المعاينة', 'Could not refresh the preview'],
+    ['مشروع كبير', 'Large project'],
+    ['مسار سريع', 'Fast path'],
+    ['جُهزت صور', 'Images prepared'],
+    ['تحسين الأداء', 'Performance tuning'],
+    ['فضول تلقائي', 'Auto-curiosity'],
+    ['تم الحفظ', 'Saved'],
+    ['نية حذف مشروع (', 'Project delete intent ('],
+    [') — طلب تأكيد صريح (لا تعديل محتوى)', ') — explicit confirmation requested (no content change)'],
+    ['أمر تنفيذ مجرّد', 'Bare execute command'],
+    ['ثقة: 100%) - قاعدة مباشرة', 'confidence: 100%) - direct rule'],
+    ['نية: (ثقة', 'Intent: (confidence'],
+    ['صُنّفت', 'Classified as'],
+    ['لكنها جملة إخبارية — حجب لمرة واحدة (الرسالة التالية تُنفَّذ)', 'but it is a declarative sentence — held once (the next message runs)'],
+    ['سؤال — رد محادثة (لا تعديل)', 'question — conversational reply (no edit)'],
+    ['تكرار رسالة محجوبة — إصرار المستخدم', 'Held message repeated — user insists'],
+    ['أمر إيقاف', 'Stop command'],
+    ['استئناف من الذاكرة', 'resuming from memory'],
+    ['وجدت المشروع في الذاكرة — الفريق يستأنف من حيث توقف...', 'Project found in memory — the team resumes where it left off...'],
+    ['استعلام حالة — لا يحتاج تنفيذاً', 'status query — no execution needed'],
+    ['تحية — رد مباشر', 'greeting — direct reply'],
+    ['مهمة تعمل بالفعل — لا تنفيذ متوازٍ', 'a mission is already running — no parallel execution'],
+    ['نشر مباشر', 'direct deploy'],
+    ['دفع للمستودع', 'pushing to the repository'],
+    ['يُحال لتصنيف النية العام', 'delegated to general intent classification'],
+
+    // ── عموميات قصيرة (الأخيرة كي لا تأكل الأطول) ────────────────────
+    ['الملفات', 'files'],
+    ['ملفاً', 'files'],
+    ['ملفات', 'files'],
+    ['استثناء', 'Exception'],
+    ['تخطّي', 'Skipping'],
+    ['نجاح', 'Success'],
+    ['فشل', 'Failed'],
+    ['خطأ في', 'Error in'],
+    ['خطأ', 'error'],
+    ['عامل', 'working'],
+    ['يعمل', 'works'],
+    ['قالب', 'template'],
+    ['نية', 'Intent'],
+    ['ملف', 'file'],
+];
+
+const ORDERED = [...LOG_DICT].sort((a, b) => b[0].length - a[0].length);
+
+/** يترجم رسالة سجلّ واحدة (الشظايا الثابتة؛ القيم المُقحمة تبقى كما هي). */
+export function localizeLog(message = '') {
+    let out = message;
+    for (const [ar, en] of ORDERED) out = out.split(ar).join(en);
+    return out;
+}

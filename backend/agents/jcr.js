@@ -18,6 +18,7 @@ import { patchEditPlan } from './patchEditor.js';
 import { stampSeed } from './seedStamp.js';
 import { forgeSeedImages } from './imageForge.js';
 import { localizeTemplateFiles } from './templateLocalizer.js';
+import { localizeLog } from './logLocalizer.js';
 import { assetsFor, injectFaviconTag, paletteHint, pickPalette } from './cloneAssets.js';
 import { polishHtml } from './polishPack.js';
 import { composePage, isMarketingPageGoal, brandFromGoal, selectBlocks, applyBrandName } from './blockRegistry.js';
@@ -205,7 +206,10 @@ export class JaolaCognitiveRuntime {
     }
 
     emitLiveLog(roomName, layer, agent, message) {
-        this.io.to(roomName).emit('log', { message: `[${layer}] ➔ [${agent}]: ${message}` });
+        // 🌐 سجلّ البناء الحي بلغة المستخدم: الترجمة في القمع الواحد (حتميّة،
+        // شظايا ثابتة فقط — القيم المُقحمة تبقى). العربية هي الأصل.
+        const msg = this.roomLang?.get(roomName) === 'en' ? localizeLog(message) : message;
+        this.io.to(roomName).emit('log', { message: `[${layer}] ➔ [${agent}]: ${msg}` });
     }
 
     emitAgentError(roomName, failedAgentKey) {
@@ -1992,6 +1996,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
     // آمن مع تراجع عند الكسر)، يتحقّق سلوكياً، ويُنهي كبناءٍ ناجح.
     async _buildFromClone(clone, goal, projectPath, username, activeProject, roomName, agents) {
         const lang = resolveGoalLanguage(goal, getUserLanguage(username)); // لا ردّ إنجليزي على طلب عربيّ
+        (this.roomLang ||= new Map()).set(roomName, lang);
         const t0 = Date.now();
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
         this.emitLiveLog(roomName, '5. RUNTIME', 'JaolaTemplate', `🧩 قالب jaola عامل: ${clone.name} (${clone.id})${clone.externalApi ? ` — API خارجي: ${clone.externalApi}` : ''} — نبدأ من تطبيق يعمل فعلاً (لا توليد من الصفر)`);
@@ -2343,6 +2348,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
         }
         const userLang = initUserLanguage(username, message);
         const langInfo = getLangInfo(userLang);
+        // 🌐 لغة الغرفة — يقرؤها قمع emitLiveLog ليترجم سجلّ البناء الحي
+        (this.roomLang ||= new Map()).set(roomName, userLang);
 
         // 🆕 Conversation Manager — فحص الهدف المعلق (دائم، ينجو من إعادة النشر)
         if (getPendingGoal(username)) {
