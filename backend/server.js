@@ -1385,6 +1385,21 @@ app.post('/api/template/apply', verifyToken, validateProjectOwnership, async (re
     }
 });
 
+// 📦 تنزيل المشروع كاملاً (zip) — «كودك ملكك». يستثني node_modules/.git
+// وملفات الأسرار (.env) دائماً.
+app.get('/api/project/export', verifyToken, validateProjectOwnership, async (req, res) => {
+    try {
+        const { exportProjectZip } = await import('./services/projectExport.js');
+        const buf = exportProjectZip(req.projectPath);
+        const fname = `${(req.activeProject || 'project').replace(/[^a-z0-9_-]/gi, '-')}.zip`;
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
+        res.send(buf);
+    } catch (e) {
+        res.status(500).json({ error: 'تعذّر تجهيز ملف التنزيل: ' + e.message });
+    }
+});
+
 // 🆕 الاسترجاع لنقطة سابقة (rollback) — يحفظ الحالة الحالية أولاً ثم يسترجع
 app.post('/api/project/rollback', verifyToken, validateProjectOwnership, async (req, res) => {
     const { hash } = req.body || {};
