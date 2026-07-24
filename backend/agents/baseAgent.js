@@ -27,7 +27,7 @@ if (openaiClient) console.log('🧠 [AI Core]: OpenAI نشط كخط ثالث أ�
 if (ai) console.log('♊ [AI Core]: محرك Gemini نشط كخطة بديلة لحالات الضغط.');
 
 // ═══════════════════════════════════════════════════════
-// 🔄 Failover تلقائي: Groq → DeepSeek → OpenAI
+// 🔄 Failover تلقائي: Groq → DeepSeek → Gemini → OpenAI
 //
 // نُصدّر كائن groq بنفس واجهة SDK الأصلية (chat.completions.create)
 // لكنه يحوّل تلقائياً للمزود التالي عند rate limit أو أعطال الخادم —
@@ -74,7 +74,28 @@ async function createWithFailover(params, opts) {
         }
     }
 
-    // 3️⃣ OpenAI — الخط الأخير
+    // 3️⃣ Gemini — واجهة مختلفة تُغلَّف بشكل OpenAI؛ لا يدعم بثّنا فيُتخطّى للبث
+    if (ai && !params.stream) {
+        try {
+            const wantJson = params.response_format?.type === 'json_object';
+            const text = (params.messages || [])
+                .map(m => (m.role === 'system' ? `تعليمات النظام:\n${m.content}` : m.content))
+                .join('\n\n');
+            const r = await ai.models.generateContent({
+                model: 'gemini-2.0-flash',
+                contents: [{ role: 'user', parts: [{ text }] }],
+                ...(wantJson ? { generationConfig: { responseMimeType: 'application/json' } } : {}),
+            });
+            const out = r.response?.text?.() || r.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (!out) throw new Error('Gemini أعاد رداً فارغاً');
+            return { choices: [{ message: { content: out } }] };
+        } catch (e) {
+            lastError = e; failures.push(e);
+            console.warn(`[AI Failover] Gemini فشل (${String(e.message).slice(0, 80)}) → ${openaiClient ? 'OpenAI' : 'لا بديل متبقٍ'}`);
+        }
+    }
+
+    // 4️⃣ OpenAI — الخط الأخير
     if (openaiClient) {
         try {
             return await openaiClient.chat.completions.create({ ...params, model: 'gpt-4o-mini' }, opts);
@@ -97,7 +118,7 @@ async function createWithFailover(params, opts) {
 }
 
 // كائن متوافق مع واجهة Groq SDK — non-null ما دام أي مزود متاحاً
-export const groq = (groqClient || hasDeepseek || openaiClient)
+export const groq = (groqClient || hasDeepseek || ai || openaiClient)
     ? { chat: { completions: { create: createWithFailover } } }
     : null;
 

@@ -197,15 +197,15 @@ ${currentCodeContext && currentCodeContext.trim().length > 50
 - استخدم التنسيق: // FILE: name
 - ثلاثة ملفات: index.html وstyles.css وscript.js`;
 
-    // قائمة النماذج بالأولوية — إذا فشل الأول، يجرب الثاني، إلخ
+    // قائمة النماذج بالأولوية (Groq ← DeepSeek ← Gemini) — إذا فشل الأول، يجرب التالي
     const modelPipeline = [
-        {
-            name: 'DeepSeek Coder',
-            call: () => callDeepSeek(userMessage, onChunk, systemPrompt)
-        },
         {
             name: 'Groq Llama',
             call: () => callGroq(userMessage, onChunk, systemPrompt)
+        },
+        {
+            name: 'DeepSeek Coder',
+            call: () => callDeepSeek(userMessage, onChunk, systemPrompt)
         },
         {
             name: 'Gemini',
@@ -266,8 +266,8 @@ ${filesBlock || '(لا ملفات)'}
 أعِد الملفات المتغيّرة فقط بصيغة // FILE: name`;
 
     const pipeline = [
-        () => callDeepSeek(userMessage, onChunk, systemPrompt),
         () => callGroq(userMessage, onChunk, systemPrompt),
+        () => callDeepSeek(userMessage, onChunk, systemPrompt),
         () => callGemini(userMessage, systemPrompt),
     ];
     for (const call of pipeline) {
