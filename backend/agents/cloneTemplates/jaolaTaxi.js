@@ -19,14 +19,22 @@ const INDEX_HTML = `<!DOCTYPE html>
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">🚕 <span id="brandName">jaola تاكسي</span></div>
+    <div class="brand"><span class="mk">🚕</span> <span id="brandName">jaola تاكسي</span></div>
     <nav class="tabs" id="tabs"></nav>
-    <button class="btn" id="authBtn" data-action="openAuth">دخول</button>
+    <button class="btn ghost" id="authBtn" data-action="openAuth">دخول</button>
   </header>
 
   <main>
     <!-- الراكب -->
     <section id="view-rider" class="view">
+      <div class="hero">
+        <div class="ph hero-bg"><img src="https://images.unsplash.com/photo-1549194388-f61be84a6e9e?w=1400&q=80&auto=format&fit=crop" alt="" onerror="this.style.display='none'"></div>
+        <div class="hero-in">
+          <span class="eyebrow">وجهتك على بُعد نقرة</span>
+          <h1>اطلب رحلتك<br><span class="accent">في ثوانٍ</span></h1>
+          <p>اختر وجهتك ونوع سيّارتك، واعرف السعر التقديري فوراً قبل الطلب.</p>
+        </div>
+      </div>
       <div class="panel booking">
         <h2>اطلب رحلتك</h2>
         <label>من</label>
@@ -350,26 +358,41 @@ function init() {
 document.addEventListener('DOMContentLoaded', init);
 `;
 
-const STYLES_CSS = `:root{--bg:#0d1117;--surface:#151b24;--card:#1b222e;--accent:#facc15;--good:#22c55e;--go:#38bdf8;--warn:#f59e0b;--text:#e8edf6;--muted:#8b93a3;--border:#272d3a;--font:'Segoe UI',Tahoma,system-ui,sans-serif}
+const STYLES_CSS = `:root{--bg:#0c0d10;--surface:#14161c;--card:#1a1d26;--accent:#facc15;--accent2:#f59e0b;--good:#22c55e;--go:#38bdf8;--warn:#f59e0b;--text:#f3f4f6;--muted:#9096a3;--border:#242833;--line:rgba(250,204,21,.16);--font:'Segoe UI',Tahoma,system-ui,sans-serif;--shadow:0 30px 70px -24px rgba(0,0,0,.8)}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6}
-.topbar{display:flex;align-items:center;gap:16px;padding:12px 20px;background:var(--surface);border-bottom:1px solid var(--border);flex-wrap:wrap}
-.brand{font-size:19px;font-weight:800}
+body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+body::before{content:"";position:fixed;inset:0;z-index:-1;background:radial-gradient(50% 40% at 85% 0%,rgba(250,204,21,.09),transparent 60%),radial-gradient(50% 40% at 0% 100%,rgba(245,158,11,.07),transparent 60%),var(--bg)}
+.topbar{display:flex;align-items:center;gap:16px;padding:12px 20px;background:rgba(20,22,28,.72);backdrop-filter:blur(14px);border-bottom:1px solid var(--border);flex-wrap:wrap;position:sticky;top:0;z-index:30}
+.brand{font-size:19px;font-weight:800;display:flex;align-items:center;gap:9px}
+.brand .mk{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;font-size:17px}
 .tabs{flex:1;display:flex;gap:6px}
-.tab{background:var(--card);border:1px solid var(--border);color:var(--text);padding:7px 14px;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer}
-.btn{background:var(--card);border:1px solid var(--border);color:var(--text);padding:8px 16px;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:#2a2400}
-.btn.sm{padding:6px 12px;font-size:12px}
+.tab{background:var(--card);border:1px solid var(--border);color:var(--text);padding:7px 15px;border-radius:99px;font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font)}
+.btn{background:var(--card);border:1px solid var(--border);color:var(--text);padding:9px 16px;border-radius:11px;font-weight:700;font-size:13px;cursor:pointer;transition:.18s;font-family:var(--font)}
+.btn.primary{background:linear-gradient(105deg,var(--accent),var(--accent2));border-color:transparent;color:#2a2400}
+.btn.primary:hover{transform:translateY(-2px);box-shadow:0 12px 30px -10px rgba(250,204,21,.5)}
+.btn.ghost{background:rgba(255,255,255,.04)}
+.btn.sm{padding:7px 13px;font-size:12px}
 .icon-btn{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer}
-main{max-width:900px;margin:0 auto;padding:20px 18px}
+main{max-width:920px;margin:0 auto;padding:0 18px 40px}
 .view h2{margin-bottom:16px}
-.panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:16px}
+/* البطل */
+.hero{position:relative;min-height:42vh;display:flex;align-items:center;overflow:hidden;border-radius:0 0 28px 28px;margin:0 -18px 18px}
+.hero .hero-bg{position:absolute;inset:0;z-index:0}
+.hero .hero-bg::after{content:"";position:absolute;inset:0;z-index:2;background:linear-gradient(90deg,rgba(12,13,16,.94) 32%,rgba(12,13,16,.42))}
+.hero-in{position:relative;z-index:3;padding:46px 30px}
+.eyebrow{font-size:12px;font-weight:800;letter-spacing:2.5px;color:var(--accent);text-transform:uppercase}
+.accent{background:linear-gradient(105deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.hero h1{font-size:clamp(30px,5.5vw,52px);line-height:1.08;font-weight:800;margin:12px 0 12px;letter-spacing:-1px}
+.hero p{font-size:16px;color:#e6e2cf;max-width:430px}
+.ph{position:relative;overflow:hidden;background:linear-gradient(135deg,#1a1d26,#2a2c1a)}
+.ph img{position:relative;z-index:1;width:100%;height:100%;object-fit:cover;display:block}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:20px;margin-bottom:16px}
 .panel h2{margin-bottom:14px}.panel h3{margin-bottom:12px;font-size:15px}
 .booking label{display:block;font-size:12px;color:var(--muted);font-weight:700;margin:12px 0 6px}
 .sel,select{width:100%;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px;color:var(--text)}
 .chips{display:flex;gap:8px;flex-wrap:wrap}
 .chip{background:var(--card);border:1px solid var(--border);color:var(--muted);padding:8px 14px;border-radius:20px;font-weight:700;font-size:13px;cursor:pointer}
-.chip.active{background:var(--accent);border-color:var(--accent);color:#2a2400}
+.chip.active{background:linear-gradient(105deg,var(--accent),var(--accent2));border-color:transparent;color:#2a2400}
 .fare-box{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin:16px 0}
 .fare-line{color:var(--muted);font-size:14px}
 .fare-line.big{font-size:18px;color:var(--text);margin-top:4px}
@@ -405,7 +428,7 @@ main{max-width:900px;margin:0 auto;padding:20px 18px}
 .switch a{color:var(--accent);text-decoration:none;font-weight:700}
 .demo{text-align:center;color:var(--muted);font-size:11px;margin-top:10px}
 .demo code{background:var(--card);padding:1px 6px;border-radius:5px}
-.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#2a2400;padding:11px 20px;border-radius:12px;font-weight:700;font-size:14px;z-index:70;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:linear-gradient(105deg,var(--accent),var(--accent2));color:#2a2400;padding:11px 20px;border-radius:12px;font-weight:700;font-size:14px;z-index:70;box-shadow:var(--shadow)}
 h2,h3{color:var(--text)}
 `;
 
