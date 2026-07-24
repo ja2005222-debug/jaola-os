@@ -27,21 +27,39 @@ if (openaiClient) console.log('🧠 [AI Core]: OpenAI نشط كخط ثالث أ�
 if (ai) console.log('♊ [AI Core]: محرك Gemini نشط كخطة بديلة لحالات الضغط.');
 
 // ═══════════════════════════════════════════════════════
-// 🔄 Failover تلقائي: Groq → DeepSeek → OpenAI
+// 🔄 Failover تلقائي: Groq → DeepSeek → Gemini → OpenAI
 //
 // نُصدّر كائن groq بنفس واجهة SDK الأصلية (chat.completions.create)
 // لكنه يحوّل تلقائياً للمزود التالي عند rate limit أو أعطال الخادم —
 // وبذلك يستفيد كل وكيل يستورد groq بدون تعديل أي موقع استدعاء.
 // ═══════════════════════════════════════════════════════
+// ── تصنيف أعطال المزوّدين — عطل دائم (رصيد/مفاتيح) لا يُجدى معه التكرار ──
+export const AI_UNAVAILABLE_MSG = 'خدمة الذكاء الاصطناعي غير متاحة حالياً (رصيد المزوّد منتهٍ أو مفاتيح غير صالحة) — طلبك سليم ولا فائدة من إعادة المحاولة الآن.';
+
+export function classifyAIError(e) {
+    if (e?.aiUnavailable) return 'quota';
+    const status = e?.status || e?.response?.status || 0;
+    const msg = String(e?.message || '').toLowerCase();
+    if (/insufficient_quota|exceeded your current quota|billing|payment required/.test(msg) || status === 402) return 'quota';
+    if (/invalid api key|incorrect api key|api key not valid|no auth credentials/.test(msg) || status === 401 || status === 403) return 'auth';
+    if (status === 429) return 'ratelimit';
+    if (/غير مُفعّل|لا يوجد مزود|not configured/.test(msg)) return 'config';
+    return 'transient';
+}
+
+/** عطل لا يزول بإعادة المحاولة: رصيد منتهٍ، مفتاح غير صالح، أو مزوّد غير مُهيأ. */
+export const isPermanentAIError = (e) => ['quota', 'auth', 'config'].includes(classifyAIError(e));
+
 async function createWithFailover(params, opts) {
     let lastError = null;
+    const failures = [];
 
     // 1️⃣ Groq — الأسرع. أي فشل (rate limit/مفتاح/شبكة) → المزود التالي فوراً
     if (groqClient) {
         try {
             return await groqClient.chat.completions.create(params, opts);
         } catch (e) {
-            lastError = e;
+            lastError = e; failures.push(e);
             console.warn(`[AI Failover] Groq فشل (${e.status || ''} ${String(e.message).slice(0, 80)}) → DeepSeek`);
         }
     }
@@ -51,21 +69,56 @@ async function createWithFailover(params, opts) {
         try {
             return await deepseek.chat.completions.create({ ...params, model: 'deepseek-chat' }, opts);
         } catch (e) {
-            lastError = e;
+            lastError = e; failures.push(e);
             console.warn(`[AI Failover] DeepSeek فشل (${e.status || ''} ${String(e.message).slice(0, 80)}) → ${openaiClient ? 'OpenAI' : 'لا بديل متبقٍ'}`);
         }
     }
 
-    // 3️⃣ OpenAI — الخط الأخير
+    // 3️⃣ Gemini — واجهة مختلفة تُغلَّف بشكل OpenAI؛ لا يدعم بثّنا فيُتخطّى للبث
+    if (ai && !params.stream) {
+        try {
+            const wantJson = params.response_format?.type === 'json_object';
+            const text = (params.messages || [])
+                .map(m => (m.role === 'system' ? `تعليمات النظام:\n${m.content}` : m.content))
+                .join('\n\n');
+            const r = await ai.models.generateContent({
+                model: 'gemini-2.0-flash',
+                contents: [{ role: 'user', parts: [{ text }] }],
+                ...(wantJson ? { generationConfig: { responseMimeType: 'application/json' } } : {}),
+            });
+            const out = r.response?.text?.() || r.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (!out) throw new Error('Gemini أعاد رداً فارغاً');
+            return { choices: [{ message: { content: out } }] };
+        } catch (e) {
+            lastError = e; failures.push(e);
+            console.warn(`[AI Failover] Gemini فشل (${String(e.message).slice(0, 80)}) → ${openaiClient ? 'OpenAI' : 'لا بديل متبقٍ'}`);
+        }
+    }
+
+    // 4️⃣ OpenAI — الخط الأخير
     if (openaiClient) {
-        return await openaiClient.chat.completions.create({ ...params, model: 'gpt-4o-mini' }, opts);
+        try {
+            return await openaiClient.chat.completions.create({ ...params, model: 'gpt-4o-mini' }, opts);
+        } catch (e) {
+            lastError = e; failures.push(e);
+            console.warn(`[AI Failover] OpenAI فشل (${e.status || ''} ${String(e.message).slice(0, 80)}) — لا بديل متبقٍ`);
+        }
+    }
+
+    // كل المزوّدين المتاحين فشلوا بأعطال دائمة → إشارة صريحة تُوقف دورات
+    // إعادة المحاولة العبثية أعلى السلسلة (كانت تحرق 7 دورات على مزوّد ميت)
+    if (failures.length && failures.every(isPermanentAIError)) {
+        const err = new Error(AI_UNAVAILABLE_MSG);
+        err.aiUnavailable = true;
+        err.causes = failures.map(f => String(f.message).slice(0, 120));
+        throw err;
     }
 
     throw lastError || new Error('لا يوجد مزود AI مُهيأ (GROQ_API_KEY / DEEPSEEK_API_KEY / OPENAI_API_KEY).');
 }
 
 // كائن متوافق مع واجهة Groq SDK — non-null ما دام أي مزود متاحاً
-export const groq = (groqClient || hasDeepseek || openaiClient)
+export const groq = (groqClient || hasDeepseek || ai || openaiClient)
     ? { chat: { completions: { create: createWithFailover } } }
     : null;
 

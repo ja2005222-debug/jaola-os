@@ -153,6 +153,13 @@ const LOG_DICT = [
     ['استثناء', 'Exception'],
     ['تخطّي', 'Skipping'],
     ['نجاح', 'Success'],
+    ['خدمة الذكاء الاصطناعي غير متاحة حالياً (رصيد المزوّد منتهٍ أو مفاتيح غير صالحة) — طلبك سليم ولا فائدة من إعادة المحاولة الآن', 'AI service is currently unavailable (provider credit exhausted or invalid keys) — your request is fine; retrying now will not help'],
+    ['فشلت جميع النماذج في توليد كود صالح', 'All models failed to generate valid code'],
+    ['فشل بناء الموقع بعد', 'Site build failed after'],
+    ['محاولة. الأسباب الأخيرة:', 'attempts. Last reasons:'],
+    ['فشل الفريق بعد', 'The team failed after'],
+    ['دورات. آخر الانتقادات:', 'rounds. Last critiques:'],
+    ['فشلت', 'Failed'],
     ['فشل', 'Failed'],
     ['خطأ في', 'Error in'],
     ['خطأ', 'error'],
@@ -163,11 +170,24 @@ const LOG_DICT = [
     ['ملف', 'file'],
 ];
 
-const ORDERED = [...LOG_DICT].sort((a, b) => b[0].length - a[0].length);
+// حدود كلمات عربية: لا نستبدل شظيّة داخل كلمة أطول («فشل» داخل «فشلت»
+// كانت تنتج "Failedت"). النطاق حروف الهجاء فقط — لا الفاصلة العربية والأرقام.
+const AR_LETTER = '\\u0621-\\u064A';
+const AR_RE = /[ء-ي]/;
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const ORDERED = [...LOG_DICT]
+    .sort((a, b) => b[0].length - a[0].length)
+    .map(([ar, en]) => {
+        // الحدّ يُفرض فقط حين تكون حافة الشظيّة نفسها حرفاً عربياً —
+        // شظيّة تنتهي بـ «(» مثلاً لا تشقّ كلمة، ولا يصح اشتراط ما بعدها.
+        const pre = AR_RE.test(ar[0]) ? `(?<![${AR_LETTER}])` : '';
+        const post = AR_RE.test(ar[ar.length - 1]) ? `(?![${AR_LETTER}])` : '';
+        return [new RegExp(pre + escRe(ar) + post, 'g'), en];
+    });
 
 /** يترجم رسالة سجلّ واحدة (الشظايا الثابتة؛ القيم المُقحمة تبقى كما هي). */
 export function localizeLog(message = '') {
     let out = message;
-    for (const [ar, en] of ORDERED) out = out.split(ar).join(en);
+    for (const [re, en] of ORDERED) out = out.replace(re, en);
     return out;
 }
