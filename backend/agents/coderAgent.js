@@ -1,4 +1,4 @@
-import { deepseek, groq, ai } from './baseAgent.js';
+import { deepseek, groq, ai, isPermanentAIError, AI_UNAVAILABLE_MSG } from './baseAgent.js';
 import { buildContextPrompt } from './knowledgeEngine.js';
 import { buildLessonsPromptBlock } from '../services/platformLessons.js';
 import { buildBlueprintPrompt } from './referenceBlueprints.js';
@@ -213,6 +213,7 @@ ${currentCodeContext && currentCodeContext.trim().length > 50
         }
     ];
 
+    const failures = [];
     for (const model of modelPipeline) {
         try {
             const responseText = await model.call();
@@ -225,10 +226,15 @@ ${currentCodeContext && currentCodeContext.trim().length > 50
 
             console.warn(`[CoderAgent] ${model.name}: رد بدون ملفات قابلة للاستخراج. جاري تجربة النموذج التالي...`);
         } catch (err) {
+            failures.push(err);
             console.warn(`[CoderAgent] ${model.name} فشل: ${err.message}. جاري تجربة النموذج التالي...`);
         }
     }
 
+    // كل الأعطال دائمة (رصيد/مفاتيح) → إشارة صريحة كي لا تُحرق دورات النقاش عبثاً
+    if (failures.length && failures.every(isPermanentAIError)) {
+        return { error: true, aiUnavailable: true, details: AI_UNAVAILABLE_MSG };
+    }
     return { error: true, details: 'فشلت جميع النماذج في توليد كود صالح.' };
 }
 

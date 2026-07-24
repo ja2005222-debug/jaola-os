@@ -19,6 +19,7 @@ import { stampSeed } from './seedStamp.js';
 import { forgeSeedImages } from './imageForge.js';
 import { localizeTemplateFiles } from './templateLocalizer.js';
 import { localizeLog } from './logLocalizer.js';
+import { buildFailureChatMessage } from './failureMessages.js';
 import { assetsFor, injectFaviconTag, paletteHint, pickPalette } from './cloneAssets.js';
 import { polishHtml } from './polishPack.js';
 import { composePage, isMarketingPageGoal, brandFromGoal, selectBlocks, applyBrandName } from './blockRegistry.js';
@@ -421,12 +422,21 @@ export class JaolaCognitiveRuntime {
                     getUserLanguage(context.username) || 'en'
                 );
             } catch (e) {
+                // ⛔ عطل مزوّد دائم (رصيد منتهٍ/مفاتيح) — الدورات الباقية عبث، نوقف فوراً
+                if (e.aiUnavailable) {
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'Orchestrator', `⛔ ${e.message}`);
+                    const err = new Error(e.message); err.aiUnavailable = true; throw err;
+                }
                 this.emitLiveLog(roomName, '5. RUNTIME', 'Coder', `❌ استثناء: ${e.message}`);
                 context.internalDebate.criticTranscripts.push({ agent: 'CODER_EXCEPTION', critique: e.message });
                 continue;
             }
 
             if (plan.error) {
+                if (plan.aiUnavailable) {
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'Orchestrator', `⛔ ${plan.details}`);
+                    const err = new Error(plan.details); err.aiUnavailable = true; throw err;
+                }
                 this.emitLiveLog(roomName, '5. RUNTIME', 'Coder', `❌ خطأ: ${plan.details}`);
                 context.internalDebate.criticTranscripts.push({ agent: 'CODER_ERROR', critique: plan.details });
                 continue;
@@ -1390,6 +1400,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 this.emitAgentError(roomName, 'coder');
                 await this.runReflectionAndSelfImprovement(context, roomName, false);
                 this.emitLiveLog(roomName, 'JCOS', 'Kernel', `❌ فشل نهائياً: ${runtimeError.message}`);
+                // 💬 الشات لا يصمت عند الفشل — رسالة حتمية بلغة المستخدم (بلا نموذج)
+                this.io.to(roomName).emit('chat_reply', {
+                    message: buildFailureChatMessage(getUserLanguage(username) || 'ar', runtimeError),
+                });
                 return { success: false, error: runtimeError.message };
             }
 
