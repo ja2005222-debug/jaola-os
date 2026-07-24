@@ -547,6 +547,8 @@ export function jaolaMarketplace() {
         category: 'marketplace',
         name: 'سوق متعدّد البائعين',
         description: 'سوق فاخر بثلاثة أدوار وصلاحيات: عميل (بطل+تصفّح+سلة+طلب) · بائع (لوحة متجره) · مدير (اعتماد المتاجر+إحصاءات). اللوحات مخفيّة عن العميل، والتوجيه حسب الدور.',
+        nameEn: 'Multi-Vendor Marketplace',
+        descriptionEn: 'Premium marketplace with three roles: customer (hero + browse + cart), seller (own store panel), admin (store approval + stats). Role-routed login.',
         keywords: ['سوق', 'ماركت', 'marketplace', 'بائعين', 'متعدد', 'multi-vendor', 'vendor', 'متاجر', 'باعة', 'منصة بيع', 'تجار'],
         model: {
             entities: [

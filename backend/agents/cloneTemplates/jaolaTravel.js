@@ -763,6 +763,8 @@ export function jaolaTravel() {
         category: 'travel',
         name: 'منصّة سفر (طيران + فنادق + سيّارات)',
         description: 'منصّة سفر عاملة غنيّة: بحث طيران وفنادق وسيّارات + أهمّ الوجهات + عروض وخصومات + حجوزات موحّدة. جاهزة لِـ API (طبقة مزوّد ترتدّ للبيانات المبدئية) و White-label (كائن علامة + لوحة تحكّم تغيّر الاسم/اللون/العملة حيّاً).',
+        nameEn: 'Travel Platform',
+        descriptionEn: 'Flights + hotels + cars + destinations + deals with unified bookings. API-ready provider layer and live white-label branding.',
         keywords: ['سفر', 'سياحة', 'طيران', 'رحلات', 'تذاكر', 'حجز فندق', 'فنادق', 'تأجير سيارات', 'travel', 'flight', 'hotel', 'booking', 'tourism', 'trip', 'حجوزات', 'عطلة'],
         externalApi: 'API-ready (طبقة مزوّد قابلة للربط) + White-label',
         model: {

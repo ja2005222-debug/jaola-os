@@ -495,6 +495,8 @@ export function foodDeliveryClone() {
         category: 'restaurant',
         name: 'توصيل طعام من مطاعم متعددة',
         description: 'تطبيق توصيل فاخر بصلاحيات: زبون (عام، بطل + مطاعم بصور + سلّة) · مطعم/سائق/إدارة (لوحات مخفية بدخول موجَّه حسب الصلاحية) · تتبّع بخطوات.',
+        nameEn: 'Multi-Restaurant Food Delivery',
+        descriptionEn: 'Premium delivery app with roles: customer (hero + photo restaurants + cart) - restaurant/driver/admin hidden panels with role-routed login - step tracking.',
         keywords: ['توصيل', 'طعام', 'مطاعم', 'delivery', 'food', 'restaurant', 'order', 'طلب', 'talabat', 'ubereats'],
         model: {
             entities: [

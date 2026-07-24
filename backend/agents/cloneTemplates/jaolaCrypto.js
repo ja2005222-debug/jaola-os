@@ -145,6 +145,8 @@ export function jaolaCrypto() {
         category: 'tool',
         name: 'أسعار العملات الرقمية (API خارجي حيّ)',
         description: 'متابعة عملات رقمية عاملة تستهلك CoinGecko مباشرةً (بلا مفتاح): أعلى العملات + بحث + تبديل عملة التسعير.',
+        nameEn: 'Crypto Prices (Live external API)',
+        descriptionEn: 'Working crypto tracker consuming CoinGecko directly (no key): top coins, search, and quote currency switch.',
         keywords: ['عملات', 'رقمية', 'كريبتو', 'crypto', 'bitcoin', 'بيتكوين', 'أسعار', 'coins', 'عملة', 'blockchain', 'ethereum'],
         externalApi: 'CoinGecko (بلا مفتاح)',
         model: {

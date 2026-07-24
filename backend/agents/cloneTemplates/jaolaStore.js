@@ -541,6 +541,8 @@ export function jaolaStore() {
         category: 'ecommerce',
         name: 'متجر إلكتروني',
         description: 'متجر فاخر مكتمل بدورين: عميل (بطل + شريط ثقة + فئات + بحث + فرز + بطاقات بصور حقيقية + تفاصيل + سلّة + دفع من خطوتين) ومدير (لوحة مخفيّة: إدارة المنتجات + إدارة حالة الطلبات + إحصاءات إيراد/متوسط/مخزون منخفض). الإدارة بدخول، والعميل يتسوّق بلا تسجيل.',
+        nameEn: 'Online Store',
+        descriptionEn: 'Complete premium store with two roles: customer (hero + trust strip + categories + search + sort + photo cards + cart + 2-step checkout) and admin (hidden panel: products, order statuses, revenue stats).',
         keywords: ['متجر', 'تسوّق', 'shop', 'store', 'ecommerce', 'منتجات', 'سلة', 'cart', 'شراء', 'بيع', 'online store', 'محل'],
         model: {
             entities: [

@@ -1072,17 +1072,24 @@ export default function Dashboard() {
   );
 
   // 📚 لوحة «معرفة المنصّة» — تجعل الفهم المتراكم مرئياً (المشروع + الفئات + الدروس)
-  // 🖼️ معرض القوالب — بطاقات بمعاينات حقيقية (لقطات من القوالب نفسها)
+  // 🖼️ معرض القوالب — بطاقات بمعاينات حقيقية، وبيانات وصفية بلغة الواجهة
   const CAT_LABELS = {
-    restaurant:'مطاعم وتوصيل', ecommerce:'متاجر', marketplace:'أسواق', realestate:'عقارات',
-    appointments:'حجوزات', education:'تعليم', events:'فعاليات وتذاكر', travel:'سفر',
-    ridehailing:'تنقّل', tool:'أدوات', weather:'أدوات', crypto:'أدوات', finance:'مالية',
+    restaurant:{ ar:'مطاعم وتوصيل', en:'Food & Delivery' }, ecommerce:{ ar:'متاجر', en:'Stores' },
+    marketplace:{ ar:'أسواق', en:'Marketplaces' }, realestate:{ ar:'عقارات', en:'Real Estate' },
+    appointments:{ ar:'حجوزات', en:'Bookings' }, education:{ ar:'تعليم', en:'Education' },
+    events:{ ar:'فعاليات وتذاكر', en:'Events & Tickets' }, travel:{ ar:'سفر', en:'Travel' },
+    ridehailing:{ ar:'تنقّل', en:'Rides' }, tool:{ ar:'أدوات', en:'Tools' },
+    weather:{ ar:'أدوات', en:'Tools' }, crypto:{ ar:'أدوات', en:'Tools' }, finance:{ ar:'مالية', en:'Finance' },
   };
+  const isEn = uiLang === 'en';
+  const catLabel = (c) => (CAT_LABELS[c.category]?.[isEn ? 'en' : 'ar']) || (isEn ? 'Other' : 'أخرى');
+  const tplName = (c) => (isEn ? (c.nameEn || c.name) : c.name);
+  const tplDesc = (c) => (isEn ? (c.descriptionEn || c.description) : c.description);
   const galleryCats = galleryTemplates
-    ? ['all', ...new Set(galleryTemplates.map(c => CAT_LABELS[c.category] || 'أخرى'))]
+    ? ['all', ...new Set(galleryTemplates.map(catLabel))]
     : ['all'];
   const galleryList = (galleryTemplates || []).filter(c =>
-    galleryFilter === 'all' || (CAT_LABELS[c.category] || 'أخرى') === galleryFilter);
+    galleryFilter === 'all' || catLabel(c) === galleryFilter);
   const galleryModal = showGalleryModal && (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(5px)', padding:16 }}
       onClick={e => e.target === e.currentTarget && setShowGalleryModal(false)}>
@@ -1116,15 +1123,15 @@ export default function Dashboard() {
                     className="tpl-shot" style={{ width:'100%', height:'100%', objectFit:'cover', objectPosition:'top', transition:'transform 0.4s' }}
                     onError={e => { e.currentTarget.style.display = 'none'; }} />
                   <span style={{ position:'absolute', top:8, insetInlineStart:8, background:'rgba(6,10,18,0.85)', border:'1px solid rgba(59,130,246,0.3)', color:'#93c5fd', fontSize:9.5, fontWeight:800, padding:'3px 9px', borderRadius:20 }}>
-                    {CAT_LABELS[c.category] || 'أخرى'}
+                    {catLabel(c)}
                   </span>
                   {c.externalApi && (
                     <span style={{ position:'absolute', top:8, insetInlineEnd:8, background:'rgba(56,189,248,0.15)', border:'1px solid rgba(56,189,248,0.35)', color:'#7dd3fc', fontSize:9, fontWeight:700, padding:'3px 8px', borderRadius:20 }}>🌐 API</span>
                   )}
                 </div>
                 <div style={{ padding:'12px 13px 13px', display:'flex', flexDirection:'column', gap:7, flex:1 }}>
-                  <div style={{ color:'#fff', fontSize:13.5, fontWeight:800 }}>{c.name}</div>
-                  <div style={{ color:S.muted, fontSize:11, lineHeight:1.6, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{c.description}</div>
+                  <div style={{ color:'#fff', fontSize:13.5, fontWeight:800 }}>{tplName(c)}</div>
+                  <div style={{ color:S.muted, fontSize:11, lineHeight:1.6, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{tplDesc(c)}</div>
                   <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
                     {(c.roles || []).map(r => (
                       <span key={r} style={{ background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)', color:'#94a3b8', fontSize:9, fontWeight:700, padding:'2px 8px', borderRadius:10 }}>{r}</span>

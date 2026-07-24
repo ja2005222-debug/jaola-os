@@ -25,6 +25,7 @@ export function listClones() {
         const c = b();
         return {
             id: c.id, name: c.name, category: c.category, description: c.description,
+            nameEn: c.nameEn || c.name, descriptionEn: c.descriptionEn || c.description,
             roles: (c.model?.roles || []).map(r => r.name),
             files: c.files.map(f => f.name),
             externalApi: c.externalApi || null,

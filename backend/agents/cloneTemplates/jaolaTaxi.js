@@ -438,6 +438,8 @@ export function jaolaTaxi() {
         category: 'ridehailing',
         name: 'طلب سيّارة (تاكسي)',
         description: 'تطبيق طلب سيّارة عامل بثلاثة أدوار وصلاحيات: راكب (يطلب+يتابع) · سائق (يقبل+ينهي) · مدير (إحصاءات). تسعير تقديري بالمسافة، لوحات مخفيّة عن الراكب، توجيه بالدور.',
+        nameEn: 'Ride Hailing (Taxi)',
+        descriptionEn: 'Working ride app with three roles: rider (request + estimated fare), driver (accept + complete + earnings), admin (stats). Hidden staff panels.',
         keywords: ['تاكسي', 'سيارة', 'رحلة', 'رحلات', 'توصيل ركاب', 'taxi', 'ride', 'ride-hailing', 'سائق', 'راكب', 'كابتن', 'نقل', 'مشوار'],
         model: {
             entities: [
