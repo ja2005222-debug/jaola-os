@@ -91,79 +91,130 @@ function BootScreen({ onDone }) {
   );
 }
 
-// ── Execution Feed Item ─────────────────────────────────────────
-function FeedItem({ msg, onOption }) {
-  // رسائل النظام (أحداث البناء الحية) — سطر حالة مضغوط
-  const isStatus = msg.sender === 'system' ||
-    (msg.text && (msg.text.includes('✅') || msg.text.includes('❌') || msg.text.includes('🎯') || msg.text.includes('🚀') || msg.text.includes('⚙️') || msg.text.includes('🔍')));
+// ── Execution Feed Item — فقاعات بمستوى كلاود ───────────────────
+// رسائل النظام (أحداث البناء الحية) — تُجمَّع في كتلة خطوات قابلة للطيّ
+export function isStatusMsg(msg) {
+  return msg.sender === 'system' ||
+    (msg.sender !== 'user' && msg.text && (msg.text.includes('✅') || msg.text.includes('❌') || msg.text.includes('🎯') || msg.text.includes('🚀') || msg.text.includes('⚙️') || msg.text.includes('🔍')));
+}
 
+// يجمع رسائل الحالة المتتالية في مجموعات — كما يطوي كلاود خطوات تفكيره
+export function groupFeed(messages = []) {
+  const out = [];
+  for (const msg of messages) {
+    if (isStatusMsg(msg)) {
+      const last = out[out.length - 1];
+      if (last && last.type === 'steps') last.msgs.push(msg);
+      else out.push({ type: 'steps', msgs: [msg] });
+    } else {
+      out.push({ type: 'msg', msg });
+    }
+  }
+  return out;
+}
+
+// كتلة خطوات التنفيذ: مطويّة تلقائياً حين تنتهي، حيّة ومفتوحة أثناء البناء
+export function StepsGroup({ msgs, live }) {
+  const [open, setOpen] = useState(live);
+  const shown = open || live;
+  const last = msgs[msgs.length - 1];
+  return (
+    <div style={{ border:'1px solid rgba(59,130,246,0.12)', borderRadius:10, background:'rgba(15,23,42,0.4)', overflow:'hidden', animation:'fadeIn 0.2s ease' }}>
+      <button onClick={() => setOpen(v => !v)}
+        style={{ width:'100%', display:'flex', alignItems:'center', gap:8, padding:'7px 12px', background:'transparent', border:'none', color:'#64748b', fontSize:11, fontWeight:700, textAlign:'start' }}>
+        <span style={{ display:'inline-block', transition:'transform 0.2s', transform: shown ? 'rotate(90deg)' : 'none', fontSize:9, color:'#3b82f6' }}>▶</span>
+        <span style={{ color:'#94a3b8' }}>⚙️ خطوات التنفيذ</span>
+        <span style={{ background:'rgba(59,130,246,0.12)', color:'#93c5fd', borderRadius:10, padding:'0 7px', fontSize:9.5, fontWeight:800 }}>{msgs.length}</span>
+        {live && <span style={{ width:6, height:6, borderRadius:'50%', background:'#3b82f6', animation:'pulse 1s infinite' }} />}
+        {!shown && last?.text && (
+          <span style={{ color:'#475569', fontWeight:500, fontSize:10.5, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', flex:1, fontFamily:'monospace' }}>{last.text}</span>
+        )}
+      </button>
+      {shown && (
+        <div style={{ padding:'2px 12px 8px', display:'flex', flexDirection:'column', gap:2, borderTop:'1px solid rgba(59,130,246,0.08)' }}>
+          {msgs.map((m, i) => (
+            <div key={i} style={{ display:'flex', alignItems:'baseline', gap:10, padding:'2px 0' }}>
+              <div style={{ width:1, background:'rgba(59,130,246,0.25)', alignSelf:'stretch', flexShrink:0 }} />
+              <div style={{ fontSize:11, color:'#64748b', fontFamily:'monospace', flex:1, wordBreak:'break-word', lineHeight:1.6 }}>{m.text}</div>
+              {m.timestamp && (
+                <span style={{ fontSize:9, color:'#334155', fontFamily:'monospace', flexShrink:0, direction:'ltr' }}>
+                  {new Date(m.timestamp).toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' })}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function FeedItem({ msg, onOption, onEdit, onRegenerate, canRegenerate }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async (text) => {
+    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1400); } catch {}
+  };
   const timeStr = msg.timestamp
     ? new Date(msg.timestamp).toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' })
     : null;
+  const actionBtn = { background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:6, padding:'2px 8px', color:'#94a3b8', fontSize:10, fontWeight:600 };
 
   if (msg.sender === 'user') {
     return (
-      <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', animation:'msgIn 0.25s ease' }}>
-        <div style={{ background:'linear-gradient(135deg,#1d4ed8,#4f46e5)', borderRadius:'12px 12px 2px 12px', padding:'10px 16px', maxWidth:'80%', fontSize:13, color:'#fff', lineHeight:1.6 }}>
-          <div style={{ fontSize:9, color:'rgba(255,255,255,0.5)', fontWeight:700, marginBottom:4, letterSpacing:'0.5px' }}>YOU — CEO</div>
+      <div className="feed-msg" style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', animation:'msgIn 0.3s cubic-bezier(.2,.8,.25,1)' }}>
+        <div style={{ background:'linear-gradient(135deg,#1e40af,#4338ca)', border:'1px solid rgba(99,102,241,0.35)', borderRadius:'14px 14px 4px 14px', padding:'9px 14px', maxWidth:'80%', fontSize:13, color:'#eef2ff', lineHeight:1.65, boxShadow:'0 4px 16px -8px rgba(67,56,202,0.5)', whiteSpace:'pre-wrap', wordBreak:'break-word' }}>
           {msg.text}
         </div>
-        {timeStr && <span style={{ fontSize:9, color:'#334155', marginTop:3, direction:'ltr' }}>{timeStr}</span>}
-      </div>
-    );
-  }
-
-  if (isStatus) {
-    return (
-      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'4px 0', animation:'fadeIn 0.2s ease' }}>
-        <div style={{ width:1, background:'rgba(59,130,246,0.3)', alignSelf:'stretch', marginRight:4, flexShrink:0 }} />
-        <div style={{ fontSize:11.5, color:'#64748b', fontFamily:'monospace', flex:1, wordBreak:'break-word' }}>{msg.text}</div>
-        {msg.timestamp && (
-          <span style={{ fontSize:9, color:'#334155', fontFamily:'monospace', flexShrink:0, direction:'ltr' }}>
-            {new Date(msg.timestamp).toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' })}
-          </span>
-        )}
+        {/* أدوات تظهر عند المرور — نسخ + تعديل (يعيد النص لصندوق الكتابة) */}
+        <div className="msg-tools" style={{ display:'flex', alignItems:'center', gap:6, marginTop:4 }}>
+          {timeStr && <span style={{ fontSize:9, color:'#334155', direction:'ltr' }}>{timeStr}</span>}
+          <button onClick={() => copy(msg.text)} style={actionBtn}>{copied ? '✓ نُسخ' : '⧉ نسخ'}</button>
+          {onEdit && <button onClick={() => onEdit(msg.text)} style={actionBtn}>✏️ تعديل</button>}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="feed-msg" style={{ display:'flex', gap:10, alignItems:'flex-start', animation:'msgIn 0.25s ease' }}>
-      <div style={{ width:28, height:28, borderRadius:8, background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, flexShrink:0, marginTop:2, animation: msg.streaming ? 'avatarGlow 1.2s infinite' : 'none' }}>⚡</div>
-      <div style={{ background:'rgba(15,23,42,0.8)', border:'1px solid rgba(59,130,246,0.15)', borderRadius:'2px 12px 12px 12px', padding:'10px 14px', maxWidth:'85%', fontSize:12, color:'#cbd5e1', lineHeight:1.7, position:'relative' }}>
-        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
-          <span style={{ fontSize:9, color:'#3b82f6', fontWeight:700, letterSpacing:'0.5px', textTransform:'uppercase' }}>JAOLA OS</span>
-          {timeStr && <span style={{ fontSize:9, color:'#334155', direction:'ltr' }}>{timeStr}</span>}
-          {!msg.streaming && msg.text && (
-            <button className="msg-copy" onClick={() => navigator.clipboard?.writeText(msg.text)} title="نسخ"
-              style={{ background:'transparent', border:'none', color:'#64748b', fontSize:11, padding:'0 2px', marginInlineStart:'auto' }}>
-              ⧉
-            </button>
+    <div className="feed-msg" style={{ display:'flex', gap:10, alignItems:'flex-start', animation:'msgIn 0.3s cubic-bezier(.2,.8,.25,1)' }}>
+      <div style={{ width:28, height:28, borderRadius:9, background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, flexShrink:0, marginTop:2, animation: msg.streaming ? 'avatarGlow 1.2s infinite' : 'none' }}>⚡</div>
+      <div style={{ flex:1, minWidth:0, maxWidth:'88%' }}>
+        <div style={{ background:'rgba(15,23,42,0.65)', border:'1px solid rgba(59,130,246,0.13)', borderRadius:'4px 14px 14px 14px', padding:'10px 14px', fontSize:12.5, color:'#cbd5e1', lineHeight:1.75, position:'relative', transition:'border-color 0.2s' }}>
+          {msg.streaming && !msg.text
+            ? <span style={{ display:'inline-flex', alignItems:'center', gap:8 }}>
+                <span className="thinking-shimmer" style={{ fontSize:12, fontWeight:600 }}>يفكّر</span>
+                <span style={{ display:'inline-flex', gap:3 }}>
+                  <span style={{ width:5, height:5, borderRadius:'50%', background:'#60a5fa', animation:'typing 1s infinite' }} />
+                  <span style={{ width:5, height:5, borderRadius:'50%', background:'#60a5fa', animation:'typing 1s infinite 0.2s' }} />
+                  <span style={{ width:5, height:5, borderRadius:'50%', background:'#60a5fa', animation:'typing 1s infinite 0.4s' }} />
+                </span>
+              </span>
+            : <span style={{ display:'inline' }}>
+                <Markdown text={msg.text} />
+                {msg.streaming && <span style={{ display:'inline-block', width:7, height:14, background:'#60a5fa', marginInlineStart:2, verticalAlign:'text-bottom', animation:'blink 1s step-end infinite', borderRadius:1 }} />}
+              </span>}
+
+          {/* 🔟 اقتراحات استباقية — أزرار الخطوة التالية */}
+          {Array.isArray(msg.options) && msg.options.length > 0 && (
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:10 }}>
+              {msg.options.map((opt, i) => (
+                <button key={i} onClick={() => onOption?.(opt)} className="chip-suggest"
+                  style={{
+                    background:'rgba(59,130,246,0.08)', border:'1px solid rgba(59,130,246,0.28)',
+                    borderRadius:99, padding:'6px 14px', color:'#93c5fd', fontSize:11, fontWeight:700,
+                  }}>
+                  {opt}
+                </button>
+              ))}
+            </div>
           )}
         </div>
-        {msg.streaming && !msg.text
-          ? <span style={{ display:'inline-flex', gap:3 }}>
-              <span style={{ width:5, height:5, borderRadius:'50%', background:'#60a5fa', animation:'typing 1s infinite' }} />
-              <span style={{ width:5, height:5, borderRadius:'50%', background:'#60a5fa', animation:'typing 1s infinite 0.2s' }} />
-              <span style={{ width:5, height:5, borderRadius:'50%', background:'#60a5fa', animation:'typing 1s infinite 0.4s' }} />
-            </span>
-          : <span style={{ display:'inline' }}>
-              <Markdown text={msg.text} />
-              {msg.streaming && <span style={{ display:'inline-block', width:7, height:14, background:'#60a5fa', marginInlineStart:2, verticalAlign:'text-bottom', animation:'blink 1s step-end infinite' }} />}
-            </span>}
-
-        {/* 🔟 اقتراحات استباقية — أزرار الخطوة التالية */}
-        {Array.isArray(msg.options) && msg.options.length > 0 && (
-          <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:10 }}>
-            {msg.options.map((opt, i) => (
-              <button key={i} onClick={() => onOption?.(opt)}
-                style={{
-                  background:'rgba(59,130,246,0.1)', border:'1px solid rgba(59,130,246,0.3)',
-                  borderRadius:8, padding:'6px 12px', color:'#93c5fd', fontSize:11, fontWeight:700,
-                }}>
-                {opt}
-              </button>
-            ))}
+        {/* شريط أدوات الرد — يظهر عند المرور */}
+        {!msg.streaming && msg.text && (
+          <div className="msg-tools" style={{ display:'flex', alignItems:'center', gap:6, marginTop:4 }}>
+            <button onClick={() => copy(msg.text)} style={actionBtn}>{copied ? '✓ نُسخ' : '⧉ نسخ'}</button>
+            {canRegenerate && onRegenerate && <button onClick={onRegenerate} style={actionBtn}>🔄 إعادة التوليد</button>}
+            {timeStr && <span style={{ fontSize:9, color:'#334155', direction:'ltr' }}>{timeStr}</span>}
           </div>
         )}
       </div>
@@ -241,6 +292,13 @@ export default function Dashboard() {
 
   const feedEndRef = useRef(null);
   const textareaRef = useRef(null);
+  const feedScrollRef = useRef(null);
+  const [showJumpLatest, setShowJumpLatest] = useState(false);
+  // زرّ «الأحدث» يظهر حين يبتعد المستخدم عن أسفل الشات (يقرأ سجلّاً قديماً)
+  const handleFeedScroll = () => {
+    const el = feedScrollRef.current; if (!el) return;
+    setShowJumpLatest(el.scrollHeight - el.scrollTop - el.clientHeight > 280);
+  };
   const notifId = useRef(0);
 
   // 🔑 اكتشاف مزوّدي OAuth المُهيّئين + عرض خطأ ارتداد OAuth إن وُجد
@@ -288,7 +346,12 @@ export default function Dashboard() {
     });
   }, [isBuilding]);
 
-  useEffect(() => { feedEndRef.current?.scrollIntoView({ behavior:'smooth' }); }, [chatMessages, isBuilding]);
+  // تمرير تلقائي للأحدث — إلا حين يصعد المستخدم يقرأ سجلّاً قديماً (سلوك كلاود)
+  useEffect(() => {
+    const el = feedScrollRef.current;
+    const nearBottom = !el || (el.scrollHeight - el.scrollTop - el.clientHeight) < 280;
+    if (nearBottom) feedEndRef.current?.scrollIntoView({ behavior:'smooth' });
+  }, [chatMessages, isBuilding]);
 
   useEffect(() => {
     if (logs.length > 0) {
@@ -784,12 +847,16 @@ export default function Dashboard() {
     textarea,input{font-family:system-ui;outline:none;transition:border-color 0.2s}
     textarea:focus,input:focus{border-color:rgba(59,130,246,0.5)!important}
 
-    /* 💬 حيوية الشات: زر النسخ يظهر عند المرور، والفقاعات تنساب */
-    .feed-msg .msg-copy{opacity:0;transition:opacity 0.15s}
-    .feed-msg:hover .msg-copy{opacity:0.7}
-    .feed-msg .msg-copy:hover{opacity:1}
-    @keyframes msgIn{from{opacity:0;transform:translateY(8px) scale(0.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+    /* 💬 حيوية الشات (بمستوى كلاود): أدوات الرسالة تظهر عند المرور فقط */
+    .feed-msg .msg-tools{opacity:0;transform:translateY(-2px);transition:opacity 0.18s ease,transform 0.18s ease;pointer-events:none}
+    .feed-msg:hover .msg-tools{opacity:1;transform:translateY(0);pointer-events:auto}
+    @keyframes msgIn{from{opacity:0;transform:translateY(10px) scale(0.985)}to{opacity:1;transform:translateY(0) scale(1)}}
     @keyframes avatarGlow{0%,100%{box-shadow:0 0 6px rgba(59,130,246,0.3)}50%{box-shadow:0 0 14px rgba(139,92,246,0.6)}}
+    /* «يفكّر…» متلألئ كنبض كلاود */
+    .thinking-shimmer{background:linear-gradient(90deg,#475569 20%,#c7d2fe 50%,#475569 80%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:shimmer 1.6s linear infinite}
+    @keyframes shimmer{0%{background-position:180% 0}100%{background-position:-20% 0}}
+    /* رقائق الاقتراحات: رفعة وإنارة عند المرور */
+    .chip-suggest:hover{background:rgba(59,130,246,0.2)!important;border-color:rgba(59,130,246,0.55)!important;box-shadow:0 4px 14px -6px rgba(59,130,246,0.5)}
 
     /* 🎴 نظام بطاقات موحّد — سطح زجاجي يرتفع قليلاً عند المرور */
     .jaola-card{background:rgba(255,255,255,0.025);border:1px solid #1a2332;border-radius:12px;transition:transform .18s ease,border-color .18s ease,background .18s ease}
@@ -820,27 +887,50 @@ export default function Dashboard() {
     </div>
   );
 
-  // بث المهمة داخل الشات: الرسائل + بطاقة التقدم الحية
+  // بث المهمة داخل الشات: فقاعات بمستوى كلاود — خطوات مطويّة + أدوات hover
+  const feedGroups = groupFeed(chatMessages);
+  const lastUserText = [...chatMessages].reverse().find(m => m.sender === 'user')?.text || '';
+  const lastRealMsgIdx = (() => {
+    for (let i = feedGroups.length - 1; i >= 0; i--) {
+      if (feedGroups[i].type === 'msg' && feedGroups[i].msg.sender !== 'user') return i;
+    }
+    return -1;
+  })();
   const missionFeed = (
-    <div style={{ flex:1, overflowY:'auto', padding:'12px 16px', display:'flex', flexDirection:'column', gap:8, minHeight:0 }}>
-      {chatMessages.length === 0 && !isBuilding && (
-        <div style={{ textAlign:'center', color:S.muted, fontSize:12, marginTop:40, lineHeight:2 }}>
-          <div style={{ fontSize:28, marginBottom:8 }}>⚡</div>
-          {t('feedAsk')}<br/>
-          <span style={{ fontSize:11, color:'#334155' }}>{t('feedHint')}</span>
-        </div>
+    <div style={{ flex:1, minHeight:0, position:'relative', display:'flex', flexDirection:'column' }}>
+      <div ref={feedScrollRef} onScroll={handleFeedScroll}
+        style={{ flex:1, overflowY:'auto', padding:'12px 16px', display:'flex', flexDirection:'column', gap:8, minHeight:0 }}>
+        {chatMessages.length === 0 && !isBuilding && (
+          <div style={{ textAlign:'center', color:S.muted, fontSize:12, marginTop:40, lineHeight:2 }}>
+            <div style={{ fontSize:28, marginBottom:8 }}>⚡</div>
+            {t('feedAsk')}<br/>
+            <span style={{ fontSize:11, color:'#334155' }}>{t('feedHint')}</span>
+          </div>
+        )}
+        {feedGroups.map((g, i) => g.type === 'steps'
+          ? <StepsGroup key={i} msgs={g.msgs} live={isBuilding && i === feedGroups.length - 1} />
+          : <FeedItem key={i} msg={g.msg} onOption={handleOptionClick}
+              onEdit={(text) => { setPrompt(text); textareaRef.current?.focus(); }}
+              canRegenerate={i === lastRealMsgIdx && !isBuilding && !isSending && !!lastUserText}
+              onRegenerate={() => handleSend(lastUserText)} />)}
+        {isBuilding && buildStartedAt && (
+          <MissionProgress agentStates={agentStates} lastLog={lastLogMsg} startedAt={buildStartedAt} phase={missionPhase} />
+        )}
+        {isSending && !isBuilding && (
+          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'4px 0' }}>
+            <div style={{ width:6, height:6, borderRadius:'50%', background:'#3b82f6', animation:'pulse 0.9s infinite' }} />
+            <span style={{ fontSize:11, color:'#64748b' }}>{t('receiving')}</span>
+          </div>
+        )}
+        <div ref={feedEndRef} />
+      </div>
+      {/* ↓ زرّ القفز للأحدث — يظهر فقط حين يصعد المستخدم في السجلّ */}
+      {showJumpLatest && (
+        <button onClick={() => feedEndRef.current?.scrollIntoView({ behavior:'smooth' })}
+          style={{ position:'absolute', bottom:12, insetInlineStart:'50%', transform:'translateX(-50%)', background:'rgba(15,23,42,0.92)', border:'1px solid rgba(59,130,246,0.35)', borderRadius:99, padding:'6px 14px', color:'#93c5fd', fontSize:11, fontWeight:700, boxShadow:'0 8px 24px rgba(0,0,0,0.5)', backdropFilter:'blur(8px)', zIndex:5, animation:'fadeIn 0.2s ease' }}>
+          ↓ {t('jumpLatest')}
+        </button>
       )}
-      {chatMessages.map((msg, i) => <FeedItem key={i} msg={msg} onOption={handleOptionClick} />)}
-      {isBuilding && buildStartedAt && (
-        <MissionProgress agentStates={agentStates} lastLog={lastLogMsg} startedAt={buildStartedAt} phase={missionPhase} />
-      )}
-      {isSending && !isBuilding && (
-        <div style={{ display:'flex', alignItems:'center', gap:8, padding:'4px 0' }}>
-          <div style={{ width:6, height:6, borderRadius:'50%', background:'#3b82f6', animation:'pulse 0.9s infinite' }} />
-          <span style={{ fontSize:11, color:'#64748b' }}>{t('receiving')}</span>
-        </div>
-      )}
-      <div ref={feedEndRef} />
     </div>
   );
 
