@@ -244,10 +244,25 @@ export function hasActionIntent(text) {
 const REBUILD_SIGNALS = /(?:أعد|اعد)\s+(?:ال)?(?:بناء|تصميم|إنشاء|انشاء)|من\s+جديد|من\s+الصفر|rebuild|from\s+scratch|start\s+over|redo/iu;
 const NEW_BUILD_STARTERS = /^\s*["'«]?\s*(?:ابني|أبني|ابنِ|أبنِ|ابن|انشئ|أنشئ|اصنع|صمّم|صمم|build|create|make|generate|design)(?=\s|$|[؟?!.،,:])/iu;
 
+// 🛡️ عبارات منفيّة تحمي من قلب المعنى: «لا تبدأ من الصفر» كانت تُطابق
+// «من الصفر» فتُحوّل الاستئنافَ إعادةَ بناءٍ تدهس المشروع (عطل إنتاجي حقيقي).
+// نحذف الجملة المنفيّة كاملة قبل فحص الإشارات.
+const NEGATED_CLAUSE = /(?:لا|لن|بدون|دون|من\s+غير)\s+(?:تبدأ|تبدا|يبدأ|يبدا|نبدأ|نبدا|البدء|بدء|إعادة|اعادة|تعد|تعيد|هدم)[^\n.،؛!؟—-]*|(?:don'?t|do\s+not|never|without|no\s+need\s+to)\s+(?:start|rebuild|redo|recreate)[^\n.!?]*/giu;
+function stripNegatedClauses(t) {
+    return t.replace(NEGATED_CLAUSE, ' ');
+}
+
+// 🧭 هدف استئناف مولَّد داخلياً (buildContinuationGoal) — لا يُعامَل أبداً
+// كبناء جديد/إعادة بناء مهما احتوى نصّه.
+export function isContinuationGoal(text) {
+    return /^\s*\[استئناف\]/.test(text || '');
+}
+
 /** طلب إعادة بناء صريح للمشروع الحالي (نفس الهوية، من جديد). */
 export function isExplicitRebuild(text) {
     const t = (text || '').trim();
-    return !!t && REBUILD_SIGNALS.test(normalizeArabic(t));
+    if (!t || isContinuationGoal(t)) return false;
+    return REBUILD_SIGNALS.test(stripNegatedClauses(normalizeArabic(t)));
 }
 
 /** طلب بناء موقع جديد بهوية جديدة (أمر بناء يصف موضوعاً) → يستبدل النموذج. */
