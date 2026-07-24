@@ -42,7 +42,7 @@ import { runTests } from './testingAgent.js';
 import { commitBuild, initProjectRepo, getProjectStats } from './gitAgent.js';
 import { backupProject, listSnapshots } from './fileManager.js';
 import { analyzeRequirements, buildRequirementsContext } from './requirementAnalyzer.js';
-import { normalizeText, normalizeArabic, detectIntentFromMeaning, isQuestionMessage, hasActionIntent, isExplicitRebuild, isExplicitNewBuild } from './textNormalizer.js';
+import { normalizeText, normalizeArabic, detectIntentFromMeaning, isQuestionMessage, hasActionIntent, isExplicitRebuild, isExplicitNewBuild, isContinuationGoal } from './textNormalizer.js';
 import { routeMessage } from './router.js';
 import { matchDeleteCommand, isBareYes, isBareExecute } from './chatCommands.js';
 import { verifyRequirements, buildFixInstruction, formatChecklist } from './requirementsVerifier.js';
@@ -1237,7 +1237,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
         try {
             const existingCtx = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
             const isFreshBuild = !existingCtx || existingCtx.trim().length < 80;
-            const explicitRebuild = isExplicitRebuild(goal) || isExplicitNewBuild(goal);
+            // 🛡️ استئناف («اكمل») على مشروع قائم = تطوير الموجود حصراً — لا
+            // إعادة بناء ولا كلون يستبدله ولا هوية جديدة، مهما احتوى نصّ الهدف.
+            // (عطل إنتاجي: «لا تبدأ من الصفر» طابقت «من الصفر» فدهست المشروع.)
+            const continuation = isContinuationGoal(goal);
+            const explicitRebuild = !continuation && (isExplicitRebuild(goal) || isExplicitNewBuild(goal));
 
             // 🧱 صفحة تسويقيّة/تعريفيّة (هبوط/بروشور/بورتفوليو/شركة) → إعادة تركيب من
             // JAOLA Registry: صفحة *كاملة واحترافية* من بلوكات جاهزة، لا توليد هشّ.
@@ -1245,7 +1249,9 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 return await this._buildFromRegistry(goal, projectPath, username, activeProject, roomName, agents);
             }
 
-            const clone = matchCloneTemplate(goal, blueprint, getDomainModel(username, activeProject));
+            const clone = (continuation && !isFreshBuild)
+                ? null // الاستئناف يكمل الموجود عبر المسار التزايدي — لا استبدال بالقالب
+                : matchCloneTemplate(goal, blueprint, getDomainModel(username, activeProject));
             if (clone) {
                 // نبدأ من الكلون العامل إن: (أ) بناء جديد/هوية جديدة، أو (ب) إعادة بناء
                 // صريحة، أو (ج) المشروع القائم معطّل فعلاً (نُصلح المكسور).
