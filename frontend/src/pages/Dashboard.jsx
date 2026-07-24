@@ -337,6 +337,12 @@ export default function Dashboard() {
       // 🖥️ مشروع full-stack → خادم دائم على Render (زر بضغطة واحدة)
       if (d.target === 'render') {
         setIsDeploying(false);
+        // 🚀 أتمتة كاملة: المنصّة أنشأت المستودع والخدمة وحقنت الأسرار — الرابط جاهز
+        if (d.liveUrl) {
+          addNotification(`${t('renderAutoLive')} ${d.liveUrl}`, 'success');
+          window.open(d.liveUrl, '_blank', 'noopener');
+          return;
+        }
         if (d.needsGitHub) {
           // Render ينشر من GitHub — نفتح ربط GitHub مباشرةً (الخطوة الوحيدة المتبقية)
           addNotification(t('renderNeedsGithub'), 'info');

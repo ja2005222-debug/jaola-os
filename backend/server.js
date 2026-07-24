@@ -66,6 +66,7 @@ import { verifyBehavior } from './agents/behaviorVerifier.js';
 import { setDomainModel } from './agents/projectMemory.js';
 import { mergeProjectModel } from './agents/projectModel.js';
 import { prepareRenderDeploy } from './agents/renderAgent.js';
+import { autoDeployFullStack, fullAutomationReady } from './services/deployAutomation.js';
 import { assetsFor, injectFaviconTag } from './agents/cloneAssets.js';
 import { listLibraries, getLibraryById, injectLibrary } from './agents/libraryRegistry.js';
 import { polishHtml } from './agents/polishPack.js';
@@ -1420,6 +1421,35 @@ app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) 
         try {
             const projectSlug = `${req.user.username}-${req.activeProject}`
                 .toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 50);
+
+            // 🚀 الأتمتة الكاملة (الجولة أ): إن هُيّئت مفاتيح المنصّة
+            // (GITHUB_PLATFORM_TOKEN + RENDER_API_KEY) → زر واحد → رابط حيّ:
+            // مستودع يُنشأ تلقائياً + دفع + خدمة Render بأسرار المشروع محقونة.
+            if (fullAutomationReady()) {
+                io.to(roomName).emit('log', { message: '🚀 [Render]: نشر آليّ كامل — مستودع + خدمة + أسرار...' });
+                const auto = await autoDeployFullStack({
+                    username: req.user.username,
+                    project: req.activeProject,
+                    projectPath: req.projectPath,
+                    projectSlug,
+                    secrets: getProjectSecrets(req.user.username, req.activeProject),
+                });
+                if (auto.success) {
+                    io.to(roomName).emit('log', { message: `✅ [Render]: ${auto.serviceCreated ? 'أُنشئت خدمتك ويجري أول نشر' : 'أُعيد النشر'} — موقعك: ${auto.liveUrl}` });
+                    try {
+                        const Project = (await import('./models/Project.js')).default;
+                        await Project.findOneAndUpdate({ name: req.activeProject, owner: req.user.username }, { vercelUrl: auto.liveUrl });
+                    } catch { /* تحديث اختياري */ }
+                    emitUserProjects(roomName, req.user.username, req.activeProject);
+                    return res.json({ accepted: true, target: 'render', liveUrl: auto.liveUrl, repoUrl: auto.repoUrl, serviceCreated: auto.serviceCreated });
+                }
+                if (!auto.fallback) {
+                    io.to(roomName).emit('log', { message: `❌ [Render]: ${auto.error}` });
+                    return res.status(502).json({ target: 'render', error: auto.error });
+                }
+                // fallback → المسار النصف-آلي أدناه كما كان
+            }
+
             const r = await deployToRender(
                 { projectPath: req.projectPath, projectName: projectSlug, username: req.user.username, activeProject: req.activeProject, hasBackend: true },
                 io, roomName

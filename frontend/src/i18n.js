@@ -166,6 +166,7 @@ const STRINGS = {
   knLessonsEmpty: { en: 'No lessons recorded yet.', ar: 'لا دروس مسجّلة بعد.' },
 
   // Render (persistent server) deploy
+  renderAutoLive: { en: '🚀 Deployed automatically — your live server:', ar: '🚀 نُشر آلياً بالكامل — خادمك الحيّ:' },
   renderNeedsGithub: { en: '🔗 Render deploys from GitHub — connect a repo first, then deploy again.', ar: '🔗 Render ينشر من GitHub — اربط المستودع أولاً ثم أعد النشر.' },
   renderReady: { en: '✅ Ready on Render — opening one-click setup...', ar: '✅ جاهز على Render — يُفتح الإعداد بضغطة واحدة...' },
   deployFail: { en: 'Deploy failed', ar: 'فشل النشر' },
