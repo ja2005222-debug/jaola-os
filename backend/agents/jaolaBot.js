@@ -230,9 +230,23 @@ export async function generateJaolaBot(projectPath, options = {}) {
         const html = await fsPromises.readFile(indexPath, 'utf-8');
         const updatedHTML = injectBotTags(html);
 
+        // 🗂️ بيان الإعداد — يقرؤه استوديو التخصيص ليملأ النموذج بالقيم الحالية
+        // (بلا توكن ولا apiBase — لا أسرار في البيان)
+        const manifest = {
+            brandName: cfg.name, emoji: cfg.emoji, welcome: cfg.welcome, fallback: cfg.fallback,
+            quick: cfg.quick,
+            faq: Array.isArray(options.faq)
+                ? options.faq.filter(x => x && x.q && x.a)
+                    .map(x => ({ q: String(x.q).slice(0, 200), a: String(x.a).slice(0, 600) })).slice(0, 20)
+                : [],
+            ai: !!cfg.apiBase,
+            updatedAt: Date.now(),
+        };
+
         await Promise.all([
             fsPromises.writeFile(path.join(projectPath, 'jaola-bot.js'), widgetJS),
             fsPromises.writeFile(path.join(projectPath, 'jaola-bot.css'), widgetCSS),
+            fsPromises.writeFile(path.join(projectPath, '.jaola-bot.json'), JSON.stringify(manifest, null, 2)),
             fsPromises.writeFile(indexPath, updatedHTML),
         ]);
 
@@ -240,6 +254,19 @@ export async function generateJaolaBot(projectPath, options = {}) {
     } catch (error) {
         return { success: false, error: error.message };
     }
+}
+
+/**
+ * 📖 حالة البوت في مشروع — هل هو مركَّب؟ وما إعداده الحالي؟
+ * يقرؤها استوديو التخصيص؛ تركيبات قديمة (قبل البيان) تعود installed بلا config.
+ */
+export function readBotManifest(projectPath) {
+    try {
+        if (!fs.existsSync(path.join(projectPath, 'jaola-bot.js'))) return { installed: false, config: null };
+        let config = null;
+        try { config = JSON.parse(fs.readFileSync(path.join(projectPath, '.jaola-bot.json'), 'utf-8')); } catch { /* تركيب قديم */ }
+        return { installed: true, config };
+    } catch { return { installed: false, config: null }; }
 }
 
 // مُصدَّرات مساعدة للاختبار

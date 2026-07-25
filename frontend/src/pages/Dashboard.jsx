@@ -431,19 +431,56 @@ export default function Dashboard() {
     setTimeout(() => { setIsDeploying(false); addNotification(t('nDeployed'), 'success'); }, 8000);
   };
 
-  // 🤖 إضافة «جولا بوت» بضغطة — يرث اسم/لون الموقع، يعمل بقاعدة معرفة داخلية
-  const handleAddBot = async () => {
+  // 🤖 استوديو مساعد الموقع — تخصيص كامل (اسم/رمز/ترحيب/أسئلة شائعة/ذكاء)
+  const [showBotModal, setShowBotModal] = useState(false);
+  const [botInstalled, setBotInstalled] = useState(false);
+  const [botLoading, setBotLoading] = useState(false);
+  const [botForm, setBotForm] = useState({ brandName: '', emoji: '🤖', welcome: '', quick: '', faq: [], ai: true });
+
+  const openBotModal = async () => {
+    setShowBotModal(true);
+    setBotLoading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/jaola-bot/status?project=${encodeURIComponent(activeProject || '')}`, { headers: getHeaders() });
+      const d = await res.json().catch(() => ({}));
+      setBotInstalled(!!d.installed);
+      const c = d.config || {};
+      setBotForm({
+        brandName: c.brandName || activeProject || '',
+        emoji: c.emoji || '🤖',
+        welcome: c.welcome || '',
+        quick: Array.isArray(c.quick) ? c.quick.join('، ') : '',
+        faq: Array.isArray(c.faq) && c.faq.length ? c.faq : [{ q: '', a: '' }],
+        ai: c.ai !== false,
+      });
+    } catch {
+      setBotInstalled(false);
+      setBotForm({ brandName: activeProject || '', emoji: '🤖', welcome: '', quick: '', faq: [{ q: '', a: '' }], ai: true });
+    }
+    setBotLoading(false);
+  };
+
+  const handleSaveBot = async () => {
     if (isAddingBot) return;
     setIsAddingBot(true);
-    addNotification(t('addingBot'), 'info');
     try {
       const res = await fetch(`${BACKEND_URL}/api/jaola-bot/generate`, {
         method: 'POST', headers: getHeaders(),
-        body: JSON.stringify({ project: activeProject, brandName: activeProject, ai: true }),
+        body: JSON.stringify({
+          project: activeProject,
+          brandName: botForm.brandName.trim() || activeProject,
+          emoji: botForm.emoji.trim() || '🤖',
+          welcome: botForm.welcome.trim() || undefined,
+          quick: botForm.quick.split(/[،,]/).map(s => s.trim()).filter(Boolean).slice(0, 4),
+          faq: botForm.faq.filter(x => x.q.trim() && x.a.trim()).map(x => ({ q: x.q.trim(), a: x.a.trim() })),
+          ai: botForm.ai,
+        }),
       });
       const d = await res.json().catch(() => ({}));
       if (res.ok && d.success) {
         addNotification(t('botAdded'), 'success');
+        setBotInstalled(true);
+        setShowBotModal(false);
         refreshPreview();
       } else {
         addNotification(`❌ ${d.error || t('botFail')}`, 'info');
@@ -1242,6 +1279,87 @@ export default function Dashboard() {
     </div>
   );
 
+  // 🤖 استوديو مساعد الموقع — نموذج التخصيص الكامل
+  const botInput = { width:'100%', background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 10px', color:'#e2e8f0', fontSize:12, outline:'none' };
+  const botLabel = { display:'block', fontSize:10, color:S.muted, fontWeight:700, marginBottom:4, letterSpacing:'0.5px' };
+  const botModal = showBotModal && (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
+      onClick={e => e.target === e.currentTarget && setShowBotModal(false)}>
+      <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:'22px 20px', width:'min(560px, 100%)', maxHeight:'90dvh', overflowY:'auto' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+          <h3 style={{ color:'#fff', fontSize:15, fontWeight:800 }}>
+            🤖 {t('botStudioTitle')}
+            {botInstalled && <span style={{ marginInlineStart:8, fontSize:9, color:'#34d399', fontWeight:800, background:'rgba(16,185,129,0.1)', border:'1px solid rgba(16,185,129,0.25)', borderRadius:5, padding:'2px 8px' }}>{t('botInstalledBadge')}</span>}
+          </h3>
+          <button onClick={() => setShowBotModal(false)}
+            style={{ background:'transparent', border:'none', color:S.muted, fontSize:20, cursor:'pointer', lineHeight:1 }}>×</button>
+        </div>
+        <p style={{ color:S.muted, fontSize:11, marginBottom:14 }}>{t('botStudioSub')}</p>
+
+        {botLoading ? <p style={{ color:S.muted, fontSize:13 }}>{t('botLoadingS')}</p> : (
+          <>
+            <div style={{ display:'flex', gap:10, marginBottom:12 }}>
+              <div style={{ flex:1 }}>
+                <label style={botLabel}>{t('botNameL')}</label>
+                <input style={botInput} value={botForm.brandName} maxLength={40}
+                  onChange={e => setBotForm(f => ({ ...f, brandName: e.target.value }))} />
+              </div>
+              <div style={{ width:70 }}>
+                <label style={botLabel}>{t('botEmojiL')}</label>
+                <input style={{ ...botInput, textAlign:'center' }} value={botForm.emoji} maxLength={4}
+                  onChange={e => setBotForm(f => ({ ...f, emoji: e.target.value }))} />
+              </div>
+            </div>
+
+            <div style={{ marginBottom:12 }}>
+              <label style={botLabel}>{t('botWelcomeL')}</label>
+              <input style={botInput} value={botForm.welcome} maxLength={200} placeholder={t('botWelcomePh')}
+                onChange={e => setBotForm(f => ({ ...f, welcome: e.target.value }))} />
+            </div>
+
+            <div style={{ marginBottom:12 }}>
+              <label style={botLabel}>{t('botQuickL')}</label>
+              <input style={botInput} value={botForm.quick} maxLength={200} placeholder={t('botQuickPh')}
+                onChange={e => setBotForm(f => ({ ...f, quick: e.target.value }))} />
+            </div>
+
+            <div style={{ marginBottom:12 }}>
+              <label style={botLabel}>{t('botFaqL')}</label>
+              {botForm.faq.map((row, i) => (
+                <div key={i} style={{ display:'flex', gap:6, marginBottom:6 }}>
+                  <input style={{ ...botInput, flex:1 }} value={row.q} maxLength={200} placeholder={t('botFaqQ')}
+                    onChange={e => setBotForm(f => ({ ...f, faq: f.faq.map((x, j) => j === i ? { ...x, q: e.target.value } : x) }))} />
+                  <input style={{ ...botInput, flex:1.4 }} value={row.a} maxLength={600} placeholder={t('botFaqA')}
+                    onChange={e => setBotForm(f => ({ ...f, faq: f.faq.map((x, j) => j === i ? { ...x, a: e.target.value } : x) }))} />
+                  <button onClick={() => setBotForm(f => ({ ...f, faq: f.faq.filter((_, j) => j !== i) }))}
+                    style={{ background:'transparent', border:'none', color:'#64748b', fontSize:14, cursor:'pointer' }}>✕</button>
+                </div>
+              ))}
+              {botForm.faq.length < 20 && (
+                <button onClick={() => setBotForm(f => ({ ...f, faq: [...f.faq, { q: '', a: '' }] }))}
+                  style={{ background:'rgba(255,255,255,0.03)', border:`1px dashed ${S.border}`, borderRadius:8, padding:'6px 12px', color:S.muted, fontSize:11, fontWeight:700, cursor:'pointer' }}>
+                  ＋ {t('botFaqAdd')}
+                </button>
+              )}
+            </div>
+
+            <label style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16, cursor:'pointer' }}>
+              <input type="checkbox" checked={botForm.ai}
+                onChange={e => setBotForm(f => ({ ...f, ai: e.target.checked }))} />
+              <span style={{ color:'#e2e8f0', fontSize:12, fontWeight:700 }}>✨ {t('botAiL')}</span>
+              <span style={{ color:S.muted, fontSize:10 }}>{t('botAiHint')}</span>
+            </label>
+
+            <button onClick={handleSaveBot} disabled={isAddingBot}
+              style={{ width:'100%', background:'rgba(139,92,246,0.15)', border:'1px solid rgba(139,92,246,0.4)', borderRadius:9, padding:'10px', color:'#c4b5fd', fontSize:13, fontWeight:800, cursor:'pointer', opacity: isAddingBot ? 0.6 : 1 }}>
+              {isAddingBot ? `⏳ ${t('addingBot')}` : (botInstalled ? `💾 ${t('botUpdate')}` : `➕ ${t('botInstall')}`)}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   // 📬 بريد الموقع: رسائل نماذج التواصل + ملخّص الزيارات
   const inboxModal = showInboxModal && (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
@@ -1592,6 +1710,10 @@ export default function Dashboard() {
                     </span>
                   )}
                 </button>
+                <button onClick={() => { setShowMobileMenu(false); openBotModal(); }}
+                  style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
+                  <span style={{ fontSize:16 }}>🤖</span> {t('botStudioTitle')}
+                </button>
                 <button onClick={() => { setShowMobileMenu(false); openGalleryModal(); }}
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>🖼️</span> {t('galleryTitle')}
@@ -1714,6 +1836,7 @@ export default function Dashboard() {
         {knowledgeModal}
         {healthModal}
         {inboxModal}
+        {botModal}
         {galleryModal}
         {projectModal}
         {secretsModal}
@@ -1851,9 +1974,9 @@ export default function Dashboard() {
           {isPolishing ? `⏳ ${t('polishing')}` : `✨ ${t('polish')}`}
         </button>
 
-        <button onClick={handleAddBot} disabled={isAddingBot} title={t('addBot')}
+        <button onClick={openBotModal} disabled={isAddingBot} title={t('botStudioTitle')}
           style={{ background:'rgba(139,92,246,0.12)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:7, padding:'5px 12px', color:'#c4b5fd', fontSize:11, fontWeight:700, opacity: isAddingBot ? 0.7 : 1 }}>
-          {isAddingBot ? `⏳ ${t('addingBot')}` : `➕🤖 ${t('addBot')}`}
+          {isAddingBot ? `⏳ ${t('addingBot')}` : `🤖 ${t('addBot')}`}
         </button>
 
         <button onClick={handleDeploy} disabled={isDeploying} title={vercelUrl ? t('redeploy') : t('deploy')}
@@ -2110,6 +2233,7 @@ export default function Dashboard() {
       {knowledgeModal}
       {healthModal}
       {inboxModal}
+      {botModal}
       {galleryModal}
       {projectModal}
       {secretsModal}
