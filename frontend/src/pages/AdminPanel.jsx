@@ -116,6 +116,16 @@ function HealthTab({ api }) {
   }, [api]);
   useEffect(() => { load(); }, [load]);
 
+  // 🔌 فحص حيّ لمزوّدي الذكاء (مفاتيح مقنّعة + رصيد DeepSeek)
+  const [providers, setProviders] = useState(null);
+  const [provBusy, setProvBusy] = useState(false);
+  const checkProviders = async () => {
+    setProvBusy(true);
+    try { const d = await api('/api/admin/ai-providers'); setProviders(d.providers); }
+    catch (e) { setProviders({ _error: e.message }); }
+    setProvBusy(false);
+  };
+
   if (loading) return <Muted>{tr('admScanning')}</Muted>;
   if (err) return <Muted>{err}</Muted>;
   if (!report) return null;
@@ -141,6 +151,34 @@ function HealthTab({ api }) {
             {c.fix && <div style={{ fontSize: 12, color: S.amber, marginTop: 6 }}>↳ {c.fix}</div>}
           </div>
         ))}
+      </div>
+
+      {/* 🔌 مزوّدو الذكاء — فحص حيّ يحسم «المفتاح موجود لكن لا يعمل» */}
+      <div style={{ marginTop: 20 }}>
+        <Header title={tr('admAiProviders')}
+          action={<button onClick={checkProviders} disabled={provBusy} style={{ ...btnPrimary, opacity: provBusy ? 0.6 : 1 }}>{provBusy ? '⏳' : tr('admAiCheck')}</button>} />
+        {providers?._error && <Muted>{providers._error}</Muted>}
+        {providers && !providers._error && (
+          <div style={{ display: 'grid', gap: 10 }}>
+            {[['groq', 'Groq'], ['deepseek', 'DeepSeek'], ['gemini', 'Gemini'], ['openai', 'OpenAI']].map(([id, name]) => {
+              const p = providers[id] || {};
+              const icon = !p.configured ? '⚪' : p.ok ? '✅' : '❌';
+              const color = !p.configured ? S.muted : p.ok ? '#10b981' : '#ef4444';
+              return (
+                <div key={id} style={{ ...cardStyle, padding: 14, borderRight: `3px solid ${color}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span>{icon}</span>
+                    <span style={{ fontWeight: 700, fontSize: 14 }}>{name}</span>
+                    {p.keyTail && <code style={{ fontSize: 11, color: S.muted, direction: 'ltr' }}>{p.keyTail}</code>}
+                  </div>
+                  <div style={{ fontSize: 13, color: S.text, marginTop: 5 }}>
+                    {!p.configured ? tr('admAiNotSet') : p.detail}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

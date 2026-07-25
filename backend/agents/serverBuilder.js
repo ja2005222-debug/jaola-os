@@ -1,5 +1,5 @@
 // backend/agents/serverBuilder.js
-import { groq, deepseek } from './baseAgent.js';
+import { groq, deepseek, DEEPSEEK_MODEL } from './baseAgent.js';
 import { compileSpecToPrompt } from './spec/AgentSpec.js';
 import { serverCraftSpec } from './spec/servercraft.spec.js';
 
@@ -31,7 +31,7 @@ export async function buildServer(instruction, projectId = 'default') {
         console.log(`[ServerCraft] 📝 التعليمات: ${instruction.substring(0, 100)}...`);
 
         // استخدام DeepSeek Coder لتوليد الخادم (أفضل للبرمجة)
-        const model = deepseek ? 'deepseek-coder' : 'llama-3.1-8b-instant';
+        const model = deepseek ? DEEPSEEK_MODEL : 'llama-3.1-8b-instant';
         
         const completion = await ai.chat.completions.create({
             model: model,
@@ -83,7 +83,7 @@ export async function buildServer(instruction, projectId = 'default') {
             try {
                 console.log('[ServerCraft] 🔄 محاولة مع المحرك الاحتياطي...');
                 const fallbackCompletion = await fallbackAI.chat.completions.create({
-                    model: fallbackAI === groq ? 'llama-3.1-8b-instant' : 'deepseek-coder',
+                    model: fallbackAI === groq ? 'llama-3.1-8b-instant' : DEEPSEEK_MODEL,
                     messages: [
                         { role: 'system', content: 'أنت خبير Node.js. ابنِ خادماً كاملاً. استخدم // FILE: <filename> لكل ملف.' },
                         { role: 'user', content: instruction }
@@ -98,7 +98,7 @@ export async function buildServer(instruction, projectId = 'default') {
                 return {
                     success: files.length > 0,
                     agent: 'ServerCraft',
-                    model: fallbackAI === groq ? 'llama-3.1-8b-instant' : 'deepseek-coder',
+                    model: fallbackAI === groq ? 'llama-3.1-8b-instant' : DEEPSEEK_MODEL,
                     fallback: true,
                     files: files,
                     fileCount: files.length

@@ -198,6 +198,9 @@ const STRINGS = {
   tgPublishing: { en: 'Publishing...', ar: 'جاري النشر...' },
   tgPublished: { en: 'Published to your Telegram channel ✓', ar: 'نُشر في قناتك على تيليجرام ✓' },
   tgPublishFail: { en: 'Could not publish.', ar: 'تعذّر النشر.' },
+  admAiProviders: { en: 'AI providers (live check)', ar: 'مزوّدو الذكاء (فحص حيّ)' },
+  admAiCheck: { en: 'Check now', ar: 'افحص الآن' },
+  admAiNotSet: { en: 'Key not set in server environment.', ar: 'المفتاح غير مضبوط في بيئة الخادم.' },
   growMenu: { en: 'Growth', ar: 'النمو' },
   settingsMenu: { en: 'Settings', ar: 'الإعدادات' },
 

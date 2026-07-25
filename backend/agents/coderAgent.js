@@ -1,4 +1,4 @@
-import { deepseek, groq, ai, isPermanentAIError, AI_UNAVAILABLE_MSG } from './baseAgent.js';
+import { deepseek, groq, ai, isPermanentAIError, AI_UNAVAILABLE_MSG, DEEPSEEK_MODEL } from './baseAgent.js';
 import { buildContextPrompt } from './knowledgeEngine.js';
 import { buildLessonsPromptBlock } from '../services/platformLessons.js';
 import { buildBlueprintPrompt } from './referenceBlueprints.js';
@@ -291,7 +291,7 @@ ${filesBlock || '(لا ملفات)'}
 async function callDeepSeek(userMessage, onChunk, systemPrompt = buildCoderSystemPrompt('en')) {
     if (onChunk) {
         const stream = await deepseek.chat.completions.create({
-            model: 'deepseek-coder',
+            model: DEEPSEEK_MODEL,
             messages: [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userMessage }
@@ -313,7 +313,7 @@ async function callDeepSeek(userMessage, onChunk, systemPrompt = buildCoderSyste
     }
 
     const completion = await deepseek.chat.completions.create({
-        model: 'deepseek-coder',
+        model: DEEPSEEK_MODEL,
         messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage }

@@ -35,6 +35,7 @@ import { generateJaolaBot, readBotManifest, buildEmbedBundle } from './agents/ja
 import { mailReady, sendMail, isEmail } from './services/mailer.js';
 import { emailQuota, socialQuota, customAgentsMax, aiImagesQuota } from './services/subscriptionService.js';
 import { aiImagesReady, applyAiImages } from './services/aiImages.js';
+import { checkAiProviders } from './services/aiProviderCheck.js';
 import {
     listAgents, upsertAgent, deleteAgent, getAgent,
     buildAgentSystemPrompt, agentToManifest,
@@ -1928,6 +1929,16 @@ app.use('/api/billing', createBillingRouter({
 // ─── 🩺 مسارات المشرف: فحص النظام + إدارة الإضافات ──────────────────
 app.get('/api/admin/health', verifyToken, adminOnly, (req, res) => {
     res.json({ success: true, report: runSystemDiagnostics() });
+});
+
+// 🔌 فحص حيّ لمزوّدي الذكاء: أيّ مفتاح يُقرأ فعلاً (بذيله المقنّع)، هل يقبل
+// الاستدعاء الآن، ورصيد DeepSeek الفعلي — يحسم «المفتاح موجود لكن لا يعمل»
+app.get('/api/admin/ai-providers', verifyToken, adminOnly, async (req, res) => {
+    try {
+        res.json({ success: true, providers: await checkAiProviders() });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل الفحص: ' + err.message });
+    }
 });
 
 // 📚 ذاكرة دروس المنصة — ما تعلّمته من كل المشاريع (الأكثر تكراراً أولاً)
