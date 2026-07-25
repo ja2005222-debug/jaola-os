@@ -170,9 +170,12 @@ export function useSocket(isAuthenticated, handleAuthError) {
       if (!history?.length) return;
       setChatMessages(prev => {
         if (prev.length > 0) return prev; // لا تُعيد التحميل إذا يوجد رسائل
-        return history.slice(-50).map(msg => ({
-          sender: msg.role === 'user' ? 'user' : 'ai',
-          text: msg.content
+        // آخر 20 فقط (لا جدار نصوص قديم) + مُرسِل موحّد 'assistant' كي تُرسم
+        // الفقاعات بنفس نمط الرسائل الحية تماماً + وسم historic للقفز الفوري
+        return history.slice(-20).map(msg => ({
+          sender: msg.role === 'user' ? 'user' : 'assistant',
+          text: msg.content,
+          historic: true,
         }));
       });
     });
