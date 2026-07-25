@@ -20,7 +20,7 @@ import {
     constructWebhookEvent, interpretWebhookEvent,
 } from '../services/stripeService.js';
 
-export function createBillingRouter({ verifyToken, DB }) {
+export function createBillingRouter({ verifyToken, DB, getBotAiUsed = () => 0 }) {
     const router = express.Router();
 
     // قائمة الخطط — عامة (تُعرض في صفحة الأسعار/الإعدادات)
@@ -35,7 +35,9 @@ export function createBillingRouter({ verifyToken, DB }) {
             const userDoc = await DB.findUser(username);
             const projects = await DB.findUserProjects(username);
             const count = (projects || []).filter(p => p.name !== 'sandbox_app').length;
-            res.json({ success: true, ...getUsage(userDoc, count), stripeEnabled: isStripeConfigured() });
+            let botAiUsed = 0;
+            try { botAiUsed = getBotAiUsed(username) || 0; } catch { /* العدّاد اختياري */ }
+            res.json({ success: true, ...getUsage(userDoc, count, botAiUsed), stripeEnabled: isStripeConfigured() });
         } catch (err) {
             res.status(500).json({ error: 'تعذّر جلب الاشتراك: ' + err.message });
         }

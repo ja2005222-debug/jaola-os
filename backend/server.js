@@ -83,7 +83,8 @@ import { adminOnly, isAdminUser } from './middleware/adminOnly.js';
 import { orchestrator } from './core/PluginOrchestrator.js';
 import { runSystemDiagnostics } from './agents/systemDoctorAgent.js';
 import * as adminSvc from './services/adminService.js';
-import { canCreateProject } from './services/subscriptionService.js';
+import { canCreateProject, botAiQuota } from './services/subscriptionService.js';
+import { getUsageCount, bumpUsage } from './services/usageMeter.js';
 import { createBillingRouter } from './routes/billing.js';
 import { topLessons } from './services/platformLessons.js';
 import { setStateEmitter } from './agents/stateMachine.js';
@@ -288,6 +289,8 @@ const OFFLINE_GH_TOKENS = new Map();
 
 // ─── مسارات الـ workspace على القرص ─────────────────────────────────
 const BASE_WORKSPACE = path.resolve(__dirname, '../workspace');
+// 📊 عدّادات الاستهلاك الشهرية المقيسة بالخطط (رسائل ذكاء البوت...)
+const USAGE_DIR = path.join(BASE_WORKSPACE, '.usage');
 if (!fs.existsSync(BASE_WORKSPACE)) fs.mkdirSync(BASE_WORKSPACE);
 
 const getProjectPath = (username, activeProject) => {
@@ -982,6 +985,16 @@ app.post('/api/jaola-bot/chat', botChatLimit, async (req, res) => {
         const claims = verifyBotToken(token);
         if (!claims || !claims.p) return res.status(401).json({ reply: null });
 
+        // 💳 حصة الذكاء الحيّ الشهرية لصاحب الموقع — عند النفاد يرتدّ الودجت
+        // لقاعدته الداخلية بصمت (الزائر لا يرى انقطاعاً، والمالك يرقّي خطته)
+        if (claims.u) {
+            const owner = await DB.findUser(claims.u).catch(() => null);
+            const quota = botAiQuota(owner);
+            if (Number.isFinite(quota.monthly) && getUsageCount(USAGE_DIR, claims.u, 'botAi') >= quota.monthly) {
+                return res.json({ reply: null, quota: 'exhausted' });
+            }
+        }
+
         const brand = (claims.b || claims.p).toString().slice(0, 40);
         const msg = message.trim().slice(0, 500);
         const system = `أنت مساعد خدمة عملاء لموقع «${brand}». أجب بإيجاز واحترافية وبنفس لغة الزائر (عربي أو إنجليزي حسب سؤاله). التزم بنطاق الموقع وخدماته، ولا تختلق معلومات أو أسعاراً؛ إن لم تكن متأكّداً، اقترح بلطف التواصل المباشر مع الموقع.`;
@@ -989,7 +1002,11 @@ app.post('/api/jaola-bot/chat', botChatLimit, async (req, res) => {
             [{ role: 'system', content: system }, { role: 'user', content: msg }],
             { max_tokens: 300, temperature: 0.4 }
         );
-        res.json({ reply: (reply || '').toString().trim() || null });
+        const finalReply = (reply || '').toString().trim() || null;
+        if (finalReply && claims.u) {
+            try { bumpUsage(USAGE_DIR, claims.u, 'botAi'); } catch { /* العدّ لا يُسقط الرد */ }
+        }
+        res.json({ reply: finalReply });
     } catch {
         res.status(200).json({ reply: null });
     }
@@ -1544,7 +1561,10 @@ app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) 
 // ─── 💳 مسارات الاشتراكات والدفع (Stripe) — مستخرجة إلى routes/billing.js
 // (أول قطعة من التفكيك التزايدي لـ server.js؛ raw middleware للـ webhook
 // يبقى مسجلاً أعلاه قبل express.json لأن الترتيب هو ما يحميه)
-app.use('/api/billing', createBillingRouter({ verifyToken, DB }));
+app.use('/api/billing', createBillingRouter({
+    verifyToken, DB,
+    getBotAiUsed: (username) => getUsageCount(USAGE_DIR, username, 'botAi'),
+}));
 
 // ─── 🩺 مسارات المشرف: فحص النظام + إدارة الإضافات ──────────────────
 app.get('/api/admin/health', verifyToken, adminOnly, (req, res) => {

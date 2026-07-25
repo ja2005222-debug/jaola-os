@@ -37,9 +37,10 @@ export function getUserSubscription(userDoc) {
  * استهلاك المستخدم. projectCount يُمرَّر من طبقة أعلى (تعدّها من DB) كي
  * يبقى هذا الملف خالياً من الاعتماديات.
  */
-export function getUsage(userDoc, projectCount = 0) {
+export function getUsage(userDoc, projectCount = 0, botAiUsed = 0) {
     const { planId, limits, status, currentPeriodEnd } = getUserSubscription(userDoc);
     const limit = limits.projects;
+    const botLimit = limits.botAiMessages ?? 0;
     return {
         planId,
         status,
@@ -49,6 +50,12 @@ export function getUsage(userDoc, projectCount = 0) {
             limit: limit === UNLIMITED ? null : limit,
             remaining: limit === UNLIMITED ? null : Math.max(0, limit - projectCount),
             unlimited: limit === UNLIMITED,
+        },
+        botAi: {
+            used: botAiUsed,
+            limit: botLimit === UNLIMITED ? null : botLimit,
+            remaining: botLimit === UNLIMITED ? null : Math.max(0, botLimit - botAiUsed),
+            unlimited: botLimit === UNLIMITED,
         },
         features: {
             autoDeploy: limits.autoDeploy,
@@ -77,4 +84,13 @@ export function canCreateProject(userDoc, currentProjectCount = 0) {
 export function hasFeature(userDoc, feature) {
     const { limits } = getUserSubscription(userDoc);
     return !!limits[feature];
+}
+
+/**
+ * حصة ذكاء البوت الحيّ الشهرية لصاحب الموقع (Infinity = بلا حدود).
+ * userDoc غائب (offline أو غير موجود) → حصة الخطة المجانية.
+ */
+export function botAiQuota(userDoc) {
+    const { limits, planId } = getUserSubscription(userDoc);
+    return { planId, monthly: limits.botAiMessages ?? 0 };
 }
