@@ -46,6 +46,26 @@ test('المفتاح المرفوض والرصيد المنتهي والشبكة
     assert.ok(!r.openai.ok && /تعذّر الوصول/.test(r.openai.detail));
 });
 
+test('فحص Gemini يكشف نماذج الصور المتاحة على المفتاح — أو يحذّر لو لا شيء من سلّمنا', async () => {
+    const env = { GEMINI_API_KEY: 'AIzaTest1234' };
+    const listOf = (names) => ({ ok: true, status: 200, json: async () => ({ models: names.map(n => ({ name: `models/${n}` })) }) });
+
+    const withImage = await checkAiProviders({
+        env,
+        fetchImpl: async (url) => url.includes('generativelanguage') ? listOf(['gemini-2.5-pro', 'gemini-2.5-flash-image']) : { ok: false, status: 500, json: async () => ({}) },
+    });
+    assert.ok(withImage.gemini.ok);
+    assert.deepEqual(withImage.gemini.imageModels, ['gemini-2.5-flash-image']);
+    assert.ok(withImage.gemini.detail.includes('نماذج الصور المتاحة: gemini-2.5-flash-image'));
+
+    const noImage = await checkAiProviders({
+        env,
+        fetchImpl: async (url) => url.includes('generativelanguage') ? listOf(['gemini-2.5-pro']) : { ok: false, status: 500, json: async () => ({}) },
+    });
+    assert.deepEqual(noImage.gemini.imageModels, []);
+    assert.ok(/لا يظهر أي نموذج صور/.test(noImage.gemini.detail), 'تحذير واضح حين لا نموذج صور على المفتاح');
+});
+
 test('موديل DeepSeek ملغى يُكشف فوراً باقتراح المدعوم، وخطأ الموديل يصنَّف دائماً', async () => {
     const env = { DEEPSEEK_API_KEY: 'd'.repeat(20), DEEPSEEK_MODEL_TEST: '1' };
     const fetchImpl = async (url) => {

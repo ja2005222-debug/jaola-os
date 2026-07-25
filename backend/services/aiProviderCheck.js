@@ -7,6 +7,7 @@
  */
 
 import { DEEPSEEK_MODEL } from '../agents/baseAgent.js';
+import { GEMINI_IMAGE_MODELS } from './aiImages.js';
 
 const mask = (key) => (key ? `…${String(key).slice(-4)}` : null);
 
@@ -67,11 +68,24 @@ export async function checkAiProviders(deps = {}) {
         }
     }
 
-    // ── Gemini ──
+    // ── Gemini: صلاحية المفتاح + أيّ نماذج صور متاحة عليه فعلاً ──
     if (!env.GEMINI_API_KEY) out.gemini = { configured: false };
     else {
-        const p = await probe(fetchImpl, `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(env.GEMINI_API_KEY)}`);
-        out.gemini = { configured: true, keyTail: mask(env.GEMINI_API_KEY), ok: p.ok, detail: p.ok ? 'يعمل' : fail(p, 'Google AI Studio') };
+        const p = await probe(fetchImpl, `https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000&key=${encodeURIComponent(env.GEMINI_API_KEY)}`);
+        if (p.ok) {
+            const names = (p.body?.models || []).map(m => String(m.name || '').replace(/^models\//, ''));
+            const ladder = env.IMAGE_MODEL_GEMINI ? [env.IMAGE_MODEL_GEMINI] : GEMINI_IMAGE_MODELS;
+            const imageModels = ladder.filter(m => names.includes(m));
+            out.gemini = {
+                configured: true, keyTail: mask(env.GEMINI_API_KEY), ok: true, imageModels,
+                detail: `يعمل (${names.length} موديلاً)` + (names.length === 0 ? ''
+                    : imageModels.length
+                        ? ` — نماذج الصور المتاحة: ${imageModels.join('، ')}`
+                        : ` — ⚠️ لا يظهر أي نموذج صور من سلّمنا (${ladder.join('، ')}) على هذا المفتاح`),
+            };
+        } else {
+            out.gemini = { configured: true, keyTail: mask(env.GEMINI_API_KEY), ok: false, detail: fail(p, 'Google AI Studio') };
+        }
     }
 
     // ── OpenAI ──
