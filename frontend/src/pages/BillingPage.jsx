@@ -118,10 +118,20 @@ export default function BillingPage({ onExit }) {
                   <Metric label={t('billingMaxLimit')} value={sub.projects.unlimited ? t('billingUnlimited') : sub.projects.limit} />
                   <Metric label={t('billingRemaining')} value={sub.projects.unlimited ? '∞' : sub.projects.remaining} />
                   <Metric label={t('billingAutoDeploy')} value={sub.features.autoDeploy ? t('billingEnabled') : t('billingNotAvailable')} />
+                  {sub.botAi && (
+                    <Metric label={t('billingBotAi')}
+                      value={sub.botAi.unlimited ? '∞' : `${sub.botAi.used} / ${sub.botAi.limit}`} />
+                  )}
                 </div>
                 {!sub.projects.unlimited && (
                   <div style={{ marginTop: 16, height: 8, background: '#1e293b', borderRadius: 5, overflow: 'hidden' }}>
                     <div style={{ height: '100%', width: `${Math.min(100, (sub.projects.used / (sub.projects.limit || 1)) * 100)}%`, background: 'linear-gradient(90deg,#3b82f6,#8b5cf6)' }} />
+                  </div>
+                )}
+                {sub.botAi && !sub.botAi.unlimited && (
+                  <div style={{ marginTop: 8, height: 8, background: '#1e293b', borderRadius: 5, overflow: 'hidden' }}
+                    title={t('billingBotAi')}>
+                    <div style={{ height: '100%', width: `${Math.min(100, (sub.botAi.used / (sub.botAi.limit || 1)) * 100)}%`, background: 'linear-gradient(90deg,#8b5cf6,#ec4899)' }} />
                   </div>
                 )}
                 {currentPlan !== 'free' && (

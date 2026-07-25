@@ -23,13 +23,14 @@ export const PLANS = {
         stripePriceId: null,               // مجانية — لا Checkout
         limits: {
             projects: 5,
+            botAiMessages: 30,             // ذكاء البوت الحيّ: عيّنة تذوّق شهرية
             autoDeploy: false,
             prioritySupport: false,
             customAgents: false,
             privateHosting: false,
         },
-        featuresAr: ['حتى 5 مشاريع', 'القوالب الأساسية', 'دعم عبر المجتمع'],
-        featuresEn: ['Up to 5 projects', 'Core templates', 'Community support'],
+        featuresAr: ['حتى 5 مشاريع', 'القوالب الأساسية', 'مساعد الموقع (قاعدة داخلية + 30 رسالة ذكاء/شهر)', 'دعم عبر المجتمع'],
+        featuresEn: ['Up to 5 projects', 'Core templates', 'Site assistant (built-in KB + 30 AI msgs/mo)', 'Community support'],
     },
     pro: {
         id: 'pro',
@@ -40,13 +41,14 @@ export const PLANS = {
         stripePriceEnv: 'STRIPE_PRICE_PRO',
         limits: {
             projects: UNLIMITED,
+            botAiMessages: 2000,           // ذكاء البوت الحيّ لكل مواقع المستخدم شهرياً
             autoDeploy: true,
             prioritySupport: true,
             customAgents: false,
             privateHosting: false,
         },
-        featuresAr: ['مشاريع غير محدودة', 'نشر تلقائي', 'دعم أولوية', 'كل القوالب المتقدمة'],
-        featuresEn: ['Unlimited projects', 'Auto deploy', 'Priority support', 'All advanced templates'],
+        featuresAr: ['مشاريع غير محدودة', 'نشر تلقائي', 'مساعد الموقع بذكاء حيّ (2000 رسالة/شهر)', 'دعم أولوية', 'كل القوالب المتقدمة'],
+        featuresEn: ['Unlimited projects', 'Auto deploy', 'AI site assistant (2000 msgs/mo)', 'Priority support', 'All advanced templates'],
     },
     enterprise: {
         id: 'enterprise',
@@ -57,13 +59,14 @@ export const PLANS = {
         stripePriceEnv: 'STRIPE_PRICE_ENTERPRISE',
         limits: {
             projects: UNLIMITED,
+            botAiMessages: UNLIMITED,
             autoDeploy: true,
             prioritySupport: true,
             customAgents: true,
             privateHosting: true,
         },
-        featuresAr: ['كل مزايا Pro', 'وكلاء مخصّصون', 'استضافة خاصة', 'مدير حساب مخصص'],
-        featuresEn: ['Everything in Pro', 'Custom agents', 'Private hosting', 'Dedicated account manager'],
+        featuresAr: ['كل مزايا Pro', 'ذكاء البوت بلا حدود', 'وكلاء مخصّصون', 'استضافة خاصة', 'مدير حساب مخصص'],
+        featuresEn: ['Everything in Pro', 'Unlimited bot AI', 'Custom agents', 'Private hosting', 'Dedicated account manager'],
     },
 };
 
@@ -105,6 +108,7 @@ export function publicPlans() {
         limits: {
             ...p.limits,
             projects: p.limits.projects === UNLIMITED ? null : p.limits.projects,
+            botAiMessages: p.limits.botAiMessages === UNLIMITED ? null : p.limits.botAiMessages,
         },
     }));
 }
