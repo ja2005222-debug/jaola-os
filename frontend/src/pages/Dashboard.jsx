@@ -615,6 +615,49 @@ export default function Dashboard() {
     setHealthLoading(false);
   };
 
+  // 📣 المساعد التسويقي — أسبوع منشورات من محتوى الموقع + مسودّات ردود
+  const [showMarketingModal, setShowMarketingModal] = useState(false);
+  const [mkPosts, setMkPosts] = useState(null);
+  const [mkLoading, setMkLoading] = useState(false);
+  const [copiedPost, setCopiedPost] = useState(null);
+  const [inboxDrafts, setInboxDrafts] = useState({});
+
+  const generatePosts = async () => {
+    setMkLoading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/marketing/posts`, {
+        method: 'POST', headers: getHeaders(),
+        body: JSON.stringify({ project: activeProject, lang: uiLang }),
+      });
+      const d = await res.json().catch(() => ({}));
+      setMkPosts(res.ok && d.success ? d : { error: d.error || true });
+    } catch { setMkPosts({ error: true }); }
+    setMkLoading(false);
+  };
+  const openMarketingModal = () => { setShowMarketingModal(true); setMkPosts(null); generatePosts(); };
+
+  const copyPost = (i, p) => {
+    const text = `${p.text}\n\n${(p.hashtags || []).join(' ')}`;
+    navigator.clipboard?.writeText(text).catch(() => {});
+    setCopiedPost(i);
+    setTimeout(() => setCopiedPost(null), 1500);
+  };
+
+  const draftReply = async (m) => {
+    const id = m.id || m.at;
+    setInboxDrafts(dr => ({ ...dr, [id]: { loading: true } }));
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/marketing/reply-draft`, {
+        method: 'POST', headers: getHeaders(),
+        body: JSON.stringify({ project: activeProject, name: m.name, message: m.message, lang: uiLang }),
+      });
+      const d = await res.json().catch(() => ({}));
+      setInboxDrafts(dr => ({ ...dr, [id]: { loading: false, text: (res.ok && d.draft) || '' } }));
+    } catch {
+      setInboxDrafts(dr => ({ ...dr, [id]: { loading: false, text: '' } }));
+    }
+  };
+
   // 📬 بريد الموقع — رسائل «تواصل معنا» من الموقع المنشور + عدّاد الزيارات
   const openInboxModal = async () => {
     setShowInboxModal(true);
@@ -1279,6 +1322,57 @@ export default function Dashboard() {
     </div>
   );
 
+  // 📣 المساعد التسويقي — أسبوع منشورات جاهزة للنسخ بصور بهوية العلامة
+  const marketingModal = showMarketingModal && (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
+      onClick={e => e.target === e.currentTarget && setShowMarketingModal(false)}>
+      <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:'22px 20px', width:'min(640px, 100%)', maxHeight:'90dvh', overflowY:'auto' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+          <h3 style={{ color:'#fff', fontSize:15, fontWeight:800 }}>📣 {t('mkTitle')}</h3>
+          <button onClick={() => setShowMarketingModal(false)}
+            style={{ background:'transparent', border:'none', color:S.muted, fontSize:20, cursor:'pointer', lineHeight:1 }}>×</button>
+        </div>
+        <p style={{ color:S.muted, fontSize:11, marginBottom:14 }}>{t('mkSub')}</p>
+
+        {mkLoading && <p style={{ color:S.muted, fontSize:13 }}>⏳ {t('mkGenerating')}</p>}
+        {!mkLoading && mkPosts?.error && <p style={{ color:S.danger, fontSize:13 }}>{typeof mkPosts.error === 'string' ? mkPosts.error : t('serverUnreachable')}</p>}
+
+        {!mkLoading && mkPosts && !mkPosts.error && (
+          <>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+              <span style={{ fontSize:10, color: mkPosts.ai ? '#a78bfa' : '#38bdf8', fontWeight:800, background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:5, padding:'2px 8px' }}>
+                {mkPosts.ai ? `✨ ${t('mkAiMade')}` : `⚡ ${t('mkPlanMade')}`}
+              </span>
+              <button onClick={generatePosts}
+                style={{ marginInlineStart:'auto', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.25)', borderRadius:7, padding:'4px 12px', color:'#7dd3fc', fontSize:11, fontWeight:700, cursor:'pointer' }}>
+                🔄 {t('mkRegenerate')}
+              </button>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              {(mkPosts.posts || []).map((p, i) => (
+                <div key={i} style={{ display:'flex', gap:12, background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:11, padding:'12px' }}>
+                  <img alt="" src={`data:image/svg+xml;utf8,${encodeURIComponent(p.svg || '')}`}
+                    style={{ width:72, height:72, borderRadius:9, flexShrink:0, objectFit:'cover' }} />
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <span style={{ fontSize:10, color:'#60a5fa', fontWeight:800 }}>{p.day}</span>
+                      <button onClick={() => copyPost(i, p)}
+                        style={{ marginInlineStart:'auto', background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)', borderRadius:6, padding:'2px 10px', color:'#34d399', fontSize:10, fontWeight:700, cursor:'pointer' }}>
+                        {copiedPost === i ? `✓ ${t('msgCopied')}` : `📋 ${t('msgCopy')}`}
+                      </button>
+                    </div>
+                    <div style={{ color:'#e2e8f0', fontSize:12, marginTop:5, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{p.text}</div>
+                    <div style={{ color:'#818cf8', fontSize:11, marginTop:4, direction:'ltr', textAlign:'start' }}>{(p.hashtags || []).join(' ')}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   // 🤖 استوديو مساعد الموقع — نموذج التخصيص الكامل
   const botInput = { width:'100%', background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 10px', color:'#e2e8f0', fontSize:12, outline:'none' };
   const botLabel = { display:'block', fontSize:10, color:S.muted, fontWeight:700, marginBottom:4, letterSpacing:'0.5px' };
@@ -1419,6 +1513,26 @@ export default function Dashboard() {
                   </div>
                   <div style={{ color:'#94a3b8', fontSize:12, marginTop:5, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{m.message}</div>
                   {m.page && <div style={{ color:'#334155', fontSize:10, marginTop:4, direction:'ltr' }}>{m.page}</div>}
+                  {(() => {
+                    const dr = inboxDrafts[m.id || m.at];
+                    if (!dr) return (
+                      <button onClick={() => draftReply(m)}
+                        style={{ marginTop:8, background:'rgba(139,92,246,0.08)', border:'1px solid rgba(139,92,246,0.25)', borderRadius:7, padding:'4px 12px', color:'#c4b5fd', fontSize:10, fontWeight:700, cursor:'pointer' }}>
+                        ✍️ {t('inboxDraftReply')}
+                      </button>
+                    );
+                    if (dr.loading) return <div style={{ marginTop:8, color:S.muted, fontSize:11 }}>⏳ {t('inboxDrafting')}</div>;
+                    if (!dr.text) return <div style={{ marginTop:8, color:'#f87171', fontSize:11 }}>{t('serverUnreachable')}</div>;
+                    return (
+                      <div style={{ marginTop:8, background:'rgba(139,92,246,0.05)', border:'1px solid rgba(139,92,246,0.2)', borderRadius:9, padding:'10px' }}>
+                        <div style={{ color:'#c4b5fd', fontSize:11, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{dr.text}</div>
+                        <button onClick={() => { navigator.clipboard?.writeText(dr.text).catch(() => {}); addNotification(t('msgCopied'), 'success'); }}
+                          style={{ marginTop:8, background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)', borderRadius:6, padding:'3px 12px', color:'#34d399', fontSize:10, fontWeight:700, cursor:'pointer' }}>
+                          📋 {t('msgCopy')}
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
@@ -1710,6 +1824,10 @@ export default function Dashboard() {
                     </span>
                   )}
                 </button>
+                <button onClick={() => { setShowMobileMenu(false); openMarketingModal(); }}
+                  style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
+                  <span style={{ fontSize:16 }}>📣</span> {t('mkTitle')}
+                </button>
                 <button onClick={() => { setShowMobileMenu(false); openBotModal(); }}
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>🤖</span> {t('botStudioTitle')}
@@ -1837,6 +1955,7 @@ export default function Dashboard() {
         {healthModal}
         {inboxModal}
         {botModal}
+        {marketingModal}
         {galleryModal}
         {projectModal}
         {secretsModal}
@@ -1931,6 +2050,12 @@ export default function Dashboard() {
         <button onClick={openHealthModal} title={t('healthTitle')}
           style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(34,197,94,0.08)', border:'1px solid rgba(34,197,94,0.22)', borderRadius:7, padding:'5px 12px', color:'#4ade80', fontSize:11, fontWeight:700 }}>
           🩺 {t('healthTitle')}
+        </button>
+
+        {/* المساعد التسويقي */}
+        <button onClick={openMarketingModal} title={t('mkTitle')}
+          style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(236,72,153,0.08)', border:'1px solid rgba(236,72,153,0.25)', borderRadius:7, padding:'5px 12px', color:'#f9a8d4', fontSize:11, fontWeight:700 }}>
+          📣 {t('mkTitle')}
         </button>
 
         {/* بريد الموقع (رسائل التواصل + الزيارات) */}
@@ -2234,6 +2359,7 @@ export default function Dashboard() {
       {healthModal}
       {inboxModal}
       {botModal}
+      {marketingModal}
       {galleryModal}
       {projectModal}
       {secretsModal}

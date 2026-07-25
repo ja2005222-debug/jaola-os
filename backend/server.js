@@ -32,6 +32,7 @@ import {
 } from './agents/index.js';
 import { generatePWA } from './agents/pwaAgent.js';
 import { generateJaolaBot, readBotManifest } from './agents/jaolaBot.js';
+import { generateSocialPosts, draftInboxReply, extractSiteFacts } from './agents/marketingAgent.js';
 import { signBotToken, verifyBotToken } from './agents/jaolaBotToken.js';
 import { smartChat } from './agents/baseAgent.js';
 import { generateBackend, generateFrontendAPIIntegration } from './agents/backendAgent.js';
@@ -929,6 +930,32 @@ app.post('/api/pwa/generate', verifyToken, validateProjectOwnership, async (req,
         });
     } catch (err) {
         res.status(500).json({ error: 'فشل توليد التطبيق: ' + err.message });
+    }
+});
+
+// 📣 المساعد التسويقي: أسبوع منشورات سوشيال من محتوى الموقع الفعلي
+// (ذكاء أولاً + ارتداد حتمي كامل — يعمل حتى مع تعطّل المزوّد)
+app.post('/api/marketing/posts', verifyToken, aiLimit, validateProjectOwnership, async (req, res) => {
+    try {
+        const lang = (req.body?.lang === 'en' || req.body?.lang === 'ar') ? req.body.lang : (langOf(req.user.username) || 'ar');
+        const result = await generateSocialPosts(req.projectPath, { lang, goal: req.activeProject });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        res.status(500).json({ error: 'تعذّر توليد المنشورات: ' + err.message });
+    }
+});
+
+// 📣 مسودّة ردّ على رسالة من صندوق النماذج
+app.post('/api/marketing/reply-draft', verifyToken, aiLimit, validateProjectOwnership, async (req, res) => {
+    try {
+        const { name, message } = req.body || {};
+        if (!message || typeof message !== 'string') return res.status(400).json({ error: 'الرسالة مطلوبة' });
+        const lang = (req.body?.lang === 'en' || req.body?.lang === 'ar') ? req.body.lang : (langOf(req.user.username) || 'ar');
+        const brand = extractSiteFacts(req.projectPath).brand;
+        const result = await draftInboxReply({ brand, name, message, lang });
+        res.json({ success: true, ...result });
+    } catch (err) {
+        res.status(500).json({ error: 'تعذّر توليد المسودّة: ' + err.message });
     }
 });
 
