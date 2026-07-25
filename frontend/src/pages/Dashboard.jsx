@@ -624,6 +624,60 @@ export default function Dashboard() {
   const [copiedPost, setCopiedPost] = useState(null);
   const [inboxDrafts, setInboxDrafts] = useState({});
 
+  const [tgStatus, setTgStatus] = useState(null);
+  const [tgShowSetup, setTgShowSetup] = useState(false);
+  const [tgForm, setTgForm] = useState({ botToken: '', chatId: '' });
+  const [tgBusy, setTgBusy] = useState(false);
+  const [tgPublishing, setTgPublishing] = useState(null);
+
+  const fetchTgStatus = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/social/telegram/status`, { headers: getHeaders() });
+      const d = await res.json().catch(() => ({}));
+      setTgStatus(res.ok ? d : { configured: false });
+    } catch { setTgStatus({ configured: false }); }
+  };
+
+  const saveTgSetup = async () => {
+    if (tgBusy) return;
+    setTgBusy(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/social/telegram/setup`, {
+        method: 'POST', headers: getHeaders(),
+        body: JSON.stringify({ botToken: tgForm.botToken.trim(), chatId: tgForm.chatId.trim() }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.success) {
+        addNotification(`✈️ ${t('tgConnected')} ${d.botName}`, 'success');
+        setTgShowSetup(false); setTgForm({ botToken: '', chatId: '' });
+        fetchTgStatus();
+      } else addNotification(`❌ ${d.error || t('serverUnreachable')}`, 'info');
+    } catch { addNotification(`❌ ${t('serverUnreachable')}`, 'info'); }
+    setTgBusy(false);
+  };
+
+  const disconnectTg = async () => {
+    try {
+      await fetch(`${BACKEND_URL}/api/social/telegram`, { method: 'DELETE', headers: getHeaders() });
+      setTgStatus({ configured: false });
+    } catch {}
+  };
+
+  const publishToTg = async (i, p) => {
+    if (tgPublishing != null) return;
+    setTgPublishing(i);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/social/telegram/publish`, {
+        method: 'POST', headers: getHeaders(),
+        body: JSON.stringify({ text: `${p.text}\n\n${(p.hashtags || []).join(' ')}` }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.success) addNotification(t('tgPublished'), 'success');
+      else addNotification(`❌ ${d.error || t('tgPublishFail')}`, 'info');
+    } catch { addNotification(`❌ ${t('tgPublishFail')}`, 'info'); }
+    setTgPublishing(null);
+  };
+
   const generatePosts = async () => {
     setMkLoading(true);
     try {
@@ -636,7 +690,7 @@ export default function Dashboard() {
     } catch { setMkPosts({ error: true }); }
     setMkLoading(false);
   };
-  const openMarketingModal = () => { setShowMarketingModal(true); setMkPosts(null); generatePosts(); };
+  const openMarketingModal = () => { setShowMarketingModal(true); setMkPosts(null); generatePosts(); fetchTgStatus(); };
 
   const copyPost = (i, p) => {
     const text = `${p.text}\n\n${(p.hashtags || []).join(' ')}`;
@@ -1358,15 +1412,46 @@ export default function Dashboard() {
 
         {!mkLoading && mkPosts && !mkPosts.error && (
           <>
-            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10, flexWrap:'wrap' }}>
               <span style={{ fontSize:10, color: mkPosts.ai ? '#a78bfa' : '#38bdf8', fontWeight:800, background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:5, padding:'2px 8px' }}>
                 {mkPosts.ai ? `✨ ${t('mkAiMade')}` : `⚡ ${t('mkPlanMade')}`}
               </span>
+              {tgStatus?.configured ? (
+                <span style={{ fontSize:10, color:'#38bdf8', fontWeight:700, background:'rgba(56,189,248,0.07)', border:'1px solid rgba(56,189,248,0.2)', borderRadius:5, padding:'2px 8px' }}>
+                  ✈️ {tgStatus.botName || 'bot'} ← <span style={{ direction:'ltr', display:'inline-block' }}>{tgStatus.chatId}</span>
+                  <button onClick={disconnectTg} title={t('tgDisconnect')}
+                    style={{ background:'transparent', border:'none', color:'#64748b', fontSize:10, cursor:'pointer', marginInlineStart:5 }}>✕</button>
+                </span>
+              ) : (
+                <button onClick={() => setTgShowSetup(v => !v)}
+                  style={{ fontSize:10, color:'#7dd3fc', fontWeight:700, background:'rgba(56,189,248,0.07)', border:'1px dashed rgba(56,189,248,0.3)', borderRadius:5, padding:'2px 10px', cursor:'pointer' }}>
+                  ✈️ {t('tgConnect')}
+                </button>
+              )}
               <button onClick={generatePosts}
                 style={{ marginInlineStart:'auto', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.25)', borderRadius:7, padding:'4px 12px', color:'#7dd3fc', fontSize:11, fontWeight:700, cursor:'pointer' }}>
                 🔄 {t('mkRegenerate')}
               </button>
             </div>
+
+            {/* ⚙️ ربط قناة تيليجرام (توكن BotFather + معرّف القناة) */}
+            {tgShowSetup && !tgStatus?.configured && (
+              <div style={{ background:'rgba(56,189,248,0.04)', border:'1px solid rgba(56,189,248,0.18)', borderRadius:10, padding:'12px', marginBottom:12 }}>
+                <div style={{ color:S.muted, fontSize:10, marginBottom:8 }}>{t('tgSetupHint')}</div>
+                <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                  <input value={tgForm.botToken} placeholder={t('tgBotToken')} type="password"
+                    onChange={e => setTgForm(f => ({ ...f, botToken: e.target.value }))}
+                    style={{ flex:2, minWidth:180, background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:8, padding:'7px 10px', color:'#e2e8f0', fontSize:11, direction:'ltr' }} />
+                  <input value={tgForm.chatId} placeholder="@mychannel"
+                    onChange={e => setTgForm(f => ({ ...f, chatId: e.target.value }))}
+                    style={{ flex:1, minWidth:120, background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:8, padding:'7px 10px', color:'#e2e8f0', fontSize:11, direction:'ltr' }} />
+                  <button onClick={saveTgSetup} disabled={tgBusy}
+                    style={{ background:'rgba(56,189,248,0.12)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:8, padding:'7px 16px', color:'#7dd3fc', fontSize:11, fontWeight:700, cursor:'pointer', opacity: tgBusy ? 0.6 : 1 }}>
+                    {tgBusy ? '⏳' : t('tgSave')}
+                  </button>
+                </div>
+              </div>
+            )}
             <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
               {(mkPosts.posts || []).map((p, i) => (
                 <div key={i} style={{ display:'flex', gap:12, background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:11, padding:'12px' }}>
@@ -1375,10 +1460,18 @@ export default function Dashboard() {
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                       <span style={{ fontSize:10, color:'#60a5fa', fontWeight:800 }}>{p.day}</span>
-                      <button onClick={() => copyPost(i, p)}
-                        style={{ marginInlineStart:'auto', background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)', borderRadius:6, padding:'2px 10px', color:'#34d399', fontSize:10, fontWeight:700, cursor:'pointer' }}>
-                        {copiedPost === i ? `✓ ${t('msgCopied')}` : `📋 ${t('msgCopy')}`}
-                      </button>
+                      <div style={{ marginInlineStart:'auto', display:'flex', gap:5 }}>
+                        {tgStatus?.configured && (
+                          <button onClick={() => publishToTg(i, p)} disabled={tgPublishing != null}
+                            style={{ background:'rgba(56,189,248,0.08)', border:'1px solid rgba(56,189,248,0.25)', borderRadius:6, padding:'2px 10px', color:'#7dd3fc', fontSize:10, fontWeight:700, cursor:'pointer', opacity: tgPublishing != null ? 0.6 : 1 }}>
+                            {tgPublishing === i ? `⏳ ${t('tgPublishing')}` : `✈️ ${t('tgPublish')}`}
+                          </button>
+                        )}
+                        <button onClick={() => copyPost(i, p)}
+                          style={{ background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)', borderRadius:6, padding:'2px 10px', color:'#34d399', fontSize:10, fontWeight:700, cursor:'pointer' }}>
+                          {copiedPost === i ? `✓ ${t('msgCopied')}` : `📋 ${t('msgCopy')}`}
+                        </button>
+                      </div>
                     </div>
                     <div style={{ color:'#e2e8f0', fontSize:12, marginTop:5, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{p.text}</div>
                     <div style={{ color:'#818cf8', fontSize:11, marginTop:4, direction:'ltr', textAlign:'start' }}>{(p.hashtags || []).join(' ')}</div>

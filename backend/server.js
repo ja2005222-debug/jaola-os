@@ -33,7 +33,11 @@ import {
 import { generatePWA } from './agents/pwaAgent.js';
 import { generateJaolaBot, readBotManifest, buildEmbedBundle } from './agents/jaolaBot.js';
 import { mailReady, sendMail, isEmail } from './services/mailer.js';
-import { emailQuota } from './services/subscriptionService.js';
+import { emailQuota, socialQuota } from './services/subscriptionService.js';
+import {
+    readTelegramConfig, saveTelegramConfig, deleteTelegramConfig,
+    checkTelegramToken, sendTelegramMessage, validBotToken as isTgToken, validChatId as isTgChat,
+} from './services/telegramPublisher.js';
 import { generateSocialPosts, draftInboxReply, extractSiteFacts } from './agents/marketingAgent.js';
 import { signBotToken, verifyBotToken } from './agents/jaolaBotToken.js';
 import { smartChat } from './agents/baseAgent.js';
@@ -963,6 +967,51 @@ app.post('/api/marketing/reply-draft', verifyToken, aiLimit, validateProjectOwne
 
 const publicBaseOf = (req) => (process.env.PUBLIC_BACKEND_URL || process.env.RENDER_EXTERNAL_URL
     || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+
+// ═══════════════════════════════════════════════════════════════════
+// ✈️ النشر المباشر — تيليجرام (وكلاء القنوات، الجولة ٣ أ)
+//    التوكن مشفّر في ملف تكاملات المستخدم ولا يُعاد للواجهة أبداً.
+// ═══════════════════════════════════════════════════════════════════
+const INTEG_DIR = path.join(BASE_WORKSPACE, '.integrations');
+
+app.get('/api/social/telegram/status', verifyToken, (req, res) => {
+    res.json({ success: true, ...readTelegramConfig(INTEG_DIR, req.user.username) });
+});
+
+app.post('/api/social/telegram/setup', verifyToken, async (req, res) => {
+    const { botToken, chatId } = req.body || {};
+    if (!isTgToken(botToken)) return res.status(400).json({ error: 'صيغة توكن البوت غير صحيحة (من @BotFather).' });
+    if (!isTgChat(chatId)) return res.status(400).json({ error: 'معرّف القناة غير صالح — مثل ‎@mychannel أو رقم المحادثة.' });
+    const check = await checkTelegramToken(String(botToken).trim());
+    if (check.error) return res.status(400).json({ error: check.error });
+    saveTelegramConfig(INTEG_DIR, req.user.username, { botToken, chatId, botName: check.botName });
+    res.json({ success: true, botName: check.botName, chatId: String(chatId).trim() });
+});
+
+app.delete('/api/social/telegram', verifyToken, (req, res) => {
+    deleteTelegramConfig(INTEG_DIR, req.user.username);
+    res.json({ success: true });
+});
+
+// نشر منشور واحد في القناة — بحصة الخطة الشهرية (socialPosts)
+app.post('/api/social/telegram/publish', verifyToken, async (req, res) => {
+    try {
+        const { text } = req.body || {};
+        if (!text || typeof text !== 'string' || !text.trim()) return res.status(400).json({ error: 'نص المنشور مطلوب.' });
+        const username = req.user.username;
+        const owner = await DB.findUser(username).catch(() => null);
+        const q = socialQuota(owner);
+        if (Number.isFinite(q.monthly) && getUsageCount(USAGE_DIR, username, 'socialPosts') >= q.monthly) {
+            return res.status(403).json({ error: `حصة النشر المباشر لخطتك (${q.monthly}/شهر) نفدت — رقِّ خطتك للمزيد.` });
+        }
+        const r = await sendTelegramMessage(INTEG_DIR, username, text);
+        if (r.error) return res.status(r.notConfigured ? 503 : 502).json(r);
+        bumpUsage(USAGE_DIR, username, 'socialPosts');
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'تعذّر النشر: ' + err.message });
+    }
+});
 
 // 🤖 حالة البوت — هل هو مركَّب؟ وإعداده + كود التضمين لأي موقع خارجي
 app.get('/api/jaola-bot/status', verifyToken, validateProjectOwnership, (req, res) => {
