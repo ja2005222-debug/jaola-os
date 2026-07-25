@@ -100,3 +100,9 @@ export function emailQuota(userDoc) {
     const { limits, planId } = getUserSubscription(userDoc);
     return { planId, monthly: limits.emails ?? 0 };
 }
+
+/** حصة المنشورات المنشورة مباشرة للقنوات شهرياً (Infinity = بلا حدود). */
+export function socialQuota(userDoc) {
+    const { limits, planId } = getUserSubscription(userDoc);
+    return { planId, monthly: limits.socialPosts ?? 0 };
+}
