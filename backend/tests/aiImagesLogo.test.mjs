@@ -1,7 +1,7 @@
 // 🎨 صور AI فوق عقد imageForge: مزوّد قابل للفحص + استبدال آمن لا يمسّ صور المستخدم
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { aiImagesReady, generateProductImage, applyAiImages } from '../services/aiImages.js';
+import { aiImagesReady, generateProductImage, applyAiImages, imageProviderOf } from '../services/aiImages.js';
 import { aiImagesQuota } from '../services/subscriptionService.js';
 import { UNLIMITED } from '../config/plans.js';
 
@@ -15,10 +15,37 @@ const PRODUCTS = [
 function render() { return PRODUCTS.length; }
 `;
 
+test('اختيار المزوّد: Gemini أولاً إن وُجد، وIMAGE_PROVIDER يفرض، وGemini/Imagen يولّد', async () => {
+    assert.equal(imageProviderOf({}), null);
+    assert.equal(imageProviderOf({ GEMINI_API_KEY: 'g' }), 'gemini');
+    assert.equal(imageProviderOf({ OPENAI_API_KEY: 'o' }), 'openai');
+    assert.equal(imageProviderOf({ GEMINI_API_KEY: 'g', OPENAI_API_KEY: 'o' }), 'gemini', 'Gemini مقدَّم');
+    assert.equal(imageProviderOf({ GEMINI_API_KEY: 'g', OPENAI_API_KEY: 'o', IMAGE_PROVIDER: 'openai' }), 'openai', 'الفرض يعمل');
+    assert.equal(imageProviderOf({ OPENAI_API_KEY: 'o', IMAGE_PROVIDER: 'gemini' }), null, 'فرض مزوّد بلا مفتاحه = غير مُفعّل');
+
+    let captured = null;
+    const png = Buffer.from('imagen-bytes');
+    const r = await generateProductImage('كنافة شهية', {
+        env: { GEMINI_API_KEY: 'gk-123' },
+        fetchImpl: async (url, opts) => { captured = { url, opts }; return { ok: true, json: async () => ({ predictions: [{ bytesBase64Encoded: png.toString('base64') }] }) }; },
+    });
+    assert.ok(r.ok && Buffer.compare(r.buf, png) === 0);
+    assert.ok(captured.url.includes('imagen-3.0-generate-002:predict') && captured.url.includes('key=gk-123'));
+    const body = JSON.parse(captured.opts.body);
+    assert.equal(body.instances[0].prompt, 'كنافة شهية');
+    assert.equal(body.parameters.sampleCount, 1);
+
+    const fail = await generateProductImage('x', {
+        env: { GEMINI_API_KEY: 'gk' },
+        fetchImpl: async () => ({ ok: false, status: 400, json: async () => ({ error: { message: 'Imagen API is only accessible to billed users' } }) }),
+    });
+    assert.ok(/Imagen/.test(fail.error) && /billed/.test(fail.error), 'خطأ Imagen يصل نصياً واضحاً');
+});
+
 test('المزوّد: غير مُفعّل صريح، وحمولة OpenAI صحيحة مع فكّ base64', async () => {
     assert.equal(aiImagesReady({}), false);
     const off = await generateProductImage('كنافة', { env: {} });
-    assert.ok(off.notConfigured && /OPENAI_API_KEY/.test(off.error));
+    assert.ok(off.notConfigured && /OPENAI_API_KEY/.test(off.error) && /GEMINI_API_KEY/.test(off.error));
 
     let captured = null;
     const png = Buffer.from('fake-png-bytes');

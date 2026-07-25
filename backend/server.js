@@ -1046,7 +1046,7 @@ app.post('/api/agent-chat', botChatLimit, async (req, res) => {
 app.post('/api/project/ai-images', verifyToken, aiLimit, validateProjectOwnership, async (req, res) => {
     try {
         if (!aiImagesReady()) {
-            return res.status(503).json({ error: 'مزوّد الصور غير مُفعّل — اضبط OPENAI_API_KEY في بيئة الخادم.', notConfigured: true });
+            return res.status(503).json({ error: 'مزوّد الصور غير مُفعّل — اضبط GEMINI_API_KEY (يفتح Imagen) أو OPENAI_API_KEY في بيئة الخادم.', notConfigured: true });
         }
         const appPath = path.join(req.projectPath, 'app.js');
         if (!fs.existsSync(appPath)) return res.status(404).json({ error: 'لا app.js في المشروع — هذه الميزة لمواقع القوالب.' });

@@ -12,24 +12,56 @@ import { patchImgUrlPassthrough } from '../agents/imageForge.js';
 const MAX_PER_CALL = 8;
 const GEN_SVG_RE = /^images\/gen-[\w-]+\.svg$/;
 
-export function aiImagesReady(env = process.env) {
-    return !!env.OPENAI_API_KEY;
+/** مزوّد الصور الفعّال: Gemini (Imagen) أولاً إن وُجد مفتاحه، ثم OpenAI. */
+export function imageProviderOf(env = process.env) {
+    const forced = (env.IMAGE_PROVIDER || '').toLowerCase();
+    if (forced === 'gemini' || forced === 'openai') return env[forced === 'gemini' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY'] ? forced : null;
+    if (env.GEMINI_API_KEY) return 'gemini';
+    if (env.OPENAI_API_KEY) return 'openai';
+    return null;
 }
 
-/** يولّد صورة واحدة عبر مزوّد الصور (OpenAI images). يعيد {ok,buf,ext} أو {error}. */
+export function aiImagesReady(env = process.env) {
+    return !!imageProviderOf(env);
+}
+
+/**
+ * يولّد صورة واحدة عبر مزوّد الصور المتاح. يعيد {ok,buf,ext} أو {error}.
+ * - Gemini: Imagen عبر :predict (يتطلب Tier مدفوعاً — نفس مفتاح GEMINI_API_KEY)
+ * - OpenAI: images/generations
+ */
 export async function generateProductImage(prompt, deps = {}) {
     const env = deps.env || process.env;
     const fetchImpl = deps.fetchImpl || fetch;
-    if (!env.OPENAI_API_KEY) {
-        return { error: 'مزوّد الصور غير مُفعّل — اضبط OPENAI_API_KEY في بيئة الخادم.', notConfigured: true };
+    const provider = imageProviderOf(env);
+    if (!provider) {
+        return { error: 'مزوّد الصور غير مُفعّل — اضبط GEMINI_API_KEY (يفتح Imagen) أو OPENAI_API_KEY.', notConfigured: true };
     }
+    const cleanPrompt = String(prompt || '').slice(0, 900);
     try {
+        if (provider === 'gemini') {
+            const model = env.IMAGE_MODEL_GEMINI || 'imagen-3.0-generate-002';
+            const r = await fetchImpl(
+                `https://generativelanguage.googleapis.com/v1beta/models/${model}:predict?key=${encodeURIComponent(env.GEMINI_API_KEY)}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        instances: [{ prompt: cleanPrompt }],
+                        parameters: { sampleCount: 1, aspectRatio: '1:1' },
+                    }),
+                });
+            const d = await r.json().catch(() => ({}));
+            const b64 = d?.predictions?.[0]?.bytesBase64Encoded;
+            if (!r.ok || !b64) return { error: `فشل توليد الصورة عبر Imagen (${d?.error?.message || r.status}).` };
+            return { ok: true, buf: Buffer.from(b64, 'base64'), ext: 'png' };
+        }
         const r = await fetchImpl('https://api.openai.com/v1/images/generations', {
             method: 'POST',
             headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 model: env.IMAGE_MODEL || 'gpt-image-1',
-                prompt: String(prompt || '').slice(0, 900),
+                prompt: cleanPrompt,
                 size: '1024x1024',
                 n: 1,
             }),
