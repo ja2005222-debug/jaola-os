@@ -435,6 +435,7 @@ export default function Dashboard() {
   const [showBotModal, setShowBotModal] = useState(false);
   const [botInstalled, setBotInstalled] = useState(false);
   const [botLoading, setBotLoading] = useState(false);
+  const [botEmbedUrl, setBotEmbedUrl] = useState(null);
   const [botForm, setBotForm] = useState({ brandName: '', emoji: '🤖', welcome: '', quick: '', faq: [], ai: true });
 
   const openBotModal = async () => {
@@ -444,6 +445,7 @@ export default function Dashboard() {
       const res = await fetch(`${BACKEND_URL}/api/jaola-bot/status?project=${encodeURIComponent(activeProject || '')}`, { headers: getHeaders() });
       const d = await res.json().catch(() => ({}));
       setBotInstalled(!!d.installed);
+      setBotEmbedUrl(d.embedUrl || null);
       const c = d.config || {};
       setBotForm({
         brandName: c.brandName || activeProject || '',
@@ -641,6 +643,23 @@ export default function Dashboard() {
     navigator.clipboard?.writeText(text).catch(() => {});
     setCopiedPost(i);
     setTimeout(() => setCopiedPost(null), 1500);
+  };
+
+  const [sendingReply, setSendingReply] = useState(null);
+  const sendReplyMail = async (m, draftText) => {
+    const id = m.id || m.at;
+    if (sendingReply) return;
+    setSendingReply(id);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/inbox/reply-send`, {
+        method: 'POST', headers: getHeaders(),
+        body: JSON.stringify({ project: activeProject, to: m.contact, text: draftText }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.success) addNotification(t('replySent'), 'success');
+      else addNotification(`❌ ${d.error || t('replySendFail')}`, 'info');
+    } catch { addNotification(`❌ ${t('replySendFail')}`, 'info'); }
+    setSendingReply(null);
   };
 
   const draftReply = async (m) => {
@@ -1448,6 +1467,22 @@ export default function Dashboard() {
               style={{ width:'100%', background:'rgba(139,92,246,0.15)', border:'1px solid rgba(139,92,246,0.4)', borderRadius:9, padding:'10px', color:'#c4b5fd', fontSize:13, fontWeight:800, cursor:'pointer', opacity: isAddingBot ? 0.6 : 1 }}>
               {isAddingBot ? `⏳ ${t('addingBot')}` : (botInstalled ? `💾 ${t('botUpdate')}` : `➕ ${t('botInstall')}`)}
             </button>
+
+            {/* 🔗 كود التضمين — يعمل في أي موقع خارج JAOLA أيضاً */}
+            {botInstalled && botEmbedUrl && (
+              <div style={{ marginTop:14, background:'rgba(56,189,248,0.05)', border:'1px solid rgba(56,189,248,0.2)', borderRadius:10, padding:'12px' }}>
+                <div style={{ ...botLabel, color:'#7dd3fc' }}>🔗 {t('botEmbedL')}</div>
+                <div style={{ display:'flex', gap:6 }}>
+                  <input readOnly value={`<script src="${botEmbedUrl}"></script>`} onFocus={e => e.target.select()}
+                    style={{ ...botInput, direction:'ltr', fontSize:10, fontFamily:'monospace', color:'#94a3b8' }} />
+                  <button onClick={() => { navigator.clipboard?.writeText(`<script src="${botEmbedUrl}"></script>`).catch(() => {}); addNotification(t('msgCopied'), 'success'); }}
+                    style={{ background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:8, padding:'0 14px', color:'#7dd3fc', fontSize:11, fontWeight:700, cursor:'pointer', flexShrink:0 }}>
+                    📋
+                  </button>
+                </div>
+                <div style={{ color:S.muted, fontSize:10, marginTop:6 }}>{t('botEmbedHint')}</div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -1526,10 +1561,18 @@ export default function Dashboard() {
                     return (
                       <div style={{ marginTop:8, background:'rgba(139,92,246,0.05)', border:'1px solid rgba(139,92,246,0.2)', borderRadius:9, padding:'10px' }}>
                         <div style={{ color:'#c4b5fd', fontSize:11, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{dr.text}</div>
-                        <button onClick={() => { navigator.clipboard?.writeText(dr.text).catch(() => {}); addNotification(t('msgCopied'), 'success'); }}
-                          style={{ marginTop:8, background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)', borderRadius:6, padding:'3px 12px', color:'#34d399', fontSize:10, fontWeight:700, cursor:'pointer' }}>
-                          📋 {t('msgCopy')}
-                        </button>
+                        <div style={{ display:'flex', gap:6, marginTop:8 }}>
+                          <button onClick={() => { navigator.clipboard?.writeText(dr.text).catch(() => {}); addNotification(t('msgCopied'), 'success'); }}
+                            style={{ background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)', borderRadius:6, padding:'3px 12px', color:'#34d399', fontSize:10, fontWeight:700, cursor:'pointer' }}>
+                            📋 {t('msgCopy')}
+                          </button>
+                          {/\S+@\S+\.\S+/.test(m.contact || '') && (
+                            <button onClick={() => sendReplyMail(m, dr.text)} disabled={!!sendingReply}
+                              style={{ background:'rgba(59,130,246,0.08)', border:'1px solid rgba(59,130,246,0.3)', borderRadius:6, padding:'3px 12px', color:'#93c5fd', fontSize:10, fontWeight:700, cursor:'pointer', opacity: sendingReply ? 0.6 : 1 }}>
+                              {sendingReply === (m.id || m.at) ? `⏳ ${t('replySending')}` : `📧 ${t('replySend')}`}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     );
                   })()}

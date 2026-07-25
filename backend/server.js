@@ -31,7 +31,9 @@ import {
     JaolaCognitiveRuntime
 } from './agents/index.js';
 import { generatePWA } from './agents/pwaAgent.js';
-import { generateJaolaBot, readBotManifest } from './agents/jaolaBot.js';
+import { generateJaolaBot, readBotManifest, buildEmbedBundle } from './agents/jaolaBot.js';
+import { mailReady, sendMail, isEmail } from './services/mailer.js';
+import { emailQuota } from './services/subscriptionService.js';
 import { generateSocialPosts, draftInboxReply, extractSiteFacts } from './agents/marketingAgent.js';
 import { signBotToken, verifyBotToken } from './agents/jaolaBotToken.js';
 import { smartChat } from './agents/baseAgent.js';
@@ -959,9 +961,38 @@ app.post('/api/marketing/reply-draft', verifyToken, aiLimit, validateProjectOwne
     }
 });
 
-// 🤖 حالة البوت — هل هو مركَّب؟ وإعداده الحالي (لملء استوديو التخصيص)
+const publicBaseOf = (req) => (process.env.PUBLIC_BACKEND_URL || process.env.RENDER_EXTERNAL_URL
+    || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+
+// 🤖 حالة البوت — هل هو مركَّب؟ وإعداده + كود التضمين لأي موقع خارجي
 app.get('/api/jaola-bot/status', verifyToken, validateProjectOwnership, (req, res) => {
-    res.json({ success: true, ...readBotManifest(req.projectPath) });
+    const m = readBotManifest(req.projectPath);
+    let embedUrl = null;
+    if (m.installed && m.config) {
+        const id = signBotToken({ u: req.user.username, p: req.activeProject, b: m.config.brandName });
+        embedUrl = `${publicBaseOf(req)}/api/jaola-bot/embed.js?id=${encodeURIComponent(id)}`;
+    }
+    res.json({ success: true, ...m, embedUrl });
+});
+
+// 🔗 المقتطف المُستضاف — سطر واحد يركّب البوت في أي موقع (WordPress/Shopify/مخصّص):
+// <script src=".../api/jaola-bot/embed.js?id=..."></script>
+// id = توكن موقّع بهوية المشروع؛ الكود يبقى عندنا فتحديث واحد يحسّن كل البوتات.
+app.get('/api/jaola-bot/embed.js', (req, res) => {
+    res.type('application/javascript');
+    const claims = verifyBotToken(String(req.query.id || ''));
+    if (!claims?.u || !claims?.p) return res.status(404).send('// JAOLA Bot: not found');
+    try {
+        const m = readBotManifest(getProjectPath(claims.u, claims.p));
+        if (!m.installed || !m.config) return res.status(404).send('// JAOLA Bot: not configured');
+        const js = buildEmbedBundle(m.config, {
+            apiBase: `${publicBaseOf(req)}/api/jaola-bot/chat`,
+            token: String(req.query.id),
+        });
+        res.set('Cache-Control', 'public, max-age=300').send(js);
+    } catch {
+        res.status(500).send('// JAOLA Bot: error');
+    }
 });
 
 // 🤖 إضافة «جولا بوت» عند الطلب لمشروع موجود (مساعد محادثة offline + API-ready)
@@ -1932,14 +1963,57 @@ app.post('/api/public/site-hit', publicSiteLimit, (req, res) => {
     res.status(204).end();
 });
 
-// رسالة «تواصل معنا» من موقع منشور → صندوق المالك
+// رسالة «تواصل معنا» من موقع منشور → صندوق المالك (+ إشعار بريدي اختياري)
 app.post('/api/public/site-message', publicSiteLimit, (req, res) => {
     const v = verifyBotToken(req.body?.token);
     if (!v?.u || !v?.p) return res.status(204).end();
     try {
         const r = recordMessage(SITEDATA_DIR, v.u, v.p, req.body || {});
         res.json({ success: !r.error });
+        // 📧 إشعار المالك ببريده (صامت تماماً، بسقف شهري ثابت لا يمسّ حصة خطته)
+        if (!r.error && mailReady()) {
+            (async () => {
+                try {
+                    if (getUsageCount(USAGE_DIR, v.u, 'notifyMail') >= 300) return;
+                    const owner = await DB.findUser(v.u).catch(() => null);
+                    if (!owner?.email || !isEmail(owner.email)) return;
+                    const m = r.message;
+                    const sent = await sendMail({
+                        to: owner.email,
+                        subject: `📬 رسالة جديدة من موقعك (${v.p})`,
+                        text: `الاسم: ${m.name || '—'}\nالتواصل: ${m.contact || '—'}\nالصفحة: ${m.page || '—'}\n\n${m.message}\n\n— افتح «بريد موقعك» في داشبورد JAOLA للردّ.`,
+                    });
+                    if (sent.ok) bumpUsage(USAGE_DIR, v.u, 'notifyMail');
+                } catch { /* الإشعار لا يعطّل الاستقبال أبداً */ }
+            })();
+        }
     } catch { res.json({ success: false }); }
+});
+
+// 📧 إرسال ردّ فعلي من الداشبورد على رسالة واردة — بحصة الخطة الشهرية
+app.post('/api/inbox/reply-send', verifyToken, validateProjectOwnership, async (req, res) => {
+    try {
+        const { to, subject, text } = req.body || {};
+        if (!isEmail(to)) return res.status(400).json({ error: 'عنوان بريد المستلم غير صالح.' });
+        if (!text || typeof text !== 'string' || !text.trim()) return res.status(400).json({ error: 'نص الرد مطلوب.' });
+        const username = req.user.username;
+        const owner = await DB.findUser(username).catch(() => null);
+        const q = emailQuota(owner);
+        if (Number.isFinite(q.monthly) && getUsageCount(USAGE_DIR, username, 'emails') >= q.monthly) {
+            return res.status(403).json({ error: `حصة بريد خطتك (${q.monthly}/شهر) نفدت — رقِّ خطتك للمزيد.` });
+        }
+        const r = await sendMail({
+            to,
+            subject: (typeof subject === 'string' && subject.trim()) ? subject.trim() : `ردّ من ${req.activeProject}`,
+            text: text.trim(),
+            replyTo: owner?.email,
+        });
+        if (r.error) return res.status(r.notConfigured ? 503 : 502).json(r);
+        bumpUsage(USAGE_DIR, username, 'emails');
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'تعذّر الإرسال: ' + err.message });
+    }
 });
 
 // المالك يقرأ صندوقه: الرسائل + ملخّص الزيارات + غير المقروء
