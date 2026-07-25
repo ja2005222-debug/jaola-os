@@ -15,7 +15,7 @@ const PRODUCTS = [
 function render() { return PRODUCTS.length; }
 `;
 
-test('اختيار المزوّد: Gemini أولاً إن وُجد، وIMAGE_PROVIDER يفرض، وGemini/Imagen يولّد', async () => {
+test('اختيار المزوّد: Gemini أولاً إن وُجد، وIMAGE_PROVIDER يفرض، وصور Gemini تولّد عبر generateContent', async () => {
     assert.equal(imageProviderOf({}), null);
     assert.equal(imageProviderOf({ GEMINI_API_KEY: 'g' }), 'gemini');
     assert.equal(imageProviderOf({ OPENAI_API_KEY: 'o' }), 'openai');
@@ -24,22 +24,45 @@ test('اختيار المزوّد: Gemini أولاً إن وُجد، وIMAGE_PRO
     assert.equal(imageProviderOf({ OPENAI_API_KEY: 'o', IMAGE_PROVIDER: 'gemini' }), null, 'فرض مزوّد بلا مفتاحه = غير مُفعّل');
 
     let captured = null;
-    const png = Buffer.from('imagen-bytes');
+    const png = Buffer.from('gemini-image-bytes');
     const r = await generateProductImage('كنافة شهية', {
         env: { GEMINI_API_KEY: 'gk-123' },
-        fetchImpl: async (url, opts) => { captured = { url, opts }; return { ok: true, json: async () => ({ predictions: [{ bytesBase64Encoded: png.toString('base64') }] }) }; },
+        fetchImpl: async (url, opts) => {
+            captured = { url, opts };
+            return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: 'وصف' }, { inlineData: { mimeType: 'image/png', data: png.toString('base64') } }] } }] }) };
+        },
     });
-    assert.ok(r.ok && Buffer.compare(r.buf, png) === 0);
-    assert.ok(captured.url.includes('imagen-3.0-generate-002:predict') && captured.url.includes('key=gk-123'));
+    assert.ok(r.ok && Buffer.compare(r.buf, png) === 0 && r.ext === 'png');
+    assert.ok(captured.url.includes('gemini-2.5-flash-image:generateContent') && captured.url.includes('key=gk-123'), 'النموذج الافتراضي صور Gemini وليس Imagen المُوقف');
     const body = JSON.parse(captured.opts.body);
-    assert.equal(body.instances[0].prompt, 'كنافة شهية');
-    assert.equal(body.parameters.sampleCount, 1);
+    assert.equal(body.contents[0].parts[0].text, 'كنافة شهية');
+    assert.deepEqual(body.generationConfig.responseModalities, ['IMAGE']);
 
     const fail = await generateProductImage('x', {
         env: { GEMINI_API_KEY: 'gk' },
-        fetchImpl: async () => ({ ok: false, status: 400, json: async () => ({ error: { message: 'Imagen API is only accessible to billed users' } }) }),
+        fetchImpl: async () => ({ ok: false, status: 400, json: async () => ({ error: { message: 'model not found' } }) }),
     });
-    assert.ok(/Imagen/.test(fail.error) && /billed/.test(fail.error), 'خطأ Imagen يصل نصياً واضحاً');
+    assert.ok(/gemini-2.5-flash-image/.test(fail.error) && /model not found/.test(fail.error), 'خطأ Google يصل نصياً مع اسم النموذج');
+
+    const blocked = await generateProductImage('x', {
+        env: { GEMINI_API_KEY: 'gk' },
+        fetchImpl: async () => ({ ok: true, json: async () => ({ candidates: [{ finishReason: 'IMAGE_SAFETY', content: { parts: [] } }] }) }),
+    });
+    assert.ok(/IMAGE_SAFETY/.test(blocked.error), 'استجابة 200 بلا صورة تُظهر سبب الحجب');
+});
+
+test('فرض IMAGE_MODEL_GEMINI باسم imagen يبقى على مسار :predict القديم', async () => {
+    let captured = null;
+    const png = Buffer.from('imagen-bytes');
+    const r = await generateProductImage('كنافة', {
+        env: { GEMINI_API_KEY: 'gk-123', IMAGE_MODEL_GEMINI: 'imagen-4.0-generate-001' },
+        fetchImpl: async (url, opts) => { captured = { url, opts }; return { ok: true, json: async () => ({ predictions: [{ bytesBase64Encoded: png.toString('base64') }] }) }; },
+    });
+    assert.ok(r.ok && Buffer.compare(r.buf, png) === 0);
+    assert.ok(captured.url.includes('imagen-4.0-generate-001:predict'));
+    const body = JSON.parse(captured.opts.body);
+    assert.equal(body.instances[0].prompt, 'كنافة');
+    assert.equal(body.parameters.sampleCount, 1);
 });
 
 test('المزوّد: غير مُفعّل صريح، وحمولة OpenAI صحيحة مع فكّ base64', async () => {
@@ -93,6 +116,9 @@ test('applyAiImages: سقف الدفعة يُحترم، وفشل صورة لا �
         return calls === 1 ? { error: 'فشل مؤقت' } : { ok: true, buf: Buffer.from('i'), ext: 'png' };
     });
     assert.equal(flaky.count, 1, 'الفاشلة تُتخطى والناجحة تُطبَّق');
+
+    const allFail = await applyAiImages(files, { goal: 'x' }, async () => ({ error: 'فشل توليد الصورة عبر gemini-2.5-flash-image (quota exceeded).' }));
+    assert.ok(!allFail.changed && /quota exceeded/.test(allFail.reason), 'فشل كل الصور يُظهر خطأ المزوّد الفعلي لا رسالة عامة');
 
     const off = await applyAiImages(files, { goal: 'x' }, async () => ({ notConfigured: true, error: 'لا مفتاح' }));
     assert.ok(off.notConfigured && !off.changed);
