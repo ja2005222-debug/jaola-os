@@ -617,6 +617,45 @@ export default function Dashboard() {
     setHealthLoading(false);
   };
 
+  // 🧩 وكلائي — صناعة وكلاء مخصّصين (شخصية + معرفة) قابلين للتضمين في أي موقع
+  const [showAgentsModal, setShowAgentsModal] = useState(false);
+  const [agentsData, setAgentsData] = useState(null);
+  const [agentForm, setAgentForm] = useState(null); // null = القائمة؛ كائن = نموذج تحرير/إنشاء
+  const [agentSaving, setAgentSaving] = useState(false);
+
+  const openAgentsModal = async () => {
+    setShowAgentsModal(true);
+    setAgentForm(null);
+    setAgentsData(null);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/agents`, { headers: getHeaders() });
+      const d = await res.json().catch(() => ({}));
+      setAgentsData(res.ok ? d : { error: true });
+    } catch { setAgentsData({ error: true }); }
+  };
+
+  const saveAgent = async () => {
+    if (agentSaving || !agentForm) return;
+    setAgentSaving(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/agents`, {
+        method: 'POST', headers: getHeaders(), body: JSON.stringify(agentForm),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.success) { addNotification(`✓ ${t('agSaved')}`, 'success'); openAgentsModal(); }
+      else addNotification(`❌ ${d.error || t('serverUnreachable')}`, 'info');
+    } catch { addNotification(`❌ ${t('serverUnreachable')}`, 'info'); }
+    setAgentSaving(false);
+  };
+
+  const removeAgent = async (a) => {
+    if (!window.confirm(`${t('agDeleteConfirm')} «${a.name}»`)) return;
+    try {
+      await fetch(`${BACKEND_URL}/api/agents/${a.id}`, { method: 'DELETE', headers: getHeaders() });
+      openAgentsModal();
+    } catch {}
+  };
+
   // 📣 المساعد التسويقي — أسبوع منشورات من محتوى الموقع + مسودّات ردود
   const [showMarketingModal, setShowMarketingModal] = useState(false);
   const [mkPosts, setMkPosts] = useState(null);
@@ -1615,6 +1654,127 @@ export default function Dashboard() {
     </div>
   );
 
+  // 🧩 وكلائي: قائمة الوكلاء + نموذج الإنشاء/التحرير
+  const agentsModal = showAgentsModal && (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
+      onClick={e => e.target === e.currentTarget && setShowAgentsModal(false)}>
+      <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:'22px 20px', width:'min(600px, 100%)', maxHeight:'90dvh', overflowY:'auto' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+          <h3 style={{ color:'#fff', fontSize:15, fontWeight:800 }}>
+            🧩 {t('agTitle')}
+            {agentsData && !agentsData.error && (
+              <span style={{ marginInlineStart:8, fontSize:9, color:'#a5b4fc', fontWeight:800, background:'rgba(99,102,241,0.1)', border:'1px solid rgba(99,102,241,0.25)', borderRadius:5, padding:'2px 8px' }}>
+                {agentsData.used} / {agentsData.max ?? '∞'}
+              </span>
+            )}
+          </h3>
+          <button onClick={() => setShowAgentsModal(false)}
+            style={{ background:'transparent', border:'none', color:S.muted, fontSize:20, cursor:'pointer', lineHeight:1 }}>×</button>
+        </div>
+        <p style={{ color:S.muted, fontSize:11, marginBottom:14 }}>{t('agSub')}</p>
+
+        {!agentsData && <p style={{ color:S.muted, fontSize:13 }}>⏳</p>}
+        {agentsData?.error && <p style={{ color:S.danger, fontSize:13 }}>{t('serverUnreachable')}</p>}
+
+        {agentsData && !agentsData.error && !agentForm && (
+          <>
+            <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:12 }}>
+              {agentsData.agents.length === 0 && (
+                <div style={{ color:S.muted, fontSize:12, background:'rgba(255,255,255,0.02)', border:`1px dashed ${S.border}`, borderRadius:11, padding:'18px 16px', textAlign:'center' }}>
+                  {t('agEmpty')}
+                </div>
+              )}
+              {agentsData.agents.map(a => (
+                <div key={a.id} style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:11, padding:'12px' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <span style={{ fontSize:18 }}>{a.emoji}</span>
+                    <span style={{ color:'#fff', fontSize:13, fontWeight:800 }}>{a.name}</span>
+                    <div style={{ marginInlineStart:'auto', display:'flex', gap:5 }}>
+                      <button onClick={() => setAgentForm({ id: a.id, name: a.name, emoji: a.emoji, welcome: a.welcome || '', instructions: a.instructions, knowledge: a.knowledge || '' })}
+                        style={{ background:'rgba(56,189,248,0.08)', border:'1px solid rgba(56,189,248,0.25)', borderRadius:6, padding:'2px 10px', color:'#7dd3fc', fontSize:10, fontWeight:700, cursor:'pointer' }}>
+                        ✏️ {t('agEdit')}
+                      </button>
+                      <button onClick={() => removeAgent(a)}
+                        style={{ background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:6, padding:'2px 10px', color:'#f87171', fontSize:10, fontWeight:700, cursor:'pointer' }}>
+                        🗑
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ color:'#94a3b8', fontSize:11, marginTop:6, overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>{a.instructions}</div>
+                  <div style={{ display:'flex', gap:6, marginTop:8 }}>
+                    <input readOnly value={`<script src="${a.embedUrl}"></script>`} onFocus={e => e.target.select()}
+                      style={{ flex:1, background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 8px', color:'#64748b', fontSize:9, fontFamily:'monospace', direction:'ltr' }} />
+                    <button onClick={() => { navigator.clipboard?.writeText(`<script src="${a.embedUrl}"></script>`).catch(() => {}); addNotification(t('msgCopied'), 'success'); }}
+                      style={{ background:'rgba(99,102,241,0.1)', border:'1px solid rgba(99,102,241,0.3)', borderRadius:7, padding:'0 12px', color:'#a5b4fc', fontSize:10, fontWeight:700, cursor:'pointer', flexShrink:0 }}>
+                      🔗 {t('msgCopy')}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {(agentsData.max == null || agentsData.used < agentsData.max) ? (
+              <button onClick={() => setAgentForm({ name: '', emoji: '🧩', welcome: '', instructions: '', knowledge: '' })}
+                style={{ width:'100%', background:'rgba(99,102,241,0.12)', border:'1px solid rgba(99,102,241,0.35)', borderRadius:9, padding:'10px', color:'#a5b4fc', fontSize:13, fontWeight:800, cursor:'pointer' }}>
+                ＋ {t('agNew')}
+              </button>
+            ) : (
+              <div style={{ color:'#fbbf24', fontSize:11, textAlign:'center', background:'rgba(245,158,11,0.06)', border:'1px solid rgba(245,158,11,0.2)', borderRadius:9, padding:'10px' }}>
+                💳 {t('agLimit')}
+              </div>
+            )}
+          </>
+        )}
+
+        {agentForm && (
+          <>
+            <div style={{ display:'flex', gap:10, marginBottom:12 }}>
+              <div style={{ flex:1 }}>
+                <label style={{ display:'block', fontSize:10, color:S.muted, fontWeight:700, marginBottom:4 }}>{t('agName')}</label>
+                <input value={agentForm.name} maxLength={40}
+                  onChange={e => setAgentForm(f => ({ ...f, name: e.target.value }))}
+                  style={{ width:'100%', background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 10px', color:'#e2e8f0', fontSize:12 }} />
+              </div>
+              <div style={{ width:70 }}>
+                <label style={{ display:'block', fontSize:10, color:S.muted, fontWeight:700, marginBottom:4 }}>{t('botEmojiL')}</label>
+                <input value={agentForm.emoji} maxLength={4}
+                  onChange={e => setAgentForm(f => ({ ...f, emoji: e.target.value }))}
+                  style={{ width:'100%', textAlign:'center', background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 10px', color:'#e2e8f0', fontSize:12 }} />
+              </div>
+            </div>
+            <div style={{ marginBottom:12 }}>
+              <label style={{ display:'block', fontSize:10, color:S.muted, fontWeight:700, marginBottom:4 }}>{t('botWelcomeL')}</label>
+              <input value={agentForm.welcome} maxLength={200}
+                onChange={e => setAgentForm(f => ({ ...f, welcome: e.target.value }))}
+                style={{ width:'100%', background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 10px', color:'#e2e8f0', fontSize:12 }} />
+            </div>
+            <div style={{ marginBottom:12 }}>
+              <label style={{ display:'block', fontSize:10, color:S.muted, fontWeight:700, marginBottom:4 }}>{t('agInstructions')}</label>
+              <textarea value={agentForm.instructions} maxLength={2000} rows={4} placeholder={t('agInstructionsPh')}
+                onChange={e => setAgentForm(f => ({ ...f, instructions: e.target.value }))}
+                style={{ width:'100%', background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 10px', color:'#e2e8f0', fontSize:12, resize:'vertical' }} />
+            </div>
+            <div style={{ marginBottom:14 }}>
+              <label style={{ display:'block', fontSize:10, color:S.muted, fontWeight:700, marginBottom:4 }}>{t('agKnowledge')}</label>
+              <textarea value={agentForm.knowledge} maxLength={4000} rows={5} placeholder={t('agKnowledgePh')}
+                onChange={e => setAgentForm(f => ({ ...f, knowledge: e.target.value }))}
+                style={{ width:'100%', background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 10px', color:'#e2e8f0', fontSize:12, resize:'vertical' }} />
+            </div>
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={saveAgent} disabled={agentSaving}
+                style={{ flex:1, background:'rgba(99,102,241,0.15)', border:'1px solid rgba(99,102,241,0.4)', borderRadius:9, padding:'10px', color:'#a5b4fc', fontSize:13, fontWeight:800, cursor:'pointer', opacity: agentSaving ? 0.6 : 1 }}>
+                {agentSaving ? '⏳' : `💾 ${t('agSave')}`}
+              </button>
+              <button onClick={() => setAgentForm(null)}
+                style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:9, padding:'10px 18px', color:S.muted, fontSize:12, fontWeight:700, cursor:'pointer' }}>
+                {t('agBack')}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   // 🤖 استوديو مساعد الموقع — نموذج التخصيص الكامل
   const botInput = { width:'100%', background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:8, padding:'8px 10px', color:'#e2e8f0', fontSize:12, outline:'none' };
   const botLabel = { display:'block', fontSize:10, color:S.muted, fontWeight:700, marginBottom:4, letterSpacing:'0.5px' };
@@ -2094,6 +2254,10 @@ export default function Dashboard() {
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>📣</span> {t('mkTitle')}
                 </button>
+                <button onClick={() => { setShowMobileMenu(false); openAgentsModal(); }}
+                  style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
+                  <span style={{ fontSize:16 }}>🧩</span> {t('agTitle')}
+                </button>
                 <button onClick={() => { setShowMobileMenu(false); openBotModal(); }}
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>🤖</span> {t('botStudioTitle')}
@@ -2220,6 +2384,7 @@ export default function Dashboard() {
         {knowledgeModal}
         {healthModal}
         {inboxModal}
+        {agentsModal}
         {botModal}
         {marketingModal}
         {galleryModal}
@@ -2322,6 +2487,12 @@ export default function Dashboard() {
         <button onClick={openMarketingModal} title={t('mkTitle')}
           style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(236,72,153,0.08)', border:'1px solid rgba(236,72,153,0.25)', borderRadius:7, padding:'5px 12px', color:'#f9a8d4', fontSize:11, fontWeight:700 }}>
           📣 {t('mkTitle')}
+        </button>
+
+        {/* وكلائي (سوق صناعة الوكلاء) */}
+        <button onClick={openAgentsModal} title={t('agTitle')}
+          style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(99,102,241,0.1)', border:'1px solid rgba(99,102,241,0.28)', borderRadius:7, padding:'5px 12px', color:'#a5b4fc', fontSize:11, fontWeight:700 }}>
+          🧩 {t('agTitle')}
         </button>
 
         {/* بريد الموقع (رسائل التواصل + الزيارات) */}
@@ -2624,6 +2795,7 @@ export default function Dashboard() {
       {knowledgeModal}
       {healthModal}
       {inboxModal}
+      {agentsModal}
       {botModal}
       {marketingModal}
       {galleryModal}
