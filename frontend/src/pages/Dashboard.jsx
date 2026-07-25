@@ -1443,7 +1443,7 @@ export default function Dashboard() {
             {galleryList.map(c => (
               <div key={c.id} className="tpl-card" style={{ background:'#121826', border:`1px solid ${S.border}`, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', transition:'transform 0.2s, border-color 0.2s' }}>
                 <div style={{ position:'relative', aspectRatio:'11/7', overflow:'hidden', background:'#0a0f1a' }}>
-                  <img src={`/templates/${c.id}.jpg`} alt={c.name} loading="lazy"
+                  <img src={uiLang === 'ar' ? `/templates/${c.id}.jpg` : `/templates/en/${c.id}.jpg`} alt={c.name} loading="lazy"
                     className="tpl-shot" style={{ width:'100%', height:'100%', objectFit:'cover', objectPosition:'top', transition:'transform 0.4s' }}
                     onError={e => { e.currentTarget.style.display = 'none'; }} />
                   <span style={{ position:'absolute', top:8, insetInlineStart:8, background:'rgba(6,10,18,0.85)', border:'1px solid rgba(59,130,246,0.3)', color:'#93c5fd', fontSize:9.5, fontWeight:800, padding:'3px 9px', borderRadius:20 }}>
