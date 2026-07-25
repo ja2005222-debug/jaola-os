@@ -6,6 +6,8 @@
  * الرسمية). لا يُعاد أي مفتاح خاماً أبداً — الذيل الأخير فقط.
  */
 
+import { DEEPSEEK_MODEL } from '../agents/baseAgent.js';
+
 const mask = (key) => (key ? `…${String(key).slice(-4)}` : null);
 
 async function probe(fetchImpl, url, headers = {}) {
@@ -36,18 +38,29 @@ export async function checkAiProviders(deps = {}) {
         out.groq = { configured: true, keyTail: mask(env.GROQ_API_KEY), ok: p.ok, detail: p.ok ? `يعمل (${p.body?.data?.length || 0} موديلاً)` : fail(p, 'Groq') };
     }
 
-    // ── DeepSeek: صلاحية + الرصيد الفعلي ──
+    // ── DeepSeek: صلاحية + الرصيد الفعلي + صحّة الموديل المضبوط ──
+    // (درس مدفوع الثمن: أسماء موديلاتهم تتغيّر — coder ثم chat ثم v4 —
+    //  والفحص هنا يكشف الموديل الملغى فوراً بدل فشل صامت في البناء)
     if (!env.DEEPSEEK_API_KEY) out.deepseek = { configured: false };
     else {
-        const p = await probe(fetchImpl, 'https://api.deepseek.com/user/balance', { Authorization: `Bearer ${env.DEEPSEEK_API_KEY}` });
+        const auth = { Authorization: `Bearer ${env.DEEPSEEK_API_KEY}` };
+        const p = await probe(fetchImpl, 'https://api.deepseek.com/user/balance', auth);
         if (p.ok) {
             const b = (p.body?.balance_infos || [])[0];
+            const balance = b ? `${b.total_balance} ${b.currency}` : null;
+            // تحقق الموديل من قائمة موديلاتهم الرسمية
+            const models = await probe(fetchImpl, 'https://api.deepseek.com/models', auth);
+            const ids = (models.body?.data || []).map(m => m.id);
+            const modelOk = !models.ok || ids.length === 0 ? null : ids.includes(DEEPSEEK_MODEL);
             out.deepseek = {
-                configured: true, keyTail: mask(env.DEEPSEEK_API_KEY), ok: p.body?.is_available !== false,
-                balance: b ? `${b.total_balance} ${b.currency}` : null,
+                configured: true, keyTail: mask(env.DEEPSEEK_API_KEY),
+                ok: p.body?.is_available !== false && modelOk !== false,
+                balance, model: DEEPSEEK_MODEL,
                 detail: p.body?.is_available === false
                     ? 'المفتاح صحيح لكن الرصيد غير كافٍ للاستدعاءات'
-                    : `يعمل — الرصيد: ${b ? `${b.total_balance} ${b.currency}` : 'غير معروف'}`,
+                    : modelOk === false
+                        ? `المفتاح والرصيد سليمان لكن الموديل «${DEEPSEEK_MODEL}» غير مدعوم — المدعوم: ${ids.join('، ')}. اضبط DEEPSEEK_MODEL.`
+                        : `يعمل (${DEEPSEEK_MODEL}) — الرصيد: ${balance || 'غير معروف'}`,
             };
         } else {
             out.deepseek = { configured: true, keyTail: mask(env.DEEPSEEK_API_KEY), ok: false, detail: fail(p, 'DeepSeek') };

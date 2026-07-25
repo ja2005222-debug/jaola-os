@@ -17,9 +17,10 @@ export const deepseek = new OpenAI({
 });
 const hasDeepseek = !!process.env.DEEPSEEK_API_KEY;
 
-// موديل DeepSeek — الافتراضي deepseek-chat: موديل deepseek-coder القديم
-// أُلغي نهائياً (دُمج في V2.5) وأي استدعاء به يفشل بـ Model Not Exist
-export const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+// موديل DeepSeek — الجيل الحالي V4 (رسالتهم الرسمية: المدعوم deepseek-v4-pro
+// أو deepseek-v4-flash؛ الأسماء الأقدم deepseek-chat/coder أُلغيت نهائياً).
+// الافتراضي pro (جودة الكود أولاً — هو العمود الثاني بعد Groq)، وflash عبر البيئة.
+export const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-v4-pro';
 
 const openaiClient = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
@@ -45,8 +46,10 @@ export function classifyAIError(e) {
     const status = e?.status || e?.response?.status || 0;
     const msg = String(e?.message || '').toLowerCase();
     if (/insufficient_quota|exceeded your current quota|billing|payment required/.test(msg) || status === 402) return 'quota';
-    if (/invalid api key|incorrect api key|api key not valid|no auth credentials/.test(msg) || status === 401 || status === 403) return 'auth';
+    if (/invalid api key|incorrect api key|api key not valid|no auth credentials|invalid authentication/.test(msg) || status === 401 || status === 403) return 'auth';
     if (status === 429) return 'ratelimit';
+    // موديل غير موجود/غير مدعوم = خطأ إعداد دائم — التكرار عليه هدر محض
+    if (/model.*(not exist|not found|supported)|supported api model/.test(msg)) return 'config';
     if (/غير مُفعّل|لا يوجد مزود|not configured/.test(msg)) return 'config';
     return 'transient';
 }
@@ -74,7 +77,7 @@ async function createWithFailover(params, opts) {
             return await deepseek.chat.completions.create({ ...params, model: DEEPSEEK_MODEL }, opts);
         } catch (e) {
             lastError = e; failures.push(e);
-            console.warn(`[AI Failover] DeepSeek فشل (${e.status || ''} ${String(e.message).slice(0, 80)}) → ${openaiClient ? 'OpenAI' : 'لا بديل متبقٍ'}`);
+            console.warn(`[AI Failover] DeepSeek فشل (${e.status || ''} ${String(e.message).slice(0, 80)}) → ${ai ? 'Gemini' : openaiClient ? 'OpenAI' : 'لا بديل متبقٍ'}`);
         }
     }
 
