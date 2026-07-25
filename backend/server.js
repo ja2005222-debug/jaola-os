@@ -34,7 +34,7 @@ import { generatePWA } from './agents/pwaAgent.js';
 import { generateJaolaBot, readBotManifest, buildEmbedBundle } from './agents/jaolaBot.js';
 import { mailReady, sendMail, isEmail } from './services/mailer.js';
 import { emailQuota, socialQuota, customAgentsMax, aiImagesQuota } from './services/subscriptionService.js';
-import { aiImagesReady, applyAiImages } from './services/aiImages.js';
+import { aiImagesReady, applyAiImages, applyHeroImage, generateProductImage } from './services/aiImages.js';
 import { checkAiProviders } from './services/aiProviderCheck.js';
 import {
     listAgents, upsertAgent, deleteAgent, getAgent,
@@ -1084,6 +1084,75 @@ app.post('/api/project/ai-images', verifyToken, aiLimit, validateProjectOwnershi
     }
 });
 
+/**
+ * 🎨 توليد الصور من الشات — نفس محرّك زر «ولّد صوراً حقيقية» لكن يُستدعى
+ * حين يطلب المستخدم الصور كلاماً («انشئ صورة حقيقية»، «غير صورة البنر»).
+ * hero=true → صورة بنر واحدة من نص الطلب تُثبَّت خلفيةً لقسم الـ hero،
+ * ثم تُستبدل صور العناصر المؤهّلة إن وُجد app.js. يرد في الشات دائماً.
+ */
+async function generateAiImagesFromChat({ username, activeProject, projectPath, roomName, message, hero }) {
+    const say = (m) => io.to(roomName).emit('chat_reply', { message: m });
+    try {
+        if (!aiImagesReady()) {
+            say('⚙️ توليد الصور غير مُفعّل بعد — اضبط GEMINI_API_KEY (يفتح صور Gemini) أو OPENAI_API_KEY في بيئة الخادم.');
+            return;
+        }
+        const owner = await DB.findUser(username).catch(() => null);
+        const q = aiImagesQuota(owner);
+        let allowed = Infinity;
+        if (Number.isFinite(q.monthly)) {
+            allowed = Math.max(0, q.monthly - getUsageCount(USAGE_DIR, username, 'aiImages'));
+            if (allowed === 0) { say(`❌ حصة صور AI لخطتك (${q.monthly}/شهر) نفدت — رقِّ خطتك من صفحة الفوترة.`); return; }
+        }
+
+        io.to(roomName).emit('log', { message: '🎨 [SYSTEM]: بدأ توليد صور حقيقية بالذكاء...' });
+        const done = [];
+        const errors = [];
+
+        // ١) صورة البنر إن طُلبت — من نص طلب المستخدم نفسه
+        if (hero && allowed > 0) {
+            const r = await generateProductImage(`${message}. Wide website hero banner photo, professional, high quality, no text or watermark.`);
+            if (r.ok) {
+                const idxPath = path.join(projectPath, 'index.html');
+                const heroRes = fs.existsSync(idxPath) ? applyHeroImage(fs.readFileSync(idxPath, 'utf8'), 'images/ai-hero.png') : { changed: false, reason: 'لا index.html — ابنِ الموقع أولاً' };
+                if (heroRes.changed) {
+                    fs.mkdirSync(path.join(projectPath, 'images'), { recursive: true });
+                    fs.writeFileSync(path.join(projectPath, 'images/ai-hero.png'), r.buf);
+                    fs.writeFileSync(idxPath, heroRes.html);
+                    bumpUsage(USAGE_DIR, username, 'aiImages');
+                    allowed--;
+                    done.push('صورة البنر');
+                } else errors.push(heroRes.reason);
+            } else errors.push(r.error);
+        }
+
+        // ٢) صور العناصر (منتجات/أطباق/عقارات...) إن وُجدت مصفوفة بيانات
+        const appPath = path.join(projectPath, 'app.js');
+        if (!hero && fs.existsSync(appPath) && allowed > 0) {
+            const r = await applyAiImages([{ name: 'app.js', content: fs.readFileSync(appPath, 'utf8') }], { goal: activeProject, maxCount: allowed });
+            if (r.changed) {
+                fs.mkdirSync(path.join(projectPath, 'images'), { recursive: true });
+                for (const img of r.images) fs.writeFileSync(path.join(projectPath, img.name), img.buf);
+                fs.writeFileSync(appPath, r.appJs);
+                for (let i = 0; i < r.count; i++) bumpUsage(USAGE_DIR, username, 'aiImages');
+                done.push(`${r.count} صورة للعناصر`);
+            } else if (!r.notConfigured && r.reason && !['لا عناصر مؤهّلة', 'لا مصفوفة بيانات', 'بيانات فارغة'].includes(r.reason)) {
+                errors.push(r.reason);
+            }
+        }
+
+        if (done.length) {
+            emitWorkspaceFiles(roomName, projectPath);
+            io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+            say(`🎨 تم! ولّدت: ${done.join(' + ')} واستبدلتها في موقعك — انظر المعاينة.${errors.length ? `\n⚠️ ملاحظة: ${errors[0]}` : ''}`);
+        } else {
+            say(`❌ لم أستطع توليد الصور: ${errors[0] || 'لا عناصر مؤهّلة (صور موقعك الحالية حقيقية بالفعل ولا تُمسّ). جرّب طلب «صورة البنر» تحديداً.'}`);
+        }
+    } catch (e) {
+        say('❌ تعذّر توليد الصور: ' + e.message);
+    }
+}
+
 // رفع شعار الموقع → assets/ + أيقونة المتصفح (favicon)
 app.post('/api/project/logo', verifyToken, validateProjectOwnership, (req, res) => {
     try {
@@ -1473,6 +1542,11 @@ app.post('/api/chat', verifyToken, aiLimit, validate(schemas.sendMessage), valid
         getState,
         // 🗑️ حذف مشروع كامل من الشات (بعد تأكيد صريح داخل jcr)
         deleteProject: (username, project) => deleteProjectCompletely(username, project),
+        // 🎨 توليد صور حقيقية من الشات (نفس محرّك زر «ولّد صوراً حقيقية»)
+        generateAiImages: (opts) => generateAiImagesFromChat({
+            username: req.user.username, activeProject: req.activeProject,
+            projectPath, roomName, ...opts,
+        }),
     };
 
     const dbStatus = isDbConnected && mongoose.connection.readyState === 1;

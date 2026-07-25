@@ -160,3 +160,24 @@ test('حصة صور AI بالخطة: مجاني 6، Pro 150، مؤسسات بل�
     assert.equal(aiImagesQuota({ subscription: { plan: 'pro', status: 'active' } }).monthly, 150);
     assert.equal(aiImagesQuota({ subscription: { plan: 'enterprise', status: 'active' } }).monthly, UNLIMITED);
 });
+
+test('applyHeroImage: يستهدف قسم الـ hero ويحفظ الأنماط ويستبدل الخلفية القديمة', async () => {
+    const { applyHeroImage } = await import('../services/aiImages.js');
+    // قالب حقيقي: topbar قبل الـ hero — يجب ألا يُلمس شريط التنقل
+    const html = '<header class="topbar">nav</header><section class="hero"><div class="hero-in">x</div></section>';
+    const r = applyHeroImage(html, 'images/ai-hero.png');
+    assert.ok(r.changed);
+    assert.ok(r.html.includes('<section class="hero" style="background-image:url(\'images/ai-hero.png\')'));
+    assert.ok(r.html.includes('<header class="topbar">'), 'شريط التنقل سليم');
+
+    // style موجود: تبقى الأنماط الأخرى وتُستبدل الخلفية القديمة فقط
+    const styled = '<div class="banner" style="min-height:300px;background:linear-gradient(red,blue);">y</div>';
+    const r2 = applyHeroImage(styled, 'images/ai-hero.png');
+    assert.ok(r2.changed && r2.html.includes('min-height:300px') && !r2.html.includes('linear-gradient'));
+    assert.ok(r2.html.includes("background-image:url('images/ai-hero.png')"));
+
+    // لا hero → أول section؛ لا شيء إطلاقاً → سبب واضح
+    const plain = '<section id="about">z</section>';
+    assert.ok(applyHeroImage(plain, 'i.png').changed);
+    assert.ok(!applyHeroImage('<p>text only</p>', 'i.png').changed);
+});
