@@ -355,12 +355,26 @@ export default function Dashboard() {
     });
   }, [isBuilding]);
 
-  // تمرير تلقائي للأحدث — إلا حين يصعد المستخدم يقرأ سجلّاً قديماً (سلوك كلاود)
+  // تمرير تلقائي للأحدث (سلوك كلاود):
+  //  - أول تحميل (تاريخ محادثة أو فتح مشروع): قفزة فورية لآخر رسالة — لا يفتح على القديم أبداً
+  //  - رسالة من المستخدم نفسه: تمرير مضمون دائماً مهما كان موضعه
+  //  - غير ذلك: يتبع الأحدث إلا إذا صعد المستخدم يقرأ سجلاً قديماً
+  const prevFeedCount = useRef(0);
+  useEffect(() => { prevFeedCount.current = 0; }, [activeProject]); // تبديل المشروع = تحميل أول من جديد
   useEffect(() => {
     const el = feedScrollRef.current;
+    const last = chatMessages[chatMessages.length - 1];
+    const firstLoad = prevFeedCount.current === 0 && chatMessages.length > 0;
+    prevFeedCount.current = chatMessages.length;
+    if (firstLoad) {
+      requestAnimationFrame(() => feedEndRef.current?.scrollIntoView({ behavior:'auto' }));
+      return;
+    }
     const nearBottom = !el || (el.scrollHeight - el.scrollTop - el.clientHeight) < 280;
-    if (nearBottom) feedEndRef.current?.scrollIntoView({ behavior:'smooth' });
-  }, [chatMessages, isBuilding]);
+    if (last?.sender === 'user' || nearBottom) {
+      feedEndRef.current?.scrollIntoView({ behavior:'smooth' });
+    }
+  }, [chatMessages, isBuilding, isSending]);
 
   useEffect(() => {
     if (logs.length > 0) {
@@ -390,9 +404,18 @@ export default function Dashboard() {
     setChatMessages(prev => [...prev, { sender: 'user', text: msg, timestamp: Date.now() }]);
     try {
       await fetch(`${BACKEND_URL}/api/chat`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ message: msg, project: activeProject, uiLang }) });
-    } catch {}
-    setTimeout(() => setIsSending(false), 1000);
+    } catch { setIsSending(false); return; }
+    // فقاعة «يفكّر» تبقى حتى وصول أول رد/حدث فعلي (لا مؤقّت ثانية يتركك في صمت)
+    // — تُطفأ في effect أدناه، مع سقف أمان إن انقطع كل شيء
+    setTimeout(() => setIsSending(false), 45000);
   };
+
+  // إطفاء «يفكّر» لحظة وصول أي رد أو حدث من المنصّة
+  useEffect(() => {
+    if (!isSending) return;
+    const last = chatMessages[chatMessages.length - 1];
+    if (last && last.sender !== 'user') setIsSending(false);
+  }, [chatMessages, isSending]);
 
   // 🔟 ضغطة زر اقتراح → تُرسل كرسالة (بعد إزالة الرموز التعبيرية من البداية)
   const handleOptionClick = (opt) => {
@@ -1260,10 +1283,18 @@ export default function Dashboard() {
         {isBuilding && buildStartedAt && (
           <MissionProgress agentStates={agentStates} lastLog={lastLogMsg} startedAt={buildStartedAt} phase={missionPhase} />
         )}
+        {/* 💬 فقاعة انتظار بمستوى كلاود: أفاتار متوهج + نقاط تكتب — لا سطر باهت */}
         {isSending && !isBuilding && (
-          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'4px 0' }}>
-            <div style={{ width:6, height:6, borderRadius:'50%', background:'#3b82f6', animation:'pulse 0.9s infinite' }} />
-            <span style={{ fontSize:11, color:'#64748b' }}>{t('receiving')}</span>
+          <div style={{ display:'flex', gap:10, alignItems:'flex-start', animation:'msgIn 0.25s ease' }}>
+            <div style={{ width:28, height:28, borderRadius:9, background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, flexShrink:0, marginTop:2, animation:'avatarGlow 1.2s infinite' }}>⚡</div>
+            <div style={{ background:'rgba(15,23,42,0.65)', border:'1px solid rgba(59,130,246,0.13)', borderRadius:'4px 14px 14px 14px', padding:'12px 16px', display:'inline-flex', alignItems:'center', gap:8 }}>
+              <span className="thinking-shimmer" style={{ fontSize:12, fontWeight:600 }}>{t('thinking')}</span>
+              <span style={{ display:'inline-flex', gap:3 }}>
+                <span style={{ width:5, height:5, borderRadius:'50%', background:'#60a5fa', animation:'typing 1s infinite' }} />
+                <span style={{ width:5, height:5, borderRadius:'50%', background:'#60a5fa', animation:'typing 1s infinite 0.2s' }} />
+                <span style={{ width:5, height:5, borderRadius:'50%', background:'#60a5fa', animation:'typing 1s infinite 0.4s' }} />
+              </span>
+            </div>
           </div>
         )}
         <div ref={feedEndRef} />
