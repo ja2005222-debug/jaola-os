@@ -107,6 +107,12 @@ export function customAgentsMax(userDoc) {
     return { planId, max: limits.customAgentsMax ?? 1 };
 }
 
+/** حصة صور AI الحقيقية الشهرية (Infinity = بلا حدود). */
+export function aiImagesQuota(userDoc) {
+    const { limits, planId } = getUserSubscription(userDoc);
+    return { planId, monthly: limits.aiImages ?? 0 };
+}
+
 /** حصة المنشورات المنشورة مباشرة للقنوات شهرياً (Infinity = بلا حدود). */
 export function socialQuota(userDoc) {
     const { limits, planId } = getUserSubscription(userDoc);
