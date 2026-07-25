@@ -33,7 +33,11 @@ import {
 import { generatePWA } from './agents/pwaAgent.js';
 import { generateJaolaBot, readBotManifest, buildEmbedBundle } from './agents/jaolaBot.js';
 import { mailReady, sendMail, isEmail } from './services/mailer.js';
-import { emailQuota, socialQuota } from './services/subscriptionService.js';
+import { emailQuota, socialQuota, customAgentsMax } from './services/subscriptionService.js';
+import {
+    listAgents, upsertAgent, deleteAgent, getAgent,
+    buildAgentSystemPrompt, agentToManifest,
+} from './services/agentMarket.js';
 import {
     readTelegramConfig, saveTelegramConfig, deleteTelegramConfig,
     checkTelegramToken, sendTelegramMessage, validBotToken as isTgToken, validChatId as isTgChat,
@@ -152,7 +156,7 @@ const io = new Server(httpServer, {
 
 // نقطة دردشة جولا بوت عامّة: تُستدعى من مواقع الزوّار (origins متعدّدة) —
 // نسمح لأي origin لهذا المسار وحده؛ بقيّة المسارات تبقى مقيّدة بـ ALLOWED_ORIGINS.
-const OPEN_CORS_PATHS = new Set(['/api/jaola-bot/chat', '/api/public/site-hit', '/api/public/site-message']);
+const OPEN_CORS_PATHS = new Set(['/api/jaola-bot/chat', '/api/agent-chat', '/api/public/site-hit', '/api/public/site-message']);
 const corsDelegate = (req, callback) => {
     if (OPEN_CORS_PATHS.has(req.path)) return callback(null, { origin: true, credentials: false, methods: ['POST', 'OPTIONS'] });
     callback(null, corsOptions);
@@ -936,6 +940,85 @@ app.post('/api/pwa/generate', verifyToken, validateProjectOwnership, async (req,
         });
     } catch (err) {
         res.status(500).json({ error: 'فشل توليد التطبيق: ' + err.message });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 🧩 سوق صناعة الوكلاء — المستخدم يصنع وكلاءه (شخصية + معرفة) ويضمّنهم
+//    في أي موقع. الإنشاء بسقف الخطة، والدردشة بحصة ذكاء البوت نفسها.
+// ═══════════════════════════════════════════════════════════════════
+const AGENTS_DIR = path.join(BASE_WORKSPACE, '.agents');
+
+app.get('/api/agents', verifyToken, async (req, res) => {
+    const username = req.user.username;
+    const owner = await DB.findUser(username).catch(() => null);
+    const { max } = customAgentsMax(owner);
+    const base = publicBaseOf(req);
+    const agents = listAgents(AGENTS_DIR, username).map(a => ({
+        ...a,
+        embedUrl: `${base}/api/agents/embed.js?id=${encodeURIComponent(signBotToken({ u: username, a: a.id }))}`,
+    }));
+    res.json({ success: true, agents, used: agents.length, max: Number.isFinite(max) ? max : null });
+});
+
+app.post('/api/agents', verifyToken, async (req, res) => {
+    const username = req.user.username;
+    const owner = await DB.findUser(username).catch(() => null);
+    const { max } = customAgentsMax(owner);
+    const r = upsertAgent(AGENTS_DIR, username, req.body || {}, max);
+    if (r.error) return res.status(r.limitReached ? 403 : 400).json({ error: r.error });
+    res.json({ success: true, agent: r.agent });
+});
+
+app.delete('/api/agents/:id', verifyToken, (req, res) => {
+    const r = deleteAgent(AGENTS_DIR, req.user.username, req.params.id);
+    if (r.error) return res.status(404).json({ error: r.error });
+    res.json({ success: true });
+});
+
+// 🔗 حزمة تضمين الوكيل — نفس ودجت البوت بهوية الوكيل (عامة، بتوكن موقّع)
+app.get('/api/agents/embed.js', (req, res) => {
+    res.type('application/javascript');
+    const claims = verifyBotToken(String(req.query.id || ''));
+    if (!claims?.u || !claims?.a) return res.status(404).send('// JAOLA Agent: not found');
+    const agent = getAgent(AGENTS_DIR, claims.u, claims.a);
+    if (!agent) return res.status(404).send('// JAOLA Agent: not found');
+    try {
+        const js = buildEmbedBundle(agentToManifest(agent), {
+            apiBase: `${publicBaseOf(req)}/api/agent-chat`,
+            token: String(req.query.id),
+        });
+        res.set('Cache-Control', 'public, max-age=300').send(js);
+    } catch {
+        res.status(500).send('// JAOLA Agent: error');
+    }
+});
+
+// 💬 دردشة الوكيل العامة — من ودجت أي موقع؛ بحصة ذكاء البوت الشهرية للمالك
+app.post('/api/agent-chat', botChatLimit, async (req, res) => {
+    try {
+        const { message, token } = req.body || {};
+        if (!message || typeof message !== 'string' || !message.trim()) return res.status(400).json({ reply: null });
+        const claims = verifyBotToken(token);
+        if (!claims?.u || !claims?.a) return res.status(401).json({ reply: null });
+        const agent = getAgent(AGENTS_DIR, claims.u, claims.a);
+        if (!agent) return res.status(404).json({ reply: null });
+
+        const owner = await DB.findUser(claims.u).catch(() => null);
+        const quota = botAiQuota(owner);
+        if (Number.isFinite(quota.monthly) && getUsageCount(USAGE_DIR, claims.u, 'botAi') >= quota.monthly) {
+            return res.json({ reply: null, quota: 'exhausted' });
+        }
+        const reply = await smartChat(
+            [{ role: 'system', content: buildAgentSystemPrompt(agent) },
+             { role: 'user', content: message.trim().slice(0, 500) }],
+            { max_tokens: 350, temperature: 0.4 }
+        );
+        const finalReply = (reply || '').toString().trim() || null;
+        if (finalReply) { try { bumpUsage(USAGE_DIR, claims.u, 'botAi'); } catch { /* العدّ لا يُسقط الرد */ } }
+        res.json({ reply: finalReply });
+    } catch {
+        res.status(200).json({ reply: null });
     }
 });
 

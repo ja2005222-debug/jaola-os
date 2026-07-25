@@ -101,6 +101,12 @@ export function emailQuota(userDoc) {
     return { planId, monthly: limits.emails ?? 0 };
 }
 
+/** سقف عدد الوكلاء المخصّصين للخطة (Infinity = بلا حدود). */
+export function customAgentsMax(userDoc) {
+    const { limits, planId } = getUserSubscription(userDoc);
+    return { planId, max: limits.customAgentsMax ?? 1 };
+}
+
 /** حصة المنشورات المنشورة مباشرة للقنوات شهرياً (Infinity = بلا حدود). */
 export function socialQuota(userDoc) {
     const { limits, planId } = getUserSubscription(userDoc);
