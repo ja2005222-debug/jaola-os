@@ -31,7 +31,7 @@ import {
     JaolaCognitiveRuntime
 } from './agents/index.js';
 import { generatePWA } from './agents/pwaAgent.js';
-import { generateJaolaBot } from './agents/jaolaBot.js';
+import { generateJaolaBot, readBotManifest } from './agents/jaolaBot.js';
 import { signBotToken, verifyBotToken } from './agents/jaolaBotToken.js';
 import { smartChat } from './agents/baseAgent.js';
 import { generateBackend, generateFrontendAPIIntegration } from './agents/backendAgent.js';
@@ -927,6 +927,11 @@ app.post('/api/pwa/generate', verifyToken, validateProjectOwnership, async (req,
     } catch (err) {
         res.status(500).json({ error: 'فشل توليد التطبيق: ' + err.message });
     }
+});
+
+// 🤖 حالة البوت — هل هو مركَّب؟ وإعداده الحالي (لملء استوديو التخصيص)
+app.get('/api/jaola-bot/status', verifyToken, validateProjectOwnership, (req, res) => {
+    res.json({ success: true, ...readBotManifest(req.projectPath) });
 });
 
 // 🤖 إضافة «جولا بوت» عند الطلب لمشروع موجود (مساعد محادثة offline + API-ready)
