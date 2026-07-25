@@ -1046,7 +1046,7 @@ app.post('/api/agent-chat', botChatLimit, async (req, res) => {
 app.post('/api/project/ai-images', verifyToken, aiLimit, validateProjectOwnership, async (req, res) => {
     try {
         if (!aiImagesReady()) {
-            return res.status(503).json({ error: 'مزوّد الصور غير مُفعّل — اضبط GEMINI_API_KEY (يفتح Imagen) أو OPENAI_API_KEY في بيئة الخادم.', notConfigured: true });
+            return res.status(503).json({ error: 'مزوّد الصور غير مُفعّل — اضبط GEMINI_API_KEY (يفتح صور Gemini) أو OPENAI_API_KEY في بيئة الخادم.', notConfigured: true });
         }
         const appPath = path.join(req.projectPath, 'app.js');
         if (!fs.existsSync(appPath)) return res.status(404).json({ error: 'لا app.js في المشروع — هذه الميزة لمواقع القوالب.' });
@@ -1063,7 +1063,11 @@ app.post('/api/project/ai-images', verifyToken, aiLimit, validateProjectOwnershi
         const files = [{ name: 'app.js', content: fs.readFileSync(appPath, 'utf8') }];
         const r = await applyAiImages(files, { goal: req.activeProject, maxCount: allowed });
         if (r.notConfigured) return res.status(503).json({ error: r.reason, notConfigured: true });
-        if (!r.changed) return res.status(400).json({ error: r.reason || 'لا عناصر مؤهّلة للتوليد.' });
+        if (!r.changed) {
+            const why = r.reason || 'لا عناصر مؤهّلة للتوليد.';
+            io.to(`${req.user.username}-${req.activeProject}`).emit('log', { message: `❌ [SYSTEM]: تعذّر توليد الصور — ${why}` });
+            return res.status(400).json({ error: why });
+        }
 
         fs.mkdirSync(path.join(req.projectPath, 'images'), { recursive: true });
         for (const img of r.images) fs.writeFileSync(path.join(req.projectPath, img.name), img.buf);

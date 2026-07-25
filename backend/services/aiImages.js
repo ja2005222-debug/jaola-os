@@ -12,7 +12,7 @@ import { patchImgUrlPassthrough } from '../agents/imageForge.js';
 const MAX_PER_CALL = 8;
 const GEN_SVG_RE = /^images\/gen-[\w-]+\.svg$/;
 
-/** مزوّد الصور الفعّال: Gemini (Imagen) أولاً إن وُجد مفتاحه، ثم OpenAI. */
+/** مزوّد الصور الفعّال: Gemini (صور Gemini/Nano Banana) أولاً إن وُجد مفتاحه، ثم OpenAI. */
 export function imageProviderOf(env = process.env) {
     const forced = (env.IMAGE_PROVIDER || '').toLowerCase();
     if (forced === 'gemini' || forced === 'openai') return env[forced === 'gemini' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY'] ? forced : null;
@@ -27,7 +27,9 @@ export function aiImagesReady(env = process.env) {
 
 /**
  * يولّد صورة واحدة عبر مزوّد الصور المتاح. يعيد {ok,buf,ext} أو {error}.
- * - Gemini: Imagen عبر :predict (يتطلب Tier مدفوعاً — نفس مفتاح GEMINI_API_KEY)
+ * - Gemini: نموذج صور Gemini عبر :generateContent (نفس مفتاح GEMINI_API_KEY).
+ *   نماذج Imagen القديمة (:predict) أُوقفت من Google — تبقى مدعومة فقط عند فرض
+ *   IMAGE_MODEL_GEMINI باسم يبدأ بـ imagen.
  * - OpenAI: images/generations
  */
 export async function generateProductImage(prompt, deps = {}) {
@@ -35,26 +37,47 @@ export async function generateProductImage(prompt, deps = {}) {
     const fetchImpl = deps.fetchImpl || fetch;
     const provider = imageProviderOf(env);
     if (!provider) {
-        return { error: 'مزوّد الصور غير مُفعّل — اضبط GEMINI_API_KEY (يفتح Imagen) أو OPENAI_API_KEY.', notConfigured: true };
+        return { error: 'مزوّد الصور غير مُفعّل — اضبط GEMINI_API_KEY (يفتح صور Gemini) أو OPENAI_API_KEY.', notConfigured: true };
     }
     const cleanPrompt = String(prompt || '').slice(0, 900);
     try {
         if (provider === 'gemini') {
-            const model = env.IMAGE_MODEL_GEMINI || 'imagen-3.0-generate-002';
+            const model = env.IMAGE_MODEL_GEMINI || 'gemini-2.5-flash-image';
+            const key = encodeURIComponent(env.GEMINI_API_KEY);
+            if (/^imagen/i.test(model)) {
+                const r = await fetchImpl(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:predict?key=${key}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            instances: [{ prompt: cleanPrompt }],
+                            parameters: { sampleCount: 1, aspectRatio: '1:1' },
+                        }),
+                    });
+                const d = await r.json().catch(() => ({}));
+                const b64 = d?.predictions?.[0]?.bytesBase64Encoded;
+                if (!r.ok || !b64) return { error: `فشل توليد الصورة عبر ${model} (${d?.error?.message || r.status}).` };
+                return { ok: true, buf: Buffer.from(b64, 'base64'), ext: 'png' };
+            }
             const r = await fetchImpl(
-                `https://generativelanguage.googleapis.com/v1beta/models/${model}:predict?key=${encodeURIComponent(env.GEMINI_API_KEY)}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
                 {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        instances: [{ prompt: cleanPrompt }],
-                        parameters: { sampleCount: 1, aspectRatio: '1:1' },
+                        contents: [{ parts: [{ text: cleanPrompt }] }],
+                        generationConfig: { responseModalities: ['IMAGE'] },
                     }),
                 });
             const d = await r.json().catch(() => ({}));
-            const b64 = d?.predictions?.[0]?.bytesBase64Encoded;
-            if (!r.ok || !b64) return { error: `فشل توليد الصورة عبر Imagen (${d?.error?.message || r.status}).` };
-            return { ok: true, buf: Buffer.from(b64, 'base64'), ext: 'png' };
+            const part = d?.candidates?.[0]?.content?.parts?.find(p => p?.inlineData?.data);
+            if (!r.ok || !part) {
+                const why = d?.error?.message || d?.candidates?.[0]?.finishReason || r.status;
+                return { error: `فشل توليد الصورة عبر ${model} (${why}).` };
+            }
+            const ext = /jpe?g/i.test(part.inlineData.mimeType || '') ? 'jpg' : 'png';
+            return { ok: true, buf: Buffer.from(part.inlineData.data, 'base64'), ext };
         }
         const r = await fetchImpl('https://api.openai.com/v1/images/generations', {
             method: 'POST',
@@ -115,17 +138,18 @@ export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_
 
     const images = [];
     let count = 0;
+    let lastError = '';
     for (const t of targets.slice(0, Math.max(0, Math.min(maxCount, MAX_PER_CALL)))) {
         const prompt = `${t.label} — ${goal}. Professional product photo, clean simple background, no text or watermark.`;
         const r = await genFn(prompt);
         if (r?.notConfigured) return { changed: false, notConfigured: true, reason: r.error };
-        if (!r?.ok || !r.buf) continue; // فشل صورة واحدة لا يفشل الدفعة
+        if (!r?.ok || !r.buf) { if (r?.error) lastError = r.error; continue; } // فشل صورة واحدة لا يفشل الدفعة
         const fileName = `images/ai-${t.key}.${r.ext || 'png'}`;
         images.push({ name: fileName, buf: r.buf });
         t.obj.img = fileName;
         count++;
     }
-    if (!count) return { changed: false, reason: 'لم تُولَّد أي صورة' };
+    if (!count) return { changed: false, reason: lastError || 'لم تُولَّد أي صورة' };
 
     const newLit = '[\n  ' + items.map(o => JSON.stringify(o)).join(',\n  ') + '\n]';
     if (!validateSeedLiteral(newLit, seedArr.literal)) return { changed: false, reason: 'حارس البنية رفض التعديل' };
