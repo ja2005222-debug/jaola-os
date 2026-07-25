@@ -178,7 +178,14 @@ app.use(express.json({ limit: '1mb' })); // حد أقصى لحجم الطلب
 // ─── تقديم الواجهة الأمامية الثابتة ────────────────────────────────
 const frontendDistPath = path.join(__dirname, '../frontend/dist');
 if (fs.existsSync(frontendDistPath)) {
-    app.use(express.static(frontendDistPath));
+    // index.html بلا كاش (الأصول الأخرى مبصومة بالهاش فآمنة للتخزين الطويل) —
+    // يضمن أن كل نشر جديد يصل للمتصفحات فوراً بلا «حزمة قديمة عالقة»
+    app.use(express.static(frontendDistPath, {
+        setHeaders: (res, filePath) => {
+            if (filePath.endsWith('index.html')) res.setHeader('Cache-Control', 'no-cache');
+            else if (/\.(js|css|jpg|png|svg|woff2?)$/.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+        },
+    }));
     app.get('*', (req, res, next) => {
         if (req.path.startsWith('/api') || req.path.startsWith('/workspace')) return next();
         res.sendFile(path.join(frontendDistPath, 'index.html'));
