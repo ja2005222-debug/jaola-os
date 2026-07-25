@@ -17,6 +17,10 @@ export const deepseek = new OpenAI({
 });
 const hasDeepseek = !!process.env.DEEPSEEK_API_KEY;
 
+// موديل DeepSeek — الافتراضي deepseek-chat: موديل deepseek-coder القديم
+// أُلغي نهائياً (دُمج في V2.5) وأي استدعاء به يفشل بـ Model Not Exist
+export const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+
 const openaiClient = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
 export const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
@@ -67,7 +71,7 @@ async function createWithFailover(params, opts) {
     // 2️⃣ DeepSeek — الاشتراك المدفوع، نفس واجهة OpenAI ويدعم البث و JSON mode
     if (hasDeepseek) {
         try {
-            return await deepseek.chat.completions.create({ ...params, model: 'deepseek-chat' }, opts);
+            return await deepseek.chat.completions.create({ ...params, model: DEEPSEEK_MODEL }, opts);
         } catch (e) {
             lastError = e; failures.push(e);
             console.warn(`[AI Failover] DeepSeek فشل (${e.status || ''} ${String(e.message).slice(0, 80)}) → ${openaiClient ? 'OpenAI' : 'لا بديل متبقٍ'}`);
