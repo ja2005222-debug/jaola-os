@@ -38,6 +38,8 @@ export default function LandingPage({ onStart = () => {} }) {
   const t = useI18n(s => s.t);
   const lang = useI18n(s => s.lang);
   const isAr = lang === 'ar';
+  // اللقطات بنسختين: عربية (الأصل) وإنجليزية (مولّدة عبر مترجم القوالب نفسه)
+  const shot = (id) => (isAr ? `/templates/${id}.jpg` : `/templates/en/${id}.jpg`);
   const [plans, setPlans] = useState(FALLBACK_PLANS);
 
   // الأسعار الحيّة من نفس مصدر صفحة الفوترة — لا ازدواجية حقيقة
@@ -115,7 +117,7 @@ export default function LandingPage({ onStart = () => {} }) {
           <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.8 }}
             className="relative h-[380px] hidden sm:block">
             {SHOWCASE.slice(0, 3).map((s, i) => (
-              <img key={s.id} src={`/templates/${s.id}.jpg`} alt={isAr ? s.ar : s.en} loading="lazy"
+              <img key={s.id} src={shot(s.id)} alt={isAr ? s.ar : s.en} loading="lazy"
                 className="absolute w-[78%] rounded-2xl border border-white/10 shadow-2xl"
                 style={{ top: `${i * 44}px`, insetInlineStart: `${i * 11}%`, transform: `rotate(${(i - 1) * 2}deg)`, zIndex: 3 - i, opacity: 1 - i * 0.12 }} />
             ))}
@@ -149,7 +151,7 @@ export default function LandingPage({ onStart = () => {} }) {
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {SHOWCASE.map(s => (
               <button key={s.id} onClick={() => onStart()} className="group rounded-2xl overflow-hidden glass text-start hover:bg-white/[0.07] transition">
-                <img src={`/templates/${s.id}.jpg`} alt={isAr ? s.ar : s.en} loading="lazy"
+                <img src={shot(s.id)} alt={isAr ? s.ar : s.en} loading="lazy"
                   className="w-full aspect-video object-cover object-top group-hover:scale-[1.02] transition" />
                 <div className="p-4 font-semibold text-sm">{isAr ? s.ar : s.en}</div>
               </button>

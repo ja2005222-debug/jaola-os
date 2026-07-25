@@ -198,6 +198,9 @@ const STRINGS = {
   tgPublishing: { en: 'Publishing...', ar: 'جاري النشر...' },
   tgPublished: { en: 'Published to your Telegram channel ✓', ar: 'نُشر في قناتك على تيليجرام ✓' },
   tgPublishFail: { en: 'Could not publish.', ar: 'تعذّر النشر.' },
+  growMenu: { en: 'Growth', ar: 'النمو' },
+  settingsMenu: { en: 'Settings', ar: 'الإعدادات' },
+
   // 🏠 اللاندنق
   ldBadge: { en: 'Your AI web company', ar: 'شركتك الذكية لبناء المواقع' },
   ldH1a: { en: 'From an idea to a live website —', ar: 'من فكرة إلى موقع منشور —' },

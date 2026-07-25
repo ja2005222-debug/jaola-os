@@ -279,6 +279,8 @@ export default function Dashboard() {
   const [showHealthModal, setShowHealthModal] = useState(false);
   const [health, setHealth] = useState(null);
   const [healthLoading, setHealthLoading] = useState(false);
+  const [openMenu, setOpenMenu] = useState(null); // 'grow' | 'settings' | null
+  const [visitsToday, setVisitsToday] = useState(0);
   const [showInboxModal, setShowInboxModal] = useState(false);
   const [inbox, setInbox] = useState(null);
   const [inboxLoading, setInboxLoading] = useState(false);
@@ -892,7 +894,7 @@ export default function Dashboard() {
     if (!activeProject || !token) { setInboxUnread(0); return; }
     fetch(`${BACKEND_URL}/api/site/inbox?project=${encodeURIComponent(activeProject)}`, { headers: getHeaders() })
       .then(r => r.ok ? r.json() : null)
-      .then(d => setInboxUnread(d?.unread || 0))
+      .then(d => { setInboxUnread(d?.unread || 0); setVisitsToday(d?.visits?.today || 0); })
       .catch(() => {});
   }, [activeProject, token]);
 
@@ -1441,7 +1443,7 @@ export default function Dashboard() {
             {galleryList.map(c => (
               <div key={c.id} className="tpl-card" style={{ background:'#121826', border:`1px solid ${S.border}`, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', transition:'transform 0.2s, border-color 0.2s' }}>
                 <div style={{ position:'relative', aspectRatio:'11/7', overflow:'hidden', background:'#0a0f1a' }}>
-                  <img src={`/templates/${c.id}.jpg`} alt={c.name} loading="lazy"
+                  <img src={uiLang === 'ar' ? `/templates/${c.id}.jpg` : `/templates/en/${c.id}.jpg`} alt={c.name} loading="lazy"
                     className="tpl-shot" style={{ width:'100%', height:'100%', objectFit:'cover', objectPosition:'top', transition:'transform 0.4s' }}
                     onError={e => { e.currentTarget.style.display = 'none'; }} />
                   <span style={{ position:'absolute', top:8, insetInlineStart:8, background:'rgba(6,10,18,0.85)', border:'1px solid rgba(59,130,246,0.3)', color:'#93c5fd', fontSize:9.5, fontWeight:800, padding:'3px 9px', borderRadius:20 }}>
@@ -2547,64 +2549,85 @@ export default function Dashboard() {
 
         <div style={{ width:1, height:20, background:S.border }} />
 
-        {/* معرفة المنصّة */}
-        <button onClick={openKnowledgeModal} title={t('knTitle')}
-          style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 12px', color:'#94a3b8', fontSize:11, fontWeight:600 }}>
-          📚 {t('knTitle')}
-        </button>
+        {/* غطاء شفاف يغلق القوائم عند النقر خارجها */}
+        {openMenu && <div onClick={() => setOpenMenu(null)} style={{ position:'fixed', inset:0, zIndex:55 }} />}
 
-        {/* صحّة المشروع */}
+        {/* 📊 أرقام حيّة — القيمة تظهر دون فتح شيء (ضغطها يفتح البريد) */}
+        {activeProject && (
+          <button onClick={openInboxModal} title={t('inboxTitle')}
+            style={{ display:'flex', alignItems:'center', gap:8, background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 10px', color:S.muted, fontSize:11, cursor:'pointer' }}>
+            <span title={t('inboxVisitsToday')}>👁 {visitsToday}</span>
+            <span style={{ color: inboxUnread > 0 ? '#60a5fa' : S.muted, fontWeight: inboxUnread > 0 ? 800 : 400 }} title={t('inboxTitle')}>
+              📬 {inboxUnread}
+            </span>
+          </button>
+        )}
+
+        {/* 📈 مركز النمو — كل ما يخدم موقعك بعد البناء في قائمة واحدة */}
+        <div style={{ position:'relative' }}>
+          <button onClick={() => setOpenMenu(m => m === 'grow' ? null : 'grow')}
+            style={{ position:'relative', display:'flex', alignItems:'center', gap:6, background:'rgba(59,130,246,0.1)', border:'1px solid rgba(59,130,246,0.3)', borderRadius:7, padding:'5px 12px', color:'#93c5fd', fontSize:11, fontWeight:700 }}>
+            📈 {t('growMenu')} ▾
+            {inboxUnread > 0 && (
+              <span style={{ position:'absolute', top:-6, insetInlineEnd:-6, background:'#3b82f6', color:'#fff', fontSize:9, fontWeight:800, borderRadius:9, minWidth:16, height:16, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 4px' }}>
+                {inboxUnread > 99 ? '99+' : inboxUnread}
+              </span>
+            )}
+          </button>
+          {openMenu === 'grow' && (
+            <div style={{ position:'absolute', top:'110%', insetInlineEnd:0, zIndex:60, background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:11, padding:6, minWidth:200, boxShadow:'0 12px 32px rgba(0,0,0,0.5)' }}>
+              {[
+                ['📬', t('inboxTitle'), openInboxModal, inboxUnread],
+                ['📣', t('mkTitle'), openMarketingModal, 0],
+                ['🤖', t('botStudioTitle'), openBotModal, 0],
+                ['🧩', t('agTitle'), openAgentsModal, 0],
+                ['🎨', t('brandTitle'), () => setShowBrandModal(true), 0],
+              ].map(([icon, label, fn, badge], i) => (
+                <button key={i} onClick={() => { setOpenMenu(null); fn(); }}
+                  style={{ display:'flex', alignItems:'center', gap:9, width:'100%', background:'transparent', border:'none', borderRadius:8, padding:'9px 10px', color:'#e2e8f0', fontSize:12, fontWeight:600, textAlign:'start', cursor:'pointer' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <span style={{ fontSize:15 }}>{icon}</span> {label}
+                  {badge > 0 && <span style={{ marginInlineStart:'auto', background:'#3b82f6', color:'#fff', fontSize:9, fontWeight:800, borderRadius:8, padding:'1px 7px' }}>{badge}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* البناء: المعرض والصحة يبقيان ظاهرين */}
+        <button onClick={openGalleryModal} title={t('galleryTitle')}
+          style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.28)', borderRadius:7, padding:'5px 12px', color:'#c4b5fd', fontSize:11, fontWeight:700 }}>
+          🖼️ {t('galleryTitle')}
+        </button>
         <button onClick={openHealthModal} title={t('healthTitle')}
           style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(34,197,94,0.08)', border:'1px solid rgba(34,197,94,0.22)', borderRadius:7, padding:'5px 12px', color:'#4ade80', fontSize:11, fontWeight:700 }}>
           🩺 {t('healthTitle')}
         </button>
 
-        {/* المساعد التسويقي */}
-        <button onClick={openMarketingModal} title={t('mkTitle')}
-          style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(236,72,153,0.08)', border:'1px solid rgba(236,72,153,0.25)', borderRadius:7, padding:'5px 12px', color:'#f9a8d4', fontSize:11, fontWeight:700 }}>
-          📣 {t('mkTitle')}
-        </button>
-
-        {/* هوية الموقع (شعار + صور AI) */}
-        <button onClick={() => setShowBrandModal(true)} title={t('brandTitle')}
-          style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(236,72,153,0.08)', border:'1px solid rgba(236,72,153,0.22)', borderRadius:7, padding:'5px 12px', color:'#f9a8d4', fontSize:11, fontWeight:700 }}>
-          🎨 {t('brandTitle')}
-        </button>
-
-        {/* وكلائي (سوق صناعة الوكلاء) */}
-        <button onClick={openAgentsModal} title={t('agTitle')}
-          style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(99,102,241,0.1)', border:'1px solid rgba(99,102,241,0.28)', borderRadius:7, padding:'5px 12px', color:'#a5b4fc', fontSize:11, fontWeight:700 }}>
-          🧩 {t('agTitle')}
-        </button>
-
-        {/* بريد الموقع (رسائل التواصل + الزيارات) */}
-        <button onClick={openInboxModal} title={t('inboxTitle')}
-          style={{ position:'relative', display:'flex', alignItems:'center', gap:6, background:'rgba(59,130,246,0.08)', border:'1px solid rgba(59,130,246,0.25)', borderRadius:7, padding:'5px 12px', color:'#93c5fd', fontSize:11, fontWeight:700 }}>
-          📬 {t('inboxTitle')}
-          {inboxUnread > 0 && (
-            <span style={{ position:'absolute', top:-6, insetInlineEnd:-6, background:'#3b82f6', color:'#fff', fontSize:9, fontWeight:800, borderRadius:9, minWidth:16, height:16, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 4px' }}>
-              {inboxUnread > 99 ? '99+' : inboxUnread}
-            </span>
+        {/* ⚙️ الإعدادات والأدوات النادرة */}
+        <div style={{ position:'relative' }}>
+          <button onClick={() => setOpenMenu(m => m === 'settings' ? null : 'settings')} title={t('settingsMenu')}
+            style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 12px', color:'#94a3b8', fontSize:11, fontWeight:600 }}>
+            ⚙️ ▾
+          </button>
+          {openMenu === 'settings' && (
+            <div style={{ position:'absolute', top:'110%', insetInlineEnd:0, zIndex:60, background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:11, padding:6, minWidth:200, boxShadow:'0 12px 32px rgba(0,0,0,0.5)' }}>
+              {[
+                ['🐙', 'GitHub', openGithubModal],
+                ['🔑', t('secretsTitle'), openSecretsModal],
+                ['📚', t('knTitle'), openKnowledgeModal],
+              ].map(([icon, label, fn], i) => (
+                <button key={i} onClick={() => { setOpenMenu(null); fn(); }}
+                  style={{ display:'flex', alignItems:'center', gap:9, width:'100%', background:'transparent', border:'none', borderRadius:8, padding:'9px 10px', color:'#e2e8f0', fontSize:12, fontWeight:600, textAlign:'start', cursor:'pointer' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <span style={{ fontSize:15 }}>{icon}</span> {label}
+                </button>
+              ))}
+            </div>
           )}
-        </button>
-
-        {/* معرض القوالب البصري */}
-        <button onClick={openGalleryModal} title={t('galleryTitle')}
-          style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.28)', borderRadius:7, padding:'5px 12px', color:'#c4b5fd', fontSize:11, fontWeight:700 }}>
-          🖼️ {t('galleryTitle')}
-        </button>
-
-        {/* GitHub */}
-        <button onClick={openGithubModal} title={t('githubTitle')}
-          style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 12px', color:'#94a3b8', fontSize:11, fontWeight:600 }}>
-          🐙 GitHub
-        </button>
-
-        {/* الأسرار (متغيّرات البيئة) */}
-        <button onClick={openSecretsModal} title={t('secretsTitle')}
-          style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 12px', color:'#94a3b8', fontSize:11, fontWeight:600 }}>
-          🔑 {t('secretsShort')}
-        </button>
+        </div>
 
         {/* Deploy — رابط الموقع (إن وُجد) + زر النشر/إعادة النشر دائماً حاضر */}
         {vercelUrl && (
@@ -2616,11 +2639,6 @@ export default function Dashboard() {
         <button onClick={handlePolish} disabled={isPolishing} title={t('polish')}
           style={{ background:'rgba(56,189,248,0.12)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:7, padding:'5px 12px', color:'#7dd3fc', fontSize:11, fontWeight:700, opacity: isPolishing ? 0.7 : 1 }}>
           {isPolishing ? `⏳ ${t('polishing')}` : `✨ ${t('polish')}`}
-        </button>
-
-        <button onClick={openBotModal} disabled={isAddingBot} title={t('botStudioTitle')}
-          style={{ background:'rgba(139,92,246,0.12)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:7, padding:'5px 12px', color:'#c4b5fd', fontSize:11, fontWeight:700, opacity: isAddingBot ? 0.7 : 1 }}>
-          {isAddingBot ? `⏳ ${t('addingBot')}` : `🤖 ${t('addBot')}`}
         </button>
 
         <button onClick={handleDeploy} disabled={isDeploying} title={vercelUrl ? t('redeploy') : t('deploy')}
