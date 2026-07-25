@@ -25,11 +25,55 @@ export function aiImagesReady(env = process.env) {
     return !!imageProviderOf(env);
 }
 
+/** سلّم نماذج Gemini للصور — يُجرَّب بالترتيب حتى ينجح أحدها (أسماء Google تتغير). */
+export const GEMINI_IMAGE_MODELS = ['gemini-2.5-flash-image', 'gemini-3.1-flash-image', 'imagen-4.0-generate-001'];
+const MODEL_GONE_RE = /not found|not supported|does not exist|unknown model|deprecated|NOT_FOUND/i;
+const KEY_BAD_RE = /api.?key|invalid authentication|unauthorized|PERMISSION_DENIED|UNAUTHENTICATED/i;
+
+/** استدعاء نموذج Gemini واحد — imagen عبر :predict والبقية عبر :generateContent. */
+async function callGeminiImageModel(model, prompt, env, fetchImpl) {
+    const key = encodeURIComponent(env.GEMINI_API_KEY);
+    if (/^imagen/i.test(model)) {
+        const r = await fetchImpl(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:predict?key=${key}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    instances: [{ prompt }],
+                    parameters: { sampleCount: 1, aspectRatio: '1:1' },
+                }),
+            });
+        const d = await r.json().catch(() => ({}));
+        const b64 = d?.predictions?.[0]?.bytesBase64Encoded;
+        if (!r.ok || !b64) return { error: `فشل توليد الصورة عبر ${model} (${d?.error?.message || r.status}).` };
+        return { ok: true, buf: Buffer.from(b64, 'base64'), ext: 'png' };
+    }
+    const r = await fetchImpl(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { responseModalities: ['IMAGE'] },
+            }),
+        });
+    const d = await r.json().catch(() => ({}));
+    const part = d?.candidates?.[0]?.content?.parts?.find(p => p?.inlineData?.data);
+    if (!r.ok || !part) {
+        const why = d?.error?.message || d?.candidates?.[0]?.finishReason || r.status;
+        return { error: `فشل توليد الصورة عبر ${model} (${why}).` };
+    }
+    const ext = /jpe?g/i.test(part.inlineData.mimeType || '') ? 'jpg' : 'png';
+    return { ok: true, buf: Buffer.from(part.inlineData.data, 'base64'), ext };
+}
+
 /**
  * يولّد صورة واحدة عبر مزوّد الصور المتاح. يعيد {ok,buf,ext} أو {error}.
- * - Gemini: نموذج صور Gemini عبر :generateContent (نفس مفتاح GEMINI_API_KEY).
- *   نماذج Imagen القديمة (:predict) أُوقفت من Google — تبقى مدعومة فقط عند فرض
- *   IMAGE_MODEL_GEMINI باسم يبدأ بـ imagen.
+ * - Gemini: يجرّب سلّم النماذج بالترتيب (نفس مفتاح GEMINI_API_KEY)؛ اسم غير
+ *   موجود → التالي، مفتاح مرفوض → توقّف فوري برسالة إرشادية، وأي خطأ آخر
+ *   (حصة/حجب أمان) يُعاد كما هو. فرض IMAGE_MODEL_GEMINI يقصر السلّم على اسمه.
  * - OpenAI: images/generations
  */
 export async function generateProductImage(prompt, deps = {}) {
@@ -42,42 +86,18 @@ export async function generateProductImage(prompt, deps = {}) {
     const cleanPrompt = String(prompt || '').slice(0, 900);
     try {
         if (provider === 'gemini') {
-            const model = env.IMAGE_MODEL_GEMINI || 'gemini-2.5-flash-image';
-            const key = encodeURIComponent(env.GEMINI_API_KEY);
-            if (/^imagen/i.test(model)) {
-                const r = await fetchImpl(
-                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:predict?key=${key}`,
-                    {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            instances: [{ prompt: cleanPrompt }],
-                            parameters: { sampleCount: 1, aspectRatio: '1:1' },
-                        }),
-                    });
-                const d = await r.json().catch(() => ({}));
-                const b64 = d?.predictions?.[0]?.bytesBase64Encoded;
-                if (!r.ok || !b64) return { error: `فشل توليد الصورة عبر ${model} (${d?.error?.message || r.status}).` };
-                return { ok: true, buf: Buffer.from(b64, 'base64'), ext: 'png' };
+            const candidates = env.IMAGE_MODEL_GEMINI ? [env.IMAGE_MODEL_GEMINI] : GEMINI_IMAGE_MODELS;
+            let last = null;
+            for (const model of candidates) {
+                const r = await callGeminiImageModel(model, cleanPrompt, env, fetchImpl);
+                if (r.ok) return r;
+                last = r;
+                if (KEY_BAD_RE.test(r.error)) {
+                    return { error: `مفتاح GEMINI_API_KEY نفسه مرفوض من Google — جدّده من aistudio.google.com/apikey وحدّثه في بيئة الخادم. (${r.error})` };
+                }
+                if (!MODEL_GONE_RE.test(r.error)) return r; // خطأ لا علاقة له باسم النموذج — تبديل الاسم لن يفيد
             }
-            const r = await fetchImpl(
-                `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-                {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: cleanPrompt }] }],
-                        generationConfig: { responseModalities: ['IMAGE'] },
-                    }),
-                });
-            const d = await r.json().catch(() => ({}));
-            const part = d?.candidates?.[0]?.content?.parts?.find(p => p?.inlineData?.data);
-            if (!r.ok || !part) {
-                const why = d?.error?.message || d?.candidates?.[0]?.finishReason || r.status;
-                return { error: `فشل توليد الصورة عبر ${model} (${why}).` };
-            }
-            const ext = /jpe?g/i.test(part.inlineData.mimeType || '') ? 'jpg' : 'png';
-            return { ok: true, buf: Buffer.from(part.inlineData.data, 'base64'), ext };
+            return last;
         }
         const r = await fetchImpl('https://api.openai.com/v1/images/generations', {
             method: 'POST',

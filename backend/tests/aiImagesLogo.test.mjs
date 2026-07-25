@@ -38,17 +38,45 @@ test('اختيار المزوّد: Gemini أولاً إن وُجد، وIMAGE_PRO
     assert.equal(body.contents[0].parts[0].text, 'كنافة شهية');
     assert.deepEqual(body.generationConfig.responseModalities, ['IMAGE']);
 
-    const fail = await generateProductImage('x', {
-        env: { GEMINI_API_KEY: 'gk' },
-        fetchImpl: async () => ({ ok: false, status: 400, json: async () => ({ error: { message: 'model not found' } }) }),
-    });
-    assert.ok(/gemini-2.5-flash-image/.test(fail.error) && /model not found/.test(fail.error), 'خطأ Google يصل نصياً مع اسم النموذج');
-
     const blocked = await generateProductImage('x', {
         env: { GEMINI_API_KEY: 'gk' },
         fetchImpl: async () => ({ ok: true, json: async () => ({ candidates: [{ finishReason: 'IMAGE_SAFETY', content: { parts: [] } }] }) }),
     });
-    assert.ok(/IMAGE_SAFETY/.test(blocked.error), 'استجابة 200 بلا صورة تُظهر سبب الحجب');
+    assert.ok(/IMAGE_SAFETY/.test(blocked.error), 'استجابة 200 بلا صورة تُظهر سبب الحجب — ولا يُجرَّب نموذج آخر');
+});
+
+test('سلّم نماذج Gemini: اسم مُوقف → التالي، مفتاح مرفوض → توقّف فوري بإرشاد، خطأ حصة → بلا تبديل عبثي', async () => {
+    // النموذج الأول غير موجود → يُجرَّب الثاني وينجح
+    const png = Buffer.from('fallback-bytes');
+    const urls = [];
+    const ladder = await generateProductImage('كنافة', {
+        env: { GEMINI_API_KEY: 'gk' },
+        fetchImpl: async (url) => {
+            urls.push(url);
+            if (urls.length === 1) return { ok: false, status: 404, json: async () => ({ error: { message: 'models/gemini-2.5-flash-image is not found for API version v1beta' } }) };
+            return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: png.toString('base64') } }] } }] }) };
+        },
+    });
+    assert.ok(ladder.ok && Buffer.compare(ladder.buf, png) === 0);
+    assert.ok(urls[0].includes('gemini-2.5-flash-image') && urls[1].includes('gemini-3.1-flash-image'), 'الاسم المُوقف يُتخطى للتالي');
+
+    // مفتاح مرفوض → رسالة إرشادية فورية واستدعاء واحد فقط
+    let calls = 0;
+    const badKey = await generateProductImage('x', {
+        env: { GEMINI_API_KEY: 'stale' },
+        fetchImpl: async () => { calls++; return { ok: false, status: 400, json: async () => ({ error: { message: 'API key not valid. Please pass a valid API key.' } }) }; },
+    });
+    assert.equal(calls, 1, 'لا تبديل نماذج على مفتاح مرفوض');
+    assert.ok(/GEMINI_API_KEY/.test(badKey.error) && /aistudio\.google\.com/.test(badKey.error), 'إرشاد تجديد المفتاح واضح');
+
+    // خطأ حصة → يُعاد كما هو بلا تجربة بقية السلّم
+    let calls2 = 0;
+    const quota = await generateProductImage('x', {
+        env: { GEMINI_API_KEY: 'gk' },
+        fetchImpl: async () => { calls2++; return { ok: false, status: 429, json: async () => ({ error: { message: 'Resource has been exhausted (e.g. check quota).' } }) }; },
+    });
+    assert.equal(calls2, 1);
+    assert.ok(/quota/.test(quota.error) && /gemini-2.5-flash-image/.test(quota.error), 'خطأ الحصة يصل باسم النموذج');
 });
 
 test('فرض IMAGE_MODEL_GEMINI باسم imagen يبقى على مسار :predict القديم', async () => {
