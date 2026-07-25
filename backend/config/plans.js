@@ -24,6 +24,7 @@ export const PLANS = {
         limits: {
             projects: 5,
             botAiMessages: 30,             // ذكاء البوت الحيّ: عيّنة تذوّق شهرية
+            emails: 20,                    // ردود بريدية من الداشبورد شهرياً
             autoDeploy: false,
             prioritySupport: false,
             customAgents: false,
@@ -42,6 +43,7 @@ export const PLANS = {
         limits: {
             projects: UNLIMITED,
             botAiMessages: 2000,           // ذكاء البوت الحيّ لكل مواقع المستخدم شهرياً
+            emails: 500,
             autoDeploy: true,
             prioritySupport: true,
             customAgents: false,
@@ -60,6 +62,7 @@ export const PLANS = {
         limits: {
             projects: UNLIMITED,
             botAiMessages: UNLIMITED,
+            emails: UNLIMITED,
             autoDeploy: true,
             prioritySupport: true,
             customAgents: true,
@@ -109,6 +112,7 @@ export function publicPlans() {
             ...p.limits,
             projects: p.limits.projects === UNLIMITED ? null : p.limits.projects,
             botAiMessages: p.limits.botAiMessages === UNLIMITED ? null : p.limits.botAiMessages,
+            emails: p.limits.emails === UNLIMITED ? null : p.limits.emails,
         },
     }));
 }

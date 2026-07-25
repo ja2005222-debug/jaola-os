@@ -234,7 +234,7 @@ export async function generateJaolaBot(projectPath, options = {}) {
         // (بلا توكن ولا apiBase — لا أسرار في البيان)
         const manifest = {
             brandName: cfg.name, emoji: cfg.emoji, welcome: cfg.welcome, fallback: cfg.fallback,
-            quick: cfg.quick,
+            color: cfg.color, quick: cfg.quick,
             faq: Array.isArray(options.faq)
                 ? options.faq.filter(x => x && x.q && x.a)
                     .map(x => ({ q: String(x.q).slice(0, 200), a: String(x.a).slice(0, 600) })).slice(0, 20)
@@ -254,6 +254,28 @@ export async function generateJaolaBot(projectPath, options = {}) {
     } catch (error) {
         return { success: false, error: error.message };
     }
+}
+
+/**
+ * 🔗 حزمة التضمين لأي موقع — ملف JS واحد يحقن CSS الودجت بنفسه.
+ * تُبنى من بيان الإعداد؛ الذكاء الحيّ يعمل فقط إن كان مفعّلاً في البيان.
+ */
+export function buildEmbedBundle(manifest = {}, { apiBase, token } = {}) {
+    const ai = manifest.ai === true;
+    const cfg = buildConfig({
+        brandName: manifest.brandName,
+        emoji: manifest.emoji,
+        welcome: manifest.welcome,
+        fallback: manifest.fallback,
+        quick: manifest.quick,
+        faq: manifest.faq,
+        apiBase: ai ? apiBase : undefined,
+        token: ai ? token : undefined,
+    }, manifest.color || '#0ea5e9');
+    const css = generateWidgetCSS(cfg.color);
+    return '// 🤖 JAOLA Bot Embed — سطر واحد يركّب المساعد في أي موقع. تم توليده عبر JAOLA OS.\n'
+        + `(function(){var s=document.createElement('style');s.textContent=${JSON.stringify(css)};document.head.appendChild(s);})();\n`
+        + generateWidgetJS(cfg);
 }
 
 /**

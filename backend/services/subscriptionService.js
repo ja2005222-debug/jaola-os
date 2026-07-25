@@ -94,3 +94,9 @@ export function botAiQuota(userDoc) {
     const { limits, planId } = getUserSubscription(userDoc);
     return { planId, monthly: limits.botAiMessages ?? 0 };
 }
+
+/** حصة الردود البريدية الشهرية من الداشبورد (Infinity = بلا حدود). */
+export function emailQuota(userDoc) {
+    const { limits, planId } = getUserSubscription(userDoc);
+    return { planId, monthly: limits.emails ?? 0 };
+}
