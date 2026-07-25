@@ -617,6 +617,48 @@ export default function Dashboard() {
     setHealthLoading(false);
   };
 
+  // 🎨 هوية الموقع — رفع الشعار + صور AI حقيقية فوق الصور الحتمية
+  const [showBrandModal, setShowBrandModal] = useState(false);
+  const [brandBusy, setBrandBusy] = useState(null); // 'logo' | 'ai' | null
+  const logoInputRef = useRef(null);
+
+  const uploadLogo = (file) => {
+    if (!file || brandBusy) return;
+    if (file.size > 3 * 1024 * 1024) { addNotification(`❌ ${t('brandLogoTooBig')}`, 'info'); return; }
+    setBrandBusy('logo');
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/project/logo`, {
+          method: 'POST', headers: getHeaders(),
+          body: JSON.stringify({ project: activeProject, name: file.name, dataUrl: reader.result }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (res.ok && d.success) { addNotification(`✓ ${t('brandLogoDone')}`, 'success'); refreshPreview(); }
+        else addNotification(`❌ ${d.error || t('serverUnreachable')}`, 'info');
+      } catch { addNotification(`❌ ${t('serverUnreachable')}`, 'info'); }
+      setBrandBusy(null);
+    };
+    reader.onerror = () => setBrandBusy(null);
+    reader.readAsDataURL(file);
+  };
+
+  const generateAiImages = async () => {
+    if (brandBusy) return;
+    setBrandBusy('ai');
+    addNotification(t('brandAiWorking'), 'info');
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/project/ai-images`, {
+        method: 'POST', headers: getHeaders(),
+        body: JSON.stringify({ project: activeProject }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.success) { addNotification(`🎨 ${t('brandAiDone')} (${d.count})`, 'success'); refreshPreview(); }
+      else addNotification(`${d.notConfigured ? '⚙️' : '❌'} ${d.error || t('serverUnreachable')}`, 'info');
+    } catch { addNotification(`❌ ${t('serverUnreachable')}`, 'info'); }
+    setBrandBusy(null);
+  };
+
   // 🧩 وكلائي — صناعة وكلاء مخصّصين (شخصية + معرفة) قابلين للتضمين في أي موقع
   const [showAgentsModal, setShowAgentsModal] = useState(false);
   const [agentsData, setAgentsData] = useState(null);
@@ -1654,6 +1696,35 @@ export default function Dashboard() {
     </div>
   );
 
+  // 🎨 هوية الموقع: شعار + صور AI
+  const brandModal = showBrandModal && (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
+      onClick={e => e.target === e.currentTarget && setShowBrandModal(false)}>
+      <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:'22px 20px', width:'min(460px, 100%)' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+          <h3 style={{ color:'#fff', fontSize:15, fontWeight:800 }}>🎨 {t('brandTitle')}</h3>
+          <button onClick={() => setShowBrandModal(false)}
+            style={{ background:'transparent', border:'none', color:S.muted, fontSize:20, cursor:'pointer', lineHeight:1 }}>×</button>
+        </div>
+        <p style={{ color:S.muted, fontSize:11, marginBottom:16 }}>{t('brandSub')}</p>
+
+        <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" style={{ display:'none' }}
+          onChange={e => { uploadLogo(e.target.files?.[0]); e.target.value = ''; }} />
+        <button onClick={() => logoInputRef.current?.click()} disabled={!!brandBusy}
+          style={{ width:'100%', marginBottom:8, background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)', borderRadius:10, padding:'12px', color:'#34d399', fontSize:13, fontWeight:800, cursor:'pointer', opacity: brandBusy ? 0.6 : 1 }}>
+          {brandBusy === 'logo' ? '⏳' : `🖼️ ${t('brandLogoBtn')}`}
+        </button>
+        <p style={{ color:'#334155', fontSize:10, marginBottom:16 }}>{t('brandLogoHint')}</p>
+
+        <button onClick={generateAiImages} disabled={!!brandBusy}
+          style={{ width:'100%', marginBottom:8, background:'rgba(236,72,153,0.08)', border:'1px solid rgba(236,72,153,0.28)', borderRadius:10, padding:'12px', color:'#f9a8d4', fontSize:13, fontWeight:800, cursor:'pointer', opacity: brandBusy ? 0.6 : 1 }}>
+          {brandBusy === 'ai' ? `⏳ ${t('brandAiWorking')}` : `🎨 ${t('brandAiBtn')}`}
+        </button>
+        <p style={{ color:'#334155', fontSize:10 }}>{t('brandAiHint')}</p>
+      </div>
+    </div>
+  );
+
   // 🧩 وكلائي: قائمة الوكلاء + نموذج الإنشاء/التحرير
   const agentsModal = showAgentsModal && (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
@@ -2254,6 +2325,10 @@ export default function Dashboard() {
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>📣</span> {t('mkTitle')}
                 </button>
+                <button onClick={() => { setShowMobileMenu(false); setShowBrandModal(true); }}
+                  style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
+                  <span style={{ fontSize:16 }}>🎨</span> {t('brandTitle')}
+                </button>
                 <button onClick={() => { setShowMobileMenu(false); openAgentsModal(); }}
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>🧩</span> {t('agTitle')}
@@ -2384,6 +2459,7 @@ export default function Dashboard() {
         {knowledgeModal}
         {healthModal}
         {inboxModal}
+        {brandModal}
         {agentsModal}
         {botModal}
         {marketingModal}
@@ -2487,6 +2563,12 @@ export default function Dashboard() {
         <button onClick={openMarketingModal} title={t('mkTitle')}
           style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(236,72,153,0.08)', border:'1px solid rgba(236,72,153,0.25)', borderRadius:7, padding:'5px 12px', color:'#f9a8d4', fontSize:11, fontWeight:700 }}>
           📣 {t('mkTitle')}
+        </button>
+
+        {/* هوية الموقع (شعار + صور AI) */}
+        <button onClick={() => setShowBrandModal(true)} title={t('brandTitle')}
+          style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(236,72,153,0.08)', border:'1px solid rgba(236,72,153,0.22)', borderRadius:7, padding:'5px 12px', color:'#f9a8d4', fontSize:11, fontWeight:700 }}>
+          🎨 {t('brandTitle')}
         </button>
 
         {/* وكلائي (سوق صناعة الوكلاء) */}
@@ -2795,6 +2877,7 @@ export default function Dashboard() {
       {knowledgeModal}
       {healthModal}
       {inboxModal}
+      {brandModal}
       {agentsModal}
       {botModal}
       {marketingModal}

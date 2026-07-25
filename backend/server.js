@@ -33,7 +33,8 @@ import {
 import { generatePWA } from './agents/pwaAgent.js';
 import { generateJaolaBot, readBotManifest, buildEmbedBundle } from './agents/jaolaBot.js';
 import { mailReady, sendMail, isEmail } from './services/mailer.js';
-import { emailQuota, socialQuota, customAgentsMax } from './services/subscriptionService.js';
+import { emailQuota, socialQuota, customAgentsMax, aiImagesQuota } from './services/subscriptionService.js';
+import { aiImagesReady, applyAiImages } from './services/aiImages.js';
 import {
     listAgents, upsertAgent, deleteAgent, getAgent,
     buildAgentSystemPrompt, agentToManifest,
@@ -1026,6 +1027,80 @@ app.post('/api/agent-chat', botChatLimit, async (req, res) => {
         res.json({ reply: finalReply });
     } catch {
         res.status(200).json({ reply: null });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 🎨 هوية الموقع: صور AI حقيقية فوق عقد imageForge + رفع الشعار
+// ═══════════════════════════════════════════════════════════════════
+
+// صور AI للعناصر (تستبدل SVG الحتمية أو الفارغة فقط — صور المستخدم لا تُمسّ)
+app.post('/api/project/ai-images', verifyToken, aiLimit, validateProjectOwnership, async (req, res) => {
+    try {
+        if (!aiImagesReady()) {
+            return res.status(503).json({ error: 'مزوّد الصور غير مُفعّل — اضبط OPENAI_API_KEY في بيئة الخادم.', notConfigured: true });
+        }
+        const appPath = path.join(req.projectPath, 'app.js');
+        if (!fs.existsSync(appPath)) return res.status(404).json({ error: 'لا app.js في المشروع — هذه الميزة لمواقع القوالب.' });
+
+        const username = req.user.username;
+        const owner = await DB.findUser(username).catch(() => null);
+        const q = aiImagesQuota(owner);
+        let allowed = Infinity;
+        if (Number.isFinite(q.monthly)) {
+            allowed = Math.max(0, q.monthly - getUsageCount(USAGE_DIR, username, 'aiImages'));
+            if (allowed === 0) return res.status(403).json({ error: `حصة صور AI لخطتك (${q.monthly}/شهر) نفدت — رقِّ خطتك.` });
+        }
+
+        const files = [{ name: 'app.js', content: fs.readFileSync(appPath, 'utf8') }];
+        const r = await applyAiImages(files, { goal: req.activeProject, maxCount: allowed });
+        if (r.notConfigured) return res.status(503).json({ error: r.reason, notConfigured: true });
+        if (!r.changed) return res.status(400).json({ error: r.reason || 'لا عناصر مؤهّلة للتوليد.' });
+
+        fs.mkdirSync(path.join(req.projectPath, 'images'), { recursive: true });
+        for (const img of r.images) fs.writeFileSync(path.join(req.projectPath, img.name), img.buf);
+        fs.writeFileSync(appPath, r.appJs);
+        for (let i = 0; i < r.count; i++) bumpUsage(USAGE_DIR, username, 'aiImages');
+
+        const roomName = `${username}-${req.activeProject}`;
+        emitWorkspaceFiles(roomName, req.projectPath);
+        io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        io.to(roomName).emit('log', { message: `🎨 [SYSTEM]: وُلّدت ${r.count} صورة حقيقية بالذكاء واستُبدلت بالصور المؤقتة.` });
+        res.json({ success: true, count: r.count });
+    } catch (err) {
+        res.status(500).json({ error: 'تعذّر توليد الصور: ' + err.message });
+    }
+});
+
+// رفع شعار الموقع → assets/ + أيقونة المتصفح (favicon)
+app.post('/api/project/logo', verifyToken, validateProjectOwnership, (req, res) => {
+    try {
+        const { name, dataUrl } = req.body || {};
+        const dec = siteCms.decodeDataUrl(dataUrl);
+        if (dec.error) return res.status(400).json({ error: dec.error });
+        const indexPath = path.join(req.projectPath, 'index.html');
+        if (!fs.existsSync(indexPath)) return res.status(404).json({ error: 'لا index.html — ابنِ الموقع أولاً.' });
+
+        fs.mkdirSync(path.join(req.projectPath, 'assets'), { recursive: true });
+        const file = siteCms.safeAssetName(name || 'logo', dec.ext);
+        fs.writeFileSync(path.join(req.projectPath, 'assets', file), dec.buf);
+        const href = `assets/${file}`;
+
+        // الأيقونة: استبدال أي favicon قائم، أو حقن وسم جديد
+        let html = fs.readFileSync(indexPath, 'utf8');
+        if (/<link[^>]+rel=["'](?:shortcut )?icon["'][^>]*>/i.test(html)) {
+            html = html.replace(/(<link[^>]+rel=["'](?:shortcut )?icon["'][^>]*href=["'])[^"']*(["'])/i, `$1${href}$2`);
+        } else {
+            html = injectFaviconTag(html, href);
+        }
+        fs.writeFileSync(indexPath, html);
+
+        const roomName = `${req.user.username}-${req.activeProject}`;
+        emitWorkspaceFiles(roomName, req.projectPath);
+        io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        res.json({ success: true, url: href });
+    } catch (err) {
+        res.status(500).json({ error: 'فشل رفع الشعار: ' + err.message });
     }
 });
 

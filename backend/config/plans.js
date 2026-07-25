@@ -26,6 +26,7 @@ export const PLANS = {
             botAiMessages: 30,             // ذكاء البوت الحيّ: عيّنة تذوّق شهرية
             emails: 20,                    // ردود بريدية من الداشبورد شهرياً
             customAgentsMax: 1,            // وكيل واحد للتذوّق
+            aiImages: 6,                   // صور AI حقيقية شهرياً
             socialPosts: 10,               // منشورات تُنشر مباشرة للقنوات شهرياً
             autoDeploy: false,
             prioritySupport: false,
@@ -47,6 +48,7 @@ export const PLANS = {
             botAiMessages: 2000,           // ذكاء البوت الحيّ لكل مواقع المستخدم شهرياً
             emails: 500,
             customAgentsMax: 3,
+            aiImages: 150,
             socialPosts: 300,
             autoDeploy: true,
             prioritySupport: true,
@@ -68,6 +70,7 @@ export const PLANS = {
             botAiMessages: UNLIMITED,
             emails: UNLIMITED,
             customAgentsMax: UNLIMITED,
+            aiImages: UNLIMITED,
             socialPosts: UNLIMITED,
             autoDeploy: true,
             prioritySupport: true,
@@ -121,6 +124,7 @@ export function publicPlans() {
             emails: p.limits.emails === UNLIMITED ? null : p.limits.emails,
             socialPosts: p.limits.socialPosts === UNLIMITED ? null : p.limits.socialPosts,
             customAgentsMax: p.limits.customAgentsMax === UNLIMITED ? null : p.limits.customAgentsMax,
+            aiImages: p.limits.aiImages === UNLIMITED ? null : p.limits.aiImages,
         },
     }));
 }
