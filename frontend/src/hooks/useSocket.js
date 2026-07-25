@@ -169,14 +169,15 @@ export function useSocket(isAuthenticated, handleAuthError) {
     socket.off('chat_history').on('chat_history', (history) => {
       if (!history?.length) return;
       setChatMessages(prev => {
-        if (prev.length > 0) return prev; // لا تُعيد التحميل إذا يوجد رسائل
-        // آخر 20 فقط (لا جدار نصوص قديم) + مُرسِل موحّد 'assistant' كي تُرسم
-        // الفقاعات بنفس نمط الرسائل الحية تماماً + وسم historic للقفز الفوري
-        return history.slice(-20).map(msg => ({
+        // 🛡️ إغلاق سباق: أحداث حيّة قد تصل قبل التاريخ — كان التاريخ يُتجاهل
+        // كلياً حينها. الآن يُدمج قبل الرسائل الحية بدل التخطي.
+        if (prev.some(m => m.historic)) return prev; // حُمّل سابقاً — لا تكرار
+        const hist = history.slice(-20).map(msg => ({
           sender: msg.role === 'user' ? 'user' : 'assistant',
           text: msg.content,
           historic: true,
         }));
+        return [...hist, ...prev];
       });
     });
 

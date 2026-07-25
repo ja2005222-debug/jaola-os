@@ -364,7 +364,9 @@ export default function Dashboard() {
   useEffect(() => {
     const el = feedScrollRef.current;
     const last = chatMessages[chatMessages.length - 1];
-    const firstLoad = prevFeedCount.current === 0 && chatMessages.length > 0;
+    // «أول تحميل» = أول رسائل تظهر، أو وصول دفعة التاريخ (قد تصل بعد أحداث حية)
+    const bulkInsert = chatMessages.length - prevFeedCount.current > 3;
+    const firstLoad = (prevFeedCount.current === 0 && chatMessages.length > 0) || bulkInsert;
     prevFeedCount.current = chatMessages.length;
     if (firstLoad) {
       requestAnimationFrame(() => feedEndRef.current?.scrollIntoView({ behavior:'auto' }));
@@ -2552,7 +2554,7 @@ export default function Dashboard() {
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
           <div style={{ width:28, height:28, borderRadius:7, background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14 }}>⚡</div>
           <span style={{ fontSize:14, fontWeight:800, letterSpacing:'-0.5px' }}>JAOLA OS</span>
-          <span style={{ fontSize:9, color:S.blue, background:'rgba(59,130,246,0.1)', border:'1px solid rgba(59,130,246,0.2)', padding:'1px 6px', borderRadius:4, fontWeight:700, letterSpacing:'0.5px' }}>v2.3</span>
+          <span style={{ fontSize:9, color:S.blue, background:'rgba(59,130,246,0.1)', border:'1px solid rgba(59,130,246,0.2)', padding:'1px 6px', borderRadius:4, fontWeight:700, letterSpacing:'0.5px' }}>v2.4</span>
         </div>
 
         <div style={{ width:1, height:20, background:S.border, margin:'0 4px' }} />
