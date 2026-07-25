@@ -42,6 +42,13 @@ import {
     readTelegramConfig, saveTelegramConfig, deleteTelegramConfig,
     checkTelegramToken, sendTelegramMessage, validBotToken as isTgToken, validChatId as isTgChat,
 } from './services/telegramPublisher.js';
+import {
+    saveFacebookConfig, deleteFacebookConfig, checkFacebookToken, sendFacebookPost,
+    saveXConfig, deleteXConfig, sendXPost, channelsStatus,
+} from './services/socialChannels.js';
+import {
+    schedulePosts, claimDuePosts, markResult, cancelSchedule, readSchedules, listScheduleUsers,
+} from './services/postScheduler.js';
 import { generateSocialPosts, draftInboxReply, extractSiteFacts } from './agents/marketingAgent.js';
 import { signBotToken, verifyBotToken } from './agents/jaolaBotToken.js';
 import { smartChat } from './agents/baseAgent.js';
@@ -1073,6 +1080,93 @@ app.post('/api/social/telegram/setup', verifyToken, async (req, res) => {
 
 app.delete('/api/social/telegram', verifyToken, (req, res) => {
     deleteTelegramConfig(INTEG_DIR, req.user.username);
+    res.json({ success: true });
+});
+
+// 📡 حالة كل قنوات النشر (بلا توكنات)
+app.get('/api/social/status', verifyToken, (req, res) => {
+    res.json({ success: true, channels: channelsStatus(INTEG_DIR, req.user.username) });
+});
+
+// فيسبوك (صفحة Meta): ربط بتوكن الصفحة + تحقق حيّ من اسمها
+app.post('/api/social/facebook/setup', verifyToken, async (req, res) => {
+    const { pageId, pageToken } = req.body || {};
+    if (!/^\d{5,}$/.test(String(pageId || '').trim())) return res.status(400).json({ error: 'معرّف الصفحة رقمي — من إعدادات صفحتك في Meta.' });
+    if (typeof pageToken !== 'string' || pageToken.trim().length < 30) return res.status(400).json({ error: 'توكن الصفحة غير صالح.' });
+    const check = await checkFacebookToken(String(pageId).trim(), pageToken.trim());
+    if (check.error) return res.status(400).json({ error: check.error });
+    saveFacebookConfig(INTEG_DIR, req.user.username, { pageId, pageToken, pageName: check.pageName });
+    res.json({ success: true, pageName: check.pageName });
+});
+app.delete('/api/social/facebook', verifyToken, (req, res) => {
+    deleteFacebookConfig(INTEG_DIR, req.user.username);
+    res.json({ success: true });
+});
+
+// X: مفاتيح المطوّر الأربعة للمستخدم (تُختبر عند أول نشر)
+app.post('/api/social/x/setup', verifyToken, (req, res) => {
+    const r = saveXConfig(INTEG_DIR, req.user.username, req.body || {});
+    if (r.error) return res.status(400).json({ error: r.error });
+    res.json({ success: true });
+});
+app.delete('/api/social/x', verifyToken, (req, res) => {
+    deleteXConfig(INTEG_DIR, req.user.username);
+    res.json({ success: true });
+});
+
+const CHANNEL_SENDERS = {
+    telegram: (user, text) => sendTelegramMessage(INTEG_DIR, user, text),
+    facebook: (user, text) => sendFacebookPost(INTEG_DIR, user, text),
+    x: (user, text) => sendXPost(INTEG_DIR, user, text),
+};
+
+// 🚀 نشر فوري لكل القنوات المطلوبة المربوطة — كل إرسال يُحسب من الحصة
+app.post('/api/social/publish', verifyToken, async (req, res) => {
+    try {
+        const { text, channels } = req.body || {};
+        if (!text || typeof text !== 'string' || !text.trim()) return res.status(400).json({ error: 'نص المنشور مطلوب.' });
+        const username = req.user.username;
+        const st = channelsStatus(INTEG_DIR, username);
+        const wanted = (Array.isArray(channels) && channels.length ? channels : Object.keys(CHANNEL_SENDERS))
+            .filter(c => CHANNEL_SENDERS[c] && st[c]?.configured);
+        if (!wanted.length) return res.status(400).json({ error: 'لا قنوات مربوطة — اربط قناة أولاً.' });
+        const owner = await DB.findUser(username).catch(() => null);
+        const q = socialQuota(owner);
+        const results = {};
+        for (const ch of wanted) {
+            if (Number.isFinite(q.monthly) && getUsageCount(USAGE_DIR, username, 'socialPosts') >= q.monthly) {
+                results[ch] = { error: `حصة النشر (${q.monthly}/شهر) نفدت.` };
+                continue;
+            }
+            const r = await CHANNEL_SENDERS[ch](username, text);
+            results[ch] = r;
+            if (r.ok) bumpUsage(USAGE_DIR, username, 'socialPosts');
+        }
+        res.json({ success: Object.values(results).some(r => r.ok), results });
+    } catch (err) {
+        res.status(500).json({ error: 'تعذّر النشر: ' + err.message });
+    }
+});
+
+// 📅 الجدولة: دفعة منشورات بأوقات مستقبلية للقنوات المختارة
+const SCHED_DIR = path.join(BASE_WORKSPACE, '.schedules');
+app.post('/api/social/schedule', verifyToken, (req, res) => {
+    const { posts, channels } = req.body || {};
+    const st = channelsStatus(INTEG_DIR, req.user.username);
+    const chans = (Array.isArray(channels) && channels.length ? channels : Object.keys(CHANNEL_SENDERS))
+        .filter(c => CHANNEL_SENDERS[c] && st[c]?.configured);
+    if (!chans.length) return res.status(400).json({ error: 'لا قنوات مربوطة — اربط قناة أولاً.' });
+    const r = schedulePosts(SCHED_DIR, req.user.username,
+        (Array.isArray(posts) ? posts : []).map(p => ({ text: p?.text, at: p?.at, channels: chans })));
+    if (r.error) return res.status(400).json({ error: r.error });
+    res.json({ success: true, scheduled: r.scheduled });
+});
+app.get('/api/social/schedule', verifyToken, (req, res) => {
+    res.json({ success: true, items: readSchedules(SCHED_DIR, req.user.username) });
+});
+app.delete('/api/social/schedule/:id', verifyToken, (req, res) => {
+    const r = cancelSchedule(SCHED_DIR, req.user.username, req.params.id);
+    if (r.error) return res.status(404).json({ error: r.error });
     res.json({ success: true });
 });
 
@@ -2170,6 +2264,33 @@ app.use((err, req, res, next) => {
     console.error('Server Error:', err.message);
     res.status(500).json({ error: 'خطأ داخلي في الخادم.' });
 });
+
+// 📅 حلقة المجدول — كل دقيقة: يلتقط المنشورات المستحقة وينشرها للقنوات
+// المربوطة بحصة الخطة، ويعلّم النتيجة (نجاح/فشل بسببه) في سجل المستخدم.
+setInterval(async () => {
+    try {
+        for (const user of listScheduleUsers(SCHED_DIR)) {
+            const due = claimDuePosts(SCHED_DIR, user);
+            for (const p of due) {
+                let anyOk = false, lastErr = '';
+                const owner = await DB.findUser(user).catch(() => null);
+                const q = socialQuota(owner);
+                for (const ch of p.channels) {
+                    if (Number.isFinite(q.monthly) && getUsageCount(USAGE_DIR, user, 'socialPosts') >= q.monthly) {
+                        lastErr = `حصة النشر (${q.monthly}/شهر) نفدت.`;
+                        break;
+                    }
+                    const sender = CHANNEL_SENDERS[ch];
+                    if (!sender) continue;
+                    const r = await sender(user, p.text).catch(e => ({ error: e.message }));
+                    if (r.ok) { anyOk = true; bumpUsage(USAGE_DIR, user, 'socialPosts'); }
+                    else lastErr = r.error || lastErr;
+                }
+                markResult(SCHED_DIR, user, p.id, { ok: anyOk, error: anyOk ? undefined : lastErr });
+            }
+        }
+    } catch (e) { console.warn('[Scheduler]', 'دورة المجدول فشلت:', e.message); }
+}, 60 * 1000);
 
 // 🔌 تحميل الإضافات ثم تشغيل الخادم
 orchestrator.init().catch(e => console.warn('[Plugins] init فشل:', e.message)).finally(() => {

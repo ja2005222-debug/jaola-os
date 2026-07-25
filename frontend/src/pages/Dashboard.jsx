@@ -663,58 +663,114 @@ export default function Dashboard() {
   const [copiedPost, setCopiedPost] = useState(null);
   const [inboxDrafts, setInboxDrafts] = useState({});
 
-  const [tgStatus, setTgStatus] = useState(null);
-  const [tgShowSetup, setTgShowSetup] = useState(false);
+  const [chStatus, setChStatus] = useState(null);
+  const [chSetup, setChSetup] = useState(null); // 'telegram' | 'facebook' | 'x' | null
   const [tgForm, setTgForm] = useState({ botToken: '', chatId: '' });
+  const [fbForm, setFbForm] = useState({ pageId: '', pageToken: '' });
+  const [xForm, setXForm] = useState({ apiKey: '', apiSecret: '', accessToken: '', accessSecret: '' });
   const [tgBusy, setTgBusy] = useState(false);
   const [tgPublishing, setTgPublishing] = useState(null);
+  const [schedItems, setSchedItems] = useState(null);
+  const [schedBusy, setSchedBusy] = useState(false);
 
-  const fetchTgStatus = async () => {
+  const anyChannel = !!(chStatus?.telegram?.configured || chStatus?.facebook?.configured || chStatus?.x?.configured);
+  const postText = (p) => `${p.text}\n\n${(p.hashtags || []).join(' ')}`.trim();
+
+  const fetchChannels = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/social/telegram/status`, { headers: getHeaders() });
+      const res = await fetch(`${BACKEND_URL}/api/social/status`, { headers: getHeaders() });
       const d = await res.json().catch(() => ({}));
-      setTgStatus(res.ok ? d : { configured: false });
-    } catch { setTgStatus({ configured: false }); }
+      setChStatus(res.ok ? d.channels : null);
+    } catch { setChStatus(null); }
+  };
+  const fetchSchedules = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/social/schedule`, { headers: getHeaders() });
+      const d = await res.json().catch(() => ({}));
+      setSchedItems(res.ok ? (d.items || []) : []);
+    } catch { setSchedItems([]); }
   };
 
-  const saveTgSetup = async () => {
+  const setupChannel = async (channel) => {
     if (tgBusy) return;
     setTgBusy(true);
+    const bodies = {
+      telegram: { url: '/api/social/telegram/setup', body: { botToken: tgForm.botToken.trim(), chatId: tgForm.chatId.trim() } },
+      facebook: { url: '/api/social/facebook/setup', body: { pageId: fbForm.pageId.trim(), pageToken: fbForm.pageToken.trim() } },
+      x: { url: '/api/social/x/setup', body: { apiKey: xForm.apiKey.trim(), apiSecret: xForm.apiSecret.trim(), accessToken: xForm.accessToken.trim(), accessSecret: xForm.accessSecret.trim() } },
+    };
     try {
-      const res = await fetch(`${BACKEND_URL}/api/social/telegram/setup`, {
-        method: 'POST', headers: getHeaders(),
-        body: JSON.stringify({ botToken: tgForm.botToken.trim(), chatId: tgForm.chatId.trim() }),
+      const res = await fetch(`${BACKEND_URL}${bodies[channel].url}`, {
+        method: 'POST', headers: getHeaders(), body: JSON.stringify(bodies[channel].body),
       });
       const d = await res.json().catch(() => ({}));
       if (res.ok && d.success) {
-        addNotification(`✈️ ${t('tgConnected')} ${d.botName}`, 'success');
-        setTgShowSetup(false); setTgForm({ botToken: '', chatId: '' });
-        fetchTgStatus();
+        addNotification(`✓ ${t('chConnected')}`, 'success');
+        setChSetup(null);
+        setTgForm({ botToken: '', chatId: '' }); setFbForm({ pageId: '', pageToken: '' });
+        setXForm({ apiKey: '', apiSecret: '', accessToken: '', accessSecret: '' });
+        fetchChannels();
       } else addNotification(`❌ ${d.error || t('serverUnreachable')}`, 'info');
     } catch { addNotification(`❌ ${t('serverUnreachable')}`, 'info'); }
     setTgBusy(false);
   };
 
-  const disconnectTg = async () => {
+  const disconnectChannel = async (channel) => {
+    const urls = { telegram: '/api/social/telegram', facebook: '/api/social/facebook', x: '/api/social/x' };
     try {
-      await fetch(`${BACKEND_URL}/api/social/telegram`, { method: 'DELETE', headers: getHeaders() });
-      setTgStatus({ configured: false });
+      await fetch(`${BACKEND_URL}${urls[channel]}`, { method: 'DELETE', headers: getHeaders() });
+      fetchChannels();
     } catch {}
   };
 
-  const publishToTg = async (i, p) => {
+  const publishPost = async (i, p) => {
     if (tgPublishing != null) return;
     setTgPublishing(i);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/social/telegram/publish`, {
+      const res = await fetch(`${BACKEND_URL}/api/social/publish`, {
         method: 'POST', headers: getHeaders(),
-        body: JSON.stringify({ text: `${p.text}\n\n${(p.hashtags || []).join(' ')}` }),
+        body: JSON.stringify({ text: postText(p) }),
       });
       const d = await res.json().catch(() => ({}));
-      if (res.ok && d.success) addNotification(t('tgPublished'), 'success');
-      else addNotification(`❌ ${d.error || t('tgPublishFail')}`, 'info');
+      if (res.ok && d.success) {
+        const fails = Object.entries(d.results || {}).filter(([, r]) => !r.ok);
+        addNotification(fails.length ? `${t('pubPartial')} (${fails.map(([c]) => c).join('، ')})` : t('tgPublished'), fails.length ? 'info' : 'success');
+      } else {
+        const firstErr = d.error || Object.values(d.results || {}).find(r => r.error)?.error;
+        addNotification(`❌ ${firstErr || t('tgPublishFail')}`, 'info');
+      }
     } catch { addNotification(`❌ ${t('tgPublishFail')}`, 'info'); }
     setTgPublishing(null);
+  };
+
+  const shareWhatsApp = (p) => {
+    window.open(`https://wa.me/?text=${encodeURIComponent(postText(p))}`, '_blank', 'noopener');
+  };
+
+  // 📅 جدولة الأسبوع: منشور يومياً الساعة 10 صباحاً بدءاً من الغد
+  const scheduleWeek = async () => {
+    if (schedBusy || !mkPosts?.posts?.length) return;
+    setSchedBusy(true);
+    try {
+      const start = new Date();
+      start.setDate(start.getDate() + 1);
+      start.setHours(10, 0, 0, 0);
+      const posts = mkPosts.posts.map((p, i) => ({ text: postText(p), at: start.getTime() + i * 86400000 }));
+      const res = await fetch(`${BACKEND_URL}/api/social/schedule`, {
+        method: 'POST', headers: getHeaders(), body: JSON.stringify({ posts }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.success) { addNotification(`📅 ${t('schedDone')} (${d.scheduled})`, 'success'); fetchSchedules(); }
+      else addNotification(`❌ ${d.error || t('serverUnreachable')}`, 'info');
+    } catch { addNotification(`❌ ${t('serverUnreachable')}`, 'info'); }
+    setSchedBusy(false);
+  };
+
+  const cancelScheduled = async (id) => {
+    try {
+      await fetch(`${BACKEND_URL}/api/social/schedule/${id}`, { method: 'DELETE', headers: getHeaders() });
+      fetchSchedules();
+    } catch {}
   };
 
   const generatePosts = async () => {
@@ -729,7 +785,7 @@ export default function Dashboard() {
     } catch { setMkPosts({ error: true }); }
     setMkLoading(false);
   };
-  const openMarketingModal = () => { setShowMarketingModal(true); setMkPosts(null); generatePosts(); fetchTgStatus(); };
+  const openMarketingModal = () => { setShowMarketingModal(true); setMkPosts(null); generatePosts(); fetchChannels(); fetchSchedules(); };
 
   const copyPost = (i, p) => {
     const text = `${p.text}\n\n${(p.hashtags || []).join(' ')}`;
@@ -1455,26 +1511,30 @@ export default function Dashboard() {
               <span style={{ fontSize:10, color: mkPosts.ai ? '#a78bfa' : '#38bdf8', fontWeight:800, background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:5, padding:'2px 8px' }}>
                 {mkPosts.ai ? `✨ ${t('mkAiMade')}` : `⚡ ${t('mkPlanMade')}`}
               </span>
-              {tgStatus?.configured ? (
-                <span style={{ fontSize:10, color:'#38bdf8', fontWeight:700, background:'rgba(56,189,248,0.07)', border:'1px solid rgba(56,189,248,0.2)', borderRadius:5, padding:'2px 8px' }}>
-                  ✈️ {tgStatus.botName || 'bot'} ← <span style={{ direction:'ltr', display:'inline-block' }}>{tgStatus.chatId}</span>
-                  <button onClick={disconnectTg} title={t('tgDisconnect')}
+              {[
+                { id:'telegram', icon:'✈️', label:'Telegram', on: chStatus?.telegram?.configured, detail: chStatus?.telegram?.chatId },
+                { id:'facebook', icon:'📘', label:'Facebook', on: chStatus?.facebook?.configured, detail: chStatus?.facebook?.pageName },
+                { id:'x', icon:'𝕏', label:'X', on: chStatus?.x?.configured, detail: '' },
+              ].map(ch => ch.on ? (
+                <span key={ch.id} style={{ fontSize:10, color:'#38bdf8', fontWeight:700, background:'rgba(56,189,248,0.07)', border:'1px solid rgba(56,189,248,0.2)', borderRadius:5, padding:'2px 8px' }}>
+                  {ch.icon} {ch.detail ? <span style={{ direction:'ltr', display:'inline-block' }}>{ch.detail}</span> : ch.label}
+                  <button onClick={() => disconnectChannel(ch.id)} title={t('tgDisconnect')}
                     style={{ background:'transparent', border:'none', color:'#64748b', fontSize:10, cursor:'pointer', marginInlineStart:5 }}>✕</button>
                 </span>
               ) : (
-                <button onClick={() => setTgShowSetup(v => !v)}
+                <button key={ch.id} onClick={() => setChSetup(v => v === ch.id ? null : ch.id)}
                   style={{ fontSize:10, color:'#7dd3fc', fontWeight:700, background:'rgba(56,189,248,0.07)', border:'1px dashed rgba(56,189,248,0.3)', borderRadius:5, padding:'2px 10px', cursor:'pointer' }}>
-                  ✈️ {t('tgConnect')}
+                  {ch.icon} {ch.label} +
                 </button>
-              )}
+              ))}
               <button onClick={generatePosts}
                 style={{ marginInlineStart:'auto', background:'rgba(56,189,248,0.1)', border:'1px solid rgba(56,189,248,0.25)', borderRadius:7, padding:'4px 12px', color:'#7dd3fc', fontSize:11, fontWeight:700, cursor:'pointer' }}>
                 🔄 {t('mkRegenerate')}
               </button>
             </div>
 
-            {/* ⚙️ ربط قناة تيليجرام (توكن BotFather + معرّف القناة) */}
-            {tgShowSetup && !tgStatus?.configured && (
+            {/* ⚙️ لوحات ربط القنوات */}
+            {chSetup === 'telegram' && (
               <div style={{ background:'rgba(56,189,248,0.04)', border:'1px solid rgba(56,189,248,0.18)', borderRadius:10, padding:'12px', marginBottom:12 }}>
                 <div style={{ color:S.muted, fontSize:10, marginBottom:8 }}>{t('tgSetupHint')}</div>
                 <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
@@ -1484,12 +1544,53 @@ export default function Dashboard() {
                   <input value={tgForm.chatId} placeholder="@mychannel"
                     onChange={e => setTgForm(f => ({ ...f, chatId: e.target.value }))}
                     style={{ flex:1, minWidth:120, background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:8, padding:'7px 10px', color:'#e2e8f0', fontSize:11, direction:'ltr' }} />
-                  <button onClick={saveTgSetup} disabled={tgBusy}
+                  <button onClick={() => setupChannel('telegram')} disabled={tgBusy}
                     style={{ background:'rgba(56,189,248,0.12)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:8, padding:'7px 16px', color:'#7dd3fc', fontSize:11, fontWeight:700, cursor:'pointer', opacity: tgBusy ? 0.6 : 1 }}>
                     {tgBusy ? '⏳' : t('tgSave')}
                   </button>
                 </div>
               </div>
+            )}
+            {chSetup === 'facebook' && (
+              <div style={{ background:'rgba(56,189,248,0.04)', border:'1px solid rgba(56,189,248,0.18)', borderRadius:10, padding:'12px', marginBottom:12 }}>
+                <div style={{ color:S.muted, fontSize:10, marginBottom:8 }}>{t('fbSetupHint')}</div>
+                <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                  <input value={fbForm.pageId} placeholder={t('fbPageId')}
+                    onChange={e => setFbForm(f => ({ ...f, pageId: e.target.value }))}
+                    style={{ flex:1, minWidth:120, background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:8, padding:'7px 10px', color:'#e2e8f0', fontSize:11, direction:'ltr' }} />
+                  <input value={fbForm.pageToken} placeholder={t('fbPageToken')} type="password"
+                    onChange={e => setFbForm(f => ({ ...f, pageToken: e.target.value }))}
+                    style={{ flex:2, minWidth:180, background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:8, padding:'7px 10px', color:'#e2e8f0', fontSize:11, direction:'ltr' }} />
+                  <button onClick={() => setupChannel('facebook')} disabled={tgBusy}
+                    style={{ background:'rgba(56,189,248,0.12)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:8, padding:'7px 16px', color:'#7dd3fc', fontSize:11, fontWeight:700, cursor:'pointer', opacity: tgBusy ? 0.6 : 1 }}>
+                    {tgBusy ? '⏳' : t('tgSave')}
+                  </button>
+                </div>
+              </div>
+            )}
+            {chSetup === 'x' && (
+              <div style={{ background:'rgba(56,189,248,0.04)', border:'1px solid rgba(56,189,248,0.18)', borderRadius:10, padding:'12px', marginBottom:12 }}>
+                <div style={{ color:S.muted, fontSize:10, marginBottom:8 }}>{t('xSetupHint')}</div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
+                  {[['apiKey','API Key'],['apiSecret','API Secret'],['accessToken','Access Token'],['accessSecret','Access Secret']].map(([k, ph]) => (
+                    <input key={k} value={xForm[k]} placeholder={ph} type="password"
+                      onChange={e => setXForm(f => ({ ...f, [k]: e.target.value }))}
+                      style={{ background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, borderRadius:8, padding:'7px 10px', color:'#e2e8f0', fontSize:11, direction:'ltr' }} />
+                  ))}
+                </div>
+                <button onClick={() => setupChannel('x')} disabled={tgBusy}
+                  style={{ marginTop:8, background:'rgba(56,189,248,0.12)', border:'1px solid rgba(56,189,248,0.3)', borderRadius:8, padding:'7px 16px', color:'#7dd3fc', fontSize:11, fontWeight:700, cursor:'pointer', opacity: tgBusy ? 0.6 : 1 }}>
+                  {tgBusy ? '⏳' : t('tgSave')}
+                </button>
+              </div>
+            )}
+
+            {/* 📅 جدولة الأسبوع كاملاً */}
+            {anyChannel && (
+              <button onClick={scheduleWeek} disabled={schedBusy}
+                style={{ width:'100%', marginBottom:12, background:'rgba(245,158,11,0.08)', border:'1px solid rgba(245,158,11,0.25)', borderRadius:9, padding:'8px', color:'#fbbf24', fontSize:12, fontWeight:800, cursor:'pointer', opacity: schedBusy ? 0.6 : 1 }}>
+                {schedBusy ? '⏳' : `📅 ${t('schedWeek')}`}
+              </button>
             )}
             <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
               {(mkPosts.posts || []).map((p, i) => (
@@ -1500,12 +1601,16 @@ export default function Dashboard() {
                     <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                       <span style={{ fontSize:10, color:'#60a5fa', fontWeight:800 }}>{p.day}</span>
                       <div style={{ marginInlineStart:'auto', display:'flex', gap:5 }}>
-                        {tgStatus?.configured && (
-                          <button onClick={() => publishToTg(i, p)} disabled={tgPublishing != null}
+                        {anyChannel && (
+                          <button onClick={() => publishPost(i, p)} disabled={tgPublishing != null}
                             style={{ background:'rgba(56,189,248,0.08)', border:'1px solid rgba(56,189,248,0.25)', borderRadius:6, padding:'2px 10px', color:'#7dd3fc', fontSize:10, fontWeight:700, cursor:'pointer', opacity: tgPublishing != null ? 0.6 : 1 }}>
-                            {tgPublishing === i ? `⏳ ${t('tgPublishing')}` : `✈️ ${t('tgPublish')}`}
+                            {tgPublishing === i ? `⏳ ${t('tgPublishing')}` : `🚀 ${t('tgPublish')}`}
                           </button>
                         )}
+                        <button onClick={() => shareWhatsApp(p)} title="WhatsApp"
+                          style={{ background:'rgba(34,197,94,0.08)', border:'1px solid rgba(34,197,94,0.25)', borderRadius:6, padding:'2px 8px', color:'#4ade80', fontSize:10, fontWeight:700, cursor:'pointer' }}>
+                          🟢
+                        </button>
                         <button onClick={() => copyPost(i, p)}
                           style={{ background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)', borderRadius:6, padding:'2px 10px', color:'#34d399', fontSize:10, fontWeight:700, cursor:'pointer' }}>
                           {copiedPost === i ? `✓ ${t('msgCopied')}` : `📋 ${t('msgCopy')}`}
@@ -1518,6 +1623,31 @@ export default function Dashboard() {
                 </div>
               ))}
             </div>
+
+            {/* 📅 المجدول: المعلّق أولاً ثم آخر المنفّذ */}
+            {(schedItems || []).length > 0 && (
+              <div style={{ marginTop:16 }}>
+                <div style={{ fontSize:10, color:S.muted, fontWeight:700, letterSpacing:'1px', textTransform:'uppercase', marginBottom:8 }}>
+                  📅 {t('schedTitle')}
+                </div>
+                <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                  {[...schedItems].sort((a, b) => (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1) || a.at - b.at).slice(0, 12).map(it => (
+                    <div key={it.id} style={{ display:'flex', alignItems:'center', gap:8, background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:8, padding:'6px 10px', fontSize:11 }}>
+                      <span>{it.status === 'pending' ? '⏳' : it.status === 'sent' ? '✅' : '❌'}</span>
+                      <span style={{ color:'#334155', fontSize:10, direction:'ltr', flexShrink:0 }}>
+                        {new Date(it.at).toLocaleString(uiLang, { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}
+                      </span>
+                      <span style={{ flex:1, color:'#94a3b8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{it.text}</span>
+                      {it.error && <span style={{ color:'#f87171', fontSize:9, flexShrink:0 }} title={it.error}>!</span>}
+                      {it.status === 'pending' && (
+                        <button onClick={() => cancelScheduled(it.id)}
+                          style={{ background:'transparent', border:'none', color:'#64748b', fontSize:11, cursor:'pointer', flexShrink:0 }}>✕</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
