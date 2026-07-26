@@ -248,3 +248,24 @@ const SEED_EVENTS = [
     assert.ok(one.changed && one.count === 1);
     assert.ok(one.appJs.includes('images/ai-e3.png') && one.appJs.includes('1470229722913-7c0e2dbbafd3'), 'e1 لم تُمسّ');
 });
+
+test('شبكة أمان imgUrl: توقيع مُعدَّل → غلاف تمرير يُلحق، وصورنا المولّدة سابقاً قابلة للتجديد', async () => {
+    // imgUrl بشكل غير قياسي (عدّله إصلاح تلقائي) — الرقعة الكلاسيكية لن تنطبق
+    const ODD_JS = `
+const imgUrl = (id) => 'https://images.unsplash.com/photo-' + String(id) + '?w=700';
+const ITEMS = [
+  { id: 'a1', name: 'منتج أول', img: '1470229722913-7c0e2dbbafd3' },
+  { id: 'a2', name: 'منتج ثانٍ', img: 'images/ai-old.png' }
+];
+`;
+    const genFn = async () => ({ ok: true, buf: Buffer.from('i'), ext: 'png' });
+    const r = await applyAiImages([{ name: 'app.js', content: ODD_JS }], { goal: 'x' }, genFn);
+    assert.ok(r.changed);
+    assert.equal(r.count, 2, 'بذرة Unsplash + صورتنا القديمة (تجديد) كلاهما مؤهّل');
+    assert.ok(r.appJs.includes("v.indexOf('/')"), 'غلاف التمرير المحلي أُلحق');
+    // الغلاف يعمل فعلاً: مسار محلي يمرّ كما هو رغم imgUrl السهمية الأصلية
+    // eslint-disable-next-line no-new-func
+    const scope = Function(r.appJs.replace('const imgUrl', 'var imgUrl') + '; return imgUrl;')();
+    assert.equal(scope('images/ai-a1.png'), 'images/ai-a1.png');
+    assert.ok(scope('12345678-abcd').startsWith('https://images.unsplash.com/'), 'المعرّفات البعيدة كما كانت');
+});

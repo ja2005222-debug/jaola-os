@@ -1055,7 +1055,8 @@ app.post('/api/project/ai-images', verifyToken, aiLimit, validateProjectOwnershi
         const owner = await DB.findUser(username).catch(() => null);
         const q = aiImagesQuota(owner);
         let allowed = Infinity;
-        if (Number.isFinite(q.monthly)) {
+        // 🔓 المشرف (مالك المنصة) بلا حصة — العدّ للعملاء المدفوعين
+        if (!isAdminUser(req.user) && Number.isFinite(q.monthly)) {
             allowed = Math.max(0, q.monthly - getUsageCount(USAGE_DIR, username, 'aiImages'));
             if (allowed === 0) return res.status(403).json({ error: `حصة صور AI لخطتك (${q.monthly}/شهر) نفدت — رقِّ خطتك.` });
         }
@@ -1091,7 +1092,7 @@ app.post('/api/project/ai-images', verifyToken, aiLimit, validateProjectOwnershi
  * ثم تُستبدل صور العناصر المؤهّلة إن وُجد app.js. يرد في الشات دائماً.
  */
 const aiImagesBusyRooms = new Set(); // 🔒 طلبات متكررة متزامنة لا تحرق الحصة مرتين
-async function generateAiImagesFromChat({ username, activeProject, projectPath, roomName, message, hero, target }) {
+async function generateAiImagesFromChat({ username, activeProject, projectPath, roomName, message, hero, target, isAdmin = false }) {
     const say = (m) => io.to(roomName).emit('chat_reply', { message: m });
     if (aiImagesBusyRooms.has(roomName)) {
         say('⏳ توليد صور سابق ما زال يعمل على هذا المشروع — انتظر رده ثم اطلب من جديد.');
@@ -1106,7 +1107,8 @@ async function generateAiImagesFromChat({ username, activeProject, projectPath, 
         const owner = await DB.findUser(username).catch(() => null);
         const q = aiImagesQuota(owner);
         let allowed = Infinity;
-        if (Number.isFinite(q.monthly)) {
+        // 🔓 المشرف (مالك المنصة) بلا حصة — العدّ للعملاء المدفوعين
+        if (!isAdmin && Number.isFinite(q.monthly)) {
             allowed = Math.max(0, q.monthly - getUsageCount(USAGE_DIR, username, 'aiImages'));
             if (allowed === 0) { say(`❌ حصة صور AI لخطتك (${q.monthly}/شهر) نفدت — رقِّ خطتك من صفحة الفوترة.`); return; }
         }
@@ -1553,7 +1555,7 @@ app.post('/api/chat', verifyToken, aiLimit, validate(schemas.sendMessage), valid
         // 🎨 توليد صور حقيقية من الشات (نفس محرّك زر «ولّد صوراً حقيقية»)
         generateAiImages: (opts) => generateAiImagesFromChat({
             username: req.user.username, activeProject: req.activeProject,
-            projectPath, roomName, ...opts,
+            projectPath, roomName, isAdmin: isAdminUser(req.user), ...opts,
         }),
     };
 

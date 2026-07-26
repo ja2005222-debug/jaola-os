@@ -14,6 +14,8 @@ const GEN_SVG_RE = /^images\/gen-[\w-]+\.svg$/;
 // معرّف Unsplash المزروع من القوالب (مثل 1470229722913-7c0e2dbbafd3) —
 // صورة افتراضية من القالب لا صورة مستخدم، فهي مؤهّلة للاستبدال أيضاً.
 const UNSPLASH_ID_RE = /^\d{8,}-[0-9a-f]{4,}$/i;
+// صورنا المولّدة سابقاً — طلب توليد جديد عليها مشروع (تجديد الصور)
+const AI_IMG_RE = /^images\/ai-[\w-]+\.(?:png|jpe?g)$/i;
 // تطبيع كلمة عربية للمطابقة: «المؤتمرات» ≈ «مؤتمر» (ال + لواحق الجمع/التأنيث)
 const normWord = (s) => String(s || '').replace(/^ال/, '').replace(/(?:ات|ين|ون|ة)$/, '');
 const labelMatches = (hay, wanted) => {
@@ -229,7 +231,7 @@ export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_
             // المطابقة على الاسم/العنوان + التصنيف (بطاقة «مؤتمرات» = category)
             const hay = `${label} ${obj.category || obj.cat || obj.type || ''}`;
             if (labelMatches(hay, wanted)) targets.push({ itemIndex, key, label: label || wanted, oldImg: String(obj.img) });
-        } else if (obj.img === '' || GEN_SVG_RE.test(String(obj.img)) || UNSPLASH_ID_RE.test(String(obj.img))) {
+        } else if (obj.img === '' || GEN_SVG_RE.test(String(obj.img)) || UNSPLASH_ID_RE.test(String(obj.img)) || AI_IMG_RE.test(String(obj.img))) {
             targets.push({ itemIndex, key, label, oldImg: String(obj.img) });
         }
     };
@@ -284,5 +286,14 @@ export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_
 
     let js = spliceSeed(app.content, seedArr, lit);
     js = patchImgUrlPassthrough(js).js;
+    // شبكة أمان: رقعة imgUrl الكلاسيكية مشروطة بتوقيع حرفي — لو عدّل أي
+    // إصلاح تلقائي شكل الدالة، نلحق غلافاً يمرّر المسارات المحلية كما هي
+    // (وإلا صار images/ai-….png رابط unsplash مكسوراً وonerror يخفي الصورة).
+    if (!js.includes("v.indexOf('/')") && js.includes('imgUrl')) {
+        js += "\n// jaola: الصور المحلية المولّدة تمرّ كما هي مهما كان شكل imgUrl الأصلي\n"
+            + "(function () { try { var _f = typeof imgUrl === 'function' ? imgUrl : null; "
+            + "imgUrl = function (id) { var v = String(id == null ? '' : id); "
+            + "return (v.indexOf('/') !== -1 || v.indexOf('.') !== -1) ? v : (_f ? _f(id) : v); }; } catch (e) {} })();\n";
+    }
     return { changed: true, count: applied.length, appJs: js, images: applied.map(j => ({ name: j.name, buf: j.buf })) };
 }
