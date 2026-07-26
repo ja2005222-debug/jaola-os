@@ -269,3 +269,35 @@ const ITEMS = [
     assert.equal(scope('images/ai-a1.png'), 'images/ai-a1.png');
     assert.ok(scope('12345678-abcd').startsWith('https://images.unsplash.com/'), 'المعرّفات البعيدة كما كانت');
 });
+
+test('مزامن localStorage: يُحقن مع خريطة الصور، يندمج مع السابق، ويعمل فعلاً على حالة محفوظة', async () => {
+    const { injectImgSync, diagnoseImages } = await import('../services/aiImages.js');
+    const base = "let events = load('events', SEED);";
+    const v1 = injectImgSync(base, { e1: 'images/ai-e1.png' });
+    assert.ok(v1.startsWith('/* jaola:img-sync */'), 'المزامن يسبق قراءة الحالة');
+    // حقن ثانٍ يدمج الخريطتين في كتلة واحدة (idempotent)
+    const v2 = injectImgSync(v1, { e3: 'images/ai-e3.png' });
+    assert.equal((v2.match(/jaola:img-sync \*\//g) || []).length, 2, 'كتلة واحدة (بداية+نهاية) لا تكرار');
+    assert.ok(v2.includes('images/ai-e1.png') && v2.includes('images/ai-e3.png'), 'الخريطتان مدموجتان');
+
+    // تنفيذ فعلي على localStorage صوري: الحالة القديمة تتحدث بالصور الجديدة
+    const store = new Map([['jev_events', JSON.stringify([{ id: 'e1', img: 'old-unsplash-id' }, { id: 'e2', img: 'keep' }])]]);
+    const fakeLS = {
+        get length() { return store.size; },
+        key: (i) => [...store.keys()][i],
+        getItem: (k) => store.get(k) ?? null,
+        setItem: (k, v) => store.set(k, v),
+    };
+    const syncCode = v2.slice(0, v2.indexOf('/* /jaola:img-sync */'));
+    // eslint-disable-next-line no-new-func
+    Function('localStorage', syncCode.replace('/* jaola:img-sync */', ''))(fakeLS);
+    const synced = JSON.parse(store.get('jev_events'));
+    assert.equal(synced[0].img, 'images/ai-e1.png', 'العنصر المولّد تزامن');
+    assert.equal(synced[1].img, 'keep', 'غير المولّد لم يُمسّ');
+
+    // التشخيص يرى المزامن والرقعة
+    const d = diagnoseImages([{ name: 'app.js', content: v2 + " function imgUrl(id){var v=String(id||'');return v.indexOf('/')!==-1?v:'u'+v;} const ITEMS = [{ id: 'e1', name: 'x', img: 'images/ai-e1.png' }];" }]);
+    assert.ok(d.ok && d.syncBlock && d.passthrough);
+    assert.equal(d.itemCount, 1);
+    assert.deepEqual(d.imgs, ['images/ai-e1.png']);
+});
