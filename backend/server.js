@@ -34,7 +34,7 @@ import { generatePWA } from './agents/pwaAgent.js';
 import { generateJaolaBot, readBotManifest, buildEmbedBundle } from './agents/jaolaBot.js';
 import { mailReady, sendMail, isEmail } from './services/mailer.js';
 import { emailQuota, socialQuota, customAgentsMax, aiImagesQuota } from './services/subscriptionService.js';
-import { aiImagesReady, applyAiImages, applyHeroImage, generateProductImage } from './services/aiImages.js';
+import { aiImagesReady, applyAiImages, applyHeroImage, generateProductImage, diagnoseImages } from './services/aiImages.js';
 import { checkAiProviders } from './services/aiProviderCheck.js';
 import {
     listAgents, upsertAgent, deleteAgent, getAgent,
@@ -1163,6 +1163,34 @@ async function generateAiImagesFromChat({ username, activeProject, projectPath, 
     }
 }
 
+/** 🔬 «شخص الصور» من الشات — يقرأ ملفات المشروع الفعلية ويطبع الحقيقة كاملة. */
+function diagnoseAiImagesFromChat({ projectPath, roomName }) {
+    const say = (m) => io.to(roomName).emit('chat_reply', { message: m });
+    try {
+        const appPath = path.join(projectPath, 'app.js');
+        const files = fs.existsSync(appPath) ? [{ name: 'app.js', content: fs.readFileSync(appPath, 'utf8') }] : [];
+        const d = diagnoseImages(files);
+        const imagesDir = path.join(projectPath, 'images');
+        const imgFiles = fs.existsSync(imagesDir) ? fs.readdirSync(imagesDir).filter(f => f.startsWith('ai-')) : [];
+        const heroSet = fs.existsSync(path.join(projectPath, 'index.html'))
+            && /images\/ai-hero\.png/.test(fs.readFileSync(path.join(projectPath, 'index.html'), 'utf8'));
+        if (!d.ok) { say(`🔬 تشخيص الصور:\n- ${d.reason}\n- ملفات ai-* على القرص: ${imgFiles.length}`); return; }
+        say([
+            '🔬 تشخيص الصور:',
+            `- مصفوفة البيانات: ${d.seedName} (${d.readable ? d.itemCount + ' عنصر' : '⚠️ تعذّرت قراءتها'})`,
+            `- قيم img الحالية: ${d.imgs.join(' | ') || '—'}`,
+            `- تمرير المسارات المحلية (imgUrl): ${d.passthrough ? '✅' : '❌ غائب'}`,
+            `- مزامن localStorage: ${d.syncBlock ? '✅' : '❌ غائب'}`,
+            `- بنر مولّد في index.html: ${heroSet ? '✅' : '—'}`,
+            `- ملفات ai-* على القرص: ${imgFiles.length}${imgFiles.length ? ' (' + imgFiles.slice(0, 6).join('، ') + ')' : ''}`,
+            '',
+            'انسخ هذه الرسالة لدعم المنصة إن بقيت الصور لا تظهر.',
+        ].join('\n'));
+    } catch (e) {
+        say('🔬 تعذّر التشخيص: ' + e.message);
+    }
+}
+
 // رفع شعار الموقع → assets/ + أيقونة المتصفح (favicon)
 app.post('/api/project/logo', verifyToken, validateProjectOwnership, (req, res) => {
     try {
@@ -1557,6 +1585,8 @@ app.post('/api/chat', verifyToken, aiLimit, validate(schemas.sendMessage), valid
             username: req.user.username, activeProject: req.activeProject,
             projectPath, roomName, isAdmin: isAdminUser(req.user), ...opts,
         }),
+        // 🔬 «شخص الصور» — كشف حقيقة ملفات المشروع في الإنتاج
+        diagnoseAiImages: () => diagnoseAiImagesFromChat({ projectPath, roomName }),
     };
 
     const dbStatus = isDbConnected && mongoose.connection.readyState === 1;

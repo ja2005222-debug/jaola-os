@@ -85,3 +85,9 @@ test('صور: طلب بناء يذكر «صور حقيقية» يمضي للبن
     // أوامر التوليد الصريحة تبقى صوراً
     assert.ok(matchImageCommand('انشئ صورة حقيقية للبنر'));
 });
+
+test('«شخص الصور» أمر تشخيص — ولا يلتبس بطلبات التوليد', async () => {
+    const { isImageDiagCommand, matchImageCommand } = await import('../agents/chatCommands.js');
+    for (const m of ['شخص الصور', 'شخّص الصور', 'افحص الصور', 'diagnose images']) assert.ok(isImageDiagCommand(m), m);
+    for (const m of ['ولد صور حقيقية', 'شخص ما', 'افحص الموقع']) assert.ok(!isImageDiagCommand(m), m);
+});

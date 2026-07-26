@@ -47,7 +47,7 @@ import { backupProject, listSnapshots } from './fileManager.js';
 import { analyzeRequirements, buildRequirementsContext } from './requirementAnalyzer.js';
 import { normalizeText, normalizeArabic, detectIntentFromMeaning, isQuestionMessage, hasActionIntent, isExplicitRebuild, isExplicitNewBuild, isContinuationGoal } from './textNormalizer.js';
 import { routeMessage } from './router.js';
-import { matchDeleteCommand, matchImageCommand, isBareYes, isBareExecute } from './chatCommands.js';
+import { matchDeleteCommand, matchImageCommand, isImageDiagCommand, isBareYes, isBareExecute } from './chatCommands.js';
 import { verifyRequirements, buildFixInstruction, formatChecklist } from './requirementsVerifier.js';
 import { classifyIntentFast, decide, buildContinuationGoal, buildStatusReply, missionBriefing, greetingReply } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
@@ -2443,6 +2443,12 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         ? `⚠️ حذف المشروع «${target}» **نهائي** — الملفات والسجل، ولا يمكن التراجع.\nللتأكيد اكتب حرفياً: **احذف نهائياً ${target}**`
                         : `⚠️ Deleting "${target}" is **permanent** — files and record, no undo.\nTo confirm, type exactly: **delete permanently ${target}**`),
             });
+            return;
+        }
+
+        // ── 🔬 تشخيص الصور — يقرأ ملفات المشروع الفعلية ويطبع الحقيقة ──
+        if (isImageDiagCommand(message) && agents.diagnoseAiImages) {
+            await agents.diagnoseAiImages();
             return;
         }
 

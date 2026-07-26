@@ -134,6 +134,31 @@ export async function generateProductImage(prompt, deps = {}) {
 }
 
 /**
+ * 🔬 تشخيص ذاتي لحالة الصور في مشروع — يُستدعى من الشات («شخص الصور»)
+ * فيكشف من ملفات الإنتاج الفعلية أين تنكسر السلسلة: أي مصفوفة تُقرأ،
+ * قيم img الحالية، وهل رقعة التمرير والمزامن حاضران.
+ */
+export function diagnoseImages(files = []) {
+    const app = files.find(f => f.name === 'app.js');
+    if (!app) return { ok: false, reason: 'لا app.js في المشروع' };
+    const seedArr = primarySeedArray(app.content);
+    if (!seedArr) return { ok: false, reason: 'لا مصفوفة بيانات في app.js' };
+    let items = null;
+    try { items = evalItems(seedArr.literal); } catch { /* تُشخَّص كتعذّر قراءة */ }
+    return {
+        ok: true,
+        seedName: seedArr.name || '(بلا اسم)',
+        readable: Array.isArray(items),
+        itemCount: Array.isArray(items) ? items.length : 0,
+        imgs: Array.isArray(items)
+            ? items.slice(0, 10).map(o => (o && typeof o === 'object' && 'img' in o) ? (String(o.img) || '(فارغ)') : '(بلا حقل img)')
+            : [],
+        passthrough: app.content.includes("v.indexOf('/')"),
+        syncBlock: app.content.includes('jaola:img-sync'),
+    };
+}
+
+/**
  * يثبّت صورة بنر مولّدة كخلفية لقسم الـ hero في index.html.
  * يستهدف أول عنصر فئته تحتوي hero/banner، وإلا أول <section>.
  * خلفية سابقة (لون/تدرّج/صورة) داخل style تُستبدل؛ بقية الأنماط تبقى.
@@ -193,6 +218,42 @@ function topLevelObjectSpans(lit) {
 }
 
 const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * القوالب التفاعلية ترسم من localStorage (let events = load('events', SEED))
+ * لا من البذرة — فأي تعديل على app.js يُحجب خلف النسخة المحفوظة من أول
+ * زيارة. نحقن مزامناً يحدّث حقول img للعناصر المولّدة داخل الحالة
+ * المحفوظة (بمطابقة id) دون مسّ بقية بيانات المستخدم. يُدمج مع خرائط
+ * الحقن السابقة ويُستبدل في مكانه (idempotent عبر علامتي التعليق).
+ */
+const IMG_SYNC_RE = /\/\* jaola:img-sync \*\/[\s\S]*?\/\* \/jaola:img-sync \*\/\n?/;
+export function injectImgSync(js, map = {}) {
+    const merged = {};
+    const prev = js.match(IMG_SYNC_RE);
+    if (prev) {
+        const m = prev[0].match(/var seedImgs = (\{[\s\S]*?\});/);
+        if (m) { try { Object.assign(merged, JSON.parse(m[1])); } catch { /* خريطة قديمة تالفة — نتجاوز */ } }
+    }
+    Object.assign(merged, map);
+    if (!Object.keys(merged).length) return js;
+    const block = '/* jaola:img-sync */\n'
+        + '(function () { try {\n'
+        + '    var seedImgs = ' + JSON.stringify(merged) + ';\n'
+        + '    var syncArr = function (arr) { var hit = false; arr.forEach(function (o) { if (o && o.id != null && Object.prototype.hasOwnProperty.call(seedImgs, String(o.id)) && o.img !== seedImgs[String(o.id)]) { o.img = seedImgs[String(o.id)]; hit = true; } }); return hit; };\n'
+        + '    for (var i = 0; i < localStorage.length; i++) {\n'
+        + '        var k = localStorage.key(i); var raw = localStorage.getItem(k);\n'
+        + '        if (!raw || (raw.charAt(0) !== \'[\' && raw.charAt(0) !== \'{\')) continue;\n'
+        + '        try {\n'
+        + '            var v = JSON.parse(raw); var hit = false;\n'
+        + '            if (Array.isArray(v)) hit = syncArr(v);\n'
+        + '            else if (v && typeof v === \'object\') { for (var p in v) { if (Array.isArray(v[p]) && syncArr(v[p])) hit = true; } }\n'
+        + '            if (hit) localStorage.setItem(k, JSON.stringify(v));\n'
+        + '        } catch (e) { /* ليس JSON حالتنا */ }\n'
+        + '    }\n'
+        + '} catch (e) {} })();\n'
+        + '/* /jaola:img-sync */\n';
+    return prev ? js.replace(IMG_SYNC_RE, block) : block + js;
+}
 /** نمط قيمة img داخل كائن: img: '…' أو "img": "…" — بالقيمة القديمة للتمييز. */
 const imgValueRe = (oldImg) => oldImg
     ? new RegExp(`(\\bimg["']?\\s*[:=]\\s*["'])${escRe(oldImg)}(["'])`)
@@ -227,12 +288,13 @@ export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_
     const collect = (obj, itemIndex, key) => {
         if (!('img' in obj)) return;
         const label = obj.name || obj.title || obj.city || '';
+        const t = { itemIndex, key, label: label || wanted, oldImg: String(obj.img), oid: obj.id != null ? String(obj.id) : null };
         if (wanted) {
             // المطابقة على الاسم/العنوان + التصنيف (بطاقة «مؤتمرات» = category)
             const hay = `${label} ${obj.category || obj.cat || obj.type || ''}`;
-            if (labelMatches(hay, wanted)) targets.push({ itemIndex, key, label: label || wanted, oldImg: String(obj.img) });
+            if (labelMatches(hay, wanted)) targets.push(t);
         } else if (obj.img === '' || GEN_SVG_RE.test(String(obj.img)) || UNSPLASH_ID_RE.test(String(obj.img)) || AI_IMG_RE.test(String(obj.img))) {
-            targets.push({ itemIndex, key, label, oldImg: String(obj.img) });
+            targets.push(t);
         }
     };
     items.forEach((item, i) => {
@@ -255,7 +317,7 @@ export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_
         const r = await genFn(prompt);
         if (r?.notConfigured) return { changed: false, notConfigured: true, reason: r.error };
         if (!r?.ok || !r.buf) { if (r?.error) lastError = r.error; continue; } // فشل صورة واحدة لا يفشل الدفعة
-        generated.push({ itemIndex: t.itemIndex, oldImg: t.oldImg, name: `images/ai-${t.key}.${r.ext || 'png'}`, buf: r.buf });
+        generated.push({ itemIndex: t.itemIndex, oldImg: t.oldImg, oid: t.oid, name: `images/ai-${t.key}.${r.ext || 'png'}`, buf: r.buf });
     }
     if (!generated.length) return { changed: false, reason: lastError || 'لم تُولَّد أي صورة' };
 
@@ -286,6 +348,10 @@ export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_
 
     let js = spliceSeed(app.content, seedArr, lit);
     js = patchImgUrlPassthrough(js).js;
+    // مزامنة الحالة المحفوظة في متصفح الزائر (localStorage) مع الصور الجديدة
+    const syncMap = {};
+    for (const j of applied) if (j.oid) syncMap[j.oid] = j.name;
+    js = injectImgSync(js, syncMap);
     // شبكة أمان: رقعة imgUrl الكلاسيكية مشروطة بتوقيع حرفي — لو عدّل أي
     // إصلاح تلقائي شكل الدالة، نلحق غلافاً يمرّر المسارات المحلية كما هي
     // (وإلا صار images/ai-….png رابط unsplash مكسوراً وonerror يخفي الصورة).

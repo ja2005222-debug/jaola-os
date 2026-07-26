@@ -85,6 +85,12 @@ export function matchImageCommand(message) {
     return { hero, target };
 }
 
+// ─── 🔬 أمر تشخيص الصور («شخص الصور») ────────────────────────────────
+const IMG_DIAG_RE = /^\s*(?:شخّ?ص|افحص)\s+الصور\s*[.!؟?]*\s*$|^\s*diagnose\s+images\s*[.!?]*\s*$/iu;
+export function isImageDiagCommand(message) {
+    return IMG_DIAG_RE.test(message || '');
+}
+
 // ─── التأكيد المجرّد ("نعم/تمام" وحدها → استئناف) ───────────────────
 const BARE_YES = /^\s*(نعم|ايوه|أيوه|اه|آه|تمام|طيب|يلا|ok|okay|yes|sure|yep|go)\s*[.!؟?]*\s*$/i;
 export function isBareYes(message) {
