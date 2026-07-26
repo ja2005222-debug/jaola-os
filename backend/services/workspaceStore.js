@@ -17,6 +17,9 @@ const WorkspaceFileSchema = new mongoose.Schema({
     project:  { type: String, required: true },
     filePath: { type: String, required: true },  // نسبي داخل المشروع (يدعم التداخل api/auth.js)
     content:  { type: String, default: '' },
+    // 'utf8' نصوص، 'base64' ثنائيات (صور مولّدة/شعارات) — قراءة الثنائي
+    // كنص كانت تتلفه فتعود الصور محطّمة بعد الاستعادة
+    encoding: { type: String, default: 'utf8' },
     updatedAt: { type: Date, default: Date.now },
 });
 WorkspaceFileSchema.index({ username: 1, project: 1, filePath: 1 }, { unique: true });
@@ -28,6 +31,7 @@ const online = () => mongoose.connection.readyState === 1;
 const SKIP_DIRS = new Set(['.git', '.backups', 'node_modules', '.next', 'dist']);
 const MAX_FILE_BYTES = 400 * 1024;  // 400KB لكل ملف
 const MAX_FILES = 80;
+const BINARY_EXT_RE = /\.(png|jpe?g|gif|webp|ico|woff2?|ttf)$/i;
 
 // جمع الملفات النصية للمشروع (بمساراتها النسبية، يشمل المجلدات الفرعية)
 function collectFiles(rootDir, dir = rootDir, acc = []) {
@@ -45,9 +49,11 @@ function collectFiles(rootDir, dir = rootDir, acc = []) {
             try {
                 const stat = fs.statSync(full);
                 if (stat.size > MAX_FILE_BYTES) continue;
+                const binary = BINARY_EXT_RE.test(entry.name);
                 acc.push({
                     filePath: path.relative(rootDir, full).split(path.sep).join('/'),
-                    content: fs.readFileSync(full, 'utf-8'),
+                    content: binary ? fs.readFileSync(full).toString('base64') : fs.readFileSync(full, 'utf-8'),
+                    encoding: binary ? 'base64' : 'utf8',
                 });
             } catch (e) {}
         }
@@ -65,7 +71,7 @@ export async function snapshotWorkspace(username, project, projectPath) {
         const ops = files.map(f => ({
             updateOne: {
                 filter: { username, project, filePath: f.filePath },
-                update: { $set: { content: f.content, updatedAt: new Date() } },
+                update: { $set: { content: f.content, encoding: f.encoding || 'utf8', updatedAt: new Date() } },
                 upsert: true,
             },
         }));
@@ -97,7 +103,8 @@ export async function restoreWorkspaceIfEmpty(username, project, projectPath) {
             const target = path.resolve(projectPath, doc.filePath);
             if (target !== path.resolve(projectPath) && !target.startsWith(path.resolve(projectPath) + path.sep)) continue;
             fs.mkdirSync(path.dirname(target), { recursive: true });
-            fs.writeFileSync(target, doc.content ?? '');
+            if (doc.encoding === 'base64') fs.writeFileSync(target, Buffer.from(doc.content || '', 'base64'));
+            else fs.writeFileSync(target, doc.content ?? '');
         }
         console.log(`🗄️ [WorkspaceStore] استُعيد ${docs.length} ملف لمشروع ${username}/${project}`);
         return { restored: docs.length };

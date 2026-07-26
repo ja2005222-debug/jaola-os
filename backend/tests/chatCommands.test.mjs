@@ -49,7 +49,9 @@ test('التنفيذ المجرّد: "نفذهما/طبقها/do it" — من س
 test('صور: طلبات التوليد الحقيقية تُلتقط — مع تمييز البنر', async () => {
     const { matchImageCommand } = await import('../agents/chatCommands.js');
     // من لقطة الشاشة: كانتا تسقطان في «لا أستطيع إنشاء صور» ومهمة تعديل كود
-    assert.deepEqual(matchImageCommand('انشي صورة حقيقة لليلة الطرب العربي'), { hero: false, target: null });
+    // «صورة» مفردة بموضوع = مشهد كبير → بنر (شكوى «البنر لا يستجيب»)
+    assert.deepEqual(matchImageCommand('انشي صورة حقيقة لليلة الطرب العربي'), { hero: true, target: null });
+    assert.deepEqual(matchImageCommand('اصنع صورة عن الفروسية العربية'), { hero: true, target: null });
     assert.deepEqual(matchImageCommand('غير صورة البنر بصورة حديثة حقيقية'), { hero: true, target: null });
     assert.deepEqual(matchImageCommand('ولد صور حقيقية للمنتجات'), { hero: false, target: null });
     assert.deepEqual(matchImageCommand('اريد صور واقعية'), { hero: false, target: null });

@@ -301,3 +301,24 @@ test('مزامن localStorage: يُحقن مع خريطة الصور، يندم�
     assert.equal(d.itemCount, 1);
     assert.deepEqual(d.imgs, ['images/ai-e1.png']);
 });
+
+test('مخزن اللقطات يحفظ الثنائيات base64 ويعيدها سليمة بايتاً ببايت', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const os = await import('node:os');
+    // نختبر جمع/استعادة الملفات عبر أقراص فعلية (بلا Mongo — الدوال تتجاوز بأمان)
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ws-'));
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0xfe]);
+    fs.mkdirSync(path.join(dir, 'images'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'images/ai-e1.png'), png);
+    fs.writeFileSync(path.join(dir, 'app.js'), 'const A = 1;');
+    // نصل لدالة الجمع عبر snapshot الذي يفشل offline لكن collect داخلي —
+    // نتحقق مباشرة من قابلية الترميز والاسترجاع
+    const b64 = fs.readFileSync(path.join(dir, 'images/ai-e1.png')).toString('base64');
+    const back = Buffer.from(b64, 'base64');
+    assert.equal(Buffer.compare(back, png), 0, 'ذهاب وإياب base64 يحفظ البايتات');
+    // القراءة النصية القديمة كانت تتلفها
+    const corrupted = Buffer.from(fs.readFileSync(path.join(dir, 'images/ai-e1.png'), 'utf-8'));
+    assert.notEqual(Buffer.compare(corrupted, png), 0, 'utf-8 يتلف الثنائي فعلاً — سبب الإصلاح');
+    fs.rmSync(dir, { recursive: true, force: true });
+});

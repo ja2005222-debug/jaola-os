@@ -1041,7 +1041,10 @@ export class JaolaCognitiveRuntime {
 
         // 🧠 نافذة السياق الأخيرة + الملخّص طويل المدى — يبقي الموضوع حاضراً
         // مهما طالت المحادثة بدل اقتطاعها لآخر 30 رسالة وفقدان السياق.
-        const { window: history, summary: convSummary } = await loadConversation(username);
+        // 💬 الذاكرة لكل مشروع (username::project) — كانت لكل المستخدم فتُعاد
+        // «الطبقة القديمة» من مشاريع أخرى مع كل تحديث.
+        const convKey = roomName.startsWith(username + '-') ? `${username}::${roomName.slice(username.length + 1)}` : username;
+        const { window: history, summary: convSummary } = await loadConversation(convKey);
 
         // 🧠 Project Brain — يفهم كامل المشروع (ملفات + قرارات + أُنجز/متبقٍّ) لا الرسالة الأخيرة فقط
         let brainContext = '';
@@ -1156,7 +1159,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // برسائل خطأ الـ rate-limit. conversationStore يحفظ كامل الحوار دائماً.
         if (streamed) {
             await recordTurn(
-                username, userMessage, reply,
+                convKey, userMessage, reply,
                 (prev, older) => this.summarizeConversation(prev, older, userLang)
             );
         }
@@ -2571,7 +2574,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         if (bareExecute) {
             const lang = getUserLanguage(username) || userLang;
             try {
-                const { window: hist } = await loadConversation(username);
+                const { window: hist } = await loadConversation(`${username}::${activeProject}`);
                 const lastAssistant = [...hist].reverse().find(m => m.role === 'assistant' && !/^⚠️|^⚡|^🗑️/.test(m.content || ''));
                 if (lastAssistant?.content) {
                     this.emitLiveLog(roomName, 'INTENT', 'Engine', '⚡ أمر تنفيذ مجرّد → تنفيذ ما نوقش للتو كتعديل فعلي.');
@@ -2721,7 +2724,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         if (!agents.getState?.(username)?.stage) { // ليس داخل حوار clarifier
             try {
                 const existingCode = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
-                const { window: hist } = await loadConversation(username);
+                const { window: hist } = await loadConversation(`${username}::${activeProject}`);
                 const lastAssistant = [...hist].reverse().find(m => m.role === 'assistant')?.content || '';
                 const route = await routeMessage(message, {
                     projectName: activeProject,
