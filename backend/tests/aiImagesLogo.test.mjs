@@ -322,3 +322,17 @@ test('مخزن اللقطات يحفظ الثنائيات base64 ويعيدها 
     assert.notEqual(Buffer.compare(corrupted, png), 0, 'utf-8 يتلف الثنائي فعلاً — سبب الإصلاح');
     fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('برومبت العناصر من هوية العنصر (عنوان + تصنيف) لا اسم المشروع — ومحصّن ضد الكتابة', async () => {
+    const EV_JS = `
+function imgUrl(id) { return 'x' + id; }
+const SEED = [{ id: 'e4', title: 'مسرحية «الرحلة»', category: 'مسرح', img: '1503095396549-807759245b35' }];
+`;
+    const prompts = [];
+    const genFn = async (p) => { prompts.push(p); return { ok: true, buf: Buffer.from('i'), ext: 'png' }; };
+    const r = await applyAiImages([{ name: 'app.js', content: EV_JS }], { goal: 'photo-test-26-2' }, genFn);
+    assert.ok(r.changed && prompts.length === 1);
+    assert.ok(prompts[0].includes('مسرحية «الرحلة»') && prompts[0].includes('مسرح'), 'العنوان والتصنيف حاضران');
+    assert.ok(!prompts[0].includes('photo-test-26-2'), 'اسم المشروع التقني لا يلوّث البرومبت');
+    assert.ok(/no text/.test(prompts[0]) && /no letters/.test(prompts[0]), 'تحصين ضد الكتابة داخل الصورة');
+});
