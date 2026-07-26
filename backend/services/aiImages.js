@@ -6,7 +6,7 @@
  * الموقع يبقى بصوره الحتمية، والمستخدم يرى سبب عدم التفعيل بوضوح.
  */
 
-import { primarySeedArray, spliceSeed, validateSeedLiteral } from '../agents/seedStamp.js';
+import { primarySeedArray, spliceSeed } from '../agents/seedStamp.js';
 import { patchImgUrlPassthrough } from '../agents/imageForge.js';
 
 const MAX_PER_CALL = 8;
@@ -153,9 +153,54 @@ export function applyHeroImage(html, imgPath) {
 }
 
 /**
- * يستبدل صور العناصر الحتمية (SVG المولّدة أو الفارغة) بصور AI في مصفوفة
- * البيانات الرئيسية. genFn قابلة للحقن للاختبار. الصور الحقيقية الموجودة
- * (روابط/ملفات المستخدم) لا تُمسّ أبداً. بنفس حارس بنية البصمة.
+ * يقرأ مصفوفة البيانات للقراءة فقط — متسامحاً مع استدعاءات دوالّ داخلها
+ * (قوالب الاستنساخ تكتب g: grad('#…','#…') فيفشل التقييم الساذج بـ
+ * «grad is not defined»). المعرّفات المجهولة تُستبدل بدوالّ صورية.
+ */
+function evalItems(lit) {
+    try {
+        // eslint-disable-next-line no-new-func
+        return Function('"use strict";return (' + lit + ');')();
+    } catch {
+        const stub = new Proxy({}, {
+            has: () => true,
+            get: (t, k) => (k === Symbol.unscopables ? undefined : () => ''),
+        });
+        // eslint-disable-next-line no-new-func
+        return Function('__ctx', 'with (__ctx) { return (' + lit + '); }')(stub);
+    }
+}
+
+/** مواقع الكائنات العلوية داخل نصّ مصفوفة (يتجاهل الأقواس داخل النصوص). */
+function topLevelObjectSpans(lit) {
+    const spans = [];
+    let depth = 0, start = -1, inStr = null, esc = false;
+    for (let i = 0; i < lit.length; i++) {
+        const c = lit[i];
+        if (inStr) {
+            if (esc) esc = false;
+            else if (c === '\\') esc = true;
+            else if (c === inStr) inStr = null;
+            continue;
+        }
+        if (c === '"' || c === "'" || c === '`') inStr = c;
+        else if (c === '{') { if (depth === 0) start = i; depth++; }
+        else if (c === '}') { depth--; if (depth === 0 && start >= 0) { spans.push([start, i + 1]); start = -1; } }
+    }
+    return spans;
+}
+
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** نمط قيمة img داخل كائن: img: '…' أو "img": "…" — بالقيمة القديمة للتمييز. */
+const imgValueRe = (oldImg) => oldImg
+    ? new RegExp(`(\\bimg["']?\\s*[:=]\\s*["'])${escRe(oldImg)}(["'])`)
+    : /(\bimg["']?\s*[:=]\s*["'])(["'])/;
+
+/**
+ * يستبدل صور العناصر الحتمية (الفارغة/المولّدة/بذور Unsplash) بصور AI في
+ * مصفوفة البيانات الرئيسية. genFn قابلة للحقن للاختبار. صور المستخدم
+ * الفعلية لا تُمسّ إلا بتسمية صريحة. الاستبدال جراحيّ في النصّ (قيمة img
+ * وحدها) فلا تُفسَد استدعاءات الدوال داخل البيانات مثل grad(...).
  *
  * يعيد {changed, count, appJs, images:[{name, buf}]} — الكتابة للقرص مسؤولية المستدعي.
  */
@@ -167,8 +212,7 @@ export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_
 
     let items;
     try {
-        // eslint-disable-next-line no-new-func
-        items = Function('"use strict";return (' + seedArr.literal + ');')();
+        items = evalItems(seedArr.literal);
     } catch { return { changed: false, reason: 'تعذّر قراءة البيانات' }; }
     if (!Array.isArray(items) || !items.length) return { changed: false, reason: 'بيانات فارغة' };
 
@@ -178,49 +222,67 @@ export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_
     // صورته أيّاً كانت — لكن العنصر المسمّى وحده، لا غيره.
     const wanted = String(targetLabel || '');
     const targets = [];
-    const collect = (obj, key) => {
+    const collect = (obj, itemIndex, key) => {
         if (!('img' in obj)) return;
         const label = obj.name || obj.title || obj.city || '';
         if (wanted) {
             // المطابقة على الاسم/العنوان + التصنيف (بطاقة «مؤتمرات» = category)
             const hay = `${label} ${obj.category || obj.cat || obj.type || ''}`;
-            if (labelMatches(hay, wanted)) targets.push({ obj, key, label: label || wanted });
+            if (labelMatches(hay, wanted)) targets.push({ itemIndex, key, label: label || wanted, oldImg: String(obj.img) });
         } else if (obj.img === '' || GEN_SVG_RE.test(String(obj.img)) || UNSPLASH_ID_RE.test(String(obj.img))) {
-            targets.push({ obj, key, label });
+            targets.push({ itemIndex, key, label, oldImg: String(obj.img) });
         }
     };
     items.forEach((item, i) => {
         if (!item || typeof item !== 'object') return;
         const id = String(item.id || i);
-        collect(item, id);
+        collect(item, i, id);
         for (const [k, v] of Object.entries(item)) {
             if (!Array.isArray(v)) continue;
-            v.forEach((sub, j) => { if (sub && typeof sub === 'object') collect(sub, `${id}-${k}-${String(sub.id || j)}`); });
+            v.forEach((sub, j) => { if (sub && typeof sub === 'object') collect(sub, i, `${id}-${k}-${String(sub.id || j)}`); });
         }
     });
     if (!targets.length) {
         return { changed: false, reason: wanted ? `لم أجد عنصراً باسم «${targetLabel}» في بيانات الموقع` : 'لا عناصر مؤهّلة' };
     }
 
-    const images = [];
-    let count = 0;
+    const generated = [];
     let lastError = '';
     for (const t of targets.slice(0, Math.max(0, Math.min(maxCount, MAX_PER_CALL)))) {
         const prompt = `${t.label} — ${goal}. Professional product photo, clean simple background, no text or watermark.`;
         const r = await genFn(prompt);
         if (r?.notConfigured) return { changed: false, notConfigured: true, reason: r.error };
         if (!r?.ok || !r.buf) { if (r?.error) lastError = r.error; continue; } // فشل صورة واحدة لا يفشل الدفعة
-        const fileName = `images/ai-${t.key}.${r.ext || 'png'}`;
-        images.push({ name: fileName, buf: r.buf });
-        t.obj.img = fileName;
-        count++;
+        generated.push({ itemIndex: t.itemIndex, oldImg: t.oldImg, name: `images/ai-${t.key}.${r.ext || 'png'}`, buf: r.buf });
     }
-    if (!count) return { changed: false, reason: lastError || 'لم تُولَّد أي صورة' };
+    if (!generated.length) return { changed: false, reason: lastError || 'لم تُولَّد أي صورة' };
 
-    const newLit = '[\n  ' + items.map(o => JSON.stringify(o)).join(',\n  ') + '\n]';
-    if (!validateSeedLiteral(newLit, seedArr.literal)) return { changed: false, reason: 'حارس البنية رفض التعديل' };
+    // استبدال جراحيّ: قيمة img وحدها داخل نطاق كائن العنصر — من الأخير
+    // للأول حتى لا تفسد الإزاحات. grad(...) وبقية الحقول تبقى حرفياً.
+    let lit = seedArr.literal;
+    const spans = topLevelObjectSpans(lit);
+    const applied = [];
+    for (const job of [...generated].sort((a, b) => b.itemIndex - a.itemIndex)) {
+        const span = spans[job.itemIndex];
+        if (!span) continue;
+        const seg = lit.slice(span[0], span[1]);
+        const re = imgValueRe(job.oldImg);
+        if (!re.test(seg)) continue;
+        lit = lit.slice(0, span[0]) + seg.replace(re, `$1${job.name}$2`) + lit.slice(span[1]);
+        applied.push(job);
+    }
 
-    let js = spliceSeed(app.content, seedArr, newLit);
+    // حارس البنية: نفس عدد العناصر ونفس مفاتيح كل عنصر بعد التعديل
+    let guardOk = false;
+    try {
+        const after = evalItems(lit);
+        guardOk = Array.isArray(after) && after.length === items.length
+            && items.every((o, i) => !o || typeof o !== 'object'
+                || Object.keys(o).every(k => after[i] && typeof after[i] === 'object' && k in after[i]));
+    } catch { guardOk = false; }
+    if (!applied.length || !guardOk) return { changed: false, reason: 'حارس البنية رفض التعديل' };
+
+    let js = spliceSeed(app.content, seedArr, lit);
     js = patchImgUrlPassthrough(js).js;
-    return { changed: true, count, appJs: js, images };
+    return { changed: true, count: applied.length, appJs: js, images: applied.map(j => ({ name: j.name, buf: j.buf })) };
 }

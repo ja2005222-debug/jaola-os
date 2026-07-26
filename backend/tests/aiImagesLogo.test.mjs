@@ -222,3 +222,29 @@ const SEED_EVENTS = [
     const r2 = await applyAiImages([{ name: 'app.js', content: EVENTS_JS }], { goal: 'فعاليات', targetLabel: 'الحفلات' }, genFn);
     assert.ok(r2.changed && r2.count === 1 && r2.appJs.includes('images/ai-e1.png'));
 });
+
+test('قوالب باستدعاءات دوال في البيانات (g: grad(…)): القراءة تنجح والاستبدال جراحي لا يفسدها', async () => {
+    // البنية الحرفية لقالب jaolaEvents التي كانت تفشل بـ «grad is not defined»
+    const GRAD_JS = `
+function grad(a, b) { return 'linear-gradient(135deg,' + a + ',' + b + ')'; }
+function imgUrl(id) { return 'x' + id; }
+const SEED_EVENTS = [
+  { id: 'e1', title: 'ليلة الطرب العربي', category: 'حفلات موسيقية', img: '1470229722913-7c0e2dbbafd3', g: grad('#7c3aed', '#db2777'), approved: true },
+  { id: 'e3', title: 'مؤتمر التقنية 2026', category: 'مؤتمرات', img: '1505373877841-8d25f7d46678', g: grad('#2563eb', '#7c3aed'), approved: true }
+];
+`;
+    const genFn = async () => ({ ok: true, buf: Buffer.from('i'), ext: 'png' });
+
+    // توليد جماعي: كلا البذرتين Unsplash تُستبدلان — وgrad(...) يبقى حرفياً
+    const all = await applyAiImages([{ name: 'app.js', content: GRAD_JS }], { goal: 'فعاليات' }, genFn);
+    assert.ok(all.changed, 'القراءة لم تعد تفشل على grad');
+    assert.equal(all.count, 2);
+    assert.ok(all.appJs.includes("grad('#7c3aed', '#db2777')") && all.appJs.includes("grad('#2563eb', '#7c3aed')"), 'استدعاءات grad سليمة حرفياً');
+    assert.ok(all.appJs.includes('images/ai-e1.png') && all.appJs.includes('images/ai-e3.png'));
+    assert.ok(all.appJs.includes('function grad(a, b)'), 'الدوال خارج المصفوفة سليمة');
+
+    // استهداف «مؤتمرات» عبر category — بطاقة e3 وحدها
+    const one = await applyAiImages([{ name: 'app.js', content: GRAD_JS }], { goal: 'فعاليات', targetLabel: 'مؤتمرات' }, genFn);
+    assert.ok(one.changed && one.count === 1);
+    assert.ok(one.appJs.includes('images/ai-e3.png') && one.appJs.includes('1470229722913-7c0e2dbbafd3'), 'e1 لم تُمسّ');
+});
