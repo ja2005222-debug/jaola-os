@@ -64,9 +64,14 @@ const IMG_TARGET_RE = /(?:^|\s)(?:صورة|الصورة|image|photo|picture)\s+(
  *   hero = طلب صورة بنر/غلاف تحديداً؛
  *   target = اسم عنصر مسمّى («غير صورة مؤتمرات» → 'مؤتمرات') أو null للكل.
  */
+// طلب بناء صريح («ابني موقع فعاليات مع صور حقيقية») — البناء يغلب نية الصور:
+// ذكر الصور هنا وصفٌ للموقع المطلوب لا أمرُ توليدٍ على المشروع الحالي.
+const IMG_BUILD_RE = /(?:ابنِ|ابني|ابن|أنشئ|انشئ|انشي|أنشي|اصنع|إصنع|اعمل|build|create|make)\s+(?:(?:لي|لنا|a|an|the|me)\s+)?(?:موقع|متجر|تطبيق|صفحة|منصة|منصّة|بوابة|بوّابة|site|website|store|shop|app|page|platform|portal)/iu;
+
 export function matchImageCommand(message) {
     const t = (message || '').trim();
     if (!t || IMG_LOGO_RE.test(t)) return null; // الشعار له مسار رفع خاص
+    if (IMG_BUILD_RE.test(t)) return null; // طلب بناء موقع — يمضي لمسار البناء
     const m = t.match(IMG_CMD_RE);
     const viaVerb = m && !IMG_STOP_WORDS.test(m[1] || '');
     if (!viaVerb && !IMG_REAL_RE.test(t)) return null;

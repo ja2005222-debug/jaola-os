@@ -74,3 +74,14 @@ test('صور: ما ليس طلب توليد لا يُلتقط — «بصورة»
         'كيف حالك',
     ]) assert.equal(matchImageCommand(m), null, m);
 });
+
+test('صور: طلب بناء يذكر «صور حقيقية» يمضي للبناء لا للتوليد — من سجل photo-test26', async () => {
+    const { matchImageCommand } = await import('../agents/chatCommands.js');
+    for (const m of [
+        'ابني موقع فعاليات مع صور حقيقية',
+        'انشئ متجر الكتروني بصور واقعية',
+        'build a website with real images',
+    ]) assert.equal(matchImageCommand(m), null, m);
+    // أوامر التوليد الصريحة تبقى صوراً
+    assert.ok(matchImageCommand('انشئ صورة حقيقية للبنر'));
+});

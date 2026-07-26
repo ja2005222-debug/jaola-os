@@ -222,3 +222,22 @@ test('listClones + getCloneById: بيانات العرض والاسترجاع', 
     assert.equal(getCloneById('jaola-delivery')?.id, 'jaola-delivery');
     assert.equal(getCloneById('nope'), null);
 });
+
+test('كلمات المستخدم الحرفية تغلب النموذج المُهلوَس: «موقع فعاليات» → قالب التذاكر لا المدرسة', async () => {
+    const { matchCloneTemplate } = await import('../agents/cloneTemplates/index.js');
+    // العطل الإنتاجي: DomainAnalyst هلوس كيانات مدرسية لطلب «إدارة وتسجيل فعاليات»
+    // وكلمة school داخل SchoolAdmin + فئة المخطط رجّحت بوّابة المدرسة
+    const hallucinated = {
+        entities: [{ name: 'Program' }, { name: 'Student' }, { name: 'Grade' }],
+        roles: [{ name: 'Parent' }, { name: 'Teacher' }, { name: 'SchoolAdmin' }, { name: 'Student' }],
+        flows: [],
+    };
+    const c = matchCloneTemplate('موقع إدارة وتسجيل فعاليات', { kind: 'webapp', category: 'education' }, hallucinated);
+    assert.ok(c, 'قالب يُختار');
+    assert.equal(c.id, 'jaola-events', 'كلمة «فعاليات» الصريحة في الهدف تحسم');
+    // وبلا كلمة صريحة في الهدف: النموذج الحقيقي ما زال يكفي للاختيار
+    const school = matchCloneTemplate('اكمل', { kind: 'webapp' }, {
+        entities: [{ name: 'مدرسة' }, { name: 'طلاب' }], roles: [{ name: 'معلم' }], flows: [],
+    });
+    assert.equal(school?.id, 'jaola-school', 'النموذج يسند الأهداف الضعيفة كما كان');
+});
