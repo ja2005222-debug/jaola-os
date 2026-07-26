@@ -546,10 +546,11 @@ io.on('connection', (socket) => {
         // 📊 المقاييس الحقيقية للوحة الذكاء عند الانضمام
         socket.emit('project_metrics', buildMetricsPayload(username, safeProject));
 
-        // استعادة تاريخ المحادثة
+        // استعادة تاريخ المحادثة — لكل مشروع (username::project) حتى لا تظهر
+        // «الطبقة القديمة» من مشاريع أخرى مع كل تحديث
         if (isDbConnected && mongoose.connection.readyState === 1) {
             try {
-                const convo = await Conversation.findOne({ username });
+                const convo = await Conversation.findOne({ username: `${username}::${safeProject}` });
                 if (convo?.messages?.length > 0) {
                     socket.emit('chat_history', convo.messages.slice(-50));
                 }
@@ -1079,6 +1080,7 @@ app.post('/api/project/ai-images', verifyToken, aiLimit, validateProjectOwnershi
         emitWorkspaceFiles(roomName, req.projectPath);
         io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
         io.to(roomName).emit('log', { message: `🎨 [SYSTEM]: وُلّدت ${r.count} صورة حقيقية بالذكاء واستُبدلت بالصور المؤقتة.` });
+        snapshotWorkspace(username, req.activeProject, req.projectPath).catch(() => {});
         res.json({ success: true, count: r.count });
     } catch (err) {
         res.status(500).json({ error: 'تعذّر توليد الصور: ' + err.message });
@@ -1152,6 +1154,9 @@ async function generateAiImagesFromChat({ username, activeProject, projectPath, 
         if (done.length) {
             emitWorkspaceFiles(roomName, projectPath);
             io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+            // 🗄️ لقطة دائمة فوراً — وإلا ارتدّ الموقع للنسخة القديمة بعد أي
+            // إعادة تشغيل لخادم Render (قرصه مؤقت)
+            snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
             say(`🎨 تم! ولّدت: ${done.join(' + ')} واستبدلتها في موقعك — انظر المعاينة.${errors.length ? `\n⚠️ ملاحظة: ${errors[0]}` : ''}`);
         } else {
             say(`❌ لم أستطع توليد الصور: ${errors[0] || 'لا عناصر مؤهّلة (صور موقعك الحالية حقيقية بالفعل ولا تُمسّ). جرّب طلب «صورة البنر» تحديداً.'}`);
@@ -1217,6 +1222,7 @@ app.post('/api/project/logo', verifyToken, validateProjectOwnership, (req, res) 
         const roomName = `${req.user.username}-${req.activeProject}`;
         emitWorkspaceFiles(roomName, req.projectPath);
         io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        snapshotWorkspace(req.user.username, req.activeProject, req.projectPath).catch(() => {});
         res.json({ success: true, url: href });
     } catch (err) {
         res.status(500).json({ error: 'فشل رفع الشعار: ' + err.message });
