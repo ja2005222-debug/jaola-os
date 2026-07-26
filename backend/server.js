@@ -1090,8 +1090,14 @@ app.post('/api/project/ai-images', verifyToken, aiLimit, validateProjectOwnershi
  * hero=true → صورة بنر واحدة من نص الطلب تُثبَّت خلفيةً لقسم الـ hero،
  * ثم تُستبدل صور العناصر المؤهّلة إن وُجد app.js. يرد في الشات دائماً.
  */
-async function generateAiImagesFromChat({ username, activeProject, projectPath, roomName, message, hero }) {
+const aiImagesBusyRooms = new Set(); // 🔒 طلبات متكررة متزامنة لا تحرق الحصة مرتين
+async function generateAiImagesFromChat({ username, activeProject, projectPath, roomName, message, hero, target }) {
     const say = (m) => io.to(roomName).emit('chat_reply', { message: m });
+    if (aiImagesBusyRooms.has(roomName)) {
+        say('⏳ توليد صور سابق ما زال يعمل على هذا المشروع — انتظر رده ثم اطلب من جديد.');
+        return;
+    }
+    aiImagesBusyRooms.add(roomName);
     try {
         if (!aiImagesReady()) {
             say('⚙️ توليد الصور غير مُفعّل بعد — اضبط GEMINI_API_KEY (يفتح صور Gemini) أو OPENAI_API_KEY في بيئة الخادم.');
@@ -1129,7 +1135,7 @@ async function generateAiImagesFromChat({ username, activeProject, projectPath, 
         // ٢) صور العناصر (منتجات/أطباق/عقارات...) إن وُجدت مصفوفة بيانات
         const appPath = path.join(projectPath, 'app.js');
         if (!hero && fs.existsSync(appPath) && allowed > 0) {
-            const r = await applyAiImages([{ name: 'app.js', content: fs.readFileSync(appPath, 'utf8') }], { goal: activeProject, maxCount: allowed });
+            const r = await applyAiImages([{ name: 'app.js', content: fs.readFileSync(appPath, 'utf8') }], { goal: activeProject, maxCount: allowed, targetLabel: target || '' });
             if (r.changed) {
                 fs.mkdirSync(path.join(projectPath, 'images'), { recursive: true });
                 for (const img of r.images) fs.writeFileSync(path.join(projectPath, img.name), img.buf);
@@ -1150,6 +1156,8 @@ async function generateAiImagesFromChat({ username, activeProject, projectPath, 
         }
     } catch (e) {
         say('❌ تعذّر توليد الصور: ' + e.message);
+    } finally {
+        aiImagesBusyRooms.delete(roomName);
     }
 }
 

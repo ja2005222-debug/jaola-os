@@ -54,10 +54,15 @@ const IMG_LOGO_RE = /شعار|لوجو|لوقو|logo|أيقونة|ايقونة|f
 const IMG_CMD_RE = new RegExp(`(?:^|\\s)${IMG_VERB}\\s+(?:(?:لي|لنا|كل|جميع)\\s+)?((?:[\\u0600-\\u06FF\\w]+\\s+){0,2}?)${IMG_NOUN}(?=\\s|$|[.!؟?،,])`, 'iu');
 const IMG_REAL_RE = /(?:^|\s)(?:صور(?:ة)?|الصور)\s+(?:حقيقية|واقعية|احترافية|بالذكاء)|real\s+(?:images?|photos?)|ai\s+(?:images?|photos?)/iu;
 const IMG_HERO_RE = /بنر|بانر|banner|غلاف|خلفية|hero/iu;
+// كلمات بعد «صورة» ليست اسمَ عنصر: صفات وحروف جر وكلمات البنر
+const IMG_NOT_TARGET = /^(?:حقيقية|حقيقة|واقعية|احترافية|جديدة|حديثة|جميلة|أفضل|افضل|بالذكاء|الى|إلى|في|من|مع|قسم|عنصر|بطاقة|كل|جميع|البنر|بنر|البانر|بانر|الغلاف|غلاف|الخلفية|خلفية|real|new|nice|professional|ai|a|an|the|with|to|for|banner|hero)$/i;
+const IMG_TARGET_RE = /(?:^|\s)(?:صورة|الصورة|image|photo|picture)\s+(?:(?:قسم|عنصر|بطاقة|of|the)\s+)?([؀-ۿ\w][؀-ۿ\w\-]*)/iu;
 
 /**
  * يحلل رسالة ضد نية توليد الصور بالذكاء.
- * @returns {{ hero: boolean } | null} hero = طلب صورة بنر/غلاف تحديداً
+ * @returns {{ hero: boolean, target: string|null } | null}
+ *   hero = طلب صورة بنر/غلاف تحديداً؛
+ *   target = اسم عنصر مسمّى («غير صورة مؤتمرات» → 'مؤتمرات') أو null للكل.
  */
 export function matchImageCommand(message) {
     const t = (message || '').trim();
@@ -65,7 +70,14 @@ export function matchImageCommand(message) {
     const m = t.match(IMG_CMD_RE);
     const viaVerb = m && !IMG_STOP_WORDS.test(m[1] || '');
     if (!viaVerb && !IMG_REAL_RE.test(t)) return null;
-    return { hero: IMG_HERO_RE.test(t) };
+    const hero = IMG_HERO_RE.test(t);
+    let target = null;
+    if (!hero) {
+        const tm = t.match(IMG_TARGET_RE);
+        const word = tm?.[1] || '';
+        if (word && !IMG_NOT_TARGET.test(word)) target = word.replace(/^ال/, '');
+    }
+    return { hero, target };
 }
 
 // ─── التأكيد المجرّد ("نعم/تمام" وحدها → استئناف) ───────────────────
