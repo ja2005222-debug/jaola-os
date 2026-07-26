@@ -336,3 +336,19 @@ const SEED = [{ id: 'e4', title: 'مسرحية «الرحلة»', category: 'م�
     assert.ok(!prompts[0].includes('photo-test-26-2'), 'اسم المشروع التقني لا يلوّث البرومبت');
     assert.ok(/no text/.test(prompts[0]) && /no letters/.test(prompts[0]), 'تحصين ضد الكتابة داخل الصورة');
 });
+
+test('applyHeroImage: قالب بصورة <img> داخل الـ hero (الأكاديمية) — src تُستبدل لا الخلفية المدفونة فقط', async () => {
+    const { applyHeroImage } = await import('../services/aiImages.js');
+    // البنية الحرفية لقالب jaolaLms: hero-bg تحمل <img> فوق الخلفية
+    const html = '<header class="topbar"><img src="assets/logo.svg"></header>'
+        + '<section class="hero"><div class="ph hero-bg">'
+        + '<img src="https://images.unsplash.com/photo-1522202176988?w=1400" srcset="a.jpg 2x" alt="" onerror="this.style.display=\'none\'">'
+        + '</div><div class="hero-in">x</div></section>';
+    const r = applyHeroImage(html, 'images/ai-hero-t9.png');
+    assert.ok(r.changed);
+    assert.ok(r.html.includes('<img src="images/ai-hero-t9.png"'), 'صورة الـ hero استُبدلت');
+    assert.ok(!r.html.includes('srcset='), 'srcset أُسقطت كي لا تتغلب على src');
+    assert.ok(!r.html.includes('photo-1522202176988'), 'رابط unsplash القديم زال');
+    assert.ok(r.html.includes('<img src="assets/logo.svg">'), 'شعار الشريط العلوي (قبل الـ hero) لم يُمسّ');
+    assert.ok(r.html.includes("background-image:url('images/ai-hero-t9.png')"), 'الخلفية مضبوطة أيضاً (احتياط لو فشل تحميل الصورة)');
+});

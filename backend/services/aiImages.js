@@ -176,7 +176,26 @@ export function applyHeroImage(html, imgPath) {
             return `style=${q}${kept ? kept + ';' : ''}${bg}${q}`;
         })
         : `${attrs} style="${bg}"`;
-    return { changed: true, html: src.replace(full, `<${tag}${newAttrs}>`) };
+    const openTag = `<${tag}${newAttrs}>`;
+    let out = src.replace(full, openTag);
+
+    // قوالب تضع صورة <img> داخل الـ hero (hero-bg) فوق الخلفية — تغيير
+    // الخلفية وحده يُدفن خلفها («البنر لا يستجيب إطلاقاً»): نستبدل src
+    // أول <img> داخل نطاق القسم أيضاً (مع إسقاط srcset كي لا تتغلب).
+    const openIdx = out.indexOf(openTag);
+    const closeIdx = openIdx !== -1 ? out.indexOf(`</${tag}>`, openIdx) : -1;
+    if (openIdx !== -1 && closeIdx !== -1) {
+        const segment = out.slice(openIdx, closeIdx);
+        const im = segment.match(/<img\b[^>]*>/i);
+        if (im) {
+            let tagTxt = im[0].replace(/\s(?:srcset|sizes)=["'][^"']*["']/gi, '');
+            tagTxt = /\bsrc=["']/i.test(tagTxt)
+                ? tagTxt.replace(/\bsrc=["'][^"']*["']/i, `src="${imgPath}"`)
+                : tagTxt.replace(/<img\b/i, `<img src="${imgPath}"`);
+            out = out.slice(0, openIdx) + segment.replace(im[0], tagTxt) + out.slice(closeIdx);
+        }
+    }
+    return { changed: true, html: out };
 }
 
 /**
