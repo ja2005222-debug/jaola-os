@@ -118,3 +118,9 @@ export function socialQuota(userDoc) {
     const { limits, planId } = getUserSubscription(userDoc);
     return { planId, monthly: limits.socialPosts ?? 0 };
 }
+
+/** 🌐 حد النطاقات الخاصة بالخطة (المجانية 0 — ميزة مدفوعة) */
+export function customDomainsMax(userDoc) {
+    const { limits, planId } = getUserSubscription(userDoc);
+    return { planId, max: limits.customDomainsMax ?? 0 };
+}
