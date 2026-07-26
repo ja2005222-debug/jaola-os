@@ -257,6 +257,8 @@ export default function Dashboard() {
   const [showMobileMenu, setShowMobileMenu] = useState(false);  // الجوال: قائمة الإجراءات الثانوية
   const [showSiteHealth, setShowSiteHealth] = useState(false);  // الجوال: بطاقة حالة الموقع (مؤشرات الجودة)
   const [prompt, setPrompt] = useState('');
+  // 🧭 مسار البناء: موقع (لزوّار) أو سيستم داخلي (أداة عمل) — يمنع القفز لقالب خاطئ
+  const [buildTrack, setBuildTrack] = useState('site');
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [isDeploying, setIsDeploying] = useState(false);
@@ -405,7 +407,7 @@ export default function Dashboard() {
     if (typeof overrideText !== 'string') setPrompt('');
     setChatMessages(prev => [...prev, { sender: 'user', text: msg, timestamp: Date.now() }]);
     try {
-      await fetch(`${BACKEND_URL}/api/chat`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ message: msg, project: activeProject, uiLang }) });
+      await fetch(`${BACKEND_URL}/api/chat`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ message: msg, project: activeProject, uiLang, track: buildTrack }) });
     } catch { setIsSending(false); return; }
     // فقاعة «يفكّر» تبقى حتى وصول أول رد/حدث فعلي (لا مؤقّت ثانية يتركك في صمت)
     // — تُطفأ في effect أدناه، مع سقف أمان إن انقطع كل شيء
@@ -2534,8 +2536,17 @@ export default function Dashboard() {
             <>
               {missionFeed}
               {quickBuilds}
+              {/* 🧭 مبدّل المسار (جوال) */}
+              <div style={{ padding:'8px 12px 0', display:'flex', gap:6, background:S.bg2, borderTop:`1px solid ${S.border}` }}>
+                {[['site', '🌍', t('trackSite')], ['system', '🏢', t('trackSystem')]].map(([id, icon, label]) => (
+                  <button key={id} onClick={() => setBuildTrack(id)}
+                    style={{ flex:1, background: buildTrack === id ? 'rgba(99,102,241,0.16)' : 'rgba(255,255,255,0.02)', border:`1px solid ${buildTrack === id ? 'rgba(99,102,241,0.5)' : S.border}`, borderRadius:8, padding:'7px 10px', color: buildTrack === id ? '#c7d2fe' : S.muted, fontSize:11, fontWeight:800 }}>
+                    {icon} {label}
+                  </button>
+                ))}
+              </div>
               {/* إدخال المهمة — أسلوب تطبيقات المحادثة */}
-              <div style={{ padding:'10px 12px', borderTop:`1px solid ${S.border}`, flexShrink:0, display:'flex', gap:8, alignItems:'flex-end', background:S.bg2 }}>
+              <div style={{ padding:'10px 12px', flexShrink:0, display:'flex', gap:8, alignItems:'flex-end', background:S.bg2 }}>
                 <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                   placeholder={t('mobilePrompt')}
@@ -2882,6 +2893,15 @@ export default function Dashboard() {
           {/* Mission Input */}
           <div style={{ padding:'16px', borderTop:`1px solid ${S.border}`, flexShrink:0 }}>
             <div className="sec-title" style={{ color:S.muted, marginBottom:10 }}>⚡ Mission Control</div>
+            {/* 🧭 مبدّل المسار: ماذا تبني؟ */}
+            <div style={{ display:'flex', gap:6, marginBottom:8 }}>
+              {[['site', '🌍', t('trackSite')], ['system', '🏢', t('trackSystem')]].map(([id, icon, label]) => (
+                <button key={id} onClick={() => setBuildTrack(id)} title={t('trackHint')}
+                  style={{ flex:1, background: buildTrack === id ? 'rgba(99,102,241,0.16)' : 'rgba(255,255,255,0.02)', border:`1px solid ${buildTrack === id ? 'rgba(99,102,241,0.5)' : S.border}`, borderRadius:8, padding:'6px 10px', color: buildTrack === id ? '#c7d2fe' : S.muted, fontSize:11, fontWeight:800, cursor:'pointer' }}>
+                  {icon} {label}
+                </button>
+              ))}
+            </div>
             <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
               placeholder={t('promptPlaceholder')}

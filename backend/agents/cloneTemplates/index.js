@@ -15,9 +15,20 @@ import { jaolaTravel } from './jaolaTravel.js';
 import { jaolaLms } from './jaolaLms.js';
 import { jaolaSchool } from './jaolaSchool.js';
 import { jaolaEvents } from './jaolaEvents.js';
+import { jaolaErp } from './jaolaErp.js';
 
 // كل قوالب jaola المتاحة (تُبنى مرة عند الحاجة)
-const BUILDERS = [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaEvents, jaolaLms, jaolaSchool, jaolaWeather, jaolaCrypto, jaolaCurrency];
+const BUILDERS = [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaEvents, jaolaLms, jaolaSchool, jaolaWeather, jaolaCrypto, jaolaCurrency, jaolaErp];
+
+// 🧭 مساران منفصلان: «موقع» (لزوّار) و«سيستم داخلي» (أداة عمل) — طلب
+// سيستم لا يُقفز أبداً لقالب متجر (عطل photo-test الحقيقي: طلب نظام
+// مصنع فبُني متجر منتجات). القوالب بلا track تُعامل كمواقع.
+const SYSTEM_INTENT_RE = /سيستم|نظام\s*(?:داخلي|إداري|ادار|إدار|محاسب)|إدارة\s*(?:مصنع|منشأة|منشاة|مستودع|مخزون|ورشة)|ادارة\s*(?:مصنع|منشأة|منشاة|مستودع|مخزون|ورشة)|منصرفات|\berp\b|internal\s+system|management\s+system/i;
+
+/** يستنتج المسار من نص الطلب حين لا يُمرَّر صراحة. */
+export function inferTrack(goal = '') {
+    return SYSTEM_INTENT_RE.test(String(goal)) ? 'system' : null;
+}
 
 /** بيانات وصفية للعرض (لوحة «معرفة المنصّة») — بلا محتوى الملفات الثقيل. */
 export function listClones() {
@@ -37,11 +48,16 @@ export function listClones() {
  * يختار أنسب كلون لمشروع (أو null). المطابقة بالكلمات المفتاحية في الهدف +
  * فئة المخطّط. مخصّص للتطبيقات التفاعلية فقط (لا البروشورات).
  */
-export function matchCloneTemplate(goal = '', blueprint = null, domainModel = null) {
+export function matchCloneTemplate(goal = '', blueprint = null, domainModel = null, opts = {}) {
     const category = blueprint?.category;
     const isApp = blueprint?.kind === 'webapp' || blueprint?.kind === 'tool'
         || (Array.isArray(domainModel?.roles) && domainModel.roles.length > 1);
     if (!isApp) return null; // البروشورات لا تحتاج كلون تطبيق
+
+    // 🧭 المسار: صريح من زر الواجهة، وإلا من كلمات الطلب. سيستم → قوالب
+    // السيستم حصراً (أو لا شيء = بناء حر)، موقع → لا قوالب سيستم.
+    const track = opts.track || inferTrack(goal);
+    const inTrack = (c) => track === 'system' ? c.track === 'system' : c.track !== 'system';
 
     // نصّان منفصلان: كلمات المستخدم الحرفية (الهدف) هي الحقيقة الأرضية،
     // وأسماء النموذج المحفوظ سند ثانوي فقط — نموذج مُهلوَس (Student/Grade
@@ -56,6 +72,7 @@ export function matchCloneTemplate(goal = '', blueprint = null, domainModel = nu
     let best = null, bestScore = 0, bestKw = 0;
     for (const build of BUILDERS) {
         const c = build();
+        if (!inTrack(c)) continue;
         let score = 0, kwHits = 0;
         if (category && c.category === category) score += 2;
         for (const kw of c.keywords || []) {

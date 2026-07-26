@@ -1710,6 +1710,7 @@ app.post('/api/chat', verifyToken, aiLimit, validate(schemas.sendMessage), valid
             username: req.user.username,
             activeProject: req.activeProject,
             uiLang: req.body.uiLang,
+            track: req.body.track, // 🧭 مسار البناء من زر الواجهة (موقع/سيستم)
         }, agents, dbStatus);
     } catch (error) {
         io.to(roomName).emit('log', { message: `❌ [ERROR]: ${error.message}` });

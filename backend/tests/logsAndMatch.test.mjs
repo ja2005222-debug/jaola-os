@@ -5,11 +5,13 @@ import { localizeLog } from '../agents/logLocalizer.js';
 import { matchCloneTemplate } from '../agents/cloneTemplates/index.js';
 
 test('العطل: فئة مهلوسة (travel) وحدها لا تفرض قالب السفر بعد اليوم', () => {
-    // نظام مخزون صُنّف خطأً travel — كان يتحول لقالب سفر كاملاً
+    // نظام مخزون صُنّف خطأً travel — كان يتحول لقالب سفر كاملاً.
+    // منذ jaola-erp: طلب نظام المخزون يجد قالبه الصحيح (سيستم) لا السفر —
+    // وهذا هو السلوك المرغوب، والحماية من الفئة المهلوسة باقية.
     const r = matchCloneTemplate('نظام إدارة مخزون للمستودعات', { category: 'travel', kind: 'webapp' }, null);
-    assert.equal(r, null, 'لا كلمة مفتاحية = لا قالب مفروض');
-    // ونفس الحماية لفئات أخرى مهلوسة على أهداف بلا كلماتها
-    assert.equal(matchCloneTemplate('لوحة تحكم داخلية للموظفين', { category: 'travel', kind: 'webapp' }, null), null);
+    assert.equal(r?.id, 'jaola-erp', 'نظام المخزون → قالب السيستم لا قالب السفر المهلوس');
+    const r2 = matchCloneTemplate('لوحة تحكم داخلية للموظفين', { category: 'travel', kind: 'webapp' }, null);
+    assert.ok(r2 === null || r2.id !== 'jaola-travel', 'الفئة المهلوسة لا تفرض السفر أبداً');
     assert.equal(matchCloneTemplate('مدونة شخصية بسيطة', { category: 'ridehailing', kind: 'webapp' }, null), null);
 });
 
