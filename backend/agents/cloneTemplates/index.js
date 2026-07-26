@@ -43,14 +43,15 @@ export function matchCloneTemplate(goal = '', blueprint = null, domainModel = nu
         || (Array.isArray(domainModel?.roles) && domainModel.roles.length > 1);
     if (!isApp) return null; // البروشورات لا تحتاج كلون تطبيق
 
-    // نبني نصّ بحث من الهدف + أسماء النموذج المحفوظ (كيانات/أدوار/تدفّقات) —
-    // فيطابق حتى لو كان الهدف ضعيفاً («اكمل») لأن النموذج يحمل هوية المشروع.
-    const modelText = [
+    // نصّان منفصلان: كلمات المستخدم الحرفية (الهدف) هي الحقيقة الأرضية،
+    // وأسماء النموذج المحفوظ سند ثانوي فقط — نموذج مُهلوَس (Student/Grade
+    // على طلب «موقع فعاليات») كان يقلب الاختيار لقالب لا علاقة له بالطلب.
+    const goalHay = String(goal || '').toLowerCase();
+    const modelHay = [
         ...(domainModel?.entities || []).map(e => e?.name),
         ...(domainModel?.roles || []).map(r => r?.name),
         ...(domainModel?.flows || []).map(f => f?.name),
-    ].filter(Boolean).join(' ');
-    const hay = `${goal || ''} ${modelText}`.toLowerCase();
+    ].filter(Boolean).join(' ').toLowerCase();
 
     let best = null, bestScore = 0, bestKw = 0;
     for (const build of BUILDERS) {
@@ -58,7 +59,10 @@ export function matchCloneTemplate(goal = '', blueprint = null, domainModel = nu
         let score = 0, kwHits = 0;
         if (category && c.category === category) score += 2;
         for (const kw of c.keywords || []) {
-            if (kw && hay.includes(kw.toLowerCase())) { score += 1; kwHits += 1; }
+            const k = kw && kw.toLowerCase();
+            if (!k) continue;
+            if (goalHay.includes(k)) { score += 10; kwHits += 1; } // كلمة المستخدم تحسم
+            else if (modelHay.includes(k)) { score += 1; kwHits += 1; }
         }
         if (score > bestScore) { bestScore = score; best = c; bestKw = kwHits; }
     }
