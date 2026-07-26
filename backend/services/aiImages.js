@@ -267,7 +267,7 @@ const imgValueRe = (oldImg) => oldImg
  *
  * يعيد {changed, count, appJs, images:[{name, buf}]} — الكتابة للقرص مسؤولية المستدعي.
  */
-export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_CALL, targetLabel = '' } = {}, genFn = generateProductImage) {
+export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_CALL, targetLabel = '', stamp = Date.now().toString(36) } = {}, genFn = generateProductImage) {
     const app = files.find(f => f.name === 'app.js');
     if (!app) return { changed: false, reason: 'لا app.js' };
     const seedArr = primarySeedArray(app.content);
@@ -324,7 +324,9 @@ export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_
         const r = await genFn(prompt);
         if (r?.notConfigured) return { changed: false, notConfigured: true, reason: r.error };
         if (!r?.ok || !r.buf) { if (r?.error) lastError = r.error; continue; } // فشل صورة واحدة لا يفشل الدفعة
-        generated.push({ itemIndex: t.itemIndex, oldImg: t.oldImg, oid: t.oid, name: `images/ai-${t.key}.${r.ext || 'png'}`, buf: r.buf });
+        // اسم فريد لكل توليد — الكتابة على نفس الاسم كانت تُري المتصفح
+        // النسخة القديمة وميضاً (أو للأبد) قبل الجديدة
+        generated.push({ itemIndex: t.itemIndex, oldImg: t.oldImg, oid: t.oid, key: t.key, name: `images/ai-${t.key}-${stamp}.${r.ext || 'png'}`, buf: r.buf });
     }
     if (!generated.length) return { changed: false, reason: lastError || 'لم تُولَّد أي صورة' };
 
@@ -368,5 +370,5 @@ export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_
             + "imgUrl = function (id) { var v = String(id == null ? '' : id); "
             + "return (v.indexOf('/') !== -1 || v.indexOf('.') !== -1) ? v : (_f ? _f(id) : v); }; } catch (e) {} })();\n";
     }
-    return { changed: true, count: applied.length, appJs: js, images: applied.map(j => ({ name: j.name, buf: j.buf })) };
+    return { changed: true, count: applied.length, appJs: js, images: applied.map(j => ({ name: j.name, buf: j.buf, key: j.key })) };
 }

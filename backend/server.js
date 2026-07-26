@@ -1073,6 +1073,7 @@ app.post('/api/project/ai-images', verifyToken, aiLimit, validateProjectOwnershi
         }
 
         fs.mkdirSync(path.join(req.projectPath, 'images'), { recursive: true });
+        cleanupOldAiImages(req.projectPath, r.images);
         for (const img of r.images) fs.writeFileSync(path.join(req.projectPath, img.name), img.buf);
         fs.writeFileSync(appPath, r.appJs);
         for (let i = 0; i < r.count; i++) bumpUsage(USAGE_DIR, username, 'aiImages');
@@ -1094,6 +1095,22 @@ app.post('/api/project/ai-images', verifyToken, aiLimit, validateProjectOwnershi
  * hero=true → صورة بنر واحدة من نص الطلب تُثبَّت خلفيةً لقسم الـ hero،
  * ثم تُستبدل صور العناصر المؤهّلة إن وُجد app.js. يرد في الشات دائماً.
  */
+/** يحذف الأجيال السابقة لصور نفس العناصر (الأسماء فريدة لكل توليد). */
+function cleanupOldAiImages(projectPath, images) {
+    const dir = path.join(projectPath, 'images');
+    if (!fs.existsSync(dir)) return;
+    for (const img of images) {
+        if (!img.key) continue;
+        const esc = String(img.key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = new RegExp(`^ai-${esc}(?:\\.|-[a-z0-9]+\\.)`);
+        try {
+            for (const f of fs.readdirSync(dir)) {
+                if (re.test(f) && `images/${f}` !== img.name) fs.unlinkSync(path.join(dir, f));
+            }
+        } catch (e) { /* تنظيف اختياري */ }
+    }
+}
+
 const aiImagesBusyRooms = new Set(); // 🔒 طلبات متكررة متزامنة لا تحرق الحصة مرتين
 async function generateAiImagesFromChat({ username, activeProject, projectPath, roomName, message, hero, target, isAdmin = false }) {
     // 💬 نحفظ الدورة في ذاكرة المشروع — وإلا اختفت «تم! ولّدت…» مع أول تحديث
@@ -1141,7 +1158,7 @@ async function generateAiImagesFromChat({ username, activeProject, projectPath, 
                     fs.writeFileSync(idxPath, heroRes.html);
                     bumpUsage(USAGE_DIR, username, 'aiImages');
                     allowed--;
-                    done.push('صورة البنر');
+                    done.push(`صورة البنر (${heroName})`);
                 } else errors.push(heroRes.reason);
             } else errors.push(r.error);
         }
@@ -1152,6 +1169,7 @@ async function generateAiImagesFromChat({ username, activeProject, projectPath, 
             const r = await applyAiImages([{ name: 'app.js', content: fs.readFileSync(appPath, 'utf8') }], { goal: activeProject, maxCount: allowed, targetLabel: target || '' });
             if (r.changed) {
                 fs.mkdirSync(path.join(projectPath, 'images'), { recursive: true });
+                cleanupOldAiImages(projectPath, r.images);
                 for (const img of r.images) fs.writeFileSync(path.join(projectPath, img.name), img.buf);
                 fs.writeFileSync(appPath, r.appJs);
                 for (let i = 0; i < r.count; i++) bumpUsage(USAGE_DIR, username, 'aiImages');
@@ -1187,16 +1205,20 @@ function diagnoseAiImagesFromChat({ projectPath, roomName }) {
         const d = diagnoseImages(files);
         const imagesDir = path.join(projectPath, 'images');
         const imgFiles = fs.existsSync(imagesDir) ? fs.readdirSync(imagesDir).filter(f => f.startsWith('ai-')) : [];
-        const heroSet = fs.existsSync(path.join(projectPath, 'index.html'))
-            && /images\/ai-hero\.png/.test(fs.readFileSync(path.join(projectPath, 'index.html'), 'utf8'));
-        if (!d.ok) { say(`🔬 تشخيص الصور:\n- ${d.reason}\n- ملفات ai-* على القرص: ${imgFiles.length}`); return; }
+        // البنر: الاسم المضبوط فعلاً في index.html + هل ملفه موجود؟
+        let heroLine = '—';
+        if (fs.existsSync(path.join(projectPath, 'index.html'))) {
+            const hm = fs.readFileSync(path.join(projectPath, 'index.html'), 'utf8').match(/images\/ai-hero[\w-]*\.png/);
+            if (hm) heroLine = `${hm[0]} (الملف ${fs.existsSync(path.join(projectPath, hm[0])) ? 'موجود ✅' : 'مفقود ❌'})`;
+        }
+        if (!d.ok) { say(`🔬 تشخيص الصور:\n- ${d.reason}\n- بنر index.html: ${heroLine}\n- ملفات ai-* على القرص: ${imgFiles.length}`); return; }
         say([
             '🔬 تشخيص الصور:',
             `- مصفوفة البيانات: ${d.seedName} (${d.readable ? d.itemCount + ' عنصر' : '⚠️ تعذّرت قراءتها'})`,
             `- قيم img الحالية: ${d.imgs.join(' | ') || '—'}`,
             `- تمرير المسارات المحلية (imgUrl): ${d.passthrough ? '✅' : '❌ غائب'}`,
             `- مزامن localStorage: ${d.syncBlock ? '✅' : '❌ غائب'}`,
-            `- بنر مولّد في index.html: ${heroSet ? '✅' : '—'}`,
+            `- بنر index.html: ${heroLine}`,
             `- ملفات ai-* على القرص: ${imgFiles.length}${imgFiles.length ? ' (' + imgFiles.slice(0, 6).join('، ') + ')' : ''}`,
             '',
             'انسخ هذه الرسالة لدعم المنصة إن بقيت الصور لا تظهر.',

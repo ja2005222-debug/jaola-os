@@ -121,38 +121,38 @@ test('المزوّد: غير مُفعّل صريح، وحمولة OpenAI صحي�
 
 test('applyAiImages: الفارغ والمولّد ومعرّف Unsplash المزروع تُستبدل — صورة المستخدم الحقيقية لا تُمسّ', async () => {
     const genFn = async () => ({ ok: true, buf: Buffer.from('img'), ext: 'png' });
-    const r = await applyAiImages([{ name: 'app.js', content: APP_JS }], { goal: 'حلويات' }, genFn);
+    const r = await applyAiImages([{ name: 'app.js', content: APP_JS }], { goal: 'حلويات', stamp: 't1' }, genFn);
     assert.ok(r.changed);
     assert.equal(r.count, 3, 'الفارغ + المولّد + معرّف Unsplash (بذرة القالب لا صورة المستخدم)');
-    assert.ok(r.appJs.includes('images/ai-p1.png') && r.appJs.includes('images/ai-p2.png') && r.appJs.includes('images/ai-p4.png'));
+    assert.ok(r.appJs.includes('images/ai-p1-t1.png') && r.appJs.includes('images/ai-p2-t1.png') && r.appJs.includes('images/ai-p4-t1.png'));
     assert.ok(r.appJs.includes('assets/my-real-photo.jpg'), 'صورة المستخدم باقية');
     assert.ok(r.appJs.includes('function render()'), 'الدوال سليمة');
-    assert.deepEqual(r.images.map(i => i.name).sort(), ['images/ai-p1.png', 'images/ai-p2.png', 'images/ai-p4.png']);
+    assert.deepEqual(r.images.map(i => i.name).sort(), ['images/ai-p1-t1.png', 'images/ai-p2-t1.png', 'images/ai-p4-t1.png']);
     // imgUrl مُرقّعة لتمرير المسارات المحلية
     // eslint-disable-next-line no-new-func
     const imgUrl = Function(r.appJs + '; return imgUrl;')();
-    assert.equal(imgUrl('images/ai-p1.png'), 'images/ai-p1.png');
+    assert.equal(imgUrl('images/ai-p1-t1.png'), 'images/ai-p1-t1.png');
 });
 
 test('applyAiImages: سقف الدفعة يُحترم، وفشل صورة لا يفشل البقية، وnotConfigured يوقف مبكراً', async () => {
     const files = [{ name: 'app.js', content: APP_JS }];
-    const one = await applyAiImages(files, { goal: 'x', maxCount: 1 }, async () => ({ ok: true, buf: Buffer.from('i'), ext: 'png' }));
+    const one = await applyAiImages(files, { goal: 'x', maxCount: 1, stamp: 't1' }, async () => ({ ok: true, buf: Buffer.from('i'), ext: 'png' }));
     assert.equal(one.count, 1, 'الحصة المتبقية تُحترم');
 
     let calls = 0;
-    const flaky = await applyAiImages(files, { goal: 'x' }, async () => {
+    const flaky = await applyAiImages(files, { goal: 'x', stamp: 't1' }, async () => {
         calls++;
         return calls === 1 ? { error: 'فشل مؤقت' } : { ok: true, buf: Buffer.from('i'), ext: 'png' };
     });
     assert.equal(flaky.count, 2, 'الفاشلة تُتخطى والناجحتان تُطبَّقان');
 
-    const allFail = await applyAiImages(files, { goal: 'x' }, async () => ({ error: 'فشل توليد الصورة عبر gemini-2.5-flash-image (quota exceeded).' }));
+    const allFail = await applyAiImages(files, { goal: 'x', stamp: 't1' }, async () => ({ error: 'فشل توليد الصورة عبر gemini-2.5-flash-image (quota exceeded).' }));
     assert.ok(!allFail.changed && /quota exceeded/.test(allFail.reason), 'فشل كل الصور يُظهر خطأ المزوّد الفعلي لا رسالة عامة');
 
-    const off = await applyAiImages(files, { goal: 'x' }, async () => ({ notConfigured: true, error: 'لا مفتاح' }));
+    const off = await applyAiImages(files, { goal: 'x', stamp: 't1' }, async () => ({ notConfigured: true, error: 'لا مفتاح' }));
     assert.ok(off.notConfigured && !off.changed);
 
-    const none = await applyAiImages([{ name: 'app.js', content: 'var x = 1;' }], {}, async () => ({}));
+    const none = await applyAiImages([{ name: 'app.js', content: 'var x = 1;' }], { stamp: 't1' }, async () => ({}));
     assert.ok(!none.changed, 'لا مصفوفة بيانات → لا تغيير');
 });
 
@@ -185,18 +185,18 @@ test('applyHeroImage: يستهدف قسم الـ hero ويحفظ الأنماط 
 
 test('استهداف بالاسم: العنصر المسمّى وحده يُستبدل — حتى لو صورته حقيقية (التسمية = موافقة)', async () => {
     const genFn = async () => ({ ok: true, buf: Buffer.from('i'), ext: 'png' });
-    const r = await applyAiImages([{ name: 'app.js', content: APP_JS }], { goal: 'x', targetLabel: 'معمول' }, genFn);
+    const r = await applyAiImages([{ name: 'app.js', content: APP_JS }], { goal: 'x', targetLabel: 'معمول', stamp: 't1' }, genFn);
     assert.ok(r.changed);
     assert.equal(r.count, 1, 'العنصر المسمّى فقط');
-    assert.ok(r.appJs.includes('images/ai-p3.png'), 'صورة المعمول الحقيقية استُبدلت لأنه سُمّي صراحة');
+    assert.ok(r.appJs.includes('images/ai-p3-t1.png'), 'صورة المعمول الحقيقية استُبدلت لأنه سُمّي صراحة');
     assert.ok(r.appJs.includes('images/gen-p2.svg'), 'غير المسمّى لا يُمسّ حتى المولّد منه');
 
     // «ال» التعريف لا تمنع المطابقة
-    const al = await applyAiImages([{ name: 'app.js', content: APP_JS }], { goal: 'x', targetLabel: 'الكنافة' }, genFn);
-    assert.ok(al.changed && al.count === 1 && al.appJs.includes('images/ai-p1.png'));
+    const al = await applyAiImages([{ name: 'app.js', content: APP_JS }], { goal: 'x', targetLabel: 'الكنافة', stamp: 't1' }, genFn);
+    assert.ok(al.changed && al.count === 1 && al.appJs.includes('images/ai-p1-t1.png'));
 
     // اسم غير موجود → سبب واضح باسم الطلب
-    const none = await applyAiImages([{ name: 'app.js', content: APP_JS }], { targetLabel: 'طائرات' }, genFn);
+    const none = await applyAiImages([{ name: 'app.js', content: APP_JS }], { targetLabel: 'طائرات', stamp: 't1' }, genFn);
     assert.ok(!none.changed && none.reason.includes('طائرات'), 'رسالة «لم أجد» تذكر الاسم المطلوب');
 });
 
@@ -212,15 +212,15 @@ const SEED_EVENTS = [
 `;
     const genFn = async () => ({ ok: true, buf: Buffer.from('i'), ext: 'png' });
     // «مؤتمرات» (جمع) تطابق category «مؤتمرات» وعنوان «مؤتمر …» (مفرد) — العنصر e3 وحده
-    const r = await applyAiImages([{ name: 'app.js', content: EVENTS_JS }], { goal: 'فعاليات', targetLabel: 'مؤتمرات' }, genFn);
+    const r = await applyAiImages([{ name: 'app.js', content: EVENTS_JS }], { goal: 'فعاليات', targetLabel: 'مؤتمرات', stamp: 't1' }, genFn);
     assert.ok(r.changed);
     assert.equal(r.count, 1, 'بطاقة المؤتمرات وحدها');
-    assert.ok(r.appJs.includes('images/ai-e3.png'));
+    assert.ok(r.appJs.includes('images/ai-e3-t1.png'));
     assert.ok(r.appJs.includes('1470229722913-7c0e2dbbafd3'), 'بقية البطاقات لا تُمسّ في الاستهداف');
 
     // «الحفلات» (بأل التعريف) تطابق «حفلات موسيقية»
-    const r2 = await applyAiImages([{ name: 'app.js', content: EVENTS_JS }], { goal: 'فعاليات', targetLabel: 'الحفلات' }, genFn);
-    assert.ok(r2.changed && r2.count === 1 && r2.appJs.includes('images/ai-e1.png'));
+    const r2 = await applyAiImages([{ name: 'app.js', content: EVENTS_JS }], { goal: 'فعاليات', targetLabel: 'الحفلات', stamp: 't1' }, genFn);
+    assert.ok(r2.changed && r2.count === 1 && r2.appJs.includes('images/ai-e1-t1.png'));
 });
 
 test('قوالب باستدعاءات دوال في البيانات (g: grad(…)): القراءة تنجح والاستبدال جراحي لا يفسدها', async () => {
@@ -236,17 +236,17 @@ const SEED_EVENTS = [
     const genFn = async () => ({ ok: true, buf: Buffer.from('i'), ext: 'png' });
 
     // توليد جماعي: كلا البذرتين Unsplash تُستبدلان — وgrad(...) يبقى حرفياً
-    const all = await applyAiImages([{ name: 'app.js', content: GRAD_JS }], { goal: 'فعاليات' }, genFn);
+    const all = await applyAiImages([{ name: 'app.js', content: GRAD_JS }], { goal: 'فعاليات', stamp: 't1' }, genFn);
     assert.ok(all.changed, 'القراءة لم تعد تفشل على grad');
     assert.equal(all.count, 2);
     assert.ok(all.appJs.includes("grad('#7c3aed', '#db2777')") && all.appJs.includes("grad('#2563eb', '#7c3aed')"), 'استدعاءات grad سليمة حرفياً');
-    assert.ok(all.appJs.includes('images/ai-e1.png') && all.appJs.includes('images/ai-e3.png'));
+    assert.ok(all.appJs.includes('images/ai-e1-t1.png') && all.appJs.includes('images/ai-e3-t1.png'));
     assert.ok(all.appJs.includes('function grad(a, b)'), 'الدوال خارج المصفوفة سليمة');
 
     // استهداف «مؤتمرات» عبر category — بطاقة e3 وحدها
-    const one = await applyAiImages([{ name: 'app.js', content: GRAD_JS }], { goal: 'فعاليات', targetLabel: 'مؤتمرات' }, genFn);
+    const one = await applyAiImages([{ name: 'app.js', content: GRAD_JS }], { goal: 'فعاليات', targetLabel: 'مؤتمرات', stamp: 't1' }, genFn);
     assert.ok(one.changed && one.count === 1);
-    assert.ok(one.appJs.includes('images/ai-e3.png') && one.appJs.includes('1470229722913-7c0e2dbbafd3'), 'e1 لم تُمسّ');
+    assert.ok(one.appJs.includes('images/ai-e3-t1.png') && one.appJs.includes('1470229722913-7c0e2dbbafd3'), 'e1 لم تُمسّ');
 });
 
 test('شبكة أمان imgUrl: توقيع مُعدَّل → غلاف تمرير يُلحق، وصورنا المولّدة سابقاً قابلة للتجديد', async () => {
@@ -259,26 +259,26 @@ const ITEMS = [
 ];
 `;
     const genFn = async () => ({ ok: true, buf: Buffer.from('i'), ext: 'png' });
-    const r = await applyAiImages([{ name: 'app.js', content: ODD_JS }], { goal: 'x' }, genFn);
+    const r = await applyAiImages([{ name: 'app.js', content: ODD_JS }], { goal: 'x', stamp: 't1' }, genFn);
     assert.ok(r.changed);
     assert.equal(r.count, 2, 'بذرة Unsplash + صورتنا القديمة (تجديد) كلاهما مؤهّل');
     assert.ok(r.appJs.includes("v.indexOf('/')"), 'غلاف التمرير المحلي أُلحق');
     // الغلاف يعمل فعلاً: مسار محلي يمرّ كما هو رغم imgUrl السهمية الأصلية
     // eslint-disable-next-line no-new-func
     const scope = Function(r.appJs.replace('const imgUrl', 'var imgUrl') + '; return imgUrl;')();
-    assert.equal(scope('images/ai-a1.png'), 'images/ai-a1.png');
+    assert.equal(scope('images/ai-a1-t1.png'), 'images/ai-a1-t1.png');
     assert.ok(scope('12345678-abcd').startsWith('https://images.unsplash.com/'), 'المعرّفات البعيدة كما كانت');
 });
 
 test('مزامن localStorage: يُحقن مع خريطة الصور، يندمج مع السابق، ويعمل فعلاً على حالة محفوظة', async () => {
     const { injectImgSync, diagnoseImages } = await import('../services/aiImages.js');
     const base = "let events = load('events', SEED);";
-    const v1 = injectImgSync(base, { e1: 'images/ai-e1.png' });
+    const v1 = injectImgSync(base, { e1: 'images/ai-e1-t1.png' });
     assert.ok(v1.startsWith('/* jaola:img-sync */'), 'المزامن يسبق قراءة الحالة');
     // حقن ثانٍ يدمج الخريطتين في كتلة واحدة (idempotent)
-    const v2 = injectImgSync(v1, { e3: 'images/ai-e3.png' });
+    const v2 = injectImgSync(v1, { e3: 'images/ai-e3-t1.png' });
     assert.equal((v2.match(/jaola:img-sync \*\//g) || []).length, 2, 'كتلة واحدة (بداية+نهاية) لا تكرار');
-    assert.ok(v2.includes('images/ai-e1.png') && v2.includes('images/ai-e3.png'), 'الخريطتان مدموجتان');
+    assert.ok(v2.includes('images/ai-e1-t1.png') && v2.includes('images/ai-e3-t1.png'), 'الخريطتان مدموجتان');
 
     // تنفيذ فعلي على localStorage صوري: الحالة القديمة تتحدث بالصور الجديدة
     const store = new Map([['jev_events', JSON.stringify([{ id: 'e1', img: 'old-unsplash-id' }, { id: 'e2', img: 'keep' }])]]);
@@ -292,14 +292,14 @@ test('مزامن localStorage: يُحقن مع خريطة الصور، يندم�
     // eslint-disable-next-line no-new-func
     Function('localStorage', syncCode.replace('/* jaola:img-sync */', ''))(fakeLS);
     const synced = JSON.parse(store.get('jev_events'));
-    assert.equal(synced[0].img, 'images/ai-e1.png', 'العنصر المولّد تزامن');
+    assert.equal(synced[0].img, 'images/ai-e1-t1.png', 'العنصر المولّد تزامن');
     assert.equal(synced[1].img, 'keep', 'غير المولّد لم يُمسّ');
 
     // التشخيص يرى المزامن والرقعة
-    const d = diagnoseImages([{ name: 'app.js', content: v2 + " function imgUrl(id){var v=String(id||'');return v.indexOf('/')!==-1?v:'u'+v;} const ITEMS = [{ id: 'e1', name: 'x', img: 'images/ai-e1.png' }];" }]);
+    const d = diagnoseImages([{ name: 'app.js', content: v2 + " function imgUrl(id){var v=String(id||'');return v.indexOf('/')!==-1?v:'u'+v;} const ITEMS = [{ id: 'e1', name: 'x', img: 'images/ai-e1-t1.png' }];" }]);
     assert.ok(d.ok && d.syncBlock && d.passthrough);
     assert.equal(d.itemCount, 1);
-    assert.deepEqual(d.imgs, ['images/ai-e1.png']);
+    assert.deepEqual(d.imgs, ['images/ai-e1-t1.png']);
 });
 
 test('مخزن اللقطات يحفظ الثنائيات base64 ويعيدها سليمة بايتاً ببايت', async () => {
@@ -310,15 +310,15 @@ test('مخزن اللقطات يحفظ الثنائيات base64 ويعيدها 
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ws-'));
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0xfe]);
     fs.mkdirSync(path.join(dir, 'images'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'images/ai-e1.png'), png);
+    fs.writeFileSync(path.join(dir, 'images/ai-e1-t1.png'), png);
     fs.writeFileSync(path.join(dir, 'app.js'), 'const A = 1;');
     // نصل لدالة الجمع عبر snapshot الذي يفشل offline لكن collect داخلي —
     // نتحقق مباشرة من قابلية الترميز والاسترجاع
-    const b64 = fs.readFileSync(path.join(dir, 'images/ai-e1.png')).toString('base64');
+    const b64 = fs.readFileSync(path.join(dir, 'images/ai-e1-t1.png')).toString('base64');
     const back = Buffer.from(b64, 'base64');
     assert.equal(Buffer.compare(back, png), 0, 'ذهاب وإياب base64 يحفظ البايتات');
     // القراءة النصية القديمة كانت تتلفها
-    const corrupted = Buffer.from(fs.readFileSync(path.join(dir, 'images/ai-e1.png'), 'utf-8'));
+    const corrupted = Buffer.from(fs.readFileSync(path.join(dir, 'images/ai-e1-t1.png'), 'utf-8'));
     assert.notEqual(Buffer.compare(corrupted, png), 0, 'utf-8 يتلف الثنائي فعلاً — سبب الإصلاح');
     fs.rmSync(dir, { recursive: true, force: true });
 });
@@ -330,7 +330,7 @@ const SEED = [{ id: 'e4', title: 'مسرحية «الرحلة»', category: 'م�
 `;
     const prompts = [];
     const genFn = async (p) => { prompts.push(p); return { ok: true, buf: Buffer.from('i'), ext: 'png' }; };
-    const r = await applyAiImages([{ name: 'app.js', content: EV_JS }], { goal: 'photo-test-26-2' }, genFn);
+    const r = await applyAiImages([{ name: 'app.js', content: EV_JS }], { goal: 'photo-test-26-2', stamp: 't1' }, genFn);
     assert.ok(r.changed && prompts.length === 1);
     assert.ok(prompts[0].includes('مسرحية «الرحلة»') && prompts[0].includes('مسرح'), 'العنوان والتصنيف حاضران');
     assert.ok(!prompts[0].includes('photo-test-26-2'), 'اسم المشروع التقني لا يلوّث البرومبت');
