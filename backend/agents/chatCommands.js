@@ -43,6 +43,31 @@ export function matchDeleteCommand(message, activeProject = '') {
     return null;
 }
 
+// ─── 🎨 نية توليد صور حقيقية ─────────────────────────────────────────
+// «انشئ صورة حقيقية لليلة الطرب» / «غير صورة البنر بصورة حديثة حقيقية» —
+// كانت تسقط في المحادثة («لا أستطيع إنشاء صور») أو الأسوأ: مهمة تعديل كود.
+// «بصورة» الظرفية (بصورة أفضل) لا تُلتقط: الاسم يجب أن يبدأ كلمة مستقلة.
+const IMG_VERB = '(?:ولّ?د|أنشئ|انشئ|انشي|أنشي|اصنع|إصنع|غيّ?ر|استبدل|إستبدل|بدّ?ل|حدّ?ث|ضع|حط|اريد|أريد|generate|create|make|replace|change|swap)';
+const IMG_NOUN = '(?:صور(?:ة|تين)?|الصور(?:ة)?|images?|photos?|pictures?|بنر|بانر|banner|غلاف)';
+const IMG_STOP_WORDS = /موقع|متجر|تطبيق|صفحة|معرض|site|store|app|page|gallery|website/i;
+const IMG_LOGO_RE = /شعار|لوجو|لوقو|logo|أيقونة|ايقونة|favicon/i;
+const IMG_CMD_RE = new RegExp(`(?:^|\\s)${IMG_VERB}\\s+(?:(?:لي|لنا|كل|جميع)\\s+)?((?:[\\u0600-\\u06FF\\w]+\\s+){0,2}?)${IMG_NOUN}(?=\\s|$|[.!؟?،,])`, 'iu');
+const IMG_REAL_RE = /(?:^|\s)(?:صور(?:ة)?|الصور)\s+(?:حقيقية|واقعية|احترافية|بالذكاء)|real\s+(?:images?|photos?)|ai\s+(?:images?|photos?)/iu;
+const IMG_HERO_RE = /بنر|بانر|banner|غلاف|خلفية|hero/iu;
+
+/**
+ * يحلل رسالة ضد نية توليد الصور بالذكاء.
+ * @returns {{ hero: boolean } | null} hero = طلب صورة بنر/غلاف تحديداً
+ */
+export function matchImageCommand(message) {
+    const t = (message || '').trim();
+    if (!t || IMG_LOGO_RE.test(t)) return null; // الشعار له مسار رفع خاص
+    const m = t.match(IMG_CMD_RE);
+    const viaVerb = m && !IMG_STOP_WORDS.test(m[1] || '');
+    if (!viaVerb && !IMG_REAL_RE.test(t)) return null;
+    return { hero: IMG_HERO_RE.test(t) };
+}
+
 // ─── التأكيد المجرّد ("نعم/تمام" وحدها → استئناف) ───────────────────
 const BARE_YES = /^\s*(نعم|ايوه|أيوه|اه|آه|تمام|طيب|يلا|ok|okay|yes|sure|yep|go)\s*[.!؟?]*\s*$/i;
 export function isBareYes(message) {

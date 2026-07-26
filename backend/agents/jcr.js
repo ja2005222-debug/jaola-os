@@ -47,7 +47,7 @@ import { backupProject, listSnapshots } from './fileManager.js';
 import { analyzeRequirements, buildRequirementsContext } from './requirementAnalyzer.js';
 import { normalizeText, normalizeArabic, detectIntentFromMeaning, isQuestionMessage, hasActionIntent, isExplicitRebuild, isExplicitNewBuild, isContinuationGoal } from './textNormalizer.js';
 import { routeMessage } from './router.js';
-import { matchDeleteCommand, isBareYes, isBareExecute } from './chatCommands.js';
+import { matchDeleteCommand, matchImageCommand, isBareYes, isBareExecute } from './chatCommands.js';
 import { verifyRequirements, buildFixInstruction, formatChecklist } from './requirementsVerifier.js';
 import { classifyIntentFast, decide, buildContinuationGoal, buildStatusReply, missionBriefing, greetingReply } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
@@ -2443,6 +2443,16 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         ? `⚠️ حذف المشروع «${target}» **نهائي** — الملفات والسجل، ولا يمكن التراجع.\nللتأكيد اكتب حرفياً: **احذف نهائياً ${target}**`
                         : `⚠️ Deleting "${target}" is **permanent** — files and record, no undo.\nTo confirm, type exactly: **delete permanently ${target}**`),
             });
+            return;
+        }
+
+        // ── 🎨 نية توليد صور — مسار حتمي قبل الموجّه واللغويات ──────────
+        // «انشئ صورة حقيقية» كان يسقط في «لا أستطيع إنشاء صور»، و«غير صورة
+        // البنر» كان يُطلق مهمة تعديل كود كاملة. الآن: مولّد الصور مباشرة.
+        const imgCmd = matchImageCommand(message);
+        if (imgCmd && agents.generateAiImages) {
+            this.emitLiveLog(roomName, 'INTENT', 'Engine', `🎨 نية توليد صور${imgCmd.hero ? ' (بنر)' : ''} — تُنفَّذ عبر مولّد الصور مباشرة (لا تعديل كود).`);
+            await agents.generateAiImages({ message, hero: imgCmd.hero });
             return;
         }
 

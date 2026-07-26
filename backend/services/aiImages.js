@@ -119,6 +119,27 @@ export async function generateProductImage(prompt, deps = {}) {
 }
 
 /**
+ * يثبّت صورة بنر مولّدة كخلفية لقسم الـ hero في index.html.
+ * يستهدف أول عنصر فئته تحتوي hero/banner، وإلا أول <section>.
+ * خلفية سابقة (لون/تدرّج/صورة) داخل style تُستبدل؛ بقية الأنماط تبقى.
+ */
+export function applyHeroImage(html, imgPath) {
+    const src = String(html || '');
+    const m = src.match(/<(section|div|header)\b([^>]*class=["'][^"']*(?:hero|banner)[^"']*["'][^>]*)>/i)
+        || src.match(/<(section)\b((?:\s[^>]*)?)>/i);
+    if (!m) return { changed: false, reason: 'لا قسم بنر (hero) في الصفحة' };
+    const [full, tag, attrs] = m;
+    const bg = `background-image:url('${imgPath}');background-size:cover;background-position:center;`;
+    const newAttrs = /style\s*=\s*["']/i.test(attrs)
+        ? attrs.replace(/style\s*=\s*(["'])(.*?)\1/i, (s, q, css) => {
+            const kept = css.replace(/background(?:-image)?\s*:[^;]*;?/gi, '').replace(/;?\s*$/, '');
+            return `style=${q}${kept ? kept + ';' : ''}${bg}${q}`;
+        })
+        : `${attrs} style="${bg}"`;
+    return { changed: true, html: src.replace(full, `<${tag}${newAttrs}>`) };
+}
+
+/**
  * يستبدل صور العناصر الحتمية (SVG المولّدة أو الفارغة) بصور AI في مصفوفة
  * البيانات الرئيسية. genFn قابلة للحقن للاختبار. الصور الحقيقية الموجودة
  * (روابط/ملفات المستخدم) لا تُمسّ أبداً. بنفس حارس بنية البصمة.
