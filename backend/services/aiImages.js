@@ -11,6 +11,19 @@ import { patchImgUrlPassthrough } from '../agents/imageForge.js';
 
 const MAX_PER_CALL = 8;
 const GEN_SVG_RE = /^images\/gen-[\w-]+\.svg$/;
+// معرّف Unsplash المزروع من القوالب (مثل 1470229722913-7c0e2dbbafd3) —
+// صورة افتراضية من القالب لا صورة مستخدم، فهي مؤهّلة للاستبدال أيضاً.
+const UNSPLASH_ID_RE = /^\d{8,}-[0-9a-f]{4,}$/i;
+// تطبيع كلمة عربية للمطابقة: «المؤتمرات» ≈ «مؤتمر» (ال + لواحق الجمع/التأنيث)
+const normWord = (s) => String(s || '').replace(/^ال/, '').replace(/(?:ات|ين|ون|ة)$/, '');
+const labelMatches = (hay, wanted) => {
+    const w = normWord(wanted);
+    if (!w) return false;
+    return String(hay).split(/\s+/).some(word => {
+        const n = normWord(word);
+        return n && (n.startsWith(w) || w.startsWith(n));
+    });
+};
 
 /** مزوّد الصور الفعّال: Gemini (صور Gemini/Nano Banana) أولاً إن وُجد مفتاحه، ثم OpenAI. */
 export function imageProviderOf(env = process.env) {
@@ -159,18 +172,20 @@ export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_
     } catch { return { changed: false, reason: 'تعذّر قراءة البيانات' }; }
     if (!Array.isArray(items) || !items.length) return { changed: false, reason: 'بيانات فارغة' };
 
-    // العناصر المؤهّلة: img فارغ أو SVG مولّد — صور المستخدم الحقيقية لا تُمسّ.
+    // العناصر المؤهّلة: img فارغ أو SVG مولّد أو معرّف Unsplash من القالب —
+    // صور المستخدم الفعلية (مسارات assets/ وروابط كاملة) لا تُمسّ.
     // استثناء: تسمية عنصر صراحةً («غير صورة مؤتمرات») = موافقة على استبدال
     // صورته أيّاً كانت — لكن العنصر المسمّى وحده، لا غيره.
-    const wanted = String(targetLabel || '').replace(/^ال/, '');
+    const wanted = String(targetLabel || '');
     const targets = [];
     const collect = (obj, key) => {
         if (!('img' in obj)) return;
         const label = obj.name || obj.title || obj.city || '';
         if (wanted) {
-            const l = String(label).replace(/^ال/, '');
-            if (l && (l.includes(wanted) || wanted.includes(l))) targets.push({ obj, key, label });
-        } else if (obj.img === '' || GEN_SVG_RE.test(String(obj.img))) {
+            // المطابقة على الاسم/العنوان + التصنيف (بطاقة «مؤتمرات» = category)
+            const hay = `${label} ${obj.category || obj.cat || obj.type || ''}`;
+            if (labelMatches(hay, wanted)) targets.push({ obj, key, label: label || wanted });
+        } else if (obj.img === '' || GEN_SVG_RE.test(String(obj.img)) || UNSPLASH_ID_RE.test(String(obj.img))) {
             targets.push({ obj, key, label });
         }
     };
