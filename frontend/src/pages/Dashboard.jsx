@@ -686,6 +686,51 @@ export default function Dashboard() {
     setBrandBusy(null);
   };
 
+  // 🌐 نطاقك الخاص — ربط نطاق المستخدم بموقعه المنشور على Vercel
+  const [showDomainModal, setShowDomainModal] = useState(false);
+  const [domainData, setDomainData] = useState(null); // null=تحميل | {none} | {domain,status,dns,verification} | {error}
+  const [domainInput, setDomainInput] = useState('');
+  const [domainBusy, setDomainBusy] = useState(false);
+
+  const fetchDomainStatus = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/domains?project=${activeProject}`, { headers: getHeaders() });
+      const d = await res.json().catch(() => ({}));
+      setDomainData(res.ok ? d : { error: d.error || t('serverUnreachable') });
+    } catch { setDomainData({ error: t('serverUnreachable') }); }
+  };
+  const openDomainModal = () => { setDomainData(null); setShowDomainModal(true); fetchDomainStatus(); };
+
+  const attachDomainReq = async () => {
+    if (!domainInput.trim() || domainBusy) return;
+    setDomainBusy(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/domains`, {
+        method: 'POST', headers: getHeaders(),
+        body: JSON.stringify({ project: activeProject, domain: domainInput }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.success) {
+        addNotification(`✓ ${t('domAttached')}`, 'success');
+        setDomainInput('');
+        setDomainData({ domain: d.domain, status: d.status, dns: d.dns, verification: d.verification });
+      } else addNotification(`❌ ${d.error || t('serverUnreachable')}`, 'info');
+    } catch { addNotification(`❌ ${t('serverUnreachable')}`, 'info'); }
+    setDomainBusy(false);
+  };
+
+  const detachDomainReq = async () => {
+    if (domainBusy) return;
+    setDomainBusy(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/domains?project=${activeProject}`, { method: 'DELETE', headers: getHeaders() });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.success) { addNotification(`✓ ${t('domDetached')}`, 'success'); setDomainData({ none: true }); }
+      else addNotification(`❌ ${d.error || t('serverUnreachable')}`, 'info');
+    } catch { addNotification(`❌ ${t('serverUnreachable')}`, 'info'); }
+    setDomainBusy(false);
+  };
+
   // 🧩 وكلائي — صناعة وكلاء مخصّصين (شخصية + معرفة) قابلين للتضمين في أي موقع
   const [showAgentsModal, setShowAgentsModal] = useState(false);
   const [agentsData, setAgentsData] = useState(null);
@@ -1760,6 +1805,90 @@ export default function Dashboard() {
     </div>
   );
 
+  // 🌐 نطاقك الخاص: ربط + سجلات DNS + حالة حية
+  const DOMAIN_STATUS_UI = {
+    'active': { color: '#4ade80', bg: 'rgba(34,197,94,0.1)', label: t('domStatusActive') },
+    'awaiting-dns': { color: '#fbbf24', bg: 'rgba(251,191,36,0.1)', label: t('domStatusDns') },
+    'needs-verification': { color: '#c4b5fd', bg: 'rgba(139,92,246,0.12)', label: t('domStatusVerify') },
+  };
+  const domainModal = showDomainModal && (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
+      onClick={e => e.target === e.currentTarget && setShowDomainModal(false)}>
+      <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:'22px 20px', width:'min(520px, 100%)', maxHeight:'90dvh', overflowY:'auto' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+          <h3 style={{ color:'#fff', fontSize:15, fontWeight:800 }}>🌐 {t('domTitle')}</h3>
+          <button onClick={() => setShowDomainModal(false)}
+            style={{ background:'transparent', border:'none', color:S.muted, fontSize:20, cursor:'pointer', lineHeight:1 }}>×</button>
+        </div>
+        <p style={{ color:S.muted, fontSize:11, marginBottom:16 }}>{t('domSub')}</p>
+
+        {!domainData && <p style={{ color:S.muted, fontSize:13 }}>⏳</p>}
+        {domainData?.error && <p style={{ color:S.danger, fontSize:12, marginBottom:10 }}>{domainData.error}</p>}
+
+        {domainData?.none && (
+          <>
+            <div style={{ display:'flex', gap:8, marginBottom:8 }}>
+              <input value={domainInput} onChange={e => setDomainInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && attachDomainReq()}
+                placeholder={t('domPlaceholder')} dir="ltr"
+                style={{ flex:1, background:'#0a0e14', border:`1px solid ${S.border}`, borderRadius:9, padding:'11px 12px', color:'#e2e8f0', fontSize:13, outline:'none' }} />
+              <button onClick={attachDomainReq} disabled={domainBusy || !domainInput.trim()}
+                style={{ background:'rgba(59,130,246,0.12)', border:'1px solid rgba(59,130,246,0.35)', borderRadius:9, padding:'11px 16px', color:'#93c5fd', fontSize:12, fontWeight:800, cursor:'pointer', opacity: domainBusy || !domainInput.trim() ? 0.5 : 1 }}>
+                {domainBusy ? '⏳' : t('domAttach')}
+              </button>
+            </div>
+            <p style={{ color:'#334155', fontSize:10 }}>{t('domHint')}</p>
+          </>
+        )}
+
+        {domainData?.domain && (
+          <>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14, flexWrap:'wrap' }}>
+              <span dir="ltr" style={{ color:'#e2e8f0', fontSize:14, fontWeight:800 }}>{domainData.domain}</span>
+              {(() => { const ui = DOMAIN_STATUS_UI[domainData.status] || { color:S.muted, bg:'rgba(255,255,255,0.05)', label: domainData.status }; return (
+                <span style={{ color:ui.color, background:ui.bg, border:`1px solid ${ui.color}33`, borderRadius:7, padding:'3px 10px', fontSize:10, fontWeight:800 }}>{ui.label}</span>
+              ); })()}
+            </div>
+
+            {domainData.status !== 'active' && (
+              <>
+                <p style={{ color:S.muted, fontSize:11, marginBottom:8 }}>{t('domDnsHint')}</p>
+                <div style={{ border:`1px solid ${S.border}`, borderRadius:10, overflow:'hidden', marginBottom:14 }}>
+                  <div style={{ display:'grid', gridTemplateColumns:'70px 1fr 2fr', background:'rgba(255,255,255,0.03)', padding:'7px 10px', color:S.muted, fontSize:10, fontWeight:800 }}>
+                    <span>{t('domType')}</span><span>{t('domHost')}</span><span>{t('domValue')}</span>
+                  </div>
+                  {[...(domainData.dns || []), ...(domainData.verification || []).map(vr => ({ type: vr.type, host: vr.domain, value: vr.value }))].map((rec, i) => (
+                    <div key={i} dir="ltr" style={{ display:'grid', gridTemplateColumns:'70px 1fr 2fr', padding:'8px 10px', borderTop:`1px solid ${S.border}`, color:'#e2e8f0', fontSize:11, fontFamily:'monospace', wordBreak:'break-all' }}>
+                      <span style={{ color:'#93c5fd', fontWeight:800 }}>{rec.type}</span>
+                      <span>{rec.host}</span>
+                      <span style={{ cursor:'pointer' }} title="نسخ" onClick={() => navigator.clipboard?.writeText(rec.value)}>{rec.value} 📋</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+            {domainData.status === 'active' && (
+              <p style={{ color:'#4ade80', fontSize:12, marginBottom:14 }}>
+                ✅ <a href={`https://${domainData.domain}`} target="_blank" rel="noreferrer" style={{ color:'#4ade80' }}>{domainData.domain}</a> — {t('domActiveMsg')}
+              </p>
+            )}
+
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={fetchDomainStatus} disabled={domainBusy}
+                style={{ flex:1, background:'rgba(59,130,246,0.1)', border:'1px solid rgba(59,130,246,0.3)', borderRadius:9, padding:'10px', color:'#93c5fd', fontSize:12, fontWeight:800, cursor:'pointer' }}>
+                🔄 {t('domCheck')}
+              </button>
+              <button onClick={detachDomainReq} disabled={domainBusy}
+                style={{ background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.25)', borderRadius:9, padding:'10px 14px', color:'#fca5a5', fontSize:12, fontWeight:800, cursor:'pointer' }}>
+                {t('domDetach')}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   // 🧩 وكلائي: قائمة الوكلاء + نموذج الإنشاء/التحرير
   const agentsModal = showAgentsModal && (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
@@ -2360,6 +2489,10 @@ export default function Dashboard() {
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>📣</span> {t('mkTitle')}
                 </button>
+                <button onClick={() => { setShowMobileMenu(false); openDomainModal(); }}
+                  style={{ display:'flex', alignItems:'center', gap:10, width:'100%', background:'transparent', border:'none', borderRadius:8, padding:'11px 10px', color:'#e2e8f0', fontSize:13, fontWeight:600, textAlign:'start' }}>
+                  🌐 {t('domTitle')}
+                </button>
                 <button onClick={() => { setShowMobileMenu(false); setShowBrandModal(true); }}
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>🎨</span> {t('brandTitle')}
@@ -2495,6 +2628,7 @@ export default function Dashboard() {
         {healthModal}
         {inboxModal}
         {brandModal}
+      {domainModal}
         {agentsModal}
         {botModal}
         {marketingModal}
@@ -2615,6 +2749,7 @@ export default function Dashboard() {
                 ['🤖', t('botStudioTitle'), openBotModal, 0],
                 ['🧩', t('agTitle'), openAgentsModal, 0],
                 ['🎨', t('brandTitle'), () => setShowBrandModal(true), 0],
+                ['🌐', t('domTitle'), openDomainModal, 0],
               ].map(([icon, label, fn, badge], i) => (
                 <button key={i} onClick={() => { setOpenMenu(null); fn(); }}
                   style={{ display:'flex', alignItems:'center', gap:9, width:'100%', background:'transparent', border:'none', borderRadius:8, padding:'9px 10px', color:'#e2e8f0', fontSize:12, fontWeight:600, textAlign:'start', cursor:'pointer' }}
@@ -2929,6 +3064,7 @@ export default function Dashboard() {
       {healthModal}
       {inboxModal}
       {brandModal}
+      {domainModal}
       {agentsModal}
       {botModal}
       {marketingModal}

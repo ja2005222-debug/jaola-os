@@ -28,6 +28,7 @@ export const PLANS = {
             customAgentsMax: 1,            // وكيل واحد للتذوّق
             aiImages: 6,                   // صور AI حقيقية شهرياً
             socialPosts: 10,               // منشورات تُنشر مباشرة للقنوات شهرياً
+            customDomainsMax: 0,           // النطاقات الخاصة ميزة مدفوعة
             autoDeploy: false,
             prioritySupport: false,
             customAgents: false,
@@ -50,13 +51,14 @@ export const PLANS = {
             customAgentsMax: 3,
             aiImages: 150,
             socialPosts: 300,
+            customDomainsMax: 1,           // نطاق خاص واحد
             autoDeploy: true,
             prioritySupport: true,
             customAgents: false,
             privateHosting: false,
         },
-        featuresAr: ['مشاريع غير محدودة', 'نشر تلقائي', 'مساعد الموقع بذكاء حيّ (2000 رسالة/شهر)', 'دعم أولوية', 'كل القوالب المتقدمة'],
-        featuresEn: ['Unlimited projects', 'Auto deploy', 'AI site assistant (2000 msgs/mo)', 'Priority support', 'All advanced templates'],
+        featuresAr: ['مشاريع غير محدودة', 'نطاقك الخاص', 'نشر تلقائي', 'مساعد الموقع بذكاء حيّ (2000 رسالة/شهر)', 'دعم أولوية', 'كل القوالب المتقدمة'],
+        featuresEn: ['Unlimited projects', 'Custom domain', 'Auto deploy', 'AI site assistant (2000 msgs/mo)', 'Priority support', 'All advanced templates'],
     },
     enterprise: {
         id: 'enterprise',
@@ -72,6 +74,7 @@ export const PLANS = {
             customAgentsMax: UNLIMITED,
             aiImages: UNLIMITED,
             socialPosts: UNLIMITED,
+            customDomainsMax: UNLIMITED,
             autoDeploy: true,
             prioritySupport: true,
             customAgents: true,
@@ -125,6 +128,7 @@ export function publicPlans() {
             socialPosts: p.limits.socialPosts === UNLIMITED ? null : p.limits.socialPosts,
             customAgentsMax: p.limits.customAgentsMax === UNLIMITED ? null : p.limits.customAgentsMax,
             aiImages: p.limits.aiImages === UNLIMITED ? null : p.limits.aiImages,
+            customDomainsMax: p.limits.customDomainsMax === UNLIMITED ? null : p.limits.customDomainsMax,
         },
     }));
 }

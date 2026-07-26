@@ -33,7 +33,8 @@ import {
 import { generatePWA } from './agents/pwaAgent.js';
 import { generateJaolaBot, readBotManifest, buildEmbedBundle } from './agents/jaolaBot.js';
 import { mailReady, sendMail, isEmail } from './services/mailer.js';
-import { emailQuota, socialQuota, customAgentsMax, aiImagesQuota } from './services/subscriptionService.js';
+import { emailQuota, socialQuota, customAgentsMax, aiImagesQuota, customDomainsMax } from './services/subscriptionService.js';
+import { validateDomain, dnsInstructionsFor, attachDomain, domainStatus, detachDomain, readUserDomains, saveUserDomain, removeUserDomain, countUserDomains } from './services/customDomains.js';
 import { aiImagesReady, applyAiImages, applyHeroImage, generateProductImage, diagnoseImages } from './services/aiImages.js';
 import { checkAiProviders } from './services/aiProviderCheck.js';
 import {
@@ -1227,6 +1228,77 @@ function diagnoseAiImagesFromChat({ projectPath, roomName }) {
         say('🔬 تعذّر التشخيص: ' + e.message);
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// 🌐 النطاقات الخاصة — ربط نطاق المستخدم بموقعه المنشور على Vercel
+// ميزة خطط مدفوعة (المجانية 0). التخزين: workspace/.domains/<user>.json
+// ═══════════════════════════════════════════════════════════════════
+const DOMAINS_DIR = path.join(BASE_WORKSPACE, '.domains');
+
+app.post('/api/domains', verifyToken, validateProjectOwnership, async (req, res) => {
+    try {
+        const username = req.user.username;
+        const v = validateDomain(req.body?.domain);
+        if (v.error) return res.status(400).json({ error: v.error });
+
+        // 💳 حد الخطة — استبدال نطاق نفس المشروع لا يُحسب إضافة جديدة
+        const owner = await DB.findUser(username).catch(() => null);
+        const q = customDomainsMax(owner);
+        const existing = readUserDomains(DOMAINS_DIR, username);
+        const isReplacing = !!existing[req.activeProject];
+        if (!isReplacing && Number.isFinite(q.max) && countUserDomains(DOMAINS_DIR, username) >= q.max) {
+            return res.status(403).json({
+                error: q.max === 0
+                    ? 'ربط النطاقات الخاصة ميزة الخطط المدفوعة — رقِّ خطتك من صفحة الفوترة.'
+                    : `حد النطاقات لخطتك (${q.max}) مكتمل — رقِّ خطتك أو فُكّ نطاقاً آخر.`,
+                code: 'plan_limit',
+            });
+        }
+
+        // استبدال نطاق قديم لنفس المشروع → فكّه من Vercel أولاً (لا يفشل الطلب)
+        if (isReplacing && existing[req.activeProject].domain !== v.domain) {
+            await detachDomain({ username, project: req.activeProject, domain: existing[req.activeProject].domain }).catch(() => {});
+        }
+
+        const r = await attachDomain({ username, project: req.activeProject, domain: v.domain });
+        if (r.error) return res.status(r.notConfigured ? 503 : 400).json({ error: r.error, notConfigured: !!r.notConfigured });
+
+        saveUserDomain(DOMAINS_DIR, username, req.activeProject, v.domain);
+        const status = await domainStatus({ username, project: req.activeProject, domain: v.domain });
+        res.json({ success: true, domain: v.domain, dns: r.dns, verification: r.verification, status: status.status || 'awaiting-dns' });
+    } catch (err) {
+        res.status(500).json({ error: 'تعذّر ربط النطاق: ' + err.message });
+    }
+});
+
+app.get('/api/domains', verifyToken, validateProjectOwnership, async (req, res) => {
+    try {
+        const username = req.user.username;
+        const rec = readUserDomains(DOMAINS_DIR, username)[req.activeProject];
+        if (!rec) return res.json({ success: true, none: true });
+        const s = await domainStatus({ username, project: req.activeProject, domain: rec.domain });
+        if (s.error && !s.notConfigured) {
+            return res.json({ success: true, domain: rec.domain, status: 'error', error: s.error, dns: dnsInstructionsFor(rec.domain) });
+        }
+        res.json({ success: true, domain: rec.domain, status: s.status || 'unknown', dns: s.dns || dnsInstructionsFor(rec.domain), verification: s.verification || [] });
+    } catch (err) {
+        res.status(500).json({ error: 'تعذّر قراءة حالة النطاق: ' + err.message });
+    }
+});
+
+app.delete('/api/domains', verifyToken, validateProjectOwnership, async (req, res) => {
+    try {
+        const username = req.user.username;
+        const rec = readUserDomains(DOMAINS_DIR, username)[req.activeProject];
+        if (!rec) return res.status(404).json({ error: 'لا نطاق مربوط بهذا المشروع.' });
+        const r = await detachDomain({ username, project: req.activeProject, domain: rec.domain });
+        if (r.error && !r.notConfigured) return res.status(400).json({ error: r.error });
+        removeUserDomain(DOMAINS_DIR, username, req.activeProject);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'تعذّر فكّ النطاق: ' + err.message });
+    }
+});
 
 // رفع شعار الموقع → assets/ + أيقونة المتصفح (favicon)
 app.post('/api/project/logo', verifyToken, validateProjectOwnership, (req, res) => {
