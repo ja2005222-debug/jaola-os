@@ -10,7 +10,8 @@ function imgUrl(id) { return 'https://images.unsplash.com/photo-' + id + '?w=600
 const PRODUCTS = [
   { "id": "p1", "name": "كنافة", "price": 25, "img": "" },
   { "id": "p2", "name": "بقلاوة", "price": 30, "img": "images/gen-p2.svg" },
-  { "id": "p3", "name": "معمول", "price": 20, "img": "assets/my-real-photo.jpg" }
+  { "id": "p3", "name": "معمول", "price": 20, "img": "assets/my-real-photo.jpg" },
+  { "id": "p4", "name": "هريسة", "price": 15, "img": "1470229722913-7c0e2dbbafd3" }
 ];
 function render() { return PRODUCTS.length; }
 `;
@@ -118,15 +119,15 @@ test('المزوّد: غير مُفعّل صريح، وحمولة OpenAI صحي�
     assert.ok(/quota/.test(fail.error));
 });
 
-test('applyAiImages: يستبدل الفارغ والمولّد فقط — صورة المستخدم الحقيقية لا تُمسّ', async () => {
+test('applyAiImages: الفارغ والمولّد ومعرّف Unsplash المزروع تُستبدل — صورة المستخدم الحقيقية لا تُمسّ', async () => {
     const genFn = async () => ({ ok: true, buf: Buffer.from('img'), ext: 'png' });
     const r = await applyAiImages([{ name: 'app.js', content: APP_JS }], { goal: 'حلويات' }, genFn);
     assert.ok(r.changed);
-    assert.equal(r.count, 2, 'عنصران مؤهّلان فقط');
-    assert.ok(r.appJs.includes('images/ai-p1.png') && r.appJs.includes('images/ai-p2.png'));
+    assert.equal(r.count, 3, 'الفارغ + المولّد + معرّف Unsplash (بذرة القالب لا صورة المستخدم)');
+    assert.ok(r.appJs.includes('images/ai-p1.png') && r.appJs.includes('images/ai-p2.png') && r.appJs.includes('images/ai-p4.png'));
     assert.ok(r.appJs.includes('assets/my-real-photo.jpg'), 'صورة المستخدم باقية');
     assert.ok(r.appJs.includes('function render()'), 'الدوال سليمة');
-    assert.deepEqual(r.images.map(i => i.name).sort(), ['images/ai-p1.png', 'images/ai-p2.png']);
+    assert.deepEqual(r.images.map(i => i.name).sort(), ['images/ai-p1.png', 'images/ai-p2.png', 'images/ai-p4.png']);
     // imgUrl مُرقّعة لتمرير المسارات المحلية
     // eslint-disable-next-line no-new-func
     const imgUrl = Function(r.appJs + '; return imgUrl;')();
@@ -143,7 +144,7 @@ test('applyAiImages: سقف الدفعة يُحترم، وفشل صورة لا �
         calls++;
         return calls === 1 ? { error: 'فشل مؤقت' } : { ok: true, buf: Buffer.from('i'), ext: 'png' };
     });
-    assert.equal(flaky.count, 1, 'الفاشلة تُتخطى والناجحة تُطبَّق');
+    assert.equal(flaky.count, 2, 'الفاشلة تُتخطى والناجحتان تُطبَّقان');
 
     const allFail = await applyAiImages(files, { goal: 'x' }, async () => ({ error: 'فشل توليد الصورة عبر gemini-2.5-flash-image (quota exceeded).' }));
     assert.ok(!allFail.changed && /quota exceeded/.test(allFail.reason), 'فشل كل الصور يُظهر خطأ المزوّد الفعلي لا رسالة عامة');
@@ -197,4 +198,27 @@ test('استهداف بالاسم: العنصر المسمّى وحده يُست
     // اسم غير موجود → سبب واضح باسم الطلب
     const none = await applyAiImages([{ name: 'app.js', content: APP_JS }], { targetLabel: 'طائرات' }, genFn);
     assert.ok(!none.changed && none.reason.includes('طائرات'), 'رسالة «لم أجد» تذكر الاسم المطلوب');
+});
+
+test('استهداف بالتصنيف والجمع: «مؤتمرات» تصيب بطاقة category مؤتمرات في قالب الفعاليات', async () => {
+    // بنية SEED_EVENTS الحقيقية من قالب jaolaEvents (مختصرة)
+    const EVENTS_JS = `
+function imgUrl(id) { return 'x' + id; }
+const SEED_EVENTS = [
+  { "id": "e1", "title": "ليلة الطرب العربي", "category": "حفلات موسيقية", "img": "1470229722913-7c0e2dbbafd3" },
+  { "id": "e3", "title": "مؤتمر التقنية 2026", "category": "مؤتمرات", "img": "1505373877841-8d25f7d46678" },
+  { "id": "e4", "title": "مسرحية الرحلة", "category": "مسرح", "img": "assets/user-play.jpg" }
+];
+`;
+    const genFn = async () => ({ ok: true, buf: Buffer.from('i'), ext: 'png' });
+    // «مؤتمرات» (جمع) تطابق category «مؤتمرات» وعنوان «مؤتمر …» (مفرد) — العنصر e3 وحده
+    const r = await applyAiImages([{ name: 'app.js', content: EVENTS_JS }], { goal: 'فعاليات', targetLabel: 'مؤتمرات' }, genFn);
+    assert.ok(r.changed);
+    assert.equal(r.count, 1, 'بطاقة المؤتمرات وحدها');
+    assert.ok(r.appJs.includes('images/ai-e3.png'));
+    assert.ok(r.appJs.includes('1470229722913-7c0e2dbbafd3'), 'بقية البطاقات لا تُمسّ في الاستهداف');
+
+    // «الحفلات» (بأل التعريف) تطابق «حفلات موسيقية»
+    const r2 = await applyAiImages([{ name: 'app.js', content: EVENTS_JS }], { goal: 'فعاليات', targetLabel: 'الحفلات' }, genFn);
+    assert.ok(r2.changed && r2.count === 1 && r2.appJs.includes('images/ai-e1.png'));
 });
