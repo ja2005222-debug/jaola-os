@@ -181,3 +181,20 @@ test('applyHeroImage: يستهدف قسم الـ hero ويحفظ الأنماط 
     assert.ok(applyHeroImage(plain, 'i.png').changed);
     assert.ok(!applyHeroImage('<p>text only</p>', 'i.png').changed);
 });
+
+test('استهداف بالاسم: العنصر المسمّى وحده يُستبدل — حتى لو صورته حقيقية (التسمية = موافقة)', async () => {
+    const genFn = async () => ({ ok: true, buf: Buffer.from('i'), ext: 'png' });
+    const r = await applyAiImages([{ name: 'app.js', content: APP_JS }], { goal: 'x', targetLabel: 'معمول' }, genFn);
+    assert.ok(r.changed);
+    assert.equal(r.count, 1, 'العنصر المسمّى فقط');
+    assert.ok(r.appJs.includes('images/ai-p3.png'), 'صورة المعمول الحقيقية استُبدلت لأنه سُمّي صراحة');
+    assert.ok(r.appJs.includes('images/gen-p2.svg'), 'غير المسمّى لا يُمسّ حتى المولّد منه');
+
+    // «ال» التعريف لا تمنع المطابقة
+    const al = await applyAiImages([{ name: 'app.js', content: APP_JS }], { goal: 'x', targetLabel: 'الكنافة' }, genFn);
+    assert.ok(al.changed && al.count === 1 && al.appJs.includes('images/ai-p1.png'));
+
+    // اسم غير موجود → سبب واضح باسم الطلب
+    const none = await applyAiImages([{ name: 'app.js', content: APP_JS }], { targetLabel: 'طائرات' }, genFn);
+    assert.ok(!none.changed && none.reason.includes('طائرات'), 'رسالة «لم أجد» تذكر الاسم المطلوب');
+});

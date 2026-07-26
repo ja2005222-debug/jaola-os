@@ -2451,8 +2451,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // البنر» كان يُطلق مهمة تعديل كود كاملة. الآن: مولّد الصور مباشرة.
         const imgCmd = matchImageCommand(message);
         if (imgCmd && agents.generateAiImages) {
-            this.emitLiveLog(roomName, 'INTENT', 'Engine', `🎨 نية توليد صور${imgCmd.hero ? ' (بنر)' : ''} — تُنفَّذ عبر مولّد الصور مباشرة (لا تعديل كود).`);
-            await agents.generateAiImages({ message, hero: imgCmd.hero });
+            this.emitLiveLog(roomName, 'INTENT', 'Engine', `🎨 نية توليد صور${imgCmd.hero ? ' (بنر)' : imgCmd.target ? ` (عنصر: ${imgCmd.target})` : ''} — تُنفَّذ عبر مولّد الصور مباشرة (لا تعديل كود).`);
+            await agents.generateAiImages({ message, hero: imgCmd.hero, target: imgCmd.target });
             return;
         }
 

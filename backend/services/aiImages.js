@@ -146,7 +146,7 @@ export function applyHeroImage(html, imgPath) {
  *
  * يعيد {changed, count, appJs, images:[{name, buf}]} — الكتابة للقرص مسؤولية المستدعي.
  */
-export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_CALL } = {}, genFn = generateProductImage) {
+export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_CALL, targetLabel = '' } = {}, genFn = generateProductImage) {
     const app = files.find(f => f.name === 'app.js');
     if (!app) return { changed: false, reason: 'لا app.js' };
     const seedArr = primarySeedArray(app.content);
@@ -159,11 +159,19 @@ export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_
     } catch { return { changed: false, reason: 'تعذّر قراءة البيانات' }; }
     if (!Array.isArray(items) || !items.length) return { changed: false, reason: 'بيانات فارغة' };
 
-    // العناصر المؤهّلة: img فارغ أو SVG مولّد — صور المستخدم الحقيقية لا تُمسّ
+    // العناصر المؤهّلة: img فارغ أو SVG مولّد — صور المستخدم الحقيقية لا تُمسّ.
+    // استثناء: تسمية عنصر صراحةً («غير صورة مؤتمرات») = موافقة على استبدال
+    // صورته أيّاً كانت — لكن العنصر المسمّى وحده، لا غيره.
+    const wanted = String(targetLabel || '').replace(/^ال/, '');
     const targets = [];
     const collect = (obj, key) => {
-        if ('img' in obj && (obj.img === '' || GEN_SVG_RE.test(String(obj.img)))) {
-            targets.push({ obj, key, label: obj.name || obj.title || obj.city || '' });
+        if (!('img' in obj)) return;
+        const label = obj.name || obj.title || obj.city || '';
+        if (wanted) {
+            const l = String(label).replace(/^ال/, '');
+            if (l && (l.includes(wanted) || wanted.includes(l))) targets.push({ obj, key, label });
+        } else if (obj.img === '' || GEN_SVG_RE.test(String(obj.img))) {
+            targets.push({ obj, key, label });
         }
     };
     items.forEach((item, i) => {
@@ -175,7 +183,9 @@ export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_
             v.forEach((sub, j) => { if (sub && typeof sub === 'object') collect(sub, `${id}-${k}-${String(sub.id || j)}`); });
         }
     });
-    if (!targets.length) return { changed: false, reason: 'لا عناصر مؤهّلة' };
+    if (!targets.length) {
+        return { changed: false, reason: wanted ? `لم أجد عنصراً باسم «${targetLabel}» في بيانات الموقع` : 'لا عناصر مؤهّلة' };
+    }
 
     const images = [];
     let count = 0;

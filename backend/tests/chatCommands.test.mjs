@@ -49,13 +49,16 @@ test('التنفيذ المجرّد: "نفذهما/طبقها/do it" — من س
 test('صور: طلبات التوليد الحقيقية تُلتقط — مع تمييز البنر', async () => {
     const { matchImageCommand } = await import('../agents/chatCommands.js');
     // من لقطة الشاشة: كانتا تسقطان في «لا أستطيع إنشاء صور» ومهمة تعديل كود
-    assert.deepEqual(matchImageCommand('انشي صورة حقيقة لليلة الطرب العربي'), { hero: false });
-    assert.deepEqual(matchImageCommand('غير صورة البنر بصورة حديثة حقيقية'), { hero: true });
-    assert.deepEqual(matchImageCommand('ولد صور حقيقية للمنتجات'), { hero: false });
-    assert.deepEqual(matchImageCommand('اريد صور واقعية'), { hero: false });
-    assert.deepEqual(matchImageCommand('replace the banner image with a real photo'), { hero: true });
-    assert.deepEqual(matchImageCommand('generate real images'), { hero: false });
-    assert.deepEqual(matchImageCommand('استبدل صورة الغلاف'), { hero: true });
+    assert.deepEqual(matchImageCommand('انشي صورة حقيقة لليلة الطرب العربي'), { hero: false, target: null });
+    assert.deepEqual(matchImageCommand('غير صورة البنر بصورة حديثة حقيقية'), { hero: true, target: null });
+    assert.deepEqual(matchImageCommand('ولد صور حقيقية للمنتجات'), { hero: false, target: null });
+    assert.deepEqual(matchImageCommand('اريد صور واقعية'), { hero: false, target: null });
+    assert.deepEqual(matchImageCommand('replace the banner image with a real photo'), { hero: true, target: null });
+    assert.deepEqual(matchImageCommand('generate real images'), { hero: false, target: null });
+    assert.deepEqual(matchImageCommand('استبدل صورة الغلاف'), { hero: true, target: null });
+    // استهداف عنصر مسمّى — من لقطة الشاشة الثانية (photo-test)
+    assert.deepEqual(matchImageCommand('غير صورة مؤتمرات الى صورة حقيقية'), { hero: false, target: 'مؤتمرات' });
+    assert.deepEqual(matchImageCommand('غير صورة المنتجات بصور حقيقية'), { hero: false, target: 'منتجات' });
 });
 
 test('صور: ما ليس طلب توليد لا يُلتقط — «بصورة» الظرفية وبناء المواقع والشعار', async () => {
