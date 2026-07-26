@@ -288,7 +288,11 @@ export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_
     const collect = (obj, itemIndex, key) => {
         if (!('img' in obj)) return;
         const label = obj.name || obj.title || obj.city || '';
-        const t = { itemIndex, key, label: label || wanted, oldImg: String(obj.img), oid: obj.id != null ? String(obj.id) : null };
+        const t = {
+            itemIndex, key, label: label || wanted, oldImg: String(obj.img),
+            oid: obj.id != null ? String(obj.id) : null,
+            cat: obj.category || obj.cat || obj.type || '',
+        };
         if (wanted) {
             // المطابقة على الاسم/العنوان + التصنيف (بطاقة «مؤتمرات» = category)
             const hay = `${label} ${obj.category || obj.cat || obj.type || ''}`;
@@ -313,7 +317,10 @@ export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_
     const generated = [];
     let lastError = '';
     for (const t of targets.slice(0, Math.max(0, Math.min(maxCount, MAX_PER_CALL)))) {
-        const prompt = `${t.label} — ${goal}. Professional product photo, clean simple background, no text or watermark.`;
+        // البرومبت من هوية العنصر (العنوان + التصنيف) لا من اسم المشروع التقني —
+        // «مسرحية الرحلة — photo-test-26-2» كانت تنتج صوراً لا علاقة لها بالحدث
+        const subject = `${t.label}${t.cat ? ` (${t.cat})` : ''}`;
+        const prompt = `${subject}. Photorealistic professional photo representing this subject, clean composition, no text, no letters, no watermark.`;
         const r = await genFn(prompt);
         if (r?.notConfigured) return { changed: false, notConfigured: true, reason: r.error };
         if (!r?.ok || !r.buf) { if (r?.error) lastError = r.error; continue; } // فشل صورة واحدة لا يفشل الدفعة

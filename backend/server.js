@@ -96,6 +96,7 @@ import { listLibraries, getLibraryById, injectLibrary } from './agents/libraryRe
 import { polishHtml } from './agents/polishPack.js';
 import { setProjectSecret, deleteProjectSecret, getProjectSecretNames, getProjectSecrets } from './services/projectSecrets.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
+import { recordTurn } from './services/conversationStore.js';
 import { buildMetricsPayload } from './services/metricsStore.js';
 import { queueStatus } from './services/missionQueue.js';
 import { getCommitHistory, rollbackToCommit } from './agents/gitAgent.js';
@@ -1095,7 +1096,11 @@ app.post('/api/project/ai-images', verifyToken, aiLimit, validateProjectOwnershi
  */
 const aiImagesBusyRooms = new Set(); // 🔒 طلبات متكررة متزامنة لا تحرق الحصة مرتين
 async function generateAiImagesFromChat({ username, activeProject, projectPath, roomName, message, hero, target, isAdmin = false }) {
-    const say = (m) => io.to(roomName).emit('chat_reply', { message: m });
+    // 💬 نحفظ الدورة في ذاكرة المشروع — وإلا اختفت «تم! ولّدت…» مع أول تحديث
+    const say = (m) => {
+        io.to(roomName).emit('chat_reply', { message: m });
+        recordTurn(`${username}::${activeProject}`, message || 'صور', m).catch(() => {});
+    };
     if (aiImagesBusyRooms.has(roomName)) {
         say('⏳ توليد صور سابق ما زال يعمل على هذا المشروع — انتظر رده ثم اطلب من جديد.');
         return;
@@ -1119,15 +1124,20 @@ async function generateAiImagesFromChat({ username, activeProject, projectPath, 
         const done = [];
         const errors = [];
 
-        // ١) صورة البنر إن طُلبت — من نص طلب المستخدم نفسه
+        // ١) صورة البنر إن طُلبت — من نص طلب المستخدم نفسه.
+        // اسم فريد لكل توليد: الكتابة على نفس ai-hero.png كانت تُبقي المتصفح
+        // على نسخته («البنر لا يتغير» رغم ملف جديد على القرص)
         if (hero && allowed > 0) {
-            const r = await generateProductImage(`${message}. Wide website hero banner photo, professional, high quality, no text or watermark.`);
+            const r = await generateProductImage(`${message}. Photorealistic wide website hero banner photo, professional, high quality, no text, no letters, no watermark.`);
             if (r.ok) {
                 const idxPath = path.join(projectPath, 'index.html');
-                const heroRes = fs.existsSync(idxPath) ? applyHeroImage(fs.readFileSync(idxPath, 'utf8'), 'images/ai-hero.png') : { changed: false, reason: 'لا index.html — ابنِ الموقع أولاً' };
+                const heroName = `images/ai-hero-${Date.now()}.png`;
+                const heroRes = fs.existsSync(idxPath) ? applyHeroImage(fs.readFileSync(idxPath, 'utf8'), heroName) : { changed: false, reason: 'لا index.html — ابنِ الموقع أولاً' };
                 if (heroRes.changed) {
                     fs.mkdirSync(path.join(projectPath, 'images'), { recursive: true });
-                    fs.writeFileSync(path.join(projectPath, 'images/ai-hero.png'), r.buf);
+                    // إزالة أبنرة سابقة كي لا تتراكم
+                    try { for (const f of fs.readdirSync(path.join(projectPath, 'images'))) if (/^ai-hero.*\.png$/.test(f)) fs.unlinkSync(path.join(projectPath, 'images', f)); } catch (e) { /* تنظيف اختياري */ }
+                    fs.writeFileSync(path.join(projectPath, heroName), r.buf);
                     fs.writeFileSync(idxPath, heroRes.html);
                     bumpUsage(USAGE_DIR, username, 'aiImages');
                     allowed--;
