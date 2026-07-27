@@ -241,3 +241,46 @@ test('كلمات المستخدم الحرفية تغلب النموذج الم�
     });
     assert.equal(school?.id, 'jaola-school', 'النموذج يسند الأهداف الضعيفة كما كان');
 });
+
+// ─── 🏭 قالب jaola-erp + فصل المسارات (موقع/سيستم داخلي) ─────────────
+test('jaola-erp: عقد القالب سليم — ملفات، أدوار، وapp.js يُعرب بلا أخطاء', async () => {
+    const { jaolaErp } = await import('../agents/cloneTemplates/jaolaErp.js');
+    const c = jaolaErp();
+    assert.equal(c.id, 'jaola-erp');
+    assert.equal(c.track, 'system');
+    assert.deepEqual(c.files.map(f => f.name), ['index.html', 'app.js', 'styles.css']);
+    assert.equal(c.model.roles.length, 3, 'مالك/محاسب/أمين مخزن');
+    const appJs = c.files.find(f => f.name === 'app.js').content;
+    // يُعرب كسكربت صالح (new Function يرمي عند خطأ صياغة)
+    // eslint-disable-next-line no-new-func
+    new Function(appJs);
+    // الوظائف الجوهرية معرّفة وموصولة بالتفويض
+    for (const fn of ['addProduct', 'addProduction', 'saveSale', 'printSale', 'addExpense', 'exportSalesCsv', 'renderDashboard', 'login']) {
+        assert.ok(appJs.includes('function ' + fn + '('), fn + ' معرّفة');
+        assert.ok(new RegExp(fn + '\\(').test(appJs), fn + ' مستدعاة');
+    }
+    const html = c.files.find(f => f.name === 'index.html').content;
+    for (const act of ['addProduct', 'addProduction', 'saveSale', 'addExpense', 'exportSalesCsv', 'login']) {
+        assert.ok(html.includes('data-action="' + act + '"'), act + ' موصول في الواجهة');
+    }
+    assert.ok(html.includes('id="printArea"') && c.files[2].content.includes('@media print'), 'فاتورة قابلة للطباعة');
+});
+
+test('فصل المسارات: طلب سيستم مصنع → jaola-erp حصراً — ولا يُقفز أبداً لمتجر', async () => {
+    const { matchCloneTemplate, inferTrack } = await import('../agents/cloneTemplates/index.js');
+    const bp = { kind: 'webapp' };
+    // السيناريو الإنتاجي الحرفي الذي بنى متجراً بالخطأ
+    const goal = 'قم ببناء سيستم داخلي لمصنع معلبات .. فيه تسجيل كامل المنصرفات والانتاج والمبيعات والاستوك والفوترة';
+    assert.equal(inferTrack(goal), 'system', 'كلمات السيستم تُستنتج تلقائياً');
+    const c = matchCloneTemplate(goal, bp, null);
+    assert.equal(c?.id, 'jaola-erp', 'نظام المصنع → قالب ERP لا متجر');
+    // زر المسار الصريح يقيّد حتى الطلبات الغامضة
+    const forced = matchCloneTemplate('نظام لتسجيل مبيعات ومخزون محلي', bp, null, { track: 'system' });
+    assert.ok(!forced || forced.track === 'system', 'مسار سيستم لا يعيد قالب موقع أبداً');
+    // ومسار «موقع» لا يعيد ERP حتى لو ذُكرت كلمات مبيعات
+    const site = matchCloneTemplate('متجر الكتروني لبيع الحلويات مع سلة ومبيعات', bp, null, { track: 'site' });
+    assert.ok(!site || site.track !== 'system', 'مسار موقع لا يعيد قالب سيستم');
+    // القوالب القديمة بلا track تعمل كما كانت (مواقع)
+    const store = matchCloneTemplate('متجر الكتروني لبيع المنتجات مع سلة شراء', bp, null);
+    assert.ok(store && store.track !== 'system');
+});

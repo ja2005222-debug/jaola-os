@@ -1269,7 +1269,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
             const clone = (continuation && !isFreshBuild)
                 ? null // الاستئناف يكمل الموجود عبر المسار التزايدي — لا استبدال بالقالب
-                : matchCloneTemplate(goal, blueprint, getDomainModel(username, activeProject));
+                : matchCloneTemplate(goal, blueprint, getDomainModel(username, activeProject),
+                    { track: this.trackByRoom?.get(roomName) });
             if (clone) {
                 // نبدأ من الكلون العامل إن: (أ) بناء جديد/هوية جديدة، أو (ب) إعادة بناء
                 // صريحة، أو (ج) المشروع القائم معطّل فعلاً (نُصلح المكسور).
@@ -2355,7 +2356,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
     }
 
     async handleUserMessage(socket, data, agents, dbStatus) {
-        const { message, roomName, projectPath, username, activeProject, uiLang } = data;
+        const { message, roomName, projectPath, username, activeProject, uiLang, track } = data;
+
+        // 🧭 مسار البناء (موقع/سيستم داخلي) — يصل من زر الواجهة مع كل رسالة
+        // ويُحفظ للغرفة كي تلتزم به تأكيدات المتابعة («نعم ابنه الآن»)
+        if (track === 'site' || track === 'system') (this.trackByRoom ||= new Map()).set(roomName, track);
 
         // ── 0. Language Detector — تسجيل اللغة من أول رسالة ────────────
         // لغة الواجهة (uiLang) بذرة أولية: إذا لم تُسجَّل لغة بعد والرسالة قصيرة

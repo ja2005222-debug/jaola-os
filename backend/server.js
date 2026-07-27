@@ -1241,12 +1241,13 @@ app.post('/api/domains', verifyToken, validateProjectOwnership, async (req, res)
         const v = validateDomain(req.body?.domain);
         if (v.error) return res.status(400).json({ error: v.error });
 
-        // 💳 حد الخطة — استبدال نطاق نفس المشروع لا يُحسب إضافة جديدة
+        // 💳 حد الخطة — استبدال نطاق نفس المشروع لا يُحسب إضافة جديدة.
+        // 🔓 المشرف (مالك المنصة) بلا حد — العدّ للعملاء المدفوعين
         const owner = await DB.findUser(username).catch(() => null);
         const q = customDomainsMax(owner);
         const existing = readUserDomains(DOMAINS_DIR, username);
         const isReplacing = !!existing[req.activeProject];
-        if (!isReplacing && Number.isFinite(q.max) && countUserDomains(DOMAINS_DIR, username) >= q.max) {
+        if (!isAdminUser(req.user) && !isReplacing && Number.isFinite(q.max) && countUserDomains(DOMAINS_DIR, username) >= q.max) {
             return res.status(403).json({
                 error: q.max === 0
                     ? 'ربط النطاقات الخاصة ميزة الخطط المدفوعة — رقِّ خطتك من صفحة الفوترة.'
@@ -1709,6 +1710,7 @@ app.post('/api/chat', verifyToken, aiLimit, validate(schemas.sendMessage), valid
             username: req.user.username,
             activeProject: req.activeProject,
             uiLang: req.body.uiLang,
+            track: req.body.track, // 🧭 مسار البناء من زر الواجهة (موقع/سيستم)
         }, agents, dbStatus);
     } catch (error) {
         io.to(roomName).emit('log', { message: `❌ [ERROR]: ${error.message}` });
