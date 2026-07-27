@@ -385,6 +385,12 @@ export default function Dashboard() {
       return;
     }
     const nearBottom = !el || (el.scrollHeight - el.scrollTop - el.clientHeight) < 280;
+    // ✨ أثناء البثّ الحرفي (نفس الرسالة تنمو ~60fps): تثبيت فوري ناعم على
+    // القاع بلا تكديس «smooth» يتضارب — تماماً كسلوك كلاود
+    if (last?.streaming) {
+      if (nearBottom) feedEndRef.current?.scrollIntoView({ behavior:'auto' });
+      return;
+    }
     if (last?.sender === 'user' || nearBottom) {
       feedEndRef.current?.scrollIntoView({ behavior:'smooth' });
     }
