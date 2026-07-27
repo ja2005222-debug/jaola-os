@@ -12,16 +12,26 @@ import { BACKEND_URL } from '../config.js';
 import { useI18n } from '../i18n.js';
 import { LanguageSwitcher } from '../components/LanguageSwitcher.jsx';
 
-const QUICK_BUILDS = [
-  { icon: '⚡', label: 'SaaS', promptKey: 'qbSaaS' },
-  { icon: '✈️', label: 'Travel', promptKey: 'qbTravel' },
-  { icon: '🍽️', label: 'Restaurant', promptKey: 'qbRestaurant' },
-  { icon: '🎬', label: 'Cinema', promptKey: 'qbCinema' },
-  { icon: '📊', label: 'Dashboard', promptKey: 'qbDashboard' },
-  { icon: '📱', label: 'Mobile App', promptKey: 'qbMobile' },
-  { icon: '💼', label: 'CRM', promptKey: 'qbCRM' },
-  { icon: '🏢', label: 'ERP', promptKey: 'qbERP' },
-];
+// 🧭 إطلاق سريع مقسّم بالمسار — كل زر يضبط المسار الصحيح + برومبت جاهز
+// أنواع «الموقع» تطابق قوالبنا الحقيقية (متجر/مطعم/سفر/فعاليات/عقارات…)
+const QUICK_BUILDS = {
+  site: [
+    { icon: '🛍️', labelKey: 'qtStore', promptKey: 'qbStore' },
+    { icon: '🍽️', labelKey: 'qtRestaurant', promptKey: 'qbRestaurant' },
+    { icon: '🎟️', labelKey: 'qtEvents', promptKey: 'qbEvents' },
+    { icon: '🏠', labelKey: 'qtRealestate', promptKey: 'qbRealestate' },
+    { icon: '✈️', labelKey: 'qtTravel', promptKey: 'qbTravel' },
+    { icon: '🎓', labelKey: 'qtLms', promptKey: 'qbLms' },
+    { icon: '🛒', labelKey: 'qtMarketplace', promptKey: 'qbMarketplace' },
+    { icon: '🚕', labelKey: 'qtTaxi', promptKey: 'qbTaxi' },
+  ],
+  system: [
+    { icon: '🏭', labelKey: 'qtErp', promptKey: 'qbErpSys' },
+    { icon: '📦', labelKey: 'qtInventory', promptKey: 'qbInventory' },
+    { icon: '🧾', labelKey: 'qtInvoicing', promptKey: 'qbInvoicing' },
+    { icon: '💼', labelKey: 'qtCrm', promptKey: 'qbCrmSys' },
+  ],
+};
 
 const BOOT_STEPS = [
   'Initializing JAOLA OS...',
@@ -375,6 +385,12 @@ export default function Dashboard() {
       return;
     }
     const nearBottom = !el || (el.scrollHeight - el.scrollTop - el.clientHeight) < 280;
+    // ✨ أثناء البثّ الحرفي (نفس الرسالة تنمو ~60fps): تثبيت فوري ناعم على
+    // القاع بلا تكديس «smooth» يتضارب — تماماً كسلوك كلاود
+    if (last?.streaming) {
+      if (nearBottom) feedEndRef.current?.scrollIntoView({ behavior:'auto' });
+      return;
+    }
     if (last?.sender === 'user' || nearBottom) {
       feedEndRef.current?.scrollIntoView({ behavior:'smooth' });
     }
@@ -1360,13 +1376,24 @@ export default function Dashboard() {
 
   const quickBuilds = chatMessages.length === 0 && (
     <div style={{ padding:'12px 16px', borderBottom:`1px solid ${S.border}`, flexShrink:0 }}>
-      <div className="sec-title" style={{ color:S.muted, marginBottom:8 }}>{t('quickLaunch')}</div>
+      {/* 🧭 مبدّل المسار — يقود نوعية الأزرار أدناه */}
+      <div style={{ display:'flex', gap:6, marginBottom:10 }}>
+        {[['site', '🌍', t('trackSite')], ['system', '🏢', t('trackSystem')]].map(([id, icon, label]) => (
+          <button key={id} onClick={() => setBuildTrack(id)} title={t('trackHint')}
+            style={{ flex:1, background: buildTrack === id ? 'rgba(99,102,241,0.16)' : 'rgba(255,255,255,0.02)', border:`1px solid ${buildTrack === id ? 'rgba(99,102,241,0.5)' : S.border}`, borderRadius:8, padding:'7px 10px', color: buildTrack === id ? '#c7d2fe' : S.muted, fontSize:12, fontWeight:800, cursor:'pointer' }}>
+            {icon} {label}
+          </button>
+        ))}
+      </div>
+      <div className="sec-title" style={{ color:S.muted, marginBottom:8 }}>
+        {buildTrack === 'system' ? t('qlSystem') : t('qlSite')}
+      </div>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
-        {QUICK_BUILDS.map((b, i) => (
-          <button key={i} onClick={() => { setPrompt(t(b.promptKey)); textareaRef.current?.focus(); }}
+        {QUICK_BUILDS[buildTrack].map((b, i) => (
+          <button key={i} onClick={() => { setBuildTrack(buildTrack); setPrompt(t(b.promptKey)); textareaRef.current?.focus(); }}
             className="stat-tile"
             style={{ color:S.muted, fontSize:11, textAlign:'start', display:'flex', alignItems:'center', gap:6, padding:'8px 10px' }}>
-            <span style={{ fontSize:14 }}>{b.icon}</span><span>{b.label}</span>
+            <span style={{ fontSize:14 }}>{b.icon}</span><span>{t(b.labelKey)}</span>
           </button>
         ))}
       </div>
@@ -2536,17 +2563,8 @@ export default function Dashboard() {
             <>
               {missionFeed}
               {quickBuilds}
-              {/* 🧭 مبدّل المسار (جوال) */}
-              <div style={{ padding:'8px 12px 0', display:'flex', gap:6, background:S.bg2, borderTop:`1px solid ${S.border}` }}>
-                {[['site', '🌍', t('trackSite')], ['system', '🏢', t('trackSystem')]].map(([id, icon, label]) => (
-                  <button key={id} onClick={() => setBuildTrack(id)}
-                    style={{ flex:1, background: buildTrack === id ? 'rgba(99,102,241,0.16)' : 'rgba(255,255,255,0.02)', border:`1px solid ${buildTrack === id ? 'rgba(99,102,241,0.5)' : S.border}`, borderRadius:8, padding:'7px 10px', color: buildTrack === id ? '#c7d2fe' : S.muted, fontSize:11, fontWeight:800 }}>
-                    {icon} {label}
-                  </button>
-                ))}
-              </div>
               {/* إدخال المهمة — أسلوب تطبيقات المحادثة */}
-              <div style={{ padding:'10px 12px', flexShrink:0, display:'flex', gap:8, alignItems:'flex-end', background:S.bg2 }}>
+              <div style={{ padding:'10px 12px', borderTop:`1px solid ${S.border}`, flexShrink:0, display:'flex', gap:8, alignItems:'flex-end', background:S.bg2 }}>
                 <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                   placeholder={t('mobilePrompt')}
@@ -2892,15 +2910,16 @@ export default function Dashboard() {
 
           {/* Mission Input */}
           <div style={{ padding:'16px', borderTop:`1px solid ${S.border}`, flexShrink:0 }}>
-            <div className="sec-title" style={{ color:S.muted, marginBottom:10 }}>⚡ Mission Control</div>
-            {/* 🧭 مبدّل المسار: ماذا تبني؟ */}
-            <div style={{ display:'flex', gap:6, marginBottom:8 }}>
-              {[['site', '🌍', t('trackSite')], ['system', '🏢', t('trackSystem')]].map(([id, icon, label]) => (
-                <button key={id} onClick={() => setBuildTrack(id)} title={t('trackHint')}
-                  style={{ flex:1, background: buildTrack === id ? 'rgba(99,102,241,0.16)' : 'rgba(255,255,255,0.02)', border:`1px solid ${buildTrack === id ? 'rgba(99,102,241,0.5)' : S.border}`, borderRadius:8, padding:'6px 10px', color: buildTrack === id ? '#c7d2fe' : S.muted, fontSize:11, fontWeight:800, cursor:'pointer' }}>
-                  {icon} {label}
-                </button>
-              ))}
+            <div className="sec-title" style={{ color:S.muted, marginBottom:10, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <span>⚡ Mission Control</span>
+              {chatMessages.length > 0 && (
+                <span style={{ display:'flex', gap:4 }}>
+                  {[['site', '🌍'], ['system', '🏢']].map(([id, icon]) => (
+                    <button key={id} onClick={() => setBuildTrack(id)} title={id === 'system' ? t('trackSystem') : t('trackSite')}
+                      style={{ background: buildTrack === id ? 'rgba(99,102,241,0.2)' : 'transparent', border:`1px solid ${buildTrack === id ? 'rgba(99,102,241,0.5)' : S.border}`, borderRadius:6, padding:'2px 7px', fontSize:12, cursor:'pointer' }}>{icon}</button>
+                  ))}
+                </span>
+              )}
             </div>
             <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}

@@ -42,6 +42,48 @@ export function useSocket(isAuthenticated, handleAuthError) {
 
   // مرجع لتتبع عدد أخطاء الاتصال لمنع حلقة الـ reload
   const connectErrorCountRef = useRef(0);
+
+  // ✨ كشف ناعم بمستوى كلاود: النموذج يبثّ دفعاتٍ قد تقفز — نفصل الوصول عن
+  // العرض. الشبكة تُراكم في `target`، وحلقة rAF تكشف الحروف بإيقاع ثابت
+  // (تتسارع كلما اتّسعت الفجوة فلا تتأخّر أبداً، وتنعم على الدفعات الصغيرة).
+  const revealRef = useRef({ target: '', shown: 0, raf: null, done: false });
+  const startRevealLoop = () => {
+    const st = revealRef.current;
+    if (st.raf) return;
+    const step = () => {
+      const s = revealRef.current;
+      const gap = s.target.length - s.shown;
+      if (gap <= 0) {
+        s.raf = null;
+        if (s.done) { flushReveal(); return; }
+        // ما زال البثّ حيّاً لكن لا حروف جديدة الآن — أعِد الفحص لاحقاً
+        s.raf = requestAnimationFrame(step);
+        return;
+      }
+      // اكشف نسبةً من الفجوة (سريع عند الدفعات الكبيرة، ناعم عند الصغيرة)
+      const reveal = Math.max(2, Math.ceil(gap / 6));
+      s.shown = Math.min(s.target.length, s.shown + reveal);
+      const visible = s.target.slice(0, s.shown);
+      setChatMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (!last || !last.streaming) return prev;
+        return [...prev.slice(0, -1), { ...last, text: visible }];
+      });
+      s.raf = requestAnimationFrame(step);
+    };
+    st.raf = requestAnimationFrame(step);
+  };
+  const flushReveal = () => {
+    const s = revealRef.current;
+    if (s.raf) { cancelAnimationFrame(s.raf); s.raf = null; }
+    const finalText = s.target;
+    setChatMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (!last || !last.streaming) return prev;
+      return [...prev.slice(0, -1), { ...last, text: finalText, streaming: false }];
+    });
+    revealRef.current = { target: '', shown: 0, raf: null, done: false };
+  };
   // مرجع للمشروع النشط — حتى تعيد معالجات الأحداث الانضمام للغرفة الصحيحة
   const activeProjectRef = useRef(activeProject);
   useEffect(() => { activeProjectRef.current = activeProject; }, [activeProject]);
@@ -142,28 +184,35 @@ export function useSocket(isAuthenticated, handleAuthError) {
 
     // 🔴 البثّ الحيّ للرد — يظهر حرفاً-بحرف
     socket.off('chat_stream_start').on('chat_stream_start', () => {
+      revealRef.current = { target: '', shown: 0, raf: null, done: false };
       setChatMessages((prev) => [...prev, { sender: 'assistant', text: '', streaming: true, timestamp: Date.now() }]);
     });
     socket.off('chat_stream_chunk').on('chat_stream_chunk', (data) => {
       const delta = data?.delta || '';
       if (!delta) return;
-      setChatMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (!last || !last.streaming) return prev;
-        const copy = prev.slice(0, -1);
-        return [...copy, { ...last, text: last.text + delta }];
-      });
+      // نُراكم في الهدف فقط — حلقة الكشف الناعمة تعرضه بإيقاع ثابت
+      revealRef.current.target += delta;
+      startRevealLoop();
     });
     socket.off('chat_stream_end').on('chat_stream_end', (data) => {
-      setChatMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (!last || !last.streaming) {
-          // لم تصل بداية البثّ لأي سبب — أضِف الرد النهائي كرسالة عادية
-          return [...prev, { sender: 'assistant', text: data?.message || '', timestamp: Date.now() }];
-        }
-        const copy = prev.slice(0, -1);
-        return [...copy, { ...last, text: data?.message ?? last.text, streaming: false }];
-      });
+      const st = revealRef.current;
+      const noStream = st.target.length === 0 && st.shown === 0 && !st.raf;
+      // لو لم يصل أي chunk (بثّ فشل) — أضِف الرد النهائي كرسالة عادية
+      if (noStream && typeof data?.message === 'string') {
+        setChatMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.streaming && !last.text) {
+            return [...prev.slice(0, -1), { ...last, text: data.message, streaming: false }];
+          }
+          return [...prev, { sender: 'assistant', text: data.message, timestamp: Date.now() }];
+        });
+        revealRef.current = { target: '', shown: 0, raf: null, done: false };
+        return;
+      }
+      // النص النهائي الموثوق يحلّ محل المتراكم؛ نترك الحلقة تكمل الكشف بنعومة
+      if (typeof data?.message === 'string') st.target = data.message;
+      st.done = true;
+      startRevealLoop();
     });
 
     socket.off('chat_history').on('chat_history', (history) => {
@@ -260,6 +309,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
     socket.emit('join_project', { project: savedProject });
 
     return () => {
+      if (revealRef.current.raf) { cancelAnimationFrame(revealRef.current.raf); revealRef.current.raf = null; }
       socket.off('workspace_files');
       socket.off('user_projects');
       socket.off('preview_updated');
