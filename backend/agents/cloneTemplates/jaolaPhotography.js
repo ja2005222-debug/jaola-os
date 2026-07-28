@@ -257,7 +257,7 @@ document.addEventListener('DOMContentLoaded', init);
         nameEn: 'Photography Studio',
         description: 'موقع استوديو تصوير للزوّار: باقات جلسات تصوير (بورتريه/زفاف/منتجات) بسعر ثابت، اختيار تاريخ ووقت الجلسة مع منع حجز وقت محجوز مسبقاً، تأكيد حجز قابل للطباعة، ولوحة إدارة للباقات والحجوزات.',
         descriptionEn: 'Visitor-facing photography studio site: photo session packages (portrait/wedding/product) with flat rates, date and time slot picking with double-booking prevention, a printable reservation confirmation, and an admin panel for packages and reservations.',
-        keywords: ['استوديو تصوير', 'تصوير فوتوغرافي', 'جلسة تصوير', 'تصوير بورتريه', 'تصوير زفاف', 'مصور فوتوغرافي', 'حجز جلسة تصوير', 'photography studio', 'photo session', 'photographer booking', 'portrait photography', 'wedding photography'],
+        keywords: ['استوديو تصوير', 'تصوير فوتوغرافي', 'جلسة تصوير', 'جلسات تصوير', 'تصوير بورتريه', 'تصوير زفاف', 'مصور فوتوغرافي', 'حجز جلسة تصوير', 'photography studio', 'photo session', 'photographer booking', 'portrait photography', 'wedding photography'],
         model: {
             roles: [{ name: 'عميل' }, { name: 'إدارة' }],
             entities: [{ name: 'باقة تصوير' }, { name: 'حجز' }],

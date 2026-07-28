@@ -6,7 +6,7 @@
  * بفواتير قابلة للطباعة، تنبيه نفاد، تقارير برسوم SVG صرفة وتصدير CSV.
  * بلا أي اعتماد خارجي (CDN محجوبة لدى شريحة من المستخدمين).
  *
- * الأدوار: مالك (كل شيء) / محاسب (مبيعات+منصرفات+تقارير) / أمين مخزن
+ * الأدوار: مالك (كل شيء) / محاسب (مبيعات+منصرفات+تقارير) / أمين المخزن
  * (مخزون+إنتاج). الحالة في localStorage (jerp_*)، تفويض أحداث data-action.
  */
 
@@ -607,11 +607,11 @@ input:focus,select:focus{border-color:var(--pri)}
         category: 'system',
         name: 'نظام إدارة منشأة',
         nameEn: 'Facility ERP',
-        description: 'سيستم داخلي كامل لمصنع/ورشة/مستودع: منصرفات، إنتاج يغذّي المخزون، مبيعات بفواتير قابلة للطباعة، تنبيه نفاد المخزون، تقارير شهرية وتصدير CSV — بأدوار (مالك/محاسب/أمين مخزن).',
+        description: 'سيستم داخلي كامل لمصنع/ورشة/مستودع: منصرفات، إنتاج يغذّي المخزون، مبيعات بفواتير قابلة للطباعة، تنبيه نفاد المخزون، تقارير شهرية وتصدير CSV — بأدوار (مالك/محاسب/أمين المخزن).',
         descriptionEn: 'Complete internal system for a factory/workshop/warehouse: expenses, production feeding inventory, sales with printable invoices, low-stock alerts, monthly reports and CSV export — with roles (owner/accountant/storekeeper).',
         keywords: ['سيستم', 'سيستم داخلي', 'نظام داخلي', 'نظام إدارة', 'نظام ادارة', 'إدارة مصنع', 'ادارة مصنع', 'مصنع', 'منشأة', 'منشاة', 'مستودع', 'ورشة', 'منصرفات', 'مصروفات', 'استوك', 'مخزون', 'جرد', 'فوترة', 'فواتير', 'محاسبة', 'erp', 'inventory', 'invoicing', 'accounting', 'factory', 'warehouse', 'internal system', 'management system'],
         model: {
-            roles: [{ name: 'مالك' }, { name: 'محاسب' }, { name: 'أمين مخزن' }],
+            roles: [{ name: 'مالك' }, { name: 'محاسب' }, { name: 'أمين المخزن' }],
             entities: [{ name: 'صنف' }, { name: 'منصرف' }, { name: 'دفعة إنتاج' }, { name: 'فاتورة بيع' }],
             flows: [
                 { name: 'تسجيل منصرف' }, { name: 'دفعة إنتاج تزيد المخزون' },

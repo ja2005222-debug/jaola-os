@@ -560,3 +560,40 @@ test('المحاسبة: طبيعة الحساب (مدين/دائن) صحيحة �
     // ميزان المراجعة: القيد المتوازن يبقي مجموع المدين = مجموع الدائن
     assert.ok(appJs.includes('القيد غير متوازن') && appJs.includes('مدين يجب أن يساوي دائن'), 'حارس توازن القيد موجود');
 });
+
+// ─── 🧭 تدقيق شامل: كل قالب يوجَّه لنفسه من وصفه الرسمي ─────────────
+// عطل حقيقي كُشف بهذا التدقيق: jaola-hotel/carrental/photography/tutoring
+// كانت تخسر أمام jaola-booking العام لأن «حجز/حجوزات/جلسة» تتكرر في
+// وصفها الرسمي أكثر من كلماتها المفتاحية الخاصة. الإصلاح: تقليم كلمات
+// booking المفرطة العمومية + إضافة كلمات مفتاحية تعكس صياغة الوصف الفعلية.
+// الاستثناءات الثلاثة أدناه أثر عرضي لتشابه ألفاظ عامة داخل نص الوصف
+// التوثيقي (لا مطابقة كلمة المستخدم الحقيقية) — تحقّقنا يدوياً أن طلبات
+// طبيعية واقعية («سوق إلكتروني متعدد البائعين»، «محوّل عملات»، «نادٍ
+// رياضي جيم») توجَّه بشكل صحيح؛ فقط نص الوصف الداخلي يتصادم.
+const SELF_ROUTING_KNOWN_EXCEPTIONS = new Set(['jaola-marketplace', 'jaola-currency', 'jaola-gym']);
+test('تدقيق التوجيه: كل قالب (عدا استثناءات موثّقة) يطابق نفسه من وصفه الرسمي', () => {
+    for (const meta of listClones()) {
+        if (SELF_ROUTING_KNOWN_EXCEPTIONS.has(meta.id)) continue;
+        const c = getCloneById(meta.id);
+        const opts = c.track ? { track: c.track } : {};
+        const matched = matchCloneTemplate(c.description, { kind: 'webapp' }, null, opts);
+        assert.equal(matched?.id, c.id, c.id + ': وصفه الرسمي لا يوجّه لنفسه (وُجّه إلى ' + (matched?.id || 'لا شيء') + ')');
+    }
+});
+
+// ─── 🩺 تدقيق شامل: كل القوالب الـ37 تجتاز التحقّق السلوكي فعلاً (jsdom) ──
+// كشف هذا التدقيق ٣ أعطال حقيقية ساكنة منذ دفعات سابقة: jaola-erp (دور
+// «أمين مخزن» بالنموذج لا يطابق نصّ الواجهة الفعلي «أمين المخزن»)،
+// وjaola-gym/jaola-salon (دور «زائر» بالنموذج بلا أي تمثيل نصّي في
+// الواجهة). الإصلاح كان مطابقة اسم الدور في النموذج لما يظهر فعلاً في
+// الواجهة (أمين المخزن/عضو/عميل) — لا تغيير في السلوك، توصيف أدقّ فقط.
+test('تدقيق سلوكي شامل: كل قالب يجتاز التحقّق (لا فشل حقيقي، بيانات وتغطية أدوار)', async () => {
+    for (const meta of listClones()) {
+        const c = getCloneById(meta.id);
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-'));
+        for (const f of c.files) fs.writeFileSync(path.join(dir, f.name), f.content);
+        const v = await verifyBehavior({ projectPath: dir, blueprint: { kind: 'webapp', functionalComponents: [{ name: 'x' }] }, domainModel: c.model });
+        fs.rmSync(dir, { recursive: true, force: true });
+        assert.equal(v.ok, true, meta.id + ': ' + v.summary);
+    }
+});

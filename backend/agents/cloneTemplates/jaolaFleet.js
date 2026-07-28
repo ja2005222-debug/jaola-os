@@ -100,11 +100,18 @@ export function jaolaFleet() {
 `;
 
     const APP_JS = `/* 🚚 نظام أسطول jaola — jaola-fleet */
+const SEED_VEHICLES = [
+  { id: 'vh1', no: 1, plate: 'أ ب ج 1234', model: 'تويوتا هايلوكس 2022', driver: 'محمد العتيبي', odo: 42000, nextServiceOdo: 45000 },
+  { id: 'vh2', no: 2, plate: 'د هـ و 5678', model: 'هيونداي H1 2021', driver: 'سالم القحطاني', odo: 61000, nextServiceOdo: 65000 }
+];
+const SEED_HISTORY = [
+  { id: 'mt1', no: 1, vehicleId: 'vh1', type: 'تغيير زيت', odo: 40000, cost: 180, note: 'زيت + فلتر', createdAt: new Date(Date.now() - 5 * 86400000).toISOString() }
+];
 function load(k, fb) { try { var v = localStorage.getItem('jfleet_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
 function save(k, val) { try { localStorage.setItem('jfleet_' + k, JSON.stringify(val)); } catch (e) {} }
-let vehicles = load('vehicles', []); // { id, no, plate, model, driver, odo, nextServiceOdo }
-let history = load('history', []); // { id, no, vehicleId, type, odo, cost, note, createdAt }
-let settings = load('settings', { name: 'أسطول jaola', pass: 'admin', currency: 'ر.س', interval: 5000, vehicleSeq: 1, maintSeq: 1 });
+let vehicles = load('vehicles', SEED_VEHICLES); // { id, no, plate, model, driver, odo, nextServiceOdo }
+let history = load('history', SEED_HISTORY); // { id, no, vehicleId, type, odo, cost, note, createdAt }
+let settings = load('settings', { name: 'أسطول jaola', pass: 'admin', currency: 'ر.س', interval: 5000, vehicleSeq: 3, maintSeq: 2 });
 let session = load('session', null);
 let state = { view: 'login' };
 

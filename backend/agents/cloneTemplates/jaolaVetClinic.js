@@ -99,12 +99,20 @@ export function jaolaVetClinic() {
 `;
 
     const APP_JS = `/* 🐾 نظام عيادة jaola البيطرية — jaola-vetclinic */
+const SEED_OWNERS = [
+  { id: 'own1', no: 1, name: 'نورة الحربي', phone: '0501234567' },
+  { id: 'own2', no: 2, name: 'خالد الدوسري', phone: '0559876543' }
+];
+const SEED_PETS = [
+  { id: 'pet1', ownerId: 'own1', name: 'لولو', species: 'قط', age: 2, lastVaccineAt: new Date(Date.now() - 60 * 86400000).toISOString() },
+  { id: 'pet2', ownerId: 'own2', name: 'ريكس', species: 'كلب', age: 4, lastVaccineAt: null }
+];
 function load(k, fb) { try { var v = localStorage.getItem('jvet_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
 function save(k, val) { try { localStorage.setItem('jvet_' + k, JSON.stringify(val)); } catch (e) {} }
-let owners = load('owners', []); // { id, no, name, phone }
-let pets = load('pets', []); // { id, ownerId, name, species, age, lastVaccineAt }
+let owners = load('owners', SEED_OWNERS); // { id, no, name, phone }
+let pets = load('pets', SEED_PETS); // { id, ownerId, name, species, age, lastVaccineAt }
 let visits = load('visits', []); // { id, no, petId, diagnosis, vaccine, fee, createdAt }
-let settings = load('settings', { name: 'عيادة jaola البيطرية', pass: 'admin', currency: 'ر.س', ownerSeq: 1, visitSeq: 1 });
+let settings = load('settings', { name: 'عيادة jaola البيطرية', pass: 'admin', currency: 'ر.س', ownerSeq: 3, visitSeq: 1 });
 let session = load('session', null);
 let state = { view: 'login', activePet: null };
 

@@ -360,7 +360,7 @@ export function jaolaBooking() {
         description: 'حجز مواعيد عامل غنيّ: خدمات → اختيار يوم → فترات متاحة (مع منع المحجوز) → تأكيد → حجوزاتي + لوحة إدارة بالإحصاءات.',
         nameEn: 'Appointment Booking',
         descriptionEn: 'Working booking flow: services, day picker, available slots (taken ones blocked), confirmation, my bookings, and an admin panel with stats.',
-        keywords: ['حجز', 'موعد', 'مواعيد', 'booking', 'appointment', 'حجوزات', 'عيادة', 'صالون', 'reservation', 'جلسة', 'reserve', 'schedule'],
+        keywords: ['حجز', 'موعد', 'مواعيد', 'booking', 'appointment', 'عيادة', 'صالون', 'reservation', 'reserve', 'schedule'],
         model: {
             entities: [
                 { name: 'Service', fields: [{ name: 'id', type: 'string' }, { name: 'name', type: 'string' }, { name: 'duration', type: 'number' }, { name: 'price', type: 'number' }], ownedBy: 'Admin' },

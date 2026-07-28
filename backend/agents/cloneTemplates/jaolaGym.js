@@ -2,7 +2,7 @@
  * 💪 jaola-gym — موقع نادٍ رياضي باشتراكات وحصص (track: site — لزوّار).
  *
  * باقات اشتراك، جدول حصص أسبوعي بحجز، اشتراك بتأكيد وبطاقة عضوية قابلة
- * للطباعة، ولوحة إدارة (باقات/حصص). أدوار: زائر (يشترك/يحجز) + إدارة.
+ * للطباعة، ولوحة إدارة (باقات/حصص). أدوار: عضو (يشترك/يحجز) + إدارة.
  * بلا اعتماد خارجي. الحالة في localStorage (jgym_*).
  */
 import { sharedSystemStyles } from './jaolaClinic.js';
@@ -278,7 +278,7 @@ document.addEventListener('DOMContentLoaded', init);
         descriptionEn: 'Visitor-facing gym site: membership plans, weekly class schedule with seat booking, signup with confirmation and a printable membership card, plus an admin panel for plans, classes and members.',
         keywords: ['نادي رياضي', 'نادٍ رياضي', 'رياضي', 'جيم', 'صالة رياضية', 'لياقة', 'اشتراكات رياضية', 'اشتراكات', 'حصص رياضية', 'يوغا', 'كروسفت', 'كارديو', 'fitness', 'gym', 'membership', 'workout', 'classes schedule', 'crossfit'],
         model: {
-            roles: [{ name: 'زائر' }, { name: 'إدارة' }],
+            roles: [{ name: 'عضو' }, { name: 'إدارة' }],
             entities: [{ name: 'باقة' }, { name: 'حصة' }, { name: 'عضو' }],
             flows: [{ name: 'تصفّح الباقات والاشتراك' }, { name: 'حجز مقعد في حصة' }, { name: 'طباعة بطاقة العضوية' }, { name: 'إدارة الباقات والحصص والأعضاء' }],
         },
