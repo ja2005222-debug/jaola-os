@@ -82,6 +82,7 @@ import { installSiteConnect } from './services/siteConnect.js';
 import { installDataSync } from './services/dataSync.js';
 import { readStore as readAppDataStore, writeKey as writeAppDataKey } from './services/appData.js';
 import { recordError, recentErrors } from './services/errorLog.js';
+import { verifyPassword as verifyProjectPassword, setPassword as setProjectPassword } from './services/projectAuth.js';
 import { buildStaticSiteFromSource, buildDashboardPage } from './services/reactPreview.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
 import { getProjectMemory, getDomainModel } from './agents/projectMemory.js';
@@ -186,7 +187,7 @@ const io = new Server(httpServer, {
 
 // نقطة دردشة جولا بوت عامّة: تُستدعى من مواقع الزوّار (origins متعدّدة) —
 // نسمح لأي origin لهذا المسار وحده؛ بقيّة المسارات تبقى مقيّدة بـ ALLOWED_ORIGINS.
-const OPEN_CORS_PATHS = new Set(['/api/jaola-bot/chat', '/api/agent-chat', '/api/public/site-hit', '/api/public/site-message', '/api/public/data']);
+const OPEN_CORS_PATHS = new Set(['/api/jaola-bot/chat', '/api/agent-chat', '/api/public/site-hit', '/api/public/site-message', '/api/public/data', '/api/public/auth/login', '/api/public/auth/set-password']);
 // 🗄️ /api/public/data/:key (PUT) بمفتاح ديناميكي في المسار — تطابق بادئة لا مساواة تامّة
 const isOpenCorsPath = (p) => OPEN_CORS_PATHS.has(p) || p.startsWith('/api/public/data/');
 const corsDelegate = (req, callback) => {
@@ -393,6 +394,15 @@ const appDataLimit = rateLimit({
     max: 120,
     keyGenerator: (req) => ipKeyGenerator(req),
     handler: (req, res) => res.status(204).end(),
+});
+
+// Rate limiter لمصادقة قوالب السيستم — سقف منخفض يمنع تخمين كلمة المرور
+// (نافذة أطول ومحاولات أقل من appDataLimit عمداً؛ الدخول نادر، التخمين متكرر)
+const authLimit = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    max: 15,
+    keyGenerator: (req) => ipKeyGenerator(req),
+    handler: (req, res) => res.status(429).json({ ok: false }),
 });
 
 // Rate limiter عام للـ API
@@ -2611,6 +2621,26 @@ app.put('/api/public/data/:key', appDataLimit, (req, res) => {
     if (!v?.u || !v?.p) return res.status(204).end();
     try {
         const r = writeAppDataKey(APPDATA_DIR, v.u, v.p, req.params.key, req.body?.value);
+        if (r.error) return res.status(400).json({ error: r.error });
+        res.json({ success: true });
+    } catch { res.status(500).json({ success: false }); }
+});
+
+// 🔐 مصادقة حقيقية لدخول قوالب السيستم — كلمة مرور مُجزَّأة تُتحقَّق هنا
+// فقط، بدل مقارنة نص صريح محلياً (كانت تُقرَأ من localStorage/jaola-data
+// مباشرة). الافتراضية 'admin' مقبولة حتى يُغيِّرها المالك من الإعدادات.
+const APPAUTH_DIR = path.join(BASE_WORKSPACE, '.appauth');
+app.post('/api/public/auth/login', authLimit, async (req, res) => {
+    const v = verifyBotToken(req.body?.token);
+    if (!v?.u || !v?.p) return res.json({ ok: false });
+    try { res.json({ ok: await verifyProjectPassword(APPAUTH_DIR, v.u, v.p, req.body?.password) }); }
+    catch { res.json({ ok: false }); }
+});
+app.post('/api/public/auth/set-password', authLimit, async (req, res) => {
+    const v = verifyBotToken(req.body?.token);
+    if (!v?.u || !v?.p) return res.status(204).end();
+    try {
+        const r = await setProjectPassword(APPAUTH_DIR, v.u, v.p, req.body?.password);
         if (r.error) return res.status(400).json({ error: r.error });
         res.json({ success: true });
     } catch { res.status(500).json({ success: false }); }

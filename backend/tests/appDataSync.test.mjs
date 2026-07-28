@@ -58,9 +58,27 @@ test('dataSync: الكود يحمل التوكن/العنوان، ويستثني
     assert.ok(js.includes('tok.sig'));
     assert.ok(js.includes('/api/public/data'));
     assert.ok(js.includes('_session'), 'استثناء مفاتيح الجلسة موجود بالكود');
+    assert.ok(js.includes('window.JAOLA_SYNC'), 'يُعرِّض API/التوكن لـ app.js من أجل المصادقة الحقيقية');
     // بلا توكن/عنوان → لا تفعل شيئاً خطراً (لا تُعطّل تشغيل التطبيق)
     const noop = buildDataSyncJS({ apiBase: '', token: '' });
     assert.ok(noop.includes('loadApp()'));
+});
+
+test('dataSync: window.JAOLA_SYNC فعلياً null بلا توكن، وكائن صحيح معه (تنفيذ حقيقي)', async () => {
+    const { JSDOM } = await import('jsdom');
+    const stubFetch = () => new Promise(() => {}); // معلّقة عمداً — لا حاجة لتسوية شبكة في هذا الاختبار
+
+    const dom1 = new JSDOM('<!doctype html><html><body></body></html>', { runScripts: 'dangerously', url: 'https://x.example' });
+    dom1.window.fetch = stubFetch;
+    dom1.window.eval(buildDataSyncJS({ apiBase: '', token: '' }));
+    assert.equal(dom1.window.JAOLA_SYNC, null);
+
+    const dom2 = new JSDOM('<!doctype html><html><body></body></html>', { runScripts: 'dangerously', url: 'https://x.example' });
+    dom2.window.fetch = stubFetch;
+    dom2.window.eval(buildDataSyncJS({ apiBase: 'https://api.example', token: 'tok.sig' }));
+    // مقارنة بالقيم لا بالمرجع — الكائن أُنشئ في واقعية (realm) jsdom منفصلة
+    assert.equal(dom2.window.JAOLA_SYNC.api, 'https://api.example');
+    assert.equal(dom2.window.JAOLA_SYNC.token, 'tok.sig');
 });
 
 test('dataSync: حقن الوسم idempotent، ويستبدل app.js لا يضيف بجانبه', () => {

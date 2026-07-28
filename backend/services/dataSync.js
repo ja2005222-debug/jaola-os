@@ -30,6 +30,10 @@ export function buildDataSyncJS({ apiBase, token, appScript = 'app.js', timeoutM
   var origSetItem = localStorage.setItem.bind(localStorage);
   var appLoaded = false;
 
+  // app.js (مُحمَّل بعده) يقرأ هذا لمصادقة الدخول الحقيقية عبر الخادم —
+  // بدل مقارنة كلمة مرور نص صريح محلياً. لا سرّ هنا (نفس فلسفة التوكن).
+  window.JAOLA_SYNC = (API && TOKEN) ? { api: API, token: TOKEN } : null;
+
   function isSynced(k) { return !/_session$/.test(k); }
 
   function loadApp() {
