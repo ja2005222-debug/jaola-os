@@ -79,6 +79,8 @@ import { fetchStarter, fetchRepoFiles, parseRepoUrl } from './agents/starterFetc
 import * as siteCms from './services/siteCms.js';
 import { recordMessage, recordVisit, readInbox, markSeen, visitSummary, unreadCount } from './services/siteInbox.js';
 import { installSiteConnect } from './services/siteConnect.js';
+import { installDataSync } from './services/dataSync.js';
+import { readStore as readAppDataStore, writeKey as writeAppDataKey } from './services/appData.js';
 import { buildStaticSiteFromSource, buildDashboardPage } from './services/reactPreview.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
 import { getProjectMemory, getDomainModel } from './agents/projectMemory.js';
@@ -167,9 +169,11 @@ const io = new Server(httpServer, {
 
 // نقطة دردشة جولا بوت عامّة: تُستدعى من مواقع الزوّار (origins متعدّدة) —
 // نسمح لأي origin لهذا المسار وحده؛ بقيّة المسارات تبقى مقيّدة بـ ALLOWED_ORIGINS.
-const OPEN_CORS_PATHS = new Set(['/api/jaola-bot/chat', '/api/agent-chat', '/api/public/site-hit', '/api/public/site-message']);
+const OPEN_CORS_PATHS = new Set(['/api/jaola-bot/chat', '/api/agent-chat', '/api/public/site-hit', '/api/public/site-message', '/api/public/data']);
+// 🗄️ /api/public/data/:key (PUT) بمفتاح ديناميكي في المسار — تطابق بادئة لا مساواة تامّة
+const isOpenCorsPath = (p) => OPEN_CORS_PATHS.has(p) || p.startsWith('/api/public/data/');
 const corsDelegate = (req, callback) => {
-    if (OPEN_CORS_PATHS.has(req.path)) return callback(null, { origin: true, credentials: false, methods: ['POST', 'OPTIONS'] });
+    if (isOpenCorsPath(req.path)) return callback(null, { origin: true, credentials: false, methods: ['GET', 'POST', 'PUT', 'OPTIONS'] });
     callback(null, corsOptions);
 };
 app.use(cors(corsDelegate));
@@ -363,6 +367,15 @@ const publicSiteLimit = rateLimit({
     max: 30,
     keyGenerator: (req) => ipKeyGenerator(req),
     handler: (req, res) => res.status(204).end(), // تجاوز الحد → صمت (الموقع لا يتأثر)
+});
+
+// Rate limiter لمزامنة بيانات القوالب — أعلى سقفاً (استخدام فعلي: عدّة موظفين
+// خلف IP مكتب واحد يحفظون سجلّات باستمرار، لا زيارة/رسالة نادرة)
+const appDataLimit = rateLimit({
+    windowMs: 60 * 1000,
+    max: 120,
+    keyGenerator: (req) => ipKeyGenerator(req),
+    handler: (req, res) => res.status(204).end(),
 });
 
 // Rate limiter عام للـ API
@@ -1999,6 +2012,16 @@ app.post('/api/template/apply', verifyToken, validateProjectOwnership, async (re
                 fs.writeFileSync(idxPath, html);
             }
         } catch { /* اختياري */ }
+        // 3.5) تخزين حقيقي متزامن (jaola-data) — يعمل فوراً حتى في المعاينة
+        // الحيّة، قبل النشر أصلاً (idempotent، تجاوز آمن لو app.js غائباً)
+        try {
+            const publicBase = (process.env.PUBLIC_BACKEND_URL || process.env.RENDER_EXTERNAL_URL
+                || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+            installDataSync(projectPath, {
+                apiBase: publicBase,
+                token: signBotToken({ u: req.user.username, p: req.activeProject }),
+            });
+        } catch { /* اختياري */ }
         // 4) تهيئة النشر (موقع ثابت) — أفضل جهد
         try {
             const projectName = `${req.user.username}-${req.activeProject}`.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 50);
@@ -2076,10 +2099,11 @@ app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) 
     try {
         const publicBase = (process.env.PUBLIC_BACKEND_URL || process.env.RENDER_EXTERNAL_URL
             || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
-        installSiteConnect(req.projectPath, {
-            apiBase: publicBase,
-            token: signBotToken({ u: req.user.username, p: req.activeProject }),
-        });
+        const botToken = signBotToken({ u: req.user.username, p: req.activeProject });
+        installSiteConnect(req.projectPath, { apiBase: publicBase, token: botToken });
+        // 🗄️ تخزين حقيقي متزامن لقوالب السيستم (بديل localStorage وحده) —
+        // idempotent، وتتجاوز تلقائياً أي مشروع بلا app.js بالشكل المتوقَّع.
+        installDataSync(req.projectPath, { apiBase: publicBase, token: botToken });
     } catch { /* اختياري — النشر يمضي */ }
 
     // 🧭 مشاريع full-stack (فيها دوال api/ حقيقية) تُنشر على Render (خادم دائم،
@@ -2537,6 +2561,29 @@ app.post('/api/public/site-message', publicSiteLimit, (req, res) => {
             })();
         }
     } catch { res.json({ success: false }); }
+});
+
+// ─── 🗄️ مزامنة بيانات القوالب (jaola-data) — بديل localStorage الحقيقي ───
+// يقرأ/يكتب موقع منشور مباشرة (توكن المشروع الموقّع، لا جلسة مستخدم) —
+// نفس فلسفة صندوق الموقع أعلاه: ملفّي، صامد بلا Mongo، فشل صامت دائماً.
+const APPDATA_DIR = path.join(BASE_WORKSPACE, '.appdata');
+
+// سحب كل مفاتيح المشروع دفعة واحدة (عند تحميل الصفحة، قبل تشغيل app.js)
+app.get('/api/public/data', appDataLimit, (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p) return res.json({});
+    try { res.json(readAppDataStore(APPDATA_DIR, v.u, v.p)); } catch { res.json({}); }
+});
+
+// كتابة مفتاح واحد (كل نداء localStorage.setItem محليّاً يُرحَّل هنا)
+app.put('/api/public/data/:key', appDataLimit, (req, res) => {
+    const v = verifyBotToken(req.body?.token);
+    if (!v?.u || !v?.p) return res.status(204).end();
+    try {
+        const r = writeAppDataKey(APPDATA_DIR, v.u, v.p, req.params.key, req.body?.value);
+        if (r.error) return res.status(400).json({ error: r.error });
+        res.json({ success: true });
+    } catch { res.status(500).json({ success: false }); }
 });
 
 // 📧 إرسال ردّ فعلي من الداشبورد على رسالة واردة — بحصة الخطة الشهرية
