@@ -428,6 +428,29 @@ test('دفعة ٥: مغسلة (سيستم) وتأجير سيارات (موقع) 
     }
 });
 
+// ─── ⚖️🧑‍💻 دفعة ٦: مكتب محاماة (سيستم) + مساحة عمل مشتركة (موقع) ────
+test('دفعة ٦: مكتب محاماة (سيستم) ومساحة عمل مشتركة (موقع) — عقد سليم وتوجيه صحيح', async () => {
+    const { matchCloneTemplate } = await import('../agents/cloneTemplates/index.js');
+    const specs = [
+        ['../agents/cloneTemplates/jaolaLawfirm.js', 'jaolaLawfirm', 'jaola-lawfirm', 'system', 'نظام مكتب محاماة لإدارة القضايا والعملاء وجلسات المحكمة'],
+        ['../agents/cloneTemplates/jaolaCoworking.js', 'jaolaCoworking', 'jaola-coworking', 'site', 'موقع مساحة عمل مشتركة لحجز مكتب مشترك وغرفة اجتماعات بالساعة'],
+    ];
+    for (const [path, fn, id, track, goal] of specs) {
+        const c = (await import(path))[fn]();
+        assert.equal(c.id, id);
+        assert.equal(c.track, track);
+        const appJs = c.files.find(f => f.name === 'app.js').content;
+        // eslint-disable-next-line no-new-func
+        new Function(appJs);
+        const html = c.files.find(f => f.name === 'index.html').content;
+        for (const act of [...new Set([...html.matchAll(/data-action="(\w+)"/g)].map(m => m[1]))]) {
+            assert.ok(new RegExp("case '" + act + "'").test(appJs), id + ': ' + act + ' موصول');
+        }
+        const matched = matchCloneTemplate(goal, { kind: 'webapp' }, null);
+        assert.equal(matched?.id, id, goal + ' → ' + id);
+    }
+});
+
 // ─── 📒💇 دفعة ٣: محاسبة (سيستم) + صالون (موقع) ─────────────────────
 test('دفعة ٣: محاسبة (سيستم) وصالون (موقع) — عقد سليم وتوجيه صحيح', async () => {
     const { matchCloneTemplate } = await import('../agents/cloneTemplates/index.js');
