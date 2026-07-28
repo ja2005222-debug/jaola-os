@@ -32,6 +32,7 @@ const QUICK_BUILDS = {
     { icon: '🧑‍💻', labelKey: 'qtCoworking', promptKey: 'qbCoworking' },
     { icon: '📸', labelKey: 'qtPhotography', promptKey: 'qbPhotography' },
     { icon: '📚', labelKey: 'qtTutoring', promptKey: 'qbTutoring' },
+    { icon: '🧹', labelKey: 'qtCleaning', promptKey: 'qbCleaning' },
   ],
   system: [
     { icon: '🏭', labelKey: 'qtErp', promptKey: 'qbErpSys' },
@@ -48,6 +49,7 @@ const QUICK_BUILDS = {
     { icon: '⚖️', labelKey: 'qtLawfirm', promptKey: 'qbLawfirm' },
     { icon: '🎫', labelKey: 'qtHelpdesk', promptKey: 'qbHelpdesk' },
     { icon: '🚚', labelKey: 'qtFleet', promptKey: 'qbFleet' },
+    { icon: '🐾', labelKey: 'qtVetClinic', promptKey: 'qbVetClinic' },
   ],
 };
 
