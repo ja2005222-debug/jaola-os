@@ -284,3 +284,49 @@ test('فصل المسارات: طلب سيستم مصنع → jaola-erp حصرا
     const store = matchCloneTemplate('متجر الكتروني لبيع المنتجات مع سلة شراء', bp, null);
     assert.ok(store && store.track !== 'system');
 });
+
+// ─── 🏥👥🧾🍽️ تشكيلة الأنظمة الداخلية: عيادة/HR/POS/مطعم ──────────────
+test('تشكيلة السيستم: عقد سليم + توجيه المسار الصحيح لكل نظام', async () => {
+    const mods = {
+        'jaola-clinic': (await import('../agents/cloneTemplates/jaolaClinic.js')).jaolaClinic,
+        'jaola-hr': (await import('../agents/cloneTemplates/jaolaHr.js')).jaolaHr,
+        'jaola-pos': (await import('../agents/cloneTemplates/jaolaPos.js')).jaolaPos,
+        'jaola-restaurant-ops': (await import('../agents/cloneTemplates/jaolaRestaurantOps.js')).jaolaRestaurantOps,
+    };
+    for (const [id, build] of Object.entries(mods)) {
+        const c = build();
+        assert.equal(c.id, id);
+        assert.equal(c.track, 'system', id + ' في مسار السيستم');
+        assert.deepEqual(c.files.map(f => f.name), ['index.html', 'app.js', 'styles.css']);
+        assert.ok(c.model.roles.length >= 2 && c.model.flows.length >= 3, id + ' أدوار وتدفّقات حقيقية');
+        const appJs = c.files.find(f => f.name === 'app.js').content;
+        // eslint-disable-next-line no-new-func
+        new Function(appJs); // يُعرب بلا خطأ صياغة
+        const html = c.files.find(f => f.name === 'index.html').content;
+        // كل data-action في الواجهة موصول في التفويض
+        const acts = [...html.matchAll(/data-action="(\w+)"/g)].map(m => m[1]);
+        for (const a of [...new Set(acts)]) {
+            assert.ok(new RegExp("case '" + a + "'").test(appJs), id + ': الفعل ' + a + ' موصول');
+        }
+        assert.ok(html.includes('data-action="login"') && appJs.includes('function login('), id + ' فيه دخول بالأدوار');
+    }
+});
+
+test('توجيه المسار: كل طلب سيستم يجد قالبه الصحيح لا قالب موقع', async () => {
+    const { matchCloneTemplate } = await import('../agents/cloneTemplates/index.js');
+    const bp = { kind: 'webapp' };
+    const cases = [
+        ['نظام عيادة لإدارة المرضى والمواعيد والوصفات', 'jaola-clinic'],
+        ['سيستم موارد بشرية للموظفين والرواتب والحضور', 'jaola-hr'],
+        ['نظام نقطة بيع كاشير للمقهى مع إيصالات', 'jaola-pos'],
+        ['نظام تشغيل مطعم بطاولات وشاشة مطبخ', 'jaola-restaurant-ops'],
+    ];
+    for (const [goal, id] of cases) {
+        const c = matchCloneTemplate(goal, bp, null);
+        assert.equal(c?.id, id, goal + ' → ' + id);
+        assert.equal(c?.track, 'system');
+    }
+    // «مطعم» في مسار موقع يبقى قالب حجز الزوّار لا نظام التشغيل الداخلي
+    const site = matchCloneTemplate('موقع مطعم فاخر مع حجز طاولات', bp, null, { track: 'site' });
+    assert.ok(site && site.track !== 'system', 'موقع المطعم للزوّار ليس نظام تشغيل');
+});

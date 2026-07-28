@@ -27,9 +27,11 @@ const QUICK_BUILDS = {
   ],
   system: [
     { icon: '🏭', labelKey: 'qtErp', promptKey: 'qbErpSys' },
+    { icon: '🏥', labelKey: 'qtClinic', promptKey: 'qbClinic' },
+    { icon: '👥', labelKey: 'qtHr', promptKey: 'qbHr' },
+    { icon: '🧾', labelKey: 'qtPos', promptKey: 'qbPos' },
+    { icon: '🍽️', labelKey: 'qtRestOps', promptKey: 'qbRestOps' },
     { icon: '📦', labelKey: 'qtInventory', promptKey: 'qbInventory' },
-    { icon: '🧾', labelKey: 'qtInvoicing', promptKey: 'qbInvoicing' },
-    { icon: '💼', labelKey: 'qtCrm', promptKey: 'qbCrmSys' },
   ],
 };
 
