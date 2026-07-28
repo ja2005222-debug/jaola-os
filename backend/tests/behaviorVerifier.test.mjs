@@ -22,6 +22,29 @@ test('inlineLocalScripts: يُضمّن السكربت المحلي ويترك ا
     assert.match(out, /https:\/\/cdn\/x\.js/, 'الخارجي يبقى كما هو');
 });
 
+// 🐾⚛️ قوالب React (CDN+Babel): jsdom بلا شبكة عمداً — نُضمِّن react/react-dom/
+// Babel standalone من الحزم المثبَّتة محلياً بدل تركها معلَّقة (React is not
+// defined)، ونحوِّل type="text/babel" عبر @babel/standalone قبل الحقن.
+test('inlineLocalScripts: يستبدل روابط CDN لـ React/ReactDOM/Babel standalone بمحتوى محلي', () => {
+    const html = [
+        '<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>',
+        '<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>',
+        '<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>',
+    ].join('\n');
+    const out = inlineLocalScripts(html, {});
+    assert.ok(!out.includes('unpkg.com'), 'كل روابط CDN المعروفة استُبدلت');
+    assert.match(out, /React/, 'محتوى React المحلي أُدرج');
+});
+
+test('inlineLocalScripts: يحوّل type="text/babel" عبر Babel.transform (classic runtime)', () => {
+    const html = '<script type="text/babel" src="app.js"></script>';
+    const jsx = 'function App(){ return React.createElement("div", null, "hi"); }';
+    const out = inlineLocalScripts(html, { 'app.js': 'const x = <div>hi</div>;' });
+    // مصدر JSX فعلي يتحوّل لاستدعاء React.createElement بلا بقاء وسم JSX خام
+    assert.ok(!out.includes('<div>hi</div>'), 'JSX خام لم يبقَ كما هو — تحوَّل فعلياً');
+    assert.match(out, /React\.createElement/, 'ناتج Babel classic runtime يستخدم React.createElement');
+});
+
 test('analyzeStatic: نموذج متعدّد الأدوار وأحدها غير مبنيّ → fail تغطية الأدوار', () => {
     const checks = analyzeStatic({
         html: '<div id="customer-view"></div>',
@@ -303,4 +326,32 @@ test('extractDefinedFunctions: يجمع الدوال المعرّفة لعقد �
     const fns = extractDefinedFunctions(js);
     for (const n of ['renderAdmin', 'finalizeOrder', 'renderDriverOrders'])
         assert.ok(fns.has(n), `يجمع ${n}`);
+});
+
+// 🐾⚛️ نمط React hooks/مكوّنات: تفكيك مصفوفة (useState) وتفكيك معامل دالة
+// (props) — كانا يُحسبان "دوالاً مُشار إليها وغير معرّفة" زوراً قبل الإصلاح.
+test('extractDefinedFunctions: يجمع تفكيك المصفوفة (const [x, setX] = useState(...))', async () => {
+    const { extractDefinedFunctions } = await import('../agents/behaviorVerifier.js');
+    const js = `const [err, setErr] = useState(false); const [role, setRole] = useState('vet');`;
+    const fns = extractDefinedFunctions(js);
+    for (const n of ['err', 'setErr', 'role', 'setRole']) assert.ok(fns.has(n), `يجمع ${n}`);
+});
+
+test('extractDefinedFunctions: يجمع تفكيك معاملات الدالة ({ prop1, prop2 }) في مكوّنات React', async () => {
+    const { extractDefinedFunctions } = await import('../agents/behaviorVerifier.js');
+    const js = `function Owners({ owners, addOwner }) { addOwner(); } const Pets = ({ pets, onAdd = null }) => { onAdd(); };`;
+    const fns = extractDefinedFunctions(js);
+    for (const n of ['owners', 'addOwner', 'pets', 'onAdd']) assert.ok(fns.has(n), `يجمع ${n}`);
+});
+
+test('detectUndefinedFunctions: مكوّن React كامل (hooks + props) لا يُبلّغ إيجابيات كاذبة', () => {
+    const js = `
+const { useState } = React;
+function Login({ onLogin }) {
+  const [pass, setPass] = useState('');
+  const [err, setErr] = useState(false);
+  function submit() { if (!pass) { setErr(true); return; } setErr(false); onLogin(pass); }
+  return submit;
+}`;
+    assert.deepEqual(detectUndefinedFunctions({ html: '', js }), [], 'hooks + props مُعترَف بها كلها');
 });

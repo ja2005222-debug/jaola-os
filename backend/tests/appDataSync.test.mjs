@@ -108,6 +108,33 @@ test('installDataSync: يكتب jaola-data.js ويحقن الوسم في مجل�
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('installDataSync: يكتشف type="text/babel" في وسم app.js (قوالب React) ويمرّره', () => {
+    const dir = tmp();
+    fs.writeFileSync(path.join(dir, 'index.html'), '<html><body><script type="text/babel" src="app.js"></script></body></html>');
+    const r = installDataSync(dir, { apiBase: 'https://x.y', token: 't.s' });
+    assert.ok(r.ok);
+    const js = fs.readFileSync(path.join(dir, 'jaola-data.js'), 'utf8');
+    assert.ok(js.includes('"text/babel"'), 'نوع app.js text/babel انتقل لكود المزامنة');
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('dataSync: مسار Babel يجلب app.js ويحوّله عبر Babel.transform وينفّذه (تنفيذ حقيقي)', async () => {
+    const { JSDOM } = await import('jsdom');
+    const dom = new JSDOM('<!doctype html><html><body></body></html>', { runScripts: 'dangerously', url: 'https://x.example' });
+    let fetchedUrl = null;
+    dom.window.fetch = (url) => { fetchedUrl = url; return Promise.resolve({ text: () => Promise.resolve('window.__ran = 1;') }); };
+    dom.window.Babel = { transform: (src) => ({ code: src }) }; // محاكاة بسيطة تكفي لإثبات مسار التنفيذ
+    let dispatched = false;
+    dom.window.document.addEventListener('DOMContentLoaded', () => { dispatched = true; });
+
+    dom.window.eval(buildDataSyncJS({ apiBase: '', token: '', appScriptType: 'text/babel' }));
+    await new Promise((r) => setTimeout(r, 50));
+
+    assert.equal(fetchedUrl, 'app.js', 'جلب app.js عبر fetch مباشرة (لا وسم <script> ديناميكي)');
+    assert.equal(dom.window.__ran, 1, 'الكود المحوَّل نُفِّذ فعلياً');
+    assert.ok(dispatched, 'DOMContentLoaded الصناعي أُطلق بعد التنفيذ');
+});
+
 test('installDataSync: تجاوز آمن حين لا يوجد index.html أو مجلّد المشروع', () => {
     const dir = tmp();
     assert.ok(installDataSync(dir, { apiBase: 'https://x.y', token: 't.s' }).skipped, 'لا index.html');

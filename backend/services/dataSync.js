@@ -15,10 +15,12 @@ import fs from 'fs';
 import path from 'path';
 
 const DATA_FILE = 'jaola-data.js';
-const APP_SCRIPT_RE = /<script\s+src=["']app\.js["']\s*>\s*<\/script>/;
+// يطابق <script src="app.js"> بأي ترتيب/وجود سمة type (مثل type="text/babel"
+// لقوالب React عبر Babel standalone) — يُستخرَج نوعها إن وُجدت.
+const APP_SCRIPT_RE = /<script\b[^>]*\bsrc=["']app\.js["'][^>]*>\s*<\/script>/;
 
 /** يبني كود المزامنة (vanilla، بلا اعتماديات، فشل الشبكة صامت دائماً). */
-export function buildDataSyncJS({ apiBase, token, appScript = 'app.js', timeoutMs = 4000 }) {
+export function buildDataSyncJS({ apiBase, token, appScript = 'app.js', appScriptType = '', timeoutMs = 4000 }) {
     const base = String(apiBase || '').replace(/\/$/, '');
     return `// 🗄️ JAOLA Data Sync — تخزين حقيقي متزامن بين الأجهزة (يُولَّد آلياً)
 (function () {
@@ -26,6 +28,7 @@ export function buildDataSyncJS({ apiBase, token, appScript = 'app.js', timeoutM
   var API = ${JSON.stringify(base)};
   var TOKEN = ${JSON.stringify(String(token || ''))};
   var APP = ${JSON.stringify(appScript)};
+  var APP_TYPE = ${JSON.stringify(String(appScriptType || ''))};
   var TIMEOUT_MS = ${Number(timeoutMs) || 4000};
   var origSetItem = localStorage.setItem.bind(localStorage);
   var appLoaded = false;
@@ -36,18 +39,35 @@ export function buildDataSyncJS({ apiBase, token, appScript = 'app.js', timeoutM
 
   function isSynced(k) { return !/_session$/.test(k); }
 
+  function dispatchReady() {
+    document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true, cancelable: true }));
+  }
+
   function loadApp() {
     if (appLoaded) return;
     appLoaded = true;
+    // قوالب React عبر Babel standalone: نجلب مصدر app.js (JSX) ونحوّله نحن
+    // مباشرة عبر Babel.transform بدل الاعتماد على مسح Babel التلقائي لوسوم
+    // <script> مُضافة ديناميكياً بعد تحميل الصفحة (توقيت غير مضمون).
+    if (APP_TYPE === 'text/babel' && window.Babel) {
+      fetch(APP).then(function (r) { return r.text(); }).then(function (src) {
+        // runtime: 'classic' → React.createElement(...) بدل import تلقائي من
+        // "react/jsx-runtime" (يفشل بلا وحدات ES — React هنا global عبر CDN فقط)
+        var compiled = window.Babel.transform(src, { presets: [['react', { runtime: 'classic' }]] }).code;
+        var s = document.createElement('script');
+        s.text = compiled;
+        document.body.appendChild(s);
+        dispatchReady();
+      }).catch(function () {});
+      return;
+    }
     var s = document.createElement('script');
     s.src = APP;
     // app.js يسجّل مستمعه عبر addEventListener('DOMContentLoaded', init) —
     // لكن الحدث الحقيقي يكون قد أُطلق بالفعل قبل أن يصل هذا الطلب (fetch
     // غير حاجب). نبثّ نسخة صناعية من الحدث بعد اكتمال تحميل app.js فعلياً
     // ليُشغَّل init() دون أي تعديل على كود القالب نفسه.
-    s.onload = function () {
-      document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true, cancelable: true }));
-    };
+    s.onload = dispatchReady;
     document.body.appendChild(s);
   }
 
@@ -83,6 +103,14 @@ export function buildDataSyncJS({ apiBase, token, appScript = 'app.js', timeoutM
 `;
 }
 
+/** يستخرج سمة type من وسم <script src="app.js"> الأصلي إن وُجدت (مثل text/babel). */
+function extractAppScriptType(html) {
+    const m = String(html || '').match(APP_SCRIPT_RE);
+    if (!m) return '';
+    const t = m[0].match(/\btype=["']([^"']+)["']/);
+    return t ? t[1] : '';
+}
+
 /** يستبدل <script src="app.js"> بوسم المزامنة — idempotent، وتجاوز آمن إن كان app.js غائباً. */
 export function injectDataSyncTag(html) {
     const out = String(html || '');
@@ -94,15 +122,17 @@ export function injectDataSyncTag(html) {
 /**
  * يثبّت المزامنة في مشروع: يكتب jaola-data.js ويستبدل وسم app.js في
  * index.html فقط (لا يمسّ الصفحات الأخرى). آمن للتكرار مع كل تطبيق/نشر.
+ * يكتشف نوع وسم app.js الأصلي (مثل type="text/babel" لقوالب React) تلقائياً.
  */
 export function installDataSync(projectPath, { apiBase, token }) {
     if (!projectPath || !fs.existsSync(projectPath)) return { error: 'مجلد المشروع غير موجود' };
     const idxPath = path.join(projectPath, 'index.html');
     if (!fs.existsSync(idxPath)) return { skipped: true };
     const html = fs.readFileSync(idxPath, 'utf8');
+    const appScriptType = extractAppScriptType(html);
     const next = injectDataSyncTag(html);
     if (next === html) return { skipped: true }; // مُثبَّت مسبقاً أو app.js غير موجود بالشكل المتوقَّع
-    fs.writeFileSync(path.join(projectPath, DATA_FILE), buildDataSyncJS({ apiBase, token }));
+    fs.writeFileSync(path.join(projectPath, DATA_FILE), buildDataSyncJS({ apiBase, token, appScriptType }));
     fs.writeFileSync(idxPath, next);
     return { ok: true };
 }
