@@ -25,14 +25,16 @@ import { jaolaProperty } from './jaolaProperty.js';
 import { jaolaCinema } from './jaolaCinema.js';
 import { jaolaWorkshop } from './jaolaWorkshop.js';
 import { jaolaGym } from './jaolaGym.js';
+import { jaolaAccounting } from './jaolaAccounting.js';
+import { jaolaSalon } from './jaolaSalon.js';
 
 // كل قوالب jaola المتاحة (تُبنى مرة عند الحاجة)
-const BUILDERS = [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaEvents, jaolaLms, jaolaSchool, jaolaWeather, jaolaCrypto, jaolaCurrency, jaolaErp, jaolaClinic, jaolaHr, jaolaPos, jaolaRestaurantOps, jaolaPharmacy, jaolaProperty, jaolaCinema, jaolaWorkshop, jaolaGym];
+const BUILDERS = [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaEvents, jaolaLms, jaolaSchool, jaolaWeather, jaolaCrypto, jaolaCurrency, jaolaErp, jaolaClinic, jaolaHr, jaolaPos, jaolaRestaurantOps, jaolaPharmacy, jaolaProperty, jaolaCinema, jaolaWorkshop, jaolaGym, jaolaAccounting, jaolaSalon];
 
 // 🧭 مساران منفصلان: «موقع» (لزوّار) و«سيستم داخلي» (أداة عمل) — طلب
 // سيستم لا يُقفز أبداً لقالب متجر (عطل photo-test الحقيقي: طلب نظام
 // مصنع فبُني متجر منتجات). القوالب بلا track تُعامل كمواقع.
-const SYSTEM_INTENT_RE = /سيستم|نظام\s*(?:داخلي|إداري|ادار|إدار|محاسب|عيادة|مركز|موارد|موظف|مطعم|نقطة|كاشير|مبيعات|مخزون|فوترة)|إدارة\s*(?:مصنع|منشأة|منشاة|مستودع|مخزون|ورشة|عيادة|موظف|موارد|مطعم)|ادارة\s*(?:مصنع|منشأة|منشاة|مستودع|مخزون|ورشة|عيادة|موظف|موارد|مطعم|صيدلية|عقار|إيجار|ايجار)|منصرفات|نقطة\s*بيع|كاشير|موارد\s*بشرية|شؤون\s*موظف|رواتب|حضور\s*وانصراف|شاشة\s*مطبخ|تشغيل\s*مطعم|صيدلية|صرف\s*دواء|صلاحية\s*الدواء|إدارة\s*عقارات|ادارة\s*عقارات|تحصيل\s*إيجار|تحصيل\s*ايجار|مستأجر|ورشة\s*سيارات|إصلاح\s*سيارات|صيانة\s*سيارات|بطاقة\s*عمل|بطاقات\s*عمل|قطع\s*غيار|\b(?:erp|pos|hr|kds|pharmacy|garage)\b|internal\s+system|management\s+system/i;
+const SYSTEM_INTENT_RE = /سيستم|نظام\s*(?:داخلي|إداري|ادار|إدار|محاسب|عيادة|مركز|موارد|موظف|مطعم|نقطة|كاشير|مبيعات|مخزون|فوترة)|إدارة\s*(?:مصنع|منشأة|منشاة|مستودع|مخزون|ورشة|عيادة|موظف|موارد|مطعم)|ادارة\s*(?:مصنع|منشأة|منشاة|مستودع|مخزون|ورشة|عيادة|موظف|موارد|مطعم|صيدلية|عقار|إيجار|ايجار)|منصرفات|نقطة\s*بيع|كاشير|موارد\s*بشرية|شؤون\s*موظف|رواتب|حضور\s*وانصراف|شاشة\s*مطبخ|تشغيل\s*مطعم|صيدلية|صرف\s*دواء|صلاحية\s*الدواء|إدارة\s*عقارات|ادارة\s*عقارات|تحصيل\s*إيجار|تحصيل\s*ايجار|مستأجر|ورشة\s*سيارات|إصلاح\s*سيارات|صيانة\s*سيارات|بطاقة\s*عمل|بطاقات\s*عمل|قطع\s*غيار|محاسبة|قيد\s*يومية|قيود\s*يومية|دفتر\s*أستاذ|ميزان\s*مراجعة|دليل\s*حسابات|مدين\s*دائن|\b(?:erp|pos|hr|kds|pharmacy|garage|accounting|ledger)\b|internal\s+system|management\s+system/i;
 
 /** يستنتج المسار من نص الطلب حين لا يُمرَّر صراحة. */
 export function inferTrack(goal = '') {
