@@ -81,6 +81,7 @@ import { recordMessage, recordVisit, readInbox, markSeen, visitSummary, unreadCo
 import { installSiteConnect } from './services/siteConnect.js';
 import { installDataSync } from './services/dataSync.js';
 import { readStore as readAppDataStore, writeKey as writeAppDataKey } from './services/appData.js';
+import { recordError, recentErrors } from './services/errorLog.js';
 import { buildStaticSiteFromSource, buildDashboardPage } from './services/reactPreview.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
 import { getProjectMemory, getDomainModel } from './agents/projectMemory.js';
@@ -90,7 +91,7 @@ import { listClones, getCloneById } from './agents/cloneTemplates/index.js';
 import { verifyBehavior } from './agents/behaviorVerifier.js';
 import { localizeTemplateFiles } from './agents/templateLocalizer.js';
 import { getUserLanguage } from './agents/languageDetector.js';
-import { setDomainModel } from './agents/projectMemory.js';
+import { setDomainModel, setCloneTrack, getCloneTrack } from './agents/projectMemory.js';
 import { mergeProjectModel } from './agents/projectModel.js';
 import { prepareRenderDeploy } from './agents/renderAgent.js';
 import { autoDeployFullStack, fullAutomationReady } from './services/deployAutomation.js';
@@ -125,6 +126,22 @@ if (!process.env.JWT_SECRET) {
     process.exit(1);
 }
 const JWT_SECRET = process.env.JWT_SECRET;
+
+// ─── مراقبة أعطال الإنتاج — عطل لا سجل له لا يمكن إصلاحه ───────────
+// uncaughtException: حالة الخادم غير موثوقة بعده — سجّل ثم اخرج، فيعيد
+// مدير العمليات (Render/Railway) تشغيله نظيفاً بدل الاستمرار في حالة فاسدة.
+process.on('uncaughtException', (err) => {
+    recordError({ source: 'uncaughtException', message: err?.message, stack: err?.stack });
+    console.error('❌ uncaughtException:', err);
+    process.exit(1);
+});
+// unhandledRejection: عادة محصور بطلب واحد (كل مسارات API هنا محميّة بـ
+// try/catch) — سجّل واستمر، فلا يُسقط عطل طلب واحد الخادم بأكمله.
+process.on('unhandledRejection', (reason) => {
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    recordError({ source: 'unhandledRejection', message: err.message, stack: err.stack });
+    console.error('❌ unhandledRejection:', err);
+});
 
 // ─── CORS مضبوط — ليس مفتوحاً للجميع ──────────────────────────────
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,https://jaola-os.onrender.com')
@@ -2012,16 +2029,21 @@ app.post('/api/template/apply', verifyToken, validateProjectOwnership, async (re
                 fs.writeFileSync(idxPath, html);
             }
         } catch { /* اختياري */ }
-        // 3.5) تخزين حقيقي متزامن (jaola-data) — يعمل فوراً حتى في المعاينة
-        // الحيّة، قبل النشر أصلاً (idempotent، تجاوز آمن لو app.js غائباً)
-        try {
-            const publicBase = (process.env.PUBLIC_BACKEND_URL || process.env.RENDER_EXTERNAL_URL
-                || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
-            installDataSync(projectPath, {
-                apiBase: publicBase,
-                token: signBotToken({ u: req.user.username, p: req.activeProject }),
-            });
-        } catch { /* اختياري */ }
+        // 3.5) تخزين حقيقي متزامن (jaola-data) — لقوالب «السيستم» فقط (أدوات
+        // عمل داخلية: عيادة/نقطة بيع/مستودع...)، لا قوالب «الموقع» التعريفية
+        // — فلا نُعرِّض بيانات زوّار لا حاجة لمزامنتها عبر توكن عام. يعمل فوراً
+        // حتى في المعاينة الحيّة، قبل النشر أصلاً (idempotent).
+        try { setCloneTrack(req.user.username, req.activeProject, clone.track); } catch { /* اختياري */ }
+        if (clone.track === 'system') {
+            try {
+                const publicBase = (process.env.PUBLIC_BACKEND_URL || process.env.RENDER_EXTERNAL_URL
+                    || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+                installDataSync(projectPath, {
+                    apiBase: publicBase,
+                    token: signBotToken({ u: req.user.username, p: req.activeProject }),
+                });
+            } catch { /* اختياري */ }
+        }
         // 4) تهيئة النشر (موقع ثابت) — أفضل جهد
         try {
             const projectName = `${req.user.username}-${req.activeProject}`.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 50);
@@ -2101,9 +2123,11 @@ app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) 
             || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
         const botToken = signBotToken({ u: req.user.username, p: req.activeProject });
         installSiteConnect(req.projectPath, { apiBase: publicBase, token: botToken });
-        // 🗄️ تخزين حقيقي متزامن لقوالب السيستم (بديل localStorage وحده) —
+        // 🗄️ تخزين حقيقي متزامن — لقوالب السيستم فقط (نفس قيد وقت التطبيق)،
         // idempotent، وتتجاوز تلقائياً أي مشروع بلا app.js بالشكل المتوقَّع.
-        installDataSync(req.projectPath, { apiBase: publicBase, token: botToken });
+        if (getCloneTrack(req.user.username, req.activeProject) === 'system') {
+            installDataSync(req.projectPath, { apiBase: publicBase, token: botToken });
+        }
     } catch { /* اختياري — النشر يمضي */ }
 
     // 🧭 مشاريع full-stack (فيها دوال api/ حقيقية) تُنشر على Render (خادم دائم،
@@ -2190,6 +2214,12 @@ app.use('/api/billing', createBillingRouter({
 // ─── 🩺 مسارات المشرف: فحص النظام + إدارة الإضافات ──────────────────
 app.get('/api/admin/health', verifyToken, adminOnly, (req, res) => {
     res.json({ success: true, report: runSystemDiagnostics() });
+});
+
+// 🩺 آخر أعطال الإنتاج الحقيقية (استثناءات/رفض Promise/أخطاء خادم عامة) —
+// الأحدث أولاً؛ فارغ يعني عدم وجود سجل عطل حقيقي (لا يعني عدم فحص).
+app.get('/api/admin/errors', verifyToken, adminOnly, (req, res) => {
+    res.json({ success: true, errors: recentErrors(100) });
 });
 
 // 🔌 فحص حيّ لمزوّدي الذكاء: أيّ مفتاح يُقرأ فعلاً (بذيله المقنّع)، هل يقبل
@@ -2632,6 +2662,7 @@ app.post('/api/site/inbox/seen', verifyToken, validateProjectOwnership, (req, re
 // ─── معالج أخطاء عام ────────────────────────────────────────────────
 app.use((err, req, res, next) => {
     console.error('Server Error:', err.message);
+    recordError({ source: 'express', message: err?.message, stack: err?.stack, path: req?.path, method: req?.method });
     res.status(500).json({ error: 'خطأ داخلي في الخادم.' });
 });
 

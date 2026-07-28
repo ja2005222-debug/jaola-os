@@ -210,6 +210,10 @@ export default function LandingPage({ onStart = () => {} }) {
           <div className="flex items-center gap-2"><span className="text-xl">⚡</span><h3 className="font-semibold">JAOLA OS</h3>
             <span className="text-sm text-slate-500 ms-2">{t('ldFooter')}</span>
           </div>
+          <div className="flex items-center gap-4 text-sm text-slate-400">
+            <a href="/privacy" className="hover:text-white transition">{t('legalTabPrivacy')}</a>
+            <a href="/terms" className="hover:text-white transition">{t('legalTabTerms')}</a>
+          </div>
           <div className="flex items-center gap-2 text-sm">
             <div className="w-2 h-2 rounded-full bg-emerald-400 pulse-node" />
             <span className="text-emerald-400">{t('operational')}</span>

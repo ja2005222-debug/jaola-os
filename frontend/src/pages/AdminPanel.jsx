@@ -46,6 +46,7 @@ export default function AdminPanel({ onExit }) {
   return (
     <Shell onExit={onExit} tab={tab} setTab={setTab}>
       {tab === 'health' && <HealthTab api={api} />}
+      {tab === 'errors' && <ErrorsTab api={api} />}
       {tab === 'agents' && <AgentsTab api={api} />}
       {tab === 'files' && <FilesTab api={api} />}
       {tab === 'github' && <GitHubTab api={api} />}
@@ -60,6 +61,7 @@ function Shell({ children, onExit, tab, setTab }) {
   const dir = useI18n(s => s.dir);
   const tabs = [
     { id: 'health', icon: '🩺', label: tr('admTabHealth') },
+    { id: 'errors', icon: '🚨', label: tr('admTabErrors') },
     { id: 'agents', icon: '🤖', label: tr('admTabAgents') },
     { id: 'files', icon: '🗂️', label: tr('admTabFiles') },
     { id: 'github', icon: '🐙', label: tr('admTabGithub') },
@@ -180,6 +182,48 @@ function HealthTab({ api }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── 🚨 أعطال الإنتاج الحقيقية ──────────────────────────────────
+function ErrorsTab({ api }) {
+  const tr = useI18n(s => s.t);
+  const [errors, setErrors] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr('');
+    try { const d = await api('/api/admin/errors'); setErrors(d.errors); }
+    catch (e) { if (e.message !== 'forbidden') setErr(e.message); }
+    setLoading(false);
+  }, [api]);
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <Muted>{tr('admScanning')}</Muted>;
+  if (err) return <Muted>{err}</Muted>;
+
+  return (
+    <div>
+      <Header title={tr('admErrorsTitle')} action={<button onClick={load} style={btnPrimary}>{tr('admRefresh')}</button>} />
+      {!errors?.length ? <Muted>{tr('admNoErrors')}</Muted> : (
+        <div style={{ display: 'grid', gap: 10 }}>
+          {errors.map((e, i) => (
+            <div key={i} style={{ ...cardStyle, padding: 14, borderRight: `3px solid ${S.red}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, color: S.muted, fontWeight: 700 }}>{new Date(e.at).toLocaleString()}</span>
+                <span style={{ fontSize: 11, color: S.blue, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)', padding: '2px 8px', borderRadius: 5, fontWeight: 700 }}>{e.source}</span>
+                {e.path && <code style={{ fontSize: 11, color: S.muted, direction: 'ltr' }}>{e.method} {e.path}</code>}
+              </div>
+              <div style={{ fontSize: 14, color: S.text, marginTop: 6, fontWeight: 700 }}>{e.message}</div>
+              {e.stack && (
+                <pre style={{ fontSize: 11, color: S.muted, marginTop: 6, whiteSpace: 'pre-wrap', direction: 'ltr', textAlign: 'left', maxHeight: 140, overflow: 'auto' }}>{e.stack}</pre>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

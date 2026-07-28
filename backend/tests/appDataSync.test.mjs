@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { readStore, writeKey } from '../services/appData.js';
 import { buildDataSyncJS, injectDataSyncTag, installDataSync } from '../services/dataSync.js';
+import { setCloneTrack, getCloneTrack } from '../agents/projectMemory.js';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'appdata-'));
 
@@ -31,6 +32,15 @@ test('appData: يرفض مفتاحاً غير صالح وقيمة أكبر من 
     assert.ok(writeKey(dir, 'u', 'p', 'bad key!', 'x').error, 'مفتاح بمسافة/رمز خاص مرفوض');
     assert.ok(writeKey(dir, 'u', 'p', 'ok_key', 'x'.repeat(600 * 1024)).error, 'قيمة أكبر من 512KB مرفوضة');
     assert.ok(writeKey(dir, 'u', 'p', 'ok_key', 'fine').ok);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('appData: يرفض أسماء مفاتيح محجوزة (تلوّث النموذج الأولي)', () => {
+    const dir = tmp();
+    assert.ok(writeKey(dir, 'u', 'p', '__proto__', '{"polluted":true}').error);
+    assert.ok(writeKey(dir, 'u', 'p', 'constructor', 'x').error);
+    assert.ok(writeKey(dir, 'u', 'p', 'prototype', 'x').error);
+    assert.deepEqual(readStore(dir, 'u', 'p'), {}, 'لا شيء كُتب فعلاً');
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -85,4 +95,13 @@ test('installDataSync: تجاوز آمن حين لا يوجد index.html أو م
     assert.ok(installDataSync(dir, { apiBase: 'https://x.y', token: 't.s' }).skipped, 'لا index.html');
     assert.ok(installDataSync(path.join(dir, 'nope'), { apiBase: 'https://x.y', token: 't.s' }).error, 'مجلّد غير موجود');
     fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('projectMemory: يسجّل ويسترجع track الكلون المطبَّق (يحدّد أهلية jaola-data)', () => {
+    const user = 'trackuser_' + Date.now(), proj = 'p1';
+    assert.equal(getCloneTrack(user, proj), null, 'مشروع لم يُطبَّق عليه كلون قط → null');
+    setCloneTrack(user, proj, 'system');
+    assert.equal(getCloneTrack(user, proj), 'system');
+    setCloneTrack(user, proj, 'site');
+    assert.equal(getCloneTrack(user, proj), 'site', 'يُحدَّث عند إعادة التطبيق');
 });
