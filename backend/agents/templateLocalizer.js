@@ -1628,6 +1628,31 @@ const DICT = [
     ['سعة النزلاء', 'Guest capacity'],
     ['نزيل', 'Guest'],
     ['إضافة نوع غرفة', 'Add room type'],
+
+    // ── المغسلة (jaola-laundry) ────────────────────────────────────
+    ['نظام إدارة مغسلة', 'Laundry Management System'],
+    ['مغسلة jaola', 'jaola Laundry'],
+    ['طلبات غسيل بقطع متعددة · تتبّع حالة الطلب · إيصالات قابلة للطباعة · تقرير إيرادات.', 'Multi-item laundry orders · order status tracking · printable receipts · revenue report.'],
+    ['مشغّل مغسلة', 'Laundry operator'],
+    ['🔔 طلبات جاهزة للاستلام', '🔔 Orders ready for pickup'],
+    ['طلب غسيل جديد', 'New laundry order'],
+    ['إنشاء الطلب وطباعة الإيصال', 'Create order and print receipt'],
+    ['كتالوج القطع', 'Garment Catalog'],
+    ['اسم الصنف (قميص/بنطلون...)', 'Item name (shirt/pants...)'],
+    ['اسم المغسلة', 'Laundry name'],
+
+    // ── تأجير السيارات (jaola-carrental) ────────────────────────────
+    ['تأجير سيارات jaola', 'jaola Car Rental'],
+    ['استأجر سيارتك بضغطة زر', 'Rent your car with one click'],
+    ['أسطول متنوّع · أسعار يومية واضحة · حجز فوري بتأكيد لحظي.', 'Diverse fleet · clear daily rates · instant booking with instant confirmation.'],
+    ['فئات السيارات', 'Car Categories'],
+    ['→ السيارات', '→ Cars'],
+    ['تاريخ الاستلام', 'Pickup date'],
+    ['تاريخ التسليم', 'Return date'],
+    ['اسم/فئة السيارة', 'Car name/category'],
+    ['السعر لليوم', 'Price per day'],
+    ['عدد السيارات', 'Number of cars'],
+    ['إضافة فئة سيارة', 'Add car category'],
 ];
 
 // بالأطول أولاً — يمنع أن تأكل الترجمة القصيرة جزءاً من سلسلة أطول
