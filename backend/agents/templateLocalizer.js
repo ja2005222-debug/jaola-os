@@ -1693,6 +1693,36 @@ const DICT = [
     ['السعر للساعة', 'Price per hour'],
     ['عدد الوحدات', 'Number of units'],
     ['إضافة مساحة', 'Add space'],
+
+    // ── الدعم الفني (jaola-helpdesk) ─────────────────────────────────
+    ['نظام تذاكر الدعم الفني', 'Helpdesk Ticketing System'],
+    ['دعم jaola الفني', 'jaola Support'],
+    ['تذاكر بأولوية وحالة · ردود متعددة · تعيين وكيل · ملخّص قابل للطباعة · تقرير أداء.', 'Prioritized tickets with status · multiple replies · agent assignment · printable summary · performance report.'],
+    ['وكيل دعم', 'Support agent'],
+    ['مشرف', 'Supervisor'],
+    ['🔥 تذاكر عاجلة مفتوحة', '🔥 Urgent open tickets'],
+    ['تذكرة جديدة', 'New ticket'],
+    ['عنوان المشكلة', 'Problem title'],
+    ['وصف المشكلة', 'Problem description'],
+    ['منخفضة', 'Low'],
+    ['عادية', 'Normal'],
+    ['عاجلة', 'Urgent'],
+    ['فتح التذكرة', 'Open ticket'],
+    ['التذاكر', 'Tickets'],
+    ['→ التذاكر', '→ Tickets'],
+    ['الردود', 'Replies'],
+    ['اكتب ردّاً...', 'Write a reply...'],
+    ['إرسال الرد', 'Send reply'],
+    ['🖨️ طباعة ملخّص التذكرة', '🖨️ Print ticket summary'],
+    ['⬇️ التذاكر CSV', '⬇️ Tickets CSV'],
+    ['اسم فريق الدعم', 'Support team name'],
+
+    // ── استوديو التصوير (jaola-photography) ──────────────────────────
+    ['استوديو jaola للتصوير', 'jaola Photography Studio'],
+    ['لحظاتك تستحق عدسة محترفة', 'Your moments deserve a professional lens'],
+    ['بورتريه · زفاف · منتجات · حجز جلسة فوري بتأكيد لحظي.', 'Portrait · wedding · products · instant session booking with instant confirmation.'],
+    ['باقات التصوير', 'Photography Packages'],
+    ['وقت الجلسة', 'Session time'],
 ];
 
 // بالأطول أولاً — يمنع أن تأكل الترجمة القصيرة جزءاً من سلسلة أطول

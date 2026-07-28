@@ -33,14 +33,16 @@ import { jaolaLaundry } from './jaolaLaundry.js';
 import { jaolaCarRental } from './jaolaCarRental.js';
 import { jaolaLawfirm } from './jaolaLawfirm.js';
 import { jaolaCoworking } from './jaolaCoworking.js';
+import { jaolaHelpdesk } from './jaolaHelpdesk.js';
+import { jaolaPhotography } from './jaolaPhotography.js';
 
 // كل قوالب jaola المتاحة (تُبنى مرة عند الحاجة)
-const BUILDERS = [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaEvents, jaolaLms, jaolaSchool, jaolaWeather, jaolaCrypto, jaolaCurrency, jaolaErp, jaolaClinic, jaolaHr, jaolaPos, jaolaRestaurantOps, jaolaPharmacy, jaolaProperty, jaolaCinema, jaolaWorkshop, jaolaGym, jaolaAccounting, jaolaSalon, jaolaWarehouse, jaolaHotel, jaolaLaundry, jaolaCarRental, jaolaLawfirm, jaolaCoworking];
+const BUILDERS = [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaEvents, jaolaLms, jaolaSchool, jaolaWeather, jaolaCrypto, jaolaCurrency, jaolaErp, jaolaClinic, jaolaHr, jaolaPos, jaolaRestaurantOps, jaolaPharmacy, jaolaProperty, jaolaCinema, jaolaWorkshop, jaolaGym, jaolaAccounting, jaolaSalon, jaolaWarehouse, jaolaHotel, jaolaLaundry, jaolaCarRental, jaolaLawfirm, jaolaCoworking, jaolaHelpdesk, jaolaPhotography];
 
 // 🧭 مساران منفصلان: «موقع» (لزوّار) و«سيستم داخلي» (أداة عمل) — طلب
 // سيستم لا يُقفز أبداً لقالب متجر (عطل photo-test الحقيقي: طلب نظام
 // مصنع فبُني متجر منتجات). القوالب بلا track تُعامل كمواقع.
-const SYSTEM_INTENT_RE = /سيستم|نظام\s*(?:داخلي|إداري|ادار|إدار|محاسب|عيادة|مركز|موارد|موظف|مطعم|نقطة|كاشير|مبيعات|مخزون|فوترة)|إدارة\s*(?:مصنع|منشأة|منشاة|مستودع|مخزون|ورشة|عيادة|موظف|موارد|مطعم)|ادارة\s*(?:مصنع|منشأة|منشاة|مستودع|مخزون|ورشة|عيادة|موظف|موارد|مطعم|صيدلية|عقار|إيجار|ايجار)|منصرفات|نقطة\s*بيع|كاشير|موارد\s*بشرية|شؤون\s*موظف|رواتب|حضور\s*وانصراف|شاشة\s*مطبخ|تشغيل\s*مطعم|صيدلية|صرف\s*دواء|صلاحية\s*الدواء|إدارة\s*عقارات|ادارة\s*عقارات|تحصيل\s*إيجار|تحصيل\s*ايجار|مستأجر|ورشة\s*سيارات|إصلاح\s*سيارات|صيانة\s*سيارات|بطاقة\s*عمل|بطاقات\s*عمل|قطع\s*غيار|محاسبة|قيد\s*يومية|قيود\s*يومية|دفتر\s*أستاذ|ميزان\s*مراجعة|دليل\s*حسابات|مدين\s*دائن|مستودع|مستودعات|مخازن|شحنات|شحنة\s*واردة|شحنة\s*صادرة|استلام\s*شحنة|صرف\s*شحنة|لوجستيات|حركة\s*مخزون|رفوف\s*تخزين|مغسلة|مغاسل|غسيل\s*ملابس|تنظيف\s*جاف|مكتب\s*محاماة|محاماة|أتعاب\s*محاماة|شؤون\s*قانونية|\b(?:erp|pos|hr|kds|pharmacy|garage|accounting|ledger|warehouse|logistics|shipment|laundry|law\s*firm)\b|internal\s+system|management\s+system/i;
+const SYSTEM_INTENT_RE = /سيستم|نظام\s*(?:داخلي|إداري|ادار|إدار|محاسب|عيادة|مركز|موارد|موظف|مطعم|نقطة|كاشير|مبيعات|مخزون|فوترة)|إدارة\s*(?:مصنع|منشأة|منشاة|مستودع|مخزون|ورشة|عيادة|موظف|موارد|مطعم)|ادارة\s*(?:مصنع|منشأة|منشاة|مستودع|مخزون|ورشة|عيادة|موظف|موارد|مطعم|صيدلية|عقار|إيجار|ايجار)|منصرفات|نقطة\s*بيع|كاشير|موارد\s*بشرية|شؤون\s*موظف|رواتب|حضور\s*وانصراف|شاشة\s*مطبخ|تشغيل\s*مطعم|صيدلية|صرف\s*دواء|صلاحية\s*الدواء|إدارة\s*عقارات|ادارة\s*عقارات|تحصيل\s*إيجار|تحصيل\s*ايجار|مستأجر|ورشة\s*سيارات|إصلاح\s*سيارات|صيانة\s*سيارات|بطاقة\s*عمل|بطاقات\s*عمل|قطع\s*غيار|محاسبة|قيد\s*يومية|قيود\s*يومية|دفتر\s*أستاذ|ميزان\s*مراجعة|دليل\s*حسابات|مدين\s*دائن|مستودع|مستودعات|مخازن|شحنات|شحنة\s*واردة|شحنة\s*صادرة|استلام\s*شحنة|صرف\s*شحنة|لوجستيات|حركة\s*مخزون|رفوف\s*تخزين|مغسلة|مغاسل|غسيل\s*ملابس|تنظيف\s*جاف|مكتب\s*محاماة|محاماة|أتعاب\s*محاماة|شؤون\s*قانونية|تذاكر\s*دعم|دعم\s*فني|مركز\s*مساعدة|\b(?:erp|pos|hr|kds|pharmacy|garage|accounting|ledger|warehouse|logistics|shipment|laundry|law\s*firm|helpdesk|ticketing)\b|internal\s+system|management\s+system/i;
 
 /** يستنتج المسار من نص الطلب حين لا يُمرَّر صراحة. */
 export function inferTrack(goal = '') {
