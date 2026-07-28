@@ -51,6 +51,15 @@ const STRINGS = {
   stop: { en: 'Stop', ar: 'إيقاف', es: 'Detener', fr: 'Arrêter', de: 'Stopp', tr: 'Durdur', pt: 'Parar', ur: 'روکیں' },
   quickLaunch: { en: 'Quick Launch', ar: 'إطلاق سريع', es: 'Lanzamiento rápido', fr: 'Lancement rapide', de: 'Schnellstart', tr: 'Hızlı Başlat', pt: 'Início rápido', ur: 'فوری آغاز' },
 
+  // sidebar navigation
+  navProjects: { en: 'Projects', ar: 'المشاريع', es: 'Proyectos', fr: 'Projets', de: 'Projekte', tr: 'Projeler', pt: 'Projetos', ur: 'پروجیکٹس' },
+  navAiCompany: { en: 'AI Company', ar: 'شركة الذكاء الاصطناعي', es: 'Empresa de IA', fr: 'Entreprise IA', de: 'KI-Firma', tr: 'AI Şirketi', pt: 'Empresa de IA', ur: 'اے آئی کمپنی' },
+  navKnowledge: { en: 'Knowledge', ar: 'المعرفة', es: 'Conocimiento', fr: 'Connaissances', de: 'Wissen', tr: 'Bilgi', pt: 'Conhecimento', ur: 'نالج' },
+  navMarketplace: { en: 'Marketplace', ar: 'السوق', es: 'Mercado', fr: 'Marché', de: 'Marktplatz', tr: 'Pazar Yeri', pt: 'Mercado', ur: 'مارکیٹ پلیس' },
+  navDeployments: { en: 'Deployments', ar: 'النشرات', es: 'Despliegues', fr: 'Déploiements', de: 'Bereitstellungen', tr: 'Dağıtımlar', pt: 'Implantações', ur: 'ڈیپلائے منٹس' },
+  navAnalytics: { en: 'Analytics', ar: 'التحليلات', es: 'Analíticas', fr: 'Analytique', de: 'Analytik', tr: 'Analitik', pt: 'Análises', ur: 'تجزیات' },
+  navCinema: { en: 'Cinema Studio', ar: 'استوديو السينما', es: 'Estudio de Cine', fr: 'Studio Cinéma', de: 'Kino-Studio', tr: 'Sinema Stüdyosu', pt: 'Estúdio de Cinema', ur: 'سنیما اسٹوڈیو' },
+
   // quick actions
   qaColors: { en: 'Change colors', ar: 'غيّر الألوان', es: 'Cambiar colores', fr: 'Changer les couleurs', de: 'Farben ändern', tr: 'Renkleri değiştir', pt: 'Mudar cores', ur: 'رنگ تبدیل کریں' },
   qaSection: { en: 'Add a section', ar: 'أضف قسماً', es: 'Añadir sección', fr: 'Ajouter une section', de: 'Abschnitt hinzufügen', tr: 'Bölüm ekle', pt: 'Adicionar seção', ur: 'سیکشن شامل کریں' },
@@ -67,7 +76,17 @@ const STRINGS = {
   // mobile tabs
   mMission: { en: 'Mission', ar: 'المهمة', es: 'Misión', fr: 'Mission', de: 'Mission', tr: 'Görev', pt: 'Missão', ur: 'مشن' },
 
+  // boot screen
+  bootInit: { en: 'Initializing JAOLA OS...', ar: '...تهيئة JAOLA OS', es: 'Iniciando JAOLA OS...', fr: 'Initialisation de JAOLA OS...', de: 'JAOLA OS wird initialisiert...', tr: 'JAOLA OS başlatılıyor...', pt: 'Inicializando o JAOLA OS...', ur: '...JAOLA OS شروع ہو رہا ہے' },
+  bootConnect: { en: 'Connecting AI Company...', ar: '...الاتصال بشركة الذكاء الاصطناعي', es: 'Conectando con la empresa de IA...', fr: "Connexion à l'entreprise IA...", de: 'Verbindung zur KI-Firma...', tr: 'AI Şirketine bağlanılıyor...', pt: 'Conectando à empresa de IA...', ur: '...اے آئی کمپنی سے رابطہ' },
+  bootKnowledge: { en: 'Loading Knowledge Base...', ar: '...تحميل قاعدة المعرفة', es: 'Cargando base de conocimiento...', fr: 'Chargement de la base de connaissances...', de: 'Wissensdatenbank wird geladen...', tr: 'Bilgi tabanı yükleniyor...', pt: 'Carregando base de conhecimento...', ur: '...نالج بیس لوڈ ہو رہا ہے' },
+  bootHiring: { en: 'Hiring AI Agents...', ar: '...توظيف وكلاء الذكاء الاصطناعي', es: 'Contratando agentes de IA...', fr: "Recrutement d'agents IA...", de: 'KI-Agenten werden eingestellt...', tr: 'AI ajanları işe alınıyor...', pt: 'Contratando agentes de IA...', ur: '...اے آئی ایجنٹس کی بھرتی' },
+  bootSync: { en: 'Synchronizing Mission Control...', ar: '...مزامنة مركز القيادة', es: 'Sincronizando el Control de Misión...', fr: 'Synchronisation du contrôle de mission...', de: 'Missionskontrolle wird synchronisiert...', tr: 'Görev Kontrolü senkronize ediliyor...', pt: 'Sincronizando o Controle de Missão...', ur: '...مشن کنٹرول کی مطابقت' },
+  bootTwin: { en: 'Activating Digital Twin...', ar: '...تفعيل التوأم الرقمي', es: 'Activando el gemelo digital...', fr: 'Activation du jumeau numérique...', de: 'Digitaler Zwilling wird aktiviert...', tr: 'Dijital İkiz etkinleştiriliyor...', pt: 'Ativando o gêmeo digital...', ur: '...ڈیجیٹل ٹوئن فعال ہو رہا ہے' },
+  bootReady: { en: 'Mission Control Ready ✓', ar: 'مركز القيادة جاهز ✓', es: 'Control de Misión listo ✓', fr: 'Contrôle de mission prêt ✓', de: 'Missionskontrolle bereit ✓', tr: 'Görev Kontrolü hazır ✓', pt: 'Controle de Missão pronto ✓', ur: 'مشن کنٹرول تیار ✓' },
+
   // login
+  authTagline: { en: 'Autonomous Software Engineering', ar: 'هندسة برمجيات مستقلّة بالذكاء الاصطناعي', es: 'Ingeniería de software autónoma', fr: 'Ingénierie logicielle autonome', de: 'Autonome Softwareentwicklung', tr: 'Otonom Yazılım Mühendisliği', pt: 'Engenharia de software autônoma', ur: 'خودمختار سافٹ ویئر انجینئرنگ' },
   login: { en: 'Login', ar: 'دخول', es: 'Entrar', fr: 'Connexion', de: 'Anmelden', tr: 'Giriş', pt: 'Entrar', ur: 'لاگ ان' },
   register: { en: 'Sign up', ar: 'حساب جديد', es: 'Registrarse', fr: "S'inscrire", de: 'Registrieren', tr: 'Kayıt ol', pt: 'Cadastrar', ur: 'رجسٹر' },
   username: { en: 'Username', ar: 'اسم المستخدم', es: 'Usuario', fr: "Nom d'utilisateur", de: 'Benutzername', tr: 'Kullanıcı adı', pt: 'Usuário', ur: 'صارف نام' },
@@ -354,12 +373,16 @@ const STRINGS = {
   currentPoint: { en: '● Current', ar: '● الحالي' },
   restoring: { en: 'Restoring...', ar: 'جاري الاسترجاع...' },
   restore: { en: '⏪ Restore', ar: '⏪ استرجاع' },
+  unitHour: { en: 'h', ar: 'س' },
   unitMin: { en: 'm', ar: 'د' },
   unitSec: { en: 's', ar: 'ث' },
   // Site health (mobile ⋯ card)
   siteHealth: { en: 'Site health', ar: 'حالة الموقع', es: 'Estado del sitio', fr: 'État du site', de: 'Website-Status', tr: 'Site durumu', pt: 'Estado do site', ur: 'سائٹ کی حالت' },
   mBuilds: { en: 'Builds', ar: 'عمليات البناء', es: 'Compilaciones', fr: 'Constructions', de: 'Builds', tr: 'Yapılar', pt: 'Builds', ur: 'بلڈز' },
   mEdits: { en: 'Edits', ar: 'التعديلات', es: 'Ediciones', fr: 'Modifications', de: 'Änderungen', tr: 'Düzenlemeler', pt: 'Edições', ur: 'ترامیم' },
+  mSeo: { en: 'SEO', ar: 'SEO' },
+  mSecurity: { en: 'Security', ar: 'الأمان' },
+  mQuality: { en: 'Quality', ar: 'الجودة' },
   noMetricsYet: { en: 'Build your site to see its scores.', ar: 'ابنِ موقعك لتظهر درجاته.', es: 'Crea tu sitio para ver sus puntuaciones.', fr: 'Créez votre site pour voir ses scores.', de: 'Erstellen Sie Ihre Website, um die Werte zu sehen.', tr: 'Puanları görmek için sitenizi oluşturun.', pt: 'Crie seu site para ver as pontuações.', ur: 'اسکور دیکھنے کے لیے اپنی سائٹ بنائیں۔' },
 
   // Mission progress
@@ -370,6 +393,22 @@ const STRINGS = {
   phaseDeploy: { en: 'Deploying', ar: 'النشر' },
   inProgress: { en: 'In progress', ar: 'جاري' },
   preparingMission: { en: '⚡ Preparing mission...', ar: '⚡ جاري تجهيز المهمة...' },
+
+  // Digital Twin panel
+  digitalTwin: { en: 'Digital Twin', ar: 'التوأم الرقمي' },
+  statusOnline: { en: 'ONLINE', ar: 'متصل' },
+  statusOffline: { en: 'OFFLINE', ar: 'غير متصل' },
+  uptimeLabel: { en: 'Uptime', ar: 'مدة التشغيل' },
+  metricCpu: { en: 'CPU', ar: 'المعالج' },
+  metricRam: { en: 'RAM', ar: 'الذاكرة' },
+  metricLatency: { en: 'Latency', ar: 'زمن الاستجابة' },
+  filesLabel: { en: 'Files', ar: 'الملفات' },
+  noPreviewYet: { en: 'Nothing built yet', ar: 'لم يُبنَ شيء بعد' },
+  noPreviewYetHint: { en: 'Describe what you want in the chat and your live preview will appear here.', ar: 'صف ما تريده في المحادثة، وستظهر المعاينة الحيّة هنا.' },
+  linesLabel: { en: 'Lines', ar: 'الأسطر' },
+  workspaceLabel: { en: 'Workspace', ar: 'مساحة العمل' },
+  projectLabel: { en: 'PROJECT', ar: 'المشروع' },
+  fileNotFound: { en: 'File not found', ar: 'الملف غير موجود' },
   // مراحل آلة الحالات الحقيقية — من أحداث project_state الموحدة
   mstate_planning: { en: 'Planning the mission', ar: 'تخطيط المهمة' },
   mstate_architecture: { en: 'Designing the architecture', ar: 'تصميم المعمارية' },

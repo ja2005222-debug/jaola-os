@@ -1,19 +1,13 @@
 import { useEffect, useState } from 'react'
 
 import { motion } from 'framer-motion'
+import { useI18n } from '../i18n.js'
 
-const messages = [
-  'Initializing JAOLA OS...',
-  'Connecting AI Company...',
-  'Loading Knowledge Base...',
-  'Hiring AI Agents...',
-  'Synchronizing Mission Control...',
-  'Activating Digital Twin...',
-  'Mission Control Ready.',
-]
+const messageKeys = ['bootInit', 'bootConnect', 'bootKnowledge', 'bootHiring', 'bootSync', 'bootTwin', 'bootReady']
 
 export default function BootSequence({ onDone = () => {} }) {
-  
+  const t = useI18n(s => s.t)
+  const messages = messageKeys.map(t)
   const [active, setActive] = useState(0)
 
   useEffect(() => {
@@ -31,7 +25,7 @@ export default function BootSequence({ onDone = () => {} }) {
         <motion.div initial={{ opacity:0, scale:0.96 }} animate={{ opacity:1, scale:1 }} className="rounded-3xl glass p-8">
           <div className="mx-auto mb-8 h-16 w-16 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-500 pulse-node flex items-center justify-center text-3xl">⚡</div>
           <h1 className="text-center text-3xl font-semibold tracking-tight">JAOLA OS</h1>
-          <p className="mt-3 text-center text-sm text-slate-400">Autonomous Software Engineering Company</p>
+          <p className="mt-3 text-center text-sm text-slate-400">{t('authTagline')}</p>
           <div className="mt-10 space-y-3 font-mono text-sm">
             {messages.map((msg, i) => (
               <motion.div key={msg} initial={{ opacity:0, x:-8 }} animate={{ opacity: i <= active ? 1 : 0.25, x: i <= active ? 0 : -8 }}

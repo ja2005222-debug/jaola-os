@@ -24,7 +24,7 @@ export default function App() {
     else setPage('landing')
   }
 
-  if (page === 'boot') return <BootSequence onDone={() => navigate('/dashboard')} />
+  if (page === 'boot') return <BootSequence onDone={() => { sessionStorage.setItem('booted', '1'); navigate('/dashboard') }} />
   if (page === 'admin') return <AdminPanel onExit={() => navigate('/dashboard')} />
   if (page === 'billing') return <BillingPage onExit={() => navigate('/dashboard')} />
   if (page === 'dashboard') return <Dashboard />
