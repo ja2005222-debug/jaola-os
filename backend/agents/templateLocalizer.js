@@ -1723,6 +1723,39 @@ const DICT = [
     ['بورتريه · زفاف · منتجات · حجز جلسة فوري بتأكيد لحظي.', 'Portrait · wedding · products · instant session booking with instant confirmation.'],
     ['باقات التصوير', 'Photography Packages'],
     ['وقت الجلسة', 'Session time'],
+
+    // ── أسطول المركبات (jaola-fleet) ─────────────────────────────────
+    ['نظام إدارة أسطول المركبات', 'Fleet Management System'],
+    ['أسطول jaola', 'jaola Fleet'],
+    ['مركبات بسائقين · تنبيه استحقاق صيانة · إيصال صيانة قابل للطباعة · تقرير تكاليف.', 'Vehicles with drivers · maintenance-due alerts · printable service receipt · cost report.'],
+    ['مدير أسطول', 'Fleet manager'],
+    ['🔧 مركبات تستحق صيانة', '🔧 Vehicles due for maintenance'],
+    ['المركبات', 'Vehicles'],
+    ['اسم السائق', 'Driver name'],
+    ['العداد الحالي (كم)', 'Current odometer (km)'],
+    ['إضافة مركبة', 'Add vehicle'],
+    ['نوع الصيانة (زيت/إطارات...)', 'Maintenance type (oil/tires...)'],
+    ['العداد عند الصيانة', 'Odometer at service'],
+    ['تسجيل وطباعة الإيصال', 'Register and print receipt'],
+    ['سجل الصيانة', 'Maintenance Log'],
+    ['⬇️ سجل الصيانة CSV', '⬇️ Maintenance Log CSV'],
+    ['تكلفة الصيانة آخر ٧ عمليات', 'Maintenance cost — last 7 records'],
+    ['اسم الأسطول', 'Fleet name'],
+    ['مسافة فاصل الصيانة (كم)', 'Maintenance interval distance (km)'],
+    ['سائق', 'Driver'],
+    ['الموديل', 'Model'],
+
+    // ── الدروس الخصوصية (jaola-tutoring) ─────────────────────────────
+    ['منصّة jaola للدروس الخصوصية', 'jaola Private Tutoring'],
+    ['مدرّسك الخاص على بعد حجز واحد', 'Your private tutor is one booking away'],
+    ['مواد متنوّعة · مدرّسون متخصّصون · حجز حصة فوري بتأكيد لحظي.', 'Diverse subjects · specialized tutors · instant session booking with instant confirmation.'],
+    ['المواد المتاحة', 'Available Subjects'],
+    ['وقت الحصة', 'Session time'],
+    ['اسم الطالب', 'Student name'],
+    ['السعر للحصة', 'Price per session'],
+    ['إضافة مادة', 'Add subject'],
+    ['اسم المادة', 'Subject name'],
+    ['اسم المدرّس', 'Teacher name'],
 ];
 
 // بالأطول أولاً — يمنع أن تأكل الترجمة القصيرة جزءاً من سلسلة أطول
