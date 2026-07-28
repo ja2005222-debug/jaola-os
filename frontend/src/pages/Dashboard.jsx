@@ -24,6 +24,7 @@ const QUICK_BUILDS = {
     { icon: '✈️', labelKey: 'qtTravel', promptKey: 'qbTravel' },
     { icon: '💪', labelKey: 'qtGym', promptKey: 'qbGym' },
     { icon: '💇', labelKey: 'qtSalon', promptKey: 'qbSalon' },
+    { icon: '🏨', labelKey: 'qtHotel', promptKey: 'qbHotel' },
     { icon: '🎓', labelKey: 'qtLms', promptKey: 'qbLms' },
     { icon: '🛒', labelKey: 'qtMarketplace', promptKey: 'qbMarketplace' },
     { icon: '🚕', labelKey: 'qtTaxi', promptKey: 'qbTaxi' },
