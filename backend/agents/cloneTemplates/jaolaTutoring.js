@@ -259,7 +259,7 @@ document.addEventListener('DOMContentLoaded', init);
         nameEn: 'Private Tutoring',
         description: 'موقع دروس خصوصية للزوّار: مواد بمدرّسين وسعر للحصة، اختيار تاريخ ووقت الحصة مع منع حجز وقت محجوز مسبقاً لدى نفس المدرّس، تأكيد حجز قابل للطباعة، ولوحة إدارة للمواد والحجوزات.',
         descriptionEn: 'Visitor-facing private tutoring site: subjects with assigned teachers and a per-session rate, date and time slot picking with double-booking prevention for the same teacher, a printable reservation confirmation, and an admin panel for subjects and reservations.',
-        keywords: ['دروس خصوصية', 'درس خصوصي', 'معلم خصوصي', 'مدرّس خصوصي', 'حجز حصة تقوية', 'تقوية دراسية', 'منصّة دروس', 'private tutoring', 'tutor booking', 'tutoring session', 'private lessons', 'online tutor'],
+        keywords: ['دروس خصوصية', 'درس خصوصي', 'معلم خصوصي', 'مدرّس خصوصي', 'بمدرّسين', 'حجز حصة تقوية', 'تقوية دراسية', 'منصّة دروس', 'private tutoring', 'tutor booking', 'tutoring session', 'private lessons', 'online tutor'],
         model: {
             roles: [{ name: 'طالب' }, { name: 'إدارة' }],
             entities: [{ name: 'مادة' }, { name: 'حجز' }],

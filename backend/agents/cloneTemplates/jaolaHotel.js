@@ -269,7 +269,7 @@ document.addEventListener('DOMContentLoaded', init);
         nameEn: 'Hotel Booking',
         description: 'موقع فندق للزوّار: أنواع غرف بأسعار لليلة، اختيار تاريخ الوصول والمغادرة مع حساب الليالي والسعر تلقائياً ومنع الحجز عند اكتمال الغرف، تأكيد حجز قابل للطباعة، ولوحة إدارة للغرف والحجوزات.',
         descriptionEn: 'Visitor-facing hotel site: room types with nightly rates, check-in/check-out date picking with automatic nights and total calculation and over-booking prevention, a printable reservation confirmation, and an admin panel for rooms and reservations.',
-        keywords: ['فندق', 'فنادق', 'حجز فندق', 'حجز غرف', 'غرفة فندقية', 'نزيل', 'تشيك ان', 'تشك ان', 'وصول ومغادرة', 'ليالي الإقامة', 'استراحة', 'شقق فندقية', 'hotel', 'hotel booking', 'room booking', 'check-in check-out', 'nights stay', 'resort'],
+        keywords: ['فندق', 'فنادق', 'حجز فندق', 'حجز غرف', 'غرفة فندقية', 'نزيل', 'تشيك ان', 'تشك ان', 'وصول ومغادرة', 'الوصول والمغادرة', 'أسعار لليلة', 'ليالي الإقامة', 'استراحة', 'شقق فندقية', 'hotel', 'hotel booking', 'room booking', 'check-in check-out', 'nights stay', 'resort'],
         model: {
             roles: [{ name: 'نزيل' }, { name: 'إدارة' }],
             entities: [{ name: 'نوع غرفة' }, { name: 'حجز' }],

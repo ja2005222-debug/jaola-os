@@ -2,7 +2,7 @@
  * 💇 jaola-salon — موقع صالون تجميل/حلاقة بحجز مواعيد (track: site — لزوّار).
  *
  * خدمات بأسعار ومدد، أخصّائيون، حجز موعد (خدمة + أخصائي + وقت) بتأكيد
- * وتذكرة قابلة للطباعة، ولوحة إدارة (خدمات/فريق/مواعيد). أدوار: زائر +
+ * وتذكرة قابلة للطباعة، ولوحة إدارة (خدمات/فريق/مواعيد). أدوار: عميل +
  * إدارة. بلا اعتماد خارجي. الحالة في localStorage (jsal_*).
  */
 import { sharedSystemStyles } from './jaolaClinic.js';
@@ -256,7 +256,7 @@ document.addEventListener('DOMContentLoaded', init);
         descriptionEn: 'Visitor-facing salon/barber site: services with prices and durations, staff specialists, appointment booking (service + specialist + time) with conflict prevention and a printable appointment ticket, plus an admin panel for services, team and appointments.',
         keywords: ['صالون', 'صالون تجميل', 'حلاقة', 'حلاق', 'كوافير', 'تجميل', 'مكياج', 'حجز موعد صالون', 'حجز مواعيد', 'مواعيد', 'خدمات تجميل', 'سبا', 'salon', 'barber', 'beauty', 'hair', 'makeup', 'spa', 'booking appointment', 'stylist'],
         model: {
-            roles: [{ name: 'زائر' }, { name: 'إدارة' }],
+            roles: [{ name: 'عميل' }, { name: 'إدارة' }],
             entities: [{ name: 'خدمة' }, { name: 'أخصائي' }, { name: 'موعد' }],
             flows: [{ name: 'تصفّح الخدمات' }, { name: 'حجز موعد (خدمة + أخصائي + وقت) مع منع التعارض' }, { name: 'طباعة تذكرة الموعد' }, { name: 'إدارة الخدمات والفريق والمواعيد' }],
         },

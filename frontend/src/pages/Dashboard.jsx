@@ -1408,7 +1408,7 @@ export default function Dashboard() {
       <div className="sec-title" style={{ color:S.muted, marginBottom:8 }}>
         {buildTrack === 'system' ? t('qlSystem') : t('qlSite')}
       </div>
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, maxHeight:216, overflowY:'auto', paddingInlineEnd:2 }}>
         {QUICK_BUILDS[buildTrack].map((b, i) => (
           <button key={i} onClick={() => { setBuildTrack(buildTrack); setPrompt(t(b.promptKey)); textareaRef.current?.focus(); }}
             className="stat-tile"

@@ -268,7 +268,7 @@ document.addEventListener('DOMContentLoaded', init);
         nameEn: 'Car Rental',
         description: 'موقع تأجير سيارات للزوّار: فئات سيارات بسعر لليوم، اختيار تاريخ الاستلام والتسليم مع حساب عدد الأيام والسعر تلقائياً ومنع الحجز عند اكتمال السيارات، تأكيد حجز قابل للطباعة، ولوحة إدارة للسيارات والحجوزات.',
         descriptionEn: 'Visitor-facing car rental site: car categories with daily rates, pickup/return date picking with automatic day count and total calculation and over-booking prevention, a printable reservation confirmation, and an admin panel for cars and reservations.',
-        keywords: ['تأجير سيارات', 'تأجير سيارة', 'استئجار سيارة', 'إيجار سيارات', 'ايجار سيارات', 'حجز سيارة', 'استلام وتسليم سيارة', 'مستأجر سيارة', 'أسطول سيارات', 'car rental', 'rent a car', 'car hire', 'pickup and return', 'rental fleet'],
+        keywords: ['تأجير سيارات', 'تأجير سيارة', 'استئجار سيارة', 'إيجار سيارات', 'ايجار سيارات', 'حجز سيارة', 'استلام وتسليم سيارة', 'الاستلام والتسليم', 'سعر لليوم', 'مستأجر سيارة', 'أسطول سيارات', 'car rental', 'rent a car', 'car hire', 'pickup and return', 'rental fleet'],
         model: {
             roles: [{ name: 'مستأجر' }, { name: 'إدارة' }],
             entities: [{ name: 'فئة سيارة' }, { name: 'حجز' }],
