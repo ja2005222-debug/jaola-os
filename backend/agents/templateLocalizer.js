@@ -1756,6 +1756,36 @@ const DICT = [
     ['إضافة مادة', 'Add subject'],
     ['اسم المادة', 'Subject name'],
     ['اسم المدرّس', 'Teacher name'],
+
+    // ── العيادة البيطرية (jaola-vetclinic) ───────────────────────────
+    ['نظام عيادة بيطرية', 'Veterinary Clinic System'],
+    ['عيادة jaola البيطرية', 'jaola Veterinary Clinic'],
+    ['أصحاب حيوانات وحيواناتهم · زيارات بتشخيص وتطعيم · سجل تطعيمات · فاتورة كشف قابلة للطباعة.', 'Pet owners and their pets · visits with diagnosis and vaccination · vaccination log · printable examination invoice.'],
+    ['طبيب بيطري', 'Veterinarian'],
+    ['💉 حيوانات تحتاج تطعيماً قريباً', '💉 Pets due for vaccination soon'],
+    ['أصحاب الحيوانات', 'Pet Owners'],
+    ['اسم صاحب الحيوان', 'Pet owner name'],
+    ['إضافة صاحب', 'Add owner'],
+    ['الحيوانات الأليفة', 'Pets'],
+    ['اسم الحيوان', 'Pet name'],
+    ['النوع (قط/كلب...)', 'Species (cat/dog...)'],
+    ['العمر (سنوات)', 'Age (years)'],
+    ['إضافة حيوان', 'Add pet'],
+    ['🩺 تسجيل زيارة', '🩺 Record visit'],
+    ['تسجيل زيارة', 'Record visit'],
+    ['→ الحيوانات', '→ Pets'],
+    ['تطعيم أُعطي (اختياري)', 'Vaccine given (optional)'],
+    ['اسم التطعيم', 'Vaccine name'],
+
+    // ── تنظيف المنازل (jaola-cleaning) ───────────────────────────────
+    ['خدمات jaola لتنظيف المنازل', 'jaola Home Cleaning Services'],
+    ['تنظيف jaola', 'jaola Cleaning'],
+    ['منزلك نظيف بضغطة زر', 'Your home, spotless with one click'],
+    ['فرق محترفة · معدّات حديثة · حجز موعد فوري بتأكيد لحظي.', 'Professional teams · modern equipment · instant appointment booking with instant confirmation.'],
+    ['باقات التنظيف', 'Cleaning Packages'],
+    ['تاريخ الزيارة', 'Visit date'],
+    ['وقت الزيارة', 'Visit time'],
+    ['الحي/الشارع', 'Neighborhood/street'],
 ];
 
 // بالأطول أولاً — يمنع أن تأكل الترجمة القصيرة جزءاً من سلسلة أطول
