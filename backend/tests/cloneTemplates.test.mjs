@@ -330,3 +330,31 @@ test('توجيه المسار: كل طلب سيستم يجد قالبه الصح
     const site = matchCloneTemplate('موقع مطعم فاخر مع حجز طاولات', bp, null, { track: 'site' });
     assert.ok(site && site.track !== 'system', 'موقع المطعم للزوّار ليس نظام تشغيل');
 });
+
+// ─── 💊🏢🎬 توسعة: صيدلية + إدارة عقارات + موقع سينما ─────────────────
+test('توسعة القوالب: صيدلية وعقارات (سيستم) وسينما (موقع) — عقد سليم وتوجيه صحيح', async () => {
+    const { matchCloneTemplate } = await import('../agents/cloneTemplates/index.js');
+    const specs = [
+        ['../agents/cloneTemplates/jaolaPharmacy.js', 'jaolaPharmacy', 'jaola-pharmacy', 'system', 'نظام صيدلية لصرف الأدوية بوصفة وتنبيه انتهاء الصلاحية'],
+        ['../agents/cloneTemplates/jaolaProperty.js', 'jaolaProperty', 'jaola-property', 'system', 'نظام إدارة عقارات وتحصيل إيجار من المستأجرين'],
+        ['../agents/cloneTemplates/jaolaCinema.js', 'jaolaCinema', 'jaola-cinema', 'site', 'موقع سينما لحجز تذاكر الأفلام واختيار المقاعد'],
+    ];
+    for (const [path, fn, id, track, goal] of specs) {
+        const build = (await import(path))[fn];
+        const c = build();
+        assert.equal(c.id, id);
+        assert.equal(c.track, track, id + ' في المسار الصحيح');
+        assert.deepEqual(c.files.map(f => f.name), ['index.html', 'app.js', 'styles.css']);
+        const appJs = c.files.find(f => f.name === 'app.js').content;
+        // eslint-disable-next-line no-new-func
+        new Function(appJs);
+        const html = c.files.find(f => f.name === 'index.html').content;
+        for (const act of [...new Set([...html.matchAll(/data-action="(\w+)"/g)].map(m => m[1]))]) {
+            assert.ok(new RegExp("case '" + act + "'").test(appJs), id + ': ' + act + ' موصول');
+        }
+        // التوجيه: طلب النوع يجد قالبه (بلا track صريح — من الكلمات)
+        const matched = matchCloneTemplate(goal, { kind: 'webapp' }, null);
+        assert.equal(matched?.id, id, goal + ' → ' + id);
+        assert.equal(matched?.track, track);
+    }
+});
