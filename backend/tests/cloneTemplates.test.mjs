@@ -381,3 +381,44 @@ test('دفعة ٢: ورشة (سيستم) ونادٍ رياضي (موقع) — ع
         assert.equal(matched?.id, id, goal + ' → ' + id);
     }
 });
+
+// ─── 📒💇 دفعة ٣: محاسبة (سيستم) + صالون (موقع) ─────────────────────
+test('دفعة ٣: محاسبة (سيستم) وصالون (موقع) — عقد سليم وتوجيه صحيح', async () => {
+    const { matchCloneTemplate } = await import('../agents/cloneTemplates/index.js');
+    const specs = [
+        ['../agents/cloneTemplates/jaolaAccounting.js', 'jaolaAccounting', 'jaola-accounting', 'system', 'نظام محاسبة بقيود يومية ودفتر أستاذ وميزان مراجعة'],
+        ['../agents/cloneTemplates/jaolaSalon.js', 'jaolaSalon', 'jaola-salon', 'site', 'موقع صالون تجميل بحجز مواعيد وخدمات'],
+    ];
+    for (const [path, fn, id, track, goal] of specs) {
+        const c = (await import(path))[fn]();
+        assert.equal(c.id, id);
+        assert.equal(c.track, track);
+        const appJs = c.files.find(f => f.name === 'app.js').content;
+        // eslint-disable-next-line no-new-func
+        new Function(appJs);
+        const html = c.files.find(f => f.name === 'index.html').content;
+        for (const act of [...new Set([...html.matchAll(/data-action="(\w+)"/g)].map(m => m[1]))]) {
+            assert.ok(new RegExp("case '" + act + "'").test(appJs), id + ': ' + act + ' موصول');
+        }
+        const matched = matchCloneTemplate(goal, { kind: 'webapp' }, null);
+        assert.equal(matched?.id, id, goal + ' → ' + id);
+    }
+});
+
+test('المحاسبة: طبيعة الحساب (مدين/دائن) صحيحة محاسبياً في المصدر', async () => {
+    const { jaolaAccounting } = await import('../agents/cloneTemplates/jaolaAccounting.js');
+    const appJs = jaolaAccounting().files.find(f => f.name === 'app.js').content;
+    // نستخرج تعريف DEBIT_NATURE ونقيّمه معزولاً (بلا document)
+    const m = appJs.match(/const DEBIT_NATURE = (\{[^}]*\});/);
+    assert.ok(m, 'DEBIT_NATURE معرّف');
+    // eslint-disable-next-line no-new-func
+    const DEBIT_NATURE = new Function('return ' + m[1])();
+    // أصول/مصروف مدينة (+1)، خصوم/حقوق/إيراد دائنة (−1) — قاعدة المحاسبة
+    assert.equal(DEBIT_NATURE.asset, 1);
+    assert.equal(DEBIT_NATURE.expense, 1);
+    assert.equal(DEBIT_NATURE.liability, -1);
+    assert.equal(DEBIT_NATURE.equity, -1);
+    assert.equal(DEBIT_NATURE.revenue, -1);
+    // ميزان المراجعة: القيد المتوازن يبقي مجموع المدين = مجموع الدائن
+    assert.ok(appJs.includes('القيد غير متوازن') && appJs.includes('مدين يجب أن يساوي دائن'), 'حارس توازن القيد موجود');
+});
