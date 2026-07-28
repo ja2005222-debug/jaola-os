@@ -19,6 +19,7 @@ const QUICK_BUILDS = {
     { icon: '🛍️', labelKey: 'qtStore', promptKey: 'qbStore' },
     { icon: '🍽️', labelKey: 'qtRestaurant', promptKey: 'qbRestaurant' },
     { icon: '🎟️', labelKey: 'qtEvents', promptKey: 'qbEvents' },
+    { icon: '🎬', labelKey: 'qtCinema', promptKey: 'qbCinemaSite' },
     { icon: '🏠', labelKey: 'qtRealestate', promptKey: 'qbRealestate' },
     { icon: '✈️', labelKey: 'qtTravel', promptKey: 'qbTravel' },
     { icon: '🎓', labelKey: 'qtLms', promptKey: 'qbLms' },
@@ -28,9 +29,11 @@ const QUICK_BUILDS = {
   system: [
     { icon: '🏭', labelKey: 'qtErp', promptKey: 'qbErpSys' },
     { icon: '🏥', labelKey: 'qtClinic', promptKey: 'qbClinic' },
+    { icon: '💊', labelKey: 'qtPharmacy', promptKey: 'qbPharmacy' },
+    { icon: '🏢', labelKey: 'qtProperty', promptKey: 'qbProperty' },
     { icon: '👥', labelKey: 'qtHr', promptKey: 'qbHr' },
     { icon: '🧾', labelKey: 'qtPos', promptKey: 'qbPos' },
-    { icon: '🍽️', labelKey: 'qtRestOps', promptKey: 'qbRestOps' },
+    { icon: '🍳', labelKey: 'qtRestOps', promptKey: 'qbRestOps' },
     { icon: '📦', labelKey: 'qtInventory', promptKey: 'qbInventory' },
   ],
 };
