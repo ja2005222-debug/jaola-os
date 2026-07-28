@@ -3,14 +3,16 @@ import './dbConfig.js';
 
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import path from 'path';
 import fs from 'fs';
+import fsp from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 import User from './models/User.js';
@@ -75,14 +77,25 @@ const io = new Server(httpServer, {
 });
 
 app.use(cors(corsOptions));
+app.use(compression()); // ضغط gzip/brotli للاستجابات — يقلل حجم النقل حتى 70%
 app.use(express.json({ limit: '1mb' })); // حد أقصى لحجم الطلب
 
 // ─── تقديم الواجهة الأمامية الثابتة ────────────────────────────────
 const frontendDistPath = path.join(__dirname, '../frontend/dist');
 if (fs.existsSync(frontendDistPath)) {
-    app.use(express.static(frontendDistPath));
+    // أصول Vite تحمل hash في اسمها → آمنة للكاش الطويل. index.html بدون كاش ليصل التحديث فوراً.
+    app.use(express.static(frontendDistPath, {
+        setHeaders: (res, filePath) => {
+            if (filePath.endsWith('.html')) {
+                res.setHeader('Cache-Control', 'no-cache');
+            } else {
+                res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            }
+        }
+    }));
     app.get('*', (req, res, next) => {
         if (req.path.startsWith('/api') || req.path.startsWith('/workspace')) return next();
+        res.set('Cache-Control', 'no-cache');
         res.sendFile(path.join(frontendDistPath, 'index.html'));
     });
 }
@@ -104,7 +117,8 @@ const DB = {
 
     async findUser(username) {
         if (this._isOnline()) {
-            try { return await User.findOne({ username }); } catch (e) {}
+            // lean(): كائن JS خام بدون تكلفة hydration الخاصة بـ Mongoose — القراءة فقط هنا
+            try { return await User.findOne({ username }).lean(); } catch (e) {}
         }
         return null;
     },
@@ -123,7 +137,7 @@ const DB = {
     },
     async findProject(name, owner) {
         if (this._isOnline()) {
-            try { return await Project.findOne({ name, owner }); } catch (e) {}
+            try { return await Project.findOne({ name, owner }).lean(); } catch (e) {}
         }
         // في وضع offline: المشاريع العامة + sandbox_app مسموحة
         return name === 'sandbox_app' ? { name, owner, vercelUrl: '' } : null;
@@ -146,16 +160,19 @@ const DB = {
 const BASE_WORKSPACE = path.resolve(__dirname, '../workspace');
 if (!fs.existsSync(BASE_WORKSPACE)) fs.mkdirSync(BASE_WORKSPACE);
 
+// كاش للمسارات المُنشأة — يتجنب 4 استدعاءات fs متزامنة على كل طلب (خاصة أصول الـ iframe)
+const ensuredPaths = new Set();
+
 const getProjectPath = (username, activeProject) => {
     // تطهير المدخلات لمنع path traversal
     const safeUser = (username || 'guest_user').replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
     const safeProject = (activeProject || 'sandbox_app').replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
 
-    const userPath = path.join(BASE_WORKSPACE, safeUser);
-    if (!fs.existsSync(userPath)) fs.mkdirSync(userPath, { recursive: true });
-
-    const projectPath = path.join(userPath, safeProject);
-    if (!fs.existsSync(projectPath)) fs.mkdirSync(projectPath, { recursive: true });
+    const projectPath = path.join(BASE_WORKSPACE, safeUser, safeProject);
+    if (!ensuredPaths.has(projectPath)) {
+        fs.mkdirSync(projectPath, { recursive: true }); // recursive: ينشئ مجلد المستخدم والمشروع معاً ولا يفشل إن وُجدا
+        ensuredPaths.add(projectPath);
+    }
     return projectPath;
 };
 
@@ -236,32 +253,41 @@ async function validateProjectOwnership(req, res, next) {
     next();
 }
 
-// إنشاء نسخة احتياطية قبل الحفظ
-function createBackupSnapshot(projectPath, fileName) {
+// إنشاء نسخة احتياطية قبل الحفظ — async حتى لا تحجب حلقة الأحداث
+async function createBackupSnapshot(projectPath, fileName) {
     const filePath = path.join(projectPath, fileName);
-    if (!fs.existsSync(filePath)) return;
-
-    const backupDir = path.join(projectPath, '.backups');
-    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
-
-    const backupPath = path.join(backupDir, `${fileName}.${Date.now()}.bak`);
-    fs.copyFileSync(filePath, backupPath);
 
     try {
-        const backups = fs.readdirSync(backupDir)
-            .filter(f => f.startsWith(fileName))
-            .map(f => ({ name: f, time: fs.statSync(path.join(backupDir, f)).mtimeMs }))
-            .sort((a, b) => b.time - a.time);
+        await fsp.access(filePath);
+    } catch {
+        return; // الملف غير موجود — لا حاجة لنسخة احتياطية
+    }
+
+    const backupDir = path.join(projectPath, '.backups');
+    await fsp.mkdir(backupDir, { recursive: true });
+
+    const backupPath = path.join(backupDir, `${fileName}.${Date.now()}.bak`);
+    await fsp.copyFile(filePath, backupPath);
+
+    try {
+        const entries = await fsp.readdir(backupDir);
+        const backups = await Promise.all(
+            entries.filter(f => f.startsWith(fileName)).map(async f => ({
+                name: f,
+                time: (await fsp.stat(path.join(backupDir, f))).mtimeMs
+            }))
+        );
+        backups.sort((a, b) => b.time - a.time);
         if (backups.length > 5) {
-            backups.slice(5).forEach(b => fs.unlinkSync(path.join(backupDir, b.name)));
+            await Promise.all(backups.slice(5).map(b => fsp.unlink(path.join(backupDir, b.name))));
         }
     } catch (e) {}
 }
 
 // ─── دوال بث الأحداث ─────────────────────────────────────────────────
-const emitWorkspaceFiles = (roomName, projectPath) => {
+const emitWorkspaceFiles = async (roomName, projectPath) => {
     try {
-        const files = fs.readdirSync(projectPath).filter(f => f !== '.backups' && !f.startsWith('.'));
+        const files = (await fsp.readdir(projectPath)).filter(f => f !== '.backups' && !f.startsWith('.'));
         io.to(roomName).emit('workspace_files', files);
         io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
     } catch (e) {}
@@ -322,12 +348,15 @@ io.on('connection', (socket) => {
         emitWorkspaceFiles(roomName, projectPath);
         await emitUserProjects(roomName, username, safeProject);
 
-        // استعادة تاريخ المحادثة
+        // استعادة تاريخ المحادثة — $slice يجلب آخر 50 رسالة فقط من DB بدلاً من المستند كاملاً
         if (isDbConnected && mongoose.connection.readyState === 1) {
             try {
-                const convo = await Conversation.findOne({ username });
+                const convo = await Conversation.findOne(
+                    { username },
+                    { messages: { $slice: -50 } }
+                ).lean();
                 if (convo?.messages?.length > 0) {
-                    socket.emit('chat_history', convo.messages.slice(-50));
+                    socket.emit('chat_history', convo.messages);
                 }
             } catch (e) {}
         }
@@ -346,21 +375,17 @@ app.get('/workspace', (req, res) => {
     const project = req.query.project || 'sandbox_app';
     const projectPath = getProjectPath(username, project);
     const filePath = path.join(projectPath, 'index.html');
-    if (fs.existsSync(filePath)) {
-        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-        return res.sendFile(filePath);
-    }
-    res.status(404).send('index.html not found');
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.sendFile(filePath, (err) => {
+        if (err && !res.headersSent) res.status(404).send('index.html not found');
+    });
 });
 
 // 🆕 المشكلة الجذرية: روابط نسبية مثل href="styles.css" داخل index.html
 // لا تحمل query parameters (?project=...&username=...) عند حلها من المتصفح،
 // فتفقد هوية المستخدم/المشروع وتُخدَّم من مسار افتراضي خاطئ (404).
-// الحل: نلتقط آخر username/project طُلب فعلياً عبر /workspace/index.html
-// ونُعيد استخدامهما كـ fallback للطلبات اللاحقة من نفس الـ Referer (الصفحة الأم).
-const lastKnownContext = new Map(); // key: referer base path → { username, project }
-
-app.get('/workspace/:file(*)', (req, res) => {
+// الحل: استخراج username/project من الـ Referer (الصفحة الأم) كـ fallback.
+app.get('/workspace/:file(*)', async (req, res) => {
     let username = req.query.username?.toString();
     let project = req.query.project?.toString();
 
@@ -388,10 +413,13 @@ app.get('/workspace/:file(*)', (req, res) => {
         return res.status(403).send('Access Denied');
     }
 
-    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-        return res.sendFile(filePath);
-    }
+    try {
+        const stat = await fsp.stat(filePath);
+        if (stat.isFile()) {
+            res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+            return res.sendFile(filePath);
+        }
+    } catch (e) {}
     res.status(404).send('File not found');
 });
 
@@ -528,9 +556,8 @@ app.delete('/api/projects/:name', verifyToken, async (req, res) => {
     try {
         // حذف الملفات من القرص
         const projectPath = getProjectPath(username, safeProject);
-        if (fs.existsSync(projectPath)) {
-            fs.rmSync(projectPath, { recursive: true, force: true });
-        }
+        await fsp.rm(projectPath, { recursive: true, force: true });
+        ensuredPaths.delete(projectPath); // إبطال الكاش حتى يُعاد إنشاء المجلد عند الحاجة
 
         // حذف السجل من قاعدة البيانات
         if (DB._isOnline()) {
@@ -604,7 +631,8 @@ app.get('/api/file-content', verifyToken, async (req, res) => {
             return res.status(403).json({ error: 'Access Denied: Out of workspace bounds.' });
         }
 
-        return res.json({ content: fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf-8') : '' });
+        const content = await fsp.readFile(filePath, 'utf-8').catch(() => '');
+        return res.json({ content });
     } catch (err) {
         res.status(500).json({ error: 'خطأ داخلي.' });
     }
@@ -625,8 +653,8 @@ app.post('/api/file-content/save', verifyToken, validateProjectOwnership, async 
             return res.status(403).json({ error: 'Access Denied.' });
         }
 
-        createBackupSnapshot(projectPath, safeFileName);
-        fs.writeFileSync(filePath, content);
+        await createBackupSnapshot(projectPath, safeFileName);
+        await fsp.writeFile(filePath, content);
 
         const roomName = `${req.user.username}-${req.activeProject}`;
         emitWorkspaceFiles(roomName, projectPath);

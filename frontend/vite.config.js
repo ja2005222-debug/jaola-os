@@ -4,6 +4,19 @@ import react from '@vitejs/plugin-react';
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // فصل مكتبات React في chunk مستقل — يبقى مكيّشاً في المتصفح بين النشرات
+    // لأن كود التطبيق يتغير أكثر بكثير من المكتبات
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) {
+            return 'react-vendor';
+          }
+        },
+      },
+    },
+  },
   server: {
     host: '0.0.0.0', 
     port: 5173,

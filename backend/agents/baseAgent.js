@@ -3,11 +3,30 @@ import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
 
-export const deepseek = new OpenAI({
-    baseURL: 'https://api.deepseek.com/v1',
-    apiKey: process.env.DEEPSEEK_API_KEY,
-});
+// dotenv أولاً — كان يُستدعى بعد إنشاء العميل فلا يقرأ المفتاح من .env أبداً
 dotenv.config();
+
+// تهيئة كسولة: إنشاء العميل عند الحاجة فقط — يمنع انهيار الخادم كاملاً
+// عند الإقلاع إذا كان DEEPSEEK_API_KEY غير مضبوط
+let _deepseek = null;
+export const deepseek = {
+    chat: {
+        completions: {
+            create(...args) {
+                if (!_deepseek) {
+                    if (!process.env.DEEPSEEK_API_KEY) {
+                        return Promise.reject(new Error('DEEPSEEK_API_KEY غير مضبوط — لا يمكن استخدام DeepSeek.'));
+                    }
+                    _deepseek = new OpenAI({
+                        baseURL: 'https://api.deepseek.com/v1',
+                        apiKey: process.env.DEEPSEEK_API_KEY,
+                    });
+                }
+                return _deepseek.chat.completions.create(...args);
+            }
+        }
+    }
+};
 
 export const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
 export const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;

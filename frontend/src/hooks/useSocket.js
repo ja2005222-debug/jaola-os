@@ -34,6 +34,11 @@ export function useSocket(isAuthenticated, handleAuthError) {
   // مرجع لتتبع عدد أخطاء الاتصال لمنع حلقة الـ reload
   const connectErrorCountRef = useRef(0);
 
+  // تجميع chunks البث في buffer وتفريغه مرة واحدة لكل إطار رسم —
+  // بدلاً من re-render كامل للشجرة على كل chunk يصل من الخادم
+  const streamBufferRef = useRef('');
+  const streamFlushRef = useRef(0);
+
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -43,6 +48,15 @@ export function useSocket(isAuthenticated, handleAuthError) {
     const savedProject = localStorage.getItem('activeProject') || activeProject;
 
     socket.auth = { token };
+
+    const flushStream = () => {
+      streamFlushRef.current = 0;
+      if (streamBufferRef.current) {
+        const buffered = streamBufferRef.current;
+        streamBufferRef.current = '';
+        setStreamingContent((prev) => prev + buffered);
+      }
+    };
 
     // ─── أحداث Socket ──────────────────────────────────────────────
     socket.off('workspace_files').on('workspace_files', setFiles);
@@ -55,21 +69,27 @@ export function useSocket(isAuthenticated, handleAuthError) {
     });
 
     socket.off('preview_updated').on('preview_updated', (data) => {
+      streamBufferRef.current = '';
+      if (streamFlushRef.current) {
+        cancelAnimationFrame(streamFlushRef.current);
+        streamFlushRef.current = 0;
+      }
       setStreamingContent('');
       setPreviewTimestamp(data.timestamp || Date.now());
     });
 
     socket.off('code_stream_chunk').on('code_stream_chunk', (chunk) => {
-      setStreamingContent((prev) => prev + chunk);
+      streamBufferRef.current += chunk;
+      if (!streamFlushRef.current) {
+        streamFlushRef.current = requestAnimationFrame(flushStream);
+      }
     });
 
     socket.off('agent_states').on('agent_states', setAgentStates);
 
     socket.off('log').on('log', (newLog) => {
-      setLogs((prev) => [...prev.slice(-100), newLog]);
-
-      // استخراج ردود الـ AI من السجلات للعرض في الشات
-
+      // نسجل وقت الوصول مرة واحدة — العرض يقرأه بدلاً من توليد وقت جديد كل render
+      setLogs((prev) => [...prev.slice(-100), { ...newLog, time: new Date().toLocaleTimeString() }]);
     });
 
     socket.off('chat_reply').on('chat_reply', (data) => {
@@ -137,6 +157,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
     socket.emit('join_project', { project: savedProject });
 
     return () => {
+      if (streamFlushRef.current) cancelAnimationFrame(streamFlushRef.current);
       socket.off('workspace_files');
       socket.off('user_projects');
       socket.off('preview_updated');

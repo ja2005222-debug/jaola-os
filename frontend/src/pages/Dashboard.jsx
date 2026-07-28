@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, memo } from 'react';
 import { useAuth } from '../hooks/useAuth.js';
 import { useSocket, socket } from '../hooks/useSocket.js';
 import { PreviewFrame } from '../components/PreviewFrame.jsx';
@@ -82,8 +82,28 @@ function BootScreen({ onDone }) {
   );
 }
 
+// ثوابت التصميم — خارج المكوّن حتى لا يُعاد إنشاؤها في كل render
+const S = {
+  bg: '#030508', bg2: '#070b12', bg3: '#0d1220',
+  border: '#1a2332', border2: '#0f1a2a',
+  text: '#f1f5f9', muted: '#475569',
+  blue: '#3b82f6', purple: '#8b5cf6',
+  font: 'system-ui,-apple-system,sans-serif',
+};
+
+const getLogColor = (msg = '') => {
+  if (msg.includes('✅') || msg.includes('نجاح')) return '#10b981';
+  if (msg.includes('❌') || msg.includes('فشل')) return '#ef4444';
+  if (msg.includes('⚠️')) return '#f59e0b';
+  if (msg.includes('🎨') || msg.includes('Designer')) return '#a78bfa';
+  if (msg.includes('💻') || msg.includes('Coder')) return '#60a5fa';
+  if (msg.includes('🔐') || msg.includes('Security')) return '#f97316';
+  return '#475569';
+};
+
 // ── Execution Feed Item ─────────────────────────────────────────
-function FeedItem({ msg, type }) {
+// memo: الرسائل القديمة لا يتغير محتواها — لا داعي لإعادة رسمها مع كل رسالة جديدة
+const FeedItem = memo(function FeedItem({ msg }) {
   const icons = { user:'👤', assistant:'⚡', system:'🔧' };
   const colors = { user:'#1d4ed8', assistant:'#0f172a', system:'#1a1a2e' };
   const borders = { user:'rgba(29,78,216,0.3)', assistant:'rgba(59,130,246,0.15)', system:'rgba(100,116,139,0.15)' };
@@ -119,10 +139,10 @@ function FeedItem({ msg, type }) {
       </div>
     </div>
   );
-}
+});
 
 // ── Agent Node ──────────────────────────────────────────────────
-function AgentNode({ name, state, icon }) {
+const AgentNode = memo(function AgentNode({ name, state, icon }) {
   const isActive = state === 'running';
   const isDone = state === 'completed';
   return (
@@ -141,7 +161,7 @@ function AgentNode({ name, state, icon }) {
       <span style={{ fontSize:9, color: isDone ? '#10b981' : isActive ? '#60a5fa' : '#374151', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>{name}</span>
     </div>
   );
-}
+});
 
 // ── Main Dashboard ──────────────────────────────────────────────
 export default function Dashboard() {
@@ -260,24 +280,6 @@ export default function Dashboard() {
     sessionStorage.setItem('booted', '1');
     setBooted(true);
   }, []);
-
-  const getLogColor = (msg = '') => {
-    if (msg.includes('✅') || msg.includes('نجاح')) return '#10b981';
-    if (msg.includes('❌') || msg.includes('فشل')) return '#ef4444';
-    if (msg.includes('⚠️')) return '#f59e0b';
-    if (msg.includes('🎨') || msg.includes('Designer')) return '#a78bfa';
-    if (msg.includes('💻') || msg.includes('Coder')) return '#60a5fa';
-    if (msg.includes('🔐') || msg.includes('Security')) return '#f97316';
-    return '#475569';
-  };
-
-  const S = {
-    bg: '#030508', bg2: '#070b12', bg3: '#0d1220',
-    border: '#1a2332', border2: '#0f1a2a',
-    text: '#f1f5f9', muted: '#475569',
-    blue: '#3b82f6', purple: '#8b5cf6',
-    font: 'system-ui,-apple-system,sans-serif',
-  };
 
   // ── LOGIN ────────────────────────────────────────────────────
   if (isLoading) return (
@@ -529,7 +531,7 @@ export default function Dashboard() {
                 {logs.length === 0 && <div style={{ color:S.muted, textAlign:'center', marginTop:60, fontSize:13 }}>Awaiting mission orders...</div>}
                 {logs.map((log, i) => (
                   <div key={i} style={{ display:'flex', gap:12, padding:'3px 0', borderBottom:`1px solid rgba(255,255,255,0.02)`, animation:'fadeIn 0.1s ease' }}>
-                    <span style={{ color:'#1e2d45', flexShrink:0, fontSize:10, minWidth:60 }}>{new Date().toLocaleTimeString()}</span>
+                    <span style={{ color:'#1e2d45', flexShrink:0, fontSize:10, minWidth:60 }}>{log.time || ''}</span>
                     <span style={{ color: getLogColor(log.message) }}>{log.message}</span>
                   </div>
                 ))}
