@@ -22,6 +22,7 @@ const QUICK_BUILDS = {
     { icon: '🎬', labelKey: 'qtCinema', promptKey: 'qbCinemaSite' },
     { icon: '🏠', labelKey: 'qtRealestate', promptKey: 'qbRealestate' },
     { icon: '✈️', labelKey: 'qtTravel', promptKey: 'qbTravel' },
+    { icon: '💪', labelKey: 'qtGym', promptKey: 'qbGym' },
     { icon: '🎓', labelKey: 'qtLms', promptKey: 'qbLms' },
     { icon: '🛒', labelKey: 'qtMarketplace', promptKey: 'qbMarketplace' },
     { icon: '🚕', labelKey: 'qtTaxi', promptKey: 'qbTaxi' },
@@ -34,6 +35,7 @@ const QUICK_BUILDS = {
     { icon: '👥', labelKey: 'qtHr', promptKey: 'qbHr' },
     { icon: '🧾', labelKey: 'qtPos', promptKey: 'qbPos' },
     { icon: '🍳', labelKey: 'qtRestOps', promptKey: 'qbRestOps' },
+    { icon: '🔧', labelKey: 'qtWorkshop', promptKey: 'qbWorkshop' },
     { icon: '📦', labelKey: 'qtInventory', promptKey: 'qbInventory' },
   ],
 };

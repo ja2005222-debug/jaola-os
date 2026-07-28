@@ -358,3 +358,26 @@ test('توسعة القوالب: صيدلية وعقارات (سيستم) وسي
         assert.equal(matched?.track, track);
     }
 });
+
+// ─── 🔧💪 دفعة ٢: ورشة سيارات (سيستم) + نادٍ رياضي (موقع) ────────────
+test('دفعة ٢: ورشة (سيستم) ونادٍ رياضي (موقع) — عقد سليم وتوجيه صحيح', async () => {
+    const { matchCloneTemplate } = await import('../agents/cloneTemplates/index.js');
+    const specs = [
+        ['../agents/cloneTemplates/jaolaWorkshop.js', 'jaolaWorkshop', 'jaola-workshop', 'system', 'نظام ورشة سيارات ببطاقات عمل وفواتير إصلاح'],
+        ['../agents/cloneTemplates/jaolaGym.js', 'jaolaGym', 'jaola-gym', 'site', 'موقع نادٍ رياضي باشتراكات وجدول حصص'],
+    ];
+    for (const [path, fn, id, track, goal] of specs) {
+        const c = (await import(path))[fn]();
+        assert.equal(c.id, id);
+        assert.equal(c.track, track);
+        const appJs = c.files.find(f => f.name === 'app.js').content;
+        // eslint-disable-next-line no-new-func
+        new Function(appJs);
+        const html = c.files.find(f => f.name === 'index.html').content;
+        for (const act of [...new Set([...html.matchAll(/data-action="(\w+)"/g)].map(m => m[1]))]) {
+            assert.ok(new RegExp("case '" + act + "'").test(appJs), id + ': ' + act + ' موصول');
+        }
+        const matched = matchCloneTemplate(goal, { kind: 'webapp' }, null);
+        assert.equal(matched?.id, id, goal + ' → ' + id);
+    }
+});
