@@ -53,26 +53,18 @@ const QUICK_BUILDS = {
   ],
 };
 
-const BOOT_STEPS = [
-  'Initializing JAOLA OS...',
-  'Connecting AI Company...',
-  'Loading Knowledge Base...',
-  'Hiring AI Agents...',
-  'Synchronizing Mission Control...',
-  'Activating Digital Twin...',
-  'Mission Control Ready ✓',
-];
+const BOOT_STEPS = ['bootInit', 'bootConnect', 'bootKnowledge', 'bootHiring', 'bootSync', 'bootTwin', 'bootReady'];
 
 const SIDEBAR_ITEMS = [
-  { icon: '⚡', label: 'Mission Control', id: 'mission' },
-  { icon: '📁', label: 'Projects', id: 'projects' },
-  { icon: '🤖', label: 'AI Company', id: 'agents' },
-  { icon: '📚', label: 'Knowledge', id: 'knowledge' },
-  { icon: '🛒', label: 'Marketplace', id: 'marketplace' },
-  { icon: '🚀', label: 'Deployments', id: 'deployments' },
-  { icon: '📈', label: 'Analytics', id: 'analytics' },
-  { icon: '🎬', label: 'Cinema Studio', id: 'cinema' },
-  { icon: '⚙️', label: 'Settings', id: 'settings' },
+  { icon: '⚡', labelKey: 'missionControl', id: 'mission' },
+  { icon: '📁', labelKey: 'navProjects', id: 'projects' },
+  { icon: '🤖', labelKey: 'navAiCompany', id: 'agents' },
+  { icon: '📚', labelKey: 'navKnowledge', id: 'knowledge' },
+  { icon: '🛒', labelKey: 'navMarketplace', id: 'marketplace' },
+  { icon: '🚀', labelKey: 'navDeployments', id: 'deployments' },
+  { icon: '📈', labelKey: 'navAnalytics', id: 'analytics' },
+  { icon: '🎬', labelKey: 'navCinema', id: 'cinema' },
+  { icon: '⚙️', labelKey: 'settingsMenu', id: 'settings' },
 ];
 
 const MOBILE_TABS = [
@@ -83,7 +75,7 @@ const MOBILE_TABS = [
 ];
 
 // ── Boot Screen ──────────────────────────────────────────────────
-function BootScreen({ onDone }) {
+function BootScreen({ onDone, t }) {
   const [step, setStep] = useState(0);
 
   useEffect(() => {
@@ -102,14 +94,14 @@ function BootScreen({ onDone }) {
       <div style={{ textAlign:'center' }}>
         <div style={{ width:72, height:72, borderRadius:20, background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:32, margin:'0 auto 20px', animation:'glow 2s infinite' }}>⚡</div>
         <div style={{ fontSize:26, fontWeight:900, color:'#fff', letterSpacing:'-1px', fontFamily:'system-ui' }}>JAOLA OS</div>
-        <div style={{ fontSize:12, color:'#475569', marginTop:6, letterSpacing:'2px', textTransform:'uppercase' }}>Autonomous Software Engineering</div>
+        <div style={{ fontSize:12, color:'#475569', marginTop:6, letterSpacing:'2px', textTransform:'uppercase' }}>{t('authTagline')}</div>
       </div>
 
       <div style={{ display:'flex', flexDirection:'column', gap:8, width:'min(320px, 90vw)' }}>
-        {BOOT_STEPS.slice(0, step).map((msg, i) => (
+        {BOOT_STEPS.slice(0, step).map((msgKey, i) => (
           <div key={i} style={{ display:'flex', alignItems:'center', gap:12, animation:'fadeIn 0.3s ease', opacity: i < step - 1 ? 0.4 : 1, transition:'opacity 0.3s' }}>
             <div style={{ width:6, height:6, borderRadius:'50%', background: i < step - 1 ? '#10b981' : '#3b82f6', boxShadow: i === step - 1 ? '0 0 10px #3b82f6' : 'none', flexShrink:0 }} />
-            <span style={{ fontSize:13, color: i < step - 1 ? '#475569' : '#94a3b8', fontFamily:'monospace' }}>{msg}</span>
+            <span style={{ fontSize:13, color: i < step - 1 ? '#475569' : '#94a3b8', fontFamily:'monospace' }}>{t(msgKey)}</span>
           </div>
         ))}
       </div>
@@ -253,9 +245,11 @@ export function FeedItem({ msg, onOption, onEdit, onRegenerate, canRegenerate, t
 }
 
 // ── Agent Node (شريط الوكلاء السفلي — سطح المكتب) ───────────────
-function AgentNode({ name, state, icon }) {
+const AGENT_NAME_KEY = { planner: 'phasePlanner', architect: 'phaseArchitect', coder: 'phaseCoder', qa: 'phaseQa', deploy: 'phaseDeploy' };
+function AgentNode({ name, state, icon, t }) {
   const isActive = state === 'running';
   const isDone = state === 'completed';
+  const label = AGENT_NAME_KEY[name] ? t(AGENT_NAME_KEY[name]) : name;
   return (
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4, flexShrink:0 }}>
       <div style={{
@@ -269,7 +263,7 @@ function AgentNode({ name, state, icon }) {
       }}>
         {isDone ? '✓' : icon}
       </div>
-      <span style={{ fontSize:9, color: isDone ? '#10b981' : isActive ? '#60a5fa' : '#374151', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>{name}</span>
+      <span style={{ fontSize:9, color: isDone ? '#10b981' : isActive ? '#60a5fa' : '#374151', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>{label}</span>
     </div>
   );
 }
@@ -351,13 +345,16 @@ export default function Dashboard() {
 
   const { files, logs, streamingContent, agentStates, projects, activeProject, currentUser, vercelUrl, chatMessages, setChatMessages, setActiveProject, previewTimestamp, refreshPreview, isConnected, connectionError, metrics, latencyMs, missionPhase } = useSocket(isAuthenticated, handleAuthError);
 
+  const t = useI18n(s => s.t);
+  const uiLang = useI18n(s => s.lang);
+
   // 📊 قيم لوحة الذكاء الحقيقية (مع بدائل عند غياب البيانات)
   const gradeColor = (g) => g === 'A' ? '#10b981' : g === 'B' ? '#fbbf24' : g ? '#f97316' : '#334155';
   const fmtScore = (s) => s ? `${s.grade}${s.score != null ? ` ${s.score}%` : ''}` : '—';
   const sysUptime = metrics?.system?.uptimeSec ?? null;
   const fmtUptime = sysUptime == null ? '—'
-    : sysUptime >= 3600 ? `${Math.floor(sysUptime/3600)}س ${Math.floor((sysUptime%3600)/60)}د`
-    : `${Math.floor(sysUptime/60)}د`;
+    : sysUptime >= 3600 ? `${Math.floor(sysUptime/3600)}${t('unitHour')} ${Math.floor((sysUptime%3600)/60)}${t('unitMin')}`
+    : `${Math.floor(sysUptime/60)}${t('unitMin')}`;
 
   // ── Monaco Workspace Store ──────────────────────────────────────
   const openJaolaFile = useJaolaStore(s => s.openFile);
@@ -371,9 +368,6 @@ export default function Dashboard() {
       useJaolaStore.getState().setContext({ token, project: activeProject });
     }
   }, [token, activeProject, isAuthenticated]);
-
-  const t = useI18n(s => s.t);
-  const uiLang = useI18n(s => s.lang);
 
   const isBuilding = Object.values(agentStates || {}).some(s => s === 'running');
   const lastLogMsg = logs[logs.length - 1]?.message || '';
@@ -1198,7 +1192,7 @@ export default function Dashboard() {
       <div style={{ background:'#0d1117', border:'1px solid #1f2937', borderRadius:16, padding:'40px 28px', width:'min(380px, 100%)', textAlign:'center' }}>
         <div style={{ width:56, height:56, borderRadius:14, background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24, margin:'0 auto 20px' }}>⚡</div>
         <h2 style={{ color:'#fff', fontSize:20, fontWeight:800, letterSpacing:'-0.5px', marginBottom:6 }}>JAOLA OS</h2>
-        <p style={{ color:S.muted, fontSize:13, marginBottom:20 }}>Autonomous Software Engineering</p>
+        <p style={{ color:S.muted, fontSize:13, marginBottom:20 }}>{t('authTagline')}</p>
 
         <div style={{ display:'flex', justifyContent:'center', marginBottom:14 }}><LanguageSwitcher /></div>
 
@@ -1268,7 +1262,7 @@ export default function Dashboard() {
     </div>
   );
 
-  if (!booted) return <BootScreen onDone={handleBoot} />;
+  if (!booted) return <BootScreen onDone={handleBoot} t={t} />;
 
   const globalStyles = `
     @keyframes spin{to{transform:rotate(360deg)}}
@@ -1440,6 +1434,7 @@ export default function Dashboard() {
       currentUser={currentUser && currentUser !== 'guest_user' ? currentUser : authUser}
       onRefresh={refreshPreview}
       compact={isMobile}
+      hasFiles={files.length > 0}
     />
   );
 
@@ -1536,6 +1531,10 @@ export default function Dashboard() {
   const catLabel = (c) => (CAT_LABELS[c.category]?.[isEn ? 'en' : 'ar']) || (isEn ? 'Other' : 'أخرى');
   const tplName = (c) => (isEn ? (c.nameEn || c.name) : c.name);
   const tplDesc = (c) => (isEn ? (c.descriptionEn || c.description) : c.description);
+  // بعض القوالب الأقدم تُسمّي أدوارها بمعرّفات إنجليزية داخلية (Admin/Customer...)
+  // — تُترجم هنا للعرض فقط، بلا مساس بـ model.roles الذي تعتمد عليه الاختبارات.
+  const ROLE_LABELS_AR = { Admin: 'الإدارة', Buyer: 'المشتري', Customer: 'العميل', Driver: 'السائق', Instructor: 'المدرّب', Organizer: 'المنظّم', Restaurant: 'المطعم', Rider: 'الراكب', Seller: 'البائع', Student: 'الطالب', Teacher: 'المعلّم', Traveler: 'المسافر', User: 'المستخدم' };
+  const tplRole = (r) => (isEn ? r : (ROLE_LABELS_AR[r] || r));
   const galleryCats = galleryTemplates
     ? ['all', ...new Set(galleryTemplates.map(catLabel))]
     : ['all'];
@@ -1585,7 +1584,7 @@ export default function Dashboard() {
                   <div style={{ color:S.muted, fontSize:11, lineHeight:1.6, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{tplDesc(c)}</div>
                   <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
                     {(c.roles || []).map(r => (
-                      <span key={r} style={{ background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)', color:'#94a3b8', fontSize:9, fontWeight:700, padding:'2px 8px', borderRadius:10 }}>{r}</span>
+                      <span key={r} style={{ background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)', color:'#94a3b8', fontSize:9, fontWeight:700, padding:'2px 8px', borderRadius:10 }}>{tplRole(r)}</span>
                     ))}
                   </div>
                   <button onClick={() => handleApplyTemplate(c.id)} disabled={!!applyingTemplate}
@@ -2302,7 +2301,7 @@ export default function Dashboard() {
                       </div>
                       <div style={{ color:S.muted, fontSize:11, marginTop:3 }}>{c.description}</div>
                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, marginTop:6, flexWrap:'wrap' }}>
-                        <span style={{ color:'#ff9d6b', fontSize:10 }}>{(c.roles||[]).join(' · ')}</span>
+                        <span style={{ color:'#ff9d6b', fontSize:10 }}>{(c.roles||[]).map(tplRole).join(' · ')}</span>
                         <button onClick={() => handleApplyTemplate(c.id)} disabled={!!applyingTemplate}
                           style={{ background:'linear-gradient(135deg,#ff6b35,#f7931e)', border:'none', borderRadius:8, padding:'6px 12px', color:'#fff', fontSize:11, fontWeight:800, cursor: applyingTemplate ? 'default' : 'pointer', opacity: applyingTemplate && applyingTemplate !== c.id ? 0.4 : 1, whiteSpace:'nowrap' }}>
                           {applyingTemplate === c.id ? `⏳ ${t('applyingTemplate')}` : `🚀 ${t('useTemplate')}`}
@@ -2700,9 +2699,9 @@ export default function Dashboard() {
               {metrics && (metrics.seo || metrics.security || metrics.quality || metrics.totalBuilds) ? (
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
                   {[
-                    { label:'SEO', value: fmtScore(metrics?.seo), color: gradeColor(metrics?.seo?.grade) },
-                    { label:'Security', value: fmtScore(metrics?.security), color: gradeColor(metrics?.security?.grade) },
-                    { label:'Quality', value: fmtScore(metrics?.quality), color: gradeColor(metrics?.quality?.grade) },
+                    { label:t('mSeo'), value: fmtScore(metrics?.seo), color: gradeColor(metrics?.seo?.grade) },
+                    { label:t('mSecurity'), value: fmtScore(metrics?.security), color: gradeColor(metrics?.security?.grade) },
+                    { label:t('mQuality'), value: fmtScore(metrics?.quality), color: gradeColor(metrics?.quality?.grade) },
                     { label:t('mBuilds'), value: metrics?.totalBuilds ?? 0, color:S.blue },
                     { label:t('mEdits'), value: metrics?.totalEdits ?? 0, color:S.purple },
                   ].map(m => (
@@ -2744,14 +2743,14 @@ export default function Dashboard() {
 
         {/* Project Selector */}
         <div style={{ display:'flex', alignItems:'center', gap:8, background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`, borderRadius:8, padding:'4px 12px' }}>
-          <span style={{ fontSize:10, color:S.muted }}>PROJECT</span>
+          <span style={{ fontSize:10, color:S.muted }}>{t('projectLabel')}</span>
           <select value={activeProject} onChange={e => handleSwitchProject(e.target.value)}
             style={{ background:'transparent', border:'none', color:S.text, fontSize:12, fontWeight:700, cursor:'pointer', outline:'none' }}>
             {projects.map(p => <option key={p} value={p} style={{ background:'#161b22' }}>{p}</option>)}
           </select>
           <button onClick={() => setShowProjectModal(true)}
             style={{ background:'rgba(59,130,246,0.1)', border:'1px solid rgba(59,130,246,0.2)', borderRadius:5, padding:'2px 8px', color:S.blue, fontSize:10, fontWeight:700 }}>
-            + New
+            {t('newProject')}
           </button>
         </div>
 
@@ -2897,7 +2896,7 @@ export default function Dashboard() {
         {/* LEFT SIDEBAR */}
         <div style={{ width:56, background:S.bg2, borderRight:`1px solid ${S.border}`, display:'flex', flexDirection:'column', alignItems:'center', padding:'12px 0', gap:4, flexShrink:0 }}>
           {SIDEBAR_ITEMS.map(item => (
-            <button key={item.id} onClick={() => setActiveNav(item.id)} title={item.label}
+            <button key={item.id} onClick={() => setActiveNav(item.id)} title={t(item.labelKey)}
               style={{
                 width:40, height:40, borderRadius:10, border:`1px solid ${activeNav === item.id ? 'rgba(59,130,246,0.3)' : 'transparent'}`,
                 background: activeNav === item.id ? 'rgba(59,130,246,0.1)' : 'transparent',
@@ -2931,7 +2930,7 @@ export default function Dashboard() {
           {/* Mission Input */}
           <div style={{ padding:'16px', borderTop:`1px solid ${S.border}`, flexShrink:0 }}>
             <div className="sec-title" style={{ color:S.muted, marginBottom:10, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-              <span>⚡ Mission Control</span>
+              <span>⚡ {t('missionControl')}</span>
               {chatMessages.length > 0 && (
                 <span style={{ display:'flex', gap:4 }}>
                   {[['site', '🌍'], ['system', '🏢']].map(([id, icon]) => (
@@ -3017,7 +3016,7 @@ export default function Dashboard() {
           <div style={{ height:60, background:'#050910', borderTop:`1px solid ${S.border}`, display:'flex', alignItems:'center', padding:'0 16px', gap:0, overflowX:'auto', flexShrink:0 }}>
             {Object.entries(agentStates || { planner:'waiting', architect:'waiting', coder:'waiting', qa:'waiting', deploy:'waiting' }).map(([name, state], i, arr) => (
               <div key={name} style={{ display:'flex', alignItems:'center', flexShrink:0 }}>
-                <AgentNode name={name} state={state} icon={
+                <AgentNode name={name} state={state} t={t} icon={
                   name === 'planner' ? '🗺️' : name === 'architect' ? '🏗️' : name === 'coder' ? '💻' : name === 'qa' ? '🧪' : '🚀'
                 } />
                 {i < arr.length - 1 && <div style={{ width:24, height:1, background: state === 'completed' ? 'rgba(16,185,129,0.3)' : S.border, flexShrink:0, margin:'0 2px' }} />}
@@ -3031,13 +3030,13 @@ export default function Dashboard() {
 
           {/* Digital Twin — حالة السيرفر الحقيقية */}
           <div style={{ padding:'14px', borderBottom:`1px solid ${S.border}` }}>
-            <div className="sec-title" style={{ color:S.muted, marginBottom:10 }}>⬡ Digital Twin</div>
+            <div className="sec-title" style={{ color:S.muted, marginBottom:10 }}>⬡ {t('digitalTwin')}</div>
             <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:8 }}>
               <span style={{ width:8, height:8, borderRadius:'50%', background: isConnected ? S.good : S.warn, boxShadow:`0 0 8px ${isConnected ? S.good : S.warn}`, animation:'pulse 1.6s infinite', flexShrink:0 }} />
               <span style={{ fontSize:20, fontWeight:900, letterSpacing:'0.5px', color: isConnected ? S.good : S.warn }}>
-                {isConnected ? 'ONLINE' : 'OFFLINE'}
+                {isConnected ? t('statusOnline') : t('statusOffline')}
               </span>
-              <span style={{ fontSize:10, color:S.muted, marginInlineStart:'auto' }}>Uptime {fmtUptime}</span>
+              <span style={{ fontSize:10, color:S.muted, marginInlineStart:'auto' }}>{t('uptimeLabel')} {fmtUptime}</span>
             </div>
             <div className="meter">
               <span style={{ width: isConnected ? '100%' : '15%', background: isConnected ? 'linear-gradient(90deg,#10b981,#059669)' : S.warn, boxShadow:`0 0 8px ${isConnected ? S.good : S.warn}66` }} />
@@ -3047,9 +3046,9 @@ export default function Dashboard() {
           {/* Metrics — مؤشرات النظام الحقيقية (مؤشرات مدوّرة، القيمة بالحبر النصّي) */}
           <div style={{ padding:14, borderBottom:`1px solid ${S.border}`, display:'flex', flexDirection:'column', gap:12 }}>
             {[
-              { label:'CPU', value: metrics?.system?.cpuPct != null ? `${metrics.system.cpuPct}%` : '—', pct: metrics?.system?.cpuPct ?? 0, color:S.blue },
-              { label:'RAM', value: metrics?.system?.rssMb != null ? `${metrics.system.rssMb} MB` : '—', pct: Math.min(100, (metrics?.system?.rssMb ?? 0) / 5), color:S.purple },
-              { label:'Latency', value: latencyMs != null ? `${latencyMs} ms` : '—', pct: Math.min(100, (latencyMs ?? 0) / 10), color: (latencyMs ?? 0) > 500 ? S.warn : S.good },
+              { label:t('metricCpu'), value: metrics?.system?.cpuPct != null ? `${metrics.system.cpuPct}%` : '—', pct: metrics?.system?.cpuPct ?? 0, color:S.blue },
+              { label:t('metricRam'), value: metrics?.system?.rssMb != null ? `${metrics.system.rssMb} MB` : '—', pct: Math.min(100, (metrics?.system?.rssMb ?? 0) / 5), color:S.purple },
+              { label:t('metricLatency'), value: latencyMs != null ? `${latencyMs} ms` : '—', pct: Math.min(100, (latencyMs ?? 0) / 10), color: (latencyMs ?? 0) > 500 ? S.warn : S.good },
             ].map(m => (
               <div key={m.label}>
                 <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
@@ -3068,11 +3067,11 @@ export default function Dashboard() {
             <div className="sec-title" style={{ color:S.muted, marginBottom:10 }}>📊 {t('intelligence')}</div>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
               {[
-                { label:'SEO', value: fmtScore(metrics?.seo), color: gradeColor(metrics?.seo?.grade) },
-                { label:'Security', value: fmtScore(metrics?.security), color: gradeColor(metrics?.security?.grade) },
-                { label:'Quality', value: fmtScore(metrics?.quality), color: gradeColor(metrics?.quality?.grade) },
-                { label:'Builds', value: metrics?.totalBuilds ?? 0, color:S.blue },
-                { label:'Edits', value: metrics?.totalEdits ?? 0, color:S.purple },
+                { label:t('mSeo'), value: fmtScore(metrics?.seo), color: gradeColor(metrics?.seo?.grade) },
+                { label:t('mSecurity'), value: fmtScore(metrics?.security), color: gradeColor(metrics?.security?.grade) },
+                { label:t('mQuality'), value: fmtScore(metrics?.quality), color: gradeColor(metrics?.quality?.grade) },
+                { label:t('mBuilds'), value: metrics?.totalBuilds ?? 0, color:S.blue },
+                { label:t('mEdits'), value: metrics?.totalEdits ?? 0, color:S.purple },
               ].map(m => (
                 <div key={m.label} className="stat-tile">
                   <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:4 }}>
@@ -3088,11 +3087,11 @@ export default function Dashboard() {
           {/* Stats */}
           {files.length > 0 && (
             <div style={{ padding:14, borderBottom:`1px solid ${S.border}` }}>
-              <div className="sec-title" style={{ color:S.muted, marginBottom:10 }}>📁 Workspace</div>
+              <div className="sec-title" style={{ color:S.muted, marginBottom:10 }}>📁 {t('workspaceLabel')}</div>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
                 {[
-                  { label:'Files', value: files.length },
-                  { label:'Lines', value: activeFileContent.split('\n').length },
+                  { label:t('filesLabel'), value: files.length },
+                  { label:t('linesLabel'), value: activeFileContent.split('\n').length },
                 ].map(s => (
                   <div key={s.label} className="stat-tile">
                     <div style={{ fontSize:9, color:S.muted, fontWeight:600 }}>{s.label}</div>
@@ -3105,7 +3104,7 @@ export default function Dashboard() {
 
           {/* Files */}
           <div style={{ padding:14, flex:1 }}>
-            <div className="sec-title" style={{ color:S.muted, marginBottom:10 }}>Files</div>
+            <div className="sec-title" style={{ color:S.muted, marginBottom:10 }}>{t('filesLabel')}</div>
             {files.map(f => (
               <button key={f} onClick={() => { openJaolaFile(f); setActiveTab('editor'); }}
                 style={{ width:'100%', background: activeFile === f ? 'rgba(59,130,246,0.08)' : 'transparent', border:`1px solid ${activeFile === f ? 'rgba(59,130,246,0.2)' : 'transparent'}`, borderRadius:6, padding:'5px 8px', color: activeFile === f ? '#93c5fd' : S.muted, fontSize:10, textAlign:'right', display:'flex', alignItems:'center', gap:6, marginBottom:2 }}>

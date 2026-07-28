@@ -5,7 +5,7 @@ import { useI18n } from '../i18n.js';
 
 // معاينة محسّنة: شريط أدوات (جهاز/تحديث/فتح خارجي) + بث الكود الحي أثناء الكتابة
 
-export function PreviewPanel({ activeProject, previewTimestamp, streamingContent, currentUser, onRefresh, compact = false }) {
+export function PreviewPanel({ activeProject, previewTimestamp, streamingContent, currentUser, onRefresh, compact = false, hasFiles = true }) {
   const t = useI18n(s => s.t);
   const [viewMode, setViewMode] = useState('desktop'); // desktop | mobile
   const [streamStale, setStreamStale] = useState(false);
@@ -60,13 +60,21 @@ export function PreviewPanel({ activeProject, previewTimestamp, streamingContent
 
       {/* المعاينة + بث الكود الحي */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: viewMode === 'mobile' ? '#0a0f18' : '#060a10' }}>
-        <PreviewFrame
-          activeProject={activeProject}
-          previewTimestamp={previewTimestamp}
-          viewMode={viewMode}
-          streamingContent={streamingContent}
-          currentUser={savedUser}
-        />
+        {!hasFiles && !streamingContent ? (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 24, textAlign: 'center' }}>
+            <span style={{ fontSize: 32, opacity: 0.5 }}>🖥️</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: '#94a3b8' }}>{t('noPreviewYet')}</span>
+            <span style={{ fontSize: 12, color: '#475569', maxWidth: 320, lineHeight: 1.7 }}>{t('noPreviewYetHint')}</span>
+          </div>
+        ) : (
+          <PreviewFrame
+            activeProject={activeProject}
+            previewTimestamp={previewTimestamp}
+            viewMode={viewMode}
+            streamingContent={streamingContent}
+            currentUser={savedUser}
+          />
+        )}
 
         {/* أثناء البناء: طبقة بث الكود المكتوب مباشرة */}
         {showStreamOverlay && (

@@ -1156,7 +1156,7 @@ const DICT = [
     // ── 💊 pharmacy / 🏢 property / 🎬 cinema ──
     ['أدوية · صرف بوصفة · تنبيه نفاد وانتهاء صلاحية · تقارير.', 'Medicines · Prescription dispensing · Low-stock and expiry alerts · Reports.'],
     ['وحدات · عقود · تحصيل إيجار · تنبيه استحقاق · تقارير.', 'Units · Contracts · Rent collection · Due alerts · Reports.'],
-    ['أحدث الأفلام · اختر مقعدك · تذكرة فورية.', 'Latest movies · Pick your seat · Instant ticket.'],
+    ['أحدث الأفلام · اختر مقعدك · تذكرة فورية لكل مشاهد.', 'Latest movies · Pick your seat · Instant ticket for every viewer.'],
     ['أيام التنبيه قبل انتهاء الصلاحية', 'Alert days before expiry'],
     ['⏳ قرب/انتهاء الصلاحية', '⏳ Near/expired'],
     ['قرب/انتهاء الصلاحية', 'Near/expired'],

@@ -2,7 +2,7 @@
  * 🎬 jaola-cinema — موقع سينما لحجز التذاكر (track: site — لزوّار).
  *
  * أفلام بعروض مؤقّتة، اختيار مقاعد على شبكة، حجز تذاكر بتأكيد وتذكرة
- * قابلة للطباعة، ولوحة إدارة (إضافة أفلام/عروض). أدوار: زائر (يحجز) +
+ * قابلة للطباعة، ولوحة إدارة (إضافة أفلام/عروض). أدوار: مشاهد (يحجز) +
  * إدارة. بلا اعتماد خارجي. الحالة في localStorage (jcin_*).
  */
 import { sharedSystemStyles } from './jaolaClinic.js';
@@ -24,7 +24,7 @@ export function jaolaCinema() {
   </header>
   <main class="no-print">
     <section id="view-now" class="view">
-      <div class="hero"><div class="hero-in"><h1>احجز تذكرتك الآن</h1><p>أحدث الأفلام · اختر مقعدك · تذكرة فورية.</p></div></div>
+      <div class="hero"><div class="hero-in"><h1>احجز تذكرتك الآن</h1><p>أحدث الأفلام · اختر مقعدك · تذكرة فورية لكل مشاهد.</p></div></div>
       <h2>يُعرض الآن</h2>
       <div id="moviesGrid" class="movies-grid"></div>
     </section>
@@ -310,7 +310,7 @@ document.addEventListener('DOMContentLoaded', init);
         descriptionEn: 'Visitor-facing cinema site: now-showing movies with showtimes, seat selection on a hall map, ticket booking with confirmation and a printable ticket, plus an admin panel to add movies and showtimes.',
         keywords: ['سينما', 'سينمات', 'أفلام', 'فيلم', 'حجز تذاكر سينما', 'تذاكر أفلام', 'تذاكر الأفلام', 'اختيار مقاعد', 'المقاعد', 'مقاعد', 'عروض سينما', 'صالة عرض', 'cinema', 'movie', 'movies', 'film', 'showtimes', 'seat selection', 'ticket booking', 'theater'],
         model: {
-            roles: [{ name: 'زائر' }, { name: 'إدارة' }],
+            roles: [{ name: 'مشاهد' }, { name: 'إدارة' }],
             entities: [{ name: 'فيلم' }, { name: 'عرض' }, { name: 'حجز تذكرة' }],
             flows: [{ name: 'تصفّح الأفلام والعروض' }, { name: 'اختيار المقاعد على خريطة القاعة' }, { name: 'تأكيد الحجز وطباعة التذكرة' }, { name: 'إدارة الأفلام والعروض' }],
         },
