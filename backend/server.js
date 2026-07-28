@@ -83,6 +83,7 @@ import { installDataSync } from './services/dataSync.js';
 import { readStore as readAppDataStore, writeKey as writeAppDataKey } from './services/appData.js';
 import { recordError, recentErrors } from './services/errorLog.js';
 import { verifyPassword as verifyProjectPassword, setPassword as setProjectPassword } from './services/projectAuth.js';
+import { listRecords as listCollectionRecords, upsertRecord as upsertCollectionRecord, deleteRecord as deleteCollectionRecord } from './services/appCollections.js';
 import { buildStaticSiteFromSource, buildDashboardPage } from './services/reactPreview.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
 import { getProjectMemory, getDomainModel } from './agents/projectMemory.js';
@@ -188,10 +189,11 @@ const io = new Server(httpServer, {
 // نقطة دردشة جولا بوت عامّة: تُستدعى من مواقع الزوّار (origins متعدّدة) —
 // نسمح لأي origin لهذا المسار وحده؛ بقيّة المسارات تبقى مقيّدة بـ ALLOWED_ORIGINS.
 const OPEN_CORS_PATHS = new Set(['/api/jaola-bot/chat', '/api/agent-chat', '/api/public/site-hit', '/api/public/site-message', '/api/public/data', '/api/public/auth/login', '/api/public/auth/set-password']);
-// 🗄️ /api/public/data/:key (PUT) بمفتاح ديناميكي في المسار — تطابق بادئة لا مساواة تامّة
-const isOpenCorsPath = (p) => OPEN_CORS_PATHS.has(p) || p.startsWith('/api/public/data/');
+// 🗄️ /api/public/data/:key و/api/public/collections/:name[/:id] بمفاتيح
+// ديناميكية في المسار — تطابق بادئة لا مساواة تامّة
+const isOpenCorsPath = (p) => OPEN_CORS_PATHS.has(p) || p.startsWith('/api/public/data/') || p.startsWith('/api/public/collections/');
 const corsDelegate = (req, callback) => {
-    if (isOpenCorsPath(req.path)) return callback(null, { origin: true, credentials: false, methods: ['GET', 'POST', 'PUT', 'OPTIONS'] });
+    if (isOpenCorsPath(req.path)) return callback(null, { origin: true, credentials: false, methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] });
     callback(null, corsOptions);
 };
 app.use(cors(corsDelegate));
@@ -2644,6 +2646,34 @@ app.post('/api/public/auth/set-password', authLimit, async (req, res) => {
         if (r.error) return res.status(400).json({ error: r.error });
         res.json({ success: true });
     } catch { res.status(500).json({ success: false }); }
+});
+
+// 🗄️ مجموعات حقيقية (jaola-collections) — سجلات بمعرّفات وCRUD فردي، فوق
+// appData.js. قدرة إضافية جاهزة لقوالب السيستم (لا القوالب الحالية بعد —
+// انظر تعليق appCollections.js)، بنفس قيد التتبّع (system فقط) والتوكن.
+const APPCOLLECTIONS_DIR = path.join(BASE_WORKSPACE, '.appcollections');
+app.get('/api/public/collections/:name', appDataLimit, (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p || getCloneTrack(v.u, v.p) !== 'system') return res.json({ records: [] });
+    try {
+        const filter = { ...req.query }; delete filter.token;
+        res.json({ records: listCollectionRecords(APPCOLLECTIONS_DIR, v.u, v.p, req.params.name, filter) });
+    } catch { res.json({ records: [] }); }
+});
+app.post('/api/public/collections/:name', appDataLimit, (req, res) => {
+    const v = verifyBotToken(req.body?.token);
+    if (!v?.u || !v?.p || getCloneTrack(v.u, v.p) !== 'system') return res.status(204).end();
+    try {
+        const r = upsertCollectionRecord(APPCOLLECTIONS_DIR, v.u, v.p, req.params.name, req.body?.record);
+        if (r.error) return res.status(400).json({ error: r.error });
+        res.json(r);
+    } catch { res.status(500).json({ success: false }); }
+});
+app.delete('/api/public/collections/:name/:id', appDataLimit, (req, res) => {
+    const v = verifyBotToken(req.query?.token || req.body?.token);
+    if (!v?.u || !v?.p || getCloneTrack(v.u, v.p) !== 'system') return res.status(204).end();
+    try { res.json(deleteCollectionRecord(APPCOLLECTIONS_DIR, v.u, v.p, req.params.name, req.params.id)); }
+    catch { res.status(500).json({ success: false }); }
 });
 
 // 📧 إرسال ردّ فعلي من الداشبورد على رسالة واردة — بحصة الخطة الشهرية
