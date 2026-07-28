@@ -16,14 +16,18 @@ import { jaolaLms } from './jaolaLms.js';
 import { jaolaSchool } from './jaolaSchool.js';
 import { jaolaEvents } from './jaolaEvents.js';
 import { jaolaErp } from './jaolaErp.js';
+import { jaolaClinic } from './jaolaClinic.js';
+import { jaolaHr } from './jaolaHr.js';
+import { jaolaPos } from './jaolaPos.js';
+import { jaolaRestaurantOps } from './jaolaRestaurantOps.js';
 
 // كل قوالب jaola المتاحة (تُبنى مرة عند الحاجة)
-const BUILDERS = [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaEvents, jaolaLms, jaolaSchool, jaolaWeather, jaolaCrypto, jaolaCurrency, jaolaErp];
+const BUILDERS = [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaEvents, jaolaLms, jaolaSchool, jaolaWeather, jaolaCrypto, jaolaCurrency, jaolaErp, jaolaClinic, jaolaHr, jaolaPos, jaolaRestaurantOps];
 
 // 🧭 مساران منفصلان: «موقع» (لزوّار) و«سيستم داخلي» (أداة عمل) — طلب
 // سيستم لا يُقفز أبداً لقالب متجر (عطل photo-test الحقيقي: طلب نظام
 // مصنع فبُني متجر منتجات). القوالب بلا track تُعامل كمواقع.
-const SYSTEM_INTENT_RE = /سيستم|نظام\s*(?:داخلي|إداري|ادار|إدار|محاسب)|إدارة\s*(?:مصنع|منشأة|منشاة|مستودع|مخزون|ورشة)|ادارة\s*(?:مصنع|منشأة|منشاة|مستودع|مخزون|ورشة)|منصرفات|\berp\b|internal\s+system|management\s+system/i;
+const SYSTEM_INTENT_RE = /سيستم|نظام\s*(?:داخلي|إداري|ادار|إدار|محاسب|عيادة|مركز|موارد|موظف|مطعم|نقطة|كاشير|مبيعات|مخزون|فوترة)|إدارة\s*(?:مصنع|منشأة|منشاة|مستودع|مخزون|ورشة|عيادة|موظف|موارد|مطعم)|ادارة\s*(?:مصنع|منشأة|منشاة|مستودع|مخزون|ورشة|عيادة|موظف|موارد|مطعم)|منصرفات|نقطة\s*بيع|كاشير|موارد\s*بشرية|شؤون\s*موظف|رواتب|حضور\s*وانصراف|شاشة\s*مطبخ|تشغيل\s*مطعم|\b(?:erp|pos|hr|kds)\b|internal\s+system|management\s+system/i;
 
 /** يستنتج المسار من نص الطلب حين لا يُمرَّر صراحة. */
 export function inferTrack(goal = '') {
