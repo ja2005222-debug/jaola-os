@@ -59,6 +59,7 @@ export async function createCheckoutSession({ planId, username, email, customerI
         line_items: [{ price: priceId, quantity: 1 }],
         success_url: successUrl,
         cancel_url: cancelUrl,
+        allow_promotion_codes: true, // يظهر حقل "لديك كود خصم؟" — الكوبونات تُنشأ من لوحة Stripe
         client_reference_id: username,
         ...(customerId ? { customer: customerId } : (email ? { customer_email: email } : {})),
         metadata: { username, planId },
