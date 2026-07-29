@@ -87,12 +87,14 @@ function Login({ onLogin }) {
     const sync = window.JAOLA_SYNC;
     const settings = load('settings', { pass: 'admin' });
     function ok() { setErr(false); setPass(''); onLogin(role); }
-    function fail() { setErr(true); }
+    function fail(msg) { setErr(msg || true); }
     if (!sync) { if (pass !== settings.pass) return fail(); return ok(); }
     fetch(sync.api + '/api/public/auth/login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: sync.token, password: pass }),
-    }).then(function (r) { return r.json(); }).then(function (d) { if (d && d.ok) ok(); else fail(); }).catch(fail);
+    }).then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); })
+      .then(function (d) { if (d && d.ok) ok(); else fail(); })
+      .catch(function () { fail('تعذّر الاتصال بالخادم، تحقّق من الاتصال وحاول مجدداً'); });
   }
 
   return (
@@ -108,7 +110,7 @@ function Login({ onLogin }) {
           </select>
           <label>كلمة المرور</label>
           <input type="password" placeholder="admin" value={pass} onChange={function (e) { setPass(e.target.value); }} />
-          {err && <p className="err">كلمة المرور غير صحيحة</p>}
+          {err && <p className="err">{typeof err === 'string' ? err : 'كلمة المرور غير صحيحة'}</p>}
           <button className="btn primary block" type="submit">دخول</button>
           <p className="hint tiny">تجريبياً: كلمة المرور «admin».</p>
         </form>

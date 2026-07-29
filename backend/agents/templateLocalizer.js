@@ -1779,6 +1779,7 @@ const DICT = [
     ['معاينة صورة العيادة', 'Clinic photo preview'],
     ['صورة العيادة (اختياري)', 'Clinic photo (optional)'],
     ['صورة العيادة', 'Clinic photo'],
+    ['تعذّر الاتصال بالخادم، تحقّق من الاتصال وحاول مجدداً', 'Could not reach the server, check your connection and try again'],
 
     // ── تنظيف المنازل (jaola-cleaning) ───────────────────────────────
     ['خدمات jaola لتنظيف المنازل', 'jaola Home Cleaning Services'],
