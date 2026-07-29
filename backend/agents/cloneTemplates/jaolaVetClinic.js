@@ -139,11 +139,13 @@ function login() {
     show(byId('loginErr'), false); session = { role: role }; save('session', session);
     byId('loginPass').value = ''; toast('أهلاً ' + roleLabel(role)); setView('dashboard');
   }
-  function onFail() { show(byId('loginErr'), true); }
+  function onFail(msg) { var el = byId('loginErr'); el.textContent = msg || 'كلمة المرور غير صحيحة'; show(el, true); }
   var sync = window.JAOLA_SYNC;
   if (!sync) { if (pass !== settings.pass) return onFail(); return onOk(); }
   fetch(sync.api + '/api/public/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: pass }) })
-    .then(function (r) { return r.json(); }).then(function (d) { if (d && d.ok) onOk(); else onFail(); }).catch(onFail);
+    .then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); })
+    .then(function (d) { if (d && d.ok) onOk(); else onFail(); })
+    .catch(function () { onFail('تعذّر الاتصال بالخادم، تحقّق من الاتصال وحاول مجدداً'); });
 }
 function logout() { session = null; save('session', null); toast('تم الخروج'); setView('login'); }
 
