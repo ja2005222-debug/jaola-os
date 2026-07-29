@@ -133,6 +133,18 @@ export function extractDefinedFunctions(js = '') {
             if (name && /^[A-Za-z_$][\w$]*$/.test(name)) defined.add(name);
         }
     }
+    // معاملات دالة عادية (لا تفكيك): function foo(a, cb) {...} أو (a, cb) =>
+    // — مهمّ خصوصاً حين يُستدعى المعامل لاحقاً كدالة (نمط callback شائع:
+    // resizeImage(file, cb) { ...؛ cb(result); }) وإلا يُحسب "غير معرَّف" زوراً.
+    for (const m of js.matchAll(/function\s*\*?\s*[A-Za-z_$]*\s*\(([^)]*)\)|\(([^)]*)\)\s*=>/g)) {
+        const body = m[1] ?? m[2];
+        for (const part of body.split(',')) {
+            const name = part.split('=')[0].trim().replace(/^\.\.\./, '');
+            if (name && !name.includes('{') && !name.includes('[') && /^[A-Za-z_$][\w$]*$/.test(name)) defined.add(name);
+        }
+    }
+    // معامل سهم بلا أقواس: x => ...
+    for (const m of js.matchAll(/(?<![\w$)\]])([A-Za-z_$][\w$]*)\s*=>/g)) defined.add(m[1]);
     for (const m of js.matchAll(/import\s+(?:\*\s+as\s+)?([A-Za-z_$][\w$]*)\s+from/g)) defined.add(m[1]);
     return defined;
 }
