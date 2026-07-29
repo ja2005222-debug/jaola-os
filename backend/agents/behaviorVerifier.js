@@ -13,7 +13,47 @@
  * للشبكة أو لـ Node من داخل السكربتات المُشغّلة.
  */
 
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+
 // ── أدوات نقية (قابلة للاختبار بلا jsdom) ─────────────────────────────
+
+// قوالب React (عبر CDN+Babel، بلا خطوة بناء) تضع type="text/babel" على
+// <script src="app.js"> — نحوّل JSX لـ JS عادي عبر @babel/standalone قبل
+// حقنها في jsdom، وإلا يفشل التشغيل بخطأ صياغة كاذب (JSX ليست JS قياسية).
+// تحميل كسول + آمن: غياب الحزمة لا يُسقط الفحص، فقط يُبقي الكود كما هو
+// (فيُبلّغ no-js-errors عن خطأ صياغة حقيقي — أصدق من إخفاء الفحص كلّياً).
+let _babel;
+function tryTransformJsx(code) {
+    if (_babel === undefined) {
+        try { _babel = require('@babel/standalone'); } catch { _babel = null; }
+    }
+    if (!_babel) return code;
+    try { return _babel.transform(code, { presets: [['react', { runtime: 'classic' }]] }).code; }
+    catch { return code; } // خطأ JSX حقيقي — يظهر لاحقاً كخطأ JS صادق في jsdom
+}
+
+// قوالب React عبر CDN (React/ReactDOM/Babel standalone من unpkg) لا تُجلب في
+// jsdom (بلا شبكة عمداً) — نُضمِّن بدلاً منها نفس الحزم مثبَّتة محلياً
+// (react/react-dom@18 UMD وBabel standalone)، فيُختبَر السلوك الحقيقي دون
+// أي اتصال شبكي فعلي. غياب الحزمة محلياً يُبقي الوسم كما هو (تجاوز آمن).
+const CDN_JS_SHIMS = [
+    { test: /unpkg\.com\/react@1[0-9][^"'/]*\/umd\/react[.\w-]*\.min\.js/i, resolve: () => require.resolve('react/package.json').replace('package.json', 'umd/react.production.min.js') },
+    { test: /unpkg\.com\/react-dom@1[0-9][^"'/]*\/umd\/react-dom[.\w-]*\.min\.js/i, resolve: () => require.resolve('react-dom/package.json').replace('package.json', 'umd/react-dom.production.min.js') },
+    { test: /unpkg\.com\/@babel\/standalone/i, resolve: () => require.resolve('@babel/standalone/babel.min.js') },
+];
+const _cdnCache = new Map();
+function resolveCdnShim(url) {
+    for (const shim of CDN_JS_SHIMS) {
+        if (!shim.test.test(url)) continue;
+        if (_cdnCache.has(shim)) return _cdnCache.get(shim);
+        let code = null;
+        try { code = require('fs').readFileSync(shim.resolve(), 'utf8'); } catch { code = null; }
+        _cdnCache.set(shim, code);
+        return code;
+    }
+    return null;
+}
 
 /**
  * يُضمّن سكربتات محلية مشار إليها بـ <script src="x.js"> داخل HTML كي تُشغَّل
@@ -25,8 +65,10 @@ export function inlineLocalScripts(html, assets = {}) {
     if (typeof html !== 'string') return '';
     return html.replace(/<script\b([^>]*)\bsrc=["']([^"']+)["']([^>]*)><\/script>/gi, (m, pre, src, post) => {
         const key = src.replace(/^\.?\//, '').split('?')[0];
-        const code = assets[key] ?? assets[src];
+        let code = assets[key] ?? assets[src];
+        if (typeof code !== 'string') code = resolveCdnShim(src);
         if (typeof code !== 'string') return m; // خارجي/غير متوفّر → نتركه (لن يُشغَّل)
+        if (/\btype=["']text\/babel["']/.test(pre + ' ' + post)) code = tryTransformJsx(code);
         // نزيل type=module لأن jsdom الكلاسيكي يكفي، ونحقن المحتوى
         return `<script>\n${code}\n</script>`;
     });
@@ -73,9 +115,21 @@ export function extractDefinedFunctions(js = '') {
         /([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{/g,                             // foo(...) {
     ];
     for (const re of defPatterns) { let m; while ((m = re.exec(js))) defined.add(m[1]); }
-    for (const m of js.matchAll(/(?:const|let|var|import)\s*\{([^}]*)\}/g)) {
+    // تفكيك كائن: const {a,b} = ... ، وتفكيك معامل دالة: function X({a,b}) {...}
+    // (نمط مكوّنات React القياسي: function Owners({ owners, addOwner }) {...})
+    for (const m of js.matchAll(/(?:const|let|var|import)\s*\{([^}]*)\}|\(\s*\{([^}]*)\}\s*\)\s*(?:=>)?\s*\{/g)) {
+        const body = m[1] ?? m[2];
+        for (const part of body.split(',')) {
+            // القيمة الافتراضية (إن وُجدت) تُقطَع أولاً كي لا تُحسَب اسماً
+            // خطأً — {role = 'vet'} الاسم المربوط هو role لا 'vet'
+            const name = part.split('=')[0].split(/[:\s]/).map(s => s.trim()).filter(Boolean).pop();
+            if (name && /^[A-Za-z_$][\w$]*$/.test(name)) defined.add(name);
+        }
+    }
+    // تفكيك مصفوفة: const [x, setX] = useState(...) — نمط React hooks القياسي
+    for (const m of js.matchAll(/(?:const|let|var)\s*\[([^\]]*)\]\s*=/g)) {
         for (const part of m[1].split(',')) {
-            const name = part.split(/[:\s]/).map(s => s.trim()).filter(Boolean).pop();
+            const name = part.trim();
             if (name && /^[A-Za-z_$][\w$]*$/.test(name)) defined.add(name);
         }
     }

@@ -570,7 +570,12 @@ test('المحاسبة: طبيعة الحساب (مدين/دائن) صحيحة �
 // التوثيقي (لا مطابقة كلمة المستخدم الحقيقية) — تحقّقنا يدوياً أن طلبات
 // طبيعية واقعية («سوق إلكتروني متعدد البائعين»، «محوّل عملات»، «نادٍ
 // رياضي جيم») توجَّه بشكل صحيح؛ فقط نص الوصف الداخلي يتصادم.
-const SELF_ROUTING_KNOWN_EXCEPTIONS = new Set(['jaola-marketplace', 'jaola-currency', 'jaola-gym']);
+// jaola-vetclinic-react: قالب تجريبي (React عبر CDN+Babel) للمقارنة مع
+// jaola-vetclinic الأصلي — تحقّقنا يدوياً أن حتى صياغات صريحة تذكر
+// "react" (بالعربية والإنجليزية) لا تتغلّب على الكلمات المفتاحية الأقوى
+// لـjaola-vetclinic نفسه؛ هذا متوقَّع ومقصود: القالب يُصل إليه بالاختيار
+// المباشر من المعرض لا بالمحادثة الطبيعية، حتى يُقرَّر لاحقاً توسيع النهج.
+const SELF_ROUTING_KNOWN_EXCEPTIONS = new Set(['jaola-marketplace', 'jaola-currency', 'jaola-gym', 'jaola-vetclinic-react']);
 test('تدقيق التوجيه: كل قالب (عدا استثناءات موثّقة) يطابق نفسه من وصفه الرسمي', () => {
     for (const meta of listClones()) {
         if (SELF_ROUTING_KNOWN_EXCEPTIONS.has(meta.id)) continue;

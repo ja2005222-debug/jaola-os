@@ -16,6 +16,7 @@ const MAX_KEYS = 60;                  // عدد مفاتيح كحد أقصى ل�
 const MAX_VALUE_BYTES = 512 * 1024;   // 512KB لكل مفتاح
 const MAX_TOTAL_BYTES = 4 * 1024 * 1024; // 4MB إجمالي لكل مشروع
 const KEY_RE = /^[\w.-]{1,80}$/;
+const RESERVED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 const slug = (u, p) => `${String(u || '').replace(/[^a-zA-Z0-9_-]/g, '_')}__${String(p || '').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 const storePath = (dir, u, p) => path.join(dir, slug(u, p) + '.json');
@@ -30,7 +31,8 @@ export function readStore(dir, user, project) {
 
 /** يكتب مفتاحاً واحداً (يدمج مع الموجود) — يفرض حدود الحجم/العدد. */
 export function writeKey(dir, user, project, dataKey, value) {
-    if (!KEY_RE.test(String(dataKey || ''))) return { error: 'مفتاح غير صالح' };
+    const k = String(dataKey || '');
+    if (!KEY_RE.test(k) || RESERVED_KEYS.has(k)) return { error: 'مفتاح غير صالح' };
     const strVal = typeof value === 'string' ? value : JSON.stringify(value ?? null);
     if (Buffer.byteLength(strVal, 'utf8') > MAX_VALUE_BYTES) return { error: 'القيمة أكبر من الحد المسموح' };
     const store = readStore(dir, user, project);

@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { readStore, writeKey } from '../services/appData.js';
 import { buildDataSyncJS, injectDataSyncTag, installDataSync } from '../services/dataSync.js';
+import { setCloneTrack, getCloneTrack } from '../agents/projectMemory.js';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'appdata-'));
 
@@ -34,6 +35,15 @@ test('appData: يرفض مفتاحاً غير صالح وقيمة أكبر من 
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('appData: يرفض أسماء مفاتيح محجوزة (تلوّث النموذج الأولي)', () => {
+    const dir = tmp();
+    assert.ok(writeKey(dir, 'u', 'p', '__proto__', '{"polluted":true}').error);
+    assert.ok(writeKey(dir, 'u', 'p', 'constructor', 'x').error);
+    assert.ok(writeKey(dir, 'u', 'p', 'prototype', 'x').error);
+    assert.deepEqual(readStore(dir, 'u', 'p'), {}, 'لا شيء كُتب فعلاً');
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('appData: يفرض سقف عدد المفاتيح لكل مشروع', () => {
     const dir = tmp();
     for (let i = 0; i < 60; i++) assert.ok(writeKey(dir, 'u', 'p', 'k' + i, 'v').ok);
@@ -48,9 +58,27 @@ test('dataSync: الكود يحمل التوكن/العنوان، ويستثني
     assert.ok(js.includes('tok.sig'));
     assert.ok(js.includes('/api/public/data'));
     assert.ok(js.includes('_session'), 'استثناء مفاتيح الجلسة موجود بالكود');
+    assert.ok(js.includes('window.JAOLA_SYNC'), 'يُعرِّض API/التوكن لـ app.js من أجل المصادقة الحقيقية');
     // بلا توكن/عنوان → لا تفعل شيئاً خطراً (لا تُعطّل تشغيل التطبيق)
     const noop = buildDataSyncJS({ apiBase: '', token: '' });
     assert.ok(noop.includes('loadApp()'));
+});
+
+test('dataSync: window.JAOLA_SYNC فعلياً null بلا توكن، وكائن صحيح معه (تنفيذ حقيقي)', async () => {
+    const { JSDOM } = await import('jsdom');
+    const stubFetch = () => new Promise(() => {}); // معلّقة عمداً — لا حاجة لتسوية شبكة في هذا الاختبار
+
+    const dom1 = new JSDOM('<!doctype html><html><body></body></html>', { runScripts: 'dangerously', url: 'https://x.example' });
+    dom1.window.fetch = stubFetch;
+    dom1.window.eval(buildDataSyncJS({ apiBase: '', token: '' }));
+    assert.equal(dom1.window.JAOLA_SYNC, null);
+
+    const dom2 = new JSDOM('<!doctype html><html><body></body></html>', { runScripts: 'dangerously', url: 'https://x.example' });
+    dom2.window.fetch = stubFetch;
+    dom2.window.eval(buildDataSyncJS({ apiBase: 'https://api.example', token: 'tok.sig' }));
+    // مقارنة بالقيم لا بالمرجع — الكائن أُنشئ في واقعية (realm) jsdom منفصلة
+    assert.equal(dom2.window.JAOLA_SYNC.api, 'https://api.example');
+    assert.equal(dom2.window.JAOLA_SYNC.token, 'tok.sig');
 });
 
 test('dataSync: حقن الوسم idempotent، ويستبدل app.js لا يضيف بجانبه', () => {
@@ -80,9 +108,45 @@ test('installDataSync: يكتب jaola-data.js ويحقن الوسم في مجل�
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('installDataSync: يكتشف type="text/babel" في وسم app.js (قوالب React) ويمرّره', () => {
+    const dir = tmp();
+    fs.writeFileSync(path.join(dir, 'index.html'), '<html><body><script type="text/babel" src="app.js"></script></body></html>');
+    const r = installDataSync(dir, { apiBase: 'https://x.y', token: 't.s' });
+    assert.ok(r.ok);
+    const js = fs.readFileSync(path.join(dir, 'jaola-data.js'), 'utf8');
+    assert.ok(js.includes('"text/babel"'), 'نوع app.js text/babel انتقل لكود المزامنة');
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('dataSync: مسار Babel يجلب app.js ويحوّله عبر Babel.transform وينفّذه (تنفيذ حقيقي)', async () => {
+    const { JSDOM } = await import('jsdom');
+    const dom = new JSDOM('<!doctype html><html><body></body></html>', { runScripts: 'dangerously', url: 'https://x.example' });
+    let fetchedUrl = null;
+    dom.window.fetch = (url) => { fetchedUrl = url; return Promise.resolve({ text: () => Promise.resolve('window.__ran = 1;') }); };
+    dom.window.Babel = { transform: (src) => ({ code: src }) }; // محاكاة بسيطة تكفي لإثبات مسار التنفيذ
+    let dispatched = false;
+    dom.window.document.addEventListener('DOMContentLoaded', () => { dispatched = true; });
+
+    dom.window.eval(buildDataSyncJS({ apiBase: '', token: '', appScriptType: 'text/babel' }));
+    await new Promise((r) => setTimeout(r, 50));
+
+    assert.equal(fetchedUrl, 'app.js', 'جلب app.js عبر fetch مباشرة (لا وسم <script> ديناميكي)');
+    assert.equal(dom.window.__ran, 1, 'الكود المحوَّل نُفِّذ فعلياً');
+    assert.ok(dispatched, 'DOMContentLoaded الصناعي أُطلق بعد التنفيذ');
+});
+
 test('installDataSync: تجاوز آمن حين لا يوجد index.html أو مجلّد المشروع', () => {
     const dir = tmp();
     assert.ok(installDataSync(dir, { apiBase: 'https://x.y', token: 't.s' }).skipped, 'لا index.html');
     assert.ok(installDataSync(path.join(dir, 'nope'), { apiBase: 'https://x.y', token: 't.s' }).error, 'مجلّد غير موجود');
     fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('projectMemory: يسجّل ويسترجع track الكلون المطبَّق (يحدّد أهلية jaola-data)', () => {
+    const user = 'trackuser_' + Date.now(), proj = 'p1';
+    assert.equal(getCloneTrack(user, proj), null, 'مشروع لم يُطبَّق عليه كلون قط → null');
+    setCloneTrack(user, proj, 'system');
+    assert.equal(getCloneTrack(user, proj), 'system');
+    setCloneTrack(user, proj, 'site');
+    assert.equal(getCloneTrack(user, proj), 'site', 'يُحدَّث عند إعادة التطبيق');
 });

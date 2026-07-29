@@ -230,11 +230,17 @@ function renderTabs() {
 function login() {
   var role = byId('loginRole').value;
   var pass = byId('loginPass').value;
-  if (pass !== settings.pass) { show(byId('loginErr'), true); return; }
-  show(byId('loginErr'), false);
-  state.user = { role: role };
-  toast('مرحباً ' + ROLES[role].name);
-  setView('dashboard');
+  function onOk() {
+    show(byId('loginErr'), false);
+    state.user = { role: role };
+    toast('مرحباً ' + ROLES[role].name);
+    setView('dashboard');
+  }
+  function onFail() { show(byId('loginErr'), true); }
+  var sync = window.JAOLA_SYNC;
+  if (!sync) { if (pass !== settings.pass) return onFail(); return onOk(); }
+  fetch(sync.api + '/api/public/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: pass }) })
+    .then(function (r) { return r.json(); }).then(function (d) { if (d && d.ok) onOk(); else onFail(); }).catch(onFail);
 }
 function logout() { state.user = null; setView('login'); }
 
@@ -499,7 +505,7 @@ function saveSettings() {
   settings.name = byId('stName').value.trim() || settings.name;
   settings.currency = byId('stCurrency').value.trim() || settings.currency;
   var np = byId('stPass').value.trim();
-  if (np) settings.pass = np;
+  if (np) { var sync = window.JAOLA_SYNC; if (sync) { fetch(sync.api + '/api/public/auth/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: np }) }).catch(function () {}); } else settings.pass = np; }
   save('settings', settings);
   byId('brandName').textContent = settings.name;
   toast('حُفظت الإعدادات');

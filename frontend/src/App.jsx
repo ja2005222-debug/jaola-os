@@ -4,6 +4,7 @@ import BootSequence from './pages/BootSequence'
 import Dashboard from './pages/Dashboard'
 import AdminPanel from './pages/AdminPanel'
 import BillingPage from './pages/BillingPage'
+import LegalPage from './pages/LegalPage'
 
 export default function App() {
   const [page, setPage] = useState(() => {
@@ -12,6 +13,8 @@ export default function App() {
     if (path === '/dashboard') return 'dashboard'
     if (path === '/admin') return 'admin'
     if (path === '/billing' || path === '/settings') return 'billing'
+    if (path === '/privacy') return 'privacy'
+    if (path === '/terms') return 'terms'
     return 'landing'
   })
 
@@ -21,12 +24,16 @@ export default function App() {
     else if (to === '/dashboard') setPage('dashboard')
     else if (to === '/admin') setPage('admin')
     else if (to === '/billing' || to === '/settings') setPage('billing')
+    else if (to === '/privacy') setPage('privacy')
+    else if (to === '/terms') setPage('terms')
     else setPage('landing')
   }
 
   if (page === 'boot') return <BootSequence onDone={() => { sessionStorage.setItem('booted', '1'); navigate('/dashboard') }} />
   if (page === 'admin') return <AdminPanel onExit={() => navigate('/dashboard')} />
   if (page === 'billing') return <BillingPage onExit={() => navigate('/dashboard')} />
+  if (page === 'privacy') return <LegalPage initialTab="privacy" onExit={() => navigate('/')} />
+  if (page === 'terms') return <LegalPage initialTab="terms" onExit={() => navigate('/')} />
   if (page === 'dashboard') return <Dashboard />
   return <LandingPage onStart={() => navigate('/boot')} />
 }

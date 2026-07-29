@@ -438,6 +438,7 @@ const STRINGS = {
   admNotAdmin: { en: 'Your account is not an admin. To enable access, add your username to the environment variable', ar: 'حسابك ليس مشرفاً. لتفعيل الوصول، أضف اسم مستخدمك في متغير البيئة' },
   admThenRestart: { en: 'on the server, then restart.', ar: 'على السيرفر ثم أعد التشغيل.' },
   admTabHealth: { en: 'System Health', ar: 'صحة النظام' },
+  admTabErrors: { en: 'Production Errors', ar: 'أعطال الإنتاج' },
   admTabAgents: { en: 'Agents & Plugins', ar: 'الوكلاء والإضافات' },
   admTabFiles: { en: 'File Manager', ar: 'إدارة الملفات' },
   admBack: { en: '← Back to dashboard', ar: '← الرجوع للوحة' },
@@ -445,6 +446,9 @@ const STRINGS = {
   admHealthTitle: { en: '🩺 System Health', ar: '🩺 صحة النظام' },
   admRefresh: { en: '⟳ Refresh', ar: '⟳ تحديث' },
   admUptime: { en: 'minutes', ar: 'دقيقة' },
+  admErrorsTitle: { en: '🩺 Real production errors (newest first)', ar: '🩺 أعطال الإنتاج الحقيقية (الأحدث أولاً)' },
+  admNoErrors: { en: 'No real errors recorded since last restart — a good sign.', ar: 'لا عطل حقيقي مسجَّل منذ آخر إعادة تشغيل — علامة جيدة.' },
+  admErrorSource: { en: 'Source', ar: 'المصدر' },
   admAgentsTitle: { en: '🤖 Agents & Plugins', ar: '🤖 الوكلاء والإضافات' },
   admNameInstrRequired: { en: 'Name and instructions are required.', ar: 'الاسم والتعليمات مطلوبان.' },
   admCreateNewAgent: { en: '✨ Create a new agent', ar: '✨ صنع وكيل جديد' },
@@ -628,6 +632,127 @@ const STRINGS = {
   planFree: { en: 'Free', ar: 'مجانية', es: 'Gratis', fr: 'Gratuit' },
   planPro: { en: 'Pro', ar: 'احترافية', es: 'Pro', fr: 'Pro' },
   planEnterprise: { en: 'Enterprise', ar: 'المؤسسات', es: 'Empresas', fr: 'Entreprise' },
+
+  // ─── سياسة الخصوصية وشروط الاستخدام (Legal) ──────────────────────
+  legalBack: { en: '← Back', ar: '← رجوع' },
+  legalTabPrivacy: { en: 'Privacy Policy', ar: 'سياسة الخصوصية' },
+  legalTabTerms: { en: 'Terms of Service', ar: 'شروط الاستخدام' },
+  legalLastUpdated: { en: 'Last updated: July 2026', ar: 'آخر تحديث: يوليو ٢٠٢٦' },
+  legalDisclaimer: {
+    en: 'This document is a good-faith description of how JAOLA OS actually works, provided as a starting point — it is not a substitute for advice from a qualified lawyer in your jurisdiction, and you should have it reviewed before relying on it for a public launch.',
+    ar: 'هذه الوثيقة وصف صادق لما تفعله JAOLA OS فعلياً، ومقدَّمة كنقطة بداية — وليست بديلاً عن استشارة محامٍ مختص في نطاقك القانوني، ويُنصح بمراجعتها قبل الاعتماد عليها في إطلاق عام.',
+  },
+
+  // Privacy Policy
+  legalPrivacyTitle: { en: '🔒 Privacy Policy', ar: '🔒 سياسة الخصوصية' },
+  legalPrivacyIntro: { en: 'Overview', ar: 'نظرة عامة' },
+  legalPrivacyIntroBody: {
+    en: 'JAOLA OS is an AI-powered platform for building, deploying, and operating websites and internal business tools. This policy explains what information we collect while you use the platform, why, and what choices you have.',
+    ar: 'JAOLA OS منصّة تعتمد على الذكاء الاصطناعي لبناء المواقع وأدوات العمل الداخلية ونشرها وتشغيلها. توضّح هذه السياسة ما نجمعه من معلومات أثناء استخدامك المنصّة، ولماذا، وما خياراتك تجاهها.',
+  },
+  legalPrivacyCollect: { en: 'What we collect', ar: 'ما الذي نجمعه' },
+  legalPrivacyCollectBody: {
+    en: '• Account data: username, email, and password (stored hashed, never in plain text).\n• Project content: the code, text, and images of the sites/systems you build — including any business data you enter into "system" templates (clinic patients, store customers, inventory...), which we sync so it works across your devices.\n• Technical data: IP address and request metadata, used only for rate-limiting and abuse prevention.\n• Billing data: handled directly by Stripe — we never see or store your full card number.\n• Anything you type to the AI assistant, which is sent to the AI provider to generate your project (see "Third parties" below).',
+    ar: '• بيانات الحساب: اسم المستخدم والبريد الإلكتروني وكلمة المرور (تُخزَّن مُجزَّأة hashed، لا كنص صريح أبداً).\n• محتوى مشاريعك: كود ونصوص وصور المواقع/الأنظمة التي تبنيها — بما في ذلك أي بيانات عمل تُدخلها في قوالب «السيستم» (مرضى عيادة، عملاء متجر، مخزون...)، والتي نزامنها لتعمل عبر أجهزتك.\n• بيانات تقنية: عنوان الـ IP وبيانات وصفية للطلبات، تُستخدم فقط لحدود المعدّل ومنع إساءة الاستخدام.\n• بيانات الفوترة: تُعالَج مباشرة عبر Stripe — لا نرى أو نخزّن رقم بطاقتك الكامل أبداً.\n• أي نص تكتبه لمساعد الذكاء الاصطناعي، والذي يُرسَل لمزوّد الذكاء الاصطناعي لتوليد مشروعك (انظر «أطراف ثالثة» أدناه).',
+  },
+  legalPrivacyUse: { en: 'How we use it', ar: 'كيف نستخدمها' },
+  legalPrivacyUseBody: {
+    en: 'To provide the core service: building, deploying, and hosting your projects; processing payments and enforcing plan limits; sending emails or messages you explicitly configure (e.g. a contact-form reply); detecting abuse and keeping the platform secure; and improving the AI generation quality over time.',
+    ar: 'لتقديم الخدمة الأساسية: بناء مشاريعك ونشرها واستضافتها؛ معالجة المدفوعات وتطبيق حدود خطتك؛ إرسال رسائل بريد أو تنبيهات تُعدّها أنت صراحةً (كردّ على نموذج تواصل)؛ اكتشاف إساءة الاستخدام والحفاظ على أمان المنصّة؛ وتحسين جودة التوليد بمرور الوقت.',
+  },
+  legalPrivacyThird: { en: 'Third parties we rely on', ar: 'أطراف ثالثة نعتمد عليها' },
+  legalPrivacyThirdBody: {
+    en: 'AI providers (Groq, DeepSeek, Google Gemini, OpenAI) process the prompts and content needed to generate your project. Stripe processes payments. Your deployed projects are hosted on Vercel or Render. If you connect GitHub, social channels, or WhatsApp, we relay data to those services only as instructed by you. We do not sell your data to advertisers.',
+    ar: 'مزوّدو الذكاء الاصطناعي (Groq، DeepSeek، Google Gemini، OpenAI) يعالجون الطلبات والمحتوى اللازم لتوليد مشروعك. Stripe يعالج المدفوعات. مشاريعك المنشورة تُستضاف على Vercel أو Render. إن ربطت GitHub أو قنوات التواصل الاجتماعي أو واتساب، فإننا ننقل البيانات لتلك الخدمات فقط بناءً على تعليماتك أنت. لا نبيع بياناتك لجهات إعلانية.',
+  },
+  legalPrivacyRetain: { en: 'Data retention & sync', ar: 'الاحتفاظ بالبيانات والمزامنة' },
+  legalPrivacyRetainBody: {
+    en: 'Project and account data is retained as long as your account is active. Business data synced for "system" templates is retrieved using a project-specific access token embedded in your deployed site — treat your deployment URL like any other credential if the data it holds is sensitive, and avoid sharing it publicly beyond your own team.',
+    ar: 'تُحفَظ بيانات المشروع والحساب طالما حسابك نشطاً. بيانات العمل المُزامنة لقوالب «السيستم» تُسترجَع عبر توكن وصول خاص بالمشروع مُضمَّن في موقعك المنشور — عاملْ رابط النشر كأي بيانات اعتماد أخرى إن كانت البيانات التي يحملها حساسة، وتجنّب مشاركته علناً خارج فريقك.',
+  },
+  legalPrivacyRights: { en: 'Your rights', ar: 'حقوقك' },
+  legalPrivacyRightsBody: {
+    en: 'You can export or delete your projects at any time from the dashboard. To request a full account/data deletion or an export of your account data, contact us through the support channel described below.',
+    ar: 'يمكنك تصدير أو حذف مشاريعك في أي وقت من لوحة التحكم. لطلب حذف كامل للحساب/البيانات أو تصديرها، تواصل معنا عبر قناة الدعم الموضّحة أدناه.',
+  },
+  legalPrivacySecurity: { en: 'Security', ar: 'الأمان' },
+  legalPrivacySecurityBody: {
+    en: 'Passwords are hashed, sensitive endpoints require authentication, and rate limits protect against abuse. No system is perfectly secure — if you discover a vulnerability, please report it to us responsibly before disclosing it publicly.',
+    ar: 'كلمات المرور مُجزَّأة، المسارات الحساسة تتطلب مصادقة، وحدود المعدّل تحمي من إساءة الاستخدام. لا يوجد نظام آمن تماماً — إن اكتشفت ثغرة، يُرجى إبلاغنا بمسؤولية قبل الإفصاح العلني عنها.',
+  },
+  legalPrivacyChildren: { en: "Children's privacy", ar: 'خصوصية القُصَّر' },
+  legalPrivacyChildrenBody: {
+    en: 'JAOLA OS is not directed at children, and account creation requires being of legal age to enter a binding agreement in your jurisdiction.',
+    ar: 'JAOLA OS ليست موجَّهة للأطفال، وإنشاء حساب يتطلب بلوغ السن القانونية لعقد اتفاق ملزم في نطاقك القانوني.',
+  },
+  legalPrivacyChanges: { en: 'Changes to this policy', ar: 'تعديلات هذه السياسة' },
+  legalPrivacyChangesBody: {
+    en: 'We may update this policy as the platform evolves. Meaningful changes will be reflected here with an updated date.',
+    ar: 'قد نُحدِّث هذه السياسة مع تطوّر المنصّة. أي تغييرات جوهرية ستُعكَس هنا مع تحديث التاريخ.',
+  },
+  legalPrivacyContact: { en: 'Contact', ar: 'التواصل' },
+  legalPrivacyContactBody: {
+    en: 'For privacy questions or data requests, contact the platform owner through the support channel in your dashboard.',
+    ar: 'لأسئلة الخصوصية أو طلبات البيانات، تواصل مع مالك المنصّة عبر قناة الدعم في لوحة التحكم الخاصة بك.',
+  },
+
+  // Terms of Service
+  legalTermsTitle: { en: '📜 Terms of Service', ar: '📜 شروط الاستخدام' },
+  legalTermsIntro: { en: 'Agreement', ar: 'الاتفاقية' },
+  legalTermsIntroBody: {
+    en: 'By creating an account or using JAOLA OS, you agree to these terms. If you do not agree, please do not use the platform.',
+    ar: 'بإنشاء حساب أو استخدام JAOLA OS، فإنك توافق على هذه الشروط. إن لم توافق، يُرجى عدم استخدام المنصّة.',
+  },
+  legalTermsService: { en: 'The service', ar: 'الخدمة' },
+  legalTermsServiceBody: {
+    en: 'JAOLA OS lets you generate, customize, and deploy websites and internal business-tool systems using AI, and offers hosting, template libraries, and optional integrations (billing, social channels, email, GitHub). Features and limits vary by plan.',
+    ar: 'تتيح JAOLA OS توليد وتخصيص ونشر مواقع وأنظمة عمل داخلية باستخدام الذكاء الاصطناعي، وتوفّر الاستضافة ومكتبة القوالب وتكاملات اختيارية (الفوترة، قنوات التواصل، البريد، GitHub). الميزات والحدود تختلف حسب الخطة.',
+  },
+  legalTermsAccount: { en: 'Your account', ar: 'حسابك' },
+  legalTermsAccountBody: {
+    en: 'You are responsible for keeping your credentials secure and for all activity under your account. Provide accurate information when registering.',
+    ar: 'أنت مسؤول عن الحفاظ على سرّية بيانات الدخول وعن كل نشاط يجري تحت حسابك. قدِّم معلومات دقيقة عند التسجيل.',
+  },
+  legalTermsUse: { en: 'Acceptable use', ar: 'الاستخدام المقبول' },
+  legalTermsUseBody: {
+    en: 'You may not use JAOLA OS to build or host illegal content, malware, phishing pages, or content that infringes others\' rights; attempt to bypass rate limits or security controls; or resell platform access without authorization.',
+    ar: 'لا يجوز استخدام JAOLA OS لبناء أو استضافة محتوى غير قانوني أو برمجيات خبيثة أو صفحات تصيّد أو محتوى ينتهك حقوق الغير؛ أو محاولة تجاوز حدود المعدّل أو ضوابط الأمان؛ أو إعادة بيع الوصول للمنصّة بلا إذن.',
+  },
+  legalTermsContent: { en: 'Your content', ar: 'محتواك' },
+  legalTermsContentBody: {
+    en: 'You own the code and content of the projects you build. You grant us the license needed to store, process, and deploy that content in order to operate the service (e.g. sending it to an AI provider to generate it, or to a hosting provider to deploy it).',
+    ar: 'أنت تملك كود ومحتوى المشاريع التي تبنيها. تمنحنا الترخيص اللازم لتخزين ومعالجة ونشر ذلك المحتوى بغرض تشغيل الخدمة (مثل إرساله لمزوّد ذكاء اصطناعي لتوليده، أو لمزوّد استضافة لنشره).',
+  },
+  legalTermsThird: { en: 'Third-party dependencies', ar: 'الاعتماديات الخارجية' },
+  legalTermsThirdBody: {
+    en: 'The service depends on third-party providers (AI models, Stripe, hosting platforms). We are not responsible for outages, errors, or changes originating from those providers, though we work to minimize their impact.',
+    ar: 'تعتمد الخدمة على مزوّدين خارجيين (نماذج الذكاء الاصطناعي، Stripe، منصّات الاستضافة). لسنا مسؤولين عن أعطال أو أخطاء أو تغييرات ناشئة من تلك الجهات، رغم عملنا على تقليل أثرها.',
+  },
+  legalTermsBilling: { en: 'Billing', ar: 'الفوترة' },
+  legalTermsBillingBody: {
+    en: 'Paid plans are billed on a recurring basis via Stripe until cancelled. You can cancel anytime from the billing page; access continues until the end of the paid period. Refund requests are handled case-by-case.',
+    ar: 'الخطط المدفوعة تُفوتَر بشكل متكرر عبر Stripe حتى الإلغاء. يمكنك الإلغاء في أي وقت من صفحة الفوترة؛ يستمر الوصول حتى نهاية الفترة المدفوعة. طلبات الاسترداد تُعالَج كل حالة على حدة.',
+  },
+  legalTermsWarranty: { en: 'No warranty', ar: 'إخلاء المسؤولية' },
+  legalTermsWarrantyBody: {
+    en: 'AI-generated content and code may contain errors — review it before relying on it for anything business-critical. The service is provided "as is" without warranties of any kind, and our liability is limited to the amount you paid in the preceding 3 months.',
+    ar: 'المحتوى والكود المولَّد بالذكاء الاصطناعي قد يحتوي أخطاء — راجعه قبل الاعتماد عليه في أي أمر حرج لعملك. تُقدَّم الخدمة «كما هي» بلا ضمانات من أي نوع، ومسؤوليتنا محدودة بما دفعته خلال الأشهر الثلاثة السابقة.',
+  },
+  legalTermsTermination: { en: 'Termination', ar: 'الإنهاء' },
+  legalTermsTerminationBody: {
+    en: 'You may close your account at any time. We may suspend or terminate accounts that violate acceptable use, with notice where practical.',
+    ar: 'يمكنك إغلاق حسابك في أي وقت. يجوز لنا تعليق أو إنهاء الحسابات التي تخالف الاستخدام المقبول، مع إشعار متى أمكن ذلك.',
+  },
+  legalTermsChanges: { en: 'Changes to these terms', ar: 'تعديلات هذه الشروط' },
+  legalTermsChangesBody: {
+    en: 'We may update these terms as the platform evolves. Continued use after an update means you accept the revised terms.',
+    ar: 'قد نُحدِّث هذه الشروط مع تطوّر المنصّة. استمرار الاستخدام بعد التحديث يعني موافقتك على الشروط المُعدَّلة.',
+  },
+  legalTermsContact: { en: 'Contact', ar: 'التواصل' },
+  legalTermsContactBody: {
+    en: 'For questions about these terms, contact the platform owner through the support channel in your dashboard.',
+    ar: 'لأسئلة حول هذه الشروط، تواصل مع مالك المنصّة عبر قناة الدعم في لوحة التحكم الخاصة بك.',
+  },
 };
 
 const stored = typeof localStorage !== 'undefined' ? localStorage.getItem('uiLang') : null;

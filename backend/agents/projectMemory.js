@@ -51,6 +51,9 @@ function createProjectMemory(username, project, goal = '') {
         history: [],             // آخر 10 تعديلات
         // 🧩 نموذج المجال المُهيكَل (كيانات + أدوار + تدفّقات) — طبقة الفهم
         domainModel: null,
+        // 🏷️ track قالب الكلون المطبَّق (site|system) — إن وُجد؛ يحدّد هل
+        // يستحق المشروع مزامنة jaola-data (أدوات عمل داخلية فقط، لا مواقع تعريفية)
+        cloneTrack: null,
     };
 }
 
@@ -149,6 +152,20 @@ export function setDomainModel(username, project, model) {
 /** استرجاع نموذج المجال المحفوظ (أو null) */
 export function getDomainModel(username, project) {
     return getProjectMemory(username, project).domainModel || null;
+}
+
+/** تسجيل track قالب الكلون المطبَّق (site|system) */
+export function setCloneTrack(username, project, track) {
+    const mem = getProjectMemory(username, project);
+    mem.cloneTrack = track || null;
+    mem.updatedAt = Date.now();
+    saveToFile();
+    return mem.cloneTrack;
+}
+
+/** استرجاع track قالب الكلون المطبَّق (أو null إن لم يُطبَّق كلون قط) */
+export function getCloneTrack(username, project) {
+    return getProjectMemory(username, project).cloneTrack || null;
 }
 
 /** تسجيل تعديل جديد في التاريخ */
