@@ -1776,6 +1776,9 @@ const DICT = [
     ['→ الحيوانات', '→ Pets'],
     ['تطعيم أُعطي (اختياري)', 'Vaccine given (optional)'],
     ['اسم التطعيم', 'Vaccine name'],
+    ['معاينة صورة العيادة', 'Clinic photo preview'],
+    ['صورة العيادة (اختياري)', 'Clinic photo (optional)'],
+    ['صورة العيادة', 'Clinic photo'],
 
     // ── تنظيف المنازل (jaola-cleaning) ───────────────────────────────
     ['خدمات jaola لتنظيف المنازل', 'jaola Home Cleaning Services'],

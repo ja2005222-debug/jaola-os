@@ -26,6 +26,7 @@ export function jaolaVetClinic() {
   <main class="no-print">
     <section id="view-login" class="view">
       <div class="login-card">
+        <img id="clinicPhotoImg" class="clinic-photo hidden" alt="صورة العيادة">
         <h1>نظام عيادة بيطرية</h1>
         <p class="hint">أصحاب حيوانات وحيواناتهم · زيارات بتشخيص وتطعيم · سجل تطعيمات · فاتورة كشف قابلة للطباعة.</p>
         <label>الدور</label>
@@ -87,6 +88,9 @@ export function jaolaVetClinic() {
       <div class="panel form-col">
         <label>اسم العيادة</label><input id="stName">
         <label>كلمة المرور الجديدة</label><input id="stPass" type="password" placeholder="اتركها فارغة للإبقاء">
+        <label>صورة العيادة (اختياري)</label>
+        <input id="stPhotoFile" type="file" accept="image/*">
+        <img id="stPhotoPreview" class="clinic-photo hidden" alt="معاينة صورة العيادة">
         <button class="btn primary" data-action="saveSettings">حفظ الإعدادات</button>
       </div>
     </section>
@@ -152,7 +156,7 @@ function setView(v) {
   if (v === 'owners') renderOwners();
   if (v === 'pets') renderPets();
   if (v === 'reports') renderReports();
-  if (v === 'settings') { byId('stName').value = settings.name; byId('stPass').value = ''; }
+  if (v === 'settings') { byId('stName').value = settings.name; byId('stPass').value = ''; pendingPhotoDataUrl = null; byId('stPhotoFile').value = ''; show(byId('stPhotoPreview'), false); }
 }
 function renderTabs() {
   if (!session) { byId('tabs').innerHTML = ''; return; }
@@ -271,10 +275,54 @@ function exportVisitsCsv() {
   toast('صُدّرت الزيارات CSV');
 }
 
+// 🖼️ صورة العيادة الحقيقية (لا Unsplash ولا AI) — تُصغَّر عبر canvas قبل
+// الرفع (أقصى بُعد 1200px، JPEG 0.8) فلا تُبطئ تحميل الموقع، وتُعرَض عبر
+// <img src> مباشرة بتوكن المزامنة (فشل التحميل يخفيها بصمت — لا خطأ ظاهر).
+var pendingPhotoDataUrl = null;
+function clinicPhotoSrc() {
+  var sync = window.JAOLA_SYNC;
+  if (!sync) return '';
+  return sync.api + '/api/public/assets/clinicPhoto?token=' + encodeURIComponent(sync.token) + '&t=' + Date.now();
+}
+function loadClinicPhoto() {
+  var src = clinicPhotoSrc(); if (!src) return;
+  var img = byId('clinicPhotoImg');
+  img.onload = function () { show(img, true); };
+  img.onerror = function () { show(img, false); };
+  img.src = src;
+}
+function resizeImageToDataUrl(file, cb) {
+  var reader = new FileReader();
+  reader.onload = function () {
+    var im = new Image();
+    im.onload = function () {
+      var max = 1200, w = im.width, h = im.height;
+      if (w > max || h > max) { if (w > h) { h = Math.round(h * max / w); w = max; } else { w = Math.round(w * max / h); h = max; } }
+      var c = document.createElement('canvas'); c.width = w; c.height = h;
+      c.getContext('2d').drawImage(im, 0, 0, w, h);
+      cb(c.toDataURL('image/jpeg', 0.8));
+    };
+    im.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+function onPhotoFileChange(e) {
+  var file = e.target.files && e.target.files[0]; if (!file) return;
+  resizeImageToDataUrl(file, function (dataUrl) {
+    pendingPhotoDataUrl = dataUrl;
+    var prev = byId('stPhotoPreview'); prev.src = dataUrl; show(prev, true);
+  });
+}
+
 function saveSettings() {
   settings.name = byId('stName').value.trim() || settings.name;
   var np = byId('stPass').value.trim();
-  if (np) { var sync = window.JAOLA_SYNC; if (sync) { fetch(sync.api + '/api/public/auth/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: np }) }).catch(function () {}); } else settings.pass = np; }
+  var sync = window.JAOLA_SYNC;
+  if (np) { if (sync) { fetch(sync.api + '/api/public/auth/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: np }) }).catch(function () {}); } else settings.pass = np; }
+  if (pendingPhotoDataUrl && sync) {
+    fetch(sync.api + '/api/public/assets/clinicPhoto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, dataUrl: pendingPhotoDataUrl }) })
+      .then(function () { pendingPhotoDataUrl = null; loadClinicPhoto(); }).catch(function () {});
+  }
   save('settings', settings); byId('brandName').textContent = settings.name;
   toast('تم حفظ الإعدادات');
 }
@@ -297,6 +345,8 @@ function handleClick(e) {
 function init() {
   byId('brandName').textContent = settings.name;
   document.addEventListener('click', handleClick);
+  var photoInput = byId('stPhotoFile'); if (photoInput) photoInput.addEventListener('change', onPhotoFileChange);
+  loadClinicPhoto();
   setView(session ? 'dashboard' : 'login');
 }
 document.addEventListener('DOMContentLoaded', init);
@@ -306,6 +356,7 @@ document.addEventListener('DOMContentLoaded', init);
 .badge{background:#1e293b;border:1px solid var(--line);border-radius:999px;padding:3px 12px;font-size:11px;color:#c7d2fe}
 .badge.warn{background:#78350f;color:#fde68a}
 .bar-col{display:inline-flex;flex-direction:column;align-items:center;gap:6px;width:12%;vertical-align:bottom}
+.clinic-photo{display:block;max-width:100%;max-height:180px;object-fit:cover;border-radius:12px;margin:0 auto 14px;border:1px solid var(--line)}
 `;
 
     return {

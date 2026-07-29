@@ -84,6 +84,7 @@ import { readStore as readAppDataStore, writeKey as writeAppDataKey } from './se
 import { recordError, recentErrors } from './services/errorLog.js';
 import { verifyPassword as verifyProjectPassword, setPassword as setProjectPassword } from './services/projectAuth.js';
 import { broadcastPresence } from './services/presence.js';
+import { saveAsset, readAsset } from './services/appAssets.js';
 import { listRecords as listCollectionRecords, upsertRecord as upsertCollectionRecord, deleteRecord as deleteCollectionRecord } from './services/appCollections.js';
 import { buildStaticSiteFromSource, buildDashboardPage } from './services/reactPreview.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
@@ -192,7 +193,7 @@ const io = new Server(httpServer, {
 const OPEN_CORS_PATHS = new Set(['/api/jaola-bot/chat', '/api/agent-chat', '/api/public/site-hit', '/api/public/site-message', '/api/public/data', '/api/public/auth/login', '/api/public/auth/set-password']);
 // 🗄️ /api/public/data/:key و/api/public/collections/:name[/:id] بمفاتيح
 // ديناميكية في المسار — تطابق بادئة لا مساواة تامّة
-const isOpenCorsPath = (p) => OPEN_CORS_PATHS.has(p) || p.startsWith('/api/public/data/') || p.startsWith('/api/public/collections/');
+const isOpenCorsPath = (p) => OPEN_CORS_PATHS.has(p) || p.startsWith('/api/public/data/') || p.startsWith('/api/public/collections/') || p.startsWith('/api/public/assets/');
 const corsDelegate = (req, callback) => {
     if (isOpenCorsPath(req.path)) return callback(null, { origin: true, credentials: false, methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] });
     callback(null, corsOptions);
@@ -200,6 +201,9 @@ const corsDelegate = (req, callback) => {
 app.use(cors(corsDelegate));
 // 💳 Stripe webhook يحتاج الجسم الخام للتحقق من التوقيع — يُسجَّل قبل express.json
 app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
+// 🖼️ رفع صور حقيقية (jaola-assets) يحتاج حداً أعلى من الحدّ العام (صورة
+// بترميز base64 أثقل ~33% من حجمها الخام) — يُسجَّل قبل express.json العام
+app.use('/api/public/assets', express.json({ limit: '6mb' }));
 app.use(express.json({ limit: '1mb' })); // حد أقصى لحجم الطلب
 
 // ─── تقديم الواجهة الأمامية الثابتة ────────────────────────────────
@@ -406,6 +410,15 @@ const authLimit = rateLimit({
     max: 15,
     keyGenerator: (req) => ipKeyGenerator(req),
     handler: (req, res) => res.status(429).json({ ok: false }),
+});
+
+// Rate limiter لرفع صور حقيقية — أقل من appDataLimit عمداً (رفع صورة نادر
+// نسبياً مقارنة بحفظ سجلّات مستمر، والصور أثقل على القرص والنطاق الترددي)
+const assetLimit = rateLimit({
+    windowMs: 60 * 1000,
+    max: 20,
+    keyGenerator: (req) => ipKeyGenerator(req),
+    handler: (req, res) => res.status(429).json({ error: 'محاولات كثيرة جداً — أعد المحاولة بعد قليل' }),
 });
 
 // Rate limiter عام للـ API
@@ -2682,6 +2695,29 @@ app.delete('/api/public/collections/:name/:id', appDataLimit, (req, res) => {
     if (!v?.u || !v?.p || getCloneTrack(v.u, v.p) !== 'system') return res.status(204).end();
     try { res.json(deleteCollectionRecord(APPCOLLECTIONS_DIR, v.u, v.p, req.params.name, req.params.id)); }
     catch { res.status(500).json({ success: false }); }
+});
+
+// 🖼️ صور حقيقية من مالك القالب (jaola-assets) — لا صورة Unsplash ولا AI
+// مولَّدة؛ صورة العيادة/المحل الفعلية. متاح لأي قالب استنساخ (site أو
+// system) — عرض صورة علناً لا يحمل نفس حساسية مزامنة سجلات العمل.
+const APPASSETS_DIR = path.join(BASE_WORKSPACE, '.appassets');
+app.post('/api/public/assets/:slot', assetLimit, (req, res) => {
+    const v = verifyBotToken(req.body?.token);
+    if (!v?.u || !v?.p) return res.status(204).end();
+    try {
+        const r = saveAsset(APPASSETS_DIR, v.u, v.p, req.params.slot, req.body?.dataUrl);
+        if (r.error) return res.status(400).json({ error: r.error });
+        res.json({ success: true });
+    } catch { res.status(500).json({ success: false }); }
+});
+app.get('/api/public/assets/:slot', assetLimit, (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p) return res.status(404).end();
+    try {
+        const asset = readAsset(APPASSETS_DIR, v.u, v.p, req.params.slot);
+        if (!asset) return res.status(404).end();
+        res.set('Cache-Control', 'no-cache').type(asset.mime).send(asset.buf);
+    } catch { res.status(500).end(); }
 });
 
 // 📧 إرسال ردّ فعلي من الداشبورد على رسالة واردة — بحصة الخطة الشهرية

@@ -344,6 +344,23 @@ test('extractDefinedFunctions: يجمع تفكيك معاملات الدالة (
     for (const n of ['owners', 'addOwner', 'pets', 'onAdd']) assert.ok(fns.has(n), `يجمع ${n}`);
 });
 
+// 🖼️ نمط callback شائع: معامل دالة عادي (لا تفكيك) يُستدعى لاحقاً كدالة —
+// resizeImage(file, cb) { ...؛ cb(result); } كان يُحسب "cb غير معرَّفة" زوراً.
+test('extractDefinedFunctions: يجمع معاملات الدالة العادية (لا تفكيك) — نمط callback', async () => {
+    const { extractDefinedFunctions } = await import('../agents/behaviorVerifier.js');
+    const js = `
+function resizeImageToDataUrl(file, cb) { var r = new FileReader(); r.onload = function () { cb(r.result); }; }
+var run = (x, done) => { done(x); };
+var solo = single => { single(); };`;
+    const fns = extractDefinedFunctions(js);
+    for (const n of ['file', 'cb', 'x', 'done', 'single']) assert.ok(fns.has(n), `يجمع ${n}`);
+});
+
+test('detectUndefinedFunctions: معامل callback مُستدعى داخل الدالة لا يُبلَّغ زوراً', () => {
+    const js = `function resizeImageToDataUrl(file, cb) { cb('x'); } function toast(m) {} resizeImageToDataUrl(file, function (d) { toast(d); });`;
+    assert.deepEqual(detectUndefinedFunctions({ html: '', js }), [], 'cb معرَّف كمعامل — لا إيجابية كاذبة');
+});
+
 test('detectUndefinedFunctions: مكوّن React كامل (hooks + props) لا يُبلّغ إيجابيات كاذبة', () => {
     const js = `
 const { useState } = React;
