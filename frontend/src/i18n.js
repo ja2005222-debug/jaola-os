@@ -22,6 +22,7 @@ const STRINGS = {
   operational: { en: 'All Systems Operational', ar: 'كل الأنظمة تعمل', es: 'Todos los sistemas operativos', fr: 'Tous systèmes opérationnels', de: 'Alle Systeme betriebsbereit', tr: 'Tüm sistemler çalışıyor', pt: 'Todos os sistemas operacionais', ur: 'تمام سسٹمز فعال' },
   reconnecting: { en: 'Reconnecting...', ar: 'جاري إعادة الاتصال...', es: 'Reconectando...', fr: 'Reconnexion...', de: 'Wiederverbindung...', tr: 'Yeniden bağlanılıyor...', pt: 'Reconectando...', ur: 'دوبارہ منسلک ہو رہا ہے...' },
   missionRunning: { en: 'Mission Running...', ar: 'المهمة جارية...', es: 'Misión en curso...', fr: 'Mission en cours...', de: 'Mission läuft...', tr: 'Görev çalışıyor...', pt: 'Missão em andamento...', ur: 'مشن جاری ہے...' },
+  presenceMulti: { en: 'Also open on {n} other device(s)', ar: 'متصل أيضاً من {n} جهاز آخر الآن', es: 'También abierto en {n} otro(s) dispositivo(s)', fr: "Aussi ouvert sur {n} autre(s) appareil(s)" },
   deploy: { en: 'Deploy', ar: 'نشر', es: 'Desplegar', fr: 'Déployer', de: 'Bereitstellen', tr: 'Yayınla', pt: 'Implantar', ur: 'تعیناتی' },
   redeploy: { en: 'Re-deploy', ar: 'إعادة النشر', es: 'Redesplegar', fr: 'Redéployer', de: 'Neu bereitstellen', tr: 'Yeniden yayınla', pt: 'Reimplantar', ur: 'دوبارہ تعیناتی' },
   deploying: { en: 'Deploying...', ar: 'جاري النشر...', es: 'Desplegando...', fr: 'Déploiement...', de: 'Bereitstellung...', tr: 'Yayınlanıyor...', pt: 'Implantando...', ur: 'تعینات جاری...' },

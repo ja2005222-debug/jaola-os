@@ -83,6 +83,7 @@ import { installDataSync } from './services/dataSync.js';
 import { readStore as readAppDataStore, writeKey as writeAppDataKey } from './services/appData.js';
 import { recordError, recentErrors } from './services/errorLog.js';
 import { verifyPassword as verifyProjectPassword, setPassword as setProjectPassword } from './services/projectAuth.js';
+import { broadcastPresence } from './services/presence.js';
 import { listRecords as listCollectionRecords, upsertRecord as upsertCollectionRecord, deleteRecord as deleteCollectionRecord } from './services/appCollections.js';
 import { buildStaticSiteFromSource, buildDashboardPage } from './services/reactPreview.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
@@ -573,6 +574,7 @@ io.on('connection', (socket) => {
         socket.join(roomName);
         socket.roomName = roomName;
         socket.activeProject = safeProject;
+        broadcastPresence(io, roomName);
 
         const projectPath = getProjectPath(username, safeProject);
 
@@ -609,6 +611,12 @@ io.on('connection', (socket) => {
         if (wasActive) {
             io.to(socket.roomName).emit('log', { message: '⏹️ [SYSTEM]: تم استلام طلب إيقاف المهمة...' });
         }
+    });
+
+    // 👥 عند قطع الاتصال، Socket.IO يزيل المقبس من غرفه تلقائياً قبل هذا
+    // الحدث — البثّ هنا يعكس العدد الصحيح لمن تبقّى.
+    socket.on('disconnect', () => {
+        if (socket.roomName) broadcastPresence(io, socket.roomName);
     });
 });
 
