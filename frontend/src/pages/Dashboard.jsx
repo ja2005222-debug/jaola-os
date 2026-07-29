@@ -343,7 +343,7 @@ export default function Dashboard() {
   }, []);
   useEffect(() => { if (oauthError) setAuthError(oauthError); }, [oauthError]);
 
-  const { files, logs, streamingContent, agentStates, projects, activeProject, currentUser, vercelUrl, chatMessages, setChatMessages, setActiveProject, previewTimestamp, refreshPreview, isConnected, connectionError, metrics, latencyMs, missionPhase } = useSocket(isAuthenticated, handleAuthError);
+  const { files, logs, streamingContent, agentStates, projects, activeProject, currentUser, vercelUrl, chatMessages, setChatMessages, setActiveProject, previewTimestamp, refreshPreview, isConnected, connectionError, metrics, latencyMs, missionPhase, presenceCount } = useSocket(isAuthenticated, handleAuthError);
 
   const t = useI18n(s => s.t);
   const uiLang = useI18n(s => s.lang);
@@ -2761,6 +2761,14 @@ export default function Dashboard() {
           <div style={{ width:6, height:6, borderRadius:'50%', background: !isConnected ? '#f59e0b' : isBuilding ? '#3b82f6' : '#10b981', animation:'pulse 2s infinite' }} />
           {!isConnected ? t('reconnecting') : isBuilding ? t('missionRunning') : t('operational')}
         </div>
+
+        {/* 👥 حضور مبسّط: جلسات/أجهزة أخرى لنفس الحساب متصلة بهذا المشروع الآن */}
+        {presenceCount > 1 && (
+          <div title={t('presenceMulti').replace('{n}', presenceCount - 1)}
+            style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'#f59e0b', background:'rgba(245,158,11,0.1)', border:'1px solid rgba(245,158,11,0.25)', borderRadius:6, padding:'2px 8px' }}>
+            <span>👥</span>{presenceCount}
+          </div>
+        )}
 
         <div style={{ width:1, height:20, background:S.border }} />
 
