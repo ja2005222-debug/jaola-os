@@ -92,6 +92,7 @@ function Login({ onLogin }) {
     fetch(sync.api + '/api/public/auth/login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: sync.token, password: pass }),
+      signal: AbortSignal.timeout(8000),
     }).then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); })
       .then(function (d) { if (d && d.ok) ok(); else fail(); })
       .catch(function () { fail('تعذّر الاتصال بالخادم، تحقّق من الاتصال وحاول مجدداً'); });
@@ -283,6 +284,7 @@ function Settings({ settings, saveSettings }) {
         fetch(sync.api + '/api/public/auth/set-password', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token: sync.token, password: pass.trim() }),
+          signal: AbortSignal.timeout(8000),
         }).catch(function () {});
       }
     }

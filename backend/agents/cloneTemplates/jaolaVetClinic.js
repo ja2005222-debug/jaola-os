@@ -142,7 +142,7 @@ function login() {
   function onFail(msg) { var el = byId('loginErr'); el.textContent = msg || 'كلمة المرور غير صحيحة'; show(el, true); }
   var sync = window.JAOLA_SYNC;
   if (!sync) { if (pass !== settings.pass) return onFail(); return onOk(); }
-  fetch(sync.api + '/api/public/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: pass }) })
+  fetch(sync.api + '/api/public/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: pass }), signal: AbortSignal.timeout(8000) })
     .then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); })
     .then(function (d) { if (d && d.ok) onOk(); else onFail(); })
     .catch(function () { onFail('تعذّر الاتصال بالخادم، تحقّق من الاتصال وحاول مجدداً'); });
@@ -320,9 +320,9 @@ function saveSettings() {
   settings.name = byId('stName').value.trim() || settings.name;
   var np = byId('stPass').value.trim();
   var sync = window.JAOLA_SYNC;
-  if (np) { if (sync) { fetch(sync.api + '/api/public/auth/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: np }) }).catch(function () {}); } else settings.pass = np; }
+  if (np) { if (sync) { fetch(sync.api + '/api/public/auth/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: np }), signal: AbortSignal.timeout(8000) }).catch(function () {}); } else settings.pass = np; }
   if (pendingPhotoDataUrl && sync) {
-    fetch(sync.api + '/api/public/assets/clinicPhoto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, dataUrl: pendingPhotoDataUrl }) })
+    fetch(sync.api + '/api/public/assets/clinicPhoto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, dataUrl: pendingPhotoDataUrl }), signal: AbortSignal.timeout(15000) })
       .then(function () { pendingPhotoDataUrl = null; loadClinicPhoto(); }).catch(function () {});
   }
   save('settings', settings); byId('brandName').textContent = settings.name;
