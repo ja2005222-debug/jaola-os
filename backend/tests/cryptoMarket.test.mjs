@@ -157,6 +157,31 @@ test('listMarkets: فشل الشبكة بعد نجاح سابق (منتهي ال
     assert.equal(r.coins[0].price, 42, 'آخر سعر معروف يبقى معروضاً بدل فراغ عند تعذّر التحديث');
 });
 
+test('listMarkets: تعطّل عابر (المحاولة الأولى تفشل، الثانية تنجح) → محاولة ثانية تلقائية تنقذ الطلب', async () => {
+    let calls = 0;
+    global.fetch = async () => {
+        calls++;
+        if (calls === 1) throw new Error('ETIMEDOUT');
+        return { ok: true, status: 200, json: async () => SUPPORTED_COINS.map(c => ({ id: c.id, current_price: 99, price_change_percentage_24h: 1 })) };
+    };
+    const r = await listMarkets();
+    assert.equal(calls, 2, 'محاولتان بالضبط: الأولى فشلت، الثانية أُعيدت تلقائياً');
+    assert.equal(r.stale, false, 'التعطّل عابر — النتيجة النهائية ناجحة لا stale');
+    assert.equal(r.coins[0].price, 99);
+});
+
+test('listMarkets: حدّ معدّل CoinGecko (429) بلا كاش سابق → محاولة ثانية تلقائية تنجح', async () => {
+    let calls = 0;
+    global.fetch = async () => {
+        calls++;
+        if (calls === 1) return { ok: false, status: 429, json: async () => ({}) };
+        return { ok: true, status: 200, json: async () => SUPPORTED_COINS.map(c => ({ id: c.id, current_price: 77, price_change_percentage_24h: 0 })) };
+    };
+    const r = await listMarkets();
+    assert.equal(calls, 2);
+    assert.equal(r.coins[0].price, 77);
+});
+
 test('listMarkets: يقبل أي عملة صالحة عبر CoinGecko (لا الثماني المدعومة فقط)', async () => {
     mockOk([{ id: 'shiba-inu', symbol: 'shib', name: 'Shiba Inu', current_price: 0.00001, price_change_percentage_24h: 3 }]);
     const r = await listMarkets(['shiba-inu']);
