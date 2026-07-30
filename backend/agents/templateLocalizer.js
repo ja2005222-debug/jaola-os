@@ -1797,6 +1797,19 @@ const DICT = [
     ['اكتب اسم العملة أو رمزها...', 'Type the currency name or symbol...'],
     ['حفظ كلمة المرور', 'Save password'],
 
+    // ── مستشار الميزانية الشخصية (jaola-budget-advisor) ────────────────
+    ['مستشار الميزانية', 'Budget Advisor'],
+    ['تتبّع دخلك ومصروفك، ميزانية شهرية لكل فئة، وقراءة ذكية لأنماط إنفاقك.', 'Track your income and spending, a monthly budget per category, and a smart read on your spending patterns.'],
+    ['لوحة الميزانية', 'Budget dashboard'],
+    ['🔄 تحديث', '🔄 Refresh'],
+    ['>مصروف</option>', '>Expense</option>'],
+    ['>دخل</option>', '>Income</option>'],
+    ['ملاحظة (اختياري)', 'Note, optional'],
+    ['+ إضافة', '+ Add'],
+    ['الميزانيات الشهرية', 'Monthly budgets'],
+    ['السقف الشهري', 'Monthly limit'],
+    ['+ حفظ', '+ Save'],
+
     // ── تنظيف المنازل (jaola-cleaning) ───────────────────────────────
     ['خدمات jaola لتنظيف المنازل', 'jaola Home Cleaning Services'],
     ['تنظيف jaola', 'jaola Cleaning'],
