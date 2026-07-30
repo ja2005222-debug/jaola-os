@@ -3,7 +3,7 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    listMarkets, getAnalysis, findCoin, resetCryptoCache, searchCoins, isValidCoinId,
+    listMarkets, getAnalysis, getOpportunities, findCoin, resetCryptoCache, searchCoins, isValidCoinId,
     toDailyCloses, bucketCloses, sma, rsi, buildSignal, SUPPORTED_COINS, MAX_WATCHLIST,
     TIMEFRAMES, DEFAULT_TIMEFRAME, isValidTimeframe,
     _marketsCacheForTest, _analysisCacheForTest,
@@ -355,4 +355,63 @@ test('searchCoins: فشل الشبكة بلا كاش سابق → []، وبعد 
     mockFail();
     const r = await searchCoins('known');
     assert.deepEqual(r, first, 'ضمن مهلة الكاش أصلاً — يعيد نفس النتائج بلا الحاجة لفشل/نجاح');
+});
+
+// ─── getOpportunities: ترتيب أقوى فرص الدخول (شراء/بيع لا انتظار) ─────
+function mockMarketChartPerCoin(seriesById) {
+    global.fetch = async (url) => {
+        const id = url.match(/coins\/([^/]+)\/market_chart/)?.[1];
+        const start = Date.parse('2026-01-01T00:00:00Z');
+        const values = seriesById[id];
+        if (!values) return { ok: false, status: 404, json: async () => ({}) };
+        return { ok: true, json: async () => ({ prices: values.map((v, i) => [start + i * 86400000, v]) }) };
+    };
+}
+
+test('getOpportunities: بلا عملات → []', async () => {
+    assert.deepEqual(await getOpportunities([]), []);
+    assert.deepEqual(await getOpportunities(undefined), []);
+});
+
+test('getOpportunities: يستبعد "انتظار" والأعطال، يُبقي شراء/بيع فقط', async () => {
+    mockMarketChartPerCoin({
+        bitcoin: Array.from({ length: 40 }, (_, i) => 300 - i * 4), // RSI=0 → buy
+        ethereum: Array.from({ length: 40 }, (_, i) => 100 + i * 5), // RSI=100 → sell
+        solana: Array.from({ length: 40 }, (_, i) => 145 + Math.sin(i) * 0.01), // شبه ثابت → hold غالباً
+    });
+    const r = await getOpportunities(['bitcoin', 'ethereum', 'solana']);
+    const signals = r.map(o => o.signal);
+    assert.ok(signals.includes('buy'));
+    assert.ok(signals.includes('sell'));
+    assert.ok(r.every(o => o.signal !== 'hold'));
+});
+
+test('getOpportunities: يرتّب تنازلياً بقوة الفرصة (RSI الأبعد عن 50 أولاً)', async () => {
+    mockMarketChartPerCoin({
+        // بيتكوين: RSI=0 (تشبّع بيعي كامل، أقوى فرصة شراء ممكنة)
+        bitcoin: Array.from({ length: 40 }, (_, i) => 300 - i * 4),
+        // كاردانو: اتجاه صاعد معتدل بلا تشبّع RSI — إشارة أضعف
+        cardano: Array.from({ length: 40 }, (_, i) => 100 + i * 0.3 + (i % 4 === 0 ? -0.5 : 0)),
+    });
+    const r = await getOpportunities(['cardano', 'bitcoin']);
+    assert.equal(r[0].id, 'bitcoin', 'الفرصة الأقوى (RSI متطرّف) أولاً رغم أن كاردانو أُدرجت أولاً في المدخل');
+});
+
+test('getOpportunities: يحدّ النتائج بثمانية كحد أقصى', async () => {
+    const ids = Array.from({ length: 12 }, (_, i) => 'coin' + i);
+    const series = {};
+    ids.forEach((id, i) => { series[id] = Array.from({ length: 40 }, (_, j) => 300 - j * (4 + i)); }); // كلها RSI=0 → buy
+    mockMarketChartPerCoin(series);
+    const r = await getOpportunities(ids);
+    assert.ok(r.length <= 8);
+});
+
+test('getOpportunities: يتجاهل معرّفات غير صالحة ويحدّ العدد بسقف المتابعة', async () => {
+    let sawBadId = false;
+    global.fetch = async (url) => {
+        if (url.includes('BAD')) sawBadId = true;
+        return { ok: false, status: 404, json: async () => ({}) };
+    };
+    await getOpportunities(['BAD ID!', 'bitcoin']);
+    assert.equal(sawBadId, false, 'لم يُطلب أبداً لمعرّف غير صالح');
 });
