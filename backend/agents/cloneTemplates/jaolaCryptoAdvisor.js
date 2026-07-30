@@ -155,6 +155,7 @@ var I18N = {
     trackRecordSummary: function (rate, hits, judged) { return 'نجحت ' + hits + ' من ' + judged + ' توقّعات محسومة (' + rate + '%) لهذه العملة على هذا المدى.'; },
     tradeBtn: function (sym) { return 'تداول ' + sym + ' الآن ↗'; },
     affiliateDisclosure: 'رابط إحالة خارجي — قد نحصل على عمولة دون أي تكلفة إضافية عليك.',
+    commentaryQuotaExhausted: 'انتهت حصة الذكاء الاصطناعي الشهرية لخطتك — رقِّ خطتك لقراءة تفسيرية آلية لكل عملة.',
     tfDay: 'يومي', tfWeek: 'أسبوعي', tfLong: 'طويل المدى',
     settingsH2: 'الإعدادات',
     currentWlLabel: 'قائمة المتابعة الحالية',
@@ -221,6 +222,7 @@ var I18N = {
     trackRecordSummary: function (rate, hits, judged) { return hits + ' out of ' + judged + ' resolved predictions hit their target — ' + rate + '% for this coin on this timeframe.'; },
     tradeBtn: function (sym) { return 'Trade ' + sym + ' now ↗'; },
     affiliateDisclosure: 'External affiliate link — we may earn a commission at no extra cost to you.',
+    commentaryQuotaExhausted: 'Your plan’s monthly AI quota is used up — upgrade for an AI reading on every coin.',
     tfDay: 'Daily', tfWeek: 'Weekly', tfLong: 'Long-term',
     settingsH2: 'Settings',
     currentWlLabel: 'Current watchlist',
@@ -550,8 +552,12 @@ function loadCommentary(id) {
   fetch(sync.api + '/api/public/crypto/commentary/' + encodeURIComponent(id) + '?symbol=' + encodeURIComponent(displaySymbol(id)) + '&timeframe=' + encodeURIComponent(timeframe) + '&lang=' + encodeURIComponent(lang) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(15000) })
     .then(function (r) { return r.json(); })
     .then(function (d) {
-      if (d && d.text) { box.innerHTML = '🤖 ' + esc(d.text); show(box, true); }
-      else show(box, false);
+      if (d && d.text) { box.innerHTML = '🤖 ' + esc(d.text); show(box, true); return; }
+      // حصة الذكاء الاصطناعي منتهية — نُخبر المستخدم صراحةً بدل اختفاء القسم
+      // بلا تفسير (كان يبدو كأن الميزة تعطّلت فجأة). أي سبب آخر (لا مزوّد AI
+      // مُهيّأ على الخادم، عطل شبكة عابر) يبقى صامتاً عمداً — لا يعطّل التحليل الأساسي.
+      if (d && d.quota === 'exhausted') { box.innerHTML = '🤖 ' + esc(t('commentaryQuotaExhausted')); show(box, true); return; }
+      show(box, false);
     })
     .catch(function () { show(box, false); });
 }
