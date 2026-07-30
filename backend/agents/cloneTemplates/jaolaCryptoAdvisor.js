@@ -153,6 +153,8 @@ var I18N = {
     trackRecordLabel: 'دقة الإشارات السابقة',
     trackRecordNoData: 'لا توجد بيانات كافية بعد لقياس الدقة على هذا المدى.',
     trackRecordSummary: function (rate, hits, judged) { return 'نجحت ' + hits + ' من ' + judged + ' توقّعات محسومة (' + rate + '%) لهذه العملة على هذا المدى.'; },
+    tradeBtn: function (sym) { return 'تداول ' + sym + ' الآن ↗'; },
+    affiliateDisclosure: 'رابط إحالة خارجي — قد نحصل على عمولة دون أي تكلفة إضافية عليك.',
     tfDay: 'يومي', tfWeek: 'أسبوعي', tfLong: 'طويل المدى',
     settingsH2: 'الإعدادات',
     currentWlLabel: 'قائمة المتابعة الحالية',
@@ -217,6 +219,8 @@ var I18N = {
     trackRecordLabel: 'Past signal accuracy',
     trackRecordNoData: 'Not enough resolved predictions yet to measure accuracy for this timeframe.',
     trackRecordSummary: function (rate, hits, judged) { return hits + ' out of ' + judged + ' resolved predictions hit their target — ' + rate + '% for this coin on this timeframe.'; },
+    tradeBtn: function (sym) { return 'Trade ' + sym + ' now ↗'; },
+    affiliateDisclosure: 'External affiliate link — we may earn a commission at no extra cost to you.',
     tfDay: 'Daily', tfWeek: 'Weekly', tfLong: 'Long-term',
     settingsH2: 'Settings',
     currentWlLabel: 'Current watchlist',
@@ -465,7 +469,7 @@ function loadAnalysis(id) {
   if (!id) return;
   fetch(sync.api + '/api/public/crypto/analysis/' + encodeURIComponent(id) + '?timeframe=' + encodeURIComponent(timeframe) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(10000) })
     .then(function (r) { return r.json(); })
-    .then(function (a) { renderAnalysis(a); if (a && !a.error) { loadCommentary(id); loadTrackRecord(id); } })
+    .then(function (a) { renderAnalysis(a); if (a && !a.error) { loadCommentary(id); loadTrackRecord(id); loadAffiliate(id); } })
     .catch(function () { byId('anaBody').innerHTML = '<p class="hint">' + esc(t('failAnalysis')) + '</p>'; });
 }
 // رسم بياني مصغّر (14 نقطة) من قيم مُعطاة — بلا أي نداء شبكة إضافي (البيانات مُرسَلة أصلاً مع التحليل).
@@ -499,7 +503,24 @@ function renderAnalysis(a) {
     '</div>' +
     '<ul class="ana-reasons">' + reasons.map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ul>' +
     '<div class="track-record" id="anaTrackRecord"></div>' +
+    '<div class="affiliate-cta hidden" id="anaAffiliate"></div>' +
     '<div class="ai-commentary-box hidden" id="anaCommentary"></div>';
+}
+// 🔗 زر تداول اختياري (رابط أفلييت) — يظهر فقط إن ضبط صاحب النظام رابطاً
+// حقيقياً على الخادم؛ غيابه (الوضع الافتراضي) يُبقي هذا القسم مخفياً تماماً.
+function loadAffiliate(id) {
+  var sync = window.JAOLA_SYNC;
+  var box = byId('anaAffiliate');
+  if (!sync || !box) return;
+  fetch(sync.api + '/api/public/crypto/affiliate/' + encodeURIComponent(id) + '?token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(8000) })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d || !d.url) { show(box, false); return; }
+      box.innerHTML = '<a class="btn primary block" href="' + esc(d.url) + '" target="_blank" rel="noopener noreferrer sponsored">' + esc(t('tradeBtn', displaySymbol(id))) + '</a>' +
+        '<p class="hint tiny affiliate-disclosure">' + esc(t('affiliateDisclosure')) + '</p>';
+      show(box, true);
+    })
+    .catch(function () { show(box, false); });
 }
 // 📊 دقة الإشارات السابقة لهذه العملة على هذا المدى — سجل حقيقي (server.js
 // يحسم كل تنبّؤ سابق بالسعر الفعلي لاحقاً)، لا رقم مُلفَّق. غيابه (عملة/مدى
@@ -675,6 +696,8 @@ document.addEventListener('DOMContentLoaded', init);
 .sparkline.up polyline{stroke:var(--ok)}
 .sparkline.down polyline{stroke:var(--bad)}
 .track-record{margin-top:10px}
+.affiliate-cta{margin-top:14px}
+.affiliate-disclosure{margin-top:6px;text-align:center}
 .ai-commentary-box{margin-top:14px;padding:12px 14px;background:rgba(99,102,241,.08);border:1px solid var(--line);border-radius:10px;font-size:13px;line-height:1.8}
 .tf-tabs{display:flex;gap:6px;margin-bottom:14px}
 .tf-tab{background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--mut);padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer}

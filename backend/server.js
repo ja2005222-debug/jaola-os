@@ -85,7 +85,7 @@ import { recordError, recentErrors } from './services/errorLog.js';
 import { verifyPassword as verifyProjectPassword, setPassword as setProjectPassword } from './services/projectAuth.js';
 import { broadcastPresence } from './services/presence.js';
 import { saveAsset, readAsset } from './services/appAssets.js';
-import { listMarkets, getAnalysis, getOpportunities, searchCoins, isValidCoinId, MAX_WATCHLIST, SUPPORTED_COINS } from './services/cryptoMarket.js';
+import { listMarkets, getAnalysis, getOpportunities, searchCoins, isValidCoinId, MAX_WATCHLIST, SUPPORTED_COINS, findCoin } from './services/cryptoMarket.js';
 import { generateCommentary } from './services/cryptoCommentary.js';
 import { saveWatchlistIndex, listWatchlistIndex, markAlerted, shouldAlert } from './services/cryptoAlerts.js';
 import { recordSignal, getDueCoinIds, resolveDue, getAccuracy } from './services/signalTrackRecord.js';
@@ -2789,6 +2789,23 @@ app.get('/api/public/crypto/track-record/:id', cryptoLimit, (req, res) => {
     if (!v?.u || !v?.p) return res.json({ hits: 0, misses: 0, neutral: 0, total: 0, hitRate: null });
     try { res.json(getAccuracy(SIGNAL_TRACK_DIR, { id: req.params.id, timeframe: req.query?.timeframe })); }
     catch { res.json({ hits: 0, misses: 0, neutral: 0, total: 0, hitRate: null }); }
+});
+
+// 🔗 رابط أفلييت اختياري لمنصة تداول — مُعطَّل تماماً افتراضياً (لا رابط
+// وهمي أو منصّة مفترضة أبداً)، يُفعَّل فقط إن ضُبط متغيّر بيئة حقيقي
+// CRYPTO_AFFILIATE_URL_TEMPLATE (قالب يحوي {symbol}/{id})؛ غيابه يُبقي
+// الزر مختفياً كليّاً في الواجهة (لا نص "قريباً" أو رابط معطَّل ظاهر).
+function affiliateUrlFor(symbol, id) {
+    const tpl = process.env.CRYPTO_AFFILIATE_URL_TEMPLATE;
+    if (!tpl) return null;
+    return tpl.replace('{symbol}', encodeURIComponent(String(symbol || '').toLowerCase()))
+        .replace('{id}', encodeURIComponent(String(id || '')));
+}
+app.get('/api/public/crypto/affiliate/:id', cryptoLimit, (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p || !isValidCoinId(req.params.id)) return res.json({ url: null });
+    const meta = findCoin(req.params.id);
+    res.json({ url: affiliateUrlFor(meta?.symbol || req.params.id.toUpperCase(), req.params.id) });
 });
 
 // 🔍 بحث عن عملة لإضافتها لقائمة المتابعة — يفتح المتابعة لأي عملة يدعمها
