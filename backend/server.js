@@ -85,7 +85,9 @@ import { recordError, recentErrors } from './services/errorLog.js';
 import { verifyPassword as verifyProjectPassword, setPassword as setProjectPassword } from './services/projectAuth.js';
 import { broadcastPresence } from './services/presence.js';
 import { saveAsset, readAsset } from './services/appAssets.js';
-import { listMarkets, getAnalysis } from './services/cryptoMarket.js';
+import { listMarkets, getAnalysis, searchCoins, isValidCoinId, MAX_WATCHLIST } from './services/cryptoMarket.js';
+import { generateCommentary } from './services/cryptoCommentary.js';
+import { saveWatchlistIndex, listWatchlistIndex, markAlerted, shouldAlert } from './services/cryptoAlerts.js';
 import { listRecords as listCollectionRecords, upsertRecord as upsertCollectionRecord, deleteRecord as deleteCollectionRecord } from './services/appCollections.js';
 import { buildStaticSiteFromSource, buildDashboardPage } from './services/reactPreview.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
@@ -430,6 +432,20 @@ const cryptoLimit = rateLimit({
     max: 30,
     keyGenerator: (req) => ipKeyGenerator(req),
     handler: (req, res) => res.status(429).json({ error: 'محاولات كثيرة جداً — أعد المحاولة بعد قليل' }),
+});
+// أخفّ (بحث أثناء الكتابة قد يتكرر كثيراً؛ كاش cryptoMarket.js لا يزال يمتصّ التكرار الفعلي على CoinGecko)
+const cryptoSearchLimit = rateLimit({
+    windowMs: 60 * 1000,
+    max: 20,
+    keyGenerator: (req) => ipKeyGenerator(req),
+    handler: (req, res) => res.status(429).json({ coins: [] }),
+});
+// أشدّ (كل نداء تعليق يستهلك من حصة الذكاء الاصطناعي الشهرية للمالك)
+const cryptoCommentaryLimit = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    keyGenerator: (req) => ipKeyGenerator(req),
+    handler: (req, res) => res.json({ text: null }),
 });
 
 // Rate limiter عام للـ API
@@ -2712,6 +2728,7 @@ app.delete('/api/public/collections/:name/:id', appDataLimit, (req, res) => {
 // مولَّدة؛ صورة العيادة/المحل الفعلية. متاح لأي قالب استنساخ (site أو
 // system) — عرض صورة علناً لا يحمل نفس حساسية مزامنة سجلات العمل.
 const APPASSETS_DIR = path.join(BASE_WORKSPACE, '.appassets');
+const CRYPTOWATCH_DIR = path.join(BASE_WORKSPACE, '.cryptowatch');
 app.post('/api/public/assets/:slot', assetLimit, (req, res) => {
     const v = verifyBotToken(req.body?.token);
     if (!v?.u || !v?.p) return res.status(204).end();
@@ -2735,10 +2752,14 @@ app.get('/api/public/assets/:slot', assetLimit, (req, res) => {
 // (SMA/RSI) وإشارة شراء/بيع/انتظار مفسَّرة، عبر كاش داخلي مشترك (لا لكل
 // مشروع) يحمي CoinGecko من الاستهلاك المفرط. تحليل وعرض فقط — لا تنفيذ
 // تداول آلي إطلاقاً؛ بيانات سوق عامة فلا حاجة لتقييدها بمسار system.
+// ?ids=a,b,c تحدّد قائمة متابعة القالب الفعلية (لا الثماني المدعومة فقط).
 app.get('/api/public/crypto/markets', cryptoLimit, async (req, res) => {
     const v = verifyBotToken(req.query?.token);
     if (!v?.u || !v?.p) return res.json({ coins: [], stale: true });
-    try { res.json(await listMarkets()); } catch { res.json({ coins: [], stale: true }); }
+    try {
+        const ids = typeof req.query?.ids === 'string' ? req.query.ids.split(',').map(s => s.trim()) : undefined;
+        res.json(await listMarkets(ids));
+    } catch { res.json({ coins: [], stale: true }); }
 });
 app.get('/api/public/crypto/analysis/:id', cryptoLimit, async (req, res) => {
     const v = verifyBotToken(req.query?.token);
@@ -2748,6 +2769,48 @@ app.get('/api/public/crypto/analysis/:id', cryptoLimit, async (req, res) => {
         if (r.error) return res.status(400).json(r);
         res.json(r);
     } catch { res.status(500).json({ error: 'تعذّر التحليل الآن' }); }
+});
+
+// 🔍 بحث عن عملة لإضافتها لقائمة المتابعة — يفتح المتابعة لأي عملة يدعمها
+// CoinGecko، لا الثماني المُنسَّقة فقط.
+app.get('/api/public/crypto/search', cryptoSearchLimit, async (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p) return res.json({ coins: [] });
+    try { res.json({ coins: await searchCoins(req.query?.q) }); } catch { res.json({ coins: [] }); }
+});
+
+// 🗂️ فهرسة قائمة المتابعة (لا تخزينها الأساسي — ذاك عبر jaola-data كسائر
+// إعدادات القالب) — فقط لتمكين حلقة فحص "الفرص القوية" أدناه من معرفة أي
+// مشاريع تتابع أي عملات، بلا حاجة لمسح كل بيانات كل المشاريع.
+app.put('/api/public/crypto/watchlist', cryptoLimit, (req, res) => {
+    const v = verifyBotToken(req.body?.token);
+    if (!v?.u || !v?.p) return res.status(204).end();
+    try {
+        const list = Array.isArray(req.body?.watchlist)
+            ? req.body.watchlist.filter(isValidCoinId).slice(0, MAX_WATCHLIST) : [];
+        saveWatchlistIndex(CRYPTOWATCH_DIR, v.u, v.p, list);
+        res.json({ success: true });
+    } catch { res.status(500).json({ success: false }); }
+});
+
+// 🤖 تعليق آلي قصير (2-3 جمل) يفسّر أرقام التحليل بلغة مبسّطة — وكيل ضيّق
+// مهمته الوحيدة الكتابة، لا التوصية بالتنفيذ (انظر cryptoCommentary.js).
+// يستهلك من حصة الذكاء الاصطناعي الشهرية للمالك (نفس حصة agent-chat).
+app.get('/api/public/crypto/commentary/:id', cryptoCommentaryLimit, async (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p) return res.json({ text: null });
+    try {
+        const owner = await DB.findUser(v.u).catch(() => null);
+        const quota = botAiQuota(owner);
+        if (Number.isFinite(quota.monthly) && getUsageCount(USAGE_DIR, v.u, 'botAi') >= quota.monthly) {
+            return res.json({ text: null, quota: 'exhausted' });
+        }
+        const a = await getAnalysis(req.params.id);
+        if (a.error) return res.json({ text: null });
+        const text = await generateCommentary({ id: a.id, symbol: req.query?.symbol, price: a.price, sma7: a.sma7, sma25: a.sma25, rsi14: a.rsi14, signal: a.signal, reasonCode: a.reasonCode });
+        if (text) { try { bumpUsage(USAGE_DIR, v.u, 'botAi'); } catch { /* العدّ لا يُسقط الرد */ } }
+        res.json({ text });
+    } catch { res.json({ text: null }); }
 });
 
 // 📧 إرسال ردّ فعلي من الداشبورد على رسالة واردة — بحصة الخطة الشهرية
@@ -2826,6 +2889,39 @@ setInterval(async () => {
         }
     } catch (e) { console.warn('[Scheduler]', 'دورة المجدول فشلت:', e.message); }
 }, 60 * 1000);
+
+// 📈 حلقة فحص "الفرص القوية" لمستشار الكريبتو — كل 5 دقائق: لكل مشروع
+// مفهرَس (watchlist محفوظة عبر PUT .../crypto/watchlist)، تحقّق من إشارة
+// كل عملة متابَعة (نفس التحليل المخزَّن مؤقتاً، لا نداء إضافي لCoinGecko)
+// وأرسل بريداً عند شراء/بيع فعليّ — لا عند "انتظار"، ولا تكراراً لنفس
+// الإشارة خلال 12 ساعة (shouldAlert). فشل مشروع واحد لا يوقف البقية.
+setInterval(async () => {
+    try {
+        for (const entry of listWatchlistIndex(CRYPTOWATCH_DIR)) {
+            try {
+                const { user, project, watchlist } = entry;
+                if (!Array.isArray(watchlist) || !watchlist.length) continue;
+                if (getUsageCount(USAGE_DIR, user, 'notifyMail') >= 300) continue;
+                const owner = await DB.findUser(user).catch(() => null);
+                if (!owner?.email || !isEmail(owner.email)) continue;
+                for (const id of watchlist) {
+                    const a = await getAnalysis(id).catch(() => null);
+                    if (!a || a.error || a.signal === 'hold') continue;
+                    if (!shouldAlert(entry, id, a.signal)) continue;
+                    const label = a.signal === 'buy' ? 'شراء' : 'بيع';
+                    const sent = await sendMail({
+                        to: owner.email,
+                        subject: `📈 فرصة ${label} محتملة — ${id} (مستشار الكريبتو)`,
+                        text: `رصد مستشار الكريبتو في مشروعك «${project}» إشارة ${label} لعملة ${id}.\n\n` +
+                            `السعر الحالي: ${a.price ?? '—'}\nRSI: ${a.rsi14 != null ? a.rsi14.toFixed(0) : '—'}\n\n` +
+                            `هذا تحليل آلي إحصائي وليس نصيحة استثمارية ملزمة — راجع لوحة مشروعك للتفاصيل.`,
+                    }).catch(() => ({ ok: false }));
+                    if (sent.ok) { bumpUsage(USAGE_DIR, user, 'notifyMail'); markAlerted(CRYPTOWATCH_DIR, user, project, id, a.signal); }
+                }
+            } catch (e) { console.warn('[CryptoAlerts]', 'مشروع فشل:', e.message); }
+        }
+    } catch (e) { console.warn('[CryptoAlerts]', 'دورة الفحص فشلت:', e.message); }
+}, 5 * 60 * 1000);
 
 // 🔌 تحميل الإضافات ثم تشغيل الخادم
 orchestrator.init().catch(e => console.warn('[Plugins] init فشل:', e.message)).finally(() => {

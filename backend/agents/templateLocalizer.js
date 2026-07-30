@@ -1791,6 +1791,11 @@ const DICT = [
     ['جارٍ التحميل...', 'Loading...'],
     ['العملات المتابعة', 'Watched currencies'],
     ['تحليل', 'Analysis'],
+    ['قائمة المتابعة الحالية', 'Current watchlist'],
+    ['إضافة سريعة', 'Quick add'],
+    ['بحث عن عملة أخرى', 'Search for another currency'],
+    ['اكتب اسم العملة أو رمزها...', 'Type the currency name or symbol...'],
+    ['حفظ كلمة المرور', 'Save password'],
 
     // ── تنظيف المنازل (jaola-cleaning) ───────────────────────────────
     ['خدمات jaola لتنظيف المنازل', 'jaola Home Cleaning Services'],

@@ -61,11 +61,21 @@ export function jaolaCryptoAdvisor() {
     <section id="view-settings" class="view hidden">
       <div class="view-head"><h2>الإعدادات</h2></div>
       <div class="panel form-col">
-        <label>العملات المتابعة</label>
-        <div id="watchlistBox" class="watchlist-box"></div>
+        <label>قائمة المتابعة الحالية</label>
+        <div id="watchlistCurrent" class="watchlist-box"></div>
+        <label>إضافة سريعة</label>
+        <div id="quickAddCoins" class="quick-add"></div>
+        <label>بحث عن عملة أخرى</label>
+        <div class="form-row">
+          <input id="coinSearchInput" placeholder="اكتب اسم العملة أو رمزها...">
+          <button class="btn ghost tiny" data-action="searchCoin">بحث</button>
+        </div>
+        <div id="coinSearchResults" class="watchlist-box"></div>
+      </div>
+      <div class="panel form-col">
         <label>كلمة المرور الجديدة</label>
         <input id="stPass" type="password" placeholder="اتركها فارغة للإبقاء">
-        <button class="btn primary" data-action="saveSettings">حفظ الإعدادات</button>
+        <button class="btn primary" data-action="saveSettings">حفظ كلمة المرور</button>
       </div>
     </section>
   </main>
@@ -92,6 +102,7 @@ var ALL_COINS = [
 function load(k, fb) { try { var v = localStorage.getItem('jcrypto_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
 function save(k, val) { try { localStorage.setItem('jcrypto_' + k, JSON.stringify(val)); } catch (e) {} }
 
+var MAX_WATCHLIST = 20;
 var settings = load('settings', { pass: 'admin' });
 var watchlist = load('watchlist', ['bitcoin', 'ethereum', 'solana']);
 var session = load('session', null);
@@ -104,6 +115,9 @@ function show(el, on) { if (el) el.classList.toggle('hidden', !on); }
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function toast(m) { var t = byId('toast'); t.textContent = m; show(t, true); clearTimeout(toast._t); toast._t = setTimeout(function () { show(t, false); }, 2400); }
 function coinMeta(id) { for (var i = 0; i < ALL_COINS.length; i++) if (ALL_COINS[i].id === id) return ALL_COINS[i]; return null; }
+// اسم/رمز العرض: العربي المألوف للعملات الشائعة، وإلا ما يعرفه الخادم عن أي عملة أخرى.
+function displayName(id) { var c = coinMeta(id); if (c) return c.nameAr; var m = marketsData[id]; return (m && m.name) || id; }
+function displaySymbol(id) { var c = coinMeta(id); if (c) return c.symbol; var m = marketsData[id]; return (m && m.symbol) || id.toUpperCase(); }
 function fmtPrice(n) { return (n == null) ? '—' : '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: n < 1 ? 6 : 2 }); }
 function fmtPct(n) { return (n == null) ? '—' : (n >= 0 ? '+' : '') + n.toFixed(2) + '%'; }
 function signalLabel(s) { return s === 'buy' ? 'شراء' : s === 'sell' ? 'بيع' : 'انتظار'; }
@@ -146,7 +160,7 @@ function setView(v) {
   show(byId('view-' + v), true); renderTabs(); renderUserChip();
   if (v === 'dashboard') { renderWatchlistShell(); loadMarkets(); startPolling(loadMarkets, 60000); }
   if (v === 'analysis') { renderAnalysisShell(); loadAnalysis(state.activeCoin); startPolling(function () { loadAnalysis(state.activeCoin); }, 60000); }
-  if (v === 'settings') { renderSettingsCoins(); byId('stPass').value = ''; }
+  if (v === 'settings') { renderWatchlistSettings(); byId('coinSearchInput').value = ''; byId('stPass').value = ''; }
 }
 function renderTabs() {
   if (!session) { byId('tabs').innerHTML = ''; return; }
@@ -159,9 +173,8 @@ function renderWatchlistShell() {
   var el = byId('coinGrid');
   if (!watchlist.length) { el.innerHTML = '<p class="hint">أضف عملات لمتابعتها من الإعدادات.</p>'; return; }
   el.innerHTML = watchlist.map(function (id) {
-    var m = coinMeta(id); if (!m) return '';
     return '<div class="panel coin-card" data-action="openAnalysis" data-id="' + id + '">' +
-      '<div class="coin-card-head"><b>' + esc(m.nameAr) + '</b><span class="hint">' + m.symbol + '</span></div>' +
+      '<div class="coin-card-head"><b>' + esc(displayName(id)) + '</b><span class="hint">' + esc(displaySymbol(id)) + '</span></div>' +
       '<div class="coin-price" id="price-' + id + '">…</div>' +
       '<div class="coin-chg" id="chg-' + id + '"></div></div>';
   }).join('');
@@ -170,12 +183,15 @@ function loadMarkets() {
   var sync = window.JAOLA_SYNC;
   var status = byId('dashStatus');
   if (!sync) { if (status) status.textContent = '🔌 التحليل الحي يعمل بعد تطبيق القالب على مشروع فعلي منشور.'; return; }
+  if (!watchlist.length) return;
   if (status) status.textContent = '⏳ جارٍ التحديث...';
-  fetch(sync.api + '/api/public/crypto/markets?token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(8000) })
+  var ids = watchlist.join(',');
+  fetch(sync.api + '/api/public/crypto/markets?ids=' + encodeURIComponent(ids) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(8000) })
     .then(function (r) { return r.json(); })
     .then(function (d) {
       var coins = (d && Array.isArray(d.coins)) ? d.coins : [];
       coins.forEach(function (c) { marketsData[c.id] = c; });
+      renderWatchlistShell(); // إعادة رسم بعد توفّر أسماء/أسعار حقيقية (قد تشمل عملات مُضافة بالبحث)
       watchlist.forEach(function (id) {
         var c = marketsData[id];
         var pEl = byId('price-' + id), cEl = byId('chg-' + id);
@@ -191,8 +207,7 @@ function loadMarkets() {
 function openAnalysis(id) { state.activeCoin = id; setView('analysis'); }
 function backDashboard() { setView('dashboard'); }
 function renderAnalysisShell() {
-  var m = coinMeta(state.activeCoin);
-  byId('anaTitle').textContent = m ? (m.nameAr + ' (' + m.symbol + ')') : 'تحليل';
+  byId('anaTitle').textContent = displayName(state.activeCoin) + ' (' + displaySymbol(state.activeCoin) + ')';
   byId('anaBody').innerHTML = '<p class="hint">⏳ جارٍ التحميل...</p>';
 }
 function loadAnalysis(id) {
@@ -201,8 +216,24 @@ function loadAnalysis(id) {
   if (!id) return;
   fetch(sync.api + '/api/public/crypto/analysis/' + encodeURIComponent(id) + '?token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(10000) })
     .then(function (r) { return r.json(); })
-    .then(function (a) { renderAnalysis(a); })
+    .then(function (a) { renderAnalysis(a); if (a && !a.error) loadCommentary(id); })
     .catch(function () { byId('anaBody').innerHTML = '<p class="hint">⚠️ تعذّر جلب التحليل الآن — حاول مجدداً.</p>'; });
+}
+// رسم بياني مصغّر (14 يوماً) من قيم مُعطاة — بلا أي نداء شبكة إضافي (البيانات مُرسَلة أصلاً مع التحليل).
+function sparklineSvg(values) {
+  if (!values || values.length < 2) return '';
+  var w = 280, h = 56, pad = 4;
+  var min = Math.min.apply(null, values), max = Math.max.apply(null, values);
+  var range = (max - min) || 1;
+  var stepX = (w - pad * 2) / (values.length - 1);
+  var pts = values.map(function (v, i) {
+    var x = pad + i * stepX;
+    var y = pad + (h - pad * 2) * (1 - (v - min) / range);
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+  var up = values[values.length - 1] >= values[0];
+  return '<svg viewBox="0 0 ' + w + ' ' + h + '" class="sparkline ' + (up ? 'up' : 'down') + '" preserveAspectRatio="none">' +
+    '<polyline points="' + pts + '"></polyline></svg>';
 }
 function renderAnalysis(a) {
   if (!a || a.error || !a.id) { byId('anaBody').innerHTML = '<p class="hint">⚠️ ' + esc(a && a.error ? a.error : 'تعذّر جلب التحليل الآن.') + '</p>'; return; }
@@ -210,34 +241,100 @@ function renderAnalysis(a) {
   byId('anaBody').innerHTML =
     (a.stale ? '<p class="hint warn-text">⚠️ بيانات قديمة (تعذّر التحديث الآن)</p>' : '') +
     '<div class="ana-price">' + fmtPrice(a.price) + '</div>' +
+    sparklineSvg(a.recentCloses) +
     '<div class="ana-signal ' + signalClass(a.signal) + '">' + signalLabel(a.signal) + '</div>' +
     '<div class="ana-stats">' +
     '<div class="stat"><span class="stat-v">' + fmtPrice(a.sma7) + '</span><span class="stat-l">متوسط 7 أيام</span></div>' +
     '<div class="stat"><span class="stat-v">' + fmtPrice(a.sma25) + '</span><span class="stat-l">متوسط 25 يوماً</span></div>' +
     '<div class="stat"><span class="stat-v">' + (a.rsi14 != null ? a.rsi14.toFixed(0) : '—') + '</span><span class="stat-l">RSI-14</span></div>' +
     '</div>' +
-    '<ul class="ana-reasons">' + reasons.map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ul>';
+    '<ul class="ana-reasons">' + reasons.map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ul>' +
+    '<div class="ai-commentary-box hidden" id="anaCommentary"></div>';
+}
+// 🤖 قراءة سريعة من وكيل مخصّص (مهمته فقط كتابة الجمل، لا التوصية بالتنفيذ) — تجميلية بحتة،
+// غيابها (لا مزوّد ذكاء اصطناعي/حصة منتهية) لا يعطّل التحليل الرقمي أعلاه إطلاقاً.
+function loadCommentary(id) {
+  var sync = window.JAOLA_SYNC;
+  var box = byId('anaCommentary');
+  if (!sync || !box) return;
+  fetch(sync.api + '/api/public/crypto/commentary/' + encodeURIComponent(id) + '?symbol=' + encodeURIComponent(displaySymbol(id)) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(15000) })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d && d.text) { box.innerHTML = '🤖 ' + esc(d.text); show(box, true); }
+      else show(box, false);
+    })
+    .catch(function () { show(box, false); });
 }
 
-function renderSettingsCoins() {
-  byId('watchlistBox').innerHTML = ALL_COINS.map(function (c) {
-    var checked = watchlist.indexOf(c.id) !== -1;
-    return '<label class="check-row"><input type="checkbox" data-coin="' + c.id + '"' + (checked ? ' checked' : '') + '> ' + esc(c.nameAr) + ' (' + c.symbol + ')</label>';
-  }).join('');
+function renderWatchlistSettings() {
+  byId('watchlistCurrent').innerHTML = watchlist.map(function (id) {
+    return '<div class="wl-row"><span>' + esc(displayName(id)) + ' <span class="hint">(' + esc(displaySymbol(id)) + ')</span></span>' +
+      '<button class="btn tiny ghost" data-action="removeCoin" data-id="' + id + '">✕</button></div>';
+  }).join('') || '<p class="hint tiny">لا عملات متابَعة بعد.</p>';
+
+  var quick = ALL_COINS.filter(function (c) { return watchlist.indexOf(c.id) === -1; });
+  byId('quickAddCoins').innerHTML = quick.map(function (c) {
+    return '<button class="btn tiny ghost" data-action="addCoin" data-id="' + c.id + '" data-symbol="' + c.symbol + '" data-name="' + esc(c.nameAr) + '">+ ' + esc(c.nameAr) + '</button>';
+  }).join('') || '<p class="hint tiny">كل العملات الشائعة مضافة بالفعل.</p>';
+  byId('coinSearchResults').innerHTML = '';
+}
+// يُزامَن مع الخادم فوراً (لا زر "حفظ" منفصل لقائمة المتابعة) — نفس نمط
+// jaola-data للتخزين، بالإضافة لفهرس مخصّص (crypto/watchlist) تستخدمه
+// حلقة تنبيهات "الفرص القوية" في server.js لمعرفة أي المشاريع تتابع أي عملات.
+function persistWatchlist() {
+  save('watchlist', watchlist);
+  var sync = window.JAOLA_SYNC;
+  if (sync) {
+    fetch(sync.api + '/api/public/crypto/watchlist', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, watchlist: watchlist }), signal: AbortSignal.timeout(8000) }).catch(function () {});
+  }
+}
+function addCoinToWatchlist(id, symbol, name) {
+  if (!id) return;
+  if (watchlist.indexOf(id) !== -1) { toast('العملة مضافة بالفعل'); return; }
+  if (watchlist.length >= MAX_WATCHLIST) { toast('وصلت للحد الأقصى لعدد العملات المتابَعة'); return; }
+  watchlist.push(id);
+  if (symbol || name) marketsData[id] = { id: id, symbol: symbol || id.toUpperCase(), name: name || id, price: null, change24h: null };
+  persistWatchlist();
+  renderWatchlistSettings();
+  toast('أُضيفت للمتابعة');
+}
+function removeCoinFromWatchlist(id) {
+  if (watchlist.length <= 1) { toast('يجب أن تبقى عملة واحدة على الأقل للمتابعة'); return; }
+  watchlist = watchlist.filter(function (x) { return x !== id; });
+  persistWatchlist();
+  renderWatchlistSettings();
+  toast('أُزيلت من المتابعة');
+}
+function searchCoin() {
+  var q = byId('coinSearchInput').value.trim();
+  var sync = window.JAOLA_SYNC;
+  var box = byId('coinSearchResults');
+  if (!sync) { box.innerHTML = '<p class="hint tiny">البحث يعمل بعد تطبيق القالب على مشروع فعلي منشور.</p>'; return; }
+  if (q.length < 2) { toast('اكتب حرفين على الأقل'); return; }
+  box.innerHTML = '<p class="hint tiny">⏳ جارٍ البحث...</p>';
+  fetch(sync.api + '/api/public/crypto/search?q=' + encodeURIComponent(q) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(8000) })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      var coins = (d && Array.isArray(d.coins)) ? d.coins : [];
+      if (!coins.length) { box.innerHTML = '<p class="hint tiny">لا نتائج.</p>'; return; }
+      box.innerHTML = coins.map(function (c) {
+        var already = watchlist.indexOf(c.id) !== -1;
+        return '<div class="wl-row"><span>' + esc(c.name) + ' <span class="hint">(' + esc(c.symbol) + ')</span></span>' +
+          (already ? '<span class="hint tiny">مُضافة</span>' : '<button class="btn tiny primary" data-action="addCoin" data-id="' + c.id + '" data-symbol="' + esc(c.symbol) + '" data-name="' + esc(c.name) + '">+ إضافة</button>') +
+          '</div>';
+      }).join('');
+    })
+    .catch(function () { box.innerHTML = '<p class="hint tiny">⚠️ تعذّر البحث الآن.</p>'; });
 }
 function saveSettings() {
-  var boxes = document.querySelectorAll('#watchlistBox input[type=checkbox]');
-  var next = [];
-  for (var i = 0; i < boxes.length; i++) if (boxes[i].checked) next.push(boxes[i].getAttribute('data-coin'));
-  if (!next.length) { toast('اختر عملة واحدة على الأقل للمتابعة'); return; }
-  watchlist = next; save('watchlist', watchlist);
   var np = byId('stPass').value.trim();
   var sync = window.JAOLA_SYNC;
   if (np) {
     if (sync) { fetch(sync.api + '/api/public/auth/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: np }), signal: AbortSignal.timeout(8000) }).catch(function () {}); }
     else { settings.pass = np; save('settings', settings); }
+    byId('stPass').value = '';
   }
-  toast('تم حفظ الإعدادات');
+  toast('تم حفظ كلمة المرور');
 }
 
 function handleClick(e) {
@@ -250,6 +347,9 @@ function handleClick(e) {
     case 'backDashboard': backDashboard(); break;
     case 'refreshAnalysis': loadAnalysis(state.activeCoin); break;
     case 'refreshMarkets': loadMarkets(); break;
+    case 'addCoin': addCoinToWatchlist(a.dataset.id, a.dataset.symbol, a.dataset.name); break;
+    case 'removeCoin': removeCoinFromWatchlist(a.dataset.id); break;
+    case 'searchCoin': searchCoin(); break;
     case 'saveSettings': saveSettings(); break;
   }
 }
@@ -277,8 +377,14 @@ document.addEventListener('DOMContentLoaded', init);
 .sig-hold{background:rgba(139,144,165,.15);color:var(--mut)}
 .ana-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px}
 .ana-reasons{padding-inline-start:20px;display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--txt)}
-.watchlist-box{display:flex;flex-direction:column;gap:6px}
-.check-row{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer}
+.watchlist-box{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.wl-row{display:flex;justify-content:space-between;align-items:center;gap:10px;background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-size:13px}
+.quick-add{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.sparkline{width:100%;max-width:280px;height:56px;display:block;margin:6px 0 14px}
+.sparkline polyline{fill:none;stroke-width:2}
+.sparkline.up polyline{stroke:var(--ok)}
+.sparkline.down polyline{stroke:var(--bad)}
+.ai-commentary-box{margin-top:14px;padding:12px 14px;background:rgba(99,102,241,.08);border:1px solid var(--line);border-radius:10px;font-size:13px;line-height:1.8}
 `;
 
     return {
