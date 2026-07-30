@@ -411,6 +411,10 @@ function renderWatchlistShell() {
       '<div class="coin-chg" id="chg-' + id + '"></div></div>';
   }).join('');
 }
+// مهلات fetch للنقاط المتصلة بـCoinGecko (markets/opportunities/analysis/search)
+// أُطيلت إلى 22 ثانية كي تتّسع لمحاولة الخادم الثانية عند تعطّل عابر
+// (انظر fetchJson في cryptoMarket.js) — بدل إظهار فشل للمستخدم بينما
+// الخادم لا يزال يعيد المحاولة بنجاح.
 function loadMarkets() {
   var sync = window.JAOLA_SYNC;
   var status = byId('dashStatus');
@@ -418,7 +422,7 @@ function loadMarkets() {
   if (!watchlist.length) return;
   if (status) status.textContent = t('updating');
   var ids = watchlist.join(',');
-  fetch(sync.api + '/api/public/crypto/markets?ids=' + encodeURIComponent(ids) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(8000) })
+  fetch(sync.api + '/api/public/crypto/markets?ids=' + encodeURIComponent(ids) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(22000) })
     .then(function (r) { return r.json(); })
     .then(function (d) {
       var coins = (d && Array.isArray(d.coins)) ? d.coins : [];
@@ -444,7 +448,7 @@ function loadOpportunities() {
   var wrap = byId('oppTicker');
   if (!wrap) return;
   if (!sync || !watchlist.length) { show(wrap, false); return; }
-  fetch(sync.api + '/api/public/crypto/opportunities?ids=' + encodeURIComponent(watchlist.join(',')) + '&timeframe=' + encodeURIComponent(timeframe) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(12000) })
+  fetch(sync.api + '/api/public/crypto/opportunities?ids=' + encodeURIComponent(watchlist.join(',')) + '&timeframe=' + encodeURIComponent(timeframe) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(22000) })
     .then(function (r) { return r.json(); })
     .then(function (d) {
       var list = (d && Array.isArray(d.opportunities)) ? d.opportunities : [];
@@ -469,7 +473,7 @@ function loadAnalysis(id) {
   var sync = window.JAOLA_SYNC;
   if (!sync) { byId('anaBody').innerHTML = '<p class="hint">' + esc(t('liveAfterPublish')) + '</p>'; return; }
   if (!id) return;
-  fetch(sync.api + '/api/public/crypto/analysis/' + encodeURIComponent(id) + '?timeframe=' + encodeURIComponent(timeframe) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(10000) })
+  fetch(sync.api + '/api/public/crypto/analysis/' + encodeURIComponent(id) + '?timeframe=' + encodeURIComponent(timeframe) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(22000) })
     .then(function (r) { return r.json(); })
     .then(function (a) { renderAnalysis(a); if (a && !a.error) { loadCommentary(id); loadTrackRecord(id); loadAffiliate(id); } })
     .catch(function () { byId('anaBody').innerHTML = '<p class="hint">' + esc(t('failAnalysis')) + '</p>'; });
@@ -624,7 +628,7 @@ function searchCoin() {
   if (!sync) { box.innerHTML = '<p class="hint tiny">' + esc(t('searchWorking')) + '</p>'; return; }
   if (q.length < 2) { toast(t('typeTwoChars')); return; }
   box.innerHTML = '<p class="hint tiny">' + esc(t('searching')) + '</p>';
-  fetch(sync.api + '/api/public/crypto/search?q=' + encodeURIComponent(q) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(8000) })
+  fetch(sync.api + '/api/public/crypto/search?q=' + encodeURIComponent(q) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(22000) })
     .then(function (r) { return r.json(); })
     .then(function (d) {
       var coins = (d && Array.isArray(d.coins)) ? d.coins : [];

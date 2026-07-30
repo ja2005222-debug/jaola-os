@@ -61,10 +61,26 @@ export function findCoin(id) {
     return SUPPORTED_COINS.find(c => c.id === id) || null;
 }
 
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+// نداء واحد فاشل (تعطّل شبكي عابر أو حدّ معدّل CoinGecko المجاني 429) لا يعني
+// أن البيانات غائبة فعلاً — محاولة ثانية بعد مهلة قصيرة تنقذ أغلب الحالات
+// العابرة (خصوصاً لمدىً أطول كالتحليل الأسبوعي/طويل المدى، حيث الحمولة
+// أكبر فاحتمال تأخّر عابر أعلى من المدى اليومي الصغير).
 async function fetchJson(url) {
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) throw new Error('http ' + res.status);
-    return res.json();
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+            if (!res.ok) {
+                if (res.status === 429 && attempt === 0) { await sleep(700); continue; }
+                throw new Error('http ' + res.status);
+            }
+            return await res.json();
+        } catch (e) {
+            if (attempt === 0) { await sleep(350); continue; }
+            throw e;
+        }
+    }
 }
 
 /** يختزل مصفوفة [timestamp, price] (أي دقّة زمنية) إلى إغلاق واحد لكل نافذة زمنية (bucketMs). */
