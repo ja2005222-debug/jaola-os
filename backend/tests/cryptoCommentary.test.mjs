@@ -33,6 +33,41 @@ test('generateCommentary: مدى مختلف لنفس (id+signal+reasonCode) → 
     assert.equal(calls, 2, 'المدى الزمني جزء من مفتاح الكاش');
 });
 
+// ─── اللغة: system prompt وسياق الطلب يتبعان lang، لا عربي دائماً ────
+test('generateCommentary: lang=en → system prompt إنجليزي وسياق الطلب إنجليزي', async () => {
+    resetCommentaryCache();
+    let seenSystem = null, seenUser = null;
+    const llm = async (messages) => { seenSystem = messages[0].content; seenUser = JSON.parse(messages[1].content); return 'Momentum looks bullish.'; };
+    const text = await generateCommentary({ ...DATA, lang: 'en' }, llm);
+    assert.match(seenSystem, /English sentences/);
+    assert.doesNotMatch(seenSystem, /[؀-ۿ]/, 'system prompt إنجليزي بلا عربية');
+    assert.equal(seenUser.signal, 'Buy');
+    assert.equal(seenUser.timeframe, 'weekly');
+    assert.equal(text, 'Momentum looks bullish.');
+});
+
+test('generateCommentary: lang غائبة أو غير en → عربي (افتراضي)', async () => {
+    resetCommentaryCache();
+    let seenSystem = null;
+    const llm = async (messages) => { seenSystem = messages[0].content; return 'نص'; };
+    await generateCommentary({ ...DATA, lang: undefined }, llm);
+    assert.match(seenSystem, /محلّل بيانات/);
+    resetCommentaryCache();
+    const llm2 = async (messages) => { seenSystem = messages[0].content; return 'نص'; };
+    await generateCommentary({ ...DATA, lang: 'fr' }, llm2);
+    assert.match(seenSystem, /محلّل بيانات/, 'لغة غير مدعومة → عربي افتراضياً');
+});
+
+test('generateCommentary: نفس السياق بلغتين مختلفتين → مفتاح كاش مستقلّ (لا تسريب نص لغة لأخرى)', async () => {
+    resetCommentaryCache();
+    let calls = 0;
+    const llm = async () => { calls++; return 'text ' + calls; };
+    const ar = await generateCommentary({ ...DATA, lang: 'ar' }, llm);
+    const en = await generateCommentary({ ...DATA, lang: 'en' }, llm);
+    assert.equal(calls, 2, 'اللغة جزء من مفتاح الكاش');
+    assert.notEqual(ar, en);
+});
+
 test('generateCommentary: فشل النموذج (لا مزوّد/رصيد) → null بدل رمي خطأ', async () => {
     resetCommentaryCache();
     const llm = async () => { throw new Error('quota exceeded'); };

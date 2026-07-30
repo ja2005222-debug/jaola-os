@@ -85,7 +85,7 @@ import { recordError, recentErrors } from './services/errorLog.js';
 import { verifyPassword as verifyProjectPassword, setPassword as setProjectPassword } from './services/projectAuth.js';
 import { broadcastPresence } from './services/presence.js';
 import { saveAsset, readAsset } from './services/appAssets.js';
-import { listMarkets, getAnalysis, searchCoins, isValidCoinId, MAX_WATCHLIST } from './services/cryptoMarket.js';
+import { listMarkets, getAnalysis, getOpportunities, searchCoins, isValidCoinId, MAX_WATCHLIST } from './services/cryptoMarket.js';
 import { generateCommentary } from './services/cryptoCommentary.js';
 import { saveWatchlistIndex, listWatchlistIndex, markAlerted, shouldAlert } from './services/cryptoAlerts.js';
 import { listRecords as listCollectionRecords, upsertRecord as upsertCollectionRecord, deleteRecord as deleteCollectionRecord } from './services/appCollections.js';
@@ -2781,6 +2781,18 @@ app.get('/api/public/crypto/search', cryptoSearchLimit, async (req, res) => {
     try { res.json({ coins: await searchCoins(req.query?.q) }); } catch { res.json({ coins: [] }); }
 });
 
+// 🚀 أقوى فرص الدخول (شراء/بيع فعلي) ضمن قائمة عملات — لشريط "الفرص
+// القوية" في لوحة القالب. يعيد استخدام كاش getAnalysis لكل عملة (نفس
+// التكلفة كأن الواجهة طلبت كل عملة على حدة، فقط بنداء HTTP واحد).
+app.get('/api/public/crypto/opportunities', cryptoLimit, async (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p) return res.json({ opportunities: [] });
+    try {
+        const ids = typeof req.query?.ids === 'string' ? req.query.ids.split(',').map(s => s.trim()) : [];
+        res.json({ opportunities: await getOpportunities(ids, req.query?.timeframe) });
+    } catch { res.json({ opportunities: [] }); }
+});
+
 // 🗂️ فهرسة قائمة المتابعة (لا تخزينها الأساسي — ذاك عبر jaola-data كسائر
 // إعدادات القالب) — فقط لتمكين حلقة فحص "الفرص القوية" أدناه من معرفة أي
 // مشاريع تتابع أي عملات، بلا حاجة لمسح كل بيانات كل المشاريع.
@@ -2809,7 +2821,7 @@ app.get('/api/public/crypto/commentary/:id', cryptoCommentaryLimit, async (req, 
         }
         const a = await getAnalysis(req.params.id, req.query?.timeframe);
         if (a.error) return res.json({ text: null });
-        const text = await generateCommentary({ id: a.id, symbol: req.query?.symbol, price: a.price, smaShort: a.smaShort, smaLong: a.smaLong, rsi: a.rsi, signal: a.signal, reasonCode: a.reasonCode, timeframe: a.timeframe });
+        const text = await generateCommentary({ id: a.id, symbol: req.query?.symbol, price: a.price, smaShort: a.smaShort, smaLong: a.smaLong, rsi: a.rsi, signal: a.signal, reasonCode: a.reasonCode, timeframe: a.timeframe, lang: req.query?.lang });
         if (text) { try { bumpUsage(USAGE_DIR, v.u, 'botAi'); } catch { /* العدّ لا يُسقط الرد */ } }
         res.json({ text });
     } catch { res.json({ text: null }); }

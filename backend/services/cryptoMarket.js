@@ -198,6 +198,37 @@ export async function getAnalysis(id, timeframe = DEFAULT_TIMEFRAME) {
     }
 }
 
+// قوّة الفرصة (0-100 تقريبية، للترتيب فقط لا للعرض الدقيق): كلما ابتعد RSI
+// عن حدّه (70/30) أو اتّسعت الفجوة النسبية بين المتوسطين، كانت الإشارة أقوى.
+function opportunityStrength(r) {
+    if (r.reasonCode === 'rsi_overbought' || r.reasonCode === 'rsi_oversold') {
+        return Math.abs((r.rsi ?? 50) - 50);
+    }
+    if (r.reasonCode === 'sma_bullish' || r.reasonCode === 'sma_bearish') {
+        if (!r.smaLong) return 0;
+        return Math.min(100, Math.abs((r.smaShort - r.smaLong) / r.smaLong) * 100 * 5);
+    }
+    return 0;
+}
+
+/**
+ * أقوى فرص الدخول (شراء/بيع فعلي، لا "انتظار") ضمن قائمة عملات — لشريط
+ * "الفرص القوية" في الواجهة. يعيد استخدام getAnalysis (وكاشها لكل عملة)،
+ * فلا يُضاعف تكلفة CoinGecko عن استدعاء كل عملة على حدة. أعلى 8 نتائج
+ * مرتّبة تنازلياً بقوة الفرصة.
+ */
+export async function getOpportunities(ids, timeframe = DEFAULT_TIMEFRAME) {
+    const wanted = (Array.isArray(ids) ? ids : []).filter(isValidCoinId).slice(0, MAX_WATCHLIST);
+    if (!wanted.length) return [];
+    const results = await Promise.all(wanted.map(id => getAnalysis(id, timeframe).catch(() => ({ error: true }))));
+    return wanted
+        .map((id, i) => ({ id, result: results[i] }))
+        .filter(({ result }) => result && !result.error && (result.signal === 'buy' || result.signal === 'sell'))
+        .map(({ id, result }) => ({ id, signal: result.signal, reasonCode: result.reasonCode, strength: opportunityStrength(result) }))
+        .sort((a, b) => b.strength - a.strength)
+        .slice(0, 8);
+}
+
 /** بحث عن عملة بالاسم/الرمز (لإضافتها لقائمة المتابعة) — أعلى 8 نتائج مطابقة. */
 export async function searchCoins(query) {
     const q = String(query || '').trim().toLowerCase().slice(0, 60);
