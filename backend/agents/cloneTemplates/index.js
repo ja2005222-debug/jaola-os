@@ -41,9 +41,10 @@ import { jaolaVetClinic } from './jaolaVetClinic.js';
 import { jaolaVetClinicReact } from './jaolaVetClinicReact.js';
 import { jaolaCleaning } from './jaolaCleaning.js';
 import { jaolaCryptoAdvisor } from './jaolaCryptoAdvisor.js';
+import { jaolaBudgetAdvisor } from './jaolaBudgetAdvisor.js';
 
 // كل قوالب jaola المتاحة (تُبنى مرة عند الحاجة)
-const BUILDERS = [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaEvents, jaolaLms, jaolaSchool, jaolaWeather, jaolaCrypto, jaolaCurrency, jaolaErp, jaolaClinic, jaolaHr, jaolaPos, jaolaRestaurantOps, jaolaPharmacy, jaolaProperty, jaolaCinema, jaolaWorkshop, jaolaGym, jaolaAccounting, jaolaSalon, jaolaWarehouse, jaolaHotel, jaolaLaundry, jaolaCarRental, jaolaLawfirm, jaolaCoworking, jaolaHelpdesk, jaolaPhotography, jaolaFleet, jaolaTutoring, jaolaVetClinic, jaolaCleaning, jaolaVetClinicReact, jaolaCryptoAdvisor];
+const BUILDERS = [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaEvents, jaolaLms, jaolaSchool, jaolaWeather, jaolaCrypto, jaolaCurrency, jaolaErp, jaolaClinic, jaolaHr, jaolaPos, jaolaRestaurantOps, jaolaPharmacy, jaolaProperty, jaolaCinema, jaolaWorkshop, jaolaGym, jaolaAccounting, jaolaSalon, jaolaWarehouse, jaolaHotel, jaolaLaundry, jaolaCarRental, jaolaLawfirm, jaolaCoworking, jaolaHelpdesk, jaolaPhotography, jaolaFleet, jaolaTutoring, jaolaVetClinic, jaolaCleaning, jaolaVetClinicReact, jaolaCryptoAdvisor, jaolaBudgetAdvisor];
 
 // 🧭 مساران منفصلان: «موقع» (لزوّار) و«سيستم داخلي» (أداة عمل) — طلب
 // سيستم لا يُقفز أبداً لقالب متجر (عطل photo-test الحقيقي: طلب نظام

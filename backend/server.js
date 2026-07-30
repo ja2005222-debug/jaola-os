@@ -90,6 +90,9 @@ import { generateCommentary } from './services/cryptoCommentary.js';
 import { saveWatchlistIndex, listWatchlistIndex, markAlerted, shouldAlert } from './services/cryptoAlerts.js';
 import { recordSignal, getDueCoinIds, resolveDue, getAccuracy } from './services/signalTrackRecord.js';
 import { listRecords as listCollectionRecords, upsertRecord as upsertCollectionRecord, deleteRecord as deleteCollectionRecord } from './services/appCollections.js';
+import { summarize as summarizeBudget, lastMonths as budgetLastMonths, budgetStatus } from './services/budgetStats.js';
+import { generateBudgetCommentary } from './services/budgetCommentary.js';
+import { registerBudgetProject, listBudgetProjects, markBudgetAlerted, shouldAlertBudget } from './services/budgetAlerts.js';
 import { buildStaticSiteFromSource, buildDashboardPage } from './services/reactPreview.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
 import { getProjectMemory, getDomainModel } from './agents/projectMemory.js';
@@ -2725,12 +2728,44 @@ app.delete('/api/public/collections/:name/:id', appDataLimit, (req, res) => {
     catch { res.status(500).json({ success: false }); }
 });
 
+// 💰 مستشار الميزانية الشخصية — يبني فوق مجموعات appCollections.js أعلاه
+// (transactions/budgets)؛ لا تخزين جديد هنا، فقط تسجيل للفحص الدوري
+// وتعليق ذكي مبني على أرقام حقيقية محسوبة من سجلات المستخدم فعلياً.
+app.put('/api/public/budget/register', appDataLimit, (req, res) => {
+    const v = verifyBotToken(req.body?.token);
+    if (!v?.u || !v?.p || getCloneTrack(v.u, v.p) !== 'system') return res.status(204).end();
+    try { registerBudgetProject(BUDGETWATCH_DIR, v.u, v.p); res.json({ success: true }); }
+    catch { res.status(500).json({ success: false }); }
+});
+app.get('/api/public/budget/commentary', cryptoCommentaryLimit, async (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p || getCloneTrack(v.u, v.p) !== 'system') return res.json({ text: null });
+    try {
+        const owner = await DB.findUser(v.u).catch(() => null);
+        const quota = botAiQuota(owner);
+        if (Number.isFinite(quota.monthly) && getUsageCount(USAGE_DIR, v.u, 'botAi') >= quota.monthly) {
+            return res.json({ text: null, quota: 'exhausted' });
+        }
+        const months = req.query?.period === 'last3' ? budgetLastMonths(3) : req.query?.period === 'lastMonth' ? budgetLastMonths(2).slice(0, 1) : budgetLastMonths(1);
+        const records = listCollectionRecords(APPCOLLECTIONS_DIR, v.u, v.p, 'transactions');
+        const sum = summarizeBudget(records, months);
+        const periodLabelAr = { thisMonth: 'هذا الشهر', lastMonth: 'الشهر الماضي', last3: 'آخر 3 أشهر' };
+        const periodLabelEn = { thisMonth: 'this month', lastMonth: 'last month', last3: 'the last 3 months' };
+        const lang = req.query?.lang === 'en' ? 'en' : 'ar';
+        const periodLabel = (lang === 'en' ? periodLabelEn : periodLabelAr)[req.query?.period] || (lang === 'en' ? periodLabelEn.thisMonth : periodLabelAr.thisMonth);
+        const text = await generateBudgetCommentary({ periodLabel, income: sum.income, expense: sum.expense, net: sum.net, categories: sum.categories, lang });
+        if (text) { try { bumpUsage(USAGE_DIR, v.u, 'botAi'); } catch { /* العدّ لا يُسقط الرد */ } }
+        res.json({ text });
+    } catch { res.json({ text: null }); }
+});
+
 // 🖼️ صور حقيقية من مالك القالب (jaola-assets) — لا صورة Unsplash ولا AI
 // مولَّدة؛ صورة العيادة/المحل الفعلية. متاح لأي قالب استنساخ (site أو
 // system) — عرض صورة علناً لا يحمل نفس حساسية مزامنة سجلات العمل.
 const APPASSETS_DIR = path.join(BASE_WORKSPACE, '.appassets');
 const CRYPTOWATCH_DIR = path.join(BASE_WORKSPACE, '.cryptowatch');
 const SIGNAL_TRACK_DIR = path.join(BASE_WORKSPACE, '.signaltrack');
+const BUDGETWATCH_DIR = path.join(BASE_WORKSPACE, '.budgetwatch');
 app.post('/api/public/assets/:slot', assetLimit, (req, res) => {
     const v = verifyBotToken(req.body?.token);
     if (!v?.u || !v?.p) return res.status(204).end();
@@ -3002,6 +3037,40 @@ setInterval(async () => {
         resolveDue(SIGNAL_TRACK_DIR, priceById);
     } catch (e) { console.warn('[SignalTrackRecord]', 'دورة الحسم فشلت:', e.message); }
 }, 30 * 60 * 1000);
+
+// 💰 حلقة فحص تجاوز الميزانية — كل 6 ساعات: لكل مشروع مسجَّل عبر
+// /api/public/budget/register، تقارن مصروف الشهر الحالي الفعلي بكل
+// ميزانية مضبوطة، وترسل بريداً عند أول تجاوز لكل (فئة، شهر) — لا تكراراً
+// مزعجاً. لا نداء شبكي خارجي هنا إطلاقاً (كل البيانات محلية)، فلا خطر
+// حدّ معدّل خارجي كما حدث مع CoinGecko.
+setInterval(async () => {
+    try {
+        const month = budgetLastMonths(1)[0];
+        for (const entry of listBudgetProjects(BUDGETWATCH_DIR)) {
+            try {
+                const { user, project } = entry;
+                if (getUsageCount(USAGE_DIR, user, 'notifyMail') >= 300) continue;
+                const budgets = listCollectionRecords(APPCOLLECTIONS_DIR, user, project, 'budgets');
+                if (!budgets.length) continue;
+                const transactions = listCollectionRecords(APPCOLLECTIONS_DIR, user, project, 'transactions');
+                const statuses = budgetStatus(budgets, transactions, month).filter(s => s.over && shouldAlertBudget(entry, s.category, month));
+                if (!statuses.length) continue;
+                const owner = await DB.findUser(user).catch(() => null);
+                if (!owner?.email || !isEmail(owner.email)) continue;
+                for (const s of statuses) {
+                    const sent = await sendMail({
+                        to: owner.email,
+                        subject: `⚠️ تجاوزت ميزانية «${s.category}» هذا الشهر — مستشار الميزانية`,
+                        text: `رصد مستشار الميزانية في مشروعك «${project}» تجاوزاً لسقف فئة "${s.category}" هذا الشهر.\n\n` +
+                            `السقف الشهري: ${s.monthlyLimit}\nالمصروف الفعلي: ${s.spent}\n\n` +
+                            `راجع لوحة مشروعك للتفاصيل وتعديل الميزانية إن رغبت.`,
+                    }).catch(() => ({ ok: false }));
+                    if (sent.ok) { bumpUsage(USAGE_DIR, user, 'notifyMail'); markBudgetAlerted(BUDGETWATCH_DIR, user, project, s.category, month); }
+                }
+            } catch (e) { console.warn('[BudgetAlerts]', 'مشروع فشل:', e.message); }
+        }
+    } catch (e) { console.warn('[BudgetAlerts]', 'دورة الفحص فشلت:', e.message); }
+}, 6 * 60 * 60 * 1000);
 
 // 🔥 حلقة تسخين كاش مستشار الكريبتو — كل 45 ثانية (أقل من مهلة كاش
 // الأسعار 60 ثانية): تُحدّث سلفاً أسعار العملات الشائعة + كل العملات
