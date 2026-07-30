@@ -1810,6 +1810,12 @@ const DICT = [
     ['السقف الشهري', 'Monthly limit'],
     ['+ حفظ', '+ Save'],
 
+    // ── مستشار الأسهم والفوركس (jaola-stock-advisor) ────────────────────
+    ['مستشار الأسهم والفوركس', 'Stocks & Forex Advisor'],
+    ['تحليل فني (SMA/RSI) لقائمة متابعتك من الأسهم وأزواج الفوركس + إشارة شراء/بيع/انتظار مفسَّرة.', 'Technical analysis (SMA/RSI) for your stocks and forex watchlist + an explained buy/sell/hold signal.'],
+    ['بحث عن رمز آخر', 'Search for another symbol'],
+    ['اكتب رمز السهم أو زوج الفوركس...', 'Type a stock ticker or forex pair...'],
+
     // ── تنظيف المنازل (jaola-cleaning) ───────────────────────────────
     ['خدمات jaola لتنظيف المنازل', 'jaola Home Cleaning Services'],
     ['تنظيف jaola', 'jaola Cleaning'],

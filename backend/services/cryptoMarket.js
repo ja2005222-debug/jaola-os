@@ -15,6 +15,8 @@
  * عربية مألوفة، والبحث يفتح البقية (آلاف العملات) بأسمائها الإنجليزية.
  */
 
+import { fetchJsonWithRetry } from './httpRetry.js';
+
 const API_BASE = 'https://api.coingecko.com/api/v3';
 
 // اقتراحات سريعة بأسماء عربية مألوفة (checkboxes في الإعدادات) — لا سقفاً
@@ -61,27 +63,11 @@ export function findCoin(id) {
     return SUPPORTED_COINS.find(c => c.id === id) || null;
 }
 
-function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-
 // نداء واحد فاشل (تعطّل شبكي عابر أو حدّ معدّل CoinGecko المجاني 429) لا يعني
-// أن البيانات غائبة فعلاً — محاولة ثانية بعد مهلة قصيرة تنقذ أغلب الحالات
-// العابرة (خصوصاً لمدىً أطول كالتحليل الأسبوعي/طويل المدى، حيث الحمولة
+// أن البيانات غائبة فعلاً — httpRetry.js يعيد المحاولة تلقائياً مرّة (ينقذ
+// أغلب الحالات العابرة، خصوصاً لمدىً أطول كالأسبوعي/طويل المدى حيث الحمولة
 // أكبر فاحتمال تأخّر عابر أعلى من المدى اليومي الصغير).
-async function fetchJson(url) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-            const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-            if (!res.ok) {
-                if (res.status === 429 && attempt === 0) { await sleep(700); continue; }
-                throw new Error('http ' + res.status);
-            }
-            return await res.json();
-        } catch (e) {
-            if (attempt === 0) { await sleep(350); continue; }
-            throw e;
-        }
-    }
-}
+function fetchJson(url) { return fetchJsonWithRetry(url); }
 
 /** يختزل مصفوفة [timestamp, price] (أي دقّة زمنية) إلى إغلاق واحد لكل نافذة زمنية (bucketMs). */
 export function bucketCloses(prices, bucketMs) {
@@ -227,7 +213,8 @@ export async function getAnalysis(id, timeframe = DEFAULT_TIMEFRAME) {
 
 // قوّة الفرصة (0-100 تقريبية، للترتيب فقط لا للعرض الدقيق): كلما ابتعد RSI
 // عن حدّه (70/30) أو اتّسعت الفجوة النسبية بين المتوسطين، كانت الإشارة أقوى.
-function opportunityStrength(r) {
+// مُصدَّرة (لا كريبتو-خاصة في منطقها) — يعيد استخدامها stockMarket.js أيضاً.
+export function opportunityStrength(r) {
     if (r.reasonCode === 'rsi_overbought' || r.reasonCode === 'rsi_oversold') {
         return Math.abs((r.rsi ?? 50) - 50);
     }

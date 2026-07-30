@@ -125,6 +125,12 @@ export function customDomainsMax(userDoc) {
     return { planId, max: limits.customDomainsMax ?? 0 };
 }
 
+/** 📈 سقف قائمة متابعة مستشار الأسهم/الفوركس حسب الخطة — نفس منطق cryptoWatchlistMax. */
+export function stockWatchlistMax(userDoc) {
+    const { limits, planId } = getUserSubscription(userDoc);
+    return { planId, max: limits.stockWatchlistMax ?? 5 };
+}
+
 /** 📊 سقف قائمة متابعة مستشار الكريبتو حسب الخطة (Infinity لا يُستخدم هنا — سقف تقني ثابت أيضاً). */
 export function cryptoWatchlistMax(userDoc) {
     const { limits, planId } = getUserSubscription(userDoc);

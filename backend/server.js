@@ -33,7 +33,7 @@ import {
 import { generatePWA } from './agents/pwaAgent.js';
 import { generateJaolaBot, readBotManifest, buildEmbedBundle } from './agents/jaolaBot.js';
 import { mailReady, sendMail, isEmail } from './services/mailer.js';
-import { emailQuota, socialQuota, customAgentsMax, aiImagesQuota, customDomainsMax, cryptoWatchlistMax } from './services/subscriptionService.js';
+import { emailQuota, socialQuota, customAgentsMax, aiImagesQuota, customDomainsMax, cryptoWatchlistMax, stockWatchlistMax } from './services/subscriptionService.js';
 import { validateDomain, dnsInstructionsFor, attachDomain, domainStatus, detachDomain, readUserDomains, saveUserDomain, removeUserDomain, countUserDomains } from './services/customDomains.js';
 import { aiImagesReady, applyAiImages, applyHeroImage, generateProductImage, diagnoseImages } from './services/aiImages.js';
 import { checkAiProviders } from './services/aiProviderCheck.js';
@@ -93,6 +93,11 @@ import { listRecords as listCollectionRecords, upsertRecord as upsertCollectionR
 import { summarize as summarizeBudget, lastMonths as budgetLastMonths, budgetStatus } from './services/budgetStats.js';
 import { generateBudgetCommentary } from './services/budgetCommentary.js';
 import { registerBudgetProject, listBudgetProjects, markBudgetAlerted, shouldAlertBudget } from './services/budgetAlerts.js';
+import {
+    listMarkets as listStockMarkets, getAnalysis as getStockAnalysis, getOpportunities as getStockOpportunities,
+    searchSymbols, isValidSymbolId, MAX_WATCHLIST as STOCK_MAX_WATCHLIST, SUPPORTED_SYMBOLS, findSymbol,
+} from './services/stockMarket.js';
+import { generateStockCommentary } from './services/stockCommentary.js';
 import { buildStaticSiteFromSource, buildDashboardPage } from './services/reactPreview.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
 import { getProjectMemory, getDomainModel } from './agents/projectMemory.js';
@@ -446,6 +451,27 @@ const cryptoSearchLimit = rateLimit({
 });
 // أشدّ (كل نداء تعليق يستهلك من حصة الذكاء الاصطناعي الشهرية للمالك)
 const cryptoCommentaryLimit = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    keyGenerator: (req) => ipKeyGenerator(req),
+    handler: (req, res) => res.json({ text: null }),
+});
+
+// نفس حدود مستشار الكريبتو أعلاه، بنسخ منفصلة كي لا تتشارك حصة معدّل واحدة
+// بين مستشاري الكريبتو والأسهم/الفوركس لمستخدم يستخدم كليهما معاً.
+const stockLimit = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    keyGenerator: (req) => ipKeyGenerator(req),
+    handler: (req, res) => res.status(429).json({ error: 'محاولات كثيرة جداً — أعد المحاولة بعد قليل' }),
+});
+const stockSearchLimit = rateLimit({
+    windowMs: 60 * 1000,
+    max: 20,
+    keyGenerator: (req) => ipKeyGenerator(req),
+    handler: (req, res) => res.status(429).json({ coins: [] }),
+});
+const stockCommentaryLimit = rateLimit({
     windowMs: 60 * 1000,
     max: 10,
     keyGenerator: (req) => ipKeyGenerator(req),
@@ -2766,6 +2792,8 @@ const APPASSETS_DIR = path.join(BASE_WORKSPACE, '.appassets');
 const CRYPTOWATCH_DIR = path.join(BASE_WORKSPACE, '.cryptowatch');
 const SIGNAL_TRACK_DIR = path.join(BASE_WORKSPACE, '.signaltrack');
 const BUDGETWATCH_DIR = path.join(BASE_WORKSPACE, '.budgetwatch');
+const STOCKWATCH_DIR = path.join(BASE_WORKSPACE, '.stockwatch');
+const STOCK_SIGNAL_TRACK_DIR = path.join(BASE_WORKSPACE, '.stocksignaltrack');
 app.post('/api/public/assets/:slot', assetLimit, (req, res) => {
     const v = verifyBotToken(req.body?.token);
     if (!v?.u || !v?.p) return res.status(204).end();
@@ -2908,6 +2936,106 @@ app.get('/api/public/crypto/commentary/:id', cryptoCommentaryLimit, async (req, 
         const a = await getAnalysis(req.params.id, req.query?.timeframe);
         if (a.error) return res.json({ text: null });
         const text = await generateCommentary({ id: a.id, symbol: req.query?.symbol, price: a.price, smaShort: a.smaShort, smaLong: a.smaLong, rsi: a.rsi, signal: a.signal, reasonCode: a.reasonCode, timeframe: a.timeframe, lang: req.query?.lang });
+        if (text) { try { bumpUsage(USAGE_DIR, v.u, 'botAi'); } catch { /* العدّ لا يُسقط الرد */ } }
+        res.json({ text });
+    } catch { res.json({ text: null }); }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 📈 مستشار الأسهم/الفوركس (jaola-stock-advisor) — نفس بنية نقاط مستشار
+// الكريبتو أعلاه بالضبط (سجل أداء مشترك signalTrackRecord.js بدليل تخزين
+// منفصل، فهرسة تنبيهات مشترك cryptoAlerts.js بدليل منفصل)، بمصدر بيانات
+// مختلف (stockMarket.js / Yahoo Finance بدل CoinGecko).
+// ═══════════════════════════════════════════════════════════════════
+app.get('/api/public/stock/markets', stockLimit, async (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p) return res.json({ symbols: [], stale: true });
+    try {
+        const ids = typeof req.query?.ids === 'string' ? req.query.ids.split(',').map(s => s.trim()) : undefined;
+        res.json(await listStockMarkets(ids));
+    } catch { res.json({ symbols: [], stale: true }); }
+});
+app.get('/api/public/stock/analysis/:id', stockLimit, async (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p) return res.status(400).json({ error: 'غير مصرّح' });
+    try {
+        const r = await getStockAnalysis(req.params.id, req.query?.timeframe);
+        if (r.error) return res.status(400).json(r);
+        try { recordSignal(STOCK_SIGNAL_TRACK_DIR, r); } catch { /* السجل لا يُسقط الاستجابة أبداً */ }
+        res.json(r);
+    } catch { res.status(500).json({ error: 'تعذّر التحليل الآن' }); }
+});
+app.get('/api/public/stock/track-record', stockLimit, (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p) return res.json({ hits: 0, misses: 0, neutral: 0, total: 0, hitRate: null });
+    try { res.json(getAccuracy(STOCK_SIGNAL_TRACK_DIR, { timeframe: req.query?.timeframe })); }
+    catch { res.json({ hits: 0, misses: 0, neutral: 0, total: 0, hitRate: null }); }
+});
+app.get('/api/public/stock/track-record/:id', stockLimit, (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p) return res.json({ hits: 0, misses: 0, neutral: 0, total: 0, hitRate: null });
+    try { res.json(getAccuracy(STOCK_SIGNAL_TRACK_DIR, { id: req.params.id, timeframe: req.query?.timeframe })); }
+    catch { res.json({ hits: 0, misses: 0, neutral: 0, total: 0, hitRate: null }); }
+});
+// 🔗 رابط أفلييت اختياري لوسيط تداول — مُعطَّل تماماً افتراضياً، بمتغيّر
+// بيئة مستقلّ عن الكريبتو (منصّة مختلفة عادةً) STOCK_AFFILIATE_URL_TEMPLATE.
+app.get('/api/public/stock/affiliate/:id', stockLimit, (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p || !isValidSymbolId(req.params.id)) return res.json({ url: null });
+    const meta = findSymbol(req.params.id);
+    const tpl = process.env.STOCK_AFFILIATE_URL_TEMPLATE;
+    if (!tpl) return res.json({ url: null });
+    const symbol = meta?.symbol || req.params.id;
+    res.json({ url: tpl.replace('{symbol}', encodeURIComponent(symbol)).replace('{id}', encodeURIComponent(req.params.id)) });
+});
+app.get('/api/public/stock/search', stockSearchLimit, async (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p) return res.json({ coins: [] });
+    try { res.json({ coins: await searchSymbols(req.query?.q) }); } catch { res.json({ coins: [] }); }
+});
+app.get('/api/public/stock/opportunities', stockLimit, async (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p) return res.json({ opportunities: [] });
+    try {
+        const ids = typeof req.query?.ids === 'string' ? req.query.ids.split(',').map(s => s.trim()) : [];
+        const tf = req.query?.timeframe;
+        const opportunities = await getStockOpportunities(ids, tf);
+        for (const o of opportunities) {
+            try { recordSignal(STOCK_SIGNAL_TRACK_DIR, { id: o.id, timeframe: tf || 'week', signal: o.signal, price: o.price }); } catch { /* لا يُسقط الاستجابة */ }
+        }
+        res.json({ opportunities });
+    } catch { res.json({ opportunities: [] }); }
+});
+app.put('/api/public/stock/watchlist', stockLimit, async (req, res) => {
+    const v = verifyBotToken(req.body?.token);
+    if (!v?.u || !v?.p) return res.status(204).end();
+    try {
+        const owner = await DB.findUser(v.u).catch(() => null);
+        const cap = Math.min(stockWatchlistMax(owner).max, STOCK_MAX_WATCHLIST);
+        const list = Array.isArray(req.body?.watchlist)
+            ? req.body.watchlist.filter(isValidSymbolId).slice(0, cap) : [];
+        saveWatchlistIndex(STOCKWATCH_DIR, v.u, v.p, list);
+        res.json({ success: true, watchlistMax: cap });
+    } catch { res.status(500).json({ success: false }); }
+});
+app.get('/api/public/stock/limits', stockLimit, async (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p) return res.json({ watchlistMax: 5 });
+    const owner = await DB.findUser(v.u).catch(() => null);
+    res.json({ watchlistMax: Math.min(stockWatchlistMax(owner).max, STOCK_MAX_WATCHLIST) });
+});
+app.get('/api/public/stock/commentary/:id', stockCommentaryLimit, async (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p) return res.json({ text: null });
+    try {
+        const owner = await DB.findUser(v.u).catch(() => null);
+        const quota = botAiQuota(owner);
+        if (Number.isFinite(quota.monthly) && getUsageCount(USAGE_DIR, v.u, 'botAi') >= quota.monthly) {
+            return res.json({ text: null, quota: 'exhausted' });
+        }
+        const a = await getStockAnalysis(req.params.id, req.query?.timeframe);
+        if (a.error) return res.json({ text: null });
+        const text = await generateStockCommentary({ id: a.id, symbol: req.query?.symbol, price: a.price, smaShort: a.smaShort, smaLong: a.smaLong, rsi: a.rsi, signal: a.signal, reasonCode: a.reasonCode, timeframe: a.timeframe, lang: req.query?.lang });
         if (text) { try { bumpUsage(USAGE_DIR, v.u, 'botAi'); } catch { /* العدّ لا يُسقط الرد */ } }
         res.json({ text });
     } catch { res.json({ text: null }); }
@@ -3102,6 +3230,71 @@ setInterval(async () => {
         }
     } catch (e) { console.warn('[CacheWarm]', 'دورة التسخين فشلت:', e.message); }
     finally { cacheWarmBusy = false; }
+}, 45 * 1000);
+
+// ═══════════════════════════════════════════════════════════════════
+// 📈 حلقات مستشار الأسهم/الفوركس — نفس منطق حلقات الكريبتو أعلاه بالضبط،
+// بفهرس/سجل أداء/كاش منفصلين (STOCKWATCH_DIR/STOCK_SIGNAL_TRACK_DIR).
+// ═══════════════════════════════════════════════════════════════════
+setInterval(async () => {
+    try {
+        for (const entry of listWatchlistIndex(STOCKWATCH_DIR)) {
+            try {
+                const { user, project, watchlist } = entry;
+                if (!Array.isArray(watchlist) || !watchlist.length) continue;
+                if (getUsageCount(USAGE_DIR, user, 'notifyMail') >= 300) continue;
+                const owner = await DB.findUser(user).catch(() => null);
+                if (!owner?.email || !isEmail(owner.email)) continue;
+                for (const id of watchlist) {
+                    const a = await getStockAnalysis(id).catch(() => null);
+                    if (!a || a.error) continue;
+                    try { recordSignal(STOCK_SIGNAL_TRACK_DIR, a); } catch { /* السجل لا يُسقط الحلقة أبداً */ }
+                    if (a.signal === 'hold') continue;
+                    if (!shouldAlert(entry, id, a.signal)) continue;
+                    const label = a.signal === 'buy' ? 'شراء' : 'بيع';
+                    const sent = await sendMail({
+                        to: owner.email,
+                        subject: `📈 فرصة ${label} محتملة — ${id} (مستشار الأسهم/الفوركس)`,
+                        text: `رصد مستشار الأسهم/الفوركس في مشروعك «${project}» إشارة ${label} لرمز ${id}.\n\n` +
+                            `السعر الحالي: ${a.price ?? '—'}\nRSI: ${a.rsi != null ? a.rsi.toFixed(0) : '—'}\n\n` +
+                            `هذا تحليل آلي إحصائي وليس نصيحة استثمارية ملزمة — راجع لوحة مشروعك للتفاصيل.`,
+                    }).catch(() => ({ ok: false }));
+                    if (sent.ok) { bumpUsage(USAGE_DIR, user, 'notifyMail'); markAlerted(STOCKWATCH_DIR, user, project, id, a.signal); }
+                }
+            } catch (e) { console.warn('[StockAlerts]', 'مشروع فشل:', e.message); }
+        }
+    } catch (e) { console.warn('[StockAlerts]', 'دورة الفحص فشلت:', e.message); }
+}, 5 * 60 * 1000);
+
+setInterval(async () => {
+    try {
+        const dueIds = getDueCoinIds(STOCK_SIGNAL_TRACK_DIR);
+        if (!dueIds.length) return;
+        const { symbols } = await listStockMarkets(dueIds).catch(() => ({ symbols: [] }));
+        const priceById = {};
+        for (const s of symbols) if (s?.id && s.price != null) priceById[s.id] = s.price;
+        resolveDue(STOCK_SIGNAL_TRACK_DIR, priceById);
+    } catch (e) { console.warn('[StockSignalTrackRecord]', 'دورة الحسم فشلت:', e.message); }
+}, 30 * 60 * 1000);
+
+// 🔥 تسخين كاش مستشار الأسهم/الفوركس — أسعار فقط (نفس الدرس المستفاد من
+// عطل CoinGecko: لا تسخين لـgetAnalysis هنا إطلاقاً — انظر تعليق حلقة
+// تسخين الكريبتو أعلاه لتفاصيل العطل الأصلي).
+let stockCacheWarmBusy = false;
+setInterval(async () => {
+    if (stockCacheWarmBusy) return;
+    stockCacheWarmBusy = true;
+    try {
+        const ids = new Set(SUPPORTED_SYMBOLS.map(s => s.id));
+        for (const entry of listWatchlistIndex(STOCKWATCH_DIR)) {
+            if (Array.isArray(entry.watchlist)) for (const id of entry.watchlist) ids.add(id);
+        }
+        const idList = [...ids].filter(isValidSymbolId).slice(0, 60);
+        for (let i = 0; i < idList.length; i += STOCK_MAX_WATCHLIST) {
+            await listStockMarkets(idList.slice(i, i + STOCK_MAX_WATCHLIST)).catch(() => {});
+        }
+    } catch (e) { console.warn('[StockCacheWarm]', 'دورة التسخين فشلت:', e.message); }
+    finally { stockCacheWarmBusy = false; }
 }, 45 * 1000);
 
 // 🔌 تحميل الإضافات ثم تشغيل الخادم
