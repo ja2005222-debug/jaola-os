@@ -90,16 +90,27 @@ export function sma(closes, period) {
     return slice.reduce((s, v) => s + v, 0) / period;
 }
 
-/** RSI بصيغة المتوسط البسيط (لا تجانس Wilder) — كافٍ لإشارة تقريبية مفسَّرة، لا تنفيذ آلي دقيق. */
+/**
+ * RSI بصيغة Wilder الأصلية (تجانس أسّي، لا متوسط بسيط لآخر نافذة فقط) —
+ * يستخدم كل التاريخ المُعطى: نافذة تمهيد بسيطة لأول period تغيّر، ثم
+ * تجانس تراكمي لبقية النقاط. هذا ما تستخدمه منصّات التداول الحقيقية —
+ * أدق وأنعم (أقل قفزات) من متوسط بسيط لآخر 14 نقطة فقط.
+ */
 export function rsi(closes, period = 14) {
     if (closes.length < period + 1) return null;
-    const slice = closes.slice(-(period + 1));
-    let gainSum = 0, lossSum = 0;
-    for (let i = 1; i < slice.length; i++) {
-        const delta = slice[i] - slice[i - 1];
-        if (delta >= 0) gainSum += delta; else lossSum += -delta;
+    let avgGain = 0, avgLoss = 0;
+    for (let i = 1; i <= period; i++) {
+        const delta = closes[i] - closes[i - 1];
+        if (delta >= 0) avgGain += delta; else avgLoss += -delta;
     }
-    const avgGain = gainSum / period, avgLoss = lossSum / period;
+    avgGain /= period; avgLoss /= period;
+    for (let i = period + 1; i < closes.length; i++) {
+        const delta = closes[i] - closes[i - 1];
+        const gain = delta >= 0 ? delta : 0;
+        const loss = delta < 0 ? -delta : 0;
+        avgGain = (avgGain * (period - 1) + gain) / period;
+        avgLoss = (avgLoss * (period - 1) + loss) / period;
+    }
     if (avgLoss === 0) return avgGain === 0 ? 50 : 100;
     return 100 - 100 / (1 + avgGain / avgLoss);
 }
@@ -224,7 +235,7 @@ export async function getOpportunities(ids, timeframe = DEFAULT_TIMEFRAME) {
     return wanted
         .map((id, i) => ({ id, result: results[i] }))
         .filter(({ result }) => result && !result.error && (result.signal === 'buy' || result.signal === 'sell'))
-        .map(({ id, result }) => ({ id, signal: result.signal, reasonCode: result.reasonCode, strength: opportunityStrength(result) }))
+        .map(({ id, result }) => ({ id, signal: result.signal, reasonCode: result.reasonCode, price: result.price, strength: opportunityStrength(result) }))
         .sort((a, b) => b.strength - a.strength)
         .slice(0, 8);
 }

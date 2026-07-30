@@ -88,6 +88,7 @@ import { saveAsset, readAsset } from './services/appAssets.js';
 import { listMarkets, getAnalysis, getOpportunities, searchCoins, isValidCoinId, MAX_WATCHLIST } from './services/cryptoMarket.js';
 import { generateCommentary } from './services/cryptoCommentary.js';
 import { saveWatchlistIndex, listWatchlistIndex, markAlerted, shouldAlert } from './services/cryptoAlerts.js';
+import { recordSignal, getDueCoinIds, resolveDue, getAccuracy } from './services/signalTrackRecord.js';
 import { listRecords as listCollectionRecords, upsertRecord as upsertCollectionRecord, deleteRecord as deleteCollectionRecord } from './services/appCollections.js';
 import { buildStaticSiteFromSource, buildDashboardPage } from './services/reactPreview.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
@@ -2729,6 +2730,7 @@ app.delete('/api/public/collections/:name/:id', appDataLimit, (req, res) => {
 // system) — عرض صورة علناً لا يحمل نفس حساسية مزامنة سجلات العمل.
 const APPASSETS_DIR = path.join(BASE_WORKSPACE, '.appassets');
 const CRYPTOWATCH_DIR = path.join(BASE_WORKSPACE, '.cryptowatch');
+const SIGNAL_TRACK_DIR = path.join(BASE_WORKSPACE, '.signaltrack');
 app.post('/api/public/assets/:slot', assetLimit, (req, res) => {
     const v = verifyBotToken(req.body?.token);
     if (!v?.u || !v?.p) return res.status(204).end();
@@ -2769,8 +2771,24 @@ app.get('/api/public/crypto/analysis/:id', cryptoLimit, async (req, res) => {
     try {
         const r = await getAnalysis(req.params.id, req.query?.timeframe);
         if (r.error) return res.status(400).json(r);
+        try { recordSignal(SIGNAL_TRACK_DIR, r); } catch { /* السجل لا يُسقط الاستجابة أبداً */ }
         res.json(r);
     } catch { res.status(500).json({ error: 'تعذّر التحليل الآن' }); }
+});
+
+// 📈 سجل أداء الإشارات — دقة تاريخية شفّافة (لا وعد، بيانات فعلية): من
+// GET بلا :id → تجميع عبر كل العملات لمدى معيّن؛ بـ:id → عملة محدَّدة.
+app.get('/api/public/crypto/track-record', cryptoLimit, (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p) return res.json({ hits: 0, misses: 0, neutral: 0, total: 0, hitRate: null });
+    try { res.json(getAccuracy(SIGNAL_TRACK_DIR, { timeframe: req.query?.timeframe })); }
+    catch { res.json({ hits: 0, misses: 0, neutral: 0, total: 0, hitRate: null }); }
+});
+app.get('/api/public/crypto/track-record/:id', cryptoLimit, (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p) return res.json({ hits: 0, misses: 0, neutral: 0, total: 0, hitRate: null });
+    try { res.json(getAccuracy(SIGNAL_TRACK_DIR, { id: req.params.id, timeframe: req.query?.timeframe })); }
+    catch { res.json({ hits: 0, misses: 0, neutral: 0, total: 0, hitRate: null }); }
 });
 
 // 🔍 بحث عن عملة لإضافتها لقائمة المتابعة — يفتح المتابعة لأي عملة يدعمها
@@ -2789,7 +2807,12 @@ app.get('/api/public/crypto/opportunities', cryptoLimit, async (req, res) => {
     if (!v?.u || !v?.p) return res.json({ opportunities: [] });
     try {
         const ids = typeof req.query?.ids === 'string' ? req.query.ids.split(',').map(s => s.trim()) : [];
-        res.json({ opportunities: await getOpportunities(ids, req.query?.timeframe) });
+        const tf = req.query?.timeframe;
+        const opportunities = await getOpportunities(ids, tf);
+        for (const o of opportunities) {
+            try { recordSignal(SIGNAL_TRACK_DIR, { id: o.id, timeframe: tf || 'week', signal: o.signal, price: o.price }); } catch { /* لا يُسقط الاستجابة */ }
+        }
+        res.json({ opportunities });
     } catch { res.json({ opportunities: [] }); }
 });
 
@@ -2920,14 +2943,16 @@ setInterval(async () => {
                 if (!owner?.email || !isEmail(owner.email)) continue;
                 for (const id of watchlist) {
                     const a = await getAnalysis(id).catch(() => null);
-                    if (!a || a.error || a.signal === 'hold') continue;
+                    if (!a || a.error) continue;
+                    try { recordSignal(SIGNAL_TRACK_DIR, a); } catch { /* السجل لا يُسقط الحلقة أبداً */ }
+                    if (a.signal === 'hold') continue;
                     if (!shouldAlert(entry, id, a.signal)) continue;
                     const label = a.signal === 'buy' ? 'شراء' : 'بيع';
                     const sent = await sendMail({
                         to: owner.email,
                         subject: `📈 فرصة ${label} محتملة — ${id} (مستشار الكريبتو)`,
                         text: `رصد مستشار الكريبتو في مشروعك «${project}» إشارة ${label} لعملة ${id}.\n\n` +
-                            `السعر الحالي: ${a.price ?? '—'}\nRSI: ${a.rsi14 != null ? a.rsi14.toFixed(0) : '—'}\n\n` +
+                            `السعر الحالي: ${a.price ?? '—'}\nRSI: ${a.rsi != null ? a.rsi.toFixed(0) : '—'}\n\n` +
                             `هذا تحليل آلي إحصائي وليس نصيحة استثمارية ملزمة — راجع لوحة مشروعك للتفاصيل.`,
                     }).catch(() => ({ ok: false }));
                     if (sent.ok) { bumpUsage(USAGE_DIR, user, 'notifyMail'); markAlerted(CRYPTOWATCH_DIR, user, project, id, a.signal); }
@@ -2936,6 +2961,19 @@ setInterval(async () => {
         }
     } catch (e) { console.warn('[CryptoAlerts]', 'دورة الفحص فشلت:', e.message); }
 }, 5 * 60 * 1000);
+
+// 🎯 حلقة حسم سجل الأداء — كل 30 دقيقة: تجلب أسعار العملات التي انقضى
+// أفقها الزمني بنداء واحد مُجمَّع (لا نداء لكل تنبّؤ) وتحسم نتيجتها (hit/miss/neutral).
+setInterval(async () => {
+    try {
+        const dueIds = getDueCoinIds(SIGNAL_TRACK_DIR);
+        if (!dueIds.length) return;
+        const { coins } = await listMarkets(dueIds).catch(() => ({ coins: [] }));
+        const priceById = {};
+        for (const m of coins) if (m?.id && m.price != null) priceById[m.id] = m.price;
+        resolveDue(SIGNAL_TRACK_DIR, priceById);
+    } catch (e) { console.warn('[SignalTrackRecord]', 'دورة الحسم فشلت:', e.message); }
+}, 30 * 60 * 1000);
 
 // 🔌 تحميل الإضافات ثم تشغيل الخادم
 orchestrator.init().catch(e => console.warn('[Plugins] init فشل:', e.message)).finally(() => {
