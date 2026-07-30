@@ -3,15 +3,20 @@
  * مبسّط (SMA7/SMA25/RSI14) يُنتج إشارة شراء/بيع/انتظار مفسَّرة بالعربية.
  *
  * ليس تنفيذاً آلياً للتداول أبداً — تحليل وعرض فقط (قرار المستخدم صاحب
- * الحساب). كاش داخلي (Map) يحمي CoinGecko من الاستهلاك المفرط عبر كل
- * المستخدمين معاً (مشترك، لا لكل مشروع)، ويصمد على فشل الشبكة بإرجاع
- * آخر بيانات معروفة موسومة stale:true بدل الانهيار.
+ * الحساب). كاش داخلي (Map، لكل عملة على حدة) يحمي CoinGecko من الاستهلاك
+ * المفرط عبر كل المستخدمين معاً (مشترك، لا لكل مشروع) — قوائم متابعة
+ * متداخلة (الكل يتابع بيتكوين مثلاً) تتشارك نفس النداء بدل تكراره. يصمد
+ * على فشل الشبكة بإرجاع آخر بيانات معروفة موسومة stale:true بدل الانهيار.
+ *
+ * القائمة المتابَعة قابلة للتوسّع لأي عملة يدعمها CoinGecko (بحث بالاسم/
+ * الرمز)، لا الثماني المُنسَّقة فقط — تلك تبقى "اقتراحات سريعة" بأسماء
+ * عربية مألوفة، والبحث يفتح البقية (آلاف العملات) بأسمائها الإنجليزية.
  */
 
 const API_BASE = 'https://api.coingecko.com/api/v3';
 
-// قائمة مقفلة (لا نتيح أي id عشوائي) — تحمي من إساءة استخدام نقطة النهاية
-// كوكيل مفتوح لأي طلب على CoinGecko.
+// اقتراحات سريعة بأسماء عربية مألوفة (checkboxes في الإعدادات) — لا سقفاً
+// على المتابعة؛ أي عملة صالحة عبر البحث قابلة للإضافة أيضاً.
 export const SUPPORTED_COINS = [
     { id: 'bitcoin', symbol: 'BTC', nameAr: 'بيتكوين' },
     { id: 'ethereum', symbol: 'ETH', nameAr: 'إيثيريوم' },
@@ -23,11 +28,20 @@ export const SUPPORTED_COINS = [
     { id: 'tron', symbol: 'TRX', nameAr: 'ترون' },
 ];
 
+export const MAX_WATCHLIST = 20; // سقف عدد العملات المتابَعة لكل مشروع
+
 const MARKETS_TTL_MS = 60 * 1000; // دقيقة — بيانات سعر/تغيّر 24س خفيفة
 const ANALYSIS_TTL_MS = 3 * 60 * 1000; // 3 دقائق — تستدعي جلب تاريخ أثقل
+const SEARCH_TTL_MS = 5 * 60 * 1000; // 5 دقائق — نتائج البحث لا تتغيّر بسرعة
 
-const marketsCache = new Map(); // 'all' → { data, at }
+const marketsCache = new Map(); // coinId → { data: {id,symbol,name,price,change24h}, at }
 const analysisCache = new Map(); // coinId → { data, at }
+const searchCache = new Map(); // query مُطبَّع → { data, at }
+
+// معرّف CoinGecko slug صالح (حروف/أرقام/شرطات فقط) — يحمي من حقن مسار URL
+// ومن إساءة استخدام نقطة النهاية كوكيل مفتوح لأي مسار على CoinGecko.
+const ID_RE = /^[a-z0-9-]{1,64}$/;
+export const isValidCoinId = (id) => ID_RE.test(String(id || ''));
 
 export function findCoin(id) {
     return SUPPORTED_COINS.find(c => c.id === id) || null;
@@ -82,31 +96,54 @@ export function buildSignal({ sma7, sma25, rsi14 }) {
     return { signal: 'hold', reasonCode: 'insufficient_data' };
 }
 
-/** أسعار + تغيّر 24س لكل العملات المدعومة (نداء CoinGecko واحد للجميع). */
-export async function listMarkets() {
-    const cached = marketsCache.get('all');
-    if (cached && Date.now() - cached.at < MARKETS_TTL_MS) return { coins: cached.data, stale: false };
-    try {
-        const ids = SUPPORTED_COINS.map(c => c.id).join(',');
-        const url = `${API_BASE}/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&price_change_percentage=24h`;
-        const raw = await fetchJson(url);
-        const byId = new Map((Array.isArray(raw) ? raw : []).map(r => [r.id, r]));
-        const data = SUPPORTED_COINS.map(c => {
-            const r = byId.get(c.id);
-            return { id: c.id, symbol: c.symbol, nameAr: c.nameAr, price: r?.current_price ?? null, change24h: r?.price_change_percentage_24h ?? null };
-        });
-        marketsCache.set('all', { data, at: Date.now() });
-        return { coins: data, stale: false };
-    } catch {
-        if (cached) return { coins: cached.data, stale: true };
-        return { coins: SUPPORTED_COINS.map(c => ({ id: c.id, symbol: c.symbol, nameAr: c.nameAr, price: null, change24h: null })), stale: true };
+/**
+ * أسعار + تغيّر 24س لقائمة عملات (يحدّد القالب أيّها — قائمة متابعته)،
+ * كاش لكل عملة على حدة فيُعاد استخدامه بين مستخدمين مختلفين يتابعون نفس
+ * العملة. نداء CoinGecko واحد لكل العملات الناقصة/منتهية الصلاحية فقط.
+ */
+export async function listMarkets(ids) {
+    const wanted = (Array.isArray(ids) && ids.length ? ids : SUPPORTED_COINS.map(c => c.id))
+        .filter(isValidCoinId).slice(0, MAX_WATCHLIST);
+    if (!wanted.length) return { coins: [], stale: false };
+
+    const now = Date.now();
+    const stale = [];
+    for (const id of wanted) {
+        const c = marketsCache.get(id);
+        if (!c || now - c.at >= MARKETS_TTL_MS) stale.push(id);
     }
+
+    let anyFetchFailed = false;
+    if (stale.length) {
+        try {
+            const url = `${API_BASE}/coins/markets?vs_currency=usd&ids=${stale.join(',')}&order=market_cap_desc&price_change_percentage=24h`;
+            const raw = await fetchJson(url);
+            const byId = new Map((Array.isArray(raw) ? raw : []).map(r => [r.id, r]));
+            for (const id of stale) {
+                const r = byId.get(id);
+                const meta = findCoin(id);
+                const data = {
+                    id, symbol: (r?.symbol || meta?.symbol || id).toString().toUpperCase(),
+                    name: r?.name || meta?.nameAr || id,
+                    price: r?.current_price ?? null, change24h: r?.price_change_percentage_24h ?? null,
+                };
+                marketsCache.set(id, { data, at: now });
+            }
+        } catch { anyFetchFailed = true; }
+    }
+
+    const coins = wanted.map(id => {
+        const c = marketsCache.get(id);
+        if (c) return c.data;
+        const meta = findCoin(id);
+        return { id, symbol: meta?.symbol || id.toUpperCase(), name: meta?.nameAr || id, price: null, change24h: null };
+    });
+    return { coins, stale: anyFetchFailed };
 }
 
 /** تحليل فني كامل لعملة واحدة: سعر + SMA7/SMA25 + RSI14 + إشارة مفسَّرة. */
 export async function getAnalysis(id) {
-    const coin = findCoin(id);
-    if (!coin) return { error: 'عملة غير مدعومة' };
+    if (!isValidCoinId(id)) return { error: 'عملة غير صالحة' };
     const cached = analysisCache.get(id);
     if (cached && Date.now() - cached.at < ANALYSIS_TTL_MS) return { ...cached.data, stale: false };
     try {
@@ -117,7 +154,9 @@ export async function getAnalysis(id) {
         const price = closes[closes.length - 1];
         const sma7 = sma(closes, 7), sma25 = sma(closes, 25), rsi14 = rsi(closes, 14);
         const { signal, reasonCode } = buildSignal({ sma7, sma25, rsi14 });
-        const data = { id: coin.id, symbol: coin.symbol, nameAr: coin.nameAr, price, sma7, sma25, rsi14, signal, reasonCode, updatedAt: Date.now() };
+        // آخر 14 إغلاقاً يومياً — للرسم البياني المصغّر (sparkline) في الواجهة، بلا نداء إضافي.
+        const recentCloses = closes.slice(-14);
+        const data = { id, price, sma7, sma25, rsi14, signal, reasonCode, recentCloses, updatedAt: Date.now() };
         analysisCache.set(id, { data, at: Date.now() });
         return { ...data, stale: false };
     } catch {
@@ -126,10 +165,30 @@ export async function getAnalysis(id) {
     }
 }
 
+/** بحث عن عملة بالاسم/الرمز (لإضافتها لقائمة المتابعة) — أعلى 8 نتائج مطابقة. */
+export async function searchCoins(query) {
+    const q = String(query || '').trim().toLowerCase().slice(0, 60);
+    if (q.length < 2) return [];
+    const cached = searchCache.get(q);
+    if (cached && Date.now() - cached.at < SEARCH_TTL_MS) return cached.data;
+    try {
+        const raw = await fetchJson(`${API_BASE}/search?query=${encodeURIComponent(q)}`);
+        const data = (Array.isArray(raw?.coins) ? raw.coins : [])
+            .slice(0, 8)
+            .map(c => ({ id: c.id, symbol: String(c.symbol || '').toUpperCase(), name: c.name || c.id }))
+            .filter(c => isValidCoinId(c.id));
+        searchCache.set(q, { data, at: Date.now() });
+        return data;
+    } catch {
+        return cached ? cached.data : [];
+    }
+}
+
 /** لإعادة ضبط الكاش بين الاختبارات فقط. */
 export function resetCryptoCache() {
     marketsCache.clear();
     analysisCache.clear();
+    searchCache.clear();
 }
 
 // تصدير الكاش نفسه للاختبارات فقط (محاكاة انتهاء صلاحية بلا انتظار حقيقي) —

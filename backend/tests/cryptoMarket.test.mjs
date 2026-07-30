@@ -3,8 +3,8 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    listMarkets, getAnalysis, findCoin, resetCryptoCache,
-    toDailyCloses, sma, rsi, buildSignal, SUPPORTED_COINS,
+    listMarkets, getAnalysis, findCoin, resetCryptoCache, searchCoins, isValidCoinId,
+    toDailyCloses, sma, rsi, buildSignal, SUPPORTED_COINS, MAX_WATCHLIST,
     _marketsCacheForTest, _analysisCacheForTest,
 } from '../services/cryptoMarket.js';
 
@@ -89,6 +89,17 @@ test('findCoin: يعيد null لعملة غير مدعومة، ويعيد الك
     assert.equal(findCoin('bitcoin')?.symbol, 'BTC');
 });
 
+// ─── isValidCoinId ────────────────────────────────────────────────
+test('isValidCoinId: يقبل slugs صالحة، يرفض الباقي', () => {
+    assert.equal(isValidCoinId('bitcoin'), true);
+    assert.equal(isValidCoinId('shiba-inu'), true);
+    assert.equal(isValidCoinId('Bitcoin'), false, 'حروف كبيرة مرفوضة');
+    assert.equal(isValidCoinId('bitcoin/../etc'), false);
+    assert.equal(isValidCoinId('has space'), false);
+    assert.equal(isValidCoinId(''), false);
+    assert.equal(isValidCoinId('a'.repeat(65)), false, 'أطول من الحد الأقصى');
+});
+
 // ─── listMarkets: نداء شبكة، كاش، وصمود على الفشل ─────────────────
 test('listMarkets: نجاح → أسعار مطابقة لكل العملات المدعومة بترتيبها', async () => {
     mockOk(SUPPORTED_COINS.map(c => ({ id: c.id, current_price: 100, price_change_percentage_24h: 1.5 })));
@@ -125,15 +136,60 @@ test('listMarkets: فشل الشبكة بعد نجاح سابق (منتهي ال
     assert.equal(r.coins[0].price, 42, 'آخر سعر معروف يبقى معروضاً بدل فراغ عند تعذّر التحديث');
 });
 
+test('listMarkets: يقبل أي عملة صالحة عبر CoinGecko (لا الثماني المدعومة فقط)', async () => {
+    mockOk([{ id: 'shiba-inu', symbol: 'shib', name: 'Shiba Inu', current_price: 0.00001, price_change_percentage_24h: 3 }]);
+    const r = await listMarkets(['shiba-inu']);
+    assert.equal(r.coins[0].id, 'shiba-inu');
+    assert.equal(r.coins[0].symbol, 'SHIB');
+    assert.equal(r.coins[0].name, 'Shiba Inu');
+});
+
+test('listMarkets: يتجاهل المعرّفات غير الصالحة ويحدّ العدد بسقف المتابعة', async () => {
+    let requestedIds = null;
+    global.fetch = async (url) => { requestedIds = new URL(url).searchParams.get('ids').split(','); return { ok: true, json: async () => [] }; };
+    const tooMany = Array.from({ length: MAX_WATCHLIST + 10 }, (_, i) => 'coin' + i);
+    const r = await listMarkets(['BAD ID!', ...tooMany]);
+    assert.equal(r.coins.length, MAX_WATCHLIST, 'لا يتجاوز سقف المتابعة');
+    assert.equal(requestedIds.length, MAX_WATCHLIST);
+    assert.ok(!requestedIds.includes('BAD ID!'));
+});
+
+test('listMarkets: قوائم متداخلة تتشارك الكاش — عملة مكرّرة لا تُطلب مرتين', async () => {
+    let calls = 0;
+    global.fetch = async (url) => {
+        calls++;
+        const ids = new URL(url).searchParams.get('ids').split(',');
+        return { ok: true, json: async () => ids.map(id => ({ id, current_price: 1, price_change_percentage_24h: 0 })) };
+    };
+    await listMarkets(['bitcoin', 'ethereum']);
+    let secondRequestedIds = null;
+    global.fetch = async (url) => { calls++; secondRequestedIds = new URL(url).searchParams.get('ids').split(','); return { ok: true, json: async () => secondRequestedIds.map(id => ({ id, current_price: 1, price_change_percentage_24h: 0 })) }; };
+    const r = await listMarkets(['ethereum', 'solana']);
+    assert.equal(calls, 2, 'نداء واحد لكل مجموعة، لا نداء لكل عملة');
+    assert.deepEqual(secondRequestedIds, ['solana'], 'إيثيريوم كان مخزّناً مسبقاً — لم يُطلب مجدداً');
+    assert.equal(r.coins.find(c => c.id === 'ethereum').price, 1);
+    assert.equal(r.coins.find(c => c.id === 'solana').price, 1);
+});
+
 // ─── getAnalysis: بناء تحليل كامل من تاريخ أسعار ──────────────────
 function dailyPricesFrom(startTs, values) {
     return values.map((v, i) => [startTs + i * 86400000, v]);
 }
 
-test('getAnalysis: عملة غير مدعومة → error فوري بلا أي نداء شبكة', async () => {
+test('getAnalysis: معرّف غير صالح الصيغة → error فوري بلا أي نداء شبكة', async () => {
     global.fetch = async () => { throw new Error('لا ينبغي أن يُستدعى'); };
-    const r = await getAnalysis('dogecoin-fake');
+    const r = await getAnalysis('Not A Valid ID!!');
     assert.ok(r.error);
+});
+
+test('getAnalysis: يعمل لأي عملة صالحة الصيغة (لا الثماني المدعومة فقط)', async () => {
+    const start = Date.parse('2026-01-01T00:00:00Z');
+    const values = Array.from({ length: 30 }, (_, i) => 10 + i * 0.3);
+    mockOk({ prices: dailyPricesFrom(start, values) });
+    const r = await getAnalysis('shiba-inu');
+    assert.equal(r.id, 'shiba-inu');
+    assert.equal(r.stale, false);
+    assert.ok(r.sma7 != null);
 });
 
 test('getAnalysis: اتجاه صاعد معتدل → buy مع سعر/مؤشرات محسوبة', async () => {
@@ -147,6 +203,8 @@ test('getAnalysis: اتجاه صاعد معتدل → buy مع سعر/مؤشرا
     assert.equal(r.price, values[values.length - 1]);
     assert.ok(['buy', 'sell', 'hold'].includes(r.signal));
     assert.ok(['rsi_overbought', 'rsi_oversold', 'sma_bullish', 'sma_bearish', 'insufficient_data'].includes(r.reasonCode));
+    assert.equal(r.recentCloses.length, 14, 'آخر 14 إغلاقاً يومياً للرسم المصغّر');
+    assert.equal(r.recentCloses[r.recentCloses.length - 1], r.price);
 });
 
 test('getAnalysis: نداء ثانٍ ضمن مهلة الكاش لا يعيد fetch', async () => {
@@ -177,4 +235,45 @@ test('getAnalysis: فشل الشبكة بعد نجاح سابق (منتهي ال
     const r = await getAnalysis('cardano');
     assert.equal(r.stale, true);
     assert.equal(r.price, knownPrice);
+});
+
+// ─── searchCoins ────────────────────────────────────────────────────
+test('searchCoins: استعلام قصير جداً → [] بلا أي نداء شبكة', async () => {
+    global.fetch = async () => { throw new Error('لا ينبغي أن يُستدعى'); };
+    assert.deepEqual(await searchCoins('a'), []);
+    assert.deepEqual(await searchCoins(''), []);
+});
+
+test('searchCoins: نجاح → أعلى 8 نتائج مطابقة، مُهيَّأة', async () => {
+    mockOk({ coins: Array.from({ length: 15 }, (_, i) => ({ id: 'coin' + i, symbol: 'c' + i, name: 'Coin ' + i })) });
+    const r = await searchCoins('coin');
+    assert.equal(r.length, 8);
+    assert.equal(r[0].symbol, 'C0');
+    assert.equal(r[0].name, 'Coin 0');
+});
+
+test('searchCoins: يستبعد نتائج بمعرّفات غير صالحة', async () => {
+    mockOk({ coins: [{ id: 'Bad Id!', symbol: 'x', name: 'Bad' }, { id: 'good-coin', symbol: 'y', name: 'Good' }] });
+    const r = await searchCoins('test');
+    assert.equal(r.length, 1);
+    assert.equal(r[0].id, 'good-coin');
+});
+
+test('searchCoins: النداء الثاني بنفس الاستعلام ضمن مهلة الكاش لا يعيد fetch', async () => {
+    let calls = 0;
+    global.fetch = async () => { calls++; return { ok: true, json: async () => ({ coins: [] }) }; };
+    await searchCoins('bitcoin');
+    await searchCoins('  Bitcoin  '); // تطبيع (trim + lowercase) يطابق نفس الكاش
+    assert.equal(calls, 1);
+});
+
+test('searchCoins: فشل الشبكة بلا كاش سابق → []، وبعد نجاح سابق → آخر نتائج معروفة', async () => {
+    mockFail();
+    assert.deepEqual(await searchCoins('xyz'), []);
+    mockOk({ coins: [{ id: 'known-coin', symbol: 'k', name: 'Known' }] });
+    const first = await searchCoins('known');
+    assert.equal(first.length, 1);
+    mockFail();
+    const r = await searchCoins('known');
+    assert.deepEqual(r, first, 'ضمن مهلة الكاش أصلاً — يعيد نفس النتائج بلا الحاجة لفشل/نجاح');
 });
