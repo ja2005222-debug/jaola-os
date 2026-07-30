@@ -150,6 +150,9 @@ var I18N = {
     smaBearish: function (s, l) { return 'المتوسط المتحرك قصير المدى (' + s + ') أدنى من طويل المدى (' + l + ') — اتجاه هابط.'; },
     noSignal: 'لا إشارة فنية واضحة حالياً — البيانات غير كافية أو السوق متذبذب.',
     disclaimerLong: 'تنبيه: هذا تحليل إحصائي آلي وليس نصيحة استثمارية ملزمة — قرار التداول ونتيجته مسؤوليتك الكاملة.',
+    trackRecordLabel: 'دقة الإشارات السابقة',
+    trackRecordNoData: 'لا توجد بيانات كافية بعد لقياس الدقة على هذا المدى.',
+    trackRecordSummary: function (rate, hits, judged) { return 'نجحت ' + hits + ' من ' + judged + ' توقّعات محسومة (' + rate + '%) لهذه العملة على هذا المدى.'; },
     tfDay: 'يومي', tfWeek: 'أسبوعي', tfLong: 'طويل المدى',
     settingsH2: 'الإعدادات',
     currentWlLabel: 'قائمة المتابعة الحالية',
@@ -211,6 +214,9 @@ var I18N = {
     smaBearish: function (s, l) { return 'The short-term average over ' + s + ' is below the long-term average over ' + l + ' — a downtrend.'; },
     noSignal: 'No clear technical signal right now — insufficient data or a choppy market.',
     disclaimerLong: 'Note: this is automated statistical analysis, not binding investment advice — the trading decision and its outcome are entirely your responsibility.',
+    trackRecordLabel: 'Past signal accuracy',
+    trackRecordNoData: 'Not enough resolved predictions yet to measure accuracy for this timeframe.',
+    trackRecordSummary: function (rate, hits, judged) { return hits + ' out of ' + judged + ' resolved predictions hit their target — ' + rate + '% for this coin on this timeframe.'; },
     tfDay: 'Daily', tfWeek: 'Weekly', tfLong: 'Long-term',
     settingsH2: 'Settings',
     currentWlLabel: 'Current watchlist',
@@ -458,7 +464,7 @@ function loadAnalysis(id) {
   if (!id) return;
   fetch(sync.api + '/api/public/crypto/analysis/' + encodeURIComponent(id) + '?timeframe=' + encodeURIComponent(timeframe) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(10000) })
     .then(function (r) { return r.json(); })
-    .then(function (a) { renderAnalysis(a); if (a && !a.error) loadCommentary(id); })
+    .then(function (a) { renderAnalysis(a); if (a && !a.error) { loadCommentary(id); loadTrackRecord(id); } })
     .catch(function () { byId('anaBody').innerHTML = '<p class="hint">' + esc(t('failAnalysis')) + '</p>'; });
 }
 // رسم بياني مصغّر (14 نقطة) من قيم مُعطاة — بلا أي نداء شبكة إضافي (البيانات مُرسَلة أصلاً مع التحليل).
@@ -491,7 +497,27 @@ function renderAnalysis(a) {
     '<div class="stat"><span class="stat-v">' + (a.rsi != null ? a.rsi.toFixed(0) : '—') + '</span><span class="stat-l">RSI-' + a.rsiPeriod + '</span></div>' +
     '</div>' +
     '<ul class="ana-reasons">' + reasons.map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ul>' +
+    '<div class="track-record" id="anaTrackRecord"></div>' +
     '<div class="ai-commentary-box hidden" id="anaCommentary"></div>';
+}
+// 📊 دقة الإشارات السابقة لهذه العملة على هذا المدى — سجل حقيقي (server.js
+// يحسم كل تنبّؤ سابق بالسعر الفعلي لاحقاً)، لا رقم مُلفَّق. غيابه (عملة/مدى
+// بلا تنبّؤات محسومة كافية بعد) لا يعطّل التحليل الرقمي أعلاه إطلاقاً.
+function renderTrackRecord(tr) {
+  var box = byId('anaTrackRecord');
+  if (!box) return;
+  var judged = tr ? (tr.hits || 0) + (tr.misses || 0) : 0;
+  if (!tr || tr.hitRate == null || !judged) { box.innerHTML = '<p class="hint tiny">📊 ' + esc(t('trackRecordNoData')) + '</p>'; return; }
+  box.innerHTML = '<p class="hint tiny">📊 ' + esc(t('trackRecordLabel')) + ': ' + esc(t('trackRecordSummary', tr.hitRate, tr.hits, judged)) + '</p>';
+}
+function loadTrackRecord(id) {
+  var sync = window.JAOLA_SYNC;
+  var box = byId('anaTrackRecord');
+  if (!sync || !box) return;
+  fetch(sync.api + '/api/public/crypto/track-record/' + encodeURIComponent(id) + '?timeframe=' + encodeURIComponent(timeframe) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(8000) })
+    .then(function (r) { return r.json(); })
+    .then(function (d) { renderTrackRecord(d); })
+    .catch(function () {});
 }
 // 🤖 قراءة سريعة من وكيل مخصّص (مهمته فقط كتابة الجمل، لا التوصية بالتنفيذ) — تجميلية بحتة،
 // غيابها (لا مزوّد ذكاء اصطناعي/حصة منتهية) لا يعطّل التحليل الرقمي أعلاه إطلاقاً.
@@ -632,6 +658,7 @@ document.addEventListener('DOMContentLoaded', init);
 .sparkline polyline{fill:none;stroke-width:2}
 .sparkline.up polyline{stroke:var(--ok)}
 .sparkline.down polyline{stroke:var(--bad)}
+.track-record{margin-top:10px}
 .ai-commentary-box{margin-top:14px;padding:12px 14px;background:rgba(99,102,241,.08);border:1px solid var(--line);border-radius:10px;font-size:13px;line-height:1.8}
 .tf-tabs{display:flex;gap:6px;margin-bottom:14px}
 .tf-tab{background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--mut);padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer}
