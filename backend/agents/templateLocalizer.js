@@ -1781,6 +1781,17 @@ const DICT = [
     ['صورة العيادة', 'Clinic photo'],
     ['تعذّر الاتصال بالخادم، تحقّق من الاتصال وحاول مجدداً', 'Could not reach the server, check your connection and try again'],
 
+    // ── مستشار الكريبتو (jaola-crypto-advisor) ────────────────────────
+    ['مستشار الكريبتو', 'Crypto Advisor'],
+    ['تحليل فني (SMA/RSI) لقائمة متابعتك من العملات الرقمية + إشارة شراء/بيع/انتظار مفسَّرة.', 'Technical analysis (SMA/RSI) for your crypto watchlist + an explained buy/sell/hold signal.'],
+    ['تنبيه: هذا تحليل آلي وليس نصيحة استثمارية.', 'Note: this is automated analysis, not investment advice.'],
+    ['قائمة المتابعة', 'Watchlist'],
+    ['تحليل إحصائي آلي وليس نصيحة استثمارية ملزمة — قرار التداول مسؤوليتك الكاملة.', 'Automated statistical analysis, not binding investment advice — the trading decision is entirely your responsibility.'],
+    ['→ القائمة', '→ List'],
+    ['جارٍ التحميل...', 'Loading...'],
+    ['العملات المتابعة', 'Watched currencies'],
+    ['تحليل', 'Analysis'],
+
     // ── تنظيف المنازل (jaola-cleaning) ───────────────────────────────
     ['خدمات jaola لتنظيف المنازل', 'jaola Home Cleaning Services'],
     ['تنظيف jaola', 'jaola Cleaning'],

@@ -85,6 +85,7 @@ import { recordError, recentErrors } from './services/errorLog.js';
 import { verifyPassword as verifyProjectPassword, setPassword as setProjectPassword } from './services/projectAuth.js';
 import { broadcastPresence } from './services/presence.js';
 import { saveAsset, readAsset } from './services/appAssets.js';
+import { listMarkets, getAnalysis } from './services/cryptoMarket.js';
 import { listRecords as listCollectionRecords, upsertRecord as upsertCollectionRecord, deleteRecord as deleteCollectionRecord } from './services/appCollections.js';
 import { buildStaticSiteFromSource, buildDashboardPage } from './services/reactPreview.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
@@ -193,7 +194,7 @@ const io = new Server(httpServer, {
 const OPEN_CORS_PATHS = new Set(['/api/jaola-bot/chat', '/api/agent-chat', '/api/public/site-hit', '/api/public/site-message', '/api/public/data', '/api/public/auth/login', '/api/public/auth/set-password']);
 // 🗄️ /api/public/data/:key و/api/public/collections/:name[/:id] بمفاتيح
 // ديناميكية في المسار — تطابق بادئة لا مساواة تامّة
-const isOpenCorsPath = (p) => OPEN_CORS_PATHS.has(p) || p.startsWith('/api/public/data/') || p.startsWith('/api/public/collections/') || p.startsWith('/api/public/assets/');
+const isOpenCorsPath = (p) => OPEN_CORS_PATHS.has(p) || p.startsWith('/api/public/data/') || p.startsWith('/api/public/collections/') || p.startsWith('/api/public/assets/') || p.startsWith('/api/public/crypto/');
 const corsDelegate = (req, callback) => {
     if (isOpenCorsPath(req.path)) return callback(null, { origin: true, credentials: false, methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] });
     callback(null, corsOptions);
@@ -417,6 +418,16 @@ const authLimit = rateLimit({
 const assetLimit = rateLimit({
     windowMs: 60 * 1000,
     max: 20,
+    keyGenerator: (req) => ipKeyGenerator(req),
+    handler: (req, res) => res.status(429).json({ error: 'محاولات كثيرة جداً — أعد المحاولة بعد قليل' }),
+});
+
+// Rate limiter لتحليل الكريبتو — الكاش الداخلي (cryptoMarket.js) يحمي
+// CoinGecko أصلاً من الاستهلاك المفرط عبر كل المستخدمين معاً؛ هذا سقف
+// إضافي ضد إساءة استخدام نقطة النهاية نفسها من مشروع واحد.
+const cryptoLimit = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
     keyGenerator: (req) => ipKeyGenerator(req),
     handler: (req, res) => res.status(429).json({ error: 'محاولات كثيرة جداً — أعد المحاولة بعد قليل' }),
 });
@@ -2718,6 +2729,25 @@ app.get('/api/public/assets/:slot', assetLimit, (req, res) => {
         if (!asset) return res.status(404).end();
         res.set('Cache-Control', 'no-cache').type(asset.mime).send(asset.buf);
     } catch { res.status(500).end(); }
+});
+
+// 📊 تحليل كريبتو حقيقي (jaola-crypto-advisor) — بيانات سوق + مؤشرات فنية
+// (SMA/RSI) وإشارة شراء/بيع/انتظار مفسَّرة، عبر كاش داخلي مشترك (لا لكل
+// مشروع) يحمي CoinGecko من الاستهلاك المفرط. تحليل وعرض فقط — لا تنفيذ
+// تداول آلي إطلاقاً؛ بيانات سوق عامة فلا حاجة لتقييدها بمسار system.
+app.get('/api/public/crypto/markets', cryptoLimit, async (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p) return res.json({ coins: [], stale: true });
+    try { res.json(await listMarkets()); } catch { res.json({ coins: [], stale: true }); }
+});
+app.get('/api/public/crypto/analysis/:id', cryptoLimit, async (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p) return res.status(400).json({ error: 'غير مصرّح' });
+    try {
+        const r = await getAnalysis(req.params.id);
+        if (r.error) return res.status(400).json(r);
+        res.json(r);
+    } catch { res.status(500).json({ error: 'تعذّر التحليل الآن' }); }
 });
 
 // 📧 إرسال ردّ فعلي من الداشبورد على رسالة واردة — بحصة الخطة الشهرية
