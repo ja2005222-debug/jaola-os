@@ -9,6 +9,15 @@ import { BACKEND_URL } from '../config.js';
 // نفس مصدر صفحة الفوترة (/api/billing/plans مع نسخة ثابتة مطابقة كارتداد)،
 // والميزات هي المبنيّة فعلاً. ثنائية اللغة بنفس نظام i18n (وRTL يُطبَّق عالمياً).
 
+// عائلة "المستشارين الأذكياء" — أنظمة داخلية شخصية (لا مواقع عامة) بتحليل
+// حقيقي وقراءة بالذكاء الاصطناعي. لقطات حقيقية أيضاً، مُلتقَطة من القوالب
+// الفعلية عبر حصاد Playwright (بيانات تجريبية واقعية، لا تصميم وهمي).
+const ADVISORS = [
+  { id: 'jaola-crypto-advisor', nameKey: 'ldAdvCrypto', descKey: 'ldAdvCryptoD', icon: '📊' },
+  { id: 'jaola-stock-advisor', nameKey: 'ldAdvStock', descKey: 'ldAdvStockD', icon: '📈' },
+  { id: 'jaola-budget-advisor', nameKey: 'ldAdvBudget', descKey: 'ldAdvBudgetD', icon: '💰' },
+];
+
 // لقطات حقيقية من frontend/public/templates (تُلتقط من القوالب نفسها)
 const SHOWCASE = [
   { id: 'jaola-store', ar: 'متجر إلكتروني', en: 'Online store' },
@@ -82,6 +91,7 @@ export default function LandingPage({ onStart = () => {} }) {
           <div className="hidden md:flex items-center gap-8 text-sm text-slate-400">
             <a href="#how" className="hover:text-white transition">{t('ldNavHow')}</a>
             <a href="#templates" className="hover:text-white transition">{t('ldNavTemplates')}</a>
+            <a href="#advisors" className="hover:text-white transition">{t('ldNavAdvisors')}</a>
             <a href="#pricing" className="hover:text-white transition">{t('ldNavPricing')}</a>
           </div>
           <div className="flex items-center gap-3">
@@ -154,6 +164,28 @@ export default function LandingPage({ onStart = () => {} }) {
                 <img src={shot(s.id)} alt={isAr ? s.ar : s.en} loading="lazy"
                   className="w-full aspect-video object-cover object-top group-hover:scale-[1.02] transition" />
                 <div className="p-4 font-semibold text-sm">{isAr ? s.ar : s.en}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* SMART ADVISORS — عائلة أنظمة داخلية شخصية، لقطات حقيقية أيضاً */}
+      <section id="advisors" className="px-6 py-24">
+        <div className="mx-auto max-w-7xl">
+          <p className="mb-4 text-sm font-medium text-emerald-300">✦ {t('ldAdvKicker')}</p>
+          <h2 className="text-4xl font-semibold tracking-tight md:text-5xl mb-4">{t('ldAdvTitle')}</h2>
+          <p className="text-slate-400 mb-14 max-w-2xl">{t('ldAdvSub')}</p>
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {ADVISORS.map(a => (
+              <button key={a.id} onClick={() => onStart()} className="group rounded-2xl overflow-hidden glass text-start hover:bg-white/[0.07] transition">
+                <img src={shot(a.id)} alt={t(a.nameKey)} loading="lazy"
+                  className="w-full aspect-video object-cover object-top group-hover:scale-[1.02] transition" />
+                <div className="p-5">
+                  <div className="flex items-center gap-2 font-semibold mb-2"><span>{a.icon}</span>{t(a.nameKey)}</div>
+                  <p className="text-sm text-slate-400 leading-6 mb-3">{t(a.descKey)}</p>
+                  <span className="text-sm font-semibold text-blue-300 group-hover:text-blue-200">{t('ldAdvCta')} →</span>
+                </div>
               </button>
             ))}
           </div>
