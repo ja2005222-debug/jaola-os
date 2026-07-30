@@ -174,7 +174,7 @@ var I18N = {
     savePassBtn: 'حفظ كلمة المرور',
     passwordSaved: 'تم حفظ كلمة المرور',
     alreadyInWatchlist: 'العملة مضافة بالفعل',
-    maxWatchlist: 'وصلت للحد الأقصى لعدد العملات المتابَعة',
+    maxWatchlist: function (n) { return 'وصلت للحد الأقصى لعدد العملات المتابَعة في خطتك (' + n + ') — رقِّ خطتك للمزيد.'; },
     addedToWatchlist: 'أُضيفت للمتابعة',
     keepAtLeastOne: 'يجب أن تبقى عملة واحدة على الأقل للمتابعة',
     removedFromWatchlist: 'أُزيلت من المتابعة'
@@ -238,7 +238,7 @@ var I18N = {
     savePassBtn: 'Save password',
     passwordSaved: 'Password saved',
     alreadyInWatchlist: 'Already in your watchlist',
-    maxWatchlist: 'You reached the maximum number of followed currencies',
+    maxWatchlist: function (n) { return 'You reached your plan’s maximum of ' + n + ' followed currencies — upgrade for more.'; },
     addedToWatchlist: 'Added to watchlist',
     keepAtLeastOne: 'At least one currency must remain in your watchlist',
     removedFromWatchlist: 'Removed from watchlist'
@@ -248,7 +248,7 @@ var I18N = {
 function load(k, fb) { try { var v = localStorage.getItem('jcrypto_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
 function save(k, val) { try { localStorage.setItem('jcrypto_' + k, JSON.stringify(val)); } catch (e) {} }
 
-var MAX_WATCHLIST = 20;
+var MAX_WATCHLIST = 20; // سقف تقني مطلق (دفعة CoinGecko الواحدة) — الحد الفعلي (watchlistMax) قد يكون أقل حسب الخطة
 var TIMEFRAME_ORDER = ['day', 'week', 'long'];
 var settings = load('settings', { pass: 'admin' });
 var watchlist = load('watchlist', ['bitcoin', 'ethereum', 'solana']);
@@ -257,6 +257,7 @@ var timeframe = load('timeframe', 'week');
 // أصلاً عبر templateLocalizer.js (lang="en" لو بُني الموقع بالإنجليزية).
 var lang = load('lang', (document.documentElement.getAttribute('lang') === 'en') ? 'en' : 'ar');
 var session = load('session', null);
+var watchlistMax = MAX_WATCHLIST; // يُحدَّث فعلياً من الخادم حسب خطة صاحب المشروع (loadLimits)
 var marketsData = {};
 var pollTimers = {};
 var state = { view: 'login', activeCoin: null };
@@ -373,7 +374,7 @@ function setView(v) {
     renderTfTabs(); renderAnalysisShell(); loadAnalysis(state.activeCoin);
     startPolling('analysis', function () { loadAnalysis(state.activeCoin); }, 60000);
   }
-  if (v === 'settings') { renderWatchlistSettings(); byId('coinSearchInput').value = ''; byId('stPass').value = ''; }
+  if (v === 'settings') { renderWatchlistSettings(); byId('coinSearchInput').value = ''; byId('stPass').value = ''; loadLimits(); }
 }
 function renderTfTabs() {
   byId('tfTabs').innerHTML = TIMEFRAME_ORDER.map(function (tf) {
@@ -535,6 +536,7 @@ function loadCommentary(id) {
 }
 
 function renderWatchlistSettings() {
+  byId('currentWlLabel').textContent = t('currentWlLabel') + ' (' + watchlist.length + ' / ' + watchlistMax + ')';
   byId('watchlistCurrent').innerHTML = watchlist.map(function (id) {
     return '<div class="wl-row"><span>' + esc(displayName(id)) + ' <span class="hint">' + esc(displaySymbol(id)) + '</span></span>' +
       '<button class="btn tiny ghost" data-action="removeCoin" data-id="' + id + '">✕</button></div>';
@@ -554,13 +556,27 @@ function persistWatchlist() {
   save('watchlist', watchlist);
   var sync = window.JAOLA_SYNC;
   if (sync) {
-    fetch(sync.api + '/api/public/crypto/watchlist', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, watchlist: watchlist }), signal: AbortSignal.timeout(8000) }).catch(function () {});
+    fetch(sync.api + '/api/public/crypto/watchlist', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, watchlist: watchlist }), signal: AbortSignal.timeout(8000) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (d && Number.isFinite(d.watchlistMax)) watchlistMax = d.watchlistMax; })
+      .catch(function () {});
   }
+}
+// 📏 سقف قائمة المتابعة الفعلي حسب خطة صاحب المشروع — يُجلَب مرّة عند
+// دخول الإعدادات كي تعرف الواجهة الحدّ الصحيح قبل محاولة الإضافة، لا بعد
+// رفض الحفظ فقط. غيابه (بلا مزامنة) يُبقي السقف التقني الافتراضي.
+function loadLimits() {
+  var sync = window.JAOLA_SYNC;
+  if (!sync) return;
+  fetch(sync.api + '/api/public/crypto/limits?token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(8000) })
+    .then(function (r) { return r.json(); })
+    .then(function (d) { if (d && Number.isFinite(d.watchlistMax)) { watchlistMax = d.watchlistMax; renderWatchlistSettings(); } })
+    .catch(function () {});
 }
 function addCoinToWatchlist(id, symbol, name) {
   if (!id) return;
   if (watchlist.indexOf(id) !== -1) { toast(t('alreadyInWatchlist')); return; }
-  if (watchlist.length >= MAX_WATCHLIST) { toast(t('maxWatchlist')); return; }
+  if (watchlist.length >= watchlistMax) { toast(t('maxWatchlist', watchlistMax)); return; }
   watchlist.push(id);
   if (symbol || name) marketsData[id] = { id: id, symbol: symbol || id.toUpperCase(), name: name || id, price: null, change24h: null };
   persistWatchlist();

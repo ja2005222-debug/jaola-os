@@ -124,3 +124,9 @@ export function customDomainsMax(userDoc) {
     const { limits, planId } = getUserSubscription(userDoc);
     return { planId, max: limits.customDomainsMax ?? 0 };
 }
+
+/** 📊 سقف قائمة متابعة مستشار الكريبتو حسب الخطة (Infinity لا يُستخدم هنا — سقف تقني ثابت أيضاً). */
+export function cryptoWatchlistMax(userDoc) {
+    const { limits, planId } = getUserSubscription(userDoc);
+    return { planId, max: limits.cryptoWatchlistMax ?? 5 };
+}

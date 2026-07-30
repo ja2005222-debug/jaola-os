@@ -8,6 +8,7 @@ import {
     TIMEFRAMES, DEFAULT_TIMEFRAME, isValidTimeframe,
     _marketsCacheForTest, _analysisCacheForTest,
 } from '../services/cryptoMarket.js';
+import { cryptoWatchlistMax } from '../services/subscriptionService.js';
 
 // يُقدِّم زمن كل إدخالات الكاش الحالية لمحاكاة انتهاء صلاحيتها فوراً بلا انتظار حقيقي.
 function expireCache(cache) {
@@ -433,4 +434,10 @@ test('getOpportunities: يتجاهل معرّفات غير صالحة ويحدّ
     };
     await getOpportunities(['BAD ID!', 'bitcoin']);
     assert.equal(sawBadId, false, 'لم يُطلب أبداً لمعرّف غير صالح');
+});
+
+test('cryptoWatchlistMax: حد الخطة — المجانية 5 (تذوّق)، الاحترافية والمؤسسات بسقف MAX_WATCHLIST نفسه', () => {
+    assert.equal(cryptoWatchlistMax(null).max, 5);
+    assert.equal(cryptoWatchlistMax({ subscription: { plan: 'pro', status: 'active' } }).max, MAX_WATCHLIST);
+    assert.equal(cryptoWatchlistMax({ subscription: { plan: 'enterprise', status: 'active' } }).max, MAX_WATCHLIST);
 });
