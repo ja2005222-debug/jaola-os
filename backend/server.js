@@ -85,7 +85,7 @@ import { recordError, recentErrors } from './services/errorLog.js';
 import { verifyPassword as verifyProjectPassword, setPassword as setProjectPassword } from './services/projectAuth.js';
 import { broadcastPresence } from './services/presence.js';
 import { saveAsset, readAsset } from './services/appAssets.js';
-import { listMarkets, getAnalysis, getOpportunities, searchCoins, isValidCoinId, MAX_WATCHLIST } from './services/cryptoMarket.js';
+import { listMarkets, getAnalysis, getOpportunities, searchCoins, isValidCoinId, MAX_WATCHLIST, SUPPORTED_COINS } from './services/cryptoMarket.js';
 import { generateCommentary } from './services/cryptoCommentary.js';
 import { saveWatchlistIndex, listWatchlistIndex, markAlerted, shouldAlert } from './services/cryptoAlerts.js';
 import { recordSignal, getDueCoinIds, resolveDue, getAccuracy } from './services/signalTrackRecord.js';
@@ -2974,6 +2974,33 @@ setInterval(async () => {
         resolveDue(SIGNAL_TRACK_DIR, priceById);
     } catch (e) { console.warn('[SignalTrackRecord]', 'دورة الحسم فشلت:', e.message); }
 }, 30 * 60 * 1000);
+
+// 🔥 حلقة تسخين كاش مستشار الكريبتو — كل 45 ثانية (أقل من مهلة كاش
+// الأسعار 60 ثانية): تُحدّث سلفاً أسعار العملات الشائعة + كل العملات
+// المتابَعة عبر كل المشاريع، وتحليل مداها الأسبوعي الافتراضي — فيصل أغلب
+// طلبات المستخدمين (تحديث لوحة العميل كل 60 ثانية) كاشاً ساخناً بدل
+// انتظار نداء CoinGecko حيّ. listMarkets/getAnalysis يتحقّقان من صلاحية
+// كاشهما داخلياً فلا نداء شبكة زائداً إن كانت البيانات لا تزال طازجة.
+// حارس busy يمنع تراكم دورات متداخلة إن طال نداء شبكي واحد.
+let cacheWarmBusy = false;
+setInterval(async () => {
+    if (cacheWarmBusy) return;
+    cacheWarmBusy = true;
+    try {
+        const ids = new Set(SUPPORTED_COINS.map(c => c.id));
+        for (const entry of listWatchlistIndex(CRYPTOWATCH_DIR)) {
+            if (Array.isArray(entry.watchlist)) for (const id of entry.watchlist) ids.add(id);
+        }
+        const idList = [...ids].filter(isValidCoinId).slice(0, 60);
+        for (let i = 0; i < idList.length; i += MAX_WATCHLIST) {
+            await listMarkets(idList.slice(i, i + MAX_WATCHLIST)).catch(() => {});
+        }
+        for (const id of idList) {
+            await getAnalysis(id).catch(() => {});
+        }
+    } catch (e) { console.warn('[CacheWarm]', 'دورة التسخين فشلت:', e.message); }
+    finally { cacheWarmBusy = false; }
+}, 45 * 1000);
 
 // 🔌 تحميل الإضافات ثم تشغيل الخادم
 orchestrator.init().catch(e => console.warn('[Plugins] init فشل:', e.message)).finally(() => {
