@@ -33,7 +33,7 @@ import {
 import { generatePWA } from './agents/pwaAgent.js';
 import { generateJaolaBot, readBotManifest, buildEmbedBundle } from './agents/jaolaBot.js';
 import { mailReady, sendMail, isEmail } from './services/mailer.js';
-import { emailQuota, socialQuota, customAgentsMax, aiImagesQuota, customDomainsMax } from './services/subscriptionService.js';
+import { emailQuota, socialQuota, customAgentsMax, aiImagesQuota, customDomainsMax, cryptoWatchlistMax } from './services/subscriptionService.js';
 import { validateDomain, dnsInstructionsFor, attachDomain, domainStatus, detachDomain, readUserDomains, saveUserDomain, removeUserDomain, countUserDomains } from './services/customDomains.js';
 import { aiImagesReady, applyAiImages, applyHeroImage, generateProductImage, diagnoseImages } from './services/aiImages.js';
 import { checkAiProviders } from './services/aiProviderCheck.js';
@@ -2819,15 +2819,26 @@ app.get('/api/public/crypto/opportunities', cryptoLimit, async (req, res) => {
 // 🗂️ فهرسة قائمة المتابعة (لا تخزينها الأساسي — ذاك عبر jaola-data كسائر
 // إعدادات القالب) — فقط لتمكين حلقة فحص "الفرص القوية" أدناه من معرفة أي
 // مشاريع تتابع أي عملات، بلا حاجة لمسح كل بيانات كل المشاريع.
-app.put('/api/public/crypto/watchlist', cryptoLimit, (req, res) => {
+app.put('/api/public/crypto/watchlist', cryptoLimit, async (req, res) => {
     const v = verifyBotToken(req.body?.token);
     if (!v?.u || !v?.p) return res.status(204).end();
     try {
+        const owner = await DB.findUser(v.u).catch(() => null);
+        const cap = Math.min(cryptoWatchlistMax(owner).max, MAX_WATCHLIST);
         const list = Array.isArray(req.body?.watchlist)
-            ? req.body.watchlist.filter(isValidCoinId).slice(0, MAX_WATCHLIST) : [];
+            ? req.body.watchlist.filter(isValidCoinId).slice(0, cap) : [];
         saveWatchlistIndex(CRYPTOWATCH_DIR, v.u, v.p, list);
-        res.json({ success: true });
+        res.json({ success: true, watchlistMax: cap });
     } catch { res.status(500).json({ success: false }); }
+});
+
+// 📏 سقف قائمة المتابعة الفعلي حسب خطة صاحب المشروع — تعرضه الواجهة قبل
+// محاولة الإضافة (لا تكتشف الحدّ فقط بعد رفض الحفظ).
+app.get('/api/public/crypto/limits', cryptoLimit, async (req, res) => {
+    const v = verifyBotToken(req.query?.token);
+    if (!v?.u || !v?.p) return res.json({ watchlistMax: 5 });
+    const owner = await DB.findUser(v.u).catch(() => null);
+    res.json({ watchlistMax: Math.min(cryptoWatchlistMax(owner).max, MAX_WATCHLIST) });
 });
 
 // 🤖 تعليق آلي قصير (2-3 جمل) يفسّر أرقام التحليل بلغة مبسّطة — وكيل ضيّق

@@ -29,6 +29,7 @@ export const PLANS = {
             aiImages: 6,                   // صور AI حقيقية شهرياً
             socialPosts: 10,               // منشورات تُنشر مباشرة للقنوات شهرياً
             customDomainsMax: 0,           // النطاقات الخاصة ميزة مدفوعة
+            cryptoWatchlistMax: 5,         // قائمة متابعة مستشار الكريبتو: عيّنة تذوّق
             autoDeploy: false,
             prioritySupport: false,
             customAgents: false,
@@ -52,6 +53,7 @@ export const PLANS = {
             aiImages: 150,
             socialPosts: 300,
             customDomainsMax: 1,           // نطاق خاص واحد
+            cryptoWatchlistMax: 20,        // قائمة متابعة كاملة
             autoDeploy: true,
             prioritySupport: true,
             customAgents: false,
@@ -75,6 +77,7 @@ export const PLANS = {
             aiImages: UNLIMITED,
             socialPosts: UNLIMITED,
             customDomainsMax: UNLIMITED,
+            cryptoWatchlistMax: 20,        // نفس السقف التقني لدفعة CoinGecko الواحدة (MAX_WATCHLIST) — لا فرق عن Pro هنا
             autoDeploy: true,
             prioritySupport: true,
             customAgents: true,
