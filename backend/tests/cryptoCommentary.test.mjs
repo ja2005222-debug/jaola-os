@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateCommentary, resetCommentaryCache } from '../services/cryptoCommentary.js';
 
-const DATA = { id: 'bitcoin', symbol: 'BTC', price: 65000, sma7: 64000, sma25: 60000, rsi14: 55, signal: 'buy', reasonCode: 'sma_bullish' };
+const DATA = { id: 'bitcoin', symbol: 'BTC', price: 65000, smaShort: 64000, smaLong: 60000, rsi: 55, signal: 'buy', reasonCode: 'sma_bullish', timeframe: 'week' };
 
 test('generateCommentary: نجاح → يعيد نص اللغة نظيفاً (مقلّماً)', async () => {
     resetCommentaryCache();
@@ -21,6 +21,16 @@ test('generateCommentary: يمرّر الأرقام الصحيحة لنموذج 
     assert.equal(seenUser.symbol, 'BTC');
     assert.equal(seenUser.price, 65000);
     assert.equal(seenUser.signal, 'شراء', 'الإشارة تُترجم للعربية قبل إرسالها للنموذج');
+    assert.equal(seenUser.timeframe, 'أسبوعي', 'المدى الزمني يُترجم للعربية قبل إرسالها للنموذج');
+});
+
+test('generateCommentary: مدى مختلف لنفس (id+signal+reasonCode) → مفتاح كاش مستقلّ', async () => {
+    resetCommentaryCache();
+    let calls = 0;
+    const llm = async () => { calls++; return 'تعليق ' + calls; };
+    await generateCommentary({ ...DATA, timeframe: 'week' }, llm);
+    await generateCommentary({ ...DATA, timeframe: 'long' }, llm);
+    assert.equal(calls, 2, 'المدى الزمني جزء من مفتاح الكاش');
 });
 
 test('generateCommentary: فشل النموذج (لا مزوّد/رصيد) → null بدل رمي خطأ', async () => {

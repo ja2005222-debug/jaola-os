@@ -1,10 +1,12 @@
 /**
  * 📊 jaola-crypto-advisor — مستشار كريبتو داخلي (track: system).
  *
- * تحليل فني حقيقي (SMA7/SMA25/RSI14) لقائمة متابعة يختارها المالك، مع
- * إشارة شراء/بيع/انتظار مفسَّرة بالعربية — بيانات حقيقية من الخادم
- * (backend/services/cryptoMarket.js يستهلك CoinGecko). عرض وتحليل فقط،
- * لا تنفيذ تداول آلي أبداً — تنبيه "ليس نصيحة استثمارية" ظاهر دائماً.
+ * تحليل فني حقيقي (SMA قصير/طويل + RSI) لقائمة متابعة يختارها المالك،
+ * على ثلاثة مدىً زمنية يختارها المستخدم (يومي/أسبوعي/طويل المدى — تبويب
+ * في شاشة التحليل)، مع إشارة شراء/بيع/انتظار مفسَّرة بالعربية — بيانات
+ * حقيقية من الخادم (backend/services/cryptoMarket.js يستهلك CoinGecko).
+ * عرض وتحليل فقط، لا تنفيذ تداول آلي أبداً — تنبيه "ليس نصيحة استثمارية"
+ * ظاهر دائماً.
  *
  * أداة شخصية بمالك واحد (لا أدوار متعددة كبقية أنظمة السيستم) — دخول
  * بكلمة مرور واحدة فقط. مختلف عن jaola-crypto (عرض أسعار عام بلا دخول
@@ -55,6 +57,7 @@ export function jaolaCryptoAdvisor() {
           <button class="btn ghost tiny" data-action="backDashboard">→ القائمة</button>
         </div>
       </div>
+      <div class="tf-tabs" id="tfTabs"></div>
       <div class="panel" id="anaBody"><p class="hint">⏳ جارٍ التحميل...</p></div>
     </section>
 
@@ -103,8 +106,12 @@ function load(k, fb) { try { var v = localStorage.getItem('jcrypto_' + k); retur
 function save(k, val) { try { localStorage.setItem('jcrypto_' + k, JSON.stringify(val)); } catch (e) {} }
 
 var MAX_WATCHLIST = 20;
+// المدىً الثلاثة: يومي (ساعات، حساس/سريع التغيّر) · أسبوعي (افتراضي) ·
+// طويل المدى (أيام كثيرة، أهدأ). يبقى مُفضَّل المستخدم محفوظاً عبر الأجهزة.
+var TIMEFRAME_LABELS = { day: 'يومي', week: 'أسبوعي', long: 'طويل المدى' };
 var settings = load('settings', { pass: 'admin' });
 var watchlist = load('watchlist', ['bitcoin', 'ethereum', 'solana']);
+var timeframe = load('timeframe', 'week');
 var session = load('session', null);
 var marketsData = {};
 var pollTimer = null;
@@ -125,13 +132,20 @@ function signalClass(s) { return s === 'buy' ? 'sig-buy' : s === 'sell' ? 'sig-s
 // النص العربي هنا (لا في استجابة الخادم) كي تترجمه templateLocalizer.js لموقع بالإنجليزية —
 // الخادم (cryptoMarket.js) يُعيد رمز سبب فقط (reasonCode)، لا جملة جاهزة.
 var DISCLAIMER_TEXT = 'تنبيه: هذا تحليل إحصائي آلي وليس نصيحة استثمارية ملزمة — قرار التداول ونتيجته مسؤوليتك الكاملة.';
+// عبارة فترة قابلة للقراءة (تختلف حسب المدى: ساعات للمدى اليومي، أيام للأسبوعي/الطويل).
+function periodPhrase(n, unit) {
+  if (unit === 'hour') return n <= 10 ? (n + ' ساعات') : (n + ' ساعة');
+  return n <= 10 ? (n + ' أيام') : (n + ' يوماً');
+}
 function reasonText(a) {
-  var rsi = (a.rsi14 != null) ? a.rsi14.toFixed(0) : '—';
+  var rsiTxt = (a.rsi != null) ? a.rsi.toFixed(0) : '—';
+  var shortP = periodPhrase(a.smaShortPeriod, a.periodUnit);
+  var longP = periodPhrase(a.smaLongPeriod, a.periodUnit);
   switch (a.reasonCode) {
-    case 'rsi_overbought': return 'مؤشر القوة النسبية (RSI) في منطقة تشبّع شرائي (' + rsi + ') — احتمال تصحيح هابط.';
-    case 'rsi_oversold': return 'مؤشر القوة النسبية (RSI) في منطقة تشبّع بيعي (' + rsi + ') — احتمال ارتداد صاعد.';
-    case 'sma_bullish': return 'المتوسط المتحرك قصير المدى (7 أيام) أعلى من طويل المدى (25 يوماً) — اتجاه صاعد.';
-    case 'sma_bearish': return 'المتوسط المتحرك قصير المدى (7 أيام) أدنى من طويل المدى (25 يوماً) — اتجاه هابط.';
+    case 'rsi_overbought': return 'مؤشر القوة النسبية (RSI) في منطقة تشبّع شرائي (' + rsiTxt + ') — احتمال تصحيح هابط.';
+    case 'rsi_oversold': return 'مؤشر القوة النسبية (RSI) في منطقة تشبّع بيعي (' + rsiTxt + ') — احتمال ارتداد صاعد.';
+    case 'sma_bullish': return 'المتوسط المتحرك قصير المدى (' + shortP + ') أعلى من طويل المدى (' + longP + ') — اتجاه صاعد.';
+    case 'sma_bearish': return 'المتوسط المتحرك قصير المدى (' + shortP + ') أدنى من طويل المدى (' + longP + ') — اتجاه هابط.';
     default: return 'لا إشارة فنية واضحة حالياً — البيانات غير كافية أو السوق متذبذب.';
   }
 }
@@ -159,8 +173,20 @@ function setView(v) {
   var vs = document.querySelectorAll('.view'); for (var i = 0; i < vs.length; i++) show(vs[i], false);
   show(byId('view-' + v), true); renderTabs(); renderUserChip();
   if (v === 'dashboard') { renderWatchlistShell(); loadMarkets(); startPolling(loadMarkets, 60000); }
-  if (v === 'analysis') { renderAnalysisShell(); loadAnalysis(state.activeCoin); startPolling(function () { loadAnalysis(state.activeCoin); }, 60000); }
+  if (v === 'analysis') { renderTfTabs(); renderAnalysisShell(); loadAnalysis(state.activeCoin); startPolling(function () { loadAnalysis(state.activeCoin); }, 60000); }
   if (v === 'settings') { renderWatchlistSettings(); byId('coinSearchInput').value = ''; byId('stPass').value = ''; }
+}
+function renderTfTabs() {
+  byId('tfTabs').innerHTML = Object.keys(TIMEFRAME_LABELS).map(function (tf) {
+    return '<button class="tf-tab ' + (timeframe === tf ? 'active' : '') + '" data-action="setTimeframe" data-tf="' + tf + '">' + TIMEFRAME_LABELS[tf] + '</button>';
+  }).join('');
+}
+function setTimeframe(tf) {
+  if (!TIMEFRAME_LABELS[tf] || tf === timeframe) return;
+  timeframe = tf; save('timeframe', timeframe);
+  renderTfTabs();
+  renderAnalysisShell();
+  loadAnalysis(state.activeCoin);
 }
 function renderTabs() {
   if (!session) { byId('tabs').innerHTML = ''; return; }
@@ -214,7 +240,7 @@ function loadAnalysis(id) {
   var sync = window.JAOLA_SYNC;
   if (!sync) { byId('anaBody').innerHTML = '<p class="hint">🔌 التحليل الحي يعمل بعد تطبيق القالب على مشروع فعلي منشور.</p>'; return; }
   if (!id) return;
-  fetch(sync.api + '/api/public/crypto/analysis/' + encodeURIComponent(id) + '?token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(10000) })
+  fetch(sync.api + '/api/public/crypto/analysis/' + encodeURIComponent(id) + '?timeframe=' + encodeURIComponent(timeframe) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(10000) })
     .then(function (r) { return r.json(); })
     .then(function (a) { renderAnalysis(a); if (a && !a.error) loadCommentary(id); })
     .catch(function () { byId('anaBody').innerHTML = '<p class="hint">⚠️ تعذّر جلب التحليل الآن — حاول مجدداً.</p>'; });
@@ -244,9 +270,9 @@ function renderAnalysis(a) {
     sparklineSvg(a.recentCloses) +
     '<div class="ana-signal ' + signalClass(a.signal) + '">' + signalLabel(a.signal) + '</div>' +
     '<div class="ana-stats">' +
-    '<div class="stat"><span class="stat-v">' + fmtPrice(a.sma7) + '</span><span class="stat-l">متوسط 7 أيام</span></div>' +
-    '<div class="stat"><span class="stat-v">' + fmtPrice(a.sma25) + '</span><span class="stat-l">متوسط 25 يوماً</span></div>' +
-    '<div class="stat"><span class="stat-v">' + (a.rsi14 != null ? a.rsi14.toFixed(0) : '—') + '</span><span class="stat-l">RSI-14</span></div>' +
+    '<div class="stat"><span class="stat-v">' + fmtPrice(a.smaShort) + '</span><span class="stat-l">متوسط ' + esc(periodPhrase(a.smaShortPeriod, a.periodUnit)) + '</span></div>' +
+    '<div class="stat"><span class="stat-v">' + fmtPrice(a.smaLong) + '</span><span class="stat-l">متوسط ' + esc(periodPhrase(a.smaLongPeriod, a.periodUnit)) + '</span></div>' +
+    '<div class="stat"><span class="stat-v">' + (a.rsi != null ? a.rsi.toFixed(0) : '—') + '</span><span class="stat-l">RSI-' + a.rsiPeriod + '</span></div>' +
     '</div>' +
     '<ul class="ana-reasons">' + reasons.map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ul>' +
     '<div class="ai-commentary-box hidden" id="anaCommentary"></div>';
@@ -257,7 +283,7 @@ function loadCommentary(id) {
   var sync = window.JAOLA_SYNC;
   var box = byId('anaCommentary');
   if (!sync || !box) return;
-  fetch(sync.api + '/api/public/crypto/commentary/' + encodeURIComponent(id) + '?symbol=' + encodeURIComponent(displaySymbol(id)) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(15000) })
+  fetch(sync.api + '/api/public/crypto/commentary/' + encodeURIComponent(id) + '?symbol=' + encodeURIComponent(displaySymbol(id)) + '&timeframe=' + encodeURIComponent(timeframe) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(15000) })
     .then(function (r) { return r.json(); })
     .then(function (d) {
       if (d && d.text) { box.innerHTML = '🤖 ' + esc(d.text); show(box, true); }
@@ -346,6 +372,7 @@ function handleClick(e) {
     case 'openAnalysis': openAnalysis(a.dataset.id); break;
     case 'backDashboard': backDashboard(); break;
     case 'refreshAnalysis': loadAnalysis(state.activeCoin); break;
+    case 'setTimeframe': setTimeframe(a.dataset.tf); break;
     case 'refreshMarkets': loadMarkets(); break;
     case 'addCoin': addCoinToWatchlist(a.dataset.id, a.dataset.symbol, a.dataset.name); break;
     case 'removeCoin': removeCoinFromWatchlist(a.dataset.id); break;
@@ -385,6 +412,9 @@ document.addEventListener('DOMContentLoaded', init);
 .sparkline.up polyline{stroke:var(--ok)}
 .sparkline.down polyline{stroke:var(--bad)}
 .ai-commentary-box{margin-top:14px;padding:12px 14px;background:rgba(99,102,241,.08);border:1px solid var(--line);border-radius:10px;font-size:13px;line-height:1.8}
+.tf-tabs{display:flex;gap:6px;margin-bottom:14px}
+.tf-tab{background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--mut);padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer}
+.tf-tab.active{background:var(--pri);border-color:var(--pri);color:#fff}
 `;
 
     return {
@@ -393,13 +423,13 @@ document.addEventListener('DOMContentLoaded', init);
         category: 'system',
         name: 'مستشار كريبتو (تحليل فني وتوصيات)',
         nameEn: 'Crypto Advisor (Technical Analysis & Signals)',
-        description: 'سيستم مستشار كريبتو داخلي: تحليل فني حقيقي (متوسطات متحركة SMA7/SMA25 ومؤشر القوة النسبية RSI14) لقائمة متابعة تختارها، مع إشارة شراء/بيع/انتظار مفسَّرة بالعربية وتحديث تلقائي — عرض وتحليل فقط، بلا تنفيذ تداول آلي.',
-        descriptionEn: 'Internal crypto advisor system: real technical analysis (SMA7/SMA25 moving averages and RSI14) for a watchlist you choose, with an explained buy/sell/hold signal and auto-refresh — analysis and display only, no automated trade execution.',
-        keywords: ['تحليل فني', 'تحليل كريبتو', 'مستشار كريبتو', 'توصيات تداول', 'توصية تداول', 'إشارة شراء', 'إشارة بيع', 'مؤشر فني', 'RSI', 'تحليل عملات رقمية', 'trading signal', 'crypto advisor', 'technical analysis', 'buy sell signal'],
+        description: 'سيستم مستشار كريبتو داخلي: تحليل فني حقيقي (متوسطات متحركة ومؤشر القوة النسبية RSI) لقائمة متابعة تختارها (أي عملة عبر البحث، لا الثماني الشائعة فقط)، على مدىً زمني تختاره (يومي/أسبوعي/طويل المدى)، مع إشارة شراء/بيع/انتظار مفسَّرة بالعربية، قراءة تفسيرية من وكيل ذكاء اصطناعي مخصّص، وتنبيهات بريدية عند فرص قوية — عرض وتحليل فقط، بلا تنفيذ تداول آلي.',
+        descriptionEn: 'Internal crypto advisor system: real technical analysis (moving averages and RSI) for a watchlist you choose (any coin via search, not just the popular eight), across a timeframe you pick (daily/weekly/long-term), with an explained buy/sell/hold signal, an AI-written short reading, and email alerts on strong opportunities — analysis and display only, no automated trade execution.',
+        keywords: ['تحليل فني', 'تحليل كريبتو', 'مستشار كريبتو', 'توصيات تداول', 'توصية تداول', 'إشارة شراء', 'إشارة بيع', 'مؤشر فني', 'RSI', 'تحليل عملات رقمية', 'مدى زمني', 'trading signal', 'crypto advisor', 'technical analysis', 'buy sell signal'],
         model: {
             roles: [{ name: 'مالك الحساب' }],
             entities: [{ name: 'عملة رقمية' }, { name: 'تحليل فني' }],
-            flows: [{ name: 'اختيار قائمة متابعة من العملات' }, { name: 'عرض السعر والتغيّر اليومي' }, { name: 'تحليل فني مفصّل وإشارة شراء/بيع/انتظار' }],
+            flows: [{ name: 'اختيار قائمة متابعة من العملات' }, { name: 'عرض السعر والتغيّر اليومي' }, { name: 'اختيار مدى زمني (يومي/أسبوعي/طويل المدى)' }, { name: 'تحليل فني مفصّل وإشارة شراء/بيع/انتظار' }],
         },
         files: [
             { name: 'index.html', content: INDEX_HTML },

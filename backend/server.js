@@ -2761,11 +2761,13 @@ app.get('/api/public/crypto/markets', cryptoLimit, async (req, res) => {
         res.json(await listMarkets(ids));
     } catch { res.json({ coins: [], stale: true }); }
 });
+// ?timeframe=day|week|long — مدى التحليل (افتراضي week)؛ getAnalysis نفسها
+// تتجاهل قيمة غير صالحة وتُرجع للافتراضي بصمت (لا حاجة للتحقق هنا أيضاً).
 app.get('/api/public/crypto/analysis/:id', cryptoLimit, async (req, res) => {
     const v = verifyBotToken(req.query?.token);
     if (!v?.u || !v?.p) return res.status(400).json({ error: 'غير مصرّح' });
     try {
-        const r = await getAnalysis(req.params.id);
+        const r = await getAnalysis(req.params.id, req.query?.timeframe);
         if (r.error) return res.status(400).json(r);
         res.json(r);
     } catch { res.status(500).json({ error: 'تعذّر التحليل الآن' }); }
@@ -2805,9 +2807,9 @@ app.get('/api/public/crypto/commentary/:id', cryptoCommentaryLimit, async (req, 
         if (Number.isFinite(quota.monthly) && getUsageCount(USAGE_DIR, v.u, 'botAi') >= quota.monthly) {
             return res.json({ text: null, quota: 'exhausted' });
         }
-        const a = await getAnalysis(req.params.id);
+        const a = await getAnalysis(req.params.id, req.query?.timeframe);
         if (a.error) return res.json({ text: null });
-        const text = await generateCommentary({ id: a.id, symbol: req.query?.symbol, price: a.price, sma7: a.sma7, sma25: a.sma25, rsi14: a.rsi14, signal: a.signal, reasonCode: a.reasonCode });
+        const text = await generateCommentary({ id: a.id, symbol: req.query?.symbol, price: a.price, smaShort: a.smaShort, smaLong: a.smaLong, rsi: a.rsi, signal: a.signal, reasonCode: a.reasonCode, timeframe: a.timeframe });
         if (text) { try { bumpUsage(USAGE_DIR, v.u, 'botAi'); } catch { /* العدّ لا يُسقط الرد */ } }
         res.json({ text });
     } catch { res.json({ text: null }); }

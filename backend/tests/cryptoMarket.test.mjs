@@ -4,7 +4,8 @@ import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     listMarkets, getAnalysis, findCoin, resetCryptoCache, searchCoins, isValidCoinId,
-    toDailyCloses, sma, rsi, buildSignal, SUPPORTED_COINS, MAX_WATCHLIST,
+    toDailyCloses, bucketCloses, sma, rsi, buildSignal, SUPPORTED_COINS, MAX_WATCHLIST,
+    TIMEFRAMES, DEFAULT_TIMEFRAME, isValidTimeframe,
     _marketsCacheForTest, _analysisCacheForTest,
 } from '../services/cryptoMarket.js';
 
@@ -54,31 +55,31 @@ test('rsi: بيانات غير كافية → null', () => {
 });
 
 test('buildSignal: RSI تشبّع شرائي (>=70) يحسم "sell" حتى لو الاتجاه صاعد', () => {
-    const r = buildSignal({ sma7: 120, sma25: 100, rsi14: 75 });
+    const r = buildSignal({ smaShort: 120, smaLong: 100, rsi: 75 });
     assert.equal(r.signal, 'sell');
     assert.equal(r.reasonCode, 'rsi_overbought');
 });
 
 test('buildSignal: RSI تشبّع بيعي (<=30) يحسم "buy" حتى لو الاتجاه هابط', () => {
-    const r = buildSignal({ sma7: 90, sma25: 100, rsi14: 25 });
+    const r = buildSignal({ smaShort: 90, smaLong: 100, rsi: 25 });
     assert.equal(r.signal, 'buy');
     assert.equal(r.reasonCode, 'rsi_oversold');
 });
 
-test('buildSignal: بلا تطرّف RSI، SMA7 > SMA25 → buy (اتجاه صاعد)', () => {
-    const r = buildSignal({ sma7: 110, sma25: 100, rsi14: 50 });
+test('buildSignal: بلا تطرّف RSI، smaShort > smaLong → buy (اتجاه صاعد)', () => {
+    const r = buildSignal({ smaShort: 110, smaLong: 100, rsi: 50 });
     assert.equal(r.signal, 'buy');
     assert.equal(r.reasonCode, 'sma_bullish');
 });
 
-test('buildSignal: بلا تطرّف RSI، SMA7 < SMA25 → sell (اتجاه هابط)', () => {
-    const r = buildSignal({ sma7: 90, sma25: 100, rsi14: 50 });
+test('buildSignal: بلا تطرّف RSI، smaShort < smaLong → sell (اتجاه هابط)', () => {
+    const r = buildSignal({ smaShort: 90, smaLong: 100, rsi: 50 });
     assert.equal(r.signal, 'sell');
     assert.equal(r.reasonCode, 'sma_bearish');
 });
 
 test('buildSignal: بيانات ناقصة كلياً → hold + insufficient_data', () => {
-    const r = buildSignal({ sma7: null, sma25: null, rsi14: null });
+    const r = buildSignal({ smaShort: null, smaLong: null, rsi: null });
     assert.equal(r.signal, 'hold');
     assert.equal(r.reasonCode, 'insufficient_data');
 });
@@ -189,22 +190,100 @@ test('getAnalysis: يعمل لأي عملة صالحة الصيغة (لا الث
     const r = await getAnalysis('shiba-inu');
     assert.equal(r.id, 'shiba-inu');
     assert.equal(r.stale, false);
-    assert.ok(r.sma7 != null);
+    assert.ok(r.smaShort != null);
 });
 
-test('getAnalysis: اتجاه صاعد معتدل → buy مع سعر/مؤشرات محسوبة', async () => {
+test('getAnalysis: اتجاه صاعد معتدل → buy مع سعر/مؤشرات محسوبة (المدى الافتراضي "week")', async () => {
     // 40 يوماً، اتجاه صاعد بتذبذب خفيف (يمنع RSI من الوصول لأقصى تطرّف)
     const start = Date.parse('2026-01-01T00:00:00Z');
     const values = Array.from({ length: 40 }, (_, i) => 100 + i * 0.5 + (i % 3 === 0 ? -1 : 0));
     mockOk({ prices: dailyPricesFrom(start, values) });
     const r = await getAnalysis('bitcoin');
+    assert.equal(r.timeframe, 'week', 'بلا تحديد → الافتراضي');
     assert.equal(r.stale, false);
-    assert.ok(r.sma7 != null && r.sma25 != null && r.rsi14 != null);
+    assert.ok(r.smaShort != null && r.smaLong != null && r.rsi != null);
+    assert.equal(r.smaShortPeriod, TIMEFRAMES.week.smaShortPeriod);
+    assert.equal(r.smaLongPeriod, TIMEFRAMES.week.smaLongPeriod);
+    assert.equal(r.periodUnit, 'day');
     assert.equal(r.price, values[values.length - 1]);
     assert.ok(['buy', 'sell', 'hold'].includes(r.signal));
     assert.ok(['rsi_overbought', 'rsi_oversold', 'sma_bullish', 'sma_bearish', 'insufficient_data'].includes(r.reasonCode));
-    assert.equal(r.recentCloses.length, 14, 'آخر 14 إغلاقاً يومياً للرسم المصغّر');
+    assert.equal(r.recentCloses.length, 14, 'آخر 14 نقطة للرسم المصغّر');
     assert.equal(r.recentCloses[r.recentCloses.length - 1], r.price);
+});
+
+// ─── المدى الزمني (day/week/long) ──────────────────────────────────
+test('isValidTimeframe: يقبل المدى الثلاثة فقط', () => {
+    assert.equal(isValidTimeframe('day'), true);
+    assert.equal(isValidTimeframe('week'), true);
+    assert.equal(isValidTimeframe('long'), true);
+    assert.equal(isValidTimeframe('month'), false);
+    assert.equal(isValidTimeframe(''), false);
+    assert.equal(isValidTimeframe(undefined), false);
+});
+
+test('getAnalysis: مدى غير صالح → يرجع للافتراضي بصمت (لا خطأ)', async () => {
+    const start = Date.parse('2026-01-01T00:00:00Z');
+    const values = Array.from({ length: 40 }, (_, i) => 100 + i);
+    mockOk({ prices: dailyPricesFrom(start, values) });
+    const r = await getAnalysis('bitcoin', 'not-a-real-timeframe');
+    assert.equal(r.timeframe, DEFAULT_TIMEFRAME);
+});
+
+test('getAnalysis: المدى "day" يطلب نافذة تاريخ أقصر ويستخدم دلواً بالساعة', async () => {
+    let requestedDays = null;
+    global.fetch = async (url) => {
+        requestedDays = new URL(url).searchParams.get('days');
+        // نقاط كل 10 دقائق على مدى يومين — كافية لتشكيل عدّة ساعات بعد التجميع بالدلو الساعي
+        const start = Date.parse('2026-01-01T00:00:00Z');
+        const points = Array.from({ length: 288 }, (_, i) => [start + i * 600000, 100 + i * 0.05]);
+        return { ok: true, json: async () => ({ prices: points }) };
+    };
+    const r = await getAnalysis('bitcoin', 'day');
+    assert.equal(requestedDays, String(TIMEFRAMES.day.historyDays));
+    assert.equal(r.timeframe, 'day');
+    assert.equal(r.periodUnit, 'hour');
+    assert.equal(r.smaShortPeriod, TIMEFRAMES.day.smaShortPeriod);
+});
+
+test('getAnalysis: المدى "long" يطلب نافذة تاريخ أطول بكثير وفترات SMA أكبر', async () => {
+    let requestedDays = null;
+    global.fetch = async (url) => {
+        requestedDays = new URL(url).searchParams.get('days');
+        const start = Date.parse('2025-01-01T00:00:00Z');
+        const values = Array.from({ length: 220 }, (_, i) => 100 + i * 0.2);
+        return { ok: true, json: async () => ({ prices: dailyPricesFrom(start, values) }) };
+    };
+    const r = await getAnalysis('bitcoin', 'long');
+    assert.equal(requestedDays, String(TIMEFRAMES.long.historyDays));
+    assert.equal(r.smaShortPeriod, 50);
+    assert.equal(r.smaLongPeriod, 200);
+    assert.ok(r.smaLong != null, 'تاريخ كافٍ لحساب SMA200');
+});
+
+test('getAnalysis: نفس العملة بمدىً مختلفَين لهما كاش مستقلّ (لا تداخل)', async () => {
+    let calls = 0;
+    global.fetch = async (url) => {
+        calls++;
+        const start = Date.parse('2026-01-01T00:00:00Z');
+        const values = Array.from({ length: 220 }, (_, i) => 100 + i * 0.1);
+        return { ok: true, json: async () => ({ prices: dailyPricesFrom(start, values) }) };
+    };
+    await getAnalysis('ethereum', 'week');
+    await getAnalysis('ethereum', 'long');
+    assert.equal(calls, 2, 'مدى مختلف = نداء منفصل، لا يُقرأ من كاش المدى الآخر');
+    // كل مدى يُقرأ من كاشه الخاص بعد ذلك بلا نداء إضافي
+    await getAnalysis('ethereum', 'week');
+    await getAnalysis('ethereum', 'long');
+    assert.equal(calls, 2, 'النداءات اللاحقة لنفس (عملة، مدى) تُقرأ من الكاش');
+});
+
+test('bucketCloses: يجمع حسب الساعة عند تمرير bucketMs بالساعة', () => {
+    const h1 = Date.parse('2026-01-01T10:00:00Z');
+    const h1Later = Date.parse('2026-01-01T10:45:00Z');
+    const h2 = Date.parse('2026-01-01T11:05:00Z');
+    const closes = bucketCloses([[h1, 100], [h1Later, 105], [h2, 110]], 3600 * 1000);
+    assert.deepEqual(closes, [105, 110], 'الساعة الأولى: آخر سعر 105، ثم الساعة الثانية');
 });
 
 test('getAnalysis: نداء ثانٍ ضمن مهلة الكاش لا يعيد fetch', async () => {
