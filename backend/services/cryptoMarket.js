@@ -1,6 +1,8 @@
 /**
  * 📊 cryptoMarket.js — بيانات سوق حقيقية (CoinGecko، بلا مفتاح) + تحليل فني
- * مبسّط (SMA7/SMA25/RSI14) يُنتج إشارة شراء/بيع/انتظار مفسَّرة بالعربية.
+ * مبسّط (SMA قصير/طويل + RSI) يُنتج إشارة شراء/بيع/انتظار مفسَّرة بالعربية،
+ * على ثلاثة مدىً زمنية يختارها المستخدم (يومي/أسبوعي/طويل المدى — انظر
+ * TIMEFRAMES أدناه).
  *
  * ليس تنفيذاً آلياً للتداول أبداً — تحليل وعرض فقط (قرار المستخدم صاحب
  * الحساب). كاش داخلي (Map، لكل عملة على حدة) يحمي CoinGecko من الاستهلاك
@@ -31,8 +33,20 @@ export const SUPPORTED_COINS = [
 export const MAX_WATCHLIST = 20; // سقف عدد العملات المتابَعة لكل مشروع
 
 const MARKETS_TTL_MS = 60 * 1000; // دقيقة — بيانات سعر/تغيّر 24س خفيفة
-const ANALYSIS_TTL_MS = 3 * 60 * 1000; // 3 دقائق — تستدعي جلب تاريخ أثقل
 const SEARCH_TTL_MS = 5 * 60 * 1000; // 5 دقائق — نتائج البحث لا تتغيّر بسرعة
+
+// 🕐 ثلاثة مدىً زمنية للتحليل — كل شخص يختار ما يناسب أفقه الاستثماري.
+// نفس منطق الإشارة (buildSignal) على فترات مختلفة: يومي (ساعات، حساس/
+// سريع التغيّر)، أسبوعي (الافتراضي، أيام قصيرة/متوسطة)، طويل المدى (أيام
+// أطول بكثير، أهدأ وأقل حساسية للتذبذب اليومي). مهلة الكاش تقصر كلما
+// قصر المدى (بيانات يومية تحتاج تحديثاً أكثر تكراراً من طويلة المدى).
+export const TIMEFRAMES = {
+    day: { periodUnit: 'hour', bucketMs: 3600 * 1000, historyDays: 2, smaShortPeriod: 6, smaLongPeriod: 24, rsiPeriod: 14, cacheTtlMs: 60 * 1000 },
+    week: { periodUnit: 'day', bucketMs: 86400 * 1000, historyDays: 40, smaShortPeriod: 7, smaLongPeriod: 25, rsiPeriod: 14, cacheTtlMs: 3 * 60 * 1000 },
+    long: { periodUnit: 'day', bucketMs: 86400 * 1000, historyDays: 220, smaShortPeriod: 50, smaLongPeriod: 200, rsiPeriod: 14, cacheTtlMs: 15 * 60 * 1000 },
+};
+export const DEFAULT_TIMEFRAME = 'week';
+export const isValidTimeframe = (t) => Object.prototype.hasOwnProperty.call(TIMEFRAMES, t);
 
 const marketsCache = new Map(); // coinId → { data: {id,symbol,name,price,change24h}, at }
 const analysisCache = new Map(); // coinId → { data, at }
@@ -53,16 +67,21 @@ async function fetchJson(url) {
     return res.json();
 }
 
-/** يختزل مصفوفة [timestamp, price] (أي دقّة زمنية) إلى إغلاق يومي واحد لكل يوم UTC. */
-export function toDailyCloses(prices) {
-    const byDay = new Map();
+/** يختزل مصفوفة [timestamp, price] (أي دقّة زمنية) إلى إغلاق واحد لكل نافذة زمنية (bucketMs). */
+export function bucketCloses(prices, bucketMs) {
+    const byBucket = new Map();
     for (const point of Array.isArray(prices) ? prices : []) {
         const ts = point?.[0], price = point?.[1];
         if (typeof ts !== 'number' || typeof price !== 'number') continue;
-        const day = new Date(ts).toISOString().slice(0, 10);
-        byDay.set(day, price); // آخر نقطة في اليوم تستبدل السابقة (البيانات مرتّبة زمنياً تصاعدياً)
+        const key = Math.floor(ts / bucketMs);
+        byBucket.set(key, price); // آخر نقطة في النافذة تستبدل السابقة (البيانات مرتّبة زمنياً تصاعدياً)
     }
-    return [...byDay.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([, p]) => p);
+    return [...byBucket.entries()].sort((a, b) => a[0] - b[0]).map(([, p]) => p);
+}
+
+/** إغلاق يومي واحد لكل يوم UTC — حالة خاصة شائعة من bucketCloses (يُستخدَم مباشرة في اختبارات سابقة). */
+export function toDailyCloses(prices) {
+    return bucketCloses(prices, 86400 * 1000);
 }
 
 export function sma(closes, period) {
@@ -88,11 +107,14 @@ export function rsi(closes, period = 14) {
 // نُعيد رمز سبب (لا جملة عربية جاهزة) — القالب (app.js) هو من يترجمه لنص
 // معروض، بنفس فلسفة كل النصوص الأخرى في القالب: مُضمَّنة بالواجهة لا في
 // استجابة الخادم، كي تلتقطها ترجمة templateLocalizer.js لموقع بالإنجليزية.
-export function buildSignal({ sma7, sma25, rsi14 }) {
-    if (rsi14 != null && rsi14 >= 70) return { signal: 'sell', reasonCode: 'rsi_overbought' };
-    if (rsi14 != null && rsi14 <= 30) return { signal: 'buy', reasonCode: 'rsi_oversold' };
-    if (sma7 != null && sma25 != null && sma7 > sma25) return { signal: 'buy', reasonCode: 'sma_bullish' };
-    if (sma7 != null && sma25 != null && sma7 < sma25) return { signal: 'sell', reasonCode: 'sma_bearish' };
+// أسماء عامة (smaShort/smaLong) لا "sma7/sma25" — نفس الدالة تُستخدَم لكل
+// المدى الزمنية الثلاثة (ساعات/أيام قصيرة/أيام طويلة)، فتخصيص الاسم للفترة
+// الأسبوعية فقط كان سيضلّل عند استخدامها للمدى اليومي أو الطويل.
+export function buildSignal({ smaShort, smaLong, rsi: rsiVal }) {
+    if (rsiVal != null && rsiVal >= 70) return { signal: 'sell', reasonCode: 'rsi_overbought' };
+    if (rsiVal != null && rsiVal <= 30) return { signal: 'buy', reasonCode: 'rsi_oversold' };
+    if (smaShort != null && smaLong != null && smaShort > smaLong) return { signal: 'buy', reasonCode: 'sma_bullish' };
+    if (smaShort != null && smaLong != null && smaShort < smaLong) return { signal: 'sell', reasonCode: 'sma_bearish' };
     return { signal: 'hold', reasonCode: 'insufficient_data' };
 }
 
@@ -141,23 +163,34 @@ export async function listMarkets(ids) {
     return { coins, stale: anyFetchFailed };
 }
 
-/** تحليل فني كامل لعملة واحدة: سعر + SMA7/SMA25 + RSI14 + إشارة مفسَّرة. */
-export async function getAnalysis(id) {
+/**
+ * تحليل فني كامل لعملة واحدة على مدى زمني مختار (day/week/long، افتراضي
+ * week): سعر + SMA قصير/طويل + RSI + إشارة مفسَّرة. كل مدى له فترات
+ * ونافذة تاريخ ومهلة كاش مختلفة (انظر TIMEFRAMES أعلاه).
+ */
+export async function getAnalysis(id, timeframe = DEFAULT_TIMEFRAME) {
     if (!isValidCoinId(id)) return { error: 'عملة غير صالحة' };
-    const cached = analysisCache.get(id);
-    if (cached && Date.now() - cached.at < ANALYSIS_TTL_MS) return { ...cached.data, stale: false };
+    const tf = isValidTimeframe(timeframe) ? timeframe : DEFAULT_TIMEFRAME;
+    const cfg = TIMEFRAMES[tf];
+    const cacheKey = `${id}:${tf}`;
+    const cached = analysisCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < cfg.cacheTtlMs) return { ...cached.data, stale: false };
     try {
-        const url = `${API_BASE}/coins/${id}/market_chart?vs_currency=usd&days=40`;
+        const url = `${API_BASE}/coins/${id}/market_chart?vs_currency=usd&days=${cfg.historyDays}`;
         const raw = await fetchJson(url);
-        const closes = toDailyCloses(raw?.prices);
+        const closes = bucketCloses(raw?.prices, cfg.bucketMs);
         if (!closes.length) throw new Error('لا بيانات تاريخية');
         const price = closes[closes.length - 1];
-        const sma7 = sma(closes, 7), sma25 = sma(closes, 25), rsi14 = rsi(closes, 14);
-        const { signal, reasonCode } = buildSignal({ sma7, sma25, rsi14 });
-        // آخر 14 إغلاقاً يومياً — للرسم البياني المصغّر (sparkline) في الواجهة، بلا نداء إضافي.
+        const smaShort = sma(closes, cfg.smaShortPeriod), smaLong = sma(closes, cfg.smaLongPeriod), rsiVal = rsi(closes, cfg.rsiPeriod);
+        const { signal, reasonCode } = buildSignal({ smaShort, smaLong, rsi: rsiVal });
+        // آخر 14 نقطة (ساعة أو يوم حسب المدى) — للرسم البياني المصغّر (sparkline)، بلا نداء إضافي.
         const recentCloses = closes.slice(-14);
-        const data = { id, price, sma7, sma25, rsi14, signal, reasonCode, recentCloses, updatedAt: Date.now() };
-        analysisCache.set(id, { data, at: Date.now() });
+        const data = {
+            id, timeframe: tf, price, smaShort, smaLong, rsi: rsiVal, signal, reasonCode, recentCloses,
+            smaShortPeriod: cfg.smaShortPeriod, smaLongPeriod: cfg.smaLongPeriod, rsiPeriod: cfg.rsiPeriod, periodUnit: cfg.periodUnit,
+            updatedAt: Date.now(),
+        };
+        analysisCache.set(cacheKey, { data, at: Date.now() });
         return { ...data, stale: false };
     } catch {
         if (cached) return { ...cached.data, stale: true };

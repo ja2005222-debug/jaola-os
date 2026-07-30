@@ -9,26 +9,28 @@
 import { smartChat } from '../agents/baseAgent.js';
 
 const TTL_MS = 5 * 60 * 1000; // يطابق مهلة كاش التحليل تقريباً
-const cache = new Map(); // "id|signal|reasonCode" → { text, at }
+const cache = new Map(); // "id|timeframe|signal|reasonCode" → { text, at }
 
 const SIGNAL_AR = { buy: 'شراء', sell: 'بيع', hold: 'انتظار' };
+const TIMEFRAME_AR = { day: 'يومي (ساعات)', week: 'أسبوعي', long: 'طويل المدى' };
 
 const SYSTEM_PROMPT = 'أنت محلّل بيانات فقط. مهمتك الوحيدة: كتابة جملتين أو ثلاث جمل عربية قصيرة ' +
     'تصف زخم/اتجاه عملة رقمية بلغة مبسّطة، بناءً على الأرقام المُعطاة فقط (سعر، متوسطات متحركة، ' +
-    'RSI، إشارة). ممنوع منعاً باتاً إعطاء أمر تنفيذي مباشر مثل "اشترِ الآن" أو "بع الآن" أو أي ' +
+    'RSI، إشارة، والمدى الزمني المطلوب — يومي/أسبوعي/طويل المدى، فاذكر أن القراءة خاصة بهذا المدى). ' +
+    'ممنوع منعاً باتاً إعطاء أمر تنفيذي مباشر مثل "اشترِ الآن" أو "بع الآن" أو أي ' +
     'توصية استثمارية ملزمة — صف الوضع فقط ودع القارئ يقرر بنفسه. لا تذكر أنك ذكاء اصطناعي ولا تكتب مقدمات، أجب بالجمل مباشرة.';
 
 /** يبني نص تعليق قصير، أو null عند تعذّر توليده (لا مزوّد/رصيد/عطل شبكة). llm قابل للحقن للاختبار. */
-export async function generateCommentary({ id, symbol, price, sma7, sma25, rsi14, signal, reasonCode }, llm = smartChat) {
+export async function generateCommentary({ id, symbol, price, smaShort, smaLong, rsi, signal, reasonCode, timeframe }, llm = smartChat) {
     if (!id || !signal) return null;
-    const key = `${id}|${signal}|${reasonCode}`;
+    const key = `${id}|${timeframe || 'week'}|${signal}|${reasonCode}`;
     const cached = cache.get(key);
     if (cached && Date.now() - cached.at < TTL_MS) return cached.text;
     try {
         const text = await llm(
             [
                 { role: 'system', content: SYSTEM_PROMPT },
-                { role: 'user', content: JSON.stringify({ symbol: symbol || id, price, sma7, sma25, rsi14, signal: SIGNAL_AR[signal] || signal }) },
+                { role: 'user', content: JSON.stringify({ symbol: symbol || id, price, smaShort, smaLong, rsi, signal: SIGNAL_AR[signal] || signal, timeframe: TIMEFRAME_AR[timeframe] || TIMEFRAME_AR.week }) },
             ],
             { max_tokens: 220, temperature: 0.5 }
         );
