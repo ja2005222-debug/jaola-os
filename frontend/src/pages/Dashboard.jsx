@@ -311,6 +311,12 @@ export default function Dashboard() {
   const [inbox, setInbox] = useState(null);
   const [inboxLoading, setInboxLoading] = useState(false);
   const [inboxUnread, setInboxUnread] = useState(0);
+  const [showNewsletterModal, setShowNewsletterModal] = useState(false);
+  const [newsletter, setNewsletter] = useState(null);
+  const [newsletterLoading, setNewsletterLoading] = useState(false);
+  const [nlSubject, setNlSubject] = useState('');
+  const [nlText, setNlText] = useState('');
+  const [sendingNewsletter, setSendingNewsletter] = useState(false);
   const [showGalleryModal, setShowGalleryModal] = useState(false);
   const [galleryTemplates, setGalleryTemplates] = useState(null);
   const [galleryFilter, setGalleryFilter] = useState('all');
@@ -989,6 +995,39 @@ export default function Dashboard() {
       setInbox({ error: true });
     }
     setInboxLoading(false);
+  };
+
+  // 📧 نشرة الموقع — مشتركو الموقع المنشور (يقابل صندوق الرسائل، لكن بثّ لا ردّ فردي)
+  const openNewsletterModal = async () => {
+    setShowNewsletterModal(true);
+    setNewsletterLoading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/site/subscribers?project=${encodeURIComponent(activeProject || '')}`, { headers: getHeaders() });
+      const d = await res.json();
+      setNewsletter(res.ok ? d : { error: true });
+    } catch {
+      setNewsletter({ error: true });
+    }
+    setNewsletterLoading(false);
+  };
+
+  const sendNewsletter = async () => {
+    if (sendingNewsletter || !nlText.trim()) return;
+    setSendingNewsletter(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/newsletter/send`, {
+        method: 'POST', headers: getHeaders(),
+        body: JSON.stringify({ project: activeProject, subject: nlSubject, text: nlText }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.success) {
+        addNotification(`✅ ${t('nlSentTo')} ${d.sent}`, 'success');
+        setNlSubject(''); setNlText('');
+      } else {
+        addNotification(`❌ ${d.error || t('nlSendFail')}`, 'info');
+      }
+    } catch { addNotification(`❌ ${t('nlSendFail')}`, 'info'); }
+    setSendingNewsletter(false);
   };
 
   // شارة غير المقروء — تُحدَّث مع تبديل المشروع
@@ -2251,6 +2290,50 @@ export default function Dashboard() {
     </div>
   );
 
+  const newsletterModal = showNewsletterModal && (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
+      onClick={e => e.target === e.currentTarget && setShowNewsletterModal(false)}>
+      <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:'22px 20px', width:'min(560px, 100%)', maxHeight:'90dvh', overflowY:'auto' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+          <h3 style={{ color:'#fff', fontSize:15, fontWeight:800 }}>📧 {t('nlTitle')}</h3>
+          <button onClick={() => setShowNewsletterModal(false)}
+            style={{ background:'transparent', border:'none', color:S.muted, fontSize:20, cursor:'pointer', lineHeight:1 }}>×</button>
+        </div>
+        <p style={{ color:S.muted, fontSize:11, marginBottom:14 }}>{t('nlSubtitle')}</p>
+
+        {newsletterLoading && <p style={{ color:S.muted, fontSize:13 }}>{t('nlLoading')}</p>}
+        {!newsletterLoading && newsletter?.error && <p style={{ color:S.danger, fontSize:13 }}>{t('serverUnreachable')}</p>}
+
+        {!newsletterLoading && newsletter && !newsletter.error && (
+          <>
+            <div style={{ background:'rgba(59,130,246,0.07)', border:'1px solid rgba(59,130,246,0.2)', borderRadius:11, padding:'12px 14px', marginBottom:16 }}>
+              <div style={{ color:'#60a5fa', fontSize:20, fontWeight:800, fontVariantNumeric:'tabular-nums' }}>{newsletter.count ?? 0}</div>
+              <div style={{ color:S.muted, fontSize:10, fontWeight:700 }}>{t('nlSubscribers')}</div>
+            </div>
+
+            {(newsletter.count ?? 0) === 0 ? (
+              <div style={{ color:S.muted, fontSize:12, background:'rgba(255,255,255,0.02)', border:`1px dashed ${S.border}`, borderRadius:11, padding:'18px 16px', textAlign:'center' }}>
+                {t('nlEmpty')}
+                <div style={{ marginTop:6, fontSize:10, color:'#334155' }}>{t('nlHint')}</div>
+              </div>
+            ) : (
+              <div>
+                <input value={nlSubject} onChange={e => setNlSubject(e.target.value)} placeholder={t('nlSubjectPh')}
+                  style={{ width:'100%', background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`, borderRadius:8, padding:'9px 11px', color:'#fff', fontSize:12, marginBottom:8 }} />
+                <textarea value={nlText} onChange={e => setNlText(e.target.value)} placeholder={t('nlTextPh')} rows={5}
+                  style={{ width:'100%', background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`, borderRadius:8, padding:'9px 11px', color:'#fff', fontSize:12, resize:'vertical', marginBottom:10 }} />
+                <button onClick={sendNewsletter} disabled={sendingNewsletter || !nlText.trim()}
+                  style={{ width:'100%', background:'rgba(59,130,246,0.12)', border:'1px solid rgba(59,130,246,0.35)', borderRadius:8, padding:'9px', color:'#93c5fd', fontSize:12, fontWeight:800, cursor: sendingNewsletter ? 'default' : 'pointer', opacity: sendingNewsletter || !nlText.trim() ? 0.6 : 1 }}>
+                  {sendingNewsletter ? `⏳ ${t('nlSending')}` : `📧 ${t('nlSend')} (${newsletter.count})`}
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   const knowledgeModal = showKnowledgeModal && (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
       onClick={e => e.target === e.currentTarget && setShowKnowledgeModal(false)}>
@@ -2675,6 +2758,7 @@ export default function Dashboard() {
         {knowledgeModal}
         {healthModal}
         {inboxModal}
+        {newsletterModal}
         {brandModal}
       {domainModal}
         {agentsModal}
@@ -2801,6 +2885,7 @@ export default function Dashboard() {
             <div style={{ position:'absolute', top:'110%', insetInlineEnd:0, zIndex:60, background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:11, padding:6, minWidth:200, boxShadow:'0 12px 32px rgba(0,0,0,0.5)' }}>
               {[
                 ['📬', t('inboxTitle'), openInboxModal, inboxUnread],
+                ['📧', t('nlTitle'), openNewsletterModal, 0],
                 ['📣', t('mkTitle'), openMarketingModal, 0],
                 ['🤖', t('botStudioTitle'), openBotModal, 0],
                 ['🧩', t('agTitle'), openAgentsModal, 0],
@@ -3129,6 +3214,7 @@ export default function Dashboard() {
       {knowledgeModal}
       {healthModal}
       {inboxModal}
+      {newsletterModal}
       {brandModal}
       {domainModal}
       {agentsModal}

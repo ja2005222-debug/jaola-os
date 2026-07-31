@@ -78,6 +78,7 @@ import { listStarters, selectStarter, resolveStack, STARTERS } from './agents/st
 import { fetchStarter, fetchRepoFiles, parseRepoUrl } from './agents/starterFetch.js';
 import * as siteCms from './services/siteCms.js';
 import { recordMessage, recordVisit, readInbox, markSeen, visitSummary, unreadCount } from './services/siteInbox.js';
+import { subscribe as subscribeNewsletter, listSubscribers as listNewsletterSubscribers, unsubscribe as unsubscribeNewsletter } from './services/newsletterSubscribers.js';
 import { installSiteConnect } from './services/siteConnect.js';
 import { installDataSync } from './services/dataSync.js';
 import { readStore as readAppDataStore, writeKey as writeAppDataKey } from './services/appData.js';
@@ -2648,6 +2649,7 @@ app.post('/api/site/asset', (req, res) => {
 //    (توكن موقّع بهوية المشروع + rate limit) ولوحة قراءة للمالك.
 // ═══════════════════════════════════════════════════════════════════
 const SITEDATA_DIR = path.join(BASE_WORKSPACE, '.sitedata');
+const NEWSLETTERDATA_DIR = path.join(BASE_WORKSPACE, '.newsletterdata');
 
 // زيارة من موقع منشور (snippet يرسل مرّة لكل جلسة زائر) — الردّ صامت دائماً
 app.post('/api/public/site-hit', publicSiteLimit, (req, res) => {
@@ -2680,6 +2682,16 @@ app.post('/api/public/site-message', publicSiteLimit, (req, res) => {
                 } catch { /* الإشعار لا يعطّل الاستقبال أبداً */ }
             })();
         }
+    } catch { res.json({ success: false }); }
+});
+
+// اشتراك نشرة من موقع منشور (بريد فقط — لا صندوق رسائل)
+app.post('/api/public/site-subscribe', publicSiteLimit, (req, res) => {
+    const v = verifyBotToken(req.body?.token);
+    if (!v?.u || !v?.p) return res.status(204).end();
+    try {
+        const r = subscribeNewsletter(NEWSLETTERDATA_DIR, v.u, v.p, req.body?.email);
+        res.json({ success: !r.error });
     } catch { res.json({ success: false }); }
 });
 
@@ -3082,6 +3094,46 @@ app.get('/api/site/inbox', verifyToken, validateProjectOwnership, (req, res) => 
 app.post('/api/site/inbox/seen', verifyToken, validateProjectOwnership, (req, res) => {
     markSeen(SITEDATA_DIR, req.user.username, req.activeProject);
     res.json({ success: true });
+});
+
+// المالك يقرأ قائمة مشتركي نشرة موقعه
+app.get('/api/site/subscribers', verifyToken, validateProjectOwnership, (req, res) => {
+    const subscribers = listNewsletterSubscribers(NEWSLETTERDATA_DIR, req.user.username, req.activeProject);
+    res.json({ success: true, subscribers, count: subscribers.length });
+});
+
+// المالك يحذف مشتركاً يدوياً
+app.post('/api/site/subscribers/remove', verifyToken, validateProjectOwnership, (req, res) => {
+    const r = unsubscribeNewsletter(NEWSLETTERDATA_DIR, req.user.username, req.activeProject, req.body?.email);
+    res.json(r);
+});
+
+// 📧 إرسال نشرة لكل مشتركي الموقع دفعة واحدة — بحصة الخطة الشهرية (نفس حصة emails)
+app.post('/api/newsletter/send', verifyToken, validateProjectOwnership, async (req, res) => {
+    try {
+        const { subject, text } = req.body || {};
+        if (!text || typeof text !== 'string' || !text.trim()) return res.status(400).json({ error: 'نص النشرة مطلوب.' });
+        if (!mailReady()) return res.status(503).json({ error: 'البريد غير مُفعّل — اضبط RESEND_API_KEY في بيئة الخادم.', notConfigured: true });
+        const username = req.user.username;
+        const subscribers = listNewsletterSubscribers(NEWSLETTERDATA_DIR, username, req.activeProject);
+        if (!subscribers.length) return res.status(400).json({ error: 'لا يوجد مشتركون بعد.' });
+        const owner = await DB.findUser(username).catch(() => null);
+        const q = emailQuota(owner);
+        const used = getUsageCount(USAGE_DIR, username, 'emails');
+        const remaining = Number.isFinite(q.monthly) ? Math.max(0, q.monthly - used) : Infinity;
+        if (remaining <= 0) return res.status(403).json({ error: `حصة بريد خطتك (${q.monthly}/شهر) نفدت — رقِّ خطتك للمزيد.` });
+
+        const finalSubject = (typeof subject === 'string' && subject.trim()) ? subject.trim() : `نشرة ${req.activeProject}`;
+        const targets = subscribers.slice(0, remaining);
+        let sent = 0, failed = 0;
+        for (const s of targets) {
+            const r = await sendMail({ to: s.email, subject: finalSubject, text: text.trim(), replyTo: owner?.email });
+            if (r.ok) { sent++; bumpUsage(USAGE_DIR, username, 'emails'); } else { failed++; }
+        }
+        res.json({ success: true, sent, failed, totalSubscribers: subscribers.length, skippedByQuota: subscribers.length - targets.length });
+    } catch (err) {
+        res.status(500).json({ error: 'تعذّر إرسال النشرة: ' + err.message });
+    }
 });
 
 // ─── معالج أخطاء عام ────────────────────────────────────────────────

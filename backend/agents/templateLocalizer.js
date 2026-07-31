@@ -167,6 +167,11 @@ const DICT = [
     ['إلكترونيات', 'Electronics'],
     ['أزياء', 'Fashion'],
     ['منزل', 'Home'],
+    ['📬 عروضنا وخصوماتنا أولاً بأول', '📬 Our offers and discounts, first'],
+    ['اشترك في نشرتنا البريدية — بلا إزعاج، إلغاء بضغطة.', 'Subscribe to our newsletter — no spam, unsubscribe anytime.'],
+    ['أدخل بريداً صالحاً', 'Please enter a valid email'],
+    ['✅ تم الاشتراك — شكراً لك!', '✅ Subscribed — thank you!'],
+    ['بريدك الإلكتروني', 'Your email'],
 
     // ── توصيل الطعام ───────────────────────────────────────────────
     ['اختر من مطاعمنا المميّزة، أضف لسلّتك، وتتبّع طلبك لحظةً بلحظة', 'Pick from our featured restaurants, fill your cart, and track your order live'],
