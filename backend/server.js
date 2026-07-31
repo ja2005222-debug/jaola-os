@@ -15,6 +15,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 import User from './models/User.js';
 import Project from './models/Project.js';
+import BotTenant from './models/BotTenant.js';
 import Conversation from './models/Conversation.js';
 
 import {
@@ -54,6 +55,7 @@ import {
 } from './services/postScheduler.js';
 import { generateSocialPosts, draftInboxReply, extractSiteFacts } from './agents/marketingAgent.js';
 import { signBotToken, verifyBotToken } from './agents/jaolaBotToken.js';
+import { genTenantId, isValidTenantId, sanitizeTenantConfig } from './services/botTenants.js';
 import { smartChat } from './agents/baseAgent.js';
 import { generateBackend, generateFrontendAPIIntegration } from './agents/backendAgent.js';
 import { needsBackend } from './agents/knowledgeEngine.js';
@@ -351,7 +353,36 @@ const DB = {
         if (!enc) return null;
         try { return { token: decryptSecret(enc), githubLogin }; }
         catch { return null; }
-    }
+    },
+
+    // ─── 🤖 مستأجرو جولا بوت المستقلّون — ميزة تتطلّب Mongo دائماً (سجلّ
+    // متعدّد المستأجرين حقيقي عبر خادم واحد)، بلا مسار offline بديل ───────
+    async createBotTenant(ownerUsername, config) {
+        if (!this._isOnline()) return null;
+        try {
+            let tenantId = genTenantId();
+            while (await BotTenant.findOne({ tenantId })) tenantId = genTenantId(); // تصادم نادر جداً
+            return await BotTenant.create({ tenantId, ownerUsername, ...config });
+        } catch (e) { console.warn('[DB.createBotTenant] فشل:', e.message); return null; }
+    },
+    async findBotTenant(tenantId) {
+        if (!this._isOnline() || !isValidTenantId(tenantId)) return null;
+        try { return await BotTenant.findOne({ tenantId }); } catch { return null; }
+    },
+    async listBotTenants(ownerUsername) {
+        if (!this._isOnline()) return [];
+        try { return await BotTenant.find({ ownerUsername }).sort({ createdAt: -1 }).lean(); } catch { return []; }
+    },
+    async updateBotTenant(tenantId, ownerUsername, config) {
+        if (!this._isOnline()) return null;
+        try {
+            return await BotTenant.findOneAndUpdate({ tenantId, ownerUsername }, { $set: config }, { new: true });
+        } catch { return null; }
+    },
+    async deleteBotTenant(tenantId, ownerUsername) {
+        if (!this._isOnline()) return false;
+        try { const r = await BotTenant.deleteOne({ tenantId, ownerUsername }); return r.deletedCount > 0; } catch { return false; }
+    },
 };
 
 // مخازن offline مؤقتة (بلا Mongo) — لا تدوم بعد إعادة التشغيل
@@ -1647,6 +1678,59 @@ app.get('/api/jaola-bot/embed.js', (req, res) => {
     }
 });
 
+// ─── 🤖 مستأجرو جولا بوت المستقلّون (JAOLA_BOT_PRODUCT_ROADMAP.md § 2.2) ───
+// عميل من خارج jaola يلصق سطر تضمين واحد في موقعه — بلا مشروع jaola. يتطلّب
+// Mongo دائماً (سجلّ مستأجرين حقيقي)؛ لا يمسّ مسار مشاريع jaola الحالي إطلاقاً.
+const noDbTenant = (res) => res.status(503).json({ error: 'هذه الميزة تتطلّب اتصالاً دائماً بقاعدة البيانات (غير متاحة الآن).' });
+
+app.post('/api/bot-tenants', verifyToken, async (req, res) => {
+    if (!DB._isOnline()) return noDbTenant(res);
+    try {
+        const cfg = sanitizeTenantConfig(req.body || {});
+        const doc = await DB.createBotTenant(req.user.username, cfg);
+        if (!doc) return res.status(500).json({ error: 'تعذّر إنشاء المستأجر.' });
+        res.json({ success: true, tenantId: doc.tenantId, embedUrl: `${publicBaseOf(req)}/api/jaola-bot/tenant-embed.js?id=${doc.tenantId}` });
+    } catch (err) { res.status(500).json({ error: 'تعذّر إنشاء المستأجر: ' + err.message }); }
+});
+
+app.get('/api/bot-tenants', verifyToken, async (req, res) => {
+    if (!DB._isOnline()) return res.json({ success: true, tenants: [] });
+    const list = await DB.listBotTenants(req.user.username);
+    const base = publicBaseOf(req);
+    res.json({ success: true, tenants: list.map(t => ({ ...t, embedUrl: `${base}/api/jaola-bot/tenant-embed.js?id=${t.tenantId}` })) });
+});
+
+app.put('/api/bot-tenants/:id', verifyToken, async (req, res) => {
+    if (!DB._isOnline()) return noDbTenant(res);
+    if (!isValidTenantId(req.params.id)) return res.status(400).json({ error: 'معرّف غير صالح.' });
+    const cfg = sanitizeTenantConfig(req.body || {});
+    const doc = await DB.updateBotTenant(req.params.id, req.user.username, cfg);
+    if (!doc) return res.status(404).json({ error: 'المستأجر غير موجود أو لا يخصّ حسابك.' });
+    res.json({ success: true });
+});
+
+app.delete('/api/bot-tenants/:id', verifyToken, async (req, res) => {
+    if (!DB._isOnline()) return noDbTenant(res);
+    const ok = await DB.deleteBotTenant(req.params.id, req.user.username);
+    res.json({ success: ok });
+});
+
+// حزمة تضمين مستأجر مستقلّ — سطر واحد في أي موقع خارج jaola تماماً
+app.get('/api/jaola-bot/tenant-embed.js', async (req, res) => {
+    res.type('application/javascript');
+    const tenantId = String(req.query.id || '');
+    if (!isValidTenantId(tenantId)) return res.status(404).send('// JAOLA Bot: not found');
+    const tenant = await DB.findBotTenant(tenantId);
+    if (!tenant) return res.status(404).send('// JAOLA Bot: not found');
+    try {
+        const js = buildEmbedBundle(
+            { brandName: tenant.brandName, emoji: tenant.emoji, welcome: tenant.welcome, quick: tenant.quick, faq: tenant.faq, color: tenant.color, ai: !!tenant.apiEnabled },
+            { apiBase: `${publicBaseOf(req)}/api/jaola-bot/chat`, token: tenantId }
+        );
+        res.set('Cache-Control', 'public, max-age=300').send(js);
+    } catch { res.status(500).send('// JAOLA Bot: error'); }
+});
+
 // 🤖 إضافة «جولا بوت» عند الطلب لمشروع موجود (مساعد محادثة offline + API-ready)
 app.post('/api/jaola-bot/generate', verifyToken, validateProjectOwnership, async (req, res) => {
     const { brandName, emoji, apiBase, faq, quick, welcome, fallback, ai } = req.body || {};
@@ -1692,20 +1776,32 @@ app.post('/api/jaola-bot/chat', botChatLimit, async (req, res) => {
         if (!message || typeof message !== 'string' || !message.trim()) {
             return res.status(400).json({ reply: null });
         }
+        // مصدر الهوية: توكن موقّع (مشاريع jaola — المسار الأصلي بلا أي تغيير)،
+        // وإلا مستأجر مستقلّ بمعرّفه الخام من السجلّ (خارج jaola تماماً).
         const claims = verifyBotToken(token);
-        if (!claims || !claims.p) return res.status(401).json({ reply: null });
+        let ownerUsername, brand, tenantApiEnabled = true;
+        if (claims && claims.p) {
+            ownerUsername = claims.u;
+            brand = (claims.b || claims.p).toString().slice(0, 40);
+        } else {
+            const tenant = await DB.findBotTenant(String(token || ''));
+            if (!tenant) return res.status(401).json({ reply: null });
+            ownerUsername = tenant.ownerUsername;
+            brand = (tenant.brandName || 'مساعدك').toString().slice(0, 40);
+            tenantApiEnabled = !!tenant.apiEnabled;
+        }
+        if (!tenantApiEnabled) return res.json({ reply: null }); // مستأجر عطّل الذكاء الحيّ — قاعدته الثابتة فقط من طرف العميل
 
-        // 💳 حصة الذكاء الحيّ الشهرية لصاحب الموقع — عند النفاد يرتدّ الودجت
+        // 💳 حصة الذكاء الحيّ الشهرية لصاحب الحساب — عند النفاد يرتدّ الودجت
         // لقاعدته الداخلية بصمت (الزائر لا يرى انقطاعاً، والمالك يرقّي خطته)
-        if (claims.u) {
-            const owner = await DB.findUser(claims.u).catch(() => null);
+        if (ownerUsername) {
+            const owner = await DB.findUser(ownerUsername).catch(() => null);
             const quota = botAiQuota(owner);
-            if (Number.isFinite(quota.monthly) && getUsageCount(USAGE_DIR, claims.u, 'botAi') >= quota.monthly) {
+            if (Number.isFinite(quota.monthly) && getUsageCount(USAGE_DIR, ownerUsername, 'botAi') >= quota.monthly) {
                 return res.json({ reply: null, quota: 'exhausted' });
             }
         }
 
-        const brand = (claims.b || claims.p).toString().slice(0, 40);
         const msg = message.trim().slice(0, 500);
         const system = `أنت مساعد خدمة عملاء لموقع «${brand}». أجب بإيجاز واحترافية وبنفس لغة الزائر (عربي أو إنجليزي حسب سؤاله). التزم بنطاق الموقع وخدماته، ولا تختلق معلومات أو أسعاراً؛ إن لم تكن متأكّداً، اقترح بلطف التواصل المباشر مع الموقع.`;
         const reply = await smartChat(
@@ -1713,8 +1809,8 @@ app.post('/api/jaola-bot/chat', botChatLimit, async (req, res) => {
             { max_tokens: 300, temperature: 0.4 }
         );
         const finalReply = (reply || '').toString().trim() || null;
-        if (finalReply && claims.u) {
-            try { bumpUsage(USAGE_DIR, claims.u, 'botAi'); } catch { /* العدّ لا يُسقط الرد */ }
+        if (finalReply && ownerUsername) {
+            try { bumpUsage(USAGE_DIR, ownerUsername, 'botAi'); } catch { /* العدّ لا يُسقط الرد */ }
         }
         res.json({ reply: finalReply });
     } catch {
