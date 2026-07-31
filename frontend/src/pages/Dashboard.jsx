@@ -311,6 +311,12 @@ export default function Dashboard() {
   const [inbox, setInbox] = useState(null);
   const [inboxLoading, setInboxLoading] = useState(false);
   const [inboxUnread, setInboxUnread] = useState(0);
+  const [showTenantModal, setShowTenantModal] = useState(false);
+  const [tenants, setTenants] = useState(null);
+  const [tenantsLoading, setTenantsLoading] = useState(false);
+  const [newTenantName, setNewTenantName] = useState('');
+  const [newTenantEmoji, setNewTenantEmoji] = useState('🤖');
+  const [creatingTenant, setCreatingTenant] = useState(false);
   const [showNewsletterModal, setShowNewsletterModal] = useState(false);
   const [newsletter, setNewsletter] = useState(null);
   const [newsletterLoading, setNewsletterLoading] = useState(false);
@@ -1028,6 +1034,45 @@ export default function Dashboard() {
       }
     } catch { addNotification(`❌ ${t('nlSendFail')}`, 'info'); }
     setSendingNewsletter(false);
+  };
+
+  // 🤖 مستأجرو جولا بوت المستقلّون — مساعد لأي موقع خارج jaola، بلا مشروع
+  const openTenantModal = async () => {
+    setShowTenantModal(true);
+    setTenantsLoading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/bot-tenants`, { headers: getHeaders() });
+      const d = await res.json();
+      setTenants(res.ok ? (d.tenants || []) : { error: true });
+    } catch { setTenants({ error: true }); }
+    setTenantsLoading(false);
+  };
+
+  const createTenant = async () => {
+    if (creatingTenant) return;
+    setCreatingTenant(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/bot-tenants`, {
+        method: 'POST', headers: getHeaders(),
+        body: JSON.stringify({ brandName: newTenantName || undefined, emoji: newTenantEmoji || undefined }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.success) {
+        addNotification(t('tenantCreated'), 'success');
+        setNewTenantName('');
+        openTenantModal();
+      } else {
+        addNotification(`❌ ${d.error || t('tenantCreateFail')}`, 'info');
+      }
+    } catch { addNotification(`❌ ${t('tenantCreateFail')}`, 'info'); }
+    setCreatingTenant(false);
+  };
+
+  const deleteTenant = async (id) => {
+    try {
+      await fetch(`${BACKEND_URL}/api/bot-tenants/${id}`, { method: 'DELETE', headers: getHeaders() });
+      openTenantModal();
+    } catch {}
   };
 
   // شارة غير المقروء — تُحدَّث مع تبديل المشروع
@@ -2334,6 +2379,70 @@ export default function Dashboard() {
     </div>
   );
 
+  const tenantModal = showTenantModal && (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
+      onClick={e => e.target === e.currentTarget && setShowTenantModal(false)}>
+      <div style={{ background:'#0d1117', border:`1px solid ${S.border}`, borderRadius:14, padding:'22px 20px', width:'min(600px, 100%)', maxHeight:'90dvh', overflowY:'auto' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+          <h3 style={{ color:'#fff', fontSize:15, fontWeight:800 }}>🌍 {t('tenantTitle')}</h3>
+          <button onClick={() => setShowTenantModal(false)}
+            style={{ background:'transparent', border:'none', color:S.muted, fontSize:20, cursor:'pointer', lineHeight:1 }}>×</button>
+        </div>
+        <p style={{ color:S.muted, fontSize:11, marginBottom:14 }}>{t('tenantSubtitle')}</p>
+
+        {tenantsLoading && <p style={{ color:S.muted, fontSize:13 }}>{t('tenantLoading')}</p>}
+        {!tenantsLoading && tenants?.error && <p style={{ color:S.danger, fontSize:13 }}>{t('serverUnreachable')}</p>}
+
+        {!tenantsLoading && Array.isArray(tenants) && (
+          <>
+            <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:16 }}>
+              {tenants.length === 0 && (
+                <div style={{ color:S.muted, fontSize:12, background:'rgba(255,255,255,0.02)', border:`1px dashed ${S.border}`, borderRadius:11, padding:'14px 16px', textAlign:'center' }}>
+                  {t('tenantEmpty')}
+                </div>
+              )}
+              {tenants.map(tn => (
+                <div key={tn.tenantId} style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:10, padding:'10px 12px' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <span style={{ fontSize:16 }}>{tn.emoji}</span>
+                    <span style={{ color:'#fff', fontSize:13, fontWeight:700 }}>{tn.brandName}</span>
+                    <button onClick={() => deleteTenant(tn.tenantId)}
+                      style={{ marginInlineStart:'auto', background:'transparent', border:'none', color:'#f87171', fontSize:11, cursor:'pointer' }}>
+                      🗑️ {t('tenantDelete')}
+                    </button>
+                  </div>
+                  <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:6 }}>
+                    <code style={{ flex:1, background:'rgba(0,0,0,0.3)', borderRadius:6, padding:'5px 8px', color:'#94a3b8', fontSize:10, direction:'ltr', overflowX:'auto', whiteSpace:'nowrap' }}>
+                      {`<script src="${tn.embedUrl}"></script>`}
+                    </code>
+                    <button onClick={() => { navigator.clipboard?.writeText(`<script src="${tn.embedUrl}"></script>`).catch(() => {}); addNotification(t('msgCopied'), 'success'); }}
+                      style={{ background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)', borderRadius:6, padding:'4px 10px', color:'#34d399', fontSize:10, fontWeight:700, cursor:'pointer' }}>
+                      📋
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ borderTop:`1px solid ${S.border}`, paddingTop:14 }}>
+              <p style={{ color:'#e2e8f0', fontSize:12, fontWeight:700, marginBottom:8 }}>{t('tenantNewTitle')}</p>
+              <div style={{ display:'flex', gap:8 }}>
+                <input value={newTenantEmoji} onChange={e => setNewTenantEmoji(e.target.value)} maxLength={4}
+                  style={{ width:52, background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`, borderRadius:8, padding:'9px', color:'#fff', fontSize:16, textAlign:'center' }} />
+                <input value={newTenantName} onChange={e => setNewTenantName(e.target.value)} placeholder={t('tenantNamePh')}
+                  style={{ flex:1, background:'rgba(255,255,255,0.03)', border:`1px solid ${S.border}`, borderRadius:8, padding:'9px 11px', color:'#fff', fontSize:12 }} />
+                <button onClick={createTenant} disabled={creatingTenant}
+                  style={{ background:'rgba(59,130,246,0.12)', border:'1px solid rgba(59,130,246,0.35)', borderRadius:8, padding:'9px 16px', color:'#93c5fd', fontSize:12, fontWeight:800, cursor: creatingTenant ? 'default' : 'pointer', opacity: creatingTenant ? 0.6 : 1, whiteSpace:'nowrap' }}>
+                  {creatingTenant ? `⏳` : `+ ${t('tenantCreate')}`}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   const knowledgeModal = showKnowledgeModal && (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
       onClick={e => e.target === e.currentTarget && setShowKnowledgeModal(false)}>
@@ -2759,6 +2868,7 @@ export default function Dashboard() {
         {healthModal}
         {inboxModal}
         {newsletterModal}
+        {tenantModal}
         {brandModal}
       {domainModal}
         {agentsModal}
@@ -2886,6 +2996,7 @@ export default function Dashboard() {
               {[
                 ['📬', t('inboxTitle'), openInboxModal, inboxUnread],
                 ['📧', t('nlTitle'), openNewsletterModal, 0],
+                ['🌍', t('tenantTitle'), openTenantModal, 0],
                 ['📣', t('mkTitle'), openMarketingModal, 0],
                 ['🤖', t('botStudioTitle'), openBotModal, 0],
                 ['🧩', t('agTitle'), openAgentsModal, 0],
@@ -3215,6 +3326,7 @@ export default function Dashboard() {
       {healthModal}
       {inboxModal}
       {newsletterModal}
+      {tenantModal}
       {brandModal}
       {domainModal}
       {agentsModal}
