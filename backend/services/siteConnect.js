@@ -3,6 +3,9 @@
  *   1. عدّاد زيارات: إشارة واحدة لكل جلسة زائر (sessionStorage).
  *   2. صندوق النماذج: يلتقط إرسال نماذج «تواصل معنا» (طور capture — لا يعطّل
  *      سلوك الموقع نفسه) ويبعثها لصندوق المالك في JAOLA.
+ *   3. اشتراك النشرة: يلتقط نموذج بريد واحد فقط (بلا اسم/رسالة) كاشتراك
+ *      نشرة لا كرسالة تواصل — ويلتقط أيضاً أي عنصر بسمة data-jaola-newsletter
+ *      (يغطّي نمط القوالب الجاهزة: زرّ data-action بدل <form> فعلي).
  *
  * التوكن موقّع بهوية المشروع (ليس سرّاً — يمنع الانتحال لا الإخفاء)،
  * ونماذج الدخول/الأدمن مستثناة (password أو حاوية admin).
@@ -42,7 +45,7 @@ export function buildConnectJS({ apiBase, token }) {
   } catch (e) { send('/api/public/site-hit', { page: location.pathname }); }
 
   // ── التقاط نماذج التواصل (طور capture: يعمل حتى مع preventDefault) ──
-  var lastSent = 0;
+  var lastSent = 0, lastSub = 0;
   document.addEventListener('submit', function (ev) {
     var form = ev.target;
     if (!form || form.tagName !== 'FORM') return;
@@ -59,12 +62,40 @@ export function buildConnectJS({ apiBase, token }) {
       else if (/name|اسم/.test(hint)) { if (!name) name = v; }
       else extra.push(v);
     }
-    if (!message && !contact) return;                                 // ليس نموذج تواصل
-    if (!message) message = extra.join(' | ');
+    if (!message && !contact) return;                                 // ليس نموذج تواصل ولا نشرة
     var now = Date.now();
+    // نموذج نشرة: بريد واحد فقط بلا اسم/رسالة/حقول أخرى، أو مُعلَّم صراحة
+    var isNewsletter = contact.indexOf('@') !== -1 && !message && !name && !extra.length &&
+      (form.hasAttribute('data-jaola-newsletter') || !!form.closest('[data-jaola-newsletter]') ||
+       /نشرة|newsletter|subscribe|اشترك/i.test((form.className || '') + ' ' + (form.id || '')));
+    if (isNewsletter) {
+      if (now - lastSub < 3000) return;
+      lastSub = now;
+      send('/api/public/site-subscribe', { email: contact });
+      return;
+    }
+    if (!message) message = extra.join(' | ');
     if (now - lastSent < 3000) return;                                // ضد الإرسال المزدوج
     lastSent = now;
     send('/api/public/site-message', { name: name, contact: contact, message: message, page: location.pathname });
+  }, true);
+
+  // ── نمط القوالب الجاهزة: زرّ data-action (لا <form> فعلي) داخل حاوية
+  // مُعلَّمة data-jaola-newsletter — يقرأ أقرب حقل بريد داخلها ويبعثه ──
+  document.addEventListener('click', function (ev) {
+    var el = ev.target && ev.target.closest
+      ? ev.target.closest('[data-jaola-newsletter] button, [data-jaola-newsletter] [data-action], [data-jaola-newsletter][data-action]')
+      : null;
+    if (!el) return;
+    var box = el.closest('[data-jaola-newsletter]');
+    if (!box) return;
+    var input = box.querySelector('input[type=email]') || box.querySelector('input');
+    var email = input ? (input.value || '').trim() : '';
+    if (!email || email.indexOf('@') === -1) return;
+    var now = Date.now();
+    if (now - lastSub < 3000) return;
+    lastSub = now;
+    send('/api/public/site-subscribe', { email: email });
   }, true);
 })();
 `;

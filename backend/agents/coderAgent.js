@@ -32,8 +32,16 @@ function langMeta(lang = 'en') {
 // ============================================================
 // 🎨 System Prompt الاحترافي — قلب جودة JAOLA OS (يتكيّف مع لغة المستخدم)
 // ============================================================
-function buildCoderSystemPrompt(lang = 'en') {
+export function buildCoderSystemPrompt(lang = 'en', libraryAware = false) {
     const L = langMeta(lang);
+    // 🔗 مشروع كبير متعدد الأقسام: نعتمد Tailwind (نفس رابط سجلّ المكتبات
+    // libraryRegistry.js عبر data-jlib idempotent) بدل CSS مخصّص شامل —
+    // فتصبح التعديلات الجراحية اللاحقة على قسم واحد (coreEditCodePlan) أبسط
+    // وأمتن: تغيير أصناف utility بدل إعادة كتابة ملف CSS كبير. المشاريع
+    // العادية (أصغر) تبقى على القاعدة الحالية: تصميم مخصّص فريد بلا إطار.
+    const frameworkRule = libraryAware
+        ? `- **مشروع كبير متعدد الأقسام**: استعن بإطار Tailwind CSS عبر Play CDN — أضف \`<script src="https://cdn.tailwindcss.com" data-jlib="tailwind"></script>\` في <head>، وصمّم أغلب التخطيط بأصناف utility مباشرة في HTML (bg-/text-/flex/grid/p-/rounded/shadow...). اجعل styles.css محدوداً لتخصيصات لا يوفّرها Tailwind فقط (خط العلامة، أنيميشن خاصة، تدرّجات مميّزة) — لا تكرّر ما تغطّيه أصناف Tailwind.`
+        : `- **عصري ومميز**: لا تستخدم Bootstrap أو أي framework CSS`;
     return `أنت مهندس ويب خبير متخصص في بناء مواقع HTML/CSS/JavaScript احترافية ومتكاملة.
 
 ## 🌐 لغة الموقع (قاعدة حرجة لا تُخالَف):
@@ -94,7 +102,7 @@ function buildCoderSystemPrompt(lang = 'en') {
 - مثال: تطبيق طيران = نموذج بحث (من/إلى/تاريخ) يُصفّي مصفوفة رحلات ويعرض النتائج المطابقة ببطاقات.
 
 ## معايير التصميم البصري:
-- **عصري ومميز**: لا تستخدم Bootstrap أو أي framework CSS
+${frameworkRule}
 - **صور**: استخدم Unsplash بـ https://images.unsplash.com/photo-ID?w=800&q=80 (أضف صوراً واقعية مناسبة للمحتوى)
 - **الهيدر**: شريط تنقل ثابت (sticky) بخلفية شبه شفافة مع backdrop-filter
 - **Hero section**: كبير ومؤثر مع صورة خلفية أو تدرج لوني جذاب
@@ -165,7 +173,9 @@ export async function coreGenerateCodePlan(prompt, currentCodeContext, visualIde
     // 🆕 استخدام Knowledge Engine لتوليد سياق غني ومخصص
     const knowledgeContext = buildContextPrompt(prompt);
     const L = langMeta(lang);
-    const systemPrompt = buildCoderSystemPrompt(lang);
+    // مشروع كبير = 6 أقسام وظيفية أو أكثر → إطار CSS بدل تصميم مخصّص كامل
+    const libraryAware = Array.isArray(templateSections) && templateSections.length >= 6;
+    const systemPrompt = buildCoderSystemPrompt(lang, libraryAware);
 
     const sectionsGuide = templateSections && templateSections.length > 0
         ? `\n## أقسام الموقع المطلوبة (الزامية، ابنِ كل قسم بالتفصيل):\n${templateSections.map((s, i) => `${i+1}. ${s}`).join('\n')}`
@@ -189,7 +199,7 @@ ${currentCodeContext && currentCodeContext.trim().length > 50
 
 ## تذكير إلزامي:
 - 🌐 لغة كل المحتوى المرئي: **${L.name}** حصراً — dir="${L.dir}" lang="${L.code}" على <html>
-- اكتب الكود كاملاً بدون اختصار
+${libraryAware ? '- 🔗 مشروع كبير: Tailwind Play CDN في <head> (data-jlib="tailwind") + أصناف utility، لا CSS مخصّص شامل\n' : ''}- اكتب الكود كاملاً بدون اختصار
 - تباين الألوان إلزامي: خلفية داكنة → نص فاتح (#fff أو #f1f5f9)، خلفية فاتحة → نص داكن (#111 أو #1a1a2e)
 - إذا استخدمت --bg-dark أو background داكن في body، يجب أن يكون color: #ffffff أو color: #f1f5f9
 - لا تضع نصاً داكناً على خلفية داكنة أبداً

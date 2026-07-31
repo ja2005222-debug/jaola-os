@@ -68,6 +68,16 @@ const INDEX_HTML = `<!DOCTYPE html>
       <p id="emptyState" class="empty hidden">لا منتجات مطابقة.</p>
     </section>
 
+    <div class="newsletter" data-jaola-newsletter>
+      <div class="nl-in">
+        <div><b>📬 عروضنا وخصوماتنا أولاً بأول</b><small>اشترك في نشرتنا البريدية — بلا إزعاج، إلغاء بضغطة.</small></div>
+        <div class="nl-form">
+          <input type="email" id="nlEmail" placeholder="بريدك الإلكتروني">
+          <button class="btn primary" data-action="nl-subscribe">اشترك</button>
+        </div>
+      </div>
+    </div>
+
     <footer class="site-foot">
       <div class="foot-in">
         <div class="brand" style="font-size:17px"><span class="mk" style="width:26px;height:26px;font-size:13px">J</span> <span>متجر jaola</span> © 2026</div>
@@ -388,7 +398,15 @@ function handleClick(e) {
     case 'add-product': addProduct(); break;
     case 'del-product': deleteProduct(id); break;
     case 'advance-order': advanceOrder(id); break;
+    case 'nl-subscribe': subscribeNewsletter(); break;
   }
+}
+function subscribeNewsletter() {
+  const input = byId('nlEmail');
+  const email = (input.value || '').trim();
+  if (!email || email.indexOf('@') === -1) { toast('أدخل بريداً صالحاً'); return; }
+  input.value = '';
+  toast('✅ تم الاشتراك — شكراً لك!');
 }
 function handleInput(e) {
   if (e.target && e.target.id === 'searchInput') { state.query = e.target.value || ''; renderProducts(); }
@@ -477,8 +495,16 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;background:radial-grad
 .p-price{font-weight:800;color:var(--accent);font-size:17px}
 .empty{text-align:center;color:var(--muted);padding:40px}
 .hidden{display:none !important}
+/* النشرة البريدية */
+.newsletter{margin-top:50px;padding:30px 24px;background:linear-gradient(105deg,var(--accent),var(--accent2))}
+.nl-in{max-width:1140px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;color:#fff}
+.nl-in b{font-size:17px;display:block}
+.nl-in small{opacity:.9;display:block;margin-top:4px}
+.nl-form{display:flex;gap:8px}
+.nl-form input{padding:11px 14px;border-radius:10px;border:none;min-width:220px;font-size:14px}
+.nl-form .btn.primary{background:#fff;color:var(--accent);white-space:nowrap}
 /* التذييل */
-.site-foot{border-top:1px solid var(--border);margin-top:50px;padding:34px 24px}
+.site-foot{border-top:1px solid var(--border);margin-top:0;padding:34px 24px}
 .foot-in{max-width:1140px;margin:0 auto;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center;color:var(--muted);font-size:14px}
 .foot-links a{color:var(--muted);text-decoration:none;margin-inline-start:18px}.foot-links a:hover{color:var(--accent)}
 /* لوحة المدير */
