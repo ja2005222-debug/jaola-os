@@ -102,6 +102,54 @@ test('patchEditPlan: مخرَج بلا كتل → ok=false (يسقط للمسا�
     assert.equal(r.applied, 0);
 });
 
+test('applyEdits: يتسامح مع علامات اقتباس ذكية ومسافات داخلية متعدّدة', () => {
+    const files = [{ name: 'app.js', content: `const msg = "hello   world";` }];
+    // النموذج "نسخ" النصّ لكن بعلامات اقتباس ذكية ومسافة مضاعفة — خطأ نسخ شائع
+    const blocks = [{ file: 'app.js', search: `const msg = “hello world”;`, replace: `const msg = "bye";` }];
+    const { applied, files: out } = applyEdits(files, blocks);
+    assert.equal(applied, 1, 'يُطابَق رغم فرق الاقتباس/المسافة');
+    assert.match(out[0].content, /bye/);
+});
+
+test('patchEditPlan: جولة تصحيح تلقائية — فشل أول محاولة، نجاح الثانية بعد رؤية المحتوى الفعلي', async () => {
+    let call = 0;
+    const fakeChat = async () => {
+        call++;
+        if (call === 1) {
+            // محاولة أولى: نسخ خاطئ للنصّ (لا يطابق المحتوى الفعلي إطلاقاً)
+            return `app.js
+<<<<<<< SEARCH
+const total = computeTotal();
+=======
+const total = computeTotal() * 1.15;
+>>>>>>> REPLACE`;
+        }
+        // محاولة التصحيح: يرى المحتوى الفعلي في الطلب فيصحّح النسخ
+        return `app.js
+<<<<<<< SEARCH
+const total = calcTotal();
+=======
+const total = calcTotal() * 1.15;
+>>>>>>> REPLACE`;
+    };
+    const r = await patchEditPlan('أضف ضريبة 15%',
+        [{ name: 'app.js', content: 'const total = calcTotal();\nfunction keep(){}' }], 'ar', { chat: fakeChat });
+    assert.equal(call, 2, 'استُدعي النموذج مرّتين (محاولة + تصحيح واحد)');
+    assert.equal(r.retried, true);
+    assert.equal(r.ok, true);
+    assert.equal(r.partial, false, 'لا فشل متبقٍّ بعد التصحيح');
+    assert.match(r.files[0].content, /calcTotal\(\) \* 1\.15/);
+    assert.match(r.files[0].content, /function keep/, 'الباقي محفوظ');
+});
+
+test('patchEditPlan: فشل التصحيح أيضاً → partial يبقى true بلا حلقة لا نهائية', async () => {
+    let calls = 0;
+    const fakeChat = async () => { calls++; return 'لا كتل صالحة هنا أبداً'; };
+    const r = await patchEditPlan('x', [{ name: 'app.js', content: 'const a = 1;' }], 'ar', { chat: fakeChat });
+    assert.equal(r.ok, false, 'لا كتل من الأساس → فشل فوري بلا محاولة تصحيح (لا كتل لتحليل فشلها)');
+    assert.equal(calls, 1, 'استدعاء واحد فقط — لا كتل يعني لا شيء لإعادة محاولته');
+});
+
 test('patchEditPlan: تطبيق جزئي (كتلة تطابق وأخرى لا) → ok=true + partial', async () => {
     const fake = async () => `app.js
 <<<<<<< SEARCH

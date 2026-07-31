@@ -1901,6 +1901,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 plan = { files: patch.files };
                 this.emitLiveLog(roomName, 'EDIT', 'PatchEditor',
                     `🩹 تعديل موضعي — ${patch.applied} تغيير على ${patch.files.map(f => f.name).join('، ')} (بلا إعادة كتابة كاملة).`);
+                if (patch.retried) {
+                    this.emitLiveLog(roomName, 'EDIT', 'PatchEditor',
+                        `🔁 صُحِّحت محاولة فاشلة تلقائياً بعد رؤية المحتوى الفعلي.`);
+                }
                 if (patch.partial) {
                     this.emitLiveLog(roomName, 'EDIT', 'PatchEditor',
                         `ℹ️ طُبّق ما أمكن موضعياً؛ تعذّر ${patch.failed.length} جزء (لم يُطابَق) — أعد صياغة الباقي إن لزم.`);
