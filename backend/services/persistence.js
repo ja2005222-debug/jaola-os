@@ -26,6 +26,12 @@ const KV = mongoose.models.MemoryKV || mongoose.model('MemoryKV', KVSchema);
 const online = () => mongoose.connection.readyState === 1;
 const pendingWrites = new Map(); // `${store}:${key}` → timeout
 
+// كل خدمة تستخدم onMongoReady تضيف مستمع 'connected' واحداً دائماً — العدد
+// ينمو مع كل ذاكرة جديدة (أخطاء، تدقيق أدمِن، دروس المنصّة...) ويتجاوز حدّ
+// Node الافتراضي (10) بتحذير EventEmitter زائف (ليس تسريباً فعلياً، كل
+// مستمع دائم ومقصود). سقف سخي يوفّر هامشاً للنمو المستقبلي.
+mongoose.connection.setMaxListeners(50);
+
 export function persistEntry(store, key, value) {
     if (!online()) return;
     const k = `${store}:${key}`;
