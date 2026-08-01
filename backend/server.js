@@ -85,6 +85,8 @@ import { installSiteConnect } from './services/siteConnect.js';
 import { installDataSync } from './services/dataSync.js';
 import { readStore as readAppDataStore, writeKey as writeAppDataKey } from './services/appData.js';
 import { recordError, recentErrors } from './services/errorLog.js';
+import { recordAdminAction, recentAdminActions } from './services/adminAudit.js';
+import { listUsers as listAdminUsers, setUserPlan } from './services/adminUsers.js';
 import { verifyPassword as verifyProjectPassword, setPassword as setProjectPassword } from './services/projectAuth.js';
 import { broadcastPresence } from './services/presence.js';
 import { saveAsset, readAsset } from './services/appAssets.js';
@@ -2409,6 +2411,36 @@ app.get('/api/admin/errors', verifyToken, adminOnly, (req, res) => {
     res.json({ success: true, errors: recentErrors(100) });
 });
 
+// 👥 قائمة المستخدمين (بحث + عدّ مشاريع) — بلا أي حقل حسّاس (لا كلمة مرور/توكن)
+app.get('/api/admin/users', verifyToken, adminOnly, async (req, res) => {
+    try {
+        const { search = '', page = '1' } = req.query;
+        const limit = 50;
+        const skip = (Math.max(1, parseInt(page, 10) || 1) - 1) * limit;
+        const result = await listAdminUsers({ search: String(search), limit, skip });
+        res.json({ success: true, ...result });
+    } catch (err) { res.status(500).json({ error: 'تعذّر جلب المستخدمين: ' + err.message }); }
+});
+
+// 💳 تغيير خطة مستخدم يدوياً (منحة/تعويض/دعم) — يُسجَّل في سجلّ التدقيق دائماً
+app.post('/api/admin/users/:username/plan', verifyToken, adminOnly, async (req, res) => {
+    try {
+        const { plan, currentPeriodEnd } = req.body || {};
+        const r = await setUserPlan(req.params.username, plan, currentPeriodEnd || null);
+        if (r.error) return res.status(400).json(r);
+        recordAdminAction({
+            admin: req.user.username, action: 'setUserPlan', target: req.params.username,
+            details: `→ ${r.plan} (${r.status})`,
+        });
+        res.json(r);
+    } catch (err) { res.status(500).json({ error: 'تعذّر تحديث الخطة: ' + err.message }); }
+});
+
+// 🧾 سجلّ تدقيق أفعال الأدمِن الحسّاسة (تغيير خطط، كتابة/حذف ملفات مستخدمين)
+app.get('/api/admin/audit', verifyToken, adminOnly, (req, res) => {
+    res.json({ success: true, actions: recentAdminActions(200) });
+});
+
 // 🔌 فحص حيّ لمزوّدي الذكاء: أيّ مفتاح يُقرأ فعلاً (بذيله المقنّع)، هل يقبل
 // الاستدعاء الآن، ورصيد DeepSeek الفعلي — يحسم «المفتاح موجود لكن لا يعمل»
 app.get('/api/admin/ai-providers', verifyToken, adminOnly, async (req, res) => {
@@ -2579,6 +2611,7 @@ app.post('/api/admin/files/write', verifyToken, adminOnly, async (req, res) => {
     try {
         const { user, project, path: p, content } = req.body || {};
         await adminSvc.writeProjectFile(user, project, p, content);
+        recordAdminAction({ admin: req.user.username, action: 'writeFile', target: `${user}/${project}/${p}` });
         res.json({ success: true });
     } catch (err) { res.status(400).json({ error: err.message }); }
 });
@@ -2587,6 +2620,7 @@ app.delete('/api/admin/files', verifyToken, adminOnly, async (req, res) => {
     try {
         const { user, project, path: p } = req.body || {};
         const r = await adminSvc.deleteProjectFile(user, project, p);
+        recordAdminAction({ admin: req.user.username, action: 'deleteFile', target: `${user}/${project}/${p}` });
         res.json({ success: true, ...r });
     } catch (err) { res.status(400).json({ error: err.message }); }
 });

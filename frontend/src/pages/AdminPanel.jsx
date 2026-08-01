@@ -47,6 +47,8 @@ export default function AdminPanel({ onExit }) {
     <Shell onExit={onExit} tab={tab} setTab={setTab}>
       {tab === 'health' && <HealthTab api={api} />}
       {tab === 'errors' && <ErrorsTab api={api} />}
+      {tab === 'users' && <UsersTab api={api} />}
+      {tab === 'audit' && <AuditTab api={api} />}
       {tab === 'agents' && <AgentsTab api={api} />}
       {tab === 'files' && <FilesTab api={api} />}
       {tab === 'github' && <GitHubTab api={api} />}
@@ -62,6 +64,8 @@ function Shell({ children, onExit, tab, setTab }) {
   const tabs = [
     { id: 'health', icon: '🩺', label: tr('admTabHealth') },
     { id: 'errors', icon: '🚨', label: tr('admTabErrors') },
+    { id: 'users', icon: '👤', label: tr('admTabUsers') },
+    { id: 'audit', icon: '🧾', label: tr('admTabAudit') },
     { id: 'agents', icon: '🤖', label: tr('admTabAgents') },
     { id: 'files', icon: '🗂️', label: tr('admTabFiles') },
     { id: 'github', icon: '🐙', label: tr('admTabGithub') },
@@ -220,6 +224,119 @@ function ErrorsTab({ api }) {
               {e.stack && (
                 <pre style={{ fontSize: 11, color: S.muted, marginTop: 6, whiteSpace: 'pre-wrap', direction: 'ltr', textAlign: 'left', maxHeight: 140, overflow: 'auto' }}>{e.stack}</pre>
               )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 👤 المستخدمون ──────────────────────────────────────────────
+const PLAN_IDS = ['free', 'pro', 'enterprise'];
+function UsersTab({ api }) {
+  const tr = useI18n(s => s.t);
+  const [data, setData] = useState(null);
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [busyUser, setBusyUser] = useState(null);
+  const [msg, setMsg] = useState('');
+
+  const load = useCallback(async (q) => {
+    setLoading(true); setErr('');
+    try { const d = await api(`/api/admin/users?search=${encodeURIComponent(q ?? search)}`); setData(d); }
+    catch (e) { if (e.message !== 'forbidden') setErr(e.message); }
+    setLoading(false);
+  }, [api, search]);
+  useEffect(() => { load(''); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const changePlan = async (username, plan) => {
+    setBusyUser(username); setMsg('');
+    try {
+      await api(`/api/admin/users/${encodeURIComponent(username)}/plan`, { method: 'POST', body: JSON.stringify({ plan }) });
+      setMsg(`✅ ${username} → ${plan}`);
+      load(search);
+    } catch (e) { setMsg('❌ ' + e.message); }
+    setBusyUser(null);
+  };
+
+  if (loading) return <Muted>{tr('admScanning')}</Muted>;
+  if (err) return <Muted>{err}</Muted>;
+  if (data?.offline) return <div><Header title={tr('admUsersTitle')} /><Muted>{tr('admDbOffline')}</Muted></div>;
+
+  return (
+    <div>
+      <Header title={`${tr('admUsersTitle')} (${data?.total ?? 0})`}
+        action={msg && <span style={{ fontSize: 12, color: msg.startsWith('❌') ? S.red : S.green }}>{msg}</span>} />
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+        <input value={search} onChange={e => setSearch(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && load(search)}
+          placeholder={tr('admUsersSearchPh')} style={{ ...inputStyle, marginTop: 0, flex: 1 }} />
+        <button onClick={() => load(search)} style={btnPrimary}>{tr('admUsersSearch')}</button>
+      </div>
+      {!data?.users?.length ? <Muted>{tr('admUsersEmpty')}</Muted> : (
+        <div style={{ display: 'grid', gap: 8 }}>
+          {data.users.map(u => (
+            <div key={u.username} style={{ ...cardStyle, padding: 14, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ minWidth: 160 }}>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>{u.username}</div>
+                <div style={{ fontSize: 11, color: S.muted }}>{u.email || '—'}</div>
+              </div>
+              <span style={{ fontSize: 11, color: S.muted }}>{tr('admUsersProjects')}: <b style={{ color: S.text }}>{u.projectCount}</b></span>
+              <span style={{ fontSize: 11, color: S.muted, direction: 'ltr' }}>{new Date(u.createdAt).toLocaleDateString()}</span>
+              {u.provider && u.provider !== 'local' && (
+                <span style={{ fontSize: 10, color: S.blue, background: 'rgba(59,130,246,0.1)', padding: '2px 7px', borderRadius: 5 }}>{u.provider}</span>
+              )}
+              <div style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <select value={u.plan} disabled={busyUser === u.username}
+                  onChange={e => changePlan(u.username, e.target.value)}
+                  style={{ ...inputStyle, marginTop: 0, width: 130, padding: '6px 8px' }}>
+                  {PLAN_IDS.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+                <span style={{ fontSize: 10, color: u.status === 'active' ? S.green : S.muted }}>{u.status}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 🧾 سجلّ تدقيق الأدمِن ──────────────────────────────────────
+function AuditTab({ api }) {
+  const tr = useI18n(s => s.t);
+  const [actions, setActions] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr('');
+    try { const d = await api('/api/admin/audit'); setActions(d.actions); }
+    catch (e) { if (e.message !== 'forbidden') setErr(e.message); }
+    setLoading(false);
+  }, [api]);
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <Muted>{tr('admScanning')}</Muted>;
+  if (err) return <Muted>{err}</Muted>;
+
+  return (
+    <div>
+      <Header title={tr('admAuditTitle')} action={<button onClick={load} style={btnPrimary}>{tr('admRefresh')}</button>} />
+      <p style={{ color: S.muted, fontSize: 12, marginBottom: 14 }}>{tr('admAuditSubtitle')}</p>
+      {!actions?.length ? <Muted>{tr('admAuditEmpty')}</Muted> : (
+        <div style={{ display: 'grid', gap: 8 }}>
+          {actions.map((a, i) => (
+            <div key={i} style={{ ...cardStyle, padding: 12, borderRight: `3px solid ${S.purple}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, color: S.muted, direction: 'ltr' }}>{new Date(a.at).toLocaleString()}</span>
+                <span style={{ fontSize: 11, color: S.purple, background: 'rgba(139,92,246,0.1)', padding: '2px 8px', borderRadius: 5, fontWeight: 700 }}>{a.admin}</span>
+                <span style={{ fontSize: 12, fontWeight: 700 }}>{a.action}</span>
+              </div>
+              <div style={{ fontSize: 12, color: S.text, marginTop: 5, direction: 'ltr', textAlign: 'left', wordBreak: 'break-all' }}>{a.target}</div>
+              {a.details && <div style={{ fontSize: 11, color: S.muted, marginTop: 3 }}>{a.details}</div>}
             </div>
           ))}
         </div>
