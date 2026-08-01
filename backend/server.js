@@ -42,6 +42,7 @@ import {
     listAgents, upsertAgent, deleteAgent, getAgent,
     buildAgentSystemPrompt, agentToManifest,
 } from './services/agentMarket.js';
+import { recordExchange, readConversations, conversationSummary } from './services/agentConversations.js';
 import {
     readTelegramConfig, saveTelegramConfig, deleteTelegramConfig,
     checkTelegramToken, sendTelegramMessage, validBotToken as isTgToken, validChatId as isTgChat,
@@ -1121,6 +1122,7 @@ app.post('/api/pwa/generate', verifyToken, validateProjectOwnership, async (req,
 //    في أي موقع. الإنشاء بسقف الخطة، والدردشة بحصة ذكاء البوت نفسها.
 // ═══════════════════════════════════════════════════════════════════
 const AGENTS_DIR = path.join(BASE_WORKSPACE, '.agents');
+const AGENTCONVO_DIR = path.join(BASE_WORKSPACE, '.agentconvo');
 
 app.get('/api/agents', verifyToken, async (req, res) => {
     const username = req.user.username;
@@ -1147,6 +1149,14 @@ app.delete('/api/agents/:id', verifyToken, (req, res) => {
     const r = deleteAgent(AGENTS_DIR, req.user.username, req.params.id);
     if (r.error) return res.status(404).json({ error: r.error });
     res.json({ success: true });
+});
+
+// 📊 محادثات وكيل معيّن (سجلّ + إحصاء استخدام) — لمالك الوكيل حصراً
+app.get('/api/agents/:id/conversations', verifyToken, (req, res) => {
+    const agent = getAgent(AGENTS_DIR, req.user.username, req.params.id);
+    if (!agent) return res.status(404).json({ error: 'الوكيل غير موجود.' });
+    const store = readConversations(AGENTCONVO_DIR, req.user.username, req.params.id);
+    res.json({ success: true, exchanges: store.exchanges, summary: conversationSummary(store) });
 });
 
 // 🔗 حزمة تضمين الوكيل — نفس ودجت البوت بهوية الوكيل (عامة، بتوكن موقّع)
@@ -1182,13 +1192,19 @@ app.post('/api/agent-chat', botChatLimit, async (req, res) => {
         if (Number.isFinite(quota.monthly) && getUsageCount(USAGE_DIR, claims.u, 'botAi') >= quota.monthly) {
             return res.json({ reply: null, quota: 'exhausted' });
         }
-        const reply = await smartChat(
-            [{ role: 'system', content: buildAgentSystemPrompt(agent) },
-             { role: 'user', content: message.trim().slice(0, 500) }],
-            { max_tokens: 350, temperature: 0.4 }
-        );
+        // عطل مزوّد الذكاء (رصيد/شبكة) لا يجب أن يمنع تسجيل السؤال في محادثات
+        // الوكيل — نعامله كردّ فارغ لا كاستثناء يُسقط بقية المسار.
+        let reply = null;
+        try {
+            reply = await smartChat(
+                [{ role: 'system', content: buildAgentSystemPrompt(agent) },
+                 { role: 'user', content: message.trim().slice(0, 500) }],
+                { max_tokens: 350, temperature: 0.4 }
+            );
+        } catch { /* يبقى null — يُسجَّل السؤال بلا ردّ أدناه */ }
         const finalReply = (reply || '').toString().trim() || null;
         if (finalReply) { try { bumpUsage(USAGE_DIR, claims.u, 'botAi'); } catch { /* العدّ لا يُسقط الرد */ } }
+        try { recordExchange(AGENTCONVO_DIR, claims.u, claims.a, { message: message.trim(), reply: finalReply }); } catch { /* السجلّ لا يُسقط الرد أبداً */ }
         res.json({ reply: finalReply });
     } catch {
         res.status(200).json({ reply: null });
