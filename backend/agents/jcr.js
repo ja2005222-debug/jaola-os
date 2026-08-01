@@ -2562,6 +2562,20 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // في الشات ليرتجل حواراً (سجل تاكسي: "نعم" كانت تدور بلا فعل).
         const bareYes = isBareYes(message); // النمط في chatCommands.js (مُختبَر)
         if (bareYes) {
+            // 🛡️ رسالة محجوبة معلّقة أولاً — الحاجز نفسه قال للمستخدم حرفياً
+            // «أكّد بإرسال "نعم"»، فيجب أن تنفّذ "نعم" *ذلك الطلب المحجوب*
+            // تعديلاً موضعياً. بدون هذا كانت تسقط لمسار الاستئناف العام أدناه
+            // فتُشعل إعادة توليد كاملة تدهس المشروع (عطل إنتاجي: "اعطي الادمن
+            // صلاحية..." حُجبت، ثم "نعم" حوّلت المشروع لموقع آخر كلياً).
+            const gated = this.gatedMessages.get(username);
+            if (gated) {
+                this.gatedMessages.delete(username);
+                this.emitLiveLog(roomName, 'INTENT', 'Engine',
+                    '✅ "نعم" بعد حجب → تنفيذ الطلب المحجوب تعديلاً موضعياً (لا استئناف عام).');
+                recordEdit(username, gated);
+                this.surgicalEdit(gated, projectPath, username, activeProject, roomName, agents, dbStatus);
+                return;
+            }
             const contGoal = buildContinuationGoal(username, activeProject);
             const d = decide('continue', username, activeProject);
             if (contGoal && d.action === 'execute') {
