@@ -83,7 +83,7 @@ export default function LandingPage({ onStart = () => {} }) {
       {/* HERO */}
       <section className="relative px-6 py-8 grid-bg">
         <div className="absolute inset-0 gradient-orb opacity-70" />
-        <nav className="relative z-10 mx-auto flex max-w-7xl items-center justify-between rounded-2xl glass px-5 py-4">
+        <nav className="relative z-30 mx-auto flex max-w-7xl items-center justify-between rounded-2xl glass px-5 py-4">
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 pulse-node flex items-center justify-center">⚡</div>
             <span className="text-lg font-semibold tracking-tight">JAOLA OS</span>
