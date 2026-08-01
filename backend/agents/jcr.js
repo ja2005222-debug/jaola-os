@@ -1955,33 +1955,37 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 }
             } catch (e) { this.emitLiveLog(roomName, 'EDIT', 'Preview', `⚠️ تعذّر تحديث المعاينة: ${e.message}`); }
         }
-        // 🔬 تحقّق سلوكي بعد التعديل — يمسك إن كسر التعديل تشغيل الصفحة أو
-        // ترك دوراً بلا واجهة، ويُصلح جولةً واحدة قبل إعلان النجاح.
-        try {
-            await this._verifyAndAutofix({
-                projectPath, blueprint: null, username, activeProject, roomName, agents, lang, canFix: true,
-            });
-        } catch (e) { console.warn('[BehaviorVerify]', 'تخطّي التحقّق بعد التعديل:', e.message); }
-
-        // 🛡️ حارس ارتداد الميزات — سجل المستخدم: تعديل كبير بُتر مخرَجه، فالإصلاح
-        // التلقائي أنتج نسخة أصغر حذفت المحاسبة. أي تعديل يحذف دوالّ موجودة (ولم
-        // يُطلب حذفها) يُرفض ويُسترجع الأصل الكامل — لا تُفقد ميزة بصمت أبداً.
-        try {
-            const afterJs = (await this.readProjectFilesArray(projectPath))
+        // 🛡️ حارس الارتداد على مرحلتين — العطل السابق: تعديل المستخدم كان يُطبَّق
+        // بنجاح، ثم جولة «الإصلاح السلوكي التلقائي» تعيد كتابة الملفات كاملة
+        // فتُبتر وتُسقط دوالاً، فيسترجع الحارس *ما قبل تعديل المستخدم* ويمسح
+        // تعديلاً نجح فعلاً — «كل تعديل يعود للنسخة الأصلية» (بلاغ مستخدم).
+        // الفصل: (أ) تعديل المستخدم نفسه أتلف → استرجاع ما قبله (كما كان).
+        //        (ب) جولة الإصلاح التلقائي أتلفت → إلغاء الإصلاح وحده،
+        //            وتعديل المستخدم الناجح يبقى.
+        const isRemoval = /احذف|امسح|أزل|إزالة|شيل|بسّ?ط|remove|delete|drop|simplify/i.test(instruction);
+        const readLostFns = async () => {
+            const js = (await this.readProjectFilesArray(projectPath))
                 .filter(f => /\.(m?js)$/i.test(f.name)).map(f => f.content).join('\n');
-            const afterFns = extractDefinedFunctions(afterJs);
-            const lost = existingFns.filter(n => !afterFns.has(n));
-            const isRemoval = /احذف|امسح|أزل|إزالة|شيل|بسّ?ط|remove|delete|drop|simplify/i.test(instruction);
+            const after = extractDefinedFunctions(js);
+            return existingFns.filter(n => !after.has(n));
+        };
+        const restoreFiles = async (snapshot) => {
+            for (const f of snapshot) await fsPromises.writeFile(path.join(projectPath, f.name), f.content);
+            if (isReact) {
+                try {
+                    const src = await fsPromises.readFile(path.join(projectPath, 'lib/content.js'), 'utf8');
+                    for (const pg of buildStaticSiteFromSource(src, lang)) await fsPromises.writeFile(path.join(projectPath, pg.name), pg.content);
+                } catch {}
+            }
+        };
+
+        // (أ) فحص تعديل المستخدم قبل أي إصلاح تلقائي
+        try {
+            const lost = await readLostFns();
             if (lost.length >= 2 && !isRemoval) {
                 this.emitLiveLog(roomName, 'EDIT', 'RegressionGuard',
                     `↩️ التعديل حذف ${lost.length} ميزة (${lost.slice(0, 5).join('، ')}) — استرجاع نسختك الكاملة.`);
-                for (const f of files) await fsPromises.writeFile(path.join(projectPath, f.name), f.content);
-                if (isReact) {
-                    try {
-                        const src = await fsPromises.readFile(path.join(projectPath, 'lib/content.js'), 'utf8');
-                        for (const pg of buildStaticSiteFromSource(src, lang)) await fsPromises.writeFile(path.join(projectPath, pg.name), pg.content);
-                    } catch {}
-                }
+                await restoreFiles(files);
                 this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
                 const warn = lang === 'en'
                     ? `⚠️ This change would have dropped existing features (${lost.slice(0, 4).join(', ')}) — likely the file grew and the output was cut off. I kept your full working version. Try a smaller, more specific change (one feature at a time).`
@@ -1990,6 +1994,30 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 return { success: false, reverted: true, lost };
             }
         } catch (e) { console.warn('[RegressionGuard]', 'تعذّر فحص الارتداد:', e.message); }
+
+        // 📸 تعديل المستخدم سليم — لقطة ما بعده مرجعُ استرجاعٍ لأي عبث لاحق
+        let postEditSnapshot = [];
+        try { postEditSnapshot = await this.readProjectFilesArray(projectPath); } catch { /* الفحص (ب) سيُتخطى */ }
+
+        // 🔬 تحقّق سلوكي بعد التعديل — يمسك إن كسر التعديل تشغيل الصفحة أو
+        // ترك دوراً بلا واجهة، ويُصلح جولةً واحدة قبل إعلان النجاح.
+        try {
+            await this._verifyAndAutofix({
+                projectPath, blueprint: null, username, activeProject, roomName, agents, lang, canFix: true,
+            });
+        } catch (e) { console.warn('[BehaviorVerify]', 'تخطّي التحقّق بعد التعديل:', e.message); }
+
+        // (ب) فحص ما بعد الإصلاح التلقائي — إتلافه يُلغيه هو، لا تعديل المستخدم
+        try {
+            if (postEditSnapshot.length) {
+                const lost = await readLostFns();
+                if (lost.length >= 2 && !isRemoval) {
+                    this.emitLiveLog(roomName, 'EDIT', 'RegressionGuard',
+                        `↩️ جولة الإصلاح التلقائي أسقطت ${lost.length} ميزة (${lost.slice(0, 5).join('، ')}) — أُلغي الإصلاح وحده، تعديلك محفوظ.`);
+                    await restoreFiles(postEditSnapshot);
+                }
+            }
+        } catch (e) { console.warn('[RegressionGuard]', 'تعذّر فحص ما بعد الإصلاح:', e.message); }
 
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
 
