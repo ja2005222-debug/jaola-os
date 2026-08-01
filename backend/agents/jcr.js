@@ -1264,6 +1264,29 @@ User preferences: ${JSON.stringify(execMemory)}` },
             // 🧱 صفحة تسويقيّة/تعريفيّة (هبوط/بروشور/بورتفوليو/شركة) → إعادة تركيب من
             // JAOLA Registry: صفحة *كاملة واحترافية* من بلوكات جاهزة، لا توليد هشّ.
             if (isMarketingPageGoal(goal, blueprint) && (isFreshBuild || explicitRebuild)) {
+                // 🛡️ تطبيق قائم *يعمل* لا يُستبدل بصفحة هبوط ثابتة بجملة بناء عادية
+                // («صمم تطبيق عرض صور لمطعم...») — مسار الكلونات يملك هذه الحماية
+                // (worksNow → لا نكلبره) وهذا المسار كان بلا مثيلها فدهس تطبيق
+                // test-edit2 التفاعلي بصفحة أقسام جاهزة (عطل إنتاجي حقيقي).
+                // الاستبدال يبقى ممكناً بطلب إعادة بناء صريح («أعد البناء/من الصفر»).
+                if (!isFreshBuild && !isExplicitRebuild(goal)) {
+                    const chk = await analyzeProjectStatic({
+                        projectPath, domainModel: getDomainModel(username, activeProject),
+                    }).catch(() => null);
+                    const worksNow = chk?.hasProject && !chk.checks.some(c => c.status === 'fail');
+                    if (worksNow) {
+                        const lang = getUserLanguage(username) || 'ar';
+                        this.emitLiveLog(roomName, 'STACK', 'JaolaRegistry',
+                            'ℹ️ المشروع القائم يعمل — لا يُستبدل بصفحة تسويقية دون «أعد البناء» صريحة.');
+                        this.io.to(roomName).emit('chat_reply', {
+                            message: lang === 'en'
+                                ? '✅ Your current app is working, so I won\'t replace it with a static marketing page. Tell me a specific change to add to it, or type "rebuild" if you really want to start over as a landing page.'
+                                : '✅ تطبيقك الحالي يعمل، فلن أستبدله بصفحة تسويقية ثابتة. أخبرني بتعديل محدّد أضيفه إليه، أو اكتب «أعد البناء» إن كنت تريد فعلاً البدء من جديد كصفحة هبوط.',
+                        });
+                        transitionState(username, activeProject, STATES.COMPLETED);
+                        return { success: true, skipped: 'works' };
+                    }
+                }
                 return await this._buildFromRegistry(goal, projectPath, username, activeProject, roomName, agents);
             }
 
