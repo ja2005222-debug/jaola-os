@@ -2,6 +2,7 @@ import 'dotenv/config';
 import './dbConfig.js';
 
 import express from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
@@ -83,6 +84,7 @@ import * as siteCms from './services/siteCms.js';
 import { recordMessage, recordVisit, readInbox, markSeen, visitSummary, unreadCount } from './services/siteInbox.js';
 import { subscribe as subscribeNewsletter, listSubscribers as listNewsletterSubscribers, unsubscribe as unsubscribeNewsletter } from './services/newsletterSubscribers.js';
 import { installSiteConnect } from './services/siteConnect.js';
+import { applySeoPack } from './agents/seoPack.js';
 import { installDataSync } from './services/dataSync.js';
 import { readStore as readAppDataStore, writeKey as writeAppDataKey } from './services/appData.js';
 import { recordError, recentErrors } from './services/errorLog.js';
@@ -222,6 +224,7 @@ app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
 // 🖼️ رفع صور حقيقية (jaola-assets) يحتاج حداً أعلى من الحدّ العام (صورة
 // بترميز base64 أثقل ~33% من حجمها الخام) — يُسجَّل قبل express.json العام
 app.use('/api/public/assets', express.json({ limit: '6mb' }));
+app.use(compression()); // ضغط gzip لكل الاستجابات — واجهة أخف وAPI أسرع
 app.use(express.json({ limit: '1mb' })); // حد أقصى لحجم الطلب
 
 // ─── تقديم الواجهة الأمامية الثابتة ────────────────────────────────
@@ -2328,6 +2331,9 @@ app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) 
             || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
         const botToken = signBotToken({ u: req.user.username, p: req.activeProject });
         installSiteConnect(req.projectPath, { apiBase: publicBase, token: botToken });
+        // 🔍 حزمة SEO الحتمية مع كل نشر — وصف meta + Open Graph + JSON-LD +
+        // robots.txt (نفس ما تسوّقه المنافسات كـ«SEO تلقائي»)، idempotent.
+        applySeoPack(req.projectPath, { siteName: req.activeProject });
         // 🗄️ تخزين حقيقي متزامن — لقوالب السيستم فقط (نفس قيد وقت التطبيق)،
         // idempotent، وتتجاوز تلقائياً أي مشروع بلا app.js بالشكل المتوقَّع.
         if (getCloneTrack(req.user.username, req.activeProject) === 'system') {

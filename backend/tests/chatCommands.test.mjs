@@ -93,3 +93,43 @@ test('«شخص الصور» أمر تشخيص — ولا يلتبس بطلبات
     for (const m of ['شخص الصور', 'شخّص الصور', 'افحص الصور', 'diagnose images']) assert.ok(isImageDiagCommand(m), m);
     for (const m of ['ولد صور حقيقية', 'شخص ما', 'افحص الموقع']) assert.ok(!isImageDiagCommand(m), m);
 });
+
+test('⏪ أمر التراجع: الصيغ المجرّدة تُطابَق، وطلبات التعديل العادية لا', async () => {
+    const { isUndoCommand } = await import('../agents/chatCommands.js');
+    for (const m of [
+        'تراجع', 'تراجع عن آخر تعديل', 'استرجع النسخة السابقة', 'استرجع اخر نسخة',
+        'رجع النسخة', 'رجّع آخر تعديل', 'undo', 'revert', 'rollback',
+    ]) assert.ok(isUndoCommand(m), m);
+    for (const m of [
+        'تراجع عن قرارك وأضف قسم التقييمات',   // جملة أطول بهدف محدّد — ليست أمر استرجاع مجرّد
+        'رجع الزر الاحمر الى الهيدر',
+        'استرجع كلمة المرور',
+        'اضف قسم تواصل', 'نعم', 'اكمل',
+    ]) assert.ok(!isUndoCommand(m), m);
+});
+
+test('⏪ نسخ احتياطي كامل: يشمل الملفات المتداخلة ويسترجعها بمساراتها', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const { backupProject, restoreSnapshot, listSnapshots } = await import('../agents/fileManager.js');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bkp-'));
+    fs.writeFileSync(path.join(dir, 'index.html'), 'v1');
+    fs.writeFileSync(path.join(dir, 'app.js'), 'v1');
+    fs.mkdirSync(path.join(dir, 'api'));
+    fs.writeFileSync(path.join(dir, 'api', 'auth.js'), 'v1');
+
+    const b = await backupProject(dir, 'edit');
+    assert.ok(b.success);
+
+    // "تعديل" أفسد الملفات
+    fs.writeFileSync(path.join(dir, 'app.js'), 'broken');
+    fs.writeFileSync(path.join(dir, 'api', 'auth.js'), 'broken');
+
+    const snaps = await listSnapshots(dir);
+    const r = await restoreSnapshot(dir, snaps.snapshots[0].name);
+    assert.ok(r.success);
+    assert.equal(fs.readFileSync(path.join(dir, 'app.js'), 'utf8'), 'v1', 'app.js استُرجع (كان خارج الثلاثي القديم)');
+    assert.equal(fs.readFileSync(path.join(dir, 'api', 'auth.js'), 'utf8'), 'v1', 'الملف المتداخل استُرجع بمساره');
+    fs.rmSync(dir, { recursive: true, force: true });
+});

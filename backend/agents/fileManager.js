@@ -178,7 +178,36 @@ export async function backupFile(projectPath, filename) {
     }
 }
 
-/** نسخة احتياطية كاملة للمشروع */
+// مجلدات/حدود جمع ملفات النسخة — نفس فلسفة workspaceStore (سقف يمنع التضخم)
+const BACKUP_SKIP_DIRS = new Set(['.backups', '.git', 'node_modules', '.next', 'dist']);
+const BACKUP_MAX_FILES = 80;
+const BACKUP_MAX_FILE_BYTES = 400 * 1024;
+
+function collectBackupFiles(rootDir, dir = rootDir, acc = []) {
+    if (acc.length >= BACKUP_MAX_FILES) return acc;
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return acc; }
+    for (const e of entries) {
+        if (acc.length >= BACKUP_MAX_FILES) break;
+        if (e.name.startsWith('.') && e.name !== '.gitignore') continue;
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) {
+            if (!BACKUP_SKIP_DIRS.has(e.name)) collectBackupFiles(rootDir, full, acc);
+        } else if (e.isFile()) {
+            try {
+                if (fs.statSync(full).size > BACKUP_MAX_FILE_BYTES) continue;
+                acc.push(path.relative(rootDir, full).split(path.sep).join('/'));
+            } catch { /* تجاهل */ }
+        }
+    }
+    return acc;
+}
+
+/**
+ * نسخة احتياطية كاملة للمشروع — كل الملفات (بمساراتها المتداخلة api/…)
+ * لا الثلاثي الثابت القديم (index/styles/script) الذي كان يترك app.js
+ * وبقية الصفحات خارج شبكة الأمان فيجعل الاسترجاع ناقصاً.
+ */
 export async function backupProject(projectPath, label = '') {
     try {
         const backupDir = path.join(projectPath, '.backups');
@@ -188,12 +217,10 @@ export async function backupProject(projectPath, label = '') {
         const snapshotDir = path.join(backupDir, `snapshot_${timestamp}${label ? '_' + label : ''}`);
         await fsPromises.mkdir(snapshotDir);
 
-        const files = ['index.html', 'styles.css', 'script.js'];
-        for (const file of files) {
-            const src = path.join(projectPath, file);
-            if (fs.existsSync(src)) {
-                await fsPromises.copyFile(src, path.join(snapshotDir, file));
-            }
+        for (const rel of collectBackupFiles(projectPath)) {
+            const dest = path.join(snapshotDir, rel);
+            await fsPromises.mkdir(path.dirname(dest), { recursive: true });
+            await fsPromises.copyFile(path.join(projectPath, rel), dest);
         }
 
         // تنظيف النسخ القديمة (احتفظ بآخر 5 فقط)
@@ -213,7 +240,7 @@ export async function backupProject(projectPath, label = '') {
     }
 }
 
-/** استرجاع نسخة احتياطية */
+/** استرجاع نسخة احتياطية (يدعم المسارات المتداخلة المحفوظة) */
 export async function restoreSnapshot(projectPath, snapshotName) {
     try {
         const snapshotDir = path.join(projectPath, '.backups', snapshotName);
@@ -221,12 +248,11 @@ export async function restoreSnapshot(projectPath, snapshotName) {
             return { success: false, error: 'النسخة الاحتياطية غير موجودة' };
         }
 
-        const files = await fsPromises.readdir(snapshotDir);
-        for (const file of files) {
-            await fsPromises.copyFile(
-                path.join(snapshotDir, file),
-                path.join(projectPath, file)
-            );
+        const files = collectBackupFiles(snapshotDir);
+        for (const rel of files) {
+            const dest = path.join(projectPath, rel);
+            await fsPromises.mkdir(path.dirname(dest), { recursive: true });
+            await fsPromises.copyFile(path.join(snapshotDir, rel), dest);
         }
 
         return { success: true, restored: files, from: snapshotName };
