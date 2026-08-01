@@ -18,6 +18,27 @@ const ADVISORS = [
   { id: 'jaola-budget-advisor', nameKey: 'ldAdvBudget', descKey: 'ldAdvBudgetD', icon: '💰' },
 ];
 
+// 🏢 مسار «السيستم الداخلي» — أدوات عمل يومية للمؤسسات (لا مواقع عامة)، بدخول
+// حسب الأدوار. لقطات حقيقية من اللوحة الفعلية بعد الدخول التجريبي، لا شاشة
+// دخول فارغة (harvestTemplateScreenshots.mjs).
+const SYSTEMS = [
+  { id: 'jaola-erp', ar: 'إدارة مصنع/منشأة (ERP)', en: 'Facility ERP' },
+  { id: 'jaola-hr', ar: 'موارد بشرية ورواتب', en: 'HR & payroll' },
+  { id: 'jaola-accounting', ar: 'محاسبة ودفاتر', en: 'Accounting & ledgers' },
+  { id: 'jaola-pos', ar: 'نقطة بيع وكاشير', en: 'POS & cashier' },
+  { id: 'jaola-warehouse', ar: 'مستودعات ومخزون', en: 'Warehouse & inventory' },
+  { id: 'jaola-clinic', ar: 'عيادة طبية', en: 'Medical clinic' },
+  { id: 'jaola-vetclinic', ar: 'عيادة بيطرية', en: 'Veterinary clinic' },
+  { id: 'jaola-lawfirm', ar: 'مكتب محاماة', en: 'Law firm' },
+  { id: 'jaola-fleet', ar: 'إدارة أسطول مركبات', en: 'Fleet management' },
+  { id: 'jaola-pharmacy', ar: 'صيدلية', en: 'Pharmacy' },
+  { id: 'jaola-property', ar: 'إدارة عقارات وإيجارات', en: 'Property & rentals' },
+  { id: 'jaola-restaurant-ops', ar: 'تشغيل مطعم وشاشة مطبخ', en: 'Restaurant ops & KDS' },
+  { id: 'jaola-helpdesk', ar: 'دعم فني وتذاكر', en: 'Helpdesk & tickets' },
+  { id: 'jaola-laundry', ar: 'مغسلة', en: 'Laundry' },
+  { id: 'jaola-workshop', ar: 'ورشة صيانة سيارات', en: 'Car repair workshop' },
+];
+
 // لقطات حقيقية من frontend/public/templates (تُلتقط من القوالب نفسها)
 const SHOWCASE = [
   { id: 'jaola-store', ar: 'متجر إلكتروني', en: 'Online store' },
@@ -91,6 +112,7 @@ export default function LandingPage({ onStart = () => {} }) {
           <div className="hidden md:flex items-center gap-8 text-sm text-slate-400">
             <a href="#how" className="hover:text-white transition">{t('ldNavHow')}</a>
             <a href="#templates" className="hover:text-white transition">{t('ldNavTemplates')}</a>
+            <a href="#systems" className="hover:text-white transition">{t('ldNavSystems')}</a>
             <a href="#advisors" className="hover:text-white transition">{t('ldNavAdvisors')}</a>
             <a href="#pricing" className="hover:text-white transition">{t('ldNavPricing')}</a>
           </div>
@@ -195,6 +217,29 @@ export default function LandingPage({ onStart = () => {} }) {
                 <div className="p-4 font-semibold text-sm">{isAr ? s.ar : s.en}</div>
               </button>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* INTERNAL SYSTEMS — مسار «السيستم» للمؤسسات والشركات (منفصل عن الموقع العام) */}
+      <section id="systems" className="px-6 py-24">
+        <div className="mx-auto max-w-7xl">
+          <p className="mb-4 text-sm font-medium text-cyan-300">✦ {t('ldSysKicker')}</p>
+          <h2 className="text-4xl font-semibold tracking-tight md:text-5xl mb-4">{t('ldSysTitle')}</h2>
+          <p className="text-slate-400 mb-14 max-w-2xl">{t('ldSysSub')}</p>
+          <div className="grid gap-5 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+            {SYSTEMS.map(s => (
+              <button key={s.id} onClick={() => onStart()} className="group rounded-2xl overflow-hidden glass text-start hover:bg-white/[0.07] transition">
+                <img src={shot(s.id)} alt={isAr ? s.ar : s.en} loading="lazy"
+                  className="w-full aspect-video object-cover object-top group-hover:scale-[1.02] transition" />
+                <div className="p-3 font-semibold text-xs leading-tight">{isAr ? s.ar : s.en}</div>
+              </button>
+            ))}
+          </div>
+          <div className="mt-8">
+            <button onClick={() => onStart()} className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black hover:bg-slate-200 transition">
+              {t('ldSysCta')} <ArrowRight size={16} className={isAr ? 'rotate-180' : ''} />
+            </button>
           </div>
         </div>
       </section>

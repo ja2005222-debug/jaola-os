@@ -903,6 +903,7 @@ const DICT = [
     ['العملة', 'Currency'],
     ['متاح:', 'available:'],
     ['البنود', 'Lines'],
+    ['البند', 'Item'], // عمود جدول تفصيل الراتب — أطول من «بند» أدناه فتُطبَّق أولاً (تمنع «الline»)
     ['بند', 'line'],
     ['الحد', 'min'],
     ['الدور', 'Role'],
@@ -1830,6 +1831,14 @@ const DICT = [
     ['تاريخ الزيارة', 'Visit date'],
     ['وقت الزيارة', 'Visit time'],
     ['الحي/الشارع', 'Neighborhood/street'],
+
+    // ── موارد بشرية (jaola-hr) — علامات تبويب مفردة لم تُغطَّ بالعبارات الأطول ─
+    ['الحضور', 'Attendance'],
+    ['الرواتب', 'Payroll'],
+    ['كتلة الرواتب', 'Payroll mass'],
+
+    // ── رمز احتياطي عام (اسم موظف/عنصر غير موجود) ─────────────────────
+    ['؟', '?'],
 ];
 
 // بالأطول أولاً — يمنع أن تأكل الترجمة القصيرة جزءاً من سلسلة أطول
@@ -1865,7 +1874,11 @@ export function localizeTemplateFiles(files = [], lang = 'ar') {
             return { ...f, content: html };
         }
         if (f.name.endsWith('.js')) {
-            return { ...f, content: localizeText(f.content) };
+            // toLocaleString('ar-EG') ثابتة في كل القوالب لتنسيق النقود بالأرقام
+            // الهندية (١٬٢٣٤) — تبقى كذلك حتى في نسخة إنجليزية لو لم تُستبدل هنا،
+            // فتظهر أرقام عربية داخل صفحة English (خلل ظهر فعلياً في لقطات jaola-hr/jaola-erp).
+            const js = localizeText(f.content).replace(/toLocaleString\('ar[a-zA-Z-]*'\)/g, "toLocaleString('en-US')");
+            return { ...f, content: js };
         }
         if (f.name.endsWith('.css')) {
             // toast كان يفترض RTL (translateX(50%)) — في LTR يلزم -50%
