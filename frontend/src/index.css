@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700;800&family=Cairo:wght@400;600;700;800&display=swap');
 @import "tailwindcss";
 
 @layer base {
@@ -17,6 +17,11 @@
     color: var(--text);
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
+  }
+  /* 🕌 العربية (وRTL عموماً) بخط Cairo — كانت تسقط لخط النظام فتبدو أقل نضجاً
+     من أي منافس؛ الخط جزء من الهوية لا رفاهية. */
+  [dir="rtl"] body, body[dir="rtl"], html[dir="rtl"] body {
+    font-family: 'Cairo', 'Inter', system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
   ::-webkit-scrollbar { width: 3px; height: 3px; }

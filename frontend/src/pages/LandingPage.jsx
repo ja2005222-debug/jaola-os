@@ -123,15 +123,44 @@ export default function LandingPage({ onStart = () => {} }) {
             <p className="mt-5 text-xs text-slate-500">{t('ldNoCard')}</p>
           </motion.div>
 
-          {/* لقطات حقيقية — لا لوحات وهمية */}
+          {/* لقطات حقيقية — لا لوحات وهمية + محاكاة المحادثة (المنتج الفعلي) */}
           <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.8 }}
-            className="relative h-[380px] hidden sm:block">
+            className="relative h-[420px] hidden sm:block">
             {SHOWCASE.slice(0, 3).map((s, i) => (
               <img key={s.id} src={shot(s.id)} alt={isAr ? s.ar : s.en} loading="lazy"
                 className="absolute w-[78%] rounded-2xl border border-white/10 shadow-2xl"
                 style={{ top: `${i * 44}px`, insetInlineStart: `${i * 11}%`, transform: `rotate(${(i - 1) * 2}deg)`, zIndex: 3 - i, opacity: 1 - i * 0.12 }} />
             ))}
+            {/* بطاقة المحادثة — هكذا يعمل المنتج فعلاً (بناء بالكلام + تراجع بكلمة) */}
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.5 }}
+              className="absolute bottom-0 inset-inline-end-0 z-10 w-[86%] rounded-2xl glass p-4 shadow-2xl"
+              style={{ insetInlineEnd: 0 }}>
+              <div className="flex justify-end mb-2">
+                <div className="max-w-[85%] rounded-2xl bg-blue-500/90 px-4 py-2 text-sm font-medium">{t('ldChatUser')}</div>
+              </div>
+              <div className="flex items-start gap-2">
+                <div className="h-7 w-7 shrink-0 rounded-lg bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-xs">⚡</div>
+                <div className="rounded-2xl bg-white/10 px-4 py-2 text-sm text-slate-200">{t('ldChatReply')}</div>
+              </div>
+            </motion.div>
           </motion.div>
+        </div>
+
+        {/* 📊 أرقام صادقة — كل رقم من الكود الفعلي لا من التسويق */}
+        <div className="relative z-10 mx-auto max-w-7xl pb-14">
+          <div className="grid grid-cols-2 gap-4 rounded-3xl glass px-6 py-8 md:grid-cols-4 text-center">
+            {[
+              ['41', t('ldStatTemplates')],
+              ['8', t('ldStatLangs')],
+              ['3', t('ldStatAdvisors')],
+              ['600+', t('ldStatChecks')],
+            ].map(([n, label], i) => (
+              <div key={i}>
+                <div className="text-3xl font-bold md:text-4xl bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">{n}</div>
+                <div className="mt-1 text-xs text-slate-400 md:text-sm">{label}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -209,6 +238,31 @@ export default function LandingPage({ onStart = () => {} }) {
         </div>
       </section>
 
+      {/* WHY JAOLA — التمايز الحقيقي (كل بند مبنيّ فعلاً) */}
+      <section id="why" className="px-6 py-24">
+        <div className="mx-auto max-w-7xl">
+          <p className="mb-4 text-sm font-medium text-purple-300">✦ {t('ldWhyKicker')}</p>
+          <h2 className="text-4xl font-semibold tracking-tight md:text-5xl mb-4">{t('ldWhyTitle')}</h2>
+          <p className="text-slate-400 mb-14 max-w-2xl">{t('ldWhySub')}</p>
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              ['🔬', t('ldWhy1'), t('ldWhy1d')],
+              ['⏪', t('ldWhy2'), t('ldWhy2d')],
+              ['🔍', t('ldWhy3'), t('ldWhy3d')],
+              ['🕌', t('ldWhy4'), t('ldWhy4d')],
+              ['🧰', t('ldWhy5'), t('ldWhy5d')],
+              ['📦', t('ldWhy6'), t('ldWhy6d')],
+            ].map(([icon, title, desc], i) => (
+              <div key={i} className="rounded-3xl border border-purple-400/15 bg-purple-500/[0.06] p-6 hover:bg-purple-500/[0.1] transition">
+                <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-purple-500/15 text-xl">{icon}</div>
+                <h3 className="font-semibold mb-2">{title}</h3>
+                <p className="text-sm text-slate-400 leading-6">{desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* PRICING — من نفس مصدر صفحة الفوترة */}
       <section id="pricing" className="px-6 py-24 bg-white/[0.015]">
         <div className="mx-auto max-w-7xl">
@@ -236,19 +290,75 @@ export default function LandingPage({ onStart = () => {} }) {
         </div>
       </section>
 
+      {/* FAQ — أسئلة حقيقية بإجابات مبنيّة فعلاً */}
+      <section id="faq" className="px-6 py-24">
+        <div className="mx-auto max-w-3xl">
+          <h2 className="text-4xl font-semibold tracking-tight md:text-5xl mb-12 text-center">{t('ldFaqTitle')}</h2>
+          <div className="space-y-3">
+            {[
+              [t('ldFaq1'), t('ldFaq1a')],
+              [t('ldFaq2'), t('ldFaq2a')],
+              [t('ldFaq3'), t('ldFaq3a')],
+              [t('ldFaq4'), t('ldFaq4a')],
+              [t('ldFaq5'), t('ldFaq5a')],
+            ].map(([q, a], i) => (
+              <details key={i} className="group rounded-2xl glass px-6 py-4">
+                <summary className="flex cursor-pointer items-center justify-between font-semibold list-none">
+                  {q}
+                  <span className="text-slate-500 transition group-open:rotate-45 text-xl leading-none">+</span>
+                </summary>
+                <p className="mt-3 text-sm leading-7 text-slate-400">{a}</p>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FINAL CTA */}
+      <section className="relative px-6 py-24 overflow-hidden">
+        <div className="absolute inset-0 gradient-orb opacity-60" />
+        <div className="relative z-10 mx-auto max-w-3xl text-center">
+          <h2 className="text-4xl font-semibold tracking-tight md:text-5xl">{t('ldFinalTitle')}</h2>
+          <p className="mt-5 text-lg text-slate-400">{t('ldFinalSub')}</p>
+          <button onClick={() => onStart()}
+            className="mt-9 inline-flex items-center gap-2 rounded-2xl bg-white px-8 py-4 text-lg font-semibold text-black hover:bg-slate-200 transition">
+            {t('ldCtaFree')} <ArrowRight size={20} className={isAr ? 'rotate-180' : ''} />
+          </button>
+          <p className="mt-4 text-xs text-slate-500">{t('ldNoCard')}</p>
+        </div>
+      </section>
+
       {/* FOOTER */}
-      <footer className="border-t border-white/10 px-6 py-10">
-        <div className="mx-auto flex max-w-7xl flex-col justify-between gap-6 md:flex-row items-center">
-          <div className="flex items-center gap-2"><span className="text-xl">⚡</span><h3 className="font-semibold">JAOLA OS</h3>
-            <span className="text-sm text-slate-500 ms-2">{t('ldFooter')}</span>
+      <footer className="border-t border-white/10 px-6 pt-14 pb-8">
+        <div className="mx-auto max-w-7xl">
+          <div className="grid gap-10 md:grid-cols-3 mb-10">
+            <div>
+              <div className="flex items-center gap-2 mb-3"><span className="text-xl">⚡</span><h3 className="font-semibold">JAOLA OS</h3></div>
+              <p className="text-sm text-slate-500 max-w-xs leading-6">{t('ldFooter')}</p>
+            </div>
+            <div>
+              <p className="text-sm font-semibold mb-4 text-slate-300">{t('ldFootProduct')}</p>
+              <div className="flex flex-col gap-2 text-sm text-slate-400">
+                <a href="#how" className="hover:text-white transition">{t('ldNavHow')}</a>
+                <a href="#templates" className="hover:text-white transition">{t('ldNavTemplates')}</a>
+                <a href="#advisors" className="hover:text-white transition">{t('ldNavAdvisors')}</a>
+                <a href="#pricing" className="hover:text-white transition">{t('ldNavPricing')}</a>
+              </div>
+            </div>
+            <div>
+              <p className="text-sm font-semibold mb-4 text-slate-300">{t('ldFootLegal')}</p>
+              <div className="flex flex-col gap-2 text-sm text-slate-400">
+                <a href="/privacy" className="hover:text-white transition">{t('legalTabPrivacy')}</a>
+                <a href="/terms" className="hover:text-white transition">{t('legalTabTerms')}</a>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-4 text-sm text-slate-400">
-            <a href="/privacy" className="hover:text-white transition">{t('legalTabPrivacy')}</a>
-            <a href="/terms" className="hover:text-white transition">{t('legalTabTerms')}</a>
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <div className="w-2 h-2 rounded-full bg-emerald-400 pulse-node" />
-            <span className="text-emerald-400">{t('operational')}</span>
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-t border-white/5 pt-6">
+            <span className="text-xs text-slate-600">© 2026 JAOLA OS</span>
+            <div className="flex items-center gap-2 text-sm">
+              <div className="w-2 h-2 rounded-full bg-emerald-400 pulse-node" />
+              <span className="text-emerald-400">{t('operational')}</span>
+            </div>
           </div>
         </div>
       </footer>
