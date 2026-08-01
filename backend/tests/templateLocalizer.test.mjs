@@ -47,6 +47,25 @@ test('المتجر بالإنجليزية: lang/dir مقلوبان وصفر عر
     assert.deepEqual(after, before, 'لا مساس بالدوال');
 });
 
+test('توطين الأرقام: toLocaleString لا يبقى بلغة عربية في أي قالب مُوطَّن للإنجليزية (كانت تظهر أرقام هندية ١٬٢٣٤ داخل صفحة إنجليزية — jaola-hr/jaola-erp)', () => {
+    for (const meta of listClones()) {
+        const c = getCloneById(meta.id);
+        const out = localizeTemplateFiles(c.files, 'en');
+        for (const f of out) {
+            if (!f.name.endsWith('.js')) continue;
+            assert.ok(!/toLocaleString\('ar/.test(f.content), `${meta.id}/${f.name}: تنسيق أرقام عربي متبقٍّ بعد التوطين للإنجليزية`);
+        }
+    }
+});
+
+test('jaola-hr: علامتا التبويب «الحضور»/«الرواتب» تُترجمان (كانتا مفقودتين من القاموس فتظهران بحروف مبعثرة)', () => {
+    const c = getCloneById('jaola-hr');
+    const js = localizeTemplateFiles(c.files, 'en').find(f => f.name === 'app.js').content;
+    assert.ok(js.includes('Attendance'), 'علامة الحضور مُترجمة');
+    assert.ok(js.includes('Payroll'), 'علامة الرواتب مُترجمة');
+    assert.equal((js.match(/[؀-ۿ]/g) || []).length, 0, 'لا عربية متبقية في app.js بعد التوطين');
+});
+
 test('تغطية شاملة: كل القوالب الـ13 بالإنجليزية شبه خالية من العربية الظاهرة', () => {
     for (const meta of listClones()) {
         const c = getCloneById(meta.id);

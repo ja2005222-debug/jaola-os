@@ -326,6 +326,7 @@ export default function Dashboard() {
   const [showGalleryModal, setShowGalleryModal] = useState(false);
   const [galleryTemplates, setGalleryTemplates] = useState(null);
   const [galleryFilter, setGalleryFilter] = useState('all');
+  const [galleryImgErrors, setGalleryImgErrors] = useState({});
   const [showSecretsModal, setShowSecretsModal] = useState(false);
   const [secretKeys, setSecretKeys] = useState([]);
   const [newSecretKey, setNewSecretKey] = useState('');
@@ -1621,6 +1622,13 @@ export default function Dashboard() {
     events:{ ar:'فعاليات وتذاكر', en:'Events & Tickets' }, travel:{ ar:'سفر', en:'Travel' },
     ridehailing:{ ar:'تنقّل', en:'Rides' }, tool:{ ar:'أدوات', en:'Tools' },
     weather:{ ar:'أدوات', en:'Tools' }, crypto:{ ar:'أدوات', en:'Tools' }, finance:{ ar:'مالية', en:'Finance' },
+    system:{ ar:'أنظمة داخلية', en:'Internal systems' },
+  };
+  // 🖼️ أيقونة احتياطية حين لا تتوفّر لقطة (أو تتعطّل) — بدل فراغ في البطاقة
+  const CAT_ICON = {
+    restaurant:'🍔', ecommerce:'🛍️', marketplace:'🏪', realestate:'🏠', appointments:'📅',
+    education:'🎓', events:'🎫', travel:'✈️', ridehailing:'🚕', tool:'🛠️', weather:'🌤️',
+    crypto:'📊', finance:'💰', system:'🏢',
   };
   const isEn = uiLang === 'en';
   const catLabel = (c) => (CAT_LABELS[c.category]?.[isEn ? 'en' : 'ar']) || (isEn ? 'Other' : 'أخرى');
@@ -1664,9 +1672,16 @@ export default function Dashboard() {
             {galleryList.map(c => (
               <div key={c.id} className="tpl-card" style={{ background:'#121826', border:`1px solid ${S.border}`, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', transition:'transform 0.2s, border-color 0.2s' }}>
                 <div style={{ position:'relative', aspectRatio:'11/7', overflow:'hidden', background:'#0a0f1a' }}>
-                  <img src={uiLang === 'ar' ? `/templates/${c.id}.jpg` : `/templates/en/${c.id}.jpg`} alt={c.name} loading="lazy"
-                    className="tpl-shot" style={{ width:'100%', height:'100%', objectFit:'cover', objectPosition:'top', transition:'transform 0.4s' }}
-                    onError={e => { e.currentTarget.style.display = 'none'; }} />
+                  {galleryImgErrors[c.id] ? (
+                    <div style={{ width:'100%', height:'100%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8, background:'linear-gradient(135deg, rgba(59,130,246,0.14), rgba(139,92,246,0.14))' }}>
+                      <span style={{ fontSize:36 }}>{CAT_ICON[c.category] || '🧩'}</span>
+                      <span style={{ color:S.muted, fontSize:11, fontWeight:700 }}>{tplName(c)}</span>
+                    </div>
+                  ) : (
+                    <img src={uiLang === 'ar' ? `/templates/${c.id}.jpg` : `/templates/en/${c.id}.jpg`} alt={c.name} loading="lazy"
+                      className="tpl-shot" style={{ width:'100%', height:'100%', objectFit:'cover', objectPosition:'top', transition:'transform 0.4s' }}
+                      onError={() => setGalleryImgErrors(prev => ({ ...prev, [c.id]: true }))} />
+                  )}
                   <span style={{ position:'absolute', top:8, insetInlineStart:8, background:'rgba(6,10,18,0.85)', border:'1px solid rgba(59,130,246,0.3)', color:'#93c5fd', fontSize:9.5, fontWeight:800, padding:'3px 9px', borderRadius:20 }}>
                     {catLabel(c)}
                   </span>
