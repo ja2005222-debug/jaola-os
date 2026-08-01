@@ -780,16 +780,27 @@ export default function Dashboard() {
   const [agentsData, setAgentsData] = useState(null);
   const [agentForm, setAgentForm] = useState(null); // null = القائمة؛ كائن = نموذج تحرير/إنشاء
   const [agentSaving, setAgentSaving] = useState(false);
+  const [agentConvo, setAgentConvo] = useState(null); // null = لا عرض؛ {agent, loading, error, exchanges, summary}
 
   const openAgentsModal = async () => {
     setShowAgentsModal(true);
     setAgentForm(null);
+    setAgentConvo(null);
     setAgentsData(null);
     try {
       const res = await fetch(`${BACKEND_URL}/api/agents`, { headers: getHeaders() });
       const d = await res.json().catch(() => ({}));
       setAgentsData(res.ok ? d : { error: true });
     } catch { setAgentsData({ error: true }); }
+  };
+
+  const openAgentConversations = async (agent) => {
+    setAgentConvo({ agent, loading: true });
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/agents/${agent.id}/conversations`, { headers: getHeaders() });
+      const d = await res.json().catch(() => ({}));
+      setAgentConvo(res.ok ? { agent, loading: false, exchanges: d.exchanges || [], summary: d.summary } : { agent, loading: false, error: true });
+    } catch { setAgentConvo({ agent, loading: false, error: true }); }
   };
 
   const saveAgent = async () => {
@@ -2043,7 +2054,7 @@ export default function Dashboard() {
         {!agentsData && <p style={{ color:S.muted, fontSize:13 }}>⏳</p>}
         {agentsData?.error && <p style={{ color:S.danger, fontSize:13 }}>{t('serverUnreachable')}</p>}
 
-        {agentsData && !agentsData.error && !agentForm && (
+        {agentsData && !agentsData.error && !agentForm && !agentConvo && (
           <>
             <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:12 }}>
               {agentsData.agents.length === 0 && (
@@ -2057,6 +2068,10 @@ export default function Dashboard() {
                     <span style={{ fontSize:18 }}>{a.emoji}</span>
                     <span style={{ color:'#fff', fontSize:13, fontWeight:800 }}>{a.name}</span>
                     <div style={{ marginInlineStart:'auto', display:'flex', gap:5 }}>
+                      <button onClick={() => openAgentConversations(a)}
+                        style={{ background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)', borderRadius:6, padding:'2px 10px', color:'#34d399', fontSize:10, fontWeight:700, cursor:'pointer' }}>
+                        📊 {t('agConvo')}
+                      </button>
                       <button onClick={() => setAgentForm({ id: a.id, name: a.name, emoji: a.emoji, welcome: a.welcome || '', instructions: a.instructions, knowledge: a.knowledge || '' })}
                         style={{ background:'rgba(56,189,248,0.08)', border:'1px solid rgba(56,189,248,0.25)', borderRadius:6, padding:'2px 10px', color:'#7dd3fc', fontSize:10, fontWeight:700, cursor:'pointer' }}>
                         ✏️ {t('agEdit')}
@@ -2088,6 +2103,67 @@ export default function Dashboard() {
               <div style={{ color:'#fbbf24', fontSize:11, textAlign:'center', background:'rgba(245,158,11,0.06)', border:'1px solid rgba(245,158,11,0.2)', borderRadius:9, padding:'10px' }}>
                 💳 {t('agLimit')}
               </div>
+            )}
+          </>
+        )}
+
+        {agentConvo && (
+          <>
+            <button onClick={() => setAgentConvo(null)}
+              style={{ background:'transparent', border:'none', color:S.muted, fontSize:12, marginBottom:10, cursor:'pointer', padding:0 }}>
+              {t('agBack')}
+            </button>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+              <span style={{ fontSize:16 }}>{agentConvo.agent.emoji}</span>
+              <span style={{ color:'#fff', fontSize:13, fontWeight:800 }}>{agentConvo.agent.name}</span>
+            </div>
+            {agentConvo.loading && <p style={{ color:S.muted, fontSize:13 }}>⏳</p>}
+            {agentConvo.error && <p style={{ color:S.danger, fontSize:13 }}>{t('serverUnreachable')}</p>}
+            {!agentConvo.loading && !agentConvo.error && (
+              <>
+                <div style={{ display:'flex', gap:10, marginBottom:16 }}>
+                  <div style={{ flex:1, background:'rgba(16,185,129,0.07)', border:'1px solid rgba(16,185,129,0.2)', borderRadius:11, padding:'12px 14px' }}>
+                    <div style={{ color:'#34d399', fontSize:20, fontWeight:800, fontVariantNumeric:'tabular-nums' }}>{agentConvo.summary?.total ?? 0}</div>
+                    <div style={{ color:S.muted, fontSize:10, fontWeight:700 }}>{t('agConvoTotal')}</div>
+                  </div>
+                  <div style={{ flex:1, background:'rgba(59,130,246,0.07)', border:'1px solid rgba(59,130,246,0.2)', borderRadius:11, padding:'12px 14px' }}>
+                    <div style={{ color:'#60a5fa', fontSize:20, fontWeight:800, fontVariantNumeric:'tabular-nums' }}>{agentConvo.summary?.today ?? 0}</div>
+                    <div style={{ color:S.muted, fontSize:10, fontWeight:700 }}>{t('agConvoToday')}</div>
+                  </div>
+                  <div style={{ flex:1.4, background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:11, padding:'12px 14px' }}>
+                    <div style={{ display:'flex', alignItems:'flex-end', gap:3, height:24 }}>
+                      {(agentConvo.summary?.last7 || []).map((d, i) => {
+                        const max = Math.max(1, ...(agentConvo.summary?.last7 || []).map(x => x.count));
+                        return <div key={i} title={`${d.day}: ${d.count}`}
+                          style={{ flex:1, borderRadius:2, background: d.count ? '#10b981' : '#1e293b', height: `${Math.max(12, (d.count / max) * 100)}%` }} />;
+                      })}
+                    </div>
+                    <div style={{ color:S.muted, fontSize:10, fontWeight:700, marginTop:5 }}>{t('inboxVisits7d')}</div>
+                  </div>
+                </div>
+
+                {(agentConvo.exchanges || []).length === 0 ? (
+                  <div style={{ color:S.muted, fontSize:12, background:'rgba(255,255,255,0.02)', border:`1px dashed ${S.border}`, borderRadius:11, padding:'18px 16px', textAlign:'center' }}>
+                    {t('agConvoEmpty')}
+                  </div>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                    {agentConvo.exchanges.map(ex => (
+                      <div key={ex.id} style={{ background:'rgba(255,255,255,0.02)', border:`1px solid ${S.border}`, borderRadius:10, padding:'10px 12px' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                          <span style={{ color:'#e2e8f0', fontSize:12, fontWeight:700 }}>{ex.message}</span>
+                          <span style={{ marginInlineStart:'auto', color:'#334155', fontSize:10, direction:'ltr' }}>
+                            {new Date(ex.at).toLocaleString(uiLang, { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}
+                          </span>
+                        </div>
+                        <div style={{ color:'#94a3b8', fontSize:12, marginTop:5, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>
+                          {ex.reply || `— ${t('agConvoNoReply')}`}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
