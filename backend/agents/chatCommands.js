@@ -102,6 +102,14 @@ export function isBareYes(message) {
     return BARE_YES.test(message || '');
 }
 
+// ─── أمر التراجع ("تراجع/استرجع آخر نسخة/undo") → استرجاع حتمي بلا LLM ──
+// شبكة أمان فورية من الشات (مكافئ Version Restore عند المنافسين):
+// آخر نسخة احتياطية تُسترجع فوراً — لا تفسير ذكاء، لا مجال لانحراف.
+const UNDO_RE = /^\s*(?:تراجع(?:\s+عن\s+(?:آخر|اخر)\s+(?:تعديل|تغيير))?|استرجع(?:\s+(?:آخر|اخر|ال)?\s*نسخ[ةه](?:\s+(?:ال)?سابق[ةه])?)?|رجّ?ع(?:\s+(?:آخر|اخر|ال)?\s*(?:نسخ[ةه]|تعديل|الموقع))?|undo|revert|rollback)\s*[.!؟?]*\s*$/iu;
+export function isUndoCommand(message) {
+    return UNDO_RE.test(message || '');
+}
+
 // ─── أمر التنفيذ المجرّد ("نفذهما/طبقها/do it" → تنفيذ ما نوقش) ─────
 const BARE_EXECUTE = /^\s*(?:تمام|طيب|اوكي?|ok|okay|نعم|يلا)?\s*(?:نفّ?ذ(?:ها|هم|هما|ه|وا)?|طبّ?ق(?:ها|هم|هما|ه)?|اعملها|سوّ?ها|قم\s+بذلك|قم\s+بها|نفذ\s+ذلك|do\s+it|execute(?:\s+it)?|go\s+ahead|implement(?:\s+it)?|apply(?:\s+it)?)\s*[.!؟?]*\s*$/iu;
 export function isBareExecute(message) {

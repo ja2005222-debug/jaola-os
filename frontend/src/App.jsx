@@ -1,10 +1,23 @@
-import { useState } from 'react'
-import LandingPage from './pages/LandingPage'
-import BootSequence from './pages/BootSequence'
-import Dashboard from './pages/Dashboard'
-import AdminPanel from './pages/AdminPanel'
-import BillingPage from './pages/BillingPage'
-import LegalPage from './pages/LegalPage'
+import { useState, lazy, Suspense } from 'react'
+
+// ⚡ تقسيم الحزمة: كل صفحة تُحمَّل عند طلبها فقط — بدل حزمة واحدة ~700KB
+// كانت تُحمَّل كاملة لكل زائر (الهبوط كانت تجرّ الداشبورد والأدمِن معها).
+const LandingPage = lazy(() => import('./pages/LandingPage'))
+const BootSequence = lazy(() => import('./pages/BootSequence'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const AdminPanel = lazy(() => import('./pages/AdminPanel'))
+const BillingPage = lazy(() => import('./pages/BillingPage'))
+const LegalPage = lazy(() => import('./pages/LegalPage'))
+
+// مؤشر تحميل خفيف بلا اعتماديات — يظهر لحظات فقط أثناء جلب شيفرة الصفحة
+function PageLoader() {
+  return (
+    <div style={{ minHeight: '100dvh', background: '#050810', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: 34, height: 34, border: '3px solid #1e293b', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'jspin 0.8s linear infinite' }} />
+      <style>{'@keyframes jspin{to{transform:rotate(360deg)}}'}</style>
+    </div>
+  )
+}
 
 export default function App() {
   const [page, setPage] = useState(() => {
@@ -29,11 +42,15 @@ export default function App() {
     else setPage('landing')
   }
 
-  if (page === 'boot') return <BootSequence onDone={() => { sessionStorage.setItem('booted', '1'); navigate('/dashboard') }} />
-  if (page === 'admin') return <AdminPanel onExit={() => navigate('/dashboard')} />
-  if (page === 'billing') return <BillingPage onExit={() => navigate('/dashboard')} />
-  if (page === 'privacy') return <LegalPage initialTab="privacy" onExit={() => navigate('/')} />
-  if (page === 'terms') return <LegalPage initialTab="terms" onExit={() => navigate('/')} />
-  if (page === 'dashboard') return <Dashboard />
-  return <LandingPage onStart={() => navigate('/boot')} />
+  return (
+    <Suspense fallback={<PageLoader />}>
+      {page === 'boot' && <BootSequence onDone={() => { sessionStorage.setItem('booted', '1'); navigate('/dashboard') }} />}
+      {page === 'admin' && <AdminPanel onExit={() => navigate('/dashboard')} />}
+      {page === 'billing' && <BillingPage onExit={() => navigate('/dashboard')} />}
+      {page === 'privacy' && <LegalPage initialTab="privacy" onExit={() => navigate('/')} />}
+      {page === 'terms' && <LegalPage initialTab="terms" onExit={() => navigate('/')} />}
+      {page === 'dashboard' && <Dashboard />}
+      {page === 'landing' && <LandingPage onStart={() => navigate('/boot')} />}
+    </Suspense>
+  )
 }

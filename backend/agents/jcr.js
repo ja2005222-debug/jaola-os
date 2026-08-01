@@ -43,11 +43,11 @@ import { buildMarketplaceContext } from './componentMarketplace.js';
 import { reviewCode } from './reviewAgent.js';
 import { runTests } from './testingAgent.js';
 import { commitBuild, initProjectRepo, getProjectStats } from './gitAgent.js';
-import { backupProject, listSnapshots } from './fileManager.js';
+import { backupProject, listSnapshots, restoreSnapshot } from './fileManager.js';
 import { analyzeRequirements, buildRequirementsContext } from './requirementAnalyzer.js';
 import { normalizeText, normalizeArabic, detectIntentFromMeaning, isQuestionMessage, hasActionIntent, isExplicitRebuild, isExplicitNewBuild, isContinuationGoal } from './textNormalizer.js';
 import { routeMessage } from './router.js';
-import { matchDeleteCommand, matchImageCommand, isImageDiagCommand, isBareYes, isBareExecute } from './chatCommands.js';
+import { matchDeleteCommand, matchImageCommand, isImageDiagCommand, isBareYes, isBareExecute, isUndoCommand } from './chatCommands.js';
 import { verifyRequirements, buildFixInstruction, formatChecklist } from './requirementsVerifier.js';
 import { classifyIntentFast, decide, buildContinuationGoal, buildStatusReply, missionBriefing, greetingReply } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
@@ -1864,6 +1864,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const lang = getUserLanguage(username) || 'ar';
         const files = await this.readProjectFilesArray(projectPath);
 
+        // 📸 نسخة احتياطية كاملة قبل كل تعديل — وقود أمر «تراجع» الفوري من
+        // الشات (فشلها لا يعطّل التعديل أبداً).
+        if (files.length) await backupProject(projectPath, 'edit').catch(() => {});
+
         // مشروع React؟ (يحوي lib/content.js أو app/page.jsx)
         const isReact = files.some(f => f.name === 'lib/content.js' || f.name === 'app/page.jsx');
 
@@ -2604,6 +2608,48 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     const state = agents.getState(username);
                     if (state) state.answers.push(`edit: ${message}`);
                 }
+            }
+            return;
+        }
+
+        // ⏪ "تراجع/استرجع/undo" — استرجاع حتمي فوري لآخر نسخة احتياطية كاملة
+        // (شبكة أمان من الشات مكافئة لـ Version Restore عند المنافسين):
+        // لا تفسير ذكاء، لا مجال لانحراف — نسخة، استرجاع، انتهى.
+        if (isUndoCommand(message)) {
+            const lang = getUserLanguage(username) || userLang;
+            try {
+                const snaps = await listSnapshots(projectPath);
+                const latest = snaps.snapshots?.[0];
+                if (!latest) {
+                    this.io.to(roomName).emit('chat_reply', {
+                        message: lang === 'en'
+                            ? 'No saved snapshot yet — snapshots are taken automatically before every upcoming edit, so "undo" will work from the next change onward.'
+                            : 'لا توجد نسخة سابقة محفوظة بعد — النسخ تُلتقط تلقائياً قبل كل تعديل قادم، فأمر «تراجع» سيعمل من التعديل التالي فصاعداً.',
+                    });
+                    return;
+                }
+                const r = await restoreSnapshot(projectPath, latest.name);
+                if (!r.success) {
+                    this.io.to(roomName).emit('chat_reply', {
+                        message: lang === 'en' ? `❌ Restore failed: ${r.error}` : `❌ تعذّر الاسترجاع: ${r.error}`,
+                    });
+                    return;
+                }
+                this.emitLiveLog(roomName, 'EDIT', 'Undo', `⏪ استُرجعت النسخة ${latest.name} (${r.restored.length} ملف).`);
+                this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+                let undoFiles = [];
+                try { undoFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
+                this.io.to(roomName).emit('workspace_files', undoFiles);
+                snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
+                this.io.to(roomName).emit('chat_reply', {
+                    message: lang === 'en'
+                        ? `⏪ Done — restored the previous snapshot (${new Date(latest.timestamp).toLocaleString()}), ${r.restored.length} files. Preview updated.`
+                        : `⏪ تم — استُرجعت النسخة السابقة (${new Date(latest.timestamp).toLocaleString('ar')})، ${r.restored.length} ملفاً. المعاينة تحدّثت.`,
+                });
+            } catch (e) {
+                this.io.to(roomName).emit('chat_reply', {
+                    message: lang === 'en' ? `❌ Restore failed: ${e.message}` : `❌ تعذّر الاسترجاع: ${e.message}`,
+                });
             }
             return;
         }

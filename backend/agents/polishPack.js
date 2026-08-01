@@ -48,6 +48,14 @@ export function polishHtml(html = '') {
     let out = html;
     out = out.includes('</head>') ? out.replace('</head>', HEAD_BLOCK + '\n  </head>') : HEAD_BLOCK + '\n' + out;
     out = out.includes('</body>') ? out.replace('</body>', BODY_BLOCK + '\n  </body>') : out + '\n' + BODY_BLOCK;
+    // 🖼️ تحميل كسول للصور (عدا أول صورتين — الأرجح فوق الطيّة): السمة تُحقن
+    // في الـ HTML نفسه لأن المتصفح يبدأ جلب الصور قبل أي سكربت لاحق —
+    // فسكربت وقت التشغيل لا يجدي هنا. يحترم أي loading وضعه صاحب الموقع.
+    let imgIndex = 0;
+    out = out.replace(/<img\b(?![^>]*\bloading=)([^>]*)>/gi, (m, attrs) => {
+        imgIndex++;
+        return imgIndex <= 2 ? m : `<img loading="lazy" decoding="async"${attrs}>`;
+    });
     return out;
 }
 
