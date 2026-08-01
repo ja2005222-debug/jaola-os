@@ -80,11 +80,15 @@ export default {
         name: ${JSON.stringify(camel)},
         handler: async (input = {}) => {
           const { smartChat } = await import('../agents/baseAgent.js');
+          const { buildPlatformContext } = await import('../agents/platformContext.js');
           const userText = typeof input === 'string'
             ? input
             : (input.text || input.message || JSON.stringify(input));
+          // سياق حقيقي عن الموقع فعلياً (لا اختلاق) — كان الوكيل قبل هذا يتعامل
+          // مع أي سؤال عن الموقع كغريب تماماً، لأن التعليمات وحدها لا تحمل شيئاً عنه.
+          const siteContext = await buildPlatformContext().catch(() => '');
           const reply = await smartChat([
-            { role: 'system', content: \`${sys}\` },
+            { role: 'system', content: siteContext ? \`${sys}\n\n\${siteContext}\` : \`${sys}\` },
             { role: 'user', content: userText },
           ], { max_tokens: 1500, temperature: ${temp} });
           return { agent: ${JSON.stringify(name.trim())}, reply };
