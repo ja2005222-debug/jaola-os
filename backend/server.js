@@ -99,6 +99,7 @@ import { saveWatchlistIndex, listWatchlistIndex, markAlerted, shouldAlert } from
 import { recordSignal, getDueCoinIds, resolveDue, getAccuracy } from './services/signalTrackRecord.js';
 import { runTradingBotTickGuarded } from './services/tradingBotEngine.js';
 import { getConfig as getTradingBotConfig, saveConfig as saveTradingBotConfig, isReadyToEnable as isTradingBotReadyToEnable } from './services/tradingBotConfig.js';
+import { getTokenRegistry as getTradingBotTokenRegistry, upsertToken as upsertTradingBotToken, removeToken as removeTradingBotToken } from './services/tradingBotCoins.js';
 import { listTrades as listTradingBotTrades, readPositions as readTradingBotPositions } from './services/tradingBotLedger.js';
 import { getCircuitBreakerStatus as getTradingBotCircuitBreakerStatus } from './services/tradingBotCircuitBreaker.js';
 import { listRecords as listCollectionRecords, upsertRecord as upsertCollectionRecord, deleteRecord as deleteCollectionRecord } from './services/appCollections.js';
@@ -2567,7 +2568,7 @@ app.post('/api/admin/agents/:name/run', verifyToken, adminOnly, async (req, res)
 // recordAdminAction — سجل "من فعل ماذا" لكل قرار يمسّ مالاً حقيقياً.
 app.get('/api/admin/tradingbot/config', verifyToken, adminOnly, (req, res) => {
     const config = getTradingBotConfig(TRADINGBOT_DIR);
-    res.json({ success: true, config, readyToEnable: isTradingBotReadyToEnable(config) });
+    res.json({ success: true, config, readyToEnable: isTradingBotReadyToEnable(TRADINGBOT_DIR, config) });
 });
 
 app.put('/api/admin/tradingbot/config', verifyToken, adminOnly, (req, res) => {
@@ -2576,8 +2577,31 @@ app.put('/api/admin/tradingbot/config', verifyToken, adminOnly, (req, res) => {
         delete patch.enabled; // التفعيل عبر /enable حصراً — فعل مميَّز مسجَّل بذاته
         const config = saveTradingBotConfig(TRADINGBOT_DIR, patch);
         recordAdminAction({ admin: req.user.username, action: 'tradingbot.config.update', target: 'tradingbot', details: JSON.stringify(patch) });
-        res.json({ success: true, config, readyToEnable: isTradingBotReadyToEnable(config) });
+        res.json({ success: true, config, readyToEnable: isTradingBotReadyToEnable(TRADINGBOT_DIR, config) });
     } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+// 🪙 سجل العملات القابلة للتداول — يديره المشرف نفسه من الواجهة (بدل PR/كود
+// في كل مرة). كل إضافة تتطلب مشرفاً مسجَّل دخوله يكتب العنوان بنفسه، فتبقى
+// نفس روح "تأكيد بشري قبل أي عنوان عقد" لكن عبر لوحة التحكم مباشرة.
+app.get('/api/admin/tradingbot/tokens', verifyToken, adminOnly, (req, res) => {
+    res.json({ success: true, tokens: getTradingBotTokenRegistry(TRADINGBOT_DIR) });
+});
+
+app.post('/api/admin/tradingbot/tokens', verifyToken, adminOnly, (req, res) => {
+    try {
+        const { coinId, symbol, address, decimals } = req.body || {};
+        const tokens = upsertTradingBotToken(TRADINGBOT_DIR, { coinId, symbol, address, decimals });
+        recordAdminAction({ admin: req.user.username, action: 'tradingbot.tokens.upsert', target: coinId, details: JSON.stringify({ symbol, address, decimals }) });
+        res.json({ success: true, tokens });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+app.delete('/api/admin/tradingbot/tokens', verifyToken, adminOnly, (req, res) => {
+    const { coinId } = req.body || {};
+    const tokens = removeTradingBotToken(TRADINGBOT_DIR, coinId);
+    recordAdminAction({ admin: req.user.username, action: 'tradingbot.tokens.remove', target: coinId, details: '' });
+    res.json({ success: true, tokens });
 });
 
 app.post('/api/admin/tradingbot/enable', verifyToken, adminOnly, (req, res) => {
@@ -2594,7 +2618,7 @@ app.get('/api/admin/tradingbot/status', verifyToken, adminOnly, (req, res) => {
     res.json({
         success: true,
         config,
-        readyToEnable: isTradingBotReadyToEnable(config),
+        readyToEnable: isTradingBotReadyToEnable(TRADINGBOT_DIR, config),
         circuitBreaker: getTradingBotCircuitBreakerStatus(TRADINGBOT_DIR, config),
         positions: readTradingBotPositions(TRADINGBOT_DIR),
     });

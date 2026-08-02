@@ -16,7 +16,7 @@ import {
     recordTradeOpen, updateTradeOutcome, readAllTrades, readPositions, writePosition, resetTradingLedgerForTest,
 } from '../services/tradingBotLedger.js';
 import { getDailyRealizedPnlBnb, isCircuitBreakerTripped, getCircuitBreakerStatus } from '../services/tradingBotCircuitBreaker.js';
-import { BSC_TOKEN_REGISTRY, isTradable, filterTradable } from '../services/tradingBotCoins.js';
+import { isTradable, filterTradable, upsertToken, removeToken, getTokenRegistry, resetTradingBotCoinsForTest } from '../services/tradingBotCoins.js';
 import { resetCryptoCache } from '../services/cryptoMarket.js';
 
 const TEST_USER = 'tradingbot-test-user';
@@ -94,23 +94,39 @@ beforeEach(() => {
     dir = tmpDir();
     resetTradingBotConfigForTest(dir);
     resetTradingLedgerForTest(dir);
+    resetTradingBotCoinsForTest(dir);
     resetCryptoCache();
-    BSC_TOKEN_REGISTRY.bitcoin = { symbol: 'BTCB', address: '0x1111111111111111111111111111111111111a', decimals: 18 };
-    BSC_TOKEN_REGISTRY.ethereum = { symbol: 'ETH', address: '0x2222222222222222222222222222222222222b', decimals: 18 };
+    upsertToken(dir, { coinId: 'bitcoin', symbol: 'BTCB', address: '0x111111111111111111111111111111111111111a', decimals: 18 });
+    upsertToken(dir, { coinId: 'ethereum', symbol: 'ETH', address: '0x222222222222222222222222222222222222222b', decimals: 18 });
 });
 afterEach(() => {
     global.fetch = realFetch;
-    delete BSC_TOKEN_REGISTRY.bitcoin;
-    delete BSC_TOKEN_REGISTRY.ethereum;
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
 // ─── القائمة البيضاء ─────────────────────────────────────────────
 test('isTradable/filterTradable: عملة خارج القائمة البيضاء غير قابلة للتداول، binancecoin مُستبعدة عمداً', () => {
-    assert.equal(isTradable('bitcoin'), true);
-    assert.equal(isTradable('dogecoin'), false, 'غير مسجَّلة في القائمة البيضاء');
-    assert.equal(isTradable('binancecoin'), false, 'عملة التمويل/الغاز نفسها — مُستبعدة صراحة');
-    assert.deepEqual(filterTradable(['bitcoin', 'dogecoin', 'binancecoin', 'ethereum']), ['bitcoin', 'ethereum']);
+    assert.equal(isTradable(dir, 'bitcoin'), true);
+    assert.equal(isTradable(dir, 'dogecoin'), false, 'غير مسجَّلة في القائمة البيضاء');
+    assert.equal(isTradable(dir, 'binancecoin'), false, 'عملة التمويل/الغاز نفسها — مُستبعدة صراحة');
+    assert.deepEqual(filterTradable(dir, ['bitcoin', 'dogecoin', 'binancecoin', 'ethereum']), ['bitcoin', 'ethereum']);
+});
+
+// ─── إدارة السجل عبر الواجهة (upsertToken/removeToken) ──────────────
+test('upsertToken: يرفض عنواناً غير صالح، معرّفاً غير صالح، binancecoin، decimals خاطئة', () => {
+    assert.throws(() => upsertToken(dir, { coinId: 'cake', symbol: 'CAKE', address: '0xbadaddress', decimals: 18 }), /عنوان عقد غير صالح/);
+    assert.throws(() => upsertToken(dir, { coinId: 'Cake Token!', symbol: 'CAKE', address: '0x333333333333333333333333333333333333333c', decimals: 18 }), /معرّف CoinGecko غير صالح/);
+    assert.throws(() => upsertToken(dir, { coinId: 'binancecoin', symbol: 'BNB', address: '0x333333333333333333333333333333333333333c', decimals: 18 }), /binancecoin مستبعدة/);
+    assert.throws(() => upsertToken(dir, { coinId: 'cake', symbol: 'CAKE', address: '0x333333333333333333333333333333333333333c', decimals: -1 }), /decimals غير صالح/);
+    assert.doesNotThrow(() => upsertToken(dir, { coinId: 'cake', symbol: 'CAKE', address: '0x333333333333333333333333333333333333333c', decimals: 18 }));
+    assert.equal(isTradable(dir, 'cake'), true);
+});
+
+test('removeToken: يزيل العملة من السجل فتصبح غير قابلة للتداول', () => {
+    assert.equal(isTradable(dir, 'bitcoin'), true);
+    removeToken(dir, 'bitcoin');
+    assert.equal(isTradable(dir, 'bitcoin'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(getTokenRegistry(dir), 'bitcoin'), false);
 });
 
 // ─── تفعيل الإعداد ─────────────────────────────────────────────────

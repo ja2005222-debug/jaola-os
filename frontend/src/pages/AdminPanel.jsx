@@ -509,18 +509,48 @@ function TradingBotTab({ api }) {
   const [status, setStatus] = useState(null);
   const [form, setForm] = useState(null);
   const [trades, setTrades] = useState([]);
+  const [tokens, setTokens] = useState(null);
+  const [tokenForm, setTokenForm] = useState({ coinId: '', symbol: '', address: '', decimals: '18' });
+  const [tokenMsg, setTokenMsg] = useState('');
+  const [tokenBusy, setTokenBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [s, t] = await Promise.all([api('/api/admin/tradingbot/status'), api('/api/admin/tradingbot/trades?limit=30')]);
+      const [s, t, tk] = await Promise.all([
+        api('/api/admin/tradingbot/status'), api('/api/admin/tradingbot/trades?limit=30'), api('/api/admin/tradingbot/tokens'),
+      ]);
       setStatus(s);
       setForm(f => f || { ...s.config, coinIdsText: (s.config.coinIds || []).join(',') });
       setTrades(t.trades || []);
+      setTokens(tk.tokens || {});
     } catch (e) { if (e.message !== 'forbidden') setMsg('❌ ' + e.message); }
   }, [api]);
   useEffect(() => { load(); }, [load]);
+
+  const addToken = async () => {
+    setTokenBusy(true); setTokenMsg('');
+    try {
+      const d = await api('/api/admin/tradingbot/tokens', {
+        method: 'POST',
+        body: JSON.stringify({ ...tokenForm, decimals: Number(tokenForm.decimals) }),
+      });
+      setTokens(d.tokens);
+      setTokenForm({ coinId: '', symbol: '', address: '', decimals: '18' });
+      setTokenMsg(`✅ ${tr('tbTokenAdded')}`);
+    } catch (e) { setTokenMsg('❌ ' + e.message); }
+    setTokenBusy(false);
+  };
+
+  const removeTokenEntry = async (coinId) => {
+    setTokenBusy(true); setTokenMsg('');
+    try {
+      const d = await api('/api/admin/tradingbot/tokens', { method: 'DELETE', body: JSON.stringify({ coinId }) });
+      setTokens(d.tokens);
+    } catch (e) { setTokenMsg('❌ ' + e.message); }
+    setTokenBusy(false);
+  };
 
   const saveConfig = async () => {
     setBusy(true); setMsg('');
@@ -657,6 +687,48 @@ function TradingBotTab({ api }) {
             <button disabled={busy} onClick={saveConfig} style={{ ...btnPrimary, opacity: busy ? 0.6 : 1 }}>{busy ? tr('admSaving') : tr('save')}</button>
           </div>
         </div>
+      </div>
+
+      <div style={{ ...cardStyle, marginBottom: 20 }}>
+        <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 4 }}>{tr('tbTokensTitle')}</div>
+        <p style={{ color: S.muted, fontSize: 12, marginBottom: 14, lineHeight: 1.7 }}>{tr('tbTokensHint')}</p>
+        <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>
+          {Object.keys(tokens || {}).length === 0 && <Muted>{tr('tbTokensEmpty')}</Muted>}
+          {Object.entries(tokens || {}).map(([coinId, t]) => (
+            <div key={coinId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 12px', border: `1px solid ${S.border}`, borderRadius: 8, fontSize: 12.5 }}>
+              <div style={{ minWidth: 0 }}>
+                <b>{t.symbol}</b> <span style={{ color: S.muted }}>({coinId})</span>
+                <div style={{ color: S.muted, fontSize: 11, direction: 'ltr', textAlign: 'left', wordBreak: 'break-all' }}>{t.address} · decimals {t.decimals}</div>
+              </div>
+              <button disabled={tokenBusy} onClick={() => removeTokenEntry(coinId)} style={{ background: 'transparent', border: `1px solid ${S.border}`, borderRadius: 6, padding: '5px 10px', color: S.red, fontSize: 11.5, fontWeight: 700, flexShrink: 0 }}>{tr('tbTokenRemove')}</button>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+          <div>
+            <span style={label}>{tr('tbTokenCoinId')}</span>
+            <input style={{ ...inputStyle, direction: 'ltr', textAlign: 'left' }} placeholder="pancakeswap-token"
+              value={tokenForm.coinId} onChange={e => setTokenForm(f => ({ ...f, coinId: e.target.value }))} />
+          </div>
+          <div>
+            <span style={label}>{tr('tbTokenSymbol')}</span>
+            <input style={{ ...inputStyle, direction: 'ltr', textAlign: 'left' }} placeholder="CAKE"
+              value={tokenForm.symbol} onChange={e => setTokenForm(f => ({ ...f, symbol: e.target.value }))} />
+          </div>
+          <div style={{ gridColumn: 'span 2' }}>
+            <span style={label}>{tr('tbTokenAddress')}</span>
+            <input style={{ ...inputStyle, direction: 'ltr', textAlign: 'left' }} placeholder="0x..."
+              value={tokenForm.address} onChange={e => setTokenForm(f => ({ ...f, address: e.target.value }))} />
+          </div>
+          <div>
+            <span style={label}>{tr('tbTokenDecimals')}</span>
+            <input style={inputStyle} type="number" min="0" max="36" value={tokenForm.decimals} onChange={e => setTokenForm(f => ({ ...f, decimals: e.target.value }))} />
+          </div>
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <button disabled={tokenBusy} onClick={addToken} style={{ ...btnPrimary, opacity: tokenBusy ? 0.6 : 1 }}>{tokenBusy ? tr('admSaving') : tr('tbTokenAdd')}</button>
+        </div>
+        {tokenMsg && <p style={{ fontSize: 12, color: tokenMsg.startsWith('❌') ? S.red : S.muted, marginTop: 10, wordBreak: 'break-word' }}>{tokenMsg}</p>}
       </div>
 
       <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10 }}>{tr('tbTradeHistory')} ({trades.length})</div>

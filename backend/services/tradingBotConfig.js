@@ -43,9 +43,9 @@ export function getConfig(dir) {
  * هل هذا الإعداد جاهز للتفعيل؟ كل الحقول الجوهرية حاضرة، وعملات قابلة
  * للتداول فعلياً (موجودة في القائمة البيضاء)، وتأكيد يدوي لعناوين العقود.
  */
-export function isReadyToEnable(cfg) {
+export function isReadyToEnable(dir, cfg) {
     if (!cfg.addressesVerified) return false;
-    if (!filterTradable(cfg.coinIds).length) return false;
+    if (!filterTradable(dir, cfg.coinIds).length) return false;
     if (!(Number(cfg.positionSizeBnb) > 0)) return false;
     if (!(Number(cfg.dailyLossLimitBnb) > 0)) return false;
     if (!(Number(cfg.minGasReserveBnb) >= 0)) return false;
@@ -61,7 +61,7 @@ export function isReadyToEnable(cfg) {
 export function saveConfig(dir, patch = {}) {
     const current = getConfig(dir);
     const merged = { ...current, ...patch };
-    if (merged.enabled && !isReadyToEnable(merged)) {
+    if (merged.enabled && !isReadyToEnable(dir, merged)) {
         throw new Error('لا يمكن تفعيل البوت: الإعداد غير مكتمل (تحقّق من العملات/الحجم/قاطع الخسارة/الأسرار/تأكيد العناوين).');
     }
     fs.mkdirSync(dir, { recursive: true });
