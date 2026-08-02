@@ -513,6 +513,8 @@ function TradingBotTab({ api }) {
   const [tokenForm, setTokenForm] = useState({ coinId: '', symbol: '', address: '', decimals: '18' });
   const [tokenMsg, setTokenMsg] = useState('');
   const [tokenBusy, setTokenBusy] = useState(false);
+  const [candidates, setCandidates] = useState(null);
+  const [discoverBusy, setDiscoverBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -551,6 +553,21 @@ function TradingBotTab({ api }) {
       setTokenMsg(`✅ ${d.name} — ${tr('tbTokenLookupReview')}`);
     } catch (e) { setTokenMsg('❌ ' + e.message); }
     setTokenBusy(false);
+  };
+
+  const discoverCandidates = async () => {
+    setDiscoverBusy(true); setTokenMsg('');
+    try {
+      const d = await api('/api/admin/tradingbot/tokens/discover');
+      setCandidates(d.candidates || []);
+      if (!d.candidates?.length) setTokenMsg(tr('tbDiscoverEmpty'));
+    } catch (e) { setTokenMsg('❌ ' + e.message); }
+    setDiscoverBusy(false);
+  };
+
+  const useCandidate = (c) => {
+    setTokenForm({ coinId: c.coinId, symbol: c.symbol, address: c.address, decimals: String(c.decimals) });
+    setTokenMsg(`👆 ${tr('tbTokenLookupReview')}`);
   };
 
   const removeTokenEntry = async (coinId) => {
@@ -714,6 +731,25 @@ function TradingBotTab({ api }) {
             </div>
           ))}
         </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <button disabled={discoverBusy} onClick={discoverCandidates} style={{ background: 'transparent', border: `1px solid ${S.border}`, borderRadius: 8, padding: '9px 16px', color: S.text, fontWeight: 700, fontSize: 13, opacity: discoverBusy ? 0.5 : 1 }}>🔥 {discoverBusy ? tr('admLoading') : tr('tbDiscover')}</button>
+          <p style={{ color: S.muted, fontSize: 11.5, marginTop: 6, lineHeight: 1.7 }}>{tr('tbDiscoverHint')}</p>
+          {candidates && candidates.length > 0 && (
+            <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+              {candidates.map(c => (
+                <div key={c.coinId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 12px', border: `1px solid ${S.border}`, borderRadius: 8, fontSize: 12.5 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <b>{c.symbol}</b> <span style={{ color: S.muted }}>{c.name} ({c.coinId})</span>
+                    <div style={{ color: S.muted, fontSize: 11, direction: 'ltr', textAlign: 'left', wordBreak: 'break-all' }}>{c.address} · decimals {c.decimals}</div>
+                  </div>
+                  <button disabled={tokenBusy} onClick={() => useCandidate(c)} style={{ background: 'transparent', border: `1px solid ${S.border}`, borderRadius: 6, padding: '5px 10px', color: S.text, fontSize: 11.5, fontWeight: 700, flexShrink: 0 }}>{tr('tbTokenUse')}</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'end', marginBottom: 10 }}>
           <div>
             <span style={label}>{tr('tbTokenAddress')}</span>

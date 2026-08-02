@@ -16,7 +16,10 @@ import {
     recordTradeOpen, updateTradeOutcome, readAllTrades, readPositions, writePosition, resetTradingLedgerForTest,
 } from '../services/tradingBotLedger.js';
 import { getDailyRealizedPnlBnb, isCircuitBreakerTripped, getCircuitBreakerStatus } from '../services/tradingBotCircuitBreaker.js';
-import { isTradable, filterTradable, upsertToken, removeToken, getTokenRegistry, resetTradingBotCoinsForTest, lookupTokenByAddress } from '../services/tradingBotCoins.js';
+import {
+    isTradable, filterTradable, upsertToken, removeToken, getTokenRegistry, resetTradingBotCoinsForTest,
+    lookupTokenByAddress, discoverTrendingCandidates, resetDiscoveryCacheForTest,
+} from '../services/tradingBotCoins.js';
 import { resetCryptoCache } from '../services/cryptoMarket.js';
 
 const TEST_USER = 'tradingbot-test-user';
@@ -95,6 +98,7 @@ beforeEach(() => {
     resetTradingBotConfigForTest(dir);
     resetTradingLedgerForTest(dir);
     resetTradingBotCoinsForTest(dir);
+    resetDiscoveryCacheForTest();
     resetCryptoCache();
     upsertToken(dir, { coinId: 'bitcoin', symbol: 'BTCB', address: '0x111111111111111111111111111111111111111a', decimals: 18 });
     upsertToken(dir, { coinId: 'ethereum', symbol: 'ETH', address: '0x222222222222222222222222222222222222222b', decimals: 18 });
@@ -151,6 +155,53 @@ test('lookupTokenByAddress: يرجع coinId/symbol/decimals من ردّ CoinGeck
 test('lookupTokenByAddress: 404 ⇒ رسالة "لم يُعثر" واضحة، لا خطأ شبكي غامض', async () => {
     global.fetch = async () => ({ ok: false, status: 404, json: async () => ({}) });
     await assert.rejects(() => lookupTokenByAddress('0x333333333333333333333333333333333333333c'), /لم يُعثر/);
+});
+
+// ─── اكتشاف مرشّحين رائجين (trending) ────────────────────────────────
+test('discoverTrendingCandidates: يُصفّي لمن له عقد BSC فقط، يتجاوز فشل مرشّح واحد بصمت', async () => {
+    global.fetch = async (url) => {
+        const u = String(url);
+        if (u.includes('/search/trending')) {
+            return {
+                ok: true, status: 200, json: async () => ({
+                    coins: [
+                        { item: { id: 'on-bsc-coin', symbol: 'obc', name: 'On BSC Coin' } },
+                        { item: { id: 'eth-only-coin', symbol: 'eoc', name: 'ETH Only Coin' } },
+                        { item: { id: 'flaky-coin', symbol: 'flk', name: 'Flaky Coin' } },
+                    ],
+                }),
+            };
+        }
+        if (u.includes('/coins/on-bsc-coin')) {
+            return {
+                ok: true, status: 200, json: async () => ({
+                    detail_platforms: { 'binance-smart-chain': { decimal_place: 18 } },
+                    platforms: { 'binance-smart-chain': '0x444444444444444444444444444444444444444d' },
+                }),
+            };
+        }
+        if (u.includes('/coins/eth-only-coin')) {
+            return { ok: true, status: 200, json: async () => ({ detail_platforms: {}, platforms: { ethereum: '0xabc' } }) };
+        }
+        if (u.includes('/coins/flaky-coin')) {
+            return { ok: false, status: 500, json: async () => ({}) };
+        }
+        return { ok: false, status: 404, json: async () => ({}) };
+    };
+    const candidates = await discoverTrendingCandidates();
+    assert.deepEqual(candidates, [{ coinId: 'on-bsc-coin', symbol: 'OBC', name: 'On BSC Coin', address: '0x444444444444444444444444444444444444444d', decimals: 18 }]);
+});
+
+test('discoverTrendingCandidates: يُخزَّن مؤقتاً — نداء ثانٍ سريع لا يعيد ضرب /search/trending', async () => {
+    let trendingCalls = 0;
+    global.fetch = async (url) => {
+        const u = String(url);
+        if (u.includes('/search/trending')) { trendingCalls++; return { ok: true, status: 200, json: async () => ({ coins: [] }) }; }
+        return { ok: false, status: 404, json: async () => ({}) };
+    };
+    await discoverTrendingCandidates();
+    await discoverTrendingCandidates();
+    assert.equal(trendingCalls, 1);
 });
 
 // ─── تفعيل الإعداد ─────────────────────────────────────────────────
