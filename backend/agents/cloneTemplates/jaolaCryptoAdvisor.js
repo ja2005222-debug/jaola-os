@@ -149,9 +149,16 @@ var I18N = {
     smaBullish: function (s, l) { return 'المتوسط المتحرك قصير المدى (' + s + ') أعلى من طويل المدى (' + l + ') — اتجاه صاعد.'; },
     smaBearish: function (s, l) { return 'المتوسط المتحرك قصير المدى (' + s + ') أدنى من طويل المدى (' + l + ') — اتجاه هابط.'; },
     noSignal: 'لا إشارة فنية واضحة حالياً — البيانات غير كافية أو السوق متذبذب.',
+    agreementConfirmedLead: 'مؤكَّد بمؤشر ثانٍ:',
+    agreementAgainstTrendLead: 'تنبيه: يخالف الاتجاه العام —',
+    badgeConfirmed: 'مؤكَّدة بمؤشرين',
+    badgeCaution: 'عكس الاتجاه — مخاطرة أعلى',
+    volumeUp: function (p) { return 'حجم التداول أعلى بنسبة ' + p + '% عن الفترة السابقة — يدعم قوة هذه الحركة.'; },
+    volumeDown: function (p) { return 'حجم التداول أقل بنسبة ' + p + '% عن الفترة السابقة — حركة أضعف اقتناعاً.'; },
     disclaimerLong: 'تنبيه: هذا تحليل إحصائي آلي وليس نصيحة استثمارية ملزمة — قرار التداول ونتيجته مسؤوليتك الكاملة.',
     trackRecordLabel: 'دقة الإشارات السابقة',
     trackRecordNoData: 'لا توجد بيانات كافية بعد لقياس الدقة على هذا المدى.',
+    trackRecordPending: function (n) { return '📡 ' + n + ' ' + (n === 1 ? 'توقّع' : 'توقّعات') + ' قيد المراقبة الآن لهذه العملة على هذا المدى — ستظهر الدقة فور حسمها.'; },
     trackRecordSummary: function (rate, hits, judged) { return 'نجحت ' + hits + ' من ' + judged + ' توقّعات محسومة (' + rate + '%) لهذه العملة على هذا المدى.'; },
     tradeBtn: function (sym) { return 'تداول ' + sym + ' الآن ↗'; },
     affiliateDisclosure: 'رابط إحالة خارجي — قد نحصل على عمولة دون أي تكلفة إضافية عليك.',
@@ -216,9 +223,16 @@ var I18N = {
     smaBullish: function (s, l) { return 'The short-term average over ' + s + ' is above the long-term average over ' + l + ' — an uptrend.'; },
     smaBearish: function (s, l) { return 'The short-term average over ' + s + ' is below the long-term average over ' + l + ' — a downtrend.'; },
     noSignal: 'No clear technical signal right now — insufficient data or a choppy market.',
+    agreementConfirmedLead: 'Confirmed by a second indicator:',
+    agreementAgainstTrendLead: 'Caution: goes against the broader trend —',
+    badgeConfirmed: 'Confirmed by two indicators',
+    badgeCaution: 'Against the trend — higher risk',
+    volumeUp: function (p) { return 'Trading volume is up ' + p + '% versus the prior period — supports the strength of this move.'; },
+    volumeDown: function (p) { return 'Trading volume is down ' + p + '% versus the prior period — a weaker, less convincing move.'; },
     disclaimerLong: 'Note: this is automated statistical analysis, not binding investment advice — the trading decision and its outcome are entirely your responsibility.',
     trackRecordLabel: 'Past signal accuracy',
     trackRecordNoData: 'Not enough resolved predictions yet to measure accuracy for this timeframe.',
+    trackRecordPending: function (n) { return '📡 ' + n + ' prediction' + (n === 1 ? '' : 's') + ' currently being tracked for this coin on this timeframe — accuracy will show once resolved.'; },
     trackRecordSummary: function (rate, hits, judged) { return hits + ' out of ' + judged + ' resolved predictions hit their target — ' + rate + '% for this coin on this timeframe.'; },
     tradeBtn: function (sym) { return 'Trade ' + sym + ' now ↗'; },
     affiliateDisclosure: 'External affiliate link — we may earn a commission at no extra cost to you.',
@@ -295,17 +309,40 @@ function periodPhrase(n, unit) {
   if (unit === 'hour') return n + ' ' + (n <= 10 ? t('hourFew') : t('hourMany'));
   return n + ' ' + (n <= 10 ? t('dayFew') : t('dayMany'));
 }
-function reasonText(a) {
+// نص مؤشر واحد (RSI أو SMA) — يُستخدَم للسبب الأساسي وللمؤشر الثانوي معاً،
+// كي لا تختلف صياغة "SMA صاعد" بين الحالتين.
+function indicatorText(a, code) {
   var rsiTxt = (a.rsi != null) ? a.rsi.toFixed(0) : '—';
   var shortP = periodPhrase(a.smaShortPeriod, a.periodUnit);
   var longP = periodPhrase(a.smaLongPeriod, a.periodUnit);
-  switch (a.reasonCode) {
+  switch (code) {
     case 'rsi_overbought': return t('rsiOverbought', rsiTxt);
     case 'rsi_oversold': return t('rsiOversold', rsiTxt);
     case 'sma_bullish': return t('smaBullish', shortP, longP);
     case 'sma_bearish': return t('smaBearish', shortP, longP);
     default: return t('noSignal');
   }
+}
+function reasonText(a) { return indicatorText(a, a.reasonCode); }
+// شارة اتفاق/تعارض المؤشرين بجانب الإشارة نفسها — لا تخفي التعارض، تُظهره.
+function agreementBadge(a) {
+  if (a.agreement === 'confirmed') return ' <span class="ana-badge badge-confirmed">✓ ' + esc(t('badgeConfirmed')) + '</span>';
+  if (a.agreement === 'against_trend') return ' <span class="ana-badge badge-caution">⚠ ' + esc(t('badgeCaution')) + '</span>';
+  return '';
+}
+// كل أسطر «لماذا هذه الإشارة» — السبب الأساسي، ثم ملاحظة اتفاق/تعارض
+// المؤشر الآخر إن وُجد، ثم ملاحظة الحجم (تدعم الحركة أم تُضعفها) إن حُسبت.
+function reasonLines(a) {
+  var lines = [reasonText(a)];
+  if (a.secondaryCode && (a.agreement === 'confirmed' || a.agreement === 'against_trend')) {
+    var lead = a.agreement === 'confirmed' ? t('agreementConfirmedLead') : t('agreementAgainstTrendLead');
+    lines.push(lead + ' ' + indicatorText(a, a.secondaryCode));
+  }
+  if (a.volumeChangePct != null) {
+    var pct = Math.abs(a.volumeChangePct).toFixed(0);
+    lines.push(a.volumeChangePct >= 0 ? t('volumeUp', pct) : t('volumeDown', pct));
+  }
+  return lines;
 }
 
 function login() {
@@ -496,12 +533,12 @@ function sparklineSvg(values) {
 }
 function renderAnalysis(a) {
   if (!a || a.error || !a.id) { byId('anaBody').innerHTML = '<p class="hint">⚠️ ' + esc(a && a.error ? a.error : t('failAnalysis')) + '</p>'; return; }
-  var reasons = [reasonText(a), t('disclaimerLong')];
+  var reasons = reasonLines(a).concat([t('disclaimerLong')]);
   byId('anaBody').innerHTML =
     (a.stale ? '<p class="hint warn-text">⚠️ ' + esc(t('staleAnalysis')) + '</p>' : '') +
     '<div class="ana-price">' + fmtPrice(a.price) + '</div>' +
     sparklineSvg(a.recentCloses) +
-    '<div class="ana-signal ' + signalClass(a.signal) + '">' + esc(signalLabel(a.signal)) + '</div>' +
+    '<div class="ana-signal ' + signalClass(a.signal) + '">' + esc(signalLabel(a.signal)) + agreementBadge(a) + '</div>' +
     '<div class="ana-stats">' +
     '<div class="stat"><span class="stat-v">' + fmtPrice(a.smaShort) + '</span><span class="stat-l">' + esc(t('smaLabel')) + ' ' + esc(periodPhrase(a.smaShortPeriod, a.periodUnit)) + '</span></div>' +
     '<div class="stat"><span class="stat-v">' + fmtPrice(a.smaLong) + '</span><span class="stat-l">' + esc(t('smaLabel')) + ' ' + esc(periodPhrase(a.smaLongPeriod, a.periodUnit)) + '</span></div>' +
@@ -535,7 +572,14 @@ function renderTrackRecord(tr) {
   var box = byId('anaTrackRecord');
   if (!box) return;
   var judged = tr ? (tr.hits || 0) + (tr.misses || 0) : 0;
-  if (!tr || tr.hitRate == null || !judged) { box.innerHTML = '<p class="hint tiny">📊 ' + esc(t('trackRecordNoData')) + '</p>'; return; }
+  if (!tr || tr.hitRate == null || !judged) {
+    // بلا نتائج محسومة بعد — لو توجد تنبّؤات مسجَّلة فعلياً قيد المراقبة
+    // (pending > 0) نقول ذلك صراحة بدل رسالة "لا بيانات" الجافة المُربكة،
+    // فيرى الزائر أن النظام يعمل ويراقب فعلياً لا أنه معطّل أو فارغ.
+    var msg = (tr && tr.pending > 0) ? t('trackRecordPending', tr.pending) : t('trackRecordNoData');
+    box.innerHTML = '<p class="hint tiny">📊 ' + esc(msg) + '</p>';
+    return;
+  }
   box.innerHTML = '<p class="hint tiny">📊 ' + esc(t('trackRecordLabel')) + ': ' + esc(t('trackRecordSummary', tr.hitRate, tr.hits, judged)) + '</p>';
 }
 function loadTrackRecord(id) {
@@ -696,6 +740,9 @@ document.addEventListener('DOMContentLoaded', init);
 .sig-buy{background:rgba(34,197,94,.15);color:var(--ok)}
 .sig-sell{background:rgba(239,68,68,.15);color:var(--bad)}
 .sig-hold{background:rgba(139,144,165,.15);color:var(--mut)}
+.ana-badge{display:inline-block;padding:3px 9px;border-radius:999px;font-weight:700;font-size:10.5px;margin-inline-start:6px;vertical-align:middle}
+.badge-confirmed{background:rgba(34,197,94,.14);color:var(--ok)}
+.badge-caution{background:rgba(245,158,11,.16);color:#f59e0b}
 .ana-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px}
 .ana-reasons{padding-inline-start:20px;display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--txt)}
 .watchlist-box{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
