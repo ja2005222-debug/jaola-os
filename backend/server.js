@@ -93,7 +93,7 @@ import { listUsers as listAdminUsers, setUserPlan } from './services/adminUsers.
 import { verifyPassword as verifyProjectPassword, setPassword as setProjectPassword } from './services/projectAuth.js';
 import { broadcastPresence } from './services/presence.js';
 import { saveAsset, readAsset } from './services/appAssets.js';
-import { listMarkets, getAnalysis, getOpportunities, searchCoins, isValidCoinId, MAX_WATCHLIST, SUPPORTED_COINS, findCoin } from './services/cryptoMarket.js';
+import { listMarkets, getAnalysis, getOpportunities, searchCoins, isValidCoinId, MAX_WATCHLIST, SUPPORTED_COINS, TIMEFRAMES, findCoin } from './services/cryptoMarket.js';
 import { generateCommentary } from './services/cryptoCommentary.js';
 import { saveWatchlistIndex, listWatchlistIndex, markAlerted, shouldAlert } from './services/cryptoAlerts.js';
 import { recordSignal, getDueCoinIds, resolveDue, getAccuracy } from './services/signalTrackRecord.js';
@@ -3369,6 +3369,25 @@ setInterval(async () => {
         resolveDue(SIGNAL_TRACK_DIR, priceById);
     } catch (e) { console.warn('[SignalTrackRecord]', 'دورة الحسم فشلت:', e.message); }
 }, 30 * 60 * 1000);
+
+// 🌱 حلقة تغذية سجل الأداء للعملات الثماني المدعومة — بدون هذه الحلقة، سجل
+// الدقة يظل فارغاً إلى الأبد لأي عملة لا يفتح أحد شاشة تحليلها فعلياً (رسالة
+// "لا بيانات كافية" الدائمة، مشكلة اكتشفها المالك فعلياً). زوج (عملة، مدى)
+// واحد فقط كل 3 دقائق (لا انفجار نداءات كالعطل السابق الموثَّق أعلاه في حلقة
+// تسخين الكاش) — getAnalysis تستخدم كاشها الخاص فمعظم النداءات هنا مجانية
+// أصلاً إن كانت ساخنة من زيارات حقيقية. عند الجفاف الكامل: نداء شبكي واحد
+// كل 3 دقائق على الأكثر، أبطأ بكثير من العطل الذي أدّى لحذف التسخين هناك.
+const TRACK_WARM_PAIRS = SUPPORTED_COINS.flatMap(c => Object.keys(TIMEFRAMES).map(tf => ({ id: c.id, tf })));
+let trackWarmCursor = 0;
+setInterval(async () => {
+    if (!TRACK_WARM_PAIRS.length) return;
+    const { id, tf } = TRACK_WARM_PAIRS[trackWarmCursor % TRACK_WARM_PAIRS.length];
+    trackWarmCursor++;
+    try {
+        const r = await getAnalysis(id, tf);
+        if (!r.error) recordSignal(SIGNAL_TRACK_DIR, r);
+    } catch (e) { console.warn('[SignalTrackRecord]', 'تغذية سجل الأداء فشلت:', e.message); }
+}, 3 * 60 * 1000);
 
 // 💰 حلقة فحص تجاوز الميزانية — كل 6 ساعات: لكل مشروع مسجَّل عبر
 // /api/public/budget/register، تقارن مصروف الشهر الحالي الفعلي بكل

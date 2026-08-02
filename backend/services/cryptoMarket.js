@@ -123,12 +123,60 @@ export function rsi(closes, period = 14) {
 // أسماء عامة (smaShort/smaLong) لا "sma7/sma25" — نفس الدالة تُستخدَم لكل
 // المدى الزمنية الثلاثة (ساعات/أيام قصيرة/أيام طويلة)، فتخصيص الاسم للفترة
 // الأسبوعية فقط كان سيضلّل عند استخدامها للمدى اليومي أو الطويل.
+//
+// RSI هو زناد التوقيت الأساسي (نفس أولوية السلوك القديم — لا كسر لأي
+// اختبار/سلوك سابق: rsi_overbought/oversold يحسمان حتى لو خالف SMA الاتجاه)،
+// وSMA مرشِّح الاتجاه العام. الجديد: لا نُخفي الخلاف بين المؤشرين بعد الآن —
+// agreement يوضّح هل يتفقان (confirmed)، يختلفان (against_trend، إشارة RSI
+// عكس الاتجاه العام فمخاطرتها أعلى)، مؤشر واحد فقط متاح (single)، أو
+// لا إشارة إطلاقاً (none). secondaryCode يحمل قراءة المؤشر الآخر للعرض.
 export function buildSignal({ smaShort, smaLong, rsi: rsiVal }) {
-    if (rsiVal != null && rsiVal >= 70) return { signal: 'sell', reasonCode: 'rsi_overbought' };
-    if (rsiVal != null && rsiVal <= 30) return { signal: 'buy', reasonCode: 'rsi_oversold' };
-    if (smaShort != null && smaLong != null && smaShort > smaLong) return { signal: 'buy', reasonCode: 'sma_bullish' };
-    if (smaShort != null && smaLong != null && smaShort < smaLong) return { signal: 'sell', reasonCode: 'sma_bearish' };
-    return { signal: 'hold', reasonCode: 'insufficient_data' };
+    const rsiSignal = rsiVal != null && rsiVal >= 70 ? 'sell' : (rsiVal != null && rsiVal <= 30 ? 'buy' : null);
+    const smaSignal = (smaShort != null && smaLong != null)
+        ? (smaShort > smaLong ? 'buy' : (smaShort < smaLong ? 'sell' : null))
+        : null;
+
+    if (rsiSignal) {
+        const reasonCode = rsiSignal === 'buy' ? 'rsi_oversold' : 'rsi_overbought';
+        if (smaSignal) {
+            return {
+                signal: rsiSignal, reasonCode,
+                agreement: rsiSignal === smaSignal ? 'confirmed' : 'against_trend',
+                secondaryCode: smaSignal === 'buy' ? 'sma_bullish' : 'sma_bearish',
+            };
+        }
+        return { signal: rsiSignal, reasonCode, agreement: 'single', secondaryCode: null };
+    }
+    if (smaSignal) {
+        return {
+            signal: smaSignal, reasonCode: smaSignal === 'buy' ? 'sma_bullish' : 'sma_bearish',
+            agreement: 'single', secondaryCode: null,
+        };
+    }
+    return { signal: 'hold', reasonCode: 'insufficient_data', agreement: 'none', secondaryCode: null };
+}
+
+/** يختزل [timestamp, volume] إلى مجموع الحجم لكل نافذة زمنية (لا آخر قيمة كالأسعار — الحجم تدفّق يُجمع). */
+export function bucketVolumes(volumes, bucketMs) {
+    const byBucket = new Map();
+    for (const point of Array.isArray(volumes) ? volumes : []) {
+        const ts = point?.[0], vol = point?.[1];
+        if (typeof ts !== 'number' || typeof vol !== 'number') continue;
+        const key = Math.floor(ts / bucketMs);
+        byBucket.set(key, (byBucket.get(key) || 0) + vol);
+    }
+    return [...byBucket.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
+}
+
+/** % تغيّر متوسط حجم التداول لآخر period نافذة مقابل الفترة التي سبقتها مباشرة — يقيس هل الحركة الحالية مدعومة بحجم أعلى (أكثر اقتناعاً) أم أضعف. */
+export function volumeTrend(volumeBuckets, period) {
+    if (!Array.isArray(volumeBuckets) || volumeBuckets.length < period * 2) return null;
+    const recent = volumeBuckets.slice(-period);
+    const prior = volumeBuckets.slice(-period * 2, -period);
+    const avgRecent = recent.reduce((s, v) => s + v, 0) / period;
+    const avgPrior = prior.reduce((s, v) => s + v, 0) / period;
+    if (!avgPrior) return null;
+    return Math.round(((avgRecent - avgPrior) / avgPrior) * 1000) / 10;
 }
 
 /**
@@ -195,11 +243,15 @@ export async function getAnalysis(id, timeframe = DEFAULT_TIMEFRAME) {
         if (!closes.length) throw new Error('لا بيانات تاريخية');
         const price = closes[closes.length - 1];
         const smaShort = sma(closes, cfg.smaShortPeriod), smaLong = sma(closes, cfg.smaLongPeriod), rsiVal = rsi(closes, cfg.rsiPeriod);
-        const { signal, reasonCode } = buildSignal({ smaShort, smaLong, rsi: rsiVal });
+        const { signal, reasonCode, agreement, secondaryCode } = buildSignal({ smaShort, smaLong, rsi: rsiVal });
+        // الحجم من نفس استجابة market_chart (بلا نداء شبكي إضافي) — يقيس هل
+        // الحركة الحالية مدعومة باقتناع (حجم أعلى) أم ضعيفة (حجم أقل).
+        const volumeBuckets = bucketVolumes(raw?.total_volumes, cfg.bucketMs);
+        const volumeChangePct = volumeTrend(volumeBuckets, cfg.smaShortPeriod);
         // آخر 14 نقطة (ساعة أو يوم حسب المدى) — للرسم البياني المصغّر (sparkline)، بلا نداء إضافي.
         const recentCloses = closes.slice(-14);
         const data = {
-            id, timeframe: tf, price, smaShort, smaLong, rsi: rsiVal, signal, reasonCode, recentCloses,
+            id, timeframe: tf, price, smaShort, smaLong, rsi: rsiVal, signal, reasonCode, agreement, secondaryCode, volumeChangePct, recentCloses,
             smaShortPeriod: cfg.smaShortPeriod, smaLongPeriod: cfg.smaLongPeriod, rsiPeriod: cfg.rsiPeriod, periodUnit: cfg.periodUnit,
             updatedAt: Date.now(),
         };

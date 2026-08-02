@@ -85,14 +85,21 @@ export function resolveDue(dir, priceById) {
     if (changed) writeAll(dir, records);
 }
 
-/** إحصاء الدقة — لعملة+مدى محدَّدين، أو لكل عملة ضمن مدى، أو للكل. neutral مُستبعَدة من hitRate (لا اتجاه حقيقي لتقييمه). */
+/**
+ * إحصاء الدقة — لعملة+مدى محدَّدين، أو لكل عملة ضمن مدى، أو للكل.
+ * neutral مُستبعَدة من hitRate (لا اتجاه حقيقي لتقييمه). pending = تنبّؤات
+ * مسجَّلة بالفعل لم يحن أفقها الزمني بعد — تُستخدَم لعرض "قيد المراقبة"
+ * بدل رسالة "لا بيانات" الجافة حين توجد تنبّؤات فعلية لم تُحسَم بعد فقط.
+ */
 export function getAccuracy(dir, { id, timeframe } = {}) {
-    const records = readAll(dir).filter(r => r.resolved && (!id || r.id === id) && (!timeframe || r.timeframe === timeframe));
+    const matching = readAll(dir).filter(r => (!id || r.id === id) && (!timeframe || r.timeframe === timeframe));
+    const records = matching.filter(r => r.resolved);
+    const pending = matching.length - records.length;
     const hits = records.filter(r => r.outcome === 'hit').length;
     const misses = records.filter(r => r.outcome === 'miss').length;
     const neutral = records.filter(r => r.outcome === 'neutral').length;
     const judged = hits + misses;
-    return { hits, misses, neutral, total: records.length, hitRate: judged ? Math.round((hits / judged) * 1000) / 10 : null };
+    return { hits, misses, neutral, total: records.length, pending, hitRate: judged ? Math.round((hits / judged) * 1000) / 10 : null };
 }
 
 /** لإعادة الضبط بين الاختبارات فقط. */

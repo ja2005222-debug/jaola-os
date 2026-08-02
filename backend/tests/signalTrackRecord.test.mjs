@@ -124,7 +124,31 @@ test('getAccuracy: يُجمِّع عبر كل العملات لمدى معيّن
 test('getAccuracy: مجلد فارغ/غير موجود → إحصاء صفري بلا رمي خطأ', () => {
     const dir = path.join(os.tmpdir(), 'does-not-exist-' + Date.now());
     const acc = getAccuracy(dir, { id: 'bitcoin', timeframe: 'week' });
-    assert.deepEqual(acc, { hits: 0, misses: 0, neutral: 0, total: 0, hitRate: null });
+    assert.deepEqual(acc, { hits: 0, misses: 0, neutral: 0, total: 0, pending: 0, hitRate: null });
+});
+
+test('getAccuracy: pending يعدّ التنبّؤات المسجَّلة غير المحسومة بعد (لا صفر رغم وجود تنبّؤات فعلية)', () => {
+    const dir = tmp();
+    recordSignal(dir, { id: 'bitcoin', timeframe: 'week', signal: 'buy', price: 100 });
+    recordSignal(dir, { id: 'bitcoin', timeframe: 'day', signal: 'sell', price: 100 }); // مدى مختلف — لا يُحتسب
+    const acc = getAccuracy(dir, { id: 'bitcoin', timeframe: 'week' });
+    assert.equal(acc.total, 0, 'لا شيء محسوماً بعد');
+    assert.equal(acc.pending, 1, 'تنبّؤ واحد قيد المراقبة لهذا المدى تحديداً');
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('getAccuracy: بعد الحسم ينتقل العدّ من pending إلى total (لا ازدواج)', () => {
+    const dir = tmp();
+    recordSignal(dir, { id: 'solana', timeframe: 'week', signal: 'buy', price: 100 });
+    let acc = getAccuracy(dir, { id: 'solana', timeframe: 'week' });
+    assert.equal(acc.pending, 1);
+    assert.equal(acc.total, 0);
+    forceDue(dir);
+    resolveDue(dir, { solana: 110 });
+    acc = getAccuracy(dir, { id: 'solana', timeframe: 'week' });
+    assert.equal(acc.pending, 0);
+    assert.equal(acc.total, 1);
+    fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('recordSignal: يفرض سقف 200 تنبّؤ لكل (عملة، مدى) — يحذف الأقدم فقط', () => {

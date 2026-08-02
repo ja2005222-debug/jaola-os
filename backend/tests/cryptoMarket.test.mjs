@@ -4,7 +4,7 @@ import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     listMarkets, getAnalysis, getOpportunities, findCoin, resetCryptoCache, searchCoins, isValidCoinId,
-    toDailyCloses, bucketCloses, sma, rsi, buildSignal, SUPPORTED_COINS, MAX_WATCHLIST,
+    toDailyCloses, bucketCloses, bucketVolumes, volumeTrend, sma, rsi, buildSignal, SUPPORTED_COINS, MAX_WATCHLIST,
     TIMEFRAMES, DEFAULT_TIMEFRAME, isValidTimeframe,
     _marketsCacheForTest, _analysisCacheForTest,
 } from '../services/cryptoMarket.js';
@@ -102,6 +102,59 @@ test('buildSignal: بيانات ناقصة كلياً → hold + insufficient_da
     const r = buildSignal({ smaShort: null, smaLong: null, rsi: null });
     assert.equal(r.signal, 'hold');
     assert.equal(r.reasonCode, 'insufficient_data');
+    assert.equal(r.agreement, 'none');
+    assert.equal(r.secondaryCode, null);
+});
+
+// ─── buildSignal: agreement/secondaryCode (شفافية الخلاف بين المؤشرين) ─
+test('buildSignal: RSI تشبّع بيعي + SMA صاعد أيضاً → متوافقان (confirmed)', () => {
+    const r = buildSignal({ smaShort: 110, smaLong: 100, rsi: 25 });
+    assert.equal(r.signal, 'buy');
+    assert.equal(r.reasonCode, 'rsi_oversold');
+    assert.equal(r.agreement, 'confirmed');
+    assert.equal(r.secondaryCode, 'sma_bullish');
+});
+
+test('buildSignal: RSI تشبّع بيعي (buy) لكن SMA هابط → إشارة عكس الاتجاه (against_trend)، لا إخفاء للخلاف', () => {
+    const r = buildSignal({ smaShort: 90, smaLong: 100, rsi: 25 });
+    assert.equal(r.signal, 'buy', 'RSI يبقى الزناد الأساسي — لا كسر لسلوك سابق');
+    assert.equal(r.reasonCode, 'rsi_oversold');
+    assert.equal(r.agreement, 'against_trend');
+    assert.equal(r.secondaryCode, 'sma_bearish');
+});
+
+test('buildSignal: RSI تشبّع شرائي لكن SMA صاعد → against_trend أيضاً (اتجاه مخالف)', () => {
+    const r = buildSignal({ smaShort: 120, smaLong: 100, rsi: 75 });
+    assert.equal(r.signal, 'sell');
+    assert.equal(r.agreement, 'against_trend');
+    assert.equal(r.secondaryCode, 'sma_bullish');
+});
+
+test('buildSignal: مؤشر SMA وحده (بلا تطرّف RSI) → single، لا secondaryCode', () => {
+    const r = buildSignal({ smaShort: 110, smaLong: 100, rsi: 50 });
+    assert.equal(r.agreement, 'single');
+    assert.equal(r.secondaryCode, null);
+});
+
+// ─── bucketVolumes / volumeTrend ────────────────────────────────────
+test('bucketVolumes: يجمع كل نقاط النافذة الواحدة (لا آخر قيمة فقط كالأسعار)', () => {
+    const day1 = Date.parse('2026-01-01T00:00:00Z');
+    const buckets = bucketVolumes([[day1, 100], [day1 + 3600000, 50], [day1 + 86400000, 10]], 86400000);
+    assert.deepEqual(buckets, [150, 10]);
+});
+
+test('volumeTrend: بيانات غير كافية (أقل من ضعف الفترة) → null', () => {
+    assert.equal(volumeTrend([10, 20, 30], 3), null);
+});
+
+test('volumeTrend: يحسب % التغيّر بين متوسط الفترة الأخيرة والتي قبلها', () => {
+    // فترة سابقة متوسطها 10، فترة أخيرة متوسطها 20 → +100%
+    const r = volumeTrend([10, 10, 10, 20, 20, 20], 3);
+    assert.equal(r, 100);
+});
+
+test('volumeTrend: الفترة السابقة صفرية → null (لا قسمة على صفر)', () => {
+    assert.equal(volumeTrend([0, 0, 0, 5, 5, 5], 3), null);
 });
 
 // ─── findCoin / القائمة المدعومة ──────────────────────────────────
@@ -255,6 +308,29 @@ test('getAnalysis: اتجاه صاعد معتدل → buy مع سعر/مؤشرا
     assert.ok(['rsi_overbought', 'rsi_oversold', 'sma_bullish', 'sma_bearish', 'insufficient_data'].includes(r.reasonCode));
     assert.equal(r.recentCloses.length, 14, 'آخر 14 نقطة للرسم المصغّر');
     assert.equal(r.recentCloses[r.recentCloses.length - 1], r.price);
+    assert.ok('agreement' in r, 'شفافية اتفاق/تعارض المؤشرين حاضرة في الاستجابة');
+    assert.ok('secondaryCode' in r);
+});
+
+test('getAnalysis: يحسب volumeChangePct من نفس استجابة market_chart (بلا نداء إضافي)، ويتسامح بغيابه', async () => {
+    const start = Date.parse('2026-01-01T00:00:00Z');
+    const prices = Array.from({ length: 40 }, (_, i) => 100 + i);
+    // حجم مرتفع في آخر أسبوع (7 أيام) مقارنة بالأسبوع الذي قبله — تغيّر إيجابي متوقَّع
+    const volumes = Array.from({ length: 40 }, (_, i) => (i >= 33 ? 200 : 100));
+    mockOk({
+        prices: dailyPricesFrom(start, prices),
+        total_volumes: dailyPricesFrom(start, volumes),
+    });
+    const r = await getAnalysis('bitcoin', 'week');
+    assert.equal(typeof r.volumeChangePct, 'number');
+    assert.ok(r.volumeChangePct > 0, 'الحجم الأخير أعلى فعلياً — تغيّر موجب');
+
+    // بلا total_volumes في الاستجابة إطلاقاً (لا كسر — تحليل الأسعار يبقى سليماً)
+    resetCryptoCache();
+    mockOk({ prices: dailyPricesFrom(start, prices) });
+    const r2 = await getAnalysis('bitcoin', 'week');
+    assert.equal(r2.volumeChangePct, null);
+    assert.ok(r2.smaShort != null);
 });
 
 // ─── المدى الزمني (day/week/long) ──────────────────────────────────
