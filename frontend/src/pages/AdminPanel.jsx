@@ -50,6 +50,7 @@ export default function AdminPanel({ onExit }) {
       {tab === 'users' && <UsersTab api={api} />}
       {tab === 'audit' && <AuditTab api={api} />}
       {tab === 'agents' && <AgentsTab api={api} />}
+      {tab === 'tradingbot' && <TradingBotTab api={api} />}
       {tab === 'files' && <FilesTab api={api} />}
       {tab === 'github' && <GitHubTab api={api} />}
       {tab === 'team' && <BackendTeamTab api={api} />}
@@ -67,6 +68,7 @@ function Shell({ children, onExit, tab, setTab }) {
     { id: 'users', icon: '👤', label: tr('admTabUsers') },
     { id: 'audit', icon: '🧾', label: tr('admTabAudit') },
     { id: 'agents', icon: '🤖', label: tr('admTabAgents') },
+    { id: 'tradingbot', icon: '🤖💱', label: tr('admTabTradingBot') },
     { id: 'files', icon: '🗂️', label: tr('admTabFiles') },
     { id: 'github', icon: '🐙', label: tr('admTabGithub') },
     { id: 'team', icon: '👥', label: tr('admTabTeam') },
@@ -496,6 +498,184 @@ function AgentsTab({ api }) {
           {status.errors.map((e, i) => <div key={i} style={{ fontSize: 11, color: S.muted, direction: 'ltr', textAlign: 'left' }}>{e.error}</div>)}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── 🤖💱 بوت PancakeSwap الشخصي — محصور بالمشرف حصراً، منفصل تماماً عن ─
+// قالب مستشار الكريبتو العام (عرض/تحليل فقط، لا تنفيذ آلياً أبداً هناك).
+function TradingBotTab({ api }) {
+  const tr = useI18n(s => s.t);
+  const [status, setStatus] = useState(null);
+  const [form, setForm] = useState(null);
+  const [trades, setTrades] = useState([]);
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const [s, t] = await Promise.all([api('/api/admin/tradingbot/status'), api('/api/admin/tradingbot/trades?limit=30')]);
+      setStatus(s);
+      setForm(f => f || { ...s.config, coinIdsText: (s.config.coinIds || []).join(',') });
+      setTrades(t.trades || []);
+    } catch (e) { if (e.message !== 'forbidden') setMsg('❌ ' + e.message); }
+  }, [api]);
+  useEffect(() => { load(); }, [load]);
+
+  const saveConfig = async () => {
+    setBusy(true); setMsg('');
+    try {
+      const patch = {
+        ...form,
+        coinIds: (form.coinIdsText || '').split(',').map(s => s.trim()).filter(Boolean),
+      };
+      delete patch.coinIdsText;
+      const d = await api('/api/admin/tradingbot/config', { method: 'PUT', body: JSON.stringify(patch) });
+      setMsg(`✅ ${tr('tbConfigSaved')}`);
+      setStatus(s => ({ ...s, config: d.config, readyToEnable: d.readyToEnable }));
+    } catch (e) { setMsg('❌ ' + e.message); }
+    setBusy(false);
+  };
+
+  const toggleEnabled = async (enabled) => {
+    setBusy(true); setMsg('');
+    try {
+      const d = await api('/api/admin/tradingbot/enable', { method: 'POST', body: JSON.stringify({ enabled }) });
+      setStatus(s => ({ ...s, config: d.config }));
+      setForm(f => ({ ...f, enabled: d.config.enabled }));
+      setMsg(enabled ? `✅ ${tr('tbEnabled')}` : `⏹️ ${tr('tbDisabled')}`);
+    } catch (e) { setMsg('❌ ' + e.message); }
+    setBusy(false);
+  };
+
+  const rearm = async () => {
+    setBusy(true); setMsg('');
+    try {
+      const d = await api('/api/admin/tradingbot/circuit-breaker/rearm', { method: 'POST' });
+      setStatus(s => ({ ...s, config: d.config, circuitBreaker: d.circuitBreaker }));
+      setMsg(`✅ ${tr('tbRearmed')}`);
+    } catch (e) { setMsg('❌ ' + e.message); }
+    setBusy(false);
+  };
+
+  const runOnce = async () => {
+    setBusy(true); setMsg('');
+    try {
+      const d = await api('/api/admin/tradingbot/run-once', { method: 'POST' });
+      setMsg(`📋 ${JSON.stringify(d.result)}`);
+      load();
+    } catch (e) { setMsg('❌ ' + e.message); }
+    setBusy(false);
+  };
+
+  if (!status || !form) return <Muted>{tr('admLoading')}</Muted>;
+  const cb = status.circuitBreaker;
+  const openPositions = Object.keys(status.positions || {});
+
+  return (
+    <div>
+      <Header title={tr('admTabTradingBot')} />
+
+      <div style={{ ...cardStyle, marginBottom: 20, border: `1px solid ${status.config.enabled ? 'rgba(16,185,129,0.35)' : S.border}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <span style={{ fontSize: 13, fontWeight: 800, color: status.config.enabled ? S.green : S.muted }}>
+            {status.config.enabled ? `● ${tr('tbRunning')}` : `○ ${tr('tbStopped')}`}
+          </span>
+          {cb?.tripped && <span style={{ fontSize: 11, fontWeight: 700, color: S.red, background: 'rgba(239,68,68,0.1)', padding: '2px 8px', borderRadius: 6 }}>🛑 {tr('tbCircuitBreakerTripped')}</span>}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, fontSize: 12, color: S.muted, marginBottom: 12 }}>
+          <div>{tr('tbDailyPnl')}: <b style={{ color: (cb?.dailyPnlBnb || 0) < 0 ? S.red : S.green }}>{(cb?.dailyPnlBnb || 0).toFixed(5)} BNB</b></div>
+          <div>{tr('tbLossLimit')}: <b>{cb?.limitBnb} BNB</b></div>
+          <div>{tr('tbOpenPositions')}: <b>{openPositions.length} / {status.config.maxOpenPositions}</b></div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {!status.config.enabled
+            ? <button disabled={busy || !status.readyToEnable} onClick={() => toggleEnabled(true)} style={{ ...btnPrimary, opacity: (busy || !status.readyToEnable) ? 0.5 : 1 }}>▶ {tr('tbEnable')}</button>
+            : <button disabled={busy} onClick={() => toggleEnabled(false)} style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '9px 18px', color: S.red, fontWeight: 700, fontSize: 13 }}>⏹ {tr('tbDisable')}</button>}
+          {cb?.tripped && <button disabled={busy} onClick={rearm} style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '9px 18px', color: S.amber, fontWeight: 700, fontSize: 13 }}>🔄 {tr('tbRearm')}</button>}
+          <button disabled={busy} onClick={runOnce} style={{ background: 'transparent', border: `1px solid ${S.border}`, borderRadius: 8, padding: '9px 18px', color: S.text, fontWeight: 700, fontSize: 13 }}>🧪 {tr('tbRunOnce')}</button>
+        </div>
+        {!status.readyToEnable && !status.config.enabled && <p style={{ color: S.amber, fontSize: 11.5, marginTop: 10 }}>⚠️ {tr('tbNotReady')}</p>}
+        {msg && <p style={{ fontSize: 12, color: msg.startsWith('❌') ? S.red : S.muted, marginTop: 10, wordBreak: 'break-word' }}>{msg}</p>}
+      </div>
+
+      <div style={{ ...cardStyle, marginBottom: 20 }}>
+        <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 4 }}>{tr('tbConfigTitle')}</div>
+        <p style={{ color: S.red, fontSize: 12, marginBottom: 14, lineHeight: 1.7 }}>⚠️ {tr('tbAddressWarning')}</p>
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div>
+            <span style={label}>{tr('tbCoinIds')}</span>
+            <input style={{ ...inputStyle, direction: 'ltr', textAlign: 'left' }} placeholder="bitcoin,ethereum"
+              value={form.coinIdsText} onChange={e => setForm(f => ({ ...f, coinIdsText: e.target.value }))} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+            <div>
+              <span style={label}>{tr('tbPositionSize')}</span>
+              <input style={inputStyle} type="text" value={form.positionSizeBnb} onChange={e => setForm(f => ({ ...f, positionSizeBnb: e.target.value }))} />
+            </div>
+            <div>
+              <span style={label}>{tr('tbDailyLossLimit')}</span>
+              <input style={inputStyle} type="text" value={form.dailyLossLimitBnb} onChange={e => setForm(f => ({ ...f, dailyLossLimitBnb: e.target.value }))} />
+            </div>
+            <div>
+              <span style={label}>{tr('tbMinGasReserve')}</span>
+              <input style={inputStyle} type="text" value={form.minGasReserveBnb} onChange={e => setForm(f => ({ ...f, minGasReserveBnb: e.target.value }))} />
+            </div>
+            <div>
+              <span style={label}>{tr('tbMaxOpenPositions')}</span>
+              <input style={inputStyle} type="number" min="1" value={form.maxOpenPositions} onChange={e => setForm(f => ({ ...f, maxOpenPositions: Number(e.target.value) }))} />
+            </div>
+            <div>
+              <span style={label}>{tr('tbCooldown')}</span>
+              <input style={inputStyle} type="number" min="0" value={form.cooldownMinutesPerCoin} onChange={e => setForm(f => ({ ...f, cooldownMinutesPerCoin: Number(e.target.value) }))} />
+            </div>
+            <div>
+              <span style={label}>{tr('tbConfirmations')}</span>
+              <input style={inputStyle} type="number" min="1" value={form.confirmationsRequired} onChange={e => setForm(f => ({ ...f, confirmationsRequired: Number(e.target.value) }))} />
+            </div>
+          </div>
+          <p style={{ color: S.muted, fontSize: 11.5, marginTop: 4 }}>{tr('tbSecretHint')}</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+            <div>
+              <span style={label}>{tr('tbSecretUsername')}</span>
+              <input style={{ ...inputStyle, direction: 'ltr', textAlign: 'left' }} value={form.secretUsername} onChange={e => setForm(f => ({ ...f, secretUsername: e.target.value }))} />
+            </div>
+            <div>
+              <span style={label}>{tr('tbSecretProject')}</span>
+              <input style={{ ...inputStyle, direction: 'ltr', textAlign: 'left' }} value={form.secretProject} onChange={e => setForm(f => ({ ...f, secretProject: e.target.value }))} />
+            </div>
+            <div>
+              <span style={label}>{tr('tbSecretKeyName')}</span>
+              <input style={{ ...inputStyle, direction: 'ltr', textAlign: 'left' }} value={form.secretKeyName} onChange={e => setForm(f => ({ ...f, secretKeyName: e.target.value }))} />
+            </div>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: S.text, marginTop: 4, cursor: 'pointer' }}>
+            <input type="checkbox" checked={!!form.addressesVerified} onChange={e => setForm(f => ({ ...f, addressesVerified: e.target.checked }))} />
+            {tr('tbAddressVerifiedConfirm')}
+          </label>
+          <div>
+            <button disabled={busy} onClick={saveConfig} style={{ ...btnPrimary, opacity: busy ? 0.6 : 1 }}>{busy ? tr('admSaving') : tr('save')}</button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10 }}>{tr('tbTradeHistory')} ({trades.length})</div>
+      {!trades.length && <Muted>{tr('tbNoTrades')}</Muted>}
+      <div style={{ display: 'grid', gap: 8 }}>
+        {trades.map(t => (
+          <div key={t.id} style={{ ...cardStyle, padding: 12, fontSize: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+              <span style={{ fontWeight: 700 }}>{t.coinId || '—'} {t.kind === 'trade' ? `· ${t.side}` : ''}</span>
+              <span style={{ color: S.muted }}>{new Date(t.at).toLocaleString()}</span>
+            </div>
+            <div style={{ color: S.muted, marginTop: 4 }}>
+              {t.kind === 'consideration'
+                ? `${t.decision}${t.skipReason ? ` (${t.skipReason})` : ''}`
+                : `${t.status}${t.realizedPnlBnb != null ? ` · PnL: ${Number(t.realizedPnlBnb).toFixed(5)} BNB` : ''}${t.error ? ` · ${t.error}` : ''}`}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

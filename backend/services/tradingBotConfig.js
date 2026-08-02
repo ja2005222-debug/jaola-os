@@ -1,0 +1,75 @@
+/**
+ * ⚙️ tradingBotConfig.js — إعداد بوت PancakeSwap الشخصي (ملف JSON واحد،
+ * نفس فلسفة appData.js/signalTrackRecord.js — بلا Mongo، فشل صامت للقراءة).
+ *
+ * enabled يبدأ false دوماً ولا يمكن ضبطه true إلا إذا اجتاز الإعداد
+ * isReadyToEnable — بوابة صريحة تمنع تفعيلاً عرَضياً بإعداد ناقص.
+ */
+import fs from 'fs';
+import path from 'path';
+import { filterTradable } from './tradingBotCoins.js';
+
+const DEFAULTS = Object.freeze({
+    enabled: false,
+    coinIds: [],
+    timeframe: 'week',
+    positionSizeBnb: '0.02',
+    maxSlippageBps: 75,
+    dailyLossLimitBnb: '0.05',
+    minGasReserveBnb: '0.01',
+    maxOpenPositions: 3,
+    cooldownMinutesPerCoin: 60,
+    confirmationsRequired: 2,
+    secretUsername: '',
+    secretProject: '',
+    secretKeyName: 'WALLET_PRIVATE_KEY',
+    addressesVerified: false,
+    reArmedAt: null,
+});
+
+function storeFile(dir) { return path.join(dir, 'config.json'); }
+
+/** الإعداد الحالي (الافتراضيات مدموجة بما هو محفوظ) — لا يرمي أبداً. */
+export function getConfig(dir) {
+    try {
+        const stored = JSON.parse(fs.readFileSync(storeFile(dir), 'utf8'));
+        return { ...DEFAULTS, ...(stored && typeof stored === 'object' ? stored : {}) };
+    } catch {
+        return { ...DEFAULTS };
+    }
+}
+
+/**
+ * هل هذا الإعداد جاهز للتفعيل؟ كل الحقول الجوهرية حاضرة، وعملات قابلة
+ * للتداول فعلياً (موجودة في القائمة البيضاء)، وتأكيد يدوي لعناوين العقود.
+ */
+export function isReadyToEnable(cfg) {
+    if (!cfg.addressesVerified) return false;
+    if (!filterTradable(cfg.coinIds).length) return false;
+    if (!(Number(cfg.positionSizeBnb) > 0)) return false;
+    if (!(Number(cfg.dailyLossLimitBnb) > 0)) return false;
+    if (!(Number(cfg.minGasReserveBnb) >= 0)) return false;
+    if (!(Number(cfg.maxOpenPositions) > 0)) return false;
+    if (!cfg.secretUsername || !cfg.secretProject || !cfg.secretKeyName) return false;
+    return true;
+}
+
+/**
+ * يدمج patch مع الإعداد الحالي ويكتبه. يرفض تفعيل enabled=true إن لم يكن
+ * الإعداد الناتج جاهزاً (isReadyToEnable) — لا استثناء، حتى لو طلبه المُستدعي صراحة.
+ */
+export function saveConfig(dir, patch = {}) {
+    const current = getConfig(dir);
+    const merged = { ...current, ...patch };
+    if (merged.enabled && !isReadyToEnable(merged)) {
+        throw new Error('لا يمكن تفعيل البوت: الإعداد غير مكتمل (تحقّق من العملات/الحجم/قاطع الخسارة/الأسرار/تأكيد العناوين).');
+    }
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(storeFile(dir), JSON.stringify(merged, null, 2));
+    return merged;
+}
+
+/** للاختبارات فقط. */
+export function resetTradingBotConfigForTest(dir) {
+    try { fs.rmSync(storeFile(dir), { force: true }); } catch { /* لا شيء */ }
+}

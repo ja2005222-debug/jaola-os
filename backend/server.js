@@ -97,6 +97,10 @@ import { listMarkets, getAnalysis, getOpportunities, searchCoins, isValidCoinId,
 import { generateCommentary } from './services/cryptoCommentary.js';
 import { saveWatchlistIndex, listWatchlistIndex, markAlerted, shouldAlert } from './services/cryptoAlerts.js';
 import { recordSignal, getDueCoinIds, resolveDue, getAccuracy } from './services/signalTrackRecord.js';
+import { runTradingBotTickGuarded } from './services/tradingBotEngine.js';
+import { getConfig as getTradingBotConfig, saveConfig as saveTradingBotConfig, isReadyToEnable as isTradingBotReadyToEnable } from './services/tradingBotConfig.js';
+import { listTrades as listTradingBotTrades, readPositions as readTradingBotPositions } from './services/tradingBotLedger.js';
+import { getCircuitBreakerStatus as getTradingBotCircuitBreakerStatus } from './services/tradingBotCircuitBreaker.js';
 import { listRecords as listCollectionRecords, upsertRecord as upsertCollectionRecord, deleteRecord as deleteCollectionRecord } from './services/appCollections.js';
 import { summarize as summarizeBudget, lastMonths as budgetLastMonths, budgetStatus } from './services/budgetStats.js';
 import { generateBudgetCommentary } from './services/budgetCommentary.js';
@@ -2557,6 +2561,66 @@ app.post('/api/admin/agents/:name/run', verifyToken, adminOnly, async (req, res)
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// 🤖💱 بوت PancakeSwap الشخصي — محصور بالمشرف حصراً، منظومة منفصلة تماماً
+// عن قالب مستشار الكريبتو العام (jaolaCryptoAdvisor.js لا تُنفّذ صفقات
+// آلياً أبداً ولن تُعدَّل). كل فعل يمسّ الإعداد/التفعيل يُسجَّل عبر
+// recordAdminAction — سجل "من فعل ماذا" لكل قرار يمسّ مالاً حقيقياً.
+app.get('/api/admin/tradingbot/config', verifyToken, adminOnly, (req, res) => {
+    const config = getTradingBotConfig(TRADINGBOT_DIR);
+    res.json({ success: true, config, readyToEnable: isTradingBotReadyToEnable(config) });
+});
+
+app.put('/api/admin/tradingbot/config', verifyToken, adminOnly, (req, res) => {
+    try {
+        const patch = { ...(req.body || {}) };
+        delete patch.enabled; // التفعيل عبر /enable حصراً — فعل مميَّز مسجَّل بذاته
+        const config = saveTradingBotConfig(TRADINGBOT_DIR, patch);
+        recordAdminAction({ admin: req.user.username, action: 'tradingbot.config.update', target: 'tradingbot', details: JSON.stringify(patch) });
+        res.json({ success: true, config, readyToEnable: isTradingBotReadyToEnable(config) });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+app.post('/api/admin/tradingbot/enable', verifyToken, adminOnly, (req, res) => {
+    try {
+        const enabled = req.body?.enabled === true;
+        const config = saveTradingBotConfig(TRADINGBOT_DIR, { enabled });
+        recordAdminAction({ admin: req.user.username, action: enabled ? 'tradingbot.enable' : 'tradingbot.disable', target: 'tradingbot', details: '' });
+        res.json({ success: true, config });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+app.get('/api/admin/tradingbot/status', verifyToken, adminOnly, (req, res) => {
+    const config = getTradingBotConfig(TRADINGBOT_DIR);
+    res.json({
+        success: true,
+        config,
+        readyToEnable: isTradingBotReadyToEnable(config),
+        circuitBreaker: getTradingBotCircuitBreakerStatus(TRADINGBOT_DIR, config),
+        positions: readTradingBotPositions(TRADINGBOT_DIR),
+    });
+});
+
+app.get('/api/admin/tradingbot/trades', verifyToken, adminOnly, (req, res) => {
+    const limit = Math.min(500, Math.max(1, parseInt(req.query?.limit, 10) || 100));
+    res.json({ success: true, trades: listTradingBotTrades(TRADINGBOT_DIR, { limit }) });
+});
+
+app.post('/api/admin/tradingbot/circuit-breaker/rearm', verifyToken, adminOnly, (req, res) => {
+    try {
+        const config = saveTradingBotConfig(TRADINGBOT_DIR, { reArmedAt: new Date().toISOString() });
+        recordAdminAction({ admin: req.user.username, action: 'tradingbot.circuitbreaker.rearm', target: 'tradingbot', details: '' });
+        res.json({ success: true, config, circuitBreaker: getTradingBotCircuitBreakerStatus(TRADINGBOT_DIR, config) });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+app.post('/api/admin/tradingbot/run-once', verifyToken, adminOnly, async (req, res) => {
+    recordAdminAction({ admin: req.user.username, action: 'tradingbot.run_once', target: 'tradingbot', details: '' });
+    try {
+        const result = await runTradingBotTickGuarded(TRADINGBOT_DIR);
+        res.json({ success: true, result });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // 👥 فرق الوكلاء (خلفية + أمامية) — عرض العقود وخطة التنفيذ
 const serializeAgent = (a) => ({
     id: a.id, role: a.role, icon: a.icon, mission: a.mission,
@@ -2958,6 +3022,7 @@ const SIGNAL_TRACK_DIR = path.join(BASE_WORKSPACE, '.signaltrack');
 const BUDGETWATCH_DIR = path.join(BASE_WORKSPACE, '.budgetwatch');
 const STOCKWATCH_DIR = path.join(BASE_WORKSPACE, '.stockwatch');
 const STOCK_SIGNAL_TRACK_DIR = path.join(BASE_WORKSPACE, '.stocksignaltrack');
+const TRADINGBOT_DIR = path.join(BASE_WORKSPACE, '.tradingbot');
 app.post('/api/public/assets/:slot', assetLimit, (req, res) => {
     const v = verifyBotToken(req.body?.token);
     if (!v?.u || !v?.p) return res.status(204).end();
@@ -3519,6 +3584,17 @@ setInterval(async () => {
     } catch (e) { console.warn('[StockCacheWarm]', 'دورة التسخين فشلت:', e.message); }
     finally { stockCacheWarmBusy = false; }
 }, 45 * 1000);
+
+// 🤖💱 حلقة بوت PancakeSwap الشخصي — كل 5 دقائق (نفس وتيرة CryptoAlerts).
+// runTradingBotTickGuarded تبدأ بـcfg.enabled=false افتراضياً (لا شيء يعمل حتى
+// يُفعِّله المشرف صراحةً من اللوحة)، وتحمل حارس تداخل خاصاً بها مشتركاً مع
+// مسار /run-once اليدوي — تمنع تسابقاً يضاعف nonce التوقيع على معاملة حقيقية.
+setInterval(async () => {
+    try {
+        const r = await runTradingBotTickGuarded(TRADINGBOT_DIR);
+        if (r?.executed) console.warn('[TradingBot]', 'صفقة:', JSON.stringify({ coinId: r.coinId, side: r.side, status: r.status, txHash: r.txHash }));
+    } catch (e) { console.warn('[TradingBot]', 'دورة التنفيذ فشلت:', e.message); }
+}, 5 * 60 * 1000);
 
 // 🔌 تحميل الإضافات ثم تشغيل الخادم
 orchestrator.init().catch(e => console.warn('[Plugins] init فشل:', e.message)).finally(() => {
