@@ -56,7 +56,7 @@ async function reconcileStaleTrades(dir, chainClient) {
         if (trade.side === 'buy') {
             writePosition(dir, trade.coinId, {
                 entryBnbSpent: trade.amountBnbWei, entryTokenWei: trade.expectedOut,
-                entryTxHash: trade.txHash, entryAt: trade.at, tokenAddress: getTokenInfo(trade.coinId)?.address || null,
+                entryTxHash: trade.txHash, entryAt: trade.at, tokenAddress: getTokenInfo(dir, trade.coinId)?.address || null,
                 entryGasCostBnb: gasCostBnb, lastActionAt: Date.now(),
             });
             updateTradeOutcome(dir, trade.id, { status, gasCostBnb });
@@ -101,7 +101,7 @@ export async function runTradingBotTick(dir, options = {}) {
     }
 
     // 2) ترتيب الفرص — cryptoMarket.getOpportunities الموجودة، بلا تعديل عليها
-    const tradableCoins = filterTradable(cfg.coinIds);
+    const tradableCoins = filterTradable(dir, cfg.coinIds);
     const opportunities = tradableCoins.length ? await getOpportunities(tradableCoins, cfg.timeframe) : [];
     // كل فرصة غير الأعلى تُرتَّب تُسجَّل فوراً كمتجاهَلة — مصيرها معروف الآن.
     // الفرصة الأعلى (candidate) تُسجَّل لاحقاً عند حسم مصيرها (تجاهل بسبب محدَّد،
@@ -115,7 +115,7 @@ export async function runTradingBotTick(dir, options = {}) {
     if (!opportunities.length) return { executed: false, reason: 'no_opportunity' };
     const candidate = opportunities[0];
 
-    const tokenInfo = getTokenInfo(candidate.id);
+    const tokenInfo = getTokenInfo(dir, candidate.id);
     if (!tokenInfo) {
         recordConsideration(dir, { coinId: candidate.id, signal: candidate.signal, decision: 'skipped', skipReason: 'not_tradable' });
         return { executed: false, reason: 'not_tradable' };
