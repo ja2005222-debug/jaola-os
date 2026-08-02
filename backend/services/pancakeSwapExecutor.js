@@ -1,12 +1,10 @@
 /**
  * 🥞 pancakeSwapExecutor.js — منفذ التفاعل الوحيد مع PancakeSwap/BNB Chain.
  *
- * ⚠️ العنوانان أدناه (الراوتر وWBNB) هما القيمتان الشائعتان المعروفتان لهذين
- * العقدين على BNB Chain mainnet، لكن لم يتسنَّ التحقّق منهما مباشرة من هذه
- * الجلسة (WebFetch/WebSearch فشلا في الوصول لـ bscscan.com/pancakeswap.finance
- * — حجب 403، ونتائج البحث بها تشويه واضح في السلاسل السداسية عشرية المُعادة).
- * تحقّق منهما بنفسك على bscscan.com قبل أي استخدام حقيقي، وسجّل ذلك عبر
- * addressesVerified في tradingBotConfig.js — البوت يرفض العمل بدون هذا التأكيد.
+ * WBNB تم تحقيقه يدوياً من صاحب المشروع مباشرة على bscscan.com (٢ أغسطس ٢٠٢٦).
+ * PANCAKE_ROUTER_V2 لا يزال يحتاج نفس التحقق اليدوي قبل أي استخدام حقيقي —
+ * سجّل ذلك عبر addressesVerified في tradingBotConfig.js؛ البوت يرفض العمل
+ * بدون هذا التأكيد.
  *
  * تصميم أساسي: tradingBotEngine.js لا يستدعي ethers.Contract مباشرة أبداً؛
  * كل تفاعل مع السلسلة يمرّ عبر الكائن الذي تُرجعه createChainClient — منفذ
@@ -15,7 +13,7 @@
 import { ethers } from 'ethers';
 
 export const PANCAKE_ROUTER_V2 = '0x10ED43C718714eb63d5aA57B78B54704E256024'; // ⚠️ تحقّق يدوياً قبل الاستخدام الحقيقي
-export const WBNB = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095'; // ⚠️ تحقّق يدوياً قبل الاستخدام الحقيقي
+export const WBNB = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'; // ✅ تحقّقه المستخدم يدوياً على bscscan.com
 
 const ROUTER_ABI = [
     'function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)',
