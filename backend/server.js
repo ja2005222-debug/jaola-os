@@ -99,7 +99,7 @@ import { saveWatchlistIndex, listWatchlistIndex, markAlerted, shouldAlert } from
 import { recordSignal, getDueCoinIds, resolveDue, getAccuracy } from './services/signalTrackRecord.js';
 import { runTradingBotTickGuarded } from './services/tradingBotEngine.js';
 import { getConfig as getTradingBotConfig, saveConfig as saveTradingBotConfig, isReadyToEnable as isTradingBotReadyToEnable } from './services/tradingBotConfig.js';
-import { getTokenRegistry as getTradingBotTokenRegistry, upsertToken as upsertTradingBotToken, removeToken as removeTradingBotToken, lookupTokenByAddress as lookupTradingBotTokenByAddress } from './services/tradingBotCoins.js';
+import { getTokenRegistry as getTradingBotTokenRegistry, upsertToken as upsertTradingBotToken, removeToken as removeTradingBotToken, lookupTokenByAddress as lookupTradingBotTokenByAddress, discoverTrendingCandidates as discoverTradingBotCandidates } from './services/tradingBotCoins.js';
 import { listTrades as listTradingBotTrades, readPositions as readTradingBotPositions } from './services/tradingBotLedger.js';
 import { getCircuitBreakerStatus as getTradingBotCircuitBreakerStatus } from './services/tradingBotCircuitBreaker.js';
 import { listRecords as listCollectionRecords, upsertRecord as upsertCollectionRecord, deleteRecord as deleteCollectionRecord } from './services/appCollections.js';
@@ -2609,6 +2609,14 @@ app.get('/api/admin/tradingbot/tokens/lookup', verifyToken, adminOnly, async (re
     try {
         const result = await lookupTradingBotTokenByAddress(req.query?.address);
         res.json({ success: true, ...result });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+// اكتشاف مرشّحين رائجين (trending) عبر CoinGecko — اقتراح فقط، لا إضافة تلقائية
+app.get('/api/admin/tradingbot/tokens/discover', verifyToken, adminOnly, async (req, res) => {
+    try {
+        const candidates = await discoverTradingBotCandidates();
+        res.json({ success: true, candidates });
     } catch (err) { res.status(400).json({ error: err.message }); }
 });
 

@@ -16,12 +16,15 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { fetchJsonWithRetry } from './httpRetry.js';
+import { fetchJsonWithRetry, sleep } from './httpRetry.js';
 
 const EXCLUDED_FUNDING_COIN = 'binancecoin';
 const VALID_COIN_ID = /^[a-z][a-z0-9-]{1,64}$/;
 const VALID_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
+const DISCOVERY_TTL_MS = 5 * 60 * 1000; // 5 دقائق — يحمي حصة CoinGecko المجانية من ضغط تكرار الضغط على "اكتشاف"
+
+let discoveryCache = null; // { at, candidates }
 
 function storeFile(dir) { return path.join(dir, 'tokens.json'); }
 
@@ -99,6 +102,49 @@ export async function lookupTokenByAddress(address) {
     }
     return { coinId: data.id, symbol: String(data.symbol).toUpperCase(), decimals, name: data.name || '' };
 }
+
+/**
+ * اكتشاف مرشحين للإضافة عبر "الأكثر رواجاً" على CoinGecko (search/trending)،
+ * مُصفّاة لمن له عقد فعلي على BNB Chain فقط. راحة اقتراح فقط — لا تُضيف شيئاً
+ * للسجل أبداً؛ المشرف يراجع كل مرشّح ويضغط "Add" بنفسه كعملية Lookup تماماً.
+ *
+ * نداءات متتالية (لا متوازية) مع تأخير قصير بينها لتخفيف ضغط الحصة المجانية
+ * المشتركة أصلاً مع مستشار الكريبتو؛ فشل مرشّح واحد (429/عملة غير مدعومة على
+ * BSC) يُتجاوَز بصمت ولا يُسقِط بقية القائمة. نتيجة مُخزَّنة مؤقتاً 5 دقائق.
+ */
+export async function discoverTrendingCandidates() {
+    if (discoveryCache && (Date.now() - discoveryCache.at) < DISCOVERY_TTL_MS) return discoveryCache.candidates;
+
+    let trending;
+    try {
+        trending = await fetchJsonWithRetry(`${COINGECKO_BASE}/search/trending`);
+    } catch (e) {
+        throw new Error('تعذّر الاتصال بـCoinGecko: ' + e.message);
+    }
+    const items = Array.isArray(trending?.coins) ? trending.coins.map(c => c.item).filter(Boolean) : [];
+
+    const candidates = [];
+    for (const item of items) {
+        if (!item?.id) continue;
+        try {
+            const detail = await fetchJsonWithRetry(
+                `${COINGECKO_BASE}/coins/${item.id}?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false&sparkline=false`,
+            );
+            const address = detail?.platforms?.['binance-smart-chain'];
+            const decimals = detail?.detail_platforms?.['binance-smart-chain']?.decimal_place;
+            if (address && VALID_ADDRESS.test(address) && Number.isInteger(decimals)) {
+                candidates.push({ coinId: item.id, symbol: String(item.symbol || '').toUpperCase(), name: item.name || '', address, decimals });
+            }
+        } catch { /* مرشّح واحد فشل (429 أو غيره) — يُتجاوَز، لا يُوقف الاكتشاف بالكامل */ }
+        await sleep(300); // تباعد بين النداءات — يقلّل احتمال 429 عبر كل المرشّحين معاً
+    }
+
+    discoveryCache = { at: Date.now(), candidates };
+    return candidates;
+}
+
+/** للاختبارات فقط. */
+export function resetDiscoveryCacheForTest() { discoveryCache = null; }
 
 /** للاختبارات فقط. */
 export function resetTradingBotCoinsForTest(dir) {
