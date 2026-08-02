@@ -543,6 +543,16 @@ function TradingBotTab({ api }) {
     setTokenBusy(false);
   };
 
+  const lookupToken = async () => {
+    setTokenBusy(true); setTokenMsg('');
+    try {
+      const d = await api(`/api/admin/tradingbot/tokens/lookup?address=${encodeURIComponent(tokenForm.address)}`);
+      setTokenForm(f => ({ ...f, coinId: d.coinId, symbol: d.symbol, decimals: String(d.decimals) }));
+      setTokenMsg(`✅ ${d.name} — ${tr('tbTokenLookupReview')}`);
+    } catch (e) { setTokenMsg('❌ ' + e.message); }
+    setTokenBusy(false);
+  };
+
   const removeTokenEntry = async (coinId) => {
     setTokenBusy(true); setTokenMsg('');
     try {
@@ -704,6 +714,14 @@ function TradingBotTab({ api }) {
             </div>
           ))}
         </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'end', marginBottom: 10 }}>
+          <div>
+            <span style={label}>{tr('tbTokenAddress')}</span>
+            <input style={{ ...inputStyle, direction: 'ltr', textAlign: 'left' }} placeholder="0x..."
+              value={tokenForm.address} onChange={e => setTokenForm(f => ({ ...f, address: e.target.value }))} />
+          </div>
+          <button disabled={tokenBusy || !tokenForm.address} onClick={lookupToken} style={{ background: 'transparent', border: `1px solid ${S.border}`, borderRadius: 8, padding: '9px 16px', color: S.text, fontWeight: 700, fontSize: 13, opacity: (tokenBusy || !tokenForm.address) ? 0.5 : 1, whiteSpace: 'nowrap' }}>🔎 {tr('tbTokenLookup')}</button>
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
           <div>
             <span style={label}>{tr('tbTokenCoinId')}</span>
@@ -714,11 +732,6 @@ function TradingBotTab({ api }) {
             <span style={label}>{tr('tbTokenSymbol')}</span>
             <input style={{ ...inputStyle, direction: 'ltr', textAlign: 'left' }} placeholder="CAKE"
               value={tokenForm.symbol} onChange={e => setTokenForm(f => ({ ...f, symbol: e.target.value }))} />
-          </div>
-          <div style={{ gridColumn: 'span 2' }}>
-            <span style={label}>{tr('tbTokenAddress')}</span>
-            <input style={{ ...inputStyle, direction: 'ltr', textAlign: 'left' }} placeholder="0x..."
-              value={tokenForm.address} onChange={e => setTokenForm(f => ({ ...f, address: e.target.value }))} />
           </div>
           <div>
             <span style={label}>{tr('tbTokenDecimals')}</span>
