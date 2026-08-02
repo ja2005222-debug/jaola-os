@@ -16,10 +16,12 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { fetchJsonWithRetry } from './httpRetry.js';
 
 const EXCLUDED_FUNDING_COIN = 'binancecoin';
 const VALID_COIN_ID = /^[a-z][a-z0-9-]{1,64}$/;
 const VALID_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
 
 function storeFile(dir) { return path.join(dir, 'tokens.json'); }
 
@@ -75,6 +77,27 @@ export function getTokenInfo(dir, coinId) {
 /** يُصفّي قائمة معرّفات عملات إلى المسموح تداوله فقط — يُستدعى قبل أي ترتيب فرص. */
 export function filterTradable(dir, coinIds) {
     return (Array.isArray(coinIds) ? coinIds : []).filter(id => isTradable(dir, id));
+}
+
+/**
+ * بحث تلقائي بعنوان العقد على CoinGecko — راحة فقط، لا يُضاف شيء للسجل
+ * تلقائياً؛ المشرف يراجع النتيجة ويضغط "Add" بنفسه كما هو الحال دوماً.
+ * يرمي برسالة واضحة إن لم يُعثر على العملة أو تعذّر الاتصال.
+ */
+export async function lookupTokenByAddress(address) {
+    if (!VALID_ADDRESS.test(address || '')) throw new Error('عنوان عقد غير صالح (يجب أن يكون 0x متبوعاً بـ40 حرفاً سداسي عشرياً)');
+    let data;
+    try {
+        data = await fetchJsonWithRetry(`${COINGECKO_BASE}/coins/binance-smart-chain/contract/${address}`);
+    } catch (e) {
+        if (String(e.message).includes('404')) throw new Error('لم يُعثر على عملة بهذا العنوان على CoinGecko');
+        throw new Error('تعذّر الاتصال بـCoinGecko: ' + e.message);
+    }
+    const decimals = data?.detail_platforms?.['binance-smart-chain']?.decimal_place;
+    if (!data?.id || !data?.symbol || !Number.isInteger(decimals)) {
+        throw new Error('ردّ CoinGecko غير مكتمل لهذا العنوان — أدخل البيانات يدوياً');
+    }
+    return { coinId: data.id, symbol: String(data.symbol).toUpperCase(), decimals, name: data.name || '' };
 }
 
 /** للاختبارات فقط. */

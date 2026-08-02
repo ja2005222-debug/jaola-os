@@ -99,7 +99,7 @@ import { saveWatchlistIndex, listWatchlistIndex, markAlerted, shouldAlert } from
 import { recordSignal, getDueCoinIds, resolveDue, getAccuracy } from './services/signalTrackRecord.js';
 import { runTradingBotTickGuarded } from './services/tradingBotEngine.js';
 import { getConfig as getTradingBotConfig, saveConfig as saveTradingBotConfig, isReadyToEnable as isTradingBotReadyToEnable } from './services/tradingBotConfig.js';
-import { getTokenRegistry as getTradingBotTokenRegistry, upsertToken as upsertTradingBotToken, removeToken as removeTradingBotToken } from './services/tradingBotCoins.js';
+import { getTokenRegistry as getTradingBotTokenRegistry, upsertToken as upsertTradingBotToken, removeToken as removeTradingBotToken, lookupTokenByAddress as lookupTradingBotTokenByAddress } from './services/tradingBotCoins.js';
 import { listTrades as listTradingBotTrades, readPositions as readTradingBotPositions } from './services/tradingBotLedger.js';
 import { getCircuitBreakerStatus as getTradingBotCircuitBreakerStatus } from './services/tradingBotCircuitBreaker.js';
 import { listRecords as listCollectionRecords, upsertRecord as upsertCollectionRecord, deleteRecord as deleteCollectionRecord } from './services/appCollections.js';
@@ -2602,6 +2602,14 @@ app.delete('/api/admin/tradingbot/tokens', verifyToken, adminOnly, (req, res) =>
     const tokens = removeTradingBotToken(TRADINGBOT_DIR, coinId);
     recordAdminAction({ admin: req.user.username, action: 'tradingbot.tokens.remove', target: coinId, details: '' });
     res.json({ success: true, tokens });
+});
+
+// بحث راحة بعنوان العقد — لا يضيف شيئاً تلقائياً، المشرف يراجع ويضغط Add بنفسه
+app.get('/api/admin/tradingbot/tokens/lookup', verifyToken, adminOnly, async (req, res) => {
+    try {
+        const result = await lookupTradingBotTokenByAddress(req.query?.address);
+        res.json({ success: true, ...result });
+    } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
 app.post('/api/admin/tradingbot/enable', verifyToken, adminOnly, (req, res) => {

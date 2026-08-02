@@ -16,7 +16,7 @@ import {
     recordTradeOpen, updateTradeOutcome, readAllTrades, readPositions, writePosition, resetTradingLedgerForTest,
 } from '../services/tradingBotLedger.js';
 import { getDailyRealizedPnlBnb, isCircuitBreakerTripped, getCircuitBreakerStatus } from '../services/tradingBotCircuitBreaker.js';
-import { isTradable, filterTradable, upsertToken, removeToken, getTokenRegistry, resetTradingBotCoinsForTest } from '../services/tradingBotCoins.js';
+import { isTradable, filterTradable, upsertToken, removeToken, getTokenRegistry, resetTradingBotCoinsForTest, lookupTokenByAddress } from '../services/tradingBotCoins.js';
 import { resetCryptoCache } from '../services/cryptoMarket.js';
 
 const TEST_USER = 'tradingbot-test-user';
@@ -127,6 +127,30 @@ test('removeToken: يزيل العملة من السجل فتصبح غير قا�
     removeToken(dir, 'bitcoin');
     assert.equal(isTradable(dir, 'bitcoin'), false);
     assert.equal(Object.prototype.hasOwnProperty.call(getTokenRegistry(dir), 'bitcoin'), false);
+});
+
+// ─── بحث CoinGecko بعنوان العقد (راحة فقط، لا يضيف شيئاً تلقائياً) ────
+test('lookupTokenByAddress: يرفض عنواناً غير صالح قبل أي نداء شبكي', async () => {
+    await assert.rejects(() => lookupTokenByAddress('0xbadaddress'), /عنوان عقد غير صالح/);
+});
+
+test('lookupTokenByAddress: يرجع coinId/symbol/decimals من ردّ CoinGecko الصحيح', async () => {
+    global.fetch = async (url) => {
+        assert.ok(String(url).includes('/coins/binance-smart-chain/contract/0x333333333333333333333333333333333333333c'));
+        return {
+            ok: true, status: 200, json: async () => ({
+                id: 'pancakeswap-token', symbol: 'cake', name: 'PancakeSwap Token',
+                detail_platforms: { 'binance-smart-chain': { decimal_place: 18, contract_address: '0x333333333333333333333333333333333333333c' } },
+            }),
+        };
+    };
+    const r = await lookupTokenByAddress('0x333333333333333333333333333333333333333c');
+    assert.deepEqual(r, { coinId: 'pancakeswap-token', symbol: 'CAKE', decimals: 18, name: 'PancakeSwap Token' });
+});
+
+test('lookupTokenByAddress: 404 ⇒ رسالة "لم يُعثر" واضحة، لا خطأ شبكي غامض', async () => {
+    global.fetch = async () => ({ ok: false, status: 404, json: async () => ({}) });
+    await assert.rejects(() => lookupTokenByAddress('0x333333333333333333333333333333333333333c'), /لم يُعثر/);
 });
 
 // ─── تفعيل الإعداد ─────────────────────────────────────────────────

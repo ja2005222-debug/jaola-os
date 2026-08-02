@@ -578,6 +578,8 @@ const STRINGS = {
   tbTokenAdd: { en: 'Add coin', ar: 'إضافة عملة' },
   tbTokenAdded: { en: 'Coin added.', ar: 'أُضيفت العملة.' },
   tbTokenRemove: { en: 'Remove', ar: 'حذف' },
+  tbTokenLookup: { en: 'Lookup', ar: 'بحث' },
+  tbTokenLookupReview: { en: 'review the fields below, then Add.', ar: 'راجع الحقول أدناه ثم اضغط إضافة.' },
   admBack: { en: '← Back to dashboard', ar: '← الرجوع للوحة' },
   admScanning: { en: 'Scanning system...', ar: 'جاري فحص النظام...' },
   admHealthTitle: { en: '🩺 System Health', ar: '🩺 صحة النظام' },
