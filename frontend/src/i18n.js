@@ -790,6 +790,9 @@ const STRINGS = {
   admTeamDependsOn: { en: 'Depends on', ar: 'يعتمد على' },
   admTeamOrder: { en: 'Execution order', ar: 'ترتيب التنفيذ' },
 
+  // video studio (خدمة منفصلة — يُفتح بتسليم التوكن)
+  videoStudioTitle: { en: 'Video Studio', ar: 'استوديو الفيديو', es: 'Estudio de vídeo', fr: 'Studio vidéo' },
+
   // billing page
   billingTitle: { en: 'Billing & Subscription', ar: 'الاشتراك والفوترة', es: 'Facturación y suscripción', fr: 'Facturation et abonnement' },
   billingBack: { en: '← Back to dashboard', ar: '← الرجوع للوحة', es: '← Volver al panel', fr: '← Retour au tableau de bord' },
