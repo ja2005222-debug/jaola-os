@@ -1,4 +1,14 @@
-import { useState, lazy, Suspense } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
+
+const PAGE_TITLES = {
+  landing: 'JAOLA OS — ابنِ موقعك بالذكاء الاصطناعي',
+  boot: 'JAOLA OS',
+  dashboard: 'لوحة المشروع — JAOLA OS',
+  admin: 'لوحة المشرف — JAOLA OS',
+  billing: 'الفوترة والاشتراك — JAOLA OS',
+  privacy: 'سياسة الخصوصية — JAOLA OS',
+  terms: 'الشروط والأحكام — JAOLA OS',
+}
 
 // ⚡ تقسيم الحزمة: كل صفحة تُحمَّل عند طلبها فقط — بدل حزمة واحدة ~700KB
 // كانت تُحمَّل كاملة لكل زائر (الهبوط كانت تجرّ الداشبورد والأدمِن معها).
@@ -30,6 +40,8 @@ export default function App() {
     if (path === '/terms') return 'terms'
     return 'landing'
   })
+
+  useEffect(() => { document.title = PAGE_TITLES[page] || PAGE_TITLES.landing }, [page])
 
   const navigate = (to) => {
     window.history.pushState({}, '', to)
