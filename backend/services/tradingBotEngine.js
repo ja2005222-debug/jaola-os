@@ -24,12 +24,12 @@
  * 9) تسجيل النتيجة + تحديث المركز — قاطع الأمان يُعاد حسابه من السجل دوماً
  */
 import { ethers } from 'ethers';
-import { getOpportunities } from './cryptoMarket.js';
+import { getOpportunities, MAX_WATCHLIST } from './cryptoMarket.js';
 import { getProjectSecrets } from './projectSecrets.js';
 import { getProvider } from './chainProvider.js';
 import { createChainClient, applySlippage, WBNB } from './pancakeSwapExecutor.js';
-import { filterTradable, getTokenInfo } from './tradingBotCoins.js';
-import { getConfig } from './tradingBotConfig.js';
+import { filterTradable, getTokenInfo, isTradable, upsertToken, discoverTrendingCandidates } from './tradingBotCoins.js';
+import { getConfig, saveConfig } from './tradingBotConfig.js';
 import { isCircuitBreakerTripped } from './tradingBotCircuitBreaker.js';
 import { sendMail } from './mailer.js';
 import {
@@ -150,12 +150,60 @@ async function runProtectiveExits(dir, cfg, chainClient, walletAddress) {
     return null;
 }
 
+// الاكتشاف التلقائي لا يعمل أكثر من مرة كل 30 دقيقة (فوق كاش trending نفسه) —
+// يحمي حصة CoinGecko المجانية من نداءات تحليل متكررة لعملات جديدة كل 5 دقائق.
+const AUTO_DISCOVERY_INTERVAL_MS = 30 * 60 * 1000;
+let lastAutoDiscoveryAt = 0;
+
+/** للاختبارات فقط. */
+export function resetAutoDiscoveryThrottleForTest() { lastAutoDiscoveryAt = 0; }
+
+/**
+ * الاكتشاف التلقائي (خيار صريح عالي الخطورة، معطَّل افتراضياً): يجلب الرائج
+ * على CoinGecko، يحلّله عبر محرك الإشارات نفسه، ومن أصدر شراءً فعلياً يُسجَّل
+ * في سجل العملات (بعنوان عقده من CoinGecko — بلا تحقق يدوي!) ويُضاف لقائمة
+ * المتابعة، فيدخل دورة التداول الاعتيادية بكل ضوابطها (حجم ثابت، قاطع أمان،
+ * سقف مراكز، انزلاق). لا ينفّذ شراءً بنفسه أبداً — التسجيل والمتابعة فقط.
+ * يُرجع الإعداد المحدَّث إن أضاف شيئاً، وإلا null.
+ */
+async function runAutoDiscovery(dir, cfg) {
+    if (Date.now() - lastAutoDiscoveryAt < AUTO_DISCOVERY_INTERVAL_MS) return null;
+    lastAutoDiscoveryAt = Date.now();
+
+    let candidates;
+    try { candidates = await discoverTrendingCandidates(); } catch { return null; }
+    const fresh = candidates.filter(c => !isTradable(dir, c.coinId));
+    if (!fresh.length) return null;
+    const room = Math.max(0, MAX_WATCHLIST - (cfg.coinIds?.length || 0));
+    if (!room) return null;
+
+    let opps;
+    try { opps = await getOpportunities(fresh.map(c => c.coinId), cfg.timeframe); } catch { return null; }
+    const buyable = opps.filter(o => o.signal === 'buy');
+
+    const coinIds = [...(cfg.coinIds || [])];
+    let added = 0;
+    for (const o of buyable) {
+        if (added >= room) break;
+        const cand = fresh.find(c => c.coinId === o.id);
+        if (!cand) continue;
+        try { upsertToken(dir, cand); } catch { continue; } // binancecoin/شكل غير صالح — يُتجاوَز
+        if (!coinIds.includes(o.id)) coinIds.push(o.id);
+        added++;
+        recordConsideration(dir, { coinId: o.id, signal: o.signal, reasonCode: 'auto_discovered', strength: o.strength, decision: 'auto_registered' });
+        await notify(cfg, `بوت التداول: عملة رائجة سُجِّلت تلقائياً — ${o.id}`,
+            `${cand.symbol} سُجِّلت تلقائياً بإشارة شراء (عنوان العقد من CoinGecko بلا تحقق يدوي: ${cand.address}). ستدخل دورة التداول الاعتيادية بكل ضوابطها.`);
+    }
+    if (!added) return null;
+    return saveConfig(dir, { coinIds });
+}
+
 /**
  * دورة واحدة. options.chainClient/walletAddress للاختبارات (يتجاوزان بناء
  * محفظة حقيقية). بلا تجاوز، يُبنى العميل من السرّ المضبوط في الإعداد.
  */
 export async function runTradingBotTick(dir, options = {}) {
-    const cfg = getConfig(dir);
+    let cfg = getConfig(dir);
     if (!cfg.enabled) return { executed: false, reason: 'disabled' };
 
     let chainClient = options.chainClient;
@@ -180,6 +228,14 @@ export async function runTradingBotTick(dir, options = {}) {
     if (isCircuitBreakerTripped(dir, cfg)) {
         recordConsideration(dir, { coinId: null, signal: null, decision: 'skipped', skipReason: 'circuit_breaker' });
         return { executed: false, reason: 'circuit_breaker' };
+    }
+
+    // 1ب) الاكتشاف التلقائي (اختياري صريح) — بعد قاطع الأمان عمداً: لا عملات
+    // جديدة تُضاف في يوم أوقف فيه القاطع الشراء. الإضافة تتسع بها قائمة
+    // المتابعة فتلتقطها هذه الدورة نفسها عبر الترتيب الاعتيادي أدناه.
+    if (cfg.autoDiscoveryEnabled) {
+        const updatedCfg = await runAutoDiscovery(dir, cfg);
+        if (updatedCfg) cfg = updatedCfg;
     }
 
     // 2) ترتيب الفرص (getOpportunities بلا تعديل) واختيار أول فرصة قابلة

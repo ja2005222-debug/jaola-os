@@ -722,6 +722,13 @@ function TradingBotTab({ api }) {
             <input type="checkbox" checked={!!form.addressesVerified} onChange={e => setForm(f => ({ ...f, addressesVerified: e.target.checked }))} />
             {tr('tbAddressVerifiedConfirm')}
           </label>
+          <div style={{ border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.05)', borderRadius: 8, padding: '10px 12px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: S.text, cursor: 'pointer', fontWeight: 700 }}>
+              <input type="checkbox" checked={!!form.autoDiscoveryEnabled} onChange={e => setForm(f => ({ ...f, autoDiscoveryEnabled: e.target.checked }))} />
+              🤖🔥 {tr('tbAutoDiscovery')}
+            </label>
+            <p style={{ color: S.red, fontSize: 11.5, marginTop: 6, lineHeight: 1.7 }}>⚠️ {tr('tbAutoDiscoveryWarn')}</p>
+          </div>
           <div>
             <button disabled={busy} onClick={saveConfig} style={{ ...btnPrimary, opacity: busy ? 0.6 : 1 }}>{busy ? tr('admSaving') : tr('save')}</button>
           </div>

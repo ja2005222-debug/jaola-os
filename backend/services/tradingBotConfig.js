@@ -23,6 +23,10 @@ const DEFAULTS = Object.freeze({
     stopLossPct: 0, // ٪ تحت سعر الدخول تُغلق المركز فوراً — 0 = معطَّل
     takeProfitPct: 0, // ٪ فوق سعر الدخول تُغلق المركز فوراً — 0 = معطَّل
     alertEmail: '', // بريد اختياري يُنبَّه عند كل صفقة منفَّذة/غاز منخفض
+    // ⚠️ خيار عالي الخطورة (اختياري صراحةً، معطَّل افتراضياً): تسجيل عملات
+    // رائجة تلقائياً بعنوان عقدها من CoinGecko — بلا تحقق يدوي على bscscan —
+    // والدخول فيها عبر دورة التداول الاعتيادية إن أصدر محرك الإشارات شراءً.
+    autoDiscoveryEnabled: false,
     secretUsername: '',
     secretProject: '',
     secretKeyName: 'WALLET_PRIVATE_KEY',
