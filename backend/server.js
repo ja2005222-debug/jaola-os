@@ -102,6 +102,7 @@ import { getConfig as getTradingBotConfig, saveConfig as saveTradingBotConfig, i
 import { getTokenRegistry as getTradingBotTokenRegistry, upsertToken as upsertTradingBotToken, removeToken as removeTradingBotToken, lookupTokenByAddress as lookupTradingBotTokenByAddress, discoverTrendingCandidates as discoverTradingBotCandidates } from './services/tradingBotCoins.js';
 import { listTrades as listTradingBotTrades, readPositions as readTradingBotPositions, readHeartbeat as readTradingBotHeartbeat } from './services/tradingBotLedger.js';
 import { getCircuitBreakerStatus as getTradingBotCircuitBreakerStatus } from './services/tradingBotCircuitBreaker.js';
+import { getPerformanceStats as getTradingBotPerformance } from './services/tradingBotStats.js';
 import { listRecords as listCollectionRecords, upsertRecord as upsertCollectionRecord, deleteRecord as deleteCollectionRecord } from './services/appCollections.js';
 import { summarize as summarizeBudget, lastMonths as budgetLastMonths, budgetStatus } from './services/budgetStats.js';
 import { generateBudgetCommentary } from './services/budgetCommentary.js';
@@ -2638,6 +2639,7 @@ app.get('/api/admin/tradingbot/status', verifyToken, adminOnly, (req, res) => {
         circuitBreaker: getTradingBotCircuitBreakerStatus(TRADINGBOT_DIR, config),
         positions: readTradingBotPositions(TRADINGBOT_DIR),
         heartbeat: readTradingBotHeartbeat(TRADINGBOT_DIR),
+        performance: getTradingBotPerformance(TRADINGBOT_DIR),
     });
 });
 

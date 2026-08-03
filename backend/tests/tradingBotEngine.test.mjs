@@ -16,6 +16,7 @@ import {
     recordConsideration, recordTradeOpen, updateTradeOutcome, readAllTrades, readPositions, writePosition, resetTradingLedgerForTest, readHeartbeat,
 } from '../services/tradingBotLedger.js';
 import { WBNB as WBNB_ADDR } from '../services/pancakeSwapExecutor.js';
+import { getPerformanceStats } from '../services/tradingBotStats.js';
 import { getDailyRealizedPnlBnb, isCircuitBreakerTripped, getCircuitBreakerStatus } from '../services/tradingBotCircuitBreaker.js';
 import {
     isTradable, filterTradable, upsertToken, removeToken, getTokenRegistry, resetTradingBotCoinsForTest,
@@ -730,4 +731,85 @@ test('heartbeat: دورة ناجحة تكتب lastOkAt؛ دورة فاشلة ت�
     hb = readHeartbeat(dir);
     assert.equal(hb.lastError, 'RPC down', 'الفشل سُجِّل في نبض الحياة');
     assert.equal(hb.lastOkAt, firstOkAt, 'lastOkAt السابق محفوظ (لم يُمسَح بالفشل)');
+});
+
+// ═══ حزمة الرؤية ب ═══════════════════════════════════════════════════
+
+// ─── الوقف المتحرك (trailing stop) ──────────────────────────────────
+test('trailing stop: هبوط عن أعلى قيمة بأكثر من النسبة ⇒ بيع (وقف متحرك)', async () => {
+    saveConfig(dir, baseConfigPatch(dir, { stopLossPct: 0, takeProfitPct: 0, trailingStopPct: 10 }));
+    // أعلى قيمة بلغها 0.02؛ القيمة الآن 0.015 = هبوط 25% عن القمة > 10%
+    writePosition(dir, 'bitcoin', {
+        entryBnbSpent: ethers.parseEther('0.01').toString(), entryTokenWei: ethers.parseEther('100').toString(),
+        entryAt: Date.now(), entryGasCostBnb: 0, highWaterBnb: 0.02,
+    });
+    mockFetchByCoin({});
+    const { client, calls } = fakeChainClient({ quoteOut: ethers.parseEther('0.015') });
+
+    const r = await runTradingBotTick(dir, { chainClient: client, walletAddress: TEST_WALLET });
+    assert.equal(r.exit, 'trailing_stop');
+    assert.equal(calls.sell, 1);
+    assert.equal(Object.keys(readPositions(dir)).length, 0, 'المركز أُغلق');
+});
+
+test('trailing stop: صعود يرفع أعلى قيمة بلا بيع؛ القمة تُثبَّت في المركز', async () => {
+    saveConfig(dir, baseConfigPatch(dir, { stopLossPct: 0, takeProfitPct: 0, trailingStopPct: 10 }));
+    writePosition(dir, 'bitcoin', {
+        entryBnbSpent: ethers.parseEther('0.01').toString(), entryTokenWei: ethers.parseEther('100').toString(),
+        entryAt: Date.now(), entryGasCostBnb: 0,
+    });
+    mockFetchByCoin({});
+    const { client, calls } = fakeChainClient({ quoteOut: ethers.parseEther('0.015') }); // صعود 50%، لا قمة سابقة
+
+    const r = await runTradingBotTick(dir, { chainClient: client, walletAddress: TEST_WALLET });
+    assert.equal(calls.sell, 0, 'لا بيع أثناء الصعود');
+    assert.equal(readPositions(dir).bitcoin.highWaterBnb, 0.015, 'القمة الجديدة ثُبِّتت');
+});
+
+// ─── ملخص الأداء (performance stats) ────────────────────────────────
+test('performance stats: يجمع الربح/الخسارة ونسبة الفوز وأفضل/أسوأ عملة من السجل', () => {
+    // bitcoin: بيع رابح +0.005؛ ethereum: بيع خاسر -0.002
+    let id = recordTradeOpen(dir, { coinId: 'bitcoin', side: 'sell', signal: 'sell', amountBnbWei: 1n });
+    updateTradeOutcome(dir, id, { status: 'confirmed', realizedPnlBnb: 0.005, gasCostBnb: 0.0001 });
+    id = recordTradeOpen(dir, { coinId: 'ethereum', side: 'sell', signal: 'sell', amountBnbWei: 1n });
+    updateTradeOutcome(dir, id, { status: 'confirmed', realizedPnlBnb: -0.002, gasCostBnb: 0.0001 });
+
+    const s = getPerformanceStats(dir);
+    assert.ok(Math.abs(s.totalPnlBnb - 0.003) < 1e-9, 'صافي = 0.005 - 0.002');
+    assert.equal(s.closedTradeCount, 2);
+    assert.equal(s.wins, 1);
+    assert.equal(s.losses, 1);
+    assert.equal(s.winRatePct, 50);
+    assert.equal(s.bestCoin.coinId, 'bitcoin');
+    assert.equal(s.worstCoin.coinId, 'ethereum');
+});
+
+test('performance stats: بلا صفقات مغلقة ⇒ أصفار ونسبة فوز null', () => {
+    const s = getPerformanceStats(dir);
+    assert.equal(s.closedTradeCount, 0);
+    assert.equal(s.totalPnlBnb, 0);
+    assert.equal(s.winRatePct, null);
+    assert.equal(s.bestCoin, null);
+});
+
+// ─── الملخص اليومي البريدي ───────────────────────────────────────────
+test('daily summary: بريد ملخص واحد يومياً عند ضبط alertEmail، لا يتكرر نفس اليوم', async () => {
+    process.env.RESEND_API_KEY = 'test-key';
+    try {
+        saveConfig(dir, baseConfigPatch(dir, { alertEmail: 'owner@example.com' }));
+        const summaryMails = [];
+        global.fetch = async (url, opts) => {
+            const u = String(url);
+            if (u.includes('api.resend.com')) { const b = JSON.parse(opts.body); if (b.subject.includes('ملخص')) summaryMails.push(b); return { ok: true, status: 200, json: async () => ({ id: 'm' }) }; }
+            return { ok: false, status: 404, json: async () => ({}) }; // لا فرص سوقية
+        };
+        const { client } = fakeChainClient();
+
+        await runTradingBotTickGuarded(dir, { chainClient: client, walletAddress: TEST_WALLET });
+        await runTradingBotTickGuarded(dir, { chainClient: client, walletAddress: TEST_WALLET });
+        assert.equal(summaryMails.length, 1, 'ملخص واحد فقط رغم دورتين في نفس اليوم');
+        assert.deepEqual(summaryMails[0].to, ['owner@example.com']);
+    } finally {
+        delete process.env.RESEND_API_KEY;
+    }
 });
