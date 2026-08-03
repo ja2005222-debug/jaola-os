@@ -555,10 +555,10 @@ function TradingBotTab({ api }) {
     setTokenBusy(false);
   };
 
-  const discoverCandidates = async () => {
+  const discoverCandidates = async (mode = 'trending') => {
     setDiscoverBusy(true); setTokenMsg('');
     try {
-      const d = await api('/api/admin/tradingbot/tokens/discover');
+      const d = await api(`/api/admin/tradingbot/tokens/discover?mode=${encodeURIComponent(mode)}`);
       setCandidates(d.candidates || []);
       if (!d.candidates?.length) setTokenMsg(tr('tbDiscoverEmpty'));
     } catch (e) { setTokenMsg('❌ ' + e.message); }
@@ -660,6 +660,18 @@ function TradingBotTab({ api }) {
           <button disabled={busy} onClick={runOnce} style={{ background: 'transparent', border: `1px solid ${S.border}`, borderRadius: 8, padding: '9px 18px', color: S.text, fontWeight: 700, fontSize: 13 }}>🧪 {tr('tbRunOnce')}</button>
         </div>
         {!status.readyToEnable && !status.config.enabled && <p style={{ color: S.amber, fontSize: 11.5, marginTop: 10 }}>⚠️ {tr('tbNotReady')}</p>}
+        {status.config.enabled && status.skipSummary && status.skipSummary.executedInWindow === 0 && (
+          <div style={{ marginTop: 12, padding: '10px 12px', border: `1px solid ${S.border}`, borderRadius: 8, fontSize: 12 }}>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>🔍 {tr('tbWhyNoTrade')}</div>
+            {Object.keys(status.skipSummary.skipReasonCounts || {}).length === 0
+              ? <span style={{ color: S.muted }}>{tr('tbWhyNoSignal')}</span>
+              : <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {Object.entries(status.skipSummary.skipReasonCounts).sort((a, b) => b[1] - a[1]).map(([reason, n]) => (
+                    <span key={reason} style={{ color: S.muted, background: S.card2 || 'rgba(148,163,184,0.08)', padding: '2px 8px', borderRadius: 5 }}>{tr('tbSkip_' + reason) || reason}: <b style={{ color: S.text }}>{n}</b></span>
+                  ))}
+                </div>}
+          </div>
+        )}
         {msg && <p style={{ fontSize: 12, color: msg.startsWith('❌') ? S.red : S.muted, marginTop: 10, wordBreak: 'break-word' }}>{msg}</p>}
       </div>
 
@@ -806,14 +818,21 @@ function TradingBotTab({ api }) {
         </div>
 
         <div style={{ marginBottom: 14 }}>
-          <button disabled={discoverBusy} onClick={discoverCandidates} style={{ background: 'transparent', border: `1px solid ${S.border}`, borderRadius: 8, padding: '9px 16px', color: S.text, fontWeight: 700, fontSize: 13, opacity: discoverBusy ? 0.5 : 1 }}>🔥 {discoverBusy ? tr('admLoading') : tr('tbDiscover')}</button>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {[['trending', '🔥', tr('tbDiscTrending')], ['gainers', '📈', tr('tbDiscGainers')], ['losers', '📉', tr('tbDiscLosers')], ['volume', '💧', tr('tbDiscVolume')], ['market_cap', '🏆', tr('tbDiscMarketCap')]].map(([mode, icon, lbl]) => (
+              <button key={mode} disabled={discoverBusy} onClick={() => discoverCandidates(mode)} style={{ background: 'transparent', border: `1px solid ${S.border}`, borderRadius: 8, padding: '8px 12px', color: S.text, fontWeight: 700, fontSize: 12.5, opacity: discoverBusy ? 0.5 : 1 }}>{icon} {lbl}</button>
+            ))}
+          </div>
           <p style={{ color: S.muted, fontSize: 11.5, marginTop: 6, lineHeight: 1.7 }}>{tr('tbDiscoverHint')}</p>
+          {discoverBusy && <Muted>{tr('admLoading')}</Muted>}
           {candidates && candidates.length > 0 && (
             <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
               {candidates.map(c => (
                 <div key={c.coinId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 12px', border: `1px solid ${S.border}`, borderRadius: 8, fontSize: 12.5 }}>
                   <div style={{ minWidth: 0 }}>
                     <b>{c.symbol}</b> <span style={{ color: S.muted }}>{c.name} ({c.coinId})</span>
+                    {typeof c.priceChange24h === 'number' && <span style={{ color: c.priceChange24h < 0 ? S.red : S.green, marginInlineStart: 6 }}>{c.priceChange24h >= 0 ? '+' : ''}{c.priceChange24h.toFixed(1)}%</span>}
+                    {typeof c.volumeUsd === 'number' && c.volumeUsd > 0 && <span style={{ color: S.muted, marginInlineStart: 6 }}>· {tr('tbDiscVol')} ${Math.round(c.volumeUsd).toLocaleString()}</span>}
                     <div style={{ color: S.muted, fontSize: 11, direction: 'ltr', textAlign: 'left', wordBreak: 'break-all' }}>{c.address} · decimals {c.decimals}</div>
                   </div>
                   <button disabled={tokenBusy} onClick={() => useCandidate(c)} style={{ background: 'transparent', border: `1px solid ${S.border}`, borderRadius: 6, padding: '5px 10px', color: S.text, fontSize: 11.5, fontWeight: 700, flexShrink: 0 }}>{tr('tbTokenUse')}</button>

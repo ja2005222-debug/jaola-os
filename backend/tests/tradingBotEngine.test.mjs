@@ -16,11 +16,11 @@ import {
     recordConsideration, recordTradeOpen, updateTradeOutcome, readAllTrades, readPositions, writePosition, resetTradingLedgerForTest, readHeartbeat,
 } from '../services/tradingBotLedger.js';
 import { WBNB as WBNB_ADDR } from '../services/pancakeSwapExecutor.js';
-import { getPerformanceStats } from '../services/tradingBotStats.js';
+import { getPerformanceStats, getRecentSkipSummary } from '../services/tradingBotStats.js';
 import { getDailyRealizedPnlBnb, isCircuitBreakerTripped, getCircuitBreakerStatus } from '../services/tradingBotCircuitBreaker.js';
 import {
     isTradable, filterTradable, upsertToken, removeToken, getTokenRegistry, resetTradingBotCoinsForTest,
-    lookupTokenByAddress, discoverTrendingCandidates, resetDiscoveryCacheForTest,
+    lookupTokenByAddress, discoverTrendingCandidates, discoverCandidates, resetDiscoveryCacheForTest,
 } from '../services/tradingBotCoins.js';
 import { resetCryptoCache } from '../services/cryptoMarket.js';
 
@@ -812,4 +812,50 @@ test('daily summary: بريد ملخص واحد يومياً عند ضبط alert
     } finally {
         delete process.env.RESEND_API_KEY;
     }
+});
+
+// ═══ توسيع الاكتشاف + تشخيص "لماذا لا صفقة" ═══════════════════════════
+
+test('discoverCandidates: نمط gainers يرتّب عملات BSC بالارتفاع 24س، ويُثري بالعقد', async () => {
+    global.fetch = async (url) => {
+        const u = String(url);
+        if (u.includes('/coins/markets')) {
+            assert.ok(u.includes('category=binance-smart-chain'), 'يقصر على عملات BNB Chain');
+            return { ok: true, status: 200, json: async () => ([
+                { id: 'low-mover', symbol: 'low', name: 'Low', price_change_percentage_24h: 2, total_volume: 1000 },
+                { id: 'big-mover', symbol: 'big', name: 'Big', price_change_percentage_24h: 40, total_volume: 5000 },
+            ]) };
+        }
+        if (u.includes('/coins/big-mover')) return { ok: true, status: 200, json: async () => ({ detail_platforms: { 'binance-smart-chain': { decimal_place: 18 } }, platforms: { 'binance-smart-chain': '0x666666666666666666666666666666666666666f' } }) };
+        if (u.includes('/coins/low-mover')) return { ok: true, status: 200, json: async () => ({ detail_platforms: { 'binance-smart-chain': { decimal_place: 9 } }, platforms: { 'binance-smart-chain': '0x7777777777777777777777777777777777777770' } }) };
+        return { ok: false, status: 404, json: async () => ({}) };
+    };
+    const c = await discoverCandidates('gainers');
+    assert.equal(c[0].coinId, 'big-mover', 'الأعلى ارتفاعاً أولاً');
+    assert.equal(c[0].priceChange24h, 40);
+    assert.equal(c[0].volumeUsd, 5000);
+});
+
+test('discoverCandidates: نمط غير معروف يرتد إلى trending', async () => {
+    let hitTrending = false;
+    global.fetch = async (url) => {
+        if (String(url).includes('/search/trending')) { hitTrending = true; return { ok: true, status: 200, json: async () => ({ coins: [] }) }; }
+        return { ok: false, status: 404, json: async () => ({}) };
+    };
+    await discoverCandidates('nonsense-mode');
+    assert.ok(hitTrending, 'ارتدّ إلى trending');
+});
+
+// ─── تشخيص "لماذا لا صفقة" ────────────────────────────────────────────
+test('getRecentSkipSummary: يُحصي أسباب التجاهل ويعدّ الصفقات المنفَّذة', () => {
+    recordConsideration(dir, { coinId: 'a', signal: 'buy', decision: 'skipped', skipReason: 'honeypot_suspected' });
+    recordConsideration(dir, { coinId: 'b', signal: 'buy', decision: 'skipped', skipReason: 'honeypot_suspected' });
+    recordConsideration(dir, { coinId: 'c', signal: 'buy', decision: 'skipped', skipReason: 'insufficient_gas' });
+    const id = recordTradeOpen(dir, { coinId: 'd', side: 'buy', signal: 'buy', amountBnbWei: 1n });
+    updateTradeOutcome(dir, id, { status: 'confirmed' });
+
+    const s = getRecentSkipSummary(dir);
+    assert.equal(s.skipReasonCounts.honeypot_suspected, 2);
+    assert.equal(s.skipReasonCounts.insufficient_gas, 1);
+    assert.equal(s.executedInWindow, 1);
 });

@@ -38,3 +38,20 @@ export function getPerformanceStats(dir) {
         bestCoin, worstCoin,
     };
 }
+
+/**
+ * "لماذا لا صفقات؟" — يُحصي أسباب التجاهل في آخر considerations، فيكشف
+ * القيد المهيمن (لا إشارة شراء؟ اشتباه honeypot؟ غاز؟) بدل التخمين.
+ */
+export function getRecentSkipSummary(dir, lookback = 200) {
+    const recent = readAllTrades(dir).slice(-lookback);
+    const considerations = recent.filter(t => t.kind === 'consideration' && t.decision === 'skipped');
+    const counts = {};
+    for (const c of considerations) {
+        const key = c.skipReason || 'unknown';
+        counts[key] = (counts[key] || 0) + 1;
+    }
+    const executed = recent.filter(t => t.kind === 'trade').length;
+    // "لا إشارة قابلة للتنفيذ" لا يُسجَّل كتجاهل لعملة بعينها — نستنتجه من غياب الفرص
+    return { skipReasonCounts: counts, executedInWindow: executed, considered: considerations.length };
+}
