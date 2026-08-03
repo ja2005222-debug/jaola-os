@@ -13,7 +13,7 @@ import { ethers } from 'ethers';
 import { runTradingBotTick, runTradingBotTickGuarded, isTickBusy } from '../services/tradingBotEngine.js';
 import { saveConfig, isReadyToEnable, resetTradingBotConfigForTest } from '../services/tradingBotConfig.js';
 import {
-    recordTradeOpen, updateTradeOutcome, readAllTrades, readPositions, writePosition, resetTradingLedgerForTest,
+    recordConsideration, recordTradeOpen, updateTradeOutcome, readAllTrades, readPositions, writePosition, resetTradingLedgerForTest,
 } from '../services/tradingBotLedger.js';
 import { getDailyRealizedPnlBnb, isCircuitBreakerTripped, getCircuitBreakerStatus } from '../services/tradingBotCircuitBreaker.js';
 import {
@@ -79,6 +79,11 @@ function oversoldPrices(startTs) {
 // سلسلة أسعار صاعدة بقوة — RSI متشبّع شرائياً (sell).
 function overboughtPrices(startTs) {
     return Array.from({ length: 40 }, (_, i) => [startTs + i * 86400000, 50 + i * 4]);
+}
+// هبوط مع أيام صعود متفرقة — RSI منخفض (buy) لكن أبعد عن التطرف من سلسلة
+// صعود صافٍ، فقوّتها (|RSI-50|) أدنى — تُرتَّب تحت بيعٍ متشبّع عمداً.
+function mildOversoldPrices(startTs) {
+    return Array.from({ length: 40 }, (_, i) => [startTs + i * 86400000, 200 - i * 3 + (i % 4 === 0 ? 6 : 0)]);
 }
 
 function mockFetchByCoin(pricesByCoinId) {
@@ -442,4 +447,127 @@ test('runTradingBotTickGuarded: يمنع دورتين متداخلتين', async
     resolveFirst();
     await p1;
     assert.equal(isTickBusy(), false);
+});
+
+// ─── اختيار أول فرصة قابلة للتنفيذ (لا انسداد بإشارة ميتة في الصدارة) ──
+test('runTradingBotTick: بيع متصدّر بلا مركز لا يحجب شراءً حياً أدنى ترتيباً', async () => {
+    saveConfig(dir, baseConfigPatch(dir, { coinIds: ['bitcoin', 'ethereum'] }));
+    // ethereum: بيع متشبّع (قوة ~50) يتصدّر؛ bitcoin: شراء معتدل (قوة أدنى) — لا مركز في أيٍّ منهما
+    mockFetchByCoin({
+        ethereum: overboughtPrices(Date.parse('2026-01-01T00:00:00Z')),
+        bitcoin: mildOversoldPrices(Date.parse('2026-01-01T00:00:00Z')),
+    });
+    const { client, calls } = fakeChainClient();
+
+    const r = await runTradingBotTick(dir, { chainClient: client, walletAddress: TEST_WALLET });
+    assert.equal(r.executed, true, 'الشراء الحي نُفِّذ رغم تصدُّر بيع ميت');
+    assert.equal(r.coinId, 'bitcoin');
+    assert.equal(r.side, 'buy');
+    assert.equal(calls.buy, 1);
+    const deadSell = readAllTrades(dir).find(t => t.kind === 'consideration' && t.coinId === 'ethereum');
+    assert.equal(deadSell?.skipReason, 'no_position_to_sell', 'البيع الميت سُجِّل بسببه المحدَّد');
+});
+
+// ─── مخارج حماية المراكز (وقف خسارة/جني ربح) ─────────────────────────
+test('protective exits: هبوط تحت وقف الخسارة ⇒ بيع فوري، مركز يُغلق، خسارة محققة تُسجَّل', async () => {
+    saveConfig(dir, baseConfigPatch(dir, { stopLossPct: 10 }));
+    writePosition(dir, 'bitcoin', {
+        entryBnbSpent: ethers.parseEther('0.01').toString(), entryTokenWei: ethers.parseEther('100').toString(),
+        entryAt: Date.now(), entryGasCostBnb: 0, lastActionAt: Date.now(),
+    });
+    mockFetchByCoin({}); // لا فرص سوقية — المخرج الوقائي وحده يعمل
+    const { client, calls } = fakeChainClient({ quoteOut: ethers.parseEther('0.008') }); // -20% ≤ -10%
+
+    const r = await runTradingBotTick(dir, { chainClient: client, walletAddress: TEST_WALLET });
+    assert.equal(r.executed, true);
+    assert.equal(r.exit, 'stop_loss');
+    assert.equal(r.side, 'sell');
+    assert.equal(calls.sell, 1);
+    assert.equal(Object.keys(readPositions(dir)).length, 0, 'المركز أُغلق');
+    const trade = readAllTrades(dir).find(t => t.kind === 'trade' && t.reasonCode === 'stop_loss');
+    assert.ok(Number(trade.realizedPnlBnb) < 0, 'خسارة محققة مُسجَّلة');
+});
+
+test('protective exits: صعود فوق جني الربح ⇒ بيع فوري بربح محقق', async () => {
+    saveConfig(dir, baseConfigPatch(dir, { takeProfitPct: 15 }));
+    writePosition(dir, 'bitcoin', {
+        entryBnbSpent: ethers.parseEther('0.01').toString(), entryTokenWei: ethers.parseEther('100').toString(),
+        entryAt: Date.now(), entryGasCostBnb: 0, lastActionAt: Date.now(),
+    });
+    mockFetchByCoin({});
+    const { client } = fakeChainClient({ quoteOut: ethers.parseEther('0.0125') }); // +25% ≥ +15%
+
+    const r = await runTradingBotTick(dir, { chainClient: client, walletAddress: TEST_WALLET });
+    assert.equal(r.exit, 'take_profit');
+    const trade = readAllTrades(dir).find(t => t.kind === 'trade' && t.reasonCode === 'take_profit');
+    assert.ok(Number(trade.realizedPnlBnb) > 0, 'ربح محقق مُسجَّل');
+});
+
+test('protective exits: ضمن النطاق الآمن ⇒ لا بيع؛ ومعطَّلة افتراضياً ⇒ صفر عروض أسعار', async () => {
+    // ضمن النطاق: وقف 10% وهبوط 5% فقط — لا مخرج
+    saveConfig(dir, baseConfigPatch(dir, { stopLossPct: 10 }));
+    writePosition(dir, 'bitcoin', {
+        entryBnbSpent: ethers.parseEther('0.01').toString(), entryTokenWei: ethers.parseEther('100').toString(),
+        entryAt: Date.now(), entryGasCostBnb: 0, lastActionAt: Date.now(),
+    });
+    mockFetchByCoin({});
+    const inRange = fakeChainClient({ quoteOut: ethers.parseEther('0.0095') }); // -5% فقط
+    const r1 = await runTradingBotTick(dir, { chainClient: inRange.client, walletAddress: TEST_WALLET });
+    assert.equal(r1.executed, false);
+    assert.equal(inRange.calls.sell, 0);
+    assert.ok(readPositions(dir).bitcoin, 'المركز باقٍ');
+
+    // معطَّلة (الافتراضي 0): لا حتى عرض سعر للمراكز
+    saveConfig(dir, baseConfigPatch(dir, { stopLossPct: 0, takeProfitPct: 0 }));
+    const disabled = fakeChainClient({ quoteOut: ethers.parseEther('0.0001') }); // كان سيوجب وقف خسارة لو مفعَّلاً
+    const r2 = await runTradingBotTick(dir, { chainClient: disabled.client, walletAddress: TEST_WALLET });
+    assert.equal(r2.executed, false);
+    assert.equal(disabled.calls.quote, 0, 'صفر عروض أسعار — الحماية معطَّلة فلا فحص أصلاً');
+    assert.equal(disabled.calls.sell, 0);
+});
+
+// ─── منع إغراق السجل (دمج التجاهلات المتطابقة) ───────────────────────
+test('recordConsideration: تجاهل متطابق خلال النافذة لا يتكرر، وحالة مختلفة تُسجَّل دوماً', async () => {
+    saveConfig(dir, baseConfigPatch(dir));
+    writePosition(dir, 'bitcoin', { entryBnbSpent: '1', entryTokenWei: '1', entryAt: Date.now() });
+    mockFetchByCoin({ bitcoin: oversoldPrices(Date.parse('2026-01-01T00:00:00Z')) }); // شراء ومركز مفتوح ⇒ position_already_open
+    const { client } = fakeChainClient();
+
+    await runTradingBotTick(dir, { chainClient: client, walletAddress: TEST_WALLET });
+    await runTradingBotTick(dir, { chainClient: client, walletAddress: TEST_WALLET });
+    await runTradingBotTick(dir, { chainClient: client, walletAddress: TEST_WALLET });
+    const dupes = readAllTrades(dir).filter(t => t.kind === 'consideration' && t.skipReason === 'position_already_open');
+    assert.equal(dupes.length, 1, 'ثلاث دورات متطابقة ⇒ سجل واحد فقط');
+
+    // حالة مختلفة (سبب آخر لنفس العملة) تُسجَّل رغم النافذة
+    assert.equal(recordConsideration(dir, { coinId: 'bitcoin', signal: 'buy', decision: 'skipped', skipReason: 'cooldown' }), true);
+});
+
+// ─── تنبيه بريدي عند تنفيذ صفقة (اختياري عبر alertEmail) ─────────────
+test('runTradingBotTick: alertEmail مضبوط ⇒ بريد واحد يُرسَل عند شراء مؤكَّد، وفشل البريد لا يمسّ الصفقة', async () => {
+    process.env.RESEND_API_KEY = 'test-key-not-real';
+    try {
+        saveConfig(dir, baseConfigPatch(dir, { alertEmail: 'owner@example.com' }));
+        const baseFetch = (url) => {
+            const u = String(url);
+            if (u.includes('/coins/bitcoin/market_chart')) {
+                return { ok: true, status: 200, json: async () => ({ prices: oversoldPrices(Date.parse('2026-01-01T00:00:00Z')) }) };
+            }
+            return { ok: false, status: 404, json: async () => ({}) };
+        };
+        const mailCalls = [];
+        global.fetch = async (url, opts) => {
+            if (String(url).includes('api.resend.com')) { mailCalls.push(JSON.parse(opts.body)); return { ok: true, status: 200, json: async () => ({ id: 'mail1' }) }; }
+            return baseFetch(url);
+        };
+        const { client } = fakeChainClient();
+
+        const r = await runTradingBotTick(dir, { chainClient: client, walletAddress: TEST_WALLET });
+        assert.equal(r.executed, true);
+        assert.equal(r.status, 'confirmed');
+        assert.equal(mailCalls.length, 1, 'بريد واحد بالضبط عند الصفقة المنفَّذة');
+        assert.deepEqual(mailCalls[0].to, ['owner@example.com']);
+    } finally {
+        delete process.env.RESEND_API_KEY;
+    }
 });

@@ -690,6 +690,18 @@ function TradingBotTab({ api }) {
               <span style={label}>{tr('tbConfirmations')}</span>
               <input style={inputStyle} type="number" min="1" value={form.confirmationsRequired} onChange={e => setForm(f => ({ ...f, confirmationsRequired: Number(e.target.value) }))} />
             </div>
+            <div>
+              <span style={label}>{tr('tbStopLoss')}</span>
+              <input style={inputStyle} type="number" min="0" step="0.5" value={form.stopLossPct ?? 0} onChange={e => setForm(f => ({ ...f, stopLossPct: Number(e.target.value) }))} />
+            </div>
+            <div>
+              <span style={label}>{tr('tbTakeProfit')}</span>
+              <input style={inputStyle} type="number" min="0" step="0.5" value={form.takeProfitPct ?? 0} onChange={e => setForm(f => ({ ...f, takeProfitPct: Number(e.target.value) }))} />
+            </div>
+            <div>
+              <span style={label}>{tr('tbAlertEmail')}</span>
+              <input style={{ ...inputStyle, direction: 'ltr', textAlign: 'left' }} type="email" placeholder="me@example.com" value={form.alertEmail ?? ''} onChange={e => setForm(f => ({ ...f, alertEmail: e.target.value }))} />
+            </div>
           </div>
           <p style={{ color: S.muted, fontSize: 11.5, marginTop: 4 }}>{tr('tbSecretHint')}</p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>

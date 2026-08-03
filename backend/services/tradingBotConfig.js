@@ -20,6 +20,9 @@ const DEFAULTS = Object.freeze({
     maxOpenPositions: 3,
     cooldownMinutesPerCoin: 60,
     confirmationsRequired: 2,
+    stopLossPct: 0, // ٪ تحت سعر الدخول تُغلق المركز فوراً — 0 = معطَّل
+    takeProfitPct: 0, // ٪ فوق سعر الدخول تُغلق المركز فوراً — 0 = معطَّل
+    alertEmail: '', // بريد اختياري يُنبَّه عند كل صفقة منفَّذة/غاز منخفض
     secretUsername: '',
     secretProject: '',
     secretKeyName: 'WALLET_PRIVATE_KEY',
