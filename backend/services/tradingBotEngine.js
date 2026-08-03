@@ -34,8 +34,9 @@ import { isCircuitBreakerTripped } from './tradingBotCircuitBreaker.js';
 import { sendMail } from './mailer.js';
 import {
     recordConsideration, recordTradeOpen, updateTradeOutcome,
-    findStalePending, readPositions, writePosition, clearPosition, writeHeartbeat,
+    findStalePending, readPositions, writePosition, clearPosition, writeHeartbeat, readHeartbeat,
 } from './tradingBotLedger.js';
+import { getPerformanceStats } from './tradingBotStats.js';
 
 function toBnb(wei) { return Number(ethers.formatEther(wei)); }
 
@@ -95,7 +96,8 @@ async function reconcileStaleTrades(dir, chainClient) {
 async function runProtectiveExits(dir, cfg, chainClient, walletAddress) {
     const stopLossPct = Number(cfg.stopLossPct) || 0;
     const takeProfitPct = Number(cfg.takeProfitPct) || 0;
-    if (stopLossPct <= 0 && takeProfitPct <= 0) return null;
+    const trailingStopPct = Number(cfg.trailingStopPct) || 0;
+    if (stopLossPct <= 0 && takeProfitPct <= 0 && trailingStopPct <= 0) return null;
 
     const positions = readPositions(dir);
     for (const [coinId, pos] of Object.entries(positions)) {
@@ -109,9 +111,21 @@ async function runProtectiveExits(dir, cfg, chainClient, walletAddress) {
         try { quote = await chainClient.quote(heldWei, [tokenInfo.address, WBNB]); } catch { continue; }
         const entryBnb = toBnb(BigInt(pos.entryBnbSpent));
         if (!(entryBnb > 0)) continue;
-        const changePct = ((toBnb(quote) - entryBnb) / entryBnb) * 100;
+        const currentBnb = toBnb(quote);
+        const changePct = ((currentBnb - entryBnb) / entryBnb) * 100;
+
+        // أعلى قيمة بلغها المركز (يبدأ من قيمة الدخول) — يُحدَّث ويُثبَّت كل دورة
+        const prevHigh = Number(pos.highWaterBnb) || entryBnb;
+        const highBnb = Math.max(prevHigh, currentBnb);
+        if (highBnb > prevHigh) writePosition(dir, coinId, { ...pos, highWaterBnb: highBnb });
+
+        // الوقف المتحرك يحمي الربح فقط (يعمل بعد صعود المركز فوق الدخول) —
+        // خسائر ما دون الدخول يتكفّل بها وقف الخسارة، فلا ازدواج.
+        const trailingHit = trailingStopPct > 0 && highBnb > entryBnb
+            && currentBnb <= highBnb * (1 - trailingStopPct / 100);
         const exitCode = (stopLossPct > 0 && changePct <= -stopLossPct) ? 'stop_loss'
-            : (takeProfitPct > 0 && changePct >= takeProfitPct) ? 'take_profit' : null;
+            : (takeProfitPct > 0 && changePct >= takeProfitPct) ? 'take_profit'
+            : trailingHit ? 'trailing_stop' : null;
         if (!exitCode) continue;
 
         const minGasReserveWei = ethers.parseEther(String(cfg.minGasReserveBnb));
@@ -147,7 +161,8 @@ async function runProtectiveExits(dir, cfg, chainClient, walletAddress) {
         const realizedPnlBnb = toBnb(quote) - entryBnb - (gasCostBnb || 0) - (Number(pos.entryGasCostBnb) || 0);
         updateTradeOutcome(dir, tradeId, { status, txHash, gasCostBnb, realizedPnlBnb });
         clearPosition(dir, coinId);
-        await notify(cfg, `بوت التداول: ${exitCode === 'stop_loss' ? 'وقف خسارة' : 'جني ربح'} — ${coinId}`,
+        const exitLabel = exitCode === 'stop_loss' ? 'وقف خسارة' : exitCode === 'take_profit' ? 'جني ربح' : 'وقف متحرك';
+        await notify(cfg, `بوت التداول: ${exitLabel} — ${coinId}`,
             `بيع ${coinId} عند ${changePct.toFixed(2)}% من الدخول. ربح/خسارة محقق: ${realizedPnlBnb.toFixed(6)} BNB. tx: ${txHash}`);
         return { executed: true, tradeId, txHash, status, coinId, side: 'sell', exit: exitCode };
     }
@@ -410,6 +425,29 @@ let tickBusy = false;
 // مثلاً) يستحق تنبيهاً واحداً — لا رسالة كل دورة فاشلة.
 const HEARTBEAT_STALE_MS = 30 * 60 * 1000;
 
+/** يوم UTC كسلسلة (YYYY-MM-DD) — مفتاح إرسال الملخص اليومي مرة واحدة يومياً. */
+function utcDayKey(ms = Date.now()) { return new Date(ms).toISOString().slice(0, 10); }
+
+/** يرسل ملخص أداء يومياً مرة واحدة (عند تغيّر يوم UTC) إن ضُبط alertEmail. */
+async function maybeSendDailySummary(dir, cfg) {
+    if (!cfg.alertEmail) return;
+    const today = utcDayKey();
+    const hb = readHeartbeat(dir);
+    if (hb.lastSummaryDay === today) return;
+    const s = getPerformanceStats(dir);
+    const body = [
+        `ملخص أداء بوت التداول (${today}):`,
+        `صافي الربح/الخسارة المحقق: ${s.totalPnlBnb.toFixed(6)} BNB`,
+        `صفقات مغلقة: ${s.closedTradeCount} (رابحة ${s.wins} / خاسرة ${s.losses}${s.winRatePct != null ? ` — نسبة الفوز ${s.winRatePct.toFixed(0)}%` : ''})`,
+        `مراكز مفتوحة حالياً: ${Object.keys(readPositions(dir)).length}`,
+        s.bestCoin ? `أفضل عملة: ${s.bestCoin.coinId} (${s.bestCoin.pnlBnb.toFixed(6)} BNB)` : '',
+        s.worstCoin ? `أسوأ عملة: ${s.worstCoin.coinId} (${s.worstCoin.pnlBnb.toFixed(6)} BNB)` : '',
+        `إجمالي الغاز المدفوع: ${s.totalGasBnb.toFixed(6)} BNB`,
+    ].filter(Boolean).join('\n');
+    await notify(cfg, `بوت التداول: ملخص ${today}`, body);
+    writeHeartbeat(dir, { ok: true, lastSummaryDay: today });
+}
+
 /**
  * حارس تداخل مشترك بين الحلقة المجدولة وأي تشغيل يدوي — يمنع تسابقاً يضاعف
  * nonce التوقيع. يكتب نبض الحياة في كل دورة (نجاحاً أو فشلاً)، ويُنبّه مرة
@@ -421,6 +459,7 @@ export async function runTradingBotTickGuarded(dir, options = {}) {
     try {
         const result = await runTradingBotTick(dir, options);
         writeHeartbeat(dir, { ok: true });
+        try { await maybeSendDailySummary(dir, getConfig(dir)); } catch { /* الملخص ثانوي دوماً */ }
         return result;
     } catch (e) {
         const hb = writeHeartbeat(dir, { ok: false, error: e.message });

@@ -135,7 +135,7 @@ export function clearPosition(dir, coinId) {
  * اكتملت بلا استثناء؛ فارقها الكبير عن الآن يكشف بوتاً "يعمل لكن كل دوراته
  * تفشل" (RPC معطّل مثلاً) — أخطر من توقّف تام لأنه صامت.
  */
-export function writeHeartbeat(dir, { ok, error = null, alertedStaleAt = undefined } = {}) {
+export function writeHeartbeat(dir, { ok, error = null, alertedStaleAt = undefined, lastSummaryDay = undefined } = {}) {
     const prev = readHeartbeat(dir);
     const now = Date.now();
     const hb = {
@@ -143,6 +143,7 @@ export function writeHeartbeat(dir, { ok, error = null, alertedStaleAt = undefin
         lastOkAt: ok ? now : (prev.lastOkAt || null),
         lastError: ok ? null : (error || 'unknown'),
         alertedStaleAt: alertedStaleAt !== undefined ? alertedStaleAt : (prev.alertedStaleAt || null),
+        lastSummaryDay: lastSummaryDay !== undefined ? lastSummaryDay : (prev.lastSummaryDay || null),
     };
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(heartbeatFile(dir), JSON.stringify(hb, null, 2));

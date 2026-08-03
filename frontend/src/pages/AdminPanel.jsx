@@ -663,6 +663,41 @@ function TradingBotTab({ api }) {
         {msg && <p style={{ fontSize: 12, color: msg.startsWith('❌') ? S.red : S.muted, marginTop: 10, wordBreak: 'break-word' }}>{msg}</p>}
       </div>
 
+      {status.performance && (
+        <div style={{ ...cardStyle, marginBottom: 20 }}>
+          <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 12 }}>{tr('tbPerfTitle')}</div>
+          {status.performance.closedTradeCount === 0
+            ? <Muted>{tr('tbPerfEmpty')}</Muted>
+            : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14, fontSize: 12.5 }}>
+                <div>
+                  <div style={{ color: S.muted, marginBottom: 3 }}>{tr('tbPerfNetPnl')}</div>
+                  <b style={{ fontSize: 16, color: status.performance.totalPnlBnb < 0 ? S.red : S.green }}>{status.performance.totalPnlBnb.toFixed(5)} BNB</b>
+                </div>
+                <div>
+                  <div style={{ color: S.muted, marginBottom: 3 }}>{tr('tbPerfWinRate')}</div>
+                  <b style={{ fontSize: 16 }}>{status.performance.winRatePct != null ? `${status.performance.winRatePct.toFixed(0)}%` : '—'}</b>
+                  <span style={{ color: S.muted }}> ({status.performance.wins}✓ / {status.performance.losses}✗)</span>
+                </div>
+                <div>
+                  <div style={{ color: S.muted, marginBottom: 3 }}>{tr('tbPerfClosed')}</div>
+                  <b style={{ fontSize: 16 }}>{status.performance.closedTradeCount}</b>
+                </div>
+                {status.performance.bestCoin && <div>
+                  <div style={{ color: S.muted, marginBottom: 3 }}>{tr('tbPerfBest')}</div>
+                  <b style={{ color: S.green }}>{status.performance.bestCoin.coinId}</b> <span style={{ color: S.muted }}>({status.performance.bestCoin.pnlBnb.toFixed(4)})</span>
+                </div>}
+                {status.performance.worstCoin && <div>
+                  <div style={{ color: S.muted, marginBottom: 3 }}>{tr('tbPerfWorst')}</div>
+                  <b style={{ color: S.red }}>{status.performance.worstCoin.coinId}</b> <span style={{ color: S.muted }}>({status.performance.worstCoin.pnlBnb.toFixed(4)})</span>
+                </div>}
+                <div>
+                  <div style={{ color: S.muted, marginBottom: 3 }}>{tr('tbPerfGas')}</div>
+                  <b>{status.performance.totalGasBnb.toFixed(5)} BNB</b>
+                </div>
+              </div>}
+        </div>
+      )}
+
       <div style={{ ...cardStyle, marginBottom: 20 }}>
         <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 4 }}>{tr('tbConfigTitle')}</div>
         <p style={{ color: S.red, fontSize: 12, marginBottom: 14, lineHeight: 1.7 }}>⚠️ {tr('tbAddressWarning')}</p>
@@ -704,6 +739,10 @@ function TradingBotTab({ api }) {
             <div>
               <span style={label}>{tr('tbTakeProfit')}</span>
               <input style={inputStyle} type="number" min="0" step="0.5" value={form.takeProfitPct ?? 0} onChange={e => setForm(f => ({ ...f, takeProfitPct: Number(e.target.value) }))} />
+            </div>
+            <div>
+              <span style={label}>{tr('tbTrailingStop')}</span>
+              <input style={inputStyle} type="number" min="0" step="0.5" value={form.trailingStopPct ?? 0} onChange={e => setForm(f => ({ ...f, trailingStopPct: Number(e.target.value) }))} />
             </div>
             <div>
               <span style={label}>{tr('tbMaxRoundTripLoss')}</span>
