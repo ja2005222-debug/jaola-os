@@ -12,6 +12,10 @@ import path from 'path';
 import crypto from 'crypto';
 
 const MAX_RECORDS = 1000;
+// سجل تجاهل متطابق (نفس العملة/الإشارة/السبب) خلال هذه النافذة لا يُكرَّر —
+// حالة "ما زال متجاهَلاً لنفس السبب" كل 5 دقائق تُغرق السجل بلا معلومة جديدة؛
+// تغيُّر الحالة (سبب جديد/إشارة جديدة) يُسجَّل دوماً فور حدوثه.
+const CONSIDERATION_DEDUPE_MS = 30 * 60 * 1000;
 
 function tradesFile(dir) { return path.join(dir, 'trades.json'); }
 function positionsFile(dir) { return path.join(dir, 'positions.json'); }
@@ -30,14 +34,27 @@ function writeTrades(dir, records) {
     fs.writeFileSync(tradesFile(dir), JSON.stringify(trimmed));
 }
 
-/** يسجّل فرصة اعتُبرت — سواء نُفّذت أم تجوهلت (decision: 'executed'|'skipped'، skipReason عند التجاهل). */
+/**
+ * يسجّل فرصة اعتُبرت — سواء نُفّذت أم تجوهلت (decision: 'executed'|'skipped'،
+ * skipReason عند التجاهل). يُرجع true إن كُتب سجل جديد فعلاً، false إن كان
+ * تكراراً متطابقاً ضمن نافذة الدمج — فيربط المستدعي أي تنبيه بريدي بالكتابة
+ * الفعلية (لا رسالة كل 5 دقائق لنفس الحالة المستمرة).
+ */
 export function recordConsideration(dir, { coinId, signal, reasonCode = null, strength = null, decision, skipReason = null }) {
     const records = readTrades(dir);
+    const cutoff = Date.now() - CONSIDERATION_DEDUPE_MS;
+    for (let i = records.length - 1; i >= 0; i--) {
+        const r = records[i];
+        if (r.at < cutoff) break; // append-only مرتَّب زمنياً — لا داعي لمواصلة الرجوع
+        if (r.kind === 'consideration' && r.coinId === coinId && r.signal === signal
+            && r.decision === decision && r.skipReason === skipReason) return false;
+    }
     records.push({
         id: newId(), at: Date.now(), kind: 'consideration',
         coinId, signal, reasonCode, strength, decision, skipReason,
     });
     writeTrades(dir, records);
+    return true;
 }
 
 /** يسجّل بدء محاولة تنفيذ فعلية (قبل إرسال المعاملة) — status='pending'. يُرجع معرّف الصفقة. */
