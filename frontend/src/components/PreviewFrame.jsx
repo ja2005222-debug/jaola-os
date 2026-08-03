@@ -3,7 +3,7 @@ import { useRef } from 'react';
 // 🛠️ نفس منطق اكتشاف عنوان الباك إند المستخدم في باقي الملفات
 // يجب أن يشير دائماً لمنفذ 4000 (الباك إند) وليس window.location.origin
 // (الذي يُعيد عنوان الصفحة الحالية على منفذ الفرونت إند 5173)
-const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname.startsWith('100.115')
+const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.startsWith('100.115')
   ? `http://${window.location.hostname}:4000`
   : 'https://jaola-os.onrender.com';
 

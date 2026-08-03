@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { io } from 'socket.io-client';
 
-const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname.startsWith('100.115')
+const BACKEND_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.startsWith('100.115')
   ? `http://${window.location.hostname}:4000`
   : 'https://jaola-os.onrender.com';
 
