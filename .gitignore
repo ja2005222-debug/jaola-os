@@ -51,3 +51,6 @@ backend/memory/
 backend/memory/*.json
 backend/jaola_os.db
 workspace/
+
+# بيانات تشغيل خدمة الفيديو (أرصدة/مهام/سجلات) — حالة محلية لا تُرفع
+video-service/.videostudio/
