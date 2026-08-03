@@ -26,6 +26,23 @@ jobs:
         working-directory: backend
         run: npm test
 
+  video-service-tests:
+    name: اختبارات خدمة الفيديو
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: video-service/package-lock.json
+      - name: تثبيت تبعيات خدمة الفيديو
+        working-directory: video-service
+        run: npm ci
+      - name: تشغيل الاختبارات
+        working-directory: video-service
+        run: npm test
+
   frontend-build:
     name: بناء الواجهة
     runs-on: ubuntu-latest
