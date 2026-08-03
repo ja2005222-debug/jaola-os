@@ -54,6 +54,12 @@ export function createChainClient({ provider, signer }) {
             return token.balanceOf(ownerAddress);
         },
 
+        /** سعر الغاز الحالي (BigInt wei) — للتحقق من سقف maxGasPriceGwei قبل الشراء. */
+        async gasPrice() {
+            const fee = await provider.getFeeData();
+            return fee.gasPrice ?? 0n;
+        },
+
         /** يقتبس ناتج مبادلة amountIn (BigInt wei) عبر المسار المُعطى — قراءة فقط، بلا معاملة. */
         async quote(amountInWei, path) {
             const amounts = await router.getAmountsOut(amountInWei, path);

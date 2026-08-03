@@ -34,7 +34,7 @@ import { isCircuitBreakerTripped } from './tradingBotCircuitBreaker.js';
 import { sendMail } from './mailer.js';
 import {
     recordConsideration, recordTradeOpen, updateTradeOutcome,
-    findStalePending, readPositions, writePosition, clearPosition,
+    findStalePending, readPositions, writePosition, clearPosition, writeHeartbeat,
 } from './tradingBotLedger.js';
 
 function toBnb(wei) { return Number(ethers.formatEther(wei)); }
@@ -101,8 +101,12 @@ async function runProtectiveExits(dir, cfg, chainClient, walletAddress) {
     for (const [coinId, pos] of Object.entries(positions)) {
         const tokenInfo = getTokenInfo(dir, coinId);
         if (!tokenInfo || !pos.entryTokenWei || !pos.entryBnbSpent) continue;
+        // الكمية الفعلية المملوكة الآن (لا المسجَّلة) — رصيد صفر = مركز شبح يُنظَّف
+        let heldWei;
+        try { heldWei = await chainClient.tokenBalance(tokenInfo.address, walletAddress); } catch { continue; }
+        if (heldWei <= 0n) { clearPosition(dir, coinId); continue; }
         let quote;
-        try { quote = await chainClient.quote(BigInt(pos.entryTokenWei), [tokenInfo.address, WBNB]); } catch { continue; }
+        try { quote = await chainClient.quote(heldWei, [tokenInfo.address, WBNB]); } catch { continue; }
         const entryBnb = toBnb(BigInt(pos.entryBnbSpent));
         if (!(entryBnb > 0)) continue;
         const changePct = ((toBnb(quote) - entryBnb) / entryBnb) * 100;
@@ -118,7 +122,7 @@ async function runProtectiveExits(dir, cfg, chainClient, walletAddress) {
             continue;
         }
 
-        const amountInWei = BigInt(pos.entryTokenWei);
+        const amountInWei = heldWei;
         const minOut = applySlippage(quote, cfg.maxSlippageBps);
         const tradeId = recordTradeOpen(dir, { coinId, side: 'sell', signal: 'sell', reasonCode: exitCode, amountBnbWei: amountInWei, expectedOut: quote, minOut });
         let txHash;
@@ -292,18 +296,58 @@ export async function runTradingBotTick(dir, options = {}) {
         return { executed: false, reason: 'max_open_positions' };
     }
 
-    // 5) عرض سعر محمي بانزلاق
+    // 5) عرض سعر محمي بانزلاق — البيع بالكمية الفعلية المملوكة الآن (لا
+    // المسجَّلة وقت الدخول): الكمية المستلمة تختلف عن المقتبَسة بسبب الانزلاق
+    // ورسوم التوكن، فبيع كمية أكبر من الفعلية يُفشل المعاملة ويحرق غازها.
     const side = candidate.signal; // 'buy' | 'sell'
-    const amountInWei = side === 'buy' ? positionSizeWei : BigInt(openPosition.entryTokenWei);
+    let amountInWei;
+    if (side === 'buy') {
+        amountInWei = positionSizeWei;
+    } else {
+        amountInWei = await chainClient.tokenBalance(tokenInfo.address, walletAddress);
+        if (amountInWei <= 0n) {
+            recordConsideration(dir, { coinId: candidate.id, signal: 'sell', decision: 'skipped', skipReason: 'no_token_balance' });
+            clearPosition(dir, candidate.id); // مركز شبح: مسجَّل لكن لا رصيد فعلي (بيع يدوي/فخ)
+            return { executed: false, reason: 'no_token_balance' };
+        }
+    }
     const path = side === 'buy' ? [WBNB, tokenInfo.address] : [tokenInfo.address, WBNB];
     const quote = await chainClient.quote(amountInWei, path);
     const minOut = applySlippage(quote, cfg.maxSlippageBps);
+
+    // فحوصات ما قبل الشراء الإضافية (لا تخصّ البيع — البيع خروج مطلوب دوماً)
+    if (side === 'buy') {
+        // فحص honeypot: عرض سعر ذهاب وإياب (BNB→توكن→BNB). خسارة نظرية مفرطة
+        // في دورة فورية = ضرائب مرتفعة أو فخ بيع — أخطر سيناريو لعملة رائجة.
+        const maxLossPct = Number(cfg.maxRoundTripLossPct) || 0;
+        if (maxLossPct > 0) {
+            const roundTripBnb = await chainClient.quote(quote, [tokenInfo.address, WBNB]);
+            const lossPct = (toBnb(positionSizeWei) - toBnb(roundTripBnb)) / toBnb(positionSizeWei) * 100;
+            if (lossPct > maxLossPct) {
+                const written = recordConsideration(dir, { coinId: candidate.id, signal: 'buy', reasonCode: candidate.reasonCode, decision: 'skipped', skipReason: 'honeypot_suspected' });
+                if (written) await notify(cfg, `بوت التداول: اشتباه honeypot — ${candidate.id}`, `رُفض شراء ${candidate.id}: خسارة دورة شراء→بيع فورية ${lossPct.toFixed(1)}% تتجاوز الحد ${maxLossPct}%. غالباً ضرائب مرتفعة أو فخ بيع.`);
+                return { executed: false, reason: 'honeypot_suspected' };
+            }
+        }
+        // سقف سعر الغاز: فوقه يُؤجَّل الشراء (ليس البيع — الخروج أهم من توفير غاز)
+        const maxGasGwei = Number(cfg.maxGasPriceGwei) || 0;
+        if (maxGasGwei > 0) {
+            const gp = await chainClient.gasPrice();
+            if (gp > ethers.parseUnits(String(maxGasGwei), 'gwei')) {
+                recordConsideration(dir, { coinId: candidate.id, signal: 'buy', reasonCode: candidate.reasonCode, decision: 'skipped', skipReason: 'gas_price_too_high' });
+                return { executed: false, reason: 'gas_price_too_high' };
+            }
+        }
+    }
 
     // 7) التنفيذ — تسجيل pending قبل الإرسال (قابل للاسترجاع عند تعطّل)
     const tradeId = recordTradeOpen(dir, {
         coinId: candidate.id, side, signal: candidate.signal, reasonCode: candidate.reasonCode,
         amountBnbWei: amountInWei, expectedOut: quote, minOut,
     });
+
+    // رصيد التوكن قبل الشراء — لقياس الكمية المستلمة فعلياً بعد التأكيد (فرق الرصيد)
+    const tokenBalBefore = side === 'buy' ? await chainClient.tokenBalance(tokenInfo.address, walletAddress) : 0n;
 
     let txHash;
     try {
@@ -335,8 +379,16 @@ export async function runTradingBotTick(dir, options = {}) {
     }
 
     if (side === 'buy') {
+        // الكمية المستلمة فعلياً = فرق رصيد التوكن (لا المقتبَسة) — تُستخدَم لاحقاً
+        // للبيع الدقيق وحساب الربح/الخسارة. تعذّر القياس ⇒ ارتداد للمقتبَسة.
+        let receivedWei = quote;
+        try {
+            const after = await chainClient.tokenBalance(tokenInfo.address, walletAddress);
+            const delta = after - tokenBalBefore;
+            if (delta > 0n) receivedWei = delta;
+        } catch { /* يبقى المقتبَس كتقريب */ }
         writePosition(dir, candidate.id, {
-            entryBnbSpent: amountInWei.toString(), entryTokenWei: quote.toString(),
+            entryBnbSpent: amountInWei.toString(), entryTokenWei: receivedWei.toString(),
             entryTxHash: txHash, entryAt: Date.now(), tokenAddress: tokenInfo.address,
             entryGasCostBnb: gasCostBnb, lastActionAt: Date.now(),
         });
@@ -354,12 +406,32 @@ export async function runTradingBotTick(dir, options = {}) {
 
 let tickBusy = false;
 
-/** حارس تداخل مشترك بين الحلقة المجدولة وأي تشغيل يدوي — يمنع تسابقاً يضاعف nonce التوقيع. */
+// دورة ناجحة كل 5 دقائق؛ مرور هذه المدة بلا نجاح = خلل مستمر (RPC معطّل
+// مثلاً) يستحق تنبيهاً واحداً — لا رسالة كل دورة فاشلة.
+const HEARTBEAT_STALE_MS = 30 * 60 * 1000;
+
+/**
+ * حارس تداخل مشترك بين الحلقة المجدولة وأي تشغيل يدوي — يمنع تسابقاً يضاعف
+ * nonce التوقيع. يكتب نبض الحياة في كل دورة (نجاحاً أو فشلاً)، ويُنبّه مرة
+ * واحدة إن استمر الفشل حتى تقادمت آخر دورة ناجحة.
+ */
 export async function runTradingBotTickGuarded(dir, options = {}) {
     if (tickBusy) return { executed: false, reason: 'busy' };
     tickBusy = true;
     try {
-        return await runTradingBotTick(dir, options);
+        const result = await runTradingBotTick(dir, options);
+        writeHeartbeat(dir, { ok: true });
+        return result;
+    } catch (e) {
+        const hb = writeHeartbeat(dir, { ok: false, error: e.message });
+        // تنبيه تقادم: آخر نجاح قديم، ولم نُنبّه منذ ذلك النجاح بعد
+        if (hb.lastOkAt && Date.now() - hb.lastOkAt > HEARTBEAT_STALE_MS
+            && (!hb.alertedStaleAt || hb.alertedStaleAt < hb.lastOkAt)) {
+            const cfg = getConfig(dir);
+            await notify(cfg, 'بوت التداول: توقّف الدورات الناجحة', `آخر دورة ناجحة قبل ${Math.round((Date.now() - hb.lastOkAt) / 60000)} دقيقة. الخطأ الأخير: ${e.message}. تحقّق من مزوّد RPC والخادم.`);
+            writeHeartbeat(dir, { ok: false, error: e.message, alertedStaleAt: Date.now() });
+        }
+        return { executed: false, reason: 'tick_error', error: e.message };
     } finally {
         tickBusy = false;
     }

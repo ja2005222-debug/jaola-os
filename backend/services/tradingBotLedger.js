@@ -19,6 +19,7 @@ const CONSIDERATION_DEDUPE_MS = 30 * 60 * 1000;
 
 function tradesFile(dir) { return path.join(dir, 'trades.json'); }
 function positionsFile(dir) { return path.join(dir, 'positions.json'); }
+function heartbeatFile(dir) { return path.join(dir, 'heartbeat.json'); }
 function newId() { return `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`; }
 function strOrNull(v) { return v == null ? null : String(v); }
 
@@ -129,8 +130,35 @@ export function clearPosition(dir, coinId) {
     writePositionsFile(dir, positions);
 }
 
+/**
+ * نبض الحياة: يُكتب في نهاية كل دورة (نجحت أم فشلت). lastOkAt = آخر دورة
+ * اكتملت بلا استثناء؛ فارقها الكبير عن الآن يكشف بوتاً "يعمل لكن كل دوراته
+ * تفشل" (RPC معطّل مثلاً) — أخطر من توقّف تام لأنه صامت.
+ */
+export function writeHeartbeat(dir, { ok, error = null, alertedStaleAt = undefined } = {}) {
+    const prev = readHeartbeat(dir);
+    const now = Date.now();
+    const hb = {
+        lastTickAt: now,
+        lastOkAt: ok ? now : (prev.lastOkAt || null),
+        lastError: ok ? null : (error || 'unknown'),
+        alertedStaleAt: alertedStaleAt !== undefined ? alertedStaleAt : (prev.alertedStaleAt || null),
+    };
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(heartbeatFile(dir), JSON.stringify(hb, null, 2));
+    return hb;
+}
+
+export function readHeartbeat(dir) {
+    try {
+        const v = JSON.parse(fs.readFileSync(heartbeatFile(dir), 'utf8'));
+        return v && typeof v === 'object' ? v : {};
+    } catch { return {}; }
+}
+
 /** للاختبارات فقط. */
 export function resetTradingLedgerForTest(dir) {
     try { fs.rmSync(tradesFile(dir), { force: true }); } catch { /* لا شيء */ }
     try { fs.rmSync(positionsFile(dir), { force: true }); } catch { /* لا شيء */ }
+    try { fs.rmSync(heartbeatFile(dir), { force: true }); } catch { /* لا شيء */ }
 }

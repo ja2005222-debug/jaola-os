@@ -100,7 +100,7 @@ import { recordSignal, getDueCoinIds, resolveDue, getAccuracy } from './services
 import { runTradingBotTickGuarded } from './services/tradingBotEngine.js';
 import { getConfig as getTradingBotConfig, saveConfig as saveTradingBotConfig, isReadyToEnable as isTradingBotReadyToEnable } from './services/tradingBotConfig.js';
 import { getTokenRegistry as getTradingBotTokenRegistry, upsertToken as upsertTradingBotToken, removeToken as removeTradingBotToken, lookupTokenByAddress as lookupTradingBotTokenByAddress, discoverTrendingCandidates as discoverTradingBotCandidates } from './services/tradingBotCoins.js';
-import { listTrades as listTradingBotTrades, readPositions as readTradingBotPositions } from './services/tradingBotLedger.js';
+import { listTrades as listTradingBotTrades, readPositions as readTradingBotPositions, readHeartbeat as readTradingBotHeartbeat } from './services/tradingBotLedger.js';
 import { getCircuitBreakerStatus as getTradingBotCircuitBreakerStatus } from './services/tradingBotCircuitBreaker.js';
 import { listRecords as listCollectionRecords, upsertRecord as upsertCollectionRecord, deleteRecord as deleteCollectionRecord } from './services/appCollections.js';
 import { summarize as summarizeBudget, lastMonths as budgetLastMonths, budgetStatus } from './services/budgetStats.js';
@@ -2637,6 +2637,7 @@ app.get('/api/admin/tradingbot/status', verifyToken, adminOnly, (req, res) => {
         readyToEnable: isTradingBotReadyToEnable(TRADINGBOT_DIR, config),
         circuitBreaker: getTradingBotCircuitBreakerStatus(TRADINGBOT_DIR, config),
         positions: readTradingBotPositions(TRADINGBOT_DIR),
+        heartbeat: readTradingBotHeartbeat(TRADINGBOT_DIR),
     });
 });
 

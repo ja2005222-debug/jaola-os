@@ -13,8 +13,9 @@ import { ethers } from 'ethers';
 import { runTradingBotTick, runTradingBotTickGuarded, isTickBusy, resetAutoDiscoveryThrottleForTest } from '../services/tradingBotEngine.js';
 import { getConfig, saveConfig, isReadyToEnable, resetTradingBotConfigForTest } from '../services/tradingBotConfig.js';
 import {
-    recordConsideration, recordTradeOpen, updateTradeOutcome, readAllTrades, readPositions, writePosition, resetTradingLedgerForTest,
+    recordConsideration, recordTradeOpen, updateTradeOutcome, readAllTrades, readPositions, writePosition, resetTradingLedgerForTest, readHeartbeat,
 } from '../services/tradingBotLedger.js';
+import { WBNB as WBNB_ADDR } from '../services/pancakeSwapExecutor.js';
 import { getDailyRealizedPnlBnb, isCircuitBreakerTripped, getCircuitBreakerStatus } from '../services/tradingBotCircuitBreaker.js';
 import {
     isTradable, filterTradable, upsertToken, removeToken, getTokenRegistry, resetTradingBotCoinsForTest,
@@ -47,10 +48,12 @@ function baseConfigPatch(dir, overrides = {}) {
 }
 
 function fakeChainClient(overrides = {}) {
-    const calls = { getBnbBalance: 0, quote: 0, buy: 0, sell: 0, ensureAllowance: 0, waitForReceipt: 0 };
+    const calls = { getBnbBalance: 0, quote: 0, buy: 0, sell: 0, ensureAllowance: 0, waitForReceipt: 0, tokenBalance: 0, gasPrice: 0 };
     const client = {
         async getBnbBalance() { calls.getBnbBalance++; return overrides.bnbBalance ?? ethers.parseEther('1'); },
-        async quote() { calls.quote++; return overrides.quoteOut ?? ethers.parseEther('100'); },
+        async tokenBalance() { calls.tokenBalance++; return overrides.tokenBalance ?? ethers.parseEther('100'); },
+        async gasPrice() { calls.gasPrice++; return overrides.gasPrice ?? ethers.parseUnits('3', 'gwei'); },
+        async quote(amountInWei, path) { calls.quote++; return overrides.quoteFn ? overrides.quoteFn(amountInWei, path) : (overrides.quoteOut ?? ethers.parseEther('100')); },
         async buy(args) {
             calls.buy++;
             if (overrides.buyArgsSpy) overrides.buyArgsSpy(args);
@@ -634,4 +637,97 @@ test('auto-discovery: رائجة بلا إشارة شراء (متشبّعة بي
     assert.equal(isTradable(dir, 'newmeme'), false, 'لا تسجيل بلا إشارة شراء من محركنا');
     assert.equal(calls.buy, 0);
     assert.equal(r.executed, false);
+});
+
+// ═══ حزمة السلامة أ ═══════════════════════════════════════════════
+
+// ─── فحص honeypot (خسارة دورة شراء→بيع فورية) ────────────────────────
+test('honeypot: خسارة دورة فورية فوق الحد ⇒ رفض الشراء، صفر buy', async () => {
+    saveConfig(dir, baseConfigPatch(dir, { positionSizeBnb: '0.01', maxRoundTripLossPct: 20 }));
+    mockFetchByCoin({ bitcoin: oversoldPrices(Date.parse('2026-01-01T00:00:00Z')) });
+    // شراء 0.01 BNB → 100 توكن؛ بيعها فوراً يعيد 0.005 BNB فقط = خسارة 50% > 20%
+    const quoteFn = (amountIn, path) => path[0] === WBNB_ADDR ? ethers.parseEther('100') : ethers.parseEther('0.005');
+    const { client, calls } = fakeChainClient({ quoteFn });
+
+    const r = await runTradingBotTick(dir, { chainClient: client, walletAddress: TEST_WALLET });
+    assert.equal(r.executed, false);
+    assert.equal(r.reason, 'honeypot_suspected');
+    assert.equal(calls.buy, 0, 'لا شراء لعملة مشتبهة بالفخ');
+    const rec = readAllTrades(dir).find(t => t.kind === 'consideration' && t.skipReason === 'honeypot_suspected');
+    assert.ok(rec, 'الرفض مُسجَّل في التدقيق');
+});
+
+test('honeypot: دورة ضمن الحد ⇒ الشراء يمرّ', async () => {
+    saveConfig(dir, baseConfigPatch(dir, { positionSizeBnb: '0.01', maxRoundTripLossPct: 20 }));
+    mockFetchByCoin({ bitcoin: oversoldPrices(Date.parse('2026-01-01T00:00:00Z')) });
+    // بيع فوري يعيد 0.0095 = خسارة 5% فقط < 20%
+    const quoteFn = (amountIn, path) => path[0] === WBNB_ADDR ? ethers.parseEther('100') : ethers.parseEther('0.0095');
+    const { client, calls } = fakeChainClient({ quoteFn });
+
+    const r = await runTradingBotTick(dir, { chainClient: client, walletAddress: TEST_WALLET });
+    assert.equal(r.executed, true);
+    assert.equal(calls.buy, 1);
+});
+
+// ─── سقف سعر الغاز ───────────────────────────────────────────────────
+test('gas cap: سعر غاز فوق السقف ⇒ تأجيل الشراء، صفر buy', async () => {
+    saveConfig(dir, baseConfigPatch(dir, { maxGasPriceGwei: 5 }));
+    mockFetchByCoin({ bitcoin: oversoldPrices(Date.parse('2026-01-01T00:00:00Z')) });
+    const { client, calls } = fakeChainClient({ gasPrice: ethers.parseUnits('10', 'gwei') }); // 10 > 5
+
+    const r = await runTradingBotTick(dir, { chainClient: client, walletAddress: TEST_WALLET });
+    assert.equal(r.executed, false);
+    assert.equal(r.reason, 'gas_price_too_high');
+    assert.equal(calls.buy, 0);
+});
+
+// ─── البيع بالكمية الفعلية المملوكة ─────────────────────────────────
+test('sell: يبيع الرصيد الفعلي لا المسجَّل؛ رصيد صفر ⇒ مركز شبح يُنظَّف', async () => {
+    // مركز مسجَّل بكمية كبيرة لكن الرصيد الفعلي صفر (بيع يدوي/فخ)
+    saveConfig(dir, baseConfigPatch(dir, { coinIds: ['bitcoin'] }));
+    writePosition(dir, 'bitcoin', { entryBnbSpent: ethers.parseEther('0.01').toString(), entryTokenWei: ethers.parseEther('999').toString(), entryAt: Date.now(), tokenAddress: '0x111111111111111111111111111111111111111a' });
+    mockFetchByCoin({ bitcoin: overboughtPrices(Date.parse('2026-01-01T00:00:00Z')) }); // إشارة بيع
+    const { client, calls } = fakeChainClient({ tokenBalance: 0n });
+
+    const r = await runTradingBotTick(dir, { chainClient: client, walletAddress: TEST_WALLET });
+    assert.equal(r.reason, 'no_token_balance');
+    assert.equal(calls.sell, 0, 'لا بيع بلا رصيد فعلي');
+    assert.equal(Object.keys(readPositions(dir)).length, 0, 'المركز الشبح نُظِّف');
+});
+
+test('buy: يسجّل الكمية المستلمة فعلياً (فرق الرصيد) لا المقتبَسة', async () => {
+    saveConfig(dir, baseConfigPatch(dir, { coinIds: ['bitcoin'] }));
+    mockFetchByCoin({ bitcoin: oversoldPrices(Date.parse('2026-01-01T00:00:00Z')) });
+    // قبل الشراء 10، بعده 55 ⇒ المستلَم فعلياً 45 (بينما المقتبَس 100)
+    let calls2 = 0;
+    const client = fakeChainClient({ quoteOut: ethers.parseEther('100') }).client;
+    client.tokenBalance = async () => { calls2++; return calls2 === 1 ? ethers.parseEther('10') : ethers.parseEther('55'); };
+
+    await runTradingBotTick(dir, { chainClient: client, walletAddress: TEST_WALLET });
+    const pos = readPositions(dir).bitcoin;
+    assert.equal(pos.entryTokenWei, ethers.parseEther('45').toString(), 'الكمية المسجَّلة = فرق الرصيد الحقيقي');
+});
+
+// ─── نبض الحياة (heartbeat) ──────────────────────────────────────────
+test('heartbeat: دورة ناجحة تكتب lastOkAt؛ دورة فاشلة تكتب lastError', async () => {
+    saveConfig(dir, baseConfigPatch(dir));
+    mockFetchByCoin({ bitcoin: oversoldPrices(Date.parse('2026-01-01T00:00:00Z')) });
+    const { client } = fakeChainClient();
+
+    const okr = await runTradingBotTickGuarded(dir, { chainClient: client, walletAddress: TEST_WALLET });
+    assert.equal(okr.executed, true, 'الدورة الأولى نفّذت شراءً (تصل نبض النجاح)');
+    let hb = readHeartbeat(dir);
+    assert.ok(hb.lastOkAt, 'دورة ناجحة سجّلت lastOkAt');
+    assert.equal(hb.lastError, null);
+    const firstOkAt = hb.lastOkAt;
+
+    // دورة فاشلة: بيتكوين الآن لها مركز مفتوح؛ إشارة بيع تصل فحص الغاز الذي يرمي
+    resetCryptoCache();
+    mockFetchByCoin({ bitcoin: overboughtPrices(Date.parse('2026-01-01T00:00:00Z')) });
+    const throwing = { ...client, getBnbBalance: async () => { throw new Error('RPC down'); } };
+    const failr = await runTradingBotTickGuarded(dir, { chainClient: throwing, walletAddress: TEST_WALLET });
+    assert.equal(failr.reason, 'tick_error');
+    hb = readHeartbeat(dir);
+    assert.equal(hb.lastError, 'RPC down', 'الفشل سُجِّل في نبض الحياة');
+    assert.equal(hb.lastOkAt, firstOkAt, 'lastOkAt السابق محفوظ (لم يُمسَح بالفشل)');
 });
