@@ -628,6 +628,9 @@ function TradingBotTab({ api }) {
   if (!status || !form) return <Muted>{tr('admLoading')}</Muted>;
   const cb = status.circuitBreaker;
   const openPositions = Object.keys(status.positions || {});
+  const hb = status.heartbeat || {};
+  const hbAgeMin = hb.lastTickAt ? Math.round((Date.now() - hb.lastTickAt) / 60000) : null;
+  const hbStale = status.config.enabled && (hbAgeMin == null || hbAgeMin > 30);
 
   return (
     <div>
@@ -639,7 +642,11 @@ function TradingBotTab({ api }) {
             {status.config.enabled ? `● ${tr('tbRunning')}` : `○ ${tr('tbStopped')}`}
           </span>
           {cb?.tripped && <span style={{ fontSize: 11, fontWeight: 700, color: S.red, background: 'rgba(239,68,68,0.1)', padding: '2px 8px', borderRadius: 6 }}>🛑 {tr('tbCircuitBreakerTripped')}</span>}
+          {status.config.enabled && (hbStale
+            ? <span style={{ fontSize: 11, fontWeight: 700, color: S.red, background: 'rgba(239,68,68,0.1)', padding: '2px 8px', borderRadius: 6 }}>💤 {tr('tbHeartbeatStale')}</span>
+            : <span style={{ fontSize: 11, fontWeight: 700, color: S.green }}>💓 {tr('tbHeartbeatOk')} {hbAgeMin === 0 ? '' : `(${hbAgeMin}m)`}</span>)}
         </div>
+        {hb.lastError && <div style={{ fontSize: 11, color: S.amber, marginBottom: 8, wordBreak: 'break-word' }}>⚠️ {tr('tbLastError')}: {hb.lastError}</div>}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, fontSize: 12, color: S.muted, marginBottom: 12 }}>
           <div>{tr('tbDailyPnl')}: <b style={{ color: (cb?.dailyPnlBnb || 0) < 0 ? S.red : S.green }}>{(cb?.dailyPnlBnb || 0).toFixed(5)} BNB</b></div>
           <div>{tr('tbLossLimit')}: <b>{cb?.limitBnb} BNB</b></div>
@@ -697,6 +704,14 @@ function TradingBotTab({ api }) {
             <div>
               <span style={label}>{tr('tbTakeProfit')}</span>
               <input style={inputStyle} type="number" min="0" step="0.5" value={form.takeProfitPct ?? 0} onChange={e => setForm(f => ({ ...f, takeProfitPct: Number(e.target.value) }))} />
+            </div>
+            <div>
+              <span style={label}>{tr('tbMaxRoundTripLoss')}</span>
+              <input style={inputStyle} type="number" min="0" step="1" value={form.maxRoundTripLossPct ?? 0} onChange={e => setForm(f => ({ ...f, maxRoundTripLossPct: Number(e.target.value) }))} />
+            </div>
+            <div>
+              <span style={label}>{tr('tbMaxGasPrice')}</span>
+              <input style={inputStyle} type="number" min="0" step="0.1" value={form.maxGasPriceGwei ?? 0} onChange={e => setForm(f => ({ ...f, maxGasPriceGwei: Number(e.target.value) }))} />
             </div>
             <div>
               <span style={label}>{tr('tbAlertEmail')}</span>
