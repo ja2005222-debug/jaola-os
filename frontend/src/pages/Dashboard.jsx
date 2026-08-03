@@ -8,7 +8,7 @@ import { Markdown } from '../components/Markdown.jsx';
 import { PreviewPanel } from '../components/PreviewPanel.jsx';
 import { TimelinePanel } from '../components/TimelinePanel.jsx';
 import { useJaolaStore } from '../store/useJaolaStore.js';
-import { BACKEND_URL } from '../config.js';
+import { BACKEND_URL, VIDEO_STUDIO_URL, openVideoStudio } from '../config.js';
 import { useI18n } from '../i18n.js';
 import { LanguageSwitcher } from '../components/LanguageSwitcher.jsx';
 
@@ -3164,6 +3164,14 @@ export default function Dashboard() {
           </div>
           <span style={{ fontSize:11, fontWeight:700, color:'#94a3b8' }}>{(authUser || '').toUpperCase()}</span>
         </div>
+
+        {/* 🎬 استوديو الفيديو — خدمة منفصلة؛ الزر يظهر فقط عند ضبط عنوانها */}
+        {VIDEO_STUDIO_URL && (
+          <button onClick={openVideoStudio} title={t('videoStudioTitle')}
+            style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 10px', color:S.muted, fontSize:13, cursor:'pointer' }}>
+            🎬
+          </button>
+        )}
 
         <a href="/billing" title={t('billingTitle')}
           style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 10px', color:S.muted, fontSize:13, textDecoration:'none' }}>
