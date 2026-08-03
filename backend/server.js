@@ -99,10 +99,10 @@ import { saveWatchlistIndex, listWatchlistIndex, markAlerted, shouldAlert } from
 import { recordSignal, getDueCoinIds, resolveDue, getAccuracy } from './services/signalTrackRecord.js';
 import { runTradingBotTickGuarded } from './services/tradingBotEngine.js';
 import { getConfig as getTradingBotConfig, saveConfig as saveTradingBotConfig, isReadyToEnable as isTradingBotReadyToEnable } from './services/tradingBotConfig.js';
-import { getTokenRegistry as getTradingBotTokenRegistry, upsertToken as upsertTradingBotToken, removeToken as removeTradingBotToken, lookupTokenByAddress as lookupTradingBotTokenByAddress, discoverTrendingCandidates as discoverTradingBotCandidates } from './services/tradingBotCoins.js';
+import { getTokenRegistry as getTradingBotTokenRegistry, upsertToken as upsertTradingBotToken, removeToken as removeTradingBotToken, lookupTokenByAddress as lookupTradingBotTokenByAddress, discoverCandidates as discoverTradingBotCandidates } from './services/tradingBotCoins.js';
 import { listTrades as listTradingBotTrades, readPositions as readTradingBotPositions, readHeartbeat as readTradingBotHeartbeat } from './services/tradingBotLedger.js';
 import { getCircuitBreakerStatus as getTradingBotCircuitBreakerStatus } from './services/tradingBotCircuitBreaker.js';
-import { getPerformanceStats as getTradingBotPerformance } from './services/tradingBotStats.js';
+import { getPerformanceStats as getTradingBotPerformance, getRecentSkipSummary as getTradingBotSkipSummary } from './services/tradingBotStats.js';
 import { listRecords as listCollectionRecords, upsertRecord as upsertCollectionRecord, deleteRecord as deleteCollectionRecord } from './services/appCollections.js';
 import { summarize as summarizeBudget, lastMonths as budgetLastMonths, budgetStatus } from './services/budgetStats.js';
 import { generateBudgetCommentary } from './services/budgetCommentary.js';
@@ -2613,11 +2613,12 @@ app.get('/api/admin/tradingbot/tokens/lookup', verifyToken, adminOnly, async (re
     } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
-// اكتشاف مرشّحين رائجين (trending) عبر CoinGecko — اقتراح فقط، لا إضافة تلقائية
+// اكتشاف مرشّحين عبر CoinGecko بعدة أنماط (trending/gainers/losers/volume/market_cap)
+// — اقتراح فقط، لا إضافة تلقائية
 app.get('/api/admin/tradingbot/tokens/discover', verifyToken, adminOnly, async (req, res) => {
     try {
-        const candidates = await discoverTradingBotCandidates();
-        res.json({ success: true, candidates });
+        const candidates = await discoverTradingBotCandidates(req.query?.mode || 'trending');
+        res.json({ success: true, candidates, mode: req.query?.mode || 'trending' });
     } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
@@ -2640,6 +2641,7 @@ app.get('/api/admin/tradingbot/status', verifyToken, adminOnly, (req, res) => {
         positions: readTradingBotPositions(TRADINGBOT_DIR),
         heartbeat: readTradingBotHeartbeat(TRADINGBOT_DIR),
         performance: getTradingBotPerformance(TRADINGBOT_DIR),
+        skipSummary: getTradingBotSkipSummary(TRADINGBOT_DIR),
     });
 });
 
