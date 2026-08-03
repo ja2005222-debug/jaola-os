@@ -10,8 +10,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { ethers } from 'ethers';
 
-import { runTradingBotTick, runTradingBotTickGuarded, isTickBusy } from '../services/tradingBotEngine.js';
-import { saveConfig, isReadyToEnable, resetTradingBotConfigForTest } from '../services/tradingBotConfig.js';
+import { runTradingBotTick, runTradingBotTickGuarded, isTickBusy, resetAutoDiscoveryThrottleForTest } from '../services/tradingBotEngine.js';
+import { getConfig, saveConfig, isReadyToEnable, resetTradingBotConfigForTest } from '../services/tradingBotConfig.js';
 import {
     recordConsideration, recordTradeOpen, updateTradeOutcome, readAllTrades, readPositions, writePosition, resetTradingLedgerForTest,
 } from '../services/tradingBotLedger.js';
@@ -104,6 +104,7 @@ beforeEach(() => {
     resetTradingLedgerForTest(dir);
     resetTradingBotCoinsForTest(dir);
     resetDiscoveryCacheForTest();
+    resetAutoDiscoveryThrottleForTest();
     resetCryptoCache();
     upsertToken(dir, { coinId: 'bitcoin', symbol: 'BTCB', address: '0x111111111111111111111111111111111111111a', decimals: 18 });
     upsertToken(dir, { coinId: 'ethereum', symbol: 'ETH', address: '0x222222222222222222222222222222222222222b', decimals: 18 });
@@ -570,4 +571,67 @@ test('runTradingBotTick: alertEmail مضبوط ⇒ بريد واحد يُرسَ�
     } finally {
         delete process.env.RESEND_API_KEY;
     }
+});
+
+// ─── الاكتشاف التلقائي الاختياري (autoDiscoveryEnabled) ──────────────
+function autoDiscoveryFetch({ chartPrices }) {
+    // trending يقترح newmeme؛ تفاصيلها تحمل عقد BSC؛ تحليلها حسب chartPrices
+    return async (url, opts) => {
+        const u = String(url);
+        if (u.includes('api.resend.com')) return { ok: true, status: 200, json: async () => ({ id: 'm' }) };
+        if (u.includes('/search/trending')) {
+            return { ok: true, status: 200, json: async () => ({ coins: [{ item: { id: 'newmeme', symbol: 'nmm', name: 'New Meme' } }] }) };
+        }
+        if (u.includes('/coins/newmeme/market_chart')) {
+            return { ok: true, status: 200, json: async () => ({ prices: chartPrices }) };
+        }
+        if (u.includes('/coins/newmeme')) {
+            return {
+                ok: true, status: 200, json: async () => ({
+                    detail_platforms: { 'binance-smart-chain': { decimal_place: 18 } },
+                    platforms: { 'binance-smart-chain': '0x555555555555555555555555555555555555555e' },
+                }),
+            };
+        }
+        return { ok: false, status: 404, json: async () => ({}) };
+    };
+}
+
+test('auto-discovery: معطَّل افتراضياً ⇒ لا نداء trending إطلاقاً', async () => {
+    saveConfig(dir, baseConfigPatch(dir));
+    const urls = [];
+    const inner = autoDiscoveryFetch({ chartPrices: oversoldPrices(Date.parse('2026-01-01T00:00:00Z')) });
+    global.fetch = async (url, opts) => { urls.push(String(url)); return inner(url, opts); };
+    const { client } = fakeChainClient();
+
+    await runTradingBotTick(dir, { chainClient: client, walletAddress: TEST_WALLET });
+    assert.ok(!urls.some(u => u.includes('/search/trending')), 'الافتراضي لا يقترب من trending');
+});
+
+test('auto-discovery: مفعَّل + إشارة شراء ⇒ تسجيل تلقائي ودخول عبر الدورة الاعتيادية نفسها', async () => {
+    // bitcoin وحدها في القائمة (تحليلها 404 فلا إشارة) — newmeme الرائجة تحمل إشارة شراء
+    saveConfig(dir, baseConfigPatch(dir, { autoDiscoveryEnabled: true }));
+    global.fetch = autoDiscoveryFetch({ chartPrices: oversoldPrices(Date.parse('2026-01-01T00:00:00Z')) });
+    const { client, calls } = fakeChainClient();
+
+    const r = await runTradingBotTick(dir, { chainClient: client, walletAddress: TEST_WALLET });
+    assert.equal(isTradable(dir, 'newmeme'), true, 'سُجِّلت تلقائياً في سجل العملات');
+    assert.ok(getConfig(dir).coinIds.includes('newmeme'), 'أُضيفت لقائمة المتابعة');
+    assert.equal(r.executed, true);
+    assert.equal(r.coinId, 'newmeme');
+    assert.equal(r.side, 'buy');
+    assert.equal(calls.buy, 1, 'الشراء تم عبر الدورة الاعتيادية بضوابطها');
+    const reg = readAllTrades(dir).find(t => t.decision === 'auto_registered');
+    assert.equal(reg?.coinId, 'newmeme', 'التسجيل التلقائي موثَّق في سجل التدقيق');
+});
+
+test('auto-discovery: رائجة بلا إشارة شراء (متشبّعة بيعاً) ⇒ لا تسجيل ولا دخول', async () => {
+    saveConfig(dir, baseConfigPatch(dir, { autoDiscoveryEnabled: true }));
+    global.fetch = autoDiscoveryFetch({ chartPrices: overboughtPrices(Date.parse('2026-01-01T00:00:00Z')) });
+    const { client, calls } = fakeChainClient();
+
+    const r = await runTradingBotTick(dir, { chainClient: client, walletAddress: TEST_WALLET });
+    assert.equal(isTradable(dir, 'newmeme'), false, 'لا تسجيل بلا إشارة شراء من محركنا');
+    assert.equal(calls.buy, 0);
+    assert.equal(r.executed, false);
 });
