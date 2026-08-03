@@ -1,0 +1,39 @@
+# 🚀 Render Blueprint — نشر خدمة الفيديو المستقلة بنقرات معدودة
+#
+# ⚠️ هذا الملف لا يؤثر إطلاقاً على خدمة الباك إند الحالية المنشأة يدوياً:
+# مخططات Render (Blueprints) تعمل فقط عند إنشائها صراحةً من اللوحة
+# (New → Blueprint → اختيار هذا المستودع) — لا شيء يتغير تلقائياً بوجوده.
+#
+# خطوات النشر:
+#  1. لوحة Render → New → Blueprint → اختر مستودع jaola-os.
+#  2. عند الطلب، أدخل JWT_SECRET بنفس قيمة سر المنصة الرئيسية بالضبط
+#     (هذا هو الدخول الموحّد) وADMIN_USERS بنفس قائمة المشرفين.
+#  3. Apply — تحصل على رابط https://jaola-video.onrender.com (أو مشابه).
+#
+# ⚠️ ملاحظة البيانات: قرص الخطة المجانية مؤقت — الأرصدة/المهام تُمسح مع
+# كل إعادة نشر/تشغيل. مقبول للتجربة؛ للإنتاج فعّل قرصاً دائماً (خطة
+# مدفوعة) بإزالة التعليق عن قسم disk أدناه وضبط VIDEO_DATA_DIR=/data.
+
+services:
+  - type: web
+    name: jaola-video
+    runtime: node
+    plan: free
+    rootDir: video-service
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: JWT_SECRET
+        sync: false # يُدخل يدوياً عند إنشاء الـ Blueprint — نفس سر المنصة حرفياً
+      - key: ADMIN_USERS
+        sync: false # نفس قائمة مشرفي المنصة (أسماء مفصولة بفواصل)
+      - key: VIDEO_PROVIDER
+        value: mock # بدّلها إلى shotstack بعد فتح حساب وإضافة SHOTSTACK_API_KEY
+    # ─ للإنتاج (خطة مدفوعة): بيانات دائمة عبر قرص ─
+    # disk:
+    #   name: videostudio-data
+    #   mountPath: /data
+    #   sizeGB: 1
+    # ثم أضف: - key: VIDEO_DATA_DIR
+    #          value: /data
