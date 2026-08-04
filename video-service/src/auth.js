@@ -8,8 +8,29 @@
  */
 import jwt from 'jsonwebtoken';
 
-/** يبني وسيط التحقق — حقن السر بدل قراءته عالمياً ليسهل الاختبار. */
+/**
+ * يتحقق من التوكن مقابل أكثر من سر (الحالي ثم السابق) — أساس **تدوير
+ * المفتاح بلا إخراج المستخدمين**: خلال فترة التدوير تُقبل التوكنات
+ * الموقّعة بالسر القديم، فيُبدَّل السر في النظامين بلا انقطاع، ثم يُزال
+ * السر القديم بعد انقضاء أطول صلاحية توكن.
+ * يُرجع الحمولة أو يرمي آخر خطأ.
+ */
+export function verifyWithSecrets(token, secrets) {
+    let lastError;
+    for (const secret of secrets) {
+        try { return jwt.verify(token, secret); } catch (e) { lastError = e; }
+    }
+    throw lastError || new Error('لا أسرار للتحقق.');
+}
+
+/**
+ * يبني وسيط التحقق — حقن السر بدل قراءته عالمياً ليسهل الاختبار.
+ * يقبل سراً واحداً أو مصفوفة (الحالي أولاً ثم السابق للتدوير).
+ */
 export function buildVerifyToken(jwtSecret) {
+    const secrets = (Array.isArray(jwtSecret) ? jwtSecret : [jwtSecret]).filter(Boolean);
+    if (secrets.length === 0) throw new Error('JWT_SECRET مطلوب.');
+
     return function verifyToken(req, res, next) {
         const authHeader = req.headers['authorization'];
         const token = authHeader && authHeader.split(' ')[1];
@@ -18,13 +39,12 @@ export function buildVerifyToken(jwtSecret) {
             return res.status(401).json({ error: 'غير مصرح: التوكن مفقود.' });
         }
 
-        jwt.verify(token, jwtSecret, (err, user) => {
-            if (err) {
-                return res.status(401).json({ error: 'غير مصرح: التوكن منتهي أو غير صالح.' });
-            }
-            req.user = user;
+        try {
+            req.user = verifyWithSecrets(token, secrets);
             next();
-        });
+        } catch {
+            return res.status(401).json({ error: 'غير مصرح: التوكن منتهي أو غير صالح.' });
+        }
     };
 }
 

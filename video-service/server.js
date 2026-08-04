@@ -20,6 +20,8 @@ import { createJob, getJob, listJobsByUser, countActiveJobsForUser, listActiveJo
 import { runEngineTickGuarded } from './src/engine.js';
 import { buildProvider } from './src/providers/index.js';
 import { buildStore } from './src/store/index.js';
+import { readLimits, checkRenderAllowed, maybeAlertCost, startOfUtcDay } from './src/limits.js';
+import { readBlocklist, inspectValues } from './src/contentFilter.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -34,15 +36,18 @@ export function createApp({
     jwtSecret,
     adminUsersCsv = process.env.ADMIN_USERS || '',
     provider,
+    limits = readLimits(),
+    blocklist = readBlocklist(),
 } = {}) {
-    if (!jwtSecret) {
+    const secrets = (Array.isArray(jwtSecret) ? jwtSecret : [jwtSecret]).filter(Boolean);
+    if (secrets.length === 0) {
         // نفس حارس المنصة: لا تشغيل أبداً بسر مفقود/افتراضي.
         throw new Error('JWT_SECRET غير مضبوط — لا يمكن تشغيل خدمة الفيديو بأمان.');
     }
     if (!store) throw new Error('store مطلوب.');
     if (!provider) throw new Error('provider مطلوب.');
 
-    const verifyToken = buildVerifyToken(jwtSecret);
+    const verifyToken = buildVerifyToken(secrets);
     const adminOnly = buildAdminOnly(adminUsersCsv);
 
     const app = express();
@@ -87,11 +92,23 @@ export function createApp({
         const validated = validateValues(template, values);
         if (validated.error) return res.status(400).json({ error: validated.error });
 
+        // فلترة المحتوى بعد التحقق النمطي وقبل أي حجز أو خصم — لا يصل
+        // للمزوّد إلا ما اجتاز الفحصين.
+        const flagged = inspectValues(template, validated.values, { blocklist });
+        if (flagged) return res.status(400).json({ error: flagged.error, field: flagged.field });
+
         const username = req.user.username;
         if (await countActiveJobsForUser(store, username) >= MAX_ACTIVE_JOBS_PER_USER) {
             return res.status(429).json({
                 error: `لديك ${MAX_ACTIVE_JOBS_PER_USER} مهام نشطة بالفعل — انتظر اكتمالها أولاً.`,
             });
+        }
+
+        // درع التكلفة: السقف اليومي (العام ولكل مستخدم) يُفحص قبل إنشاء
+        // المهمة — لا تُحجز ولا تُخصم أرصدة لطلب سيُرفض.
+        const gate = await checkRenderAllowed(store, { username, limits });
+        if (!gate.allowed) {
+            return res.status(429).json({ error: gate.error, code: gate.code });
         }
 
         const spec = compileSpec(template, validated.values);
@@ -112,6 +129,11 @@ export function createApp({
                 error: `رصيدك الحالي (${await getBalance(store, username)}) لا يكفي — هذا القالب يكلف ${template.costCredits}.`,
             });
         }
+
+        // إنذار مبكر عند الاقتراب من السقف العام — مرة واحدة يومياً،
+        // وفشله لا يمس نجاح الطلب.
+        maybeAlertCost(store, { limits, count: gate.globalCount })
+            .catch(e => console.warn('⚠️ تعذّر فحص تنبيه التكلفة:', e.message));
 
         res.json({ job: { id: job.id, status: job.status, costCredits: job.costCredits } });
     }));
@@ -149,12 +171,21 @@ export function createApp({
 
     app.get('/api/video/admin/status', verifyToken, adminOnly, wrap(async (req, res) => {
         const active = await listActiveJobs(store);
+        const usedToday = await store.countJobsSince(startOfUtcDay());
         res.json({
             provider: provider.name,
             store: store.name,
             activeJobs: active.length,
             queued: active.filter(j => j.status === 'queued').length,
             rendering: active.filter(j => j.status === 'rendering').length,
+            // درع التكلفة مرئي للمشرف: كم استُهلك اليوم من السقف
+            usage: {
+                usedToday,
+                dailyCap: limits.dailyRenderCap,
+                dailyCapPerUser: limits.dailyRenderCapPerUser,
+                remainingToday: Math.max(0, limits.dailyRenderCap - usedToday),
+                starterCredits: limits.starterCredits,
+            },
         });
     }));
 
@@ -170,9 +201,11 @@ export function createApp({
 // ─── الإقلاع الفعلي (لا يعمل عند الاستيراد من الاختبارات) ──────────────
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
+    const limits = readLimits();
     const store = buildStore({
         databaseUrl: process.env.DATABASE_URL,
         dataDir: process.env.VIDEO_DATA_DIR || path.join(__dirname, '.videostudio'),
+        starterCredits: limits.starterCredits,
     });
     const provider = buildProvider({
         providerName: process.env.VIDEO_PROVIDER || 'mock',
@@ -182,13 +215,23 @@ if (isMain) {
 
     await store.init(); // ينشئ الجداول عند أول إقلاع — فشلٌ صاخب إن تعذّر
 
-    const app = createApp({ store, jwtSecret: process.env.JWT_SECRET, provider });
+    const app = createApp({
+        store,
+        // السر السابق (اختياري) يُقبل أثناء تدوير المفتاح فقط — يُزال بعده.
+        jwtSecret: [process.env.JWT_SECRET, process.env.JWT_SECRET_PREVIOUS],
+        provider,
+        limits,
+    });
 
     const port = Number(process.env.PORT || 4100);
     app.listen(port, () => {
         console.log(`🎬 خدمة الفيديو على المنفذ ${port} (المزود: ${provider.name}، التخزين: ${store.name})`);
+        console.log(`🛡️ السقف اليومي: ${limits.dailyRenderCap} إجمالاً، ${limits.dailyRenderCapPerUser} لكل مستخدم، رصيد ترحيبي: ${limits.starterCredits}`);
         if (store.name === 'file') {
             console.warn('⚠️ تخزين بالملفات — على منصة ذات قرص مؤقت تُمسح الأرصدة مع كل إعادة نشر. اضبط DATABASE_URL للإنتاج.');
+        }
+        if (process.env.JWT_SECRET_PREVIOUS) {
+            console.warn('🔑 وضع تدوير المفتاح فعّال (السر السابق مقبول) — أزل JWT_SECRET_PREVIOUS بعد انقضاء أطول صلاحية توكن.');
         }
     });
 
