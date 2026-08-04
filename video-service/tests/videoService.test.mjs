@@ -508,6 +508,37 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(inspectImageUrl('https://cdn.example.org/a.png'), null);
         });
 
+        test('قراءة الحدود من البيئة: القيم الخاطئة ترتد للافتراضي الآمن', () => {
+            const parsed = readLimits({
+                DAILY_RENDER_CAP: '50', DAILY_RENDER_CAP_PER_USER: 'abc',
+                COST_ALERT_AT_PCT: '250', STARTER_CREDITS: '0',
+            });
+            assert.equal(parsed.dailyRenderCap, 50);
+            assert.equal(parsed.dailyRenderCapPerUser, DEFAULTS.dailyRenderCapPerUser); // 'abc' مرفوضة
+            assert.equal(parsed.alertAtPct, DEFAULTS.alertAtPct);                        // 250 خارج المدى
+            assert.equal(parsed.starterCredits, 0);                                      // صفر قيمة صحيحة لا "فارغة"
+        });
+
+        test('قراءة قائمة الحجب: تقصّ الفراغات وتتجاهل الفارغ', () => {
+            assert.deepEqual(readBlocklist({ CONTENT_BLOCKLIST: ' أ , ,ب ' }), ['أ', 'ب']);
+            assert.deepEqual(readBlocklist({}), []);
+        });
+
+        test('checkRenderAllowed مباشرةً: سقف صفر يوقف كل توليد (إيقاف طوارئ)', async () => {
+            const stopped = await checkRenderAllowed(store, {
+                username: 'anyone',
+                limits: { ...TIGHT, dailyRenderCap: 0 },
+            });
+            assert.equal(stopped.allowed, false);
+            assert.equal(stopped.code, 'daily_cap_reached');
+        });
+
+        test('verifyWithSecrets يجرّب الأسرار بالترتيب ويرمي إن فشلت كلها', () => {
+            const token = jwt.sign({ username: 'x' }, 'second');
+            assert.equal(verifyWithSecrets(token, ['first', 'second']).username, 'x');
+            assert.throws(() => verifyWithSecrets(token, ['first', 'third']));
+        });
+
         test('الفلترة لا تمس القيم السليمة', () => {
             const t = getTemplate('product_showcase');
             const v = validateValues(t, {
