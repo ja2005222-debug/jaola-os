@@ -235,6 +235,7 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 product_showcase: { productName: 'أ', price: '9', imageUrl: 'https://x.test/i.png' },
                 story_slides: { slide1: '١', slide2: '٢', slide3: '٣' },
                 ai_clip: { prompt: 'قطة تمشي على الشاطئ وقت الغروب' },
+                ai_image_clip: { imageUrl: 'https://x.test/hero.png', prompt: 'البطل يلتفت نحو الأفق' },
             };
             for (const t of listTemplates()) {
                 const full = getTemplate(t.id);
@@ -951,6 +952,54 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             // duration محذوف عمداً: شكله يختلف بين النماذج ("8s"/"5"/غائب)
             // والقيمة غير المطابقة ترد 422 عند التنفيذ لا عند الإرسال.
             assert.deepEqual(input, { prompt: 'مشهد', aspect_ratio: '1:1' });
+            // الصورة المرجعية تُرسل image_url فقط عند وجودها (i2v)
+            const i2v = specToFalInput({ kind: 'ai_prompt', prompt: 'م', imageUrl: 'https://x.test/hero.png' });
+            assert.equal(i2v.image_url, 'https://x.test/hero.png');
+        });
+
+        test('الشخصية الثابتة: قالب الصورة المرجعية يمرّر الصورة ويرفض النموذج غير المطابق', async () => {
+            // المخطط يحمل imageUrl
+            const t = getTemplate('ai_image_clip');
+            const v = validateValues(t, { imageUrl: 'https://x.test/hero.png', prompt: 'يلتفت البطل' });
+            assert.equal(v.error, undefined);
+            const spec = compileSpec(t, v.values);
+            assert.equal(spec.imageUrl, 'https://x.test/hero.png');
+
+            // الكتالوج يميّز نماذج الصورة، وإدخال فاسد يفشل صاخباً
+            const models = readAiModels({});
+            assert.ok(models.some(m => m.input === 'image'));
+            assert.throws(() => readAiModels({
+                FAL_MODELS_JSON: JSON.stringify([{ id: 'x', nameAr: 'س', falPath: 'a/b', costCredits: 1, input: 'صوت' }]),
+            }));
+
+            // الخادم: نموذج نصي لقالب الصورة → 400، ونموذج i2v اقتصادي → 200 بتكلفته
+            const token = makeToken('consistency');
+            await call('/api/video/credits', { token });
+            const mismatch = await call('/api/video/renders', {
+                method: 'POST', token,
+                body: {
+                    templateId: 'ai_image_clip', modelId: 'veo3_fast',
+                    values: { imageUrl: 'https://x.test/hero.png', prompt: 'مشهد' },
+                },
+            });
+            assert.equal(mismatch.status, 400);
+            assert.match(mismatch.data.error, /نصّي/);
+
+            const reverse = await call('/api/video/renders', {
+                method: 'POST', token,
+                body: { templateId: 'ai_clip', modelId: 'wan_i2v', values: { prompt: 'مشهد' } },
+            });
+            assert.equal(reverse.status, 400);
+
+            const ok = await call('/api/video/renders', {
+                method: 'POST', token,
+                body: {
+                    templateId: 'ai_image_clip', modelId: 'wan_i2v',
+                    values: { imageUrl: 'https://x.test/hero.png', prompt: 'مشهد' },
+                },
+            });
+            assert.equal(ok.status, 200);
+            assert.equal(ok.data.job.costCredits, 2); // تكلفة Wan الاقتصادي لا القالب
         });
 
         test('fal: 422 عند جلب النتيجة يُفشل بتفاصيل fal لا برقم صامت', async () => {

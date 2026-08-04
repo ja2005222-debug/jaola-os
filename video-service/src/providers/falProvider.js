@@ -41,6 +41,9 @@ export function specToFalInput(spec) {
     return {
         prompt: spec.prompt,
         aspect_ratio: spec.aspectRatio || '16:9',
+        // وضع image-to-video: الصورة المرجعية إطاراً أول — يُرسل الحقل
+        // فقط عند وجوده (نماذج النص لا تعرفه وقد ترفضه بـ422).
+        ...(spec.imageUrl ? { image_url: spec.imageUrl } : {}),
     };
 }
 

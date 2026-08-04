@@ -73,6 +73,27 @@ export const TEMPLATES = Object.freeze([
         ],
     },
     {
+        id: 'ai_image_clip',
+        nameAr: 'لقطة من صورة مرجعية (شخصية ثابتة)',
+        descriptionAr: 'ارفع صورة بطلك مرة واحدة واجعلها الإطار الأول لكل لقطة — فيبقى الشخص/المنتج نفسه عبر مشاهد فيلمك بدل أن يخترع النموذج وجهاً جديداً كل مرة.',
+        durationSec: 5,
+        costCredits: 5, // النموذج المختار يحدد التكلفة الفعلية
+        specKind: SPEC_AI_PROMPT,
+        aiInput: 'image', // لا تصلح له إلا نماذج image-to-video من الكتالوج
+        fields: [
+            { key: 'imageUrl', labelAr: 'رابط الصورة المرجعية (الإطار الأول)', type: 'imageUrl', required: true },
+            { key: 'prompt', labelAr: 'ماذا يحدث في اللقطة؟', type: 'text', required: true, maxLen: 1000 },
+            {
+                key: 'aspectRatio', labelAr: 'نسبة الأبعاد', type: 'choice', required: false,
+                default: '16:9', options: ['16:9', '9:16', '1:1', '21:9', '4:3'],
+            },
+            { key: 'cameraMove', labelAr: 'حركة الكاميرا', type: 'choice', required: false, options: cinemaFieldOptions('cameraMove') },
+            { key: 'lighting', labelAr: 'الإضاءة', type: 'choice', required: false, options: cinemaFieldOptions('lighting') },
+            { key: 'style', labelAr: 'الأسلوب البصري', type: 'choice', required: false, options: cinemaFieldOptions('style') },
+            { key: 'negativePrompt', labelAr: 'ما لا تريد رؤيته (اختياري)', type: 'text', required: false, maxLen: 300 },
+        ],
+    },
+    {
         id: 'story_slides',
         nameAr: 'قصة من ثلاث لقطات',
         descriptionAr: 'ثلاث لقطات نصية متتابعة (مشكلة → حل → دعوة) — الأساس الذي سيُبنى عليه "تحويل المقال إلى فيديو" لاحقاً.',
@@ -93,9 +114,10 @@ export function getTemplate(id) {
 
 /** كتالوج للواجهة — بلا أي منطق داخلي. */
 export function listTemplates() {
-    return TEMPLATES.map(({ id, nameAr, descriptionAr, durationSec, costCredits, fields, specKind }) => ({
+    return TEMPLATES.map(({ id, nameAr, descriptionAr, durationSec, costCredits, fields, specKind, aiInput }) => ({
         id, nameAr, descriptionAr, durationSec, costCredits, fields,
         specKind: specKind || SPEC_TIMELINE,
+        aiInput: aiInput || (specKind === SPEC_AI_PROMPT ? 'text' : null),
     }));
 }
 
@@ -173,6 +195,8 @@ export function compileSpec(template, clean) {
             // بمصطلحاتها الإنجليزية + "Avoid: …" للوصف السلبي.
             prompt: composeCinematicPrompt(clean),
             aspectRatio: clean.aspectRatio || '16:9',
+            // الصورة المرجعية (إن وُجدت) — إطار أول لوضع image-to-video.
+            ...(clean.imageUrl ? { imageUrl: clean.imageUrl } : {}),
         };
     }
 
