@@ -5,8 +5,8 @@
  * الدخول الموحّد (نفس JWT_SECRET يتحقق محلياً من نفس التوكن). تعطُّل أو
  * بطء هذه الخدمة لا يمس المنصة، والعكس صحيح، وتُنشر وتتوسع باستقلال.
  *
- * createApp({...}) مصنع قابل للحقن (المجلد/السر/المزود) — الاختبارات
- * تبنيه بمجلد مؤقت ومزود محاكاة وتشغّل المحرك يدوياً بلا مؤقتات.
+ * createApp({...}) مصنع قابل للحقن (المخزن/السر/المزود) — الاختبارات
+ * تبنيه بمخزن مؤقت ومزود محاكاة وتشغّل المحرك يدوياً بلا مؤقتات.
  */
 import express from 'express';
 import cors from 'cors';
@@ -19,14 +19,18 @@ import { getBalance, grantCredits, deductCredits, getUserLedger } from './src/cr
 import { createJob, getJob, listJobsByUser, countActiveJobsForUser, listActiveJobs, transitionJob } from './src/jobs.js';
 import { runEngineTickGuarded } from './src/engine.js';
 import { buildProvider } from './src/providers/index.js';
+import { buildStore } from './src/store/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const MAX_ACTIVE_JOBS_PER_USER = 3;
 const ENGINE_POLL_MS = 5000;
 
+/** يلتقط أخطاء المسارات غير المتزامنة إلى معالج Express بدل ابتلاعها. */
+const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
 export function createApp({
-    dataDir,
+    store,
     jwtSecret,
     adminUsersCsv = process.env.ADMIN_USERS || '',
     provider,
@@ -35,7 +39,7 @@ export function createApp({
         // نفس حارس المنصة: لا تشغيل أبداً بسر مفقود/افتراضي.
         throw new Error('JWT_SECRET غير مضبوط — لا يمكن تشغيل خدمة الفيديو بأمان.');
     }
-    if (!dataDir) throw new Error('dataDir مطلوب.');
+    if (!store) throw new Error('store مطلوب.');
     if (!provider) throw new Error('provider مطلوب.');
 
     const verifyToken = buildVerifyToken(jwtSecret);
@@ -57,7 +61,10 @@ export function createApp({
 
     // ─── مسارات عامة ────────────────────────────────────────────────────
     app.get('/api/health', (req, res) => {
-        res.json({ ok: true, service: 'jaola-video-service', provider: provider.name });
+        res.json({
+            ok: true, service: 'jaola-video-service',
+            provider: provider.name, store: store.name,
+        });
     });
 
     // ─── مسارات المستخدم (توكن المنصة نفسه) ────────────────────────────
@@ -65,14 +72,14 @@ export function createApp({
         res.json({ templates: listTemplates() });
     });
 
-    app.get('/api/video/credits', verifyToken, (req, res) => {
+    app.get('/api/video/credits', verifyToken, wrap(async (req, res) => {
         res.json({
-            credits: getBalance(dataDir, req.user.username),
-            ledger: getUserLedger(dataDir, req.user.username, 30),
+            credits: await getBalance(store, req.user.username),
+            ledger: await getUserLedger(store, req.user.username, 30),
         });
-    });
+    }));
 
-    app.post('/api/video/renders', verifyToken, renderLimit, (req, res) => {
+    app.post('/api/video/renders', verifyToken, renderLimit, wrap(async (req, res) => {
         const { templateId, values } = req.body || {};
         const template = getTemplate(String(templateId || ''));
         if (!template) return res.status(400).json({ error: 'قالب غير معروف.' });
@@ -81,7 +88,7 @@ export function createApp({
         if (validated.error) return res.status(400).json({ error: validated.error });
 
         const username = req.user.username;
-        if (countActiveJobsForUser(dataDir, username) >= MAX_ACTIVE_JOBS_PER_USER) {
+        if (await countActiveJobsForUser(store, username) >= MAX_ACTIVE_JOBS_PER_USER) {
             return res.status(429).json({
                 error: `لديك ${MAX_ACTIVE_JOBS_PER_USER} مهام نشطة بالفعل — انتظر اكتمالها أولاً.`,
             });
@@ -89,69 +96,72 @@ export function createApp({
 
         const spec = compileSpec(template, validated.values);
 
-        // الخصم قبل الإنشاء — مهمة بلا خصمٍ مثبت لا تدخل الطابور أبداً.
+        // الخصم قبل المعالجة — مهمة بلا خصمٍ مثبت لا تُعالَج أبداً.
         // نُنشئ المهمة أولاً لنملك jobId يربط الخصم بها في سجل التدقيق،
-        // فإن فشل الخصم (رصيد غير كافٍ) نُفشلها فوراً قبل أي معالجة.
-        const job = createJob(dataDir, {
+        // فإن فشل الخصم (رصيد غير كافٍ) نُفشلها فوراً قبل أن يلمسها المحرك.
+        const job = await createJob(store, {
             username, templateId: template.id, values: validated.values,
             spec, costCredits: template.costCredits,
         });
-        const deducted = deductCredits(dataDir, {
+        const deducted = await deductCredits(store, {
             username, amount: template.costCredits, jobId: job.id,
         });
         if (!deducted) {
-            transitionJob(dataDir, job.id, 'failed', { error: 'رصيد غير كافٍ.', refunded: false });
+            await transitionJob(store, job.id, 'failed', { error: 'رصيد غير كافٍ.' });
             return res.status(402).json({
-                error: `رصيدك الحالي (${getBalance(dataDir, username)}) لا يكفي — هذا القالب يكلف ${template.costCredits}.`,
+                error: `رصيدك الحالي (${await getBalance(store, username)}) لا يكفي — هذا القالب يكلف ${template.costCredits}.`,
             });
         }
 
         res.json({ job: { id: job.id, status: job.status, costCredits: job.costCredits } });
+    }));
+
+    const publicJob = j => ({
+        id: j.id, at: j.at, templateId: j.templateId, status: j.status,
+        videoUrl: j.videoUrl, error: j.error, costCredits: j.costCredits,
+        updatedAt: j.updatedAt,
     });
 
-    app.get('/api/video/renders', verifyToken, (req, res) => {
-        const jobs = listJobsByUser(dataDir, req.user.username).map(j => ({
-            id: j.id, at: j.at, templateId: j.templateId, status: j.status,
-            videoUrl: j.videoUrl, error: j.error, costCredits: j.costCredits,
-            updatedAt: j.updatedAt,
-        }));
-        res.json({ jobs });
-    });
+    app.get('/api/video/renders', verifyToken, wrap(async (req, res) => {
+        const jobs = await listJobsByUser(store, req.user.username);
+        res.json({ jobs: jobs.map(publicJob) });
+    }));
 
-    app.get('/api/video/renders/:id', verifyToken, (req, res) => {
-        const job = getJob(dataDir, req.params.id);
+    app.get('/api/video/renders/:id', verifyToken, wrap(async (req, res) => {
+        const job = await getJob(store, req.params.id);
         // عزل صارم: مهمة مستخدم آخر تُعامل كغير موجودة (404 لا 403) —
         // لا نؤكد حتى وجودها.
         if (!job || job.username !== String(req.user.username || '').trim().toLowerCase()) {
             return res.status(404).json({ error: 'المهمة غير موجودة.' });
         }
-        res.json({
-            job: {
-                id: job.id, at: job.at, templateId: job.templateId, status: job.status,
-                videoUrl: job.videoUrl, error: job.error, costCredits: job.costCredits,
-                updatedAt: job.updatedAt,
-            },
-        });
-    });
+        res.json({ job: publicJob(job) });
+    }));
 
     // ─── مسارات المشرف ─────────────────────────────────────────────────
-    app.post('/api/video/admin/credits/grant', verifyToken, adminOnly, (req, res) => {
+    app.post('/api/video/admin/credits/grant', verifyToken, adminOnly, wrap(async (req, res) => {
         const { username, amount, note } = req.body || {};
-        const ok = grantCredits(dataDir, {
+        const ok = await grantCredits(store, {
             username, amount, grantedBy: req.user.username, note: note || null,
         });
         if (!ok) return res.status(400).json({ error: 'بيانات منح غير صالحة (اسم مستخدم + عدد صحيح موجب).' });
-        res.json({ success: true, credits: getBalance(dataDir, username) });
-    });
+        res.json({ success: true, credits: await getBalance(store, username) });
+    }));
 
-    app.get('/api/video/admin/status', verifyToken, adminOnly, (req, res) => {
-        const active = listActiveJobs(dataDir);
+    app.get('/api/video/admin/status', verifyToken, adminOnly, wrap(async (req, res) => {
+        const active = await listActiveJobs(store);
         res.json({
             provider: provider.name,
+            store: store.name,
             activeJobs: active.length,
             queued: active.filter(j => j.status === 'queued').length,
             rendering: active.filter(j => j.status === 'rendering').length,
         });
+    }));
+
+    // معالج أخطاء أخير — لا تسريب تفاصيل داخلية للعميل.
+    app.use((err, req, res, next) => {
+        console.error('⚠️ خطأ غير متوقع في خدمة الفيديو:', err.message);
+        res.status(500).json({ error: 'خطأ داخلي في الخدمة.' });
     });
 
     return app;
@@ -160,25 +170,30 @@ export function createApp({
 // ─── الإقلاع الفعلي (لا يعمل عند الاستيراد من الاختبارات) ──────────────
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
-    const dataDir = process.env.VIDEO_DATA_DIR || path.join(__dirname, '.videostudio');
+    const store = buildStore({
+        databaseUrl: process.env.DATABASE_URL,
+        dataDir: process.env.VIDEO_DATA_DIR || path.join(__dirname, '.videostudio'),
+    });
     const provider = buildProvider({
         providerName: process.env.VIDEO_PROVIDER || 'mock',
         shotstackApiKey: process.env.SHOTSTACK_API_KEY,
         shotstackEnv: process.env.SHOTSTACK_ENV,
     });
-    const app = createApp({
-        dataDir,
-        jwtSecret: process.env.JWT_SECRET,
-        provider,
-    });
+
+    await store.init(); // ينشئ الجداول عند أول إقلاع — فشلٌ صاخب إن تعذّر
+
+    const app = createApp({ store, jwtSecret: process.env.JWT_SECRET, provider });
 
     const port = Number(process.env.PORT || 4100);
     app.listen(port, () => {
-        console.log(`🎬 خدمة الفيديو تعمل على المنفذ ${port} (المزود: ${provider.name})`);
+        console.log(`🎬 خدمة الفيديو على المنفذ ${port} (المزود: ${provider.name}، التخزين: ${store.name})`);
+        if (store.name === 'file') {
+            console.warn('⚠️ تخزين بالملفات — على منصة ذات قرص مؤقت تُمسح الأرصدة مع كل إعادة نشر. اضبط DATABASE_URL للإنتاج.');
+        }
     });
 
     // الحلقة المجدولة — الحارس داخل runEngineTickGuarded يمنع التداخل.
     setInterval(() => {
-        runEngineTickGuarded(dataDir, { provider });
+        runEngineTickGuarded(store, { provider });
     }, ENGINE_POLL_MS);
 }
