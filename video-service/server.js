@@ -161,8 +161,20 @@ export function createApp({
         // الفعلية ونسب الأبعاد المسموحة — والتحقق خادمي لا واجهة فقط.
         let aiModel = null;
         if (template.specKind === 'ai_prompt') {
-            aiModel = modelId ? getAiModel(aiModels, modelId) : defaultAiModel(aiModels);
+            // قالب الصورة المرجعية لا تصلح له إلا نماذج image-to-video،
+            // وقالب النص لا تصلح له نماذج الصورة — إرسال خاطئ = 422 مؤكد
+            // لدى المزود، فنرفضه هنا برسالة مفهومة بدل هدر محاولة.
+            const requiredInput = template.aiInput || 'text';
+            const candidates = aiModels.filter(m => (m.input || 'text') === requiredInput);
+            aiModel = modelId ? getAiModel(aiModels, modelId) : (candidates[0] || defaultAiModel(aiModels));
             if (!aiModel) return res.status(400).json({ error: 'نموذج توليد غير معروف.' });
+            if ((aiModel.input || 'text') !== requiredInput) {
+                return res.status(400).json({
+                    error: requiredInput === 'image'
+                        ? `النموذج ${aiModel.nameAr} نصّي — هذا القالب يحتاج نموذج "من صورة" (image-to-video).`
+                        : `النموذج ${aiModel.nameAr} يبدأ من صورة — اختر نموذجاً نصّياً لهذا القالب.`,
+                });
+            }
             const ratio = validated.values.aspectRatio || '16:9';
             if (aiModel.aspectRatios?.length && !aiModel.aspectRatios.includes(ratio)) {
                 return res.status(400).json({

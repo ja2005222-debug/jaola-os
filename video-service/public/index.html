@@ -213,16 +213,20 @@
     // ونسب الأبعاد المتاحة، فيُعاد ضبطهما عند كل اختيار.
     function renderModelPicker() {
       const wrap = $('modelPicker');
-      if (!isAiTemplate(activeTemplate) || aiModels.length === 0) {
+      // نماذج القالب فقط: النصي يعرض النماذج النصية، وقالب الصورة
+      // المرجعية يعرض نماذج image-to-video — التطابق يتحقق منه الخادم أيضاً.
+      const required = activeTemplate ? (activeTemplate.aiInput || 'text') : 'text';
+      const list = aiModels.filter(m => (m.input || 'text') === required);
+      if (!isAiTemplate(activeTemplate) || list.length === 0) {
         wrap.innerHTML = ''; wrap.classList.add('hidden');
         activeModelId = null;
         return;
       }
-      if (!activeModel()) activeModelId = aiModels[0].id;
+      if (!list.some(m => m.id === activeModelId)) activeModelId = list[0].id;
       wrap.classList.remove('hidden');
       wrap.innerHTML = `<label style="margin-top:0">النموذج المولِّد *</label>
         <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">` +
-        aiModels.map(m => `
+        list.map(m => `
           <div class="card tpl model${m.id === activeModelId ? ' active' : ''}" data-model="${m.id}"
                style="margin-bottom:0;padding:12px">
             <h3 style="font-size:14px">${m.nameAr}</h3>

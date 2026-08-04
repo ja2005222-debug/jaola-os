@@ -17,6 +17,9 @@
 const FAL_PATH_RE = /^[\w.-]+\/[\w.-]+(\/[\w.-]+)*$/;
 const RATIO_RE = /^\d+:\d+$/;
 
+// input: 'text' = يولّد من وصف نصي فقط، 'image' = يبدأ من صورة مرجعية
+// (image-to-video) — أساس "الشخصية الثابتة": نفس الصورة المرجعية إطاراً
+// أولَ لعدة لقطات تبقي البطل واحداً عبر المشاهد.
 export const BUILTIN_AI_MODELS = Object.freeze([
     {
         id: 'veo3_fast',
@@ -25,6 +28,7 @@ export const BUILTIN_AI_MODELS = Object.freeze([
         falPath: 'fal-ai/veo3/fast',
         costCredits: 5,
         aspectRatios: ['16:9', '9:16'],
+        input: 'text',
     },
     {
         id: 'veo3',
@@ -33,6 +37,25 @@ export const BUILTIN_AI_MODELS = Object.freeze([
         falPath: 'fal-ai/veo3',
         costCredits: 10,
         aspectRatios: ['16:9', '9:16'],
+        input: 'text',
+    },
+    {
+        id: 'veo3_fast_i2v',
+        nameAr: 'Veo 3 السريع — من صورة',
+        descriptionAr: 'يحرّك صورتك المرجعية كإطار أول — ثبات الشخصية عبر اللقطات.',
+        falPath: 'fal-ai/veo3/fast/image-to-video',
+        costCredits: 5,
+        aspectRatios: ['16:9', '9:16'],
+        input: 'image',
+    },
+    {
+        id: 'wan_i2v',
+        nameAr: 'Wan — من صورة (اقتصادي)',
+        descriptionAr: 'الأرخص لتحريك صورة مرجعية — ممتاز لمسودات اللقطات المتسلسلة.',
+        falPath: 'fal-ai/wan-i2v',
+        costCredits: 2,
+        aspectRatios: ['16:9', '9:16'],
+        input: 'image',
     },
 ]);
 
@@ -51,12 +74,17 @@ function validateModel(m, source) {
     if (!Array.isArray(ratios) || ratios.length === 0 || !ratios.every(r => RATIO_RE.test(String(r)))) {
         throw new Error(`${source}: aspectRatios يجب أن تكون نسباً مثل "16:9" (${m.id}).`);
     }
+    const input = m.input ?? 'text';
+    if (!['text', 'image'].includes(input)) {
+        throw new Error(`${source}: input يجب أن يكون text أو image (${m.id}).`);
+    }
     return {
         id: m.id, nameAr: m.nameAr,
         descriptionAr: m.descriptionAr || '',
         falPath: String(m.falPath).replace(/^\/+|\/+$/g, ''),
         costCredits: m.costCredits,
         aspectRatios: ratios.map(String),
+        input,
     };
 }
 
