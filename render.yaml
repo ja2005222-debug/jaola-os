@@ -33,3 +33,13 @@ services:
         sync: false # رابط PostgreSQL (Neon/Supabase مجاناً) — بدونه التخزين مؤقت
       - key: VIDEO_PROVIDER
         value: mock # بدّلها إلى shotstack بعد فتح حساب وإضافة SHOTSTACK_API_KEY
+      # 🛡️ درع التكلفة — راجع قسمه في README قبل تفعيل مزوّد مدفوع.
+      # DAILY_RENDER_CAP=0 إيقاف طوارئ فوري لكل توليد جديد.
+      - key: DAILY_RENDER_CAP
+        value: "200"
+      - key: DAILY_RENDER_CAP_PER_USER
+        value: "20"
+      - key: STARTER_CREDITS
+        value: "3" # اجعله 0 قبل تفعيل مزوّد مدفوع (كل حساب جديد يكلفك)
+      - key: COST_ALERT_WEBHOOK_URL
+        sync: false # اختياري: رابط Slack/Discord يستقبل تنبيه بلوغ السقف

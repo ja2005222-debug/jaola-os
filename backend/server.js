@@ -135,6 +135,8 @@ import { buildMetricsPayload } from './services/metricsStore.js';
 import { queueStatus } from './services/missionQueue.js';
 import { getCommitHistory, rollbackToCommit } from './agents/gitAgent.js';
 import { adminOnly, isAdminUser } from './middleware/adminOnly.js';
+// 🔑 تحقق يقبل السر السابق أثناء تدوير المفتاح — التوقيع يبقى بالحالي دوماً
+import { verifyJwt } from './utils/auth.js';
 import { orchestrator } from './core/PluginOrchestrator.js';
 import { runSystemDiagnostics } from './agents/systemDoctorAgent.js';
 import * as adminSvc from './services/adminService.js';
@@ -539,13 +541,12 @@ export function verifyToken(req, res, next) {
         return res.status(401).json({ error: 'غير مصرح: التوكن مفقود.' });
     }
 
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) {
-            return res.status(401).json({ error: 'غير مصرح: التوكن منتهي أو غير صالح.' });
-        }
-        req.user = user;
+    try {
+        req.user = verifyJwt(token);
         next();
-    });
+    } catch {
+        return res.status(401).json({ error: 'غير مصرح: التوكن منتهي أو غير صالح.' });
+    }
 }
 
 // verifyToken مع fallback للضيف — فقط للمسارات التي تسمح بالوصول كضيف
@@ -558,10 +559,12 @@ function verifyTokenOrGuest(req, res, next) {
         return next();
     }
 
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-        req.user = err ? { id: 'guest', username: 'guest_user' } : user;
-        next();
-    });
+    try {
+        req.user = verifyJwt(token);
+    } catch {
+        req.user = { id: 'guest', username: 'guest_user' };
+    }
+    next();
 }
 
 // التحقق من ملكية المشروع
@@ -655,11 +658,12 @@ io.use((socket, next) => {
     const token = socket.handshake.auth?.token;
     if (!token) return next(new Error('Unauthorized: Token Required'));
 
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return next(new Error('Unauthorized: Invalid Token'));
-        socket.user = user;
+    try {
+        socket.user = verifyJwt(token);
         next();
-    });
+    } catch {
+        next(new Error('Unauthorized: Invalid Token'));
+    }
 });
 
 io.on('connection', (socket) => {
@@ -767,11 +771,13 @@ function verifyPreviewAccess(req, res, next) {
         req.previewUser = 'guest_user'; // زائر: معاينة sandbox الضيف فقط
         return next();
     }
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return res.status(401).send('Unauthorized');
-        req.previewUser = user.username; // من التوكن حصراً — لا من query أبداً
+    try {
+        // من التوكن حصراً — لا من query أبداً
+        req.previewUser = verifyJwt(token).username;
         next();
-    });
+    } catch {
+        return res.status(401).send('Unauthorized');
+    }
 }
 
 app.get('/workspace', verifyPreviewAccess, (req, res) => {
@@ -971,7 +977,7 @@ app.get('/api/auth/:provider/callback', async (req, res) => {
     if (!oauth.isProvider(provider) || !oauth.providerConfigured(provider)) return fail('مزوّد غير متاح');
     if (!code) return fail('لم يصل كود المصادقة');
     try {
-        const decoded = jwt.verify(state, JWT_SECRET);
+        const decoded = verifyJwt(state);
         if (decoded.provider !== provider) return fail('state غير صالح');
     } catch { return fail('انتهت صلاحية طلب الدخول — حاول مجدداً'); }
 

@@ -51,6 +51,12 @@ CREATE TABLE IF NOT EXISTS video_jobs (
 );
 CREATE INDEX IF NOT EXISTS video_jobs_user_idx ON video_jobs (username, at);
 CREATE INDEX IF NOT EXISTS video_jobs_status_idx ON video_jobs (status);
+CREATE INDEX IF NOT EXISTS video_jobs_at_idx ON video_jobs (at);
+-- أعلام صغيرة دائمة (تنبيه التكلفة اليومي…) — تبقى عبر إعادات التشغيل
+CREATE TABLE IF NOT EXISTS video_flags (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 `;
 
 function newId() {
@@ -135,7 +141,7 @@ export function createPostgresStore({ connectionString, starterCredits, poolFact
          * مسار إنتاجي (لا مرجع له خارج ملف الاختبار).
          */
         async truncateAllForTest() {
-            await withClient(c => c.query('TRUNCATE video_jobs, video_credit_ledger, video_balances'));
+            await withClient(c => c.query('TRUNCATE video_jobs, video_credit_ledger, video_balances, video_flags'));
         },
 
         async getBalance(user) {
@@ -253,6 +259,41 @@ export function createPostgresStore({ connectionString, starterCredits, poolFact
                 );
                 return res.rows.map(rowToJob);
             });
+        },
+
+        // عدّ التوليدات ضمن نافذة زمنية — أساس درع التكلفة اليومي.
+        // يشمل الفاشلة عمداً: محاولة التوليد نفسها قد تكون كلّفت المزوّد.
+        async countJobsSince(sinceMs) {
+            return withClient(async c => {
+                const res = await c.query('SELECT COUNT(*)::int AS n FROM video_jobs WHERE at >= $1', [sinceMs]);
+                return res.rows[0].n;
+            });
+        },
+
+        async countJobsSinceForUser(user, sinceMs) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'SELECT COUNT(*)::int AS n FROM video_jobs WHERE username = $1 AND at >= $2',
+                    [user, sinceMs]
+                );
+                return res.rows[0].n;
+            });
+        },
+
+        // أعلام صغيرة دائمة (مثل: أُرسل تنبيه التكلفة اليوم).
+        async getFlag(key) {
+            return withClient(async c => {
+                const res = await c.query('SELECT value FROM video_flags WHERE key = $1', [key]);
+                return res.rows[0]?.value ?? null;
+            });
+        },
+
+        async setFlag(key, value) {
+            await withClient(c => c.query(
+                `INSERT INTO video_flags (key, value) VALUES ($1, $2)
+                 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+                [key, String(value)]
+            ));
         },
 
         /** انتقال ذرّي: الشرط status = ANY(from) داخل UPDATE نفسه. */

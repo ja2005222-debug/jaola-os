@@ -35,6 +35,7 @@ export function createFileStore({ dataDir, starterCredits }) {
     const balancesFile = path.join(dataDir, 'balances.json');
     const ledgerFile = path.join(dataDir, 'creditLedger.json');
     const jobsFile = path.join(dataDir, 'jobs.json');
+    const flagsFile = path.join(dataDir, 'flags.json');
 
     const readBalances = () => readJson(balancesFile, {});
     const writeBalances = v => writeJson(dataDir, balancesFile, v);
@@ -132,6 +133,31 @@ export function createFileStore({ dataDir, starterCredits }) {
             return readJobs()
                 .filter(j => j.status === 'queued' || j.status === 'rendering')
                 .map(j => ({ ...j }));
+        },
+
+        // عدّ التوليدات ضمن نافذة زمنية — أساس درع التكلفة اليومي.
+        // يشمل الفاشلة عمداً: محاولة التوليد نفسها قد تكون كلّفت المزوّد.
+        // ⚠️ هنا تُجتزأ المهام المنتهية عند MAX_TERMINAL_JOBS، فلو ضُبط
+        // سقف يومي أعلى من ذلك صار العدّ ناقصاً — سبب إضافي لاعتماد
+        // Postgres (بلا اجتزاء) في الإنتاج.
+        async countJobsSince(sinceMs) {
+            return readJobs().filter(j => j.at >= sinceMs).length;
+        },
+
+        async countJobsSinceForUser(user, sinceMs) {
+            return readJobs().filter(j => j.username === user && j.at >= sinceMs).length;
+        },
+
+        // أعلام صغيرة دائمة (مثل: أُرسل تنبيه التكلفة اليوم) — تمنع تكرار
+        // التنبيه عبر إعادات التشغيل، لا مجرد ذاكرة العملية.
+        async getFlag(key) {
+            return readJson(flagsFile, {})[key] ?? null;
+        },
+
+        async setFlag(key, value) {
+            const flags = readJson(flagsFile, {});
+            flags[key] = value;
+            writeJson(dataDir, flagsFile, flags);
         },
 
         /**

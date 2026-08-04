@@ -1,0 +1,55 @@
+version = 1
+
+# ⚙️ إعداد DeepSource — أُضيف لسبب محدد: محلّل JavaScript كان يفشل بخطأ
+# "'import' and 'export' may appear only with 'sourceType: module'" على كل
+# ملفات video-service/ لأنه يفترضها CommonJS رغم أن المشروع ESM بالكامل
+# ("type": "module" في package.json). module_system أدناه يحسم ذلك.
+#
+# ⚠️ ملاحظة مهمة: وجود هذا الملف ينقل الإعداد من لوحة DeepSource إليه،
+# فأي محلّل غير مذكور هنا يتوقف. لذلك أُدرجت **كل** المحلّلات التي كانت
+# فعّالة وناجحة قبل إضافته حتى لا يسقط أي فحص بصمت.
+
+[[analyzers]]
+name = "javascript"
+
+  [analyzers.meta]
+  # es-modules: السبب المباشر لإضافة هذا الملف (backend/frontend/video-service كلها ESM)
+  module_system = "es-modules"
+  # nodejs للخادم وخدمة الفيديو، browser للواجهة — كلاهما في هذا المستودع
+  environment = ["nodejs", "browser"]
+  # الواجهة React
+  plugins = ["react"]
+
+[[analyzers]]
+name = "secrets"
+
+[[analyzers]]
+name = "shell"
+
+[[analyzers]]
+name = "docker"
+
+[[analyzers]]
+name = "sql"
+
+[[analyzers]]
+name = "python"
+
+[[analyzers]]
+name = "java"
+
+[[analyzers]]
+name = "cxx"
+
+# ملفات الاختبار تُعامَل كاختبارات لا كود إنتاج (قواعد أخف، بلا إنذارات
+# في غير محلها مثل "قيمة ثابتة مكررة" في بيانات اختبار).
+test_patterns = [
+  "backend/tests/**",
+  "video-service/tests/**",
+]
+
+exclude_patterns = [
+  "**/node_modules/**",
+  "frontend/dist/**",
+  "workspace/**",
+]
