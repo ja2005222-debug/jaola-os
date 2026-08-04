@@ -941,9 +941,37 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(extractVideoUrl({ nothing: 1 }), null);
         });
 
-        test('fal: ترجمة المخطط لمدخلات النموذج', () => {
+        test('fal: ترجمة المخطط لمدخلات النموذج — بلا duration (درس إنتاجي)', () => {
             const input = specToFalInput({ kind: 'ai_prompt', prompt: 'مشهد', aspectRatio: '1:1', durationSec: 5 });
-            assert.deepEqual(input, { prompt: 'مشهد', aspect_ratio: '1:1', duration: 5 });
+            // duration محذوف عمداً: شكله يختلف بين النماذج ("8s"/"5"/غائب)
+            // والقيمة غير المطابقة ترد 422 عند التنفيذ لا عند الإرسال.
+            assert.deepEqual(input, { prompt: 'مشهد', aspect_ratio: '1:1' });
+        });
+
+        test('fal: 422 عند جلب النتيجة يُفشل بتفاصيل fal لا برقم صامت', async () => {
+            const orig = console.error;
+            console.error = () => {};
+            try {
+                const p = createFalProvider({
+                    apiKey: 'K', model: 'm',
+                    fetchImpl: async (url) => url.endsWith('/status')
+                        ? { ok: true, json: async () => ({ status: 'COMPLETED' }) }
+                        : { ok: false, status: 422, text: async () => '{"detail":[{"msg":"Input should be \'8s\'"}]}' },
+                });
+                const r = await p.getRender('r');
+                assert.equal(r.status, 'failed');
+                assert.match(r.error, /Input should be/);
+            } finally { console.error = orig; }
+        });
+
+        test('fal: 5xx عند جلب النتيجة عابر — يبقى قيد المعالجة للدورة التالية', async () => {
+            const p = createFalProvider({
+                apiKey: 'K', model: 'm',
+                fetchImpl: async (url) => url.endsWith('/status')
+                    ? { ok: true, json: async () => ({ status: 'COMPLETED' }) }
+                    : { ok: false, status: 503, text: async () => '' },
+            });
+            assert.equal((await p.getRender('r')).status, 'rendering');
         });
 
         test('Shotstack يرفض مخطط توليد لا يخصه', async () => {
