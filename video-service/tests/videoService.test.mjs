@@ -866,6 +866,25 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(done.videoUrl, 'https://cdn.fal/v.mp4');
         });
 
+        test('خطأ المصادقة في الاستطلاع يُفشل فوراً — لا تعليق حتى المهلة (درس إنتاجي)', async () => {
+            // fal: حساب مقفول (403) → فشل فوري بتفاصيل الخطأ
+            for (const code of [401, 403]) {
+                const p = createFalProvider({
+                    apiKey: 'K', model: 'm',
+                    fetchImpl: async () => ({ ok: false, status: code, text: async () => 'User is locked.' }),
+                });
+                const r = await p.getRender('req');
+                assert.equal(r.status, 'failed', `fal ${code}`);
+                assert.match(r.error, /User is locked/);
+            }
+            // shotstack: نفس القاعدة
+            const { createShotstackProvider } = await import('../src/providers/shotstackProvider.js');
+            const sp = createShotstackProvider({
+                apiKey: 'k', fetchImpl: async () => ({ ok: false, status: 403 }),
+            });
+            assert.equal((await sp.getRender('id')).status, 'failed');
+        });
+
         test('fal: الحالات غير المكتملة تبقى قيد المعالجة لا تُحسم', async () => {
             for (const status of ['IN_QUEUE', 'IN_PROGRESS']) {
                 const p = createFalProvider({

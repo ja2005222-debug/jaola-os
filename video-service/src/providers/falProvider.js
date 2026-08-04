@@ -68,9 +68,20 @@ export function createFalProvider({ apiKey, model, fetchImpl = fetch }) {
             const statusRes = await fetchImpl(
                 `${QUEUE_BASE}/${modelPath}/requests/${providerId}/status`, { headers }
             );
+            // خطأ المصادقة/الصلاحية ليس عابراً (مفتاح باطل أو حساب مقفول
+            // لنفاد رصيد fal) — الانتظار عليه يعلّق المهمة ربع ساعة كاملة
+            // حتى المهلة القصوى بدل إفشالها فوراً واسترداد رصيد المستخدم.
+            // درسٌ من الإنتاج: حدث فعلاً مع "User is locked: Exhausted balance".
+            if (statusRes.status === 401 || statusRes.status === 403) {
+                const detail = await statusRes.text().catch(() => '');
+                return {
+                    status: 'failed',
+                    error: `fal.ai رفض الاستطلاع (HTTP ${statusRes.status}) — تحقق من المفتاح/رصيد fal. ${detail.slice(0, 200)}`,
+                };
+            }
             if (!statusRes.ok) {
-                // فشل استطلاع عابر ليس فشل التوليد — يحسمه الاستطلاع
-                // التالي أو مهلة المحرك القصوى.
+                // فشل استطلاع عابر (5xx/شبكة) ليس فشل التوليد — يحسمه
+                // الاستطلاع التالي أو مهلة المحرك القصوى.
                 return { status: 'rendering' };
             }
             const { status } = await statusRes.json();

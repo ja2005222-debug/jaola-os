@@ -79,9 +79,17 @@ export function createShotstackProvider({ apiKey, env = 'stage', fetchImpl = fet
 
         async getRender(providerId) {
             const res = await fetchImpl(`${baseUrl}/render/${providerId}`, { headers });
+            // خطأ المصادقة ليس عابراً (مفتاح باطل/حساب موقوف) — إفشال فوري
+            // مع استرداد بدل تعليق المهمة حتى المهلة القصوى (نفس درس fal).
+            if (res.status === 401 || res.status === 403) {
+                return {
+                    status: 'failed',
+                    error: `Shotstack رفض الاستطلاع (HTTP ${res.status}) — تحقق من المفتاح/الحساب.`,
+                };
+            }
             if (!res.ok) {
-                // فشل الاستطلاع العابر ليس فشل التصدير — نُبقي المهمة قيد
-                // المعالجة ويحسمها الاستطلاع التالي أو مهلة المحرك القصوى.
+                // فشل الاستطلاع العابر (5xx/شبكة) ليس فشل التصدير — نُبقي
+                // المهمة قيد المعالجة ويحسمها الاستطلاع التالي أو المهلة.
                 return { status: 'rendering' };
             }
             const data = await res.json();
