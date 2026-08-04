@@ -24,19 +24,25 @@ services:
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /api/health
+    # ⚠️⚠️ درس إنتاجي مكلف: كل المتغيرات هنا sync: false **عمداً وبلا استثناء**.
+    # أي متغير يُكتب هنا بـ value: تعيد Render فرضَه من هذا الملف عند كل
+    # تعديل عليه (مزامنة الـ Blueprint)، فتمسح ما ضبطتَه يدوياً في اللوحة —
+    # حدث فعلاً: تعديلٌ للملف أطفأ VIDEO_AI_PROVIDER=fal وVIDEO_STORAGE=r2
+    # المضبوطين من اللوحة، فاختفى قالب الذكاء الاصطناعي وملكية الملفات.
+    # القاعدة: القيم تُدار من لوحة Render حصراً، وهذا الملف يعرّف المفاتيح فقط.
     envVars:
       - key: JWT_SECRET
-        sync: false # يُدخل يدوياً عند إنشاء الـ Blueprint — نفس سر المنصة حرفياً
+        sync: false # نفس سر المنصة الرئيسية حرفياً (الدخول الموحّد)
       - key: ADMIN_USERS
         sync: false # نفس قائمة مشرفي المنصة (أسماء مفصولة بفواصل)
       - key: DATABASE_URL
         sync: false # رابط PostgreSQL (Neon/Supabase مجاناً) — بدونه التخزين مؤقت
       - key: VIDEO_PROVIDER
-        value: mock # مزوّد التركيب — بدّلها إلى shotstack بعد فتح حساب
+        sync: false # mock (افتراضي) أو shotstack
       # 🤖 التوليد بالذكاء الاصطناعي (اختياري) — بدونه يُخفى قالبه.
       # ⚠️ أغلى بكثير من التركيب: راجع درع التكلفة في README قبل تفعيله.
       - key: VIDEO_AI_PROVIDER
-        value: "" # ضع fal بعد إضافة FAL_KEY وFAL_MODEL
+        sync: false # ضع fal (من اللوحة) بعد إضافة FAL_KEY
       - key: FAL_KEY
         sync: false
       - key: FAL_MODEL
@@ -46,17 +52,17 @@ services:
       # 🛡️ درع التكلفة — راجع قسمه في README قبل تفعيل مزوّد مدفوع.
       # DAILY_RENDER_CAP=0 إيقاف طوارئ فوري لكل توليد جديد.
       - key: DAILY_RENDER_CAP
-        value: "200"
+        sync: false # افتراضي الكود 200
       - key: DAILY_RENDER_CAP_PER_USER
-        value: "20"
+        sync: false # افتراضي الكود 20
       - key: STARTER_CREDITS
-        value: "3" # اجعله 0 قبل تفعيل مزوّد مدفوع (كل حساب جديد يكلفك)
+        sync: false # افتراضي الكود 3 — اجعله 0 قبل تفعيل مزوّد مدفوع
       - key: COST_ALERT_WEBHOOK_URL
         sync: false # اختياري: رابط Slack/Discord يستقبل تنبيه بلوغ السقف
       # 🗃️ ملكية ملفات الفيديو (اختيارية) — بدونها تبقى لدى المزوّد.
       # فعّلها بضبط VIDEO_STORAGE=r2 مع المفاتيح الأربعة (انظر README).
       - key: VIDEO_STORAGE
-        value: "" # ضع r2 بعد إنشاء الدلو والمفاتيح
+        sync: false # ضع r2 (من اللوحة) بعد إنشاء الدلو والمفاتيح
       - key: R2_ACCOUNT_ID
         sync: false
       - key: R2_ACCESS_KEY_ID
