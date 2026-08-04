@@ -45,6 +45,12 @@ export function createFalProvider({ apiKey, model, fetchImpl = fetch }) {
 
     const headers = { Authorization: `Key ${apiKey}`, 'Content-Type': 'application/json' };
     const modelPath = String(model).replace(/^\/+|\/+$/g, '');
+    // 📌 دقيقة موثَّقة في fal تسببت بتعليق فعلي في الإنتاج: الإرسال يذهب
+    // للمسار الكامل (fal-ai/veo3/fast)، لكن مسارات المتابعة
+    // (/requests/{id}/status) تستخدم معرّف التطبيق فقط (المالك/الاسم:
+    // fal-ai/veo3) بلا المسار الفرعي. البناء بالمسار الكامل يعطي 404
+    // فتُعامَل المهمة "قيد المعالجة" للأبد حتى المهلة القصوى.
+    const appPath = modelPath.split('/').slice(0, 2).join('/');
 
     return {
         name: `fal:${modelPath}`,
@@ -61,12 +67,17 @@ export function createFalProvider({ apiKey, model, fetchImpl = fetch }) {
             const data = await res.json();
             const providerId = data?.request_id;
             if (!providerId) throw new Error('fal.ai لم يُرجع request_id.');
+            // تحقق ذاتي وقت التشغيل: الرد يحمل status_url الحقيقي — إن لم
+            // يبدأ بما سنبنيه، نسجّله صراخاً بدل استطلاع رابط خاطئ بصمت.
+            if (data.status_url && !String(data.status_url).startsWith(`${QUEUE_BASE}/${appPath}/`)) {
+                console.error(`⚠️ fal: status_url الفعلي (${data.status_url}) لا يطابق المبني (${QUEUE_BASE}/${appPath}/…) — راجع appPath.`);
+            }
             return { providerId };
         },
 
         async getRender(providerId) {
             const statusRes = await fetchImpl(
-                `${QUEUE_BASE}/${modelPath}/requests/${providerId}/status`, { headers }
+                `${QUEUE_BASE}/${appPath}/requests/${providerId}/status`, { headers }
             );
             // خطأ المصادقة/الصلاحية ليس عابراً (مفتاح باطل أو حساب مقفول
             // لنفاد رصيد fal) — الانتظار عليه يعلّق المهمة ربع ساعة كاملة
@@ -90,7 +101,7 @@ export function createFalProvider({ apiKey, model, fetchImpl = fetch }) {
                 return { status: 'rendering' };
             }
 
-            const resultRes = await fetchImpl(`${QUEUE_BASE}/${modelPath}/requests/${providerId}`, { headers });
+            const resultRes = await fetchImpl(`${QUEUE_BASE}/${appPath}/requests/${providerId}`, { headers });
             if (!resultRes.ok) {
                 return { status: 'failed', error: `fal.ai تعذّر جلب النتيجة (HTTP ${resultRes.status}).` };
             }

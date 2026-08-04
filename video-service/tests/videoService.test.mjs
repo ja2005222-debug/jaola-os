@@ -864,6 +864,29 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             const done = await p.getRender('req-9');
             assert.equal(done.status, 'done');
             assert.equal(done.videoUrl, 'https://cdn.fal/v.mp4');
+
+            // 📌 درس إنتاجي: مسارات المتابعة تستخدم معرّف التطبيق (أول
+            // جزأين) لا المسار الكامل — البناء الكامل يعطي 404 دائماً
+            // فتتعلق المهمة حتى المهلة القصوى.
+            assert.equal(calls[1].url, 'https://queue.fal.run/fal-ai/some/requests/req-9/status');
+            assert.equal(calls[2].url, 'https://queue.fal.run/fal-ai/some/requests/req-9');
+        });
+
+        test('fal: التحقق الذاتي يصرخ إذا خالف status_url الفعلي المسار المبني', async () => {
+            const logged = [];
+            const orig = console.error;
+            console.error = (...a) => logged.push(a.join(' '));
+            try {
+                const p = createFalProvider({
+                    apiKey: 'K', model: 'fal-ai/app/endpoint',
+                    fetchImpl: async () => ({
+                        ok: true,
+                        json: async () => ({ request_id: 'r1', status_url: 'https://queue.fal.run/other-owner/other-app/requests/r1/status' }),
+                    }),
+                });
+                await p.submitRender({ kind: 'ai_prompt', prompt: 'x', durationSec: 5 });
+                assert.ok(logged.some(l => l.includes('لا يطابق المبني')), 'يجب أن يُسجَّل عدم التطابق');
+            } finally { console.error = orig; }
         });
 
         test('خطأ المصادقة في الاستطلاع يُفشل فوراً — لا تعليق حتى المهلة (درس إنتاجي)', async () => {
