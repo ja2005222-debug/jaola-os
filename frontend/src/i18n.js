@@ -751,6 +751,7 @@ const STRINGS = {
   registerFail: { en: 'Failed to create the account.', ar: 'فشل إنشاء الحساب.' },
   loginFail: { en: 'Failed to sign in.', ar: 'فشل تسجيل الدخول.' },
   serverConnRetry: { en: 'Could not reach the server — try again.', ar: 'تعذّر الاتصال بالخادم — حاول مرة أخرى.' },
+  offlineRetry: { en: 'You appear to be offline — check your connection.', ar: 'يبدو أنك غير متصل بالإنترنت — تحقق من اتصالك.', es: 'Parece que no tienes conexión.', fr: 'Vous semblez hors ligne.' },
   connectionLost: { en: 'Connection to the server lost — reconnecting automatically...', ar: 'انقطع الاتصال بالخادم — جاري إعادة الاتصال تلقائياً...' },
   liveLog: { en: '📋 Live Log', ar: '📋 السجل الحي' },
   timelineTab: { en: '🕘 Timeline', ar: '🕘 الخط الزمني' },

@@ -8,7 +8,7 @@ import { Markdown } from '../components/Markdown.jsx';
 import { PreviewPanel } from '../components/PreviewPanel.jsx';
 import { TimelinePanel } from '../components/TimelinePanel.jsx';
 import { useJaolaStore } from '../store/useJaolaStore.js';
-import { BACKEND_URL, VIDEO_STUDIO_URL, openVideoStudio } from '../config.js';
+import { BACKEND_URL, VIDEO_STUDIO_URL, openVideoStudio, describeFetchFailure } from '../config.js';
 import { useI18n } from '../i18n.js';
 import { LanguageSwitcher } from '../components/LanguageSwitcher.jsx';
 
@@ -1230,8 +1230,11 @@ export default function Dashboard() {
       } else {
         setAuthError(d.error || (authMode === 'register' ? t('registerFail') : t('loginFail')));
       }
-    } catch {
-      setAuthError(t('serverConnRetry'));
+    } catch (err) {
+      // يميّز "غير متصل" عن "الخادم رفض/متعذّر"، ويطبع العنوان والسبب
+      // الخام في الـconsole — المتصفح يخفي فشل CORS عن الجافاسكربت.
+      const info = describeFetchFailure(err);
+      setAuthError(info.offline ? t('offlineRetry') : t('serverConnRetry'));
     }
     setIsLoggingIn(false);
   };
