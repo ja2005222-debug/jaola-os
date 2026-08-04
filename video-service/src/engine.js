@@ -15,9 +15,33 @@
  */
 import { listActiveJobs, transitionJob } from './jobs.js';
 import { refundCredits } from './credits.js';
+import { storageKeyFor } from './storage/index.js';
 
 export const JOB_TIMEOUT_MS = 15 * 60 * 1000;
 export const MAX_CONCURRENT_RENDERS = 2;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * ينسخ الفيديو المكتمل إلى تخزيننا فور جاهزيته — هنا تتحقق "ملكية
+ * الملف": يصبح لدينا نسخة مستقلة عن استضافة المزوّد المؤقتة.
+ * يُرجع {storageKey, videoUrl} للحالة النهائية.
+ *
+ * فشل النسخ **لا يُفشل المهمة**: المستخدم دفع وحصل على فيديو، فنُبقي
+ * رابط المزوّد كاحتياط شفاف بدل إهدار رصيده — ويُسجَّل الفشل.
+ */
+async function mirrorToStorage(storage, job, providerUrl) {
+    if (!storage || !providerUrl) return { storageKey: null, videoUrl: providerUrl ?? null };
+    try {
+        const key = storageKeyFor({ username: job.username, jobId: job.id });
+        await storage.mirrorFromUrl(providerUrl, key);
+        // لا نحفظ رابط المزوّد بعد النسخ: التنزيل يمر بمسارنا الذي يوقّع
+        // رابطاً قصير الأجل بعد التحقق من الملكية.
+        return { storageKey: key, videoUrl: null };
+    } catch (e) {
+        console.warn(`⚠️ تعذّر نسخ فيديو المهمة ${job.id} إلى التخزين: ${e.message}`);
+        return { storageKey: null, videoUrl: providerUrl };
+    }
+}
 
 async function failWithRefund(store, job, error) {
     // الاسترداد قبل الانتقال: لو انهارت العملية بينهما تعيد دورة لاحقة
@@ -34,8 +58,8 @@ async function failWithRefund(store, job, error) {
 }
 
 /** دورة معالجة واحدة نقية — تُستدعى من المجدول أو من الاختبارات مباشرة. */
-export async function runEngineTick(store, { provider, now = Date.now() }) {
-    const summary = { timedOut: 0, completed: 0, failed: 0, submitted: 0, submitErrors: 0 };
+export async function runEngineTick(store, { provider, storage = null, retentionDays = 0, now = Date.now() }) {
+    const summary = { timedOut: 0, completed: 0, failed: 0, submitted: 0, submitErrors: 0, mirrored: 0, purged: 0 };
     const active = await listActiveJobs(store);
 
     // 1) المهلة القصوى أولاً — تُقيَّم على عمر المهمة الكلي منذ إنشائها.
@@ -56,10 +80,15 @@ export async function runEngineTick(store, { provider, now = Date.now() }) {
             continue; // فشل استطلاع عابر (شبكة) — الدورة التالية تعيد المحاولة.
         }
         if (result.status === 'done') {
+            // النسخ قبل الانتقال: المهمة لا تُعلَن مكتملة إلا وقد استقر
+            // مصير ملفها (نُسخ إلينا، أو بقي على رابط المزوّد صراحةً).
+            const { storageKey, videoUrl } = await mirrorToStorage(storage, job, result.videoUrl);
             await transitionJob(store, job.id, 'done', {
-                videoUrl: result.videoUrl ?? null,
+                videoUrl,
+                storageKey,
                 error: result.note ?? null,
             });
+            if (storageKey) summary.mirrored += 1;
             summary.completed += 1;
         } else if (result.status === 'failed') {
             await failWithRefund(store, job, result.error || 'فشل التصدير لدى المزود.');
@@ -81,6 +110,23 @@ export async function runEngineTick(store, { provider, now = Date.now() }) {
         } catch (e) {
             await failWithRefund(store, job, `فشل الإرسال للمزود: ${e.message}`);
             summary.submitErrors += 1;
+        }
+    }
+
+    // 4) تنظيف الاحتفاظ: حذف الملفات التي تجاوزت المدة المعلنة للمستخدم.
+    // يُنفَّذ أخيراً حتى لا يؤخر معالجة المهام الحية، ولا يعمل إطلاقاً
+    // بلا تخزين مفعَّل أو بمدة احتفاظ = 0 (احتفاظ دائم).
+    if (storage && retentionDays > 0) {
+        const cutoff = now - retentionDays * DAY_MS;
+        for (const expired of await store.listExpiredStorageJobs(cutoff)) {
+            try {
+                await storage.remove(expired.storageKey);
+                await store.clearStorageKey(expired.id);
+                summary.purged += 1;
+            } catch (e) {
+                // فشل حذف واحد لا يوقف البقية — يُعاد في الدورة القادمة.
+                console.warn(`⚠️ تعذّر حذف ملف المهمة ${expired.id}: ${e.message}`);
+            }
         }
     }
 

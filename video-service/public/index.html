@@ -233,9 +233,17 @@
       $('jobsBody').innerHTML = jobs.map(j => {
         let result = '—';
         if (j.status === 'done') {
-          result = j.videoUrl
-            ? `<a href="${j.videoUrl}" target="_blank" rel="noopener">⬇️ تنزيل الفيديو</a>`
-            : (j.error || 'اكتمل (وضع تجريبي بلا ملف).');
+          if (j.videoUrl && j.owned) {
+            // ملف مملوك لنا: الرابط مسار خدمتنا، ويحتاج التوكن — نفتحه
+            // عبر fetch ثم نتبع التوجيه، فلا يُسرَّب توكن في شريط العنوان.
+            result = `<a href="#" data-download="${j.id}">⬇️ تنزيل الفيديو</a>`
+                   + ` <span style="color:var(--ok);font-size:11px">مُخزَّن لديك</span>`;
+          } else if (j.videoUrl) {
+            result = `<a href="${j.videoUrl}" target="_blank" rel="noopener">⬇️ تنزيل الفيديو</a>`
+                   + ` <span style="color:var(--muted);font-size:11px">(مستضاف لدى المزوّد)</span>`;
+          } else {
+            result = j.error || 'اكتمل (وضع تجريبي بلا ملف).';
+          }
         } else if (j.status === 'failed') {
           result = (j.error || 'فشل.') + ' (استُرد الرصيد)';
         }
@@ -247,6 +255,29 @@
           <td dir="ltr">${d.toLocaleString('ar')}</td>
         </tr>`;
       }).join('');
+
+      // تنزيل الملفات المملوكة: نطلب المسار المحمي بالتوكن، فيتحقق
+      // الخادم من الملكية ويعيد التوجيه لرابط موقّع صالح دقائق معدودة.
+      document.querySelectorAll('[data-download]').forEach(el => {
+        el.addEventListener('click', async (e) => {
+          e.preventDefault();
+          const original = el.textContent;
+          el.textContent = '⏳ جارٍ التحضير…';
+          try {
+            const res = await api(`/api/video/renders/${el.dataset.download}/download`);
+            if (res.ok && res.url) {
+              window.open(res.url, '_blank', 'noopener');
+            } else {
+              const data = await res.json().catch(() => ({}));
+              alert(data.error || 'تعذّر تحضير رابط التنزيل.');
+            }
+          } catch {
+            alert('تعذّر الاتصال بالخدمة.');
+          } finally {
+            el.textContent = original;
+          }
+        });
+      });
     }
 
     $('submitBtn').addEventListener('click', submitRender);

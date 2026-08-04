@@ -160,6 +160,25 @@ export function createFileStore({ dataDir, starterCredits }) {
             writeJson(dataDir, flagsFile, flags);
         },
 
+        // ملفات تجاوزت مدة الاحتفاظ وما زالت مخزَّنة — للحذف الدوري.
+        async listExpiredStorageJobs(beforeMs) {
+            return readJobs()
+                .filter(j => j.storageKey && j.at < beforeMs)
+                .map(j => ({ id: j.id, username: j.username, storageKey: j.storageKey }));
+        },
+
+        // يمسح أثر الملف بعد حذفه فعلياً من التخزين (بلا تغيير حالة المهمة).
+        async clearStorageKey(id) {
+            const jobs = readJobs();
+            const job = jobs.find(j => j.id === id);
+            if (!job) return false;
+            job.storageKey = null;
+            job.videoUrl = null; // الملف لم يعد موجوداً — لا رابط يوهم بتوفره
+            job.updatedAt = Date.now();
+            writeJobs(jobs);
+            return true;
+        },
+
         /**
          * انتقال حالة ذرّي: يُطبَّق فقط إن كانت الحالة الراهنة ضمن
          * allowedFrom — يُرجع المهمة المحدَّثة أو null.
@@ -170,7 +189,7 @@ export function createFileStore({ dataDir, starterCredits }) {
             if (!job || !from.includes(job.status)) return null;
             job.status = to;
             job.updatedAt = Date.now();
-            for (const key of ['providerId', 'provider', 'videoUrl', 'error', 'refunded']) {
+            for (const key of ['providerId', 'provider', 'videoUrl', 'error', 'refunded', 'storageKey']) {
                 if (key in patch) job[key] = patch[key];
             }
             writeJobs(jobs);
