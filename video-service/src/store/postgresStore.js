@@ -52,9 +52,22 @@ CREATE TABLE IF NOT EXISTS video_jobs (
 );
 -- ترقية غير هدّامة للجداول المنشأة قبل إضافة ملكية الملفات
 ALTER TABLE video_jobs ADD COLUMN IF NOT EXISTS storage_key TEXT;
+-- ترقية غير هدّامة: مشاريع الأفلام (ستوري بورد) — ربط اللقطة بمشروعها
+ALTER TABLE video_jobs ADD COLUMN IF NOT EXISTS project_id TEXT;
+ALTER TABLE video_jobs ADD COLUMN IF NOT EXISTS shot_index INTEGER;
 CREATE INDEX IF NOT EXISTS video_jobs_user_idx ON video_jobs (username, at);
 CREATE INDEX IF NOT EXISTS video_jobs_status_idx ON video_jobs (status);
 CREATE INDEX IF NOT EXISTS video_jobs_at_idx ON video_jobs (at);
+CREATE INDEX IF NOT EXISTS video_jobs_project_idx ON video_jobs (project_id);
+-- مشاريع الأفلام: تجميع اللقطات في ستوري بورد
+CREATE TABLE IF NOT EXISTS video_projects (
+    id         TEXT PRIMARY KEY,
+    at         BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL,
+    username   TEXT NOT NULL,
+    title      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS video_projects_user_idx ON video_projects (username, at);
 -- أعلام صغيرة دائمة (تنبيه التكلفة اليومي…) — تبقى عبر إعادات التشغيل
 CREATE TABLE IF NOT EXISTS video_flags (
     key   TEXT PRIMARY KEY,
@@ -85,6 +98,16 @@ function rowToJob(r) {
         error: r.error,
         refunded: r.refunded,
         storageKey: r.storage_key,
+        projectId: r.project_id,
+        shotIndex: r.shot_index,
+    };
+}
+
+function rowToProject(r) {
+    if (!r) return null;
+    return {
+        id: r.id, at: Number(r.at), updatedAt: Number(r.updated_at),
+        username: r.username, title: r.title,
     };
 }
 
@@ -145,7 +168,7 @@ export function createPostgresStore({ connectionString, starterCredits, poolFact
          * مسار إنتاجي (لا مرجع له خارج ملف الاختبار).
          */
         async truncateAllForTest() {
-            await withClient(c => c.query('TRUNCATE video_jobs, video_credit_ledger, video_balances, video_flags'));
+            await withClient(c => c.query('TRUNCATE video_jobs, video_credit_ledger, video_balances, video_flags, video_projects'));
         },
 
         async getBalance(user) {
@@ -230,10 +253,11 @@ export function createPostgresStore({ connectionString, starterCredits, poolFact
                 const res = await c.query(
                     `INSERT INTO video_jobs
                      (id, at, updated_at, username, template_id, values_json, spec_json, cost_credits,
-                      status, provider_id, provider, video_url, error, refunded)
-                     VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,NULL,NULL,NULL,NULL,FALSE) RETURNING *`,
+                      status, provider_id, provider, video_url, error, refunded, project_id, shot_index)
+                     VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,NULL,NULL,NULL,NULL,FALSE,$9,$10) RETURNING *`,
                     [newId(), now, job.username, job.templateId, JSON.stringify(job.values),
-                        JSON.stringify(job.spec), job.costCredits, job.status]
+                        JSON.stringify(job.spec), job.costCredits, job.status,
+                        job.projectId ?? null, job.shotIndex ?? null]
                 );
                 return rowToJob(res.rows[0]);
             });
@@ -320,6 +344,76 @@ export function createPostgresStore({ connectionString, starterCredits, poolFact
                     [id, Date.now()]
                 );
                 return res.rowCount > 0;
+            });
+        },
+
+        // ─── مشاريع الأفلام (ستوري بورد) ───────────────────────────────
+
+        async createProject({ username, title }) {
+            return withClient(async c => {
+                const now = Date.now();
+                const res = await c.query(
+                    `INSERT INTO video_projects (id, at, updated_at, username, title)
+                     VALUES ($1,$2,$2,$3,$4) RETURNING *`,
+                    [newId(), now, username, title]
+                );
+                return rowToProject(res.rows[0]);
+            });
+        },
+
+        async getProject(id) {
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM video_projects WHERE id = $1', [id]);
+                return rowToProject(res.rows[0]);
+            });
+        },
+
+        async listProjectsByUser(user, limit = 50) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'SELECT * FROM video_projects WHERE username = $1 ORDER BY at DESC LIMIT $2',
+                    [user, limit]
+                );
+                return res.rows.map(rowToProject);
+            });
+        },
+
+        async renameProject(id, title) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'UPDATE video_projects SET title = $2, updated_at = $3 WHERE id = $1 RETURNING *',
+                    [id, title, Date.now()]
+                );
+                return rowToProject(res.rows[0]);
+            });
+        },
+
+        // اللقطات لا تُحذف مع المشروع — أُنفق عليها رصيد وتبقى في السجل
+        // العام؛ يزول التجميع فقط.
+        async deleteProject(id) {
+            return withClient(async c => {
+                const res = await c.query('DELETE FROM video_projects WHERE id = $1', [id]);
+                return res.rowCount > 0;
+            });
+        },
+
+        async listJobsByProject(projectId) {
+            return withClient(async c => {
+                const res = await c.query(
+                    `SELECT * FROM video_jobs WHERE project_id = $1
+                     ORDER BY shot_index ASC NULLS LAST, at ASC`,
+                    [projectId]
+                );
+                return res.rows.map(rowToJob);
+            });
+        },
+
+        async countJobsInProject(projectId) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'SELECT COUNT(*)::int AS n FROM video_jobs WHERE project_id = $1', [projectId]
+                );
+                return res.rows[0].n;
             });
         },
 
