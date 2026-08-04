@@ -48,19 +48,29 @@ export function buildVerifyToken(jwtSecret) {
     };
 }
 
-/** نفس دلالات adminOnly في المنصة: قائمة ADMIN_USERS أو علامة isAdmin في التوكن. */
-export function buildAdminOnly(adminUsersCsv) {
+/** محمول (predicate) لا وسيط: هل هذا المستخدم مشرف؟ — نفس دلالات المنصة. */
+export function buildIsAdmin(adminUsersCsv) {
     const adminUsers = String(adminUsersCsv || '')
         .split(',')
         .map(u => u.trim().toLowerCase())
         .filter(Boolean);
 
+    return function isAdmin(user) {
+        if (!user) return false;
+        const uname = (user.username || '').toLowerCase();
+        return user.isAdmin === true || adminUsers.includes(uname);
+    };
+}
+
+/** نفس دلالات adminOnly في المنصة: قائمة ADMIN_USERS أو علامة isAdmin في التوكن. */
+export function buildAdminOnly(adminUsersCsv) {
+    const isAdmin = buildIsAdmin(adminUsersCsv);
+
     return function adminOnly(req, res, next) {
         if (!req.user) {
             return res.status(401).json({ error: 'غير مصرح: التوكن مطلوب.' });
         }
-        const uname = (req.user.username || '').toLowerCase();
-        if (req.user.isAdmin !== true && !adminUsers.includes(uname)) {
+        if (!isAdmin(req.user)) {
             return res.status(403).json({ error: 'هذا المسار للمشرفين فقط.' });
         }
         next();

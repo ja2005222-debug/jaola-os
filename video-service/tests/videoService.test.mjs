@@ -1164,6 +1164,24 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             }
         });
 
+        test('المشرف معفى من سقف المستخدم الفردي — والسقف العام يسري عليه', async () => {
+            // TIGHT: سقف الفرد 1 والعام 2 — المشرف يتجاوز الأول لا الثاني
+            const admin = makeToken('boss');
+            await callAt(cappedUrl, '/api/video/credits', { token: admin });
+            await callAt(cappedUrl, '/api/video/admin/credits/grant', {
+                method: 'POST', token: admin, body: { username: 'boss', amount: 10 },
+            });
+            const body = { templateId: 'promo_announcement', values: { headline: 'أ', cta: 'ب' } };
+
+            const r1 = await callAt(cappedUrl, '/api/video/renders', { method: 'POST', token: admin, body });
+            assert.equal(r1.status, 200);
+            const r2 = await callAt(cappedUrl, '/api/video/renders', { method: 'POST', token: admin, body });
+            assert.equal(r2.status, 200, 'تجاوز سقف الفرد (1) لأنه مشرف');
+            const r3 = await callAt(cappedUrl, '/api/video/renders', { method: 'POST', token: admin, body });
+            assert.equal(r3.status, 429);
+            assert.equal(r3.data.code, 'daily_cap_reached'); // العام بلا استثناء لأحد
+        });
+
         // ─── مشاريع الأفلام (ستوري بورد) ───────────────────────────────
 
         test('المشاريع: إنشاء وقائمة وإعادة تسمية وحذف — بعزل صارم بين المستخدمين', async () => {
