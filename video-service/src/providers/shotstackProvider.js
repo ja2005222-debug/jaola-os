@@ -55,8 +55,12 @@ export function createShotstackProvider({ apiKey, env = 'stage', fetchImpl = fet
 
     return {
         name: `shotstack-${env}`,
+        specKinds: ['timeline'],
 
         async submitRender(spec) {
+            if (spec?.kind && spec.kind !== 'timeline') {
+                throw new Error(`Shotstack لا يدعم هذا النوع من المخططات: ${spec.kind}`);
+            }
             const body = {
                 timeline: specToShotstackTimeline(spec),
                 output: { format: 'mp4', resolution: 'hd' },

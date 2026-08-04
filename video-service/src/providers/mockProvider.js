@@ -16,6 +16,7 @@ export function createMockProvider({ pollsToComplete = 2 } = {}) {
 
     return {
         name: 'mock',
+        specKinds: ['timeline', 'ai_prompt'],
 
         /** يُرجع { providerId } أو يرمي خطأ (يحاكي رفض المزود). */
         async submitRender(spec) {

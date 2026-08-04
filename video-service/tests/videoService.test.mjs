@@ -17,6 +17,8 @@ import jwt from 'jsonwebtoken';
 
 import { createApp, MAX_ACTIVE_JOBS_PER_USER } from '../server.js';
 import { createMockProvider } from '../src/providers/mockProvider.js';
+import { buildProvider, buildAiProvider } from '../src/providers/index.js';
+import { createFalProvider, extractVideoUrl, specToFalInput } from '../src/providers/falProvider.js';
 import { specToShotstackTimeline } from '../src/providers/shotstackProvider.js';
 import { runEngineTick, JOB_TIMEOUT_MS } from '../src/engine.js';
 import { getBalance, grantCredits, deductCredits, refundCredits, STARTER_CREDITS } from '../src/credits.js';
@@ -87,7 +89,8 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
         before(async () => {
             store = await makeStore();
             await store.init();
-            provider = createMockProvider({ pollsToComplete: 2 });
+            // موجّه بمزوّد محاكاة للنوعين — يعكس بنية الإنتاج لا يلتف عليها
+            provider = buildProvider({}, { composition: createMockProvider({ pollsToComplete: 2 }), ai: createMockProvider({ pollsToComplete: 2 }) });
             const app = createApp({ store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider });
             await new Promise(resolve => { server = app.listen(0, resolve); });
             baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -139,7 +142,7 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
         test('مسار الصحة عام بلا توكن ويُظهر المزود والتخزين', async () => {
             const res = await call('/api/health');
             assert.equal(res.status, 200);
-            assert.equal(res.data.provider, 'mock');
+            assert.equal(res.data.provider, 'mock+mock'); // موجّه: تركيب+توليد
             assert.equal(res.data.store, storeLabel);
         });
 
@@ -229,6 +232,7 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 promo_announcement: { headline: 'أ', cta: 'ب' },
                 product_showcase: { productName: 'أ', price: '9', imageUrl: 'https://x.test/i.png' },
                 story_slides: { slide1: '١', slide2: '٢', slide3: '٣' },
+                ai_clip: { prompt: 'قطة تمشي على الشاطئ وقت الغروب' },
             };
             for (const t of listTemplates()) {
                 const full = getTemplate(t.id);
@@ -236,7 +240,13 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 assert.equal(v.error, undefined, t.id);
                 const spec = compileSpec(full, v.values);
                 assert.equal(spec.durationSec, full.durationSec, t.id);
-                assert.ok(spec.scenes.length >= 1, t.id);
+                // لكل نوع شكله: الزمني له مشاهد، والتوليدي له وصف نصي
+                if (spec.kind === 'ai_prompt') {
+                    assert.ok(spec.prompt.length > 0, t.id);
+                    assert.ok(spec.aspectRatio, t.id);
+                } else {
+                    assert.ok(spec.scenes.length >= 1, t.id);
+                }
             }
         });
 
@@ -758,6 +768,166 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             const done = await getJob(store, job.id);
             assert.equal(done.storageKey, null);
             assert.equal(done.videoUrl, 'https://provider.test/v.mp4');
+        });
+
+
+        // ─── توليد الفيديو بالذكاء الاصطناعي (المرحلة ٢) ───────────────
+
+        test('قالب الذكاء الاصطناعي يُجمَّع لمخطط وصف نصي لا مخطط زمني', () => {
+            const t = getTemplate('ai_clip');
+            const v = validateValues(t, { prompt: 'مدينة ليلاً تحت المطر', aspectRatio: '9:16' });
+            assert.equal(v.error, undefined);
+            const spec = compileSpec(t, v.values);
+            assert.equal(spec.kind, 'ai_prompt');
+            assert.equal(spec.prompt, 'مدينة ليلاً تحت المطر');
+            assert.equal(spec.aspectRatio, '9:16');
+            assert.equal(spec.scenes, undefined); // ليس مخططاً زمنياً
+        });
+
+        test('حقل الاختيار يرفض قيمة خارج القائمة ويطبّق الافتراضي', () => {
+            const t = getTemplate('ai_clip');
+            assert.ok(validateValues(t, { prompt: 'x', aspectRatio: '4:3' }).error);
+            assert.equal(validateValues(t, { prompt: 'x' }).values.aspectRatio, '16:9');
+        });
+
+        test('الموجّه يرسل كل نوع لمزوّده ويُعيد الاستطلاع للمزوّد نفسه', async () => {
+            const seen = { timeline: [], ai: [] };
+            const mk = (bucket) => ({
+                name: bucket,
+                async submitRender(spec) { seen[bucket].push(spec.kind); return { providerId: `${bucket}-1` }; },
+                async getRender(id) { return { status: 'done', videoUrl: `https://${bucket}.test/${id}.mp4` }; },
+            });
+            const router = buildProvider({}, { composition: mk('timeline'), ai: mk('ai') });
+
+            const a = await router.submitRender({ kind: 'timeline', scenes: [] });
+            const b = await router.submitRender({ kind: 'ai_prompt', prompt: 'x' });
+            assert.deepEqual(seen.timeline, ['timeline']);
+            assert.deepEqual(seen.ai, ['ai_prompt']);
+
+            // المعرّف يحمل بادئة النوع فيعرف الاستطلاع أي مزوّد يسأل
+            assert.ok(a.providerId.startsWith('timeline::'));
+            assert.ok(b.providerId.startsWith('ai_prompt::'));
+            assert.match((await router.getRender(b.providerId)).videoUrl, /^https:\/\/ai\.test\//);
+            assert.match((await router.getRender(a.providerId)).videoUrl, /^https:\/\/timeline\.test\//);
+        });
+
+        test('معرّف قديم بلا بادئة يُعامَل كمخطط زمني (توافق خلفي)', async () => {
+            const router = buildProvider({}, {
+                composition: { name: 'c', async submitRender() { return { providerId: 'x' }; },
+                    async getRender(id) { return { status: 'done', videoUrl: `old/${id}` }; } },
+                ai: null,
+            });
+            assert.equal((await router.getRender('legacy-id')).videoUrl, 'old/legacy-id');
+        });
+
+        test('بلا مزوّد ذكاء اصطناعي: القالب يُخفى من الكتالوج ويُرفض طلبه مباشرةً', async () => {
+            const noAi = buildProvider({}, { composition: createMockProvider(), ai: null });
+            const app = createApp({ store, jwtSecret: JWT_SECRET, provider: noAi });
+            const srv = await new Promise(r => { const s2 = app.listen(0, () => r(s2)); });
+            const url = `http://127.0.0.1:${srv.address().port}`;
+            try {
+                const token = makeToken('noai');
+                const list = await callAt(url, '/api/video/templates', { token });
+                assert.equal(list.data.templates.some(t => t.id === 'ai_clip'), false);
+
+                // الإخفاء لا يكفي — الطلب المباشر يُرفض أيضاً
+                const direct = await callAt(url, '/api/video/renders', {
+                    method: 'POST', token, body: { templateId: 'ai_clip', values: { prompt: 'x' } },
+                });
+                assert.equal(direct.status, 503);
+            } finally { await new Promise(r => srv.close(r)); }
+        });
+
+        test('اختيار مزوّد الذكاء الاصطناعي: معطَّل افتراضياً، ويفشل صاخباً بإعداد ناقص', () => {
+            assert.equal(buildAiProvider({}), null);
+            assert.equal(buildAiProvider({ VIDEO_AI_PROVIDER: 'none' }), null);
+            assert.throws(() => buildAiProvider({ VIDEO_AI_PROVIDER: 'fal' }));                    // بلا مفتاح
+            assert.throws(() => buildAiProvider({ VIDEO_AI_PROVIDER: 'fal', FAL_KEY: 'k' }));      // بلا نموذج
+            assert.throws(() => buildAiProvider({ VIDEO_AI_PROVIDER: 'unknown' }));
+        });
+
+        test('fal: الإرسال والاستطلاع واستخراج الرابط (بلا شبكة)', async () => {
+            const calls = [];
+            const fetchImpl = async (url, opts = {}) => {
+                calls.push({ url, method: opts.method || 'GET', auth: opts.headers?.Authorization });
+                if (opts.method === 'POST') return { ok: true, json: async () => ({ request_id: 'req-9' }) };
+                if (url.endsWith('/status')) return { ok: true, json: async () => ({ status: 'COMPLETED' }) };
+                return { ok: true, json: async () => ({ video: { url: 'https://cdn.fal/v.mp4' } }) };
+            };
+            const p = createFalProvider({ apiKey: 'K', model: 'fal-ai/some/model', fetchImpl });
+
+            const { providerId } = await p.submitRender({ kind: 'ai_prompt', prompt: 'قطة', aspectRatio: '9:16', durationSec: 5 });
+            assert.equal(providerId, 'req-9');
+            assert.equal(calls[0].auth, 'Key K');
+            assert.equal(calls[0].url, 'https://queue.fal.run/fal-ai/some/model');
+
+            const done = await p.getRender('req-9');
+            assert.equal(done.status, 'done');
+            assert.equal(done.videoUrl, 'https://cdn.fal/v.mp4');
+        });
+
+        test('fal: الحالات غير المكتملة تبقى قيد المعالجة لا تُحسم', async () => {
+            for (const status of ['IN_QUEUE', 'IN_PROGRESS']) {
+                const p = createFalProvider({
+                    apiKey: 'K', model: 'm',
+                    fetchImpl: async () => ({ ok: true, json: async () => ({ status }) }),
+                });
+                assert.equal((await p.getRender('r')).status, 'rendering', status);
+            }
+            // فشل استطلاع عابر (HTTP خطأ) لا يُفشل المهمة أيضاً
+            const flaky = createFalProvider({ apiKey: 'K', model: 'm', fetchImpl: async () => ({ ok: false, status: 502 }) });
+            assert.equal((await flaky.getRender('r')).status, 'rendering');
+        });
+
+        test('fal: رد مكتمل بلا رابط معروف يُحسم فشلاً لا نجاحاً صامتاً', async () => {
+            const p = createFalProvider({
+                apiKey: 'K', model: 'm',
+                fetchImpl: async (url) => url.endsWith('/status')
+                    ? { ok: true, json: async () => ({ status: 'COMPLETED' }) }
+                    : { ok: true, json: async () => ({ unexpected: true }) },
+            });
+            const r = await p.getRender('r');
+            assert.equal(r.status, 'failed');
+        });
+
+        test('fal: استخراج الرابط يغطي أشكال مخرجات النماذج المختلفة', () => {
+            assert.equal(extractVideoUrl({ video: { url: 'a' } }), 'a');
+            assert.equal(extractVideoUrl({ videos: [{ url: 'b' }] }), 'b');
+            assert.equal(extractVideoUrl({ output: { video: { url: 'c' } } }), 'c');
+            assert.equal(extractVideoUrl({ video: 'd' }), 'd');
+            assert.equal(extractVideoUrl({ url: 'e' }), 'e');
+            assert.equal(extractVideoUrl({ nothing: 1 }), null);
+        });
+
+        test('fal: ترجمة المخطط لمدخلات النموذج', () => {
+            const input = specToFalInput({ kind: 'ai_prompt', prompt: 'مشهد', aspectRatio: '1:1', durationSec: 5 });
+            assert.deepEqual(input, { prompt: 'مشهد', aspect_ratio: '1:1', duration: 5 });
+        });
+
+        test('Shotstack يرفض مخطط توليد لا يخصه', async () => {
+            const { createShotstackProvider } = await import('../src/providers/shotstackProvider.js');
+            const p = createShotstackProvider({ apiKey: 'k' });
+            await assert.rejects(() => p.submitRender({ kind: 'ai_prompt', prompt: 'x' }));
+        });
+
+        test('دورة كاملة لمقطع ذكاء اصطناعي عبر المسارات الفعلية', async () => {
+            const token = makeToken('aiuser');
+            await grantCredits(store, { username: 'aiuser', amount: 10, grantedBy: 'test' });
+            const created = await call('/api/video/renders', {
+                method: 'POST', token,
+                body: { templateId: 'ai_clip', values: { prompt: 'شروق الشمس فوق الجبال' } },
+            });
+            assert.equal(created.status, 200);
+            assert.equal(created.data.job.costCredits, 5); // أغلى من قوالب التركيب
+
+            await runEngineTick(store, { provider });
+            const sent = await getJob(store, created.data.job.id);
+            assert.equal(sent.status, 'rendering');
+            assert.ok(sent.providerId.startsWith('ai_prompt::')); // ذهبت لمزوّد التوليد
+
+            await runEngineTick(store, { provider });
+            await runEngineTick(store, { provider });
+            assert.equal((await getJob(store, created.data.job.id)).status, 'done');
         });
 
         test('انتقال متزامن مكرر: واحد فقط ينجح (ذرّية الانتقال)', async () => {

@@ -163,7 +163,8 @@
         <div class="card tpl" data-id="${t.id}">
           <h3>${t.nameAr}</h3>
           <p>${t.descriptionAr}</p>
-          <div class="meta">⏱️ ${t.durationSec} ثوانٍ · 🎟️ ${t.costCredits} رصيد</div>
+          <div class="meta">⏱️ ${t.durationSec} ثوانٍ · 🎟️ ${t.costCredits} رصيد${
+            t.specKind === 'ai_prompt' ? ' · 🤖 ذكاء اصطناعي' : ''}</div>
         </div>`).join('');
       document.querySelectorAll('.tpl').forEach(el => {
         el.addEventListener('click', () => selectTemplate(el.dataset.id));
@@ -181,9 +182,25 @@
           return `<label>${f.labelAr}${req}</label>
                   <input type="color" name="${f.key}" value="${f.default || '#1F4E5F'}" />`;
         }
+        if (f.type === 'choice') {
+          const opts = f.options.map(o =>
+            `<option value="${o}"${o === f.default ? ' selected' : ''}>${o}</option>`).join('');
+          return `<label>${f.labelAr}${req}</label>
+                  <select name="${f.key}" style="width:100%;padding:10px 12px;border-radius:8px;
+                    border:1px solid var(--border);background:var(--bg);color:var(--text);
+                    font-size:14px;font-family:inherit">${opts}</select>`;
+        }
         const type = f.type === 'imageUrl' ? 'url' : 'text';
         const ph = f.type === 'imageUrl' ? 'https://…' : '';
-        return `<label>${f.labelAr}${req}${f.maxLen ? ` (حتى ${f.maxLen} حرفاً)` : ''}</label>
+        const label = `<label>${f.labelAr}${req}${f.maxLen ? ` (حتى ${f.maxLen} حرفاً)` : ''}</label>`;
+        if (f.type === 'text' && (f.maxLen || 0) > 150) {
+          return `${label}
+                  <textarea name="${f.key}" maxlength="${f.maxLen}" rows="3"
+                    style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);
+                    background:var(--bg);color:var(--text);font-size:14px;font-family:inherit;
+                    resize:vertical"></textarea>`;
+        }
+        return `${label}
                 <input type="${type}" name="${f.key}" maxlength="${f.maxLen || 500}" placeholder="${ph}" />`;
       }).join('');
       $('formWrap').classList.remove('hidden');
