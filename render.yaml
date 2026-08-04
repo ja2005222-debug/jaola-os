@@ -32,7 +32,15 @@ services:
       - key: DATABASE_URL
         sync: false # رابط PostgreSQL (Neon/Supabase مجاناً) — بدونه التخزين مؤقت
       - key: VIDEO_PROVIDER
-        value: mock # بدّلها إلى shotstack بعد فتح حساب وإضافة SHOTSTACK_API_KEY
+        value: mock # مزوّد التركيب — بدّلها إلى shotstack بعد فتح حساب
+      # 🤖 التوليد بالذكاء الاصطناعي (اختياري) — بدونه يُخفى قالبه.
+      # ⚠️ أغلى بكثير من التركيب: راجع درع التكلفة في README قبل تفعيله.
+      - key: VIDEO_AI_PROVIDER
+        value: "" # ضع fal بعد إضافة FAL_KEY وFAL_MODEL
+      - key: FAL_KEY
+        sync: false
+      - key: FAL_MODEL
+        sync: false # مثال: fal-ai/veo3/fast
       # 🛡️ درع التكلفة — راجع قسمه في README قبل تفعيل مزوّد مدفوع.
       # DAILY_RENDER_CAP=0 إيقاف طوارئ فوري لكل توليد جديد.
       - key: DAILY_RENDER_CAP

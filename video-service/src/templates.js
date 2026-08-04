@@ -10,6 +10,12 @@
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 const MAX_TEXT_LEN = 200;
 
+// نوعا المخرجات اللذان تعرفهما الخدمة. المخطط المُجمَّع يحمل kind،
+// وطبقة المزودين توجّه كل نوع لمزوّده — فلا يتلقى مزوّد تركيب مخططَ
+// توليد ولا العكس.
+export const SPEC_TIMELINE = 'timeline';   // تركيب قوالب (Shotstack…)
+export const SPEC_AI_PROMPT = 'ai_prompt'; // توليد من وصف نصي (fal.ai…)
+
 // التكلفة بالأرصدة لكل قالب — القوالب الأطول أغلى (تكلفة تصدير أعلى
 // لدى المزود). التسعير النهائي للباقات يُدار تجارياً خارج الكود.
 export const TEMPLATES = Object.freeze([
@@ -41,6 +47,21 @@ export const TEMPLATES = Object.freeze([
         ],
     },
     {
+        id: 'ai_clip',
+        nameAr: 'مقطع بالذكاء الاصطناعي',
+        descriptionAr: 'اكتب وصفاً لما تريد رؤيته، فيُولَّد مقطع فيديو كامل. الأغلى تكلفةً والأكثر إبهاراً.',
+        durationSec: 5,
+        costCredits: 5, // توليد الذكاء الاصطناعي أغلى بكثير من تركيب القوالب
+        specKind: SPEC_AI_PROMPT,
+        fields: [
+            { key: 'prompt', labelAr: 'وصف المشهد المطلوب', type: 'text', required: true, maxLen: 500 },
+            {
+                key: 'aspectRatio', labelAr: 'نسبة الأبعاد', type: 'choice', required: false,
+                default: '16:9', options: ['16:9', '9:16', '1:1'],
+            },
+        ],
+    },
+    {
         id: 'story_slides',
         nameAr: 'قصة من ثلاث لقطات',
         descriptionAr: 'ثلاث لقطات نصية متتابعة (مشكلة → حل → دعوة) — الأساس الذي سيُبنى عليه "تحويل المقال إلى فيديو" لاحقاً.',
@@ -61,8 +82,9 @@ export function getTemplate(id) {
 
 /** كتالوج للواجهة — بلا أي منطق داخلي. */
 export function listTemplates() {
-    return TEMPLATES.map(({ id, nameAr, descriptionAr, durationSec, costCredits, fields }) => ({
+    return TEMPLATES.map(({ id, nameAr, descriptionAr, durationSec, costCredits, fields, specKind }) => ({
         id, nameAr, descriptionAr, durationSec, costCredits, fields,
+        specKind: specKind || SPEC_TIMELINE,
     }));
 }
 
@@ -81,6 +103,12 @@ function validateField(field, raw) {
     }
     if (field.type === 'color') {
         if (!HEX_COLOR.test(value)) return { error: `الحقل "${field.labelAr}" يجب أن يكون لوناً سداسياً مثل #1F4E5F.` };
+        return { value };
+    }
+    if (field.type === 'choice') {
+        if (!field.options.includes(value)) {
+            return { error: `قيمة "${field.labelAr}" غير مسموحة (المتاح: ${field.options.join('، ')}).` };
+        }
         return { value };
     }
     if (field.type === 'imageUrl') {
@@ -115,11 +143,26 @@ export function validateValues(template, rawValues) {
 }
 
 /**
- * يجمّع القالب + القيم المنقّاة إلى مخطط زمني محايد:
- * { durationSec, background, scenes: [{ startSec, lengthSec, layers: [...] }] }
- * الطبقات: { kind: 'title'|'text'|'image', ... } — مفهومة لكل المزودين.
+ * يجمّع القالب + القيم المنقّاة إلى **مخطط محايد** عن أي مزود، بأحد شكلين
+ * يميّزهما الحقل `kind`:
+ *
+ *  timeline  → { kind, durationSec, background, scenes: [{startSec, lengthSec, layers}] }
+ *              الطبقات: {kind:'title'|'text'|'image'} — لمزوّدي التركيب.
+ *  ai_prompt → { kind, durationSec, prompt, aspectRatio }
+ *              — لمزوّدي التوليد بالذكاء الاصطناعي.
+ *
+ * هذا الحياد هو ما يسمح بتبديل المزود أو إضافة غيره بلا لمس القوالب.
  */
 export function compileSpec(template, clean) {
+    if (template.specKind === SPEC_AI_PROMPT) {
+        return {
+            kind: SPEC_AI_PROMPT,
+            durationSec: template.durationSec,
+            prompt: clean.prompt,
+            aspectRatio: clean.aspectRatio || '16:9',
+        };
+    }
+
     const bg = clean.bgColor || '#111827';
 
     if (template.id === 'promo_announcement') {
@@ -128,6 +171,7 @@ export function compileSpec(template, clean) {
             ...(clean.subline ? [{ kind: 'text', text: clean.subline }] : []),
         ];
         return {
+            kind: SPEC_TIMELINE,
             durationSec: template.durationSec,
             background: bg,
             scenes: [
@@ -139,6 +183,7 @@ export function compileSpec(template, clean) {
 
     if (template.id === 'product_showcase') {
         return {
+            kind: SPEC_TIMELINE,
             durationSec: template.durationSec,
             background: bg,
             scenes: [
@@ -156,6 +201,7 @@ export function compileSpec(template, clean) {
 
     if (template.id === 'story_slides') {
         return {
+            kind: SPEC_TIMELINE,
             durationSec: template.durationSec,
             background: bg,
             scenes: [

@@ -76,8 +76,13 @@ export function createApp({
     });
 
     // ─── مسارات المستخدم (توكن المنصة نفسه) ────────────────────────────
+    // لا نعرض قالباً لا يستطيع المزوّد المفعَّل تنفيذه — عرضه يعني وعداً
+    // بميزة تفشل عند أول ضغطة (قالب الذكاء الاصطناعي بلا مزوّد مثلاً).
+    const supported = new Set(provider.supportedKinds || ['timeline']);
+    const availableTemplates = () => listTemplates().filter(t => supported.has(t.specKind));
+
     app.get('/api/video/templates', verifyToken, (req, res) => {
-        res.json({ templates: listTemplates() });
+        res.json({ templates: availableTemplates() });
     });
 
     app.get('/api/video/credits', verifyToken, wrap(async (req, res) => {
@@ -91,6 +96,10 @@ export function createApp({
         const { templateId, values } = req.body || {};
         const template = getTemplate(String(templateId || ''));
         if (!template) return res.status(400).json({ error: 'قالب غير معروف.' });
+        // الإخفاء من الواجهة لا يكفي — الطلب المباشر يُرفض أيضاً.
+        if (!supported.has(template.specKind || 'timeline')) {
+            return res.status(503).json({ error: 'هذا النوع من الفيديو غير مفعَّل حالياً في الخدمة.' });
+        }
 
         const validated = validateValues(template, values);
         if (validated.error) return res.status(400).json({ error: validated.error });
@@ -237,11 +246,7 @@ if (isMain) {
         dataDir: process.env.VIDEO_DATA_DIR || path.join(__dirname, '.videostudio'),
         starterCredits: limits.starterCredits,
     });
-    const provider = buildProvider({
-        providerName: process.env.VIDEO_PROVIDER || 'mock',
-        shotstackApiKey: process.env.SHOTSTACK_API_KEY,
-        shotstackEnv: process.env.SHOTSTACK_ENV,
-    });
+    const provider = buildProvider(); // موجّه: تركيب + توليد ذكاء اصطناعي
     const storage = buildStorage();            // null ما لم يُضبط VIDEO_STORAGE=r2
     const retention = readRetentionDays();
 
@@ -259,6 +264,7 @@ if (isMain) {
     const port = Number(process.env.PORT || 4100);
     app.listen(port, () => {
         console.log(`🎬 خدمة الفيديو على المنفذ ${port} (المزود: ${provider.name}، التخزين: ${store.name})`);
+        console.log(`🧩 أنواع الفيديو المفعَّلة: ${(provider.supportedKinds || []).join('، ') || 'لا شيء'}`);
         console.log(`🛡️ السقف اليومي: ${limits.dailyRenderCap} إجمالاً، ${limits.dailyRenderCapPerUser} لكل مستخدم، رصيد ترحيبي: ${limits.starterCredits}`);
         if (storage) {
             console.log(`🗃️ ملكية الملفات مفعّلة (${storage.name}) — احتفاظ: ${retention > 0 ? retention + ' يوماً' : 'دائم'}`);
