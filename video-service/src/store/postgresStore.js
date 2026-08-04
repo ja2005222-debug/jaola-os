@@ -47,8 +47,11 @@ CREATE TABLE IF NOT EXISTS video_jobs (
     provider     TEXT,
     video_url    TEXT,
     error        TEXT,
-    refunded     BOOLEAN NOT NULL DEFAULT FALSE
+    refunded     BOOLEAN NOT NULL DEFAULT FALSE,
+    storage_key  TEXT
 );
+-- ترقية غير هدّامة للجداول المنشأة قبل إضافة ملكية الملفات
+ALTER TABLE video_jobs ADD COLUMN IF NOT EXISTS storage_key TEXT;
 CREATE INDEX IF NOT EXISTS video_jobs_user_idx ON video_jobs (username, at);
 CREATE INDEX IF NOT EXISTS video_jobs_status_idx ON video_jobs (status);
 CREATE INDEX IF NOT EXISTS video_jobs_at_idx ON video_jobs (at);
@@ -81,6 +84,7 @@ function rowToJob(r) {
         videoUrl: r.video_url,
         error: r.error,
         refunded: r.refunded,
+        storageKey: r.storage_key,
     };
 }
 
@@ -296,6 +300,29 @@ export function createPostgresStore({ connectionString, starterCredits, poolFact
             ));
         },
 
+        // ملفات تجاوزت مدة الاحتفاظ وما زالت مخزَّنة — للحذف الدوري.
+        async listExpiredStorageJobs(beforeMs) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'SELECT id, username, storage_key FROM video_jobs WHERE storage_key IS NOT NULL AND at < $1',
+                    [beforeMs]
+                );
+                return res.rows.map(r => ({ id: r.id, username: r.username, storageKey: r.storage_key }));
+            });
+        },
+
+        // يمسح أثر الملف بعد حذفه فعلياً من التخزين.
+        async clearStorageKey(id) {
+            return withClient(async c => {
+                const res = await c.query(
+                    // الملف لم يعد موجوداً — لا رابط يوهم بتوفره
+                    'UPDATE video_jobs SET storage_key = NULL, video_url = NULL, updated_at = $2 WHERE id = $1',
+                    [id, Date.now()]
+                );
+                return res.rowCount > 0;
+            });
+        },
+
         /** انتقال ذرّي: الشرط status = ANY(from) داخل UPDATE نفسه. */
         async transitionJob(id, { from, to, patch = {} }) {
             return withClient(async c => {
@@ -306,12 +333,14 @@ export function createPostgresStore({ connectionString, starterCredits, poolFact
                         provider    = COALESCE($6, provider),
                         video_url   = COALESCE($7, video_url),
                         error       = COALESCE($8, error),
-                        refunded    = COALESCE($9, refunded)
+                        refunded    = COALESCE($9, refunded),
+                        storage_key = COALESCE($10, storage_key)
                      WHERE id = $1 AND status = ANY($2) RETURNING *`,
                     [id, from, to, Date.now(),
                         patch.providerId ?? null, patch.provider ?? null,
                         patch.videoUrl ?? null, patch.error ?? null,
-                        'refunded' in patch ? patch.refunded : null]
+                        'refunded' in patch ? patch.refunded : null,
+                        patch.storageKey ?? null]
                 );
                 return rowToJob(res.rows[0]);
             });

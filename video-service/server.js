@@ -20,6 +20,7 @@ import { createJob, getJob, listJobsByUser, countActiveJobsForUser, listActiveJo
 import { runEngineTickGuarded } from './src/engine.js';
 import { buildProvider } from './src/providers/index.js';
 import { buildStore } from './src/store/index.js';
+import { buildStorage, retentionDays as readRetentionDays } from './src/storage/index.js';
 import { readLimits, checkRenderAllowed, maybeAlertCost, startOfUtcDay } from './src/limits.js';
 import { readBlocklist, inspectValues } from './src/contentFilter.js';
 
@@ -36,6 +37,7 @@ export function createApp({
     jwtSecret,
     adminUsersCsv = process.env.ADMIN_USERS || '',
     provider,
+    storage = null,
     limits = readLimits(),
     blocklist = readBlocklist(),
 } = {}) {
@@ -69,6 +71,7 @@ export function createApp({
         res.json({
             ok: true, service: 'jaola-video-service',
             provider: provider.name, store: store.name,
+            fileStorage: storage ? storage.name : 'provider-hosted',
         });
     });
 
@@ -138,9 +141,14 @@ export function createApp({
         res.json({ job: { id: job.id, status: job.status, costCredits: job.costCredits } });
     }));
 
+    // ما يراه المستخدم: إن كان الملف مملوكاً لنا فالرابط هو مسار التنزيل
+    // الخاص بنا (يتحقق من الملكية ويوقّع رابطاً قصير الأجل عند كل نقرة)،
+    // وإلا فرابط المزوّد كما هو — بلا ادعاء ملكية غير قائمة.
     const publicJob = j => ({
         id: j.id, at: j.at, templateId: j.templateId, status: j.status,
-        videoUrl: j.videoUrl, error: j.error, costCredits: j.costCredits,
+        videoUrl: j.storageKey ? `/api/video/renders/${j.id}/download` : j.videoUrl,
+        owned: !!j.storageKey,
+        error: j.error, costCredits: j.costCredits,
         updatedAt: j.updatedAt,
     });
 
@@ -159,6 +167,27 @@ export function createApp({
         res.json({ job: publicJob(job) });
     }));
 
+    /**
+     * تنزيل الفيديو المملوك: يتحقق من الملكية أولاً ثم يوقّع رابطاً
+     * صالحاً دقائق ويعيد التوجيه إليه. لا رابط دائم يُسرَّب أبداً، وكل
+     * نقرة تولّد توقيعاً جديداً.
+     */
+    app.get('/api/video/renders/:id/download', verifyToken, wrap(async (req, res) => {
+        const job = await getJob(store, req.params.id);
+        if (!job || job.username !== String(req.user.username || '').trim().toLowerCase()) {
+            return res.status(404).json({ error: 'المهمة غير موجودة.' });
+        }
+        if (!job.storageKey) {
+            return res.status(404).json({ error: 'لا ملف مخزَّن لهذه المهمة.' });
+        }
+        if (!storage) {
+            // إعداد تغيّر بعد تخزين الملف — نصارح بدل إعطاء رابط ميت.
+            return res.status(503).json({ error: 'تخزين الملفات غير مفعَّل حالياً.' });
+        }
+        const url = await storage.signedUrl(job.storageKey);
+        res.redirect(302, url);
+    }));
+
     // ─── مسارات المشرف ─────────────────────────────────────────────────
     app.post('/api/video/admin/credits/grant', verifyToken, adminOnly, wrap(async (req, res) => {
         const { username, amount, note } = req.body || {};
@@ -175,6 +204,7 @@ export function createApp({
         res.json({
             provider: provider.name,
             store: store.name,
+            fileStorage: storage ? storage.name : 'provider-hosted',
             activeJobs: active.length,
             queued: active.filter(j => j.status === 'queued').length,
             rendering: active.filter(j => j.status === 'rendering').length,
@@ -212,6 +242,8 @@ if (isMain) {
         shotstackApiKey: process.env.SHOTSTACK_API_KEY,
         shotstackEnv: process.env.SHOTSTACK_ENV,
     });
+    const storage = buildStorage();            // null ما لم يُضبط VIDEO_STORAGE=r2
+    const retention = readRetentionDays();
 
     await store.init(); // ينشئ الجداول عند أول إقلاع — فشلٌ صاخب إن تعذّر
 
@@ -220,6 +252,7 @@ if (isMain) {
         // السر السابق (اختياري) يُقبل أثناء تدوير المفتاح فقط — يُزال بعده.
         jwtSecret: [process.env.JWT_SECRET, process.env.JWT_SECRET_PREVIOUS],
         provider,
+        storage,
         limits,
     });
 
@@ -227,6 +260,11 @@ if (isMain) {
     app.listen(port, () => {
         console.log(`🎬 خدمة الفيديو على المنفذ ${port} (المزود: ${provider.name}، التخزين: ${store.name})`);
         console.log(`🛡️ السقف اليومي: ${limits.dailyRenderCap} إجمالاً، ${limits.dailyRenderCapPerUser} لكل مستخدم، رصيد ترحيبي: ${limits.starterCredits}`);
+        if (storage) {
+            console.log(`🗃️ ملكية الملفات مفعّلة (${storage.name}) — احتفاظ: ${retention > 0 ? retention + ' يوماً' : 'دائم'}`);
+        } else {
+            console.warn('⚠️ تخزين الملفات غير مفعَّل — الفيديوهات تبقى على استضافة المزوّد المؤقتة. اضبط VIDEO_STORAGE=r2 لملكيتها.');
+        }
         if (store.name === 'file') {
             console.warn('⚠️ تخزين بالملفات — على منصة ذات قرص مؤقت تُمسح الأرصدة مع كل إعادة نشر. اضبط DATABASE_URL للإنتاج.');
         }
@@ -237,6 +275,6 @@ if (isMain) {
 
     // الحلقة المجدولة — الحارس داخل runEngineTickGuarded يمنع التداخل.
     setInterval(() => {
-        runEngineTickGuarded(store, { provider });
+        runEngineTickGuarded(store, { provider, storage, retentionDays: retention });
     }, ENGINE_POLL_MS);
 }

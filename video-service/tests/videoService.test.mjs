@@ -27,11 +27,32 @@ import { createPostgresStore } from '../src/store/postgresStore.js';
 import { readLimits, checkRenderAllowed, maybeAlertCost, startOfUtcDay, DEFAULTS } from '../src/limits.js';
 import { inspectText, inspectImageUrl, inspectValues, readBlocklist } from '../src/contentFilter.js';
 import { verifyWithSecrets } from '../src/auth.js';
+import { storageKeyFor, buildStorage, retentionDays } from '../src/storage/index.js';
 
 const JWT_SECRET = 'test-secret-not-for-production';
 
 function makeToken(username, extra = {}) {
     return jwt.sign({ id: username, username, ...extra }, JWT_SECRET, { expiresIn: '1h' });
+}
+
+
+/** تخزين ملفات وهمي يحقق عقد storage — بلا شبكة ولا مفاتيح. */
+function createFakeStorage({ failMirror = false } = {}) {
+    const objects = new Map();
+    return {
+        name: 'fake',
+        objects,
+        async mirrorFromUrl(sourceUrl, key) {
+            if (failMirror) throw new Error('محاكاة: فشل النسخ.');
+            objects.set(key, sourceUrl);
+            return { key, bytes: 123 };
+        },
+        async signedUrl(key, ttlSec = 600) {
+            if (!objects.has(key)) throw new Error('مفتاح مجهول');
+            return `https://signed.test/${encodeURIComponent(key)}?exp=${ttlSec}`;
+        },
+        async remove(key) { objects.delete(key); },
+    };
 }
 
 // ─── المجموعة الكاملة، مُعامَلة بمصنع المخزن ──────────────────────────
@@ -51,6 +72,7 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
         // نسخة ثانية بحدود ضيقة وقائمة حجب — لاختبار درع التكلفة والفلترة
         // بلا إضعاف الحدود الواقعية في بقية الاختبارات.
         let cappedServer, cappedUrl;
+        let ownedServer, ownedUrl, fakeStorage;
         const TIGHT = { dailyRenderCap: 2, dailyRenderCapPerUser: 1, alertAtPct: 50, starterCredits: 3, alertWebhookUrl: '' };
 
         async function callAt(url, pathname, { method = 'GET', token = null, body = null } = {}) {
@@ -76,11 +98,20 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             });
             await new Promise(resolve => { cappedServer = capped.listen(0, resolve); });
             cappedUrl = `http://127.0.0.1:${cappedServer.address().port}`;
+
+            // نسخة ثالثة بتخزين ملفات مفعّل — لاختبار ملكية الملفات
+            fakeStorage = createFakeStorage();
+            const owned = createApp({
+                store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider, storage: fakeStorage,
+            });
+            await new Promise(resolve => { ownedServer = owned.listen(0, resolve); });
+            ownedUrl = `http://127.0.0.1:${ownedServer.address().port}`;
         });
 
         after(async () => {
             await new Promise(resolve => server.close(resolve));
             await new Promise(resolve => cappedServer.close(resolve));
+            await new Promise(resolve => ownedServer.close(resolve));
             await store.close();
         });
 
@@ -567,6 +598,166 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             } finally {
                 await new Promise(r => srv.close(r));
             }
+        });
+
+
+        // ─── ملكية ملفات الفيديو ───────────────────────────────────────
+
+        test('مفتاح التخزين يعزل المستخدمين ويُنظَّف من محارف المسار', () => {
+            assert.equal(storageKeyFor({ username: 'Jamal', jobId: 'j-1' }), 'videos/Jamal/j-1.mp4');
+            // محاولة خروج من المسار تُبطَل بالكامل
+            assert.equal(storageKeyFor({ username: '../../etc', jobId: 'a/b' }), 'videos/______etc/a_b.mp4');
+        });
+
+        test('التخزين معطَّل افتراضياً ولا يُفعَّل إلا بطلب صريح', () => {
+            assert.equal(buildStorage({}), null);
+            assert.equal(buildStorage({ VIDEO_STORAGE: '' }), null);
+            // مفعَّل بلا مفاتيح = خطأ إعداد صاخب لا فشل صامت
+            assert.throws(() => buildStorage({ VIDEO_STORAGE: 'r2' }));
+        });
+
+        test('مدة الاحتفاظ: افتراضي ٣٠ يوماً، و0 احتفاظ دائم، والخطأ يرتد للافتراضي', () => {
+            assert.equal(retentionDays({}), 30);
+            assert.equal(retentionDays({ VIDEO_RETENTION_DAYS: '0' }), 0);
+            assert.equal(retentionDays({ VIDEO_RETENTION_DAYS: '7' }), 7);
+            assert.equal(retentionDays({ VIDEO_RETENTION_DAYS: 'abc' }), 30);
+        });
+
+        test('اكتمال المهمة ينسخ الفيديو لتخزيننا ويستبدل رابط المزوّد بمسارنا', async () => {
+            const provider2 = createMockProvider({ pollsToComplete: 1 });
+            provider2.getRender = async () => ({ status: 'done', videoUrl: 'https://provider.test/v.mp4' });
+            await grantCredits(store, { username: 'owner1', amount: 5, grantedBy: 'test' });
+            const t = getTemplate('promo_announcement');
+            const v = validateValues(t, { headline: 'أ', cta: 'ب' }).values;
+            const job = await createJob(store, {
+                username: 'owner1', templateId: t.id, values: v, spec: compileSpec(t, v), costCredits: 1,
+            });
+
+            await runEngineTick(store, { provider: provider2, storage: fakeStorage });  // إرسال
+            const s2 = await runEngineTick(store, { provider: provider2, storage: fakeStorage }); // اكتمال+نسخ
+            assert.equal(s2.mirrored, 1);
+
+            const done = await getJob(store, job.id);
+            assert.equal(done.status, 'done');
+            assert.equal(done.storageKey, 'videos/owner1/' + job.id + '.mp4');
+            assert.equal(done.videoUrl, null); // لا رابط مزوّد محفوظ بعد النسخ
+            assert.ok(fakeStorage.objects.has(done.storageKey));
+        });
+
+        test('فشل النسخ لا يُفشل المهمة ولا يهدر الرصيد — يبقى رابط المزوّد', async () => {
+            const failing = createFakeStorage({ failMirror: true });
+            const provider2 = createMockProvider({ pollsToComplete: 1 });
+            provider2.getRender = async () => ({ status: 'done', videoUrl: 'https://provider.test/v.mp4' });
+            await grantCredits(store, { username: 'owner2', amount: 5, grantedBy: 'test' });
+            const t = getTemplate('promo_announcement');
+            const v = validateValues(t, { headline: 'أ', cta: 'ب' }).values;
+            const job = await createJob(store, {
+                username: 'owner2', templateId: t.id, values: v, spec: compileSpec(t, v), costCredits: 1,
+            });
+            assert.ok(await deductCredits(store, { username: 'owner2', amount: 1, jobId: job.id }));
+            const before = await getBalance(store, 'owner2');
+
+            await runEngineTick(store, { provider: provider2, storage: failing });
+            await runEngineTick(store, { provider: provider2, storage: failing });
+
+            const done = await getJob(store, job.id);
+            assert.equal(done.status, 'done');          // نجحت رغم فشل النسخ
+            assert.equal(done.storageKey, null);
+            assert.equal(done.videoUrl, 'https://provider.test/v.mp4'); // احتياط شفاف
+            assert.equal(await getBalance(store, 'owner2'), before);    // لا استرداد لناجحة
+        });
+
+        test('مسار التنزيل: المالك يُوجَّه لرابط موقّع، وغيره 404', async () => {
+            const provider2 = createMockProvider({ pollsToComplete: 1 });
+            provider2.getRender = async () => ({ status: 'done', videoUrl: 'https://provider.test/v.mp4' });
+            const tokenOwner = makeToken('dl1');
+            const created = await callAt(ownedUrl, '/api/video/renders', {
+                method: 'POST', token: tokenOwner,
+                body: { templateId: 'promo_announcement', values: { headline: 'أ', cta: 'ب' } },
+            });
+            assert.equal(created.status, 200);
+            await runEngineTick(store, { provider: provider2, storage: fakeStorage });
+            await runEngineTick(store, { provider: provider2, storage: fakeStorage });
+            const jobId = created.data.job.id;
+
+            // القائمة تعرض مسارنا لا رابط المزوّد، وتعلن الملكية صراحةً
+            const list = await callAt(ownedUrl, '/api/video/renders', { token: tokenOwner });
+            const row = list.data.jobs.find(j => j.id === jobId);
+            assert.equal(row.owned, true);
+            assert.equal(row.videoUrl, `/api/video/renders/${jobId}/download`);
+
+            // المالك: إعادة توجيه 302 لرابط موقّع
+            const res = await fetch(`${ownedUrl}/api/video/renders/${jobId}/download`, {
+                headers: { Authorization: `Bearer ${tokenOwner}` }, redirect: 'manual',
+            });
+            assert.equal(res.status, 302);
+            assert.ok(res.headers.get('location').startsWith('https://signed.test/'));
+
+            // مستخدم آخر: 404 (لا تأكيد للوجود)
+            const other = await callAt(ownedUrl, `/api/video/renders/${jobId}/download`, { token: makeToken('dl2') });
+            assert.equal(other.status, 404);
+
+            // بلا توكن: 401
+            const anon = await fetch(`${ownedUrl}/api/video/renders/${jobId}/download`, { redirect: 'manual' });
+            assert.equal(anon.status, 401);
+        });
+
+        test('تنزيل مهمة بلا ملف مخزَّن يُرجع 404 لا رابطاً ميتاً', async () => {
+            const token = makeToken('dl3');
+            const created = await callAt(ownedUrl, '/api/video/renders', {
+                method: 'POST', token,
+                body: { templateId: 'promo_announcement', values: { headline: 'أ', cta: 'ب' } },
+            });
+            const res = await callAt(ownedUrl, `/api/video/renders/${created.data.job.id}/download`, { token });
+            assert.equal(res.status, 404);
+        });
+
+        test('تنظيف الاحتفاظ يحذف الملفات المنتهية ويمسح أثرها', async () => {
+            const provider2 = createMockProvider({ pollsToComplete: 1 });
+            provider2.getRender = async () => ({ status: 'done', videoUrl: 'https://provider.test/v.mp4' });
+            await grantCredits(store, { username: 'keep1', amount: 5, grantedBy: 'test' });
+            const t = getTemplate('promo_announcement');
+            const v = validateValues(t, { headline: 'أ', cta: 'ب' }).values;
+            const job = await createJob(store, {
+                username: 'keep1', templateId: t.id, values: v, spec: compileSpec(t, v), costCredits: 1,
+            });
+            await runEngineTick(store, { provider: provider2, storage: fakeStorage });
+            await runEngineTick(store, { provider: provider2, storage: fakeStorage });
+            const key = (await getJob(store, job.id)).storageKey;
+            assert.ok(fakeStorage.objects.has(key));
+
+            // لم تنقضِ المدة بعد → لا حذف
+            let sum = await runEngineTick(store, { provider: provider2, storage: fakeStorage, retentionDays: 30 });
+            assert.equal(sum.purged, 0);
+            assert.ok(fakeStorage.objects.has(key));
+
+            // بعد انقضائها (دورة في المستقبل) → يُحذف ويُمسح أثره
+            sum = await runEngineTick(store, {
+                provider: provider2, storage: fakeStorage, retentionDays: 30,
+                now: Date.now() + 31 * 24 * 60 * 60 * 1000,
+            });
+            assert.equal(sum.purged, 1);
+            assert.equal(fakeStorage.objects.has(key), false);
+            const purged = await getJob(store, job.id);
+            assert.equal(purged.storageKey, null);
+            assert.equal(purged.videoUrl, null); // لا رابط يوهم بتوفر ملف محذوف
+        });
+
+        test('بلا تخزين مفعَّل: لا نسخ ولا حذف — سلوك ما قبل الميزة كما هو', async () => {
+            const provider2 = createMockProvider({ pollsToComplete: 1 });
+            provider2.getRender = async () => ({ status: 'done', videoUrl: 'https://provider.test/v.mp4' });
+            const t = getTemplate('promo_announcement');
+            const v = validateValues(t, { headline: 'أ', cta: 'ب' }).values;
+            const job = await createJob(store, {
+                username: 'nostore', templateId: t.id, values: v, spec: compileSpec(t, v), costCredits: 1,
+            });
+            await runEngineTick(store, { provider: provider2 });
+            const sum = await runEngineTick(store, { provider: provider2, retentionDays: 30 });
+            assert.equal(sum.mirrored, 0);
+            assert.equal(sum.purged, 0);
+            const done = await getJob(store, job.id);
+            assert.equal(done.storageKey, null);
+            assert.equal(done.videoUrl, 'https://provider.test/v.mp4');
         });
 
         test('انتقال متزامن مكرر: واحد فقط ينجح (ذرّية الانتقال)', async () => {

@@ -43,3 +43,15 @@ services:
         value: "3" # اجعله 0 قبل تفعيل مزوّد مدفوع (كل حساب جديد يكلفك)
       - key: COST_ALERT_WEBHOOK_URL
         sync: false # اختياري: رابط Slack/Discord يستقبل تنبيه بلوغ السقف
+      # 🗃️ ملكية ملفات الفيديو (اختيارية) — بدونها تبقى لدى المزوّد.
+      # فعّلها بضبط VIDEO_STORAGE=r2 مع المفاتيح الأربعة (انظر README).
+      - key: VIDEO_STORAGE
+        value: "" # ضع r2 بعد إنشاء الدلو والمفاتيح
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
