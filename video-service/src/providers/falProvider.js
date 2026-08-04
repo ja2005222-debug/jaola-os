@@ -28,12 +28,19 @@ export function extractVideoUrl(data) {
     );
 }
 
-/** يترجم المخطط المحايد إلى مدخلات النموذج. */
+/**
+ * يترجم المخطط المحايد إلى مدخلات النموذج.
+ *
+ * 📌 لا نرسل duration عمداً (درس إنتاجي ثانٍ): النماذج تختلف حتى في
+ * *نوع* الحقل — Veo3 يقبل نصاً محدداً ("8s") وKling نصوصاً أخرى
+ * ("5"/"10") وبعضها لا يعرفه أصلاً. القيمة غير المطابقة تجتاز الإرسال
+ * (الطابور لا يتحقق) ثم تفشل تحققَ التنفيذ فيرد مسار النتيجة 422.
+ * حذفه يترك المدة لافتراضي النموذج — والتسعير عندنا بالقالب لا بالثانية.
+ */
 export function specToFalInput(spec) {
     return {
         prompt: spec.prompt,
         aspect_ratio: spec.aspectRatio || '16:9',
-        duration: spec.durationSec,
     };
 }
 
@@ -103,7 +110,19 @@ export function createFalProvider({ apiKey, model, fetchImpl = fetch }) {
 
             const resultRes = await fetchImpl(`${QUEUE_BASE}/${appPath}/requests/${providerId}`, { headers });
             if (!resultRes.ok) {
-                return { status: 'failed', error: `fal.ai تعذّر جلب النتيجة (HTTP ${resultRes.status}).` };
+                // خطأ خادم عابر (5xx): الحالة COMPLETED محفوظة لدى fal،
+                // فالدورة التالية تعيد المحاولة بلا خسارة.
+                if (resultRes.status >= 500) return { status: 'rendering' };
+                // 4xx هنا يعني غالباً أن *التوليد نفسه* فشل: fal يقبل أي
+                // حمولة في الطابور ويؤجل التحقق للتنفيذ، وخطأ المدخلات
+                // يظهر كـ422 على مسار النتيجة (حدث فعلاً في الإنتاج).
+                // التفاصيل هي التشخيص كله — تُعرض ولا تُبتلع.
+                const detail = await resultRes.text().catch(() => '');
+                console.error(`⚠️ fal: جلب النتيجة فشل (HTTP ${resultRes.status}):`, detail.slice(0, 1000));
+                return {
+                    status: 'failed',
+                    error: `fal.ai أبلغ عن فشل التوليد (HTTP ${resultRes.status}). ${detail.slice(0, 300)}`,
+                };
             }
             const data = await resultRes.json();
             const videoUrl = extractVideoUrl(data);
