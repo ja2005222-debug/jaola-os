@@ -44,26 +44,35 @@ export function specToFalInput(spec) {
     };
 }
 
+// يفصل مسار النموذج عن معرّف الطلب داخل providerId — فتتابع كل مهمة
+// نموذجَها هي حتى لو تغيّر النموذج الافتراضي بعد إرسالها.
+const MODEL_SEP = '|';
+
+// 📌 دقيقة موثَّقة في fal تسببت بتعليق فعلي في الإنتاج: الإرسال يذهب
+// للمسار الكامل (fal-ai/veo3/fast)، لكن مسارات المتابعة
+// (/requests/{id}/status) تستخدم معرّف التطبيق فقط (المالك/الاسم:
+// fal-ai/veo3) بلا المسار الفرعي. البناء بالمسار الكامل يعطي 404
+// فتُعامَل المهمة "قيد المعالجة" للأبد حتى المهلة القصوى.
+const appPathOf = modelPath => modelPath.split('/').slice(0, 2).join('/');
+const normalizePath = p => String(p).replace(/^\/+|\/+$/g, '');
+
 export function createFalProvider({ apiKey, model, fetchImpl = fetch }) {
     if (!apiKey) throw new Error('FAL_KEY مطلوب لمزوّد fal.');
-    // لا نضع نموذجاً افتراضياً: معرّفات النماذج تتغيّر وتُهجَر، وافتراضٌ
-    // خاطئ يعني فشل كل مهمة بسبب غامض. الضبط الصريح أوضح وأصدق.
-    if (!model) throw new Error('FAL_MODEL مطلوب (مثال: fal-ai/veo3/fast) — راجع كتالوج نماذج fal.ai.');
+    // النموذج الافتراضي مطلوب (احتياط للمخططات القديمة بلا modelPath) —
+    // الكتالوج في models.js يضمن وجوده دائماً عند البناء من البيئة.
+    if (!model) throw new Error('نموذج fal افتراضي مطلوب (مثال: fal-ai/veo3/fast).');
 
     const headers = { Authorization: `Key ${apiKey}`, 'Content-Type': 'application/json' };
-    const modelPath = String(model).replace(/^\/+|\/+$/g, '');
-    // 📌 دقيقة موثَّقة في fal تسببت بتعليق فعلي في الإنتاج: الإرسال يذهب
-    // للمسار الكامل (fal-ai/veo3/fast)، لكن مسارات المتابعة
-    // (/requests/{id}/status) تستخدم معرّف التطبيق فقط (المالك/الاسم:
-    // fal-ai/veo3) بلا المسار الفرعي. البناء بالمسار الكامل يعطي 404
-    // فتُعامَل المهمة "قيد المعالجة" للأبد حتى المهلة القصوى.
-    const appPath = modelPath.split('/').slice(0, 2).join('/');
+    const defaultPath = normalizePath(model);
 
     return {
-        name: `fal:${modelPath}`,
+        name: `fal:${defaultPath}`,
         specKinds: ['ai_prompt'],
 
         async submitRender(spec) {
+            // متعدد النماذج: المخطط يحمل نموذجه (اختيار المستخدم لكل
+            // لقطة)، والافتراضي احتياط للمخططات التي لا تحمله.
+            const modelPath = normalizePath(spec?.modelPath || defaultPath);
             const res = await fetchImpl(`${QUEUE_BASE}/${modelPath}`, {
                 method: 'POST', headers, body: JSON.stringify(specToFalInput(spec)),
             });
@@ -72,17 +81,25 @@ export function createFalProvider({ apiKey, model, fetchImpl = fetch }) {
                 throw new Error(`fal.ai رفض الإرسال (HTTP ${res.status}). ${detail.slice(0, 200)}`);
             }
             const data = await res.json();
-            const providerId = data?.request_id;
-            if (!providerId) throw new Error('fal.ai لم يُرجع request_id.');
+            const requestId = data?.request_id;
+            if (!requestId) throw new Error('fal.ai لم يُرجع request_id.');
             // تحقق ذاتي وقت التشغيل: الرد يحمل status_url الحقيقي — إن لم
             // يبدأ بما سنبنيه، نسجّله صراخاً بدل استطلاع رابط خاطئ بصمت.
+            const appPath = appPathOf(modelPath);
             if (data.status_url && !String(data.status_url).startsWith(`${QUEUE_BASE}/${appPath}/`)) {
                 console.error(`⚠️ fal: status_url الفعلي (${data.status_url}) لا يطابق المبني (${QUEUE_BASE}/${appPath}/…) — راجع appPath.`);
             }
-            return { providerId };
+            // مسار النموذج يُخزَّن داخل المعرّف نفسه — فيتابع الاستطلاع
+            // النموذج الصحيح لكل مهمة بلا أي تغيير في مخطط المخزن.
+            return { providerId: `${modelPath}${MODEL_SEP}${requestId}` };
         },
 
-        async getRender(providerId) {
+        async getRender(compositeId) {
+            const sep = String(compositeId).indexOf(MODEL_SEP);
+            // معرّفات ما قبل تعدد النماذج بلا فاصل — تتابع النموذج الافتراضي.
+            const modelPath = sep > 0 ? String(compositeId).slice(0, sep) : defaultPath;
+            const providerId = sep > 0 ? String(compositeId).slice(sep + 1) : String(compositeId);
+            const appPath = appPathOf(modelPath);
             const statusRes = await fetchImpl(
                 `${QUEUE_BASE}/${appPath}/requests/${providerId}/status`, { headers }
             );

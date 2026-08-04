@@ -23,6 +23,7 @@ import { buildStore } from './src/store/index.js';
 import { buildStorage, retentionDays as readRetentionDays } from './src/storage/index.js';
 import { readLimits, checkRenderAllowed, maybeAlertCost, startOfUtcDay } from './src/limits.js';
 import { readBlocklist, inspectValues } from './src/contentFilter.js';
+import { readAiModels, getAiModel, defaultAiModel } from './src/models.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -40,6 +41,7 @@ export function createApp({
     storage = null,
     limits = readLimits(),
     blocklist = readBlocklist(),
+    aiModels = readAiModels(),
 } = {}) {
     const secrets = (Array.isArray(jwtSecret) ? jwtSecret : [jwtSecret]).filter(Boolean);
     if (secrets.length === 0) {
@@ -82,7 +84,12 @@ export function createApp({
     const availableTemplates = () => listTemplates().filter(t => supported.has(t.specKind));
 
     app.get('/api/video/templates', verifyToken, (req, res) => {
-        res.json({ templates: availableTemplates() });
+        res.json({
+            templates: availableTemplates(),
+            // كتالوج نماذج التوليد — الواجهة تعرضه كاختيار لكل لقطة.
+            // فارغ حين لا مزوّد توليد مفعَّلاً (فلا وعد بميزة معطلة).
+            aiModels: supported.has('ai_prompt') ? aiModels : [],
+        });
     });
 
     app.get('/api/video/credits', verifyToken, wrap(async (req, res) => {
@@ -93,7 +100,7 @@ export function createApp({
     }));
 
     app.post('/api/video/renders', verifyToken, renderLimit, wrap(async (req, res) => {
-        const { templateId, values } = req.body || {};
+        const { templateId, values, modelId } = req.body || {};
         const template = getTemplate(String(templateId || ''));
         if (!template) return res.status(400).json({ error: 'قالب غير معروف.' });
         // الإخفاء من الواجهة لا يكفي — الطلب المباشر يُرفض أيضاً.
@@ -103,6 +110,21 @@ export function createApp({
 
         const validated = validateValues(template, values);
         if (validated.error) return res.status(400).json({ error: validated.error });
+
+        // 🎞️ اختيار النموذج (قوالب التوليد فقط): النموذج يحدد التكلفة
+        // الفعلية ونسب الأبعاد المسموحة — والتحقق خادمي لا واجهة فقط.
+        let aiModel = null;
+        if (template.specKind === 'ai_prompt') {
+            aiModel = modelId ? getAiModel(aiModels, modelId) : defaultAiModel(aiModels);
+            if (!aiModel) return res.status(400).json({ error: 'نموذج توليد غير معروف.' });
+            const ratio = validated.values.aspectRatio || '16:9';
+            if (aiModel.aspectRatios?.length && !aiModel.aspectRatios.includes(ratio)) {
+                return res.status(400).json({
+                    error: `النموذج ${aiModel.nameAr} لا يدعم نسبة ${ratio} (المتاح: ${aiModel.aspectRatios.join('، ')}).`,
+                });
+            }
+        }
+        const costCredits = aiModel ? aiModel.costCredits : template.costCredits;
 
         // فلترة المحتوى بعد التحقق النمطي وقبل أي حجز أو خصم — لا يصل
         // للمزوّد إلا ما اجتاز الفحصين.
@@ -124,21 +146,27 @@ export function createApp({
         }
 
         const spec = compileSpec(template, validated.values);
+        if (aiModel) {
+            // المخطط يحمل نموذجه — فيرسله المزوّد للمسار الصحيح ويعرضه
+            // السجل، بلا أي تغيير في مخطط المخزن (spec يُخزَّن أصلاً).
+            spec.modelId = aiModel.id;
+            spec.modelPath = aiModel.falPath;
+        }
 
         // الخصم قبل المعالجة — مهمة بلا خصمٍ مثبت لا تُعالَج أبداً.
         // نُنشئ المهمة أولاً لنملك jobId يربط الخصم بها في سجل التدقيق،
         // فإن فشل الخصم (رصيد غير كافٍ) نُفشلها فوراً قبل أن يلمسها المحرك.
         const job = await createJob(store, {
             username, templateId: template.id, values: validated.values,
-            spec, costCredits: template.costCredits,
+            spec, costCredits,
         });
         const deducted = await deductCredits(store, {
-            username, amount: template.costCredits, jobId: job.id,
+            username, amount: costCredits, jobId: job.id,
         });
         if (!deducted) {
             await transitionJob(store, job.id, 'failed', { error: 'رصيد غير كافٍ.' });
             return res.status(402).json({
-                error: `رصيدك الحالي (${await getBalance(store, username)}) لا يكفي — هذا القالب يكلف ${template.costCredits}.`,
+                error: `رصيدك الحالي (${await getBalance(store, username)}) لا يكفي — هذا الطلب يكلف ${costCredits}.`,
             });
         }
 
@@ -158,6 +186,7 @@ export function createApp({
         videoUrl: j.storageKey ? `/api/video/renders/${j.id}/download` : j.videoUrl,
         owned: !!j.storageKey,
         error: j.error, costCredits: j.costCredits,
+        modelId: j.spec?.modelId || null,
         updatedAt: j.updatedAt,
     });
 
