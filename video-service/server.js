@@ -99,8 +99,54 @@ export function createApp({
         });
     }));
 
+    // ─── مشاريع الأفلام (ستوري بورد) ───────────────────────────────────
+    // كل مسارات المشروع تتحقق من الملكية بنفس قاعدة المهام: مشروع مستخدم
+    // آخر غير موجود (404) — لا نؤكد حتى وجوده.
+    const userOf = req => String(req.user.username || '').trim().toLowerCase();
+    const ownedProject = async (req) => {
+        const p = await store.getProject(req.params.id);
+        return p && p.username === userOf(req) ? p : null;
+    };
+    const validTitle = raw => {
+        const title = String(raw || '').trim();
+        return title.length >= 1 && title.length <= 80 ? title : null;
+    };
+
+    app.get('/api/video/projects', verifyToken, wrap(async (req, res) => {
+        res.json({ projects: await store.listProjectsByUser(userOf(req), 50) });
+    }));
+
+    app.post('/api/video/projects', verifyToken, wrap(async (req, res) => {
+        const title = validTitle(req.body?.title);
+        if (!title) return res.status(400).json({ error: 'عنوان المشروع مطلوب (حتى 80 حرفاً).' });
+        res.json({ project: await store.createProject({ username: userOf(req), title }) });
+    }));
+
+    app.get('/api/video/projects/:id', verifyToken, wrap(async (req, res) => {
+        const project = await ownedProject(req);
+        if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
+        const shots = await store.listJobsByProject(project.id);
+        res.json({ project, shots: shots.map(publicJob) });
+    }));
+
+    app.patch('/api/video/projects/:id', verifyToken, wrap(async (req, res) => {
+        const project = await ownedProject(req);
+        if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
+        const title = validTitle(req.body?.title);
+        if (!title) return res.status(400).json({ error: 'عنوان المشروع مطلوب (حتى 80 حرفاً).' });
+        res.json({ project: await store.renameProject(project.id, title) });
+    }));
+
+    // حذف التجميع فقط — اللقطات تبقى في السجل العام (أُنفق عليها رصيد).
+    app.delete('/api/video/projects/:id', verifyToken, wrap(async (req, res) => {
+        const project = await ownedProject(req);
+        if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
+        await store.deleteProject(project.id);
+        res.json({ success: true });
+    }));
+
     app.post('/api/video/renders', verifyToken, renderLimit, wrap(async (req, res) => {
-        const { templateId, values, modelId } = req.body || {};
+        const { templateId, values, modelId, projectId } = req.body || {};
         const template = getTemplate(String(templateId || ''));
         if (!template) return res.status(400).json({ error: 'قالب غير معروف.' });
         // الإخفاء من الواجهة لا يكفي — الطلب المباشر يُرفض أيضاً.
@@ -125,6 +171,17 @@ export function createApp({
             }
         }
         const costCredits = aiModel ? aiModel.costCredits : template.costCredits;
+
+        // 🎬 الربط بمشروع (اختياري): ملكية المشروع شرط، ورقم اللقطة يُسنَد
+        // خادمياً بترتيب الإضافة.
+        let project = null, shotIndex = null;
+        if (projectId) {
+            project = await store.getProject(String(projectId));
+            if (!project || project.username !== userOf(req)) {
+                return res.status(400).json({ error: 'المشروع غير موجود.' });
+            }
+            shotIndex = await store.countJobsInProject(project.id);
+        }
 
         // فلترة المحتوى بعد التحقق النمطي وقبل أي حجز أو خصم — لا يصل
         // للمزوّد إلا ما اجتاز الفحصين.
@@ -159,6 +216,7 @@ export function createApp({
         const job = await createJob(store, {
             username, templateId: template.id, values: validated.values,
             spec, costCredits,
+            projectId: project ? project.id : null, shotIndex,
         });
         const deducted = await deductCredits(store, {
             username, amount: costCredits, jobId: job.id,
@@ -187,6 +245,10 @@ export function createApp({
         owned: !!j.storageKey,
         error: j.error, costCredits: j.costCredits,
         modelId: j.spec?.modelId || null,
+        projectId: j.projectId || null,
+        shotIndex: j.shotIndex ?? null,
+        // قيم المستخدم نفسها تعود له — أساس "تكرار اللقطة" و"إعادة التوليد"
+        values: j.values,
         updatedAt: j.updatedAt,
     });
 

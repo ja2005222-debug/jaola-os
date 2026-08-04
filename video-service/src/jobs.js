@@ -16,10 +16,11 @@ const ALLOWED_FROM = Object.freeze({
     queued: [], // لا انتقال إلى queued أبداً — حالة البداية فقط
 });
 
-export async function createJob(store, { username, templateId, values, spec, costCredits }) {
+export async function createJob(store, { username, templateId, values, spec, costCredits, projectId = null, shotIndex = null }) {
     return store.createJob({
         username: String(username || '').trim().toLowerCase(),
         templateId, values, spec, costCredits,
+        projectId, shotIndex,
         status: 'queued',
     });
 }

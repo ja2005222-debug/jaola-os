@@ -63,6 +63,22 @@
     .st-rendering { background: rgba(56,189,248,.15); color: var(--accent); }
     .st-done { background: rgba(52,211,153,.15); color: var(--ok); }
     .st-failed { background: rgba(248,113,113,.15); color: var(--bad); }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      border: 1px solid var(--border); background: var(--bg); color: var(--text);
+      border-radius: 999px; padding: 6px 14px; font-size: 13px; cursor: pointer;
+      margin-top: 0; font-weight: normal;
+    }
+    .chip.active { border-color: var(--accent); color: var(--accent); }
+    .shots { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
+    .shot { min-width: 220px; max-width: 250px; flex: 0 0 auto; margin-bottom: 0; }
+    .shot .num { color: var(--accent); font-size: 12px; }
+    .shot .prompt { font-size: 12px; color: var(--muted); line-height: 1.6; margin: 6px 0;
+      max-height: 3.2em; overflow: hidden; }
+    .shot .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .shot .actions button { margin-top: 0; padding: 5px 10px; font-size: 12px;
+      background: var(--bg); color: var(--text); border: 1px solid var(--border); font-weight: normal; }
+    .shot .actions button:hover { border-color: var(--accent); }
     .gate { max-width: 480px; margin: 80px auto; text-align: center; }
     .gate p { color: var(--muted); line-height: 1.9; font-size: 14px; }
     a { color: var(--accent); }
@@ -90,6 +106,14 @@
   </div>
 
   <main class="hidden" id="studio">
+    <h2>🎬 مشاريعك (أفلامك)</h2>
+    <div class="card">
+      <div class="chips" id="projectChips"></div>
+      <div id="storyboard" class="hidden" style="margin-top:14px"></div>
+      <p class="note">أنشئ مشروعاً لفيلمك وأضف إليه لقطة بعد لقطة — كل لقطة جديدة تنضم
+        للمشروع المفتوح تلقائياً، وتستطيع إعادة توليد أي لقطة أو استخدامها أساساً لغيرها.</p>
+    </div>
+
     <h2>١) اختر قالباً</h2>
     <div class="grid" id="templates"></div>
 
@@ -141,6 +165,8 @@
     let aiModels = [];
     let activeTemplate = null;
     let activeModelId = null;
+    let projects = [];
+    let activeProjectId = null;
 
     const STATUS_AR = { queued: 'في الطابور', rendering: 'قيد التصدير', done: 'مكتمل', failed: 'فشل' };
 
@@ -279,6 +305,7 @@
       try {
         const body = { templateId: activeTemplate.id, values };
         if (isAiTemplate(activeTemplate) && activeModelId) body.modelId = activeModelId;
+        if (activeProjectId) body.projectId = activeProjectId; // تنضم للمشروع المفتوح
         const res = await api('/api/video/renders', {
           method: 'POST',
           body: JSON.stringify(body),
@@ -288,10 +315,12 @@
           msg.textContent = data.error || 'حدث خطأ.';
           msg.className = 'msg err';
         } else {
-          msg.textContent = '✅ دخلت المهمة الطابور — تابع حالتها في القائمة أدناه.';
+          msg.textContent = activeProjectId
+            ? '✅ دخلت اللقطة الطابور وانضمت لمشروعك — تابعها في الستوري بورد أعلاه.'
+            : '✅ دخلت المهمة الطابور — تابع حالتها في القائمة أدناه.';
           msg.className = 'msg ok';
           $('renderForm').reset();
-          loadCredits(); loadJobs();
+          loadCredits(); loadJobs(); refreshStoryboard();
         }
       } catch {
         msg.textContent = 'تعذر الاتصال بالخدمة.';
@@ -340,9 +369,13 @@
         </tr>`;
       }).join('');
 
-      // تنزيل الملفات المملوكة: نطلب المسار المحمي بالتوكن، فيتحقق
-      // الخادم من الملكية ويعيد التوجيه لرابط موقّع صالح دقائق معدودة.
-      document.querySelectorAll('[data-download]').forEach(el => {
+      bindDownloads($('jobsBody'));
+    }
+
+    // تنزيل الملفات المملوكة: نطلب المسار المحمي بالتوكن، فيتحقق
+    // الخادم من الملكية ويعيد التوجيه لرابط موقّع صالح دقائق معدودة.
+    function bindDownloads(root) {
+      root.querySelectorAll('[data-download]').forEach(el => {
         el.addEventListener('click', async (e) => {
           e.preventDefault();
           const original = el.textContent;
@@ -364,6 +397,144 @@
       });
     }
 
+    // ─── مشاريع الأفلام (الستوري بورد) ─────────────────────────────────
+
+    async function loadProjects() {
+      const res = await api('/api/video/projects');
+      if (!res.ok) return;
+      projects = (await res.json()).projects;
+      renderProjectChips();
+    }
+
+    function renderProjectChips() {
+      const wrap = $('projectChips');
+      wrap.innerHTML =
+        `<button class="chip${!activeProjectId ? ' active' : ''}" data-proj="">لقطات حرة (بلا مشروع)</button>` +
+        projects.map(p =>
+          `<button class="chip${p.id === activeProjectId ? ' active' : ''}" data-proj="${p.id}">🎬 ${escapeHtml(p.title)}</button>`
+        ).join('') +
+        `<button class="chip" id="newProjectBtn">➕ مشروع جديد</button>`;
+      wrap.querySelectorAll('[data-proj]').forEach(el => {
+        el.addEventListener('click', () => selectProject(el.dataset.proj || null));
+      });
+      $('newProjectBtn').addEventListener('click', createProject);
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    async function createProject() {
+      const title = prompt('اسم الفيلم / المشروع:');
+      if (!title || !title.trim()) return;
+      const res = await api('/api/video/projects', {
+        method: 'POST', body: JSON.stringify({ title: title.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'تعذّر إنشاء المشروع.'); return; }
+      await loadProjects();
+      selectProject(data.project.id);
+    }
+
+    function selectProject(id) {
+      activeProjectId = id;
+      renderProjectChips();
+      if (!id) { $('storyboard').classList.add('hidden'); $('storyboard').innerHTML = ''; return; }
+      refreshStoryboard();
+    }
+
+    async function refreshStoryboard() {
+      if (!activeProjectId) return;
+      const res = await api(`/api/video/projects/${activeProjectId}`);
+      if (!res.ok) { selectProject(null); return; }
+      const { project, shots } = await res.json();
+      const board = $('storyboard');
+      board.classList.remove('hidden');
+      board.innerHTML = `
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+          <strong>🎬 ${escapeHtml(project.title)}</strong>
+          <span style="color:var(--muted);font-size:12px">${shots.length} لقطة</span>
+          <button class="chip" id="renameProjBtn">✏️ إعادة تسمية</button>
+          <button class="chip" id="deleteProjBtn">🗑️ حذف المشروع</button>
+        </div>
+        ${shots.length === 0
+          ? '<p class="note">لا لقطات بعد — اختر قالباً بالأسفل وأنشئ أول لقطة، ستنضم هنا تلقائياً.</p>'
+          : `<div class="shots">${shots.map(shotCard).join('')}</div>`}`;
+      bindDownloads(board);
+      board.querySelectorAll('[data-redo]').forEach(el =>
+        el.addEventListener('click', () => regenerateShot(el.dataset.redo, shots)));
+      board.querySelectorAll('[data-base]').forEach(el =>
+        el.addEventListener('click', () => useShotAsBase(el.dataset.base, shots)));
+      $('renameProjBtn').addEventListener('click', async () => {
+        const title = prompt('الاسم الجديد:', project.title);
+        if (!title || !title.trim()) return;
+        await api(`/api/video/projects/${project.id}`, {
+          method: 'PATCH', body: JSON.stringify({ title: title.trim() }),
+        });
+        await loadProjects();
+        refreshStoryboard();
+      });
+      $('deleteProjBtn').addEventListener('click', async () => {
+        if (!confirm('حذف المشروع؟ اللقطات نفسها تبقى في سجل فيديوهاتك — يزول التجميع فقط.')) return;
+        await api(`/api/video/projects/${project.id}`, { method: 'DELETE' });
+        activeProjectId = null;
+        await loadProjects();
+        selectProject(null);
+      });
+    }
+
+    function shotCard(s, i) {
+      const model = s.modelId ? aiModels.find(m => m.id === s.modelId) : null;
+      const promptText = s.values && s.values.prompt ? s.values.prompt : '';
+      let action = '';
+      if (s.status === 'done' && s.videoUrl) {
+        action = s.owned
+          ? `<a href="#" data-download="${s.id}">⬇️ تنزيل</a>`
+          : `<a href="${s.videoUrl}" target="_blank" rel="noopener">⬇️ تنزيل</a>`;
+      }
+      return `<div class="card shot">
+        <div class="num">لقطة ${i + 1}</div>
+        <div style="font-size:13px;margin-top:4px">${tplName(s.templateId)}${
+          model ? ` <span style="color:var(--muted);font-size:11px">(${model.nameAr})</span>` : ''}</div>
+        ${promptText ? `<div class="prompt">${escapeHtml(promptText)}</div>` : ''}
+        <span class="st st-${s.status}">${STATUS_AR[s.status] || s.status}</span>
+        <div class="actions">
+          ${action}
+          <button data-redo="${s.id}" title="لقطة جديدة بنفس الإعدادات">🔁 إعادة توليد</button>
+          <button data-base="${s.id}" title="املأ النموذج بإعداداتها ثم عدّل">📝 أساس للقطة جديدة</button>
+        </div>
+      </div>`;
+    }
+
+    // لقطة جديدة بنفس القالب والقيم والنموذج — تنضم لنهاية المشروع.
+    async function regenerateShot(id, shots) {
+      const s = shots.find(x => x.id === id);
+      if (!s) return;
+      const body = { templateId: s.templateId, values: s.values || {}, projectId: activeProjectId };
+      if (s.modelId) body.modelId = s.modelId;
+      const res = await api('/api/video/renders', { method: 'POST', body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'تعذّرت إعادة التوليد.'); return; }
+      loadCredits(); refreshStoryboard(); loadJobs();
+    }
+
+    // يملأ النموذج بإعدادات اللقطة ليعدّلها المستخدم قبل الإرسال.
+    function useShotAsBase(id, shots) {
+      const s = shots.find(x => x.id === id);
+      if (!s) return;
+      selectTemplate(s.templateId);
+      if (s.modelId && aiModels.some(m => m.id === s.modelId)) {
+        activeModelId = s.modelId;
+        renderModelPicker(); syncAspectRatios(); syncCost();
+      }
+      const form = $('renderForm');
+      for (const [k, v] of Object.entries(s.values || {})) {
+        const el = form.elements[k];
+        if (el && v) el.value = v;
+      }
+    }
+
     $('submitBtn').addEventListener('click', submitRender);
 
     (async function init() {
@@ -372,8 +543,9 @@
       if (!ok) return;
       $('studio').classList.remove('hidden');
       await loadTemplates();
+      await loadProjects();
       await loadJobs();
-      setInterval(loadJobs, 5000);
+      setInterval(() => { loadJobs(); refreshStoryboard(); }, 5000);
       setInterval(loadCredits, 15000);
     })();
   </script>

@@ -13,6 +13,13 @@
  *   listJobsByUser(user, limit) → [job]            (الأحدث أولاً)
  *   listActiveJobs() → [job]                       (queued|rendering، الأقدم أولاً)
  *   transitionJob(id, {from:[حالات], to, patch}) → job|null   (ذرّي)
+ *   createProject({username, title}) → project     (مشاريع الأفلام — ستوري بورد)
+ *   getProject(id) → project|null
+ *   listProjectsByUser(user, limit) → [project]    (الأحدث أولاً)
+ *   renameProject(id, title) → project|null
+ *   deleteProject(id) → bool                       (اللقطات تبقى في السجل العام — أُنفق عليها رصيد)
+ *   listJobsByProject(projectId) → [job]           (بترتيب اللقطات shotIndex)
+ *   countJobsInProject(projectId) → number
  *
  * الاختيار: DATABASE_URL مضبوط → postgres (دائم، للإنتاج)، وإلا → ملفات
  * (صفر إعداد، للتطوير والاختبار).

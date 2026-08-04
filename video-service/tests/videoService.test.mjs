@@ -1115,6 +1115,81 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             }
         });
 
+        // ─── مشاريع الأفلام (ستوري بورد) ───────────────────────────────
+
+        test('المشاريع: إنشاء وقائمة وإعادة تسمية وحذف — بعزل صارم بين المستخدمين', async () => {
+            const token = makeToken('filmmaker');
+            const other = makeToken('intruder');
+
+            const created = await call('/api/video/projects', {
+                method: 'POST', token, body: { title: 'فيلمي الأول' },
+            });
+            assert.equal(created.status, 200);
+            const pid = created.data.project.id;
+
+            assert.equal((await call('/api/video/projects', { method: 'POST', token, body: { title: '   ' } })).status, 400);
+            assert.equal((await call('/api/video/projects', { method: 'POST', token, body: { title: 'ط'.repeat(81) } })).status, 400);
+
+            assert.equal((await call('/api/video/projects', { token })).data.projects.length, 1);
+
+            // مستخدم آخر: لا يرى ولا يصل — 404 لا 403 (لا نؤكد حتى الوجود)
+            assert.equal((await call('/api/video/projects', { token: other })).data.projects.length, 0);
+            assert.equal((await call(`/api/video/projects/${pid}`, { token: other })).status, 404);
+            assert.equal((await call(`/api/video/projects/${pid}`, { method: 'PATCH', token: other, body: { title: 'اختراق' } })).status, 404);
+            assert.equal((await call(`/api/video/projects/${pid}`, { method: 'DELETE', token: other })).status, 404);
+
+            const renamed = await call(`/api/video/projects/${pid}`, {
+                method: 'PATCH', token, body: { title: 'الفيلم النهائي' },
+            });
+            assert.equal(renamed.data.project.title, 'الفيلم النهائي');
+
+            assert.equal((await call(`/api/video/projects/${pid}`, { method: 'DELETE', token })).status, 200);
+            assert.equal((await call(`/api/video/projects/${pid}`, { token })).status, 404);
+        });
+
+        test('اللقطات تنضم للمشروع بترتيب يسنده الخادم وتبقى بعد حذفه في السجل', async () => {
+            const token = makeToken('director2');
+            await call('/api/video/credits', { token });
+            const pid = (await call('/api/video/projects', {
+                method: 'POST', token, body: { title: 'قصة قصيرة' },
+            })).data.project.id;
+
+            const s0 = await call('/api/video/renders', {
+                method: 'POST', token,
+                body: { templateId: 'promo_announcement', values: { headline: 'أ', cta: 'ب' }, projectId: pid },
+            });
+            assert.equal(s0.status, 200);
+            await call('/api/video/renders', {
+                method: 'POST', token,
+                body: { templateId: 'promo_announcement', values: { headline: 'ج', cta: 'د' }, projectId: pid },
+            });
+
+            const detail = await call(`/api/video/projects/${pid}`, { token });
+            assert.equal(detail.data.shots.length, 2);
+            assert.deepEqual(detail.data.shots.map(s => s.shotIndex), [0, 1]);
+            // القيم تعود للمالك — أساس "إعادة التوليد" و"أساس للقطة جديدة"
+            assert.equal(detail.data.shots[0].values.headline, 'أ');
+
+            // مشروع مستخدم آخر أو وهمي في الطلب → 400 بلا إنشاء مهمة
+            const other = makeToken('someone-else');
+            await call('/api/video/credits', { token: other });
+            const foreign = await call('/api/video/renders', {
+                method: 'POST', token: other,
+                body: { templateId: 'promo_announcement', values: { headline: 'س', cta: 'ص' }, projectId: pid },
+            });
+            assert.equal(foreign.status, 400);
+            const ghost = await call('/api/video/renders', {
+                method: 'POST', token,
+                body: { templateId: 'promo_announcement', values: { headline: 'س', cta: 'ص' }, projectId: 'لا-وجود' },
+            });
+            assert.equal(ghost.status, 400);
+
+            // حذف المشروع يزيل التجميع فقط — اللقطات باقية في السجل العام
+            await call(`/api/video/projects/${pid}`, { method: 'DELETE', token });
+            const jobs = await call('/api/video/renders', { token });
+            assert.equal(jobs.data.jobs.length, 2);
+        });
+
         test('Shotstack يرفض مخطط توليد لا يخصه', async () => {
             const { createShotstackProvider } = await import('../src/providers/shotstackProvider.js');
             const p = createShotstackProvider({ apiKey: 'k' });

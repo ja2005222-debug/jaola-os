@@ -36,11 +36,14 @@ export function createFileStore({ dataDir, starterCredits }) {
     const ledgerFile = path.join(dataDir, 'creditLedger.json');
     const jobsFile = path.join(dataDir, 'jobs.json');
     const flagsFile = path.join(dataDir, 'flags.json');
+    const projectsFile = path.join(dataDir, 'projects.json');
 
     const readBalances = () => readJson(balancesFile, {});
     const writeBalances = v => writeJson(dataDir, balancesFile, v);
     const readLedger = () => { const v = readJson(ledgerFile, []); return Array.isArray(v) ? v : []; };
     const readJobs = () => { const v = readJson(jobsFile, []); return Array.isArray(v) ? v : []; };
+    const readProjects = () => { const v = readJson(projectsFile, []); return Array.isArray(v) ? v : []; };
+    const writeProjects = v => writeJson(dataDir, projectsFile, v);
 
     function appendLedger(entry) {
         const records = readLedger();
@@ -177,6 +180,56 @@ export function createFileStore({ dataDir, starterCredits }) {
             job.updatedAt = Date.now();
             writeJobs(jobs);
             return true;
+        },
+
+        // ─── مشاريع الأفلام (ستوري بورد) ───────────────────────────────
+
+        async createProject({ username, title }) {
+            const projects = readProjects();
+            const project = { id: newId(), at: Date.now(), updatedAt: Date.now(), username, title };
+            projects.push(project);
+            writeProjects(projects);
+            return { ...project };
+        },
+
+        async getProject(id) {
+            const p = readProjects().find(x => x.id === id);
+            return p ? { ...p } : null;
+        },
+
+        async listProjectsByUser(user, limit = 50) {
+            return readProjects().filter(p => p.username === user).slice(-limit).reverse().map(p => ({ ...p }));
+        },
+
+        async renameProject(id, title) {
+            const projects = readProjects();
+            const p = projects.find(x => x.id === id);
+            if (!p) return null;
+            p.title = title;
+            p.updatedAt = Date.now();
+            writeProjects(projects);
+            return { ...p };
+        },
+
+        // اللقطات لا تُحذف مع المشروع — أُنفق عليها رصيد وتبقى في السجل
+        // العام؛ يزول التجميع فقط.
+        async deleteProject(id) {
+            const projects = readProjects();
+            const remaining = projects.filter(x => x.id !== id);
+            if (remaining.length === projects.length) return false;
+            writeProjects(remaining);
+            return true;
+        },
+
+        async listJobsByProject(projectId) {
+            return readJobs()
+                .filter(j => j.projectId === projectId)
+                .sort((a, b) => (a.shotIndex ?? 1e9) - (b.shotIndex ?? 1e9) || a.at - b.at)
+                .map(j => ({ ...j }));
+        },
+
+        async countJobsInProject(projectId) {
+            return readJobs().filter(j => j.projectId === projectId).length;
         },
 
         /**
