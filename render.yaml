@@ -40,7 +40,9 @@ services:
       - key: FAL_KEY
         sync: false
       - key: FAL_MODEL
-        sync: false # مثال: fal-ai/veo3/fast
+        sync: false # اختياري منذ كتالوج النماذج — يضبط الافتراضي فقط
+      - key: FAL_MODELS_JSON
+        sync: false # اختياري: توسيع كتالوج النماذج بلا نشر (انظر README)
       # 🛡️ درع التكلفة — راجع قسمه في README قبل تفعيل مزوّد مدفوع.
       # DAILY_RENDER_CAP=0 إيقاف طوارئ فوري لكل توليد جديد.
       - key: DAILY_RENDER_CAP

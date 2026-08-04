@@ -7,6 +7,8 @@
  * هذا الحياد هو ما يسمح بتبديل المزود لاحقاً دون لمس القوالب.
  */
 
+import { cinemaFieldOptions, composeCinematicPrompt } from './cinema.js';
+
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 const MAX_TEXT_LEN = 200;
 
@@ -48,17 +50,26 @@ export const TEMPLATES = Object.freeze([
     },
     {
         id: 'ai_clip',
-        nameAr: 'مقطع بالذكاء الاصطناعي',
-        descriptionAr: 'اكتب وصفاً لما تريد رؤيته، فيُولَّد مقطع فيديو كامل. الأغلى تكلفةً والأكثر إبهاراً.',
+        nameAr: 'لقطة سينمائية بالذكاء الاصطناعي',
+        descriptionAr: 'صف المشهد واضبط الإخراج — حجم اللقطة وحركة الكاميرا والإضاءة والأسلوب — فتُولَّد لقطة كاملة بالنموذج الذي تختاره.',
         durationSec: 5,
-        costCredits: 5, // توليد الذكاء الاصطناعي أغلى بكثير من تركيب القوالب
+        costCredits: 5, // تكلفة افتراضية — النموذج المختار يحدد التكلفة الفعلية
         specKind: SPEC_AI_PROMPT,
         fields: [
-            { key: 'prompt', labelAr: 'وصف المشهد المطلوب', type: 'text', required: true, maxLen: 500 },
+            { key: 'prompt', labelAr: 'وصف المشهد المطلوب', type: 'text', required: true, maxLen: 1000 },
             {
                 key: 'aspectRatio', labelAr: 'نسبة الأبعاد', type: 'choice', required: false,
-                default: '16:9', options: ['16:9', '9:16', '1:1'],
+                // القائمة الكاملة هنا؛ النموذج المختار يقيّدها أكثر (يتحقق
+                // الخادم، وتعرض الواجهة نسب النموذج فقط).
+                default: '16:9', options: ['16:9', '9:16', '1:1', '21:9', '4:3'],
             },
+            // 🎥 معايير الإخراج — اختيارية كلها؛ تُركَّب مصطلحاتها
+            // الإنجليزية في الوصف النهائي (انظر cinema.js).
+            { key: 'shotSize', labelAr: 'حجم اللقطة', type: 'choice', required: false, options: cinemaFieldOptions('shotSize') },
+            { key: 'cameraMove', labelAr: 'حركة الكاميرا', type: 'choice', required: false, options: cinemaFieldOptions('cameraMove') },
+            { key: 'lighting', labelAr: 'الإضاءة', type: 'choice', required: false, options: cinemaFieldOptions('lighting') },
+            { key: 'style', labelAr: 'الأسلوب البصري', type: 'choice', required: false, options: cinemaFieldOptions('style') },
+            { key: 'negativePrompt', labelAr: 'ما لا تريد رؤيته (اختياري)', type: 'text', required: false, maxLen: 300 },
         ],
     },
     {
@@ -158,7 +169,9 @@ export function compileSpec(template, clean) {
         return {
             kind: SPEC_AI_PROMPT,
             durationSec: template.durationSec,
-            prompt: clean.prompt,
+            // الوصف النهائي مركَّب: وصف المستخدم + معايير الإخراج المختارة
+            // بمصطلحاتها الإنجليزية + "Avoid: …" للوصف السلبي.
+            prompt: composeCinematicPrompt(clean),
             aspectRatio: clean.aspectRatio || '16:9',
         };
     }

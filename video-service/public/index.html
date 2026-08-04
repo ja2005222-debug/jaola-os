@@ -96,6 +96,7 @@
     <div id="formWrap" class="hidden">
       <h2>٢) عبّئ محتوى الفيديو</h2>
       <div class="card">
+        <div id="modelPicker" class="hidden"></div>
         <form id="renderForm"></form>
         <button id="submitBtn" type="button">🚀 أنشئ الفيديو</button>
         <div class="msg" id="formMsg"></div>
@@ -137,7 +138,9 @@
 
     const $ = id => document.getElementById(id);
     let templates = [];
+    let aiModels = [];
     let activeTemplate = null;
+    let activeModelId = null;
 
     const STATUS_AR = { queued: 'في الطابور', rendering: 'قيد التصدير', done: 'مكتمل', failed: 'فشل' };
 
@@ -158,7 +161,9 @@
     async function loadTemplates() {
       const res = await api('/api/video/templates');
       if (!res.ok) return;
-      templates = (await res.json()).templates;
+      const data = await res.json();
+      templates = data.templates;
+      aiModels = data.aiModels || [];
       $('templates').innerHTML = templates.map(t => `
         <div class="card tpl" data-id="${t.id}">
           <h3>${t.nameAr}</h3>
@@ -171,9 +176,63 @@
       });
     }
 
+    const SELECT_STYLE = `width:100%;padding:10px 12px;border-radius:8px;
+                    border:1px solid var(--border);background:var(--bg);color:var(--text);
+                    font-size:14px;font-family:inherit`;
+
+    const isAiTemplate = t => t && t.specKind === 'ai_prompt';
+    const activeModel = () => aiModels.find(m => m.id === activeModelId) || null;
+
+    // 🎞️ اختيار النموذج: بطاقات فوق الحقول — النموذج يحدد التكلفة
+    // ونسب الأبعاد المتاحة، فيُعاد ضبطهما عند كل اختيار.
+    function renderModelPicker() {
+      const wrap = $('modelPicker');
+      if (!isAiTemplate(activeTemplate) || aiModels.length === 0) {
+        wrap.innerHTML = ''; wrap.classList.add('hidden');
+        activeModelId = null;
+        return;
+      }
+      if (!activeModel()) activeModelId = aiModels[0].id;
+      wrap.classList.remove('hidden');
+      wrap.innerHTML = `<label style="margin-top:0">النموذج المولِّد *</label>
+        <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">` +
+        aiModels.map(m => `
+          <div class="card tpl model${m.id === activeModelId ? ' active' : ''}" data-model="${m.id}"
+               style="margin-bottom:0;padding:12px">
+            <h3 style="font-size:14px">${m.nameAr}</h3>
+            <p style="font-size:12px">${m.descriptionAr || ''}</p>
+            <div class="meta">🎟️ ${m.costCredits} رصيد للقطة</div>
+          </div>`).join('') + '</div>';
+      wrap.querySelectorAll('[data-model]').forEach(el => {
+        el.addEventListener('click', () => {
+          activeModelId = el.dataset.model;
+          renderModelPicker();
+          syncAspectRatios();
+          syncCost();
+        });
+      });
+    }
+
+    // نسب الأبعاد المعروضة = ما يدعمه النموذج المختار فقط.
+    function syncAspectRatios() {
+      const sel = document.querySelector('#renderForm select[name="aspectRatio"]');
+      const m = activeModel();
+      if (!sel || !m || !m.aspectRatios || !m.aspectRatios.length) return;
+      const field = activeTemplate.fields.find(f => f.key === 'aspectRatio') || {};
+      const current = sel.value;
+      sel.innerHTML = m.aspectRatios.map(o =>
+        `<option value="${o}"${o === (m.aspectRatios.includes(current) ? current : (m.aspectRatios.includes(field.default) ? field.default : m.aspectRatios[0])) ? ' selected' : ''}>${o}</option>`).join('');
+    }
+
+    function syncCost() {
+      const m = isAiTemplate(activeTemplate) ? activeModel() : null;
+      const cost = m ? m.costCredits : (activeTemplate ? activeTemplate.costCredits : 0);
+      $('submitBtn').textContent = `🚀 أنشئ الفيديو (🎟️ ${cost})`;
+    }
+
     function selectTemplate(id) {
       activeTemplate = templates.find(t => t.id === id);
-      document.querySelectorAll('.tpl').forEach(el =>
+      document.querySelectorAll('.tpl:not(.model)').forEach(el =>
         el.classList.toggle('active', el.dataset.id === id));
       const form = $('renderForm');
       form.innerHTML = activeTemplate.fields.map(f => {
@@ -183,12 +242,12 @@
                   <input type="color" name="${f.key}" value="${f.default || '#1F4E5F'}" />`;
         }
         if (f.type === 'choice') {
-          const opts = f.options.map(o =>
+          // معيار اختياري بلا افتراضي (معايير الإخراج): خيار فارغ أولاً.
+          const blank = (!f.required && !f.default) ? '<option value="">— بدون تحديد —</option>' : '';
+          const opts = blank + f.options.map(o =>
             `<option value="${o}"${o === f.default ? ' selected' : ''}>${o}</option>`).join('');
           return `<label>${f.labelAr}${req}</label>
-                  <select name="${f.key}" style="width:100%;padding:10px 12px;border-radius:8px;
-                    border:1px solid var(--border);background:var(--bg);color:var(--text);
-                    font-size:14px;font-family:inherit">${opts}</select>`;
+                  <select name="${f.key}" style="${SELECT_STYLE}">${opts}</select>`;
         }
         const type = f.type === 'imageUrl' ? 'url' : 'text';
         const ph = f.type === 'imageUrl' ? 'https://…' : '';
@@ -203,6 +262,9 @@
         return `${label}
                 <input type="${type}" name="${f.key}" maxlength="${f.maxLen || 500}" placeholder="${ph}" />`;
       }).join('');
+      renderModelPicker();
+      syncAspectRatios();
+      syncCost();
       $('formWrap').classList.remove('hidden');
       $('formMsg').className = 'msg';
       $('formWrap').scrollIntoView({ behavior: 'smooth' });
@@ -215,9 +277,11 @@
       const values = {};
       new FormData($('renderForm')).forEach((v, k) => { if (v) values[k] = v; });
       try {
+        const body = { templateId: activeTemplate.id, values };
+        if (isAiTemplate(activeTemplate) && activeModelId) body.modelId = activeModelId;
         const res = await api('/api/video/renders', {
           method: 'POST',
-          body: JSON.stringify({ templateId: activeTemplate.id, values }),
+          body: JSON.stringify(body),
         });
         const data = await res.json();
         if (!res.ok) {
@@ -265,8 +329,11 @@
           result = (j.error || 'فشل.') + ' (استُرد الرصيد)';
         }
         const d = new Date(j.at);
+        const model = j.modelId ? aiModels.find(m => m.id === j.modelId) : null;
+        const modelTag = model
+          ? ` <span style="color:var(--muted);font-size:11px">(${model.nameAr})</span>` : '';
         return `<tr>
-          <td>${tplName(j.templateId)}</td>
+          <td>${tplName(j.templateId)}${modelTag}</td>
           <td><span class="st st-${j.status}">${STATUS_AR[j.status] || j.status}</span></td>
           <td>${result}</td>
           <td dir="ltr">${d.toLocaleString('ar')}</td>

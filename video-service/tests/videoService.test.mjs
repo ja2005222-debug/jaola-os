@@ -19,6 +19,8 @@ import { createApp, MAX_ACTIVE_JOBS_PER_USER } from '../server.js';
 import { createMockProvider } from '../src/providers/mockProvider.js';
 import { buildProvider, buildAiProvider } from '../src/providers/index.js';
 import { createFalProvider, extractVideoUrl, specToFalInput } from '../src/providers/falProvider.js';
+import { readAiModels, getAiModel, defaultAiModel } from '../src/models.js';
+import { composeCinematicPrompt } from '../src/cinema.js';
 import { specToShotstackTimeline } from '../src/providers/shotstackProvider.js';
 import { runEngineTick, JOB_TIMEOUT_MS } from '../src/engine.js';
 import { getBalance, grantCredits, deductCredits, refundCredits, STARTER_CREDITS } from '../src/credits.js';
@@ -786,7 +788,7 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
 
         test('حقل الاختيار يرفض قيمة خارج القائمة ويطبّق الافتراضي', () => {
             const t = getTemplate('ai_clip');
-            assert.ok(validateValues(t, { prompt: 'x', aspectRatio: '4:3' }).error);
+            assert.ok(validateValues(t, { prompt: 'x', aspectRatio: '7:5' }).error);
             assert.equal(validateValues(t, { prompt: 'x' }).values.aspectRatio, '16:9');
         });
 
@@ -842,7 +844,8 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(buildAiProvider({}), null);
             assert.equal(buildAiProvider({ VIDEO_AI_PROVIDER: 'none' }), null);
             assert.throws(() => buildAiProvider({ VIDEO_AI_PROVIDER: 'fal' }));                    // بلا مفتاح
-            assert.throws(() => buildAiProvider({ VIDEO_AI_PROVIDER: 'fal', FAL_KEY: 'k' }));      // بلا نموذج
+            // بلا FAL_MODEL: يعمل بالافتراضي من الكتالوج المدمج (متعدد النماذج)
+            assert.match(buildAiProvider({ VIDEO_AI_PROVIDER: 'fal', FAL_KEY: 'k' }).name, /veo3\/fast/);
             assert.throws(() => buildAiProvider({ VIDEO_AI_PROVIDER: 'unknown' }));
         });
 
@@ -857,11 +860,13 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             const p = createFalProvider({ apiKey: 'K', model: 'fal-ai/some/model', fetchImpl });
 
             const { providerId } = await p.submitRender({ kind: 'ai_prompt', prompt: 'قطة', aspectRatio: '9:16', durationSec: 5 });
-            assert.equal(providerId, 'req-9');
+            // المعرّف مركّب: مسار النموذج + معرّف الطلب — فتتابع كل مهمة
+            // نموذجها هي حتى لو تغيّر الافتراضي لاحقاً.
+            assert.equal(providerId, 'fal-ai/some/model|req-9');
             assert.equal(calls[0].auth, 'Key K');
             assert.equal(calls[0].url, 'https://queue.fal.run/fal-ai/some/model');
 
-            const done = await p.getRender('req-9');
+            const done = await p.getRender(providerId);
             assert.equal(done.status, 'done');
             assert.equal(done.videoUrl, 'https://cdn.fal/v.mp4');
 
@@ -972,6 +977,142 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                     : { ok: false, status: 503, text: async () => '' },
             });
             assert.equal((await p.getRender('r')).status, 'rendering');
+        });
+
+        test('كتالوج النماذج: مدمج + توسيع/استبدال بFAL_MODELS_JSON + احترام FAL_MODEL', () => {
+            const base = readAiModels({});
+            assert.ok(base.some(m => m.id === 'veo3_fast'));
+            assert.equal(defaultAiModel(base, {}).id, 'veo3_fast');
+
+            // توسيع بنموذج جديد بلا نشر كود
+            const extended = readAiModels({
+                FAL_MODELS_JSON: JSON.stringify([{
+                    id: 'kling', nameAr: 'كلينغ', falPath: 'fal-ai/kling-video/v2/master',
+                    costCredits: 7, aspectRatios: ['16:9', '1:1'],
+                }]),
+            });
+            assert.equal(getAiModel(extended, 'kling').costCredits, 7);
+
+            // نفس المعرّف = استبدال مقصود (تعديل تكلفة نموذج مدمج) لا تكرار
+            const replaced = readAiModels({
+                FAL_MODELS_JSON: JSON.stringify([{
+                    id: 'veo3_fast', nameAr: 'سريع بسعر خاص', falPath: 'fal-ai/veo3/fast', costCredits: 3,
+                }]),
+            });
+            assert.equal(getAiModel(replaced, 'veo3_fast').costCredits, 3);
+            assert.equal(replaced.length, base.length);
+
+            // FAL_MODEL قديم خارج الكتالوج: يُضاف ويصبح الافتراضي
+            const env = { FAL_MODEL: 'fal-ai/wan/v2' };
+            const withEnv = readAiModels(env);
+            assert.ok(withEnv.some(m => m.falPath === 'fal-ai/wan/v2'));
+            assert.equal(defaultAiModel(withEnv, env).falPath, 'fal-ai/wan/v2');
+
+            // إعداد فاسد يفشل صاخباً عند الإقلاع لا 422 غامضاً لاحقاً
+            assert.throws(() => readAiModels({ FAL_MODELS_JSON: 'ليس json' }));
+            assert.throws(() => readAiModels({
+                FAL_MODELS_JSON: JSON.stringify([{ id: 'x', nameAr: 'س', falPath: 'بلا-مالك', costCredits: 1 }]),
+            }));
+            assert.throws(() => readAiModels({
+                FAL_MODELS_JSON: JSON.stringify([{ id: 'x', nameAr: 'س', falPath: 'a/b', costCredits: 0 }]),
+            }));
+        });
+
+        test('التركيب السينمائي: المعايير تُترجم اصطلاحياً والسلبي يُلحق بـAvoid', () => {
+            const composed = composeCinematicPrompt({
+                prompt: 'فارس يعبر الصحراء',
+                shotSize: 'واسعة', cameraMove: 'تتبع',
+                lighting: 'الساعة الذهبية', style: 'سينمائي واقعي',
+                negativePrompt: 'نص مكتوب على الشاشة',
+            });
+            assert.match(composed, /فارس يعبر الصحراء/);
+            assert.match(composed, /wide shot/);
+            assert.match(composed, /tracking shot/);
+            assert.match(composed, /golden hour/);
+            assert.match(composed, /35mm/);
+            assert.match(composed, /Avoid: نص مكتوب على الشاشة/);
+            // بلا معايير: الوصف يمر كما هو حرفياً
+            assert.equal(composeCinematicPrompt({ prompt: 'مشهد' }), 'مشهد');
+            // قيمة غير معروفة لمعيار تُتجاهل بصمت (الخادم يتحقق قبلها أصلاً)
+            assert.equal(composeCinematicPrompt({ prompt: 'مشهد', shotSize: 'غريبة' }), 'مشهد');
+        });
+
+        test('fal متعدد النماذج: المخطط يحمل نموذجه والمتابعة تلاحقه لا الافتراضي', async () => {
+            const calls = [];
+            const fetchImpl = async (url, opts = {}) => {
+                calls.push(url);
+                if (opts.method === 'POST') return { ok: true, json: async () => ({ request_id: 'r7' }) };
+                if (url.endsWith('/status')) return { ok: true, json: async () => ({ status: 'COMPLETED' }) };
+                return { ok: true, json: async () => ({ video: { url: 'https://cdn.fal/x.mp4' } }) };
+            };
+            const p = createFalProvider({ apiKey: 'K', model: 'fal-ai/default/model', fetchImpl });
+            const { providerId } = await p.submitRender({
+                kind: 'ai_prompt', prompt: 'x', modelPath: 'fal-ai/kling-video/v2/master',
+            });
+            assert.equal(providerId, 'fal-ai/kling-video/v2/master|r7');
+            assert.equal(calls[0], 'https://queue.fal.run/fal-ai/kling-video/v2/master');
+            const done = await p.getRender(providerId);
+            assert.equal(done.status, 'done');
+            assert.equal(calls[1], 'https://queue.fal.run/fal-ai/kling-video/requests/r7/status');
+            assert.equal(calls[2], 'https://queue.fal.run/fal-ai/kling-video/requests/r7');
+        });
+
+        test('اختيار النموذج في الطلب: التكلفة بالنموذج، ورفض المجهول والنسبة غير المدعومة', async () => {
+            const token = makeToken('director');
+            await call('/api/video/credits', { token }); // الرصيد الترحيبي
+            await call('/api/video/admin/credits/grant', {
+                method: 'POST', token: makeToken('boss'),
+                body: { username: 'director', amount: 20 },
+            });
+
+            // veo3 الكامل يكلف 10 لا تكلفة القالب الافتراضية
+            const created = await call('/api/video/renders', {
+                method: 'POST', token,
+                body: { templateId: 'ai_clip', values: { prompt: 'مشهد افتتاحي' }, modelId: 'veo3' },
+            });
+            assert.equal(created.status, 200);
+            assert.equal(created.data.job.costCredits, 10);
+            assert.equal(
+                (await call('/api/video/credits', { token })).data.credits,
+                STARTER_CREDITS + 20 - 10
+            );
+
+            const unknown = await call('/api/video/renders', {
+                method: 'POST', token,
+                body: { templateId: 'ai_clip', values: { prompt: 'x' }, modelId: 'لا-وجود' },
+            });
+            assert.equal(unknown.status, 400);
+
+            // veo3_fast لا يدعم 1:1 — تحقق خادمي لا واجهة فقط
+            const badRatio = await call('/api/video/renders', {
+                method: 'POST', token,
+                body: { templateId: 'ai_clip', values: { prompt: 'x', aspectRatio: '1:1' }, modelId: 'veo3_fast' },
+            });
+            assert.equal(badRatio.status, 400);
+            assert.match(badRatio.data.error, /لا يدعم/);
+        });
+
+        test('كتالوج النماذج في /templates حاضر مع التوليد وغائب بدونه', async () => {
+            const withAi = await call('/api/video/templates', { token: makeToken('jamal') });
+            assert.ok(withAi.data.aiModels.length >= 2);
+            assert.ok(withAi.data.aiModels.some(m => m.id === 'veo3_fast'));
+
+            // خدمة تركيب فقط: لا كتالوج (فلا وعد بميزة معطلة)
+            const compOnly = createApp({
+                store, jwtSecret: JWT_SECRET,
+                provider: buildProvider({}, { composition: createMockProvider(), ai: null }),
+            });
+            const s = await new Promise(resolve => {
+                const srv = compOnly.listen(0, () => resolve(srv));
+            });
+            try {
+                const res = await callAt(`http://127.0.0.1:${s.address().port}`, '/api/video/templates', {
+                    token: makeToken('jamal'),
+                });
+                assert.deepEqual(res.data.aiModels, []);
+            } finally {
+                await new Promise(resolve => s.close(resolve));
+            }
         });
 
         test('Shotstack يرفض مخطط توليد لا يخصه', async () => {

@@ -14,6 +14,7 @@
 import { createMockProvider } from './mockProvider.js';
 import { createShotstackProvider } from './shotstackProvider.js';
 import { createFalProvider } from './falProvider.js';
+import { readAiModels, defaultAiModel } from '../models.js';
 
 const SEP = '::';
 
@@ -38,7 +39,10 @@ export function buildAiProvider(env = process.env) {
     if (!name || name === 'none') return null; // معطَّل: قالب الذكاء الاصطناعي يُخفى
     if (name === 'mock') return createMockProvider();
     if (name === 'fal') {
-        return createFalProvider({ apiKey: env.FAL_KEY, model: env.FAL_MODEL });
+        // النموذج الافتراضي من الكتالوج (FAL_MODEL يبقى محترماً إن ضُبط) —
+        // كل مهمة تحمل نموذجها في مخططها، والافتراضي احتياط للقديمة فقط.
+        const fallback = defaultAiModel(readAiModels(env), env);
+        return createFalProvider({ apiKey: env.FAL_KEY, model: fallback?.falPath });
     }
     throw new Error(`مزود توليد غير معروف: ${env.VIDEO_AI_PROVIDER}`);
 }
