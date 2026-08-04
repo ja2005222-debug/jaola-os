@@ -13,7 +13,7 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
-import { buildVerifyToken, buildAdminOnly } from './src/auth.js';
+import { buildVerifyToken, buildAdminOnly, buildIsAdmin } from './src/auth.js';
 import { listTemplates, getTemplate, validateValues, compileSpec } from './src/templates.js';
 import { getBalance, grantCredits, deductCredits, getUserLedger } from './src/credits.js';
 import { createJob, getJob, listJobsByUser, countActiveJobsForUser, listActiveJobs, transitionJob } from './src/jobs.js';
@@ -53,6 +53,7 @@ export function createApp({
 
     const verifyToken = buildVerifyToken(secrets);
     const adminOnly = buildAdminOnly(adminUsersCsv);
+    const isAdminUser = buildIsAdmin(adminUsersCsv);
 
     const app = express();
     app.use(cors());
@@ -208,8 +209,11 @@ export function createApp({
         }
 
         // درع التكلفة: السقف اليومي (العام ولكل مستخدم) يُفحص قبل إنشاء
-        // المهمة — لا تُحجز ولا تُخصم أرصدة لطلب سيُرفض.
-        const gate = await checkRenderAllowed(store, { username, limits });
+        // المهمة — لا تُحجز ولا تُخصم أرصدة لطلب سيُرفض. المشرف معفى من
+        // سقف الفرد فقط (السقف العام يسري على الجميع).
+        const gate = await checkRenderAllowed(store, {
+            username, limits, exemptPerUser: isAdminUser(req.user),
+        });
         if (!gate.allowed) {
             return res.status(429).json({ error: gate.error, code: gate.code });
         }

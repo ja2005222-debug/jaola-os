@@ -53,7 +53,7 @@ export function utcDayKey(now = Date.now()) {
  * {allowed:false, code, error} — والرسائل عربية جاهزة للعرض.
  * السقف = 0 يعني "موقوف تماماً" (مفيد لإيقاف الطوارئ بمتغير بيئة واحد).
  */
-export async function checkRenderAllowed(store, { username, limits, now = Date.now() }) {
+export async function checkRenderAllowed(store, { username, limits, exemptPerUser = false, now = Date.now() }) {
     const since = startOfUtcDay(now);
 
     const globalCount = await store.countJobsSince(since);
@@ -64,12 +64,16 @@ export async function checkRenderAllowed(store, { username, limits, now = Date.n
         };
     }
 
-    const userCount = await store.countJobsSinceForUser(username, since);
-    if (userCount >= limits.dailyRenderCapPerUser) {
-        return {
-            allowed: false, code: 'user_daily_cap_reached',
-            error: `بلغت حدك اليومي (${limits.dailyRenderCapPerUser} فيديو) — يتجدد غداً.`,
-        };
+    // المشرف معفى من سقف الفرد (يختبر منصته بلا قيد مصطنع)، لكن السقف
+    // العام أعلاه يسري على الجميع بلا استثناء — هو حد الفاتورة المطلق.
+    if (!exemptPerUser) {
+        const userCount = await store.countJobsSinceForUser(username, since);
+        if (userCount >= limits.dailyRenderCapPerUser) {
+            return {
+                allowed: false, code: 'user_daily_cap_reached',
+                error: `بلغت حدك اليومي (${limits.dailyRenderCapPerUser} فيديو) — يتجدد غداً.`,
+            };
+        }
     }
 
     return { allowed: true, globalCount: globalCount + 1 };
