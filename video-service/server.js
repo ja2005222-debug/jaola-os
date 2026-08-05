@@ -23,7 +23,8 @@ import { buildStore } from './src/store/index.js';
 import { buildStorage, retentionDays as readRetentionDays } from './src/storage/index.js';
 import { readLimits, checkRenderAllowed, maybeAlertCost, startOfUtcDay } from './src/limits.js';
 import { readBlocklist, inspectValues, inspectText } from './src/contentFilter.js';
-import { readAiModels, getAiModel, defaultAiModel } from './src/models.js';
+import { readAiModels, getAiModel, defaultAiModel, publicAiModels } from './src/models.js';
+import { CINEMA_CONTROLS } from './src/cinema.js';
 import { buildImageProvider } from './src/providers/falImageProvider.js';
 import { characterImageKeyFor } from './src/storage/index.js';
 import {
@@ -95,9 +96,12 @@ export function createApp({
     app.get('/api/video/templates', verifyToken, (req, res) => {
         res.json({
             templates: availableTemplates(),
-            // كتالوج نماذج التوليد — الواجهة تعرضه كاختيار لكل لقطة.
-            // فارغ حين لا مزوّد توليد مفعَّلاً (فلا وعد بميزة معطلة).
-            aiModels: supported.has('ai_prompt') ? aiModels : [],
+            // كتالوج نماذج التوليد بشكله العلني (مستويات جودة بلا مسارات
+            // مزودين). فارغ حين لا مزوّد توليد مفعَّلاً (لا وعد بميزة معطلة).
+            aiModels: supported.has('ai_prompt') ? publicAiModels(aiModels) : [],
+            // خرائط الإخراج السينمائي — للواجهة كي تعرض معاينة البرومت
+            // النهائي حياً بنفس تركيب الخادم حرفياً.
+            cinema: CINEMA_CONTROLS.map(c => ({ key: c.key, labelAr: c.labelAr, map: c.map })),
         });
     });
 

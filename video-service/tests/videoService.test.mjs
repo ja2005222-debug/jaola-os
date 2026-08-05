@@ -1082,6 +1082,8 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.match(composed, /golden hour/);
             assert.match(composed, /35mm/);
             assert.match(composed, /Avoid: نص مكتوب على الشاشة/);
+            // المزاج والإيقاع معيار مستقل
+            assert.match(composeCinematicPrompt({ prompt: 'م', mood: 'ملحمي' }), /epic grand atmosphere/);
             // بلا معايير: الوصف يمر كما هو حرفياً
             assert.equal(composeCinematicPrompt({ prompt: 'مشهد' }), 'مشهد');
             // قيمة غير معروفة لمعيار تُتجاهل بصمت (الخادم يتحقق قبلها أصلاً)
@@ -1147,6 +1149,12 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             const withAi = await call('/api/video/templates', { token: makeToken('jamal') });
             assert.ok(withAi.data.aiModels.length >= 2);
             assert.ok(withAi.data.aiModels.some(m => m.id === 'veo3_fast'));
+            // قرار منتج: مستويات جودة لا أسماء مزودين — لا مسار fal يتسرب للواجهة
+            assert.ok(withAi.data.aiModels.every(m => m.falPath === undefined));
+            assert.ok(withAi.data.aiModels.every(m => !/veo|wan|kling/i.test(m.nameAr)));
+            // خرائط الإخراج تصل للواجهة لتبني معاينة البرومت بنفس تركيب الخادم
+            assert.ok(withAi.data.cinema.some(c => c.key === 'mood'));
+            assert.ok(withAi.data.cinema.find(c => c.key === 'shotSize').map['واسعة']);
 
             // خدمة تركيب فقط: لا كتالوج (فلا وعد بميزة معطلة)
             const compOnly = createApp({

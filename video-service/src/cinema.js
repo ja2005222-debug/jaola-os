@@ -47,6 +47,17 @@ export const CINEMA_CONTROLS = Object.freeze([
         }),
     },
     {
+        key: 'mood', labelAr: 'المزاج والإيقاع',
+        map: Object.freeze({
+            'ملحمي': 'epic grand atmosphere, sweeping momentum',
+            'متوتر': 'tense suspenseful atmosphere, urgent pacing',
+            'هادئ تأملي': 'calm contemplative mood, slow gentle pacing',
+            'رومانسي': 'romantic warm mood, soft intimate atmosphere',
+            'كوميدي': 'lighthearted comedic tone, playful energy',
+            'غامض': 'mysterious eerie atmosphere',
+        }),
+    },
+    {
         key: 'style', labelAr: 'الأسلوب البصري',
         map: Object.freeze({
             'سينمائي واقعي': 'cinematic, photorealistic, shot on 35mm film, film grain',
