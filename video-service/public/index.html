@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>استوديو الفيديو — JAOLA</title>
-  <meta name="description" content="استوديو الفيديو من JAOLA: أنشئ فيديوهات تسويقية عربية من قوالب جاهزة خلال دقائق." />
+  <title>الاستديو السينمائي المتكامل — JAOLA OS</title>
+  <meta name="description" content="استوديو JAOLA السينمائي: شخصيات ثابتة، منشئ مشاهد بمعاينة حية، وتجميع أفلام كاملة." />
   <meta name="robots" content="noindex" />
   <style>
     :root {
@@ -17,18 +17,65 @@
       font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
       background: var(--bg); color: var(--text); min-height: 100vh;
     }
+    a { color: var(--accent); }
+    .hidden { display: none !important; }
+
+    /* ─── الترويسة ─── */
     header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 16px 24px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      flex-wrap: wrap; padding: 14px 24px; border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; background: rgba(11,17,32,.92); backdrop-filter: blur(6px);
+      z-index: 20;
     }
-    header h1 { font-size: 20px; }
+    header h1 { font-size: 17px; white-space: nowrap; }
     header h1 span { color: var(--accent); }
-    .credits-chip {
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: 999px; padding: 6px 16px; font-size: 14px;
+    .header-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .pill-btn {
+      background: var(--card); border: 1px solid var(--border); color: var(--text);
+      border-radius: 999px; padding: 6px 16px; font-size: 13px; cursor: pointer;
+      font-family: inherit; margin: 0; font-weight: normal;
     }
-    main { max-width: 1000px; margin: 0 auto; padding: 24px 16px 60px; }
-    h2 { font-size: 17px; margin: 26px 0 12px; color: var(--accent); }
+    .pill-btn:hover { border-color: var(--accent); }
+    .credits-chip { font-weight: bold; color: var(--warn); }
+    .plan-badge { color: var(--muted); }
+
+    /* ─── التخطيط العام (يمين: قائمة · وسط: الاستوديو · يسار: اللوحات) ─── */
+    .dashboard-grid {
+      display: grid; grid-template-columns: 210px 1fr 300px; gap: 18px;
+      max-width: 1440px; margin: 0 auto; padding: 20px 16px 70px; align-items: start;
+    }
+    .nav-sidebar { position: sticky; top: 70px; display: flex; flex-direction: column; gap: 3px; }
+    .side-panel { position: sticky; top: 70px; display: flex; flex-direction: column; gap: 16px;
+      max-height: calc(100vh - 90px); overflow-y: auto; padding-bottom: 10px; }
+    .studio-center { min-width: 0; }
+
+    @media (max-width: 1100px) {
+      .dashboard-grid { grid-template-columns: 1fr; }
+      .nav-sidebar { position: static; flex-direction: row; overflow-x: auto; padding-bottom: 6px; }
+      .nav-sidebar .nav-group-label { display: none; }
+      .side-panel { position: static; max-height: none; order: 3; }
+      .studio-center { order: 2; }
+    }
+
+    .nav-group-label {
+      font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em;
+      margin: 14px 6px 4px; white-space: nowrap;
+    }
+    .nav-item {
+      display: flex; align-items: center; gap: 8px; background: none; border: none;
+      color: var(--text); font-family: inherit; font-size: 14px; font-weight: normal;
+      padding: 9px 12px; border-radius: 8px; cursor: pointer; text-align: right;
+      margin: 0; white-space: nowrap; width: 100%;
+    }
+    .nav-item:hover { background: var(--card); }
+    .nav-item.active { background: rgba(56,189,248,.12); color: var(--accent); }
+    .soon-badge {
+      font-size: 10px; color: var(--muted); background: rgba(148,163,184,.15);
+      padding: 2px 7px; border-radius: 999px; margin-inline-start: auto;
+    }
+
+    h2 { font-size: 16px; margin: 0 0 12px; color: var(--accent); scroll-margin-top: 80px; }
+    section { scroll-margin-top: 80px; margin-bottom: 28px; }
     .card {
       background: var(--card); border: 1px solid var(--border);
       border-radius: 12px; padding: 16px; margin-bottom: 12px;
@@ -63,6 +110,9 @@
     .st-rendering { background: rgba(56,189,248,.15); color: var(--accent); }
     .st-done { background: rgba(52,211,153,.15); color: var(--ok); }
     .st-failed { background: rgba(248,113,113,.15); color: var(--bad); }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; flex: 0 0 auto; }
+    .dot-queued { background: var(--warn); } .dot-rendering { background: var(--accent); }
+    .dot-done { background: var(--ok); } .dot-failed { background: var(--bad); }
     .chips { display: flex; flex-wrap: wrap; gap: 8px; }
     .chip {
       border: 1px solid var(--border); background: var(--bg); color: var(--text);
@@ -81,15 +131,39 @@
     .shot .actions button:hover { border-color: var(--accent); }
     .gate { max-width: 480px; margin: 80px auto; text-align: center; }
     .gate p { color: var(--muted); line-height: 1.9; font-size: 14px; }
-    a { color: var(--accent); }
-    .hidden { display: none; }
     .note { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.7; }
+
+    /* ─── إحصاءات سريعة ─── */
+    .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
+    .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+    .stat-card .num { font-size: 20px; font-weight: bold; color: var(--accent); }
+    .stat-card .lbl { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    /* ─── اللوحة الجانبية: بنك الشخصيات / الطابور المباشر / الحساب ─── */
+    .side-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+    .side-card h3 { font-size: 13px; color: var(--accent); margin-bottom: 10px; }
+    .char-mini { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); }
+    .char-mini:last-child { border-bottom: none; }
+    .char-mini img { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; }
+    .char-mini .name { font-size: 12.5px; }
+    .char-mini .sub { font-size: 10.5px; color: var(--muted); }
+    .queue-item { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 12.5px; }
+    .queue-item:last-child { border-bottom: none; }
+    .queue-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .queue-item .when { color: var(--muted); font-size: 11px; }
+    .ledger-row { display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+    .ledger-row:last-child { border-bottom: none; }
+    .ledger-row .amt.neg { color: var(--bad); } .ledger-row .amt.pos { color: var(--ok); }
   </style>
 </head>
 <body>
   <header>
-    <h1>🎬 استوديو الفيديو <span>JAOLA</span></h1>
-    <div class="credits-chip" id="creditsChip">الرصيد: …</div>
+    <h1>🎬 الاستديو السينمائي <span>JAOLA OS</span></h1>
+    <div class="header-controls">
+      <button class="pill-btn" id="headerProjectBtn" type="button">📁 المشروع: <span id="headerProjectLabel">لقطات حرة</span> ▾</button>
+      <span class="pill-btn credits-chip" id="creditsChip">الرصيد: …</span>
+      <button class="pill-btn plan-badge" id="upgradeBtn" type="button">⭐ الترقية للاحترافي</button>
+    </div>
   </header>
 
   <!-- بوابة الدخول: الخدمة لا تملك تسجيل دخول خاصاً بها — التوكن يصل
@@ -105,71 +179,120 @@
     </div>
   </div>
 
-  <main class="hidden" id="studio">
-    <h2>🎬 مشاريعك (أفلامك)</h2>
-    <div class="card">
-      <div class="chips" id="projectChips"></div>
-      <div id="storyboard" class="hidden" style="margin-top:14px"></div>
-      <p class="note">أنشئ مشروعاً لفيلمك وأضف إليه لقطة بعد لقطة — كل لقطة جديدة تنضم
-        للمشروع المفتوح تلقائياً، وتستطيع إعادة توليد أي لقطة أو استخدامها أساساً لغيرها.</p>
-    </div>
+  <div class="dashboard-grid hidden" id="studio">
+    <!-- ─── يمين: القائمة الرئيسية ─── -->
+    <nav class="nav-sidebar">
+      <button class="nav-item" data-target="sectionTop">🏠 اللوحة الرئيسية</button>
+      <button class="nav-item" data-target="sectionProjects">📁 إدارة المشاريع</button>
+      <button class="nav-item active" data-target="sectionComposer">🎬 استديو التوليد</button>
+      <button class="nav-item" data-target="sectionCharacters">🎭 بنك الشخصيات</button>
+      <button class="nav-item" data-target="sectionLibrary">🗂️ مكتبة الأفلام</button>
+      <div class="nav-group-label">الأدوات الاحترافية</div>
+      <button class="nav-item" data-soon="هندسة الصوت وAI Voice">🎙️ هندسة الصوت وAI Voice<span class="soon-badge">قريباً</span></button>
+      <button class="nav-item" data-soon="التلوين السينمائي المستقل">🎨 التلوين السينمائي<span class="soon-badge">قريباً</span></button>
+      <button class="nav-item" data-soon="التحكم بالمحاكاة LORA">🧬 التحكم بمحاكاة LORA<span class="soon-badge">قريباً</span></button>
+      <div class="nav-group-label">الحساب</div>
+      <button class="nav-item" data-target="sectionAccount">💳 الباقات والرصيد</button>
+      <button class="nav-item" data-target="sectionAccount">📜 سجل العمليات</button>
+    </nav>
 
-    <h2>🎭 بنك الشخصيات</h2>
-    <div class="card">
-      <div class="grid" id="charGrid" style="grid-template-columns:repeat(auto-fill,minmax(250px,1fr))"></div>
-      <div id="charCreate" class="hidden" style="margin-top:12px">
-        <label>اسم الشخصية *</label>
-        <input type="text" id="charName" maxlength="60" placeholder="مثال: البطل — رجل المعطف" />
-        <label>الوصف الحرفي الثابت * (يُحقن كما هو في كل لقطة — كن محدداً: الملامح، الملابس، العمر)</label>
-        <textarea id="charDesc" maxlength="500" rows="3"
-          style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);
-          background:var(--bg);color:var(--text);font-size:14px;font-family:inherit;resize:vertical"
-          placeholder="مثال: A man in his 40s with a short grey beard, wearing a long dark trench coat and black leather gloves"></textarea>
-        <button id="charCreateBtn" type="button">🎭 أنشئ الشخصية (٣ صور مرجعية)</button>
-        <div class="msg" id="charMsg"></div>
-      </div>
-      <p class="note">الشخصية = وصف حرفي ثابت + ٣ صور مرجعية بزوايا مختلفة تُولَّد مرة واحدة.
-        عند إدراجها في لقطة يُحقن وصفها في البرومت وتُستخدم صورة الزاوية الأنسب إطاراً أول —
-        فيبقى بطلك نفسه عبر كل المشاهد. 💡 اكتب الوصف بالإنجليزية لالتزام أدق من النماذج.</p>
-    </div>
+    <!-- ─── وسط: الاستوديو ─── -->
+    <main class="studio-center" id="sectionTop">
+      <div class="stat-row" id="statRow"></div>
 
-    <h2>١) اختر قالباً</h2>
-    <div class="grid" id="templates"></div>
-
-    <div id="formWrap" class="hidden">
-      <h2>٢) عبّئ محتوى الفيديو</h2>
-      <div class="card">
-        <div id="modelPicker" class="hidden"></div>
-        <div id="charPicker" class="hidden"></div>
-        <form id="renderForm"></form>
-        <div id="composerExtras" class="hidden">
-          <div id="presetBar" style="margin-top:12px"></div>
-          <label style="display:flex;align-items:center;gap:8px">
-            🎬 معاينة البرومت النهائي (ما سيصل للنموذج حرفياً)
-            <span style="display:flex;align-items:center;gap:4px;font-size:12px">
-              <input type="checkbox" id="manualEdit" style="width:auto" /> تحرير يدوي
-            </span>
-          </label>
-          <textarea id="promptPreview" dir="auto" rows="3" readonly
-            style="width:100%;padding:10px 12px;border-radius:8px;border:1px dashed var(--border);
-            background:rgba(56,189,248,.04);color:var(--muted);font-size:13px;font-family:inherit;
-            resize:vertical"></textarea>
-          <div id="promptHistory"></div>
+      <section id="sectionProjects">
+        <h2>🎬 مشاريعك (أفلامك)</h2>
+        <div class="card">
+          <div class="chips" id="projectChips"></div>
+          <div id="storyboard" class="hidden" style="margin-top:14px"></div>
+          <p class="note">أنشئ مشروعاً لفيلمك وأضف إليه لقطة بعد لقطة — كل لقطة جديدة تنضم
+            للمشروع المفتوح تلقائياً، وتستطيع إعادة توليد أي لقطة أو استخدامها أساساً لغيرها.</p>
         </div>
-        <button id="submitBtn" type="button">🚀 أنشئ الفيديو</button>
-        <div class="msg" id="formMsg"></div>
-      </div>
-    </div>
+      </section>
 
-    <h2>٣) فيديوهاتك</h2>
-    <div class="card">
-      <table>
-        <thead><tr><th>القالب</th><th>الحالة</th><th>النتيجة</th><th>التاريخ</th></tr></thead>
-        <tbody id="jobsBody"><tr><td colspan="4" style="color:var(--muted)">لا مهام بعد.</td></tr></tbody>
-      </table>
-      <p class="note">تُحدَّث الحالة تلقائياً كل بضع ثوانٍ. عند فشل أي مهمة يُسترد رصيدها تلقائياً.</p>
-    </div>
-  </main>
+      <section id="sectionComposer">
+        <h2>🎥 منشئ المشاهد السينمائي (Prompt Studio)</h2>
+        <div class="card">
+          <h3 style="font-size:14px;margin-bottom:8px">١) اختر قالباً</h3>
+          <div class="grid" id="templates"></div>
+        </div>
+
+        <div id="formWrap" class="hidden">
+          <div class="card">
+            <h3 style="font-size:14px;margin-bottom:8px">٢) محرك التوليد ونواة الذكاء الاصطناعي</h3>
+            <div id="modelPicker" class="hidden"></div>
+            <div id="charPicker" class="hidden"></div>
+            <h3 style="font-size:14px;margin:16px 0 8px">٣) عبّئ محتوى المشهد</h3>
+            <form id="renderForm"></form>
+            <div id="composerExtras" class="hidden">
+              <div id="presetBar" style="margin-top:12px"></div>
+              <label style="display:flex;align-items:center;gap:8px">
+                🎬 معاينة البرومت النهائي (ما سيصل للنموذج حرفياً — الحقن الثنائي للشخصية والأجواء مفعَّل)
+                <span style="display:flex;align-items:center;gap:4px;font-size:12px">
+                  <input type="checkbox" id="manualEdit" style="width:auto" /> تحرير يدوي
+                </span>
+              </label>
+              <textarea id="promptPreview" dir="auto" rows="3" readonly
+                style="width:100%;padding:10px 12px;border-radius:8px;border:1px dashed var(--border);
+                background:rgba(56,189,248,.04);color:var(--muted);font-size:13px;font-family:inherit;
+                resize:vertical"></textarea>
+              <div id="promptHistory"></div>
+            </div>
+            <button id="submitBtn" type="button">🎬 ولّد المشهد الآن</button>
+            <div class="msg" id="formMsg"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="sectionLibrary">
+        <h2>🗂️ مكتبة أفلامك</h2>
+        <div class="card">
+          <table>
+            <thead><tr><th>القالب</th><th>الحالة</th><th>النتيجة</th><th>التاريخ</th></tr></thead>
+            <tbody id="jobsBody"><tr><td colspan="4" style="color:var(--muted)">لا مهام بعد.</td></tr></tbody>
+          </table>
+          <p class="note">تُحدَّث الحالة تلقائياً كل بضع ثوانٍ. عند فشل أي مهمة يُسترد رصيدها تلقائياً.</p>
+        </div>
+      </section>
+    </main>
+
+    <!-- ─── يسار: بنك الشخصيات + الطابور المباشر + الحساب ─── -->
+    <aside class="side-panel">
+      <section id="sectionCharacters" class="side-card">
+        <h3>🎭 بنك الشخصيات الموحدة</h3>
+        <div id="charGrid"></div>
+        <div id="charCreate" class="hidden" style="margin-top:10px">
+          <label style="margin-top:0">اسم الشخصية *</label>
+          <input type="text" id="charName" maxlength="60" placeholder="مثال: الرجل بالمعطف" />
+          <label>الوصف الحرفي الثابت * (يُحقن كما هو في كل لقطة)</label>
+          <textarea id="charDesc" maxlength="500" rows="3"
+            style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);
+            background:var(--bg);color:var(--text);font-size:13px;font-family:inherit;resize:vertical"
+            placeholder="A man in his 40s with a short grey beard, wearing a long dark trench coat"></textarea>
+          <button id="charCreateBtn" type="button" style="width:100%">🎭 أنشئ الشخصية (٣ صور مرجعية)</button>
+          <div class="msg" id="charMsg"></div>
+        </div>
+        <p class="note" style="margin-top:10px">وصف حرفي ثابت + ٣ صور مرجعية بزوايا مختلفة — يبقى بطلك نفسه عبر كل المشاهد.</p>
+      </section>
+
+      <section id="sectionQueue" class="side-card">
+        <h3>⏳ طابور المعالجة المباشرة</h3>
+        <div id="queueList"><p class="note" style="margin:0">لا مهام جارية.</p></div>
+      </section>
+
+      <section class="side-card">
+        <h3>▶️ المعاينة السينمائية المباشرة</h3>
+        <div id="livePreviewBox"><p class="note" style="margin:0">لا معاينة بعد — أنشئ لقطة أو افتح "▶️ معاينة" من مكتبتك.</p></div>
+      </section>
+
+      <section id="sectionAccount" class="side-card">
+        <h3>💳 الباقات والرصيد · سجل العمليات</h3>
+        <p style="font-size:13px;margin-bottom:8px">الرصيد الحالي: <strong id="accountCredits" style="color:var(--warn)">…</strong></p>
+        <div id="ledgerBody"><p class="note" style="margin:0">لا حركات بعد.</p></div>
+        <p class="note">باقات الشراء والترقية قادمة قريباً — الرصيد الترحيبي والمنح الإدارية تعمل الآن.</p>
+      </section>
+    </aside>
+  </div>
 
   <!-- 🎥 مشغل المعاينة الداخلي — بلا مغادرة الاستوديو -->
   <div id="playerModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);
@@ -217,6 +340,7 @@
     let activeCharacterId = null;
     let activeCharAngle = 'front';
     let cinemaControls = [];
+    let currentCredits = 0;
 
     const STATUS_AR = { queued: 'في الطابور', rendering: 'قيد التصدير', done: 'مكتمل', failed: 'فشل' };
 
@@ -226,12 +350,58 @@
       $('creditsChip').textContent = 'غير مسجَّل';
     }
 
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    // ─── القائمة الرئيسية: تمرير للأقسام أو تنبيه "قريباً" للأدوات غير المفعَّلة ───
+    document.querySelectorAll('.nav-item[data-target]').forEach(el => {
+      el.addEventListener('click', () => {
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        el.classList.add('active');
+        document.getElementById(el.dataset.target)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+    document.querySelectorAll('.nav-item[data-soon]').forEach(el => {
+      el.addEventListener('click', () => alert(`${el.dataset.soon} — قادم قريباً في الاستوديو.`));
+    });
+    $('headerProjectBtn').addEventListener('click', () =>
+      $('sectionProjects').scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    $('upgradeBtn').addEventListener('click', () => alert('باقات الترقية والاشتراك المدفوع قادمة قريباً.'));
+
+    const LEDGER_KIND_AR = { starter: 'رصيد ترحيبي', grant: 'منح إداري', deduct: 'خصم توليد', refund: 'استرداد' };
+
+    function renderLedger(ledger) {
+      const box = $('ledgerBody');
+      if (!ledger || !ledger.length) { box.innerHTML = '<p class="note" style="margin:0">لا حركات بعد.</p>'; return; }
+      box.innerHTML = ledger.slice(0, 12).map(r => {
+        const neg = r.kind === 'deduct';
+        return `<div class="ledger-row">
+          <span>${LEDGER_KIND_AR[r.kind] || r.kind}</span>
+          <span class="amt ${neg ? 'neg' : 'pos'}">${neg ? '-' : '+'}${r.amount}</span>
+        </div>`;
+      }).join('');
+    }
+
     async function loadCredits() {
       const res = await api('/api/video/credits');
       if (res.status === 401) { showGate(); return false; }
       const data = await res.json();
+      currentCredits = data.credits;
       $('creditsChip').textContent = 'الرصيد: ' + data.credits + ' 🎟️';
+      $('accountCredits').textContent = data.credits + ' نقطة';
+      renderLedger(data.ledger);
+      renderStats();
       return true;
+    }
+
+    function renderStats() {
+      $('statRow').innerHTML = [
+        { num: currentCredits, lbl: '🎟️ الرصيد المتاح' },
+        { num: projects.length, lbl: '📁 مشاريع نشطة' },
+        { num: characters.length, lbl: '🎭 شخصيات محفوظة' },
+      ].map(s => `<div class="stat-card"><div class="num">${s.num}</div><div class="lbl">${s.lbl}</div></div>`).join('');
     }
 
     async function loadTemplates() {
@@ -260,7 +430,7 @@
     const isAiTemplate = t => t && t.specKind === 'ai_prompt';
     const activeModel = () => aiModels.find(m => m.id === activeModelId) || null;
 
-    // 🎞️ اختيار النموذج: بطاقات فوق الحقول — النموذج يحدد التكلفة
+    // 🎞️ اختيار النموذج: بطاقات مستويات الجودة — النموذج يحدد التكلفة
     // ونسب الأبعاد المتاحة، فيُعاد ضبطهما عند كل اختيار.
     function renderModelPicker() {
       const wrap = $('modelPicker');
@@ -308,7 +478,7 @@
     function syncCost() {
       const m = isAiTemplate(activeTemplate) ? activeModel() : null;
       const cost = m ? m.costCredits : (activeTemplate ? activeTemplate.costCredits : 0);
-      $('submitBtn').textContent = `🚀 أنشئ الفيديو (🎟️ ${cost})`;
+      $('submitBtn').textContent = `🎬 ولّد المشهد الآن (🎟️ ${cost})`;
     }
 
     function selectTemplate(id) {
@@ -388,7 +558,7 @@
         } else {
           msg.textContent = activeProjectId
             ? '✅ دخلت اللقطة الطابور وانضمت لمشروعك — تابعها في الستوري بورد أعلاه.'
-            : '✅ دخلت المهمة الطابور — تابع حالتها في القائمة أدناه.';
+            : '✅ دخلت المهمة الطابور — تابع حالتها في مكتبتك أدناه.';
           msg.className = 'msg ok';
           if (values.prompt) { pushHistory(values.prompt); renderPromptHistory(); }
           $('renderForm').reset();
@@ -409,12 +579,35 @@
       return t ? t.nameAr : id;
     }
 
+    function timeAgo(ms) {
+      const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+      if (s < 60) return 'الآن';
+      if (s < 3600) return `منذ ${Math.round(s / 60)} د`;
+      return `منذ ${Math.round(s / 3600)} س`;
+    }
+
+    // ⏳ طابور المعالجة المباشرة: أحدث المهام (نشطة أولاً) بشكل مختصر.
+    function renderQueueWidget(jobs) {
+      const box = $('queueList');
+      const active = jobs.filter(j => j.status === 'queued' || j.status === 'rendering');
+      const recent = jobs.filter(j => j.status === 'done' || j.status === 'failed').slice(0, 4);
+      const rows = [...active, ...recent].slice(0, 8);
+      if (!rows.length) { box.innerHTML = '<p class="note" style="margin:0">لا مهام جارية.</p>'; return; }
+      box.innerHTML = rows.map(j => `
+        <div class="queue-item">
+          <span class="dot dot-${j.status}"></span>
+          <span class="name">${tplName(j.templateId)}</span>
+          <span class="when">${STATUS_AR[j.status]} · ${timeAgo(j.updatedAt || j.at)}</span>
+        </div>`).join('');
+    }
+
     async function loadJobs() {
       const res = await api('/api/video/renders');
       if (!res.ok) return;
       const { jobs } = await res.json();
-      if (!jobs.length) return;
       lastJobs = jobs;
+      renderQueueWidget(jobs);
+      if (!jobs.length) return;
       $('jobsBody').innerHTML = jobs.map(j => {
         let result = '—';
         if (j.status === 'done') {
@@ -451,6 +644,7 @@
     }
 
     // 🎥 المعاينة الداخلية: للمملوك نطلب رابطاً موقّعاً طازجاً أولاً.
+    // تُعرض أيضاً مصغَّرة في لوحة "المعاينة السينمائية المباشرة" الجانبية.
     let lastJobs = [];
     async function openPlayer(jobId) {
       const j = lastJobs.find(x => x.id === jobId);
@@ -465,6 +659,9 @@
       }
       $('playerVideo').src = src;
       $('playerModal').style.display = 'flex';
+      $('livePreviewBox').innerHTML = `
+        <video src="${src}" controls style="width:100%;border-radius:8px;background:#000"></video>
+        <p class="note" style="margin-top:6px">▶️ ${tplName(j.templateId)}</p>`;
     }
     $('playerClose').addEventListener('click', () => {
       $('playerVideo').pause();
@@ -620,6 +817,7 @@
       characters = data.characters;
       charMeta = { enabled: data.enabled, costCredits: data.costCredits, angles: data.angles };
       renderCharacters();
+      renderStats();
     }
 
     function renderCharacters() {
@@ -627,24 +825,19 @@
       const grid = $('charGrid');
       if (!characters.length) {
         grid.innerHTML = `<p class="note" style="margin:0">${charMeta.enabled
-          ? 'لا شخصيات بعد — أنشئ بطلك الأول بالأسفل.'
+          ? 'لا شخصيات بعد — أنشئ بطلك الأول أدناه.'
           : 'توليد الصور المرجعية غير مفعَّل حالياً في الخدمة.'}</p>`;
         return;
       }
       grid.innerHTML = characters.map(c => `
-        <div class="card" style="margin-bottom:0">
-          <strong style="font-size:14px">🎭 ${escapeHtml(c.name)}</strong>
-          <div style="display:flex;gap:6px;margin:8px 0">
-            ${(c.images || []).map(img => `
-              <img src="${img.url}" alt="${img.angle}" title="${img.angle}"
-                style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border)" />`).join('')}
+        <div class="char-mini">
+          ${c.images?.[0]?.url ? `<img src="${c.images[0].url}" alt="${escapeHtml(c.name)}" />` : ''}
+          <div style="flex:1;min-width:0">
+            <div class="name">${escapeHtml(c.name)}</div>
+            <div class="sub">${(c.images || []).length} روايا مرجعية · استُخدم ${c.usageCount} مرات</div>
           </div>
-          <div class="note" style="margin:0 0 8px">${escapeHtml(c.description.slice(0, 90))}${c.description.length > 90 ? '…' : ''}</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="chip" data-use-char="${c.id}">🎬 استخدمها في لقطة</button>
-            <button class="chip" data-del-char="${c.id}">🗑️</button>
-            <span style="color:var(--muted);font-size:11px;align-self:center">استُخدمت ${c.usageCount} مرة</span>
-          </div>
+          <button class="chip" data-use-char="${c.id}" style="padding:5px 9px;font-size:11px">استخدم</button>
+          <button class="chip" data-del-char="${c.id}" style="padding:5px 8px;font-size:11px">🗑️</button>
         </div>`).join('');
       grid.querySelectorAll('[data-use-char]').forEach(el =>
         el.addEventListener('click', () => useCharacter(el.dataset.useChar)));
@@ -730,6 +923,7 @@
       if (!res.ok) return;
       projects = (await res.json()).projects;
       renderProjectChips();
+      renderStats();
     }
 
     function renderProjectChips() {
@@ -744,11 +938,8 @@
         el.addEventListener('click', () => selectProject(el.dataset.proj || null));
       });
       $('newProjectBtn').addEventListener('click', createProject);
-    }
-
-    function escapeHtml(s) {
-      return String(s).replace(/[&<>"']/g, c =>
-        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      const activeProj = projects.find(p => p.id === activeProjectId);
+      $('headerProjectLabel').textContent = activeProj ? activeProj.title : 'لقطات حرة';
     }
 
     async function createProject() {
@@ -790,7 +981,7 @@
         </div>
         <div id="assemblyPanel" class="hidden" style="margin-bottom:10px"></div>
         ${shots.length === 0
-          ? '<p class="note">لا لقطات بعد — اختر قالباً بالأسفل وأنشئ أول لقطة، ستنضم هنا تلقائياً.</p>'
+          ? '<p class="note">لا لقطات بعد — اختر قالباً في استديو التوليد، ستنضم هنا تلقائياً.</p>'
           : `<div class="shots">${shots.map(shotCard).join('')}</div>`}`;
       bindDownloads(board);
       // بطاقات الستوري بورد تشارك مشغل المعاينة نفسه
@@ -810,7 +1001,7 @@
         refreshStoryboard();
       });
       $('deleteProjBtn').addEventListener('click', async () => {
-        if (!confirm('حذف المشروع؟ اللقطات نفسها تبقى في سجل فيديوهاتك — يزول التجميع فقط.')) return;
+        if (!confirm('حذف المشروع؟ اللقطات نفسها تبقى في مكتبتك — يزول التجميع فقط.')) return;
         await api(`/api/video/projects/${project.id}`, { method: 'DELETE' });
         activeProjectId = null;
         await loadProjects();
@@ -820,7 +1011,7 @@
       if (assembleBtn) assembleBtn.addEventListener('click', () => openAssemblyPanel(project.id));
     }
 
-    // 🎬 لوحة تجميع الفيلم: انتقال + موسيقى + عنوان ختامي → مهمة تركيب.
+    // 🎬 لوحة تجميع الفيلم: انتقال + فلتر + مقاس + موسيقى + عنوان ختامي.
     async function openAssemblyPanel(projectId) {
       const panel = $('assemblyPanel');
       if (!panel.classList.contains('hidden')) { panel.classList.add('hidden'); return; }
@@ -873,7 +1064,7 @@
             msg.textContent = data.error || 'تعذّر التجميع.';
             msg.className = 'msg err';
           } else {
-            msg.textContent = '✅ دخل الفيلم طابور التركيب — تابعه في قائمة فيديوهاتك بالأسفل.';
+            msg.textContent = '✅ دخل الفيلم طابور التركيب — تابعه في مكتبتك بالأسفل.';
             msg.className = 'msg ok';
             loadCredits(); loadJobs();
           }
