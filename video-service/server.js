@@ -27,6 +27,7 @@ import { readAiModels, getAiModel, defaultAiModel, publicAiModels } from './src/
 import { CINEMA_CONTROLS, cinemaFieldOptions } from './src/cinema.js';
 import {
     ASSEMBLY_COST_CREDITS, NARRATION_COST_CREDITS, TRANSITIONS, COLOR_FILTERS, OUTPUT_ASPECTS,
+    OUTPUT_RESOLUTIONS, DEFAULT_RESOLUTION,
     readMusicLibrary, readSfxLibrary, buildFilmSpec,
 } from './src/assembly.js';
 import { buildImageProvider } from './src/providers/falImageProvider.js';
@@ -229,6 +230,7 @@ export function createApp({
             transitions: Object.keys(TRANSITIONS),
             filters: Object.keys(COLOR_FILTERS),
             aspects: OUTPUT_ASPECTS,
+            resolutions: OUTPUT_RESOLUTIONS,
             music: musicLibrary.map(({ id, nameAr }) => ({ id, nameAr })),
             sfx: sfxLibrary.map(({ id, nameAr }) => ({ id, nameAr })),
             narrationEnabled: !!ttsProvider,
@@ -242,7 +244,7 @@ export function createApp({
         const project = await ownedProject(req);
         if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
 
-        const { transition, musicId, endTitle, filter, aspect, logoUrl, sfxId, narrationText } = req.body || {};
+        const { transition, musicId, endTitle, filter, aspect, logoUrl, sfxId, narrationText, resolution } = req.body || {};
         if (transition != null && !(transition in TRANSITIONS)) {
             return res.status(400).json({ error: `انتقال غير معروف (المتاح: ${Object.keys(TRANSITIONS).join('، ')}).` });
         }
@@ -251,6 +253,9 @@ export function createApp({
         }
         if (aspect != null && !OUTPUT_ASPECTS.includes(aspect)) {
             return res.status(400).json({ error: `مقاس غير معروف (المتاح: ${OUTPUT_ASPECTS.join('، ')}).` });
+        }
+        if (resolution != null && !OUTPUT_RESOLUTIONS.includes(resolution)) {
+            return res.status(400).json({ error: `دقة غير معروفة (المتاح: ${OUTPUT_RESOLUTIONS.join('، ')}).` });
         }
         let musicUrl = null;
         if (musicId) {
@@ -339,6 +344,7 @@ export function createApp({
             logoUrl: cleanLogoUrl,
             sfxUrl,
             narrationUrl,
+            resolution: resolution || DEFAULT_RESOLUTION,
         });
 
         const job = await createJob(store, {
@@ -346,7 +352,7 @@ export function createApp({
             values: {
                 transition: transition || '', musicId: musicId || '', endTitle: title,
                 filter: filter || '', aspect: aspect || '16:9', logoUrl: cleanLogoUrl || '',
-                sfxId: sfxId || '', narrationText: narration || '',
+                sfxId: sfxId || '', narrationText: narration || '', resolution: resolution || DEFAULT_RESOLUTION,
             },
             spec, costCredits: ASSEMBLY_COST_CREDITS,
             projectId: project.id, shotIndex: null,

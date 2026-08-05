@@ -24,7 +24,10 @@ import { composeCinematicPrompt } from '../src/cinema.js';
 import { createFalImageProvider, extractImageUrl } from '../src/providers/falImageProvider.js';
 import { createFalTtsProvider, extractAudioUrl, buildTtsProvider } from '../src/providers/falTtsProvider.js';
 import { CHARACTER_COST_CREDITS, characterImagePrompt, validateCharacterInput } from '../src/characters.js';
-import { ASSEMBLY_COST_CREDITS, buildFilmSpec, readMusicLibrary, readSfxLibrary } from '../src/assembly.js';
+import {
+    ASSEMBLY_COST_CREDITS, buildFilmSpec, readMusicLibrary, readSfxLibrary,
+    OUTPUT_RESOLUTIONS, DEFAULT_RESOLUTION,
+} from '../src/assembly.js';
 import { specToShotstackTimeline } from '../src/providers/shotstackProvider.js';
 import { runEngineTick, JOB_TIMEOUT_MS } from '../src/engine.js';
 import { getBalance, grantCredits, deductCredits, refundCredits, STARTER_CREDITS } from '../src/credits.js';
@@ -918,6 +921,34 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal((await sp.getRender('id')).status, 'failed');
         });
 
+        test('Shotstack: دقة الإخراج تُرسَل كما هي (افتراضي hd)، ورفض الإرسال يُظهر تفصيل الرد', async () => {
+            const { createShotstackProvider } = await import('../src/providers/shotstackProvider.js');
+            const bodies = [];
+            const p = createShotstackProvider({
+                apiKey: 'k',
+                fetchImpl: async (url, opts = {}) => {
+                    bodies.push(JSON.parse(opts.body));
+                    return { ok: true, json: async () => ({ response: { id: 'r1' } }) };
+                },
+            });
+            await p.submitRender({ kind: 'timeline', scenes: [], durationSec: 5 });
+            assert.equal(bodies[0].output.resolution, 'hd'); // بلا resolution في المخطط
+
+            await p.submitRender({ kind: 'timeline', scenes: [], durationSec: 5, resolution: '4k' });
+            assert.equal(bodies[1].output.resolution, '4k');
+
+            // رفض الإرسال (مثلاً قيمة resolution مرفوضة فعلياً من Shotstack)
+            // يُظهر تفصيل رده كاملاً — لا HTTP فارغ.
+            const rejecting = createShotstackProvider({
+                apiKey: 'k',
+                fetchImpl: async () => ({ ok: false, status: 400, text: async () => 'Invalid output.resolution: 4k' }),
+            });
+            await assert.rejects(
+                () => rejecting.submitRender({ kind: 'timeline', scenes: [], durationSec: 5, resolution: '4k' }),
+                /Invalid output\.resolution/
+            );
+        });
+
         test('fal: الحالات غير المكتملة تبقى قيد المعالجة لا تُحسم', async () => {
             for (const status of ['IN_QUEUE', 'IN_PROGRESS']) {
                 const p = createFalProvider({
@@ -1743,6 +1774,13 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(specToShotstackTimeline(noNarration).tracks.length, 1);
         });
 
+        test('دقة الإخراج: افتراضي hd، وقيمة صريحة تُحفظ في المخطط', () => {
+            const shots = [{ durationSec: 5, videoUrl: 'https://v.test/a.mp4' }];
+            assert.equal(buildFilmSpec({ shots }).resolution, DEFAULT_RESOLUTION);
+            assert.equal(buildFilmSpec({ shots, resolution: '4k' }).resolution, '4k');
+            assert.deepEqual(OUTPUT_RESOLUTIONS, ['sd', 'hd', '1080', '4k']);
+        });
+
         test('التجميع: شعار برابط فاسد يُرفض بـ400 قبل الخصم، وشعار صالح يصل المخطط', async () => {
             // تطبيق مستقل: /assemble يشارك محدود renderLimit مع /renders،
             // وقد استُهلك حصة الساعة عبر عشرات النداءات في بقية هذا الملف —
@@ -1795,6 +1833,18 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 });
                 assert.equal(badTts.status, 400);
                 assert.match(badTts.data.error, /التعليق الصوتي غير مفعَّل/);
+
+                // دقة غير معروفة → 400
+                const badRes = await callAt(url, `/api/video/projects/${pid}/assemble`, {
+                    method: 'POST', token, body: { resolution: '8k' },
+                });
+                assert.equal(badRes.status, 400);
+                // دقة صحيحة (4k) تصل المخطط رغم كونها غير مؤكَّدة عملياً
+                const okRes = await callAt(url, `/api/video/projects/${pid}/assemble`, {
+                    method: 'POST', token, body: { resolution: '4k' },
+                });
+                assert.equal(okRes.status, 200);
+                assert.equal((await getJob(store, okRes.data.job.id)).spec.resolution, '4k');
             } finally {
                 await new Promise(r => s.close(r));
             }
