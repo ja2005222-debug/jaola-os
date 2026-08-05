@@ -128,6 +128,19 @@ export function createApp({
         });
     }));
 
+    // 🎙️ هندسة الصوت وAI Voice: مكتبات الموسيقى/المؤثرات ورابط كل مقطع
+    // (لمعاينته مباشرة) — مستقلة عن أي مشروع، خلافاً لـassembly-options
+    // المرتبطة بمشروع محدد. رابط المقطع نفسه علني أصلاً (يُضمَّن حرفياً
+    // في الفيلم النهائي المُصدَّر) فلا حساسية إضافية بعرضه هنا للمعاينة.
+    app.get('/api/video/audio-options', verifyToken, wrap(async (req, res) => {
+        res.json({
+            music: musicLibrary.map(({ id, nameAr, url }) => ({ id, nameAr, url })),
+            sfx: sfxLibrary.map(({ id, nameAr, url }) => ({ id, nameAr, url })),
+            narrationEnabled: !!ttsProvider,
+            narrationCostCredits: NARRATION_COST_CREDITS,
+        });
+    }));
+
     // ─── مشاريع الأفلام (ستوري بورد) ───────────────────────────────────
     // كل مسارات المشروع تتحقق من الملكية بنفس قاعدة المهام: مشروع مستخدم
     // آخر غير موجود (404) — لا نؤكد حتى وجوده.

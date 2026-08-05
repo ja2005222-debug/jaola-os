@@ -150,6 +150,15 @@
     .char-mini .sub { font-size: 10.5px; color: var(--muted); }
     .char-mini .chip { padding: 5px 8px; font-size: 11px; }
 
+    /* ─── هندسة الصوت: صفوف معاينة الموسيقى/المؤثرات ─── */
+    .audio-row {
+      display: flex; align-items: center; gap: 10px; padding: 8px 0;
+      border-bottom: 1px solid var(--border); flex-wrap: wrap;
+    }
+    .audio-row:last-child { border-bottom: none; }
+    .audio-row .name { font-size: 13px; min-width: 140px; }
+    .audio-row audio { height: 32px; max-width: 280px; flex: 1; min-width: 200px; }
+
     /* ─── معاينة الشخصية بزواياها المختلفة (نافذة منبثقة) ─── */
     .char-preview-overlay {
       position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 100;
@@ -216,8 +225,8 @@
       <button class="nav-item active" data-target="sectionComposer">🎬 استديو التوليد</button>
       <button class="nav-item" data-target="sectionCharacters">🎭 بنك الشخصيات</button>
       <button class="nav-item" data-target="sectionLibrary">🗂️ مكتبة الأفلام</button>
+      <button class="nav-item" data-target="sectionAudio">🎙️ هندسة الصوت وAI Voice</button>
       <div class="nav-group-label">الأدوات الاحترافية</div>
-      <button class="nav-item" data-soon="هندسة الصوت وAI Voice">🎙️ هندسة الصوت وAI Voice<span class="soon-badge">قريباً</span></button>
       <button class="nav-item" data-soon="التلوين السينمائي المستقل">🎨 التلوين السينمائي<span class="soon-badge">قريباً</span></button>
       <button class="nav-item" data-soon="التحكم بالمحاكاة LORA">🧬 التحكم بمحاكاة LORA<span class="soon-badge">قريباً</span></button>
       <div class="nav-group-label">الحساب</div>
@@ -281,6 +290,27 @@
             <tbody id="jobsBody"><tr><td colspan="4" style="color:var(--muted)">لا مهام بعد.</td></tr></tbody>
           </table>
           <p class="note">تُحدَّث الحالة تلقائياً كل بضع ثوانٍ. عند فشل أي مهمة يُسترد رصيدها تلقائياً.</p>
+        </div>
+      </section>
+
+      <section id="sectionAudio">
+        <h2>🎙️ هندسة الصوت وAI Voice</h2>
+        <div class="card">
+          <h3 style="font-size:14px;margin-bottom:8px">🎵 مكتبة الموسيقى التصويرية</h3>
+          <div id="audioMusicList"><p class="note" style="margin:0">جارٍ التحميل…</p></div>
+        </div>
+        <div class="card">
+          <h3 style="font-size:14px;margin-bottom:8px">🔊 مكتبة مؤثرات الانتقال</h3>
+          <div id="audioSfxList"><p class="note" style="margin:0">جارٍ التحميل…</p></div>
+        </div>
+        <div class="card">
+          <h3 style="font-size:14px;margin-bottom:8px">🗣️ التعليق الصوتي بالذكاء الاصطناعي (TTS)</h3>
+          <div id="audioTtsStatus"></div>
+          <p class="note">
+            تُضاف نصاً حراً حين تجمّع فيلماً (لوحة التجميع في مكتبة الأفلام) —
+            يُقرأ آلياً بصوت مركّب ويمتد طوال الفيلم. رصيد منفصل عن تكلفة
+            التجميع نفسها، يُسترد كاملاً تلقائياً إن فشل التوليد.
+          </p>
         </div>
       </section>
     </main>
@@ -1005,6 +1035,33 @@
       img.onclick = () => openCharacterPreview(c.id, shot.angle);
     }
 
+    // ─── هندسة الصوت وAI Voice: معاينة مكتبتي الموسيقى والمؤثرات ─────────
+
+    async function loadAudioOptions() {
+      const res = await api('/api/video/audio-options');
+      if (!res.ok) return;
+      const opts = await res.json();
+
+      const renderList = (containerId, items, icon, emptyNote) => {
+        const box = $(containerId);
+        if (!items.length) { box.innerHTML = `<p class="note" style="margin:0">${emptyNote}</p>`; return; }
+        box.innerHTML = items.map(item => `
+          <div class="audio-row">
+            <span class="name">${icon} ${escapeHtml(item.nameAr)}</span>
+            <audio controls preload="none" src="${item.url}"></audio>
+          </div>`).join('');
+      };
+      renderList('audioMusicList', opts.music || [], '🎵',
+        'لا مكتبة موسيقى مضبوطة على هذا الخادم بعد.');
+      renderList('audioSfxList', opts.sfx || [], '🔊',
+        'لا مكتبة مؤثرات مضبوطة على هذا الخادم بعد.');
+
+      const ttsBox = $('audioTtsStatus');
+      ttsBox.innerHTML = opts.narrationEnabled
+        ? `<p class="msg ok" style="display:block">✅ مفعَّل — 🎟️ ${opts.narrationCostCredits} لكل فيلم مُجمَّع.</p>`
+        : `<p class="msg err" style="display:block">⏸️ غير مفعَّل على هذا الخادم حالياً.</p>`;
+    }
+
     // ─── مشاريع الأفلام (الستوري بورد) ─────────────────────────────────
 
     let projectSettingsOptions = { aspects: [], styles: [] };
@@ -1364,6 +1421,7 @@
       await loadProjects();
       await loadCharacters();
       await loadJobs();
+      await loadAudioOptions();
       setInterval(() => { loadJobs(); refreshStoryboard(); }, 5000);
       setInterval(loadCredits, 15000);
     })();
