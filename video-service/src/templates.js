@@ -81,7 +81,8 @@ export const TEMPLATES = Object.freeze([
         specKind: SPEC_AI_PROMPT,
         aiInput: 'image', // لا تصلح له إلا نماذج image-to-video من الكتالوج
         fields: [
-            { key: 'imageUrl', labelAr: 'رابط الصورة المرجعية (الإطار الأول)', type: 'imageUrl', required: true },
+            // غير إلزامي: البديل شخصية من البنك — الخادم يرفض غياب الاثنين معاً.
+            { key: 'imageUrl', labelAr: 'رابط الصورة المرجعية (الإطار الأول) — أو اختر شخصية', type: 'imageUrl', required: false },
             { key: 'prompt', labelAr: 'ماذا يحدث في اللقطة؟', type: 'text', required: true, maxLen: 1000 },
             {
                 key: 'aspectRatio', labelAr: 'نسبة الأبعاد', type: 'choice', required: false,

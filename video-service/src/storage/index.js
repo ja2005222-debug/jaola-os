@@ -18,6 +18,14 @@ export function storageKeyFor({ username, jobId }) {
     return `videos/${safeUser}/${safeJob}.mp4`;
 }
 
+/** مسار صورة مرجعية لشخصية (بنك الشخصيات) — نفس قواعد العزل. */
+export function characterImageKeyFor({ username, characterId, angle }) {
+    const safeUser = String(username || 'unknown').replace(/[^a-z0-9_-]/gi, '_').slice(0, 64);
+    const safeChar = String(characterId).replace(/[^a-z0-9_-]/gi, '_');
+    const safeAngle = String(angle).replace(/[^a-z]/gi, '').slice(0, 16) || 'front';
+    return `characters/${safeUser}/${safeChar}-${safeAngle}.png`;
+}
+
 export function buildStorage(env = process.env) {
     const enabled = String(env.VIDEO_STORAGE || '').toLowerCase() === 'r2';
     if (!enabled) return null;

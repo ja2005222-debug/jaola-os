@@ -22,8 +22,15 @@ import { buildProvider } from './src/providers/index.js';
 import { buildStore } from './src/store/index.js';
 import { buildStorage, retentionDays as readRetentionDays } from './src/storage/index.js';
 import { readLimits, checkRenderAllowed, maybeAlertCost, startOfUtcDay } from './src/limits.js';
-import { readBlocklist, inspectValues } from './src/contentFilter.js';
+import { readBlocklist, inspectValues, inspectText } from './src/contentFilter.js';
 import { readAiModels, getAiModel, defaultAiModel } from './src/models.js';
+import { buildImageProvider } from './src/providers/falImageProvider.js';
+import { characterImageKeyFor } from './src/storage/index.js';
+import {
+    CHARACTER_COST_CREDITS, CHARACTER_ANGLES,
+    characterImagePrompt, validateCharacterInput,
+} from './src/characters.js';
+import { refundCredits } from './src/credits.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -42,6 +49,7 @@ export function createApp({
     limits = readLimits(),
     blocklist = readBlocklist(),
     aiModels = readAiModels(),
+    imageProvider = null,
 } = {}) {
     const secrets = (Array.isArray(jwtSecret) ? jwtSecret : [jwtSecret]).filter(Boolean);
     if (secrets.length === 0) {
@@ -146,8 +154,103 @@ export function createApp({
         res.json({ success: true });
     }));
 
+    // ─── بنك الشخصيات (تثبيت هوية البطل) ───────────────────────────────
+    // عرض الصور: مفتاح مخزَّن → رابط موقّع طازج عند كل قراءة؛ وإلا رابط
+    // المزوّد كما هو — نفس فلسفة publicJob بلا ادعاء ملكية غير قائمة.
+    const publicCharacter = async (c) => ({
+        id: c.id, at: c.at, name: c.name, description: c.description,
+        usageCount: c.usageCount || 0,
+        images: await Promise.all((c.images || []).map(async img => ({
+            angle: img.angle,
+            url: img.storageKey && storage ? await storage.signedUrl(img.storageKey) : img.url,
+        }))),
+    });
+
+    app.get('/api/video/characters', verifyToken, wrap(async (req, res) => {
+        const list = await store.listCharactersByUser(userOf(req), 50);
+        res.json({
+            characters: await Promise.all(list.map(publicCharacter)),
+            enabled: !!imageProvider,
+            costCredits: CHARACTER_COST_CREDITS,
+            angles: CHARACTER_ANGLES.map(a => ({ key: a.key, labelAr: a.labelAr })),
+        });
+    }));
+
+    app.post('/api/video/characters', verifyToken, wrap(async (req, res) => {
+        if (!imageProvider) {
+            return res.status(503).json({ error: 'توليد الصور المرجعية غير مفعَّل حالياً في الخدمة.' });
+        }
+        const input = validateCharacterInput(req.body || {});
+        if (input.error) return res.status(400).json({ error: input.error });
+        // الوصف يذهب لمزوّد خارجي — نفس فلترة نصوص الفيديو قبل أي إرسال.
+        const flagged = inspectText(input.description, { blocklist }) || inspectText(input.name, { blocklist });
+        if (flagged) return res.status(400).json({ error: flagged.error });
+
+        const username = userOf(req);
+        // خصم مقدَّم بمعرّف طلب فريد — الفشل بعده يسترد به (معصوم من الازدواج).
+        const requestId = `char-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+        const deducted = await deductCredits(store, {
+            username, amount: CHARACTER_COST_CREDITS, jobId: requestId,
+        });
+        if (!deducted) {
+            return res.status(402).json({
+                error: `رصيدك لا يكفي — إنشاء شخصية (٣ صور مرجعية) يكلف ${CHARACTER_COST_CREDITS}.`,
+            });
+        }
+
+        try {
+            // ثلاث زوايا بنفس الوصف الحرفي — أساس الثبات عبر اللقطات.
+            const images = [];
+            for (const angle of CHARACTER_ANGLES) {
+                const url = await imageProvider.generateImage(
+                    characterImagePrompt(input.description, angle.key)
+                );
+                images.push({ angle: angle.key, url });
+            }
+            // نسخ الصور لملكيتنا قبل الحفظ (إن فُعّل التخزين) — روابط
+            // المزوّد مؤقتة، وفشل النسخ لا يفشل الشخصية (احتياط شفاف).
+            if (storage) {
+                for (const img of images) {
+                    try {
+                        const key = characterImageKeyFor({ username, characterId: requestId, angle: img.angle });
+                        await storage.mirrorFromUrl(img.url, key);
+                        img.storageKey = key;
+                    } catch (e) {
+                        console.warn('⚠️ تعذّر نسخ صورة شخصية:', e.message);
+                    }
+                }
+            }
+            const character = await store.createCharacter({
+                username, name: input.name, description: input.description, images,
+            });
+            res.json({ character: await publicCharacter(character) });
+        } catch (e) {
+            // فشل التوليد: استرداد فوري + السبب الكامل (لا رقم صامت).
+            await refundCredits(store, {
+                username, amount: CHARACTER_COST_CREDITS, jobId: requestId,
+                reason: 'فشل توليد صور الشخصية',
+            }).catch(() => {});
+            res.status(502).json({ error: `تعذّر توليد صور الشخصية: ${e.message} (استُرد الرصيد)` });
+        }
+    }));
+
+    app.delete('/api/video/characters/:id', verifyToken, wrap(async (req, res) => {
+        const character = await store.getCharacter(req.params.id);
+        if (!character || character.username !== userOf(req)) {
+            return res.status(404).json({ error: 'الشخصية غير موجودة.' });
+        }
+        // حذف الملفات المملوكة أولاً (أفضل جهد) ثم السجل.
+        if (storage) {
+            for (const img of character.images || []) {
+                if (img.storageKey) await storage.remove(img.storageKey).catch(() => {});
+            }
+        }
+        await store.deleteCharacter(character.id);
+        res.json({ success: true });
+    }));
+
     app.post('/api/video/renders', verifyToken, renderLimit, wrap(async (req, res) => {
-        const { templateId, values, modelId, projectId } = req.body || {};
+        const { templateId, values, modelId, projectId, characterId, characterAngle } = req.body || {};
         const template = getTemplate(String(templateId || ''));
         if (!template) return res.status(400).json({ error: 'قالب غير معروف.' });
         // الإخفاء من الواجهة لا يكفي — الطلب المباشر يُرفض أيضاً.
@@ -184,6 +287,16 @@ export function createApp({
             }
         }
         const costCredits = aiModel ? aiModel.costCredits : template.costCredits;
+
+        // 🎭 إدراج شخصية من البنك (اختياري): وصفها الحرفي يُحقن في مقدمة
+        // البرومت، وصورة الزاوية المطلوبة تصبح الإطار الأول في وضع الصورة.
+        let character = null;
+        if (characterId && template.specKind === 'ai_prompt') {
+            character = await store.getCharacter(String(characterId));
+            if (!character || character.username !== userOf(req)) {
+                return res.status(400).json({ error: 'الشخصية غير موجودة.' });
+            }
+        }
 
         // 🎬 الربط بمشروع (اختياري): ملكية المشروع شرط، ورقم اللقطة يُسنَد
         // خادمياً بترتيب الإضافة.
@@ -225,6 +338,30 @@ export function createApp({
             spec.modelId = aiModel.id;
             spec.modelPath = aiModel.falPath;
         }
+        if (character) {
+            // الوصف الحرفي في المقدمة — لا يُعاد صياغته أبداً (إعادة
+            // الصياغة أول أسباب تغيّر الملامح بين اللقطات).
+            spec.prompt = `${character.description}. ${spec.prompt}`;
+            spec.characterId = character.id;
+            if ((template.aiInput || 'text') === 'image' && !spec.imageUrl) {
+                const angleKey = CHARACTER_ANGLES.some(a => a.key === characterAngle)
+                    ? characterAngle : 'front';
+                const img = (character.images || []).find(i => i.angle === angleKey)
+                    || (character.images || [])[0];
+                if (img) {
+                    // رابط موقّع بساعة كاملة: المهمة قد تنتظر دورها في
+                    // الطابور قبل أن يقرأ المزوّد الصورة.
+                    spec.imageUrl = img.storageKey && storage
+                        ? await storage.signedUrl(img.storageKey, 3600)
+                        : img.url;
+                }
+            }
+        }
+        // قالب الصورة المرجعية يحتاج مصدراً للإطار الأول — رابطاً مباشراً
+        // أو شخصية من البنك.
+        if (template.specKind === 'ai_prompt' && (template.aiInput || 'text') === 'image' && !spec.imageUrl) {
+            return res.status(400).json({ error: 'وفّر رابط صورة مرجعية أو اختر شخصية من بنك الشخصيات.' });
+        }
 
         // الخصم قبل المعالجة — مهمة بلا خصمٍ مثبت لا تُعالَج أبداً.
         // نُنشئ المهمة أولاً لنملك jobId يربط الخصم بها في سجل التدقيق،
@@ -242,6 +379,12 @@ export function createApp({
             return res.status(402).json({
                 error: `رصيدك الحالي (${await getBalance(store, username)}) لا يكفي — هذا الطلب يكلف ${costCredits}.`,
             });
+        }
+
+        // عدّاد استخدام الشخصية — فشله لا يمس نجاح الطلب.
+        if (character) {
+            store.incrementCharacterUsage(character.id)
+                .catch(e => console.warn('⚠️ تعذّر تحديث عداد الشخصية:', e.message));
         }
 
         // إنذار مبكر عند الاقتراب من السقف العام — مرة واحدة يومياً،
@@ -355,6 +498,7 @@ if (isMain) {
     });
     const provider = buildProvider(); // موجّه: تركيب + توليد ذكاء اصطناعي
     const storage = buildStorage();            // null ما لم يُضبط VIDEO_STORAGE=r2
+    const imageProvider = buildImageProvider(); // null ما لم يكن fal مفعَّلاً
     const retention = readRetentionDays();
 
     await store.init(); // ينشئ الجداول عند أول إقلاع — فشلٌ صاخب إن تعذّر
@@ -366,6 +510,7 @@ if (isMain) {
         provider,
         storage,
         limits,
+        imageProvider,
     });
 
     const port = Number(process.env.PORT || 4100);

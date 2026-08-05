@@ -68,6 +68,18 @@ CREATE TABLE IF NOT EXISTS video_projects (
     title      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS video_projects_user_idx ON video_projects (username, at);
+-- بنك الشخصيات: وصف حرفي ثابت + صور مرجعية بزوايا متعددة
+CREATE TABLE IF NOT EXISTS video_characters (
+    id          TEXT PRIMARY KEY,
+    at          BIGINT NOT NULL,
+    updated_at  BIGINT NOT NULL,
+    username    TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    description TEXT NOT NULL,
+    images_json JSONB NOT NULL,
+    usage_count INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS video_characters_user_idx ON video_characters (username, at);
 -- أعلام صغيرة دائمة (تنبيه التكلفة اليومي…) — تبقى عبر إعادات التشغيل
 CREATE TABLE IF NOT EXISTS video_flags (
     key   TEXT PRIMARY KEY,
@@ -108,6 +120,15 @@ function rowToProject(r) {
     return {
         id: r.id, at: Number(r.at), updatedAt: Number(r.updated_at),
         username: r.username, title: r.title,
+    };
+}
+
+function rowToCharacter(r) {
+    if (!r) return null;
+    return {
+        id: r.id, at: Number(r.at), updatedAt: Number(r.updated_at),
+        username: r.username, name: r.name, description: r.description,
+        images: r.images_json, usageCount: r.usage_count,
     };
 }
 
@@ -168,7 +189,7 @@ export function createPostgresStore({ connectionString, starterCredits, poolFact
          * مسار إنتاجي (لا مرجع له خارج ملف الاختبار).
          */
         async truncateAllForTest() {
-            await withClient(c => c.query('TRUNCATE video_jobs, video_credit_ledger, video_balances, video_flags, video_projects'));
+            await withClient(c => c.query('TRUNCATE video_jobs, video_credit_ledger, video_balances, video_flags, video_projects, video_characters'));
         },
 
         async getBalance(user) {
@@ -414,6 +435,54 @@ export function createPostgresStore({ connectionString, starterCredits, poolFact
                     'SELECT COUNT(*)::int AS n FROM video_jobs WHERE project_id = $1', [projectId]
                 );
                 return res.rows[0].n;
+            });
+        },
+
+        // ─── بنك الشخصيات ─────────────────────────────────────────────
+
+        async createCharacter({ username, name, description, images }) {
+            return withClient(async c => {
+                const now = Date.now();
+                const res = await c.query(
+                    `INSERT INTO video_characters (id, at, updated_at, username, name, description, images_json, usage_count)
+                     VALUES ($1,$2,$2,$3,$4,$5,$6,0) RETURNING *`,
+                    [newId(), now, username, name, description, JSON.stringify(images || [])]
+                );
+                return rowToCharacter(res.rows[0]);
+            });
+        },
+
+        async getCharacter(id) {
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM video_characters WHERE id = $1', [id]);
+                return rowToCharacter(res.rows[0]);
+            });
+        },
+
+        async listCharactersByUser(user, limit = 50) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'SELECT * FROM video_characters WHERE username = $1 ORDER BY at DESC LIMIT $2',
+                    [user, limit]
+                );
+                return res.rows.map(rowToCharacter);
+            });
+        },
+
+        async deleteCharacter(id) {
+            return withClient(async c => {
+                const res = await c.query('DELETE FROM video_characters WHERE id = $1', [id]);
+                return res.rowCount > 0;
+            });
+        },
+
+        async incrementCharacterUsage(id) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'UPDATE video_characters SET usage_count = usage_count + 1, updated_at = $2 WHERE id = $1',
+                    [id, Date.now()]
+                );
+                return res.rowCount > 0;
             });
         },
 
