@@ -13,10 +13,13 @@
  *   listJobsByUser(user, limit) → [job]            (الأحدث أولاً)
  *   listActiveJobs() → [job]                       (queued|rendering، الأقدم أولاً)
  *   transitionJob(id, {from:[حالات], to, patch}) → job|null   (ذرّي)
- *   createProject({username, title}) → project     (مشاريع الأفلام — ستوري بورد)
+ *   createProject({username, title, defaultAspectRatio?, defaultStyle?}) → project
  *   getProject(id) → project|null
  *   listProjectsByUser(user, limit) → [project]    (الأحدث أولاً)
  *   renameProject(id, title) → project|null
+ *   updateProjectSettings(id, {aspectRatio?, style?}) → project|null
+ *     (مفتاح غائب = لا تغيير له؛ مفتاح موجود بقيمة فارغة/null = مسحه —
+ *      إعدادات افتراضية تُورَّث في اللقطات الجديدة، لا تُفرض على القديمة)
  *   deleteProject(id) → bool                       (اللقطات تبقى في السجل العام — أُنفق عليها رصيد)
  *   listJobsByProject(projectId) → [job]           (بترتيب اللقطات shotIndex)
  *   countJobsInProject(projectId) → number

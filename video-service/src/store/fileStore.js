@@ -187,9 +187,12 @@ export function createFileStore({ dataDir, starterCredits }) {
 
         // ─── مشاريع الأفلام (ستوري بورد) ───────────────────────────────
 
-        async createProject({ username, title }) {
+        async createProject({ username, title, defaultAspectRatio = null, defaultStyle = null }) {
             const projects = readProjects();
-            const project = { id: newId(), at: Date.now(), updatedAt: Date.now(), username, title };
+            const project = {
+                id: newId(), at: Date.now(), updatedAt: Date.now(), username, title,
+                defaultAspectRatio, defaultStyle,
+            };
             projects.push(project);
             writeProjects(projects);
             return { ...project };
@@ -209,6 +212,19 @@ export function createFileStore({ dataDir, starterCredits }) {
             const p = projects.find(x => x.id === id);
             if (!p) return null;
             p.title = title;
+            p.updatedAt = Date.now();
+            writeProjects(projects);
+            return { ...p };
+        },
+
+        // إعدادات موروثة (نسبة الأبعاد/الأسلوب) — مفتاح غائب لا يُمس،
+        // ومفتاح بقيمة فارغة/null يُمسح صراحة.
+        async updateProjectSettings(id, { aspectRatio, style } = {}) {
+            const projects = readProjects();
+            const p = projects.find(x => x.id === id);
+            if (!p) return null;
+            if (aspectRatio !== undefined) p.defaultAspectRatio = aspectRatio || null;
+            if (style !== undefined) p.defaultStyle = style || null;
             p.updatedAt = Date.now();
             writeProjects(projects);
             return { ...p };

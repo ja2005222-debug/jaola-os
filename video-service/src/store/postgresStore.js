@@ -68,6 +68,9 @@ CREATE TABLE IF NOT EXISTS video_projects (
     title      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS video_projects_user_idx ON video_projects (username, at);
+-- ترقية غير هدّامة: إعدادات موحدة تُورَّث في اللقطات الجديدة للمشروع
+ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS default_aspect_ratio TEXT;
+ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS default_style TEXT;
 -- بنك الشخصيات: وصف حرفي ثابت + صور مرجعية بزوايا متعددة
 CREATE TABLE IF NOT EXISTS video_characters (
     id          TEXT PRIMARY KEY,
@@ -120,6 +123,7 @@ function rowToProject(r) {
     return {
         id: r.id, at: Number(r.at), updatedAt: Number(r.updated_at),
         username: r.username, title: r.title,
+        defaultAspectRatio: r.default_aspect_ratio, defaultStyle: r.default_style,
     };
 }
 
@@ -370,13 +374,13 @@ export function createPostgresStore({ connectionString, starterCredits, poolFact
 
         // ─── مشاريع الأفلام (ستوري بورد) ───────────────────────────────
 
-        async createProject({ username, title }) {
+        async createProject({ username, title, defaultAspectRatio = null, defaultStyle = null }) {
             return withClient(async c => {
                 const now = Date.now();
                 const res = await c.query(
-                    `INSERT INTO video_projects (id, at, updated_at, username, title)
-                     VALUES ($1,$2,$2,$3,$4) RETURNING *`,
-                    [newId(), now, username, title]
+                    `INSERT INTO video_projects (id, at, updated_at, username, title, default_aspect_ratio, default_style)
+                     VALUES ($1,$2,$2,$3,$4,$5,$6) RETURNING *`,
+                    [newId(), now, username, title, defaultAspectRatio, defaultStyle]
                 );
                 return rowToProject(res.rows[0]);
             });
@@ -404,6 +408,23 @@ export function createPostgresStore({ connectionString, starterCredits, poolFact
                 const res = await c.query(
                     'UPDATE video_projects SET title = $2, updated_at = $3 WHERE id = $1 RETURNING *',
                     [id, title, Date.now()]
+                );
+                return rowToProject(res.rows[0]);
+            });
+        },
+
+        // إعدادات موروثة — مفتاح غائب (undefined) لا يُمس، والعلم البوليني
+        // في الاستعلام هو ما يقرر ذلك (لا يمكن تمييز NULL المقصود عن
+        // "لم يُرسَل" داخل SQL وحدها).
+        async updateProjectSettings(id, { aspectRatio, style } = {}) {
+            return withClient(async c => {
+                const res = await c.query(
+                    `UPDATE video_projects SET
+                        default_aspect_ratio = CASE WHEN $2::boolean THEN $3 ELSE default_aspect_ratio END,
+                        default_style        = CASE WHEN $4::boolean THEN $5 ELSE default_style END,
+                        updated_at = $6
+                     WHERE id = $1 RETURNING *`,
+                    [id, aspectRatio !== undefined, aspectRatio || null, style !== undefined, style || null, Date.now()]
                 );
                 return rowToProject(res.rows[0]);
             });

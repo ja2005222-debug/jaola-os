@@ -1377,6 +1377,97 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal((await call(`/api/video/projects/${pid}`, { token })).status, 404);
         });
 
+        test('إعدادات المشروع الموروثة: إنشاء/تعديل برفض القيم المجهولة، ومفتاح غائب لا يُمس', async () => {
+            const token = makeToken('art-director');
+
+            // إنشاء بإعداد فاسد → 400 قبل أي إنشاء
+            assert.equal((await call('/api/video/projects', {
+                method: 'POST', token, body: { title: 'x', defaultAspectRatio: '3:2' },
+            })).status, 400);
+            assert.equal((await call('/api/video/projects', {
+                method: 'POST', token, body: { title: 'x', defaultStyle: 'كرتوني' },
+            })).status, 400);
+
+            const created = await call('/api/video/projects', {
+                method: 'POST', token,
+                body: { title: 'وثائقي درامي', defaultAspectRatio: '9:16', defaultStyle: 'نوار' },
+            });
+            assert.equal(created.status, 200);
+            assert.equal(created.data.project.defaultAspectRatio, '9:16');
+            assert.equal(created.data.project.defaultStyle, 'نوار');
+            const pid = created.data.project.id;
+
+            // خيارات الإعداد تصل في قائمة المشاريع (مصدر حقيقة واحد للواجهة)
+            const list = await call('/api/video/projects', { token });
+            assert.ok(list.data.settingsOptions.aspects.includes('9:16'));
+            assert.ok(list.data.settingsOptions.styles.includes('نوار'));
+
+            // تعديل نسبة الأبعاد وحدها لا يمسّ الأسلوب المحفوظ
+            const patched = await call(`/api/video/projects/${pid}`, {
+                method: 'PATCH', token, body: { defaultAspectRatio: '1:1' },
+            });
+            assert.equal(patched.data.project.defaultAspectRatio, '1:1');
+            assert.equal(patched.data.project.defaultStyle, 'نوار'); // بلا تغيير
+
+            // إعداد فاسد في التعديل → 400 بلا أي تغيير
+            const before = await call(`/api/video/projects/${pid}`, { token });
+            assert.equal((await call(`/api/video/projects/${pid}`, {
+                method: 'PATCH', token, body: { defaultStyle: 'غير موجود' },
+            })).status, 400);
+            const after = await call(`/api/video/projects/${pid}`, { token });
+            assert.deepEqual(after.data.project, before.data.project);
+        });
+
+        test('توريث إعدادات المشروع في اللقطة الجديدة: يُطبَّق فقط حين يترك المستخدم الحقل فارغاً', async () => {
+            // تطبيق مستقل (حصة renderLimit خاصة — نفس سبب اختباري الشعار
+            // وإعادة الترتيب أعلاه).
+            const app = createApp({ store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const token = makeToken('inheritor');
+                await callAt(url, '/api/video/credits', { token });
+                await callAt(url, '/api/video/admin/credits/grant', {
+                    method: 'POST', token: makeToken('boss'), body: { username: 'inheritor', amount: 20 },
+                });
+                const pid = (await callAt(url, '/api/video/projects', {
+                    method: 'POST', token,
+                    body: { title: 'فيلم موروث', defaultAspectRatio: '9:16', defaultStyle: 'أنمي' },
+                })).data.project.id;
+
+                // لم يحدد المستخدم نسبة الأبعاد ولا الأسلوب — يرثهما من المشروع
+                const inherited = await callAt(url, '/api/video/renders', {
+                    method: 'POST', token,
+                    body: { templateId: 'ai_clip', values: { prompt: 'مشهد' }, projectId: pid },
+                });
+                assert.equal(inherited.status, 200);
+                const j1 = await getJob(store, inherited.data.job.id);
+                assert.equal(j1.spec.aspectRatio, '9:16');
+                assert.match(j1.spec.prompt, /anime/i);
+
+                // المستخدم يحدد نسبة صراحة (مدعومة لدى النموذج) — تتفوق
+                // على الموروثة من المشروع (9:16)
+                const overridden = await callAt(url, '/api/video/renders', {
+                    method: 'POST', token,
+                    body: { templateId: 'ai_clip', values: { prompt: 'مشهد', aspectRatio: '16:9' }, projectId: pid },
+                });
+                assert.equal(overridden.status, 200);
+                const j2 = await getJob(store, overridden.data.job.id);
+                assert.equal(j2.spec.aspectRatio, '16:9');
+
+                // بلا مشروع: لا توريث بالطبع — الافتراضي العادي للقالب
+                const free = await callAt(url, '/api/video/renders', {
+                    method: 'POST', token,
+                    body: { templateId: 'ai_clip', values: { prompt: 'مشهد حر' } },
+                });
+                assert.equal(free.status, 200);
+                const j3 = await getJob(store, free.data.job.id);
+                assert.equal(j3.spec.aspectRatio, '16:9');
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
         test('اللقطات تنضم للمشروع بترتيب يسنده الخادم وتبقى بعد حذفه في السجل', async () => {
             const token = makeToken('director2');
             await call('/api/video/credits', { token });
