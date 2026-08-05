@@ -1122,6 +1122,9 @@
             <input type="url" id="asmLogo" placeholder="رابط شعارك (اختياري — يظهر في الزاوية طوال الفيلم)"
               style="max-width:280px" />
           </div>
+          ${opts.narrationEnabled ? `<textarea id="asmNarration" maxlength="500" rows="2"
+            placeholder="تعليق صوتي (اختياري — 🎟️ ${opts.narrationCostCredits} إضافية، يُقرأ آلياً طوال الفيلم)"
+            style="width:100%;margin-top:8px;resize:vertical"></textarea>` : ''}
           <button id="asmGo" type="button">🚀 جمّع الفيلم (🎟️ ${opts.costCredits})</button>
           <div class="msg" id="asmMsg"></div>
         </div>`;
@@ -1140,6 +1143,8 @@
           if (musicSel && musicSel.value) body.musicId = musicSel.value;
           const sfxSel = $('asmSfx');
           if (sfxSel && sfxSel.value) body.sfxId = sfxSel.value;
+          const narrationEl = $('asmNarration');
+          if (narrationEl && narrationEl.value.trim()) body.narrationText = narrationEl.value.trim();
           const r = await api(`/api/video/projects/${projectId}/assemble`, {
             method: 'POST', body: JSON.stringify(body),
           });

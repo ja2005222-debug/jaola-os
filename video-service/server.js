@@ -26,10 +26,11 @@ import { readBlocklist, inspectValues, inspectText, inspectImageUrl } from './sr
 import { readAiModels, getAiModel, defaultAiModel, publicAiModels } from './src/models.js';
 import { CINEMA_CONTROLS, cinemaFieldOptions } from './src/cinema.js';
 import {
-    ASSEMBLY_COST_CREDITS, TRANSITIONS, COLOR_FILTERS, OUTPUT_ASPECTS,
+    ASSEMBLY_COST_CREDITS, NARRATION_COST_CREDITS, TRANSITIONS, COLOR_FILTERS, OUTPUT_ASPECTS,
     readMusicLibrary, readSfxLibrary, buildFilmSpec,
 } from './src/assembly.js';
 import { buildImageProvider } from './src/providers/falImageProvider.js';
+import { buildTtsProvider } from './src/providers/falTtsProvider.js';
 import { characterImageKeyFor } from './src/storage/index.js';
 import {
     CHARACTER_COST_CREDITS, CHARACTER_ANGLES,
@@ -57,6 +58,7 @@ export function createApp({
     imageProvider = null,
     musicLibrary = readMusicLibrary(),
     sfxLibrary = readSfxLibrary(),
+    ttsProvider = null,
 } = {}) {
     const secrets = (Array.isArray(jwtSecret) ? jwtSecret : [jwtSecret]).filter(Boolean);
     if (secrets.length === 0) {
@@ -229,6 +231,8 @@ export function createApp({
             aspects: OUTPUT_ASPECTS,
             music: musicLibrary.map(({ id, nameAr }) => ({ id, nameAr })),
             sfx: sfxLibrary.map(({ id, nameAr }) => ({ id, nameAr })),
+            narrationEnabled: !!ttsProvider,
+            narrationCostCredits: NARRATION_COST_CREDITS,
             costCredits: ASSEMBLY_COST_CREDITS,
             readyShots: (await readyShotsOf(project.id)).length,
         });
@@ -238,7 +242,7 @@ export function createApp({
         const project = await ownedProject(req);
         if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
 
-        const { transition, musicId, endTitle, filter, aspect, logoUrl, sfxId } = req.body || {};
+        const { transition, musicId, endTitle, filter, aspect, logoUrl, sfxId, narrationText } = req.body || {};
         if (transition != null && !(transition in TRANSITIONS)) {
             return res.status(400).json({ error: `انتقال غير معروف (المتاح: ${Object.keys(TRANSITIONS).join('، ')}).` });
         }
@@ -272,6 +276,13 @@ export function createApp({
             if (issue) return res.status(400).json({ error: issue.error });
             cleanLogoUrl = String(logoUrl);
         }
+        // تعليق صوتي (TTS): نص يذهب لمزوّد خارجي — نفس فلترة بقية النصوص.
+        const narration = String(narrationText || '').trim().slice(0, 500);
+        if (narration) {
+            if (!ttsProvider) return res.status(400).json({ error: 'التعليق الصوتي غير مفعَّل على هذا الخادم.' });
+            const flagged = inspectText(narration, { blocklist });
+            if (flagged) return res.status(400).json({ error: flagged.error });
+        }
 
         const ready = await readyShotsOf(project.id);
         if (ready.length === 0) {
@@ -288,6 +299,31 @@ export function createApp({
         });
         if (!gate.allowed) return res.status(429).json({ error: gate.error, code: gate.code });
 
+        // تعليق صوتي: توليد متزامن (كالصور المرجعية) — خصم مقدَّم يُسترد
+        // عند الفشل؛ يحدث بعد كل بوابات الرفض المجانية كي لا يُخصم رصيد
+        // على طلب كان سيُرفض على أي حال.
+        let narrationUrl = null;
+        if (narration) {
+            const narrationReqId = `narr-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+            const deducted = await deductCredits(store, {
+                username, amount: NARRATION_COST_CREDITS, jobId: narrationReqId,
+            });
+            if (!deducted) {
+                return res.status(402).json({
+                    error: `رصيدك لا يكفي — التعليق الصوتي يكلف ${NARRATION_COST_CREDITS}.`,
+                });
+            }
+            try {
+                narrationUrl = await ttsProvider.generateSpeech(narration);
+            } catch (e) {
+                await refundCredits(store, {
+                    username, amount: NARRATION_COST_CREDITS, jobId: narrationReqId,
+                    reason: 'فشل توليد التعليق الصوتي',
+                }).catch(() => {});
+                return res.status(502).json({ error: `تعذّر توليد التعليق الصوتي: ${e.message} (استُرد الرصيد)` });
+            }
+        }
+
         // روابط اللقطات للمُركِّب: المملوكة تُوقَّع بساعة (قد تنتظر الطابور)
         const shots = await Promise.all(ready.map(async s => ({
             durationSec: s.spec?.durationSec,
@@ -302,6 +338,7 @@ export function createApp({
             aspectRatio: aspect || '16:9',
             logoUrl: cleanLogoUrl,
             sfxUrl,
+            narrationUrl,
         });
 
         const job = await createJob(store, {
@@ -309,7 +346,7 @@ export function createApp({
             values: {
                 transition: transition || '', musicId: musicId || '', endTitle: title,
                 filter: filter || '', aspect: aspect || '16:9', logoUrl: cleanLogoUrl || '',
-                sfxId: sfxId || '',
+                sfxId: sfxId || '', narrationText: narration || '',
             },
             spec, costCredits: ASSEMBLY_COST_CREDITS,
             projectId: project.id, shotIndex: null,
@@ -685,6 +722,7 @@ if (isMain) {
     const provider = buildProvider(); // موجّه: تركيب + توليد ذكاء اصطناعي
     const storage = buildStorage();            // null ما لم يُضبط VIDEO_STORAGE=r2
     const imageProvider = buildImageProvider(); // null ما لم يكن fal مفعَّلاً
+    const ttsProvider = buildTtsProvider();     // null ما لم يُضبط FAL_TTS_MODEL
     const retention = readRetentionDays();
 
     await store.init(); // ينشئ الجداول عند أول إقلاع — فشلٌ صاخب إن تعذّر
@@ -697,6 +735,7 @@ if (isMain) {
         storage,
         limits,
         imageProvider,
+        ttsProvider,
     });
 
     const port = Number(process.env.PORT || 4100);

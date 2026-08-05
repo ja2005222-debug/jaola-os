@@ -13,6 +13,10 @@
 
 export const ASSEMBLY_COST_CREDITS = 1;
 
+// تكلفة تعليق صوتي واحد (TTS) لكامل الفيلم — تُخصم مرة واحدة قبل
+// الإرسال لمزوّد fal، منفصلة عن تكلفة التجميع نفسها.
+export const NARRATION_COST_CREDITS = 1;
+
 // خيارات الانتقال المعروضة بالعربية → قيم Shotstack
 export const TRANSITIONS = Object.freeze({
     'قطع مباشر': null,
@@ -69,6 +73,7 @@ export function readSfxLibrary(env = process.env) {
 export function buildFilmSpec({
     shots, transition = null, musicUrl = null, endTitle = '',
     aspectRatio = '16:9', filter = null, logoUrl = null, sfxUrl = null,
+    narrationUrl = null,
 }) {
     if (!Array.isArray(shots) || shots.length === 0) {
         throw new Error('لا لقطات جاهزة للتجميع.');
@@ -105,6 +110,7 @@ export function buildFilmSpec({
         // انتقال؛ محسوبة هنا بدل المحوّل كي تبقى مصدراً محايداً واحداً.
         sceneStarts: scenes.map(s => s.startSec),
         sfxUrl: sfxUrl || null,
+        narrationUrl: narrationUrl || null, // تعليق صوتي (TTS) يمتد طوال الفيلم
         scenes,
     };
 }
