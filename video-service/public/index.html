@@ -1184,6 +1184,7 @@
       panel.innerHTML = `
         <div class="card" style="margin-bottom:0">
           <strong style="font-size:14px">🎬 تجميع ${opts.readyShots} لقطة في فيلم واحد</strong>
+          ${opts.watermarked ? `<p class="note" style="color:var(--warn)">⚠️ فيلمك سيحمل علامة مائية (الخطة المجانية) — رقِّ لباقة مدفوعة لإزالتها.</p>` : ''}
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
             <select id="asmTransition" style="${SELECT_STYLE};max-width:160px">
               ${opts.transitions.map(t => `<option value="${t}">${t}</option>`).join('')}

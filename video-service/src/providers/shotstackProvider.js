@@ -28,6 +28,10 @@
  * الحقل لكن غير مجرَّبة من هذه الخدمة تحديداً — رفضها الآن يظهر
  * بتفصيل رد Shotstack كاملاً (لا HTTP فارغ)، فأي قيمة خاطئة تُكتشف
  * فوراً من أول محاولة حقيقية بدل فشل صامت.
+ *
+ * ⚠️ العلامة المائية (spec.watermarkText، تُفرض للخطة المجانية فقط):
+ * حقل opacity على مستوى الـclip غير مجرَّب من هذه الخدمة تحديداً —
+ * تحقّق أنه يُخفِّف شفافية النص فعلياً لا يُرفض/يُتجاهل صامتاً.
  */
 
 const SCENE_TRANSITION = { in: 'fade', out: 'fade' };
@@ -90,6 +94,21 @@ export function specToShotstackTimeline(spec) {
                 position: 'topRight',
                 scale: 0.15,
                 offset: { x: -0.03, y: 0.03 },
+            }],
+        });
+    }
+    // علامة مائية للخطة المجانية — يفرضها الخادم وحده (server.js)، لا
+    // خياراً يختاره المستخدم. زاوية مقابلة للشعار (سفلى يسرى) فلا تتداخل
+    // معه؛ ⚠️ opacity على مستوى الـclip غير مؤكَّد عملياً بعد من هذه
+    // الخدمة تحديداً (خلافاً لبقية حقول الشعار/العنوان المؤكَّدة أعلاه).
+    if (spec.watermarkText) {
+        timeline.tracks.unshift({
+            clips: [{
+                asset: { type: 'title', text: spec.watermarkText, style: 'minimal', size: 'small' },
+                start: 0,
+                length: spec.durationSec,
+                position: 'bottomLeft',
+                opacity: 0.6,
             }],
         });
     }

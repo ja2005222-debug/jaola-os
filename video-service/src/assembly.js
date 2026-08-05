@@ -17,6 +17,11 @@ export const ASSEMBLY_COST_CREDITS = 1;
 // الإرسال لمزوّد fal، منفصلة عن تكلفة التجميع نفسها.
 export const NARRATION_COST_CREDITS = 1;
 
+// علامة مائية للخطة المجانية — نص افتراضي، قابل للتخصيص. تُفرض من
+// الخادم وحده حسب خطة المستخدم (req.user.plan من التوكن الموحّد)، لا
+// حقلاً يرسله العميل أبداً — راجع WATERMARK_ENFORCEMENT في server.js.
+export const DEFAULT_WATERMARK_TEXT = 'JAOLA OS';
+
 // خيارات الانتقال المعروضة بالعربية → قيم Shotstack
 export const TRANSITIONS = Object.freeze({
     'قطع مباشر': null,
@@ -81,7 +86,7 @@ export function readSfxLibrary(env = process.env) {
 export function buildFilmSpec({
     shots, transition = null, musicUrl = null, endTitle = '',
     aspectRatio = '16:9', filter = null, logoUrl = null, sfxUrl = null,
-    narrationUrl = null, resolution = DEFAULT_RESOLUTION,
+    narrationUrl = null, resolution = DEFAULT_RESOLUTION, watermarkText = null,
 }) {
     if (!Array.isArray(shots) || shots.length === 0) {
         throw new Error('لا لقطات جاهزة للتجميع.');
@@ -120,6 +125,7 @@ export function buildFilmSpec({
         sfxUrl: sfxUrl || null,
         narrationUrl: narrationUrl || null, // تعليق صوتي (TTS) يمتد طوال الفيلم
         resolution: resolution || DEFAULT_RESOLUTION,
+        watermarkText: watermarkText || null, // علامة الخطة المجانية — فرض خادم فقط
         scenes,
     };
 }
