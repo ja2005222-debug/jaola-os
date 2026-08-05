@@ -22,6 +22,12 @@
  * ثالث بمقطع واحد يمتد طوال الفيلم — تحقّق من مزجه مع الموسيقى دون
  * تشويش (فارق مستوى الصوت بين المتحدث والموسيقى مسؤولية صاحب
  * المنصة عبر اختيار مقطع موسيقي هادئ، لا تحكّماً تلقائياً هنا).
+ *
+ * ⚠️ دقة الإخراج (spec.resolution): 'hd' مؤكَّدة (أعلاه)؛ القيم الأخرى
+ * ('sd'، '1080'، '4k') من كتالوج Shotstack الموثَّق تاريخياً لنفس
+ * الحقل لكن غير مجرَّبة من هذه الخدمة تحديداً — رفضها الآن يظهر
+ * بتفصيل رد Shotstack كاملاً (لا HTTP فارغ)، فأي قيمة خاطئة تُكتشف
+ * فوراً من أول محاولة حقيقية بدل فشل صامت.
  */
 
 const SCENE_TRANSITION = { in: 'fade', out: 'fade' };
@@ -129,7 +135,7 @@ export function createShotstackProvider({ apiKey, env = 'stage', fetchImpl = fet
             if (spec?.kind && spec.kind !== 'timeline') {
                 throw new Error(`Shotstack لا يدعم هذا النوع من المخططات: ${spec.kind}`);
             }
-            const output = { format: 'mp4', resolution: 'hd' };
+            const output = { format: 'mp4', resolution: spec?.resolution || 'hd' };
             // مقاس المنصة (ريلز 9:16 / بوست 1:1) — الافتراضي 16:9
             if (spec?.aspectRatio && spec.aspectRatio !== '16:9') {
                 output.aspectRatio = spec.aspectRatio;
@@ -142,7 +148,10 @@ export function createShotstackProvider({ apiKey, env = 'stage', fetchImpl = fet
                 method: 'POST', headers, body: JSON.stringify(body),
             });
             if (!res.ok) {
-                throw new Error(`Shotstack رفض الإرسال (HTTP ${res.status}).`);
+                // التفاصيل هي التشخيص كله (مثلاً قيمة resolution مرفوضة) —
+                // تُعرض ولا تُبتلع، نفس درس fal.ai في هذه الخدمة.
+                const detail = await res.text().catch(() => '');
+                throw new Error(`Shotstack رفض الإرسال (HTTP ${res.status}). ${detail.slice(0, 300)}`);
             }
             const data = await res.json();
             const providerId = data?.response?.id;

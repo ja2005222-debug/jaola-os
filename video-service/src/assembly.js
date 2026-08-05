@@ -37,6 +37,14 @@ export const COLOR_FILTERS = Object.freeze({
 // مقاسات المنصات: يوتيوب/ريلز/بوست
 export const OUTPUT_ASPECTS = Object.freeze(['16:9', '9:16', '1:1']);
 
+// دقة الإخراج — قيم Shotstack. 'hd' هي المؤكَّدة عملياً (أول تجميع حقيقي
+// نجح بها). البقية قيم كتالوج Shotstack الموثَّقة تاريخياً بنفس الحقل؛
+// '4k' تحديداً ⚠️ غير مؤكَّدة من هذه الخدمة (توثيق Shotstack غير
+// متاح من بيئة التطوير) — رفض Shotstack لها يظهر بتفصيل رده الآن (لا
+// فشل صامت)، وتكلفة/زمن تصديرها أعلى فعلياً بغضّ النظر عن قبولها.
+export const OUTPUT_RESOLUTIONS = Object.freeze(['sd', 'hd', '1080', '4k']);
+export const DEFAULT_RESOLUTION = 'hd';
+
 /** يقرأ مكتبة مقاطع صوتية مرخصة من متغير بيئة — [{id, nameAr, url}] أو فارغة. */
 function readAudioLibrary(env, varName) {
     if (!env[varName]) return [];
@@ -73,7 +81,7 @@ export function readSfxLibrary(env = process.env) {
 export function buildFilmSpec({
     shots, transition = null, musicUrl = null, endTitle = '',
     aspectRatio = '16:9', filter = null, logoUrl = null, sfxUrl = null,
-    narrationUrl = null,
+    narrationUrl = null, resolution = DEFAULT_RESOLUTION,
 }) {
     if (!Array.isArray(shots) || shots.length === 0) {
         throw new Error('لا لقطات جاهزة للتجميع.');
@@ -111,6 +119,7 @@ export function buildFilmSpec({
         sceneStarts: scenes.map(s => s.startSec),
         sfxUrl: sfxUrl || null,
         narrationUrl: narrationUrl || null, // تعليق صوتي (TTS) يمتد طوال الفيلم
+        resolution: resolution || DEFAULT_RESOLUTION,
         scenes,
     };
 }
