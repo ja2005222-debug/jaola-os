@@ -1447,6 +1447,15 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.deepEqual(clips[0].transition, { in: 'fade', out: 'fade' });
             assert.equal(timeline.soundtrack.src, 'https://m.test/epic.mp3');
 
+            // فلتر ما بعد الإنتاج يُطبَّق على لقطات الفيديو فقط
+            const filtered = buildFilmSpec({
+                shots: [{ durationSec: 5, videoUrl: 'https://v.test/a.mp4' }],
+                filter: 'greyscale', endTitle: 'ختام',
+            });
+            const fClips = specToShotstackTimeline(filtered).tracks[0].clips;
+            assert.equal(fClips[0].filter, 'greyscale');       // لقطة فيديو
+            assert.equal(fClips[1].filter, undefined);          // العنوان بلا فلتر
+
             // مكتبة الموسيقى: فارغة بلا env، وفاسدة تفشل صاخباً
             assert.deepEqual(readMusicLibrary({}), []);
             assert.equal(readMusicLibrary({
@@ -1485,15 +1494,24 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(opts.status, 200);
             assert.equal(opts.data.readyShots, 2);
             assert.ok(opts.data.transitions.includes('تلاشٍ'));
+            assert.ok(opts.data.filters.includes('أبيض وأسود'));
+            assert.ok(opts.data.aspects.includes('9:16'));
 
-            // انتقال مجهول → 400
+            // انتقال/فلتر/مقاس مجهول → 400
             assert.equal((await call(`/api/video/projects/${pid}/assemble`, {
                 method: 'POST', token, body: { transition: 'دوران' },
+            })).status, 400);
+            assert.equal((await call(`/api/video/projects/${pid}/assemble`, {
+                method: 'POST', token, body: { filter: 'وردي' },
+            })).status, 400);
+            assert.equal((await call(`/api/video/projects/${pid}/assemble`, {
+                method: 'POST', token, body: { aspect: '3:2' },
             })).status, 400);
 
             const before = (await call('/api/video/credits', { token })).data.credits;
             const asm = await call(`/api/video/projects/${pid}/assemble`, {
-                method: 'POST', token, body: { transition: 'تلاشٍ', endTitle: 'النهاية' },
+                method: 'POST', token,
+                body: { transition: 'تلاشٍ', endTitle: 'النهاية', filter: 'خافت سينمائي', aspect: '9:16' },
             });
             assert.equal(asm.status, 200);
             assert.equal(asm.data.job.costCredits, ASSEMBLY_COST_CREDITS);
@@ -1508,6 +1526,8 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(film.spec.assembly, true);
             assert.equal(film.spec.scenes.length, 3); // لقطتان + ختام
             assert.equal(film.spec.transition, 'fade');
+            assert.equal(film.spec.filter, 'muted');
+            assert.equal(film.spec.aspectRatio, '9:16');
 
             // مشروع مستخدم آخر → 404
             assert.equal((await call(`/api/video/projects/${pid}/assemble`, {

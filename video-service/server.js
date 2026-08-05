@@ -25,7 +25,10 @@ import { readLimits, checkRenderAllowed, maybeAlertCost, startOfUtcDay } from '.
 import { readBlocklist, inspectValues, inspectText } from './src/contentFilter.js';
 import { readAiModels, getAiModel, defaultAiModel, publicAiModels } from './src/models.js';
 import { CINEMA_CONTROLS } from './src/cinema.js';
-import { ASSEMBLY_COST_CREDITS, TRANSITIONS, readMusicLibrary, buildFilmSpec } from './src/assembly.js';
+import {
+    ASSEMBLY_COST_CREDITS, TRANSITIONS, COLOR_FILTERS, OUTPUT_ASPECTS,
+    readMusicLibrary, buildFilmSpec,
+} from './src/assembly.js';
 import { buildImageProvider } from './src/providers/falImageProvider.js';
 import { characterImageKeyFor } from './src/storage/index.js';
 import {
@@ -172,6 +175,8 @@ export function createApp({
         if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
         res.json({
             transitions: Object.keys(TRANSITIONS),
+            filters: Object.keys(COLOR_FILTERS),
+            aspects: OUTPUT_ASPECTS,
             music: musicLibrary.map(({ id, nameAr }) => ({ id, nameAr })),
             costCredits: ASSEMBLY_COST_CREDITS,
             readyShots: (await readyShotsOf(project.id)).length,
@@ -182,9 +187,15 @@ export function createApp({
         const project = await ownedProject(req);
         if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
 
-        const { transition, musicId, endTitle } = req.body || {};
+        const { transition, musicId, endTitle, filter, aspect } = req.body || {};
         if (transition != null && !(transition in TRANSITIONS)) {
             return res.status(400).json({ error: `انتقال غير معروف (المتاح: ${Object.keys(TRANSITIONS).join('، ')}).` });
+        }
+        if (filter != null && !(filter in COLOR_FILTERS)) {
+            return res.status(400).json({ error: `فلتر لوني غير معروف (المتاح: ${Object.keys(COLOR_FILTERS).join('، ')}).` });
+        }
+        if (aspect != null && !OUTPUT_ASPECTS.includes(aspect)) {
+            return res.status(400).json({ error: `مقاس غير معروف (المتاح: ${OUTPUT_ASPECTS.join('، ')}).` });
         }
         let musicUrl = null;
         if (musicId) {
@@ -223,10 +234,16 @@ export function createApp({
             transition: transition ? TRANSITIONS[transition] : null,
             musicUrl,
             endTitle: title,
+            filter: filter ? COLOR_FILTERS[filter] : null,
+            aspectRatio: aspect || '16:9',
         });
 
         const job = await createJob(store, {
-            username, templateId: 'film_assembly', values: { transition: transition || '', musicId: musicId || '', endTitle: title },
+            username, templateId: 'film_assembly',
+            values: {
+                transition: transition || '', musicId: musicId || '', endTitle: title,
+                filter: filter || '', aspect: aspect || '16:9',
+            },
             spec, costCredits: ASSEMBLY_COST_CREDITS,
             projectId: project.id, shotIndex: null,
         });
