@@ -145,9 +145,37 @@
     .side-card h3 { font-size: 13px; color: var(--accent); margin-bottom: 10px; }
     .char-mini { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); }
     .char-mini:last-child { border-bottom: none; }
-    .char-mini img { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; }
+    .char-mini > img { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; cursor: pointer; flex: 0 0 auto; }
     .char-mini .name { font-size: 12.5px; }
     .char-mini .sub { font-size: 10.5px; color: var(--muted); }
+    .char-mini .chip { padding: 5px 8px; font-size: 11px; }
+
+    /* ─── معاينة الشخصية بزواياها المختلفة (نافذة منبثقة) ─── */
+    .char-preview-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 100;
+      display: flex; align-items: center; justify-content: center; padding: 20px;
+    }
+    .char-preview-box {
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+      padding: 16px; max-width: 480px; width: 100%; text-align: center;
+    }
+    .char-preview-box .cp-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .char-preview-box .cp-head h3 { font-size: 14px; color: var(--accent); margin: 0; }
+    .char-preview-box .cp-close {
+      background: none; border: none; color: var(--muted); font-size: 20px;
+      padding: 0; margin: 0; cursor: pointer; line-height: 1;
+    }
+    .char-preview-box .cp-main {
+      width: 100%; max-height: 360px; object-fit: contain; border-radius: 8px;
+      background: var(--bg); margin-bottom: 6px;
+    }
+    .char-preview-box .cp-angle-label { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+    .char-preview-box .cp-thumbs { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+    .char-preview-box .cp-thumbs img {
+      width: 56px; height: 56px; object-fit: cover; border-radius: 6px; cursor: pointer;
+      border: 2px solid transparent; opacity: .7;
+    }
+    .char-preview-box .cp-thumbs img.active { border-color: var(--accent); opacity: 1; }
     .queue-item { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 12.5px; }
     .queue-item:last-child { border-bottom: none; }
     .queue-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -262,6 +290,7 @@
       <section id="sectionCharacters" class="side-card">
         <h3>🎭 بنك الشخصيات الموحدة</h3>
         <div id="charGrid"></div>
+        <div id="charPreviewOverlay" class="char-preview-overlay hidden"></div>
         <div id="charCreate" class="hidden" style="margin-top:10px">
           <label style="margin-top:0">اسم الشخصية *</label>
           <input type="text" id="charName" maxlength="60" placeholder="مثال: الرجل بالمعطف" />
@@ -833,16 +862,19 @@
       }
       grid.innerHTML = characters.map(c => `
         <div class="char-mini">
-          ${c.images?.[0]?.url ? `<img src="${c.images[0].url}" alt="${escapeHtml(c.name)}" />` : ''}
+          ${c.images?.[0]?.url ? `<img src="${c.images[0].url}" alt="${escapeHtml(c.name)}" data-preview-char="${c.id}" />` : ''}
           <div style="flex:1;min-width:0">
             <div class="name">${escapeHtml(c.name)}</div>
-            <div class="sub">${(c.images || []).length} روايا مرجعية · استُخدم ${c.usageCount} مرات</div>
+            <div class="sub">${(c.images || []).length} زوايا مرجعية · استُخدم ${c.usageCount} مرات</div>
           </div>
-          <button class="chip" data-use-char="${c.id}" style="padding:5px 9px;font-size:11px">استخدم</button>
-          <button class="chip" data-del-char="${c.id}" style="padding:5px 8px;font-size:11px">🗑️</button>
+          ${(c.images || []).length > 1 ? `<button class="chip" data-preview-char="${c.id}" title="معاينة الزوايا">👁️</button>` : ''}
+          <button class="chip" data-use-char="${c.id}">استخدم</button>
+          <button class="chip" data-del-char="${c.id}">🗑️</button>
         </div>`).join('');
       grid.querySelectorAll('[data-use-char]').forEach(el =>
         el.addEventListener('click', () => useCharacter(el.dataset.useChar)));
+      grid.querySelectorAll('[data-preview-char]').forEach(el =>
+        el.addEventListener('click', () => openCharacterPreview(el.dataset.previewChar)));
       grid.querySelectorAll('[data-del-char]').forEach(el =>
         el.addEventListener('click', async () => {
           if (!confirm('حذف الشخصية وصورها المرجعية؟')) return;
@@ -851,6 +883,46 @@
           loadCharacters();
         }));
     }
+
+    // زاوية → تسميتها العربية (من قائمة الزوايا التي تعيدها الخدمة).
+    function angleLabel(key) {
+      return (charMeta.angles || []).find(a => a.key === key)?.labelAr || key;
+    }
+
+    // معاينة شخصية بكل زواياها المرجعية — صورة كبيرة + شريط مصغّرات للتبديل.
+    function openCharacterPreview(id, angleKey = null) {
+      const c = characters.find(x => x.id === id);
+      if (!c || !(c.images || []).length) return;
+      const active = angleKey ? c.images.find(i => i.angle === angleKey) : null;
+      const shown = active || c.images[0];
+      const overlay = $('charPreviewOverlay');
+      overlay.innerHTML = `
+        <div class="char-preview-box">
+          <div class="cp-head">
+            <h3>🎭 ${escapeHtml(c.name)}</h3>
+            <button class="cp-close" type="button" aria-label="إغلاق">✕</button>
+          </div>
+          <img class="cp-main" src="${shown.url}" alt="${escapeHtml(c.name)} — زاوية ${escapeHtml(angleLabel(shown.angle))}" />
+          <div class="cp-angle-label">زاوية ${escapeHtml(angleLabel(shown.angle))}</div>
+          <div class="cp-thumbs">
+            ${c.images.map(img => `<img src="${img.url}" data-thumb-angle="${img.angle}"
+              class="${img.angle === shown.angle ? 'active' : ''}" alt="زاوية ${escapeHtml(angleLabel(img.angle))}"
+              title="زاوية ${escapeHtml(angleLabel(img.angle))}" />`).join('')}
+          </div>
+        </div>`;
+      overlay.classList.remove('hidden');
+      overlay.querySelector('.cp-close').addEventListener('click', closeCharacterPreview);
+      overlay.addEventListener('click', e => { if (e.target === overlay) closeCharacterPreview(); });
+      overlay.querySelectorAll('[data-thumb-angle]').forEach(el =>
+        el.addEventListener('click', () => openCharacterPreview(id, el.dataset.thumbAngle)));
+    }
+    function closeCharacterPreview() {
+      $('charPreviewOverlay').classList.add('hidden');
+      $('charPreviewOverlay').innerHTML = '';
+    }
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && !$('charPreviewOverlay').classList.contains('hidden')) closeCharacterPreview();
+    });
 
     async function createCharacter() {
       const btn = $('charCreateBtn'); const msg = $('charMsg');
@@ -908,14 +980,29 @@
           </select>
           ${isImage ? `<select id="charAngle" style="${SELECT_STYLE};max-width:160px">
             ${charMeta.angles.map(a => `<option value="${a.key}"${a.key === activeCharAngle ? ' selected' : ''}>زاوية ${a.labelAr}</option>`).join('')}
-          </select>` : ''}
+          </select>
+          <img id="charAnglePreview" style="width:40px;height:40px;border-radius:6px;object-fit:cover;cursor:pointer" title="معاينة أكبر" />` : ''}
         </div>`;
       $('charSelect').addEventListener('change', e => {
         activeCharacterId = e.target.value || null;
         if (!isManual()) $('promptPreview').value = composePreview();
+        updateCharAnglePreview();
       });
       const angleSel = $('charAngle');
-      if (angleSel) angleSel.addEventListener('change', e => { activeCharAngle = e.target.value; });
+      if (angleSel) angleSel.addEventListener('change', e => { activeCharAngle = e.target.value; updateCharAnglePreview(); });
+      updateCharAnglePreview();
+    }
+
+    // معاينة صغيرة لصورة الزاوية المختارة حالياً — نقرها يفتح المعاينة الكبيرة.
+    function updateCharAnglePreview() {
+      const img = $('charAnglePreview');
+      if (!img) return;
+      const c = characters.find(x => x.id === activeCharacterId);
+      const shot = c?.images?.find(i => i.angle === activeCharAngle) || c?.images?.[0];
+      if (!shot) { img.classList.add('hidden'); return; }
+      img.classList.remove('hidden');
+      img.src = shot.url;
+      img.onclick = () => openCharacterPreview(c.id, shot.angle);
     }
 
     // ─── مشاريع الأفلام (الستوري بورد) ─────────────────────────────────
