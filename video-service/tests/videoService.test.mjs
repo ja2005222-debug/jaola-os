@@ -22,6 +22,7 @@ import { createFalProvider, extractVideoUrl, specToFalInput } from '../src/provi
 import { readAiModels, getAiModel, defaultAiModel } from '../src/models.js';
 import { composeCinematicPrompt } from '../src/cinema.js';
 import { createFalImageProvider, extractImageUrl } from '../src/providers/falImageProvider.js';
+import { createFalTtsProvider, extractAudioUrl, buildTtsProvider } from '../src/providers/falTtsProvider.js';
 import { CHARACTER_COST_CREDITS, characterImagePrompt, validateCharacterInput } from '../src/characters.js';
 import { ASSEMBLY_COST_CREDITS, buildFilmSpec, readMusicLibrary, readSfxLibrary } from '../src/assembly.js';
 import { specToShotstackTimeline } from '../src/providers/shotstackProvider.js';
@@ -1345,6 +1346,53 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.ok(validateCharacterInput({ name: 'س', description: 'قصير' }).error);
         });
 
+        test('مزوّد TTS عبر fal: نفس آلية الطابور، ومهلة صريحة، واستخراج رابط الصوت', async () => {
+            const calls = [];
+            const bodies = [];
+            const fetchImpl = async (url, opts = {}) => {
+                calls.push(url);
+                if (opts.method === 'POST') {
+                    bodies.push(JSON.parse(opts.body));
+                    return { ok: true, json: async () => ({ request_id: 'tts-1' }) };
+                }
+                if (url.endsWith('/status')) return { ok: true, json: async () => ({ status: 'COMPLETED' }) };
+                return { ok: true, json: async () => ({ audio: { url: 'https://tts.fal/x.mp3' } }) };
+            };
+            const p = createFalTtsProvider({
+                apiKey: 'K', model: 'fal-ai/some-tts/voice', voice: 'ar-arabic', fetchImpl, sleep: async () => {},
+            });
+            assert.equal(await p.generateSpeech('مرحباً'), 'https://tts.fal/x.mp3');
+            assert.equal(calls[0], 'https://queue.fal.run/fal-ai/some-tts/voice');
+            assert.equal(calls[1], 'https://queue.fal.run/fal-ai/some-tts/requests/tts-1/status');
+            assert.equal(calls[2], 'https://queue.fal.run/fal-ai/some-tts/requests/tts-1');
+            // الصوت يُرسل فقط عند ضبطه صراحة
+            assert.deepEqual(bodies[0], { text: 'مرحباً', voice: 'ar-arabic' });
+
+            const noVoice = createFalTtsProvider({ apiKey: 'K', model: 'm/x', fetchImpl, sleep: async () => {} });
+            await noVoice.generateSpeech('نص');
+            assert.deepEqual(bodies[1], { text: 'نص' });
+
+            // مهلة: حالة لا تكتمل أبداً ترمي خطأً عربياً لا تعليقاً صامتاً
+            const stuck = createFalTtsProvider({
+                apiKey: 'K', model: 'm/x', maxWaitMs: 10, pollMs: 1, sleep: async () => {},
+                fetchImpl: async (url, opts = {}) => opts.method === 'POST'
+                    ? { ok: true, json: async () => ({ request_id: 'r' }) }
+                    : { ok: true, json: async () => ({ status: 'IN_PROGRESS' }) },
+            });
+            await assert.rejects(() => stuck.generateSpeech('x'), /مهلة/);
+
+            // استخراج الرابط يغطي الأشكال المختلفة
+            assert.equal(extractAudioUrl({ audio: { url: 'a' } }), 'a');
+            assert.equal(extractAudioUrl({ audio_url: 'b' }), 'b');
+            assert.equal(extractAudioUrl({ audio: 'c' }), 'c');
+            assert.equal(extractAudioUrl({}), null);
+
+            // البناء من البيئة: مخفي بلا fal مفعَّل أو بلا FAL_TTS_MODEL
+            assert.equal(buildTtsProvider({}), null);
+            assert.equal(buildTtsProvider({ VIDEO_AI_PROVIDER: 'fal' }), null);
+            assert.ok(buildTtsProvider({ VIDEO_AI_PROVIDER: 'fal', FAL_KEY: 'K', FAL_TTS_MODEL: 'm/x' }));
+        });
+
         // ─── مشاريع الأفلام (ستوري بورد) ───────────────────────────────
 
         test('المشاريع: إنشاء وقائمة وإعادة تسمية وحذف — بعزل صارم بين المستخدمين', async () => {
@@ -1676,6 +1724,25 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.throws(() => readSfxLibrary({ SFX_LIBRARY_JSON: 'ليس json' }));
         });
 
+        test('تعليق صوتي (TTS): مسار كامل الفيلم، منفصل عن الموسيقى والمؤثرات', () => {
+            const spec = buildFilmSpec({
+                shots: [{ durationSec: 5, videoUrl: 'https://v.test/a.mp4' }],
+                musicUrl: 'https://music.test/bg.mp3',
+                narrationUrl: 'https://tts.test/voice.mp3',
+            });
+            assert.equal(spec.narrationUrl, 'https://tts.test/voice.mp3');
+            const timeline = specToShotstackTimeline(spec);
+            const narrTrack = timeline.tracks.find(t => t.clips[0]?.asset?.src === 'https://tts.test/voice.mp3');
+            assert.ok(narrTrack);
+            assert.equal(narrTrack.clips[0].start, 0);
+            assert.equal(narrTrack.clips[0].length, spec.durationSec);
+            // الموسيقى تبقى soundtrack منفصلاً — لا تعارض
+            assert.equal(timeline.soundtrack.src, 'https://music.test/bg.mp3');
+
+            const noNarration = buildFilmSpec({ shots: [{ durationSec: 5, videoUrl: 'https://v.test/a.mp4' }] });
+            assert.equal(specToShotstackTimeline(noNarration).tracks.length, 1);
+        });
+
         test('التجميع: شعار برابط فاسد يُرفض بـ400 قبل الخصم، وشعار صالح يصل المخطط', async () => {
             // تطبيق مستقل: /assemble يشارك محدود renderLimit مع /renders،
             // وقد استُهلك حصة الساعة عبر عشرات النداءات في بقية هذا الملف —
@@ -1721,6 +1788,73 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                     method: 'POST', token, body: { sfxId: 'لا-وجود' },
                 });
                 assert.equal(badSfx.status, 400);
+
+                // تعليق صوتي مطلوب لكن TTS غير مفعَّل في هذه الخدمة → 400
+                const badTts = await callAt(url, `/api/video/projects/${pid}/assemble`, {
+                    method: 'POST', token, body: { narrationText: 'مرحباً بكم' },
+                });
+                assert.equal(badTts.status, 400);
+                assert.match(badTts.data.error, /التعليق الصوتي غير مفعَّل/);
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
+        test('تعليق صوتي (TTS): خصم مقدَّم ونجاح يصل المخطط، وفشل يسترد الرصيد', async () => {
+            // تطبيق مستقل بمزوّد TTS محاكى — لا شبكة حقيقية، فقط تحقّق التوصيل.
+            const ttsCalls = [];
+            const ttsProvider = {
+                async generateSpeech(text) {
+                    ttsCalls.push(text);
+                    if (text === 'ارفضني') throw new Error('رفض النموذج النص');
+                    return 'https://tts.test/out.mp3';
+                },
+            };
+            const app = createApp({
+                store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider, ttsProvider,
+            });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const token = makeToken('narrator');
+                await callAt(url, '/api/video/credits', { token });
+                const opts0 = await callAt(url, '/api/video/projects', {
+                    method: 'POST', token, body: { title: 'فيلم بتعليق صوتي' },
+                });
+                const pid = opts0.data.project.id;
+                const j = await createJob(store, {
+                    username: 'narrator', templateId: 'ai_clip', values: { prompt: 'x' },
+                    spec: { kind: 'ai_prompt', durationSec: 5, prompt: 'x' },
+                    costCredits: 1, projectId: pid, shotIndex: 0,
+                });
+                await transitionJob(store, j.id, 'rendering', {});
+                await transitionJob(store, j.id, 'done', { videoUrl: 'https://v.test/0.mp4' });
+
+                const options = await callAt(url, `/api/video/projects/${pid}/assembly-options`, { token });
+                assert.equal(options.data.narrationEnabled, true);
+                assert.equal(typeof options.data.narrationCostCredits, 'number');
+
+                const before = (await callAt(url, '/api/video/credits', { token })).data.credits;
+                const ok = await callAt(url, `/api/video/projects/${pid}/assemble`, {
+                    method: 'POST', token, body: { narrationText: 'مرحباً بكم في الفيلم' },
+                });
+                assert.equal(ok.status, 200);
+                const film = await getJob(store, ok.data.job.id);
+                assert.equal(film.spec.narrationUrl, 'https://tts.test/out.mp3');
+                assert.deepEqual(ttsCalls, ['مرحباً بكم في الفيلم']);
+                // النجاح يخصم تكلفة التعليق الصوتي + تكلفة التجميع نفسه (منفصلتان)
+                const afterOk = (await callAt(url, '/api/video/credits', { token })).data.credits;
+                assert.equal(afterOk, before - options.data.narrationCostCredits - options.data.costCredits);
+
+                // فشل توليد الصوت → 502 واسترداد خصم التعليق الصوتي فقط (لا تجميع يُنشأ أصلاً)
+                const beforeFail = afterOk;
+                const failed = await callAt(url, `/api/video/projects/${pid}/assemble`, {
+                    method: 'POST', token, body: { narrationText: 'ارفضني' },
+                });
+                assert.equal(failed.status, 502);
+                assert.match(failed.data.error, /استُرد الرصيد/);
+                const afterFail = (await callAt(url, '/api/video/credits', { token })).data.credits;
+                assert.equal(afterFail, beforeFail); // مسترد بالكامل — لا خصم تجميع لأن الفشل سابق لإنشاء المهمة
             } finally {
                 await new Promise(r => s.close(r));
             }

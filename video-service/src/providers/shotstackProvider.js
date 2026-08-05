@@ -17,6 +17,11 @@
  * بنفس صيغة clip الصوتي المؤكَّدة (asset:{type:'audio'}) لكن كمسار
  * منفصل متعدد المقاطع القصيرة بدل soundtrack واحد؛ تحقّق أنها تُسمع
  * فعلياً عند كل انتقال ولا تتداخل بصوت مشوَّه مع الموسيقى.
+ *
+ * ⚠️ وكذلك التعليق الصوتي (narrationUrl، توليد fal.ai): مسار صوتي
+ * ثالث بمقطع واحد يمتد طوال الفيلم — تحقّق من مزجه مع الموسيقى دون
+ * تشويش (فارق مستوى الصوت بين المتحدث والموسيقى مسؤولية صاحب
+ * المنصة عبر اختيار مقطع موسيقي هادئ، لا تحكّماً تلقائياً هنا).
  */
 
 const SCENE_TRANSITION = { in: 'fade', out: 'fade' };
@@ -91,6 +96,16 @@ export function specToShotstackTimeline(spec) {
                 start: startSec,
                 length: 1,
             })),
+        });
+    }
+    // تعليق صوتي (TTS) يمتد طوال الفيلم — مسار منفصل عن الموسيقى/المؤثرات.
+    if (spec.narrationUrl) {
+        timeline.tracks.push({
+            clips: [{
+                asset: { type: 'audio', src: spec.narrationUrl },
+                start: 0,
+                length: spec.durationSec,
+            }],
         });
     }
     // موسيقى تصويرية (التجميع) — تتلاشى مع النهاية
