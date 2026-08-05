@@ -27,7 +27,7 @@ import { readAiModels, getAiModel, defaultAiModel, publicAiModels } from './src/
 import { CINEMA_CONTROLS, cinemaFieldOptions } from './src/cinema.js';
 import {
     ASSEMBLY_COST_CREDITS, NARRATION_COST_CREDITS, TRANSITIONS, COLOR_FILTERS, OUTPUT_ASPECTS,
-    OUTPUT_RESOLUTIONS, DEFAULT_RESOLUTION,
+    OUTPUT_RESOLUTIONS, DEFAULT_RESOLUTION, DEFAULT_WATERMARK_TEXT,
     readMusicLibrary, readSfxLibrary, buildFilmSpec,
 } from './src/assembly.js';
 import { buildImageProvider } from './src/providers/falImageProvider.js';
@@ -60,6 +60,13 @@ export function createApp({
     musicLibrary = readMusicLibrary(),
     sfxLibrary = readSfxLibrary(),
     ttsProvider = null,
+    // علامة الخطة المجانية: مفتاح تفعيل صريح منفصل — التوكنات الحالية
+    // (المُصدرة قبل حمل ادّعاء plan) تُعامَل مجانية افتراضياً في الفرع
+    // أدناه، فتفعيله فوراً عند نشر هذا الكود قد يضع علامة خطأً على
+    // مشتركين حاليين حتى يُجدَّد توكنهم (تسجيل دخول جديد). فعّله فقط
+    // بعد التأكد من نشر مطالبة plan في توكنات تسجيل الدخول بالمنصة.
+    watermarkEnforced = String(process.env.WATERMARK_ENFORCEMENT || '').toLowerCase() === 'true',
+    watermarkText = process.env.WATERMARK_TEXT || DEFAULT_WATERMARK_TEXT,
 } = {}) {
     const secrets = (Array.isArray(jwtSecret) ? jwtSecret : [jwtSecret]).filter(Boolean);
     if (secrets.length === 0) {
@@ -237,6 +244,7 @@ export function createApp({
             narrationCostCredits: NARRATION_COST_CREDITS,
             costCredits: ASSEMBLY_COST_CREDITS,
             readyShots: (await readyShotsOf(project.id)).length,
+            watermarked: watermarkEnforced && !['pro', 'enterprise'].includes(req.user.plan),
         });
     }));
 
@@ -329,6 +337,13 @@ export function createApp({
             }
         }
 
+        // علامة الخطة المجانية: تُحدَّد من ادّعاء plan في التوكن حصراً —
+        // لا حقل يرسله العميل أبداً، فلا يمكن للمستخدم إسقاطها بنفسه.
+        // خطة غير معروفة/مفقودة (توكن قديم قبل حمل هذا الادّعاء) تُعامَل
+        // مجانية افتراضياً — القاعدة الآمنة تجارياً، لا الأريح للمستخدم.
+        const isPaidPlan = ['pro', 'enterprise'].includes(req.user.plan);
+        const appliedWatermark = (watermarkEnforced && !isPaidPlan) ? watermarkText : null;
+
         // روابط اللقطات للمُركِّب: المملوكة تُوقَّع بساعة (قد تنتظر الطابور)
         const shots = await Promise.all(ready.map(async s => ({
             durationSec: s.spec?.durationSec,
@@ -345,6 +360,7 @@ export function createApp({
             sfxUrl,
             narrationUrl,
             resolution: resolution || DEFAULT_RESOLUTION,
+            watermarkText: appliedWatermark,
         });
 
         const job = await createJob(store, {
@@ -353,6 +369,7 @@ export function createApp({
                 transition: transition || '', musicId: musicId || '', endTitle: title,
                 filter: filter || '', aspect: aspect || '16:9', logoUrl: cleanLogoUrl || '',
                 sfxId: sfxId || '', narrationText: narration || '', resolution: resolution || DEFAULT_RESOLUTION,
+                watermarked: !!appliedWatermark,
             },
             spec, costCredits: ASSEMBLY_COST_CREDITS,
             projectId: project.id, shotIndex: null,

@@ -26,7 +26,7 @@ import { createFalTtsProvider, extractAudioUrl, buildTtsProvider } from '../src/
 import { CHARACTER_COST_CREDITS, characterImagePrompt, validateCharacterInput } from '../src/characters.js';
 import {
     ASSEMBLY_COST_CREDITS, buildFilmSpec, readMusicLibrary, readSfxLibrary,
-    OUTPUT_RESOLUTIONS, DEFAULT_RESOLUTION,
+    OUTPUT_RESOLUTIONS, DEFAULT_RESOLUTION, DEFAULT_WATERMARK_TEXT,
 } from '../src/assembly.js';
 import { specToShotstackTimeline } from '../src/providers/shotstackProvider.js';
 import { runEngineTick, JOB_TIMEOUT_MS } from '../src/engine.js';
@@ -1781,6 +1781,23 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.deepEqual(OUTPUT_RESOLUTIONS, ['sd', 'hd', '1080', '4k']);
         });
 
+        test('علامة الخطة المجانية: مسار عنوان منفصل زاوية سفلى يسرى، وغيابها بلا مسار إضافي', () => {
+            const shots = [{ durationSec: 5, videoUrl: 'https://v.test/a.mp4' }];
+            const spec = buildFilmSpec({ shots, logoUrl: 'https://logo.test/x.png', watermarkText: DEFAULT_WATERMARK_TEXT });
+            assert.equal(spec.watermarkText, DEFAULT_WATERMARK_TEXT);
+            const timeline = specToShotstackTimeline(spec);
+            // شعار + علامة مائية: مساران فوق الفيديو + مسار الفيديو نفسه
+            assert.equal(timeline.tracks.length, 3);
+            const wmClip = timeline.tracks.find(t => t.clips[0]?.asset?.text === DEFAULT_WATERMARK_TEXT).clips[0];
+            assert.equal(wmClip.asset.type, 'title');
+            assert.equal(wmClip.position, 'bottomLeft');
+            assert.equal(wmClip.length, spec.durationSec);
+
+            const noWatermark = buildFilmSpec({ shots });
+            assert.equal(noWatermark.watermarkText, null);
+            assert.equal(specToShotstackTimeline(noWatermark).tracks.length, 1);
+        });
+
         test('التجميع: شعار برابط فاسد يُرفض بـ400 قبل الخصم، وشعار صالح يصل المخطط', async () => {
             // تطبيق مستقل: /assemble يشارك محدود renderLimit مع /renders،
             // وقد استُهلك حصة الساعة عبر عشرات النداءات في بقية هذا الملف —
@@ -1845,6 +1862,65 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 });
                 assert.equal(okRes.status, 200);
                 assert.equal((await getJob(store, okRes.data.job.id)).spec.resolution, '4k');
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
+        test('علامة الخطة المجانية: تُفرض من الخادم حسب ادّعاء plan في التوكن — لا حقل يرسله العميل', async () => {
+            // تطبيق مستقل بتفعيل صريح (معطَّل افتراضياً — راجع التعليق في server.js).
+            const app = createApp({
+                store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider,
+                watermarkEnforced: true, watermarkText: 'TESTMARK',
+            });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                // مستخدم بلا ادّعاء plan (توكن قديم/افتراضي) → يُعامَل مجانياً
+                const freeToken = makeToken('free-plan-user');
+                await callAt(url, '/api/video/credits', { token: freeToken });
+                const freePid = (await callAt(url, '/api/video/projects', {
+                    method: 'POST', token: freeToken, body: { title: 'مجاني' },
+                })).data.project.id;
+                const freeJob = await createJob(store, {
+                    username: 'free-plan-user', templateId: 'ai_clip', values: { prompt: 'x' },
+                    spec: { kind: 'ai_prompt', durationSec: 5, prompt: 'x' },
+                    costCredits: 1, projectId: freePid, shotIndex: 0,
+                });
+                await transitionJob(store, freeJob.id, 'rendering', {});
+                await transitionJob(store, freeJob.id, 'done', { videoUrl: 'https://v.test/0.mp4' });
+
+                const freeOpts = await callAt(url, `/api/video/projects/${freePid}/assembly-options`, { token: freeToken });
+                assert.equal(freeOpts.data.watermarked, true);
+                const freeAssemble = await callAt(url, `/api/video/projects/${freePid}/assemble`, {
+                    method: 'POST', token: freeToken, body: {},
+                });
+                assert.equal(freeAssemble.status, 200);
+                const freeSpec = (await getJob(store, freeAssemble.data.job.id)).spec;
+                assert.equal(freeSpec.watermarkText, 'TESTMARK');
+
+                // مستخدم بخطة pro → بلا علامة، ولا يملك أي حقل يُسقطها بنفسه
+                const proToken = makeToken('pro-plan-user', { plan: 'pro' });
+                await callAt(url, '/api/video/credits', { token: proToken });
+                const proPid = (await callAt(url, '/api/video/projects', {
+                    method: 'POST', token: proToken, body: { title: 'احترافي' },
+                })).data.project.id;
+                const proJob = await createJob(store, {
+                    username: 'pro-plan-user', templateId: 'ai_clip', values: { prompt: 'x' },
+                    spec: { kind: 'ai_prompt', durationSec: 5, prompt: 'x' },
+                    costCredits: 1, projectId: proPid, shotIndex: 0,
+                });
+                await transitionJob(store, proJob.id, 'rendering', {});
+                await transitionJob(store, proJob.id, 'done', { videoUrl: 'https://v.test/1.mp4' });
+
+                const proOpts = await callAt(url, `/api/video/projects/${proPid}/assembly-options`, { token: proToken });
+                assert.equal(proOpts.data.watermarked, false);
+                const proAssemble = await callAt(url, `/api/video/projects/${proPid}/assemble`, {
+                    // محاولة تمرير watermarkText من العميل — لا حقل معروف بهذا الاسم، يُتجاهل بصمت
+                    method: 'POST', token: proToken, body: { watermarkText: 'محاولة تحايل' },
+                });
+                assert.equal(proAssemble.status, 200);
+                assert.equal((await getJob(store, proAssemble.data.job.id)).spec.watermarkText, null);
             } finally {
                 await new Promise(r => s.close(r));
             }

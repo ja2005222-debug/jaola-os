@@ -35,7 +35,7 @@ import {
 import { generatePWA } from './agents/pwaAgent.js';
 import { generateJaolaBot, readBotManifest, buildEmbedBundle } from './agents/jaolaBot.js';
 import { mailReady, sendMail, isEmail } from './services/mailer.js';
-import { emailQuota, socialQuota, customAgentsMax, aiImagesQuota, customDomainsMax, cryptoWatchlistMax, stockWatchlistMax } from './services/subscriptionService.js';
+import { emailQuota, socialQuota, customAgentsMax, aiImagesQuota, customDomainsMax, cryptoWatchlistMax, stockWatchlistMax, getUserSubscription } from './services/subscriptionService.js';
 import { validateDomain, dnsInstructionsFor, attachDomain, domainStatus, detachDomain, readUserDomains, saveUserDomain, removeUserDomain, countUserDomains } from './services/customDomains.js';
 import { aiImagesReady, applyAiImages, applyHeroImage, generateProductImage, diagnoseImages } from './services/aiImages.js';
 import { checkAiProviders } from './services/aiProviderCheck.js';
@@ -872,7 +872,8 @@ app.post('/api/auth/register', async (req, res) => {
         const payload = {
             id: userRecord._id || userRecord.id || sanitizedUser,
             username: sanitizedUser,
-            email: userRecord.email || `${sanitizedUser}@jaola-twin.io`
+            email: userRecord.email || `${sanitizedUser}@jaola-twin.io`,
+            plan: getUserSubscription(userRecord).planId, // حساب جديد → مجانية دائماً، لكن نفس المسار الموحّد
         };
 
         const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
@@ -909,7 +910,10 @@ app.post('/api/auth/login', async (req, res) => {
                 return res.status(404).json({ error: 'الحساب غير موجود. سجّل حساباً جديداً أولاً.' });
             }
             // وضع offline: دخول كضيف بدون التحقق من كلمة مرور (للتطوير المحلي فقط)
-            const payload = { id: `offline_${sanitizedUser}`, username: sanitizedUser, email: `${sanitizedUser}@jaola-twin.io` };
+            const payload = {
+                id: `offline_${sanitizedUser}`, username: sanitizedUser, email: `${sanitizedUser}@jaola-twin.io`,
+                plan: 'free', // لا وثيقة مستخدم هنا أصلاً — لا اشتراك ممكن
+            };
             const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
             return res.json({ success: true, token, currentUser: sanitizedUser, activeProject: 'sandbox_app', offlineMode: true });
         }
@@ -931,7 +935,8 @@ app.post('/api/auth/login', async (req, res) => {
         const payload = {
             id: userRecord._id || userRecord.id,
             username: sanitizedUser,
-            email: userRecord.email
+            email: userRecord.email,
+            plan: getUserSubscription(userRecord).planId,
         };
         const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
         res.json({ success: true, token, currentUser: sanitizedUser, activeProject: 'sandbox_app' });
@@ -993,7 +998,10 @@ app.get('/api/auth/:provider/callback', async (req, res) => {
         }
 
         const token = jwt.sign(
-            { id: user._id || user.id || username, username, email: user.email || profile.email },
+            {
+                id: user._id || user.id || username, username, email: user.email || profile.email,
+                plan: getUserSubscription(user).planId,
+            },
             JWT_SECRET, { expiresIn: '7d' }
         );
         const params = new URLSearchParams({ token, user: username });
