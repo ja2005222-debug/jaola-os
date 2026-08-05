@@ -44,6 +44,24 @@ test('index.html في مجلد فرعي فقط لا يُحتسب جذراً', ()
     assert.throws(() => ensureStaticDeploy([f('pages/index.html'), f('style.css')]), /HTML في جذر/);
 });
 
+// ─── 404 عند التحديث: توجيه SPA من جانب العميل (React Router ونحوه) ───
+test('كود JS فيه توجيه React Router → route احتياطي filesystem ثم index.html', () => {
+    const spaJs = f('assets/app.js', 'import { BrowserRouter, useNavigate } from "react-router-dom"; export default function App(){}');
+    const out = ensureStaticDeploy([f('index.html'), spaJs]);
+    const cfg = cfgOf(out);
+    assert.deepEqual(cfg.routes, [{ handle: 'filesystem' }, { src: '/(.*)', dest: '/index.html' }]);
+});
+
+test('كود JS فيه history.pushState يدوياً (بلا مكتبة توجيه) → نفس fallback', () => {
+    const out = ensureStaticDeploy([f('index.html'), f('app.js', 'window.history.pushState({}, "", "/dashboard");')]);
+    assert.deepEqual(cfgOf(out).routes, [{ handle: 'filesystem' }, { src: '/(.*)', dest: '/index.html' }]);
+});
+
+test('موقع ثابت متعدد الصفحات بلا توجيه من جانب العميل → بلا routes (404 حقيقي يبقى 404)', () => {
+    const out = ensureStaticDeploy([f('index.html'), f('about.html'), f('script.js', 'console.log("hi");')]);
+    assert.equal(cfgOf(out).routes, undefined, 'لا مؤشر SPA — لا حقن fallback يُخفي صفحات مفقودة فعلاً');
+});
+
 // ─── الرابط النظيف: لا رابط نشرة مُجزّأ طويل بعد الآن ───────────────
 test('رابط النشرة المُجزّأ في الرد يُتجاهل لصالح نطاق المشروع الحتمي', () => {
     const result = { url: 'jamal-new16jul-ggihmlmx6-jazaki-s-projects.vercel.app', alias: [] };

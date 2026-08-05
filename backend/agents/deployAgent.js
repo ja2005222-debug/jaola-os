@@ -108,10 +108,33 @@ async function collectProjectFiles(projectPath, { includeApi = false } = {}) {
     return files;
 }
 
+// 🔎 مؤشرات توجيه من جانب العميل (SPA) داخل كود JS مبني — إن وُجدت في أي
+// ملف JS بالمشروع فهذا موقع صفحة واحدة يتولى فيه الجافاسكربت التوجيه، لا
+// خادم ثابت متعدد الصفحات. الفرق مهم: حقن fallback عشوائياً لكل مشروع
+// ثابت يكسر مواقع حقيقية متعددة الصفحات (about.html غير موجود يصير 404
+// حقيقياً يُخفى خطأً بدل ظهوره).
+const SPA_ROUTER_SIGNAL = /react-router|createBrowserRouter|BrowserRouter|useNavigate|history\.pushState|window\.history\.pushState/;
+
+function looksLikeClientRoutedSpa(files) {
+    const jsFiles = files.filter(f => /\.(js|mjs|jsx|ts|tsx)$/i.test(f.file));
+    return jsFiles.some(f => {
+        let content;
+        try { content = Buffer.from(f.data, 'base64').toString('utf8'); } catch { return false; }
+        return SPA_ROUTER_SIGNAL.test(content);
+    });
+}
+
 /**
  * 🧩 يضمن نشراً ثابتاً صحيحاً — يمنع عطل 404 من محاولة Vercel بناء مشروع
  * فيه package.json بدل خدمة صفحات HTML الجاهزة. دالة نقية قابلة للاختبار:
  * تُرجع قائمة الملفات مع vercel.json الثابت مضافاً (إن لزم).
+ *
+ * 🩹 404 عند تحديث الصفحة (مسار SPA غير ملف حقيقي): إن حمل المشروع كود
+ * توجيه من جانب العميل (React Router ونحوه) نضيف fallback صريحاً —
+ * filesystem أولاً (الملفات/الأصول الحقيقية تُخدم كما هي)، ثم أي مسار
+ * آخر إلى index.html فيتولى الموجّه من هناك. مواقع متعددة الصفحات بلا
+ * توجيه من جانب العميل تبقى كما كانت (404 حقيقي لصفحة غير موجودة يبقى
+ * 404، لا يُخفى).
  * @throws إذا لم يوجد أي HTML في الجذر
  */
 export function ensureStaticDeploy(files) {
@@ -123,7 +146,11 @@ export function ensureStaticDeploy(files) {
     if (files.some(f => f.file === 'vercel.json')) return files;
 
     const cfg = { version: 2, builds: [{ src: '**/*', use: '@vercel/static' }] };
-    if (!hasIndex) cfg.routes = [{ src: '/', dest: `/${rootHtml[0].file}` }];
+    if (!hasIndex) {
+        cfg.routes = [{ src: '/', dest: `/${rootHtml[0].file}` }];
+    } else if (looksLikeClientRoutedSpa(files)) {
+        cfg.routes = [{ handle: 'filesystem' }, { src: '/(.*)', dest: '/index.html' }];
+    }
     return [...files, {
         file: 'vercel.json',
         data: Buffer.from(JSON.stringify(cfg)).toString('base64'),
