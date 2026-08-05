@@ -1635,6 +1635,40 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.throws(() => readMusicLibrary({ MUSIC_LIBRARY_JSON: JSON.stringify([{ id: 'x' }]) }));
         });
 
+        test('هندسة الصوت: مكتبتا الموسيقى/المؤثرات وحالة TTS مستقلة عن أي مشروع', async () => {
+            const token = makeToken('audio-checker');
+            const res = await call('/api/video/audio-options', { token });
+            assert.equal(res.status, 200);
+            // بلا مكتبات مضبوطة في بيئة الاختبار (لا MUSIC_LIBRARY_JSON/SFX_LIBRARY_JSON) وبلا TTS
+            assert.deepEqual(res.data.music, []);
+            assert.deepEqual(res.data.sfx, []);
+            assert.equal(res.data.narrationEnabled, false);
+            assert.equal(typeof res.data.narrationCostCredits, 'number');
+
+            // بلا توكن → 401 (نفس حماية بقية مسارات الخدمة)
+            assert.equal((await call('/api/video/audio-options')).status, 401);
+        });
+
+        test('هندسة الصوت: مكتبات مضبوطة تصل برابطها الكامل للمعاينة (لا id/nameAr فقط)', async () => {
+            const app = createApp({
+                store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider,
+                musicLibrary: [{ id: 'm1', nameAr: 'مقطع', url: 'https://music.test/a.mp3' }],
+                sfxLibrary: [{ id: 's1', nameAr: 'مؤثر', url: 'https://sfx.test/b.mp3' }],
+                ttsProvider: { async generateSpeech() { return 'x'; } },
+            });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const res = await callAt(url, '/api/video/audio-options', { token: makeToken('audio-checker-2') });
+                assert.equal(res.status, 200);
+                assert.deepEqual(res.data.music, [{ id: 'm1', nameAr: 'مقطع', url: 'https://music.test/a.mp3' }]);
+                assert.deepEqual(res.data.sfx, [{ id: 's1', nameAr: 'مؤثر', url: 'https://sfx.test/b.mp3' }]);
+                assert.equal(res.data.narrationEnabled, true);
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
         test('تجميع الفيلم عبر المسار: لقطات جاهزة → مهمة تركيب بخصم وتحقق', async () => {
             const token = makeToken('editor');
             await call('/api/video/credits', { token });
