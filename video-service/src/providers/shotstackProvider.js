@@ -12,6 +12,11 @@
  * ⚠️ غير مؤكَّد بعد: طبقة الشعار (logoUrl أدناه) تفترض أن أول مسار في
  * tracks يُرسم أعلى البقية (اصطلاح Shotstack الشائع) — لم تُختبر بلقطة
  * شعار حقيقية بعد؛ تحقّق من ظهوره فوق الفيديو لا خلفه في أول استخدام.
+ *
+ * ⚠️ غير مؤكَّد بعد أيضاً: مؤثرات الانتقال الصوتية (sfxUrl) — مبنية
+ * بنفس صيغة clip الصوتي المؤكَّدة (asset:{type:'audio'}) لكن كمسار
+ * منفصل متعدد المقاطع القصيرة بدل soundtrack واحد؛ تحقّق أنها تُسمع
+ * فعلياً عند كل انتقال ولا تتداخل بصوت مشوَّه مع الموسيقى.
  */
 
 const SCENE_TRANSITION = { in: 'fade', out: 'fade' };
@@ -75,6 +80,17 @@ export function specToShotstackTimeline(spec) {
                 scale: 0.15,
                 offset: { x: -0.03, y: 0.03 },
             }],
+        });
+    }
+    // مؤثر صوتي عند كل نقطة انتقال بين المشاهد — مسار صوتي منفصل قصير
+    // المقاطع، لا يتعارض مع مسار الفيديو أو الموسيقى التصويرية.
+    if (spec.sfxUrl && Array.isArray(spec.sceneStarts)) {
+        timeline.tracks.push({
+            clips: spec.sceneStarts.map(startSec => ({
+                asset: { type: 'audio', src: spec.sfxUrl },
+                start: startSec,
+                length: 1,
+            })),
         });
     }
     // موسيقى تصويرية (التجميع) — تتلاشى مع النهاية
