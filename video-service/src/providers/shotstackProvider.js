@@ -15,6 +15,10 @@ const SCENE_TRANSITION = { in: 'fade', out: 'fade' };
 
 /** يترجم المخطط المحايد (compileSpec) إلى timeline بصيغة Shotstack. */
 export function specToShotstackTimeline(spec) {
+    // انتقال المخطط (التجميع) إن حُدد، وإلا الافتراضي
+    const transition = spec.transition
+        ? { in: spec.transition, out: spec.transition }
+        : SCENE_TRANSITION;
     const clips = [];
     for (const scene of spec.scenes) {
         for (const layer of scene.layers) {
@@ -28,7 +32,7 @@ export function specToShotstackTimeline(spec) {
                     },
                     start: scene.startSec,
                     length: scene.lengthSec,
-                    transition: SCENE_TRANSITION,
+                    transition,
                 });
             } else if (layer.kind === 'image') {
                 clips.push({
@@ -36,15 +40,29 @@ export function specToShotstackTimeline(spec) {
                     start: scene.startSec,
                     length: scene.lengthSec,
                     fit: 'contain',
-                    transition: SCENE_TRANSITION,
+                    transition,
+                });
+            } else if (layer.kind === 'video') {
+                // تجميع الفيلم: لقطة فيديو مولَّدة تُضم للخط الزمني
+                clips.push({
+                    asset: { type: 'video', src: layer.url },
+                    start: scene.startSec,
+                    length: scene.lengthSec,
+                    fit: 'contain',
+                    transition,
                 });
             }
         }
     }
-    return {
+    const timeline = {
         background: spec.background,
         tracks: [{ clips }],
     };
+    // موسيقى تصويرية (التجميع) — تتلاشى مع النهاية
+    if (spec.soundtrackUrl) {
+        timeline.soundtrack = { src: spec.soundtrackUrl, effect: 'fadeOut' };
+    }
+    return timeline;
 }
 
 export function createShotstackProvider({ apiKey, env = 'stage', fetchImpl = fetch } = {}) {

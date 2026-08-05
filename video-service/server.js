@@ -25,6 +25,7 @@ import { readLimits, checkRenderAllowed, maybeAlertCost, startOfUtcDay } from '.
 import { readBlocklist, inspectValues, inspectText } from './src/contentFilter.js';
 import { readAiModels, getAiModel, defaultAiModel, publicAiModels } from './src/models.js';
 import { CINEMA_CONTROLS } from './src/cinema.js';
+import { ASSEMBLY_COST_CREDITS, TRANSITIONS, readMusicLibrary, buildFilmSpec } from './src/assembly.js';
 import { buildImageProvider } from './src/providers/falImageProvider.js';
 import { characterImageKeyFor } from './src/storage/index.js';
 import {
@@ -51,6 +52,7 @@ export function createApp({
     blocklist = readBlocklist(),
     aiModels = readAiModels(),
     imageProvider = null,
+    musicLibrary = readMusicLibrary(),
 } = {}) {
     const secrets = (Array.isArray(jwtSecret) ? jwtSecret : [jwtSecret]).filter(Boolean);
     if (secrets.length === 0) {
@@ -156,6 +158,88 @@ export function createApp({
         if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
         await store.deleteProject(project.id);
         res.json({ success: true });
+    }));
+
+    // ─── تجميع الفيلم: لقطات المشروع الجاهزة → فيلم واحد ────────────────
+
+    const readyShotsOf = async (projectId) => {
+        const shots = await store.listJobsByProject(projectId);
+        return shots.filter(s => s.status === 'done' && (s.videoUrl || s.storageKey));
+    };
+
+    app.get('/api/video/projects/:id/assembly-options', verifyToken, wrap(async (req, res) => {
+        const project = await ownedProject(req);
+        if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
+        res.json({
+            transitions: Object.keys(TRANSITIONS),
+            music: musicLibrary.map(({ id, nameAr }) => ({ id, nameAr })),
+            costCredits: ASSEMBLY_COST_CREDITS,
+            readyShots: (await readyShotsOf(project.id)).length,
+        });
+    }));
+
+    app.post('/api/video/projects/:id/assemble', verifyToken, renderLimit, wrap(async (req, res) => {
+        const project = await ownedProject(req);
+        if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
+
+        const { transition, musicId, endTitle } = req.body || {};
+        if (transition != null && !(transition in TRANSITIONS)) {
+            return res.status(400).json({ error: `انتقال غير معروف (المتاح: ${Object.keys(TRANSITIONS).join('، ')}).` });
+        }
+        let musicUrl = null;
+        if (musicId) {
+            const track = musicLibrary.find(m => m.id === String(musicId));
+            if (!track) return res.status(400).json({ error: 'مقطع موسيقي غير معروف.' });
+            musicUrl = track.url;
+        }
+        const title = String(endTitle || '').trim().slice(0, 60);
+        if (title) {
+            const flagged = inspectText(title, { blocklist });
+            if (flagged) return res.status(400).json({ error: flagged.error });
+        }
+
+        const ready = await readyShotsOf(project.id);
+        if (ready.length === 0) {
+            return res.status(400).json({ error: 'لا لقطات مكتملة في المشروع بعد — ولّد لقطة واحدة على الأقل.' });
+        }
+
+        const username = userOf(req);
+        if (await countActiveJobsForUser(store, username) >= MAX_ACTIVE_JOBS_PER_USER) {
+            return res.status(429).json({ error: `لديك ${MAX_ACTIVE_JOBS_PER_USER} مهام نشطة بالفعل — انتظر اكتمالها أولاً.` });
+        }
+        // درع التكلفة يشمل التجميع أيضاً — كل مهمة تُحسب.
+        const gate = await checkRenderAllowed(store, {
+            username, limits, exemptPerUser: isAdminUser(req.user),
+        });
+        if (!gate.allowed) return res.status(429).json({ error: gate.error, code: gate.code });
+
+        // روابط اللقطات للمُركِّب: المملوكة تُوقَّع بساعة (قد تنتظر الطابور)
+        const shots = await Promise.all(ready.map(async s => ({
+            durationSec: s.spec?.durationSec,
+            videoUrl: s.storageKey && storage ? await storage.signedUrl(s.storageKey, 3600) : s.videoUrl,
+        })));
+        const spec = buildFilmSpec({
+            shots,
+            transition: transition ? TRANSITIONS[transition] : null,
+            musicUrl,
+            endTitle: title,
+        });
+
+        const job = await createJob(store, {
+            username, templateId: 'film_assembly', values: { transition: transition || '', musicId: musicId || '', endTitle: title },
+            spec, costCredits: ASSEMBLY_COST_CREDITS,
+            projectId: project.id, shotIndex: null,
+        });
+        const deducted = await deductCredits(store, {
+            username, amount: ASSEMBLY_COST_CREDITS, jobId: job.id,
+        });
+        if (!deducted) {
+            await transitionJob(store, job.id, 'failed', { error: 'رصيد غير كافٍ.' });
+            return res.status(402).json({
+                error: `رصيدك الحالي (${await getBalance(store, username)}) لا يكفي — التجميع يكلف ${ASSEMBLY_COST_CREDITS}.`,
+            });
+        }
+        res.json({ job: { id: job.id, status: job.status, costCredits: job.costCredits } });
     }));
 
     // ─── بنك الشخصيات (تثبيت هوية البطل) ───────────────────────────────
