@@ -114,6 +114,25 @@
         للمشروع المفتوح تلقائياً، وتستطيع إعادة توليد أي لقطة أو استخدامها أساساً لغيرها.</p>
     </div>
 
+    <h2>🎭 بنك الشخصيات</h2>
+    <div class="card">
+      <div class="grid" id="charGrid" style="grid-template-columns:repeat(auto-fill,minmax(250px,1fr))"></div>
+      <div id="charCreate" class="hidden" style="margin-top:12px">
+        <label>اسم الشخصية *</label>
+        <input type="text" id="charName" maxlength="60" placeholder="مثال: البطل — رجل المعطف" />
+        <label>الوصف الحرفي الثابت * (يُحقن كما هو في كل لقطة — كن محدداً: الملامح، الملابس، العمر)</label>
+        <textarea id="charDesc" maxlength="500" rows="3"
+          style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);
+          background:var(--bg);color:var(--text);font-size:14px;font-family:inherit;resize:vertical"
+          placeholder="مثال: A man in his 40s with a short grey beard, wearing a long dark trench coat and black leather gloves"></textarea>
+        <button id="charCreateBtn" type="button">🎭 أنشئ الشخصية (٣ صور مرجعية)</button>
+        <div class="msg" id="charMsg"></div>
+      </div>
+      <p class="note">الشخصية = وصف حرفي ثابت + ٣ صور مرجعية بزوايا مختلفة تُولَّد مرة واحدة.
+        عند إدراجها في لقطة يُحقن وصفها في البرومت وتُستخدم صورة الزاوية الأنسب إطاراً أول —
+        فيبقى بطلك نفسه عبر كل المشاهد. 💡 اكتب الوصف بالإنجليزية لالتزام أدق من النماذج.</p>
+    </div>
+
     <h2>١) اختر قالباً</h2>
     <div class="grid" id="templates"></div>
 
@@ -121,6 +140,7 @@
       <h2>٢) عبّئ محتوى الفيديو</h2>
       <div class="card">
         <div id="modelPicker" class="hidden"></div>
+        <div id="charPicker" class="hidden"></div>
         <form id="renderForm"></form>
         <button id="submitBtn" type="button">🚀 أنشئ الفيديو</button>
         <div class="msg" id="formMsg"></div>
@@ -167,6 +187,10 @@
     let activeModelId = null;
     let projects = [];
     let activeProjectId = null;
+    let characters = [];
+    let charMeta = { enabled: false, costCredits: 1, angles: [] };
+    let activeCharacterId = null;
+    let activeCharAngle = 'front';
 
     const STATUS_AR = { queued: 'في الطابور', rendering: 'قيد التصدير', done: 'مكتمل', failed: 'فشل' };
 
@@ -293,6 +317,7 @@
                 <input type="${type}" name="${f.key}" maxlength="${f.maxLen || 500}" placeholder="${ph}" />`;
       }).join('');
       renderModelPicker();
+      renderCharacterPicker();
       syncAspectRatios();
       syncCost();
       $('formWrap').classList.remove('hidden');
@@ -310,6 +335,10 @@
         const body = { templateId: activeTemplate.id, values };
         if (isAiTemplate(activeTemplate) && activeModelId) body.modelId = activeModelId;
         if (activeProjectId) body.projectId = activeProjectId; // تنضم للمشروع المفتوح
+        if (isAiTemplate(activeTemplate) && activeCharacterId) {
+          body.characterId = activeCharacterId;
+          body.characterAngle = activeCharAngle;
+        }
         const res = await api('/api/video/renders', {
           method: 'POST',
           body: JSON.stringify(body),
@@ -399,6 +428,115 @@
           }
         });
       });
+    }
+
+    // ─── بنك الشخصيات ──────────────────────────────────────────────────
+
+    async function loadCharacters() {
+      const res = await api('/api/video/characters');
+      if (!res.ok) return;
+      const data = await res.json();
+      characters = data.characters;
+      charMeta = { enabled: data.enabled, costCredits: data.costCredits, angles: data.angles };
+      renderCharacters();
+    }
+
+    function renderCharacters() {
+      $('charCreate').classList.toggle('hidden', !charMeta.enabled);
+      const grid = $('charGrid');
+      if (!characters.length) {
+        grid.innerHTML = `<p class="note" style="margin:0">${charMeta.enabled
+          ? 'لا شخصيات بعد — أنشئ بطلك الأول بالأسفل.'
+          : 'توليد الصور المرجعية غير مفعَّل حالياً في الخدمة.'}</p>`;
+        return;
+      }
+      grid.innerHTML = characters.map(c => `
+        <div class="card" style="margin-bottom:0">
+          <strong style="font-size:14px">🎭 ${escapeHtml(c.name)}</strong>
+          <div style="display:flex;gap:6px;margin:8px 0">
+            ${(c.images || []).map(img => `
+              <img src="${img.url}" alt="${img.angle}" title="${img.angle}"
+                style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border)" />`).join('')}
+          </div>
+          <div class="note" style="margin:0 0 8px">${escapeHtml(c.description.slice(0, 90))}${c.description.length > 90 ? '…' : ''}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="chip" data-use-char="${c.id}">🎬 استخدمها في لقطة</button>
+            <button class="chip" data-del-char="${c.id}">🗑️</button>
+            <span style="color:var(--muted);font-size:11px;align-self:center">استُخدمت ${c.usageCount} مرة</span>
+          </div>
+        </div>`).join('');
+      grid.querySelectorAll('[data-use-char]').forEach(el =>
+        el.addEventListener('click', () => useCharacter(el.dataset.useChar)));
+      grid.querySelectorAll('[data-del-char]').forEach(el =>
+        el.addEventListener('click', async () => {
+          if (!confirm('حذف الشخصية وصورها المرجعية؟')) return;
+          await api(`/api/video/characters/${el.dataset.delChar}`, { method: 'DELETE' });
+          if (activeCharacterId === el.dataset.delChar) activeCharacterId = null;
+          loadCharacters();
+        }));
+    }
+
+    async function createCharacter() {
+      const btn = $('charCreateBtn'); const msg = $('charMsg');
+      const name = $('charName').value.trim();
+      const description = $('charDesc').value.trim();
+      msg.className = 'msg';
+      btn.disabled = true;
+      btn.textContent = '⏳ يولّد الصور المرجعية الثلاث… (نحو دقيقة)';
+      try {
+        const res = await api('/api/video/characters', {
+          method: 'POST', body: JSON.stringify({ name, description }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          msg.textContent = data.error || 'تعذّر إنشاء الشخصية.';
+          msg.className = 'msg err';
+        } else {
+          msg.textContent = '✅ وُلدت الشخصية بثلاث زوايا — استخدمها في أي لقطة.';
+          msg.className = 'msg ok';
+          $('charName').value = ''; $('charDesc').value = '';
+          loadCredits(); loadCharacters();
+        }
+      } catch {
+        msg.textContent = 'تعذر الاتصال بالخدمة.';
+        msg.className = 'msg err';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = `🎭 أنشئ الشخصية (٣ صور مرجعية — 🎟️ ${charMeta.costCredits})`;
+      }
+    }
+
+    // يفتح قالب الصورة المرجعية مع الشخصية المختارة جاهزة.
+    function useCharacter(id) {
+      activeCharacterId = id;
+      const t = templates.find(x => x.id === 'ai_image_clip') || templates.find(x => x.specKind === 'ai_prompt');
+      if (t) selectTemplate(t.id);
+      $('formWrap').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // منتقي الشخصية داخل نموذج اللقطة (قوالب التوليد فقط).
+    function renderCharacterPicker() {
+      const wrap = $('charPicker');
+      if (!activeTemplate || activeTemplate.specKind !== 'ai_prompt' || !characters.length) {
+        wrap.innerHTML = ''; wrap.classList.add('hidden');
+        return;
+      }
+      wrap.classList.remove('hidden');
+      const isImage = (activeTemplate.aiInput || 'text') === 'image';
+      wrap.innerHTML = `
+        <label>الشخصية (اختياري — يُحقن وصفها الحرفي${isImage ? ' وتُستخدم صورتها إطاراً أول' : ''})</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <select id="charSelect" style="${SELECT_STYLE};max-width:280px">
+            <option value="">— بدون شخصية —</option>
+            ${characters.map(c => `<option value="${c.id}"${c.id === activeCharacterId ? ' selected' : ''}>🎭 ${escapeHtml(c.name)}</option>`).join('')}
+          </select>
+          ${isImage ? `<select id="charAngle" style="${SELECT_STYLE};max-width:160px">
+            ${charMeta.angles.map(a => `<option value="${a.key}"${a.key === activeCharAngle ? ' selected' : ''}>زاوية ${a.labelAr}</option>`).join('')}
+          </select>` : ''}
+        </div>`;
+      $('charSelect').addEventListener('change', e => { activeCharacterId = e.target.value || null; });
+      const angleSel = $('charAngle');
+      if (angleSel) angleSel.addEventListener('change', e => { activeCharAngle = e.target.value; });
     }
 
     // ─── مشاريع الأفلام (الستوري بورد) ─────────────────────────────────
@@ -540,6 +678,7 @@
     }
 
     $('submitBtn').addEventListener('click', submitRender);
+    $('charCreateBtn').addEventListener('click', createCharacter);
 
     (async function init() {
       if (!token()) { showGate(); return; }
@@ -548,6 +687,7 @@
       $('studio').classList.remove('hidden');
       await loadTemplates();
       await loadProjects();
+      await loadCharacters();
       await loadJobs();
       setInterval(() => { loadJobs(); refreshStoryboard(); }, 5000);
       setInterval(loadCredits, 15000);

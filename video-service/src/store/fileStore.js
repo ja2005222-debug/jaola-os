@@ -37,6 +37,7 @@ export function createFileStore({ dataDir, starterCredits }) {
     const jobsFile = path.join(dataDir, 'jobs.json');
     const flagsFile = path.join(dataDir, 'flags.json');
     const projectsFile = path.join(dataDir, 'projects.json');
+    const charactersFile = path.join(dataDir, 'characters.json');
 
     const readBalances = () => readJson(balancesFile, {});
     const writeBalances = v => writeJson(dataDir, balancesFile, v);
@@ -44,6 +45,8 @@ export function createFileStore({ dataDir, starterCredits }) {
     const readJobs = () => { const v = readJson(jobsFile, []); return Array.isArray(v) ? v : []; };
     const readProjects = () => { const v = readJson(projectsFile, []); return Array.isArray(v) ? v : []; };
     const writeProjects = v => writeJson(dataDir, projectsFile, v);
+    const readCharacters = () => { const v = readJson(charactersFile, []); return Array.isArray(v) ? v : []; };
+    const writeCharacters = v => writeJson(dataDir, charactersFile, v);
 
     function appendLedger(entry) {
         const records = readLedger();
@@ -230,6 +233,47 @@ export function createFileStore({ dataDir, starterCredits }) {
 
         async countJobsInProject(projectId) {
             return readJobs().filter(j => j.projectId === projectId).length;
+        },
+
+        // ─── بنك الشخصيات ─────────────────────────────────────────────
+
+        async createCharacter({ username, name, description, images }) {
+            const characters = readCharacters();
+            const character = {
+                id: newId(), at: Date.now(), updatedAt: Date.now(),
+                username, name, description,
+                images: images || [], usageCount: 0,
+            };
+            characters.push(character);
+            writeCharacters(characters);
+            return { ...character };
+        },
+
+        async getCharacter(id) {
+            const c = readCharacters().find(x => x.id === id);
+            return c ? { ...c } : null;
+        },
+
+        async listCharactersByUser(user, limit = 50) {
+            return readCharacters().filter(c => c.username === user).slice(-limit).reverse().map(c => ({ ...c }));
+        },
+
+        async deleteCharacter(id) {
+            const characters = readCharacters();
+            const remaining = characters.filter(x => x.id !== id);
+            if (remaining.length === characters.length) return false;
+            writeCharacters(remaining);
+            return true;
+        },
+
+        async incrementCharacterUsage(id) {
+            const characters = readCharacters();
+            const c = characters.find(x => x.id === id);
+            if (!c) return false;
+            c.usageCount = (c.usageCount || 0) + 1;
+            c.updatedAt = Date.now();
+            writeCharacters(characters);
+            return true;
         },
 
         /**

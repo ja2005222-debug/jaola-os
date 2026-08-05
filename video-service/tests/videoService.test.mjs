@@ -21,6 +21,8 @@ import { buildProvider, buildAiProvider } from '../src/providers/index.js';
 import { createFalProvider, extractVideoUrl, specToFalInput } from '../src/providers/falProvider.js';
 import { readAiModels, getAiModel, defaultAiModel } from '../src/models.js';
 import { composeCinematicPrompt } from '../src/cinema.js';
+import { createFalImageProvider, extractImageUrl } from '../src/providers/falImageProvider.js';
+import { CHARACTER_COST_CREDITS, characterImagePrompt, validateCharacterInput } from '../src/characters.js';
 import { specToShotstackTimeline } from '../src/providers/shotstackProvider.js';
 import { runEngineTick, JOB_TIMEOUT_MS } from '../src/engine.js';
 import { getBalance, grantCredits, deductCredits, refundCredits, STARTER_CREDITS } from '../src/credits.js';
@@ -1180,6 +1182,158 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             const r3 = await callAt(cappedUrl, '/api/video/renders', { method: 'POST', token: admin, body });
             assert.equal(r3.status, 429);
             assert.equal(r3.data.code, 'daily_cap_reached'); // العام بلا استثناء لأحد
+        });
+
+        // ─── بنك الشخصيات ──────────────────────────────────────────────
+
+        test('بنك الشخصيات: الإنشاء يولّد ٣ زوايا ويخصم، والفشل يسترد بالتفاصيل', async () => {
+            // خادم بمولّد صور وهمي محقون — بلا شبكة
+            const genPrompts = [];
+            const fakeImages = {
+                name: 'fake-image',
+                async generateImage(prompt) {
+                    genPrompts.push(prompt);
+                    return `https://img.test/${genPrompts.length}.png`;
+                },
+            };
+            const app = createApp({
+                store, jwtSecret: JWT_SECRET, provider, imageProvider: fakeImages,
+            });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const token = makeToken('casting');
+                await callAt(url, '/api/video/credits', { token }); // رصيد ترحيبي 3
+
+                const desc = 'A man in his 40s with a grey beard wearing a long dark coat';
+                const created = await callAt(url, '/api/video/characters', {
+                    method: 'POST', token, body: { name: 'البطل', description: desc },
+                });
+                assert.equal(created.status, 200);
+                const c = created.data.character;
+                assert.equal(c.images.length, 3);
+                assert.deepEqual(c.images.map(i => i.angle), ['front', 'side', 'back']);
+                // كل برومت زاوية يبدأ بالوصف الحرفي نفسه
+                assert.ok(genPrompts.every(p => p.startsWith(desc)));
+
+                // الخصم وقع (1 رصيد)
+                const credits = await callAt(url, '/api/video/credits', { token });
+                assert.equal(credits.data.credits, STARTER_CREDITS - CHARACTER_COST_CREDITS);
+
+                // مدخلات فاسدة تُرفض قبل أي خصم
+                assert.equal((await callAt(url, '/api/video/characters', {
+                    method: 'POST', token, body: { name: '', description: desc },
+                })).status, 400);
+                assert.equal((await callAt(url, '/api/video/characters', {
+                    method: 'POST', token, body: { name: 'س', description: 'قصير' },
+                })).status, 400);
+
+                // عزل: مستخدم آخر لا يرى ولا يحذف
+                const other = makeToken('outsider');
+                assert.equal((await callAt(url, '/api/video/characters', { token: other })).data.characters.length, 0);
+                assert.equal((await callAt(url, `/api/video/characters/${c.id}`, {
+                    method: 'DELETE', token: other,
+                })).status, 404);
+
+                // فشل التوليد: استرداد + السبب الكامل
+                fakeImages.generateImage = async () => { throw new Error('نموذج الصور مشغول'); };
+                const before = (await callAt(url, '/api/video/credits', { token })).data.credits;
+                const failed = await callAt(url, '/api/video/characters', {
+                    method: 'POST', token, body: { name: 'ثانية', description: desc },
+                });
+                assert.equal(failed.status, 502);
+                assert.match(failed.data.error, /نموذج الصور مشغول/);
+                assert.equal((await callAt(url, '/api/video/credits', { token })).data.credits, before);
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
+        test('إدراج الشخصية في لقطة: حقن الوصف الحرفي + صورة الزاوية + العدّاد', async () => {
+            const token = makeToken('director-cast');
+            await call('/api/video/credits', { token });
+            await call('/api/video/admin/credits/grant', {
+                method: 'POST', token: makeToken('boss'), body: { username: 'director-cast', amount: 20 },
+            });
+            const desc = 'A knight in silver armor with a red cape';
+            const character = await store.createCharacter({
+                username: 'director-cast', name: 'الفارس', description: desc,
+                images: [
+                    { angle: 'front', url: 'https://img.test/front.png' },
+                    { angle: 'side', url: 'https://img.test/side.png' },
+                    { angle: 'back', url: 'https://img.test/back.png' },
+                ],
+            });
+
+            // قالب الصورة بلا رابط يدوي — الشخصية توفّر الإطار الأول
+            const created = await call('/api/video/renders', {
+                method: 'POST', token,
+                body: {
+                    templateId: 'ai_image_clip', modelId: 'wan_i2v',
+                    characterId: character.id, characterAngle: 'side',
+                    values: { prompt: 'يمتطي حصانه نحو القلعة' },
+                },
+            });
+            assert.equal(created.status, 200);
+            const job = await getJob(store, created.data.job.id);
+            assert.ok(job.spec.prompt.startsWith(desc + '. '), 'الوصف الحرفي في المقدمة');
+            assert.equal(job.spec.imageUrl, 'https://img.test/side.png');
+            assert.equal(job.spec.characterId, character.id);
+            assert.equal((await store.getCharacter(character.id)).usageCount, 1);
+
+            // قالب الصورة بلا صورة ولا شخصية → 400 واضح
+            const missing = await call('/api/video/renders', {
+                method: 'POST', token,
+                body: { templateId: 'ai_image_clip', modelId: 'wan_i2v', values: { prompt: 'مشهد' } },
+            });
+            assert.equal(missing.status, 400);
+            assert.match(missing.data.error, /شخصية|صورة/);
+
+            // شخصية مستخدم آخر → 400 بلا تسريب
+            const foreign = await call('/api/video/renders', {
+                method: 'POST', token: makeToken('stranger-2'),
+                body: {
+                    templateId: 'ai_image_clip', modelId: 'wan_i2v',
+                    characterId: character.id, values: { prompt: 'مشهد' },
+                },
+            });
+            assert.equal(foreign.status, 400);
+        });
+
+        test('مولّد صور fal: مسارات المتابعة بمعرّف التطبيق ومهلة صريحة', async () => {
+            const calls = [];
+            const fetchImpl = async (url, opts = {}) => {
+                calls.push(url);
+                if (opts.method === 'POST') return { ok: true, json: async () => ({ request_id: 'img-1' }) };
+                if (url.endsWith('/status')) return { ok: true, json: async () => ({ status: 'COMPLETED' }) };
+                return { ok: true, json: async () => ({ images: [{ url: 'https://img.fal/x.png' }] }) };
+            };
+            const p = createFalImageProvider({
+                apiKey: 'K', model: 'fal-ai/flux/schnell', fetchImpl, sleep: async () => {},
+            });
+            assert.equal(await p.generateImage('hero'), 'https://img.fal/x.png');
+            assert.equal(calls[0], 'https://queue.fal.run/fal-ai/flux/schnell');
+            assert.equal(calls[1], 'https://queue.fal.run/fal-ai/flux/requests/img-1/status');
+            assert.equal(calls[2], 'https://queue.fal.run/fal-ai/flux/requests/img-1');
+
+            // مهلة: حالة لا تكتمل أبداً ترمي خطأً عربياً لا تعليقاً صامتاً
+            const stuck = createFalImageProvider({
+                apiKey: 'K', model: 'm/x', maxWaitMs: 10, pollMs: 1, sleep: async () => {},
+                fetchImpl: async (url, opts = {}) => opts.method === 'POST'
+                    ? { ok: true, json: async () => ({ request_id: 'r' }) }
+                    : { ok: true, json: async () => ({ status: 'IN_PROGRESS' }) },
+            });
+            await assert.rejects(() => stuck.generateImage('x'), /مهلة/);
+
+            // استخراج الرابط يغطي الأشكال المختلفة
+            assert.equal(extractImageUrl({ images: [{ url: 'a' }] }), 'a');
+            assert.equal(extractImageUrl({ image: { url: 'b' } }), 'b');
+            assert.equal(extractImageUrl({ image: 'c' }), 'c');
+            assert.equal(extractImageUrl({}), null);
+
+            // برومت الزوايا يحمل الوصف والزاوية
+            assert.match(characterImagePrompt('desc', 'back'), /^desc\. seen from behind/);
+            assert.ok(validateCharacterInput({ name: 'س', description: 'قصير' }).error);
         });
 
         // ─── مشاريع الأفلام (ستوري بورد) ───────────────────────────────
