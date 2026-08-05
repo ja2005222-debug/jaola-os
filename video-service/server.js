@@ -22,7 +22,7 @@ import { buildProvider } from './src/providers/index.js';
 import { buildStore } from './src/store/index.js';
 import { buildStorage, retentionDays as readRetentionDays } from './src/storage/index.js';
 import { readLimits, checkRenderAllowed, maybeAlertCost, startOfUtcDay } from './src/limits.js';
-import { readBlocklist, inspectValues, inspectText } from './src/contentFilter.js';
+import { readBlocklist, inspectValues, inspectText, inspectImageUrl } from './src/contentFilter.js';
 import { readAiModels, getAiModel, defaultAiModel, publicAiModels } from './src/models.js';
 import { CINEMA_CONTROLS } from './src/cinema.js';
 import {
@@ -163,6 +163,18 @@ export function createApp({
         res.json({ success: true });
     }));
 
+    // إعادة ترتيب لقطات المشروع (سحب وإفلات) — يجب أن يطابق order كل
+    // لقطات المشروع تماماً، لا نقبل ترتيباً جزئياً يُسقط لقطة بصمت.
+    app.patch('/api/video/projects/:id/reorder', verifyToken, wrap(async (req, res) => {
+        const project = await ownedProject(req);
+        if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
+        const order = Array.isArray(req.body?.order) ? req.body.order.map(String) : null;
+        if (!order || order.length === 0) return res.status(400).json({ error: 'ترتيب غير صالح.' });
+        const ok = await store.reorderProjectShots(project.id, order);
+        if (!ok) return res.status(400).json({ error: 'الترتيب لا يطابق لقطات المشروع الحالية.' });
+        res.json({ success: true });
+    }));
+
     // ─── تجميع الفيلم: لقطات المشروع الجاهزة → فيلم واحد ────────────────
 
     const readyShotsOf = async (projectId) => {
@@ -187,7 +199,7 @@ export function createApp({
         const project = await ownedProject(req);
         if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
 
-        const { transition, musicId, endTitle, filter, aspect } = req.body || {};
+        const { transition, musicId, endTitle, filter, aspect, logoUrl } = req.body || {};
         if (transition != null && !(transition in TRANSITIONS)) {
             return res.status(400).json({ error: `انتقال غير معروف (المتاح: ${Object.keys(TRANSITIONS).join('، ')}).` });
         }
@@ -207,6 +219,13 @@ export function createApp({
         if (title) {
             const flagged = inspectText(title, { blocklist });
             if (flagged) return res.status(400).json({ error: flagged.error });
+        }
+        // شعار المستخدم: نفس فحص SSRF/الصيغة على حقول imageUrl في القوالب.
+        let cleanLogoUrl = null;
+        if (logoUrl) {
+            const issue = inspectImageUrl(logoUrl);
+            if (issue) return res.status(400).json({ error: issue.error });
+            cleanLogoUrl = String(logoUrl);
         }
 
         const ready = await readyShotsOf(project.id);
@@ -236,13 +255,14 @@ export function createApp({
             endTitle: title,
             filter: filter ? COLOR_FILTERS[filter] : null,
             aspectRatio: aspect || '16:9',
+            logoUrl: cleanLogoUrl,
         });
 
         const job = await createJob(store, {
             username, templateId: 'film_assembly',
             values: {
                 transition: transition || '', musicId: musicId || '', endTitle: title,
-                filter: filter || '', aspect: aspect || '16:9',
+                filter: filter || '', aspect: aspect || '16:9', logoUrl: cleanLogoUrl || '',
             },
             spec, costCredits: ASSEMBLY_COST_CREDITS,
             projectId: project.id, shotIndex: null,

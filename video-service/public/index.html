@@ -121,7 +121,8 @@
     }
     .chip.active { border-color: var(--accent); color: var(--accent); }
     .shots { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
-    .shot { min-width: 220px; max-width: 250px; flex: 0 0 auto; margin-bottom: 0; }
+    .shot { min-width: 220px; max-width: 250px; flex: 0 0 auto; margin-bottom: 0; cursor: grab; }
+    .shot.dragging { opacity: .4; cursor: grabbing; }
     .shot .num { color: var(--accent); font-size: 12px; }
     .shot .prompt { font-size: 12px; color: var(--muted); line-height: 1.6; margin: 6px 0;
       max-height: 3.2em; overflow: hidden; }
@@ -982,11 +983,13 @@
         <div id="assemblyPanel" class="hidden" style="margin-bottom:10px"></div>
         ${shots.length === 0
           ? '<p class="note">لا لقطات بعد — اختر قالباً في استديو التوليد، ستنضم هنا تلقائياً.</p>'
-          : `<div class="shots">${shots.map(shotCard).join('')}</div>`}`;
+          : `<div class="shots">${shots.map(shotCard).join('')}</div>
+             <p class="note">🖱️ اسحب أي بطاقة لإعادة ترتيب اللقطات (سطح المكتب).</p>`}`;
       bindDownloads(board);
       // بطاقات الستوري بورد تشارك مشغل المعاينة نفسه
       lastJobs = lastJobs.filter(j => !shots.some(s => s.id === j.id)).concat(shots);
       bindPlayers(board);
+      if (shots.length > 1) bindDragReorder(board.querySelector('.shots'), project.id);
       board.querySelectorAll('[data-redo]').forEach(el =>
         el.addEventListener('click', () => regenerateShot(el.dataset.redo, shots)));
       board.querySelectorAll('[data-base]').forEach(el =>
@@ -1040,6 +1043,8 @@
             </select>` : ''}
             <input type="text" id="asmTitle" maxlength="60" placeholder="عنوان ختامي (اختياري)"
               style="max-width:220px" />
+            <input type="url" id="asmLogo" placeholder="رابط شعارك (اختياري — يظهر في الزاوية طوال الفيلم)"
+              style="max-width:280px" />
           </div>
           <button id="asmGo" type="button">🚀 جمّع الفيلم (🎟️ ${opts.costCredits})</button>
           <div class="msg" id="asmMsg"></div>
@@ -1053,6 +1058,7 @@
             filter: $('asmFilter').value,
             aspect: $('asmAspect').value,
             endTitle: $('asmTitle').value.trim(),
+            logoUrl: $('asmLogo').value.trim(),
           };
           const musicSel = $('asmMusic');
           if (musicSel && musicSel.value) body.musicId = musicSel.value;
@@ -1077,6 +1083,41 @@
       });
     }
 
+    // 🖱️ سحب وإفلات لإعادة ترتيب اللقطات: ترتيب الـDOM بعد الإفلات هو
+    // الترتيب الجديد — يُرسَل كاملاً للخادم الذي يرفضه إن لم يطابق لقطات
+    // المشروع تماماً (لا فقدان لقطة بصمت).
+    function bindDragReorder(container, projectId) {
+      if (!container) return;
+      let draggingEl = null;
+      container.querySelectorAll('.shot').forEach(card => {
+        card.setAttribute('draggable', 'true');
+        card.addEventListener('dragstart', () => {
+          draggingEl = card;
+          card.classList.add('dragging');
+        });
+        card.addEventListener('dragend', async () => {
+          card.classList.remove('dragging');
+          draggingEl = null;
+          const order = [...container.querySelectorAll('.shot')].map(el => el.dataset.shotId);
+          const res = await api(`/api/video/projects/${projectId}/reorder`, {
+            method: 'PATCH', body: JSON.stringify({ order }),
+          });
+          if (!res.ok) refreshStoryboard(); // تعارض (مثلاً لقطة جديدة وصلت) — نعيد المزامنة
+        });
+      });
+      container.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (!draggingEl) return;
+        const after = [...container.querySelectorAll('.shot:not(.dragging)')].reduce((closest, child) => {
+          const box = child.getBoundingClientRect();
+          const offset = e.clientX - box.left - box.width / 2;
+          return (offset < 0 && offset > closest.offset) ? { offset, element: child } : closest;
+        }, { offset: -Infinity, element: null }).element;
+        if (after == null) container.appendChild(draggingEl);
+        else container.insertBefore(draggingEl, after);
+      });
+    }
+
     function shotCard(s, i) {
       const model = s.modelId ? aiModels.find(m => m.id === s.modelId) : null;
       const promptText = s.values && s.values.prompt ? s.values.prompt : '';
@@ -1086,7 +1127,7 @@
           ? `<a href="#" data-download="${s.id}">⬇️ تنزيل</a>`
           : `<a href="${s.videoUrl}" target="_blank" rel="noopener">⬇️ تنزيل</a>`);
       }
-      return `<div class="card shot">
+      return `<div class="card shot" data-shot-id="${s.id}">
         <div class="num">لقطة ${i + 1}</div>
         <div style="font-size:13px;margin-top:4px">${tplName(s.templateId)}${
           model ? ` <span style="color:var(--muted);font-size:11px">(${model.nameAr})</span>` : ''}</div>

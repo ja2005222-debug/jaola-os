@@ -20,6 +20,7 @@
  *   deleteProject(id) → bool                       (اللقطات تبقى في السجل العام — أُنفق عليها رصيد)
  *   listJobsByProject(projectId) → [job]           (بترتيب اللقطات shotIndex)
  *   countJobsInProject(projectId) → number
+ *   reorderProjectShots(projectId, orderedIds) → bool  (false إن لم تطابق لقطات المشروع تماماً)
  *
  * الاختيار: DATABASE_URL مضبوط → postgres (دائم، للإنتاج)، وإلا → ملفات
  * (صفر إعداد، للتطوير والاختبار).
