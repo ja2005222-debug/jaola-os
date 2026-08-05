@@ -196,11 +196,12 @@
 </head>
 <body>
   <header>
-    <h1>🎬 الاستديو السينمائي <span>JAOLA OS</span></h1>
+    <h1 data-i18n="headerTitle">🎬 الاستديو السينمائي <span>JAOLA OS</span></h1>
     <div class="header-controls">
-      <button class="pill-btn" id="headerProjectBtn" type="button">📁 المشروع: <span id="headerProjectLabel">لقطات حرة</span> ▾</button>
-      <span class="pill-btn credits-chip" id="creditsChip">الرصيد: …</span>
-      <button class="pill-btn plan-badge" id="upgradeBtn" type="button">⭐ الترقية للاحترافي</button>
+      <button class="pill-btn" id="headerProjectBtn" type="button"><span data-i18n="headerProject">📁 المشروع:</span> <span id="headerProjectLabel" data-i18n="freeShots">لقطات حرة</span> ▾</button>
+      <span class="pill-btn credits-chip" id="creditsChip"><span data-i18n="creditsLabel">الرصيد:</span> …</span>
+      <button class="pill-btn plan-badge" id="upgradeBtn" type="button" data-i18n="upgradeBtn">⭐ الترقية للاحترافي</button>
+      <button class="pill-btn" id="langToggleBtn" type="button" data-i18n="langToggle">English</button>
     </div>
   </header>
 
@@ -208,11 +209,11 @@
        من المنصة الرئيسية عبر ?token= أو يكون محفوظاً من زيارة سابقة. -->
   <div class="gate hidden" id="gate">
     <div class="card">
-      <h2 style="margin-top:0">مطلوب تسجيل الدخول</h2>
+      <h2 style="margin-top:0" data-i18n="gate_title">مطلوب تسجيل الدخول</h2>
       <p>
-        استوديو الفيديو يستخدم حسابك في منصة JAOLA نفسها.<br />
-        افتح الاستوديو من داخل المنصة بعد تسجيل الدخول، أو مرّر التوكن
-        عبر الرابط: <code dir="ltr">?token=…</code>
+        <span data-i18n="gate_body">استوديو الفيديو يستخدم حسابك في منصة JAOLA نفسها.</span><br />
+        <span data-i18n="gate_body2">افتح الاستوديو من داخل المنصة بعد تسجيل الدخول، أو مرّر التوكن عبر الرابط:</span>
+        <code dir="ltr">?token=…</code>
       </p>
     </div>
   </div>
@@ -220,18 +221,18 @@
   <div class="dashboard-grid hidden" id="studio">
     <!-- ─── يمين: القائمة الرئيسية ─── -->
     <nav class="nav-sidebar">
-      <button class="nav-item" data-target="sectionTop">🏠 اللوحة الرئيسية</button>
-      <button class="nav-item" data-target="sectionProjects">📁 إدارة المشاريع</button>
-      <button class="nav-item active" data-target="sectionComposer">🎬 استديو التوليد</button>
-      <button class="nav-item" data-target="sectionCharacters">🎭 بنك الشخصيات</button>
-      <button class="nav-item" data-target="sectionLibrary">🗂️ مكتبة الأفلام</button>
-      <button class="nav-item" data-target="sectionAudio">🎙️ هندسة الصوت وAI Voice</button>
-      <div class="nav-group-label">الأدوات الاحترافية</div>
-      <button class="nav-item" data-soon="التلوين السينمائي المستقل">🎨 التلوين السينمائي<span class="soon-badge">قريباً</span></button>
-      <button class="nav-item" data-soon="التحكم بالمحاكاة LORA">🧬 التحكم بمحاكاة LORA<span class="soon-badge">قريباً</span></button>
-      <div class="nav-group-label">الحساب</div>
-      <button class="nav-item" data-target="sectionAccount">💳 الباقات والرصيد</button>
-      <button class="nav-item" data-target="sectionAccount">📜 سجل العمليات</button>
+      <button class="nav-item" data-target="sectionTop" data-i18n="navHome">🏠 اللوحة الرئيسية</button>
+      <button class="nav-item" data-target="sectionProjects" data-i18n="navProjects">📁 إدارة المشاريع</button>
+      <button class="nav-item active" data-target="sectionComposer" data-i18n="navComposer">🎬 استديو التوليد</button>
+      <button class="nav-item" data-target="sectionCharacters" data-i18n="navCharacters">🎭 بنك الشخصيات</button>
+      <button class="nav-item" data-target="sectionLibrary" data-i18n="navLibrary">🗂️ مكتبة الأفلام</button>
+      <button class="nav-item" data-target="sectionAudio" data-i18n="navAudio">🎙️ هندسة الصوت وAI Voice</button>
+      <div class="nav-group-label" data-i18n="navProTools">الأدوات الاحترافية</div>
+      <button class="nav-item" data-soon-key="navColor"><span data-i18n="navColor">🎨 التلوين السينمائي</span><span class="soon-badge" data-i18n="navSoon">قريباً</span></button>
+      <button class="nav-item" data-soon-key="navLora"><span data-i18n="navLora">🧬 التحكم بمحاكاة LORA</span><span class="soon-badge" data-i18n="navSoon">قريباً</span></button>
+      <div class="nav-group-label" data-i18n="navAccount">الحساب</div>
+      <button class="nav-item" data-target="sectionAccount" data-i18n="navBilling">💳 الباقات والرصيد</button>
+      <button class="nav-item" data-target="sectionAccount" data-i18n="navLedger">📜 سجل العمليات</button>
     </nav>
 
     <!-- ─── وسط: الاستوديو ─── -->
@@ -239,35 +240,35 @@
       <div class="stat-row" id="statRow"></div>
 
       <section id="sectionProjects">
-        <h2>🎬 مشاريعك (أفلامك)</h2>
+        <h2 data-i18n="projectsTitle">🎬 مشاريعك (أفلامك)</h2>
         <div class="card">
           <div class="chips" id="projectChips"></div>
           <div id="storyboard" class="hidden" style="margin-top:14px"></div>
-          <p class="note">أنشئ مشروعاً لفيلمك وأضف إليه لقطة بعد لقطة — كل لقطة جديدة تنضم
+          <p class="note" data-i18n="projectsNote">أنشئ مشروعاً لفيلمك وأضف إليه لقطة بعد لقطة — كل لقطة جديدة تنضم
             للمشروع المفتوح تلقائياً، وتستطيع إعادة توليد أي لقطة أو استخدامها أساساً لغيرها.</p>
         </div>
       </section>
 
       <section id="sectionComposer">
-        <h2>🎥 منشئ المشاهد السينمائي (Prompt Studio)</h2>
+        <h2 data-i18n="composerTitle">🎥 منشئ المشاهد السينمائي (Prompt Studio)</h2>
         <div class="card">
-          <h3 style="font-size:14px;margin-bottom:8px">١) اختر قالباً</h3>
+          <h3 style="font-size:14px;margin-bottom:8px" data-i18n="step1">١) اختر قالباً</h3>
           <div class="grid" id="templates"></div>
         </div>
 
         <div id="formWrap" class="hidden">
           <div class="card">
-            <h3 style="font-size:14px;margin-bottom:8px">٢) محرك التوليد ونواة الذكاء الاصطناعي</h3>
+            <h3 style="font-size:14px;margin-bottom:8px" data-i18n="step2">٢) محرك التوليد ونواة الذكاء الاصطناعي</h3>
             <div id="modelPicker" class="hidden"></div>
             <div id="charPicker" class="hidden"></div>
-            <h3 style="font-size:14px;margin:16px 0 8px">٣) عبّئ محتوى المشهد</h3>
+            <h3 style="font-size:14px;margin:16px 0 8px" data-i18n="step3">٣) عبّئ محتوى المشهد</h3>
             <form id="renderForm"></form>
             <div id="composerExtras" class="hidden">
               <div id="presetBar" style="margin-top:12px"></div>
               <label style="display:flex;align-items:center;gap:8px">
-                🎬 معاينة البرومت النهائي (ما سيصل للنموذج حرفياً — الحقن الثنائي للشخصية والأجواء مفعَّل)
+                <span data-i18n="promptPreviewLabel">🎬 معاينة البرومت النهائي (ما سيصل للنموذج حرفياً — الحقن الثنائي للشخصية والأجواء مفعَّل)</span>
                 <span style="display:flex;align-items:center;gap:4px;font-size:12px">
-                  <input type="checkbox" id="manualEdit" style="width:auto" /> تحرير يدوي
+                  <input type="checkbox" id="manualEdit" style="width:auto" /> <span data-i18n="manualEdit">تحرير يدوي</span>
                 </span>
               </label>
               <textarea id="promptPreview" dir="auto" rows="3" readonly
@@ -276,37 +277,37 @@
                 resize:vertical"></textarea>
               <div id="promptHistory"></div>
             </div>
-            <button id="submitBtn" type="button">🎬 ولّد المشهد الآن</button>
+            <button id="submitBtn" type="button" data-i18n="generateNow">🎬 ولّد المشهد الآن</button>
             <div class="msg" id="formMsg"></div>
           </div>
         </div>
       </section>
 
       <section id="sectionLibrary">
-        <h2>🗂️ مكتبة أفلامك</h2>
+        <h2 data-i18n="libraryTitle">🗂️ مكتبة أفلامك</h2>
         <div class="card">
           <table>
-            <thead><tr><th>القالب</th><th>الحالة</th><th>النتيجة</th><th>التاريخ</th></tr></thead>
-            <tbody id="jobsBody"><tr><td colspan="4" style="color:var(--muted)">لا مهام بعد.</td></tr></tbody>
+            <thead><tr><th data-i18n="thTemplate">القالب</th><th data-i18n="thStatus">الحالة</th><th data-i18n="thResult">النتيجة</th><th data-i18n="thDate">التاريخ</th></tr></thead>
+            <tbody id="jobsBody"><tr><td colspan="4" style="color:var(--muted)" data-i18n="noJobsYet">لا مهام بعد.</td></tr></tbody>
           </table>
-          <p class="note">تُحدَّث الحالة تلقائياً كل بضع ثوانٍ. عند فشل أي مهمة يُسترد رصيدها تلقائياً.</p>
+          <p class="note" data-i18n="libraryNote">تُحدَّث الحالة تلقائياً كل بضع ثوانٍ. عند فشل أي مهمة يُسترد رصيدها تلقائياً.</p>
         </div>
       </section>
 
       <section id="sectionAudio">
-        <h2>🎙️ هندسة الصوت وAI Voice</h2>
+        <h2 data-i18n="audioTitle">🎙️ هندسة الصوت وAI Voice</h2>
         <div class="card">
-          <h3 style="font-size:14px;margin-bottom:8px">🎵 مكتبة الموسيقى التصويرية</h3>
-          <div id="audioMusicList"><p class="note" style="margin:0">جارٍ التحميل…</p></div>
+          <h3 style="font-size:14px;margin-bottom:8px" data-i18n="audioMusicTitle">🎵 مكتبة الموسيقى التصويرية</h3>
+          <div id="audioMusicList"><p class="note" style="margin:0" data-i18n="loading">جارٍ التحميل…</p></div>
         </div>
         <div class="card">
-          <h3 style="font-size:14px;margin-bottom:8px">🔊 مكتبة مؤثرات الانتقال</h3>
-          <div id="audioSfxList"><p class="note" style="margin:0">جارٍ التحميل…</p></div>
+          <h3 style="font-size:14px;margin-bottom:8px" data-i18n="audioSfxTitle">🔊 مكتبة مؤثرات الانتقال</h3>
+          <div id="audioSfxList"><p class="note" style="margin:0" data-i18n="loading">جارٍ التحميل…</p></div>
         </div>
         <div class="card">
-          <h3 style="font-size:14px;margin-bottom:8px">🗣️ التعليق الصوتي بالذكاء الاصطناعي (TTS)</h3>
+          <h3 style="font-size:14px;margin-bottom:8px" data-i18n="audioTtsTitle">🗣️ التعليق الصوتي بالذكاء الاصطناعي (TTS)</h3>
           <div id="audioTtsStatus"></div>
-          <p class="note">
+          <p class="note" data-i18n="audioTtsNote">
             تُضاف نصاً حراً حين تجمّع فيلماً (لوحة التجميع في مكتبة الأفلام) —
             يُقرأ آلياً بصوت مركّب ويمتد طوال الفيلم. رصيد منفصل عن تكلفة
             التجميع نفسها، يُسترد كاملاً تلقائياً إن فشل التوليد.
@@ -318,38 +319,38 @@
     <!-- ─── يسار: بنك الشخصيات + الطابور المباشر + الحساب ─── -->
     <aside class="side-panel">
       <section id="sectionCharacters" class="side-card">
-        <h3>🎭 بنك الشخصيات الموحدة</h3>
+        <h3 data-i18n="charBankTitle">🎭 بنك الشخصيات الموحدة</h3>
         <div id="charGrid"></div>
         <div id="charPreviewOverlay" class="char-preview-overlay hidden"></div>
         <div id="charCreate" class="hidden" style="margin-top:10px">
-          <label style="margin-top:0">اسم الشخصية *</label>
-          <input type="text" id="charName" maxlength="60" placeholder="مثال: الرجل بالمعطف" />
-          <label>الوصف الحرفي الثابت * (يُحقن كما هو في كل لقطة)</label>
+          <label style="margin-top:0" data-i18n="charNameLabel">اسم الشخصية *</label>
+          <input type="text" id="charName" maxlength="60" data-i18n-ph="charNamePh" placeholder="مثال: الرجل بالمعطف" />
+          <label data-i18n="charDescLabel">الوصف الحرفي الثابت * (يُحقن كما هو في كل لقطة)</label>
           <textarea id="charDesc" maxlength="500" rows="3"
             style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);
             background:var(--bg);color:var(--text);font-size:13px;font-family:inherit;resize:vertical"
             placeholder="A man in his 40s with a short grey beard, wearing a long dark trench coat"></textarea>
-          <button id="charCreateBtn" type="button" style="width:100%">🎭 أنشئ الشخصية (٣ صور مرجعية)</button>
+          <button id="charCreateBtn" type="button" style="width:100%" data-i18n="charCreateBtn">🎭 أنشئ الشخصية (٣ صور مرجعية)</button>
           <div class="msg" id="charMsg"></div>
         </div>
-        <p class="note" style="margin-top:10px">وصف حرفي ثابت + ٣ صور مرجعية بزوايا مختلفة — يبقى بطلك نفسه عبر كل المشاهد.</p>
+        <p class="note" style="margin-top:10px" data-i18n="charBankNote">وصف حرفي ثابت + ٣ صور مرجعية بزوايا مختلفة — يبقى بطلك نفسه عبر كل المشاهد.</p>
       </section>
 
       <section id="sectionQueue" class="side-card">
-        <h3>⏳ طابور المعالجة المباشرة</h3>
-        <div id="queueList"><p class="note" style="margin:0">لا مهام جارية.</p></div>
+        <h3 data-i18n="queueTitle">⏳ طابور المعالجة المباشرة</h3>
+        <div id="queueList"><p class="note" style="margin:0" data-i18n="noActiveJobs">لا مهام جارية.</p></div>
       </section>
 
       <section class="side-card">
-        <h3>▶️ المعاينة السينمائية المباشرة</h3>
-        <div id="livePreviewBox"><p class="note" style="margin:0">لا معاينة بعد — أنشئ لقطة أو افتح "▶️ معاينة" من مكتبتك.</p></div>
+        <h3 data-i18n="livePreviewTitle">▶️ المعاينة السينمائية المباشرة</h3>
+        <div id="livePreviewBox"><p class="note" style="margin:0" data-i18n="livePreviewEmpty">لا معاينة بعد — أنشئ لقطة أو افتح "▶️ معاينة" من مكتبتك.</p></div>
       </section>
 
       <section id="sectionAccount" class="side-card">
-        <h3>💳 الباقات والرصيد · سجل العمليات</h3>
-        <p style="font-size:13px;margin-bottom:8px">الرصيد الحالي: <strong id="accountCredits" style="color:var(--warn)">…</strong></p>
-        <div id="ledgerBody"><p class="note" style="margin:0">لا حركات بعد.</p></div>
-        <p class="note">باقات الشراء والترقية قادمة قريباً — الرصيد الترحيبي والمنح الإدارية تعمل الآن.</p>
+        <h3 data-i18n="accountTitle">💳 الباقات والرصيد · سجل العمليات</h3>
+        <p style="font-size:13px;margin-bottom:8px"><span data-i18n="currentBalance">الرصيد الحالي:</span> <strong id="accountCredits" style="color:var(--warn)">…</strong></p>
+        <div id="ledgerBody"><p class="note" style="margin:0" data-i18n="noLedgerYet">لا حركات بعد.</p></div>
+        <p class="note" data-i18n="accountNote">باقات الشراء والترقية قادمة قريباً — الرصيد الترحيبي والمنح الإدارية تعمل الآن.</p>
       </section>
     </aside>
   </div>
@@ -359,7 +360,7 @@
        z-index:50;align-items:center;justify-content:center;padding:20px">
     <div style="max-width:860px;width:100%">
       <button id="playerClose" type="button"
-        style="margin:0 0 8px;background:var(--card);color:var(--text);border:1px solid var(--border)">✖ إغلاق</button>
+        style="margin:0 0 8px;background:var(--card);color:var(--text);border:1px solid var(--border)" data-i18n="closePlayer">✖ إغلاق</button>
       <video id="playerVideo" controls autoplay playsinline
         style="width:100%;max-height:78vh;border-radius:12px;background:#000"></video>
     </div>
@@ -389,6 +390,247 @@
     });
 
     const $ = id => document.getElementById(id);
+
+    // ─── اللغة: تبديل عربي/إنجليزي لنصوص الواجهة نفسها ──────────────────
+    // ⚠️ نطاق محدود عمداً: يغطي كل نص واجهة كتبناه هنا (تنقّل، رسائل،
+    // تسميات، عناصر نائبة). لا يغطي محتوى القوالب/النماذج القادم من
+    // الخادم (أسماء القوالب nameAr، أوصافها descriptionAr، تسميات
+    // الحقول labelAr، أسماء النماذج، خيارات الانتقال/الفلتر...) — تلك
+    // بيانات مُعرَّفة في الخادم (templates.js/models.js/cinema.js) لا
+    // نصوص واجهة، وتعريبها ثنائي اللغة مشروع منفصل أكبر (يحتاج حقل
+    // موازٍ بالإنجليزية لكل عنصر محتوى، لا مجرد قاموس ترجمة كهذا).
+    const I18N = {
+      ar: {
+        docTitle: 'الاستديو السينمائي المتكامل — JAOLA OS',
+        langToggle: 'English', gate_title: 'مطلوب تسجيل الدخول',
+        gate_body: 'استوديو الفيديو يستخدم حسابك في منصة JAOLA نفسها.',
+        gate_body2: 'افتح الاستوديو من داخل المنصة بعد تسجيل الدخول، أو مرّر التوكن عبر الرابط:',
+        navHome: '🏠 اللوحة الرئيسية', navProjects: '📁 إدارة المشاريع',
+        navComposer: '🎬 استديو التوليد', navCharacters: '🎭 بنك الشخصيات',
+        navLibrary: '🗂️ مكتبة الأفلام', navAudio: '🎙️ هندسة الصوت وAI Voice',
+        navProTools: 'الأدوات الاحترافية', navColor: '🎨 التلوين السينمائي',
+        navLora: '🧬 التحكم بمحاكاة LORA', navSoon: 'قريباً',
+        navAccount: 'الحساب', navBilling: '💳 الباقات والرصيد', navLedger: '📜 سجل العمليات',
+        soonAlert: (name) => `${name} — قادم قريباً في الاستوديو.`,
+        upgradeAlert: 'باقات الترقية والاشتراك المدفوع قادمة قريباً.',
+        headerTitle: '🎬 الاستديو السينمائي ', headerProject: '📁 المشروع:',
+        freeShots: 'لقطات حرة', creditsLabel: 'الرصيد:', notRegistered: 'غير مسجَّل',
+        upgradeBtn: '⭐ الترقية للاحترافي',
+        statCredits: '🎟️ الرصيد المتاح', statProjects: '📁 مشاريع نشطة', statCharacters: '🎭 شخصيات محفوظة',
+        projectsTitle: '🎬 مشاريعك (أفلامك)',
+        projectsNote: 'أنشئ مشروعاً لفيلمك وأضف إليه لقطة بعد لقطة — كل لقطة جديدة تنضم للمشروع المفتوح تلقائياً، وتستطيع إعادة توليد أي لقطة أو استخدامها أساساً لغيرها.',
+        composerTitle: '🎥 منشئ المشاهد السينمائي (Prompt Studio)',
+        step1: '١) اختر قالباً', step2: '٢) محرك التوليد ونواة الذكاء الاصطناعي',
+        step3: '٣) عبّئ محتوى المشهد',
+        promptPreviewLabel: '🎬 معاينة البرومت النهائي (ما سيصل للنموذج حرفياً — الحقن الثنائي للشخصية والأجواء مفعَّل)',
+        manualEdit: 'تحرير يدوي', generateNow: '🎬 ولّد المشهد الآن',
+        libraryTitle: '🗂️ مكتبة أفلامك', thTemplate: 'القالب', thStatus: 'الحالة',
+        thResult: 'النتيجة', thDate: 'التاريخ', noJobsYet: 'لا مهام بعد.',
+        libraryNote: 'تُحدَّث الحالة تلقائياً كل بضع ثوانٍ. عند فشل أي مهمة يُسترد رصيدها تلقائياً.',
+        audioTitle: '🎙️ هندسة الصوت وAI Voice', audioMusicTitle: '🎵 مكتبة الموسيقى التصويرية',
+        loading: 'جارٍ التحميل…', audioSfxTitle: '🔊 مكتبة مؤثرات الانتقال',
+        audioTtsTitle: '🗣️ التعليق الصوتي بالذكاء الاصطناعي (TTS)',
+        audioTtsNote: 'تُضاف نصاً حراً حين تجمّع فيلماً (لوحة التجميع في مكتبة الأفلام) — يُقرأ آلياً بصوت مركّب ويمتد طوال الفيلم. رصيد منفصل عن تكلفة التجميع نفسها، يُسترد كاملاً تلقائياً إن فشل التوليد.',
+        noMusicLib: 'لا مكتبة موسيقى مضبوطة على هذا الخادم بعد.',
+        noSfxLib: 'لا مكتبة مؤثرات مضبوطة على هذا الخادم بعد.',
+        ttsEnabled: (n) => `✅ مفعَّل — 🎟️ ${n} لكل فيلم مُجمَّع.`,
+        ttsDisabled: '⏸️ غير مفعَّل على هذا الخادم حالياً.',
+        charBankTitle: '🎭 بنك الشخصيات الموحدة', charNameLabel: 'اسم الشخصية *',
+        charNamePh: 'مثال: الرجل بالمعطف', charDescLabel: 'الوصف الحرفي الثابت * (يُحقن كما هو في كل لقطة)',
+        charCreateBtn: '🎭 أنشئ الشخصية (٣ صور مرجعية)',
+        charBankNote: 'وصف حرفي ثابت + ٣ صور مرجعية بزوايا مختلفة — يبقى بطلك نفسه عبر كل المشاهد.',
+        queueTitle: '⏳ طابور المعالجة المباشرة', noActiveJobs: 'لا مهام جارية.',
+        livePreviewTitle: '▶️ المعاينة السينمائية المباشرة',
+        livePreviewEmpty: 'لا معاينة بعد — أنشئ لقطة أو افتح "▶️ معاينة" من مكتبتك.',
+        accountTitle: '💳 الباقات والرصيد · سجل العمليات', currentBalance: 'الرصيد الحالي:',
+        noLedgerYet: 'لا حركات بعد.',
+        accountNote: 'باقات الشراء والترقية قادمة قريباً — الرصيد الترحيبي والمنح الإدارية تعمل الآن.',
+        closePlayer: '✖ إغلاق',
+        st_queued: 'في الطابور', st_rendering: 'قيد التصدير', st_done: 'مكتمل', st_failed: 'فشل',
+        ledger_starter: 'رصيد ترحيبي', ledger_grant: 'منح إداري', ledger_deduct: 'خصم توليد', ledger_refund: 'استرداد',
+        genericError: 'حدث خطأ.', connFail: 'تعذر الاتصال بالخدمة.',
+        joinedProject: '✅ دخلت اللقطة الطابور وانضمت لمشروعك — تابعها في الستوري بورد أعلاه.',
+        joinedQueue: '✅ دخلت المهمة الطابور — تابع حالتها في مكتبتك أدناه.',
+        assembledFilm: '🎬 فيلم مُجمَّع', justNow: 'الآن',
+        minsAgo: (n) => `منذ ${n} د`, hoursAgo: (n) => `منذ ${n} س`,
+        preview: '▶️ معاينة', download: '⬇️ تنزيل', ownedByYou: 'مُخزَّن لديك', hostedByProvider: '(مستضاف لدى المزوّد)',
+        doneNoFile: 'اكتمل (وضع تجريبي بلا ملف).', failedGeneric: 'فشل.', creditRefunded: ' (استُرد الرصيد)',
+        previewPrepFail: 'تعذّر تجهيز المعاينة.', preparing: '⏳ جارٍ التحضير…',
+        downloadLinkFail: 'تعذّر تحضير رابط التنزيل.',
+        applyPreset: 'تطبيق الوصفة', deletePreset: 'حذف', savePreset: '💾 احفظ الإخراج الحالي كوصفة',
+        presetNamePrompt: 'اسم الوصفة (مثال: افتتاحية ملحمية):', pastPrompts: '🕘 أوصاف سابقة',
+        noCharsYet: 'لا شخصيات بعد — أنشئ بطلك الأول أدناه.',
+        charGenDisabled: 'توليد الصور المرجعية غير مفعَّل حالياً في الخدمة.',
+        anglesCount: (n) => `${n} زوايا مرجعية`, usedTimes: (n) => `استُخدم ${n} مرات`,
+        previewAngles: 'معاينة الزوايا', useChar: 'استخدم', deleteCharConfirm: 'حذف الشخصية وصورها المرجعية؟',
+        closeAria: 'إغلاق', angleWord: 'زاوية',
+        generatingChar: '⏳ يولّد الصور المرجعية الثلاث… (نحو دقيقة)',
+        charCreateFail: 'تعذّر إنشاء الشخصية.',
+        charCreated: '✅ وُلدت الشخصية بثلاث زوايا — استخدمها في أي لقطة.',
+        charCreateBtnCost: (n) => `🎭 أنشئ الشخصية (٣ صور مرجعية — 🎟️ ${n})`,
+        charPickerLabelBase: 'الشخصية (اختياري — يُحقن وصفها الحرفي',
+        charPickerImgSuffix: ' وتُستخدم صورتها إطاراً أول)', charPickerSuffix: ')',
+        noCharacter: '— بدون شخصية —', biggerPreview: 'معاينة أكبر',
+        freeShotsOption: 'لقطات حرة (بلا مشروع)', newProject: '➕ مشروع جديد',
+        newProjectPrompt: 'اسم الفيلم / المشروع:', projectCreateFail: 'تعذّر إنشاء المشروع.',
+        shotsCount: (n) => `${n} لقطة`, renameProject: '✏️ إعادة تسمية',
+        inheritedSettings: '⚙️ إعدادات موروثة', deleteProject: '🗑️ حذف المشروع',
+        assembleFilm: '🎬 جمّع الفيلم', noShotsYet: 'لا لقطات بعد — اختر قالباً في استديو التوليد، ستنضم هنا تلقائياً.',
+        dragToReorder: '🖱️ اسحب أي بطاقة لإعادة ترتيب اللقطات (سطح المكتب).',
+        renamePrompt: 'الاسم الجديد:',
+        deleteProjectConfirm: 'حذف المشروع؟ اللقطات نفسها تبقى في مكتبتك — يزول التجميع فقط.',
+        inheritedSettingsTitle: '⚙️ إعدادات موروثة لكل لقطة جديدة في هذا المشروع',
+        noDefaultAspect: '— بلا نسبة افتراضية —', noDefaultStyle: '— بلا أسلوب افتراضي —',
+        save: '💾 احفظ', saveFail: 'تعذّر الحفظ.',
+        settingsSaved: '✅ حُفظت — ستُطبَّق على كل لقطة جديدة في هذا المشروع.',
+        assembleShots: (n) => `🎬 تجميع ${n} لقطة في فيلم واحد`,
+        watermarkNote: '⚠️ فيلمك سيحمل علامة مائية (الخطة المجانية) — رقِّ لباقة مدفوعة لإزالتها.',
+        ytOption: '📺 يوتيوب 16:9', reelsOption: '📱 ريلز 9:16', postOption: '🖼️ بوست 1:1',
+        resSd: '📉 SD', resHd: '✅ HD (افتراضي)', res1080: '🎞️ 1080p', res4k: '⚠️ 4K (تجريبي — غير مؤكَّد)',
+        noMusic: '— بلا موسيقى —', noSfx: '— بلا مؤثر انتقال —',
+        endTitlePh: 'عنوان ختامي (اختياري)', logoUrlPh: 'رابط شعارك (اختياري — يظهر في الزاوية طوال الفيلم)',
+        narrationPh: (n) => `تعليق صوتي (اختياري — 🎟️ ${n} إضافية، يُقرأ آلياً طوال الفيلم)`,
+        assembleBtn: (n) => `🚀 جمّع الفيلم (🎟️ ${n})`,
+        assembleFail: 'تعذّر التجميع.', assembleOk: '✅ دخل الفيلم طابور التركيب — تابعه في مكتبتك بالأسفل.',
+        shotNum: (n) => `لقطة ${n}`, regenTitle: 'لقطة جديدة بنفس الإعدادات', regen: '🔁 إعادة توليد',
+        useAsBaseTitle: 'املأ النموذج بإعداداتها ثم عدّل', useAsBase: '📝 أساس للقطة جديدة',
+        regenFail: 'تعذّرت إعادة التوليد.', generateBtnCost: (n) => `🎬 ولّد المشهد الآن (🎟️ ${n})`,
+        noSelection: '— بدون تحديد —', charsSuffix: (n) => ` (حتى ${n} حرفاً)`,
+        modelLabel: 'النموذج المولِّد *', creditsPerShot: (n) => `🎟️ ${n} رصيد للقطة`,
+        secondsCredits: (n, c) => `⏱️ ${n} ثوانٍ · 🎟️ ${c} رصيد`, aiTag: ' · 🤖 ذكاء اصطناعي',
+      },
+      en: {
+        docTitle: 'Cinematic Studio — JAOLA OS',
+        langToggle: 'العربية', gate_title: 'Login Required',
+        gate_body: 'The video studio uses your account on the JAOLA platform itself.',
+        gate_body2: 'Open the studio from inside the platform after logging in, or pass the token via the link:',
+        navHome: '🏠 Dashboard', navProjects: '📁 Manage Projects',
+        navComposer: '🎬 Generation Studio', navCharacters: '🎭 Character Bank',
+        navLibrary: '🗂️ Film Library', navAudio: '🎙️ Sound Engineering & AI Voice',
+        navProTools: 'Pro Tools', navColor: '🎨 Cinematic Color Grading',
+        navLora: '🧬 LORA Simulation Control', navSoon: 'Soon',
+        navAccount: 'Account', navBilling: '💳 Plans & Credits', navLedger: '📜 Activity Log',
+        soonAlert: (name) => `${name} — coming soon to the studio.`,
+        upgradeAlert: 'Upgrade plans and paid subscriptions are coming soon.',
+        headerTitle: '🎬 Cinematic Studio ', headerProject: '📁 Project:',
+        freeShots: 'Free shots', creditsLabel: 'Credits:', notRegistered: 'Not signed in',
+        upgradeBtn: '⭐ Upgrade to Pro',
+        statCredits: '🎟️ Available credits', statProjects: '📁 Active projects', statCharacters: '🎭 Saved characters',
+        projectsTitle: '🎬 Your projects (films)',
+        projectsNote: 'Create a project for your film and add shots one by one — each new shot automatically joins the open project, and you can regenerate any shot or use it as a base for another.',
+        composerTitle: '🎥 Cinematic Scene Composer (Prompt Studio)',
+        step1: '1) Pick a template', step2: '2) Generation engine & AI core',
+        step3: '3) Fill in the scene content',
+        promptPreviewLabel: '🎬 Final prompt preview (exactly what reaches the model — character/mood dual injection is active)',
+        manualEdit: 'Manual edit', generateNow: '🎬 Generate scene now',
+        libraryTitle: '🗂️ Your film library', thTemplate: 'Template', thStatus: 'Status',
+        thResult: 'Result', thDate: 'Date', noJobsYet: 'No jobs yet.',
+        libraryNote: 'Status updates automatically every few seconds. If a job fails, its credits are refunded automatically.',
+        audioTitle: '🎙️ Sound Engineering & AI Voice', audioMusicTitle: '🎵 Soundtrack music library',
+        loading: 'Loading…', audioSfxTitle: '🔊 Transition effects library',
+        audioTtsTitle: '🗣️ AI voiceover (TTS)',
+        audioTtsNote: 'Add free-form text when you assemble a film (the assembly panel in the film library) — it is read aloud automatically and spans the whole film. A separate credit cost from the assembly itself, fully refunded automatically if generation fails.',
+        noMusicLib: 'No music library configured on this server yet.',
+        noSfxLib: 'No sound-effects library configured on this server yet.',
+        ttsEnabled: (n) => `✅ Enabled — 🎟️ ${n} per assembled film.`,
+        ttsDisabled: '⏸️ Not enabled on this server currently.',
+        charBankTitle: '🎭 Unified Character Bank', charNameLabel: 'Character name *',
+        charNamePh: 'Example: The man in the coat', charDescLabel: 'Fixed literal description * (injected as-is into every shot)',
+        charCreateBtn: '🎭 Create character (3 reference images)',
+        charBankNote: 'A fixed literal description + 3 reference images from different angles — your hero stays the same across every scene.',
+        queueTitle: '⏳ Live processing queue', noActiveJobs: 'No active jobs.',
+        livePreviewTitle: '▶️ Live cinematic preview',
+        livePreviewEmpty: 'No preview yet — create a shot or open "▶️ Preview" from your library.',
+        accountTitle: '💳 Plans & Credits · Activity Log', currentBalance: 'Current balance:',
+        noLedgerYet: 'No activity yet.',
+        accountNote: 'Purchase and upgrade plans are coming soon — the welcome credit and admin grants work now.',
+        closePlayer: '✖ Close',
+        st_queued: 'Queued', st_rendering: 'Rendering', st_done: 'Done', st_failed: 'Failed',
+        ledger_starter: 'Welcome credit', ledger_grant: 'Admin grant', ledger_deduct: 'Generation charge', ledger_refund: 'Refund',
+        genericError: 'An error occurred.', connFail: 'Could not reach the service.',
+        joinedProject: '✅ The shot joined the queue and your project — track it in the storyboard above.',
+        joinedQueue: '✅ The job joined the queue — track its status in your library below.',
+        assembledFilm: '🎬 Assembled film', justNow: 'Just now',
+        minsAgo: (n) => `${n}m ago`, hoursAgo: (n) => `${n}h ago`,
+        preview: '▶️ Preview', download: '⬇️ Download', ownedByYou: 'Stored with you', hostedByProvider: '(hosted by the provider)',
+        doneNoFile: 'Done (demo mode, no file).', failedGeneric: 'Failed.', creditRefunded: ' (credit refunded)',
+        previewPrepFail: 'Could not prepare the preview.', preparing: '⏳ Preparing…',
+        downloadLinkFail: 'Could not prepare a download link.',
+        applyPreset: 'Apply preset', deletePreset: 'Delete', savePreset: '💾 Save current output as a preset',
+        presetNamePrompt: 'Preset name (e.g. Epic opening):', pastPrompts: '🕘 Past prompts',
+        noCharsYet: 'No characters yet — create your first hero below.',
+        charGenDisabled: 'Reference image generation is not enabled on this service currently.',
+        anglesCount: (n) => `${n} reference angles`, usedTimes: (n) => `used ${n} times`,
+        previewAngles: 'Preview angles', useChar: 'Use', deleteCharConfirm: 'Delete this character and its reference images?',
+        closeAria: 'Close', angleWord: 'angle',
+        generatingChar: '⏳ Generating the three reference images… (about a minute)',
+        charCreateFail: 'Could not create the character.',
+        charCreated: '✅ Character created with three angles — use it in any shot.',
+        charCreateBtnCost: (n) => `🎭 Create character (3 reference images — 🎟️ ${n})`,
+        charPickerLabelBase: 'Character (optional — its literal description is injected',
+        charPickerImgSuffix: ' and its image is used as the first frame)', charPickerSuffix: ')',
+        noCharacter: '— No character —', biggerPreview: 'Larger preview',
+        freeShotsOption: 'Free shots (no project)', newProject: '➕ New project',
+        newProjectPrompt: 'Film / project name:', projectCreateFail: 'Could not create the project.',
+        shotsCount: (n) => `${n} shots`, renameProject: '✏️ Rename',
+        inheritedSettings: '⚙️ Inherited settings', deleteProject: '🗑️ Delete project',
+        assembleFilm: '🎬 Assemble film', noShotsYet: 'No shots yet — pick a template in the generation studio, it will join here automatically.',
+        dragToReorder: '🖱️ Drag any card to reorder the shots (desktop).',
+        renamePrompt: 'New name:',
+        deleteProjectConfirm: 'Delete the project? The shots themselves stay in your library — only the assembly is removed.',
+        inheritedSettingsTitle: '⚙️ Inherited settings for every new shot in this project',
+        noDefaultAspect: '— No default ratio —', noDefaultStyle: '— No default style —',
+        save: '💾 Save', saveFail: 'Could not save.',
+        settingsSaved: '✅ Saved — will apply to every new shot in this project.',
+        assembleShots: (n) => `🎬 Assembling ${n} shots into one film`,
+        watermarkNote: '⚠️ Your film will carry a watermark (free plan) — upgrade to a paid plan to remove it.',
+        ytOption: '📺 YouTube 16:9', reelsOption: '📱 Reels 9:16', postOption: '🖼️ Post 1:1',
+        resSd: '📉 SD', resHd: '✅ HD (default)', res1080: '🎞️ 1080p', res4k: '⚠️ 4K (experimental — unconfirmed)',
+        noMusic: '— No music —', noSfx: '— No transition effect —',
+        endTitlePh: 'End title (optional)', logoUrlPh: 'Your logo URL (optional — shown in the corner throughout the film)',
+        narrationPh: (n) => `Voiceover (optional — 🎟️ ${n} extra, read aloud automatically throughout the film)`,
+        assembleBtn: (n) => `🚀 Assemble the film (🎟️ ${n})`,
+        assembleFail: 'Could not assemble.', assembleOk: '✅ The film joined the assembly queue — track it in your library below.',
+        shotNum: (n) => `Shot ${n}`, regenTitle: 'A new shot with the same settings', regen: '🔁 Regenerate',
+        useAsBaseTitle: 'Fill the form with its settings then edit', useAsBase: '📝 Base for a new shot',
+        regenFail: 'Could not regenerate.', generateBtnCost: (n) => `🎬 Generate scene now (🎟️ ${n})`,
+        noSelection: '— No selection —', charsSuffix: (n) => ` (up to ${n} characters)`,
+        modelLabel: 'Generating model *', creditsPerShot: (n) => `🎟️ ${n} credit(s) per shot`,
+        secondsCredits: (n, c) => `⏱️ ${n}s · 🎟️ ${c} credit(s)`, aiTag: ' · 🤖 AI',
+      },
+    };
+    let lang = localStorage.getItem('studioLang') || 'ar';
+    const tr = (key, ...args) => {
+      const v = (I18N[lang] || I18N.ar)[key];
+      return typeof v === 'function' ? v(...args) : (v ?? key);
+    };
+    function applyDocumentDirection() {
+      document.documentElement.lang = lang === 'en' ? 'en' : 'ar';
+      document.documentElement.dir = lang === 'en' ? 'ltr' : 'rtl';
+    }
+    applyDocumentDirection();
+
+    // يطبّق الترجمة على الهيكل الثابت (غير المولَّد بجافاسكربت) —
+    // النصوص المولَّدة ديناميكياً تُترجَم عبر tr() مباشرة داخل دوال
+    // renderX/loadX نفسها.
+    function applyStaticI18n() {
+      document.title = tr('docTitle');
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        // بعض العناصر (مثل شارة "قريباً" المتكررة) لها أبناء نصيون فقط
+        // — نستبدل أول عقدة نصية بدل textContent كي لا نمحو عناصر فرعية.
+        const key = el.dataset.i18n;
+        const val = tr(key);
+        if (el.children.length === 0) el.textContent = val;
+        else {
+          const textNode = [...el.childNodes].find(n => n.nodeType === Node.TEXT_NODE && n.textContent.trim());
+          if (textNode) textNode.textContent = val; else el.prepend(document.createTextNode(val));
+        }
+      });
+      document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.placeholder = tr(el.dataset.i18nPh); });
+      document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = tr(el.dataset.i18nTitle); });
+      document.querySelectorAll('[data-i18n-aria]').forEach(el => { el.setAttribute('aria-label', tr(el.dataset.i18nAria)); });
+    }
+
     let templates = [];
     let aiModels = [];
     let activeTemplate = null;
@@ -402,12 +644,10 @@
     let cinemaControls = [];
     let currentCredits = 0;
 
-    const STATUS_AR = { queued: 'في الطابور', rendering: 'قيد التصدير', done: 'مكتمل', failed: 'فشل' };
-
     function showGate() {
       $('gate').classList.remove('hidden');
       $('studio').classList.add('hidden');
-      $('creditsChip').textContent = 'غير مسجَّل';
+      $('creditsChip').textContent = tr('notRegistered');
     }
 
     function escapeHtml(s) {
@@ -423,22 +663,24 @@
         document.getElementById(el.dataset.target)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     });
-    document.querySelectorAll('.nav-item[data-soon]').forEach(el => {
-      el.addEventListener('click', () => alert(`${el.dataset.soon} — قادم قريباً في الاستوديو.`));
+    document.querySelectorAll('.nav-item[data-soon-key]').forEach(el => {
+      el.addEventListener('click', () => alert(tr('soonAlert', tr(el.dataset.soonKey))));
     });
     $('headerProjectBtn').addEventListener('click', () =>
       $('sectionProjects').scrollIntoView({ behavior: 'smooth', block: 'start' }));
-    $('upgradeBtn').addEventListener('click', () => alert('باقات الترقية والاشتراك المدفوع قادمة قريباً.'));
-
-    const LEDGER_KIND_AR = { starter: 'رصيد ترحيبي', grant: 'منح إداري', deduct: 'خصم توليد', refund: 'استرداد' };
+    $('upgradeBtn').addEventListener('click', () => alert(tr('upgradeAlert')));
+    $('langToggleBtn').addEventListener('click', () => {
+      localStorage.setItem('studioLang', lang === 'en' ? 'ar' : 'en');
+      location.reload();
+    });
 
     function renderLedger(ledger) {
       const box = $('ledgerBody');
-      if (!ledger || !ledger.length) { box.innerHTML = '<p class="note" style="margin:0">لا حركات بعد.</p>'; return; }
+      if (!ledger || !ledger.length) { box.innerHTML = `<p class="note" style="margin:0">${tr('noLedgerYet')}</p>`; return; }
       box.innerHTML = ledger.slice(0, 12).map(r => {
         const neg = r.kind === 'deduct';
         return `<div class="ledger-row">
-          <span>${LEDGER_KIND_AR[r.kind] || r.kind}</span>
+          <span>${tr('ledger_' + r.kind) || r.kind}</span>
           <span class="amt ${neg ? 'neg' : 'pos'}">${neg ? '-' : '+'}${r.amount}</span>
         </div>`;
       }).join('');
@@ -449,8 +691,8 @@
       if (res.status === 401) { showGate(); return false; }
       const data = await res.json();
       currentCredits = data.credits;
-      $('creditsChip').textContent = 'الرصيد: ' + data.credits + ' 🎟️';
-      $('accountCredits').textContent = data.credits + ' نقطة';
+      $('creditsChip').innerHTML = `${tr('creditsLabel')} ${data.credits} 🎟️`;
+      $('accountCredits').textContent = data.credits + (lang === 'en' ? ' pts' : ' نقطة');
       renderLedger(data.ledger);
       renderStats();
       return true;
@@ -458,9 +700,9 @@
 
     function renderStats() {
       $('statRow').innerHTML = [
-        { num: currentCredits, lbl: '🎟️ الرصيد المتاح' },
-        { num: projects.length, lbl: '📁 مشاريع نشطة' },
-        { num: characters.length, lbl: '🎭 شخصيات محفوظة' },
+        { num: currentCredits, lbl: tr('statCredits') },
+        { num: projects.length, lbl: tr('statProjects') },
+        { num: characters.length, lbl: tr('statCharacters') },
       ].map(s => `<div class="stat-card"><div class="num">${s.num}</div><div class="lbl">${s.lbl}</div></div>`).join('');
     }
 
@@ -471,12 +713,15 @@
       templates = data.templates;
       aiModels = data.aiModels || [];
       cinemaControls = data.cinema || [];
+      // ⚠️ أسماء/أوصاف القوالب (nameAr/descriptionAr) محتوى من الخادم لا
+      // نص واجهة — تبقى عربية بغضّ النظر عن اللغة المختارة هنا (راجع
+      // تعليق I18N أعلاه).
       $('templates').innerHTML = templates.map(t => `
         <div class="card tpl" data-id="${t.id}">
           <h3>${t.nameAr}</h3>
           <p>${t.descriptionAr}</p>
-          <div class="meta">⏱️ ${t.durationSec} ثوانٍ · 🎟️ ${t.costCredits} رصيد${
-            t.specKind === 'ai_prompt' ? ' · 🤖 ذكاء اصطناعي' : ''}</div>
+          <div class="meta">${tr('secondsCredits', t.durationSec, t.costCredits)}${
+            t.specKind === 'ai_prompt' ? tr('aiTag') : ''}</div>
         </div>`).join('');
       document.querySelectorAll('.tpl').forEach(el => {
         el.addEventListener('click', () => selectTemplate(el.dataset.id));
@@ -505,14 +750,14 @@
       }
       if (!list.some(m => m.id === activeModelId)) activeModelId = list[0].id;
       wrap.classList.remove('hidden');
-      wrap.innerHTML = `<label style="margin-top:0">النموذج المولِّد *</label>
+      wrap.innerHTML = `<label style="margin-top:0">${tr('modelLabel')}</label>
         <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">` +
         list.map(m => `
           <div class="card tpl model${m.id === activeModelId ? ' active' : ''}" data-model="${m.id}"
                style="margin-bottom:0;padding:12px">
             <h3 style="font-size:14px">${m.nameAr}</h3>
             <p style="font-size:12px">${m.descriptionAr || ''}</p>
-            <div class="meta">🎟️ ${m.costCredits} رصيد للقطة</div>
+            <div class="meta">${tr('creditsPerShot', m.costCredits)}</div>
           </div>`).join('') + '</div>';
       wrap.querySelectorAll('[data-model]').forEach(el => {
         el.addEventListener('click', () => {
@@ -538,7 +783,7 @@
     function syncCost() {
       const m = isAiTemplate(activeTemplate) ? activeModel() : null;
       const cost = m ? m.costCredits : (activeTemplate ? activeTemplate.costCredits : 0);
-      $('submitBtn').textContent = `🎬 ولّد المشهد الآن (🎟️ ${cost})`;
+      $('submitBtn').textContent = tr('generateBtnCost', cost);
     }
 
     function selectTemplate(id) {
@@ -554,7 +799,7 @@
         }
         if (f.type === 'choice') {
           // معيار اختياري بلا افتراضي (معايير الإخراج): خيار فارغ أولاً.
-          const blank = (!f.required && !f.default) ? '<option value="">— بدون تحديد —</option>' : '';
+          const blank = (!f.required && !f.default) ? `<option value="">${tr('noSelection')}</option>` : '';
           const opts = blank + f.options.map(o =>
             `<option value="${o}"${o === f.default ? ' selected' : ''}>${o}</option>`).join('');
           return `<label>${f.labelAr}${req}</label>
@@ -562,7 +807,7 @@
         }
         const type = f.type === 'imageUrl' ? 'url' : 'text';
         const ph = f.type === 'imageUrl' ? 'https://…' : '';
-        const label = `<label>${f.labelAr}${req}${f.maxLen ? ` (حتى ${f.maxLen} حرفاً)` : ''}</label>`;
+        const label = `<label>${f.labelAr}${req}${f.maxLen ? tr('charsSuffix', f.maxLen) : ''}</label>`;
         if (f.type === 'text' && (f.maxLen || 0) > 150) {
           return `${label}
                   <textarea name="${f.key}" maxlength="${f.maxLen}" rows="3"
@@ -614,12 +859,10 @@
         });
         const data = await res.json();
         if (!res.ok) {
-          msg.textContent = data.error || 'حدث خطأ.';
+          msg.textContent = data.error || tr('genericError');
           msg.className = 'msg err';
         } else {
-          msg.textContent = activeProjectId
-            ? '✅ دخلت اللقطة الطابور وانضمت لمشروعك — تابعها في الستوري بورد أعلاه.'
-            : '✅ دخلت المهمة الطابور — تابع حالتها في مكتبتك أدناه.';
+          msg.textContent = activeProjectId ? tr('joinedProject') : tr('joinedQueue');
           msg.className = 'msg ok';
           if (values.prompt) { pushHistory(values.prompt); renderPromptHistory(); }
           $('renderForm').reset();
@@ -627,7 +870,7 @@
           updateComposerExtras();
         }
       } catch {
-        msg.textContent = 'تعذر الاتصال بالخدمة.';
+        msg.textContent = tr('connFail');
         msg.className = 'msg err';
       } finally {
         btn.disabled = false;
@@ -635,16 +878,16 @@
     }
 
     function tplName(id) {
-      if (id === 'film_assembly') return '🎬 فيلم مُجمَّع';
+      if (id === 'film_assembly') return tr('assembledFilm');
       const t = templates.find(x => x.id === id);
       return t ? t.nameAr : id;
     }
 
     function timeAgo(ms) {
       const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
-      if (s < 60) return 'الآن';
-      if (s < 3600) return `منذ ${Math.round(s / 60)} د`;
-      return `منذ ${Math.round(s / 3600)} س`;
+      if (s < 60) return tr('justNow');
+      if (s < 3600) return tr('minsAgo', Math.round(s / 60));
+      return tr('hoursAgo', Math.round(s / 3600));
     }
 
     // ⏳ طابور المعالجة المباشرة: أحدث المهام (نشطة أولاً) بشكل مختصر.
@@ -653,12 +896,12 @@
       const active = jobs.filter(j => j.status === 'queued' || j.status === 'rendering');
       const recent = jobs.filter(j => j.status === 'done' || j.status === 'failed').slice(0, 4);
       const rows = [...active, ...recent].slice(0, 8);
-      if (!rows.length) { box.innerHTML = '<p class="note" style="margin:0">لا مهام جارية.</p>'; return; }
+      if (!rows.length) { box.innerHTML = `<p class="note" style="margin:0">${tr('noActiveJobs')}</p>`; return; }
       box.innerHTML = rows.map(j => `
         <div class="queue-item">
           <span class="dot dot-${j.status}"></span>
           <span class="name">${tplName(j.templateId)}</span>
-          <span class="when">${STATUS_AR[j.status]} · ${timeAgo(j.updatedAt || j.at)}</span>
+          <span class="when">${tr('st_' + j.status)} · ${timeAgo(j.updatedAt || j.at)}</span>
         </div>`).join('');
     }
 
@@ -675,18 +918,19 @@
           if (j.videoUrl && j.owned) {
             // ملف مملوك لنا: الرابط مسار خدمتنا، ويحتاج التوكن — نفتحه
             // عبر fetch ثم نتبع التوجيه، فلا يُسرَّب توكن في شريط العنوان.
-            result = `<a href="#" data-play="${j.id}">▶️ معاينة</a> · `
-                   + `<a href="#" data-download="${j.id}">⬇️ تنزيل</a>`
-                   + ` <span style="color:var(--ok);font-size:11px">مُخزَّن لديك</span>`;
+            result = `<a href="#" data-play="${j.id}">${tr('preview')}</a> · `
+                   + `<a href="#" data-download="${j.id}">${tr('download')}</a>`
+                   + ` <span style="color:var(--ok);font-size:11px">${tr('ownedByYou')}</span>`;
           } else if (j.videoUrl) {
-            result = `<a href="#" data-play="${j.id}">▶️ معاينة</a> · `
-                   + `<a href="${j.videoUrl}" target="_blank" rel="noopener">⬇️ تنزيل</a>`
-                   + ` <span style="color:var(--muted);font-size:11px">(مستضاف لدى المزوّد)</span>`;
+            result = `<a href="#" data-play="${j.id}">${tr('preview')}</a> · `
+                   + `<a href="${j.videoUrl}" target="_blank" rel="noopener">${tr('download')}</a>`
+                   + ` <span style="color:var(--muted);font-size:11px">${tr('hostedByProvider')}</span>`;
           } else {
-            result = j.error || 'اكتمل (وضع تجريبي بلا ملف).';
+            // j.error محتوى من الخادم (عربي دوماً) — عربي حتى في الواجهة الإنجليزية
+            result = j.error || tr('doneNoFile');
           }
         } else if (j.status === 'failed') {
-          result = (j.error || 'فشل.') + ' (استُرد الرصيد)';
+          result = (j.error || tr('failedGeneric')) + tr('creditRefunded');
         }
         const d = new Date(j.at);
         const model = j.modelId ? aiModels.find(m => m.id === j.modelId) : null;
@@ -694,9 +938,9 @@
           ? ` <span style="color:var(--muted);font-size:11px">(${model.nameAr})</span>` : '';
         return `<tr>
           <td>${tplName(j.templateId)}${modelTag}</td>
-          <td><span class="st st-${j.status}">${STATUS_AR[j.status] || j.status}</span></td>
+          <td><span class="st st-${j.status}">${tr('st_' + j.status) || j.status}</span></td>
           <td>${result}</td>
-          <td dir="ltr">${d.toLocaleString('ar')}</td>
+          <td dir="ltr">${d.toLocaleString(lang === 'en' ? 'en' : 'ar')}</td>
         </tr>`;
       }).join('');
 
@@ -714,9 +958,9 @@
       if (j.owned) {
         try {
           const res = await api(`/api/video/renders/${j.id}/download`);
-          if (!(res.ok && res.url)) { alert('تعذّر تجهيز المعاينة.'); return; }
+          if (!(res.ok && res.url)) { alert(tr('previewPrepFail')); return; }
           src = res.url;
-        } catch { alert('تعذّر الاتصال بالخدمة.'); return; }
+        } catch { alert(tr('connFail')); return; }
       }
       $('playerVideo').src = src;
       $('playerModal').style.display = 'flex';
@@ -741,17 +985,17 @@
         el.addEventListener('click', async (e) => {
           e.preventDefault();
           const original = el.textContent;
-          el.textContent = '⏳ جارٍ التحضير…';
+          el.textContent = tr('preparing');
           try {
             const res = await api(`/api/video/renders/${el.dataset.download}/download`);
             if (res.ok && res.url) {
               window.open(res.url, '_blank', 'noopener');
             } else {
               const data = await res.json().catch(() => ({}));
-              alert(data.error || 'تعذّر تحضير رابط التنزيل.');
+              alert(data.error || tr('downloadLinkFail'));
             }
           } catch {
-            alert('تعذّر الاتصال بالخدمة.');
+            alert(tr('connFail'));
           } finally {
             el.textContent = original;
           }
@@ -807,9 +1051,9 @@
       const presets = readPresets();
       bar.innerHTML = `<div class="chips">
         ${presets.map((p, i) => `
-          <button class="chip" data-preset="${i}" title="تطبيق الوصفة">🎞️ ${escapeHtml(p.name)}</button>
-          <button class="chip" data-del-preset="${i}" title="حذف" style="padding:6px 8px">×</button>`).join('')}
-        <button class="chip" id="savePresetBtn">💾 احفظ الإخراج الحالي كوصفة</button>
+          <button class="chip" data-preset="${i}" title="${tr('applyPreset')}">🎞️ ${escapeHtml(p.name)}</button>
+          <button class="chip" data-del-preset="${i}" title="${tr('deletePreset')}" style="padding:6px 8px">×</button>`).join('')}
+        <button class="chip" id="savePresetBtn">${tr('savePreset')}</button>
       </div>`;
       bar.querySelectorAll('[data-preset]').forEach(el =>
         el.addEventListener('click', () => {
@@ -829,7 +1073,7 @@
           renderPresets();
         }));
       $('savePresetBtn').addEventListener('click', () => {
-        const name = prompt('اسم الوصفة (مثال: افتتاحية ملحمية):');
+        const name = prompt(tr('presetNamePrompt'));
         if (!name || !name.trim()) return;
         const form = $('renderForm');
         const values = {};
@@ -858,7 +1102,7 @@
       const box = $('promptHistory');
       const h = readHistory();
       if (!h.length) { box.innerHTML = ''; return; }
-      box.innerHTML = `<label>🕘 أوصاف سابقة</label><div class="chips">
+      box.innerHTML = `<label>${tr('pastPrompts')}</label><div class="chips">
         ${h.slice(0, 8).map((t, i) => `<button class="chip" data-hist="${i}" title="${escapeHtml(t)}">${escapeHtml(t.slice(0, 40))}${t.length > 40 ? '…' : ''}</button>`).join('')}
       </div>`;
       box.querySelectorAll('[data-hist]').forEach(el =>
@@ -885,9 +1129,7 @@
       $('charCreate').classList.toggle('hidden', !charMeta.enabled);
       const grid = $('charGrid');
       if (!characters.length) {
-        grid.innerHTML = `<p class="note" style="margin:0">${charMeta.enabled
-          ? 'لا شخصيات بعد — أنشئ بطلك الأول أدناه.'
-          : 'توليد الصور المرجعية غير مفعَّل حالياً في الخدمة.'}</p>`;
+        grid.innerHTML = `<p class="note" style="margin:0">${charMeta.enabled ? tr('noCharsYet') : tr('charGenDisabled')}</p>`;
         return;
       }
       grid.innerHTML = characters.map(c => `
@@ -895,10 +1137,10 @@
           ${c.images?.[0]?.url ? `<img src="${c.images[0].url}" alt="${escapeHtml(c.name)}" data-preview-char="${c.id}" />` : ''}
           <div style="flex:1;min-width:0">
             <div class="name">${escapeHtml(c.name)}</div>
-            <div class="sub">${(c.images || []).length} زوايا مرجعية · استُخدم ${c.usageCount} مرات</div>
+            <div class="sub">${tr('anglesCount', (c.images || []).length)} · ${tr('usedTimes', c.usageCount)}</div>
           </div>
-          ${(c.images || []).length > 1 ? `<button class="chip" data-preview-char="${c.id}" title="معاينة الزوايا">👁️</button>` : ''}
-          <button class="chip" data-use-char="${c.id}">استخدم</button>
+          ${(c.images || []).length > 1 ? `<button class="chip" data-preview-char="${c.id}" title="${tr('previewAngles')}">👁️</button>` : ''}
+          <button class="chip" data-use-char="${c.id}">${tr('useChar')}</button>
           <button class="chip" data-del-char="${c.id}">🗑️</button>
         </div>`).join('');
       grid.querySelectorAll('[data-use-char]').forEach(el =>
@@ -907,14 +1149,15 @@
         el.addEventListener('click', () => openCharacterPreview(el.dataset.previewChar)));
       grid.querySelectorAll('[data-del-char]').forEach(el =>
         el.addEventListener('click', async () => {
-          if (!confirm('حذف الشخصية وصورها المرجعية؟')) return;
+          if (!confirm(tr('deleteCharConfirm'))) return;
           await api(`/api/video/characters/${el.dataset.delChar}`, { method: 'DELETE' });
           if (activeCharacterId === el.dataset.delChar) activeCharacterId = null;
           loadCharacters();
         }));
     }
 
-    // زاوية → تسميتها العربية (من قائمة الزوايا التي تعيدها الخدمة).
+    // زاوية → تسميتها العربية (من قائمة الزوايا التي تعيدها الخدمة — محتوى
+    // خادم يبقى عربياً؛ كلمة "زاوية/angle" المرافقة له نص واجهة مترجَم).
     function angleLabel(key) {
       return (charMeta.angles || []).find(a => a.key === key)?.labelAr || key;
     }
@@ -930,14 +1173,14 @@
         <div class="char-preview-box">
           <div class="cp-head">
             <h3>🎭 ${escapeHtml(c.name)}</h3>
-            <button class="cp-close" type="button" aria-label="إغلاق">✕</button>
+            <button class="cp-close" type="button" aria-label="${tr('closeAria')}">✕</button>
           </div>
-          <img class="cp-main" src="${shown.url}" alt="${escapeHtml(c.name)} — زاوية ${escapeHtml(angleLabel(shown.angle))}" />
-          <div class="cp-angle-label">زاوية ${escapeHtml(angleLabel(shown.angle))}</div>
+          <img class="cp-main" src="${shown.url}" alt="${escapeHtml(c.name)} — ${tr('angleWord')} ${escapeHtml(angleLabel(shown.angle))}" />
+          <div class="cp-angle-label">${tr('angleWord')} ${escapeHtml(angleLabel(shown.angle))}</div>
           <div class="cp-thumbs">
             ${c.images.map(img => `<img src="${img.url}" data-thumb-angle="${img.angle}"
-              class="${img.angle === shown.angle ? 'active' : ''}" alt="زاوية ${escapeHtml(angleLabel(img.angle))}"
-              title="زاوية ${escapeHtml(angleLabel(img.angle))}" />`).join('')}
+              class="${img.angle === shown.angle ? 'active' : ''}" alt="${tr('angleWord')} ${escapeHtml(angleLabel(img.angle))}"
+              title="${tr('angleWord')} ${escapeHtml(angleLabel(img.angle))}" />`).join('')}
           </div>
         </div>`;
       overlay.classList.remove('hidden');
@@ -960,27 +1203,27 @@
       const description = $('charDesc').value.trim();
       msg.className = 'msg';
       btn.disabled = true;
-      btn.textContent = '⏳ يولّد الصور المرجعية الثلاث… (نحو دقيقة)';
+      btn.textContent = tr('generatingChar');
       try {
         const res = await api('/api/video/characters', {
           method: 'POST', body: JSON.stringify({ name, description }),
         });
         const data = await res.json();
         if (!res.ok) {
-          msg.textContent = data.error || 'تعذّر إنشاء الشخصية.';
+          msg.textContent = data.error || tr('charCreateFail');
           msg.className = 'msg err';
         } else {
-          msg.textContent = '✅ وُلدت الشخصية بثلاث زوايا — استخدمها في أي لقطة.';
+          msg.textContent = tr('charCreated');
           msg.className = 'msg ok';
           $('charName').value = ''; $('charDesc').value = '';
           loadCredits(); loadCharacters();
         }
       } catch {
-        msg.textContent = 'تعذر الاتصال بالخدمة.';
+        msg.textContent = tr('connFail');
         msg.className = 'msg err';
       } finally {
         btn.disabled = false;
-        btn.textContent = `🎭 أنشئ الشخصية (٣ صور مرجعية — 🎟️ ${charMeta.costCredits})`;
+        btn.textContent = tr('charCreateBtnCost', charMeta.costCredits);
       }
     }
 
@@ -1002,16 +1245,16 @@
       wrap.classList.remove('hidden');
       const isImage = (activeTemplate.aiInput || 'text') === 'image';
       wrap.innerHTML = `
-        <label>الشخصية (اختياري — يُحقن وصفها الحرفي${isImage ? ' وتُستخدم صورتها إطاراً أول' : ''})</label>
+        <label>${tr('charPickerLabelBase')}${isImage ? tr('charPickerImgSuffix') : tr('charPickerSuffix')}</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <select id="charSelect" style="${SELECT_STYLE};max-width:280px">
-            <option value="">— بدون شخصية —</option>
+            <option value="">${tr('noCharacter')}</option>
             ${characters.map(c => `<option value="${c.id}"${c.id === activeCharacterId ? ' selected' : ''}>🎭 ${escapeHtml(c.name)}</option>`).join('')}
           </select>
           ${isImage ? `<select id="charAngle" style="${SELECT_STYLE};max-width:160px">
-            ${charMeta.angles.map(a => `<option value="${a.key}"${a.key === activeCharAngle ? ' selected' : ''}>زاوية ${a.labelAr}</option>`).join('')}
+            ${charMeta.angles.map(a => `<option value="${a.key}"${a.key === activeCharAngle ? ' selected' : ''}>${tr('angleWord')} ${a.labelAr}</option>`).join('')}
           </select>
-          <img id="charAnglePreview" style="width:40px;height:40px;border-radius:6px;object-fit:cover;cursor:pointer" title="معاينة أكبر" />` : ''}
+          <img id="charAnglePreview" style="width:40px;height:40px;border-radius:6px;object-fit:cover;cursor:pointer" title="${tr('biggerPreview')}" />` : ''}
         </div>`;
       $('charSelect').addEventListener('change', e => {
         activeCharacterId = e.target.value || null;
@@ -1051,15 +1294,13 @@
             <audio controls preload="none" src="${item.url}"></audio>
           </div>`).join('');
       };
-      renderList('audioMusicList', opts.music || [], '🎵',
-        'لا مكتبة موسيقى مضبوطة على هذا الخادم بعد.');
-      renderList('audioSfxList', opts.sfx || [], '🔊',
-        'لا مكتبة مؤثرات مضبوطة على هذا الخادم بعد.');
+      renderList('audioMusicList', opts.music || [], '🎵', tr('noMusicLib'));
+      renderList('audioSfxList', opts.sfx || [], '🔊', tr('noSfxLib'));
 
       const ttsBox = $('audioTtsStatus');
       ttsBox.innerHTML = opts.narrationEnabled
-        ? `<p class="msg ok" style="display:block">✅ مفعَّل — 🎟️ ${opts.narrationCostCredits} لكل فيلم مُجمَّع.</p>`
-        : `<p class="msg err" style="display:block">⏸️ غير مفعَّل على هذا الخادم حالياً.</p>`;
+        ? `<p class="msg ok" style="display:block">${tr('ttsEnabled', opts.narrationCostCredits)}</p>`
+        : `<p class="msg err" style="display:block">${tr('ttsDisabled')}</p>`;
     }
 
     // ─── مشاريع الأفلام (الستوري بورد) ─────────────────────────────────
@@ -1079,27 +1320,27 @@
     function renderProjectChips() {
       const wrap = $('projectChips');
       wrap.innerHTML =
-        `<button class="chip${!activeProjectId ? ' active' : ''}" data-proj="">لقطات حرة (بلا مشروع)</button>` +
+        `<button class="chip${!activeProjectId ? ' active' : ''}" data-proj="">${tr('freeShotsOption')}</button>` +
         projects.map(p =>
           `<button class="chip${p.id === activeProjectId ? ' active' : ''}" data-proj="${p.id}">🎬 ${escapeHtml(p.title)}</button>`
         ).join('') +
-        `<button class="chip" id="newProjectBtn">➕ مشروع جديد</button>`;
+        `<button class="chip" id="newProjectBtn">${tr('newProject')}</button>`;
       wrap.querySelectorAll('[data-proj]').forEach(el => {
         el.addEventListener('click', () => selectProject(el.dataset.proj || null));
       });
       $('newProjectBtn').addEventListener('click', createProject);
       const activeProj = projects.find(p => p.id === activeProjectId);
-      $('headerProjectLabel').textContent = activeProj ? activeProj.title : 'لقطات حرة';
+      $('headerProjectLabel').textContent = activeProj ? activeProj.title : tr('freeShots');
     }
 
     async function createProject() {
-      const title = prompt('اسم الفيلم / المشروع:');
+      const title = prompt(tr('newProjectPrompt'));
       if (!title || !title.trim()) return;
       const res = await api('/api/video/projects', {
         method: 'POST', body: JSON.stringify({ title: title.trim() }),
       });
       const data = await res.json();
-      if (!res.ok) { alert(data.error || 'تعذّر إنشاء المشروع.'); return; }
+      if (!res.ok) { alert(data.error || tr('projectCreateFail')); return; }
       await loadProjects();
       selectProject(data.project.id);
     }
@@ -1126,19 +1367,19 @@
       board.innerHTML = `
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
           <strong>🎬 ${escapeHtml(project.title)}</strong>
-          <span style="color:var(--muted);font-size:12px">${shots.length} لقطة</span>
-          <button class="chip" id="renameProjBtn">✏️ إعادة تسمية</button>
-          <button class="chip" id="projSettingsBtn">⚙️ إعدادات موروثة${
+          <span style="color:var(--muted);font-size:12px">${tr('shotsCount', shots.length)}</span>
+          <button class="chip" id="renameProjBtn">${tr('renameProject')}</button>
+          <button class="chip" id="projSettingsBtn">${tr('inheritedSettings')}${
             (project.defaultAspectRatio || project.defaultStyle) ? ' ●' : ''}</button>
-          <button class="chip" id="deleteProjBtn">🗑️ حذف المشروع</button>
-          ${shots.some(s => s.status === 'done') ? '<button class="chip" id="assembleBtn" style="border-color:var(--accent);color:var(--accent)">🎬 جمّع الفيلم</button>' : ''}
+          <button class="chip" id="deleteProjBtn">${tr('deleteProject')}</button>
+          ${shots.some(s => s.status === 'done') ? `<button class="chip" id="assembleBtn" style="border-color:var(--accent);color:var(--accent)">${tr('assembleFilm')}</button>` : ''}
         </div>
         <div id="projSettingsPanel" class="hidden" style="margin-bottom:10px"></div>
         <div id="assemblyPanel" class="hidden" style="margin-bottom:10px"></div>
         ${shots.length === 0
-          ? '<p class="note">لا لقطات بعد — اختر قالباً في استديو التوليد، ستنضم هنا تلقائياً.</p>'
+          ? `<p class="note">${tr('noShotsYet')}</p>`
           : `<div class="shots">${shots.map(shotCard).join('')}</div>
-             <p class="note">🖱️ اسحب أي بطاقة لإعادة ترتيب اللقطات (سطح المكتب).</p>`}`;
+             <p class="note">${tr('dragToReorder')}</p>`}`;
       bindDownloads(board);
       // بطاقات الستوري بورد تشارك مشغل المعاينة نفسه
       lastJobs = lastJobs.filter(j => !shots.some(s => s.id === j.id)).concat(shots);
@@ -1149,7 +1390,7 @@
       board.querySelectorAll('[data-base]').forEach(el =>
         el.addEventListener('click', () => useShotAsBase(el.dataset.base, shots)));
       $('renameProjBtn').addEventListener('click', async () => {
-        const title = prompt('الاسم الجديد:', project.title);
+        const title = prompt(tr('renamePrompt'), project.title);
         if (!title || !title.trim()) return;
         await api(`/api/video/projects/${project.id}`, {
           method: 'PATCH', body: JSON.stringify({ title: title.trim() }),
@@ -1158,7 +1399,7 @@
         refreshStoryboard();
       });
       $('deleteProjBtn').addEventListener('click', async () => {
-        if (!confirm('حذف المشروع؟ اللقطات نفسها تبقى في مكتبتك — يزول التجميع فقط.')) return;
+        if (!confirm(tr('deleteProjectConfirm'))) return;
         await api(`/api/video/projects/${project.id}`, { method: 'DELETE' });
         activeProjectId = null;
         await loadProjects();
@@ -1177,20 +1418,20 @@
       panel.classList.remove('hidden');
       panel.innerHTML = `
         <div class="card" style="margin-bottom:0">
-          <strong style="font-size:14px">⚙️ إعدادات موروثة لكل لقطة جديدة في هذا المشروع</strong>
+          <strong style="font-size:14px">${tr('inheritedSettingsTitle')}</strong>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
             <select id="projAspect" style="${SELECT_STYLE};max-width:170px">
-              <option value="">— بلا نسبة افتراضية —</option>
+              <option value="">${tr('noDefaultAspect')}</option>
               ${projectSettingsOptions.aspects.map(a =>
                 `<option value="${a}"${a === project.defaultAspectRatio ? ' selected' : ''}>${a}</option>`).join('')}
             </select>
             <select id="projStyle" style="${SELECT_STYLE};max-width:200px">
-              <option value="">— بلا أسلوب افتراضي —</option>
+              <option value="">${tr('noDefaultStyle')}</option>
               ${projectSettingsOptions.styles.map(st =>
                 `<option value="${st}"${st === project.defaultStyle ? ' selected' : ''}>${st}</option>`).join('')}
             </select>
           </div>
-          <button id="projSettingsSave" type="button">💾 احفظ</button>
+          <button id="projSettingsSave" type="button">${tr('save')}</button>
           <div class="msg" id="projSettingsMsg"></div>
         </div>`;
       $('projSettingsSave').addEventListener('click', async () => {
@@ -1204,10 +1445,10 @@
         });
         const data = await res.json();
         if (!res.ok) {
-          msg.textContent = data.error || 'تعذّر الحفظ.';
+          msg.textContent = data.error || tr('saveFail');
           msg.className = 'msg err';
         } else {
-          msg.textContent = '✅ حُفظت — ستُطبَّق على كل لقطة جديدة في هذا المشروع.';
+          msg.textContent = tr('settingsSaved');
           msg.className = 'msg ok';
           await loadProjects();
           refreshStoryboard();
@@ -1240,8 +1481,8 @@
       panel.classList.remove('hidden');
       panel.innerHTML = `
         <div class="card" style="margin-bottom:0">
-          <strong style="font-size:14px">🎬 تجميع ${opts.readyShots} لقطة في فيلم واحد</strong>
-          ${opts.watermarked ? `<p class="note" style="color:var(--warn)">⚠️ فيلمك سيحمل علامة مائية (الخطة المجانية) — رقِّ لباقة مدفوعة لإزالتها.</p>` : ''}
+          <strong style="font-size:14px">${tr('assembleShots', opts.readyShots)}</strong>
+          ${opts.watermarked ? `<p class="note" style="color:var(--warn)">${tr('watermarkNote')}</p>` : ''}
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
             <select id="asmTransition" style="${SELECT_STYLE};max-width:160px">
               ${opts.transitions.map(t => `<option value="${t}">${t}</option>`).join('')}
@@ -1250,33 +1491,33 @@
               ${(opts.filters || []).map(f => `<option value="${f}">🎨 ${f}</option>`).join('')}
             </select>
             <select id="asmAspect" style="${SELECT_STYLE};max-width:170px">
-              <option value="16:9">📺 يوتيوب 16:9</option>
-              <option value="9:16">📱 ريلز 9:16</option>
-              <option value="1:1">🖼️ بوست 1:1</option>
+              <option value="16:9">${tr('ytOption')}</option>
+              <option value="9:16">${tr('reelsOption')}</option>
+              <option value="1:1">${tr('postOption')}</option>
             </select>
             ${(opts.resolutions || []).length ? `<select id="asmResolution" style="${SELECT_STYLE};max-width:170px">
               ${opts.resolutions.map(r => {
-                const labels = { sd: '📉 SD', hd: '✅ HD (افتراضي)', '1080': '🎞️ 1080p', '4k': '⚠️ 4K (تجريبي — غير مؤكَّد)' };
+                const labels = { sd: tr('resSd'), hd: tr('resHd'), '1080': tr('res1080'), '4k': tr('res4k') };
                 return `<option value="${r}"${r === 'hd' ? ' selected' : ''}>${labels[r] || r}</option>`;
               }).join('')}
             </select>` : ''}
             ${opts.music.length ? `<select id="asmMusic" style="${SELECT_STYLE};max-width:200px">
-              <option value="">— بلا موسيقى —</option>
+              <option value="">${tr('noMusic')}</option>
               ${opts.music.map(m => `<option value="${m.id}">🎵 ${escapeHtml(m.nameAr)}</option>`).join('')}
             </select>` : ''}
             ${(opts.sfx || []).length ? `<select id="asmSfx" style="${SELECT_STYLE};max-width:200px">
-              <option value="">— بلا مؤثر انتقال —</option>
+              <option value="">${tr('noSfx')}</option>
               ${opts.sfx.map(m => `<option value="${m.id}">🔊 ${escapeHtml(m.nameAr)}</option>`).join('')}
             </select>` : ''}
-            <input type="text" id="asmTitle" maxlength="60" placeholder="عنوان ختامي (اختياري)"
+            <input type="text" id="asmTitle" maxlength="60" placeholder="${tr('endTitlePh')}"
               style="max-width:220px" />
-            <input type="url" id="asmLogo" placeholder="رابط شعارك (اختياري — يظهر في الزاوية طوال الفيلم)"
+            <input type="url" id="asmLogo" placeholder="${tr('logoUrlPh')}"
               style="max-width:280px" />
           </div>
           ${opts.narrationEnabled ? `<textarea id="asmNarration" maxlength="500" rows="2"
-            placeholder="تعليق صوتي (اختياري — 🎟️ ${opts.narrationCostCredits} إضافية، يُقرأ آلياً طوال الفيلم)"
+            placeholder="${tr('narrationPh', opts.narrationCostCredits)}"
             style="width:100%;margin-top:8px;resize:vertical"></textarea>` : ''}
-          <button id="asmGo" type="button">🚀 جمّع الفيلم (🎟️ ${opts.costCredits})</button>
+          <button id="asmGo" type="button">${tr('assembleBtn', opts.costCredits)}</button>
           <div class="msg" id="asmMsg"></div>
         </div>`;
       $('asmGo').addEventListener('click', async () => {
@@ -1303,15 +1544,15 @@
           });
           const data = await r.json();
           if (!r.ok) {
-            msg.textContent = data.error || 'تعذّر التجميع.';
+            msg.textContent = data.error || tr('assembleFail');
             msg.className = 'msg err';
           } else {
-            msg.textContent = '✅ دخل الفيلم طابور التركيب — تابعه في مكتبتك بالأسفل.';
+            msg.textContent = tr('assembleOk');
             msg.className = 'msg ok';
             loadCredits(); loadJobs();
           }
         } catch {
-          $('asmMsg').textContent = 'تعذر الاتصال بالخدمة.';
+          $('asmMsg').textContent = tr('connFail');
           $('asmMsg').className = 'msg err';
         } finally {
           $('asmGo').disabled = false;
@@ -1360,19 +1601,19 @@
       let action = '';
       if (s.status === 'done' && s.videoUrl) {
         action = `<a href="#" data-play="${s.id}">▶️</a> ` + (s.owned
-          ? `<a href="#" data-download="${s.id}">⬇️ تنزيل</a>`
-          : `<a href="${s.videoUrl}" target="_blank" rel="noopener">⬇️ تنزيل</a>`);
+          ? `<a href="#" data-download="${s.id}">${tr('download')}</a>`
+          : `<a href="${s.videoUrl}" target="_blank" rel="noopener">${tr('download')}</a>`);
       }
       return `<div class="card shot" data-shot-id="${s.id}">
-        <div class="num">لقطة ${i + 1}</div>
+        <div class="num">${tr('shotNum', i + 1)}</div>
         <div style="font-size:13px;margin-top:4px">${tplName(s.templateId)}${
           model ? ` <span style="color:var(--muted);font-size:11px">(${model.nameAr})</span>` : ''}</div>
         ${promptText ? `<div class="prompt">${escapeHtml(promptText)}</div>` : ''}
-        <span class="st st-${s.status}">${STATUS_AR[s.status] || s.status}</span>
+        <span class="st st-${s.status}">${tr('st_' + s.status) || s.status}</span>
         <div class="actions">
           ${action}
-          <button data-redo="${s.id}" title="لقطة جديدة بنفس الإعدادات">🔁 إعادة توليد</button>
-          <button data-base="${s.id}" title="املأ النموذج بإعداداتها ثم عدّل">📝 أساس للقطة جديدة</button>
+          <button data-redo="${s.id}" title="${tr('regenTitle')}">${tr('regen')}</button>
+          <button data-base="${s.id}" title="${tr('useAsBaseTitle')}">${tr('useAsBase')}</button>
         </div>
       </div>`;
     }
@@ -1385,7 +1626,7 @@
       if (s.modelId) body.modelId = s.modelId;
       const res = await api('/api/video/renders', { method: 'POST', body: JSON.stringify(body) });
       const data = await res.json();
-      if (!res.ok) { alert(data.error || 'تعذّرت إعادة التوليد.'); return; }
+      if (!res.ok) { alert(data.error || tr('regenFail')); return; }
       loadCredits(); refreshStoryboard(); loadJobs();
     }
 
@@ -1413,6 +1654,7 @@
     });
 
     (async function init() {
+      applyStaticI18n();
       if (!token()) { showGate(); return; }
       const ok = await loadCredits();
       if (!ok) return;
