@@ -1113,6 +1113,10 @@
               <option value="">— بلا موسيقى —</option>
               ${opts.music.map(m => `<option value="${m.id}">🎵 ${escapeHtml(m.nameAr)}</option>`).join('')}
             </select>` : ''}
+            ${(opts.sfx || []).length ? `<select id="asmSfx" style="${SELECT_STYLE};max-width:200px">
+              <option value="">— بلا مؤثر انتقال —</option>
+              ${opts.sfx.map(m => `<option value="${m.id}">🔊 ${escapeHtml(m.nameAr)}</option>`).join('')}
+            </select>` : ''}
             <input type="text" id="asmTitle" maxlength="60" placeholder="عنوان ختامي (اختياري)"
               style="max-width:220px" />
             <input type="url" id="asmLogo" placeholder="رابط شعارك (اختياري — يظهر في الزاوية طوال الفيلم)"
@@ -1134,6 +1138,8 @@
           };
           const musicSel = $('asmMusic');
           if (musicSel && musicSel.value) body.musicId = musicSel.value;
+          const sfxSel = $('asmSfx');
+          if (sfxSel && sfxSel.value) body.sfxId = sfxSel.value;
           const r = await api(`/api/video/projects/${projectId}/assemble`, {
             method: 'POST', body: JSON.stringify(body),
           });

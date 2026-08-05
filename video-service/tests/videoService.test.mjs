@@ -23,7 +23,7 @@ import { readAiModels, getAiModel, defaultAiModel } from '../src/models.js';
 import { composeCinematicPrompt } from '../src/cinema.js';
 import { createFalImageProvider, extractImageUrl } from '../src/providers/falImageProvider.js';
 import { CHARACTER_COST_CREDITS, characterImagePrompt, validateCharacterInput } from '../src/characters.js';
-import { ASSEMBLY_COST_CREDITS, buildFilmSpec, readMusicLibrary } from '../src/assembly.js';
+import { ASSEMBLY_COST_CREDITS, buildFilmSpec, readMusicLibrary, readSfxLibrary } from '../src/assembly.js';
 import { specToShotstackTimeline } from '../src/providers/shotstackProvider.js';
 import { runEngineTick, JOB_TIMEOUT_MS } from '../src/engine.js';
 import { getBalance, grantCredits, deductCredits, refundCredits, STARTER_CREDITS } from '../src/credits.js';
@@ -1647,6 +1647,35 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(specToShotstackTimeline(noLogo).tracks.length, 1);
         });
 
+        test('مؤثر صوتي للانتقال: مقطع قصير عند كل نقطة انتقال بين المشاهد', () => {
+            const spec = buildFilmSpec({
+                shots: [
+                    { durationSec: 5, videoUrl: 'https://v.test/a.mp4' },
+                    { durationSec: 8, videoUrl: 'https://v.test/b.mp4' },
+                ],
+                endTitle: 'ختام', sfxUrl: 'https://sfx.test/whoosh.mp3',
+            });
+            assert.deepEqual(spec.sceneStarts, [0, 5, 13]); // لقطتان + ختام
+            const timeline = specToShotstackTimeline(spec);
+            // مسار المؤثر منفصل عن الفيديو والشعار — آخر مسار
+            const sfxTrack = timeline.tracks.at(-1);
+            assert.equal(sfxTrack.clips.length, 3);
+            assert.deepEqual(sfxTrack.clips.map(c => c.start), [0, 5, 13]);
+            assert.equal(sfxTrack.clips[0].asset.type, 'audio');
+            assert.equal(sfxTrack.clips[0].asset.src, 'https://sfx.test/whoosh.mp3');
+
+            // بلا مؤثر: لا مسار إضافي
+            const noSfx = buildFilmSpec({ shots: [{ durationSec: 5, videoUrl: 'https://v.test/a.mp4' }] });
+            assert.equal(specToShotstackTimeline(noSfx).tracks.length, 1);
+
+            // مكتبة المؤثرات: فارغة بلا env، وفاسدة تفشل صاخباً (نفس قاعدة الموسيقى)
+            assert.deepEqual(readSfxLibrary({}), []);
+            assert.equal(readSfxLibrary({
+                SFX_LIBRARY_JSON: JSON.stringify([{ id: 'whoosh', nameAr: 'انتقال', url: 'https://sfx.test/w.mp3' }]),
+            })[0].id, 'whoosh');
+            assert.throws(() => readSfxLibrary({ SFX_LIBRARY_JSON: 'ليس json' }));
+        });
+
         test('التجميع: شعار برابط فاسد يُرفض بـ400 قبل الخصم، وشعار صالح يصل المخطط', async () => {
             // تطبيق مستقل: /assemble يشارك محدود renderLimit مع /renders،
             // وقد استُهلك حصة الساعة عبر عشرات النداءات في بقية هذا الملف —
@@ -1686,6 +1715,12 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 assert.equal(ok.status, 200);
                 const film = await getJob(store, ok.data.job.id);
                 assert.equal(film.spec.logoUrl, 'https://logo.test/mine.png');
+
+                // مؤثر صوتي مجهول → 400 (بلا مكتبة SFX مضبوطة في هذه الخدمة)
+                const badSfx = await callAt(url, `/api/video/projects/${pid}/assemble`, {
+                    method: 'POST', token, body: { sfxId: 'لا-وجود' },
+                });
+                assert.equal(badSfx.status, 400);
             } finally {
                 await new Promise(r => s.close(r));
             }

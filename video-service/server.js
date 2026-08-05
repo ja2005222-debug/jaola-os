@@ -27,7 +27,7 @@ import { readAiModels, getAiModel, defaultAiModel, publicAiModels } from './src/
 import { CINEMA_CONTROLS, cinemaFieldOptions } from './src/cinema.js';
 import {
     ASSEMBLY_COST_CREDITS, TRANSITIONS, COLOR_FILTERS, OUTPUT_ASPECTS,
-    readMusicLibrary, buildFilmSpec,
+    readMusicLibrary, readSfxLibrary, buildFilmSpec,
 } from './src/assembly.js';
 import { buildImageProvider } from './src/providers/falImageProvider.js';
 import { characterImageKeyFor } from './src/storage/index.js';
@@ -56,6 +56,7 @@ export function createApp({
     aiModels = readAiModels(),
     imageProvider = null,
     musicLibrary = readMusicLibrary(),
+    sfxLibrary = readSfxLibrary(),
 } = {}) {
     const secrets = (Array.isArray(jwtSecret) ? jwtSecret : [jwtSecret]).filter(Boolean);
     if (secrets.length === 0) {
@@ -227,6 +228,7 @@ export function createApp({
             filters: Object.keys(COLOR_FILTERS),
             aspects: OUTPUT_ASPECTS,
             music: musicLibrary.map(({ id, nameAr }) => ({ id, nameAr })),
+            sfx: sfxLibrary.map(({ id, nameAr }) => ({ id, nameAr })),
             costCredits: ASSEMBLY_COST_CREDITS,
             readyShots: (await readyShotsOf(project.id)).length,
         });
@@ -236,7 +238,7 @@ export function createApp({
         const project = await ownedProject(req);
         if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
 
-        const { transition, musicId, endTitle, filter, aspect, logoUrl } = req.body || {};
+        const { transition, musicId, endTitle, filter, aspect, logoUrl, sfxId } = req.body || {};
         if (transition != null && !(transition in TRANSITIONS)) {
             return res.status(400).json({ error: `انتقال غير معروف (المتاح: ${Object.keys(TRANSITIONS).join('، ')}).` });
         }
@@ -251,6 +253,12 @@ export function createApp({
             const track = musicLibrary.find(m => m.id === String(musicId));
             if (!track) return res.status(400).json({ error: 'مقطع موسيقي غير معروف.' });
             musicUrl = track.url;
+        }
+        let sfxUrl = null;
+        if (sfxId) {
+            const sfx = sfxLibrary.find(m => m.id === String(sfxId));
+            if (!sfx) return res.status(400).json({ error: 'مؤثر صوتي غير معروف.' });
+            sfxUrl = sfx.url;
         }
         const title = String(endTitle || '').trim().slice(0, 60);
         if (title) {
@@ -293,6 +301,7 @@ export function createApp({
             filter: filter ? COLOR_FILTERS[filter] : null,
             aspectRatio: aspect || '16:9',
             logoUrl: cleanLogoUrl,
+            sfxUrl,
         });
 
         const job = await createJob(store, {
@@ -300,6 +309,7 @@ export function createApp({
             values: {
                 transition: transition || '', musicId: musicId || '', endTitle: title,
                 filter: filter || '', aspect: aspect || '16:9', logoUrl: cleanLogoUrl || '',
+                sfxId: sfxId || '',
             },
             spec, costCredits: ASSEMBLY_COST_CREDITS,
             projectId: project.id, shotIndex: null,
