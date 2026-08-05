@@ -50,6 +50,8 @@ export function specToShotstackTimeline(spec) {
                     length: scene.lengthSec,
                     fit: 'contain',
                     transition,
+                    // فلتر ما بعد الإنتاج اللوني (إن حُدد) — على اللقطات فقط
+                    ...(spec.filter ? { filter: spec.filter } : {}),
                 });
             }
         }
@@ -79,9 +81,14 @@ export function createShotstackProvider({ apiKey, env = 'stage', fetchImpl = fet
             if (spec?.kind && spec.kind !== 'timeline') {
                 throw new Error(`Shotstack لا يدعم هذا النوع من المخططات: ${spec.kind}`);
             }
+            const output = { format: 'mp4', resolution: 'hd' };
+            // مقاس المنصة (ريلز 9:16 / بوست 1:1) — الافتراضي 16:9
+            if (spec?.aspectRatio && spec.aspectRatio !== '16:9') {
+                output.aspectRatio = spec.aspectRatio;
+            }
             const body = {
                 timeline: specToShotstackTimeline(spec),
-                output: { format: 'mp4', resolution: 'hd' },
+                output,
             };
             const res = await fetchImpl(`${baseUrl}/render`, {
                 method: 'POST', headers, body: JSON.stringify(body),

@@ -20,6 +20,18 @@ export const TRANSITIONS = Object.freeze({
     'تقريب': 'zoom',
 });
 
+// فلاتر لونية (ما بعد الإنتاج) بالعربية → قيم فلاتر Shotstack
+export const COLOR_FILTERS = Object.freeze({
+    'بلا فلتر': null,
+    'أبيض وأسود': 'greyscale',
+    'دافئ مُشبع': 'boost',
+    'خافت سينمائي': 'muted',
+    'معتم درامي': 'darken',
+});
+
+// مقاسات المنصات: يوتيوب/ريلز/بوست
+export const OUTPUT_ASPECTS = Object.freeze(['16:9', '9:16', '1:1']);
+
 /** مكتبة الموسيقى المرخصة من البيئة — [{id, nameAr, url}] أو فارغة. */
 export function readMusicLibrary(env = process.env) {
     if (!env.MUSIC_LIBRARY_JSON) return [];
@@ -43,7 +55,7 @@ export function readMusicLibrary(env = process.env) {
  * المخطط له (نموذج ينتج 8 ثوانٍ لمخطط 5). نستخدم المخطط له كحد موثوق —
  * قصّ زائد خيرٌ من إطار متجمد؛ الضبط الدقيق يأتي مع أول تشغيل Shotstack.
  */
-export function buildFilmSpec({ shots, transition = null, musicUrl = null, endTitle = '', aspectRatio = '16:9' }) {
+export function buildFilmSpec({ shots, transition = null, musicUrl = null, endTitle = '', aspectRatio = '16:9', filter = null }) {
     if (!Array.isArray(shots) || shots.length === 0) {
         throw new Error('لا لقطات جاهزة للتجميع.');
     }
@@ -73,6 +85,7 @@ export function buildFilmSpec({ shots, transition = null, musicUrl = null, endTi
         aspectRatio,
         transition: transition || null,
         soundtrackUrl: musicUrl || null,
+        filter: filter || null, // فلتر لوني يطبَّق على كل اللقطات
         scenes,
     };
 }
