@@ -517,6 +517,7 @@
       renderModelPicker();
       renderCharacterPicker();
       syncAspectRatios();
+      applyProjectDefaults();
       syncCost();
       updateComposerExtras();
       $('formWrap').classList.remove('hidden');
@@ -919,10 +920,14 @@
 
     // ─── مشاريع الأفلام (الستوري بورد) ─────────────────────────────────
 
+    let projectSettingsOptions = { aspects: [], styles: [] };
+
     async function loadProjects() {
       const res = await api('/api/video/projects');
       if (!res.ok) return;
-      projects = (await res.json()).projects;
+      const data = await res.json();
+      projects = data.projects;
+      projectSettingsOptions = data.settingsOptions || projectSettingsOptions;
       renderProjectChips();
       renderStats();
     }
@@ -964,9 +969,11 @@
 
     async function refreshStoryboard() {
       if (!activeProjectId) return;
-      // لوحة التجميع مفتوحة = المستخدم يكتب — لا نمسح ما تحت يده.
-      const openPanel = document.getElementById('assemblyPanel');
-      if (openPanel && !openPanel.classList.contains('hidden')) return;
+      // لوحة التجميع أو الإعدادات مفتوحة = المستخدم يكتب — لا نمسح ما تحت يده.
+      const openAssembly = document.getElementById('assemblyPanel');
+      const openSettings = document.getElementById('projSettingsPanel');
+      if ((openAssembly && !openAssembly.classList.contains('hidden')) ||
+          (openSettings && !openSettings.classList.contains('hidden'))) return;
       const res = await api(`/api/video/projects/${activeProjectId}`);
       if (!res.ok) { selectProject(null); return; }
       const { project, shots } = await res.json();
@@ -977,9 +984,12 @@
           <strong>🎬 ${escapeHtml(project.title)}</strong>
           <span style="color:var(--muted);font-size:12px">${shots.length} لقطة</span>
           <button class="chip" id="renameProjBtn">✏️ إعادة تسمية</button>
+          <button class="chip" id="projSettingsBtn">⚙️ إعدادات موروثة${
+            (project.defaultAspectRatio || project.defaultStyle) ? ' ●' : ''}</button>
           <button class="chip" id="deleteProjBtn">🗑️ حذف المشروع</button>
           ${shots.some(s => s.status === 'done') ? '<button class="chip" id="assembleBtn" style="border-color:var(--accent);color:var(--accent)">🎬 جمّع الفيلم</button>' : ''}
         </div>
+        <div id="projSettingsPanel" class="hidden" style="margin-bottom:10px"></div>
         <div id="assemblyPanel" class="hidden" style="margin-bottom:10px"></div>
         ${shots.length === 0
           ? '<p class="note">لا لقطات بعد — اختر قالباً في استديو التوليد، ستنضم هنا تلقائياً.</p>'
@@ -1010,8 +1020,70 @@
         await loadProjects();
         selectProject(null);
       });
+      $('projSettingsBtn').addEventListener('click', () => openProjectSettingsPanel(project));
       const assembleBtn = $('assembleBtn');
       if (assembleBtn) assembleBtn.addEventListener('click', () => openAssemblyPanel(project.id));
+    }
+
+    // ⚙️ إعدادات موروثة: نسبة أبعاد وأسلوب افتراضيان تُطبَّقان تلقائياً
+    // على كل لقطة جديدة في هذا المشروع (ما لم يحدّد المستخدم قيمة صراحة).
+    function openProjectSettingsPanel(project) {
+      const panel = $('projSettingsPanel');
+      if (!panel.classList.contains('hidden')) { panel.classList.add('hidden'); return; }
+      panel.classList.remove('hidden');
+      panel.innerHTML = `
+        <div class="card" style="margin-bottom:0">
+          <strong style="font-size:14px">⚙️ إعدادات موروثة لكل لقطة جديدة في هذا المشروع</strong>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+            <select id="projAspect" style="${SELECT_STYLE};max-width:170px">
+              <option value="">— بلا نسبة افتراضية —</option>
+              ${projectSettingsOptions.aspects.map(a =>
+                `<option value="${a}"${a === project.defaultAspectRatio ? ' selected' : ''}>${a}</option>`).join('')}
+            </select>
+            <select id="projStyle" style="${SELECT_STYLE};max-width:200px">
+              <option value="">— بلا أسلوب افتراضي —</option>
+              ${projectSettingsOptions.styles.map(st =>
+                `<option value="${st}"${st === project.defaultStyle ? ' selected' : ''}>${st}</option>`).join('')}
+            </select>
+          </div>
+          <button id="projSettingsSave" type="button">💾 احفظ</button>
+          <div class="msg" id="projSettingsMsg"></div>
+        </div>`;
+      $('projSettingsSave').addEventListener('click', async () => {
+        const msg = $('projSettingsMsg'); msg.className = 'msg';
+        const res = await api(`/api/video/projects/${project.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            defaultAspectRatio: $('projAspect').value,
+            defaultStyle: $('projStyle').value,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          msg.textContent = data.error || 'تعذّر الحفظ.';
+          msg.className = 'msg err';
+        } else {
+          msg.textContent = '✅ حُفظت — ستُطبَّق على كل لقطة جديدة في هذا المشروع.';
+          msg.className = 'msg ok';
+          await loadProjects();
+          refreshStoryboard();
+        }
+      });
+    }
+
+    // يملأ حقول نسبة الأبعاد/الأسلوب من إعدادات المشروع النشط الموروثة
+    // — لا يفرض قيمة، فقط يعرض ما سيُطبَّق فعلياً لو تُرك الحقل فارغاً.
+    function applyProjectDefaults() {
+      const proj = projects.find(p => p.id === activeProjectId);
+      if (!proj) return;
+      const form = $('renderForm');
+      if (proj.defaultAspectRatio && form.elements.aspectRatio) {
+        const has = [...form.elements.aspectRatio.options].some(o => o.value === proj.defaultAspectRatio);
+        if (has) form.elements.aspectRatio.value = proj.defaultAspectRatio;
+      }
+      if (proj.defaultStyle && form.elements.style) {
+        form.elements.style.value = proj.defaultStyle;
+      }
     }
 
     // 🎬 لوحة تجميع الفيلم: انتقال + فلتر + مقاس + موسيقى + عنوان ختامي.

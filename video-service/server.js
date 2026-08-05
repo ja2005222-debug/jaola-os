@@ -24,7 +24,7 @@ import { buildStorage, retentionDays as readRetentionDays } from './src/storage/
 import { readLimits, checkRenderAllowed, maybeAlertCost, startOfUtcDay } from './src/limits.js';
 import { readBlocklist, inspectValues, inspectText, inspectImageUrl } from './src/contentFilter.js';
 import { readAiModels, getAiModel, defaultAiModel, publicAiModels } from './src/models.js';
-import { CINEMA_CONTROLS } from './src/cinema.js';
+import { CINEMA_CONTROLS, cinemaFieldOptions } from './src/cinema.js';
 import {
     ASSEMBLY_COST_CREDITS, TRANSITIONS, COLOR_FILTERS, OUTPUT_ASPECTS,
     readMusicLibrary, buildFilmSpec,
@@ -129,15 +129,40 @@ export function createApp({
         const title = String(raw || '').trim();
         return title.length >= 1 && title.length <= 80 ? title : null;
     };
+    // مصدر الحقيقة الوحيد لخيارات الإعدادات الموروثة — نفس القوائم التي
+    // تراها الواجهة في قالب اللقطة، لا تكرار يتباعد عنها بصمت.
+    const PROJECT_ASPECTS = getTemplate('ai_clip').fields.find(f => f.key === 'aspectRatio').options;
+    const PROJECT_STYLES = cinemaFieldOptions('style');
+    const validSettings = ({ defaultAspectRatio, defaultStyle }) => {
+        if (defaultAspectRatio != null && !PROJECT_ASPECTS.includes(defaultAspectRatio)) {
+            return `نسبة أبعاد غير معروفة (المتاح: ${PROJECT_ASPECTS.join('، ')}).`;
+        }
+        if (defaultStyle != null && !PROJECT_STYLES.includes(defaultStyle)) {
+            return `أسلوب بصري غير معروف (المتاح: ${PROJECT_STYLES.join('، ')}).`;
+        }
+        return null;
+    };
 
     app.get('/api/video/projects', verifyToken, wrap(async (req, res) => {
-        res.json({ projects: await store.listProjectsByUser(userOf(req), 50) });
+        res.json({
+            projects: await store.listProjectsByUser(userOf(req), 50),
+            settingsOptions: { aspects: PROJECT_ASPECTS, styles: PROJECT_STYLES },
+        });
     }));
 
     app.post('/api/video/projects', verifyToken, wrap(async (req, res) => {
         const title = validTitle(req.body?.title);
         if (!title) return res.status(400).json({ error: 'عنوان المشروع مطلوب (حتى 80 حرفاً).' });
-        res.json({ project: await store.createProject({ username: userOf(req), title }) });
+        const { defaultAspectRatio, defaultStyle } = req.body || {};
+        const issue = validSettings({ defaultAspectRatio, defaultStyle });
+        if (issue) return res.status(400).json({ error: issue });
+        res.json({
+            project: await store.createProject({
+                username: userOf(req), title,
+                defaultAspectRatio: defaultAspectRatio || null,
+                defaultStyle: defaultStyle || null,
+            }),
+        });
     }));
 
     app.get('/api/video/projects/:id', verifyToken, wrap(async (req, res) => {
@@ -147,12 +172,24 @@ export function createApp({
         res.json({ project, shots: shots.map(publicJob) });
     }));
 
+    // العنوان وإعدادات التوريث الآن مستقلان: أي منهما قد يصل وحده، أو
+    // معاً — مفتاح غائب في الطلب لا يمسّ قيمته المخزَّنة.
     app.patch('/api/video/projects/:id', verifyToken, wrap(async (req, res) => {
         const project = await ownedProject(req);
         if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
-        const title = validTitle(req.body?.title);
-        if (!title) return res.status(400).json({ error: 'عنوان المشروع مطلوب (حتى 80 حرفاً).' });
-        res.json({ project: await store.renameProject(project.id, title) });
+        const { title, defaultAspectRatio, defaultStyle } = req.body || {};
+        let updated = project;
+        if (title !== undefined) {
+            const clean = validTitle(title);
+            if (!clean) return res.status(400).json({ error: 'عنوان المشروع مطلوب (حتى 80 حرفاً).' });
+            updated = await store.renameProject(project.id, clean);
+        }
+        if (defaultAspectRatio !== undefined || defaultStyle !== undefined) {
+            const issue = validSettings({ defaultAspectRatio, defaultStyle });
+            if (issue) return res.status(400).json({ error: issue });
+            updated = await store.updateProjectSettings(project.id, { aspectRatio: defaultAspectRatio, style: defaultStyle });
+        }
+        res.json({ project: updated });
     }));
 
     // حذف التجميع فقط — اللقطات تبقى في السجل العام (أُنفق عليها رصيد).
@@ -383,7 +420,32 @@ export function createApp({
             return res.status(503).json({ error: 'هذا النوع من الفيديو غير مفعَّل حالياً في الخدمة.' });
         }
 
-        const validated = validateValues(template, values);
+        // 🎬 الربط بمشروع (اختياري): ملكية المشروع شرط، ورقم اللقطة يُسنَد
+        // خادمياً بترتيب الإضافة. نُبكّر هذا الفحص لأن إعدادات المشروع
+        // الموروثة (نسبة الأبعاد/الأسلوب) تُطبَّق على القيم قبل التحقق.
+        let project = null, shotIndex = null;
+        if (projectId) {
+            project = await store.getProject(String(projectId));
+            if (!project || project.username !== userOf(req)) {
+                return res.status(400).json({ error: 'المشروع غير موجود.' });
+            }
+            shotIndex = await store.countJobsInProject(project.id);
+        }
+
+        // توريث إعدادات المشروع: يُطبَّق فقط حين يترك المستخدم الحقل
+        // فارغاً — مدخل المستخدم يتفوق دوماً على الافتراضي الموروث.
+        const mergedValues = { ...(values && typeof values === 'object' ? values : {}) };
+        if (project) {
+            const hasField = key => template.fields.some(f => f.key === key);
+            if (project.defaultAspectRatio && !mergedValues.aspectRatio && hasField('aspectRatio')) {
+                mergedValues.aspectRatio = project.defaultAspectRatio;
+            }
+            if (project.defaultStyle && !mergedValues.style && hasField('style')) {
+                mergedValues.style = project.defaultStyle;
+            }
+        }
+
+        const validated = validateValues(template, mergedValues);
         if (validated.error) return res.status(400).json({ error: validated.error });
 
         // 🎞️ اختيار النموذج (قوالب التوليد فقط): النموذج يحدد التكلفة
@@ -421,17 +483,6 @@ export function createApp({
             if (!character || character.username !== userOf(req)) {
                 return res.status(400).json({ error: 'الشخصية غير موجودة.' });
             }
-        }
-
-        // 🎬 الربط بمشروع (اختياري): ملكية المشروع شرط، ورقم اللقطة يُسنَد
-        // خادمياً بترتيب الإضافة.
-        let project = null, shotIndex = null;
-        if (projectId) {
-            project = await store.getProject(String(projectId));
-            if (!project || project.username !== userOf(req)) {
-                return res.status(400).json({ error: 'المشروع غير موجود.' });
-            }
-            shotIndex = await store.countJobsInProject(project.id);
         }
 
         // فلترة المحتوى بعد التحقق النمطي وقبل أي حجز أو خصم — لا يصل
