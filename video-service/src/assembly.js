@@ -55,7 +55,10 @@ export function readMusicLibrary(env = process.env) {
  * المخطط له (نموذج ينتج 8 ثوانٍ لمخطط 5). نستخدم المخطط له كحد موثوق —
  * قصّ زائد خيرٌ من إطار متجمد؛ الضبط الدقيق يأتي مع أول تشغيل Shotstack.
  */
-export function buildFilmSpec({ shots, transition = null, musicUrl = null, endTitle = '', aspectRatio = '16:9', filter = null }) {
+export function buildFilmSpec({
+    shots, transition = null, musicUrl = null, endTitle = '',
+    aspectRatio = '16:9', filter = null, logoUrl = null,
+}) {
     if (!Array.isArray(shots) || shots.length === 0) {
         throw new Error('لا لقطات جاهزة للتجميع.');
     }
@@ -86,6 +89,7 @@ export function buildFilmSpec({ shots, transition = null, musicUrl = null, endTi
         transition: transition || null,
         soundtrackUrl: musicUrl || null,
         filter: filter || null, // فلتر لوني يطبَّق على كل اللقطات
+        logoUrl: logoUrl || null, // شعار ثابت في الزاوية طوال مدة الفيلم
         scenes,
     };
 }

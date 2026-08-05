@@ -429,6 +429,34 @@ export function createPostgresStore({ connectionString, starterCredits, poolFact
             });
         },
 
+        /**
+         * يعيد ترتيب لقطات مشروع حسب orderedIds (فهرسها = ترتيبها الجديد).
+         * يرفض (false) إن لم تطابق المجموعة تماماً لقطات المشروع الحالية.
+         */
+        async reorderProjectShots(projectId, orderedIds) {
+            return withClient(async c => {
+                const cur = await c.query('SELECT id FROM video_jobs WHERE project_id = $1', [projectId]);
+                const currentIds = new Set(cur.rows.map(r => r.id));
+                if (orderedIds.length !== currentIds.size || !orderedIds.every(id => currentIds.has(id))) {
+                    return false;
+                }
+                await c.query('BEGIN');
+                try {
+                    for (let i = 0; i < orderedIds.length; i++) {
+                        await c.query(
+                            'UPDATE video_jobs SET shot_index = $2, updated_at = $3 WHERE id = $1',
+                            [orderedIds[i], i, Date.now()]
+                        );
+                    }
+                    await c.query('COMMIT');
+                    return true;
+                } catch (e) {
+                    await c.query('ROLLBACK');
+                    throw e;
+                }
+            });
+        },
+
         async countJobsInProject(projectId) {
             return withClient(async c => {
                 const res = await c.query(

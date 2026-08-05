@@ -5,10 +5,13 @@
  * يبدأ دوماً ببيئة stage (المجانية، بعلامة مائية) — الانتقال لبيئة v1
  * (الإنتاج المدفوع) قرار صريح عبر SHOTSTACK_ENV=v1.
  *
- * ملاحظة تحقق: شكل الطلب/الرد أدناه وفق توثيق Shotstack العام
- * (POST {env}/render برأس x-api-key ثم GET {env}/render/{id})، ويجب
- * التحقق منه عملياً في أول تشغيل حقيقي على stage قبل أي اعتماد إنتاجي —
- * لا تُعتبر هذه الصيغة حقيقة مؤكدة حتى تمر أول عملية تصدير ناجحة.
+ * ✅ مؤكَّد عملياً: أول تجميع حقيقي (لقطات + انتقال + فلتر لوني + موسيقى)
+ * نجح على بيئة stage — صيغة الطلب/الرد أدناه (POST {env}/render برأس
+ * x-api-key ثم GET {env}/render/{id}) صحيحة لهذه العناصر.
+ *
+ * ⚠️ غير مؤكَّد بعد: طبقة الشعار (logoUrl أدناه) تفترض أن أول مسار في
+ * tracks يُرسم أعلى البقية (اصطلاح Shotstack الشائع) — لم تُختبر بلقطة
+ * شعار حقيقية بعد؛ تحقّق من ظهوره فوق الفيديو لا خلفه في أول استخدام.
  */
 
 const SCENE_TRANSITION = { in: 'fade', out: 'fade' };
@@ -60,6 +63,20 @@ export function specToShotstackTimeline(spec) {
         background: spec.background,
         tracks: [{ clips }],
     };
+    // شعار المستخدم — مسار منفصل يُضاف **أولاً** (أعلى البقية) طوال
+    // مدة الفيلم، في الزاوية العلوية اليمنى بحجم صغير غير مزعج.
+    if (spec.logoUrl) {
+        timeline.tracks.unshift({
+            clips: [{
+                asset: { type: 'image', src: spec.logoUrl },
+                start: 0,
+                length: spec.durationSec,
+                position: 'topRight',
+                scale: 0.15,
+                offset: { x: -0.03, y: 0.03 },
+            }],
+        });
+    }
     // موسيقى تصويرية (التجميع) — تتلاشى مع النهاية
     if (spec.soundtrackUrl) {
         timeline.soundtrack = { src: spec.soundtrackUrl, effect: 'fadeOut' };

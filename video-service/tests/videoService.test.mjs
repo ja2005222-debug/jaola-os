@@ -1535,6 +1535,129 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             })).status, 404);
         });
 
+        test('شعار المستخدم: مسار مركّب علوي طوال الفيلم، ورابط فاسد يُرفض قبل أي خصم', () => {
+            const spec = buildFilmSpec({
+                shots: [{ durationSec: 5, videoUrl: 'https://v.test/a.mp4' }],
+                logoUrl: 'https://logo.test/x.png',
+            });
+            assert.equal(spec.logoUrl, 'https://logo.test/x.png');
+
+            const timeline = specToShotstackTimeline(spec);
+            // مسار الشعار أولاً (أعلى البقية) ويمتد طوال مدة الفيلم كاملة
+            assert.equal(timeline.tracks.length, 2);
+            const logoClip = timeline.tracks[0].clips[0];
+            assert.equal(logoClip.asset.type, 'image');
+            assert.equal(logoClip.asset.src, 'https://logo.test/x.png');
+            assert.equal(logoClip.length, spec.durationSec);
+            assert.equal(logoClip.position, 'topRight');
+
+            // بلا شعار: مسار واحد فقط (لا تغيير عن السلوك القديم)
+            const noLogo = buildFilmSpec({ shots: [{ durationSec: 5, videoUrl: 'https://v.test/a.mp4' }] });
+            assert.equal(specToShotstackTimeline(noLogo).tracks.length, 1);
+        });
+
+        test('التجميع: شعار برابط فاسد يُرفض بـ400 قبل الخصم، وشعار صالح يصل المخطط', async () => {
+            // تطبيق مستقل: /assemble يشارك محدود renderLimit مع /renders،
+            // وقد استُهلك حصة الساعة عبر عشرات النداءات في بقية هذا الملف —
+            // تطبيق جديد يملك عدّاده الخاص فلا يتأثر بذلك.
+            const app = createApp({ store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const token = makeToken('logo-user');
+                await callAt(url, '/api/video/credits', { token });
+                const pid = (await callAt(url, '/api/video/projects', {
+                    method: 'POST', token, body: { title: 'فيلم بشعار' },
+                })).data.project.id;
+                const j = await createJob(store, {
+                    username: 'logo-user', templateId: 'ai_clip', values: { prompt: 'x' },
+                    spec: { kind: 'ai_prompt', durationSec: 5, prompt: 'x' },
+                    costCredits: 1, projectId: pid, shotIndex: 0,
+                });
+                await transitionJob(store, j.id, 'rendering', {});
+                await transitionJob(store, j.id, 'done', { videoUrl: 'https://v.test/0.mp4' });
+
+                const before = (await callAt(url, '/api/video/credits', { token })).data.credits;
+                const badLogo = await callAt(url, `/api/video/projects/${pid}/assemble`, {
+                    method: 'POST', token, body: { logoUrl: 'file:///etc/passwd' },
+                });
+                assert.equal(badLogo.status, 400);
+                assert.equal((await callAt(url, '/api/video/credits', { token })).data.credits, before); // لا خصم
+
+                const ssrfLogo = await callAt(url, `/api/video/projects/${pid}/assemble`, {
+                    method: 'POST', token, body: { logoUrl: 'http://127.0.0.1/logo.png' },
+                });
+                assert.equal(ssrfLogo.status, 400);
+
+                const ok = await callAt(url, `/api/video/projects/${pid}/assemble`, {
+                    method: 'POST', token, body: { logoUrl: 'https://logo.test/mine.png' },
+                });
+                assert.equal(ok.status, 200);
+                const film = await getJob(store, ok.data.job.id);
+                assert.equal(film.spec.logoUrl, 'https://logo.test/mine.png');
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
+        test('إعادة ترتيب اللقطات (سحب وإفلات): ترتيب صحيح يُطبَّق، والجزئي/الأجنبي يُرفض', async () => {
+            // تطبيق مستقل لنفس سبب الاختبار السابق (حصة renderLimit خاصة).
+            const app = createApp({ store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const token = makeToken('reorderer');
+                await callAt(url, '/api/video/credits', { token });
+                const pid = (await callAt(url, '/api/video/projects', {
+                    method: 'POST', token, body: { title: 'إعادة الترتيب' },
+                })).data.project.id;
+
+                const ids = [];
+                for (const n of [0, 1, 2]) {
+                    const r = await callAt(url, '/api/video/renders', {
+                        method: 'POST', token,
+                        body: { templateId: 'promo_announcement', values: { headline: `${n}`, cta: 'ب' }, projectId: pid },
+                    });
+                    ids.push(r.data.job.id);
+                }
+                // الترتيب الأصلي [0,1,2] — نعكسه
+                const reversed = [...ids].reverse();
+                const ok = await callAt(url, `/api/video/projects/${pid}/reorder`, {
+                    method: 'PATCH', token, body: { order: reversed },
+                });
+                assert.equal(ok.status, 200);
+                const afterReorder = await callAt(url, `/api/video/projects/${pid}`, { token });
+                assert.deepEqual(afterReorder.data.shots.map(x => x.id), reversed);
+
+                // ترتيب ناقص لقطة → 400 بلا أي تغيير
+                const partial = await callAt(url, `/api/video/projects/${pid}/reorder`, {
+                    method: 'PATCH', token, body: { order: ids.slice(0, 2) },
+                });
+                assert.equal(partial.status, 400);
+
+                // معرّف غريب مكان معرّف حقيقي → 400
+                const foreignId = await callAt(url, `/api/video/projects/${pid}/reorder`, {
+                    method: 'PATCH', token, body: { order: [ids[0], ids[1], 'لا-وجود'] },
+                });
+                assert.equal(foreignId.status, 400);
+
+                // ترتيب فارغ / بلا مصفوفة → 400
+                assert.equal((await callAt(url, `/api/video/projects/${pid}/reorder`, {
+                    method: 'PATCH', token, body: { order: [] },
+                })).status, 400);
+                assert.equal((await callAt(url, `/api/video/projects/${pid}/reorder`, {
+                    method: 'PATCH', token, body: {},
+                })).status, 400);
+
+                // مشروع مستخدم آخر → 404
+                assert.equal((await callAt(url, `/api/video/projects/${pid}/reorder`, {
+                    method: 'PATCH', token: makeToken('not-reorderer'), body: { order: reversed },
+                })).status, 404);
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
         test('Shotstack يرفض مخطط توليد لا يخصه', async () => {
             const { createShotstackProvider } = await import('../src/providers/shotstackProvider.js');
             const p = createShotstackProvider({ apiKey: 'k' });

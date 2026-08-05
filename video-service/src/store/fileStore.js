@@ -231,6 +231,27 @@ export function createFileStore({ dataDir, starterCredits }) {
                 .map(j => ({ ...j }));
         },
 
+        /**
+         * يعيد ترتيب لقطات مشروع حسب orderedIds (فهرسها = ترتيبها الجديد).
+         * يرفض (false) إن لم تطابق المجموعة تماماً لقطات المشروع الحالية —
+         * لا نقبل ترتيباً جزئياً يُسقط لقطة أو يُدخل لقطة غريبة بصمت.
+         */
+        async reorderProjectShots(projectId, orderedIds) {
+            const jobs = readJobs();
+            const current = jobs.filter(j => j.projectId === projectId);
+            const currentIds = new Set(current.map(j => j.id));
+            if (orderedIds.length !== current.length || !orderedIds.every(id => currentIds.has(id))) {
+                return false;
+            }
+            const indexOf = new Map(orderedIds.map((id, i) => [id, i]));
+            for (const job of current) {
+                job.shotIndex = indexOf.get(job.id);
+                job.updatedAt = Date.now();
+            }
+            writeJobs(jobs);
+            return true;
+        },
+
         async countJobsInProject(projectId) {
             return readJobs().filter(j => j.projectId === projectId).length;
         },
