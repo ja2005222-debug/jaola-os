@@ -21,9 +21,11 @@ const RATIO_RE = /^\d+:\d+$/;
 // (image-to-video) — أساس "الشخصية الثابتة": نفس الصورة المرجعية إطاراً
 // أولَ لعدة لقطات تبقي البطل واحداً عبر المشاهد.
 export const BUILTIN_AI_MODELS = Object.freeze([
+    // 📌 الأسماء المعروضة مستويات جودة لا أسماء مزودين — قرار منتج:
+    // المستخدم يشتري "قياسي/سينمائي" لا "نموذج X" الذي قد نبدله غداً.
     {
         id: 'veo3_fast',
-        nameAr: 'Veo 3 السريع',
+        nameAr: 'قياسي ⚡',
         descriptionAr: 'توازن ممتاز بين الجودة والسرعة والتكلفة — الخيار الافتراضي لمعظم اللقطات.',
         falPath: 'fal-ai/veo3/fast',
         costCredits: 5,
@@ -32,8 +34,8 @@ export const BUILTIN_AI_MODELS = Object.freeze([
     },
     {
         id: 'veo3',
-        nameAr: 'Veo 3 الكامل',
-        descriptionAr: 'أعلى واقعية وتفاصيل — للقطات البطولية والنسخ النهائية.',
+        nameAr: 'سينمائي 👑',
+        descriptionAr: 'أعلى واقعية وتفاصيل مع صوت مدمج — للقطات البطولية والنسخ النهائية.',
         falPath: 'fal-ai/veo3',
         costCredits: 10,
         aspectRatios: ['16:9', '9:16'],
@@ -41,8 +43,8 @@ export const BUILTIN_AI_MODELS = Object.freeze([
     },
     {
         id: 'veo3_fast_i2v',
-        nameAr: 'Veo 3 السريع — من صورة',
-        descriptionAr: 'يحرّك صورتك المرجعية كإطار أول — ثبات الشخصية عبر اللقطات.',
+        nameAr: 'قياسي ⚡ — من صورة',
+        descriptionAr: 'يحرّك صورتك المرجعية كإطار أول بجودة عالية — ثبات الشخصية عبر اللقطات.',
         falPath: 'fal-ai/veo3/fast/image-to-video',
         costCredits: 5,
         aspectRatios: ['16:9', '9:16'],
@@ -50,14 +52,21 @@ export const BUILTIN_AI_MODELS = Object.freeze([
     },
     {
         id: 'wan_i2v',
-        nameAr: 'Wan — من صورة (اقتصادي)',
-        descriptionAr: 'الأرخص لتحريك صورة مرجعية — ممتاز لمسودات اللقطات المتسلسلة.',
+        nameAr: 'اقتصادي 💡 — من صورة',
+        descriptionAr: 'الأرخص لتحريك صورة مرجعية — للمسودات والتجارب. الحركات الدقيقة تحتاج المستوى الأعلى.',
         falPath: 'fal-ai/wan-i2v',
         costCredits: 2,
         aspectRatios: ['16:9', '9:16'],
         input: 'image',
     },
 ]);
+
+/** الشكل العلني للكتالوج — بلا مسارات المزود (قرار منتج: مستويات لا أسماء). */
+export function publicAiModels(models) {
+    return models.map(({ id, nameAr, descriptionAr, costCredits, aspectRatios, input }) => ({
+        id, nameAr, descriptionAr, costCredits, aspectRatios, input,
+    }));
+}
 
 /** يتحقق من مدخل نموذج واحد — فشل صاخب عند الإقلاع خير من 422 غامض لاحقاً. */
 function validateModel(m, source) {

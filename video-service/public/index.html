@@ -142,6 +142,20 @@
         <div id="modelPicker" class="hidden"></div>
         <div id="charPicker" class="hidden"></div>
         <form id="renderForm"></form>
+        <div id="composerExtras" class="hidden">
+          <div id="presetBar" style="margin-top:12px"></div>
+          <label style="display:flex;align-items:center;gap:8px">
+            🎬 معاينة البرومت النهائي (ما سيصل للنموذج حرفياً)
+            <span style="display:flex;align-items:center;gap:4px;font-size:12px">
+              <input type="checkbox" id="manualEdit" style="width:auto" /> تحرير يدوي
+            </span>
+          </label>
+          <textarea id="promptPreview" dir="auto" rows="3" readonly
+            style="width:100%;padding:10px 12px;border-radius:8px;border:1px dashed var(--border);
+            background:rgba(56,189,248,.04);color:var(--muted);font-size:13px;font-family:inherit;
+            resize:vertical"></textarea>
+          <div id="promptHistory"></div>
+        </div>
         <button id="submitBtn" type="button">🚀 أنشئ الفيديو</button>
         <div class="msg" id="formMsg"></div>
       </div>
@@ -191,6 +205,7 @@
     let charMeta = { enabled: false, costCredits: 1, angles: [] };
     let activeCharacterId = null;
     let activeCharAngle = 'front';
+    let cinemaControls = [];
 
     const STATUS_AR = { queued: 'في الطابور', rendering: 'قيد التصدير', done: 'مكتمل', failed: 'فشل' };
 
@@ -214,6 +229,7 @@
       const data = await res.json();
       templates = data.templates;
       aiModels = data.aiModels || [];
+      cinemaControls = data.cinema || [];
       $('templates').innerHTML = templates.map(t => `
         <div class="card tpl" data-id="${t.id}">
           <h3>${t.nameAr}</h3>
@@ -320,6 +336,7 @@
       renderCharacterPicker();
       syncAspectRatios();
       syncCost();
+      updateComposerExtras();
       $('formWrap').classList.remove('hidden');
       $('formMsg').className = 'msg';
       $('formWrap').scrollIntoView({ behavior: 'smooth' });
@@ -331,6 +348,16 @@
       btn.disabled = true; msg.className = 'msg';
       const values = {};
       new FormData($('renderForm')).forEach((v, k) => { if (v) values[k] = v; });
+      // التحرير اليدوي: النص المعدَّل هو البرومت كاملاً — تُلغى معايير
+      // الإخراج كي لا تُركَّب فوقه مرة ثانية.
+      if (isAiTemplate(activeTemplate) && isManual()) {
+        const manual = $('promptPreview').value.trim().slice(0, 1000);
+        if (manual) {
+          values.prompt = manual;
+          for (const control of cinemaControls) delete values[control.key];
+          delete values.negativePrompt;
+        }
+      }
       try {
         const body = { templateId: activeTemplate.id, values };
         if (isAiTemplate(activeTemplate) && activeModelId) body.modelId = activeModelId;
@@ -352,8 +379,10 @@
             ? '✅ دخلت اللقطة الطابور وانضمت لمشروعك — تابعها في الستوري بورد أعلاه.'
             : '✅ دخلت المهمة الطابور — تابع حالتها في القائمة أدناه.';
           msg.className = 'msg ok';
+          if (values.prompt) { pushHistory(values.prompt); renderPromptHistory(); }
           $('renderForm').reset();
           loadCredits(); loadJobs(); refreshStoryboard();
+          updateComposerExtras();
         }
       } catch {
         msg.textContent = 'تعذر الاتصال بالخدمة.';
@@ -428,6 +457,116 @@
           }
         });
       });
+    }
+
+    // ─── منشئ المشهد: معاينة البرومت الحية + الوصفات + السجل ───────────
+
+    const isManual = () => $('manualEdit').checked;
+
+    // نفس تركيب الخادم حرفياً (الخرائط تصل من /templates) — ما تراه هو
+    // ما يصل للنموذج.
+    function composePreview() {
+      const form = $('renderForm');
+      const parts = [];
+      const char = characters.find(c => c.id === activeCharacterId);
+      if (char) parts.push(char.description);
+      parts.push((form.elements.prompt?.value || '').trim());
+      const fragments = [];
+      for (const control of cinemaControls) {
+        const chosen = form.elements[control.key]?.value;
+        if (chosen && control.map[chosen]) fragments.push(control.map[chosen]);
+      }
+      if (fragments.length) parts.push(fragments.join(', '));
+      const neg = (form.elements.negativePrompt?.value || '').trim();
+      if (neg) parts.push('Avoid: ' + neg);
+      return parts.filter(Boolean).join('. ');
+    }
+
+    function updateComposerExtras() {
+      const show = isAiTemplate(activeTemplate);
+      $('composerExtras').classList.toggle('hidden', !show);
+      if (!show) return;
+      if (!isManual()) $('promptPreview').value = composePreview();
+      renderPresets();
+      renderPromptHistory();
+    }
+
+    $('manualEdit').addEventListener('change', () => {
+      const ta = $('promptPreview');
+      ta.readOnly = !isManual();
+      ta.style.color = isManual() ? 'var(--text)' : 'var(--muted)';
+      ta.style.borderStyle = isManual() ? 'solid' : 'dashed';
+      if (!isManual()) ta.value = composePreview();
+    });
+
+    // 💾 وصفات جاهزة: تشكيلة الإخراج الحالية باسم — تُحفظ محلياً.
+    const readPresets = () => { try { return JSON.parse(localStorage.getItem('cinemaPresets')) || []; } catch { return []; } };
+
+    function renderPresets() {
+      const bar = $('presetBar');
+      const presets = readPresets();
+      bar.innerHTML = `<div class="chips">
+        ${presets.map((p, i) => `
+          <button class="chip" data-preset="${i}" title="تطبيق الوصفة">🎞️ ${escapeHtml(p.name)}</button>
+          <button class="chip" data-del-preset="${i}" title="حذف" style="padding:6px 8px">×</button>`).join('')}
+        <button class="chip" id="savePresetBtn">💾 احفظ الإخراج الحالي كوصفة</button>
+      </div>`;
+      bar.querySelectorAll('[data-preset]').forEach(el =>
+        el.addEventListener('click', () => {
+          const p = readPresets()[Number(el.dataset.preset)];
+          if (!p) return;
+          const form = $('renderForm');
+          for (const [k, v] of Object.entries(p.values)) {
+            if (form.elements[k]) form.elements[k].value = v;
+          }
+          updateComposerExtras();
+        }));
+      bar.querySelectorAll('[data-del-preset]').forEach(el =>
+        el.addEventListener('click', () => {
+          const presets2 = readPresets();
+          presets2.splice(Number(el.dataset.delPreset), 1);
+          localStorage.setItem('cinemaPresets', JSON.stringify(presets2));
+          renderPresets();
+        }));
+      $('savePresetBtn').addEventListener('click', () => {
+        const name = prompt('اسم الوصفة (مثال: افتتاحية ملحمية):');
+        if (!name || !name.trim()) return;
+        const form = $('renderForm');
+        const values = {};
+        for (const control of cinemaControls) {
+          const v = form.elements[control.key]?.value;
+          if (v) values[control.key] = v;
+        }
+        const presets2 = readPresets();
+        presets2.unshift({ name: name.trim().slice(0, 30), values });
+        localStorage.setItem('cinemaPresets', JSON.stringify(presets2.slice(0, 12)));
+        renderPresets();
+      });
+    }
+
+    // 🕘 سجل آخر 20 وصفاً ناجح الإرسال — إعادة استخدام بنقرة.
+    const readHistory = () => { try { return JSON.parse(localStorage.getItem('promptHistory')) || []; } catch { return []; } };
+
+    function pushHistory(text) {
+      if (!text) return;
+      const h = readHistory().filter(x => x !== text);
+      h.unshift(text);
+      localStorage.setItem('promptHistory', JSON.stringify(h.slice(0, 20)));
+    }
+
+    function renderPromptHistory() {
+      const box = $('promptHistory');
+      const h = readHistory();
+      if (!h.length) { box.innerHTML = ''; return; }
+      box.innerHTML = `<label>🕘 أوصاف سابقة</label><div class="chips">
+        ${h.slice(0, 8).map((t, i) => `<button class="chip" data-hist="${i}" title="${escapeHtml(t)}">${escapeHtml(t.slice(0, 40))}${t.length > 40 ? '…' : ''}</button>`).join('')}
+      </div>`;
+      box.querySelectorAll('[data-hist]').forEach(el =>
+        el.addEventListener('click', () => {
+          const form = $('renderForm');
+          if (form.elements.prompt) form.elements.prompt.value = readHistory()[Number(el.dataset.hist)] || '';
+          updateComposerExtras();
+        }));
     }
 
     // ─── بنك الشخصيات ──────────────────────────────────────────────────
@@ -534,7 +673,10 @@
             ${charMeta.angles.map(a => `<option value="${a.key}"${a.key === activeCharAngle ? ' selected' : ''}>زاوية ${a.labelAr}</option>`).join('')}
           </select>` : ''}
         </div>`;
-      $('charSelect').addEventListener('change', e => { activeCharacterId = e.target.value || null; });
+      $('charSelect').addEventListener('change', e => {
+        activeCharacterId = e.target.value || null;
+        if (!isManual()) $('promptPreview').value = composePreview();
+      });
       const angleSel = $('charAngle');
       if (angleSel) angleSel.addEventListener('change', e => { activeCharAngle = e.target.value; });
     }
@@ -679,6 +821,10 @@
 
     $('submitBtn').addEventListener('click', submitRender);
     $('charCreateBtn').addEventListener('click', createCharacter);
+    // معاينة حية مع كل ضغطة — ما لم يكن التحرير اليدوي فعّالاً.
+    $('renderForm').addEventListener('input', () => {
+      if (isAiTemplate(activeTemplate) && !isManual()) $('promptPreview').value = composePreview();
+    });
 
     (async function init() {
       if (!token()) { showGate(); return; }
