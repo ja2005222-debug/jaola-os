@@ -393,6 +393,7 @@
     }
 
     function tplName(id) {
+      if (id === 'film_assembly') return '🎬 فيلم مُجمَّع';
       const t = templates.find(x => x.id === id);
       return t ? t.nameAr : id;
     }
@@ -730,6 +731,9 @@
 
     async function refreshStoryboard() {
       if (!activeProjectId) return;
+      // لوحة التجميع مفتوحة = المستخدم يكتب — لا نمسح ما تحت يده.
+      const openPanel = document.getElementById('assemblyPanel');
+      if (openPanel && !openPanel.classList.contains('hidden')) return;
       const res = await api(`/api/video/projects/${activeProjectId}`);
       if (!res.ok) { selectProject(null); return; }
       const { project, shots } = await res.json();
@@ -741,7 +745,9 @@
           <span style="color:var(--muted);font-size:12px">${shots.length} لقطة</span>
           <button class="chip" id="renameProjBtn">✏️ إعادة تسمية</button>
           <button class="chip" id="deleteProjBtn">🗑️ حذف المشروع</button>
+          ${shots.some(s => s.status === 'done') ? '<button class="chip" id="assembleBtn" style="border-color:var(--accent);color:var(--accent)">🎬 جمّع الفيلم</button>' : ''}
         </div>
+        <div id="assemblyPanel" class="hidden" style="margin-bottom:10px"></div>
         ${shots.length === 0
           ? '<p class="note">لا لقطات بعد — اختر قالباً بالأسفل وأنشئ أول لقطة، ستنضم هنا تلقائياً.</p>'
           : `<div class="shots">${shots.map(shotCard).join('')}</div>`}`;
@@ -765,6 +771,64 @@
         activeProjectId = null;
         await loadProjects();
         selectProject(null);
+      });
+      const assembleBtn = $('assembleBtn');
+      if (assembleBtn) assembleBtn.addEventListener('click', () => openAssemblyPanel(project.id));
+    }
+
+    // 🎬 لوحة تجميع الفيلم: انتقال + موسيقى + عنوان ختامي → مهمة تركيب.
+    async function openAssemblyPanel(projectId) {
+      const panel = $('assemblyPanel');
+      if (!panel.classList.contains('hidden')) { panel.classList.add('hidden'); return; }
+      const res = await api(`/api/video/projects/${projectId}/assembly-options`);
+      if (!res.ok) return;
+      const opts = await res.json();
+      panel.classList.remove('hidden');
+      panel.innerHTML = `
+        <div class="card" style="margin-bottom:0">
+          <strong style="font-size:14px">🎬 تجميع ${opts.readyShots} لقطة في فيلم واحد</strong>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+            <select id="asmTransition" style="${SELECT_STYLE};max-width:160px">
+              ${opts.transitions.map(t => `<option value="${t}">${t}</option>`).join('')}
+            </select>
+            ${opts.music.length ? `<select id="asmMusic" style="${SELECT_STYLE};max-width:200px">
+              <option value="">— بلا موسيقى —</option>
+              ${opts.music.map(m => `<option value="${m.id}">🎵 ${escapeHtml(m.nameAr)}</option>`).join('')}
+            </select>` : ''}
+            <input type="text" id="asmTitle" maxlength="60" placeholder="عنوان ختامي (اختياري)"
+              style="max-width:220px" />
+          </div>
+          <button id="asmGo" type="button">🚀 جمّع الفيلم (🎟️ ${opts.costCredits})</button>
+          <div class="msg" id="asmMsg"></div>
+        </div>`;
+      $('asmGo').addEventListener('click', async () => {
+        const msg = $('asmMsg'); msg.className = 'msg';
+        $('asmGo').disabled = true;
+        try {
+          const body = {
+            transition: $('asmTransition').value,
+            endTitle: $('asmTitle').value.trim(),
+          };
+          const musicSel = $('asmMusic');
+          if (musicSel && musicSel.value) body.musicId = musicSel.value;
+          const r = await api(`/api/video/projects/${projectId}/assemble`, {
+            method: 'POST', body: JSON.stringify(body),
+          });
+          const data = await r.json();
+          if (!r.ok) {
+            msg.textContent = data.error || 'تعذّر التجميع.';
+            msg.className = 'msg err';
+          } else {
+            msg.textContent = '✅ دخل الفيلم طابور التركيب — تابعه في قائمة فيديوهاتك بالأسفل.';
+            msg.className = 'msg ok';
+            loadCredits(); loadJobs();
+          }
+        } catch {
+          $('asmMsg').textContent = 'تعذر الاتصال بالخدمة.';
+          $('asmMsg').className = 'msg err';
+        } finally {
+          $('asmGo').disabled = false;
+        }
       });
     }
 

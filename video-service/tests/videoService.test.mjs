@@ -23,6 +23,7 @@ import { readAiModels, getAiModel, defaultAiModel } from '../src/models.js';
 import { composeCinematicPrompt } from '../src/cinema.js';
 import { createFalImageProvider, extractImageUrl } from '../src/providers/falImageProvider.js';
 import { CHARACTER_COST_CREDITS, characterImagePrompt, validateCharacterInput } from '../src/characters.js';
+import { ASSEMBLY_COST_CREDITS, buildFilmSpec, readMusicLibrary } from '../src/assembly.js';
 import { specToShotstackTimeline } from '../src/providers/shotstackProvider.js';
 import { runEngineTick, JOB_TIMEOUT_MS } from '../src/engine.js';
 import { getBalance, grantCredits, deductCredits, refundCredits, STARTER_CREDITS } from '../src/credits.js';
@@ -1417,6 +1418,101 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             await call(`/api/video/projects/${pid}`, { method: 'DELETE', token });
             const jobs = await call('/api/video/renders', { token });
             assert.equal(jobs.data.jobs.length, 2);
+        });
+
+        // ─── تجميع الفيلم ──────────────────────────────────────────────
+
+        test('buildFilmSpec: مشاهد متتابعة بأزمنة صحيحة + لوحة ختامية + رفض الفراغ', () => {
+            const spec = buildFilmSpec({
+                shots: [
+                    { durationSec: 5, videoUrl: 'https://v.test/a.mp4' },
+                    { durationSec: 8, videoUrl: 'https://v.test/b.mp4' },
+                ],
+                transition: 'fade', musicUrl: 'https://m.test/epic.mp3', endTitle: 'JAOLA',
+            });
+            assert.equal(spec.kind, 'timeline');
+            assert.equal(spec.assembly, true);
+            assert.equal(spec.scenes.length, 3); // لقطتان + ختام
+            assert.deepEqual(spec.scenes.map(s => s.startSec), [0, 5, 13]);
+            assert.equal(spec.durationSec, 16);
+            assert.equal(spec.scenes[0].layers[0].kind, 'video');
+            assert.equal(spec.scenes[2].layers[0].text, 'JAOLA');
+            assert.throws(() => buildFilmSpec({ shots: [] }));
+
+            // ترجمة Shotstack: مقاطع فيديو + موسيقى + انتقال المخطط
+            const timeline = specToShotstackTimeline(spec);
+            const clips = timeline.tracks[0].clips;
+            assert.equal(clips[0].asset.type, 'video');
+            assert.equal(clips[0].asset.src, 'https://v.test/a.mp4');
+            assert.deepEqual(clips[0].transition, { in: 'fade', out: 'fade' });
+            assert.equal(timeline.soundtrack.src, 'https://m.test/epic.mp3');
+
+            // مكتبة الموسيقى: فارغة بلا env، وفاسدة تفشل صاخباً
+            assert.deepEqual(readMusicLibrary({}), []);
+            assert.equal(readMusicLibrary({
+                MUSIC_LIBRARY_JSON: JSON.stringify([{ id: 'epic', nameAr: 'ملحمية', url: 'https://m.test/e.mp3' }]),
+            })[0].id, 'epic');
+            assert.throws(() => readMusicLibrary({ MUSIC_LIBRARY_JSON: 'ليس json' }));
+            assert.throws(() => readMusicLibrary({ MUSIC_LIBRARY_JSON: JSON.stringify([{ id: 'x' }]) }));
+        });
+
+        test('تجميع الفيلم عبر المسار: لقطات جاهزة → مهمة تركيب بخصم وتحقق', async () => {
+            const token = makeToken('editor');
+            await call('/api/video/credits', { token });
+            const pid = (await call('/api/video/projects', {
+                method: 'POST', token, body: { title: 'فيلم للتجميع' },
+            })).data.project.id;
+
+            // لا لقطات جاهزة → 400
+            const empty = await call(`/api/video/projects/${pid}/assemble`, {
+                method: 'POST', token, body: {},
+            });
+            assert.equal(empty.status, 400);
+
+            // لقطتان مكتملتان بروابط (نبنيهما مباشرة في المخزن)
+            for (const n of [0, 1]) {
+                const j = await createJob(store, {
+                    username: 'editor', templateId: 'ai_clip',
+                    values: { prompt: `لقطة ${n}` },
+                    spec: { kind: 'ai_prompt', durationSec: 5, prompt: 'x' },
+                    costCredits: 1, projectId: pid, shotIndex: n,
+                });
+                await transitionJob(store, j.id, 'rendering', {});
+                await transitionJob(store, j.id, 'done', { videoUrl: `https://v.test/${n}.mp4` });
+            }
+
+            const opts = await call(`/api/video/projects/${pid}/assembly-options`, { token });
+            assert.equal(opts.status, 200);
+            assert.equal(opts.data.readyShots, 2);
+            assert.ok(opts.data.transitions.includes('تلاشٍ'));
+
+            // انتقال مجهول → 400
+            assert.equal((await call(`/api/video/projects/${pid}/assemble`, {
+                method: 'POST', token, body: { transition: 'دوران' },
+            })).status, 400);
+
+            const before = (await call('/api/video/credits', { token })).data.credits;
+            const asm = await call(`/api/video/projects/${pid}/assemble`, {
+                method: 'POST', token, body: { transition: 'تلاشٍ', endTitle: 'النهاية' },
+            });
+            assert.equal(asm.status, 200);
+            assert.equal(asm.data.job.costCredits, ASSEMBLY_COST_CREDITS);
+            assert.equal(
+                (await call('/api/video/credits', { token })).data.credits,
+                before - ASSEMBLY_COST_CREDITS
+            );
+
+            const film = await getJob(store, asm.data.job.id);
+            assert.equal(film.templateId, 'film_assembly');
+            assert.equal(film.projectId, pid);
+            assert.equal(film.spec.assembly, true);
+            assert.equal(film.spec.scenes.length, 3); // لقطتان + ختام
+            assert.equal(film.spec.transition, 'fade');
+
+            // مشروع مستخدم آخر → 404
+            assert.equal((await call(`/api/video/projects/${pid}/assemble`, {
+                method: 'POST', token: makeToken('not-editor'), body: {},
+            })).status, 404);
         });
 
         test('Shotstack يرفض مخطط توليد لا يخصه', async () => {
