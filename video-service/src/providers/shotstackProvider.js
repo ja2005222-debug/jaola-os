@@ -112,17 +112,21 @@ export function specToShotstackTimeline(spec) {
             }],
         });
     }
-    // 📝 كابشن محروق — مسار نصي مستقل أسفل الشاشة، مقطع واحد لكل لقطة
-    // تحمل كابشن خاصاً بها (⚠️ غير مؤكَّد عملياً بعد من هذه الخدمة تحديداً:
-    // موضع النص أسفل الشاشة مع مقاسات 9:16/1:1 — تحقّق أنه لا يتقاطع مع
-    // أزرار/واجهة المنصة المستضيفة في أول استخدام حقيقي).
+    // 📝 كابشن محروق — مسار نصي مستقل، مقطع (أو عدة مقاطع كلمة-كلمة في
+    // النمط المتحرك — راجع assembly.js) لكل لقطة تحمل كابشن خاصاً بها.
+    // النمط والموضع قابلان للاختيار (spec.captionStyle/captionPosition)؛
+    // الافتراضي 'minimal'/'bottom' هو المسار المؤكَّد عملياً وحده من هذه
+    // الخدمة تحديداً — بقية الأنماط (راجع CAPTION_STYLES) من كتالوج
+    // Shotstack الموثَّق تاريخياً لكن غير مجرَّبة من هنا. ⚠️ كذلك الموضع
+    // مع مقاسات 9:16/1:1 عموماً — تحقّق أنه لا يتقاطع مع واجهة المنصة
+    // المستضيفة في أول استخدام حقيقي.
     if (Array.isArray(spec.captionCues) && spec.captionCues.length) {
         timeline.tracks.push({
             clips: spec.captionCues.map(c => ({
-                asset: { type: 'title', text: c.text, style: 'minimal', size: 'medium' },
+                asset: { type: 'title', text: c.text, style: spec.captionStyle || 'minimal', size: 'medium' },
                 start: c.startSec,
                 length: c.lengthSec,
-                position: 'bottom',
+                position: spec.captionPosition || 'bottom',
                 offset: { y: 0.08 },
             })),
         });

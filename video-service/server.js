@@ -28,6 +28,7 @@ import { CINEMA_CONTROLS, cinemaFieldOptions } from './src/cinema.js';
 import {
     ASSEMBLY_COST_CREDITS, NARRATION_COST_CREDITS, TRANSITIONS, COLOR_FILTERS, OUTPUT_ASPECTS,
     OUTPUT_RESOLUTIONS, DEFAULT_RESOLUTION, DEFAULT_WATERMARK_TEXT,
+    CAPTION_STYLES, CAPTION_POSITIONS, DEFAULT_CAPTION_STYLE, DEFAULT_CAPTION_POSITION,
     readMusicLibrary, readSfxLibrary, buildFilmSpec,
 } from './src/assembly.js';
 import { buildImageProvider } from './src/providers/falImageProvider.js';
@@ -340,6 +341,10 @@ export function createApp({
         res.json({
             transitions: Object.keys(TRANSITIONS),
             filters: Object.keys(COLOR_FILTERS),
+            captionStyles: Object.keys(CAPTION_STYLES),
+            captionPositions: Object.keys(CAPTION_POSITIONS),
+            defaultCaptionStyle: DEFAULT_CAPTION_STYLE,
+            defaultCaptionPosition: DEFAULT_CAPTION_POSITION,
             aspects: OUTPUT_ASPECTS,
             resolutions: OUTPUT_RESOLUTIONS,
             music: musicLibrary.map(({ id, nameAr }) => ({ id, nameAr })),
@@ -357,7 +362,10 @@ export function createApp({
         const project = await ownedProject(req);
         if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
 
-        const { transition, musicId, endTitle, aspect, logoUrl, sfxId, narrationText, resolution, burnCaptions } = req.body || {};
+        const {
+            transition, musicId, endTitle, aspect, logoUrl, sfxId, narrationText, resolution, burnCaptions,
+            captionStyle, captionPosition, captionAnimated,
+        } = req.body || {};
         // فلتر لوني: طلب صريح (حتى '' = بلا فلتر) يتفوق دوماً؛ غيابه فقط
         // (undefined) يقع على فلتر المشروع الافتراضي (أداة التلوين السينمائي).
         const filter = req.body?.filter !== undefined ? req.body.filter : (project.defaultFilter || null);
@@ -366,6 +374,12 @@ export function createApp({
         }
         if (filter != null && !(filter in COLOR_FILTERS)) {
             return res.status(400).json({ error: `فلتر لوني غير معروف (المتاح: ${Object.keys(COLOR_FILTERS).join('، ')}).` });
+        }
+        if (captionStyle != null && !(captionStyle in CAPTION_STYLES)) {
+            return res.status(400).json({ error: `نمط كابشن غير معروف (المتاح: ${Object.keys(CAPTION_STYLES).join('، ')}).` });
+        }
+        if (captionPosition != null && !(captionPosition in CAPTION_POSITIONS)) {
+            return res.status(400).json({ error: `موضع كابشن غير معروف (المتاح: ${Object.keys(CAPTION_POSITIONS).join('، ')}).` });
         }
         if (aspect != null && !OUTPUT_ASPECTS.includes(aspect)) {
             return res.status(400).json({ error: `مقاس غير معروف (المتاح: ${OUTPUT_ASPECTS.join('، ')}).` });
@@ -470,6 +484,9 @@ export function createApp({
             narrationUrl,
             resolution: resolution || DEFAULT_RESOLUTION,
             burnCaptions: !!burnCaptions,
+            captionStyle: captionStyle ? CAPTION_STYLES[captionStyle] : null,
+            captionPosition: captionPosition ? CAPTION_POSITIONS[captionPosition] : null,
+            captionAnimated: !!captionAnimated,
             watermarkText: appliedWatermark,
         });
 
@@ -480,6 +497,8 @@ export function createApp({
                 filter: filter || '', aspect: aspect || '16:9', logoUrl: cleanLogoUrl || '',
                 sfxId: sfxId || '', narrationText: narration || '', resolution: resolution || DEFAULT_RESOLUTION,
                 watermarked: !!appliedWatermark, burnCaptions: !!burnCaptions,
+                captionStyle: captionStyle || '', captionPosition: captionPosition || '',
+                captionAnimated: !!captionAnimated,
             },
             spec, costCredits: ASSEMBLY_COST_CREDITS,
             projectId: project.id, shotIndex: null,
