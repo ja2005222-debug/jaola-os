@@ -22,6 +22,7 @@ import { createFalProvider, extractVideoUrl, specToFalInput } from '../src/provi
 import { readAiModels, getAiModel, defaultAiModel } from '../src/models.js';
 import { composeCinematicPrompt } from '../src/cinema.js';
 import { createFalImageProvider, extractImageUrl } from '../src/providers/falImageProvider.js';
+import { createScriptProvider } from '../src/scriptProvider.js';
 import { createFalTtsProvider, extractAudioUrl, buildTtsProvider } from '../src/providers/falTtsProvider.js';
 import { CHARACTER_COST_CREDITS, characterImagePrompt, validateCharacterInput } from '../src/characters.js';
 import {
@@ -800,6 +801,25 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(validateValues(t, { prompt: 'x' }).values.aspectRatio, '16:9');
         });
 
+        test('📝 حقل الكابشن (ai_clip/ai_image_clip): اختياري، محدود الطول، ولا يدخل برومت التوليد إطلاقاً', () => {
+            for (const id of ['ai_clip', 'ai_image_clip']) {
+                const t = getTemplate(id);
+                const field = t.fields.find(f => f.key === 'caption');
+                assert.ok(field, `القالب ${id} يفتقد حقل caption`);
+                assert.equal(field.required, false);
+
+                const v = validateValues(t, { prompt: 'x', caption: 'كابشن قصير' });
+                assert.equal(v.error, undefined);
+                assert.equal(v.values.caption, 'كابشن قصير');
+                // compileSpec لا يقرأ caption إطلاقاً — لا يظهر في الوصف المرسَل للنموذج
+                const spec = compileSpec(t, v.values);
+                assert.doesNotMatch(spec.prompt, /كابشن قصير/);
+
+                // أطول من الحد المسموح (80) → رفض
+                assert.ok(validateValues(t, { prompt: 'x', caption: 'ط'.repeat(81) }).error);
+            }
+        });
+
         test('الموجّه يرسل كل نوع لمزوّده ويُعيد الاستطلاع للمزوّد نفسه', async () => {
             const seen = { timeline: [], ai: [] };
             const mk = (bucket) => ({
@@ -1377,6 +1397,71 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.ok(validateCharacterInput({ name: 'س', description: 'قصير' }).error);
         });
 
+        test('✍️ مزوّد تخطيط السيناريو: يفسّر JSON (حتى داخل سياج ```)، ويرفض رداً غير مصفوفة أو فارغاً', async () => {
+            const okScenes = [{ prompt: 'مشهد ١', caption: 'ك١', shotSize: 'واسعة' }];
+            const fenced = createScriptProvider({
+                apiKey: 'K',
+                fetchImpl: async () => ({
+                    ok: true,
+                    json: async () => ({ choices: [{ message: { content: '```json\n' + JSON.stringify(okScenes) + '\n```' } }] }),
+                }),
+            });
+            const result = await fenced.planScenes({
+                idea: 'فكرة', sceneCount: 1,
+                shotSizeOptions: ['واسعة'], cameraMoveOptions: [], lightingOptions: [], moodOptions: [], styleOptions: [],
+            });
+            assert.deepEqual(result, okScenes);
+
+            // بلا سياج أيضاً — JSON خام مباشرة
+            const raw = createScriptProvider({
+                apiKey: 'K',
+                fetchImpl: async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(okScenes) } }] }) }),
+            });
+            assert.deepEqual(
+                await raw.planScenes({ idea: 'x', sceneCount: 1, shotSizeOptions: [], cameraMoveOptions: [], lightingOptions: [], moodOptions: [], styleOptions: [] }),
+                okScenes
+            );
+
+            // رد ليس مصفوفة → خطأ عربي واضح
+            const notArray = createScriptProvider({
+                apiKey: 'K',
+                fetchImpl: async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: '{"a":1}' } }] }) }),
+            });
+            await assert.rejects(
+                () => notArray.planScenes({ idea: 'x', sceneCount: 1, shotSizeOptions: [], cameraMoveOptions: [], lightingOptions: [], moodOptions: [], styleOptions: [] }),
+                /مصفوفة/
+            );
+
+            // رد فارغ (بلا choices) → خطأ لا انهيار صامت
+            const empty = createScriptProvider({ apiKey: 'K', fetchImpl: async () => ({ ok: true, json: async () => ({}) }) });
+            await assert.rejects(
+                () => empty.planScenes({ idea: 'x', sceneCount: 1, shotSizeOptions: [], cameraMoveOptions: [], lightingOptions: [], moodOptions: [], styleOptions: [] }),
+                /فارغاً/
+            );
+
+            // فشل HTTP → تفصيل الرد يظهر لا يُبتلع
+            const httpFail = createScriptProvider({
+                apiKey: 'K',
+                fetchImpl: async () => ({ ok: false, status: 503, text: async () => 'service unavailable' }),
+            });
+            await assert.rejects(
+                () => httpFail.planScenes({ idea: 'x', sceneCount: 1, shotSizeOptions: [], cameraMoveOptions: [], lightingOptions: [], moodOptions: [], styleOptions: [] }),
+                /503/
+            );
+
+            // JSON غير صالح داخل الرد → خطأ عربي لا انهيار
+            const badJson = createScriptProvider({
+                apiKey: 'K',
+                fetchImpl: async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: 'ليس JSON' } }] }) }),
+            });
+            await assert.rejects(
+                () => badJson.planScenes({ idea: 'x', sceneCount: 1, shotSizeOptions: [], cameraMoveOptions: [], lightingOptions: [], moodOptions: [], styleOptions: [] }),
+                /تفسير/
+            );
+
+            assert.throws(() => createScriptProvider({ apiKey: '' }), /مفتاح/);
+        });
+
         test('مزوّد TTS عبر fal: نفس آلية الطابور، ومهلة صريحة، واستخراج رابط الصوت', async () => {
             const calls = [];
             const bodies = [];
@@ -1660,6 +1745,115 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             }
         });
 
+        test('✍️ تخطيط سيناريو من فكرة واحدة: 503 بلا مزوّد، ثم تنظيف صارم لمخرجات المزوّد', async () => {
+            // بلا مزوّد (التطبيق المشترك) → غياب الميزة صريح لا رابط مكسور
+            const token = makeToken('planner');
+            const pid = (await call('/api/video/projects', {
+                method: 'POST', token, body: { title: 'مشروع مخطَّط' },
+            })).data.project.id;
+            const disabled = await call(`/api/video/projects/${pid}/plan-shots`, {
+                method: 'POST', token, body: { idea: 'فكرة فيلم قصير عن قطة' },
+            });
+            assert.equal(disabled.status, 503);
+
+            // مصدر الحقيقة: scriptPlanningEnabled في قائمة المشاريع يعكس الحالة
+            assert.equal((await call('/api/video/projects', { token })).data.scriptPlanningEnabled, false);
+
+            // تطبيق مستقل بمزوّد وهمي — يُرجع مشهداً صالحاً وآخر بقيم فاسدة
+            // عمداً: خيار cinema غير معروف، ونص يحمل كلمة محظورة.
+            const fakeScript = createScriptProvider({
+                apiKey: 'K',
+                fetchImpl: async () => ({
+                    ok: true,
+                    json: async () => ({
+                        choices: [{
+                            message: {
+                                content: JSON.stringify([
+                                    { prompt: 'قطة تمشي في الحديقة', caption: 'قطة!', shotSize: 'واسعة', cameraMove: 'ثابتة', lighting: 'نهارية ساطعة', mood: 'هادئ تأملي', style: 'وثائقي' },
+                                    { prompt: 'مشهد فيه كلمةمحظورة هنا', caption: '', shotSize: 'غير معروف' },
+                                    { prompt: '', caption: 'فارغ بلا برومت' },
+                                ]),
+                            },
+                        }],
+                    }),
+                }),
+            });
+            const app = createApp({
+                store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider,
+                scriptProvider: fakeScript, blocklist: ['كلمةمحظورة'],
+            });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                assert.equal((await callAt(url, '/api/video/projects', { token })).data.scriptPlanningEnabled, true);
+
+                // فكرة قصيرة جداً/طويلة جداً → 400
+                assert.equal((await callAt(url, `/api/video/projects/${pid}/plan-shots`, {
+                    method: 'POST', token, body: { idea: 'قص' },
+                })).status, 400);
+                assert.equal((await callAt(url, `/api/video/projects/${pid}/plan-shots`, {
+                    method: 'POST', token, body: { idea: 'ط'.repeat(501) },
+                })).status, 400);
+                // فكرة تحمل محتوى محظوراً → 400 قبل أي نداء للمزوّد
+                assert.equal((await callAt(url, `/api/video/projects/${pid}/plan-shots`, {
+                    method: 'POST', token, body: { idea: 'قصة فيها كلمةمحظورة هنا وضحة' },
+                })).status, 400);
+                // مشروع لغير المالك → 404
+                assert.equal((await callAt(url, `/api/video/projects/${pid}/plan-shots`, {
+                    method: 'POST', token: makeToken('not-planner'), body: { idea: 'فكرة صالحة تماماً' },
+                })).status, 404);
+
+                const planned = await callAt(url, `/api/video/projects/${pid}/plan-shots`, {
+                    method: 'POST', token, body: { idea: 'فكرة صالحة تماماً لفيلم قصير', sceneCount: 2 },
+                });
+                assert.equal(planned.status, 200);
+                // مشهدان فقط نجيا: الثالث بلا برومت أُسقط، الثاني (كلمة محظورة
+                // في البرومت) أُسقط أيضاً بالكامل لا نصف بيانات مبتورة.
+                assert.equal(planned.data.scenes.length, 1);
+                const scene = planned.data.scenes[0];
+                assert.equal(scene.prompt, 'قطة تمشي في الحديقة');
+                assert.equal(scene.caption, 'قطة!');
+                assert.equal(scene.shotSize, 'واسعة');
+                assert.equal(scene.style, 'وثائقي');
+
+                // sceneCount يُقيَّد ضمن الحدود (لا يمرَّر خاماً للمزوّد)
+                const clamped = await callAt(url, `/api/video/projects/${pid}/plan-shots`, {
+                    method: 'POST', token, body: { idea: 'فكرة صالحة تماماً', sceneCount: 999 },
+                });
+                assert.equal(clamped.status, 200); // لا يفشل — المزوّد الوهمي يتجاهل sceneCount أصلاً
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
+        test('✍️ فشل مزوّد التخطيط أو رد بلا مشاهد صالحة → خطأ واضح لا نجاح وهمي', async () => {
+            const token = makeToken('planner2');
+            const pid = (await call('/api/video/projects', {
+                method: 'POST', token, body: { title: 'مشروع فاشل' },
+            })).data.project.id;
+
+            const failingScript = { name: 'fail', async planScenes() { throw new Error('محاكاة: تعطّل مزوّد التخطيط.'); } };
+            const emptyScript = { name: 'empty', async planScenes() { return [{ prompt: '' }]; } };
+
+            for (const [provider2, matcher] of [[failingScript, /تعطّل/], [emptyScript, /مشهد صالح/]]) {
+                const app = createApp({
+                    store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider,
+                    scriptProvider: provider2,
+                });
+                const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+                const url = `http://127.0.0.1:${s.address().port}`;
+                try {
+                    const res = await callAt(url, `/api/video/projects/${pid}/plan-shots`, {
+                        method: 'POST', token, body: { idea: 'فكرة صالحة تماماً لفيلم قصير' },
+                    });
+                    assert.equal(res.status, 502);
+                    assert.match(res.data.error, matcher);
+                } finally {
+                    await new Promise(r => s.close(r));
+                }
+            }
+        });
+
         test('توريث إعدادات المشروع في اللقطة الجديدة: يُطبَّق فقط حين يترك المستخدم الحقل فارغاً', async () => {
             // تطبيق مستقل (حصة renderLimit خاصة — نفس سبب اختباري الشعار
             // وإعادة الترتيب أعلاه).
@@ -1902,6 +2096,59 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             })).status, 404);
         });
 
+        test('📝 كابشن محروق عبر مسار التجميع الفعلي: يُبنى من values.caption فقط عند طلبه صراحةً', async () => {
+            // تطبيق مستقل: /assemble يشارك محدود renderLimit مع /renders
+            // (نفس سبب اختباري الشعار والفلتر الافتراضي أعلاه).
+            const app = createApp({ store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const token = makeToken('captioner');
+                await callAt(url, '/api/video/credits', { token });
+                const pid = (await callAt(url, '/api/video/projects', {
+                    method: 'POST', token, body: { title: 'فيلم بكابشن' },
+                })).data.project.id;
+
+                // لقطة بكابشن ولقطة بلا كابشن
+                const withCaption = await createJob(store, {
+                    username: 'captioner', templateId: 'ai_clip',
+                    values: { prompt: 'مشهد أول', caption: 'أول الحكاية' },
+                    spec: { kind: 'ai_prompt', durationSec: 5, prompt: 'x' },
+                    costCredits: 1, projectId: pid, shotIndex: 0,
+                });
+                await transitionJob(store, withCaption.id, 'rendering', {});
+                await transitionJob(store, withCaption.id, 'done', { videoUrl: 'https://v.test/0.mp4' });
+
+                const withoutCaption = await createJob(store, {
+                    username: 'captioner', templateId: 'ai_clip',
+                    values: { prompt: 'مشهد ثانٍ' },
+                    spec: { kind: 'ai_prompt', durationSec: 5, prompt: 'x' },
+                    costCredits: 1, projectId: pid, shotIndex: 1,
+                });
+                await transitionJob(store, withoutCaption.id, 'rendering', {});
+                await transitionJob(store, withoutCaption.id, 'done', { videoUrl: 'https://v.test/1.mp4' });
+
+                // بلا burnCaptions: لا كابشن رغم وجود قيمة مخزَّنة باللقطة
+                const noBurn = await callAt(url, `/api/video/projects/${pid}/assemble`, { method: 'POST', token, body: {} });
+                assert.equal(noBurn.status, 200);
+                const filmNoBurn = await getJob(store, noBurn.data.job.id);
+                assert.equal(filmNoBurn.spec.captionCues, null);
+                assert.equal(filmNoBurn.values.burnCaptions, false);
+
+                // مع burnCaptions: كابشن واحد فقط (اللقطة التي تحمل نصاً)
+                const withBurn = await callAt(url, `/api/video/projects/${pid}/assemble`, {
+                    method: 'POST', token, body: { burnCaptions: true },
+                });
+                assert.equal(withBurn.status, 200);
+                const filmWithBurn = await getJob(store, withBurn.data.job.id);
+                assert.equal(filmWithBurn.values.burnCaptions, true);
+                assert.equal(filmWithBurn.spec.captionCues.length, 1);
+                assert.equal(filmWithBurn.spec.captionCues[0].text, 'أول الحكاية');
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
         test('شعار المستخدم: مسار مركّب علوي طوال الفيلم، ورابط فاسد يُرفض قبل أي خصم', () => {
             const spec = buildFilmSpec({
                 shots: [{ durationSec: 5, videoUrl: 'https://v.test/a.mp4' }],
@@ -1993,6 +2240,42 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             const noWatermark = buildFilmSpec({ shots });
             assert.equal(noWatermark.watermarkText, null);
             assert.equal(specToShotstackTimeline(noWatermark).tracks.length, 1);
+        });
+
+        test('📝 كابشن محروق: مسار مستقل لكل لقطة تحمل كابشناً، ولا أثر بلا burnCaptions أو بلا كابشن أصلاً', () => {
+            const shots = [
+                { durationSec: 5, videoUrl: 'https://v.test/a.mp4', caption: 'اللقطة الأولى' },
+                { durationSec: 8, videoUrl: 'https://v.test/b.mp4', caption: null },
+                { durationSec: 5, videoUrl: 'https://v.test/c.mp4', caption: 'اللقطة الثالثة' },
+            ];
+
+            // بلا burnCaptions: لا كابشن على الإطلاق، حتى مع وجود نص كابشن باللقطات
+            const off = buildFilmSpec({ shots });
+            assert.equal(off.captionCues, null);
+            assert.equal(specToShotstackTimeline(off).tracks.length, 1); // مسار الفيديو فقط
+
+            // مع burnCaptions: مقطعان فقط (اللقطة الوسطى بلا كابشن تُستبعد)
+            const on = buildFilmSpec({ shots, burnCaptions: true });
+            assert.equal(on.captionCues.length, 2);
+            assert.equal(on.captionCues[0].text, 'اللقطة الأولى');
+            assert.equal(on.captionCues[0].startSec, 0);
+            assert.equal(on.captionCues[0].lengthSec, 5);
+            assert.equal(on.captionCues[1].text, 'اللقطة الثالثة');
+            assert.equal(on.captionCues[1].startSec, 13); // 5 + 8
+
+            const timeline = specToShotstackTimeline(on);
+            // مسار فيديو + مسار كابشن مستقل — لا تداخل مع مسار الفيديو نفسه
+            assert.equal(timeline.tracks.length, 2);
+            const captionTrack = timeline.tracks.find(t => t.clips.every(c => c.asset.type === 'title'));
+            assert.equal(captionTrack.clips.length, 2);
+            assert.equal(captionTrack.clips[0].position, 'bottom');
+            assert.equal(captionTrack.clips[0].asset.text, 'اللقطة الأولى');
+
+            // burnCaptions مفعَّل لكن بلا كابشن بأي لقطة إطلاقاً → captionCues فارغة (null لا مصفوفة فارغة مزعجة)
+            const noCaptionsAtAll = buildFilmSpec({
+                shots: shots.map(s => ({ ...s, caption: null })), burnCaptions: true,
+            });
+            assert.equal(noCaptionsAtAll.captionCues, null);
         });
 
         test('التجميع: شعار برابط فاسد يُرفض بـ400 قبل الخصم، وشعار صالح يصل المخطط', async () => {

@@ -87,11 +87,16 @@ export function buildFilmSpec({
     shots, transition = null, musicUrl = null, endTitle = '',
     aspectRatio = '16:9', filter = null, logoUrl = null, sfxUrl = null,
     narrationUrl = null, resolution = DEFAULT_RESOLUTION, watermarkText = null,
+    burnCaptions = false,
 }) {
     if (!Array.isArray(shots) || shots.length === 0) {
         throw new Error('لا لقطات جاهزة للتجميع.');
     }
     const scenes = [];
+    // 📝 كابشن محروق: مقطع نصي أسفل الشاشة لكل لقطة تحمل كابشن خاصاً بها
+    // (values.caption عند توليدها) — مسار مستقل عن الفيديو (انظر
+    // shotstackProvider.js)، لا يُفعَّل إلا حين يطلبه المستخدم صراحةً.
+    const captionCues = [];
     let cursor = 0;
     for (const shot of shots) {
         const lengthSec = Number(shot.durationSec) > 0 ? Number(shot.durationSec) : 5;
@@ -100,6 +105,9 @@ export function buildFilmSpec({
             lengthSec,
             layers: [{ kind: 'video', url: shot.videoUrl }],
         });
+        if (burnCaptions && shot.caption) {
+            captionCues.push({ startSec: cursor, lengthSec, text: shot.caption });
+        }
         cursor += lengthSec;
     }
     if (endTitle) {
@@ -126,6 +134,7 @@ export function buildFilmSpec({
         narrationUrl: narrationUrl || null, // تعليق صوتي (TTS) يمتد طوال الفيلم
         resolution: resolution || DEFAULT_RESOLUTION,
         watermarkText: watermarkText || null, // علامة الخطة المجانية — فرض خادم فقط
+        captionCues: captionCues.length ? captionCues : null,
         scenes,
     };
 }
