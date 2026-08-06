@@ -2741,6 +2741,23 @@ export default function Dashboard() {
     </div>
   );
 
+  // 🧭 القائمة الجانبية اليسرى: كل زر يفتح فعلاً الميزة القائمة الأقرب
+  // له (لا شيء يعتمد على activeNav وحده — كان يُغيَّر بلا أي أثر آخر).
+  const handleSidebarClick = (id) => {
+    setActiveNav(id);
+    switch (id) {
+      case 'projects': setShowProjectModal(true); break;
+      case 'agents': openAgentsModal(); break;
+      case 'knowledge': openKnowledgeModal(); break;
+      case 'marketplace': openGalleryModal(); break;
+      case 'deployments': openDomainModal(); break;
+      case 'analytics': openInboxModal(); break;
+      case 'cinema': openVideoStudio(); break;
+      case 'settings': window.location.assign('/admin'); break;
+      default: break; // 'mission' — اللوحة المعروضة أصلاً، لا فعل إضافي
+    }
+  };
+
   // ═══════════════════════════════════════════════════════════════
   // 📱 تخطيط الجوال — شاشة واحدة + تنقل سفلي
   // ═══════════════════════════════════════════════════════════════
@@ -2794,6 +2811,22 @@ export default function Dashboard() {
                   <span style={{ fontSize:13, color:S.text }}>🌐 {t('language') || 'Language'}</span>
                   <LanguageSwitcher compact />
                 </div>
+                {/* الإدارة/الفوترة/الاستوديو — موجودة في الشريط العلوي على سطح
+                    المكتب فقط؛ كانت غائبة تماماً عن قائمة الجوال. */}
+                <a href="/admin" onClick={() => setShowMobileMenu(false)}
+                  style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start', textDecoration:'none' }}>
+                  <span style={{ fontSize:16 }}>⚙️</span> {t('adminTitle')}
+                </a>
+                <a href="/billing" onClick={() => setShowMobileMenu(false)}
+                  style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start', textDecoration:'none' }}>
+                  <span style={{ fontSize:16 }}>💳</span> {t('billingTitle')}
+                </a>
+                {VIDEO_STUDIO_URL && (
+                  <button onClick={() => { setShowMobileMenu(false); openVideoStudio(); }}
+                    style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
+                    <span style={{ fontSize:16 }}>🎬</span> {t('videoStudioTitle')}
+                  </button>
+                )}
                 <button onClick={() => { setShowMobileMenu(false); setShowSiteHealth(true); }}
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>📊</span> {t('siteHealth')}
@@ -3201,8 +3234,8 @@ export default function Dashboard() {
 
         {/* LEFT SIDEBAR */}
         <div style={{ width:56, background:S.bg2, borderRight:`1px solid ${S.border}`, display:'flex', flexDirection:'column', alignItems:'center', padding:'12px 0', gap:4, flexShrink:0 }}>
-          {SIDEBAR_ITEMS.map(item => (
-            <button key={item.id} onClick={() => setActiveNav(item.id)} title={t(item.labelKey)}
+          {SIDEBAR_ITEMS.filter(item => item.id !== 'cinema' || VIDEO_STUDIO_URL).map(item => (
+            <button key={item.id} onClick={() => handleSidebarClick(item.id)} title={t(item.labelKey)}
               style={{
                 width:40, height:40, borderRadius:10, border:`1px solid ${activeNav === item.id ? 'rgba(59,130,246,0.3)' : 'transparent'}`,
                 background: activeNav === item.id ? 'rgba(59,130,246,0.1)' : 'transparent',
