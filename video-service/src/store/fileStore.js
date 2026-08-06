@@ -192,7 +192,7 @@ export function createFileStore({ dataDir, starterCredits }) {
             const project = {
                 id: newId(), at: Date.now(), updatedAt: Date.now(), username, title,
                 defaultAspectRatio, defaultStyle, defaultFilter: null, styleProfile: null,
-                defaultCharacterId: null,
+                defaultCharacterId: null, autoAssemble: null,
             };
             projects.push(project);
             writeProjects(projects);
@@ -274,6 +274,23 @@ export function createFileStore({ dataDir, starterCredits }) {
 
         async countJobsInProject(projectId) {
             return readJobs().filter(j => j.projectId === projectId).length;
+        },
+
+        // 🎬 "أكمل تلقائياً" (AI Producer): تسليح/نزع تجميع مؤجل يُطلقه
+        // محرك المعالجة بمجرد توقف كل نشاط المشروع — value = null ينزع
+        // التسليح (يدوياً أو بعد محاولة تلقائية واحدة، ناجحة أو فاشلة).
+        async setProjectAutoAssemble(id, value) {
+            const projects = readProjects();
+            const p = projects.find(x => x.id === id);
+            if (!p) return null;
+            p.autoAssemble = value || null;
+            p.updatedAt = Date.now();
+            writeProjects(projects);
+            return { ...p };
+        },
+
+        async listProjectsWithPendingAutoAssemble() {
+            return readProjects().filter(p => p.autoAssemble).map(p => ({ ...p }));
         },
 
         // ─── بنك الشخصيات ─────────────────────────────────────────────

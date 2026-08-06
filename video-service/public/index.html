@@ -559,6 +559,11 @@
         captionAnimatedLabel: '✨ متحرك (كلمة واحدة كبيرة في كل لحظة)',
         presetHint: 'إعداد سريع لصيغة منصة — يملأ المقاس والكابشن دفعة واحدة:',
         presetTiktok: 'تيك توك / ريلز / شورتس', presetYoutube: 'يوتيوب', presetSquare: 'منشور مربع',
+        planAutoProduceBtn: '🚀 أكمل تلقائياً',
+        planAutoProduceHint: 'يرسل كل المشاهد أعلاه ثم يجمّع الفيلم تلقائياً بمجرد اكتمال توليدها — بلا عودة يدوية.',
+        autoProduceArmedMsg: 'سيُجمَّع الفيلم تلقائياً فور اكتمال كل اللقطات.',
+        autoProduceFailMsg: (err) => `تعذّر تفعيل الإنتاج التلقائي: ${err}`,
+        autoProducePending: 'إنتاج تلقائي مجدول',
       },
       en: {
         docTitle: 'Cinematic Studio — JAOLA OS',
@@ -691,6 +696,11 @@
         captionAnimatedLabel: '✨ Animated (one big word at a time)',
         presetHint: 'Quick platform preset — fills aspect ratio and captions at once:',
         presetTiktok: 'TikTok / Reels / Shorts', presetYoutube: 'YouTube', presetSquare: 'Square post',
+        planAutoProduceBtn: '🚀 Finish automatically',
+        planAutoProduceHint: 'Sends every scene above, then assembles the film automatically once generation finishes — no manual return needed.',
+        autoProduceArmedMsg: 'The film will be assembled automatically once all shots are done.',
+        autoProduceFailMsg: (err) => `Could not enable auto-production: ${err}`,
+        autoProducePending: 'Auto-production scheduled',
       },
     };
     let lang = localStorage.getItem('studioLang') || 'ar';
@@ -1479,6 +1489,8 @@
           <button class="chip" id="deleteProjBtn">${tr('deleteProject')}</button>
           ${scriptPlanningEnabled ? `<button class="chip" id="planBtn" style="border-color:#a78bfa;color:#a78bfa">${tr('planFilmBtn')}</button>` : ''}
           ${shots.some(s => s.status === 'done') ? `<button class="chip" id="assembleBtn" style="border-color:var(--accent);color:var(--accent)">${tr('assembleFilm')}</button>` : ''}
+          ${project.autoAssemble ? `<span class="chip" style="border-color:#a78bfa;color:#a78bfa">⏳ ${tr('autoProducePending')}
+            <button type="button" id="cancelAutoAssembleBtn" style="margin-inline-start:6px;border:none;background:none;color:inherit;cursor:pointer">✖</button></span>` : ''}
         </div>
         <div id="projSettingsPanel" class="hidden" style="margin-bottom:10px"></div>
         <div id="planPanel" class="hidden" style="margin-bottom:10px"></div>
@@ -1517,6 +1529,11 @@
       if (assembleBtn) assembleBtn.addEventListener('click', () => openAssemblyPanel(project.id));
       const planBtn = $('planBtn');
       if (planBtn) planBtn.addEventListener('click', () => openPlanPanel(project.id));
+      const cancelAutoBtn = $('cancelAutoAssembleBtn');
+      if (cancelAutoBtn) cancelAutoBtn.addEventListener('click', async () => {
+        await api(`/api/video/projects/${project.id}/auto-assemble`, { method: 'DELETE' });
+        refreshStoryboard();
+      });
     }
 
     // ⚙️ إعدادات موروثة: نسبة أبعاد وأسلوب افتراضيان تُطبَّقان تلقائياً
@@ -1586,7 +1603,10 @@
 
     async function openPlanPanel(projectId) {
       const panel = $('planPanel');
-      if (!panel.classList.contains('hidden')) { panel.classList.add('hidden'); return; }
+      // إغلاق اللوحة: تُحدَّث بطاقة المشروع الآن (لا أثناء الفتح — refreshStoryboard
+      // تتجنّب عمداً الكتابة فوق لوحة مفتوحة) كي تظهر شارة "إنتاج تلقائي مجدول"
+      // فوراً لو سلّحها المستخدم قبل الإغلاق.
+      if (!panel.classList.contains('hidden')) { panel.classList.add('hidden'); refreshStoryboard(); return; }
       panel.classList.remove('hidden');
       planScenesDraft = [];
       renderPlanPanel(projectId);
@@ -1660,7 +1680,11 @@
           </div>
           <p class="note" id="planStatus-${i}"></p>
         </div>`).join('') + `
-        <button id="planGenerateAllBtn" type="button" style="margin-top:6px">${tr('planGenerateAll', planScenesDraft.length)}</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+          <button id="planGenerateAllBtn" type="button">${tr('planGenerateAll', planScenesDraft.length)}</button>
+          <button id="planAutoProduceBtn" type="button" style="border-color:#a78bfa;color:#a78bfa">${tr('planAutoProduceBtn')}</button>
+        </div>
+        <p class="note">${tr('planAutoProduceHint')}</p>
         <div class="msg" id="planGenerateMsg"></div>`;
 
       // القيم المخطَّطة تُختار مبدئياً في القوائم المنسدلة إن كانت ضمن الخيارات المتاحة
@@ -1680,16 +1704,20 @@
       });
 
       $('planGenerateAllBtn').addEventListener('click', () => generatePlannedScenes(projectId));
+      $('planAutoProduceBtn').addEventListener('click', () => generateAndAutoProduce(projectId));
     }
 
     // يرسل كل مشهد مقبول عبر /api/video/renders العادي تباعاً (لا بالتوازي
     // — يحترم طابور المستخدم وسقوف درع التكلفة بدل إغراقها دفعة واحدة).
+    // يُرجع {okCount, failCount} — تستهلكها "أكمل تلقائياً" لتقرر التسليح.
     async function generatePlannedScenes(projectId) {
       const list = $('planDraftList');
       const cards = [...list.querySelectorAll('[data-plan-idx]')];
       const genBtn = $('planGenerateAllBtn');
+      const autoBtn = $('planAutoProduceBtn');
       const genMsg = $('planGenerateMsg');
       if (genBtn) genBtn.disabled = true;
+      if (autoBtn) autoBtn.disabled = true;
       if (genMsg) genMsg.className = 'msg';
       let okCount = 0, failCount = 0;
       for (const card of cards) {
@@ -1718,7 +1746,41 @@
         genMsg.className = failCount === 0 ? 'msg ok' : 'msg err';
       }
       if (genBtn) genBtn.disabled = false;
+      if (autoBtn) autoBtn.disabled = false;
       loadCredits(); loadJobs(); refreshStoryboard();
+      return { okCount, failCount };
+    }
+
+    // 🎬 "أكمل تلقائياً" (AI Producer): يرسل كل المشاهد المراجَعة كالمعتاد
+    // ثم يسلّح تجميعاً مؤجَّلاً بخيارات أساسية معقولة (بلا نموذج إضافي —
+    // مقاس المشروع الافتراضي أو عمودي، كابشن محروق بنمط نظيف افتراضياً).
+    // محرك المعالجة (engine.js) يُجمِّع تلقائياً بمجرد اكتمال كل اللقطات.
+    async function generateAndAutoProduce(projectId) {
+      const { okCount } = await generatePlannedScenes(projectId);
+      const genMsg = $('planGenerateMsg');
+      if (okCount === 0) return; // لا شيء أُرسل أصلاً — لا معنى للتسليح
+      const proj = projects.find(p => p.id === projectId);
+      try {
+        const res = await api(`/api/video/projects/${projectId}/auto-assemble`, {
+          method: 'POST',
+          body: JSON.stringify({
+            aspect: (proj && proj.defaultAspectRatio) || '9:16',
+            burnCaptions: true, captionStyle: 'نظيف', captionPosition: 'أسفل الشاشة', captionAnimated: false,
+          }),
+        });
+        const data = await res.json();
+        if (genMsg) {
+          if (res.ok) {
+            genMsg.textContent += ` ${tr('autoProduceArmedMsg')}`;
+          } else {
+            genMsg.textContent += ` ${tr('autoProduceFailMsg', data.error || '')}`;
+            genMsg.className = 'msg err';
+          }
+        }
+      } catch {
+        if (genMsg) { genMsg.textContent += ` ${tr('connFail')}`; genMsg.className = 'msg err'; }
+      }
+      refreshStoryboard();
     }
 
     // يملأ حقول نسبة الأبعاد/الأسلوب من إعدادات المشروع النشط الموروثة

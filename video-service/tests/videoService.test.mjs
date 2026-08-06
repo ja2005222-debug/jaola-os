@@ -38,7 +38,7 @@ import { createFileStore } from '../src/store/fileStore.js';
 import { createPostgresStore } from '../src/store/postgresStore.js';
 import { readLimits, checkRenderAllowed, maybeAlertCost, startOfUtcDay, DEFAULTS } from '../src/limits.js';
 import { inspectText, inspectImageUrl, inspectValues, readBlocklist } from '../src/contentFilter.js';
-import { verifyWithSecrets } from '../src/auth.js';
+import { verifyWithSecrets, buildIsAdmin } from '../src/auth.js';
 import { storageKeyFor, buildStorage, retentionDays } from '../src/storage/index.js';
 
 const JWT_SECRET = 'test-secret-not-for-production';
@@ -1790,6 +1790,137 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 const jAfterDelete = await getJob(store, afterDelete.data.job.id);
                 assert.equal(jAfterDelete.spec.characterId, undefined);
                 assert.equal(jAfterDelete.spec.prompt, 'مشهد ثالث');
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
+        test('🎬 "أكمل تلقائياً" (AI Producer): تجميع مؤجَّل يُطلقه المحرك بمجرد توقف كل نشاط المشروع', async () => {
+            const app = createApp({ store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            const engineOpts = {
+                provider, limits: readLimits(), isAdminUser: buildIsAdmin('boss'),
+                maxActiveJobsPerUser: MAX_ACTIVE_JOBS_PER_USER,
+            };
+            try {
+                const token = makeToken('producer');
+                await callAt(url, '/api/video/credits', { token });
+                await callAt(url, '/api/video/admin/credits/grant', {
+                    method: 'POST', token: makeToken('boss'), body: { username: 'producer', amount: 20 },
+                });
+                const pid = (await callAt(url, '/api/video/projects', {
+                    method: 'POST', token, body: { title: 'فيلم بإنتاج تلقائي' },
+                })).data.project.id;
+
+                // مشروع بلا أي لقطة بعد → تسليح مرفوض بـ400 (لا شيء لينتظره)
+                assert.equal((await callAt(url, `/api/video/projects/${pid}/auto-assemble`, {
+                    method: 'POST', token, body: { burnCaptions: true, captionStyle: 'نظيف', aspect: '9:16' },
+                })).status, 400);
+
+                // خيار غير معروف يُرفض بـ400 — نفس تحقق /assemble تماماً (دالة مشتركة)
+                const j0 = await createJob(store, {
+                    username: 'producer', templateId: 'ai_clip', values: { prompt: 'مشهد أول', caption: 'أول الحكاية' },
+                    spec: { kind: 'ai_prompt', durationSec: 5, prompt: 'x' },
+                    costCredits: 1, projectId: pid, shotIndex: 0,
+                });
+                assert.equal((await callAt(url, `/api/video/projects/${pid}/auto-assemble`, {
+                    method: 'POST', token, body: { transition: 'دوران' },
+                })).status, 400);
+
+                // تسليح صحيح — المشروع فيه لقطة (queued) بعد
+                const armed = await callAt(url, `/api/video/projects/${pid}/auto-assemble`, {
+                    method: 'POST', token, body: { burnCaptions: true, captionStyle: 'نظيف', aspect: '9:16' },
+                });
+                assert.equal(armed.status, 200);
+                assert.ok(armed.data.project.autoAssemble);
+                assert.equal(armed.data.project.autoAssemble.resolved.aspectRatio, '9:16');
+
+                // نشاط لا يزال قائماً (j0 = queued) → دورة المحرك لا تُجمِّع بعد
+                await runEngineTick(store, engineOpts);
+                const stillArmed = await callAt(url, `/api/video/projects/${pid}`, { token });
+                assert.ok(stillArmed.data.project.autoAssemble, 'لا يُنزَع التسليح قبل اكتمال كل اللقطات');
+                assert.equal(stillArmed.data.shots.filter(sh => sh.templateId === 'film_assembly').length, 0);
+
+                // اكتملت اللقطة الوحيدة → الدورة التالية تُجمِّع تلقائياً وتنزع التسليح
+                await transitionJob(store, j0.id, 'rendering', {});
+                await transitionJob(store, j0.id, 'done', { videoUrl: 'https://v.test/0.mp4' });
+                const before = (await callAt(url, '/api/video/credits', { token })).data.credits;
+                await runEngineTick(store, engineOpts);
+
+                const after = await callAt(url, `/api/video/projects/${pid}`, { token });
+                assert.equal(after.data.project.autoAssemble, null);
+                const film = after.data.shots.find(sh => sh.templateId === 'film_assembly');
+                assert.ok(film, 'مهمة تجميع تلقائية لم تُنشأ');
+                const filmJob = await getJob(store, film.id);
+                assert.equal(filmJob.spec.aspectRatio, '9:16');
+                assert.equal(filmJob.spec.captionStyle, 'minimal'); // 'نظيف' → قيمة Shotstack
+                assert.ok(filmJob.spec.captionCues?.length); // كابشن محروق مُفعَّل فعلياً
+                assert.equal(
+                    (await callAt(url, '/api/video/credits', { token })).data.credits,
+                    before - ASSEMBLY_COST_CREDITS
+                );
+
+                // دورة أخرى: لا تجميع مضاعف (التسليح مُنزوع بالفعل)
+                await runEngineTick(store, engineOpts);
+                const filmCountAfter = (await callAt(url, `/api/video/projects/${pid}`, { token }))
+                    .data.shots.filter(sh => sh.templateId === 'film_assembly').length;
+                assert.equal(filmCountAfter, 1);
+
+                // نزع يدوي (DELETE): مشروع ثانٍ، لقطة جاهزة، تسليح ثم نزع — لا تجميع أبداً
+                const pid2 = (await callAt(url, '/api/video/projects', {
+                    method: 'POST', token, body: { title: 'فيلم بلا إنتاج تلقائي' },
+                })).data.project.id;
+                const j1 = await createJob(store, {
+                    username: 'producer', templateId: 'ai_clip', values: { prompt: 'مشهد' },
+                    spec: { kind: 'ai_prompt', durationSec: 5, prompt: 'x' },
+                    costCredits: 1, projectId: pid2, shotIndex: 0,
+                });
+                await transitionJob(store, j1.id, 'rendering', {});
+                await transitionJob(store, j1.id, 'done', { videoUrl: 'https://v.test/1.mp4' });
+                await callAt(url, `/api/video/projects/${pid2}/auto-assemble`, { method: 'POST', token, body: {} });
+                const disarmed = await callAt(url, `/api/video/projects/${pid2}/auto-assemble`, { method: 'DELETE', token });
+                assert.equal(disarmed.data.project.autoAssemble, null);
+                await runEngineTick(store, engineOpts);
+                const p2After = await callAt(url, `/api/video/projects/${pid2}`, { token });
+                assert.equal(p2After.data.shots.filter(sh => sh.templateId === 'film_assembly').length, 0);
+
+                // كل اللقطات فشلت: تسليح يُنزَع بصمت بلا أي تجميع (لا شيء جاهز)
+                const pid3 = (await callAt(url, '/api/video/projects', {
+                    method: 'POST', token, body: { title: 'فيلم فشلت كل لقطاته' },
+                })).data.project.id;
+                const j2 = await createJob(store, {
+                    username: 'producer', templateId: 'ai_clip', values: { prompt: 'مشهد' },
+                    spec: { kind: 'ai_prompt', durationSec: 5, prompt: 'x' },
+                    costCredits: 1, projectId: pid3, shotIndex: 0,
+                });
+                await transitionJob(store, j2.id, 'rendering', {});
+                await transitionJob(store, j2.id, 'failed', { error: 'فشل محاكاة' });
+                await callAt(url, `/api/video/projects/${pid3}/auto-assemble`, { method: 'POST', token, body: {} });
+                await runEngineTick(store, engineOpts);
+                const p3After = await callAt(url, `/api/video/projects/${pid3}`, { token });
+                assert.equal(p3After.data.project.autoAssemble, null);
+                assert.equal(p3After.data.shots.filter(sh => sh.templateId === 'film_assembly').length, 0);
+
+                // تجميع يدوي بينما التسليح قائم: يُنزَع فوراً (لا تجميع مزدوج لاحقاً)
+                const pid4 = (await callAt(url, '/api/video/projects', {
+                    method: 'POST', token, body: { title: 'فيلم بتجميع يدوي مبكر' },
+                })).data.project.id;
+                const j3 = await createJob(store, {
+                    username: 'producer', templateId: 'ai_clip', values: { prompt: 'مشهد' },
+                    spec: { kind: 'ai_prompt', durationSec: 5, prompt: 'x' },
+                    costCredits: 1, projectId: pid4, shotIndex: 0,
+                });
+                await transitionJob(store, j3.id, 'rendering', {});
+                await transitionJob(store, j3.id, 'done', { videoUrl: 'https://v.test/3.mp4' });
+                await callAt(url, `/api/video/projects/${pid4}/auto-assemble`, { method: 'POST', token, body: {} });
+                const manualAsm = await callAt(url, `/api/video/projects/${pid4}/assemble`, { method: 'POST', token, body: {} });
+                assert.equal(manualAsm.status, 200);
+                const p4AfterManual = await callAt(url, `/api/video/projects/${pid4}`, { token });
+                assert.equal(p4AfterManual.data.project.autoAssemble, null);
+                await runEngineTick(store, engineOpts);
+                const p4AfterTick = await callAt(url, `/api/video/projects/${pid4}`, { token });
+                assert.equal(p4AfterTick.data.shots.filter(sh => sh.templateId === 'film_assembly').length, 1); // اليدوي فقط، لا مضاعفة
             } finally {
                 await new Promise(r => s.close(r));
             }

@@ -40,6 +40,7 @@ import {
 } from './src/characters.js';
 import { refundCredits } from './src/credits.js';
 import { buildScriptProvider } from './src/scriptProvider.js';
+import { readyShotsOf, resolveAssemblyOptions, checkAssemblyGates, finalizeAssembly } from './src/assemblyJob.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -339,11 +340,6 @@ export function createApp({
 
     // ─── تجميع الفيلم: لقطات المشروع الجاهزة → فيلم واحد ────────────────
 
-    const readyShotsOf = async (projectId) => {
-        const shots = await store.listJobsByProject(projectId);
-        return shots.filter(s => s.status === 'done' && (s.videoUrl || s.storageKey));
-    };
-
     app.get('/api/video/projects/:id/assembly-options', verifyToken, wrap(async (req, res) => {
         const project = await ownedProject(req);
         if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
@@ -361,7 +357,7 @@ export function createApp({
             narrationEnabled: !!ttsProvider,
             narrationCostCredits: NARRATION_COST_CREDITS,
             costCredits: ASSEMBLY_COST_CREDITS,
-            readyShots: (await readyShotsOf(project.id)).length,
+            readyShots: (await readyShotsOf(store, project.id)).length,
             watermarked: watermarkEnforced && !['pro', 'enterprise'].includes(req.user.plan),
             defaultFilter: project.defaultFilter || null,
         });
@@ -371,48 +367,17 @@ export function createApp({
         const project = await ownedProject(req);
         if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
 
-        const {
-            transition, musicId, endTitle, aspect, logoUrl, sfxId, narrationText, resolution, burnCaptions,
-            captionStyle, captionPosition, captionAnimated,
-        } = req.body || {};
-        // فلتر لوني: طلب صريح (حتى '' = بلا فلتر) يتفوق دوماً؛ غيابه فقط
-        // (undefined) يقع على فلتر المشروع الافتراضي (أداة التلوين السينمائي).
-        const filter = req.body?.filter !== undefined ? req.body.filter : (project.defaultFilter || null);
-        if (transition != null && !(transition in TRANSITIONS)) {
-            return res.status(400).json({ error: `انتقال غير معروف (المتاح: ${Object.keys(TRANSITIONS).join('، ')}).` });
+        // تجميع يدوي بعد تسليح "أكمل تلقائياً": ننزع التسليح فوراً — لا
+        // داعٍ لمحاولة تلقائية لاحقة بعد أن جمّع المستخدم بنفسه يدوياً
+        // (تفادي تجميعين مزدوجين لنفس المشروع).
+        if (project.autoAssemble) {
+            await store.setProjectAutoAssemble(project.id, null);
         }
-        if (filter != null && !(filter in COLOR_FILTERS)) {
-            return res.status(400).json({ error: `فلتر لوني غير معروف (المتاح: ${Object.keys(COLOR_FILTERS).join('، ')}).` });
-        }
-        if (captionStyle != null && !(captionStyle in CAPTION_STYLES)) {
-            return res.status(400).json({ error: `نمط كابشن غير معروف (المتاح: ${Object.keys(CAPTION_STYLES).join('، ')}).` });
-        }
-        if (captionPosition != null && !(captionPosition in CAPTION_POSITIONS)) {
-            return res.status(400).json({ error: `موضع كابشن غير معروف (المتاح: ${Object.keys(CAPTION_POSITIONS).join('، ')}).` });
-        }
-        if (aspect != null && !OUTPUT_ASPECTS.includes(aspect)) {
-            return res.status(400).json({ error: `مقاس غير معروف (المتاح: ${OUTPUT_ASPECTS.join('، ')}).` });
-        }
-        if (resolution != null && !OUTPUT_RESOLUTIONS.includes(resolution)) {
-            return res.status(400).json({ error: `دقة غير معروفة (المتاح: ${OUTPUT_RESOLUTIONS.join('، ')}).` });
-        }
-        let musicUrl = null;
-        if (musicId) {
-            const track = musicLibrary.find(m => m.id === String(musicId));
-            if (!track) return res.status(400).json({ error: 'مقطع موسيقي غير معروف.' });
-            musicUrl = track.url;
-        }
-        let sfxUrl = null;
-        if (sfxId) {
-            const sfx = sfxLibrary.find(m => m.id === String(sfxId));
-            if (!sfx) return res.status(400).json({ error: 'مؤثر صوتي غير معروف.' });
-            sfxUrl = sfx.url;
-        }
-        const title = String(endTitle || '').trim().slice(0, 60);
-        if (title) {
-            const flagged = inspectText(title, { blocklist });
-            if (flagged) return res.status(400).json({ error: flagged.error });
-        }
+
+        const resolved = resolveAssemblyOptions({ body: req.body, project, musicLibrary, sfxLibrary, blocklist });
+        if (resolved.error) return res.status(400).json({ error: resolved.error });
+
+        const { logoUrl, narrationText } = req.body || {};
         // شعار المستخدم: نفس فحص SSRF/الصيغة على حقول imageUrl في القوالب.
         let cleanLogoUrl = null;
         if (logoUrl) {
@@ -428,20 +393,14 @@ export function createApp({
             if (flagged) return res.status(400).json({ error: flagged.error });
         }
 
-        const ready = await readyShotsOf(project.id);
-        if (ready.length === 0) {
-            return res.status(400).json({ error: 'لا لقطات مكتملة في المشروع بعد — ولّد لقطة واحدة على الأقل.' });
-        }
-
         const username = userOf(req);
-        if (await countActiveJobsForUser(store, username) >= MAX_ACTIVE_JOBS_PER_USER) {
-            return res.status(429).json({ error: `لديك ${MAX_ACTIVE_JOBS_PER_USER} مهام نشطة بالفعل — انتظر اكتمالها أولاً.` });
-        }
-        // درع التكلفة يشمل التجميع أيضاً — كل مهمة تُحسب.
-        const gate = await checkRenderAllowed(store, {
-            username, limits, exemptPerUser: isAdminUser(req.user),
+        // البوابات (لقطات جاهزة/سقف مهام نشطة/درع التكلفة) قبل أي توليد
+        // صوتي مدفوع — فشلها لا يجب أن يهدر نداء مزوّد خارجي حقيقي.
+        const gated = await checkAssemblyGates(store, {
+            project, username, maxActiveJobsPerUser: MAX_ACTIVE_JOBS_PER_USER,
+            limits, exemptPerUser: isAdminUser(req.user),
         });
-        if (!gate.allowed) return res.status(429).json({ error: gate.error, code: gate.code });
+        if (gated.error) return res.status(gated.status).json({ error: gated.error, code: gated.code });
 
         // تعليق صوتي: توليد متزامن (كالصور المرجعية) — خصم مقدَّم يُسترد
         // عند الفشل؛ يحدث بعد كل بوابات الرفض المجانية كي لا يُخصم رصيد
@@ -475,53 +434,45 @@ export function createApp({
         const isPaidPlan = ['pro', 'enterprise'].includes(req.user.plan);
         const appliedWatermark = (watermarkEnforced && !isPaidPlan) ? watermarkText : null;
 
-        // روابط اللقطات للمُركِّب: المملوكة تُوقَّع بساعة (قد تنتظر الطابور)
-        const shots = await Promise.all(ready.map(async s => ({
-            durationSec: s.spec?.durationSec,
-            videoUrl: s.storageKey && storage ? await storage.signedUrl(s.storageKey, 3600) : s.videoUrl,
-            caption: typeof s.values?.caption === 'string' ? s.values.caption : null,
-        })));
-        const spec = buildFilmSpec({
-            shots,
-            transition: transition ? TRANSITIONS[transition] : null,
-            musicUrl,
-            endTitle: title,
-            filter: filter ? COLOR_FILTERS[filter] : null,
-            aspectRatio: aspect || '16:9',
-            logoUrl: cleanLogoUrl,
-            sfxUrl,
-            narrationUrl,
-            resolution: resolution || DEFAULT_RESOLUTION,
-            burnCaptions: !!burnCaptions,
-            captionStyle: captionStyle ? CAPTION_STYLES[captionStyle] : null,
-            captionPosition: captionPosition ? CAPTION_POSITIONS[captionPosition] : null,
-            captionAnimated: !!captionAnimated,
-            watermarkText: appliedWatermark,
+        const result = await finalizeAssembly(store, {
+            project, username, storage, ready: gated.ready,
+            resolved: resolved.values,
+            rawValues: { ...resolved.raw, logoUrl: cleanLogoUrl || '', narrationText: narration || '' },
+            watermarkText: appliedWatermark, narrationUrl, logoUrl: cleanLogoUrl,
         });
+        if (result.error) return res.status(result.status).json({ error: result.error });
+        res.json({ job: { id: result.job.id, status: result.job.status, costCredits: result.job.costCredits } });
+    }));
 
-        const job = await createJob(store, {
-            username, templateId: 'film_assembly',
-            values: {
-                transition: transition || '', musicId: musicId || '', endTitle: title,
-                filter: filter || '', aspect: aspect || '16:9', logoUrl: cleanLogoUrl || '',
-                sfxId: sfxId || '', narrationText: narration || '', resolution: resolution || DEFAULT_RESOLUTION,
-                watermarked: !!appliedWatermark, burnCaptions: !!burnCaptions,
-                captionStyle: captionStyle || '', captionPosition: captionPosition || '',
-                captionAnimated: !!captionAnimated,
-            },
-            spec, costCredits: ASSEMBLY_COST_CREDITS,
-            projectId: project.id, shotIndex: null,
-        });
-        const deducted = await deductCredits(store, {
-            username, amount: ASSEMBLY_COST_CREDITS, jobId: job.id,
-        });
-        if (!deducted) {
-            await transitionJob(store, job.id, 'failed', { error: 'رصيد غير كافٍ.' });
-            return res.status(402).json({
-                error: `رصيدك الحالي (${await getBalance(store, username)}) لا يكفي — التجميع يكلف ${ASSEMBLY_COST_CREDITS}.`,
-            });
+    // 🎬 "أكمل تلقائياً" (AI Producer): تسليح تجميع مؤجَّل — يراجع المستخدم
+    // مسودة السيناريو ويرسل كل مشاهدها كالمعتاد (POST /renders لكل مشهد)،
+    // ثم يسلّح هذا المسار بخيارات تجميع أساسية؛ محرك المعالجة (engine.js)
+    // يُجمِّع تلقائياً بمجرد توقف كل نشاط المشروع — بلا عودة يدوية. لا
+    // تعليق صوتي ولا لوجو هنا عمداً (يبقيان يدويين حصراً عبر /assemble).
+    app.post('/api/video/projects/:id/auto-assemble', verifyToken, wrap(async (req, res) => {
+        const project = await ownedProject(req);
+        if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
+        if (await store.countJobsInProject(project.id) === 0) {
+            return res.status(400).json({ error: 'لا لقطات في هذا المشروع بعد — أرسل مشهداً واحداً على الأقل أولاً.' });
         }
-        res.json({ job: { id: job.id, status: job.status, costCredits: job.costCredits } });
+        const resolved = resolveAssemblyOptions({ body: req.body, project, musicLibrary, sfxLibrary, blocklist });
+        if (resolved.error) return res.status(400).json({ error: resolved.error });
+
+        const isPaidPlan = ['pro', 'enterprise'].includes(req.user.plan);
+        const appliedWatermark = (watermarkEnforced && !isPaidPlan) ? watermarkText : null;
+
+        const updated = await store.setProjectAutoAssemble(project.id, {
+            resolved: resolved.values, raw: resolved.raw,
+            watermarkText: appliedWatermark, armedAt: Date.now(),
+        });
+        res.json({ project: updated });
+    }));
+
+    app.delete('/api/video/projects/:id/auto-assemble', verifyToken, wrap(async (req, res) => {
+        const project = await ownedProject(req);
+        if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
+        const updated = await store.setProjectAutoAssemble(project.id, null);
+        res.json({ project: updated });
     }));
 
     // ─── بنك الشخصيات (تثبيت هوية البطل) ───────────────────────────────
@@ -939,8 +890,15 @@ if (isMain) {
         }
     });
 
+    // نفس منطق isAdminUser المبني داخل createApp — يُعاد بناؤه هنا لأن
+    // المحرك يعمل خارج نطاقها (لا req متاح وقت التجميع التلقائي).
+    const isAdminUser = buildIsAdmin(process.env.ADMIN_USERS || '');
+
     // الحلقة المجدولة — الحارس داخل runEngineTickGuarded يمنع التداخل.
     setInterval(() => {
-        runEngineTickGuarded(store, { provider, storage, retentionDays: retention });
+        runEngineTickGuarded(store, {
+            provider, storage, retentionDays: retention,
+            limits, isAdminUser, maxActiveJobsPerUser: MAX_ACTIVE_JOBS_PER_USER,
+        });
     }, ENGINE_POLL_MS);
 }
