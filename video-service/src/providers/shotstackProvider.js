@@ -112,6 +112,21 @@ export function specToShotstackTimeline(spec) {
             }],
         });
     }
+    // 📝 كابشن محروق — مسار نصي مستقل أسفل الشاشة، مقطع واحد لكل لقطة
+    // تحمل كابشن خاصاً بها (⚠️ غير مؤكَّد عملياً بعد من هذه الخدمة تحديداً:
+    // موضع النص أسفل الشاشة مع مقاسات 9:16/1:1 — تحقّق أنه لا يتقاطع مع
+    // أزرار/واجهة المنصة المستضيفة في أول استخدام حقيقي).
+    if (Array.isArray(spec.captionCues) && spec.captionCues.length) {
+        timeline.tracks.push({
+            clips: spec.captionCues.map(c => ({
+                asset: { type: 'title', text: c.text, style: 'minimal', size: 'medium' },
+                start: c.startSec,
+                length: c.lengthSec,
+                position: 'bottom',
+                offset: { y: 0.08 },
+            })),
+        });
+    }
     // مؤثر صوتي عند كل نقطة انتقال بين المشاهد — مسار صوتي منفصل قصير
     // المقاطع، لا يتعارض مع مسار الفيديو أو الموسيقى التصويرية.
     if (spec.sfxUrl && Array.isArray(spec.sceneStarts)) {

@@ -71,6 +71,10 @@ export const TEMPLATES = Object.freeze([
             { key: 'mood', labelAr: 'المزاج والإيقاع', type: 'choice', required: false, options: cinemaFieldOptions('mood') },
             { key: 'style', labelAr: 'الأسلوب البصري', type: 'choice', required: false, options: cinemaFieldOptions('style') },
             { key: 'negativePrompt', labelAr: 'ما لا تريد رؤيته (اختياري)', type: 'text', required: false, maxLen: 300 },
+            // 📝 كابشن اختياري — لا يدخل في وصف التوليد إطلاقاً (compileSpec
+            // لا يقرأ هذا الحقل)، يُحفظ فقط ليُحرق كنص فوق اللقطة عند
+            // التجميع إن اختار المستخدم ذلك (راجع assembly.js).
+            { key: 'caption', labelAr: 'كابشن يُحرق فوق اللقطة عند التجميع (اختياري)', type: 'text', required: false, maxLen: 80 },
         ],
     },
     {
@@ -94,6 +98,7 @@ export const TEMPLATES = Object.freeze([
             { key: 'mood', labelAr: 'المزاج والإيقاع', type: 'choice', required: false, options: cinemaFieldOptions('mood') },
             { key: 'style', labelAr: 'الأسلوب البصري', type: 'choice', required: false, options: cinemaFieldOptions('style') },
             { key: 'negativePrompt', labelAr: 'ما لا تريد رؤيته (اختياري)', type: 'text', required: false, maxLen: 300 },
+            { key: 'caption', labelAr: 'كابشن يُحرق فوق اللقطة عند التجميع (اختياري)', type: 'text', required: false, maxLen: 80 },
         ],
     },
     {

@@ -38,11 +38,16 @@ import {
     characterImagePrompt, validateCharacterInput,
 } from './src/characters.js';
 import { refundCredits } from './src/credits.js';
+import { buildScriptProvider } from './src/scriptProvider.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const MAX_ACTIVE_JOBS_PER_USER = 3;
 const ENGINE_POLL_MS = 5000;
+// درع تكلفة لتخطيط السيناريو: مشاهد كثيرة جداً في نداء واحد = تكلفة/زمن
+// استجابة أعلى لمزوّد التخطيط بلا فائدة حقيقية (المستخدم يراجع/يعدّل أصلاً).
+const MAX_PLAN_SCENES = 8;
+const MIN_PLAN_SCENES = 2;
 
 /** يلتقط أخطاء المسارات غير المتزامنة إلى معالج Express بدل ابتلاعها. */
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -60,6 +65,7 @@ export function createApp({
     musicLibrary = readMusicLibrary(),
     sfxLibrary = readSfxLibrary(),
     ttsProvider = null,
+    scriptProvider = null,
     // علامة الخطة المجانية: مفتاح تفعيل صريح منفصل — التوكنات الحالية
     // (المُصدرة قبل حمل ادّعاء plan) تُعامَل مجانية افتراضياً في الفرع
     // أدناه، فتفعيله فوراً عند نشر هذا الكود قد يضع علامة خطأً على
@@ -186,6 +192,7 @@ export function createApp({
         res.json({
             projects: await store.listProjectsByUser(userOf(req), 50),
             settingsOptions: { aspects: PROJECT_ASPECTS, styles: PROJECT_STYLES, filters: PROJECT_FILTERS },
+            scriptPlanningEnabled: !!scriptProvider,
         });
     }));
 
@@ -209,6 +216,68 @@ export function createApp({
         if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
         const shots = await store.listJobsByProject(project.id);
         res.json({ project, shots: shots.map(publicJob) });
+    }));
+
+    // ✍️ تخطيط سيناريو من فكرة واحدة: "برومت واحد → مسودة فيلم كامل".
+    // تخطيط فقط — لا يُنشئ مهمة ولا يخصم رصيداً؛ الناتج يُراجعه المستخدم
+    // ويُرسل كل مشهد لاحقاً عبر /api/video/renders العادي بكل حراساته.
+    app.post('/api/video/projects/:id/plan-shots', verifyToken, wrap(async (req, res) => {
+        if (!scriptProvider) return res.status(503).json({ error: 'تخطيط السيناريو غير مفعَّل على هذا الخادم.' });
+        const project = await ownedProject(req);
+        if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
+
+        const idea = String(req.body?.idea || '').trim();
+        if (idea.length < 5 || idea.length > 500) {
+            return res.status(400).json({ error: 'صف فكرة الفيلم بين 5 و500 حرف.' });
+        }
+        const ideaFlagged = inspectText(idea, { blocklist });
+        if (ideaFlagged) return res.status(400).json({ error: ideaFlagged.error });
+
+        const rawCount = parseInt(req.body?.sceneCount, 10);
+        const sceneCount = Math.min(Math.max(Number.isFinite(rawCount) ? rawCount : 4, MIN_PLAN_SCENES), MAX_PLAN_SCENES);
+
+        const shotSizeOptions = cinemaFieldOptions('shotSize');
+        const cameraMoveOptions = cinemaFieldOptions('cameraMove');
+        const lightingOptions = cinemaFieldOptions('lighting');
+        const moodOptions = cinemaFieldOptions('mood');
+        const styleOptions = cinemaFieldOptions('style');
+
+        let rawScenes;
+        try {
+            rawScenes = await scriptProvider.planScenes({
+                idea, sceneCount, shotSizeOptions, cameraMoveOptions, lightingOptions, moodOptions, styleOptions,
+            });
+        } catch (e) {
+            return res.status(502).json({ error: `تعذّر تخطيط السيناريو: ${e.message}` });
+        }
+
+        // 🛡️ مخرجات نموذج خارجي لا تُصدَّق حرفياً: كل حقل يُقيَّد ضمن
+        // خيارات cinema.js المسموحة فقط (قيمة خارجها تُسقَط بصمت، لا تُفشل
+        // المشهد كله)، والنصوص تمر بنفس فلترة المحتوى — مشهد يفشل الفلترة
+        // يُسقَط كاملاً بصمت أيضاً، لا يُفشل الطلب كله لمشهد واحد سيّئ.
+        const pickOption = (value, options) => {
+            const clean = String(value || '').trim();
+            return options.includes(clean) ? clean : '';
+        };
+        const scenes = [];
+        for (const raw of (rawScenes || []).slice(0, MAX_PLAN_SCENES)) {
+            const prompt = String(raw?.prompt || '').trim().slice(0, 1000);
+            if (!prompt || inspectText(prompt, { blocklist })) continue;
+            const captionRaw = String(raw?.caption || '').trim().slice(0, 80);
+            const caption = captionRaw && !inspectText(captionRaw, { blocklist }) ? captionRaw : '';
+            scenes.push({
+                prompt, caption,
+                shotSize: pickOption(raw?.shotSize, shotSizeOptions),
+                cameraMove: pickOption(raw?.cameraMove, cameraMoveOptions),
+                lighting: pickOption(raw?.lighting, lightingOptions),
+                mood: pickOption(raw?.mood, moodOptions),
+                style: pickOption(raw?.style, styleOptions),
+            });
+        }
+        if (scenes.length === 0) {
+            return res.status(502).json({ error: 'تعذّر إنتاج أي مشهد صالح — أعد صياغة الفكرة أو جرّب فكرة أخرى.' });
+        }
+        res.json({ scenes });
     }));
 
     // العنوان وإعدادات التوريث الآن مستقلان: أي منهما قد يصل وحده، أو
@@ -288,7 +357,7 @@ export function createApp({
         const project = await ownedProject(req);
         if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
 
-        const { transition, musicId, endTitle, aspect, logoUrl, sfxId, narrationText, resolution } = req.body || {};
+        const { transition, musicId, endTitle, aspect, logoUrl, sfxId, narrationText, resolution, burnCaptions } = req.body || {};
         // فلتر لوني: طلب صريح (حتى '' = بلا فلتر) يتفوق دوماً؛ غيابه فقط
         // (undefined) يقع على فلتر المشروع الافتراضي (أداة التلوين السينمائي).
         const filter = req.body?.filter !== undefined ? req.body.filter : (project.defaultFilter || null);
@@ -387,6 +456,7 @@ export function createApp({
         const shots = await Promise.all(ready.map(async s => ({
             durationSec: s.spec?.durationSec,
             videoUrl: s.storageKey && storage ? await storage.signedUrl(s.storageKey, 3600) : s.videoUrl,
+            caption: typeof s.values?.caption === 'string' ? s.values.caption : null,
         })));
         const spec = buildFilmSpec({
             shots,
@@ -399,6 +469,7 @@ export function createApp({
             sfxUrl,
             narrationUrl,
             resolution: resolution || DEFAULT_RESOLUTION,
+            burnCaptions: !!burnCaptions,
             watermarkText: appliedWatermark,
         });
 
@@ -408,7 +479,7 @@ export function createApp({
                 transition: transition || '', musicId: musicId || '', endTitle: title,
                 filter: filter || '', aspect: aspect || '16:9', logoUrl: cleanLogoUrl || '',
                 sfxId: sfxId || '', narrationText: narration || '', resolution: resolution || DEFAULT_RESOLUTION,
-                watermarked: !!appliedWatermark,
+                watermarked: !!appliedWatermark, burnCaptions: !!burnCaptions,
             },
             spec, costCredits: ASSEMBLY_COST_CREDITS,
             projectId: project.id, shotIndex: null,
@@ -794,6 +865,7 @@ if (isMain) {
     const storage = buildStorage();            // null ما لم يُضبط VIDEO_STORAGE=r2
     const imageProvider = buildImageProvider(); // null ما لم يكن fal مفعَّلاً
     const ttsProvider = buildTtsProvider();     // null ما لم يُضبط FAL_TTS_MODEL
+    const scriptProvider = buildScriptProvider(); // null ما لم يُضبط VIDEO_SCRIPT_API_KEY
     const retention = readRetentionDays();
 
     await store.init(); // ينشئ الجداول عند أول إقلاع — فشلٌ صاخب إن تعذّر
@@ -807,6 +879,7 @@ if (isMain) {
         limits,
         imageProvider,
         ttsProvider,
+        scriptProvider,
     });
 
     const port = Number(process.env.PORT || 4100);

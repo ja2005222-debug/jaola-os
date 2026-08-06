@@ -521,6 +521,15 @@
           'رسوم ثلاثية الأبعاد بأسلوب استوديوهات العائلات، ألوان دافئة',
           'واقعية سينمائية 35mm بحبيبات فيلم خفيفة',
         ],
+        planFilmBtn: '🪄 خطّط لي فيلماً', planTitle: '🪄 تخطيط سيناريو من فكرة واحدة',
+        planNote: 'صف فكرتك وسنقترح مسودة مشاهد متتابعة — راجعها وعدّلها كما تشاء، ثم ولّدها كلها بضغطة واحدة. لا يُخصم أي رصيد في هذه الخطوة.',
+        planIdeaPh: 'مثال: قطة برتقالية تتجول في شارع أوروبي عند الغروب وتكتشف كرة صوف متدحرجة',
+        planSceneCountLabel: 'عدد المشاهد:', planGoBtn: '✨ اقترح المشاهد',
+        planFail: 'تعذّر تخطيط السيناريو.', planCaptionPh: 'كابشن (اختياري)',
+        planGenerateAll: (n) => `🎬 ولّد كل المشاهد (${n})`,
+        planGenerating: 'جارٍ الإرسال…', planQueued: 'دخل الطابور',
+        planGenerateSummary: (ok, fail) => fail === 0 ? `✅ أُرسلت ${ok} مشاهد بنجاح.` : `أُرسل ${ok} بنجاح، وفشل ${fail}.`,
+        burnCaptionsLabel: '📝 احرق الترجمات (كابشن كل لقطة فوقها إن وُجد)',
       },
       en: {
         docTitle: 'Cinematic Studio — JAOLA OS',
@@ -639,6 +648,15 @@
           '3D family-studio animation style, warm colors',
           'Cinematic 35mm photorealism with light film grain',
         ],
+        planFilmBtn: '🪄 Plan my film', planTitle: '🪄 Plan a script from one idea',
+        planNote: 'Describe your idea and we\'ll suggest a draft of sequential scenes — review and edit them as you like, then generate them all in one click. No credits are charged at this step.',
+        planIdeaPh: 'Example: an orange cat wandering a European street at sunset discovers a rolling ball of yarn',
+        planSceneCountLabel: 'Scene count:', planGoBtn: '✨ Suggest scenes',
+        planFail: 'Could not plan the script.', planCaptionPh: 'Caption (optional)',
+        planGenerateAll: (n) => `🎬 Generate all scenes (${n})`,
+        planGenerating: 'Sending…', planQueued: 'Queued',
+        planGenerateSummary: (ok, fail) => fail === 0 ? `✅ ${ok} scenes sent successfully.` : `${ok} sent successfully, ${fail} failed.`,
+        burnCaptionsLabel: '📝 Burn captions (each shot\'s caption over it, if any)',
       },
     };
     let lang = localStorage.getItem('studioLang') || 'ar';
@@ -1348,6 +1366,7 @@
     // ─── مشاريع الأفلام (الستوري بورد) ─────────────────────────────────
 
     let projectSettingsOptions = { aspects: [], styles: [] };
+    let scriptPlanningEnabled = false;
 
     async function loadProjects() {
       const res = await api('/api/video/projects');
@@ -1355,6 +1374,7 @@
       const data = await res.json();
       projects = data.projects;
       projectSettingsOptions = data.settingsOptions || projectSettingsOptions;
+      scriptPlanningEnabled = !!data.scriptPlanningEnabled;
       renderProjectChips();
       renderStats();
     }
@@ -1398,11 +1418,13 @@
 
     async function refreshStoryboard() {
       if (!activeProjectId) return;
-      // لوحة التجميع أو الإعدادات مفتوحة = المستخدم يكتب — لا نمسح ما تحت يده.
+      // لوحة التجميع أو الإعدادات أو التخطيط مفتوحة = المستخدم يكتب — لا نمسح ما تحت يده.
       const openAssembly = document.getElementById('assemblyPanel');
       const openSettings = document.getElementById('projSettingsPanel');
+      const openPlan = document.getElementById('planPanel');
       if ((openAssembly && !openAssembly.classList.contains('hidden')) ||
-          (openSettings && !openSettings.classList.contains('hidden'))) return;
+          (openSettings && !openSettings.classList.contains('hidden')) ||
+          (openPlan && !openPlan.classList.contains('hidden'))) return;
       const res = await api(`/api/video/projects/${activeProjectId}`);
       if (!res.ok) { selectProject(null); return; }
       const { project, shots } = await res.json();
@@ -1416,9 +1438,11 @@
           <button class="chip" id="projSettingsBtn">${tr('inheritedSettings')}${
             (project.defaultAspectRatio || project.defaultStyle) ? ' ●' : ''}</button>
           <button class="chip" id="deleteProjBtn">${tr('deleteProject')}</button>
+          ${scriptPlanningEnabled ? `<button class="chip" id="planBtn" style="border-color:#a78bfa;color:#a78bfa">${tr('planFilmBtn')}</button>` : ''}
           ${shots.some(s => s.status === 'done') ? `<button class="chip" id="assembleBtn" style="border-color:var(--accent);color:var(--accent)">${tr('assembleFilm')}</button>` : ''}
         </div>
         <div id="projSettingsPanel" class="hidden" style="margin-bottom:10px"></div>
+        <div id="planPanel" class="hidden" style="margin-bottom:10px"></div>
         <div id="assemblyPanel" class="hidden" style="margin-bottom:10px"></div>
         ${shots.length === 0
           ? `<p class="note">${tr('noShotsYet')}</p>`
@@ -1452,6 +1476,8 @@
       $('projSettingsBtn').addEventListener('click', () => openProjectSettingsPanel(project));
       const assembleBtn = $('assembleBtn');
       if (assembleBtn) assembleBtn.addEventListener('click', () => openAssemblyPanel(project.id));
+      const planBtn = $('planBtn');
+      if (planBtn) planBtn.addEventListener('click', () => openPlanPanel(project.id));
     }
 
     // ⚙️ إعدادات موروثة: نسبة أبعاد وأسلوب افتراضيان تُطبَّقان تلقائياً
@@ -1498,6 +1524,154 @@
           refreshStoryboard();
         }
       });
+    }
+
+    // 🪄 تخطيط سيناريو من فكرة واحدة: "برومت واحد → مسودة فيلم كامل" —
+    // تخطيط فقط (بلا خصم رصيد ولا إنشاء مهمة)؛ المستخدم يراجع/يعدّل كل
+    // مشهد ثم يولّدها كلها عبر /api/video/renders العادي بكل حراساته
+    // (فلترة المحتوى، درع التكلفة، الطابور) — صفر التفاف على تلك المسارات.
+    let planScenesDraft = [];
+
+    function planFieldOptions(key) {
+      const control = cinemaControls.find(c => c.key === key);
+      return control ? Object.keys(control.map) : [];
+    }
+
+    async function openPlanPanel(projectId) {
+      const panel = $('planPanel');
+      if (!panel.classList.contains('hidden')) { panel.classList.add('hidden'); return; }
+      panel.classList.remove('hidden');
+      planScenesDraft = [];
+      renderPlanPanel(projectId);
+    }
+
+    function renderPlanPanel(projectId) {
+      const panel = $('planPanel');
+      panel.innerHTML = `
+        <div class="card" style="margin-bottom:0">
+          <strong style="font-size:14px">${tr('planTitle')}</strong>
+          <p class="note">${tr('planNote')}</p>
+          <textarea id="planIdea" rows="3" maxlength="500" placeholder="${tr('planIdeaPh')}"
+            style="width:100%;margin-top:8px;resize:vertical"></textarea>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+            <label style="font-size:12px;color:var(--muted)">${tr('planSceneCountLabel')}</label>
+            <input type="number" id="planSceneCount" min="2" max="8" value="4"
+              style="width:70px;padding:6px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)" />
+            <button id="planGoBtn" type="button">${tr('planGoBtn')}</button>
+          </div>
+          <div class="msg" id="planMsg"></div>
+          <div id="planDraftList" style="margin-top:12px"></div>
+        </div>`;
+
+      $('planGoBtn').addEventListener('click', async () => {
+        const idea = $('planIdea').value.trim();
+        const sceneCount = parseInt($('planSceneCount').value, 10) || 4;
+        const msg = $('planMsg'); msg.className = 'msg';
+        const btn = $('planGoBtn'); btn.disabled = true;
+        try {
+          const res = await api(`/api/video/projects/${projectId}/plan-shots`, {
+            method: 'POST', body: JSON.stringify({ idea, sceneCount }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            msg.textContent = data.error || tr('planFail');
+            msg.className = 'msg err';
+          } else {
+            planScenesDraft = data.scenes;
+            msg.className = 'msg';
+            renderPlanDraftList(projectId);
+          }
+        } catch {
+          msg.textContent = tr('connFail');
+          msg.className = 'msg err';
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    }
+
+    function renderPlanDraftList(projectId) {
+      const list = $('planDraftList');
+      if (planScenesDraft.length === 0) { list.innerHTML = ''; return; }
+      const opts = (key) => planFieldOptions(key).map(o => `<option value="${o}">${o}</option>`).join('');
+      list.innerHTML = planScenesDraft.map((s, i) => `
+        <div class="card" data-plan-idx="${i}" style="margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <strong style="font-size:12px">${tr('shotNum', i + 1)}</strong>
+            <button type="button" class="chip" data-plan-remove="${i}">✖</button>
+          </div>
+          <textarea data-plan-field="prompt" rows="2" maxlength="1000"
+            style="width:100%;margin-top:6px;resize:vertical">${escapeHtml(s.prompt)}</textarea>
+          <input type="text" data-plan-field="caption" maxlength="80" placeholder="${tr('planCaptionPh')}"
+            value="${escapeHtml(s.caption || '')}" style="width:100%;margin-top:6px" />
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+            <select data-plan-field="shotSize" style="${SELECT_STYLE};max-width:150px"><option value="">${tr('noSelection')}</option>${opts('shotSize')}</select>
+            <select data-plan-field="cameraMove" style="${SELECT_STYLE};max-width:150px"><option value="">${tr('noSelection')}</option>${opts('cameraMove')}</select>
+            <select data-plan-field="lighting" style="${SELECT_STYLE};max-width:150px"><option value="">${tr('noSelection')}</option>${opts('lighting')}</select>
+            <select data-plan-field="mood" style="${SELECT_STYLE};max-width:150px"><option value="">${tr('noSelection')}</option>${opts('mood')}</select>
+            <select data-plan-field="style" style="${SELECT_STYLE};max-width:150px"><option value="">${tr('noSelection')}</option>${opts('style')}</select>
+          </div>
+          <p class="note" id="planStatus-${i}"></p>
+        </div>`).join('') + `
+        <button id="planGenerateAllBtn" type="button" style="margin-top:6px">${tr('planGenerateAll', planScenesDraft.length)}</button>
+        <div class="msg" id="planGenerateMsg"></div>`;
+
+      // القيم المخطَّطة تُختار مبدئياً في القوائم المنسدلة إن كانت ضمن الخيارات المتاحة
+      planScenesDraft.forEach((s, i) => {
+        const card = list.querySelector(`[data-plan-idx="${i}"]`);
+        ['shotSize', 'cameraMove', 'lighting', 'mood', 'style'].forEach(key => {
+          const sel = card.querySelector(`[data-plan-field="${key}"]`);
+          if (sel && s[key] && [...sel.options].some(o => o.value === s[key])) sel.value = s[key];
+        });
+      });
+
+      list.querySelectorAll('[data-plan-remove]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          planScenesDraft.splice(parseInt(btn.dataset.planRemove, 10), 1);
+          renderPlanDraftList(projectId);
+        });
+      });
+
+      $('planGenerateAllBtn').addEventListener('click', () => generatePlannedScenes(projectId));
+    }
+
+    // يرسل كل مشهد مقبول عبر /api/video/renders العادي تباعاً (لا بالتوازي
+    // — يحترم طابور المستخدم وسقوف درع التكلفة بدل إغراقها دفعة واحدة).
+    async function generatePlannedScenes(projectId) {
+      const list = $('planDraftList');
+      const cards = [...list.querySelectorAll('[data-plan-idx]')];
+      const genBtn = $('planGenerateAllBtn');
+      const genMsg = $('planGenerateMsg');
+      if (genBtn) genBtn.disabled = true;
+      if (genMsg) genMsg.className = 'msg';
+      let okCount = 0, failCount = 0;
+      for (const card of cards) {
+        const statusEl = document.getElementById(`planStatus-${card.dataset.planIdx}`);
+        const values = {};
+        card.querySelectorAll('[data-plan-field]').forEach(el => {
+          const v = el.value.trim();
+          if (v) values[el.dataset.planField] = v;
+        });
+        if (!values.prompt) { if (statusEl) statusEl.textContent = '—'; continue; }
+        if (statusEl) statusEl.textContent = `⏳ ${tr('planGenerating')}`;
+        try {
+          const res = await api('/api/video/renders', {
+            method: 'POST', body: JSON.stringify({ templateId: 'ai_clip', values, projectId }),
+          });
+          const data = await res.json();
+          if (res.ok) { okCount++; if (statusEl) statusEl.textContent = `✅ ${tr('planQueued')}`; }
+          else { failCount++; if (statusEl) statusEl.textContent = `❌ ${data.error || tr('genericError')}`; }
+        } catch {
+          failCount++;
+          if (statusEl) statusEl.textContent = `❌ ${tr('connFail')}`;
+        }
+      }
+      if (genMsg) {
+        genMsg.textContent = tr('planGenerateSummary', okCount, failCount);
+        genMsg.className = failCount === 0 ? 'msg ok' : 'msg err';
+      }
+      if (genBtn) genBtn.disabled = false;
+      loadCredits(); loadJobs(); refreshStoryboard();
     }
 
     // يملأ حقول نسبة الأبعاد/الأسلوب من إعدادات المشروع النشط الموروثة
@@ -1562,6 +1736,10 @@
           ${opts.narrationEnabled ? `<textarea id="asmNarration" maxlength="500" rows="2"
             placeholder="${tr('narrationPh', opts.narrationCostCredits)}"
             style="width:100%;margin-top:8px;resize:vertical"></textarea>` : ''}
+          <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:var(--muted)">
+            <input type="checkbox" id="asmBurnCaptions" />
+            ${tr('burnCaptionsLabel')}
+          </label>
           <button id="asmGo" type="button">${tr('assembleBtn', opts.costCredits)}</button>
           <div class="msg" id="asmMsg"></div>
         </div>`;
@@ -1575,6 +1753,7 @@
             aspect: $('asmAspect').value,
             endTitle: $('asmTitle').value.trim(),
             logoUrl: $('asmLogo').value.trim(),
+            burnCaptions: $('asmBurnCaptions').checked,
           };
           const musicSel = $('asmMusic');
           if (musicSel && musicSel.value) body.musicId = musicSel.value;
