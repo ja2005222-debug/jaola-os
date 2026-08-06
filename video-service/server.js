@@ -286,15 +286,23 @@ export function createApp({
     app.patch('/api/video/projects/:id', verifyToken, wrap(async (req, res) => {
         const project = await ownedProject(req);
         if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
-        const { title, defaultAspectRatio, defaultStyle, defaultFilter, styleProfile } = req.body || {};
+        const { title, defaultAspectRatio, defaultStyle, defaultFilter, styleProfile, defaultCharacterId } = req.body || {};
         let updated = project;
         if (title !== undefined) {
             const clean = validTitle(title);
             if (!clean) return res.status(400).json({ error: 'عنوان المشروع مطلوب (حتى 80 حرفاً).' });
             updated = await store.renameProject(project.id, clean);
         }
+        // الشخصية الافتراضية: خلافاً لبقية الإعدادات الموروثة، تُتحقَّق
+        // ملكيتها هنا صراحةً (لا تفويض صامت لشخصية مستخدم آخر أبداً).
+        if (defaultCharacterId) {
+            const c = await store.getCharacter(String(defaultCharacterId));
+            if (!c || c.username !== userOf(req)) {
+                return res.status(400).json({ error: 'الشخصية المختارة كافتراضية غير موجودة.' });
+            }
+        }
         if (defaultAspectRatio !== undefined || defaultStyle !== undefined
-            || defaultFilter !== undefined || styleProfile !== undefined) {
+            || defaultFilter !== undefined || styleProfile !== undefined || defaultCharacterId !== undefined) {
             const cleanStyleProfile = styleProfile !== undefined ? String(styleProfile || '').trim() : undefined;
             const issue = validSettings({
                 defaultAspectRatio, defaultStyle, defaultFilter, styleProfile: cleanStyleProfile,
@@ -303,6 +311,7 @@ export function createApp({
             updated = await store.updateProjectSettings(project.id, {
                 aspectRatio: defaultAspectRatio, style: defaultStyle,
                 filter: defaultFilter, styleProfile: cleanStyleProfile,
+                characterId: defaultCharacterId,
             });
         }
         res.json({ project: updated });
@@ -676,12 +685,20 @@ export function createApp({
 
         // 🎭 إدراج شخصية من البنك (اختياري): وصفها الحرفي يُحقن في مقدمة
         // البرومت، وصورة الزاوية المطلوبة تصبح الإطار الأول في وضع الصورة.
+        // اختيار صريح من الطلب يتفوق دوماً؛ غيابه فقط يقع على الشخصية
+        // الافتراضية الموروثة من المشروع (إن وُجدت) — بديل "بنقرة واحدة"
+        // عن اختيار الشخصية يدوياً في كل لقطة جديدة بنفس الفيلم.
         let character = null;
         if (characterId && template.specKind === 'ai_prompt') {
             character = await store.getCharacter(String(characterId));
             if (!character || character.username !== userOf(req)) {
                 return res.status(400).json({ error: 'الشخصية غير موجودة.' });
             }
+        } else if (!characterId && project?.defaultCharacterId && template.specKind === 'ai_prompt') {
+            // توريث "أفضل جهد": شخصية افتراضية محذوفة/غير مملوكة لا تُفشل
+            // الطلب — تُتجاهَل بصمت (نفس فلسفة توريث نسبة الأبعاد/الأسلوب).
+            const c = await store.getCharacter(String(project.defaultCharacterId));
+            if (c && c.username === userOf(req)) character = c;
         }
 
         // فلترة المحتوى بعد التحقق النمطي وقبل أي حجز أو خصم — لا يصل

@@ -192,6 +192,7 @@ export function createFileStore({ dataDir, starterCredits }) {
             const project = {
                 id: newId(), at: Date.now(), updatedAt: Date.now(), username, title,
                 defaultAspectRatio, defaultStyle, defaultFilter: null, styleProfile: null,
+                defaultCharacterId: null,
             };
             projects.push(project);
             writeProjects(projects);
@@ -217,9 +218,9 @@ export function createFileStore({ dataDir, starterCredits }) {
             return { ...p };
         },
 
-        // إعدادات موروثة (نسبة الأبعاد/الأسلوب/الفلتر/بصمة الأسلوب) —
+        // إعدادات موروثة (نسبة الأبعاد/الأسلوب/الفلتر/بصمة الأسلوب/الشخصية) —
         // مفتاح غائب لا يُمس، ومفتاح بقيمة فارغة/null يُمسح صراحة.
-        async updateProjectSettings(id, { aspectRatio, style, filter, styleProfile } = {}) {
+        async updateProjectSettings(id, { aspectRatio, style, filter, styleProfile, characterId } = {}) {
             const projects = readProjects();
             const p = projects.find(x => x.id === id);
             if (!p) return null;
@@ -227,6 +228,7 @@ export function createFileStore({ dataDir, starterCredits }) {
             if (style !== undefined) p.defaultStyle = style || null;
             if (filter !== undefined) p.defaultFilter = filter || null;
             if (styleProfile !== undefined) p.styleProfile = styleProfile || null;
+            if (characterId !== undefined) p.defaultCharacterId = characterId || null;
             p.updatedAt = Date.now();
             writeProjects(projects);
             return { ...p };

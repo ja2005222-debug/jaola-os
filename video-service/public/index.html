@@ -509,6 +509,8 @@
         deleteProjectConfirm: 'حذف المشروع؟ اللقطات نفسها تبقى في مكتبتك — يزول التجميع فقط.',
         inheritedSettingsTitle: '⚙️ إعدادات موروثة لكل لقطة جديدة في هذا المشروع',
         noDefaultAspect: '— بلا نسبة افتراضية —', noDefaultStyle: '— بلا أسلوب افتراضي —',
+        noDefaultCharacter: '— بلا شخصية افتراضية —',
+        defaultCharacterHint: '🎭 الشخصية الافتراضية تُدرَج تلقائياً في كل لقطة جديدة بهذا المشروع — بلا اختيارها يدوياً كل مرة. يمكن استبدالها لأي لقطة بعينها من منتقي الشخصية في نموذج التوليد.',
         save: '💾 احفظ', saveFail: 'تعذّر الحفظ.',
         settingsSaved: '✅ حُفظت — ستُطبَّق على كل لقطة جديدة في هذا المشروع.',
         assembleShots: (n) => `🎬 تجميع ${n} لقطة في فيلم واحد`,
@@ -639,6 +641,8 @@
         deleteProjectConfirm: 'Delete the project? The shots themselves stay in your library — only the assembly is removed.',
         inheritedSettingsTitle: '⚙️ Inherited settings for every new shot in this project',
         noDefaultAspect: '— No default ratio —', noDefaultStyle: '— No default style —',
+        noDefaultCharacter: '— No default character —',
+        defaultCharacterHint: '🎭 The default character is auto-inserted into every new shot in this project — no need to pick it manually each time. Any single shot can still use a different character from the picker in the generation form.',
         save: '💾 Save', saveFail: 'Could not save.',
         settingsSaved: '✅ Saved — will apply to every new shot in this project.',
         assembleShots: (n) => `🎬 Assembling ${n} shots into one film`,
@@ -1440,6 +1444,10 @@
 
     function selectProject(id) {
       activeProjectId = id;
+      // كل مشروع يبدأ بلا شخصية مختارة يدوياً — الشخصية الافتراضية
+      // الموروثة (إن وُجدت) تُطبَّق لاحقاً عبر applyProjectDefaults، لا
+      // شخصية مشروع سابق باقية في الجلسة بالخطأ.
+      activeCharacterId = null;
       renderProjectChips();
       renderColorSection();
       renderLoraSection();
@@ -1531,17 +1539,25 @@
               ${projectSettingsOptions.styles.map(st =>
                 `<option value="${st}"${st === project.defaultStyle ? ' selected' : ''}>${st}</option>`).join('')}
             </select>
+            ${characters.length ? `<select id="projCharacter" style="${SELECT_STYLE};max-width:220px">
+              <option value="">${tr('noDefaultCharacter')}</option>
+              ${characters.map(c =>
+                `<option value="${c.id}"${c.id === project.defaultCharacterId ? ' selected' : ''}>🎭 ${escapeHtml(c.name)}</option>`).join('')}
+            </select>` : ''}
           </div>
+          <p class="note" style="margin-top:8px">${tr('defaultCharacterHint')}</p>
           <button id="projSettingsSave" type="button">${tr('save')}</button>
           <div class="msg" id="projSettingsMsg"></div>
         </div>`;
       $('projSettingsSave').addEventListener('click', async () => {
         const msg = $('projSettingsMsg'); msg.className = 'msg';
+        const charSel = $('projCharacter');
         const res = await api(`/api/video/projects/${project.id}`, {
           method: 'PATCH',
           body: JSON.stringify({
             defaultAspectRatio: $('projAspect').value,
             defaultStyle: $('projStyle').value,
+            defaultCharacterId: charSel ? charSel.value : '',
           }),
         });
         const data = await res.json();
@@ -1717,6 +1733,13 @@
       }
       if (proj.defaultStyle && form.elements.style) {
         form.elements.style.value = proj.defaultStyle;
+      }
+      // 🎭 شخصية افتراضية للمشروع — فقط إن لم يخترِ المستخدم شخصية بعد في
+      // هذه الجلسة (لا يُلغي اختياره اليدوي لشخصية أخرى)، وفقط إن كانت
+      // لا تزال موجودة في البنك (تفادي شخصية محذوفة معروضة كمختارة).
+      if (proj.defaultCharacterId && !activeCharacterId && characters.some(c => c.id === proj.defaultCharacterId)) {
+        activeCharacterId = proj.defaultCharacterId;
+        renderCharacterPicker();
       }
     }
 
