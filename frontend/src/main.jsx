@@ -8,3 +8,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <App />
   </React.StrictMode>,
 );
+
+// 📱 تسجيل Service Worker — وجوده وحده شرط تثبيت PWA على Chrome/Android
+// (بلا تخزين مؤقت فعلي، راجع public/sw.js). فشل التسجيل لا يكسر الموقع.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
