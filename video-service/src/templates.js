@@ -101,6 +101,76 @@ export const TEMPLATES = Object.freeze([
             { key: 'caption', labelAr: 'كابشن يُحرق فوق اللقطة عند التجميع (اختياري)', type: 'text', required: false, maxLen: 80 },
         ],
     },
+    // 🎥 قوالب صنّاع الفيديو — نفس بنية ai_clip (prompt + معايير إخراج +
+    // caption) بلا أي منطق تجميع جديد؛ الفرق كله في التوجيه والمقاسات
+    // الافتراضية المناسبة لصيغ صنّاع المحتوى القصيرة تحديداً، بدل قوالب
+    // الإعلانات التسويقية العامة أعلاه.
+    {
+        id: 'faceless_channel_short',
+        nameAr: 'قناة يوتيوب بلا وجه',
+        descriptionAr: 'لقطة عمودية بلا وجه ظاهر — يد، منتج، مشهد طبيعي، أو تفصيل مجرَّد — مع خطاف نصي فوقها. الصيغة الأكثر انتشاراً في يوتيوب شورتس وقنوات "الحقائق/القصص" الآلية.',
+        durationSec: 5,
+        costCredits: 5,
+        specKind: SPEC_AI_PROMPT,
+        fields: [
+            { key: 'prompt', labelAr: 'صف المشهد (مثال: كاميرا تقترب ببطء من كوب قهوة يتصاعد منه البخار على طاولة خشب في صباح ماطر)', type: 'text', required: true, maxLen: 1000 },
+            {
+                key: 'aspectRatio', labelAr: 'نسبة الأبعاد', type: 'choice', required: false,
+                default: '9:16', options: ['16:9', '9:16', '1:1', '21:9', '4:3'],
+            },
+            { key: 'shotSize', labelAr: 'حجم اللقطة', type: 'choice', required: false, options: cinemaFieldOptions('shotSize') },
+            { key: 'cameraMove', labelAr: 'حركة الكاميرا', type: 'choice', required: false, options: cinemaFieldOptions('cameraMove') },
+            { key: 'lighting', labelAr: 'الإضاءة', type: 'choice', required: false, options: cinemaFieldOptions('lighting') },
+            { key: 'mood', labelAr: 'المزاج والإيقاع', type: 'choice', required: false, options: cinemaFieldOptions('mood') },
+            { key: 'style', labelAr: 'الأسلوب البصري', type: 'choice', required: false, options: cinemaFieldOptions('style') },
+            { key: 'negativePrompt', labelAr: 'ما لا تريد رؤيته (اختياري)', type: 'text', required: false, maxLen: 300 },
+            { key: 'caption', labelAr: '📝 الخطاف الافتتاحي — نص كبير فوق المشهد (مثال: أغرب حقيقة لن تصدقها اليوم)', type: 'text', required: false, maxLen: 80 },
+        ],
+    },
+    {
+        id: 'podcast_highlight',
+        nameAr: 'ملخص بودكاست مرئي',
+        descriptionAr: 'مشهد بصري هادئ (خلفية مجردة/موجات صوت/استوديو) يتوسطه اقتباس بارز من الحلقة — مثالي لمقاطع الترويج القصيرة على السوشال ميديا.',
+        durationSec: 5,
+        costCredits: 5,
+        specKind: SPEC_AI_PROMPT,
+        fields: [
+            { key: 'prompt', labelAr: 'صف الخلفية البصرية (مثال: موجات صوت متوهجة بنفسجية تنبض ببطء على خلفية داكنة، استوديو بودكاست عصري)', type: 'text', required: true, maxLen: 1000 },
+            {
+                key: 'aspectRatio', labelAr: 'نسبة الأبعاد', type: 'choice', required: false,
+                default: '1:1', options: ['16:9', '9:16', '1:1', '21:9', '4:3'],
+            },
+            { key: 'shotSize', labelAr: 'حجم اللقطة', type: 'choice', required: false, options: cinemaFieldOptions('shotSize') },
+            { key: 'cameraMove', labelAr: 'حركة الكاميرا', type: 'choice', required: false, options: cinemaFieldOptions('cameraMove') },
+            { key: 'lighting', labelAr: 'الإضاءة', type: 'choice', required: false, options: cinemaFieldOptions('lighting') },
+            { key: 'mood', labelAr: 'المزاج والإيقاع', type: 'choice', required: false, options: cinemaFieldOptions('mood') },
+            { key: 'style', labelAr: 'الأسلوب البصري', type: 'choice', required: false, options: cinemaFieldOptions('style') },
+            { key: 'negativePrompt', labelAr: 'ما لا تريد رؤيته (اختياري)', type: 'text', required: false, maxLen: 300 },
+            { key: 'caption', labelAr: '📝 الاقتباس البارز من الحلقة — يظهر كنص فوق المشهد', type: 'text', required: false, maxLen: 80 },
+        ],
+    },
+    {
+        id: 'product_review_clip',
+        nameAr: 'مراجعة منتج سريعة',
+        descriptionAr: 'لقطة تُبرز منتجاً بأسلوب مراجعة واقعي — إضاءة استوديو نظيفة أو بيئة استخدام حقيقية — مع خلاصة أو تقييم نصي فوقها.',
+        durationSec: 5,
+        costCredits: 5,
+        specKind: SPEC_AI_PROMPT,
+        fields: [
+            { key: 'prompt', labelAr: 'صف المنتج والمشهد (مثال: يد تمسك سماعة لاسلكية بيضاء وتديرها ببطء أمام خلفية رمادية فاتحة بإضاءة استوديو ناعمة)', type: 'text', required: true, maxLen: 1000 },
+            {
+                key: 'aspectRatio', labelAr: 'نسبة الأبعاد', type: 'choice', required: false,
+                default: '9:16', options: ['16:9', '9:16', '1:1', '21:9', '4:3'],
+            },
+            { key: 'shotSize', labelAr: 'حجم اللقطة', type: 'choice', required: false, options: cinemaFieldOptions('shotSize') },
+            { key: 'cameraMove', labelAr: 'حركة الكاميرا', type: 'choice', required: false, options: cinemaFieldOptions('cameraMove') },
+            { key: 'lighting', labelAr: 'الإضاءة', type: 'choice', required: false, options: cinemaFieldOptions('lighting') },
+            { key: 'mood', labelAr: 'المزاج والإيقاع', type: 'choice', required: false, options: cinemaFieldOptions('mood') },
+            { key: 'style', labelAr: 'الأسلوب البصري', type: 'choice', required: false, options: cinemaFieldOptions('style') },
+            { key: 'negativePrompt', labelAr: 'ما لا تريد رؤيته (اختياري)', type: 'text', required: false, maxLen: 300 },
+            { key: 'caption', labelAr: '📝 الخلاصة أو التقييم — يظهر كنص فوق المشهد (مثال: يستحق الشراء ✅)', type: 'text', required: false, maxLen: 80 },
+        ],
+    },
     {
         id: 'story_slides',
         nameAr: 'قصة من ثلاث لقطات',

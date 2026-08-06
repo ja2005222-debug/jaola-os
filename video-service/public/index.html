@@ -554,6 +554,9 @@
         planGenerating: 'جارٍ الإرسال…', planQueued: 'دخل الطابور',
         planGenerateSummary: (ok, fail) => fail === 0 ? `✅ أُرسلت ${ok} مشاهد بنجاح.` : `أُرسل ${ok} بنجاح، وفشل ${fail}.`,
         burnCaptionsLabel: '📝 احرق الترجمات (كابشن كل لقطة فوقها إن وُجد)',
+        captionAnimatedLabel: '✨ متحرك (كلمة واحدة كبيرة في كل لحظة)',
+        presetHint: 'إعداد سريع لصيغة منصة — يملأ المقاس والكابشن دفعة واحدة:',
+        presetTiktok: 'تيك توك / ريلز / شورتس', presetYoutube: 'يوتيوب', presetSquare: 'منشور مربع',
       },
       en: {
         docTitle: 'Cinematic Studio — JAOLA OS',
@@ -681,6 +684,9 @@
         planGenerating: 'Sending…', planQueued: 'Queued',
         planGenerateSummary: (ok, fail) => fail === 0 ? `✅ ${ok} scenes sent successfully.` : `${ok} sent successfully, ${fail} failed.`,
         burnCaptionsLabel: '📝 Burn captions (each shot\'s caption over it, if any)',
+        captionAnimatedLabel: '✨ Animated (one big word at a time)',
+        presetHint: 'Quick platform preset — fills aspect ratio and captions at once:',
+        presetTiktok: 'TikTok / Reels / Shorts', presetYoutube: 'YouTube', presetSquare: 'Square post',
       },
     };
     let lang = localStorage.getItem('studioLang') || 'ar';
@@ -1726,6 +1732,12 @@
         <div class="card" style="margin-bottom:0">
           <strong style="font-size:14px">${tr('assembleShots', opts.readyShots)}</strong>
           ${opts.watermarked ? `<p class="note" style="color:var(--warn)">${tr('watermarkNote')}</p>` : ''}
+          <p class="note" style="margin-top:8px">${tr('presetHint')}</p>
+          <div class="chips" id="asmPresetChips">
+            <button type="button" class="chip" data-preset="tiktok">📱 ${tr('presetTiktok')}</button>
+            <button type="button" class="chip" data-preset="youtube">▶️ ${tr('presetYoutube')}</button>
+            <button type="button" class="chip" data-preset="square">🖼️ ${tr('presetSquare')}</button>
+          </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
             <select id="asmTransition" style="${SELECT_STYLE};max-width:160px">
               ${opts.transitions.map(t => `<option value="${t}">${t}</option>`).join('')}
@@ -1765,9 +1777,54 @@
             <input type="checkbox" id="asmBurnCaptions" />
             ${tr('burnCaptionsLabel')}
           </label>
+          <div id="asmCaptionOptions" class="hidden" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;margin-inline-start:22px">
+            <select id="asmCaptionStyle" style="${SELECT_STYLE};max-width:150px">
+              ${(opts.captionStyles || []).map(s =>
+                `<option value="${s}"${s === opts.defaultCaptionStyle ? ' selected' : ''}>🔤 ${s}</option>`).join('')}
+            </select>
+            <select id="asmCaptionPosition" style="${SELECT_STYLE};max-width:150px">
+              ${(opts.captionPositions || []).map(p =>
+                `<option value="${p}"${p === opts.defaultCaptionPosition ? ' selected' : ''}>${p}</option>`).join('')}
+            </select>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)">
+              <input type="checkbox" id="asmCaptionAnimated" />
+              ${tr('captionAnimatedLabel')}
+            </label>
+          </div>
           <button id="asmGo" type="button">${tr('assembleBtn', opts.costCredits)}</button>
           <div class="msg" id="asmMsg"></div>
         </div>`;
+      // 📝 خيارات الكابشن (النمط/الموضع/الحركة) لا تظهر إلا حين يُفعَّل
+      // حرقه — تفادياً لخيارات معطَّلة الأثر مربكة على الواجهة.
+      const toggleCaptionOptions = () =>
+        $('asmCaptionOptions').classList.toggle('hidden', !$('asmBurnCaptions').checked);
+      $('asmBurnCaptions').addEventListener('change', toggleCaptionOptions);
+      toggleCaptionOptions();
+
+      // 🎬 إعدادات منصة بنقرة واحدة — تملأ المقاس + إعدادات الكابشن
+      // المناسبة للصيغة القصيرة (تيك توك/ريلز/شورتس) دفعة واحدة، بدل
+      // ضبط ٤-٥ حقول يدوياً كل مرة.
+      const PLATFORM_PRESETS = {
+        tiktok: { aspect: '9:16', burnCaptions: true, captionStyle: 'عريض جريء', captionPosition: 'أسفل الشاشة', captionAnimated: true },
+        youtube: { aspect: '16:9', burnCaptions: false },
+        square: { aspect: '1:1', burnCaptions: true, captionStyle: 'نظيف', captionPosition: 'أسفل الشاشة', captionAnimated: false },
+      };
+      panel.querySelectorAll('#asmPresetChips .chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const p = PLATFORM_PRESETS[btn.dataset.preset];
+          if (!p) return;
+          $('asmAspect').value = p.aspect;
+          $('asmBurnCaptions').checked = !!p.burnCaptions;
+          if (p.burnCaptions) {
+            if (p.captionStyle) $('asmCaptionStyle').value = p.captionStyle;
+            if (p.captionPosition) $('asmCaptionPosition').value = p.captionPosition;
+            $('asmCaptionAnimated').checked = !!p.captionAnimated;
+          }
+          toggleCaptionOptions();
+          panel.querySelectorAll('#asmPresetChips .chip').forEach(c => c.classList.remove('active'));
+          btn.classList.add('active');
+        });
+      });
       $('asmGo').addEventListener('click', async () => {
         const msg = $('asmMsg'); msg.className = 'msg';
         $('asmGo').disabled = true;
@@ -1779,6 +1836,9 @@
             endTitle: $('asmTitle').value.trim(),
             logoUrl: $('asmLogo').value.trim(),
             burnCaptions: $('asmBurnCaptions').checked,
+            captionStyle: $('asmCaptionStyle').value,
+            captionPosition: $('asmCaptionPosition').value,
+            captionAnimated: $('asmCaptionAnimated').checked,
           };
           const musicSel = $('asmMusic');
           if (musicSel && musicSel.value) body.musicId = musicSel.value;

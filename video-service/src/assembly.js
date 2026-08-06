@@ -42,6 +42,29 @@ export const COLOR_FILTERS = Object.freeze({
 // مقاسات المنصات: يوتيوب/ريلز/بوست
 export const OUTPUT_ASPECTS = Object.freeze(['16:9', '9:16', '1:1']);
 
+// أنماط الكابشن المحروق بالعربية → قيم Shotstack title.style. 'نظيف'
+// (minimal) هو الوحيد المؤكَّد عملياً من هذه الخدمة تحديداً (نفس المخطط
+// المستخدم أصلاً في العنوان الختامي/الشعار) — البقية من كتالوج Shotstack
+// الموثَّق تاريخياً لنفس الحقل لكن غير مجرَّبة من هذه الخدمة، ورفضها إن
+// حدث يظهر بتفصيل رد Shotstack كاملاً (راجع shotstackProvider.js).
+export const CAPTION_STYLES = Object.freeze({
+    'نظيف': 'minimal',
+    'عريض جريء': 'blockbuster',
+    'أنيق': 'vogue',
+    'ترجمة كلاسيكية': 'subtitle',
+    'قلم تظليل': 'marker',
+    'مستقبلي': 'future',
+});
+export const DEFAULT_CAPTION_STYLE = 'نظيف';
+
+// مواضع الكابشن — نفس آلية position المؤكَّدة أصلاً للشعار/العلامة المائية.
+export const CAPTION_POSITIONS = Object.freeze({
+    'أسفل الشاشة': 'bottom',
+    'منتصف الشاشة': 'center',
+    'أعلى الشاشة': 'top',
+});
+export const DEFAULT_CAPTION_POSITION = 'أسفل الشاشة';
+
 // دقة الإخراج — قيم Shotstack. 'hd' هي المؤكَّدة عملياً (أول تجميع حقيقي
 // نجح بها). البقية قيم كتالوج Shotstack الموثَّقة تاريخياً بنفس الحقل؛
 // '4k' تحديداً ⚠️ غير مؤكَّدة من هذه الخدمة (توثيق Shotstack غير
@@ -87,7 +110,7 @@ export function buildFilmSpec({
     shots, transition = null, musicUrl = null, endTitle = '',
     aspectRatio = '16:9', filter = null, logoUrl = null, sfxUrl = null,
     narrationUrl = null, resolution = DEFAULT_RESOLUTION, watermarkText = null,
-    burnCaptions = false,
+    burnCaptions = false, captionStyle = null, captionPosition = null, captionAnimated = false,
 }) {
     if (!Array.isArray(shots) || shots.length === 0) {
         throw new Error('لا لقطات جاهزة للتجميع.');
@@ -96,6 +119,12 @@ export function buildFilmSpec({
     // 📝 كابشن محروق: مقطع نصي أسفل الشاشة لكل لقطة تحمل كابشن خاصاً بها
     // (values.caption عند توليدها) — مسار مستقل عن الفيديو (انظر
     // shotstackProvider.js)، لا يُفعَّل إلا حين يطلبه المستخدم صراحةً.
+    //
+    // 🎬 نمط "متحرك": بدل مقطع واحد بالسطر الكامل طوال اللقطة، يُقسَّم
+    // الكابشن لكلماته وتُوزَّع مدة اللقطة عليها بالتساوي — كل كلمة مقطع
+    // Shotstack title مستقل بتوقيته الخاص، فتظهر كلمة واحدة كبيرة في كل
+    // لحظة بدل السطر الثابت (أسلوب شائع في أدوات صنّاع المحتوى القصيرة).
+    // مبني بالكامل على نوع المقطع المؤكَّد (title) — لا بدائل غير مجرَّبة.
     const captionCues = [];
     let cursor = 0;
     for (const shot of shots) {
@@ -106,7 +135,17 @@ export function buildFilmSpec({
             layers: [{ kind: 'video', url: shot.videoUrl }],
         });
         if (burnCaptions && shot.caption) {
-            captionCues.push({ startSec: cursor, lengthSec, text: shot.caption });
+            if (captionAnimated) {
+                const words = shot.caption.trim().split(/\s+/).filter(Boolean);
+                if (words.length) {
+                    const wordDur = lengthSec / words.length;
+                    words.forEach((word, i) => {
+                        captionCues.push({ startSec: cursor + i * wordDur, lengthSec: wordDur, text: word });
+                    });
+                }
+            } else {
+                captionCues.push({ startSec: cursor, lengthSec, text: shot.caption });
+            }
         }
         cursor += lengthSec;
     }
@@ -135,6 +174,8 @@ export function buildFilmSpec({
         resolution: resolution || DEFAULT_RESOLUTION,
         watermarkText: watermarkText || null, // علامة الخطة المجانية — فرض خادم فقط
         captionCues: captionCues.length ? captionCues : null,
+        captionStyle: captionCues.length ? (captionStyle || null) : null,
+        captionPosition: captionCues.length ? (captionPosition || null) : null,
         scenes,
     };
 }

@@ -244,6 +244,9 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 story_slides: { slide1: '١', slide2: '٢', slide3: '٣' },
                 ai_clip: { prompt: 'قطة تمشي على الشاطئ وقت الغروب' },
                 ai_image_clip: { imageUrl: 'https://x.test/hero.png', prompt: 'البطل يلتفت نحو الأفق' },
+                faceless_channel_short: { prompt: 'كوب قهوة على طاولة خشب في صباح ماطر' },
+                podcast_highlight: { prompt: 'موجات صوت متوهجة على خلفية داكنة' },
+                product_review_clip: { prompt: 'سماعة لاسلكية بيضاء تدور أمام خلفية رمادية' },
             };
             for (const t of listTemplates()) {
                 const full = getTemplate(t.id);
@@ -258,6 +261,22 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 } else {
                     assert.ok(spec.scenes.length >= 1, t.id);
                 }
+            }
+        });
+
+        test('قوالب صنّاع الفيديو: نسبة أبعاد افتراضية مناسبة لكل صيغة (عمودي للقصير، مربع لملخص البودكاست)', () => {
+            for (const [id, expectedDefault] of [
+                ['faceless_channel_short', '9:16'],
+                ['product_review_clip', '9:16'],
+                ['podcast_highlight', '1:1'],
+            ]) {
+                const t = getTemplate(id);
+                const aspectField = t.fields.find(f => f.key === 'aspectRatio');
+                assert.equal(aspectField.default, expectedDefault, id);
+                // القيمة تُطبَّق فعلياً حين لا يحدِّد المستخدم شيئاً
+                const v = validateValues(t, { prompt: 'وصف تجريبي' }).values;
+                const spec = compileSpec(t, v);
+                assert.equal(spec.aspectRatio, expectedDefault, id);
             }
         });
 
@@ -2144,6 +2163,32 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 assert.equal(filmWithBurn.values.burnCaptions, true);
                 assert.equal(filmWithBurn.spec.captionCues.length, 1);
                 assert.equal(filmWithBurn.spec.captionCues[0].text, 'أول الحكاية');
+
+                // نمط/موضع/حركة الكابشن عبر الطلب الفعلي — تصل مترجَمة للمخطط،
+                // ومُسجَّلة في values للتدقيق (نفس نمط transition/filter الحالي)
+                const styled = await callAt(url, `/api/video/projects/${pid}/assemble`, {
+                    method: 'POST', token,
+                    body: { burnCaptions: true, captionStyle: 'مستقبلي', captionPosition: 'منتصف الشاشة', captionAnimated: true },
+                });
+                assert.equal(styled.status, 200);
+                const filmStyled = await getJob(store, styled.data.job.id);
+                assert.equal(filmStyled.values.captionStyle, 'مستقبلي');
+                assert.equal(filmStyled.values.captionPosition, 'منتصف الشاشة');
+                assert.equal(filmStyled.values.captionAnimated, true);
+                assert.equal(filmStyled.spec.captionStyle, 'future'); // الترجمة لقيمة Shotstack
+                assert.equal(filmStyled.spec.captionPosition, 'center');
+                // متحرك: كلمتان في "أول الحكاية" → مقطعان لا مقطع واحد
+                assert.equal(filmStyled.spec.captionCues.length, 2);
+
+                // نمط/موضع غير معروفين يُرفضان بـ400 قبل أي خصم (نفس صرامة transition/filter)
+                const badStyle = await callAt(url, `/api/video/projects/${pid}/assemble`, {
+                    method: 'POST', token, body: { burnCaptions: true, captionStyle: 'غير موجود' },
+                });
+                assert.equal(badStyle.status, 400);
+                const badPosition = await callAt(url, `/api/video/projects/${pid}/assemble`, {
+                    method: 'POST', token, body: { burnCaptions: true, captionPosition: 'غير موجود' },
+                });
+                assert.equal(badPosition.status, 400);
             } finally {
                 await new Promise(r => s.close(r));
             }
@@ -2276,6 +2321,65 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 shots: shots.map(s => ({ ...s, caption: null })), burnCaptions: true,
             });
             assert.equal(noCaptionsAtAll.captionCues, null);
+        });
+
+        test('📝 نمط/موضع الكابشن يصلان لمقاطع Shotstack، والافتراضي يبقى minimal/bottom بلا تحديد', () => {
+            const shots = [{ durationSec: 6, videoUrl: 'https://v.test/a.mp4', caption: 'مرحباً بالجميع' }];
+
+            // بلا تحديد نمط/موضع: نفس الافتراضي القديم (توافق خلفي كامل)
+            const def = buildFilmSpec({ shots, burnCaptions: true });
+            const defClip = specToShotstackTimeline(def).tracks
+                .find(t => t.clips.every(c => c.asset.type === 'title')).clips[0];
+            assert.equal(defClip.asset.style, 'minimal');
+            assert.equal(defClip.position, 'bottom');
+
+            // نمط وموضع مخصَّصان يصلان كما هما لكل مقطع كابشن
+            const styled = buildFilmSpec({
+                shots, burnCaptions: true, captionStyle: 'blockbuster', captionPosition: 'top',
+            });
+            const styledClip = specToShotstackTimeline(styled).tracks
+                .find(t => t.clips.every(c => c.asset.type === 'title')).clips[0];
+            assert.equal(styledClip.asset.style, 'blockbuster');
+            assert.equal(styledClip.position, 'top');
+        });
+
+        test('📝 كابشن متحرك: يُقسَّم لكلماته بتوقيت متساوٍ عبر مدة اللقطة، وغير متحرك = مقطع واحد كسابقاً', () => {
+            const shots = [
+                { durationSec: 6, videoUrl: 'https://v.test/a.mp4', caption: 'مرحباً بالجميع اليوم' }, // 3 كلمات
+            ];
+
+            // غير متحرك (الافتراضي): مقطع واحد بالسطر كاملاً — سلوك موجود مسبقاً
+            const still = buildFilmSpec({ shots, burnCaptions: true });
+            assert.equal(still.captionCues.length, 1);
+            assert.equal(still.captionCues[0].text, 'مرحباً بالجميع اليوم');
+            assert.equal(still.captionCues[0].lengthSec, 6);
+
+            // متحرك: 3 مقاطع (كلمة لكل مقطع)، بتوقيت متساوٍ يغطي كامل مدة اللقطة تماماً
+            const animated = buildFilmSpec({ shots, burnCaptions: true, captionAnimated: true });
+            assert.equal(animated.captionCues.length, 3);
+            assert.deepEqual(animated.captionCues.map(c => c.text), ['مرحباً', 'بالجميع', 'اليوم']);
+            assert.equal(animated.captionCues[0].startSec, 0);
+            assert.equal(animated.captionCues[0].lengthSec, 2);
+            assert.equal(animated.captionCues[1].startSec, 2);
+            assert.equal(animated.captionCues[2].startSec, 4);
+            // مجموع الأزمنة يغطي مدة اللقطة كاملة بلا نقص أو تجاوز
+            const totalSec = animated.captionCues.reduce((s, c) => s + c.lengthSec, 0);
+            assert.equal(totalSec, 6);
+
+            // متحرك بكلمة واحدة فقط: مقطع واحد يغطي كامل مدة اللقطة
+            const oneWord = buildFilmSpec({
+                shots: [{ durationSec: 4, videoUrl: 'https://v.test/b.mp4', caption: 'مرحباً' }],
+                burnCaptions: true, captionAnimated: true,
+            });
+            assert.equal(oneWord.captionCues.length, 1);
+            assert.equal(oneWord.captionCues[0].lengthSec, 4);
+
+            // متحرك مع كابشن فراغ فقط (بعد trim) — بلا مقاطع، بلا قسمة على صفر
+            const blankCaption = buildFilmSpec({
+                shots: [{ durationSec: 4, videoUrl: 'https://v.test/c.mp4', caption: '   ' }],
+                burnCaptions: true, captionAnimated: true,
+            });
+            assert.equal(blankCaption.captionCues, null);
         });
 
         test('التجميع: شعار برابط فاسد يُرفض بـ400 قبل الخصم، وشعار صالح يصل المخطط', async () => {
