@@ -1497,6 +1497,169 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.deepEqual(after.data.project, before.data.project);
         });
 
+        test('🎨 التلوين السينمائي: فلتر افتراضي للمشروع — تحقق ورفض ومسح صريح', async () => {
+            const token = makeToken('grader');
+            const pid = (await call('/api/video/projects', {
+                method: 'POST', token, body: { title: 'مشروع تلوين' },
+            })).data.project.id;
+
+            // فلتر مجهول → 400 بلا أي تغيير
+            assert.equal((await call(`/api/video/projects/${pid}`, {
+                method: 'PATCH', token, body: { defaultFilter: 'وردي فاقع' },
+            })).status, 400);
+
+            // قيمة صالحة تُحفظ وتظهر في قائمة الخيارات (مصدر حقيقة واحد للواجهة)
+            const patched = await call(`/api/video/projects/${pid}`, {
+                method: 'PATCH', token, body: { defaultFilter: 'أبيض وأسود' },
+            });
+            assert.equal(patched.status, 200);
+            assert.equal(patched.data.project.defaultFilter, 'أبيض وأسود');
+            const list = await call('/api/video/projects', { token });
+            assert.ok(list.data.settingsOptions.filters.includes('أبيض وأسود'));
+
+            // مسح صريح بقيمة فارغة
+            const cleared = await call(`/api/video/projects/${pid}`, {
+                method: 'PATCH', token, body: { defaultFilter: '' },
+            });
+            assert.equal(cleared.status, 200);
+            assert.equal(cleared.data.project.defaultFilter, null);
+        });
+
+        test('🧬 التحكم بمحاكاة LORA: بصمة أسلوب المشروع — طول أقصى وفلترة محتوى ومسح', async () => {
+            const token = makeToken('lora-writer');
+            const pid = (await call('/api/video/projects', {
+                method: 'POST', token, body: { title: 'مشروع بصمة' },
+            })).data.project.id;
+
+            // طويلة جداً → 400
+            assert.equal((await call(`/api/video/projects/${pid}`, {
+                method: 'PATCH', token, body: { styleProfile: 'ط'.repeat(301) },
+            })).status, 400);
+
+            // تُحفظ وتُقرأ كما هي
+            const patched = await call(`/api/video/projects/${pid}`, {
+                method: 'PATCH', token, body: { styleProfile: 'أنمي ياباني بألوان زاهية' },
+            });
+            assert.equal(patched.status, 200);
+            assert.equal(patched.data.project.styleProfile, 'أنمي ياباني بألوان زاهية');
+
+            // مسح صريح بقيمة فارغة
+            const cleared = await call(`/api/video/projects/${pid}`, {
+                method: 'PATCH', token, body: { styleProfile: '' },
+            });
+            assert.equal(cleared.data.project.styleProfile, null);
+
+            // محتوى محظور → 400 (نفس فحص بقية النصوص في الخدمة — الخادم المقيّد بقائمة حظر)
+            const blockedPid = (await callAt(cappedUrl, '/api/video/projects', {
+                method: 'POST', token, body: { title: 'مشروع مقيّد' },
+            })).data.project.id;
+            assert.equal((await callAt(cappedUrl, `/api/video/projects/${blockedPid}`, {
+                method: 'PATCH', token, body: { styleProfile: 'نص فيه كلمةمحظورة هنا' },
+            })).status, 400);
+        });
+
+        test('🧬 بصمة الأسلوب تُحقن في مقدمة كل برومت بالمشروع — قبل وصف الشخصية إن وُجدت', async () => {
+            // تطبيق مستقل (حصة renderLimit خاصة) + مولّد صور وهمي لإنشاء شخصية.
+            const fakeImages = {
+                name: 'fake-image',
+                async generateImage(prompt) { return `https://img.test/${Date.now()}.png`; },
+            };
+            const app = createApp({
+                store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider, imageProvider: fakeImages,
+            });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const token = makeToken('lora-director');
+                await callAt(url, '/api/video/credits', { token });
+                await callAt(url, '/api/video/admin/credits/grant', {
+                    method: 'POST', token: makeToken('boss'), body: { username: 'lora-director', amount: 20 },
+                });
+                const pid = (await callAt(url, '/api/video/projects', {
+                    method: 'POST', token, body: { title: 'فيلم ببصمة' },
+                })).data.project.id;
+                await callAt(url, `/api/video/projects/${pid}`, {
+                    method: 'PATCH', token, body: { styleProfile: 'anime style fingerprint' },
+                });
+
+                // بلا شخصية: بصمة الأسلوب وحدها في المقدمة
+                const withoutChar = await callAt(url, '/api/video/renders', {
+                    method: 'POST', token,
+                    body: { templateId: 'ai_clip', values: { prompt: 'مشهد' }, projectId: pid },
+                });
+                assert.equal(withoutChar.status, 200);
+                const j1 = await getJob(store, withoutChar.data.job.id);
+                assert.match(j1.spec.prompt, /^anime style fingerprint\. /);
+
+                // مع شخصية: البصمة أولاً ثم وصف الشخصية ثم البرومت (الأعمّ فالأخصّ)
+                const char = await callAt(url, '/api/video/characters', {
+                    method: 'POST', token,
+                    body: { name: 'البطل', description: 'رجل بمعطف أزرق' },
+                });
+                assert.equal(char.status, 200);
+                const withChar = await callAt(url, '/api/video/renders', {
+                    method: 'POST', token,
+                    body: {
+                        templateId: 'ai_clip', values: { prompt: 'مشهد آخر' },
+                        projectId: pid, characterId: char.data.character.id,
+                    },
+                });
+                assert.equal(withChar.status, 200);
+                const j2 = await getJob(store, withChar.data.job.id);
+                assert.match(j2.spec.prompt, /^anime style fingerprint\. رجل بمعطف أزرق\. /);
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
+        test('🎨 فلتر المشروع الافتراضي يُستخدم عند التجميع فقط إن لم يُحدَّد فلتر صراحةً', async () => {
+            // تطبيق مستقل: /assemble يشارك محدود renderLimit مع /renders.
+            const app = createApp({ store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const token = makeToken('color-editor');
+                await callAt(url, '/api/video/credits', { token });
+                const pid = (await callAt(url, '/api/video/projects', {
+                    method: 'POST', token, body: { title: 'فيلم بفلتر افتراضي' },
+                })).data.project.id;
+                await callAt(url, `/api/video/projects/${pid}`, {
+                    method: 'PATCH', token, body: { defaultFilter: 'دافئ مُشبع' },
+                });
+
+                const j = await createJob(store, {
+                    username: 'color-editor', templateId: 'ai_clip',
+                    values: { prompt: 'لقطة' },
+                    spec: { kind: 'ai_prompt', durationSec: 5, prompt: 'x' },
+                    costCredits: 1, projectId: pid, shotIndex: 0,
+                });
+                await transitionJob(store, j.id, 'rendering', {});
+                await transitionJob(store, j.id, 'done', { videoUrl: 'https://v.test/0.mp4' });
+
+                // خيارات التجميع تعرض الفلتر الافتراضي المحفوظ
+                const opts = await callAt(url, `/api/video/projects/${pid}/assembly-options`, { token });
+                assert.equal(opts.data.defaultFilter, 'دافئ مُشبع');
+
+                // لا فلتر مُحدَّد في الطلب → يقع على فلتر المشروع الافتراضي
+                const asm1 = await callAt(url, `/api/video/projects/${pid}/assemble`, {
+                    method: 'POST', token, body: {},
+                });
+                assert.equal(asm1.status, 200);
+                const film1 = await getJob(store, asm1.data.job.id);
+                assert.equal(film1.spec.filter, 'boost'); // قيمة Shotstack لـ"دافئ مُشبع"
+
+                // فلتر صريح في الطلب يتفوق على افتراضي المشروع
+                const asm2 = await callAt(url, `/api/video/projects/${pid}/assemble`, {
+                    method: 'POST', token, body: { filter: 'أبيض وأسود' },
+                });
+                assert.equal(asm2.status, 200);
+                const film2 = await getJob(store, asm2.data.job.id);
+                assert.equal(film2.spec.filter, 'greyscale');
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
         test('توريث إعدادات المشروع في اللقطة الجديدة: يُطبَّق فقط حين يترك المستخدم الحقل فارغاً', async () => {
             // تطبيق مستقل (حصة renderLimit خاصة — نفس سبب اختباري الشعار
             // وإعادة الترتيب أعلاه).
