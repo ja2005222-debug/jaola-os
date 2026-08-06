@@ -794,6 +794,9 @@ const STRINGS = {
   // video studio (خدمة منفصلة — يُفتح بتسليم التوكن)
   videoStudioTitle: { en: 'Video Studio', ar: 'استوديو الفيديو', es: 'Estudio de vídeo', fr: 'Studio vidéo' },
 
+  // تثبيت PWA (زر يظهر فقط حين يدعمه المتصفح ولم يُثبَّت التطبيق أصلاً)
+  installAppTitle: { en: 'Install App', ar: 'ثبّت التطبيق', es: 'Instalar app', fr: "Installer l'appli" },
+
   // billing page
   billingTitle: { en: 'Billing & Subscription', ar: 'الاشتراك والفوترة', es: 'Facturación y suscripción', fr: 'Facturation et abonnement' },
   billingBack: { en: '← Back to dashboard', ar: '← الرجوع للوحة', es: '← Volver al panel', fr: '← Retour au tableau de bord' },

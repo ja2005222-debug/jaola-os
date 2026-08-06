@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth.js';
 import { useSocket, socket } from '../hooks/useSocket.js';
 import { useIsMobile } from '../hooks/useIsMobile.js';
+import { useInstallPrompt } from '../hooks/useInstallPrompt.js';
 import { MonacoWorkspace } from '../components/editor/MonacoWorkspace.jsx';
 import { MissionProgress } from '../components/MissionProgress.jsx';
 import { Markdown } from '../components/Markdown.jsx';
@@ -272,6 +273,7 @@ function AgentNode({ name, state, icon, t }) {
 export default function Dashboard() {
   const { currentUser: authUser, token, isAuthenticated, handleAuthError, setIsAuthenticated, setCurrentUser, setToken, isLoading, oauthError } = useAuth();
   const isMobile = useIsMobile();
+  const { canInstall, promptInstall } = useInstallPrompt();
 
   const [booted, setBooted] = useState(() => sessionStorage.getItem('booted') === '1');
   const [activeNav, setActiveNav] = useState('mission');
@@ -2827,6 +2829,12 @@ export default function Dashboard() {
                     <span style={{ fontSize:16 }}>🎬</span> {t('videoStudioTitle')}
                   </button>
                 )}
+                {canInstall && (
+                  <button onClick={() => { setShowMobileMenu(false); promptInstall(); }}
+                    style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.25)', color:S.text, fontSize:13, fontWeight:700, textAlign:'start' }}>
+                    <span style={{ fontSize:16 }}>📲</span> {t('installAppTitle')}
+                  </button>
+                )}
                 <button onClick={() => { setShowMobileMenu(false); setShowSiteHealth(true); }}
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
                   <span style={{ fontSize:16 }}>📊</span> {t('siteHealth')}
@@ -3206,6 +3214,13 @@ export default function Dashboard() {
           <button onClick={openVideoStudio} title={t('videoStudioTitle')}
             style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 10px', color:S.muted, fontSize:13, cursor:'pointer' }}>
             🎬
+          </button>
+        )}
+
+        {canInstall && (
+          <button onClick={promptInstall} title={t('installAppTitle')}
+            style={{ background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.3)', borderRadius:7, padding:'5px 10px', color:'#a78bfa', fontSize:13, cursor:'pointer' }}>
+            📲
           </button>
         )}
 
