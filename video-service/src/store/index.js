@@ -17,7 +17,7 @@
  *   getProject(id) → project|null
  *   listProjectsByUser(user, limit) → [project]    (الأحدث أولاً)
  *   renameProject(id, title) → project|null
- *   updateProjectSettings(id, {aspectRatio?, style?}) → project|null
+ *   updateProjectSettings(id, {aspectRatio?, style?, filter?, styleProfile?}) → project|null
  *     (مفتاح غائب = لا تغيير له؛ مفتاح موجود بقيمة فارغة/null = مسحه —
  *      إعدادات افتراضية تُورَّث في اللقطات الجديدة، لا تُفرض على القديمة)
  *   deleteProject(id) → bool                       (اللقطات تبقى في السجل العام — أُنفق عليها رصيد)

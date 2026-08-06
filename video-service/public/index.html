@@ -228,8 +228,8 @@
       <button class="nav-item" data-target="sectionLibrary" data-i18n="navLibrary">🗂️ مكتبة الأفلام</button>
       <button class="nav-item" data-target="sectionAudio" data-i18n="navAudio">🎙️ هندسة الصوت وAI Voice</button>
       <div class="nav-group-label" data-i18n="navProTools">الأدوات الاحترافية</div>
-      <button class="nav-item" data-soon-key="navColor"><span data-i18n="navColor">🎨 التلوين السينمائي</span><span class="soon-badge" data-i18n="navSoon">قريباً</span></button>
-      <button class="nav-item" data-soon-key="navLora"><span data-i18n="navLora">🧬 التحكم بمحاكاة LORA</span><span class="soon-badge" data-i18n="navSoon">قريباً</span></button>
+      <button class="nav-item" data-target="sectionColor" data-i18n="navColor">🎨 التلوين السينمائي</button>
+      <button class="nav-item" data-target="sectionLora" data-i18n="navLora">🧬 التحكم بمحاكاة LORA</button>
       <div class="nav-group-label" data-i18n="navAccount">الحساب</div>
       <button class="nav-item" data-target="sectionAccount" data-i18n="navBilling">💳 الباقات والرصيد</button>
       <button class="nav-item" data-target="sectionAccount" data-i18n="navLedger">📜 سجل العمليات</button>
@@ -314,6 +314,10 @@
           </p>
         </div>
       </section>
+
+      <section id="sectionColor"></section>
+
+      <section id="sectionLora"></section>
     </main>
 
     <!-- ─── يسار: بنك الشخصيات + الطابور المباشر + الحساب ─── -->
@@ -498,6 +502,25 @@
         noSelection: '— بدون تحديد —', charsSuffix: (n) => ` (حتى ${n} حرفاً)`,
         modelLabel: 'النموذج المولِّد *', creditsPerShot: (n) => `🎟️ ${n} رصيد للقطة`,
         secondsCredits: (n, c) => `⏱️ ${n} ثوانٍ · 🎟️ ${c} رصيد`, aiTag: ' · 🤖 ذكاء اصطناعي',
+        colorTitle: '🎨 التلوين السينمائي',
+        colorNeedProject: 'اختر مشروعاً من قسم "إدارة المشاريع" أولاً — أداة التلوين تعمل على لقطات مشروع محدد.',
+        colorNoShots: 'لا لقطات مكتملة في هذا المشروع بعد — ولّد لقطة واحدة على الأقل من استديو التوليد.',
+        colorNote: 'معاينة تقريبية بفلاتر المتصفح (CSS) — التصدير الفعلي عبر Shotstack عند التجميع قد يختلف قليلاً بصرياً. اختر لقطة ثم فلتراً، ثم احفظه كافتراضي لتجميع هذا المشروع.',
+        colorSetDefault: '💾 استخدم هذا الفلتر افتراضياً لتجميع المشروع',
+        colorCurrentDefault: (f) => `الفلتر الافتراضي الحالي لهذا المشروع: ${f}`,
+        loraTitle: '🧬 التحكم بمحاكاة LORA',
+        loraNeedProject: 'اختر مشروعاً من قسم "إدارة المشاريع" أولاً — بصمة الأسلوب تُحفظ لكل مشروع على حدة.',
+        loraDisclaimer: '⚠️ هذه ليست عملية تدريب نموذج (LoRA) حقيقية — لا تشغّل أي معالجة على معالج رسومي. هي بصمة أسلوب نصية تُحقن تلقائياً في مقدمة كل برومت توليد بهذا المشروع (قبل وصف الشخصية إن وُجدت)، فتحاكي اتساق نموذج مدرَّب بلا أي تدريب فعلي.',
+        loraProfilePh: 'مثال: أنمي ياباني بألوان زاهية وخطوط واضحة',
+        loraProfileLabel: 'بصمة الأسلوب البصري لهذا المشروع',
+        loraClear: '🗑️ إزالة البصمة',
+        loraCurrentNote: 'مُفعَّلة حالياً — تُحقن في كل لقطة جديدة بهذا المشروع.',
+        loraPresets: () => [
+          'أنمي ياباني بألوان زاهية وخطوط واضحة',
+          'نوار كلاسيكي أبيض وأسود بظلال حادة',
+          'رسوم ثلاثية الأبعاد بأسلوب استوديوهات العائلات، ألوان دافئة',
+          'واقعية سينمائية 35mm بحبيبات فيلم خفيفة',
+        ],
       },
       en: {
         docTitle: 'Cinematic Studio — JAOLA OS',
@@ -597,6 +620,25 @@
         noSelection: '— No selection —', charsSuffix: (n) => ` (up to ${n} characters)`,
         modelLabel: 'Generating model *', creditsPerShot: (n) => `🎟️ ${n} credit(s) per shot`,
         secondsCredits: (n, c) => `⏱️ ${n}s · 🎟️ ${c} credit(s)`, aiTag: ' · 🤖 AI',
+        colorTitle: '🎨 Cinematic Color Grading',
+        colorNeedProject: 'Pick a project from "Manage Projects" first — the color tool works on a specific project\'s shots.',
+        colorNoShots: 'No completed shots in this project yet — generate at least one shot from the generation studio.',
+        colorNote: 'Approximate preview using browser (CSS) filters — the actual Shotstack export at assembly time may look slightly different. Pick a shot, then a filter, then save it as this project\'s assembly default.',
+        colorSetDefault: '💾 Use this filter as the project\'s assembly default',
+        colorCurrentDefault: (f) => `Current default filter for this project: ${f}`,
+        loraTitle: '🧬 LORA Simulation Control',
+        loraNeedProject: 'Pick a project from "Manage Projects" first — the style fingerprint is saved per project.',
+        loraDisclaimer: '⚠️ This is not real model (LoRA) training — no GPU processing runs. It\'s a text style fingerprint automatically injected into the start of every generation prompt in this project (before the character description, if any), simulating the consistency of a trained model without any real training.',
+        loraProfilePh: 'Example: Japanese anime with vivid colors and clean lines',
+        loraProfileLabel: 'Visual style fingerprint for this project',
+        loraClear: '🗑️ Remove fingerprint',
+        loraCurrentNote: 'Currently active — injected into every new shot in this project.',
+        loraPresets: () => [
+          'Japanese anime with vivid colors and clean lines',
+          'Classic film noir, black and white, hard shadows',
+          '3D family-studio animation style, warm colors',
+          'Cinematic 35mm photorealism with light film grain',
+        ],
       },
     };
     let lang = localStorage.getItem('studioLang') || 'ar';
@@ -1348,6 +1390,8 @@
     function selectProject(id) {
       activeProjectId = id;
       renderProjectChips();
+      renderColorSection();
+      renderLoraSection();
       if (!id) { $('storyboard').classList.add('hidden'); $('storyboard').innerHTML = ''; return; }
       refreshStoryboard();
     }
@@ -1488,7 +1532,8 @@
               ${opts.transitions.map(t => `<option value="${t}">${t}</option>`).join('')}
             </select>
             <select id="asmFilter" style="${SELECT_STYLE};max-width:170px">
-              ${(opts.filters || []).map(f => `<option value="${f}">🎨 ${f}</option>`).join('')}
+              ${(opts.filters || []).map(f =>
+                `<option value="${f}"${f === opts.defaultFilter ? ' selected' : ''}>🎨 ${f}</option>`).join('')}
             </select>
             <select id="asmAspect" style="${SELECT_STYLE};max-width:170px">
               <option value="16:9">${tr('ytOption')}</option>
@@ -1558,6 +1603,167 @@
           $('asmGo').disabled = false;
         }
       });
+    }
+
+    // 🎨 التلوين السينمائي: معاينة فلاتر Shotstack (COLOR_FILTERS) بمقارِب
+    // CSS على المتصفح مباشرة — بلا أي تصدير فعلي — ثم حفظ الاختيار
+    // كفلتر افتراضي لتجميع هذا المشروع (يُطبَّق تلقائياً في /assemble
+    // إن لم يحدَّد فلتر صراحةً في تلك اللحظة).
+    const COLOR_CSS_PREVIEW = {
+      'أبيض وأسود': 'grayscale(1)',
+      'دافئ مُشبع': 'saturate(1.6) sepia(0.15) contrast(1.05)',
+      'خافت سينمائي': 'saturate(0.6) contrast(0.95) brightness(0.95)',
+      'معتم درامي': 'brightness(0.7) contrast(1.15)',
+    };
+
+    async function renderColorSection() {
+      const box = $('sectionColor');
+      if (!activeProjectId) {
+        box.innerHTML = `<h2>${tr('colorTitle')}</h2><div class="card"><p class="note">${tr('colorNeedProject')}</p></div>`;
+        return;
+      }
+      const [projRes, optsRes] = await Promise.all([
+        api(`/api/video/projects/${activeProjectId}`),
+        api(`/api/video/projects/${activeProjectId}/assembly-options`),
+      ]);
+      if (!projRes.ok || !optsRes.ok) {
+        box.innerHTML = `<h2>${tr('colorTitle')}</h2><p class="note">${tr('connFail')}</p>`;
+        return;
+      }
+      const { project, shots } = await projRes.json();
+      const opts = await optsRes.json();
+      lastJobs = lastJobs.filter(j => !shots.some(s => s.id === j.id)).concat(shots);
+      const ready = shots.filter(s => s.status === 'done' && s.videoUrl);
+      if (ready.length === 0) {
+        box.innerHTML = `<h2>${tr('colorTitle')} — 🎬 ${escapeHtml(project.title)}</h2>
+          <div class="card"><p class="note">${tr('colorNoShots')}</p></div>`;
+        return;
+      }
+      box.innerHTML = `
+        <h2>${tr('colorTitle')} — 🎬 ${escapeHtml(project.title)}</h2>
+        <div class="card">
+          <p class="note">${tr('colorNote')}</p>
+          <div class="chips" id="colorShotPicker" style="margin-top:10px">
+            ${ready.map((s, i) => `<button type="button" class="chip" data-color-shot="${s.id}">${tr('shotNum', i + 1)}</button>`).join('')}
+          </div>
+          <video id="colorPreviewVideo" controls style="width:100%;max-width:480px;border-radius:8px;background:#000;display:none;margin-top:10px"></video>
+          <div class="chips" id="colorFilterPicker" style="margin-top:10px">
+            ${opts.filters.map(f => `<button type="button" class="chip" data-color-filter="${escapeHtml(f)}">${escapeHtml(f)}</button>`).join('')}
+          </div>
+          <button id="colorSetDefaultBtn" type="button" style="margin-top:10px" disabled>${tr('colorSetDefault')}</button>
+          <div class="msg" id="colorMsg"></div>
+          ${project.defaultFilter ? `<p class="note" style="margin-top:8px">${tr('colorCurrentDefault', escapeHtml(project.defaultFilter))}</p>` : ''}
+        </div>`;
+
+      let currentShotId = null;
+      let currentFilter = project.defaultFilter || null;
+      const noFilterKey = opts.filters.find(f => !(f in COLOR_CSS_PREVIEW)) || opts.filters[0];
+
+      function syncPickers() {
+        box.querySelectorAll('[data-color-filter]').forEach(b =>
+          b.classList.toggle('active', b.dataset.colorFilter === (currentFilter || noFilterKey)));
+        box.querySelectorAll('[data-color-shot]').forEach(b =>
+          b.classList.toggle('active', b.dataset.colorShot === currentShotId));
+        $('colorSetDefaultBtn').disabled = !currentShotId;
+        const video = $('colorPreviewVideo');
+        video.style.filter = currentFilter ? (COLOR_CSS_PREVIEW[currentFilter] || '') : '';
+      }
+
+      box.querySelectorAll('[data-color-shot]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          currentShotId = btn.dataset.colorShot;
+          const j = lastJobs.find(x => x.id === currentShotId);
+          if (!j) return;
+          let src = j.videoUrl;
+          if (j.owned) {
+            try {
+              const res = await api(`/api/video/renders/${j.id}/download`);
+              if (res.ok && res.url) src = res.url; else { alert(tr('previewPrepFail')); return; }
+            } catch { alert(tr('connFail')); return; }
+          }
+          const video = $('colorPreviewVideo');
+          video.src = src;
+          video.style.display = 'block';
+          syncPickers();
+        });
+      });
+      box.querySelectorAll('[data-color-filter]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          currentFilter = btn.dataset.colorFilter === noFilterKey ? null : btn.dataset.colorFilter;
+          syncPickers();
+        });
+      });
+      syncPickers();
+
+      $('colorSetDefaultBtn').addEventListener('click', async () => {
+        const msg = $('colorMsg'); msg.className = 'msg';
+        const res = await api(`/api/video/projects/${activeProjectId}`, {
+          method: 'PATCH', body: JSON.stringify({ defaultFilter: currentFilter || '' }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          msg.textContent = data.error || tr('saveFail');
+          msg.className = 'msg err';
+        } else {
+          await loadProjects();
+          await renderColorSection();
+          // القسم أُعيد بناؤه بالكامل — الرسالة تُكتب على عنصر msg الجديد.
+          const freshMsg = $('colorMsg');
+          if (freshMsg) { freshMsg.textContent = tr('settingsSaved'); freshMsg.className = 'msg ok'; }
+        }
+      });
+    }
+
+    // 🧬 التحكم بمحاكاة LORA: بصمة أسلوب نصية لكل مشروع — تُحقن خادمياً
+    // في مقدمة كل برومت بهذا المشروع (server.js) لمحاكاة اتساق نموذج
+    // مدرَّب بلا أي تدريب فعلي؛ الإفصاح صريح في نص الواجهة نفسها.
+    async function renderLoraSection() {
+      const box = $('sectionLora');
+      if (!activeProjectId) {
+        box.innerHTML = `<h2>${tr('loraTitle')}</h2><div class="card"><p class="note">${tr('loraNeedProject')}</p></div>`;
+        return;
+      }
+      const proj = projects.find(p => p.id === activeProjectId);
+      if (!proj) return;
+      const presets = tr('loraPresets');
+      box.innerHTML = `
+        <h2>${tr('loraTitle')} — 🎬 ${escapeHtml(proj.title)}</h2>
+        <div class="card">
+          <p class="note">${tr('loraDisclaimer')}</p>
+          <label style="display:block;font-size:13px;margin-top:10px;color:var(--muted)">${tr('loraProfileLabel')}</label>
+          <textarea id="loraProfileInput" rows="3" maxlength="300" placeholder="${tr('loraProfilePh')}"
+            style="width:100%;margin-top:6px;resize:vertical">${escapeHtml(proj.styleProfile || '')}</textarea>
+          <div class="chips" style="margin-top:8px">
+            ${presets.map(p => `<button type="button" class="chip" data-lora-preset="${escapeHtml(p)}">${escapeHtml(p)}</button>`).join('')}
+          </div>
+          <button id="loraSaveBtn" type="button" style="margin-top:10px">${tr('save')}</button>
+          ${proj.styleProfile ? `<button id="loraClearBtn" type="button" style="margin-top:10px">${tr('loraClear')}</button>` : ''}
+          <div class="msg" id="loraMsg"></div>
+          ${proj.styleProfile ? `<p class="note" style="margin-top:8px">✅ ${tr('loraCurrentNote')}</p>` : ''}
+        </div>`;
+      box.querySelectorAll('[data-lora-preset]').forEach(btn => {
+        btn.addEventListener('click', () => { $('loraProfileInput').value = btn.dataset.loraPreset; });
+      });
+      const save = async (value) => {
+        const msg = $('loraMsg'); msg.className = 'msg';
+        const res = await api(`/api/video/projects/${activeProjectId}`, {
+          method: 'PATCH', body: JSON.stringify({ styleProfile: value }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          msg.textContent = data.error || tr('saveFail');
+          msg.className = 'msg err';
+        } else {
+          await loadProjects();
+          await renderLoraSection();
+          // القسم أُعيد بناؤه بالكامل — الرسالة تُكتب على عنصر msg الجديد.
+          const freshMsg = $('loraMsg');
+          if (freshMsg) { freshMsg.textContent = tr('settingsSaved'); freshMsg.className = 'msg ok'; }
+        }
+      };
+      $('loraSaveBtn').addEventListener('click', () => save($('loraProfileInput').value.trim()));
+      const clearBtn = $('loraClearBtn');
+      if (clearBtn) clearBtn.addEventListener('click', () => save(''));
     }
 
     // 🖱️ سحب وإفلات لإعادة ترتيب اللقطات: ترتيب الـDOM بعد الإفلات هو
@@ -1664,6 +1870,8 @@
       await loadCharacters();
       await loadJobs();
       await loadAudioOptions();
+      await renderColorSection();
+      await renderLoraSection();
       setInterval(() => { loadJobs(); refreshStoryboard(); }, 5000);
       setInterval(loadCredits, 15000);
     })();

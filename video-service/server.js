@@ -157,12 +157,27 @@ export function createApp({
     // تراها الواجهة في قالب اللقطة، لا تكرار يتباعد عنها بصمت.
     const PROJECT_ASPECTS = getTemplate('ai_clip').fields.find(f => f.key === 'aspectRatio').options;
     const PROJECT_STYLES = cinemaFieldOptions('style');
-    const validSettings = ({ defaultAspectRatio, defaultStyle }) => {
+    const PROJECT_FILTERS = Object.keys(COLOR_FILTERS);
+    const MAX_STYLE_PROFILE_LEN = 300;
+    const validSettings = ({ defaultAspectRatio, defaultStyle, defaultFilter, styleProfile }) => {
         if (defaultAspectRatio != null && !PROJECT_ASPECTS.includes(defaultAspectRatio)) {
             return `نسبة أبعاد غير معروفة (المتاح: ${PROJECT_ASPECTS.join('، ')}).`;
         }
         if (defaultStyle != null && !PROJECT_STYLES.includes(defaultStyle)) {
             return `أسلوب بصري غير معروف (المتاح: ${PROJECT_STYLES.join('، ')}).`;
+        }
+        // فارغ/null = "بلا فلتر افتراضي" — يُفحص فقط حين تصل قيمة فعلية.
+        if (defaultFilter && !PROJECT_FILTERS.includes(defaultFilter)) {
+            return `فلتر لوني غير معروف (المتاح: ${PROJECT_FILTERS.join('، ')}).`;
+        }
+        if (styleProfile) {
+            if (styleProfile.length > MAX_STYLE_PROFILE_LEN) {
+                return `بصمة الأسلوب البصري طويلة جداً (الحد ${MAX_STYLE_PROFILE_LEN} حرفاً).`;
+            }
+            // تُفحص هنا (مرة عند الحفظ) لا عند كل توليد — تُحقن لاحقاً في
+            // كل برومت بهذا المشروع بلا فحص إضافي، فيجب أن تكون نظيفة أولاً.
+            const flagged = inspectText(styleProfile, { blocklist });
+            if (flagged) return flagged.error;
         }
         return null;
     };
@@ -170,7 +185,7 @@ export function createApp({
     app.get('/api/video/projects', verifyToken, wrap(async (req, res) => {
         res.json({
             projects: await store.listProjectsByUser(userOf(req), 50),
-            settingsOptions: { aspects: PROJECT_ASPECTS, styles: PROJECT_STYLES },
+            settingsOptions: { aspects: PROJECT_ASPECTS, styles: PROJECT_STYLES, filters: PROJECT_FILTERS },
         });
     }));
 
@@ -201,17 +216,24 @@ export function createApp({
     app.patch('/api/video/projects/:id', verifyToken, wrap(async (req, res) => {
         const project = await ownedProject(req);
         if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
-        const { title, defaultAspectRatio, defaultStyle } = req.body || {};
+        const { title, defaultAspectRatio, defaultStyle, defaultFilter, styleProfile } = req.body || {};
         let updated = project;
         if (title !== undefined) {
             const clean = validTitle(title);
             if (!clean) return res.status(400).json({ error: 'عنوان المشروع مطلوب (حتى 80 حرفاً).' });
             updated = await store.renameProject(project.id, clean);
         }
-        if (defaultAspectRatio !== undefined || defaultStyle !== undefined) {
-            const issue = validSettings({ defaultAspectRatio, defaultStyle });
+        if (defaultAspectRatio !== undefined || defaultStyle !== undefined
+            || defaultFilter !== undefined || styleProfile !== undefined) {
+            const cleanStyleProfile = styleProfile !== undefined ? String(styleProfile || '').trim() : undefined;
+            const issue = validSettings({
+                defaultAspectRatio, defaultStyle, defaultFilter, styleProfile: cleanStyleProfile,
+            });
             if (issue) return res.status(400).json({ error: issue });
-            updated = await store.updateProjectSettings(project.id, { aspectRatio: defaultAspectRatio, style: defaultStyle });
+            updated = await store.updateProjectSettings(project.id, {
+                aspectRatio: defaultAspectRatio, style: defaultStyle,
+                filter: defaultFilter, styleProfile: cleanStyleProfile,
+            });
         }
         res.json({ project: updated });
     }));
@@ -258,6 +280,7 @@ export function createApp({
             costCredits: ASSEMBLY_COST_CREDITS,
             readyShots: (await readyShotsOf(project.id)).length,
             watermarked: watermarkEnforced && !['pro', 'enterprise'].includes(req.user.plan),
+            defaultFilter: project.defaultFilter || null,
         });
     }));
 
@@ -265,7 +288,10 @@ export function createApp({
         const project = await ownedProject(req);
         if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
 
-        const { transition, musicId, endTitle, filter, aspect, logoUrl, sfxId, narrationText, resolution } = req.body || {};
+        const { transition, musicId, endTitle, aspect, logoUrl, sfxId, narrationText, resolution } = req.body || {};
+        // فلتر لوني: طلب صريح (حتى '' = بلا فلتر) يتفوق دوماً؛ غيابه فقط
+        // (undefined) يقع على فلتر المشروع الافتراضي (أداة التلوين السينمائي).
+        const filter = req.body?.filter !== undefined ? req.body.filter : (project.defaultFilter || null);
         if (transition != null && !(transition in TRANSITIONS)) {
             return res.status(400).json({ error: `انتقال غير معروف (المتاح: ${Object.keys(TRANSITIONS).join('، ')}).` });
         }
@@ -615,6 +641,15 @@ export function createApp({
                         : img.url;
                 }
             }
+        }
+        // 🧬 بصمة الأسلوب البصري للمشروع (محاكاة LoRA — "التحكم بمحاكاة
+        // LORA" في الواجهة): نص وصفي يحقنه صاحب المشروع مرة واحدة (أداة
+        // التلوين/الأسلوب)، ثم يُضاف تلقائياً في مقدمة كل برومت بهذا
+        // المشروع — قبل وصف الشخصية إن وُجدت (الأعمّ أولاً) — فيحاكي
+        // اتساق نموذج مدرَّب (LoRA) بلا أي تدريب فعلي على أي GPU. فُحص
+        // محتواه عند الحفظ (validSettings) لا هنا، فهو نظيف مسبقاً.
+        if (project && project.styleProfile && template.specKind === 'ai_prompt') {
+            spec.prompt = `${project.styleProfile}. ${spec.prompt}`;
         }
         // قالب الصورة المرجعية يحتاج مصدراً للإطار الأول — رابطاً مباشراً
         // أو شخصية من البنك.
