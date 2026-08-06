@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { BACKEND_URL } from '../config.js';
+import { BACKEND_URL, VIDEO_STUDIO_URL } from '../config.js';
 import { useI18n } from '../i18n.js';
 
 // 🛠️ لوحة تحكم المشرف — صحة النظام + صناعة وإدارة الوكلاء + إدارة الملفات
@@ -51,6 +51,7 @@ export default function AdminPanel({ onExit }) {
       {tab === 'audit' && <AuditTab api={api} />}
       {tab === 'agents' && <AgentsTab api={api} />}
       {tab === 'tradingbot' && <TradingBotTab api={api} />}
+      {tab === 'videocredits' && <VideoCreditsTab />}
       {tab === 'files' && <FilesTab api={api} />}
       {tab === 'github' && <GitHubTab api={api} />}
       {tab === 'team' && <BackendTeamTab api={api} />}
@@ -69,6 +70,7 @@ function Shell({ children, onExit, tab, setTab }) {
     { id: 'audit', icon: '🧾', label: tr('admTabAudit') },
     { id: 'agents', icon: '🤖', label: tr('admTabAgents') },
     { id: 'tradingbot', icon: '🤖💱', label: tr('admTabTradingBot') },
+    ...(VIDEO_STUDIO_URL ? [{ id: 'videocredits', icon: '🎬💳', label: tr('admTabVideoCredits') }] : []),
     { id: 'files', icon: '🗂️', label: tr('admTabFiles') },
     { id: 'github', icon: '🐙', label: tr('admTabGithub') },
     { id: 'team', icon: '👥', label: tr('admTabTeam') },
@@ -889,6 +891,82 @@ function TradingBotTab({ api }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ── 🎬💳 منح رصيد استديو الفيديو — الخدمة منفصلة تماماً عن الباك-إند
+// الرئيسي (نشر مستقل)، فالطلب يذهب مباشرة لـ VIDEO_STUDIO_URL بنفس
+// التوكن المشترك، لا عبر api()/BACKEND_URL. صلاحية الأدمِن هناك مستقلة
+// أيضاً (ADMIN_USERS خاص بتلك الخدمة على Render) — لهذا رسالة 403 هنا
+// توضّح الفرق بدل الافتراض أن أدمِن المنصة الرئيسية كافٍ تلقائياً.
+function VideoCreditsTab() {
+  const tr = useI18n(s => s.t);
+  const token = localStorage.getItem('token');
+  const [username, setUsername] = useState(localStorage.getItem('currentUser') || '');
+  const [amount, setAmount] = useState('50');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [forbidden, setForbidden] = useState(false);
+
+  const grant = async () => {
+    const value = Number(amount);
+    if (!username.trim() || !Number.isInteger(value) || value <= 0) {
+      setMsg('❌ ' + tr('admVideoCreditsInvalid'));
+      return;
+    }
+    setBusy(true); setMsg(''); setForbidden(false);
+    try {
+      const res = await fetch(`${VIDEO_STUDIO_URL}/api/video/admin/credits/grant`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), amount: value, note: note.trim() || undefined }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.status === 403) { setForbidden(true); return; }
+      if (!res.ok) throw new Error(d.error || tr('admGenericError'));
+      setMsg(`✅ ${username.trim()} → ${d.credits} ${tr('admVideoCreditsUnit')}`);
+      setNote('');
+    } catch (e) { setMsg('❌ ' + e.message); }
+    setBusy(false);
+  };
+
+  return (
+    <div>
+      <Header title={tr('admTabVideoCredits')} />
+      {forbidden ? (
+        <div style={{ ...cardStyle, borderColor: 'rgba(245,158,11,0.35)' }}>
+          <div style={{ color: S.amber, fontWeight: 700, fontSize: 13, marginBottom: 6 }}>🔒 {tr('admVideoCreditsForbiddenTitle')}</div>
+          <p style={{ color: S.muted, fontSize: 12.5, lineHeight: 1.9 }}>{tr('admVideoCreditsForbiddenBody')}</p>
+        </div>
+      ) : (
+        <div style={{ ...cardStyle, maxWidth: 420 }}>
+          <p style={{ color: S.muted, fontSize: 12, marginBottom: 14, lineHeight: 1.8 }}>{tr('admVideoCreditsHint')}</p>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div>
+              <span style={label}>{tr('admVideoCreditsUsername')}</span>
+              <input style={{ ...inputStyle, direction: 'ltr', textAlign: 'left' }} value={username}
+                onChange={e => setUsername(e.target.value)} />
+            </div>
+            <div>
+              <span style={label}>{tr('admVideoCreditsAmount')}</span>
+              <input style={inputStyle} type="number" min="1" step="1" value={amount}
+                onChange={e => setAmount(e.target.value)} />
+            </div>
+            <div>
+              <span style={label}>{tr('admDescOptional')}</span>
+              <input style={inputStyle} value={note} onChange={e => setNote(e.target.value)} />
+            </div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <button onClick={grant} disabled={busy} style={{ ...btnPrimary, opacity: busy ? 0.6 : 1 }}>
+                {busy ? tr('admSaving') : tr('admVideoCreditsGrant')}
+              </button>
+              {msg && <span style={{ fontSize: 12, color: msg.startsWith('❌') ? S.red : S.green }}>{msg}</span>}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
