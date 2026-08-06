@@ -67,6 +67,18 @@
         -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
       .header-controls::-webkit-scrollbar { display: none; }
       .pill-btn { padding: 5px 12px; font-size: 12.5px; flex: 0 0 auto; }
+
+      /* جدول مكتبة الأفلام: بأعمدة (القالب/الحالة/النتيجة/التاريخ) الحقيقية
+         (روابط معاينة/تحميل + نص طويل) كان يفرض عرضاً أكبر من الشاشة على
+         كامل الصفحة — بلا هذا التحويل لبطاقات مكدَّسة، كل الاستوديو كان
+         يحتاج تمريراً أفقياً للوصول لبقية المحتوى. */
+      table, table tbody, table tr, table td { display: block; }
+      table thead { display: none; }
+      table tr { border: 1px solid var(--border); border-radius: 10px; padding: 4px 0; margin-bottom: 10px; }
+      table tr:last-child { margin-bottom: 0; }
+      table td { border-bottom: none; white-space: normal; word-break: break-word; }
+      table td::before { content: attr(data-label); display: block; font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+      table td[colspan]::before { content: none; }
     }
 
     .nav-group-label {
@@ -1010,10 +1022,10 @@
         const modelTag = model
           ? ` <span style="color:var(--muted);font-size:11px">(${model.nameAr})</span>` : '';
         return `<tr>
-          <td>${tplName(j.templateId)}${modelTag}</td>
-          <td><span class="st st-${j.status}">${tr('st_' + j.status) || j.status}</span></td>
-          <td>${result}</td>
-          <td dir="ltr">${d.toLocaleString(lang === 'en' ? 'en' : 'ar')}</td>
+          <td data-label="${tr('thTemplate')}">${tplName(j.templateId)}${modelTag}</td>
+          <td data-label="${tr('thStatus')}"><span class="st st-${j.status}">${tr('st_' + j.status) || j.status}</span></td>
+          <td data-label="${tr('thResult')}">${result}</td>
+          <td data-label="${tr('thDate')}" dir="ltr">${d.toLocaleString(lang === 'en' ? 'en' : 'ar')}</td>
         </tr>`;
       }).join('');
 
