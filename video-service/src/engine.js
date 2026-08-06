@@ -8,6 +8,12 @@
  *    عند الفشل — فشل المزود لا يكلف المستخدم).
  * 3. إرسال المهام queued (ضمن سقف تزامن) — فشل الإرسال نفسه = فشل فوري
  *    مع استرداد.
+ * 4. تجميع تلقائي مؤجل ("أكمل تلقائياً" — AI Producer): مشروع سلّحه
+ *    المستخدم بعد مراجعة مسودة السيناريو وإرسال كل مشاهده — بمجرد توقف
+ *    كل نشاطه (لا queued ولا rendering) يُجمَّع تلقائياً بلا عودة يدوية.
+ *    تُتجاوَز هذه الخطوة بصمت حين لا تُمرَّر limits/exemptFromDailyCap
+ *    (الاختبارات الحالية التي لا تعنيها) — محاولة واحدة فقط لكل تسليح،
+ *    نجحت أو فشلت، فلا تُعاد إلى الأبد كل دورة.
  *
  * مصالحة إعادة التشغيل مجانية بالتصميم: الحالة كلها في المخزن الدائم،
  * فأول دورة بعد أي تعطّل/إعادة نشر تلتقط المهام النشطة من حيث توقفت
@@ -16,6 +22,7 @@
 import { listActiveJobs, transitionJob } from './jobs.js';
 import { refundCredits } from './credits.js';
 import { storageKeyFor } from './storage/index.js';
+import { runAssembly } from './assemblyJob.js';
 
 export const JOB_TIMEOUT_MS = 15 * 60 * 1000;
 export const MAX_CONCURRENT_RENDERS = 2;
@@ -58,8 +65,14 @@ async function failWithRefund(store, job, error) {
 }
 
 /** دورة معالجة واحدة نقية — تُستدعى من المجدول أو من الاختبارات مباشرة. */
-export async function runEngineTick(store, { provider, storage = null, retentionDays = 0, now = Date.now() }) {
-    const summary = { timedOut: 0, completed: 0, failed: 0, submitted: 0, submitErrors: 0, mirrored: 0, purged: 0 };
+export async function runEngineTick(store, {
+    provider, storage = null, retentionDays = 0, now = Date.now(),
+    limits = null, isAdminUser = null, maxActiveJobsPerUser = 3,
+}) {
+    const summary = {
+        timedOut: 0, completed: 0, failed: 0, submitted: 0, submitErrors: 0, mirrored: 0, purged: 0,
+        autoAssembled: 0, autoAssembleSkipped: 0,
+    };
     const active = await listActiveJobs(store);
 
     // 1) المهلة القصوى أولاً — تُقيَّم على عمر المهمة الكلي منذ إنشائها.
@@ -113,7 +126,34 @@ export async function runEngineTick(store, { provider, storage = null, retention
         }
     }
 
-    // 4) تنظيف الاحتفاظ: حذف الملفات التي تجاوزت المدة المعلنة للمستخدم.
+    // 4) تجميع تلقائي مؤجل — انظر الشرح أعلى الملف.
+    if (limits && isAdminUser) {
+        const pendingProjects = await store.listProjectsWithPendingAutoAssemble();
+        for (const project of pendingProjects) {
+            const shots = await store.listJobsByProject(project.id);
+            if (shots.some(s => s.status === 'queued' || s.status === 'rendering')) continue;
+            // ننزع التسليح فوراً — محاولة واحدة فقط بغضّ النظر عن النتيجة،
+            // فلا يُعاد فشل عابر (بوابة مؤقتة) إلى الأبد كل دورة.
+            await store.setProjectAutoAssemble(project.id, null);
+            const ready = shots.filter(s => s.status === 'done' && (s.videoUrl || s.storageKey));
+            if (ready.length === 0) { summary.autoAssembleSkipped += 1; continue; }
+            try {
+                const result = await runAssembly(store, {
+                    project, username: project.username, storage,
+                    resolved: project.autoAssemble.resolved, rawValues: project.autoAssemble.raw,
+                    limits, exemptPerUser: isAdminUser({ username: project.username }),
+                    maxActiveJobsPerUser, watermarkText: project.autoAssemble.watermarkText || null,
+                });
+                if (result.job) summary.autoAssembled += 1;
+                else summary.autoAssembleSkipped += 1;
+            } catch (e) {
+                console.warn(`⚠️ تعذّر التجميع التلقائي للمشروع ${project.id}: ${e.message}`);
+                summary.autoAssembleSkipped += 1;
+            }
+        }
+    }
+
+    // 5) تنظيف الاحتفاظ: حذف الملفات التي تجاوزت المدة المعلنة للمستخدم.
     // يُنفَّذ أخيراً حتى لا يؤخر معالجة المهام الحية، ولا يعمل إطلاقاً
     // بلا تخزين مفعَّل أو بمدة احتفاظ = 0 (احتفاظ دائم).
     if (storage && retentionDays > 0) {

@@ -24,6 +24,8 @@
  *   listJobsByProject(projectId) → [job]           (بترتيب اللقطات shotIndex)
  *   countJobsInProject(projectId) → number
  *   reorderProjectShots(projectId, orderedIds) → bool  (false إن لم تطابق لقطات المشروع تماماً)
+ *   setProjectAutoAssemble(id, valueOrNull) → project|null   ("أكمل تلقائياً" — تسليح/نزع تجميع مؤجل)
+ *   listProjectsWithPendingAutoAssemble() → [project]         (لمحرك المعالجة فقط)
  *
  * الاختيار: DATABASE_URL مضبوط → postgres (دائم، للإنتاج)، وإلا → ملفات
  * (صفر إعداد، للتطوير والاختبار).
