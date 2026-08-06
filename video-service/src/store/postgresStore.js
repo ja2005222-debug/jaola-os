@@ -75,6 +75,9 @@ ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS default_style TEXT;
 ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS default_filter TEXT;
 -- ترقية غير هدّامة: بصمة أسلوب بصري تُحقن في كل برومت بالمشروع (محاكاة LoRA)
 ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS style_profile TEXT;
+-- ترقية غير هدّامة: شخصية افتراضية من البنك تُدرَج تلقائياً في كل لقطة
+-- جديدة بهذا المشروع (ما لم يختر المستخدم شخصية أخرى صراحةً)
+ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS default_character_id TEXT;
 -- بنك الشخصيات: وصف حرفي ثابت + صور مرجعية بزوايا متعددة
 CREATE TABLE IF NOT EXISTS video_characters (
     id          TEXT PRIMARY KEY,
@@ -129,6 +132,7 @@ function rowToProject(r) {
         username: r.username, title: r.title,
         defaultAspectRatio: r.default_aspect_ratio, defaultStyle: r.default_style,
         defaultFilter: r.default_filter, styleProfile: r.style_profile,
+        defaultCharacterId: r.default_character_id,
     };
 }
 
@@ -421,7 +425,7 @@ export function createPostgresStore({ connectionString, starterCredits, poolFact
         // إعدادات موروثة — مفتاح غائب (undefined) لا يُمس، والعلم البوليني
         // في الاستعلام هو ما يقرر ذلك (لا يمكن تمييز NULL المقصود عن
         // "لم يُرسَل" داخل SQL وحدها).
-        async updateProjectSettings(id, { aspectRatio, style, filter, styleProfile } = {}) {
+        async updateProjectSettings(id, { aspectRatio, style, filter, styleProfile, characterId } = {}) {
             return withClient(async c => {
                 const res = await c.query(
                     `UPDATE video_projects SET
@@ -429,13 +433,15 @@ export function createPostgresStore({ connectionString, starterCredits, poolFact
                         default_style        = CASE WHEN $4::boolean THEN $5 ELSE default_style END,
                         default_filter       = CASE WHEN $6::boolean THEN $7 ELSE default_filter END,
                         style_profile        = CASE WHEN $8::boolean THEN $9 ELSE style_profile END,
-                        updated_at = $10
+                        default_character_id = CASE WHEN $10::boolean THEN $11 ELSE default_character_id END,
+                        updated_at = $12
                      WHERE id = $1 RETURNING *`,
                     [
                         id, aspectRatio !== undefined, aspectRatio || null,
                         style !== undefined, style || null,
                         filter !== undefined, filter || null,
                         styleProfile !== undefined, styleProfile || null,
+                        characterId !== undefined, characterId || null,
                         Date.now(),
                     ]
                 );

@@ -1716,6 +1716,85 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             }
         });
 
+        test('🎭 شخصية افتراضية للمشروع: تُدرَج تلقائياً بلا اختيار يدوي، واختيار صريح يتفوّق عليها', async () => {
+            const fakeImages = {
+                name: 'fake-image',
+                async generateImage() { return `https://img.test/${Date.now()}.png`; },
+            };
+            const app = createApp({
+                store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider, imageProvider: fakeImages,
+            });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const token = makeToken('default-char-director');
+                await callAt(url, '/api/video/credits', { token });
+                await callAt(url, '/api/video/admin/credits/grant', {
+                    method: 'POST', token: makeToken('boss'), body: { username: 'default-char-director', amount: 20 },
+                });
+                const pid = (await callAt(url, '/api/video/projects', {
+                    method: 'POST', token, body: { title: 'فيلم بطل ثابت' },
+                })).data.project.id;
+                const heroId = (await callAt(url, '/api/video/characters', {
+                    method: 'POST', token, body: { name: 'البطل', description: 'امرأة بمعطف أحمر' },
+                })).data.character.id;
+                const sidekickId = (await callAt(url, '/api/video/characters', {
+                    method: 'POST', token, body: { name: 'الرفيق', description: 'كلب صغير بني' },
+                })).data.character.id;
+
+                // شخصية مجهولة/مملوكة لغيرك كافتراضية → 400 قبل أي حفظ
+                assert.equal((await callAt(url, `/api/video/projects/${pid}`, {
+                    method: 'PATCH', token, body: { defaultCharacterId: 'لا-وجود' },
+                })).status, 400);
+                assert.equal((await callAt(url, `/api/video/projects/${pid}`, {
+                    method: 'PATCH', token: makeToken('other-director'), body: { defaultCharacterId: heroId },
+                })).status, 404); // المشروع نفسه ليس مملوكاً له أصلاً
+
+                const patched = await callAt(url, `/api/video/projects/${pid}`, {
+                    method: 'PATCH', token, body: { defaultCharacterId: heroId },
+                });
+                assert.equal(patched.status, 200);
+                assert.equal(patched.data.project.defaultCharacterId, heroId);
+
+                // بلا characterId صريح: الشخصية الافتراضية تُدرَج تلقائياً
+                const inherited = await callAt(url, '/api/video/renders', {
+                    method: 'POST', token,
+                    body: { templateId: 'ai_clip', values: { prompt: 'مشهد أول' }, projectId: pid },
+                });
+                assert.equal(inherited.status, 200);
+                const jInherited = await getJob(store, inherited.data.job.id);
+                assert.equal(jInherited.spec.characterId, heroId);
+                assert.match(jInherited.spec.prompt, /^امرأة بمعطف أحمر\. /);
+
+                // characterId صريح مختلف يتفوّق على الافتراضي الموروث
+                const overridden = await callAt(url, '/api/video/renders', {
+                    method: 'POST', token,
+                    body: {
+                        templateId: 'ai_clip', values: { prompt: 'مشهد ثانٍ' },
+                        projectId: pid, characterId: sidekickId,
+                    },
+                });
+                assert.equal(overridden.status, 200);
+                const jOverridden = await getJob(store, overridden.data.job.id);
+                assert.equal(jOverridden.spec.characterId, sidekickId);
+                assert.match(jOverridden.spec.prompt, /^كلب صغير بني\. /);
+
+                // شخصية افتراضية حُذفت لاحقاً: توريث "أفضل جهد" — لا تُفشل
+                // الطلب، فقط تُتجاهَل بصمت (نفس فلسفة توريث نسبة الأبعاد/الأسلوب)
+                await store.deleteCharacter(heroId);
+                const afterDelete = await callAt(url, '/api/video/renders', {
+                    method: 'POST', token,
+                    body: { templateId: 'ai_clip', values: { prompt: 'مشهد ثالث' }, projectId: pid },
+                });
+                assert.equal(afterDelete.status, 200);
+                const jAfterDelete = await getJob(store, afterDelete.data.job.id);
+                assert.equal(jAfterDelete.spec.characterId, undefined);
+                assert.equal(jAfterDelete.spec.prompt, 'مشهد ثالث');
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
         test('🎨 فلتر المشروع الافتراضي يُستخدم عند التجميع فقط إن لم يُحدَّد فلتر صراحةً', async () => {
             // تطبيق مستقل: /assemble يشارك محدود renderLimit مع /renders.
             const app = createApp({ store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider });
