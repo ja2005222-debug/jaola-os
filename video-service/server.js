@@ -746,9 +746,12 @@ export function createApp({
             });
         }
 
-        // عدّاد استخدام الشخصية — فشله لا يمس نجاح الطلب.
+        // عدّاد استخدام الشخصية — يُنتظر (لا fire-and-forget): بلا await
+        // كانت قراءة العداد فور الرد قد تسبق كتابته فعلياً (سباق حقيقي
+        // تحت Postgres تحديداً — كشفه فشل عابر في CI لا يظهر أبداً على
+        // المخزن الملفي المتزامن). فشل التحديث نفسه لا يزال لا يفشل الطلب.
         if (character) {
-            store.incrementCharacterUsage(character.id)
+            await store.incrementCharacterUsage(character.id)
                 .catch(e => console.warn('⚠️ تعذّر تحديث عداد الشخصية:', e.message));
         }
 
