@@ -2,9 +2,10 @@
  * 🗃️ storage/index.js — اختيار تخزين ملفات الفيديو (نقطة التبديل الوحيدة)
  *
  * عقد التخزين:
- *   mirrorFromUrl(sourceUrl, key) → {key, bytes}   (يرمي عند الفشل)
- *   signedUrl(key, ttlSec?)       → رابط موقّع قصير الأجل
- *   remove(key)                   → حذف الملف
+ *   mirrorFromUrl(sourceUrl, key)   → {key, bytes}   (يرمي عند الفشل)
+ *   putObject(key, body, mimeType)  → {key, bytes}   (رفع مباشر من الذاكرة)
+ *   signedUrl(key, ttlSec?)         → رابط موقّع قصير الأجل
+ *   remove(key)                     → حذف الملف
  *
  * **معطَّل افتراضياً** (يُرجع null): بلا مفاتيح R2 تعمل الخدمة كما كانت —
  * روابط المزوّد كما هي. لا تعطُّل ولا سلوك نصف-مفعَّل.
@@ -16,6 +17,18 @@ export function storageKeyFor({ username, jobId }) {
     const safeUser = String(username || 'unknown').replace(/[^a-z0-9_-]/gi, '_').slice(0, 64);
     const safeJob = String(jobId).replace(/[^a-z0-9_-]/gi, '_');
     return `videos/${safeUser}/${safeJob}.mp4`;
+}
+
+/**
+ * مسار صورة رفعها المستخدم من جهازه — نفس قواعد العزل. البادئة
+ * `uploads/<user>/` هي أيضاً فحص الملكية: قيمة `upload:<key>` في حقل
+ * صورة تُقبل فقط إن طابقت بادئة صاحب الطلب (راجع server.js).
+ */
+export function uploadImageKeyFor({ username, uploadId, ext }) {
+    const safeUser = String(username || 'unknown').replace(/[^a-z0-9_-]/gi, '_').slice(0, 64);
+    const safeId = String(uploadId).replace(/[^a-z0-9_-]/gi, '_');
+    const safeExt = ['png', 'jpg', 'webp'].includes(ext) ? ext : 'png';
+    return `uploads/${safeUser}/${safeId}.${safeExt}`;
 }
 
 /** مسار صورة مرجعية لشخصية (بنك الشخصيات) — نفس قواعد العزل. */

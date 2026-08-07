@@ -538,6 +538,9 @@
         planFilmBtn: '🪄 خطّط لي فيلماً', planTitle: '🪄 تخطيط سيناريو من فكرة واحدة',
         planNote: 'صف فكرتك وسنقترح مسودة مشاهد متتابعة — راجعها وعدّلها كما تشاء، ثم ولّدها كلها بضغطة واحدة. لا يُخصم أي رصيد في هذه الخطوة.',
         planStoryTitleLabel: '📽️ العنوان المقترَح', planStoryLoglineLabel: '📝 الملخص',
+        uploadFromDevice: 'ارفع من جهازك', uploading: 'جارٍ الرفع…',
+        uploadFailed: 'تعذّر رفع الصورة.', uploadTooLarge: 'الصورة أكبر من الحد المسموح (8MB).',
+        uploadDone: '✅ رُفعت — ستُستخدم هذه الصورة.',
         planIdeaPh: 'مثال: قطة برتقالية تتجول في شارع أوروبي عند الغروب وتكتشف كرة صوف متدحرجة',
         planSceneCountLabel: 'عدد المشاهد:', planGoBtn: '✨ اقترح المشاهد',
         planFail: 'تعذّر تخطيط السيناريو.', planCaptionPh: 'كابشن (اختياري)',
@@ -680,6 +683,9 @@
         planFilmBtn: '🪄 Plan my film', planTitle: '🪄 Plan a script from one idea',
         planNote: 'Describe your idea and we\'ll suggest a draft of sequential scenes — review and edit them as you like, then generate them all in one click. No credits are charged at this step.',
         planStoryTitleLabel: '📽️ Suggested title', planStoryLoglineLabel: '📝 Logline',
+        uploadFromDevice: 'Upload from device', uploading: 'Uploading…',
+        uploadFailed: 'Could not upload the image.', uploadTooLarge: 'Image exceeds the allowed size (8MB).',
+        uploadDone: '✅ Uploaded — this image will be used.',
         planIdeaPh: 'Example: an orange cat wandering a European street at sunset discovers a rolling ball of yarn',
         planSceneCountLabel: 'Scene count:', planGoBtn: '✨ Suggest scenes',
         planFail: 'Could not plan the script.', planCaptionPh: 'Caption (optional)',
@@ -748,6 +754,7 @@
     let activeCharacterId = null;
     let activeCharAngle = 'front';
     let cinemaControls = [];
+    let uploadsEnabled = false; // زر "ارفع من جهازك" — فقط حين يملك الخادم تخزيناً
     let currentCredits = 0;
 
     function showGate() {
@@ -829,6 +836,7 @@
       templates = data.templates;
       aiModels = data.aiModels || [];
       cinemaControls = data.cinema || [];
+      uploadsEnabled = !!data.uploadsEnabled;
       // ⚠️ أسماء/أوصاف القوالب (nameAr/descriptionAr) محتوى من الخادم لا
       // نص واجهة — تبقى عربية بغضّ النظر عن اللغة المختارة هنا (راجع
       // تعليق I18N أعلاه).
@@ -931,9 +939,20 @@
                     background:var(--bg);color:var(--text);font-size:14px;font-family:inherit;
                     resize:vertical"></textarea>`;
         }
+        // 📤 حقل صورة + تخزين مفعَّل: زر رفع من الجهاز بجانب خيار الرابط —
+        // الرفع يملأ الحقل بتوكن upload:... يحلّه الخادم لرابط موقّع.
+        const uploadRow = (f.type === 'imageUrl' && uploadsEnabled) ? `
+                <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
+                  <button type="button" class="chip" data-upload-btn="${f.key}">📤 ${tr('uploadFromDevice')}</button>
+                  <input type="file" accept="image/jpeg,image/png,image/webp" data-upload-file="${f.key}" class="hidden" />
+                  <img data-upload-preview="${f.key}" class="hidden" alt=""
+                    style="height:44px;border-radius:8px;border:1px solid var(--border)" />
+                  <span class="note" style="margin:0" data-upload-status="${f.key}"></span>
+                </div>` : '';
         return `${label}
-                <input type="${type}" name="${f.key}" maxlength="${f.maxLen || 500}" placeholder="${ph}" />`;
+                <input type="${type}" name="${f.key}" maxlength="${f.maxLen || 500}" placeholder="${ph}" />${uploadRow}`;
       }).join('');
+      bindUploadButtons(form);
       renderModelPicker();
       renderCharacterPicker();
       syncAspectRatios();
@@ -943,6 +962,43 @@
       $('formWrap').classList.remove('hidden');
       $('formMsg').className = 'msg';
       $('formWrap').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // 📤 رفع صورة من الجهاز لحقل صورة: fetch مباشر (لا api()) لأن جسم
+    // الطلب بايتات الصورة الخام بنوعها الحقيقي، لا JSON. الخادم يتحقق من
+    // بصمة البايتات بنفسه — رأس النوع هنا مجرد تمرير للـparser.
+    function bindUploadButtons(form) {
+      form.querySelectorAll('[data-upload-btn]').forEach(btn => {
+        const key = btn.dataset.uploadBtn;
+        const fileInput = form.querySelector(`[data-upload-file="${key}"]`);
+        const status = form.querySelector(`[data-upload-status="${key}"]`);
+        const preview = form.querySelector(`[data-upload-preview="${key}"]`);
+        btn.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', async () => {
+          const file = fileInput.files[0];
+          if (!file) return;
+          if (file.size > 8 * 1024 * 1024) { status.textContent = tr('uploadTooLarge'); return; }
+          btn.disabled = true; status.textContent = tr('uploading');
+          try {
+            const res = await fetch('/api/video/uploads', {
+              method: 'POST',
+              headers: { 'Content-Type': file.type || 'image/png', 'Authorization': 'Bearer ' + token() },
+              body: file,
+            });
+            const data = await res.json();
+            if (!res.ok) { status.textContent = data.error || tr('uploadFailed'); return; }
+            form.elements[key].value = data.token;
+            preview.src = data.previewUrl;
+            preview.classList.remove('hidden');
+            status.textContent = tr('uploadDone');
+            form.dispatchEvent(new Event('input', { bubbles: true })); // معاينة البرومت/التكلفة تتزامن
+          } catch {
+            status.textContent = tr('connFail');
+          } finally {
+            btn.disabled = false; fileInput.value = '';
+          }
+        });
+      });
     }
 
     async function submitRender() {

@@ -60,6 +60,18 @@ export function createR2Storage({
             return { key, bytes: body.byteLength };
         },
 
+        /**
+         * يرفع محتوى جاهزاً في الذاكرة (صورة مرجعية من جهاز المستخدم) —
+         * بخلاف mirrorFromUrl الذي يجلب من رابط. التحقق من النوع والحجم
+         * مسؤولية المستدعي (server.js يفحص magic bytes قبل الوصول هنا).
+         */
+        async putObject(key, body, contentType) {
+            await client.send(new PutObjectCommand({
+                Bucket: bucket, Key: key, Body: body, ContentType: contentType,
+            }));
+            return { key, bytes: body.byteLength };
+        },
+
         /** رابط تنزيل موقّع قصير الأجل — لا يُخزَّن ولا يُعاد استخدامه. */
         async signedUrl(key, ttlSec = signedUrlTtlSec) {
             return getSignedUrl(

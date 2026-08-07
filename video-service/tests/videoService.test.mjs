@@ -59,6 +59,10 @@ function createFakeStorage({ failMirror = false } = {}) {
             objects.set(key, sourceUrl);
             return { key, bytes: 123 };
         },
+        async putObject(key, body, contentType) {
+            objects.set(key, { bytes: body.byteLength, contentType });
+            return { key, bytes: body.byteLength };
+        },
         async signedUrl(key, ttlSec = 600) {
             if (!objects.has(key)) throw new Error('مفتاح مجهول');
             return `https://signed.test/${encodeURIComponent(key)}?exp=${ttlSec}`;
@@ -1378,6 +1382,97 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 },
             });
             assert.equal(foreign.status, 400);
+        });
+
+        test('📤 رفع صورة من الجهاز: فحص بصمة البايتات، توكن معزول بالمالك، وحلّه لرابط موقّع في المخطط', async () => {
+            const pngBytes = Buffer.concat([
+                Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+                Buffer.alloc(120, 7),
+            ]);
+            const rawUpload = (url, { token, body, contentType = 'image/png' }) =>
+                fetch(`${url}/api/video/uploads`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': contentType, Authorization: `Bearer ${token}` },
+                    body,
+                }).then(async r => ({ status: r.status, data: await r.json().catch(() => null) }));
+
+            const token = makeToken('uploader');
+
+            // بلا تخزين → الميزة معطلة صراحةً (503) والعلم في القوالب false
+            assert.equal((await rawUpload(baseUrl, { token, body: pngBytes })).status, 503);
+            assert.equal((await call('/api/video/templates', { token })).data.uploadsEnabled, false);
+            // بتخزين → العلم true
+            assert.equal((await callAt(ownedUrl, '/api/video/templates', { token })).data.uploadsEnabled, true);
+
+            // رفع PNG صالح → توكن بمفتاح معزول باسم المالك + رابط معاينة
+            const up = await rawUpload(ownedUrl, { token, body: pngBytes });
+            assert.equal(up.status, 200);
+            assert.match(up.data.token, /^upload:uploads\/uploader\/[a-z0-9-]+\.png$/);
+            assert.match(up.data.previewUrl, /^https:\/\/signed\.test\//);
+            assert.ok(fakeStorage.objects.has(up.data.token.slice('upload:'.length)));
+
+            // بايتات ليست صورة (رأس النوع يكذب) → 400 ببصمة البايتات لا الرأس
+            const junk = await rawUpload(ownedUrl, { token, body: Buffer.alloc(200, 3) });
+            assert.equal(junk.status, 400);
+            assert.match(junk.data.error, /صيغة/);
+            // جسم صغير جداً → 400
+            assert.equal((await rawUpload(ownedUrl, { token, body: Buffer.from([0x89]) })).status, 400);
+
+            // التوليد بالتوكن: المخطط يحمل رابطاً موقَّعاً، والقيم المخزَّنة
+            // تحتفظ بالتوكن — "أعد التوليد" لاحقاً يوقّع من جديد بلا انتهاء صلاحية.
+            const created = await callAt(ownedUrl, '/api/video/renders', {
+                method: 'POST', token,
+                body: {
+                    templateId: 'ai_image_clip', modelId: 'wan_i2v',
+                    values: { prompt: 'البطل يلتفت نحو الأفق', imageUrl: up.data.token },
+                },
+            });
+            assert.equal(created.status, 200);
+            const job = await getJob(store, created.data.job.id);
+            assert.match(job.spec.imageUrl, /^https:\/\/signed\.test\//);
+            assert.equal(job.values.imageUrl, up.data.token);
+
+            // قالب Timeline (عرض منتج): التوكن يُحل داخل أصول المخطط أيضاً
+            const product = await callAt(ownedUrl, '/api/video/renders', {
+                method: 'POST', token,
+                body: {
+                    templateId: 'product_showcase',
+                    values: { productName: 'ساعة', price: '99 ر.س', imageUrl: up.data.token },
+                },
+            });
+            assert.equal(product.status, 200);
+            const productJob = await getJob(store, product.data.job.id);
+            const imgLayer = productJob.spec.scenes
+                .flatMap(s => s.layers || [])
+                .find(l => l.kind === 'image');
+            assert.match(imgLayer.url, /^https:\/\/signed\.test\//);
+
+            // توكن مستخدم آخر → 400 بلا تأكيد حتى لوجوده
+            const foreign = await callAt(ownedUrl, '/api/video/renders', {
+                method: 'POST', token: makeToken('thief'),
+                body: {
+                    templateId: 'ai_image_clip', modelId: 'wan_i2v',
+                    values: { prompt: 'مشهد ما', imageUrl: up.data.token },
+                },
+            });
+            assert.equal(foreign.status, 400);
+
+            // توكن على خادم بلا تخزين → 400 واضح لا انهيار. تطبيق مخصص
+            // معزول — لا يستهلك حصة rate-limit تطبيق baseUrl المشترك.
+            const bare = createApp({ store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider });
+            const bareServer = await new Promise(r => { const s = bare.listen(0, () => r(s)); });
+            try {
+                const noStorage = await callAt(`http://127.0.0.1:${bareServer.address().port}`, '/api/video/renders', {
+                    method: 'POST', token,
+                    body: {
+                        templateId: 'ai_image_clip', modelId: 'wan_i2v',
+                        values: { prompt: 'مشهد ما', imageUrl: 'upload:uploads/uploader/x.png' },
+                    },
+                });
+                assert.equal(noStorage.status, 400);
+            } finally {
+                await new Promise(r => bareServer.close(r));
+            }
         });
 
         test('مولّد صور fal: مسارات المتابعة بمعرّف التطبيق ومهلة صريحة', async () => {
