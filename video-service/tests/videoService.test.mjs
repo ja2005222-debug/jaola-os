@@ -1416,7 +1416,61 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.ok(validateCharacterInput({ name: 'س', description: 'قصير' }).error);
         });
 
-        test('✍️ مزوّد تخطيط السيناريو: يفسّر JSON (حتى داخل سياج ```)، ويرفض رداً غير مصفوفة أو فارغاً', async () => {
+        test('✍️ الكاتب (writeStory): يفسّر JSON (حتى داخل سياج ```)، ويرفض رداً غير كائن أو بلا beats، وأخطاء chatJson المشتركة تظهر بوضوح', async () => {
+            const okStory = { title: 'عنوان', logline: 'ملخص', beats: [{ summary: 'حدث ١', emotion: 'فضول' }] };
+            const fenced = createScriptProvider({
+                apiKey: 'K',
+                fetchImpl: async () => ({
+                    ok: true,
+                    json: async () => ({ choices: [{ message: { content: '```json\n' + JSON.stringify(okStory) + '\n```' } }] }),
+                }),
+            });
+            const result = await fenced.writeStory({ idea: 'فكرة', sceneCount: 1 });
+            assert.deepEqual(result, okStory);
+
+            // بلا سياج أيضاً — JSON خام مباشرة
+            const raw = createScriptProvider({
+                apiKey: 'K',
+                fetchImpl: async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(okStory) } }] }) }),
+            });
+            assert.deepEqual(await raw.writeStory({ idea: 'x', sceneCount: 1 }), okStory);
+
+            // رد مصفوفة (لا كائن) → خطأ عربي واضح
+            const isArray = createScriptProvider({
+                apiKey: 'K',
+                fetchImpl: async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: '[1,2]' } }] }) }),
+            });
+            await assert.rejects(() => isArray.writeStory({ idea: 'x', sceneCount: 1 }), /كائناً/);
+
+            // كائن بلا beats → خطأ عربي واضح
+            const noBeats = createScriptProvider({
+                apiKey: 'K',
+                fetchImpl: async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: '{"title":"t"}' } }] }) }),
+            });
+            await assert.rejects(() => noBeats.writeStory({ idea: 'x', sceneCount: 1 }), /أحداثاً/);
+
+            // رد فارغ (بلا choices) → خطأ لا انهيار صامت
+            const empty = createScriptProvider({ apiKey: 'K', fetchImpl: async () => ({ ok: true, json: async () => ({}) }) });
+            await assert.rejects(() => empty.writeStory({ idea: 'x', sceneCount: 1 }), /فارغاً/);
+
+            // فشل HTTP → تفصيل الرد يظهر لا يُبتلع
+            const httpFail = createScriptProvider({
+                apiKey: 'K',
+                fetchImpl: async () => ({ ok: false, status: 503, text: async () => 'service unavailable' }),
+            });
+            await assert.rejects(() => httpFail.writeStory({ idea: 'x', sceneCount: 1 }), /503/);
+
+            // JSON غير صالح داخل الرد → خطأ عربي لا انهيار
+            const badJson = createScriptProvider({
+                apiKey: 'K',
+                fetchImpl: async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: 'ليس JSON' } }] }) }),
+            });
+            await assert.rejects(() => badJson.writeStory({ idea: 'x', sceneCount: 1 }), /تفسير/);
+
+            assert.throws(() => createScriptProvider({ apiKey: '' }), /مفتاح/);
+        });
+
+        test('🎬 المخرج (directScenes): يفسّر JSON إلى مصفوفة لقطات، ويرفض رداً غير مصفوفة', async () => {
             const okScenes = [{ prompt: 'مشهد ١', caption: 'ك١', shotSize: 'واسعة' }];
             const fenced = createScriptProvider({
                 apiKey: 'K',
@@ -1425,21 +1479,11 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                     json: async () => ({ choices: [{ message: { content: '```json\n' + JSON.stringify(okScenes) + '\n```' } }] }),
                 }),
             });
-            const result = await fenced.planScenes({
-                idea: 'فكرة', sceneCount: 1,
+            const result = await fenced.directScenes({
+                beats: [{ summary: 'حدث', emotion: 'فضول' }],
                 shotSizeOptions: ['واسعة'], cameraMoveOptions: [], lightingOptions: [], moodOptions: [], styleOptions: [],
             });
             assert.deepEqual(result, okScenes);
-
-            // بلا سياج أيضاً — JSON خام مباشرة
-            const raw = createScriptProvider({
-                apiKey: 'K',
-                fetchImpl: async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(okScenes) } }] }) }),
-            });
-            assert.deepEqual(
-                await raw.planScenes({ idea: 'x', sceneCount: 1, shotSizeOptions: [], cameraMoveOptions: [], lightingOptions: [], moodOptions: [], styleOptions: [] }),
-                okScenes
-            );
 
             // رد ليس مصفوفة → خطأ عربي واضح
             const notArray = createScriptProvider({
@@ -1447,38 +1491,47 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 fetchImpl: async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: '{"a":1}' } }] }) }),
             });
             await assert.rejects(
-                () => notArray.planScenes({ idea: 'x', sceneCount: 1, shotSizeOptions: [], cameraMoveOptions: [], lightingOptions: [], moodOptions: [], styleOptions: [] }),
+                () => notArray.directScenes({
+                    beats: [{ summary: 'حدث', emotion: 'فضول' }],
+                    shotSizeOptions: [], cameraMoveOptions: [], lightingOptions: [], moodOptions: [], styleOptions: [],
+                }),
                 /مصفوفة/
             );
+        });
 
-            // رد فارغ (بلا choices) → خطأ لا انهيار صامت
-            const empty = createScriptProvider({ apiKey: 'K', fetchImpl: async () => ({ ok: true, json: async () => ({}) }) });
-            await assert.rejects(
-                () => empty.planScenes({ idea: 'x', sceneCount: 1, shotSizeOptions: [], cameraMoveOptions: [], lightingOptions: [], moodOptions: [], styleOptions: [] }),
-                /فارغاً/
-            );
-
-            // فشل HTTP → تفصيل الرد يظهر لا يُبتلع
-            const httpFail = createScriptProvider({
+        test('📝🎬 planScenes ينسّق الكاتب ثم المخرج تباعاً: نداءان بالضبط، وفشل الكاتب يمنع نداء المخرج', async () => {
+            const okStory = { title: 'عنوان', logline: 'ملخص', beats: [{ summary: 'حدث ١', emotion: 'فضول' }] };
+            const okScenes = [{ prompt: 'مشهد ١', caption: 'ك١', shotSize: 'واسعة' }];
+            let calls = 0;
+            const provider = createScriptProvider({
                 apiKey: 'K',
-                fetchImpl: async () => ({ ok: false, status: 503, text: async () => 'service unavailable' }),
+                fetchImpl: async () => {
+                    calls += 1;
+                    const content = JSON.stringify(calls === 1 ? okStory : okScenes);
+                    return { ok: true, json: async () => ({ choices: [{ message: { content } }] }) };
+                },
+            });
+            const result = await provider.planScenes({
+                idea: 'فكرة', sceneCount: 1,
+                shotSizeOptions: ['واسعة'], cameraMoveOptions: [], lightingOptions: [], moodOptions: [], styleOptions: [],
+            });
+            assert.equal(calls, 2);
+            assert.deepEqual(result, { title: okStory.title, logline: okStory.logline, scenes: okScenes });
+
+            // فشل الكاتب → صفر نداء للمخرج (لا هدر، لا تناقض)
+            let failCalls = 0;
+            const failing = createScriptProvider({
+                apiKey: 'K',
+                fetchImpl: async () => { failCalls += 1; return { ok: false, status: 500, text: async () => 'boom' }; },
             });
             await assert.rejects(
-                () => httpFail.planScenes({ idea: 'x', sceneCount: 1, shotSizeOptions: [], cameraMoveOptions: [], lightingOptions: [], moodOptions: [], styleOptions: [] }),
-                /503/
+                () => failing.planScenes({
+                    idea: 'x', sceneCount: 1,
+                    shotSizeOptions: [], cameraMoveOptions: [], lightingOptions: [], moodOptions: [], styleOptions: [],
+                }),
+                /500/
             );
-
-            // JSON غير صالح داخل الرد → خطأ عربي لا انهيار
-            const badJson = createScriptProvider({
-                apiKey: 'K',
-                fetchImpl: async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: 'ليس JSON' } }] }) }),
-            });
-            await assert.rejects(
-                () => badJson.planScenes({ idea: 'x', sceneCount: 1, shotSizeOptions: [], cameraMoveOptions: [], lightingOptions: [], moodOptions: [], styleOptions: [] }),
-                /تفسير/
-            );
-
-            assert.throws(() => createScriptProvider({ apiKey: '' }), /مفتاح/);
+            assert.equal(failCalls, 1);
         });
 
         test('مزوّد TTS عبر fal: نفس آلية الطابور، ومهلة صريحة، واستخراج رابط الصوت', async () => {
@@ -2120,24 +2173,27 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             // مصدر الحقيقة: scriptPlanningEnabled في قائمة المشاريع يعكس الحالة
             assert.equal((await call('/api/video/projects', { token })).data.scriptPlanningEnabled, false);
 
-            // تطبيق مستقل بمزوّد وهمي — يُرجع مشهداً صالحاً وآخر بقيم فاسدة
-            // عمداً: خيار cinema غير معروف، ونص يحمل كلمة محظورة.
+            // تطبيق مستقل بمزوّد وهمي — planScenes الآن نداءان متتاليان
+            // (الكاتب ثم المخرج)؛ المحاكاة تتناوب: فردي = رد الكاتب (قصة
+            // سردية)، زوجي = رد المخرج (مشهد صالح وآخر بقيم فاسدة عمداً:
+            // خيار cinema غير معروف، ونص يحمل كلمة محظورة).
+            let scriptCalls = 0;
             const fakeScript = createScriptProvider({
                 apiKey: 'K',
-                fetchImpl: async () => ({
-                    ok: true,
-                    json: async () => ({
-                        choices: [{
-                            message: {
-                                content: JSON.stringify([
-                                    { prompt: 'قطة تمشي في الحديقة', caption: 'قطة!', shotSize: 'واسعة', cameraMove: 'ثابتة', lighting: 'نهارية ساطعة', mood: 'هادئ تأملي', style: 'وثائقي' },
-                                    { prompt: 'مشهد فيه كلمةمحظورة هنا', caption: '', shotSize: 'غير معروف' },
-                                    { prompt: '', caption: 'فارغ بلا برومت' },
-                                ]),
-                            },
-                        }],
-                    }),
-                }),
+                fetchImpl: async () => {
+                    scriptCalls += 1;
+                    const content = scriptCalls % 2 === 1
+                        ? JSON.stringify({
+                            title: 'فيلم القطة', logline: 'قطة تستكشف حديقتها',
+                            beats: [{ summary: 'قطة تمشي', emotion: 'هدوء' }, { summary: 'قطة تلعب', emotion: 'مرح' }],
+                        })
+                        : JSON.stringify([
+                            { prompt: 'قطة تمشي في الحديقة', caption: 'قطة!', shotSize: 'واسعة', cameraMove: 'ثابتة', lighting: 'نهارية ساطعة', mood: 'هادئ تأملي', style: 'وثائقي' },
+                            { prompt: 'مشهد فيه كلمةمحظورة هنا', caption: '', shotSize: 'غير معروف' },
+                            { prompt: '', caption: 'فارغ بلا برومت' },
+                        ]);
+                    return { ok: true, json: async () => ({ choices: [{ message: { content } }] }) };
+                },
             });
             const app = createApp({
                 store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider,
@@ -2194,7 +2250,7 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             })).data.project.id;
 
             const failingScript = { name: 'fail', async planScenes() { throw new Error('محاكاة: تعطّل مزوّد التخطيط.'); } };
-            const emptyScript = { name: 'empty', async planScenes() { return [{ prompt: '' }]; } };
+            const emptyScript = { name: 'empty', async planScenes() { return { title: '', logline: '', scenes: [{ prompt: '' }] }; } };
 
             for (const [provider2, matcher] of [[failingScript, /تعطّل/], [emptyScript, /مشهد صالح/]]) {
                 const app = createApp({
