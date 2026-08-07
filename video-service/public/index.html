@@ -504,7 +504,8 @@
         shotsCount: (n) => `${n} لقطة`, renameProject: '✏️ إعادة تسمية',
         inheritedSettings: '⚙️ إعدادات موروثة', deleteProject: '🗑️ حذف المشروع',
         assembleFilm: '🎬 جمّع الفيلم', noShotsYet: 'لا لقطات بعد — اختر قالباً في استديو التوليد، ستنضم هنا تلقائياً.',
-        dragToReorder: '🖱️ اسحب أي بطاقة لإعادة ترتيب اللقطات (سطح المكتب).',
+        dragToReorder: '🖱️ اسحب أي بطاقة لإعادة ترتيب اللقطات (سطح المكتب)، أو استخدم ⏮⏭ (يعمل على الجوال أيضاً).',
+        moveEarlierTitle: 'انقل مبكراً في الفيلم', moveLaterTitle: 'انقل لاحقاً في الفيلم',
         renamePrompt: 'الاسم الجديد:',
         deleteProjectConfirm: 'حذف المشروع؟ اللقطات نفسها تبقى في مكتبتك — يزول التجميع فقط.',
         inheritedSettingsTitle: '⚙️ إعدادات موروثة لكل لقطة جديدة في هذا المشروع',
@@ -649,7 +650,8 @@
         shotsCount: (n) => `${n} shots`, renameProject: '✏️ Rename',
         inheritedSettings: '⚙️ Inherited settings', deleteProject: '🗑️ Delete project',
         assembleFilm: '🎬 Assemble film', noShotsYet: 'No shots yet — pick a template in the generation studio, it will join here automatically.',
-        dragToReorder: '🖱️ Drag any card to reorder the shots (desktop).',
+        dragToReorder: '🖱️ Drag any card to reorder the shots (desktop), or use ⏮⏭ (works on mobile too).',
+        moveEarlierTitle: 'Move earlier in the film', moveLaterTitle: 'Move later in the film',
         renamePrompt: 'New name:',
         deleteProjectConfirm: 'Delete the project? The shots themselves stay in your library — only the assembly is removed.',
         inheritedSettingsTitle: '⚙️ Inherited settings for every new shot in this project',
@@ -1517,13 +1519,16 @@
         <div id="marketingPanel" class="hidden" style="margin-bottom:10px"></div>
         ${shots.length === 0
           ? `<p class="note">${tr('noShotsYet')}</p>`
-          : `<div class="shots">${shots.map(shotCard).join('')}</div>
+          : `<div class="shots">${shots.map((s, i) => shotCard(s, i, shots.length)).join('')}</div>
              <p class="note">${tr('dragToReorder')}</p>`}`;
       bindDownloads(board);
       // بطاقات الستوري بورد تشارك مشغل المعاينة نفسه
       lastJobs = lastJobs.filter(j => !shots.some(s => s.id === j.id)).concat(shots);
       bindPlayers(board);
-      if (shots.length > 1) bindDragReorder(board.querySelector('.shots'), project.id);
+      if (shots.length > 1) {
+        bindDragReorder(board.querySelector('.shots'), project.id);
+        bindMoveButtons(board.querySelector('.shots'), project.id);
+      }
       board.querySelectorAll('[data-redo]').forEach(el =>
         el.addEventListener('click', () => regenerateShot(el.dataset.redo, shots)));
       board.querySelectorAll('[data-base]').forEach(el =>
@@ -2239,7 +2244,38 @@
       });
     }
 
-    function shotCard(s, i) {
+    // ⏮⏭ إعادة ترتيب بلمسة/نقرة — بديل يعمل في كل مكان (الجوال خصوصاً)
+    // لسحب-وإفلات bindDragReorder الذي لا يعمل على شاشات اللمس إطلاقاً.
+    // نفس مسار /reorder ونفس منطق قراءة الترتيب الحالي من الـDOM.
+    function bindMoveButtons(container, projectId) {
+      if (!container) return;
+      container.querySelectorAll('[data-move-earlier]').forEach(btn => {
+        btn.addEventListener('click', () => moveShot(container, projectId, btn.dataset.moveEarlier, -1));
+      });
+      container.querySelectorAll('[data-move-later]').forEach(btn => {
+        btn.addEventListener('click', () => moveShot(container, projectId, btn.dataset.moveLater, 1));
+      });
+    }
+
+    async function moveShot(container, projectId, shotId, delta) {
+      const cards = [...container.querySelectorAll('.shot')];
+      const idx = cards.findIndex(c => c.dataset.shotId === shotId);
+      const swapIdx = idx + delta;
+      if (idx === -1 || swapIdx < 0 || swapIdx >= cards.length) return;
+      const order = cards.map(c => c.dataset.shotId);
+      [order[idx], order[swapIdx]] = [order[swapIdx], order[idx]];
+      const moveBtns = container.querySelectorAll('[data-move-earlier], [data-move-later]');
+      moveBtns.forEach(b => { b.disabled = true; });
+      try {
+        await api(`/api/video/projects/${projectId}/reorder`, {
+          method: 'PATCH', body: JSON.stringify({ order }),
+        });
+      } finally {
+        refreshStoryboard(); // يعيد المزامنة دوماً — نجاحاً كان أو تعارضاً
+      }
+    }
+
+    function shotCard(s, i, total) {
       const model = s.modelId ? aiModels.find(m => m.id === s.modelId) : null;
       const promptText = s.values && s.values.prompt ? s.values.prompt : '';
       let action = '';
@@ -2248,6 +2284,10 @@
           ? `<a href="#" data-download="${s.id}">${tr('download')}</a>`
           : `<a href="${s.videoUrl}" target="_blank" rel="noopener">${tr('download')}</a>`);
       }
+      // ⏮⏭ إعادة ترتيب بلمسة/نقرة — السحب والإفلات (bindDragReorder) لا
+      // يعمل على الجوال إطلاقاً (HTML5 Drag API سطح مكتب فقط)؛ هذان
+      // الزرّان يستخدمان نفس مسار /reorder فيعملان في كل مكان. الأيقونتان
+      // "السابق/التالي" تمثّلان ترتيب المشهد لا اتجاه الشاشة — بلا لبس مع RTL.
       return `<div class="card shot" data-shot-id="${s.id}">
         <div class="num">${tr('shotNum', i + 1)}</div>
         <div style="font-size:13px;margin-top:4px">${tplName(s.templateId)}${
@@ -2256,6 +2296,8 @@
         <span class="st st-${s.status}">${tr('st_' + s.status) || s.status}</span>
         <div class="actions">
           ${action}
+          <button data-move-earlier="${s.id}" title="${tr('moveEarlierTitle')}" ${i === 0 ? 'disabled' : ''}>⏮</button>
+          <button data-move-later="${s.id}" title="${tr('moveLaterTitle')}" ${i === total - 1 ? 'disabled' : ''}>⏭</button>
           <button data-redo="${s.id}" title="${tr('regenTitle')}">${tr('regen')}</button>
           <button data-base="${s.id}" title="${tr('useAsBaseTitle')}">${tr('useAsBase')}</button>
         </div>
