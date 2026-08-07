@@ -40,6 +40,7 @@ import {
 } from './src/characters.js';
 import { refundCredits } from './src/credits.js';
 import { buildScriptProvider } from './src/scriptProvider.js';
+import { uploadImageKeyFor } from './src/storage/index.js';
 import { readyShotsOf, resolveAssemblyOptions, checkAssemblyGates, finalizeAssembly } from './src/assemblyJob.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -126,6 +127,9 @@ export function createApp({
             // خرائط الإخراج السينمائي — للواجهة كي تعرض معاينة البرومت
             // النهائي حياً بنفس تركيب الخادم حرفياً.
             cinema: CINEMA_CONTROLS.map(c => ({ key: c.key, labelAr: c.labelAr, map: c.map })),
+            // زر "ارفع من جهازك" في حقول الصور يظهر فقط حين يوجد تخزين —
+            // بلا R2 تبقى الحقول روابط كما كانت (لا زر يفشل عند أول ضغطة).
+            uploadsEnabled: !!storage,
         });
     });
 
@@ -148,6 +152,81 @@ export function createApp({
             narrationCostCredits: NARRATION_COST_CREDITS,
         });
     }));
+
+    // ─── 📤 رفع صورة مرجعية من جهاز المستخدم ────────────────────────────
+    // بديل عن لصق رابط: الملف يُرفع لتخزين الخدمة الخاص (R2) ويُرجَع توكن
+    // `upload:<key>` يوضع في حقل الصورة — عند التوليد يُحلّ لرابط موقّع
+    // ساعة كاملة (نفس نمط صور الشخصيات). بلا تخزين مضبوط الميزة معطلة
+    // صراحةً (503 + زر مخفي في الواجهة) — لا وعد بميزة مكسورة.
+    const UPLOAD_LIMIT_BYTES = 8 * 1024 * 1024;
+    const uploadLimit = rateLimit({
+        windowMs: 60 * 60 * 1000,
+        max: 30,
+        message: { error: 'تجاوزت حد رفع الصور المسموح في الساعة.' },
+    });
+    /** يتعرف نوع الصورة من بصمة البايتات الأولى — لا ثقة برأس Content-Type وحده. */
+    const sniffImage = (buf) => {
+        if (buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+            return { ext: 'png', mime: 'image/png' };
+        }
+        if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+            return { ext: 'jpg', mime: 'image/jpeg' };
+        }
+        if (buf.length > 12 && buf.slice(0, 4).toString('ascii') === 'RIFF'
+            && buf.slice(8, 12).toString('ascii') === 'WEBP') {
+            return { ext: 'webp', mime: 'image/webp' };
+        }
+        return null;
+    };
+    app.post('/api/video/uploads', verifyToken, uploadLimit,
+        express.raw({ type: 'image/*', limit: UPLOAD_LIMIT_BYTES }),
+        wrap(async (req, res) => {
+            if (!storage) return res.status(503).json({ error: 'رفع الصور غير مفعَّل على هذا الخادم.' });
+            const body = Buffer.isBuffer(req.body) ? req.body : null;
+            if (!body || body.length < 100) {
+                return res.status(400).json({ error: 'أرسل ملف صورة (jpeg/png/webp) في جسم الطلب.' });
+            }
+            const kind = sniffImage(body);
+            if (!kind) return res.status(400).json({ error: 'صيغة الصورة غير مدعومة — المسموح: JPEG أو PNG أو WebP.' });
+
+            const uploadId = `${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}`;
+            // نفس تطبيع اسم المستخدم في بقية المسارات (userOf) — بادئة
+            // المفتاح هي فحص الملكية عند الحل، فأي اختلاف حالة أحرف
+            // بين الرفع والحل كان سيرفض صاحب الصورة نفسه.
+            const key = uploadImageKeyFor({ username: userOf(req), uploadId, ext: kind.ext });
+            await storage.putObject(key, body, kind.mime);
+            res.json({
+                token: `upload:${key}`,
+                // معاينة فورية في الواجهة فقط — التوليد يوقّع رابطه الخاص لاحقاً.
+                previewUrl: await storage.signedUrl(key, 600),
+            });
+        }));
+
+    /**
+     * يحلّ توكنات `upload:<key>` داخل المخطط إلى روابط موقّعة ساعة كاملة
+     * (المهمة قد تنتظر دورها في الطابور). فحص الملكية ببادئة المفتاح:
+     * `uploads/<user>/` تُبنى من اسم صاحب الطلب نفسه — توكن مستخدم آخر
+     * لا يطابقها فيُرفض، ولا نؤكد حتى وجوده.
+     */
+    async function resolveUploadTokens(spec, username) {
+        const resolveOne = async (value) => {
+            if (typeof value !== 'string' || !value.startsWith('upload:')) return value;
+            if (!storage) throw Object.assign(new Error('رفع الصور غير مفعَّل على هذا الخادم.'), { status: 400 });
+            const key = value.slice('upload:'.length);
+            const ownPrefix = uploadImageKeyFor({ username, uploadId: 'x', ext: 'png' }).replace(/x\.png$/, '');
+            if (!key.startsWith(ownPrefix)) {
+                throw Object.assign(new Error('الصورة المرفوعة غير موجودة.'), { status: 400 });
+            }
+            return storage.signedUrl(key, 3600);
+        };
+        if (spec.imageUrl) spec.imageUrl = await resolveOne(spec.imageUrl);
+        // قوالب Timeline: الصورة طبقة {kind:'image', url} داخل مشاهد المخطط.
+        for (const scene of spec.scenes || []) {
+            for (const layer of scene.layers || []) {
+                if (layer && layer.kind === 'image') layer.url = await resolveOne(layer.url);
+            }
+        }
+    }
 
     // ─── مشاريع الأفلام (ستوري بورد) ───────────────────────────────────
     // كل مسارات المشروع تتحقق من الملكية بنفس قاعدة المهام: مشروع مستخدم
@@ -787,9 +866,17 @@ export function createApp({
             spec.prompt = `${project.styleProfile}. ${spec.prompt}`;
         }
         // قالب الصورة المرجعية يحتاج مصدراً للإطار الأول — رابطاً مباشراً
-        // أو شخصية من البنك.
+        // أو صورة مرفوعة من الجهاز أو شخصية من البنك.
         if (template.specKind === 'ai_prompt' && (template.aiInput || 'text') === 'image' && !spec.imageUrl) {
             return res.status(400).json({ error: 'وفّر رابط صورة مرجعية أو اختر شخصية من بنك الشخصيات.' });
+        }
+        // توكنات الصور المرفوعة → روابط موقّعة. تُحلّ في المخطط فقط: القيم
+        // المخزَّنة (values) تحتفظ بالتوكن، فـ"أعد التوليد" لاحقاً يعمل
+        // للأبد بتوقيع جديد بدل رابط منتهي الصلاحية.
+        try {
+            await resolveUploadTokens(spec, userOf(req));
+        } catch (e) {
+            return res.status(e.status || 400).json({ error: e.message });
         }
 
         // الخصم قبل المعالجة — مهمة بلا خصمٍ مثبت لا تُعالَج أبداً.

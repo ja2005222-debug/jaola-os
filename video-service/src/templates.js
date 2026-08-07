@@ -223,10 +223,16 @@ function validateField(field, raw) {
         return { value };
     }
     if (field.type === 'imageUrl') {
+        // صورة مرفوعة من جهاز المستخدم: توكن `upload:uploads/...` بدل رابط —
+        // شكله فقط يُفحص هنا؛ الملكية والوجود يفحصهما server.js عند الحل
+        // لرابط موقّع (نفس تقسيم المسؤولية مع فلترة المحتوى).
+        if (/^upload:uploads\/[a-z0-9_-]+\/[a-z0-9_-]+\.(png|jpg|webp)$/i.test(value)) {
+            return { value };
+        }
         let parsed;
         try { parsed = new URL(value); } catch { parsed = null; }
         if (!parsed || !['http:', 'https:'].includes(parsed.protocol)) {
-            return { error: `الحقل "${field.labelAr}" يجب أن يكون رابط صورة صالحاً (http/https).` };
+            return { error: `الحقل "${field.labelAr}" يجب أن يكون رابط صورة صالحاً (http/https) أو صورة مرفوعة.` };
         }
         if (value.length > 500) return { error: `رابط "${field.labelAr}" أطول من المسموح.` };
         return { value };

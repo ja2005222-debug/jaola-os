@@ -79,6 +79,9 @@ export function inspectText(raw, { blocklist = [] } = {}) {
  * خارجي يجلبه بنفسه، فلا معنى لعنوان خاص إلا محاولة استكشاف شبكة.
  */
 export function inspectImageUrl(raw) {
+    // توكن صورة مرفوعة (upload:uploads/...) لا رابطاً يجلبه مزوّد خارجي —
+    // لا سطح SSRF هنا؛ الملكية تُفحص في server.js قبل توقيع أي رابط فعلي.
+    if (/^upload:uploads\/[a-z0-9_-]+\/[a-z0-9_-]+\.(png|jpg|webp)$/i.test(String(raw))) return null;
     let url;
     try { url = new URL(String(raw)); } catch { return { code: 'bad_url', error: 'رابط الصورة غير صالح.' }; }
     if (!['http:', 'https:'].includes(url.protocol)) {
