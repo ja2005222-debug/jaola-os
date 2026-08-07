@@ -307,17 +307,6 @@
         </div>
       </section>
 
-      <section id="sectionLibrary">
-        <h2 data-i18n="libraryTitle">🗂️ مكتبة أفلامك</h2>
-        <div class="card">
-          <table>
-            <thead><tr><th data-i18n="thTemplate">القالب</th><th data-i18n="thStatus">الحالة</th><th data-i18n="thResult">النتيجة</th><th data-i18n="thDate">التاريخ</th></tr></thead>
-            <tbody id="jobsBody"><tr><td colspan="4" style="color:var(--muted)" data-i18n="noJobsYet">لا مهام بعد.</td></tr></tbody>
-          </table>
-          <p class="note" data-i18n="libraryNote">تُحدَّث الحالة تلقائياً كل بضع ثوانٍ. عند فشل أي مهمة يُسترد رصيدها تلقائياً.</p>
-        </div>
-      </section>
-
       <section id="sectionAudio">
         <h2 data-i18n="audioTitle">🎙️ هندسة الصوت وAI Voice</h2>
         <div class="card">
@@ -342,6 +331,20 @@
       <section id="sectionColor"></section>
 
       <section id="sectionLora"></section>
+
+      <!-- 🗂️ مكتبة الأفلام أخيراً عمداً: سجل المهام ينمو بلا سقف — قبل هذا
+           التموضع كان يدفع الصوت/التلوين/LORA لأسفل تدريجياً كلما تراكمت
+           لقطات أكثر، فيغطيها عملياً على الجوال (عمود واحد). -->
+      <section id="sectionLibrary">
+        <h2 data-i18n="libraryTitle">🗂️ مكتبة أفلامك</h2>
+        <div class="card">
+          <table>
+            <thead><tr><th data-i18n="thTemplate">القالب</th><th data-i18n="thStatus">الحالة</th><th data-i18n="thResult">النتيجة</th><th data-i18n="thDate">التاريخ</th></tr></thead>
+            <tbody id="jobsBody"><tr><td colspan="4" style="color:var(--muted)" data-i18n="noJobsYet">لا مهام بعد.</td></tr></tbody>
+          </table>
+          <p class="note" data-i18n="libraryNote">تُحدَّث الحالة تلقائياً كل بضع ثوانٍ. عند فشل أي مهمة يُسترد رصيدها تلقائياً.</p>
+        </div>
+      </section>
     </main>
 
     <!-- ─── يسار: بنك الشخصيات + الطابور المباشر + الحساب ─── -->
