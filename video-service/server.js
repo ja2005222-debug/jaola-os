@@ -126,7 +126,7 @@ export function createApp({
             aiModels: supported.has('ai_prompt') ? publicAiModels(aiModels) : [],
             // خرائط الإخراج السينمائي — للواجهة كي تعرض معاينة البرومت
             // النهائي حياً بنفس تركيب الخادم حرفياً.
-            cinema: CINEMA_CONTROLS.map(c => ({ key: c.key, labelAr: c.labelAr, map: c.map })),
+            cinema: CINEMA_CONTROLS.map(c => ({ key: c.key, labelAr: c.labelAr, labelEn: c.labelEn, map: c.map })),
             // زر "ارفع من جهازك" في حقول الصور يظهر فقط حين يوجد تخزين —
             // بلا R2 تبقى الحقول روابط كما كانت (لا زر يفشل عند أول ضغطة).
             uploadsEnabled: !!storage,
@@ -649,7 +649,7 @@ export function createApp({
             characters: await Promise.all(list.map(publicCharacter)),
             enabled: !!imageProvider,
             costCredits: CHARACTER_COST_CREDITS,
-            angles: CHARACTER_ANGLES.map(a => ({ key: a.key, labelAr: a.labelAr })),
+            angles: CHARACTER_ANGLES.map(a => ({ key: a.key, labelAr: a.labelAr, labelEn: a.labelEn })),
         });
     }));
 

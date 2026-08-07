@@ -13,15 +13,15 @@ export const CHARACTER_COST_CREDITS = 1; // ثلاث صور مرجعية بنم�
 
 export const CHARACTER_ANGLES = Object.freeze([
     {
-        key: 'front', labelAr: 'أمامية',
+        key: 'front', labelEn: 'Front', labelAr: 'أمامية',
         promptEn: 'front facing portrait, looking directly at the camera, full body visible',
     },
     {
-        key: 'side', labelAr: 'جانبية',
+        key: 'side', labelEn: 'Side', labelAr: 'جانبية',
         promptEn: 'side profile view, full body visible',
     },
     {
-        key: 'back', labelAr: 'خلفية',
+        key: 'back', labelEn: 'Back', labelAr: 'خلفية',
         promptEn: 'seen from behind, full body visible',
     },
 ]);

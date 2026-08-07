@@ -12,7 +12,7 @@
 
 export const CINEMA_CONTROLS = Object.freeze([
     {
-        key: 'shotSize', labelAr: 'حجم اللقطة',
+        key: 'shotSize', labelEn: 'Shot size', labelAr: 'حجم اللقطة',
         map: Object.freeze({
             'واسعة جداً': 'extreme wide shot',
             'واسعة': 'wide shot',
@@ -22,7 +22,7 @@ export const CINEMA_CONTROLS = Object.freeze([
         }),
     },
     {
-        key: 'cameraMove', labelAr: 'حركة الكاميرا',
+        key: 'cameraMove', labelEn: 'Camera movement', labelAr: 'حركة الكاميرا',
         map: Object.freeze({
             'ثابتة': 'static camera on tripod',
             'دوللي للأمام': 'slow dolly in',
@@ -35,7 +35,7 @@ export const CINEMA_CONTROLS = Object.freeze([
         }),
     },
     {
-        key: 'lighting', labelAr: 'الإضاءة',
+        key: 'lighting', labelEn: 'Lighting', labelAr: 'الإضاءة',
         map: Object.freeze({
             'الساعة الذهبية': 'golden hour sunlight',
             'نهارية ساطعة': 'bright natural daylight',
@@ -47,7 +47,7 @@ export const CINEMA_CONTROLS = Object.freeze([
         }),
     },
     {
-        key: 'mood', labelAr: 'المزاج والإيقاع',
+        key: 'mood', labelEn: 'Mood & pacing', labelAr: 'المزاج والإيقاع',
         map: Object.freeze({
             'ملحمي': 'epic grand atmosphere, sweeping momentum',
             'متوتر': 'tense suspenseful atmosphere, urgent pacing',
@@ -58,7 +58,7 @@ export const CINEMA_CONTROLS = Object.freeze([
         }),
     },
     {
-        key: 'style', labelAr: 'الأسلوب البصري',
+        key: 'style', labelEn: 'Visual style', labelAr: 'الأسلوب البصري',
         map: Object.freeze({
             'سينمائي واقعي': 'cinematic, photorealistic, shot on 35mm film, film grain',
             'نوار': 'film noir, high contrast black and white, deep shadows',

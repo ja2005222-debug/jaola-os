@@ -411,14 +411,13 @@
 
     const $ = id => document.getElementById(id);
 
-    // ─── اللغة: تبديل عربي/إنجليزي لنصوص الواجهة نفسها ──────────────────
-    // ⚠️ نطاق محدود عمداً: يغطي كل نص واجهة كتبناه هنا (تنقّل، رسائل،
-    // تسميات، عناصر نائبة). لا يغطي محتوى القوالب/النماذج القادم من
-    // الخادم (أسماء القوالب nameAr، أوصافها descriptionAr، تسميات
-    // الحقول labelAr، أسماء النماذج، خيارات الانتقال/الفلتر...) — تلك
-    // بيانات مُعرَّفة في الخادم (templates.js/models.js/cinema.js) لا
-    // نصوص واجهة، وتعريبها ثنائي اللغة مشروع منفصل أكبر (يحتاج حقل
-    // موازٍ بالإنجليزية لكل عنصر محتوى، لا مجرد قاموس ترجمة كهذا).
+    // ─── اللغة: تبديل عربي/إنجليزي ──────────────────────────────────────
+    // يغطي نصوص الواجهة (قاموس I18N أدناه) **ومحتوى الكتالوجات** القادم
+    // من الخادم: القوالب/النماذج/الحقول تحمل الآن nameEn/descriptionEn/
+    // labelEn تُعرض عبر L()، وقيم الخيارات العربية (عقد الخادم — لا
+    // تتغير أبداً) تُعرض بتسمية إنجليزية عبر OPT_EN/optLabel أدناه.
+    // خارج النطاق عمداً: محتوى أدخله المستخدم نفسه، رسائل أخطاء الخادم،
+    // ومكتبات الموسيقى/المؤثرات المعرَّفة في متغيرات البيئة (nameAr فقط).
     const I18N = {
       ar: {
         docTitle: 'الاستديو السينمائي المتكامل — JAOLA OS',
@@ -722,6 +721,44 @@
     }
     applyDocumentDirection();
 
+    // 🌐 محتوى الكتالوجات ثنائي اللغة: الإنجليزي إن وُجد والواجهة
+    // إنجليزية، وإلا العربي — إضافة مخصصة بلا إنجليزية (FAL_MODELS_JSON
+    // مثلاً) تظهر بالعربية بدل أن تنكسر.
+    const L = (obj, base) =>
+      (lang === 'en' && obj && obj[base + 'En']) ? obj[base + 'En'] : (obj ? obj[base + 'Ar'] : '');
+    // قيم الخيارات العربية هي عقد الخادم (مفاتيح خرائط cinema/assembly —
+    // لا تتغير أبداً في value)؛ هذا قاموس **عرض** فقط لوضع الإنجليزية.
+    const OPT_EN = {
+      // حجم اللقطة
+      'واسعة جداً': 'Extreme wide', 'واسعة': 'Wide', 'متوسطة': 'Medium',
+      'قريبة': 'Close-up', 'قريبة جداً': 'Extreme close-up',
+      // حركة الكاميرا
+      'ثابتة': 'Static', 'دوللي للأمام': 'Dolly in', 'دوللي للخلف': 'Dolly out',
+      'بان جانبي': 'Lateral pan', 'كرين صاعد': 'Crane up', 'تتبع': 'Tracking',
+      'دوران حول الهدف': 'Orbit', 'محمولة باليد': 'Handheld',
+      // الإضاءة
+      'الساعة الذهبية': 'Golden hour', 'نهارية ساطعة': 'Bright daylight', 'ليلية': 'Night',
+      'نيون': 'Neon', 'سينمائية خافتة': 'Low-key cinematic', 'ضوء شموع': 'Candlelight',
+      'ضبابية ناعمة': 'Soft foggy',
+      // المزاج والإيقاع
+      'ملحمي': 'Epic', 'متوتر': 'Tense', 'هادئ تأملي': 'Calm & contemplative',
+      'رومانسي': 'Romantic', 'كوميدي': 'Comedic', 'غامض': 'Mysterious',
+      // الأسلوب البصري
+      'سينمائي واقعي': 'Cinematic realism', 'نوار': 'Noir', 'وثائقي': 'Documentary',
+      'خيال علمي': 'Sci-fi', 'حالم': 'Dreamy', 'أنمي': 'Anime', 'ريترو ٨٠s': 'Retro 80s',
+      // الانتقالات
+      'قطع مباشر': 'Hard cut', 'تلاشٍ': 'Fade', 'انزلاق': 'Slide', 'تقريب': 'Zoom',
+      // الفلاتر اللونية
+      'بلا فلتر': 'No filter', 'أبيض وأسود': 'Black & white', 'دافئ مُشبع': 'Warm boost',
+      'خافت سينمائي': 'Muted cinematic', 'معتم درامي': 'Dark dramatic',
+      // أنماط الكابشن
+      'نظيف': 'Minimal', 'عريض جريء': 'Blockbuster', 'أنيق': 'Vogue',
+      'ترجمة كلاسيكية': 'Classic subtitle', 'قلم تظليل': 'Marker', 'مستقبلي': 'Futuristic',
+      // مواضع الكابشن
+      'أسفل الشاشة': 'Bottom', 'منتصف الشاشة': 'Center', 'أعلى الشاشة': 'Top',
+    };
+    const optLabel = v => (lang === 'en' && OPT_EN[v]) || v;
+
     // يطبّق الترجمة على الهيكل الثابت (غير المولَّد بجافاسكربت) —
     // النصوص المولَّدة ديناميكياً تُترجَم عبر tr() مباشرة داخل دوال
     // renderX/loadX نفسها.
@@ -837,13 +874,12 @@
       aiModels = data.aiModels || [];
       cinemaControls = data.cinema || [];
       uploadsEnabled = !!data.uploadsEnabled;
-      // ⚠️ أسماء/أوصاف القوالب (nameAr/descriptionAr) محتوى من الخادم لا
-      // نص واجهة — تبقى عربية بغضّ النظر عن اللغة المختارة هنا (راجع
-      // تعليق I18N أعلاه).
+      // أسماء/أوصاف القوالب تُعرض بلغة الواجهة عبر L() — الكتالوج يحمل
+      // النسختين (nameAr/nameEn...) من الخادم.
       $('templates').innerHTML = templates.map(t => `
         <div class="card tpl" data-id="${t.id}">
-          <h3>${t.nameAr}</h3>
-          <p>${t.descriptionAr}</p>
+          <h3>${L(t, 'name')}</h3>
+          <p>${L(t, 'description')}</p>
           <div class="meta">${tr('secondsCredits', t.durationSec, t.costCredits)}${
             t.specKind === 'ai_prompt' ? tr('aiTag') : ''}</div>
         </div>`).join('');
@@ -879,8 +915,8 @@
         list.map(m => `
           <div class="card tpl model${m.id === activeModelId ? ' active' : ''}" data-model="${m.id}"
                style="margin-bottom:0;padding:12px">
-            <h3 style="font-size:14px">${m.nameAr}</h3>
-            <p style="font-size:12px">${m.descriptionAr || ''}</p>
+            <h3 style="font-size:14px">${L(m, 'name')}</h3>
+            <p style="font-size:12px">${L(m, 'description') || ''}</p>
             <div class="meta">${tr('creditsPerShot', m.costCredits)}</div>
           </div>`).join('') + '</div>';
       wrap.querySelectorAll('[data-model]').forEach(el => {
@@ -918,20 +954,20 @@
       form.innerHTML = activeTemplate.fields.map(f => {
         const req = f.required ? ' *' : '';
         if (f.type === 'color') {
-          return `<label>${f.labelAr}${req}</label>
+          return `<label>${L(f, 'label')}${req}</label>
                   <input type="color" name="${f.key}" value="${f.default || '#1F4E5F'}" />`;
         }
         if (f.type === 'choice') {
           // معيار اختياري بلا افتراضي (معايير الإخراج): خيار فارغ أولاً.
           const blank = (!f.required && !f.default) ? `<option value="">${tr('noSelection')}</option>` : '';
           const opts = blank + f.options.map(o =>
-            `<option value="${o}"${o === f.default ? ' selected' : ''}>${o}</option>`).join('');
-          return `<label>${f.labelAr}${req}</label>
+            `<option value="${o}"${o === f.default ? ' selected' : ''}>${optLabel(o)}</option>`).join('');
+          return `<label>${L(f, 'label')}${req}</label>
                   <select name="${f.key}" style="${SELECT_STYLE}">${opts}</select>`;
         }
         const type = f.type === 'imageUrl' ? 'url' : 'text';
         const ph = f.type === 'imageUrl' ? 'https://…' : '';
-        const label = `<label>${f.labelAr}${req}${f.maxLen ? tr('charsSuffix', f.maxLen) : ''}</label>`;
+        const label = `<label>${L(f, 'label')}${req}${f.maxLen ? tr('charsSuffix', f.maxLen) : ''}</label>`;
         if (f.type === 'text' && (f.maxLen || 0) > 150) {
           return `${label}
                   <textarea name="${f.key}" maxlength="${f.maxLen}" rows="3"
@@ -1052,7 +1088,7 @@
     function tplName(id) {
       if (id === 'film_assembly') return tr('assembledFilm');
       const t = templates.find(x => x.id === id);
-      return t ? t.nameAr : id;
+      return t ? L(t, 'name') : id;
     }
 
     function timeAgo(ms) {
@@ -1107,7 +1143,7 @@
         const d = new Date(j.at);
         const model = j.modelId ? aiModels.find(m => m.id === j.modelId) : null;
         const modelTag = model
-          ? ` <span style="color:var(--muted);font-size:11px">(${model.nameAr})</span>` : '';
+          ? ` <span style="color:var(--muted);font-size:11px">(${L(model, 'name')})</span>` : '';
         return `<tr>
           <td data-label="${tr('thTemplate')}">${tplName(j.templateId)}${modelTag}</td>
           <td data-label="${tr('thStatus')}"><span class="st st-${j.status}">${tr('st_' + j.status) || j.status}</span></td>
@@ -1331,7 +1367,8 @@
     // زاوية → تسميتها العربية (من قائمة الزوايا التي تعيدها الخدمة — محتوى
     // خادم يبقى عربياً؛ كلمة "زاوية/angle" المرافقة له نص واجهة مترجَم).
     function angleLabel(key) {
-      return (charMeta.angles || []).find(a => a.key === key)?.labelAr || key;
+      const a = (charMeta.angles || []).find(x => x.key === key);
+      return a ? L(a, 'label') : key;
     }
 
     // معاينة شخصية بكل زواياها المرجعية — صورة كبيرة + شريط مصغّرات للتبديل.
@@ -1427,7 +1464,7 @@
             ${characters.map(c => `<option value="${c.id}"${c.id === activeCharacterId ? ' selected' : ''}>🎭 ${escapeHtml(c.name)}</option>`).join('')}
           </select>
           ${isImage ? `<select id="charAngle" style="${SELECT_STYLE};max-width:160px">
-            ${charMeta.angles.map(a => `<option value="${a.key}"${a.key === activeCharAngle ? ' selected' : ''}>${tr('angleWord')} ${a.labelAr}</option>`).join('')}
+            ${charMeta.angles.map(a => `<option value="${a.key}"${a.key === activeCharAngle ? ' selected' : ''}>${tr('angleWord')} ${L(a, 'label')}</option>`).join('')}
           </select>
           <img id="charAnglePreview" style="width:40px;height:40px;border-radius:6px;object-fit:cover;cursor:pointer" title="${tr('biggerPreview')}" />` : ''}
         </div>`;
@@ -1742,7 +1779,7 @@
     function renderPlanDraftList(projectId) {
       const list = $('planDraftList');
       if (planScenesDraft.length === 0) { list.innerHTML = ''; return; }
-      const opts = (key) => planFieldOptions(key).map(o => `<option value="${o}">${o}</option>`).join('');
+      const opts = (key) => planFieldOptions(key).map(o => `<option value="${o}">${optLabel(o)}</option>`).join('');
       const storyMetaHtml = (planStoryMeta.title || planStoryMeta.logline) ? `
         <div class="card" style="margin-bottom:8px;border-color:#a78bfa">
           ${planStoryMeta.title ? `<p class="note">${tr('planStoryTitleLabel')}</p><strong style="font-size:14px">${escapeHtml(planStoryMeta.title)}</strong>` : ''}
@@ -1912,11 +1949,11 @@
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
             <select id="asmTransition" style="${SELECT_STYLE};max-width:160px">
-              ${opts.transitions.map(t => `<option value="${t}">${t}</option>`).join('')}
+              ${opts.transitions.map(t => `<option value="${t}">${optLabel(t)}</option>`).join('')}
             </select>
             <select id="asmFilter" style="${SELECT_STYLE};max-width:170px">
               ${(opts.filters || []).map(f =>
-                `<option value="${f}"${f === opts.defaultFilter ? ' selected' : ''}>🎨 ${f}</option>`).join('')}
+                `<option value="${f}"${f === opts.defaultFilter ? ' selected' : ''}>🎨 ${optLabel(f)}</option>`).join('')}
             </select>
             <select id="asmAspect" style="${SELECT_STYLE};max-width:170px">
               <option value="16:9">${tr('ytOption')}</option>
@@ -1952,11 +1989,11 @@
           <div id="asmCaptionOptions" class="hidden" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;margin-inline-start:22px">
             <select id="asmCaptionStyle" style="${SELECT_STYLE};max-width:150px">
               ${(opts.captionStyles || []).map(s =>
-                `<option value="${s}"${s === opts.defaultCaptionStyle ? ' selected' : ''}>🔤 ${s}</option>`).join('')}
+                `<option value="${s}"${s === opts.defaultCaptionStyle ? ' selected' : ''}>🔤 ${optLabel(s)}</option>`).join('')}
             </select>
             <select id="asmCaptionPosition" style="${SELECT_STYLE};max-width:150px">
               ${(opts.captionPositions || []).map(p =>
-                `<option value="${p}"${p === opts.defaultCaptionPosition ? ' selected' : ''}>${p}</option>`).join('')}
+                `<option value="${p}"${p === opts.defaultCaptionPosition ? ' selected' : ''}>${optLabel(p)}</option>`).join('')}
             </select>
             <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)">
               <input type="checkbox" id="asmCaptionAnimated" />
@@ -2351,7 +2388,7 @@
       return `<div class="card shot" data-shot-id="${s.id}">
         <div class="num">${tr('shotNum', i + 1)}</div>
         <div style="font-size:13px;margin-top:4px">${tplName(s.templateId)}${
-          model ? ` <span style="color:var(--muted);font-size:11px">(${model.nameAr})</span>` : ''}</div>
+          model ? ` <span style="color:var(--muted);font-size:11px">(${L(model, 'name')})</span>` : ''}</div>
         ${promptText ? `<div class="prompt">${escapeHtml(promptText)}</div>` : ''}
         <span class="st st-${s.status}">${tr('st_' + s.status) || s.status}</span>
         <div class="actions">
