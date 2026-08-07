@@ -7,7 +7,7 @@
  * هذا الحياد هو ما يسمح بتبديل المزود لاحقاً دون لمس القوالب.
  */
 
-import { cinemaFieldOptions, composeCinematicPrompt } from './cinema.js';
+import { CINEMA_CONTROLS, cinemaFieldOptions, composeCinematicPrompt } from './cinema.js';
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 const MAX_TEXT_LEN = 200;
@@ -18,67 +18,88 @@ const MAX_TEXT_LEN = 200;
 export const SPEC_TIMELINE = 'timeline';   // تركيب قوالب (Shotstack…)
 export const SPEC_AI_PROMPT = 'ai_prompt'; // توليد من وصف نصي (fal.ai…)
 
+// حقول مشتركة بين قوالب التوليد — مصدر واحد لتسمياتها (عربي/إنجليزي)
+// بدل تكرارها حرفياً في ستة قوالب. تسميات معايير الإخراج تأتي من
+// cinema.js نفسه (labelAr/labelEn هناك) فلا ازدواج مصدر أبداً.
+const cinemaField = (key) => {
+    const c = CINEMA_CONTROLS.find(x => x.key === key);
+    return { key, labelAr: c.labelAr, labelEn: c.labelEn, type: 'choice', required: false, options: cinemaFieldOptions(key) };
+};
+// القائمة الكاملة للنسب هنا؛ النموذج المختار يقيّدها أكثر (يتحقق
+// الخادم، وتعرض الواجهة نسب النموذج فقط).
+const aspectField = (def) => ({
+    key: 'aspectRatio', labelAr: 'نسبة الأبعاد', labelEn: 'Aspect ratio', type: 'choice', required: false,
+    default: def, options: ['16:9', '9:16', '1:1', '21:9', '4:3'],
+});
+const negativeField = () => ({
+    key: 'negativePrompt', labelAr: 'ما لا تريد رؤيته (اختياري)', labelEn: "What you don't want to see (optional)",
+    type: 'text', required: false, maxLen: 300,
+});
+
 // التكلفة بالأرصدة لكل قالب — القوالب الأطول أغلى (تكلفة تصدير أعلى
 // لدى المزود). التسعير النهائي للباقات يُدار تجارياً خارج الكود.
 export const TEMPLATES = Object.freeze([
     {
         id: 'promo_announcement',
+        nameEn: 'Promo announcement',
+        descriptionEn: 'Big headline + subline + call to action over an animated gradient background. Perfect for offers and sale ads.',
         nameAr: 'إعلان ترويجي',
         descriptionAr: 'عنوان كبير + سطر فرعي + دعوة لإجراء، على خلفية لونية متدرجة الظهور. مثالي لإعلانات العروض والتخفيضات.',
         durationSec: 8,
         costCredits: 1,
         fields: [
-            { key: 'headline', labelAr: 'العنوان الرئيسي', type: 'text', required: true, maxLen: 60 },
-            { key: 'subline', labelAr: 'السطر الفرعي', type: 'text', required: false, maxLen: 90 },
-            { key: 'cta', labelAr: 'دعوة الإجراء (مثال: اطلب الآن)', type: 'text', required: true, maxLen: 30 },
-            { key: 'bgColor', labelAr: 'لون الخلفية', type: 'color', required: false, default: '#1F4E5F' },
+            { key: 'headline', labelEn: 'Main headline', labelAr: 'العنوان الرئيسي', type: 'text', required: true, maxLen: 60 },
+            { key: 'subline', labelEn: 'Subline', labelAr: 'السطر الفرعي', type: 'text', required: false, maxLen: 90 },
+            { key: 'cta', labelEn: 'Call to action (e.g., Order now)', labelAr: 'دعوة الإجراء (مثال: اطلب الآن)', type: 'text', required: true, maxLen: 30 },
+            { key: 'bgColor', labelEn: 'Background color', labelAr: 'لون الخلفية', type: 'color', required: false, default: '#1F4E5F' },
         ],
     },
     {
         id: 'product_showcase',
+        nameEn: 'Product showcase',
+        descriptionEn: 'The product image takes center screen with its name, price and a short description. Perfect for stores.',
         nameAr: 'عرض منتج',
         descriptionAr: 'صورة المنتج تتوسط الشاشة مع اسمه وسعره ووصف قصير. مثالي للمتاجر.',
         durationSec: 10,
         costCredits: 1,
         fields: [
-            { key: 'productName', labelAr: 'اسم المنتج', type: 'text', required: true, maxLen: 50 },
-            { key: 'price', labelAr: 'السعر (نصاً، مثال: 99 ر.س)', type: 'text', required: true, maxLen: 20 },
-            { key: 'description', labelAr: 'وصف قصير', type: 'text', required: false, maxLen: 120 },
-            { key: 'imageUrl', labelAr: 'رابط صورة المنتج', type: 'imageUrl', required: true },
-            { key: 'bgColor', labelAr: 'لون الخلفية', type: 'color', required: false, default: '#0F172A' },
+            { key: 'productName', labelEn: 'Product name', labelAr: 'اسم المنتج', type: 'text', required: true, maxLen: 50 },
+            { key: 'price', labelEn: 'Price (as text, e.g., $99)', labelAr: 'السعر (نصاً، مثال: 99 ر.س)', type: 'text', required: true, maxLen: 20 },
+            { key: 'description', labelEn: 'Short description', labelAr: 'وصف قصير', type: 'text', required: false, maxLen: 120 },
+            { key: 'imageUrl', labelEn: 'Product image URL', labelAr: 'رابط صورة المنتج', type: 'imageUrl', required: true },
+            { key: 'bgColor', labelEn: 'Background color', labelAr: 'لون الخلفية', type: 'color', required: false, default: '#0F172A' },
         ],
     },
     {
         id: 'ai_clip',
+        nameEn: 'AI cinematic shot',
+        descriptionEn: 'Describe the scene and set the direction — shot size, camera movement, lighting and style — and a full shot is generated with the model you choose.',
         nameAr: 'لقطة سينمائية بالذكاء الاصطناعي',
         descriptionAr: 'صف المشهد واضبط الإخراج — حجم اللقطة وحركة الكاميرا والإضاءة والأسلوب — فتُولَّد لقطة كاملة بالنموذج الذي تختاره.',
         durationSec: 5,
         costCredits: 5, // تكلفة افتراضية — النموذج المختار يحدد التكلفة الفعلية
         specKind: SPEC_AI_PROMPT,
         fields: [
-            { key: 'prompt', labelAr: 'وصف المشهد المطلوب', type: 'text', required: true, maxLen: 1000 },
-            {
-                key: 'aspectRatio', labelAr: 'نسبة الأبعاد', type: 'choice', required: false,
-                // القائمة الكاملة هنا؛ النموذج المختار يقيّدها أكثر (يتحقق
-                // الخادم، وتعرض الواجهة نسب النموذج فقط).
-                default: '16:9', options: ['16:9', '9:16', '1:1', '21:9', '4:3'],
-            },
+            { key: 'prompt', labelEn: 'Scene description', labelAr: 'وصف المشهد المطلوب', type: 'text', required: true, maxLen: 1000 },
+            aspectField('16:9'),
             // 🎥 معايير الإخراج — اختيارية كلها؛ تُركَّب مصطلحاتها
             // الإنجليزية في الوصف النهائي (انظر cinema.js).
-            { key: 'shotSize', labelAr: 'حجم اللقطة', type: 'choice', required: false, options: cinemaFieldOptions('shotSize') },
-            { key: 'cameraMove', labelAr: 'حركة الكاميرا', type: 'choice', required: false, options: cinemaFieldOptions('cameraMove') },
-            { key: 'lighting', labelAr: 'الإضاءة', type: 'choice', required: false, options: cinemaFieldOptions('lighting') },
-            { key: 'mood', labelAr: 'المزاج والإيقاع', type: 'choice', required: false, options: cinemaFieldOptions('mood') },
-            { key: 'style', labelAr: 'الأسلوب البصري', type: 'choice', required: false, options: cinemaFieldOptions('style') },
-            { key: 'negativePrompt', labelAr: 'ما لا تريد رؤيته (اختياري)', type: 'text', required: false, maxLen: 300 },
+            cinemaField('shotSize'),
+            cinemaField('cameraMove'),
+            cinemaField('lighting'),
+            cinemaField('mood'),
+            cinemaField('style'),
+            negativeField(),
             // 📝 كابشن اختياري — لا يدخل في وصف التوليد إطلاقاً (compileSpec
             // لا يقرأ هذا الحقل)، يُحفظ فقط ليُحرق كنص فوق اللقطة عند
             // التجميع إن اختار المستخدم ذلك (راجع assembly.js).
-            { key: 'caption', labelAr: 'كابشن يُحرق فوق اللقطة عند التجميع (اختياري)', type: 'text', required: false, maxLen: 80 },
+            { key: 'caption', labelEn: 'Caption burned over the shot at assembly (optional)', labelAr: 'كابشن يُحرق فوق اللقطة عند التجميع (اختياري)', type: 'text', required: false, maxLen: 80 },
         ],
     },
     {
         id: 'ai_image_clip',
+        nameEn: 'Shot from a reference image (consistent character)',
+        descriptionEn: 'Upload your hero image once and make it the first frame of every shot — the same person/product persists across your film instead of the model inventing a new face every time.',
         nameAr: 'لقطة من صورة مرجعية (شخصية ثابتة)',
         descriptionAr: 'ارفع صورة بطلك مرة واحدة واجعلها الإطار الأول لكل لقطة — فيبقى الشخص/المنتج نفسه عبر مشاهد فيلمك بدل أن يخترع النموذج وجهاً جديداً كل مرة.',
         durationSec: 5,
@@ -87,18 +108,15 @@ export const TEMPLATES = Object.freeze([
         aiInput: 'image', // لا تصلح له إلا نماذج image-to-video من الكتالوج
         fields: [
             // غير إلزامي: البديل شخصية من البنك — الخادم يرفض غياب الاثنين معاً.
-            { key: 'imageUrl', labelAr: 'رابط الصورة المرجعية (الإطار الأول) — أو اختر شخصية', type: 'imageUrl', required: false },
-            { key: 'prompt', labelAr: 'ماذا يحدث في اللقطة؟', type: 'text', required: true, maxLen: 1000 },
-            {
-                key: 'aspectRatio', labelAr: 'نسبة الأبعاد', type: 'choice', required: false,
-                default: '16:9', options: ['16:9', '9:16', '1:1', '21:9', '4:3'],
-            },
-            { key: 'cameraMove', labelAr: 'حركة الكاميرا', type: 'choice', required: false, options: cinemaFieldOptions('cameraMove') },
-            { key: 'lighting', labelAr: 'الإضاءة', type: 'choice', required: false, options: cinemaFieldOptions('lighting') },
-            { key: 'mood', labelAr: 'المزاج والإيقاع', type: 'choice', required: false, options: cinemaFieldOptions('mood') },
-            { key: 'style', labelAr: 'الأسلوب البصري', type: 'choice', required: false, options: cinemaFieldOptions('style') },
-            { key: 'negativePrompt', labelAr: 'ما لا تريد رؤيته (اختياري)', type: 'text', required: false, maxLen: 300 },
-            { key: 'caption', labelAr: 'كابشن يُحرق فوق اللقطة عند التجميع (اختياري)', type: 'text', required: false, maxLen: 80 },
+            { key: 'imageUrl', labelEn: 'Reference image URL (first frame) — or pick a character', labelAr: 'رابط الصورة المرجعية (الإطار الأول) — أو اختر شخصية', type: 'imageUrl', required: false },
+            { key: 'prompt', labelEn: 'What happens in this shot?', labelAr: 'ماذا يحدث في اللقطة؟', type: 'text', required: true, maxLen: 1000 },
+            aspectField('16:9'),
+            cinemaField('cameraMove'),
+            cinemaField('lighting'),
+            cinemaField('mood'),
+            cinemaField('style'),
+            negativeField(),
+            { key: 'caption', labelEn: 'Caption burned over the shot at assembly (optional)', labelAr: 'كابشن يُحرق فوق اللقطة عند التجميع (اختياري)', type: 'text', required: false, maxLen: 80 },
         ],
     },
     // 🎥 قوالب صنّاع الفيديو — نفس بنية ai_clip (prompt + معايير إخراج +
@@ -107,81 +125,80 @@ export const TEMPLATES = Object.freeze([
     // الإعلانات التسويقية العامة أعلاه.
     {
         id: 'faceless_channel_short',
+        nameEn: 'Faceless YouTube channel',
+        descriptionEn: 'A vertical shot with no visible face — a hand, a product, a nature scene or an abstract detail — with a text hook on top. The most popular format on YouTube Shorts and automated facts/story channels.',
         nameAr: 'قناة يوتيوب بلا وجه',
         descriptionAr: 'لقطة عمودية بلا وجه ظاهر — يد، منتج، مشهد طبيعي، أو تفصيل مجرَّد — مع خطاف نصي فوقها. الصيغة الأكثر انتشاراً في يوتيوب شورتس وقنوات "الحقائق/القصص" الآلية.',
         durationSec: 5,
         costCredits: 5,
         specKind: SPEC_AI_PROMPT,
         fields: [
-            { key: 'prompt', labelAr: 'صف المشهد (مثال: كاميرا تقترب ببطء من كوب قهوة يتصاعد منه البخار على طاولة خشب في صباح ماطر)', type: 'text', required: true, maxLen: 1000 },
-            {
-                key: 'aspectRatio', labelAr: 'نسبة الأبعاد', type: 'choice', required: false,
-                default: '9:16', options: ['16:9', '9:16', '1:1', '21:9', '4:3'],
-            },
-            { key: 'shotSize', labelAr: 'حجم اللقطة', type: 'choice', required: false, options: cinemaFieldOptions('shotSize') },
-            { key: 'cameraMove', labelAr: 'حركة الكاميرا', type: 'choice', required: false, options: cinemaFieldOptions('cameraMove') },
-            { key: 'lighting', labelAr: 'الإضاءة', type: 'choice', required: false, options: cinemaFieldOptions('lighting') },
-            { key: 'mood', labelAr: 'المزاج والإيقاع', type: 'choice', required: false, options: cinemaFieldOptions('mood') },
-            { key: 'style', labelAr: 'الأسلوب البصري', type: 'choice', required: false, options: cinemaFieldOptions('style') },
-            { key: 'negativePrompt', labelAr: 'ما لا تريد رؤيته (اختياري)', type: 'text', required: false, maxLen: 300 },
-            { key: 'caption', labelAr: '📝 الخطاف الافتتاحي — نص كبير فوق المشهد (مثال: أغرب حقيقة لن تصدقها اليوم)', type: 'text', required: false, maxLen: 80 },
+            { key: 'prompt', labelEn: 'Describe the scene (e.g., camera slowly closing in on a steaming coffee cup on a wooden table on a rainy morning)', labelAr: 'صف المشهد (مثال: كاميرا تقترب ببطء من كوب قهوة يتصاعد منه البخار على طاولة خشب في صباح ماطر)', type: 'text', required: true, maxLen: 1000 },
+            aspectField('9:16'),
+            cinemaField('shotSize'),
+            cinemaField('cameraMove'),
+            cinemaField('lighting'),
+            cinemaField('mood'),
+            cinemaField('style'),
+            negativeField(),
+            { key: 'caption', labelEn: '📝 Opening hook — big text over the scene (e.g., the strangest fact you will hear today)', labelAr: '📝 الخطاف الافتتاحي — نص كبير فوق المشهد (مثال: أغرب حقيقة لن تصدقها اليوم)', type: 'text', required: false, maxLen: 80 },
         ],
     },
     {
         id: 'podcast_highlight',
+        nameEn: 'Podcast visual highlight',
+        descriptionEn: 'A calm visual scene (abstract background / sound waves / studio) centered on a standout quote from the episode — perfect for short promo clips on social media.',
         nameAr: 'ملخص بودكاست مرئي',
         descriptionAr: 'مشهد بصري هادئ (خلفية مجردة/موجات صوت/استوديو) يتوسطه اقتباس بارز من الحلقة — مثالي لمقاطع الترويج القصيرة على السوشال ميديا.',
         durationSec: 5,
         costCredits: 5,
         specKind: SPEC_AI_PROMPT,
         fields: [
-            { key: 'prompt', labelAr: 'صف الخلفية البصرية (مثال: موجات صوت متوهجة بنفسجية تنبض ببطء على خلفية داكنة، استوديو بودكاست عصري)', type: 'text', required: true, maxLen: 1000 },
-            {
-                key: 'aspectRatio', labelAr: 'نسبة الأبعاد', type: 'choice', required: false,
-                default: '1:1', options: ['16:9', '9:16', '1:1', '21:9', '4:3'],
-            },
-            { key: 'shotSize', labelAr: 'حجم اللقطة', type: 'choice', required: false, options: cinemaFieldOptions('shotSize') },
-            { key: 'cameraMove', labelAr: 'حركة الكاميرا', type: 'choice', required: false, options: cinemaFieldOptions('cameraMove') },
-            { key: 'lighting', labelAr: 'الإضاءة', type: 'choice', required: false, options: cinemaFieldOptions('lighting') },
-            { key: 'mood', labelAr: 'المزاج والإيقاع', type: 'choice', required: false, options: cinemaFieldOptions('mood') },
-            { key: 'style', labelAr: 'الأسلوب البصري', type: 'choice', required: false, options: cinemaFieldOptions('style') },
-            { key: 'negativePrompt', labelAr: 'ما لا تريد رؤيته (اختياري)', type: 'text', required: false, maxLen: 300 },
-            { key: 'caption', labelAr: '📝 الاقتباس البارز من الحلقة — يظهر كنص فوق المشهد', type: 'text', required: false, maxLen: 80 },
+            { key: 'prompt', labelEn: 'Describe the visual background (e.g., glowing purple sound waves pulsing slowly on a dark background, modern podcast studio)', labelAr: 'صف الخلفية البصرية (مثال: موجات صوت متوهجة بنفسجية تنبض ببطء على خلفية داكنة، استوديو بودكاست عصري)', type: 'text', required: true, maxLen: 1000 },
+            aspectField('1:1'),
+            cinemaField('shotSize'),
+            cinemaField('cameraMove'),
+            cinemaField('lighting'),
+            cinemaField('mood'),
+            cinemaField('style'),
+            negativeField(),
+            { key: 'caption', labelEn: '📝 Standout quote from the episode — shown as text over the scene', labelAr: '📝 الاقتباس البارز من الحلقة — يظهر كنص فوق المشهد', type: 'text', required: false, maxLen: 80 },
         ],
     },
     {
         id: 'product_review_clip',
+        nameEn: 'Quick product review',
+        descriptionEn: 'A shot that showcases a product in a realistic review style — clean studio lighting or a real usage setting — with a takeaway or rating text on top.',
         nameAr: 'مراجعة منتج سريعة',
         descriptionAr: 'لقطة تُبرز منتجاً بأسلوب مراجعة واقعي — إضاءة استوديو نظيفة أو بيئة استخدام حقيقية — مع خلاصة أو تقييم نصي فوقها.',
         durationSec: 5,
         costCredits: 5,
         specKind: SPEC_AI_PROMPT,
         fields: [
-            { key: 'prompt', labelAr: 'صف المنتج والمشهد (مثال: يد تمسك سماعة لاسلكية بيضاء وتديرها ببطء أمام خلفية رمادية فاتحة بإضاءة استوديو ناعمة)', type: 'text', required: true, maxLen: 1000 },
-            {
-                key: 'aspectRatio', labelAr: 'نسبة الأبعاد', type: 'choice', required: false,
-                default: '9:16', options: ['16:9', '9:16', '1:1', '21:9', '4:3'],
-            },
-            { key: 'shotSize', labelAr: 'حجم اللقطة', type: 'choice', required: false, options: cinemaFieldOptions('shotSize') },
-            { key: 'cameraMove', labelAr: 'حركة الكاميرا', type: 'choice', required: false, options: cinemaFieldOptions('cameraMove') },
-            { key: 'lighting', labelAr: 'الإضاءة', type: 'choice', required: false, options: cinemaFieldOptions('lighting') },
-            { key: 'mood', labelAr: 'المزاج والإيقاع', type: 'choice', required: false, options: cinemaFieldOptions('mood') },
-            { key: 'style', labelAr: 'الأسلوب البصري', type: 'choice', required: false, options: cinemaFieldOptions('style') },
-            { key: 'negativePrompt', labelAr: 'ما لا تريد رؤيته (اختياري)', type: 'text', required: false, maxLen: 300 },
-            { key: 'caption', labelAr: '📝 الخلاصة أو التقييم — يظهر كنص فوق المشهد (مثال: يستحق الشراء ✅)', type: 'text', required: false, maxLen: 80 },
+            { key: 'prompt', labelEn: 'Describe the product and scene (e.g., a hand holding white wireless earbuds, rotating them slowly against a light grey background with soft studio lighting)', labelAr: 'صف المنتج والمشهد (مثال: يد تمسك سماعة لاسلكية بيضاء وتديرها ببطء أمام خلفية رمادية فاتحة بإضاءة استوديو ناعمة)', type: 'text', required: true, maxLen: 1000 },
+            aspectField('9:16'),
+            cinemaField('shotSize'),
+            cinemaField('cameraMove'),
+            cinemaField('lighting'),
+            cinemaField('mood'),
+            cinemaField('style'),
+            negativeField(),
+            { key: 'caption', labelEn: '📝 Takeaway or rating — shown as text over the scene (e.g., worth buying ✅)', labelAr: '📝 الخلاصة أو التقييم — يظهر كنص فوق المشهد (مثال: يستحق الشراء ✅)', type: 'text', required: false, maxLen: 80 },
         ],
     },
     {
         id: 'story_slides',
+        nameEn: 'Three-shot story',
+        descriptionEn: 'Three sequential text shots (problem → solution → call) — the foundation for "article to video" later.',
         nameAr: 'قصة من ثلاث لقطات',
         descriptionAr: 'ثلاث لقطات نصية متتابعة (مشكلة → حل → دعوة) — الأساس الذي سيُبنى عليه "تحويل المقال إلى فيديو" لاحقاً.',
         durationSec: 15,
         costCredits: 2,
         fields: [
-            { key: 'slide1', labelAr: 'اللقطة الأولى', type: 'text', required: true, maxLen: 100 },
-            { key: 'slide2', labelAr: 'اللقطة الثانية', type: 'text', required: true, maxLen: 100 },
-            { key: 'slide3', labelAr: 'اللقطة الثالثة', type: 'text', required: true, maxLen: 100 },
-            { key: 'bgColor', labelAr: 'لون الخلفية', type: 'color', required: false, default: '#1E1B4B' },
+            { key: 'slide1', labelEn: 'First shot', labelAr: 'اللقطة الأولى', type: 'text', required: true, maxLen: 100 },
+            { key: 'slide2', labelEn: 'Second shot', labelAr: 'اللقطة الثانية', type: 'text', required: true, maxLen: 100 },
+            { key: 'slide3', labelEn: 'Third shot', labelAr: 'اللقطة الثالثة', type: 'text', required: true, maxLen: 100 },
+            { key: 'bgColor', labelEn: 'Background color', labelAr: 'لون الخلفية', type: 'color', required: false, default: '#1E1B4B' },
         ],
     },
 ]);
@@ -192,8 +209,8 @@ export function getTemplate(id) {
 
 /** كتالوج للواجهة — بلا أي منطق داخلي. */
 export function listTemplates() {
-    return TEMPLATES.map(({ id, nameAr, descriptionAr, durationSec, costCredits, fields, specKind, aiInput }) => ({
-        id, nameAr, descriptionAr, durationSec, costCredits, fields,
+    return TEMPLATES.map(({ id, nameAr, nameEn, descriptionAr, descriptionEn, durationSec, costCredits, fields, specKind, aiInput }) => ({
+        id, nameAr, nameEn, descriptionAr, descriptionEn, durationSec, costCredits, fields,
         specKind: specKind || SPEC_TIMELINE,
         aiInput: aiInput || (specKind === SPEC_AI_PROMPT ? 'text' : null),
     }));

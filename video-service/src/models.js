@@ -25,6 +25,8 @@ export const BUILTIN_AI_MODELS = Object.freeze([
     // المستخدم يشتري "قياسي/سينمائي" لا "نموذج X" الذي قد نبدله غداً.
     {
         id: 'veo3_fast',
+        nameEn: 'Standard ⚡',
+        descriptionEn: 'Excellent balance of quality, speed and cost — the default choice for most shots.',
         nameAr: 'قياسي ⚡',
         descriptionAr: 'توازن ممتاز بين الجودة والسرعة والتكلفة — الخيار الافتراضي لمعظم اللقطات.',
         falPath: 'fal-ai/veo3/fast',
@@ -34,6 +36,8 @@ export const BUILTIN_AI_MODELS = Object.freeze([
     },
     {
         id: 'veo3',
+        nameEn: 'Cinematic 👑',
+        descriptionEn: 'Highest realism and detail with built-in audio — for hero shots and final versions.',
         nameAr: 'سينمائي 👑',
         descriptionAr: 'أعلى واقعية وتفاصيل مع صوت مدمج — للقطات البطولية والنسخ النهائية.',
         falPath: 'fal-ai/veo3',
@@ -43,6 +47,8 @@ export const BUILTIN_AI_MODELS = Object.freeze([
     },
     {
         id: 'veo3_fast_i2v',
+        nameEn: 'Standard ⚡ — from image',
+        descriptionEn: 'Animates your reference image as the first frame in high quality — character consistency across shots.',
         nameAr: 'قياسي ⚡ — من صورة',
         descriptionAr: 'يحرّك صورتك المرجعية كإطار أول بجودة عالية — ثبات الشخصية عبر اللقطات.',
         falPath: 'fal-ai/veo3/fast/image-to-video',
@@ -52,6 +58,8 @@ export const BUILTIN_AI_MODELS = Object.freeze([
     },
     {
         id: 'wan_i2v',
+        nameEn: 'Budget 💡 — from image',
+        descriptionEn: 'The cheapest way to animate a reference image — for drafts and experiments. Fine motion needs the higher tier.',
         nameAr: 'اقتصادي 💡 — من صورة',
         descriptionAr: 'الأرخص لتحريك صورة مرجعية — للمسودات والتجارب. الحركات الدقيقة تحتاج المستوى الأعلى.',
         falPath: 'fal-ai/wan-i2v',
@@ -63,8 +71,8 @@ export const BUILTIN_AI_MODELS = Object.freeze([
 
 /** الشكل العلني للكتالوج — بلا مسارات المزود (قرار منتج: مستويات لا أسماء). */
 export function publicAiModels(models) {
-    return models.map(({ id, nameAr, descriptionAr, costCredits, aspectRatios, input }) => ({
-        id, nameAr, descriptionAr, costCredits, aspectRatios, input,
+    return models.map(({ id, nameAr, nameEn, descriptionAr, descriptionEn, costCredits, aspectRatios, input }) => ({
+        id, nameAr, nameEn, descriptionAr, descriptionEn, costCredits, aspectRatios, input,
     }));
 }
 
