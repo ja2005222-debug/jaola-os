@@ -553,6 +553,7 @@
         ],
         planFilmBtn: '🪄 خطّط لي فيلماً', planTitle: '🪄 تخطيط سيناريو من فكرة واحدة',
         planNote: 'صف فكرتك وسنقترح مسودة مشاهد متتابعة — راجعها وعدّلها كما تشاء، ثم ولّدها كلها بضغطة واحدة. لا يُخصم أي رصيد في هذه الخطوة.',
+        planStoryTitleLabel: '📽️ العنوان المقترَح', planStoryLoglineLabel: '📝 الملخص',
         planIdeaPh: 'مثال: قطة برتقالية تتجول في شارع أوروبي عند الغروب وتكتشف كرة صوف متدحرجة',
         planSceneCountLabel: 'عدد المشاهد:', planGoBtn: '✨ اقترح المشاهد',
         planFail: 'تعذّر تخطيط السيناريو.', planCaptionPh: 'كابشن (اختياري)',
@@ -699,6 +700,7 @@
         ],
         planFilmBtn: '🪄 Plan my film', planTitle: '🪄 Plan a script from one idea',
         planNote: 'Describe your idea and we\'ll suggest a draft of sequential scenes — review and edit them as you like, then generate them all in one click. No credits are charged at this step.',
+        planStoryTitleLabel: '📽️ Suggested title', planStoryLoglineLabel: '📝 Logline',
         planIdeaPh: 'Example: an orange cat wandering a European street at sunset discovers a rolling ball of yarn',
         planSceneCountLabel: 'Scene count:', planGoBtn: '✨ Suggest scenes',
         planFail: 'Could not plan the script.', planCaptionPh: 'Caption (optional)',
@@ -1625,6 +1627,7 @@
     // مشهد ثم يولّدها كلها عبر /api/video/renders العادي بكل حراساته
     // (فلترة المحتوى، درع التكلفة، الطابور) — صفر التفاف على تلك المسارات.
     let planScenesDraft = [];
+    let planStoryMeta = { title: '', logline: '' };
 
     function planFieldOptions(key) {
       const control = cinemaControls.find(c => c.key === key);
@@ -1639,6 +1642,7 @@
       if (!panel.classList.contains('hidden')) { panel.classList.add('hidden'); refreshStoryboard(); return; }
       panel.classList.remove('hidden');
       planScenesDraft = [];
+      planStoryMeta = { title: '', logline: '' };
       renderPlanPanel(projectId);
     }
 
@@ -1675,6 +1679,7 @@
             msg.className = 'msg err';
           } else {
             planScenesDraft = data.scenes;
+            planStoryMeta = { title: data.title || '', logline: data.logline || '' };
             msg.className = 'msg';
             renderPlanDraftList(projectId);
           }
@@ -1691,7 +1696,12 @@
       const list = $('planDraftList');
       if (planScenesDraft.length === 0) { list.innerHTML = ''; return; }
       const opts = (key) => planFieldOptions(key).map(o => `<option value="${o}">${o}</option>`).join('');
-      list.innerHTML = planScenesDraft.map((s, i) => `
+      const storyMetaHtml = (planStoryMeta.title || planStoryMeta.logline) ? `
+        <div class="card" style="margin-bottom:8px;border-color:#a78bfa">
+          ${planStoryMeta.title ? `<p class="note">${tr('planStoryTitleLabel')}</p><strong style="font-size:14px">${escapeHtml(planStoryMeta.title)}</strong>` : ''}
+          ${planStoryMeta.logline ? `<p class="note" style="margin-top:6px">${tr('planStoryLoglineLabel')}</p><span style="font-size:13px">${escapeHtml(planStoryMeta.logline)}</span>` : ''}
+        </div>` : '';
+      list.innerHTML = storyMetaHtml + planScenesDraft.map((s, i) => `
         <div class="card" data-plan-idx="${i}" style="margin-bottom:8px">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <strong style="font-size:12px">${tr('shotNum', i + 1)}</strong>

@@ -244,14 +244,23 @@ export function createApp({
         const moodOptions = cinemaFieldOptions('mood');
         const styleOptions = cinemaFieldOptions('style');
 
-        let rawScenes;
+        let planResult;
         try {
-            rawScenes = await scriptProvider.planScenes({
+            planResult = await scriptProvider.planScenes({
                 idea, sceneCount, shotSizeOptions, cameraMoveOptions, lightingOptions, moodOptions, styleOptions,
             });
         } catch (e) {
             return res.status(502).json({ error: `تعذّر تخطيط السيناريو: ${e.message}` });
         }
+        const rawScenes = planResult?.scenes;
+
+        // نفس انضباط المشاهد بالضبط: عنوان/ملخص الكاتب أيضاً مخرجات نموذج
+        // لا تُصدَّق حرفياً — طول محدود + نفس فلترة المحتوى، وحقل يفشل
+        // الفلترة يُفرَغ بصمت بدل إسقاط الطلب كله.
+        const titleRaw = String(planResult?.title || '').trim().slice(0, 60);
+        const title = titleRaw && !inspectText(titleRaw, { blocklist }) ? titleRaw : '';
+        const loglineRaw = String(planResult?.logline || '').trim().slice(0, 200);
+        const logline = loglineRaw && !inspectText(loglineRaw, { blocklist }) ? loglineRaw : '';
 
         // 🛡️ مخرجات نموذج خارجي لا تُصدَّق حرفياً: كل حقل يُقيَّد ضمن
         // خيارات cinema.js المسموحة فقط (قيمة خارجها تُسقَط بصمت، لا تُفشل
@@ -279,7 +288,7 @@ export function createApp({
         if (scenes.length === 0) {
             return res.status(502).json({ error: 'تعذّر إنتاج أي مشهد صالح — أعد صياغة الفكرة أو جرّب فكرة أخرى.' });
         }
-        res.json({ scenes });
+        res.json({ title, logline, scenes });
     }));
 
     // العنوان وإعدادات التوريث الآن مستقلان: أي منهما قد يصل وحده، أو
