@@ -39,24 +39,22 @@
     .credits-chip { font-weight: bold; color: var(--warn); }
     .plan-badge { color: var(--muted); }
 
-    /* ─── التخطيط العام (يمين: قائمة · وسط: الاستوديو · يسار: اللوحات) ─── */
+    /* ─── التخطيط العام (يمين: قائمة · يسار: الوجهة المختارة) ───
+       ٤ وجهات بعرض حقيقي: كل قسم يحمل data-view-section، والوجهة المختارة
+       فقط تظهر — لا صفحة تمرير واحدة تكدّس ١٠ أقسام فيتشتت المستخدم. */
     .dashboard-grid {
-      display: grid; grid-template-columns: 210px 1fr 300px; gap: 18px;
-      max-width: 1440px; margin: 0 auto; padding: 20px 16px 70px; align-items: start;
+      display: grid; grid-template-columns: 210px 1fr; gap: 18px;
+      max-width: 1200px; margin: 0 auto; padding: 20px 16px 70px; align-items: start;
     }
     .nav-sidebar { position: sticky; top: 70px; display: flex; flex-direction: column; gap: 3px; }
-    .side-panel { position: sticky; top: 70px; display: flex; flex-direction: column; gap: 16px;
-      max-height: calc(100vh - 90px); overflow-y: auto; padding-bottom: 10px; }
     .studio-center { min-width: 0; }
+    .view-hidden { display: none; }
 
     @media (max-width: 1100px) {
       .dashboard-grid { grid-template-columns: 1fr; }
       .nav-sidebar { position: static; flex-direction: row; overflow-x: auto; padding-bottom: 6px;
         -webkit-overflow-scrolling: touch; scroll-behavior: smooth; }
-      .nav-sidebar .nav-group-label { display: none; }
       .nav-item { min-height: 44px; padding: 11px 14px; }
-      .side-panel { position: static; max-height: none; order: 3; }
-      .studio-center { order: 2; }
     }
 
     /* ─── هواتف: ترويسة مضغوطة بسطر واحد قابل للتمرير بدل الالتفاف على ٣ أسطر ─── */
@@ -81,10 +79,6 @@
       table td[colspan]::before { content: none; }
     }
 
-    .nav-group-label {
-      font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em;
-      margin: 14px 6px 4px; white-space: nowrap;
-    }
     .nav-item {
       display: flex; align-items: center; gap: 8px; background: none; border: none;
       color: var(--text); font-family: inherit; font-size: 14px; font-weight: normal;
@@ -93,10 +87,6 @@
     }
     .nav-item:hover { background: var(--card); }
     .nav-item.active { background: rgba(56,189,248,.12); color: var(--accent); }
-    .soon-badge {
-      font-size: 10px; color: var(--muted); background: rgba(148,163,184,.15);
-      padding: 2px 7px; border-radius: 999px; margin-inline-start: auto;
-    }
 
     h2 { font-size: 16px; margin: 0 0 12px; color: var(--accent); scroll-margin-top: 80px; }
     section { scroll-margin-top: 80px; margin-bottom: 28px; }
@@ -243,27 +233,23 @@
   </div>
 
   <div class="dashboard-grid hidden" id="studio">
-    <!-- ─── يمين: القائمة الرئيسية ─── -->
+    <!-- ─── يمين: القائمة الرئيسية — ٤ وجهات فقط بدل ١٠ أزرار متناثرة ───
+         🎬 الاستوديو  = المشاريع + الستوري بورد + منشئ المشاهد (سير عمل واحد)
+         🎛️ غرفة الإخراج = الشخصيات + الصوت + التلوين + LORA (إعدادات المشروع)
+         🗂️ المكتبة    = الطابور + المعاينة + مكتبة الأفلام (المخرجات والحالة)
+         💳 الحساب     = الرصيد + سجل العمليات (كانا زرّين لنفس القسم!) -->
     <nav class="nav-sidebar">
-      <button class="nav-item" data-target="sectionTop" data-i18n="navHome">🏠 اللوحة الرئيسية</button>
-      <button class="nav-item" data-target="sectionProjects" data-i18n="navProjects">📁 إدارة المشاريع</button>
-      <button class="nav-item active" data-target="sectionComposer" data-i18n="navComposer">🎬 استديو التوليد</button>
-      <button class="nav-item" data-target="sectionCharacters" data-i18n="navCharacters">🎭 بنك الشخصيات</button>
-      <button class="nav-item" data-target="sectionAudio" data-i18n="navAudio">🎙️ هندسة الصوت وAI Voice</button>
-      <div class="nav-group-label" data-i18n="navProTools">الأدوات الاحترافية</div>
-      <button class="nav-item" data-target="sectionColor" data-i18n="navColor">🎨 التلوين السينمائي</button>
-      <button class="nav-item" data-target="sectionLora" data-i18n="navLora">🧬 التحكم بمحاكاة LORA</button>
-      <div class="nav-group-label" data-i18n="navAccount">الحساب</div>
-      <button class="nav-item" data-target="sectionAccount" data-i18n="navBilling">💳 الباقات والرصيد</button>
-      <button class="nav-item" data-target="sectionAccount" data-i18n="navLedger">📜 سجل العمليات</button>
-      <button class="nav-item" data-target="sectionLibrary" data-i18n="navLibrary">🗂️ مكتبة الأفلام</button>
+      <button class="nav-item active" data-view="studio" data-i18n="navStudio">🎬 الاستوديو</button>
+      <button class="nav-item" data-view="post" data-i18n="navPostRoom">🎛️ غرفة الإخراج</button>
+      <button class="nav-item" data-view="library" data-i18n="navLibrary">🗂️ مكتبة الأفلام</button>
+      <button class="nav-item" data-view="account" data-i18n="navAccountHub">💳 الحساب</button>
     </nav>
 
     <!-- ─── وسط: الاستوديو ─── -->
     <main class="studio-center" id="sectionTop">
       <div class="stat-row" id="statRow"></div>
 
-      <section id="sectionProjects">
+      <section id="sectionProjects" data-view-section="studio">
         <h2 data-i18n="projectsTitle">🎬 مشاريعك (أفلامك)</h2>
         <div class="card">
           <div class="chips" id="projectChips"></div>
@@ -273,7 +259,7 @@
         </div>
       </section>
 
-      <section id="sectionComposer">
+      <section id="sectionComposer" data-view-section="studio">
         <h2 data-i18n="composerTitle">🎥 منشئ المشاهد السينمائي (Prompt Studio)</h2>
         <div class="card">
           <h3 style="font-size:14px;margin-bottom:8px" data-i18n="step1">١) اختر قالباً</h3>
@@ -307,7 +293,27 @@
         </div>
       </section>
 
-      <section id="sectionAudio">
+      <!-- 🎛️ وجهة "غرفة الإخراج": شخصيات + صوت + تلوين + LORA — كلها
+           إعدادات على مستوى المشروع، مجموعة في وجهة واحدة بدل تشتيتها. -->
+      <section id="sectionCharacters" class="side-card view-hidden" data-view-section="post">
+        <h3 data-i18n="charBankTitle">🎭 بنك الشخصيات الموحدة</h3>
+        <div id="charGrid"></div>
+        <div id="charPreviewOverlay" class="char-preview-overlay hidden"></div>
+        <div id="charCreate" class="hidden" style="margin-top:10px">
+          <label style="margin-top:0" data-i18n="charNameLabel">اسم الشخصية *</label>
+          <input type="text" id="charName" maxlength="60" data-i18n-ph="charNamePh" placeholder="مثال: الرجل بالمعطف" />
+          <label data-i18n="charDescLabel">الوصف الحرفي الثابت * (يُحقن كما هو في كل لقطة)</label>
+          <textarea id="charDesc" maxlength="500" rows="3"
+            style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);
+            background:var(--bg);color:var(--text);font-size:13px;font-family:inherit;resize:vertical"
+            placeholder="A man in his 40s with a short grey beard, wearing a long dark trench coat"></textarea>
+          <button id="charCreateBtn" type="button" style="width:100%" data-i18n="charCreateBtn">🎭 أنشئ الشخصية (٣ صور مرجعية)</button>
+          <div class="msg" id="charMsg"></div>
+        </div>
+        <p class="note" style="margin-top:10px" data-i18n="charBankNote">وصف حرفي ثابت + ٣ صور مرجعية بزوايا مختلفة — يبقى بطلك نفسه عبر كل المشاهد.</p>
+      </section>
+
+      <section id="sectionAudio" class="view-hidden" data-view-section="post">
         <h2 data-i18n="audioTitle">🎙️ هندسة الصوت وAI Voice</h2>
         <div class="card">
           <h3 style="font-size:14px;margin-bottom:8px" data-i18n="audioMusicTitle">🎵 مكتبة الموسيقى التصويرية</h3>
@@ -328,14 +334,34 @@
         </div>
       </section>
 
-      <section id="sectionColor"></section>
+      <section id="sectionColor" class="view-hidden" data-view-section="post"></section>
 
-      <section id="sectionLora"></section>
+      <section id="sectionLora" class="view-hidden" data-view-section="post"></section>
 
-      <!-- 🗂️ مكتبة الأفلام أخيراً عمداً: سجل المهام ينمو بلا سقف — قبل هذا
-           التموضع كان يدفع الصوت/التلوين/LORA لأسفل تدريجياً كلما تراكمت
-           لقطات أكثر، فيغطيها عملياً على الجوال (عمود واحد). -->
-      <section id="sectionLibrary">
+      <!-- 💳 وجهة "الحساب": كانت زرّين منفصلين في القائمة (الباقات + السجل)
+           يشيران لنفس القسم — وجهة واحدة الآن. -->
+      <section id="sectionAccount" class="side-card view-hidden" data-view-section="account">
+        <h3 data-i18n="accountTitle">💳 الباقات والرصيد · سجل العمليات</h3>
+        <p style="font-size:13px;margin-bottom:8px"><span data-i18n="currentBalance">الرصيد الحالي:</span> <strong id="accountCredits" style="color:var(--warn)">…</strong></p>
+        <div id="ledgerBody"><p class="note" style="margin:0" data-i18n="noLedgerYet">لا حركات بعد.</p></div>
+        <p class="note" data-i18n="accountNote">باقات الشراء والترقية قادمة قريباً — الرصيد الترحيبي والمنح الإدارية تعمل الآن.</p>
+      </section>
+
+      <!-- 🗂️ وجهة "المكتبة": الطابور + المعاينة + مكتبة الأفلام — كل
+           "المخرجات والحالة" في مكان واحد. -->
+      <section id="sectionQueue" class="side-card view-hidden" data-view-section="library">
+        <h3 data-i18n="queueTitle">⏳ طابور المعالجة المباشرة</h3>
+        <div id="queueList"><p class="note" style="margin:0" data-i18n="noActiveJobs">لا مهام جارية.</p></div>
+      </section>
+
+      <section id="sectionPreview" class="side-card view-hidden" data-view-section="library">
+        <h3 data-i18n="livePreviewTitle">▶️ المعاينة السينمائية المباشرة</h3>
+        <div id="livePreviewBox"><p class="note" style="margin:0" data-i18n="livePreviewEmpty">لا معاينة بعد — أنشئ لقطة أو افتح "▶️ معاينة" من مكتبتك.</p></div>
+      </section>
+
+      <!-- 🗂️ مكتبة الأفلام أخيراً عمداً (آخر قسم في وجهتها وفي الصفحة):
+           سجل المهام ينمو بلا سقف — لا يوضع أي محتوى بعدها أبداً. -->
+      <section id="sectionLibrary" class="view-hidden" data-view-section="library">
         <h2 data-i18n="libraryTitle">🗂️ مكتبة أفلامك</h2>
         <div class="card">
           <table>
@@ -347,43 +373,6 @@
       </section>
     </main>
 
-    <!-- ─── يسار: بنك الشخصيات + الطابور المباشر + الحساب ─── -->
-    <aside class="side-panel">
-      <section id="sectionCharacters" class="side-card">
-        <h3 data-i18n="charBankTitle">🎭 بنك الشخصيات الموحدة</h3>
-        <div id="charGrid"></div>
-        <div id="charPreviewOverlay" class="char-preview-overlay hidden"></div>
-        <div id="charCreate" class="hidden" style="margin-top:10px">
-          <label style="margin-top:0" data-i18n="charNameLabel">اسم الشخصية *</label>
-          <input type="text" id="charName" maxlength="60" data-i18n-ph="charNamePh" placeholder="مثال: الرجل بالمعطف" />
-          <label data-i18n="charDescLabel">الوصف الحرفي الثابت * (يُحقن كما هو في كل لقطة)</label>
-          <textarea id="charDesc" maxlength="500" rows="3"
-            style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);
-            background:var(--bg);color:var(--text);font-size:13px;font-family:inherit;resize:vertical"
-            placeholder="A man in his 40s with a short grey beard, wearing a long dark trench coat"></textarea>
-          <button id="charCreateBtn" type="button" style="width:100%" data-i18n="charCreateBtn">🎭 أنشئ الشخصية (٣ صور مرجعية)</button>
-          <div class="msg" id="charMsg"></div>
-        </div>
-        <p class="note" style="margin-top:10px" data-i18n="charBankNote">وصف حرفي ثابت + ٣ صور مرجعية بزوايا مختلفة — يبقى بطلك نفسه عبر كل المشاهد.</p>
-      </section>
-
-      <section id="sectionQueue" class="side-card">
-        <h3 data-i18n="queueTitle">⏳ طابور المعالجة المباشرة</h3>
-        <div id="queueList"><p class="note" style="margin:0" data-i18n="noActiveJobs">لا مهام جارية.</p></div>
-      </section>
-
-      <section class="side-card">
-        <h3 data-i18n="livePreviewTitle">▶️ المعاينة السينمائية المباشرة</h3>
-        <div id="livePreviewBox"><p class="note" style="margin:0" data-i18n="livePreviewEmpty">لا معاينة بعد — أنشئ لقطة أو افتح "▶️ معاينة" من مكتبتك.</p></div>
-      </section>
-
-      <section id="sectionAccount" class="side-card">
-        <h3 data-i18n="accountTitle">💳 الباقات والرصيد · سجل العمليات</h3>
-        <p style="font-size:13px;margin-bottom:8px"><span data-i18n="currentBalance">الرصيد الحالي:</span> <strong id="accountCredits" style="color:var(--warn)">…</strong></p>
-        <div id="ledgerBody"><p class="note" style="margin:0" data-i18n="noLedgerYet">لا حركات بعد.</p></div>
-        <p class="note" data-i18n="accountNote">باقات الشراء والترقية قادمة قريباً — الرصيد الترحيبي والمنح الإدارية تعمل الآن.</p>
-      </section>
-    </aside>
   </div>
 
   <!-- 🎥 مشغل المعاينة الداخلي — بلا مغادرة الاستوديو -->
@@ -436,13 +425,8 @@
         langToggle: 'English', gate_title: 'مطلوب تسجيل الدخول',
         gate_body: 'استوديو الفيديو يستخدم حسابك في منصة JAOLA نفسها.',
         gate_body2: 'افتح الاستوديو من داخل المنصة بعد تسجيل الدخول، أو مرّر التوكن عبر الرابط:',
-        navHome: '🏠 اللوحة الرئيسية', navProjects: '📁 إدارة المشاريع',
-        navComposer: '🎬 استديو التوليد', navCharacters: '🎭 بنك الشخصيات',
-        navLibrary: '🗂️ مكتبة الأفلام', navAudio: '🎙️ هندسة الصوت وAI Voice',
-        navProTools: 'الأدوات الاحترافية', navColor: '🎨 التلوين السينمائي',
-        navLora: '🧬 التحكم بمحاكاة LORA', navSoon: 'قريباً',
-        navAccount: 'الحساب', navBilling: '💳 الباقات والرصيد', navLedger: '📜 سجل العمليات',
-        soonAlert: (name) => `${name} — قادم قريباً في الاستوديو.`,
+        navStudio: '🎬 الاستوديو', navPostRoom: '🎛️ غرفة الإخراج',
+        navLibrary: '🗂️ مكتبة الأفلام', navAccountHub: '💳 الحساب',
         upgradeAlert: 'باقات الترقية والاشتراك المدفوع قادمة قريباً.',
         headerTitle: '🎬 الاستديو السينمائي ', headerProject: '📁 المشروع:',
         freeShots: 'لقطات حرة', creditsLabel: 'الرصيد:', notRegistered: 'غير مسجَّل',
@@ -583,13 +567,8 @@
         langToggle: 'العربية', gate_title: 'Login Required',
         gate_body: 'The video studio uses your account on the JAOLA platform itself.',
         gate_body2: 'Open the studio from inside the platform after logging in, or pass the token via the link:',
-        navHome: '🏠 Dashboard', navProjects: '📁 Manage Projects',
-        navComposer: '🎬 Generation Studio', navCharacters: '🎭 Character Bank',
-        navLibrary: '🗂️ Film Library', navAudio: '🎙️ Sound Engineering & AI Voice',
-        navProTools: 'Pro Tools', navColor: '🎨 Cinematic Color Grading',
-        navLora: '🧬 LORA Simulation Control', navSoon: 'Soon',
-        navAccount: 'Account', navBilling: '💳 Plans & Credits', navLedger: '📜 Activity Log',
-        soonAlert: (name) => `${name} — coming soon to the studio.`,
+        navStudio: '🎬 Studio', navPostRoom: '🎛️ Production Room',
+        navLibrary: '🗂️ Film Library', navAccountHub: '💳 Account',
         upgradeAlert: 'Upgrade plans and paid subscriptions are coming soon.',
         headerTitle: '🎬 Cinematic Studio ', headerProject: '📁 Project:',
         freeShots: 'Free shots', creditsLabel: 'Credits:', notRegistered: 'Not signed in',
@@ -782,20 +761,29 @@
         ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
 
-    // ─── القائمة الرئيسية: تمرير للأقسام أو تنبيه "قريباً" للأدوات غير المفعَّلة ───
-    document.querySelectorAll('.nav-item[data-target]').forEach(el => {
-      el.addEventListener('click', () => {
-        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-        el.classList.add('active');
-        el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-        document.getElementById(el.dataset.target)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // ─── ٤ وجهات بعرض حقيقي: الوجهة المختارة فقط تظهر ───
+    // القائمة كانت "تمريراً" لصفحة واحدة تكدّس ١٠ أقسام — الآن كل قسم يحمل
+    // data-view-section، والتبديل يخفي غير المختار كلياً. آخر وجهة تُحفظ
+    // محلياً فيعود المستخدم حيث كان بعد التحديث.
+    const STUDIO_VIEWS = ['studio', 'post', 'library', 'account'];
+    function switchView(name, { scroll = true } = {}) {
+      if (!STUDIO_VIEWS.includes(name)) name = 'studio';
+      document.querySelectorAll('[data-view-section]').forEach(sec =>
+        sec.classList.toggle('view-hidden', sec.dataset.viewSection !== name));
+      document.querySelectorAll('.nav-item[data-view]').forEach(n => {
+        const active = n.dataset.view === name;
+        n.classList.toggle('active', active);
+        if (active) n.scrollIntoView({ inline: 'center', block: 'nearest' });
       });
+      localStorage.setItem('studioView', name);
+      if (scroll) window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    document.querySelectorAll('.nav-item[data-view]').forEach(el =>
+      el.addEventListener('click', () => switchView(el.dataset.view)));
+    $('headerProjectBtn').addEventListener('click', () => {
+      switchView('studio');
+      $('sectionProjects').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
-    document.querySelectorAll('.nav-item[data-soon-key]').forEach(el => {
-      el.addEventListener('click', () => alert(tr('soonAlert', tr(el.dataset.soonKey))));
-    });
-    $('headerProjectBtn').addEventListener('click', () =>
-      $('sectionProjects').scrollIntoView({ behavior: 'smooth', block: 'start' }));
     $('upgradeBtn').addEventListener('click', () => alert(tr('upgradeAlert')));
     $('langToggleBtn').addEventListener('click', () => {
       localStorage.setItem('studioLang', lang === 'en' ? 'ar' : 'en');
@@ -1360,6 +1348,9 @@
       activeCharacterId = id;
       const t = templates.find(x => x.id === 'ai_image_clip') || templates.find(x => x.specKind === 'ai_prompt');
       if (t) selectTemplate(t.id);
+      // منشئ المشاهد في وجهة "الاستوديو" والشخصيات في "غرفة الإخراج" —
+      // بلا هذا التبديل كان التمرير يستهدف قسماً مخفياً فلا يحدث شيء.
+      switchView('studio', { scroll: false });
       $('formWrap').scrollIntoView({ behavior: 'smooth' });
     }
 
@@ -2358,10 +2349,9 @@
       const ok = await loadCredits();
       if (!ok) return;
       $('studio').classList.remove('hidden');
-      // على الجوال القائمة تُمرَّر أفقياً — بلا هذا السطر يظهر العنصر النشط
-      // مقصوصاً على حافة الشاشة عند التحميل الأول بدل أن يكون مرئياً كاملاً.
-      document.querySelector('.nav-item.active')
-        ?.scrollIntoView({ inline: 'center', block: 'nearest' });
+      // استعادة آخر وجهة كان عليها المستخدم (تُمرِّر زر القائمة النشط
+      // ليظهر كاملاً على الجوال أيضاً — القائمة أفقية هناك).
+      switchView(localStorage.getItem('studioView') || 'studio', { scroll: false });
       await loadTemplates();
       await loadProjects();
       await loadCharacters();
