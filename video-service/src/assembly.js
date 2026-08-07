@@ -42,6 +42,15 @@ export const COLOR_FILTERS = Object.freeze({
 // مقاسات المنصات: يوتيوب/ريلز/بوست
 export const OUTPUT_ASPECTS = Object.freeze(['16:9', '9:16', '1:1']);
 
+// 🎯 إعدادات منصة بنقرة واحدة — مصدر الحقيقة الوحيد (تقرأه الواجهة عبر
+// /assembly-options، ويستهلكه مسار حزمة التسويق مباشرة لتوليد نفس
+// الثلاث نسخ آلياً بلا تكرار التعريف في مكانين).
+export const PLATFORM_PRESETS = Object.freeze({
+    tiktok: { aspect: '9:16', burnCaptions: true, captionStyle: 'عريض جريء', captionPosition: 'أسفل الشاشة', captionAnimated: true },
+    youtube: { aspect: '16:9', burnCaptions: false },
+    square: { aspect: '1:1', burnCaptions: true, captionStyle: 'نظيف', captionPosition: 'أسفل الشاشة', captionAnimated: false },
+});
+
 // أنماط الكابشن المحروق بالعربية → قيم Shotstack title.style. 'نظيف'
 // (minimal) هو الوحيد المؤكَّد عملياً من هذه الخدمة تحديداً (نفس المخطط
 // المستخدم أصلاً في العنوان الختامي/الشعار) — البقية من كتالوج Shotstack

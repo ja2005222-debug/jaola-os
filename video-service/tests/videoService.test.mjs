@@ -1926,6 +1926,138 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             }
         });
 
+        test('🎁 حزمة تسويقية: ثلاث نسخ منصات + نص تسويقي مفلتَر، وفشل جزئي عند نفاد الرصيد', async () => {
+            const fakeMarketingScript = {
+                name: 'fake-script',
+                async planScenes() { return []; },
+                async generateMarketingCopy() {
+                    return {
+                        headline: 'فيلم رائع كلمةمحظورة',
+                        caption: 'شاهد فيلمنا الجديد الآن',
+                        hashtags: ['سينما', '#فيديو', 'كلمةمحظورة', '  وسم رابع  '],
+                    };
+                },
+            };
+            const app = createApp({
+                store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider,
+                scriptProvider: fakeMarketingScript, blocklist: ['كلمةمحظورة'],
+            });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const token = makeToken('marketer');
+                await callAt(url, '/api/video/credits', { token }); // رصيد ترحيبي = STARTER_CREDITS (3)
+                const pid = (await callAt(url, '/api/video/projects', {
+                    method: 'POST', token, body: { title: 'فيلم للتسويق' },
+                })).data.project.id;
+
+                // لا لقطات جاهزة بعد → 400
+                assert.equal((await callAt(url, `/api/video/projects/${pid}/marketing-pack`, {
+                    method: 'POST', token, body: {},
+                })).status, 400);
+
+                const opts = await callAt(url, `/api/video/projects/${pid}/assembly-options`, { token });
+                assert.ok(opts.data.platformPresets.tiktok);
+                assert.equal(opts.data.marketingCopyEnabled, true);
+
+                const j0 = await createJob(store, {
+                    username: 'marketer', templateId: 'ai_clip',
+                    values: { prompt: 'مشهد ترويجي', caption: 'كابشن اللقطة' },
+                    spec: { kind: 'ai_prompt', durationSec: 5, prompt: 'x' },
+                    costCredits: 1, projectId: pid, shotIndex: 0,
+                });
+                await transitionJob(store, j0.id, 'rendering', {});
+                await transitionJob(store, j0.id, 'done', { videoUrl: 'https://v.test/0.mp4' });
+
+                // رصيد كافٍ لكل الثلاث نسخ (3 × ASSEMBLY_COST_CREDITS = رصيد المستخدم الترحيبي بالضبط)
+                const before = (await callAt(url, '/api/video/credits', { token })).data.credits;
+                const pack = await callAt(url, `/api/video/projects/${pid}/marketing-pack`, {
+                    method: 'POST', token, body: {},
+                });
+                assert.equal(pack.status, 200);
+                assert.equal(pack.data.cuts.length, 3);
+                const byPreset = Object.fromEntries(pack.data.cuts.map(c => [c.preset, c]));
+                assert.ok(byPreset.tiktok.job);
+                assert.ok(byPreset.youtube.job);
+                assert.ok(byPreset.square.job);
+                assert.equal(
+                    (await callAt(url, '/api/video/credits', { token })).data.credits,
+                    before - 3 * ASSEMBLY_COST_CREDITS
+                );
+
+                const tiktokJob = await getJob(store, byPreset.tiktok.job.id);
+                assert.equal(tiktokJob.spec.aspectRatio, '9:16');
+                assert.equal(tiktokJob.spec.captionStyle, 'blockbuster'); // 'عريض جريء'
+                assert.ok(tiktokJob.spec.captionCues?.length);
+                const youtubeJob = await getJob(store, byPreset.youtube.job.id);
+                assert.equal(youtubeJob.spec.aspectRatio, '16:9');
+                assert.equal(youtubeJob.spec.captionCues, null); // youtube: burnCaptions=false
+                const squareJob = await getJob(store, byPreset.square.job.id);
+                assert.equal(squareJob.spec.aspectRatio, '1:1');
+
+                // النص التسويقي: العنوان المحظور يُسقَط (فارغ)، الكابشن النظيف يبقى،
+                // الوسم المحظور يُسقَط، و'#' يُزال، والمسافات الزائدة تُقلَّم.
+                assert.equal(pack.data.copy.headline, '');
+                assert.equal(pack.data.copy.caption, 'شاهد فيلمنا الجديد الآن');
+                assert.deepEqual(pack.data.copy.hashtags, ['سينما', 'فيديو', 'وسم رابع']);
+
+                // مشروع مستخدم آخر → 404
+                assert.equal((await callAt(url, `/api/video/projects/${pid}/marketing-pack`, {
+                    method: 'POST', token: makeToken('not-marketer'), body: {},
+                })).status, 404);
+
+                // فشل جزئي: مستخدم جديد (لا مهام نشطة متراكمة من الأعلى تصطدم
+                // بسقف MAX_ACTIVE_JOBS_PER_USER) برصيد يكفي نسخة واحدة فقط.
+                const token2 = makeToken('marketer2');
+                await callAt(url, '/api/video/credits', { token: token2 }); // رصيد ترحيبي = STARTER_CREDITS
+                const pid2 = (await callAt(url, '/api/video/projects', {
+                    method: 'POST', token: token2, body: { title: 'فيلم برصيد شحيح' },
+                })).data.project.id;
+                const j1 = await createJob(store, {
+                    username: 'marketer2', templateId: 'ai_clip', values: { prompt: 'مشهد' },
+                    spec: { kind: 'ai_prompt', durationSec: 5, prompt: 'x' },
+                    costCredits: 1, projectId: pid2, shotIndex: 0,
+                });
+                await transitionJob(store, j1.id, 'rendering', {});
+                await transitionJob(store, j1.id, 'done', { videoUrl: 'https://v.test/1.mp4' });
+                // نُصفّر الرصيد ثم نمنح واحداً بالضبط — نتيجة يوتيوب/مربع محسومة
+                // بغضّ النظر عن الرصيد الترحيبي الفعلي.
+                const remaining = await getBalance(store, 'marketer2');
+                if (remaining > 0) {
+                    await deductCredits(store, { username: 'marketer2', amount: remaining, jobId: `drain-${Date.now()}` });
+                }
+                await grantCredits(store, { username: 'marketer2', amount: 1, grantedBy: 'test' });
+                const partial = await callAt(url, `/api/video/projects/${pid2}/marketing-pack`, {
+                    method: 'POST', token: token2, body: {},
+                });
+                assert.equal(partial.status, 200);
+                assert.ok(partial.data.cuts[0].job); // تيك توك نجح
+                assert.ok(partial.data.cuts[1].error); // يوتيوب فشل (رصيد غير كافٍ)
+                assert.ok(partial.data.cuts[2].error); // مربع فشل أيضاً
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
+        test('🎁 حزمة تسويقية بلا مزوّد سيناريو: النسخ تعمل والنص التسويقي null بلا خطأ', async () => {
+            const token = makeToken('marketer-no-script');
+            await call('/api/video/credits', { token });
+            const pid = (await call('/api/video/projects', {
+                method: 'POST', token, body: { title: 'فيلم بلا نص تسويقي' },
+            })).data.project.id;
+            const j = await createJob(store, {
+                username: 'marketer-no-script', templateId: 'ai_clip', values: { prompt: 'مشهد' },
+                spec: { kind: 'ai_prompt', durationSec: 5, prompt: 'x' },
+                costCredits: 1, projectId: pid, shotIndex: 0,
+            });
+            await transitionJob(store, j.id, 'rendering', {});
+            await transitionJob(store, j.id, 'done', { videoUrl: 'https://v.test/0.mp4' });
+            const pack = await call(`/api/video/projects/${pid}/marketing-pack`, { method: 'POST', token, body: {} });
+            assert.equal(pack.status, 200);
+            assert.equal(pack.data.cuts.length, 3);
+            assert.equal(pack.data.copy, null); // لا scriptProvider على الخادم الرئيسي في هذه الاختبارات
+        });
+
         test('🎨 فلتر المشروع الافتراضي يُستخدم عند التجميع فقط إن لم يُحدَّد فلتر صراحةً', async () => {
             // تطبيق مستقل: /assemble يشارك محدود renderLimit مع /renders.
             const app = createApp({ store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider });

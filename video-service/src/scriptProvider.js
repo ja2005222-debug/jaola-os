@@ -21,18 +21,52 @@
 const DEFAULT_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const DEFAULT_MODEL = 'llama-3.3-70b-versatile';
 
-/** يستخرج أول كتلة JSON من رد قد يغلّفها النموذج بسياج ```json ...```. */
+/**
+ * يستخرج أول كتلة JSON من رد قد يغلّفها النموذج بسياج ```json ...``` —
+ * مصفوفة (planScenes) أو كائن (generateMarketingCopy) على السواء.
+ */
 function extractJsonBlock(text) {
     const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
     if (fenced) return fenced[1].trim();
-    const start = text.indexOf('[');
-    const end = text.lastIndexOf(']');
-    if (start !== -1 && end !== -1 && end > start) return text.slice(start, end + 1);
+    const arrStart = text.indexOf('[');
+    const arrEnd = text.lastIndexOf(']');
+    if (arrStart !== -1 && arrEnd !== -1 && arrEnd > arrStart) return text.slice(arrStart, arrEnd + 1);
+    const objStart = text.indexOf('{');
+    const objEnd = text.lastIndexOf('}');
+    if (objStart !== -1 && objEnd !== -1 && objEnd > objStart) return text.slice(objStart, objEnd + 1);
     return text.trim();
 }
 
 export function createScriptProvider({ apiKey, apiUrl = DEFAULT_API_URL, model = DEFAULT_MODEL, fetchImpl = fetch }) {
     if (!apiKey) throw new Error('مفتاح مزوّد تخطيط السيناريو مطلوب.');
+
+    /** نداء نصي عام لنفس نقطة النهاية — planScenes وgenerateMarketingCopy يتشاركانه. */
+    async function chatJson(system, user) {
+        const res = await fetchImpl(apiUrl, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model,
+                messages: [
+                    { role: 'system', content: system },
+                    { role: 'user', content: user },
+                ],
+                temperature: 0.8,
+            }),
+        });
+        if (!res.ok) {
+            const detail = await res.text().catch(() => '');
+            throw new Error(`تعذّر الاتصال بمزوّد التخطيط (HTTP ${res.status}). ${detail.slice(0, 300)}`);
+        }
+        const data = await res.json();
+        const content = data?.choices?.[0]?.message?.content;
+        if (!content) throw new Error('مزوّد التخطيط أعاد رداً فارغاً.');
+        try {
+            return JSON.parse(extractJsonBlock(content));
+        } catch {
+            throw new Error('تعذّر تفسير رد مزوّد التخطيط (لم يكن JSON صالحاً).');
+        }
+    }
 
     return {
         name: `script:${model}`,
@@ -56,33 +90,32 @@ export function createScriptProvider({ apiKey, apiUrl = DEFAULT_API_URL, model =
                 'لا تكرر نفس القيم في كل المشاهد — نوّع حجم اللقطة وحركة الكاميرا لإيقاع بصري حقيقي.',
             ].join('\n');
 
-            const res = await fetchImpl(apiUrl, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model,
-                    messages: [
-                        { role: 'system', content: system },
-                        { role: 'user', content: idea },
-                    ],
-                    temperature: 0.8,
-                }),
-            });
-            if (!res.ok) {
-                const detail = await res.text().catch(() => '');
-                throw new Error(`تعذّر الاتصال بمزوّد التخطيط (HTTP ${res.status}). ${detail.slice(0, 300)}`);
-            }
-            const data = await res.json();
-            const content = data?.choices?.[0]?.message?.content;
-            if (!content) throw new Error('مزوّد التخطيط أعاد رداً فارغاً.');
-
-            let parsed;
-            try {
-                parsed = JSON.parse(extractJsonBlock(content));
-            } catch {
-                throw new Error('تعذّر تفسير رد مزوّد التخطيط (لم يكن JSON صالحاً).');
-            }
+            const parsed = await chatJson(system, idea);
             if (!Array.isArray(parsed)) throw new Error('رد مزوّد التخطيط ليس مصفوفة مشاهد.');
+            return parsed;
+        },
+
+        /**
+         * نص تسويقي (عنوان + كابشن + هاشتاقات) من عنوان المشروع ومشاهده —
+         * يُستهلَك ضمن "حزمة تسويقية". يُرجع كائناً خاماً (بلا تحقق):
+         * {headline?, caption?, hashtags?}. يرمي خطأً عربياً واضحاً عند
+         * أي فشل — نفس انضباط planScenes، مخرجاته لا تُصدَّق حرفياً أبداً
+         * (التحقق والفلترة الفعلية في server.js قبل وصول أي نص للمستخدم).
+         */
+        async generateMarketingCopy({ projectTitle, shotPrompts }) {
+            const system = [
+                'أنت مسوّق محتوى محترف يكتب نصاً ترويجياً قصيراً بالعربية لفيديو قصير.',
+                'أعد JSON فقط — كائن واحد بلا أي نص خارجه — بهذا الشكل بالضبط:',
+                '{"headline": "عنوان جذاب حتى 8 كلمات", "caption": "كابشن ترويجي حتى 200 حرف يناسب السوشال ميديا", "hashtags": ["وسم1", "وسم2", "..."]}',
+                'الهاشتاقات: 5 إلى 8 وسوم عربية أو إنجليزية قصيرة ذات صلة، بلا علامة # نفسها.',
+                'لا مبالغة ولا وعود كاذبة ولا لغة تحريضية — نبرة احترافية جذابة فقط.',
+            ].join('\n');
+            const user = `عنوان المشروع: ${projectTitle}\nمشاهد الفيلم:\n${shotPrompts.map((p, i) => `${i + 1}. ${p}`).join('\n')}`;
+
+            const parsed = await chatJson(system, user);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                throw new Error('رد مزوّد النص التسويقي ليس كائناً صالحاً.');
+            }
             return parsed;
         },
     };

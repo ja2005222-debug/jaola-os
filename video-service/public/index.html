@@ -564,6 +564,14 @@
         autoProduceArmedMsg: 'سيُجمَّع الفيلم تلقائياً فور اكتمال كل اللقطات.',
         autoProduceFailMsg: (err) => `تعذّر تفعيل الإنتاج التلقائي: ${err}`,
         autoProducePending: 'إنتاج تلقائي مجدول',
+        marketingPackBtn: '🎁 حزمة تسويقية',
+        marketingPackTitle: '🎁 حزمة تسويقية تلقائية',
+        marketingPackNote: (n) => `يولّد 3 نسخ منصات (تيك توك/يوتيوب/مربع) من لقطات المشروع الجاهزة + نص تسويقي جاهز — يكلف ${n} رصيد إجمالاً.`,
+        marketingGoBtn: '🎁 ولّد الحزمة الآن',
+        marketingPackFail: 'تعذّر توليد الحزمة التسويقية.',
+        marketingPackSummary: (ok, total) => ok === total ? `✅ اكتملت الحزمة (${ok}/${total}).` : `اكتمل ${ok} من أصل ${total} نسخة.`,
+        marketingCopyTitle: '📝 نص تسويقي جاهز',
+        copyToClipboard: 'انسخ النص', copied: 'نُسخ',
       },
       en: {
         docTitle: 'Cinematic Studio — JAOLA OS',
@@ -701,6 +709,14 @@
         autoProduceArmedMsg: 'The film will be assembled automatically once all shots are done.',
         autoProduceFailMsg: (err) => `Could not enable auto-production: ${err}`,
         autoProducePending: 'Auto-production scheduled',
+        marketingPackBtn: '🎁 Marketing pack',
+        marketingPackTitle: '🎁 Automatic marketing pack',
+        marketingPackNote: (n) => `Generates 3 platform cuts (TikTok/YouTube/Square) from the project's ready shots + ready marketing copy — costs ${n} credits total.`,
+        marketingGoBtn: '🎁 Generate pack now',
+        marketingPackFail: 'Could not generate the marketing pack.',
+        marketingPackSummary: (ok, total) => ok === total ? `✅ Pack complete (${ok}/${total}).` : `${ok} of ${total} cuts completed.`,
+        marketingCopyTitle: '📝 Ready marketing copy',
+        copyToClipboard: 'Copy text', copied: 'Copied',
       },
     };
     let lang = localStorage.getItem('studioLang') || 'ar';
@@ -1471,9 +1487,11 @@
       const openAssembly = document.getElementById('assemblyPanel');
       const openSettings = document.getElementById('projSettingsPanel');
       const openPlan = document.getElementById('planPanel');
+      const openMarketing = document.getElementById('marketingPanel');
       if ((openAssembly && !openAssembly.classList.contains('hidden')) ||
           (openSettings && !openSettings.classList.contains('hidden')) ||
-          (openPlan && !openPlan.classList.contains('hidden'))) return;
+          (openPlan && !openPlan.classList.contains('hidden')) ||
+          (openMarketing && !openMarketing.classList.contains('hidden'))) return;
       const res = await api(`/api/video/projects/${activeProjectId}`);
       if (!res.ok) { selectProject(null); return; }
       const { project, shots } = await res.json();
@@ -1489,12 +1507,14 @@
           <button class="chip" id="deleteProjBtn">${tr('deleteProject')}</button>
           ${scriptPlanningEnabled ? `<button class="chip" id="planBtn" style="border-color:#a78bfa;color:#a78bfa">${tr('planFilmBtn')}</button>` : ''}
           ${shots.some(s => s.status === 'done') ? `<button class="chip" id="assembleBtn" style="border-color:var(--accent);color:var(--accent)">${tr('assembleFilm')}</button>` : ''}
+          ${shots.some(s => s.status === 'done') ? `<button class="chip" id="marketingPackBtn" style="border-color:#f59e0b;color:#f59e0b">${tr('marketingPackBtn')}</button>` : ''}
           ${project.autoAssemble ? `<span class="chip" style="border-color:#a78bfa;color:#a78bfa">⏳ ${tr('autoProducePending')}
             <button type="button" id="cancelAutoAssembleBtn" style="margin-inline-start:6px;border:none;background:none;color:inherit;cursor:pointer">✖</button></span>` : ''}
         </div>
         <div id="projSettingsPanel" class="hidden" style="margin-bottom:10px"></div>
         <div id="planPanel" class="hidden" style="margin-bottom:10px"></div>
         <div id="assemblyPanel" class="hidden" style="margin-bottom:10px"></div>
+        <div id="marketingPanel" class="hidden" style="margin-bottom:10px"></div>
         ${shots.length === 0
           ? `<p class="note">${tr('noShotsYet')}</p>`
           : `<div class="shots">${shots.map(shotCard).join('')}</div>
@@ -1529,6 +1549,8 @@
       if (assembleBtn) assembleBtn.addEventListener('click', () => openAssemblyPanel(project.id));
       const planBtn = $('planBtn');
       if (planBtn) planBtn.addEventListener('click', () => openPlanPanel(project.id));
+      const marketingBtn = $('marketingPackBtn');
+      if (marketingBtn) marketingBtn.addEventListener('click', () => openMarketingPanel(project.id));
       const cancelAutoBtn = $('cancelAutoAssembleBtn');
       if (cancelAutoBtn) cancelAutoBtn.addEventListener('click', async () => {
         await api(`/api/video/projects/${project.id}/auto-assemble`, { method: 'DELETE' });
@@ -1889,11 +1911,8 @@
       // 🎬 إعدادات منصة بنقرة واحدة — تملأ المقاس + إعدادات الكابشن
       // المناسبة للصيغة القصيرة (تيك توك/ريلز/شورتس) دفعة واحدة، بدل
       // ضبط ٤-٥ حقول يدوياً كل مرة.
-      const PLATFORM_PRESETS = {
-        tiktok: { aspect: '9:16', burnCaptions: true, captionStyle: 'عريض جريء', captionPosition: 'أسفل الشاشة', captionAnimated: true },
-        youtube: { aspect: '16:9', burnCaptions: false },
-        square: { aspect: '1:1', burnCaptions: true, captionStyle: 'نظيف', captionPosition: 'أسفل الشاشة', captionAnimated: false },
-      };
+      // مصدر الحقيقة عند الخادم (assembly.js) — لا تكرار تعريف قد يتباعد بصمت.
+      const PLATFORM_PRESETS = opts.platformPresets || {};
       panel.querySelectorAll('#asmPresetChips .chip').forEach(btn => {
         btn.addEventListener('click', () => {
           const p = PLATFORM_PRESETS[btn.dataset.preset];
@@ -1950,6 +1969,76 @@
           $('asmMsg').className = 'msg err';
         } finally {
           $('asmGo').disabled = false;
+        }
+      });
+    }
+
+    // 🎁 حزمة تسويقية: ثلاث نسخ منصات (PLATFORM_PRESETS نفسها) + نص
+    // تسويقي (عنوان/كابشن/هاشتاقات) بضغطة واحدة من مشروع فيه لقطة جاهزة.
+    async function openMarketingPanel(projectId) {
+      const panel = $('marketingPanel');
+      if (!panel.classList.contains('hidden')) { panel.classList.add('hidden'); refreshStoryboard(); return; }
+      const res = await api(`/api/video/projects/${projectId}/assembly-options`);
+      if (!res.ok) return;
+      const opts = await res.json();
+      panel.classList.remove('hidden');
+      panel.innerHTML = `
+        <div class="card" style="margin-bottom:0">
+          <strong style="font-size:14px">${tr('marketingPackTitle')}</strong>
+          <p class="note">${tr('marketingPackNote', 3 * opts.costCredits)}</p>
+          <button id="marketingGoBtn" type="button">${tr('marketingGoBtn')}</button>
+          <div class="msg" id="marketingMsg"></div>
+          <div id="marketingResult" style="margin-top:10px"></div>
+        </div>`;
+      const PRESET_LABELS = { tiktok: `📱 ${tr('presetTiktok')}`, youtube: `▶️ ${tr('presetYoutube')}`, square: `🖼️ ${tr('presetSquare')}` };
+      $('marketingGoBtn').addEventListener('click', async () => {
+        const msg = $('marketingMsg'); msg.className = 'msg';
+        const resultBox = $('marketingResult'); resultBox.innerHTML = '';
+        $('marketingGoBtn').disabled = true;
+        try {
+          const r = await api(`/api/video/projects/${projectId}/marketing-pack`, { method: 'POST', body: JSON.stringify({}) });
+          const data = await r.json();
+          if (!r.ok) {
+            msg.textContent = data.error || tr('marketingPackFail');
+            msg.className = 'msg err';
+            return;
+          }
+          const okCount = data.cuts.filter(c => c.job).length;
+          msg.textContent = tr('marketingPackSummary', okCount, data.cuts.length);
+          msg.className = okCount === data.cuts.length ? 'msg ok' : 'msg err';
+          const cutsHtml = data.cuts.map(c =>
+            `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:13px">
+              <span>${PRESET_LABELS[c.preset] || c.preset}</span>
+              <span>${c.job ? '✅ ' + tr('planQueued') : '❌ ' + escapeHtml(c.error || tr('genericError'))}</span>
+            </div>`).join('');
+          let copyHtml = '';
+          if (data.copy) {
+            const tagsText = (data.copy.hashtags || []).map(h => `#${h}`).join(' ');
+            const fullText = [data.copy.headline, data.copy.caption, tagsText].filter(Boolean).join('\n\n');
+            copyHtml = `
+              <div class="card" style="margin-top:10px">
+                <strong style="font-size:13px">${tr('marketingCopyTitle')}</strong>
+                ${data.copy.headline ? `<p style="margin:6px 0 2px;font-weight:600">${escapeHtml(data.copy.headline)}</p>` : ''}
+                ${data.copy.caption ? `<p style="margin:2px 0;color:var(--muted)">${escapeHtml(data.copy.caption)}</p>` : ''}
+                ${tagsText ? `<p style="margin:6px 0 2px;color:var(--accent)">${escapeHtml(tagsText)}</p>` : ''}
+                ${fullText ? `<button type="button" id="marketingCopyBtn" style="margin-top:6px">📋 ${tr('copyToClipboard')}</button>` : ''}
+              </div>`;
+          }
+          resultBox.innerHTML = cutsHtml + copyHtml;
+          const copyBtn = document.getElementById('marketingCopyBtn');
+          if (copyBtn) {
+            const tagsText = (data.copy.hashtags || []).map(h => `#${h}`).join(' ');
+            const fullText = [data.copy.headline, data.copy.caption, tagsText].filter(Boolean).join('\n\n');
+            copyBtn.addEventListener('click', async () => {
+              try { await navigator.clipboard.writeText(fullText); copyBtn.textContent = `✅ ${tr('copied')}`; } catch {}
+            });
+          }
+          loadCredits(); loadJobs();
+        } catch {
+          msg.textContent = tr('connFail');
+          msg.className = 'msg err';
+        } finally {
+          $('marketingGoBtn').disabled = false;
         }
       });
     }

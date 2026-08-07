@@ -29,7 +29,7 @@ import {
     ASSEMBLY_COST_CREDITS, NARRATION_COST_CREDITS, TRANSITIONS, COLOR_FILTERS, OUTPUT_ASPECTS,
     OUTPUT_RESOLUTIONS, DEFAULT_RESOLUTION, DEFAULT_WATERMARK_TEXT,
     CAPTION_STYLES, CAPTION_POSITIONS, DEFAULT_CAPTION_STYLE, DEFAULT_CAPTION_POSITION,
-    readMusicLibrary, readSfxLibrary, buildFilmSpec,
+    PLATFORM_PRESETS, readMusicLibrary, readSfxLibrary, buildFilmSpec,
 } from './src/assembly.js';
 import { buildImageProvider } from './src/providers/falImageProvider.js';
 import { buildTtsProvider } from './src/providers/falTtsProvider.js';
@@ -360,6 +360,8 @@ export function createApp({
             readyShots: (await readyShotsOf(store, project.id)).length,
             watermarked: watermarkEnforced && !['pro', 'enterprise'].includes(req.user.plan),
             defaultFilter: project.defaultFilter || null,
+            platformPresets: PLATFORM_PRESETS,
+            marketingCopyEnabled: !!scriptProvider,
         });
     }));
 
@@ -473,6 +475,72 @@ export function createApp({
         if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
         const updated = await store.setProjectAutoAssemble(project.id, null);
         res.json({ project: updated });
+    }));
+
+    // 🎁 حزمة تسويقية: من مشروع فيه لقطة جاهزة واحدة على الأقل، ثلاث نسخ
+    // منصات (تيك توك/يوتيوب/مربع — PLATFORM_PRESETS نفسها) عبر نفس نواة
+    // /assemble تماماً (checkAssemblyGates/finalizeAssembly)، بلا أي بوابة
+    // مختصرة؛ كل نسخة تُفحص وتُخصم مستقلة، فتقرير جزئي وارد وسليم. النص
+    // التسويقي خطوة مجانية منفصلة (بلا خصم ولا مهمة) — فشله لا يُسقط
+    // النسخ المرئية الناجحة أصلاً.
+    app.post('/api/video/projects/:id/marketing-pack', verifyToken, renderLimit, wrap(async (req, res) => {
+        const project = await ownedProject(req);
+        if (!project) return res.status(404).json({ error: 'المشروع غير موجود.' });
+        const username = userOf(req);
+
+        const ready = await readyShotsOf(store, project.id);
+        if (ready.length === 0) {
+            return res.status(400).json({ error: 'لا لقطات مكتملة في المشروع بعد — ولّد لقطة واحدة على الأقل.' });
+        }
+
+        const isPaidPlan = ['pro', 'enterprise'].includes(req.user.plan);
+        const appliedWatermark = (watermarkEnforced && !isPaidPlan) ? watermarkText : null;
+
+        const cuts = [];
+        for (const [preset, opts] of Object.entries(PLATFORM_PRESETS)) {
+            const resolved = resolveAssemblyOptions({ body: opts, project, musicLibrary, sfxLibrary, blocklist });
+            if (resolved.error) { cuts.push({ preset, error: resolved.error }); continue; }
+            const gated = await checkAssemblyGates(store, {
+                project, username, maxActiveJobsPerUser: MAX_ACTIVE_JOBS_PER_USER,
+                limits, exemptPerUser: isAdminUser(req.user),
+            });
+            if (gated.error) { cuts.push({ preset, error: gated.error }); continue; }
+            const outcome = await finalizeAssembly(store, {
+                project, username, storage, ready: gated.ready,
+                resolved: resolved.values, rawValues: resolved.raw, watermarkText: appliedWatermark,
+            });
+            if (outcome.error) { cuts.push({ preset, error: outcome.error }); continue; }
+            cuts.push({
+                preset,
+                job: { id: outcome.job.id, status: outcome.job.status, costCredits: outcome.job.costCredits },
+            });
+        }
+
+        let copy = null;
+        if (scriptProvider) {
+            try {
+                const shotPrompts = ready.map(s => String(s.values?.prompt || '').slice(0, 200)).filter(Boolean);
+                const raw = await scriptProvider.generateMarketingCopy({ projectTitle: project.title, shotPrompts });
+                // 🛡️ نفس انضباط مخرجات النموذج في plan-shots: طول محدود
+                // وفلترة محتوى قبل أن يصل أي نص للمستخدم — نص/وسم يفشل
+                // الفلترة يُسقَط بصمت بدل إفشال الحزمة كلها.
+                const headline = String(raw?.headline || '').trim().slice(0, 80);
+                const caption = String(raw?.caption || '').trim().slice(0, 300);
+                const hashtags = Array.isArray(raw?.hashtags)
+                    ? raw.hashtags.map(h => String(h || '').replace(/^#+/, '').trim().slice(0, 30))
+                        .filter(h => h && !inspectText(h, { blocklist })).slice(0, 8)
+                    : [];
+                copy = {
+                    headline: headline && !inspectText(headline, { blocklist }) ? headline : '',
+                    caption: caption && !inspectText(caption, { blocklist }) ? caption : '',
+                    hashtags,
+                };
+            } catch (e) {
+                console.warn(`⚠️ تعذّر توليد النص التسويقي للمشروع ${project.id}: ${e.message}`);
+            }
+        }
+
+        res.json({ cuts, copy });
     }));
 
     // ─── بنك الشخصيات (تثبيت هوية البطل) ───────────────────────────────
