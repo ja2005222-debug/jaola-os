@@ -7,6 +7,8 @@
  */
 import { createDuffelProvider } from './duffelProvider.js';
 import { createMockTravelProvider } from './mockProvider.js';
+import { createDuffelStaysProvider } from './duffelStaysProvider.js';
+import { createMockStaysProvider } from './mockStaysProvider.js';
 
 export function buildProvider(env = process.env) {
     if (env.DUFFEL_API_KEY) {
@@ -16,4 +18,15 @@ export function buildProvider(env = process.env) {
         });
     }
     return createMockTravelProvider();
+}
+
+/** نفس مفتاح الطيران بالضبط — Duffel Stays على نفس الحساب. */
+export function buildStaysProvider(env = process.env) {
+    if (env.DUFFEL_API_KEY) {
+        return createDuffelStaysProvider({
+            apiKey: env.DUFFEL_API_KEY,
+            apiUrl: env.DUFFEL_API_URL || undefined,
+        });
+    }
+    return createMockStaysProvider();
 }

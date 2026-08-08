@@ -7,17 +7,10 @@
  * cancelOrder بنفس أشكال المخرجات) فتتبادل الخدمتان بلا لمس server.js.
  */
 
+import { seedOf, pad } from './mockUtils.js';
+
 const MOCK_AIRLINES = ['طيران جاولا', 'أجنحة الصقر', 'سماء العرب'];
 const MOCK_CURRENCY = 'USD';
-
-/** بذرة رقمية حتمية من نص — لا عشوائية في الاختبارات. */
-function seedOf(text) {
-    let h = 0;
-    for (const ch of text) h = (h * 31 + ch.charCodeAt(0)) % 100000;
-    return h;
-}
-
-function pad(n) { return String(n).padStart(2, '0'); }
 
 export function createMockTravelProvider({ failCreate = false, failCancel = false } = {}) {
     const offers = new Map();  // id → عرض كامل (بالصافي)
