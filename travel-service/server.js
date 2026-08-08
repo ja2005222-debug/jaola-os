@@ -20,14 +20,17 @@ import { buildVerifyToken } from './src/auth.js';
 import { readMarkupPct, applyMarkup } from './src/pricing.js';
 import { createBooking, getBooking, listBookingsByUser, transitionBooking } from './src/bookings.js';
 import { buildStore } from './src/store/index.js';
-import { buildProvider } from './src/providers/index.js';
+import { buildProvider, buildStaysProvider } from './src/providers/index.js';
 import { buildTravelAgent } from './src/agent/agent.js';
+import { airportCoords } from './src/airports.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const CABINS = ['economy', 'premium_economy', 'business', 'first'];
 const MAX_ADULTS = 9;
 const MAX_CHILDREN = 8;
+const MAX_ROOMS = 5;
+const MAX_STAY_NIGHTS = 30;
 const MAX_BOOKING_WINDOW_DAYS = 330; // أقصى ما تفتحه أنظمة الحجز عادةً
 const MAX_AGENT_MESSAGES = 30;
 const MAX_AGENT_MESSAGE_CHARS = 4000;
@@ -122,6 +125,62 @@ export function validatePassengers(body, expectedCount) {
     return { values: { passengers: clean, contact: { email, phone } } };
 }
 
+/** يتحقق من معايير بحث الفنادق ويطبّعها — {error} أو {values}. */
+export function validateStaySearchParams(body) {
+    const iata = String(body?.iata || '').trim().toUpperCase();
+    if (!IATA_RE.test(iata)) {
+        return { error: 'رمز الوجهة يجب أن يكون IATA من ثلاثة أحرف (مثل RUH وCAI).' };
+    }
+    if (!airportCoords(iata)) {
+        return { error: `الوجهة ${iata} غير مغطّاة حالياً في بحث الفنادق.` };
+    }
+    const checkInDate = String(body?.checkInDate || '').trim();
+    if (!DATE_RE.test(checkInDate) || isNaN(Date.parse(checkInDate))) {
+        return { error: 'تاريخ الوصول بصيغة YYYY-MM-DD.' };
+    }
+    const checkInOffset = daysFromToday(checkInDate);
+    if (checkInOffset < 0) return { error: 'تاريخ الوصول في الماضي.' };
+    if (checkInOffset > MAX_BOOKING_WINDOW_DAYS) {
+        return { error: `تاريخ الوصول أبعد من نافذة الحجز (${MAX_BOOKING_WINDOW_DAYS} يوماً).` };
+    }
+    const checkOutDate = String(body?.checkOutDate || '').trim();
+    if (!DATE_RE.test(checkOutDate) || isNaN(Date.parse(checkOutDate))) {
+        return { error: 'تاريخ المغادرة بصيغة YYYY-MM-DD.' };
+    }
+    if (checkOutDate <= checkInDate) return { error: 'تاريخ المغادرة يجب أن يكون بعد الوصول.' };
+    const nights = Math.round((new Date(checkOutDate) - new Date(checkInDate)) / 86400000);
+    if (nights > MAX_STAY_NIGHTS) return { error: `أقصى مدة إقامة ${MAX_STAY_NIGHTS} ليلة.` };
+    const adults = body?.adults != null ? Number(body.adults) : 1;
+    const rooms = body?.rooms != null ? Number(body.rooms) : 1;
+    if (!Number.isInteger(adults) || adults < 1 || adults > MAX_ADULTS) {
+        return { error: `عدد البالغين بين 1 و${MAX_ADULTS}.` };
+    }
+    if (!Number.isInteger(rooms) || rooms < 1 || rooms > MAX_ROOMS) {
+        return { error: `عدد الغرف بين 1 و${MAX_ROOMS}.` };
+    }
+    return { values: { iata, checkInDate, checkOutDate, adults, rooms } };
+}
+
+/** يتحقق من بيانات ضيوف الفندق والتواصل — {error} أو {values}. */
+export function validateGuests(body) {
+    const guests = Array.isArray(body?.guests) ? body.guests : null;
+    if (!guests || guests.length === 0) return { error: 'بيانات الضيوف مطلوبة.' };
+    const clean = [];
+    for (const [i, g] of guests.entries()) {
+        const givenName = String(g?.givenName || '').trim();
+        const familyName = String(g?.familyName || '').trim();
+        if (!NAME_RE.test(givenName) || !NAME_RE.test(familyName)) {
+            return { error: `الضيف ${i + 1}: الاسمان بالحروف اللاتينية (حتى 40 حرفاً).` };
+        }
+        clean.push({ givenName, familyName });
+    }
+    const email = String(body?.contact?.email || '').trim();
+    const phone = String(body?.contact?.phone || '').replace(/[\s-]/g, '');
+    if (!EMAIL_RE.test(email)) return { error: 'بريد تواصل صالح مطلوب.' };
+    if (!PHONE_RE.test(phone)) return { error: 'هاتف تواصل صالح مطلوب (أرقام دولية).' };
+    return { values: { guests: clean, contact: { email, phone } } };
+}
+
 /** عرض للعميل: sellAmount فقط — الصافي netAmount **لا يغادر الخادم**. */
 function publicOffer(offer, markupPct) {
     const { netAmount, passengerIds, ...rest } = offer;
@@ -130,7 +189,7 @@ function publicOffer(offer, markupPct) {
 
 function publicBooking(b) {
     return {
-        id: b.id, at: b.at, updatedAt: b.updatedAt, status: b.status,
+        id: b.id, at: b.at, updatedAt: b.updatedAt, status: b.status, kind: b.kind || 'flight',
         bookingReference: b.bookingReference,
         sellAmount: b.sellAmount, currency: b.currency,
         offer: b.offer, passengers: b.passengers, contact: b.contact,
@@ -142,6 +201,7 @@ export function createApp({
     store,
     jwtSecret,
     provider,
+    staysProvider = null,
     agent = null,
     markupPct = readMarkupPct(),
 }) {
@@ -207,8 +267,8 @@ export function createApp({
 
     async function doCancel(username, bookingId) {
         const booking = await getBooking(store, String(bookingId || ''));
-        // عزل صارم: حجز مستخدم آخر يُعامل كغير موجود (404 لا 403)
-        if (!booking || booking.username !== username) {
+        // عزل صارم: حجز مستخدم آخر (أو من نوع مختلف) يُعامل كغير موجود (404 لا 403)
+        if (!booking || booking.username !== username || (booking.kind || 'flight') !== 'flight') {
             throw Object.assign(new Error('الحجز غير موجود.'), { status: 404 });
         }
         if (booking.status !== 'issued') {
@@ -227,6 +287,75 @@ export function createApp({
         return bookings.map(publicBooking);
     }
 
+    // ─── الفنادق (Duffel Stays) — محاذاة دوال الطيران أعلاه سطراً بسطر ──
+
+    function requireStays() {
+        if (!staysProvider) throw Object.assign(new Error('حجز الفنادق غير مفعَّل حالياً.'), { status: 503 });
+    }
+
+    async function doSearchStays(params) {
+        requireStays();
+        const check = validateStaySearchParams(params);
+        if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
+        const offers = await staysProvider.searchStays(check.values);
+        return offers.map(o => publicOffer(o, markupPct));
+    }
+
+    async function doGetStayOffer(offerId) {
+        requireStays();
+        const offer = await staysProvider.getStayOffer(String(offerId || ''));
+        return offer ? publicOffer(offer, markupPct) : null;
+    }
+
+    async function doBookStay(username, { offerId, guests, contact }) {
+        requireStays();
+        const offer = await staysProvider.getStayOffer(String(offerId || ''));
+        if (!offer) throw Object.assign(new Error('عرض الفندق غير موجود أو انتهت صلاحيته — أعد البحث.'), { status: 404 });
+        const check = validateGuests({ guests, contact });
+        if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
+
+        const sellAmount = applyMarkup(offer.netAmount, markupPct);
+        const { netAmount: _net, ...offerSummary } = offer;
+        const booking = await createBooking(store, {
+            username, provider: staysProvider.name, kind: 'stay',
+            offer: offerSummary,
+            passengers: check.values.guests,
+            contact: check.values.contact,
+            netAmount: offer.netAmount, sellAmount, currency: offer.currency,
+        });
+        try {
+            const order = await staysProvider.createStayOrder({
+                offerId: offer.id,
+                guests: check.values.guests,
+                contact: check.values.contact,
+            });
+            const issued = await transitionBooking(store, booking.id, 'issued', {
+                providerOrderId: order.orderId,
+                bookingReference: order.bookingReference,
+            });
+            return publicBooking(issued);
+        } catch (e) {
+            await transitionBooking(store, booking.id, 'failed', { error: e.message });
+            throw Object.assign(new Error(`تعذّر إصدار حجز الفندق: ${e.message}`), { status: 502 });
+        }
+    }
+
+    async function doCancelStay(username, bookingId) {
+        requireStays();
+        const booking = await getBooking(store, String(bookingId || ''));
+        if (!booking || booking.username !== username || booking.kind !== 'stay') {
+            throw Object.assign(new Error('الحجز غير موجود.'), { status: 404 });
+        }
+        if (booking.status !== 'issued') {
+            throw Object.assign(new Error('الإلغاء متاح للحجوزات المُصدَرة فقط.'), { status: 400 });
+        }
+        const result = await staysProvider.cancelStayOrder(booking.providerOrderId);
+        const cancelled = await transitionBooking(store, booking.id, 'cancelled', {
+            refund: { amount: result.refundAmount ?? null, currency: result.currency ?? null },
+        });
+        return publicBooking(cancelled || await getBooking(store, booking.id));
+    }
+
     // ─── المسارات ─────────────────────────────────────────────────────
 
     app.get('/api/travel/health', (req, res) => {
@@ -238,9 +367,12 @@ export function createApp({
             cabins: CABINS,
             maxAdults: MAX_ADULTS,
             maxChildren: MAX_CHILDREN,
+            maxRooms: MAX_ROOMS,
             provider: provider.name,
             // sandbox/mock → الواجهة تعرض لافتة "بيئة تجريبية" بصدق
             providerMode: provider.mode || 'live',
+            staysEnabled: !!staysProvider,
+            staysProviderMode: staysProvider?.mode || null,
             agentEnabled: !!agent,
         });
     }));
@@ -291,6 +423,47 @@ export function createApp({
         }
     }));
 
+    // ─── الفنادق (Duffel Stays) — محاذاة مسارات الطيران أعلاه ──────────
+
+    app.post('/api/travel/stays/search', verifyToken, searchLimiter, wrap(async (req, res) => {
+        try {
+            res.json({ offers: await doSearchStays(req.body) });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
+    app.get('/api/travel/stays/offers/:id', verifyToken, wrap(async (req, res) => {
+        try {
+            const offer = await doGetStayOffer(req.params.id);
+            if (!offer) return res.status(404).json({ error: 'عرض الفندق غير موجود أو انتهت صلاحيته.' });
+            res.json({ offer });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
+    app.post('/api/travel/stays/bookings', verifyToken, wrap(async (req, res) => {
+        try {
+            const booking = await doBookStay(userOf(req), req.body || {});
+            res.json({ booking });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
+    app.post('/api/travel/stays/bookings/:id/cancel', verifyToken, wrap(async (req, res) => {
+        try {
+            res.json({ booking: await doCancelStay(userOf(req), req.params.id) });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
     // ─── 🤖 الايجنت الحاجز ────────────────────────────────────────────
 
     app.post('/api/travel/agent/chat', verifyToken, agentLimiter, wrap(async (req, res) => {
@@ -317,6 +490,10 @@ export function createApp({
             bookFlight: args => doBook(username, args),
             listBookings: () => listMine(username),
             cancelBooking: id => doCancel(username, id),
+            searchStays: staysProvider ? params => doSearchStays(params) : null,
+            getStayOffer: staysProvider ? id => doGetStayOffer(id) : null,
+            bookStay: staysProvider ? args => doBookStay(username, args) : null,
+            cancelStay: staysProvider ? id => doCancelStay(username, id) : null,
         };
         try {
             const result = await agent.chat({ messages, services });
@@ -343,6 +520,7 @@ if (isMain) {
         dataDir: process.env.TRAVEL_DATA_DIR || path.join(__dirname, '.travelportal'),
     });
     const provider = buildProvider();
+    const staysProvider = buildStaysProvider();
     const agent = buildTravelAgent();
     const markupPct = readMarkupPct();
 
@@ -353,13 +531,14 @@ if (isMain) {
         // السر السابق (اختياري) يُقبل أثناء تدوير المفتاح فقط — يُزال بعده.
         jwtSecret: [process.env.JWT_SECRET, process.env.JWT_SECRET_PREVIOUS],
         provider,
+        staysProvider,
         agent,
         markupPct,
     });
 
     const port = Number(process.env.PORT || 4200);
     app.listen(port, () => {
-        console.log(`✈️ بوابة السفر على المنفذ ${port} (المزوّد: ${provider.name}/${provider.mode || 'live'}، التخزين: ${store.name}، الهامش: ${markupPct}%)`);
+        console.log(`✈️ بوابة السفر على المنفذ ${port} (المزوّد: ${provider.name}/${provider.mode || 'live'}، الفنادق: ${staysProvider.name}/${staysProvider.mode || 'live'}، التخزين: ${store.name}، الهامش: ${markupPct}%)`);
         if (!agent) console.warn('⚠️ الايجنت غير مفعَّل — اضبط TRAVEL_AGENT_API_KEY لتفعيل المساعد الحاجز.');
         if (provider.name === 'mock') console.warn('⚠️ مزوّد محاكاة — اضبط DUFFEL_API_KEY (يبدأ بـduffel_test للتجريبي).');
         if (store.name === 'file') {

@@ -25,15 +25,17 @@ const DEFAULT_MODEL = 'llama-3.3-70b-versatile';
 const MAX_TOOL_ROUNDS = 6;
 const MAX_TOOL_RESULT_CHARS = 6000;
 
-const SYSTEM_PROMPT = `أنت "مساعد جاولا للسفر" — وكيل حجز طيران محترف يتحدث العربية (أو لغة المستخدم).
-قدراتك عبر الأدوات: البحث عن رحلات، فحص عرض محدد، حجز فعلي، عرض حجوزات المستخدم، وإلغاء حجز.
+const SYSTEM_PROMPT = `أنت "مساعد جاولا للسفر" — وكيل سفر شامل محترف يتحدث العربية (أو لغة المستخدم)، لا مجرد حاجز طيران.
+قدراتك عبر الأدوات: بحث رحلات وفنادق، فحص عرض محدد، حجز فعلي (طيران/فنادق)، عرض حجوزات المستخدم، وإلغاء حجز.
 قواعد صارمة:
-1. الأسعار التي تعيدها الأدوات نهائية وشاملة — لا تخترع أسعاراً أو رحلات من ذاكرتك أبداً؛ كل معلومة رحلة تأتي من أداة.
-2. قبل أي حجز: اعرض ملخص الرحلة والسعر الإجمالي واسأل المستخدم صراحةً "هل أؤكد الحجز؟" — لا تضبط confirmed=true إلا بعد موافقة صريحة في رسالة المستخدم الأخيرة.
-3. للحجز تحتاج لكل مسافر: اللقب (mr/ms/mrs)، الاسم الأول واسم العائلة بالحروف اللاتينية كما في الجواز، تاريخ الميلاد (YYYY-MM-DD)، والجنس (m/f) — ولا تنس بريد التواصل والهاتف. اجمعها بالحوار إن نقصت.
+1. الأسعار التي تعيدها الأدوات نهائية وشاملة — لا تخترع أسعاراً أو رحلات أو فنادق من ذاكرتك أبداً؛ كل معلومة رحلة/فندق تأتي من أداة.
+2. قبل أي حجز: اعرض ملخص الرحلة/الإقامة والسعر الإجمالي واسأل المستخدم صراحةً "هل أؤكد الحجز؟" — لا تضبط confirmed=true إلا بعد موافقة صريحة في رسالة المستخدم الأخيرة.
+3. للحجز تحتاج لكل مسافر: اللقب (mr/ms/mrs)، الاسم الأول واسم العائلة بالحروف اللاتينية كما في الجواز، تاريخ الميلاد (YYYY-MM-DD)، والجنس (m/f) — ولا تنس بريد التواصل والهاتف. اجمعها بالحوار إن نقصت. للفنادق يكفي اسم كل ضيق (بالحروف اللاتينية) + بريد وهاتف تواصل، بلا جواز أو ميلاد.
 4. قبل الإلغاء: أكد مع المستخدم واذكر أن مبلغ الاسترداد يحدده المزوّد.
-5. كن موجزاً وعملياً — رقّم الخيارات ليسهل الاختيار، واذكر التوقيتات والمدة وعدد التوقفات.
-6. رموز المطارات IATA من ثلاثة أحرف (RUH, JED, CAI, DXB...) — استنتجها من أسماء المدن، واسأل عند اللبس.`;
+5. كن موجزاً وعملياً — رقّم الخيارات ليسهل الاختيار، واذكر التوقيتات والمدة وعدد التوقفات (للطيران) أو التقييم والليالي (للفنادق).
+6. رموز المطارات IATA من ثلاثة أحرف (RUH, JED, CAI, DXB...) — استنتجها من أسماء المدن، واسأل عند اللبس. بحث الفنادق يستخدم نفس رمز المطار كمرجع للمدينة.
+7. بعد حجز رحلة طيران بنجاح، اقترح على المستخدم فندقاً بنفس الوجهة وتواريخ قريبة (عبر search_stays) إن كان ذلك منطقياً — لا تفترض موافقته، اقترح فقط.
+8. عند نتائج بحث غالية جداً أو معدومة، جرّب مطارات قريبة أو تواريخ مجاورة (نداءات search_flights/search_stays إضافية) قبل إخبار المستخدم بعدم وجود خيارات — لا تستسلم من أول محاولة.`;
 
 /** تعريفات الأدوات بصيغة OpenAI tools الموثَّقة. */
 export const AGENT_TOOLS = [
@@ -115,7 +117,83 @@ export const AGENT_TOOLS = [
         type: 'function',
         function: {
             name: 'cancel_booking',
-            description: 'يلغي حجزاً قائماً (issued) بعد تأكيد المستخدم. الاسترداد حسب سياسة المزوّد.',
+            description: 'يلغي حجز رحلة قائم (issued) بعد تأكيد المستخدم. الاسترداد حسب سياسة المزوّد.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    bookingId: { type: 'string' },
+                    confirmed: { type: 'boolean', description: 'true فقط بعد تأكيد المستخدم الصريح للإلغاء' },
+                },
+                required: ['bookingId', 'confirmed'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'search_stays',
+            description: 'يبحث عن فنادق متاحة قرب وجهة محددة بأسعار نهائية. يعيد قائمة عروض بمعرّفاتها.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    iata: { type: 'string', description: 'رمز IATA لمطار أقرب مدينة (مثل RUH أو DXB)' },
+                    checkInDate: { type: 'string', description: 'تاريخ الوصول YYYY-MM-DD' },
+                    checkOutDate: { type: 'string', description: 'تاريخ المغادرة YYYY-MM-DD' },
+                    adults: { type: 'integer', description: 'عدد البالغين (افتراضي 1)' },
+                    rooms: { type: 'integer', description: 'عدد الغرف (افتراضي 1)' },
+                },
+                required: ['iata', 'checkInDate', 'checkOutDate'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_stay_offer',
+            description: 'يجلب تفاصيل عرض فندق محدد بسعر محدَّث (العروض تنتهي صلاحيتها).',
+            parameters: {
+                type: 'object',
+                properties: { offerId: { type: 'string' } },
+                required: ['offerId'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'book_stay',
+            description: 'يحجز عرض فندق فعلياً. لا تستخدمه إلا بعد موافقة المستخدم الصريحة على الملخص والسعر.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    offerId: { type: 'string' },
+                    guests: {
+                        type: 'array',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                givenName: { type: 'string' },
+                                familyName: { type: 'string' },
+                            },
+                            required: ['givenName', 'familyName'],
+                        },
+                    },
+                    contact: {
+                        type: 'object',
+                        properties: { email: { type: 'string' }, phone: { type: 'string' } },
+                        required: ['email', 'phone'],
+                    },
+                    confirmed: { type: 'boolean', description: 'true فقط بعد موافقة المستخدم الصريحة على الحجز' },
+                },
+                required: ['offerId', 'guests', 'contact', 'confirmed'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'cancel_stay',
+            description: 'يلغي حجز فندق قائم (issued) بعد تأكيد المستخدم. الاسترداد حسب سياسة المزوّد.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -169,6 +247,40 @@ export async function executeAgentTool(name, args, services) {
                 }
                 const result = await services.cancelBooking(args.bookingId);
                 return { ok: true, summary: `↩️ أُلغي الحجز ${args.bookingId}`, data: result };
+            }
+            case 'search_stays': {
+                if (!services.searchStays) return { ok: false, data: { error: 'حجز الفنادق غير مفعَّل حالياً.' } };
+                const offers = await services.searchStays(args);
+                return { ok: true, summary: `🏨 ${args.iata} (${offers.length} فنادق)`, data: offers };
+            }
+            case 'get_stay_offer': {
+                if (!services.getStayOffer) return { ok: false, data: { error: 'حجز الفنادق غير مفعَّل حالياً.' } };
+                const offer = await services.getStayOffer(args.offerId);
+                if (!offer) return { ok: false, data: { error: 'عرض الفندق غير موجود أو انتهت صلاحيته — أعد البحث.' } };
+                return { ok: true, summary: `💰 عرض فندق بسعر ${offer.sellAmount} ${offer.currency}`, data: offer };
+            }
+            case 'book_stay': {
+                if (!services.bookStay) return { ok: false, data: { error: 'حجز الفنادق غير مفعَّل حالياً.' } };
+                if (args.confirmed !== true) {
+                    return { ok: false, data: { error: 'الحجز يتطلب موافقة المستخدم الصريحة أولاً — اعرض الملخص والسعر واسأله، ثم أعد النداء بـconfirmed=true.' } };
+                }
+                const booking = await services.bookStay(args);
+                return {
+                    ok: true,
+                    summary: `✅ حُجز فندق — المرجع ${booking.bookingReference}`,
+                    data: {
+                        bookingId: booking.id, bookingReference: booking.bookingReference,
+                        status: booking.status, total: `${booking.sellAmount} ${booking.currency}`,
+                    },
+                };
+            }
+            case 'cancel_stay': {
+                if (!services.cancelStay) return { ok: false, data: { error: 'حجز الفنادق غير مفعَّل حالياً.' } };
+                if (args.confirmed !== true) {
+                    return { ok: false, data: { error: 'الإلغاء يتطلب تأكيد المستخدم الصريح — اسأله أولاً ثم أعد النداء بـconfirmed=true.' } };
+                }
+                const result = await services.cancelStay(args.bookingId);
+                return { ok: true, summary: `↩️ أُلغي حجز الفندق ${args.bookingId}`, data: result };
             }
             default:
                 return { ok: false, data: { error: `أداة مجهولة: ${name}` } };

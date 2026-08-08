@@ -16,10 +16,12 @@ import os from 'os';
 import path from 'path';
 import jwt from 'jsonwebtoken';
 
-import { createApp, validateSearchParams, validatePassengers } from '../server.js';
+import { createApp, validateSearchParams, validatePassengers, validateStaySearchParams, validateGuests } from '../server.js';
 import { createMockTravelProvider } from '../src/providers/mockProvider.js';
 import { createDuffelProvider, normalizeDuffelOffer } from '../src/providers/duffelProvider.js';
-import { buildProvider } from '../src/providers/index.js';
+import { createMockStaysProvider } from '../src/providers/mockStaysProvider.js';
+import { normalizeDuffelStayResult } from '../src/providers/duffelStaysProvider.js';
+import { buildProvider, buildStaysProvider } from '../src/providers/index.js';
 import { readMarkupPct, applyMarkup, DEFAULT_MARKUP_PCT } from '../src/pricing.js';
 import { canTransition, createBooking, transitionBooking, getBooking } from '../src/bookings.js';
 import { createFileStore } from '../src/store/fileStore.js';
@@ -46,10 +48,19 @@ const VALID_PAX = {
     contact: { email: 'a@test.com', phone: '+966500000000' },
 };
 
+const STAY_SEARCH_BODY = () => ({
+    iata: 'RUH', checkInDate: futureDate(14), checkOutDate: futureDate(17), adults: 1, rooms: 1,
+});
+
+const VALID_GUESTS = {
+    guests: [{ givenName: 'AHMED', familyName: 'ALI' }],
+    contact: { email: 'a@test.com', phone: '+966500000000' },
+};
+
 // ─── المجموعة الكاملة، مُعامَلة بمصنع المخزن ──────────────────────────
 function runSuite(storeLabel, { makeStore, resetStore }) {
     describe(`بوابة السفر — تخزين: ${storeLabel}`, () => {
-        let store, server, baseUrl, provider;
+        let store, server, baseUrl, provider, staysProvider;
 
         async function call(pathname, { method = 'GET', token = null, body = null } = {}) {
             const headers = { 'Content-Type': 'application/json' };
@@ -66,7 +77,8 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             store = await makeStore();
             await store.init();
             provider = createMockTravelProvider();
-            const app = createApp({ store, jwtSecret: JWT_SECRET, provider, markupPct: MARKUP });
+            staysProvider = createMockStaysProvider();
+            const app = createApp({ store, jwtSecret: JWT_SECRET, provider, staysProvider, markupPct: MARKUP });
             server = await new Promise(r => { const s = app.listen(0, () => r(s)); });
             baseUrl = `http://127.0.0.1:${server.address().port}`;
         });
@@ -120,6 +132,8 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 ['POST', '/api/travel/flights/search'],
                 ['GET', '/api/travel/bookings'],
                 ['POST', '/api/travel/agent/chat'],
+                ['POST', '/api/travel/stays/search'],
+                ['POST', '/api/travel/stays/bookings'],
             ]) {
                 assert.equal((await call(pathname, { method })).status, 401, pathname);
             }
@@ -293,6 +307,100 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(d.mode, 'sandbox');
             assert.equal(buildProvider({ DUFFEL_API_KEY: 'duffel_live_x' }).mode, 'live');
             assert.throws(() => createDuffelProvider({}));
+
+            assert.equal(buildStaysProvider({}).name, 'mock-stays');
+            const ds = buildStaysProvider({ DUFFEL_API_KEY: 'duffel_test_abc' });
+            assert.equal(ds.name, 'duffel-stays');
+            assert.equal(ds.mode, 'sandbox');
+        });
+
+        test('🏨 بحث الفنادق: تحقق صارم من المعايير + الهامش مطبَّق والصافي لا يتسرب', async () => {
+            const token = makeToken('stay-searcher');
+            for (const bad of [
+                { ...STAY_SEARCH_BODY(), iata: 'RUHX' },                    // IATA فاسد
+                { ...STAY_SEARCH_BODY(), iata: 'ZZZ' },                     // غير مغطّى
+                { ...STAY_SEARCH_BODY(), checkInDate: '2020-01-01' },       // ماضٍ
+                { ...STAY_SEARCH_BODY(), checkOutDate: futureDate(10) },    // مغادرة قبل وصول
+                { ...STAY_SEARCH_BODY(), checkOutDate: futureDate(50) },    // أطول من الحد
+                { ...STAY_SEARCH_BODY(), adults: 0 },
+                { ...STAY_SEARCH_BODY(), rooms: 0 },
+                { ...STAY_SEARCH_BODY(), rooms: 10 },
+            ]) {
+                const r = await call('/api/travel/stays/search', { method: 'POST', token, body: bad });
+                assert.equal(r.status, 400, JSON.stringify(bad));
+            }
+
+            const ok = await call('/api/travel/stays/search', { method: 'POST', token, body: STAY_SEARCH_BODY() });
+            assert.equal(ok.status, 200);
+            assert.equal(ok.data.offers.length, 4);
+            const rawOffers = await staysProvider.searchStays(STAY_SEARCH_BODY());
+            for (const [i, offer] of ok.data.offers.entries()) {
+                assert.equal(offer.sellAmount, applyMarkup(rawOffers[i].netAmount, MARKUP));
+                assert.equal(offer.netAmount, undefined); // 💰 لا تسريب للصافي
+            }
+
+            const one = await call(`/api/travel/stays/offers/${rawOffers[0].id}`, { token });
+            assert.equal(one.status, 200);
+            assert.equal(one.data.offer.netAmount, undefined);
+            assert.equal((await call('/api/travel/stays/offers/ghost', { token })).status, 404);
+        });
+
+        test('🏨🎫 حجز فندق كامل: pending→issued بمرجع، وحجوزاتي موحّدة طيران+فنادق، وعزل الملكية', async () => {
+            const token = makeToken('stay-booker');
+            const search = await call('/api/travel/stays/search', { method: 'POST', token, body: STAY_SEARCH_BODY() });
+            const offerId = search.data.offers[0].id;
+
+            for (const badGuests of [
+                {},
+                { ...VALID_GUESTS, guests: [{ ...VALID_GUESTS.guests[0], givenName: 'أحمد' }] }, // غير لاتيني
+                { ...VALID_GUESTS, contact: { email: 'bad', phone: '+966500000000' } },
+            ]) {
+                const r = await call('/api/travel/stays/bookings', { method: 'POST', token, body: { offerId, ...badGuests } });
+                assert.equal(r.status, 400, JSON.stringify(badGuests).slice(0, 80));
+            }
+
+            assert.equal((await call('/api/travel/stays/bookings', {
+                method: 'POST', token, body: { offerId: 'ghost', ...VALID_GUESTS },
+            })).status, 404);
+
+            const booked = await call('/api/travel/stays/bookings', { method: 'POST', token, body: { offerId, ...VALID_GUESTS } });
+            assert.equal(booked.status, 200);
+            const b = booked.data.booking;
+            assert.equal(b.status, 'issued');
+            assert.equal(b.kind, 'stay');
+            assert.match(b.bookingReference, /^JAH\d+/);
+
+            // القائمة الموحّدة تعيد الفندق (kind: stay) — بلا أداة عرض إضافية
+            const list = await call('/api/travel/bookings', { token });
+            assert.equal(list.data.bookings.length, 1);
+            assert.equal(list.data.bookings[0].kind, 'stay');
+
+            // عزل صارم + عزل بين الأنواع: مسار إلغاء الطيران لا يلغي حجز فندق
+            const stranger = makeToken('stay-stranger');
+            assert.equal((await call(`/api/travel/stays/bookings/${b.id}/cancel`, { method: 'POST', token: stranger })).status, 404);
+            assert.equal((await call(`/api/travel/bookings/${b.id}/cancel`, { method: 'POST', token })).status, 404);
+
+            const cancelled = await call(`/api/travel/stays/bookings/${b.id}/cancel`, { method: 'POST', token });
+            assert.equal(cancelled.status, 200);
+            assert.equal(cancelled.data.booking.status, 'cancelled');
+            assert.ok(cancelled.data.booking.refund.amount > 0);
+            assert.equal((await call(`/api/travel/stays/bookings/${b.id}/cancel`, { method: 'POST', token })).status, 400);
+        });
+
+        test('✈️🏨 تطبيع نتيجة Duffel Stays: الشكل الخام الموثَّق → العرض الموحّد', () => {
+            const raw = {
+                cheapest_rate: { id: 'rat_123', total_amount: '340.00', total_currency: 'USD', refundable_until: '2027-01-10' },
+                accommodation: {
+                    id: 'acc_1', name: 'Test Hotel', rating: 4,
+                    location: { address: { city_name: 'Riyadh', country_code: 'SA' } },
+                },
+            };
+            const offer = normalizeDuffelStayResult(raw);
+            assert.equal(offer.id, 'rat_123');
+            assert.equal(offer.netAmount, 340);
+            assert.equal(offer.name, 'Test Hotel');
+            assert.equal(offer.city, 'Riyadh');
+            assert.equal(offer.cancellable, true);
         });
     });
 }
@@ -429,6 +537,43 @@ describe('الايجنت الحاجز', () => {
         const names = AGENT_TOOLS.map(t => t.function.name);
         assert.equal(new Set(names).size, names.length);
         for (const t of AGENT_TOOLS) assert.ok(t.function.parameters);
+    });
+
+    test('🏨 حارس حجز الفندق: بلا خدمة → رسالة تعليمية، وconfirmed=true يحجز فعلاً', async () => {
+        const username = 'agent-stay-booker';
+        const bookArgs = { offerId: 'off_x', ...VALID_GUESTS };
+
+        // الخدمة غير محقونة (حجز فنادق معطَّل على هذا الخادم) → رسالة لا استثناء
+        const disabled = await executeAgentTool('book_stay', { ...bookArgs, confirmed: true }, {});
+        assert.equal(disabled.ok, false);
+        assert.match(disabled.data.error, /غير مفعَّل/);
+
+        const services = {
+            bookStay: async (args) => {
+                const booking = await createBooking(store, {
+                    username, provider: 'mock-stays', kind: 'stay',
+                    offer: { name: 'x' },
+                    passengers: args.guests, contact: args.contact,
+                    netAmount: 200, sellAmount: 220, currency: 'USD',
+                });
+                return { ...booking, bookingReference: 'JAH9999', status: 'issued', sellAmount: 220, currency: 'USD' };
+            },
+            cancelStay: async () => ({ status: 'cancelled' }),
+        };
+
+        // بلا تأكيد → رسالة تعليمية ولا حجز
+        const refused = await executeAgentTool('book_stay', { ...bookArgs, confirmed: false }, services);
+        assert.equal(refused.ok, false);
+        assert.equal((await store.listBookingsByUser(username)).length, 0);
+
+        // بتأكيد صريح → حجز فعلي
+        const done = await executeAgentTool('book_stay', { ...bookArgs, confirmed: true }, services);
+        assert.equal(done.ok, true);
+        assert.equal(done.data.bookingReference, 'JAH9999');
+        assert.equal((await store.listBookingsByUser(username)).length, 1);
+
+        const cancelRefused = await executeAgentTool('cancel_stay', { bookingId: 'b1', confirmed: false }, services);
+        assert.equal(cancelRefused.ok, false);
     });
 });
 

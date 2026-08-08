@@ -22,11 +22,11 @@ export function canTransition(from, to) {
     return (ALLOWED[from] || []).includes(to);
 }
 
-export async function createBooking(store, { username, provider, offer, passengers, contact, netAmount, sellAmount, currency }) {
+export async function createBooking(store, { username, provider, offer, passengers, contact, netAmount, sellAmount, currency, kind = 'flight' }) {
     return store.createBooking({
         username: String(username || '').trim().toLowerCase(),
         provider, offer, passengers, contact,
-        netAmount, sellAmount, currency,
+        netAmount, sellAmount, currency, kind,
         status: 'pending',
     });
 }

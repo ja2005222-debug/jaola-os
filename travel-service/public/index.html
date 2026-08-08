@@ -348,8 +348,19 @@
       }
     });
 
-    // ─── رحلاتي ───
+    // ─── رحلاتي (طيران + فنادق موحّدة) ───
     const ST_LABEL = { issued: 'مُصدَر ✅', pending: 'قيد الإصدار', failed: 'فشل', cancelled: 'مُلغى' };
+    const CANCEL_PATH = { flight: id => `/api/travel/bookings/${id}/cancel`, stay: id => `/api/travel/stays/bookings/${id}/cancel` };
+    function bookingBodyHtml(b) {
+      if (b.kind === 'stay') {
+        return `<div class="route">🏨 ${esc(b.offer?.name || '')}
+            <span class="st st-${esc(b.status)}">${ST_LABEL[b.status] || esc(b.status)}</span></div>
+          <div class="seg">${esc(b.offer?.city || '')} · ${esc(b.offer?.checkInDate || '')} → ${esc(b.offer?.checkOutDate || '')}</div>`;
+      }
+      return `<div class="route">${esc(b.offer?.owner || '')}
+          <span class="st st-${esc(b.status)}">${ST_LABEL[b.status] || esc(b.status)}</span></div>
+        ${(b.offer?.slices || []).map(sliceHtml).join('')}`;
+    }
     async function loadTrips() {
       const res = await api('/api/travel/bookings');
       if (!res.ok) return;
@@ -360,23 +371,22 @@
           <div class="card">
             <div class="offer">
               <div style="flex:1">
-                <div class="route">${esc(b.offer?.owner || '')}
-                  <span class="st st-${esc(b.status)}">${ST_LABEL[b.status] || esc(b.status)}</span></div>
-                ${(b.offer?.slices || []).map(sliceHtml).join('')}
+                ${bookingBodyHtml(b)}
                 ${b.bookingReference ? `<div class="note">المرجع: <strong>${esc(b.bookingReference)}</strong></div>` : ''}
                 ${b.error ? `<div class="error">${esc(b.error)}</div>` : ''}
                 ${b.refund && b.refund.amount != null ? `<div class="note">↩️ استرداد: ${b.refund.amount} ${esc(b.refund.currency || '')}</div>` : ''}
               </div>
               <div style="text-align:center">
                 <div class="price">${b.sellAmount} ${esc(b.currency)}</div>
-                ${b.status === 'issued' ? `<button class="chip" data-cancel="${esc(b.id)}">إلغاء الحجز</button>` : ''}
+                ${b.status === 'issued' ? `<button class="chip" data-cancel="${esc(b.id)}" data-kind="${esc(b.kind || 'flight')}">إلغاء الحجز</button>` : ''}
               </div>
             </div>
           </div>`).join('');
       document.querySelectorAll('[data-cancel]').forEach(btn =>
         btn.addEventListener('click', async () => {
           if (!confirm('إلغاء هذا الحجز؟ مبلغ الاسترداد يحدده المزوّد.')) return;
-          const res = await api(`/api/travel/bookings/${btn.dataset.cancel}/cancel`, { method: 'POST' });
+          const path = (CANCEL_PATH[btn.dataset.kind] || CANCEL_PATH.flight)(btn.dataset.cancel);
+          const res = await api(path, { method: 'POST' });
           const data = await res.json();
           if (!res.ok) alert(data.error || 'تعذّر الإلغاء.');
           loadTrips();
@@ -417,7 +427,7 @@
         pushMsg('bot', data.reply);
         chatHistory.push({ role: 'assistant', content: data.reply });
         // إجراء نفّذ حجزاً/إلغاءً؟ حدّث الرحلات في الخلفية
-        if ((data.actions || []).some(a => ['book_flight', 'cancel_booking'].includes(a.tool))) loadTrips();
+        if ((data.actions || []).some(a => ['book_flight', 'cancel_booking', 'book_stay', 'cancel_stay'].includes(a.tool))) loadTrips();
       } catch {
         pushMsg('bot', '⚠️ تعذّر الاتصال بالخادم.');
       } finally {

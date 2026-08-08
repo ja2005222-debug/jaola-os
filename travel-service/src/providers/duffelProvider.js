@@ -20,8 +20,7 @@
  * بتفصيل رد Duffel لا فشلاً صامتاً.
  */
 
-const DEFAULT_API_URL = 'https://api.duffel.com';
-const DUFFEL_VERSION = 'v2';
+import { createDuffelClient } from './duffelClient.js';
 
 /** يطبّع عرض Duffel الخام إلى شكل العرض الموحّد الذي يفهمه بقية النظام. */
 export function normalizeDuffelOffer(raw, passengerIds) {
@@ -60,34 +59,13 @@ export function normalizeDuffelOffer(raw, passengerIds) {
     };
 }
 
-export function createDuffelProvider({ apiKey, apiUrl = DEFAULT_API_URL, fetchImpl = fetch }) {
-    if (!apiKey) throw new Error('مفتاح Duffel مطلوب.');
-    // مفاتيح Duffel الاختبارية تبدأ بـduffel_test — نكشف الوضع للواجهة
-    // لتعرض لافتة "بيئة تجريبية" بصدق.
-    const mode = apiKey.startsWith('duffel_test') ? 'sandbox' : 'live';
-
-    async function duffel(method, pathname, body = null) {
-        const res = await fetchImpl(`${apiUrl}${pathname}`, {
-            method,
-            headers: {
-                Authorization: `Bearer ${apiKey}`,
-                'Duffel-Version': DUFFEL_VERSION,
-                'Content-Type': 'application/json',
-                Accept: 'application/json',
-            },
-            body: body ? JSON.stringify(body) : undefined,
-        });
-        const payload = await res.json().catch(() => ({}));
-        if (!res.ok) {
-            const detail = (payload.errors || []).map(e => e.message || e.title).join('؛ ');
-            throw new Error(`Duffel HTTP ${res.status}: ${detail || 'خطأ غير مفصَّل'}`);
-        }
-        return payload.data;
-    }
+export function createDuffelProvider({ apiKey, apiUrl, fetchImpl }) {
+    const client = createDuffelClient({ apiKey, apiUrl, fetchImpl });
+    const duffel = client.request;
 
     return {
         name: 'duffel',
-        mode,
+        mode: client.mode,
 
         async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, children = 0, cabin = 'economy' }) {
             const slices = [{ origin, destination, departure_date: departDate }];

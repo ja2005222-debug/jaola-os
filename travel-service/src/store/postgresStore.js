@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS travel_bookings (
     username        TEXT NOT NULL,
     provider        TEXT NOT NULL,
     status          TEXT NOT NULL,
+    kind            TEXT NOT NULL DEFAULT 'flight',
     offer_json      JSONB NOT NULL,
     passengers_json JSONB NOT NULL,
     contact_json    JSONB NOT NULL,
@@ -27,6 +28,9 @@ CREATE TABLE IF NOT EXISTS travel_bookings (
     error           TEXT,
     refund_json     JSONB
 );
+-- توسعة المرحلة ١ الموجودة أصلاً في الإنتاج: عمود إضافي غير هدّام
+-- (الصفوف الحالية تصبح 'flight' تلقائياً).
+ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'flight';
 CREATE INDEX IF NOT EXISTS travel_bookings_user_idx ON travel_bookings (username, at);
 CREATE INDEX IF NOT EXISTS travel_bookings_status_idx ON travel_bookings (status);
 `;
@@ -40,6 +44,7 @@ function rowToBooking(r) {
         username: r.username,
         provider: r.provider,
         status: r.status,
+        kind: r.kind,
         offer: r.offer_json,
         passengers: r.passengers_json,
         contact: r.contact_json,
@@ -76,10 +81,10 @@ export function createPostgresStore({ connectionString }) {
             return withClient(async c => {
                 const res = await c.query(
                     `INSERT INTO travel_bookings
-                     (id, at, updated_at, username, provider, status, offer_json,
+                     (id, at, updated_at, username, provider, status, kind, offer_json,
                       passengers_json, contact_json, net_amount, sell_amount, currency)
-                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-                    [id, now, now, b.username, b.provider, b.status,
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+                    [id, now, now, b.username, b.provider, b.status, b.kind || 'flight',
                         JSON.stringify(b.offer), JSON.stringify(b.passengers),
                         JSON.stringify(b.contact), b.netAmount, b.sellAmount, b.currency]
                 );
