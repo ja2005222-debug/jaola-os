@@ -98,7 +98,20 @@ function rowToWatch(r) {
 }
 
 export function createPostgresStore({ connectionString }) {
-    const pool = new pg.Pool({ connectionString, max: 5 });
+    const pool = new pg.Pool({
+        connectionString,
+        // Neon/Supabase وRender تتطلب TLS؛ الشهادات مُدارة من المزوّد
+        // (نفس ضبط video-service/src/store/postgresStore.js حرفياً).
+        ssl: /localhost|127\.0\.0\.1|\/tmp/.test(connectionString) ? false : { rejectUnauthorized: false },
+        max: 5,
+    });
+    // عميل خامل يفشل (إعادة تشغيل مُدار، قطع اتصال) يُصدر حدث 'error' على
+    // الـPool — بلا مستمع هنا ترميه Node كاستثناء غير مُعالَج فيسقط الخادم
+    // كاملاً بمنتصف طلبات أخرى (موثَّق في node-postgres). تسجيل فقط؛ الـPool
+    // نفسه يستبدل العميل الفاسد تلقائياً.
+    pool.on('error', err => {
+        console.error('⚠️ خطأ في اتصال Postgres (عميل خامل):', err.message);
+    });
 
     async function withClient(fn) {
         const client = await pool.connect();

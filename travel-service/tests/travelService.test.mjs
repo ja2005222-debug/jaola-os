@@ -123,6 +123,49 @@ describe('checkWatches: الفحص الدوري لمراقبات الأسعار'
         assert.equal(result.notified, 0);
         assert.equal(result.errors.length, 0);
     });
+
+    test('رحلة مضى تاريخها → expired فوراً بلا نداء مزوّد', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaola-travel-watch3-'));
+        const watchStore = createFileStore({ dataDir: dir });
+        await watchStore.init();
+        const watch = await watchStore.createPriceWatch({
+            username: 'poll-user3', origin: 'RUH', destination: 'CAI',
+            departDate: '2020-01-01', returnDate: null, cabin: 'economy',
+            targetPrice: null, contactEmail: null, status: 'active',
+        });
+        let searchCalls = 0;
+        const stubProvider = { async searchOffers() { searchCalls += 1; return [{ netAmount: 100, currency: 'USD' }]; } };
+
+        const result = await checkWatches({ store: watchStore, provider: stubProvider, markupPct: 0 });
+        assert.equal(searchCalls, 0); // لا نداء مزوّد لرحلة مضت — توفير
+        assert.equal(result.checked, 1);
+        const updated = await watchStore.getPriceWatch(watch.id);
+        assert.equal(updated.status, 'expired');
+
+        // expired لم تعد نشطة — لا تُفحص مجدداً
+        const again = await checkWatches({ store: watchStore, provider: stubProvider, markupPct: 0 });
+        assert.equal(again.checked, 0);
+    });
+
+    test('فشل الإرسال البريدي لا يُسكت المراقبة: تبقى active لإعادة المحاولة لاحقاً', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaola-travel-watch4-'));
+        const watchStore = createFileStore({ dataDir: dir });
+        await watchStore.init();
+        const watch = await watchStore.createPriceWatch({
+            username: 'poll-user4', origin: 'RUH', destination: 'CAI',
+            departDate: futureDate(40), returnDate: null, cabin: 'economy',
+            targetPrice: 50, contactEmail: 'fail@test.com', status: 'active',
+        });
+        const stubProvider = { async searchOffers() { return [{ netAmount: 20, currency: 'USD' }]; } };
+        // sendMail الحقيقي لا يرمي أبداً عند فشل مزوّد البريد — يعيد {error}
+        const failingMailer = { mailReady: () => true, sendMail: async () => ({ error: 'فشل الإرسال (429).' }) };
+
+        const result = await checkWatches({ store: watchStore, provider: stubProvider, markupPct: 0, mailer: failingMailer });
+        assert.equal(result.notified, 0); // الإرسال فشل — لا يُحتسَب إشعاراً ناجحاً
+        const updated = await watchStore.getPriceWatch(watch.id);
+        assert.equal(updated.status, 'active'); // ليست triggered رغم بلوغ الهدف — تُعاد المحاولة
+        assert.equal(updated.lastPrice, 20); // السعر يتحدّث رغم فشل الإرسال
+    });
 });
 
 // ─── 🌤️💱 طقس + عملة (وحدة مستقلة — fetchImpl مُحاكى، بلا شبكة حقيقية) ──

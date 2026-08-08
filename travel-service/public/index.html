@@ -149,6 +149,7 @@
           <form id="chatForm">
             <input id="chatInput" placeholder="مثال: احجز لي رحلة من الرياض للقاهرة الأسبوع القادم بأرخص سعر" autocomplete="off" />
             <button class="primary" style="margin-top:0" id="chatSend">أرسل</button>
+            <button class="chip" style="margin-top:0" id="chatReset" type="button" title="محادثة جديدة">🔄 جديدة</button>
           </form>
           <p class="note">المساعد ينفّذ فعلياً: يبحث ويقارن ويحجز ويلغي بالحوار — وكل إجراء نفّذه يظهر كرقاقة شفافية.</p>
         </div>
@@ -287,6 +288,12 @@
         document.querySelectorAll('[data-book]').forEach(btn =>
           btn.addEventListener('click', () => openBooking(
             data.offers.find(o => o.id === JSON.parse(btn.dataset.book).id))));
+      } catch {
+        // رد غير JSON (مثال: 429 نصي من محدّد المعدّل) أو انقطاع شبكة —
+        // بلا هذا تبقى الشاشة عالقة على "جارٍ البحث…" للأبد.
+        $('results').innerHTML = '';
+        $('searchError').textContent = 'تعذّر البحث — حاول مجدداً بعد قليل.';
+        $('searchError').classList.remove('hidden');
       } finally {
         $('searchBtn').disabled = false;
       }
@@ -422,10 +429,18 @@
           method: 'POST', body: JSON.stringify({ messages: chatHistory }),
         });
         const data = await res.json();
-        if (!res.ok) { pushMsg('bot', '⚠️ ' + (data.error || 'تعذّر رد المساعد.')); return; }
+        if (!res.ok) {
+          // رسالة تاريخ فارغة (ردّ سابق بلا محتوى) أو تجاوز الحد الأقصى —
+          // الحوار عالق بلا هذا: إفراغ التاريخ يتيح متابعة محادثة جديدة.
+          pushMsg('bot', '⚠️ ' + (data.error || 'تعذّر رد المساعد.'));
+          if (res.status === 400) chatHistory.pop(); // أزل رسالة المستخدم الأخيرة غير المُعالَجة
+          return;
+        }
         (data.actions || []).forEach(a => pushAction(a.summary));
         pushMsg('bot', data.reply);
-        chatHistory.push({ role: 'assistant', content: data.reply });
+        // ردّ فارغ (بلا نص وبلا أدوات) لا يُضاف للتاريخ — الخادم يرفض أي
+        // رسالة تاريخ فارغة لاحقاً، فإضافته هنا تُقفل المحادثة دائماً.
+        if (data.reply) chatHistory.push({ role: 'assistant', content: data.reply });
         // إجراء نفّذ حجزاً/إلغاءً؟ حدّث الرحلات في الخلفية
         if ((data.actions || []).some(a => ['book_flight', 'cancel_booking', 'book_stay', 'cancel_stay'].includes(a.tool))) loadTrips();
       } catch {
@@ -433,6 +448,11 @@
       } finally {
         $('chatSend').disabled = false;
       }
+    });
+
+    $('chatReset').addEventListener('click', () => {
+      chatHistory = [];
+      $('chatLog').innerHTML = '';
     });
 
     boot();

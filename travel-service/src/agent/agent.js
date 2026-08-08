@@ -249,6 +249,7 @@ export const AGENT_TOOLS = [
                     returnDate: { type: 'string' },
                     cabin: { type: 'string', enum: ['economy', 'premium_economy', 'business', 'first'] },
                     targetPrice: { type: 'number', description: 'سعر يودّ المستخدم التنبيه دونه (اختياري)' },
+                    contactEmail: { type: 'string', description: 'بريد المستخدم لإشعار انخفاض السعر (اختياري — اسأله إن أراد إشعاراً بريدياً)' },
                 },
                 required: ['origin', 'destination', 'departDate'],
             },

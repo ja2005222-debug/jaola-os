@@ -56,6 +56,14 @@ export function createMockStaysProvider({ failCreate = false, failCancel = false
             return offer ? { ...offer } : null;
         },
 
+        // بلا تفرقة rate/quote في المحاكاة — نفس المعرّف طوال الوقت،
+        // فتُعيد نفس البحث في الخريطة (تحقق تعادل duffelStaysProvider
+        // الحقيقي حيث getQuote تجلب quote موجوداً لا تُنشئ آخر).
+        async getQuote(offerId) {
+            const offer = offers.get(offerId);
+            return offer ? { ...offer } : null;
+        },
+
         async createStayOrder({ offerId, guests, contact }) {
             if (failCreate) throw new Error('محاكاة: مزوّد الفنادق رفض إصدار الحجز.');
             const offer = offers.get(offerId);

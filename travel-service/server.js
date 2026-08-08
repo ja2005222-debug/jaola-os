@@ -13,7 +13,7 @@
  */
 import express from 'express';
 import cors from 'cors';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { buildVerifyToken } from './src/auth.js';
@@ -215,6 +215,9 @@ export function createApp({
     travelInfoFetch = fetch, // قابل للحقن في الاختبارات (طقس/عملة بلا شبكة حقيقية)
 }) {
     const app = express();
+    // خلف وكيل عكسي واحد (Render وأمثالها) — بدونه req.ip هو عنوان الوكيل
+    // نفسه لكل الطلبات، فيتشارك كل المستخدمين نفس سلة محدّد المعدل أدناه.
+    app.set('trust proxy', 1);
     app.use(cors());
     app.use(express.json({ limit: '256kb' }));
     app.use(express.static(path.join(__dirname, 'public')));
@@ -222,9 +225,14 @@ export function createApp({
     const verifyToken = buildVerifyToken(jwtSecret);
     const userOf = req => String(req.user?.username || '').trim().toLowerCase();
 
+    // مفتاح محدّدات المعدل أدناه: اسم المستخدم لا عنوان IP — verifyToken
+    // يعمل قبلها دوماً في كل مسار، والتصحيح بالمستخدم صحيح بصرف النظر عن
+    // إعداد الوكيل العكسي (خلاف trust proxy وحده الذي لا يحل تشارك عنوان
+    // NAT/شبكة شركة بين عدة مستخدمين حقيقيين).
+    const byUser = req => userOf(req) || ipKeyGenerator(req.ip); // احتياطي IPv6-آمن قبل verifyToken
     // بحث المزوّدات مكلف/محدود المعدل لديهم — درع أمامي عندنا أولاً
-    const searchLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
-    const agentLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
+    const searchLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, keyGenerator: byUser });
+    const agentLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, keyGenerator: byUser });
 
     // ─── منطق الخدمة المشترك: المسارات والايجنت يستهلكان نفس الدوال ───
     // (هذا ما يجعل الايجنت "بلا التفاف": أي حارس هنا يسري عليه حتماً)
@@ -318,7 +326,10 @@ export function createApp({
 
     async function doBookStay(username, { offerId, guests, contact }) {
         requireStays();
-        const offer = await staysProvider.getStayOffer(String(offerId || ''));
+        // offerId هنا quote id (من get_stay_offer السابقة) — getQuote يجلبه
+        // كما هو دون إنشاء quote جديد؛ getStayOffer كانت لتنشئ quote ثانياً
+        // من نفس المعرّف بوصفه rate_id خطأً، فيفشل الحجز ضد Duffel الحقيقي.
+        const offer = await staysProvider.getQuote(String(offerId || ''));
         if (!offer) throw Object.assign(new Error('عرض الفندق غير موجود أو انتهت صلاحيته — أعد البحث.'), { status: 404 });
         const check = validateGuests({ guests, contact });
         if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
