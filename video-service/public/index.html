@@ -540,6 +540,13 @@
         uploadFromDevice: 'ارفع من جهازك', uploading: 'جارٍ الرفع…',
         uploadFailed: 'تعذّر رفع الصورة.', uploadTooLarge: 'الصورة أكبر من الحد المسموح (8MB).',
         uploadDone: '✅ رُفعت — ستُستخدم هذه الصورة.',
+        montageTitle: 'مونتاج: قص اللقطة ومستوى صوتها', montageStart: 'من (ث)', montageEnd: 'إلى (ث)',
+        montageSave: '✂️ احفظ المونتاج', montageClear: '↩️ ألغِ القص',
+        montageFail: 'تعذّر حفظ المونتاج.',
+        montageNote: (d) => `تحرير غير هدّام: يُطبَّق عند تجميع الفيلم فقط — اللقطة الأصلية (${d} ث) لا تُمس أبداً.`,
+        previewFilmFree: 'معاينة الفيلم كاملاً (مجاني)',
+        filmTotal: (n) => `⏱️ مدة الفيلم: ${n} ثانية`,
+        timelineTitle: 'الشريط الزمني — عرض كل مقطع يعكس مدته الفعلية بعد المونتاج',
         planIdeaPh: 'مثال: قطة برتقالية تتجول في شارع أوروبي عند الغروب وتكتشف كرة صوف متدحرجة',
         planSceneCountLabel: 'عدد المشاهد:', planGoBtn: '✨ اقترح المشاهد',
         planFail: 'تعذّر تخطيط السيناريو.', planCaptionPh: 'كابشن (اختياري)',
@@ -685,6 +692,13 @@
         uploadFromDevice: 'Upload from device', uploading: 'Uploading…',
         uploadFailed: 'Could not upload the image.', uploadTooLarge: 'Image exceeds the allowed size (8MB).',
         uploadDone: '✅ Uploaded — this image will be used.',
+        montageTitle: 'Montage: trim this shot and set its volume', montageStart: 'From (s)', montageEnd: 'To (s)',
+        montageSave: '✂️ Save montage', montageClear: '↩️ Undo trim',
+        montageFail: 'Could not save the montage.',
+        montageNote: (d) => `Non-destructive: applied only at film assembly — the original shot (${d}s) is never touched.`,
+        previewFilmFree: 'Preview full film (free)',
+        filmTotal: (n) => `⏱️ Film duration: ${n}s`,
+        timelineTitle: 'Timeline — each segment width reflects its effective duration after montage',
         planIdeaPh: 'Example: an orange cat wandering a European street at sunset discovers a rolling ball of yarn',
         planSceneCountLabel: 'Scene count:', planGoBtn: '✨ Suggest scenes',
         planFail: 'Could not plan the script.', planCaptionPh: 'Caption (optional)',
@@ -1170,6 +1184,9 @@
           src = res.url;
         } catch { alert(tr('connFail')); return; }
       }
+      filmPreview = null; // معاينة مفردة تُلغي أي معاينة فيلم متسلسلة جارية
+      $('playerVideo').onloadedmetadata = null;
+      $('playerVideo').volume = 1;
       $('playerVideo').src = src;
       $('playerModal').style.display = 'flex';
       $('livePreviewBox').innerHTML = `
@@ -1177,10 +1194,64 @@
         <p class="note" style="margin-top:6px">▶️ ${tplName(j.templateId)}</p>`;
     }
     $('playerClose').addEventListener('click', () => {
-      $('playerVideo').pause();
-      $('playerVideo').src = '';
+      filmPreview = null; // إيقاف المعاينة المتسلسلة إن كانت جارية
+      const v = $('playerVideo');
+      v.onloadedmetadata = null;
+      v.pause();
+      v.src = '';
+      v.volume = 1;
       $('playerModal').style.display = 'none';
     });
+
+    // ─── ▶️ معاينة الفيلم كاملاً (مجانية) ────────────────────────────────
+    // تشغيل متسلسل للقطات المكتملة بترتيبها داخل مشغل المعاينة نفسه، مع
+    // احترام قص المونتاج (قفز للبداية، قطع عند النهاية) ومستوى الصوت —
+    // كله في المتصفح: صفر نداء مزوّد، صفر رصيد. ليست بدقة التجميع النهائي
+    // (لا انتقالات/موسيقى/كابشن) لكنها تكفي للحكم على الإيقاع قبل الدفع.
+    let filmPreview = null; // { list: [{src, start, end, volume}], idx, advancing }
+    async function startFilmPreview(doneShots) {
+      const list = [];
+      for (const s of doneShots) {
+        const span = effectiveShotSpan(s);
+        let src = s.videoUrl;
+        if (s.owned) {
+          try {
+            const res = await api(`/api/video/renders/${s.id}/download`);
+            if (res.ok && res.url) src = res.url; else continue;
+          } catch { continue; }
+        }
+        list.push({ src, start: span.start, end: span.end, volume: s.edit?.volume });
+      }
+      if (list.length === 0) { alert(tr('previewPrepFail')); return; }
+      filmPreview = { list, idx: 0, advancing: false };
+      $('playerModal').style.display = 'flex';
+      loadPreviewItem();
+    }
+    function loadPreviewItem() {
+      if (!filmPreview) return;
+      const v = $('playerVideo');
+      const item = filmPreview.list[filmPreview.idx];
+      filmPreview.advancing = false;
+      v.onloadedmetadata = () => {
+        if (item.start > 0) v.currentTime = item.start;
+        v.play().catch(() => {});
+      };
+      v.volume = item.volume != null ? item.volume : 1;
+      v.src = item.src;
+    }
+    function nextPreviewItem() {
+      if (!filmPreview || filmPreview.advancing) return;
+      filmPreview.advancing = true;
+      filmPreview.idx += 1;
+      if (filmPreview.idx >= filmPreview.list.length) { $('playerClose').click(); return; }
+      loadPreviewItem();
+    }
+    $('playerVideo').addEventListener('timeupdate', () => {
+      if (!filmPreview) return;
+      const item = filmPreview.list[filmPreview.idx];
+      if (item && $('playerVideo').currentTime >= item.end - 0.05) nextPreviewItem();
+    });
+    $('playerVideo').addEventListener('ended', () => { if (filmPreview) nextPreviewItem(); });
     function bindPlayers(root) {
       root.querySelectorAll('[data-play]').forEach(el =>
         el.addEventListener('click', (e) => { e.preventDefault(); openPlayer(el.dataset.play); }));
@@ -1582,7 +1653,9 @@
       if ((openAssembly && !openAssembly.classList.contains('hidden')) ||
           (openSettings && !openSettings.classList.contains('hidden')) ||
           (openPlan && !openPlan.classList.contains('hidden')) ||
-          (openMarketing && !openMarketing.classList.contains('hidden'))) return;
+          (openMarketing && !openMarketing.classList.contains('hidden')) ||
+          // ✂️ محرر مونتاج مفتوح = المستخدم يضبط القص — لا نمسح ما تحت يده
+          document.querySelector('[data-montage]:not(.hidden)')) return;
       const res = await api(`/api/video/projects/${activeProjectId}`);
       if (!res.ok) { selectProject(null); return; }
       const { project, shots } = await res.json();
@@ -1606,6 +1679,25 @@
         <div id="planPanel" class="hidden" style="margin-bottom:10px"></div>
         <div id="assemblyPanel" class="hidden" style="margin-bottom:10px"></div>
         <div id="marketingPanel" class="hidden" style="margin-bottom:10px"></div>
+        ${(() => {
+          // 🎞️ الشريط الزمني للفيلم: مقاطع بعرض نسبي لمدة كل لقطة الفعلية
+          // (بعد المونتاج) + المدة الكلية + معاينة الفيلم كاملاً مجاناً —
+          // تشغيل متسلسل في المتصفح يحترم القص والصوت، صفر تكلفة.
+          const done = shots.filter(s => s.status === 'done' && s.videoUrl);
+          if (done.length === 0) return '';
+          const spans = done.map(effectiveShotSpan);
+          const total = Math.round(spans.reduce((a, sp) => a + sp.len, 0) * 10) / 10;
+          const palette = ['#38bdf8', '#a78bfa', '#34d399', '#f59e0b', '#f87171', '#22d3ee'];
+          return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">
+              <button class="chip" id="previewFilmBtn" style="border-color:var(--ok);color:var(--ok)">▶️ ${tr('previewFilmFree')}</button>
+              <span class="note" style="margin:0">${tr('filmTotal', total)}</span>
+            </div>
+            <div style="display:flex;height:24px;border-radius:8px;overflow:hidden;border:1px solid var(--border);margin-bottom:12px" title="${tr('timelineTitle')}">
+              ${done.map((s, i) => `<div style="flex:${spans[i].len} 0 0;min-width:14px;background:${palette[i % palette.length]}22;
+                  border-inline-end:1px solid var(--border);display:flex;align-items:center;justify-content:center;
+                  font-size:10px;color:var(--text)" title="${tr('shotNum', i + 1)} · ${spans[i].len}s${s.edit ? ' ✂️' : ''}">${i + 1}${s.edit ? '✂️' : ''}</div>`).join('')}
+            </div>`;
+        })()}
         ${shots.length === 0
           ? `<p class="note">${tr('noShotsYet')}</p>`
           : `<div class="shots">${shots.map((s, i) => shotCard(s, i, shots.length)).join('')}</div>
@@ -1622,6 +1714,9 @@
         el.addEventListener('click', () => regenerateShot(el.dataset.redo, shots)));
       board.querySelectorAll('[data-base]').forEach(el =>
         el.addEventListener('click', () => useShotAsBase(el.dataset.base, shots)));
+      bindMontage(board, shots);
+      document.getElementById('previewFilmBtn')?.addEventListener('click', () =>
+        startFilmPreview(shots.filter(s => s.status === 'done' && s.videoUrl)));
       $('renameProjBtn').addEventListener('click', async () => {
         const title = prompt(tr('renamePrompt'), project.title);
         if (!title || !title.trim()) return;
@@ -2372,6 +2467,15 @@
       }
     }
 
+    // ✂️ المدى الفعلي للقطة بعد المونتاج — مقيّد داخل مدة المصدر دوماً
+    // (نفس منطق buildFilmSpec في الخادم حرفياً، فتطابق المعاينة الفيلم).
+    function effectiveShotSpan(s) {
+      const dur = Number(s.durationSec) > 0 ? Number(s.durationSec) : 5;
+      const st = s.edit ? Math.min(Math.max(Number(s.edit.trimStart) || 0, 0), dur) : 0;
+      const en = s.edit && Number(s.edit.trimEnd) > st ? Math.min(Number(s.edit.trimEnd), dur) : dur;
+      return { start: st, end: en, len: Math.round((en - st) * 10) / 10, dur };
+    }
+
     function shotCard(s, i, total) {
       const model = s.modelId ? aiModels.find(m => m.id === s.modelId) : null;
       const promptText = s.values && s.values.prompt ? s.values.prompt : '';
@@ -2381,6 +2485,29 @@
           ? `<a href="#" data-download="${s.id}">${tr('download')}</a>`
           : `<a href="${s.videoUrl}" target="_blank" rel="noopener">${tr('download')}</a>`);
       }
+      // ✂️ محرر المونتاج (اللقطات المكتملة فقط): قص بداية/نهاية + مستوى
+      // صوت — تحرير غير هدّام يُطبَّق عند التجميع، الملف الأصلي لا يُمس.
+      const span = effectiveShotSpan(s);
+      const montageBadge = s.edit
+        ? `<span style="font-size:11px;color:#a78bfa">✂️ ${span.start}s–${span.end}s${
+            s.edit.volume != null ? ` · 🔊${Math.round(s.edit.volume * 100)}%` : ''}</span>`
+        : '';
+      const montageEditor = s.status === 'done' ? `
+        <div class="hidden" data-montage="${s.id}"
+          style="margin-top:8px;border-top:1px dashed var(--border);padding-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px">
+          <label style="margin:0">${tr('montageStart')}</label>
+          <input type="number" data-m-start step="0.1" min="0" max="${span.dur}" value="${span.start}"
+            style="width:70px;padding:6px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)" />
+          <label style="margin:0">${tr('montageEnd')}</label>
+          <input type="number" data-m-end step="0.1" min="0" max="${span.dur}" value="${span.end}"
+            style="width:70px;padding:6px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)" />
+          <label style="margin:0">🔊</label>
+          <input type="range" data-m-vol min="0" max="100" value="${s.edit?.volume != null ? Math.round(s.edit.volume * 100) : 100}"
+            style="width:90px" />
+          <button type="button" class="chip" data-m-save="${s.id}">${tr('montageSave')}</button>
+          ${s.edit ? `<button type="button" class="chip" data-m-clear="${s.id}">${tr('montageClear')}</button>` : ''}
+          <span class="note" style="margin:0;flex-basis:100%">${tr('montageNote', span.dur)}</span>
+        </div>` : '';
       // ⏮⏭ إعادة ترتيب بلمسة/نقرة — السحب والإفلات (bindDragReorder) لا
       // يعمل على الجوال إطلاقاً (HTML5 Drag API سطح مكتب فقط)؛ هذان
       // الزرّان يستخدمان نفس مسار /reorder فيعملان في كل مكان. الأيقونتان
@@ -2390,15 +2517,54 @@
         <div style="font-size:13px;margin-top:4px">${tplName(s.templateId)}${
           model ? ` <span style="color:var(--muted);font-size:11px">(${L(model, 'name')})</span>` : ''}</div>
         ${promptText ? `<div class="prompt">${escapeHtml(promptText)}</div>` : ''}
-        <span class="st st-${s.status}">${tr('st_' + s.status) || s.status}</span>
+        <span class="st st-${s.status}">${tr('st_' + s.status) || s.status}</span> ${montageBadge}
         <div class="actions">
           ${action}
           <button data-move-earlier="${s.id}" title="${tr('moveEarlierTitle')}" ${i === 0 ? 'disabled' : ''}>⏮</button>
           <button data-move-later="${s.id}" title="${tr('moveLaterTitle')}" ${i === total - 1 ? 'disabled' : ''}>⏭</button>
+          ${s.status === 'done' ? `<button data-edit-shot="${s.id}" title="${tr('montageTitle')}">✂️</button>` : ''}
           <button data-redo="${s.id}" title="${tr('regenTitle')}">${tr('regen')}</button>
           <button data-base="${s.id}" title="${tr('useAsBaseTitle')}">${tr('useAsBase')}</button>
         </div>
+        ${montageEditor}
       </div>`;
+    }
+
+    // ✂️ ربط محرر المونتاج: فتح/حفظ/مسح — الحفظ عبر PATCH /renders/:id/edit
+    function bindMontage(board, shots) {
+      board.querySelectorAll('[data-edit-shot]').forEach(btn =>
+        btn.addEventListener('click', () => {
+          board.querySelector(`[data-montage="${btn.dataset.editShot}"]`)?.classList.toggle('hidden');
+        }));
+      board.querySelectorAll('[data-m-save]').forEach(btn =>
+        btn.addEventListener('click', async () => {
+          const panel = board.querySelector(`[data-montage="${btn.dataset.mSave}"]`);
+          const body = {
+            trimStart: parseFloat(panel.querySelector('[data-m-start]').value),
+            trimEnd: parseFloat(panel.querySelector('[data-m-end]').value),
+            volume: parseInt(panel.querySelector('[data-m-vol]').value, 10) / 100,
+          };
+          btn.disabled = true;
+          try {
+            const res = await api(`/api/video/renders/${btn.dataset.mSave}/edit`, {
+              method: 'PATCH', body: JSON.stringify(body),
+            });
+            const data = await res.json();
+            if (!res.ok) { alert(data.error || tr('montageFail')); return; }
+            // أغلق اللوحة قبل التحديث — حارس refreshStoryboard يتخطى
+            // الرسم ما دام أي محرر مونتاج مفتوحاً (حماية الكتابة الجارية).
+            panel.classList.add('hidden');
+            refreshStoryboard();
+          } catch { alert(tr('connFail')); } finally { btn.disabled = false; }
+        }));
+      board.querySelectorAll('[data-m-clear]').forEach(btn =>
+        btn.addEventListener('click', async () => {
+          await api(`/api/video/renders/${btn.dataset.mClear}/edit`, {
+            method: 'PATCH', body: JSON.stringify({ clear: true }),
+          }).catch(() => {});
+          board.querySelector(`[data-montage="${btn.dataset.mClear}"]`)?.classList.add('hidden');
+          refreshStoryboard();
+        }));
     }
 
     // لقطة جديدة بنفس القالب والقيم والنموذج — تنضم لنهاية المشروع.

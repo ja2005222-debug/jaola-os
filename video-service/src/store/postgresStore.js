@@ -55,6 +55,8 @@ ALTER TABLE video_jobs ADD COLUMN IF NOT EXISTS storage_key TEXT;
 -- ترقية غير هدّامة: مشاريع الأفلام (ستوري بورد) — ربط اللقطة بمشروعها
 ALTER TABLE video_jobs ADD COLUMN IF NOT EXISTS project_id TEXT;
 ALTER TABLE video_jobs ADD COLUMN IF NOT EXISTS shot_index INTEGER;
+-- ترقية غير هدّامة: مونتاج اللقطة (قص + صوت) — يُطبَّق عند التجميع
+ALTER TABLE video_jobs ADD COLUMN IF NOT EXISTS edit_json JSONB;
 CREATE INDEX IF NOT EXISTS video_jobs_user_idx ON video_jobs (username, at);
 CREATE INDEX IF NOT EXISTS video_jobs_status_idx ON video_jobs (status);
 CREATE INDEX IF NOT EXISTS video_jobs_at_idx ON video_jobs (at);
@@ -125,6 +127,7 @@ function rowToJob(r) {
         storageKey: r.storage_key,
         projectId: r.project_id,
         shotIndex: r.shot_index,
+        edit: r.edit_json || null,
     };
 }
 
@@ -470,6 +473,20 @@ export function createPostgresStore({ connectionString, starterCredits, poolFact
                     [projectId]
                 );
                 return res.rows.map(rowToJob);
+            });
+        },
+
+        /**
+         * ✂️ مونتاج اللقطة: {trimStart, trimEnd, volume?} أو null للمسح.
+         * التحقق من الحدود مسؤولية المسار — المخزن يخزّن فقط.
+         */
+        async setJobEdit(id, edit) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'UPDATE video_jobs SET edit_json = $2, updated_at = $3 WHERE id = $1',
+                    [id, edit, Date.now()]
+                );
+                return res.rowCount > 0;
             });
         },
 

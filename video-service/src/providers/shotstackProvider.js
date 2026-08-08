@@ -68,7 +68,17 @@ export function specToShotstackTimeline(spec) {
             } else if (layer.kind === 'video') {
                 // تجميع الفيلم: لقطة فيديو مولَّدة تُضم للخط الزمني
                 clips.push({
-                    asset: { type: 'video', src: layer.url },
+                    asset: {
+                        type: 'video', src: layer.url,
+                        // ✂️ مونتاج اللقطة: trim = ثوانٍ تُتخطى من بداية
+                        // الملف الأصلي، وvolume مستوى صوت المقطع (0..1) —
+                        // حقلا asset فيديو موثَّقان لدى Shotstack. ⚠️ غير
+                        // مجرَّبين من هذه الخدمة في الإنتاج بعد (نفس ملاحظة
+                        // دقة 4k) — رفض Shotstack لهما يظهر بتفصيل رده، لا
+                        // فشلاً صامتاً.
+                        ...(layer.trimSec > 0 ? { trim: layer.trimSec } : {}),
+                        ...(layer.volume != null ? { volume: layer.volume } : {}),
+                    },
                     start: scene.startSec,
                     length: scene.lengthSec,
                     fit: 'contain',

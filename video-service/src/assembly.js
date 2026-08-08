@@ -137,11 +137,25 @@ export function buildFilmSpec({
     const captionCues = [];
     let cursor = 0;
     for (const shot of shots) {
-        const lengthSec = Number(shot.durationSec) > 0 ? Number(shot.durationSec) : 5;
+        const srcDur = Number(shot.durationSec) > 0 ? Number(shot.durationSec) : 5;
+        // ✂️ مونتاج اللقطة (إن وُجد): الطول الفعلي = trimEnd - trimStart.
+        // تعديل مخزَّن فاسد (نهاية قبل بداية / خارج المدة) يُتجاهل **كلياً**
+        // فتعود اللقطة كاملة — لا نقتطع ذيلاً عشوائياً من قصّ نصف صالح.
+        let trimStart = 0, trimEnd = srcDur;
+        if (shot.edit) {
+            const st = Number(shot.edit.trimStart) || 0;
+            const en = Number(shot.edit.trimEnd);
+            if (st >= 0 && en > st && en <= srcDur) { trimStart = st; trimEnd = en; }
+        }
+        const lengthSec = trimEnd - trimStart;
         scenes.push({
             startSec: cursor,
             lengthSec,
-            layers: [{ kind: 'video', url: shot.videoUrl }],
+            layers: [{
+                kind: 'video', url: shot.videoUrl,
+                ...(trimStart > 0 ? { trimSec: trimStart } : {}),
+                ...(shot.edit?.volume != null ? { volume: shot.edit.volume } : {}),
+            }],
         });
         if (burnCaptions && shot.caption) {
             if (captionAnimated) {
