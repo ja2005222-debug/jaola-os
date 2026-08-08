@@ -886,6 +886,64 @@ describe('الايجنت الحاجز', () => {
         });
         assert.equal(badIata.ok, false);
     });
+
+    test('📋 generate_trip_summary حقيقي: يجمع طيران+فنادق مُصدَرة فقط، مع تصفية مدى تاريخ', async () => {
+        const username = 'summary-user';
+        const flightB = await createBooking(store, {
+            username, provider: 'mock',
+            offer: { owner: 'Test Air', slices: [{ origin: 'RUH', destination: 'CAI', departAt: '2027-08-20T10:00:00', arriveAt: '2027-08-20T12:00:00' }] },
+            passengers: [], contact: {}, netAmount: 100, sellAmount: 110, currency: 'USD',
+        });
+        await transitionBooking(store, flightB.id, 'issued', { bookingReference: 'REFF' });
+
+        const stayB = await createBooking(store, {
+            username, provider: 'mock-stays', kind: 'stay',
+            offer: { name: 'Test Hotel', city: 'Cairo', checkInDate: '2027-08-10', checkOutDate: '2027-08-12' },
+            passengers: [], contact: {}, netAmount: 200, sellAmount: 220, currency: 'USD',
+        });
+        await transitionBooking(store, stayB.id, 'issued', { bookingReference: 'REFH' });
+
+        // حجز pending (غير مُصدَر) — يجب ألا يظهر في الملخص إطلاقاً
+        await createBooking(store, {
+            username, provider: 'mock',
+            offer: { owner: 'x', slices: [{ origin: 'RUH', destination: 'DXB', departAt: '2027-08-15T10:00:00', arriveAt: '2027-08-15T12:00:00' }] },
+            passengers: [], contact: {}, netAmount: 50, sellAmount: 55, currency: 'USD',
+        });
+
+        const bareAgent = createTravelAgent({
+            apiKey: 'k',
+            fetchImpl: scriptedFetch([
+                { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'generate_trip_summary', arguments: '{}' } }] },
+                { role: 'assistant', content: 'هذا ملخص رحلتك الكامل.' },
+            ]),
+        });
+        await withAgentApp(bareAgent, async call => {
+            const res = await call('/api/travel/agent/chat', {
+                method: 'POST', token: makeToken(username), body: { messages: [{ role: 'user', content: 'رتّب لي رحلتي' }] },
+            });
+            assert.equal(res.status, 200);
+            assert.match(res.data.actions[0].summary, /2 حجوزات/); // فندق + رحلة مُصدَرة فقط، لا pending
+        });
+
+        // تصفية مدى تاريخ تستبعد الفندق (قبل 15 أغسطس) وتُبقي الرحلة فقط
+        const filteredAgent = createTravelAgent({
+            apiKey: 'k',
+            fetchImpl: scriptedFetch([
+                {
+                    role: 'assistant', content: null,
+                    tool_calls: [{ id: 'c2', type: 'function', function: { name: 'generate_trip_summary', arguments: JSON.stringify({ fromDate: '2027-08-15', toDate: '2027-08-31' }) } }],
+                },
+                { role: 'assistant', content: 'هذا ملخص المدى المطلوب.' },
+            ]),
+        });
+        await withAgentApp(filteredAgent, async call => {
+            const res = await call('/api/travel/agent/chat', {
+                method: 'POST', token: makeToken(username), body: { messages: [{ role: 'user', content: 'رتّب رحلتي من 15 أغسطس' }] },
+            });
+            assert.equal(res.status, 200);
+            assert.match(res.data.actions[0].summary, /1 حجوزات/);
+        });
+    });
 });
 
 // ─── التشغيل: ملفات دوماً + postgres إن توفر ──────────────────────────

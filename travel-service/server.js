@@ -529,6 +529,41 @@ export function createApp({
         return convertCurrency({ amount: amt, from: fromU, to: toU, fetchImpl: travelInfoFetch });
     }
 
+    // ─── خدمات مساعدة (concierge — حساب داخلي بحت، بلا API خارجي) ──────
+
+    function bookingStartDate(b) {
+        if (b.kind === 'stay') return b.offer?.checkInDate || null;
+        return b.offer?.slices?.[0]?.departAt?.slice(0, 10) || null;
+    }
+
+    async function doGenerateTripSummary(username, { fromDate, toDate } = {}) {
+        for (const [label, d] of [['fromDate', fromDate], ['toDate', toDate]]) {
+            if (d != null && (!DATE_RE.test(d) || isNaN(Date.parse(d)))) {
+                throw Object.assign(new Error(`${label} بصيغة YYYY-MM-DD.`), { status: 400 });
+            }
+        }
+        const bookings = (await listBookingsByUser(store, username))
+            .filter(b => b.status === 'issued')
+            .map(b => ({ b, date: bookingStartDate(b) }))
+            .filter(({ date }) => date && (!fromDate || date >= fromDate) && (!toDate || date <= toDate))
+            .sort((a, c) => a.date.localeCompare(c.date))
+            .map(({ b }) => b);
+
+        if (bookings.length === 0) return { text: 'لا حجوزات مُصدَرة ضمن هذا المدى.', bookingCount: 0 };
+
+        const lines = ['📋 ملخص الرحلة:'];
+        for (const b of bookings) {
+            if (b.kind === 'stay') {
+                lines.push(`🏨 ${b.offer.name || 'فندق'} — ${b.offer.city || ''} — ${b.offer.checkInDate} → ${b.offer.checkOutDate} — ${b.sellAmount} ${b.currency} — مرجع ${b.bookingReference}`);
+            } else {
+                const first = b.offer.slices?.[0] || {};
+                const last = b.offer.slices?.[b.offer.slices.length - 1] || {};
+                lines.push(`✈️ ${first.origin || '؟'}→${last.destination || '؟'} — ${(first.departAt || '').slice(0, 16).replace('T', ' ')} — ${b.sellAmount} ${b.currency} — مرجع ${b.bookingReference}`);
+            }
+        }
+        return { text: lines.join('\n'), bookingCount: bookings.length };
+    }
+
     // ─── المسارات ─────────────────────────────────────────────────────
 
     app.get('/api/travel/health', (req, res) => {
@@ -674,6 +709,7 @@ export function createApp({
             cancelPriceWatch: id => doCancelPriceWatch(username, id),
             getDestinationWeather: args => doGetDestinationWeather(args),
             convertCurrency: args => doConvertCurrency(args),
+            generateTripSummary: args => doGenerateTripSummary(username, args),
         };
         try {
             const result = await agent.chat({ messages, services });
