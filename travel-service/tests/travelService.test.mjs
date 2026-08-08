@@ -27,6 +27,8 @@ import { canTransition, createBooking, transitionBooking, getBooking } from '../
 import { createFileStore } from '../src/store/fileStore.js';
 import { createPostgresStore } from '../src/store/postgresStore.js';
 import { createTravelAgent, executeAgentTool, buildTravelAgent, AGENT_TOOLS } from '../src/agent/agent.js';
+import { listPriceWatchesByUser, cancelPriceWatch } from '../src/priceWatches.js';
+import { checkWatches } from '../src/priceWatchPoller.js';
 
 const JWT_SECRET = 'test-secret-not-for-production';
 const MARKUP = 10; // هامش الاختبارات — أرقامه سهلة التحقق يدوياً
@@ -56,6 +58,71 @@ const VALID_GUESTS = {
     guests: [{ givenName: 'AHMED', familyName: 'ALI' }],
     contact: { email: 'a@test.com', phone: '+966500000000' },
 };
+
+// ─── 👁️ مراقب الأسعار الدوري (وحدة مستقلة — بلا خادم HTTP) ────────────
+describe('checkWatches: الفحص الدوري لمراقبات الأسعار', () => {
+    test('خط أساس أول فحص بلا إشعار، ثم إشعار عند بلوغ السعر الهدف وstatus=triggered', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaola-travel-watch-'));
+        const watchStore = createFileStore({ dataDir: dir });
+        await watchStore.init();
+        const watch = await watchStore.createPriceWatch({
+            username: 'poll-user', origin: 'RUH', destination: 'CAI',
+            departDate: futureDate(40), returnDate: null, cabin: 'economy',
+            targetPrice: 50, contactEmail: 'poll@test.com', status: 'active',
+        });
+
+        let price = 100;
+        const stubProvider = { async searchOffers() { return [{ netAmount: price, currency: 'USD' }]; } };
+        const sentMails = [];
+        const stubMailer = {
+            mailReady: () => true,
+            sendMail: async (msg) => { sentMails.push(msg); return { ok: true }; },
+        };
+
+        // الفحص الأول: خط أساس فقط — لا سعر سابق للمقارنة، فلا إشعار
+        let result = await checkWatches({ store: watchStore, provider: stubProvider, markupPct: 0, mailer: stubMailer });
+        assert.equal(result.checked, 1);
+        assert.equal(result.notified, 0);
+        let updated = await watchStore.getPriceWatch(watch.id);
+        assert.equal(updated.lastPrice, 100);
+        assert.equal(updated.status, 'active');
+
+        // الفحص الثاني: السعر ينخفض تحت الهدف (50) → إشعار + status=triggered
+        price = 40;
+        result = await checkWatches({ store: watchStore, provider: stubProvider, markupPct: 0, mailer: stubMailer });
+        assert.equal(result.notified, 1);
+        assert.equal(sentMails.length, 1);
+        assert.match(sentMails[0].subject, /RUH→CAI/);
+        assert.equal(sentMails[0].to, 'poll@test.com');
+        updated = await watchStore.getPriceWatch(watch.id);
+        assert.equal(updated.status, 'triggered');
+
+        // triggered لم تعد "نشطة" — الفحص التالي لا يعاود فحصها ولا الإشعار
+        result = await checkWatches({ store: watchStore, provider: stubProvider, markupPct: 0, mailer: stubMailer });
+        assert.equal(result.checked, 0);
+        assert.equal(sentMails.length, 1);
+    });
+
+    test('بلا بريد تواصل: تحديث السعر يستمر بلا محاولة إرسال', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaola-travel-watch2-'));
+        const watchStore = createFileStore({ dataDir: dir });
+        await watchStore.init();
+        await watchStore.createPriceWatch({
+            username: 'poll-user2', origin: 'RUH', destination: 'JED',
+            departDate: futureDate(40), returnDate: null, cabin: 'economy',
+            targetPrice: null, contactEmail: null, status: 'active',
+        });
+        let price = 100;
+        const stubProvider = { async searchOffers() { return [{ netAmount: price, currency: 'USD' }]; } };
+        const stubMailer = { mailReady: () => true, sendMail: async () => { throw new Error('لا يجب أن يُستدعى'); } };
+
+        await checkWatches({ store: watchStore, provider: stubProvider, markupPct: 0, mailer: stubMailer });
+        price = 10; // انخفاض حقيقي — لكن بلا contactEmail لا إرسال
+        const result = await checkWatches({ store: watchStore, provider: stubProvider, markupPct: 0, mailer: stubMailer });
+        assert.equal(result.notified, 0);
+        assert.equal(result.errors.length, 0);
+    });
+});
 
 // ─── المجموعة الكاملة، مُعامَلة بمصنع المخزن ──────────────────────────
 function runSuite(storeLabel, { makeStore, resetStore }) {
@@ -407,15 +474,32 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
 
 // ─── 🤖 اختبارات الايجنت (مستقلة عن المخزن — نموذج مُسجَّل) ────────────
 describe('الايجنت الحاجز', () => {
-    let store, server, baseUrl, provider;
+    let store, provider;
 
-    async function call(pathname, { method = 'GET', token = null, body = null } = {}) {
-        const headers = { 'Content-Type': 'application/json' };
-        if (token) headers.Authorization = `Bearer ${token}`;
-        const res = await fetch(baseUrl + pathname, {
-            method, headers, body: body ? JSON.stringify(body) : undefined,
-        });
-        return { status: res.status, data: await res.json().catch(() => null) };
+    /**
+     * ينشئ تطبيقاً+خادماً محلياً لجولة اختبار واحدة ويُغلقه دوماً بعد
+     * انتهاء fn (حتى عند رمي استثناء) — خادم متروك مفتوحاً بلا إغلاق
+     * يُبقي عملية node --test حيّة إلى الأبد (عُطل حقيقي صودف أثناء
+     * التطوير: عدة اختبارات تُعيد تعيين متغيّر server مشترك فتُغرق كل
+     * الخوادم السابقة ما عدا الأخير).
+     */
+    async function withAgentApp(agent, fn) {
+        const app = createApp({ store, jwtSecret: JWT_SECRET, provider, agent, markupPct: MARKUP });
+        const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+        const baseUrl = `http://127.0.0.1:${s.address().port}`;
+        async function call(pathname, { method = 'GET', token = null, body = null } = {}) {
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers.Authorization = `Bearer ${token}`;
+            const res = await fetch(baseUrl + pathname, {
+                method, headers, body: body ? JSON.stringify(body) : undefined,
+            });
+            return { status: res.status, data: await res.json().catch(() => null) };
+        }
+        try {
+            await fn(call);
+        } finally {
+            await new Promise(r => s.close(r));
+        }
     }
 
     /** نموذج مُسجَّل: يرد بالسيناريو المكتوب رداً تلو رد. */
@@ -438,24 +522,14 @@ describe('الايجنت الحاجز', () => {
         provider = createMockTravelProvider();
     });
 
-    after(async () => {
-        if (server) await new Promise(r => server.close(r));
-    });
-
     test('بلا مفتاح: buildTravelAgent يرجع null والمسار يرد 503 بوضوح', async () => {
         assert.equal(buildTravelAgent({}), null);
-        const app = createApp({ store, jwtSecret: JWT_SECRET, provider, agent: null, markupPct: MARKUP });
-        const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
-        try {
-            const res = await fetch(`http://127.0.0.1:${s.address().port}/api/travel/agent/chat`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${makeToken('u')}` },
-                body: JSON.stringify({ messages: [{ role: 'user', content: 'مرحبا' }] }),
+        await withAgentApp(null, async call => {
+            const res = await call('/api/travel/agent/chat', {
+                method: 'POST', token: makeToken('u'), body: { messages: [{ role: 'user', content: 'مرحبا' }] },
             });
             assert.equal(res.status, 503);
-        } finally {
-            await new Promise(r => s.close(r));
-        }
+        });
     });
 
     test('حلقة الأدوات: بحث → رد نهائي، مع سجل actions شفاف', async () => {
@@ -472,25 +546,24 @@ describe('الايجنت الحاجز', () => {
                 { role: 'assistant', content: 'وجدت 3 رحلات، أرخصها…' },
             ]),
         });
-        const app = createApp({ store, jwtSecret: JWT_SECRET, provider, agent, markupPct: MARKUP });
-        server = await new Promise(r => { const s = app.listen(0, () => r(s)); });
-        baseUrl = `http://127.0.0.1:${server.address().port}`;
-        const token = makeToken('chatter');
+        await withAgentApp(agent, async call => {
+            const token = makeToken('chatter');
 
-        // تحقق مدخلات المحادثة أولاً
-        assert.equal((await call('/api/travel/agent/chat', { method: 'POST', token, body: {} })).status, 400);
-        assert.equal((await call('/api/travel/agent/chat', {
-            method: 'POST', token, body: { messages: [{ role: 'user', content: '' }] },
-        })).status, 400);
+            // تحقق مدخلات المحادثة أولاً
+            assert.equal((await call('/api/travel/agent/chat', { method: 'POST', token, body: {} })).status, 400);
+            assert.equal((await call('/api/travel/agent/chat', {
+                method: 'POST', token, body: { messages: [{ role: 'user', content: '' }] },
+            })).status, 400);
 
-        const res = await call('/api/travel/agent/chat', {
-            method: 'POST', token, body: { messages: [{ role: 'user', content: 'ابحث لي عن رحلة' }] },
+            const res = await call('/api/travel/agent/chat', {
+                method: 'POST', token, body: { messages: [{ role: 'user', content: 'ابحث لي عن رحلة' }] },
+            });
+            assert.equal(res.status, 200);
+            assert.equal(res.data.reply, 'وجدت 3 رحلات، أرخصها…');
+            assert.equal(res.data.actions.length, 1);
+            assert.equal(res.data.actions[0].tool, 'search_flights');
+            assert.match(res.data.actions[0].summary, /RUH→CAI/);
         });
-        assert.equal(res.status, 200);
-        assert.equal(res.data.reply, 'وجدت 3 رحلات، أرخصها…');
-        assert.equal(res.data.actions.length, 1);
-        assert.equal(res.data.actions[0].tool, 'search_flights');
-        assert.match(res.data.actions[0].summary, /RUH→CAI/);
     });
 
     test('🛡️ حارس الحجز: confirmed=false يُرفض بلا حجز، وconfirmed=true يحجز فعلاً', async () => {
@@ -574,6 +647,138 @@ describe('الايجنت الحاجز', () => {
 
         const cancelRefused = await executeAgentTool('cancel_stay', { bookingId: 'b1', confirmed: false }, services);
         assert.equal(cancelRefused.ok, false);
+    });
+
+    test('📅 find_flexible_dates حقيقي عبر الوكيل: نطاق تواريخ + محدّد معدّل مخصّص', async () => {
+        // 6 محادثات منفصلة عبر نفس الوكيل — لا نموذج مُسجَّل ثابت الفهرس
+        // (scriptedFetch أحادي الاستخدام لكل محادثة)؛ بدلاً منه رد يقرأ
+        // آخر رسالة فعلياً: نداء أداة عند رسالة مستخدم جديدة، ورد نهائي
+        // بعد نتيجة الأداة — يحاكي وكيلاً حقيقياً عبر جولات متعددة.
+        function reactiveFlexFetch() {
+            return async (url, opts) => {
+                const body = JSON.parse(opts.body);
+                const last = body.messages[body.messages.length - 1];
+                if (last.role === 'tool') {
+                    return { ok: true, json: async () => ({ choices: [{ message: { role: 'assistant', content: 'أرخص تاريخ هو…' } }] }) };
+                }
+                return {
+                    ok: true,
+                    json: async () => ({
+                        choices: [{
+                            message: {
+                                role: 'assistant', content: null,
+                                tool_calls: [{
+                                    id: 'c' + Math.random(), type: 'function',
+                                    function: {
+                                        name: 'find_flexible_dates',
+                                        arguments: JSON.stringify({ origin: 'RUH', destination: 'CAI', aroundDate: futureDate(60), windowDays: 2 }),
+                                    },
+                                }],
+                            },
+                        }],
+                    }),
+                };
+            };
+        }
+        const token = makeToken('flexer');
+        const agent1 = createTravelAgent({ apiKey: 'k', fetchImpl: reactiveFlexFetch() });
+
+        await withAgentApp(agent1, async call => {
+            const first = await call('/api/travel/agent/chat', {
+                method: 'POST', token, body: { messages: [{ role: 'user', content: 'ابحث أرخص تاريخ ±يومين' }] },
+            });
+            assert.equal(first.status, 200);
+            assert.equal(first.data.actions[0].tool, 'find_flexible_dates');
+            assert.match(first.data.actions[0].summary, /RUH→CAI/);
+            assert.match(first.data.actions[0].summary, /\(5 تواريخ\)/); // ±2 حول المركز = 5 أيام
+
+            // المحدّد الخاص FLEX_MAX_CALLS=5: 4 نداءات إضافية تمر (المجموع 5)، والسادس يُرفض
+            for (let i = 0; i < 4; i++) {
+                const r = await call('/api/travel/agent/chat', {
+                    method: 'POST', token, body: { messages: [{ role: 'user', content: 'كرر' }] },
+                });
+                assert.equal(r.status, 200);
+                assert.equal(r.data.actions.length, 1, `النداء رقم ${i + 2} يجب أن ينجح`);
+            }
+            const limited = await call('/api/travel/agent/chat', {
+                method: 'POST', token, body: { messages: [{ role: 'user', content: 'كرر مرة أخرى' }] },
+            });
+            assert.equal(limited.status, 200); // HTTP 200 دوماً؛ الحد داخل نتيجة الأداة لا كود الحالة
+            assert.equal(limited.data.actions.length, 0); // فشلت الأداة (محدّد المعدّل) → لا إجراء ناجح مسجَّل
+        });
+    });
+
+    test('⚠️ check_trip_conflicts حقيقي: يكتشف تداخل توقيت رحلتين مُصدَرتين', async () => {
+        const username = 'conflict-user';
+        async function issuedFlight(depart, arrive) {
+            const b = await createBooking(store, {
+                username, provider: 'mock',
+                offer: { owner: 'x', slices: [{ departAt: depart, arriveAt: arrive }] },
+                passengers: [], contact: {},
+                netAmount: 100, sellAmount: 110, currency: 'USD',
+            });
+            return transitionBooking(store, b.id, 'issued', { bookingReference: 'REFX' });
+        }
+        await issuedFlight('2027-06-01T08:00:00', '2027-06-01T12:00:00');
+        await issuedFlight('2027-06-01T10:00:00', '2027-06-01T14:00:00'); // يتداخل مع الأولى
+
+        const agent = createTravelAgent({
+            apiKey: 'k',
+            fetchImpl: scriptedFetch([
+                { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'check_trip_conflicts', arguments: '{}' } }] },
+                { role: 'assistant', content: 'وجدت تعارضاً…' },
+            ]),
+        });
+        await withAgentApp(agent, async call => {
+            const token = makeToken(username);
+            const res = await call('/api/travel/agent/chat', {
+                method: 'POST', token, body: { messages: [{ role: 'user', content: 'هل هناك تعارض في رحلاتي؟' }] },
+            });
+            assert.equal(res.status, 200);
+            assert.match(res.data.actions[0].summary, /1 تعارض محتمل/);
+        });
+    });
+
+    test('👁️ مراقبة الأسعار حقيقية: إنشاء عبر الوكيل، عزل ملكية عند الإلغاء', async () => {
+        const username = 'watcher';
+        const agent = createTravelAgent({
+            apiKey: 'k',
+            fetchImpl: scriptedFetch([
+                {
+                    role: 'assistant', content: null,
+                    tool_calls: [{
+                        id: 'c1', type: 'function',
+                        function: { name: 'watch_price', arguments: JSON.stringify({ origin: 'RUH', destination: 'CAI', departDate: futureDate(30) }) },
+                    }],
+                },
+                { role: 'assistant', content: 'أنشأت المراقبة.' },
+            ]),
+        });
+        await withAgentApp(agent, async call => {
+            const token = makeToken(username);
+            const created = await call('/api/travel/agent/chat', {
+                method: 'POST', token, body: { messages: [{ role: 'user', content: 'راقب لي سعر هذه الرحلة' }] },
+            });
+            assert.equal(created.status, 200);
+            assert.match(created.data.actions[0].summary, /RUH→CAI/);
+        });
+
+        const watches = await listPriceWatchesByUser(store, username);
+        assert.equal(watches.length, 1);
+        assert.equal(watches[0].status, 'active');
+
+        // list_price_watches عبر الوكيل (مباشرة — يفحص دمج agent.js/server.js)
+        const listResult = await executeAgentTool('list_price_watches', {}, {
+            listPriceWatches: () => listPriceWatchesByUser(store, username),
+        });
+        assert.equal(listResult.ok, true);
+        assert.match(listResult.summary, /1 مراقبات/);
+
+        // عزل الملكية: مستخدم آخر لا يلغي، صاحبها يلغي فعلياً
+        assert.equal(await cancelPriceWatch(store, watches[0].id, 'stranger'), null);
+        const cancelled = await cancelPriceWatch(store, watches[0].id, username);
+        assert.equal(cancelled.status, 'cancelled');
+        assert.equal(await cancelPriceWatch(store, watches[0].id, username), null); // إلغاء مكرر
     });
 });
 

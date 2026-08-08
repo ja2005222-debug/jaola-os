@@ -22,11 +22,12 @@
 
 const DEFAULT_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const DEFAULT_MODEL = 'llama-3.3-70b-versatile';
-const MAX_TOOL_ROUNDS = 6;
+// 10 لا 6: البحث المقارن (تواريخ مرنة/بدائل) يستهلك جولات أكثر من حجز مباشر
+const MAX_TOOL_ROUNDS = 10;
 const MAX_TOOL_RESULT_CHARS = 6000;
 
 const SYSTEM_PROMPT = `أنت "مساعد جاولا للسفر" — وكيل سفر شامل محترف يتحدث العربية (أو لغة المستخدم)، لا مجرد حاجز طيران.
-قدراتك عبر الأدوات: بحث رحلات وفنادق، فحص عرض محدد، حجز فعلي (طيران/فنادق)، عرض حجوزات المستخدم، وإلغاء حجز.
+قدراتك عبر الأدوات: بحث رحلات وفنادق، فحص عرض محدد، حجز فعلي (طيران/فنادق)، عرض حجوزات المستخدم، إلغاء حجز، بحث تواريخ مرنة، فحص تعارض الرحلة، ومراقبة سعر.
 قواعد صارمة:
 1. الأسعار التي تعيدها الأدوات نهائية وشاملة — لا تخترع أسعاراً أو رحلات أو فنادق من ذاكرتك أبداً؛ كل معلومة رحلة/فندق تأتي من أداة.
 2. قبل أي حجز: اعرض ملخص الرحلة/الإقامة والسعر الإجمالي واسأل المستخدم صراحةً "هل أؤكد الحجز؟" — لا تضبط confirmed=true إلا بعد موافقة صريحة في رسالة المستخدم الأخيرة.
@@ -35,7 +36,8 @@ const SYSTEM_PROMPT = `أنت "مساعد جاولا للسفر" — وكيل س
 5. كن موجزاً وعملياً — رقّم الخيارات ليسهل الاختيار، واذكر التوقيتات والمدة وعدد التوقفات (للطيران) أو التقييم والليالي (للفنادق).
 6. رموز المطارات IATA من ثلاثة أحرف (RUH, JED, CAI, DXB...) — استنتجها من أسماء المدن، واسأل عند اللبس. بحث الفنادق يستخدم نفس رمز المطار كمرجع للمدينة.
 7. بعد حجز رحلة طيران بنجاح، اقترح على المستخدم فندقاً بنفس الوجهة وتواريخ قريبة (عبر search_stays) إن كان ذلك منطقياً — لا تفترض موافقته، اقترح فقط.
-8. عند نتائج بحث غالية جداً أو معدومة، جرّب مطارات قريبة أو تواريخ مجاورة (نداءات search_flights/search_stays إضافية) قبل إخبار المستخدم بعدم وجود خيارات — لا تستسلم من أول محاولة.`;
+8. عند نتائج بحث غالية جداً أو معدومة، جرّب مطارات قريبة أو تواريخ مجاورة (نداءات search_flights/search_stays إضافية) قبل إخبار المستخدم بعدم وجود خيارات — لا تستسلم من أول محاولة.
+9. إن سأل المستخدم عن أرخص تاريخ ضمن مدى مرن استخدم find_flexible_dates بدل نداءات search_flights متكررة يدوياً. بعد أي حجز جديد أو عند سؤال المستخدم "هل خطتي متعارضة؟" استخدم check_trip_conflicts وأبلغه بأي تحذير فوراً. إن طلب مراقبة سعر رحلة لم تنخفض بعد استخدم watch_price واشرح أن الفحص دوري لا لحظي.`;
 
 /** تعريفات الأدوات بصيغة OpenAI tools الموثَّقة. */
 export const AGENT_TOOLS = [
@@ -204,6 +206,71 @@ export const AGENT_TOOLS = [
             },
         },
     },
+    {
+        type: 'function',
+        function: {
+            name: 'find_flexible_dates',
+            description: 'يبحث عن أرخص تاريخ رحلة ضمن نافذة أيام حول تاريخ مستهدف — أفضل من نداءات search_flights متكررة يدوياً.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    origin: { type: 'string', description: 'رمز IATA لمطار المغادرة' },
+                    destination: { type: 'string', description: 'رمز IATA لمطار الوصول' },
+                    aroundDate: { type: 'string', description: 'تاريخ مركزي YYYY-MM-DD' },
+                    windowDays: { type: 'integer', description: 'نصف عرض النافذة بالأيام (1-7، افتراضي 3)' },
+                    cabin: { type: 'string', enum: ['economy', 'premium_economy', 'business', 'first'] },
+                },
+                required: ['origin', 'destination', 'aroundDate'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'check_trip_conflicts',
+            description: 'يفحص حجوزات المستخدم الحالية (طيران+فنادق) بحثاً عن تعارض تواريخ — يستخدم بعد أي حجز جديد أو عند سؤال المستخدم.',
+            parameters: { type: 'object', properties: {} },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'watch_price',
+            description: 'ينشئ مراقبة دورية لسعر رحلة معيّنة — يُخطر (بريدياً إن مضبوط) عند الانخفاض. الفحص دوري لا لحظي.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    origin: { type: 'string' },
+                    destination: { type: 'string' },
+                    departDate: { type: 'string' },
+                    returnDate: { type: 'string' },
+                    cabin: { type: 'string', enum: ['economy', 'premium_economy', 'business', 'first'] },
+                    targetPrice: { type: 'number', description: 'سعر يودّ المستخدم التنبيه دونه (اختياري)' },
+                },
+                required: ['origin', 'destination', 'departDate'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'list_price_watches',
+            description: 'يعرض مراقبات الأسعار النشطة للمستخدم.',
+            parameters: { type: 'object', properties: {} },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'cancel_price_watch',
+            description: 'يلغي مراقبة سعر قائمة.',
+            parameters: {
+                type: 'object',
+                properties: { watchId: { type: 'string' } },
+                required: ['watchId'],
+            },
+        },
+    },
 ];
 
 /**
@@ -281,6 +348,31 @@ export async function executeAgentTool(name, args, services) {
                 }
                 const result = await services.cancelStay(args.bookingId);
                 return { ok: true, summary: `↩️ أُلغي حجز الفندق ${args.bookingId}`, data: result };
+            }
+            case 'find_flexible_dates': {
+                if (!services.findFlexibleDates) return { ok: false, data: { error: 'بحث التواريخ المرنة غير متاح حالياً.' } };
+                const days = await services.findFlexibleDates(args);
+                return { ok: true, summary: `📅 ${args.origin}→${args.destination} (${days.length} تواريخ)`, data: days };
+            }
+            case 'check_trip_conflicts': {
+                if (!services.checkTripConflicts) return { ok: false, data: { error: 'فحص التعارض غير متاح حالياً.' } };
+                const warnings = await services.checkTripConflicts();
+                return { ok: true, summary: warnings.length ? `⚠️ ${warnings.length} تعارض محتمل` : '✅ لا تعارض', data: warnings };
+            }
+            case 'watch_price': {
+                if (!services.watchPrice) return { ok: false, data: { error: 'مراقبة الأسعار غير متاحة حالياً.' } };
+                const watch = await services.watchPrice(args);
+                return { ok: true, summary: `👁️ مراقبة سعر ${args.origin}→${args.destination}`, data: watch };
+            }
+            case 'list_price_watches': {
+                if (!services.listPriceWatches) return { ok: false, data: { error: 'مراقبة الأسعار غير متاحة حالياً.' } };
+                const watches = await services.listPriceWatches();
+                return { ok: true, summary: `👁️ ${watches.length} مراقبات نشطة`, data: watches };
+            }
+            case 'cancel_price_watch': {
+                if (!services.cancelPriceWatch) return { ok: false, data: { error: 'مراقبة الأسعار غير متاحة حالياً.' } };
+                const result = await services.cancelPriceWatch(args.watchId);
+                return { ok: true, summary: `🚫 أُلغيت المراقبة ${args.watchId}`, data: result };
             }
             default:
                 return { ok: false, data: { error: `أداة مجهولة: ${name}` } };

@@ -23,6 +23,8 @@ import { buildStore } from './src/store/index.js';
 import { buildProvider, buildStaysProvider } from './src/providers/index.js';
 import { buildTravelAgent } from './src/agent/agent.js';
 import { airportCoords } from './src/airports.js';
+import { createPriceWatch, listPriceWatchesByUser, cancelPriceWatch } from './src/priceWatches.js';
+import { checkWatches } from './src/priceWatchPoller.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -34,6 +36,10 @@ const MAX_STAY_NIGHTS = 30;
 const MAX_BOOKING_WINDOW_DAYS = 330; // أقصى ما تفتحه أنظمة الحجز عادةً
 const MAX_AGENT_MESSAGES = 30;
 const MAX_AGENT_MESSAGE_CHARS = 4000;
+const MAX_FLEX_WINDOW_DAYS = 7;
+const FLEX_CONCURRENCY = 3;
+const FLEX_WINDOW_MS = 5 * 60 * 1000;
+const FLEX_MAX_CALLS = 5; // أغلى من بحث عادي (نداءات مزوّد متعددة لكل طلب)
 
 /** يلتقط أخطاء المسارات غير المتزامنة إلى معالج Express بدل ابتلاعها. */
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -356,6 +362,133 @@ export function createApp({
         return publicBooking(cancelled || await getBooking(store, booking.id));
     }
 
+    // ─── إيجاد الحلول (أدوات ايجنت فقط — لا مسارات HTTP مباشرة) ────────
+
+    // عدّاد بسيط لكل مستخدم: find_flexible_dates تُصدر عدة نداءات مزوّد
+    // لكل طلب واحد، فتحتاج سقفاً أشدّ من searchLimiter العام.
+    const flexCallState = new Map();
+    function checkFlexLimit(username) {
+        const now = Date.now();
+        const entry = flexCallState.get(username);
+        if (!entry || now - entry.windowStart > FLEX_WINDOW_MS) {
+            flexCallState.set(username, { count: 1, windowStart: now });
+            return;
+        }
+        entry.count += 1;
+        if (entry.count > FLEX_MAX_CALLS) {
+            throw Object.assign(new Error('طلبات بحث التواريخ المرنة كثيرة جداً — انتظر قليلاً وحاول مجدداً.'), { status: 429 });
+        }
+    }
+
+    async function doFindFlexibleDates(username, { origin, destination, aroundDate, windowDays, cabin }) {
+        checkFlexLimit(username);
+        const originU = String(origin || '').trim().toUpperCase();
+        const destU = String(destination || '').trim().toUpperCase();
+        if (!IATA_RE.test(originU) || !IATA_RE.test(destU)) {
+            throw Object.assign(new Error('رمزا المطار يجب أن يكونا IATA من ثلاثة أحرف.'), { status: 400 });
+        }
+        const center = String(aroundDate || '').trim();
+        if (!DATE_RE.test(center) || isNaN(Date.parse(center))) {
+            throw Object.assign(new Error('تاريخ مركزي بصيغة YYYY-MM-DD.'), { status: 400 });
+        }
+        const win = Math.min(MAX_FLEX_WINDOW_DAYS, Math.max(1, Number(windowDays) || 3));
+        const cab = CABINS.includes(cabin) ? cabin : 'economy';
+
+        const dates = [];
+        for (let d = -win; d <= win; d++) {
+            const dt = new Date(center + 'T00:00:00Z');
+            dt.setUTCDate(dt.getUTCDate() + d);
+            const iso = dt.toISOString().slice(0, 10);
+            if (daysFromToday(iso) >= 0) dates.push(iso);
+        }
+
+        const results = [];
+        for (let i = 0; i < dates.length; i += FLEX_CONCURRENCY) {
+            const batch = dates.slice(i, i + FLEX_CONCURRENCY);
+            const batchResults = await Promise.all(batch.map(async date => {
+                try {
+                    const offers = await provider.searchOffers({ origin: originU, destination: destU, departDate: date, adults: 1, children: 0, cabin: cab });
+                    if (offers.length === 0) return { date, price: null, currency: null };
+                    const cheapestNet = Math.min(...offers.map(o => o.netAmount));
+                    return { date, price: applyMarkup(cheapestNet, markupPct), currency: offers[0].currency };
+                } catch {
+                    return { date, price: null, currency: null };
+                }
+            }));
+            results.push(...batchResults);
+        }
+        return results;
+    }
+
+    async function doCheckTripConflicts(username) {
+        const bookings = (await listBookingsByUser(store, username)).filter(b => b.status === 'issued');
+        const warnings = [];
+        const flights = bookings.filter(b => (b.kind || 'flight') === 'flight' && (b.offer?.slices || []).length > 0);
+        const stays = bookings.filter(b => b.kind === 'stay' && b.offer?.checkOutDate);
+
+        for (let i = 0; i < flights.length; i++) {
+            const aSlices = flights[i].offer.slices;
+            const aStart = new Date(aSlices[0].departAt);
+            const aEnd = new Date(aSlices[aSlices.length - 1].arriveAt);
+            for (let j = i + 1; j < flights.length; j++) {
+                const bSlices = flights[j].offer.slices;
+                const bStart = new Date(bSlices[0].departAt);
+                const bEnd = new Date(bSlices[bSlices.length - 1].arriveAt);
+                if (aStart < bEnd && bStart < aEnd) {
+                    warnings.push({ message: `رحلتان متداخلتا التوقيت: ${flights[i].bookingReference || flights[i].id} و${flights[j].bookingReference || flights[j].id}.` });
+                }
+            }
+        }
+
+        if (flights.length > 0) {
+            const latestFlightDate = flights
+                .map(f => f.offer.slices[f.offer.slices.length - 1].arriveAt?.slice(0, 10))
+                .filter(Boolean)
+                .sort()
+                .pop();
+            for (const stay of stays) {
+                if (latestFlightDate && stay.offer.checkOutDate > latestFlightDate) {
+                    warnings.push({ message: `مغادرة الفندق (${stay.offer.checkOutDate}) بعد آخر رحلة عودة (${latestFlightDate}) — تحقق من التواريخ.` });
+                }
+            }
+        }
+        return warnings;
+    }
+
+    async function doWatchPrice(username, params) {
+        const check = validateSearchParams(params);
+        if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
+        let targetPrice = null;
+        if (params?.targetPrice != null) {
+            targetPrice = Number(params.targetPrice);
+            if (!Number.isFinite(targetPrice) || targetPrice <= 0) {
+                throw Object.assign(new Error('السعر الهدف يجب أن يكون رقماً موجباً.'), { status: 400 });
+            }
+        }
+        let contactEmail = null;
+        if (params?.contactEmail) {
+            contactEmail = String(params.contactEmail).trim();
+            if (!EMAIL_RE.test(contactEmail)) {
+                throw Object.assign(new Error('بريد إشعار غير صالح.'), { status: 400 });
+            }
+        }
+        return createPriceWatch(store, {
+            username, origin: check.values.origin, destination: check.values.destination,
+            departDate: check.values.departDate, returnDate: check.values.returnDate,
+            cabin: check.values.cabin, targetPrice, contactEmail,
+        });
+    }
+
+    async function doListPriceWatches(username) {
+        return listPriceWatchesByUser(store, username);
+    }
+
+    async function doCancelPriceWatch(username, watchId) {
+        const cancelled = await cancelPriceWatch(store, watchId, username);
+        if (!cancelled) throw Object.assign(new Error('المراقبة غير موجودة أو غير نشطة.'), { status: 404 });
+        return cancelled;
+    }
+
     // ─── المسارات ─────────────────────────────────────────────────────
 
     app.get('/api/travel/health', (req, res) => {
@@ -494,6 +627,11 @@ export function createApp({
             getStayOffer: staysProvider ? id => doGetStayOffer(id) : null,
             bookStay: staysProvider ? args => doBookStay(username, args) : null,
             cancelStay: staysProvider ? id => doCancelStay(username, id) : null,
+            findFlexibleDates: params => doFindFlexibleDates(username, params),
+            checkTripConflicts: () => doCheckTripConflicts(username),
+            watchPrice: args => doWatchPrice(username, args),
+            listPriceWatches: () => doListPriceWatches(username),
+            cancelPriceWatch: id => doCancelPriceWatch(username, id),
         };
         try {
             const result = await agent.chat({ messages, services });
@@ -545,4 +683,20 @@ if (isMain) {
             console.warn('⚠️ تخزين بالملفات — على منصة ذات قرص مؤقت تُمسح الحجوزات مع كل إعادة نشر. اضبط DATABASE_URL للإنتاج.');
         }
     });
+
+    // 👁️ مراقب الأسعار: يعمل فقط أثناء يقظة الخدمة (لا setInterval يبقيها
+    // مستيقظة عمداً) — على خطة استضافة مجانية تنام الخدمة بلا زيارات
+    // فيتوقف الفحص حتى يوقظها أول طلب، وهذا حد منصة معروف لا خلل.
+    async function runPriceWatchCheck() {
+        try {
+            const { checked, notified, errors } = await checkWatches({ store, provider, markupPct });
+            if (checked > 0) {
+                console.log(`👁️ فحص مراقبات الأسعار: ${checked} فُحصت، ${notified} إشعار أُرسل${errors.length ? `، ${errors.length} أخطاء` : ''}.`);
+            }
+        } catch (e) {
+            console.error('⚠️ فشل فحص مراقبات الأسعار:', e.message);
+        }
+    }
+    runPriceWatchCheck();
+    setInterval(runPriceWatchCheck, 6 * 60 * 60 * 1000); // كل 6 ساعات
 }
