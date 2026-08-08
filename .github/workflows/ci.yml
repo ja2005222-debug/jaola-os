@@ -61,6 +61,39 @@ jobs:
           TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/videotest
         run: npm test
 
+  travel-service-tests:
+    name: اختبارات بوابة السفر
+    runs-on: ubuntu-latest
+    # نفس عقيدة خدمة الفيديو: المجموعة كاملة على المخزنين (ملفات + Postgres)
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: traveltest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: travel-service/package-lock.json
+      - name: تثبيت تبعيات بوابة السفر
+        working-directory: travel-service
+        run: npm ci
+      - name: تشغيل الاختبارات (ملفات + Postgres)
+        working-directory: travel-service
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/traveltest
+        run: npm test
+
   frontend-build:
     name: بناء الواجهة
     runs-on: ubuntu-latest

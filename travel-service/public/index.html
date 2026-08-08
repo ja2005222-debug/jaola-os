@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>✈️ JAOLA Travel — بوابة السفر</title>
+  <style>
+    :root {
+      --bg: #0b1120; --card: #111a2e; --border: #1e2a44;
+      --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8;
+      --ok: #34d399; --warn: #fbbf24; --bad: #f87171;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh;
+    }
+    a { color: var(--accent); }
+    .hidden { display: none !important; }
+
+    header {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 14px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap;
+    }
+    header h1 { font-size: 20px; }
+    .banner {
+      background: #fbbf2422; color: var(--warn); border: 1px solid #fbbf2455;
+      padding: 8px 14px; text-align: center; font-size: 13px;
+    }
+    main { max-width: 1000px; margin: 0 auto; padding: 20px; }
+
+    .tabs { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+    .tabs button {
+      background: var(--card); color: var(--text); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 18px; cursor: pointer; font-size: 15px;
+    }
+    .tabs button.active { border-color: var(--accent); color: var(--accent); }
+
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 16px; margin-bottom: 14px;
+    }
+    label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+    input, select {
+      width: 100%; padding: 10px 12px; border-radius: 10px; font-size: 14px;
+      border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    }
+    .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+    button.primary {
+      background: var(--accent); color: #06202e; border: none; border-radius: 10px;
+      padding: 12px 22px; font-size: 15px; font-weight: 700; cursor: pointer; margin-top: 14px;
+    }
+    button.primary:disabled { opacity: .5; cursor: wait; }
+    .chip {
+      background: none; border: 1px solid var(--border); color: var(--text);
+      border-radius: 999px; padding: 6px 14px; font-size: 13px; cursor: pointer;
+    }
+    .note { color: var(--muted); font-size: 12px; margin-top: 8px; }
+    .error { color: var(--bad); font-size: 13px; margin-top: 8px; }
+
+    /* عرض رحلة */
+    .offer { display: flex; justify-content: space-between; gap: 14px; align-items: center; flex-wrap: wrap; }
+    .offer .route { font-size: 17px; font-weight: 700; }
+    .offer .price { font-size: 22px; color: var(--ok); font-weight: 800; white-space: nowrap; }
+    .seg { color: var(--muted); font-size: 13px; margin-top: 4px; }
+    .stops0 { color: var(--ok); } .stops1 { color: var(--warn); }
+
+    .st { font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); }
+    .st-issued { color: var(--ok); border-color: var(--ok); }
+    .st-pending { color: var(--warn); border-color: var(--warn); }
+    .st-failed, .st-cancelled { color: var(--bad); border-color: var(--bad); }
+
+    /* المساعد */
+    #chatLog { max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px; }
+    .msg { max-width: 85%; padding: 10px 14px; border-radius: 14px; font-size: 14px; white-space: pre-wrap; line-height: 1.6; }
+    .msg.user { background: #0e3350; align-self: flex-start; }
+    .msg.bot { background: var(--card); border: 1px solid var(--border); align-self: flex-end; }
+    .action-chip {
+      align-self: flex-end; font-size: 12px; color: var(--accent);
+      border: 1px dashed var(--accent); border-radius: 999px; padding: 3px 12px;
+    }
+    #chatForm { display: flex; gap: 8px; margin-top: 12px; }
+    #chatInput { flex: 1; }
+
+    dialog {
+      background: var(--card); color: var(--text); border: 1px solid var(--border);
+      border-radius: 14px; padding: 20px; max-width: 560px; width: 92%;
+    }
+    dialog::backdrop { background: #000a; }
+  </style>
+</head>
+<body>
+  <div id="modeBanner" class="banner hidden">🧪 بيئة تجريبية — الحجوزات هنا لا تُصدر تذاكر حقيقية ولا تُحصَّل أموال.</div>
+  <header>
+    <h1>✈️ JAOLA Travel <span style="color:var(--muted);font-size:13px">بوابة السفر</span></h1>
+    <span id="userBadge" style="color:var(--muted);font-size:13px"></span>
+  </header>
+
+  <main>
+    <div id="authGate" class="card hidden">
+      <p>🔐 افتح البوابة من لوحة تحكم منصة JAOLA (نفس تسجيل الدخول) — أو ألصق توكن الجلسة للتجربة:</p>
+      <input id="tokenInput" placeholder="JWT token" style="margin-top:10px" />
+      <button class="primary" id="tokenSave">دخول</button>
+    </div>
+
+    <div id="app" class="hidden">
+      <div class="tabs">
+        <button data-tab="search" class="active">🔎 بحث الرحلات</button>
+        <button data-tab="trips">🧳 رحلاتي</button>
+        <button data-tab="agent" id="agentTabBtn">🤖 المساعد</button>
+      </div>
+
+      <!-- ─── البحث ─── -->
+      <section id="tab-search">
+        <div class="card">
+          <div class="row">
+            <div><label>من (IATA)</label><input id="fOrigin" placeholder="RUH" maxlength="3" /></div>
+            <div><label>إلى (IATA)</label><input id="fDest" placeholder="CAI" maxlength="3" /></div>
+            <div><label>تاريخ الذهاب</label><input id="fDepart" type="date" /></div>
+            <div><label>العودة (اختياري)</label><input id="fReturn" type="date" /></div>
+          </div>
+          <div class="row">
+            <div><label>بالغون</label><input id="fAdults" type="number" min="1" max="9" value="1" /></div>
+            <div><label>أطفال</label><input id="fChildren" type="number" min="0" max="8" value="0" /></div>
+            <div><label>الدرجة</label>
+              <select id="fCabin">
+                <option value="economy">اقتصادية</option>
+                <option value="premium_economy">اقتصادية مميزة</option>
+                <option value="business">رجال الأعمال</option>
+                <option value="first">الأولى</option>
+              </select>
+            </div>
+          </div>
+          <button class="primary" id="searchBtn">🔎 ابحث</button>
+          <div id="searchError" class="error hidden"></div>
+        </div>
+        <div id="results"></div>
+      </section>
+
+      <!-- ─── رحلاتي ─── -->
+      <section id="tab-trips" class="hidden">
+        <div id="tripsList"></div>
+      </section>
+
+      <!-- ─── المساعد ─── -->
+      <section id="tab-agent" class="hidden">
+        <div class="card">
+          <div id="chatLog"></div>
+          <form id="chatForm">
+            <input id="chatInput" placeholder="مثال: احجز لي رحلة من الرياض للقاهرة الأسبوع القادم بأرخص سعر" autocomplete="off" />
+            <button class="primary" style="margin-top:0" id="chatSend">أرسل</button>
+          </form>
+          <p class="note">المساعد ينفّذ فعلياً: يبحث ويقارن ويحجز ويلغي بالحوار — وكل إجراء نفّذه يظهر كرقاقة شفافية.</p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- نافذة بيانات الركاب -->
+  <dialog id="bookDialog">
+    <h3 style="margin-bottom:6px">🎫 بيانات المسافرين</h3>
+    <p id="bookSummary" class="note"></p>
+    <form id="bookForm" method="dialog"></form>
+    <div id="bookError" class="error hidden"></div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="primary" id="bookConfirm">أكّد الحجز</button>
+      <button class="chip" id="bookCancel" type="button">إلغاء</button>
+    </div>
+  </dialog>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    let token = null, config = null, selectedOffer = null;
+    let chatHistory = []; // {role, content} — تُرسل كاملة لكل جولة
+
+    // ─── الدخول الموحّد: توكن من ?token= أو التخزين المحلي ───
+    function initToken() {
+      const url = new URL(location.href);
+      const fromUrl = url.searchParams.get('token');
+      if (fromUrl) {
+        localStorage.setItem('jaolaTravelToken', fromUrl);
+        url.searchParams.delete('token');
+        history.replaceState(null, '', url.toString());
+      }
+      token = localStorage.getItem('jaolaTravelToken');
+    }
+
+    async function api(path, opts = {}) {
+      const res = await fetch(path, {
+        ...opts,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(opts.headers || {}) },
+      });
+      if (res.status === 401) { localStorage.removeItem('jaolaTravelToken'); showGate(); }
+      return res;
+    }
+
+    function showGate() {
+      $('authGate').classList.remove('hidden');
+      $('app').classList.add('hidden');
+    }
+
+    async function boot() {
+      initToken();
+      if (!token) return showGate();
+      const res = await api('/api/travel/config');
+      if (!res.ok) return; // 401 عالجها api()
+      config = await res.json();
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        $('userBadge').textContent = '👤 ' + (payload.username || '');
+      } catch { /* عرض تجميلي فقط */ }
+      if (config.providerMode !== 'live') $('modeBanner').classList.remove('hidden');
+      if (!config.agentEnabled) $('agentTabBtn').title = 'غير مفعَّل على هذا الخادم';
+      $('app').classList.remove('hidden');
+      $('authGate').classList.add('hidden');
+      // تاريخ افتراضي: بعد أسبوع
+      const d = new Date(Date.now() + 7 * 86400000);
+      $('fDepart').value = d.toISOString().slice(0, 10);
+      loadTrips();
+    }
+
+    $('tokenSave').addEventListener('click', () => {
+      const t = $('tokenInput').value.trim();
+      if (!t) return;
+      localStorage.setItem('jaolaTravelToken', t);
+      location.reload();
+    });
+
+    // ─── التبويبات ───
+    document.querySelectorAll('.tabs button').forEach(btn =>
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b === btn));
+        ['search', 'trips', 'agent'].forEach(t =>
+          $('tab-' + t).classList.toggle('hidden', t !== btn.dataset.tab));
+        if (btn.dataset.tab === 'trips') loadTrips();
+      }));
+
+    // ─── البحث ───
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fmtTime = iso => (iso || '').slice(11, 16);
+    const fmtDur = min => min == null ? '' : `${Math.floor(min / 60)}س ${min % 60}د`;
+
+    function sliceHtml(s) {
+      const stopsTxt = s.stops === 0 ? 'مباشرة' : `${s.stops} توقف`;
+      return `<div class="seg">
+        <strong>${esc(s.origin)} ${fmtTime(s.departAt)}</strong> ← <strong>${esc(s.destination)} ${fmtTime(s.arriveAt)}</strong>
+        · ${fmtDur(s.durationMin)} · <span class="stops${s.stops}">${stopsTxt}</span>
+        · ${s.segments.map(g => esc(g.carrier + ' ' + g.flightNumber)).join(' ثم ')}
+      </div>`;
+    }
+
+    async function doSearch() {
+      $('searchError').classList.add('hidden');
+      $('results').innerHTML = '<p class="note">🔎 جارٍ البحث…</p>';
+      $('searchBtn').disabled = true;
+      try {
+        const body = {
+          origin: $('fOrigin').value, destination: $('fDest').value,
+          departDate: $('fDepart').value, returnDate: $('fReturn').value || null,
+          adults: Number($('fAdults').value), children: Number($('fChildren').value),
+          cabin: $('fCabin').value,
+        };
+        const res = await api('/api/travel/flights/search', { method: 'POST', body: JSON.stringify(body) });
+        const data = await res.json();
+        if (!res.ok) {
+          $('results').innerHTML = '';
+          $('searchError').textContent = data.error || 'تعذّر البحث.';
+          $('searchError').classList.remove('hidden');
+          return;
+        }
+        if (!data.offers.length) {
+          $('results').innerHTML = '<p class="note">لا رحلات متاحة لهذا البحث.</p>';
+          return;
+        }
+        $('results').innerHTML = data.offers.map(o => `
+          <div class="card offer">
+            <div style="flex:1">
+              <div class="route">${esc(o.owner)}</div>
+              ${o.slices.map(sliceHtml).join('')}
+            </div>
+            <div style="text-align:center">
+              <div class="price">${o.sellAmount} ${esc(o.currency)}</div>
+              <div class="note">إجمالي ${o.passengerCount} مسافر</div>
+              <button class="primary" data-book='${esc(JSON.stringify({ id: o.id }))}'>احجز</button>
+            </div>
+          </div>`).join('');
+        document.querySelectorAll('[data-book]').forEach(btn =>
+          btn.addEventListener('click', () => openBooking(
+            data.offers.find(o => o.id === JSON.parse(btn.dataset.book).id))));
+      } finally {
+        $('searchBtn').disabled = false;
+      }
+    }
+    $('searchBtn').addEventListener('click', doSearch);
+
+    // ─── الحجز ───
+    function openBooking(offer) {
+      selectedOffer = offer;
+      $('bookSummary').textContent =
+        `${offer.owner} — الإجمالي ${offer.sellAmount} ${offer.currency} لعدد ${offer.passengerCount} مسافر`;
+      let html = '';
+      for (let i = 0; i < offer.passengerCount; i++) {
+        html += `<fieldset style="border:1px dashed var(--border);border-radius:10px;padding:10px;margin-top:10px">
+          <legend style="font-size:13px;color:var(--muted)">المسافر ${i + 1}</legend>
+          <div class="row">
+            <div><label>اللقب</label><select data-p="title"><option value="mr">Mr</option><option value="ms">Ms</option><option value="mrs">Mrs</option></select></div>
+            <div><label>الاسم الأول (لاتيني)</label><input data-p="givenName" placeholder="AHMED" /></div>
+            <div><label>اسم العائلة (لاتيني)</label><input data-p="familyName" placeholder="ALI" /></div>
+            <div><label>تاريخ الميلاد</label><input data-p="bornOn" type="date" /></div>
+            <div><label>الجنس</label><select data-p="gender"><option value="m">ذكر</option><option value="f">أنثى</option></select></div>
+          </div>
+        </fieldset>`;
+      }
+      html += `<div class="row" style="margin-top:10px">
+        <div><label>البريد الإلكتروني</label><input id="cEmail" type="email" placeholder="you@example.com" /></div>
+        <div><label>الهاتف</label><input id="cPhone" placeholder="+9665xxxxxxxx" /></div>
+      </div>`;
+      $('bookForm').innerHTML = html;
+      $('bookError').classList.add('hidden');
+      $('bookDialog').showModal();
+    }
+    $('bookCancel').addEventListener('click', () => $('bookDialog').close());
+
+    $('bookConfirm').addEventListener('click', async (e) => {
+      e.preventDefault();
+      const passengers = [...$('bookForm').querySelectorAll('fieldset')].map(fs => {
+        const val = name => fs.querySelector(`[data-p="${name}"]`).value.trim();
+        return { title: val('title'), givenName: val('givenName'), familyName: val('familyName'), bornOn: val('bornOn'), gender: val('gender') };
+      });
+      const body = {
+        offerId: selectedOffer.id, passengers,
+        contact: { email: $('cEmail').value.trim(), phone: $('cPhone').value.trim() },
+      };
+      $('bookConfirm').disabled = true;
+      try {
+        const res = await api('/api/travel/bookings', { method: 'POST', body: JSON.stringify(body) });
+        const data = await res.json();
+        if (!res.ok) {
+          $('bookError').textContent = data.error || 'تعذّر الحجز.';
+          $('bookError').classList.remove('hidden');
+          return;
+        }
+        $('bookDialog').close();
+        alert(`✅ تم الحجز!\nالمرجع: ${data.booking.bookingReference}\nالإجمالي: ${data.booking.sellAmount} ${data.booking.currency}`);
+        document.querySelector('[data-tab="trips"]').click();
+      } finally {
+        $('bookConfirm').disabled = false;
+      }
+    });
+
+    // ─── رحلاتي ───
+    const ST_LABEL = { issued: 'مُصدَر ✅', pending: 'قيد الإصدار', failed: 'فشل', cancelled: 'مُلغى' };
+    async function loadTrips() {
+      const res = await api('/api/travel/bookings');
+      if (!res.ok) return;
+      const { bookings } = await res.json();
+      $('tripsList').innerHTML = bookings.length === 0
+        ? '<p class="note">لا حجوزات بعد — ابدأ من تبويب البحث أو اطلب من المساعد.</p>'
+        : bookings.map(b => `
+          <div class="card">
+            <div class="offer">
+              <div style="flex:1">
+                <div class="route">${esc(b.offer?.owner || '')}
+                  <span class="st st-${esc(b.status)}">${ST_LABEL[b.status] || esc(b.status)}</span></div>
+                ${(b.offer?.slices || []).map(sliceHtml).join('')}
+                ${b.bookingReference ? `<div class="note">المرجع: <strong>${esc(b.bookingReference)}</strong></div>` : ''}
+                ${b.error ? `<div class="error">${esc(b.error)}</div>` : ''}
+                ${b.refund && b.refund.amount != null ? `<div class="note">↩️ استرداد: ${b.refund.amount} ${esc(b.refund.currency || '')}</div>` : ''}
+              </div>
+              <div style="text-align:center">
+                <div class="price">${b.sellAmount} ${esc(b.currency)}</div>
+                ${b.status === 'issued' ? `<button class="chip" data-cancel="${esc(b.id)}">إلغاء الحجز</button>` : ''}
+              </div>
+            </div>
+          </div>`).join('');
+      document.querySelectorAll('[data-cancel]').forEach(btn =>
+        btn.addEventListener('click', async () => {
+          if (!confirm('إلغاء هذا الحجز؟ مبلغ الاسترداد يحدده المزوّد.')) return;
+          const res = await api(`/api/travel/bookings/${btn.dataset.cancel}/cancel`, { method: 'POST' });
+          const data = await res.json();
+          if (!res.ok) alert(data.error || 'تعذّر الإلغاء.');
+          loadTrips();
+        }));
+    }
+
+    // ─── المساعد ───
+    function pushMsg(role, content) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
+      div.textContent = content;
+      $('chatLog').appendChild(div);
+      $('chatLog').scrollTop = $('chatLog').scrollHeight;
+    }
+    function pushAction(summary) {
+      const div = document.createElement('div');
+      div.className = 'action-chip';
+      div.textContent = summary;
+      $('chatLog').appendChild(div);
+      $('chatLog').scrollTop = $('chatLog').scrollHeight;
+    }
+
+    $('chatForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = $('chatInput').value.trim();
+      if (!text) return;
+      $('chatInput').value = '';
+      pushMsg('user', text);
+      chatHistory.push({ role: 'user', content: text });
+      $('chatSend').disabled = true;
+      try {
+        const res = await api('/api/travel/agent/chat', {
+          method: 'POST', body: JSON.stringify({ messages: chatHistory }),
+        });
+        const data = await res.json();
+        if (!res.ok) { pushMsg('bot', '⚠️ ' + (data.error || 'تعذّر رد المساعد.')); return; }
+        (data.actions || []).forEach(a => pushAction(a.summary));
+        pushMsg('bot', data.reply);
+        chatHistory.push({ role: 'assistant', content: data.reply });
+        // إجراء نفّذ حجزاً/إلغاءً؟ حدّث الرحلات في الخلفية
+        if ((data.actions || []).some(a => ['book_flight', 'cancel_booking'].includes(a.tool))) loadTrips();
+      } catch {
+        pushMsg('bot', '⚠️ تعذّر الاتصال بالخادم.');
+      } finally {
+        $('chatSend').disabled = false;
+      }
+    });
+
+    boot();
+  </script>
+</body>
+</html>

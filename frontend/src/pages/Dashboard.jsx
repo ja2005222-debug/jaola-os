@@ -9,7 +9,7 @@ import { Markdown } from '../components/Markdown.jsx';
 import { PreviewPanel } from '../components/PreviewPanel.jsx';
 import { TimelinePanel } from '../components/TimelinePanel.jsx';
 import { useJaolaStore } from '../store/useJaolaStore.js';
-import { BACKEND_URL, VIDEO_STUDIO_URL, openVideoStudio, describeFetchFailure } from '../config.js';
+import { BACKEND_URL, VIDEO_STUDIO_URL, openVideoStudio, TRAVEL_PORTAL_URL, openTravelPortal, describeFetchFailure } from '../config.js';
 import { useI18n } from '../i18n.js';
 import { LanguageSwitcher } from '../components/LanguageSwitcher.jsx';
 
@@ -3214,6 +3214,14 @@ export default function Dashboard() {
           <button onClick={openVideoStudio} title={t('videoStudioTitle')}
             style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 10px', color:S.muted, fontSize:13, cursor:'pointer' }}>
             🎬
+          </button>
+        )}
+
+        {/* ✈️ بوابة السفر — خدمة منفصلة؛ نفس قاعدة الاستوديو حرفياً */}
+        {TRAVEL_PORTAL_URL && (
+          <button onClick={openTravelPortal} title={t('travelPortalTitle')}
+            style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 10px', color:S.muted, fontSize:13, cursor:'pointer' }}>
+            ✈️
           </button>
         )}
 
