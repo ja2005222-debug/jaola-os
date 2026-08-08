@@ -25,6 +25,7 @@ import { buildTravelAgent } from './src/agent/agent.js';
 import { airportCoords } from './src/airports.js';
 import { createPriceWatch, listPriceWatchesByUser, cancelPriceWatch } from './src/priceWatches.js';
 import { checkWatches } from './src/priceWatchPoller.js';
+import { getDestinationWeather, convertCurrency, MAX_FORECAST_DAYS_AHEAD } from './src/travelInfo.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -49,6 +50,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const NAME_RE = /^[A-Za-z][A-Za-z' -]{0,39}$/; // لاتينية كما في الجواز — شرط المزوّدين
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^\+?[0-9]{7,15}$/;
+const CURRENCY_RE = /^[A-Za-z]{3}$/;
 
 function todayUtc() {
     return new Date().toISOString().slice(0, 10);
@@ -210,6 +212,7 @@ export function createApp({
     staysProvider = null,
     agent = null,
     markupPct = readMarkupPct(),
+    travelInfoFetch = fetch, // قابل للحقن في الاختبارات (طقس/عملة بلا شبكة حقيقية)
 }) {
     const app = express();
     app.use(cors());
@@ -489,6 +492,43 @@ export function createApp({
         return cancelled;
     }
 
+    // ─── معلومات وفيرة (أدوات ايجنت فقط — بيانات حقيقية مصدرها API) ────
+
+    async function doGetDestinationWeather({ iata, dateFrom, dateTo }) {
+        const code = String(iata || '').trim().toUpperCase();
+        if (!IATA_RE.test(code)) {
+            throw Object.assign(new Error('رمز الوجهة يجب أن يكون IATA من ثلاثة أحرف.'), { status: 400 });
+        }
+        const coords = airportCoords(code);
+        if (!coords) throw Object.assign(new Error(`الوجهة ${code} غير مغطّاة حالياً لتوقعات الطقس.`), { status: 400 });
+        const from = String(dateFrom || '').trim();
+        const to = String(dateTo || from).trim();
+        if (!DATE_RE.test(from) || isNaN(Date.parse(from))) {
+            throw Object.assign(new Error('تاريخ بداية بصيغة YYYY-MM-DD.'), { status: 400 });
+        }
+        if (!DATE_RE.test(to) || isNaN(Date.parse(to)) || to < from) {
+            throw Object.assign(new Error('تاريخ نهاية صالح لا يسبق البداية.'), { status: 400 });
+        }
+        if (daysFromToday(from) < 0 || daysFromToday(to) > MAX_FORECAST_DAYS_AHEAD) {
+            throw Object.assign(new Error(`التوقعات الجوية متاحة من اليوم حتى ${MAX_FORECAST_DAYS_AHEAD} يوماً قادماً فقط.`), { status: 400 });
+        }
+        const days = await getDestinationWeather({ lat: coords.lat, lon: coords.lon, dateFrom: from, dateTo: to, fetchImpl: travelInfoFetch });
+        return { city: coords.city, country: coords.country, days };
+    }
+
+    async function doConvertCurrency({ amount, from, to }) {
+        const amt = Number(amount);
+        if (!Number.isFinite(amt) || amt <= 0) {
+            throw Object.assign(new Error('المبلغ يجب أن يكون رقماً موجباً.'), { status: 400 });
+        }
+        const fromU = String(from || '').trim().toUpperCase();
+        const toU = String(to || '').trim().toUpperCase();
+        if (!CURRENCY_RE.test(fromU) || !CURRENCY_RE.test(toU)) {
+            throw Object.assign(new Error('رمزا العملة يجب أن يكونا من ثلاثة أحرف (مثل USD وSAR).'), { status: 400 });
+        }
+        return convertCurrency({ amount: amt, from: fromU, to: toU, fetchImpl: travelInfoFetch });
+    }
+
     // ─── المسارات ─────────────────────────────────────────────────────
 
     app.get('/api/travel/health', (req, res) => {
@@ -632,6 +672,8 @@ export function createApp({
             watchPrice: args => doWatchPrice(username, args),
             listPriceWatches: () => doListPriceWatches(username),
             cancelPriceWatch: id => doCancelPriceWatch(username, id),
+            getDestinationWeather: args => doGetDestinationWeather(args),
+            convertCurrency: args => doConvertCurrency(args),
         };
         try {
             const result = await agent.chat({ messages, services });

@@ -29,6 +29,7 @@ import { createPostgresStore } from '../src/store/postgresStore.js';
 import { createTravelAgent, executeAgentTool, buildTravelAgent, AGENT_TOOLS } from '../src/agent/agent.js';
 import { listPriceWatchesByUser, cancelPriceWatch } from '../src/priceWatches.js';
 import { checkWatches } from '../src/priceWatchPoller.js';
+import { getDestinationWeather, convertCurrency } from '../src/travelInfo.js';
 
 const JWT_SECRET = 'test-secret-not-for-production';
 const MARKUP = 10; // هامش الاختبارات — أرقامه سهلة التحقق يدوياً
@@ -121,6 +122,52 @@ describe('checkWatches: الفحص الدوري لمراقبات الأسعار'
         const result = await checkWatches({ store: watchStore, provider: stubProvider, markupPct: 0, mailer: stubMailer });
         assert.equal(result.notified, 0);
         assert.equal(result.errors.length, 0);
+    });
+});
+
+// ─── 🌤️💱 طقس + عملة (وحدة مستقلة — fetchImpl مُحاكى، بلا شبكة حقيقية) ──
+describe('travelInfo: طقس الوجهة وتحويل العملات (بيانات حقيقية عبر fetchImpl قابل للحقن)', () => {
+    test('getDestinationWeather: يطبّع رد Open-Meteo الموثَّق إلى أيام', async () => {
+        const stubFetch = async () => ({
+            ok: true,
+            json: async () => ({
+                daily: {
+                    time: ['2027-01-15', '2027-01-16'],
+                    temperature_2m_max: [30, 31],
+                    temperature_2m_min: [18, 19],
+                    precipitation_sum: [0, 2.4],
+                },
+            }),
+        });
+        const days = await getDestinationWeather({ lat: 24.9, lon: 46.7, dateFrom: '2027-01-15', dateTo: '2027-01-16', fetchImpl: stubFetch });
+        assert.equal(days.length, 2);
+        assert.equal(days[0].date, '2027-01-15');
+        assert.equal(days[0].maxTempC, 30);
+        assert.equal(days[1].precipitationMm, 2.4);
+    });
+
+    test('getDestinationWeather: خطأ HTTP يظهر برسالة واضحة لا فشلاً صامتاً', async () => {
+        const stubFetch = async () => ({ ok: false, status: 400, text: async () => 'Bad Request' });
+        await assert.rejects(
+            getDestinationWeather({ lat: 0, lon: 0, dateFrom: '2027-01-15', dateTo: '2027-01-15', fetchImpl: stubFetch }),
+            /HTTP 400/
+        );
+    });
+
+    test('convertCurrency: يحسب المبلغ المحوَّل من السعر الحقيقي', async () => {
+        const stubFetch = async () => ({ ok: true, json: async () => ({ rates: { SAR: 3.75 }, date: '2027-01-15' }) });
+        const result = await convertCurrency({ amount: 100, from: 'USD', to: 'SAR', fetchImpl: stubFetch });
+        assert.equal(result.converted, 375);
+        assert.equal(result.rate, 3.75);
+        assert.equal(result.date, '2027-01-15');
+    });
+
+    test('convertCurrency: عملة غير معروفة في الرد → خطأ واضح لا NaN صامت', async () => {
+        const stubFetch = async () => ({ ok: true, json: async () => ({ rates: {} }) });
+        await assert.rejects(
+            convertCurrency({ amount: 10, from: 'USD', to: 'ZZZ', fetchImpl: stubFetch }),
+            /لا سعر صرف متاح/
+        );
     });
 });
 
@@ -365,6 +412,23 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(offer.slices[0].stops, 0);
             assert.equal(offer.slices[0].segments[0].flightNumber, 'TA101');
             assert.deepEqual(offer.passengerIds, ['pas_1', 'pas_2']);
+            assert.equal(offer.slices[0].segments[0].baggage, null); // بلا حقل خام → null لا اختلاق
+        });
+
+        test('🧳 إثراء الأمتعة: يُستخرج إن وُجد، وnull بأمان إن غاب', () => {
+            const withBaggage = normalizeDuffelOffer({
+                id: 'off_1', total_amount: '100', total_currency: 'USD',
+                slices: [{
+                    segments: [{
+                        origin: { iata_code: 'RUH' }, destination: { iata_code: 'CAI' },
+                        departing_at: '2027-01-15T08:00:00', arriving_at: '2027-01-15T10:00:00',
+                        passengers: [{ baggages: [{ type: 'checked', quantity: 1 }, { type: 'carry_on', quantity: 1 }] }],
+                    }],
+                }],
+            }, ['pas_1']);
+            assert.deepEqual(withBaggage.slices[0].segments[0].baggage, [
+                { type: 'checked', quantity: 1 }, { type: 'carry_on', quantity: 1 },
+            ]);
         });
 
         test('🔌 اختيار المزوّد: مفتاح Duffel → duffel (وsandbox لمفتاح اختباري)، وبلا مفتاح → محاكاة', () => {
@@ -483,8 +547,8 @@ describe('الايجنت الحاجز', () => {
      * التطوير: عدة اختبارات تُعيد تعيين متغيّر server مشترك فتُغرق كل
      * الخوادم السابقة ما عدا الأخير).
      */
-    async function withAgentApp(agent, fn) {
-        const app = createApp({ store, jwtSecret: JWT_SECRET, provider, agent, markupPct: MARKUP });
+    async function withAgentApp(agent, fn, extra = {}) {
+        const app = createApp({ store, jwtSecret: JWT_SECRET, provider, agent, markupPct: MARKUP, ...extra });
         const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
         const baseUrl = `http://127.0.0.1:${s.address().port}`;
         async function call(pathname, { method = 'GET', token = null, body = null } = {}) {
@@ -779,6 +843,48 @@ describe('الايجنت الحاجز', () => {
         const cancelled = await cancelPriceWatch(store, watches[0].id, username);
         assert.equal(cancelled.status, 'cancelled');
         assert.equal(await cancelPriceWatch(store, watches[0].id, username), null); // إلغاء مكرر
+    });
+
+    test('🌤️💱 طقس وعملة حقيقيان عبر الوكيل: دمج server.js/agent.js + fetchImpl محقون', async () => {
+        const stubTravelFetch = async (url) => {
+            const u = String(url);
+            if (u.includes('open-meteo')) {
+                return { ok: true, json: async () => ({ daily: { time: ['DATE'], temperature_2m_max: [35], temperature_2m_min: [22], precipitation_sum: [0] } }) };
+            }
+            if (u.includes('frankfurter')) {
+                return { ok: true, json: async () => ({ rates: { SAR: 3.75 }, date: 'DATE' }) };
+            }
+            throw new Error('نطاق غير متوقَّع في الاختبار: ' + u);
+        };
+        const agent = createTravelAgent({
+            apiKey: 'k',
+            fetchImpl: scriptedFetch([
+                {
+                    role: 'assistant', content: null,
+                    tool_calls: [
+                        { id: 'c1', type: 'function', function: { name: 'get_destination_weather', arguments: JSON.stringify({ iata: 'RUH', dateFrom: futureDate(5) }) } },
+                        { id: 'c2', type: 'function', function: { name: 'convert_currency', arguments: JSON.stringify({ amount: 100, from: 'USD', to: 'SAR' }) } },
+                    ],
+                },
+                { role: 'assistant', content: 'الطقس حار والسعر محوَّل.' },
+            ]),
+        });
+        await withAgentApp(agent, async call => {
+            const token = makeToken('info-seeker');
+            const res = await call('/api/travel/agent/chat', {
+                method: 'POST', token, body: { messages: [{ role: 'user', content: 'كيف الطقس بالرياض؟ وكم 100 دولار بالريال؟' }] },
+            });
+            assert.equal(res.status, 200);
+            assert.equal(res.data.actions.length, 2);
+            assert.match(res.data.actions.find(a => a.tool === 'get_destination_weather').summary, /الرياض/);
+            assert.match(res.data.actions.find(a => a.tool === 'convert_currency').summary, /375/);
+        }, { travelInfoFetch: stubTravelFetch });
+
+        // تحقق التحقق الصارم مباشرة عبر executeAgentTool (وجهة غير مغطّاة، عملة فاسدة)
+        const badIata = await executeAgentTool('get_destination_weather', { iata: 'ZZZ', dateFrom: futureDate(5) }, {
+            getDestinationWeather: async () => { throw new Error('غير مغطّاة'); },
+        });
+        assert.equal(badIata.ok, false);
     });
 });
 

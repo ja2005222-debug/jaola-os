@@ -22,6 +22,16 @@
 
 import { createDuffelClient } from './duffelClient.js';
 
+// ⚠️ إثراء اختياري (المرحلة ٢ج): Duffel يُرجع أمتعة كل راكب لكل قطاع عبر
+// slice.segments[].passengers[].baggages وفق التوثيق العام — لم يُتحقَّق
+// منه ضد رد حي بعد (نفس صراحة الملف كله). غياب الحقل لا يكسر شيئاً —
+// baggage تبقى null والوكيل يعتذر بدل اختلاق معلومة.
+function extractBaggage(seg) {
+    const baggages = seg.passengers?.[0]?.baggages;
+    if (!Array.isArray(baggages) || baggages.length === 0) return null;
+    return baggages.map(b => ({ type: b.type || null, quantity: b.quantity ?? null }));
+}
+
 /** يطبّع عرض Duffel الخام إلى شكل العرض الموحّد الذي يفهمه بقية النظام. */
 export function normalizeDuffelOffer(raw, passengerIds) {
     const slices = (raw.slices || []).map(slice => {
@@ -32,6 +42,7 @@ export function normalizeDuffelOffer(raw, passengerIds) {
             arriveAt: seg.arriving_at,
             carrier: seg.marketing_carrier?.name || seg.operating_carrier?.name || '',
             flightNumber: `${seg.marketing_carrier?.iata_code || ''}${seg.marketing_carrier_flight_number || ''}`,
+            baggage: extractBaggage(seg),
         }));
         const first = segments[0] || {};
         const last = segments[segments.length - 1] || {};

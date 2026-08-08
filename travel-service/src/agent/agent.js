@@ -27,7 +27,7 @@ const MAX_TOOL_ROUNDS = 10;
 const MAX_TOOL_RESULT_CHARS = 6000;
 
 const SYSTEM_PROMPT = `أنت "مساعد جاولا للسفر" — وكيل سفر شامل محترف يتحدث العربية (أو لغة المستخدم)، لا مجرد حاجز طيران.
-قدراتك عبر الأدوات: بحث رحلات وفنادق، فحص عرض محدد، حجز فعلي (طيران/فنادق)، عرض حجوزات المستخدم، إلغاء حجز، بحث تواريخ مرنة، فحص تعارض الرحلة، ومراقبة سعر.
+قدراتك عبر الأدوات: بحث رحلات وفنادق، فحص عرض محدد، حجز فعلي (طيران/فنادق)، عرض حجوزات المستخدم، إلغاء حجز، بحث تواريخ مرنة، فحص تعارض الرحلة، مراقبة سعر، توقعات طقس الوجهة، وتحويل عملات.
 قواعد صارمة:
 1. الأسعار التي تعيدها الأدوات نهائية وشاملة — لا تخترع أسعاراً أو رحلات أو فنادق من ذاكرتك أبداً؛ كل معلومة رحلة/فندق تأتي من أداة.
 2. قبل أي حجز: اعرض ملخص الرحلة/الإقامة والسعر الإجمالي واسأل المستخدم صراحةً "هل أؤكد الحجز؟" — لا تضبط confirmed=true إلا بعد موافقة صريحة في رسالة المستخدم الأخيرة.
@@ -37,7 +37,9 @@ const SYSTEM_PROMPT = `أنت "مساعد جاولا للسفر" — وكيل س
 6. رموز المطارات IATA من ثلاثة أحرف (RUH, JED, CAI, DXB...) — استنتجها من أسماء المدن، واسأل عند اللبس. بحث الفنادق يستخدم نفس رمز المطار كمرجع للمدينة.
 7. بعد حجز رحلة طيران بنجاح، اقترح على المستخدم فندقاً بنفس الوجهة وتواريخ قريبة (عبر search_stays) إن كان ذلك منطقياً — لا تفترض موافقته، اقترح فقط.
 8. عند نتائج بحث غالية جداً أو معدومة، جرّب مطارات قريبة أو تواريخ مجاورة (نداءات search_flights/search_stays إضافية) قبل إخبار المستخدم بعدم وجود خيارات — لا تستسلم من أول محاولة.
-9. إن سأل المستخدم عن أرخص تاريخ ضمن مدى مرن استخدم find_flexible_dates بدل نداءات search_flights متكررة يدوياً. بعد أي حجز جديد أو عند سؤال المستخدم "هل خطتي متعارضة؟" استخدم check_trip_conflicts وأبلغه بأي تحذير فوراً. إن طلب مراقبة سعر رحلة لم تنخفض بعد استخدم watch_price واشرح أن الفحص دوري لا لحظي.`;
+9. إن سأل المستخدم عن أرخص تاريخ ضمن مدى مرن استخدم find_flexible_dates بدل نداءات search_flights متكررة يدوياً. بعد أي حجز جديد أو عند سؤال المستخدم "هل خطتي متعارضة؟" استخدم check_trip_conflicts وأبلغه بأي تحذير فوراً. إن طلب مراقبة سعر رحلة لم تنخفض بعد استخدم watch_price واشرح أن الفحص دوري لا لحظي.
+10. أسئلة الطقس والعملة تُجاب حصراً عبر get_destination_weather وconvert_currency (بيانات حقيقية) — لا تخمين درجات حرارة أو أسعار صرف من ذاكرتك أبداً. أسئلة الأمتعة تُجاب من بيانات العرض نفسه (search_flights) إن وُجدت.
+11. أسئلة عامة عن الوجهة (تأشيرة، جمارك، عادات، أفضل وقت للزيارة، سلامة) يمكنك إجابتها من معرفتك العامة — بخلاف السعر/التوفر التي تبقى حصراً من الأدوات — لكن أضف دوماً جملة تنبيه واضحة: "معلومة استرشادية عامة، تحقق من السفارة أو الموقع الرسمي قبل السفر."`;
 
 /** تعريفات الأدوات بصيغة OpenAI tools الموثَّقة. */
 export const AGENT_TOOLS = [
@@ -271,6 +273,38 @@ export const AGENT_TOOLS = [
             },
         },
     },
+    {
+        type: 'function',
+        function: {
+            name: 'get_destination_weather',
+            description: 'يجلب توقعات طقس يومية حقيقية (حرارة عليا/دنيا وهطول) لوجهة ومدى تاريخ — متاح حتى 16 يوماً قادماً فقط.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    iata: { type: 'string', description: 'رمز IATA لأقرب مطار للوجهة' },
+                    dateFrom: { type: 'string', description: 'تاريخ بداية YYYY-MM-DD' },
+                    dateTo: { type: 'string', description: 'تاريخ نهاية YYYY-MM-DD (اختياري — يوم واحد بدونه)' },
+                },
+                required: ['iata', 'dateFrom'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'convert_currency',
+            description: 'يحوّل مبلغاً بسعر صرف حقيقي محدَّث بين عملتين — لأسئلة "كم هذا بعملتي؟".',
+            parameters: {
+                type: 'object',
+                properties: {
+                    amount: { type: 'number' },
+                    from: { type: 'string', description: 'رمز العملة المصدر (مثل USD)' },
+                    to: { type: 'string', description: 'رمز العملة الهدف (مثل SAR)' },
+                },
+                required: ['amount', 'from', 'to'],
+            },
+        },
+    },
 ];
 
 /**
@@ -373,6 +407,16 @@ export async function executeAgentTool(name, args, services) {
                 if (!services.cancelPriceWatch) return { ok: false, data: { error: 'مراقبة الأسعار غير متاحة حالياً.' } };
                 const result = await services.cancelPriceWatch(args.watchId);
                 return { ok: true, summary: `🚫 أُلغيت المراقبة ${args.watchId}`, data: result };
+            }
+            case 'get_destination_weather': {
+                if (!services.getDestinationWeather) return { ok: false, data: { error: 'توقعات الطقس غير متاحة حالياً.' } };
+                const weather = await services.getDestinationWeather(args);
+                return { ok: true, summary: `🌤️ طقس ${weather.city} (${weather.days.length} أيام)`, data: weather };
+            }
+            case 'convert_currency': {
+                if (!services.convertCurrency) return { ok: false, data: { error: 'تحويل العملات غير متاح حالياً.' } };
+                const result = await services.convertCurrency(args);
+                return { ok: true, summary: `💱 ${result.amount} ${args.from} = ${result.converted} ${args.to}`, data: result };
             }
             default:
                 return { ok: false, data: { error: `أداة مجهولة: ${name}` } };
