@@ -49,3 +49,15 @@ export function openVideoStudio() {
   const token = localStorage.getItem('token') || '';
   window.open(`${VIDEO_STUDIO_URL}/?token=${encodeURIComponent(token)}`, '_blank', 'noopener');
 }
+
+// ✈️ بوابة السفر — خدمة منفصلة تماماً (travel-service/) بنفس قاعدة
+// الاستوديو حرفياً: تُضبط عبر VITE_TRAVEL_PORTAL_URL وقت البناء، وبدونها
+// لا يظهر الزر أصلاً — لا رابط مكسور ولا تخمين لعنوان غير مؤكد.
+export const TRAVEL_PORTAL_URL = (import.meta.env.VITE_TRAVEL_PORTAL_URL || '').replace(/\/$/, '');
+
+/** يفتح بوابة السفر بتسليم توكن الجلسة الحالية (الدخول الموحّد). */
+export function openTravelPortal() {
+  if (!TRAVEL_PORTAL_URL) return;
+  const token = localStorage.getItem('token') || '';
+  window.open(`${TRAVEL_PORTAL_URL}/?token=${encodeURIComponent(token)}`, '_blank', 'noopener');
+}
