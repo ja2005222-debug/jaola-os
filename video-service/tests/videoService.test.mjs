@@ -2461,6 +2461,44 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
 
         // ─── تجميع الفيلم ──────────────────────────────────────────────
 
+        test('✂️ المونتاج في buildFilmSpec: القص يقصّر المشهد ويزحزح التالي، وتعديل فاسد لا يكسر الفيلم', () => {
+            const spec = buildFilmSpec({
+                shots: [
+                    { durationSec: 5, videoUrl: 'https://v.test/a.mp4', edit: { trimStart: 1, trimEnd: 3.5, volume: 0.4 } },
+                    { durationSec: 8, videoUrl: 'https://v.test/b.mp4' }, // بلا مونتاج
+                ],
+            });
+            assert.equal(spec.scenes[0].lengthSec, 2.5);
+            assert.deepEqual(spec.scenes.map(s => s.startSec), [0, 2.5]);
+            assert.equal(spec.durationSec, 10.5);
+            assert.equal(spec.scenes[0].layers[0].trimSec, 1);
+            assert.equal(spec.scenes[0].layers[0].volume, 0.4);
+            assert.equal(spec.scenes[1].layers[0].trimSec, undefined);
+            assert.equal(spec.scenes[1].layers[0].volume, undefined);
+
+            // ترجمة Shotstack: trim/volume داخل asset الفيديو فقط عند وجودهما
+            const clips = specToShotstackTimeline(spec).tracks[0].clips;
+            assert.equal(clips[0].asset.trim, 1);
+            assert.equal(clips[0].asset.volume, 0.4);
+            assert.equal(clips[0].length, 2.5);
+            assert.equal(clips[1].asset.trim, undefined);
+            assert.equal(clips[1].asset.volume, undefined);
+
+            // تعديل مخزَّن فاسد (نهاية قبل بداية / خارج المدة) → المدة الأصلية
+            const bad = buildFilmSpec({
+                shots: [{ durationSec: 5, videoUrl: 'https://v.test/x.mp4', edit: { trimStart: 4, trimEnd: 2 } }],
+            });
+            assert.equal(bad.scenes[0].lengthSec, 5);
+
+            // الكابشن المتحرك يوزَّع على المدة الفعلية بعد القص لا الأصلية
+            const cap = buildFilmSpec({
+                shots: [{ durationSec: 6, videoUrl: 'https://v.test/c.mp4', caption: 'كلمة ثانية', edit: { trimStart: 0, trimEnd: 3 } }],
+                burnCaptions: true, captionAnimated: true,
+            });
+            assert.equal(cap.captionCues.length, 2);
+            assert.equal(cap.captionCues[0].lengthSec, 1.5);
+        });
+
         test('buildFilmSpec: مشاهد متتابعة بأزمنة صحيحة + لوحة ختامية + رفض الفراغ', () => {
             const spec = buildFilmSpec({
                 shots: [
@@ -3060,6 +3098,90 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 assert.equal(afterFail, beforeFail); // مسترد بالكامل — لا خصم تجميع لأن الفشل سابق لإنشاء المهمة
             } finally {
                 await new Promise(r => s.close(r));
+            }
+        });
+
+        test('✂️ مونتاج اللقطة عبر المسار: تحقق حدود، عزل ملكية، تخزين/مسح، وتطبيق فعلي عند التجميع', async () => {
+            // تطبيق مستقل — حصة renderLimit خاصة لا تمس بقية الاختبارات.
+            const app = createApp({ store, jwtSecret: JWT_SECRET, adminUsersCsv: 'boss', provider });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const token = makeToken('editor');
+                await callAt(url, '/api/video/credits', { token });
+                const pid = (await callAt(url, '/api/video/projects', {
+                    method: 'POST', token, body: { title: 'فيلم المونتاج' },
+                })).data.project.id;
+                const r = await callAt(url, '/api/video/renders', {
+                    method: 'POST', token,
+                    body: { templateId: 'promo_announcement', values: { headline: 'س', cta: 'ب' }, projectId: pid },
+                });
+                const jobId = r.data.job.id;
+
+                // لقطة غير مكتملة → 400
+                assert.equal((await callAt(url, `/api/video/renders/${jobId}/edit`, {
+                    method: 'PATCH', token, body: { trimStart: 1, trimEnd: 3 },
+                })).status, 400);
+
+                await transitionJob(store, jobId, 'rendering', {});
+                await transitionJob(store, jobId, 'done', { videoUrl: 'https://v.test/m.mp4' });
+
+                // حدود فاسدة (المصدر 8 ثوانٍ لقالب promo_announcement) → 400
+                for (const body of [
+                    { trimStart: -1, trimEnd: 3 },
+                    { trimStart: 2, trimEnd: 99 },
+                    { trimStart: 3, trimEnd: 3.2 }, // أقصر من 0.5 ثانية
+                ]) {
+                    const bad = await callAt(url, `/api/video/renders/${jobId}/edit`, { method: 'PATCH', token, body });
+                    assert.equal(bad.status, 400, JSON.stringify(body));
+                }
+                // صوت خارج النطاق → 400
+                assert.equal((await callAt(url, `/api/video/renders/${jobId}/edit`, {
+                    method: 'PATCH', token, body: { trimStart: 1, trimEnd: 3, volume: 1.5 },
+                })).status, 400);
+
+                // حفظ صحيح → يُخزَّن ويعود في publicJob مع مدة المصدر
+                const saved = await callAt(url, `/api/video/renders/${jobId}/edit`, {
+                    method: 'PATCH', token, body: { trimStart: 1, trimEnd: 3.5, volume: 0.4 },
+                });
+                assert.equal(saved.status, 200);
+                assert.deepEqual(saved.data.edit, { trimStart: 1, trimEnd: 3.5, volume: 0.4 });
+                const shot = (await callAt(url, `/api/video/projects/${pid}`, { token })).data.shots[0];
+                assert.deepEqual(shot.edit, { trimStart: 1, trimEnd: 3.5, volume: 0.4 });
+                assert.equal(shot.durationSec, 8);
+
+                // التجميع يطبّق المونتاج فعلياً في مخطط الفيلم
+                const asm = await callAt(url, `/api/video/projects/${pid}/assemble`, {
+                    method: 'POST', token, body: {},
+                });
+                assert.equal(asm.status, 200);
+                const filmJob = await getJob(store, asm.data.job.id);
+                assert.equal(filmJob.spec.scenes[0].lengthSec, 2.5);
+                assert.equal(filmJob.spec.scenes[0].layers[0].trimSec, 1);
+                assert.equal(filmJob.spec.scenes[0].layers[0].volume, 0.4);
+
+                // قصّ كامل المدة بصوت كامل = لا تعديل → null (نظافة تخزين)
+                const noop = await callAt(url, `/api/video/renders/${jobId}/edit`, {
+                    method: 'PATCH', token, body: { trimStart: 0, trimEnd: 8, volume: 1 },
+                });
+                assert.equal(noop.data.edit, null);
+
+                // إعادة الحفظ ثم المسح الصريح
+                await callAt(url, `/api/video/renders/${jobId}/edit`, {
+                    method: 'PATCH', token, body: { trimStart: 2, trimEnd: 6 },
+                });
+                const cleared = await callAt(url, `/api/video/renders/${jobId}/edit`, {
+                    method: 'PATCH', token, body: { clear: true },
+                });
+                assert.equal(cleared.data.edit, null);
+                assert.equal((await getJob(store, jobId)).edit, null);
+
+                // مهمة مستخدم آخر → 404 بلا تأكيد وجودها
+                assert.equal((await callAt(url, `/api/video/renders/${jobId}/edit`, {
+                    method: 'PATCH', token: makeToken('stranger-editor'), body: { trimStart: 1, trimEnd: 3 },
+                })).status, 404);
+            } finally {
+                await new Promise(r2 => s.close(r2));
             }
         });
 

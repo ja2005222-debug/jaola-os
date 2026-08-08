@@ -24,6 +24,7 @@
  *   listJobsByProject(projectId) → [job]           (بترتيب اللقطات shotIndex)
  *   countJobsInProject(projectId) → number
  *   reorderProjectShots(projectId, orderedIds) → bool  (false إن لم تطابق لقطات المشروع تماماً)
+ *   setJobEdit(id, edit) → bool               (✂️ مونتاج اللقطة: {trimStart,trimEnd,volume?} أو null)
  *   setProjectAutoAssemble(id, valueOrNull) → project|null   ("أكمل تلقائياً" — تسليح/نزع تجميع مؤجل)
  *   listProjectsWithPendingAutoAssemble() → [project]         (لمحرك المعالجة فقط)
  *

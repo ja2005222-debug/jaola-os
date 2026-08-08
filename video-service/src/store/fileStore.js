@@ -252,6 +252,21 @@ export function createFileStore({ dataDir, starterCredits }) {
         },
 
         /**
+         * ✂️ مونتاج اللقطة: {trimStart, trimEnd, volume?} أو null للمسح.
+         * التحقق من الحدود مسؤولية المسار (يملك spec.durationSec) — المخزن
+         * يخزّن فقط. يُرجع false للمهمة غير الموجودة.
+         */
+        async setJobEdit(id, edit) {
+            const jobs = readJobs();
+            const job = jobs.find(j => j.id === id);
+            if (!job) return false;
+            job.edit = edit;
+            job.updatedAt = Date.now();
+            writeJobs(jobs);
+            return true;
+        },
+
+        /**
          * يعيد ترتيب لقطات مشروع حسب orderedIds (فهرسها = ترتيبها الجديد).
          * يرفض (false) إن لم تطابق المجموعة تماماً لقطات المشروع الحالية —
          * لا نقبل ترتيباً جزئياً يُسقط لقطة أو يُدخل لقطة غريبة بصمت.

@@ -426,6 +426,45 @@ export function createApp({
         res.json({ success: true });
     }));
 
+    // ─── ✂️ مونتاج اللقطة: قص بداية/نهاية + مستوى صوت ───────────────────
+    // تعديل بلا أي تكلفة: يُخزَّن على اللقطة ويُطبَّق فقط عند تجميع
+    // الفيلم (trim/volume في مقطع Shotstack) — اللقطة الأصلية لا تُمس
+    // أبداً، فمسح المونتاج يعيدها كاملة (تحرير غير هدّام).
+    app.patch('/api/video/renders/:id/edit', verifyToken, wrap(async (req, res) => {
+        const job = await getJob(store, req.params.id);
+        if (!job || job.username !== userOf(req)) {
+            return res.status(404).json({ error: 'المهمة غير موجودة.' });
+        }
+        if (job.status !== 'done') {
+            return res.status(400).json({ error: 'المونتاج متاح للقطات المكتملة فقط.' });
+        }
+        if (req.body?.clear) {
+            await store.setJobEdit(job.id, null);
+            return res.json({ success: true, edit: null });
+        }
+        const srcDur = Number(job.spec?.durationSec) > 0 ? Number(job.spec.durationSec) : 5;
+        const round1 = v => Math.round(Number(v) * 10) / 10;
+        const trimStart = req.body?.trimStart != null ? round1(req.body.trimStart) : 0;
+        const trimEnd = req.body?.trimEnd != null ? round1(req.body.trimEnd) : srcDur;
+        if (!Number.isFinite(trimStart) || !Number.isFinite(trimEnd)
+            || trimStart < 0 || trimEnd > srcDur || trimEnd - trimStart < 0.5) {
+            return res.status(400).json({
+                error: `حدود القص غير صالحة — بين 0 و${srcDur} ثانية، وطول المقطع 0.5 ثانية على الأقل.`,
+            });
+        }
+        let volume = req.body?.volume != null ? Math.round(Number(req.body.volume) * 100) / 100 : null;
+        if (volume != null && (!Number.isFinite(volume) || volume < 0 || volume > 1)) {
+            return res.status(400).json({ error: 'مستوى الصوت بين 0 و1.' });
+        }
+        if (volume === 1) volume = null; // الصوت الكامل هو الافتراضي — لا يُخزَّن
+        // قصّ يغطي كامل المدة بصوت كامل = لا تعديل فعلياً → null (نظافة تخزين)
+        const edit = (trimStart === 0 && trimEnd === srcDur && volume == null)
+            ? null
+            : { trimStart, trimEnd, ...(volume != null ? { volume } : {}) };
+        await store.setJobEdit(job.id, edit);
+        res.json({ success: true, edit });
+    }));
+
     // ─── تجميع الفيلم: لقطات المشروع الجاهزة → فيلم واحد ────────────────
 
     app.get('/api/video/projects/:id/assembly-options', verifyToken, wrap(async (req, res) => {
@@ -925,6 +964,10 @@ export function createApp({
         modelId: j.spec?.modelId || null,
         projectId: j.projectId || null,
         shotIndex: j.shotIndex ?? null,
+        // ✂️ المونتاج ومدة المصدر — تحتاجهما الواجهة لمحرر القص والشريط
+        // الزمني والمعاينة المتسلسلة المجانية.
+        edit: j.edit || null,
+        durationSec: Number(j.spec?.durationSec) > 0 ? Number(j.spec.durationSec) : null,
         // قيم المستخدم نفسها تعود له — أساس "تكرار اللقطة" و"إعادة التوليد"
         values: j.values,
         updatedAt: j.updatedAt,

@@ -132,6 +132,7 @@ export async function finalizeAssembly(store, {
         durationSec: s.spec?.durationSec,
         videoUrl: s.storageKey && storage ? await storage.signedUrl(s.storageKey, 3600) : s.videoUrl,
         caption: typeof s.values?.caption === 'string' ? s.values.caption : null,
+        edit: s.edit || null, // ✂️ مونتاج اللقطة (قص/صوت) — يطبّقه buildFilmSpec
     })));
     const spec = buildFilmSpec({ shots, ...resolved, logoUrl, narrationUrl, watermarkText });
 
