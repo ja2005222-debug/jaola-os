@@ -289,6 +289,17 @@ describe('liteApiStaysProvider: بحث فنادق حقيقي (رد Sandbox حي 
                     }),
                 };
             }
+            // ⚠️ الشكلان أدناه (prebook/book) اختُلقا لاختبار منطق كودنا
+            // نفسه (تحليل الحقول التي افترضناها بحذر) — لا يمثّلان رد
+            // LiteAPI الفعلي عند النجاح، لأنه لم يُشاهَد حياً بعد (راجع
+            // تحذير أعلى liteApiStaysProvider.js). أول رد حي حقيقي قد
+            // يحتاج تعديل مسارات الحقول في الكود لا هذا الاختبار وحده.
+            if (u.includes('/rates/prebook')) {
+                return { ok: true, text: async () => JSON.stringify({ data: { prebookId: 'prebook_xyz' } }) };
+            }
+            if (u.includes('/rates/book')) {
+                return { ok: true, text: async () => JSON.stringify({ data: { bookingId: 'bk_123', bookingReference: 'LTA789' } }) };
+            }
             if (u.includes('/hotels/rates')) {
                 return {
                     ok: true,
@@ -348,10 +359,33 @@ describe('liteApiStaysProvider: بحث فنادق حقيقي (رد Sandbox حي 
         assert.equal(await provider.getStayOffer('لا-وجود'), null);
     });
 
-    test('الحجز/الإلغاء غير مبنيين بعد: خطأ صريح لا ادّعاء دعم', async () => {
+    test('getQuote → createStayOrder: دورة حجز كاملة (prebook ثم book) عبر book.liteapi.travel', async () => {
         const provider = createLiteApiStaysProvider({ apiKey: 'sand_test123', fetchImpl: stubFetch() });
-        await assert.rejects(provider.getQuote('offer_abc'), /لم تُبنَ بعد/);
-        await assert.rejects(provider.createStayOrder({}), /لم تُبنَ بعد/);
+        await provider.searchStays({ iata: 'RUH', checkInDate: '2027-01-15', checkOutDate: '2027-01-17', adults: 1, rooms: 1 });
+
+        const quote = await provider.getQuote('offer_abc');
+        assert.equal(quote.id, 'prebook_xyz'); // prebookId من رد /rates/prebook
+        assert.equal(quote.netAmount, 474.65); // نفس سعر البحث (لا رد نجاح حي يُعيد سعراً محدَّثاً بعد)
+
+        const order = await provider.createStayOrder({
+            offerId: quote.id,
+            guests: [{ givenName: 'AHMED', familyName: 'ALI' }],
+            contact: { email: 'a@test.com', phone: '+966500000000' },
+        });
+        assert.equal(order.orderId, 'bk_123');
+        assert.equal(order.bookingReference, 'LTA789');
+        assert.equal(order.status, 'issued');
+        assert.equal(order.netAmount, 474.65);
+        assert.equal(order.currency, 'USD');
+    });
+
+    test('getQuote: عرض غير موجود/منتهٍ → null بلا نداء شبكة', async () => {
+        const provider = createLiteApiStaysProvider({ apiKey: 'sand_test123', fetchImpl: stubFetch() });
+        assert.equal(await provider.getQuote('لا-وجود'), null);
+    });
+
+    test('الإلغاء غير مبني بعد: خطأ صريح لا ادّعاء دعم', async () => {
+        const provider = createLiteApiStaysProvider({ apiKey: 'sand_test123', fetchImpl: stubFetch() });
         await assert.rejects(provider.cancelStayOrder('x'), /لم يُبنَ بعد/);
     });
 });

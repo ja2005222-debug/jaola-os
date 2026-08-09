@@ -3,26 +3,31 @@
  *
  * بديل مستقل تماماً عن Duffel Stays (حساب/مفاتيح منفصلة) — Sandbox key
  * يُصدر تلقائياً عند التسجيل بلا موافقة مبيعات (خلاف Duffel Stays وRateHawk
- * التقليديين). صيغ البحث أدناه مأخوذة **حرفياً** من Code Snippets حقيقية
- * ورد Sandbox فعلي حي شُوهدا مباشرة بلوحة العميل (API Playground) —
- * ليست من توثيق مقروء وحده كـduffelStaysProvider، بل مُختبَرة فعلاً قبل
- * كتابة هذا الملف:
- *   1. GET /data/hotels?latitude=&longitude=&radius=&limit= — قائمة فنادق
- *      قرب إحداثيات (⚠️ شكل رد هذا المسار تحديداً **غير مؤكَّد بلقطة
- *      شاشة** خلاف بقية الملف — استُنتج بالقياس على /data/hotel المفرد
- *      الموثَّق فعلاً في دليل "Displaying Essential Hotel Details"، لأن
- *      كلا المسارين REST متجانسان تحت فئة Hotel Data نفسها).
- *   2. POST /hotels/rates — بحث أسعار فعلي بمعرّفات الفنادق أعلاه؛
- *      **الطلب والرد كلاهما مؤكَّدان حرفياً** من رد Sandbox حي حقيقي.
+ * التقليديين). أربع خطوات، كل الطلبات (لا الردود كلها) مؤكَّدة حرفياً من
+ * Code Snippets حقيقية بلوحة العميل (API Playground) — لا توثيق مقروء
+ * وحده كـduffelStaysProvider:
+ *   1. GET api.liteapi.travel/v3.0/data/hotels — قائمة فنادق قرب إحداثيات
+ *      (⚠️ شكل الرد هنا تحديداً **غير مؤكَّد بلقطة شاشة** — استُنتج بالقياس
+ *      على /data/hotel المفرد الموثَّق فعلاً في دليل منشور).
+ *   2. POST api.liteapi.travel/v3.0/hotels/rates — بحث أسعار؛ **الطلب
+ *      والرد كلاهما مؤكَّدان حرفياً** من رد Sandbox حي حقيقي.
+ *   3. POST book.liteapi.travel/v3.0/rates/prebook — قفل/تحقق السعر قبل
+ *      الحجز؛ **الطلب مؤكَّد حرفياً** (offerId + payment.gateway=STRIPE
+ *      إلزامي في الصيغة — الحجز الفعلي يحتاج Stripe مُهيَّأ لاحقاً، لا الآن).
+ *      ⚠️ **الرد عند النجاح غير مُشاهَد** — كل محاولتين حيّتين أعادتا خطأً
+ *      (بيانات مثال تجريبية منتهية/غير مطابقة)، فاستخراج `prebookId` أدناه
+ *      **تخمين مبني على تناسق شكل رد الخطأ** (`success`/`data`)، بنفس
+ *      صراحة duffelCarsProvider.js تماماً — أول نجاح حي فعلي هو التحقق.
+ *   4. POST book.liteapi.travel/v3.0/rates/book — إتمام الحجز؛ **الطلب
+ *      مؤكَّد حرفياً**، **الرد عند النجاح غير مُشاهَد** لنفس السبب أعلاه.
  *
- * ⚠️ الحجز الفعلي (checkout session/prebook + complete booking عبر
- * book.liteapi.travel) والإلغاء **لم تصل صيغتهما بعد** — getQuote/
- * createStayOrder/cancelStayOrder ترمي خطأً صريحاً بدل تخمين صيغة لم
- * تُر: نفس معيار الصراحة المتّبع في كل مزوّد بهذا المجلد، لا استثناء.
+ * الإلغاء (Cancel a booking) لم تصل صيغته بعد — cancelStayOrder ترمي
+ * خطأً صريحاً بدل التخمين.
  */
 import { createLiteApiClient } from './liteApiClient.js';
 import { airportCoords } from '../airports.js';
 
+const DEFAULT_BOOK_API_URL = 'https://book.liteapi.travel/v3.0';
 const SEARCH_RADIUS_M = 15000;
 const MAX_HOTELS_PER_SEARCH = 20;
 const MAX_RESULTS = 10;
@@ -38,10 +43,13 @@ function buildOccupancies(adults, rooms) {
     return Array.from({ length: rooms }, () => ({ rooms: 1, adults: perRoom }));
 }
 
-export function createLiteApiStaysProvider({ apiKey, apiUrl, fetchImpl }) {
+export function createLiteApiStaysProvider({ apiKey, apiUrl, bookApiUrl, fetchImpl }) {
     const client = createLiteApiClient({ apiKey, apiUrl, fetchImpl });
+    const bookClient = createLiteApiClient({ apiKey, apiUrl: bookApiUrl || DEFAULT_BOOK_API_URL, fetchImpl });
     const liteApi = client.request;
-    const offerCache = new Map(); // offerId → { offer, expiresAt }
+    const liteApiBook = bookClient.request;
+    const offerCache = new Map(); // offerId (بحث) → { offer, expiresAt }
+    const quoteCache = new Map(); // prebookId → { offerId, offer, expiresAt }
 
     return {
         name: 'liteapi-stays',
@@ -103,15 +111,73 @@ export function createLiteApiStaysProvider({ apiKey, apiUrl, fetchImpl }) {
             return { ...cached.offer };
         },
 
-        // ⚠️ غير مُنفَّذة بعد: تحتاج صيغة "Create a checkout session
-        // (PREBOOK)" الحقيقية لإعادة قفل/تحقق السعر قبل الحجز — لا نُخمّن
-        // صيغتها. حالياً ترمي خطأً واضحاً بدل ادّعاء دعم غير حقيقي.
-        async getQuote() {
-            throw new Error('حجز فنادق LiteAPI: خطوة تأكيد السعر (checkout session) لم تُبنَ بعد — التوثيق الفعلي لم يصل.');
+        // rate offerId (من searchStays) → يقفل السعر عبر /rates/prebook.
+        // معرّف العرض المُعاد (prebookId) هو ما تستخدمه createStayOrder
+        // لاحقاً — نفس تفرقة rate/quote لدى Duffel Stays بالضبط.
+        async getQuote(offerId) {
+            const cached = offerCache.get(String(offerId || ''));
+            if (!cached || cached.expiresAt < Date.now()) return null;
+            const data = await liteApiBook('POST', '/rates/prebook', {
+                offerId: cached.offer.id,
+                usePaymentSdk: false,
+                voucherCode: '',
+                addons: [],
+                bedTypeIds: [],
+                includeCreditBalance: false,
+                payment: { gateway: 'STRIPE', useOwnSecretKey: false },
+            });
+            // ⚠️ مسار الحقول أدناه غير مُتحقَّق ضد رد نجاح فعلي (راجع
+            // التحذير أعلى الملف) — احتياط دفاعي بمسارات محتملة متعددة
+            // بدل افتراض واحد قد يكون خاطئاً بصمت.
+            const prebookId = data?.data?.prebookId || data?.prebookId;
+            if (!prebookId) {
+                throw new Error('رد /rates/prebook بلا prebookId — راجع الشكل الفعلي وحدّث الصيغة (لم يصل رد نجاح حقيقي بعد وقت كتابة هذا الكود).');
+            }
+            const quote = { ...cached.offer, id: prebookId };
+            quoteCache.set(prebookId, { offerId: cached.offer.id, offer: quote, expiresAt: Date.now() + OFFER_TTL_MS });
+            return quote;
         },
-        async createStayOrder() {
-            throw new Error('حجز فنادق LiteAPI: خطوة إتمام الحجز (complete booking) لم تُبنَ بعد — التوثيق الفعلي لم يصل.');
+
+        // prebookId (من getQuote) → يُتمّ الحجز فعلياً عبر /rates/book.
+        // ⚠️ يتطلب Stripe مُهيَّأ فعلياً (payment.gateway=STRIPE عند
+        // prebook) — لا يُختبَر حياً حتى تُضبط بيانات الدفع الحقيقية.
+        async createStayOrder({ offerId, guests, contact }) {
+            const cached = quoteCache.get(String(offerId || ''));
+            if (!cached) throw new Error('عرض الفندق غير موجود أو انتهت صلاحيته — أعد البحث والتحقق من السعر.');
+            const holderName = guests[0] || {};
+            const data = await liteApiBook('POST', '/rates/book', {
+                prebookId: offerId,
+                holder: {
+                    firstName: holderName.givenName || '',
+                    lastName: holderName.familyName || '',
+                    email: contact.email,
+                    phone: contact.phone,
+                },
+                guests: guests.map((g, i) => ({
+                    occupancyNumber: i + 1,
+                    firstName: g.givenName,
+                    lastName: g.familyName,
+                    email: contact.email,
+                })),
+                payment: { method: 'ACC_CREDIT_CARD' },
+            });
+            // ⚠️ نفس تحذير getQuote أعلاه — مسار الحقول تخمين مبني على
+            // تناسق الشكل العام لردود LiteAPI، لا رد نجاح فعلي مُشاهَد.
+            const booking = data?.data || data?.booking || data;
+            const bookingId = booking?.bookingId || booking?.id;
+            if (!bookingId) {
+                throw new Error('رد /rates/book بلا معرّف حجز واضح — راجع الشكل الفعلي وحدّث الصيغة (لم يصل رد نجاح حقيقي بعد وقت كتابة هذا الكود).');
+            }
+            return {
+                orderId: bookingId,
+                bookingReference: booking.bookingReference || booking.confirmationNumber || String(bookingId),
+                status: 'issued',
+                netAmount: cached.offer.netAmount,
+                currency: cached.offer.currency,
+            };
         },
+
+        // ⚠️ غير مُنفَّذة: صيغة "Cancel a booking" (PUT) لم تصل بعد — لا تخمين.
         async cancelStayOrder() {
             throw new Error('إلغاء حجوزات LiteAPI لم يُبنَ بعد — التوثيق الفعلي لم يصل.');
         },
