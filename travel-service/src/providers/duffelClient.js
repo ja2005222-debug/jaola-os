@@ -24,10 +24,16 @@ export function createDuffelClient({ apiKey, apiUrl = DEFAULT_API_URL, fetchImpl
             },
             body: body ? JSON.stringify(body) : undefined,
         });
-        const payload = await res.json().catch(() => ({}));
+        // نقرأ نصاً خاماً أولاً لا json() مباشرة: ردود الرفض على مستوى
+        // الشبكة (WAF/CDN أمام Duffel) غالباً HTML أو نص عادي لا JSON —
+        // لو اعتمدنا json().catch(() => ({})) لضاع محتواها كلياً ولظهر
+        // "خطأ غير مفصَّل" رغم وجود تفصيل فعلي يفسّر الرفض.
+        const rawText = await res.text();
+        let payload = {};
+        try { payload = rawText ? JSON.parse(rawText) : {}; } catch { /* رد ليس JSON */ }
         if (!res.ok) {
             const detail = (payload.errors || []).map(e => e.message || e.title).join('؛ ');
-            throw new Error(`Duffel HTTP ${res.status}: ${detail || 'خطأ غير مفصَّل'}`);
+            throw new Error(`Duffel HTTP ${res.status}: ${detail || rawText.slice(0, 300) || 'خطأ غير مفصَّل'}`);
         }
         return payload.data;
     }
