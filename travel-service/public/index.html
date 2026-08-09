@@ -169,9 +169,21 @@
     </div>
   </dialog>
 
+  <!-- نافذة بيانات نزلاء الفندق -->
+  <dialog id="stayBookDialog">
+    <h3 style="margin-bottom:6px">🏨 بيانات النزلاء</h3>
+    <p id="stayBookSummary" class="note"></p>
+    <form id="stayBookForm" method="dialog"></form>
+    <div id="stayBookError" class="error hidden"></div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="primary" id="stayBookConfirm">أكّد الحجز</button>
+      <button class="chip" id="stayBookCancel" type="button">إلغاء</button>
+    </div>
+  </dialog>
+
   <script>
     const $ = id => document.getElementById(id);
-    let token = null, config = null, selectedOffer = null;
+    let token = null, config = null, selectedOffer = null, selectedStayOffer = null, lastFlightSearch = null;
     let chatHistory = []; // {role, content} — تُرسل كاملة لكل جولة
 
     // ─── الدخول الموحّد: توكن من ?token= أو التخزين المحلي ───
@@ -269,6 +281,7 @@
           $('searchError').classList.remove('hidden');
           return;
         }
+        lastFlightSearch = body;
         if (!data.offers.length) {
           $('results').innerHTML = '<p class="note">لا رحلات متاحة لهذا البحث.</p>';
           return;
@@ -284,10 +297,17 @@
               <div class="note">إجمالي ${o.passengerCount} مسافر</div>
               <button class="primary" data-book='${esc(JSON.stringify({ id: o.id }))}'>احجز</button>
             </div>
-          </div>`).join('');
+          </div>`).join('')
+          + (config.staysEnabled ? `
+          <div class="card" id="stayCta">
+            <p class="note">🏨 هل تحتاج فندقاً في ${esc(body.destination)}؟</p>
+            <button class="chip" id="showStaysBtn" type="button">اعرض فنادق الوجهة</button>
+            <div id="staysResults"></div>
+          </div>` : '');
         document.querySelectorAll('[data-book]').forEach(btn =>
           btn.addEventListener('click', () => openBooking(
             data.offers.find(o => o.id === JSON.parse(btn.dataset.book).id))));
+        if (config.staysEnabled) $('showStaysBtn').addEventListener('click', loadDestinationStays);
       } catch {
         // رد غير JSON (مثال: 429 نصي من محدّد المعدّل) أو انقطاع شبكة —
         // بلا هذا تبقى الشاشة عالقة على "جارٍ البحث…" للأبد.
@@ -352,6 +372,102 @@
         document.querySelector('[data-tab="trips"]').click();
       } finally {
         $('bookConfirm').disabled = false;
+      }
+    });
+
+    // ─── فنادق الوجهة (اختياري تحت نتائج بحث الرحلات — لا بحث تلقائي) ───
+    function addDays(dateStr, days) {
+      const d = new Date(dateStr + 'T00:00:00Z');
+      d.setUTCDate(d.getUTCDate() + days);
+      return d.toISOString().slice(0, 10);
+    }
+    async function loadDestinationStays() {
+      const search = lastFlightSearch;
+      if (!search) return;
+      const btn = $('showStaysBtn');
+      btn.disabled = true;
+      $('staysResults').innerHTML = '<p class="note">🔎 جارٍ البحث عن فنادق…</p>';
+      try {
+        const body = {
+          iata: search.destination,
+          checkInDate: search.departDate,
+          checkOutDate: search.returnDate || addDays(search.departDate, 2),
+          adults: search.adults, rooms: 1,
+        };
+        const res = await api('/api/travel/stays/search', { method: 'POST', body: JSON.stringify(body) });
+        const data = await res.json();
+        if (!res.ok) {
+          $('staysResults').innerHTML = `<p class="error">${esc(data.error || 'تعذّر بحث الفنادق.')}</p>`;
+          return;
+        }
+        if (!data.offers.length) {
+          $('staysResults').innerHTML = '<p class="note">لا فنادق متاحة لهذه الوجهة/التواريخ.</p>';
+          return;
+        }
+        $('staysResults').innerHTML = data.offers.map(o => `
+          <div class="card offer">
+            <div style="flex:1">
+              <div class="route">${esc(o.name)}</div>
+              <div class="seg">${esc(o.city || '')} · ${esc(o.checkInDate || body.checkInDate)} → ${esc(o.checkOutDate || body.checkOutDate)}</div>
+            </div>
+            <div style="text-align:center">
+              <div class="price">${o.sellAmount} ${esc(o.currency)}</div>
+              <button class="primary" data-stay-book='${esc(JSON.stringify({ id: o.id }))}'>احجز</button>
+            </div>
+          </div>`).join('');
+        document.querySelectorAll('[data-stay-book]').forEach(sbtn =>
+          sbtn.addEventListener('click', () => openStayBooking(
+            data.offers.find(o => o.id === JSON.parse(sbtn.dataset.stayBook).id))));
+      } catch {
+        $('staysResults').innerHTML = '<p class="error">تعذّر بحث الفنادق — حاول مجدداً بعد قليل.</p>';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function openStayBooking(offer) {
+      selectedStayOffer = offer;
+      $('stayBookSummary').textContent = `${offer.name} — الإجمالي ${offer.sellAmount} ${offer.currency}`;
+      $('stayBookForm').innerHTML = `
+        <fieldset style="border:1px dashed var(--border);border-radius:10px;padding:10px;margin-top:10px">
+          <legend style="font-size:13px;color:var(--muted)">الضيف الرئيسي</legend>
+          <div class="row">
+            <div><label>الاسم الأول (لاتيني)</label><input data-g="givenName" placeholder="AHMED" /></div>
+            <div><label>اسم العائلة (لاتيني)</label><input data-g="familyName" placeholder="ALI" /></div>
+          </div>
+        </fieldset>
+        <div class="row" style="margin-top:10px">
+          <div><label>البريد الإلكتروني</label><input id="sEmail" type="email" placeholder="you@example.com" /></div>
+          <div><label>الهاتف</label><input id="sPhone" placeholder="+9665xxxxxxxx" /></div>
+        </div>`;
+      $('stayBookError').classList.add('hidden');
+      $('stayBookDialog').showModal();
+    }
+    $('stayBookCancel').addEventListener('click', () => $('stayBookDialog').close());
+
+    $('stayBookConfirm').addEventListener('click', async (e) => {
+      e.preventDefault();
+      const fs = $('stayBookForm').querySelector('fieldset');
+      const val = name => fs.querySelector(`[data-g="${name}"]`).value.trim();
+      const body = {
+        offerId: selectedStayOffer.id,
+        guests: [{ givenName: val('givenName'), familyName: val('familyName') }],
+        contact: { email: $('sEmail').value.trim(), phone: $('sPhone').value.trim() },
+      };
+      $('stayBookConfirm').disabled = true;
+      try {
+        const res = await api('/api/travel/stays/bookings', { method: 'POST', body: JSON.stringify(body) });
+        const data = await res.json();
+        if (!res.ok) {
+          $('stayBookError').textContent = data.error || 'تعذّر الحجز.';
+          $('stayBookError').classList.remove('hidden');
+          return;
+        }
+        $('stayBookDialog').close();
+        alert(`✅ تم حجز الفندق!\nالمرجع: ${data.booking.bookingReference}\nالإجمالي: ${data.booking.sellAmount} ${data.booking.currency}`);
+        document.querySelector('[data-tab="trips"]').click();
+      } finally {
+        $('stayBookConfirm').disabled = false;
       }
     });
 
