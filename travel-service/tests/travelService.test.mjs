@@ -300,6 +300,9 @@ describe('liteApiStaysProvider: بحث فنادق حقيقي (رد Sandbox حي 
             if (u.includes('/rates/book')) {
                 return { ok: true, text: async () => JSON.stringify({ data: { bookingId: 'bk_123', bookingReference: 'LTA789' } }) };
             }
+            if (u.includes('/bookings/bk_123')) {
+                return { ok: true, text: async () => JSON.stringify({ data: { refundAmount: 200.5, currency: 'USD' } }) };
+            }
             if (u.includes('/hotels/rates')) {
                 return {
                     ok: true,
@@ -377,6 +380,11 @@ describe('liteApiStaysProvider: بحث فنادق حقيقي (رد Sandbox حي 
         assert.equal(order.status, 'issued');
         assert.equal(order.netAmount, 474.65);
         assert.equal(order.currency, 'USD');
+
+        const cancelled = await provider.cancelStayOrder(order.orderId);
+        assert.equal(cancelled.status, 'cancelled');
+        assert.equal(cancelled.refundAmount, 200.5);
+        assert.equal(cancelled.currency, 'USD');
     });
 
     test('getQuote: عرض غير موجود/منتهٍ → null بلا نداء شبكة', async () => {
@@ -384,10 +392,6 @@ describe('liteApiStaysProvider: بحث فنادق حقيقي (رد Sandbox حي 
         assert.equal(await provider.getQuote('لا-وجود'), null);
     });
 
-    test('الإلغاء غير مبني بعد: خطأ صريح لا ادّعاء دعم', async () => {
-        const provider = createLiteApiStaysProvider({ apiKey: 'sand_test123', fetchImpl: stubFetch() });
-        await assert.rejects(provider.cancelStayOrder('x'), /لم يُبنَ بعد/);
-    });
 });
 
 // ─── المجموعة الكاملة، مُعامَلة بمصنع المخزن ──────────────────────────
@@ -748,6 +752,10 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             const ds = buildStaysProvider({ DUFFEL_API_KEY: 'duffel_test_abc' });
             assert.equal(ds.name, 'duffel-stays');
             assert.equal(ds.mode, 'sandbox');
+            // LITEAPI_API_KEY له الأولوية على DUFFEL_API_KEY (Stays معطَّل حالياً على Duffel)
+            const ls = buildStaysProvider({ LITEAPI_API_KEY: 'sand_abc', DUFFEL_API_KEY: 'duffel_test_abc' });
+            assert.equal(ls.name, 'liteapi-stays');
+            assert.equal(ls.mode, 'sandbox');
 
             assert.equal(buildCarsProvider({}).name, 'mock-cars');
             const dc = buildCarsProvider({ DUFFEL_API_KEY: 'duffel_test_abc' });

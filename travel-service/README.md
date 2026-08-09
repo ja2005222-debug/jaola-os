@@ -172,7 +172,7 @@ open-meteo/frankfurter)؛ أول تشغيل فعلي على الخادم الم�
 - `mailer` معامل قابل للحقن في `createApp` (نفس نمط `travelInfoFetch`)
   لاختبار محتوى البريد الفعلي بلا شبكة حقيقية.
 
-## المرحلة ٣د (قيد الإنجاز): مزوّد فنادق LiteAPI/Nuitee Connect
+## المرحلة ٣د: مزوّد فنادق LiteAPI/Nuitee Connect (بديل Duffel Stays النشط)
 
 بديل حقيقي لـDuffel Stays (المعطَّل حالياً على حساب Duffel — راجع
 التحذير أعلاه) اكتُشف أثناء البحث عن RateHawk: LiteAPI/Nuitee Connect
@@ -197,13 +197,18 @@ open-meteo/frankfurter)؛ أول تشغيل فعلي على الخادم الم�
   الخطأ (`success`/`data`)، بنفس صراحة `duffelCarsProvider.js` تماماً —
   أول نجاح حي فعلي (بعد جاهزية Stripe) هو التحقق الحقيقي، وأي اختلاف
   بمسار الحقول يظهر بخطأ واضح ("رد بلا prebookId/معرّف حجز") لا فشلاً صامتاً.
-- الإلغاء (`Cancel a booking`) لسه صيغته لم تصل — `cancelStayOrder` ترمي
-  خطأً صريحاً بدل التخمين.
-- **لم يُربَط بـ`buildStaysProvider` بعد** — الإلغاء غير المكتمل يكفي
-  وحده لتأجيل الربط (حجز بلا قدرة إلغاء حقيقية واجهة مكسورة جزئياً)، زائد
-  انتظار Stripe لاختبار الحجز نفسه حياً. الخطوة التالية: صيغة الإلغاء +
-  تجهيز Stripe، ثم الربط في `providers/index.js` عبر `LITEAPI_API_KEY`
-  (لا يستبدل Duffel — بديل فنادق مستقل بالتوازي).
+- `cancelStayOrder` مبنيّة الآن أيضاً: `PUT book.liteapi.travel/v3.0/bookings/{bookingId}`
+  — **الطلب مؤكَّد حرفياً** (بلا جسم، `bookingId` بالمسار فقط)، رد النجاح
+  غير مُشاهَد لنفس السبب أعلاه.
+- **مربوط الآن في `providers/index.js`**: `LITEAPI_API_KEY` له الأولوية
+  على `DUFFEL_API_KEY` لمزوّد الفنادق تحديداً (Duffel Stays معطَّل حالياً
+  على حسابنا — راجع التحذير أدناه)، مستقل تماماً عن مزوّد الطيران (يبقى
+  Duffel أو محاكاة بصرف النظر). Duffel Stays يبقى احتياطاً إن فُعِّل لاحقاً
+  بلا `LITEAPI_API_KEY` مضبوطاً.
+- ⚠️ **الحجز الفعلي الحي لا يزال بانتظار Stripe** (`payment.gateway: STRIPE`
+  إلزامي في صيغة LiteAPI نفسها) — البحث والعرض يعملان الآن بلا أي اعتماد
+  خارجي إضافي؛ الحجز/الإلغاء الفعليان أول اختبار حقيقي لهما بعد تجهيز
+  Stripe لاحقاً.
 
 ## ⚠️ إجراء مطلوب من المالك: تفعيل Stays وCars لدى Duffel
 
@@ -244,7 +249,7 @@ API حقيقي مقروء (نفس معيار Stays لا Cars — صيغ مُخم
 | `DUFFEL_API_KEY` | يبدأ بـ`duffel_test` | Duffel Sandbox — الطيران يعمل مباشرة؛ **الفنادق والسيارات تحتاجان تفعيل مبيعات Duffel أولاً** (راجع التحذير أعلى) — لافتة "بيئة تجريبية" في الواجهة |
 | `DUFFEL_API_KEY` | مفتاح إنتاج | Duffel حي — **يتطلب رصيد Duffel مشحوناً** + نفس تفعيل Stays/Cars |
 | (غير مضبوط) | — | مزوّد محاكاة حتمي للثلاثة (تطوير كامل التدفق بلا مفاتيح) |
-| `LITEAPI_API_KEY` *(قريباً)* | يبدأ بـ`sand_` | LiteAPI/Nuitee Sandbox — بحث الفنادق جاهز (`liteApiStaysProvider.js`)، الحجز لسه غير مكتمل (راجع المرحلة ٣د) — **غير مربوط بـ`buildStaysProvider` بعد** |
+| `LITEAPI_API_KEY` | يبدأ بـ`sand_` | LiteAPI/Nuitee Sandbox — **مزوّد الفنادق الفعلي الآن** (أولوية على Duffel Stays المعطَّل)؛ البحث مُختبَر بالكامل، الحجز/الإلغاء مبنيّان لكن ردّهما الحقيقي لم يُتحقَّق منه بعد (ينتظر Stripe — راجع المرحلة ٣د) |
 
 الايجنت: `TRAVEL_AGENT_API_KEY` (+ اختيارياً `TRAVEL_AGENT_API_URL` و
 `TRAVEL_AGENT_MODEL`) — أي خدمة متوافقة مع OpenAI chat/completions تدعم

@@ -20,9 +20,9 @@
  *      صراحة duffelCarsProvider.js تماماً — أول نجاح حي فعلي هو التحقق.
  *   4. POST book.liteapi.travel/v3.0/rates/book — إتمام الحجز؛ **الطلب
  *      مؤكَّد حرفياً**، **الرد عند النجاح غير مُشاهَد** لنفس السبب أعلاه.
- *
- * الإلغاء (Cancel a booking) لم تصل صيغته بعد — cancelStayOrder ترمي
- * خطأً صريحاً بدل التخمين.
+ *   5. PUT book.liteapi.travel/v3.0/bookings/{bookingId} — إلغاء؛ **الطلب
+ *      مؤكَّد حرفياً** (بلا جسم — bookingId بالمسار فقط)، **الرد عند
+ *      النجاح غير مُشاهَد** لنفس سبب الحجز أعلاه.
  */
 import { createLiteApiClient } from './liteApiClient.js';
 import { airportCoords } from '../airports.js';
@@ -177,9 +177,17 @@ export function createLiteApiStaysProvider({ apiKey, apiUrl, bookApiUrl, fetchIm
             };
         },
 
-        // ⚠️ غير مُنفَّذة: صيغة "Cancel a booking" (PUT) لم تصل بعد — لا تخمين.
-        async cancelStayOrder() {
-            throw new Error('إلغاء حجوزات LiteAPI لم يُبنَ بعد — التوثيق الفعلي لم يصل.');
+        // bookingId (من createStayOrder) → إلغاء عبر PUT /bookings/{id}.
+        async cancelStayOrder(orderId) {
+            const data = await liteApiBook('PUT', `/bookings/${encodeURIComponent(orderId)}`);
+            // ⚠️ نفس تحذير getQuote/createStayOrder — مسار الحقول تخمين
+            // مبني على تناسق شكل ردود LiteAPI، لا رد نجاح فعلي مُشاهَد.
+            const result = data?.data || data;
+            return {
+                status: 'cancelled',
+                refundAmount: result?.refundAmount ?? result?.refund?.amount ?? null,
+                currency: result?.currency ?? result?.refund?.currency ?? null,
+            };
         },
     };
 }
