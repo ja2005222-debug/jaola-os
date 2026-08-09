@@ -172,6 +172,30 @@ open-meteo/frankfurter)؛ أول تشغيل فعلي على الخادم الم�
 - `mailer` معامل قابل للحقن في `createApp` (نفس نمط `travelInfoFetch`)
   لاختبار محتوى البريد الفعلي بلا شبكة حقيقية.
 
+## المرحلة ٣د (قيد الإنجاز): مزوّد فنادق LiteAPI/Nuitee Connect
+
+بديل حقيقي لـDuffel Stays (المعطَّل حالياً على حساب Duffel — راجع
+التحذير أعلاه) اكتُشف أثناء البحث عن RateHawk: LiteAPI/Nuitee Connect
+(`api.liteapi.travel`) — حساب مستقل بالكامل عن Duffel، **Sandbox key
+يُصدر تلقائياً عند التسجيل بلا موافقة مبيعات** (خلاف Duffel Stays
+وRateHawk التقليديين)، ويغطي فنادق (٣مليون+) وطيران وسيارات بنفس المفتاح.
+
+- `src/providers/liteApiClient.js` + `src/providers/liteApiStaysProvider.js`:
+  بحث فنادق حقيقي (`GET /data/hotels` ثم `POST /hotels/rates`، هيدر
+  `X-API-Key`) — **مبني من رد Sandbox حي حقيقي مُلتقَط فعلياً** من لوحة
+  العميل (API Playground)، لا توثيق مقروء وحده: كل حقول التطبيع
+  (`offerId`, `offerRetailRate`, `cancellationPolicies.refundableTag`...)
+  مؤكَّدة من رد فعلي، ومُختبَرة بنسخة مطابقة من نفس الرد.
+- ⚠️ **غير مكتمل عمداً**: خطوتا الحجز الفعلي (`Create a checkout session`
+  ثم `Complete a booking` عبر `book.liteapi.travel`) والإلغاء لم تصل
+  صيغتهما الحقيقية بعد — `getQuote`/`createStayOrder`/`cancelStayOrder`
+  ترمي خطأً صريحاً بدل تخمين صيغة لم تُوثَّق (نفس معيار الصراحة في كل
+  ملف بهذا المجلد). **لم يُربَط بـ`buildStaysProvider` بعد** لهذا السبب
+  تحديداً — ربطه الآن كان سيُظهره متاحاً للحجز بواجهة تكسر عند أول محاولة.
+- الخطوة التالية: الحصول على Code Snippets حقيقية لخطوتي الحجز، إكمال
+  الدوال الثلاث، ثم ربطه في `providers/index.js` كخيار مستقل عبر
+  `LITEAPI_API_KEY` (لا يستبدل Duffel — يعمل بالتوازي كبديل فنادق فقط).
+
 ## ⚠️ إجراء مطلوب من المالك: تفعيل Stays وCars لدى Duffel
 
 بحث الفنادق والسيارات مبنيان ومُختبَران بالكامل ضد مزوّد المحاكاة، لكن
@@ -211,6 +235,7 @@ API حقيقي مقروء (نفس معيار Stays لا Cars — صيغ مُخم
 | `DUFFEL_API_KEY` | يبدأ بـ`duffel_test` | Duffel Sandbox — الطيران يعمل مباشرة؛ **الفنادق والسيارات تحتاجان تفعيل مبيعات Duffel أولاً** (راجع التحذير أعلى) — لافتة "بيئة تجريبية" في الواجهة |
 | `DUFFEL_API_KEY` | مفتاح إنتاج | Duffel حي — **يتطلب رصيد Duffel مشحوناً** + نفس تفعيل Stays/Cars |
 | (غير مضبوط) | — | مزوّد محاكاة حتمي للثلاثة (تطوير كامل التدفق بلا مفاتيح) |
+| `LITEAPI_API_KEY` *(قريباً)* | يبدأ بـ`sand_` | LiteAPI/Nuitee Sandbox — بحث الفنادق جاهز (`liteApiStaysProvider.js`)، الحجز لسه غير مكتمل (راجع المرحلة ٣د) — **غير مربوط بـ`buildStaysProvider` بعد** |
 
 الايجنت: `TRAVEL_AGENT_API_KEY` (+ اختيارياً `TRAVEL_AGENT_API_URL` و
 `TRAVEL_AGENT_MODEL`) — أي خدمة متوافقة مع OpenAI chat/completions تدعم

@@ -33,6 +33,7 @@ import { listPriceWatchesByUser, cancelPriceWatch } from '../src/priceWatches.js
 import { checkWatches } from '../src/priceWatchPoller.js';
 import { getDestinationWeather, convertCurrency } from '../src/travelInfo.js';
 import { buildTopDestinations, CURATED_DESTINATIONS } from '../src/topDestinations.js';
+import { createLiteApiStaysProvider } from '../src/providers/liteApiStaysProvider.js';
 
 const JWT_SECRET = 'test-secret-not-for-production';
 const MARKUP = 10; // هامش الاختبارات — أرقامه سهلة التحقق يدوياً
@@ -270,6 +271,88 @@ describe('topDestinations: أهم الوجهات (صورة Wikimedia + سعر ح
         assert.equal(ist.currency, null);
         const dxb = destinations.find(d => d.iata === 'DXB');
         assert.ok(Number.isFinite(dxb.fromPrice) && dxb.fromPrice > 0);
+    });
+});
+
+// ─── 🏨 liteApiStaysProvider (LiteAPI/Nuitee) — ردود Sandbox حقيقية ────
+describe('liteApiStaysProvider: بحث فنادق حقيقي (رد Sandbox حي مُلتقَط فعلياً)', () => {
+    // نسخة مختصَرة من رد GET /data/hotels وPOST /hotels/rates الحقيقيين
+    // (بنفس أسماء الحقول والقيم — لا اختلاق) كما وردا من لوحة العميل.
+    function stubFetch() {
+        return async (url) => {
+            const u = String(url);
+            if (u.includes('/data/hotels')) {
+                return {
+                    ok: true,
+                    text: async () => JSON.stringify({
+                        data: [{ id: 'lp1897', name: 'Test Hotel NYC', city: 'New York', country: 'us', starRating: 4 }],
+                    }),
+                };
+            }
+            if (u.includes('/hotels/rates')) {
+                return {
+                    ok: true,
+                    text: async () => JSON.stringify({
+                        data: [{
+                            hotelId: 'lp1897',
+                            et: 10800,
+                            roomTypes: [
+                                {
+                                    roomTypeId: 'rt1', offerId: 'offer_abc', supplier: 'nuitee',
+                                    rates: [{ name: 'Premium Two Queen Beds room', cancellationPolicies: { refundableTag: 'NRFN' } }],
+                                    offerRetailRate: { amount: 474.65, currency: 'USD' },
+                                },
+                                {
+                                    roomTypeId: 'rt2', offerId: 'offer_cheaper', supplier: 'nuitee',
+                                    rates: [{ name: 'Queen Standard Room', cancellationPolicies: { refundableTag: 'RFN' } }],
+                                    offerRetailRate: { amount: 253.01, currency: 'USD' },
+                                },
+                            ],
+                        }],
+                        guestLevel: 0,
+                    }),
+                };
+            }
+            throw new Error('مسار غير متوقَّع بالاختبار: ' + u);
+        };
+    }
+
+    test('searchStays: يطبّع الرد الحقيقي (اسم فندق+غرفة، أرخص أولاً، refundableTag → cancellable)', async () => {
+        const provider = createLiteApiStaysProvider({ apiKey: 'sand_test123', fetchImpl: stubFetch() });
+        const offers = await provider.searchStays({ iata: 'RUH', checkInDate: '2027-01-15', checkOutDate: '2027-01-17', adults: 2, rooms: 1 });
+        assert.equal(offers.length, 2);
+        // مرتَّبة تصاعدياً بالسعر — الأرخص (offer_cheaper) أولاً
+        assert.equal(offers[0].id, 'offer_cheaper');
+        assert.equal(offers[0].netAmount, 253.01);
+        assert.equal(offers[0].currency, 'USD');
+        assert.equal(offers[0].cancellable, true); // RFN
+        assert.match(offers[0].name, /Test Hotel NYC/);
+        assert.match(offers[0].name, /Queen Standard Room/);
+        assert.equal(offers[1].id, 'offer_abc');
+        assert.equal(offers[1].cancellable, false); // NRFN
+    });
+
+    test('searchStays: وجهة غير مغطّاة (بلا إحداثيات) → خطأ واضح بلا نداء شبكة', async () => {
+        const provider = createLiteApiStaysProvider({ apiKey: 'sand_test123', fetchImpl: stubFetch() });
+        await assert.rejects(
+            provider.searchStays({ iata: 'ZZZ', checkInDate: '2027-01-15', checkOutDate: '2027-01-17' }),
+            /لا إحداثيات معروفة/
+        );
+    });
+
+    test('getStayOffer: يرجّع من الكاش بعد البحث، وnull لمعرّف غير موجود', async () => {
+        const provider = createLiteApiStaysProvider({ apiKey: 'sand_test123', fetchImpl: stubFetch() });
+        await provider.searchStays({ iata: 'RUH', checkInDate: '2027-01-15', checkOutDate: '2027-01-17', adults: 2, rooms: 1 });
+        const found = await provider.getStayOffer('offer_abc');
+        assert.equal(found.netAmount, 474.65);
+        assert.equal(await provider.getStayOffer('لا-وجود'), null);
+    });
+
+    test('الحجز/الإلغاء غير مبنيين بعد: خطأ صريح لا ادّعاء دعم', async () => {
+        const provider = createLiteApiStaysProvider({ apiKey: 'sand_test123', fetchImpl: stubFetch() });
+        await assert.rejects(provider.getQuote('offer_abc'), /لم تُبنَ بعد/);
+        await assert.rejects(provider.createStayOrder({}), /لم تُبنَ بعد/);
+        await assert.rejects(provider.cancelStayOrder('x'), /لم يُبنَ بعد/);
     });
 });
 
