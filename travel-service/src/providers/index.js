@@ -9,6 +9,8 @@ import { createDuffelProvider } from './duffelProvider.js';
 import { createMockTravelProvider } from './mockProvider.js';
 import { createDuffelStaysProvider } from './duffelStaysProvider.js';
 import { createMockStaysProvider } from './mockStaysProvider.js';
+import { createDuffelCarsProvider } from './duffelCarsProvider.js';
+import { createMockCarsProvider } from './mockCarsProvider.js';
 
 export function buildProvider(env = process.env) {
     if (env.DUFFEL_API_KEY) {
@@ -29,4 +31,15 @@ export function buildStaysProvider(env = process.env) {
         });
     }
     return createMockStaysProvider();
+}
+
+/** نفس مفتاح الطيران بالضبط — Duffel Cars على نفس الحساب. */
+export function buildCarsProvider(env = process.env) {
+    if (env.DUFFEL_API_KEY) {
+        return createDuffelCarsProvider({
+            apiKey: env.DUFFEL_API_KEY,
+            apiUrl: env.DUFFEL_API_URL || undefined,
+        });
+    }
+    return createMockCarsProvider();
 }

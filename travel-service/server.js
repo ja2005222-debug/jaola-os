@@ -20,7 +20,7 @@ import { buildVerifyToken } from './src/auth.js';
 import { readMarkupPct, applyMarkup } from './src/pricing.js';
 import { createBooking, getBooking, listBookingsByUser, transitionBooking } from './src/bookings.js';
 import { buildStore } from './src/store/index.js';
-import { buildProvider, buildStaysProvider } from './src/providers/index.js';
+import { buildProvider, buildStaysProvider, buildCarsProvider } from './src/providers/index.js';
 import { buildTravelAgent } from './src/agent/agent.js';
 import { airportCoords } from './src/airports.js';
 import { createPriceWatch, listPriceWatchesByUser, cancelPriceWatch } from './src/priceWatches.js';
@@ -34,6 +34,7 @@ const MAX_ADULTS = 9;
 const MAX_CHILDREN = 8;
 const MAX_ROOMS = 5;
 const MAX_STAY_NIGHTS = 30;
+const MAX_RENTAL_DAYS = 30;
 const MAX_BOOKING_WINDOW_DAYS = 330; // أقصى ما تفتحه أنظمة الحجز عادةً
 const MAX_AGENT_MESSAGES = 30;
 const MAX_AGENT_MESSAGE_CHARS = 4000;
@@ -47,6 +48,7 @@ const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch
 
 const IATA_RE = /^[A-Za-z]{3}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const NAME_RE = /^[A-Za-z][A-Za-z' -]{0,39}$/; // لاتينية كما في الجواز — شرط المزوّدين
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^\+?[0-9]{7,15}$/;
@@ -189,6 +191,60 @@ export function validateGuests(body) {
     return { values: { guests: clean, contact: { email, phone } } };
 }
 
+/** يتحقق من معايير بحث السيارات ويطبّعها — {error} أو {values}. */
+export function validateCarSearchParams(body) {
+    const iata = String(body?.iata || '').trim().toUpperCase();
+    if (!IATA_RE.test(iata)) {
+        return { error: 'رمز موقع الاستلام يجب أن يكون IATA من ثلاثة أحرف (مثل RUH وCAI).' };
+    }
+    if (!airportCoords(iata)) {
+        return { error: `الوجهة ${iata} غير مغطّاة حالياً في بحث السيارات.` };
+    }
+    const pickupDate = String(body?.pickupDate || '').trim();
+    if (!DATE_RE.test(pickupDate) || isNaN(Date.parse(pickupDate))) {
+        return { error: 'تاريخ الاستلام بصيغة YYYY-MM-DD.' };
+    }
+    const pickupOffset = daysFromToday(pickupDate);
+    if (pickupOffset < 0) return { error: 'تاريخ الاستلام في الماضي.' };
+    if (pickupOffset > MAX_BOOKING_WINDOW_DAYS) {
+        return { error: `تاريخ الاستلام أبعد من نافذة الحجز (${MAX_BOOKING_WINDOW_DAYS} يوماً).` };
+    }
+    const pickupTime = String(body?.pickupTime || '10:00').trim();
+    if (!TIME_RE.test(pickupTime)) return { error: 'وقت الاستلام بصيغة HH:MM.' };
+    const dropoffDate = String(body?.dropoffDate || '').trim();
+    if (!DATE_RE.test(dropoffDate) || isNaN(Date.parse(dropoffDate))) {
+        return { error: 'تاريخ التسليم بصيغة YYYY-MM-DD.' };
+    }
+    const dropoffTime = String(body?.dropoffTime || '10:00').trim();
+    if (!TIME_RE.test(dropoffTime)) return { error: 'وقت التسليم بصيغة HH:MM.' };
+    const pickupAt = `${pickupDate}T${pickupTime}:00Z`;
+    const dropoffAt = `${dropoffDate}T${dropoffTime}:00Z`;
+    if (dropoffAt <= pickupAt) return { error: 'وقت التسليم يجب أن يكون بعد الاستلام.' };
+    const days = (new Date(dropoffAt) - new Date(pickupAt)) / 86400000;
+    if (days > MAX_RENTAL_DAYS) return { error: `أقصى مدة استئجار ${MAX_RENTAL_DAYS} يوماً.` };
+    return { values: { iata, pickupAt, dropoffAt } };
+}
+
+/** يتحقق من بيانات السائقين والتواصل — {error} أو {values}. */
+export function validateDrivers(body) {
+    const drivers = Array.isArray(body?.drivers) ? body.drivers : null;
+    if (!drivers || drivers.length === 0) return { error: 'بيانات السائق مطلوبة.' };
+    const clean = [];
+    for (const [i, d] of drivers.entries()) {
+        const givenName = String(d?.givenName || '').trim();
+        const familyName = String(d?.familyName || '').trim();
+        if (!NAME_RE.test(givenName) || !NAME_RE.test(familyName)) {
+            return { error: `السائق ${i + 1}: الاسمان بالحروف اللاتينية (حتى 40 حرفاً).` };
+        }
+        clean.push({ givenName, familyName });
+    }
+    const email = String(body?.contact?.email || '').trim();
+    const phone = String(body?.contact?.phone || '').replace(/[\s-]/g, '');
+    if (!EMAIL_RE.test(email)) return { error: 'بريد تواصل صالح مطلوب.' };
+    if (!PHONE_RE.test(phone)) return { error: 'هاتف تواصل صالح مطلوب (أرقام دولية).' };
+    return { values: { drivers: clean, contact: { email, phone } } };
+}
+
 /** عرض للعميل: sellAmount فقط — الصافي netAmount **لا يغادر الخادم**. */
 function publicOffer(offer, markupPct) {
     const { netAmount, passengerIds, ...rest } = offer;
@@ -210,6 +266,7 @@ export function createApp({
     jwtSecret,
     provider,
     staysProvider = null,
+    carsProvider = null,
     agent = null,
     markupPct = readMarkupPct(),
     travelInfoFetch = fetch, // قابل للحقن في الاختبارات (طقس/عملة بلا شبكة حقيقية)
@@ -370,6 +427,77 @@ export function createApp({
             throw Object.assign(new Error('الإلغاء متاح للحجوزات المُصدَرة فقط.'), { status: 400 });
         }
         const result = await staysProvider.cancelStayOrder(booking.providerOrderId);
+        const cancelled = await transitionBooking(store, booking.id, 'cancelled', {
+            refund: { amount: result.refundAmount ?? null, currency: result.currency ?? null },
+        });
+        return publicBooking(cancelled || await getBooking(store, booking.id));
+    }
+
+    // ─── السيارات (Duffel Cars) — محاذاة دوال الفنادق أعلاه سطراً بسطر ──
+
+    function requireCars() {
+        if (!carsProvider) throw Object.assign(new Error('استئجار السيارات غير مفعَّل حالياً.'), { status: 503 });
+    }
+
+    async function doSearchCars(params) {
+        requireCars();
+        const check = validateCarSearchParams(params);
+        if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
+        const offers = await carsProvider.searchCars(check.values);
+        return offers.map(o => publicOffer(o, markupPct));
+    }
+
+    async function doGetCarOffer(offerId) {
+        requireCars();
+        const offer = await carsProvider.getCarOffer(String(offerId || ''));
+        return offer ? publicOffer(offer, markupPct) : null;
+    }
+
+    async function doBookCar(username, { offerId, drivers, contact }) {
+        requireCars();
+        // نفس تفرقة rate/quote لدى الفنادق: offerId هنا quote id — getQuote
+        // يجلبه كما هو دون إنشاء quote جديد.
+        const offer = await carsProvider.getQuote(String(offerId || ''));
+        if (!offer) throw Object.assign(new Error('عرض السيارة غير موجود أو انتهت صلاحيته — أعد البحث.'), { status: 404 });
+        const check = validateDrivers({ drivers, contact });
+        if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
+
+        const sellAmount = applyMarkup(offer.netAmount, markupPct);
+        const { netAmount: _net, ...offerSummary } = offer;
+        const booking = await createBooking(store, {
+            username, provider: carsProvider.name, kind: 'car',
+            offer: offerSummary,
+            passengers: check.values.drivers,
+            contact: check.values.contact,
+            netAmount: offer.netAmount, sellAmount, currency: offer.currency,
+        });
+        try {
+            const order = await carsProvider.createCarOrder({
+                offerId: offer.id,
+                drivers: check.values.drivers,
+                contact: check.values.contact,
+            });
+            const issued = await transitionBooking(store, booking.id, 'issued', {
+                providerOrderId: order.orderId,
+                bookingReference: order.bookingReference,
+            });
+            return publicBooking(issued);
+        } catch (e) {
+            await transitionBooking(store, booking.id, 'failed', { error: e.message });
+            throw Object.assign(new Error(`تعذّر إصدار حجز السيارة: ${e.message}`), { status: 502 });
+        }
+    }
+
+    async function doCancelCar(username, bookingId) {
+        requireCars();
+        const booking = await getBooking(store, String(bookingId || ''));
+        if (!booking || booking.username !== username || booking.kind !== 'car') {
+            throw Object.assign(new Error('الحجز غير موجود.'), { status: 404 });
+        }
+        if (booking.status !== 'issued') {
+            throw Object.assign(new Error('الإلغاء متاح للحجوزات المُصدَرة فقط.'), { status: 400 });
+        }
+        const result = await carsProvider.cancelCarOrder(booking.providerOrderId);
         const cancelled = await transitionBooking(store, booking.id, 'cancelled', {
             refund: { amount: result.refundAmount ?? null, currency: result.currency ?? null },
         });
@@ -592,6 +720,8 @@ export function createApp({
             providerMode: provider.mode || 'live',
             staysEnabled: !!staysProvider,
             staysProviderMode: staysProvider?.mode || null,
+            carsEnabled: !!carsProvider,
+            carsProviderMode: carsProvider?.mode || null,
             agentEnabled: !!agent,
         });
     }));
@@ -683,6 +813,47 @@ export function createApp({
         }
     }));
 
+    // ─── السيارات (Duffel Cars) — محاذاة مسارات الفنادق أعلاه ──────────
+
+    app.post('/api/travel/cars/search', verifyToken, searchLimiter, wrap(async (req, res) => {
+        try {
+            res.json({ offers: await doSearchCars(req.body) });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
+    app.get('/api/travel/cars/offers/:id', verifyToken, wrap(async (req, res) => {
+        try {
+            const offer = await doGetCarOffer(req.params.id);
+            if (!offer) return res.status(404).json({ error: 'عرض السيارة غير موجود أو انتهت صلاحيته.' });
+            res.json({ offer });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
+    app.post('/api/travel/cars/bookings', verifyToken, wrap(async (req, res) => {
+        try {
+            const booking = await doBookCar(userOf(req), req.body || {});
+            res.json({ booking });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
+    app.post('/api/travel/cars/bookings/:id/cancel', verifyToken, wrap(async (req, res) => {
+        try {
+            res.json({ booking: await doCancelCar(userOf(req), req.params.id) });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
     // ─── 🤖 الايجنت الحاجز ────────────────────────────────────────────
 
     app.post('/api/travel/agent/chat', verifyToken, agentLimiter, wrap(async (req, res) => {
@@ -713,6 +884,10 @@ export function createApp({
             getStayOffer: staysProvider ? id => doGetStayOffer(id) : null,
             bookStay: staysProvider ? args => doBookStay(username, args) : null,
             cancelStay: staysProvider ? id => doCancelStay(username, id) : null,
+            searchCars: carsProvider ? params => doSearchCars(params) : null,
+            getCarOffer: carsProvider ? id => doGetCarOffer(id) : null,
+            bookCar: carsProvider ? args => doBookCar(username, args) : null,
+            cancelCar: carsProvider ? id => doCancelCar(username, id) : null,
             findFlexibleDates: params => doFindFlexibleDates(username, params),
             checkTripConflicts: () => doCheckTripConflicts(username),
             watchPrice: args => doWatchPrice(username, args),
@@ -748,6 +923,7 @@ if (isMain) {
     });
     const provider = buildProvider();
     const staysProvider = buildStaysProvider();
+    const carsProvider = buildCarsProvider();
     const agent = buildTravelAgent();
     const markupPct = readMarkupPct();
 
@@ -759,13 +935,14 @@ if (isMain) {
         jwtSecret: [process.env.JWT_SECRET, process.env.JWT_SECRET_PREVIOUS],
         provider,
         staysProvider,
+        carsProvider,
         agent,
         markupPct,
     });
 
     const port = Number(process.env.PORT || 4200);
     app.listen(port, () => {
-        console.log(`✈️ بوابة السفر على المنفذ ${port} (المزوّد: ${provider.name}/${provider.mode || 'live'}، الفنادق: ${staysProvider.name}/${staysProvider.mode || 'live'}، التخزين: ${store.name}، الهامش: ${markupPct}%)`);
+        console.log(`✈️ بوابة السفر على المنفذ ${port} (المزوّد: ${provider.name}/${provider.mode || 'live'}، الفنادق: ${staysProvider.name}/${staysProvider.mode || 'live'}، السيارات: ${carsProvider.name}/${carsProvider.mode || 'live'}، التخزين: ${store.name}، الهامش: ${markupPct}%)`);
         if (!agent) console.warn('⚠️ الايجنت غير مفعَّل — اضبط TRAVEL_AGENT_API_KEY لتفعيل المساعد الحاجز.');
         if (provider.name === 'mock') console.warn('⚠️ مزوّد محاكاة — اضبط DUFFEL_API_KEY (يبدأ بـduffel_test للتجريبي).');
         if (store.name === 'file') {

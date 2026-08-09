@@ -16,12 +16,14 @@ import os from 'os';
 import path from 'path';
 import jwt from 'jsonwebtoken';
 
-import { createApp, validateSearchParams, validatePassengers, validateStaySearchParams, validateGuests } from '../server.js';
+import { createApp, validateSearchParams, validatePassengers, validateStaySearchParams, validateGuests, validateCarSearchParams, validateDrivers } from '../server.js';
 import { createMockTravelProvider } from '../src/providers/mockProvider.js';
 import { createDuffelProvider, normalizeDuffelOffer } from '../src/providers/duffelProvider.js';
 import { createMockStaysProvider } from '../src/providers/mockStaysProvider.js';
 import { normalizeDuffelStayResult } from '../src/providers/duffelStaysProvider.js';
-import { buildProvider, buildStaysProvider } from '../src/providers/index.js';
+import { createMockCarsProvider } from '../src/providers/mockCarsProvider.js';
+import { normalizeDuffelCarResult } from '../src/providers/duffelCarsProvider.js';
+import { buildProvider, buildStaysProvider, buildCarsProvider } from '../src/providers/index.js';
 import { readMarkupPct, applyMarkup, DEFAULT_MARKUP_PCT } from '../src/pricing.js';
 import { canTransition, createBooking, transitionBooking, getBooking } from '../src/bookings.js';
 import { createFileStore } from '../src/store/fileStore.js';
@@ -57,6 +59,16 @@ const STAY_SEARCH_BODY = () => ({
 
 const VALID_GUESTS = {
     guests: [{ givenName: 'AHMED', familyName: 'ALI' }],
+    contact: { email: 'a@test.com', phone: '+966500000000' },
+};
+
+const CAR_SEARCH_BODY = () => ({
+    iata: 'RUH', pickupDate: futureDate(14), pickupTime: '10:00',
+    dropoffDate: futureDate(16), dropoffTime: '10:00',
+});
+
+const VALID_DRIVERS = {
+    drivers: [{ givenName: 'AHMED', familyName: 'ALI' }],
     contact: { email: 'a@test.com', phone: '+966500000000' },
 };
 
@@ -217,7 +229,7 @@ describe('travelInfo: طقس الوجهة وتحويل العملات (بيان�
 // ─── المجموعة الكاملة، مُعامَلة بمصنع المخزن ──────────────────────────
 function runSuite(storeLabel, { makeStore, resetStore }) {
     describe(`بوابة السفر — تخزين: ${storeLabel}`, () => {
-        let store, server, baseUrl, provider, staysProvider;
+        let store, server, baseUrl, provider, staysProvider, carsProvider;
 
         async function call(pathname, { method = 'GET', token = null, body = null } = {}) {
             const headers = { 'Content-Type': 'application/json' };
@@ -235,7 +247,8 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             await store.init();
             provider = createMockTravelProvider();
             staysProvider = createMockStaysProvider();
-            const app = createApp({ store, jwtSecret: JWT_SECRET, provider, staysProvider, markupPct: MARKUP });
+            carsProvider = createMockCarsProvider();
+            const app = createApp({ store, jwtSecret: JWT_SECRET, provider, staysProvider, carsProvider, markupPct: MARKUP });
             server = await new Promise(r => { const s = app.listen(0, () => r(s)); });
             baseUrl = `http://127.0.0.1:${server.address().port}`;
         });
@@ -486,6 +499,11 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             const ds = buildStaysProvider({ DUFFEL_API_KEY: 'duffel_test_abc' });
             assert.equal(ds.name, 'duffel-stays');
             assert.equal(ds.mode, 'sandbox');
+
+            assert.equal(buildCarsProvider({}).name, 'mock-cars');
+            const dc = buildCarsProvider({ DUFFEL_API_KEY: 'duffel_test_abc' });
+            assert.equal(dc.name, 'duffel-cars');
+            assert.equal(dc.mode, 'sandbox');
         });
 
         test('🏨 بحث الفنادق: تحقق صارم من المعايير + الهامش مطبَّق والصافي لا يتسرب', async () => {
@@ -574,6 +592,92 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(offer.netAmount, 340);
             assert.equal(offer.name, 'Test Hotel');
             assert.equal(offer.city, 'Riyadh');
+            assert.equal(offer.cancellable, true);
+        });
+
+        test('🚗 بحث السيارات: تحقق صارم من المعايير + الهامش مطبَّق والصافي لا يتسرب', async () => {
+            const token = makeToken('car-searcher');
+            for (const bad of [
+                { ...CAR_SEARCH_BODY(), iata: 'RUHX' },                     // IATA فاسد
+                { ...CAR_SEARCH_BODY(), iata: 'ZZZ' },                      // غير مغطّى
+                { ...CAR_SEARCH_BODY(), pickupDate: '2020-01-01' },         // ماضٍ
+                { ...CAR_SEARCH_BODY(), pickupTime: '25:00' },              // وقت فاسد
+                { ...CAR_SEARCH_BODY(), dropoffDate: futureDate(10) },      // تسليم قبل استلام
+                { ...CAR_SEARCH_BODY(), dropoffDate: futureDate(50) },      // أطول من الحد
+            ]) {
+                const r = await call('/api/travel/cars/search', { method: 'POST', token, body: bad });
+                assert.equal(r.status, 400, JSON.stringify(bad));
+            }
+
+            const ok = await call('/api/travel/cars/search', { method: 'POST', token, body: CAR_SEARCH_BODY() });
+            assert.equal(ok.status, 200);
+            assert.equal(ok.data.offers.length, 4);
+            const validated = validateCarSearchParams(CAR_SEARCH_BODY());
+            const rawOffers = await carsProvider.searchCars(validated.values);
+            for (const [i, offer] of ok.data.offers.entries()) {
+                assert.equal(offer.sellAmount, applyMarkup(rawOffers[i].netAmount, MARKUP));
+                assert.equal(offer.netAmount, undefined); // 💰 لا تسريب للصافي
+            }
+
+            const one = await call(`/api/travel/cars/offers/${rawOffers[0].id}`, { token });
+            assert.equal(one.status, 200);
+            assert.equal(one.data.offer.netAmount, undefined);
+            assert.equal((await call('/api/travel/cars/offers/ghost', { token })).status, 404);
+        });
+
+        test('🚗🎫 حجز سيارة كامل: pending→issued بمرجع، وحجوزاتي موحّدة، وعزل الملكية', async () => {
+            const token = makeToken('car-booker');
+            const search = await call('/api/travel/cars/search', { method: 'POST', token, body: CAR_SEARCH_BODY() });
+            const offerId = search.data.offers[0].id;
+
+            for (const badDrivers of [
+                {},
+                { ...VALID_DRIVERS, drivers: [{ ...VALID_DRIVERS.drivers[0], givenName: 'أحمد' }] }, // غير لاتيني
+                { ...VALID_DRIVERS, contact: { email: 'bad', phone: '+966500000000' } },
+            ]) {
+                const r = await call('/api/travel/cars/bookings', { method: 'POST', token, body: { offerId, ...badDrivers } });
+                assert.equal(r.status, 400, JSON.stringify(badDrivers).slice(0, 80));
+            }
+
+            assert.equal((await call('/api/travel/cars/bookings', {
+                method: 'POST', token, body: { offerId: 'ghost', ...VALID_DRIVERS },
+            })).status, 404);
+
+            const booked = await call('/api/travel/cars/bookings', { method: 'POST', token, body: { offerId, ...VALID_DRIVERS } });
+            assert.equal(booked.status, 200);
+            const b = booked.data.booking;
+            assert.equal(b.status, 'issued');
+            assert.equal(b.kind, 'car');
+            assert.match(b.bookingReference, /^JAC\d+/);
+
+            const list = await call('/api/travel/bookings', { token });
+            assert.equal(list.data.bookings.length, 1);
+            assert.equal(list.data.bookings[0].kind, 'car');
+
+            const stranger = makeToken('car-stranger');
+            assert.equal((await call(`/api/travel/cars/bookings/${b.id}/cancel`, { method: 'POST', token: stranger })).status, 404);
+            assert.equal((await call(`/api/travel/bookings/${b.id}/cancel`, { method: 'POST', token })).status, 404);
+
+            const cancelled = await call(`/api/travel/cars/bookings/${b.id}/cancel`, { method: 'POST', token });
+            assert.equal(cancelled.status, 200);
+            assert.equal(cancelled.data.booking.status, 'cancelled');
+            assert.ok(cancelled.data.booking.refund.amount > 0);
+            assert.equal((await call(`/api/travel/cars/bookings/${b.id}/cancel`, { method: 'POST', token })).status, 400);
+        });
+
+        test('✈️🚗 تطبيع نتيجة Duffel Cars: الشكل المُستنتَج → العرض الموحّد', () => {
+            const raw = {
+                cheapest_rate: { id: 'rat_car_1', total_amount: '120.00', total_currency: 'USD', refundable_until: '2027-01-10' },
+                vehicle: { name: 'Toyota Corolla', acriss_code: 'CDMR' },
+                supplier: { name: 'Avis' },
+                pickup: { location: { address: { city_name: 'Riyadh' } } },
+            };
+            const offer = normalizeDuffelCarResult(raw);
+            assert.equal(offer.id, 'rat_car_1');
+            assert.equal(offer.netAmount, 120);
+            assert.equal(offer.vehicleName, 'Toyota Corolla');
+            assert.equal(offer.supplier, 'Avis');
+            assert.equal(offer.pickupLocation, 'Riyadh');
             assert.equal(offer.cancellable, true);
         });
     });
@@ -753,6 +857,40 @@ describe('الايجنت الحاجز', () => {
         assert.equal((await store.listBookingsByUser(username)).length, 1);
 
         const cancelRefused = await executeAgentTool('cancel_stay', { bookingId: 'b1', confirmed: false }, services);
+        assert.equal(cancelRefused.ok, false);
+    });
+
+    test('🚗 حارس حجز السيارة: بلا خدمة → رسالة تعليمية، وconfirmed=true يحجز فعلاً', async () => {
+        const username = 'agent-car-booker';
+        const bookArgs = { offerId: 'off_x', ...VALID_DRIVERS };
+
+        const disabled = await executeAgentTool('book_car', { ...bookArgs, confirmed: true }, {});
+        assert.equal(disabled.ok, false);
+        assert.match(disabled.data.error, /غير مفعَّل/);
+
+        const services = {
+            bookCar: async (args) => {
+                const booking = await createBooking(store, {
+                    username, provider: 'mock-cars', kind: 'car',
+                    offer: { vehicleName: 'x' },
+                    passengers: args.drivers, contact: args.contact,
+                    netAmount: 60, sellAmount: 66, currency: 'USD',
+                });
+                return { ...booking, bookingReference: 'JAC9999', status: 'issued', sellAmount: 66, currency: 'USD' };
+            },
+            cancelCar: async () => ({ status: 'cancelled' }),
+        };
+
+        const refused = await executeAgentTool('book_car', { ...bookArgs, confirmed: false }, services);
+        assert.equal(refused.ok, false);
+        assert.equal((await store.listBookingsByUser(username)).length, 0);
+
+        const done = await executeAgentTool('book_car', { ...bookArgs, confirmed: true }, services);
+        assert.equal(done.ok, true);
+        assert.equal(done.data.bookingReference, 'JAC9999');
+        assert.equal((await store.listBookingsByUser(username)).length, 1);
+
+        const cancelRefused = await executeAgentTool('cancel_car', { bookingId: 'b1', confirmed: false }, services);
         assert.equal(cancelRefused.ok, false);
     });
 
