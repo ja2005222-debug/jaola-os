@@ -27,16 +27,16 @@ const MAX_TOOL_ROUNDS = 10;
 const MAX_TOOL_RESULT_CHARS = 6000;
 
 const SYSTEM_PROMPT = `أنت "مساعد جاولا للسفر" — وكيل سفر شامل محترف يتحدث العربية (أو لغة المستخدم)، لا مجرد حاجز طيران.
-قدراتك عبر الأدوات: بحث رحلات وفنادق، فحص عرض محدد، حجز فعلي (طيران/فنادق)، عرض حجوزات المستخدم، إلغاء حجز، بحث تواريخ مرنة، فحص تعارض الرحلة، مراقبة سعر، توقعات طقس الوجهة، تحويل عملات، وتجميع ملخص رحلة منسّق.
+قدراتك عبر الأدوات: بحث رحلات وفنادق وسيارات إيجار، فحص عرض محدد، حجز فعلي (طيران/فنادق/سيارات)، عرض حجوزات المستخدم، إلغاء حجز، بحث تواريخ مرنة، فحص تعارض الرحلة، مراقبة سعر، توقعات طقس الوجهة، تحويل عملات، وتجميع ملخص رحلة منسّق.
 قواعد صارمة:
-1. الأسعار التي تعيدها الأدوات نهائية وشاملة — لا تخترع أسعاراً أو رحلات أو فنادق من ذاكرتك أبداً؛ كل معلومة رحلة/فندق تأتي من أداة.
-2. قبل أي حجز: اعرض ملخص الرحلة/الإقامة والسعر الإجمالي واسأل المستخدم صراحةً "هل أؤكد الحجز؟" — لا تضبط confirmed=true إلا بعد موافقة صريحة في رسالة المستخدم الأخيرة.
-3. للحجز تحتاج لكل مسافر: اللقب (mr/ms/mrs)، الاسم الأول واسم العائلة بالحروف اللاتينية كما في الجواز، تاريخ الميلاد (YYYY-MM-DD)، والجنس (m/f) — ولا تنس بريد التواصل والهاتف. اجمعها بالحوار إن نقصت. للفنادق يكفي اسم كل ضيق (بالحروف اللاتينية) + بريد وهاتف تواصل، بلا جواز أو ميلاد.
+1. الأسعار التي تعيدها الأدوات نهائية وشاملة — لا تخترع أسعاراً أو رحلات أو فنادق أو سيارات من ذاكرتك أبداً؛ كل معلومة رحلة/فندق/سيارة تأتي من أداة.
+2. قبل أي حجز: اعرض ملخص الرحلة/الإقامة/السيارة والسعر الإجمالي واسأل المستخدم صراحةً "هل أؤكد الحجز؟" — لا تضبط confirmed=true إلا بعد موافقة صريحة في رسالة المستخدم الأخيرة.
+3. للحجز تحتاج لكل مسافر: اللقب (mr/ms/mrs)، الاسم الأول واسم العائلة بالحروف اللاتينية كما في الجواز، تاريخ الميلاد (YYYY-MM-DD)، والجنس (m/f) — ولا تنس بريد التواصل والهاتف. اجمعها بالحوار إن نقصت. للفنادق والسيارات يكفي اسم كل ضيف/سائق (بالحروف اللاتينية) + بريد وهاتف تواصل، بلا جواز أو ميلاد.
 4. قبل الإلغاء: أكد مع المستخدم واذكر أن مبلغ الاسترداد يحدده المزوّد.
-5. كن موجزاً وعملياً — رقّم الخيارات ليسهل الاختيار، واذكر التوقيتات والمدة وعدد التوقفات (للطيران) أو التقييم والليالي (للفنادق).
+5. كن موجزاً وعملياً — رقّم الخيارات ليسهل الاختيار، واذكر التوقيتات والمدة وعدد التوقفات (للطيران) أو التقييم والليالي (للفنادق) أو نوع السيارة والشركة المؤجّرة (للسيارات).
 6. رموز المطارات IATA من ثلاثة أحرف (RUH, JED, CAI, DXB...) — استنتجها من أسماء المدن، واسأل عند اللبس. بحث الفنادق يستخدم نفس رمز المطار كمرجع للمدينة.
-7. بعد حجز رحلة طيران بنجاح، اقترح على المستخدم فندقاً بنفس الوجهة وتواريخ قريبة (عبر search_stays) إن كان ذلك منطقياً — لا تفترض موافقته، اقترح فقط.
-8. عند نتائج بحث غالية جداً أو معدومة، جرّب مطارات قريبة أو تواريخ مجاورة (نداءات search_flights/search_stays إضافية) قبل إخبار المستخدم بعدم وجود خيارات — لا تستسلم من أول محاولة.
+7. بعد حجز رحلة طيران بنجاح، اقترح على المستخدم فندقاً بنفس الوجهة وتواريخ قريبة (عبر search_stays)، وسيارة إيجار لنفس فترة الإقامة إن ناسب (عبر search_cars) — لا تفترض موافقته، اقترح فقط.
+8. عند نتائج بحث غالية جداً أو معدومة، جرّب مطارات قريبة أو تواريخ مجاورة (نداءات search_flights/search_stays/search_cars إضافية) قبل إخبار المستخدم بعدم وجود خيارات — لا تستسلم من أول محاولة.
 9. إن سأل المستخدم عن أرخص تاريخ ضمن مدى مرن استخدم find_flexible_dates بدل نداءات search_flights متكررة يدوياً. بعد أي حجز جديد أو عند سؤال المستخدم "هل خطتي متعارضة؟" استخدم check_trip_conflicts وأبلغه بأي تحذير فوراً. إن طلب مراقبة سعر رحلة لم تنخفض بعد استخدم watch_price واشرح أن الفحص دوري لا لحظي.
 10. أسئلة الطقس والعملة تُجاب حصراً عبر get_destination_weather وconvert_currency (بيانات حقيقية) — لا تخمين درجات حرارة أو أسعار صرف من ذاكرتك أبداً. أسئلة الأمتعة تُجاب من بيانات العرض نفسه (search_flights) إن وُجدت.
 11. أسئلة عامة عن الوجهة (تأشيرة، جمارك، عادات، أفضل وقت للزيارة، سلامة) يمكنك إجابتها من معرفتك العامة — بخلاف السعر/التوفر التي تبقى حصراً من الأدوات — لكن أضف دوماً جملة تنبيه واضحة: "معلومة استرشادية عامة، تحقق من السفارة أو الموقع الرسمي قبل السفر."
@@ -199,6 +199,80 @@ export const AGENT_TOOLS = [
         function: {
             name: 'cancel_stay',
             description: 'يلغي حجز فندق قائم (issued) بعد تأكيد المستخدم. الاسترداد حسب سياسة المزوّد.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    bookingId: { type: 'string' },
+                    confirmed: { type: 'boolean', description: 'true فقط بعد تأكيد المستخدم الصريح للإلغاء' },
+                },
+                required: ['bookingId', 'confirmed'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'search_cars',
+            description: 'يبحث عن سيارات إيجار متاحة قرب موقع استلام محدد بأسعار نهائية. يعيد قائمة عروض بمعرّفاتها.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    iata: { type: 'string', description: 'رمز IATA لمطار أقرب مدينة لموقع الاستلام (مثل RUH أو DXB)' },
+                    pickupAt: { type: 'string', description: 'تاريخ ووقت الاستلام بصيغة ISO (مثال 2027-01-15T10:00:00Z)' },
+                    dropoffAt: { type: 'string', description: 'تاريخ ووقت التسليم بصيغة ISO' },
+                },
+                required: ['iata', 'pickupAt', 'dropoffAt'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_car_offer',
+            description: 'يجلب تفاصيل عرض سيارة محدد بسعر محدَّث (العروض تنتهي صلاحيتها).',
+            parameters: {
+                type: 'object',
+                properties: { offerId: { type: 'string' } },
+                required: ['offerId'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'book_car',
+            description: 'يحجز عرض سيارة فعلياً. لا تستخدمه إلا بعد موافقة المستخدم الصريحة على الملخص والسعر.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    offerId: { type: 'string' },
+                    drivers: {
+                        type: 'array',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                givenName: { type: 'string' },
+                                familyName: { type: 'string' },
+                            },
+                            required: ['givenName', 'familyName'],
+                        },
+                    },
+                    contact: {
+                        type: 'object',
+                        properties: { email: { type: 'string' }, phone: { type: 'string' } },
+                        required: ['email', 'phone'],
+                    },
+                    confirmed: { type: 'boolean', description: 'true فقط بعد موافقة المستخدم الصريحة على الحجز' },
+                },
+                required: ['offerId', 'drivers', 'contact', 'confirmed'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'cancel_car',
+            description: 'يلغي حجز سيارة قائم (issued) بعد تأكيد المستخدم. الاسترداد حسب سياسة المزوّد.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -398,6 +472,40 @@ export async function executeAgentTool(name, args, services) {
                 }
                 const result = await services.cancelStay(args.bookingId);
                 return { ok: true, summary: `↩️ أُلغي حجز الفندق ${args.bookingId}`, data: result };
+            }
+            case 'search_cars': {
+                if (!services.searchCars) return { ok: false, data: { error: 'استئجار السيارات غير مفعَّل حالياً.' } };
+                const offers = await services.searchCars(args);
+                return { ok: true, summary: `🚗 ${args.iata} (${offers.length} سيارات)`, data: offers };
+            }
+            case 'get_car_offer': {
+                if (!services.getCarOffer) return { ok: false, data: { error: 'استئجار السيارات غير مفعَّل حالياً.' } };
+                const offer = await services.getCarOffer(args.offerId);
+                if (!offer) return { ok: false, data: { error: 'عرض السيارة غير موجود أو انتهت صلاحيته — أعد البحث.' } };
+                return { ok: true, summary: `💰 عرض سيارة بسعر ${offer.sellAmount} ${offer.currency}`, data: offer };
+            }
+            case 'book_car': {
+                if (!services.bookCar) return { ok: false, data: { error: 'استئجار السيارات غير مفعَّل حالياً.' } };
+                if (args.confirmed !== true) {
+                    return { ok: false, data: { error: 'الحجز يتطلب موافقة المستخدم الصريحة أولاً — اعرض الملخص والسعر واسأله، ثم أعد النداء بـconfirmed=true.' } };
+                }
+                const booking = await services.bookCar(args);
+                return {
+                    ok: true,
+                    summary: `✅ حُجزت سيارة — المرجع ${booking.bookingReference}`,
+                    data: {
+                        bookingId: booking.id, bookingReference: booking.bookingReference,
+                        status: booking.status, total: `${booking.sellAmount} ${booking.currency}`,
+                    },
+                };
+            }
+            case 'cancel_car': {
+                if (!services.cancelCar) return { ok: false, data: { error: 'استئجار السيارات غير مفعَّل حالياً.' } };
+                if (args.confirmed !== true) {
+                    return { ok: false, data: { error: 'الإلغاء يتطلب تأكيد المستخدم الصريح — اسأله أولاً ثم أعد النداء بـconfirmed=true.' } };
+                }
+                const result = await services.cancelCar(args.bookingId);
+                return { ok: true, summary: `↩️ أُلغي حجز السيارة ${args.bookingId}`, data: result };
             }
             case 'find_flexible_dates': {
                 if (!services.findFlexibleDates) return { ok: false, data: { error: 'بحث التواريخ المرنة غير متاح حالياً.' } };

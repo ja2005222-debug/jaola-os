@@ -106,6 +106,7 @@
     <div id="app" class="hidden">
       <div class="tabs">
         <button data-tab="search" class="active">🔎 بحث الرحلات</button>
+        <button data-tab="cars" id="carsTabBtn">🚗 سيارات</button>
         <button data-tab="trips">🧳 رحلاتي</button>
         <button data-tab="agent" id="agentTabBtn">🤖 المساعد</button>
       </div>
@@ -141,6 +142,24 @@
           <div id="searchError" class="error hidden"></div>
         </div>
         <div id="results"></div>
+      </section>
+
+      <!-- ─── سيارات الإيجار ─── -->
+      <section id="tab-cars" class="hidden">
+        <div class="card">
+          <div class="row">
+            <div><label>موقع الاستلام (IATA)</label><input id="carIata" placeholder="RUH" maxlength="3" /></div>
+            <div><label>تاريخ الاستلام</label><input id="carPickupDate" type="date" /></div>
+            <div><label>وقت الاستلام</label><input id="carPickupTime" type="time" value="10:00" /></div>
+          </div>
+          <div class="row">
+            <div><label>تاريخ التسليم</label><input id="carDropoffDate" type="date" /></div>
+            <div><label>وقت التسليم</label><input id="carDropoffTime" type="time" value="10:00" /></div>
+          </div>
+          <button class="primary" id="carSearchBtn">🔎 ابحث عن سيارة</button>
+          <div id="carSearchError" class="error hidden"></div>
+        </div>
+        <div id="carResults"></div>
       </section>
 
       <!-- ─── رحلاتي ─── -->
@@ -196,9 +215,21 @@
     </div>
   </dialog>
 
+  <!-- نافذة بيانات سائق السيارة -->
+  <dialog id="carBookDialog">
+    <h3 style="margin-bottom:6px">🚗 بيانات السائق</h3>
+    <p id="carBookSummary" class="note"></p>
+    <form id="carBookForm" method="dialog"></form>
+    <div id="carBookError" class="error hidden"></div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="primary" id="carBookConfirm">أكّد الحجز</button>
+      <button class="chip" id="carBookCancel" type="button">إلغاء</button>
+    </div>
+  </dialog>
+
   <script>
     const $ = id => document.getElementById(id);
-    let token = null, config = null, selectedOffer = null, selectedStayOffer = null, lastFlightSearch = null;
+    let token = null, config = null, selectedOffer = null, selectedStayOffer = null, selectedCarOffer = null, lastFlightSearch = null;
     let chatHistory = []; // {role, content} — تُرسل كاملة لكل جولة
 
     // ─── الدخول الموحّد: توكن من ?token= أو التخزين المحلي ───
@@ -240,6 +271,7 @@
       if (config.providerMode !== 'live') $('modeBanner').classList.remove('hidden');
       if (!config.agentEnabled) $('agentTabBtn').title = 'غير مفعَّل على هذا الخادم';
       if (!config.staysEnabled) $('includeStaysLabel').classList.add('hidden');
+      if (!config.carsEnabled) $('carsTabBtn').classList.add('hidden');
       $('app').classList.remove('hidden');
       $('authGate').classList.add('hidden');
 
@@ -263,6 +295,8 @@
       // تاريخ افتراضي: بعد أسبوع
       const d = new Date(Date.now() + 7 * 86400000);
       $('fDepart').value = d.toISOString().slice(0, 10);
+      $('carPickupDate').value = d.toISOString().slice(0, 10);
+      $('carDropoffDate').value = new Date(Date.now() + 9 * 86400000).toISOString().slice(0, 10);
       loadTrips();
     }
 
@@ -277,7 +311,7 @@
     document.querySelectorAll('.tabs button').forEach(btn =>
       btn.addEventListener('click', () => {
         document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b === btn));
-        ['search', 'trips', 'agent'].forEach(t =>
+        ['search', 'cars', 'trips', 'agent'].forEach(t =>
           $('tab-' + t).classList.toggle('hidden', t !== btn.dataset.tab));
         if (btn.dataset.tab === 'trips') loadTrips();
       }));
@@ -500,14 +534,116 @@
       }
     });
 
-    // ─── رحلاتي (طيران + فنادق موحّدة) ───
+    // ─── سيارات الإيجار ───
+    async function doSearchCars() {
+      $('carSearchError').classList.add('hidden');
+      $('carResults').innerHTML = '<p class="note">🔎 جارٍ البحث…</p>';
+      $('carSearchBtn').disabled = true;
+      try {
+        const body = {
+          iata: $('carIata').value,
+          pickupDate: $('carPickupDate').value, pickupTime: $('carPickupTime').value,
+          dropoffDate: $('carDropoffDate').value, dropoffTime: $('carDropoffTime').value,
+        };
+        const res = await api('/api/travel/cars/search', { method: 'POST', body: JSON.stringify(body) });
+        const data = await res.json();
+        if (!res.ok) {
+          $('carResults').innerHTML = '';
+          $('carSearchError').textContent = data.error || 'تعذّر البحث.';
+          $('carSearchError').classList.remove('hidden');
+          return;
+        }
+        if (!data.offers.length) {
+          $('carResults').innerHTML = '<p class="note">لا سيارات متاحة لهذا البحث.</p>';
+          return;
+        }
+        $('carResults').innerHTML = data.offers.map(o => `
+          <div class="card offer">
+            <div style="flex:1">
+              <div class="route">🚗 ${esc(o.vehicleName)}</div>
+              <div class="seg">${esc(o.supplier || '')} · ${esc(o.pickupLocation || '')}</div>
+            </div>
+            <div style="text-align:center">
+              <div class="price">${o.sellAmount} ${esc(o.currency)}</div>
+              <button class="primary" data-car-book='${esc(JSON.stringify({ id: o.id }))}'>احجز</button>
+            </div>
+          </div>`).join('');
+        document.querySelectorAll('[data-car-book]').forEach(cbtn =>
+          cbtn.addEventListener('click', () => openCarBooking(
+            data.offers.find(o => o.id === JSON.parse(cbtn.dataset.carBook).id))));
+      } catch {
+        $('carResults').innerHTML = '';
+        $('carSearchError').textContent = 'تعذّر البحث — حاول مجدداً بعد قليل.';
+        $('carSearchError').classList.remove('hidden');
+      } finally {
+        $('carSearchBtn').disabled = false;
+      }
+    }
+    $('carSearchBtn').addEventListener('click', doSearchCars);
+
+    function openCarBooking(offer) {
+      selectedCarOffer = offer;
+      $('carBookSummary').textContent = `${offer.vehicleName} — الإجمالي ${offer.sellAmount} ${offer.currency}`;
+      $('carBookForm').innerHTML = `
+        <fieldset style="border:1px dashed var(--border);border-radius:10px;padding:10px;margin-top:10px">
+          <legend style="font-size:13px;color:var(--muted)">السائق الرئيسي</legend>
+          <div class="row">
+            <div><label>الاسم الأول (لاتيني)</label><input data-d="givenName" placeholder="AHMED" /></div>
+            <div><label>اسم العائلة (لاتيني)</label><input data-d="familyName" placeholder="ALI" /></div>
+          </div>
+        </fieldset>
+        <div class="row" style="margin-top:10px">
+          <div><label>البريد الإلكتروني</label><input id="dEmail" type="email" placeholder="you@example.com" /></div>
+          <div><label>الهاتف</label><input id="dPhone" placeholder="+9665xxxxxxxx" /></div>
+        </div>`;
+      $('carBookError').classList.add('hidden');
+      $('carBookDialog').showModal();
+    }
+    $('carBookCancel').addEventListener('click', () => $('carBookDialog').close());
+
+    $('carBookConfirm').addEventListener('click', async (e) => {
+      e.preventDefault();
+      const fs = $('carBookForm').querySelector('fieldset');
+      const val = name => fs.querySelector(`[data-d="${name}"]`).value.trim();
+      const body = {
+        offerId: selectedCarOffer.id,
+        drivers: [{ givenName: val('givenName'), familyName: val('familyName') }],
+        contact: { email: $('dEmail').value.trim(), phone: $('dPhone').value.trim() },
+      };
+      $('carBookConfirm').disabled = true;
+      try {
+        const res = await api('/api/travel/cars/bookings', { method: 'POST', body: JSON.stringify(body) });
+        const data = await res.json();
+        if (!res.ok) {
+          $('carBookError').textContent = data.error || 'تعذّر الحجز.';
+          $('carBookError').classList.remove('hidden');
+          return;
+        }
+        $('carBookDialog').close();
+        alert(`✅ تم حجز السيارة!\nالمرجع: ${data.booking.bookingReference}\nالإجمالي: ${data.booking.sellAmount} ${data.booking.currency}`);
+        document.querySelector('[data-tab="trips"]').click();
+      } finally {
+        $('carBookConfirm').disabled = false;
+      }
+    });
+
+    // ─── رحلاتي (طيران + فنادق + سيارات موحّدة) ───
     const ST_LABEL = { issued: 'مُصدَر ✅', pending: 'قيد الإصدار', failed: 'فشل', cancelled: 'مُلغى' };
-    const CANCEL_PATH = { flight: id => `/api/travel/bookings/${id}/cancel`, stay: id => `/api/travel/stays/bookings/${id}/cancel` };
+    const CANCEL_PATH = {
+      flight: id => `/api/travel/bookings/${id}/cancel`,
+      stay: id => `/api/travel/stays/bookings/${id}/cancel`,
+      car: id => `/api/travel/cars/bookings/${id}/cancel`,
+    };
     function bookingBodyHtml(b) {
       if (b.kind === 'stay') {
         return `<div class="route">🏨 ${esc(b.offer?.name || '')}
             <span class="st st-${esc(b.status)}">${ST_LABEL[b.status] || esc(b.status)}</span></div>
           <div class="seg">${esc(b.offer?.city || '')} · ${esc(b.offer?.checkInDate || '')} → ${esc(b.offer?.checkOutDate || '')}</div>`;
+      }
+      if (b.kind === 'car') {
+        return `<div class="route">🚗 ${esc(b.offer?.vehicleName || '')}
+            <span class="st st-${esc(b.status)}">${ST_LABEL[b.status] || esc(b.status)}</span></div>
+          <div class="seg">${esc(b.offer?.supplier || '')} · ${esc(b.offer?.pickupLocation || '')}</div>`;
       }
       return `<div class="route">${esc(b.offer?.owner || '')}
           <span class="st st-${esc(b.status)}">${ST_LABEL[b.status] || esc(b.status)}</span></div>
@@ -587,7 +723,7 @@
         // رسالة تاريخ فارغة لاحقاً، فإضافته هنا تُقفل المحادثة دائماً.
         if (data.reply) chatHistory.push({ role: 'assistant', content: data.reply });
         // إجراء نفّذ حجزاً/إلغاءً؟ حدّث الرحلات في الخلفية
-        if ((data.actions || []).some(a => ['book_flight', 'cancel_booking', 'book_stay', 'cancel_stay'].includes(a.tool))) loadTrips();
+        if ((data.actions || []).some(a => ['book_flight', 'cancel_booking', 'book_stay', 'cancel_stay', 'book_car', 'cancel_car'].includes(a.tool))) loadTrips();
       } catch {
         pushMsg('bot', '⚠️ تعذّر الاتصال بالخادم.');
       } finally {
