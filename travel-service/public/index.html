@@ -70,6 +70,16 @@
     .st-pending { color: var(--warn); border-color: var(--warn); }
     .st-failed, .st-cancelled { color: var(--bad); border-color: var(--bad); }
 
+    /* أهم الوجهات */
+    .dest-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+    .dest-card {
+      position: relative; height: 160px; border-radius: 14px; overflow: hidden;
+      background: var(--card) center/cover no-repeat; border: 1px solid var(--border); cursor: pointer;
+    }
+    .dest-card .dest-overlay { position: absolute; inset: auto 0 0 0; background: linear-gradient(transparent, #000c); padding: 10px 12px; }
+    .dest-card .dest-city { font-weight: 700; font-size: 15px; }
+    .dest-card .dest-price { color: var(--ok); font-size: 13px; margin-top: 2px; }
+
     /* المساعد */
     #chatLog { max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px; }
     .msg { max-width: 85%; padding: 10px 14px; border-radius: 14px; font-size: 14px; white-space: pre-wrap; line-height: 1.6; }
@@ -106,6 +116,7 @@
     <div id="app" class="hidden">
       <div class="tabs">
         <button data-tab="search" class="active">🔎 بحث الرحلات</button>
+        <button data-tab="destinations">🗺️ أهم الوجهات</button>
         <button data-tab="cars" id="carsTabBtn">🚗 سيارات</button>
         <button data-tab="trips">🧳 رحلاتي</button>
         <button data-tab="agent" id="agentTabBtn">🤖 المساعد</button>
@@ -142,6 +153,18 @@
           <div id="searchError" class="error hidden"></div>
         </div>
         <div id="results"></div>
+      </section>
+
+      <!-- ─── أهم الوجهات ─── -->
+      <section id="tab-destinations" class="hidden">
+        <div class="card">
+          <div class="row" style="align-items:end">
+            <div><label>من (IATA)</label><input id="destOrigin" placeholder="RUH" maxlength="3" value="RUH" /></div>
+          </div>
+          <button class="primary" id="destLoadBtn">🔄 تحديث</button>
+          <div id="destError" class="error hidden"></div>
+        </div>
+        <div id="destGrid" class="dest-grid"></div>
       </section>
 
       <!-- ─── سيارات الإيجار ─── -->
@@ -311,9 +334,10 @@
     document.querySelectorAll('.tabs button').forEach(btn =>
       btn.addEventListener('click', () => {
         document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b === btn));
-        ['search', 'cars', 'trips', 'agent'].forEach(t =>
+        ['search', 'destinations', 'cars', 'trips', 'agent'].forEach(t =>
           $('tab-' + t).classList.toggle('hidden', t !== btn.dataset.tab));
         if (btn.dataset.tab === 'trips') loadTrips();
+        if (btn.dataset.tab === 'destinations' && !$('destGrid').children.length) loadDestinations();
       }));
 
     // ─── البحث ───
@@ -533,6 +557,46 @@
         $('stayBookConfirm').disabled = false;
       }
     });
+
+    // ─── أهم الوجهات (صور + أرخص سعر حقيقي) ───
+    async function loadDestinations() {
+      $('destError').classList.add('hidden');
+      $('destGrid').innerHTML = '<p class="note">🔎 جارٍ التحميل…</p>';
+      $('destLoadBtn').disabled = true;
+      try {
+        const origin = ($('destOrigin').value || 'RUH').trim().toUpperCase();
+        const res = await api('/api/travel/destinations/top?origin=' + encodeURIComponent(origin));
+        const data = await res.json();
+        if (!res.ok) {
+          $('destGrid').innerHTML = '';
+          $('destError').textContent = data.error || 'تعذّر تحميل الوجهات.';
+          $('destError').classList.remove('hidden');
+          return;
+        }
+        $('destGrid').innerHTML = data.destinations.map(d => `
+          <div class="dest-card" data-dest='${esc(JSON.stringify({ iata: d.iata, origin }))}' ${d.image ? `style="background-image:url('${esc(d.image)}')"` : ''}>
+            <div class="dest-overlay">
+              <div class="dest-city">${esc(d.city)}${d.country ? ' · ' + esc(d.country) : ''}</div>
+              <div class="dest-price">${d.fromPrice != null ? `من ${d.fromPrice} ${esc(d.currency)}` : 'السعر غير متاح حالياً'}</div>
+            </div>
+          </div>`).join('');
+        document.querySelectorAll('[data-dest]').forEach(card =>
+          card.addEventListener('click', () => {
+            const info = JSON.parse(card.dataset.dest);
+            $('fOrigin').value = info.origin;
+            $('fDest').value = info.iata;
+            document.querySelector('[data-tab="search"]').click();
+            doSearch();
+          }));
+      } catch {
+        $('destGrid').innerHTML = '';
+        $('destError').textContent = 'تعذّر تحميل الوجهات — حاول مجدداً بعد قليل.';
+        $('destError').classList.remove('hidden');
+      } finally {
+        $('destLoadBtn').disabled = false;
+      }
+    }
+    $('destLoadBtn').addEventListener('click', loadDestinations);
 
     // ─── سيارات الإيجار ───
     async function doSearchCars() {

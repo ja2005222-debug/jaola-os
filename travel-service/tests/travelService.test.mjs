@@ -32,6 +32,7 @@ import { createTravelAgent, executeAgentTool, buildTravelAgent, AGENT_TOOLS } fr
 import { listPriceWatchesByUser, cancelPriceWatch } from '../src/priceWatches.js';
 import { checkWatches } from '../src/priceWatchPoller.js';
 import { getDestinationWeather, convertCurrency } from '../src/travelInfo.js';
+import { buildTopDestinations, CURATED_DESTINATIONS } from '../src/topDestinations.js';
 
 const JWT_SECRET = 'test-secret-not-for-production';
 const MARKUP = 10; // هامش الاختبارات — أرقامه سهلة التحقق يدوياً
@@ -223,6 +224,52 @@ describe('travelInfo: طقس الوجهة وتحويل العملات (بيان�
             convertCurrency({ amount: 10, from: 'USD', to: 'ZZZ', fetchImpl: stubFetch }),
             /لا سعر صرف متاح/
         );
+    });
+});
+
+// ─── 🗺️ أهم الوجهات (وحدة مستقلة — كاش عملية مشترك بين الاختبارات) ────
+// ⚠️ ترتيب الاختبارات أدناه مقصود لا اعتباطي: imageCache/priceCache في
+// topDestinations.js كاش عملية (module-level) بلا دالة تصفير للاختبارات
+// — اختبار "تعطّل الصور" يجب أن يسبق أي اختبار ينجح في جلب صورة (نجاح
+// يُخزَّن مؤقتاً 7 أيام، فيُبطل تأكيد null لاحقاً)، والاختبارات تستخدم
+// أصول (origin) مختلفة فيما بينها لتفادي تصادم كاش السعر أيضاً.
+describe('topDestinations: أهم الوجهات (صورة Wikimedia + سعر حقيقي عبر مزوّد الطيران)', () => {
+    test('buildTopDestinations: تعطّل شبكة الصور كليةً → صور null لكل الوجهات مع أسعار حقيقية سليمة', async () => {
+        const provider = createMockTravelProvider();
+        const flakyFetch = async () => { throw new Error('شبكة معطوبة'); };
+        const destinations = await buildTopDestinations({ origin: 'DXB', provider, markupPct: MARKUP, fetchImpl: flakyFetch });
+        assert.equal(destinations.length, CURATED_DESTINATIONS.length - 1); // DXB أصل البحث → مُستبعدة
+        assert.ok(destinations.every(d => d.iata !== 'DXB'));
+        assert.ok(destinations.every(d => d.image === null));
+        assert.ok(destinations.every(d => Number.isFinite(d.fromPrice) && d.fromPrice > 0));
+        const cai = destinations.find(d => d.iata === 'CAI');
+        assert.equal(cai.city, 'القاهرة'); // من airports.js
+    });
+
+    test('buildTopDestinations: يُرجع صورة حقيقية لكل وجهة عند نجاح الشبكة', async () => {
+        const provider = createMockTravelProvider();
+        const stubFetch = async (url) => ({ ok: true, json: async () => ({ thumbnail: { source: String(url) + '.jpg' } }) });
+        const destinations = await buildTopDestinations({ origin: 'JED', provider, markupPct: MARKUP, fetchImpl: stubFetch });
+        assert.equal(destinations.length, CURATED_DESTINATIONS.length); // JED ليست ضمن القائمة المختارة
+        assert.ok(destinations.every(d => typeof d.image === 'string' && d.image.includes('wikipedia.org')));
+    });
+
+    test('buildTopDestinations: فشل بحث المزوّد لوجهة واحدة → سعرها null بلا كسر بقية الوجهات', async () => {
+        const base = createMockTravelProvider();
+        const flakyProvider = {
+            ...base,
+            async searchOffers(params) {
+                if (params.destination === 'IST') throw new Error('مزوّد معطوب مؤقتاً');
+                return base.searchOffers(params);
+            },
+        };
+        const stubFetch = async (url) => ({ ok: true, json: async () => ({ thumbnail: { source: String(url) + '.jpg' } }) });
+        const destinations = await buildTopDestinations({ origin: 'AMM', provider: flakyProvider, markupPct: MARKUP, fetchImpl: stubFetch });
+        const ist = destinations.find(d => d.iata === 'IST');
+        assert.equal(ist.fromPrice, null);
+        assert.equal(ist.currency, null);
+        const dxb = destinations.find(d => d.iata === 'DXB');
+        assert.ok(Number.isFinite(dxb.fromPrice) && dxb.fromPrice > 0);
     });
 });
 
@@ -1066,6 +1113,23 @@ describe('الايجنت الحاجز', () => {
             getDestinationWeather: async () => { throw new Error('غير مغطّاة'); },
         });
         assert.equal(badIata.ok, false);
+    });
+
+    test('🗺️ GET /api/travel/destinations/top: مصادقة + تحقق + شكل الرد', async () => {
+        const stubFetch = async (url) => ({ ok: true, json: async () => ({ thumbnail: { source: String(url) + '.jpg' } }) });
+        await withAgentApp(null, async call => {
+            const noAuth = await call('/api/travel/destinations/top?origin=RUH');
+            assert.equal(noAuth.status, 401);
+
+            const token = makeToken('dest-seeker');
+            const badOrigin = await call('/api/travel/destinations/top?origin=xx', { token });
+            assert.equal(badOrigin.status, 400);
+
+            const res = await call('/api/travel/destinations/top?origin=RUH', { token });
+            assert.equal(res.status, 200);
+            assert.equal(res.data.destinations.length, CURATED_DESTINATIONS.length);
+            assert.ok(res.data.destinations.every(d => Number.isFinite(d.fromPrice)));
+        }, { travelInfoFetch: stubFetch });
     });
 
     test('📋 generate_trip_summary حقيقي: يجمع طيران+فنادق مُصدَرة فقط، مع تصفية مدى تاريخ', async () => {

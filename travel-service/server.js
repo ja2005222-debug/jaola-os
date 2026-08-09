@@ -26,6 +26,7 @@ import { airportCoords } from './src/airports.js';
 import { createPriceWatch, listPriceWatchesByUser, cancelPriceWatch } from './src/priceWatches.js';
 import { checkWatches } from './src/priceWatchPoller.js';
 import { getDestinationWeather, convertCurrency, MAX_FORECAST_DAYS_AHEAD } from './src/travelInfo.js';
+import { buildTopDestinations } from './src/topDestinations.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -290,6 +291,9 @@ export function createApp({
     // بحث المزوّدات مكلف/محدود المعدل لديهم — درع أمامي عندنا أولاً
     const searchLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, keyGenerator: byUser });
     const agentLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, keyGenerator: byUser });
+    // نتيجة أهم الوجهات مُخزَّنة عالمياً (topDestinations.js) فلا تكلفة
+    // حقيقية على المزوّد إلا أول طلب كل 6 ساعات — حد أخف من searchLimiter يكفي.
+    const destinationsLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 15, standardHeaders: true, legacyHeaders: false, keyGenerator: byUser });
 
     // ─── منطق الخدمة المشترك: المسارات والايجنت يستهلكان نفس الدوال ───
     // (هذا ما يجعل الايجنت "بلا التفاف": أي حارس هنا يسري عليه حتماً)
@@ -852,6 +856,17 @@ export function createApp({
             if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;
         }
+    }));
+
+    // ─── 🗺️ أهم الوجهات (صور Wikimedia + أرخص سعر حقيقي) ──────────────
+
+    app.get('/api/travel/destinations/top', verifyToken, destinationsLimiter, wrap(async (req, res) => {
+        const origin = String(req.query.origin || '').trim().toUpperCase();
+        if (!IATA_RE.test(origin)) {
+            return res.status(400).json({ error: 'رمز مطار الأصل يجب أن يكون IATA من ثلاثة أحرف (مثل RUH).' });
+        }
+        const destinations = await buildTopDestinations({ origin, provider, markupPct, fetchImpl: travelInfoFetch });
+        res.json({ destinations });
     }));
 
     // ─── 🤖 الايجنت الحاجز ────────────────────────────────────────────
