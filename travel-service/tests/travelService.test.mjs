@@ -477,6 +477,91 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             }
         });
 
+        test('📧 بريد تأكيد/إلغاء الحجز: يُرسَل بالمحتوى الصحيح عند تفعيل mailer', async () => {
+            const sentMails = [];
+            const stubMailer = {
+                mailReady: () => true,
+                sendMail: async (msg) => { sentMails.push(msg); return { ok: true }; },
+            };
+            const app = createApp({ store, jwtSecret: JWT_SECRET, provider, markupPct: MARKUP, mailer: stubMailer });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const token = makeToken('mail-flyer');
+                const search = await fetch(url + '/api/travel/flights/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify(SEARCH_BODY()),
+                }).then(r => r.json());
+                const bookRes = await fetch(url + '/api/travel/bookings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ offerId: search.offers[0].id, ...VALID_PAX }),
+                }).then(r => r.json());
+
+                assert.equal(sentMails.length, 1);
+                assert.equal(sentMails[0].to, VALID_PAX.contact.email);
+                assert.match(sentMails[0].subject, new RegExp(bookRes.booking.bookingReference));
+                assert.match(sentMails[0].text, new RegExp(String(bookRes.booking.sellAmount)));
+
+                await fetch(url + `/api/travel/bookings/${bookRes.booking.id}/cancel`, {
+                    method: 'POST', headers: { Authorization: `Bearer ${token}` },
+                });
+                assert.equal(sentMails.length, 2);
+                assert.equal(sentMails[1].to, VALID_PAX.contact.email);
+                assert.match(sentMails[1].subject, /إلغاء/);
+                assert.match(sentMails[1].text, /استرداد/);
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
+        test('📧 فشل مزوّد البريد لا يكسر الحجز — الاستجابة تبقى 200 بلا محاولة ثانية', async () => {
+            const stubMailer = { mailReady: () => true, sendMail: async () => ({ error: 'فشل الإرسال (429).' }) };
+            const app = createApp({ store, jwtSecret: JWT_SECRET, provider, markupPct: MARKUP, mailer: stubMailer });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const token = makeToken('mail-unlucky');
+                const search = await fetch(url + '/api/travel/flights/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify(SEARCH_BODY()),
+                }).then(r => r.json());
+                const res = await fetch(url + '/api/travel/bookings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ offerId: search.offers[0].id, ...VALID_PAX }),
+                });
+                assert.equal(res.status, 200); // sendMail لا يرمي أبداً — {error} لا يُسقط الحجز
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
+        test('📧 بلا RESEND_API_KEY (mailReady=false): لا محاولة إرسال إطلاقاً', async () => {
+            const stubMailer = { mailReady: () => false, sendMail: async () => { throw new Error('لا يجب أن يُستدعى'); } };
+            const app = createApp({ store, jwtSecret: JWT_SECRET, staysProvider, markupPct: MARKUP, mailer: stubMailer });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const token = makeToken('mail-quiet-guest');
+                const search = await fetch(url + '/api/travel/stays/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify(STAY_SEARCH_BODY()),
+                }).then(r => r.json());
+                const res = await fetch(url + '/api/travel/stays/bookings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ offerId: search.offers[0].id, ...VALID_GUESTS }),
+                });
+                assert.equal(res.status, 200); // sendMail المُزيَّف كان سيرمي لو استُدعي
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
         test('⚛️ transitionBooking ذرّي: انتقال من حالة خاطئة يُرفض بلا أثر', async () => {
             const booking = await createBooking(store, {
                 username: 'atomic', provider: 'mock',

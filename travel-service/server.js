@@ -27,6 +27,7 @@ import { createPriceWatch, listPriceWatchesByUser, cancelPriceWatch } from './sr
 import { checkWatches } from './src/priceWatchPoller.js';
 import { getDestinationWeather, convertCurrency, MAX_FORECAST_DAYS_AHEAD } from './src/travelInfo.js';
 import { buildTopDestinations } from './src/topDestinations.js';
+import { sendMail, mailReady } from './src/mailer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -262,6 +263,20 @@ function publicBooking(b) {
     };
 }
 
+/** سطر ملخّص نصّي لحجز (بريد التأكيد/الإلغاء) — نفس منطق bookingBodyHtml في الواجهة. */
+function bookingSummaryLine(b) {
+    if (b.kind === 'stay') {
+        return `🏨 ${b.offer?.name || 'فندق'} — ${b.offer?.city || ''} — ${b.offer?.checkInDate || ''} → ${b.offer?.checkOutDate || ''}`;
+    }
+    if (b.kind === 'car') {
+        return `🚗 ${b.offer?.vehicleName || 'سيارة'} — ${b.offer?.supplier || ''} — ${b.offer?.pickupLocation || ''}`;
+    }
+    const slices = b.offer?.slices || [];
+    const first = slices[0] || {};
+    const last = slices[slices.length - 1] || first;
+    return `✈️ ${first.origin || '؟'}→${last.destination || '؟'} — ${(first.departAt || '').slice(0, 16).replace('T', ' ')}`;
+}
+
 export function createApp({
     store,
     jwtSecret,
@@ -271,6 +286,7 @@ export function createApp({
     agent = null,
     markupPct = readMarkupPct(),
     travelInfoFetch = fetch, // قابل للحقن في الاختبارات (طقس/عملة بلا شبكة حقيقية)
+    mailer = { sendMail, mailReady }, // قابل للحقن في الاختبارات (نفس نمط priceWatchPoller.js)
 }) {
     const app = express();
     // خلف وكيل عكسي واحد (Render وأمثالها) — بدونه req.ip هو عنوان الوكيل
@@ -294,6 +310,28 @@ export function createApp({
     // نتيجة أهم الوجهات مُخزَّنة عالمياً (topDestinations.js) فلا تكلفة
     // حقيقية على المزوّد إلا أول طلب كل 6 ساعات — حد أخف من searchLimiter يكفي.
     const destinationsLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 15, standardHeaders: true, legacyHeaders: false, keyGenerator: byUser });
+
+    // بريد تأكيد/إلغاء اختياري تماماً (RESEND_API_KEY) — فشل الإرسال أو
+    // غياب البريد لا يكسر الحجز أبداً؛ sendMail الحقيقي لا يرمي استثناءً.
+    async function notifyBookingIssued(booking) {
+        if (!booking?.contact?.email || !mailer.mailReady()) return;
+        await mailer.sendMail({
+            to: booking.contact.email,
+            subject: `✅ تأكيد حجزك — مرجع ${booking.bookingReference}`,
+            text: `تم تأكيد حجزك بنجاح.\n\n${bookingSummaryLine(booking)}\nالمرجع: ${booking.bookingReference}\nالإجمالي: ${booking.sellAmount} ${booking.currency}\n\nراجع كل حجوزاتك من بوابة السفر.`,
+        });
+    }
+    async function notifyBookingCancelled(booking) {
+        if (!booking?.contact?.email || !mailer.mailReady()) return;
+        const refundLine = booking.refund?.amount != null
+            ? `مبلغ الاسترداد: ${booking.refund.amount} ${booking.refund.currency || ''}`
+            : 'سيُحدَّد مبلغ الاسترداد قريباً من المزوّد.';
+        await mailer.sendMail({
+            to: booking.contact.email,
+            subject: `↩️ تم إلغاء حجزك — مرجع ${booking.bookingReference}`,
+            text: `تم إلغاء حجزك.\n\n${bookingSummaryLine(booking)}\nالمرجع: ${booking.bookingReference}\n${refundLine}`,
+        });
+    }
 
     // ─── منطق الخدمة المشترك: المسارات والايجنت يستهلكان نفس الدوال ───
     // (هذا ما يجعل الايجنت "بلا التفاف": أي حارس هنا يسري عليه حتماً)
@@ -336,6 +374,7 @@ export function createApp({
                 providerOrderId: order.orderId,
                 bookingReference: order.bookingReference,
             });
+            await notifyBookingIssued(issued);
             return publicBooking(issued);
         } catch (e) {
             await transitionBooking(store, booking.id, 'failed', { error: e.message });
@@ -357,7 +396,9 @@ export function createApp({
             refund: { amount: result.refundAmount ?? null, currency: result.currency ?? null },
         });
         // سباق نادر: انتقال آخر سبقنا بعد نداء المزوّد — الحالة الفعلية أصدق
-        return publicBooking(cancelled || await getBooking(store, booking.id));
+        const finalBooking = cancelled || await getBooking(store, booking.id);
+        await notifyBookingCancelled(finalBooking);
+        return publicBooking(finalBooking);
     }
 
     async function listMine(username) {
@@ -414,6 +455,7 @@ export function createApp({
                 providerOrderId: order.orderId,
                 bookingReference: order.bookingReference,
             });
+            await notifyBookingIssued(issued);
             return publicBooking(issued);
         } catch (e) {
             await transitionBooking(store, booking.id, 'failed', { error: e.message });
@@ -434,7 +476,9 @@ export function createApp({
         const cancelled = await transitionBooking(store, booking.id, 'cancelled', {
             refund: { amount: result.refundAmount ?? null, currency: result.currency ?? null },
         });
-        return publicBooking(cancelled || await getBooking(store, booking.id));
+        const finalBooking = cancelled || await getBooking(store, booking.id);
+        await notifyBookingCancelled(finalBooking);
+        return publicBooking(finalBooking);
     }
 
     // ─── السيارات (Duffel Cars) — محاذاة دوال الفنادق أعلاه سطراً بسطر ──
@@ -485,6 +529,7 @@ export function createApp({
                 providerOrderId: order.orderId,
                 bookingReference: order.bookingReference,
             });
+            await notifyBookingIssued(issued);
             return publicBooking(issued);
         } catch (e) {
             await transitionBooking(store, booking.id, 'failed', { error: e.message });
@@ -505,7 +550,9 @@ export function createApp({
         const cancelled = await transitionBooking(store, booking.id, 'cancelled', {
             refund: { amount: result.refundAmount ?? null, currency: result.currency ?? null },
         });
-        return publicBooking(cancelled || await getBooking(store, booking.id));
+        const finalBooking = cancelled || await getBooking(store, booking.id);
+        await notifyBookingCancelled(finalBooking);
+        return publicBooking(finalBooking);
     }
 
     // ─── إيجاد الحلول (أدوات ايجنت فقط — لا مسارات HTTP مباشرة) ────────
