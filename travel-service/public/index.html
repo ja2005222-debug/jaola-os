@@ -112,6 +112,16 @@
     .dest-card .dest-city { font-weight: 700; font-size: 15px; }
     .dest-card .dest-price { color: var(--ok); font-size: 13px; margin-top: 2px; }
 
+    /* 🤖 قراءة المساعد فوق النتائج — حضور الايجنت بلا أن يُسأل */
+    .insight {
+      display: block; border-right: 3px solid var(--ok); background: #0e2438;
+      padding: 12px 14px; margin-bottom: 12px;
+    }
+    .insight-head { font-size: 12px; color: var(--ok); margin-bottom: 6px; font-weight: 700; }
+    .insight-text { font-size: 14px; line-height: 1.75; }
+    .insight-text strong { color: #fff; }
+    .insight.phrasing .insight-text { opacity: .75; }
+
     /* الشريط الترويجي أسفل البحث — رفّ أفقي لا شبكة: يوحي بوجود المزيد
        ولا يزيح النتائج لأسفل الصفحة عند ظهورها. */
     .promo-head { display: flex; align-items: baseline; gap: 10px; margin: 18px 2px 10px; }
@@ -572,6 +582,42 @@
       return `<div class="details">${parts.join('')}</div>`;
     }
 
+    // ─── 🤖 قراءة المساعد لنتائج البحث ───
+    // الأرقام كلها محسوبة في الخادم (insights.js) وتصل جاهزة مع النتائج،
+    // فتظهر القراءة **فوراً** بلا انتظار أي نموذج. تحسين الصياغة نداء
+    // لاحق اختياري: ينجح فيبدّل النص، أو يفشل فيبقى الأصلي كما هو.
+
+    /** يحوّل **عريض** إلى <strong> — بعد الهروب، فلا يمر وسم من الخادم. */
+    function insightMarkup(text) {
+      return esc(text).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    }
+
+    function insightHtml(insight) {
+      if (!insight || !insight.text) return '';
+      return `<div class="card insight phrasing" id="insightCard">
+        <div class="insight-head">🤖 قراءة المساعد</div>
+        <div class="insight-text" id="insightText">${insightMarkup(insight.text)}</div>
+      </div>`;
+    }
+
+    async function refineInsight(insight) {
+      if (!insight || !insight.findings || !insight.findings.length) return;
+      try {
+        const res = await api('/api/travel/insights/phrase', {
+          method: 'POST', body: JSON.stringify({ findings: insight.findings }),
+        });
+        if (!res.ok) return;
+        const { text } = await res.json();
+        const el = $('insightText');
+        // العنصر قد يكون اختفى ببحث جديد أثناء انتظار الرد
+        if (el && text) el.innerHTML = insightMarkup(text);
+      } catch { /* الصياغة الحتمية تكفي — لا رسالة خطأ على تحسين تجميلي */
+      } finally {
+        const card = $('insightCard');
+        if (card) card.classList.remove('phrasing');
+      }
+    }
+
     async function doSearch() {
       $('searchError').classList.add('hidden');
       $('results').innerHTML = '<p class="note">🔎 جارٍ البحث…</p>';
@@ -596,7 +642,7 @@
           $('results').innerHTML = '<p class="note">لا رحلات متاحة لهذا البحث.</p>';
           return;
         }
-        $('results').innerHTML = data.offers.map((o, i) => `
+        $('results').innerHTML = insightHtml(data.insight) + data.offers.map((o, i) => `
           <div class="card offer">
             <div style="flex:1">
               <div class="route">${airlineLogoHtml(o)}${esc(o.owner)}${
@@ -624,6 +670,7 @@
         document.querySelectorAll('[data-book]').forEach(btn =>
           btn.addEventListener('click', () => openBooking(
             data.offers.find(o => o.id === JSON.parse(btn.dataset.book).id))));
+        refineInsight(data.insight); // بلا await: النتائج معروضة سلفاً
         // مربع "أضف فنادق الوجهة" — بحسب رغبة العميل، تفتح في تبويب منفصل
         // (نفس التطبيق بوضع عرض مختلف) لا مضمَّنة في نفس الصفحة.
         if ($('fIncludeStays').checked && config.staysEnabled) {

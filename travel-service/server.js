@@ -23,6 +23,7 @@ import { createBooking, getBooking, getBookingByProviderOrderId, listBookingsByU
 import { buildStore } from './src/store/index.js';
 import { buildProvider, buildStaysProvider, buildCarsProvider } from './src/providers/index.js';
 import { buildTravelAgent } from './src/agent/agent.js';
+import { buildInsight, renderInsight, sanitizeFindings } from './src/agent/insights.js';
 import { airportCoords, searchAirports, airportForTimezone } from './src/airports.js';
 import { createPriceWatch, listPriceWatchesByUser, cancelPriceWatch } from './src/priceWatches.js';
 import { checkWatches } from './src/priceWatchPoller.js';
@@ -904,7 +905,11 @@ export function createApp({
 
     app.post('/api/travel/flights/search', verifyToken, searchLimiter, wrap(async (req, res) => {
         try {
-            res.json({ offers: await doSearch(req.body) });
+            const offers = await doSearch(req.body);
+            // قراءة الايجنت تُحسب هنا حتمياً (دوال نقية، بلا شبكة) فلا تضيف
+            // زمناً على المسار الأهم في البوابة. صياغة النموذج — إن فُعّل —
+            // تأتي بنداء منفصل بعد ظهور النتائج، لا قبلها.
+            res.json({ offers, insight: buildInsight(offers) });
         } catch (e) {
             // كان يفحص 400 فقط — رفض مزوّد فعلي (502 الجديد أعلاه) كان يسقط
             // كخطأ 500 عام رغم تفصيل واضح متوفر، خلاف مساري الفنادق/السيارات.
@@ -1112,6 +1117,18 @@ export function createApp({
         } catch (e) {
             res.status(502).json({ error: `تعذّر رد المساعد: ${e.message}` });
         }
+    }));
+
+    // صياغة قراءة النتائج بأسلوب الايجنت. مسار منفصل عن البحث عمداً:
+    // النتائج تظهر فوراً بالقراءة الحتمية، وهذا النداء يحسّن الصياغة بعدها
+    // — فلا ينتظر أحدٌ نموذجاً لغوياً ليرى أسعار رحلته.
+    app.post('/api/travel/insights/phrase', verifyToken, agentLimiter, wrap(async (req, res) => {
+        const findings = sanitizeFindings(req.body?.findings);
+        if (findings.length === 0) return res.status(400).json({ error: 'لا نتائج تحليل صالحة للصياغة.' });
+        // يُعاد التوليد من القوالب — نص العميل لا يصل النموذج إطلاقاً
+        const text = renderInsight(findings);
+        if (!agent) return res.json({ text, phrased: false });
+        res.json({ text: await agent.phraseInsight(text), phrased: true });
     }));
 
     // معالج أخطاء أخير — لا تسريب تفاصيل داخلية للعميل.
