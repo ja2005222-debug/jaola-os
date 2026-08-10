@@ -1,0 +1,46 @@
+# ⏰ المُطلِق الزمني لبوابة السفر (فحص الأسعار + تذكير ما قبل السفر)
+#
+# لماذا مُطلِق خارجي أصلاً: باقة Render المجانية توقف الخدمة عند الخمول،
+# فأي setInterval داخل العملية يتوقف معها. كان مراقب الأسعار يعمل «أثناء
+# يقظة الخدمة» فقط — أي عملياً حين يزورها أحد صدفةً. وتذكير ما قبل السفر
+# مستحيل بلا مُطلِق: لا حدث خارجي يقول إن الغد موعد رحلة.
+#
+# كل ساعة لا أكثر: التذكير نافذته ٦–٣٦ ساعة قبل الإقلاع، فساعة واحدة
+# دقّةٌ أكثر من كافية، وتقليل التكرار يقلّل استهلاك ساعات Render.
+#
+# ⚠️ توقيت GitHub Actions «بأفضل جهد» وقد يتأخر دقائق تحت الضغط — وهذا
+# مقبول هنا: النافذة ٣٠ ساعة، لا لحظة محدّدة.
+#
+# 🔒 يتطلب سرّين في إعدادات المستودع (Settings → Secrets → Actions):
+#   TRAVEL_SERVICE_URL — رابط الخدمة (مثل https://jaola-travel.onrender.com)
+#   TRAVEL_CRON_SECRET — نفس قيمة CRON_SECRET في بيئة الخدمة على Render
+name: مُطلِق بوابة السفر الزمني
+
+on:
+  schedule:
+    - cron: '7 * * * *' # الدقيقة 7 لتفادي ازدحام رأس الساعة لدى GitHub
+  workflow_dispatch: {}
+
+jobs:
+  run:
+    name: تشغيل المهام الدورية
+    runs-on: ubuntu-latest
+    steps:
+      - name: إيقاظ الخدمة
+        # بدء التشغيل البارد على Render يقارب ٥٠ ثانية؛ نداءٌ خفيف أولاً
+        # يمنع فشل النداء الحقيقي بمهلة منتهية. `|| true` لأن الإيقاظ
+        # ليس هو المهمة — فشله لا يعني فشل الدورة.
+        run: curl -sf --max-time 90 "${{ secrets.TRAVEL_SERVICE_URL }}/api/health" || true
+
+      - name: تشغيل المهام الدورية
+        run: |
+          set -euo pipefail
+          response=$(curl -sS --max-time 120 -w '\n%{http_code}' \
+            -X POST "${{ secrets.TRAVEL_SERVICE_URL }}/api/travel/cron/run" \
+            -H "X-Cron-Secret: ${{ secrets.TRAVEL_CRON_SECRET }}")
+          status=$(printf '%s' "$response" | tail -n1)
+          body=$(printf '%s' "$response" | sed '$d')
+          echo "الحالة: $status"
+          echo "$body"
+          # الملخّص يُطبع قبل الفحص، فيبقى مرئياً في السجل حتى عند الفشل
+          test "$status" = "200"
