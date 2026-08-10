@@ -599,6 +599,42 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             }
         });
 
+        test('💥 فشل المزوّد وقت البحث: 502 بتفصيل الرسالة الفعلية لا 500 مبهم', async () => {
+            // نفس عطل حقيقي واجهه المالك: Duffel/LiteAPI يرفض بحث الفنادق
+            // فيسقط كخطأ 500 عام يخفي السبب — تحقق الإصلاح لثلاثة أنواع البحث.
+            const rejectingProvider = { ...provider, async searchOffers() { throw new Error('Duffel HTTP 403: تفصيل رفض حقيقي'); } };
+            const rejectingStays = { name: 'x', mode: 'sandbox', async searchStays() { throw new Error('تفصيل رفض فنادق'); } };
+            const rejectingCars = { name: 'y', mode: 'sandbox', async searchCars() { throw new Error('تفصيل رفض سيارات'); } };
+            const app = createApp({
+                store, jwtSecret: JWT_SECRET, provider: rejectingProvider,
+                staysProvider: rejectingStays, carsProvider: rejectingCars, markupPct: MARKUP,
+            });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const token = makeToken('search-fail-tester');
+                const call = (path, body) => fetch(url + path, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify(body),
+                });
+
+                const flightRes = await call('/api/travel/flights/search', SEARCH_BODY());
+                assert.equal(flightRes.status, 502);
+                assert.match((await flightRes.json()).error, /تفصيل رفض حقيقي/);
+
+                const stayRes = await call('/api/travel/stays/search', STAY_SEARCH_BODY());
+                assert.equal(stayRes.status, 502);
+                assert.match((await stayRes.json()).error, /تفصيل رفض فنادق/);
+
+                const carRes = await call('/api/travel/cars/search', CAR_SEARCH_BODY());
+                assert.equal(carRes.status, 502);
+                assert.match((await carRes.json()).error, /تفصيل رفض سيارات/);
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
         test('📧 بريد تأكيد/إلغاء الحجز: يُرسَل بالمحتوى الصحيح عند تفعيل mailer', async () => {
             const sentMails = [];
             const stubMailer = {

@@ -377,8 +377,15 @@ export function createApp({
     async function doSearch(params) {
         const check = validateSearchParams(params);
         if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
-        const offers = await provider.searchOffers(check.values);
-        return offers.map(o => publicOffer(o, markupPct));
+        try {
+            const offers = await provider.searchOffers(check.values);
+            return offers.map(o => publicOffer(o, markupPct));
+        } catch (e) {
+            // بلا هذا: رفض المزوّد (403 Duffel، خطأ LiteAPI...) يسقط كخطأ
+            // 500 عام مبهم — التفصيل الفعلي يضيع رغم وجوده (راجع تعليق
+            // duffelProvider.js: "أي رفض يظهر بتفصيل رد Duffel لا فشلاً صامتاً").
+            throw Object.assign(new Error(`تعذّر البحث: ${e.message}`), { status: 502 });
+        }
     }
 
     async function doGetOffer(offerId) {
@@ -454,8 +461,12 @@ export function createApp({
         requireStays();
         const check = validateStaySearchParams(params);
         if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
-        const offers = await staysProvider.searchStays(check.values);
-        return offers.map(o => publicOffer(o, markupPct));
+        try {
+            const offers = await staysProvider.searchStays(check.values);
+            return offers.map(o => publicOffer(o, markupPct));
+        } catch (e) {
+            throw Object.assign(new Error(`تعذّر بحث الفنادق: ${e.message}`), { status: 502 });
+        }
     }
 
     async function doGetStayOffer(offerId) {
@@ -529,8 +540,12 @@ export function createApp({
         requireCars();
         const check = validateCarSearchParams(params);
         if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
-        const offers = await carsProvider.searchCars(check.values);
-        return offers.map(o => publicOffer(o, markupPct));
+        try {
+            const offers = await carsProvider.searchCars(check.values);
+            return offers.map(o => publicOffer(o, markupPct));
+        } catch (e) {
+            throw Object.assign(new Error(`تعذّر بحث السيارات: ${e.message}`), { status: 502 });
+        }
     }
 
     async function doGetCarOffer(offerId) {
@@ -840,7 +855,9 @@ export function createApp({
         try {
             res.json({ offers: await doSearch(req.body) });
         } catch (e) {
-            if (e.status === 400) return res.status(400).json({ error: e.message });
+            // كان يفحص 400 فقط — رفض مزوّد فعلي (502 الجديد أعلاه) كان يسقط
+            // كخطأ 500 عام رغم تفصيل واضح متوفر، خلاف مساري الفنادق/السيارات.
+            if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;
         }
     }));
