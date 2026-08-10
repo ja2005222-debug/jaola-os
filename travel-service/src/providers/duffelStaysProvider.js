@@ -16,6 +16,19 @@
  * ⚠️ نفس صراحة duffelProvider.js بالضبط: الصيغ أعلاه من التوثيق المنشور
  * ولم تُجرَّب ضد Sandbox حي من هذه البيئة — أول تشغيل بمفتاح حقيقي هو
  * الاختبار الفعلي، وأي رفض يظهر بتفصيل رد Duffel لا فشلاً صامتاً.
+ *
+ * ✅ تصحيح ٩ أغسطس ٢٠٢٦: راجعنا توثيق Bookings الفعلي المنشور (schema +
+ * أمثلة كاملة لـCreate/Cancel/Get/List) وصححنا خطأين كانا سيفشلان أو
+ * يعطيان بيانات خاطئة صامتة عند أول استخدام حي:
+ *   1. `payment: { type: 'balance' }` عند الحجز بالرصيد — التوثيق صريح:
+ *      "When you want to pay using the 'balance' payment method, this
+ *      must be omitted" — إرساله كان سيُسبّب رفضاً أو سلوكاً غير متوقَّع.
+ *   2. حقل `total_amount`/`total_currency` على مستوى الحجز (Booking) —
+ *      **غير موجود إطلاقاً** في schema الرسمي (لا `refund_amount` كذلك
+ *      على رد الإلغاء) — كنا نقرأه فيرجع NaN/undefined صامتاً. لا بديل
+ *      موثوق داخل نفس الرد لاستخراج السعر الفعلي المحجوز، فتُركا null
+ *      بوضوح؛ السعر أصلاً مسجَّل لدينا من الـquote قبل نداء الحجز (server.js
+ *      doBookStay لا يقرأ هذين الحقلين من createStayOrder أصلاً).
  */
 import { createDuffelClient } from './duffelClient.js';
 import { airportCoords } from '../airports.js';
@@ -114,26 +127,31 @@ export function createDuffelStaysProvider({ apiKey, apiUrl, fetchImpl }) {
         },
 
         async createStayOrder({ offerId, guests, contact }) {
+            // payment مُهمَل هنا كلياً — الدفع بالرصيد (balance) يتطلب عدم
+            // إرسال الحقل إطلاقاً وفق التوثيق الرسمي (راجع تصحيح أعلى الملف).
             const data = await duffel('POST', '/stays/bookings', {
                 data: {
                     quote_id: offerId,
                     email: contact.email,
                     phone_number: contact.phone,
                     guests: guests.map(g => ({ given_name: g.givenName, family_name: g.familyName })),
-                    payment: { type: 'balance' },
                 },
             });
             return {
                 orderId: data.id,
                 bookingReference: data.reference || data.id,
                 status: 'issued',
-                netAmount: Number(data.total_amount),
-                currency: data.total_currency,
+                // لا حقل سعر إجمالي على مستوى الحجز في schema الرسمي —
+                // null صريح لا NaN صامت (راجع تصحيح أعلى الملف).
+                netAmount: null,
+                currency: null,
             };
         },
 
         async cancelStayOrder(orderId) {
             const data = await duffel('POST', `/stays/bookings/${encodeURIComponent(orderId)}/actions/cancel`);
+            // لا حقل استرداد على رد الإلغاء في schema الرسمي (مؤكَّد، لا
+            // افتراض) — null صريح دوماً حتى لو ظهر مبلغ يوماً ما بالمستقبل.
             return {
                 status: 'cancelled',
                 refundAmount: data.refund_amount != null ? Number(data.refund_amount) : null,

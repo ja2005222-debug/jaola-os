@@ -35,6 +35,10 @@ export async function getBooking(store, id) {
     return store.getBooking(id);
 }
 
+export async function getBookingByProviderOrderId(store, providerOrderId) {
+    return store.getBookingByProviderOrderId(String(providerOrderId || ''));
+}
+
 export async function listBookingsByUser(store, username, limit = 50) {
     return store.listBookingsByUser(String(username || '').trim().toLowerCase(), limit);
 }

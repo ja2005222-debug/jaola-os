@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS travel_bookings (
 ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'flight';
 CREATE INDEX IF NOT EXISTS travel_bookings_user_idx ON travel_bookings (username, at);
 CREATE INDEX IF NOT EXISTS travel_bookings_status_idx ON travel_bookings (status);
+CREATE INDEX IF NOT EXISTS travel_bookings_provider_order_idx ON travel_bookings (provider_order_id);
 
 CREATE TABLE IF NOT EXISTS travel_price_watches (
     id              TEXT PRIMARY KEY,
@@ -147,6 +148,13 @@ export function createPostgresStore({ connectionString }) {
         async getBooking(id) {
             return withClient(async c => {
                 const res = await c.query('SELECT * FROM travel_bookings WHERE id = $1', [id]);
+                return rowToBooking(res.rows[0]);
+            });
+        },
+
+        async getBookingByProviderOrderId(providerOrderId) {
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM travel_bookings WHERE provider_order_id = $1', [providerOrderId]);
                 return rowToBooking(res.rows[0]);
             });
         },

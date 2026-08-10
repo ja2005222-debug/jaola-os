@@ -64,6 +64,11 @@ export function createFileStore({ dataDir }) {
             return booking ? { ...booking } : null;
         },
 
+        async getBookingByProviderOrderId(providerOrderId) {
+            const booking = readBookings().find(b => b.providerOrderId === providerOrderId);
+            return booking ? { ...booking } : null;
+        },
+
         async listBookingsByUser(username, limit = 50) {
             return readBookings()
                 .filter(b => b.username === username)

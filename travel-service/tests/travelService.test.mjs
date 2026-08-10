@@ -16,7 +16,8 @@ import os from 'os';
 import path from 'path';
 import jwt from 'jsonwebtoken';
 
-import { createApp, validateSearchParams, validatePassengers, validateStaySearchParams, validateGuests, validateCarSearchParams, validateDrivers } from '../server.js';
+import { createApp, validateSearchParams, validatePassengers, validateStaySearchParams, validateGuests, validateCarSearchParams, validateDrivers, verifyDuffelWebhookSignature } from '../server.js';
+import crypto from 'crypto';
 import { createMockTravelProvider } from '../src/providers/mockProvider.js';
 import { createDuffelProvider, normalizeDuffelOffer } from '../src/providers/duffelProvider.js';
 import { createMockStaysProvider } from '../src/providers/mockStaysProvider.js';
@@ -25,13 +26,15 @@ import { createMockCarsProvider } from '../src/providers/mockCarsProvider.js';
 import { normalizeDuffelCarResult } from '../src/providers/duffelCarsProvider.js';
 import { buildProvider, buildStaysProvider, buildCarsProvider } from '../src/providers/index.js';
 import { readMarkupPct, applyMarkup, DEFAULT_MARKUP_PCT } from '../src/pricing.js';
-import { canTransition, createBooking, transitionBooking, getBooking } from '../src/bookings.js';
+import { canTransition, createBooking, transitionBooking, getBooking, getBookingByProviderOrderId } from '../src/bookings.js';
 import { createFileStore } from '../src/store/fileStore.js';
 import { createPostgresStore } from '../src/store/postgresStore.js';
 import { createTravelAgent, executeAgentTool, buildTravelAgent, AGENT_TOOLS } from '../src/agent/agent.js';
 import { listPriceWatchesByUser, cancelPriceWatch } from '../src/priceWatches.js';
 import { checkWatches } from '../src/priceWatchPoller.js';
 import { getDestinationWeather, convertCurrency } from '../src/travelInfo.js';
+import { buildTopDestinations, CURATED_DESTINATIONS } from '../src/topDestinations.js';
+import { createLiteApiStaysProvider } from '../src/providers/liteApiStaysProvider.js';
 
 const JWT_SECRET = 'test-secret-not-for-production';
 const MARKUP = 10; // هامش الاختبارات — أرقامه سهلة التحقق يدوياً
@@ -224,6 +227,172 @@ describe('travelInfo: طقس الوجهة وتحويل العملات (بيان�
             /لا سعر صرف متاح/
         );
     });
+});
+
+// ─── 🗺️ أهم الوجهات (وحدة مستقلة — كاش عملية مشترك بين الاختبارات) ────
+// ⚠️ ترتيب الاختبارات أدناه مقصود لا اعتباطي: imageCache/priceCache في
+// topDestinations.js كاش عملية (module-level) بلا دالة تصفير للاختبارات
+// — اختبار "تعطّل الصور" يجب أن يسبق أي اختبار ينجح في جلب صورة (نجاح
+// يُخزَّن مؤقتاً 7 أيام، فيُبطل تأكيد null لاحقاً)، والاختبارات تستخدم
+// أصول (origin) مختلفة فيما بينها لتفادي تصادم كاش السعر أيضاً.
+describe('topDestinations: أهم الوجهات (صورة Wikimedia + سعر حقيقي عبر مزوّد الطيران)', () => {
+    test('buildTopDestinations: تعطّل شبكة الصور كليةً → صور null لكل الوجهات مع أسعار حقيقية سليمة', async () => {
+        const provider = createMockTravelProvider();
+        const flakyFetch = async () => { throw new Error('شبكة معطوبة'); };
+        const destinations = await buildTopDestinations({ origin: 'DXB', provider, markupPct: MARKUP, fetchImpl: flakyFetch });
+        assert.equal(destinations.length, CURATED_DESTINATIONS.length - 1); // DXB أصل البحث → مُستبعدة
+        assert.ok(destinations.every(d => d.iata !== 'DXB'));
+        assert.ok(destinations.every(d => d.image === null));
+        assert.ok(destinations.every(d => Number.isFinite(d.fromPrice) && d.fromPrice > 0));
+        const cai = destinations.find(d => d.iata === 'CAI');
+        assert.equal(cai.city, 'القاهرة'); // من airports.js
+    });
+
+    test('buildTopDestinations: يُرجع صورة حقيقية لكل وجهة عند نجاح الشبكة', async () => {
+        const provider = createMockTravelProvider();
+        const stubFetch = async (url) => ({ ok: true, json: async () => ({ thumbnail: { source: String(url) + '.jpg' } }) });
+        const destinations = await buildTopDestinations({ origin: 'JED', provider, markupPct: MARKUP, fetchImpl: stubFetch });
+        assert.equal(destinations.length, CURATED_DESTINATIONS.length); // JED ليست ضمن القائمة المختارة
+        assert.ok(destinations.every(d => typeof d.image === 'string' && d.image.includes('wikipedia.org')));
+    });
+
+    test('buildTopDestinations: فشل بحث المزوّد لوجهة واحدة → سعرها null بلا كسر بقية الوجهات', async () => {
+        const base = createMockTravelProvider();
+        const flakyProvider = {
+            ...base,
+            async searchOffers(params) {
+                if (params.destination === 'IST') throw new Error('مزوّد معطوب مؤقتاً');
+                return base.searchOffers(params);
+            },
+        };
+        const stubFetch = async (url) => ({ ok: true, json: async () => ({ thumbnail: { source: String(url) + '.jpg' } }) });
+        const destinations = await buildTopDestinations({ origin: 'AMM', provider: flakyProvider, markupPct: MARKUP, fetchImpl: stubFetch });
+        const ist = destinations.find(d => d.iata === 'IST');
+        assert.equal(ist.fromPrice, null);
+        assert.equal(ist.currency, null);
+        const dxb = destinations.find(d => d.iata === 'DXB');
+        assert.ok(Number.isFinite(dxb.fromPrice) && dxb.fromPrice > 0);
+    });
+});
+
+// ─── 🏨 liteApiStaysProvider (LiteAPI/Nuitee) — ردود Sandbox حقيقية ────
+describe('liteApiStaysProvider: بحث فنادق حقيقي (رد Sandbox حي مُلتقَط فعلياً)', () => {
+    // نسخة مختصَرة من رد GET /data/hotels وPOST /hotels/rates الحقيقيين
+    // (بنفس أسماء الحقول والقيم — لا اختلاق) كما وردا من لوحة العميل.
+    function stubFetch() {
+        return async (url) => {
+            const u = String(url);
+            if (u.includes('/data/hotels')) {
+                return {
+                    ok: true,
+                    text: async () => JSON.stringify({
+                        data: [{ id: 'lp1897', name: 'Test Hotel NYC', city: 'New York', country: 'us', starRating: 4 }],
+                    }),
+                };
+            }
+            // ⚠️ الشكلان أدناه (prebook/book) اختُلقا لاختبار منطق كودنا
+            // نفسه (تحليل الحقول التي افترضناها بحذر) — لا يمثّلان رد
+            // LiteAPI الفعلي عند النجاح، لأنه لم يُشاهَد حياً بعد (راجع
+            // تحذير أعلى liteApiStaysProvider.js). أول رد حي حقيقي قد
+            // يحتاج تعديل مسارات الحقول في الكود لا هذا الاختبار وحده.
+            if (u.includes('/rates/prebook')) {
+                return { ok: true, text: async () => JSON.stringify({ data: { prebookId: 'prebook_xyz' } }) };
+            }
+            if (u.includes('/rates/book')) {
+                return { ok: true, text: async () => JSON.stringify({ data: { bookingId: 'bk_123', bookingReference: 'LTA789' } }) };
+            }
+            if (u.includes('/bookings/bk_123')) {
+                return { ok: true, text: async () => JSON.stringify({ data: { refundAmount: 200.5, currency: 'USD' } }) };
+            }
+            if (u.includes('/hotels/rates')) {
+                return {
+                    ok: true,
+                    text: async () => JSON.stringify({
+                        data: [{
+                            hotelId: 'lp1897',
+                            et: 10800,
+                            roomTypes: [
+                                {
+                                    roomTypeId: 'rt1', offerId: 'offer_abc', supplier: 'nuitee',
+                                    rates: [{ name: 'Premium Two Queen Beds room', cancellationPolicies: { refundableTag: 'NRFN' } }],
+                                    offerRetailRate: { amount: 474.65, currency: 'USD' },
+                                },
+                                {
+                                    roomTypeId: 'rt2', offerId: 'offer_cheaper', supplier: 'nuitee',
+                                    rates: [{ name: 'Queen Standard Room', cancellationPolicies: { refundableTag: 'RFN' } }],
+                                    offerRetailRate: { amount: 253.01, currency: 'USD' },
+                                },
+                            ],
+                        }],
+                        guestLevel: 0,
+                    }),
+                };
+            }
+            throw new Error('مسار غير متوقَّع بالاختبار: ' + u);
+        };
+    }
+
+    test('searchStays: يطبّع الرد الحقيقي (اسم فندق+غرفة، أرخص أولاً، refundableTag → cancellable)', async () => {
+        const provider = createLiteApiStaysProvider({ apiKey: 'sand_test123', fetchImpl: stubFetch() });
+        const offers = await provider.searchStays({ iata: 'RUH', checkInDate: '2027-01-15', checkOutDate: '2027-01-17', adults: 2, rooms: 1 });
+        assert.equal(offers.length, 2);
+        // مرتَّبة تصاعدياً بالسعر — الأرخص (offer_cheaper) أولاً
+        assert.equal(offers[0].id, 'offer_cheaper');
+        assert.equal(offers[0].netAmount, 253.01);
+        assert.equal(offers[0].currency, 'USD');
+        assert.equal(offers[0].cancellable, true); // RFN
+        assert.match(offers[0].name, /Test Hotel NYC/);
+        assert.match(offers[0].name, /Queen Standard Room/);
+        assert.equal(offers[1].id, 'offer_abc');
+        assert.equal(offers[1].cancellable, false); // NRFN
+    });
+
+    test('searchStays: وجهة غير مغطّاة (بلا إحداثيات) → خطأ واضح بلا نداء شبكة', async () => {
+        const provider = createLiteApiStaysProvider({ apiKey: 'sand_test123', fetchImpl: stubFetch() });
+        await assert.rejects(
+            provider.searchStays({ iata: 'ZZZ', checkInDate: '2027-01-15', checkOutDate: '2027-01-17' }),
+            /لا إحداثيات معروفة/
+        );
+    });
+
+    test('getStayOffer: يرجّع من الكاش بعد البحث، وnull لمعرّف غير موجود', async () => {
+        const provider = createLiteApiStaysProvider({ apiKey: 'sand_test123', fetchImpl: stubFetch() });
+        await provider.searchStays({ iata: 'RUH', checkInDate: '2027-01-15', checkOutDate: '2027-01-17', adults: 2, rooms: 1 });
+        const found = await provider.getStayOffer('offer_abc');
+        assert.equal(found.netAmount, 474.65);
+        assert.equal(await provider.getStayOffer('لا-وجود'), null);
+    });
+
+    test('getQuote → createStayOrder: دورة حجز كاملة (prebook ثم book) عبر book.liteapi.travel', async () => {
+        const provider = createLiteApiStaysProvider({ apiKey: 'sand_test123', fetchImpl: stubFetch() });
+        await provider.searchStays({ iata: 'RUH', checkInDate: '2027-01-15', checkOutDate: '2027-01-17', adults: 1, rooms: 1 });
+
+        const quote = await provider.getQuote('offer_abc');
+        assert.equal(quote.id, 'prebook_xyz'); // prebookId من رد /rates/prebook
+        assert.equal(quote.netAmount, 474.65); // نفس سعر البحث (لا رد نجاح حي يُعيد سعراً محدَّثاً بعد)
+
+        const order = await provider.createStayOrder({
+            offerId: quote.id,
+            guests: [{ givenName: 'AHMED', familyName: 'ALI' }],
+            contact: { email: 'a@test.com', phone: '+966500000000' },
+        });
+        assert.equal(order.orderId, 'bk_123');
+        assert.equal(order.bookingReference, 'LTA789');
+        assert.equal(order.status, 'issued');
+        assert.equal(order.netAmount, 474.65);
+        assert.equal(order.currency, 'USD');
+
+        const cancelled = await provider.cancelStayOrder(order.orderId);
+        assert.equal(cancelled.status, 'cancelled');
+        assert.equal(cancelled.refundAmount, 200.5);
+        assert.equal(cancelled.currency, 'USD');
+    });
+
+    test('getQuote: عرض غير موجود/منتهٍ → null بلا نداء شبكة', async () => {
+        const provider = createLiteApiStaysProvider({ apiKey: 'sand_test123', fetchImpl: stubFetch() });
+        assert.equal(await provider.getQuote('لا-وجود'), null);
+    });
+
 });
 
 // ─── المجموعة الكاملة، مُعامَلة بمصنع المخزن ──────────────────────────
@@ -430,6 +599,209 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             }
         });
 
+        test('💥 فشل المزوّد وقت البحث: 502 بتفصيل الرسالة الفعلية لا 500 مبهم', async () => {
+            // نفس عطل حقيقي واجهه المالك: Duffel/LiteAPI يرفض بحث الفنادق
+            // فيسقط كخطأ 500 عام يخفي السبب — تحقق الإصلاح لثلاثة أنواع البحث.
+            const rejectingProvider = { ...provider, async searchOffers() { throw new Error('Duffel HTTP 403: تفصيل رفض حقيقي'); } };
+            const rejectingStays = { name: 'x', mode: 'sandbox', async searchStays() { throw new Error('تفصيل رفض فنادق'); } };
+            const rejectingCars = { name: 'y', mode: 'sandbox', async searchCars() { throw new Error('تفصيل رفض سيارات'); } };
+            const app = createApp({
+                store, jwtSecret: JWT_SECRET, provider: rejectingProvider,
+                staysProvider: rejectingStays, carsProvider: rejectingCars, markupPct: MARKUP,
+            });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const token = makeToken('search-fail-tester');
+                const call = (path, body) => fetch(url + path, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify(body),
+                });
+
+                const flightRes = await call('/api/travel/flights/search', SEARCH_BODY());
+                assert.equal(flightRes.status, 502);
+                assert.match((await flightRes.json()).error, /تفصيل رفض حقيقي/);
+
+                const stayRes = await call('/api/travel/stays/search', STAY_SEARCH_BODY());
+                assert.equal(stayRes.status, 502);
+                assert.match((await stayRes.json()).error, /تفصيل رفض فنادق/);
+
+                const carRes = await call('/api/travel/cars/search', CAR_SEARCH_BODY());
+                assert.equal(carRes.status, 502);
+                assert.match((await carRes.json()).error, /تفصيل رفض سيارات/);
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
+        test('📧 بريد تأكيد/إلغاء الحجز: يُرسَل بالمحتوى الصحيح عند تفعيل mailer', async () => {
+            const sentMails = [];
+            const stubMailer = {
+                mailReady: () => true,
+                sendMail: async (msg) => { sentMails.push(msg); return { ok: true }; },
+            };
+            const app = createApp({ store, jwtSecret: JWT_SECRET, provider, markupPct: MARKUP, mailer: stubMailer });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const token = makeToken('mail-flyer');
+                const search = await fetch(url + '/api/travel/flights/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify(SEARCH_BODY()),
+                }).then(r => r.json());
+                const bookRes = await fetch(url + '/api/travel/bookings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ offerId: search.offers[0].id, ...VALID_PAX }),
+                }).then(r => r.json());
+
+                assert.equal(sentMails.length, 1);
+                assert.equal(sentMails[0].to, VALID_PAX.contact.email);
+                assert.match(sentMails[0].subject, new RegExp(bookRes.booking.bookingReference));
+                assert.match(sentMails[0].text, new RegExp(String(bookRes.booking.sellAmount)));
+
+                await fetch(url + `/api/travel/bookings/${bookRes.booking.id}/cancel`, {
+                    method: 'POST', headers: { Authorization: `Bearer ${token}` },
+                });
+                assert.equal(sentMails.length, 2);
+                assert.equal(sentMails[1].to, VALID_PAX.contact.email);
+                assert.match(sentMails[1].subject, /إلغاء/);
+                assert.match(sentMails[1].text, /استرداد/);
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
+        test('📧 فشل مزوّد البريد لا يكسر الحجز — الاستجابة تبقى 200 بلا محاولة ثانية', async () => {
+            const stubMailer = { mailReady: () => true, sendMail: async () => ({ error: 'فشل الإرسال (429).' }) };
+            const app = createApp({ store, jwtSecret: JWT_SECRET, provider, markupPct: MARKUP, mailer: stubMailer });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const token = makeToken('mail-unlucky');
+                const search = await fetch(url + '/api/travel/flights/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify(SEARCH_BODY()),
+                }).then(r => r.json());
+                const res = await fetch(url + '/api/travel/bookings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ offerId: search.offers[0].id, ...VALID_PAX }),
+                });
+                assert.equal(res.status, 200); // sendMail لا يرمي أبداً — {error} لا يُسقط الحجز
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
+        test('📧 بلا RESEND_API_KEY (mailReady=false): لا محاولة إرسال إطلاقاً', async () => {
+            const stubMailer = { mailReady: () => false, sendMail: async () => { throw new Error('لا يجب أن يُستدعى'); } };
+            const app = createApp({ store, jwtSecret: JWT_SECRET, staysProvider, markupPct: MARKUP, mailer: stubMailer });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const token = makeToken('mail-quiet-guest');
+                const search = await fetch(url + '/api/travel/stays/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify(STAY_SEARCH_BODY()),
+                }).then(r => r.json());
+                const res = await fetch(url + '/api/travel/stays/bookings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ offerId: search.offers[0].id, ...VALID_GUESTS }),
+                });
+                assert.equal(res.status, 200); // sendMail المُزيَّف كان سيرمي لو استُدعي
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
+        test('🔔 verifyDuffelWebhookSignature: توقيع صحيح يمرّ، وأي تلاعب يُرفض', () => {
+            const secret = 'whsec_test_123';
+            const rawBody = JSON.stringify({ type: 'order.airline_initiated_change_detected', data: { object: { id: 'ord_1' } } });
+            const t = '1616202842';
+            const signedPayload = Buffer.concat([Buffer.from(`${t}.`, 'utf8'), Buffer.from(rawBody, 'utf8')]);
+            const v1 = crypto.createHmac('sha256', secret).update(signedPayload).digest('hex');
+            const header = `t=${t},v1=${v1}`;
+
+            assert.equal(verifyDuffelWebhookSignature(Buffer.from(rawBody), header, secret), true);
+            assert.equal(verifyDuffelWebhookSignature(Buffer.from(rawBody + 'x'), header, secret), false); // جسم مُتلاعَب به
+            assert.equal(verifyDuffelWebhookSignature(Buffer.from(rawBody), header, 'wrong_secret'), false);
+            assert.equal(verifyDuffelWebhookSignature(Buffer.from(rawBody), null, secret), false);
+            assert.equal(verifyDuffelWebhookSignature(Buffer.from(rawBody), 't=1616202842,v1=', secret), false);
+            assert.equal(verifyDuffelWebhookSignature(Buffer.from(rawBody), 'garbage', secret), false);
+        });
+
+        test('🔔 POST /api/travel/webhooks/duffel: تحقق توقيع + إشعار تغيير طيران حقيقي', async () => {
+            const secret = 'whsec_test_456';
+            const sign = (rawBody, t = String(Math.floor(Date.now() / 1000))) => {
+                const signedPayload = Buffer.concat([Buffer.from(`${t}.`, 'utf8'), Buffer.from(rawBody, 'utf8')]);
+                const v1 = crypto.createHmac('sha256', secret).update(signedPayload).digest('hex');
+                return `t=${t},v1=${v1}`;
+            };
+            const sentMails = [];
+            const stubMailer = { mailReady: () => true, sendMail: async (msg) => { sentMails.push(msg); return { ok: true }; } };
+            const app = createApp({ store, jwtSecret: JWT_SECRET, provider, markupPct: MARKUP, mailer: stubMailer, duffelWebhookSecret: secret });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                // حجز حقيقي مُصدَر بـproviderOrderId معروف — نفس ما يخزّنه doBook فعلياً
+                const flightBooking = await createBooking(store, {
+                    username: 'webhook-traveler', provider: 'mock',
+                    offer: { owner: 'Test Air', slices: [{ origin: 'RUH', destination: 'DXB', departAt: '2027-09-01T10:00:00', arriveAt: '2027-09-01T12:00:00' }] },
+                    passengers: [], contact: { email: 'traveler@test.com', phone: '+966500000001' },
+                    netAmount: 100, sellAmount: 110, currency: 'USD',
+                });
+                await transitionBooking(store, flightBooking.id, 'issued', { providerOrderId: 'ord_webhook_1', bookingReference: 'REFWH1' });
+
+                // توقيع فاسد → 400، بلا محاولة إرسال
+                const badBody = JSON.stringify({ type: 'order.airline_initiated_change_detected', data: { object: { id: 'ord_webhook_1' } } });
+                const badRes = await fetch(url + '/api/travel/webhooks/duffel', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Duffel-Signature': 'garbage' }, body: badBody,
+                });
+                assert.equal(badRes.status, 400);
+                assert.equal(sentMails.length, 0);
+
+                // توقيع صحيح + حدث تغيير طيران بمعرّف حجزنا → 200 + بريد فعلي
+                const goodBody = JSON.stringify({ type: 'order.airline_initiated_change_detected', data: { object: { id: 'ord_webhook_1' } } });
+                const goodRes = await fetch(url + '/api/travel/webhooks/duffel', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Duffel-Signature': sign(goodBody) }, body: goodBody,
+                });
+                assert.equal(goodRes.status, 200);
+                assert.equal(sentMails.length, 1);
+                assert.equal(sentMails[0].to, 'traveler@test.com');
+                assert.match(sentMails[0].subject, /REFWH1/);
+
+                // نوع حدث غير معنيّين به → 200 بلا أي محاولة إرسال إضافية
+                const otherBody = JSON.stringify({ type: 'order.created', data: { object: { id: 'ord_webhook_1' } } });
+                const otherRes = await fetch(url + '/api/travel/webhooks/duffel', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Duffel-Signature': sign(otherBody) }, body: otherBody,
+                });
+                assert.equal(otherRes.status, 200);
+                assert.equal(sentMails.length, 1); // لم يزد
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
+        test('🔔 POST /api/travel/webhooks/duffel: بلا DUFFEL_WEBHOOK_SECRET → 503 صريح', async () => {
+            const app = createApp({ store, jwtSecret: JWT_SECRET, provider, markupPct: MARKUP });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const res = await fetch(url + '/api/travel/webhooks/duffel', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+                });
+                assert.equal(res.status, 503);
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
         test('⚛️ transitionBooking ذرّي: انتقال من حالة خاطئة يُرفض بلا أثر', async () => {
             const booking = await createBooking(store, {
                 username: 'atomic', provider: 'mock',
@@ -443,6 +815,20 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(await transitionBooking(store, 'ghost', 'issued'), null);
             const final = await getBooking(store, booking.id);
             assert.equal(final.bookingReference, 'REF1');
+
+            assert.equal(await getBookingByProviderOrderId(store, 'لا-وجود'), null);
+        });
+
+        test('🔎 getBookingByProviderOrderId: يجد الحجز بمعرّف المزوّد (أساس بحث webhook)', async () => {
+            const booking = await createBooking(store, {
+                username: 'provider-lookup', provider: 'mock',
+                offer: { owner: 'x', slices: [] }, passengers: [], contact: {},
+                netAmount: 50, sellAmount: 55, currency: 'USD',
+            });
+            await transitionBooking(store, booking.id, 'issued', { providerOrderId: 'ord_lookup_1', bookingReference: 'REFLK1' });
+            const found = await getBookingByProviderOrderId(store, 'ord_lookup_1');
+            assert.equal(found.id, booking.id);
+            assert.equal(found.bookingReference, 'REFLK1');
         });
 
         test('✈️ تطبيع عرض Duffel: الشكل الخام الموثَّق → العرض الموحّد', () => {
@@ -499,6 +885,10 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             const ds = buildStaysProvider({ DUFFEL_API_KEY: 'duffel_test_abc' });
             assert.equal(ds.name, 'duffel-stays');
             assert.equal(ds.mode, 'sandbox');
+            // LITEAPI_API_KEY له الأولوية على DUFFEL_API_KEY (Stays معطَّل حالياً على Duffel)
+            const ls = buildStaysProvider({ LITEAPI_API_KEY: 'sand_abc', DUFFEL_API_KEY: 'duffel_test_abc' });
+            assert.equal(ls.name, 'liteapi-stays');
+            assert.equal(ls.mode, 'sandbox');
 
             assert.equal(buildCarsProvider({}).name, 'mock-cars');
             const dc = buildCarsProvider({ DUFFEL_API_KEY: 'duffel_test_abc' });
@@ -1066,6 +1456,23 @@ describe('الايجنت الحاجز', () => {
             getDestinationWeather: async () => { throw new Error('غير مغطّاة'); },
         });
         assert.equal(badIata.ok, false);
+    });
+
+    test('🗺️ GET /api/travel/destinations/top: مصادقة + تحقق + شكل الرد', async () => {
+        const stubFetch = async (url) => ({ ok: true, json: async () => ({ thumbnail: { source: String(url) + '.jpg' } }) });
+        await withAgentApp(null, async call => {
+            const noAuth = await call('/api/travel/destinations/top?origin=RUH');
+            assert.equal(noAuth.status, 401);
+
+            const token = makeToken('dest-seeker');
+            const badOrigin = await call('/api/travel/destinations/top?origin=xx', { token });
+            assert.equal(badOrigin.status, 400);
+
+            const res = await call('/api/travel/destinations/top?origin=RUH', { token });
+            assert.equal(res.status, 200);
+            assert.equal(res.data.destinations.length, CURATED_DESTINATIONS.length);
+            assert.ok(res.data.destinations.every(d => Number.isFinite(d.fromPrice)));
+        }, { travelInfoFetch: stubFetch });
     });
 
     test('📋 generate_trip_summary حقيقي: يجمع طيران+فنادق مُصدَرة فقط، مع تصفية مدى تاريخ', async () => {

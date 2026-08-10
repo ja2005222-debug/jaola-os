@@ -8,6 +8,7 @@
 import { createDuffelProvider } from './duffelProvider.js';
 import { createMockTravelProvider } from './mockProvider.js';
 import { createDuffelStaysProvider } from './duffelStaysProvider.js';
+import { createLiteApiStaysProvider } from './liteApiStaysProvider.js';
 import { createMockStaysProvider } from './mockStaysProvider.js';
 import { createDuffelCarsProvider } from './duffelCarsProvider.js';
 import { createMockCarsProvider } from './mockCarsProvider.js';
@@ -22,8 +23,17 @@ export function buildProvider(env = process.env) {
     return createMockTravelProvider();
 }
 
-/** نفس مفتاح الطيران بالضبط — Duffel Stays على نفس الحساب. */
+// LITEAPI_API_KEY أولاً إن ضُبط: حساب مستقل تماماً عن Duffel (Sandbox
+// ذاتي التفعيل بلا موافقة مبيعات) — مفضَّل حالياً لأن Duffel Stays معطَّل
+// على حسابنا (راجع تحذير README). Duffel Stays يبقى احتياطاً إن فُعِّل لاحقاً.
 export function buildStaysProvider(env = process.env) {
+    if (env.LITEAPI_API_KEY) {
+        return createLiteApiStaysProvider({
+            apiKey: env.LITEAPI_API_KEY,
+            apiUrl: env.LITEAPI_API_URL || undefined,
+            bookApiUrl: env.LITEAPI_BOOK_API_URL || undefined,
+        });
+    }
     if (env.DUFFEL_API_KEY) {
         return createDuffelStaysProvider({
             apiKey: env.DUFFEL_API_KEY,
