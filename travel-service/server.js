@@ -27,7 +27,7 @@ import { airportCoords, searchAirports, airportForTimezone } from './src/airport
 import { createPriceWatch, listPriceWatchesByUser, cancelPriceWatch } from './src/priceWatches.js';
 import { checkWatches } from './src/priceWatchPoller.js';
 import { getDestinationWeather, convertCurrency, MAX_FORECAST_DAYS_AHEAD } from './src/travelInfo.js';
-import { buildTopDestinations } from './src/topDestinations.js';
+import { buildTopDestinations, CURATED_DESTINATIONS } from './src/topDestinations.js';
 import { sendMail, mailReady } from './src/mailer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1051,7 +1051,15 @@ export function createApp({
         if (!IATA_RE.test(origin)) {
             return res.status(400).json({ error: 'رمز مطار الأصل يجب أن يكون IATA من ثلاثة أحرف (مثل RUH).' });
         }
-        const destinations = await buildTopDestinations({ origin, provider, markupPct, fetchImpl: travelInfoFetch });
+        const rawLimit = req.query.limit;
+        let limit;
+        if (rawLimit !== undefined) {
+            limit = Number(rawLimit);
+            if (!Number.isInteger(limit) || limit < 1 || limit > CURATED_DESTINATIONS.length) {
+                return res.status(400).json({ error: `limit يجب أن يكون عدداً صحيحاً بين 1 و${CURATED_DESTINATIONS.length}.` });
+            }
+        }
+        const destinations = await buildTopDestinations({ origin, provider, markupPct, fetchImpl: travelInfoFetch, limit });
         res.json({ destinations });
     }));
 
