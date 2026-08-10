@@ -41,6 +41,10 @@ import {
     createNotifier, defaultNotificationPrefs, normalizeNotificationPrefs,
     renderAirlineChangeNotice, isChannelEnabled,
 } from '../src/notifications.js';
+import {
+    defaultProfile, normalizePrefs, normalizeTraveller, mergeProfile,
+    buildAgentMemory, frequentDestinations, trimConversation, MAX_MEMORY_MESSAGES,
+} from '../src/profile.js';
 
 const JWT_SECRET = 'test-secret-not-for-production';
 const MARKUP = 10; // هامش الاختبارات — أرقامه سهلة التحقق يدوياً
@@ -517,6 +521,103 @@ describe('insights: قراءة نتائج البحث تُحسب بالكود ل�
     test('نوع غير معروف في العرض لا يكسر بقية القراءة', () => {
         const text = renderInsight([{ type: 'unknown_future_kind' }, { type: 'price_spread', spreadPct: 50, count: 3 }]);
         assert.ok(text.includes('50%'));
+    });
+});
+
+// ─── 🧠 ذاكرة المسافر: خط الخصوصية الأحمر أولاً ───────────────────────
+describe('profile: الذاكرة تعرف التفضيلات ولا تُسرّب بيانات الجواز', () => {
+    // ⚠️ الوسم المختار متعمَّد التميّز: فحص التسريب بـincludes على نصّ
+    // عربي قصير يعطي إيجابيات كاذبة — «علي» جزءٌ من «عليه» في نصّ
+    // الذاكرة نفسه. الوسم هنا لا يمكن أن يكون جزءاً من كلمة أخرى.
+    const traveller = {
+        id: 'tvl_1', title: 'mr', givenName: 'Ali', familyName: 'Alqahtani',
+        bornOn: '1990-05-01', gender: 'm', label: 'فاطمة‌الزهراء',
+    };
+
+    // 🔒 أهم اختبار في هذا الملف: بيانات الجواز تُرسَل لمزوّد خارجي إن
+    // تسرّبت — والتكلفة أثقل بكثير من السياق الذي تشتريه.
+    test('سياق النموذج يحمل التفضيلات وعدد المسافرين، وصفر بيانات شخصية', () => {
+        const profile = {
+            prefs: { homeAirport: 'RUH', cabin: 'business', savePassengers: true },
+            travellers: [traveller, { ...traveller, id: 'tvl_2', givenName: 'Nora', familyName: 'Saleh' }],
+            conversation: [],
+        };
+        const memory = buildAgentMemory(profile, []);
+        assert.ok(memory.includes('RUH'));
+        assert.ok(memory.includes('business'));
+        assert.ok(memory.includes('2'));
+        for (const secret of ['Ali', 'Alqahtani', 'Nora', 'Saleh', '1990-05-01', 'فاطمة‌الزهراء']) {
+            assert.ok(!memory.includes(secret), `تسريب في سياق النموذج: ${secret}`);
+        }
+    });
+
+    test('بلا ذاكرة تُذكر → نص فارغ لا جملة جوفاء تُحقَن في التعليمة', () => {
+        assert.equal(buildAgentMemory(defaultProfile(), []), '');
+        assert.equal(buildAgentMemory(null, []), '');
+    });
+
+    test('الوجهات المتكررة: مرة واحدة ليست عادة، والملغى لا يُحتسب', () => {
+        const flight = (destination, status) => ({
+            kind: 'flight', status, offer: { slices: [{ origin: 'RUH', destination }] },
+        });
+        const freq = frequentDestinations([
+            flight('CAI', 'issued'), flight('CAI', 'issued'), flight('CAI', 'issued'),
+            flight('DXB', 'issued'), flight('DXB', 'issued'),
+            flight('LHR', 'issued'),                 // مرة واحدة → تسقط
+            flight('IST', 'cancelled'), flight('IST', 'cancelled'), // ملغاة → تسقط
+        ]);
+        assert.deepEqual(freq, [{ iata: 'CAI', count: 3 }, { iata: 'DXB', count: 2 }]);
+    });
+
+    test('التفضيلات تُنقّى: قيمة فاسدة تسقط إلى null بدل تخزينها', () => {
+        const p = normalizePrefs({ homeAirport: 'ruh', cabin: 'BUSINESS', savePassengers: true });
+        assert.equal(p.homeAirport, 'RUH');
+        assert.equal(p.cabin, 'business');
+        assert.equal(p.savePassengers, true);
+        const bad = normalizePrefs({ homeAirport: 'RIYADH', cabin: 'luxury', savePassengers: 'نعم' });
+        assert.equal(bad.homeAirport, null);
+        assert.equal(bad.cabin, null);
+        assert.equal(bad.savePassengers, false); // 'نعم' ليست true
+    });
+
+    // مسافر محفوظ لا يصلح للحجز عيبٌ لا ميزة — لذا نفس المُتحقِّق حرفياً
+    test('المسافر المحفوظ يمر بمُتحقِّق الحجز نفسه', () => {
+        const ok = normalizeTraveller(
+            { title: 'mr', givenName: 'Ali', familyName: 'Saleh', bornOn: '1990-05-01', gender: 'm' },
+            validatePassengers
+        );
+        assert.equal(ok.value.givenName, 'Ali');
+        assert.equal(ok.value.label, 'Ali Saleh'); // وسمٌ افتراضي من الاسم
+
+        // تاريخ ميلاد مستقبلي يرفضه الحجز — فيجب أن يرفضه الحفظ
+        const future = normalizeTraveller(
+            { title: 'mr', givenName: 'Ali', familyName: 'Saleh', bornOn: '2090-01-01', gender: 'm' },
+            validatePassengers
+        );
+        assert.ok(future.error);
+        // واسم بحروف غير لاتينية يرفضه المزوّد — فيُرفض هنا
+        assert.ok(normalizeTraveller(
+            { title: 'mr', givenName: 'علي', familyName: 'صالح', bornOn: '1990-05-01', gender: 'm' },
+            validatePassengers
+        ).error);
+    });
+
+    test('الدمج الجزئي لا يمحو ما لم يُرسَل', () => {
+        const base = { prefs: { homeAirport: 'RUH', cabin: 'business', savePassengers: true }, travellers: [traveller], conversation: [{ role: 'user', content: 'س' }] };
+        const merged = mergeProfile(base, { prefs: { cabin: 'economy' } });
+        assert.equal(merged.prefs.cabin, 'economy');
+        assert.equal(merged.prefs.homeAirport, 'RUH'); // لم يُرسَل فبقي
+        assert.equal(merged.travellers.length, 1);
+        assert.equal(merged.conversation.length, 1);
+    });
+
+    test('المحادثة تُقصّ على آخر ما يفيد الاستئناف', () => {
+        const many = Array.from({ length: 40 }, (_, i) => ({ role: 'user', content: 'رسالة ' + i }));
+        const trimmed = trimConversation(many);
+        assert.equal(trimmed.length, MAX_MEMORY_MESSAGES);
+        assert.equal(trimmed.at(-1).content, 'رسالة 39'); // الأحدث محفوظ
+        // رسائل فارغة أو بأدوار مجهولة تسقط/تُطبَّع
+        assert.deepEqual(trimConversation([{ role: 'system', content: 'x' }, { content: '' }]), [{ role: 'user', content: 'x' }]);
     });
 });
 
@@ -1770,6 +1871,88 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(offer.cancellable, true);
         });
 
+        // ─── 🧠 ملف المسافر: نفس العقد على المخزنين ───
+
+        test('🧠 المسافرون المحفوظون: حفظ باختيار صريح، وعزل ملكية، وحد أقصى', async () => {
+            const token = makeToken('mem-user');
+            const other = makeToken('mem-other');
+            const person = { title: 'mr', givenName: 'Ali', familyName: 'Saleh', bornOn: '1990-05-01', gender: 'm' };
+
+            const fresh = await call('/api/travel/profile', { token });
+            assert.equal(fresh.status, 200);
+            assert.deepEqual(fresh.data.travellers, []);
+            assert.equal(fresh.data.prefs.savePassengers, false); // مطفأ افتراضياً
+
+            // ⚠️ بلا تفعيل صريح لا يُحفظ أحد — الحفظ اختيار لا أثر جانبي
+            const blocked = await call('/api/travel/profile/travellers', {
+                method: 'POST', token, body: { traveller: person },
+            });
+            assert.equal(blocked.status, 403);
+
+            await call('/api/travel/profile/prefs', {
+                method: 'PUT', token, body: { prefs: { savePassengers: true, homeAirport: 'ruh', cabin: 'business' } },
+            });
+            const saved = await call('/api/travel/profile/travellers', {
+                method: 'POST', token, body: { traveller: { ...person, label: 'أنا' } },
+            });
+            assert.equal(saved.status, 200);
+            assert.equal(saved.data.traveller.label, 'أنا');
+            assert.ok(saved.data.traveller.id.startsWith('tvl_'));
+
+            // بيانات لا تصلح للحجز لا تُحفَظ
+            const bad = await call('/api/travel/profile/travellers', {
+                method: 'POST', token, body: { traveller: { ...person, bornOn: '2090-01-01' } },
+            });
+            assert.equal(bad.status, 400);
+
+            // ملف مستخدم آخر منفصل تماماً
+            assert.deepEqual((await call('/api/travel/profile', { token: other })).data.travellers, []);
+            // ولا يحذف من ملف غيره بمعرّف صحيح
+            const steal = await call(`/api/travel/profile/travellers/${saved.data.traveller.id}`, { method: 'DELETE', token: other });
+            assert.equal(steal.status, 404);
+            assert.equal((await call('/api/travel/profile', { token })).data.travellers.length, 1);
+
+            const removed = await call(`/api/travel/profile/travellers/${saved.data.traveller.id}`, { method: 'DELETE', token });
+            assert.equal(removed.status, 200);
+            assert.deepEqual(removed.data.travellers, []);
+        });
+
+        test('🧠 التفضيلات تُحفظ وتُقرأ، والفاسدة تسقط', async () => {
+            const token = makeToken('mem-prefs');
+            await call('/api/travel/profile/prefs', {
+                method: 'PUT', token, body: { prefs: { homeAirport: 'jed', cabin: 'first' } },
+            });
+            const read = await call('/api/travel/profile', { token });
+            assert.equal(read.data.prefs.homeAirport, 'JED');
+            assert.equal(read.data.prefs.cabin, 'first');
+
+            await call('/api/travel/profile/prefs', { method: 'PUT', token, body: { prefs: { cabin: 'luxury' } } });
+            const after = await call('/api/travel/profile', { token });
+            assert.equal(after.data.prefs.cabin, null);      // الفاسدة سقطت
+            assert.equal(after.data.prefs.homeAirport, 'JED'); // ولم تُمسّ الأخرى
+        });
+
+        // 🔒 المسح حقٌّ لا ميزة: يجب أن يكون فورياً وكاملاً وقابلاً للإثبات
+        test('🔒 «امسح بياناتي» يمحو الملف كله فوراً', async () => {
+            const token = makeToken('mem-wipe');
+            await call('/api/travel/profile/prefs', { method: 'PUT', token, body: { prefs: { savePassengers: true, homeAirport: 'RUH' } } });
+            await call('/api/travel/profile/travellers', {
+                method: 'POST', token,
+                body: { traveller: { title: 'ms', givenName: 'Nora', familyName: 'Ahmed', bornOn: '1995-03-03', gender: 'f' } },
+            });
+            assert.equal((await call('/api/travel/profile', { token })).data.travellers.length, 1);
+
+            const wiped = await call('/api/travel/profile', { method: 'DELETE', token });
+            assert.equal(wiped.status, 200);
+            assert.equal(wiped.data.deleted, true);
+            assert.equal(await store.getProfile('mem-wipe'), null); // لا بقايا في المخزن
+
+            const back = await call('/api/travel/profile', { token });
+            assert.deepEqual(back.data.travellers, []);
+            assert.equal(back.data.prefs.savePassengers, false); // عاد للافتراضات
+            assert.equal((await call('/api/travel/profile', { method: 'DELETE', token })).data.deleted, false);
+        });
+
         // ─── 🔔 التنبيهات: نفس العقد على المخزنين ───
 
         test('🔔 صندوق التنبيهات: إنشاء وقراءة وعدّاد وعزل ملكية', async () => {
@@ -2345,6 +2528,66 @@ describe('الايجنت الحاجز', () => {
         await agent.phraseNotice('تنبيه ما');
         assert.equal(sentBody.tools, undefined, 'مسار التنبيه لا توضع فيه يدٌ تحجز');
         assert.equal(sentBody.tool_choice, undefined);
+    });
+
+    // 🔒 الاختبار الحاسم: يفحص ما وصل المزوّد فعلاً، لا ما نوينا إرساله
+    test('🧠🔒 ذاكرة المسافر تصل النموذج بلا بيانات جواز، والمحادثة تُحفظ', async () => {
+        const username = 'memory-agent-user';
+        await store.setProfile(username, {
+            prefs: { homeAirport: 'RUH', cabin: 'business', savePassengers: true },
+            travellers: [{
+                id: 'tvl_x', title: 'mr', givenName: 'Faisal', familyName: 'Alharbi',
+                bornOn: '1988-02-02', gender: 'm', label: 'نفسي',
+            }],
+            conversation: [],
+        });
+        let sentBody = null;
+        const agent = createTravelAgent({
+            apiKey: 'k',
+            fetchImpl: async (url, opts) => {
+                sentBody = JSON.parse(opts.body);
+                return { ok: true, json: async () => ({ choices: [{ message: { content: 'أهلاً بك مجدداً.' } }] }) };
+            },
+        });
+        await withAgentApp(agent, async call => {
+            const res = await call('/api/travel/agent/chat', {
+                method: 'POST', token: makeToken(username),
+                body: { messages: [{ role: 'user', content: 'أبغى أسافر' }] },
+            });
+            assert.equal(res.status, 200);
+
+            const wire = JSON.stringify(sentBody);
+            assert.ok(wire.includes('RUH'), 'الذاكرة لم تصل النموذج');
+            assert.ok(wire.includes('business'));
+            for (const secret of ['Faisal', 'Alharbi', '1988-02-02', 'نفسي']) {
+                assert.ok(!wire.includes(secret), `بيانات جواز وصلت المزوّد: ${secret}`);
+            }
+            // ورسالة نظام منفصلة لا إلحاق بالتعليمة الأساسية
+            assert.equal(sentBody.messages.filter(m => m.role === 'system').length, 2);
+
+            // والمحادثة حُفظت لتُستأنف
+            const convo = await call('/api/travel/agent/conversation', { token: makeToken(username) });
+            assert.equal(convo.data.messages.length, 2);
+            assert.equal(convo.data.messages[1].content, 'أهلاً بك مجدداً.');
+        });
+    });
+
+    test('🧠 مستخدم بلا ملف: لا رسالة نظام ثانية جوفاء', async () => {
+        let sentBody = null;
+        const agent = createTravelAgent({
+            apiKey: 'k',
+            fetchImpl: async (url, opts) => {
+                sentBody = JSON.parse(opts.body);
+                return { ok: true, json: async () => ({ choices: [{ message: { content: 'مرحباً' } }] }) };
+            },
+        });
+        await withAgentApp(agent, async call => {
+            await call('/api/travel/agent/chat', {
+                method: 'POST', token: makeToken('no-profile-user'),
+                body: { messages: [{ role: 'user', content: 'مرحبا' }] },
+            });
+            assert.equal(sentBody.messages.filter(m => m.role === 'system').length, 1);
+        });
     });
 
     test('🛡️ صياغة التنبيه: رد مُطوَّل أو فارغ → يعود النص الحتمي', async () => {

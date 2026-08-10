@@ -28,6 +28,10 @@ import {
     createNotifier, renderAirlineChangeNotice, normalizeNotificationPrefs,
     defaultNotificationPrefs, NOTIFICATION_CATEGORIES,
 } from './src/notifications.js';
+import {
+    defaultProfile, mergeProfile, normalizeTraveller, buildAgentMemory,
+    trimConversation, MAX_TRAVELLERS,
+} from './src/profile.js';
 import { airportCoords, searchAirports, airportForTimezone } from './src/airports.js';
 import { createPriceWatch, listPriceWatchesByUser, cancelPriceWatch } from './src/priceWatches.js';
 import { checkWatches } from './src/priceWatchPoller.js';
@@ -1151,12 +1155,35 @@ export function createApp({
             convertCurrency: args => doConvertCurrency(args),
             generateTripSummary: args => doGenerateTripSummary(username, args),
         };
+        // 🧠 ذاكرة الايجنت: تفضيلات ووجهات متكررة وعددُ المسافرين — بلا
+        // اسم ولا تاريخ ميلاد (راجع الخط الأحمر في profile.js).
+        let memory = '';
+        let profile = null;
         try {
-            const result = await agent.chat({ messages, services });
+            profile = await loadProfile(username);
+            memory = buildAgentMemory(profile, await listMine(username));
+        } catch (e) {
+            console.error('⚠️ تعذّر تحميل ذاكرة المسافر:', e.message);
+        }
+        try {
+            const result = await agent.chat({ messages, services, memory });
+            // آخر محادثة تُحفظ لتُستأنف — والحفظ لا يُسقط رداً نجح فعلاً
+            try {
+                await store.setProfile(username, mergeProfile(profile, {
+                    conversation: trimConversation([...messages, { role: 'assistant', content: result.reply }]),
+                }));
+            } catch (e) {
+                console.error('⚠️ تعذّر حفظ المحادثة:', e.message);
+            }
             res.json(result);
         } catch (e) {
             res.status(502).json({ error: `تعذّر رد المساعد: ${e.message}` });
         }
+    }));
+
+    // آخر محادثة محفوظة — تُستأنف عند فتح تبويب المساعد بدل البدء من صفر
+    app.get('/api/travel/agent/conversation', verifyToken, wrap(async (req, res) => {
+        res.json({ messages: (await loadProfile(userOf(req))).conversation || [] });
     }));
 
     // صياغة قراءة النتائج بأسلوب الايجنت. مسار منفصل عن البحث عمداً:
@@ -1169,6 +1196,63 @@ export function createApp({
         const text = renderInsight(findings);
         if (!agent) return res.json({ text, phrased: false });
         res.json({ text: await agent.phraseInsight(text), phrased: true });
+    }));
+
+    // ─── 🧠 ملف المسافر (الذاكرة) ─────────────────────────────────────
+
+    async function loadProfile(username) {
+        return (await store.getProfile(username)) || defaultProfile();
+    }
+
+    app.get('/api/travel/profile', verifyToken, wrap(async (req, res) => {
+        const profile = await loadProfile(userOf(req));
+        // المحادثة المحفوظة لا تُرسَل هنا — لها مسارها، وحجمها لا يخصّ
+        // شاشة الإعدادات التي تستدعي هذا كثيراً.
+        res.json({ prefs: profile.prefs, travellers: profile.travellers });
+    }));
+
+    app.put('/api/travel/profile/prefs', verifyToken, wrap(async (req, res) => {
+        const username = userOf(req);
+        const current = await loadProfile(username);
+        const next = mergeProfile(current, { prefs: req.body?.prefs || {} });
+        await store.setProfile(username, next);
+        res.json({ prefs: next.prefs });
+    }));
+
+    app.post('/api/travel/profile/travellers', verifyToken, wrap(async (req, res) => {
+        const username = userOf(req);
+        const current = await loadProfile(username);
+        // ⚠️ الحفظ باختيار صريح: لا يُحفظ مسافر لمجرد أنه حجز
+        if (!current.prefs.savePassengers) {
+            return res.status(403).json({ error: 'حفظ المسافرين غير مُفعَّل — فعّله من إعدادات ملفك أولاً.' });
+        }
+        if (current.travellers.length >= MAX_TRAVELLERS) {
+            return res.status(400).json({ error: `الحد الأقصى ${MAX_TRAVELLERS} مسافرين محفوظين.` });
+        }
+        // نفس مُتحقِّق الحجز — مسافر محفوظ لا يصلح للحجز عيبٌ لا ميزة
+        const check = normalizeTraveller(req.body?.traveller, validatePassengers);
+        if (check.error) return res.status(400).json({ error: check.error });
+        const traveller = { id: 'tvl_' + crypto.randomBytes(8).toString('hex'), ...check.value };
+        const next = mergeProfile(current, { travellers: [...current.travellers, traveller] });
+        await store.setProfile(username, next);
+        res.json({ traveller, travellers: next.travellers });
+    }));
+
+    app.delete('/api/travel/profile/travellers/:id', verifyToken, wrap(async (req, res) => {
+        const username = userOf(req);
+        const current = await loadProfile(username);
+        const travellers = current.travellers.filter(t => t.id !== req.params.id);
+        if (travellers.length === current.travellers.length) {
+            return res.status(404).json({ error: 'المسافر غير موجود في ملفك.' });
+        }
+        await store.setProfile(username, mergeProfile(current, { travellers }));
+        res.json({ travellers });
+    }));
+
+    // 🔒 المسح الكامل: حقٌّ لا ميزة، وفوريٌّ لا مجدوَل. صفٌّ واحد يُزال
+    // فلا تبقى بقايا موزّعة (وهو سبب تجميع الملف في صفٍّ واحد أصلاً).
+    app.delete('/api/travel/profile', verifyToken, wrap(async (req, res) => {
+        res.json({ deleted: await store.deleteProfile(userOf(req)) });
     }));
 
     // ─── 🔔 التنبيهات وتفضيلاتها ──────────────────────────────────────
