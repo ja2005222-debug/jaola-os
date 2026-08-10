@@ -610,8 +610,13 @@ export function createTravelAgent({ apiKey, apiUrl = DEFAULT_API_URL, model = DE
          * → {reply, actions} حيث actions سجل ما نُفّذ فعلاً (تعرضه الواجهة
          * كرقائق شفافية: المستخدم يرى ماذا فعل الوكيل لا كلامه فقط).
          */
-        async chat({ messages, services }) {
-            const convo = [{ role: 'system', content: SYSTEM_PROMPT }, ...messages];
+        async chat({ messages, services, memory = '' }) {
+            // الذاكرة رسالة نظام منفصلة لا إلحاقٌ بالتعليمة الأساسية:
+            // تبقى التعليمة ثابتة عبر المستخدمين (وهو ما يجعل الكاش مفيداً)،
+            // ويبقى الجزء المتغيّر معزولاً ومقروءاً في السجل.
+            const convo = [{ role: 'system', content: SYSTEM_PROMPT }];
+            if (memory) convo.push({ role: 'system', content: memory });
+            convo.push(...messages);
             const actions = [];
             for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
                 const msg = await complete(convo);

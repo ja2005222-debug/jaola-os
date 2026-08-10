@@ -74,6 +74,15 @@ CREATE TABLE IF NOT EXISTS travel_notification_prefs (
     username        TEXT PRIMARY KEY,
     prefs_json      JSONB NOT NULL
 );
+
+-- 🔒 ملف المسافر: صفٌّ واحد لكل مستخدم يجمع التفضيلات والمسافرين
+-- المحفوظين وآخر محادثة. التجميع مقصود لا كسل: «امسح بياناتي» يصير
+-- DELETE واحداً لا مطاردةَ بقايا عبر جداول.
+CREATE TABLE IF NOT EXISTS travel_profiles (
+    username        TEXT PRIMARY KEY,
+    profile_json    JSONB NOT NULL,
+    updated_at      BIGINT NOT NULL
+);
 `;
 
 function rowToBooking(r) {
@@ -348,6 +357,31 @@ export function createPostgresStore({ connectionString }) {
                     [username]
                 );
                 return res.rowCount;
+            });
+        },
+
+        async getProfile(username) {
+            return withClient(async c => {
+                const res = await c.query('SELECT profile_json FROM travel_profiles WHERE username = $1', [username]);
+                return res.rows[0]?.profile_json || null;
+            });
+        },
+
+        async setProfile(username, profile) {
+            return withClient(async c => {
+                await c.query(
+                    `INSERT INTO travel_profiles (username, profile_json, updated_at) VALUES ($1, $2, $3)
+                     ON CONFLICT (username) DO UPDATE SET profile_json = EXCLUDED.profile_json, updated_at = EXCLUDED.updated_at`,
+                    [username, profile, Date.now()]
+                );
+                return profile;
+            });
+        },
+
+        async deleteProfile(username) {
+            return withClient(async c => {
+                const res = await c.query('DELETE FROM travel_profiles WHERE username = $1', [username]);
+                return res.rowCount > 0;
             });
         },
 

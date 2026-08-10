@@ -292,6 +292,32 @@
           <div id="ntfList" style="margin-top:12px"></div>
         </div>
         <div class="card">
+          <strong>🧠 ملفك ومسافروك</strong>
+          <p class="note">يملأ نماذج البحث والحجز مسبقاً. المساعد يعرف تفضيلاتك ووجهاتك المتكررة — <strong>ولا تصله أسماء مسافريك ولا تواريخ ميلادهم أبداً</strong>.</p>
+          <div class="row" style="align-items:end">
+            <div class="ac-wrap"><label>مطار الانطلاق المعتاد</label><input id="prefHome" placeholder="الرياض أو RUH" autocomplete="off" /></div>
+            <div><label>الدرجة المفضّلة</label>
+              <select id="prefCabin">
+                <option value="">— بلا تفضيل —</option>
+                <option value="economy">اقتصادية</option>
+                <option value="premium_economy">اقتصادية مميزة</option>
+                <option value="business">رجال الأعمال</option>
+                <option value="first">الأولى</option>
+              </select>
+            </div>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:12px;cursor:pointer">
+            <input type="checkbox" id="prefSavePax" />
+            <span>احفظ بيانات المسافرين لتسريع الحجز القادم</span>
+          </label>
+          <div id="travellersBox" style="margin-top:12px"></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+            <button class="primary" id="profSave">حفظ التفضيلات</button>
+            <button id="profWipe" style="color:var(--bad)">🗑️ امسح كل بياناتي</button>
+          </div>
+          <div id="profMsg" class="note hidden"></div>
+        </div>
+        <div class="card">
           <strong>⚙️ أي التنبيهات تريد أن تصلك؟</strong>
           <p class="note">وقائع حجوزاتك يبقى سجلها داخل البوابة دوماً — اختيارك يطال بريدها.</p>
           <div id="prefRows"></div>
@@ -424,7 +450,9 @@
         return;
       }
 
-      ['fOrigin', 'fDest', 'carIata', 'destOrigin'].forEach(id => attachAirportAutocomplete($(id)));
+      ['fOrigin', 'fDest', 'carIata', 'destOrigin', 'prefHome'].forEach(id => attachAirportAutocomplete($(id)));
+      // الملف يسبق مطار الأصل: تفضيل محفوظ على الخادم يتقدّم على الاستنتاج
+      await loadProfile();
       await applyDefaultOrigin(); // الشريط الترويجي يحتاج مطار الأصل مُستقرّاً أولاً
 
       // تاريخ افتراضي: بعد أسبوع
@@ -452,7 +480,8 @@
           $('tab-' + t).classList.toggle('hidden', t !== btn.dataset.tab));
         if (btn.dataset.tab === 'trips') loadTrips();
         if (btn.dataset.tab === 'destinations' && !$('destGrid').children.length) loadDestinations();
-        if (btn.dataset.tab === 'notifications') { loadNotifications(); loadPrefs(); }
+        if (btn.dataset.tab === 'notifications') { loadNotifications(); loadPrefs(); loadProfile(); }
+        if (btn.dataset.tab === 'agent') restoreConversation();
       }));
 
     // ─── البحث ───
@@ -487,6 +516,14 @@
 
     async function applyDefaultOrigin() {
       const originFields = [$('fOrigin'), $('carIata'), $('destOrigin')];
+      // 0) تفضيل محفوظ في الملف — يسبق كل شيء لأنه اختيار صريح على
+      // الخادم، فيتبع المستخدمَ بين أجهزته لا يبقى حبيس متصفّح واحد.
+      if (profilePrefs.homeAirport) {
+        originFields.forEach(f => setOriginField(f, { iata: profilePrefs.homeAirport, city: profilePrefs.homeAirport }));
+        if (profilePrefs.cabin) $('fCabin').value = profilePrefs.cabin;
+        return;
+      }
+      if (profilePrefs.cabin) $('fCabin').value = profilePrefs.cabin;
       // 1) اختيار محفوظ سابقاً
       try {
         const saved = JSON.parse(localStorage.getItem(ORIGIN_KEY) || 'null');
@@ -623,6 +660,121 @@
       if (o.expiresAt) parts.push(`<div class="det-warn">⏳ صلاحية السعر حتى ${fmtDateTime(o.expiresAt)}</div>`);
       return `<div class="details">${parts.join('')}</div>`;
     }
+
+    // ─── 🧠 ملف المسافر (الذاكرة) ───
+    // نسخة محلية يقرأها نموذج الحجز — تُحمَّل مرة عند الإقلاع وتُحدَّث بعد
+    // كل تعديل، فلا ينادي فتحُ نافذة الحجز الخادمَ.
+    let savedTravellers = [];
+    let profilePrefs = { homeAirport: null, cabin: null, savePassengers: false };
+
+    function renderTravellers() {
+        const box = $('travellersBox');
+        if (!profilePrefs.savePassengers) {
+            box.innerHTML = '<p class="note">فعّل الحفظ أعلاه لإضافة مسافرين.</p>';
+            return;
+        }
+        const list = savedTravellers.map(t => `
+          <div class="pref-row">
+            <span class="pref-name">${esc(t.label)} <span class="note">(${esc(t.givenName)} ${esc(t.familyName)})</span></span>
+            <button data-del-tvl="${esc(t.id)}" style="color:var(--bad)">حذف</button>
+          </div>`).join('');
+        box.innerHTML = list + `
+          <div class="row" style="margin-top:10px">
+            <div><label>الوسم</label><input id="tvlLabel" placeholder="أنا / زوجتي" /></div>
+            <div><label>اللقب</label><select id="tvlTitle"><option value="mr">Mr</option><option value="ms">Ms</option><option value="mrs">Mrs</option></select></div>
+            <div><label>الاسم الأول (لاتيني)</label><input id="tvlGiven" placeholder="AHMED" /></div>
+            <div><label>اسم العائلة (لاتيني)</label><input id="tvlFamily" placeholder="ALI" /></div>
+            <div><label>تاريخ الميلاد</label><input id="tvlBorn" type="date" /></div>
+            <div><label>الجنس</label><select id="tvlGender"><option value="m">ذكر</option><option value="f">أنثى</option></select></div>
+          </div>
+          <button id="tvlAdd" style="margin-top:8px">➕ أضف مسافراً</button>`;
+        box.querySelectorAll('[data-del-tvl]').forEach(btn =>
+          btn.addEventListener('click', () => deleteTraveller(btn.dataset.delTvl)));
+        const add = $('tvlAdd');
+        if (add) add.addEventListener('click', addTraveller);
+    }
+
+    function profMsg(text, bad = false) {
+        const el = $('profMsg');
+        el.textContent = text;
+        el.style.color = bad ? 'var(--bad)' : 'var(--ok)';
+        el.classList.remove('hidden');
+        setTimeout(() => el.classList.add('hidden'), 3000);
+    }
+
+    async function loadProfile() {
+      try {
+        const res = await api('/api/travel/profile');
+        if (!res.ok) return;
+        const data = await res.json();
+        profilePrefs = data.prefs;
+        savedTravellers = data.travellers || [];
+        if (profilePrefs.homeAirport) {
+          $('prefHome').value = profilePrefs.homeAirport;
+          $('prefHome').dataset.iata = profilePrefs.homeAirport;
+        }
+        $('prefCabin').value = profilePrefs.cabin || '';
+        $('prefSavePax').checked = !!profilePrefs.savePassengers;
+        renderTravellers();
+      } catch { /* الملف إثراء — غيابه لا يكسر البوابة */ }
+    }
+
+    async function saveProfilePrefs() {
+      const prefs = {
+        homeAirport: selectedIata($('prefHome')) || null,
+        cabin: $('prefCabin').value || null,
+        savePassengers: $('prefSavePax').checked,
+      };
+      try {
+        const res = await api('/api/travel/profile/prefs', { method: 'PUT', body: JSON.stringify({ prefs }) });
+        if (!res.ok) return profMsg('تعذّر الحفظ.', true);
+        profilePrefs = (await res.json()).prefs;
+        renderTravellers();
+        profMsg('✅ حُفظت تفضيلاتك.');
+      } catch { profMsg('تعذّر الحفظ.', true); }
+    }
+
+    async function addTraveller() {
+      const traveller = {
+        label: $('tvlLabel').value.trim(), title: $('tvlTitle').value,
+        givenName: $('tvlGiven').value.trim(), familyName: $('tvlFamily').value.trim(),
+        bornOn: $('tvlBorn').value, gender: $('tvlGender').value,
+      };
+      try {
+        const res = await api('/api/travel/profile/travellers', { method: 'POST', body: JSON.stringify({ traveller }) });
+        const data = await res.json();
+        if (!res.ok) return profMsg(data.error || 'تعذّرت الإضافة.', true);
+        savedTravellers = data.travellers;
+        renderTravellers();
+        profMsg('✅ أُضيف المسافر.');
+      } catch { profMsg('تعذّرت الإضافة.', true); }
+    }
+
+    async function deleteTraveller(id) {
+      try {
+        const res = await api(`/api/travel/profile/travellers/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (!res.ok) return profMsg('تعذّر الحذف.', true);
+        savedTravellers = (await res.json()).travellers;
+        renderTravellers();
+      } catch { profMsg('تعذّر الحذف.', true); }
+    }
+
+    $('profSave').addEventListener('click', saveProfilePrefs);
+    $('profWipe').addEventListener('click', async () => {
+      // 🔒 المسح لا رجعة فيه — تأكيد صريح قبله، وهو الفعل الوحيد هنا
+      // الذي يُتلف بيانات، فلا يُنفَّذ بضغطة واحدة.
+      if (!confirm('سيُحذف ملفك كاملاً: تفضيلاتك ومسافروك المحفوظون وآخر محادثة مع المساعد. لا يمكن التراجع. متابعة؟')) return;
+      try {
+        const res = await api('/api/travel/profile', { method: 'DELETE' });
+        if (!res.ok) return profMsg('تعذّر المسح.', true);
+        profilePrefs = { homeAirport: null, cabin: null, savePassengers: false };
+        savedTravellers = [];
+        $('prefHome').value = ''; delete $('prefHome').dataset.iata;
+        $('prefCabin').value = ''; $('prefSavePax').checked = false;
+        renderTravellers();
+        profMsg('🗑️ مُحيت كل بياناتك.');
+      } catch { profMsg('تعذّر المسح.', true); }
+    });
 
     // ─── 🔔 التنبيهات ───
 
@@ -837,9 +989,16 @@
       $('bookSummary').textContent =
         `${offer.owner} — الإجمالي ${offer.sellAmount} ${offer.currency} لعدد ${offer.passengerCount} مسافر`;
       let html = '';
+      // قائمة المسافرين المحفوظين: أكبر احتكاك في البوابة كان إدخال
+      // خمسة حقول لكل مسافر في كل حجز — عائلة من أربعة تعني عشرين حقلاً.
+      const savedOptions = savedTravellers.length
+        ? `<option value="">— اختر مسافراً محفوظاً —</option>` +
+          savedTravellers.map(t => `<option value="${esc(t.id)}">${esc(t.label)}</option>`).join('')
+        : '';
       for (let i = 0; i < offer.passengerCount; i++) {
         html += `<fieldset style="border:1px dashed var(--border);border-radius:10px;padding:10px;margin-top:10px">
           <legend style="font-size:13px;color:var(--muted)">المسافر ${i + 1}</legend>
+          ${savedOptions ? `<div style="margin-bottom:8px"><select data-fill="${i}">${savedOptions}</select></div>` : ''}
           <div class="row">
             <div><label>اللقب</label><select data-p="title"><option value="mr">Mr</option><option value="ms">Ms</option><option value="mrs">Mrs</option></select></div>
             <div><label>الاسم الأول (لاتيني)</label><input data-p="givenName" placeholder="AHMED" /></div>
@@ -854,6 +1013,17 @@
         <div><label>الهاتف (بصيغة دولية)</label><input id="cPhone" placeholder="+966501234567" /></div>
       </div>`;
       $('bookForm').innerHTML = html;
+      // ملء بيانات مسافر محفوظ في مجموعته — يبقى كل حقل قابلاً للتعديل
+      $('bookForm').querySelectorAll('[data-fill]').forEach(sel =>
+        sel.addEventListener('change', () => {
+          const t = savedTravellers.find(x => x.id === sel.value);
+          if (!t) return;
+          const fs = sel.closest('fieldset');
+          ['title', 'givenName', 'familyName', 'bornOn', 'gender'].forEach(k => {
+            const el = fs.querySelector(`[data-p="${k}"]`);
+            if (el) el.value = t[k] || '';
+          });
+        }));
       $('bookError').classList.add('hidden');
       $('bookDialog').showModal();
     }
@@ -1320,6 +1490,24 @@
       div.textContent = summary;
       $('chatLog').appendChild(div);
       $('chatLog').scrollTop = $('chatLog').scrollHeight;
+    }
+
+    // آخر محادثة تُستأنف بدل أن يبدأ المسافر شرحه من الصفر كل مرة.
+    // مرة واحدة لكل تحميل صفحة: chatHistory غير الفارغ يعني أنها حُمِّلت
+    // سلفاً أو أن حواراً جارٍ — واستبداله يمحو كلاماً حياً.
+    let conversationRestored = false;
+    async function restoreConversation() {
+      if (conversationRestored || chatHistory.length) return;
+      conversationRestored = true;
+      try {
+        const res = await api('/api/travel/agent/conversation');
+        if (!res.ok) return;
+        const { messages } = await res.json();
+        if (!messages.length) return;
+        chatHistory = messages;
+        messages.forEach(m => pushMsg(m.role, m.content));
+        pushAction('↩️ استُؤنفت محادثتك السابقة');
+      } catch { /* محادثة جديدة تعمل تماماً — الاستئناف إثراء */ }
     }
 
     $('chatForm').addEventListener('submit', async (e) => {

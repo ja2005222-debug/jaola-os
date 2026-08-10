@@ -15,6 +15,7 @@ export function createFileStore({ dataDir }) {
     const watchesPath = path.join(dataDir, 'priceWatches.json');
     const notificationsPath = path.join(dataDir, 'notifications.json');
     const prefsPath = path.join(dataDir, 'notificationPrefs.json');
+    const profilesPath = path.join(dataDir, 'profiles.json');
 
     function ensureDir() {
         fs.mkdirSync(dataDir, { recursive: true });
@@ -41,6 +42,8 @@ export function createFileStore({ dataDir }) {
     const writeNotifications = rows => writeJson(notificationsPath, rows);
     const readPrefs = () => readJson(prefsPath);
     const writePrefs = rows => writeJson(prefsPath, rows);
+    const readProfiles = () => readJson(profilesPath);
+    const writeProfiles = rows => writeJson(profilesPath, rows);
 
     return {
         name: 'file',
@@ -179,6 +182,31 @@ export function createFileStore({ dataDir }) {
             }
             if (count > 0) writeNotifications(rows);
             return count;
+        },
+
+        // ملف واحد لكل مستخدم (تفضيلات + مسافرون + آخر محادثة): الكتابة
+        // ذرّية على الملف كله فلا تتعارض حقول، والحذف الكامل صفٌّ واحد
+        // يُزال — لا بقايا موزّعة على جداول.
+        async getProfile(username) {
+            const row = readProfiles().find(p => p.username === username);
+            return row ? row.profile : null;
+        },
+
+        async setProfile(username, profile) {
+            const rows = readProfiles();
+            const row = rows.find(p => p.username === username);
+            if (row) row.profile = profile;
+            else rows.push({ username, profile });
+            writeProfiles(rows);
+            return profile;
+        },
+
+        async deleteProfile(username) {
+            const rows = readProfiles();
+            const next = rows.filter(p => p.username !== username);
+            if (next.length === rows.length) return false;
+            writeProfiles(next);
+            return true;
         },
 
         async getNotificationPrefs(username) {
