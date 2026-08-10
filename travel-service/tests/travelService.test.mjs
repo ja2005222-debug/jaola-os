@@ -32,6 +32,7 @@ import { createPostgresStore } from '../src/store/postgresStore.js';
 import { createTravelAgent, executeAgentTool, buildTravelAgent, AGENT_TOOLS } from '../src/agent/agent.js';
 import { listPriceWatchesByUser, cancelPriceWatch } from '../src/priceWatches.js';
 import { checkWatches } from '../src/priceWatchPoller.js';
+import { searchAirports, AIRPORT_COORDS } from '../src/airports.js';
 import { getDestinationWeather, convertCurrency } from '../src/travelInfo.js';
 import { buildTopDestinations, CURATED_DESTINATIONS } from '../src/topDestinations.js';
 import { createLiteApiStaysProvider } from '../src/providers/liteApiStaysProvider.js';
@@ -458,6 +459,73 @@ describe('liteApiStaysProvider: بحث فنادق حقيقي (رد Sandbox حي 
         assert.equal(await provider.getQuote('لا-وجود'), null);
     });
 
+});
+
+// ─── 🔤 بحث المطارات بالاسم (عربي/إنجليزي) بدل حفظ رموز IATA ──────────
+describe('searchAirports: بحث بالمدينة أو الدولة، عربياً أو إنجليزياً', () => {
+    const codes = q => searchAirports(q, 8).map(a => a.iata);
+
+    test('العربية بكل صورها الشائعة تصل لنفس المطار', () => {
+        // العيب الذي يعالجه التطبيع: من يكتب أياً من هذه يقصد الرياض،
+        // والمقارنة النصية الخام تفشل في أغلبها.
+        for (const q of ['الرياض', 'رياض', 'الریاض', 'الريااض'.replace('اا', 'ا'), ' الرياض ']) {
+            assert.ok(codes(q).includes('RUH'), `فشل: ${q}`);
+        }
+        // تاء مربوطة/هاء، وألف مقصورة
+        assert.ok(codes('جدة').includes('JED'));
+        assert.ok(codes('جده').includes('JED'));
+    });
+
+    test('اسم الدولة يعطي كل مطاراتها المغطّاة', () => {
+        const sa = codes('السعودية');
+        for (const c of ['RUH', 'JED', 'DMM', 'MED', 'AHB']) assert.ok(sa.includes(c), `ناقص: ${c}`);
+        assert.deepEqual(codes('سعودي').sort(), sa.sort()); // بلا «ال» نفس النتيجة
+        const eg = codes('مصر');
+        for (const c of ['CAI', 'HRG', 'SSH']) assert.ok(eg.includes(c), `ناقص: ${c}`);
+    });
+
+    test('الإنجليزية ورموز IATA تعمل بنفس الحقل', () => {
+        assert.ok(codes('london').includes('LHR'));
+        assert.ok(codes('London').includes('LGW'));
+        assert.ok(codes('Saudi').includes('RUH'));
+        assert.equal(codes('ruh')[0], 'RUH');   // تطابق الرمز يتصدّر
+        assert.equal(codes('RUH')[0], 'RUH');
+    });
+
+    test('الترتيب: المدينة قبل الدولة، والرمز المطابق أولاً', () => {
+        // «مصر» دولة لكل من CAI/HRG/SSH؛ و«القاهرة» مدينة واحدة
+        assert.equal(codes('القاهرة')[0], 'CAI');
+        // بحث بحرفين على الأقل، وما دونه لا يُرجع شيئاً (تفادي ضجيج)
+        assert.deepEqual(searchAirports('ا'), []);
+        assert.deepEqual(searchAirports(''), []);
+        assert.deepEqual(searchAirports(null), []);
+    });
+
+    test('اسم غير مغطّى يُرجع فارغاً بدل اقتراح مطار لا نخدمه', () => {
+        // نطاق البحث = المطارات التي نملك إحداثياتها فعلاً، فاقتراح غيرها
+        // إغراء بفشل لاحق في الفنادق/الطقس.
+        assert.deepEqual(codes('أنتاركتيكا'), []);
+        assert.deepEqual(codes('zzzzz'), []);
+    });
+
+    test('كل نتيجة تحمل ما تحتاجه الواجهة للعرض والاختيار', () => {
+        const [first] = searchAirports('الرياض');
+        assert.equal(first.iata, 'RUH');
+        assert.equal(first.city, 'الرياض');
+        assert.equal(first.country, 'السعودية');
+        assert.equal(first.cityEn, 'Riyadh');
+        assert.match(first.label, /الرياض/);
+        assert.match(first.label, /RUH/);
+    });
+
+    test('كل مطار مغطّى له اسم إنجليزي (لا فجوات في البيانات)', () => {
+        for (const [iata, a] of Object.entries(AIRPORT_COORDS)) {
+            assert.ok(a.cityEn, `بلا cityEn: ${iata}`);
+            assert.ok(a.countryEn, `بلا countryEn: ${iata}`);
+            // ويجب أن يكون قابلاً للإيجاد باسمه الإنجليزي فعلاً
+            assert.ok(searchAirports(a.cityEn, 20).some(r => r.iata === iata), `لا يُوجد بالإنجليزية: ${iata}`);
+        }
+    });
 });
 
 // ─── المجموعة الكاملة، مُعامَلة بمصنع المخزن ──────────────────────────
