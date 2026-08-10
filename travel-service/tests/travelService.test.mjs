@@ -32,7 +32,7 @@ import { createPostgresStore } from '../src/store/postgresStore.js';
 import { createTravelAgent, executeAgentTool, buildTravelAgent, AGENT_TOOLS } from '../src/agent/agent.js';
 import { listPriceWatchesByUser, cancelPriceWatch } from '../src/priceWatches.js';
 import { checkWatches } from '../src/priceWatchPoller.js';
-import { searchAirports, AIRPORT_COORDS } from '../src/airports.js';
+import { searchAirports, airportForTimezone, AIRPORT_COORDS } from '../src/airports.js';
 import { getDestinationWeather, convertCurrency } from '../src/travelInfo.js';
 import { buildTopDestinations, CURATED_DESTINATIONS } from '../src/topDestinations.js';
 import { createLiteApiStaysProvider } from '../src/providers/liteApiStaysProvider.js';
@@ -476,12 +476,58 @@ describe('searchAirports: بحث بالمدينة أو الدولة، عربيا
         assert.ok(codes('جده').includes('JED'));
     });
 
-    test('اسم الدولة يعطي كل مطاراتها المغطّاة', () => {
+    test('اسم الدولة يعطي مطاراتها، والبوابات الرئيسية أولاً', () => {
+        // ⚠️ ما يحرسه هذا الاختبار: بعد توسيع التغطية صار للسعودية ٢٣
+        // مطاراً والقائمة تُقتطع عند ٨. بالترتيب الأبجدي وحده كانت «أبها»
+        // و«الباحة» تُزيحان الرياض وجدة خارج النتائج — عيب حقيقي ظهر عند
+        // التوسيع. الرتبة (بوابة دولية = 1) تسبق الأبجدية لهذا السبب.
         const sa = codes('السعودية');
-        for (const c of ['RUH', 'JED', 'DMM', 'MED', 'AHB']) assert.ok(sa.includes(c), `ناقص: ${c}`);
+        for (const c of ['RUH', 'JED', 'DMM', 'MED']) assert.ok(sa.includes(c), `بوابة رئيسية غائبة: ${c}`);
         assert.deepEqual(codes('سعودي').sort(), sa.sort()); // بلا «ال» نفس النتيجة
         const eg = codes('مصر');
         for (const c of ['CAI', 'HRG', 'SSH']) assert.ok(eg.includes(c), `ناقص: ${c}`);
+        // دولة كل مطاراتها مضافة حديثاً: بوابتها الرئيسية تتصدّر أيضاً
+        assert.equal(codes('اليمن')[0], 'SAH');
+    });
+
+    test('🧭 مطار الانطلاق من المنطقة الزمنية: بلا إذن موقع ولا خدمة خارجية', () => {
+        // أسماء IANA تحمل المدينة نفسها، فتُشتقّ وتُمرَّر على نفس البحث —
+        // فيغطّي معظم العالم بلا جدول يدوي.
+        const expect = {
+            'Asia/Riyadh': 'RUH', 'Asia/Dubai': 'DXB', 'Africa/Cairo': 'CAI',
+            'Europe/Istanbul': 'IST', 'Asia/Baghdad': 'BGW', 'Asia/Amman': 'AMM',
+            'Asia/Beirut': 'BEY', 'Asia/Muscat': 'MCT', 'Africa/Casablanca': 'CMN',
+            'Africa/Tunis': 'TUN', 'Africa/Khartoum': 'KRT', 'Africa/Tripoli': 'TIP',
+            'Asia/Aden': 'ADE', 'Europe/London': 'LHR', 'Europe/Paris': 'CDG',
+            'America/New_York': 'JFK', // الشرطة السفلية تُحوَّل مسافةً
+        };
+        for (const [tz, iata] of Object.entries(expect)) {
+            assert.equal(airportForTimezone(tz)?.iata, iata, `فشل: ${tz}`);
+        }
+        // مناطق تُسمّى باسم الدولة لا المدينة — يلتقطها البحث بالدولة
+        assert.equal(airportForTimezone('Asia/Qatar')?.iata, 'DOH');
+        assert.equal(airportForTimezone('Asia/Bahrain')?.iata, 'BAH');
+        assert.equal(airportForTimezone('Asia/Kuwait')?.iata, 'KWI');
+
+        // منطقة لا نعرف لها مطاراً → null، والواجهة تترك الحقل فارغاً
+        // بدل فرض مطار خاطئ على المستخدم.
+        for (const tz of ['Antarctica/Troll', 'UTC', '', null, undefined, 'Zzz/Nowhere']) {
+            assert.equal(airportForTimezone(tz), null, `كان يجب أن يُرجع null: ${tz}`);
+        }
+    });
+
+    test('توسعة الشرق الأوسط: المطارات الجديدة قابلة للإيجاد بأسمائها', () => {
+        // عيّنة عبر الدول المضافة — الإقليمية تُوجَد بالاسم المباشر حتى
+        // وإن لم تتصدّر البحث بالدولة.
+        const expect = {
+            'الطائف': 'TIF', 'تبوك': 'TUU', 'بريدة': 'ELQ', 'نجران': 'EAM', 'جازان': 'GIZ',
+            'العلا': 'ULH', 'الأقصر': 'LXR', 'أسوان': 'ASW', 'الإسكندرية': 'HBE',
+            'صلالة': 'SLL', 'عدن': 'ADE', 'العقبة': 'AQJ', 'البصرة': 'BSR', 'النجف': 'NJF',
+            'أنطاليا': 'AYT', 'أنقرة': 'ESB', 'طنجة': 'TNG', 'جربة': 'DJE', 'طرابلس': 'TIP',
+        };
+        for (const [name, iata] of Object.entries(expect)) {
+            assert.ok(searchAirports(name, 5).some(a => a.iata === iata), `${name} لا يُوجد ${iata}`);
+        }
     });
 
     test('الإنجليزية ورموز IATA تعمل بنفس الحقل', () => {
@@ -730,6 +776,23 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             } finally {
                 await new Promise(r => s.close(r));
             }
+        });
+
+        test('🔤🧭 مسارا المطارات: البحث بالاسم ومطار الانطلاق الافتراضي', async () => {
+            const token = makeToken('airport-user');
+            assert.equal((await call('/api/travel/airports?q=RUH')).status, 401); // محمي بالتوكن
+            const search = await call('/api/travel/airports?q=' + encodeURIComponent('الرياض'), { token });
+            assert.equal(search.status, 200);
+            assert.equal(search.data.airports[0].iata, 'RUH');
+
+            const def = await call('/api/travel/airports/default?tz=' + encodeURIComponent('Asia/Riyadh'), { token });
+            assert.equal(def.status, 200);
+            assert.equal(def.data.airport.iata, 'RUH');
+
+            // منطقة مجهولة → null صريح (الواجهة تترك الحقل فارغاً)
+            const unknown = await call('/api/travel/airports/default?tz=UTC', { token });
+            assert.equal(unknown.status, 200);
+            assert.equal(unknown.data.airport, null);
         });
 
         test('🏨ℹ️ GET /api/travel/stays/hotels/:id: تفاصيل حقيقية، و501 لمزوّد لا يدعمها', async () => {

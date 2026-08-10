@@ -23,7 +23,7 @@ import { createBooking, getBooking, getBookingByProviderOrderId, listBookingsByU
 import { buildStore } from './src/store/index.js';
 import { buildProvider, buildStaysProvider, buildCarsProvider } from './src/providers/index.js';
 import { buildTravelAgent } from './src/agent/agent.js';
-import { airportCoords, searchAirports } from './src/airports.js';
+import { airportCoords, searchAirports, airportForTimezone } from './src/airports.js';
 import { createPriceWatch, listPriceWatchesByUser, cancelPriceWatch } from './src/priceWatches.js';
 import { checkWatches } from './src/priceWatchPoller.js';
 import { getDestinationWeather, convertCurrency, MAX_FORECAST_DAYS_AHEAD } from './src/travelInfo.js';
@@ -877,6 +877,12 @@ export function createApp({
     // معدّل خاص به (verifyToken وحده يكفي كبقية المسارات).
     app.get('/api/travel/airports', verifyToken, wrap(async (req, res) => {
         res.json({ airports: searchAirports(req.query.q, 8) });
+    }));
+
+    // مطار الانطلاق الافتراضي من المنطقة الزمنية للمتصفح — قيمة مقترحة
+    // لا مفروضة: الواجهة تعبّئها ويغيّرها المستخدم متى شاء، وتحفظ اختياره.
+    app.get('/api/travel/airports/default', verifyToken, wrap(async (req, res) => {
+        res.json({ airport: airportForTimezone(req.query.tz) });
     }));
 
     app.get('/api/travel/config', verifyToken, wrap(async (req, res) => {
