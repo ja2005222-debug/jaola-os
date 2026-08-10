@@ -8,6 +8,7 @@
  */
 
 import { seedOf, pad } from './mockUtils.js';
+import { sortOffers, totalDurationMin } from './duffelProvider.js';
 
 const MOCK_AIRLINES = ['طيران جاولا', 'أجنحة الصقر', 'سماء العرب'];
 const MOCK_CURRENCY = 'USD';
@@ -60,7 +61,7 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
         name: 'mock',
         mode: 'mock',
 
-        async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, children = 0, cabin = 'economy' }) {
+        async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, children = 0, cabin = 'economy', sort = 'price' }) {
             const seed = seedOf(`${origin}${destination}${departDate}${cabin}`);
             const paxCount = adults + children;
             const results = [];
@@ -79,12 +80,16 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
                     cabin,
                     passengerCount: paxCount,
                     expiresAt: new Date(Date.now() + 30 * 60000).toISOString(),
+                    // تعادل عقد duffelProvider: الشعار null (لا نختلق رابطاً)
+                    ownerLogo: null,
+                    ownerIata: null,
+                    totalDurationMin: totalDurationMin(slices),
                     slices,
                 };
                 offers.set(offer.id, offer);
                 results.push({ ...offer });
             }
-            return results;
+            return sortOffers(results, sort);
         },
 
         async getOffer(offerId) {

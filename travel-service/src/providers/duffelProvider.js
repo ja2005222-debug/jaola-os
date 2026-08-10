@@ -22,6 +22,8 @@
 
 import { createDuffelClient } from './duffelClient.js';
 
+const MAX_RESULTS = 10; // ما يكفي شاشة النتائج — Duffel قد يعيد المئات
+
 // ⚠️ إثراء اختياري (المرحلة ٢ج): Duffel يُرجع أمتعة كل راكب لكل قطاع عبر
 // slice.segments[].passengers[].baggages وفق التوثيق العام — لم يُتحقَّق
 // منه ضد رد حي بعد (نفس صراحة الملف كله). غياب الحقل لا يكسر شيئاً —
@@ -60,14 +62,44 @@ export function normalizeDuffelOffer(raw, passengerIds) {
     return {
         id: raw.id,
         owner: raw.owner?.name || '',
+        // ⚠️ شعار الناقل: Duffel يوثّق logo_symbol_url على كائن شركة
+        // الطيران، لكنه **غير مُتحقَّق منه ضد رد حي** من هذه البيئة. غيابه
+        // غير ضار إطلاقاً: null ← الواجهة تعرض البديل النصي كما كانت،
+        // بلا صورة مكسورة (نفس مبدأ baggage: نعرضه إن وصل لا نختلقه).
+        ownerLogo: raw.owner?.logo_symbol_url || raw.owner?.logo_lockup_url || null,
+        ownerIata: raw.owner?.iata_code || null,
         netAmount: Number(raw.total_amount),
         currency: raw.total_currency,
         cabin: raw.cabin_class || null,
         passengerCount: (raw.passengers || []).length || passengerIds.length,
         expiresAt: raw.expires_at || null,
+        totalDurationMin: totalDurationMin(slices),
         passengerIds,
         slices,
     };
+}
+
+/** إجمالي زمن الرحلة (كل الاتجاهات) — أساس الترتيب بـ"الأسرع". */
+export function totalDurationMin(slices) {
+    const mins = (slices || []).map(s => s.durationMin).filter(Number.isFinite);
+    return mins.length ? mins.reduce((a, b) => a + b, 0) : null;
+}
+
+/**
+ * ترتيب العروض قبل الاقتطاع — الترتيب بعد الاقتطاع كان سيعطي "الأسرع من
+ * بين الأرخص" لا الأسرع فعلاً. العروض بلا مدة معروفة تُدفع لآخر القائمة
+ * بدل أن تتصدّرها بقيمة صفرية مضلّلة.
+ */
+export function sortOffers(offers, sort = 'price') {
+    const copy = offers.slice();
+    if (sort === 'duration') {
+        return copy.sort((a, b) => {
+            const da = a.totalDurationMin ?? Infinity;
+            const db = b.totalDurationMin ?? Infinity;
+            return da - db || a.netAmount - b.netAmount; // تعادل المدة → الأرخص أولاً
+        });
+    }
+    return copy.sort((a, b) => a.netAmount - b.netAmount);
 }
 
 export function createDuffelProvider({ apiKey, apiUrl, fetchImpl }) {
@@ -78,7 +110,7 @@ export function createDuffelProvider({ apiKey, apiUrl, fetchImpl }) {
         name: 'duffel',
         mode: client.mode,
 
-        async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, children = 0, cabin = 'economy' }) {
+        async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, children = 0, cabin = 'economy', sort = 'price' }) {
             const slices = [{ origin, destination, departure_date: departDate }];
             if (returnDate) slices.push({ origin: destination, destination: origin, departure_date: returnDate });
             const passengers = [
@@ -89,12 +121,14 @@ export function createDuffelProvider({ apiKey, apiUrl, fetchImpl }) {
                 data: { slices, passengers, cabin_class: cabin },
             });
             const passengerIds = (data.passengers || []).map(p => p.id);
-            // أرخص 10 عروض تكفي شاشة النتائج — Duffel قد يعيد المئات
-            return (data.offers || [])
-                .slice()
-                .sort((a, b) => Number(a.total_amount) - Number(b.total_amount))
-                .slice(0, 10)
-                .map(o => normalizeDuffelOffer(o, passengerIds));
+            // ⚠️ التطبيع قبل الترتيب متعمَّد: المدة لا تُعرف إلا بعده، ولو
+            // اقتطعنا الأرخص عشرة أولاً (كما كان) لأعطى ترتيبُ "الأسرع"
+            // أسرعَ العشرة الأرخص لا الأسرع فعلاً. Duffel قد يعيد المئات،
+            // والتطبيع حساب محلي رخيص فلا مشكلة في تطبيقه على الكل.
+            const normalized = (data.offers || [])
+                .map(o => normalizeDuffelOffer(o, passengerIds))
+                .filter(o => Number.isFinite(o.netAmount));
+            return sortOffers(normalized, sort).slice(0, MAX_RESULTS);
         },
 
         async getOffer(offerId) {

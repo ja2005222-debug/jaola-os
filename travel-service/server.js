@@ -33,6 +33,7 @@ import { sendMail, mailReady } from './src/mailer.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const CABINS = ['economy', 'premium_economy', 'business', 'first'];
+const SORTS = ['price', 'duration']; // الأرخص | الأسرع
 const MAX_ADULTS = 9;
 const MAX_CHILDREN = 8;
 const MAX_ROOMS = 5;
@@ -143,7 +144,11 @@ export function validateSearchParams(body) {
     if (!CABINS.includes(cabin)) {
         return { error: `درجة غير معروفة (المتاح: ${CABINS.join('، ')}).` };
     }
-    return { values: { origin, destination, departDate, returnDate, adults, children, cabin } };
+    const sort = body?.sort ? String(body.sort) : 'price';
+    if (!SORTS.includes(sort)) {
+        return { error: `ترتيب غير معروف (المتاح: ${SORTS.join('، ')}).` };
+    }
+    return { values: { origin, destination, departDate, returnDate, adults, children, cabin, sort } };
 }
 
 /** يتحقق من بيانات الركاب والتواصل — {error} أو {values}. */
