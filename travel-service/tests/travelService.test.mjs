@@ -599,6 +599,32 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             }
         });
 
+        test('📞 الهاتف E.164 إلزامي: رقم محلي يُرفض عندنا قبل أن يرفضه Duffel', () => {
+            // عُطل حي حقيقي: 05xxxxxxxx كان يمرّ ثم يرفضه Duffel بـ422
+            // **بعد** إنشاء حجز يتحول failed. الآن يُرفض بتحققنا بلا أي أثر.
+            for (const bad of ['0500000000', '966500000000', '+0500000000', '', '+123', 'abc']) {
+                const flight = validatePassengers({ ...VALID_PAX, contact: { email: 'a@test.com', phone: bad } }, 1);
+                assert.ok(flight.error, `طيران قَبِل رقماً فاسداً: ${bad}`);
+                assert.match(flight.error, /بصيغة دولية/);
+                // نفس الصرامة للفنادق والسيارات — لا مسار يتسرب منه رقم فاسد
+                assert.ok(validateGuests({ ...VALID_GUESTS, contact: { email: 'a@test.com', phone: bad } }).error, `فنادق قَبِلت: ${bad}`);
+                assert.ok(validateDrivers({ ...VALID_DRIVERS, contact: { email: 'a@test.com', phone: bad } }).error, `سيارات قَبِلت: ${bad}`);
+            }
+
+            // صيغ صحيحة تمرّ، مع تطبيع 00 → + والفواصل الشكلية
+            const cases = [
+                ['+966501234567', '+966501234567'],
+                ['00966501234567', '+966501234567'],   // بادئة الاتصال الدولي
+                ['+966 50 123 4567', '+966501234567'], // مسافات
+                ['+966-50-123-4567', '+966501234567'], // شرطات
+            ];
+            for (const [input, expected] of cases) {
+                const res = validatePassengers({ ...VALID_PAX, contact: { email: 'a@test.com', phone: input } }, 1);
+                assert.ok(!res.error, `رُفض رقم صحيح ${input}: ${res.error}`);
+                assert.equal(res.values.contact.phone, expected);
+            }
+        });
+
         test('💥 فشل المزوّد وقت البحث: 502 بتفصيل الرسالة الفعلية لا 500 مبهم', async () => {
             // نفس عطل حقيقي واجهه المالك: Duffel/LiteAPI يرفض بحث الفنادق
             // فيسقط كخطأ 500 عام يخفي السبب — تحقق الإصلاح لثلاثة أنواع البحث.
