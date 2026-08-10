@@ -19,7 +19,7 @@ import jwt from 'jsonwebtoken';
 import { createApp, validateSearchParams, validatePassengers, validateStaySearchParams, validateGuests, validateCarSearchParams, validateDrivers, verifyDuffelWebhookSignature } from '../server.js';
 import crypto from 'crypto';
 import { createMockTravelProvider } from '../src/providers/mockProvider.js';
-import { createDuffelProvider, normalizeDuffelOffer } from '../src/providers/duffelProvider.js';
+import { createDuffelProvider, normalizeDuffelOffer, sortOffers, totalDurationMin } from '../src/providers/duffelProvider.js';
 import { createMockStaysProvider } from '../src/providers/mockStaysProvider.js';
 import { normalizeDuffelStayResult } from '../src/providers/duffelStaysProvider.js';
 import { createMockCarsProvider } from '../src/providers/mockCarsProvider.js';
@@ -688,6 +688,48 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             } finally {
                 await new Promise(r => s.close(r));
             }
+        });
+
+        test('↕️ الترتيب أرخص/أسرع: يُطبَّق قبل الاقتطاع لا بعده', async () => {
+            // 💡 جوهر الاختبار: لو رُتّب بعد الاقتطاع لأعطى "أسرع العشرة
+            // الأرخص" لا الأسرع فعلاً. هنا أسرع رحلة هي الأغلى عمداً،
+            // فلا تظهر أولاً إلا إذا كان الترتيب قبل الاقتطاع فعلياً.
+            const many = Array.from({ length: 25 }, (_, i) => ({
+                netAmount: 100 + i,                       // الأرخص أولاً = i=0
+                totalDurationMin: 600 - i * 10,           // الأسرع = i=24 (الأغلى)
+                id: 'off_' + i,
+            }));
+            const byPrice = sortOffers(many, 'price');
+            assert.equal(byPrice[0].id, 'off_0');
+            const byDuration = sortOffers(many, 'duration');
+            assert.equal(byDuration[0].id, 'off_24');     // الأسرع رغم أنه الأغلى
+            assert.equal(byDuration[0].totalDurationMin, 360);
+
+            // مدة مجهولة → آخر القائمة لا أولها (لا تتصدّر بقيمة صفرية مضلّلة)
+            const withUnknown = sortOffers(
+                [{ id: 'a', netAmount: 50, totalDurationMin: null }, { id: 'b', netAmount: 90, totalDurationMin: 120 }],
+                'duration');
+            assert.equal(withUnknown[0].id, 'b');
+            // تعادل المدة → الأرخص أولاً
+            const tie = sortOffers(
+                [{ id: 'x', netAmount: 90, totalDurationMin: 120 }, { id: 'y', netAmount: 50, totalDurationMin: 120 }],
+                'duration');
+            assert.equal(tie[0].id, 'y');
+
+            assert.equal(totalDurationMin([{ durationMin: 100 }, { durationMin: 50 }]), 150); // ذهاب+عودة
+            assert.equal(totalDurationMin([]), null);
+
+            // المسار كاملاً: ترتيب فاسد يُرفض، والصحيح يمرّ للمزوّد
+            const token = makeToken('sorter');
+            assert.equal((await call('/api/travel/flights/search', {
+                method: 'POST', token, body: { ...SEARCH_BODY(), sort: 'nonsense' },
+            })).status, 400);
+            const ok = await call('/api/travel/flights/search', {
+                method: 'POST', token, body: { ...SEARCH_BODY(), sort: 'duration' },
+            });
+            assert.equal(ok.status, 200);
+            const durations = ok.data.offers.map(o => o.totalDurationMin ?? Infinity);
+            assert.deepEqual(durations, durations.slice().sort((a, b) => a - b), 'النتائج غير مرتَّبة بالأسرع');
         });
 
         test('📞 الهاتف E.164 إلزامي: رقم محلي يُرفض عندنا قبل أن يرفضه Duffel', () => {

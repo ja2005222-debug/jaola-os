@@ -160,6 +160,12 @@
                 <option value="first">الأولى</option>
               </select>
             </div>
+            <div><label>الترتيب</label>
+              <select id="fSort">
+                <option value="price">💰 الأرخص أولاً</option>
+                <option value="duration">⚡ الأسرع أولاً</option>
+              </select>
+            </div>
           </div>
           <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
             <button class="primary" id="searchBtn">🔎 ابحث</button>
@@ -372,6 +378,17 @@
       </div>`;
     }
 
+    /**
+     * شعار الناقل — يُعرض فقط إن أعاد المزوّد رابطاً فعلياً. غيابه يعيد
+     * سلسلة فارغة فتبقى البطاقة كما كانت بالاسم النصي، بلا صورة مكسورة
+     * ولا رابط مُختلَق من رمز IATA (لا نخترع مصادر صور).
+     */
+    function airlineLogoHtml(o) {
+      if (!o.ownerLogo) return '';
+      return `<img src="${esc(o.ownerLogo)}" alt="${esc(o.owner || '')}" loading="lazy"
+        onerror="this.remove()" style="height:22px;vertical-align:middle;margin-left:8px;border-radius:4px" />`;
+    }
+
     const CABIN_AR = {
       economy: 'اقتصادية', premium_economy: 'اقتصادية مميزة',
       business: 'رجال الأعمال', first: 'الأولى',
@@ -408,7 +425,7 @@
           origin: $('fOrigin').value, destination: $('fDest').value,
           departDate: $('fDepart').value, returnDate: $('fReturn').value || null,
           adults: Number($('fAdults').value), children: Number($('fChildren').value),
-          cabin: $('fCabin').value,
+          cabin: $('fCabin').value, sort: $('fSort').value,
         };
         const res = await api('/api/travel/flights/search', { method: 'POST', body: JSON.stringify(body) });
         const data = await res.json();
@@ -426,7 +443,8 @@
         $('results').innerHTML = data.offers.map((o, i) => `
           <div class="card offer">
             <div style="flex:1">
-              <div class="route">${esc(o.owner)}</div>
+              <div class="route">${airlineLogoHtml(o)}${esc(o.owner)}${
+                o.totalDurationMin ? `<span class="note" style="margin-right:8px">إجمالي ${fmtDur(o.totalDurationMin)}</span>` : ''}</div>
               ${o.slices.map(sliceHtml).join('')}
               <button class="det-toggle" data-flight-det="${i}">▾ تفاصيل الرحلة والأمتعة</button>
             </div>
