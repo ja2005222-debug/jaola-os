@@ -221,6 +221,34 @@ open-meteo/frankfurter)؛ أول تشغيل فعلي على الخادم الم�
   خارجي إضافي؛ الحجز/الإلغاء الفعليان أول اختبار حقيقي لهما بعد تجهيز
   Stripe لاحقاً.
 
+## المرحلة ٣هـ: استقبال Duffel webhooks (تغييرات الطيران بعد الحجز)
+
+قيمة جديدة لا علاقة لها بحظر Stays/Cars — الطيران يعمل حياً فعلاً، لكن
+لو شركة الطيران غيّرت أو ألغت رحلة **بعد** إصدار الحجز، ما كان المسافر
+يعرف إلا لو راجع بنفسه. الآن:
+
+- `POST /api/travel/webhooks/duffel` — مسار عام بلا `verifyToken` (Duffel
+  خادم لا مستخدم مسجَّل دخول)، محمي حصراً بتحقق توقيع HMAC.
+- `verifyDuffelWebhookSignature` (`server.js`): **الخوارزمية مؤكَّدة
+  حرفياً** من نموذج Python الرسمي بتوثيق Duffel (Notifications) — هيدر
+  `X-Duffel-Signature` بصيغة `t=<timestamp>,v1=<hex>`، والتوقيع
+  `HMAC-SHA256(secret, "${t}.${rawBody}")`، مقارنة بزمن ثابت
+  (`crypto.timingSafeEqual`). ميزة أمنية — لا نفس تساهل تخمين أشكال
+  الأسعار بمزوّدات أخرى؛ لا تُبنى بلا صيغة مؤكَّدة.
+- `express.json({ verify })` يحفظ `req.rawBody` (البايتات الخام قبل
+  التفكيك) — التوقيع يُحسَب على النص الخام بالضبط كما وصل، لا نسخة
+  مُعاد تسلسلها من JSON المُفكَّك.
+- عند `order.airline_initiated_change_detected`: بحث الحجز بـ
+  `getBookingByProviderOrderId` (دالة جديدة بكلا المخزنين) ثم بريد فوري
+  للمسافر (نفس بنية بريد التأكيد/الإلغاء الموجود). ⚠️ شكل `event.data.object`
+  لهذا النوع تحديداً غير مؤكَّد بمثال حي (المثال الرسمي المُشاهَد كان لنوع
+  `order.created` بجسم فارغ `{}`) — استخراج معرّف الطلب بمسارات احتياطية متعددة.
+- بلا `DUFFEL_WEBHOOK_SECRET` → 503 صريح، لا قبول صامت لطلبات غير موثَّقة.
+- الإعداد: أنشئ webhook بلوحة Duffel (Developers → Webhooks) بعنوان
+  `https://<رابط النشر>/api/travel/webhooks/duffel` وحدث
+  `order.airline_initiated_change_detected` فقط، وانسخ الـsecret (يظهر
+  مرة واحدة) إلى `DUFFEL_WEBHOOK_SECRET`.
+
 ## ⚠️ إجراء مطلوب من المالك: تفعيل Stays وCars لدى Duffel
 
 بحث الفنادق والسيارات مبنيان ومُختبَران بالكامل ضد مزوّد المحاكاة، لكن
@@ -261,6 +289,7 @@ API حقيقي مقروء (نفس معيار Stays لا Cars — صيغ مُخم
 | `DUFFEL_API_KEY` | مفتاح إنتاج | Duffel حي — **يتطلب رصيد Duffel مشحوناً** + نفس تفعيل Stays/Cars |
 | (غير مضبوط) | — | مزوّد محاكاة حتمي للثلاثة (تطوير كامل التدفق بلا مفاتيح) |
 | `LITEAPI_API_KEY` | يبدأ بـ`sand_` | LiteAPI/Nuitee Sandbox — **مزوّد الفنادق الفعلي الآن** (أولوية على Duffel Stays المعطَّل)؛ البحث مُختبَر بالكامل، الحجز/الإلغاء مبنيّان لكن ردّهما الحقيقي لم يُتحقَّق منه بعد (ينتظر Stripe — راجع المرحلة ٣د) |
+| `DUFFEL_WEBHOOK_SECRET` | من لوحة Duffel (Developers → Webhooks) | إشعارات تغيير الطيران بعد الحجز (`order.airline_initiated_change_detected`) — راجع المرحلة ٣هـ. بلا هذا: `/api/travel/webhooks/duffel` يرد 503 |
 
 الايجنت: `TRAVEL_AGENT_API_KEY` (+ اختيارياً `TRAVEL_AGENT_API_URL` و
 `TRAVEL_AGENT_MODEL`) — أي خدمة متوافقة مع OpenAI chat/completions تدعم

@@ -13,12 +13,13 @@
  */
 import express from 'express';
 import cors from 'cors';
+import crypto from 'crypto';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { buildVerifyToken } from './src/auth.js';
 import { readMarkupPct, applyMarkup } from './src/pricing.js';
-import { createBooking, getBooking, listBookingsByUser, transitionBooking } from './src/bookings.js';
+import { createBooking, getBooking, getBookingByProviderOrderId, listBookingsByUser, transitionBooking } from './src/bookings.js';
 import { buildStore } from './src/store/index.js';
 import { buildProvider, buildStaysProvider, buildCarsProvider } from './src/providers/index.js';
 import { buildTravelAgent } from './src/agent/agent.js';
@@ -61,6 +62,29 @@ function todayUtc() {
 }
 function daysFromToday(dateStr) {
     return Math.round((new Date(dateStr + 'T00:00:00Z') - new Date(todayUtc() + 'T00:00:00Z')) / 86400000);
+}
+
+/**
+ * ✅ تحقق توقيع Duffel webhook — الخوارزمية مؤكَّدة حرفياً من نموذج Python
+ * الرسمي بدليل Duffel (Notifications) الذي قدَّمه المالك، لا تخمين (ميزة
+ * أمنية — لا يُقبَل فيها نفس تساهل تخمين أشكال الأسعار في مزوّدات أخرى):
+ *   هيدر X-Duffel-Signature بصيغة `t=<timestamp>,v1=<hex>`، والتوقيع =
+ *   HMAC-SHA256(secret, `${t}.${rawBody}`) بترميز hex صغير الحروف.
+ * مقارنة زمن ثابت (timingSafeEqual) — لا `===` عادية لمقارنة أسرار.
+ */
+export function verifyDuffelWebhookSignature(rawBody, signatureHeader, secret) {
+    if (!signatureHeader || !secret) return false;
+    const pairs = Object.fromEntries(
+        String(signatureHeader).split(',').map(p => p.split('='))
+    );
+    const { t, v1 } = pairs;
+    if (!t || !v1) return false;
+    const signedPayload = Buffer.concat([Buffer.from(`${t}.`, 'utf8'), Buffer.from(rawBody)]);
+    const expected = crypto.createHmac('sha256', secret).update(signedPayload).digest('hex');
+    const expectedBuf = Buffer.from(expected, 'utf8');
+    const actualBuf = Buffer.from(String(v1), 'utf8');
+    if (expectedBuf.length !== actualBuf.length) return false;
+    return crypto.timingSafeEqual(expectedBuf, actualBuf);
 }
 
 /** يتحقق من معايير البحث ويطبّعها — {error} أو {values}. */
@@ -287,13 +311,17 @@ export function createApp({
     markupPct = readMarkupPct(),
     travelInfoFetch = fetch, // قابل للحقن في الاختبارات (طقس/عملة بلا شبكة حقيقية)
     mailer = { sendMail, mailReady }, // قابل للحقن في الاختبارات (نفس نمط priceWatchPoller.js)
+    duffelWebhookSecret = null, // بلا هذا: مسار الـwebhook يرد 503 بوضوح
 }) {
     const app = express();
     // خلف وكيل عكسي واحد (Render وأمثالها) — بدونه req.ip هو عنوان الوكيل
     // نفسه لكل الطلبات، فيتشارك كل المستخدمين نفس سلة محدّد المعدل أدناه.
     app.set('trust proxy', 1);
     app.use(cors());
-    app.use(express.json({ limit: '256kb' }));
+    // verify يحفظ البايتات الخام (req.rawBody) قبل التفكيك — تحقق توقيع
+    // webhook يحتاج الجسم الخام بالضبط كما وصل، لا نسخة مُعاد تسلسلها من
+    // JSON المُفكَّك (قد تختلف بايتاً بايت: ترتيب مفاتيح، مسافات...).
+    app.use(express.json({ limit: '256kb', verify: (req, res, buf) => { req.rawBody = buf; } }));
     app.use(express.static(path.join(__dirname, 'public')));
 
     const verifyToken = buildVerifyToken(jwtSecret);
@@ -330,6 +358,16 @@ export function createApp({
             to: booking.contact.email,
             subject: `↩️ تم إلغاء حجزك — مرجع ${booking.bookingReference}`,
             text: `تم إلغاء حجزك.\n\n${bookingSummaryLine(booking)}\nالمرجع: ${booking.bookingReference}\n${refundLine}`,
+        });
+    }
+    // شركة الطيران غيّرت أو ألغت رحلة مُصدَرة (webhook من Duffel، لا مبادرة
+    // منّا) — إشعار فوري لأن المسافر لن يعرف إلا بمراجعة حجوزاته يدوياً.
+    async function notifyAirlineChange(booking) {
+        if (!booking?.contact?.email || !mailer.mailReady()) return;
+        await mailer.sendMail({
+            to: booking.contact.email,
+            subject: `⚠️ تغيير من شركة الطيران على حجزك — مرجع ${booking.bookingReference}`,
+            text: `شركة الطيران أجرت تغييراً على رحلتك بعد الحجز (موعد أو مسار).\n\n${bookingSummaryLine(booking)}\nالمرجع: ${booking.bookingReference}\n\nراجع تفاصيل حجزك من بوابة السفر أو تواصل مع شركة الطيران مباشرةً بالمرجع أعلاه.`,
         });
     }
 
@@ -760,6 +798,27 @@ export function createApp({
         res.json({ ok: true, service: 'jaola-travel', provider: provider.name });
     });
 
+    // ─── 🔔 Duffel webhooks — بلا verifyToken (Duffel لا يحمل توكن JWT
+    // مستخدم؛ الحماية عبر توقيع HMAC وحده، راجع verifyDuffelWebhookSignature) ─
+    app.post('/api/travel/webhooks/duffel', wrap(async (req, res) => {
+        if (!duffelWebhookSecret) return res.status(503).json({ error: 'Duffel webhook غير مُهيَّأ.' });
+        const valid = verifyDuffelWebhookSignature(req.rawBody, req.headers['x-duffel-signature'], duffelWebhookSecret);
+        if (!valid) return res.status(400).json({ error: 'توقيع غير صالح.' });
+
+        const event = req.body || {};
+        if (event.type === 'order.airline_initiated_change_detected') {
+            // ⚠️ شكل event.data.object لهذا النوع تحديداً غير مؤكَّد بمثال
+            // حي (المثال الرسمي المُشاهَد كان لنوع order.created بجسم فارغ
+            // {}) — مسارات استخراج مُعدَّدة احتياطاً بدل افتراض واحد.
+            const orderId = event.data?.object?.id || event.data?.object?.order_id || event.data?.id || null;
+            const booking = orderId ? await getBookingByProviderOrderId(store, orderId) : null;
+            if (booking && booking.status === 'issued') {
+                await notifyAirlineChange(booking);
+            }
+        }
+        res.json({ received: true });
+    }));
+
     app.get('/api/travel/config', verifyToken, wrap(async (req, res) => {
         res.json({
             cabins: CABINS,
@@ -1000,6 +1059,7 @@ if (isMain) {
         carsProvider,
         agent,
         markupPct,
+        duffelWebhookSecret: process.env.DUFFEL_WEBHOOK_SECRET || null,
     });
 
     const port = Number(process.env.PORT || 4200);

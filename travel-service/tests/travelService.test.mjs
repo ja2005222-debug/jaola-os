@@ -16,7 +16,8 @@ import os from 'os';
 import path from 'path';
 import jwt from 'jsonwebtoken';
 
-import { createApp, validateSearchParams, validatePassengers, validateStaySearchParams, validateGuests, validateCarSearchParams, validateDrivers } from '../server.js';
+import { createApp, validateSearchParams, validatePassengers, validateStaySearchParams, validateGuests, validateCarSearchParams, validateDrivers, verifyDuffelWebhookSignature } from '../server.js';
+import crypto from 'crypto';
 import { createMockTravelProvider } from '../src/providers/mockProvider.js';
 import { createDuffelProvider, normalizeDuffelOffer } from '../src/providers/duffelProvider.js';
 import { createMockStaysProvider } from '../src/providers/mockStaysProvider.js';
@@ -25,7 +26,7 @@ import { createMockCarsProvider } from '../src/providers/mockCarsProvider.js';
 import { normalizeDuffelCarResult } from '../src/providers/duffelCarsProvider.js';
 import { buildProvider, buildStaysProvider, buildCarsProvider } from '../src/providers/index.js';
 import { readMarkupPct, applyMarkup, DEFAULT_MARKUP_PCT } from '../src/pricing.js';
-import { canTransition, createBooking, transitionBooking, getBooking } from '../src/bookings.js';
+import { canTransition, createBooking, transitionBooking, getBooking, getBookingByProviderOrderId } from '../src/bookings.js';
 import { createFileStore } from '../src/store/fileStore.js';
 import { createPostgresStore } from '../src/store/postgresStore.js';
 import { createTravelAgent, executeAgentTool, buildTravelAgent, AGENT_TOOLS } from '../src/agent/agent.js';
@@ -683,6 +684,88 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             }
         });
 
+        test('🔔 verifyDuffelWebhookSignature: توقيع صحيح يمرّ، وأي تلاعب يُرفض', () => {
+            const secret = 'whsec_test_123';
+            const rawBody = JSON.stringify({ type: 'order.airline_initiated_change_detected', data: { object: { id: 'ord_1' } } });
+            const t = '1616202842';
+            const signedPayload = Buffer.concat([Buffer.from(`${t}.`, 'utf8'), Buffer.from(rawBody, 'utf8')]);
+            const v1 = crypto.createHmac('sha256', secret).update(signedPayload).digest('hex');
+            const header = `t=${t},v1=${v1}`;
+
+            assert.equal(verifyDuffelWebhookSignature(Buffer.from(rawBody), header, secret), true);
+            assert.equal(verifyDuffelWebhookSignature(Buffer.from(rawBody + 'x'), header, secret), false); // جسم مُتلاعَب به
+            assert.equal(verifyDuffelWebhookSignature(Buffer.from(rawBody), header, 'wrong_secret'), false);
+            assert.equal(verifyDuffelWebhookSignature(Buffer.from(rawBody), null, secret), false);
+            assert.equal(verifyDuffelWebhookSignature(Buffer.from(rawBody), 't=1616202842,v1=', secret), false);
+            assert.equal(verifyDuffelWebhookSignature(Buffer.from(rawBody), 'garbage', secret), false);
+        });
+
+        test('🔔 POST /api/travel/webhooks/duffel: تحقق توقيع + إشعار تغيير طيران حقيقي', async () => {
+            const secret = 'whsec_test_456';
+            const sign = (rawBody, t = String(Math.floor(Date.now() / 1000))) => {
+                const signedPayload = Buffer.concat([Buffer.from(`${t}.`, 'utf8'), Buffer.from(rawBody, 'utf8')]);
+                const v1 = crypto.createHmac('sha256', secret).update(signedPayload).digest('hex');
+                return `t=${t},v1=${v1}`;
+            };
+            const sentMails = [];
+            const stubMailer = { mailReady: () => true, sendMail: async (msg) => { sentMails.push(msg); return { ok: true }; } };
+            const app = createApp({ store, jwtSecret: JWT_SECRET, provider, markupPct: MARKUP, mailer: stubMailer, duffelWebhookSecret: secret });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                // حجز حقيقي مُصدَر بـproviderOrderId معروف — نفس ما يخزّنه doBook فعلياً
+                const flightBooking = await createBooking(store, {
+                    username: 'webhook-traveler', provider: 'mock',
+                    offer: { owner: 'Test Air', slices: [{ origin: 'RUH', destination: 'DXB', departAt: '2027-09-01T10:00:00', arriveAt: '2027-09-01T12:00:00' }] },
+                    passengers: [], contact: { email: 'traveler@test.com', phone: '+966500000001' },
+                    netAmount: 100, sellAmount: 110, currency: 'USD',
+                });
+                await transitionBooking(store, flightBooking.id, 'issued', { providerOrderId: 'ord_webhook_1', bookingReference: 'REFWH1' });
+
+                // توقيع فاسد → 400، بلا محاولة إرسال
+                const badBody = JSON.stringify({ type: 'order.airline_initiated_change_detected', data: { object: { id: 'ord_webhook_1' } } });
+                const badRes = await fetch(url + '/api/travel/webhooks/duffel', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Duffel-Signature': 'garbage' }, body: badBody,
+                });
+                assert.equal(badRes.status, 400);
+                assert.equal(sentMails.length, 0);
+
+                // توقيع صحيح + حدث تغيير طيران بمعرّف حجزنا → 200 + بريد فعلي
+                const goodBody = JSON.stringify({ type: 'order.airline_initiated_change_detected', data: { object: { id: 'ord_webhook_1' } } });
+                const goodRes = await fetch(url + '/api/travel/webhooks/duffel', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Duffel-Signature': sign(goodBody) }, body: goodBody,
+                });
+                assert.equal(goodRes.status, 200);
+                assert.equal(sentMails.length, 1);
+                assert.equal(sentMails[0].to, 'traveler@test.com');
+                assert.match(sentMails[0].subject, /REFWH1/);
+
+                // نوع حدث غير معنيّين به → 200 بلا أي محاولة إرسال إضافية
+                const otherBody = JSON.stringify({ type: 'order.created', data: { object: { id: 'ord_webhook_1' } } });
+                const otherRes = await fetch(url + '/api/travel/webhooks/duffel', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Duffel-Signature': sign(otherBody) }, body: otherBody,
+                });
+                assert.equal(otherRes.status, 200);
+                assert.equal(sentMails.length, 1); // لم يزد
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
+        test('🔔 POST /api/travel/webhooks/duffel: بلا DUFFEL_WEBHOOK_SECRET → 503 صريح', async () => {
+            const app = createApp({ store, jwtSecret: JWT_SECRET, provider, markupPct: MARKUP });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const res = await fetch(url + '/api/travel/webhooks/duffel', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+                });
+                assert.equal(res.status, 503);
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
         test('⚛️ transitionBooking ذرّي: انتقال من حالة خاطئة يُرفض بلا أثر', async () => {
             const booking = await createBooking(store, {
                 username: 'atomic', provider: 'mock',
@@ -696,6 +779,20 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(await transitionBooking(store, 'ghost', 'issued'), null);
             const final = await getBooking(store, booking.id);
             assert.equal(final.bookingReference, 'REF1');
+
+            assert.equal(await getBookingByProviderOrderId(store, 'لا-وجود'), null);
+        });
+
+        test('🔎 getBookingByProviderOrderId: يجد الحجز بمعرّف المزوّد (أساس بحث webhook)', async () => {
+            const booking = await createBooking(store, {
+                username: 'provider-lookup', provider: 'mock',
+                offer: { owner: 'x', slices: [] }, passengers: [], contact: {},
+                netAmount: 50, sellAmount: 55, currency: 'USD',
+            });
+            await transitionBooking(store, booking.id, 'issued', { providerOrderId: 'ord_lookup_1', bookingReference: 'REFLK1' });
+            const found = await getBookingByProviderOrderId(store, 'ord_lookup_1');
+            assert.equal(found.id, booking.id);
+            assert.equal(found.bookingReference, 'REFLK1');
         });
 
         test('✈️ تطبيع عرض Duffel: الشكل الخام الموثَّق → العرض الموحّد', () => {
