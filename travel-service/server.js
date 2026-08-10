@@ -23,6 +23,11 @@ import { createBooking, getBooking, getBookingByProviderOrderId, listBookingsByU
 import { buildStore } from './src/store/index.js';
 import { buildProvider, buildStaysProvider, buildCarsProvider } from './src/providers/index.js';
 import { buildTravelAgent } from './src/agent/agent.js';
+import { buildInsight, renderInsight, sanitizeFindings } from './src/agent/insights.js';
+import {
+    createNotifier, renderAirlineChangeNotice, normalizeNotificationPrefs,
+    defaultNotificationPrefs, NOTIFICATION_CATEGORIES,
+} from './src/notifications.js';
 import { airportCoords, searchAirports, airportForTimezone } from './src/airports.js';
 import { createPriceWatch, listPriceWatchesByUser, cancelPriceWatch } from './src/priceWatches.js';
 import { checkWatches } from './src/priceWatchPoller.js';
@@ -40,6 +45,7 @@ const MAX_ROOMS = 5;
 const MAX_STAY_NIGHTS = 30;
 const MAX_RENTAL_DAYS = 30;
 const MAX_BOOKING_WINDOW_DAYS = 330; // أقصى ما تفتحه أنظمة الحجز عادةً
+const MAX_NOTIFICATIONS = 50; // صندوق يُقرأ لا أرشيف يُنقَّب
 const MAX_AGENT_MESSAGES = 30;
 const MAX_AGENT_MESSAGE_CHARS = 4000;
 const MAX_FLEX_WINDOW_DAYS = 7;
@@ -360,35 +366,70 @@ export function createApp({
     // حقيقية على المزوّد إلا أول طلب كل 6 ساعات — حد أخف من searchLimiter يكفي.
     const destinationsLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 15, standardHeaders: true, legacyHeaders: false, keyGenerator: byUser });
 
-    // بريد تأكيد/إلغاء اختياري تماماً (RESEND_API_KEY) — فشل الإرسال أو
-    // غياب البريد لا يكسر الحجز أبداً؛ sendMail الحقيقي لا يرمي استثناءً.
+    // كل تنبيه في البوابة يمر من هنا: يفحص تفضيلات المستخدم، يحفظ سجلاً
+    // داخل البوابة، ويرسل بريداً إن رغب. قبل هذا كان كل مصدر يرسل بريده
+    // بنفسه — بلا سجل يراه المستخدم ولا خيار يوقفه.
+    // ⚠️ صياغة الايجنت تُمرَّر للتنبيهات الحدثية فقط (تغيير طيران، انخفاض
+    // سعر). تأكيد الحجز وإلغاؤه يبقيان بالنص الحتمي حرفياً: إيصالٌ بمبلغ
+    // ومرجع لا يُعاد صوغه بنموذج لغوي.
+    const notifier = createNotifier({ store, mailer });
+    const eventNotifier = createNotifier({
+        store, mailer,
+        phrase: agent ? text => agent.phraseNotice(text) : null,
+    });
+
     async function notifyBookingIssued(booking) {
-        if (!booking?.contact?.email || !mailer.mailReady()) return;
-        await mailer.sendMail({
-            to: booking.contact.email,
-            subject: `✅ تأكيد حجزك — مرجع ${booking.bookingReference}`,
-            text: `تم تأكيد حجزك بنجاح.\n\n${bookingSummaryLine(booking)}\nالمرجع: ${booking.bookingReference}\nالإجمالي: ${booking.sellAmount} ${booking.currency}\n\nراجع كل حجوزاتك من بوابة السفر.`,
+        await notifier.deliver({
+            username: booking?.username,
+            category: 'booking_issued',
+            title: `✅ تأكيد حجزك — مرجع ${booking.bookingReference}`,
+            body: `تم تأكيد حجزك بنجاح.\n\n${bookingSummaryLine(booking)}\nالمرجع: ${booking.bookingReference}\nالإجمالي: ${booking.sellAmount} ${booking.currency}\n\nراجع كل حجوزاتك من بوابة السفر.`,
+            email: booking?.contact?.email || null,
+            meta: { bookingId: booking.id },
         });
     }
     async function notifyBookingCancelled(booking) {
-        if (!booking?.contact?.email || !mailer.mailReady()) return;
         const refundLine = booking.refund?.amount != null
             ? `مبلغ الاسترداد: ${booking.refund.amount} ${booking.refund.currency || ''}`
             : 'سيُحدَّد مبلغ الاسترداد قريباً من المزوّد.';
-        await mailer.sendMail({
-            to: booking.contact.email,
-            subject: `↩️ تم إلغاء حجزك — مرجع ${booking.bookingReference}`,
-            text: `تم إلغاء حجزك.\n\n${bookingSummaryLine(booking)}\nالمرجع: ${booking.bookingReference}\n${refundLine}`,
+        await notifier.deliver({
+            username: booking?.username,
+            category: 'booking_cancelled',
+            title: `↩️ تم إلغاء حجزك — مرجع ${booking.bookingReference}`,
+            body: `تم إلغاء حجزك.\n\n${bookingSummaryLine(booking)}\nالمرجع: ${booking.bookingReference}\n${refundLine}`,
+            email: booking?.contact?.email || null,
+            meta: { bookingId: booking.id },
         });
     }
-    // شركة الطيران غيّرت أو ألغت رحلة مُصدَرة (webhook من Duffel، لا مبادرة
-    // منّا) — إشعار فوري لأن المسافر لن يعرف إلا بمراجعة حجوزاته يدوياً.
+
+    /**
+     * شركة الطيران غيّرت رحلة مُصدَرة (webhook من Duffel، لا مبادرة منّا).
+     *
+     * الجديد هنا ليس البريد بل **أثر التغيير على بقية الخطة**: يُفحص
+     * تعارضُ الحجوزات فعلياً (نفس دالة check_trip_conflicts التي يناديها
+     * الايجنت) فيعرف المسافر أن تأخّر وصوله يصطدم بحجز فندقه — بدل خبرٍ
+     * مجرّد يتركه يكتشف ذلك بنفسه.
+     */
     async function notifyAirlineChange(booking) {
-        if (!booking?.contact?.email || !mailer.mailReady()) return;
-        await mailer.sendMail({
-            to: booking.contact.email,
-            subject: `⚠️ تغيير من شركة الطيران على حجزك — مرجع ${booking.bookingReference}`,
-            text: `شركة الطيران أجرت تغييراً على رحلتك بعد الحجز (موعد أو مسار).\n\n${bookingSummaryLine(booking)}\nالمرجع: ${booking.bookingReference}\n\nراجع تفاصيل حجزك من بوابة السفر أو تواصل مع شركة الطيران مباشرةً بالمرجع أعلاه.`,
+        let warnings = [];
+        try {
+            // ترجع مصفوفة تحذيرات مباشرةً لا كائناً يلفّها
+            warnings = await doCheckTripConflicts(booking.username);
+        } catch (e) {
+            // فحص التعارض إثراء لا شرط — فشله لا يمنع التنبيه بالتغيير
+            console.error('⚠️ تعذّر فحص تعارض الرحلة عند تغيير الطيران:', e.message);
+        }
+        await eventNotifier.deliver({
+            username: booking?.username,
+            category: 'airline_change',
+            title: `⚠️ تغيير من شركة الطيران على حجزك — مرجع ${booking.bookingReference}`,
+            body: renderAirlineChangeNotice({
+                summaryLine: bookingSummaryLine(booking),
+                bookingReference: booking.bookingReference,
+                warnings,
+            }),
+            email: booking?.contact?.email || null,
+            meta: { bookingId: booking.id, conflicts: warnings.length },
         });
     }
 
@@ -904,7 +945,11 @@ export function createApp({
 
     app.post('/api/travel/flights/search', verifyToken, searchLimiter, wrap(async (req, res) => {
         try {
-            res.json({ offers: await doSearch(req.body) });
+            const offers = await doSearch(req.body);
+            // قراءة الايجنت تُحسب هنا حتمياً (دوال نقية، بلا شبكة) فلا تضيف
+            // زمناً على المسار الأهم في البوابة. صياغة النموذج — إن فُعّل —
+            // تأتي بنداء منفصل بعد ظهور النتائج، لا قبلها.
+            res.json({ offers, insight: buildInsight(offers) });
         } catch (e) {
             // كان يفحص 400 فقط — رفض مزوّد فعلي (502 الجديد أعلاه) كان يسقط
             // كخطأ 500 عام رغم تفصيل واضح متوفر، خلاف مساري الفنادق/السيارات.
@@ -1112,6 +1157,57 @@ export function createApp({
         } catch (e) {
             res.status(502).json({ error: `تعذّر رد المساعد: ${e.message}` });
         }
+    }));
+
+    // صياغة قراءة النتائج بأسلوب الايجنت. مسار منفصل عن البحث عمداً:
+    // النتائج تظهر فوراً بالقراءة الحتمية، وهذا النداء يحسّن الصياغة بعدها
+    // — فلا ينتظر أحدٌ نموذجاً لغوياً ليرى أسعار رحلته.
+    app.post('/api/travel/insights/phrase', verifyToken, agentLimiter, wrap(async (req, res) => {
+        const findings = sanitizeFindings(req.body?.findings);
+        if (findings.length === 0) return res.status(400).json({ error: 'لا نتائج تحليل صالحة للصياغة.' });
+        // يُعاد التوليد من القوالب — نص العميل لا يصل النموذج إطلاقاً
+        const text = renderInsight(findings);
+        if (!agent) return res.json({ text, phrased: false });
+        res.json({ text: await agent.phraseInsight(text), phrased: true });
+    }));
+
+    // ─── 🔔 التنبيهات وتفضيلاتها ──────────────────────────────────────
+
+    app.get('/api/travel/notifications', verifyToken, wrap(async (req, res) => {
+        const username = userOf(req);
+        const [notifications, unread] = await Promise.all([
+            store.listNotificationsByUser(username, MAX_NOTIFICATIONS),
+            store.countUnreadNotifications(username),
+        ]);
+        res.json({ notifications, unread });
+    }));
+
+    app.post('/api/travel/notifications/read-all', verifyToken, wrap(async (req, res) => {
+        res.json({ marked: await store.markAllNotificationsRead(userOf(req)) });
+    }));
+
+    // اسم المستخدم يمرَّر للمخزن ليدخل شرط التحديث نفسه — لا فحص ملكية
+    // منفصل يمكن أن يُنسى (نفس عزل transitionBooking).
+    app.post('/api/travel/notifications/:id/read', verifyToken, wrap(async (req, res) => {
+        const row = await store.markNotificationRead(String(req.params.id), userOf(req));
+        if (!row) return res.status(404).json({ error: 'التنبيه غير موجود.' });
+        res.json({ notification: row });
+    }));
+
+    app.get('/api/travel/notifications/prefs', verifyToken, wrap(async (req, res) => {
+        const stored = await store.getNotificationPrefs(userOf(req));
+        res.json({
+            prefs: stored ? normalizeNotificationPrefs(stored) : defaultNotificationPrefs(),
+            categories: NOTIFICATION_CATEGORIES,
+        });
+    }));
+
+    app.put('/api/travel/notifications/prefs', verifyToken, wrap(async (req, res) => {
+        // التنقية تُعيد بناء الكائن كاملاً من قائمة بيضاء: فئة مجهولة أو
+        // قيمة غير منطقية تسقط، والفئة الغائبة تأخذ افتراضها بدل الاختفاء.
+        const prefs = normalizeNotificationPrefs(req.body?.prefs);
+        await store.setNotificationPrefs(userOf(req), prefs);
+        res.json({ prefs });
     }));
 
     // معالج أخطاء أخير — لا تسريب تفاصيل داخلية للعميل.

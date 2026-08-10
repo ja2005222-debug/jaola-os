@@ -53,6 +53,27 @@ CREATE TABLE IF NOT EXISTS travel_price_watches (
 );
 CREATE INDEX IF NOT EXISTS travel_price_watches_user_idx ON travel_price_watches (username, at);
 CREATE INDEX IF NOT EXISTS travel_price_watches_status_idx ON travel_price_watches (status);
+
+CREATE TABLE IF NOT EXISTS travel_notifications (
+    id              TEXT PRIMARY KEY,
+    at              BIGINT NOT NULL,
+    username        TEXT NOT NULL,
+    category        TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    body            TEXT NOT NULL,
+    read            BOOLEAN NOT NULL DEFAULT FALSE,
+    meta_json       JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+CREATE INDEX IF NOT EXISTS travel_notifications_user_idx ON travel_notifications (username, at DESC);
+-- فهرس جزئي: الاستعلام الوحيد المتكرر هو عدّاد غير المقروء في كل تحميل
+-- صفحة، والمقروءة تتراكم بلا حد — فلا داعي لفهرستها معها.
+CREATE INDEX IF NOT EXISTS travel_notifications_unread_idx
+    ON travel_notifications (username) WHERE read = FALSE;
+
+CREATE TABLE IF NOT EXISTS travel_notification_prefs (
+    username        TEXT PRIMARY KEY,
+    prefs_json      JSONB NOT NULL
+);
 `;
 
 function rowToBooking(r) {
@@ -95,6 +116,20 @@ function rowToWatch(r) {
         currency: r.currency,
         contactEmail: r.contact_email,
         status: r.status,
+    };
+}
+
+function rowToNotification(r) {
+    if (!r) return null;
+    return {
+        id: r.id,
+        at: Number(r.at),
+        username: r.username,
+        category: r.category,
+        title: r.title,
+        body: r.body,
+        read: r.read,
+        meta: r.meta_json || {},
     };
 }
 
@@ -253,6 +288,86 @@ export function createPostgresStore({ connectionString }) {
                     vals
                 );
                 return rowToWatch(res.rows[0]);
+            });
+        },
+
+        async createNotification(n) {
+            const row = {
+                id: 'ntf_' + Array.from(crypto.getRandomValues(new Uint8Array(10)))
+                    .map(x => x.toString(16).padStart(2, '0')).join(''),
+                at: Date.now(),
+                read: false,
+                meta: {},
+                ...n,
+            };
+            return withClient(async c => {
+                const res = await c.query(
+                    `INSERT INTO travel_notifications (id, at, username, category, title, body, read, meta_json)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+                    [row.id, row.at, row.username, row.category, row.title, row.body, row.read, row.meta]
+                );
+                return rowToNotification(res.rows[0]);
+            });
+        },
+
+        async listNotificationsByUser(username, limit = 50) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'SELECT * FROM travel_notifications WHERE username = $1 ORDER BY at DESC LIMIT $2',
+                    [username, limit]
+                );
+                return res.rows.map(rowToNotification);
+            });
+        },
+
+        async countUnreadNotifications(username) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'SELECT COUNT(*)::int AS n FROM travel_notifications WHERE username = $1 AND read = FALSE',
+                    [username]
+                );
+                return res.rows[0]?.n || 0;
+            });
+        },
+
+        // username في WHERE لا في فحص سابق — عزل ملكية بالاستعلام نفسه
+        async markNotificationRead(id, username) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'UPDATE travel_notifications SET read = TRUE WHERE id = $1 AND username = $2 RETURNING *',
+                    [id, username]
+                );
+                return rowToNotification(res.rows[0]);
+            });
+        },
+
+        async markAllNotificationsRead(username) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'UPDATE travel_notifications SET read = TRUE WHERE username = $1 AND read = FALSE',
+                    [username]
+                );
+                return res.rowCount;
+            });
+        },
+
+        async getNotificationPrefs(username) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'SELECT prefs_json FROM travel_notification_prefs WHERE username = $1', [username]
+                );
+                return res.rows[0]?.prefs_json || null;
+            });
+        },
+
+        async setNotificationPrefs(username, prefs) {
+            return withClient(async c => {
+                await c.query(
+                    `INSERT INTO travel_notification_prefs (username, prefs_json) VALUES ($1, $2)
+                     ON CONFLICT (username) DO UPDATE SET prefs_json = EXCLUDED.prefs_json`,
+                    [username, prefs]
+                );
+                return prefs;
             });
         },
     };

@@ -8,6 +8,21 @@
  */
 import { applyMarkup } from './pricing.js';
 import { sendMail, mailReady } from './mailer.js';
+import { createNotifier, renderPriceDropNotice } from './notifications.js';
+
+/**
+ * هل أدّت المراقبة غرضها فتُغلَق؟
+ *
+ * وصل شيءٌ للمستخدم فعلاً (سجل داخل البوابة أو بريد) → نعم.
+ * أطفأ المستخدم هذه الفئة صراحةً (skipped) → نعم أيضاً: المراقبة بلغت
+ * هدفها وهو اختار ألا يُخبَر، وإبقاؤها نشطة يستهلك حصة المزوّد أبد الدهر
+ * على تنبيه لن يُرسَل.
+ * حُوِلت المحاولة وفشلت القناتان → لا، تبقى نشطة لتُعاد المحاولة.
+ */
+function watchIsDone(delivery) {
+    if (!delivery) return false;
+    return delivery.inApp || delivery.email || delivery.skipped;
+}
 
 function cheapestSellAmount(offers, markupPct) {
     if (offers.length === 0) return null;
@@ -28,6 +43,10 @@ function cheapestSellAmount(offers, markupPct) {
  *     وlastPrice يتحدّث دوماً؛ المستخدم يسأل الايجنت list_price_watches.
  */
 export async function checkWatches({ store, provider, markupPct, mailer = { sendMail, mailReady } }) {
+    // التوقيع كما هو ليبقى المستدعي والاختبارات دون تغيير — المُسلِّم يُبنى
+    // هنا فيسري على البريد الدوري ما يسري على غيره: تفضيلات المستخدم وسجلٌ
+    // يراه داخل البوابة.
+    const notifier = createNotifier({ store, mailer });
     const watches = await store.listActivePriceWatches();
     let notified = 0;
     const errors = [];
@@ -52,21 +71,27 @@ export async function checkWatches({ store, provider, markupPct, mailer = { send
             const dropped = !isFirstCheck && price < watch.lastPrice;
             const hitTarget = watch.targetPrice != null && price <= watch.targetPrice;
 
-            let emailSent = false;
-            if ((dropped || hitTarget) && watch.contactEmail && mailer.mailReady()) {
+            let delivery = null;
+            if (dropped || hitTarget) {
                 const reason = hitTarget ? `وصل السعر الهدف (${watch.targetPrice})` : 'انخفض السعر';
-                const result = await mailer.sendMail({
-                    to: watch.contactEmail,
-                    subject: `✈️ ${reason}: ${watch.origin}→${watch.destination}`,
-                    text: `${reason} إلى ${price} ${currency} لرحلة ${watch.origin}→${watch.destination} بتاريخ ${watch.departDate}.\nافتح بوابة السفر لمراجعة العروض والحجز.`,
+                delivery = await notifier.deliver({
+                    username: watch.username,
+                    category: 'price_drop',
+                    title: `✈️ ${reason}: ${watch.origin}→${watch.destination}`,
+                    body: renderPriceDropNotice({
+                        origin: watch.origin, destination: watch.destination,
+                        departDate: watch.departDate, price, currency,
+                        targetPrice: watch.targetPrice,
+                    }),
+                    email: watch.contactEmail || null,
+                    meta: { watchId: watch.id, price, currency },
                 });
-                emailSent = !!result?.ok; // sendMail لا يرمي أبداً — {error} يعني فشلاً صامتاً بلا هذا التحقق
-                if (emailSent) notified += 1;
+                if (delivery.inApp || delivery.email) notified += 1;
             }
 
             await store.updatePriceWatch(watch.id, {
                 lastPrice: price, currency,
-                status: hitTarget && emailSent ? 'triggered' : watch.status,
+                status: hitTarget && watchIsDone(delivery) ? 'triggered' : watch.status,
             });
         } catch (e) {
             errors.push({ watchId: watch.id, error: e.message });

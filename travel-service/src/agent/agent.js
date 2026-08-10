@@ -42,6 +42,28 @@ const SYSTEM_PROMPT = `أنت "مساعد جاولا للسفر" — وكيل س
 11. أسئلة عامة عن الوجهة (تأشيرة، جمارك، عادات، أفضل وقت للزيارة، سلامة) يمكنك إجابتها من معرفتك العامة — بخلاف السعر/التوفر التي تبقى حصراً من الأدوات — لكن أضف دوماً جملة تنبيه واضحة: "معلومة استرشادية عامة، تحقق من السفارة أو الموقع الرسمي قبل السفر."
 12. إن طلب المستخدم "رتّب لي رحلتي" أو ملخصاً شاملاً لخطته استخدم generate_trip_summary بدل تجميع الحجوزات يدوياً من list_my_bookings.`;
 
+// صياغة قراءة النتائج: مهمة واحدة ضيّقة عمداً. كل رقم في المُدخَل محسوب
+// في insights.js، فالتعليمة الأهم هنا هي المنع من الإضافة لا الحثّ عليها.
+const INSIGHT_PROMPT = `أنت محرّر لغوي في بوابة سفر. تصلك قراءة مقارنة لنتائج بحث رحلات، مصوغة آلياً.
+مهمتك إعادة صياغتها بعربية سلسة موجزة كأن وكيل سفر خبير يقولها للمسافر.
+قواعد قاطعة:
+1. لا تضف أي رقم أو حقيقة غير موجودة في النص المُعطى — لا سعراً ولا مدة ولا اسم شركة ولا توصية بمطار أو تاريخ.
+2. لا تحذف أي رقم ورد في النص.
+3. جملتان على الأكثر. بلا مقدمات ("بالتأكيد"، "إليك") وبلا سؤال ختامي.
+4. حافظ على إشارات **العريض** كما هي.
+5. أعد النص المُعاد صياغته فقط، بلا تعليق أو علامات اقتباس.`;
+
+// تنبيه يصل بلا طلب ولا مراجعة — فالتعليمة تمنع التهوين والتهويل معاً،
+// لا الاختلاق وحده. «طمئن المستخدم» ليست مهمة النموذج: الواقعة كما هي.
+const NOTICE_PROMPT = `أنت محرّر لغوي في بوابة سفر. يصلك نص تنبيه مصوغ آلياً عن حدث جرى على حجز مسافر.
+مهمتك إعادة صياغته بعربية واضحة هادئة، موجزة ومحترمة.
+قواعد قاطعة:
+1. لا تضف أي معلومة أو رقم أو تاريخ أو اسم غير موجود في النص، ولا تقترح حلاً لم يُذكر فيه.
+2. لا تحذف أي رقم أو مرجع حجز أو تحذير ورد في النص.
+3. لا تُهوّن من الحدث ولا تُهوّله — انقله كما هو بلا "لا تقلق" وبلا "خطر عاجل".
+4. لا تَعِد بشيء نيابةً عن الخدمة (لا تعويض، لا استرداد، لا إعادة حجز تلقائي).
+5. حافظ على الأسطر المنفصلة والنقاط كما هي، وأعد النص فقط بلا تعليق.`;
+
 /** تعريفات الأدوات بصيغة OpenAI tools الموثَّقة. */
 export const AGENT_TOOLS = [
     {
@@ -558,11 +580,16 @@ export async function executeAgentTool(name, args, services) {
 export function createTravelAgent({ apiKey, apiUrl = DEFAULT_API_URL, model = DEFAULT_MODEL, fetchImpl = fetch }) {
     if (!apiKey) throw new Error('مفتاح مزوّد الايجنت مطلوب.');
 
-    async function complete(messages) {
+    async function complete(messages, { tools = true, temperature = 0.3 } = {}) {
+        // صياغة القراءة تُنادى بلا أدوات إطلاقاً: لا شيء تحجزه أو تلغيه، فلا
+        // سبب لوضع أدوات الكتابة في يدها. منعٌ بالبنية لا بالتعليمات.
+        const body = tools
+            ? { model, messages, tools: AGENT_TOOLS, tool_choice: 'auto', temperature }
+            : { model, messages, temperature };
         const res = await fetchImpl(apiUrl, {
             method: 'POST',
             headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model, messages, tools: AGENT_TOOLS, tool_choice: 'auto', temperature: 0.3 }),
+            body: JSON.stringify(body),
         });
         if (!res.ok) {
             const detail = await res.text().catch(() => '');
@@ -606,7 +633,54 @@ export function createTravelAgent({ apiKey, apiUrl = DEFAULT_API_URL, model = DE
             }
             return { reply: 'تجاوزت الجولة حد الأدوات — جرّب طلباً أبسط أو أكمل خطوة خطوة.', actions };
         },
+
+        /**
+         * يصوغ قراءة نتائج البحث بأسلوب أفضل — **صياغة لا تحليل**.
+         *
+         * النموذج لا يرى العروض إطلاقاً، بل النص الحتمي المُولَّد من أرقام
+         * محسوبة في insights.js. فأسوأ ما يفعله هو صياغة رديئة، لا رقم
+         * مختلَق — وهذا هو سبب تمرير النص لا البيانات.
+         *
+         * بلا أدوات وبلا جولات: نداء واحد يعيد جملة أو جملتين. وأي فشل
+         * (شبكة، مهلة، رد فارغ) يعيد النص الأصلي — القراءة لا تختفي لأن
+         * النموذج تعثّر.
+         */
+        async phraseInsight(deterministicText) {
+            return rephrase(deterministicText, INSIGHT_PROMPT);
+        },
+
+        /**
+         * يصوغ نص تنبيه حدثٍ (تغيير طيران، انخفاض سعر) — نفس العقد تماماً:
+         * الوقائع محسوبة في notifications.js، وهذه صياغة فوقها.
+         *
+         * ⚠️ الأخطر بين المسارين: التنبيه يصل المستخدمَ بلا أن يطلبه ولا
+         * أن يراجعه أحد. لذا التعليمة تمنع الإضافة والتهوين والتهويل معاً،
+         * والحدّ الأقصى للطول أضيق — تنبيهٌ مُطوَّل يُتجاهَل فيضيع الحدث.
+         */
+        async phraseNotice(deterministicText) {
+            return rephrase(deterministicText, NOTICE_PROMPT, 1.6);
+        },
     };
+
+    /**
+     * إعادة صياغة محروسة: بلا أدوات إطلاقاً، ورجوعٌ للنص الأصلي عند أي
+     * فشل أو ردٍّ مُطوَّل. مشتركة بين القراءة والتنبيه فلا يفترق حارساهما.
+     */
+    async function rephrase(deterministicText, systemPrompt, maxGrowth = 2.5) {
+        const source = String(deterministicText || '').trim();
+        if (!source) return '';
+        try {
+            const msg = await complete([
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: source },
+            ], { tools: false, temperature: 0.4 });
+            const out = String(msg.content || '').trim();
+            // رد فارغ أو مُطوَّل بلا داعٍ → النص الحتمي أصدق وأقصر
+            return out && out.length <= source.length * maxGrowth ? out : source;
+        } catch {
+            return source;
+        }
+    }
 }
 
 /** null بلا مفتاح — الخدمة تعمل كاملة بدون الايجنت (تدهور رشيق). */

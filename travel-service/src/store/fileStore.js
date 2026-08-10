@@ -13,6 +13,8 @@ import crypto from 'crypto';
 export function createFileStore({ dataDir }) {
     const bookingsPath = path.join(dataDir, 'bookings.json');
     const watchesPath = path.join(dataDir, 'priceWatches.json');
+    const notificationsPath = path.join(dataDir, 'notifications.json');
+    const prefsPath = path.join(dataDir, 'notificationPrefs.json');
 
     function ensureDir() {
         fs.mkdirSync(dataDir, { recursive: true });
@@ -35,6 +37,10 @@ export function createFileStore({ dataDir }) {
     const writeBookings = rows => writeJson(bookingsPath, rows);
     const readWatches = () => readJson(watchesPath);
     const writeWatches = rows => writeJson(watchesPath, rows);
+    const readNotifications = () => readJson(notificationsPath);
+    const writeNotifications = rows => writeJson(notificationsPath, rows);
+    const readPrefs = () => readJson(prefsPath);
+    const writePrefs = rows => writeJson(prefsPath, rows);
 
     return {
         name: 'file',
@@ -125,6 +131,68 @@ export function createFileStore({ dataDir }) {
             Object.assign(watch, patch, { updatedAt: Date.now() });
             writeWatches(watches);
             return { ...watch };
+        },
+
+        async createNotification(n) {
+            const rows = readNotifications();
+            const notification = {
+                id: 'ntf_' + crypto.randomBytes(10).toString('hex'),
+                at: Date.now(),
+                read: false,
+                meta: {},
+                ...n,
+            };
+            rows.push(notification);
+            writeNotifications(rows);
+            return { ...notification };
+        },
+
+        async listNotificationsByUser(username, limit = 50) {
+            return readNotifications()
+                .filter(n => n.username === username)
+                .sort((a, b) => b.at - a.at)
+                .slice(0, limit)
+                .map(n => ({ ...n }));
+        },
+
+        async countUnreadNotifications(username) {
+            return readNotifications().filter(n => n.username === username && !n.read).length;
+        },
+
+        // اسم المستخدم شرطٌ في التحديث لا فحصٌ سابق له: بلا هذا يستطيع
+        // مستخدم تعليم تنبيه غيره مقروءاً بمعرّف مُخمَّن (نفس عزل الملكية
+        // في transitionBooking).
+        async markNotificationRead(id, username) {
+            const rows = readNotifications();
+            const row = rows.find(n => n.id === id && n.username === username);
+            if (!row) return null;
+            row.read = true;
+            writeNotifications(rows);
+            return { ...row };
+        },
+
+        async markAllNotificationsRead(username) {
+            const rows = readNotifications();
+            let count = 0;
+            for (const n of rows) {
+                if (n.username === username && !n.read) { n.read = true; count += 1; }
+            }
+            if (count > 0) writeNotifications(rows);
+            return count;
+        },
+
+        async getNotificationPrefs(username) {
+            const row = readPrefs().find(p => p.username === username);
+            return row ? row.prefs : null; // null = لم يضبط شيئاً → الافتراضات
+        },
+
+        async setNotificationPrefs(username, prefs) {
+            const rows = readPrefs();
+            const row = rows.find(p => p.username === username);
+            if (row) row.prefs = prefs;
+            else rows.push({ username, prefs });
+            writePrefs(rows);
+            return prefs;
         },
     };
 }
