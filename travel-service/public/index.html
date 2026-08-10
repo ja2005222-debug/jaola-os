@@ -197,7 +197,7 @@
       <section id="tab-destinations" class="hidden">
         <div class="card">
           <div class="row" style="align-items:end">
-            <div class="ac-wrap"><label>من</label><input id="destOrigin" placeholder="الرياض أو RUH" autocomplete="off" value="RUH" /></div>
+            <div class="ac-wrap"><label>من</label><input id="destOrigin" placeholder="الرياض أو RUH" autocomplete="off" /></div>
           </div>
           <button class="primary" id="destLoadBtn">🔄 تحديث</button>
           <div id="destError" class="error hidden"></div>
@@ -354,6 +354,7 @@
       }
 
       ['fOrigin', 'fDest', 'carIata', 'destOrigin'].forEach(id => attachAirportAutocomplete($(id)));
+      applyDefaultOrigin();
 
       // تاريخ افتراضي: بعد أسبوع
       const d = new Date(Date.now() + 7 * 86400000);
@@ -393,6 +394,45 @@
       return input.dataset.iata || raw; // الخادم يرد بخطأ واضح إن كان غير صالح
     }
 
+    // ─── 🧭 مطار الانطلاق الافتراضي ───
+    // ترتيب الأولوية: اختيار المستخدم المحفوظ ← ثم استنتاج من المنطقة
+    // الزمنية. المحفوظ يسبق دوماً حتى لا نُعيد فرض مطار غيّره المستخدم
+    // عمداً (هذا جوهر "إلا إذا أراد الشخص التغيير").
+    const ORIGIN_KEY = 'jaolaTravelOrigin';
+
+    function setOriginField(input, a) {
+      if (!input || !a) return;
+      input.value = `${a.city} (${a.iata})`;
+      input.dataset.iata = a.iata;
+    }
+
+    /** يحفظ اختيار المستخدم لمطار الانطلاق ليكون افتراضيه لاحقاً. */
+    function rememberOrigin(a) {
+      try { localStorage.setItem(ORIGIN_KEY, JSON.stringify({ iata: a.iata, city: a.city })); } catch { /* وضع خاص */ }
+    }
+
+    async function applyDefaultOrigin() {
+      const originFields = [$('fOrigin'), $('carIata'), $('destOrigin')];
+      // 1) اختيار محفوظ سابقاً
+      try {
+        const saved = JSON.parse(localStorage.getItem(ORIGIN_KEY) || 'null');
+        if (saved && saved.iata) {
+          originFields.forEach(f => setOriginField(f, saved));
+          return;
+        }
+      } catch { /* قيمة تالفة — نتجاهلها ونستنتج */ }
+      // 2) استنتاج من المنطقة الزمنية (بلا إذن ولا خدمة خارجية)
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (!tz) return;
+        const res = await api('/api/travel/airports/default?tz=' + encodeURIComponent(tz));
+        if (!res.ok) return;
+        const { airport } = await res.json();
+        // منطقة لا نعرف لها مطاراً → نترك الحقل فارغاً بدل فرض مطار خاطئ
+        if (airport) originFields.forEach(f => setOriginField(f, airport));
+      } catch { /* بلا شبكة: الحقل يبقى فارغاً وقابلاً للكتابة */ }
+    }
+
     function attachAirportAutocomplete(input) {
       const wrap = input.closest('.ac-wrap');
       let list = null, items = [], active = -1, timer = null, seq = 0;
@@ -401,6 +441,9 @@
       const choose = (a) => {
         input.value = `${a.city} (${a.iata})`;
         input.dataset.iata = a.iata;
+        // حقول الانطلاق فقط: اختيار المستخدم يصير افتراضيه في الزيارات
+        // التالية (حقل "إلى" وجهة تتغيّر كل بحث، فلا معنى لحفظها).
+        if (['fOrigin', 'carIata', 'destOrigin'].includes(input.id)) rememberOrigin(a);
         close();
       };
       const highlight = () => {
