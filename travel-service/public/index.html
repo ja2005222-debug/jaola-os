@@ -112,6 +112,25 @@
     .dest-card .dest-city { font-weight: 700; font-size: 15px; }
     .dest-card .dest-price { color: var(--ok); font-size: 13px; margin-top: 2px; }
 
+    /* 🔔 التنبيهات */
+    .bell {
+      position: relative; background: none; border: none; color: var(--text);
+      font-size: 20px; cursor: pointer; padding: 4px; line-height: 1;
+    }
+    .bell-count {
+      position: absolute; top: -2px; left: -6px; background: var(--bad); color: #fff;
+      font-size: 10px; font-weight: 700; border-radius: 999px; padding: 1px 5px; min-width: 16px;
+    }
+    .ntf { border-right: 3px solid var(--border); padding: 10px 12px; margin-bottom: 8px; background: var(--card); border-radius: 10px; }
+    .ntf.unread { border-right-color: var(--ok); background: #0e2438; }
+    .ntf-title { font-weight: 700; font-size: 14px; }
+    .ntf-body { font-size: 13px; color: var(--muted); white-space: pre-wrap; line-height: 1.7; margin-top: 4px; }
+    .ntf-time { font-size: 11px; color: var(--muted); margin-top: 6px; }
+    .pref-row { display: flex; align-items: center; gap: 18px; padding: 8px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .pref-row .pref-name { flex: 1; min-width: 180px; font-size: 14px; }
+    .pref-row label { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+    .pref-row label.locked { opacity: .55; cursor: not-allowed; }
+
     /* 🤖 قراءة المساعد فوق النتائج — حضور الايجنت بلا أن يُسأل */
     .insight {
       display: block; border-right: 3px solid var(--ok); background: #0e2438;
@@ -159,7 +178,10 @@
   <div id="modeBanner" class="banner hidden">🧪 بيئة تجريبية — الحجوزات هنا لا تُصدر تذاكر حقيقية ولا تُحصَّل أموال.</div>
   <header>
     <h1>✈️ JAOLA Travel <span style="color:var(--muted);font-size:13px">بوابة السفر</span></h1>
-    <span id="userBadge" style="color:var(--muted);font-size:13px"></span>
+    <div style="display:flex;align-items:center;gap:14px">
+      <button id="bellBtn" class="bell hidden" title="التنبيهات">🔔<span id="bellCount" class="bell-count hidden">0</span></button>
+      <span id="userBadge" style="color:var(--muted);font-size:13px"></span>
+    </div>
   </header>
 
   <main>
@@ -175,6 +197,7 @@
         <button data-tab="destinations">🗺️ أهم الوجهات</button>
         <button data-tab="cars" id="carsTabBtn">🚗 سيارات</button>
         <button data-tab="trips">🧳 رحلاتي</button>
+        <button data-tab="notifications">🔔 التنبيهات</button>
         <button data-tab="agent" id="agentTabBtn">🤖 المساعد</button>
       </div>
 
@@ -257,6 +280,23 @@
       <!-- ─── رحلاتي ─── -->
       <section id="tab-trips" class="hidden">
         <div id="tripsList"></div>
+      </section>
+
+      <!-- ─── التنبيهات وتفضيلاتها ─── -->
+      <section id="tab-notifications" class="hidden">
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+            <strong>🔔 تنبيهاتك</strong>
+            <button id="ntfReadAll">تعليم الكل كمقروء</button>
+          </div>
+          <div id="ntfList" style="margin-top:12px"></div>
+        </div>
+        <div class="card">
+          <strong>⚙️ أي التنبيهات تريد أن تصلك؟</strong>
+          <p class="note">وقائع حجوزاتك يبقى سجلها داخل البوابة دوماً — اختيارك يطال بريدها.</p>
+          <div id="prefRows"></div>
+          <div id="prefSaved" class="note hidden" style="color:var(--ok)">✅ حُفظ.</div>
+        </div>
       </section>
 
       <!-- ─── فنادق الوجهة (صفحة منفصلة تُفتح من بحث الرحلات بمربع اختياري) ─── -->
@@ -394,6 +434,7 @@
       $('carDropoffDate').value = new Date(Date.now() + 9 * 86400000).toISOString().slice(0, 10);
       loadTrips();
       loadPromos(); // بلا await: الشريط زينة، لا يؤخّر جاهزية الصفحة
+      refreshBell();
     }
 
     $('tokenSave').addEventListener('click', () => {
@@ -407,10 +448,11 @@
     document.querySelectorAll('.tabs button').forEach(btn =>
       btn.addEventListener('click', () => {
         document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b === btn));
-        ['search', 'destinations', 'cars', 'trips', 'agent'].forEach(t =>
+        ['search', 'destinations', 'cars', 'trips', 'notifications', 'agent'].forEach(t =>
           $('tab-' + t).classList.toggle('hidden', t !== btn.dataset.tab));
         if (btn.dataset.tab === 'trips') loadTrips();
         if (btn.dataset.tab === 'destinations' && !$('destGrid').children.length) loadDestinations();
+        if (btn.dataset.tab === 'notifications') { loadNotifications(); loadPrefs(); }
       }));
 
     // ─── البحث ───
@@ -580,6 +622,100 @@
       }
       if (o.expiresAt) parts.push(`<div class="det-warn">⏳ صلاحية السعر حتى ${fmtDateTime(o.expiresAt)}</div>`);
       return `<div class="details">${parts.join('')}</div>`;
+    }
+
+    // ─── 🔔 التنبيهات ───
+
+    const fmtWhen = ts => new Date(ts).toLocaleString('ar', { dateStyle: 'medium', timeStyle: 'short' });
+
+    function setBell(unread) {
+      $('bellBtn').classList.remove('hidden');
+      const badge = $('bellCount');
+      badge.textContent = unread > 99 ? '99+' : String(unread);
+      badge.classList.toggle('hidden', !unread);
+    }
+
+    async function refreshBell() {
+      try {
+        const res = await api('/api/travel/notifications');
+        if (!res.ok) return;
+        setBell((await res.json()).unread || 0);
+      } catch { /* عدّاد تجميلي — لا رسالة خطأ */ }
+    }
+
+    async function loadNotifications() {
+      $('ntfList').innerHTML = '<p class="note">…</p>';
+      try {
+        const res = await api('/api/travel/notifications');
+        if (!res.ok) throw new Error('http');
+        const { notifications, unread } = await res.json();
+        setBell(unread || 0);
+        if (!notifications.length) {
+          $('ntfList').innerHTML = '<p class="note">لا تنبيهات بعد — ستصلك هنا تأكيدات حجوزاتك وتغييرات شركات الطيران وانخفاضات الأسعار.</p>';
+          return;
+        }
+        $('ntfList').innerHTML = notifications.map(n => `
+          <div class="ntf ${n.read ? '' : 'unread'}" data-ntf="${esc(n.id)}">
+            <div class="ntf-title">${esc(n.title)}</div>
+            <div class="ntf-body">${esc(n.body)}</div>
+            <div class="ntf-time">${esc(fmtWhen(n.at))}</div>
+          </div>`).join('');
+        // فتح تنبيه غير مقروء يعلّمه مقروءاً — بلا زر منفصل
+        $('ntfList').querySelectorAll('[data-ntf]').forEach(el =>
+          el.addEventListener('click', async () => {
+            if (!el.classList.contains('unread')) return;
+            el.classList.remove('unread');
+            try { await api(`/api/travel/notifications/${encodeURIComponent(el.dataset.ntf)}/read`, { method: 'POST' }); } catch { /* يُعاد عند التحديث */ }
+            refreshBell();
+          }));
+      } catch {
+        $('ntfList').innerHTML = '<p class="error">تعذّر تحميل التنبيهات.</p>';
+      }
+    }
+
+    $('ntfReadAll').addEventListener('click', async () => {
+      try { await api('/api/travel/notifications/read-all', { method: 'POST' }); } catch { /* أدناه يُظهر الحال */ }
+      loadNotifications();
+    });
+
+    $('bellBtn').addEventListener('click', () => document.querySelector('[data-tab="notifications"]').click());
+
+    // تفضيلات التنبيهات: الفئات تأتي من الخادم لا مكرّرة هنا — إضافة فئة
+    // جديدة لاحقاً تظهر تلقائياً بلا تعديل واجهة.
+    async function loadPrefs() {
+      try {
+        const res = await api('/api/travel/notifications/prefs');
+        if (!res.ok) return;
+        const { prefs, categories } = await res.json();
+        $('prefRows').innerHTML = Object.entries(categories).map(([key, meta]) => `
+          <div class="pref-row" data-cat="${esc(key)}">
+            <span class="pref-name">${esc(meta.label)}</span>
+            <label class="${meta.alwaysInApp ? 'locked' : ''}" title="${meta.alwaysInApp ? 'سجل الوقائع محفوظ دوماً' : ''}">
+              <input type="checkbox" data-ch="inApp" ${prefs[key].inApp ? 'checked' : ''} ${meta.alwaysInApp ? 'disabled' : ''} />
+              داخل البوابة
+            </label>
+            <label>
+              <input type="checkbox" data-ch="email" ${prefs[key].email ? 'checked' : ''} />
+              بريد
+            </label>
+          </div>`).join('');
+        $('prefRows').querySelectorAll('input[type=checkbox]').forEach(cb =>
+          cb.addEventListener('change', savePrefs));
+      } catch { /* التبويب يبقى صالحاً بلا لوحة التفضيلات */ }
+    }
+
+    async function savePrefs() {
+      const prefs = {};
+      $('prefRows').querySelectorAll('[data-cat]').forEach(row => {
+        prefs[row.dataset.cat] = {};
+        row.querySelectorAll('input[data-ch]').forEach(cb => { prefs[row.dataset.cat][cb.dataset.ch] = cb.checked; });
+      });
+      try {
+        const res = await api('/api/travel/notifications/prefs', { method: 'PUT', body: JSON.stringify({ prefs }) });
+        if (!res.ok) return;
+        $('prefSaved').classList.remove('hidden');
+        setTimeout(() => $('prefSaved').classList.add('hidden'), 2000);
+      } catch { /* الحفظ يُعاد عند أي تغيير لاحق */ }
     }
 
     // ─── 🤖 قراءة المساعد لنتائج البحث ───

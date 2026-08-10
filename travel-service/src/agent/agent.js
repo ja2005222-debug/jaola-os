@@ -53,6 +53,17 @@ const INSIGHT_PROMPT = `أنت محرّر لغوي في بوابة سفر. تص�
 4. حافظ على إشارات **العريض** كما هي.
 5. أعد النص المُعاد صياغته فقط، بلا تعليق أو علامات اقتباس.`;
 
+// تنبيه يصل بلا طلب ولا مراجعة — فالتعليمة تمنع التهوين والتهويل معاً،
+// لا الاختلاق وحده. «طمئن المستخدم» ليست مهمة النموذج: الواقعة كما هي.
+const NOTICE_PROMPT = `أنت محرّر لغوي في بوابة سفر. يصلك نص تنبيه مصوغ آلياً عن حدث جرى على حجز مسافر.
+مهمتك إعادة صياغته بعربية واضحة هادئة، موجزة ومحترمة.
+قواعد قاطعة:
+1. لا تضف أي معلومة أو رقم أو تاريخ أو اسم غير موجود في النص، ولا تقترح حلاً لم يُذكر فيه.
+2. لا تحذف أي رقم أو مرجع حجز أو تحذير ورد في النص.
+3. لا تُهوّن من الحدث ولا تُهوّله — انقله كما هو بلا "لا تقلق" وبلا "خطر عاجل".
+4. لا تَعِد بشيء نيابةً عن الخدمة (لا تعويض، لا استرداد، لا إعادة حجز تلقائي).
+5. حافظ على الأسطر المنفصلة والنقاط كما هي، وأعد النص فقط بلا تعليق.`;
+
 /** تعريفات الأدوات بصيغة OpenAI tools الموثَّقة. */
 export const AGENT_TOOLS = [
     {
@@ -635,21 +646,41 @@ export function createTravelAgent({ apiKey, apiUrl = DEFAULT_API_URL, model = DE
          * النموذج تعثّر.
          */
         async phraseInsight(deterministicText) {
-            const source = String(deterministicText || '').trim();
-            if (!source) return '';
-            try {
-                const msg = await complete([
-                    { role: 'system', content: INSIGHT_PROMPT },
-                    { role: 'user', content: source },
-                ], { tools: false, temperature: 0.4 });
-                const out = String(msg.content || '').trim();
-                // رد فارغ أو مُطوَّل بلا داعٍ → النص الحتمي أصدق وأقصر
-                return out && out.length <= source.length * 2.5 ? out : source;
-            } catch {
-                return source;
-            }
+            return rephrase(deterministicText, INSIGHT_PROMPT);
+        },
+
+        /**
+         * يصوغ نص تنبيه حدثٍ (تغيير طيران، انخفاض سعر) — نفس العقد تماماً:
+         * الوقائع محسوبة في notifications.js، وهذه صياغة فوقها.
+         *
+         * ⚠️ الأخطر بين المسارين: التنبيه يصل المستخدمَ بلا أن يطلبه ولا
+         * أن يراجعه أحد. لذا التعليمة تمنع الإضافة والتهوين والتهويل معاً،
+         * والحدّ الأقصى للطول أضيق — تنبيهٌ مُطوَّل يُتجاهَل فيضيع الحدث.
+         */
+        async phraseNotice(deterministicText) {
+            return rephrase(deterministicText, NOTICE_PROMPT, 1.6);
         },
     };
+
+    /**
+     * إعادة صياغة محروسة: بلا أدوات إطلاقاً، ورجوعٌ للنص الأصلي عند أي
+     * فشل أو ردٍّ مُطوَّل. مشتركة بين القراءة والتنبيه فلا يفترق حارساهما.
+     */
+    async function rephrase(deterministicText, systemPrompt, maxGrowth = 2.5) {
+        const source = String(deterministicText || '').trim();
+        if (!source) return '';
+        try {
+            const msg = await complete([
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: source },
+            ], { tools: false, temperature: 0.4 });
+            const out = String(msg.content || '').trim();
+            // رد فارغ أو مُطوَّل بلا داعٍ → النص الحتمي أصدق وأقصر
+            return out && out.length <= source.length * maxGrowth ? out : source;
+        } catch {
+            return source;
+        }
+    }
 }
 
 /** null بلا مفتاح — الخدمة تعمل كاملة بدون الايجنت (تدهور رشيق). */
