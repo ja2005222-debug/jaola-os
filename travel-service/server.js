@@ -37,6 +37,7 @@ import {
 import { airportCoords, searchAirports, airportForTimezone } from './src/airports.js';
 import { createPriceWatch, listPriceWatchesByUser, cancelPriceWatch } from './src/priceWatches.js';
 import { checkWatches } from './src/priceWatchPoller.js';
+import { sendTripReminders } from './src/tripReminders.js';
 import { getDestinationWeather, convertCurrency, MAX_FORECAST_DAYS_AHEAD } from './src/travelInfo.js';
 import { buildTopDestinations, CURATED_DESTINATIONS } from './src/topDestinations.js';
 import { sendMail, mailReady } from './src/mailer.js';
@@ -101,6 +102,17 @@ function daysFromToday(dateStr) {
  *   HMAC-SHA256(secret, `${t}.${rawBody}`) بترميز hex صغير الحروف.
  * مقارنة زمن ثابت (timingSafeEqual) — لا `===` عادية لمقارنة أسرار.
  */
+/**
+ * مقارنة سرّ بزمن ثابت. `timingSafeEqual` ترمي عند اختلاف الطول، فيُوازَن
+ * الطرفان بالتجزئة أولاً — بلا هذا يتسرّب طول السرّ من فرق التوقيت.
+ */
+export function secretMatches(provided, expected) {
+    if (!provided || !expected) return false;
+    const a = crypto.createHash('sha256').update(String(provided)).digest();
+    const b = crypto.createHash('sha256').update(String(expected)).digest();
+    return crypto.timingSafeEqual(a, b);
+}
+
 export function verifyDuffelWebhookSignature(rawBody, signatureHeader, secret) {
     if (!signatureHeader || !secret) return false;
     const pairs = Object.fromEntries(
@@ -348,6 +360,7 @@ export function createApp({
     travelInfoFetch = fetch, // قابل للحقن في الاختبارات (طقس/عملة بلا شبكة حقيقية)
     mailer = { sendMail, mailReady }, // قابل للحقن في الاختبارات (نفس نمط priceWatchPoller.js)
     duffelWebhookSecret = null, // بلا هذا: مسار الـwebhook يرد 503 بوضوح
+    cronSecret = null,          // وبلا هذا: مسار المُطلِق الزمني يرد 503
 }) {
     const app = express();
     // خلف وكيل عكسي واحد (Render وأمثالها) — بدونه req.ip هو عنوان الوكيل
@@ -1205,6 +1218,37 @@ export function createApp({
         res.json({ text: await agent.phraseInsight(text), phrased: true });
     }));
 
+    // ─── ⏰ المُطلِق الزمني ────────────────────────────────────────────
+    //
+    // الخطة المجانية على Render **تنام** بلا زيارات، فـsetInterval داخل
+    // العملية يتوقف معها — وهو حدّ منصة موثَّق لا خلل. المُطلِق الخارجي
+    // (GitHub Actions cron) يوقظ الخدمة ثم ينادي هذا المسار، فيعمل الفحص
+    // الدوري وتذكيرُ ما قبل السفر فعلياً لا نظرياً.
+    //
+    // 🔒 سرٌّ مشترك لا توكن مستخدم: هذا ليس فعل مستخدم بل فعل نظام،
+    // ومقارنته بزمن ثابت (timingSafeEqual) كتوقيع الـwebhook.
+    app.post('/api/travel/cron/run', wrap(async (req, res) => {
+        if (!cronSecret) return res.status(503).json({ error: 'المُطلِق الزمني غير مُهيَّأ.' });
+        if (!secretMatches(req.headers['x-cron-secret'], cronSecret)) {
+            return res.status(401).json({ error: 'سرّ المُطلِق غير صحيح.' });
+        }
+        const summary = {};
+        // كل مهمة معزولة: فشل إحداها لا يمنع الأخرى من العمل هذه الدورة
+        try {
+            summary.priceWatches = await checkWatches({ store, provider, markupPct, mailer });
+        } catch (e) {
+            summary.priceWatches = { error: e.message };
+        }
+        try {
+            summary.tripReminders = await sendTripReminders({
+                store, notifier: eventNotifier, fetchImpl: travelInfoFetch,
+            });
+        } catch (e) {
+            summary.tripReminders = { error: e.message };
+        }
+        res.json(summary);
+    }));
+
     // ─── 🧠 ملف المسافر (الذاكرة) ─────────────────────────────────────
 
     async function loadProfile(username) {
@@ -1335,6 +1379,7 @@ if (isMain) {
         agent,
         markupPct,
         duffelWebhookSecret: process.env.DUFFEL_WEBHOOK_SECRET || null,
+        cronSecret: process.env.CRON_SECRET || null,
     });
 
     const port = Number(process.env.PORT || 4200);

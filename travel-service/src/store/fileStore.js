@@ -86,6 +86,29 @@ export function createFileStore({ dataDir }) {
                 .map(b => ({ ...b }));
         },
 
+        // للمُطلِق الزمني: يفحص كل المُصدَرة ويصفّي في الذاكرة. موعد
+        // الإقلاع داخل offer_json فاستعلامه في Postgres هشّ، والحجم هنا
+        // يجعل التصفية في الذاكرة كافية — يُعاد النظر عند نموّ فعلي.
+        async listIssuedBookings(limit = 500) {
+            return readBookings()
+                .filter(b => b.status === 'issued')
+                .sort((a, b) => b.at - a.at)
+                .slice(0, limit)
+                .map(b => ({ ...b }));
+        },
+
+        // علامة «أُرسل التذكير» — خارج آلة الحالات عمداً: ليست انتقال
+        // حالة حجز بل أثرٌ جانبي، وإقحامها في transitionBooking كان
+        // سيتطلّب انتقالاً وهمياً.
+        async markTripReminderSent(id, at = Date.now()) {
+            const bookings = readBookings();
+            const booking = bookings.find(b => b.id === id);
+            if (!booking) return null;
+            booking.reminderSentAt = at;
+            writeBookings(bookings);
+            return { ...booking };
+        },
+
         async transitionBooking(id, { from, to, patch = {} }) {
             const bookings = readBookings();
             const booking = bookings.find(b => b.id === id);

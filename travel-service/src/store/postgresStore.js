@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS travel_bookings (
 -- توسعة المرحلة ١ الموجودة أصلاً في الإنتاج: عمود إضافي غير هدّام
 -- (الصفوف الحالية تصبح 'flight' تلقائياً).
 ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'flight';
+-- علامة تذكير ما قبل السفر: توسعة غير هدّامة، الصفوف الحالية تبقى NULL
+-- (أي «لم يُرسَل») وهو الصحيح — لا تذكير أُرسل لها فعلاً.
+ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS reminder_sent_at BIGINT;
 CREATE INDEX IF NOT EXISTS travel_bookings_user_idx ON travel_bookings (username, at);
 CREATE INDEX IF NOT EXISTS travel_bookings_status_idx ON travel_bookings (status);
 CREATE INDEX IF NOT EXISTS travel_bookings_provider_order_idx ON travel_bookings (provider_order_id);
@@ -105,6 +108,7 @@ function rowToBooking(r) {
         bookingReference: r.booking_reference,
         error: r.error,
         refund: r.refund_json,
+        reminderSentAt: r.reminder_sent_at != null ? Number(r.reminder_sent_at) : null,
     };
 }
 
@@ -210,6 +214,28 @@ export function createPostgresStore({ connectionString }) {
                     [username, limit]
                 );
                 return res.rows.map(rowToBooking);
+            });
+        },
+
+        // الفهرس على status موجود سلفاً — والتصفية بموعد الإقلاع تتم في
+        // الذاكرة لأنه داخل offer_json (نفس تعليق fileStore).
+        async listIssuedBookings(limit = 500) {
+            return withClient(async c => {
+                const res = await c.query(
+                    "SELECT * FROM travel_bookings WHERE status = 'issued' ORDER BY at DESC LIMIT $1",
+                    [limit]
+                );
+                return res.rows.map(rowToBooking);
+            });
+        },
+
+        async markTripReminderSent(id, at = Date.now()) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'UPDATE travel_bookings SET reminder_sent_at = $2, updated_at = $3 WHERE id = $1 RETURNING *',
+                    [id, at, Date.now()]
+                );
+                return rowToBooking(res.rows[0]);
             });
         },
 

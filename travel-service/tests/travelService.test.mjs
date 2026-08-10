@@ -32,6 +32,7 @@ import { createPostgresStore } from '../src/store/postgresStore.js';
 import { createTravelAgent, executeAgentTool, buildTravelAgent, AGENT_TOOLS } from '../src/agent/agent.js';
 import { listPriceWatchesByUser, cancelPriceWatch } from '../src/priceWatches.js';
 import { checkWatches } from '../src/priceWatchPoller.js';
+import { sendTripReminders, isReminderDue, renderTripReminder, departureAt } from '../src/tripReminders.js';
 import { searchAirports, airportForTimezone, AIRPORT_COORDS } from '../src/airports.js';
 import { getDestinationWeather, convertCurrency } from '../src/travelInfo.js';
 import { buildTopDestinations, CURATED_DESTINATIONS } from '../src/topDestinations.js';
@@ -622,6 +623,121 @@ describe('insights: قراءة نتائج البحث تُحسب بالكود ل�
     test('نوع غير معروف في العرض لا يكسر بقية القراءة', () => {
         const text = renderInsight([{ type: 'unknown_future_kind' }, { type: 'price_spread', spreadPct: 50, count: 3 }]);
         assert.ok(text.includes('50%'));
+    });
+});
+
+// ─── ⏰ تذكير ما قبل السفر (المُطلِق الزمني) ───────────────────────────
+describe('tripReminders: التذكير يُرسل مرة واحدة فقط', () => {
+    const HOUR = 3600000;
+    const now = Date.parse('2027-05-10T12:00:00Z');
+    const flight = (hoursAway, extra = {}) => ({
+        id: 'b' + hoursAway + (extra.id || ''), username: 'u', status: 'issued', kind: 'flight',
+        bookingReference: 'REF1', contact: { email: 'u@t.com' },
+        offer: { slices: [{ origin: 'RUH', destination: 'CAI', departAt: new Date(now + hoursAway * HOUR).toISOString(), arriveAt: new Date(now + (hoursAway + 2) * HOUR).toISOString() }] },
+        ...extra,
+    });
+
+    test('النافذة: ٦–٣٦ ساعة فقط', () => {
+        assert.equal(isReminderDue(flight(24), now), true);
+        assert.equal(isReminderDue(flight(6), now), true);
+        assert.equal(isReminderDue(flight(36), now), true);
+        assert.equal(isReminderDue(flight(3), now), false);   // قريبة جداً — في الطريق أصلاً
+        assert.equal(isReminderDue(flight(72), now), false);  // بعيدة — تُنسى قبل موعدها
+        assert.equal(isReminderDue(flight(-5), now), false);  // أقلعت
+    });
+
+    test('يُستبعد غير المُصدَر وغير الطيران والمُذكَّر سلفاً', () => {
+        assert.equal(isReminderDue(flight(24, { status: 'cancelled' }), now), false);
+        assert.equal(isReminderDue(flight(24, { status: 'pending' }), now), false);
+        assert.equal(isReminderDue(flight(24, { kind: 'stay' }), now), false);
+        assert.equal(isReminderDue(flight(24, { reminderSentAt: now - HOUR }), now), false);
+        assert.equal(isReminderDue({ ...flight(24), offer: { slices: [] } }, now), false);
+    });
+
+    // ⚠️ الأهم: المُطلِق يفتح كل ساعة. بلا علامة تُكتب، تصير الرحلة
+    // الواحدة ٣٠ رسالة — وهو الفخّ الذي بُني الملف لتفاديه.
+    test('دورتان متتاليتان → رسالة واحدة لا رسالتان', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaola-remind-'));
+        const store = createFileStore({ dataDir: dir });
+        await store.init();
+        const booking = await store.createBooking({
+            username: 'remind-user', provider: 'mock', kind: 'flight', status: 'pending',
+            offer: { slices: [{ origin: 'RUH', destination: 'CAI', departAt: new Date(Date.now() + 24 * HOUR).toISOString(), arriveAt: new Date(Date.now() + 26 * HOUR).toISOString() }] },
+            passengers: [], contact: { email: 'r@t.com' }, netAmount: 100, sellAmount: 110, currency: 'USD',
+        });
+        await store.transitionBooking(booking.id, { from: ['pending'], to: 'issued', patch: { bookingReference: 'REFRM' } });
+
+        const sent = [];
+        const notifier = createNotifier({
+            store, mailer: { mailReady: () => true, sendMail: async m => { sent.push(m); return { ok: true }; } },
+        });
+        const noWeather = async () => { throw new Error('طقس محجوب'); };
+
+        const first = await sendTripReminders({ store, notifier, fetchImpl: noWeather });
+        assert.equal(first.due, 1);
+        assert.equal(first.sent, 1);
+        // ⚠️ لا بريد افتراضاً: هذه الفئة وحدها defaultEmail=false — تذكير
+        // ودّي لا إيصال، فلا يُقحَم في بريد المسافر إلا بطلبه.
+        assert.equal(sent.length, 0);
+        const inbox = (await store.listNotificationsByUser('remind-user')).filter(n => n.category === 'trip_reminder');
+        assert.equal(inbox.length, 1);
+        assert.match(inbox[0].body, /RUH ← CAI/);
+        assert.match(inbox[0].body, /REFRM/);
+
+        const second = await sendTripReminders({ store, notifier, fetchImpl: noWeather });
+        assert.equal(second.due, 0, 'الدورة الثانية يجب ألا تجد ما تُذكّر به');
+        assert.equal((await store.listNotificationsByUser('remind-user')).filter(n => n.category === 'trip_reminder').length, 1);
+    });
+
+    test('من فعّل البريد لهذه الفئة يصله فعلاً', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaola-remind3-'));
+        const store = createFileStore({ dataDir: dir });
+        await store.init();
+        await store.setNotificationPrefs('mail-user', { trip_reminder: { inApp: true, email: true } });
+        const b = await store.createBooking({
+            username: 'mail-user', provider: 'mock', kind: 'flight', status: 'pending',
+            offer: { slices: [{ origin: 'JED', destination: 'IST', departAt: new Date(Date.now() + 18 * HOUR).toISOString(), arriveAt: new Date(Date.now() + 24 * HOUR).toISOString() }] },
+            passengers: [], contact: { email: 'm@t.com' }, netAmount: 100, sellAmount: 110, currency: 'USD',
+        });
+        await store.transitionBooking(b.id, { from: ['pending'], to: 'issued', patch: { bookingReference: 'REFML' } });
+
+        const sent = [];
+        const notifier = createNotifier({ store, mailer: { mailReady: () => true, sendMail: async m => { sent.push(m); return { ok: true }; } } });
+        await sendTripReminders({ store, notifier, fetchImpl: async () => { throw new Error('x'); } });
+        assert.equal(sent.length, 1);
+        assert.equal(sent[0].to, 'm@t.com');
+        assert.match(sent[0].text, /JED ← IST/);
+    });
+
+    test('أطفأ المستخدم الفئة → لا رسالة، ولا إعادة فحص كل دورة', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaola-remind2-'));
+        const store = createFileStore({ dataDir: dir });
+        await store.init();
+        await store.setNotificationPrefs('quiet-user', { trip_reminder: { inApp: false, email: false } });
+        const b = await store.createBooking({
+            username: 'quiet-user', provider: 'mock', kind: 'flight', status: 'pending',
+            offer: { slices: [{ origin: 'RUH', destination: 'DXB', departAt: new Date(Date.now() + 20 * HOUR).toISOString(), arriveAt: new Date(Date.now() + 22 * HOUR).toISOString() }] },
+            passengers: [], contact: { email: 'q@t.com' }, netAmount: 100, sellAmount: 110, currency: 'USD',
+        });
+        await store.transitionBooking(b.id, { from: ['pending'], to: 'issued', patch: { bookingReference: 'REFQ' } });
+
+        const sent = [];
+        const notifier = createNotifier({ store, mailer: { mailReady: () => true, sendMail: async m => { sent.push(m); return { ok: true }; } } });
+        const r = await sendTripReminders({ store, notifier, fetchImpl: async () => { throw new Error('x'); } });
+        assert.equal(r.sent, 0);
+        assert.equal(sent.length, 0);
+        // العلامة تُكتب رغم عدم الإرسال — وإلا فُحص كل دورة إلى الأبد
+        assert.ok((await store.getBooking(b.id)).reminderSentAt);
+        assert.equal((await sendTripReminders({ store, notifier, fetchImpl: async () => { throw new Error('x'); } })).due, 0);
+    });
+
+    test('سطر الطقس يُضاف عند نجاحه ويُحذف كلياً عند تعذّره', async () => {
+        const booking = flight(24);
+        const noWeather = renderTripReminder({ booking, weatherLine: null });
+        assert.ok(!noWeather.includes('🌤️'));
+        assert.ok(noWeather.includes('REF1'));
+        const withWeather = renderTripReminder({ booking, weatherLine: '🌤️ طقس القاهرة يوم وصولك: من 20° إلى 33°.' });
+        assert.ok(withWeather.includes('33°'));
     });
 });
 
@@ -1684,6 +1800,48 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 assert.ok(notice);
                 assert.equal(notice.meta.conflicts, 1);
                 assert.equal(notice.body, sentMails[0].text); // نصٌّ واحد للقناتين
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
+        // ─── ⏰ مسار المُطلِق الزمني ───
+
+        test('⏰ POST /api/travel/cron/run: سرّ مطلوب، ولا توكن مستخدم', async () => {
+            const secret = 'cron_secret_xyz';
+            const app = createApp({ store, jwtSecret: JWT_SECRET, provider, markupPct: MARKUP, cronSecret: secret });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            const post = (headers = {}) => fetch(url + '/api/travel/cron/run', {
+                method: 'POST', headers: { 'Content-Type': 'application/json', ...headers },
+            });
+            try {
+                assert.equal((await post()).status, 401);                             // بلا سرّ
+                // قيمة الترويسة لاتينية إجباراً — الترويسات ByteString
+                assert.equal((await post({ 'X-Cron-Secret': 'wrong_secret' })).status, 401);
+                // وسرٌّ بطول مختلف: timingSafeEqual ترمي لولا موازنة التجزئة
+                assert.equal((await post({ 'X-Cron-Secret': 'x' })).status, 401);
+                // ⚠️ توكن مستخدم صالح لا يفتح هذا المسار: فعل نظام لا فعل مستخدم
+                assert.equal((await post({ Authorization: `Bearer ${makeToken('u')}` })).status, 401);
+
+                const ok = await post({ 'X-Cron-Secret': secret });
+                assert.equal(ok.status, 200);
+                const body = await ok.json();
+                assert.ok(body.priceWatches, 'ملخّص فحص الأسعار مطلوب في الرد');
+                assert.ok(body.tripReminders, 'ملخّص التذكيرات مطلوب في الرد');
+                assert.equal(typeof body.tripReminders.checked, 'number');
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
+        test('⏰ بلا CRON_SECRET → 503 صريح لا قبول صامت', async () => {
+            const app = createApp({ store, jwtSecret: JWT_SECRET, provider, markupPct: MARKUP });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            const url = `http://127.0.0.1:${s.address().port}`;
+            try {
+                const res = await fetch(url + '/api/travel/cron/run', { method: 'POST' });
+                assert.equal(res.status, 503);
             } finally {
                 await new Promise(r => s.close(r));
             }
