@@ -80,10 +80,14 @@ async function fetchCheapestPrice({ provider, origin, destination, departDate, m
 /**
  * يبني قائمة الوجهات المُثراة (صورة + سعر) لأصل بحث معيّن — يستبعد
  * الوجهة إن طابقت الأصل (بحث بمطار مطابق للوصول مرفوض أصلاً لدى provider).
+ *
+ * `limit` ليس تجميلاً: كل وجهة = بحث حقيقي لدى المزوّد، والشريط الترويجي
+ * في صفحة الهبوط يعمل لكل زائر لا عند ضغطة زر. تقليل العدد هناك يقلّل
+ * الضغط على حدّ معدّل المزوّد عند أول زيارة من مطار غير مُخزَّن مسبقاً.
  */
-export async function buildTopDestinations({ origin, provider, markupPct, fetchImpl = fetch }) {
+export async function buildTopDestinations({ origin, provider, markupPct, fetchImpl = fetch, limit = CURATED_DESTINATIONS.length }) {
     const departDate = new Date(Date.now() + DEFAULT_DAYS_AHEAD * 86400000).toISOString().slice(0, 10);
-    const list = CURATED_DESTINATIONS.filter(d => d.iata !== origin);
+    const list = CURATED_DESTINATIONS.filter(d => d.iata !== origin).slice(0, Math.max(1, limit));
 
     const results = [];
     for (let i = 0; i < list.length; i += PRICE_CONCURRENCY) {

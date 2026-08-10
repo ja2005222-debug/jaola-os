@@ -112,6 +112,20 @@
     .dest-card .dest-city { font-weight: 700; font-size: 15px; }
     .dest-card .dest-price { color: var(--ok); font-size: 13px; margin-top: 2px; }
 
+    /* الشريط الترويجي أسفل البحث — رفّ أفقي لا شبكة: يوحي بوجود المزيد
+       ولا يزيح النتائج لأسفل الصفحة عند ظهورها. */
+    .promo-head { display: flex; align-items: baseline; gap: 10px; margin: 18px 2px 10px; }
+    .promo-head h3 { margin: 0; font-size: 16px; }
+    .promo-strip { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x mandatory; }
+    .promo-strip .dest-card { flex: 0 0 200px; height: 130px; scroll-snap-align: start; }
+    .promo-skel {
+      flex: 0 0 200px; height: 130px; border-radius: 14px; border: 1px solid var(--border);
+      background: linear-gradient(90deg, var(--card) 25%, #1b2b3d 50%, var(--card) 75%) 0/400% 100%;
+      animation: promoShimmer 1.4s linear infinite;
+    }
+    @keyframes promoShimmer { to { background-position: -400% 0; } }
+    @media (prefers-reduced-motion: reduce) { .promo-skel { animation: none; } }
+
     /* المساعد */
     #chatLog { max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px; }
     .msg { max-width: 85%; padding: 10px 14px; border-radius: 14px; font-size: 14px; white-space: pre-wrap; line-height: 1.6; }
@@ -189,6 +203,13 @@
             </label>
           </div>
           <div id="searchError" class="error hidden"></div>
+        </div>
+        <div id="promoWrap" class="hidden">
+          <div class="promo-head">
+            <h3>✨ وجهات رائجة من مطارك</h3>
+            <span class="note" style="margin:0">أرخص سعر وجدناه اليوم — ذهاب فقط بعد ٣٠ يوماً</span>
+          </div>
+          <div id="promoStrip" class="promo-strip"></div>
         </div>
         <div id="results"></div>
       </section>
@@ -354,7 +375,7 @@
       }
 
       ['fOrigin', 'fDest', 'carIata', 'destOrigin'].forEach(id => attachAirportAutocomplete($(id)));
-      applyDefaultOrigin();
+      await applyDefaultOrigin(); // الشريط الترويجي يحتاج مطار الأصل مُستقرّاً أولاً
 
       // تاريخ افتراضي: بعد أسبوع
       const d = new Date(Date.now() + 7 * 86400000);
@@ -362,6 +383,7 @@
       $('carPickupDate').value = d.toISOString().slice(0, 10);
       $('carDropoffDate').value = new Date(Date.now() + 9 * 86400000).toISOString().slice(0, 10);
       loadTrips();
+      loadPromos(); // بلا await: الشريط زينة، لا يؤخّر جاهزية الصفحة
     }
 
     $('tokenSave').addEventListener('click', () => {
@@ -862,6 +884,31 @@
     });
 
     // ─── أهم الوجهات (صور + أرخص سعر حقيقي) ───
+
+    function destCardHtml(d, origin) {
+      return `
+        <div class="dest-card" data-dest='${esc(JSON.stringify({ iata: d.iata, origin }))}' ${d.image ? `style="background-image:url('${esc(d.image)}')"` : ''}>
+          <div class="dest-overlay">
+            <div class="dest-city">${esc(d.city)}${d.country ? ' · ' + esc(d.country) : ''}</div>
+            <div class="dest-price">${d.fromPrice != null ? `من ${d.fromPrice} ${esc(d.currency)}` : 'السعر غير متاح حالياً'}</div>
+          </div>
+        </div>`;
+    }
+
+    // ⚠️ مُقيَّد بالحاوية لا بالمستند: بطاقات الشريط الترويجي تحمل نفس
+    // `data-dest`، فبحث عام كان سيربط مستمعاً ثانياً لبطاقات شريط سبق ربطها
+    // كلما حُمِّل تبويب الوجهات — فيُطلَق بحثان بضغطة واحدة.
+    function bindDestCards(container) {
+      container.querySelectorAll('[data-dest]').forEach(card =>
+        card.addEventListener('click', () => {
+          const info = JSON.parse(card.dataset.dest);
+          $('fOrigin').value = info.origin; $('fOrigin').dataset.iata = info.origin;
+          $('fDest').value = info.iata; $('fDest').dataset.iata = info.iata;
+          document.querySelector('[data-tab="search"]').click();
+          doSearch();
+        }));
+    }
+
     async function loadDestinations() {
       $('destError').classList.add('hidden');
       $('destGrid').innerHTML = '<p class="note">🔎 جارٍ التحميل…</p>';
@@ -876,21 +923,8 @@
           $('destError').classList.remove('hidden');
           return;
         }
-        $('destGrid').innerHTML = data.destinations.map(d => `
-          <div class="dest-card" data-dest='${esc(JSON.stringify({ iata: d.iata, origin }))}' ${d.image ? `style="background-image:url('${esc(d.image)}')"` : ''}>
-            <div class="dest-overlay">
-              <div class="dest-city">${esc(d.city)}${d.country ? ' · ' + esc(d.country) : ''}</div>
-              <div class="dest-price">${d.fromPrice != null ? `من ${d.fromPrice} ${esc(d.currency)}` : 'السعر غير متاح حالياً'}</div>
-            </div>
-          </div>`).join('');
-        document.querySelectorAll('[data-dest]').forEach(card =>
-          card.addEventListener('click', () => {
-            const info = JSON.parse(card.dataset.dest);
-            $('fOrigin').value = info.origin; $('fOrigin').dataset.iata = info.origin;
-            $('fDest').value = info.iata; $('fDest').dataset.iata = info.iata;
-            document.querySelector('[data-tab="search"]').click();
-            doSearch();
-          }));
+        $('destGrid').innerHTML = data.destinations.map(d => destCardHtml(d, origin)).join('');
+        bindDestCards($('destGrid'));
       } catch {
         $('destGrid').innerHTML = '';
         $('destError').textContent = 'تعذّر تحميل الوجهات — حاول مجدداً بعد قليل.';
@@ -900,6 +934,47 @@
       }
     }
     $('destLoadBtn').addEventListener('click', loadDestinations);
+
+    // ─── ✨ الشريط الترويجي أسفل البحث ───
+    // نفس بيانات "أهم الوجهات" لكن في المكان الذي يهبط فيه الزائر فعلاً،
+    // بعدد أقل (كل وجهة = بحث حقيقي لدى المزوّد). الأسعار حقيقية دائماً:
+    // لا خصوماً مُختلقة ولا أسعاراً مشطوبة — نحن البائع لا وسيط إعلانات،
+    // وسعرٌ موهوم يعني إعلاناً مضلِّلاً بحق لا مجرّد ذوق تصميمي.
+    const PROMO_COUNT = 6;
+    let promoLoaded = false;
+
+    /** الشريط زينة: يظهر على الشاشة الفارغة فقط ويختفي فور وجود نتائج. */
+    function syncPromoVisibility() {
+      const hasResults = $('results').children.length > 0;
+      $('promoWrap').classList.toggle('hidden', hasResults || !promoLoaded);
+    }
+
+    // مراقب واحد بدل نداء يدوي عند كل موضع يغيّر #results (بحث، لا نتائج،
+    // خطأ، مسح) — تلك المواضع تتكاثر مع الوقت ونسيان واحد يترك الشريط
+    // ظاهراً فوق النتائج.
+    new MutationObserver(syncPromoVisibility).observe($('results'), { childList: true });
+
+    async function loadPromos() {
+      const origin = selectedIata($('fOrigin'));
+      if (!/^[A-Z]{3}$/.test(origin)) return; // لم يُستنتَج مطار — لا شريط بلا أصل
+      $('promoStrip').innerHTML = '<div class="promo-skel"></div>'.repeat(4);
+      $('promoWrap').classList.remove('hidden');
+      try {
+        const res = await api(`/api/travel/destinations/top?origin=${encodeURIComponent(origin)}&limit=${PROMO_COUNT}`);
+        if (!res.ok) throw new Error('http');
+        const { destinations } = await res.json();
+        if (!destinations.length) throw new Error('empty');
+        $('promoStrip').innerHTML = destinations.map(d => destCardHtml(d, origin)).join('');
+        bindDestCards($('promoStrip'));
+        promoLoaded = true;
+        syncPromoVisibility();
+      } catch {
+        // فشل الزينة لا يُظهر خطأً للمستخدم ولا يترك هياكل تحميل معلَّقة
+        $('promoStrip').innerHTML = '';
+        $('promoWrap').classList.add('hidden');
+        promoLoaded = false;
+      }
+    }
 
     // ─── سيارات الإيجار ───
     async function doSearchCars() {

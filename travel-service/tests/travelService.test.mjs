@@ -274,6 +274,34 @@ describe('topDestinations: أهم الوجهات (صورة Wikimedia + سعر ح
         const dxb = destinations.find(d => d.iata === 'DXB');
         assert.ok(Number.isFinite(dxb.fromPrice) && dxb.fromPrice > 0);
     });
+
+    // الشريط الترويجي في صفحة الهبوط يعمل لكل زائر لا عند ضغطة زر، وكل
+    // وجهة = بحث حقيقي لدى المزوّد — فالحدّ ضبطُ كلفة لا تقليمُ عرض.
+    test('buildTopDestinations: limit يقلّص العدد فعلياً ويقلّل نداءات المزوّد بالمثل', async () => {
+        const base = createMockTravelProvider();
+        let searchCalls = 0;
+        const countingProvider = {
+            ...base,
+            async searchOffers(params) { searchCalls++; return base.searchOffers(params); },
+        };
+        const stubFetch = async (url) => ({ ok: true, json: async () => ({ thumbnail: { source: String(url) + '.jpg' } }) });
+        const destinations = await buildTopDestinations({
+            origin: 'BAH', provider: countingProvider, markupPct: MARKUP, fetchImpl: stubFetch, limit: 4,
+        });
+        assert.equal(destinations.length, 4);
+        assert.equal(searchCalls, 4); // لا نبحث عن وجهات لن تُعرض
+        assert.ok(destinations.every(d => Number.isFinite(d.fromPrice) && d.fromPrice > 0));
+    });
+
+    test('buildTopDestinations: الأصل يُستبعد قبل تطبيق limit فيبقى العدد كاملاً', async () => {
+        const provider = createMockTravelProvider();
+        const stubFetch = async (url) => ({ ok: true, json: async () => ({ thumbnail: { source: String(url) + '.jpg' } }) });
+        const destinations = await buildTopDestinations({
+            origin: 'DXB', provider, markupPct: MARKUP, fetchImpl: stubFetch, limit: 3,
+        });
+        assert.equal(destinations.length, 3);
+        assert.ok(destinations.every(d => d.iata !== 'DXB')); // دبي ضمن المختارة وأول القائمة
+    });
 });
 
 // ─── 🏨 liteApiStaysProvider (LiteAPI/Nuitee) — ردود Sandbox حقيقية ────
@@ -1762,6 +1790,17 @@ describe('الايجنت الحاجز', () => {
             assert.equal(res.status, 200);
             assert.equal(res.data.destinations.length, CURATED_DESTINATIONS.length);
             assert.ok(res.data.destinations.every(d => Number.isFinite(d.fromPrice)));
+
+            // limit للشريط الترويجي: يُقبل ضمن المدى ويُرفض خارجه بدل أن
+            // يُترجَم صامتاً (limit=0 أو ضخم = طلب مكسور من الواجهة).
+            const limited = await call('/api/travel/destinations/top?origin=RUH&limit=3', { token });
+            assert.equal(limited.status, 200);
+            assert.equal(limited.data.destinations.length, 3);
+
+            for (const bad of ['0', '-1', '999', 'abc', '2.5']) {
+                const r = await call(`/api/travel/destinations/top?origin=RUH&limit=${bad}`, { token });
+                assert.equal(r.status, 400, `limit=${bad} كان يجب أن يُرفض`);
+            }
         }, { travelInfoFetch: stubFetch });
     });
 
