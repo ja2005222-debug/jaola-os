@@ -491,6 +491,23 @@ export function createApp({
         return offer ? publicOffer(offer, markupPct) : null;
     }
 
+    // تفاصيل الفندق للعرض فقط (بلا أسعار — الأسعار حصراً من مسار البحث
+    // المُسعَّر حتى لا يلتف أحد حول تطبيق الهامش). ليست كل المزوّدات
+    // تدعمها (Duffel Stays لا يوفّر مساراً مكافئاً) — 501 صريح بدل تعطّل.
+    async function doGetHotelDetails(hotelId) {
+        requireStays();
+        if (typeof staysProvider.getHotelDetails !== 'function') {
+            throw Object.assign(new Error('تفاصيل الفنادق غير مدعومة لدى المزوّد الحالي.'), { status: 501 });
+        }
+        const id = String(hotelId || '').trim();
+        if (!id) throw Object.assign(new Error('معرّف الفندق مطلوب.'), { status: 400 });
+        try {
+            return await staysProvider.getHotelDetails(id);
+        } catch (e) {
+            throw Object.assign(new Error(`تعذّر جلب تفاصيل الفندق: ${e.message}`), { status: 502 });
+        }
+    }
+
     async function doBookStay(username, { offerId, guests, contact }) {
         requireStays();
         // offerId هنا quote id (من get_stay_offer السابقة) — getQuote يجلبه
@@ -931,6 +948,18 @@ export function createApp({
             const offer = await doGetStayOffer(req.params.id);
             if (!offer) return res.status(404).json({ error: 'عرض الفندق غير موجود أو انتهت صلاحيته.' });
             res.json({ offer });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
+    // نداء مزوّد حقيقي لكل فتح تفاصيل — searchLimiter نفسه يحميه.
+    app.get('/api/travel/stays/hotels/:hotelId', verifyToken, searchLimiter, wrap(async (req, res) => {
+        try {
+            const hotel = await doGetHotelDetails(req.params.hotelId);
+            if (!hotel) return res.status(404).json({ error: 'تفاصيل الفندق غير متاحة.' });
+            res.json({ hotel });
         } catch (e) {
             if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;

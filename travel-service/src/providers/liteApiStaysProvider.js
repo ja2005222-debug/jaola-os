@@ -37,6 +37,8 @@ const DEFAULT_BOOK_API_URL = 'https://book.liteapi.travel/v3.0';
 const SEARCH_RADIUS_M = 15000;
 const MAX_HOTELS_PER_SEARCH = 20;
 const MAX_RESULTS = 10;
+const MAX_DETAIL_IMAGES = 8;      // كفاية لمعرض مصغَّر بلا إثقال الرد
+const MAX_DETAIL_FACILITIES = 30; // بعض الفنادق تُعيد مئات المرافق
 const OFFER_TTL_MS = 3 * 60 * 60 * 1000; // مطابق لـet:10800 (ثانية) بالرد الحقيقي المُشاهَد
 
 function nightsBetween(checkIn, checkOut) {
@@ -91,16 +93,38 @@ export function createLiteApiStaysProvider({ apiKey, apiUrl, bookApiUrl, fetchIm
                 const expiresAt = new Date(now + (Number(hotelEntry.et) || 10800) * 1000).toISOString();
                 for (const roomType of hotelEntry.roomTypes || []) {
                     const firstRate = (roomType.rates || [])[0] || {};
+                    const policy = firstRate.cancellationPolicies || {};
                     const offer = {
                         id: roomType.offerId,
                         name: [meta?.name, firstRate.name].filter(Boolean).join(' — ') || 'فندق',
+                        hotelId: hotelEntry.hotelId, // لجلب تفاصيل الفندق لاحقاً
+                        hotelName: meta?.name || null,
+                        roomName: firstRate.name || null,
                         city: meta?.city || coords.city,
                         country: meta?.country || coords.country,
                         rating: meta?.starRating ?? meta?.rating ?? null,
                         checkInDate, checkOutDate, nights, adults, rooms,
                         netAmount: Number(roomType.offerRetailRate?.amount),
                         currency: roomType.offerRetailRate?.currency,
-                        cancellable: firstRate.cancellationPolicies?.refundableTag === 'RFN',
+                        cancellable: policy.refundableTag === 'RFN',
+                        // تفاصيل تصل من المزوّد وكانت تُهمَل: نوع الإقامة،
+                        // سعة الغرفة، موعد آخر إلغاء مجاني، والرسوم
+                        // **غير المشمولة** بالسعر (تُدفع في الفندق مباشرةً —
+                        // لا هامش عليها لأنها ليست جزءاً مما نبيعه).
+                        boardName: firstRate.boardName || null,
+                        maxOccupancy: firstRate.maxOccupancy ?? null,
+                        cancelPolicy: (policy.cancelPolicyInfos || []).map(p => ({
+                            before: p.cancelTime || null,
+                            amount: p.amount ?? null,
+                            currency: p.currency || null,
+                        })),
+                        feesAtProperty: (firstRate.retailRate?.taxesAndFees || [])
+                            .filter(f => f && f.included === false)
+                            .map(f => ({
+                                description: f.description || null,
+                                amount: f.amount ?? null,
+                                currency: f.currency || null,
+                            })),
                         expiresAt,
                     };
                     if (!Number.isFinite(offer.netAmount)) continue;
@@ -115,6 +139,42 @@ export function createLiteApiStaysProvider({ apiKey, apiUrl, bookApiUrl, fetchIm
             const cached = offerCache.get(String(offerId || ''));
             if (!cached || cached.expiresAt < Date.now()) return null;
             return { ...cached.offer };
+        },
+
+        /**
+         * تفاصيل فندق للعرض (صور/وصف/مرافق/تقييم/أوقات الدخول والخروج).
+         * ✅ شكل الرد **موثَّق حرفياً** في دليل LiteAPI المنشور
+         * ("Displaying Essential Hotel Details") — لا تخمين: كل حقل
+         * مقروء أدناه ورد في مثال JSON الرسمي الكامل.
+         * بلا سعر إطلاقاً — الأسعار تأتي حصراً من مسار البحث المُسعَّر
+         * (فلا يلتف أحد حول تطبيق الهامش من هنا).
+         */
+        async getHotelDetails(hotelId) {
+            const res = await liteApi('GET', `/data/hotel?hotelId=${encodeURIComponent(hotelId)}`);
+            const d = res.data;
+            if (!d) return null;
+            return {
+                id: d.id || hotelId,
+                name: d.name || null,
+                description: d.hotelDescription || null,
+                importantInformation: d.hotelImportantInformation || null,
+                address: d.address || null,
+                city: d.city || null,
+                country: d.country || null,
+                starRating: d.starRating ?? null,
+                reviewRating: d.rating ?? null,
+                reviewCount: d.reviewCount ?? null,
+                checkinTime: d.checkinCheckoutTimes?.checkin || null,
+                checkoutTime: d.checkinCheckoutTimes?.checkout || null,
+                location: d.location?.latitude != null && d.location?.longitude != null
+                    ? { lat: d.location.latitude, lon: d.location.longitude }
+                    : null,
+                images: (d.hotelImages || [])
+                    .slice(0, MAX_DETAIL_IMAGES)
+                    .map(i => ({ url: i.url || null, caption: i.caption || null }))
+                    .filter(i => i.url),
+                facilities: (d.hotelFacilities || []).slice(0, MAX_DETAIL_FACILITIES),
+            };
         },
 
         // rate offerId (من searchStays) → يقفل السعر عبر /rates/prebook.

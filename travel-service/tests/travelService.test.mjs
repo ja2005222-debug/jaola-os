@@ -304,6 +304,25 @@ describe('liteApiStaysProvider: بحث فنادق حقيقي (رد Sandbox حي 
             if (u.includes('/bookings/bk_123')) {
                 return { ok: true, text: async () => JSON.stringify({ data: { refundAmount: 200.5, currency: 'USD' } }) };
             }
+            if (u.includes('/data/hotel?')) {
+                // شكل موثَّق حرفياً في دليل LiteAPI المنشور
+                return {
+                    ok: true,
+                    text: async () => JSON.stringify({
+                        data: {
+                            id: 'lp1897', name: 'Test Hotel NYC',
+                            hotelDescription: '<p><strong>Oceanfront</strong> property...</p>',
+                            hotelImportantInformation: 'Photo ID required at check-in.',
+                            checkinCheckoutTimes: { checkin: '04:00 PM', checkout: '11:00 AM' },
+                            hotelImages: [{ url: 'https://img.example/1.jpg', caption: 'hotel building' }],
+                            country: 'us', city: 'New York', starRating: 4, rating: 8.6, reviewCount: 1599,
+                            location: { latitude: 40.75, longitude: -73.99 },
+                            address: '703 South Ocean Boulevard',
+                            hotelFacilities: ['Free WiFi', 'Parking'],
+                        },
+                    }),
+                };
+            }
             if (u.includes('/hotels/rates')) {
                 return {
                     ok: true,
@@ -319,7 +338,22 @@ describe('liteApiStaysProvider: بحث فنادق حقيقي (رد Sandbox حي 
                                 },
                                 {
                                     roomTypeId: 'rt2', offerId: 'offer_cheaper', supplier: 'nuitee',
-                                    rates: [{ name: 'Queen Standard Room', cancellationPolicies: { refundableTag: 'RFN' } }],
+                                    // حقول التفاصيل بنفس أسماء رد Sandbox الحقيقي المُلتقَط
+                                    rates: [{
+                                        name: 'Queen Standard Room',
+                                        boardName: 'Breakfast Included',
+                                        maxOccupancy: 3,
+                                        cancellationPolicies: {
+                                            refundableTag: 'RFN',
+                                            cancelPolicyInfos: [{ cancelTime: '2027-01-13 07:00:00', amount: 381.62, currency: 'USD' }],
+                                        },
+                                        retailRate: {
+                                            taxesAndFees: [
+                                                { included: true, description: 'Resort fee', amount: 80, currency: 'USD' },
+                                                { included: false, description: 'City tax', amount: 7, currency: 'USD' },
+                                            ],
+                                        },
+                                    }],
                                     offerRetailRate: { amount: 253.01, currency: 'USD' },
                                 },
                             ],
@@ -353,6 +387,37 @@ describe('liteApiStaysProvider: بحث فنادق حقيقي (رد Sandbox حي 
             provider.searchStays({ iata: 'ZZZ', checkInDate: '2027-01-15', checkOutDate: '2027-01-17' }),
             /لا إحداثيات معروفة/
         );
+    });
+
+    test('searchStays: يحمل تفاصيل العرض التي كانت تُهمَل (إقامة/سعة/إلغاء/رسوم الفندق)', async () => {
+        const provider = createLiteApiStaysProvider({ apiKey: 'sand_test123', fetchImpl: stubFetch() });
+        const offers = await provider.searchStays({ iata: 'RUH', checkInDate: '2027-01-15', checkOutDate: '2027-01-17', adults: 2, rooms: 1 });
+        const cheap = offers.find(o => o.id === 'offer_cheaper');
+        assert.equal(cheap.hotelId, 'lp1897');           // أساس جلب تفاصيل الفندق
+        assert.equal(cheap.roomName, 'Queen Standard Room');
+        assert.equal(cheap.boardName, 'Breakfast Included');
+        assert.equal(cheap.maxOccupancy, 3);
+        assert.deepEqual(cheap.cancelPolicy, [{ before: '2027-01-13 07:00:00', amount: 381.62, currency: 'USD' }]);
+        // الرسوم **غير المشمولة** فقط (تُدفع بالفندق) — المشمولة لا تُكرَّر
+        assert.deepEqual(cheap.feesAtProperty, [{ description: 'City tax', amount: 7, currency: 'USD' }]);
+    });
+
+    test('getHotelDetails: يطبّع الشكل الموثَّق، وبلا أي حقل سعر', async () => {
+        const provider = createLiteApiStaysProvider({ apiKey: 'sand_test123', fetchImpl: stubFetch() });
+        const h = await provider.getHotelDetails('lp1897');
+        assert.equal(h.name, 'Test Hotel NYC');
+        assert.equal(h.starRating, 4);
+        assert.equal(h.reviewRating, 8.6);
+        assert.equal(h.reviewCount, 1599);
+        assert.equal(h.checkinTime, '04:00 PM');
+        assert.equal(h.checkoutTime, '11:00 AM');
+        assert.deepEqual(h.location, { lat: 40.75, lon: -73.99 });
+        assert.equal(h.images.length, 1);
+        assert.deepEqual(h.facilities, ['Free WiFi', 'Parking']);
+        // 💰 لا سعر إطلاقاً من هذا المسار — الأسعار حصراً من البحث المُسعَّر
+        for (const k of ['netAmount', 'sellAmount', 'price', 'currency']) {
+            assert.equal(h[k], undefined, `تسرّب حقل سعري: ${k}`);
+        }
     });
 
     test('getStayOffer: يرجّع من الكاش بعد البحث، وnull لمعرّف غير موجود', async () => {
@@ -594,6 +659,32 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 assert.equal(list.bookings.length, 1);
                 assert.equal(list.bookings[0].status, 'failed');
                 assert.ok(list.bookings[0].error);
+            } finally {
+                await new Promise(r => s.close(r));
+            }
+        });
+
+        test('🏨ℹ️ GET /api/travel/stays/hotels/:id: تفاصيل حقيقية، و501 لمزوّد لا يدعمها', async () => {
+            const token = makeToken('hotel-details-user');
+            // مزوّد المحاكاة يدعمها (تعادل العقد)
+            const ok = await call('/api/travel/stays/hotels/mock_hotel_1', { token });
+            assert.equal(ok.status, 200);
+            assert.ok(ok.data.hotel.name);
+            assert.ok(Array.isArray(ok.data.hotel.facilities));
+            assert.equal(ok.data.hotel.sellAmount, undefined); // بلا أسعار
+
+            assert.equal((await call('/api/travel/stays/hotels/x')).status, 401); // محمي بالتوكن
+
+            // مزوّد بلا القدرة (كـDuffel Stays) → 501 صريح لا تعطّل
+            const bare = { name: 'no-details', mode: 'mock', async searchStays() { return []; } };
+            const app = createApp({ store, jwtSecret: JWT_SECRET, provider, staysProvider: bare, markupPct: MARKUP });
+            const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
+            try {
+                const res = await fetch(`http://127.0.0.1:${s.address().port}/api/travel/stays/hotels/abc`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                assert.equal(res.status, 501);
+                assert.match((await res.json()).error, /غير مدعومة/);
             } finally {
                 await new Promise(r => s.close(r));
             }

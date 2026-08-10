@@ -65,6 +65,24 @@
     .seg { color: var(--muted); font-size: 13px; margin-top: 4px; }
     .stops0 { color: var(--ok); } .stops1 { color: var(--warn); }
 
+    /* لوحة التفاصيل (رحلة/فندق) */
+    .details {
+      border-top: 1px dashed var(--border); margin-top: 10px; padding-top: 10px;
+      font-size: 13px; color: var(--muted); line-height: 1.7; width: 100%;
+    }
+    .details strong { color: var(--text); }
+    .details ul { margin: 4px 18px 0; }
+    .det-toggle {
+      background: none; border: none; color: var(--accent); cursor: pointer;
+      font-size: 13px; padding: 4px 0; text-decoration: underline;
+    }
+    .det-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .det-tag { border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; font-size: 12px; }
+    .det-gallery { display: flex; gap: 8px; overflow-x: auto; margin-top: 8px; padding-bottom: 4px; }
+    .det-gallery img { height: 90px; border-radius: 8px; flex: 0 0 auto; }
+    .det-warn { color: var(--warn); }
+    .det-ok { color: var(--ok); }
+
     .st { font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); }
     .st-issued { color: var(--ok); border-color: var(--ok); }
     .st-pending { color: var(--warn); border-color: var(--warn); }
@@ -354,6 +372,33 @@
       </div>`;
     }
 
+    const CABIN_AR = {
+      economy: 'اقتصادية', premium_economy: 'اقتصادية مميزة',
+      business: 'رجال الأعمال', first: 'الأولى',
+    };
+    const BAGGAGE_AR = { checked: 'حقيبة مسجَّلة', carry_on: 'حقيبة يد' };
+    const fmtDateTime = iso => (iso || '').slice(0, 16).replace('T', ' ');
+
+    /** تفاصيل رحلة من بيانات العرض نفسها — لا نداء إضافي (كلها كانت تصل ولا تُعرض). */
+    function flightDetailsHtml(o) {
+      const parts = [];
+      if (o.cabin) parts.push(`<div>🎫 الدرجة: <strong>${esc(CABIN_AR[o.cabin] || o.cabin)}</strong></div>`);
+      for (const [i, s] of (o.slices || []).entries()) {
+        const label = (o.slices.length > 1) ? (i === 0 ? 'الذهاب' : 'العودة') : 'الرحلة';
+        const segs = (s.segments || []).map(g => {
+          const bag = (g.baggage || []).map(b =>
+            `${BAGGAGE_AR[b.type] || b.type || 'أمتعة'}${b.quantity != null ? ` ×${b.quantity}` : ''}`).join('، ');
+          return `<li>${esc(g.origin)} ${fmtDateTime(g.departAt)} ← ${esc(g.destination)} ${fmtDateTime(g.arriveAt)}
+            · ${esc(g.carrier)} ${esc(g.flightNumber)}
+            ${bag ? `<br><span class="det-ok">🧳 ${esc(bag)}</span>`
+                  : '<br><span class="det-warn">🧳 لم يُصرّح المزوّد بالأمتعة لهذا القطاع</span>'}</li>`;
+        }).join('');
+        parts.push(`<div><strong>${label}</strong><ul>${segs}</ul></div>`);
+      }
+      if (o.expiresAt) parts.push(`<div class="det-warn">⏳ صلاحية السعر حتى ${fmtDateTime(o.expiresAt)}</div>`);
+      return `<div class="details">${parts.join('')}</div>`;
+    }
+
     async function doSearch() {
       $('searchError').classList.add('hidden');
       $('results').innerHTML = '<p class="note">🔎 جارٍ البحث…</p>';
@@ -378,18 +423,30 @@
           $('results').innerHTML = '<p class="note">لا رحلات متاحة لهذا البحث.</p>';
           return;
         }
-        $('results').innerHTML = data.offers.map(o => `
+        $('results').innerHTML = data.offers.map((o, i) => `
           <div class="card offer">
             <div style="flex:1">
               <div class="route">${esc(o.owner)}</div>
               ${o.slices.map(sliceHtml).join('')}
+              <button class="det-toggle" data-flight-det="${i}">▾ تفاصيل الرحلة والأمتعة</button>
             </div>
             <div style="text-align:center">
               <div class="price">${o.sellAmount} ${esc(o.currency)}</div>
               <div class="note">إجمالي ${o.passengerCount} مسافر</div>
               <button class="primary" data-book='${esc(JSON.stringify({ id: o.id }))}'>احجز</button>
             </div>
+            <div class="hidden" id="flightDet${i}"></div>
           </div>`).join('');
+        document.querySelectorAll('[data-flight-det]').forEach(btn =>
+          btn.addEventListener('click', () => {
+            const i = btn.dataset.flightDet;
+            const panel = $('flightDet' + i);
+            const open = !panel.classList.contains('hidden');
+            if (open) { panel.classList.add('hidden'); btn.textContent = '▾ تفاصيل الرحلة والأمتعة'; return; }
+            if (!panel.innerHTML) panel.innerHTML = flightDetailsHtml(data.offers[i]);
+            panel.classList.remove('hidden');
+            btn.textContent = '▴ إخفاء التفاصيل';
+          }));
         document.querySelectorAll('[data-book]').forEach(btn =>
           btn.addEventListener('click', () => openBooking(
             data.offers.find(o => o.id === JSON.parse(btn.dataset.book).id))));
@@ -478,6 +535,90 @@
       d.setUTCDate(d.getUTCDate() + days);
       return d.toISOString().slice(0, 10);
     }
+    const BOARD_AR = {
+      'Room Only': 'بلا وجبات', 'Breakfast Included': 'إفطار مشمول',
+      'Half Board': 'إقامة نصف كاملة', 'Full Board': 'إقامة كاملة', 'All Inclusive': 'شامل الكل',
+    };
+    const boardAr = b => BOARD_AR[b] || b;
+
+    /** سياسات العرض نفسه — متاحة فوراً بلا نداء (تصل مع نتيجة البحث). */
+    function stayPolicyHtml(o) {
+      const parts = [];
+      if (o.roomName) parts.push(`<div>🛏️ الغرفة: <strong>${esc(o.roomName)}</strong></div>`);
+      if ((o.cancelPolicy || []).length) {
+        const lines = o.cancelPolicy.map(p =>
+          `<li>ابتداءً من ${esc(fmtDateTime(p.before))} تُخصم ${p.amount != null ? `${p.amount} ${esc(p.currency || '')}` : 'رسوم يحددها الفندق'}</li>`).join('');
+        parts.push(`<div><strong>سياسة الإلغاء</strong><ul>${lines}</ul>
+          <span class="note">الإلغاء قبل أول موعد أعلاه مجاني.</span></div>`);
+      } else if (!o.cancellable) {
+        parts.push('<div class="det-warn">⛔ حجز غير قابل للاسترداد — لا إلغاء مجاني.</div>');
+      }
+      if ((o.feesAtProperty || []).length) {
+        const lines = o.feesAtProperty.map(f =>
+          `<li>${esc(f.description || 'رسوم')}: ${f.amount != null ? `${f.amount} ${esc(f.currency || '')}` : '—'}</li>`).join('');
+        parts.push(`<div class="det-warn"><strong>رسوم تُدفع في الفندق (غير مشمولة بالسعر أعلاه)</strong><ul>${lines}</ul></div>`);
+      }
+      return parts.join('');
+    }
+
+    /** معلومات الفندق نفسه — نداء حقيقي للمزوّد عند أول فتح فقط. */
+    function hotelInfoHtml(h) {
+      const parts = [];
+      if ((h.images || []).length) {
+        parts.push(`<div class="det-gallery">${h.images.map(im =>
+          `<img src="${esc(im.url)}" alt="${esc(im.caption || h.name || '')}" loading="lazy" />`).join('')}</div>`);
+      }
+      const stars = [];
+      if (h.starRating) stars.push(`⭐ ${h.starRating} نجوم`);
+      if (h.reviewRating) stars.push(`👍 تقييم النزلاء ${h.reviewRating}${h.reviewCount ? ` (${h.reviewCount} مراجعة)` : ''}`);
+      if (stars.length) parts.push(`<div>${esc(stars.join(' · '))}</div>`);
+      if (h.address) parts.push(`<div>📍 ${esc(h.address)}${h.city ? '، ' + esc(h.city) : ''}${
+        h.location ? ` — <a href="https://maps.google.com/?q=${h.location.lat},${h.location.lon}" target="_blank" rel="noopener">الخريطة</a>` : ''}</div>`);
+      if (h.checkinTime || h.checkoutTime) {
+        parts.push(`<div>🕒 الدخول ${esc(h.checkinTime || '—')} · الخروج ${esc(h.checkoutTime || '—')}</div>`);
+      }
+      if ((h.facilities || []).length) {
+        parts.push(`<div class="det-tags">${h.facilities.map(f => `<span class="det-tag">${esc(f)}</span>`).join('')}</div>`);
+      }
+      // الوصف قد يحوي HTML من المزوّد — يُعرض كنص مهروب لا كترميز مُنفَّذ
+      if (h.description) {
+        const plain = String(h.description).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+        if (plain) parts.push(`<div style="margin-top:6px">${esc(plain.slice(0, 600))}${plain.length > 600 ? '…' : ''}</div>`);
+      }
+      if (h.importantInformation) {
+        const plain = String(h.importantInformation).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+        if (plain) parts.push(`<div class="det-warn" style="margin-top:6px">ℹ️ ${esc(plain.slice(0, 400))}${plain.length > 400 ? '…' : ''}</div>`);
+      }
+      return parts.join('');
+    }
+
+    async function toggleStayDetails(btn, offer) {
+      const panel = $('stayDet' + btn.dataset.stayDet);
+      if (!panel.classList.contains('hidden')) {
+        panel.classList.add('hidden');
+        btn.textContent = '▾ تفاصيل الفندق والسياسات';
+        return;
+      }
+      btn.textContent = '▴ إخفاء التفاصيل';
+      panel.classList.remove('hidden');
+      if (panel.dataset.loaded) return;
+      // السياسات فوراً من بيانات البحث، ثم معلومات الفندق بعد جلبها
+      panel.innerHTML = `<div class="details">${stayPolicyHtml(offer)}
+        <div id="hotelInfo${btn.dataset.stayDet}" class="note">⏳ جارٍ جلب تفاصيل الفندق…</div></div>`;
+      const slot = $('hotelInfo' + btn.dataset.stayDet);
+      if (!offer.hotelId) { slot.textContent = 'المزوّد الحالي لا يوفّر تفاصيل إضافية لهذا الفندق.'; panel.dataset.loaded = '1'; return; }
+      try {
+        const res = await api('/api/travel/stays/hotels/' + encodeURIComponent(offer.hotelId));
+        const data = await res.json();
+        if (!res.ok) { slot.textContent = data.error || 'تعذّر جلب تفاصيل الفندق.'; return; }
+        slot.className = '';
+        slot.innerHTML = hotelInfoHtml(data.hotel) || '<span class="note">لا تفاصيل إضافية من المزوّد.</span>';
+        panel.dataset.loaded = '1'; // لا نعيد النداء عند إعادة الفتح
+      } catch {
+        slot.textContent = 'تعذّر الاتصال بالخادم لجلب التفاصيل.';
+      }
+    }
+
     async function renderStaysPage({ iata, checkIn, checkOut, adults }) {
       $('staysPageTitle').textContent = `🏨 فنادق ${iata}`;
       $('staysPageResults').innerHTML = '<p class="note">🔎 جارٍ البحث عن فنادق…</p>';
@@ -493,17 +634,27 @@
           $('staysPageResults').innerHTML = '<p class="note">لا فنادق متاحة لهذه الوجهة/التواريخ.</p>';
           return;
         }
-        $('staysPageResults').innerHTML = data.offers.map(o => `
+        $('staysPageResults').innerHTML = data.offers.map((o, i) => `
           <div class="card offer">
             <div style="flex:1">
               <div class="route">${esc(o.name)}</div>
-              <div class="seg">${esc(o.city || '')} · ${esc(o.checkInDate || body.checkInDate)} → ${esc(o.checkOutDate || body.checkOutDate)}</div>
+              <div class="seg">${esc(o.city || '')} · ${esc(o.checkInDate || body.checkInDate)} → ${esc(o.checkOutDate || body.checkOutDate)}${o.nights ? ` · ${o.nights} ليالٍ` : ''}</div>
+              <div class="det-tags">
+                ${o.boardName ? `<span class="det-tag">🍽️ ${esc(boardAr(o.boardName))}</span>` : ''}
+                ${o.maxOccupancy ? `<span class="det-tag">👥 حتى ${o.maxOccupancy}</span>` : ''}
+                ${o.rating ? `<span class="det-tag">⭐ ${esc(String(o.rating))}</span>` : ''}
+                <span class="det-tag ${o.cancellable ? 'det-ok' : 'det-warn'}">${o.cancellable ? '↩️ قابل للإلغاء' : '⛔ غير قابل للاسترداد'}</span>
+              </div>
+              <button class="det-toggle" data-stay-det="${i}">▾ تفاصيل الفندق والسياسات</button>
             </div>
             <div style="text-align:center">
               <div class="price">${o.sellAmount} ${esc(o.currency)}</div>
               <button class="primary" data-stay-book='${esc(JSON.stringify({ id: o.id }))}'>احجز</button>
             </div>
+            <div class="hidden" id="stayDet${i}"></div>
           </div>`).join('');
+        document.querySelectorAll('[data-stay-det]').forEach(btn =>
+          btn.addEventListener('click', () => toggleStayDetails(btn, data.offers[Number(btn.dataset.stayDet)])));
         document.querySelectorAll('[data-stay-book]').forEach(sbtn =>
           sbtn.addEventListener('click', () => openStayBooking(
             data.offers.find(o => o.id === JSON.parse(sbtn.dataset.stayBook).id))));
