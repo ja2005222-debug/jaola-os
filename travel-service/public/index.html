@@ -65,6 +65,20 @@
     .seg { color: var(--muted); font-size: 13px; margin-top: 4px; }
     .stops0 { color: var(--ok); } .stops1 { color: var(--warn); }
 
+    /* الإكمال التلقائي للمطارات */
+    .ac-wrap { position: relative; }
+    .ac-list {
+      position: absolute; z-index: 50; inset-inline: 0; top: 100%;
+      background: var(--card); border: 1px solid var(--accent); border-radius: 10px;
+      margin-top: 4px; max-height: 260px; overflow-y: auto; box-shadow: 0 8px 24px #0008;
+    }
+    .ac-item { padding: 9px 12px; cursor: pointer; font-size: 14px; border-bottom: 1px solid var(--border); }
+    .ac-item:last-child { border-bottom: none; }
+    .ac-item:hover, .ac-item.active { background: #0e3350; }
+    .ac-item .ac-code { color: var(--accent); font-weight: 700; margin-inline-start: 6px; }
+    .ac-item .ac-sub { color: var(--muted); font-size: 12px; }
+    .ac-empty { padding: 9px 12px; color: var(--muted); font-size: 13px; }
+
     /* لوحة التفاصيل (رحلة/فندق) */
     .details {
       border-top: 1px dashed var(--border); margin-top: 10px; padding-top: 10px;
@@ -144,8 +158,8 @@
       <section id="tab-search">
         <div class="card">
           <div class="row">
-            <div><label>من (IATA)</label><input id="fOrigin" placeholder="RUH" maxlength="3" /></div>
-            <div><label>إلى (IATA)</label><input id="fDest" placeholder="CAI" maxlength="3" /></div>
+            <div class="ac-wrap"><label>من</label><input id="fOrigin" placeholder="الرياض أو RUH" autocomplete="off" /></div>
+            <div class="ac-wrap"><label>إلى</label><input id="fDest" placeholder="القاهرة أو CAI" autocomplete="off" /></div>
             <div><label>تاريخ الذهاب</label><input id="fDepart" type="date" /></div>
             <div><label>العودة (اختياري)</label><input id="fReturn" type="date" /></div>
           </div>
@@ -183,7 +197,7 @@
       <section id="tab-destinations" class="hidden">
         <div class="card">
           <div class="row" style="align-items:end">
-            <div><label>من (IATA)</label><input id="destOrigin" placeholder="RUH" maxlength="3" value="RUH" /></div>
+            <div class="ac-wrap"><label>من</label><input id="destOrigin" placeholder="الرياض أو RUH" autocomplete="off" value="RUH" /></div>
           </div>
           <button class="primary" id="destLoadBtn">🔄 تحديث</button>
           <div id="destError" class="error hidden"></div>
@@ -195,7 +209,7 @@
       <section id="tab-cars" class="hidden">
         <div class="card">
           <div class="row">
-            <div><label>موقع الاستلام (IATA)</label><input id="carIata" placeholder="RUH" maxlength="3" /></div>
+            <div class="ac-wrap"><label>موقع الاستلام</label><input id="carIata" placeholder="الرياض أو RUH" autocomplete="off" /></div>
             <div><label>تاريخ الاستلام</label><input id="carPickupDate" type="date" /></div>
             <div><label>وقت الاستلام</label><input id="carPickupTime" type="time" value="10:00" /></div>
           </div>
@@ -339,6 +353,8 @@
         return;
       }
 
+      ['fOrigin', 'fDest', 'carIata', 'destOrigin'].forEach(id => attachAirportAutocomplete($(id)));
+
       // تاريخ افتراضي: بعد أسبوع
       const d = new Date(Date.now() + 7 * 86400000);
       $('fDepart').value = d.toISOString().slice(0, 10);
@@ -366,6 +382,81 @@
 
     // ─── البحث ───
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    // ─── 🔤 الإكمال التلقائي للمطارات (عربي/إنجليزي/IATA) ───
+    // الحقل يقبل ما يكتبه المستخدم بأي صيغة، لكن ما يُرسَل للخادم هو رمز
+    // IATA دوماً — محفوظ في dataset.iata عند الاختيار. لو كتب المستخدم
+    // رمزاً صحيحاً مباشرةً (RUH) نقبله كما هو بلا إلزامه بالاختيار.
+    function selectedIata(input) {
+      const raw = (input.value || '').trim();
+      if (/^[A-Za-z]{3}$/.test(raw)) return raw.toUpperCase();
+      return input.dataset.iata || raw; // الخادم يرد بخطأ واضح إن كان غير صالح
+    }
+
+    function attachAirportAutocomplete(input) {
+      const wrap = input.closest('.ac-wrap');
+      let list = null, items = [], active = -1, timer = null, seq = 0;
+
+      const close = () => { if (list) { list.remove(); list = null; } items = []; active = -1; };
+      const choose = (a) => {
+        input.value = `${a.city} (${a.iata})`;
+        input.dataset.iata = a.iata;
+        close();
+      };
+      const highlight = () => {
+        if (!list) return;
+        [...list.children].forEach((el, i) => el.classList.toggle('active', i === active));
+      };
+
+      const render = (airports) => {
+        close();
+        list = document.createElement('div');
+        list.className = 'ac-list';
+        if (!airports.length) {
+          list.innerHTML = '<div class="ac-empty">لا مطار مغطّى بهذا الاسم — جرّب اسم مدينة أو دولة أخرى.</div>';
+        } else {
+          list.innerHTML = airports.map(a => `
+            <div class="ac-item" data-iata="${esc(a.iata)}">
+              <span>${esc(a.city)}</span><span class="ac-code">${esc(a.iata)}</span>
+              <div class="ac-sub">${esc(a.country)} · ${esc(a.cityEn)}</div>
+            </div>`).join('');
+          [...list.children].forEach((el, i) =>
+            el.addEventListener('mousedown', ev => { ev.preventDefault(); choose(airports[i]); }));
+        }
+        items = airports;
+        wrap.appendChild(list);
+      };
+
+      input.addEventListener('input', () => {
+        input.dataset.iata = ''; // أي تعديل يدوي يُبطل اختياراً سابقاً
+        clearTimeout(timer);
+        const q = input.value.trim();
+        if (q.length < 2) return close();
+        // تأخير بسيط حتى لا نُطلق طلباً لكل ضغطة مفتاح
+        timer = setTimeout(async () => {
+          const mine = ++seq;
+          try {
+            const res = await api('/api/travel/airports?q=' + encodeURIComponent(q));
+            if (!res.ok || mine !== seq) return; // تجاهل رداً تجاوزه ما بعده
+            const data = await res.json();
+            if (document.activeElement === input) render(data.airports || []);
+          } catch { /* الشبكة — الحقل يبقى قابلاً للكتابة اليدوية */ }
+        }, 180);
+      });
+
+      input.addEventListener('keydown', (e) => {
+        if (!list || !items.length) return;
+        if (e.key === 'ArrowDown') { e.preventDefault(); active = (active + 1) % items.length; highlight(); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); active = (active - 1 + items.length) % items.length; highlight(); }
+        else if (e.key === 'Enter') {
+          if (active >= 0) { e.preventDefault(); choose(items[active]); }
+          else if (items.length === 1) { e.preventDefault(); choose(items[0]); }
+        } else if (e.key === 'Escape') close();
+      });
+
+      input.addEventListener('blur', () => setTimeout(close, 120));
+    }
+
     const fmtTime = iso => (iso || '').slice(11, 16);
     const fmtDur = min => min == null ? '' : `${Math.floor(min / 60)}س ${min % 60}د`;
 
@@ -422,7 +513,7 @@
       $('searchBtn').disabled = true;
       try {
         const body = {
-          origin: $('fOrigin').value, destination: $('fDest').value,
+          origin: selectedIata($('fOrigin')), destination: selectedIata($('fDest')),
           departDate: $('fDepart').value, returnDate: $('fReturn').value || null,
           adults: Number($('fAdults').value), children: Number($('fChildren').value),
           cabin: $('fCabin').value, sort: $('fSort').value,
@@ -733,7 +824,7 @@
       $('destGrid').innerHTML = '<p class="note">🔎 جارٍ التحميل…</p>';
       $('destLoadBtn').disabled = true;
       try {
-        const origin = ($('destOrigin').value || 'RUH').trim().toUpperCase();
+        const origin = selectedIata($('destOrigin')) || 'RUH';
         const res = await api('/api/travel/destinations/top?origin=' + encodeURIComponent(origin));
         const data = await res.json();
         if (!res.ok) {
@@ -752,8 +843,8 @@
         document.querySelectorAll('[data-dest]').forEach(card =>
           card.addEventListener('click', () => {
             const info = JSON.parse(card.dataset.dest);
-            $('fOrigin').value = info.origin;
-            $('fDest').value = info.iata;
+            $('fOrigin').value = info.origin; $('fOrigin').dataset.iata = info.origin;
+            $('fDest').value = info.iata; $('fDest').dataset.iata = info.iata;
             document.querySelector('[data-tab="search"]').click();
             doSearch();
           }));
@@ -774,7 +865,7 @@
       $('carSearchBtn').disabled = true;
       try {
         const body = {
-          iata: $('carIata').value,
+          iata: selectedIata($('carIata')),
           pickupDate: $('carPickupDate').value, pickupTime: $('carPickupTime').value,
           dropoffDate: $('carDropoffDate').value, dropoffTime: $('carDropoffTime').value,
         };
