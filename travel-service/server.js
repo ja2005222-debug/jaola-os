@@ -54,8 +54,24 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const NAME_RE = /^[A-Za-z][A-Za-z' -]{0,39}$/; // لاتينية كما في الجواز — شرط المزوّدين
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_RE = /^\+?[0-9]{7,15}$/;
+// ⚠️ E.164 صارمة: `+` ورمز دولة إلزاميان (١–١٥ رقماً، أولها ليس صفراً).
+// كانت `\+?` تجعل `+` اختيارية فيمرّ رقم محلي (05xxxxxxxx) من تحققنا ثم
+// يرفضه Duffel بـ`HTTP 422: Field 'phone_number' is invalid` — **بعد**
+// إنشاء سجل حجز يتحول failed، فيتراكم فشل في قائمة المستخدم بلا سبب
+// مفهوم له. عُطل حقيقي رُصد من استخدام حي (١٠ أغسطس ٢٠٢٦).
+const PHONE_RE = /^\+[1-9][0-9]{6,14}$/;
+const PHONE_HINT = 'هاتف بصيغة دولية يبدأ بـ+ ورمز الدولة (مثل +966501234567).';
 const CURRENCY_RE = /^[A-Za-z]{3}$/;
+
+/**
+ * يطبّع الهاتف قبل التحقق: يزيل الفواصل الشكلية، ويحوّل بادئة الاتصال
+ * الدولي `00` إلى `+` (نفس الرقم دولياً — من يكتب 00966… يقصد +966…)،
+ * فلا يُرفض رقم صحيح لمجرد اختلاف صيغة كتابته.
+ */
+function normalizePhone(raw) {
+    const cleaned = String(raw || '').replace(/[\s()\-.]/g, '');
+    return cleaned.startsWith('00') ? '+' + cleaned.slice(2) : cleaned;
+}
 
 function todayUtc() {
     return new Date().toISOString().slice(0, 10);
@@ -155,9 +171,9 @@ export function validatePassengers(body, expectedCount) {
         clean.push({ title, givenName, familyName, bornOn, gender });
     }
     const email = String(body?.contact?.email || '').trim();
-    const phone = String(body?.contact?.phone || '').replace(/[\s-]/g, '');
+    const phone = normalizePhone(body?.contact?.phone);
     if (!EMAIL_RE.test(email)) return { error: 'بريد تواصل صالح مطلوب.' };
-    if (!PHONE_RE.test(phone)) return { error: 'هاتف تواصل صالح مطلوب (أرقام دولية).' };
+    if (!PHONE_RE.test(phone)) return { error: PHONE_HINT };
     return { values: { passengers: clean, contact: { email, phone } } };
 }
 
@@ -211,9 +227,9 @@ export function validateGuests(body) {
         clean.push({ givenName, familyName });
     }
     const email = String(body?.contact?.email || '').trim();
-    const phone = String(body?.contact?.phone || '').replace(/[\s-]/g, '');
+    const phone = normalizePhone(body?.contact?.phone);
     if (!EMAIL_RE.test(email)) return { error: 'بريد تواصل صالح مطلوب.' };
-    if (!PHONE_RE.test(phone)) return { error: 'هاتف تواصل صالح مطلوب (أرقام دولية).' };
+    if (!PHONE_RE.test(phone)) return { error: PHONE_HINT };
     return { values: { guests: clean, contact: { email, phone } } };
 }
 
@@ -265,9 +281,9 @@ export function validateDrivers(body) {
         clean.push({ givenName, familyName });
     }
     const email = String(body?.contact?.email || '').trim();
-    const phone = String(body?.contact?.phone || '').replace(/[\s-]/g, '');
+    const phone = normalizePhone(body?.contact?.phone);
     if (!EMAIL_RE.test(email)) return { error: 'بريد تواصل صالح مطلوب.' };
-    if (!PHONE_RE.test(phone)) return { error: 'هاتف تواصل صالح مطلوب (أرقام دولية).' };
+    if (!PHONE_RE.test(phone)) return { error: PHONE_HINT };
     return { values: { drivers: clean, contact: { email, phone } } };
 }
 
@@ -473,6 +489,23 @@ export function createApp({
         requireStays();
         const offer = await staysProvider.getStayOffer(String(offerId || ''));
         return offer ? publicOffer(offer, markupPct) : null;
+    }
+
+    // تفاصيل الفندق للعرض فقط (بلا أسعار — الأسعار حصراً من مسار البحث
+    // المُسعَّر حتى لا يلتف أحد حول تطبيق الهامش). ليست كل المزوّدات
+    // تدعمها (Duffel Stays لا يوفّر مساراً مكافئاً) — 501 صريح بدل تعطّل.
+    async function doGetHotelDetails(hotelId) {
+        requireStays();
+        if (typeof staysProvider.getHotelDetails !== 'function') {
+            throw Object.assign(new Error('تفاصيل الفنادق غير مدعومة لدى المزوّد الحالي.'), { status: 501 });
+        }
+        const id = String(hotelId || '').trim();
+        if (!id) throw Object.assign(new Error('معرّف الفندق مطلوب.'), { status: 400 });
+        try {
+            return await staysProvider.getHotelDetails(id);
+        } catch (e) {
+            throw Object.assign(new Error(`تعذّر جلب تفاصيل الفندق: ${e.message}`), { status: 502 });
+        }
     }
 
     async function doBookStay(username, { offerId, guests, contact }) {
@@ -915,6 +948,18 @@ export function createApp({
             const offer = await doGetStayOffer(req.params.id);
             if (!offer) return res.status(404).json({ error: 'عرض الفندق غير موجود أو انتهت صلاحيته.' });
             res.json({ offer });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
+    // نداء مزوّد حقيقي لكل فتح تفاصيل — searchLimiter نفسه يحميه.
+    app.get('/api/travel/stays/hotels/:hotelId', verifyToken, searchLimiter, wrap(async (req, res) => {
+        try {
+            const hotel = await doGetHotelDetails(req.params.hotelId);
+            if (!hotel) return res.status(404).json({ error: 'تفاصيل الفندق غير متاحة.' });
+            res.json({ hotel });
         } catch (e) {
             if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;

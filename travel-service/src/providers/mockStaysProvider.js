@@ -37,12 +37,20 @@ export function createMockStaysProvider({ failCreate = false, failCancel = false
                 const offer = {
                     id: `mock_stay_${seed}_${i}`,
                     name: MOCK_HOTEL_NAMES[s % MOCK_HOTEL_NAMES.length],
+                    hotelId: `mock_hotel_${s % MOCK_HOTEL_NAMES.length}`,
+                    hotelName: MOCK_HOTEL_NAMES[s % MOCK_HOTEL_NAMES.length],
+                    roomName: i === 0 ? 'غرفة مزدوجة' : 'غرفة فردية',
                     city: location?.city || iata,
                     country: location?.country || null,
                     rating: 3 + (s % 3),
                     checkInDate, checkOutDate, nights, adults, rooms,
                     netAmount, currency: MOCK_CURRENCY,
                     cancellable: i !== 2,
+                    // نفس حقول liteApiStaysProvider الجديدة — تعادل العقد
+                    boardName: i % 2 === 0 ? 'Room Only' : 'Breakfast Included',
+                    maxOccupancy: 2 + (i % 2),
+                    cancelPolicy: i === 2 ? [] : [{ before: `${checkInDate}T12:00:00`, amount: netAmount, currency: MOCK_CURRENCY }],
+                    feesAtProperty: i === 0 ? [{ description: 'ضريبة المدينة', amount: 5, currency: MOCK_CURRENCY }] : [],
                     expiresAt: new Date(Date.now() + 30 * 60000).toISOString(),
                 };
                 offers.set(offer.id, offer);
@@ -54,6 +62,27 @@ export function createMockStaysProvider({ failCreate = false, failCancel = false
         async getStayOffer(offerId) {
             const offer = offers.get(offerId);
             return offer ? { ...offer } : null;
+        },
+
+        // تعادل عقد liteApiStaysProvider.getHotelDetails — حتمي بلا شبكة.
+        async getHotelDetails(hotelId) {
+            const s = seedOf(String(hotelId || ''));
+            return {
+                id: hotelId,
+                name: MOCK_HOTEL_NAMES[s % MOCK_HOTEL_NAMES.length],
+                description: 'فندق محاكاة للتطوير — وصف تجريبي بلا بيانات حقيقية.',
+                importantInformation: 'يلزم إبراز هوية عند الوصول (نص محاكاة).',
+                address: 'شارع المحاكاة 1',
+                city: null, country: null,
+                starRating: 3 + (s % 3),
+                reviewRating: 7 + (s % 3),
+                reviewCount: 100 + (s % 900),
+                checkinTime: '03:00 PM',
+                checkoutTime: '12:00 PM',
+                location: null,
+                images: [],
+                facilities: ['واي فاي مجاني', 'موقف سيارات', 'مصعد'],
+            };
         },
 
         // بلا تفرقة rate/quote في المحاكاة — نفس المعرّف طوال الوقت،
