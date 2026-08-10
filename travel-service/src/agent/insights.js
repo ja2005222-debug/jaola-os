@@ -150,18 +150,161 @@ export function analyzeOffers(offers) {
         }
     }
 
-    // ٥) تشتّت سعري لافت — أضعف الإشارات، فلا يُذكر إلا حين لا شيء أنفع
-    // منه. بلا هذا الشرط كانت نسبته تتكرّر حرفياً مع نسبة علاوة ذُكرت
-    // قبلها بسطر («+246%» مرتين) — ضجيج لا قراءة.
-    if (findings.length === 0) {
-        const highest = list.reduce((max, o) => (price(o) > price(max) ? o : max), list[0]);
-        const spreadPct = pctMore(price(cheapest), price(highest));
-        if (spreadPct >= MIN_SPREAD_PCT) {
-            findings.push({ type: 'price_spread', spreadPct, count: list.length });
+    return withSpread(findings, list).slice(0, MAX_FINDINGS);
+}
+
+/**
+ * يضيف تشتّت السعر — أضعف الإشارات، فلا يُذكر إلا حين لا شيء أنفع منه.
+ * بلا هذا الشرط كانت نسبته تتكرّر حرفياً مع نسبة علاوة ذُكرت قبلها بسطر
+ * («+246%» مرتين) — ضجيج لا قراءة. مشتركة بين الأنواع الثلاثة فلا يفترق
+ * انضباطها بينها.
+ */
+function withSpread(findings, list) {
+    if (findings.length > 0) return findings;
+    const cheapest = cheapestOf(list);
+    const highest = list.reduce((max, o) => (price(o) > price(max) ? o : max), list[0]);
+    const spreadPct = pctMore(price(cheapest), price(highest));
+    if (spreadPct >= MIN_SPREAD_PCT) {
+        return [{ type: 'price_spread', spreadPct, count: list.length }];
+    }
+    return findings;
+}
+
+// ─── 🏨 الفنادق ───────────────────────────────────────────────────────
+
+const MIN_RATING_GAIN = 1;          // أقل من نجمة فرقٌ لا يُلاحَظ
+const MAX_RATING_PREMIUM_PCT = 25;
+const MAX_BOARD_PREMIUM_PCT = 20;   // فطور بربع السعر ليس صفقة
+const MAX_REFUND_PREMIUM_PCT = 25;
+
+const BREAKFAST_RE = /breakfast|فطور|\bBB\b|half board|full board/i;
+const ROOM_ONLY_RE = /room only|\bRO\b|بدون وجبات/i;
+
+/**
+ * هل يشمل السعر فطوراً؟ true/false/null — و`null` ليست تفصيلاً هنا أيضاً:
+ * مزوّد صامت عن نوع الإقامة يختلف عن مزوّد يقول «بلا وجبات»، وادّعاء
+ * الثانية مكان الأولى يجعل المسافر يفاجأ بفاتورة إفطار.
+ */
+export function hasBreakfast(offer) {
+    const board = offer?.boardName;
+    if (!board) return null;
+    if (BREAKFAST_RE.test(board)) return true;
+    if (ROOM_ONLY_RE.test(board)) return false;
+    return null; // وصفٌ لا نفهمه ≠ لا فطور
+}
+
+/** مجموع الرسوم التي تُدفع في الفندق — خارج السعر المعروض. */
+function propertyFeesTotal(offer) {
+    const fees = offer?.feesAtProperty;
+    if (!Array.isArray(fees) || fees.length === 0) return 0;
+    return fees.reduce((sum, f) => sum + (Number(f?.amount) || 0), 0);
+}
+
+const isRefundable = offer => (offer?.cancellable === true
+    || (Array.isArray(offer?.cancelPolicy) && offer.cancelPolicy.length > 0));
+
+export function analyzeStayOffers(offers) {
+    const list = (Array.isArray(offers) ? offers : []).filter(o => Number.isFinite(price(o)));
+    if (list.length < 2) return [];
+
+    const findings = [];
+    const cheapest = cheapestOf(list);
+    const cheapestIdx = list.indexOf(cheapest);
+    const cheapestRating = Number(cheapest.rating);
+
+    // ١) تقييم أعلى بفارق يسير — نظير «البديل المباشر» في الطيران
+    if (Number.isFinite(cheapestRating)) {
+        const better = list
+            .filter(o => o !== cheapest && Number(o.rating) - cheapestRating >= MIN_RATING_GAIN)
+            .filter(o => pctMore(price(cheapest), price(o)) <= MAX_RATING_PREMIUM_PCT && price(o) > price(cheapest));
+        const pick = cheapestOf(better);
+        if (pick) {
+            findings.push({
+                type: 'rating_upgrade',
+                index: list.indexOf(pick),
+                rating: Number(pick.rating),
+                cheapestRating,
+                extraAmount: Math.round((price(pick) - price(cheapest)) * 100) / 100,
+                extraPct: pctMore(price(cheapest), price(pick)),
+                currency: pick.currency || null,
+            });
         }
     }
 
-    return findings.slice(0, MAX_FINDINGS);
+    // ٢) فطور مشمول بفارق يسير — قرار سفرٍ ملموس لا تفصيل
+    if (hasBreakfast(cheapest) === false) {
+        const withBreakfast = cheapestOf(list.filter(o => o !== cheapest && hasBreakfast(o) === true
+            && price(o) > price(cheapest) && pctMore(price(cheapest), price(o)) <= MAX_BOARD_PREMIUM_PCT));
+        if (withBreakfast) {
+            findings.push({
+                type: 'breakfast_included',
+                index: list.indexOf(withBreakfast),
+                extraAmount: Math.round((price(withBreakfast) - price(cheapest)) * 100) / 100,
+                extraPct: pctMore(price(cheapest), price(withBreakfast)),
+                currency: withBreakfast.currency || null,
+            });
+        }
+    }
+
+    // ٣) الأرخص غير قابل للإلغاء — أثقل من فارق سعر عند تغيّر الخطط
+    if (!isRefundable(cheapest)) {
+        const refundable = cheapestOf(list.filter(o => o !== cheapest && isRefundable(o)
+            && pctMore(price(cheapest), price(o)) <= MAX_REFUND_PREMIUM_PCT && price(o) > price(cheapest)));
+        if (refundable) {
+            findings.push({
+                type: 'cheapest_not_refundable',
+                index: cheapestIdx,
+                alternativeIndex: list.indexOf(refundable),
+                extraAmount: Math.round((price(refundable) - price(cheapest)) * 100) / 100,
+                extraPct: pctMore(price(cheapest), price(refundable)),
+                currency: refundable.currency || null,
+            });
+        }
+    }
+
+    // ٤) رسوم تُدفع في الفندق — السعر المعروض ليس ما سيدفعه فعلاً
+    const fees = propertyFeesTotal(cheapest);
+    if (fees > 0 && findings.length < MAX_FINDINGS) {
+        findings.push({
+            type: 'fees_at_property',
+            index: cheapestIdx,
+            feesAmount: Math.round(fees * 100) / 100,
+            currency: cheapest.currency || null,
+        });
+    }
+
+    return withSpread(findings, list).slice(0, MAX_FINDINGS);
+}
+
+// ─── 🚗 السيارات ──────────────────────────────────────────────────────
+
+/**
+ * أنحف القراءات الثلاث، وعن قصد: العرض الموحّد للسيارة لا يحمل فئة
+ * حجم قابلة للمقارنة (لا ACRISS مُطبَّع ولا عدد مقاعد)، فمقارنة «سيارة
+ * أكبر بفارق يسير» تحتاج تخميناً من اسم الطراز — وذلك اختلاقٌ لا تحليل.
+ * ما يُحسب بيقين: الإلغاء المجاني وتشتّت السعر.
+ */
+export function analyzeCarOffers(offers) {
+    const list = (Array.isArray(offers) ? offers : []).filter(o => Number.isFinite(price(o)));
+    if (list.length < 2) return [];
+
+    const findings = [];
+    const cheapest = cheapestOf(list);
+    if (cheapest.cancellable === false) {
+        const refundable = cheapestOf(list.filter(o => o !== cheapest && o.cancellable === true
+            && pctMore(price(cheapest), price(o)) <= MAX_REFUND_PREMIUM_PCT && price(o) > price(cheapest)));
+        if (refundable) {
+            findings.push({
+                type: 'cheapest_not_refundable',
+                index: list.indexOf(cheapest),
+                alternativeIndex: list.indexOf(refundable),
+                extraAmount: Math.round((price(refundable) - price(cheapest)) * 100) / 100,
+                extraPct: pctMore(price(cheapest), price(refundable)),
+                currency: refundable.currency || null,
+            });
+        }
+    }
+    return withSpread(findings, list).slice(0, MAX_FINDINGS);
 }
 
 /** «7 س 30 د» — صياغة مدة مقروءة بالعربية. */
@@ -206,6 +349,26 @@ export function renderInsight(findings) {
             case 'price_spread':
                 parts.push(`الفرق بين الأرخص والأغلى ${f.spreadPct}% — تصفّح أبعد من أول نتيجة.`);
                 break;
+            case 'rating_upgrade':
+                parts.push(
+                    `${optionNo(f.index)} تقييمه **${f.rating}** مقابل ${f.cheapestRating} للأرخص، ` +
+                    `بفارق ${money(f.extraAmount, f.currency)} فقط (+${f.extraPct}%).`);
+                break;
+            case 'breakfast_included':
+                parts.push(
+                    `${optionNo(f.index)} يشمل **الفطور** مقابل ${money(f.extraAmount, f.currency)} ` +
+                    `زيادة (+${f.extraPct}%).`);
+                break;
+            case 'cheapest_not_refundable':
+                parts.push(
+                    `الأرخص (${optionNo(f.index)}) **غير قابل للإلغاء**، بينما ` +
+                    `${optionNo(f.alternativeIndex)} قابل للإلغاء بفارق ${money(f.extraAmount, f.currency)} (+${f.extraPct}%).`);
+                break;
+            case 'fees_at_property':
+                parts.push(
+                    `⚠️ ${optionNo(f.index)} عليه **${money(f.feesAmount, f.currency)} رسوم تُدفع في الفندق** ` +
+                    `خارج السعر المعروض.`);
+                break;
             default:
                 break; // نوع غير معروف يُتجاهل بدل كسر القراءة كلها
         }
@@ -220,6 +383,10 @@ const FINDING_FIELDS = {
     fastest_premium: ['index', 'extraAmount', 'extraPct', 'savedMin'],
     cheapest_no_baggage: ['index', 'alternativeIndex', 'extraAmount'],
     price_spread: ['spreadPct', 'count'],
+    rating_upgrade: ['index', 'extraAmount', 'extraPct', 'rating', 'cheapestRating'],
+    breakfast_included: ['index', 'extraAmount', 'extraPct'],
+    cheapest_not_refundable: ['index', 'alternativeIndex', 'extraAmount', 'extraPct'],
+    fees_at_property: ['index', 'feesAmount'],
 };
 const CURRENCY_RE = /^[A-Za-z]{3}$/;
 
@@ -249,8 +416,11 @@ export function sanitizeFindings(raw) {
 }
 
 /** القراءة الكاملة لعروض — null حين لا يوجد ما يستحق الذكر. */
-export function buildInsight(offers) {
-    const findings = analyzeOffers(offers);
+function wrap(findings) {
     if (findings.length === 0) return null;
     return { findings, text: renderInsight(findings) };
 }
+
+export const buildInsight = offers => wrap(analyzeOffers(offers));
+export const buildStayInsight = offers => wrap(analyzeStayOffers(offers));
+export const buildCarInsight = offers => wrap(analyzeCarOffers(offers));

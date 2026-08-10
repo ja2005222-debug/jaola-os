@@ -880,15 +880,18 @@
       return esc(text).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     }
 
-    function insightHtml(insight) {
+    // ⚠️ المفتاح ليس تجميلاً: ثلاث مناطق نتائج (طيران/فنادق/سيارات) قد
+    // تحمل قراءةً في وقت واحد، ومعرّف ثابت كان سيجعل صياغةَ إحداها
+    // تستبدل نصّ الأخرى — getElementById يعيد الأول لا الصحيح.
+    function insightHtml(insight, key = 'flight') {
       if (!insight || !insight.text) return '';
-      return `<div class="card insight phrasing" id="insightCard">
+      return `<div class="card insight phrasing" id="insightCard-${key}">
         <div class="insight-head">🤖 قراءة المساعد</div>
-        <div class="insight-text" id="insightText">${insightMarkup(insight.text)}</div>
+        <div class="insight-text" id="insightText-${key}">${insightMarkup(insight.text)}</div>
       </div>`;
     }
 
-    async function refineInsight(insight) {
+    async function refineInsight(insight, key = 'flight') {
       if (!insight || !insight.findings || !insight.findings.length) return;
       try {
         const res = await api('/api/travel/insights/phrase', {
@@ -896,12 +899,12 @@
         });
         if (!res.ok) return;
         const { text } = await res.json();
-        const el = $('insightText');
+        const el = $('insightText-' + key);
         // العنصر قد يكون اختفى ببحث جديد أثناء انتظار الرد
         if (el && text) el.innerHTML = insightMarkup(text);
       } catch { /* الصياغة الحتمية تكفي — لا رسالة خطأ على تحسين تجميلي */
       } finally {
-        const card = $('insightCard');
+        const card = $('insightCard-' + key);
         if (card) card.classList.remove('phrasing');
       }
     }
@@ -1161,7 +1164,7 @@
           $('staysPageResults').innerHTML = '<p class="note">لا فنادق متاحة لهذه الوجهة/التواريخ.</p>';
           return;
         }
-        $('staysPageResults').innerHTML = data.offers.map((o, i) => `
+        $('staysPageResults').innerHTML = insightHtml(data.insight, 'stay') + data.offers.map((o, i) => `
           <div class="card offer">
             <div style="flex:1">
               <div class="route">${esc(o.name)}</div>
@@ -1185,6 +1188,7 @@
         document.querySelectorAll('[data-stay-book]').forEach(sbtn =>
           sbtn.addEventListener('click', () => openStayBooking(
             data.offers.find(o => o.id === JSON.parse(sbtn.dataset.stayBook).id))));
+        refineInsight(data.insight, 'stay');
       } catch {
         $('staysPageResults').innerHTML = '<p class="error">تعذّر بحث الفنادق — حاول مجدداً بعد قليل.</p>';
       }
@@ -1352,11 +1356,12 @@
           $('carResults').innerHTML = '<p class="note">لا سيارات متاحة لهذا البحث.</p>';
           return;
         }
-        $('carResults').innerHTML = data.offers.map(o => `
+        $('carResults').innerHTML = insightHtml(data.insight, 'car') + data.offers.map(o => `
           <div class="card offer">
             <div style="flex:1">
               <div class="route">🚗 ${esc(o.vehicleName)}</div>
               <div class="seg">${esc(o.supplier || '')} · ${esc(o.pickupLocation || '')}</div>
+              <div class="det-tags"><span class="det-tag ${o.cancellable ? 'det-ok' : 'det-warn'}">${o.cancellable ? '↩️ قابل للإلغاء' : '⛔ غير قابل للاسترداد'}</span></div>
             </div>
             <div style="text-align:center">
               <div class="price">${o.sellAmount} ${esc(o.currency)}</div>
@@ -1366,6 +1371,7 @@
         document.querySelectorAll('[data-car-book]').forEach(cbtn =>
           cbtn.addEventListener('click', () => openCarBooking(
             data.offers.find(o => o.id === JSON.parse(cbtn.dataset.carBook).id))));
+        refineInsight(data.insight, 'car');
       } catch {
         $('carResults').innerHTML = '';
         $('carSearchError').textContent = 'تعذّر البحث — حاول مجدداً بعد قليل.';

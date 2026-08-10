@@ -23,7 +23,9 @@ import { createBooking, getBooking, getBookingByProviderOrderId, listBookingsByU
 import { buildStore } from './src/store/index.js';
 import { buildProvider, buildStaysProvider, buildCarsProvider } from './src/providers/index.js';
 import { buildTravelAgent } from './src/agent/agent.js';
-import { buildInsight, renderInsight, sanitizeFindings } from './src/agent/insights.js';
+import {
+    buildInsight, buildStayInsight, buildCarInsight, renderInsight, sanitizeFindings,
+} from './src/agent/insights.js';
 import {
     createNotifier, renderAirlineChangeNotice, normalizeNotificationPrefs,
     defaultNotificationPrefs, NOTIFICATION_CATEGORIES,
@@ -326,10 +328,13 @@ function bookingSummaryLine(b) {
     if (b.kind === 'car') {
         return `🚗 ${b.offer?.vehicleName || 'سيارة'} — ${b.offer?.supplier || ''} — ${b.offer?.pickupLocation || ''}`;
     }
+    // ⚠️ الوجهة من شريحة الذهاب لا من آخر شريحة: في رحلة ذهاب وعودة تكون
+    // آخر شريحة عائدة إلى مطار الانطلاق، فكان السطر يقرأ «AMS→AMS»
+    // ويُخفي الوجهة الحقيقية كلياً — عيبٌ ظهر في تنبيه إلغاء حقيقي.
     const slices = b.offer?.slices || [];
-    const first = slices[0] || {};
-    const last = slices[slices.length - 1] || first;
-    return `✈️ ${first.origin || '؟'}→${last.destination || '؟'} — ${(first.departAt || '').slice(0, 16).replace('T', ' ')}`;
+    const outbound = slices[0] || {};
+    const arrow = slices.length > 1 ? '⇄' : '→'; // ⇄ يقول «ذهاب وعودة» بلا كلمة
+    return `✈️ ${outbound.origin || '؟'}${arrow}${outbound.destination || '؟'} — ${(outbound.departAt || '').slice(0, 16).replace('T', ' ')}`;
 }
 
 export function createApp({
@@ -1003,7 +1008,8 @@ export function createApp({
 
     app.post('/api/travel/stays/search', verifyToken, searchLimiter, wrap(async (req, res) => {
         try {
-            res.json({ offers: await doSearchStays(req.body) });
+            const offers = await doSearchStays(req.body);
+            res.json({ offers, insight: buildStayInsight(offers) });
         } catch (e) {
             if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;
@@ -1056,7 +1062,8 @@ export function createApp({
 
     app.post('/api/travel/cars/search', verifyToken, searchLimiter, wrap(async (req, res) => {
         try {
-            res.json({ offers: await doSearchCars(req.body) });
+            const offers = await doSearchCars(req.body);
+            res.json({ offers, insight: buildCarInsight(offers) });
         } catch (e) {
             if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;

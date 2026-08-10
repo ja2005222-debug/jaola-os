@@ -36,7 +36,10 @@ import { searchAirports, airportForTimezone, AIRPORT_COORDS } from '../src/airpo
 import { getDestinationWeather, convertCurrency } from '../src/travelInfo.js';
 import { buildTopDestinations, CURATED_DESTINATIONS } from '../src/topDestinations.js';
 import { createLiteApiStaysProvider } from '../src/providers/liteApiStaysProvider.js';
-import { analyzeOffers, renderInsight, buildInsight, sanitizeFindings, checkedBaggage, formatDuration } from '../src/agent/insights.js';
+import {
+    analyzeOffers, renderInsight, buildInsight, sanitizeFindings, checkedBaggage, formatDuration,
+    analyzeStayOffers, analyzeCarOffers, buildStayInsight, buildCarInsight, hasBreakfast,
+} from '../src/agent/insights.js';
 import {
     createNotifier, defaultNotificationPrefs, normalizeNotificationPrefs,
     renderAirlineChangeNotice, isChannelEnabled,
@@ -516,6 +519,104 @@ describe('insights: قراءة نتائج البحث تُحسب بالكود ل�
         assert.equal(clean[1].currency, 'USD'); // العملة الصحيحة نُظِّمت
         // والأهم: النص المُصاغ يخرج من قوالب الخادم وحدها
         assert.ok(!renderInsight(clean).includes('تجاهل ما سبق'));
+    });
+
+    // ─── 🏨 الفنادق ───
+    const stay = ({ price, rating = 4, board, cancellable = true, fees = [] }) => ({
+        id: 's' + price, sellAmount: price, currency: 'USD', rating,
+        boardName: board, cancellable, feesAtProperty: fees, cancelPolicy: cancellable ? [{}] : [],
+    });
+
+    test('🏨 تقييم أعلى بفارق يسير يُرصد، والباهظ لا', () => {
+        const f = analyzeStayOffers([
+            stay({ price: 400, rating: 3 }),
+            stay({ price: 460, rating: 5 }),
+        ]).find(x => x.type === 'rating_upgrade');
+        assert.equal(f.rating, 5);
+        assert.equal(f.cheapestRating, 3);
+        assert.equal(f.extraAmount, 60);
+        assert.ok(renderInsight([f]).includes('الخيار 2'));
+
+        // نفس الترقية بسعر مضاعف → لا تُقترح
+        assert.ok(!analyzeStayOffers([
+            stay({ price: 400, rating: 3 }), stay({ price: 900, rating: 5 }),
+        ]).some(x => x.type === 'rating_upgrade'));
+    });
+
+    test('🏨 «لا نعرف نوع الإقامة» ≠ «بلا فطور»', () => {
+        assert.equal(hasBreakfast(stay({ price: 1, board: undefined })), null);
+        assert.equal(hasBreakfast(stay({ price: 1, board: 'Room Only' })), false);
+        assert.equal(hasBreakfast(stay({ price: 1, board: 'Breakfast Included' })), true);
+        assert.equal(hasBreakfast(stay({ price: 1, board: 'BB' })), true);
+        // وصفٌ لا نفهمه لا يُترجَم إلى «بلا فطور»
+        assert.equal(hasBreakfast(stay({ price: 1, board: 'Superior Package' })), null);
+
+        // مزوّد صامت عن الإقامة → لا ادّعاء
+        assert.ok(!analyzeStayOffers([stay({ price: 300 }), stay({ price: 320 })])
+            .some(f => f.type === 'breakfast_included'));
+    });
+
+    test('🏨 فطور مشمول بفارق يسير يُرصد', () => {
+        const f = analyzeStayOffers([
+            stay({ price: 300, board: 'Room Only', rating: 4 }),
+            stay({ price: 330, board: 'Breakfast Included', rating: 4 }),
+        ]).find(x => x.type === 'breakfast_included');
+        assert.equal(f.extraAmount, 30);
+        assert.ok(renderInsight([f]).includes('الفطور'));
+    });
+
+    test('🏨 الأرخص غير قابل للإلغاء → تحذير ببديل قابل له', () => {
+        const f = analyzeStayOffers([
+            stay({ price: 300, cancellable: false, rating: 4 }),
+            stay({ price: 340, cancellable: true, rating: 4 }),
+        ]).find(x => x.type === 'cheapest_not_refundable');
+        assert.equal(f.extraAmount, 40);
+        assert.ok(renderInsight([f]).includes('غير قابل للإلغاء'));
+    });
+
+    test('🏨 رسوم تُدفع في الفندق تُحذَّر — السعر المعروض ليس النهائي', () => {
+        const f = analyzeStayOffers([
+            stay({ price: 300, rating: 4, fees: [{ amount: 15 }, { amount: 5 }] }),
+            stay({ price: 310, rating: 4 }),
+        ]).find(x => x.type === 'fees_at_property');
+        assert.equal(f.feesAmount, 20); // مجموع الرسوم
+        assert.ok(renderInsight([f]).includes('تُدفع في الفندق'));
+    });
+
+    // ─── 🚗 السيارات ───
+    const car = ({ price, cancellable = true }) => ({
+        id: 'c' + price, sellAmount: price, currency: 'USD', cancellable,
+    });
+
+    test('🚗 الأرخص غير قابل للإلغاء → تحذير، وإلا فتشتّت السعر', () => {
+        const f = analyzeCarOffers([
+            car({ price: 200, cancellable: false }),
+            car({ price: 230, cancellable: true }),
+        ]).find(x => x.type === 'cheapest_not_refundable');
+        assert.equal(f.extraAmount, 30);
+
+        // كلاهما قابل للإلغاء وفارقهما كبير → التشتّت وحده
+        const spread = analyzeCarOffers([car({ price: 100 }), car({ price: 300 })]);
+        assert.equal(spread[0].type, 'price_spread');
+        assert.equal(spread[0].spreadPct, 200);
+    });
+
+    test('عرض واحد لفندق أو سيارة → لا قراءة', () => {
+        assert.deepEqual(analyzeStayOffers([stay({ price: 100 })]), []);
+        assert.deepEqual(analyzeCarOffers([car({ price: 100 })]), []);
+        assert.equal(buildStayInsight([stay({ price: 100 })]), null);
+        assert.equal(buildCarInsight([car({ price: 100 })]), null);
+    });
+
+    test('كل أنواع الفنادق والسيارات مقبولة في التنقية (لا تسقط صامتة)', () => {
+        const findings = [
+            { type: 'rating_upgrade', index: 1, rating: 5, cheapestRating: 3, extraAmount: 60, extraPct: 15, currency: 'USD' },
+            { type: 'breakfast_included', index: 1, extraAmount: 30, extraPct: 10, currency: 'USD' },
+            { type: 'fees_at_property', index: 0, feesAmount: 20, currency: 'USD' },
+        ];
+        const clean = sanitizeFindings(findings);
+        assert.equal(clean.length, 3);
+        assert.ok(renderInsight(clean).includes('20 USD'));
     });
 
     test('نوع غير معروف في العرض لا يكسر بقية القراءة', () => {
@@ -2049,6 +2150,35 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.ok(issued, 'تأكيد الحجز يجب أن يظهر في الصندوق');
             assert.ok(issued.body.includes(booked.data.booking.bookingReference));
             assert.equal(issued.meta.bookingId, booked.data.booking.id);
+        });
+
+        // ⚠️ عيب ظهر في تنبيه إلغاء حقيقي على الإنتاج: رحلة ذهاب وعودة
+        // كانت تُلخَّص «AMS→AMS» لأن آخر شريحة تعود لمطار الانطلاق —
+        // فتختفي الوجهة الحقيقية من التنبيه كلياً.
+        test('🔁 ملخّص الذهاب والعودة يُظهر الوجهة لا مطار الانطلاق مرتين', async () => {
+            const token = makeToken('roundtrip-user');
+            const offers = await call('/api/travel/flights/search', {
+                method: 'POST', token,
+                body: {
+                    origin: 'AMS', destination: 'DXB',
+                    departDate: futureDate(20), returnDate: futureDate(27), adults: 1,
+                },
+            });
+            const booked = await call('/api/travel/bookings', {
+                method: 'POST', token,
+                body: {
+                    offerId: offers.data.offers[0].id,
+                    passengers: [{ title: 'mr', givenName: 'Omar', familyName: 'Nasser', bornOn: '1985-06-06', gender: 'm' }],
+                    contact: { email: 'rt@test.com', phone: '+966501234567' },
+                },
+            });
+            assert.equal(booked.status, 200);
+            assert.equal(booked.data.booking.offer.slices.length, 2); // ذهاب وعودة فعلاً
+
+            const inbox = await call('/api/travel/notifications', { token });
+            const issued = inbox.data.notifications.find(n => n.category === 'booking_issued');
+            assert.ok(issued.body.includes('AMS⇄DXB'), `الوجهة غائبة: ${issued.body}`);
+            assert.ok(!issued.body.includes('AMS→AMS'));
         });
     });
 }
