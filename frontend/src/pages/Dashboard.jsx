@@ -2829,6 +2829,14 @@ export default function Dashboard() {
                     <span style={{ fontSize:16 }}>🎬</span> {t('videoStudioTitle')}
                   </button>
                 )}
+                {/* ✈️ بوابة السفر — كانت في تخطيط سطح المكتب وحده، فلم يكن
+                    لها مدخل على الجوال إطلاقاً: الخدمة تعمل والزر مفقود. */}
+                {TRAVEL_PORTAL_URL && (
+                  <button onClick={() => { setShowMobileMenu(false); openTravelPortal(); }}
+                    style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
+                    <span style={{ fontSize:16 }}>✈️</span> {t('travelPortalTitle')}
+                  </button>
+                )}
                 {canInstall && (
                   <button onClick={() => { setShowMobileMenu(false); promptInstall(); }}
                     style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.25)', color:S.text, fontSize:13, fontWeight:700, textAlign:'start' }}>
