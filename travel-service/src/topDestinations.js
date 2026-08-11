@@ -63,7 +63,7 @@ async function fetchCheapestPrice({ provider, origin, destination, departDate, m
     const cached = priceCache.get(key);
     if (cached && cached.expiresAt > Date.now()) return { price: cached.price, currency: cached.currency };
     try {
-        const offers = await provider.searchOffers({ origin, destination, departDate, returnDate: null, adults: 1, children: 0, cabin: 'economy' });
+        const offers = await provider.searchOffers({ origin, destination, departDate, returnDate: null, adults: 1, childrenDobs: [], cabin: 'economy' });
         if (offers.length === 0) {
             priceCache.set(key, { price: null, currency: null, expiresAt: Date.now() + PRICE_CACHE_TTL_MS });
             return { price: null, currency: null };

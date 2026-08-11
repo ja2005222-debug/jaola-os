@@ -29,11 +29,12 @@ import { readMarkupPct, applyMarkup, DEFAULT_MARKUP_PCT } from '../src/pricing.j
 import { canTransition, createBooking, transitionBooking, getBooking, getBookingByProviderOrderId } from '../src/bookings.js';
 import { createFileStore } from '../src/store/fileStore.js';
 import { createPostgresStore } from '../src/store/postgresStore.js';
-import { createTravelAgent, executeAgentTool, buildTravelAgent, AGENT_TOOLS } from '../src/agent/agent.js';
+import { createTravelAgent, executeAgentTool, buildTravelAgent, AGENT_TOOLS, retryDelayMs, compactToolResult, buildFallbackProvider } from '../src/agent/agent.js';
 import { listPriceWatchesByUser, cancelPriceWatch } from '../src/priceWatches.js';
 import { checkWatches } from '../src/priceWatchPoller.js';
 import { sendTripReminders, isReminderDue, renderTripReminder, departureAt } from '../src/tripReminders.js';
 import { searchAirports, airportForTimezone, AIRPORT_COORDS } from '../src/airports.js';
+import { ageOn, buildSearchPassengers, validateChildrenDobs, checkPassengerAges } from '../src/passengerAges.js';
 import { getDestinationWeather, convertCurrency } from '../src/travelInfo.js';
 import { buildTopDestinations, CURATED_DESTINATIONS } from '../src/topDestinations.js';
 import { createLiteApiStaysProvider } from '../src/providers/liteApiStaysProvider.js';
@@ -1136,6 +1137,105 @@ describe('liteApiStaysProvider: بحث فنادق حقيقي (رد Sandbox حي 
 
 });
 
+// ─── 👶 عمر المسافر: مصدر حقيقة واحد ─────────────────────────────────
+describe('passengerAges: العمر مشتقّ من الميلاد لا مخمَّن', () => {
+    test('🧮 ageOn: يُحسب يوم السفر، وبلا انزلاق منطقة زمنية', () => {
+        // الطفلان من الحجز الذي فشل في الإنتاج
+        assert.equal(ageOn('2022-11-20', '2026-08-11'), 3);  // لم يبلغ الرابعة بعد
+        assert.equal(ageOn('2024-02-28', '2026-08-11'), 2);
+        // العمر يوم السفر لا يوم البحث: عيد ميلاد بينهما يقلب النتيجة
+        assert.equal(ageOn('2020-12-01', '2026-11-30'), 5);
+        assert.equal(ageOn('2020-12-01', '2026-12-01'), 6);  // يوم الميلاد نفسه
+        // منتصف الليل بأي توقيت لا يغيّر شيئاً — حساب نصّي بلا Date
+        assert.equal(ageOn('2020-01-01T23:59:59Z', '2026-01-01'), 6);
+        assert.equal(ageOn('غير صالح', '2026-01-01'), null);
+        assert.equal(ageOn('2020-01-01', ''), null);
+    });
+
+    test('🎫 buildSearchPassengers: البالغون بالنوع والأطفال بأعمارهم الحقيقية', () => {
+        const pax = buildSearchPassengers({
+            adults: 2, childrenDobs: ['2022-11-20', '2024-02-28'], departDate: '2026-08-11',
+        });
+        assert.deepEqual(pax, [{ type: 'adult' }, { type: 'adult' }, { age: 3 }, { age: 2 }]);
+        // الانحدار المباشر: لا رقم ثابت مهما اختلفت التواريخ
+        assert.notEqual(pax[2].age, pax[3].age);
+        assert.ok(!pax.some(p => p.age === 8), 'age:8 المخترَع كان سبب الرفض 422');
+        // الترتيب جزء من العقد: معرّفات Duffel تُطابَق بالفهرس
+        assert.deepEqual(buildSearchPassengers({ adults: 1, childrenDobs: [], departDate: '2026-08-11' }),
+            [{ type: 'adult' }]);
+    });
+
+    test('🚫 validateChildrenDobs: يرفض الصيغة والبالغ والتاريخ المستقبلي', () => {
+        assert.deepEqual(validateChildrenDobs(null, '2026-08-11', 8).values, []);
+        assert.deepEqual(validateChildrenDobs(['2022-11-20'], '2026-08-11', 8).values, ['2022-11-20']);
+        assert.match(validateChildrenDobs('2022-11-20', '2026-08-11', 8).error, /قائمة/);
+        assert.match(validateChildrenDobs(['20-11-2022'], '2026-08-11', 8).error, /YYYY-MM-DD/);
+        assert.match(validateChildrenDobs(['1990-01-01'], '2026-08-11', 8).error, /البالغين/);
+        assert.match(validateChildrenDobs(['2030-01-01'], '2026-08-11', 8).error, /بعد تاريخ السفر/);
+        assert.match(validateChildrenDobs(Array(9).fill('2020-01-01'), '2026-08-11', 8).error, /بين 0 و8/);
+        // من يبلغ 18 يوم السفر يُحجز بالغاً حتى لو كان 17 يوم البحث
+        assert.match(validateChildrenDobs(['2008-08-01'], '2026-08-11', 8).error, /يُحجز ضمن البالغين/);
+        assert.deepEqual(validateChildrenDobs(['2008-08-20'], '2026-08-11', 8).values, ['2008-08-20']);
+    });
+
+    test('🛡️ checkPassengerAges: يمسك التناقض في الاتجاهين', () => {
+        const offerPassengers = [{ type: 'adult', age: null }, { type: null, age: 3 }];
+        const at = '2026-08-11T09:00:00';
+        const pax = born => ({ bornOn: born });
+        // مطابق → لا خطأ
+        assert.equal(checkPassengerAges({
+            passengers: [pax('1990-01-01'), pax('2022-11-20')], offerPassengers, departAt: at,
+        }), null);
+        // طفل بعمر مخالف لما سُعِّر
+        assert.match(checkPassengerAges({
+            passengers: [pax('1990-01-01'), pax('2015-01-01')], offerPassengers, departAt: at,
+        }), /سُعِّر لعمر 3/);
+        // مقعد بالغ يحمل ميلاد طفل
+        assert.match(checkPassengerAges({
+            passengers: [pax('2020-01-01'), pax('2022-11-20')], offerPassengers, departAt: at,
+        }), /ضمن الأطفال/);
+        // بلا أعمار من المزوّد لا فحص مضلّل (عرض قديم/مزوّد لا يعيدها)
+        assert.equal(checkPassengerAges({
+            passengers: [pax('2020-01-01')], offerPassengers: [], departAt: at,
+        }), null);
+        assert.equal(checkPassengerAges({
+            passengers: [pax('2020-01-01')], offerPassengers, departAt: null,
+        }), null);
+    });
+
+    test('✈️ Duffel: جسم طلب العرض يحمل العمر الحقيقي لا 8 الثابت', async () => {
+        let sent = null;
+        const fetchImpl = async (url, opts) => {
+            sent = JSON.parse(opts.body);
+            return {
+                ok: true, status: 200,
+                text: async () => JSON.stringify({
+                    data: { passengers: [{ id: 'pas_1', type: 'adult' }, { id: 'pas_2', age: 3 }], offers: [] },
+                }),
+            };
+        };
+        const p = createDuffelProvider({ apiKey: 'duffel_test_x', fetchImpl });
+        await p.searchOffers({
+            origin: 'RUH', destination: 'CAI', departDate: '2026-08-11',
+            childrenDobs: ['2022-11-20'], adults: 1,
+        });
+        assert.deepEqual(sent.data.passengers, [{ type: 'adult' }, { age: 3 }]);
+    });
+
+    test('🔗 normalizeDuffelOffer: يقبل المعرّفات المجرّدة والكائنات بالأعمار', () => {
+        const raw = { id: 'off_1', total_amount: '100', total_currency: 'EUR', slices: [] };
+        const legacy = normalizeDuffelOffer(raw, ['pas_1', 'pas_2']);
+        assert.deepEqual(legacy.passengerIds, ['pas_1', 'pas_2']);
+        assert.deepEqual(legacy.passengers.map(p => p.age), [null, null]);
+        const rich = normalizeDuffelOffer(raw, [{ id: 'pas_1', type: 'adult' }, { id: 'pas_2', age: 3 }]);
+        assert.deepEqual(rich.passengerIds, ['pas_1', 'pas_2']);
+        assert.deepEqual(rich.passengers, [
+            { id: 'pas_1', type: 'adult', age: null },
+            { id: 'pas_2', type: null, age: 3 },
+        ]);
+    });
+});
+
 // ─── 🔤 بحث المطارات بالاسم (عربي/إنجليزي) بدل حفظ رموز IATA ──────────
 describe('searchAirports: بحث بالمدينة أو الدولة، عربياً أو إنجليزياً', () => {
     const codes = q => searchAirports(q, 8).map(a => a.iata);
@@ -1345,7 +1445,11 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 { ...SEARCH_BODY(), returnDate: futureDate(2) },   // عودة قبل ذهاب
                 { ...SEARCH_BODY(), adults: 0 },
                 { ...SEARCH_BODY(), adults: 15 },
-                { ...SEARCH_BODY(), children: -1 },
+                { ...SEARCH_BODY(), children: 2 },                 // الحقل القديم يُرفض معلناً
+                { ...SEARCH_BODY(), childrenDobs: '2020-01-01' },  // ليست قائمة
+                { ...SEARCH_BODY(), childrenDobs: ['15-05-2020'] },// صيغة خاطئة
+                { ...SEARCH_BODY(), childrenDobs: ['1995-01-01'] },// بالغ في خانة طفل
+                { ...SEARCH_BODY(), childrenDobs: Array(9).fill('2020-01-01') },
                 { ...SEARCH_BODY(), cabin: 'vip' },
             ]) {
                 const r = await call('/api/travel/flights/search', { method: 'POST', token, body: bad });
@@ -1356,7 +1460,7 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(ok.status, 200);
             assert.equal(ok.data.offers.length, 3);
             // نفس البحث مباشرة على المزوّد: sell = net + 10% لأعلى، والصافي مخفي
-            const rawOffers = await provider.searchOffers({ ...SEARCH_BODY(), returnDate: null, children: 0, cabin: 'economy' });
+            const rawOffers = await provider.searchOffers({ ...SEARCH_BODY(), returnDate: null, childrenDobs: [], cabin: 'economy' });
             for (const [i, offer] of ok.data.offers.entries()) {
                 assert.equal(offer.sellAmount, applyMarkup(rawOffers[i].netAmount, MARKUP));
                 assert.equal(offer.netAmount, undefined);      // 💰 لا تسريب للصافي
@@ -1368,6 +1472,60 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(one.status, 200);
             assert.equal(one.data.offer.netAmount, undefined);
             assert.equal((await call('/api/travel/flights/offers/ghost', { token })).status, 404);
+        });
+
+        // 👶 انحدار حجز إنتاج حقيقي: Duffel رفض بـ 422 «age does not match
+        // date of birth» لأن البحث أعلن age:8 لكل طفل مهما كان عمره.
+        test('👶 الأطفال: عمر كل طفل مشتقّ من ميلاده، والتناقض يُرفض قبل المزوّد', async () => {
+            const token = makeToken('family');
+            const departDate = futureDate(30);
+            // الطفلان من الحجز الذي فشل فعلاً — عمران مختلفان، وكلاهما ليس ٨
+            const dobs = ['2022-11-20', '2024-02-28'];
+            const search = await call('/api/travel/flights/search', {
+                method: 'POST', token,
+                body: { origin: 'RUH', destination: 'CAI', departDate, adults: 1, childrenDobs: dobs },
+            });
+            assert.equal(search.status, 200);
+            const offer = search.data.offers[0];
+            assert.equal(offer.passengerCount, 3);
+
+            // جوهر الانحدار: طفلان بعمرين مختلفين لا يُعلَنان بعمر واحد
+            const ages = offer.passengers.map(p => p.age);
+            assert.deepEqual(ages, [null, ageOn(dobs[0], departDate), ageOn(dobs[1], departDate)]);
+            assert.notEqual(ages[1], ages[2], 'عمرا الطفلين مختلفان فلا يصحّ تسويتهما');
+            assert.equal(offer.passengers[0].type, 'adult');
+            assert.equal(offer.passengerIds, undefined); // الأعمار تظهر والمعرّفات لا
+
+            const paxOf = bornOn => ({ title: 'ms', givenName: 'TALIA', familyName: 'ALFAKI', bornOn, gender: 'f' });
+            const adult = { title: 'mr', givenName: 'AHMED', familyName: 'ALFAKI', bornOn: '1990-05-01', gender: 'm' };
+            const contact = { email: 'a@b.com', phone: '+31684554623' };
+
+            // تاريخ ميلاد يناقض ما سُعِّر به العرض → 400 عربي، لا 422 خام
+            const clash = await call('/api/travel/bookings', {
+                method: 'POST', token,
+                body: { offerId: offer.id, contact, passengers: [adult, paxOf('2015-01-01'), paxOf(dobs[1])] },
+            });
+            assert.equal(clash.status, 400);
+            assert.match(clash.data.error, /أعد البحث/);
+
+            // ومقعد بالغ يحمل ميلاد طفل — العطب نفسه من الباب المقابل
+            const asAdult = await call('/api/travel/bookings', {
+                method: 'POST', token,
+                body: { offerId: offer.id, contact, passengers: [paxOf('2020-03-03'), paxOf(dobs[0]), paxOf(dobs[1])] },
+            });
+            assert.equal(asAdult.status, 400);
+            assert.match(asAdult.data.error, /ضمن الأطفال/);
+
+            // ولا حجز pending خُلق لطلبٍ نعرف سلفاً أنه مرفوض
+            assert.equal((await call('/api/travel/bookings', { token })).data.bookings.length, 0);
+
+            // التواريخ الصحيحة تمرّ
+            const ok = await call('/api/travel/bookings', {
+                method: 'POST', token,
+                body: { offerId: offer.id, contact, passengers: [adult, paxOf(dobs[0]), paxOf(dobs[1])] },
+            });
+            assert.equal(ok.status, 200);
+            assert.equal(ok.data.booking.status, 'issued');
         });
 
         test('🎟️ الحجز الكامل: pending→issued بمرجع، وتحقق الركاب، وعزل الملكية', async () => {
@@ -2876,6 +3034,168 @@ describe('الايجنت الحاجز', () => {
             });
             assert.equal(sentBody.messages.filter(m => m.role === 'system').length, 1);
         });
+    });
+
+    // ⚠️ حدّ المعدّل هو أكثر ما يراه المستخدم فشلاً: المزوّد المجاني
+    // 12 ألف رمز/دقيقة، وطلبٌ واحد كان يبلغها. الرد يحمل مدة الانتظار.
+    test('⏳ 429 يُعاد بعد المدة التي يطلبها المزوّد، لا يفشل فوراً', async () => {
+        let calls = 0; const waits = [];
+        const agent = createTravelAgent({
+            apiKey: 'k',
+            sleepImpl: async ms => { waits.push(ms); },
+            fetchImpl: async () => {
+                calls += 1;
+                if (calls === 1) {
+                    return {
+                        ok: false, status: 429,
+                        headers: { get: () => null },
+                        text: async () => '{"error":{"message":"Rate limit reached ... Please try again in 1.39s."}}',
+                    };
+                }
+                return { ok: true, json: async () => ({ choices: [{ message: { content: 'نجح بعد الانتظار' } }] }) };
+            },
+        });
+        // مصدر واقعي الطول: حارس النموّ (١.٦×) يرفض رداً أطول بكثير من
+        // مصدره، فمصدرٌ من حرفين كان سيُسقط الردّ لسببٍ لا علاقة له بالإعادة
+        const out = await agent.phraseNotice('انخفض سعر رحلتك إلى 420 ريالاً.');
+        assert.equal(out, 'نجح بعد الانتظار');
+        assert.equal(calls, 2);
+        // المدة من نص المزوّد (1.39s) + هامش، لا تخميناً
+        assert.ok(waits[0] >= 1390 && waits[0] <= 2000, `انتظار غير متوقع: ${waits[0]}`);
+    });
+
+    test('⏳ ترويسة retry-after تُقدَّم على نص الرسالة، والانتظار مسقوف', () => {
+        const withHeader = { headers: { get: n => (n === 'retry-after' ? '2' : null) } };
+        assert.equal(retryDelayMs(withHeader, 'try again in 9s', 0), 2000);
+        // سقفٌ يمنع تجميد الطلب مهما طلب المزوّد
+        const huge = { headers: { get: () => '600' } };
+        assert.equal(retryDelayMs(huge, '', 0), 4000);
+        // بلا ترويسة ولا نص → تراجع أُسّي
+        const bare = { headers: { get: () => null } };
+        assert.ok(retryDelayMs(bare, '', 0) < retryDelayMs(bare, '', 2));
+    });
+
+    test('⏳ خطأ غير قابل للإعادة (400) يفشل فوراً بلا انتظار', async () => {
+        let calls = 0; const waits = [];
+        const agent = createTravelAgent({
+            apiKey: 'k', sleepImpl: async ms => waits.push(ms),
+            fetchImpl: async () => {
+                calls += 1;
+                return { ok: false, status: 400, headers: { get: () => null }, text: async () => 'طلب سيئ' };
+            },
+        });
+        // phraseNotice تبتلع الخطأ وتعيد الأصل — المهم ألا يُعاد النداء
+        assert.equal(await agent.phraseNotice('نص'), 'نص');
+        assert.equal(calls, 1);
+        assert.equal(waits.length, 0);
+    });
+
+    // 🔀 نفاد حصّة المزوّد لا يعني مساعداً معطّلاً
+    test('🔀 نفاد الحصّة → تحويل للمزوّد الاحتياطي بعد استنفاد الصبر', async () => {
+        const seen = [];
+        const agent = createTravelAgent({
+            apiKey: 'k1', apiUrl: 'https://primary.test/v1', model: 'llama-x',
+            sleepImpl: async () => {},
+            fallback: { apiKey: 'k2', apiUrl: 'https://deepseek.test/v1', model: 'deepseek-chat', label: 'ديب سيك' },
+            fetchImpl: async (url, opts) => {
+                seen.push({ url, model: JSON.parse(opts.body).model, auth: opts.headers.Authorization });
+                if (url.includes('primary')) {
+                    return { ok: false, status: 429, headers: { get: () => null }, text: async () => 'Rate limit reached' };
+                }
+                return { ok: true, json: async () => ({ choices: [{ message: { content: 'ردٌّ من الاحتياطي بعد نفاد الأساسي' } }] }) };
+            },
+        });
+        const out = await agent.phraseNotice('انخفض سعر رحلتك إلى 420 ريالاً.');
+        assert.equal(out, 'ردٌّ من الاحتياطي بعد نفاد الأساسي');
+
+        // ⚠️ الترتيب جوهري: يُستنفد صبر الأساسي (٣ محاولات) قبل التحويل —
+        // التحويل من أول 429 يهجر مزوّداً يعود بعد ثانية.
+        const primaryCalls = seen.filter(s => s.url.includes('primary'));
+        assert.equal(primaryCalls.length, 3);
+        const fallbackCalls = seen.filter(s => s.url.includes('deepseek'));
+        assert.equal(fallbackCalls.length, 1);
+
+        // ولكلٍّ مفتاحه ونموذجه — لا تسريب بين المزوّدين
+        assert.equal(primaryCalls[0].model, 'llama-x');
+        assert.equal(primaryCalls[0].auth, 'Bearer k1');
+        assert.equal(fallbackCalls[0].model, 'deepseek-chat');
+        assert.equal(fallbackCalls[0].auth, 'Bearer k2');
+    });
+
+    test('🔀 خطأ غير قابل للإعادة لا يُحوَّل — عيبٌ في طلبنا يتكرّر عند الاحتياطي', async () => {
+        const urls = [];
+        const agent = createTravelAgent({
+            apiKey: 'k1', apiUrl: 'https://primary.test/v1', sleepImpl: async () => {},
+            fallback: { apiKey: 'k2', apiUrl: 'https://deepseek.test/v1', model: 'deepseek-chat', label: 'ديب سيك' },
+            fetchImpl: async (url) => {
+                urls.push(url);
+                return { ok: false, status: 400, headers: { get: () => null }, text: async () => 'طلب سيئ' };
+            },
+        });
+        assert.equal(await agent.phraseNotice('نصٌّ طويل بما يكفي للصياغة'), 'نصٌّ طويل بما يكفي للصياغة');
+        assert.equal(urls.length, 1, 'لا إعادة ولا تحويل على 400');
+    });
+
+    test('🔀 بلا مزوّد احتياطي: السلوك كما كان تماماً', async () => {
+        const urls = [];
+        const agent = createTravelAgent({
+            apiKey: 'k1', apiUrl: 'https://primary.test/v1', sleepImpl: async () => {},
+            fetchImpl: async (url) => {
+                urls.push(url);
+                return { ok: false, status: 429, headers: { get: () => null }, text: async () => 'Rate limit' };
+            },
+        });
+        assert.equal(await agent.phraseNotice('نصٌّ طويل بما يكفي للصياغة'), 'نصٌّ طويل بما يكفي للصياغة');
+        assert.equal(urls.length, 3); // ثلاث محاولات ثم استسلام، بلا تحويل
+    });
+
+    test('🔀 buildFallbackProvider: null بلا مفتاح، وافتراضات قابلة للتجاوز', () => {
+        assert.equal(buildFallbackProvider({}), null);
+        const d = buildFallbackProvider({ TRAVEL_AGENT_FALLBACK_API_KEY: 'x' });
+        // ⚠️ الافتراضات تطابق التكامل القائم في backend/agents/baseAgent.js:
+        // مسار /v1، والجيل الرابع — لا deepseek-chat الملغى.
+        assert.equal(d.apiUrl, 'https://api.deepseek.com/v1/chat/completions');
+        assert.equal(d.model, 'deepseek-v4-pro');
+        assert.ok(!d.model.includes('chat'), 'deepseek-chat أُلغي نهائياً');
+
+        // المفتاح المشترك للمنصة يكفي — لا نُلزم المالك بنسخه باسم ثانٍ
+        const shared = buildFallbackProvider({ DEEPSEEK_API_KEY: 'shared', DEEPSEEK_MODEL: 'deepseek-v4-flash' });
+        assert.equal(shared.apiKey, 'shared');
+        assert.equal(shared.model, 'deepseek-v4-flash');
+        // والاسم الخاص يتقدّم عليه عند وجود الاثنين
+        assert.equal(buildFallbackProvider({ DEEPSEEK_API_KEY: 'a', TRAVEL_AGENT_FALLBACK_API_KEY: 'b' }).apiKey, 'b');
+        const custom = buildFallbackProvider({
+            TRAVEL_AGENT_FALLBACK_API_KEY: 'x',
+            TRAVEL_AGENT_FALLBACK_API_URL: 'https://other.test/v1',
+            TRAVEL_AGENT_FALLBACK_MODEL: 'other-model',
+            TRAVEL_AGENT_FALLBACK_LABEL: 'مزوّد ثالث',
+        });
+        assert.equal(custom.apiUrl, 'https://other.test/v1');
+        assert.equal(custom.model, 'other-model');
+        assert.equal(custom.label, 'مزوّد ثالث');
+    });
+
+    test('🔀 مزوّد احتياطي بلا مفتاح يُرفض عند الإنشاء لا وقت الحاجة', () => {
+        assert.throws(() => createTravelAgent({ apiKey: 'k', fallback: { apiUrl: 'https://x.test' } }), /بلا مفتاح/);
+    });
+
+    // ⚠️ التقطيع بالحروف كان يُنتج JSON فاسداً يبني النموذج عليه جوابه
+    test('✂️ تقليص نتيجة الأداة يُبقيها JSON صالحاً ويُعلن ما أُسقط', () => {
+        const many = Array.from({ length: 40 }, (_, i) => ({ id: i, name: 'رحلة طويلة الاسم ' + i, extra: 'ح'.repeat(80) }));
+        const out = compactToolResult(many, 1200);
+        const parsed = JSON.parse(out); // لا يرمي = صالح
+        assert.ok(out.length <= 1200);
+        assert.ok(parsed.items.length > 0 && parsed.items.length < 40);
+        assert.equal(parsed.omitted, 40 - parsed.items.length);
+        assert.equal(parsed.items[0].id, 0); // الأنسب أولاً محفوظ
+
+        // صغيرة تمر كما هي بلا تغليف
+        assert.equal(compactToolResult({ a: 1 }, 1200), '{"a":1}');
+
+        // كائن مفرد ضخم: يبقى صالحاً ويُعلن أنه جزئي
+        const big = JSON.parse(compactToolResult({ t: 'ط'.repeat(5000) }, 500));
+        assert.equal(big.partial, true);
+        assert.ok(big.text.length > 0);
     });
 
     test('🛡️ صياغة التنبيه: رد مُطوَّل أو فارغ → يعود النص الحتمي', async () => {

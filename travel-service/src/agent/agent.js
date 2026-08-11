@@ -24,7 +24,50 @@ const DEFAULT_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const DEFAULT_MODEL = 'llama-3.3-70b-versatile';
 // 10 لا 6: البحث المقارن (تواريخ مرنة/بدائل) يستهلك جولات أكثر من حجز مباشر
 const MAX_TOOL_ROUNDS = 10;
-const MAX_TOOL_RESULT_CHARS = 6000;
+// 6000 كانت تُضخّم الجولة الأخيرة: عشر جولات × 6000 حرف ≈ 16 ألف رمز من
+// نتائج الأدوات وحدها، فوق 3300 رمز ثابتة (مخططات الأدوات + التعليمة) في
+// كل نداء. الحدّ الأدنى للمزوّد المجاني 12 ألف رمز/دقيقة — فطلبٌ واحد
+// كان يلتهم الحصّة كاملة.
+const MAX_TOOL_RESULT_CHARS = 3000;
+const MAX_RETRIES = 2;          // ثلاث محاولات إجمالاً
+const MAX_RETRY_WAIT_MS = 4000; // لا نُجمّد المسافر انتظاراً لحدّ معدّل
+
+/**
+ * كم ننتظر قبل إعادة المحاولة؟ نُفضّل ما يقوله المزوّد على تخميننا:
+ * ترويسة `retry-after` أولاً، ثم المدة المذكورة في نص الخطأ، وأخيراً
+ * تراجع أُسّي. مسقوفٌ دوماً حتى لا يعلق الطلب.
+ */
+export function retryDelayMs(res, detail, attempt) {
+    const header = Number(res?.headers?.get?.('retry-after'));
+    if (Number.isFinite(header) && header > 0) return Math.min(header * 1000, MAX_RETRY_WAIT_MS);
+    const m = /try again in ([\d.]+)\s*s/i.exec(String(detail || ''));
+    if (m) return Math.min(Math.ceil(parseFloat(m[1]) * 1000) + 250, MAX_RETRY_WAIT_MS);
+    return Math.min(500 * 2 ** attempt, MAX_RETRY_WAIT_MS);
+}
+
+/**
+ * يقلّص نتيجة أداة مع **إبقائها JSON صالحاً**.
+ *
+ * ⚠️ كان التقليص `JSON.stringify(data).slice(0, N)` — يقطع وسط البنية
+ * فيصل النموذجَ نصٌّ لا يُحلَّل، ويبني عليه جوابه. الآن تُسقَط عناصر من
+ * آخر المصفوفة (الأقل صلة عادةً: النتائج مرتّبة بالأنسب أولاً) ويُذكر
+ * كم أُسقط، فيعرف النموذج أن ثمّة المزيد بدل أن يظنّ القائمة كاملة.
+ */
+export function compactToolResult(data, maxChars = MAX_TOOL_RESULT_CHARS) {
+    let text = JSON.stringify(data);
+    if (text.length <= maxChars) return text;
+    if (Array.isArray(data)) {
+        const kept = data.slice();
+        while (kept.length > 1) {
+            kept.pop();
+            text = JSON.stringify({ items: kept, omitted: data.length - kept.length });
+            if (text.length <= maxChars) return text;
+        }
+        return JSON.stringify({ items: kept.slice(0, 1), omitted: data.length - 1, truncated: true });
+    }
+    // كائن مفرد ضخم: نُبقيه نصاً مقطوعاً لكن نُعلم النموذج صراحةً
+    return JSON.stringify({ partial: true, text: text.slice(0, maxChars - 40) });
+}
 
 const SYSTEM_PROMPT = `أنت "مساعد جاولا للسفر" — وكيل سفر شامل محترف يتحدث العربية (أو لغة المستخدم)، لا مجرد حاجز طيران.
 قدراتك عبر الأدوات: بحث رحلات وفنادق وسيارات إيجار، فحص عرض محدد، حجز فعلي (طيران/فنادق/سيارات)، عرض حجوزات المستخدم، إلغاء حجز، بحث تواريخ مرنة، فحص تعارض الرحلة، مراقبة سعر، توقعات طقس الوجهة، تحويل عملات، وتجميع ملخص رحلة منسّق.
@@ -79,7 +122,14 @@ export const AGENT_TOOLS = [
                     departDate: { type: 'string', description: 'تاريخ الذهاب YYYY-MM-DD' },
                     returnDate: { type: 'string', description: 'تاريخ العودة YYYY-MM-DD (اختياري — ذهاب فقط بدونه)' },
                     adults: { type: 'integer', description: 'عدد البالغين (افتراضي 1)' },
-                    children: { type: 'integer', description: 'عدد الأطفال (افتراضي 0)' },
+                    // عمداً تواريخ لا عدد: العدد يترك العمر مجهولاً فيُخمَّن،
+                    // والتخمين هو العطب نفسه الذي أصلحه passengerAges.js.
+                    // النموذج لا يملك ما يخمّن به هنا — عليه أن يسأل.
+                    childrenDobs: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'تواريخ ميلاد الأطفال YYYY-MM-DD (دون 18 سنة). اسأل المسافر عنها ولا تخمّنها — العمر يحدّد السعر والتذكرة.',
+                    },
                     cabin: { type: 'string', enum: ['economy', 'premium_economy', 'business', 'first'] },
                 },
                 required: ['origin', 'destination', 'departDate'],
@@ -577,8 +627,21 @@ export async function executeAgentTool(name, args, services) {
     }
 }
 
-export function createTravelAgent({ apiKey, apiUrl = DEFAULT_API_URL, model = DEFAULT_MODEL, fetchImpl = fetch }) {
+export function createTravelAgent({
+    apiKey, apiUrl = DEFAULT_API_URL, model = DEFAULT_MODEL, fetchImpl = fetch,
+    // مُحقَنة ليختبر الانتظارُ منطقَه بلا أن تنتظر الاختبارات فعلياً
+    sleepImpl = ms => new Promise(r => setTimeout(r, ms)),
+    // مزوّد احتياطي اختياري {apiKey, apiUrl, model, label} — بلا شيء يعمل
+    // كما كان تماماً: سلسلة من مزوّد واحد.
+    fallback = null,
+}) {
     if (!apiKey) throw new Error('مفتاح مزوّد الايجنت مطلوب.');
+    const primary = { apiKey, apiUrl, model, label: 'المزوّد الأساسي' };
+    if (fallback && !fallback.apiKey) {
+        throw new Error('المزوّد الاحتياطي بلا مفتاح — اضبطه أو أزله.');
+    }
+    // آخر مزوّد أجاب فعلاً — تُعرَض للمستخدم فيعرف لماذا تغيّر الأسلوب
+    let lastProviderUsed = primary.label;
 
     async function complete(messages, { tools = true, temperature = 0.3 } = {}) {
         // صياغة القراءة تُنادى بلا أدوات إطلاقاً: لا شيء تحجزه أو تلغيه، فلا
@@ -586,19 +649,45 @@ export function createTravelAgent({ apiKey, apiUrl = DEFAULT_API_URL, model = DE
         const body = tools
             ? { model, messages, tools: AGENT_TOOLS, tool_choice: 'auto', temperature }
             : { model, messages, temperature };
-        const res = await fetchImpl(apiUrl, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
-        if (!res.ok) {
-            const detail = await res.text().catch(() => '');
-            throw new Error(`تعذّر الاتصال بمزوّد الايجنت (HTTP ${res.status}). ${detail.slice(0, 300)}`);
+        // ⚠️ حدّ المعدّل ليس عطلاً بل انتظاراً: مزوّد الايجنت يردّ 429 مع
+        // المدة المطلوبة صراحةً («try again in 1.39s»)، وكنّا نرمي فوراً
+        // فيرى المسافر «تعذّر رد المساعد» على شيء يُحلّ بثانية ونصف.
+        //
+        // والترتيب مقصود: نصبر على الأساسي أولاً (الانتظار ثانية أرخص من
+        // تبديل مزوّد وتبديل سلوك)، فإن نفدت حصّته فعلاً تحوّلنا للبديل
+        // بدل أن نُفشل الطلب. مزوّد واحد معطّل لا يعني مساعداً معطّلاً.
+        const chain = fallback ? [primary, fallback] : [primary];
+        let lastError = null;
+
+        for (const [index, provider] of chain.entries()) {
+            const isLast = index === chain.length - 1;
+            for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+                const res = await fetchImpl(provider.apiUrl, {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${provider.apiKey}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...body, model: provider.model }),
+                });
+                if (res.ok) {
+                    const payload = await res.json();
+                    const message = payload.choices?.[0]?.message;
+                    if (!message) throw new Error('رد مزوّد الايجنت بلا رسالة.');
+                    lastProviderUsed = provider.label;
+                    return message;
+                }
+                const detail = await res.text().catch(() => '');
+                lastError = new Error(`تعذّر الاتصال بمزوّد الايجنت (HTTP ${res.status}). ${detail.slice(0, 300)}`);
+                // 429 وأعطال الخادم عابرة؛ 4xx غيرها خطأ في طلبنا فإعادته عبث
+                const retriable = res.status === 429 || res.status >= 500;
+                if (!retriable) throw lastError;      // لا إعادة ولا تحويل
+                if (attempt < MAX_RETRIES) {
+                    await sleepImpl(retryDelayMs(res, detail, attempt));
+                    continue;
+                }
+                if (isLast) throw lastError;          // نفد الصبر وما من بديل
+                console.warn(`⚠️ ${provider.label} تعذّر (HTTP ${res.status}) — التحويل إلى ${chain[index + 1].label}.`);
+            }
         }
-        const payload = await res.json();
-        const message = payload.choices?.[0]?.message;
-        if (!message) throw new Error('رد مزوّد الايجنت بلا رسالة.');
-        return message;
+        throw lastError;
     }
 
     return {
@@ -621,7 +710,7 @@ export function createTravelAgent({ apiKey, apiUrl = DEFAULT_API_URL, model = DE
             for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
                 const msg = await complete(convo);
                 if (!msg.tool_calls || msg.tool_calls.length === 0) {
-                    return { reply: msg.content || '', actions };
+                    return { reply: msg.content || '', actions, provider: lastProviderUsed };
                 }
                 convo.push({ role: 'assistant', content: msg.content || null, tool_calls: msg.tool_calls });
                 for (const call of msg.tool_calls) {
@@ -632,11 +721,11 @@ export function createTravelAgent({ apiKey, apiUrl = DEFAULT_API_URL, model = DE
                     convo.push({
                         role: 'tool',
                         tool_call_id: call.id,
-                        content: JSON.stringify(result.data).slice(0, MAX_TOOL_RESULT_CHARS),
+                        content: compactToolResult(result.data),
                     });
                 }
             }
-            return { reply: 'تجاوزت الجولة حد الأدوات — جرّب طلباً أبسط أو أكمل خطوة خطوة.', actions };
+            return { reply: 'تجاوزت الجولة حد الأدوات — جرّب طلباً أبسط أو أكمل خطوة خطوة.', actions, provider: lastProviderUsed };
         },
 
         /**
@@ -695,5 +784,33 @@ export function buildTravelAgent(env = process.env) {
         apiKey: env.TRAVEL_AGENT_API_KEY,
         apiUrl: env.TRAVEL_AGENT_API_URL || undefined,
         model: env.TRAVEL_AGENT_MODEL || undefined,
+        fallback: buildFallbackProvider(env),
     });
+}
+
+// ✅ العنوان والنموذج مأخوذان من التكامل **القائم والمُتحقَّق منه** في
+// backend/agents/baseAgent.js لا من تخمين: نفس `baseURL` (‎/v1‎) ونفس
+// النموذج الافتراضي. وتعليق ذلك الملف يحذّر صراحةً أن `deepseek-chat`
+// و`coder` **أُلغيا نهائياً** لصالح الجيل الرابع — وهو ما تؤكده لوحة
+// الإدارة (فحص حيّ يُظهر deepseek-v4-pro يعمل).
+const DEFAULT_FALLBACK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
+const DEFAULT_FALLBACK_MODEL = 'deepseek-v4-pro';
+
+/**
+ * null بلا مفتاح احتياطي — السلسلة تعود مزوّداً واحداً كما كانت.
+ *
+ * يقبل `DEEPSEEK_API_KEY` أيضاً: المفتاح نفسه مضبوط سلفاً لبقية المنصة،
+ * فإلزام المالك بنسخه تحت اسم ثانٍ تكرارٌ يُنسى تحديثه عند التدوير.
+ * والاسم الخاص `TRAVEL_AGENT_FALLBACK_*` يبقى مقدَّماً لمن أراد مزوّداً
+ * مختلفاً لبوابة السفر وحدها.
+ */
+export function buildFallbackProvider(env = process.env) {
+    const apiKey = env.TRAVEL_AGENT_FALLBACK_API_KEY || env.DEEPSEEK_API_KEY;
+    if (!apiKey) return null;
+    return {
+        apiKey,
+        apiUrl: env.TRAVEL_AGENT_FALLBACK_API_URL || DEFAULT_FALLBACK_API_URL,
+        model: env.TRAVEL_AGENT_FALLBACK_MODEL || env.DEEPSEEK_MODEL || DEFAULT_FALLBACK_MODEL,
+        label: env.TRAVEL_AGENT_FALLBACK_LABEL || 'DeepSeek',
+    };
 }
