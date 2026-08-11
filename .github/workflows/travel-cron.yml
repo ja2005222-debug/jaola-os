@@ -45,7 +45,27 @@ jobs:
             echo "  TRAVEL_CRON_SECRET  = نفس قيمة CRON_SECRET في بيئة الخدمة على Render"
             exit 1
           fi
-          echo "✅ الأسرار موجودة."
+
+          # ⚠️ الوجود لا يكفي: قيمة أُلصق بها اسمُها
+          # (TRAVEL_SERVICE_URL=https://...) تجعل curl يقرأ ما قبل «//»
+          # كمضيف فيفشل بـ«Port number was not a decimal number» — خطأ
+          # لا يمتّ للسبب بصلة. حدث فعلاً، فصار يُفحص هنا.
+          case "$SERVICE_URL" in
+            https://*|http://*) ;;
+            *)
+              echo "::error::TRAVEL_SERVICE_URL يجب أن يبدأ بـ https:// وأن يحوي الرابط وحده"
+              echo "الصحيح:  https://jaola-travel.onrender.com"
+              echo "شائع خطأً: إلصاق الاسم بالقيمة، أو تكرار https://، أو اقتباسات"
+              exit 1
+              ;;
+          esac
+          case "$SERVICE_URL" in
+            *[[:space:]]*|*//*//*)
+              echo "::error::TRAVEL_SERVICE_URL يحوي مسافة أو بروتوكولاً مكرّراً"
+              exit 1
+              ;;
+          esac
+          echo "✅ الأسرار موجودة وصيغة الرابط سليمة."
 
       - name: إيقاظ الخدمة
         # بدء التشغيل البارد على Render يقارب ٥٠ ثانية؛ نداءٌ خفيف أولاً
