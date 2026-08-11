@@ -35,6 +35,7 @@ import {
     trimConversation, MAX_TRAVELLERS,
 } from './src/profile.js';
 import { airportCoords, searchAirports, airportForTimezone } from './src/airports.js';
+import { validateChildrenDobs, checkPassengerAges } from './src/passengerAges.js';
 import { createPriceWatch, listPriceWatchesByUser, cancelPriceWatch } from './src/priceWatches.js';
 import { checkWatches } from './src/priceWatchPoller.js';
 import { sendTripReminders } from './src/tripReminders.js';
@@ -157,13 +158,23 @@ export function validateSearchParams(body) {
         }
     }
     const adults = body?.adults != null ? Number(body.adults) : 1;
-    const children = body?.children != null ? Number(body.children) : 0;
     if (!Number.isInteger(adults) || adults < 1 || adults > MAX_ADULTS) {
         return { error: `عدد البالغين بين 1 و${MAX_ADULTS}.` };
     }
-    if (!Number.isInteger(children) || children < 0 || children > MAX_CHILDREN) {
-        return { error: `عدد الأطفال بين 0 و${MAX_CHILDREN}.` };
+    // الأطفال بتواريخ ميلادهم لا بعددهم: العدد وحده يُجبر المزوّد على
+    // تخمين عمر، والتخمين يناقض تاريخ الميلاد وقت الحجز. راجع
+    // passengerAges.js — العطب الذي وُلد منه هذا التغيير موثّق هناك.
+    //
+    // ورفض `children` القديم صراحةً لا تجاهله: عميل لم يُحدَّث (صفحة
+    // مخبوءة، أو ايجنت بمخطط أدوات قديم) يرسل children:2 فيبحث بلا
+    // أطفال أصلاً — نفس الخطأ الصامت في التسعير من باب آخر. الفشل
+    // المعلن أرخص.
+    if (body?.children != null) {
+        return { error: 'أرسل childrenDobs (تواريخ ميلاد الأطفال) بدل children — سعر تذكرة الطفل يتبع عمره يوم السفر.' };
     }
+    const childrenCheck = validateChildrenDobs(body?.childrenDobs, departDate, MAX_CHILDREN);
+    if (childrenCheck.error) return { error: childrenCheck.error };
+    const childrenDobs = childrenCheck.values;
     const cabin = body?.cabin ? String(body.cabin) : 'economy';
     if (!CABINS.includes(cabin)) {
         return { error: `درجة غير معروفة (المتاح: ${CABINS.join('، ')}).` };
@@ -172,7 +183,7 @@ export function validateSearchParams(body) {
     if (!SORTS.includes(sort)) {
         return { error: `ترتيب غير معروف (المتاح: ${SORTS.join('، ')}).` };
     }
-    return { values: { origin, destination, departDate, returnDate, adults, children, cabin, sort } };
+    return { values: { origin, destination, departDate, returnDate, adults, childrenDobs, cabin, sort } };
 }
 
 /** يتحقق من بيانات الركاب والتواصل — {error} أو {values}. */
@@ -317,9 +328,23 @@ export function validateDrivers(body) {
 }
 
 /** عرض للعميل: sellAmount فقط — الصافي netAmount **لا يغادر الخادم**. */
+/**
+ * أعمار الركاب تصل الواجهة، ومعرّفات المزوّد لا.
+ * الواجهة تحتاج أن تعرف أيّ مقعد لطفل لتملأ تاريخ ميلاده وتقفله (فلا
+ * يناقض ما سُعِّر به العرض) — والمعرّف الداخلي لا شأن لها به، كحال
+ * passengerIds تماماً.
+ */
+function publicPassengers(passengers) {
+    if (!Array.isArray(passengers)) return undefined;
+    return passengers.map(p => ({ type: p.type ?? null, age: p.age ?? null }));
+}
+
 function publicOffer(offer, markupPct) {
-    const { netAmount, passengerIds, ...rest } = offer;
-    return { ...rest, sellAmount: applyMarkup(netAmount, markupPct) };
+    const { netAmount, passengerIds, passengers, ...rest } = offer;
+    const pub = { ...rest, sellAmount: applyMarkup(netAmount, markupPct) };
+    const safe = publicPassengers(passengers);
+    if (safe) pub.passengers = safe;
+    return pub;
 }
 
 function publicBooking(b) {
@@ -483,9 +508,20 @@ export function createApp({
         const check = validatePassengers({ passengers, contact }, offer.passengerCount);
         if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
 
+        // شبكة أخيرة قبل المزوّد: تاريخ ميلاد يناقض العمر الذي سُعِّر به
+        // العرض كان يصل إلى Duffel فيعود 422 بالإنجليزية إلى وجه المسافر.
+        // الآن يُوقَف هنا برسالة عربية تقول ما العمل — ولا يُنشأ حجز
+        // pending لطلبٍ نعرف سلفاً أنه سيُرفض.
+        const ageError = checkPassengerAges({
+            passengers: check.values.passengers,
+            offerPassengers: offer.passengers,
+            departAt: offer.slices?.[0]?.departAt,
+        });
+        if (ageError) throw Object.assign(new Error(ageError), { status: 400 });
+
         const sellAmount = applyMarkup(offer.netAmount, markupPct);
         // ملخص العرض المخزَّن على الحجز: بلا صافٍ ولا معرّفات مزوّد داخلية
-        const { netAmount: _net, passengerIds: _ids, ...offerSummary } = offer;
+        const { netAmount: _net, passengerIds: _ids, passengers: _pax, ...offerSummary } = offer;
         const booking = await createBooking(store, {
             username, provider: provider.name,
             offer: offerSummary,
@@ -754,7 +790,7 @@ export function createApp({
             const batch = dates.slice(i, i + FLEX_CONCURRENCY);
             const batchResults = await Promise.all(batch.map(async date => {
                 try {
-                    const offers = await provider.searchOffers({ origin: originU, destination: destU, departDate: date, adults: 1, children: 0, cabin: cab });
+                    const offers = await provider.searchOffers({ origin: originU, destination: destU, departDate: date, adults: 1, childrenDobs: [], cabin: cab });
                     if (offers.length === 0) return { date, price: null, currency: null };
                     const cheapestNet = Math.min(...offers.map(o => o.netAmount));
                     return { date, price: applyMarkup(cheapestNet, markupPct), currency: offers[0].currency };

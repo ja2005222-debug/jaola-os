@@ -21,6 +21,7 @@
  */
 
 import { createDuffelClient } from './duffelClient.js';
+import { buildSearchPassengers } from '../passengerAges.js';
 
 const MAX_RESULTS = 10; // ما يكفي شاشة النتائج — Duffel قد يعيد المئات
 
@@ -34,8 +35,21 @@ function extractBaggage(seg) {
     return baggages.map(b => ({ type: b.type || null, quantity: b.quantity ?? null }));
 }
 
+/**
+ * يوحّد قائمة ركاب Duffel: قد تصل معرّفات مجرّدة (نصوص) أو كائنات تحمل
+ * `type`/`age` معها. الأعمار هي ما سُعِّر به العرض فعلاً، ويطابقها الخادم
+ * بتواريخ الميلاد قبل الحجز — فغيابها يعطّل الفحص ولا يكسره.
+ */
+function normalizePassengerRefs(list) {
+    return (list || []).map(p => (typeof p === 'string'
+        ? { id: p, type: null, age: null }
+        : { id: p?.id ?? null, type: p?.type ?? null, age: p?.age ?? null }));
+}
+
 /** يطبّع عرض Duffel الخام إلى شكل العرض الموحّد الذي يفهمه بقية النظام. */
-export function normalizeDuffelOffer(raw, passengerIds) {
+export function normalizeDuffelOffer(raw, passengerRefs) {
+    const passengers = normalizePassengerRefs(passengerRefs);
+    const passengerIds = passengers.map(p => p.id);
     const slices = (raw.slices || []).map(slice => {
         const segments = (slice.segments || []).map(seg => ({
             origin: seg.origin?.iata_code,
@@ -75,6 +89,7 @@ export function normalizeDuffelOffer(raw, passengerIds) {
         expiresAt: raw.expires_at || null,
         totalDurationMin: totalDurationMin(slices),
         passengerIds,
+        passengers,
         slices,
     };
 }
@@ -110,23 +125,25 @@ export function createDuffelProvider({ apiKey, apiUrl, fetchImpl }) {
         name: 'duffel',
         mode: client.mode,
 
-        async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, children = 0, cabin = 'economy', sort = 'price' }) {
+        async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, childrenDobs = [], cabin = 'economy', sort = 'price' }) {
             const slices = [{ origin, destination, departure_date: departDate }];
             if (returnDate) slices.push({ origin: destination, destination: origin, departure_date: returnDate });
-            const passengers = [
-                ...Array.from({ length: adults }, () => ({ type: 'adult' })),
-                ...Array.from({ length: children }, () => ({ age: 8 })),
-            ];
+            // كان هنا `age: 8` ثابتاً لكل طفل — رقم مخترَع يناقض تاريخ
+            // الميلاد وقت الحجز (422) ويسعّر الرحلة لعمر خاطئ. الآن العمر
+            // مشتقّ من تاريخ الميلاد على تاريخ السفر. راجع passengerAges.js.
+            const passengers = buildSearchPassengers({ adults, childrenDobs, departDate });
             const data = await duffel('POST', '/air/offer_requests?return_offers=true', {
                 data: { slices, passengers, cabin_class: cabin },
             });
-            const passengerIds = (data.passengers || []).map(p => p.id);
+            // الكائنات كاملةً لا معرّفاتها وحدها: `age` المُعاد هو ما سُعِّر
+            // به العرض، ويطابقه الخادم بتاريخ الميلاد قبل الحجز.
+            const requestPassengers = data.passengers || [];
             // ⚠️ التطبيع قبل الترتيب متعمَّد: المدة لا تُعرف إلا بعده، ولو
             // اقتطعنا الأرخص عشرة أولاً (كما كان) لأعطى ترتيبُ "الأسرع"
             // أسرعَ العشرة الأرخص لا الأسرع فعلاً. Duffel قد يعيد المئات،
             // والتطبيع حساب محلي رخيص فلا مشكلة في تطبيقه على الكل.
             const normalized = (data.offers || [])
-                .map(o => normalizeDuffelOffer(o, passengerIds))
+                .map(o => normalizeDuffelOffer(o, requestPassengers))
                 .filter(o => Number.isFinite(o.netAmount));
             return sortOffers(normalized, sort).slice(0, MAX_RESULTS);
         },
@@ -134,8 +151,7 @@ export function createDuffelProvider({ apiKey, apiUrl, fetchImpl }) {
         async getOffer(offerId) {
             try {
                 const raw = await duffel('GET', `/air/offers/${encodeURIComponent(offerId)}`);
-                const passengerIds = (raw.passengers || []).map(p => p.id);
-                return normalizeDuffelOffer(raw, passengerIds);
+                return normalizeDuffelOffer(raw, raw.passengers || []);
             } catch (e) {
                 // عرض منتهي/مجهول = null (يعامله الخادم 404) — أخطاء أخرى تصعد
                 if (/HTTP 404/.test(e.message)) return null;

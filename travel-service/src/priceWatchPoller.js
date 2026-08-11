@@ -61,7 +61,7 @@ export async function checkWatches({ store, provider, markupPct, mailer = { send
             const offers = await provider.searchOffers({
                 origin: watch.origin, destination: watch.destination,
                 departDate: watch.departDate, returnDate: watch.returnDate || null,
-                adults: 1, children: 0, cabin: watch.cabin,
+                adults: 1, childrenDobs: [], cabin: watch.cabin,
             });
             const price = cheapestSellAmount(offers, markupPct);
             if (price == null) continue; // لا عروض حالياً — لا تحديث ولا إشعار

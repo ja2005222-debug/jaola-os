@@ -122,7 +122,14 @@ export const AGENT_TOOLS = [
                     departDate: { type: 'string', description: 'تاريخ الذهاب YYYY-MM-DD' },
                     returnDate: { type: 'string', description: 'تاريخ العودة YYYY-MM-DD (اختياري — ذهاب فقط بدونه)' },
                     adults: { type: 'integer', description: 'عدد البالغين (افتراضي 1)' },
-                    children: { type: 'integer', description: 'عدد الأطفال (افتراضي 0)' },
+                    // عمداً تواريخ لا عدد: العدد يترك العمر مجهولاً فيُخمَّن،
+                    // والتخمين هو العطب نفسه الذي أصلحه passengerAges.js.
+                    // النموذج لا يملك ما يخمّن به هنا — عليه أن يسأل.
+                    childrenDobs: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'تواريخ ميلاد الأطفال YYYY-MM-DD (دون 18 سنة). اسأل المسافر عنها ولا تخمّنها — العمر يحدّد السعر والتذكرة.',
+                    },
                     cabin: { type: 'string', enum: ['economy', 'premium_economy', 'business', 'first'] },
                 },
                 required: ['origin', 'destination', 'departDate'],

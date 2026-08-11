@@ -9,6 +9,7 @@
 
 import { seedOf, pad } from './mockUtils.js';
 import { sortOffers, totalDurationMin } from './duffelProvider.js';
+import { buildSearchPassengers } from '../passengerAges.js';
 
 const MOCK_AIRLINES = ['طيران جاولا', 'أجنحة الصقر', 'سماء العرب'];
 const MOCK_CURRENCY = 'USD';
@@ -61,9 +62,13 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
         name: 'mock',
         mode: 'mock',
 
-        async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, children = 0, cabin = 'economy', sort = 'price' }) {
+        async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, childrenDobs = [], cabin = 'economy', sort = 'price' }) {
             const seed = seedOf(`${origin}${destination}${departDate}${cabin}`);
-            const paxCount = adults + children;
+            const paxCount = adults + childrenDobs.length;
+            // نفس ترتيب duffelProvider (بالغون ثم أطفال) ونفس شكل الكائن —
+            // فيسري فحص الأعمار في الخادم على المحاكاة كما على المزوّد الحي.
+            const passengers = buildSearchPassengers({ adults, childrenDobs, departDate })
+                .map((p, idx) => ({ id: `mock_pas_${idx}`, type: p.type ?? null, age: p.age ?? null }));
             const results = [];
             for (let i = 0; i < 3; i++) {
                 const s = seed + i * 137;
@@ -79,6 +84,8 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
                     currency: MOCK_CURRENCY,
                     cabin,
                     passengerCount: paxCount,
+                    passengers,
+                    passengerIds: passengers.map(p => p.id),
                     expiresAt: new Date(Date.now() + 30 * 60000).toISOString(),
                     // تعادل عقد duffelProvider: الشعار null (لا نختلق رابطاً)
                     ownerLogo: null,

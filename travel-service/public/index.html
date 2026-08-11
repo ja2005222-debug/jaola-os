@@ -252,7 +252,7 @@
           </div>
           <div class="row">
             <div><label>بالغون</label><input id="fAdults" type="number" min="1" max="9" value="1" /></div>
-            <div><label>أطفال</label><input id="fChildren" type="number" min="0" max="8" value="0" /></div>
+            <div><label>أطفال (دون 18)</label><input id="fChildren" type="number" min="0" max="8" value="0" /></div>
             <div><label>الدرجة</label>
               <select id="fCabin">
                 <option value="economy">اقتصادية</option>
@@ -268,6 +268,9 @@
               </select>
             </div>
           </div>
+          <!-- تواريخ ميلاد الأطفال: سعر تذكرة الطفل يتبع عمره يوم السفر،
+               فبدونها يُسعَّر الحجز لعمر مخترَع ويرفضه الناقل عند الإصدار. -->
+          <div id="childDobs" class="row hidden" style="margin-top:8px"></div>
           <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
             <button class="primary" id="searchBtn">🔎 ابحث</button>
             <label id="includeStaysLabel" style="display:flex;align-items:center;gap:6px;cursor:pointer">
@@ -958,15 +961,40 @@
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
+    // ── تواريخ ميلاد الأطفال ───────────────────────────────────────────
+    // حقل لكل طفل يظهر بتغيير العدد. القيم المُدخلة تُحفظ عبر إعادة
+    // الرسم حتى لا يمحو رفعُ العدد ما كُتب قبله.
+    function renderChildDobs() {
+      const n = Math.max(0, Math.min(8, Number($('fChildren').value) || 0));
+      const wrap = $('childDobs');
+      const previous = childDobValues();
+      wrap.classList.toggle('hidden', n === 0);
+      wrap.innerHTML = Array.from({ length: n }, (_, i) =>
+        `<div><label>تاريخ ميلاد الطفل ${i + 1}</label>
+           <input data-child-dob="${i}" type="date" value="${previous[i] || ''}" /></div>`).join('');
+    }
+    function childDobValues() {
+      return [...$('childDobs').querySelectorAll('[data-child-dob]')].map(el => el.value);
+    }
+    $('fChildren').addEventListener('input', renderChildDobs);
+    renderChildDobs();
+
     async function doSearch() {
       $('searchError').classList.add('hidden');
       $('results').innerHTML = '<p class="note">🔎 جارٍ البحث…</p>';
       $('searchBtn').disabled = true;
       try {
+        const childrenDobs = childDobValues();
+        if (childrenDobs.some(d => !d)) {
+          $('results').innerHTML = '';
+          $('searchError').textContent = 'أدخل تاريخ ميلاد كل طفل — سعر تذكرته يتبع عمره يوم السفر.';
+          $('searchError').classList.remove('hidden');
+          return;
+        }
         const body = {
           origin: selectedIata($('fOrigin')), destination: selectedIata($('fDest')),
           departDate: $('fDepart').value, returnDate: $('fReturn').value || null,
-          adults: Number($('fAdults').value), children: Number($('fChildren').value),
+          adults: Number($('fAdults').value), childrenDobs,
           cabin: $('fCabin').value, sort: $('fSort').value,
         };
         const res = await api('/api/travel/flights/search', { method: 'POST', body: JSON.stringify(body) });
@@ -1048,17 +1076,26 @@
         ? `<option value="">— اختر مسافراً محفوظاً —</option>` +
           savedTravellers.map(t => `<option value="${esc(t.id)}">${esc(t.label)}</option>`).join('')
         : '';
+      // مقاعد الأطفال تأتي بعد البالغين بنفس ترتيب إرسالها للمزوّد،
+      // وتواريخ ميلادها هي عين ما سُعِّر به العرض. نملؤها ونقفلها: إعادة
+      // كتابتها هنا لا تفيد شيئاً وتفتح باب التناقض الذي وُلد منه العطب.
+      const searchDobs = (lastFlightSearch && lastFlightSearch.childrenDobs) || [];
+      const adultsInOffer = Math.max(0, offer.passengerCount - searchDobs.length);
       for (let i = 0; i < offer.passengerCount; i++) {
+        const childIdx = i - adultsInOffer;
+        const lockedDob = childIdx >= 0 ? searchDobs[childIdx] : null;
         html += `<fieldset style="border:1px dashed var(--border);border-radius:10px;padding:10px;margin-top:10px">
-          <legend style="font-size:13px;color:var(--muted)">المسافر ${i + 1}</legend>
-          ${savedOptions ? `<div style="margin-bottom:8px"><select data-fill="${i}">${savedOptions}</select></div>` : ''}
+          <legend style="font-size:13px;color:var(--muted)">${lockedDob ? `الطفل ${childIdx + 1}` : `المسافر ${i + 1}`}</legend>
+          ${savedOptions && !lockedDob ? `<div style="margin-bottom:8px"><select data-fill="${i}">${savedOptions}</select></div>` : ''}
           <div class="row">
             <div><label>اللقب</label><select data-p="title"><option value="mr">Mr</option><option value="ms">Ms</option><option value="mrs">Mrs</option></select></div>
             <div><label>الاسم الأول (لاتيني)</label><input data-p="givenName" placeholder="AHMED" /></div>
             <div><label>اسم العائلة (لاتيني)</label><input data-p="familyName" placeholder="ALI" /></div>
-            <div><label>تاريخ الميلاد</label><input data-p="bornOn" type="date" /></div>
+            <div><label>تاريخ الميلاد</label><input data-p="bornOn" type="date"${
+              lockedDob ? ` value="${esc(lockedDob)}" readonly` : ''} /></div>
             <div><label>الجنس</label><select data-p="gender"><option value="m">ذكر</option><option value="f">أنثى</option></select></div>
           </div>
+          ${lockedDob ? '<div class="note" style="margin:6px 0 0">تاريخ الميلاد من البحث — لتغييره أعد البحث، فالسعر يتبع العمر.</div>' : ''}
         </fieldset>`;
       }
       html += `<div class="row" style="margin-top:10px">
