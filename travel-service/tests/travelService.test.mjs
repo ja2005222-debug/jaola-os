@@ -2994,8 +2994,18 @@ describe('الايجنت الحاجز', () => {
     test('🔀 buildFallbackProvider: null بلا مفتاح، وافتراضات قابلة للتجاوز', () => {
         assert.equal(buildFallbackProvider({}), null);
         const d = buildFallbackProvider({ TRAVEL_AGENT_FALLBACK_API_KEY: 'x' });
-        assert.match(d.apiUrl, /deepseek/);
-        assert.equal(d.model, 'deepseek-chat');
+        // ⚠️ الافتراضات تطابق التكامل القائم في backend/agents/baseAgent.js:
+        // مسار /v1، والجيل الرابع — لا deepseek-chat الملغى.
+        assert.equal(d.apiUrl, 'https://api.deepseek.com/v1/chat/completions');
+        assert.equal(d.model, 'deepseek-v4-pro');
+        assert.ok(!d.model.includes('chat'), 'deepseek-chat أُلغي نهائياً');
+
+        // المفتاح المشترك للمنصة يكفي — لا نُلزم المالك بنسخه باسم ثانٍ
+        const shared = buildFallbackProvider({ DEEPSEEK_API_KEY: 'shared', DEEPSEEK_MODEL: 'deepseek-v4-flash' });
+        assert.equal(shared.apiKey, 'shared');
+        assert.equal(shared.model, 'deepseek-v4-flash');
+        // والاسم الخاص يتقدّم عليه عند وجود الاثنين
+        assert.equal(buildFallbackProvider({ DEEPSEEK_API_KEY: 'a', TRAVEL_AGENT_FALLBACK_API_KEY: 'b' }).apiKey, 'b');
         const custom = buildFallbackProvider({
             TRAVEL_AGENT_FALLBACK_API_KEY: 'x',
             TRAVEL_AGENT_FALLBACK_API_URL: 'https://other.test/v1',

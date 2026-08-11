@@ -781,20 +781,29 @@ export function buildTravelAgent(env = process.env) {
     });
 }
 
-// ⚠️ عنوان DeepSeek ونموذجه من توثيقه العام المنشور (واجهة متوافقة مع
-// OpenAI، وهي نفس الصيغة التي نرسلها أصلاً) — **لم يُجرَّب ضد الشبكة
-// الحية من بيئة التطوير**، نفس صراحة Wikipedia/LiteAPI في هذا المستودع.
-// وكلاهما قابل للتجاوز بمتغيّر بيئة، فأي مزوّد متوافق يعمل بلا تعديل كود.
-const DEFAULT_FALLBACK_API_URL = 'https://api.deepseek.com/chat/completions';
-const DEFAULT_FALLBACK_MODEL = 'deepseek-chat';
+// ✅ العنوان والنموذج مأخوذان من التكامل **القائم والمُتحقَّق منه** في
+// backend/agents/baseAgent.js لا من تخمين: نفس `baseURL` (‎/v1‎) ونفس
+// النموذج الافتراضي. وتعليق ذلك الملف يحذّر صراحةً أن `deepseek-chat`
+// و`coder` **أُلغيا نهائياً** لصالح الجيل الرابع — وهو ما تؤكده لوحة
+// الإدارة (فحص حيّ يُظهر deepseek-v4-pro يعمل).
+const DEFAULT_FALLBACK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
+const DEFAULT_FALLBACK_MODEL = 'deepseek-v4-pro';
 
-/** null بلا مفتاح احتياطي — السلسلة تعود مزوّداً واحداً كما كانت. */
+/**
+ * null بلا مفتاح احتياطي — السلسلة تعود مزوّداً واحداً كما كانت.
+ *
+ * يقبل `DEEPSEEK_API_KEY` أيضاً: المفتاح نفسه مضبوط سلفاً لبقية المنصة،
+ * فإلزام المالك بنسخه تحت اسم ثانٍ تكرارٌ يُنسى تحديثه عند التدوير.
+ * والاسم الخاص `TRAVEL_AGENT_FALLBACK_*` يبقى مقدَّماً لمن أراد مزوّداً
+ * مختلفاً لبوابة السفر وحدها.
+ */
 export function buildFallbackProvider(env = process.env) {
-    if (!env.TRAVEL_AGENT_FALLBACK_API_KEY) return null;
+    const apiKey = env.TRAVEL_AGENT_FALLBACK_API_KEY || env.DEEPSEEK_API_KEY;
+    if (!apiKey) return null;
     return {
-        apiKey: env.TRAVEL_AGENT_FALLBACK_API_KEY,
+        apiKey,
         apiUrl: env.TRAVEL_AGENT_FALLBACK_API_URL || DEFAULT_FALLBACK_API_URL,
-        model: env.TRAVEL_AGENT_FALLBACK_MODEL || DEFAULT_FALLBACK_MODEL,
-        label: env.TRAVEL_AGENT_FALLBACK_LABEL || 'المزوّد الاحتياطي',
+        model: env.TRAVEL_AGENT_FALLBACK_MODEL || env.DEEPSEEK_MODEL || DEFAULT_FALLBACK_MODEL,
+        label: env.TRAVEL_AGENT_FALLBACK_LABEL || 'DeepSeek',
     };
 }
