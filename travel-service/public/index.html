@@ -172,6 +172,46 @@
       border-radius: 14px; padding: 20px; max-width: 560px; width: 92%;
     }
     dialog::backdrop { background: #000a; }
+    /* ─── 📱 الهاتف ───────────────────────────────────────────────
+       قِيست هذه الأرقام على عرض 375px فعلياً لا تخميناً: التبويبات كانت
+       تلتف ثلاثة صفوف فتلتهم ~300px (38% من الشاشة)، فلا يبقى للنتائج
+       شيء فوق الطيّة. */
+    @media (max-width: 560px) {
+      main { padding: 14px 12px; }
+      header { padding: 10px 12px; }
+      header h1 { font-size: 17px; }
+
+      /* رفّ أفقي بدل ثلاثة صفوف — يوفّر ~200px رأسياً */
+      .tabs {
+        flex-wrap: nowrap; overflow-x: auto; margin-bottom: 12px;
+        padding-bottom: 4px; scrollbar-width: none; scroll-snap-type: x proximity;
+      }
+      .tabs::-webkit-scrollbar { display: none; }
+      .tabs button { flex: 0 0 auto; padding: 9px 14px; font-size: 14px; scroll-snap-align: start; }
+
+      /* ⚠️ 16px ليست ذوقاً: iOS Safari يُكبّر الصفحة تلقائياً عند لمس
+         حقل خطُّه أصغر من 16px، فيخرج التخطيط عن الشاشة ولا يعود. */
+      input, select, textarea { font-size: 16px; }
+
+      .card { padding: 13px; }
+      .offer .price { font-size: 20px; }
+      .offer button.primary { margin-top: 8px; }
+
+      #chatLog { max-height: 60vh; }
+      .msg { max-width: 92%; }
+      .dest-grid { grid-template-columns: 1fr; }
+      dialog { padding: 16px; width: 95%; }
+    }
+
+    /* مساحة لمس لا تقل عن 44px للجرس (كان 28px) */
+    .bell { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+
+    /* مربّع «أضف فنادق الوجهة»: صفٌّ كامل العرض، ونصُّه يتمدّد فيه.
+       بلا flex:1 على النصّ يبقى عرضه بمقدار محتواه المُقلَّص (قِيس: 133px
+       داخل لافتة عرضها 323px) فيلتفّ سطرين بلا داعٍ. */
+    #includeStaysLabel { flex: 1 1 100%; }
+    #includeStaysLabel span { margin: 0; flex: 1; }
+    #includeStaysLabel input { width: auto; flex: 0 0 auto; }
   </style>
 </head>
 <body>
@@ -909,6 +949,15 @@
       }
     }
 
+    // 📱 على الهاتف تقع النتائج تحت التبويبات ونموذج البحث، فيحتاج المسافر
+    // تمرير ~800px ليرى أول عرض بعد ضغطه «ابحث» — وكثيرون يظنون أن شيئاً
+    // لم يحدث. على الشاشات الواسعة النتائج مرئية أصلاً فلا نحرّك شيئاً.
+    const MOBILE_MAX = 560;
+    function revealResults(el) {
+      if (!el || window.innerWidth > MOBILE_MAX) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
     async function doSearch() {
       $('searchError').classList.add('hidden');
       $('results').innerHTML = '<p class="note">🔎 جارٍ البحث…</p>';
@@ -962,6 +1011,7 @@
           btn.addEventListener('click', () => openBooking(
             data.offers.find(o => o.id === JSON.parse(btn.dataset.book).id))));
         refineInsight(data.insight); // بلا await: النتائج معروضة سلفاً
+        revealResults($('results'));
         // مربع "أضف فنادق الوجهة" — بحسب رغبة العميل، تفتح في تبويب منفصل
         // (نفس التطبيق بوضع عرض مختلف) لا مضمَّنة في نفس الصفحة.
         if ($('fIncludeStays').checked && config.staysEnabled) {
@@ -1189,6 +1239,7 @@
           sbtn.addEventListener('click', () => openStayBooking(
             data.offers.find(o => o.id === JSON.parse(sbtn.dataset.stayBook).id))));
         refineInsight(data.insight, 'stay');
+        revealResults($('staysPageResults'));
       } catch {
         $('staysPageResults').innerHTML = '<p class="error">تعذّر بحث الفنادق — حاول مجدداً بعد قليل.</p>';
       }
@@ -1372,6 +1423,7 @@
           cbtn.addEventListener('click', () => openCarBooking(
             data.offers.find(o => o.id === JSON.parse(cbtn.dataset.carBook).id))));
         refineInsight(data.insight, 'car');
+        revealResults($('carResults'));
       } catch {
         $('carResults').innerHTML = '';
         $('carSearchError').textContent = 'تعذّر البحث — حاول مجدداً بعد قليل.';
