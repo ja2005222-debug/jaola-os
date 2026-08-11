@@ -29,7 +29,7 @@ import { readMarkupPct, applyMarkup, DEFAULT_MARKUP_PCT } from '../src/pricing.j
 import { canTransition, createBooking, transitionBooking, getBooking, getBookingByProviderOrderId } from '../src/bookings.js';
 import { createFileStore } from '../src/store/fileStore.js';
 import { createPostgresStore } from '../src/store/postgresStore.js';
-import { createTravelAgent, executeAgentTool, buildTravelAgent, AGENT_TOOLS } from '../src/agent/agent.js';
+import { createTravelAgent, executeAgentTool, buildTravelAgent, AGENT_TOOLS, retryDelayMs, compactToolResult } from '../src/agent/agent.js';
 import { listPriceWatchesByUser, cancelPriceWatch } from '../src/priceWatches.js';
 import { checkWatches } from '../src/priceWatchPoller.js';
 import { sendTripReminders, isReminderDue, renderTripReminder, departureAt } from '../src/tripReminders.js';
@@ -2876,6 +2876,79 @@ describe('الايجنت الحاجز', () => {
             });
             assert.equal(sentBody.messages.filter(m => m.role === 'system').length, 1);
         });
+    });
+
+    // ⚠️ حدّ المعدّل هو أكثر ما يراه المستخدم فشلاً: المزوّد المجاني
+    // 12 ألف رمز/دقيقة، وطلبٌ واحد كان يبلغها. الرد يحمل مدة الانتظار.
+    test('⏳ 429 يُعاد بعد المدة التي يطلبها المزوّد، لا يفشل فوراً', async () => {
+        let calls = 0; const waits = [];
+        const agent = createTravelAgent({
+            apiKey: 'k',
+            sleepImpl: async ms => { waits.push(ms); },
+            fetchImpl: async () => {
+                calls += 1;
+                if (calls === 1) {
+                    return {
+                        ok: false, status: 429,
+                        headers: { get: () => null },
+                        text: async () => '{"error":{"message":"Rate limit reached ... Please try again in 1.39s."}}',
+                    };
+                }
+                return { ok: true, json: async () => ({ choices: [{ message: { content: 'نجح بعد الانتظار' } }] }) };
+            },
+        });
+        // مصدر واقعي الطول: حارس النموّ (١.٦×) يرفض رداً أطول بكثير من
+        // مصدره، فمصدرٌ من حرفين كان سيُسقط الردّ لسببٍ لا علاقة له بالإعادة
+        const out = await agent.phraseNotice('انخفض سعر رحلتك إلى 420 ريالاً.');
+        assert.equal(out, 'نجح بعد الانتظار');
+        assert.equal(calls, 2);
+        // المدة من نص المزوّد (1.39s) + هامش، لا تخميناً
+        assert.ok(waits[0] >= 1390 && waits[0] <= 2000, `انتظار غير متوقع: ${waits[0]}`);
+    });
+
+    test('⏳ ترويسة retry-after تُقدَّم على نص الرسالة، والانتظار مسقوف', () => {
+        const withHeader = { headers: { get: n => (n === 'retry-after' ? '2' : null) } };
+        assert.equal(retryDelayMs(withHeader, 'try again in 9s', 0), 2000);
+        // سقفٌ يمنع تجميد الطلب مهما طلب المزوّد
+        const huge = { headers: { get: () => '600' } };
+        assert.equal(retryDelayMs(huge, '', 0), 4000);
+        // بلا ترويسة ولا نص → تراجع أُسّي
+        const bare = { headers: { get: () => null } };
+        assert.ok(retryDelayMs(bare, '', 0) < retryDelayMs(bare, '', 2));
+    });
+
+    test('⏳ خطأ غير قابل للإعادة (400) يفشل فوراً بلا انتظار', async () => {
+        let calls = 0; const waits = [];
+        const agent = createTravelAgent({
+            apiKey: 'k', sleepImpl: async ms => waits.push(ms),
+            fetchImpl: async () => {
+                calls += 1;
+                return { ok: false, status: 400, headers: { get: () => null }, text: async () => 'طلب سيئ' };
+            },
+        });
+        // phraseNotice تبتلع الخطأ وتعيد الأصل — المهم ألا يُعاد النداء
+        assert.equal(await agent.phraseNotice('نص'), 'نص');
+        assert.equal(calls, 1);
+        assert.equal(waits.length, 0);
+    });
+
+    // ⚠️ التقطيع بالحروف كان يُنتج JSON فاسداً يبني النموذج عليه جوابه
+    test('✂️ تقليص نتيجة الأداة يُبقيها JSON صالحاً ويُعلن ما أُسقط', () => {
+        const many = Array.from({ length: 40 }, (_, i) => ({ id: i, name: 'رحلة طويلة الاسم ' + i, extra: 'ح'.repeat(80) }));
+        const out = compactToolResult(many, 1200);
+        const parsed = JSON.parse(out); // لا يرمي = صالح
+        assert.ok(out.length <= 1200);
+        assert.ok(parsed.items.length > 0 && parsed.items.length < 40);
+        assert.equal(parsed.omitted, 40 - parsed.items.length);
+        assert.equal(parsed.items[0].id, 0); // الأنسب أولاً محفوظ
+
+        // صغيرة تمر كما هي بلا تغليف
+        assert.equal(compactToolResult({ a: 1 }, 1200), '{"a":1}');
+
+        // كائن مفرد ضخم: يبقى صالحاً ويُعلن أنه جزئي
+        const big = JSON.parse(compactToolResult({ t: 'ط'.repeat(5000) }, 500));
+        assert.equal(big.partial, true);
+        assert.ok(big.text.length > 0);
     });
 
     test('🛡️ صياغة التنبيه: رد مُطوَّل أو فارغ → يعود النص الحتمي', async () => {

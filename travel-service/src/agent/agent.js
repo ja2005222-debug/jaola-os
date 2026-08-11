@@ -24,7 +24,50 @@ const DEFAULT_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const DEFAULT_MODEL = 'llama-3.3-70b-versatile';
 // 10 لا 6: البحث المقارن (تواريخ مرنة/بدائل) يستهلك جولات أكثر من حجز مباشر
 const MAX_TOOL_ROUNDS = 10;
-const MAX_TOOL_RESULT_CHARS = 6000;
+// 6000 كانت تُضخّم الجولة الأخيرة: عشر جولات × 6000 حرف ≈ 16 ألف رمز من
+// نتائج الأدوات وحدها، فوق 3300 رمز ثابتة (مخططات الأدوات + التعليمة) في
+// كل نداء. الحدّ الأدنى للمزوّد المجاني 12 ألف رمز/دقيقة — فطلبٌ واحد
+// كان يلتهم الحصّة كاملة.
+const MAX_TOOL_RESULT_CHARS = 3000;
+const MAX_RETRIES = 2;          // ثلاث محاولات إجمالاً
+const MAX_RETRY_WAIT_MS = 4000; // لا نُجمّد المسافر انتظاراً لحدّ معدّل
+
+/**
+ * كم ننتظر قبل إعادة المحاولة؟ نُفضّل ما يقوله المزوّد على تخميننا:
+ * ترويسة `retry-after` أولاً، ثم المدة المذكورة في نص الخطأ، وأخيراً
+ * تراجع أُسّي. مسقوفٌ دوماً حتى لا يعلق الطلب.
+ */
+export function retryDelayMs(res, detail, attempt) {
+    const header = Number(res?.headers?.get?.('retry-after'));
+    if (Number.isFinite(header) && header > 0) return Math.min(header * 1000, MAX_RETRY_WAIT_MS);
+    const m = /try again in ([\d.]+)\s*s/i.exec(String(detail || ''));
+    if (m) return Math.min(Math.ceil(parseFloat(m[1]) * 1000) + 250, MAX_RETRY_WAIT_MS);
+    return Math.min(500 * 2 ** attempt, MAX_RETRY_WAIT_MS);
+}
+
+/**
+ * يقلّص نتيجة أداة مع **إبقائها JSON صالحاً**.
+ *
+ * ⚠️ كان التقليص `JSON.stringify(data).slice(0, N)` — يقطع وسط البنية
+ * فيصل النموذجَ نصٌّ لا يُحلَّل، ويبني عليه جوابه. الآن تُسقَط عناصر من
+ * آخر المصفوفة (الأقل صلة عادةً: النتائج مرتّبة بالأنسب أولاً) ويُذكر
+ * كم أُسقط، فيعرف النموذج أن ثمّة المزيد بدل أن يظنّ القائمة كاملة.
+ */
+export function compactToolResult(data, maxChars = MAX_TOOL_RESULT_CHARS) {
+    let text = JSON.stringify(data);
+    if (text.length <= maxChars) return text;
+    if (Array.isArray(data)) {
+        const kept = data.slice();
+        while (kept.length > 1) {
+            kept.pop();
+            text = JSON.stringify({ items: kept, omitted: data.length - kept.length });
+            if (text.length <= maxChars) return text;
+        }
+        return JSON.stringify({ items: kept.slice(0, 1), omitted: data.length - 1, truncated: true });
+    }
+    // كائن مفرد ضخم: نُبقيه نصاً مقطوعاً لكن نُعلم النموذج صراحةً
+    return JSON.stringify({ partial: true, text: text.slice(0, maxChars - 40) });
+}
 
 const SYSTEM_PROMPT = `أنت "مساعد جاولا للسفر" — وكيل سفر شامل محترف يتحدث العربية (أو لغة المستخدم)، لا مجرد حاجز طيران.
 قدراتك عبر الأدوات: بحث رحلات وفنادق وسيارات إيجار، فحص عرض محدد، حجز فعلي (طيران/فنادق/سيارات)، عرض حجوزات المستخدم، إلغاء حجز، بحث تواريخ مرنة، فحص تعارض الرحلة، مراقبة سعر، توقعات طقس الوجهة، تحويل عملات، وتجميع ملخص رحلة منسّق.
@@ -577,7 +620,11 @@ export async function executeAgentTool(name, args, services) {
     }
 }
 
-export function createTravelAgent({ apiKey, apiUrl = DEFAULT_API_URL, model = DEFAULT_MODEL, fetchImpl = fetch }) {
+export function createTravelAgent({
+    apiKey, apiUrl = DEFAULT_API_URL, model = DEFAULT_MODEL, fetchImpl = fetch,
+    // مُحقَنة ليختبر الانتظارُ منطقَه بلا أن تنتظر الاختبارات فعلياً
+    sleepImpl = ms => new Promise(r => setTimeout(r, ms)),
+}) {
     if (!apiKey) throw new Error('مفتاح مزوّد الايجنت مطلوب.');
 
     async function complete(messages, { tools = true, temperature = 0.3 } = {}) {
@@ -586,19 +633,30 @@ export function createTravelAgent({ apiKey, apiUrl = DEFAULT_API_URL, model = DE
         const body = tools
             ? { model, messages, tools: AGENT_TOOLS, tool_choice: 'auto', temperature }
             : { model, messages, temperature };
-        const res = await fetchImpl(apiUrl, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
-        if (!res.ok) {
+        // ⚠️ حدّ المعدّل ليس عطلاً بل انتظاراً: مزوّد الايجنت يردّ 429 مع
+        // المدة المطلوبة صراحةً («try again in 1.39s»)، وكنّا نرمي فوراً
+        // فيرى المسافر «تعذّر رد المساعد» على شيء يُحلّ بثانية ونصف.
+        let lastError = null;
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            const res = await fetchImpl(apiUrl, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (res.ok) {
+                const payload = await res.json();
+                const message = payload.choices?.[0]?.message;
+                if (!message) throw new Error('رد مزوّد الايجنت بلا رسالة.');
+                return message;
+            }
             const detail = await res.text().catch(() => '');
-            throw new Error(`تعذّر الاتصال بمزوّد الايجنت (HTTP ${res.status}). ${detail.slice(0, 300)}`);
+            lastError = new Error(`تعذّر الاتصال بمزوّد الايجنت (HTTP ${res.status}). ${detail.slice(0, 300)}`);
+            // 429 وأعطال الخادم عابرة؛ 4xx غيرها خطأ في طلبنا فإعادته عبث
+            const retriable = res.status === 429 || res.status >= 500;
+            if (!retriable || attempt === MAX_RETRIES) throw lastError;
+            await sleepImpl(retryDelayMs(res, detail, attempt));
         }
-        const payload = await res.json();
-        const message = payload.choices?.[0]?.message;
-        if (!message) throw new Error('رد مزوّد الايجنت بلا رسالة.');
-        return message;
+        throw lastError;
     }
 
     return {
@@ -632,7 +690,7 @@ export function createTravelAgent({ apiKey, apiUrl = DEFAULT_API_URL, model = DE
                     convo.push({
                         role: 'tool',
                         tool_call_id: call.id,
-                        content: JSON.stringify(result.data).slice(0, MAX_TOOL_RESULT_CHARS),
+                        content: compactToolResult(result.data),
                     });
                 }
             }
