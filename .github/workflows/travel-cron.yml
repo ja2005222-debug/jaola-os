@@ -26,6 +26,27 @@ jobs:
     name: تشغيل المهام الدورية
     runs-on: ubuntu-latest
     steps:
+      # ⚠️ بلا هذا الفحص يفشل الأمر التالي برسالة مبهمة
+      # («curl: (3) URL rejected: No host part in the URL») لأن السرّ
+      # الغائب يُستبدل بنصّ فارغ — ست دورات فشلت هكذا قبل إضافته، ولم
+      # يكن في السجل ما يدلّ على السبب الحقيقي.
+      - name: التحقق من وجود الأسرار
+        env:
+          SERVICE_URL: ${{ secrets.TRAVEL_SERVICE_URL }}
+          CRON_SECRET: ${{ secrets.TRAVEL_CRON_SECRET }}
+        run: |
+          missing=""
+          [ -n "$SERVICE_URL" ] || missing="$missing TRAVEL_SERVICE_URL"
+          [ -n "$CRON_SECRET" ] || missing="$missing TRAVEL_CRON_SECRET"
+          if [ -n "$missing" ]; then
+            echo "::error::أسرار ناقصة في المستودع:$missing"
+            echo "اضبطها من: Settings → Secrets and variables → Actions"
+            echo "  TRAVEL_SERVICE_URL  = https://<رابط خدمة السفر>"
+            echo "  TRAVEL_CRON_SECRET  = نفس قيمة CRON_SECRET في بيئة الخدمة على Render"
+            exit 1
+          fi
+          echo "✅ الأسرار موجودة."
+
       - name: إيقاظ الخدمة
         # بدء التشغيل البارد على Render يقارب ٥٠ ثانية؛ نداءٌ خفيف أولاً
         # يمنع فشل النداء الحقيقي بمهلة منتهية. `|| true` لأن الإيقاظ
