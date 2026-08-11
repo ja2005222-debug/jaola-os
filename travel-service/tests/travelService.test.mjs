@@ -29,7 +29,7 @@ import { readMarkupPct, applyMarkup, DEFAULT_MARKUP_PCT } from '../src/pricing.j
 import { canTransition, createBooking, transitionBooking, getBooking, getBookingByProviderOrderId } from '../src/bookings.js';
 import { createFileStore } from '../src/store/fileStore.js';
 import { createPostgresStore } from '../src/store/postgresStore.js';
-import { createTravelAgent, executeAgentTool, buildTravelAgent, AGENT_TOOLS, retryDelayMs, compactToolResult } from '../src/agent/agent.js';
+import { createTravelAgent, executeAgentTool, buildTravelAgent, AGENT_TOOLS, retryDelayMs, compactToolResult, buildFallbackProvider } from '../src/agent/agent.js';
 import { listPriceWatchesByUser, cancelPriceWatch } from '../src/priceWatches.js';
 import { checkWatches } from '../src/priceWatchPoller.js';
 import { sendTripReminders, isReminderDue, renderTripReminder, departureAt } from '../src/tripReminders.js';
@@ -2930,6 +2930,85 @@ describe('الايجنت الحاجز', () => {
         assert.equal(await agent.phraseNotice('نص'), 'نص');
         assert.equal(calls, 1);
         assert.equal(waits.length, 0);
+    });
+
+    // 🔀 نفاد حصّة المزوّد لا يعني مساعداً معطّلاً
+    test('🔀 نفاد الحصّة → تحويل للمزوّد الاحتياطي بعد استنفاد الصبر', async () => {
+        const seen = [];
+        const agent = createTravelAgent({
+            apiKey: 'k1', apiUrl: 'https://primary.test/v1', model: 'llama-x',
+            sleepImpl: async () => {},
+            fallback: { apiKey: 'k2', apiUrl: 'https://deepseek.test/v1', model: 'deepseek-chat', label: 'ديب سيك' },
+            fetchImpl: async (url, opts) => {
+                seen.push({ url, model: JSON.parse(opts.body).model, auth: opts.headers.Authorization });
+                if (url.includes('primary')) {
+                    return { ok: false, status: 429, headers: { get: () => null }, text: async () => 'Rate limit reached' };
+                }
+                return { ok: true, json: async () => ({ choices: [{ message: { content: 'ردٌّ من الاحتياطي بعد نفاد الأساسي' } }] }) };
+            },
+        });
+        const out = await agent.phraseNotice('انخفض سعر رحلتك إلى 420 ريالاً.');
+        assert.equal(out, 'ردٌّ من الاحتياطي بعد نفاد الأساسي');
+
+        // ⚠️ الترتيب جوهري: يُستنفد صبر الأساسي (٣ محاولات) قبل التحويل —
+        // التحويل من أول 429 يهجر مزوّداً يعود بعد ثانية.
+        const primaryCalls = seen.filter(s => s.url.includes('primary'));
+        assert.equal(primaryCalls.length, 3);
+        const fallbackCalls = seen.filter(s => s.url.includes('deepseek'));
+        assert.equal(fallbackCalls.length, 1);
+
+        // ولكلٍّ مفتاحه ونموذجه — لا تسريب بين المزوّدين
+        assert.equal(primaryCalls[0].model, 'llama-x');
+        assert.equal(primaryCalls[0].auth, 'Bearer k1');
+        assert.equal(fallbackCalls[0].model, 'deepseek-chat');
+        assert.equal(fallbackCalls[0].auth, 'Bearer k2');
+    });
+
+    test('🔀 خطأ غير قابل للإعادة لا يُحوَّل — عيبٌ في طلبنا يتكرّر عند الاحتياطي', async () => {
+        const urls = [];
+        const agent = createTravelAgent({
+            apiKey: 'k1', apiUrl: 'https://primary.test/v1', sleepImpl: async () => {},
+            fallback: { apiKey: 'k2', apiUrl: 'https://deepseek.test/v1', model: 'deepseek-chat', label: 'ديب سيك' },
+            fetchImpl: async (url) => {
+                urls.push(url);
+                return { ok: false, status: 400, headers: { get: () => null }, text: async () => 'طلب سيئ' };
+            },
+        });
+        assert.equal(await agent.phraseNotice('نصٌّ طويل بما يكفي للصياغة'), 'نصٌّ طويل بما يكفي للصياغة');
+        assert.equal(urls.length, 1, 'لا إعادة ولا تحويل على 400');
+    });
+
+    test('🔀 بلا مزوّد احتياطي: السلوك كما كان تماماً', async () => {
+        const urls = [];
+        const agent = createTravelAgent({
+            apiKey: 'k1', apiUrl: 'https://primary.test/v1', sleepImpl: async () => {},
+            fetchImpl: async (url) => {
+                urls.push(url);
+                return { ok: false, status: 429, headers: { get: () => null }, text: async () => 'Rate limit' };
+            },
+        });
+        assert.equal(await agent.phraseNotice('نصٌّ طويل بما يكفي للصياغة'), 'نصٌّ طويل بما يكفي للصياغة');
+        assert.equal(urls.length, 3); // ثلاث محاولات ثم استسلام، بلا تحويل
+    });
+
+    test('🔀 buildFallbackProvider: null بلا مفتاح، وافتراضات قابلة للتجاوز', () => {
+        assert.equal(buildFallbackProvider({}), null);
+        const d = buildFallbackProvider({ TRAVEL_AGENT_FALLBACK_API_KEY: 'x' });
+        assert.match(d.apiUrl, /deepseek/);
+        assert.equal(d.model, 'deepseek-chat');
+        const custom = buildFallbackProvider({
+            TRAVEL_AGENT_FALLBACK_API_KEY: 'x',
+            TRAVEL_AGENT_FALLBACK_API_URL: 'https://other.test/v1',
+            TRAVEL_AGENT_FALLBACK_MODEL: 'other-model',
+            TRAVEL_AGENT_FALLBACK_LABEL: 'مزوّد ثالث',
+        });
+        assert.equal(custom.apiUrl, 'https://other.test/v1');
+        assert.equal(custom.model, 'other-model');
+        assert.equal(custom.label, 'مزوّد ثالث');
+    });
+
+    test('🔀 مزوّد احتياطي بلا مفتاح يُرفض عند الإنشاء لا وقت الحاجة', () => {
+        assert.throws(() => createTravelAgent({ apiKey: 'k', fallback: { apiUrl: 'https://x.test' } }), /بلا مفتاح/);
     });
 
     // ⚠️ التقطيع بالحروف كان يُنتج JSON فاسداً يبني النموذج عليه جوابه

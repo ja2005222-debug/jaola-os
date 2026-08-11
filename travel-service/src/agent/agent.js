@@ -624,8 +624,17 @@ export function createTravelAgent({
     apiKey, apiUrl = DEFAULT_API_URL, model = DEFAULT_MODEL, fetchImpl = fetch,
     // مُحقَنة ليختبر الانتظارُ منطقَه بلا أن تنتظر الاختبارات فعلياً
     sleepImpl = ms => new Promise(r => setTimeout(r, ms)),
+    // مزوّد احتياطي اختياري {apiKey, apiUrl, model, label} — بلا شيء يعمل
+    // كما كان تماماً: سلسلة من مزوّد واحد.
+    fallback = null,
 }) {
     if (!apiKey) throw new Error('مفتاح مزوّد الايجنت مطلوب.');
+    const primary = { apiKey, apiUrl, model, label: 'المزوّد الأساسي' };
+    if (fallback && !fallback.apiKey) {
+        throw new Error('المزوّد الاحتياطي بلا مفتاح — اضبطه أو أزله.');
+    }
+    // آخر مزوّد أجاب فعلاً — تُعرَض للمستخدم فيعرف لماذا تغيّر الأسلوب
+    let lastProviderUsed = primary.label;
 
     async function complete(messages, { tools = true, temperature = 0.3 } = {}) {
         // صياغة القراءة تُنادى بلا أدوات إطلاقاً: لا شيء تحجزه أو تلغيه، فلا
@@ -636,25 +645,40 @@ export function createTravelAgent({
         // ⚠️ حدّ المعدّل ليس عطلاً بل انتظاراً: مزوّد الايجنت يردّ 429 مع
         // المدة المطلوبة صراحةً («try again in 1.39s»)، وكنّا نرمي فوراً
         // فيرى المسافر «تعذّر رد المساعد» على شيء يُحلّ بثانية ونصف.
+        //
+        // والترتيب مقصود: نصبر على الأساسي أولاً (الانتظار ثانية أرخص من
+        // تبديل مزوّد وتبديل سلوك)، فإن نفدت حصّته فعلاً تحوّلنا للبديل
+        // بدل أن نُفشل الطلب. مزوّد واحد معطّل لا يعني مساعداً معطّلاً.
+        const chain = fallback ? [primary, fallback] : [primary];
         let lastError = null;
-        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-            const res = await fetchImpl(apiUrl, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
-            if (res.ok) {
-                const payload = await res.json();
-                const message = payload.choices?.[0]?.message;
-                if (!message) throw new Error('رد مزوّد الايجنت بلا رسالة.');
-                return message;
+
+        for (const [index, provider] of chain.entries()) {
+            const isLast = index === chain.length - 1;
+            for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+                const res = await fetchImpl(provider.apiUrl, {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${provider.apiKey}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...body, model: provider.model }),
+                });
+                if (res.ok) {
+                    const payload = await res.json();
+                    const message = payload.choices?.[0]?.message;
+                    if (!message) throw new Error('رد مزوّد الايجنت بلا رسالة.');
+                    lastProviderUsed = provider.label;
+                    return message;
+                }
+                const detail = await res.text().catch(() => '');
+                lastError = new Error(`تعذّر الاتصال بمزوّد الايجنت (HTTP ${res.status}). ${detail.slice(0, 300)}`);
+                // 429 وأعطال الخادم عابرة؛ 4xx غيرها خطأ في طلبنا فإعادته عبث
+                const retriable = res.status === 429 || res.status >= 500;
+                if (!retriable) throw lastError;      // لا إعادة ولا تحويل
+                if (attempt < MAX_RETRIES) {
+                    await sleepImpl(retryDelayMs(res, detail, attempt));
+                    continue;
+                }
+                if (isLast) throw lastError;          // نفد الصبر وما من بديل
+                console.warn(`⚠️ ${provider.label} تعذّر (HTTP ${res.status}) — التحويل إلى ${chain[index + 1].label}.`);
             }
-            const detail = await res.text().catch(() => '');
-            lastError = new Error(`تعذّر الاتصال بمزوّد الايجنت (HTTP ${res.status}). ${detail.slice(0, 300)}`);
-            // 429 وأعطال الخادم عابرة؛ 4xx غيرها خطأ في طلبنا فإعادته عبث
-            const retriable = res.status === 429 || res.status >= 500;
-            if (!retriable || attempt === MAX_RETRIES) throw lastError;
-            await sleepImpl(retryDelayMs(res, detail, attempt));
         }
         throw lastError;
     }
@@ -679,7 +703,7 @@ export function createTravelAgent({
             for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
                 const msg = await complete(convo);
                 if (!msg.tool_calls || msg.tool_calls.length === 0) {
-                    return { reply: msg.content || '', actions };
+                    return { reply: msg.content || '', actions, provider: lastProviderUsed };
                 }
                 convo.push({ role: 'assistant', content: msg.content || null, tool_calls: msg.tool_calls });
                 for (const call of msg.tool_calls) {
@@ -694,7 +718,7 @@ export function createTravelAgent({
                     });
                 }
             }
-            return { reply: 'تجاوزت الجولة حد الأدوات — جرّب طلباً أبسط أو أكمل خطوة خطوة.', actions };
+            return { reply: 'تجاوزت الجولة حد الأدوات — جرّب طلباً أبسط أو أكمل خطوة خطوة.', actions, provider: lastProviderUsed };
         },
 
         /**
@@ -753,5 +777,24 @@ export function buildTravelAgent(env = process.env) {
         apiKey: env.TRAVEL_AGENT_API_KEY,
         apiUrl: env.TRAVEL_AGENT_API_URL || undefined,
         model: env.TRAVEL_AGENT_MODEL || undefined,
+        fallback: buildFallbackProvider(env),
     });
+}
+
+// ⚠️ عنوان DeepSeek ونموذجه من توثيقه العام المنشور (واجهة متوافقة مع
+// OpenAI، وهي نفس الصيغة التي نرسلها أصلاً) — **لم يُجرَّب ضد الشبكة
+// الحية من بيئة التطوير**، نفس صراحة Wikipedia/LiteAPI في هذا المستودع.
+// وكلاهما قابل للتجاوز بمتغيّر بيئة، فأي مزوّد متوافق يعمل بلا تعديل كود.
+const DEFAULT_FALLBACK_API_URL = 'https://api.deepseek.com/chat/completions';
+const DEFAULT_FALLBACK_MODEL = 'deepseek-chat';
+
+/** null بلا مفتاح احتياطي — السلسلة تعود مزوّداً واحداً كما كانت. */
+export function buildFallbackProvider(env = process.env) {
+    if (!env.TRAVEL_AGENT_FALLBACK_API_KEY) return null;
+    return {
+        apiKey: env.TRAVEL_AGENT_FALLBACK_API_KEY,
+        apiUrl: env.TRAVEL_AGENT_FALLBACK_API_URL || DEFAULT_FALLBACK_API_URL,
+        model: env.TRAVEL_AGENT_FALLBACK_MODEL || DEFAULT_FALLBACK_MODEL,
+        label: env.TRAVEL_AGENT_FALLBACK_LABEL || 'المزوّد الاحتياطي',
+    };
 }
