@@ -234,6 +234,7 @@
     <div id="app" class="hidden">
       <div class="tabs">
         <button data-tab="search" class="active">🔎 بحث الرحلات</button>
+        <button data-tab="stays" id="staysTabBtn">🏨 الفنادق</button>
         <button data-tab="destinations">🗺️ أهم الوجهات</button>
         <button data-tab="cars" id="carsTabBtn">🚗 سيارات</button>
         <button data-tab="trips">🧳 رحلاتي</button>
@@ -291,6 +292,24 @@
       </section>
 
       <!-- ─── أهم الوجهات ─── -->
+      <!-- ─── الفنادق: بحث قائم بذاته لا يشترط بحث طيران قبله ─── -->
+      <section id="tab-stays" class="hidden">
+        <div class="card">
+          <div class="row">
+            <div class="ac-wrap"><label>الوجهة</label><input id="stayIata" placeholder="دبي أو DXB" autocomplete="off" /></div>
+            <div><label>تاريخ الوصول</label><input id="stayCheckIn" type="date" /></div>
+            <div><label>تاريخ المغادرة</label><input id="stayCheckOut" type="date" /></div>
+          </div>
+          <div class="row">
+            <div><label>بالغون</label><input id="stayAdults" type="number" min="1" max="9" value="1" /></div>
+            <div><label>الغرف</label><input id="stayRooms" type="number" min="1" max="5" value="1" /></div>
+          </div>
+          <button class="primary" id="staySearchBtn">🔎 ابحث عن فندق</button>
+          <div id="stayTabError" class="error hidden"></div>
+        </div>
+        <div id="stayTabResults"></div>
+      </section>
+
       <section id="tab-destinations" class="hidden">
         <div class="card">
           <div class="row" style="align-items:end">
@@ -473,6 +492,8 @@
       if (config.providerMode !== 'live') $('modeBanner').classList.remove('hidden');
       if (!config.agentEnabled) $('agentTabBtn').title = 'غير مفعَّل على هذا الخادم';
       if (!config.staysEnabled) $('includeStaysLabel').classList.add('hidden');
+      // تبويب بلا مزوّد فنادق يعد بما لا يُنجَز — يُخفى كتبويب السيارات
+      if (!config.staysEnabled) $('staysTabBtn').classList.add('hidden');
       if (!config.carsEnabled) $('carsTabBtn').classList.add('hidden');
       $('app').classList.remove('hidden');
       $('authGate').classList.add('hidden');
@@ -494,7 +515,7 @@
         return;
       }
 
-      ['fOrigin', 'fDest', 'carIata', 'destOrigin', 'prefHome'].forEach(id => attachAirportAutocomplete($(id)));
+      ['fOrigin', 'fDest', 'carIata', 'destOrigin', 'prefHome', 'stayIata'].forEach(id => attachAirportAutocomplete($(id)));
       // الملف يسبق مطار الأصل: تفضيل محفوظ على الخادم يتقدّم على الاستنتاج
       await loadProfile();
       await applyDefaultOrigin(); // الشريط الترويجي يحتاج مطار الأصل مُستقرّاً أولاً
@@ -504,6 +525,8 @@
       $('fDepart').value = d.toISOString().slice(0, 10);
       $('carPickupDate').value = d.toISOString().slice(0, 10);
       $('carDropoffDate').value = new Date(Date.now() + 9 * 86400000).toISOString().slice(0, 10);
+      $('stayCheckIn').value = d.toISOString().slice(0, 10);
+      $('stayCheckOut').value = new Date(Date.now() + 9 * 86400000).toISOString().slice(0, 10);
       loadTrips();
       loadPromos(); // بلا await: الشريط زينة، لا يؤخّر جاهزية الصفحة
       refreshBell();
@@ -520,7 +543,7 @@
     document.querySelectorAll('.tabs button').forEach(btn =>
       btn.addEventListener('click', () => {
         document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b === btn));
-        ['search', 'destinations', 'cars', 'trips', 'notifications', 'agent'].forEach(t =>
+        ['search', 'stays', 'destinations', 'cars', 'trips', 'notifications', 'agent'].forEach(t =>
           $('tab-' + t).classList.toggle('hidden', t !== btn.dataset.tab));
         if (btn.dataset.tab === 'trips') loadTrips();
         if (btn.dataset.tab === 'destinations' && !$('destGrid').children.length) loadDestinations();
@@ -1291,22 +1314,29 @@
       }
     }
 
-    async function renderStaysPage({ iata, checkIn, checkOut, adults }) {
-      $('staysPageTitle').textContent = `🏨 فنادق ${iata}`;
-      $('staysPageResults').innerHTML = '<p class="note">🔎 جارٍ البحث عن فنادق…</p>';
+    /**
+     * مُصيِّر واحد لمصدرَي بحث الفنادق: الصفحة المنفصلة التي تُفتح من بحث
+     * الرحلات، وتبويب الفنادق القائم بذاته. نسخُه مرتين كان سيعني أن أي
+     * إصلاح في بطاقة الفندق يُطبَّق في مكان وينسى الآخر.
+     */
+    async function renderStaysInto(target, { iata, checkIn, checkOut, adults, rooms }) {
+      target.innerHTML = '<p class="note">🔎 جارٍ البحث عن فنادق…</p>';
       try {
-        const body = { iata, checkInDate: checkIn, checkOutDate: checkOut, adults: adults || 1, rooms: 1 };
+        const body = {
+          iata, checkInDate: checkIn, checkOutDate: checkOut,
+          adults: adults || 1, rooms: rooms || 1,
+        };
         const res = await api('/api/travel/stays/search', { method: 'POST', body: JSON.stringify(body) });
         const data = await res.json();
         if (!res.ok) {
-          $('staysPageResults').innerHTML = `<p class="error">${esc(data.error || 'تعذّر بحث الفنادق.')}</p>`;
+          target.innerHTML = `<p class="error">${esc(data.error || 'تعذّر بحث الفنادق.')}</p>`;
           return;
         }
         if (!data.offers.length) {
-          $('staysPageResults').innerHTML = '<p class="note">لا فنادق متاحة لهذه الوجهة/التواريخ.</p>';
+          target.innerHTML = '<p class="note">لا فنادق متاحة لهذه الوجهة/التواريخ.</p>';
           return;
         }
-        $('staysPageResults').innerHTML = insightHtml(data.insight, 'stay') + data.offers.map((o, i) => `
+        target.innerHTML = insightHtml(data.insight, 'stay') + data.offers.map((o, i) => `
           <div class="card offer">
             <div style="flex:1">
               <div class="route">${esc(o.name)}</div>
@@ -1325,15 +1355,58 @@
             </div>
             <div class="hidden" id="stayDet${i}"></div>
           </div>`).join('');
-        document.querySelectorAll('[data-stay-det]').forEach(btn =>
+        // ⚠️ الاستعلام داخل `target` لا في المستند كله: التبويب والصفحة
+        // المنفصلة قد يحملان نتائج معاً، فاستعلامٌ عام يربط أزرار أحدهما
+        // بعروض الآخر — حجزُ فندق لم يضغطه المستخدم.
+        target.querySelectorAll('[data-stay-det]').forEach(btn =>
           btn.addEventListener('click', () => toggleStayDetails(btn, data.offers[Number(btn.dataset.stayDet)])));
-        document.querySelectorAll('[data-stay-book]').forEach(sbtn =>
+        target.querySelectorAll('[data-stay-book]').forEach(sbtn =>
           sbtn.addEventListener('click', () => openStayBooking(
             data.offers.find(o => o.id === JSON.parse(sbtn.dataset.stayBook).id))));
         refineInsight(data.insight, 'stay');
-        revealResults($('staysPageResults'));
+        revealResults(target);
       } catch {
-        $('staysPageResults').innerHTML = '<p class="error">تعذّر بحث الفنادق — حاول مجدداً بعد قليل.</p>';
+        target.innerHTML = '<p class="error">تعذّر بحث الفنادق — حاول مجدداً بعد قليل.</p>';
+      }
+    }
+
+    /** الصفحة المنفصلة التي تُفتح من مربع «أضف فنادق الوجهة». */
+    async function renderStaysPage({ iata, checkIn, checkOut, adults }) {
+      $('staysPageTitle').textContent = `🏨 فنادق ${iata}`;
+      await renderStaysInto($('staysPageResults'), { iata, checkIn, checkOut, adults, rooms: 1 });
+    }
+
+    /** تبويب الفنادق القائم بذاته — لا يشترط بحث طيران قبله. */
+    async function doStayTabSearch() {
+      const err = $('stayTabError');
+      err.classList.add('hidden');
+      const iata = selectedIata($('stayIata'));
+      if (!iata) {
+        err.textContent = 'اختر وجهة من القائمة أو اكتب رمز IATA (مثل DXB).';
+        err.classList.remove('hidden');
+        return;
+      }
+      const checkIn = $('stayCheckIn').value;
+      const checkOut = $('stayCheckOut').value;
+      if (!checkIn || !checkOut) {
+        err.textContent = 'حدّد تاريخي الوصول والمغادرة.';
+        err.classList.remove('hidden');
+        return;
+      }
+      if (checkOut <= checkIn) {
+        err.textContent = 'تاريخ المغادرة يجب أن يكون بعد الوصول.';
+        err.classList.remove('hidden');
+        return;
+      }
+      $('staySearchBtn').disabled = true;
+      try {
+        await renderStaysInto($('stayTabResults'), {
+          iata, checkIn, checkOut,
+          adults: Number($('stayAdults').value) || 1,
+          rooms: Number($('stayRooms').value) || 1,
+        });
+      } finally {
+        $('staySearchBtn').disabled = false;
       }
     }
 
@@ -1525,6 +1598,7 @@
       }
     }
     $('carSearchBtn').addEventListener('click', doSearchCars);
+    $('staySearchBtn').addEventListener('click', doStayTabSearch);
 
     function openCarBooking(offer) {
       selectedCarOffer = offer;
