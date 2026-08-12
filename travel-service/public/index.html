@@ -130,6 +130,10 @@
     .pref-row .pref-name { flex: 1; min-width: 180px; font-size: 14px; }
     .pref-row label { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
     .pref-row label.locked { opacity: .55; cursor: not-allowed; }
+    .pkg-pick { cursor: pointer; }
+    .pkg-pick.sel { outline: 2px solid var(--accent, #4da3ff); border-radius: 12px; }
+    .pkg-badge { display:inline-block; padding:2px 8px; border-radius:8px; font-size:12px; background:rgba(80,200,120,.15); color:var(--ok, #3fbf7f); }
+    .pkg-strike { text-decoration: line-through; opacity:.6; }
 
     /* 🤖 قراءة المساعد فوق النتائج — حضور الايجنت بلا أن يُسأل */
     .insight {
@@ -235,11 +239,13 @@
       <div class="tabs">
         <button data-tab="search" class="active">🔎 بحث الرحلات</button>
         <button data-tab="stays" id="staysTabBtn">🏨 الفنادق</button>
+        <button data-tab="packages" id="pkgTabBtn">🎁 باقات</button>
         <button data-tab="destinations">🗺️ أهم الوجهات</button>
         <button data-tab="cars" id="carsTabBtn">🚗 سيارات</button>
         <button data-tab="trips">🧳 رحلاتي</button>
         <button data-tab="notifications">🔔 التنبيهات</button>
         <button data-tab="agent" id="agentTabBtn">🤖 المساعد</button>
+        <button id="adminLink" class="hidden" type="button">⚙️ الإدارة</button>
       </div>
 
       <!-- ─── البحث ─── -->
@@ -308,6 +314,35 @@
           <div id="stayTabError" class="error hidden"></div>
         </div>
         <div id="stayTabResults"></div>
+      </section>
+
+      <!-- ─── 🎁 الباقات: طيران + فندق برقم واحد وخصم حقيقي محسوب ─── -->
+      <section id="tab-packages" class="hidden">
+        <div class="card">
+          <p class="note" style="margin-bottom:10px">🎁 اختر رحلة وفندقاً معاً — سعر الباقة أقل من مجموعهما منفصلَين، والفرق يُحسب ويُعرض. الباقة ذهاب وعودة (الفندق بين التاريخين).</p>
+          <div class="row">
+            <div class="ac-wrap"><label>من</label><input id="pkgOrigin" placeholder="الرياض أو RUH" autocomplete="off" /></div>
+            <div class="ac-wrap"><label>إلى</label><input id="pkgDest" placeholder="دبي أو DXB" autocomplete="off" /></div>
+            <div><label>الذهاب</label><input id="pkgDepart" type="date" /></div>
+            <div><label>العودة</label><input id="pkgReturn" type="date" /></div>
+            <div><label>بالغون</label><input id="pkgAdults" type="number" min="1" max="9" value="1" /></div>
+          </div>
+          <button class="primary" id="pkgSearchBtn">🔎 ابحث عن باقات</button>
+          <div id="pkgError" class="error hidden"></div>
+        </div>
+        <div id="pkgResults" class="hidden">
+          <div class="row" style="align-items:flex-start">
+            <div style="flex:1;min-width:280px">
+              <h3 style="margin:10px 0 6px">✈️ اختر الرحلة</h3>
+              <div id="pkgFlights"></div>
+            </div>
+            <div style="flex:1;min-width:280px">
+              <h3 style="margin:10px 0 6px">🏨 اختر الفندق</h3>
+              <div id="pkgStays"></div>
+            </div>
+          </div>
+          <div id="pkgQuote" class="hidden card"></div>
+        </div>
       </section>
 
       <section id="tab-destinations" class="hidden">
@@ -424,6 +459,18 @@
     </div>
   </dialog>
 
+  <!-- نافذة بيانات مسافري الباقة (هم أنفسهم نزلاء الفندق — نموذج واحد) -->
+  <dialog id="pkgDialog">
+    <h3 style="margin-bottom:6px">🎁 بيانات مسافري الباقة</h3>
+    <p id="pkgSummary" class="note"></p>
+    <form id="pkgForm" method="dialog"></form>
+    <div id="pkgBookError" class="error hidden"></div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="primary" id="pkgConfirm">أكّد حجز الباقة</button>
+      <button class="chip" id="pkgCancel" type="button">إلغاء</button>
+    </div>
+  </dialog>
+
   <!-- نافذة بيانات نزلاء الفندق -->
   <dialog id="stayBookDialog">
     <h3 style="margin-bottom:6px">🏨 بيانات النزلاء</h3>
@@ -494,7 +541,13 @@
       if (!config.staysEnabled) $('includeStaysLabel').classList.add('hidden');
       // تبويب بلا مزوّد فنادق يعد بما لا يُنجَز — يُخفى كتبويب السيارات
       if (!config.staysEnabled) $('staysTabBtn').classList.add('hidden');
+      if (!config.packagesEnabled) $('pkgTabBtn').classList.add('hidden');
       if (!config.carsEnabled) $('carsTabBtn').classList.add('hidden');
+      // ⚙️ رابط الإدارة لأصحابه فقط — الخادم يخفي المسارات عن غيرهم أصلاً
+      if (config.isAdmin) {
+        $('adminLink').classList.remove('hidden');
+        $('adminLink').addEventListener('click', () => window.open('admin.html', '_blank', 'noopener'));
+      }
       $('app').classList.remove('hidden');
       $('authGate').classList.add('hidden');
 
@@ -515,7 +568,7 @@
         return;
       }
 
-      ['fOrigin', 'fDest', 'carIata', 'destOrigin', 'prefHome', 'stayIata'].forEach(id => attachAirportAutocomplete($(id)));
+      ['fOrigin', 'fDest', 'carIata', 'destOrigin', 'prefHome', 'stayIata', 'pkgOrigin', 'pkgDest'].forEach(id => attachAirportAutocomplete($(id)));
       // الملف يسبق مطار الأصل: تفضيل محفوظ على الخادم يتقدّم على الاستنتاج
       await loadProfile();
       await applyDefaultOrigin(); // الشريط الترويجي يحتاج مطار الأصل مُستقرّاً أولاً
@@ -527,6 +580,8 @@
       $('carDropoffDate').value = new Date(Date.now() + 9 * 86400000).toISOString().slice(0, 10);
       $('stayCheckIn').value = d.toISOString().slice(0, 10);
       $('stayCheckOut').value = new Date(Date.now() + 9 * 86400000).toISOString().slice(0, 10);
+      $('pkgDepart').value = d.toISOString().slice(0, 10);
+      $('pkgReturn').value = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10);
       loadTrips();
       loadPromos(); // بلا await: الشريط زينة، لا يؤخّر جاهزية الصفحة
       refreshBell();
@@ -543,7 +598,7 @@
     document.querySelectorAll('.tabs button').forEach(btn =>
       btn.addEventListener('click', () => {
         document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b === btn));
-        ['search', 'stays', 'destinations', 'cars', 'trips', 'notifications', 'agent'].forEach(t =>
+        ['search', 'stays', 'packages', 'destinations', 'cars', 'trips', 'notifications', 'agent'].forEach(t =>
           $('tab-' + t).classList.toggle('hidden', t !== btn.dataset.tab));
         if (btn.dataset.tab === 'trips') loadTrips();
         if (btn.dataset.tab === 'destinations' && !$('destGrid').children.length) loadDestinations();
@@ -1600,6 +1655,192 @@
     $('carSearchBtn').addEventListener('click', doSearchCars);
     $('staySearchBtn').addEventListener('click', doStayTabSearch);
 
+    // ─── 🎁 الباقات ───
+    // الاختياران يعيشان هنا حتى التقييم — التقييم نفسه (السعر والتوفير)
+    // يأتي من الخادم حصراً: الواجهة لا تجمع ولا تخصم، فلا تكذب.
+    const pkgState = { flights: [], stays: [], flightId: null, stayId: null, quote: null };
+
+    function pkgErr(msg) {
+      $('pkgError').textContent = msg;
+      $('pkgError').classList.remove('hidden');
+    }
+
+    async function doPkgSearch() {
+      $('pkgError').classList.add('hidden');
+      $('pkgQuote').classList.add('hidden');
+      pkgState.flightId = pkgState.stayId = null;
+      const origin = selectedIata($('pkgOrigin'));
+      const dest = selectedIata($('pkgDest'));
+      if (!origin || !dest) return pkgErr('اختر مطاري الانطلاق والوجهة.');
+      const depart = $('pkgDepart').value;
+      const ret = $('pkgReturn').value;
+      if (!depart || !ret) return pkgErr('الباقة ذهاب وعودة — حدّد التاريخين، فالفندق يُحجز بينهما.');
+      if (ret <= depart) return pkgErr('تاريخ العودة يجب أن يكون بعد الذهاب.');
+      const adults = Number($('pkgAdults').value) || 1;
+      $('pkgSearchBtn').disabled = true;
+      $('pkgResults').classList.remove('hidden');
+      $('pkgFlights').innerHTML = $('pkgStays').innerHTML = '<p class="note">🔎 جارٍ البحث…</p>';
+      try {
+        // بحثان متوازيان — فشل أحدهما لا يُخفي نتائج الآخر
+        const [fRes, sRes] = await Promise.all([
+          api('/api/travel/flights/search', { method: 'POST', body: JSON.stringify({ origin, destination: dest, departDate: depart, returnDate: ret, adults, childrenDobs: [] }) }),
+          api('/api/travel/stays/search', { method: 'POST', body: JSON.stringify({ iata: dest, checkInDate: depart, checkOutDate: ret, adults, rooms: 1 }) }),
+        ]);
+        const fData = await fRes.json();
+        const sData = await sRes.json();
+        pkgState.flights = fRes.ok ? fData.offers : [];
+        pkgState.stays = sRes.ok ? (sData.offers || []).filter(o => o.cancellable) : [];
+        renderPkgFlights(fRes.ok ? null : fData.error);
+        renderPkgStays(sRes.ok ? null : sData.error,
+          sRes.ok ? (sData.offers || []).length - pkgState.stays.length : 0);
+      } catch {
+        pkgErr('تعذّر البحث — حاول مجدداً بعد قليل.');
+      } finally {
+        $('pkgSearchBtn').disabled = false;
+      }
+    }
+
+    function renderPkgFlights(error) {
+      $('pkgFlights').innerHTML = error ? `<p class="error">${esc(error)}</p>`
+        : pkgState.flights.length === 0 ? '<p class="note">لا رحلات لهذا البحث.</p>'
+        : pkgState.flights.map(o => `
+          <div class="card offer pkg-pick ${pkgState.flightId === o.id ? 'sel' : ''}" data-pkg-flight="${esc(o.id)}">
+            <div style="flex:1">
+              <div class="route">${esc(o.owner)}</div>
+              ${o.slices.map(sliceHtml).join('')}
+            </div>
+            <div style="text-align:center"><div class="price">${o.sellAmount} ${esc(o.currency)}</div></div>
+          </div>`).join('');
+      $('pkgFlights').querySelectorAll('[data-pkg-flight]').forEach(el =>
+        el.addEventListener('click', () => { pkgState.flightId = el.dataset.pkgFlight; renderPkgFlights(); updatePkgQuote(); }));
+    }
+
+    function renderPkgStays(error, hiddenCount) {
+      $('pkgStays').innerHTML = error ? `<p class="error">${esc(error)}</p>`
+        : pkgState.stays.length === 0 ? '<p class="note">لا فنادق قابلة للإلغاء لهذه التواريخ — شرط الباقة.</p>'
+        : (hiddenCount > 0 ? `<p class="note">ℹ️ أُخفي ${hiddenCount} سعر غير قابل للإلغاء — الباقة تشترط سعراً فندقياً قابلاً للإلغاء لحمايتك إن فشل الطيران.</p>` : '')
+          + pkgState.stays.map(o => `
+          <div class="card offer pkg-pick ${pkgState.stayId === o.id ? 'sel' : ''}" data-pkg-stay="${esc(o.id)}">
+            <div style="flex:1">
+              <div class="route">${o.contracted ? '🤝 ' : ''}${esc(o.name)}</div>
+              <div class="seg">${esc(o.city || '')} · ${o.nights || ''} ليالٍ${o.contracted ? ' · <span class="pkg-badge">سعر خاص متعاقَد</span>' : ''}</div>
+            </div>
+            <div style="text-align:center"><div class="price">${o.sellAmount} ${esc(o.currency)}</div></div>
+          </div>`).join('');
+      $('pkgStays').querySelectorAll('[data-pkg-stay]').forEach(el =>
+        el.addEventListener('click', () => { pkgState.stayId = el.dataset.pkgStay; renderPkgStays(null, 0); updatePkgQuote(); }));
+    }
+
+    async function updatePkgQuote() {
+      if (!pkgState.flightId || !pkgState.stayId) return;
+      $('pkgQuote').classList.remove('hidden');
+      $('pkgQuote').innerHTML = '<p class="note">⏳ جارٍ تسعير الباقة…</p>';
+      try {
+        const res = await api('/api/travel/packages/quote', {
+          method: 'POST',
+          body: JSON.stringify({ flightOfferId: pkgState.flightId, stayOfferId: pkgState.stayId }),
+        });
+        const data = await res.json();
+        if (!res.ok) { $('pkgQuote').innerHTML = `<p class="error">${esc(data.error || 'تعذّر التسعير.')}</p>`; return; }
+        pkgState.quote = data.quote;
+        const q = data.quote;
+        $('pkgQuote').innerHTML = `
+          <div class="offer">
+            <div style="flex:1">
+              <div class="route">🎁 باقتك: ${esc(q.flight.owner)} + ${esc(q.stay.name)}</div>
+              ${q.savings > 0 ? `<div class="note">منفصلَين: <span class="pkg-strike">${q.separateTotal} ${esc(q.currency)}</span>
+                <span class="pkg-badge">وفّرت ${q.savings} ${esc(q.currency)} (${q.savingsPct}%)</span></div>` : ''}
+              ${q.insight ? `<div class="note">${esc(q.insight.text)}</div>` : ''}
+              <div class="note">↩️ سياسة الإلغاء: الفندق يُسترد وفق سياسته، والطيران يخضع لشروط الناقل.</div>
+            </div>
+            <div style="text-align:center">
+              <div class="price">${q.sellAmount} ${esc(q.currency)}</div>
+              <button class="primary" id="pkgBookBtn">احجز الباقة</button>
+            </div>
+          </div>`;
+        $('pkgBookBtn').addEventListener('click', openPkgBooking);
+        revealResults($('pkgQuote'));
+      } catch {
+        $('pkgQuote').innerHTML = '<p class="error">تعذّر تسعير الباقة — حاول مجدداً.</p>';
+      }
+    }
+
+    function openPkgBooking() {
+      const q = pkgState.quote;
+      if (!q) return;
+      $('pkgSummary').textContent =
+        `${q.flight.owner} + ${q.stay.name} — الإجمالي ${q.sellAmount} ${q.currency} لعدد ${q.flight.passengerCount} مسافر`;
+      const savedOptions = savedTravellers.length
+        ? `<option value="">— اختر مسافراً محفوظاً —</option>` +
+          savedTravellers.map(t => `<option value="${esc(t.id)}">${esc(t.label)}</option>`).join('')
+        : '';
+      let html = '';
+      for (let i = 0; i < q.flight.passengerCount; i++) {
+        html += `<fieldset style="border:1px dashed var(--border);border-radius:10px;padding:10px;margin-top:10px">
+          <legend style="font-size:13px;color:var(--muted)">المسافر ${i + 1}</legend>
+          ${savedOptions ? `<div style="margin-bottom:8px"><select data-fill-pkg="${i}">${savedOptions}</select></div>` : ''}
+          <div class="row">
+            <div><label>اللقب</label><select data-p="title"><option value="mr">Mr</option><option value="ms">Ms</option><option value="mrs">Mrs</option></select></div>
+            <div><label>الاسم الأول (لاتيني)</label><input data-p="givenName" placeholder="AHMED" /></div>
+            <div><label>اسم العائلة (لاتيني)</label><input data-p="familyName" placeholder="ALI" /></div>
+            <div><label>تاريخ الميلاد</label><input data-p="bornOn" type="date" /></div>
+            <div><label>الجنس</label><select data-p="gender"><option value="m">ذكر</option><option value="f">أنثى</option></select></div>
+          </div>
+        </fieldset>`;
+      }
+      html += `<div class="row" style="margin-top:10px">
+        <div><label>البريد الإلكتروني</label><input id="pkgEmail" type="email" placeholder="you@example.com" /></div>
+        <div><label>الهاتف (بصيغة دولية)</label><input id="pkgPhone" placeholder="+966501234567" /></div>
+      </div>
+      <p class="note">🏨 نزلاء الفندق هم المسافرون أنفسهم — لا نموذج ثانٍ.</p>`;
+      $('pkgForm').innerHTML = html;
+      $('pkgForm').querySelectorAll('[data-fill-pkg]').forEach(sel =>
+        sel.addEventListener('change', () => {
+          const t = savedTravellers.find(x => x.id === sel.value);
+          if (!t) return;
+          const fs = sel.closest('fieldset');
+          ['title', 'givenName', 'familyName', 'bornOn', 'gender'].forEach(k => {
+            const el = fs.querySelector(`[data-p="${k}"]`);
+            if (el) el.value = t[k] || '';
+          });
+        }));
+      $('pkgBookError').classList.add('hidden');
+      $('pkgDialog').showModal();
+    }
+    $('pkgCancel').addEventListener('click', () => $('pkgDialog').close());
+
+    $('pkgConfirm').addEventListener('click', async (e) => {
+      e.preventDefault();
+      const passengers = [...$('pkgForm').querySelectorAll('fieldset')].map(fs => {
+        const val = name => fs.querySelector(`[data-p="${name}"]`).value.trim();
+        return { title: val('title'), givenName: val('givenName'), familyName: val('familyName'), bornOn: val('bornOn'), gender: val('gender') };
+      });
+      $('pkgConfirm').disabled = true;
+      try {
+        const res = await api('/api/travel/packages/bookings', {
+          method: 'POST',
+          body: JSON.stringify({
+            flightOfferId: pkgState.flightId, stayOfferId: pkgState.stayId, passengers,
+            contact: { email: $('pkgEmail').value.trim(), phone: $('pkgPhone').value.trim() },
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          $('pkgBookError').textContent = data.error || 'تعذّر حجز الباقة.';
+          $('pkgBookError').classList.remove('hidden');
+          return;
+        }
+        $('pkgDialog').close();
+        document.querySelector('[data-tab="trips"]').click();
+      } catch {
+        $('pkgBookError').textContent = 'تعذّر الاتصال بالخادم — حاول مجدداً.';
+        $('pkgBookError').classList.remove('hidden');
+      } finally {
+        $('pkgConfirm').disabled = false;
+      }
+    });
+    $('pkgSearchBtn').addEventListener('click', doPkgSearch);
+
     function openCarBooking(offer) {
       selectedCarOffer = offer;
       $('carBookSummary').textContent = `${offer.vehicleName} — الإجمالي ${offer.sellAmount} ${offer.currency}`;
@@ -1652,8 +1893,15 @@
       flight: id => `/api/travel/bookings/${id}/cancel`,
       stay: id => `/api/travel/stays/bookings/${id}/cancel`,
       car: id => `/api/travel/cars/bookings/${id}/cancel`,
+      package: id => `/api/travel/packages/bookings/${id}/cancel`,
     };
     function bookingBodyHtml(b) {
+      if (b.kind === 'package') {
+        const outbound = b.offer?.flight?.slices?.[0] || {};
+        return `<div class="route">🎁 باقة: ${esc(outbound.origin || '؟')} ⇄ ${esc(outbound.destination || '؟')} + 🏨 ${esc(b.offer?.stay?.name || '')}
+            <span class="st st-${esc(b.status)}">${ST_LABEL[b.status] || esc(b.status)}</span></div>
+          ${b.offer?.savings > 0 ? `<div class="note"><span class="pkg-badge">وفّرت ${b.offer.savings} ${esc(b.currency)}</span></div>` : ''}`;
+      }
       if (b.kind === 'stay') {
         return `<div class="route">🏨 ${esc(b.offer?.name || '')}
             <span class="st st-${esc(b.status)}">${ST_LABEL[b.status] || esc(b.status)}</span></div>
@@ -1672,19 +1920,40 @@
       const res = await api('/api/travel/bookings');
       if (!res.ok) return;
       const { bookings } = await res.json();
-      $('tripsList').innerHTML = bookings.length === 0
+      // 🎁 أبناء الباقات لا يظهرون صفوفاً مستقلة — يُجمَعون داخل بطاقة
+      // أبيهم بمرجعَيهما، والإلغاء من الأب وحده (الساغا تدير الاثنين معاً)
+      const childrenOf = {};
+      for (const b of bookings) {
+        if (b.packageId) (childrenOf[b.packageId] = childrenOf[b.packageId] || []).push(b);
+      }
+      const topLevel = bookings.filter(b => !b.packageId);
+      const refundHtml = b => {
+        if (!b.refund) return '';
+        if (b.refund.amount != null) return `<div class="note">↩️ استرداد: ${b.refund.amount} ${esc(b.refund.currency || '')}</div>`;
+        // استرداد باقة: مبلغان منفصلان بصدق — طيران بشروط الناقل وفندق بسياسته
+        const parts = [];
+        if (b.refund.flight?.amount != null) parts.push(`✈️ ${b.refund.flight.amount} ${esc(b.refund.flight.currency || '')}`);
+        if (b.refund.stay?.amount != null) parts.push(`🏨 ${b.refund.stay.amount} ${esc(b.refund.stay.currency || '')}`);
+        return parts.length ? `<div class="note">↩️ استرداد: ${parts.join(' + ')}</div>` : '';
+      };
+      $('tripsList').innerHTML = topLevel.length === 0
         ? '<p class="note">لا حجوزات بعد — ابدأ من تبويب البحث أو اطلب من المساعد.</p>'
-        : bookings.map(b => `
+        : topLevel.map(b => `
           <div class="card">
             <div class="offer">
               <div style="flex:1">
                 ${bookingBodyHtml(b)}
                 ${b.bookingReference ? `<div class="note">المرجع: <strong>${esc(b.bookingReference)}</strong></div>` : ''}
+                ${(childrenOf[b.id] || []).map(c => `
+                  <div class="seg" style="margin-top:4px">${c.kind === 'stay' ? '🏨' : '✈️'} ${
+                    c.kind === 'stay' ? esc(c.offer?.name || 'فندق') : esc(c.offer?.owner || 'طيران')} —
+                    <span class="st st-${esc(c.status)}">${ST_LABEL[c.status] || esc(c.status)}</span>${
+                    c.bookingReference ? ` · مرجع <strong>${esc(c.bookingReference)}</strong>` : ''}</div>`).join('')}
                 ${b.error ? `<div class="error">${esc(b.error)}</div>` : ''}
-                ${b.refund && b.refund.amount != null ? `<div class="note">↩️ استرداد: ${b.refund.amount} ${esc(b.refund.currency || '')}</div>` : ''}
+                ${refundHtml(b)}
               </div>
               <div style="text-align:center">
-                <div class="price">${b.sellAmount} ${esc(b.currency)}</div>
+                ${b.sellAmount != null ? `<div class="price">${b.sellAmount} ${esc(b.currency)}</div>` : ''}
                 ${b.status === 'issued' ? `<button class="chip" data-cancel="${esc(b.id)}" data-kind="${esc(b.kind || 'flight')}">إلغاء الحجز</button>` : ''}
               </div>
             </div>

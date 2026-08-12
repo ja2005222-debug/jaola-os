@@ -31,6 +31,9 @@ export const NOTIFICATION_CATEGORIES = {
     airline_change: { label: 'تغيير من شركة الطيران', alwaysInApp: true, defaultEmail: true, template: 'jaola_airline_change' },
     price_drop: { label: 'انخفاض سعر مُراقَب', alwaysInApp: false, defaultEmail: true, template: 'jaola_price_drop' },
     trip_reminder: { label: 'تذكير قبل السفر', alwaysInApp: false, defaultEmail: false, template: 'jaola_trip_reminder' },
+    // للأدمن فقط عملياً (تعويض باقة عالق ونحوه) — سجلّ وقائع يخصّ مال
+    // المنصة فلا يُطفأ داخل البوابة، كفئات الوقائع المالية للمسافر.
+    admin_alert: { label: 'تنبيه إداري (للمشرفين)', alwaysInApp: true, defaultEmail: true, template: 'jaola_admin_alert' },
 };
 
 export const NOTIFICATION_CHANNELS = ['inApp', 'email', 'whatsapp'];

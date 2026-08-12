@@ -11,6 +11,7 @@
  */
 
 export const DEFAULT_MARKUP_PCT = 8;
+export const DEFAULT_PACKAGE_MARKUP_PCT = 5; // قرار المالك: خصم حقيقي من التنازل عن جزء من العمولة
 const MAX_MARKUP_PCT = 50; // فوق هذا غالباً خطأ إعداد لا قرار تسعير
 
 /** يقرأ نسبة الهامش من البيئة — قيمة فاسدة/سالبة/مبالغة تقع على الافتراضي. */
@@ -18,6 +19,22 @@ export function readMarkupPct(env = process.env) {
     const raw = Number(env.TRAVEL_MARKUP_PCT);
     if (!Number.isFinite(raw) || raw < 0 || raw > MAX_MARKUP_PCT) return DEFAULT_MARKUP_PCT;
     return raw;
+}
+
+/**
+ * هامش الباقة — **محروس بنيوياً أن يكون أقل من الهامش العادي**.
+ *
+ * قرار المالك: فرق سعر الباقة خصمٌ حقيقي مموَّل من التنازل عن جزء من
+ * العمولة، والربح من معدّل الإرفاق. وباقة هامشها ≥ الهامش العادي ليست
+ * أرخص — فادّعاء «وفّر X» عليها كذبٌ يُكتشف بجمع بسيط. لذلك القيمة
+ * المضبوطة تُقبل فقط إن كانت أدنى من الهامش العادي، وإلا سقطت على
+ * افتراضٍ يُضمَن أنه أدنى (نصف الهامش العادي إن كان الافتراضُ نفسه لا
+ * يحقق الشرط). البنية تمنع الادّعاء الكاذب قبل النيّة.
+ */
+export function readPackageMarkupPct(env = process.env, markupPct = DEFAULT_MARKUP_PCT) {
+    const raw = Number(env.TRAVEL_PACKAGE_MARKUP_PCT);
+    if (Number.isFinite(raw) && raw >= 0 && raw < markupPct) return raw;
+    return Math.min(DEFAULT_PACKAGE_MARKUP_PCT, markupPct / 2);
 }
 
 /**

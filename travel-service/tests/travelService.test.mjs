@@ -25,7 +25,11 @@ import { normalizeDuffelStayResult } from '../src/providers/duffelStaysProvider.
 import { createMockCarsProvider } from '../src/providers/mockCarsProvider.js';
 import { normalizeDuffelCarResult } from '../src/providers/duffelCarsProvider.js';
 import { buildProvider, buildStaysProvider, buildCarsProvider } from '../src/providers/index.js';
-import { readMarkupPct, applyMarkup, DEFAULT_MARKUP_PCT } from '../src/pricing.js';
+import { readMarkupPct, applyMarkup, DEFAULT_MARKUP_PCT, readPackageMarkupPct, DEFAULT_PACKAGE_MARKUP_PCT } from '../src/pricing.js';
+import { normalizeContract, contractCoversStay, contractOfferId, parseContractOfferId } from '../src/contracts.js';
+import { createContractedStaysProvider, withContractedStays } from '../src/providers/contractedStaysProvider.js';
+import { retryPackageCompensations } from '../src/packages.js';
+import { buildPackageInsight } from '../src/agent/insights.js';
 import { canTransition, createBooking, transitionBooking, getBooking, getBookingByProviderOrderId } from '../src/bookings.js';
 import { createFileStore } from '../src/store/fileStore.js';
 import { createPostgresStore } from '../src/store/postgresStore.js';
@@ -54,6 +58,7 @@ import {
 
 const JWT_SECRET = 'test-secret-not-for-production';
 const MARKUP = 10; // هامش الاختبارات — أرقامه سهلة التحقق يدوياً
+const PKG_MARKUP = 5; // هامش الباقات — أدنى من العادي بالتصميم (الخصم الحقيقي)
 
 function makeToken(username) {
     return jwt.sign({ id: username, username }, JWT_SECRET, { expiresIn: '1h' });
@@ -1395,6 +1400,76 @@ describe('passengerAges: العمر مشتقّ من الميلاد لا مخمَ
     });
 });
 
+// ─── 🎁 الباقات: هامش محروس وعقود فندقية ──────────────────────────────
+describe('packages/contracts: وحدات نقية بلا شبكة', () => {
+    test('💰 هامش الباقة محروس أدنى من العادي — بنيةً لا نيّةً', () => {
+        assert.equal(readPackageMarkupPct({ TRAVEL_PACKAGE_MARKUP_PCT: '6' }, 8), 6);
+        assert.equal(readPackageMarkupPct({ TRAVEL_PACKAGE_MARKUP_PCT: '0' }, 8), 0);
+        // ≥ الهامش العادي = باقة ليست أرخص → يسقط على min(الافتراض، نصف العادي)
+        // فيُضمَن أدنى من العادي **دوماً** مهما كانت القيم
+        assert.equal(readPackageMarkupPct({ TRAVEL_PACKAGE_MARKUP_PCT: '8' }, 8), 4);
+        assert.equal(readPackageMarkupPct({ TRAVEL_PACKAGE_MARKUP_PCT: '12' }, 8), 4);
+        assert.equal(readPackageMarkupPct({ TRAVEL_PACKAGE_MARKUP_PCT: 'garbage' }, 8), 4);
+        assert.equal(readPackageMarkupPct({}, 4), 2);
+        assert.equal(readPackageMarkupPct({}, 20), DEFAULT_PACKAGE_MARKUP_PCT); // النصف أكبر من الافتراض → الافتراض
+        assert.ok(readPackageMarkupPct({}, 8) < 8);
+    });
+
+    test('🎁 قراءة الباقة: توفير موجب يُصاغ، وصفر لا يُدّعى', () => {
+        const insight = buildPackageInsight({ savings: 20, savingsPct: 2.3, separateTotal: 864, currency: 'USD' });
+        assert.ok(insight.text.includes('20 USD'));
+        assert.ok(insight.text.includes('2.3%'));
+        assert.ok(insight.text.includes('864'));
+        assert.equal(buildPackageInsight({ savings: 0, separateTotal: 100, currency: 'USD' }), null);
+        assert.equal(buildPackageInsight(null), null);
+    });
+
+    test('🤝 normalizeContract: القائمة البيضاء تحكم', () => {
+        const ok = normalizeContract({
+            hotelName: 'فندق الشاطئ', iata: 'dxb', netPerNight: 80, currency: 'usd',
+            allotment: 10, startDate: '2027-01-01', endDate: '2027-06-30',
+            blackoutDates: ['2027-03-01'],
+        });
+        assert.equal(ok.value.iata, 'DXB');
+        assert.equal(ok.value.currency, 'USD');
+        assert.equal(ok.value.active, true);
+        assert.match(normalizeContract({}).error, /اسم الفندق/);
+        assert.match(normalizeContract({ hotelName: 'x', iata: 'DXBX' }).error, /IATA/);
+        assert.match(normalizeContract({ hotelName: 'x', iata: 'DXB', netPerNight: -5 }).error, /موجب/);
+        assert.match(normalizeContract({ hotelName: 'x', iata: 'DXB', netPerNight: 80, currency: 'USD', allotment: 0 }).error, /حصة/);
+        assert.match(normalizeContract({
+            hotelName: 'x', iata: 'DXB', netPerNight: 80, currency: 'USD', allotment: 5,
+            startDate: '2027-06-30', endDate: '2027-01-01',
+        }).error, /بعد بدايته/);
+        assert.match(normalizeContract({
+            hotelName: 'x', iata: 'DXB', netPerNight: 80, currency: 'USD', allotment: 5,
+            startDate: '2027-01-01', endDate: '2027-06-30', blackoutDates: ['31-12-2027'],
+        }).error, /حظر/);
+    });
+
+    test('🗓️ contractCoversStay: النافذة والحظر بالليلة لا باليوم', () => {
+        const c = { startDate: '2027-01-01', endDate: '2027-06-30', blackoutDates: ['2027-03-15'] };
+        assert.equal(contractCoversStay(c, '2027-02-01', '2027-02-05'), true);
+        assert.equal(contractCoversStay(c, '2026-12-30', '2027-01-03'), false); // يبدأ قبل العقد
+        assert.equal(contractCoversStay(c, '2027-06-28', '2027-07-02'), false); // يتجاوز نهايته
+        assert.equal(contractCoversStay(c, '2027-06-28', '2027-06-30'), true);  // المغادرة يوم النهاية تجوز
+        assert.equal(contractCoversStay(c, '2027-03-14', '2027-03-16'), false); // ليلة 15 محظورة
+        assert.equal(contractCoversStay(c, '2027-03-15', '2027-03-16'), false); // ليلة الوصول نفسها محظورة
+        assert.equal(contractCoversStay(c, '2027-03-13', '2027-03-15'), true);  // يغادر يوم الحظر — لم يبِت ليلته
+    });
+
+    test('🔗 معرّف عرض العقد يُعاد بناؤه — لا خريطة ذاكرة تضيع بإعادة التشغيل', () => {
+        const id = contractOfferId('hc_abc123', '2027-02-01', '2027-02-05', 2, 1);
+        assert.deepEqual(parseContractOfferId(id), {
+            contractId: 'hc_abc123', checkInDate: '2027-02-01', checkOutDate: '2027-02-05',
+            adults: 2, rooms: 1,
+        });
+        assert.equal(parseContractOfferId('mock_stay_55_1'), null); // ليس لنا
+        assert.equal(parseContractOfferId('ctr_مشوَّه'), null);
+        assert.equal(parseContractOfferId(''), null);
+    });
+});
+
 // ─── 🔤 بحث المطارات بالاسم (عربي/إنجليزي) بدل حفظ رموز IATA ──────────
 describe('searchAirports: بحث بالمدينة أو الدولة، عربياً أو إنجليزياً', () => {
     const codes = q => searchAirports(q, 8).map(a => a.iata);
@@ -1530,7 +1605,10 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             provider = createMockTravelProvider();
             staysProvider = createMockStaysProvider();
             carsProvider = createMockCarsProvider();
-            const app = createApp({ store, jwtSecret: JWT_SECRET, provider, staysProvider, carsProvider, markupPct: MARKUP });
+            const app = createApp({
+                store, jwtSecret: JWT_SECRET, provider, staysProvider, carsProvider,
+                markupPct: MARKUP, packageMarkupPct: PKG_MARKUP, adminUsers: ['admin'],
+            });
             server = await new Promise(r => { const s = app.listen(0, () => r(s)); });
             baseUrl = `http://127.0.0.1:${server.address().port}`;
         });
@@ -1685,6 +1763,428 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             });
             assert.equal(ok.status, 200);
             assert.equal(ok.data.booking.status, 'issued');
+        });
+
+        // ─── 🎁 الباقات: طيران + فندق بخصم حقيقي ───────────────────────
+
+        async function pkgSearchBoth(token, depart, ret) {
+            const f = await call('/api/travel/flights/search', {
+                method: 'POST', token,
+                body: { origin: 'RUH', destination: 'CAI', departDate: depart, returnDate: ret, adults: 1 },
+            });
+            const s = await call('/api/travel/stays/search', {
+                method: 'POST', token,
+                body: { iata: 'CAI', checkInDate: depart, checkOutDate: ret, adults: 1, rooms: 1 },
+            });
+            return { flight: f.data.offers[0], stays: s.data.offers };
+        }
+
+        test('🎁 التقييم: التوفير محسوب لا مكتوب، والصافي لا يتسرب، وغير القابل للإلغاء يُرفض', async () => {
+            const token = makeToken('pkg-quoter');
+            const depart = futureDate(21), ret = futureDate(25);
+            const { flight, stays } = await pkgSearchBoth(token, depart, ret);
+            const cancellable = stays.find(o => o.cancellable);
+            const nonCancellable = stays.find(o => !o.cancellable);
+
+            const q = await call('/api/travel/packages/quote', {
+                method: 'POST', token,
+                body: { flightOfferId: flight.id, stayOfferId: cancellable.id },
+            });
+            assert.equal(q.status, 200);
+            const quote = q.data.quote;
+            // «وفّر X» = مجموع البيع منفصلَين − بيع الباقة — والهامش الأدنى يضمنه
+            assert.equal(quote.separateTotal, Math.round((flight.sellAmount + cancellable.sellAmount) * 100) / 100);
+            assert.ok(quote.sellAmount < quote.separateTotal, 'باقة ليست أرخص لا يحق لها الوجود');
+            assert.equal(quote.savings, Math.round((quote.separateTotal - quote.sellAmount) * 100) / 100);
+            assert.ok(quote.savingsPct > 0);
+            assert.ok(quote.insight.text.includes('توفّر'));
+            assert.ok(!JSON.stringify(q.data).includes('netAmount'), '💰 الصافي لا يغادر الخادم — حتى في الباقات');
+
+            // فندق غير قابل للإلغاء → 400 قبل أي حجز (قاعدة الترتيب المعكوس)
+            const bad = await call('/api/travel/packages/quote', {
+                method: 'POST', token,
+                body: { flightOfferId: flight.id, stayOfferId: nonCancellable.id },
+            });
+            assert.equal(bad.status, 400);
+            assert.match(bad.data.error, /قابل للإلغاء/);
+
+            // عرض ميت → 404 لا حجز نصفه ناجح
+            assert.equal((await call('/api/travel/packages/quote', {
+                method: 'POST', token, body: { flightOfferId: 'ghost', stayOfferId: cancellable.id },
+            })).status, 404);
+        });
+
+        test('🎁 الساغا: الفندق يُحجز قبل الطيران، والهامش مرة واحدة على الأب', async () => {
+            const token = makeToken('pkg-booker');
+            const depart = futureDate(30), ret = futureDate(34);
+            const { flight, stays } = await pkgSearchBoth(token, depart, ret);
+            const stay = stays.find(o => o.cancellable);
+
+            // ترتيب النداءات هو القاعدة الحاكمة كلها — يُقاس لا يُفترض
+            const orderLog = [];
+            const origFlight = provider.createOrder;
+            const origStay = staysProvider.createStayOrder;
+            provider.createOrder = async a => { orderLog.push('flight'); return origFlight.call(provider, a); };
+            staysProvider.createStayOrder = async a => { orderLog.push('stay'); return origStay.call(staysProvider, a); };
+            let res;
+            try {
+                res = await call('/api/travel/packages/bookings', {
+                    method: 'POST', token,
+                    body: { flightOfferId: flight.id, stayOfferId: stay.id, ...VALID_PAX },
+                });
+            } finally {
+                provider.createOrder = origFlight;
+                staysProvider.createStayOrder = origStay;
+            }
+            assert.equal(res.status, 200);
+            assert.deepEqual(orderLog, ['stay', 'flight'], 'القابل للإلغاء أولاً والنهائي أخيراً');
+
+            const parent = res.data.booking;
+            assert.equal(parent.kind, 'package');
+            assert.equal(parent.status, 'issued');
+            assert.ok(parent.bookingReference);
+            assert.ok(parent.offer.savings > 0);
+            assert.ok(!JSON.stringify(res.data).includes('netAmount'));
+
+            // الابنان مُصدَران، بلا سعر بيع (الهامش على الأب وحده)، ومربوطان بأبيهما
+            assert.equal(res.data.children.length, 2);
+            for (const child of res.data.children) {
+                assert.equal(child.status, 'issued');
+                assert.equal(child.packageId, parent.id);
+                assert.equal(child.sellAmount, null);
+                assert.ok(child.bookingReference);
+            }
+
+            // القائمة تعرض الثلاثة، والأبناء يحملون packageId للتجميع في الواجهة
+            const list = await call('/api/travel/bookings', { token });
+            const mine = list.data.bookings;
+            assert.equal(mine.length, 3);
+            assert.equal(mine.filter(b => b.packageId === parent.id).length, 2);
+        });
+
+        test('🧯 فشل الطيران بعد الفندق → يُلغى الفندق تلقائياً ولا يُحاسَب المسافر', async () => {
+            const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaola-pkg-comp-'));
+            const s2 = createFileStore({ dataDir: dir });
+            await s2.init();
+            const flightFail = createMockTravelProvider({ failCreate: true });
+            const goodStays = createMockStaysProvider();
+            const app2 = createApp({
+                store: s2, jwtSecret: JWT_SECRET, provider: flightFail, staysProvider: goodStays,
+                markupPct: MARKUP, packageMarkupPct: PKG_MARKUP, adminUsers: ['admin'],
+            });
+            const srv2 = await new Promise(r => { const x = app2.listen(0, () => r(x)); });
+            const url2 = `http://127.0.0.1:${srv2.address().port}`;
+            const call2 = async (pathname, { method = 'GET', token, body } = {}) => {
+                const r = await fetch(url2 + pathname, {
+                    method,
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: body ? JSON.stringify(body) : undefined,
+                });
+                return { status: r.status, data: await r.json().catch(() => null) };
+            };
+            try {
+                const token = makeToken('comp-user');
+                const depart = futureDate(15), ret = futureDate(18);
+                const f = await call2('/api/travel/flights/search', {
+                    method: 'POST', token,
+                    body: { origin: 'RUH', destination: 'CAI', departDate: depart, returnDate: ret, adults: 1 },
+                });
+                const s = await call2('/api/travel/stays/search', {
+                    method: 'POST', token,
+                    body: { iata: 'CAI', checkInDate: depart, checkOutDate: ret, adults: 1, rooms: 1 },
+                });
+                const res = await call2('/api/travel/packages/bookings', {
+                    method: 'POST', token,
+                    body: {
+                        flightOfferId: f.data.offers[0].id,
+                        stayOfferId: s.data.offers.find(o => o.cancellable).id,
+                        ...VALID_PAX,
+                    },
+                });
+                assert.equal(res.status, 502);
+                assert.match(res.data.error, /لن تُحاسَب/);
+
+                const mine = (await call2('/api/travel/bookings', { token })).data.bookings;
+                const parent = mine.find(b => b.kind === 'package');
+                const stayChild = mine.find(b => b.kind === 'stay');
+                const flightChild = mine.find(b => b.kind === 'flight');
+                assert.equal(parent.status, 'failed');
+                assert.equal(stayChild.status, 'cancelled', 'الفندق أُلغي تعويضاً — لا غرفة يتيمة');
+                assert.ok(stayChild.refund.amount > 0);
+                assert.equal(flightChild.status, 'failed');
+                assert.equal((await s2.listCompensationPending()).length, 0, 'التعويض نجح فلا معلّق');
+            } finally {
+                await new Promise(r => srv2.close(r));
+            }
+        });
+
+        test('🧯🧯 فشل التعويض نفسه → معلّق مسجَّل + تنبيه أدمن + المُطلِق يحلّه', async () => {
+            const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaola-pkg-stuck-'));
+            const s2 = createFileStore({ dataDir: dir });
+            await s2.init();
+            const flightFail = createMockTravelProvider({ failCreate: true });
+            const goodStays = createMockStaysProvider();
+            // إلغاء الفندق معطَّل مؤقتاً — ثم «تعود الشبكة» فيصلحه المُطلِق
+            let cancelBroken = true;
+            const flakyStays = {
+                ...goodStays,
+                cancelStayOrder: async id => {
+                    if (cancelBroken) throw new Error('انقطاع شبكة مؤقت');
+                    return goodStays.cancelStayOrder(id);
+                },
+            };
+            const app2 = createApp({
+                store: s2, jwtSecret: JWT_SECRET, provider: flightFail, staysProvider: flakyStays,
+                markupPct: MARKUP, packageMarkupPct: PKG_MARKUP, adminUsers: ['admin'],
+            });
+            const srv2 = await new Promise(r => { const x = app2.listen(0, () => r(x)); });
+            const url2 = `http://127.0.0.1:${srv2.address().port}`;
+            const call2 = async (pathname, { method = 'GET', token, body } = {}) => {
+                const r = await fetch(url2 + pathname, {
+                    method,
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: body ? JSON.stringify(body) : undefined,
+                });
+                return { status: r.status, data: await r.json().catch(() => null) };
+            };
+            try {
+                const token = makeToken('stuck-user');
+                const depart = futureDate(15), ret = futureDate(18);
+                const f = await call2('/api/travel/flights/search', {
+                    method: 'POST', token,
+                    body: { origin: 'RUH', destination: 'CAI', departDate: depart, returnDate: ret, adults: 1 },
+                });
+                const s = await call2('/api/travel/stays/search', {
+                    method: 'POST', token,
+                    body: { iata: 'CAI', checkInDate: depart, checkOutDate: ret, adults: 1, rooms: 1 },
+                });
+                const res = await call2('/api/travel/packages/bookings', {
+                    method: 'POST', token,
+                    body: {
+                        flightOfferId: f.data.offers[0].id,
+                        stayOfferId: s.data.offers.find(o => o.cancellable).id,
+                        ...VALID_PAX,
+                    },
+                });
+                assert.equal(res.status, 502);
+
+                const mine = (await call2('/api/travel/bookings', { token })).data.bookings;
+                const parent = mine.find(b => b.kind === 'package');
+                const stayChild = mine.find(b => b.kind === 'stay');
+                assert.equal(parent.status, 'failed');
+                // الابن يبقى issued لأنه **فعلاً** مُصدَر — الكذب في القاعدة أسوأ
+                assert.equal(stayChild.status, 'issued');
+                const stuck = await s2.listCompensationPending();
+                assert.equal(stuck.length, 1);
+                assert.deepEqual(stuck[0].compensation.pending, [stayChild.id]);
+
+                // الأدمن أُبلغ فوراً — لا اكتشاف متأخراً في التقارير
+                const adminInbox = await s2.listNotificationsByUser('admin');
+                assert.equal(adminInbox.filter(n => n.category === 'admin_alert').length, 1);
+                assert.match(adminInbox[0].body, /فشل إلغاء الفندق/);
+
+                // «عادت الشبكة» — المُطلِق الزمني يحلّ العالق
+                cancelBroken = false;
+                const retry = await retryPackageCompensations({ store: s2, staysProvider: flakyStays });
+                assert.equal(retry.resolved, 1);
+                assert.equal((await s2.listCompensationPending()).length, 0);
+                assert.equal((await s2.getBooking(stayChild.id)).status, 'cancelled');
+            } finally {
+                await new Promise(r => srv2.close(r));
+            }
+        });
+
+        test('🎁↩️ إلغاء الباقة: الابنان معاً واسترداد مفصَّل بصدق', async () => {
+            const token = makeToken('pkg-canceller');
+            const depart = futureDate(40), ret = futureDate(44);
+            const { flight, stays } = await pkgSearchBoth(token, depart, ret);
+            const booked = await call('/api/travel/packages/bookings', {
+                method: 'POST', token,
+                body: { flightOfferId: flight.id, stayOfferId: stays.find(o => o.cancellable).id, ...VALID_PAX },
+            });
+            assert.equal(booked.status, 200);
+
+            const cancelled = await call(`/api/travel/packages/bookings/${booked.data.booking.id}/cancel`, {
+                method: 'POST', token,
+            });
+            assert.equal(cancelled.status, 200);
+            assert.equal(cancelled.data.booking.status, 'cancelled');
+            // استردادان منفصلان بصدق: طيران بشروط الناقل وفندق بسياسته
+            assert.ok(cancelled.data.booking.refund.flight.amount != null);
+            assert.ok(cancelled.data.booking.refund.stay.amount != null);
+            const mine = (await call('/api/travel/bookings', { token })).data.bookings;
+            for (const b of mine) assert.equal(b.status, 'cancelled');
+
+            // عزل الملكية: باقة مستخدم آخر غير موجودة لا ممنوعة
+            assert.equal((await call(`/api/travel/packages/bookings/${booked.data.booking.id}/cancel`, {
+                method: 'POST', token: makeToken('someone-else'),
+            })).status, 404);
+        });
+
+        // ─── 🤝 العقود الفندقية عبر الأدمن ─────────────────────────────
+
+        test('🤝 العقود: CRUD أدمن، الظهور في البحث، والعدّاد الذرّي لا يبيع فوق الحصة', async () => {
+            const admin = makeToken('admin');
+            const user = makeToken('contract-guest');
+
+            // غير الأدمن: المسارات غير موجودة أصلاً (404 لا 403)
+            for (const [method, pathname] of [
+                ['GET', '/api/travel/admin/contracts'],
+                ['POST', '/api/travel/admin/contracts'],
+                ['GET', '/api/travel/admin/overview'],
+                ['GET', '/api/travel/admin/bookings'],
+                ['POST', '/api/travel/admin/compensations/retry'],
+            ]) {
+                assert.equal((await call(pathname, { method, token: user })).status, 404, pathname);
+            }
+
+            // تنظيف عقود جولات سابقة (Postgres يبقيها بين التشغيلات)
+            const existing = (await call('/api/travel/admin/contracts', { token: admin })).data.contracts;
+            for (const c of existing) {
+                await call(`/api/travel/admin/contracts/${c.id}`, { method: 'DELETE', token: admin });
+            }
+
+            // عقد فاسد يُرفض بالمنقّي
+            assert.equal((await call('/api/travel/admin/contracts', {
+                method: 'POST', token: admin, body: { hotelName: 'x', iata: 'ZZZZ' },
+            })).status, 400);
+
+            const created = await call('/api/travel/admin/contracts', {
+                method: 'POST', token: admin,
+                body: {
+                    hotelName: 'فندق العقد الذهبي', city: 'القاهرة', iata: 'CAI',
+                    netPerNight: 50, currency: 'USD', allotment: 2,
+                    startDate: futureDate(1), endDate: futureDate(300),
+                },
+            });
+            assert.equal(created.status, 200);
+            const cid = created.data.contract.id;
+            assert.equal(created.data.contract.usedRooms, 0);
+
+            // يظهر في بحث الفنادق العادي: سعر خاص، قابل للإلغاء، بلا صافٍ
+            const checkIn = futureDate(50), checkOut = futureDate(52);
+            const search = await call('/api/travel/stays/search', {
+                method: 'POST', token: user,
+                body: { iata: 'CAI', checkInDate: checkIn, checkOutDate: checkOut, adults: 1, rooms: 1 },
+            });
+            const offer = search.data.offers.find(o => o.contracted);
+            assert.ok(offer, 'عرض العقد يظهر للمسافر العادي');
+            assert.equal(offer.cancellable, true);
+            assert.equal(offer.sellAmount, applyMarkup(50 * 2, MARKUP)); // ليلتان × الصافي + الهامش
+            assert.ok(!('netAmount' in offer));
+
+            // 🔒 العدّاد الذرّي: 4 حجوزات متزامنة على حصة غرفتين → اثنان فقط
+            const bookOnce = () => call('/api/travel/stays/bookings', {
+                method: 'POST', token: user,
+                body: {
+                    offerId: offer.id,
+                    guests: [{ givenName: 'AHMED', familyName: 'ALI' }],
+                    contact: { email: 'a@b.com', phone: '+966501234567' },
+                },
+            });
+            const results = await Promise.all([bookOnce(), bookOnce(), bookOnce(), bookOnce()]);
+            const issued = results.filter(r => r.status === 200 && r.data.booking.status === 'issued');
+            assert.equal(issued.length, 2, 'الغرفة الثالثة من حصة غرفتين لا تُباع أبداً');
+            for (const r of results.filter(r => r.status !== 200)) {
+                // مساران صحيحان للرفض حسب توقيت السباق: الحصة نفدت أثناء
+                // الحجز (502) أو نفدت قبل جلب العرض فاختفى العرض أصلاً (404)
+                assert.match(r.data.error, /نفدت حصة|غير موجود/);
+            }
+            assert.equal((await call('/api/travel/admin/contracts', { token: admin }))
+                .data.contracts.find(c => c.id === cid).usedRooms, 2);
+
+            // الإلغاء يعيد الغرفة للحصة — والاسترداد كامل (Free-sale)
+            const cancel = await call(`/api/travel/stays/bookings/${issued[0].data.booking.id}/cancel`, {
+                method: 'POST', token: user,
+            });
+            assert.equal(cancel.status, 200);
+            assert.equal(cancel.data.booking.refund.amount, 100);
+            const again = await bookOnce();
+            assert.equal(again.status, 200, 'الغرفة المُعادة تُباع من جديد');
+
+            // إيقاف العقد يخفيه من البحث فوراً
+            await call(`/api/travel/admin/contracts/${cid}`, {
+                method: 'PUT', token: admin, body: { active: false },
+            });
+            const after = await call('/api/travel/stays/search', {
+                method: 'POST', token: user,
+                body: { iata: 'CAI', checkInDate: checkIn, checkOutDate: checkOut, adults: 1, rooms: 1 },
+            });
+            assert.ok(!after.data.offers.some(o => o.contracted));
+        });
+
+        test('🔒 العدّاد في المخزن نفسه ذرّي — لا اعتماد على فحوصات ما قبله', async () => {
+            // الطبقات الأعلى (البحث/العرض) تفحص الحصة أيضاً، لكن حارس
+            // السباق الحقيقي هو شرط المخزن — يُضرب هنا مباشرة بلا وسيط
+            const contract = await store.createContract({
+                hotelName: 'فندق العدّاد', iata: 'CAI', netPerNight: 30, currency: 'USD',
+                allotment: 2, startDate: '2027-01-01', endDate: '2027-12-31', blackoutDates: [],
+            });
+            const results = await Promise.all([1, 2, 3, 4].map(() =>
+                store.createContractAllocation(contract.id, { rooms: 1, netAmount: 30, currency: 'USD' })));
+            const granted = results.filter(Boolean);
+            assert.equal(granted.length, 2, 'أربعة طلبات على حصة غرفتين — اثنان فقط يمرّان');
+            assert.equal((await store.getContract(contract.id)).usedRooms, 2);
+            // التحرير المزدوج لنفس التخصيص لا يعيد الغرفة مرتين
+            assert.ok(await store.releaseContractAllocation(granted[0].id));
+            assert.equal(await store.releaseContractAllocation(granted[0].id), null);
+            assert.equal((await store.getContract(contract.id)).usedRooms, 1);
+            await store.deleteContract(contract.id); // لا يتسرب لبحث الاختبارات التالية
+        });
+
+        test('⚙️ الأدمن: النظرة العامة جمعُ السجلات لا تقدير، والصافي يظهر له وحده', async () => {
+            const admin = makeToken('admin');
+            const overview = await call('/api/travel/admin/overview', { token: admin });
+            assert.equal(overview.status, 200);
+            const all = (await call('/api/travel/admin/bookings?limit=500', { token: admin })).data.bookings;
+            // الإيراد المعلن = جمع هوامش المُصدَر (أبناء الباقات مستثنون بأن sellAmount=null)
+            const expected = Math.round(all
+                .filter(b => b.status === 'issued' && b.sellAmount != null)
+                .reduce((s, b) => s + (b.sellAmount - b.netAmount), 0) * 100) / 100;
+            assert.equal(overview.data.bookings.revenue, expected);
+            // للأدمن الصافي والهامش والمستخدم — وللمسافر العادي لا شيء منها
+            const withMargin = all.find(b => b.margin != null);
+            assert.ok(withMargin);
+            assert.equal(Math.round((withMargin.sellAmount - withMargin.netAmount) * 100) / 100, withMargin.margin);
+            assert.ok(all.every(b => typeof b.username === 'string'));
+        });
+
+        test('🎁🤝 الباقة بفندق متعاقَد: الحصة تُستهلك بالحجز وتعود بالإلغاء', async () => {
+            const admin = makeToken('admin');
+            const token = makeToken('pkg-contract-user');
+            const created = await call('/api/travel/admin/contracts', {
+                method: 'POST', token: admin,
+                body: {
+                    hotelName: 'منتجع الباقات', iata: 'CAI',
+                    netPerNight: 40, currency: 'USD', allotment: 3,
+                    startDate: futureDate(1), endDate: futureDate(300),
+                },
+            });
+            const cid = created.data.contract.id;
+            const depart = futureDate(60), ret = futureDate(63);
+            const { flight, stays } = await pkgSearchBoth(token, depart, ret);
+            const contractedOffer = stays.find(o => o.contracted && o.name === 'منتجع الباقات');
+            assert.ok(contractedOffer, 'فندق العقد ضمن خيارات الباقة');
+
+            const booked = await call('/api/travel/packages/bookings', {
+                method: 'POST', token,
+                body: { flightOfferId: flight.id, stayOfferId: contractedOffer.id, ...VALID_PAX },
+            });
+            assert.equal(booked.status, 200);
+            assert.equal(booked.data.booking.status, 'issued');
+            const contractAfterBook = (await call('/api/travel/admin/contracts', { token: admin }))
+                .data.contracts.find(c => c.id === cid);
+            assert.equal(contractAfterBook.usedRooms, 1, 'حجز الباقة استهلك غرفة من الحصة');
+
+            const cancelled = await call(`/api/travel/packages/bookings/${booked.data.booking.id}/cancel`, {
+                method: 'POST', token,
+            });
+            assert.equal(cancelled.status, 200);
+            // استرداد الفندق المتعاقَد كامل — 3 ليالٍ × 40
+            assert.equal(cancelled.data.booking.refund.stay.amount, 120);
+            const contractAfterCancel = (await call('/api/travel/admin/contracts', { token: admin }))
+                .data.contracts.find(c => c.id === cid);
+            assert.equal(contractAfterCancel.usedRooms, 0, 'إلغاء الباقة أعاد الغرفة للحصة');
         });
 
         test('🎟️ الحجز الكامل: pending→issued بمرجع، وتحقق الركاب، وعزل الملكية', async () => {

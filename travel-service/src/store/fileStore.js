@@ -16,6 +16,8 @@ export function createFileStore({ dataDir }) {
     const notificationsPath = path.join(dataDir, 'notifications.json');
     const prefsPath = path.join(dataDir, 'notificationPrefs.json');
     const profilesPath = path.join(dataDir, 'profiles.json');
+    const contractsPath = path.join(dataDir, 'hotelContracts.json');
+    const allocationsPath = path.join(dataDir, 'contractAllocations.json');
 
     function ensureDir() {
         fs.mkdirSync(dataDir, { recursive: true });
@@ -44,6 +46,10 @@ export function createFileStore({ dataDir }) {
     const writePrefs = rows => writeJson(prefsPath, rows);
     const readProfiles = () => readJson(profilesPath);
     const writeProfiles = rows => writeJson(profilesPath, rows);
+    const readContracts = () => readJson(contractsPath);
+    const writeContracts = rows => writeJson(contractsPath, rows);
+    const readAllocations = () => readJson(allocationsPath);
+    const writeAllocations = rows => writeJson(allocationsPath, rows);
 
     return {
         name: 'file',
@@ -61,6 +67,8 @@ export function createFileStore({ dataDir }) {
                 bookingReference: null,
                 error: null,
                 refund: null,
+                packageId: null,
+                compensation: null,
                 ...b,
             };
             bookings.push(booking);
@@ -116,6 +124,123 @@ export function createFileStore({ dataDir }) {
             Object.assign(booking, patch, { status: to, updatedAt: Date.now() });
             writeBookings(bookings);
             return { ...booking };
+        },
+
+        async listAllBookings(limit = 500) {
+            return readBookings()
+                .sort((a, b) => b.at - a.at)
+                .slice(0, limit)
+                .map(b => ({ ...b }));
+        },
+
+        async listCompensationPending(limit = 20) {
+            return readBookings()
+                .filter(b => b.kind === 'package' && b.status === 'failed'
+                    && Array.isArray(b.compensation?.pending) && b.compensation.pending.length > 0)
+                .sort((a, b) => a.at - b.at)
+                .slice(0, limit)
+                .map(b => ({ ...b }));
+        },
+
+        // ─── 🤝 العقود الفندقية (نفس عقد postgresStore بالتطابق) ────────
+
+        async createContract(cData) {
+            const contracts = readContracts();
+            const contract = {
+                id: 'hc_' + crypto.randomBytes(10).toString('hex'),
+                at: Date.now(),
+                updatedAt: Date.now(),
+                hotelName: cData.hotelName,
+                city: cData.city || null,
+                iata: cData.iata,
+                netPerNight: cData.netPerNight,
+                currency: cData.currency,
+                allotment: cData.allotment,
+                usedRooms: 0,
+                startDate: cData.startDate,
+                endDate: cData.endDate,
+                blackoutDates: cData.blackoutDates || [],
+                active: cData.active !== false,
+            };
+            contracts.push(contract);
+            writeContracts(contracts);
+            return { ...contract };
+        },
+
+        async getContract(id) {
+            const contract = readContracts().find(c => c.id === id);
+            return contract ? { ...contract } : null;
+        },
+
+        async listContracts() {
+            return readContracts().sort((a, b) => b.at - a.at).map(c => ({ ...c }));
+        },
+
+        async updateContract(id, patch = {}) {
+            const contracts = readContracts();
+            const contract = contracts.find(c => c.id === id);
+            if (!contract) return null;
+            const allowed = ['hotelName', 'city', 'iata', 'netPerNight', 'currency',
+                'allotment', 'startDate', 'endDate', 'blackoutDates', 'active'];
+            for (const key of allowed) {
+                if (key in patch) contract[key] = patch[key];
+            }
+            contract.updatedAt = Date.now();
+            writeContracts(contracts);
+            return { ...contract };
+        },
+
+        async deleteContract(id) {
+            const contracts = readContracts();
+            const next = contracts.filter(c => c.id !== id);
+            if (next.length === contracts.length) return false;
+            writeContracts(next);
+            return true;
+        },
+
+        // ⚠️ الذرّية هنا من أحادية خيط JS: الفحص والزيادة والكتابة كتلة
+        // متزامنة **بلا أي await بينها** — فلا يتداخل طلبان. أي await
+        // يُقحَم وسطها مستقبلاً يكسر الضمان (postgresStore يضمنها بشرط
+        // داخل UPDATE واحد).
+        async createContractAllocation(contractId, { rooms, netAmount, currency, checkIn = null, checkOut = null }) {
+            const contracts = readContracts();
+            const contract = contracts.find(c => c.id === contractId);
+            if (!contract || contract.active === false) return null;
+            if ((contract.usedRooms || 0) + rooms > contract.allotment) return null;
+            contract.usedRooms = (contract.usedRooms || 0) + rooms;
+            contract.updatedAt = Date.now();
+            const allocations = readAllocations();
+            const allocation = {
+                id: 'ctro_' + crypto.randomBytes(10).toString('hex'),
+                at: Date.now(),
+                contractId, rooms, netAmount, currency, checkIn, checkOut,
+                status: 'active',
+            };
+            allocations.push(allocation);
+            writeContracts(contracts);
+            writeAllocations(allocations);
+            return { ...allocation };
+        },
+
+        async getContractAllocation(id) {
+            const allocation = readAllocations().find(a => a.id === id);
+            return allocation ? { ...allocation } : null;
+        },
+
+        async releaseContractAllocation(id) {
+            const allocations = readAllocations();
+            const allocation = allocations.find(a => a.id === id);
+            if (!allocation || allocation.status !== 'active') return null;
+            allocation.status = 'released';
+            const contracts = readContracts();
+            const contract = contracts.find(c => c.id === allocation.contractId);
+            if (contract) {
+                contract.usedRooms = Math.max(0, (contract.usedRooms || 0) - allocation.rooms);
+                contract.updatedAt = Date.now();
+                writeContracts(contracts);
+            }
+            writeAllocations(allocations);
+            return { ...allocation };
         },
 
         async createPriceWatch(w) {
