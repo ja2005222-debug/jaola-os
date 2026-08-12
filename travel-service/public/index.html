@@ -9,6 +9,10 @@
       --bg: #0b1120; --card: #111a2e; --border: #1e2a44;
       --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8;
       --ok: #34d399; --warn: #fbbf24; --bad: #f87171;
+      /* 🎁 لون خامس مخصَّص للحصري (عقود فنادق مباشرة) — عمداً غير --warn:
+         الكهرماني هنا معناه "تحذير" (بيئة تجريبية)، واستعارته لـ"صفقة
+         حصرية" كان يجعل المزايا تبدو مشكلة. */
+      --exclusive: #a78bfa;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -17,6 +21,24 @@
     }
     a { color: var(--accent); }
     .hidden { display: none !important; }
+
+    /* 🖱️ تفاعل بصري موحَّد: كل عنصر يُنقر أو يُحاط بالمؤشر يستجيب —
+       بلا هذا كانت الواجهة ثابتة تماماً، لا إشارة قبل النقر. */
+    button, .tabs button, .chip, .card.offer, .pkg-pick, .dest-card, .ac-item {
+      transition: transform .15s ease, box-shadow .15s ease,
+        border-color .15s ease, background-color .15s ease, opacity .15s ease, filter .15s ease;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      button, .tabs button, .chip, .card.offer, .pkg-pick, .dest-card, .ac-item,
+      .card.offer:hover, .pkg-pick:hover, .dest-card:hover { transition: none; transform: none; }
+    }
+    button.primary:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 4px 14px rgba(56,189,248,.35); }
+    .chip:hover { border-color: var(--accent); color: var(--accent); }
+    .tabs button:hover { border-color: var(--accent); }
+    .card.offer:hover, .pkg-pick:hover, .dest-card:hover {
+      transform: translateY(-2px); border-color: var(--accent);
+      box-shadow: 0 8px 20px rgba(0,0,0,.35);
+    }
 
     header {
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -39,6 +61,7 @@
     .card {
       background: var(--card); border: 1px solid var(--border);
       border-radius: 14px; padding: 16px; margin-bottom: 14px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.25); /* عمق خفيف في الراحة — لا كل شيء صندوق مسطّح */
     }
     label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
     input, select {
@@ -64,6 +87,39 @@
     .offer .price { font-size: 22px; color: var(--ok); font-weight: 800; white-space: nowrap; }
     .seg { color: var(--muted); font-size: 13px; margin-top: 4px; }
     .stops0 { color: var(--ok); } .stops1 { color: var(--warn); }
+
+    /* 🤖 العرض الذي تشير إليه قراءة الايجنت — نفس الحساب الذي يُصاغ نصاً
+       (insight.text) يُترجَم هنا إشارة بصرية على البطاقة نفسها، فلا يبقى
+       الذكاء المحسوب حبيس فقرة تُقرأ ثم تُنسى. */
+    .card.offer-best {
+      position: relative; border-color: var(--ok);
+      box-shadow: 0 1px 4px rgba(0,0,0,.25), 0 0 0 1px var(--ok) inset;
+    }
+    .card.offer-best:hover { border-color: var(--ok); box-shadow: 0 8px 20px rgba(52,211,153,.2), 0 0 0 1px var(--ok) inset; }
+    .card.offer-best::before {
+      content: '🤖 الأفضل'; position: absolute; top: -11px; right: 16px;
+      background: var(--ok); color: #06202e; font-size: 11px; font-weight: 800;
+      padding: 2px 10px; border-radius: 999px; letter-spacing: .2px;
+    }
+
+    /* شارتان بمعنيين مختلفين لا تُخلَطان: توفير الباقة (أخضر — "ربحت
+       مالاً") مقابل السعر الحصري المتعاقَد (بنفسجي — "لا تجده في مكان
+       آخر"). قبل هذا كان الاثنان يتشاركان لون التوفير نفسه فيضيع الفرق. */
+    .badge-exclusive {
+      display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 12px;
+      font-weight: 600; background: rgba(167,139,250,.16); color: var(--exclusive);
+    }
+
+    /* هيكل تحميل بشكل النتيجة القادمة — بدل نصّ "جارٍ البحث…" في كل مكان.
+       نفس تدرّج promoShimmer أدناه؛ سطر واحد لكل شكل (صفّ نتيجة/بطاقة شبكة). */
+    .skel-card {
+      border-radius: 14px; border: 1px solid var(--border); margin-bottom: 14px;
+      background: linear-gradient(90deg, var(--card) 25%, #1b2b3d 50%, var(--card) 75%) 0/400% 100%;
+      animation: promoShimmer 1.4s linear infinite;
+    }
+    .skel-card.row { height: 96px; }
+    .skel-card.grid { height: 160px; }
+    @media (prefers-reduced-motion: reduce) { .skel-card { animation: none; } }
 
     /* الإكمال التلقائي للمطارات */
     .ac-wrap { position: relative; }
@@ -131,8 +187,9 @@
     .pref-row label { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
     .pref-row label.locked { opacity: .55; cursor: not-allowed; }
     .pkg-pick { cursor: pointer; }
-    .pkg-pick.sel { outline: 2px solid var(--accent, #4da3ff); border-radius: 12px; }
-    .pkg-badge { display:inline-block; padding:2px 8px; border-radius:8px; font-size:12px; background:rgba(80,200,120,.15); color:var(--ok, #3fbf7f); }
+    .pkg-pick.sel { outline: 2px solid var(--accent); border-radius: 12px; }
+    /* شارة التوفير — أخضر التوفير نفسه المستخدم في .offer .price، لا لون مستعار من صفحة أخرى */
+    .pkg-badge { display:inline-block; padding:2px 8px; border-radius:8px; font-size:12px; font-weight:600; background:rgba(52,211,153,.15); color:var(--ok); }
     .pkg-strike { text-decoration: line-through; opacity:.6; }
 
     /* 🤖 قراءة المساعد فوق النتائج — حضور الايجنت بلا أن يُسأل */
@@ -1067,6 +1124,32 @@
       </div>`;
     }
 
+    // هياكل تحميل بشكل النتيجة القادمة — بدل "🔎 جارٍ البحث…" في كل مكان.
+    function skeletonHtml(n = 3, shape = 'row') {
+      return Array.from({ length: n }, () => `<div class="skel-card ${shape}"></div>`).join('');
+    }
+
+    // 🤖 يحوّل قراءة الايجنت من نصّ يُقرأ إلى تمييز يُرى على البطاقة نفسها.
+    // نفس الحقول (index/alternativeIndex) في insight.findings تُصاغ نصاً في
+    // renderInsight (الخادم) وتُصاغ هنا تمييزاً — الحقل الذي يمثّل "الخيار
+    // الأفضل" يختلف بنوع القراءة: بعضها يوصي بصاحب index (الأسرع يستحق
+    // الفارق) وبعضها بـalternativeIndex (الأرخص فيه عيب؛ البديل هو الموصى
+    // به، لا صاحب index الذي هو الأرخص المعيب نفسه).
+    const RECOMMEND_FIELD = {
+      direct_alternative: 'index', cheapest_is_fastest: 'index', fastest_premium: 'index',
+      rating_upgrade: 'index', breakfast_included: 'index',
+      cheapest_no_baggage: 'alternativeIndex', cheapest_not_refundable: 'alternativeIndex',
+    };
+    function pickedOfferIndices(insight) {
+      const picked = new Set();
+      for (const f of insight?.findings || []) {
+        const field = RECOMMEND_FIELD[f.type];
+        if (field && Number.isInteger(f[field])) picked.add(f[field]);
+      }
+      return picked;
+    }
+    function offerCardClass(best, i) { return 'card offer' + (best.has(i) ? ' offer-best' : ''); }
+
     async function refineInsight(insight, key = 'flight') {
       if (!insight || !insight.findings || !insight.findings.length) return;
       try {
@@ -1114,7 +1197,7 @@
 
     async function doSearch() {
       $('searchError').classList.add('hidden');
-      $('results').innerHTML = '<p class="note">🔎 جارٍ البحث…</p>';
+      $('results').innerHTML = skeletonHtml(3);
       $('searchBtn').disabled = true;
       try {
         const childrenDobs = childDobValues();
@@ -1143,8 +1226,9 @@
           $('results').innerHTML = '<p class="note">لا رحلات متاحة لهذا البحث.</p>';
           return;
         }
+        const bestFlights = pickedOfferIndices(data.insight);
         $('results').innerHTML = insightHtml(data.insight) + data.offers.map((o, i) => `
-          <div class="card offer">
+          <div class="${offerCardClass(bestFlights, i)}">
             <div style="flex:1">
               <div class="route">${airlineLogoHtml(o)}${esc(o.owner)}${
                 o.totalDurationMin ? `<span class="note" style="margin-right:8px">إجمالي ${fmtDur(o.totalDurationMin)}</span>` : ''}</div>
@@ -1375,7 +1459,7 @@
      * إصلاح في بطاقة الفندق يُطبَّق في مكان وينسى الآخر.
      */
     async function renderStaysInto(target, { iata, checkIn, checkOut, adults, rooms }) {
-      target.innerHTML = '<p class="note">🔎 جارٍ البحث عن فنادق…</p>';
+      target.innerHTML = skeletonHtml(3);
       try {
         const body = {
           iata, checkInDate: checkIn, checkOutDate: checkOut,
@@ -1391,11 +1475,12 @@
           target.innerHTML = '<p class="note">لا فنادق متاحة لهذه الوجهة/التواريخ.</p>';
           return;
         }
+        const bestStays = pickedOfferIndices(data.insight);
         target.innerHTML = insightHtml(data.insight, 'stay') + data.offers.map((o, i) => `
-          <div class="card offer">
+          <div class="${offerCardClass(bestStays, i)}">
             <div style="flex:1">
-              <div class="route">${esc(o.name)}</div>
-              <div class="seg">${esc(o.city || '')} · ${esc(o.checkInDate || body.checkInDate)} → ${esc(o.checkOutDate || body.checkOutDate)}${o.nights ? ` · ${o.nights} ليالٍ` : ''}</div>
+              <div class="route">${o.contracted ? '🤝 ' : ''}${esc(o.name)}</div>
+              <div class="seg">${esc(o.city || '')} · ${esc(o.checkInDate || body.checkInDate)} → ${esc(o.checkOutDate || body.checkOutDate)}${o.nights ? ` · ${o.nights} ليالٍ` : ''}${o.contracted ? ' · <span class="badge-exclusive">سعر خاص متعاقَد</span>' : ''}</div>
               <div class="det-tags">
                 ${o.boardName ? `<span class="det-tag">🍽️ ${esc(boardAr(o.boardName))}</span>` : ''}
                 ${o.maxOccupancy ? `<span class="det-tag">👥 حتى ${o.maxOccupancy}</span>` : ''}
@@ -1539,7 +1624,7 @@
 
     async function loadDestinations() {
       $('destError').classList.add('hidden');
-      $('destGrid').innerHTML = '<p class="note">🔎 جارٍ التحميل…</p>';
+      $('destGrid').innerHTML = skeletonHtml(6, 'grid');
       $('destLoadBtn').disabled = true;
       try {
         const origin = selectedIata($('destOrigin')) || 'RUH';
@@ -1607,7 +1692,7 @@
     // ─── سيارات الإيجار ───
     async function doSearchCars() {
       $('carSearchError').classList.add('hidden');
-      $('carResults').innerHTML = '<p class="note">🔎 جارٍ البحث…</p>';
+      $('carResults').innerHTML = skeletonHtml(3);
       $('carSearchBtn').disabled = true;
       try {
         const body = {
@@ -1627,8 +1712,9 @@
           $('carResults').innerHTML = '<p class="note">لا سيارات متاحة لهذا البحث.</p>';
           return;
         }
-        $('carResults').innerHTML = insightHtml(data.insight, 'car') + data.offers.map(o => `
-          <div class="card offer">
+        const bestCars = pickedOfferIndices(data.insight);
+        $('carResults').innerHTML = insightHtml(data.insight, 'car') + data.offers.map((o, i) => `
+          <div class="${offerCardClass(bestCars, i)}">
             <div style="flex:1">
               <div class="route">🚗 ${esc(o.vehicleName)}</div>
               <div class="seg">${esc(o.supplier || '')} · ${esc(o.pickupLocation || '')}</div>
@@ -1679,7 +1765,7 @@
       const adults = Number($('pkgAdults').value) || 1;
       $('pkgSearchBtn').disabled = true;
       $('pkgResults').classList.remove('hidden');
-      $('pkgFlights').innerHTML = $('pkgStays').innerHTML = '<p class="note">🔎 جارٍ البحث…</p>';
+      $('pkgFlights').innerHTML = $('pkgStays').innerHTML = skeletonHtml(2);
       try {
         // بحثان متوازيان — فشل أحدهما لا يُخفي نتائج الآخر
         const [fRes, sRes] = await Promise.all([
@@ -1723,7 +1809,7 @@
           <div class="card offer pkg-pick ${pkgState.stayId === o.id ? 'sel' : ''}" data-pkg-stay="${esc(o.id)}">
             <div style="flex:1">
               <div class="route">${o.contracted ? '🤝 ' : ''}${esc(o.name)}</div>
-              <div class="seg">${esc(o.city || '')} · ${o.nights || ''} ليالٍ${o.contracted ? ' · <span class="pkg-badge">سعر خاص متعاقَد</span>' : ''}</div>
+              <div class="seg">${esc(o.city || '')} · ${o.nights || ''} ليالٍ${o.contracted ? ' · <span class="badge-exclusive">سعر خاص متعاقَد</span>' : ''}</div>
             </div>
             <div style="text-align:center"><div class="price">${o.sellAmount} ${esc(o.currency)}</div></div>
           </div>`).join('');
@@ -1734,7 +1820,7 @@
     async function updatePkgQuote() {
       if (!pkgState.flightId || !pkgState.stayId) return;
       $('pkgQuote').classList.remove('hidden');
-      $('pkgQuote').innerHTML = '<p class="note">⏳ جارٍ تسعير الباقة…</p>';
+      $('pkgQuote').innerHTML = skeletonHtml(1);
       try {
         const res = await api('/api/travel/packages/quote', {
           method: 'POST',

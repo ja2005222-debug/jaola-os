@@ -6,8 +6,11 @@
   <title>⚙️ إدارة بوابة السفر — جولا</title>
   <style>
     :root {
-      --bg: #0d1220; --card: #161d31; --border: #2a3350; --text: #e8ecf7;
-      --muted: #8b93ad; --accent: #4da3ff; --ok: #3fbf7f; --err: #ff6b6b; --warn: #ffb84d;
+      /* 🎨 نفس لوحة index.html حرفياً — كانت مختلفة (أزرق أفتح، بطاقات
+         أفتح) فبدت صفحة الإدارة كأنها منتج آخر. هذا إصلاح هوية لا ذوق. */
+      --bg: #0b1120; --card: #111a2e; --border: #1e2a44; --text: #e2e8f0;
+      --muted: #94a3b8; --accent: #38bdf8; --ok: #34d399; --err: #f87171; --warn: #fbbf24;
+      --exclusive: #a78bfa;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, sans-serif; }
     body { background: var(--bg); color: var(--text); min-height: 100vh; padding: 18px; }
@@ -19,16 +22,28 @@
     .warn { color: var(--warn); }
     .hidden { display: none !important; }
     .cards { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; flex: 1; min-width: 200px; }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 14px; flex: 1; min-width: 200px; box-shadow: 0 1px 4px rgba(0,0,0,.25);
+    }
     .big { font-size: 26px; font-weight: 700; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
     th, td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--border); }
     th { color: var(--muted); font-weight: 600; }
+    tbody tr { transition: background-color .15s ease; }
+    tbody tr:hover { background: rgba(56,189,248,.06); }
     .st { padding: 2px 8px; border-radius: 8px; font-size: 12px; }
-    .st-issued { background: rgba(63,191,127,.15); color: var(--ok); }
-    .st-pending { background: rgba(255,184,77,.15); color: var(--warn); }
-    .st-failed, .st-cancelled { background: rgba(255,107,107,.12); color: var(--err); }
-    button { background: var(--accent); color: #06101f; border: 0; border-radius: 10px; padding: 8px 14px; font-size: 14px; cursor: pointer; font-weight: 600; }
+    .st-issued { background: rgba(52,211,153,.15); color: var(--ok); }
+    .st-pending { background: rgba(251,191,36,.15); color: var(--warn); }
+    .st-failed, .st-cancelled { background: rgba(248,113,113,.12); color: var(--err); }
+    button {
+      background: var(--accent); color: #06101f; border: 0; border-radius: 10px;
+      padding: 8px 14px; font-size: 14px; cursor: pointer; font-weight: 600;
+      transition: transform .15s ease, box-shadow .15s ease, filter .15s ease, border-color .15s ease;
+    }
+    button:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
+    button:disabled { opacity: .5; cursor: wait; }
+    @media (prefers-reduced-motion: reduce) { button, tbody tr { transition: none; } button:hover { transform: none; } }
     button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
     button.danger { background: transparent; color: var(--err); border: 1px solid var(--err); }
     input, select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; font-size: 14px; width: 100%; }
