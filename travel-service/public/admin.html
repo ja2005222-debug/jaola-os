@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>⚙️ إدارة بوابة السفر — جولا</title>
+  <style>
+    :root {
+      --bg: #0d1220; --card: #161d31; --border: #2a3350; --text: #e8ecf7;
+      --muted: #8b93ad; --accent: #4da3ff; --ok: #3fbf7f; --err: #ff6b6b; --warn: #ffb84d;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, sans-serif; }
+    body { background: var(--bg); color: var(--text); min-height: 100vh; padding: 18px; }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    h2 { font-size: 17px; margin: 22px 0 10px; }
+    .note { color: var(--muted); font-size: 13px; }
+    .error { color: var(--err); font-size: 14px; margin-top: 8px; }
+    .ok { color: var(--ok); }
+    .warn { color: var(--warn); }
+    .hidden { display: none !important; }
+    .cards { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; flex: 1; min-width: 200px; }
+    .big { font-size: 26px; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+    th, td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; }
+    .st { padding: 2px 8px; border-radius: 8px; font-size: 12px; }
+    .st-issued { background: rgba(63,191,127,.15); color: var(--ok); }
+    .st-pending { background: rgba(255,184,77,.15); color: var(--warn); }
+    .st-failed, .st-cancelled { background: rgba(255,107,107,.12); color: var(--err); }
+    button { background: var(--accent); color: #06101f; border: 0; border-radius: 10px; padding: 8px 14px; font-size: 14px; cursor: pointer; font-weight: 600; }
+    button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+    button.danger { background: transparent; color: var(--err); border: 1px solid var(--err); }
+    input, select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; font-size: 14px; width: 100%; }
+    label { display: block; font-size: 12.5px; color: var(--muted); margin: 8px 0 4px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .row > div { flex: 1; min-width: 130px; }
+    .tbl-wrap { overflow-x: auto; }
+    dialog { background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 14px; padding: 18px; max-width: 560px; width: 92vw; }
+    dialog::backdrop { background: rgba(0,0,0,.6); }
+  </style>
+</head>
+<body>
+  <h1>⚙️ إدارة بوابة السفر</h1>
+  <p class="note">كل رقم هنا جمعٌ من سجلات الحجوزات نفسها — لا تقديرات.</p>
+  <div id="gate" class="error hidden"></div>
+
+  <div id="panel" class="hidden">
+    <h2>📊 نظرة عامة</h2>
+    <div class="cards" id="overviewCards"></div>
+
+    <div id="compBox" class="hidden">
+      <h2>🧯 تعويضات باقات عالقة</h2>
+      <p class="note">فشل الطيران ثم فشل إلغاء الفندق — الغرفة مُصدَرة على مالنا حتى تُحلّ. المُطلِق الزمني يعيد المحاولة كل ساعة، أو الآن:</p>
+      <div id="compList"></div>
+      <button id="compRetry" style="margin-top:8px">🔁 أعد التعويضات الآن</button>
+      <span id="compResult" class="note"></span>
+    </div>
+
+    <h2>🤝 العقود الفندقية (أسعار خاصة — Free-sale ضمن حصة)</h2>
+    <p class="note">شرط النجاح تعاقدي لا تقني: الفندق يمنحنا غرفاً نبيعها دون الرجوع إليه، فالتأكيد فوري والأتمتة كاملة.</p>
+    <div class="tbl-wrap"><table id="contractsTable"></table></div>
+    <button id="contractNew" style="margin-top:10px">➕ عقد جديد</button>
+
+    <h2>🧳 آخر الحجوزات (كل المستخدمين)</h2>
+    <div class="tbl-wrap"><table id="bookingsTable"></table></div>
+  </div>
+
+  <dialog id="contractDialog">
+    <h2 id="contractDialogTitle">عقد فندقي</h2>
+    <form method="dialog" id="contractForm">
+      <div class="row">
+        <div><label>اسم الفندق</label><input id="cHotelName" /></div>
+        <div><label>المدينة (اختياري)</label><input id="cCity" /></div>
+        <div><label>الوجهة (IATA)</label><input id="cIata" placeholder="DXB" maxlength="3" /></div>
+      </div>
+      <div class="row">
+        <div><label>الصافي لليلة</label><input id="cNet" type="number" step="0.01" min="0" /></div>
+        <div><label>العملة</label><input id="cCurrency" placeholder="USD" maxlength="3" /></div>
+        <div><label>حصة الغرف</label><input id="cAllotment" type="number" min="1" max="500" /></div>
+      </div>
+      <div class="row">
+        <div><label>بداية العقد</label><input id="cStart" type="date" /></div>
+        <div><label>نهايته</label><input id="cEnd" type="date" /></div>
+      </div>
+      <label>تواريخ حظر (YYYY-MM-DD مفصولة بفواصل — اختياري)</label>
+      <input id="cBlackout" placeholder="2026-12-31, 2027-01-01" />
+      <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer">
+        <input id="cActive" type="checkbox" checked style="width:auto" /> نشط (يظهر في البحث)
+      </label>
+      <div id="contractErr" class="error hidden"></div>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <button id="contractSave" type="button">💾 حفظ</button>
+        <button class="ghost" type="button" onclick="document.getElementById('contractDialog').close()">إغلاق</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const token = localStorage.getItem('jaolaTravelToken');
+
+    async function api(path, opts = {}) {
+      return fetch(path, {
+        ...opts,
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, ...(opts.headers || {}) },
+      });
+    }
+
+    const ST_LABEL = { pending: 'قيد الإصدار', issued: 'مُصدَر', failed: 'فشل', cancelled: 'مُلغى' };
+    const KIND_LABEL = { flight: '✈️ طيران', stay: '🏨 فندق', car: '🚗 سيارة', package: '🎁 باقة' };
+    let editingContractId = null;
+
+    async function load() {
+      if (!token) { $('gate').textContent = 'سجّل الدخول من بوابة السفر أولاً ثم افتح هذه الصفحة.'; $('gate').classList.remove('hidden'); return; }
+      const res = await api('/api/travel/admin/overview');
+      if (res.status === 404 || res.status === 401) {
+        $('gate').textContent = 'هذه الصفحة لمشرفي البوابة (TRAVEL_ADMIN_USERS) — حسابك ليس منهم.';
+        $('gate').classList.remove('hidden');
+        return;
+      }
+      const ov = await res.json();
+      $('panel').classList.remove('hidden');
+      renderOverview(ov);
+      await Promise.all([loadContracts(), loadBookings()]);
+    }
+
+    function renderOverview(ov) {
+      const c = ov.config;
+      const flag = (on, label) => `<div>${on ? '✅' : '⚪'} ${label}</div>`;
+      $('overviewCards').innerHTML = `
+        <div class="card"><div class="note">الحجوزات</div><div class="big">${ov.bookings.total}</div>
+          <div class="note">${Object.entries(ov.bookings.byStatus).map(([s, n]) => `${ST_LABEL[s] || s}: ${n}`).join(' · ') || '—'}</div>
+          <div class="note">${Object.entries(ov.bookings.byKind).map(([k, n]) => `${KIND_LABEL[k] || k}: ${n}`).join(' · ') || '—'}</div></div>
+        <div class="card"><div class="note">إجمالي الهامش (المُصدَر)</div>
+          <div class="big ok">${ov.bookings.revenue}</div>
+          <div class="note">${ov.bookings.revenueMixedCurrencies
+            ? '⚠️ عملات متعددة (' + ov.bookings.revenueCurrencies.join('، ') + ') — الجمع أعلاه تقريبي عبرها'
+            : (ov.bookings.revenueCurrencies[0] || '')}</div></div>
+        <div class="card"><div class="note">حصص العقود</div>
+          <div class="big">${ov.contracts.roomsUsed} / ${ov.contracts.roomsTotal}</div>
+          <div class="note">${ov.contracts.active} عقد نشط من ${ov.contracts.total}</div></div>
+        <div class="card"><div class="note">الإعداد</div>
+          <div class="note">الهامش: ${c.markupPct}% · الباقة: ${c.packageMarkupPct}%</div>
+          ${flag(true, 'طيران: ' + c.provider + ' (' + c.providerMode + ')')}
+          ${flag(!!c.staysProvider, 'فنادق: ' + (c.staysProvider || 'معطَّل'))}
+          ${flag(c.agentEnabled, 'المساعد')} ${flag(c.mailReady, 'البريد')} ${flag(c.whatsappReady, 'واتساب')}
+          ${flag(c.cronConfigured, 'المُطلِق الزمني')} ${flag(c.webhooksConfigured, 'Duffel webhooks')}</div>`;
+      if (ov.compensationPending.length > 0) {
+        $('compBox').classList.remove('hidden');
+        $('compList').innerHTML = ov.compensationPending.map(p =>
+          `<div class="note">⏳ ${esc(p.id)} — ${esc(p.username)} (${new Date(p.at).toLocaleString('ar')})</div>`).join('');
+      }
+    }
+
+    $('compRetry').addEventListener('click', async () => {
+      $('compRetry').disabled = true;
+      try {
+        const res = await api('/api/travel/admin/compensations/retry', { method: 'POST' });
+        const r = await res.json();
+        $('compResult').textContent = res.ok
+          ? ` فُحص ${r.checked} — حُلّ ${r.resolved}${r.errors.length ? ` — ما زال عالقاً ${r.errors.length}` : ''}`
+          : (r.error || 'تعذّر');
+        load();
+      } finally { $('compRetry').disabled = false; }
+    });
+
+    async function loadContracts() {
+      const res = await api('/api/travel/admin/contracts');
+      if (!res.ok) return;
+      const { contracts } = await res.json();
+      $('contractsTable').innerHTML = `
+        <tr><th>الفندق</th><th>الوجهة</th><th>الصافي/ليلة</th><th>الحصة</th><th>النافذة</th><th>الحالة</th><th></th></tr>` +
+        (contracts.length === 0 ? '<tr><td colspan="7" class="note">لا عقود بعد — العقد الأول يبدأ من زر «عقد جديد».</td></tr>' :
+        contracts.map(c => `
+          <tr>
+            <td>${esc(c.hotelName)}${c.city ? `<div class="note">${esc(c.city)}</div>` : ''}</td>
+            <td>${esc(c.iata)}</td>
+            <td>${c.netPerNight} ${esc(c.currency)}</td>
+            <td>${c.usedRooms} / ${c.allotment}</td>
+            <td class="note">${esc(c.startDate)} → ${esc(c.endDate)}${(c.blackoutDates || []).length ? `<div>🚫 ${c.blackoutDates.length} يوم حظر</div>` : ''}</td>
+            <td>${c.active ? '<span class="ok">نشط</span>' : '<span class="note">موقوف</span>'}</td>
+            <td style="white-space:nowrap">
+              <button class="ghost" data-edit="${esc(c.id)}">تعديل</button>
+              <button class="danger" data-del="${esc(c.id)}">حذف</button>
+            </td>
+          </tr>`).join(''));
+      document.querySelectorAll('[data-edit]').forEach(b =>
+        b.addEventListener('click', () => openContract(contracts.find(c => c.id === b.dataset.edit))));
+      document.querySelectorAll('[data-del]').forEach(b =>
+        b.addEventListener('click', async () => {
+          if (!confirm('حذف العقد نهائياً؟ الحجوزات القائمة عليه لا تتأثر — سجلاتها مستقلة.')) return;
+          await api('/api/travel/admin/contracts/' + b.dataset.del, { method: 'DELETE' });
+          loadContracts(); load();
+        }));
+    }
+
+    function openContract(c) {
+      editingContractId = c?.id || null;
+      $('contractDialogTitle').textContent = c ? `تعديل: ${c.hotelName}` : 'عقد فندقي جديد';
+      $('cHotelName').value = c?.hotelName || '';
+      $('cCity').value = c?.city || '';
+      $('cIata').value = c?.iata || '';
+      $('cNet').value = c?.netPerNight ?? '';
+      $('cCurrency').value = c?.currency || 'USD';
+      $('cAllotment').value = c?.allotment ?? 10;
+      $('cStart').value = c?.startDate || '';
+      $('cEnd').value = c?.endDate || '';
+      $('cBlackout').value = (c?.blackoutDates || []).join(', ');
+      $('cActive').checked = c ? c.active !== false : true;
+      $('contractErr').classList.add('hidden');
+      $('contractDialog').showModal();
+    }
+    $('contractNew').addEventListener('click', () => openContract(null));
+
+    $('contractSave').addEventListener('click', async () => {
+      const body = {
+        hotelName: $('cHotelName').value.trim(),
+        city: $('cCity').value.trim(),
+        iata: $('cIata').value.trim().toUpperCase(),
+        netPerNight: Number($('cNet').value),
+        currency: $('cCurrency').value.trim().toUpperCase(),
+        allotment: Number($('cAllotment').value),
+        startDate: $('cStart').value,
+        endDate: $('cEnd').value,
+        blackoutDates: $('cBlackout').value.split(',').map(s => s.trim()).filter(Boolean),
+        active: $('cActive').checked,
+      };
+      const res = await api(
+        editingContractId ? '/api/travel/admin/contracts/' + editingContractId : '/api/travel/admin/contracts',
+        { method: editingContractId ? 'PUT' : 'POST', body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) {
+        $('contractErr').textContent = data.error || 'تعذّر الحفظ.';
+        $('contractErr').classList.remove('hidden');
+        return;
+      }
+      $('contractDialog').close();
+      loadContracts(); load();
+    });
+
+    async function loadBookings() {
+      const res = await api('/api/travel/admin/bookings?limit=100');
+      if (!res.ok) return;
+      const { bookings } = await res.json();
+      $('bookingsTable').innerHTML = `
+        <tr><th>النوع</th><th>المستخدم</th><th>الحالة</th><th>المرجع</th><th>البيع</th><th>الصافي</th><th>الهامش</th><th>التاريخ</th></tr>` +
+        (bookings.length === 0 ? '<tr><td colspan="8" class="note">لا حجوزات بعد.</td></tr>' :
+        bookings.map(b => `
+          <tr>
+            <td>${KIND_LABEL[b.kind] || esc(b.kind)}${b.packageId ? ' <span class="note">(ابن باقة)</span>' : ''}${b.compensation?.pending?.length ? ' 🧯' : ''}</td>
+            <td>${esc(b.username)}</td>
+            <td><span class="st st-${esc(b.status)}">${ST_LABEL[b.status] || esc(b.status)}</span></td>
+            <td>${esc(b.bookingReference || '—')}</td>
+            <td>${b.sellAmount != null ? b.sellAmount + ' ' + esc(b.currency) : '<span class="note">على الأب</span>'}</td>
+            <td>${b.netAmount} ${esc(b.currency)}</td>
+            <td>${b.margin != null ? `<span class="ok">${b.margin}</span>` : '—'}</td>
+            <td class="note">${new Date(b.at).toLocaleString('ar')}</td>
+          </tr>`).join(''));
+    }
+
+    load();
+  </script>
+</body>
+</html>

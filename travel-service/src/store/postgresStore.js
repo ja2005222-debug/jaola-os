@@ -34,6 +34,13 @@ ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 
 -- علامة تذكير ما قبل السفر: توسعة غير هدّامة، الصفوف الحالية تبقى NULL
 -- (أي «لم يُرسَل») وهو الصحيح — لا تذكير أُرسل لها فعلاً.
 ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS reminder_sent_at BIGINT;
+-- 🎁 الباقات: الابن يحمل معرّف أبيه، والأب يحمل تعويضاً معلّقاً إن فشل
+-- إلغاء ابنٍ بعد فشل الطيران. sell_amount يقبل NULL لأن ابن الباقة
+-- لا سعر بيع له — الهامش يُطبَّق مرة واحدة على الأب فلا سعران متناقضان.
+ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS package_id TEXT;
+ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS compensation_json JSONB;
+ALTER TABLE travel_bookings ALTER COLUMN sell_amount DROP NOT NULL;
+CREATE INDEX IF NOT EXISTS travel_bookings_package_idx ON travel_bookings (package_id);
 CREATE INDEX IF NOT EXISTS travel_bookings_user_idx ON travel_bookings (username, at);
 CREATE INDEX IF NOT EXISTS travel_bookings_status_idx ON travel_bookings (status);
 CREATE INDEX IF NOT EXISTS travel_bookings_provider_order_idx ON travel_bookings (provider_order_id);
@@ -86,6 +93,42 @@ CREATE TABLE IF NOT EXISTS travel_profiles (
     profile_json    JSONB NOT NULL,
     updated_at      BIGINT NOT NULL
 );
+
+-- 🤝 العقود الفندقية المباشرة (أسعار خاصة متفاوَض عليها — Free-sale ضمن
+-- حصة غرف). used_rooms عدّاد الحصة: يُزاد ذرّياً بشرط عدم تجاوز allotment
+-- في UPDATE واحد، فلا تُباع الغرفة الحادية عشرة من حصة عشرٍ بطلبين
+-- متزامنين (نفس فلسفة transitionBooking حرفياً).
+CREATE TABLE IF NOT EXISTS travel_hotel_contracts (
+    id            TEXT PRIMARY KEY,
+    at            BIGINT NOT NULL,
+    updated_at    BIGINT NOT NULL,
+    hotel_name    TEXT NOT NULL,
+    city          TEXT,
+    iata          TEXT NOT NULL,
+    net_per_night NUMERIC(12,2) NOT NULL,
+    currency      TEXT NOT NULL,
+    allotment     INTEGER NOT NULL,
+    used_rooms    INTEGER NOT NULL DEFAULT 0,
+    start_date    TEXT NOT NULL,
+    end_date      TEXT NOT NULL,
+    blackout_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    active        BOOLEAN NOT NULL DEFAULT TRUE
+);
+CREATE INDEX IF NOT EXISTS travel_hotel_contracts_iata_idx ON travel_hotel_contracts (iata);
+
+-- كل حجز من عقد = تخصيص غرفة/غرف. الإلغاء يعيدها للحصة.
+CREATE TABLE IF NOT EXISTS travel_contract_allocations (
+    id           TEXT PRIMARY KEY,
+    at           BIGINT NOT NULL,
+    contract_id  TEXT NOT NULL,
+    rooms        INTEGER NOT NULL,
+    net_amount   NUMERIC(12,2) NOT NULL,
+    currency     TEXT NOT NULL,
+    check_in     TEXT,
+    check_out    TEXT,
+    status       TEXT NOT NULL DEFAULT 'active'
+);
+CREATE INDEX IF NOT EXISTS travel_contract_allocations_contract_idx ON travel_contract_allocations (contract_id);
 `;
 
 function rowToBooking(r) {
@@ -102,13 +145,51 @@ function rowToBooking(r) {
         passengers: r.passengers_json,
         contact: r.contact_json,
         netAmount: Number(r.net_amount),
-        sellAmount: Number(r.sell_amount),
+        // NULL لابن الباقة (الهامش على الأب) — Number(null) كان سيحوّله صفراً كاذباً
+        sellAmount: r.sell_amount != null ? Number(r.sell_amount) : null,
         currency: r.currency,
         providerOrderId: r.provider_order_id,
         bookingReference: r.booking_reference,
         error: r.error,
         refund: r.refund_json,
+        packageId: r.package_id || null,
+        compensation: r.compensation_json || null,
         reminderSentAt: r.reminder_sent_at != null ? Number(r.reminder_sent_at) : null,
+    };
+}
+
+function rowToContract(r) {
+    if (!r) return null;
+    return {
+        id: r.id,
+        at: Number(r.at),
+        updatedAt: Number(r.updated_at),
+        hotelName: r.hotel_name,
+        city: r.city,
+        iata: r.iata,
+        netPerNight: Number(r.net_per_night),
+        currency: r.currency,
+        allotment: Number(r.allotment),
+        usedRooms: Number(r.used_rooms),
+        startDate: r.start_date,
+        endDate: r.end_date,
+        blackoutDates: r.blackout_json || [],
+        active: r.active,
+    };
+}
+
+function rowToAllocation(r) {
+    if (!r) return null;
+    return {
+        id: r.id,
+        at: Number(r.at),
+        contractId: r.contract_id,
+        rooms: Number(r.rooms),
+        netAmount: Number(r.net_amount),
+        currency: r.currency,
+        checkIn: r.check_in,
+        checkOut: r.check_out,
+        status: r.status,
     };
 }
 
@@ -183,11 +264,12 @@ export function createPostgresStore({ connectionString }) {
                 const res = await c.query(
                     `INSERT INTO travel_bookings
                      (id, at, updated_at, username, provider, status, kind, offer_json,
-                      passengers_json, contact_json, net_amount, sell_amount, currency)
-                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+                      passengers_json, contact_json, net_amount, sell_amount, currency, package_id)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
                     [id, now, now, b.username, b.provider, b.status, b.kind || 'flight',
                         JSON.stringify(b.offer), JSON.stringify(b.passengers),
-                        JSON.stringify(b.contact), b.netAmount, b.sellAmount, b.currency]
+                        JSON.stringify(b.contact), b.netAmount, b.sellAmount ?? null, b.currency,
+                        b.packageId || null]
                 );
                 return rowToBooking(res.rows[0]);
             });
@@ -245,7 +327,7 @@ export function createPostgresStore({ connectionString }) {
             const sets = ['status = $2', 'updated_at = $3'];
             const vals = [id, to, Date.now()];
             let i = 4;
-            const jsonCols = { offer: 'offer_json', refund: 'refund_json' };
+            const jsonCols = { offer: 'offer_json', refund: 'refund_json', compensation: 'compensation_json' };
             const textCols = {
                 providerOrderId: 'provider_order_id',
                 bookingReference: 'booking_reference',
@@ -265,6 +347,165 @@ export function createPostgresStore({ connectionString }) {
                     vals
                 );
                 return rowToBooking(res.rows[0]);
+            });
+        },
+
+        // للأدمن: كل الحجوزات عبر كل المستخدمين — التقارير تُجمَع في الخادم
+        async listAllBookings(limit = 500) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'SELECT * FROM travel_bookings ORDER BY at DESC LIMIT $1', [limit]
+                );
+                return res.rows.map(rowToBooking);
+            });
+        },
+
+        // باقات فشل تعويضها (إلغاء ابنٍ بعد فشل الطيران) — يلتقطها
+        // المُطلِق الزمني فيعيد المحاولة. jsonb_array_length على NULL
+        // يعيد NULL فتُستبعد الصفوف بلا تعويض تلقائياً.
+        async listCompensationPending(limit = 20) {
+            return withClient(async c => {
+                const res = await c.query(
+                    `SELECT * FROM travel_bookings
+                     WHERE kind = 'package' AND status = 'failed'
+                       AND jsonb_array_length(compensation_json -> 'pending') > 0
+                     ORDER BY at ASC LIMIT $1`, [limit]
+                );
+                return res.rows.map(rowToBooking);
+            });
+        },
+
+        // ─── 🤝 العقود الفندقية ───────────────────────────────────────
+
+        async createContract(cData) {
+            const id = 'hc_' + Array.from(crypto.getRandomValues(new Uint8Array(10)))
+                .map(x => x.toString(16).padStart(2, '0')).join('');
+            const now = Date.now();
+            return withClient(async c => {
+                const res = await c.query(
+                    `INSERT INTO travel_hotel_contracts
+                     (id, at, updated_at, hotel_name, city, iata, net_per_night, currency,
+                      allotment, used_rooms, start_date, end_date, blackout_json, active)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$10,$11,$12,$13) RETURNING *`,
+                    [id, now, now, cData.hotelName, cData.city || null, cData.iata,
+                        cData.netPerNight, cData.currency, cData.allotment,
+                        cData.startDate, cData.endDate,
+                        JSON.stringify(cData.blackoutDates || []), cData.active !== false]
+                );
+                return rowToContract(res.rows[0]);
+            });
+        },
+
+        async getContract(id) {
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM travel_hotel_contracts WHERE id = $1', [id]);
+                return rowToContract(res.rows[0]);
+            });
+        },
+
+        async listContracts() {
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM travel_hotel_contracts ORDER BY at DESC');
+                return res.rows.map(rowToContract);
+            });
+        },
+
+        async updateContract(id, patch = {}) {
+            const sets = ['updated_at = $2'];
+            const vals = [id, Date.now()];
+            let i = 3;
+            const cols = {
+                hotelName: 'hotel_name', city: 'city', iata: 'iata',
+                netPerNight: 'net_per_night', currency: 'currency',
+                allotment: 'allotment', startDate: 'start_date', endDate: 'end_date',
+                active: 'active',
+            };
+            for (const [key, col] of Object.entries(cols)) {
+                if (key in patch) { sets.push(`${col} = $${i++}`); vals.push(patch[key]); }
+            }
+            if ('blackoutDates' in patch) {
+                sets.push(`blackout_json = $${i++}`);
+                vals.push(JSON.stringify(patch.blackoutDates || []));
+            }
+            return withClient(async c => {
+                const res = await c.query(
+                    `UPDATE travel_hotel_contracts SET ${sets.join(', ')} WHERE id = $1 RETURNING *`,
+                    vals
+                );
+                return rowToContract(res.rows[0]);
+            });
+        },
+
+        async deleteContract(id) {
+            return withClient(async c => {
+                const res = await c.query('DELETE FROM travel_hotel_contracts WHERE id = $1', [id]);
+                return res.rowCount > 0;
+            });
+        },
+
+        /**
+         * تخصيص غرف ذرّي: الشرط `used_rooms + n <= allotment` داخل UPDATE
+         * نفسه — طلبان متزامنان على آخر غرفة لا يمرّان معاً أبداً.
+         * يعيد null عند نفاد الحصة (ليس خطأً — جوابٌ تجاري صريح).
+         */
+        async createContractAllocation(contractId, { rooms, netAmount, currency, checkIn = null, checkOut = null }) {
+            const id = 'ctro_' + Array.from(crypto.getRandomValues(new Uint8Array(10)))
+                .map(x => x.toString(16).padStart(2, '0')).join('');
+            return withClient(async c => {
+                try {
+                    await c.query('BEGIN');
+                    const upd = await c.query(
+                        `UPDATE travel_hotel_contracts
+                         SET used_rooms = used_rooms + $2, updated_at = $3
+                         WHERE id = $1 AND active = TRUE AND used_rooms + $2 <= allotment
+                         RETURNING id`,
+                        [contractId, rooms, Date.now()]
+                    );
+                    if (!upd.rows[0]) { await c.query('ROLLBACK'); return null; }
+                    const ins = await c.query(
+                        `INSERT INTO travel_contract_allocations
+                         (id, at, contract_id, rooms, net_amount, currency, check_in, check_out, status)
+                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active') RETURNING *`,
+                        [id, Date.now(), contractId, rooms, netAmount, currency, checkIn, checkOut]
+                    );
+                    await c.query('COMMIT');
+                    return rowToAllocation(ins.rows[0]);
+                } catch (e) {
+                    await c.query('ROLLBACK');
+                    throw e;
+                }
+            });
+        },
+
+        async getContractAllocation(id) {
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM travel_contract_allocations WHERE id = $1', [id]);
+                return rowToAllocation(res.rows[0]);
+            });
+        },
+
+        /** إلغاء التخصيص يعيد الغرف للحصة — الشرط على status يمنع التحرير المزدوج. */
+        async releaseContractAllocation(id) {
+            return withClient(async c => {
+                try {
+                    await c.query('BEGIN');
+                    const upd = await c.query(
+                        `UPDATE travel_contract_allocations SET status = 'released'
+                         WHERE id = $1 AND status = 'active' RETURNING *`, [id]
+                    );
+                    if (!upd.rows[0]) { await c.query('ROLLBACK'); return null; }
+                    await c.query(
+                        `UPDATE travel_hotel_contracts
+                         SET used_rooms = GREATEST(0, used_rooms - $2), updated_at = $3
+                         WHERE id = $1`,
+                        [upd.rows[0].contract_id, upd.rows[0].rooms, Date.now()]
+                    );
+                    await c.query('COMMIT');
+                    return rowToAllocation(upd.rows[0]);
+                } catch (e) {
+                    await c.query('ROLLBACK');
+                    throw e;
+                }
             });
         },
 

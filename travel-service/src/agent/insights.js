@@ -349,6 +349,11 @@ export function renderInsight(findings) {
             case 'price_spread':
                 parts.push(`الفرق بين الأرخص والأغلى ${f.spreadPct}% — تصفّح أبعد من أول نتيجة.`);
                 break;
+            case 'package_savings':
+                parts.push(
+                    `🎁 هذه الباقة توفّر ${money(f.savings, f.currency)} (${f.savingsPct}%) ` +
+                    `مقارنةً بحجز الطيران والفندق منفصلَين عندنا (${money(f.separateTotal, f.currency)}).`);
+                break;
             case 'rating_upgrade':
                 parts.push(
                     `${optionNo(f.index)} تقييمه **${f.rating}** مقابل ${f.cheapestRating} للأرخص، ` +
@@ -378,6 +383,7 @@ export function renderInsight(findings) {
 
 // أنواع النتائج المعروفة وحقولها الرقمية — قائمة بيضاء لا قائمة سوداء.
 const FINDING_FIELDS = {
+    package_savings: ['savings', 'savingsPct', 'separateTotal'],
     direct_alternative: ['index', 'extraAmount', 'extraPct', 'savedMin', 'stopsAvoided'],
     cheapest_is_fastest: ['index', 'durationMin'],
     fastest_premium: ['index', 'extraAmount', 'extraPct', 'savedMin'],
@@ -424,3 +430,18 @@ function wrap(findings) {
 export const buildInsight = offers => wrap(analyzeOffers(offers));
 export const buildStayInsight = offers => wrap(analyzeStayOffers(offers));
 export const buildCarInsight = offers => wrap(analyzeCarOffers(offers));
+
+/**
+ * قراءة الباقة — حتمية من أرقام التسعير نفسها لا من نموذج لغوي.
+ * توفيرٌ صفري (تقريب سنتات على مبالغ ضئيلة) لا يُدّعى — null أصدق.
+ */
+export function buildPackageInsight(quote) {
+    if (!quote || !(quote.savings > 0)) return null;
+    return wrap([{
+        type: 'package_savings',
+        savings: quote.savings,
+        savingsPct: quote.savingsPct,
+        separateTotal: quote.separateTotal,
+        currency: quote.currency,
+    }]);
+}

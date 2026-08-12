@@ -18,13 +18,17 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { buildVerifyToken } from './src/auth.js';
-import { readMarkupPct, applyMarkup } from './src/pricing.js';
+import { readMarkupPct, readPackageMarkupPct, applyMarkup } from './src/pricing.js';
+import { quotePackage, bookPackage, cancelPackage, retryPackageCompensations } from './src/packages.js';
+import { normalizeContract } from './src/contracts.js';
+import { createContractedStaysProvider, withContractedStays } from './src/providers/contractedStaysProvider.js';
 import { createBooking, getBooking, getBookingByProviderOrderId, listBookingsByUser, transitionBooking } from './src/bookings.js';
 import { buildStore } from './src/store/index.js';
 import { buildProvider, buildStaysProvider, buildCarsProvider } from './src/providers/index.js';
 import { buildTravelAgent } from './src/agent/agent.js';
 import {
-    buildInsight, buildStayInsight, buildCarInsight, renderInsight, sanitizeFindings,
+    buildInsight, buildStayInsight, buildCarInsight, buildPackageInsight,
+    renderInsight, sanitizeFindings,
 } from './src/agent/insights.js';
 import {
     createNotifier, renderAirlineChangeNotice, normalizeNotificationPrefs,
@@ -355,11 +359,16 @@ function publicBooking(b) {
         sellAmount: b.sellAmount, currency: b.currency,
         offer: b.offer, passengers: b.passengers, contact: b.contact,
         error: b.error, refund: b.refund,
+        packageId: b.packageId || null, // الواجهة تجمع أبناء الباقة تحت أبيهم
     };
 }
 
 /** سطر ملخّص نصّي لحجز (بريد التأكيد/الإلغاء) — نفس منطق bookingBodyHtml في الواجهة. */
 function bookingSummaryLine(b) {
+    if (b.kind === 'package') {
+        const outbound = b.offer?.flight?.slices?.[0] || {};
+        return `🎁 باقة: ✈️ ${outbound.origin || '؟'}⇄${outbound.destination || '؟'} + 🏨 ${b.offer?.stay?.name || 'فندق'}`;
+    }
     if (b.kind === 'stay') {
         return `🏨 ${b.offer?.name || 'فندق'} — ${b.offer?.city || ''} — ${b.offer?.checkInDate || ''} → ${b.offer?.checkOutDate || ''}`;
     }
@@ -383,6 +392,8 @@ export function createApp({
     carsProvider = null,
     agent = null,
     markupPct = readMarkupPct(),
+    packageMarkupPct = null,     // يُشتق من markupPct إن لم يُمرَّر — محروس أدنى منه
+    adminUsers = [],             // أسماء مستخدمي الأدمن (من TRAVEL_ADMIN_USERS)
     travelInfoFetch = fetch, // قابل للحقن في الاختبارات (طقس/عملة بلا شبكة حقيقية)
     mailer = { sendMail, mailReady }, // قابل للحقن في الاختبارات (نفس نمط priceWatchPoller.js)
     whatsapp = { sendWhatsAppTemplate, whatsappReady }, // نفس العقد بالضبط — قناة لا تعرفها deliver عن أختها
@@ -402,6 +413,27 @@ export function createApp({
 
     const verifyToken = buildVerifyToken(jwtSecret);
     const userOf = req => String(req.user?.username || '').trim().toLowerCase();
+
+    // هامش الباقة النهائي — الحارس في readPackageMarkupPct يضمنه أدنى من العادي
+    const pkgMarkupPct = packageMarkupPct != null && packageMarkupPct < markupPct
+        ? packageMarkupPct
+        : readPackageMarkupPct(process.env, markupPct);
+
+    // مزوّد الفنادق المُركَّب: عقودنا المباشرة أولاً ثم المزوّد العام —
+    // التوجيه ببادئة المعرّف، وفشل جانبٍ لا يُسقط الآخر.
+    const staysBase = staysProvider;
+    if (staysBase) {
+        staysProvider = withContractedStays(staysBase, createContractedStaysProvider({ store }));
+    }
+
+    // الأدمن: قائمة أسماء صريحة من البيئة — ومسار أدمن لغير المخوَّل 404
+    // لا 403 (نفس فلسفة عزل الملكية: لا نؤكد وجود ما لا يخصّك)
+    const adminSet = new Set((adminUsers || []).map(u => String(u).trim().toLowerCase()).filter(Boolean));
+    const isAdmin = req => adminSet.has(userOf(req));
+    const requireAdmin = (req, res, next) => {
+        if (!isAdmin(req)) return res.status(404).json({ error: 'غير موجود.' });
+        next();
+    };
 
     // مفتاح محدّدات المعدل أدناه: اسم المستخدم لا عنوان IP — verifyToken
     // يعمل قبلها دوماً في كل مسار، والتصحيح بالمستخدم صحيح بصرف النظر عن
@@ -457,6 +489,23 @@ export function createApp({
             whatsappParams: [bookingSummaryLine(booking), booking.bookingReference || '—', refundLine],
             meta: { bookingId: booking.id },
         });
+    }
+
+    /**
+     * تعويض باقة عالق (فشل إلغاء الفندق بعد فشل الطيران): تنبيه فوري لكل
+     * أدمن — فالغرفة مُصدَرة على مالنا حتى يُحلّ. المُطلِق الزمني يعيد
+     * المحاولة تلقائياً، لكن الأدمن يجب أن يعلم لا أن يكتشف في التقارير.
+     */
+    async function notifyCompensationStuck(parent, stayChild) {
+        for (const admin of adminSet) {
+            await notifier.deliver({
+                username: admin,
+                category: 'admin_alert',
+                title: `🧯 تعويض باقة عالق — ${parent.id}`,
+                body: `فشل الطيران في باقة ${parent.id} وفشل إلغاء الفندق (${stayChild.bookingReference || stayChild.id}) بعده.\nالمُطلِق الزمني سيعيد المحاولة كل ساعة، ويمكنك «إعادة التعويضات الآن» من صفحة الإدارة.`,
+                meta: { bookingId: parent.id, stayChildId: stayChild.id },
+            });
+        }
     }
 
     /**
@@ -625,6 +674,7 @@ export function createApp({
         try {
             return await staysProvider.getHotelDetails(id);
         } catch (e) {
+            if (e.status) throw e; // 501 من غلاف العقود حين لا يدعمها الأساسي
             throw Object.assign(new Error(`تعذّر جلب تفاصيل الفندق: ${e.message}`), { status: 502 });
         }
     }
@@ -1015,6 +1065,8 @@ export function createApp({
             carsEnabled: !!carsProvider,
             carsProviderMode: carsProvider?.mode || null,
             agentEnabled: !!agent,
+            packagesEnabled: !!staysProvider, // الباقة = طيران + فندق؛ الطيران موجود دوماً
+            isAdmin: isAdmin(req), // رابط ⚙️ الإدارة يظهر لأصحابه فقط
         });
     }));
 
@@ -1166,6 +1218,83 @@ export function createApp({
         }
     }));
 
+    // ─── 🎁 الباقات (طيران + فندق — خصم حقيقي من التنازل عن جزء من العمولة) ──
+
+    function requirePackages() {
+        if (!staysProvider) {
+            throw Object.assign(new Error('الباقات تتطلب مزوّد فنادق مُفعّلاً.'), { status: 503 });
+        }
+    }
+
+    /** التقييم للعميل: أرقام البيع فقط — الصافي وتقسيمه الداخلي لا يغادران الخادم. */
+    function publicQuote(q) {
+        const { netAmount: _nf, passengerIds: _ids, passengers, ...flight } = q.flight;
+        const { netAmount: _ns, ...stay } = q.stay;
+        return {
+            flight: { ...flight, passengers: publicPassengers(passengers) },
+            stay,
+            sellAmount: q.sellAmount,
+            separateTotal: q.separateTotal,
+            savings: q.savings,
+            savingsPct: q.savingsPct,
+            currency: q.currency,
+            insight: buildPackageInsight(q),
+        };
+    }
+
+    app.post('/api/travel/packages/quote', verifyToken, wrap(async (req, res) => {
+        requirePackages();
+        try {
+            const q = await quotePackage({
+                provider, staysProvider,
+                flightOfferId: req.body?.flightOfferId, stayOfferId: req.body?.stayOfferId,
+                markupPct, packageMarkupPct: pkgMarkupPct,
+            });
+            res.json({ quote: publicQuote(q) });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
+    app.post('/api/travel/packages/bookings', verifyToken, wrap(async (req, res) => {
+        requirePackages();
+        try {
+            const result = await bookPackage({
+                store, provider, staysProvider,
+                username: userOf(req),
+                flightOfferId: req.body?.flightOfferId, stayOfferId: req.body?.stayOfferId,
+                passengers: req.body?.passengers, contact: req.body?.contact,
+                markupPct, packageMarkupPct: pkgMarkupPct,
+                validatePassengers, validateGuests, checkPassengerAges,
+                onCompensationStuck: notifyCompensationStuck,
+            });
+            await notifyBookingIssued(result.parent);
+            res.json({
+                booking: publicBooking(result.parent),
+                children: [publicBooking(result.stayChild), publicBooking(result.flightChild)],
+            });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
+    app.post('/api/travel/packages/bookings/:id/cancel', verifyToken, wrap(async (req, res) => {
+        requirePackages();
+        try {
+            const cancelled = await cancelPackage({
+                store, provider, staysProvider,
+                username: userOf(req), packageId: req.params.id,
+            });
+            await notifyBookingCancelled(cancelled);
+            res.json({ booking: publicBooking(cancelled) });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
     // ─── 🗺️ أهم الوجهات (صور Wikimedia + أرخص سعر حقيقي) ──────────────
 
     app.get('/api/travel/destinations/top', verifyToken, destinationsLimiter, wrap(async (req, res) => {
@@ -1299,7 +1428,112 @@ export function createApp({
         } catch (e) {
             summary.tripReminders = { error: e.message };
         }
+        try {
+            summary.packageCompensations = await retryPackageCompensations({ store, staysProvider });
+        } catch (e) {
+            summary.packageCompensations = { error: e.message };
+        }
         res.json(summary);
+    }));
+
+    // ─── ⚙️ الإدارة (TRAVEL_ADMIN_USERS فقط — لغيرهم المسارات غير موجودة) ──
+
+    /**
+     * النظرة العامة: كل رقم فيها جمعٌ من سجلات netAmount/sellAmount التي
+     * تُكتب مع كل حجز — لا استنتاج رجعي. أبناء الباقات يُستثنون من
+     * الإيراد (sellAmount=null أصلاً: الهامش على الأب وحده فلا عدّ مزدوج).
+     */
+    app.get('/api/travel/admin/overview', verifyToken, requireAdmin, wrap(async (req, res) => {
+        const bookings = await store.listAllBookings(1000);
+        const byStatus = {};
+        const byKind = {};
+        let revenue = 0;
+        let revenueCurrencies = new Set();
+        for (const b of bookings) {
+            byStatus[b.status] = (byStatus[b.status] || 0) + 1;
+            byKind[b.kind || 'flight'] = (byKind[b.kind || 'flight'] || 0) + 1;
+            if (b.status === 'issued' && b.sellAmount != null) {
+                revenue += b.sellAmount - b.netAmount;
+                revenueCurrencies.add(b.currency);
+            }
+        }
+        const contracts = await store.listContracts();
+        const compensationPending = await store.listCompensationPending(50);
+        res.json({
+            bookings: {
+                total: bookings.length, byStatus, byKind,
+                // ⚠️ صادق لا مبسَّط: الإيراد جمعُ هوامش، وإن تعددت العملات
+                // يُعلَن ذلك بدل جمع عملات مختلفة في رقم واحد كاذب
+                revenue: Math.round(revenue * 100) / 100,
+                revenueCurrencies: [...revenueCurrencies],
+                revenueMixedCurrencies: revenueCurrencies.size > 1,
+            },
+            contracts: {
+                total: contracts.length,
+                active: contracts.filter(c => c.active !== false).length,
+                roomsUsed: contracts.reduce((s, c) => s + (c.usedRooms || 0), 0),
+                roomsTotal: contracts.reduce((s, c) => s + (c.allotment || 0), 0),
+            },
+            compensationPending: compensationPending.map(b => ({
+                id: b.id, username: b.username, at: b.at, pending: b.compensation?.pending || [],
+            })),
+            config: {
+                provider: provider.name, providerMode: provider.mode || 'live',
+                staysProvider: staysBase?.name || null, staysProviderMode: staysBase?.mode || null,
+                carsEnabled: !!carsProvider,
+                markupPct, packageMarkupPct: pkgMarkupPct,
+                agentEnabled: !!agent,
+                mailReady: !!mailer?.mailReady?.(),
+                whatsappReady: !!whatsapp?.whatsappReady?.(),
+                cronConfigured: !!cronSecret,
+                webhooksConfigured: !!duffelWebhookSecret,
+            },
+        });
+    }));
+
+    app.get('/api/travel/admin/bookings', verifyToken, requireAdmin, wrap(async (req, res) => {
+        const limit = Math.min(Number(req.query.limit) || 100, 500);
+        const bookings = await store.listAllBookings(limit);
+        // للأدمن — وله وحده — يظهر الصافي والهامش: قاعدة «الصافي لا يغادر
+        // الخادم» تحمي الهامش من المسافر، والأدمن هو صاحب الهامش نفسه.
+        res.json({
+            bookings: bookings.map(b => ({
+                ...publicBooking(b),
+                username: b.username,
+                netAmount: b.netAmount,
+                margin: b.sellAmount != null ? Math.round((b.sellAmount - b.netAmount) * 100) / 100 : null,
+                compensation: b.compensation || null,
+            })),
+        });
+    }));
+
+    app.get('/api/travel/admin/contracts', verifyToken, requireAdmin, wrap(async (req, res) => {
+        res.json({ contracts: await store.listContracts() });
+    }));
+
+    app.post('/api/travel/admin/contracts', verifyToken, requireAdmin, wrap(async (req, res) => {
+        const check = normalizeContract(req.body || {});
+        if (check.error) return res.status(400).json({ error: check.error });
+        res.json({ contract: await store.createContract(check.value) });
+    }));
+
+    app.put('/api/travel/admin/contracts/:id', verifyToken, requireAdmin, wrap(async (req, res) => {
+        const existing = await store.getContract(req.params.id);
+        if (!existing) return res.status(404).json({ error: 'العقد غير موجود.' });
+        // التعديل يمرّ على نفس منقّي الإنشاء — عقدٌ لا يصلح إنشاؤه لا يصلح تعديلاً إليه
+        const check = normalizeContract({ ...existing, ...req.body });
+        if (check.error) return res.status(400).json({ error: check.error });
+        res.json({ contract: await store.updateContract(req.params.id, check.value) });
+    }));
+
+    app.delete('/api/travel/admin/contracts/:id', verifyToken, requireAdmin, wrap(async (req, res) => {
+        const deleted = await store.deleteContract(req.params.id);
+        if (!deleted) return res.status(404).json({ error: 'العقد غير موجود.' });
+        res.json({ deleted: true });
+    }));
+
+    app.post('/api/travel/admin/compensations/retry', verifyToken, requireAdmin, wrap(async (req, res) => {
+        res.json(await retryPackageCompensations({ store, staysProvider }));
     }));
 
     // ─── 🧠 ملف المسافر (الذاكرة) ─────────────────────────────────────
@@ -1444,6 +1678,8 @@ if (isMain) {
         carsProvider,
         agent,
         markupPct,
+        // أدمن البوابة: أسماء مستخدمين مفصولة بفواصل — بلا ضبط لا صفحة إدارة
+        adminUsers: String(process.env.TRAVEL_ADMIN_USERS || '').split(',').map(s => s.trim()).filter(Boolean),
         duffelWebhookSecret: process.env.DUFFEL_WEBHOOK_SECRET || null,
         cronSecret: process.env.CRON_SECRET || null,
     });
