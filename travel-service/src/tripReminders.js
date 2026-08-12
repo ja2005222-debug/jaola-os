@@ -46,6 +46,12 @@ export function isReminderDue(booking, now = Date.now()) {
     return hoursAway >= REMIND_MIN_HOURS && hoursAway <= REMIND_MAX_HOURS;
 }
 
+/** سطر المسار المختصر — متغيّر قالب واتساب الأول (بلا أسطر جديدة). */
+export function routeLine(booking) {
+    const outbound = booking.offer?.slices?.[0] || {};
+    return `${outbound.origin || '؟'} ← ${outbound.destination || '؟'} (مرجع ${booking.bookingReference || '—'})`;
+}
+
 /** يصوغ نص التذكير من بيانات الحجز — كل سطر من حقيقة مخزَّنة. */
 export function renderTripReminder({ booking, weatherLine = null }) {
     const slices = booking.offer?.slices || [];
@@ -106,14 +112,21 @@ export async function sendTripReminders({ store, notifier, now = Date.now(), fet
                 title: `⏰ تذكير برحلتك — مرجع ${booking.bookingReference || ''}`.trim(),
                 body: renderTripReminder({ booking, weatherLine }),
                 email: booking.contact?.email || null,
+                whatsappParams: [
+                    routeLine(booking),
+                    // الحقل النصّي الخام لا departureAt: تلك تُرجع ميلي‑ثانية
+                    // للمقارنة الزمنية، ونصُّها هنا مطلوب للعرض.
+                    (booking.offer?.slices?.[0]?.departAt || '').slice(0, 16).replace('T', ' ') || '—',
+                    weatherLine || 'لا توقّع طقس متاح للوجهة.',
+                ],
                 meta: { bookingId: booking.id },
             });
             // ⚠️ تُوضع العلامة حتى عند skipped (المستخدم أطفأ الفئة): وإلا
             // أُعيد الفحص والنداء كل دورة إلى الأبد لتذكير لن يُرسَل.
             // أما فشل التسليم فعلياً فيُبقيها بلا علامة لتُعاد المحاولة.
-            if (result.inApp || result.email || result.skipped) {
+            if (result.inApp || result.email || result.whatsapp || result.skipped) {
                 await store.markTripReminderSent(booking.id, now);
-                if (result.inApp || result.email) sent += 1;
+                if (result.inApp || result.email || result.whatsapp) sent += 1;
             }
         } catch (e) {
             errors.push({ bookingId: booking.id, error: e.message });

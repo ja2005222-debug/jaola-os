@@ -365,6 +365,7 @@
           <p class="note">وقائع حجوزاتك يبقى سجلها داخل البوابة دوماً — اختيارك يطال بريدها.</p>
           <div id="prefRows"></div>
           <div id="prefSaved" class="note hidden" style="color:var(--ok)">✅ حُفظ.</div>
+          <div id="waPhoneBox" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)"></div>
         </div>
       </section>
 
@@ -881,7 +882,14 @@
       try {
         const res = await api('/api/travel/notifications/prefs');
         if (!res.ok) return;
-        const { prefs, categories } = await res.json();
+        const { prefs, categories, whatsapp } = await res.json();
+        // مفتاح واتساب معطَّل حتى تتوفر شرطاه: القناة مُفعّلة على الخادم،
+        // ورقم محفوظ في الملف. مفتاحٌ يُضغط ولا يُرسل شيئاً أسوأ من غيابه.
+        const waReady = !!whatsapp?.enabled;
+        const waPhone = whatsapp?.phone || null;
+        const waUsable = waReady && !!waPhone;
+        const waHint = !waReady ? 'واتساب غير مُفعّل على الخادم'
+          : !waPhone ? 'أضف رقم واتساب أدناه أولاً' : '';
         $('prefRows').innerHTML = Object.entries(categories).map(([key, meta]) => `
           <div class="pref-row" data-cat="${esc(key)}">
             <span class="pref-name">${esc(meta.label)}</span>
@@ -893,10 +901,57 @@
               <input type="checkbox" data-ch="email" ${prefs[key].email ? 'checked' : ''} />
               بريد
             </label>
+            <label class="${waUsable ? '' : 'locked'}" title="${esc(waHint)}">
+              <input type="checkbox" data-ch="whatsapp" ${prefs[key].whatsapp ? 'checked' : ''} ${waUsable ? '' : 'disabled'} />
+              واتساب
+            </label>
           </div>`).join('');
         $('prefRows').querySelectorAll('input[type=checkbox]').forEach(cb =>
           cb.addEventListener('change', savePrefs));
+        renderWhatsAppPhone(waReady, waPhone);
       } catch { /* التبويب يبقى صالحاً بلا لوحة التفضيلات */ }
+    }
+
+    // رقم واتساب: موافقة صريحة على مراسلة شخصية — لا يُؤخذ من هاتف الحجز.
+    function renderWhatsAppPhone(ready, phone) {
+      const box = $('waPhoneBox');
+      if (!box) return;
+      if (!ready) {
+        box.innerHTML = '<p class="note">💬 تنبيهات واتساب غير مُفعّلة على هذا الخادم بعد.</p>';
+        return;
+      }
+      box.innerHTML = `
+        <label>💬 رقم واتساب (بصيغة دولية)</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input id="waPhone" placeholder="+966501234567" value="${esc(phone || '')}" style="flex:1;min-width:180px" />
+          <button class="primary" id="waSave">حفظ</button>
+          ${phone ? '<button id="waClear">إزالة</button>' : ''}
+        </div>
+        <div id="waErr" class="error hidden"></div>
+        <p class="note">يُستخدم لتنبيهات السفر فقط، ويُحذف مع ملفك متى شئت.</p>`;
+      $('waSave').addEventListener('click', () => saveWhatsAppPhone($('waPhone').value.trim()));
+      if (phone) $('waClear').addEventListener('click', () => saveWhatsAppPhone(''));
+    }
+
+    async function saveWhatsAppPhone(value) {
+      const err = $('waErr');
+      err.classList.add('hidden');
+      try {
+        const res = await api('/api/travel/profile/prefs', {
+          method: 'PUT', body: JSON.stringify({ prefs: { whatsappPhone: value || null } }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          err.textContent = data.error || 'تعذّر حفظ الرقم.';
+          err.classList.remove('hidden');
+          return;
+        }
+        // إعادة التحميل تُعيد تفعيل مفاتيح واتساب (أو تُعطّلها عند الإزالة)
+        await loadPrefs();
+      } catch {
+        err.textContent = 'تعذّر حفظ الرقم — حاول مجدداً.';
+        err.classList.remove('hidden');
+      }
     }
 
     async function savePrefs() {

@@ -20,6 +20,8 @@
  *      مسافر لمجرد أنه حجز. والمسح الكامل متاح دوماً وفوري.
  */
 
+import { isWhatsAppPhone, normalizeWhatsAppPhone } from './whatsapp.js';
+
 const CABINS = ['economy', 'premium_economy', 'business', 'first'];
 const IATA_RE = /^[A-Z]{3}$/;
 export const MAX_TRAVELLERS = 8;      // عائلة كبيرة، لا دفتر عناوين
@@ -28,7 +30,7 @@ const MAX_LABEL = 40;
 
 export function defaultProfile() {
     return {
-        prefs: { homeAirport: null, cabin: null, savePassengers: false },
+        prefs: { homeAirport: null, cabin: null, savePassengers: false, whatsappPhone: null },
         travellers: [],
         conversation: [],
     };
@@ -38,10 +40,14 @@ export function defaultProfile() {
 export function normalizePrefs(raw) {
     const homeAirport = String(raw?.homeAirport || '').trim().toUpperCase();
     const cabin = String(raw?.cabin || '').trim().toLowerCase();
+    // رقم واتساب: موافقة صريحة على مراسلة شخصية — رقم فاسد يسقط إلى null
+    // بدل أن يُخزَّن فيفشل الإرسال صامتاً كل مرة.
+    const phone = normalizeWhatsAppPhone(raw?.whatsappPhone);
     return {
         homeAirport: IATA_RE.test(homeAirport) ? homeAirport : null,
         cabin: CABINS.includes(cabin) ? cabin : null,
         savePassengers: raw?.savePassengers === true,
+        whatsappPhone: isWhatsAppPhone(phone) ? phone : null,
     };
 }
 

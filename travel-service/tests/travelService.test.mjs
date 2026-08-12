@@ -44,8 +44,9 @@ import {
 } from '../src/agent/insights.js';
 import {
     createNotifier, defaultNotificationPrefs, normalizeNotificationPrefs,
-    renderAirlineChangeNotice, isChannelEnabled,
+    renderAirlineChangeNotice, isChannelEnabled, templateNameFor,
 } from '../src/notifications.js';
+import { sendWhatsAppTemplate, whatsappReady, isWhatsAppPhone } from '../src/whatsapp.js';
 import {
     defaultProfile, normalizePrefs, normalizeTraveller, mergeProfile,
     buildAgentMemory, frequentDestinations, trimConversation, MAX_MEMORY_MESSAGES,
@@ -856,6 +857,164 @@ describe('notifications: تفضيلات المستخدم تحكم كل تنبي�
         assert.equal(prefs.booking_issued.email, true);
         assert.equal(prefs.trip_reminder.email, false);
         assert.ok(Object.values(prefs).every(p => p.inApp === true));
+        // 💬 واتساب مطفأ للجميع افتراضاً: يكلّف مالاً بكل رسالة ويصل هاتف
+        // المسافر شخصياً — تشغيله اختياره لا افتراضنا.
+        assert.ok(Object.values(prefs).every(p => p.whatsapp === false));
+    });
+
+    // ─── 💬 قناة واتساب ────────────────────────────────────────────────
+    const waStore = (prefs, profile = null) => ({
+        saved: [],
+        async getNotificationPrefs() { return prefs; },
+        async createNotification(n) { this.saved.push(n); return { id: 'n1', ...n }; },
+        async getProfile() { return profile; },
+    });
+    const waSpy = () => {
+        const calls = [];
+        return {
+            calls,
+            whatsappReady: () => true,
+            sendWhatsAppTemplate: async p => { calls.push(p); return { ok: true, id: 'wamid.1' }; },
+        };
+    };
+
+    test('💬 واتساب: يُرسل بالقالب ورقم الملف حين يُفعّله المستخدم', async () => {
+        const store = waStore(
+            { price_drop: { inApp: false, email: false, whatsapp: true } },
+            { prefs: { whatsappPhone: '+966501234567' } },
+        );
+        const wa = waSpy();
+        const notifier = createNotifier({ store, mailer: okMailer([]), whatsapp: wa, env: {} });
+        const r = await notifier.deliver({
+            username: 'u', category: 'price_drop', title: 'ت', body: 'ن',
+            whatsappParams: ['RUH → CAI', '2027-01-01', '420 USD'],
+        });
+        assert.equal(r.whatsapp, true);
+        assert.equal(wa.calls.length, 1);
+        assert.equal(wa.calls[0].to, '+966501234567');
+        assert.equal(wa.calls[0].template, 'jaola_price_drop'); // الاسم الافتراضي للفئة
+        assert.deepEqual(wa.calls[0].params, ['RUH → CAI', '2027-01-01', '420 USD']);
+    });
+
+    test('💬 واتساب: بلا متغيّرات قالب لا يُرسَل شيء (لا نخترع)', async () => {
+        const store = waStore(
+            { booking_issued: { inApp: false, email: false, whatsapp: true } },
+            { prefs: { whatsappPhone: '+966501234567' } },
+        );
+        const wa = waSpy();
+        const notifier = createNotifier({ store, mailer: okMailer([]), whatsapp: wa, env: {} });
+        const r = await notifier.deliver({ username: 'u', category: 'booking_issued', title: 'ت', body: 'ن' });
+        assert.equal(r.whatsapp, false);
+        assert.equal(wa.calls.length, 0, 'قالب بمتغيّرات ناقصة يصل نصف رسالة أو يُرفض');
+        assert.equal(r.inApp, true); // بقية القنوات لا تتأثر
+    });
+
+    test('💬 واتساب: بلا رقم محفوظ لا مراسلة — هاتف الحجز ليس إذناً', async () => {
+        const store = waStore({ price_drop: { inApp: false, email: false, whatsapp: true } }, { prefs: {} });
+        const wa = waSpy();
+        const notifier = createNotifier({ store, mailer: okMailer([]), whatsapp: wa, env: {} });
+        const r = await notifier.deliver({
+            username: 'u', category: 'price_drop', title: 'ت', body: 'ن',
+            email: 'u@t.com', whatsappParams: ['أ', 'ب', 'ج'],
+        });
+        assert.equal(r.whatsapp, false);
+        assert.equal(wa.calls.length, 0);
+    });
+
+    test('💬 واتساب: القناة المطفأة لا تُرسل ولو توفّر كل شيء', async () => {
+        const store = waStore(
+            { price_drop: { inApp: true, email: false, whatsapp: false } },
+            { prefs: { whatsappPhone: '+966501234567' } },
+        );
+        const wa = waSpy();
+        const notifier = createNotifier({ store, mailer: okMailer([]), whatsapp: wa, env: {} });
+        await notifier.deliver({
+            username: 'u', category: 'price_drop', title: 'ت', body: 'ن', whatsappParams: ['أ'],
+        });
+        assert.equal(wa.calls.length, 0);
+    });
+
+    test('💬 واتساب: اسم القالب من البيئة يسبق الافتراضي', () => {
+        assert.equal(templateNameFor('booking_issued', {}), 'jaola_booking_issued');
+        assert.equal(
+            templateNameFor('booking_issued', { WHATSAPP_TEMPLATE_BOOKING_ISSUED: 'approved_name_v3' }),
+            'approved_name_v3',
+        );
+        assert.equal(templateNameFor('فئة_مجهولة', {}), null);
+    });
+
+    // ⚠️ الفخّ الذي يظهر عند أول إرسال حقيقي: Meta ترفض متغيّراً يحوي
+    // سطراً جديداً أو أكثر من أربع مسافات — ونصوصنا متعددة الأسطر أصلاً.
+    test('💬 واتساب: متغيّر القالب يُسطَّح ويُقصّ قبل الإرسال', async () => {
+        let sent = null;
+        const fetchImpl = async (url, opts) => {
+            sent = { url, body: JSON.parse(opts.body) };
+            return { ok: true, status: 200, text: async () => JSON.stringify({ messages: [{ id: 'wamid.9' }] }) };
+        };
+        const env = { WHATSAPP_TOKEN: 't', WHATSAPP_PHONE_NUMBER_ID: '123' };
+        const r = await sendWhatsAppTemplate(
+            { to: '00966501234567', template: 'jaola_test', params: ['سطر\nثانٍ    بمسافات', 'ب'] },
+            { env, fetchImpl },
+        );
+        assert.equal(r.ok, true);
+        assert.equal(r.id, 'wamid.9');
+        const params = sent.body.template.components[0].parameters;
+        assert.equal(params[0].text, 'سطر ثانٍ بمسافات'); // بلا سطر جديد ولا مسافات متتالية
+        assert.ok(!/\n/.test(params[0].text));
+        assert.equal(sent.body.to, '+966501234567');      // 00 الدولية → +
+        assert.equal(sent.body.messaging_product, 'whatsapp');
+        assert.equal(sent.body.type, 'template');
+        assert.ok(sent.url.includes('/123/messages'));
+    });
+
+    test('💬 واتساب: بلا مفاتيح لا نداء شبكة أصلاً', async () => {
+        let called = false;
+        const r = await sendWhatsAppTemplate(
+            { to: '+966501234567', template: 'x', params: ['أ'] },
+            { env: {}, fetchImpl: async () => { called = true; } },
+        );
+        assert.equal(r.notConfigured, true);
+        assert.equal(called, false);
+        assert.equal(whatsappReady({}), false);
+        assert.equal(whatsappReady({ WHATSAPP_TOKEN: 't' }), false); // مفتاح واحد لا يكفي
+        assert.equal(whatsappReady({ WHATSAPP_TOKEN: 't', WHATSAPP_PHONE_NUMBER_ID: '1' }), true);
+    });
+
+    test('💬 واتساب: رفض Meta يُكشف بتفصيله ولا يرمي', async () => {
+        const env = { WHATSAPP_TOKEN: 't', WHATSAPP_PHONE_NUMBER_ID: '123' };
+        const fetchImpl = async () => ({
+            ok: false, status: 400,
+            text: async () => JSON.stringify({ error: { message: 'Template name does not exist' } }),
+        });
+        const r = await sendWhatsAppTemplate({ to: '+966501234567', template: 'ghost', params: ['أ'] }, { env, fetchImpl });
+        assert.match(r.error, /Template name does not exist/);
+        assert.ok(!r.ok);
+        // رد ليس JSON (طبقة أمامية) لا يضيع سببه
+        const html = async () => ({ ok: false, status: 502, text: async () => '<html>Bad Gateway</html>' });
+        const r2 = await sendWhatsAppTemplate({ to: '+966501234567', template: 'x', params: ['أ'] }, { env, fetchImpl: html });
+        assert.match(r2.error, /Bad Gateway/);
+    });
+
+    test('💬 واتساب: رقم فاسد يُرفض ولا يُخزَّن في الملف', () => {
+        assert.equal(isWhatsAppPhone('+966501234567'), true);
+        assert.equal(isWhatsAppPhone('00966501234567'), true);  // الدولية تُطبَّع
+        assert.equal(isWhatsAppPhone('0501234567'), false);      // بلا رمز دولة
+        assert.equal(isWhatsAppPhone('+0501234567'), false);     // رمز دولة يبدأ بصفر
+        assert.equal(isWhatsAppPhone(''), false);
+        assert.equal(normalizePrefs({ whatsappPhone: '+966 50 123 4567' }).whatsappPhone, '+966501234567');
+        assert.equal(normalizePrefs({ whatsappPhone: 'رقم' }).whatsappPhone, null);
+        assert.equal(normalizePrefs({}).whatsappPhone, null);
+    });
+
+    // 🔒 الخط الأحمر القائم: الهاتف بيانات شخصية لا تصل النموذج اللغوي
+    test('🔒 رقم واتساب لا يتسرّب إلى ذاكرة الايجنت', () => {
+        const memory = buildAgentMemory({
+            prefs: { homeAirport: 'RUH', cabin: 'economy', whatsappPhone: '+966501234567' },
+            travellers: [{ label: 'أحمد' }],
+        }, []);
+        assert.ok(memory.includes('RUH'));
+        assert.ok(!memory.includes('966501234567'), 'الهاتف بيانات شخصية كالجواز');
+        assert.ok(!memory.includes('whatsapp'));
     });
 
     test('إطفاء القناتين → لا تسليم ولا كتابة (skipped)', async () => {
@@ -865,7 +1024,7 @@ describe('notifications: تفضيلات المستخدم تحكم كل تنبي�
         const r = await notifier.deliver({
             username: 'u', category: 'price_drop', title: 'ت', body: 'ن', email: 'u@t.com',
         });
-        assert.deepEqual(r, { inApp: false, email: false, skipped: true });
+        assert.deepEqual(r, { inApp: false, email: false, whatsapp: false, skipped: true });
         assert.equal(store.saved.length, 0);
         assert.equal(sent.length, 0);
     });

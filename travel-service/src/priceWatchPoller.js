@@ -21,7 +21,7 @@ import { createNotifier, renderPriceDropNotice } from './notifications.js';
  */
 function watchIsDone(delivery) {
     if (!delivery) return false;
-    return delivery.inApp || delivery.email || delivery.skipped;
+    return delivery.inApp || delivery.email || delivery.whatsapp || delivery.skipped;
 }
 
 function cheapestSellAmount(offers, markupPct) {
@@ -84,9 +84,14 @@ export async function checkWatches({ store, provider, markupPct, mailer = { send
                         targetPrice: watch.targetPrice,
                     }),
                     email: watch.contactEmail || null,
+                    whatsappParams: [
+                        `${watch.origin} → ${watch.destination}`,
+                        watch.departDate,
+                        `${price} ${currency}`,
+                    ],
                     meta: { watchId: watch.id, price, currency },
                 });
-                if (delivery.inApp || delivery.email) notified += 1;
+                if (delivery.inApp || delivery.email || delivery.whatsapp) notified += 1;
             }
 
             await store.updatePriceWatch(watch.id, {
