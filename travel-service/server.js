@@ -42,6 +42,7 @@ import { sendTripReminders } from './src/tripReminders.js';
 import { getDestinationWeather, convertCurrency, MAX_FORECAST_DAYS_AHEAD } from './src/travelInfo.js';
 import { buildTopDestinations, CURATED_DESTINATIONS } from './src/topDestinations.js';
 import { sendMail, mailReady } from './src/mailer.js';
+import { sendWhatsAppTemplate, whatsappReady, isWhatsAppPhone } from './src/whatsapp.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -384,6 +385,7 @@ export function createApp({
     markupPct = readMarkupPct(),
     travelInfoFetch = fetch, // قابل للحقن في الاختبارات (طقس/عملة بلا شبكة حقيقية)
     mailer = { sendMail, mailReady }, // قابل للحقن في الاختبارات (نفس نمط priceWatchPoller.js)
+    whatsapp = { sendWhatsAppTemplate, whatsappReady }, // نفس العقد بالضبط — قناة لا تعرفها deliver عن أختها
     duffelWebhookSecret = null, // بلا هذا: مسار الـwebhook يرد 503 بوضوح
     cronSecret = null,          // وبلا هذا: مسار المُطلِق الزمني يرد 503
 }) {
@@ -419,9 +421,9 @@ export function createApp({
     // ⚠️ صياغة الايجنت تُمرَّر للتنبيهات الحدثية فقط (تغيير طيران، انخفاض
     // سعر). تأكيد الحجز وإلغاؤه يبقيان بالنص الحتمي حرفياً: إيصالٌ بمبلغ
     // ومرجع لا يُعاد صوغه بنموذج لغوي.
-    const notifier = createNotifier({ store, mailer });
+    const notifier = createNotifier({ store, mailer, whatsapp });
     const eventNotifier = createNotifier({
-        store, mailer,
+        store, mailer, whatsapp,
         phrase: agent ? text => agent.phraseNotice(text) : null,
     });
 
@@ -432,6 +434,13 @@ export function createApp({
             title: `✅ تأكيد حجزك — مرجع ${booking.bookingReference}`,
             body: `تم تأكيد حجزك بنجاح.\n\n${bookingSummaryLine(booking)}\nالمرجع: ${booking.bookingReference}\nالإجمالي: ${booking.sellAmount} ${booking.currency}\n\nراجع كل حجوزاتك من بوابة السفر.`,
             email: booking?.contact?.email || null,
+            // متغيّرات القالب بترتيبها المعتمَد {{1}}{{2}}{{3}} — تُغيَّر
+            // بتغيير القالب لدى Meta معاً، لا هنا وحدها.
+            whatsappParams: [
+                bookingSummaryLine(booking),
+                booking.bookingReference || '—',
+                `${booking.sellAmount} ${booking.currency}`,
+            ],
             meta: { bookingId: booking.id },
         });
     }
@@ -445,6 +454,7 @@ export function createApp({
             title: `↩️ تم إلغاء حجزك — مرجع ${booking.bookingReference}`,
             body: `تم إلغاء حجزك.\n\n${bookingSummaryLine(booking)}\nالمرجع: ${booking.bookingReference}\n${refundLine}`,
             email: booking?.contact?.email || null,
+            whatsappParams: [bookingSummaryLine(booking), booking.bookingReference || '—', refundLine],
             meta: { bookingId: booking.id },
         });
     }
@@ -476,6 +486,13 @@ export function createApp({
                 warnings,
             }),
             email: booking?.contact?.email || null,
+            // النص المُرسَل هنا يمرّ على النموذج لإعادة الصياغة — ومتغيّرات
+            // واتساب لا تمرّ عليه: القالب المعتمَد نصّه ثابت.
+            whatsappParams: [
+                bookingSummaryLine(booking),
+                booking.bookingReference || '—',
+                warnings.length > 0 ? `وهذا يصطدم بـ${warnings.length} من حجوزاتك — راجع البوابة.` : 'لا تعارض مع بقية حجوزاتك.',
+            ],
             meta: { bookingId: booking.id, conflicts: warnings.length },
         });
     }
@@ -1301,6 +1318,12 @@ export function createApp({
     app.put('/api/travel/profile/prefs', verifyToken, wrap(async (req, res) => {
         const username = userOf(req);
         const current = await loadProfile(username);
+        // رقم فاسد يسقط إلى null في التنقية — وسقوطه صامتاً يترك المستخدم
+        // يظن أنه فعّل واتساب بينما لا رقم محفوظاً. يُقال له صراحةً.
+        const rawPhone = req.body?.prefs?.whatsappPhone;
+        if (rawPhone && !isWhatsAppPhone(rawPhone)) {
+            return res.status(400).json({ error: PHONE_HINT });
+        }
         const next = mergeProfile(current, { prefs: req.body?.prefs || {} });
         await store.setProfile(username, next);
         res.json({ prefs: next.prefs });
@@ -1367,9 +1390,16 @@ export function createApp({
 
     app.get('/api/travel/notifications/prefs', verifyToken, wrap(async (req, res) => {
         const stored = await store.getNotificationPrefs(userOf(req));
+        // الواجهة تحتاج تعرف هل القناة صالحة أصلاً: مفتاح غير مضبوط على
+        // الخادم، أو رقم لم يُسجَّل — كلاهما يجعل المفتاح كذبة بصرية.
+        const profile = await loadProfile(userOf(req));
         res.json({
             prefs: stored ? normalizeNotificationPrefs(stored) : defaultNotificationPrefs(),
             categories: NOTIFICATION_CATEGORIES,
+            whatsapp: {
+                enabled: !!whatsapp?.whatsappReady?.(),
+                phone: profile.prefs?.whatsappPhone || null,
+            },
         });
     }));
 
