@@ -15,6 +15,13 @@
  * في readPackageMarkupPct)، و«وفّر X» **يُحسب** من السعرين الفعليين:
  * مجموع بيعِ المكوّنين منفصلَين ناقص بيع الباقة — لا عبارة تسويقية.
  *
+ * ⚠️ ومنذ فصل هامش الفئات (طيران/فندق منفصلان — راجع pricing.js) صار
+ * "بيع المكوّنين منفصلَين" له هامشان مختلفان محتملان لا واحد: `flight
+ * MarkupPct` و`stayMarkupPct` كلٌّ بقيمته الفعلية، لا رقم واحد مُبلَّط.
+ * والفندق المتعاقَد يذهب أبعد: هامشه الخاص (`stay.marginPct`) إن وُجد
+ * يتقدّم حتى على `stayMarkupPct` العام — فـ«ما كنت لتدفعه منفصلاً» يبقى
+ * صادقاً بالضبط لما كنت لتدفعه فعلاً، لا تقريباً.
+ *
  * حين يفشل التعويض نفسه (فشل الطيران ثم فشل إلغاء الفندق): لا حلقة
  * انتظار تحبس الطلب — الأب `failed` مع `compensation.pending`، الابن
  * الفندقي يبقى `issued` لأنه فعلاً مُصدَر (الكذب عليه في القاعدة أسوأ من
@@ -31,7 +38,7 @@ const httpError = (status, message) => Object.assign(new Error(message), { statu
  * العرضان موجودان، العملة واحدة، الفندق قابل للإلغاء.
  * الفشل هنا أرخص فشل ممكن: لا حجز جرى ولا تعويض يلزم.
  */
-export async function quotePackage({ provider, staysProvider, flightOfferId, stayOfferId, markupPct, packageMarkupPct }) {
+export async function quotePackage({ provider, staysProvider, flightOfferId, stayOfferId, flightMarkupPct, stayMarkupPct, packageMarkupPct }) {
     const flight = await provider.getOffer(String(flightOfferId || ''));
     if (!flight) throw httpError(404, 'عرض الطيران غير موجود أو انتهت صلاحيته — أعد البحث.');
     const stay = await staysProvider.getQuote(String(stayOfferId || ''));
@@ -45,8 +52,12 @@ export async function quotePackage({ provider, staysProvider, flightOfferId, sta
     }
     const netTotal = round2(flight.netAmount + stay.netAmount);
     const sellAmount = applyMarkup(netTotal, packageMarkupPct);
+    // فندق متعاقَد بهامش خاص (stay.marginPct) يتقدّم على stayMarkupPct
+    // العام — نفس أسبقية server.js/publicOffer، مكرَّرة هنا لأن الباقات
+    // تحسب هذا بمعزل عن publicOffer (لا تمرّ عرض الفندق عبرها).
+    const effectiveStayMarkupPct = stay.marginPct != null ? stay.marginPct : stayMarkupPct;
     const separateTotal = round2(
-        applyMarkup(flight.netAmount, markupPct) + applyMarkup(stay.netAmount, markupPct)
+        applyMarkup(flight.netAmount, flightMarkupPct) + applyMarkup(stay.netAmount, effectiveStayMarkupPct)
     );
     // «وفّر X» محسوب لا مكتوب — وإن لم يكن موجباً (تقريب سنتات على مبالغ
     // ضئيلة) لا يُدّعى توفير أصلاً
@@ -62,7 +73,7 @@ export async function quotePackage({ provider, staysProvider, flightOfferId, sta
 /** ملخّصا العرضين المخزَّنان على الحجوزات — بلا صافٍ ولا معرّفات مزوّد داخلية. */
 function publicSummaries(q) {
     const { netAmount: _nf, passengerIds: _ids, passengers: _pax, ...flightSummary } = q.flight;
-    const { netAmount: _ns, ...staySummary } = q.stay;
+    const { netAmount: _ns, marginPct: _mp, ...staySummary } = q.stay;
     return { flightSummary, staySummary };
 }
 
@@ -74,11 +85,11 @@ function publicSummaries(q) {
 export async function bookPackage({
     store, provider, staysProvider,
     username, flightOfferId, stayOfferId, passengers, contact,
-    markupPct, packageMarkupPct,
+    flightMarkupPct, stayMarkupPct, packageMarkupPct,
     validatePassengers, validateGuests, checkPassengerAges,
     onCompensationStuck = null, // async (parent, stayChild) — تنبيه الأدمن
 }) {
-    const q = await quotePackage({ provider, staysProvider, flightOfferId, stayOfferId, markupPct, packageMarkupPct });
+    const q = await quotePackage({ provider, staysProvider, flightOfferId, stayOfferId, flightMarkupPct, stayMarkupPct, packageMarkupPct });
 
     const checkP = validatePassengers({ passengers, contact }, q.flight.passengerCount);
     if (checkP.error) throw httpError(400, checkP.error);

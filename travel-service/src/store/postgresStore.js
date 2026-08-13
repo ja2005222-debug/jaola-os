@@ -112,8 +112,12 @@ CREATE TABLE IF NOT EXISTS travel_hotel_contracts (
     start_date    TEXT NOT NULL,
     end_date      TEXT NOT NULL,
     blackout_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-    active        BOOLEAN NOT NULL DEFAULT TRUE
+    active        BOOLEAN NOT NULL DEFAULT TRUE,
+    margin_pct    NUMERIC(5,2)
 );
+-- عقود سابقة على هذا العمود (تثبيت قديم) — NULL تعني «ورّث هامش الفنادق
+-- الافتراضي»، وهو نفس سلوكها قبل وجود العمود أصلاً فلا تغيير سعر صامت.
+ALTER TABLE travel_hotel_contracts ADD COLUMN IF NOT EXISTS margin_pct NUMERIC(5,2);
 CREATE INDEX IF NOT EXISTS travel_hotel_contracts_iata_idx ON travel_hotel_contracts (iata);
 
 -- كل حجز من عقد = تخصيص غرفة/غرف. الإلغاء يعيدها للحصة.
@@ -175,6 +179,7 @@ function rowToContract(r) {
         endDate: r.end_date,
         blackoutDates: r.blackout_json || [],
         active: r.active,
+        marginPct: r.margin_pct != null ? Number(r.margin_pct) : null,
     };
 }
 
@@ -385,12 +390,13 @@ export function createPostgresStore({ connectionString }) {
                 const res = await c.query(
                     `INSERT INTO travel_hotel_contracts
                      (id, at, updated_at, hotel_name, city, iata, net_per_night, currency,
-                      allotment, used_rooms, start_date, end_date, blackout_json, active)
-                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$10,$11,$12,$13) RETURNING *`,
+                      allotment, used_rooms, start_date, end_date, blackout_json, active, margin_pct)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$10,$11,$12,$13,$14) RETURNING *`,
                     [id, now, now, cData.hotelName, cData.city || null, cData.iata,
                         cData.netPerNight, cData.currency, cData.allotment,
                         cData.startDate, cData.endDate,
-                        JSON.stringify(cData.blackoutDates || []), cData.active !== false]
+                        JSON.stringify(cData.blackoutDates || []), cData.active !== false,
+                        cData.marginPct ?? null]
                 );
                 return rowToContract(res.rows[0]);
             });
@@ -418,7 +424,7 @@ export function createPostgresStore({ connectionString }) {
                 hotelName: 'hotel_name', city: 'city', iata: 'iata',
                 netPerNight: 'net_per_night', currency: 'currency',
                 allotment: 'allotment', startDate: 'start_date', endDate: 'end_date',
-                active: 'active',
+                active: 'active', marginPct: 'margin_pct',
             };
             for (const [key, col] of Object.entries(cols)) {
                 if (key in patch) { sets.push(`${col} = $${i++}`); vals.push(patch[key]); }
