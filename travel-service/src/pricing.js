@@ -12,12 +12,36 @@
 
 export const DEFAULT_MARKUP_PCT = 8;
 export const DEFAULT_PACKAGE_MARKUP_PCT = 5; // قرار المالك: خصم حقيقي من التنازل عن جزء من العمولة
-const MAX_MARKUP_PCT = 50; // فوق هذا غالباً خطأ إعداد لا قرار تسعير
+export const MAX_MARKUP_PCT = 50; // فوق هذا غالباً خطأ إعداد لا قرار تسعير — مُصدَّرة ليستعملها contracts.js بلا سقف مكرَّر
 
 /** يقرأ نسبة الهامش من البيئة — قيمة فاسدة/سالبة/مبالغة تقع على الافتراضي. */
 export function readMarkupPct(env = process.env) {
     const raw = Number(env.TRAVEL_MARKUP_PCT);
     if (!Number.isFinite(raw) || raw < 0 || raw > MAX_MARKUP_PCT) return DEFAULT_MARKUP_PCT;
+    return raw;
+}
+
+/**
+ * هامش كل فئة منتج (طيران/فندق/سيارة) قابل للتخصيص على حدة — قبل هذا
+ * كانت applyMarkup(x, markupPct) تُنادى بنفس الرقم للثلاثة حرفياً
+ * (تحقّقتُ من كل نداء في server.js): لا فصل أصلاً بين هامش الطيران
+ * والفندق، فسؤال «هل نفصلهما» لم يكن اختياراً بل كان عطباً قائماً.
+ *
+ * وبلا أي متغيّر بيئة جديد **لا يتغيّر شيء**: تسقط الفئة على `defaultPct`
+ * الذي يمرّره الطالب (غالباً الهامش العام نفسه) — من لم يلمس الإعداد
+ * الجديد لا يتغيّر سعره حرفاً واحداً. هذا توافق خلفي مقصود لا مصادفة.
+ */
+export const CATEGORY_MARKUP_ENV = {
+    flight: 'TRAVEL_MARKUP_PCT_FLIGHT',
+    stay: 'TRAVEL_MARKUP_PCT_STAY',
+    car: 'TRAVEL_MARKUP_PCT_CAR',
+};
+
+export function readCategoryMarkupPct(category, env = process.env, defaultPct = DEFAULT_MARKUP_PCT) {
+    const envVar = CATEGORY_MARKUP_ENV[category];
+    if (!envVar) return defaultPct; // فئة مجهولة — لا تخمين
+    const raw = Number(env[envVar]);
+    if (!Number.isFinite(raw) || raw < 0 || raw > MAX_MARKUP_PCT) return defaultPct;
     return raw;
 }
 

@@ -39,6 +39,10 @@ function offerFromContract(contract, { checkInDate, checkOutDate, adults, rooms 
         // إعادة الغرفة لحصتنا لا تكلّفنا شيئاً.
         cancellable: true,
         contracted: true, // 🤝 شارة «سعر خاص» في الواجهة
+        // هامش هذا العقد بعينه إن ضبطه المالك — server.js يفضّله على
+        // هامش الفنادق العام (publicOffer/doBookStay). null = يرث الهامش
+        // العام كأي فندق آخر. لا يصل الواجهة أبداً (يُستهلك خادمياً فقط).
+        marginPct: contract.marginPct ?? null,
         boardName: null,
         maxOccupancy: null,
         cancelPolicy: [],

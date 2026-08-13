@@ -14,7 +14,17 @@
  * معرّف العرض **يُعاد بناؤه من مكوّناته** (`ctr_<عقد>_<وصول>_<مغادرة>_
  * <بالغون>_<غرف>`) بدل خريطة في الذاكرة: إعادة تشغيل الخادم بين البحث
  * والحجز لا تُفقد العرض — بخلاف مزوّدات المحاكاة التي تتعمّد الذاكرة.
+ *
+ * 🎚️ هامش كل عقد قابل للتخصيص على حدة (`marginPct`، اختياري): كل عقد
+ * أصلاً مساومة فردية على السعر الصافي — فهامش فردي امتدادٌ طبيعي لنفس
+ * الفكرة لا مفهومٌ جديد، خلافاً لهامش الفئات (طيران/فندق/سيارة) الذي
+ * يبقى بمتغيّر بيئة (راجع pricing.js). و`null` تعني «ورّث هامش الفنادق
+ * الافتراضي» — لا سقفاً اتجاهياً هنا (لا يُشترط أن يكون أدنى من العام):
+ * فندق حصري نادر المقارنة قد يستحق هامشاً **أعلى** من المعتاد، والمالك
+ * يقرّره صراحةً لا البنية.
  */
+
+import { MAX_MARKUP_PCT } from './pricing.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const IATA_RE = /^[A-Z]{3}$/;
@@ -48,6 +58,14 @@ export function normalizeContract(raw) {
         return { error: 'تاريخا بداية العقد ونهايته بصيغة YYYY-MM-DD.' };
     }
     if (endDate <= startDate) return { error: 'نهاية العقد يجب أن تكون بعد بدايته.' };
+    let marginPct = null;
+    if (raw?.marginPct !== null && raw?.marginPct !== undefined && raw?.marginPct !== '') {
+        const m = Number(raw.marginPct);
+        if (!Number.isFinite(m) || m < 0 || m > MAX_MARKUP_PCT) {
+            return { error: `هامش الفندق الخاص بين 0 و${MAX_MARKUP_PCT} (أو اتركه فارغاً ليرث هامش الفنادق).` };
+        }
+        marginPct = m;
+    }
     const blackoutRaw = raw?.blackoutDates;
     const blackoutDates = [];
     if (blackoutRaw != null) {
@@ -63,7 +81,7 @@ export function normalizeContract(raw) {
             hotelName,
             city: String(raw?.city || '').trim().slice(0, MAX_NAME) || null,
             iata, netPerNight, currency, allotment, startDate, endDate,
-            blackoutDates,
+            blackoutDates, marginPct,
             active: raw?.active !== false,
         },
     };

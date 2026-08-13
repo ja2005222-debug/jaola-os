@@ -18,7 +18,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { buildVerifyToken } from './src/auth.js';
-import { readMarkupPct, readPackageMarkupPct, applyMarkup } from './src/pricing.js';
+import { readMarkupPct, readPackageMarkupPct, readCategoryMarkupPct, applyMarkup } from './src/pricing.js';
 import { quotePackage, bookPackage, cancelPackage, retryPackageCompensations } from './src/packages.js';
 import { normalizeContract } from './src/contracts.js';
 import { createContractedStaysProvider, withContractedStays } from './src/providers/contractedStaysProvider.js';
@@ -344,9 +344,19 @@ function publicPassengers(passengers) {
     return passengers.map(p => ({ type: p.type ?? null, age: p.age ?? null }));
 }
 
-function publicOffer(offer, markupPct) {
-    const { netAmount, passengerIds, passengers, ...rest } = offer;
-    const pub = { ...rest, sellAmount: applyMarkup(netAmount, markupPct) };
+/**
+ * الهامش الفعلي لعرض بعينه: عقد فندقي بهامش خاص (`offer.marginPct`)
+ * يتقدّم على هامش فئته العام — امتداد المستوى الثاني من التحكّم
+ * (لكل عقد على حدة) فوق المستوى الأول (لكل فئة منتج). `null` يعني لم
+ * يُخصَّص شيء فيسقط على `categoryPct` كأي عرض آخر من نفس الفئة.
+ */
+function effectiveMarkupPct(offer, categoryPct) {
+    return offer.marginPct != null ? offer.marginPct : categoryPct;
+}
+
+function publicOffer(offer, categoryPct) {
+    const { netAmount, passengerIds, passengers, marginPct: _mp, ...rest } = offer;
+    const pub = { ...rest, sellAmount: applyMarkup(netAmount, effectiveMarkupPct(offer, categoryPct)) };
     const safe = publicPassengers(passengers);
     if (safe) pub.passengers = safe;
     return pub;
@@ -391,9 +401,12 @@ export function createApp({
     staysProvider = null,
     carsProvider = null,
     agent = null,
-    markupPct = readMarkupPct(),
-    packageMarkupPct = null,     // يُشتق من markupPct إن لم يُمرَّر — محروس أدنى منه
-    adminUsers = [],             // أسماء مستخدمي الأدمن (من TRAVEL_ADMIN_USERS)
+    markupPct = readMarkupPct(),  // الافتراض العام: تسقط عليه كل فئة لم تُخصَّص لها قيمة
+    flightMarkupPct = null,       // يُشتق من markupPct إن لم يُمرَّر (TRAVEL_MARKUP_PCT_FLIGHT)
+    stayMarkupPct = null,         // كذلك (TRAVEL_MARKUP_PCT_STAY) — وفندق التعاقد يتقدّم عليه بهامشه الخاص إن وُجد
+    carMarkupPct = null,          // كذلك (TRAVEL_MARKUP_PCT_CAR)
+    packageMarkupPct = null,      // يُشتق من markupPct إن لم يُمرَّر — محروس أدنى منه
+    adminUsers = [],              // أسماء مستخدمي الأدمن (من TRAVEL_ADMIN_USERS)
     travelInfoFetch = fetch, // قابل للحقن في الاختبارات (طقس/عملة بلا شبكة حقيقية)
     mailer = { sendMail, mailReady }, // قابل للحقن في الاختبارات (نفس نمط priceWatchPoller.js)
     whatsapp = { sendWhatsAppTemplate, whatsappReady }, // نفس العقد بالضبط — قناة لا تعرفها deliver عن أختها
@@ -414,10 +427,21 @@ export function createApp({
     const verifyToken = buildVerifyToken(jwtSecret);
     const userOf = req => String(req.user?.username || '').trim().toLowerCase();
 
-    // هامش الباقة النهائي — الحارس في readPackageMarkupPct يضمنه أدنى من العادي
-    const pkgMarkupPct = packageMarkupPct != null && packageMarkupPct < markupPct
+    // 🎚️ المستوى الأول: هامش كل فئة منتج على حدة — قبل هذا كانت applyMarkup
+    // تُنادى بنفس markupPct للطيران والفندق والسيارة حرفياً في كل مسار
+    // (تحقّق: كل نداء applyMarkup في هذا الملف). بلا أي متغيّر بيئة جديد
+    // تتساوى الثلاثة بـmarkupPct كما كانت — توافق خلفي كامل.
+    const flightMkt = flightMarkupPct != null ? flightMarkupPct : readCategoryMarkupPct('flight', process.env, markupPct);
+    const stayMkt = stayMarkupPct != null ? stayMarkupPct : readCategoryMarkupPct('stay', process.env, markupPct);
+    const carMkt = carMarkupPct != null ? carMarkupPct : readCategoryMarkupPct('car', process.env, markupPct);
+
+    // هامش الباقة النهائي — محروس أن يبقى أدنى من **الأضيق** بين هامشَي
+    // مكوّنَيها (لا الهامش العام وحده): فبعد فصل الفئات لم يعد هناك رقم
+    // واحد يمثّل «الهامش العادي»، والضمان يجب أن يصمد أمام كليهما معاً.
+    const pkgCeiling = Math.min(flightMkt, stayMkt);
+    const pkgMarkupPct = packageMarkupPct != null && packageMarkupPct < pkgCeiling
         ? packageMarkupPct
-        : readPackageMarkupPct(process.env, markupPct);
+        : readPackageMarkupPct(process.env, pkgCeiling);
 
     // مزوّد الفنادق المُركَّب: عقودنا المباشرة أولاً ثم المزوّد العام —
     // التوجيه ببادئة المعرّف، وفشل جانبٍ لا يُسقط الآخر.
@@ -554,7 +578,7 @@ export function createApp({
         if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
         try {
             const offers = await provider.searchOffers(check.values);
-            return offers.map(o => publicOffer(o, markupPct));
+            return offers.map(o => publicOffer(o, flightMkt));
         } catch (e) {
             // بلا هذا: رفض المزوّد (403 Duffel، خطأ LiteAPI...) يسقط كخطأ
             // 500 عام مبهم — التفصيل الفعلي يضيع رغم وجوده (راجع تعليق
@@ -565,7 +589,7 @@ export function createApp({
 
     async function doGetOffer(offerId) {
         const offer = await provider.getOffer(String(offerId || ''));
-        return offer ? publicOffer(offer, markupPct) : null;
+        return offer ? publicOffer(offer, flightMkt) : null;
     }
 
     async function doBook(username, { offerId, passengers, contact }) {
@@ -585,7 +609,7 @@ export function createApp({
         });
         if (ageError) throw Object.assign(new Error(ageError), { status: 400 });
 
-        const sellAmount = applyMarkup(offer.netAmount, markupPct);
+        const sellAmount = applyMarkup(offer.netAmount, flightMkt);
         // ملخص العرض المخزَّن على الحجز: بلا صافٍ ولا معرّفات مزوّد داخلية
         const { netAmount: _net, passengerIds: _ids, passengers: _pax, ...offerSummary } = offer;
         const booking = await createBooking(store, {
@@ -649,7 +673,7 @@ export function createApp({
         if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
         try {
             const offers = await staysProvider.searchStays(check.values);
-            return offers.map(o => publicOffer(o, markupPct));
+            return offers.map(o => publicOffer(o, stayMkt));
         } catch (e) {
             throw Object.assign(new Error(`تعذّر بحث الفنادق: ${e.message}`), { status: 502 });
         }
@@ -658,7 +682,7 @@ export function createApp({
     async function doGetStayOffer(offerId) {
         requireStays();
         const offer = await staysProvider.getStayOffer(String(offerId || ''));
-        return offer ? publicOffer(offer, markupPct) : null;
+        return offer ? publicOffer(offer, stayMkt) : null;
     }
 
     // تفاصيل الفندق للعرض فقط (بلا أسعار — الأسعار حصراً من مسار البحث
@@ -689,8 +713,11 @@ export function createApp({
         const check = validateGuests({ guests, contact });
         if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
 
-        const sellAmount = applyMarkup(offer.netAmount, markupPct);
-        const { netAmount: _net, ...offerSummary } = offer;
+        // فندق التعاقد يتقدّم بهامشه الخاص إن ضبطه المالك — نفس منطق
+        // publicOffer، مكرَّر هنا لأن الحجز لا يمرّ عبرها (نداء مباشر لـ
+        // applyMarkup لا عبر عرض بحث مُطبَّع).
+        const sellAmount = applyMarkup(offer.netAmount, effectiveMarkupPct(offer, stayMkt));
+        const { netAmount: _net, marginPct: _mp, ...offerSummary } = offer;
         const booking = await createBooking(store, {
             username, provider: staysProvider.name, kind: 'stay',
             offer: offerSummary,
@@ -746,7 +773,7 @@ export function createApp({
         if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
         try {
             const offers = await carsProvider.searchCars(check.values);
-            return offers.map(o => publicOffer(o, markupPct));
+            return offers.map(o => publicOffer(o, carMkt));
         } catch (e) {
             throw Object.assign(new Error(`تعذّر بحث السيارات: ${e.message}`), { status: 502 });
         }
@@ -755,7 +782,7 @@ export function createApp({
     async function doGetCarOffer(offerId) {
         requireCars();
         const offer = await carsProvider.getCarOffer(String(offerId || ''));
-        return offer ? publicOffer(offer, markupPct) : null;
+        return offer ? publicOffer(offer, carMkt) : null;
     }
 
     async function doBookCar(username, { offerId, drivers, contact }) {
@@ -767,7 +794,7 @@ export function createApp({
         const check = validateDrivers({ drivers, contact });
         if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
 
-        const sellAmount = applyMarkup(offer.netAmount, markupPct);
+        const sellAmount = applyMarkup(offer.netAmount, carMkt);
         const { netAmount: _net, ...offerSummary } = offer;
         const booking = await createBooking(store, {
             username, provider: carsProvider.name, kind: 'car',
@@ -860,7 +887,7 @@ export function createApp({
                     const offers = await provider.searchOffers({ origin: originU, destination: destU, departDate: date, adults: 1, childrenDobs: [], cabin: cab });
                     if (offers.length === 0) return { date, price: null, currency: null };
                     const cheapestNet = Math.min(...offers.map(o => o.netAmount));
-                    return { date, price: applyMarkup(cheapestNet, markupPct), currency: offers[0].currency };
+                    return { date, price: applyMarkup(cheapestNet, flightMkt), currency: offers[0].currency };
                 } catch {
                     return { date, price: null, currency: null };
                 }
@@ -1229,7 +1256,7 @@ export function createApp({
     /** التقييم للعميل: أرقام البيع فقط — الصافي وتقسيمه الداخلي لا يغادران الخادم. */
     function publicQuote(q) {
         const { netAmount: _nf, passengerIds: _ids, passengers, ...flight } = q.flight;
-        const { netAmount: _ns, ...stay } = q.stay;
+        const { netAmount: _ns, marginPct: _mp, ...stay } = q.stay;
         return {
             flight: { ...flight, passengers: publicPassengers(passengers) },
             stay,
@@ -1248,7 +1275,7 @@ export function createApp({
             const q = await quotePackage({
                 provider, staysProvider,
                 flightOfferId: req.body?.flightOfferId, stayOfferId: req.body?.stayOfferId,
-                markupPct, packageMarkupPct: pkgMarkupPct,
+                flightMarkupPct: flightMkt, stayMarkupPct: stayMkt, packageMarkupPct: pkgMarkupPct,
             });
             res.json({ quote: publicQuote(q) });
         } catch (e) {
@@ -1265,7 +1292,7 @@ export function createApp({
                 username: userOf(req),
                 flightOfferId: req.body?.flightOfferId, stayOfferId: req.body?.stayOfferId,
                 passengers: req.body?.passengers, contact: req.body?.contact,
-                markupPct, packageMarkupPct: pkgMarkupPct,
+                flightMarkupPct: flightMkt, stayMarkupPct: stayMkt, packageMarkupPct: pkgMarkupPct,
                 validatePassengers, validateGuests, checkPassengerAges,
                 onCompensationStuck: notifyCompensationStuck,
             });
@@ -1310,7 +1337,7 @@ export function createApp({
                 return res.status(400).json({ error: `limit يجب أن يكون عدداً صحيحاً بين 1 و${CURATED_DESTINATIONS.length}.` });
             }
         }
-        const destinations = await buildTopDestinations({ origin, provider, markupPct, fetchImpl: travelInfoFetch, limit });
+        const destinations = await buildTopDestinations({ origin, provider, markupPct: flightMkt, fetchImpl: travelInfoFetch, limit });
         res.json({ destinations });
     }));
 
@@ -1417,7 +1444,7 @@ export function createApp({
         const summary = {};
         // كل مهمة معزولة: فشل إحداها لا يمنع الأخرى من العمل هذه الدورة
         try {
-            summary.priceWatches = await checkWatches({ store, provider, markupPct, mailer });
+            summary.priceWatches = await checkWatches({ store, provider, markupPct: flightMkt, mailer });
         } catch (e) {
             summary.priceWatches = { error: e.message };
         }
@@ -1481,7 +1508,9 @@ export function createApp({
                 provider: provider.name, providerMode: provider.mode || 'live',
                 staysProvider: staysBase?.name || null, staysProviderMode: staysBase?.mode || null,
                 carsEnabled: !!carsProvider,
-                markupPct, packageMarkupPct: pkgMarkupPct,
+                markupPct, // الافتراض العام — يظهر لتوضيح ما تسقط عليه فئة لم تُخصَّص
+                flightMarkupPct: flightMkt, stayMarkupPct: stayMkt, carMarkupPct: carMkt,
+                packageMarkupPct: pkgMarkupPct,
                 agentEnabled: !!agent,
                 mailReady: !!mailer?.mailReady?.(),
                 whatsappReady: !!whatsapp?.whatsappReady?.(),
@@ -1666,6 +1695,9 @@ if (isMain) {
     const carsProvider = buildCarsProvider();
     const agent = buildTravelAgent();
     const markupPct = readMarkupPct();
+    // مراقب الأسعار أدناه يعمل خارج نطاق createApp، فيحتاج نسخته الخاصة من
+    // هامش الطيران — نفس الحساب الذي تجريه createApp داخلياً بلا حقن صريح
+    const flightMktBoot = readCategoryMarkupPct('flight', process.env, markupPct);
 
     await store.init(); // ينشئ الجداول عند أول إقلاع — فشلٌ صاخب إن تعذّر
 
@@ -1699,7 +1731,7 @@ if (isMain) {
     // فيتوقف الفحص حتى يوقظها أول طلب، وهذا حد منصة معروف لا خلل.
     async function runPriceWatchCheck() {
         try {
-            const { checked, notified, errors } = await checkWatches({ store, provider, markupPct });
+            const { checked, notified, errors } = await checkWatches({ store, provider, markupPct: flightMktBoot });
             if (checked > 0) {
                 console.log(`👁️ فحص مراقبات الأسعار: ${checked} فُحصت، ${notified} إشعار أُرسل${errors.length ? `، ${errors.length} أخطاء` : ''}.`);
             }

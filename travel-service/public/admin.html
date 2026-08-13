@@ -95,6 +95,13 @@
         <div><label>حصة الغرف</label><input id="cAllotment" type="number" min="1" max="500" /></div>
       </div>
       <div class="row">
+        <div>
+          <label>هامش خاص لهذا الفندق ٪ (اختياري)</label>
+          <input id="cMarginPct" type="number" step="0.1" min="0" max="50" placeholder="اتركه فارغاً ليرث هامش الفنادق" />
+        </div>
+      </div>
+      <p class="note" style="margin-top:2px">فارغ = يرث الهامش العام للفنادق (٪ أعلاه في «الإعداد»). عقد نادر المقارنة قد يستحق هامشاً أعلى من المعتاد — لا يُشترط أن يكون أدنى.</p>
+      <div class="row">
         <div><label>بداية العقد</label><input id="cStart" type="date" /></div>
         <div><label>نهايته</label><input id="cEnd" type="date" /></div>
       </div>
@@ -157,7 +164,9 @@
           <div class="big">${ov.contracts.roomsUsed} / ${ov.contracts.roomsTotal}</div>
           <div class="note">${ov.contracts.active} عقد نشط من ${ov.contracts.total}</div></div>
         <div class="card"><div class="note">الإعداد</div>
-          <div class="note">الهامش: ${c.markupPct}% · الباقة: ${c.packageMarkupPct}%</div>
+          <div class="note">الافتراض العام: ${c.markupPct}%</div>
+          <div class="note">✈️ طيران ${c.flightMarkupPct}% · 🏨 فنادق ${c.stayMarkupPct}% · 🚗 سيارات ${c.carMarkupPct}% · 🎁 باقة ${c.packageMarkupPct}%</div>
+          <div class="note">لكل فئة متغيّر بيئة خاص (TRAVEL_MARKUP_PCT_FLIGHT/STAY/CAR) — بلا ضبطه تسقط على الافتراض العام</div>
           ${flag(true, 'طيران: ' + c.provider + ' (' + c.providerMode + ')')}
           ${flag(!!c.staysProvider, 'فنادق: ' + (c.staysProvider || 'معطَّل'))}
           ${flag(c.agentEnabled, 'المساعد')} ${flag(c.mailReady, 'البريد')} ${flag(c.whatsappReady, 'واتساب')}
@@ -186,13 +195,14 @@
       if (!res.ok) return;
       const { contracts } = await res.json();
       $('contractsTable').innerHTML = `
-        <tr><th>الفندق</th><th>الوجهة</th><th>الصافي/ليلة</th><th>الحصة</th><th>النافذة</th><th>الحالة</th><th></th></tr>` +
-        (contracts.length === 0 ? '<tr><td colspan="7" class="note">لا عقود بعد — العقد الأول يبدأ من زر «عقد جديد».</td></tr>' :
+        <tr><th>الفندق</th><th>الوجهة</th><th>الصافي/ليلة</th><th>الهامش</th><th>الحصة</th><th>النافذة</th><th>الحالة</th><th></th></tr>` +
+        (contracts.length === 0 ? '<tr><td colspan="8" class="note">لا عقود بعد — العقد الأول يبدأ من زر «عقد جديد».</td></tr>' :
         contracts.map(c => `
           <tr>
             <td>${esc(c.hotelName)}${c.city ? `<div class="note">${esc(c.city)}</div>` : ''}</td>
             <td>${esc(c.iata)}</td>
             <td>${c.netPerNight} ${esc(c.currency)}</td>
+            <td>${c.marginPct != null ? `<span class="ok">${c.marginPct}% خاص</span>` : '<span class="note">افتراضي الفنادق</span>'}</td>
             <td>${c.usedRooms} / ${c.allotment}</td>
             <td class="note">${esc(c.startDate)} → ${esc(c.endDate)}${(c.blackoutDates || []).length ? `<div>🚫 ${c.blackoutDates.length} يوم حظر</div>` : ''}</td>
             <td>${c.active ? '<span class="ok">نشط</span>' : '<span class="note">موقوف</span>'}</td>
@@ -220,6 +230,7 @@
       $('cNet').value = c?.netPerNight ?? '';
       $('cCurrency').value = c?.currency || 'USD';
       $('cAllotment').value = c?.allotment ?? 10;
+      $('cMarginPct').value = c?.marginPct ?? '';
       $('cStart').value = c?.startDate || '';
       $('cEnd').value = c?.endDate || '';
       $('cBlackout').value = (c?.blackoutDates || []).join(', ');
@@ -237,6 +248,8 @@
         netPerNight: Number($('cNet').value),
         currency: $('cCurrency').value.trim().toUpperCase(),
         allotment: Number($('cAllotment').value),
+        // حقل فارغ = null صراحةً (يرث هامش الفنادق) — لا صفراً كاذباً
+        marginPct: $('cMarginPct').value.trim() === '' ? null : Number($('cMarginPct').value),
         startDate: $('cStart').value,
         endDate: $('cEnd').value,
         blackoutDates: $('cBlackout').value.split(',').map(s => s.trim()).filter(Boolean),

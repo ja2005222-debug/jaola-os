@@ -161,6 +161,7 @@ export function createFileStore({ dataDir }) {
                 endDate: cData.endDate,
                 blackoutDates: cData.blackoutDates || [],
                 active: cData.active !== false,
+                marginPct: cData.marginPct ?? null,
             };
             contracts.push(contract);
             writeContracts(contracts);
@@ -181,7 +182,7 @@ export function createFileStore({ dataDir }) {
             const contract = contracts.find(c => c.id === id);
             if (!contract) return null;
             const allowed = ['hotelName', 'city', 'iata', 'netPerNight', 'currency',
-                'allotment', 'startDate', 'endDate', 'blackoutDates', 'active'];
+                'allotment', 'startDate', 'endDate', 'blackoutDates', 'active', 'marginPct'];
             for (const key of allowed) {
                 if (key in patch) contract[key] = patch[key];
             }

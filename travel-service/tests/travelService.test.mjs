@@ -25,7 +25,7 @@ import { normalizeDuffelStayResult } from '../src/providers/duffelStaysProvider.
 import { createMockCarsProvider } from '../src/providers/mockCarsProvider.js';
 import { normalizeDuffelCarResult } from '../src/providers/duffelCarsProvider.js';
 import { buildProvider, buildStaysProvider, buildCarsProvider } from '../src/providers/index.js';
-import { readMarkupPct, applyMarkup, DEFAULT_MARKUP_PCT, readPackageMarkupPct, DEFAULT_PACKAGE_MARKUP_PCT } from '../src/pricing.js';
+import { readMarkupPct, applyMarkup, DEFAULT_MARKUP_PCT, readPackageMarkupPct, DEFAULT_PACKAGE_MARKUP_PCT, readCategoryMarkupPct, MAX_MARKUP_PCT } from '../src/pricing.js';
 import { normalizeContract, contractCoversStay, contractOfferId, parseContractOfferId } from '../src/contracts.js';
 import { createContractedStaysProvider, withContractedStays } from '../src/providers/contractedStaysProvider.js';
 import { retryPackageCompensations } from '../src/packages.js';
@@ -1415,6 +1415,29 @@ describe('packages/contracts: وحدات نقية بلا شبكة', () => {
         assert.ok(readPackageMarkupPct({}, 8) < 8);
     });
 
+    // 🎚️ المستوى الأول: هامش كل فئة منتج على حدة — قبل هذا كانت applyMarkup
+    // تُنادى بنفس الرقم للطيران والفندق والسيارة حرفياً (تحقّق سابق في
+    // server.js)، فهذا الاختبار يحرس أن الفصل حقيقي وأن التوافق الخلفي سليم.
+    test('🎚️ readCategoryMarkupPct: فئة مخصَّصة تسود، وغير المخصَّصة تسقط على الافتراض الممرَّر', () => {
+        assert.equal(readCategoryMarkupPct('flight', { TRAVEL_MARKUP_PCT_FLIGHT: '6' }, 10), 6);
+        assert.equal(readCategoryMarkupPct('stay', { TRAVEL_MARKUP_PCT_STAY: '12.5' }, 10), 12.5);
+        assert.equal(readCategoryMarkupPct('car', { TRAVEL_MARKUP_PCT_CAR: '0' }, 10), 0);
+        // بلا متغيّر بيئة لهذه الفئة — تسقط على defaultPct بلا تغيير (توافق خلفي)
+        assert.equal(readCategoryMarkupPct('flight', {}, 10), 10);
+        assert.equal(readCategoryMarkupPct('stay', {}, 8), 8);
+        // قيمة فاسدة/سالبة/فوق السقف تسقط على الافتراض لا تُقبل كما هي
+        assert.equal(readCategoryMarkupPct('car', { TRAVEL_MARKUP_PCT_CAR: 'garbage' }, 10), 10);
+        assert.equal(readCategoryMarkupPct('car', { TRAVEL_MARKUP_PCT_CAR: '-1' }, 10), 10);
+        assert.equal(readCategoryMarkupPct('car', { TRAVEL_MARKUP_PCT_CAR: String(MAX_MARKUP_PCT + 1) }, 10), 10);
+        // فئة غير معروفة — لا تخمين، الافتراض الممرَّر مباشرة
+        assert.equal(readCategoryMarkupPct('unknown', { TRAVEL_MARKUP_PCT_FLIGHT: '99' }, 7), 7);
+        // متغيّرات الفئات مستقلة تماماً — تخصيص واحدة لا يمسّ الأخريين
+        const env = { TRAVEL_MARKUP_PCT_FLIGHT: '5' };
+        assert.equal(readCategoryMarkupPct('flight', env, 10), 5);
+        assert.equal(readCategoryMarkupPct('stay', env, 10), 10);
+        assert.equal(readCategoryMarkupPct('car', env, 10), 10);
+    });
+
     test('🎁 قراءة الباقة: توفير موجب يُصاغ، وصفر لا يُدّعى', () => {
         const insight = buildPackageInsight({ savings: 20, savingsPct: 2.3, separateTotal: 864, currency: 'USD' });
         assert.ok(insight.text.includes('20 USD'));
@@ -1433,6 +1456,7 @@ describe('packages/contracts: وحدات نقية بلا شبكة', () => {
         assert.equal(ok.value.iata, 'DXB');
         assert.equal(ok.value.currency, 'USD');
         assert.equal(ok.value.active, true);
+        assert.equal(ok.value.marginPct, null); // بلا تخصيص — يرث هامش الفنادق
         assert.match(normalizeContract({}).error, /اسم الفندق/);
         assert.match(normalizeContract({ hotelName: 'x', iata: 'DXBX' }).error, /IATA/);
         assert.match(normalizeContract({ hotelName: 'x', iata: 'DXB', netPerNight: -5 }).error, /موجب/);
@@ -1445,6 +1469,28 @@ describe('packages/contracts: وحدات نقية بلا شبكة', () => {
             hotelName: 'x', iata: 'DXB', netPerNight: 80, currency: 'USD', allotment: 5,
             startDate: '2027-01-01', endDate: '2027-06-30', blackoutDates: ['31-12-2027'],
         }).error, /حظر/);
+    });
+
+    // 🎚️ المستوى الثاني: هامش خاص بكل عقد — لا سقف اتجاهي (قد يكون أعلى
+    // من العام: فندق حصري نادر المقارنة قرارٌ للمالك لا حرسٌ بنيوي).
+    const baseContract = {
+        hotelName: 'فندق العقد', iata: 'DXB', netPerNight: 80, currency: 'USD',
+        allotment: 5, startDate: '2027-01-01', endDate: '2027-06-30',
+    };
+    test('🎚️ marginPct في العقد: اختياري، وقد يفوق الهامش العام عمداً', () => {
+        assert.equal(normalizeContract({ ...baseContract, marginPct: 12.5 }).value.marginPct, 12.5);
+        assert.equal(normalizeContract({ ...baseContract, marginPct: 0 }).value.marginPct, 0);
+        // فارغ/غائب/null كلها تعني «يرث» — لا تفرّق بينها اعتباطاً
+        assert.equal(normalizeContract({ ...baseContract, marginPct: null }).value.marginPct, null);
+        assert.equal(normalizeContract({ ...baseContract, marginPct: undefined }).value.marginPct, null);
+        assert.equal(normalizeContract({ ...baseContract, marginPct: '' }).value.marginPct, null);
+        assert.equal(normalizeContract(baseContract).value.marginPct, null);
+        // هامش أعلى من العام مقبول — لا سقف اتجاهي كباقات (قرار مالك لا بنية)
+        assert.equal(normalizeContract({ ...baseContract, marginPct: 40 }).value.marginPct, 40);
+        // لكن يبقى داخل الحدّ الأقصى العام (MAX_MARKUP_PCT) والصحّة الرقمية
+        assert.match(normalizeContract({ ...baseContract, marginPct: MAX_MARKUP_PCT + 1 }).error, /بين 0 و/);
+        assert.match(normalizeContract({ ...baseContract, marginPct: -1 }).error, /بين 0 و/);
+        assert.match(normalizeContract({ ...baseContract, marginPct: 'garbage' }).error, /بين 0 و/);
     });
 
     test('🗓️ contractCoversStay: النافذة والحظر بالليلة لا باليوم', () => {
@@ -2147,6 +2193,11 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.ok(withMargin);
             assert.equal(Math.round((withMargin.sellAmount - withMargin.netAmount) * 100) / 100, withMargin.margin);
             assert.ok(all.every(b => typeof b.username === 'string'));
+            // 🎚️ رؤية الأدمن لهامش كل فئة — لا app هنا يخصّص أي فئة، فالكل
+            // يساوي MARKUP العام (توافق خلفي محسوس لا مفترَض)
+            assert.equal(overview.data.config.flightMarkupPct, MARKUP);
+            assert.equal(overview.data.config.stayMarkupPct, MARKUP);
+            assert.equal(overview.data.config.carMarkupPct, MARKUP);
         });
 
         test('🎁🤝 الباقة بفندق متعاقَد: الحصة تُستهلك بالحجز وتعود بالإلغاء', async () => {
@@ -2185,6 +2236,205 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             const contractAfterCancel = (await call('/api/travel/admin/contracts', { token: admin }))
                 .data.contracts.find(c => c.id === cid);
             assert.equal(contractAfterCancel.usedRooms, 0, 'إلغاء الباقة أعاد الغرفة للحصة');
+        });
+
+        // ─── 🎚️ التحكّم في الهامش لكل جزء على حدة (طيران/فندق/سيارة + عقد) ──
+
+        /** app منفصل بمخزن وإعدادات هامش مستقلة — نفس نمط اختبارات التعويض أعلاه. */
+        async function spawnApp(overrides = {}) {
+            const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaola-margin-'));
+            const store2 = createFileStore({ dataDir: dir });
+            await store2.init();
+            const provider2 = createMockTravelProvider();
+            const staysProvider2 = createMockStaysProvider();
+            const carsProvider2 = createMockCarsProvider();
+            const app2 = createApp({
+                store: store2, jwtSecret: JWT_SECRET,
+                provider: provider2, staysProvider: staysProvider2, carsProvider: carsProvider2,
+                adminUsers: ['admin'], ...overrides,
+            });
+            const server2 = await new Promise(r => { const x = app2.listen(0, () => r(x)); });
+            const url2 = `http://127.0.0.1:${server2.address().port}`;
+            const call2 = async (pathname, { method = 'GET', token, body } = {}) => {
+                const r = await fetch(url2 + pathname, {
+                    method,
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: body ? JSON.stringify(body) : undefined,
+                });
+                return { status: r.status, data: await r.json().catch(() => null) };
+            };
+            return { store: store2, provider: provider2, staysProvider: staysProvider2, carsProvider: carsProvider2, call: call2, close: () => new Promise(r => server2.close(r)) };
+        }
+
+        test('🎚️ فصل الفئات: طيران وفندق وسيارة بهوامش مختلفة تماماً، ولا تسريب بينها', async () => {
+            // متعمَّد: الثلاثة متباعدة جداً (20/5/12) وبعيدة عن markupPct
+            // العام (8) — فأي خلط بينها يظهر فوراً في الفرق، لا يختبئ في تقريب
+            const app = await spawnApp({ markupPct: 8, flightMarkupPct: 20, stayMarkupPct: 5, carMarkupPct: 12 });
+            try {
+                const token = makeToken('cat-user');
+                const depart = futureDate(20), ret = futureDate(23);
+
+                const rawFlights = await app.provider.searchOffers({ origin: 'RUH', destination: 'CAI', departDate: depart, returnDate: ret, adults: 1, childrenDobs: [], cabin: 'economy' });
+                const flightRes = await app.call('/api/travel/flights/search', {
+                    method: 'POST', token, body: { origin: 'RUH', destination: 'CAI', departDate: depart, returnDate: ret, adults: 1 },
+                });
+                assert.equal(flightRes.data.offers[0].sellAmount, applyMarkup(rawFlights[0].netAmount, 20));
+
+                const rawStays = await app.staysProvider.searchStays({ iata: 'CAI', checkInDate: depart, checkOutDate: ret, adults: 1, rooms: 1 });
+                const stayRes = await app.call('/api/travel/stays/search', {
+                    method: 'POST', token, body: { iata: 'CAI', checkInDate: depart, checkOutDate: ret, adults: 1, rooms: 1 },
+                });
+                assert.equal(stayRes.data.offers[0].sellAmount, applyMarkup(rawStays[0].netAmount, 5));
+
+                const rawCars = await app.carsProvider.searchCars({ iata: 'CAI', pickupAt: `${depart}T10:00:00Z`, dropoffAt: `${ret}T10:00:00Z` });
+                const carRes = await app.call('/api/travel/cars/search', {
+                    method: 'POST', token, body: { iata: 'CAI', pickupDate: depart, pickupTime: '10:00', dropoffDate: ret, dropoffTime: '10:00' },
+                });
+                assert.equal(carRes.data.offers[0].sellAmount, applyMarkup(rawCars[0].netAmount, 12));
+
+                // ولا واحد منها يساوي ما كان سيكون عليه بالهامش العام (8%) —
+                // إثبات أن التخصيص فعلياً حجب الافتراض، لا صادف نفس الرقم
+                assert.notEqual(flightRes.data.offers[0].sellAmount, applyMarkup(rawFlights[0].netAmount, 8));
+                assert.notEqual(stayRes.data.offers[0].sellAmount, applyMarkup(rawStays[0].netAmount, 8));
+                assert.notEqual(carRes.data.offers[0].sellAmount, applyMarkup(rawCars[0].netAmount, 8));
+
+                // النظرة العامة تُظهر القيم الثلاث بالضبط كما ضُبطت
+                const overview = await app.call('/api/travel/admin/overview', { token: makeToken('admin') });
+                assert.equal(overview.data.config.flightMarkupPct, 20);
+                assert.equal(overview.data.config.stayMarkupPct, 5);
+                assert.equal(overview.data.config.carMarkupPct, 12);
+            } finally {
+                await app.close();
+            }
+        });
+
+        test('🎚️🤝 هامش خاص بعقد فندقي يتقدّم على هامش الفنادق العام — في البحث والحجز معاً', async () => {
+            const app = await spawnApp({ markupPct: 8, stayMarkupPct: 10 }); // هامش الفنادق العام 10%
+            try {
+                const admin = makeToken('admin');
+                const token = makeToken('margin-guest');
+                const created = await app.call('/api/travel/admin/contracts', {
+                    method: 'POST', token: admin,
+                    body: {
+                        hotelName: 'فندق الهامش الخاص', iata: 'CAI',
+                        netPerNight: 50, currency: 'USD', allotment: 3,
+                        marginPct: 25, // أعلى من 10% العام عمداً — قرار مالك لا خطأ
+                        startDate: futureDate(1), endDate: futureDate(300),
+                    },
+                });
+                assert.equal(created.status, 200);
+                assert.equal(created.data.contract.marginPct, 25);
+
+                const checkIn = futureDate(30), checkOut = futureDate(32); // ليلتان
+                const search = await app.call('/api/travel/stays/search', {
+                    method: 'POST', token, body: { iata: 'CAI', checkInDate: checkIn, checkOutDate: checkOut, adults: 1, rooms: 1 },
+                });
+                const offer = search.data.offers.find(o => o.contracted);
+                assert.ok(offer);
+                // 25% الخاص لا 10% العام — الصافي 50×2=100، والفرق واضح جداً بين النسبتين
+                assert.equal(offer.sellAmount, applyMarkup(100, 25));
+                assert.notEqual(offer.sellAmount, applyMarkup(100, 10));
+                assert.ok(!('marginPct' in offer), 'الهامش الخاص رافعة داخلية — لا يصل الواجهة');
+
+                // ويصمد عند الحجز الفعلي لا البحث وحده
+                const booked = await app.call('/api/travel/stays/bookings', {
+                    method: 'POST', token,
+                    body: {
+                        offerId: offer.id,
+                        guests: [{ givenName: 'AHMED', familyName: 'ALI' }],
+                        contact: { email: 'a@b.com', phone: '+966501234567' },
+                    },
+                });
+                assert.equal(booked.status, 200);
+                assert.equal(booked.data.booking.sellAmount, applyMarkup(100, 25));
+                assert.ok(!('marginPct' in (booked.data.booking.offer || {})), 'ولا يتسرّب داخل الحجز المخزَّن أيضاً');
+
+                // وفندق آخر بلا هامش خاص في نفس البحث يبقى على 10% العام
+                const otherStay = search.data.offers.find(o => !o.contracted);
+                if (otherStay) {
+                    const rawOther = await app.staysProvider.getStayOffer(otherStay.id);
+                    assert.equal(otherStay.sellAmount, applyMarkup(rawOther.netAmount, 10));
+                }
+            } finally {
+                await app.close();
+            }
+        });
+
+        test('🎁💯 صدق «وفّرت X» في الباقة: يقارن بالهامشين الفعليين لكل مكوّن لا برقم مبلَّط', async () => {
+            // فرق كبير عمداً بين الطيران (25%) والفندق (4%) — لو حُسب
+            // separateTotal برقم واحد مبلَّط لظهر الفرق فوراً في الاختبار
+            const app = await spawnApp({ markupPct: 8, flightMarkupPct: 25, stayMarkupPct: 4 });
+            try {
+                const token = makeToken('honesty-user');
+                const depart = futureDate(35), ret = futureDate(38);
+                const rawFlight = (await app.provider.searchOffers({ origin: 'RUH', destination: 'CAI', departDate: depart, returnDate: ret, adults: 1, childrenDobs: [], cabin: 'economy' }))[0];
+                const rawStay = (await app.staysProvider.searchStays({ iata: 'CAI', checkInDate: depart, checkOutDate: ret, adults: 1, rooms: 1 }))
+                    .find(o => o.cancellable);
+
+                const flightRes = await app.call('/api/travel/flights/search', {
+                    method: 'POST', token, body: { origin: 'RUH', destination: 'CAI', departDate: depart, returnDate: ret, adults: 1 },
+                });
+                const stayRes = await app.call('/api/travel/stays/search', {
+                    method: 'POST', token, body: { iata: 'CAI', checkInDate: depart, checkOutDate: ret, adults: 1, rooms: 1 },
+                });
+                const flightOffer = flightRes.data.offers.find(o => o.id === rawFlight.id);
+                const stayOffer = stayRes.data.offers.find(o => o.id === rawStay.id);
+
+                const q = await app.call('/api/travel/packages/quote', {
+                    method: 'POST', token,
+                    body: { flightOfferId: flightOffer.id, stayOfferId: stayOffer.id },
+                });
+                assert.equal(q.status, 200);
+                // separateTotal الصادق = بيع الطيران الفعلي (25%) + بيع الفندق الفعلي (4%)
+                // — نفس الرقمين المعروضين في نتائج البحث حرفياً، لا هامش وسطي مُختلَق
+                const honestSeparate = Math.round((flightOffer.sellAmount + stayOffer.sellAmount) * 100) / 100;
+                assert.equal(q.data.quote.separateTotal, honestSeparate);
+            } finally {
+                await app.close();
+            }
+        });
+
+        test('🎁💯🤝 صدق «وفّرت X» في باقة بفندق متعاقَد: يستعمل هامش العقد لا هامش الفنادق العام', async () => {
+            const app = await spawnApp({ markupPct: 8, flightMarkupPct: 15, stayMarkupPct: 10 });
+            try {
+                const admin = makeToken('admin');
+                const token = makeToken('honesty-contract-user');
+                await app.call('/api/travel/admin/contracts', {
+                    method: 'POST', token: admin,
+                    body: {
+                        hotelName: 'فندق صدق العقد', iata: 'CAI',
+                        netPerNight: 60, currency: 'USD', allotment: 3,
+                        marginPct: 2, // أدنى بكثير من 10% العام — الفرق يظهر فوراً إن أُخطئ الحساب
+                        startDate: futureDate(1), endDate: futureDate(300),
+                    },
+                });
+                const depart = futureDate(45), ret = futureDate(48);
+                const rawFlight = (await app.provider.searchOffers({ origin: 'RUH', destination: 'CAI', departDate: depart, returnDate: ret, adults: 1, childrenDobs: [], cabin: 'economy' }))[0];
+                const flightRes = await app.call('/api/travel/flights/search', {
+                    method: 'POST', token, body: { origin: 'RUH', destination: 'CAI', departDate: depart, returnDate: ret, adults: 1 },
+                });
+                const stayRes = await app.call('/api/travel/stays/search', {
+                    method: 'POST', token, body: { iata: 'CAI', checkInDate: depart, checkOutDate: ret, adults: 1, rooms: 1 },
+                });
+                const flightOffer = flightRes.data.offers.find(o => o.id === rawFlight.id);
+                const contractedOffer = stayRes.data.offers.find(o => o.contracted);
+                assert.ok(contractedOffer);
+
+                const q = await app.call('/api/travel/packages/quote', {
+                    method: 'POST', token,
+                    body: { flightOfferId: flightOffer.id, stayOfferId: contractedOffer.id },
+                });
+                assert.equal(q.status, 200);
+                // الفندق مسعَّر بـ2% (هامش العقد) لا 10% (هامش الفنادق العام) —
+                // separateTotal الصادق يعكس ما ستدفعه فعلاً: بيع الفندق المعروض حرفياً
+                const honestSeparate = Math.round((flightOffer.sellAmount + contractedOffer.sellAmount) * 100) / 100;
+                assert.equal(q.data.quote.separateTotal, honestSeparate);
+                // ولإثبات أنه ليس صدفة: لو استُعمل 10% العام لاختلف الرقم عن هذا فعلاً
+                const dishonestSeparate = Math.round((flightOffer.sellAmount + applyMarkup(60 * 3, 10)) * 100) / 100;
+                assert.notEqual(q.data.quote.separateTotal, dishonestSeparate);
+            } finally {
+                await app.close();
+            }
         });
 
         test('🎟️ الحجز الكامل: pending→issued بمرجع، وتحقق الركاب، وعزل الملكية', async () => {
