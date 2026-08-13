@@ -33,7 +33,7 @@ import { buildPackageInsight } from '../src/agent/insights.js';
 import { canTransition, createBooking, transitionBooking, getBooking, getBookingByProviderOrderId } from '../src/bookings.js';
 import { createFileStore } from '../src/store/fileStore.js';
 import { createPostgresStore } from '../src/store/postgresStore.js';
-import { createTravelAgent, executeAgentTool, buildTravelAgent, AGENT_TOOLS, retryDelayMs, compactToolResult, buildFallbackProvider } from '../src/agent/agent.js';
+import { createTravelAgent, executeAgentTool, buildTravelAgent, AGENT_TOOLS, retryDelayMs, compactToolResult, buildFallbackProvider, MAX_TOOL_RESULT_CHARS } from '../src/agent/agent.js';
 import { listPriceWatchesByUser, cancelPriceWatch } from '../src/priceWatches.js';
 import { checkWatches } from '../src/priceWatchPoller.js';
 import { sendTripReminders, isReminderDue, renderTripReminder, departureAt } from '../src/tripReminders.js';
@@ -4105,6 +4105,23 @@ describe('الايجنت الحاجز', () => {
         const big = JSON.parse(compactToolResult({ t: 'ط'.repeat(5000) }, 500));
         assert.equal(big.partial, true);
         assert.ok(big.text.length > 0);
+    });
+
+    // 📈 رُفع الحدّ بعد ترقية الحساب إلى Developer (300K TPM) — هذا
+    // الاختبار يحرس القيمة المقصودة ذاتها، لا سلوكاً عاماً: تعديلها لاحقاً
+    // بلا مراجعة يعيد إمّا الضيق القديم (تقليص لا داعي له) أو يتجاوز
+    // هامش الأمان المحسوب (٨٨٪ من الحصّة متروك للتزامن وإعادة المحاولة).
+    test('📈 MAX_TOOL_RESULT_CHARS: 12000 — أسوأ حالة داخل ~12% من حصّة Developer', () => {
+        assert.equal(MAX_TOOL_RESULT_CHARS, 12000);
+        // نفس المقياس التجريبي الموثَّق في README (٣٣٠١ ثابت + ٢.٧٨ رمز/حرف
+        // عبر عشر جولات تراكمية) — أسوأ حالة يجب أن تبقى بعيدة عن حافة
+        // حصّة Developer (300,000 TPM لـllama-3.3-70b-versatile)، لا قريبة
+        // منها كما كان الحال اضطرارياً مع المجاني (كانت ~97% من 12,000).
+        const worstCaseTokens = 3301 + 2.78 * MAX_TOOL_RESULT_CHARS;
+        const DEVELOPER_TPM = 300000;
+        assert.ok(worstCaseTokens < DEVELOPER_TPM * 0.15,
+            `أسوأ حالة (${Math.round(worstCaseTokens)}) يجب أن تبقى دون 15% من حصّة Developer`);
+        assert.ok(worstCaseTokens > 25000, 'تحسين حقيقي لا رقم رمزي — أكثر من ضعف الحدّ القديم (~11,631)');
     });
 
     test('🛡️ صياغة التنبيه: رد مُطوَّل أو فارغ → يعود النص الحتمي', async () => {
