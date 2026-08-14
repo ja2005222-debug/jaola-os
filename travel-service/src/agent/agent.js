@@ -686,7 +686,10 @@ export function createTravelAgent({
                     return message;
                 }
                 const detail = await res.text().catch(() => '');
-                lastError = new Error(`تعذّر الاتصال بمزوّد الايجنت (HTTP ${res.status}). ${detail.slice(0, 300)}`);
+                // ⚠️ كان الخطأ لا يذكر أيّ مزوّد رفض — فحين يفشل الاحتياطي
+                // بعد الأساسي (401 مثلاً بمفتاح فاسد) لا سبيل لمعرفة أيّهما
+                // من نصّ الرسالة وحده إلا بتخمين صيغة الردّ. الاسم صريح الآن.
+                lastError = new Error(`تعذّر الاتصال بمزوّد الايجنت (${provider.label}، HTTP ${res.status}). ${detail.slice(0, 300)}`);
                 // 429 وأعطال الخادم عابرة؛ 4xx غيرها خطأ في طلبنا فإعادته عبث
                 const retriable = res.status === 429 || res.status >= 500;
                 if (!retriable) throw lastError;      // لا إعادة ولا تحويل
@@ -710,11 +713,29 @@ export function createTravelAgent({
          * → {reply, actions} حيث actions سجل ما نُفّذ فعلاً (تعرضه الواجهة
          * كرقائق شفافية: المستخدم يرى ماذا فعل الوكيل لا كلامه فقط).
          */
-        async chat({ messages, services, memory = '' }) {
+        async chat({ messages, services, memory = '', now = Date.now() }) {
+            // ⚠️ العطب المُصلَح هنا: SYSTEM_PROMPT لا يذكر تاريخ اليوم أبداً،
+            // فحين يطلب المسافر "غداً" لا مرجع لدى النموذج ليحسب منه —
+            // شُوهد فعلياً يحاول تمرير الكلمة "tomorrow" حرفياً في وسيط
+            // departDate، فيرفضها محلّل Groq الصارم للنداءات (400
+            // tool_use_failed) قبل أن تصل حتى إلى تحقق الخادم.
+            //
+            // التاريخ رسالة نظام منفصلة كالذاكرة أدناه لا إلحاقٌ بـ
+            // SYSTEM_PROMPT: يتغيّر مرة كل يوم فقط فيبقى مفيداً لتخزين
+            // مزوّدات الطلبات المؤقت المؤقّت (prompt caching) عبر كل
+            // المستخدمين خلال نفس اليوم — خلافاً للذاكرة الخاصة بمستخدم واحد.
+            // بتوقيت UTC اتساقاً مع todayUtc() في server.js (نفس المرجع
+            // الذي يتحقّق به الخادم لاحقاً — تاريخ ميلاد/سفر لا يتناقضان
+            // بين ما يقترحه الايجنت وما يقبله الخادم).
+            const today = new Date(now).toISOString().slice(0, 10);
+            const dateLine = `تاريخ اليوم (بتوقيت UTC): ${today} — بصيغة YYYY-MM-DD. احسب أي تاريخ نسبي (غداً/بعد أسبوع/الشهر القادم/نهاية الأسبوع) من هذا التاريخ فعلياً، وأرسل الناتج دوماً بصيغة YYYY-MM-DD في وسائط الأدوات — لا تُرسل كلمات مثل "tomorrow" أو "غداً" حرفياً كقيمة تاريخ أبداً.`;
             // الذاكرة رسالة نظام منفصلة لا إلحاقٌ بالتعليمة الأساسية:
             // تبقى التعليمة ثابتة عبر المستخدمين (وهو ما يجعل الكاش مفيداً)،
             // ويبقى الجزء المتغيّر معزولاً ومقروءاً في السجل.
-            const convo = [{ role: 'system', content: SYSTEM_PROMPT }];
+            const convo = [
+                { role: 'system', content: SYSTEM_PROMPT },
+                { role: 'system', content: dateLine },
+            ];
             if (memory) convo.push({ role: 'system', content: memory });
             convo.push(...messages);
             const actions = [];

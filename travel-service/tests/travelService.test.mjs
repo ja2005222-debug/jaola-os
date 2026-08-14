@@ -3917,8 +3917,13 @@ describe('الايجنت الحاجز', () => {
             for (const secret of ['Faisal', 'Alharbi', '1988-02-02', 'نفسي']) {
                 assert.ok(!wire.includes(secret), `بيانات جواز وصلت المزوّد: ${secret}`);
             }
-            // ورسالة نظام منفصلة لا إلحاق بالتعليمة الأساسية
-            assert.equal(sentBody.messages.filter(m => m.role === 'system').length, 2);
+            // ثلاث رسائل نظام منفصلة لا إلحاق بالتعليمة الأساسية:
+            // SYSTEM_PROMPT الثابتة + تاريخ اليوم (يومي لا شخصي) + الذاكرة
+            assert.equal(sentBody.messages.filter(m => m.role === 'system').length, 3);
+            // وتاريخ اليوم بصيغة صحيحة وصريحة — لا يبقى "غداً" بلا مرجع
+            const dateMsg = sentBody.messages.find(m => m.role === 'system' && /تاريخ اليوم/.test(m.content));
+            assert.ok(dateMsg, 'رسالة تاريخ اليوم غائبة');
+            assert.match(dateMsg.content, /\d{4}-\d{2}-\d{2}/);
 
             // والمحادثة حُفظت لتُستأنف
             const convo = await call('/api/travel/agent/conversation', { token: makeToken(username) });
@@ -3941,7 +3946,10 @@ describe('الايجنت الحاجز', () => {
                 method: 'POST', token: makeToken('no-profile-user'),
                 body: { messages: [{ role: 'user', content: 'مرحبا' }] },
             });
-            assert.equal(sentBody.messages.filter(m => m.role === 'system').length, 1);
+            // بلا ملف شخصي: SYSTEM_PROMPT + تاريخ اليوم فقط — لا رسالة
+            // ذاكرة ثالثة جوفاء (الاسم الأصلي للاختبار لا يزال قائماً،
+            // العدد فقط ارتفع بواحد لأن تاريخ اليوم يومي لا شخصي)
+            assert.equal(sentBody.messages.filter(m => m.role === 'system').length, 2);
         });
     });
 
@@ -4029,6 +4037,87 @@ describe('الايجنت الحاجز', () => {
         assert.equal(primaryCalls[0].auth, 'Bearer k1');
         assert.equal(fallbackCalls[0].model, 'deepseek-chat');
         assert.equal(fallbackCalls[0].auth, 'Bearer k2');
+    });
+
+    // 👶 انحدار إنتاج حقيقي: طلب "احجز رحلة غداً" أعاد 400 tool_use_failed
+    // من Groq — النموذج حاول تمرير الكلمة "tomorrow" حرفياً في departDate
+    // لأنه لا مرجع لديه لتاريخ اليوم. السبب: SYSTEM_PROMPT لا يذكره أبداً.
+    test('📅 chat: تاريخ اليوم يصل النموذج صريحاً — فلا يبقى "غداً" بلا مرجع', async () => {
+        let sentBody = null;
+        const agent = createTravelAgent({
+            apiKey: 'k',
+            fetchImpl: async (url, opts) => {
+                sentBody = JSON.parse(opts.body);
+                return { ok: true, json: async () => ({ choices: [{ message: { content: 'حسناً' } }] }) };
+            },
+        });
+        // زمن ثابت معروف — لا Date.now() الحقيقي، فالاختبار حتمي لا يعتمد
+        // على يوم التشغيل
+        const fixedNow = Date.parse('2027-03-10T15:00:00Z');
+        await agent.chat({ messages: [{ role: 'user', content: 'احجز رحلة غداً' }], services: {}, now: fixedNow });
+
+        const dateMsg = sentBody.messages.find(m => m.role === 'system' && /تاريخ اليوم/.test(m.content));
+        assert.ok(dateMsg, 'رسالة تاريخ اليوم غائبة عن الطلب المُرسَل فعلياً');
+        assert.match(dateMsg.content, /2027-03-10/);
+        // التحذير الصريح ضد تمرير الكلمة حرفياً — خطّ دفاع ثانٍ حتى لو
+        // أخطأ النموذج الحساب رغم توفّر المرجع
+        assert.match(dateMsg.content, /tomorrow/i);
+        assert.match(dateMsg.content, /YYYY-MM-DD/);
+
+        // وبلا now صريح: تسقط على الوقت الحقيقي — لا تنكسر افتراضياً
+        let sentBody2 = null;
+        const agent2 = createTravelAgent({
+            apiKey: 'k',
+            fetchImpl: async (url, opts) => {
+                sentBody2 = JSON.parse(opts.body);
+                return { ok: true, json: async () => ({ choices: [{ message: { content: 'حسناً' } }] }) };
+            },
+        });
+        await agent2.chat({ messages: [{ role: 'user', content: 'مرحبا' }], services: {} });
+        const today = new Date().toISOString().slice(0, 10);
+        const dateMsg2 = sentBody2.messages.find(m => m.role === 'system' && /تاريخ اليوم/.test(m.content));
+        assert.ok(dateMsg2.content.includes(today));
+    });
+
+    // 💬 انحدار إنتاج حقيقي آخر: 401 من الاحتياطي بعد نفاد صبر الأساسي —
+    // رسالة الخطأ التي وصلت المستخدم فعلياً لم تذكر أيّ مزوّد رفض، فلا
+    // سبيل للتفريق بين مفتاح Groq فاسد ومفتاح DeepSeek فاسد إلا بتخمين
+    // صيغة الرد. الاسم صريح الآن في رسالة الخطأ نفسها.
+    test('🔀💬 اسم المزوّد صريح في رسالة الخطأ — تشخيص لا تخمين صيغة الرد', async () => {
+        const agent = createTravelAgent({
+            apiKey: 'k1', apiUrl: 'https://primary.test/v1', sleepImpl: async () => {},
+            fallback: { apiKey: 'k2', apiUrl: 'https://deepseek.test/v1', model: 'deepseek-v4-pro', label: 'DeepSeek' },
+            fetchImpl: async (url) => {
+                if (url.includes('primary')) {
+                    return { ok: false, status: 429, headers: { get: () => null }, text: async () => 'Rate limit reached' };
+                }
+                // الاحتياطي نفسه بمفتاح فاسد — نفس ما وقع فعلياً في الإنتاج
+                return {
+                    ok: false, status: 401, headers: { get: () => null },
+                    text: async () => 'Authentication Fails, Your api key: ****c34c is invalid',
+                };
+            },
+        });
+        await assert.rejects(
+            agent.chat({ messages: [{ role: 'user', content: 'احجز فندقاً' }], services: {} }),
+            err => {
+                assert.match(err.message, /DeepSeek/, 'اسم المزوّد الذي رفض فعلياً يجب أن يظهر');
+                assert.match(err.message, /401/);
+                return true;
+            },
+        );
+
+        // وخطأ الأساسي نفسه (بلا تحويل) يحمل اسمه هو لا اسم الاحتياطي
+        const primaryOnlyFail = createTravelAgent({
+            apiKey: 'k1', apiUrl: 'https://primary.test/v1', sleepImpl: async () => {},
+            fetchImpl: async () => ({
+                ok: false, status: 401, headers: { get: () => null }, text: async () => 'invalid key',
+            }),
+        });
+        await assert.rejects(
+            primaryOnlyFail.chat({ messages: [{ role: 'user', content: 'مرحبا' }], services: {} }),
+            /المزوّد الأساسي/,
+        );
     });
 
     test('🔀 خطأ غير قابل للإعادة لا يُحوَّل — عيبٌ في طلبنا يتكرّر عند الاحتياطي', async () => {
