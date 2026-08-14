@@ -4079,6 +4079,86 @@ describe('الايجنت الحاجز', () => {
         assert.ok(dateMsg2.content.includes(today));
     });
 
+    // 🧠 انحدار إنتاج حقيقي: بعد إصلاح تاريخ اليوم أعلاه، بلاغٌ تالٍ من
+    // نفس المستخدم — DeepSeek رفض الجولة الثانية بـ400: «reasoning_content
+    // in the thinking mode must be passed back». السبب: كنّا نُعيد بناء
+    // رسالة المساعد من content/tool_calls فقط فتضيع reasoning_content
+    // التي أعادها DeepSeek في وضع التفكير — فترفض جولته التالية الطلب
+    // لأنه لا يحمل ما اشترطت إعادته.
+    test('🧠 reasoning_content يُعاد للمزوّد في الجولة التالية — لا تُفقَد عند إعادة بناء رسالة المساعد', async () => {
+        const services = { searchFlights: async () => (await provider.searchOffers(SEARCH_BODY())) };
+        let round2Body = null;
+        let round = 0;
+        const agent = createTravelAgent({
+            apiKey: 'k1', apiUrl: 'https://deepseek.test/v1', model: 'deepseek-v4-pro',
+            fetchImpl: async (url, opts) => {
+                round += 1;
+                if (round === 1) {
+                    // نفس شكل ردّ DeepSeek في وضع التفكير: reasoning_content
+                    // إلى جانب tool_calls العادية
+                    return {
+                        ok: true,
+                        json: async () => ({
+                            choices: [{
+                                message: {
+                                    role: 'assistant', content: null,
+                                    reasoning_content: 'أفكّر في أفضل رحلة أولاً…',
+                                    tool_calls: [{
+                                        id: 'c1', type: 'function',
+                                        function: { name: 'search_flights', arguments: JSON.stringify(SEARCH_BODY()) },
+                                    }],
+                                },
+                            }],
+                        }),
+                    };
+                }
+                // الجولة الثانية: نلتقط الجسم المُرسَل فعلياً لنتحقق أن
+                // reasoning_content أُعيد ضمن تاريخ المحادثة
+                round2Body = JSON.parse(opts.body);
+                return { ok: true, json: async () => ({ choices: [{ message: { content: 'وجدت رحلة مناسبة.' } }] }) };
+            },
+        });
+        const result = await agent.chat({ messages: [{ role: 'user', content: 'ابحث لي عن رحلة' }], services });
+        assert.equal(result.reply, 'وجدت رحلة مناسبة.');
+        assert.equal(round, 2, 'جولتان — الثانية هي ما نتحقق من جسمها');
+
+        const echoedAssistant = round2Body.messages.find(m => m.role === 'assistant' && m.tool_calls);
+        assert.ok(echoedAssistant, 'رسالة المساعد من الجولة الأولى غائبة عن تاريخ الجولة الثانية');
+        assert.equal(echoedAssistant.reasoning_content, 'أفكّر في أفضل رحلة أولاً…');
+
+        // وحين لا يعيد المزوّد reasoning_content أصلاً (حال Groq دوماً) —
+        // لا يُقحَم حقل فارغ/null في الرسالة المُعاد بناؤها
+        let round2BodyNoReasoning = null;
+        let round2 = 0;
+        const agentNoReasoning = createTravelAgent({
+            apiKey: 'k1',
+            fetchImpl: async (url, opts) => {
+                round2 += 1;
+                if (round2 === 1) {
+                    return {
+                        ok: true,
+                        json: async () => ({
+                            choices: [{
+                                message: {
+                                    role: 'assistant', content: null,
+                                    tool_calls: [{
+                                        id: 'c1', type: 'function',
+                                        function: { name: 'search_flights', arguments: JSON.stringify(SEARCH_BODY()) },
+                                    }],
+                                },
+                            }],
+                        }),
+                    };
+                }
+                round2BodyNoReasoning = JSON.parse(opts.body);
+                return { ok: true, json: async () => ({ choices: [{ message: { content: 'تم.' } }] }) };
+            },
+        });
+        await agentNoReasoning.chat({ messages: [{ role: 'user', content: 'ابحث لي عن رحلة' }], services });
+        const echoedNoReasoning = round2BodyNoReasoning.messages.find(m => m.role === 'assistant' && m.tool_calls);
+        assert.ok(!('reasoning_content' in echoedNoReasoning), 'لا حقل مُقحَم حين لا يعيده المزوّد أصلاً');
+    });
+
     // 💬 انحدار إنتاج حقيقي آخر: 401 من الاحتياطي بعد نفاد صبر الأساسي —
     // رسالة الخطأ التي وصلت المستخدم فعلياً لم تذكر أيّ مزوّد رفض، فلا
     // سبيل للتفريق بين مفتاح Groq فاسد ومفتاح DeepSeek فاسد إلا بتخمين

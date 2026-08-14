@@ -744,7 +744,17 @@ export function createTravelAgent({
                 if (!msg.tool_calls || msg.tool_calls.length === 0) {
                     return { reply: msg.content || '', actions, provider: lastProviderUsed };
                 }
-                convo.push({ role: 'assistant', content: msg.content || null, tool_calls: msg.tool_calls });
+                // ⚠️ عطب إنتاج حقيقي: كنّا نُعيد بناء رسالة المساعد من
+                // content/tool_calls فقط، فتضيع أي حقول أخرى أعادها
+                // المزوّد. مع DeepSeek في "وضع التفكير" (thinking mode)
+                // يُعيد الردّ reasoning_content إلى جانب tool_calls —
+                // وDeepSeek يشترط إعادة هذا الحقل بعينه في الجولة
+                // التالية، فيرفض الطلب (400) لأننا حذفناه سهواً. الآن
+                // يُمرَّر إن وُجد؛ Groq لا يُعيده أصلاً فلا يتأثر.
+                convo.push({
+                    role: 'assistant', content: msg.content || null, tool_calls: msg.tool_calls,
+                    ...(msg.reasoning_content != null ? { reasoning_content: msg.reasoning_content } : {}),
+                });
                 for (const call of msg.tool_calls) {
                     let args = {};
                     try { args = JSON.parse(call.function?.arguments || '{}'); } catch { /* أدناه يرفضها المنفّذ */ }
