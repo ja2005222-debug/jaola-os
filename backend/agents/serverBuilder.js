@@ -31,7 +31,10 @@ export async function buildServer(instruction, projectId = 'default') {
         console.log(`[ServerCraft] 📝 التعليمات: ${instruction.substring(0, 100)}...`);
 
         // استخدام DeepSeek Coder لتوليد الخادم (أفضل للبرمجة)
-        const model = deepseek ? DEEPSEEK_MODEL : 'llama-3.1-8b-instant';
+        // llama-3.1-8b-instant أُوقف من Groq في 16 أغسطس 2026 — استُبدل
+        // بالنموذج الذي أوصت به Groq نفسها في إشعار الإيقاف: أسرع (1000
+        // رمز/ثانية مقابل 560) وبنفس نافذة السياق.
+        const model = deepseek ? DEEPSEEK_MODEL : 'openai/gpt-oss-20b';
         
         const completion = await ai.chat.completions.create({
             model: model,
@@ -83,7 +86,7 @@ export async function buildServer(instruction, projectId = 'default') {
             try {
                 console.log('[ServerCraft] 🔄 محاولة مع المحرك الاحتياطي...');
                 const fallbackCompletion = await fallbackAI.chat.completions.create({
-                    model: fallbackAI === groq ? 'llama-3.1-8b-instant' : DEEPSEEK_MODEL,
+                    model: fallbackAI === groq ? 'openai/gpt-oss-20b' : DEEPSEEK_MODEL,
                     messages: [
                         { role: 'system', content: 'أنت خبير Node.js. ابنِ خادماً كاملاً. استخدم // FILE: <filename> لكل ملف.' },
                         { role: 'user', content: instruction }
@@ -98,7 +101,7 @@ export async function buildServer(instruction, projectId = 'default') {
                 return {
                     success: files.length > 0,
                     agent: 'ServerCraft',
-                    model: fallbackAI === groq ? 'llama-3.1-8b-instant' : DEEPSEEK_MODEL,
+                    model: fallbackAI === groq ? 'openai/gpt-oss-20b' : DEEPSEEK_MODEL,
                     fallback: true,
                     files: files,
                     fileCount: files.length
