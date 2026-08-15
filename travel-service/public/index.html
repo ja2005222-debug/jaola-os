@@ -225,6 +225,24 @@
       align-self: flex-end; font-size: 12px; color: var(--accent);
       border: 1px dashed var(--accent); border-radius: 999px; padding: 3px 12px;
     }
+    /* 🔐 بطاقة تأكيد الحجز: الفعل الوحيد الذي يحجز فعلاً في المحادثة.
+       بارزة عمداً (إطار مصمت لا منقّط كرقائق الإجراءات) — المسافر يجب
+       أن يفرّق بلمحة بين «المساعد فعل شيئاً» و«المساعد ينتظر قرارك». */
+    .confirm-card {
+      align-self: stretch; border: 1px solid var(--accent); border-radius: 14px;
+      padding: 14px; background: color-mix(in srgb, var(--accent) 8%, transparent);
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .confirm-card h4 { margin: 0; font-size: 14px; color: var(--accent); }
+    .confirm-card .cc-line { font-size: 13px; color: var(--muted); }
+    .confirm-card .cc-total { font-size: 18px; font-weight: 700; }
+    .confirm-card .cc-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .confirm-card button[data-confirm] {
+      background: var(--accent); color: #04121f; border: none; font-weight: 700;
+    }
+    .confirm-card.done { border-color: #34d399; background: color-mix(in srgb, #34d399 10%, transparent); }
+    .confirm-card.done h4 { color: #34d399; }
+
     #chatForm { display: flex; gap: 8px; margin-top: 12px; }
     #chatInput { flex: 1; }
 
@@ -2071,6 +2089,79 @@
       $('chatLog').scrollTop = $('chatLog').scrollHeight;
     }
 
+    /**
+     * 🔐 بطاقة تأكيد الحجز — الزر الذي يحجز فعلاً.
+     *
+     * ⚠️ سبب وجودها: كان المساعد يحجز بنفسه متى «قرّر» أن المستخدم وافق،
+     * فأنتج سؤالٌ عن توفّر فندق حجزاً فعلياً. الآن يُصدر نية موقّعة فقط،
+     * وهذه البطاقة هي المكان الوحيد الذي يتحوّل فيه الاقتراح إلى حجز —
+     * بضغطة من المسافر لا بقرار من النموذج.
+     */
+    function offerBrief(kind, offer) {
+      if (!offer) return '';
+      if (kind === 'flight') {
+        const s = offer.slices?.[0] || {};
+        const route = [s.origin, s.destination].filter(Boolean).join(' → ');
+        return [offer.owner, route, s.departAt ? new Date(s.departAt).toLocaleString('ar') : ''].filter(Boolean).join(' · ');
+      }
+      if (kind === 'stay') {
+        return [offer.name, offer.checkInDate && `${offer.checkInDate} → ${offer.checkOutDate}`].filter(Boolean).join(' · ');
+      }
+      return [offer.vehicleName, offer.vendor].filter(Boolean).join(' · ');
+    }
+
+    function pushConfirmCard(proposal) {
+      const label = { flight: 'الرحلة', stay: 'الفندق', car: 'السيارة' }[proposal.kind] || 'الحجز';
+      const card = document.createElement('div');
+      card.className = 'confirm-card';
+      card.innerHTML = `
+        <h4>🧾 تأكيد حجز ${esc(label)}</h4>
+        <div class="cc-line">${esc(offerBrief(proposal.kind, proposal.offer))}</div>
+        <div class="cc-line">عدد المسافرين: ${esc(proposal.travellerCount)}</div>
+        <div class="cc-total">${esc(proposal.sellAmount)} ${esc(proposal.currency)}</div>
+        <div class="cc-line">لن يُحجز شيء حتى تضغط «أؤكد الحجز».</div>
+        <div class="cc-actions">
+          <button type="button" data-confirm>✅ أؤكد الحجز</button>
+          <button type="button" class="chip" data-dismiss>تجاهل</button>
+        </div>`;
+      $('chatLog').appendChild(card);
+      $('chatLog').scrollTop = $('chatLog').scrollHeight;
+
+      const btn = card.querySelector('[data-confirm]');
+      card.querySelector('[data-dismiss]').addEventListener('click', () => card.remove());
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = '⏳ جارٍ الحجز…';
+        try {
+          const res = await api('/api/travel/agent/confirm', {
+            method: 'POST', body: JSON.stringify({ intent: proposal.intent }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            btn.disabled = false;
+            btn.textContent = '✅ أؤكد الحجز';
+            pushMsg('bot', '⚠️ ' + (data.error || 'تعذّر إتمام الحجز.'));
+            return;
+          }
+          card.classList.add('done');
+          // ⚠️ فرق السعر يُعلَن لا يُبتلَع: لو تحرّك سعر المزوّد بين العرض
+          // والضغط، المسافر دفع غير ما رأى — وحقّه أن يعرف فوراً.
+          const drift = data.priceChanged
+            ? `<div class="cc-line">⚠️ تغيّر السعر عن المعروض (${esc(data.quotedAmount)}) — المحصَّل ${esc(data.sellAmount)} ${esc(data.currency)}.</div>`
+            : '';
+          card.innerHTML = `
+            <h4>✅ تم الحجز</h4>
+            <div class="cc-line">المرجع: <strong>${esc(data.bookingReference || '—')}</strong></div>
+            <div class="cc-total">${esc(data.sellAmount)} ${esc(data.currency)}</div>${drift}`;
+          loadTrips();
+        } catch {
+          btn.disabled = false;
+          btn.textContent = '✅ أؤكد الحجز';
+          pushMsg('bot', '⚠️ تعذّر الاتصال بالخادم.');
+        }
+      });
+    }
+
     // آخر محادثة تُستأنف بدل أن يبدأ المسافر شرحه من الصفر كل مرة.
     // مرة واحدة لكل تحميل صفحة: chatHistory غير الفارغ يعني أنها حُمِّلت
     // سلفاً أو أن حواراً جارٍ — واستبداله يمحو كلاماً حياً.
@@ -2116,11 +2207,14 @@
           pushAction(`🔀 أجاب ${data.provider} (حصّة المزوّد الأساسي مؤقتاً ممتلئة)`);
         }
         pushMsg('bot', data.reply);
+        // 🔐 بطاقات التأكيد بعد ردّ المساعد: هو يشرح، وهي تُنفّذ
+        (data.intents || []).forEach(pushConfirmCard);
         // ردّ فارغ (بلا نص وبلا أدوات) لا يُضاف للتاريخ — الخادم يرفض أي
         // رسالة تاريخ فارغة لاحقاً، فإضافته هنا تُقفل المحادثة دائماً.
         if (data.reply) chatHistory.push({ role: 'assistant', content: data.reply });
-        // إجراء نفّذ حجزاً/إلغاءً؟ حدّث الرحلات في الخلفية
-        if ((data.actions || []).some(a => ['book_flight', 'cancel_booking', 'book_stay', 'cancel_stay', 'book_car', 'cancel_car'].includes(a.tool))) loadTrips();
+        // إلغاء نُفّذ؟ حدّث الرحلات. (الحجز لم يعد يقع هنا — بل عند ضغط
+        // زر بطاقة التأكيد، وهو يستدعي loadTrips بنفسه.)
+        if ((data.actions || []).some(a => ['cancel_booking', 'cancel_stay', 'cancel_car'].includes(a.tool))) loadTrips();
       } catch {
         pushMsg('bot', '⚠️ تعذّر الاتصال بالخادم.');
       } finally {
