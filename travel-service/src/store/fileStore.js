@@ -20,6 +20,8 @@ export function createFileStore({ dataDir }) {
     const allocationsPath = path.join(dataDir, 'contractAllocations.json');
     const fixedPackagesPath = path.join(dataDir, 'fixedPackages.json');
     const interestsPath = path.join(dataDir, 'packageInterests.json');
+    const reviewsPath = path.join(dataDir, 'packageReviews.json');
+    const wishlistPath = path.join(dataDir, 'wishlist.json');
 
     function ensureDir() {
         fs.mkdirSync(dataDir, { recursive: true });
@@ -56,6 +58,10 @@ export function createFileStore({ dataDir }) {
     const writeFixedPackages = rows => writeJson(fixedPackagesPath, rows);
     const readInterests = () => readJson(interestsPath);
     const writeInterests = rows => writeJson(interestsPath, rows);
+    const readReviews = () => readJson(reviewsPath);
+    const writeReviews = rows => writeJson(reviewsPath, rows);
+    const readWishlist = () => readJson(wishlistPath);
+    const writeWishlist = rows => writeJson(wishlistPath, rows);
 
     return {
         name: 'file',
@@ -369,6 +375,69 @@ export function createFileStore({ dataDir }) {
             Object.assign(row, patch);
             writeInterests(rows);
             return { ...row };
+        },
+
+        // ─── ⭐ مراجعات الباقات (موثقة بحجز — نفس عقد postgresStore) ─────
+
+        // مراجعة واحدة لكل (مستخدم، باقة): الثانية تحديثٌ للأولى لا صف جديد
+        async upsertReview(rData) {
+            const rows = readReviews();
+            const existing = rows.find(r => r.username === rData.username && r.packageId === rData.packageId);
+            if (existing) {
+                Object.assign(existing, {
+                    rating: rData.rating, title: rData.title, text: rData.text,
+                    bookingId: rData.bookingId, updatedAt: Date.now(),
+                });
+                writeReviews(rows);
+                return { ...existing };
+            }
+            const row = {
+                id: 'rev_' + crypto.randomBytes(10).toString('hex'),
+                at: Date.now(),
+                updatedAt: Date.now(),
+                ...rData,
+            };
+            rows.push(row);
+            writeReviews(rows);
+            return { ...row };
+        },
+
+        async listReviewsByPackage(packageId, limit = 100) {
+            return readReviews()
+                .filter(r => r.packageId === packageId)
+                .sort((a, b) => b.at - a.at)
+                .slice(0, limit)
+                .map(r => ({ ...r }));
+        },
+
+        async getReviewByUser(username, packageId) {
+            const row = readReviews().find(r => r.username === username && r.packageId === packageId);
+            return row ? { ...row } : null;
+        },
+
+        // ─── ❤️ المفضلة (قائمة رغبات لكل مستخدم) ────────────────────────
+
+        async addWishlist(username, packageId) {
+            const rows = readWishlist();
+            if (rows.some(w => w.username === username && w.packageId === packageId)) return false;
+            rows.push({ username, packageId, at: Date.now() });
+            writeWishlist(rows);
+            return true;
+        },
+
+        async removeWishlist(username, packageId) {
+            const rows = readWishlist();
+            const next = rows.filter(w => !(w.username === username && w.packageId === packageId));
+            if (next.length === rows.length) return false;
+            writeWishlist(next);
+            return true;
+        },
+
+        async listWishlistByUser(username) {
+            return readWishlist()
+                .filter(w => w.username === username)
+                .sort((a, b) => b.at - a.at)
+                .map(w => ({ ...w }));
         },
 
         async createPriceWatch(w) {

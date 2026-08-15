@@ -25,6 +25,8 @@ import {
     bookFixedPackage, cancelFixedPackageBooking, seatsLeft as fixedSeatsLeft,
     SEAT_SOURCING,
 } from './src/fixedPackages.js';
+import { submitReview, publicReview, aggregateRating } from './src/reviews.js';
+import { sendBalanceReminders } from './src/balanceReminders.js';
 import { normalizeContract } from './src/contracts.js';
 import { createContractedStaysProvider, withContractedStays } from './src/providers/contractedStaysProvider.js';
 import { createBooking, getBooking, getBookingByProviderOrderId, listBookingsByUser, transitionBooking } from './src/bookings.js';
@@ -1372,10 +1374,60 @@ export function createApp({
     app.get('/api/travel/fixed-packages', verifyToken, wrap(async (req, res) => {
         const today = todayUtc();
         const all = await store.listFixedPackages();
-        const packages = all
-            .filter(p => p.active !== false && p.departDate > today)
-            .map(p => publicFixedPackage(p));
+        const username = userOf(req);
+        const wishlist = new Set((await store.listWishlistByUser(username)).map(w => w.packageId));
+        const upcoming = all.filter(p => p.active !== false && p.departDate > today);
+        // ⭐ تقييم كل باقة يُجمع من مراجعاتها الموثقة + ❤️ حالة مفضلة المستخدم
+        const packages = [];
+        for (const p of upcoming) {
+            const reviews = await store.listReviewsByPackage(p.id);
+            packages.push({
+                ...publicFixedPackage(p),
+                ...aggregateRating(reviews),
+                wishlisted: wishlist.has(p.id),
+            });
+        }
         res.json({ packages });
+    }));
+
+    // ─── ⭐ مراجعات موثقة: لا يراجع إلا من حجز فعلاً وانطلقت رحلته ──────
+
+    app.get('/api/travel/fixed-packages/:id/reviews', verifyToken, wrap(async (req, res) => {
+        const pkg = await store.getFixedPackage(String(req.params.id || ''));
+        if (!pkg) return res.status(404).json({ error: 'الباقة غير موجودة.' });
+        const reviews = await store.listReviewsByPackage(pkg.id);
+        res.json({
+            ...aggregateRating(reviews),
+            reviews: reviews.map(publicReview),
+            myReview: (await store.getReviewByUser(userOf(req), pkg.id)) ? true : false,
+        });
+    }));
+
+    app.post('/api/travel/fixed-packages/:id/reviews', verifyToken, wrap(async (req, res) => {
+        try {
+            const saved = await submitReview({
+                store, username: userOf(req), packageId: req.params.id,
+                review: { rating: req.body?.rating, title: req.body?.title, text: req.body?.text },
+            });
+            res.json({ review: publicReview(saved), message: '⭐ شكراً — مراجعتك الموثقة نُشرت.' });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
+    // ─── ❤️ المفضلة ────────────────────────────────────────────────────
+
+    app.put('/api/travel/wishlist/:packageId', verifyToken, wrap(async (req, res) => {
+        const pkg = await store.getFixedPackage(String(req.params.packageId || ''));
+        if (!pkg || pkg.active === false) return res.status(404).json({ error: 'الباقة غير موجودة.' });
+        await store.addWishlist(userOf(req), pkg.id);
+        res.json({ wishlisted: true });
+    }));
+
+    app.delete('/api/travel/wishlist/:packageId', verifyToken, wrap(async (req, res) => {
+        await store.removeWishlist(userOf(req), String(req.params.packageId || ''));
+        res.json({ wishlisted: false });
     }));
 
     app.post('/api/travel/fixed-packages/:id/quote', verifyToken, wrap(async (req, res) => {
@@ -1607,6 +1659,12 @@ export function createApp({
             summary.packageCompensations = await retryPackageCompensations({ store, staysProvider });
         } catch (e) {
             summary.packageCompensations = { error: e.message };
+        }
+        try {
+            // 💳 تذكير سداد متبقي العربون — يجعل نموذجنا الفريد ذاتي التشغيل
+            summary.balanceReminders = await sendBalanceReminders({ store, notifier });
+        } catch (e) {
+            summary.balanceReminders = { error: e.message };
         }
         res.json(summary);
     }));

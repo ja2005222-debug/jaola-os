@@ -162,6 +162,30 @@ CREATE TABLE IF NOT EXISTS travel_package_interests (
     data_json   JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 CREATE INDEX IF NOT EXISTS travel_package_interests_pkg_idx ON travel_package_interests (package_id);
+
+-- ⭐ مراجعات الباقات — موثقة بنيوياً: كل صف يحمل booking_id لحجز حقيقي،
+-- ومراجعة واحدة لكل (مستخدم، باقة) بقيد فريد — الإرسال الثاني تحديث.
+CREATE TABLE IF NOT EXISTS travel_package_reviews (
+    id          TEXT PRIMARY KEY,
+    at          BIGINT NOT NULL,
+    updated_at  BIGINT NOT NULL,
+    package_id  TEXT NOT NULL,
+    username    TEXT NOT NULL,
+    booking_id  TEXT NOT NULL,
+    rating      INTEGER NOT NULL,
+    title       TEXT,
+    text        TEXT,
+    UNIQUE (username, package_id)
+);
+CREATE INDEX IF NOT EXISTS travel_package_reviews_pkg_idx ON travel_package_reviews (package_id);
+
+-- ❤️ المفضلة — صف لكل (مستخدم، باقة)
+CREATE TABLE IF NOT EXISTS travel_wishlist (
+    username    TEXT NOT NULL,
+    package_id  TEXT NOT NULL,
+    at          BIGINT NOT NULL,
+    PRIMARY KEY (username, package_id)
+);
 `;
 
 function rowToBooking(r) {
@@ -251,6 +275,21 @@ function rowToInterest(r) {
         packageId: r.package_id || null,
         username: r.username,
         status: r.status,
+    };
+}
+
+function rowToReview(r) {
+    if (!r) return null;
+    return {
+        id: r.id,
+        at: Number(r.at),
+        updatedAt: Number(r.updated_at),
+        packageId: r.package_id,
+        username: r.username,
+        bookingId: r.booking_id,
+        rating: Number(r.rating),
+        title: r.title,
+        text: r.text,
     };
 }
 
@@ -739,6 +778,82 @@ export function createPostgresStore({ connectionString }) {
                     await c.query('ROLLBACK');
                     throw e;
                 }
+            });
+        },
+
+        // ─── ⭐ مراجعات الباقات ────────────────────────────────────────
+
+        async upsertReview(rData) {
+            const id = 'rev_' + Array.from(crypto.getRandomValues(new Uint8Array(10)))
+                .map(x => x.toString(16).padStart(2, '0')).join('');
+            const now = Date.now();
+            return withClient(async c => {
+                // upsert بقيد (username, package_id) — الإرسال الثاني تحديث ذرّي
+                const res = await c.query(
+                    `INSERT INTO travel_package_reviews
+                     (id, at, updated_at, package_id, username, booking_id, rating, title, text)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                     ON CONFLICT (username, package_id) DO UPDATE SET
+                       updated_at = EXCLUDED.updated_at, booking_id = EXCLUDED.booking_id,
+                       rating = EXCLUDED.rating, title = EXCLUDED.title, text = EXCLUDED.text
+                     RETURNING *`,
+                    [id, now, now, rData.packageId, rData.username, rData.bookingId,
+                        rData.rating, rData.title, rData.text]
+                );
+                return rowToReview(res.rows[0]);
+            });
+        },
+
+        async listReviewsByPackage(packageId, limit = 100) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'SELECT * FROM travel_package_reviews WHERE package_id = $1 ORDER BY at DESC LIMIT $2',
+                    [packageId, limit]
+                );
+                return res.rows.map(rowToReview);
+            });
+        },
+
+        async getReviewByUser(username, packageId) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'SELECT * FROM travel_package_reviews WHERE username = $1 AND package_id = $2',
+                    [username, packageId]
+                );
+                return rowToReview(res.rows[0]);
+            });
+        },
+
+        // ─── ❤️ المفضلة ───────────────────────────────────────────────
+
+        async addWishlist(username, packageId) {
+            return withClient(async c => {
+                const res = await c.query(
+                    `INSERT INTO travel_wishlist (username, package_id, at)
+                     VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+                    [username, packageId, Date.now()]
+                );
+                return res.rowCount > 0;
+            });
+        },
+
+        async removeWishlist(username, packageId) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'DELETE FROM travel_wishlist WHERE username = $1 AND package_id = $2',
+                    [username, packageId]
+                );
+                return res.rowCount > 0;
+            });
+        },
+
+        async listWishlistByUser(username) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'SELECT * FROM travel_wishlist WHERE username = $1 ORDER BY at DESC',
+                    [username]
+                );
+                return res.rows.map(r => ({ username: r.username, packageId: r.package_id, at: Number(r.at) }));
             });
         },
 

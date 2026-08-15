@@ -31,6 +31,8 @@ import {
     normalizeFixedPackage, priceFixedPackage, publicFixedPackage,
     isEarlyBird, seatsLeft as fixedSeatsLeft, SEAT_SOURCING, addDaysStr,
 } from '../src/fixedPackages.js';
+import { normalizeReview, maskReviewerName, aggregateRating, publicReview } from '../src/reviews.js';
+import { isBalanceReminderDue, renderBalanceReminder, sendBalanceReminders, BALANCE_REMINDER_DAYS_AHEAD } from '../src/balanceReminders.js';
 import { createContractedStaysProvider, withContractedStays } from '../src/providers/contractedStaysProvider.js';
 import { retryPackageCompensations } from '../src/packages.js';
 import { buildPackageInsight } from '../src/agent/insights.js';
@@ -1474,6 +1476,45 @@ describe('fixedPackages: وحدات نقية — تنقية وتسعير وحج�
     });
 });
 
+describe('reviews/balanceReminders: وحدات نقية', () => {
+    test('⭐ منقّي المراجعة وقناع الاسم والتجميع', () => {
+        assert.ok(!normalizeReview({ rating: 5, title: 'رائعة', text: 'تنظيم ممتاز' }).error);
+        assert.ok(normalizeReview({ rating: 0 }).error);
+        assert.ok(normalizeReview({ rating: 6 }).error);
+        assert.ok(normalizeReview({ rating: 4.5 }).error);
+        assert.equal(maskReviewerName('salem alharbi'), 'salem a.');
+        assert.equal(maskReviewerName('fx-buyer'), 'fx b.');
+        assert.equal(maskReviewerName(''), 'مسافر');
+        assert.deepEqual(aggregateRating([]), { ratingAvg: null, ratingCount: 0 });
+        assert.deepEqual(aggregateRating([{ rating: 5 }, { rating: 4 }, { rating: 4 }]),
+            { ratingAvg: 4.3, ratingCount: 3 });
+        const pub = publicReview({ id: 'r1', at: 1, rating: 5, title: 't', text: 'x', username: 'secret-user', bookingId: 'b1' });
+        assert.ok(!('bookingId' in pub) && !('username' in pub), 'لا هوية كاملة ولا معرّف حجز للجمهور');
+        assert.equal(pub.verified, true);
+    });
+
+    test('💳 استحقاق تذكير السداد: النافذة والعلامة والأنواع', () => {
+        const base = {
+            kind: 'fixed_package', status: 'issued',
+            paymentPlan: { remaining: 500, dueDate: futureDate(3) },
+        };
+        assert.ok(isBalanceReminderDue(base), 'داخل نافذة الأيام الخمسة');
+        assert.ok(!isBalanceReminderDue({ ...base, paymentPlan: { remaining: 500, dueDate: futureDate(BALANCE_REMINDER_DAYS_AHEAD + 5) } }), 'بعيد الاستحقاق');
+        assert.ok(!isBalanceReminderDue({ ...base, balanceReminderSentAt: 123 }), 'ذُكِّر سلفاً');
+        assert.ok(!isBalanceReminderDue({ ...base, paymentPlan: { remaining: 0, dueDate: futureDate(3) } }), 'مدفوع بالكامل');
+        assert.ok(!isBalanceReminderDue({ ...base, status: 'cancelled' }), 'ملغى');
+        assert.ok(!isBalanceReminderDue({ ...base, kind: 'flight' }), 'ليس باقة مجدولة');
+        const { title, body } = renderBalanceReminder({
+            ...base, bookingReference: 'FP-ABC123', currency: 'USD',
+            offer: { title: 'أسبوع في أنطاليا', departDate: futureDate(17), hotelName: 'لارا' },
+            paymentPlan: { remaining: 500, paidNow: 200, dueDate: futureDate(3) },
+        });
+        assert.match(title, /متبقي/);
+        assert.match(body, /500 USD/);
+        assert.match(body, /FP-ABC123/);
+    });
+});
+
 describe('packages/contracts: وحدات نقية بلا شبكة', () => {
     test('💰 هامش الباقة محروس أدنى من العادي — بنيةً لا نيّةً', () => {
         assert.equal(readPackageMarkupPct({ TRAVEL_PACKAGE_MARKUP_PCT: '6' }, 8), 6);
@@ -2287,6 +2328,94 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(off.status, 200);
             assert.equal((await call('/api/travel/fixed-packages', { token: buyer }))
                 .data.packages.some(p => p.id === pkgId), false, 'الموقوفة تختفي من الجمهور');
+        });
+
+        test('⭐❤️💳 مراجعات موثقة + مفضلة + تذكير سداد المتبقي', async () => {
+            const admin = makeToken('admin');
+            const buyer = makeToken('rv-buyer');
+            const stranger = makeToken('rv-stranger');
+
+            const created = await call('/api/travel/admin/fixed-packages', {
+                method: 'POST', token: admin,
+                body: {
+                    title: 'سحر إسطنبول', city: 'إسطنبول', iata: 'IST',
+                    hotelName: 'بيت البسفور', departDate: futureDate(40), nights: 5,
+                    seatCapacity: 10, sourcing: 'consolidator', currency: 'USD',
+                    pricePerSeat: 800, depositPct: 30,
+                },
+            });
+            assert.equal(created.status, 200);
+            const pkgId = created.data.package.id;
+
+            const booked = await call(`/api/travel/fixed-packages/${pkgId}/bookings`, {
+                method: 'POST', token: buyer,
+                body: { adults: 1, pay: 'deposit', leadName: 'منى', contact: { email: 'mona@example.com' } },
+            });
+            assert.equal(booked.status, 200);
+            const bookingId = booked.data.booking.id;
+
+            // 🔒 التوثيق البنيوي: غير الحاجز 403، والحاجز قبل الانطلاق 400
+            assert.equal((await call(`/api/travel/fixed-packages/${pkgId}/reviews`, {
+                method: 'POST', token: stranger, body: { rating: 5 },
+            })).status, 403);
+            assert.equal((await call(`/api/travel/fixed-packages/${pkgId}/reviews`, {
+                method: 'POST', token: buyer, body: { rating: 5 },
+            })).status, 400, 'المراجعة تُفتح بعد الانطلاق فقط');
+
+            // نحاكي انقضاء الرحلة: علامة نفس-الحالة الذرّية تُحدّث لقطة الحجز
+            const bRow = await store.getBooking(bookingId);
+            await store.transitionBooking(bookingId, {
+                from: ['issued'], to: 'issued',
+                patch: { offer: { ...bRow.offer, departDate: '2020-01-01' } },
+            });
+
+            const posted = await call(`/api/travel/fixed-packages/${pkgId}/reviews`, {
+                method: 'POST', token: buyer,
+                body: { rating: 4, title: 'جميلة', text: 'تنظيم مريح' },
+            });
+            assert.equal(posted.status, 200);
+            assert.equal(posted.data.review.verified, true);
+            assert.ok(!posted.data.review.reviewer.includes('rv-buyer'), 'الاسم مُقنَّع');
+
+            // الإرسال الثاني تحديث لا تكرار — العدد يبقى 1 والمتوسط يتبدل
+            await call(`/api/travel/fixed-packages/${pkgId}/reviews`, {
+                method: 'POST', token: buyer, body: { rating: 5 },
+            });
+            const listed = await call(`/api/travel/fixed-packages/${pkgId}/reviews`, { token: stranger });
+            assert.equal(listed.data.ratingCount, 1);
+            assert.equal(listed.data.ratingAvg, 5);
+            assert.ok(!('bookingId' in listed.data.reviews[0]) && !('username' in listed.data.reviews[0]));
+
+            // التجميع يظهر في قائمة الباقات العامة
+            const pubList = await call('/api/travel/fixed-packages', { token: stranger });
+            const pubPkg = pubList.data.packages.find(p => p.id === pkgId);
+            assert.equal(pubPkg.ratingAvg, 5);
+            assert.equal(pubPkg.ratingCount, 1);
+
+            // ❤️ المفضلة: إضافة → تظهر بعلمها لصاحبها فقط، ثم إزالة
+            assert.equal((await call(`/api/travel/wishlist/${pkgId}`, { method: 'PUT', token: buyer })).status, 200);
+            const wlList = await call('/api/travel/fixed-packages', { token: buyer });
+            assert.equal(wlList.data.packages.find(p => p.id === pkgId).wishlisted, true);
+            assert.equal((await call('/api/travel/fixed-packages', { token: stranger }))
+                .data.packages.find(p => p.id === pkgId).wishlisted, false, 'المفضلة شخصية');
+            await call(`/api/travel/wishlist/${pkgId}`, { method: 'DELETE', token: buyer });
+            assert.equal((await call('/api/travel/fixed-packages', { token: buyer }))
+                .data.packages.find(p => p.id === pkgId).wishlisted, false);
+
+            // 💳 تذكير السداد: استحقاق قريب → إشعار واحد فقط مهما أعيدت الدورة
+            const bRow2 = await store.getBooking(bookingId);
+            await store.transitionBooking(bookingId, {
+                from: ['issued'], to: 'issued',
+                patch: { paymentPlan: { ...bRow2.paymentPlan, dueDate: futureDate(2) } },
+            });
+            const notifier = createNotifier({ store, mailer: null, whatsapp: null });
+            const run1 = await sendBalanceReminders({ store, notifier });
+            assert.ok(run1.sent >= 1, 'التذكير أُرسل');
+            const run2 = await sendBalanceReminders({ store, notifier });
+            assert.equal(run2.sent, 0, 'لا تذكير مكرر لنفس الحجز');
+            const inbox = await call('/api/travel/notifications', { token: buyer });
+            assert.ok(inbox.data.notifications.some(n => n.title.includes('متبقي')),
+                'التذكير وصل صندوق المسافر');
         });
 
         // ─── 🤝 العقود الفندقية عبر الأدمن ─────────────────────────────

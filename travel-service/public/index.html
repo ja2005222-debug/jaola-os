@@ -592,6 +592,32 @@
     </div>
   </dialog>
 
+  <!-- ⭐ نافذة المراجعات الموثقة: عرض + إرسال (لمن سافر فعلاً) -->
+  <dialog id="reviewsDialog">
+    <h3 style="margin-bottom:6px">⭐ مراجعات موثقة</h3>
+    <p id="rvSummary" class="note"></p>
+    <div id="rvList" style="max-height:40vh;overflow:auto"></div>
+    <div id="rvForm" class="hidden" style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px">
+      <div class="row">
+        <div><label>تقييمك</label><select id="rvRating">
+          <option value="5">⭐⭐⭐⭐⭐ ممتازة</option>
+          <option value="4">⭐⭐⭐⭐ جيدة جداً</option>
+          <option value="3">⭐⭐⭐ جيدة</option>
+          <option value="2">⭐⭐ دون المتوقع</option>
+          <option value="1">⭐ سيئة</option>
+        </select></div>
+        <div style="flex:2"><label>عنوان (اختياري)</label><input id="rvTitle" placeholder="رحلة رائعة!" /></div>
+      </div>
+      <label>تجربتك (اختياري)</label>
+      <input id="rvText" placeholder="الفندق، التنظيم، الطيران..." />
+      <div id="rvErr" class="error hidden"></div>
+      <button class="primary" id="rvSubmit" style="margin-top:8px">نشر المراجعة</button>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:12px">
+      <button class="chip" id="rvClose" type="button">إغلاق</button>
+    </div>
+  </dialog>
+
   <!-- نافذة بيانات سائق السيارة -->
   <dialog id="carBookDialog">
     <h3 style="margin-bottom:6px">🚗 بيانات السائق</h3>
@@ -2038,13 +2064,25 @@
         return;
       }
       fixedPkgs = (await res.json()).packages || [];
-      $('fixedGrid').innerHTML = fixedPkgs.length === 0
-        ? '<p class="note">لا انطلاقات معلنة حالياً — اطلب عرضاً خاصاً أدناه وسنوافيك.</p>'
-        : fixedPkgs.map(p => `
+      renderFixedGrid();
+    }
+
+    let fixedWishOnly = false;
+    function renderFixedGrid() {
+      const shown = fixedWishOnly ? fixedPkgs.filter(p => p.wishlisted) : fixedPkgs;
+      const filterBar = fixedPkgs.some(p => p.wishlisted) || fixedWishOnly
+        ? `<div style="margin:4px 0 10px"><button class="chip" id="fxWishFilter">${fixedWishOnly ? '📋 كل الباقات' : '❤️ مفضلتي فقط'}</button></div>` : '';
+      $('fixedGrid').innerHTML = filterBar + (shown.length === 0
+        ? `<p class="note">${fixedWishOnly ? 'لا باقات في مفضلتك بعد — اضغط ♡ على أي باقة.' : 'لا انطلاقات معلنة حالياً — اطلب عرضاً خاصاً أدناه وسنوافيك.'}</p>`
+        : shown.map(p => `
           <div class="card">
             <div class="route">🎒 ${esc(p.title)}
+              <button class="chip" data-fx-wish="${esc(p.id)}" title="مفضلة" style="padding:2px 8px">${p.wishlisted ? '❤️' : '🤍'}</button>
               ${p.earlyBird ? `<span class="pkg-badge">⚡ سعر مبكّر −${p.ebPct}% حتى ${esc(p.ebUntil)}</span>` : ''}
             </div>
+            ${p.ratingCount > 0
+              ? `<div class="seg"><a href="#" data-fx-reviews="${esc(p.id)}" style="color:inherit">⭐ ${p.ratingAvg} · ${p.ratingCount} مراجعة موثقة</a></div>`
+              : ''}
             <div class="seg">🏨 ${esc(p.hotelName)} · ${esc(p.board)} · ✈️ ذهاب وعودة</div>
             <div class="seg">📅 ${esc(p.departDate)} → ${esc(p.returnDate)} (${p.nights} ليالٍ)</div>
             ${p.description ? `<div class="note">${esc(p.description)}</div>` : ''}
@@ -2073,7 +2111,60 @@
           const data = await res2.json();
           alert(res2.ok ? data.message : (data.error || 'تعذّر التسجيل.'));
         }));
+      // ❤️ تبديل المفضلة دون إعادة تحميل كاملة
+      document.querySelectorAll('[data-fx-wish]').forEach(btn =>
+        btn.addEventListener('click', async () => {
+          const p = fixedPkgs.find(x => x.id === btn.dataset.fxWish);
+          if (!p) return;
+          const res2 = await api(`/api/travel/wishlist/${p.id}`, { method: p.wishlisted ? 'DELETE' : 'PUT' });
+          if (res2.ok) { p.wishlisted = !p.wishlisted; renderFixedGrid(); }
+        }));
+      document.querySelectorAll('[data-fx-reviews]').forEach(a =>
+        a.addEventListener('click', e => { e.preventDefault(); openReviews(a.dataset.fxReviews, false); }));
+      const wf = $('fxWishFilter');
+      if (wf) wf.addEventListener('click', () => { fixedWishOnly = !fixedWishOnly; renderFixedGrid(); });
     }
+
+    // ─── ⭐ المراجعات الموثقة ───
+    let reviewsPkgId = null;
+    async function openReviews(pkgId, withForm) {
+      reviewsPkgId = pkgId;
+      const res = await api(`/api/travel/fixed-packages/${pkgId}/reviews`);
+      if (!res.ok) return;
+      const data = await res.json();
+      $('rvSummary').textContent = data.ratingCount > 0
+        ? `⭐ ${data.ratingAvg} من 5 — ${data.ratingCount} مراجعة، كلها من مسافرين حجزوا فعلاً`
+        : 'لا مراجعات بعد — كن أول من يشارك تجربته.';
+      $('rvList').innerHTML = data.reviews.map(r => `
+        <div class="card" style="margin:6px 0">
+          <div>${'⭐'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}
+            <strong>${esc(r.title || '')}</strong>
+            <span class="note">— ${esc(r.reviewer)} ✓ حجز موثق</span></div>
+          ${r.text ? `<div class="note">${esc(r.text)}</div>` : ''}
+        </div>`).join('') || '';
+      $('rvForm').classList.toggle('hidden', !withForm);
+      $('rvErr').classList.add('hidden');
+      $('reviewsDialog').showModal();
+    }
+    $('rvClose').addEventListener('click', () => $('reviewsDialog').close());
+    $('rvSubmit').addEventListener('click', async () => {
+      const res = await api(`/api/travel/fixed-packages/${reviewsPkgId}/reviews`, {
+        method: 'POST',
+        body: JSON.stringify({
+          rating: Number($('rvRating').value),
+          title: $('rvTitle').value.trim(),
+          text: $('rvText').value.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        $('rvErr').textContent = data.error || 'تعذّر النشر.';
+        $('rvErr').classList.remove('hidden');
+        return;
+      }
+      openReviews(reviewsPkgId, false);
+      loadFixedPackages().catch(() => {});
+    });
 
     function openFixedDlg(id) {
       fixedSel = fixedPkgs.find(p => p.id === id);
@@ -2189,7 +2280,9 @@
             ? `<div class="note">💳 عربون مدفوع ${plan.paidNow} ${esc(b.currency)} — المتبقي <strong>${plan.remaining} ${esc(b.currency)}</strong> قبل ${esc(plan.dueDate)}</div>`
             : ''}
           ${b.namesDeadline && b.status === 'issued'
-            ? `<div class="note">🪪 تسليم أسماء المسافرين قبل ${esc(b.namesDeadline)}</div>` : ''}`;
+            ? `<div class="note">🪪 تسليم أسماء المسافرين قبل ${esc(b.namesDeadline)}</div>` : ''}
+          ${b.status === 'issued' && b.offer?.departDate && b.offer.departDate <= new Date().toISOString().slice(0, 10)
+            ? `<button class="chip" data-fx-review="${esc(b.offer?.fixedPackageId || '')}" style="margin-top:4px">⭐ قيّم رحلتك</button>` : ''}`;
       }
       if (b.kind === 'package') {
         const outbound = b.offer?.flight?.slices?.[0] || {};
@@ -2262,6 +2355,9 @@
           if (!res.ok) alert(data.error || 'تعذّر الإلغاء.');
           loadTrips();
         }));
+      // ⭐ تقييم رحلة منقضية — يفتح نافذة المراجعات بنموذج الإرسال
+      document.querySelectorAll('[data-fx-review]').forEach(btn =>
+        btn.addEventListener('click', () => openReviews(btn.dataset.fxReview, true)));
     }
 
     // ─── المساعد ───
