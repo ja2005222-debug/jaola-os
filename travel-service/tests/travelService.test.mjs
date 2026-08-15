@@ -19,7 +19,7 @@ import jwt from 'jsonwebtoken';
 import { createApp, validateSearchParams, validatePassengers, validateStaySearchParams, validateGuests, validateCarSearchParams, validateDrivers, verifyDuffelWebhookSignature } from '../server.js';
 import crypto from 'crypto';
 import { createMockTravelProvider } from '../src/providers/mockProvider.js';
-import { createDuffelProvider, normalizeDuffelOffer, sortOffers, totalDurationMin } from '../src/providers/duffelProvider.js';
+import { createDuffelProvider, normalizeDuffelOffer, sortOffers, totalDurationMin, applyOfferFilters } from '../src/providers/duffelProvider.js';
 import { createMockStaysProvider } from '../src/providers/mockStaysProvider.js';
 import { normalizeDuffelStayResult } from '../src/providers/duffelStaysProvider.js';
 import { createMockCarsProvider } from '../src/providers/mockCarsProvider.js';
@@ -1476,6 +1476,48 @@ describe('fixedPackages: وحدات نقية — تنقية وتسعير وحج�
     });
 });
 
+describe('صحة صياغة سكربتات الواجهة — درس عطل إنتاجي حقيقي', () => {
+    // ⚠️ عطل حقيقي (١٥ أغسطس ٢٠٢٦): قوس ناقص في سكربت index.html أسقط
+    // البوابة المنشورة كلها صفحةً فارغة — و195 اختباراً للخادم لم تلحظه
+    // لأن سكربت المتصفح لا يمرّ على Node إطلاقاً. هذا الاختبار يفكّك كل
+    // <script> مضمَّن في الصفحتين ويفحص صياغته كما سيفعل المتصفح —
+    // فأي قوس/سلسلة مكسورة تكسر الاختبار قبل أن تكسر الإنتاج.
+    for (const page of ['public/index.html', 'public/admin.html']) {
+        test(`🧩 ${page}: كل سكربت مضمَّن يتحلّل بلا خطأ صياغة`, () => {
+            const html = fs.readFileSync(new URL('../' + page, import.meta.url), 'utf8');
+            const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+            assert.ok(scripts.length >= 1, 'الصفحة تحوي سكربتاً واحداً على الأقل');
+            for (const [i, code] of scripts.entries()) {
+                assert.doesNotThrow(() => new Function(code), `سكربت ${i} في ${page} مكسور الصياغة`);
+            }
+        });
+    }
+    test('🧩 sw.js يتحلّل بلا خطأ صياغة', () => {
+        const code = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+        assert.doesNotThrow(() => new Function(code));
+    });
+});
+
+describe('applyOfferFilters: فلترة قبل الاقتطاع — وحدة نقية', () => {
+    const offers = [
+        { id: 'a', netAmount: 100, owner: 'الخطوط السعودية', ownerIata: 'SV', slices: [{ stops: 0 }] },
+        { id: 'b', netAmount: 80, owner: 'طيران ناس', ownerIata: 'XY', slices: [{ stops: 1 }] },
+        { id: 'c', netAmount: 60, owner: 'العربية للطيران', ownerIata: 'G9', slices: [{ stops: 2 }, { stops: 0 }] },
+    ];
+    test('🔍 التوقفات والناقل والسقف — كلٌّ على حدة ومجتمعة', () => {
+        assert.deepEqual(applyOfferFilters(offers, { maxStops: 0 }).map(o => o.id), ['a']);
+        assert.deepEqual(applyOfferFilters(offers, { maxStops: 1 }).map(o => o.id), ['a', 'b']);
+        // الناقل: احتواء اسم غير حساس، أو IATA مطابق
+        assert.deepEqual(applyOfferFilters(offers, { airline: 'ناس' }).map(o => o.id), ['b']);
+        assert.deepEqual(applyOfferFilters(offers, { airline: 'sv' }).map(o => o.id), ['a']);
+        assert.deepEqual(applyOfferFilters(offers, { maxNetAmount: 80 }).map(o => o.id), ['b', 'c']);
+        assert.deepEqual(applyOfferFilters(offers, { maxStops: 1, maxNetAmount: 90 }).map(o => o.id), ['b']);
+        // بلا فلاتر: كما هي
+        assert.equal(applyOfferFilters(offers, {}).length, 3);
+        assert.equal(applyOfferFilters(offers).length, 3);
+    });
+});
+
 describe('reviews/balanceReminders: وحدات نقية', () => {
     test('⭐ منقّي المراجعة وقناع الاسم والتجميع', () => {
         assert.ok(!normalizeReview({ rating: 5, title: 'رائعة', text: 'تنظيم ممتاز' }).error);
@@ -2416,6 +2458,70 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             const inbox = await call('/api/travel/notifications', { token: buyer });
             assert.ok(inbox.data.notifications.some(n => n.title.includes('متبقي')),
                 'التذكير وصل صندوق المسافر');
+        });
+
+        test('🔍📅 فلاتر البحث + تقويم الأسعار عبر الـ API', async () => {
+            const token = makeToken('filter-user');
+
+            // فلاتر فاسدة تُرفض بالمنقّي
+            for (const bad of [
+                { ...SEARCH_BODY(), maxStops: 5 },
+                { ...SEARCH_BODY(), maxStops: 1.5 },
+                { ...SEARCH_BODY(), maxPrice: -10 },
+                { ...SEARCH_BODY(), maxPrice: 'free' },
+            ]) {
+                assert.equal((await call('/api/travel/flights/search', {
+                    method: 'POST', token, body: bad,
+                })).status, 400, JSON.stringify(bad));
+            }
+
+            // المرجع بلا فلاتر: mock يعيد 3 عروض (الثالث بتوقف واحد)
+            const all = (await call('/api/travel/flights/search', {
+                method: 'POST', token, body: SEARCH_BODY(),
+            })).data.offers;
+            assert.equal(all.length, 3);
+
+            // مباشر فقط → يسقط العرض ذو التوقف
+            const direct = (await call('/api/travel/flights/search', {
+                method: 'POST', token, body: { ...SEARCH_BODY(), maxStops: 0 },
+            })).data.offers;
+            assert.equal(direct.length, 2);
+            assert.ok(direct.every(o => o.slices.every(s => s.stops === 0)));
+
+            // فلتر الناقل باسم أحد العروض الفعلية
+            const airline = all[0].owner;
+            const byAirline = (await call('/api/travel/flights/search', {
+                method: 'POST', token, body: { ...SEARCH_BODY(), airline },
+            })).data.offers;
+            assert.ok(byAirline.length >= 1);
+            assert.ok(byAirline.every(o => o.owner === airline));
+
+            // سقف السعر بسعر **البيع**: سقف = أرخص بيع → يبقى الأرخص وحده على الأقل
+            const cheapestSell = Math.min(...all.map(o => o.sellAmount));
+            const capped = (await call('/api/travel/flights/search', {
+                method: 'POST', token, body: { ...SEARCH_BODY(), maxPrice: cheapestSell },
+            })).data.offers;
+            assert.ok(capped.length >= 1);
+            assert.ok(capped.every(o => o.sellAmount <= cheapestSell));
+
+            // 📅 التقويم: أيام حول التاريخ بأسعار حقيقية من نفس المزوّد
+            const cal = await call('/api/travel/flights/calendar', {
+                method: 'POST', token,
+                body: { origin: 'RUH', destination: 'CAI', aroundDate: futureDate(20), windowDays: 2 },
+            });
+            assert.equal(cal.status, 200);
+            assert.equal(cal.data.days.length, 5); // ±2 حول المركز
+            assert.ok(cal.data.days.every(d => d.price > 0 && d.currency));
+            // النداء الثاني يخدمه الكاش (نفس المسار والأيام)
+            const cal2 = await call('/api/travel/flights/calendar', {
+                method: 'POST', token,
+                body: { origin: 'RUH', destination: 'CAI', aroundDate: futureDate(20), windowDays: 2 },
+            });
+            assert.ok(cal2.data.days.every(d => d.cached === true), 'الكاش يمتص التكرار');
+            // تحقق فاسد
+            assert.equal((await call('/api/travel/flights/calendar', {
+                method: 'POST', token, body: { origin: 'RUHX', destination: 'CAI', aroundDate: futureDate(20) },
+            })).status, 400);
         });
 
         // ─── 🤝 العقود الفندقية عبر الأدمن ─────────────────────────────

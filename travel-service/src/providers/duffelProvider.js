@@ -117,6 +117,33 @@ export function sortOffers(offers, sort = 'price') {
     return copy.sort((a, b) => a.netAmount - b.netAmount);
 }
 
+/**
+ * 🔍 فلترة العروض قبل الترتيب والاقتطاع — نفس درس sortOffers أعلاه: فلترة
+ * العشرة المقتطعة كانت ستُخفي رحلات مباشرة موجودة خارج العشرة الأرخص.
+ * دالة نقية يتشاركها المزوّدان (الحي والمحاكاة) فيسري العقد عليهما معاً.
+ * - maxStops: أقصى توقفات لأي قطاع من قطاعات العرض (0 = مباشر فقط)
+ * - airline: اسم الناقل (احتواء، غير حساس لحالة الأحرف) أو رمز IATA مطابق
+ * - maxNetAmount: سقف الصافي (الخادم يحوّل سقف البيع إليه قبل التمرير —
+ *   الهامش لا يعرفه المزوّد ولا يجب أن يعرفه)
+ */
+export function applyOfferFilters(offers, { maxStops = null, airline = null, maxNetAmount = null } = {}) {
+    let list = offers;
+    if (maxStops != null) {
+        list = list.filter(o => (o.slices || []).every(s => (s.stops || 0) <= maxStops));
+    }
+    if (airline) {
+        const q = String(airline).trim().toLowerCase();
+        const qIata = q.toUpperCase();
+        list = list.filter(o =>
+            String(o.owner || '').toLowerCase().includes(q)
+            || (o.ownerIata && o.ownerIata === qIata));
+    }
+    if (maxNetAmount != null) {
+        list = list.filter(o => o.netAmount <= maxNetAmount);
+    }
+    return list;
+}
+
 export function createDuffelProvider({ apiKey, apiUrl, fetchImpl }) {
     const client = createDuffelClient({ apiKey, apiUrl, fetchImpl });
     const duffel = client.request;
@@ -125,7 +152,7 @@ export function createDuffelProvider({ apiKey, apiUrl, fetchImpl }) {
         name: 'duffel',
         mode: client.mode,
 
-        async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, childrenDobs = [], cabin = 'economy', sort = 'price' }) {
+        async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, childrenDobs = [], cabin = 'economy', sort = 'price', maxStops = null, airline = null, maxNetAmount = null }) {
             const slices = [{ origin, destination, departure_date: departDate }];
             if (returnDate) slices.push({ origin: destination, destination: origin, departure_date: returnDate });
             // كان هنا `age: 8` ثابتاً لكل طفل — رقم مخترَع يناقض تاريخ
@@ -145,7 +172,9 @@ export function createDuffelProvider({ apiKey, apiUrl, fetchImpl }) {
             const normalized = (data.offers || [])
                 .map(o => normalizeDuffelOffer(o, requestPassengers))
                 .filter(o => Number.isFinite(o.netAmount));
-            return sortOffers(normalized, sort).slice(0, MAX_RESULTS);
+            // الفلترة قبل الترتيب والاقتطاع — انظر تعليق applyOfferFilters
+            const filtered = applyOfferFilters(normalized, { maxStops, airline, maxNetAmount });
+            return sortOffers(filtered, sort).slice(0, MAX_RESULTS);
         },
 
         async getOffer(offerId) {

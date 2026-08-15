@@ -195,7 +195,29 @@ export function validateSearchParams(body) {
     if (!SORTS.includes(sort)) {
         return { error: `ترتيب غير معروف (المتاح: ${SORTS.join('، ')}).` };
     }
-    return { values: { origin, destination, departDate, returnDate, adults, childrenDobs, cabin, sort } };
+    // 🔍 فلاتر اختيارية (فجوة أمام OTAs الكبرى) — تُطبَّق داخل المزوّد
+    // **قبل** اقتطاع أفضل النتائج (نفس درس الترتيب الموثق: فلترة العشرة
+    // المقتطعة تُخفي رحلات مباشرة موجودة خارج العشرة الأرخص).
+    let maxStops = null;
+    if (body?.maxStops != null && body.maxStops !== '') {
+        maxStops = Number(body.maxStops);
+        if (!Number.isInteger(maxStops) || maxStops < 0 || maxStops > 3) {
+            return { error: 'حد التوقفات عدد صحيح بين 0 (مباشر) و3.' };
+        }
+    }
+    let airline = null;
+    if (body?.airline != null && body.airline !== '') {
+        airline = String(body.airline).trim().slice(0, 60);
+        if (!airline) airline = null;
+    }
+    let maxPrice = null;
+    if (body?.maxPrice != null && body.maxPrice !== '') {
+        maxPrice = Number(body.maxPrice);
+        if (!Number.isFinite(maxPrice) || maxPrice <= 0) {
+            return { error: 'سقف السعر رقم موجب.' };
+        }
+    }
+    return { values: { origin, destination, departDate, returnDate, adults, childrenDobs, cabin, sort, maxStops, airline, maxPrice } };
 }
 
 /** يتحقق من بيانات الركاب والتواصل — {error} أو {values}. */
@@ -591,7 +613,12 @@ export function createApp({
         const check = validateSearchParams(params);
         if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
         try {
-            const offers = await provider.searchOffers(check.values);
+            // سقف السعر يصل من المستخدم بسعر **البيع** — المزوّد يفلتر
+            // بالصافي (لا يعرف الهامش ولا يجب): التحويل هنا، والهامش
+            // رتيب فالتكافؤ محفوظ.
+            const { maxPrice, ...vals } = check.values;
+            if (maxPrice != null) vals.maxNetAmount = maxPrice / (1 + flightMkt / 100);
+            const offers = await provider.searchOffers(vals);
             return offers.map(o => publicOffer(o, flightMkt));
         } catch (e) {
             // بلا هذا: رفض المزوّد (403 Duffel، خطأ LiteAPI...) يسقط كخطأ
@@ -871,6 +898,13 @@ export function createApp({
         }
     }
 
+    // 📅 كاش أرخص سعر لليوم (مسار، تاريخ، درجة) — تقويم الأسعار يطلب
+    // نفس الأيام تكراراً من مستخدمين مختلفين، وكل يوم نداء مزوّد فعلي.
+    // 6 ساعات = نفس فاصل topDestinations/priceWatchPoller (تناسق منطقي).
+    // النجاح فقط يُكيَّش — فشلُ لحظةٍ لا يُخلَّد 6 ساعات.
+    const FLEX_PRICE_TTL_MS = 6 * 60 * 60 * 1000;
+    const flexPriceCache = new Map();
+
     async function doFindFlexibleDates(username, { origin, destination, aroundDate, windowDays, cabin }) {
         checkFlexLimit(username);
         const originU = String(origin || '').trim().toUpperCase();
@@ -897,11 +931,18 @@ export function createApp({
         for (let i = 0; i < dates.length; i += FLEX_CONCURRENCY) {
             const batch = dates.slice(i, i + FLEX_CONCURRENCY);
             const batchResults = await Promise.all(batch.map(async date => {
+                const cacheKey = `${originU}_${destU}_${date}_${cab}`;
+                const cached = flexPriceCache.get(cacheKey);
+                if (cached && Date.now() - cached.at < FLEX_PRICE_TTL_MS) {
+                    return { date, price: cached.price, currency: cached.currency, cached: true };
+                }
                 try {
                     const offers = await provider.searchOffers({ origin: originU, destination: destU, departDate: date, adults: 1, childrenDobs: [], cabin: cab });
                     if (offers.length === 0) return { date, price: null, currency: null };
                     const cheapestNet = Math.min(...offers.map(o => o.netAmount));
-                    return { date, price: applyMarkup(cheapestNet, flightMkt), currency: offers[0].currency };
+                    const row = { price: applyMarkup(cheapestNet, flightMkt), currency: offers[0].currency, at: Date.now() };
+                    flexPriceCache.set(cacheKey, row);
+                    return { date, price: row.price, currency: row.currency };
                 } catch {
                     return { date, price: null, currency: null };
                 }
@@ -1121,6 +1162,24 @@ export function createApp({
         } catch (e) {
             // كان يفحص 400 فقط — رفض مزوّد فعلي (502 الجديد أعلاه) كان يسقط
             // كخطأ 500 عام رغم تفصيل واضح متوفر، خلاف مساري الفنادق/السيارات.
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
+    // 📅 تقويم الأسعار: أرخص سعر حقيقي لكل يوم حول تاريخ (ميزة Skyscanner
+    // /Google Flights) — كان حكراً على أداة الايجنت find_flexible_dates،
+    // الآن للواجهة أيضاً. نفس المنطق حرفياً: حارس checkFlexLimit الأشدّ
+    // (نداءات مزوّد متعددة لكل طلب) + كاش الأسعار أعلاه يمتصّ التكرار.
+    app.post('/api/travel/flights/calendar', verifyToken, wrap(async (req, res) => {
+        try {
+            const days = await doFindFlexibleDates(userOf(req), {
+                origin: req.body?.origin, destination: req.body?.destination,
+                aroundDate: req.body?.aroundDate, windowDays: req.body?.windowDays,
+                cabin: req.body?.cabin,
+            });
+            res.json({ days });
+        } catch (e) {
             if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;
         }
