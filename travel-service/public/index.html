@@ -4,6 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>✈️ JAOLA Travel — بوابة السفر</title>
+  <!-- 📱 PWA: تطبيق قابل للتثبيت — القشرة تُكيَّش والـ API حي دوماً (sw.js) -->
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <meta name="theme-color" content="#0b1120" />
   <style>
     :root {
       --bg: #0b1120; --card: #111a2e; --border: #1e2a44;
@@ -336,14 +340,31 @@
           <!-- تواريخ ميلاد الأطفال: سعر تذكرة الطفل يتبع عمره يوم السفر،
                فبدونها يُسعَّر الحجز لعمر مخترَع ويرفضه الناقل عند الإصدار. -->
           <div id="childDobs" class="row hidden" style="margin-top:8px"></div>
-          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <!-- 🔍 فلاتر اختيارية — تُطبَّق لدى الخادم قبل اقتطاع أفضل النتائج -->
+          <details style="margin-top:8px">
+            <summary class="note" style="cursor:pointer">🔍 فلاتر متقدمة (توقفات · شركة · سقف سعر)</summary>
+            <div class="row" style="margin-top:8px">
+              <div><label>التوقفات</label>
+                <select id="fMaxStops">
+                  <option value="">أي عدد</option>
+                  <option value="0">✈️ مباشر فقط</option>
+                  <option value="1">توقف واحد كحد أقصى</option>
+                </select>
+              </div>
+              <div><label>شركة الطيران (اسم أو رمز)</label><input id="fAirline" placeholder="مثال: السعودية أو SV" /></div>
+              <div><label>سقف السعر</label><input id="fMaxPrice" type="number" min="1" placeholder="بلا سقف" /></div>
+            </div>
+          </details>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:8px">
             <button class="primary" id="searchBtn">🔎 ابحث</button>
+            <button class="chip" id="calendarBtn" title="أرخص سعر لكل يوم حول تاريخك">📅 تقويم الأسعار</button>
             <label id="includeStaysLabel" style="display:flex;align-items:center;gap:6px;cursor:pointer">
               <input type="checkbox" id="fIncludeStays" />
               <span class="note" style="margin:0">🏨 أضف فنادق الوجهة (تفتح في صفحة منفصلة)</span>
             </label>
           </div>
           <div id="searchError" class="error hidden"></div>
+          <div id="calStrip" class="hidden" style="margin-top:10px"></div>
         </div>
         <div id="promoWrap" class="hidden">
           <div class="promo-head">
@@ -1291,6 +1312,10 @@
           departDate: $('fDepart').value, returnDate: $('fReturn').value || null,
           adults: Number($('fAdults').value), childrenDobs,
           cabin: $('fCabin').value, sort: $('fSort').value,
+          // 🔍 الفلاتر الاختيارية — تُرسَل فقط حين ضُبطت
+          maxStops: $('fMaxStops').value === '' ? undefined : Number($('fMaxStops').value),
+          airline: $('fAirline').value.trim() || undefined,
+          maxPrice: $('fMaxPrice').value === '' ? undefined : Number($('fMaxPrice').value),
         };
         const res = await api('/api/travel/flights/search', { method: 'POST', body: JSON.stringify(body) });
         const data = await res.json();
@@ -1359,6 +1384,42 @@
       }
     }
     $('searchBtn').addEventListener('click', doSearch);
+
+    // ─── 📅 تقويم الأسعار: أرخص سعر حقيقي لكل يوم حول تاريخ الذهاب ───
+    $('calendarBtn').addEventListener('click', async () => {
+      const origin = selectedIata($('fOrigin')), destination = selectedIata($('fDest'));
+      const aroundDate = $('fDepart').value;
+      $('searchError').classList.add('hidden');
+      if (!origin || !destination || !aroundDate) {
+        $('searchError').textContent = 'للتقويم: حدّد «من» و«إلى» وتاريخ الذهاب أولاً.';
+        $('searchError').classList.remove('hidden');
+        return;
+      }
+      $('calStrip').classList.remove('hidden');
+      $('calStrip').innerHTML = '<p class="note">📅 نجمع أرخص سعر لكل يوم — لحظات...</p>';
+      const res = await api('/api/travel/flights/calendar', {
+        method: 'POST',
+        body: JSON.stringify({ origin, destination, aroundDate, windowDays: 3, cabin: $('fCabin').value }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        $('calStrip').innerHTML = `<span class="error" style="display:block">${esc(data.error || 'تعذّر جلب التقويم.')}</span>`;
+        return;
+      }
+      const priced = data.days.filter(d => d.price != null);
+      const cheapest = priced.length ? Math.min(...priced.map(d => d.price)) : null;
+      const dayName = d => new Date(d + 'T00:00:00Z').toLocaleDateString('ar', { weekday: 'short', day: 'numeric', month: 'short' });
+      $('calStrip').innerHTML =
+        '<div class="note" style="margin-bottom:6px">📅 أرخص سعر لكل يوم (لمسافر واحد) — اضغط يوماً لتبحث به:</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        data.days.map(d => d.price == null
+          ? `<span class="chip" style="opacity:.5">${esc(dayName(d.date))}<br><small>لا رحلات</small></span>`
+          : `<button class="chip" data-cal-day="${esc(d.date)}" style="${d.price === cheapest ? 'border-color:var(--ok);color:var(--ok)' : ''}${d.date === aroundDate ? ';font-weight:800' : ''}">
+              ${esc(dayName(d.date))}<br><small>${d.price === cheapest ? '🏆 ' : ''}${d.price} ${esc(d.currency)}</small></button>`
+        ).join('') + '</div>';
+      document.querySelectorAll('[data-cal-day]').forEach(btn =>
+        btn.addEventListener('click', () => { $('fDepart').value = btn.dataset.calDay; doSearch(); }));
+    });
 
     // ─── الحجز ───
     function openBooking(offer) {
@@ -2439,6 +2500,11 @@
     });
 
     boot();
+
+    // 📱 تسجيل الـ Service Worker — فشله لا يمس البوابة بشيء (تحسين تدريجي)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
   </script>
 </body>
 </html>

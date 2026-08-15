@@ -8,7 +8,7 @@
  */
 
 import { seedOf, pad } from './mockUtils.js';
-import { sortOffers, totalDurationMin } from './duffelProvider.js';
+import { sortOffers, totalDurationMin, applyOfferFilters } from './duffelProvider.js';
 import { buildSearchPassengers } from '../passengerAges.js';
 
 const MOCK_AIRLINES = ['طيران جاولا', 'أجنحة الصقر', 'سماء العرب'];
@@ -62,7 +62,7 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
         name: 'mock',
         mode: 'mock',
 
-        async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, childrenDobs = [], cabin = 'economy', sort = 'price' }) {
+        async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, childrenDobs = [], cabin = 'economy', sort = 'price', maxStops = null, airline = null, maxNetAmount = null }) {
             const seed = seedOf(`${origin}${destination}${departDate}${cabin}`);
             const paxCount = adults + childrenDobs.length;
             // نفس ترتيب duffelProvider (بالغون ثم أطفال) ونفس شكل الكائن —
@@ -96,7 +96,8 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
                 offers.set(offer.id, offer);
                 results.push({ ...offer });
             }
-            return sortOffers(results, sort);
+            // نفس عقد duffelProvider حرفياً: فلترة قبل الترتيب
+            return sortOffers(applyOfferFilters(results, { maxStops, airline, maxNetAmount }), sort);
         },
 
         async getOffer(offerId) {
