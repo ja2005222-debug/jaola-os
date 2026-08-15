@@ -1378,7 +1378,52 @@ mode)، يُرجع حقلاً إضافياً `reasoning_content` إلى جانب
 يُعيده المزوّد (حال Groq). طفرة عمداً (إسقاط الإصلاح) أسقطت اختبارين،
 ثم أُعيد فعادت **181/181**.
 
-⚠️ **بلاغ منفصل لم يُحسم بعد**: نفس الجلسة أظهرت خطأ آخر من Groq —
-`400 tool call validation failed: /adults: expected integer, but got
-…` — النص الكامل للقيمة الفعلية غير متوفر بعد (اقتُطع في لقطة الشاشة
-المُبلَّغة). لا يُصلَح بتخمين القيمة؛ ينتظر النص الكامل للخطأ.
+## 🐛 عطب إنتاج ثالث: Groq يرفض `adults`/`rooms`/`windowDays` كسلسلة نصية
+
+بلاغ من نفس الجلسة، وصل النص الكامل هذه المرة:
+
+```
+⚠️ تعذّر رد المساعد: تعذّر الاتصال بمزوّد الايجنت (المزوّد الأساسي، HTTP 400)
+"tool call validation failed: parameters for tool search_flights did not
+match schema: errors: [`/adults`: expected integer, but got string]"
+```
+
+### السبب
+
+Groq يتحقق من مخطط الأداة (JSON Schema) على المعطيات التي **يولّدها هو
+نفسه** قبل أن يُعيد الرد إلى العميل إطلاقاً — رفضٌ يقع عند Groq نفسه،
+لا يصل خادمنا مطلقاً. حين يولّد النموذج `"1"` (سلسلة) بدل `1` (رقم) لحقل
+معلَّم `type: 'integer'` في مخطط الأداة، يرفض Groq النداء كاملاً بـ400
+`tool_use_failed` قبل أن تُتاح لخادمنا فرصة تحويلها.
+
+والمفارقة: خادمنا **يتقبّل السلسلة أصلاً**. كل موضع من الحقول الأربعة
+يحوّل القيمة صراحة بـ`Number(...)` قبل أي استخدام:
+
+```js
+// server.js — validateSearchParams وvalidateStaySearchParams
+const adults = body?.adults != null ? Number(body.adults) : 1;
+const rooms = body?.rooms != null ? Number(body.rooms) : 1;
+// doFindFlexibleDates
+const win = Math.min(MAX_FLEX_WINDOW_DAYS, Math.max(1, Number(windowDays) || 3));
+```
+
+فالمخطط كان أضيق مما يتطلبه الخادم فعلياً — قيداً زائداً يرفض طلبات
+كان خادمنا سيقبلها بلا أي مشكلة.
+
+### العلاج
+
+توسيع نوع الحقول الأربعة (`adults` في `search_flights` و`search_stays`،
+`rooms` في `search_stays`، `windowDays` في `find_flexible_dates`) من
+`type: 'integer'` إلى `type: ['integer', 'string']` — حارس بنيوي (مخطط
+الأداة) يُطابق ما يتحمّله الخادم فعلياً، بدل حارس تعليماتي (رجاء أرسل
+رقماً) لا يضمن التزام النموذج به.
+
+### التحقق
+
+اختباران جديدان: (١) حارس على مستوى المخطط يتأكد أن الحقول الأربعة
+معاً تحمل `type: ['integer', 'string']` — طفرة (إعادتها إلى `'integer'`
+فقط) أسقطته فوراً؛ (٢) اختبار من طرف إلى طرف حقيقي: نموذج مُحاكى يولّد
+`adults: "2"` (سلسلة) عبر `chat()` الفعلي → `/api/travel/agent/chat` →
+`executeAgentTool` → `services.searchFlights` (وهو `doSearch` الحقيقي
+في `server.js`، لا مُقلَّد) → `validateSearchParams` — وينجح البحث دون
+أي رفض. أُعيد الفحص فعادت **183/183**.

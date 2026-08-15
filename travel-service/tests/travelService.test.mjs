@@ -4293,6 +4293,60 @@ describe('الايجنت الحاجز', () => {
         assert.ok(worstCaseTokens > 25000, 'تحسين حقيقي لا رقم رمزي — أكثر من ضعف الحدّ القديم (~11,631)');
     });
 
+    // ⚠️ عطب إنتاج حقيقي: Groq يتحقق من مخطط الأداة قبل أن يصل الطلب إلى
+    // خادمنا — type:'integer' وحدها كانت ترفض "2" (سلسلة) بـ400
+    // tool_use_failed رغم أن الخادم (Number(...) في validateSearchParams
+    // وأخواتها) يتقبّلها أصلاً. الحقول الأربعة يجب أن تبقى موسّعة معاً.
+    test('🛡️ مخطط أدوات الايجنت: adults/rooms/windowDays يقبلان سلسلة أو رقماً', () => {
+        const flightSearch = AGENT_TOOLS.find(t => t.function.name === 'search_flights');
+        const staySearch = AGENT_TOOLS.find(t => t.function.name === 'search_stays');
+        const flexDates = AGENT_TOOLS.find(t => t.function.name === 'find_flexible_dates');
+
+        const widened = [
+            [flightSearch, 'adults'],
+            [staySearch, 'adults'],
+            [staySearch, 'rooms'],
+            [flexDates, 'windowDays'],
+        ];
+        for (const [tool, field] of widened) {
+            const schema = tool.function.parameters.properties[field].type;
+            assert.deepEqual(schema, ['integer', 'string'], `${tool.function.name}.${field} يجب أن يقبل النوعين معاً`);
+        }
+    });
+
+    // نفس العطب أعلاه، لكن مُتحقَّقاً منه من طرف إلى طرف: نموذج يولّد
+    // adults:"2" (سلسلة، كما وقع فعلياً) عبر chat() الحقيقي → مسار
+    // /api/travel/agent/chat → executeAgentTool → services.searchFlights
+    // (وهو doSearch الحقيقي في server.js لا مُقلَّد) → validateSearchParams.
+    // النجاح هنا يثبت أن التوسيع في المخطط يكفي وحده — الخادم متسامح أصلاً.
+    test('🛡️ من طرف إلى طرف: النموذج يرسل adults كسلسلة نصية فينجح البحث', async () => {
+        const stringBody = { ...SEARCH_BODY(), adults: '2' };
+        const agent = createTravelAgent({
+            apiKey: 'k',
+            fetchImpl: scriptedFetch([
+                {
+                    role: 'assistant', content: null,
+                    tool_calls: [{
+                        id: 'c1', type: 'function',
+                        function: { name: 'search_flights', arguments: JSON.stringify(stringBody) },
+                    }],
+                },
+                { content: 'وجدت رحلات مناسبة لبالغَين.' },
+            ]),
+        });
+        await withAgentApp(agent, async call => {
+            const res = await call('/api/travel/agent/chat', {
+                method: 'POST', token: makeToken('u-string-adults'),
+                body: { messages: [{ role: 'user', content: 'ابحث لي رحلة لشخصين' }] },
+            });
+            assert.equal(res.status, 200, JSON.stringify(res.data));
+            assert.equal(res.data.reply, 'وجدت رحلات مناسبة لبالغَين.');
+            const searchAction = res.data.actions?.find(a => a.tool === 'search_flights');
+            assert.ok(searchAction, 'سجل actions يجب أن يضمّ نداء البحث بنجاح — لا رفض عند التحقق من adults كسلسلة');
+            assert.match(searchAction.summary, /RUH→CAI/);
+        });
+    });
+
     test('🛡️ صياغة التنبيه: رد مُطوَّل أو فارغ → يعود النص الحتمي', async () => {
         const long = createTravelAgent({
             apiKey: 'k',

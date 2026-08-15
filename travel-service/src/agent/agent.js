@@ -132,7 +132,14 @@ export const AGENT_TOOLS = [
                     destination: { type: 'string', description: 'رمز IATA لمطار الوصول (مثل CAI)' },
                     departDate: { type: 'string', description: 'تاريخ الذهاب YYYY-MM-DD' },
                     returnDate: { type: 'string', description: 'تاريخ العودة YYYY-MM-DD (اختياري — ذهاب فقط بدونه)' },
-                    adults: { type: 'integer', description: 'عدد البالغين (افتراضي 1)' },
+                    // ⚠️ عطب إنتاج حقيقي: type:'integer' وحدها كانت تجعل Groq
+                    // يرفض النداء كاملاً (400 tool_use_failed: "expected
+                    // integer, but got string") حين يولّد النموذج "1" بدل 1
+                    // — رفضٌ يقع عند Groq **قبل** أن يصل الطلب حتى إلى
+                    // الخادم. والخادم يتقبّل السلسلة أصلاً (Number(body.
+                    // adults) في validateSearchParams) فلا حاجة لمنعها هنا؛
+                    // القيد كان أضيق مما يتطلبه الخادم فعلياً.
+                    adults: { type: ['integer', 'string'], description: 'عدد البالغين، رقماً صحيحاً (افتراضي 1)' },
                     // عمداً تواريخ لا عدد: العدد يترك العمر مجهولاً فيُخمَّن،
                     // والتخمين هو العطب نفسه الذي أصلحه passengerAges.js.
                     // النموذج لا يملك ما يخمّن به هنا — عليه أن يسأل.
@@ -227,8 +234,16 @@ export const AGENT_TOOLS = [
                     iata: { type: 'string', description: 'رمز IATA لمطار أقرب مدينة (مثل RUH أو DXB)' },
                     checkInDate: { type: 'string', description: 'تاريخ الوصول YYYY-MM-DD' },
                     checkOutDate: { type: 'string', description: 'تاريخ المغادرة YYYY-MM-DD' },
-                    adults: { type: 'integer', description: 'عدد البالغين (افتراضي 1)' },
-                    rooms: { type: 'integer', description: 'عدد الغرف (افتراضي 1)' },
+                    // ⚠️ عطب إنتاج حقيقي: type:'integer' وحدها كانت تجعل Groq
+                    // يرفض النداء كاملاً (400 tool_use_failed: "expected
+                    // integer, but got string") حين يولّد النموذج "1" بدل 1
+                    // — رفضٌ يقع عند Groq **قبل** أن يصل الطلب حتى إلى
+                    // الخادم. والخادم يتقبّل السلسلة أصلاً (Number(body.
+                    // adults) في validateSearchParams) فلا حاجة لمنعها هنا؛
+                    // القيد كان أضيق مما يتطلبه الخادم فعلياً.
+                    adults: { type: ['integer', 'string'], description: 'عدد البالغين، رقماً صحيحاً (افتراضي 1)' },
+                    // نفس عطب adults أعلاه بالضبط — راجع تعليقه
+                    rooms: { type: ['integer', 'string'], description: 'عدد الغرف، رقماً صحيحاً (افتراضي 1)' },
                 },
                 required: ['iata', 'checkInDate', 'checkOutDate'],
             },
@@ -377,7 +392,8 @@ export const AGENT_TOOLS = [
                     origin: { type: 'string', description: 'رمز IATA لمطار المغادرة' },
                     destination: { type: 'string', description: 'رمز IATA لمطار الوصول' },
                     aroundDate: { type: 'string', description: 'تاريخ مركزي YYYY-MM-DD' },
-                    windowDays: { type: 'integer', description: 'نصف عرض النافذة بالأيام (1-7، افتراضي 3)' },
+                    // نفس عطب adults أعلاه — الخادم يحوّلها بـNumber() في doFindFlexibleDates
+                    windowDays: { type: ['integer', 'string'], description: 'نصف عرض النافذة بالأيام، رقماً صحيحاً (1-7، افتراضي 3)' },
                     cabin: { type: 'string', enum: ['economy', 'premium_economy', 'business', 'first'] },
                 },
                 required: ['origin', 'destination', 'aroundDate'],
