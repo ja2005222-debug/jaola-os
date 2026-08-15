@@ -670,7 +670,14 @@ export function createTravelAgent({
     // آخر مزوّد أجاب فعلاً — تُعرَض للمستخدم فيعرف لماذا تغيّر الأسلوب
     let lastProviderUsed = primary.label;
 
-    async function complete(messages, { tools = true, temperature = 0.3 } = {}) {
+    /**
+     * نداء واحد للنموذج. يُعيد {message, provider} — هوية المزوّد جزء من
+     * النتيجة لا أثر جانبي، لأن حلقة الأدوات تحتاجها لتثبيت المزوّد
+     * (راجع تعليق «تثبيت المزوّد» في chat أدناه).
+     *
+     * `pinned` يقصر السلسلة على مزوّد بعينه: بلا تحويل ولا احتياطي.
+     */
+    async function complete(messages, { tools = true, temperature = 0.3, pinned = null } = {}) {
         // صياغة القراءة تُنادى بلا أدوات إطلاقاً: لا شيء تحجزه أو تلغيه، فلا
         // سبب لوضع أدوات الكتابة في يدها. منعٌ بالبنية لا بالتعليمات.
         const body = tools
@@ -683,7 +690,7 @@ export function createTravelAgent({
         // والترتيب مقصود: نصبر على الأساسي أولاً (الانتظار ثانية أرخص من
         // تبديل مزوّد وتبديل سلوك)، فإن نفدت حصّته فعلاً تحوّلنا للبديل
         // بدل أن نُفشل الطلب. مزوّد واحد معطّل لا يعني مساعداً معطّلاً.
-        const chain = fallback ? [primary, fallback] : [primary];
+        const chain = pinned ? [pinned] : (fallback ? [primary, fallback] : [primary]);
         let lastError = null;
 
         for (const [index, provider] of chain.entries()) {
@@ -699,7 +706,7 @@ export function createTravelAgent({
                     const message = payload.choices?.[0]?.message;
                     if (!message) throw new Error('رد مزوّد الايجنت بلا رسالة.');
                     lastProviderUsed = provider.label;
-                    return message;
+                    return { message, provider };
                 }
                 const detail = await res.text().catch(() => '');
                 // ⚠️ كان الخطأ لا يذكر أيّ مزوّد رفض — فحين يفشل الاحتياطي
@@ -755,8 +762,32 @@ export function createTravelAgent({
             if (memory) convo.push({ role: 'system', content: memory });
             convo.push(...messages);
             const actions = [];
+            // ⚠️ تثبيت المزوّد — عطب إنتاج حقيقي وقع فور نشر إصلاح
+            // reasoning_content أدناه: `complete` كانت تختار المزوّد من
+            // جديد **في كل جولة**، بينما `convo` تتراكم مشتركة بين
+            // الجولات. فحين يجيب مزوّد جولةً ثم يجيب الآخر التالية، يصل
+            // إلى الثاني تاريخُ محادثة مصوغ بشكل الأول — وشكل رسالة
+            // المساعد ليس واحداً بين المزوّدين:
+            //
+            //   • DeepSeek→Groq: «property 'reasoning_content' is
+            //     unsupported» — Groq يرفض الحقل الذي كتبه DeepSeek.
+            //   • Groq→DeepSeek: «The `reasoning_content` in the thinking
+            //     mode must be passed back» — DeepSeek يطلب حقلاً لم
+            //     يكتبه Groq أصلاً، ولا يمكننا اختلاقه.
+            //
+            // كلا الخطأين وجهان لسبب واحد: خلط مزوّدين داخل محادثة
+            // واحدة. الحارس بنيوي لا ترقيعي — أول مزوّد يجيب يُثبَّت
+            // لبقية الجولات، فلا يرى أيّ مزوّد تاريخاً كتبه غيره.
+            //
+            // والتحويل يبقى عاملاً حيث ينفع فعلاً: الجولة الأولى (لا
+            // تاريخ بعد) تمرّ بالسلسلة كاملة، فتعطُّل مزوّد بالكامل ما
+            // زال يُنجي المحادثة. وفشل المُثبَّت وسط الحلقة يُعلَن بدل
+            // أن يُعاد تشغيلها على مزوّد آخر — إعادة التشغيل تعني إعادة
+            // تنفيذ نداءات أدوات قد تكون حجزت فعلاً.
+            let pinned = null;
             for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-                const msg = await complete(convo);
+                const { message: msg, provider } = await complete(convo, { pinned });
+                pinned = provider;
                 if (!msg.tool_calls || msg.tool_calls.length === 0) {
                     return { reply: msg.content || '', actions, provider: lastProviderUsed };
                 }
@@ -766,7 +797,11 @@ export function createTravelAgent({
                 // يُعيد الردّ reasoning_content إلى جانب tool_calls —
                 // وDeepSeek يشترط إعادة هذا الحقل بعينه في الجولة
                 // التالية، فيرفض الطلب (400) لأننا حذفناه سهواً. الآن
-                // يُمرَّر إن وُجد؛ Groq لا يُعيده أصلاً فلا يتأثر.
+                // يُمرَّر إن وُجد.
+                //
+                // وسلامة ذلك تقوم على تثبيت المزوّد أعلاه: الحقل يعود
+                // حصراً إلى المزوّد الذي كتبه، فلا يصل Groq (الذي يرفضه
+                // كحقل غير مدعوم) قط.
                 convo.push({
                     role: 'assistant', content: msg.content || null, tool_calls: msg.tool_calls,
                     ...(msg.reasoning_content != null ? { reasoning_content: msg.reasoning_content } : {}),
@@ -822,7 +857,9 @@ export function createTravelAgent({
         const source = String(deterministicText || '').trim();
         if (!source) return '';
         try {
-            const msg = await complete([
+            // بلا تثبيت: نداء واحد بلا تاريخ متراكم، فلا خلط أشكال بين
+            // المزوّدين — والتحويل هنا مكسب خالص.
+            const { message: msg } = await complete([
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: source },
             ], { tools: false, temperature: 0.4 });

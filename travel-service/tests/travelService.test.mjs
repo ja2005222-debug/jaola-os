@@ -4159,6 +4159,127 @@ describe('الايجنت الحاجز', () => {
         assert.ok(!('reasoning_content' in echoedNoReasoning), 'لا حقل مُقحَم حين لا يعيده المزوّد أصلاً');
     });
 
+    // ⚠️ انحدار إنتاج وقع فور نشر إصلاح reasoning_content أعلاه: المزوّد
+    // كان يُختار من جديد في كل جولة بينما تاريخ المحادثة مشترك، فيصل إلى
+    // مزوّد تاريخٌ كتبه الآخر. الخطآن اللذان وصلا المستخدم فعلياً:
+    //   DeepSeek→Groq: "property 'reasoning_content' is unsupported"
+    //   Groq→DeepSeek: "reasoning_content ... must be passed back"
+    test('📌 تثبيت المزوّد: جولات المحادثة الواحدة لا تُخلَط بين مزوّدين', async () => {
+        const services = { searchFlights: async () => (await provider.searchOffers(SEARCH_BODY())) };
+        const hits = [];
+        let round = 0;
+        const agent = createTravelAgent({
+            apiKey: 'k1', apiUrl: 'https://primary.test/v1', sleepImpl: async () => {},
+            fallback: { apiKey: 'k2', apiUrl: 'https://deepseek.test/v1', model: 'deepseek-v4-pro', label: 'DeepSeek' },
+            fetchImpl: async (url, opts) => {
+                // الأساسي منهك الحصّة في الجولة الأولى وحدها — تماماً كما
+                // وقع فعلياً (429 عابر ثم تعافٍ)
+                if (url.includes('primary') && round === 0) {
+                    return { ok: false, status: 429, headers: { get: () => null }, text: async () => 'Rate limit' };
+                }
+                hits.push({ url, body: JSON.parse(opts.body) });
+                round += 1;
+                if (round === 1) {
+                    return {
+                        ok: true,
+                        json: async () => ({
+                            choices: [{
+                                message: {
+                                    role: 'assistant', content: null,
+                                    reasoning_content: 'أفكّر…',
+                                    tool_calls: [{
+                                        id: 'c1', type: 'function',
+                                        function: { name: 'search_flights', arguments: JSON.stringify(SEARCH_BODY()) },
+                                    }],
+                                },
+                            }],
+                        }),
+                    };
+                }
+                return { ok: true, json: async () => ({ choices: [{ message: { content: 'تمّ.' } }] }) };
+            },
+        });
+        const result = await agent.chat({ messages: [{ role: 'user', content: 'ابحث لي عن رحلة' }], services });
+        assert.equal(result.reply, 'تمّ.');
+
+        // الجولة الأولى ذهبت للاحتياطي (بعد 429 الأساسي) — والثانية يجب
+        // أن تذهب إليه هو نفسه، لا أن تعود للأساسي المتعافي
+        assert.equal(hits.length, 2, 'جولتان أجابتا فعلاً');
+        assert.ok(hits[0].url.includes('deepseek'), 'الجولة الأولى: الاحتياطي');
+        assert.ok(hits[1].url.includes('deepseek'),
+            'الجولة الثانية تسرّبت إلى الأساسي — هو بعينه الخطأ الذي رآه المستخدم (Groq يرفض reasoning_content)');
+
+        // والحقل الذي كتبه الاحتياطي عاد إليه هو، سليماً
+        const echoed = hits[1].body.messages.find(m => m.role === 'assistant' && m.tool_calls);
+        assert.equal(echoed.reasoning_content, 'أفكّر…');
+    });
+
+    // الاتجاه المعاكس من نفس العطب: الأساسي يجيب الجولة الأولى، فلا يجوز
+    // أن تتسرّب الثانية إلى الاحتياطي — DeepSeek يرفض تاريخاً بلا
+    // reasoning_content ("must be passed back")، ولا سبيل لاختلاقه.
+    test('📌 تثبيت المزوّد: نجاح الأساسي يمنع التسرّب للاحتياطي في جولة تالية', async () => {
+        const services = { searchFlights: async () => (await provider.searchOffers(SEARCH_BODY())) };
+        const urls = [];
+        let round = 0;
+        const agent = createTravelAgent({
+            apiKey: 'k1', apiUrl: 'https://primary.test/v1', sleepImpl: async () => {},
+            fallback: { apiKey: 'k2', apiUrl: 'https://deepseek.test/v1', model: 'deepseek-v4-pro', label: 'DeepSeek' },
+            fetchImpl: async (url) => {
+                urls.push(url);
+                round += 1;
+                if (round === 1) {
+                    // الأساسي يجيب الجولة الأولى: تاريخ المحادثة صار الآن
+                    // مصوغاً بشكله هو — بلا reasoning_content
+                    return {
+                        ok: true,
+                        json: async () => ({
+                            choices: [{
+                                message: {
+                                    role: 'assistant', content: null,
+                                    tool_calls: [{
+                                        id: 'c1', type: 'function',
+                                        function: { name: 'search_flights', arguments: JSON.stringify(SEARCH_BODY()) },
+                                    }],
+                                },
+                            }],
+                        }),
+                    };
+                }
+                // ثم تنفد حصّته وسط الحلقة — هنا بالضبط كان التسرّب يقع
+                if (url.includes('primary')) {
+                    return { ok: false, status: 429, headers: { get: () => null }, text: async () => 'Rate limit' };
+                }
+                return { ok: true, json: async () => ({ choices: [{ message: { content: 'أجاب الاحتياطي.' } }] }) };
+            },
+        });
+        // الفشل المُعلَن هو السلوك الصحيح: تمرير تاريخ كتبه الأساسي إلى
+        // DeepSeek يرفضه هذا الأخير (400 "must be passed back")، وإعادة
+        // تشغيل الحلقة عليه تعني إعادة تنفيذ أدوات قد تكون حجزت فعلاً.
+        await assert.rejects(
+            agent.chat({ messages: [{ role: 'user', content: 'ابحث لي عن رحلة' }], services }),
+            /المزوّد الأساسي/,
+        );
+        assert.ok(urls.every(u => u.includes('primary')), `لا تسرّب للاحتياطي: ${urls.join(' , ')}`);
+    });
+
+    // التحويل يبقى نافعاً حيث لا تاريخ متراكم: تعطّل الأساسي بالكامل قبل
+    // أي جولة ناجحة ما زال يُنجي المحادثة — التثبيت لم يُلغِ الاحتياطي.
+    test('📌 التثبيت لا يُلغي الاحتياطي: الجولة الأولى تمرّ بالسلسلة كاملة', async () => {
+        const agent = createTravelAgent({
+            apiKey: 'k1', apiUrl: 'https://primary.test/v1', sleepImpl: async () => {},
+            fallback: { apiKey: 'k2', apiUrl: 'https://deepseek.test/v1', model: 'deepseek-v4-pro', label: 'DeepSeek' },
+            fetchImpl: async (url) => {
+                if (url.includes('primary')) {
+                    return { ok: false, status: 429, headers: { get: () => null }, text: async () => 'Rate limit' };
+                }
+                return { ok: true, json: async () => ({ choices: [{ message: { content: 'أجاب الاحتياطي.' } }] }) };
+            },
+        });
+        const result = await agent.chat({ messages: [{ role: 'user', content: 'مرحبا' }], services: {} });
+        assert.equal(result.reply, 'أجاب الاحتياطي.');
+        assert.equal(result.provider, 'DeepSeek');
+    });
+
     // 💬 انحدار إنتاج حقيقي آخر: 401 من الاحتياطي بعد نفاد صبر الأساسي —
     // رسالة الخطأ التي وصلت المستخدم فعلياً لم تذكر أيّ مزوّد رفض، فلا
     // سبيل للتفريق بين مفتاح Groq فاسد ومفتاح DeepSeek فاسد إلا بتخمين
