@@ -77,6 +77,14 @@
     <div class="tbl-wrap"><table id="contractsTable"></table></div>
     <button id="contractNew" style="margin-top:10px">➕ عقد جديد</button>
 
+    <h2>🎒 الباقات المجدولة (مخزون مملوك — انطلاقات ثابتة)</h2>
+    <p class="note">فندق متعاقَد + مقاعد طيران محجوزة مسبقاً تُباع بسعر واحد. البيع الزائد مستحيل بنيوياً (حجز المقاعد ذرّي)، والإلغاء يعيد المقاعد ويُبلغ قائمة الانتظار تلقائياً.</p>
+    <div class="tbl-wrap"><table id="fixedTable"></table></div>
+    <button id="fixedNew" style="margin-top:10px">➕ باقة جديدة</button>
+
+    <h2>🔔 قائمة الانتظار وطلبات العروض الخاصة</h2>
+    <div class="tbl-wrap"><table id="interestsTable"></table></div>
+
     <h2>🧳 آخر الحجوزات (كل المستخدمين)</h2>
     <div class="tbl-wrap"><table id="bookingsTable"></table></div>
   </div>
@@ -118,6 +126,63 @@
     </form>
   </dialog>
 
+  <!-- 🎒 حوار باقة مجدولة -->
+  <dialog id="fixedPkgDialog">
+    <h2 id="fixedPkgDialogTitle">باقة مجدولة</h2>
+    <form method="dialog" id="fixedPkgForm">
+      <div class="row">
+        <div><label>اسم الباقة</label><input id="fpTitle" placeholder="أسبوع في أنطاليا" /></div>
+        <div><label>المدينة</label><input id="fpCity" placeholder="أنطاليا" /></div>
+        <div><label>الوجهة (IATA)</label><input id="fpIata" placeholder="AYT" maxlength="3" /></div>
+      </div>
+      <div class="row">
+        <div><label>الفندق المتعاقَد</label><input id="fpHotel" /></div>
+        <div><label>الإعاشة</label><input id="fpBoard" value="شامل الإفطار" /></div>
+      </div>
+      <label>وصف مختصر (اختياري)</label>
+      <input id="fpDesc" placeholder="تنقّلات المطار + أمتعة 23كغ + ..." />
+      <div class="row">
+        <div><label>تاريخ الانطلاق</label><input id="fpDepart" type="date" /></div>
+        <div><label>الليالي</label><input id="fpNights" type="number" min="1" max="30" value="7" /></div>
+        <div><label>سعة المقاعد</label><input id="fpCap" type="number" min="1" max="300" value="20" /></div>
+      </div>
+      <div class="row">
+        <div>
+          <label>مصدر مقاعد الطيران</label>
+          <select id="fpSourcing">
+            <option value="group">حجز جماعي (Group)</option>
+            <option value="allotment">حصة موسمية (Allotment)</option>
+            <option value="consolidator">موزّع جملة (Consolidator)</option>
+            <option value="charter">طيران عارض (Charter)</option>
+          </select>
+        </div>
+        <div><label>تاريخ استرجاع المقاعد (اختياري)</label><input id="fpRelease" type="date" /></div>
+      </div>
+      <div class="row">
+        <div><label>العملة</label><input id="fpCurrency" value="USD" maxlength="3" /></div>
+        <div><label>سعر المقعد (بيع)</label><input id="fpPrice" type="number" step="0.01" min="0" /></div>
+        <div><label>كلفة المقعد الصافية (اختياري)</label><input id="fpNet" type="number" step="0.01" min="0" /></div>
+      </div>
+      <div class="row">
+        <div><label>فارق الغرفة المفردة</label><input id="fpSingle" type="number" step="0.01" min="0" value="0" /></div>
+        <div><label>سعر الطفل (اختياري)</label><input id="fpChild" type="number" step="0.01" min="0" /></div>
+        <div><label>العربون ٪</label><input id="fpDeposit" type="number" min="10" max="100" value="30" /></div>
+      </div>
+      <div class="row">
+        <div><label>خصم السعر المبكّر ٪ (اختياري)</label><input id="fpEbPct" type="number" min="0" max="50" placeholder="0" /></div>
+        <div><label>ساري حتى</label><input id="fpEbUntil" type="date" /></div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer">
+        <input id="fpActive" type="checkbox" checked style="width:auto" /> نشطة (تظهر للجمهور)
+      </label>
+      <div id="fixedPkgErr" class="error hidden"></div>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <button id="fixedPkgSave" type="button">💾 حفظ</button>
+        <button class="ghost" type="button" onclick="document.getElementById('fixedPkgDialog').close()">إغلاق</button>
+      </div>
+    </form>
+  </dialog>
+
   <script>
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -131,8 +196,9 @@
     }
 
     const ST_LABEL = { pending: 'قيد الإصدار', issued: 'مُصدَر', failed: 'فشل', cancelled: 'مُلغى' };
-    const KIND_LABEL = { flight: '✈️ طيران', stay: '🏨 فندق', car: '🚗 سيارة', package: '🎁 باقة' };
+    const KIND_LABEL = { flight: '✈️ طيران', stay: '🏨 فندق', car: '🚗 سيارة', package: '🎁 باقة', fixed_package: '🎒 باقة مجدولة' };
     let editingContractId = null;
+    let editingFixedId = null;
 
     async function load() {
       if (!token) { $('gate').textContent = 'سجّل الدخول من بوابة السفر أولاً ثم افتح هذه الصفحة.'; $('gate').classList.remove('hidden'); return; }
@@ -145,7 +211,7 @@
       const ov = await res.json();
       $('panel').classList.remove('hidden');
       renderOverview(ov);
-      await Promise.all([loadContracts(), loadBookings()]);
+      await Promise.all([loadContracts(), loadFixedPkgs(), loadInterests(), loadBookings()]);
     }
 
     function renderOverview(ov) {
@@ -267,6 +333,125 @@
       $('contractDialog').close();
       loadContracts(); load();
     });
+
+    // ─── 🎒 الباقات المجدولة ───
+    async function loadFixedPkgs() {
+      const res = await api('/api/travel/admin/fixed-packages');
+      if (!res.ok) return;
+      const { packages } = await res.json();
+      $('fixedTable').innerHTML = `
+        <tr><th>الباقة</th><th>الانطلاق</th><th>المقاعد</th><th>مصدر المقاعد</th><th>السعر/الصافي</th><th>مبكّر/عربون</th><th>🔔</th><th>الحالة</th><th></th></tr>` +
+        (packages.length === 0 ? '<tr><td colspan="9" class="note">لا باقات بعد — الأولى تبدأ من زر «باقة جديدة».</td></tr>' :
+        packages.map(p => `
+          <tr>
+            <td>${esc(p.title)}<div class="note">🏨 ${esc(p.hotelName)} · ${esc(p.city)} (${esc(p.iata)})</div></td>
+            <td class="note">${esc(p.departDate)}<div>${p.nights} ليالٍ</div></td>
+            <td>${p.seatsSold} / ${p.seatCapacity}${p.seatsLeft <= 5 && p.seatsLeft > 0 ? ' <span class="warn">🔥</span>' : ''}${p.seatsLeft === 0 ? ' <span class="err">مكتمل</span>' : ''}</td>
+            <td class="note">${esc(p.sourcingLabel)}${p.releaseDate ? `<div>↩️ استرجاع ${esc(p.releaseDate)}</div>` : ''}</td>
+            <td>${p.pricePerSeat} ${esc(p.currency)}${p.netPerSeat != null ? `<div class="note">صافي ${p.netPerSeat} — هامش <span class="ok">${p.marginPerSeat}</span></div>` : ''}</td>
+            <td class="note">${p.ebPct > 0 ? `⚡ −${p.ebPct}% حتى ${esc(p.ebUntil)}` : '—'}<div>عربون ${p.depositPct}%</div></td>
+            <td>${p.waitlistCount > 0 ? `<span class="warn">${p.waitlistCount}</span>` : '<span class="note">0</span>'}</td>
+            <td>${p.active ? '<span class="ok">نشطة</span>' : '<span class="note">موقوفة</span>'}</td>
+            <td style="white-space:nowrap">
+              <button class="ghost" data-fp-edit="${esc(p.id)}">تعديل</button>
+              ${p.seatsSold === 0 ? `<button class="danger" data-fp-del="${esc(p.id)}">حذف</button>` : ''}
+            </td>
+          </tr>`).join(''));
+      document.querySelectorAll('[data-fp-edit]').forEach(b =>
+        b.addEventListener('click', () => openFixedPkg(packages.find(p => p.id === b.dataset.fpEdit))));
+      document.querySelectorAll('[data-fp-del]').forEach(b =>
+        b.addEventListener('click', async () => {
+          if (!confirm('حذف الباقة نهائياً؟ (باقة عليها حجوزات لا تُحذف — توقَف فقط)')) return;
+          const res2 = await api('/api/travel/admin/fixed-packages/' + b.dataset.fpDel, { method: 'DELETE' });
+          if (!res2.ok) alert((await res2.json()).error || 'تعذّر الحذف.');
+          loadFixedPkgs();
+        }));
+    }
+
+    function openFixedPkg(p) {
+      editingFixedId = p?.id || null;
+      $('fixedPkgDialogTitle').textContent = p ? `تعديل: ${p.title}` : 'باقة مجدولة جديدة';
+      $('fpTitle').value = p?.title || '';
+      $('fpCity').value = p?.city || '';
+      $('fpIata').value = p?.iata || '';
+      $('fpHotel').value = p?.hotelName || '';
+      $('fpBoard').value = p?.board || 'شامل الإفطار';
+      $('fpDesc').value = p?.description || '';
+      $('fpDepart').value = p?.departDate || '';
+      $('fpNights').value = p?.nights ?? 7;
+      $('fpCap').value = p?.seatCapacity ?? 20;
+      $('fpSourcing').value = p?.sourcing || 'group';
+      $('fpRelease').value = p?.releaseDate || '';
+      $('fpCurrency').value = p?.currency || 'USD';
+      $('fpPrice').value = p?.pricePerSeat ?? '';
+      $('fpNet').value = p?.netPerSeat ?? '';
+      $('fpSingle').value = p?.singleSupplement ?? 0;
+      $('fpChild').value = p?.childPrice ?? '';
+      $('fpDeposit').value = p?.depositPct ?? 30;
+      $('fpEbPct').value = p?.ebPct || '';
+      $('fpEbUntil').value = p?.ebUntil || '';
+      $('fpActive').checked = p ? p.active !== false : true;
+      $('fixedPkgErr').classList.add('hidden');
+      $('fixedPkgDialog').showModal();
+    }
+    $('fixedNew').addEventListener('click', () => openFixedPkg(null));
+
+    $('fixedPkgSave').addEventListener('click', async () => {
+      const opt = id => { const v = $(id).value.trim(); return v === '' ? null : Number(v); };
+      const body = {
+        title: $('fpTitle').value.trim(),
+        city: $('fpCity').value.trim(),
+        iata: $('fpIata').value.trim().toUpperCase(),
+        hotelName: $('fpHotel').value.trim(),
+        board: $('fpBoard').value.trim(),
+        description: $('fpDesc').value.trim(),
+        departDate: $('fpDepart').value,
+        nights: Number($('fpNights').value),
+        seatCapacity: Number($('fpCap').value),
+        sourcing: $('fpSourcing').value,
+        releaseDate: $('fpRelease').value || null,
+        currency: $('fpCurrency').value.trim().toUpperCase(),
+        pricePerSeat: Number($('fpPrice').value),
+        netPerSeat: opt('fpNet'),
+        singleSupplement: Number($('fpSingle').value || 0),
+        childPrice: opt('fpChild'),
+        depositPct: Number($('fpDeposit').value || 30),
+        ebPct: Number($('fpEbPct').value || 0),
+        ebUntil: $('fpEbUntil').value || null,
+        active: $('fpActive').checked,
+      };
+      const res = await api(
+        editingFixedId ? '/api/travel/admin/fixed-packages/' + editingFixedId : '/api/travel/admin/fixed-packages',
+        { method: editingFixedId ? 'PUT' : 'POST', body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) {
+        $('fixedPkgErr').textContent = data.error || 'تعذّر الحفظ.';
+        $('fixedPkgErr').classList.remove('hidden');
+        return;
+      }
+      $('fixedPkgDialog').close();
+      loadFixedPkgs(); loadInterests();
+    });
+
+    async function loadInterests() {
+      const res = await api('/api/travel/admin/package-interests');
+      if (!res.ok) return;
+      const { interests } = await res.json();
+      $('interestsTable').innerHTML = `
+        <tr><th>النوع</th><th>المستخدم</th><th>التفاصيل</th><th>التواصل</th><th>الحالة</th><th>التاريخ</th></tr>` +
+        (interests.length === 0 ? '<tr><td colspan="6" class="note">لا قوائم انتظار ولا طلبات عروض بعد.</td></tr>' :
+        interests.map(i => `
+          <tr>
+            <td>${i.kind === 'waitlist' ? '🔔 انتظار' : '🎯 طلب عرض'}</td>
+            <td>${esc(i.username)}</td>
+            <td class="note">${i.kind === 'waitlist'
+              ? `${esc(i.packageTitle || i.packageId || '')} (${esc(i.departDate || '')})`
+              : `${esc(i.destination || '')} · ${esc(i.date || 'مرن')} · ${i.pax || '؟'} مسافر${i.note ? `<div>📝 ${esc(i.note)}</div>` : ''}`}</td>
+            <td class="note">${esc(i.email || i.phone || '—')}</td>
+            <td>${i.status === 'new' ? '<span class="warn">جديد</span>' : `<span class="ok">${esc(i.status === 'notified' ? 'أُبلغ' : i.status)}</span>`}</td>
+            <td class="note">${new Date(i.at).toLocaleString('ar')}</td>
+          </tr>`).join(''));
+    }
 
     async function loadBookings() {
       const res = await api('/api/travel/admin/bookings?limit=100');

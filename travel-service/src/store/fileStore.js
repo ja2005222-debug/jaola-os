@@ -18,6 +18,8 @@ export function createFileStore({ dataDir }) {
     const profilesPath = path.join(dataDir, 'profiles.json');
     const contractsPath = path.join(dataDir, 'hotelContracts.json');
     const allocationsPath = path.join(dataDir, 'contractAllocations.json');
+    const fixedPackagesPath = path.join(dataDir, 'fixedPackages.json');
+    const interestsPath = path.join(dataDir, 'packageInterests.json');
 
     function ensureDir() {
         fs.mkdirSync(dataDir, { recursive: true });
@@ -50,6 +52,10 @@ export function createFileStore({ dataDir }) {
     const writeContracts = rows => writeJson(contractsPath, rows);
     const readAllocations = () => readJson(allocationsPath);
     const writeAllocations = rows => writeJson(allocationsPath, rows);
+    const readFixedPackages = () => readJson(fixedPackagesPath);
+    const writeFixedPackages = rows => writeJson(fixedPackagesPath, rows);
+    const readInterests = () => readJson(interestsPath);
+    const writeInterests = rows => writeJson(interestsPath, rows);
 
     return {
         name: 'file',
@@ -242,6 +248,127 @@ export function createFileStore({ dataDir }) {
             }
             writeAllocations(allocations);
             return { ...allocation };
+        },
+
+        // ─── 🎒 الباقات المجدولة (نفس عقد postgresStore بالتطابق) ───────
+
+        async createFixedPackage(pData) {
+            const rows = readFixedPackages();
+            const pkg = {
+                id: 'fxp_' + crypto.randomBytes(10).toString('hex'),
+                at: Date.now(),
+                updatedAt: Date.now(),
+                seatsSold: 0,
+                ...pData,
+            };
+            rows.push(pkg);
+            writeFixedPackages(rows);
+            return { ...pkg };
+        },
+
+        async getFixedPackage(id) {
+            const pkg = readFixedPackages().find(p => p.id === id);
+            return pkg ? { ...pkg } : null;
+        },
+
+        async listFixedPackages() {
+            return readFixedPackages()
+                .sort((a, b) => String(a.departDate).localeCompare(String(b.departDate)))
+                .map(p => ({ ...p }));
+        },
+
+        async updateFixedPackage(id, patch = {}) {
+            const rows = readFixedPackages();
+            const pkg = rows.find(p => p.id === id);
+            if (!pkg) return null;
+            const allowed = ['title', 'city', 'iata', 'hotelName', 'board', 'description',
+                'departDate', 'nights', 'seatCapacity', 'sourcing', 'releaseDate',
+                'currency', 'netPerSeat', 'pricePerSeat', 'singleSupplement', 'childPrice',
+                'ebPct', 'ebUntil', 'depositPct', 'active'];
+            for (const key of allowed) {
+                if (key in patch) pkg[key] = patch[key];
+            }
+            // السعة لا تهبط دون المباع — تقليصها تحت الحجوزات القائمة بيعٌ زائد بأثر رجعي
+            if (pkg.seatCapacity < (pkg.seatsSold || 0)) pkg.seatCapacity = pkg.seatsSold;
+            pkg.updatedAt = Date.now();
+            writeFixedPackages(rows);
+            return { ...pkg };
+        },
+
+        async deleteFixedPackage(id) {
+            const rows = readFixedPackages();
+            const pkg = rows.find(p => p.id === id);
+            if (!pkg) return false;
+            if ((pkg.seatsSold || 0) > 0) return false; // عليها حجوزات — تُغلق (active=false) لا تُحذف
+            writeFixedPackages(rows.filter(p => p.id !== id));
+            return true;
+        },
+
+        // ⚠️ نفس ضمان ذرّية حصص العقود أعلاه: فحص وزيادة وكتابة كتلة
+        // متزامنة بلا await بينها — postgresStore يضمنها بشرط داخل UPDATE واحد.
+        async allocateFixedSeats(id, seats) {
+            const rows = readFixedPackages();
+            const pkg = rows.find(p => p.id === id);
+            if (!pkg || pkg.active === false) return null;
+            if ((pkg.seatsSold || 0) + seats > pkg.seatCapacity) return null;
+            pkg.seatsSold = (pkg.seatsSold || 0) + seats;
+            pkg.updatedAt = Date.now();
+            writeFixedPackages(rows);
+            return { ...pkg };
+        },
+
+        async releaseFixedSeats(id, seats) {
+            const rows = readFixedPackages();
+            const pkg = rows.find(p => p.id === id);
+            if (!pkg) return null;
+            pkg.seatsSold = Math.max(0, (pkg.seatsSold || 0) - seats);
+            pkg.updatedAt = Date.now();
+            writeFixedPackages(rows);
+            return { ...pkg };
+        },
+
+        // ─── 🔔 اهتمامات الباقات: قائمة انتظار + طلبات عروض خاصة ────────
+
+        async createPackageInterest(entry) {
+            const rows = readInterests();
+            // انتظار مكرَّر لنفس (مستخدم، باقة) يُعاد كما هو — لا صفوف مكرّرة
+            if (entry.kind === 'waitlist') {
+                const dup = rows.find(r => r.kind === 'waitlist' && r.status === 'new'
+                    && r.username === entry.username && r.packageId === entry.packageId);
+                if (dup) return { ...dup, duplicate: true };
+            }
+            const row = {
+                id: 'pin_' + crypto.randomBytes(10).toString('hex'),
+                at: Date.now(),
+                status: 'new',
+                packageId: null,
+                ...entry,
+            };
+            rows.push(row);
+            writeInterests(rows);
+            return { ...row };
+        },
+
+        async listPackageInterests(limit = 200) {
+            return readInterests()
+                .sort((a, b) => b.at - a.at)
+                .slice(0, limit)
+                .map(r => ({ ...r }));
+        },
+
+        async listWaitlistByPackage(packageId) {
+            return readInterests()
+                .filter(r => r.kind === 'waitlist' && r.packageId === packageId && r.status === 'new')
+                .map(r => ({ ...r }));
+        },
+
+        async updatePackageInterest(id, patch = {}) {
+            const rows = readInterests();
+            const row = rows.find(r => r.id === id);
+            if (!row) return null;
+            Object.assign(row, patch);
+            writeInterests(rows);
+            return { ...row };
         },
 
         async createPriceWatch(w) {
