@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo, memo } from 'react';
 import { useAuth } from '../hooks/useAuth.js';
 import { useSocket, socket } from '../hooks/useSocket.js';
 import { useIsMobile } from '../hooks/useIsMobile.js';
@@ -137,7 +137,9 @@ export function groupFeed(messages = []) {
 }
 
 // كتلة خطوات التنفيذ: مطويّة تلقائياً حين تنتهي، حيّة ومفتوحة أثناء البناء
-export function StepsGroup({ msgs, live, t }) {
+// memo بمقارنة مخصصة: groupFeed تعيد بناء مصفوفات المجموعات كل render، لكن
+// عناصر الرسائل نفسها ثابتة الهوية — فنقارن المحتوى عنصراً بعنصر بدل هوية المصفوفة
+export const StepsGroup = memo(function StepsGroup({ msgs, live, t }) {
   const [open, setOpen] = useState(live);
   const shown = open || live;
   const last = msgs[msgs.length - 1];
@@ -170,9 +172,14 @@ export function StepsGroup({ msgs, live, t }) {
       )}
     </div>
   );
-}
+}, (prev, next) =>
+  prev.live === next.live && prev.t === next.t &&
+  prev.msgs.length === next.msgs.length &&
+  prev.msgs.every((m, i) => m === next.msgs[i])
+);
 
-export function FeedItem({ msg, onOption, onEdit, onRegenerate, canRegenerate, t }) {
+// memo: الرسائل القديمة ثابتة الهوية — لا تُعاد رسمها مع كل إطار بث أو حدث لوحة
+export const FeedItem = memo(function FeedItem({ msg, onOption, onEdit, onRegenerate, canRegenerate, t }) {
   const [copied, setCopied] = useState(false);
   const copy = async (text) => {
     try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1400); } catch {}
@@ -243,11 +250,11 @@ export function FeedItem({ msg, onOption, onEdit, onRegenerate, canRegenerate, t
       </div>
     </div>
   );
-}
+});
 
 // ── Agent Node (شريط الوكلاء السفلي — سطح المكتب) ───────────────
 const AGENT_NAME_KEY = { planner: 'phasePlanner', architect: 'phaseArchitect', coder: 'phaseCoder', qa: 'phaseQa', deploy: 'phaseDeploy' };
-function AgentNode({ name, state, icon, t }) {
+const AgentNode = memo(function AgentNode({ name, state, icon, t }) {
   const isActive = state === 'running';
   const isDone = state === 'completed';
   const label = AGENT_NAME_KEY[name] ? t(AGENT_NAME_KEY[name]) : name;
@@ -267,7 +274,7 @@ function AgentNode({ name, state, icon, t }) {
       <span style={{ fontSize:9, color: isDone ? '#10b981' : isActive ? '#60a5fa' : '#374151', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>{label}</span>
     </div>
   );
-}
+});
 
 // ── Main Dashboard ──────────────────────────────────────────────
 export default function Dashboard() {
@@ -343,6 +350,11 @@ export default function Dashboard() {
   const feedEndRef = useRef(null);
   const textareaRef = useRef(null);
   const feedScrollRef = useRef(null);
+  // مراجع "أحدث نسخة" لمعالجات القائمة + أغلفة مستقرة الهوية (انظر تعليق feedGroups)
+  const feedHandlersRef = useRef({});
+  const onFeedOption = useCallback((opt) => feedHandlersRef.current.option?.(opt), []);
+  const onFeedEdit = useCallback((text) => feedHandlersRef.current.edit?.(text), []);
+  const onFeedRegenerate = useCallback(() => feedHandlersRef.current.regenerate?.(), []);
   const [showJumpLatest, setShowJumpLatest] = useState(false);
   // زرّ «الأحدث» يظهر حين يبتعد المستخدم عن أسفل الشات (يقرأ سجلّاً قديماً)
   const handleFeedScroll = () => {
@@ -1435,8 +1447,18 @@ export default function Dashboard() {
   );
 
   // بث المهمة داخل الشات: فقاعات بمستوى كلاود — خطوات مطويّة + أدوات hover
-  const feedGroups = groupFeed(chatMessages);
+  // useMemo: لا يُعاد بناء المجموعات إلا عند تغيّر الرسائل فعلاً (لا مع كل حدث لوحة)
+  const feedGroups = useMemo(() => groupFeed(chatMessages), [chatMessages]);
   const lastUserText = [...chatMessages].reverse().find(m => m.sender === 'user')?.text || '';
+
+  // 🔒 دوال مستقرة الهوية لعناصر القائمة — الدوال السهمية المضمّنة كانت تهزم
+  // memo(FeedItem) وتعيد رسم كل الرسائل مع كل render. نمط "أحدث مرجع": الهوية
+  // ثابتة، والمحتوى يُحدَّث كل render فلا closures قديمة.
+  feedHandlersRef.current = {
+    option: handleOptionClick,
+    edit: (text) => { setPrompt(text); textareaRef.current?.focus(); },
+    regenerate: () => handleSend(lastUserText),
+  };
   const lastRealMsgIdx = (() => {
     for (let i = feedGroups.length - 1; i >= 0; i--) {
       if (feedGroups[i].type === 'msg' && feedGroups[i].msg.sender !== 'user') return i;
@@ -1456,10 +1478,10 @@ export default function Dashboard() {
         )}
         {feedGroups.map((g, i) => g.type === 'steps'
           ? <StepsGroup key={i} msgs={g.msgs} live={isBuilding && i === feedGroups.length - 1} t={t} />
-          : <FeedItem key={i} msg={g.msg} onOption={handleOptionClick} t={t}
-              onEdit={(text) => { setPrompt(text); textareaRef.current?.focus(); }}
+          : <FeedItem key={i} msg={g.msg} onOption={onFeedOption} t={t}
+              onEdit={onFeedEdit}
               canRegenerate={i === lastRealMsgIdx && !isBuilding && !isSending && !!lastUserText}
-              onRegenerate={() => handleSend(lastUserText)} />)}
+              onRegenerate={onFeedRegenerate} />)}
         {isBuilding && buildStartedAt && (
           <MissionProgress agentStates={agentStates} lastLog={lastLogMsg} startedAt={buildStartedAt} phase={missionPhase} />
         )}
@@ -1520,7 +1542,7 @@ export default function Dashboard() {
       {logs.length === 0 && <div style={{ color:S.muted, textAlign:'center', marginTop:60, fontSize:13 }}>Awaiting mission orders...</div>}
       {logs.map((log, i) => (
         <div key={i} style={{ display:'flex', gap:12, padding:'3px 0', borderBottom:`1px solid rgba(255,255,255,0.02)`, animation:'fadeIn 0.1s ease' }}>
-          <span style={{ color:'#1e2d45', flexShrink:0, fontSize:10, minWidth:60 }}>{new Date().toLocaleTimeString()}</span>
+          <span style={{ color:'#1e2d45', flexShrink:0, fontSize:10, minWidth:60 }}>{log.time || ''}</span>
           <span style={{ color: getLogColor(log.message), wordBreak:'break-word' }}>{log.message}</span>
         </div>
       ))}
