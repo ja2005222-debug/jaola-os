@@ -284,6 +284,9 @@
   <header>
     <h1>✈️ JAOLA Travel <span style="color:var(--muted);font-size:13px">بوابة السفر</span></h1>
     <div style="display:flex;align-items:center;gap:14px">
+      <select id="fxSel" class="hidden" title="عملة العرض التقريبية" style="width:auto;padding:6px 8px;font-size:13px">
+        <option value="">💵 العملة الأصلية</option>
+      </select>
       <button id="bellBtn" class="bell hidden" title="التنبيهات">🔔<span id="bellCount" class="bell-count hidden">0</span></button>
       <span id="userBadge" style="color:var(--muted);font-size:13px"></span>
     </div>
@@ -482,6 +485,11 @@
 
       <!-- ─── التنبيهات وتفضيلاتها ─── -->
       <section id="tab-notifications" class="hidden">
+        <!-- 🎁 الولاء: نقاط مشتقة من حجوزاتك المدفوعة فعلاً -->
+        <div class="card" id="loyaltyCard">
+          <strong>🎁 برنامج الولاء</strong>
+          <div id="loyaltyBody" class="note" style="margin-top:8px">جارٍ الحساب...</div>
+        </div>
         <div class="card">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
             <strong>🔔 تنبيهاتك</strong>
@@ -706,6 +714,7 @@
       }
       $('app').classList.remove('hidden');
       $('authGate').classList.add('hidden');
+      fxInit().catch(() => {}); // منتقي العملة إثراء — فشله لا يمس البوابة
 
       // وضع "صفحة فنادق منفصلة": فُتح هذا التبويب من مربع "أضف فنادق
       // الوجهة" في تبويب آخر — يستبدل التبويبات الاعتيادية بنتائج الفنادق
@@ -759,7 +768,7 @@
         if (btn.dataset.tab === 'fixed') loadFixedPackages();
         if (btn.dataset.tab === 'trips') loadTrips();
         if (btn.dataset.tab === 'destinations' && !$('destGrid').children.length) loadDestinations();
-        if (btn.dataset.tab === 'notifications') { loadNotifications(); loadPrefs(); loadProfile(); }
+        if (btn.dataset.tab === 'notifications') { loadNotifications(); loadPrefs(); loadProfile(); loadLoyalty(); }
         if (btn.dataset.tab === 'agent') restoreConversation();
       }));
 
@@ -1110,6 +1119,88 @@
     });
 
     $('bellBtn').addEventListener('click', () => document.querySelector('[data-tab="notifications"]').click());
+
+    // ─── 💵 عرض الأسعار بعملة المسافر (تقريبي — الفوترة تبقى بعملة المزوّد) ───
+    // مُعلِّق واحد بمراقب DOM يلتقط كل عنصر .price حالياً ومستقبلاً —
+    // بدل مطاردة كل موضع عرض سعر في الصفحة (ثمانية اليوم وتتكاثر).
+    const FX_KEY = 'jaolaTravelFxCur';
+    let fxCur = localStorage.getItem(FX_KEY) || '';
+    const fxRates = new Map(); // عملة المصدر → وعد {rate, source}
+    const FX_SRC = { peg: 'ربط رسمي', market: 'سوق', mixed: 'تقريبي' };
+
+    function fxGetRate(from) {
+      if (!fxRates.has(from)) {
+        fxRates.set(from, api(`/api/travel/fx?from=${from}&to=${fxCur}`)
+          .then(r => r.ok ? r.json() : null).catch(() => null));
+      }
+      return fxRates.get(from);
+    }
+    async function fxAnnotate(el) {
+      if (!fxCur || el.dataset.fxDone === fxCur) return;
+      const m = el.textContent.trim().match(/^([\d.,]+)\s+([A-Z]{3})/);
+      if (!m) return;
+      const amount = Number(m[1].replace(/,/g, ''));
+      const from = m[2];
+      el.dataset.fxDone = fxCur; // قبل النداء — فلا يُعاد على نفس العنصر أثناء انتظاره
+      if (!Number.isFinite(amount) || from === fxCur) return;
+      const fx = await fxGetRate(from);
+      if (!fx || !Number.isFinite(fx.rate)) return;
+      let note = el.querySelector('.fx-approx');
+      if (!note) {
+        note = document.createElement('div');
+        note.className = 'note fx-approx';
+        note.style.fontSize = '11px';
+        el.appendChild(note);
+      }
+      note.textContent = `≈ ${Math.round(amount * fx.rate).toLocaleString('en-US')} ${fxCur} (${FX_SRC[fx.source] || 'تقريبي'})`;
+    }
+    function fxAnnotateAll() {
+      if (!fxCur) return;
+      document.querySelectorAll('.price').forEach(fxAnnotate);
+    }
+    new MutationObserver(fxAnnotateAll).observe(document.body, { childList: true, subtree: true });
+
+    async function fxInit() {
+      const res = await api('/api/travel/fx/currencies');
+      if (!res.ok) return;
+      const { currencies } = await res.json();
+      $('fxSel').innerHTML = '<option value="">💵 العملة الأصلية</option>' +
+        currencies.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+      $('fxSel').value = fxCur;
+      $('fxSel').classList.remove('hidden');
+      fxAnnotateAll();
+    }
+    $('fxSel').addEventListener('change', () => {
+      fxCur = $('fxSel').value;
+      localStorage.setItem(FX_KEY, fxCur);
+      fxRates.clear();
+      document.querySelectorAll('.fx-approx').forEach(n => n.remove());
+      document.querySelectorAll('[data-fx-done]').forEach(el => el.removeAttribute('data-fx-done'));
+      fxAnnotateAll();
+    });
+
+    // ─── 🎁 الولاء ───
+    async function loadLoyalty() {
+      const res = await api('/api/travel/loyalty');
+      if (!res.ok) return;
+      const { loyalty: L } = await res.json();
+      $('loyaltyBody').innerHTML = `
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <span style="font-size:30px">${L.tier.icon}</span>
+          <div style="flex:1;min-width:200px">
+            <strong>مستواك: ${esc(L.tier.label)}</strong> — ${L.points.toLocaleString('en-US')} نقطة من ${L.trips} رحلة
+            <div class="note">${esc(L.tier.perk)}</div>
+            ${L.nextTier ? `
+              <div style="height:6px;background:var(--border);border-radius:4px;margin-top:6px;overflow:hidden">
+                <div style="height:100%;width:${L.progressPct}%;background:var(--accent)"></div>
+              </div>
+              <div class="note">${L.nextTier.pointsNeeded.toLocaleString('en-US')} نقطة تفصلك عن ${L.nextTier.icon} ${esc(L.nextTier.label)}</div>`
+              : '<div class="note ok">🏆 أنت في القمة</div>'}
+            ${L.mixedCurrencies ? `<div class="note">⚠️ نقاطك من عملات متعددة (${L.currencies.join('، ')}) — الجمع تقريبي</div>` : ''}
+            <div class="note">${esc(L.redeemNote)}</div>
+          </div>
+        </div>`;
+    }
 
     // تفضيلات التنبيهات: الفئات تأتي من الخادم لا مكرّرة هنا — إضافة فئة
     // جديدة لاحقاً تظهر تلقائياً بلا تعديل واجهة.
