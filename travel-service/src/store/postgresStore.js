@@ -133,6 +133,35 @@ CREATE TABLE IF NOT EXISTS travel_contract_allocations (
     status       TEXT NOT NULL DEFAULT 'active'
 );
 CREATE INDEX IF NOT EXISTS travel_contract_allocations_contract_idx ON travel_contract_allocations (contract_id);
+
+-- 🎒 الباقات المجدولة: مخزون مملوك (فندق متعاقَد + مقاعد محجوزة سلفاً)
+-- يُباع بانطلاقات ثابتة. seats_sold يُزاد ذرّياً بشرط عدم تجاوز السعة
+-- داخل UPDATE واحد — نفس حارس البيع الزائد في حصص العقود حرفياً.
+-- التفاصيل الوصفية في data_json؛ الأعمدة المفصولة هي ما تحتاجه الذرّية
+-- والفرز فقط (سعة/مباع/نشط/تاريخ الانطلاق).
+CREATE TABLE IF NOT EXISTS travel_fixed_packages (
+    id            TEXT PRIMARY KEY,
+    at            BIGINT NOT NULL,
+    updated_at    BIGINT NOT NULL,
+    depart_date   TEXT NOT NULL,
+    seat_capacity INTEGER NOT NULL,
+    seats_sold    INTEGER NOT NULL DEFAULT 0,
+    active        BOOLEAN NOT NULL DEFAULT TRUE,
+    data_json     JSONB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS travel_fixed_packages_depart_idx ON travel_fixed_packages (depart_date);
+
+-- 🔔 اهتمامات الباقات: قائمة انتظار انطلاقة مكتملة + طلبات عروض خاصة.
+CREATE TABLE IF NOT EXISTS travel_package_interests (
+    id          TEXT PRIMARY KEY,
+    at          BIGINT NOT NULL,
+    kind        TEXT NOT NULL,
+    package_id  TEXT,
+    username    TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'new',
+    data_json   JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+CREATE INDEX IF NOT EXISTS travel_package_interests_pkg_idx ON travel_package_interests (package_id);
 `;
 
 function rowToBooking(r) {
@@ -194,6 +223,33 @@ function rowToAllocation(r) {
         currency: r.currency,
         checkIn: r.check_in,
         checkOut: r.check_out,
+        status: r.status,
+    };
+}
+
+function rowToFixedPackage(r) {
+    if (!r) return null;
+    return {
+        ...(r.data_json || {}),
+        id: r.id,
+        at: Number(r.at),
+        updatedAt: Number(r.updated_at),
+        departDate: r.depart_date,
+        seatCapacity: Number(r.seat_capacity),
+        seatsSold: Number(r.seats_sold),
+        active: r.active,
+    };
+}
+
+function rowToInterest(r) {
+    if (!r) return null;
+    return {
+        ...(r.data_json || {}),
+        id: r.id,
+        at: Number(r.at),
+        kind: r.kind,
+        packageId: r.package_id || null,
+        username: r.username,
         status: r.status,
     };
 }
@@ -508,6 +564,177 @@ export function createPostgresStore({ connectionString }) {
                     );
                     await c.query('COMMIT');
                     return rowToAllocation(upd.rows[0]);
+                } catch (e) {
+                    await c.query('ROLLBACK');
+                    throw e;
+                }
+            });
+        },
+
+        // ─── 🎒 الباقات المجدولة ──────────────────────────────────────
+
+        async createFixedPackage(pData) {
+            const id = 'fxp_' + Array.from(crypto.getRandomValues(new Uint8Array(10)))
+                .map(x => x.toString(16).padStart(2, '0')).join('');
+            const now = Date.now();
+            const { departDate, seatCapacity, active, ...data } = pData;
+            return withClient(async c => {
+                const res = await c.query(
+                    `INSERT INTO travel_fixed_packages
+                     (id, at, updated_at, depart_date, seat_capacity, seats_sold, active, data_json)
+                     VALUES ($1,$2,$3,$4,$5,0,$6,$7) RETURNING *`,
+                    [id, now, now, departDate, seatCapacity, active !== false, JSON.stringify(data)]
+                );
+                return rowToFixedPackage(res.rows[0]);
+            });
+        },
+
+        async getFixedPackage(id) {
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM travel_fixed_packages WHERE id = $1', [id]);
+                return rowToFixedPackage(res.rows[0]);
+            });
+        },
+
+        async listFixedPackages() {
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM travel_fixed_packages ORDER BY depart_date ASC');
+                return res.rows.map(rowToFixedPackage);
+            });
+        },
+
+        async updateFixedPackage(id, patch = {}) {
+            const { departDate, seatCapacity, active, ...dataPatch } = patch;
+            return withClient(async c => {
+                try {
+                    await c.query('BEGIN');
+                    const cur = await c.query('SELECT * FROM travel_fixed_packages WHERE id = $1 FOR UPDATE', [id]);
+                    if (!cur.rows[0]) { await c.query('ROLLBACK'); return null; }
+                    const row = cur.rows[0];
+                    const mergedData = { ...(row.data_json || {}), ...dataPatch };
+                    // السعة لا تهبط دون المباع — تقليصها تحت الحجوزات القائمة بيعٌ زائد بأثر رجعي
+                    const nextCapRaw = seatCapacity !== undefined ? seatCapacity : Number(row.seat_capacity);
+                    const nextCap = Math.max(nextCapRaw, Number(row.seats_sold));
+                    const res = await c.query(
+                        `UPDATE travel_fixed_packages
+                         SET updated_at = $2, depart_date = $3, seat_capacity = $4, active = $5, data_json = $6
+                         WHERE id = $1 RETURNING *`,
+                        [id, Date.now(),
+                            departDate !== undefined ? departDate : row.depart_date,
+                            nextCap,
+                            active !== undefined ? active : row.active,
+                            JSON.stringify(mergedData)]
+                    );
+                    await c.query('COMMIT');
+                    return rowToFixedPackage(res.rows[0]);
+                } catch (e) {
+                    await c.query('ROLLBACK');
+                    throw e;
+                }
+            });
+        },
+
+        async deleteFixedPackage(id) {
+            return withClient(async c => {
+                // عليها حجوزات (seats_sold > 0) → تُغلق لا تُحذف — الشرط داخل DELETE
+                const res = await c.query(
+                    'DELETE FROM travel_fixed_packages WHERE id = $1 AND seats_sold = 0', [id]
+                );
+                return res.rowCount > 0;
+            });
+        },
+
+        /**
+         * حجز مقاعد ذرّي: الشرط `seats_sold + n <= seat_capacity` داخل
+         * UPDATE نفسه — طلبان متزامنان على آخر مقعد لا يمرّان معاً أبداً.
+         * null عند نفاد السعة (جواب تجاري صريح لا خطأ).
+         */
+        async allocateFixedSeats(id, seats) {
+            return withClient(async c => {
+                const res = await c.query(
+                    `UPDATE travel_fixed_packages
+                     SET seats_sold = seats_sold + $2, updated_at = $3
+                     WHERE id = $1 AND active = TRUE AND seats_sold + $2 <= seat_capacity
+                     RETURNING *`,
+                    [id, seats, Date.now()]
+                );
+                return rowToFixedPackage(res.rows[0]);
+            });
+        },
+
+        async releaseFixedSeats(id, seats) {
+            return withClient(async c => {
+                const res = await c.query(
+                    `UPDATE travel_fixed_packages
+                     SET seats_sold = GREATEST(0, seats_sold - $2), updated_at = $3
+                     WHERE id = $1 RETURNING *`,
+                    [id, seats, Date.now()]
+                );
+                return rowToFixedPackage(res.rows[0]);
+            });
+        },
+
+        // ─── 🔔 اهتمامات الباقات (انتظار + طلبات عروض) ────────────────
+
+        async createPackageInterest(entry) {
+            const { kind, packageId = null, username, status, ...data } = entry;
+            return withClient(async c => {
+                if (kind === 'waitlist') {
+                    // انتظار مكرَّر لنفس (مستخدم، باقة) يُعاد كما هو — لا صفوف مكرّرة
+                    const dup = await c.query(
+                        `SELECT * FROM travel_package_interests
+                         WHERE kind = 'waitlist' AND status = 'new' AND username = $1 AND package_id = $2
+                         LIMIT 1`,
+                        [username, packageId]
+                    );
+                    if (dup.rows[0]) return { ...rowToInterest(dup.rows[0]), duplicate: true };
+                }
+                const id = 'pin_' + Array.from(crypto.getRandomValues(new Uint8Array(10)))
+                    .map(x => x.toString(16).padStart(2, '0')).join('');
+                const res = await c.query(
+                    `INSERT INTO travel_package_interests
+                     (id, at, kind, package_id, username, status, data_json)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+                    [id, Date.now(), kind, packageId, username, status || 'new', JSON.stringify(data)]
+                );
+                return rowToInterest(res.rows[0]);
+            });
+        },
+
+        async listPackageInterests(limit = 200) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'SELECT * FROM travel_package_interests ORDER BY at DESC LIMIT $1', [limit]
+                );
+                return res.rows.map(rowToInterest);
+            });
+        },
+
+        async listWaitlistByPackage(packageId) {
+            return withClient(async c => {
+                const res = await c.query(
+                    `SELECT * FROM travel_package_interests
+                     WHERE kind = 'waitlist' AND package_id = $1 AND status = 'new'`,
+                    [packageId]
+                );
+                return res.rows.map(rowToInterest);
+            });
+        },
+
+        async updatePackageInterest(id, patch = {}) {
+            const { status, ...dataPatch } = patch;
+            return withClient(async c => {
+                try {
+                    await c.query('BEGIN');
+                    const cur = await c.query('SELECT * FROM travel_package_interests WHERE id = $1 FOR UPDATE', [id]);
+                    if (!cur.rows[0]) { await c.query('ROLLBACK'); return null; }
+                    const mergedData = { ...(cur.rows[0].data_json || {}), ...dataPatch };
+                    const res = await c.query(
+                        `UPDATE travel_package_interests SET status = $2, data_json = $3 WHERE id = $1 RETURNING *`,
+                        [id, status !== undefined ? status : cur.rows[0].status, JSON.stringify(mergedData)]
+                    );
+                    await c.query('COMMIT');
+                    return rowToInterest(res.rows[0]);
                 } catch (e) {
                     await c.query('ROLLBACK');
                     throw e;

@@ -27,6 +27,10 @@ import { normalizeDuffelCarResult } from '../src/providers/duffelCarsProvider.js
 import { buildProvider, buildStaysProvider, buildCarsProvider } from '../src/providers/index.js';
 import { readMarkupPct, applyMarkup, DEFAULT_MARKUP_PCT, readPackageMarkupPct, DEFAULT_PACKAGE_MARKUP_PCT, readCategoryMarkupPct, MAX_MARKUP_PCT } from '../src/pricing.js';
 import { normalizeContract, contractCoversStay, contractOfferId, parseContractOfferId } from '../src/contracts.js';
+import {
+    normalizeFixedPackage, priceFixedPackage, publicFixedPackage,
+    isEarlyBird, seatsLeft as fixedSeatsLeft, SEAT_SOURCING, addDaysStr,
+} from '../src/fixedPackages.js';
 import { createContractedStaysProvider, withContractedStays } from '../src/providers/contractedStaysProvider.js';
 import { retryPackageCompensations } from '../src/packages.js';
 import { buildPackageInsight } from '../src/agent/insights.js';
@@ -1401,6 +1405,75 @@ describe('passengerAges: العمر مشتقّ من الميلاد لا مخمَ
 });
 
 // ─── 🎁 الباقات: هامش محروس وعقود فندقية ──────────────────────────────
+describe('fixedPackages: وحدات نقية — تنقية وتسعير وحجب الأسرار التشغيلية', () => {
+    const validPkg = (over = {}) => ({
+        title: 'أسبوع في أنطاليا', city: 'أنطاليا', iata: 'AYT',
+        hotelName: 'منتجع لارا', board: 'شامل الإفطار',
+        departDate: futureDate(40), nights: 7, seatCapacity: 20,
+        sourcing: 'group', currency: 'USD',
+        pricePerSeat: 1000, netPerSeat: 800, singleSupplement: 100, childPrice: 500,
+        ebPct: 10, ebUntil: futureDate(5), depositPct: 20,
+        ...over,
+    });
+
+    test('🧹 المنقّي: كل مصدر تعاقد صالح، والفاسد يُرفض بسببه', () => {
+        for (const s of Object.keys(SEAT_SOURCING)) {
+            assert.ok(!normalizeFixedPackage(validPkg({ sourcing: s })).error, s);
+        }
+        for (const [bad, why] of [
+            [{ title: '' }, 'بلا اسم'],
+            [{ iata: 'ZZZZ' }, 'IATA فاسد'],
+            [{ sourcing: 'magic' }, 'مصدر غير معروف'],
+            [{ seatCapacity: 0 }, 'سعة صفر'],
+            [{ nights: 0 }, 'ليالٍ صفر'],
+            [{ netPerSeat: 1000 }, 'صافٍ ≥ البيع (هامش سالب)'],
+            [{ ebPct: 10, ebUntil: '' }, 'خصم مبكّر بلا نهاية'],
+            [{ ebUntil: futureDate(50) }, 'نهاية المبكّر بعد الانطلاق'],
+            [{ releaseDate: futureDate(50) }, 'استرجاع بعد الانطلاق'],
+            [{ depositPct: 5 }, 'عربون تحت الأدنى'],
+        ]) {
+            assert.ok(normalizeFixedPackage(validPkg(bad)).error, why);
+        }
+    });
+
+    test('💰 التسعير: مبكّر + إشغال + عربون — أرقام قابلة للتحقق يدوياً', () => {
+        const pkg = { ...normalizeFixedPackage(validPkg()).value, id: 'fxp_t', seatsSold: 0 };
+        assert.ok(isEarlyBird(pkg));
+        // بالغان: 900×2، مفردة: (900+100)×1، طفل: 450×1 → 3250
+        const q = priceFixedPackage(pkg, { adults: 2, singles: 1, children: 1, pay: 'deposit' });
+        assert.equal(q.total, 3250);
+        assert.equal(q.seats, 4);
+        assert.equal(q.paidNow, 650);            // عربون 20%
+        assert.equal(q.remaining, 2600);
+        assert.equal(q.dueDate, addDaysStr(pkg.departDate, -14));
+        assert.equal(q.netAmount, 3200);          // 800×4 — للمالك فقط
+        // دفع كامل: لا متبقٍّ
+        const qf = priceFixedPackage(pkg, { adults: 2, pay: 'full' });
+        assert.equal(qf.paidNow, qf.total);
+        assert.equal(qf.remaining, 0);
+        // بعد انتهاء المبكّر يعود السعر الكامل
+        const late = { ...pkg, ebUntil: '2020-01-01' };
+        assert.equal(priceFixedPackage(late, { adults: 1 }).total, 1000);
+        // أطفال بلا سعر أطفال معلن → رفض صريح لا تخمين
+        assert.throws(() => priceFixedPackage({ ...pkg, childPrice: null }, { adults: 1, children: 1 }), /سعر أطفال/);
+        assert.throws(() => priceFixedPackage(pkg, { adults: 0 }), /البالغين/);
+        assert.throws(() => priceFixedPackage(pkg, { adults: 1, pay: 'later' }), /deposit/);
+    });
+
+    test('🔒 publicFixedPackage يحجب الأسرار التشغيلية للمالك', () => {
+        const pkg = { ...normalizeFixedPackage(validPkg()).value, id: 'fxp_t', seatsSold: 18 };
+        const pub = publicFixedPackage(pkg);
+        assert.ok(!('netPerSeat' in pub), 'الكلفة الصافية لا تغادر');
+        assert.ok(!('sourcing' in pub), 'مصدر تعاقدنا لا يغادر');
+        assert.ok(!('releaseDate' in pub), 'موعد استرجاع حصتنا لا يغادر');
+        assert.equal(pub.seatsLeft, 2);
+        assert.equal(pub.fewSeats, true);
+        assert.equal(pub.effectivePrice, 900); // مبكّر −10%
+        assert.equal(pub.returnDate, addDaysStr(pkg.departDate, 7));
+        assert.equal(fixedSeatsLeft({ seatCapacity: 5, seatsSold: 7 }), 0); // لا سالب
+    });
+});
+
 describe('packages/contracts: وحدات نقية بلا شبكة', () => {
     test('💰 هامش الباقة محروس أدنى من العادي — بنيةً لا نيّةً', () => {
         assert.equal(readPackageMarkupPct({ TRAVEL_PACKAGE_MARKUP_PCT: '6' }, 8), 6);
@@ -2065,6 +2138,155 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal((await call(`/api/travel/packages/bookings/${booked.data.booking.id}/cancel`, {
                 method: 'POST', token: makeToken('someone-else'),
             })).status, 404);
+        });
+
+        // ─── 🎒 الباقات المجدولة: مخزون مملوك بانطلاقات ثابتة ─────────
+
+        test('🎒 الباقات المجدولة: CRUD أدمن + حجز ذرّي بعربون + انتظار يُبلَّغ عند التحرر', async () => {
+            const admin = makeToken('admin');
+            const buyer = makeToken('fx-buyer');
+            const waiter = makeToken('fx-waiter');
+
+            // غير الأدمن: مسارات الإدارة غير موجودة أصلاً (404 لا 403)
+            for (const [method, pathname] of [
+                ['GET', '/api/travel/admin/fixed-packages'],
+                ['POST', '/api/travel/admin/fixed-packages'],
+                ['GET', '/api/travel/admin/package-interests'],
+            ]) {
+                assert.equal((await call(pathname, { method, token: buyer })).status, 404, pathname);
+            }
+
+            // تنظيف باقات جولات سابقة (Postgres يبقيها بين التشغيلات)
+            for (const p of (await call('/api/travel/admin/fixed-packages', { token: admin })).data.packages) {
+                await call(`/api/travel/admin/fixed-packages/${p.id}`, { method: 'DELETE', token: admin });
+            }
+
+            // باقة فاسدة تُرفض بالمنقّي — ومصدر تعاقد مجهول سبب صريح
+            assert.equal((await call('/api/travel/admin/fixed-packages', {
+                method: 'POST', token: admin, body: { title: 'x', iata: 'AYT', sourcing: 'magic' },
+            })).status, 400);
+
+            const depart = futureDate(40);
+            const created = await call('/api/travel/admin/fixed-packages', {
+                method: 'POST', token: admin,
+                body: {
+                    title: 'أسبوع في أنطاليا', city: 'أنطاليا', iata: 'AYT',
+                    hotelName: 'منتجع لارا', board: 'شامل الإفطار',
+                    departDate: depart, nights: 7, seatCapacity: 3,
+                    sourcing: 'group', releaseDate: futureDate(26),
+                    currency: 'USD', pricePerSeat: 1000, netPerSeat: 800,
+                    singleSupplement: 100, childPrice: 500,
+                    ebPct: 10, ebUntil: futureDate(5), depositPct: 20,
+                },
+            });
+            assert.equal(created.status, 200, JSON.stringify(created.data));
+            const pkgId = created.data.package.id;
+            assert.equal(created.data.package.seatsSold, 0);
+
+            // القائمة العامة: تظهر بلا أسرار تشغيلية وبسعر المبكّر الفعّال
+            const list = await call('/api/travel/fixed-packages', { token: buyer });
+            const pub = list.data.packages.find(p => p.id === pkgId);
+            assert.ok(pub, 'الباقة النشطة المستقبلية تظهر للجمهور');
+            assert.ok(!('netPerSeat' in pub) && !('sourcing' in pub) && !('releaseDate' in pub));
+            assert.equal(pub.effectivePrice, 900);
+            assert.equal(pub.seatsLeft, 3);
+
+            // عرض سعر: نفس حساب الفاتورة (بالغان بمبكّر −10% وعربون 20%)
+            const quote = await call(`/api/travel/fixed-packages/${pkgId}/quote`, {
+                method: 'POST', token: buyer, body: { adults: 2, pay: 'deposit' },
+            });
+            assert.equal(quote.status, 200);
+            assert.equal(quote.data.quote.total, 1800);
+            assert.equal(quote.data.quote.paidNow, 360);
+            assert.ok(!('netAmount' in quote.data.quote), 'الصافي لا يتسرب حتى في عرض السعر');
+
+            // 🔒 الحجز الذرّي: طلبان متزامنان ×2 مقاعد على سعة 3 → واحد فقط يمر
+            const bookTwo = () => call(`/api/travel/fixed-packages/${pkgId}/bookings`, {
+                method: 'POST', token: buyer,
+                body: {
+                    adults: 2, pay: 'deposit', leadName: 'سالم الحربي',
+                    contact: { email: 'salem@example.com' },
+                },
+            });
+            const race = await Promise.all([bookTwo(), bookTwo()]);
+            const ok = race.filter(r => r.status === 200);
+            const rejected = race.filter(r => r.status === 409);
+            assert.equal(ok.length, 1, 'المقعد الرابع من سعة ثلاثة لا يُباع أبداً');
+            assert.equal(rejected.length, 1);
+            const booking = ok[0].data.booking;
+            assert.equal(booking.status, 'issued'); // تأكيد فوري — المخزون ملكنا
+            assert.match(booking.bookingReference, /^FP-/);
+            assert.equal(booking.sellAmount, 1800);
+            assert.equal(booking.paymentPlan.paidNow, 360);
+            assert.equal(booking.paymentPlan.remaining, 1440);
+            assert.equal(booking.paymentPlan.dueDate, addDaysStr(depart, -14));
+
+            // حجز التواصل الفاسد يُرفض قبل لمس المقاعد
+            assert.equal((await call(`/api/travel/fixed-packages/${pkgId}/bookings`, {
+                method: 'POST', token: buyer,
+                body: { adults: 1, leadName: 'x', contact: { phone: '05012345' } },
+            })).status, 400);
+
+            // اكمال السعة (مقعد أخير) ثم قائمة الانتظار
+            const last = await call(`/api/travel/fixed-packages/${pkgId}/bookings`, {
+                method: 'POST', token: buyer,
+                body: { adults: 1, pay: 'full', leadName: 'سالم الحربي', contact: { email: 'salem@example.com' } },
+            });
+            assert.equal(last.status, 200);
+            assert.equal(last.data.booking.paymentPlan.remaining, 0);
+
+            // انتظار على باقة فيها مقاعد → يُرفض بإرشاد للحجز المباشر
+            // (الآن السعة مكتملة 3/3 فالانضمام يمر)
+            const wl1 = await call(`/api/travel/fixed-packages/${pkgId}/waitlist`, {
+                method: 'POST', token: waiter, body: {},
+            });
+            assert.equal(wl1.status, 200);
+            assert.equal(wl1.data.duplicate, false);
+            const wl2 = await call(`/api/travel/fixed-packages/${pkgId}/waitlist`, {
+                method: 'POST', token: waiter, body: {},
+            });
+            assert.equal(wl2.data.duplicate, true, 'لا صفوف انتظار مكررة لنفس المستخدم');
+
+            // الإلغاء الذاتي (قبل موعد الأسماء): استرداد كامل المدفوع + مقاعد
+            // تتحرر + المنتظر يُبلَّغ تلقائياً ويُعلَّم حتى لا يُزعَج ثانية
+            const cancel = await call(`/api/travel/fixed-packages/bookings/${booking.id}/cancel`, {
+                method: 'POST', token: buyer,
+            });
+            assert.equal(cancel.status, 200);
+            assert.equal(cancel.data.booking.refund.amount, 360, 'يُسترد المدفوع فعلاً (العربون) لا الإجمالي');
+            const adminView = (await call('/api/travel/admin/fixed-packages', { token: admin }))
+                .data.packages.find(p => p.id === pkgId);
+            assert.equal(adminView.seatsSold, 1, 'مقعدا الحجز الملغى عادا للسعة');
+            assert.equal(adminView.sourcingLabel, SEAT_SOURCING.group);
+            assert.equal(adminView.marginPerSeat, 200);
+            const waiterNtf = await call('/api/travel/notifications', { token: waiter });
+            assert.ok(waiterNtf.data.notifications.some(n => n.title.includes('توفّرت مقاعد')),
+                'المنتظر يُبلَّغ فور تحرر المقاعد');
+            const interests = (await call('/api/travel/admin/package-interests', { token: admin })).data.interests;
+            assert.equal(interests.find(i => i.kind === 'waitlist' && i.packageId === pkgId).status, 'notified');
+
+            // 🎯 طلب عرض خاص: تحقق ثم ظهور في قائمة الأدمن
+            assert.equal((await call('/api/travel/quote-requests', {
+                method: 'POST', token: buyer, body: { destination: '', contact: { email: 'a@b.com' } },
+            })).status, 400);
+            const qr = await call('/api/travel/quote-requests', {
+                method: 'POST', token: buyer,
+                body: { destination: 'جورجيا', date: futureDate(60), pax: 4, note: 'عائلة', contact: { email: 'salem@example.com' } },
+            });
+            assert.equal(qr.status, 200);
+            const interests2 = (await call('/api/travel/admin/package-interests', { token: admin })).data.interests;
+            assert.ok(interests2.some(i => i.kind === 'quote' && i.destination === 'جورجيا'));
+
+            // الحذف محكوم: باقة عليها حجوزات لا تُحذف — توقَف فقط
+            assert.equal((await call(`/api/travel/admin/fixed-packages/${pkgId}`, {
+                method: 'DELETE', token: admin,
+            })).status, 400);
+            const off = await call(`/api/travel/admin/fixed-packages/${pkgId}`, {
+                method: 'PUT', token: admin, body: { active: false },
+            });
+            assert.equal(off.status, 200);
+            assert.equal((await call('/api/travel/fixed-packages', { token: buyer }))
+                .data.packages.some(p => p.id === pkgId), false, 'الموقوفة تختفي من الجمهور');
         });
 
         // ─── 🤝 العقود الفندقية عبر الأدمن ─────────────────────────────

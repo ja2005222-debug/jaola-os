@@ -296,7 +296,8 @@
       <div class="tabs">
         <button data-tab="search" class="active">🔎 بحث الرحلات</button>
         <button data-tab="stays" id="staysTabBtn">🏨 الفنادق</button>
-        <button data-tab="packages" id="pkgTabBtn">🎁 باقات</button>
+        <button data-tab="fixed" id="fixedTabBtn">🎒 باقات جاهزة</button>
+        <button data-tab="packages" id="pkgTabBtn">🎁 ركّب باقتك</button>
         <button data-tab="destinations">🗺️ أهم الوجهات</button>
         <button data-tab="cars" id="carsTabBtn">🚗 سيارات</button>
         <button data-tab="trips">🧳 رحلاتي</button>
@@ -399,6 +400,28 @@
             </div>
           </div>
           <div id="pkgQuote" class="hidden card"></div>
+        </div>
+      </section>
+
+      <!-- ─── 🎒 الباقات الجاهزة (انطلاقات مجدولة — فندق متعاقَد + مقاعد محجوزة) ─── -->
+      <section id="tab-fixed" class="hidden">
+        <div class="card">
+          <p class="note" style="margin-bottom:0">🎒 فندق متعاقَد + مقاعد طيران محجوزة مسبقاً — سعر نهائي واحد وتأكيد فوري. احجز بعربون وسلّم الأسماء قبل الإقلاع بأسبوعين.</p>
+        </div>
+        <div id="fixedError" class="error hidden"></div>
+        <div id="fixedGrid" class="dest-grid"></div>
+        <div class="card" style="text-align:center">
+          <strong>🎯 ما ناسبك تاريخ أو وجهة؟</strong>
+          <p class="note">اطلب عرضاً خاصاً ويجهّز لك فريقنا باقة على مقاسك.</p>
+          <div class="row" style="justify-content:center">
+            <div><label>الوجهة</label><input id="qrDest" placeholder="أنطاليا" /></div>
+            <div><label>التاريخ التقريبي</label><input id="qrDate" type="date" /></div>
+            <div><label>المسافرون</label><input id="qrPax" type="number" min="1" max="100" value="2" /></div>
+            <div><label>بريد أو هاتف</label><input id="qrContact" placeholder="+9665xxxxxxxx" /></div>
+          </div>
+          <button class="primary" id="qrSendBtn">إرسال الطلب</button>
+          <div id="qrMsg" class="note hidden"></div>
+          <div id="qrErr" class="error hidden"></div>
         </div>
       </section>
 
@@ -540,6 +563,35 @@
     </div>
   </dialog>
 
+  <!-- 🎒 نافذة حجز باقة مجدولة: عدد المسافرين + عربون/كامل + تسعير حي -->
+  <dialog id="fixedDialog">
+    <h3 id="fixedDlgTitle" style="margin-bottom:6px">🎒 حجز باقة</h3>
+    <p id="fixedDlgSummary" class="note"></p>
+    <div class="row">
+      <div><label>بالغون (غرفة مزدوجة)</label><input id="fxAdults" type="number" min="1" max="9" value="2" /></div>
+      <div><label>غرف مفردة</label><input id="fxSingles" type="number" min="0" max="9" value="0" /></div>
+      <div><label>أطفال</label><input id="fxChildren" type="number" min="0" max="9" value="0" /></div>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <label style="display:flex;align-items:center;gap:6px"><input type="radio" name="fxPay" value="deposit" checked style="width:auto" /> عربون الآن والباقي لاحقاً</label>
+      <label style="display:flex;align-items:center;gap:6px"><input type="radio" name="fxPay" value="full" style="width:auto" /> دفع كامل</label>
+    </div>
+    <div id="fixedDlgQuote" class="note" style="margin-top:8px"></div>
+    <div class="row" style="margin-top:6px">
+      <div style="flex:1"><label>اسم قائد المجموعة</label><input id="fxLeadName" placeholder="الاسم الكامل" /></div>
+    </div>
+    <div class="row">
+      <div><label>البريد</label><input id="fxEmail" type="email" placeholder="you@example.com" /></div>
+      <div><label>الهاتف</label><input id="fxPhone" placeholder="+9665xxxxxxxx" /></div>
+    </div>
+    <p class="note">🪪 أسماء بقية المسافرين تُسلَّم قبل الإقلاع بأسبوعين — لا تلزم الآن.</p>
+    <div id="fixedDlgError" class="error hidden"></div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="primary" id="fixedConfirm">أكّد الحجز</button>
+      <button class="chip" id="fixedCancelBtn" type="button">إغلاق</button>
+    </div>
+  </dialog>
+
   <!-- نافذة بيانات سائق السيارة -->
   <dialog id="carBookDialog">
     <h3 style="margin-bottom:6px">🚗 بيانات السائق</h3>
@@ -655,8 +707,9 @@
     document.querySelectorAll('.tabs button').forEach(btn =>
       btn.addEventListener('click', () => {
         document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b === btn));
-        ['search', 'stays', 'packages', 'destinations', 'cars', 'trips', 'notifications', 'agent'].forEach(t =>
+        ['search', 'stays', 'fixed', 'packages', 'destinations', 'cars', 'trips', 'notifications', 'agent'].forEach(t =>
           $('tab-' + t).classList.toggle('hidden', t !== btn.dataset.tab));
+        if (btn.dataset.tab === 'fixed') loadFixedPackages();
         if (btn.dataset.tab === 'trips') loadTrips();
         if (btn.dataset.tab === 'destinations' && !$('destGrid').children.length) loadDestinations();
         if (btn.dataset.tab === 'notifications') { loadNotifications(); loadPrefs(); loadProfile(); }
@@ -1973,6 +2026,150 @@
       }
     });
 
+    // ─── 🎒 الباقات الجاهزة (انطلاقات مجدولة) ───
+    let fixedPkgs = [], fixedSel = null;
+
+    async function loadFixedPackages() {
+      $('fixedError').classList.add('hidden');
+      const res = await api('/api/travel/fixed-packages');
+      if (!res.ok) {
+        $('fixedError').textContent = 'تعذّر تحميل الباقات — حدّث الصفحة.';
+        $('fixedError').classList.remove('hidden');
+        return;
+      }
+      fixedPkgs = (await res.json()).packages || [];
+      $('fixedGrid').innerHTML = fixedPkgs.length === 0
+        ? '<p class="note">لا انطلاقات معلنة حالياً — اطلب عرضاً خاصاً أدناه وسنوافيك.</p>'
+        : fixedPkgs.map(p => `
+          <div class="card">
+            <div class="route">🎒 ${esc(p.title)}
+              ${p.earlyBird ? `<span class="pkg-badge">⚡ سعر مبكّر −${p.ebPct}% حتى ${esc(p.ebUntil)}</span>` : ''}
+            </div>
+            <div class="seg">🏨 ${esc(p.hotelName)} · ${esc(p.board)} · ✈️ ذهاب وعودة</div>
+            <div class="seg">📅 ${esc(p.departDate)} → ${esc(p.returnDate)} (${p.nights} ليالٍ)</div>
+            ${p.description ? `<div class="note">${esc(p.description)}</div>` : ''}
+            <div class="offer" style="margin-top:8px">
+              <div>
+                <div class="price">${p.effectivePrice} ${esc(p.currency)} <span class="note" style="display:inline">/ للشخص</span></div>
+                ${p.earlyBird ? `<div class="note" style="text-decoration:line-through">${p.pricePerSeat} ${esc(p.currency)}</div>` : ''}
+                <div class="note">عربون ${p.depositPct}% يثبّت مقعدك — الأسماء قبل ${esc(p.namesDeadline)}</div>
+              </div>
+              <div style="text-align:center">
+                ${p.soldOut
+                  ? `<div class="st st-failed">اكتملت المقاعد</div>
+                     <button class="chip" data-fx-wait="${esc(p.id)}">🔔 أبلغني عند التوفّر</button>`
+                  : `${p.fewSeats ? `<div class="st st-pending">🔥 تبقى ${p.seatsLeft} مقاعد فقط</div>` : `<div class="note">متاح: ${p.seatsLeft} مقاعد</div>`}
+                     <button class="primary" data-fx-book="${esc(p.id)}">احجز الآن</button>`}
+              </div>
+            </div>
+          </div>`).join('');
+      document.querySelectorAll('[data-fx-book]').forEach(btn =>
+        btn.addEventListener('click', () => openFixedDlg(btn.dataset.fxBook)));
+      document.querySelectorAll('[data-fx-wait]').forEach(btn =>
+        btn.addEventListener('click', async () => {
+          const res2 = await api(`/api/travel/fixed-packages/${btn.dataset.fxWait}/waitlist`, {
+            method: 'POST', body: JSON.stringify({}),
+          });
+          const data = await res2.json();
+          alert(res2.ok ? data.message : (data.error || 'تعذّر التسجيل.'));
+        }));
+    }
+
+    function openFixedDlg(id) {
+      fixedSel = fixedPkgs.find(p => p.id === id);
+      if (!fixedSel) return;
+      $('fixedDlgTitle').textContent = `🎒 ${fixedSel.title}`;
+      $('fixedDlgSummary').textContent =
+        `🏨 ${fixedSel.hotelName} · ${fixedSel.board} · انطلاق ${fixedSel.departDate} (${fixedSel.nights} ليالٍ) · المتاح ${fixedSel.seatsLeft} مقاعد`;
+      $('fixedDlgError').classList.add('hidden');
+      $('fxAdults').value = 2; $('fxSingles').value = 0; $('fxChildren').value = 0;
+      document.querySelector('input[name="fxPay"][value="deposit"]').checked = true;
+      refreshFixedQuote();
+      $('fixedDialog').showModal();
+    }
+
+    async function refreshFixedQuote() {
+      if (!fixedSel) return;
+      const body = {
+        adults: Number($('fxAdults').value || 1),
+        singles: Number($('fxSingles').value || 0),
+        children: Number($('fxChildren').value || 0),
+        pay: document.querySelector('input[name="fxPay"]:checked')?.value || 'deposit',
+      };
+      const res = await api(`/api/travel/fixed-packages/${fixedSel.id}/quote`, {
+        method: 'POST', body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        $('fixedDlgQuote').innerHTML = `<span class="error" style="display:block">${esc(data.error || 'تعذّر التسعير')}</span>`;
+        return;
+      }
+      const q = data.quote;
+      $('fixedDlgQuote').innerHTML = [
+        ...q.lines.map(l => `${esc(l.label)}: <strong>${l.amount} ${esc(q.currency)}</strong>`),
+        q.earlyBird ? `⚡ يشمل خصم السعر المبكّر −${q.ebPct}%` : '',
+        `الإجمالي: <strong>${q.total} ${esc(q.currency)}</strong> (${q.seats} مقاعد)`,
+        q.pay === 'deposit'
+          ? `💳 المطلوب الآن (عربون ${q.depositPct}%): <strong>${q.paidNow} ${esc(q.currency)}</strong> — والمتبقي ${q.remaining} قبل ${esc(q.dueDate)}`
+          : `💳 المطلوب الآن: <strong>${q.paidNow} ${esc(q.currency)}</strong>`,
+      ].filter(Boolean).join('<br>');
+    }
+    ['fxAdults', 'fxSingles', 'fxChildren'].forEach(id => $(id).addEventListener('input', refreshFixedQuote));
+    document.querySelectorAll('input[name="fxPay"]').forEach(r => r.addEventListener('change', refreshFixedQuote));
+    $('fixedCancelBtn').addEventListener('click', () => $('fixedDialog').close());
+
+    $('fixedConfirm').addEventListener('click', async () => {
+      if (!fixedSel) return;
+      $('fixedDlgError').classList.add('hidden');
+      const res = await api(`/api/travel/fixed-packages/${fixedSel.id}/bookings`, {
+        method: 'POST',
+        body: JSON.stringify({
+          adults: Number($('fxAdults').value || 1),
+          singles: Number($('fxSingles').value || 0),
+          children: Number($('fxChildren').value || 0),
+          pay: document.querySelector('input[name="fxPay"]:checked')?.value || 'deposit',
+          leadName: $('fxLeadName').value.trim(),
+          contact: { email: $('fxEmail').value.trim(), phone: $('fxPhone').value.trim() },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        $('fixedDlgError').textContent = data.error || 'تعذّر الحجز.';
+        $('fixedDlgError').classList.remove('hidden');
+        return;
+      }
+      $('fixedDialog').close();
+      const plan = data.booking?.paymentPlan;
+      alert(`✅ تأكّد حجزك فوراً — المرجع ${data.booking.bookingReference}` +
+        (plan && plan.remaining > 0 ? `\n💳 عربون ${plan.paidNow} — المتبقي ${plan.remaining} قبل ${plan.dueDate}` : ''));
+      document.querySelector('[data-tab="trips"]').click();
+      loadFixedPackages().catch(() => {});
+    });
+
+    $('qrSendBtn').addEventListener('click', async () => {
+      $('qrErr').classList.add('hidden'); $('qrMsg').classList.add('hidden');
+      const contactRaw = $('qrContact').value.trim();
+      const contact = contactRaw.includes('@') ? { email: contactRaw } : { phone: contactRaw };
+      const res = await api('/api/travel/quote-requests', {
+        method: 'POST',
+        body: JSON.stringify({
+          destination: $('qrDest').value.trim(),
+          date: $('qrDate').value || undefined,
+          pax: Number($('qrPax').value || 2),
+          contact,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        $('qrErr').textContent = data.error || 'تعذّر الإرسال.';
+        $('qrErr').classList.remove('hidden');
+        return;
+      }
+      $('qrMsg').textContent = data.message;
+      $('qrMsg').classList.remove('hidden');
+      $('qrDest').value = ''; $('qrContact').value = '';
+    });
+
     // ─── رحلاتي (طيران + فنادق + سيارات موحّدة) ───
     const ST_LABEL = { issued: 'مُصدَر ✅', pending: 'قيد الإصدار', failed: 'فشل', cancelled: 'مُلغى' };
     const CANCEL_PATH = {
@@ -1980,8 +2177,20 @@
       stay: id => `/api/travel/stays/bookings/${id}/cancel`,
       car: id => `/api/travel/cars/bookings/${id}/cancel`,
       package: id => `/api/travel/packages/bookings/${id}/cancel`,
+      fixed_package: id => `/api/travel/fixed-packages/bookings/${id}/cancel`,
     };
     function bookingBodyHtml(b) {
+      if (b.kind === 'fixed_package') {
+        const plan = b.paymentPlan;
+        return `<div class="route">🎒 ${esc(b.offer?.title || 'باقة مجدولة')}
+            <span class="st st-${esc(b.status)}">${ST_LABEL[b.status] || esc(b.status)}</span></div>
+          <div class="seg">🏨 ${esc(b.offer?.hotelName || '')} · ${esc(b.offer?.board || '')} · انطلاق ${esc(b.offer?.departDate || '')} (${b.offer?.nights || '؟'} ليالٍ) · ${b.seats || '؟'} مقاعد</div>
+          ${plan && plan.remaining > 0
+            ? `<div class="note">💳 عربون مدفوع ${plan.paidNow} ${esc(b.currency)} — المتبقي <strong>${plan.remaining} ${esc(b.currency)}</strong> قبل ${esc(plan.dueDate)}</div>`
+            : ''}
+          ${b.namesDeadline && b.status === 'issued'
+            ? `<div class="note">🪪 تسليم أسماء المسافرين قبل ${esc(b.namesDeadline)}</div>` : ''}`;
+      }
       if (b.kind === 'package') {
         const outbound = b.offer?.flight?.slices?.[0] || {};
         return `<div class="route">🎁 باقة: ${esc(outbound.origin || '؟')} ⇄ ${esc(outbound.destination || '؟')} + 🏨 ${esc(b.offer?.stay?.name || '')}

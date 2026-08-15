@@ -20,6 +20,11 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { buildVerifyToken } from './src/auth.js';
 import { readMarkupPct, readPackageMarkupPct, readCategoryMarkupPct, applyMarkup } from './src/pricing.js';
 import { quotePackage, bookPackage, cancelPackage, retryPackageCompensations } from './src/packages.js';
+import {
+    normalizeFixedPackage, priceFixedPackage, publicFixedPackage,
+    bookFixedPackage, cancelFixedPackageBooking, seatsLeft as fixedSeatsLeft,
+    SEAT_SOURCING,
+} from './src/fixedPackages.js';
 import { normalizeContract } from './src/contracts.js';
 import { createContractedStaysProvider, withContractedStays } from './src/providers/contractedStaysProvider.js';
 import { createBooking, getBooking, getBookingByProviderOrderId, listBookingsByUser, transitionBooking } from './src/bookings.js';
@@ -370,11 +375,18 @@ function publicBooking(b) {
         offer: b.offer, passengers: b.passengers, contact: b.contact,
         error: b.error, refund: b.refund,
         packageId: b.packageId || null, // الواجهة تجمع أبناء الباقة تحت أبيهم
+        // حقول الباقات المجدولة — undefined لغيرها فلا تظهر في JSON أصلاً
+        paymentPlan: b.paymentPlan,
+        seats: b.seats,
+        namesDeadline: b.namesDeadline,
     };
 }
 
 /** سطر ملخّص نصّي لحجز (بريد التأكيد/الإلغاء) — نفس منطق bookingBodyHtml في الواجهة. */
 function bookingSummaryLine(b) {
+    if (b.kind === 'fixed_package') {
+        return `🎒 باقة مجدولة: ${b.offer?.title || '؟'} — 🏨 ${b.offer?.hotelName || 'فندق'} — انطلاق ${b.offer?.departDate || '؟'} (${b.seats || '؟'} مقاعد)`;
+    }
     if (b.kind === 'package') {
         const outbound = b.offer?.flight?.slices?.[0] || {};
         return `🎁 باقة: ✈️ ${outbound.origin || '؟'}⇄${outbound.destination || '؟'} + 🏨 ${b.offer?.stay?.name || 'فندق'}`;
@@ -1322,6 +1334,142 @@ export function createApp({
         }
     }));
 
+    // ─── 🎒 الباقات المجدولة (مخزون مملوك — تأكيد فوري بلا مزوّد) ──────
+
+    /** تحقق وسيلة التواصل لحجز باقة مجدولة — نفس معايير بقية البوابة. */
+    function validateFixedContact(raw) {
+        const email = String(raw?.email || '').trim();
+        const phone = normalizePhone(raw?.phone);
+        if (!email && !phone) return { error: 'وسيلة تواصل مطلوبة: بريد أو هاتف.' };
+        if (email && !EMAIL_RE.test(email)) return { error: 'صيغة البريد غير صحيحة.' };
+        if (phone && !PHONE_RE.test(phone)) return { error: PHONE_HINT };
+        return { value: { email: email || null, phone: phone || null } };
+    }
+
+    /**
+     * مقاعد تحرّرت (إلغاء حجز أو زيادة سعة من الأدمن) → إبلاغ قائمة
+     * الانتظار تلقائياً وتعليم كل مُبلَّغ حتى لا يتكرر إزعاجه. الإشعار
+     * إثراء: فشله لا يُفشل العملية الأصلية.
+     */
+    async function notifyWaitlistSeatsFreed(pkg) {
+        try {
+            if (!pkg || pkg.active === false || fixedSeatsLeft(pkg) <= 0) return;
+            const waiting = await store.listWaitlistByPackage(pkg.id);
+            for (const entry of waiting) {
+                await notifier.deliver({
+                    username: entry.username,
+                    category: 'booking_issued',
+                    title: `🔔 توفّرت مقاعد — ${pkg.title}`,
+                    body: `توفّرت مقاعد في الباقة التي انتظرتها:\n\n🎒 ${pkg.title} — 🏨 ${pkg.hotelName}\nانطلاق ${pkg.departDate} (${pkg.nights} ليالٍ) — المتبقي الآن ${fixedSeatsLeft(pkg)} مقاعد.\n\nسارع بالحجز من بوابة السفر قبل نفادها مجدداً.`,
+                    email: entry.email || null,
+                    meta: { fixedPackageId: pkg.id },
+                });
+                await store.updatePackageInterest(entry.id, { status: 'notified' });
+            }
+        } catch { /* الإشعار إثراء — لا يُفشل الإلغاء/التعديل */ }
+    }
+
+    app.get('/api/travel/fixed-packages', verifyToken, wrap(async (req, res) => {
+        const today = todayUtc();
+        const all = await store.listFixedPackages();
+        const packages = all
+            .filter(p => p.active !== false && p.departDate > today)
+            .map(p => publicFixedPackage(p));
+        res.json({ packages });
+    }));
+
+    app.post('/api/travel/fixed-packages/:id/quote', verifyToken, wrap(async (req, res) => {
+        const pkg = await store.getFixedPackage(String(req.params.id || ''));
+        if (!pkg || pkg.active === false) return res.status(404).json({ error: 'الباقة غير موجودة.' });
+        try {
+            const q = priceFixedPackage(pkg, {
+                adults: req.body?.adults, singles: req.body?.singles ?? 0,
+                children: req.body?.children ?? 0, pay: req.body?.pay || 'deposit',
+            });
+            // الصافي كلفة داخلية — لا يغادر للجمهور حتى في عرض السعر
+            const { netAmount: _net, ...publicQuote } = q;
+            res.json({ quote: publicQuote, package: publicFixedPackage(pkg) });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
+    app.post('/api/travel/fixed-packages/:id/bookings', verifyToken, wrap(async (req, res) => {
+        const contactCheck = validateFixedContact(req.body?.contact);
+        if (contactCheck.error) return res.status(400).json({ error: contactCheck.error });
+        try {
+            const { booking } = await bookFixedPackage({
+                store, packageId: req.params.id, username: userOf(req),
+                adults: req.body?.adults, singles: req.body?.singles ?? 0,
+                children: req.body?.children ?? 0, pay: req.body?.pay || 'deposit',
+                leadName: req.body?.leadName, contact: contactCheck.value,
+            });
+            await notifyBookingIssued(booking);
+            res.json({ booking: publicBooking(booking) });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
+    app.post('/api/travel/fixed-packages/bookings/:id/cancel', verifyToken, wrap(async (req, res) => {
+        try {
+            const cancelled = await cancelFixedPackageBooking({
+                store, username: userOf(req), bookingId: req.params.id,
+            });
+            await notifyBookingCancelled(cancelled);
+            // المقاعد المتحررة قد تُسعد منتظرين — أبلغهم الآن
+            const pkgId = cancelled.offer?.fixedPackageId;
+            if (pkgId) await notifyWaitlistSeatsFreed(await store.getFixedPackage(pkgId));
+            res.json({ booking: publicBooking(cancelled) });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
+    app.post('/api/travel/fixed-packages/:id/waitlist', verifyToken, wrap(async (req, res) => {
+        const pkg = await store.getFixedPackage(String(req.params.id || ''));
+        if (!pkg || pkg.active === false) return res.status(404).json({ error: 'الباقة غير موجودة.' });
+        if (fixedSeatsLeft(pkg) > 0) {
+            return res.status(400).json({ error: `ما زالت هناك ${fixedSeatsLeft(pkg)} مقاعد متاحة — احجز مباشرةً.` });
+        }
+        const email = String(req.body?.email || '').trim();
+        if (email && !EMAIL_RE.test(email)) return res.status(400).json({ error: 'صيغة البريد غير صحيحة.' });
+        const entry = await store.createPackageInterest({
+            kind: 'waitlist', packageId: pkg.id, username: userOf(req),
+            email: email || null,
+            packageTitle: pkg.title, departDate: pkg.departDate,
+        });
+        res.json({
+            waitlisted: true, duplicate: !!entry.duplicate,
+            message: entry.duplicate
+                ? 'أنت في قائمة الانتظار مسبقاً — سنبلغك فور توفّر مقاعد.'
+                : 'أُضفت لقائمة الانتظار — سنبلغك فور توفّر مقاعد.',
+        });
+    }));
+
+    app.post('/api/travel/quote-requests', verifyToken, wrap(async (req, res) => {
+        const destination = String(req.body?.destination || '').trim().slice(0, 80);
+        if (!destination) return res.status(400).json({ error: 'الوجهة مطلوبة.' });
+        const date = String(req.body?.date || '').trim();
+        if (date && !DATE_RE.test(date)) return res.status(400).json({ error: 'التاريخ بصيغة YYYY-MM-DD.' });
+        const pax = Number(req.body?.pax ?? 2);
+        if (!Number.isInteger(pax) || pax < 1 || pax > 100) {
+            return res.status(400).json({ error: 'عدد المسافرين عدد صحيح بين 1 و100.' });
+        }
+        const contactCheck = validateFixedContact(req.body?.contact);
+        if (contactCheck.error) return res.status(400).json({ error: contactCheck.error });
+        await store.createPackageInterest({
+            kind: 'quote', username: userOf(req),
+            destination, date: date || null, pax,
+            note: String(req.body?.note || '').trim().slice(0, 400) || null,
+            ...contactCheck.value,
+        });
+        res.json({ requested: true, message: '🎯 استلمنا طلبك — سيصلك عرض خاص على مقاسك قريباً.' });
+    }));
+
     // ─── 🗺️ أهم الوجهات (صور Wikimedia + أرخص سعر حقيقي) ──────────────
 
     app.get('/api/travel/destinations/top', verifyToken, destinationsLimiter, wrap(async (req, res) => {
@@ -1563,6 +1711,58 @@ export function createApp({
 
     app.post('/api/travel/admin/compensations/retry', verifyToken, requireAdmin, wrap(async (req, res) => {
         res.json(await retryPackageCompensations({ store, staysProvider }));
+    }));
+
+    // ─── 🎒 إدارة الباقات المجدولة ────────────────────────────────────
+
+    app.get('/api/travel/admin/fixed-packages', verifyToken, requireAdmin, wrap(async (req, res) => {
+        const all = await store.listFixedPackages();
+        // نظرة المالك الكاملة: الصافي والهامش ومصدر التعاقد وقائمة الانتظار
+        const packages = [];
+        for (const p of all) {
+            const waiting = await store.listWaitlistByPackage(p.id);
+            packages.push({
+                ...p,
+                seatsLeft: fixedSeatsLeft(p),
+                sourcingLabel: SEAT_SOURCING[p.sourcing] || p.sourcing,
+                waitlistCount: waiting.length,
+                marginPerSeat: p.netPerSeat != null
+                    ? Math.round((p.pricePerSeat - p.netPerSeat) * 100) / 100 : null,
+            });
+        }
+        res.json({ packages, sourcingOptions: SEAT_SOURCING });
+    }));
+
+    app.post('/api/travel/admin/fixed-packages', verifyToken, requireAdmin, wrap(async (req, res) => {
+        const check = normalizeFixedPackage(req.body || {});
+        if (check.error) return res.status(400).json({ error: check.error });
+        res.json({ package: await store.createFixedPackage(check.value) });
+    }));
+
+    app.put('/api/travel/admin/fixed-packages/:id', verifyToken, requireAdmin, wrap(async (req, res) => {
+        const existing = await store.getFixedPackage(req.params.id);
+        if (!existing) return res.status(404).json({ error: 'الباقة غير موجودة.' });
+        // التعديل يمرّ على نفس منقّي الإنشاء — باقة لا يصلح إنشاؤها لا يصلح تعديلٌ إليها
+        const check = normalizeFixedPackage({ ...existing, ...req.body });
+        if (check.error) return res.status(400).json({ error: check.error });
+        const updated = await store.updateFixedPackage(req.params.id, check.value);
+        // سعة زادت أو باقة أُعيد فتحها → مقاعد متاحة لمنتظرين — أبلغهم
+        const seatsFreed = fixedSeatsLeft(updated) > fixedSeatsLeft(existing)
+            || (existing.active === false && updated.active !== false);
+        if (seatsFreed) await notifyWaitlistSeatsFreed(updated);
+        res.json({ package: updated });
+    }));
+
+    app.delete('/api/travel/admin/fixed-packages/:id', verifyToken, requireAdmin, wrap(async (req, res) => {
+        const deleted = await store.deleteFixedPackage(req.params.id);
+        if (!deleted) {
+            return res.status(400).json({ error: 'تعذّر الحذف — باقة عليها حجوزات تُغلق (active=false) ولا تُحذف، أو المعرّف غير موجود.' });
+        }
+        res.json({ deleted: true });
+    }));
+
+    app.get('/api/travel/admin/package-interests', verifyToken, requireAdmin, wrap(async (req, res) => {
+        res.json({ interests: await store.listPackageInterests(200) });
     }));
 
     // ─── 🧠 ملف المسافر (الذاكرة) ─────────────────────────────────────
