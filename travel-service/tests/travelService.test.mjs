@@ -1476,6 +1476,28 @@ describe('fixedPackages: وحدات نقية — تنقية وتسعير وحج�
     });
 });
 
+describe('صحة صياغة سكربتات الواجهة — درس عطل إنتاجي حقيقي', () => {
+    // ⚠️ عطل حقيقي (١٥ أغسطس ٢٠٢٦): قوس ناقص في سكربت index.html أسقط
+    // البوابة المنشورة كلها صفحةً فارغة — و195 اختباراً للخادم لم تلحظه
+    // لأن سكربت المتصفح لا يمرّ على Node إطلاقاً. هذا الاختبار يفكّك كل
+    // <script> مضمَّن في الصفحتين ويفحص صياغته كما سيفعل المتصفح —
+    // فأي قوس/سلسلة مكسورة تكسر الاختبار قبل أن تكسر الإنتاج.
+    for (const page of ['public/index.html', 'public/admin.html']) {
+        test(`🧩 ${page}: كل سكربت مضمَّن يتحلّل بلا خطأ صياغة`, () => {
+            const html = fs.readFileSync(new URL('../' + page, import.meta.url), 'utf8');
+            const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+            assert.ok(scripts.length >= 1, 'الصفحة تحوي سكربتاً واحداً على الأقل');
+            for (const [i, code] of scripts.entries()) {
+                assert.doesNotThrow(() => new Function(code), `سكربت ${i} في ${page} مكسور الصياغة`);
+            }
+        });
+    }
+    test('🧩 sw.js يتحلّل بلا خطأ صياغة', () => {
+        const code = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+        assert.doesNotThrow(() => new Function(code));
+    });
+});
+
 describe('applyOfferFilters: فلترة قبل الاقتطاع — وحدة نقية', () => {
     const offers = [
         { id: 'a', netAmount: 100, owner: 'الخطوط السعودية', ownerIata: 'SV', slices: [{ stops: 0 }] },

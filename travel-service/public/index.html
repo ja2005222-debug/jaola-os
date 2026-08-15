@@ -2161,7 +2161,7 @@
                      <button class="primary" data-fx-book="${esc(p.id)}">احجز الآن</button>`}
               </div>
             </div>
-          </div>`).join('');
+          </div>`).join(''));
       document.querySelectorAll('[data-fx-book]').forEach(btn =>
         btn.addEventListener('click', () => openFixedDlg(btn.dataset.fxBook)));
       document.querySelectorAll('[data-fx-wait]').forEach(btn =>
