@@ -11,13 +11,14 @@
  * scriptProvider.js وbackend/utils/aiProvider.js، وصيغة tools/tool_calls
  * موثَّقة لدى Groq. لا تخمين صيغ جديدة.
  *
- * 🛡️ حارس الحجز على مستويين:
- *   1. أداة book_flight تتطلب confirmed=true، والتعليمات تلزم الايجنت
- *      بعرض ملخص العرض والسعر الكامل ونيل موافقة صريحة قبل ضبطها.
- *   2. منفّذ الأداة يرفض confirmed غير الصريح برسالة تعليمية تُعاد
- *      للنموذج فيصحح مساره (لا حجز صامت أبداً).
- * (المرحلة ١ بيئة تجريبية — قبل الإنتاج يُضاف تأكيد UI صريح خارج
- * النموذج كلياً: زر يوقّع نية الحجز في الطلب نفسه.)
+ * 🛡️ حارس الحجز — **بنيوي لا تعليماتي**: الايجنت لا يحجز إطلاقاً.
+ * أدوات book_* تُصدر «نية حجز» موقّعة بمفتاح الخادم تعرضها الواجهة
+ * كبطاقة بزر تأكيد، والحجز يقع على مسار يتحقق من التوقيع. النموذج لا
+ * يملك المفتاح فلا يستطيع تزوير نية مهما انحرف أو أُقنع.
+ *
+ * ⚠️ وهذا استبدالٌ لحارسٍ سقط في الإنتاج: كان `confirmed: true` راية
+ * **يضبطها النموذج على نفسه**، فسؤالٌ عن التوفّر («هل يوجد فندق قرب
+ * المطار؟») أنتج حجزاً فعلياً. راجع src/bookingIntent.js للتفصيل.
  */
 
 const DEFAULT_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
@@ -25,19 +26,26 @@ const DEFAULT_MODEL = 'llama-3.3-70b-versatile';
 // 10 لا 6: البحث المقارن (تواريخ مرنة/بدائل) يستهلك جولات أكثر من حجز مباشر
 const MAX_TOOL_ROUNDS = 10;
 /**
- * 📈 رُفعت 3000 → 12000 بعد ترقية حساب Groq من المجاني (12,000 TPM) إلى
- * Developer (300,000 TPM لـllama-3.3-70b-versatile — تحقّق حيّ من لوحة
- * الحساب لا افتراضاً). القياس بالمقياس التجريبي نفسه الذي بُني به الحدّ
- * الأول (README، «المرحلة ٤و»): أسوأ حالة ≈ 3301 رمز ثابت (مخططات
- * الأدوات + التعليمة) + ~2.78 رمز لكل حرف من هذا الحدّ عبر عشر جولات
- * تراكمية (MAX_TOOL_ROUNDS) — أي **~36,661 رمزاً** أسوأ حالة عند 12000،
- * ما يزال **~12%** فقط من الحصّة الجديدة، لا حافتها.
+ * 📈 رُفعت 3000 → 12000 بعد ترقية حساب Groq إلى Developer (300,000 TPM
+ * لـllama-3.3-70b-versatile).
  *
- * ⚠️ عمداً لم يُرفع إلى حافة الحصّة (كان الحدّ القديم عند ~97% منها —
- * ضيقٌ اضطراريٌّ فرضه المجاني): 88% المتبقّية هامشٌ لمستخدمين متزامنين
- * ومحاولات إعادة، لا رقماً مُهدَراً. ولو تشارك هذا المفتاح TRAVEL_AGENT_
- * API_KEY مع مزوّدات أخرى في jaola-os يوماً، الحصّة الفعلية المتاحة أقل
- * من رقم اللوحة — الهامش الواسع يمتصّ ذلك أيضاً.
+ * ⚠️ الحمولة الثابتة **مقيسة حيّاً** لا مُقدَّرة: ردّ 429 من Groq يذكر
+ * `Requested` صراحةً، وعلى نداء أول بلا أي نتيجة أداة كان **~8,740
+ * رمزاً** (مخططات الأدوات ٩٬٤٣٤ حرفاً + التعليمة ٢٬٦٦٠ حرفاً، وأغلبها
+ * عربية تُرمَّز بسخاء). التقدير الأول في README (٣٬٣٠١) كان **أقل من
+ * الواقع ٢.٦ ضعفاً** — صُحّح من بيانات حيّة لا من إعادة تقدير.
+ *
+ * أسوأ حالة عند هذا الحدّ: 8,740 + ~2.78 رمز/حرف × 12000 عبر عشر جولات
+ * تراكمية (MAX_TOOL_ROUNDS) ≈ **~42,100 رمزاً** — أي **~14%** من حصّة
+ * Developer. الهامش الباقي لمستخدمين متزامنين ومحاولات إعادة، ولاحتمال
+ * مشاركة TRAVEL_AGENT_API_KEY مع مزوّدات أخرى في jaola-os.
+ *
+ * 🚨 وهذا الحدّ مشروط بالترقية فعلاً: على المجاني (12,000 TPM) تلتهم
+ * الحمولة الثابتة وحدها **72.8%** من الحصّة الدقيقة، فلا يبقى للنتائج
+ * سوى ~3,260 رمزاً — أي أن الايجنت لا يعمل هناك مهما صغّرنا هذا الرقم.
+ * لا تُعالَج 429 المتكررة بخفض هذا الحدّ؛ تُعالَج بالتحقق من أن المفتاح
+ * المنشور يخصّ الحساب المُرقَّى فعلاً (رد 429 يذكر معرّف المنظمة وطبقة
+ * الخدمة صراحةً — اقرأهما قبل لمس الكود).
  */
 export const MAX_TOOL_RESULT_CHARS = 12000;
 const MAX_RETRIES = 2;          // ثلاث محاولات إجمالاً
@@ -81,10 +89,10 @@ export function compactToolResult(data, maxChars = MAX_TOOL_RESULT_CHARS) {
 }
 
 const SYSTEM_PROMPT = `أنت "مساعد جاولا للسفر" — وكيل سفر شامل محترف يتحدث العربية (أو لغة المستخدم)، لا مجرد حاجز طيران.
-قدراتك عبر الأدوات: بحث رحلات وفنادق وسيارات إيجار، فحص عرض محدد، حجز فعلي (طيران/فنادق/سيارات)، عرض حجوزات المستخدم، إلغاء حجز، بحث تواريخ مرنة، فحص تعارض الرحلة، مراقبة سعر، توقعات طقس الوجهة، تحويل عملات، وتجميع ملخص رحلة منسّق.
+قدراتك عبر الأدوات: بحث رحلات وفنادق وسيارات إيجار، فحص عرض محدد، عرض بطاقة تأكيد حجز للمسافر (طيران/فنادق/سيارات)، عرض حجوزات المستخدم وتفاصيل حجز بعينه، إلغاء حجز، بحث تواريخ مرنة، فحص تعارض الرحلة، مراقبة سعر، توقعات طقس الوجهة، تحويل عملات، وتجميع ملخص رحلة منسّق.
 قواعد صارمة:
 1. الأسعار التي تعيدها الأدوات نهائية وشاملة — لا تخترع أسعاراً أو رحلات أو فنادق أو سيارات من ذاكرتك أبداً؛ كل معلومة رحلة/فندق/سيارة تأتي من أداة.
-2. قبل أي حجز: اعرض ملخص الرحلة/الإقامة/السيارة والسعر الإجمالي واسأل المستخدم صراحةً "هل أؤكد الحجز؟" — لا تضبط confirmed=true إلا بعد موافقة صريحة في رسالة المستخدم الأخيرة.
+2. أدوات الحجز (book_flight/book_stay/book_car) **لا تحجز**: تعرض على المسافر بطاقة تأكيد فيها السعر النهائي وزر يضغطه بنفسه. لذلك لا تقل أبداً "تم الحجز" بعد ندائها — قل إن بطاقة التأكيد أمامه وعليه الضغط على الزر. ولا تنادها إلا حين يطلب المسافر الحجز فعلاً؛ سؤاله عن التوفّر أو السعر يُجاب بالبحث لا ببطاقة تأكيد.
 3. للحجز تحتاج لكل مسافر: اللقب (mr/ms/mrs)، الاسم الأول واسم العائلة بالحروف اللاتينية كما في الجواز، تاريخ الميلاد (YYYY-MM-DD)، والجنس (m/f) — ولا تنس بريد التواصل والهاتف. اجمعها بالحوار إن نقصت. للفنادق والسيارات يكفي اسم كل ضيف/سائق (بالحروف اللاتينية) + بريد وهاتف تواصل، بلا جواز أو ميلاد.
 4. قبل الإلغاء: أكد مع المستخدم واذكر أن مبلغ الاسترداد يحدده المزوّد.
 5. كن موجزاً وعملياً — رقّم الخيارات ليسهل الاختيار، واذكر التوقيتات والمدة وعدد التوقفات (للطيران) أو التقييم والليالي (للفنادق) أو نوع السيارة والشركة المؤجّرة (للسيارات).
@@ -94,7 +102,10 @@ const SYSTEM_PROMPT = `أنت "مساعد جاولا للسفر" — وكيل س
 9. إن سأل المستخدم عن أرخص تاريخ ضمن مدى مرن استخدم find_flexible_dates بدل نداءات search_flights متكررة يدوياً. بعد أي حجز جديد أو عند سؤال المستخدم "هل خطتي متعارضة؟" استخدم check_trip_conflicts وأبلغه بأي تحذير فوراً. إن طلب مراقبة سعر رحلة لم تنخفض بعد استخدم watch_price واشرح أن الفحص دوري لا لحظي.
 10. أسئلة الطقس والعملة تُجاب حصراً عبر get_destination_weather وconvert_currency (بيانات حقيقية) — لا تخمين درجات حرارة أو أسعار صرف من ذاكرتك أبداً. أسئلة الأمتعة تُجاب من بيانات العرض نفسه (search_flights) إن وُجدت.
 11. أسئلة عامة عن الوجهة (تأشيرة، جمارك، عادات، أفضل وقت للزيارة، سلامة) يمكنك إجابتها من معرفتك العامة — بخلاف السعر/التوفر التي تبقى حصراً من الأدوات — لكن أضف دوماً جملة تنبيه واضحة: "معلومة استرشادية عامة، تحقق من السفارة أو الموقع الرسمي قبل السفر."
-12. إن طلب المستخدم "رتّب لي رحلتي" أو ملخصاً شاملاً لخطته استخدم generate_trip_summary بدل تجميع الحجوزات يدوياً من list_my_bookings.`;
+12. إن طلب المستخدم "رتّب لي رحلتي" أو ملخصاً شاملاً لخطته استخدم generate_trip_summary بدل تجميع الحجوزات يدوياً من list_my_bookings.
+13. أي سؤال عن حجز **تمّ** (تفاصيله، سعره، مرجعه) يُجاب من get_booking أو list_my_bookings — لا من get_offer أبداً: سعر العرض حيّ ويتغيّر، وليس ما دفعه المسافر.
+14. لا تُعِد نداء أداة بنفس الوسائط مرتين — النتيجة لن تتغيّر. غيّر الوسائط أو أجب بما لديك أو اسأل المسافر عمّا ينقصك.
+15. حين تعطيك أداة حقل count أو total، هو العدد الصحيح — لا تعدّ بنفسك ولا تتجاوزه في قائمتك.`;
 
 // صياغة قراءة النتائج: مهمة واحدة ضيّقة عمداً. كل رقم في المُدخَل محسوب
 // في insights.js، فالتعليمة الأهم هنا هي المنع من الإضافة لا الحثّ عليها.
@@ -170,7 +181,7 @@ export const AGENT_TOOLS = [
         type: 'function',
         function: {
             name: 'book_flight',
-            description: 'يحجز عرضاً فعلياً ويصدر التذكرة. لا تستخدمه إلا بعد موافقة المستخدم الصريحة على الملخص والسعر.',
+            description: 'يعرض على المسافر بطاقة تأكيد حجز فيها الرحلة والسعر النهائي وزر تأكيد. لا يحجز بنفسه — الحجز يقع فقط حين يضغط المسافر الزر.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -194,9 +205,8 @@ export const AGENT_TOOLS = [
                         properties: { email: { type: 'string' }, phone: { type: 'string' } },
                         required: ['email', 'phone'],
                     },
-                    confirmed: { type: 'boolean', description: 'true فقط بعد موافقة المستخدم الصريحة على الحجز' },
                 },
-                required: ['offerId', 'passengers', 'contact', 'confirmed'],
+                required: ['offerId', 'passengers', 'contact'],
             },
         },
     },
@@ -206,6 +216,20 @@ export const AGENT_TOOLS = [
             name: 'list_my_bookings',
             description: 'يعرض حجوزات المستخدم الحالية بحالاتها ومراجعها.',
             parameters: { type: 'object', properties: {} },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_booking',
+            description: 'يجلب تفاصيل حجز قائم بمرجعه (مثل H7ULWF) أو معرّفه — بسعره المدفوع فعلاً. استخدمه لأي سؤال عن حجز تم، ولا تستخدم get_offer لذلك أبداً (سعر العرض حيّ ويتغيّر، وليس ما دفعه المسافر).',
+            parameters: {
+                type: 'object',
+                properties: {
+                    bookingRef: { type: 'string', description: 'مرجع الحجز أو معرّفه' },
+                },
+                required: ['bookingRef'],
+            },
         },
     },
     {
@@ -265,7 +289,7 @@ export const AGENT_TOOLS = [
         type: 'function',
         function: {
             name: 'book_stay',
-            description: 'يحجز عرض فندق فعلياً. لا تستخدمه إلا بعد موافقة المستخدم الصريحة على الملخص والسعر.',
+            description: 'يعرض على المسافر بطاقة تأكيد حجز فندق فيها العرض والسعر النهائي وزر تأكيد. لا يحجز بنفسه — الحجز يقع فقط حين يضغط المسافر الزر.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -286,9 +310,8 @@ export const AGENT_TOOLS = [
                         properties: { email: { type: 'string' }, phone: { type: 'string' } },
                         required: ['email', 'phone'],
                     },
-                    confirmed: { type: 'boolean', description: 'true فقط بعد موافقة المستخدم الصريحة على الحجز' },
                 },
-                required: ['offerId', 'guests', 'contact', 'confirmed'],
+                required: ['offerId', 'guests', 'contact'],
             },
         },
     },
@@ -339,7 +362,7 @@ export const AGENT_TOOLS = [
         type: 'function',
         function: {
             name: 'book_car',
-            description: 'يحجز عرض سيارة فعلياً. لا تستخدمه إلا بعد موافقة المستخدم الصريحة على الملخص والسعر.',
+            description: 'يعرض على المسافر بطاقة تأكيد حجز سيارة فيها العرض والسعر النهائي وزر تأكيد. لا يحجز بنفسه — الحجز يقع فقط حين يضغط المسافر الزر.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -360,9 +383,8 @@ export const AGENT_TOOLS = [
                         properties: { email: { type: 'string' }, phone: { type: 'string' } },
                         required: ['email', 'phone'],
                     },
-                    confirmed: { type: 'boolean', description: 'true فقط بعد موافقة المستخدم الصريحة على الحجز' },
                 },
-                required: ['offerId', 'drivers', 'contact', 'confirmed'],
+                required: ['offerId', 'drivers', 'contact'],
             },
         },
     },
@@ -501,35 +523,94 @@ export const AGENT_TOOLS = [
  * دوماً نتيجة نصية تُغذَّى للنموذج — الأخطاء تعود كرسائل عربية تعليمية
  * يصحّح بها النموذج مساره، لا استثناءات تقطع الحوار.
  */
+/**
+ * يغلّف قائمة نتائج بعدد صريح.
+ *
+ * ⚠️ عطب إنتاج: أعاد البحث ١٠ عروض، فعدّد النموذج **١١** — بندٌ حادي
+ * عشر مكرَّر عن الخامس، بسعره نفسه. مصفوفة عارية تترك العدّ للنموذج،
+ * والعدّ ليس ما يُجيده. الرقم الآن في البيانات نفسها فيقرأه لا يحسبه.
+ *
+ * ملاحظة صدق: هذه **مرساة** لا ضمانة — نموذج مصرٌّ على الاختلاق قد
+ * يخالف الرقم المكتوب أمامه. لكنها تُزيل السبب الأشيع (لا رقم أصلاً)
+ * وتجعل المخالفة قابلة للكشف عند المراجعة.
+ */
+function countedList(items) {
+    const list = Array.isArray(items) ? items : [];
+    return { count: list.length, items: list };
+}
+
+/**
+ * 🔐 نتيجة أداة حجز: **نية** لا حجز.
+ *
+ * النصّ المُعاد للنموذج صريح في أن شيئاً لم يُحجَز بعد — لأن أسوأ ما
+ * يمكن أن يفعله هنا هو أن يقول للمسافر «تمّ الحجز» وهو لم يتم. والحقل
+ * `pendingConfirmation` تقرؤه الواجهة فتعرض البطاقة والزر.
+ *
+ * ولا يُسلَّم التوقيع للنموذج ضمن data: لا حاجة له به (الواجهة تأخذه من
+ * الحقل المستقل)، وكل ما لا يحتاجه النموذج لا يُعطى له.
+ */
+function intentResult(proposal, label) {
+    return {
+        ok: true,
+        summary: `🧾 بانتظار تأكيدك — ${label} بسعر ${proposal.sellAmount} ${proposal.currency}`,
+        intent: proposal,
+        data: {
+            pendingConfirmation: true,
+            note: `لم يتم الحجز بعد. عُرضت على المسافر بطاقة تأكيد فيها ${label} والسعر النهائي وزر تأكيد. أخبره أن عليه الضغط على الزر لإتمام الحجز، ولا تقل إن الحجز تمّ.`,
+            total: `${proposal.sellAmount} ${proposal.currency}`,
+            travellerCount: proposal.travellerCount,
+        },
+    };
+}
+
 export async function executeAgentTool(name, args, services) {
     try {
         switch (name) {
             case 'search_flights': {
                 const offers = await services.searchFlights(args);
-                return { ok: true, summary: `🔎 ${args.origin}→${args.destination} (${offers.length} عروض)`, data: offers };
+                return {
+                    ok: true,
+                    summary: `🔎 ${args.origin}→${args.destination} (${offers.length} عروض)`,
+                    data: countedList(offers),
+                };
             }
             case 'get_offer': {
                 const offer = await services.getOffer(args.offerId);
                 if (!offer) return { ok: false, data: { error: 'العرض غير موجود أو انتهت صلاحيته — أعد البحث.' } };
-                return { ok: true, summary: `💰 عرض بسعر ${offer.sellAmount} ${offer.currency}`, data: offer };
-            }
-            case 'book_flight': {
-                if (args.confirmed !== true) {
-                    return { ok: false, data: { error: 'الحجز يتطلب موافقة المستخدم الصريحة أولاً — اعرض الملخص والسعر واسأله، ثم أعد النداء بـconfirmed=true.' } };
-                }
-                const booking = await services.bookFlight(args);
+                // ⚠️ الوسم ليس زينة: سُئل الايجنت عن تفاصيل حجز قائم فنادى
+                // هذه الأداة وعرض سعرها الحيّ (213.05) كأنه سعر التذكرة —
+                // والمدفوع 206.51. البيانات تقول عن نفسها ما هي الآن.
                 return {
                     ok: true,
-                    summary: `✅ حُجز — المرجع ${booking.bookingReference}`,
-                    data: {
-                        bookingId: booking.id, bookingReference: booking.bookingReference,
-                        status: booking.status, total: `${booking.sellAmount} ${booking.currency}`,
-                    },
+                    summary: `💰 عرض بسعر ${offer.sellAmount} ${offer.currency}`,
+                    data: { ...offer, priceKind: 'عرض حيّ قابل للتغيّر — ليس سعر حجز. لسعر حجز تمّ استخدم get_booking.' },
                 };
+            }
+            case 'book_flight': {
+                const proposal = await services.proposeFlight(args);
+                return intentResult(proposal, 'الرحلة');
             }
             case 'list_my_bookings': {
                 const bookings = await services.listBookings();
-                return { ok: true, summary: `🧳 ${bookings.length} حجوزات`, data: bookings };
+                // ⚠️ المصفوفة العارية جعلت النموذج يقول «لديك 2 حجز نشط» ثم
+                // يعدّد 3، والرقاقة تقول 25. الأعداد محسوبة هنا لا مستنتجة
+                // هناك — النموذج لا يَعُدّ، يقرأ.
+                const byStatus = {};
+                for (const b of bookings) byStatus[b.status] = (byStatus[b.status] || 0) + 1;
+                return {
+                    ok: true,
+                    summary: `🧳 ${bookings.length} حجوزات`,
+                    data: { total: bookings.length, countByStatus: byStatus, items: bookings },
+                };
+            }
+            case 'get_booking': {
+                if (!services.getBooking) return { ok: false, data: { error: 'جلب الحجز غير متاح.' } };
+                const booking = await services.getBooking(args.bookingRef);
+                return {
+                    ok: true,
+                    summary: `📄 حجز ${booking.bookingReference || booking.id}`,
+                    data: { ...booking, priceKind: 'السعر المدفوع فعلاً على هذا الحجز.' },
+                };
             }
             case 'cancel_booking': {
                 if (args.confirmed !== true) {
@@ -541,7 +622,7 @@ export async function executeAgentTool(name, args, services) {
             case 'search_stays': {
                 if (!services.searchStays) return { ok: false, data: { error: 'حجز الفنادق غير مفعَّل حالياً.' } };
                 const offers = await services.searchStays(args);
-                return { ok: true, summary: `🏨 ${args.iata} (${offers.length} فنادق)`, data: offers };
+                return { ok: true, summary: `🏨 ${args.iata} (${offers.length} فنادق)`, data: countedList(offers) };
             }
             case 'get_stay_offer': {
                 if (!services.getStayOffer) return { ok: false, data: { error: 'حجز الفنادق غير مفعَّل حالياً.' } };
@@ -550,19 +631,9 @@ export async function executeAgentTool(name, args, services) {
                 return { ok: true, summary: `💰 عرض فندق بسعر ${offer.sellAmount} ${offer.currency}`, data: offer };
             }
             case 'book_stay': {
-                if (!services.bookStay) return { ok: false, data: { error: 'حجز الفنادق غير مفعَّل حالياً.' } };
-                if (args.confirmed !== true) {
-                    return { ok: false, data: { error: 'الحجز يتطلب موافقة المستخدم الصريحة أولاً — اعرض الملخص والسعر واسأله، ثم أعد النداء بـconfirmed=true.' } };
-                }
-                const booking = await services.bookStay(args);
-                return {
-                    ok: true,
-                    summary: `✅ حُجز فندق — المرجع ${booking.bookingReference}`,
-                    data: {
-                        bookingId: booking.id, bookingReference: booking.bookingReference,
-                        status: booking.status, total: `${booking.sellAmount} ${booking.currency}`,
-                    },
-                };
+                if (!services.proposeStay) return { ok: false, data: { error: 'حجز الفنادق غير مفعَّل حالياً.' } };
+                const proposal = await services.proposeStay(args);
+                return intentResult(proposal, 'الفندق');
             }
             case 'cancel_stay': {
                 if (!services.cancelStay) return { ok: false, data: { error: 'حجز الفنادق غير مفعَّل حالياً.' } };
@@ -575,7 +646,7 @@ export async function executeAgentTool(name, args, services) {
             case 'search_cars': {
                 if (!services.searchCars) return { ok: false, data: { error: 'استئجار السيارات غير مفعَّل حالياً.' } };
                 const offers = await services.searchCars(args);
-                return { ok: true, summary: `🚗 ${args.iata} (${offers.length} سيارات)`, data: offers };
+                return { ok: true, summary: `🚗 ${args.iata} (${offers.length} سيارات)`, data: countedList(offers) };
             }
             case 'get_car_offer': {
                 if (!services.getCarOffer) return { ok: false, data: { error: 'استئجار السيارات غير مفعَّل حالياً.' } };
@@ -584,19 +655,9 @@ export async function executeAgentTool(name, args, services) {
                 return { ok: true, summary: `💰 عرض سيارة بسعر ${offer.sellAmount} ${offer.currency}`, data: offer };
             }
             case 'book_car': {
-                if (!services.bookCar) return { ok: false, data: { error: 'استئجار السيارات غير مفعَّل حالياً.' } };
-                if (args.confirmed !== true) {
-                    return { ok: false, data: { error: 'الحجز يتطلب موافقة المستخدم الصريحة أولاً — اعرض الملخص والسعر واسأله، ثم أعد النداء بـconfirmed=true.' } };
-                }
-                const booking = await services.bookCar(args);
-                return {
-                    ok: true,
-                    summary: `✅ حُجزت سيارة — المرجع ${booking.bookingReference}`,
-                    data: {
-                        bookingId: booking.id, bookingReference: booking.bookingReference,
-                        status: booking.status, total: `${booking.sellAmount} ${booking.currency}`,
-                    },
-                };
+                if (!services.proposeCar) return { ok: false, data: { error: 'استئجار السيارات غير مفعَّل حالياً.' } };
+                const proposal = await services.proposeCar(args);
+                return intentResult(proposal, 'السيارة');
             }
             case 'cancel_car': {
                 if (!services.cancelCar) return { ok: false, data: { error: 'استئجار السيارات غير مفعَّل حالياً.' } };
@@ -785,11 +846,16 @@ export function createTravelAgent({
             // أن يُعاد تشغيلها على مزوّد آخر — إعادة التشغيل تعني إعادة
             // تنفيذ نداءات أدوات قد تكون حجزت فعلاً.
             let pinned = null;
+            // 🔐 نوايا الحجز المعروضة في هذه الجولة — تلتقطها الواجهة
+            // فتعرض بطاقة تأكيد بزر. لا تُمرَّر للنموذج إطلاقاً.
+            const intents = [];
+            // نداءات هذه المحادثة بوسائطها — مفتاح قطع التكرار أدناه
+            const seenCalls = new Map();
             for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
                 const { message: msg, provider } = await complete(convo, { pinned });
                 pinned = provider;
                 if (!msg.tool_calls || msg.tool_calls.length === 0) {
-                    return { reply: msg.content || '', actions, provider: lastProviderUsed };
+                    return { reply: msg.content || '', actions, intents, provider: lastProviderUsed };
                 }
                 // ⚠️ عطب إنتاج حقيقي: كنّا نُعيد بناء رسالة المساعد من
                 // content/tool_calls فقط، فتضيع أي حقول أخرى أعادها
@@ -809,8 +875,30 @@ export function createTravelAgent({
                 for (const call of msg.tool_calls) {
                     let args = {};
                     try { args = JSON.parse(call.function?.arguments || '{}'); } catch { /* أدناه يرفضها المنفّذ */ }
+
+                    // ⚠️ عطب إنتاج: «احجز فندق وسط الرياض» أطلق أربع عمليات
+                    // بحث **متطابقة** ثم مات الطلب بحدّ الجولات ووصل المسافرَ
+                    // «تجاوزت الجولة حد الأدوات». النموذج علق يكرّر نداءً
+                    // بنفس الوسائط بلا تقدّم. الحلّ لا يكون بتوسيع الحدّ (يؤجّل
+                    // العطب ويضاعف الكلفة) بل بقطع التكرار نفسه: النتيجة
+                    // المحفوظة تعود فوراً مع تنبيه صريح يدفعه لتغيير المسار.
+                    const callKey = `${call.function?.name}:${JSON.stringify(args)}`;
+                    if (seenCalls.has(callKey)) {
+                        convo.push({
+                            role: 'tool', tool_call_id: call.id,
+                            content: compactToolResult({
+                                repeated: true,
+                                note: 'ناديت هذه الأداة بنفس الوسائط تماماً قبل قليل ولم تتغيّر النتيجة. لا تُعدها ثالثة — إما أجب المسافر بما لديك، أو غيّر الوسائط (تاريخ/مدينة/معايير) إن أردت نتيجة مختلفة، أو اسأله عمّا ينقصك.',
+                                previous: seenCalls.get(callKey),
+                            }),
+                        });
+                        continue;
+                    }
+
                     const result = await executeAgentTool(call.function?.name, args, services);
+                    seenCalls.set(callKey, result.ok ? (result.summary || 'تمّت') : result.data);
                     if (result.ok && result.summary) actions.push({ tool: call.function?.name, summary: result.summary });
+                    if (result.intent) intents.push(result.intent);
                     convo.push({
                         role: 'tool',
                         tool_call_id: call.id,
@@ -818,7 +906,7 @@ export function createTravelAgent({
                     });
                 }
             }
-            return { reply: 'تجاوزت الجولة حد الأدوات — جرّب طلباً أبسط أو أكمل خطوة خطوة.', actions, provider: lastProviderUsed };
+            return { reply: 'تجاوزت الجولة حد الأدوات — جرّب طلباً أبسط أو أكمل خطوة خطوة.', actions, intents, provider: lastProviderUsed };
         },
 
         /**
