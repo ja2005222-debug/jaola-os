@@ -1518,20 +1518,27 @@ describe('i18n: جدول الترجمة لا يتباعد عن الصفحة', ()
         }
     });
 
-    test('🌐 حارس الانجراف: المفاتيح المحورية ما زالت حرفياً في index.html', () => {
-        // نهج «جدول النصوص» يعتمد المطابقة الحرفية — تغيير نص في الصفحة
-        // دون الجدول يترك الإنجليزية ناقصة بصمت. هذه العينة تكسر الصمت.
+    test('🌐 حارس الانجراف الصارم: كل مفتاح في الجدول موجود حرفياً في index.html', () => {
+        // نهج «جدول النصوص» يعتمد المطابقة الحرفية — تغيير نص في الصفحة دون
+        // الجدول (أو مفتاح منقول بخطأ حرف واحد) يترك الإنجليزية ناقصة بصمت.
+        // كل النصوص (الثابتة والمولَّدة) تعيش في نفس الملف، فالفحص شامل.
         const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
-        for (const key of [
-            '🔎 بحث الرحلات', '🎒 باقات جاهزة', '🧳 رحلاتي', '🤖 المساعد',
-            'تاريخ الذهاب', 'العودة (اختياري)', '📅 تقويم الأسعار',
-            '🔍 فلاتر متقدمة (توقفات · شركة · سقف سعر)',
-            'احجز الآن', 'اسم قائد المجموعة', '🔔 أبلغني عند التوفّر',
-            'نشر المراجعة', '🎁 برنامج الولاء', 'تعليم الكل كمقروء',
-        ]) {
-            assert.ok(en[key], `مفتاح مفقود من الجدول: ${key}`);
-            assert.ok(html.includes(key), `نص الصفحة تغيّر عن مفتاح الجدول: ${key}`);
+        const missing = Object.keys(en).filter(key => !html.includes(key));
+        assert.deepEqual(missing, [], `مفاتيح لا تطابق نص الصفحة حرفياً:\n${missing.join('\n')}`);
+    });
+
+    test('🌐 قواعد الأنماط والاستبدالات معرَّفة وسليمة', () => {
+        const w2 = {};
+        new Function('window', code)(w2);
+        assert.ok(Array.isArray(w2.JAOLA_I18N_RULES) && w2.JAOLA_I18N_RULES.length >= 8);
+        for (const [re, rep] of w2.JAOLA_I18N_RULES) {
+            assert.ok(re instanceof RegExp && typeof rep === 'string');
         }
+        // عيّنة تطبيق فعلية
+        const r = w2.JAOLA_I18N_RULES.find(([re]) => re.test('متاح: 7 مقاعد'));
+        assert.ok(r, 'قاعدة المقاعد موجودة');
+        assert.equal('متاح: 7 مقاعد'.replace(r[0], r[1]), 'Available: 7 seats');
+        assert.ok(Array.isArray(w2.JAOLA_I18N_SUBS) && w2.JAOLA_I18N_SUBS.length >= 6);
     });
 });
 
