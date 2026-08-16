@@ -85,7 +85,10 @@
 `LITEAPI_API_KEY` · `TRAVEL_ADMIN_USERS` · `TRAVEL_MARKUP_PCT`(+`_FLIGHT/_STAY/_CAR`،
 `TRAVEL_PACKAGE_MARKUP_PCT`) · `TRAVEL_AGENT_API_KEY`(+`TRAVEL_AGENT_MODEL`) ·
 `RESEND_API_KEY` · واتساب: `WHATSAPP_TOKEN/PHONE_ID` · `TRAVEL_CRON_SECRET` ·
-`DUFFEL_WEBHOOK_SECRET`
+`DUFFEL_WEBHOOK_SECRET` · دفع: `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET`
+(من نقطة webhook في لوحة Stripe على `/api/travel/webhooks/stripe` بحدثَي
+`checkout.session.completed` و`checkout.session.expired`) + `TRAVEL_PUBLIC_URL`
+(روابط العودة من صفحة الدفع)
 
 ## أعراف لا تُخالَف
 - كل قرار غير بديهي يُوثَّق بتعليق عربي يشرح «لماذا» (انظر أي ملف — النمط
@@ -119,7 +122,7 @@
 |---|---|---|
 | ⭐ تقييمات ومراجعات | لا شيء | ✅ **نُفّذت**: مراجعات موثقة بحجز فعلي بعد السفر (أصدق من مراجعاتهم المفتوحة) |
 | ❤️ مفضلة/قوائم رغبات | لا شيء | ✅ **نُفّذت** للباقات المجدولة |
-| 💳 دفع إلكتروني فعلي | نسجّل المبالغ ولا نقبض | 🔜 **يتولاه المالك حالياً**: Stripe (LiteAPI يدعم `payment.gateway: STRIPE` أصلاً) + Apple Pay/مدى للسوق |
+| 💳 دفع إلكتروني فعلي | نسجّل المبالغ ولا نقبض | ✅ **نُفّذ** (`src/payments/stripeClient.js`): Stripe Checkout مستضاف (لا PCI عندنا) لحجوزات الباقات المجدولة — حجز معلّق يحجز المقاعد ذرّياً → صفحة Stripe (30 دقيقة) → webhook موقَّع يُصدر، وانتهاء المهلة يحرر المقاعد ويبلّغ الانتظار. سداد المتبقي بزر من رحلاتي، الإلغاء يسترد فعلياً عبر Refunds، ومصالحة دورية ضمن `cron/run` تلتقط أي webhook ضائع. بلا مفاتيح: السلوك القديم حرفياً (إصدار فوري). البيئة: `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` + `TRAVEL_PUBLIC_URL`. التالي: استبدال نقاط الولاء صار قابلاً للتفعيل، وApple Pay/مدى عبر Stripe نفسه |
 | 🗓️ تقويم أسعار بصري | — | ✅ **نُفّذ**: `POST /flights/calendar` بكاش 6 ساعات + شريط أيام في الواجهة (🏆 للأرخص، ضغطة تبحث باليوم) |
 | 🔍 فلاتر بحث (توقفات/ناقل/سعر) | — | ✅ **نُفّذت**: `applyOfferFilters` داخل المزوّدين **قبل** الاقتطاع، سقف السعر يُحوَّل بيعاً→صافياً في الخادم |
 | 📱 تطبيق/PWA | — | ✅ **نُفّذت**: manifest + sw.js (قشرة مكيَّشة، API حي دوماً — لا أسعار قديمة أبداً) |

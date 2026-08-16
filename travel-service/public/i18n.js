@@ -133,6 +133,8 @@ window.JAOLA_I18N = {
         'أنا / زوجتي': 'Me / spouse',
 
         // ─── حالات الحجز وأنواعه (نصوص مولَّدة بالجافاسكربت) ───
+        '💳 سدّد المتبقي الآن': '💳 Pay balance now',
+        '💳 بانتظار إتمام الدفع — مقاعدك محجوزة، وتتحرر إن انتهت مهلة الدفع.': '💳 Awaiting payment — your seats are held and release if the payment window expires.',
         'مُصدَر ✅': 'Issued ✅',
         'قيد الإصدار': 'Issuing',
         'فشل': 'Failed',

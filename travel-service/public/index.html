@@ -2497,12 +2497,35 @@
         return;
       }
       $('fixedDialog').close();
+      // 💳 مع بوابة الدفع: تحويل لصفحة Stripe المستضافة — الحجز معلّق
+      // ومقاعده محجوزة له، والإصدار بعد الدفع الفعلي (webhook)
+      if (data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+        return;
+      }
       const plan = data.booking?.paymentPlan;
       alert(`✅ تأكّد حجزك فوراً — المرجع ${data.booking.bookingReference}` +
         (plan && plan.remaining > 0 ? `\n💳 عربون ${plan.paidNow} — المتبقي ${plan.remaining} قبل ${plan.dueDate}` : ''));
       document.querySelector('[data-tab="trips"]').click();
       loadFixedPackages().catch(() => {});
     });
+
+    // 🔁 العودة من صفحة دفع Stripe: ?payment=success|cancelled
+    (function handlePaymentReturn() {
+      const params = new URLSearchParams(location.search);
+      const outcome = params.get('payment');
+      if (!outcome) return;
+      history.replaceState({}, '', location.pathname); // تنظيف الرابط — فلا يتكرر التنبيه مع كل تحديث
+      setTimeout(() => {
+        if (outcome === 'success') {
+          alert('✅ استلمنا دفعتك — حجزك يُصدَر الآن وستصلك رسالة التأكيد خلال لحظات.');
+          const trips = document.querySelector('[data-tab="trips"]');
+          if (trips) trips.click();
+        } else if (outcome === 'cancelled') {
+          alert('↩️ أُلغيت عملية الدفع — لم تُحاسَب على شيء. مقاعدك تبقى محجوزة دقائق قبل أن تتحرر.');
+        }
+      }, 400);
+    })();
 
     $('qrSendBtn').addEventListener('click', async () => {
       $('qrErr').classList.add('hidden'); $('qrMsg').classList.add('hidden');
@@ -2543,8 +2566,11 @@
         return `<div class="route">🎒 ${esc(b.offer?.title || 'باقة مجدولة')}
             <span class="st st-${esc(b.status)}">${ST_LABEL[b.status] || esc(b.status)}</span></div>
           <div class="seg">🏨 ${esc(b.offer?.hotelName || '')} · ${esc(b.offer?.board || '')} · انطلاق ${esc(b.offer?.departDate || '')} (${b.offer?.nights || '؟'} ليالٍ) · ${b.seats || '؟'} مقاعد</div>
-          ${plan && plan.remaining > 0
-            ? `<div class="note">💳 عربون مدفوع ${plan.paidNow} ${esc(b.currency)} — المتبقي <strong>${plan.remaining} ${esc(b.currency)}</strong> قبل ${esc(plan.dueDate)}</div>`
+          ${b.status === 'pending'
+            ? '<div class="note">💳 بانتظار إتمام الدفع — مقاعدك محجوزة، وتتحرر إن انتهت مهلة الدفع.</div>' : ''}
+          ${b.status === 'issued' && plan && plan.remaining > 0
+            ? `<div class="note">💳 عربون مدفوع ${plan.paidNow} ${esc(b.currency)} — المتبقي <strong>${plan.remaining} ${esc(b.currency)}</strong> قبل ${esc(plan.dueDate)}</div>
+               ${config?.paymentsEnabled ? `<button class="chip" data-fx-balance="${esc(b.id)}" style="margin-top:4px">💳 سدّد المتبقي الآن</button>` : ''}`
             : ''}
           ${b.namesDeadline && b.status === 'issued'
             ? `<div class="note">🪪 تسليم أسماء المسافرين قبل ${esc(b.namesDeadline)}</div>` : ''}
@@ -2625,6 +2651,15 @@
       // ⭐ تقييم رحلة منقضية — يفتح نافذة المراجعات بنموذج الإرسال
       document.querySelectorAll('[data-fx-review]').forEach(btn =>
         btn.addEventListener('click', () => openReviews(btn.dataset.fxReview, true)));
+      // 💳 سداد المتبقي — جلسة دفع جديدة بنفس تجربة الحجز
+      document.querySelectorAll('[data-fx-balance]').forEach(btn =>
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          const res = await api(`/api/travel/fixed-packages/bookings/${btn.dataset.fxBalance}/pay-balance`, { method: 'POST' });
+          const data = await res.json();
+          if (!res.ok) { alert(data.error || 'تعذّر فتح صفحة الدفع.'); btn.disabled = false; return; }
+          window.location.href = data.checkoutUrl;
+        }));
     }
 
     // ─── المساعد ───

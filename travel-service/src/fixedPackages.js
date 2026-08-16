@@ -240,12 +240,20 @@ export function publicFixedPackage(pkg, today = todayUtcStr()) {
 
 /**
  * الحجز الفعلي: مقاعد أولاً (ذرّياً — حارس البيع الزائد) ثم سجل الحجز.
- * التأكيد فوري (issued) لأن المخزون ملكنا — لا مزوّد يُنتظر.
+ *
+ * وضعان للإصدار:
+ * - بلا بوابة دفع (deferIssue=false، الافتراض): تأكيد فوري (issued) لأن
+ *   المخزون ملكنا — الدفع يُدار خارج المنصة كما كان.
+ * - مع بوابة دفع (deferIssue=true): يبقى الحجز pending والمقاعد محجوزة له
+ *   حتى يؤكد webhook الدفع فيُصدر — أو تنتهي جلسة الدفع فيفشل وتتحرر.
+ *   خطة الدفع تُثبَّت على الحجز المعلّق بتحديث نفس-الحالة الذرّي (ليست
+ *   انتقالاً — نفس نمط علامة التعويض في packages.js).
  */
 export async function bookFixedPackage({
     store, packageId, username,
     adults, singles = 0, children = 0, pay = 'deposit',
     leadName, contact,
+    deferIssue = false,
 }) {
     const pkg = await store.getFixedPackage(String(packageId || ''));
     if (!pkg || pkg.active === false) throw httpError(404, 'الباقة غير موجودة أو أُغلقت.');
@@ -284,12 +292,21 @@ export async function bookFixedPackage({
             netAmount: q.netAmount, sellAmount: q.total, currency: q.currency,
         });
         const reference = 'FP-' + booking.id.slice(-6).toUpperCase();
+        const plan = {
+            mode: q.pay, depositPct: q.depositPct,
+            paidNow: q.paidNow, remaining: q.remaining, dueDate: q.dueDate,
+        };
+        if (deferIssue) {
+            // خطة الدفع على الحجز المعلّق — تحديث نفس-الحالة لا انتقال
+            const pending = await store.transitionBooking(booking.id, {
+                from: ['pending'], to: 'pending',
+                patch: { paymentPlan: plan, seats: q.seats, namesDeadline: q.namesDeadline, bookingReference: reference },
+            });
+            return { booking: pending || await getBooking(store, booking.id), quote: q };
+        }
         const issued = await transitionBooking(store, booking.id, 'issued', {
             bookingReference: reference,
-            paymentPlan: {
-                mode: q.pay, depositPct: q.depositPct,
-                paidNow: q.paidNow, remaining: q.remaining, dueDate: q.dueDate,
-            },
+            paymentPlan: plan,
             seats: q.seats,
             namesDeadline: q.namesDeadline,
         });
