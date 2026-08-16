@@ -1161,13 +1161,18 @@ export function createApp({
         });
     }));
 
+    // 🌐 لغة واجهة الطالب — هيدر يرسله العميل مع كل نداء. قائمة بيضاء
+    // صريحة: أي قيمة غير 'en' تعني العربية، فلا يمرّر هيدرٌ عابث شيئاً
+    // إلى قوالب النصوص أو تعليمات النموذج.
+    const uiLangOf = req => (req.headers['x-ui-lang'] === 'en' ? 'en' : 'ar');
+
     app.post('/api/travel/flights/search', verifyToken, searchLimiter, wrap(async (req, res) => {
         try {
             const offers = await doSearch(req.body);
             // قراءة الايجنت تُحسب هنا حتمياً (دوال نقية، بلا شبكة) فلا تضيف
             // زمناً على المسار الأهم في البوابة. صياغة النموذج — إن فُعّل —
             // تأتي بنداء منفصل بعد ظهور النتائج، لا قبلها.
-            res.json({ offers, insight: buildInsight(offers) });
+            res.json({ offers, insight: buildInsight(offers, uiLangOf(req)) });
         } catch (e) {
             // كان يفحص 400 فقط — رفض مزوّد فعلي (502 الجديد أعلاه) كان يسقط
             // كخطأ 500 عام رغم تفصيل واضح متوفر، خلاف مساري الفنادق/السيارات.
@@ -1236,7 +1241,7 @@ export function createApp({
     app.post('/api/travel/stays/search', verifyToken, searchLimiter, wrap(async (req, res) => {
         try {
             const offers = await doSearchStays(req.body);
-            res.json({ offers, insight: buildStayInsight(offers) });
+            res.json({ offers, insight: buildStayInsight(offers, uiLangOf(req)) });
         } catch (e) {
             if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;
@@ -1290,7 +1295,7 @@ export function createApp({
     app.post('/api/travel/cars/search', verifyToken, searchLimiter, wrap(async (req, res) => {
         try {
             const offers = await doSearchCars(req.body);
-            res.json({ offers, insight: buildCarInsight(offers) });
+            res.json({ offers, insight: buildCarInsight(offers, uiLangOf(req)) });
         } catch (e) {
             if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;
@@ -1336,7 +1341,7 @@ export function createApp({
     }
 
     /** التقييم للعميل: أرقام البيع فقط — الصافي وتقسيمه الداخلي لا يغادران الخادم. */
-    function publicQuote(q) {
+    function publicQuote(q, lang = 'ar') {
         const { netAmount: _nf, passengerIds: _ids, passengers, ...flight } = q.flight;
         const { netAmount: _ns, marginPct: _mp, ...stay } = q.stay;
         return {
@@ -1347,7 +1352,7 @@ export function createApp({
             savings: q.savings,
             savingsPct: q.savingsPct,
             currency: q.currency,
-            insight: buildPackageInsight(q),
+            insight: buildPackageInsight(q, lang),
         };
     }
 
@@ -1359,7 +1364,7 @@ export function createApp({
                 flightOfferId: req.body?.flightOfferId, stayOfferId: req.body?.stayOfferId,
                 flightMarkupPct: flightMkt, stayMarkupPct: stayMkt, packageMarkupPct: pkgMarkupPct,
             });
-            res.json({ quote: publicQuote(q) });
+            res.json({ quote: publicQuote(q, uiLangOf(req)) });
         } catch (e) {
             if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;
@@ -1888,7 +1893,7 @@ export function createApp({
             console.error('⚠️ تعذّر تحميل ذاكرة المسافر:', e.message);
         }
         try {
-            const result = await agent.chat({ messages, services, memory });
+            const result = await agent.chat({ messages, services, memory, lang: uiLangOf(req) });
             // آخر محادثة تُحفظ لتُستأنف — والحفظ لا يُسقط رداً نجح فعلاً
             try {
                 await store.setProfile(username, mergeProfile(profile, {
@@ -1915,9 +1920,10 @@ export function createApp({
         const findings = sanitizeFindings(req.body?.findings);
         if (findings.length === 0) return res.status(400).json({ error: 'لا نتائج تحليل صالحة للصياغة.' });
         // يُعاد التوليد من القوالب — نص العميل لا يصل النموذج إطلاقاً
-        const text = renderInsight(findings);
+        const lang = uiLangOf(req);
+        const text = renderInsight(findings, lang);
         if (!agent) return res.json({ text, phrased: false });
-        res.json({ text: await agent.phraseInsight(text), phrased: true });
+        res.json({ text: await agent.phraseInsight(text, lang), phrased: true });
     }));
 
     // ─── ⏰ المُطلِق الزمني ────────────────────────────────────────────

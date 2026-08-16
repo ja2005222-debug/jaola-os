@@ -521,6 +521,38 @@ describe('insights: قراءة نتائج البحث تُحسب بالكود ل�
         assert.equal(formatDuration(null), '');
     });
 
+    // 🌐 القراءة بلغة الواجهة تُصاغ في الخادم لا بجدول ترجمة العميل —
+    // جُمَل بأرقام مُدرَجة بلا حصر يستحيل التقاطها بمطابقة نصية.
+    test('🌐 renderInsight بالإنجليزية: كل الأنواع تُصاغ بلا حرف عربي وبأرقامها كاملة', () => {
+        assert.equal(formatDuration(450, 'en'), '7h 30m');
+        assert.equal(formatDuration(420, 'en'), '7h');
+        assert.equal(formatDuration(45, 'en'), '45m');
+        const AR = /[؀-ۿ]/;
+        const samples = [
+            { type: 'direct_alternative', index: 1, extraAmount: 30, extraPct: 12, savedMin: 90, currency: 'USD', stopsAvoided: 2 },
+            { type: 'cheapest_is_fastest', index: 0 },
+            { type: 'fastest_premium', index: 2, extraAmount: 40, extraPct: 20, savedMin: 120, currency: 'USD' },
+            { type: 'cheapest_no_baggage', index: 0, alternativeIndex: 1, extraAmount: 15, currency: 'USD' },
+            { type: 'price_spread', spreadPct: 80 },
+            { type: 'package_savings', savings: 55, savingsPct: 9, separateTotal: 600, currency: 'USD' },
+            { type: 'rating_upgrade', index: 1, rating: 5, cheapestRating: 3, extraAmount: 60, extraPct: 15, currency: 'USD' },
+            { type: 'breakfast_included', index: 1, extraAmount: 20, extraPct: 5, currency: 'USD' },
+            { type: 'cheapest_not_refundable', index: 0, alternativeIndex: 2, extraAmount: 25, extraPct: 8, currency: 'USD' },
+            { type: 'fees_at_property', index: 0, feesAmount: 35, currency: 'USD' },
+        ];
+        for (const f of samples) {
+            const en = renderInsight([f], 'en');
+            assert.ok(en.length > 0, `صياغة إنجليزية لـ${f.type}`);
+            assert.ok(!AR.test(en), `لا عربي في صياغة ${f.type}: ${en}`);
+            // كل رقم في الحقائق يظهر في النص — الترجمة لا تُسقط حقيقة
+            for (const key of ['extraAmount', 'extraPct', 'spreadPct', 'savings', 'rating', 'feesAmount']) {
+                if (Number.isFinite(f[key])) assert.ok(en.includes(String(f[key])), `${key} في ${f.type}`);
+            }
+        }
+        // الافتراضي بلا لغة يبقى عربياً حرفياً — لا كسر لأي مستهلك قائم
+        assert.ok(AR.test(renderInsight([samples[1]])));
+    });
+
     // ⚠️ الحقن: نص الصياغة يذهب لنموذج لغوي، فحقل نصّي من العميل كان
     // سيصير قناة تعليمات. لا يمر إلا نوع معروف وأرقام وعملة ٣ أحرف.
     test('sanitizeFindings: يسقط الأنواع المجهولة والحقول النصية الملغومة', () => {
@@ -1983,8 +2015,8 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
     describe(`بوابة السفر — تخزين: ${storeLabel}`, () => {
         let store, server, baseUrl, provider, staysProvider, carsProvider;
 
-        async function call(pathname, { method = 'GET', token = null, body = null } = {}) {
-            const headers = { 'Content-Type': 'application/json' };
+        async function call(pathname, { method = 'GET', token = null, body = null, headers: extraHeaders = {} } = {}) {
+            const headers = { 'Content-Type': 'application/json', ...extraHeaders };
             if (token) headers.Authorization = `Bearer ${token}`;
             const res = await fetch(baseUrl + pathname, {
                 method, headers, body: body ? JSON.stringify(body) : undefined,
@@ -4283,8 +4315,8 @@ describe('الايجنت الحاجز', () => {
         const app = createApp({ store, jwtSecret: JWT_SECRET, provider, agent, markupPct: MARKUP, ...extra });
         const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
         const baseUrl = `http://127.0.0.1:${s.address().port}`;
-        async function call(pathname, { method = 'GET', token = null, body = null } = {}) {
-            const headers = { 'Content-Type': 'application/json' };
+        async function call(pathname, { method = 'GET', token = null, body = null, headers: extraHeaders = {} } = {}) {
+            const headers = { 'Content-Type': 'application/json', ...extraHeaders };
             if (token) headers.Authorization = `Bearer ${token}`;
             const res = await fetch(baseUrl + pathname, {
                 method, headers, body: body ? JSON.stringify(body) : undefined,
@@ -4694,6 +4726,21 @@ describe('الايجنت الحاجز', () => {
             assert.equal(ok.status, 200);
             assert.equal(ok.data.phrased, false);
             assert.ok(ok.data.text.includes('60%'));
+
+            // 🌐 هيدر لغة الواجهة يقلب صياغة القراءة إنجليزيةً من الخادم
+            const en = await call('/api/travel/insights/phrase', {
+                method: 'POST', token, headers: { 'x-ui-lang': 'en' },
+                body: { findings: [{ type: 'price_spread', spreadPct: 60, count: 3 }] },
+            });
+            assert.equal(en.status, 200);
+            assert.ok(en.data.text.includes('60%'));
+            assert.ok(!/[؀-ۿ]/.test(en.data.text), `صياغة إنجليزية بلا عربي: ${en.data.text}`);
+            // قيمة عابثة في الهيدر = عربية — قائمة بيضاء لا تمرير أعمى
+            const junkLang = await call('/api/travel/insights/phrase', {
+                method: 'POST', token, headers: { 'x-ui-lang': 'de" injected' },
+                body: { findings: [{ type: 'price_spread', spreadPct: 60, count: 3 }] },
+            });
+            assert.ok(/[؀-ۿ]/.test(junkLang.data.text));
         });
     });
 
