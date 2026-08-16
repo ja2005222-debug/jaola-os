@@ -130,9 +130,16 @@ export function createStripeClient({ secretKey, fetchImpl = fetch }) {
             };
         },
 
-        /** استرداد كامل لدفعة — للإلغاء الذاتي قبل موعد الأسماء. */
-        async createRefund({ paymentIntentId }) {
-            const r = await stripeRequest('POST', '/refunds', { payment_intent: paymentIntentId });
+        /**
+         * استرداد دفعة — كامل بلا `amount`، وجزئي به (وحدات كبرى تُحوَّل
+         * لصغرى). الجزئي ضرورة لا ترف: إلغاء رحلةٍ يردّ فيها المزوّد جزءاً
+         * فقط يجب أن يردّ للمسافر بنفس النسبة لا أكثر ولا أقل.
+         */
+        async createRefund({ paymentIntentId, amount = null }) {
+            const r = await stripeRequest('POST', '/refunds', {
+                payment_intent: paymentIntentId,
+                ...(Number.isFinite(amount) ? { amount: Math.round(amount * 100) } : {}),
+            });
             return {
                 id: r.id, status: r.status,
                 amount: Number.isFinite(r.amount) ? r.amount / 100 : null,

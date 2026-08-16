@@ -497,6 +497,37 @@ export const AGENT_TOOLS = [
 ];
 
 /**
+ * نتيجة أداة حجز، موحَّدة للأنواع الثلاثة.
+ *
+ * ⚠️ مع بوابة دفع مفعَّلة لا يكتمل الحجز بنداء الأداة: يعود رابط دفع
+ * والحجز معلّق. فلو بقي النص «✅ حُجز — المرجع undefined» لأخبر الوكيلُ
+ * المسافرَ بحجزٍ لم يقع — أسوأ ما يمكن أن يقوله وكيل سفر. لذا يتغيّر
+ * الملخص والبيانات معاً، وتُرفَق تعليمة صريحة تمنع ادّعاء التأكيد.
+ */
+function bookingToolResult(booking, doneSummary) {
+    if (booking?.checkoutUrl) {
+        return {
+            ok: true,
+            summary: `💳 بانتظار الدفع — ${booking.sellAmount} ${booking.currency}`,
+            data: {
+                bookingId: booking.id, status: booking.status,
+                total: `${booking.sellAmount} ${booking.currency}`,
+                checkoutUrl: booking.checkoutUrl,
+                note: 'الحجز لم يُصدر بعد. أعطِ المستخدم رابط الدفع (checkoutUrl) كما هو حرفياً، وقل إن التأكيد يصله فور إتمام الدفع — ولا تقل إن الحجز تم.',
+            },
+        };
+    }
+    return {
+        ok: true,
+        summary: `${doneSummary} ${booking.bookingReference}`,
+        data: {
+            bookingId: booking.id, bookingReference: booking.bookingReference,
+            status: booking.status, total: `${booking.sellAmount} ${booking.currency}`,
+        },
+    };
+}
+
+/**
  * ينفّذ أداة واحدة عبر services المحقونة (المربوطة بالمستخدم). يعيد
  * دوماً نتيجة نصية تُغذَّى للنموذج — الأخطاء تعود كرسائل عربية تعليمية
  * يصحّح بها النموذج مساره، لا استثناءات تقطع الحوار.
@@ -517,15 +548,7 @@ export async function executeAgentTool(name, args, services) {
                 if (args.confirmed !== true) {
                     return { ok: false, data: { error: 'الحجز يتطلب موافقة المستخدم الصريحة أولاً — اعرض الملخص والسعر واسأله، ثم أعد النداء بـconfirmed=true.' } };
                 }
-                const booking = await services.bookFlight(args);
-                return {
-                    ok: true,
-                    summary: `✅ حُجز — المرجع ${booking.bookingReference}`,
-                    data: {
-                        bookingId: booking.id, bookingReference: booking.bookingReference,
-                        status: booking.status, total: `${booking.sellAmount} ${booking.currency}`,
-                    },
-                };
+                return bookingToolResult(await services.bookFlight(args), '✅ حُجز — المرجع');
             }
             case 'list_my_bookings': {
                 const bookings = await services.listBookings();
@@ -554,15 +577,7 @@ export async function executeAgentTool(name, args, services) {
                 if (args.confirmed !== true) {
                     return { ok: false, data: { error: 'الحجز يتطلب موافقة المستخدم الصريحة أولاً — اعرض الملخص والسعر واسأله، ثم أعد النداء بـconfirmed=true.' } };
                 }
-                const booking = await services.bookStay(args);
-                return {
-                    ok: true,
-                    summary: `✅ حُجز فندق — المرجع ${booking.bookingReference}`,
-                    data: {
-                        bookingId: booking.id, bookingReference: booking.bookingReference,
-                        status: booking.status, total: `${booking.sellAmount} ${booking.currency}`,
-                    },
-                };
+                return bookingToolResult(await services.bookStay(args), '✅ حُجز فندق — المرجع');
             }
             case 'cancel_stay': {
                 if (!services.cancelStay) return { ok: false, data: { error: 'حجز الفنادق غير مفعَّل حالياً.' } };
@@ -588,15 +603,7 @@ export async function executeAgentTool(name, args, services) {
                 if (args.confirmed !== true) {
                     return { ok: false, data: { error: 'الحجز يتطلب موافقة المستخدم الصريحة أولاً — اعرض الملخص والسعر واسأله، ثم أعد النداء بـconfirmed=true.' } };
                 }
-                const booking = await services.bookCar(args);
-                return {
-                    ok: true,
-                    summary: `✅ حُجزت سيارة — المرجع ${booking.bookingReference}`,
-                    data: {
-                        bookingId: booking.id, bookingReference: booking.bookingReference,
-                        status: booking.status, total: `${booking.sellAmount} ${booking.currency}`,
-                    },
-                };
+                return bookingToolResult(await services.bookCar(args), '✅ حُجزت سيارة — المرجع');
             }
             case 'cancel_car': {
                 if (!services.cancelCar) return { ok: false, data: { error: 'استئجار السيارات غير مفعَّل حالياً.' } };
