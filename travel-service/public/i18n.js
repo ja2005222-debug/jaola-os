@@ -221,6 +221,9 @@ window.JAOLA_I18N = {
         'غير مفعَّل على هذا الخادم': 'Not enabled on this server',
         '🧪 بيئة تجريبية — الحجوزات هنا لا تُصدر تذاكر حقيقية ولا تُحصَّل أموال.':
             '🧪 Sandbox environment — bookings here issue no real tickets and charge no money.',
+        '🔄 تحديث': '🔄 Refresh',
+        '🔎 ابحث عن سيارة': '🔎 Find a car',
+        'تعذّر تحميل التنبيهات.': 'Could not load notifications.',
     },
 };
 
@@ -269,6 +272,32 @@ window.JAOLA_I18N_RULES = [
     [/^🌤️ طقس (.+) \((\d+) أيام\)$/, '🌤️ $1 weather ($2 days)'],
     [/^📋 ملخص رحلة \((\d+) حجوزات\)$/, '📋 Trip summary ($1 bookings)'],
     [/^🔀 أجاب (.+) \(حصّة المزوّد الأساسي مؤقتاً ممتلئة\)$/, '🔀 Answered by $1 (primary provider quota temporarily full)'],
+
+    // ─── التنبيهات المخزَّنة (تُكتب بالعربية وقت وقوعها في الخادم — تُترجم
+    // عرضاً سطراً سطراً: الواجهة تقسم الجسم بـ<br> فيصير كل سطر عقدة) ───
+    [/^✅ تأكيد حجزك — مرجع (.+)$/, '✅ Booking confirmed — reference $1'],
+    [/^↩️ تم إلغاء حجزك — مرجع (.+)$/, '↩️ Booking cancelled — reference $1'],
+    [/^⚠️ تغيير من شركة الطيران على حجزك — مرجع (.+)$/, '⚠️ Airline change on your booking — reference $1'],
+    [/^🔔 توفّرت مقاعد — (.+)$/, '🔔 Seats available — $1'],
+    [/^💳 اكتمل سداد باقتك — (.+)$/, '💳 Package fully paid — $1'],
+    [/^⏰ تذكير برحلتك — مرجع (.+)$/, '⏰ Trip reminder — reference $1'],
+    [/^(.+) — عربون (\d+)% \((.+)\)$/, '$1 — $2% deposit ($3)'],
+    [/^(.+) — دفع كامل \((.+)\)$/, '$1 — paid in full ($2)'],
+    [/^سداد متبقي (.+) \((.+)\)$/, 'Balance due — $1 ($2)'],
+    [/^تم تأكيد حجزك بنجاح\.$/, 'Your booking was confirmed successfully.'],
+    [/^تم إلغاء حجزك\.$/, 'Your booking was cancelled.'],
+    [/^المرجع: (.+)$/, 'Reference: $1'],
+    [/^الإجمالي: (.+)$/, 'Total: $1'],
+    [/^راجع كل حجوزاتك من بوابة السفر\.$/, 'See all your bookings in the travel portal.'],
+    [/^راجع تفاصيل حجزك من بوابة السفر أو تواصل مع شركة الطيران بالمرجع أعلاه\.$/,
+        'See your booking details in the travel portal, or contact the airline with the reference above.'],
+    [/^أجرت شركة الطيران تغييراً على رحلتك بعد الحجز \(موعد أو مسار\)\.$/,
+        'The airline changed your flight after booking (schedule or route).'],
+    [/^⚠️ وأثر هذا على بقية خطتك:$/, '⚠️ This affects the rest of your plan:'],
+    [/^انخفض سعر (.+) بتاريخ ([\d-]+) إلى (.+)\.$/, 'The price for $1 on $2 dropped to $3.'],
+    [/^\(هدفك كان (.+)\.\)$/, '(Your target was $1.)'],
+    [/^الأسعار تتغيّر باستمرار — احجز من بوابة السفر إن ناسبك\.$/,
+        'Prices move constantly — book from the travel portal if it suits you.'],
 ];
 
 /**

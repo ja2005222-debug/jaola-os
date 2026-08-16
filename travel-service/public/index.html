@@ -1145,7 +1145,7 @@
 
     // ─── 🔔 التنبيهات ───
 
-    const fmtWhen = ts => new Date(ts).toLocaleString('ar', { dateStyle: 'medium', timeStyle: 'short' });
+    const fmtWhen = ts => new Date(ts).toLocaleString(uiLang === 'en' ? 'en' : 'ar', { dateStyle: 'medium', timeStyle: 'short' });
 
     function setBell(unread) {
       $('bellBtn').classList.remove('hidden');
@@ -1173,10 +1173,13 @@
           $('ntfList').innerHTML = '<p class="note">لا تنبيهات بعد — ستصلك هنا تأكيدات حجوزاتك وتغييرات شركات الطيران وانخفاضات الأسعار.</p>';
           return;
         }
+        // 🌐 الجسم يُقسَّم أسطراً بـ<br>: كل سطر يصير عقدة نص مستقلة فتلتقطه
+        // قواعد الترجمة سطراً سطراً — كتلة واحدة متعددة الأسطر لا يطابقها
+        // أي نمط، فكانت التنبيهات المخزنة تبقى عربية كاملة في واجهة إنجليزية.
         $('ntfList').innerHTML = notifications.map(n => `
           <div class="ntf ${n.read ? '' : 'unread'}" data-ntf="${esc(n.id)}">
             <div class="ntf-title">${esc(n.title)}</div>
-            <div class="ntf-body">${esc(n.body)}</div>
+            <div class="ntf-body">${String(n.body || '').split('\n').map(l => esc(l)).join('<br>')}</div>
             <div class="ntf-time">${esc(fmtWhen(n.at))}</div>
           </div>`).join('');
         // فتح تنبيه غير مقروء يعلّمه مقروءاً — بلا زر منفصل
@@ -1218,7 +1221,14 @@
     }
     async function fxAnnotate(el) {
       if (!fxCur || el.dataset.fxDone === fxCur) return;
-      const m = el.textContent.trim().match(/^([\d.,]+)\s+([A-Z]{3})/);
+      // عقد النص المباشرة فقط — دون ملاحظة ≈ المُلحقة سابقاً كي لا تُقرأ
+      // قيمتها المحوَّلة كمصدر. وبلا تثبيت على بداية النص: بطاقات الوجهات
+      // تسبق السعر بكلمة («من 223.44 EUR») فكانت تفلت من التحويل كلياً
+      // (من صورة عطب حقيقية للمالك: USD مختارة والبطاقات EUR صامتة).
+      const ownText = Array.from(el.childNodes)
+        .filter(nd => nd.nodeType === Node.TEXT_NODE)
+        .map(nd => nd.textContent).join(' ');
+      const m = ownText.match(/([\d.,]+)\s+([A-Z]{3})/);
       if (!m) return;
       const amount = Number(m[1].replace(/,/g, ''));
       const from = m[2];
@@ -1248,7 +1258,7 @@
     }
     function fxAnnotateAll() {
       if (!fxCur) return;
-      document.querySelectorAll('.price').forEach(fxAnnotate);
+      document.querySelectorAll('.price, .dest-price').forEach(fxAnnotate);
     }
     // مراقب واحد لخدمتين: ترجمة العقد المضافة والنصوص المعدَّلة + تعليق العملة.
     // characterData ضروري: btn.textContent = '...' يعدّل عقدة نص قائمة بلا
@@ -1297,20 +1307,40 @@
       const res = await api('/api/travel/loyalty');
       if (!res.ok) return;
       const { loyalty: L } = await res.json();
+      // 🌐 أسماء المستويات والمزايا تُترجم بمعرّف المستوى لا بنصه — الخادم
+      // يبقى عربياً (عقد ثابت) والخريطة هنا محدودة ومغلقة. الصياغة كلها
+      // بـT() لا بجدول المطابقة: السطر يحمل أرقاماً مُدرَجة فكان الاستبدال
+      // الجزئي ينتج هجيناً («مستواك: traveller(s) — 976 نقطة» من صورة
+      // عطب حقيقية للمالك).
+      const TIER_EN = { member: 'Traveller', silver: 'Silver', gold: 'Gold' };
+      const TIER_PERK_EN = {
+        member: 'Track your points from your first booking',
+        silver: 'Priority replies to custom-offer requests',
+        gold: 'Waitlist priority + early offers',
+      };
+      const tierLabel = t => (uiLang === 'en' ? (TIER_EN[t.id] || t.label) : t.label);
       $('loyaltyBody').innerHTML = `
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <span style="font-size:30px">${L.tier.icon}</span>
           <div style="flex:1;min-width:200px">
-            <strong>مستواك: ${esc(L.tier.label)}</strong> — ${L.points.toLocaleString('en-US')} نقطة من ${L.trips} رحلة
-            <div class="note">${esc(L.tier.perk)}</div>
+            <strong>${T('مستواك:', 'Your tier:')} ${esc(tierLabel(L.tier))}</strong> — ${uiLang === 'en'
+              ? `${L.points.toLocaleString('en-US')} points from ${L.trips} trip(s)`
+              : `${L.points.toLocaleString('en-US')} نقطة من ${L.trips} رحلة`}
+            <div class="note">${esc(uiLang === 'en' ? (TIER_PERK_EN[L.tier.id] || '') : L.tier.perk)}</div>
             ${L.nextTier ? `
               <div style="height:6px;background:var(--border);border-radius:4px;margin-top:6px;overflow:hidden">
                 <div style="height:100%;width:${L.progressPct}%;background:var(--accent)"></div>
               </div>
-              <div class="note">${L.nextTier.pointsNeeded.toLocaleString('en-US')} نقطة تفصلك عن ${L.nextTier.icon} ${esc(L.nextTier.label)}</div>`
-              : '<div class="note ok">🏆 أنت في القمة</div>'}
-            ${L.mixedCurrencies ? `<div class="note">⚠️ نقاطك من عملات متعددة (${L.currencies.join('، ')}) — الجمع تقريبي</div>` : ''}
-            <div class="note">${esc(L.redeemNote)}</div>
+              <div class="note">${uiLang === 'en'
+                ? `${L.nextTier.pointsNeeded.toLocaleString('en-US')} points to ${L.nextTier.icon} ${esc(tierLabel(L.nextTier))}`
+                : `${L.nextTier.pointsNeeded.toLocaleString('en-US')} نقطة تفصلك عن ${L.nextTier.icon} ${esc(L.nextTier.label)}`}</div>`
+              : `<div class="note ok">${T('🏆 أنت في القمة', "🏆 You're at the top")}</div>`}
+            ${L.mixedCurrencies ? `<div class="note">${uiLang === 'en'
+              ? `⚠️ Your points span multiple currencies (${L.currencies.join(', ')}) — the total is approximate`
+              : `⚠️ نقاطك من عملات متعددة (${L.currencies.join('، ')}) — الجمع تقريبي`}</div>` : ''}
+            <div class="note">${uiLang === 'en'
+              ? 'Points accrue from today — redeeming them for discounts activates with e-payments.'
+              : esc(L.redeemNote)}</div>
           </div>
         </div>`;
     }
