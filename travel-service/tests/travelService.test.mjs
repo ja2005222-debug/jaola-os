@@ -1498,6 +1498,41 @@ describe('صحة صياغة سكربتات الواجهة — درس عطل إن
         const code = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
         assert.doesNotThrow(() => new Function(code));
     });
+    test('🧩 i18n.js يتحلّل بلا خطأ صياغة', () => {
+        const code = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+        assert.doesNotThrow(() => new Function('window', code));
+    });
+});
+
+describe('i18n: جدول الترجمة لا يتباعد عن الصفحة', () => {
+    const code = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
+    const w = {};
+    new Function('window', code)(w);
+    const en = w.JAOLA_I18N?.en;
+
+    test('🌐 الجدول موجود وكل قيمة إنجليزية غير فارغة ومختلفة عن مفتاحها', () => {
+        assert.ok(en && Object.keys(en).length >= 80, 'جدول وافٍ للهيكل الرئيسي');
+        for (const [ar, enVal] of Object.entries(en)) {
+            assert.ok(typeof enVal === 'string' && enVal.trim(), `قيمة فارغة للمفتاح: ${ar}`);
+            assert.notEqual(enVal, ar, `ترجمة مطابقة لمفتاحها: ${ar}`);
+        }
+    });
+
+    test('🌐 حارس الانجراف: المفاتيح المحورية ما زالت حرفياً في index.html', () => {
+        // نهج «جدول النصوص» يعتمد المطابقة الحرفية — تغيير نص في الصفحة
+        // دون الجدول يترك الإنجليزية ناقصة بصمت. هذه العينة تكسر الصمت.
+        const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+        for (const key of [
+            '🔎 بحث الرحلات', '🎒 باقات جاهزة', '🧳 رحلاتي', '🤖 المساعد',
+            'تاريخ الذهاب', 'العودة (اختياري)', '📅 تقويم الأسعار',
+            '🔍 فلاتر متقدمة (توقفات · شركة · سقف سعر)',
+            'احجز الآن', 'اسم قائد المجموعة', '🔔 أبلغني عند التوفّر',
+            'نشر المراجعة', '🎁 برنامج الولاء', 'تعليم الكل كمقروء',
+        ]) {
+            assert.ok(en[key], `مفتاح مفقود من الجدول: ${key}`);
+            assert.ok(html.includes(key), `نص الصفحة تغيّر عن مفتاح الجدول: ${key}`);
+        }
+    });
 });
 
 describe('applyOfferFilters: فلترة قبل الاقتطاع — وحدة نقية', () => {
@@ -2589,6 +2624,21 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal((await call('/api/travel/flights/calendar', {
                 method: 'POST', token, body: { origin: 'RUHX', destination: 'CAI', aroundDate: futureDate(20) },
             })).status, 400);
+        });
+
+        test('🗺️ تفاصيل الفندق تحمل إحداثيات صالحة للخريطة المضمّنة', async () => {
+            const token = makeToken('map-user');
+            const search = await call('/api/travel/stays/search', {
+                method: 'POST', token,
+                body: { iata: 'DXB', checkInDate: futureDate(20), checkOutDate: futureDate(23), adults: 1, rooms: 1 },
+            });
+            const withHotel = search.data.offers.find(o => o.hotelId);
+            assert.ok(withHotel, 'عرض بفندق قابل للتفاصيل');
+            const det = await call(`/api/travel/stays/hotels/${encodeURIComponent(withHotel.hotelId)}`, { token });
+            assert.equal(det.status, 200);
+            const loc = det.data.hotel.location;
+            assert.ok(loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lon),
+                'إحداثيات رقمية صالحة — شرط ظهور خريطة OSM المضمّنة');
         });
 
         test('💵🎁 سعر الصرف للعرض + الولاء عبر الـ API', async () => {

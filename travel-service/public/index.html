@@ -284,6 +284,7 @@
   <header>
     <h1>✈️ JAOLA Travel <span style="color:var(--muted);font-size:13px">بوابة السفر</span></h1>
     <div style="display:flex;align-items:center;gap:14px">
+      <button id="langBtn" title="اللغة / Language" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:6px 10px;font-size:13px">EN</button>
       <select id="fxSel" class="hidden" title="عملة العرض التقريبية" style="width:auto;padding:6px 8px;font-size:13px">
         <option value="">💵 العملة الأصلية</option>
       </select>
@@ -659,9 +660,38 @@
     </div>
   </dialog>
 
+  <script src="i18n.js"></script>
   <script>
     const $ = id => document.getElementById(id);
     let token = null, config = null, selectedOffer = null, selectedStayOffer = null, selectedCarOffer = null, lastFlightSearch = null;
+
+    // ─── 🌐 تعدد اللغات (المرحلة ١): مترجم جدول نصوص — انظر تعليق i18n.js ───
+    const LANG_KEY = 'jaolaTravelLang';
+    const uiLang = localStorage.getItem(LANG_KEY) || 'ar';
+    const I18N_MAP = (uiLang === 'en' && window.JAOLA_I18N && window.JAOLA_I18N.en) || null;
+    function translateTree(root) {
+      if (!I18N_MAP || !root) return;
+      if (root.nodeType === Node.TEXT_NODE) {
+        const t = root.textContent.trim();
+        if (t && I18N_MAP[t]) root.textContent = root.textContent.replace(t, I18N_MAP[t]);
+        return;
+      }
+      if (root.nodeType !== Node.ELEMENT_NODE) return;
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let n;
+      while ((n = walker.nextNode())) {
+        const t = n.textContent.trim();
+        if (t && I18N_MAP[t]) n.textContent = n.textContent.replace(t, I18N_MAP[t]);
+      }
+      root.querySelectorAll('[placeholder]').forEach(el => {
+        if (I18N_MAP[el.placeholder]) el.placeholder = I18N_MAP[el.placeholder];
+      });
+      if (root.placeholder && I18N_MAP[root.placeholder]) root.placeholder = I18N_MAP[root.placeholder];
+    }
+    if (I18N_MAP) {
+      document.documentElement.lang = 'en';
+      document.documentElement.dir = 'ltr';
+    }
     let chatHistory = []; // {role, content} — تُرسل كاملة لكل جولة
 
     // ─── الدخول الموحّد: توكن من ?token= أو التخزين المحلي ───
@@ -1158,7 +1188,21 @@
       if (!fxCur) return;
       document.querySelectorAll('.price').forEach(fxAnnotate);
     }
-    new MutationObserver(fxAnnotateAll).observe(document.body, { childList: true, subtree: true });
+    // مراقب واحد لخدمتين: ترجمة العقد المضافة (لغة إنجليزية) + تعليق العملة
+    new MutationObserver((mutations) => {
+      if (I18N_MAP) {
+        for (const m of mutations) m.addedNodes.forEach(n => translateTree(n));
+      }
+      fxAnnotateAll();
+    }).observe(document.body, { childList: true, subtree: true });
+    translateTree(document.body); // الهيكل الثابت يُترجم فور التحميل
+
+    // 🌐 مبدّل اللغة: يظهر اللغة الهدف، والتبديل بإعادة تحميل نظيفة
+    $('langBtn').textContent = uiLang === 'en' ? 'عربي' : 'EN';
+    $('langBtn').addEventListener('click', () => {
+      localStorage.setItem(LANG_KEY, uiLang === 'en' ? 'ar' : 'en');
+      location.reload();
+    });
 
     async function fxInit() {
       const res = await api('/api/travel/fx/currencies');
@@ -1637,8 +1681,21 @@
       if (h.starRating) stars.push(`⭐ ${h.starRating} نجوم`);
       if (h.reviewRating) stars.push(`👍 تقييم النزلاء ${h.reviewRating}${h.reviewCount ? ` (${h.reviewCount} مراجعة)` : ''}`);
       if (stars.length) parts.push(`<div>${esc(stars.join(' · '))}</div>`);
-      if (h.address) parts.push(`<div>📍 ${esc(h.address)}${h.city ? '، ' + esc(h.city) : ''}${
-        h.location ? ` — <a href="https://maps.google.com/?q=${h.location.lat},${h.location.lon}" target="_blank" rel="noopener">الخريطة</a>` : ''}</div>`);
+      if (h.address) parts.push(`<div>📍 ${esc(h.address)}${h.city ? '، ' + esc(h.city) : ''}</div>`);
+      // 🗺️ خريطة مضمّنة بلا أي مكتبة أو مفتاح: تضمين OpenStreetMap الرسمي
+      // في iframe كسول — فشل تحميله لا يكسر شيئاً (تدهور آمن كالصور).
+      // الأرقام مفحوصة Number.isFinite قبل دخول الرابط — لا حقن نصوص.
+      if (h.location && Number.isFinite(h.location.lat) && Number.isFinite(h.location.lon)) {
+        const { lat, lon } = h.location;
+        const d = 0.006; // نافذة ~600م حول الفندق
+        parts.push(`<div style="margin-top:8px">
+          <iframe src="https://www.openstreetmap.org/export/embed.html?bbox=${lon - d}%2C${lat - d}%2C${lon + d}%2C${lat + d}&layer=mapnik&marker=${lat}%2C${lon}"
+            style="width:100%;height:220px;border:1px solid var(--border);border-radius:10px" loading="lazy" title="خريطة موقع الفندق"></iframe>
+          <div class="note" style="font-size:11px;margin-top:2px">🗺️
+            <a href="https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}" target="_blank" rel="noopener">OpenStreetMap</a> ·
+            <a href="https://maps.google.com/?q=${lat},${lon}" target="_blank" rel="noopener">خرائط Google</a></div>
+        </div>`);
+      }
       if (h.checkinTime || h.checkoutTime) {
         parts.push(`<div>🕒 الدخول ${esc(h.checkinTime || '—')} · الخروج ${esc(h.checkoutTime || '—')}</div>`);
       }
