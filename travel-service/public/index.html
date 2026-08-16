@@ -669,22 +669,43 @@
     const LANG_KEY = 'jaolaTravelLang';
     const uiLang = localStorage.getItem(LANG_KEY) || 'ar';
     const I18N_MAP = (uiLang === 'en' && window.JAOLA_I18N && window.JAOLA_I18N.en) || null;
+    const I18N_RULES = (uiLang === 'en' && window.JAOLA_I18N_RULES) || [];
+    const I18N_SUBS = (uiLang === 'en' && window.JAOLA_I18N_SUBS) || [];
+    const AR_RE = /[؀-ۿ]/; // لا عمل على عقدة بلا حرف عربي أصلاً
+
+    // ترجمة نص واحد: جدول حرفي ← قواعد أنماط (أرقام مُدرَجة) ← استبدالات جزئية
+    function translateText(raw) {
+      const t = raw.trim();
+      if (!t || !AR_RE.test(t)) return raw;
+      if (I18N_MAP[t]) return raw.replace(t, I18N_MAP[t]);
+      for (const [re, rep] of I18N_RULES) {
+        if (re.test(t)) return raw.replace(t, t.replace(re, rep));
+      }
+      let out = raw;
+      for (const [ar, en] of I18N_SUBS) {
+        if (out.includes(ar)) out = out.split(ar).join(en);
+      }
+      return out;
+    }
     function translateTree(root) {
       if (!I18N_MAP || !root) return;
       if (root.nodeType === Node.TEXT_NODE) {
-        const t = root.textContent.trim();
-        if (t && I18N_MAP[t]) root.textContent = root.textContent.replace(t, I18N_MAP[t]);
+        const next = translateText(root.textContent);
+        if (next !== root.textContent) root.textContent = next;
         return;
       }
       if (root.nodeType !== Node.ELEMENT_NODE) return;
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
       let n;
       while ((n = walker.nextNode())) {
-        const t = n.textContent.trim();
-        if (t && I18N_MAP[t]) n.textContent = n.textContent.replace(t, I18N_MAP[t]);
+        const next = translateText(n.textContent);
+        if (next !== n.textContent) n.textContent = next;
       }
       root.querySelectorAll('[placeholder]').forEach(el => {
         if (I18N_MAP[el.placeholder]) el.placeholder = I18N_MAP[el.placeholder];
+      });
+      root.querySelectorAll('[title]').forEach(el => {
+        if (I18N_MAP[el.title]) el.title = I18N_MAP[el.title];
       });
       if (root.placeholder && I18N_MAP[root.placeholder]) root.placeholder = I18N_MAP[root.placeholder];
     }
@@ -1174,7 +1195,18 @@
       el.dataset.fxDone = fxCur; // قبل النداء — فلا يُعاد على نفس العنصر أثناء انتظاره
       if (!Number.isFinite(amount) || from === fxCur) return;
       const fx = await fxGetRate(from);
-      if (!fx || !Number.isFinite(fx.rate)) return;
+      if (!fx || !Number.isFinite(fx.rate)) {
+        // 🛠️ تبليغ إنتاجي: فشل السعر كان يُعلَّم «منجزاً» فلا يُعاد أبداً —
+        // «العملات لا تتغير بالمرة». الآن: يُمحى الفشل من الكاشين فيُعاد
+        // في العرض التالي، ويُسجَّل تحذير يُظهر السبب في أدوات المطور.
+        fxRates.delete(from);
+        el.removeAttribute('data-fx-done');
+        if (!fxAnnotate._warned) {
+          fxAnnotate._warned = true;
+          console.warn(`[fx] تعذّر جلب سعر ${from}→${fxCur} — سيُعاد تلقائياً.`);
+        }
+        return;
+      }
       let note = el.querySelector('.fx-approx');
       if (!note) {
         note = document.createElement('div');
@@ -1188,13 +1220,20 @@
       if (!fxCur) return;
       document.querySelectorAll('.price').forEach(fxAnnotate);
     }
-    // مراقب واحد لخدمتين: ترجمة العقد المضافة (لغة إنجليزية) + تعليق العملة
+    // مراقب واحد لخدمتين: ترجمة العقد المضافة والنصوص المعدَّلة + تعليق العملة.
+    // characterData ضروري: btn.textContent = '...' يعدّل عقدة نص قائمة بلا
+    // childList — كان يفلت من الترجمة (تبليغ إنتاجي: «العربي يظهر في عدة
+    // حقول»). لا حلقة لا نهائية: الترجمة تكتب فقط عند تغيّر فعلي، والنص
+    // المترجم لا يتغيّر في التمريرة الثانية.
     new MutationObserver((mutations) => {
       if (I18N_MAP) {
-        for (const m of mutations) m.addedNodes.forEach(n => translateTree(n));
+        for (const m of mutations) {
+          if (m.type === 'characterData') translateTree(m.target);
+          else m.addedNodes.forEach(n => translateTree(n));
+        }
       }
       fxAnnotateAll();
-    }).observe(document.body, { childList: true, subtree: true });
+    }).observe(document.body, { childList: true, subtree: true, characterData: true });
     translateTree(document.body); // الهيكل الثابت يُترجم فور التحميل
 
     // 🌐 مبدّل اللغة: يظهر اللغة الهدف، والتبديل بإعادة تحميل نظيفة

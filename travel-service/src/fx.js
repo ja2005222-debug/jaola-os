@@ -33,6 +33,37 @@ export const DISPLAY_CURRENCIES = ['USD', 'SAR', 'AED', 'QAR', 'BHD', 'OMR', 'JO
 const CURRENCY_RE = /^[A-Z]{3}$/;
 const round6 = n => Math.round(n * 1e6) / 1e6;
 
+/**
+ * ساق السوق بمزوّدَين: Frankfurter (المركزي الأوروبي) أولاً، وعند فشله
+ * open.er-api.com (نقطة مفتوحة بلا مفتاح، بيانات سوق منشورة، تغطية أوسع)
+ * — تبليغ إنتاجي حقيقي: «العملات لا تتغير بالمرة» حين تكون كل الأسعار
+ * بعملة عائمة (يورو Duffel) وساق السوق الوحيدة معطوبة تعني صفر تحويلات.
+ * كل نتيجة تحمل provider حتى يُعرف المصدر الفعلي دوماً.
+ */
+async function marketRate({ from, to, fetchImpl }) {
+    let firstError;
+    try {
+        const r = await convertCurrency({ amount: 1, from, to, fetchImpl });
+        return { rate: r.rate, date: r.date || null, provider: 'frankfurter' };
+    } catch (e) {
+        firstError = e;
+    }
+    try {
+        const res = await fetchImpl(`https://open.er-api.com/v6/latest/${from}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const payload = await res.json();
+        const rate = payload?.rates?.[to];
+        if (!Number.isFinite(rate)) throw new Error(`لا سعر ${from}→${to} في الرد.`);
+        return {
+            rate,
+            date: payload.time_last_update_utc ? String(payload.time_last_update_utc).slice(0, 16) : null,
+            provider: 'er-api',
+        };
+    } catch (e2) {
+        throw new Error(`فشل مزوّدا السوق معاً — Frankfurter: ${firstError.message} | er-api: ${e2.message}`);
+    }
+}
+
 function pegOf(code) {
     const v = USD_PEGS[code];
     return Number.isFinite(v) ? v : null;
@@ -68,17 +99,17 @@ export async function fxRate({ from, to, fetchImpl = fetch }) {
     try {
         if (fPeg == null && tPeg == null) {
             // عائمة↔عائمة — سوق مباشر
-            const r = await convertCurrency({ amount: 1, from: f, to: t, fetchImpl });
-            return { from: f, to: t, rate: round6(r.rate), source: 'market', date: r.date };
+            const r = await marketRate({ from: f, to: t, fetchImpl });
+            return { from: f, to: t, rate: round6(r.rate), source: 'market', date: r.date, provider: r.provider };
         }
         if (fPeg != null) {
             // مربوطة → عائمة: f→USD ربطاً ثم USD→t سوقاً
-            const r = await convertCurrency({ amount: 1, from: 'USD', to: t, fetchImpl });
-            return { from: f, to: t, rate: round6(r.rate / fPeg), source: 'mixed', date: r.date };
+            const r = await marketRate({ from: 'USD', to: t, fetchImpl });
+            return { from: f, to: t, rate: round6(r.rate / fPeg), source: 'mixed', date: r.date, provider: r.provider };
         }
         // عائمة → مربوطة: f→USD سوقاً ثم USD→t ربطاً
-        const r = await convertCurrency({ amount: 1, from: f, to: 'USD', fetchImpl });
-        return { from: f, to: t, rate: round6(r.rate * tPeg), source: 'mixed', date: r.date };
+        const r = await marketRate({ from: f, to: 'USD', fetchImpl });
+        return { from: f, to: t, rate: round6(r.rate * tPeg), source: 'mixed', date: r.date, provider: r.provider };
     } catch (e) {
         throw Object.assign(
             new Error(`تعذّر جلب سعر الصرف ${f}→${t}: ${e.message}`),

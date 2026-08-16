@@ -1,15 +1,19 @@
 /**
  * 🛰️ Service Worker — بوابة السفر كتطبيق قابل للتثبيت (PWA)
  *
- * السياسة عمداً محافظة:
- * - القشرة الثابتة (الصفحة/الأيقونة/المانيفست) cache-first مع تحديث خلفي
- *   (stale-while-revalidate) — فتح فوري حتى بشبكة بطيئة.
- * - **الـ API لا يُكيَّش أبداً**: الأسعار والمقاعد والحجوزات بيانات حية،
- *   وتقديم نسخة قديمة منها كذبة سعرية — نفس فلسفة «لا أسعار موهومة».
- * - رفع الإصدار في CACHE_NAME يمسح القديم تلقائياً عند التفعيل.
+ * ⚠️ درس إنتاجي حقيقي (١٥ أغسطس ٢٠٢٦): النسخة الأولى خدمت القشرة
+ * cache-first — فكان كل مستخدم يرى صفحة **النشر السابق** زيارةً كاملة
+ * (تحديث خلفي لا يظهر إلا بالزيارة التالية)، وبدت الميزات الجديدة
+ * «مختفية» رغم نشرها. المالك أبلغ عنها فعلياً.
+ *
+ * السياسة الآن **network-first للقشرة**: الشبكة أولاً دوماً (فأحدث نشر
+ * يظهر فوراً)، والكاش احتياطي الانقطاع الكامل فقط — الـPWA تبقى تعمل
+ * دون اتصال، بلا ثمن التقادم.
+ * - الـ API لا يُلمس إطلاقاً (أسعار ومقاعد حية).
+ * - رفع الإصدار في CACHE_NAME يمسح كاش النسخ القديمة عند التفعيل.
  */
-const CACHE_NAME = 'jaola-travel-shell-v1';
-const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
+const CACHE_NAME = 'jaola-travel-shell-v2';
+const SHELL = ['/', '/index.html', '/i18n.js', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
     event.waitUntil(
@@ -27,19 +31,16 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
-    // API وكل ما ليس GET → الشبكة مباشرةً بلا أي تدخل
-    if (event.request.method !== 'GET' || url.pathname.startsWith('/api/')) return;
-    // القشرة فقط: كاش أولاً + تحديث خلفي صامت
+    // API وكل ما ليس GET من أصلنا → الشبكة مباشرةً بلا أي تدخل
+    if (event.request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+    // القشرة: شبكة أولاً (أحدث نشر فوراً) + تحديث الكاش، والكاش للانقطاع فقط
     event.respondWith(
-        caches.match(event.request).then(cached => {
-            const refresh = fetch(event.request).then(res => {
-                if (res && res.ok && url.origin === self.location.origin) {
-                    const copy = res.clone();
-                    caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
-                }
-                return res;
-            }).catch(() => cached); // انقطاع كامل: القشرة المكيَّشة خير من لا شيء
-            return cached || refresh;
-        })
+        fetch(event.request).then(res => {
+            if (res && res.ok) {
+                const copy = res.clone();
+                caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
+            }
+            return res;
+        }).catch(() => caches.match(event.request))
     );
 });

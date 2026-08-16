@@ -122,7 +122,6 @@ window.JAOLA_I18N = {
         'دخول': 'Sign in',
         'حفظ التفضيلات': 'Save preferences',
         'تعليم الكل كمقروء': 'Mark all read',
-        'تحميل المزيد': 'Load more',
 
         // ─── التنبيهات والملف ───
         '🔔 تنبيهاتك': '🔔 Your notifications',
@@ -132,5 +131,101 @@ window.JAOLA_I18N = {
         '— بلا تفضيل —': '— No preference —',
         'الوسم': 'Label',
         'أنا / زوجتي': 'Me / spouse',
+
+        // ─── حالات الحجز وأنواعه (نصوص مولَّدة بالجافاسكربت) ───
+        'مُصدَر ✅': 'Issued ✅',
+        'قيد الإصدار': 'Issuing',
+        'فشل': 'Failed',
+        'مُلغى': 'Cancelled',
+        'باقة مجدولة': 'Fixed package',
+        '↩️ قابل للإلغاء': '↩️ Cancellable',
+        '⛔ غير قابل للاسترداد': '⛔ Non-refundable',
+        'سعر خاص متعاقَد': 'Contracted special rate',
+        'سياسة الإلغاء': 'Cancellation policy',
+        'الإلغاء قبل أول موعد أعلاه مجاني.': 'Free cancellation before the first date above.',
+        '⛔ حجز غير قابل للاسترداد — لا إلغاء مجاني.': '⛔ Non-refundable booking — no free cancellation.',
+
+        // ─── مقدمات الأقسام والشرائط ───
+        '🎒 فندق متعاقَد + مقاعد طيران محجوزة مسبقاً — سعر نهائي واحد وتأكيد فوري. احجز بعربون وسلّم الأسماء قبل الإقلاع بأسبوعين.':
+            '🎒 Contracted hotel + pre-blocked flight seats — one final price, instant confirmation. Book with a deposit, submit names two weeks before departure.',
+        '🎯 ما ناسبك تاريخ أو وجهة؟': "🎯 Dates or destination don't fit?",
+        'اطلب عرضاً خاصاً ويجهّز لك فريقنا باقة على مقاسك.': 'Request a custom offer and our team will tailor a package for you.',
+        '✨ وجهات رائجة من مطارك': '✨ Trending from your airport',
+        'أرخص سعر وجدناه اليوم — ذهاب فقط بعد ٣٠ يوماً': 'Cheapest price found today — one-way, 30 days out',
+        '🏨 أضف فنادق الوجهة (تفتح في صفحة منفصلة)': '🏨 Add destination hotels (opens separately)',
+        'الباقة ذهاب وعودة — حدّد التاريخين، فالفندق يُحجز بينهما.': 'Bundles are round-trip — set both dates; the hotel spans them.',
+        '🪪 أسماء بقية المسافرين تُسلَّم قبل الإقلاع بأسبوعين — لا تلزم الآن.': '🪪 Remaining traveller names are due two weeks before departure — not now.',
+        'عربون الآن والباقي لاحقاً': 'Deposit now, balance later',
+        'دفع كامل': 'Pay in full',
+
+        // ─── رسائل فارغ/خطأ/انتظار (مولَّدة) ───
+        'لا رحلات متاحة لهذا البحث.': 'No flights available for this search.',
+        'لا رحلات لهذا البحث.': 'No flights for this search.',
+        'لا فنادق متاحة لهذه الوجهة/التواريخ.': 'No hotels for this destination/dates.',
+        'لا فنادق قابلة للإلغاء لهذه التواريخ — شرط الباقة.': 'No cancellable hotels for these dates — a bundle requirement.',
+        'لا سيارات متاحة لهذا البحث.': 'No cars available for this search.',
+        'لا حجوزات بعد — ابدأ من تبويب البحث أو اطلب من المساعد.': 'No bookings yet — start from Search or ask the assistant.',
+        'لا تنبيهات بعد — ستصلك هنا تأكيدات حجوزاتك وتغييرات شركات الطيران وانخفاضات الأسعار.': 'No notifications yet — booking confirmations, airline changes and price drops arrive here.',
+        'لا انطلاقات معلنة حالياً — اطلب عرضاً خاصاً أدناه وسنوافيك.': 'No departures announced yet — request a custom offer below.',
+        'لا باقات في مفضلتك بعد — اضغط ♡ على أي باقة.': 'No wishlisted packages yet — tap ♡ on any package.',
+        'لا مراجعات بعد — كن أول من يشارك تجربته.': 'No reviews yet — be the first to share.',
+        'لا تفاصيل إضافية من المزوّد.': 'No extra details from the provider.',
+        'لا مطار مغطّى بهذا الاسم — جرّب اسم مدينة أو دولة أخرى.': 'No covered airport by that name — try another city or country.',
+        '⏳ جارٍ جلب تفاصيل الفندق…': '⏳ Fetching hotel details…',
+        'جارٍ الحساب...': 'Calculating...',
+        '📅 نجمع أرخص سعر لكل يوم — لحظات...': '📅 Collecting the cheapest price per day — moments...',
+        '📅 أرخص سعر لكل يوم (لمسافر واحد) — اضغط يوماً لتبحث به:': '📅 Cheapest per day (one traveller) — tap a day to search it:',
+        'تعذّر البحث — حاول مجدداً بعد قليل.': 'Search failed — try again shortly.',
+        'تعذّر بحث الفنادق — حاول مجدداً بعد قليل.': 'Hotel search failed — try again shortly.',
+        'تعذّر الاتصال بالخادم — حاول مجدداً.': 'Could not reach the server — try again.',
+        'تعذّر تحميل الباقات — حدّث الصفحة.': 'Could not load packages — refresh the page.',
+        'تعذّر تحميل الوجهات — حاول مجدداً بعد قليل.': 'Could not load destinations — try again shortly.',
+        'تعذّر تسعير الباقة — حاول مجدداً.': 'Could not price the bundle — try again.',
+        'أدخل تاريخ ميلاد كل طفل — سعر تذكرته يتبع عمره يوم السفر.': "Enter each child's date of birth — the fare follows their age on travel day.",
+        'تاريخ الميلاد من البحث — لتغييره أعد البحث، فالسعر يتبع العمر.': 'Date of birth comes from the search — re-search to change it; the fare follows the age.',
+        'أغلق هذا التبويب للعودة إلى نتائج بحث الرحلات.': 'Close this tab to return to flight results.',
+        'فعّل الحفظ أعلاه لإضافة مسافرين.': 'Enable saving above to add travellers.',
+        '💬 تنبيهات واتساب غير مُفعّلة على هذا الخادم بعد.': '💬 WhatsApp alerts are not enabled on this server yet.',
+        '/ للشخص': '/ per person',
+        'المرجع:': 'Reference:',
+        '✓ حجز موثق': '✓ verified booking',
+        '▴ إخفاء التفاصيل': '▴ Hide details',
+        'خريطة موقع الفندق': 'Hotel location map',
+        'خرائط Google': 'Google Maps',
     },
 };
+
+/**
+ * قواعد الأنماط: نصوص بأرقام مُدرَجة لا تطابق جدولاً حرفياً — تُترجم
+ * بتعابير نمطية محدودة، وتُطبَّق فقط حين لا يطابق النص الجدول أعلاه.
+ */
+window.JAOLA_I18N_RULES = [
+    [/^(\d+) ليالٍ$/, '$1 nights'],
+    [/^متاح: (\d+) مقاعد$/, 'Available: $1 seats'],
+    [/^🔥 تبقى (\d+) مقاعد فقط$/, '🔥 Only $1 seats left'],
+    [/^إجمالي (\d+) مسافر$/, 'Total for $1 traveller(s)'],
+    [/^(\d+) مسافر$/, '$1 traveller(s)'],
+    [/^⭐ ([\d.]+) · (\d+) مراجعة موثقة$/, '⭐ $1 · $2 verified reviews'],
+    [/^عربون (\d+)% يثبّت مقعدك — الأسماء قبل ([\d-]+)$/, '$1% deposit secures your seat — names due before $2'],
+    [/^عربون (\d+)% الآن$/, '$1% deposit now'],
+    [/^(\d+) بالغ — غرفة مزدوجة$/, '$1 adult(s) — double room'],
+    [/^(\d+) غرفة مفردة/, '$1 single room(s)'],
+    [/^(\d+) طفل$/, '$1 child(ren)'],
+];
+
+/**
+ * استبدالات جزئية آمنة داخل النصوص المختلطة (مدينة · تاريخ · «5 ليالٍ»):
+ * كلمات عربية مميزة لا تلتبس — تُطبَّق أخيراً وعالمياً داخل عقدة النص.
+ */
+window.JAOLA_I18N_SUBS = [
+    [' ليالٍ', ' nights'],
+    [' ليلة', ' night(s)'],
+    [' مقاعد', ' seats'],
+    [' مسافر', ' traveller(s)'],
+    [' مراجعة موثقة', ' verified reviews'],
+    ['انطلاق ', 'Departs '],
+    ['أقرب انطلاقة ', 'Next departure '],
+    ['شامل الإفطار', 'Breakfast included'],
+    ['إفطار وعشاء', 'Half board'],
+    ['بدون إعاشة', 'Room only'],
+];
