@@ -214,6 +214,15 @@ export function createDuffelProvider({ apiKey, apiUrl, fetchImpl }) {
                 status: 'issued',
                 netAmount: Number(data.total_amount),
                 currency: data.total_currency,
+                // 🎫 أرقام التذاكر الإلكترونية: هي «شكل التذكرة النهائي» فعلياً
+                // (لا ملف PDF) — بها يُراجَع الناقل ويُسجَّل الوصول. الحقل
+                // اختياري في رد Duffel وقد يصل لاحقاً بعد الإصدار، فالغياب
+                // ليس خطأً: نعرض المرجع (PNR) وحده حينها.
+                tickets: Array.isArray(data.documents)
+                    ? data.documents
+                        .filter(d => d?.unique_identifier)
+                        .map(d => ({ type: d.type || 'ticket', number: d.unique_identifier }))
+                    : [],
             };
         },
 

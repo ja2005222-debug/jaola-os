@@ -2822,7 +2822,11 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 },
                 async getCheckoutSession(id) {
                     const s = sessions.get(id);
-                    return { id, status: s?.status || 'expired', paymentStatus: s?.paymentStatus || 'unpaid', paymentIntent: 'pi_' + id, metadata: s?.args || {} };
+                    return {
+                        id, status: s?.status || 'expired', paymentStatus: s?.paymentStatus || 'unpaid',
+                        paymentIntent: 'pi_' + id, metadata: s?.args || {},
+                        url: `https://checkout.stripe.test/${id}`,
+                    };
                 },
                 async createRefund({ paymentIntentId, amount = null }) {
                     refunds.push({ paymentIntentId, amount });
@@ -3042,6 +3046,28 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 assert.equal(lastRefund.paymentIntentId, 'pi_flight');
                 assert.ok(Math.abs(lastRefund.amount - paidAmount * 0.8) < 0.02,
                     `الرد يتناسب مع رد المزوّد: ${lastRefund.amount} ≈ ${paidAmount * 0.8}`);
+
+                // 11.5) «كيف أكمل الدفع؟»: الاستئناف يعيد الجلسة القائمة ولا
+                // يفتح ثانية (جلستان مفتوحتان = تحصيل مرتين)
+                const f4 = await bookFlight();
+                const f4id = f4.res.data.booking.id;
+                const sessionsBefore = sessions.size;
+                const resume = await call2(`/api/travel/bookings/${f4id}/pay`, { method: 'POST', token: buyer });
+                assert.equal(resume.status, 200);
+                assert.equal(resume.data.checkoutUrl, f4.res.data.checkoutUrl, 'نفس الجلسة لا جلسة جديدة');
+                assert.equal(sessions.size, sessionsBefore, 'لم تُفتح جلسة ثانية للحجز نفسه');
+
+                // ... ودفعٌ وصل وضاع webhookه: الاستئناف يسوّيه بدل مطالبته مجدداً
+                const f4session = [...sessions.entries()].find(([, s]) => s.args.bookingId === f4id)[0];
+                sessions.get(f4session).paymentStatus = 'paid';
+                const late = await call2(`/api/travel/bookings/${f4id}/pay`, { method: 'POST', token: buyer });
+                assert.equal(late.status, 400);
+                assert.match(late.data.error, /دفعتك وصلت/);
+                const f4After = (await call2('/api/travel/bookings', { token: buyer })).data.bookings.find(b => b.id === f4id);
+                assert.equal(f4After.status, 'issued', 'المصالحة الفورية أصدرته');
+                // ومحاولة الدفع على مُصدَر مرفوضة، وعلى حجز غيرك 404 لا 403
+                assert.equal((await call2(`/api/travel/bookings/${f4id}/pay`, { method: 'POST', token: buyer })).status, 400);
+                assert.equal((await call2(`/api/travel/bookings/${f4id}/pay`, { method: 'POST', token: admin })).status, 404);
 
                 // 12) الفندق يمر بنفس الدورة — وفرع إرساله مختلف (guests لا
                 // passengers)، فيثبت أن التوزيع على المزوّدات صحيح لا الطيران وحده

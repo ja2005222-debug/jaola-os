@@ -227,6 +227,10 @@ window.JAOLA_I18N = {
         '🔎 ابحث عن سيارة': '🔎 Find a car',
         'تعذّر تحميل التنبيهات.': 'Could not load notifications.',
         'للتقويم: حدّد «من» و«إلى» وتاريخ الذهاب أولاً.': 'For the calendar: set From, To and the departure date first.',
+        '📄 تفاصيل الحجز': '📄 Booking details',
+        '💳 أكمل الدفع الآن': '💳 Pay now',
+        '🖨️ طباعة / حفظ PDF': '🖨️ Print / save as PDF',
+        'تعذّر فتح صفحة الدفع.': 'Could not open the payment page.',
 
         // ─── ما كشفه مسحٌ آلي للواجهة الإنجليزية تبويباً تبويباً ───
         '🔎 ابحث عن فندق': '🔎 Find a hotel',

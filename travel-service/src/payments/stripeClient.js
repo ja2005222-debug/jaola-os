@@ -127,6 +127,9 @@ export function createStripeClient({ secretKey, fetchImpl = fetch }) {
             return {
                 id: s.id, status: s.status, paymentStatus: s.payment_status,
                 paymentIntent: s.payment_intent || null, metadata: s.metadata || {},
+                // الرابط يبقى صالحاً ما دامت الجلسة مفتوحة — به نستأنف دفعاً
+                // هُجر بدل فتح جلسة ثانية للحجز نفسه (فتُحصَّل مرتين).
+                url: s.url || null,
             };
         },
 
