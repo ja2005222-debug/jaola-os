@@ -226,6 +226,34 @@ window.JAOLA_I18N = {
         '🔄 تحديث': '🔄 Refresh',
         '🔎 ابحث عن سيارة': '🔎 Find a car',
         'تعذّر تحميل التنبيهات.': 'Could not load notifications.',
+        'للتقويم: حدّد «من» و«إلى» وتاريخ الذهاب أولاً.': 'For the calendar: set From, To and the departure date first.',
+
+        // ─── ما كشفه مسحٌ آلي للواجهة الإنجليزية تبويباً تبويباً ───
+        '🔎 ابحث عن فندق': '🔎 Find a hotel',
+        '🔎 ابحث عن باقات': '🔎 Find bundles',
+        '🎁 اختر رحلة وفندقاً معاً — سعر الباقة أقل من مجموعهما منفصلَين، والفرق يُحسب ويُعرض. الباقة ذهاب وعودة (الفندق بين التاريخين).':
+            '🎁 Pick a flight and a hotel together — the bundle costs less than booking both separately, and the difference is computed and shown. Bundles are round-trip (the hotel spans both dates).',
+        '🧠 ملفك ومسافروك': '🧠 Your profile & travellers',
+        // الفقرة مقسومة بـ<strong> فهي عقدتا نص لا واحدة — مفتاح لكل جزء
+        'يملأ نماذج البحث والحجز مسبقاً. المساعد يعرف تفضيلاتك ووجهاتك المتكررة —':
+            'Pre-fills your search and booking forms. The assistant knows your preferences and frequent destinations —',
+        'ولا تصله أسماء مسافريك ولا تواريخ ميلادهم أبداً':
+            'and it never receives your travellers’ names or dates of birth',
+        'احفظ بيانات المسافرين لتسريع الحجز القادم': 'Save traveller details to speed up your next booking',
+        '🗑️ امسح كل بياناتي': '🗑️ Erase all my data',
+        '⚙️ أي التنبيهات تريد أن تصلك؟': '⚙️ Which notifications do you want?',
+        'وقائع حجوزاتك يبقى سجلها داخل البوابة دوماً — اختيارك يطال بريدها.':
+            'Your booking events are always logged in the portal — your choice applies to their email.',
+        'أضف رقم واتساب أدناه أولاً': 'Add a WhatsApp number below first',
+        // عناوين ومُلمِحات (title/placeholder)
+        'عملة العرض التقريبية': 'Approximate display currency',
+        'التنبيهات': 'Notifications',
+        'أرخص سعر لكل يوم حول تاريخك': 'Cheapest price per day around your date',
+        'مثال: السعودية أو SV': 'e.g. Saudia or SV',
+        'رحلة رائعة!': 'Great trip!',
+        'الفندق، التنظيم، الطيران...': 'Hotel, organisation, flight...',
+        'سجل الوقائع محفوظ دوماً': 'The event log is always kept',
+        'واتساب غير مُفعّل على الخادم': 'WhatsApp is not enabled on this server',
     },
 };
 

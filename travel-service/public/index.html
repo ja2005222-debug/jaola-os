@@ -109,6 +109,14 @@
        لغة الجذر (يضبطها سكربت i18n فور التحميل) */
     html[lang="en"] .card.offer-best::before { content: '🤖 Best'; }
 
+    /* 🗓️ صيغة التاريخ داخل <input type="date"> يكتبها المتصفح بلغته هو لا
+       بلغة الصفحة، ولا تملك الصفحة تغييرها. ومتصفح عربي داخل واجهة
+       إنجليزية يعرضها معكوسة («موي/رهش/ةنس» — من صورة عطب حقيقية للمالك).
+       فنخفيها ما دام الحقل فارغاً وغير مركَّز (عنوان الحقل فوقه يكفي)،
+       وتعود فور التركيز ليكتب المسافر بثقة. الصف يُضاف بالجافاسكربت
+       للفارغ وحده — على حقلٍ ذي قيمة يخفي القيمة نفسها (مُجرَّب). */
+    input[type="date"].date-hint-off:not(:focus)::-webkit-datetime-edit { color: transparent; }
+
     /* شارتان بمعنيين مختلفين لا تُخلَطان: توفير الباقة (أخضر — "ربحت
        مالاً") مقابل السعر الحصري المتعاقَد (بنفسجي — "لا تجده في مكان
        آخر"). قبل هذا كان الاثنان يتشاركان لون التوفير نفسه فيضيع الفرق. */
@@ -675,6 +683,14 @@
     const I18N_RULES = (uiLang === 'en' && window.JAOLA_I18N_RULES) || [];
     const I18N_SUBS = (uiLang === 'en' && window.JAOLA_I18N_SUBS) || [];
     const AR_RE = /[؀-ۿ]/; // لا عمل على عقدة بلا حرف عربي أصلاً
+    // استبدال جزئي محروس بحدّ كلمة (انظر translateText) — يُبنى مرة ويُكيَّش
+    const SUB_CACHE = new Map();
+    const SUB_RE = (ar) => {
+      if (!SUB_CACHE.has(ar)) {
+        SUB_CACHE.set(ar, new RegExp(ar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![ء-ي])', 'g'));
+      }
+      return SUB_CACHE.get(ar);
+    };
 
     // ترجمة نص واحد: جدول حرفي ← قواعد أنماط (أرقام مُدرَجة) ← استبدالات جزئية
     function translateText(raw) {
@@ -686,7 +702,10 @@
       }
       let out = raw;
       for (const [ar, en] of I18N_SUBS) {
-        if (out.includes(ar)) out = out.split(ar).join(en);
+        // ⚠️ حدُّ كلمة إلزامي: الاستبدال الحرفي كان يقطع كلمةً أطول تشترك
+        // في البداية — «أسماء مسافريك» صارت «أسماء traveller(s)يك» فعلياً
+        // في الإنتاج. فلا يُستبدل إلا ما لا يتلوه حرف عربي.
+        if (out.includes(ar)) out = out.replace(SUB_RE(ar), en);
       }
       return out;
     }
@@ -719,6 +738,23 @@
     // نصوص تُبنى بالجافاسكربت بأجزاء مُدرَجة لا يلتقطها جدول المطابقة —
     // تُصاغ باللغة الصحيحة من المنبع بدل مطاردتها بأنماط هشّة.
     const T = (ar, en) => (uiLang === 'en' ? en : ar);
+
+    // 🗓️ حقول التاريخ: يُخفى تلميح الصيغة (انظر CSS أعلاه) حين تختلف لغة
+    // المتصفح عن لغة الواجهة فقط — فمتصفحٌ متوافق يبقى بتلميحه كاملاً.
+    const browserAr = String(navigator.language || '').toLowerCase().startsWith('ar');
+    const DATE_HINT_MISMATCH = (uiLang === 'en') === browserAr;
+    function markDateHint(el) {
+      if (!el || el.tagName !== 'INPUT' || el.type !== 'date') return;
+      el.classList.toggle('date-hint-off', !el.value);
+    }
+    function syncDateHints(root) {
+      if (!DATE_HINT_MISMATCH || !root) return;
+      markDateHint(root);
+      root.querySelectorAll?.('input[type="date"]').forEach(markDateHint);
+    }
+    for (const ev of ['input', 'change']) {
+      document.addEventListener(ev, e => { if (DATE_HINT_MISMATCH) markDateHint(e.target); });
+    }
     let chatHistory = []; // {role, content} — تُرسل كاملة لكل جولة
 
     // ─── الدخول الموحّد: توكن من ?token= أو التخزين المحلي ───
@@ -806,6 +842,10 @@
       $('stayCheckOut').value = new Date(Date.now() + 9 * 86400000).toISOString().slice(0, 10);
       $('pkgDepart').value = d.toISOString().slice(0, 10);
       $('pkgReturn').value = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10);
+      // ⚠️ بعد ملء التواريخ لا قبله: ضبط القيمة بالجافاسكربت لا يُطلق حدث
+      // input، فمزامنةٌ سابقة كانت تُبقي صف الإخفاء على حقلٍ صار ذا قيمة
+      // فتخفي التاريخ نفسه (رصده اختبار متصفح قبل النشر لا مستخدم بعده).
+      syncDateHints(document.body);
       loadTrips();
       loadPromos(); // بلا await: الشريط زينة، لا يؤخّر جاهزية الصفحة
       refreshBell();
@@ -1266,15 +1306,17 @@
     // حقول»). لا حلقة لا نهائية: الترجمة تكتب فقط عند تغيّر فعلي، والنص
     // المترجم لا يتغيّر في التمريرة الثانية.
     new MutationObserver((mutations) => {
-      if (I18N_MAP) {
-        for (const m of mutations) {
-          if (m.type === 'characterData') translateTree(m.target);
-          else m.addedNodes.forEach(n => translateTree(n));
-        }
+      for (const m of mutations) {
+        if (m.type === 'characterData') { if (I18N_MAP) translateTree(m.target); continue; }
+        m.addedNodes.forEach(n => { if (I18N_MAP) translateTree(n); });
       }
+      // مزامنة شاملة لا للمُضاف وحده: قيم التواريخ تُضبط بالجافاسكربت بلا
+      // أحداث (نقرة يوم في التقويم مثلاً) — والحقول قليلة فالكلفة مهملة.
+      syncDateHints(document.body);
       fxAnnotateAll();
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
     translateTree(document.body); // الهيكل الثابت يُترجم فور التحميل
+    syncDateHints(document.body);
 
     // 🌐 مبدّل اللغة: يظهر اللغة الهدف، والتبديل بإعادة تحميل نظيفة
     $('langBtn').textContent = uiLang === 'en' ? 'عربي' : 'EN';
@@ -1357,22 +1399,31 @@
         const waReady = !!whatsapp?.enabled;
         const waPhone = whatsapp?.phone || null;
         const waUsable = waReady && !!waPhone;
-        const waHint = !waReady ? 'واتساب غير مُفعّل على الخادم'
-          : !waPhone ? 'أضف رقم واتساب أدناه أولاً' : '';
+        const waHint = !waReady ? T('واتساب غير مُفعّل على الخادم', 'WhatsApp is not enabled on this server')
+          : !waPhone ? T('أضف رقم واتساب أدناه أولاً', 'Add a WhatsApp number below first') : '';
+        // 🌐 تسميات الفئات تصل من الخادم عربيةً (عقد ثابت لا يتغيّر بلغة
+        // العميل) — تُترجم هنا بمعرّف الفئة لا بنصها، ففئة جديدة في الخادم
+        // تظهر بنصها العربي بدل أن تختفي.
+        const CAT_EN = {
+          booking_issued: 'Booking confirmed', booking_cancelled: 'Booking cancelled',
+          airline_change: 'Airline change', price_drop: 'Watched price drop',
+          trip_reminder: 'Pre-trip reminder', admin_alert: 'Admin alert (staff)',
+        };
+        const catLabel = (key, meta) => (uiLang === 'en' ? (CAT_EN[key] || meta.label) : meta.label);
         $('prefRows').innerHTML = Object.entries(categories).map(([key, meta]) => `
           <div class="pref-row" data-cat="${esc(key)}">
-            <span class="pref-name">${esc(meta.label)}</span>
-            <label class="${meta.alwaysInApp ? 'locked' : ''}" title="${meta.alwaysInApp ? 'سجل الوقائع محفوظ دوماً' : ''}">
+            <span class="pref-name">${esc(catLabel(key, meta))}</span>
+            <label class="${meta.alwaysInApp ? 'locked' : ''}" title="${meta.alwaysInApp ? T('سجل الوقائع محفوظ دوماً', 'The event log is always kept') : ''}">
               <input type="checkbox" data-ch="inApp" ${prefs[key].inApp ? 'checked' : ''} ${meta.alwaysInApp ? 'disabled' : ''} />
-              داخل البوابة
+              ${T('داخل البوابة', 'In portal')}
             </label>
             <label>
               <input type="checkbox" data-ch="email" ${prefs[key].email ? 'checked' : ''} />
-              بريد
+              ${T('بريد', 'Email')}
             </label>
             <label class="${waUsable ? '' : 'locked'}" title="${esc(waHint)}">
               <input type="checkbox" data-ch="whatsapp" ${prefs[key].whatsapp ? 'checked' : ''} ${waUsable ? '' : 'disabled'} />
-              واتساب
+              ${T('واتساب', 'WhatsApp')}
             </label>
           </div>`).join('');
         $('prefRows').querySelectorAll('input[type=checkbox]').forEach(cb =>
