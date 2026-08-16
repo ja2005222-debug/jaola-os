@@ -1562,6 +1562,30 @@ describe('applyOfferFilters: فلترة قبل الاقتطاع — وحدة ن�
     });
 });
 
+describe('bilingual data: الأسماء الإنجليزية تصل الواجهة من مصادرها', () => {
+    test('🧭 استنتاج الموقع يعمل للمناطق الأوروبية والإقليمية معاً وبأسماء ثنائية', () => {
+        // تبليغ المالك: كان في أمستردام والحقل يصرّ على القاهرة — القاعدة
+        // الجديدة «الموقع أولاً» تعتمد على أن الاستنتاج يعيد المطار كاملاً
+        const ams = airportForTimezone('Europe/Amsterdam');
+        assert.equal(ams?.iata, 'AMS');
+        assert.equal(ams?.cityEn, 'Amsterdam');
+        const cai = airportForTimezone('Africa/Cairo');
+        assert.equal(cai?.iata, 'CAI');
+        assert.equal(cai?.cityEn, 'Cairo');
+        assert.equal(airportForTimezone('Pacific/Nowhere'), null, 'منطقة مجهولة → null لا تخمين');
+    });
+
+    test('🗺️ أهم الوجهات تحمل cityEn/countryEn للعرض الإنجليزي', async () => {
+        const provider = createMockTravelProvider();
+        const fetchImpl = async () => ({ ok: false, status: 404, text: async () => '' }); // صور تفشل بأمان
+        const dests = await buildTopDestinations({ origin: 'RUH', provider, markupPct: 8, fetchImpl, limit: 2 });
+        assert.ok(dests.length >= 1);
+        for (const d of dests) {
+            assert.ok(d.cityEn && /^[A-Za-z]/.test(d.cityEn), `cityEn مفقود للوجهة ${d.iata}`);
+        }
+    });
+});
+
 describe('fx/loyalty: وحدات نقية', () => {
     test('💵 أزواج الربط الرسمي تُخدَم بلا شبكة إطلاقاً', async () => {
         assert.equal(pegRate('USD', 'SAR'), 3.75);
