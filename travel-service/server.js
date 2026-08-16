@@ -401,6 +401,9 @@ function publicBooking(b) {
         sellAmount: b.sellAmount, currency: b.currency,
         offer: b.offer, passengers: b.passengers, contact: b.contact,
         error: b.error, refund: b.refund,
+        // 🎫 أرقام التذاكر الإلكترونية ووقت الدفع — تفاصيل يسأل عنها المسافر
+        // فعلاً («متى تأكد؟ وأين تذكرتي؟»)، وليست أسراراً كالصافي.
+        tickets: b.tickets, paidAt: b.paidAt,
         packageId: b.packageId || null, // الواجهة تجمع أبناء الباقة تحت أبيهم
         // حقول الباقات المجدولة — undefined لغيرها فلا تظهر في JSON أصلاً
         paymentPlan: b.paymentPlan,
@@ -685,6 +688,7 @@ export function createApp({
             const issued = await transitionBooking(store, booking.id, 'issued', {
                 providerOrderId: order.orderId,
                 bookingReference: order.bookingReference,
+                tickets: order.tickets || [],
             });
             await notifyBookingIssued(issued);
             return publicBooking(issued);
@@ -799,6 +803,7 @@ export function createApp({
             const issued = await transitionBooking(store, booking.id, 'issued', {
                 providerOrderId: order.orderId,
                 bookingReference: order.bookingReference,
+                tickets: order.tickets || [],
             });
             await notifyBookingIssued(issued);
             return publicBooking(issued);
@@ -884,6 +889,7 @@ export function createApp({
             const issued = await transitionBooking(store, booking.id, 'issued', {
                 providerOrderId: order.orderId,
                 bookingReference: order.bookingReference,
+                tickets: order.tickets || [],
             });
             await notifyBookingIssued(issued);
             return publicBooking(issued);
@@ -1599,6 +1605,70 @@ export function createApp({
         }
     }));
 
+    /**
+     * 💳 استئناف دفعٍ لم يكتمل — «كيف أكمل الدفع؟» أول ما يسأله مسافر
+     * أغلق صفحة الدفع أو انقطع اتصاله. بلا هذا المسار يبقى حجزه معلّقاً
+     * بلا طريق: لا يُصدر ولا يُلغى حتى تنتهي المهلة، فيُعيد الحجز من الصفر.
+     *
+     * ⚠️ يُعاد استخدام الجلسة المفتوحة إن كانت ما تزال حيّة، ولا تُفتح
+     * ثانية أبداً: جلستان مفتوحتان للحجز نفسه تعنيان تحصيلاً مرتين إن
+     * أكملهما المسافر — وردّ إحداهما لاحقاً لا يمحو الإزعاج.
+     */
+    app.post('/api/travel/bookings/:id/pay', verifyToken, wrap(async (req, res) => {
+        if (!stripeClient) return res.status(503).json({ error: 'الدفع الإلكتروني غير مفعَّل على هذا الخادم.' });
+        const booking = await getBooking(store, String(req.params.id || ''));
+        if (!booking || booking.username !== userOf(req)) {
+            return res.status(404).json({ error: 'الحجز غير موجود.' });
+        }
+        if (booking.status !== 'pending') {
+            return res.status(400).json({
+                error: booking.status === 'issued'
+                    ? 'هذا الحجز مدفوع ومُصدَر بالفعل.'
+                    : 'هذا الحجز لم يعد بانتظار الدفع — ابدأ حجزاً جديداً.',
+            });
+        }
+        if (booking.stripeSessionId) {
+            try {
+                const s = await stripeClient.getCheckoutSession(booking.stripeSessionId);
+                if (s.paymentStatus === 'paid') {
+                    // دُفع فعلاً وضاع الـwebhook — نسوّي فوراً بدل مطالبته مجدداً
+                    const settled = booking.kind === 'fixed_package'
+                        ? await settleFixedBookingPaid(booking.id, s.paymentIntent)
+                        : await settleProviderBookingPaid(booking.id, s.paymentIntent);
+                    return res.status(400).json({
+                        error: settled
+                            ? 'دفعتك وصلت — الحجز مُصدَر الآن. حدّث الصفحة.'
+                            : 'دفعتك وصلت ونعالجها الآن — حدّث الصفحة بعد لحظات.',
+                    });
+                }
+                if (s.status === 'open' && s.url) return res.json({ checkoutUrl: s.url });
+            } catch (e) {
+                console.warn('⚠️ تعذّر فحص جلسة الدفع القائمة:', e.message);
+            }
+        }
+        const isFixed = booking.kind === 'fixed_package';
+        const amount = isFixed ? (booking.paymentPlan?.paidNow ?? booking.sellAmount) : booking.sellAmount;
+        const base = requestBaseUrl(req);
+        try {
+            const session = await stripeClient.createCheckoutSession({
+                amount, currency: booking.currency,
+                title: `${bookingSummaryLine(booking).slice(0, 200)} (${booking.bookingReference || booking.id})`,
+                bookingId: booking.id,
+                purpose: isFixed ? 'fixed_booking' : 'issue_booking',
+                customerEmail: booking.contact?.email,
+                successUrl: `${base}/?payment=success&booking=${booking.id}`,
+                cancelUrl: `${base}/?payment=cancelled&booking=${booking.id}`,
+            });
+            await store.transitionBooking(booking.id, {
+                from: ['pending'], to: 'pending',
+                patch: { stripeSessionId: session.id, checkoutExpiresAt: session.expiresAt },
+            });
+            res.json({ checkoutUrl: session.url });
+        } catch (e) {
+            res.status(502).json({ error: `تعذّر فتح صفحة الدفع: ${e.message}` });
+        }
+    }));
+
     // 💳 سداد المتبقي لحجز عربون مُصدَر — يكمل نموذجنا الفريد بتحصيل فعلي
     app.post('/api/travel/fixed-packages/bookings/:id/pay-balance', verifyToken, wrap(async (req, res) => {
         if (!stripeClient) return res.status(503).json({ error: 'الدفع الإلكتروني غير مفعَّل على هذا الخادم.' });
@@ -1760,6 +1830,7 @@ export function createApp({
             const issued = await transitionBooking(store, booking.id, 'issued', {
                 providerOrderId: order.orderId,
                 bookingReference: order.bookingReference,
+                tickets: order.tickets || [],
                 paymentIntentId, paidAt: Date.now(),
             });
             if (issued) await notifyBookingIssued(issued);

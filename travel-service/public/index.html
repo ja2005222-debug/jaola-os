@@ -109,6 +109,25 @@
        لغة الجذر (يضبطها سكربت i18n فور التحميل) */
     html[lang="en"] .card.offer-best::before { content: '🤖 Best'; }
 
+    /* 🗓️ صيغة التاريخ داخل <input type="date"> يكتبها المتصفح بلغته هو لا
+       بلغة الصفحة، ولا تملك الصفحة تغييرها. ومتصفح عربي داخل واجهة
+       إنجليزية يعرضها معكوسة («موي/رهش/ةنس» — من صورة عطب حقيقية للمالك).
+       فنخفيها ما دام الحقل فارغاً وغير مركَّز (عنوان الحقل فوقه يكفي)،
+       وتعود فور التركيز ليكتب المسافر بثقة. الصف يُضاف بالجافاسكربت
+       للفارغ وحده — على حقلٍ ذي قيمة يخفي القيمة نفسها (مُجرَّب). */
+    input[type="date"].date-hint-off:not(:focus)::-webkit-datetime-edit { color: transparent; }
+
+    /* شارة الحالة تظهر في سطر رأس القسيمة — فتُخفى من سطر المسار داخلها
+       كي لا تتكرر مرتين متجاورتين */
+    #detailsBody .route .st { display: none; }
+    #detailsBody .seg, #detailsBody .note { margin-top: 4px; }
+    @media print {
+      /* الطباعة للقسيمة وحدها: البوابة كلها خلفها لا تعني الفندق ولا المطار */
+      body > *:not(dialog) { display: none !important; }
+      dialog#detailsDialog { position: static; border: 0; box-shadow: none; }
+      #detailsClose, #detailsPrint { display: none !important; }
+    }
+
     /* شارتان بمعنيين مختلفين لا تُخلَطان: توفير الباقة (أخضر — "ربحت
        مالاً") مقابل السعر الحصري المتعاقَد (بنفسجي — "لا تجده في مكان
        آخر"). قبل هذا كان الاثنان يتشاركان لون التوفير نفسه فيضيع الفرق. */
@@ -663,6 +682,16 @@
     </div>
   </dialog>
 
+  <!-- 📄 قسيمة الحجز: كل ما نملكه عن الحجز في مكان واحد — يسأل عنه المسافر
+       فعلاً («تفاصيل الحجز مقتضبة»، «أين تذكرتي؟»). للطباعة أيضاً. -->
+  <dialog id="detailsDialog" style="max-width:720px">
+    <div id="detailsBody"></div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="chip" id="detailsClose" type="button">إغلاق</button>
+      <button class="chip" id="detailsPrint" type="button">🖨️ طباعة / حفظ PDF</button>
+    </div>
+  </dialog>
+
   <script src="i18n.js"></script>
   <script>
     const $ = id => document.getElementById(id);
@@ -675,6 +704,14 @@
     const I18N_RULES = (uiLang === 'en' && window.JAOLA_I18N_RULES) || [];
     const I18N_SUBS = (uiLang === 'en' && window.JAOLA_I18N_SUBS) || [];
     const AR_RE = /[؀-ۿ]/; // لا عمل على عقدة بلا حرف عربي أصلاً
+    // استبدال جزئي محروس بحدّ كلمة (انظر translateText) — يُبنى مرة ويُكيَّش
+    const SUB_CACHE = new Map();
+    const SUB_RE = (ar) => {
+      if (!SUB_CACHE.has(ar)) {
+        SUB_CACHE.set(ar, new RegExp(ar.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![ء-ي])', 'g'));
+      }
+      return SUB_CACHE.get(ar);
+    };
 
     // ترجمة نص واحد: جدول حرفي ← قواعد أنماط (أرقام مُدرَجة) ← استبدالات جزئية
     function translateText(raw) {
@@ -686,7 +723,10 @@
       }
       let out = raw;
       for (const [ar, en] of I18N_SUBS) {
-        if (out.includes(ar)) out = out.split(ar).join(en);
+        // ⚠️ حدُّ كلمة إلزامي: الاستبدال الحرفي كان يقطع كلمةً أطول تشترك
+        // في البداية — «أسماء مسافريك» صارت «أسماء traveller(s)يك» فعلياً
+        // في الإنتاج. فلا يُستبدل إلا ما لا يتلوه حرف عربي.
+        if (out.includes(ar)) out = out.replace(SUB_RE(ar), en);
       }
       return out;
     }
@@ -719,6 +759,23 @@
     // نصوص تُبنى بالجافاسكربت بأجزاء مُدرَجة لا يلتقطها جدول المطابقة —
     // تُصاغ باللغة الصحيحة من المنبع بدل مطاردتها بأنماط هشّة.
     const T = (ar, en) => (uiLang === 'en' ? en : ar);
+
+    // 🗓️ حقول التاريخ: يُخفى تلميح الصيغة (انظر CSS أعلاه) حين تختلف لغة
+    // المتصفح عن لغة الواجهة فقط — فمتصفحٌ متوافق يبقى بتلميحه كاملاً.
+    const browserAr = String(navigator.language || '').toLowerCase().startsWith('ar');
+    const DATE_HINT_MISMATCH = (uiLang === 'en') === browserAr;
+    function markDateHint(el) {
+      if (!el || el.tagName !== 'INPUT' || el.type !== 'date') return;
+      el.classList.toggle('date-hint-off', !el.value);
+    }
+    function syncDateHints(root) {
+      if (!DATE_HINT_MISMATCH || !root) return;
+      markDateHint(root);
+      root.querySelectorAll?.('input[type="date"]').forEach(markDateHint);
+    }
+    for (const ev of ['input', 'change']) {
+      document.addEventListener(ev, e => { if (DATE_HINT_MISMATCH) markDateHint(e.target); });
+    }
     let chatHistory = []; // {role, content} — تُرسل كاملة لكل جولة
 
     // ─── الدخول الموحّد: توكن من ?token= أو التخزين المحلي ───
@@ -806,6 +863,10 @@
       $('stayCheckOut').value = new Date(Date.now() + 9 * 86400000).toISOString().slice(0, 10);
       $('pkgDepart').value = d.toISOString().slice(0, 10);
       $('pkgReturn').value = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10);
+      // ⚠️ بعد ملء التواريخ لا قبله: ضبط القيمة بالجافاسكربت لا يُطلق حدث
+      // input، فمزامنةٌ سابقة كانت تُبقي صف الإخفاء على حقلٍ صار ذا قيمة
+      // فتخفي التاريخ نفسه (رصده اختبار متصفح قبل النشر لا مستخدم بعده).
+      syncDateHints(document.body);
       loadTrips();
       loadPromos(); // بلا await: الشريط زينة، لا يؤخّر جاهزية الصفحة
       refreshBell();
@@ -1266,15 +1327,17 @@
     // حقول»). لا حلقة لا نهائية: الترجمة تكتب فقط عند تغيّر فعلي، والنص
     // المترجم لا يتغيّر في التمريرة الثانية.
     new MutationObserver((mutations) => {
-      if (I18N_MAP) {
-        for (const m of mutations) {
-          if (m.type === 'characterData') translateTree(m.target);
-          else m.addedNodes.forEach(n => translateTree(n));
-        }
+      for (const m of mutations) {
+        if (m.type === 'characterData') { if (I18N_MAP) translateTree(m.target); continue; }
+        m.addedNodes.forEach(n => { if (I18N_MAP) translateTree(n); });
       }
+      // مزامنة شاملة لا للمُضاف وحده: قيم التواريخ تُضبط بالجافاسكربت بلا
+      // أحداث (نقرة يوم في التقويم مثلاً) — والحقول قليلة فالكلفة مهملة.
+      syncDateHints(document.body);
       fxAnnotateAll();
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
     translateTree(document.body); // الهيكل الثابت يُترجم فور التحميل
+    syncDateHints(document.body);
 
     // 🌐 مبدّل اللغة: يظهر اللغة الهدف، والتبديل بإعادة تحميل نظيفة
     $('langBtn').textContent = uiLang === 'en' ? 'عربي' : 'EN';
@@ -1357,22 +1420,31 @@
         const waReady = !!whatsapp?.enabled;
         const waPhone = whatsapp?.phone || null;
         const waUsable = waReady && !!waPhone;
-        const waHint = !waReady ? 'واتساب غير مُفعّل على الخادم'
-          : !waPhone ? 'أضف رقم واتساب أدناه أولاً' : '';
+        const waHint = !waReady ? T('واتساب غير مُفعّل على الخادم', 'WhatsApp is not enabled on this server')
+          : !waPhone ? T('أضف رقم واتساب أدناه أولاً', 'Add a WhatsApp number below first') : '';
+        // 🌐 تسميات الفئات تصل من الخادم عربيةً (عقد ثابت لا يتغيّر بلغة
+        // العميل) — تُترجم هنا بمعرّف الفئة لا بنصها، ففئة جديدة في الخادم
+        // تظهر بنصها العربي بدل أن تختفي.
+        const CAT_EN = {
+          booking_issued: 'Booking confirmed', booking_cancelled: 'Booking cancelled',
+          airline_change: 'Airline change', price_drop: 'Watched price drop',
+          trip_reminder: 'Pre-trip reminder', admin_alert: 'Admin alert (staff)',
+        };
+        const catLabel = (key, meta) => (uiLang === 'en' ? (CAT_EN[key] || meta.label) : meta.label);
         $('prefRows').innerHTML = Object.entries(categories).map(([key, meta]) => `
           <div class="pref-row" data-cat="${esc(key)}">
-            <span class="pref-name">${esc(meta.label)}</span>
-            <label class="${meta.alwaysInApp ? 'locked' : ''}" title="${meta.alwaysInApp ? 'سجل الوقائع محفوظ دوماً' : ''}">
+            <span class="pref-name">${esc(catLabel(key, meta))}</span>
+            <label class="${meta.alwaysInApp ? 'locked' : ''}" title="${meta.alwaysInApp ? T('سجل الوقائع محفوظ دوماً', 'The event log is always kept') : ''}">
               <input type="checkbox" data-ch="inApp" ${prefs[key].inApp ? 'checked' : ''} ${meta.alwaysInApp ? 'disabled' : ''} />
-              داخل البوابة
+              ${T('داخل البوابة', 'In portal')}
             </label>
             <label>
               <input type="checkbox" data-ch="email" ${prefs[key].email ? 'checked' : ''} />
-              بريد
+              ${T('بريد', 'Email')}
             </label>
             <label class="${waUsable ? '' : 'locked'}" title="${esc(waHint)}">
               <input type="checkbox" data-ch="whatsapp" ${prefs[key].whatsapp ? 'checked' : ''} ${waUsable ? '' : 'disabled'} />
-              واتساب
+              ${T('واتساب', 'WhatsApp')}
             </label>
           </div>`).join('');
         $('prefRows').querySelectorAll('input[type=checkbox]').forEach(cb =>
@@ -2603,6 +2675,11 @@
 
     // ─── رحلاتي (طيران + فنادق + سيارات موحّدة) ───
     const ST_LABEL = { issued: 'مُصدَر ✅', pending: 'قيد الإصدار', failed: 'فشل', cancelled: 'مُلغى' };
+    // «قيد الإصدار» تصف حجزاً يُصدَر الآن — ومع بوابة دفع لا شيء يُصدر قبل
+    // السداد، فالمعلّق ينتظر المسافرَ لا الخادم. تسمية صادقة تمنع سؤال
+    // «لماذا لا يكتمل؟» أصلاً (سؤال المالك حرفياً: «كيف أكمل الدفع؟»).
+    const statusLabel = b => (b.status === 'pending' && config?.paymentsEnabled
+      ? T('بانتظار الدفع', 'Awaiting payment') : (ST_LABEL[b.status] || b.status));
     const CANCEL_PATH = {
       flight: id => `/api/travel/bookings/${id}/cancel`,
       stay: id => `/api/travel/stays/bookings/${id}/cancel`,
@@ -2614,7 +2691,7 @@
       if (b.kind === 'fixed_package') {
         const plan = b.paymentPlan;
         return `<div class="route">🎒 ${esc(b.offer?.title || 'باقة مجدولة')}
-            <span class="st st-${esc(b.status)}">${ST_LABEL[b.status] || esc(b.status)}</span></div>
+            <span class="st st-${esc(b.status)}">${esc(statusLabel(b))}</span></div>
           <div class="seg">🏨 ${esc(b.offer?.hotelName || '')} · ${esc(b.offer?.board || '')} · انطلاق ${esc(b.offer?.departDate || '')} (${b.offer?.nights || '؟'} ليالٍ) · ${b.seats || '؟'} مقاعد</div>
           ${b.status === 'pending'
             ? '<div class="note">💳 بانتظار إتمام الدفع — مقاعدك محجوزة، وتتحرر إن انتهت مهلة الدفع.</div>' : ''}
@@ -2630,27 +2707,28 @@
       if (b.kind === 'package') {
         const outbound = b.offer?.flight?.slices?.[0] || {};
         return `<div class="route">🎁 باقة: ${esc(outbound.origin || '؟')} ⇄ ${esc(outbound.destination || '؟')} + 🏨 ${esc(b.offer?.stay?.name || '')}
-            <span class="st st-${esc(b.status)}">${ST_LABEL[b.status] || esc(b.status)}</span></div>
+            <span class="st st-${esc(b.status)}">${esc(statusLabel(b))}</span></div>
           ${b.offer?.savings > 0 ? `<div class="note"><span class="pkg-badge">وفّرت ${b.offer.savings} ${esc(b.currency)}</span></div>` : ''}`;
       }
       if (b.kind === 'stay') {
         return `<div class="route">🏨 ${esc(b.offer?.name || '')}
-            <span class="st st-${esc(b.status)}">${ST_LABEL[b.status] || esc(b.status)}</span></div>
+            <span class="st st-${esc(b.status)}">${esc(statusLabel(b))}</span></div>
           <div class="seg">${esc(b.offer?.city || '')} · ${esc(b.offer?.checkInDate || '')} → ${esc(b.offer?.checkOutDate || '')}</div>`;
       }
       if (b.kind === 'car') {
         return `<div class="route">🚗 ${esc(b.offer?.vehicleName || '')}
-            <span class="st st-${esc(b.status)}">${ST_LABEL[b.status] || esc(b.status)}</span></div>
+            <span class="st st-${esc(b.status)}">${esc(statusLabel(b))}</span></div>
           <div class="seg">${esc(b.offer?.supplier || '')} · ${esc(b.offer?.pickupLocation || '')}</div>`;
       }
       return `<div class="route">${esc(b.offer?.owner || '')}
-          <span class="st st-${esc(b.status)}">${ST_LABEL[b.status] || esc(b.status)}</span></div>
+          <span class="st st-${esc(b.status)}">${esc(statusLabel(b))}</span></div>
         ${(b.offer?.slices || []).map(sliceHtml).join('')}`;
     }
     async function loadTrips() {
       const res = await api('/api/travel/bookings');
       if (!res.ok) return;
       const { bookings } = await res.json();
+      lastTrips = bookings; // نافذة التفاصيل تقرأ منها بلا نداء إضافي
       // 🎁 أبناء الباقات لا يظهرون صفوفاً مستقلة — يُجمَعون داخل بطاقة
       // أبيهم بمرجعَيهما، والإلغاء من الأب وحده (الساغا تدير الاثنين معاً)
       const childrenOf = {};
@@ -2684,6 +2762,11 @@
                 ${b.status === 'pending' && b.kind !== 'fixed_package' && config?.paymentsEnabled
                   ? '<div class="note">💳 بانتظار إتمام الدفع — لا يُصدر الحجز قبل السداد، ولن تُحاسَب إن لم تُكمله.</div>' : ''}
                 ${refundHtml(b)}
+                <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+                  <button class="chip" data-details="${esc(b.id)}" style="margin-top:0">📄 تفاصيل الحجز</button>
+                  ${b.status === 'pending' && config?.paymentsEnabled
+                    ? `<button class="chip" data-pay="${esc(b.id)}" style="margin-top:0;border-color:var(--ok);color:var(--ok)">💳 أكمل الدفع الآن</button>` : ''}
+                </div>
               </div>
               <div style="text-align:center">
                 ${b.sellAmount != null ? `<div class="price">${b.sellAmount} ${esc(b.currency)}</div>` : ''}
@@ -2703,6 +2786,18 @@
       // ⭐ تقييم رحلة منقضية — يفتح نافذة المراجعات بنموذج الإرسال
       document.querySelectorAll('[data-fx-review]').forEach(btn =>
         btn.addEventListener('click', () => openReviews(btn.dataset.fxReview, true)));
+      // 📄 قسيمة الحجز الكاملة
+      document.querySelectorAll('[data-details]').forEach(btn =>
+        btn.addEventListener('click', () => openBookingDetails(btn.dataset.details)));
+      // 💳 إكمال دفع لم يتم — يستأنف الجلسة القائمة إن كانت حيّة
+      document.querySelectorAll('[data-pay]').forEach(btn =>
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          const res = await api(`/api/travel/bookings/${btn.dataset.pay}/pay`, { method: 'POST' });
+          const data = await res.json();
+          if (!res.ok) { alert(data.error || 'تعذّر فتح صفحة الدفع.'); btn.disabled = false; loadTrips(); return; }
+          window.location.href = data.checkoutUrl;
+        }));
       // 💳 سداد المتبقي — جلسة دفع جديدة بنفس تجربة الحجز
       document.querySelectorAll('[data-fx-balance]').forEach(btn =>
         btn.addEventListener('click', async () => {
@@ -2713,6 +2808,92 @@
           window.location.href = data.checkoutUrl;
         }));
     }
+
+    // ─── 📄 قسيمة الحجز: كل ما نملكه، ومتى يصير تذكرة ───
+    //
+    // «تفاصيل الحجز مقتضبة» — وهي كانت كذلك فعلاً: بطاقة الرحلة تعرض
+    // المسار والحالة وحدهما، بينما الخادم يحفظ الشرائح والقطاعات والأمتعة
+    // والمسافرين والسياسات كاملةً. هنا تُعرض كلها من الحجز المخزَّن نفسه
+    // بلا نداء إضافي للمزوّد (نداءُ سردٍ لكل فتحة تفاصيل كلفةٌ بلا فائدة).
+    let lastTrips = [];
+    function ticketNoteHtml(b) {
+      if (b.kind === 'stay') {
+        return `<div class="note">🏨 ${T('التأكيد نهائي: يكفي إبراز رقم المرجع أعلاه في استقبال الفندق مع هوية المسافر — لا تذكرة ورقية هنا.',
+          'Confirmation is final: show the reference above at the hotel desk with an ID — there is no paper ticket here.')}</div>`;
+      }
+      if (b.kind === 'car') {
+        return `<div class="note">🚗 ${T('يُبرَز رقم المرجع ورخصة القيادة وبطاقة ائتمان باسم السائق عند الاستلام.',
+          'Show the reference, a driving licence and a credit card in the driver’s name at pickup.')}</div>`;
+      }
+      const tickets = (b.tickets || []).filter(t => t?.number);
+      return `<div class="note" style="line-height:1.8">
+        ✈️ <strong>${T('عن التذكرة وبطاقة الصعود:', 'About your ticket and boarding pass:')}</strong><br>
+        ${T('حجزك مؤكَّد لدى الناقل برقم المرجع (PNR) أعلاه — وهو التذكرة نفسها اليوم: تذاكر الطيران إلكترونية بالكامل ولا تُصدر ورقاً.',
+            'Your booking is confirmed with the airline under the reference (PNR) above — that is the ticket itself today: air tickets are fully electronic and no paper is issued.')}<br>
+        ${tickets.length
+          ? `🎫 ${T('رقم التذكرة الإلكترونية:', 'E-ticket number:')} <strong>${tickets.map(t => esc(t.number)).join('، ')}</strong><br>`
+          : `🎫 ${T('رقم التذكرة الإلكترونية يصدره الناقل بعد التأكيد وقد يتأخر دقائق — المرجع كافٍ حتى ذلك.',
+                   'The e-ticket number is issued by the airline after confirmation and may take a few minutes — the reference is enough until then.')}<br>`}
+        🪪 <strong>${T('بطاقة الصعود لا تصدر من هنا', 'The boarding pass is not issued here')}</strong>: ${
+          T('يفتح تسجيل الوصول لدى الناقل قبل الإقلاع بـ24–48 ساعة، فتستخرجها من موقع الناقل أو تطبيقه أو من مكتب المطار برقم المرجع وجواز السفر.',
+            'Airline check-in opens 24–48 hours before departure; get it from the airline’s site or app, or at the airport desk, using the reference and your passport.')}
+      </div>`;
+    }
+    function paymentLineHtml(b) {
+      const plan = b.paymentPlan;
+      const rows = [];
+      if (plan) {
+        rows.push(`${T('المدفوع', 'Paid')}: <strong>${plan.paidNow} ${esc(b.currency)}</strong>`);
+        if (plan.remaining > 0) rows.push(`${T('المتبقي', 'Remaining')}: <strong>${plan.remaining} ${esc(b.currency)}</strong>${plan.dueDate ? ` (${T('قبل', 'before')} ${esc(plan.dueDate)})` : ''}`);
+      } else if (b.status === 'issued') {
+        rows.push(`${T('المدفوع', 'Paid')}: <strong>${b.sellAmount} ${esc(b.currency)}</strong>`);
+      } else {
+        rows.push(`${T('المطلوب', 'Due')}: <strong>${b.sellAmount} ${esc(b.currency)}</strong>`);
+      }
+      if (b.paidAt) rows.push(`${T('وقت الدفع', 'Paid at')}: ${esc(fmtWhen(b.paidAt))}`);
+      return `<div class="seg">💳 ${rows.join(' · ')}</div>`;
+    }
+    function detailsHtml(b) {
+      const paxRows = (b.passengers || []).map((p, i) => `<li>${
+        esc([p.title, p.givenName, p.familyName].filter(Boolean).join(' ') || `${T('مسافر', 'Traveller')} ${i + 1}`)}${
+        p.bornOn ? ` · ${esc(p.bornOn)}` : ''}</li>`).join('');
+      const parts = [];
+      parts.push(`<h3 style="margin-bottom:6px">📄 ${T('تفاصيل الحجز', 'Booking details')}</h3>`);
+      parts.push(`<div class="seg">${T('الحالة', 'Status')}: <span class="st st-${esc(b.status)}">${esc(statusLabel(b))}</span>
+        ${b.bookingReference ? ` · ${T('المرجع', 'Reference')}: <strong>${esc(b.bookingReference)}</strong>` : ''}
+        · ${T('حُجز في', 'Booked on')} ${esc(fmtWhen(b.at))}</div>`);
+      parts.push(bookingBodyHtml(b));
+      // تفاصيل المكوّن نفسه — نفس اللوحات المستعملة في نتائج البحث، لكن
+      // بلا «صلاحية السعر»: مهلة عرضٍ انقضت بالحجز نفسه، وعرضها على حجز
+      // قائم يوهم بأنه ينتهي.
+      const noExpiry = o => ({ ...(o || {}), expiresAt: null });
+      if (b.kind === 'stay') parts.push(stayPolicyHtml(b.offer || {}));
+      else if (!b.kind || b.kind === 'flight') parts.push(flightDetailsHtml(noExpiry(b.offer)));
+      else if (b.kind === 'package') {
+        parts.push(flightDetailsHtml(noExpiry(b.offer?.flight)));
+        parts.push(stayPolicyHtml(b.offer?.stay || {}));
+      }
+      if (paxRows) parts.push(`<div><strong>${T('المسافرون', 'Travellers')}</strong><ul>${paxRows}</ul></div>`);
+      if (b.contact?.email || b.contact?.phone) {
+        parts.push(`<div class="seg">📧 ${esc(b.contact.email || '')} ${b.contact.phone ? '· 📱 ' + esc(b.contact.phone) : ''}</div>`);
+      }
+      parts.push(paymentLineHtml(b));
+      if (b.status === 'issued') parts.push(ticketNoteHtml(b));
+      if (b.status === 'pending') {
+        parts.push(`<div class="note">💳 ${T('لم يُصدر شيء بعد ولم تُحاسَب: أكمل الدفع من زر «أكمل الدفع الآن» في بطاقة الحجز، وتصلك التأكيدات فور وصوله.',
+          'Nothing is issued yet and you have not been charged: complete payment from the “Pay now” button on the booking card, and confirmations arrive as soon as it lands.')}</div>`);
+      }
+      if (b.error) parts.push(`<div class="error">${esc(b.error)}</div>`);
+      return parts.join('');
+    }
+    async function openBookingDetails(id) {
+      const b = lastTrips.find(x => x.id === id);
+      if (!b) return;
+      $('detailsBody').innerHTML = detailsHtml(b);
+      $('detailsDialog').showModal();
+    }
+    $('detailsClose').addEventListener('click', () => $('detailsDialog').close());
+    $('detailsPrint').addEventListener('click', () => window.print());
 
     // ─── المساعد ───
     function pushMsg(role, content) {
