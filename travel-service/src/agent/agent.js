@@ -736,7 +736,7 @@ export function createTravelAgent({
          * → {reply, actions} حيث actions سجل ما نُفّذ فعلاً (تعرضه الواجهة
          * كرقائق شفافية: المستخدم يرى ماذا فعل الوكيل لا كلامه فقط).
          */
-        async chat({ messages, services, memory = '', now = Date.now() }) {
+        async chat({ messages, services, memory = '', now = Date.now(), lang = 'ar' }) {
             // ⚠️ العطب المُصلَح هنا: SYSTEM_PROMPT لا يذكر تاريخ اليوم أبداً،
             // فحين يطلب المسافر "غداً" لا مرجع لدى النموذج ليحسب منه —
             // شُوهد فعلياً يحاول تمرير الكلمة "tomorrow" حرفياً في وسيط
@@ -759,6 +759,13 @@ export function createTravelAgent({
                 { role: 'system', content: SYSTEM_PROMPT },
                 { role: 'system', content: dateLine },
             ];
+            // 🌐 لغة الرد تتبع لغة الواجهة لا لغة آخر رسالة: مستخدم واجهته
+            // إنجليزية كان يكتب بالإنجليزية ويُجاب بالعربية (شوهد فعلياً) لأن
+            // SYSTEM_PROMPT عربي فيجرّ النموذج إليها. رسالة نظام منفصلة
+            // كالتاريخ أعلاه: ثابتة لكل مستخدمي الإنجليزية فلا تفسد الكاش.
+            if (lang === 'en') {
+                convo.push({ role: 'system', content: 'The traveller is using the English interface — always reply in English, regardless of the language of previous messages.' });
+            }
             if (memory) convo.push({ role: 'system', content: memory });
             convo.push(...messages);
             const actions = [];
@@ -818,7 +825,12 @@ export function createTravelAgent({
                     });
                 }
             }
-            return { reply: 'تجاوزت الجولة حد الأدوات — جرّب طلباً أبسط أو أكمل خطوة خطوة.', actions, provider: lastProviderUsed };
+            return {
+                reply: lang === 'en'
+                    ? 'This turn hit the tool limit — try a simpler request, or continue step by step.'
+                    : 'تجاوزت الجولة حد الأدوات — جرّب طلباً أبسط أو أكمل خطوة خطوة.',
+                actions, provider: lastProviderUsed,
+            };
         },
 
         /**
@@ -832,8 +844,14 @@ export function createTravelAgent({
          * (شبكة، مهلة، رد فارغ) يعيد النص الأصلي — القراءة لا تختفي لأن
          * النموذج تعثّر.
          */
-        async phraseInsight(deterministicText) {
-            return rephrase(deterministicText, INSIGHT_PROMPT);
+        async phraseInsight(deterministicText, lang = 'ar') {
+            // 🌐 النص الحتمي يصل بلغة الواجهة أصلاً (renderInsight) — السطر
+            // الإضافي يمنع النموذج من «الترجمة للعربية» التي تطلبها التعليمة
+            // الأساسية حين يكون المصدر إنجليزياً.
+            const prompt = lang === 'en'
+                ? `${INSIGHT_PROMPT}\nالنص يصلك بالإنجليزية — أعد صياغته بالإنجليزية، لا تترجمه.`
+                : INSIGHT_PROMPT;
+            return rephrase(deterministicText, prompt);
         },
 
         /**

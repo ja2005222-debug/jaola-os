@@ -133,6 +133,8 @@ window.JAOLA_I18N = {
         'أنا / زوجتي': 'Me / spouse',
 
         // ─── حالات الحجز وأنواعه (نصوص مولَّدة بالجافاسكربت) ───
+        '💳 سدّد المتبقي الآن': '💳 Pay balance now',
+        '💳 بانتظار إتمام الدفع — مقاعدك محجوزة، وتتحرر إن انتهت مهلة الدفع.': '💳 Awaiting payment — your seats are held and release if the payment window expires.',
         'مُصدَر ✅': 'Issued ✅',
         'قيد الإصدار': 'Issuing',
         'فشل': 'Failed',
@@ -192,6 +194,33 @@ window.JAOLA_I18N = {
         '▴ إخفاء التفاصيل': '▴ Hide details',
         'خريطة موقع الفندق': 'Hotel location map',
         'خرائط Google': 'Google Maps',
+
+        // ─── تفاصيل الرحلة والفندق (من صور فجوات حقيقية للمالك) ───
+        '🎫 الدرجة:': '🎫 Cabin:',
+        'الذهاب': 'Outbound',
+        'العودة': 'Return',
+        'الرحلة': 'Flight',
+        '🧳 لم يُصرّح المزوّد بالأمتعة لهذا القطاع': '🧳 The provider did not declare baggage for this segment',
+        '🛏️ الغرفة:': '🛏️ Room:',
+        'رسوم تُدفع في الفندق (غير مشمولة بالسعر أعلاه)': 'Fees paid at the hotel (not included in the price above)',
+        '🏨 فنادق الوجهة': '🏨 Destination hotels',
+        'لا رحلات': 'No flights',
+        'تعذّر جلب التقويم.': 'Could not fetch the calendar.',
+        'تعذّر فتح صفحة الدفع.': 'Could not open the payment page.',
+
+        // ─── المساعد ───
+        '🤖 قراءة المساعد': "🤖 Assistant's read",
+        '🔄 جديدة': '🔄 New chat',
+        'محادثة جديدة': 'New conversation',
+        'المساعد ينفّذ فعلياً: يبحث ويقارن ويحجز ويلغي بالحوار — وكل إجراء نفّذه يظهر كرقاقة شفافية.':
+            'The assistant actually acts: it searches, compares, books and cancels in conversation — and every action it takes shows as a transparency chip.',
+        'مثال: احجز لي رحلة من الرياض للقاهرة الأسبوع القادم بأرخص سعر':
+            'e.g.: book me the cheapest Riyadh–Cairo flight next week',
+        '↩️ استُؤنفت محادثتك السابقة': '↩️ Your previous conversation was resumed',
+        '⚠️ تعذّر الاتصال بالخادم.': '⚠️ Could not reach the server.',
+        'غير مفعَّل على هذا الخادم': 'Not enabled on this server',
+        '🧪 بيئة تجريبية — الحجوزات هنا لا تُصدر تذاكر حقيقية ولا تُحصَّل أموال.':
+            '🧪 Sandbox environment — bookings here issue no real tickets and charge no money.',
     },
 };
 
@@ -211,6 +240,35 @@ window.JAOLA_I18N_RULES = [
     [/^(\d+) بالغ — غرفة مزدوجة$/, '$1 adult(s) — double room'],
     [/^(\d+) غرفة مفردة/, '$1 single room(s)'],
     [/^(\d+) طفل$/, '$1 child(ren)'],
+    [/^👥 حتى (\d+)$/, '👥 Up to $1'],
+    [/^⏳ صلاحية السعر حتى (.+)$/, '⏳ Price valid until $1'],
+    // سطرا سياسة الإلغاء — الأخصّ أولاً (أول نمط مطابق يفوز)
+    [/^ابتداءً من (.+) تُخصم رسوم يحددها الفندق$/, 'From $1 a fee set by the hotel applies'],
+    [/^ابتداءً من (.+) تُخصم (.+)$/, 'From $1 a charge of $2 applies'],
+
+    // ─── رقائق شفافية المساعد (نصوصها تُبنى في الخادم بأرقام مُدرَجة) ───
+    [/^🔎 (.+) \((\d+) عروض\)$/, '🔎 $1 ($2 offers)'],
+    [/^💰 عرض بسعر (.+)$/, '💰 Offer at $1'],
+    [/^💰 عرض فندق بسعر (.+)$/, '💰 Hotel offer at $1'],
+    [/^💰 عرض سيارة بسعر (.+)$/, '💰 Car offer at $1'],
+    [/^✅ حُجز — المرجع (.+)$/, '✅ Booked — reference $1'],
+    [/^✅ حُجز فندق — المرجع (.+)$/, '✅ Hotel booked — reference $1'],
+    [/^✅ حُجزت سيارة — المرجع (.+)$/, '✅ Car booked — reference $1'],
+    [/^↩️ أُلغي الحجز (.+)$/, '↩️ Cancelled booking $1'],
+    [/^↩️ أُلغي حجز الفندق (.+)$/, '↩️ Cancelled hotel booking $1'],
+    [/^↩️ أُلغي حجز السيارة (.+)$/, '↩️ Cancelled car booking $1'],
+    [/^🧳 (\d+) حجوزات$/, '🧳 $1 bookings'],
+    [/^🏨 (.+) \((\d+) فنادق\)$/, '🏨 $1 ($2 hotels)'],
+    [/^🚗 (.+) \((\d+) سيارات\)$/, '🚗 $1 ($2 cars)'],
+    [/^📅 (.+) \((\d+) تواريخ\)$/, '📅 $1 ($2 dates)'],
+    [/^⚠️ (\d+) تعارض محتمل$/, '⚠️ $1 potential conflict(s)'],
+    [/^✅ لا تعارض$/, '✅ No conflicts'],
+    [/^👁️ مراقبة سعر (.+)$/, '👁️ Price watch $1'],
+    [/^👁️ (\d+) مراقبات نشطة$/, '👁️ $1 active watches'],
+    [/^🚫 أُلغيت المراقبة (.+)$/, '🚫 Watch cancelled $1'],
+    [/^🌤️ طقس (.+) \((\d+) أيام\)$/, '🌤️ $1 weather ($2 days)'],
+    [/^📋 ملخص رحلة \((\d+) حجوزات\)$/, '📋 Trip summary ($1 bookings)'],
+    [/^🔀 أجاب (.+) \(حصّة المزوّد الأساسي مؤقتاً ممتلئة\)$/, '🔀 Answered by $1 (primary provider quota temporarily full)'],
 ];
 
 /**
@@ -228,4 +286,6 @@ window.JAOLA_I18N_SUBS = [
     ['شامل الإفطار', 'Breakfast included'],
     ['إفطار وعشاء', 'Half board'],
     ['بدون إعاشة', 'Room only'],
+    ['حقيبة مسجَّلة', 'checked bag'],
+    ['حقيبة يد', 'carry-on bag'],
 ];

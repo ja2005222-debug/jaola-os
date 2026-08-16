@@ -34,6 +34,7 @@ import {
 import { normalizeReview, maskReviewerName, aggregateRating, publicReview } from '../src/reviews.js';
 import { pegRate, fxRate, USD_PEGS, DISPLAY_CURRENCIES } from '../src/fx.js';
 import { bookingPoints, computeLoyalty, LOYALTY_TIERS } from '../src/loyalty.js';
+import { parseStripeSignature, verifyStripeWebhookSignature, toStripeForm, createStripeClient } from '../src/payments/stripeClient.js';
 import { isBalanceReminderDue, renderBalanceReminder, sendBalanceReminders, BALANCE_REMINDER_DAYS_AHEAD } from '../src/balanceReminders.js';
 import { createContractedStaysProvider, withContractedStays } from '../src/providers/contractedStaysProvider.js';
 import { retryPackageCompensations } from '../src/packages.js';
@@ -518,6 +519,38 @@ describe('insights: قراءة نتائج البحث تُحسب بالكود ل�
         assert.equal(formatDuration(45), '45 د');
         assert.equal(formatDuration(0), '');
         assert.equal(formatDuration(null), '');
+    });
+
+    // 🌐 القراءة بلغة الواجهة تُصاغ في الخادم لا بجدول ترجمة العميل —
+    // جُمَل بأرقام مُدرَجة بلا حصر يستحيل التقاطها بمطابقة نصية.
+    test('🌐 renderInsight بالإنجليزية: كل الأنواع تُصاغ بلا حرف عربي وبأرقامها كاملة', () => {
+        assert.equal(formatDuration(450, 'en'), '7h 30m');
+        assert.equal(formatDuration(420, 'en'), '7h');
+        assert.equal(formatDuration(45, 'en'), '45m');
+        const AR = /[؀-ۿ]/;
+        const samples = [
+            { type: 'direct_alternative', index: 1, extraAmount: 30, extraPct: 12, savedMin: 90, currency: 'USD', stopsAvoided: 2 },
+            { type: 'cheapest_is_fastest', index: 0 },
+            { type: 'fastest_premium', index: 2, extraAmount: 40, extraPct: 20, savedMin: 120, currency: 'USD' },
+            { type: 'cheapest_no_baggage', index: 0, alternativeIndex: 1, extraAmount: 15, currency: 'USD' },
+            { type: 'price_spread', spreadPct: 80 },
+            { type: 'package_savings', savings: 55, savingsPct: 9, separateTotal: 600, currency: 'USD' },
+            { type: 'rating_upgrade', index: 1, rating: 5, cheapestRating: 3, extraAmount: 60, extraPct: 15, currency: 'USD' },
+            { type: 'breakfast_included', index: 1, extraAmount: 20, extraPct: 5, currency: 'USD' },
+            { type: 'cheapest_not_refundable', index: 0, alternativeIndex: 2, extraAmount: 25, extraPct: 8, currency: 'USD' },
+            { type: 'fees_at_property', index: 0, feesAmount: 35, currency: 'USD' },
+        ];
+        for (const f of samples) {
+            const en = renderInsight([f], 'en');
+            assert.ok(en.length > 0, `صياغة إنجليزية لـ${f.type}`);
+            assert.ok(!AR.test(en), `لا عربي في صياغة ${f.type}: ${en}`);
+            // كل رقم في الحقائق يظهر في النص — الترجمة لا تُسقط حقيقة
+            for (const key of ['extraAmount', 'extraPct', 'spreadPct', 'savings', 'rating', 'feesAmount']) {
+                if (Number.isFinite(f[key])) assert.ok(en.includes(String(f[key])), `${key} في ${f.type}`);
+            }
+        }
+        // الافتراضي بلا لغة يبقى عربياً حرفياً — لا كسر لأي مستهلك قائم
+        assert.ok(AR.test(renderInsight([samples[1]])));
     });
 
     // ⚠️ الحقن: نص الصياغة يذهب لنموذج لغوي، فحقل نصّي من العميل كان
@@ -1562,6 +1595,65 @@ describe('applyOfferFilters: فلترة قبل الاقتطاع — وحدة ن�
     });
 });
 
+describe('💳 stripeClient: وحدات نقية — توقيع webhook وترميز النماذج', () => {
+    const SECRET = 'whsec_test_secret';
+    const signedHeader = (body, t = Math.floor(Date.now() / 1000)) => {
+        const v1 = crypto.createHmac('sha256', SECRET).update(`${t}.${body}`).digest('hex');
+        return `t=${t},v1=${v1}`;
+    };
+
+    test('🔏 التوقيع: الصحيح يمر، والمزوَّر والقديم والمشوَّه تُرفض', () => {
+        const body = '{"type":"checkout.session.completed"}';
+        assert.ok(verifyStripeWebhookSignature({ rawBody: body, header: signedHeader(body), secret: SECRET }));
+        // v1 متعددة أثناء تدوير الأسرار — يكفي تطابق واحدة
+        const t = Math.floor(Date.now() / 1000);
+        const good = crypto.createHmac('sha256', SECRET).update(`${t}.${body}`).digest('hex');
+        assert.ok(verifyStripeWebhookSignature({
+            rawBody: body, header: `t=${t},v1=${'0'.repeat(64)},v1=${good}`, secret: SECRET,
+        }));
+        // جسم مختلف عن الموقَّع → رفض
+        assert.ok(!verifyStripeWebhookSignature({ rawBody: body + ' ', header: signedHeader(body), secret: SECRET }));
+        // حدث أقدم من النافذة (إعادة تشغيل مسجَّلة) → رفض
+        assert.ok(!verifyStripeWebhookSignature({
+            rawBody: body, header: signedHeader(body, Math.floor(Date.now() / 1000) - 3600), secret: SECRET,
+        }));
+        assert.ok(!verifyStripeWebhookSignature({ rawBody: body, header: 'garbage', secret: SECRET }));
+        assert.ok(!verifyStripeWebhookSignature({ rawBody: body, header: signedHeader(body), secret: '' }));
+        assert.equal(parseStripeSignature('t=abc,v1=zz'), null);
+    });
+
+    test('📦 toStripeForm: التداخل بأقواس أسلوب Stripe', () => {
+        const form = toStripeForm({
+            mode: 'payment',
+            'line_items[0]': { quantity: 1, price_data: { currency: 'usd', unit_amount: 54000 } },
+            metadata: { bookingId: 'trv_1' },
+        });
+        const s = form.toString();
+        assert.ok(s.includes(encodeURIComponent('line_items[0][price_data][unit_amount]') + '=54000'));
+        assert.ok(s.includes(encodeURIComponent('metadata[bookingId]') + '=trv_1'));
+        assert.ok(s.includes('mode=payment'));
+    });
+
+    test('🌐 createCheckoutSession: سنتات صحيحة وترويسة مصادقة — عبر fetch مسجَّل', async () => {
+        const calls = [];
+        const client = createStripeClient({
+            secretKey: 'sk_test_x',
+            fetchImpl: async (url, opts) => {
+                calls.push({ url, opts });
+                return { ok: true, json: async () => ({ id: 'cs_1', url: 'https://checkout.stripe.test/c/1', expires_at: 123 }) };
+            },
+        });
+        const s = await client.createCheckoutSession({
+            amount: 540.5, currency: 'USD', title: 'عربون', bookingId: 'trv_1',
+            purpose: 'fixed_booking', successUrl: 'https://x/s', cancelUrl: 'https://x/c',
+        });
+        assert.equal(s.url, 'https://checkout.stripe.test/c/1');
+        assert.equal(calls[0].opts.headers.Authorization, 'Bearer sk_test_x');
+        assert.ok(calls[0].opts.body.includes('unit_amount%5D=54050'), 'المبلغ بوحدات صغرى صحيحة (54050 سنتاً)');
+        assert.equal(createStripeClient({ secretKey: null }), null, 'بلا مفتاح → لا عميل (الدفع معطَّل بأمان)');
+    });
+});
+
 describe('bilingual data: الأسماء الإنجليزية تصل الواجهة من مصادرها', () => {
     test('🧭 استنتاج الموقع يعمل للمناطق الأوروبية والإقليمية معاً وبأسماء ثنائية', () => {
         // تبليغ المالك: كان في أمستردام والحقل يصرّ على القاهرة — القاعدة
@@ -1923,8 +2015,8 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
     describe(`بوابة السفر — تخزين: ${storeLabel}`, () => {
         let store, server, baseUrl, provider, staysProvider, carsProvider;
 
-        async function call(pathname, { method = 'GET', token = null, body = null } = {}) {
-            const headers = { 'Content-Type': 'application/json' };
+        async function call(pathname, { method = 'GET', token = null, body = null, headers: extraHeaders = {} } = {}) {
+            const headers = { 'Content-Type': 'application/json', ...extraHeaders };
             if (token) headers.Authorization = `Bearer ${token}`;
             const res = await fetch(baseUrl + pathname, {
                 method, headers, body: body ? JSON.stringify(body) : undefined,
@@ -2716,6 +2808,155 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 method: 'POST', token,
             });
             assert.equal((await call('/api/travel/loyalty', { token })).data.loyalty.points, 0);
+        });
+
+        test('💳 دورة الدفع كاملة: معلّق → webhook → مُصدَر، وانتهاء المهلة يحرر المقاعد', async () => {
+            const WHSEC = 'whsec_flow_secret';
+            const sessions = new Map(); // ما «أنشأه» العميل الوهمي — للمصالحة
+            const fakeStripe = {
+                name: 'stripe',
+                async createCheckoutSession(args) {
+                    const id = 'cs_' + (sessions.size + 1);
+                    sessions.set(id, { args, status: 'open', paymentStatus: 'unpaid' });
+                    return { id, url: `https://checkout.stripe.test/${id}`, expiresAt: 999 };
+                },
+                async getCheckoutSession(id) {
+                    const s = sessions.get(id);
+                    return { id, status: s?.status || 'expired', paymentStatus: s?.paymentStatus || 'unpaid', paymentIntent: 'pi_' + id, metadata: s?.args || {} };
+                },
+                async createRefund({ paymentIntentId }) {
+                    return { id: 're_1', status: 'succeeded', amount: 540, currency: 'USD' };
+                },
+            };
+            // app منفصل بدفع مفعَّل — نفس نمط spawnApp في اختبارات الهوامش
+            const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaola-stripe-'));
+            const store2 = createFileStore({ dataDir: dir });
+            await store2.init();
+            const app2 = createApp({
+                store: store2, jwtSecret: JWT_SECRET,
+                provider: createMockTravelProvider(), staysProvider: createMockStaysProvider(),
+                carsProvider: createMockCarsProvider(), adminUsers: ['admin'],
+                stripeClient: fakeStripe, stripeWebhookSecret: WHSEC,
+                publicUrl: 'https://portal.test', cronSecret: 'cron-secret',
+            });
+            const server2 = await new Promise(r => { const x = app2.listen(0, () => r(x)); });
+            const base = `http://127.0.0.1:${server2.address().port}`;
+            const call2 = async (pathname, { method = 'GET', token, body, headers = {} } = {}) => {
+                const res = await fetch(base + pathname, {
+                    method,
+                    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...headers },
+                    body: body === undefined ? undefined : (typeof body === 'string' ? body : JSON.stringify(body)),
+                });
+                let data = null; try { data = await res.json(); } catch { /* بلا جسم */ }
+                return { status: res.status, data };
+            };
+            const signedWebhook = (payload) => {
+                const raw = JSON.stringify(payload);
+                const t = Math.floor(Date.now() / 1000);
+                const v1 = crypto.createHmac('sha256', WHSEC).update(`${t}.${raw}`).digest('hex');
+                return { body: raw, headers: { 'stripe-signature': `t=${t},v1=${v1}` } };
+            };
+
+            try {
+                const admin = makeToken('admin');
+                const buyer = makeToken('payer');
+                const pkg = await call2('/api/travel/admin/fixed-packages', {
+                    method: 'POST', token: admin,
+                    body: {
+                        title: 'باقة الدفع', city: 'دبي', iata: 'DXB', hotelName: 'فندق',
+                        departDate: futureDate(60), nights: 4, seatCapacity: 4,
+                        sourcing: 'group', currency: 'USD', pricePerSeat: 900, depositPct: 30,
+                    },
+                });
+                const pkgId = pkg.data.package.id;
+                assert.equal((await call2('/api/travel/config', { token: buyer })).data.paymentsEnabled, true);
+
+                // 1) الحجز مع الدفع: checkoutUrl + معلّق + المقاعد محجوزة له
+                const booked = await call2(`/api/travel/fixed-packages/${pkgId}/bookings`, {
+                    method: 'POST', token: buyer,
+                    body: { adults: 2, pay: 'deposit', leadName: 'وائل', contact: { email: 'w@x.com' } },
+                });
+                assert.equal(booked.status, 200);
+                assert.match(booked.data.checkoutUrl, /^https:\/\/checkout\.stripe\.test\//);
+                assert.equal(booked.data.booking.status, 'pending', 'لا إصدار قبل الدفع');
+                const bookingId = booked.data.booking.id;
+                let adminView = (await call2('/api/travel/admin/fixed-packages', { token: admin }))
+                    .data.packages.find(p => p.id === pkgId);
+                assert.equal(adminView.seatsSold, 2, 'المقاعد محجوزة للمعلّق — لا بيع مزدوج أثناء الدفع');
+                // العميل الوهمي استلم المبلغ الصحيح: عربون 30% من 1800 = 540 → 54000 سنت
+                assert.equal(sessions.get('cs_1').args.amount, 540);
+
+                // 2) توقيع مزوَّر → 401 ولا تغيير
+                const forged = signedWebhook({ type: 'checkout.session.completed', data: { object: { metadata: { bookingId, purpose: 'fixed_booking' } } } });
+                assert.equal((await call2('/api/travel/webhooks/stripe', {
+                    method: 'POST', body: forged.body, headers: { 'stripe-signature': 't=1,v1=' + '0'.repeat(64) },
+                })).status, 401);
+
+                // 3) webhook دفع مكتمل موقَّع → إصدار + مرجع + إشعار
+                const done = signedWebhook({
+                    type: 'checkout.session.completed',
+                    data: { object: { payment_intent: 'pi_cs_1', metadata: { bookingId, purpose: 'fixed_booking' } } },
+                });
+                assert.equal((await call2('/api/travel/webhooks/stripe', { method: 'POST', body: done.body, headers: done.headers })).status, 200);
+                const afterPay = (await call2('/api/travel/bookings', { token: buyer })).data.bookings.find(b => b.id === bookingId);
+                assert.equal(afterPay.status, 'issued');
+                assert.match(afterPay.bookingReference, /^FP-/);
+                assert.equal(afterPay.paymentPlan.remaining, 1260);
+                const inbox = await call2('/api/travel/notifications', { token: buyer });
+                assert.ok(inbox.data.notifications.some(n => n.title.includes('تأكيد حجزك')));
+                // التكرار (Stripe يعيد الإرسال) لا يكسر شيئاً
+                assert.equal((await call2('/api/travel/webhooks/stripe', { method: 'POST', body: done.body, headers: done.headers })).status, 200);
+
+                // 4) سداد المتبقي: جلسة جديدة ثم webhook يصفّر الخطة
+                const bal = await call2(`/api/travel/fixed-packages/bookings/${bookingId}/pay-balance`, { method: 'POST', token: buyer });
+                assert.equal(bal.status, 200);
+                assert.equal(sessions.get('cs_2').args.amount, 1260);
+                const balDone = signedWebhook({
+                    type: 'checkout.session.completed',
+                    data: { object: { metadata: { bookingId, purpose: 'fixed_balance' } } },
+                });
+                await call2('/api/travel/webhooks/stripe', { method: 'POST', body: balDone.body, headers: balDone.headers });
+                const paidFull = (await call2('/api/travel/bookings', { token: buyer })).data.bookings.find(b => b.id === bookingId);
+                assert.equal(paidFull.paymentPlan.remaining, 0);
+                assert.equal((await call2(`/api/travel/fixed-packages/bookings/${bookingId}/pay-balance`, { method: 'POST', token: buyer })).status, 400, 'لا سداد لمدفوع بالكامل');
+
+                // 5) حجز ثانٍ تنتهي مهلة دفعه → يفشل وتتحرر مقاعده
+                const b2 = await call2(`/api/travel/fixed-packages/${pkgId}/bookings`, {
+                    method: 'POST', token: buyer,
+                    body: { adults: 2, pay: 'full', leadName: 'وائل', contact: { email: 'w@x.com' } },
+                });
+                const expiredHook = signedWebhook({
+                    type: 'checkout.session.expired',
+                    data: { object: { metadata: { bookingId: b2.data.booking.id, purpose: 'fixed_booking' } } },
+                });
+                await call2('/api/travel/webhooks/stripe', { method: 'POST', body: expiredHook.body, headers: expiredHook.headers });
+                adminView = (await call2('/api/travel/admin/fixed-packages', { token: admin }))
+                    .data.packages.find(p => p.id === pkgId);
+                assert.equal(adminView.seatsSold, 2, 'مقاعد المهلة المنتهية تحررت');
+
+                // 6) المصالحة الدورية تلتقط دفعاً ضاع webhookه
+                const b3 = await call2(`/api/travel/fixed-packages/${pkgId}/bookings`, {
+                    method: 'POST', token: buyer,
+                    body: { adults: 1, pay: 'full', leadName: 'وائل', contact: { email: 'w@x.com' } },
+                });
+                // نلتقط جلسة b3 بمعرّف الحجز لا برقم متسلسل — حجز المهلة المنتهية
+                // أعلاه استهلك جلسةً أيضاً، والاعتماد على الترقيم كسر الاختبار فعلاً
+                const [b3Sid] = [...sessions.entries()]
+                    .find(([, s]) => s.args.bookingId === b3.data.booking.id);
+                sessions.get(b3Sid).paymentStatus = 'paid'; // دُفع لدى Stripe لكن الـwebhook ضاع
+                const cron = await call2('/api/travel/cron/run', { method: 'POST', headers: { 'x-cron-secret': 'cron-secret' } });
+                assert.equal(cron.data.paymentReconcile.settled, 1, 'المصالحة أصدرت الحجز المدفوع');
+                const b3After = (await call2('/api/travel/bookings', { token: buyer })).data.bookings.find(b => b.id === b3.data.booking.id);
+                assert.equal(b3After.status, 'issued');
+
+                // 7) الإلغاء الذاتي يسترد فعلياً عبر Stripe
+                const cancel = await call2(`/api/travel/fixed-packages/bookings/${bookingId}/cancel`, { method: 'POST', token: buyer });
+                assert.equal(cancel.status, 200);
+                assert.equal(cancel.data.booking.refund.stripeRefundId, 're_1', 'استرداد Stripe فعلي مسجَّل');
+            } finally {
+                await new Promise(r => server2.close(r));
+                await store2.close();
+            }
         });
 
         // ─── 🤝 العقود الفندقية عبر الأدمن ─────────────────────────────
@@ -4074,8 +4315,8 @@ describe('الايجنت الحاجز', () => {
         const app = createApp({ store, jwtSecret: JWT_SECRET, provider, agent, markupPct: MARKUP, ...extra });
         const s = await new Promise(r => { const srv = app.listen(0, () => r(srv)); });
         const baseUrl = `http://127.0.0.1:${s.address().port}`;
-        async function call(pathname, { method = 'GET', token = null, body = null } = {}) {
-            const headers = { 'Content-Type': 'application/json' };
+        async function call(pathname, { method = 'GET', token = null, body = null, headers: extraHeaders = {} } = {}) {
+            const headers = { 'Content-Type': 'application/json', ...extraHeaders };
             if (token) headers.Authorization = `Bearer ${token}`;
             const res = await fetch(baseUrl + pathname, {
                 method, headers, body: body ? JSON.stringify(body) : undefined,
@@ -4485,6 +4726,21 @@ describe('الايجنت الحاجز', () => {
             assert.equal(ok.status, 200);
             assert.equal(ok.data.phrased, false);
             assert.ok(ok.data.text.includes('60%'));
+
+            // 🌐 هيدر لغة الواجهة يقلب صياغة القراءة إنجليزيةً من الخادم
+            const en = await call('/api/travel/insights/phrase', {
+                method: 'POST', token, headers: { 'x-ui-lang': 'en' },
+                body: { findings: [{ type: 'price_spread', spreadPct: 60, count: 3 }] },
+            });
+            assert.equal(en.status, 200);
+            assert.ok(en.data.text.includes('60%'));
+            assert.ok(!/[؀-ۿ]/.test(en.data.text), `صياغة إنجليزية بلا عربي: ${en.data.text}`);
+            // قيمة عابثة في الهيدر = عربية — قائمة بيضاء لا تمرير أعمى
+            const junkLang = await call('/api/travel/insights/phrase', {
+                method: 'POST', token, headers: { 'x-ui-lang': 'de" injected' },
+                body: { findings: [{ type: 'price_spread', spreadPct: 60, count: 3 }] },
+            });
+            assert.ok(/[؀-ۿ]/.test(junkLang.data.text));
         });
     });
 

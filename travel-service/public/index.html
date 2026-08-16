@@ -105,6 +105,9 @@
       background: var(--ok); color: #06202e; font-size: 11px; font-weight: 800;
       padding: 2px 10px; border-radius: 999px; letter-spacing: .2px;
     }
+    /* 🌐 نص مولَّد بالـCSS لا يمر على مترجم الـDOM أصلاً — يُترجم بمحدد
+       لغة الجذر (يضبطها سكربت i18n فور التحميل) */
+    html[lang="en"] .card.offer-best::before { content: '🤖 Best'; }
 
     /* شارتان بمعنيين مختلفين لا تُخلَطان: توفير الباقة (أخضر — "ربحت
        مالاً") مقابل السعر الحصري المتعاقَد (بنفسجي — "لا تجده في مكان
@@ -713,6 +716,9 @@
       document.documentElement.lang = 'en';
       document.documentElement.dir = 'ltr';
     }
+    // نصوص تُبنى بالجافاسكربت بأجزاء مُدرَجة لا يلتقطها جدول المطابقة —
+    // تُصاغ باللغة الصحيحة من المنبع بدل مطاردتها بأنماط هشّة.
+    const T = (ar, en) => (uiLang === 'en' ? en : ar);
     let chatHistory = []; // {role, content} — تُرسل كاملة لكل جولة
 
     // ─── الدخول الموحّد: توكن من ?token= أو التخزين المحلي ───
@@ -730,7 +736,9 @@
     async function api(path, opts = {}) {
       const res = await fetch(path, {
         ...opts,
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(opts.headers || {}) },
+        // 🌐 X-UI-Lang: الخادم يصوغ به قراءات المساعد وردود الايجنت بلغة
+        // الواجهة — جُمَل بأرقام مُدرَجة يستحيل التقاطها بجدول ترجمة العميل.
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-UI-Lang': uiLang, ...(opts.headers || {}) },
       });
       if (res.status === 401) { localStorage.removeItem('jaolaTravelToken'); showGate(); }
       return res;
@@ -752,7 +760,7 @@
         $('userBadge').textContent = '👤 ' + (payload.username || '');
       } catch { /* عرض تجميلي فقط */ }
       if (config.providerMode !== 'live') $('modeBanner').classList.remove('hidden');
-      if (!config.agentEnabled) $('agentTabBtn').title = 'غير مفعَّل على هذا الخادم';
+      if (!config.agentEnabled) $('agentTabBtn').title = T('غير مفعَّل على هذا الخادم', 'Not enabled on this server');
       if (!config.staysEnabled) $('includeStaysLabel').classList.add('hidden');
       // تبويب بلا مزوّد فنادق يعد بما لا يُنجَز — يُخفى كتبويب السيارات
       if (!config.staysEnabled) $('staysTabBtn').classList.add('hidden');
@@ -969,14 +977,16 @@
     }
 
     const fmtTime = iso => (iso || '').slice(11, 16);
-    const fmtDur = min => min == null ? '' : `${Math.floor(min / 60)}س ${min % 60}د`;
+    const fmtDur = min => min == null ? '' : (uiLang === 'en'
+      ? `${Math.floor(min / 60)}h ${min % 60}m`
+      : `${Math.floor(min / 60)}س ${min % 60}د`);
 
     function sliceHtml(s) {
-      const stopsTxt = s.stops === 0 ? 'مباشرة' : `${s.stops} توقف`;
+      const stopsTxt = s.stops === 0 ? T('مباشرة', 'Direct') : `${s.stops} ${T('توقف', 'stop(s)')}`;
       return `<div class="seg">
         <strong>${esc(s.origin)} ${fmtTime(s.departAt)}</strong> ← <strong>${esc(s.destination)} ${fmtTime(s.arriveAt)}</strong>
         · ${fmtDur(s.durationMin)} · <span class="stops${s.stops}">${stopsTxt}</span>
-        · ${s.segments.map(g => esc(g.carrier + ' ' + g.flightNumber)).join(' ثم ')}
+        · ${s.segments.map(g => esc(g.carrier + ' ' + g.flightNumber)).join(T(' ثم ', ' then '))}
       </div>`;
     }
 
@@ -1195,7 +1205,9 @@
     const FX_KEY = 'jaolaTravelFxCur';
     let fxCur = localStorage.getItem(FX_KEY) || '';
     const fxRates = new Map(); // عملة المصدر → وعد {rate, source}
-    const FX_SRC = { peg: 'ربط رسمي', market: 'سوق', mixed: 'تقريبي' };
+    const FX_SRC = uiLang === 'en'
+      ? { peg: 'official peg', market: 'market rate', mixed: 'approx.' }
+      : { peg: 'ربط رسمي', market: 'سوق', mixed: 'تقريبي' };
 
     function fxGetRate(from) {
       if (!fxRates.has(from)) {
@@ -1232,7 +1244,7 @@
         note.style.fontSize = '11px';
         el.appendChild(note);
       }
-      note.textContent = `≈ ${Math.round(amount * fx.rate).toLocaleString('en-US')} ${fxCur} (${FX_SRC[fx.source] || 'تقريبي'})`;
+      note.textContent = `≈ ${Math.round(amount * fx.rate).toLocaleString('en-US')} ${fxCur} (${FX_SRC[fx.source] || FX_SRC.mixed})`;
     }
     function fxAnnotateAll() {
       if (!fxCur) return;
@@ -1527,7 +1539,7 @@
           <div class="${offerCardClass(bestFlights, i)}">
             <div style="flex:1">
               <div class="route">${airlineLogoHtml(o)}${esc(o.owner)}${
-                o.totalDurationMin ? `<span class="note" style="margin-right:8px">إجمالي ${fmtDur(o.totalDurationMin)}</span>` : ''}</div>
+                o.totalDurationMin ? `<span class="note" style="margin-right:8px">${T('إجمالي', 'Total')} ${fmtDur(o.totalDurationMin)}</span>` : ''}</div>
               ${o.slices.map(sliceHtml).join('')}
               <button class="det-toggle" data-flight-det="${i}">▾ تفاصيل الرحلة والأمتعة</button>
             </div>
@@ -1600,7 +1612,9 @@
       }
       const priced = data.days.filter(d => d.price != null);
       const cheapest = priced.length ? Math.min(...priced.map(d => d.price)) : null;
-      const dayName = d => new Date(d + 'T00:00:00Z').toLocaleDateString('ar', { weekday: 'short', day: 'numeric', month: 'short' });
+      // 🌐 لغة أسماء الأيام تتبع الواجهة — كانت 'ar' ثابتة فظهر «الخميس، 20
+      // أغسطس» وسط واجهة إنجليزية بالكامل (من صورة عطب حقيقية للمالك)
+      const dayName = d => new Date(d + 'T00:00:00Z').toLocaleDateString(uiLang === 'en' ? 'en' : 'ar', { weekday: 'short', day: 'numeric', month: 'short' });
       $('calStrip').innerHTML =
         '<div class="note" style="margin-bottom:6px">📅 أرخص سعر لكل يوم (لمسافر واحد) — اضغط يوماً لتبحث به:</div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
@@ -1705,7 +1719,9 @@
       'Room Only': 'بلا وجبات', 'Breakfast Included': 'إفطار مشمول',
       'Half Board': 'إقامة نصف كاملة', 'Full Board': 'إقامة كاملة', 'All Inclusive': 'شامل الكل',
     };
-    const boardAr = b => BOARD_AR[b] || b;
+    // المزوّد يرسل أسماء الإعاشة إنجليزيةً أصلاً — في واجهة إنجليزية تمرّ
+    // كما هي، والتعريب للعربية فقط.
+    const boardAr = b => (uiLang === 'en' ? (b || '') : (BOARD_AR[b] || b));
 
     /** سياسات العرض نفسه — متاحة فوراً بلا نداء (تصل مع نتيجة البحث). */
     function stayPolicyHtml(o) {
@@ -1857,7 +1873,7 @@
 
     /** الصفحة المنفصلة التي تُفتح من مربع «أضف فنادق الوجهة». */
     async function renderStaysPage({ iata, checkIn, checkOut, adults }) {
-      $('staysPageTitle').textContent = `🏨 فنادق ${iata}`;
+      $('staysPageTitle').textContent = uiLang === 'en' ? `🏨 ${iata} hotels` : `🏨 فنادق ${iata}`;
       await renderStaysInto($('staysPageResults'), { iata, checkIn, checkOut, adults, rooms: 1 });
     }
 
@@ -1949,7 +1965,7 @@
           <div class="dest-overlay">
             <div class="dest-city">${esc(uiLang === 'en' && d.cityEn ? d.cityEn : d.city)}${
               (uiLang === 'en' ? d.countryEn : d.country) ? ' · ' + esc(uiLang === 'en' ? d.countryEn : d.country) : ''}</div>
-            <div class="dest-price">${d.fromPrice != null ? `من ${d.fromPrice} ${esc(d.currency)}` : 'السعر غير متاح حالياً'}</div>
+            <div class="dest-price">${d.fromPrice != null ? `${T('من', 'From')} ${d.fromPrice} ${esc(d.currency)}` : T('السعر غير متاح حالياً', 'Price unavailable right now')}</div>
           </div>
         </div>`;
     }
@@ -2497,12 +2513,35 @@
         return;
       }
       $('fixedDialog').close();
+      // 💳 مع بوابة الدفع: تحويل لصفحة Stripe المستضافة — الحجز معلّق
+      // ومقاعده محجوزة له، والإصدار بعد الدفع الفعلي (webhook)
+      if (data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+        return;
+      }
       const plan = data.booking?.paymentPlan;
       alert(`✅ تأكّد حجزك فوراً — المرجع ${data.booking.bookingReference}` +
         (plan && plan.remaining > 0 ? `\n💳 عربون ${plan.paidNow} — المتبقي ${plan.remaining} قبل ${plan.dueDate}` : ''));
       document.querySelector('[data-tab="trips"]').click();
       loadFixedPackages().catch(() => {});
     });
+
+    // 🔁 العودة من صفحة دفع Stripe: ?payment=success|cancelled
+    (function handlePaymentReturn() {
+      const params = new URLSearchParams(location.search);
+      const outcome = params.get('payment');
+      if (!outcome) return;
+      history.replaceState({}, '', location.pathname); // تنظيف الرابط — فلا يتكرر التنبيه مع كل تحديث
+      setTimeout(() => {
+        if (outcome === 'success') {
+          alert('✅ استلمنا دفعتك — حجزك يُصدَر الآن وستصلك رسالة التأكيد خلال لحظات.');
+          const trips = document.querySelector('[data-tab="trips"]');
+          if (trips) trips.click();
+        } else if (outcome === 'cancelled') {
+          alert('↩️ أُلغيت عملية الدفع — لم تُحاسَب على شيء. مقاعدك تبقى محجوزة دقائق قبل أن تتحرر.');
+        }
+      }, 400);
+    })();
 
     $('qrSendBtn').addEventListener('click', async () => {
       $('qrErr').classList.add('hidden'); $('qrMsg').classList.add('hidden');
@@ -2543,8 +2582,11 @@
         return `<div class="route">🎒 ${esc(b.offer?.title || 'باقة مجدولة')}
             <span class="st st-${esc(b.status)}">${ST_LABEL[b.status] || esc(b.status)}</span></div>
           <div class="seg">🏨 ${esc(b.offer?.hotelName || '')} · ${esc(b.offer?.board || '')} · انطلاق ${esc(b.offer?.departDate || '')} (${b.offer?.nights || '؟'} ليالٍ) · ${b.seats || '؟'} مقاعد</div>
-          ${plan && plan.remaining > 0
-            ? `<div class="note">💳 عربون مدفوع ${plan.paidNow} ${esc(b.currency)} — المتبقي <strong>${plan.remaining} ${esc(b.currency)}</strong> قبل ${esc(plan.dueDate)}</div>`
+          ${b.status === 'pending'
+            ? '<div class="note">💳 بانتظار إتمام الدفع — مقاعدك محجوزة، وتتحرر إن انتهت مهلة الدفع.</div>' : ''}
+          ${b.status === 'issued' && plan && plan.remaining > 0
+            ? `<div class="note">💳 عربون مدفوع ${plan.paidNow} ${esc(b.currency)} — المتبقي <strong>${plan.remaining} ${esc(b.currency)}</strong> قبل ${esc(plan.dueDate)}</div>
+               ${config?.paymentsEnabled ? `<button class="chip" data-fx-balance="${esc(b.id)}" style="margin-top:4px">💳 سدّد المتبقي الآن</button>` : ''}`
             : ''}
           ${b.namesDeadline && b.status === 'issued'
             ? `<div class="note">🪪 تسليم أسماء المسافرين قبل ${esc(b.namesDeadline)}</div>` : ''}
@@ -2625,6 +2667,15 @@
       // ⭐ تقييم رحلة منقضية — يفتح نافذة المراجعات بنموذج الإرسال
       document.querySelectorAll('[data-fx-review]').forEach(btn =>
         btn.addEventListener('click', () => openReviews(btn.dataset.fxReview, true)));
+      // 💳 سداد المتبقي — جلسة دفع جديدة بنفس تجربة الحجز
+      document.querySelectorAll('[data-fx-balance]').forEach(btn =>
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          const res = await api(`/api/travel/fixed-packages/bookings/${btn.dataset.fxBalance}/pay-balance`, { method: 'POST' });
+          const data = await res.json();
+          if (!res.ok) { alert(data.error || 'تعذّر فتح صفحة الدفع.'); btn.disabled = false; return; }
+          window.location.href = data.checkoutUrl;
+        }));
     }
 
     // ─── المساعد ───

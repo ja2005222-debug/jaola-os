@@ -29,6 +29,7 @@ import { submitReview, publicReview, aggregateRating } from './src/reviews.js';
 import { sendBalanceReminders } from './src/balanceReminders.js';
 import { fxRate, DISPLAY_CURRENCIES } from './src/fx.js';
 import { computeLoyalty } from './src/loyalty.js';
+import { createStripeClient, verifyStripeWebhookSignature } from './src/payments/stripeClient.js';
 import { normalizeContract } from './src/contracts.js';
 import { createContractedStaysProvider, withContractedStays } from './src/providers/contractedStaysProvider.js';
 import { createBooking, getBooking, getBookingByProviderOrderId, listBookingsByUser, transitionBooking } from './src/bookings.js';
@@ -450,6 +451,11 @@ export function createApp({
     whatsapp = { sendWhatsAppTemplate, whatsappReady }, // نفس العقد بالضبط — قناة لا تعرفها deliver عن أختها
     duffelWebhookSecret = null, // بلا هذا: مسار الـwebhook يرد 503 بوضوح
     cronSecret = null,          // وبلا هذا: مسار المُطلِق الزمني يرد 503
+    // 💳 الدفع الإلكتروني (Stripe Checkout) — كله اختياري: بلا عميل تبقى
+    // الباقات المجدولة على سلوكها السابق (إصدار فوري ودفع خارج المنصة)
+    stripeClient = null,          // من STRIPE_SECRET_KEY (قابل للحقن في الاختبارات)
+    stripeWebhookSecret = null,   // من STRIPE_WEBHOOK_SECRET — بلا هذا يرد المسار 503
+    publicUrl = null,             // من TRAVEL_PUBLIC_URL — روابط العودة من صفحة الدفع
 }) {
     const app = express();
     // خلف وكيل عكسي واحد (Render وأمثالها) — بدونه req.ip هو عنوان الوكيل
@@ -1150,9 +1156,15 @@ export function createApp({
             carsProviderMode: carsProvider?.mode || null,
             agentEnabled: !!agent,
             packagesEnabled: !!staysProvider, // الباقة = طيران + فندق؛ الطيران موجود دوماً
+            paymentsEnabled: !!stripeClient, // 💳 حجز الباقات المجدولة يتحول لدفع فعلي
             isAdmin: isAdmin(req), // رابط ⚙️ الإدارة يظهر لأصحابه فقط
         });
     }));
+
+    // 🌐 لغة واجهة الطالب — هيدر يرسله العميل مع كل نداء. قائمة بيضاء
+    // صريحة: أي قيمة غير 'en' تعني العربية، فلا يمرّر هيدرٌ عابث شيئاً
+    // إلى قوالب النصوص أو تعليمات النموذج.
+    const uiLangOf = req => (req.headers['x-ui-lang'] === 'en' ? 'en' : 'ar');
 
     app.post('/api/travel/flights/search', verifyToken, searchLimiter, wrap(async (req, res) => {
         try {
@@ -1160,7 +1172,7 @@ export function createApp({
             // قراءة الايجنت تُحسب هنا حتمياً (دوال نقية، بلا شبكة) فلا تضيف
             // زمناً على المسار الأهم في البوابة. صياغة النموذج — إن فُعّل —
             // تأتي بنداء منفصل بعد ظهور النتائج، لا قبلها.
-            res.json({ offers, insight: buildInsight(offers) });
+            res.json({ offers, insight: buildInsight(offers, uiLangOf(req)) });
         } catch (e) {
             // كان يفحص 400 فقط — رفض مزوّد فعلي (502 الجديد أعلاه) كان يسقط
             // كخطأ 500 عام رغم تفصيل واضح متوفر، خلاف مساري الفنادق/السيارات.
@@ -1229,7 +1241,7 @@ export function createApp({
     app.post('/api/travel/stays/search', verifyToken, searchLimiter, wrap(async (req, res) => {
         try {
             const offers = await doSearchStays(req.body);
-            res.json({ offers, insight: buildStayInsight(offers) });
+            res.json({ offers, insight: buildStayInsight(offers, uiLangOf(req)) });
         } catch (e) {
             if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;
@@ -1283,7 +1295,7 @@ export function createApp({
     app.post('/api/travel/cars/search', verifyToken, searchLimiter, wrap(async (req, res) => {
         try {
             const offers = await doSearchCars(req.body);
-            res.json({ offers, insight: buildCarInsight(offers) });
+            res.json({ offers, insight: buildCarInsight(offers, uiLangOf(req)) });
         } catch (e) {
             if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;
@@ -1329,7 +1341,7 @@ export function createApp({
     }
 
     /** التقييم للعميل: أرقام البيع فقط — الصافي وتقسيمه الداخلي لا يغادران الخادم. */
-    function publicQuote(q) {
+    function publicQuote(q, lang = 'ar') {
         const { netAmount: _nf, passengerIds: _ids, passengers, ...flight } = q.flight;
         const { netAmount: _ns, marginPct: _mp, ...stay } = q.stay;
         return {
@@ -1340,7 +1352,7 @@ export function createApp({
             savings: q.savings,
             savingsPct: q.savingsPct,
             currency: q.currency,
-            insight: buildPackageInsight(q),
+            insight: buildPackageInsight(q, lang),
         };
     }
 
@@ -1352,7 +1364,7 @@ export function createApp({
                 flightOfferId: req.body?.flightOfferId, stayOfferId: req.body?.stayOfferId,
                 flightMarkupPct: flightMkt, stayMarkupPct: stayMkt, packageMarkupPct: pkgMarkupPct,
             });
-            res.json({ quote: publicQuote(q) });
+            res.json({ quote: publicQuote(q, uiLangOf(req)) });
         } catch (e) {
             if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;
@@ -1508,22 +1520,80 @@ export function createApp({
         }
     }));
 
+    // رابط العودة من صفحة دفع Stripe — TRAVEL_PUBLIC_URL أولاً، وإلا يُشتق
+    // من الطلب نفسه (خلف وكيل Render يصل البروتوكول في x-forwarded-proto)
+    function requestBaseUrl(req) {
+        if (publicUrl) return String(publicUrl).replace(/\/$/, '');
+        const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+        return `${proto}://${req.get('host')}`;
+    }
+
     app.post('/api/travel/fixed-packages/:id/bookings', verifyToken, wrap(async (req, res) => {
         const contactCheck = validateFixedContact(req.body?.contact);
         if (contactCheck.error) return res.status(400).json({ error: contactCheck.error });
         try {
-            const { booking } = await bookFixedPackage({
+            const { booking, quote } = await bookFixedPackage({
                 store, packageId: req.params.id, username: userOf(req),
                 adults: req.body?.adults, singles: req.body?.singles ?? 0,
                 children: req.body?.children ?? 0, pay: req.body?.pay || 'deposit',
                 leadName: req.body?.leadName, contact: contactCheck.value,
+                deferIssue: !!stripeClient, // مع بوابة دفع: الإصدار بعد الدفع الفعلي
             });
-            await notifyBookingIssued(booking);
-            res.json({ booking: publicBooking(booking) });
+            if (!stripeClient) {
+                await notifyBookingIssued(booking);
+                return res.json({ booking: publicBooking(booking) });
+            }
+            // 💳 جلسة دفع للمطلوب الآن (عربون أو كامل) — المقاعد محجوزة للحجز
+            // المعلّق، وانتهاء الجلسة (30 دقيقة) يحرّرها عبر webhook/المصالحة
+            const base = requestBaseUrl(req);
+            let session;
+            try {
+                session = await stripeClient.createCheckoutSession({
+                    amount: quote.paidNow, currency: quote.currency,
+                    title: `${booking.offer?.title || 'باقة مجدولة'} — ${quote.pay === 'deposit' ? `عربون ${quote.depositPct}%` : 'دفع كامل'} (${booking.bookingReference})`,
+                    bookingId: booking.id, purpose: 'fixed_booking',
+                    customerEmail: contactCheck.value.email,
+                    successUrl: `${base}/?payment=success&booking=${booking.id}`,
+                    cancelUrl: `${base}/?payment=cancelled&booking=${booking.id}`,
+                });
+            } catch (e) {
+                // فشل إنشاء الجلسة: لا نترك حجزاً معلقاً يحبس مقاعد بلا طريق دفع
+                await transitionBooking(store, booking.id, 'failed', { error: `تعذّر فتح صفحة الدفع: ${e.message}` });
+                const pkgId = booking.offer?.fixedPackageId;
+                if (pkgId && booking.seats > 0) await store.releaseFixedSeats(pkgId, booking.seats).catch(() => {});
+                return res.status(502).json({ error: `تعذّر فتح صفحة الدفع: ${e.message}. لم تُحاسَب على شيء.` });
+            }
+            await store.transitionBooking(booking.id, {
+                from: ['pending'], to: 'pending',
+                patch: { stripeSessionId: session.id, checkoutExpiresAt: session.expiresAt },
+            });
+            res.json({ booking: publicBooking(await getBooking(store, booking.id)), checkoutUrl: session.url });
         } catch (e) {
             if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;
         }
+    }));
+
+    // 💳 سداد المتبقي لحجز عربون مُصدَر — يكمل نموذجنا الفريد بتحصيل فعلي
+    app.post('/api/travel/fixed-packages/bookings/:id/pay-balance', verifyToken, wrap(async (req, res) => {
+        if (!stripeClient) return res.status(503).json({ error: 'الدفع الإلكتروني غير مفعَّل على هذا الخادم.' });
+        const booking = await getBooking(store, String(req.params.id || ''));
+        if (!booking || booking.username !== userOf(req) || booking.kind !== 'fixed_package') {
+            return res.status(404).json({ error: 'الحجز غير موجود.' });
+        }
+        if (booking.status !== 'issued') return res.status(400).json({ error: 'سداد المتبقي متاح للحجوزات المُصدَرة فقط.' });
+        const remaining = booking.paymentPlan?.remaining || 0;
+        if (!(remaining > 0)) return res.status(400).json({ error: 'لا متبقٍّ على هذا الحجز — مدفوع بالكامل.' });
+        const base = requestBaseUrl(req);
+        const session = await stripeClient.createCheckoutSession({
+            amount: remaining, currency: booking.currency,
+            title: `سداد متبقي ${booking.offer?.title || 'باقة'} (${booking.bookingReference})`,
+            bookingId: booking.id, purpose: 'fixed_balance',
+            customerEmail: booking.contact?.email,
+            successUrl: `${base}/?payment=success&booking=${booking.id}`,
+            cancelUrl: `${base}/?payment=cancelled&booking=${booking.id}`,
+        });
+        res.json({ checkoutUrl: session.url });
     }));
 
     app.post('/api/travel/fixed-packages/bookings/:id/cancel', verifyToken, wrap(async (req, res) => {
@@ -1531,11 +1601,37 @@ export function createApp({
             const cancelled = await cancelFixedPackageBooking({
                 store, username: userOf(req), bookingId: req.params.id,
             });
-            await notifyBookingCancelled(cancelled);
+            // 💳 مع بوابة دفع ودفعة حقيقية مسجَّلة: الاسترداد فعلي عبر Stripe —
+            // لا سجل يدّعي استرداداً لم يحدث. فشل الاسترداد لا يعكس الإلغاء
+            // (المقاعد تحررت) — يُسجَّل صراحةً ويُنبَّه الأدمن ليسترد يدوياً.
+            if (stripeClient && cancelled.paymentIntentId) {
+                try {
+                    const refund = await stripeClient.createRefund({ paymentIntentId: cancelled.paymentIntentId });
+                    await store.transitionBooking(cancelled.id, {
+                        from: ['cancelled'], to: 'cancelled',
+                        patch: { refund: { amount: refund.amount, currency: refund.currency || cancelled.currency, stripeRefundId: refund.id } },
+                    });
+                } catch (e) {
+                    await store.transitionBooking(cancelled.id, {
+                        from: ['cancelled'], to: 'cancelled',
+                        patch: { refund: { amount: null, currency: cancelled.currency, error: `تعذّر الاسترداد الآلي: ${e.message} — سيُسترد يدوياً.` } },
+                    });
+                    for (const admin of adminSet) {
+                        await notifier.deliver({
+                            username: admin, category: 'admin_alert',
+                            title: `🧯 استرداد يدوي مطلوب — ${cancelled.bookingReference}`,
+                            body: `أُلغي حجز الباقة ${cancelled.id} وفشل الاسترداد الآلي عبر Stripe: ${e.message}`,
+                            meta: { bookingId: cancelled.id },
+                        }).catch(() => {});
+                    }
+                }
+            }
+            const finalBooking = await getBooking(store, cancelled.id);
+            await notifyBookingCancelled(finalBooking);
             // المقاعد المتحررة قد تُسعد منتظرين — أبلغهم الآن
             const pkgId = cancelled.offer?.fixedPackageId;
             if (pkgId) await notifyWaitlistSeatsFreed(await store.getFixedPackage(pkgId));
-            res.json({ booking: publicBooking(cancelled) });
+            res.json({ booking: publicBooking(finalBooking) });
         } catch (e) {
             if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;
@@ -1562,6 +1658,112 @@ export function createApp({
                 : 'أُضفت لقائمة الانتظار — سنبلغك فور توفّر مقاعد.',
         });
     }));
+
+    // ─── 💳 تسوية مدفوعات Stripe: webhook موقَّع + مصالحة دورية ─────────
+
+    /** دفع حجز باقة اكتمل → إصدار + إشعار. آمن التكرار (الانتقال محروس). */
+    async function settleFixedBookingPaid(bookingId, paymentIntentId = null) {
+        const booking = await getBooking(store, bookingId);
+        if (!booking || booking.kind !== 'fixed_package' || booking.status !== 'pending') return false;
+        const issued = await transitionBooking(store, booking.id, 'issued', {
+            paymentIntentId, paidAt: Date.now(),
+        });
+        if (issued) await notifyBookingIssued(issued);
+        return !!issued;
+    }
+
+    /** دفع المتبقي اكتمل → تصفير الخطة + إشعار. آمن التكرار (يفحص المتبقي). */
+    async function settleFixedBalancePaid(bookingId) {
+        const booking = await getBooking(store, bookingId);
+        if (!booking || booking.kind !== 'fixed_package' || booking.status !== 'issued') return false;
+        const plan = booking.paymentPlan;
+        if (!plan || !(plan.remaining > 0)) return false; // سُوّي سلفاً — تكرار webhook
+        await store.transitionBooking(booking.id, {
+            from: ['issued'], to: 'issued',
+            patch: { paymentPlan: { ...plan, paidNow: plan.paidNow + plan.remaining, remaining: 0, balancePaidAt: Date.now() } },
+        });
+        await notifier.deliver({
+            username: booking.username,
+            category: 'booking_issued',
+            title: `💳 اكتمل سداد باقتك — ${booking.bookingReference}`,
+            body: `استلمنا سداد المتبقي لحجزك «${booking.offer?.title || ''}» (${booking.bookingReference}).\nالحجز مدفوع بالكامل — رحلة سعيدة!`,
+            email: booking.contact?.email || null,
+            meta: { bookingId: booking.id },
+        });
+        return true;
+    }
+
+    /** جلسة دفع حجزٍ انتهت بلا سداد → فشل + تحرير المقاعد لمن ينتظر. */
+    async function expireFixedBookingPayment(bookingId) {
+        const booking = await getBooking(store, bookingId);
+        if (!booking || booking.kind !== 'fixed_package' || booking.status !== 'pending') return false;
+        const failed = await transitionBooking(store, booking.id, 'failed', {
+            error: 'انتهت مهلة الدفع (30 دقيقة) دون سداد — تحررت المقاعد. احجز من جديد متى شئت.',
+        });
+        if (failed) {
+            const pkgId = booking.offer?.fixedPackageId;
+            if (pkgId && booking.seats > 0) {
+                await store.releaseFixedSeats(pkgId, booking.seats).catch(() => {});
+                await notifyWaitlistSeatsFreed(await store.getFixedPackage(pkgId));
+            }
+        }
+        return !!failed;
+    }
+
+    // نفس عمارة webhook Duffel حرفياً: مسار عام بلا verifyToken (Stripe خادم
+    // لا مستخدم)، محمي حصراً بتوقيع HMAC على الجسم الخام (req.rawBody).
+    app.post('/api/travel/webhooks/stripe', wrap(async (req, res) => {
+        if (!stripeWebhookSecret) return res.status(503).json({ error: 'webhook الدفع غير مُهيَّأ.' });
+        const ok = verifyStripeWebhookSignature({
+            rawBody: req.rawBody?.toString('utf8'),
+            header: req.headers['stripe-signature'],
+            secret: stripeWebhookSecret,
+        });
+        if (!ok) return res.status(401).json({ error: 'توقيع غير صالح.' });
+
+        const event = req.body || {};
+        const session = event?.data?.object || {};
+        const bookingId = session?.metadata?.bookingId;
+        const purpose = session?.metadata?.purpose;
+        if (bookingId) {
+            if (event.type === 'checkout.session.completed') {
+                if (purpose === 'fixed_balance') await settleFixedBalancePaid(bookingId);
+                else await settleFixedBookingPaid(bookingId, session.payment_intent || null);
+            } else if (event.type === 'checkout.session.expired' && purpose === 'fixed_booking') {
+                await expireFixedBookingPayment(bookingId);
+            }
+        }
+        res.json({ received: true }); // غير المعروف يُقَرّ به بصمت — Stripe يعيد الإرسال وإلا
+    }));
+
+    /**
+     * مصالحة المدفوعات المعلّقة — شبكة أمان لضياع webhook (انقطاع، خدمة
+     * نائمة على استضافة مجانية): حجوزات pending بجلسة دفع تُستفسر حالتها
+     * من Stripe مباشرة: مدفوعة → تُصدر، منتهية → تفشل وتتحرر مقاعدها.
+     * يستدعيها المُطلِق الزمني — فشل حجز واحد لا يوقف البقية.
+     */
+    async function reconcilePendingPayments(limit = 100) {
+        if (!stripeClient) return { checked: 0, settled: 0, expired: 0 };
+        const all = await store.listAllBookings(500);
+        const pending = all.filter(b =>
+            b.kind === 'fixed_package' && b.status === 'pending' && b.stripeSessionId).slice(0, limit);
+        let settled = 0, expired = 0;
+        const errors = [];
+        for (const b of pending) {
+            try {
+                const s = await stripeClient.getCheckoutSession(b.stripeSessionId);
+                if (s.paymentStatus === 'paid') {
+                    if (await settleFixedBookingPaid(b.id, s.paymentIntent)) settled += 1;
+                } else if (s.status === 'expired') {
+                    if (await expireFixedBookingPayment(b.id)) expired += 1;
+                }
+                // open وغير منتهية: ما زال المسافر على صفحة الدفع — تُترك
+            } catch (e) {
+                errors.push({ bookingId: b.id, error: e.message });
+            }
+        }
+        return { checked: pending.length, settled, expired, errors };
+    }
 
     app.post('/api/travel/quote-requests', verifyToken, wrap(async (req, res) => {
         const destination = String(req.body?.destination || '').trim().slice(0, 80);
@@ -1691,7 +1893,7 @@ export function createApp({
             console.error('⚠️ تعذّر تحميل ذاكرة المسافر:', e.message);
         }
         try {
-            const result = await agent.chat({ messages, services, memory });
+            const result = await agent.chat({ messages, services, memory, lang: uiLangOf(req) });
             // آخر محادثة تُحفظ لتُستأنف — والحفظ لا يُسقط رداً نجح فعلاً
             try {
                 await store.setProfile(username, mergeProfile(profile, {
@@ -1718,9 +1920,10 @@ export function createApp({
         const findings = sanitizeFindings(req.body?.findings);
         if (findings.length === 0) return res.status(400).json({ error: 'لا نتائج تحليل صالحة للصياغة.' });
         // يُعاد التوليد من القوالب — نص العميل لا يصل النموذج إطلاقاً
-        const text = renderInsight(findings);
+        const lang = uiLangOf(req);
+        const text = renderInsight(findings, lang);
         if (!agent) return res.json({ text, phrased: false });
-        res.json({ text: await agent.phraseInsight(text), phrased: true });
+        res.json({ text: await agent.phraseInsight(text, lang), phrased: true });
     }));
 
     // ─── ⏰ المُطلِق الزمني ────────────────────────────────────────────
@@ -1761,6 +1964,12 @@ export function createApp({
             summary.balanceReminders = await sendBalanceReminders({ store, notifier });
         } catch (e) {
             summary.balanceReminders = { error: e.message };
+        }
+        try {
+            // 💳 مصالحة مدفوعات معلّقة — شبكة أمان لضياع webhook
+            summary.paymentReconcile = await reconcilePendingPayments();
+        } catch (e) {
+            summary.paymentReconcile = { error: e.message };
         }
         res.json(summary);
     }));
@@ -2068,6 +2277,11 @@ if (isMain) {
         adminUsers: String(process.env.TRAVEL_ADMIN_USERS || '').split(',').map(s => s.trim()).filter(Boolean),
         duffelWebhookSecret: process.env.DUFFEL_WEBHOOK_SECRET || null,
         cronSecret: process.env.CRON_SECRET || null,
+        // 💳 Stripe Checkout — sk_test_ للتجربة وsk_live_ للإنتاج، والسر
+        // الثاني من إعداد الـwebhook في لوحة Stripe (whsec_...)
+        stripeClient: createStripeClient({ secretKey: process.env.STRIPE_SECRET_KEY || null }),
+        stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || null,
+        publicUrl: process.env.TRAVEL_PUBLIC_URL || null,
     });
 
     const port = Number(process.env.PORT || 4200);
@@ -2075,6 +2289,12 @@ if (isMain) {
         console.log(`✈️ بوابة السفر على المنفذ ${port} (المزوّد: ${provider.name}/${provider.mode || 'live'}، الفنادق: ${staysProvider.name}/${staysProvider.mode || 'live'}، السيارات: ${carsProvider.name}/${carsProvider.mode || 'live'}، التخزين: ${store.name}، الهامش: ${markupPct}%)`);
         if (!agent) console.warn('⚠️ الايجنت غير مفعَّل — اضبط TRAVEL_AGENT_API_KEY لتفعيل المساعد الحاجز.');
         if (provider.name === 'mock') console.warn('⚠️ مزوّد محاكاة — اضبط DUFFEL_API_KEY (يبدأ بـduffel_test للتجريبي).');
+        if (process.env.STRIPE_SECRET_KEY) {
+            const live = process.env.STRIPE_SECRET_KEY.startsWith('sk_live_');
+            console.log(`💳 الدفع مفعَّل عبر Stripe (${live ? 'حساب حي' : 'وضع تجريبي sk_test'})${process.env.STRIPE_WEBHOOK_SECRET ? '' : ' — ⚠️ STRIPE_WEBHOOK_SECRET غير مضبوط: التسوية ستعتمد على المصالحة الدورية فقط'}.`);
+        } else {
+            console.warn('⚠️ الدفع الإلكتروني غير مفعَّل — اضبط STRIPE_SECRET_KEY وSTRIPE_WEBHOOK_SECRET لتحصيل حجوزات الباقات فعلياً.');
+        }
         if (store.name === 'file') {
             console.warn('⚠️ تخزين بالملفات — على منصة ذات قرص مؤقت تُمسح الحجوزات مع كل إعادة نشر. اضبط DATABASE_URL للإنتاج.');
         }
