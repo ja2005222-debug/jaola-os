@@ -102,6 +102,9 @@ export async function buildTopDestinations({ origin, provider, markupPct, fetchI
                 iata: d.iata,
                 city: coords?.city || d.iata,
                 country: coords?.country || null,
+                // الأسماء الإنجليزية للواجهة ثنائية اللغة — من نفس سجل المطار
+                cityEn: coords?.cityEn || d.wikiTitle || d.iata,
+                countryEn: coords?.countryEn || null,
                 image,
                 fromPrice: priced.price,
                 currency: priced.currency,

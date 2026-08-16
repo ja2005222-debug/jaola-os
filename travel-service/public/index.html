@@ -837,50 +837,68 @@
     }
 
     // ─── 🧭 مطار الانطلاق الافتراضي ───
-    // ترتيب الأولوية: اختيار المستخدم المحفوظ ← ثم استنتاج من المنطقة
-    // الزمنية. المحفوظ يسبق دوماً حتى لا نُعيد فرض مطار غيّره المستخدم
-    // عمداً (هذا جوهر "إلا إذا أراد الشخص التغيير").
+    // 🧭 قاعدة «موقعك الحالي أولاً» (تبليغ المالك من أمستردام والحقل يصرّ
+    // على القاهرة): الاختيار المحفوظ يسود **داخل نفس الموقع فقط** — يُختم
+    // بالمنطقة الزمنية وقت الحفظ، فإن تغيّرت (سافرتَ فعلاً) يفوز استنتاج
+    // الموقع الحالي على الاختيار القديم وعلى «المطار المعتاد» معاً، ولا
+    // يُمحى المحفوظ (تعود لموقعك القديم فيعود اختيارُك).
     const ORIGIN_KEY = 'jaolaTravelOrigin';
+    const currentTz = (() => {
+      try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; }
+    })();
+
+    // اسم المطار بلغة الواجهة — كان يعرض «القاهرة (CAI)» حتى في الإنجليزية
+    const airportName = a => (uiLang === 'en' && a.cityEn) ? a.cityEn : (a.city || a.iata);
 
     function setOriginField(input, a) {
       if (!input || !a) return;
-      input.value = `${a.city} (${a.iata})`;
+      input.value = `${airportName(a)} (${a.iata})`;
       input.dataset.iata = a.iata;
     }
 
-    /** يحفظ اختيار المستخدم لمطار الانطلاق ليكون افتراضيه لاحقاً. */
+    /** يحفظ اختيار المستخدم لمطار الانطلاق مختوماً بمنطقته الزمنية. */
     function rememberOrigin(a) {
-      try { localStorage.setItem(ORIGIN_KEY, JSON.stringify({ iata: a.iata, city: a.city })); } catch { /* وضع خاص */ }
+      try {
+        localStorage.setItem(ORIGIN_KEY, JSON.stringify({
+          iata: a.iata, city: a.city, cityEn: a.cityEn || null, tz: currentTz,
+        }));
+      } catch { /* وضع خاص */ }
+    }
+
+    async function inferOriginFromLocation() {
+      try {
+        if (!currentTz) return null;
+        const res = await api('/api/travel/airports/default?tz=' + encodeURIComponent(currentTz));
+        if (!res.ok) return null;
+        return (await res.json()).airport || null;
+      } catch { return null; }
     }
 
     async function applyDefaultOrigin() {
       const originFields = [$('fOrigin'), $('carIata'), $('destOrigin')];
-      // 0) تفضيل محفوظ في الملف — يسبق كل شيء لأنه اختيار صريح على
-      // الخادم، فيتبع المستخدمَ بين أجهزته لا يبقى حبيس متصفّح واحد.
-      if (profilePrefs.homeAirport) {
-        originFields.forEach(f => setOriginField(f, { iata: profilePrefs.homeAirport, city: profilePrefs.homeAirport }));
-        if (profilePrefs.cabin) $('fCabin').value = profilePrefs.cabin;
+      if (profilePrefs.cabin) $('fCabin').value = profilePrefs.cabin;
+
+      let saved = null;
+      try { saved = JSON.parse(localStorage.getItem(ORIGIN_KEY) || 'null'); } catch { /* تالفة */ }
+
+      // 1) اختيار صريح في **نفس الموقع الحالي** — يسبق كل شيء
+      if (saved && saved.iata && saved.tz === currentTz) {
+        originFields.forEach(f => setOriginField(f, saved));
         return;
       }
-      if (profilePrefs.cabin) $('fCabin').value = profilePrefs.cabin;
-      // 1) اختيار محفوظ سابقاً
-      try {
-        const saved = JSON.parse(localStorage.getItem(ORIGIN_KEY) || 'null');
-        if (saved && saved.iata) {
-          originFields.forEach(f => setOriginField(f, saved));
-          return;
-        }
-      } catch { /* قيمة تالفة — نتجاهلها ونستنتج */ }
-      // 2) استنتاج من المنطقة الزمنية (بلا إذن ولا خدمة خارجية)
-      try {
-        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        if (!tz) return;
-        const res = await api('/api/travel/airports/default?tz=' + encodeURIComponent(tz));
-        if (!res.ok) return;
-        const { airport } = await res.json();
-        // منطقة لا نعرف لها مطاراً → نترك الحقل فارغاً بدل فرض مطار خاطئ
-        if (airport) originFields.forEach(f => setOriginField(f, airport));
-      } catch { /* بلا شبكة: الحقل يبقى فارغاً وقابلاً للكتابة */ }
+      // 2) موقعك الحالي (سافرتَ أو زيارة أولى) — يسبق المعتاد والقديم
+      const inferred = await inferOriginFromLocation();
+      if (inferred) {
+        originFields.forEach(f => setOriginField(f, inferred));
+        return;
+      }
+      // 3) لا استنتاج للموقع: المطار المعتاد من الملف، ثم المحفوظ القديم
+      if (profilePrefs.homeAirport) {
+        originFields.forEach(f => setOriginField(f, { iata: profilePrefs.homeAirport, city: profilePrefs.homeAirport }));
+        return;
+      }
+      if (saved && saved.iata) originFields.forEach(f => setOriginField(f, saved));
+      // وإلا: الحقل يبقى فارغاً بدل فرض مطار خاطئ
     }
 
     function attachAirportAutocomplete(input) {
@@ -889,7 +907,7 @@
 
       const close = () => { if (list) { list.remove(); list = null; } items = []; active = -1; };
       const choose = (a) => {
-        input.value = `${a.city} (${a.iata})`;
+        input.value = `${airportName(a)} (${a.iata})`;
         input.dataset.iata = a.iata;
         // حقول الانطلاق فقط: اختيار المستخدم يصير افتراضيه في الزيارات
         // التالية (حقل "إلى" وجهة تتغيّر كل بحث، فلا معنى لحفظها).
@@ -910,8 +928,8 @@
         } else {
           list.innerHTML = airports.map(a => `
             <div class="ac-item" data-iata="${esc(a.iata)}">
-              <span>${esc(a.city)}</span><span class="ac-code">${esc(a.iata)}</span>
-              <div class="ac-sub">${esc(a.country)} · ${esc(a.cityEn)}</div>
+              <span>${esc(airportName(a))}</span><span class="ac-code">${esc(a.iata)}</span>
+              <div class="ac-sub">${esc(uiLang === 'en' ? (a.countryEn || a.country) : a.country)} · ${esc(uiLang === 'en' ? a.city : a.cityEn)}</div>
             </div>`).join('');
           [...list.children].forEach((el, i) =>
             el.addEventListener('mousedown', ev => { ev.preventDefault(); choose(airports[i]); }));
@@ -1929,7 +1947,8 @@
       return `
         <div class="dest-card" data-dest='${esc(JSON.stringify({ iata: d.iata, origin }))}' ${d.image ? `style="background-image:url('${esc(d.image)}')"` : ''}>
           <div class="dest-overlay">
-            <div class="dest-city">${esc(d.city)}${d.country ? ' · ' + esc(d.country) : ''}</div>
+            <div class="dest-city">${esc(uiLang === 'en' && d.cityEn ? d.cityEn : d.city)}${
+              (uiLang === 'en' ? d.countryEn : d.country) ? ' · ' + esc(uiLang === 'en' ? d.countryEn : d.country) : ''}</div>
             <div class="dest-price">${d.fromPrice != null ? `من ${d.fromPrice} ${esc(d.currency)}` : 'السعر غير متاح حالياً'}</div>
           </div>
         </div>`;
