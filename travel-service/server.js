@@ -27,6 +27,8 @@ import {
 } from './src/fixedPackages.js';
 import { submitReview, publicReview, aggregateRating } from './src/reviews.js';
 import { sendBalanceReminders } from './src/balanceReminders.js';
+import { fxRate, DISPLAY_CURRENCIES } from './src/fx.js';
+import { computeLoyalty } from './src/loyalty.js';
 import { normalizeContract } from './src/contracts.js';
 import { createContractedStaysProvider, withContractedStays } from './src/providers/contractedStaysProvider.js';
 import { createBooking, getBooking, getBookingByProviderOrderId, listBookingsByUser, transitionBooking } from './src/bookings.js';
@@ -1579,6 +1581,41 @@ export function createApp({
             ...contactCheck.value,
         });
         res.json({ requested: true, message: '🎯 استلمنا طلبك — سيصلك عرض خاص على مقاسك قريباً.' });
+    }));
+
+    // ─── 💵 سعر صرف للعرض + 🎁 الولاء ──────────────────────────────────
+
+    // كاش سعر الصرف 12 ساعة لكل زوج — Frankfurter يتحدّث يومياً أصلاً،
+    // وأزواج الربط الرسمي تُخدَم بلا شبكة إطلاقاً (fx.js).
+    const FX_TTL_MS = 12 * 60 * 60 * 1000;
+    const fxCache = new Map();
+
+    app.get('/api/travel/fx', verifyToken, wrap(async (req, res) => {
+        const from = String(req.query.from || '').trim().toUpperCase();
+        const to = String(req.query.to || '').trim().toUpperCase();
+        const key = `${from}_${to}`;
+        const cached = fxCache.get(key);
+        if (cached && Date.now() - cached.at < FX_TTL_MS) {
+            return res.json({ ...cached.data, cached: true });
+        }
+        try {
+            const data = await fxRate({ from, to, fetchImpl: travelInfoFetch });
+            // النجاح فقط يُكيَّش — فشل شبكة لحظي لا يُخلَّد 12 ساعة
+            fxCache.set(key, { at: Date.now(), data });
+            res.json(data);
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
+    app.get('/api/travel/fx/currencies', verifyToken, (req, res) => {
+        res.json({ currencies: DISPLAY_CURRENCIES });
+    });
+
+    app.get('/api/travel/loyalty', verifyToken, wrap(async (req, res) => {
+        const bookings = await store.listBookingsByUser(userOf(req), 500);
+        res.json({ loyalty: computeLoyalty(bookings) });
     }));
 
     // ─── 🗺️ أهم الوجهات (صور Wikimedia + أرخص سعر حقيقي) ──────────────

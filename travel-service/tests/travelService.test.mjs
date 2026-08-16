@@ -32,6 +32,8 @@ import {
     isEarlyBird, seatsLeft as fixedSeatsLeft, SEAT_SOURCING, addDaysStr,
 } from '../src/fixedPackages.js';
 import { normalizeReview, maskReviewerName, aggregateRating, publicReview } from '../src/reviews.js';
+import { pegRate, fxRate, USD_PEGS, DISPLAY_CURRENCIES } from '../src/fx.js';
+import { bookingPoints, computeLoyalty, LOYALTY_TIERS } from '../src/loyalty.js';
 import { isBalanceReminderDue, renderBalanceReminder, sendBalanceReminders, BALANCE_REMINDER_DAYS_AHEAD } from '../src/balanceReminders.js';
 import { createContractedStaysProvider, withContractedStays } from '../src/providers/contractedStaysProvider.js';
 import { retryPackageCompensations } from '../src/packages.js';
@@ -1518,6 +1520,71 @@ describe('applyOfferFilters: فلترة قبل الاقتطاع — وحدة ن�
     });
 });
 
+describe('fx/loyalty: وحدات نقية', () => {
+    test('💵 أزواج الربط الرسمي تُخدَم بلا شبكة إطلاقاً', async () => {
+        assert.equal(pegRate('USD', 'SAR'), 3.75);
+        assert.equal(pegRate('SAR', 'USD'), Math.round((1 / 3.75) * 1e6) / 1e6);
+        assert.equal(pegRate('SAR', 'AED'), Math.round((3.6725 / 3.75) * 1e6) / 1e6);
+        assert.equal(pegRate('USD', 'EUR'), null, 'اليورو عائم — لا ربط');
+        assert.equal(pegRate('USD', 'KWD'), null, 'الدينار الكويتي مربوط بسلة غير معلنة — لا يُخمَّن');
+        // fetchImpl يرمي عمداً: نجاح النداء برهانُ أن مسار الربط لا يلمس الشبكة
+        const noNet = () => { throw new Error('network must not be touched'); };
+        const same = await fxRate({ from: 'USD', to: 'usd', fetchImpl: noNet });
+        assert.equal(same.rate, 1);
+        assert.equal(same.source, 'same');
+        const peg = await fxRate({ from: 'SAR', to: 'QAR', fetchImpl: noNet });
+        assert.equal(peg.source, 'peg');
+        assert.ok(Math.abs(peg.rate - 3.64 / 3.75) < 1e-6);
+        await assert.rejects(fxRate({ from: 'SA', to: 'USD', fetchImpl: noNet }), /ثلاثة أحرف/);
+    });
+
+    test('💵 العائمة سوقاً والمختلطة عبر الدولار — بأسعار Frankfurter محقونة', async () => {
+        const fetchImpl = async (url) => ({
+            ok: true,
+            json: async () => {
+                const u = new URL(url);
+                const base = u.searchParams.get('base'), sym = u.searchParams.get('symbols');
+                const table = { 'EUR_GBP': 0.85, 'USD_EUR': 0.9, 'EUR_USD': 1.1 };
+                return { date: '2026-08-15', rates: { [sym]: table[`${base}_${sym}`] } };
+            },
+        });
+        const market = await fxRate({ from: 'EUR', to: 'GBP', fetchImpl });
+        assert.equal(market.source, 'market');
+        assert.equal(market.rate, 0.85);
+        // مربوطة→عائمة: SAR→EUR = (USD→EUR) ÷ ربط SAR
+        const mixed1 = await fxRate({ from: 'SAR', to: 'EUR', fetchImpl });
+        assert.equal(mixed1.source, 'mixed');
+        assert.ok(Math.abs(mixed1.rate - 0.9 / 3.75) < 1e-6);
+        // عائمة→مربوطة: EUR→SAR = (EUR→USD) × ربط SAR
+        const mixed2 = await fxRate({ from: 'EUR', to: 'SAR', fetchImpl });
+        assert.ok(Math.abs(mixed2.rate - 1.1 * 3.75) < 1e-6);
+        assert.ok(DISPLAY_CURRENCIES.includes('SAR') && DISPLAY_CURRENCIES.includes('EUR'));
+        assert.ok(!('KWD' in USD_PEGS) || USD_PEGS.KWD === null);
+    });
+
+    test('🎁 النقاط من المدفوع فعلاً والمستوى من العتبات', () => {
+        assert.equal(bookingPoints({ status: 'issued', sellAmount: 800.9 }), 800);
+        assert.equal(bookingPoints({ status: 'issued', sellAmount: 3000, paymentPlan: { paidNow: 900 } }), 900, 'العربون المدفوع لا قيمة العقد');
+        assert.equal(bookingPoints({ status: 'cancelled', sellAmount: 800 }), 0, 'الملغى استُرد ماله');
+        assert.equal(bookingPoints({ status: 'issued', sellAmount: null }), 0, 'ابن باقة — الدفع على الأب');
+        const L = computeLoyalty([
+            { status: 'issued', sellAmount: 3000, currency: 'USD' },
+            { status: 'issued', sellAmount: 4000, paymentPlan: { paidNow: 1200 }, currency: 'USD' },
+            { status: 'cancelled', sellAmount: 9999, currency: 'USD' },
+        ]);
+        assert.equal(L.points, 4200);
+        assert.equal(L.trips, 2);
+        assert.equal(L.tier.id, 'member');
+        assert.equal(L.nextTier.pointsNeeded, 800);
+        assert.equal(L.mixedCurrencies, false);
+        const gold = computeLoyalty([{ status: 'issued', sellAmount: 20000, currency: 'USD' }]);
+        assert.equal(gold.tier.id, 'gold');
+        assert.equal(gold.nextTier, null);
+        assert.equal(gold.progressPct, 100);
+        assert.equal(computeLoyalty([]).tier.id, LOYALTY_TIERS[0].id);
+    });
+});
+
 describe('reviews/balanceReminders: وحدات نقية', () => {
     test('⭐ منقّي المراجعة وقناع الاسم والتجميع', () => {
         assert.ok(!normalizeReview({ rating: 5, title: 'رائعة', text: 'تنظيم ممتاز' }).error);
@@ -2522,6 +2589,52 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal((await call('/api/travel/flights/calendar', {
                 method: 'POST', token, body: { origin: 'RUHX', destination: 'CAI', aroundDate: futureDate(20) },
             })).status, 400);
+        });
+
+        test('💵🎁 سعر الصرف للعرض + الولاء عبر الـ API', async () => {
+            const token = makeToken('fx-loyal');
+
+            // زوج ربط رسمي — يعمل بلا أي شبكة (لا fetchImpl حقيقي في الاختبار)
+            const peg = await call('/api/travel/fx?from=USD&to=SAR', { token });
+            assert.equal(peg.status, 200);
+            assert.equal(peg.data.rate, 3.75);
+            assert.equal(peg.data.source, 'peg');
+            // النداء الثاني من الكاش
+            assert.equal((await call('/api/travel/fx?from=USD&to=SAR', { token })).data.cached, true);
+            // تحقق فاسد
+            assert.equal((await call('/api/travel/fx?from=US&to=SAR', { token })).status, 400);
+            // قائمة عملات العرض
+            const curs = await call('/api/travel/fx/currencies', { token });
+            assert.ok(curs.data.currencies.includes('SAR'));
+
+            // الولاء: صفر قبل أي حجز، ثم نقاط بقدر المدفوع فعلاً (العربون)
+            const before = await call('/api/travel/loyalty', { token });
+            assert.equal(before.data.loyalty.points, 0);
+            assert.equal(before.data.loyalty.tier.id, 'member');
+
+            const pkg = await call('/api/travel/admin/fixed-packages', {
+                method: 'POST', token: makeToken('admin'),
+                body: {
+                    title: 'ولاء تجريبي', city: 'دبي', iata: 'DXB', hotelName: 'فندق',
+                    departDate: futureDate(60), nights: 4, seatCapacity: 10,
+                    sourcing: 'group', currency: 'USD', pricePerSeat: 1000, depositPct: 30,
+                },
+            });
+            const booked = await call(`/api/travel/fixed-packages/${pkg.data.package.id}/bookings`, {
+                method: 'POST', token,
+                body: { adults: 2, pay: 'deposit', leadName: 'وليد', contact: { email: 'w@x.com' } },
+            });
+            assert.equal(booked.status, 200);
+            const after = await call('/api/travel/loyalty', { token });
+            // عربون 30% من 2000 = 600 نقطة — المدفوع فعلاً لا قيمة العقد
+            assert.equal(after.data.loyalty.points, 600);
+            assert.equal(after.data.loyalty.trips, 1);
+
+            // الإلغاء يعيد النقاط تلقائياً — المصدر واحد فلا عدّاد يتباعد
+            await call(`/api/travel/fixed-packages/bookings/${booked.data.booking.id}/cancel`, {
+                method: 'POST', token,
+            });
+            assert.equal((await call('/api/travel/loyalty', { token })).data.loyalty.points, 0);
         });
 
         // ─── 🤝 العقود الفندقية عبر الأدمن ─────────────────────────────
