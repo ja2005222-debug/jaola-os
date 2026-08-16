@@ -2824,8 +2824,22 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                     const s = sessions.get(id);
                     return { id, status: s?.status || 'expired', paymentStatus: s?.paymentStatus || 'unpaid', paymentIntent: 'pi_' + id, metadata: s?.args || {} };
                 },
-                async createRefund({ paymentIntentId }) {
-                    return { id: 're_1', status: 'succeeded', amount: 540, currency: 'USD' };
+                async createRefund({ paymentIntentId, amount = null }) {
+                    refunds.push({ paymentIntentId, amount });
+                    return { id: 're_' + refunds.length, status: 'succeeded', amount: amount ?? 540, currency: 'USD' };
+                },
+            };
+            const refunds = []; // كل ردٍّ طُلب فعلاً — بمبلغه (null = كامل)
+            // مزوّد طيران يعدّ نداءات الإصدار ويمكن إفشاله لحظياً: الأول
+            // يثبت «لا نداء قبل الدفع»، والثاني يثبت الرد الآلي بعده.
+            const baseProvider = createMockTravelProvider();
+            let failIssue = false, orderCalls = 0;
+            const flightProvider = {
+                ...baseProvider,
+                async createOrder(args) {
+                    orderCalls += 1;
+                    if (failIssue) throw new Error('محاكاة: انتهت صلاحية العرض قبل الإصدار.');
+                    return baseProvider.createOrder(args);
                 },
             };
             // app منفصل بدفع مفعَّل — نفس نمط spawnApp في اختبارات الهوامش
@@ -2834,7 +2848,7 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             await store2.init();
             const app2 = createApp({
                 store: store2, jwtSecret: JWT_SECRET,
-                provider: createMockTravelProvider(), staysProvider: createMockStaysProvider(),
+                provider: flightProvider, staysProvider: createMockStaysProvider(),
                 carsProvider: createMockCarsProvider(), adminUsers: ['admin'],
                 stripeClient: fakeStripe, stripeWebhookSecret: WHSEC,
                 publicUrl: 'https://portal.test', cronSecret: 'cron-secret',
@@ -2953,6 +2967,106 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 const cancel = await call2(`/api/travel/fixed-packages/bookings/${bookingId}/cancel`, { method: 'POST', token: buyer });
                 assert.equal(cancel.status, 200);
                 assert.equal(cancel.data.booking.refund.stripeRefundId, 're_1', 'استرداد Stripe فعلي مسجَّل');
+
+                // ─── ✈️ حجوزات مخزون المزوّد: الدفع قبل الإصدار ───
+                const pax = { title: 'mr', givenName: 'WAEL', familyName: 'ALI', bornOn: '1990-05-01', gender: 'm' };
+                const contact = { email: 'w@x.com', phone: '+966500000000' };
+                const bookFlight = async () => {
+                    const search = await call2('/api/travel/flights/search', {
+                        method: 'POST', token: buyer,
+                        body: { origin: 'RUH', destination: 'CAI', departDate: futureDate(30), adults: 1 },
+                    });
+                    const offer = search.data.offers[0];
+                    const res = await call2('/api/travel/bookings', {
+                        method: 'POST', token: buyer,
+                        body: { offerId: offer.id, passengers: [pax], contact },
+                    });
+                    return { res, offer };
+                };
+
+                // 8) الحجز يفتح صفحة دفع ولا يلمس المزوّد إطلاقاً
+                const callsBefore = orderCalls;
+                const f1 = await bookFlight();
+                assert.equal(f1.res.status, 200);
+                assert.match(f1.res.data.checkoutUrl, /^https:\/\/checkout\.stripe\.test\//);
+                assert.equal(f1.res.data.booking.status, 'pending');
+                assert.equal(orderCalls, callsBefore, '⛔ لا نداء للمزوّد قبل وصول المال — جوهر التصميم');
+                const fid = f1.res.data.booking.id;
+
+                // ... والدفع وحده يصدر التذكرة (مرة واحدة مهما تكرر webhook)
+                const fDone = signedWebhook({
+                    type: 'checkout.session.completed',
+                    data: { object: { payment_intent: 'pi_flight', metadata: { bookingId: fid, purpose: 'issue_booking' } } },
+                });
+                await call2('/api/travel/webhooks/stripe', { method: 'POST', body: fDone.body, headers: fDone.headers });
+                await call2('/api/travel/webhooks/stripe', { method: 'POST', body: fDone.body, headers: fDone.headers });
+                const issuedFlight = (await call2('/api/travel/bookings', { token: buyer })).data.bookings.find(b => b.id === fid);
+                assert.equal(issuedFlight.status, 'issued');
+                assert.match(issuedFlight.bookingReference, /^JAO/);
+                assert.equal(orderCalls, callsBefore + 1, 'إصدار واحد رغم تكرار الـwebhook');
+
+                // 9) انتهاء مهلة الدفع → فشل صريح بلا أي تذكرة
+                const f2 = await bookFlight();
+                const f2id = f2.res.data.booking.id;
+                const fExpired = signedWebhook({
+                    type: 'checkout.session.expired',
+                    data: { object: { metadata: { bookingId: f2id, purpose: 'issue_booking' } } },
+                });
+                await call2('/api/travel/webhooks/stripe', { method: 'POST', body: fExpired.body, headers: fExpired.headers });
+                const expiredFlight = (await call2('/api/travel/bookings', { token: buyer })).data.bookings.find(b => b.id === f2id);
+                assert.equal(expiredFlight.status, 'failed');
+                assert.equal(orderCalls, callsBefore + 1, 'المهلة المنتهية لا تُصدر شيئاً');
+
+                // 10) دُفع ثم فشل الإصدار (عرض منتهٍ) → رد آلي كامل + إشعار
+                failIssue = true;
+                const f3 = await bookFlight();
+                const f3id = f3.res.data.booking.id;
+                const f3Done = signedWebhook({
+                    type: 'checkout.session.completed',
+                    data: { object: { payment_intent: 'pi_fail', metadata: { bookingId: f3id, purpose: 'issue_booking' } } },
+                });
+                await call2('/api/travel/webhooks/stripe', { method: 'POST', body: f3Done.body, headers: f3Done.headers });
+                failIssue = false;
+                const failedFlight = (await call2('/api/travel/bookings', { token: buyer })).data.bookings.find(b => b.id === f3id);
+                assert.equal(failedFlight.status, 'failed');
+                assert.ok(failedFlight.refund?.stripeRefundId, 'المال لا يبقى عندنا بلا خدمة');
+                assert.deepEqual(refunds.at(-1), { paymentIntentId: 'pi_fail', amount: null }, 'رد كامل بلا تجزئة');
+                const inbox2 = await call2('/api/travel/notifications', { token: buyer });
+                assert.ok(inbox2.data.notifications.some(n => n.title.includes('أُعيد المبلغ')));
+
+                // 11) إلغاء حجز مدفوع → رد بنسبة ما ردّه المزوّد (80% في المحاكاة)
+                const cancelFlight = await call2(`/api/travel/bookings/${fid}/cancel`, { method: 'POST', token: buyer });
+                assert.equal(cancelFlight.status, 200);
+                const paidAmount = issuedFlight.sellAmount;
+                const lastRefund = refunds.at(-1);
+                assert.equal(lastRefund.paymentIntentId, 'pi_flight');
+                assert.ok(Math.abs(lastRefund.amount - paidAmount * 0.8) < 0.02,
+                    `الرد يتناسب مع رد المزوّد: ${lastRefund.amount} ≈ ${paidAmount * 0.8}`);
+
+                // 12) الفندق يمر بنفس الدورة — وفرع إرساله مختلف (guests لا
+                // passengers)، فيثبت أن التوزيع على المزوّدات صحيح لا الطيران وحده
+                const staySearch = await call2('/api/travel/stays/search', {
+                    method: 'POST', token: buyer,
+                    body: { iata: 'DXB', checkInDate: futureDate(30), checkOutDate: futureDate(33), adults: 1, rooms: 1 },
+                });
+                const stayBooked = await call2('/api/travel/stays/bookings', {
+                    method: 'POST', token: buyer,
+                    body: {
+                        offerId: staySearch.data.offers[0].id,
+                        guests: [{ givenName: 'WAEL', familyName: 'ALI' }], contact,
+                    },
+                });
+                assert.equal(stayBooked.data.booking.status, 'pending');
+                assert.ok(stayBooked.data.checkoutUrl, 'الفندق أيضاً لا يُحجز قبل الدفع');
+                const sid = stayBooked.data.booking.id;
+                const sDone = signedWebhook({
+                    type: 'checkout.session.completed',
+                    data: { object: { payment_intent: 'pi_stay', metadata: { bookingId: sid, purpose: 'issue_booking' } } },
+                });
+                await call2('/api/travel/webhooks/stripe', { method: 'POST', body: sDone.body, headers: sDone.headers });
+                const issuedStay = (await call2('/api/travel/bookings', { token: buyer })).data.bookings.find(b => b.id === sid);
+                assert.equal(issuedStay.status, 'issued');
+                assert.ok(issuedStay.bookingReference, 'مرجع الفندق من المزوّد بعد الدفع');
             } finally {
                 await new Promise(r => server2.close(r));
                 await store2.close();

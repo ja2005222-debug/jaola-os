@@ -641,7 +641,7 @@ export function createApp({
         return offer ? publicOffer(offer, flightMkt) : null;
     }
 
-    async function doBook(username, { offerId, passengers, contact }) {
+    async function doBook(username, { offerId, passengers, contact }, baseUrl = null) {
         const offer = await provider.getOffer(String(offerId || ''));
         if (!offer) throw Object.assign(new Error('العرض غير موجود أو انتهت صلاحيته — أعد البحث.'), { status: 404 });
         const check = validatePassengers({ passengers, contact }, offer.passengerCount);
@@ -668,6 +668,14 @@ export function createApp({
             contact: check.values.contact,
             netAmount: offer.netAmount, sellAmount, currency: offer.currency,
         });
+        // 💳 الدفع قبل الإصدار — لا نلمس المزوّد قبل وصول المال (انظر
+        // startBookingCheckout: تذكرة تُصدر بلا مقابل خسارة نقدية فورية)
+        if (stripeClient) {
+            return startBookingCheckout({
+                booking, baseUrl,
+                title: `${offer.slices?.[0]?.origin || ''}→${offer.slices?.[0]?.destination || ''} · ${offer.owner || 'رحلة'}`,
+            });
+        }
         try {
             const order = await provider.createOrder({
                 offerId: offer.id,
@@ -696,8 +704,10 @@ export function createApp({
             throw Object.assign(new Error('الإلغاء متاح للحجوزات المُصدَرة فقط.'), { status: 400 });
         }
         const result = await provider.cancelOrder(booking.providerOrderId);
+        // 💳 ما دفعه المسافر إلينا يُرد منّا — رد المزوّد يحدد القدر لا الوجهة
+        const stripeRefund = await refundCancelledBooking(booking, { amount: result.refundAmount });
         const cancelled = await transitionBooking(store, booking.id, 'cancelled', {
-            refund: { amount: result.refundAmount ?? null, currency: result.currency ?? null },
+            refund: { amount: result.refundAmount ?? null, currency: result.currency ?? null, ...(stripeRefund || {}) },
         });
         // سباق نادر: انتقال آخر سبقنا بعد نداء المزوّد — الحالة الفعلية أصدق
         const finalBooking = cancelled || await getBooking(store, booking.id);
@@ -752,7 +762,7 @@ export function createApp({
         }
     }
 
-    async function doBookStay(username, { offerId, guests, contact }) {
+    async function doBookStay(username, { offerId, guests, contact }, baseUrl = null) {
         requireStays();
         // offerId هنا quote id (من get_stay_offer السابقة) — getQuote يجلبه
         // كما هو دون إنشاء quote جديد؛ getStayOffer كانت لتنشئ quote ثانياً
@@ -774,6 +784,12 @@ export function createApp({
             contact: check.values.contact,
             netAmount: offer.netAmount, sellAmount, currency: offer.currency,
         });
+        if (stripeClient) {
+            return startBookingCheckout({
+                booking, baseUrl,
+                title: `${offer.name || 'فندق'} · ${offer.checkIn || ''}→${offer.checkOut || ''}`,
+            });
+        }
         try {
             const order = await staysProvider.createStayOrder({
                 offerId: offer.id,
@@ -802,8 +818,9 @@ export function createApp({
             throw Object.assign(new Error('الإلغاء متاح للحجوزات المُصدَرة فقط.'), { status: 400 });
         }
         const result = await staysProvider.cancelStayOrder(booking.providerOrderId);
+        const stripeRefund = await refundCancelledBooking(booking, { amount: result.refundAmount });
         const cancelled = await transitionBooking(store, booking.id, 'cancelled', {
-            refund: { amount: result.refundAmount ?? null, currency: result.currency ?? null },
+            refund: { amount: result.refundAmount ?? null, currency: result.currency ?? null, ...(stripeRefund || {}) },
         });
         const finalBooking = cancelled || await getBooking(store, booking.id);
         await notifyBookingCancelled(finalBooking);
@@ -834,7 +851,7 @@ export function createApp({
         return offer ? publicOffer(offer, carMkt) : null;
     }
 
-    async function doBookCar(username, { offerId, drivers, contact }) {
+    async function doBookCar(username, { offerId, drivers, contact }, baseUrl = null) {
         requireCars();
         // نفس تفرقة rate/quote لدى الفنادق: offerId هنا quote id — getQuote
         // يجلبه كما هو دون إنشاء quote جديد.
@@ -852,6 +869,12 @@ export function createApp({
             contact: check.values.contact,
             netAmount: offer.netAmount, sellAmount, currency: offer.currency,
         });
+        if (stripeClient) {
+            return startBookingCheckout({
+                booking, baseUrl,
+                title: `${offer.vehicleName || 'سيارة'} · ${offer.pickUpAt || ''}`,
+            });
+        }
         try {
             const order = await carsProvider.createCarOrder({
                 offerId: offer.id,
@@ -880,8 +903,9 @@ export function createApp({
             throw Object.assign(new Error('الإلغاء متاح للحجوزات المُصدَرة فقط.'), { status: 400 });
         }
         const result = await carsProvider.cancelCarOrder(booking.providerOrderId);
+        const stripeRefund = await refundCancelledBooking(booking, { amount: result.refundAmount });
         const cancelled = await transitionBooking(store, booking.id, 'cancelled', {
-            refund: { amount: result.refundAmount ?? null, currency: result.currency ?? null },
+            refund: { amount: result.refundAmount ?? null, currency: result.currency ?? null, ...(stripeRefund || {}) },
         });
         const finalBooking = cancelled || await getBooking(store, booking.id);
         await notifyBookingCancelled(finalBooking);
@@ -1207,8 +1231,9 @@ export function createApp({
 
     app.post('/api/travel/bookings', verifyToken, wrap(async (req, res) => {
         try {
-            const booking = await doBook(userOf(req), req.body || {});
-            res.json({ booking });
+            const booking = await doBook(userOf(req), req.body || {}, requestBaseUrl(req));
+            // checkoutUrl (إن وُجد) على الجذر أيضاً — نفس عقد مسار الباقات
+            res.json({ booking, ...(booking.checkoutUrl ? { checkoutUrl: booking.checkoutUrl } : {}) });
         } catch (e) {
             if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;
@@ -1273,8 +1298,8 @@ export function createApp({
 
     app.post('/api/travel/stays/bookings', verifyToken, wrap(async (req, res) => {
         try {
-            const booking = await doBookStay(userOf(req), req.body || {});
-            res.json({ booking });
+            const booking = await doBookStay(userOf(req), req.body || {}, requestBaseUrl(req));
+            res.json({ booking, ...(booking.checkoutUrl ? { checkoutUrl: booking.checkoutUrl } : {}) });
         } catch (e) {
             if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;
@@ -1315,8 +1340,8 @@ export function createApp({
 
     app.post('/api/travel/cars/bookings', verifyToken, wrap(async (req, res) => {
         try {
-            const booking = await doBookCar(userOf(req), req.body || {});
-            res.json({ booking });
+            const booking = await doBookCar(userOf(req), req.body || {}, requestBaseUrl(req));
+            res.json({ booking, ...(booking.checkoutUrl ? { checkoutUrl: booking.checkoutUrl } : {}) });
         } catch (e) {
             if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;
@@ -1661,6 +1686,190 @@ export function createApp({
 
     // ─── 💳 تسوية مدفوعات Stripe: webhook موقَّع + مصالحة دورية ─────────
 
+    /**
+     * 💳 الدفع قبل الإصدار — لحجوزات مخزون المزوّد (طيران/فندق/سيارة).
+     *
+     * ⚠️ الفارق الجوهري عن الباقات المجدولة ليس تفصيلاً تقنياً بل مالياً:
+     * مقعد الباقة **ملكنا** (متعاقَد سلفاً) فنحجزه للمعلّق ونؤجل الإصدار
+     * بلا خسارة. أما تذكرة Duffel/غرفة LiteAPI فتُشترى لحظة النداء
+     * ويُخصم ثمنها من رصيدنا فوراً — فنداء المزوّد قبل وصول المال يعني
+     * تذكرة مدفوعة من جيبنا إن هجر المسافر صفحة الدفع. لذلك: لا نداء
+     * للمزوّد إطلاقاً قبل نجاح الدفع، والإصدار يجري في webhook/المصالحة.
+     *
+     * والثمن المقبول لهذا الترتيب: قد ينتهي أجل العرض بين الدفع والإصدار
+     * (عروض Duffel قصيرة الأجل، والحد الأدنى لجلسة Stripe 30 دقيقة) —
+     * فيُرد المبلغ كاملاً آلياً في settleProviderBookingPaid أدناه.
+     */
+    async function startBookingCheckout({ booking, baseUrl, title }) {
+        const base = baseUrl || publicUrl || '';
+        let session;
+        try {
+            session = await stripeClient.createCheckoutSession({
+                amount: booking.sellAmount, currency: booking.currency,
+                title: `${title} (${booking.id})`.slice(0, 250),
+                bookingId: booking.id, purpose: 'issue_booking',
+                customerEmail: booking.contact?.email,
+                successUrl: `${base}/?payment=success&booking=${booking.id}`,
+                cancelUrl: `${base}/?payment=cancelled&booking=${booking.id}`,
+            });
+        } catch (e) {
+            // لا حجز معلّق بلا طريق دفع — ولا مقاعد محجوزة هنا أصلاً
+            await transitionBooking(store, booking.id, 'failed', { error: `تعذّر فتح صفحة الدفع: ${e.message}` });
+            throw Object.assign(new Error(`تعذّر فتح صفحة الدفع: ${e.message}. لم تُحاسَب على شيء.`), { status: 502 });
+        }
+        await store.transitionBooking(booking.id, {
+            from: ['pending'], to: 'pending',
+            patch: { stripeSessionId: session.id, checkoutExpiresAt: session.expiresAt },
+        });
+        return { ...publicBooking(await getBooking(store, booking.id)), checkoutUrl: session.url };
+    }
+
+    /** نداء المزوّد المناسب لنوع الحجز — نفس الوسائط المحفوظة على الحجز. */
+    async function issueBookingWithProvider(booking) {
+        const offerId = booking.offer?.id;
+        const contact = booking.contact;
+        if (booking.kind === 'stay') {
+            requireStays();
+            return staysProvider.createStayOrder({ offerId, guests: booking.passengers, contact });
+        }
+        if (booking.kind === 'car') {
+            requireCars();
+            return carsProvider.createCarOrder({ offerId, drivers: booking.passengers, contact });
+        }
+        return provider.createOrder({ offerId, passengers: booking.passengers, contact });
+    }
+
+    const KIND_LABEL = { stay: 'الفندق', car: 'السيارة' };
+
+    /**
+     * دفع حجز مزوّد اكتمل → الإصدار الآن (النداء الوحيد للمزوّد في الرحلة
+     * كلها). آمن التكرار: الانتقال من pending محروس، فإعادة إرسال Stripe
+     * لا تُصدر تذكرتين.
+     *
+     * وفشل الإصدار بعد الدفع هو الحالة التي تُحكم بها جودة أي بوابة:
+     * المال وصل والخدمة لم تُقدَّم، فالرد **آلي فوري** لا مطالبة يدوية —
+     * وإن تعذّر الرد نفسه يُنبَّه المالك لأنها الحالة الوحيدة التي نحتفظ
+     * فيها بمال بلا مقابل ولو لدقائق.
+     */
+    async function settleProviderBookingPaid(bookingId, paymentIntentId = null) {
+        const booking = await getBooking(store, bookingId);
+        if (!booking || booking.status !== 'pending' || booking.kind === 'fixed_package') return false;
+        const label = KIND_LABEL[booking.kind] || 'الرحلة';
+        try {
+            const order = await issueBookingWithProvider(booking);
+            const issued = await transitionBooking(store, booking.id, 'issued', {
+                providerOrderId: order.orderId,
+                bookingReference: order.bookingReference,
+                paymentIntentId, paidAt: Date.now(),
+            });
+            if (issued) await notifyBookingIssued(issued);
+            return !!issued;
+        } catch (e) {
+            let refund = { amount: null, error: e.message };
+            if (paymentIntentId) {
+                try {
+                    const r = await stripeClient.createRefund({ paymentIntentId });
+                    refund = { amount: r.amount, currency: r.currency, stripeRefundId: r.id, reason: e.message };
+                } catch (re) {
+                    refund = { amount: null, error: `تعذّر الرد الآلي: ${re.message}`, reason: e.message };
+                    for (const admin of adminSet) {
+                        await notifier.deliver({
+                            username: admin, category: 'admin_alert',
+                            title: `🧯 استرداد يدوي مطلوب — ${booking.id}`,
+                            body: `دُفع حجز ${label} ولم يُصدَر (${e.message})، وفشل الرد الآلي (${re.message}).\nالمبلغ: ${booking.sellAmount} ${booking.currency}\npayment_intent: ${paymentIntentId}`,
+                            meta: { bookingId: booking.id },
+                        });
+                    }
+                }
+            }
+            await transitionBooking(store, booking.id, 'failed', {
+                error: `تعذّر إصدار حجز ${label} بعد الدفع: ${e.message}`,
+                refund,
+            });
+            await notifier.deliver({
+                username: booking.username, category: 'booking_cancelled',
+                title: `↩️ تعذّر إصدار حجزك — أُعيد المبلغ`,
+                body: `تعذّر إصدار حجز ${label} بعد الدفع (${e.message}).\n`
+                    + (refund.stripeRefundId
+                        ? `أُعيد المبلغ ${refund.amount} ${refund.currency} إلى بطاقتك — قد يستغرق ظهوره أياماً قليلة لدى البنك.`
+                        : 'سنعيد المبلغ إليك يدوياً خلال وقت قصير.')
+                    + '\nيمكنك إعادة البحث والحجز من جديد متى شئت.',
+                email: booking.contact?.email || null,
+                meta: { bookingId: booking.id },
+            });
+            return false;
+        }
+    }
+
+    /** جلسة دفع حجز مزوّد انتهت بلا سداد → فشل صريح (لا مخزون محجوزاً يُحرَّر). */
+    async function expireProviderBookingPayment(bookingId) {
+        const booking = await getBooking(store, bookingId);
+        if (!booking || booking.status !== 'pending' || booking.kind === 'fixed_package') return false;
+        const failed = await transitionBooking(store, booking.id, 'failed', {
+            error: 'انتهت مهلة الدفع دون سداد — لم يُصدر الحجز ولم تُحاسَب على شيء.',
+        });
+        return !!failed;
+    }
+
+    /**
+     * مبلغ ما يُرد للمسافر عند إلغاء حجز مدفوع — يتناسب مع ما ردّه
+     * المزوّد فعلاً: رد كامل ⇒ رد كامل بهامشنا، جزئي ⇒ نفس النسبة،
+     * صفر ⇒ صفر (وهو ما أعلناه له قبل الحجز: «غير قابل للاسترداد»).
+     *
+     * ⚠️ ومزوّد صامت عن المبلغ حالة حقيقية لا فرضية (LiteAPI أعاد `null`
+     * في إلغاء مُجرَّب): لا نخمّن — إن كنا وعدنا بإلغاء مجاني نرد كاملاً،
+     * وإلا نترك القرار للمالك بتنبيه صريح بدل رقمٍ مخترَع.
+     */
+    function refundPlanFor(booking, providerRefund) {
+        const paid = Number(booking.sellAmount);
+        const net = Number(booking.netAmount);
+        const back = Number(providerRefund?.amount);
+        if (Number.isFinite(back) && Number.isFinite(net) && net > 0) {
+            const share = Math.max(0, Math.min(1, back / net));
+            return { amount: Math.round(paid * share * 100) / 100, manual: false };
+        }
+        if (booking.offer?.cancellable === true) return { amount: paid, manual: false };
+        return { amount: null, manual: true };
+    }
+
+    /**
+     * يُرجع المال بعد إلغاء ناجح لدى المزوّد. يُستدعى من مسارات الإلغاء
+     * الثلاثة — منطق واحد فلا تفترق سياسة الرد بين طيران وفندق وسيارة.
+     */
+    async function refundCancelledBooking(booking, providerRefund) {
+        if (!stripeClient || !booking.paymentIntentId) return null;
+        const plan = refundPlanFor(booking, providerRefund);
+        if (plan.manual || !(plan.amount > 0)) {
+            for (const admin of adminSet) {
+                await notifier.deliver({
+                    username: admin, category: 'admin_alert',
+                    title: `🧯 مراجعة استرداد — ${booking.bookingReference || booking.id}`,
+                    body: `أُلغي حجز مدفوع ولم يُحدَّد مبلغ الرد آلياً (المزوّد لم يصرّح بالمبلغ وسياسة العرض ليست إلغاءً مجانياً).\n`
+                        + `المدفوع: ${booking.sellAmount} ${booking.currency}\npayment_intent: ${booking.paymentIntentId}`,
+                    meta: { bookingId: booking.id },
+                });
+            }
+            return { amount: null, pendingReview: true };
+        }
+        try {
+            const r = await stripeClient.createRefund({
+                paymentIntentId: booking.paymentIntentId,
+                amount: plan.amount < Number(booking.sellAmount) ? plan.amount : null,
+            });
+            return { amount: r.amount, currency: r.currency, stripeRefundId: r.id };
+        } catch (e) {
+            for (const admin of adminSet) {
+                await notifier.deliver({
+                    username: admin, category: 'admin_alert',
+                    title: `🧯 استرداد يدوي مطلوب — ${booking.bookingReference || booking.id}`,
+                    body: `فشل رد ${plan.amount} ${booking.currency} آلياً: ${e.message}\npayment_intent: ${booking.paymentIntentId}`,
+                    meta: { bookingId: booking.id },
+                });
+            }
+            return { amount: null, error: `تعذّر الرد الآلي — سيُسترد يدوياً: ${e.message}` };
+        }
+    }
+
     /** دفع حجز باقة اكتمل → إصدار + إشعار. آمن التكرار (الانتقال محروس). */
     async function settleFixedBookingPaid(bookingId, paymentIntentId = null) {
         const booking = await getBooking(store, bookingId);
@@ -1728,9 +1937,11 @@ export function createApp({
         if (bookingId) {
             if (event.type === 'checkout.session.completed') {
                 if (purpose === 'fixed_balance') await settleFixedBalancePaid(bookingId);
+                else if (purpose === 'issue_booking') await settleProviderBookingPaid(bookingId, session.payment_intent || null);
                 else await settleFixedBookingPaid(bookingId, session.payment_intent || null);
-            } else if (event.type === 'checkout.session.expired' && purpose === 'fixed_booking') {
-                await expireFixedBookingPayment(bookingId);
+            } else if (event.type === 'checkout.session.expired') {
+                if (purpose === 'issue_booking') await expireProviderBookingPayment(bookingId);
+                else if (purpose === 'fixed_booking') await expireFixedBookingPayment(bookingId);
             }
         }
         res.json({ received: true }); // غير المعروف يُقَرّ به بصمت — Stripe يعيد الإرسال وإلا
@@ -1745,17 +1956,24 @@ export function createApp({
     async function reconcilePendingPayments(limit = 100) {
         if (!stripeClient) return { checked: 0, settled: 0, expired: 0 };
         const all = await store.listAllBookings(500);
-        const pending = all.filter(b =>
-            b.kind === 'fixed_package' && b.status === 'pending' && b.stripeSessionId).slice(0, limit);
+        // كل الأنواع: مقاعد الباقة تُحرَّر، وحجوزات المزوّد تُصدر بعد الدفع
+        const pending = all.filter(b => b.status === 'pending' && b.stripeSessionId).slice(0, limit);
         let settled = 0, expired = 0;
         const errors = [];
         for (const b of pending) {
+            const isFixed = b.kind === 'fixed_package';
             try {
                 const s = await stripeClient.getCheckoutSession(b.stripeSessionId);
                 if (s.paymentStatus === 'paid') {
-                    if (await settleFixedBookingPaid(b.id, s.paymentIntent)) settled += 1;
+                    const done = isFixed
+                        ? await settleFixedBookingPaid(b.id, s.paymentIntent)
+                        : await settleProviderBookingPaid(b.id, s.paymentIntent);
+                    if (done) settled += 1;
                 } else if (s.status === 'expired') {
-                    if (await expireFixedBookingPayment(b.id)) expired += 1;
+                    const done = isFixed
+                        ? await expireFixedBookingPayment(b.id)
+                        : await expireProviderBookingPayment(b.id);
+                    if (done) expired += 1;
                 }
                 // open وغير منتهية: ما زال المسافر على صفحة الدفع — تُترك
             } catch (e) {
@@ -1862,16 +2080,16 @@ export function createApp({
         const services = {
             searchFlights: params => doSearch(params),
             getOffer: id => doGetOffer(id),
-            bookFlight: args => doBook(username, args),
+            bookFlight: args => doBook(username, args, requestBaseUrl(req)),
             listBookings: () => listMine(username),
             cancelBooking: id => doCancel(username, id),
             searchStays: staysProvider ? params => doSearchStays(params) : null,
             getStayOffer: staysProvider ? id => doGetStayOffer(id) : null,
-            bookStay: staysProvider ? args => doBookStay(username, args) : null,
+            bookStay: staysProvider ? args => doBookStay(username, args, requestBaseUrl(req)) : null,
             cancelStay: staysProvider ? id => doCancelStay(username, id) : null,
             searchCars: carsProvider ? params => doSearchCars(params) : null,
             getCarOffer: carsProvider ? id => doGetCarOffer(id) : null,
-            bookCar: carsProvider ? args => doBookCar(username, args) : null,
+            bookCar: carsProvider ? args => doBookCar(username, args, requestBaseUrl(req)) : null,
             cancelCar: carsProvider ? id => doCancelCar(username, id) : null,
             findFlexibleDates: params => doFindFlexibleDates(username, params),
             checkTripConflicts: () => doCheckTripConflicts(username),

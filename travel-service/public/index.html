@@ -1732,6 +1732,8 @@
           return;
         }
         $('bookDialog').close();
+        // 💳 مع بوابة الدفع: لا تذكرة قبل السداد — تحويل لصفحة Stripe
+        if (data.checkoutUrl) { window.location.href = data.checkoutUrl; return; }
         alert(`✅ تم الحجز!\nالمرجع: ${data.booking.bookingReference}\nالإجمالي: ${data.booking.sellAmount} ${data.booking.currency}`);
         document.querySelector('[data-tab="trips"]').click();
       } finally {
@@ -1980,6 +1982,7 @@
           return;
         }
         $('stayBookDialog').close();
+        if (data.checkoutUrl) { window.location.href = data.checkoutUrl; return; }
         alert(`✅ تم حجز الفندق!\nالمرجع: ${data.booking.bookingReference}\nالإجمالي: ${data.booking.sellAmount} ${data.booking.currency}`);
         document.querySelector('[data-tab="trips"]').click();
       } finally {
@@ -2358,6 +2361,7 @@
           return;
         }
         $('carBookDialog').close();
+        if (data.checkoutUrl) { window.location.href = data.checkoutUrl; return; }
         alert(`✅ تم حجز السيارة!\nالمرجع: ${data.booking.bookingReference}\nالإجمالي: ${data.booking.sellAmount} ${data.booking.currency}`);
         document.querySelector('[data-tab="trips"]').click();
       } finally {
@@ -2677,6 +2681,8 @@
                     <span class="st st-${esc(c.status)}">${ST_LABEL[c.status] || esc(c.status)}</span>${
                     c.bookingReference ? ` · مرجع <strong>${esc(c.bookingReference)}</strong>` : ''}</div>`).join('')}
                 ${b.error ? `<div class="error">${esc(b.error)}</div>` : ''}
+                ${b.status === 'pending' && b.kind !== 'fixed_package' && config?.paymentsEnabled
+                  ? '<div class="note">💳 بانتظار إتمام الدفع — لا يُصدر الحجز قبل السداد، ولن تُحاسَب إن لم تُكمله.</div>' : ''}
                 ${refundHtml(b)}
               </div>
               <div style="text-align:center">

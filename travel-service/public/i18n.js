@@ -135,6 +135,8 @@ window.JAOLA_I18N = {
         // ─── حالات الحجز وأنواعه (نصوص مولَّدة بالجافاسكربت) ───
         '💳 سدّد المتبقي الآن': '💳 Pay balance now',
         '💳 بانتظار إتمام الدفع — مقاعدك محجوزة، وتتحرر إن انتهت مهلة الدفع.': '💳 Awaiting payment — your seats are held and release if the payment window expires.',
+        '💳 بانتظار إتمام الدفع — لا يُصدر الحجز قبل السداد، ولن تُحاسَب إن لم تُكمله.':
+            '💳 Awaiting payment — nothing is issued before payment, and you are not charged if you do not complete it.',
         'مُصدَر ✅': 'Issued ✅',
         'قيد الإصدار': 'Issuing',
         'فشل': 'Failed',
@@ -255,6 +257,8 @@ window.JAOLA_I18N_RULES = [
     [/^💰 عرض فندق بسعر (.+)$/, '💰 Hotel offer at $1'],
     [/^💰 عرض سيارة بسعر (.+)$/, '💰 Car offer at $1'],
     [/^✅ حُجز — المرجع (.+)$/, '✅ Booked — reference $1'],
+    [/^💳 بانتظار الدفع — (.+)$/, '💳 Awaiting payment — $1'],
+    [/^↩️ تعذّر إصدار حجزك — أُعيد المبلغ$/, '↩️ Your booking could not be issued — refunded'],
     [/^✅ حُجز فندق — المرجع (.+)$/, '✅ Hotel booked — reference $1'],
     [/^✅ حُجزت سيارة — المرجع (.+)$/, '✅ Car booked — reference $1'],
     [/^↩️ أُلغي الحجز (.+)$/, '↩️ Cancelled booking $1'],
