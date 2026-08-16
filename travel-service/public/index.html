@@ -686,10 +686,14 @@
        فعلاً («تفاصيل الحجز مقتضبة»، «أين تذكرتي؟»). للطباعة أيضاً. -->
   <dialog id="detailsDialog" style="max-width:720px">
     <div id="detailsBody"></div>
-    <div style="display:flex;gap:10px;margin-top:14px">
+    <div id="detailsActions" style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
       <button class="chip" id="detailsClose" type="button">إغلاق</button>
+      <button class="chip" id="detailsShare" type="button">📤 مشاركة</button>
+      <button class="chip" id="detailsWhatsApp" type="button">💬 واتساب</button>
+      <button class="chip" id="detailsCalendar" type="button">📅 أضف للتقويم</button>
       <button class="chip" id="detailsPrint" type="button">🖨️ طباعة / حفظ PDF</button>
     </div>
+    <p class="note" id="detailsShareNote">تُشارَك خطة الرحلة والمرجع فقط — بلا بريدك ولا هاتفك ولا أرقام تذاكرك.</p>
   </dialog>
 
   <script src="i18n.js"></script>
@@ -2766,6 +2770,8 @@
                   <button class="chip" data-details="${esc(b.id)}" style="margin-top:0">📄 تفاصيل الحجز</button>
                   ${b.status === 'pending' && config?.paymentsEnabled
                     ? `<button class="chip" data-pay="${esc(b.id)}" style="margin-top:0;border-color:var(--ok);color:var(--ok)">💳 أكمل الدفع الآن</button>` : ''}
+                  ${b.status === 'failed' && ['flight', 'stay', 'car'].includes(b.kind || 'flight')
+                    ? `<button class="chip" data-rebook="${esc(b.id)}" style="margin-top:0">🔁 ابحث عن بديل</button>` : ''}
                 </div>
               </div>
               <div style="text-align:center">
@@ -2789,6 +2795,10 @@
       // 📄 قسيمة الحجز الكاملة
       document.querySelectorAll('[data-details]').forEach(btn =>
         btn.addEventListener('click', () => openBookingDetails(btn.dataset.details)));
+      // 🔁 حجز فشل (انتهت مهلة دفعه أو رفضه المزوّد): بحثٌ جديد بنفس
+      // معطياته بدل إعادة إدخالها كلها — أكثر ما يُحبط بعد فشلٍ إعادةُ العمل.
+      document.querySelectorAll('[data-rebook]').forEach(btn =>
+        btn.addEventListener('click', () => rebookFrom(btn.dataset.rebook)));
       // 💳 إكمال دفع لم يتم — يستأنف الجلسة القائمة إن كانت حيّة
       document.querySelectorAll('[data-pay]').forEach(btn =>
         btn.addEventListener('click', async () => {
@@ -2886,14 +2896,182 @@
       if (b.error) parts.push(`<div class="error">${esc(b.error)}</div>`);
       return parts.join('');
     }
+    // ─── 📤 مشاركة الحجز و📅 إضافته للتقويم ───
+    //
+    // 🔒 خط الخصوصية: المُشارَك خطةُ رحلةٍ لا هوية — لا بريد ولا هاتف ولا
+    // رقم تذكرة إلكترونية (به يُسجَّل الوصول ويُعدَّل الحجز لدى الناقل).
+    // المرجع وحده يكفي من يستقبله ليعرف الرحلة، ولا يكفيه ليتصرّف فيها.
+    function bookingShareText(b) {
+      const L = [];
+      const money = `${b.sellAmount} ${b.currency}`;
+      if (b.kind === 'fixed_package') {
+        L.push(`🎒 ${b.offer?.title || ''}`);
+        L.push(`🏨 ${b.offer?.hotelName || ''} · ${T('انطلاق', 'Departs')} ${b.offer?.departDate || ''} (${b.offer?.nights || '؟'} ${T('ليالٍ', 'nights')})`);
+      } else if (b.kind === 'stay') {
+        L.push(`🏨 ${b.offer?.name || ''}`);
+        L.push(`${b.offer?.city || ''} · ${b.offer?.checkInDate || ''} → ${b.offer?.checkOutDate || ''}`);
+      } else if (b.kind === 'car') {
+        L.push(`🚗 ${b.offer?.vehicleName || ''}`);
+        L.push(`${b.offer?.pickupLocation || ''} · ${b.offer?.pickUpAt || ''}`);
+      } else {
+        const slices = b.offer?.flight?.slices || b.offer?.slices || [];
+        L.push(`✈️ ${b.offer?.owner || b.offer?.flight?.owner || ''}`);
+        for (const s of slices) {
+          L.push(`${s.origin} ${fmtDateTime(s.departAt)} → ${s.destination} ${fmtDateTime(s.arriveAt)}`);
+        }
+      }
+      if (b.bookingReference) L.push(`${T('المرجع', 'Reference')}: ${b.bookingReference}`);
+      L.push(`${T('الإجمالي', 'Total')}: ${money}`);
+      L.push('— JAOLA Travel');
+      return L.filter(Boolean).join('\n');
+    }
+    async function shareBooking(b) {
+      const text = bookingShareText(b);
+      if (navigator.share) {
+        try { await navigator.share({ title: T('حجزي عبر جولا ترافل', 'My JAOLA Travel booking'), text }); return; }
+        catch (e) { if (e?.name === 'AbortError') return; /* غير مدعومة فعلياً → النسخ أدناه */ }
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        alert(T('نُسخت تفاصيل الحجز — الصقها أينما شئت.', 'Booking details copied — paste them anywhere.'));
+      } catch {
+        prompt(T('انسخ التفاصيل:', 'Copy the details:'), text);
+      }
+    }
+
+    /**
+     * 📅 ملف تقويم (.ics) يُبنى في المتصفح بلا مكتبة ولا نداء خادم.
+     *
+     * ⚠️ التوقيت «عائم» (بلا منطقة زمنية) عن قصد: مواعيد الرحلات محلية
+     * بمطاراتها، ولا نملك جدول مناطق زمنية للمطارات — فإلحاق Z كان
+     * سيزيح الموعد ساعاتٍ عن الحقيقة. العائم يعرضه التقويم كما كُتب،
+     * والوصف يذكر أن التوقيت محلي بمكانه.
+     */
+    const icsEsc = s => String(s || '').replace(/[\\;,]/g, m => '\\' + m).replace(/\n/g, '\\n');
+    const icsLocal = iso => String(iso || '').replace(/[-:]/g, '').slice(0, 15).padEnd(15, '0');
+    const icsDate = d => String(d || '').replace(/-/g, '');
+    // RFC 5545: أسطر مطويّة، والتالي منها يبدأ بمسافة. القطع لا يقع بين
+    // نصفَي رمز تعبيري (زوج بديل) وإلا خرج حرفٌ مكسور في ملف التقويم.
+    function icsFold(line) {
+      const chunks = [];
+      let s = line, limit = 73;
+      while (s.length > limit) {
+        let cut = limit;
+        if (/[\uD800-\uDBFF]/.test(s[cut - 1])) cut -= 1;
+        chunks.push(s.slice(0, cut));
+        s = s.slice(cut);
+        limit = 72; // الأسطر التالية تُصدَّر بمسافة فينقص المتاح حرفاً
+      }
+      chunks.push(s);
+      return chunks.map((c, i) => (i ? ' ' + c : c)).join('\r\n');
+    }
+    function bookingIcs(b) {
+      const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+      const ref = b.bookingReference ? ` (${b.bookingReference})` : '';
+      const tail = T('التوقيت محلي بمكانه. عبر جولا ترافل.', 'Times are local to the location. Via JAOLA Travel.');
+      const ev = [];
+      const push = (uid, summary, start, end, allDay, desc, loc) => ev.push([
+        'BEGIN:VEVENT', `UID:${uid}@jaola.travel`, `DTSTAMP:${stamp}`,
+        allDay ? `DTSTART;VALUE=DATE:${start}` : `DTSTART:${start}`,
+        allDay ? `DTEND;VALUE=DATE:${end}` : `DTEND:${end}`,
+        icsFold(`SUMMARY:${icsEsc(summary)}`),
+        icsFold(`DESCRIPTION:${icsEsc(desc)}`),
+        loc ? icsFold(`LOCATION:${icsEsc(loc)}`) : '',
+        'END:VEVENT',
+      ].filter(Boolean).join('\r\n'));
+
+      if (b.kind === 'stay') {
+        const o = b.offer || {};
+        push(b.id, `🏨 ${o.name || ''}${ref}`, icsDate(o.checkInDate), icsDate(o.checkOutDate), true,
+          `${o.roomName || ''}\n${tail}`, o.city || '');
+      } else if (b.kind === 'fixed_package') {
+        const o = b.offer || {};
+        const end = new Date(new Date(o.departDate + 'T00:00:00Z').getTime() + (Number(o.nights) || 1) * 86400000);
+        push(b.id, `🎒 ${o.title || ''}${ref}`, icsDate(o.departDate), icsDate(end.toISOString().slice(0, 10)), true,
+          `${o.hotelName || ''}\n${tail}`, o.city || '');
+      } else if (b.kind === 'car') {
+        const o = b.offer || {};
+        push(b.id, `🚗 ${o.vehicleName || ''}${ref}`, icsLocal(o.pickUpAt), icsLocal(o.dropOffAt || o.pickUpAt), false,
+          `${o.supplier || ''}\n${tail}`, o.pickupLocation || '');
+      } else {
+        const slices = b.offer?.flight?.slices || b.offer?.slices || [];
+        const owner = b.offer?.owner || b.offer?.flight?.owner || '';
+        slices.forEach((s, i) => {
+          const nums = (s.segments || []).map(g => `${g.carrier} ${g.flightNumber}`).join(' → ');
+          push(`${b.id}-${i}`, `✈️ ${s.origin} → ${s.destination}${ref}`,
+            icsLocal(s.departAt), icsLocal(s.arriveAt), false,
+            `${owner}\n${nums}\n${T('تسجيل الوصول يفتح لدى الناقل قبل الإقلاع بـ24–48 ساعة.', 'Airline check-in opens 24–48 hours before departure.')}\n${tail}`,
+            s.origin);
+        });
+      }
+      if (!ev.length) return null;
+      return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//JAOLA Travel//AR//', 'CALSCALE:GREGORIAN', ...ev, 'END:VCALENDAR'].join('\r\n');
+    }
+    function downloadIcs(b) {
+      const ics = bookingIcs(b);
+      if (!ics) return alert(T('لا مواعيد قابلة للإضافة في هذا الحجز.', 'This booking has no dates to add.'));
+      const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `jaola-${b.bookingReference || b.id}.ics`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }
+
+    /** يعيد ملء نموذج البحث من حجزٍ فاشل ويبحث فوراً — بلا إعادة إدخال. */
+    function rebookFrom(id) {
+      const b = lastTrips.find(x => x.id === id);
+      if (!b) return;
+      const kind = b.kind || 'flight';
+      if (kind === 'stay') {
+        const o = b.offer || {};
+        $('stayIata').value = o.iata || o.city || '';
+        if (o.checkInDate) $('stayCheckIn').value = o.checkInDate;
+        if (o.checkOutDate) $('stayCheckOut').value = o.checkOutDate;
+        document.querySelector('[data-tab="stays"]').click();
+        $('staySearchBtn').click();
+        return;
+      }
+      if (kind === 'car') {
+        const o = b.offer || {};
+        $('carIata').value = o.iata || o.pickupLocation || '';
+        document.querySelector('[data-tab="cars"]').click();
+        $('carSearchBtn').click();
+        return;
+      }
+      const s = (b.offer?.slices || [])[0] || {};
+      const back = (b.offer?.slices || [])[1];
+      if (s.origin) $('fOrigin').value = s.origin;
+      if (s.destination) $('fDest').value = s.destination;
+      if (s.departAt) $('fDepart').value = String(s.departAt).slice(0, 10);
+      if (back?.departAt) $('fReturn').value = String(back.departAt).slice(0, 10);
+      document.querySelector('[data-tab="search"]').click();
+      $('searchBtn').click();
+    }
+
+    let detailsBooking = null;
     async function openBookingDetails(id) {
       const b = lastTrips.find(x => x.id === id);
       if (!b) return;
+      detailsBooking = b;
       $('detailsBody').innerHTML = detailsHtml(b);
+      // حجز فاشل لا يُشارَك ولا يُضاف لتقويم — لا موعد فيه أصلاً
+      const usable = b.status === 'issued' || b.status === 'pending';
+      for (const id2 of ['detailsShare', 'detailsWhatsApp', 'detailsCalendar']) {
+        $(id2).classList.toggle('hidden', !usable);
+      }
+      $('detailsShareNote').classList.toggle('hidden', !usable);
       $('detailsDialog').showModal();
     }
     $('detailsClose').addEventListener('click', () => $('detailsDialog').close());
     $('detailsPrint').addEventListener('click', () => window.print());
+    $('detailsShare').addEventListener('click', () => detailsBooking && shareBooking(detailsBooking));
+    $('detailsCalendar').addEventListener('click', () => detailsBooking && downloadIcs(detailsBooking));
+    // واتساب أولاً في سوقنا: رابط رسمي يفتح المحادثة بالنص جاهزاً
+    $('detailsWhatsApp').addEventListener('click', () => {
+      if (!detailsBooking) return;
+      window.open(`https://wa.me/?text=${encodeURIComponent(bookingShareText(detailsBooking))}`, '_blank', 'noopener');
+    });
 
     // ─── المساعد ───
     function pushMsg(role, content) {
