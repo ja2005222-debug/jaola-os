@@ -22,6 +22,7 @@ export function createFileStore({ dataDir }) {
     const interestsPath = path.join(dataDir, 'packageInterests.json');
     const reviewsPath = path.join(dataDir, 'packageReviews.json');
     const wishlistPath = path.join(dataDir, 'wishlist.json');
+    const usersPath = path.join(dataDir, 'users.json');
 
     function ensureDir() {
         fs.mkdirSync(dataDir, { recursive: true });
@@ -62,6 +63,8 @@ export function createFileStore({ dataDir }) {
     const writeReviews = rows => writeJson(reviewsPath, rows);
     const readWishlist = () => readJson(wishlistPath);
     const writeWishlist = rows => writeJson(wishlistPath, rows);
+    const readUsers = () => readJson(usersPath);
+    const writeUsers = rows => writeJson(usersPath, rows);
 
     return {
         name: 'file',
@@ -413,6 +416,50 @@ export function createFileStore({ dataDir }) {
         async getReviewByUser(username, packageId) {
             const row = readReviews().find(r => r.username === username && r.packageId === packageId);
             return row ? { ...row } : null;
+        },
+
+        // ─── 👤 حسابات Jatrava الذاتية ───────────────────────────────────
+        // البريد **مفتاح فريد**: getUserByEmail قبل الإنشاء لا يكفي وحده
+        // (سباقُ تسجيلين بنفس البريد)، فالإنشاء نفسه يفحص مجدداً في نفس
+        // الكتلة المتزامنة بلا await — نفس عرف العدّادات الذرّية هنا.
+
+        async createUser(u) {
+            const rows = readUsers();
+            const email = String(u.email || '').trim().toLowerCase();
+            if (!email) throw new Error('البريد مطلوب.');
+            if (rows.some(r => r.email === email)) return null; // مستعمَل سلفاً
+            const row = {
+                id: 'usr_' + crypto.randomBytes(10).toString('hex'),
+                email,
+                name: u.name || '',
+                passwordHash: u.passwordHash || null,
+                provider: u.provider || 'password',
+                emailVerifiedAt: u.emailVerifiedAt || null,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+            };
+            rows.push(row);
+            writeUsers(rows);
+            return { ...row };
+        },
+
+        async getUserByEmail(email) {
+            const key = String(email || '').trim().toLowerCase();
+            if (!key) return null;
+            const row = readUsers().find(r => r.email === key);
+            return row ? { ...row } : null;
+        },
+
+        async updateUser(id, patch = {}) {
+            const rows = readUsers();
+            const row = rows.find(r => r.id === id);
+            if (!row) return null;
+            // البريد والمعرّف لا يُرقَّعان: البريد هو الهوية وكل ملكيةٍ
+            // مفهرسة به، فتغييره هنا ييتّم حجوزات صاحبه بصمت.
+            const { id: _i, email: _e, createdAt: _c, ...safe } = patch;
+            Object.assign(row, safe, { updatedAt: Date.now() });
+            writeUsers(rows);
+            return { ...row };
         },
 
         // ─── ❤️ المفضلة (قائمة رغبات لكل مستخدم) ────────────────────────

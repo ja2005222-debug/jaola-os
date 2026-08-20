@@ -2629,6 +2629,113 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             }
         });
 
+        // ─── 👤 حسابات Jatrava الذاتية ───────────────────────────────
+
+        const SIGNUP = (over = {}) => ({
+            email: 'traveller@example.com', password: 'travel2026x', name: 'مسافر', ...over,
+        });
+
+        test('👤 التسجيل يُنشئ حساباً ويُصدر توكناً يفتح المسارات المحمية', async () => {
+            const r = await call('/api/travel/auth/signup', { method: 'POST', body: SIGNUP() });
+            assert.equal(r.status, 201);
+            assert.ok(r.data.token, 'توكن مفقود');
+            assert.equal(r.data.user.email, 'traveller@example.com');
+            assert.equal(r.data.user.provider, 'password');
+            // 🔴 لا يخرج هاش كلمة المرور أبداً — ولا في حقلٍ منسيّ
+            assert.ok(!JSON.stringify(r.data).includes('scrypt'), 'هاش كلمة المرور تسرّب!');
+            assert.equal(r.data.user.passwordHash, undefined);
+
+            // التوكن يفتح ما كان مغلقاً على الزائر
+            assert.equal((await call('/api/travel/bookings', { token: r.data.token })).status, 200);
+        });
+
+        test('👤 البريد يُطبَّع، والمكرر يُرفض 409 بلا كشف أنه مسجَّل', async () => {
+            const a = await call('/api/travel/auth/signup', { method: 'POST', body: SIGNUP({ email: 'Dup@Example.COM' }) });
+            assert.equal(a.status, 201);
+            assert.equal(a.data.user.email, 'dup@example.com', 'لم يُطبَّع البريد');
+
+            const b = await call('/api/travel/auth/signup', { method: 'POST', body: SIGNUP({ email: ' dup@example.com ' }) });
+            assert.equal(b.status, 409);
+            // «مسجَّل سلفاً» صراحةً تعطي عدّادَ حساباتٍ صالحة مجاناً
+            assert.ok(!/مسجّل|مسجل|موجود/.test(b.data.error || ''), 'الرسالة تكشف وجود الحساب');
+        });
+
+        test('👤 كلمة المرور: طولٌ أدنى ورفض الشائعة، والبريد الفاسد يُرفض', async () => {
+            for (const [body, why] of [
+                [SIGNUP({ email: 'a1@example.com', password: 'short' }), 'قصيرة'],
+                [SIGNUP({ email: 'a2@example.com', password: 'password123' }), 'شائعة'],
+                [SIGNUP({ email: 'a3@example.com', password: 'x'.repeat(300) }), 'مفرطة الطول'],
+                [SIGNUP({ email: 'not-an-email', password: 'travel2026x' }), 'بريد فاسد'],
+                [SIGNUP({ email: 'a@b', password: 'travel2026x' }), 'نطاق بلا نقطة'],
+            ]) {
+                assert.equal((await call('/api/travel/auth/signup', { method: 'POST', body })).status, 400, why);
+            }
+        });
+
+        test('👤 الدخول: الصحيح يُصدر توكناً، والخطأ **بنفس النصّ** للمسجَّل وغيره', async () => {
+            await call('/api/travel/auth/signup', { method: 'POST', body: SIGNUP({ email: 'login@example.com' }) });
+
+            const ok = await call('/api/travel/auth/login', {
+                method: 'POST', body: { email: 'LOGIN@example.com', password: 'travel2026x' },
+            });
+            assert.equal(ok.status, 200);
+            assert.ok(ok.data.token);
+
+            const wrongPw = await call('/api/travel/auth/login', {
+                method: 'POST', body: { email: 'login@example.com', password: 'wrong-password' },
+            });
+            const noUser = await call('/api/travel/auth/login', {
+                method: 'POST', body: { email: 'ghost@example.com', password: 'wrong-password' },
+            });
+            assert.equal(wrongPw.status, 401);
+            assert.equal(noUser.status, 401);
+            // تطابقٌ حرفيّ: أي فرقٍ هنا يَعُدّ به المهاجم حساباتنا
+            assert.equal(wrongPw.data.error, noUser.data.error);
+        });
+
+        test('🔐 توكن Jatrava لا يصلح توكنَ دخولٍ على المنصة الأم', async () => {
+            const r = await call('/api/travel/auth/signup', { method: 'POST', body: SIGNUP({ email: 'sep@example.com' }) });
+            // makeToken يوقّع بسرّ المنصة نفسه — فلو قُبل توكننا به لكان
+            // كل مسافرٍ يملك مفتاح المنصة الأم كاملة (تصعيد صلاحية).
+            assert.throws(() => jwt.verify(r.data.token, JWT_SECRET), /signature/i);
+        });
+
+        test('🆔 عزل الملكية: بريدٌ لا يمكن أن يساوي اسم مستخدمٍ في المنصة الأم', async () => {
+            // الحارس ليس بادئةً نتذكّرها بل استحالةٌ بنيوية: نمط أسماء
+            // المنصة الأم لا يقبل @ إطلاقاً، وكل بريد فيه @.
+            const JAOLA_USERNAME_RE = /^[a-zA-Z][a-zA-Z0-9_\-]{2,19}$/;
+            for (const email of ['a@b.com', 'traveller@example.com', 'x.y+z@sub.domain.org']) {
+                assert.ok(!JAOLA_USERNAME_RE.test(email), `بريدٌ يطابق نمط اسم المنصة: ${email}`);
+            }
+
+            // وعملياً: حجز حساب Jatrava لا يظهر لحاملِ توكن المنصة الأم
+            const acc = await call('/api/travel/auth/signup', { method: 'POST', body: SIGNUP({ email: 'iso@example.com' }) });
+            const offers = await call('/api/travel/flights/search', { method: 'POST', token: acc.data.token, body: SEARCH_BODY() });
+            const booked = await call('/api/travel/bookings', {
+                method: 'POST', token: acc.data.token,
+                body: { offerId: offers.data.offers[0].id, ...VALID_PAX },
+            });
+            assert.equal(booked.status, 200, JSON.stringify(booked.data));
+
+            const mine = await call('/api/travel/bookings', { token: acc.data.token });
+            assert.equal(mine.data.bookings.length, 1);
+            // مستخدم منصةٍ أمّ باسمٍ قريب — لا يرى شيئاً
+            const stranger = await call('/api/travel/bookings', { token: makeToken('iso') });
+            assert.equal(stranger.data.bookings.length, 0, 'تسرّبت حجوزات حساب Jatrava!');
+        });
+
+        test('👤 /auth/me يميّز مُصدِر التوكن، ولا صفَّ لمستخدم المنصة الأم', async () => {
+            const acc = await call('/api/travel/auth/signup', { method: 'POST', body: SIGNUP({ email: 'me@example.com' }) });
+            const mine = await call('/api/travel/auth/me', { token: acc.data.token });
+            assert.equal(mine.data.issuer, 'jatrava');
+            assert.equal(mine.data.username, 'me@example.com');
+            assert.equal(mine.data.user.email, 'me@example.com');
+
+            const legacy = await call('/api/travel/auth/me', { token: makeToken('platformuser') });
+            assert.equal(legacy.data.issuer, 'jaola');
+            assert.equal(legacy.data.user, null, 'مستخدم المنصة الأم لا صفَّ له عندنا');
+        });
+
         test('🔎 البحث: تحقق صارم من المعايير + الهامش مطبَّق والصافي لا يتسرب', async () => {
             const token = makeToken('searcher');
             for (const bad of [

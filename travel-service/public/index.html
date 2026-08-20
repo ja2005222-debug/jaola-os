@@ -332,10 +332,12 @@
   </header>
 
   <main>
+    <!-- 🔐 بوابة انتهاء الجلسة. **لا نموذج هنا**: نسختان من نموذج الدخول
+         تتباعدان بصمت (نفس درس ICS والتوطين) — فهذه تفتح نافذة الدخول
+         نفسها، ونموذجٌ واحد في الصفحة كلها. -->
     <div id="authGate" class="card hidden">
-      <p>🔐 افتح البوابة من لوحة تحكم منصة JAOLA (نفس تسجيل الدخول) — أو ألصق توكن الجلسة للتجربة:</p>
-      <input id="tokenInput" placeholder="JWT token" style="margin-top:10px" />
-      <button class="primary" id="tokenSave">دخول</button>
+      <p>🔐 انتهت جلستك — سجّل دخولك من جديد للوصول إلى حجوزاتك.</p>
+      <button class="primary" id="gateSignIn" style="margin-top:10px">تسجيل الدخول</button>
     </div>
 
     <!-- 🪧 تعريف ما قبل الدخول: زائرٌ يصل jatrava.com مباشرةً لا يعرف ما
@@ -659,10 +661,31 @@
        ولا يُطلب الحساب إلا عند الحجز. نافذةٌ لا استبدالُ الصفحة عمداً —
        إظهار authGate هنا يمحو نتائج بحثه فيبدأ من الصفر بعد الدخول. -->
   <dialog id="loginDialog">
-    <h3 style="margin-bottom:6px">🔐 الحجز يحتاج حساباً</h3>
+    <h3 id="loginTitle" style="margin-bottom:6px">🔐 الحجز يحتاج حساباً</h3>
     <p class="note">تصفّحُ الأسعار مفتوح للجميع، أمّا الحجز فيحتاج حساباً
       لتصل إليك التذكرة والتأكيد، وتجد حجزك في «رحلاتي» لاحقاً.</p>
-    <input id="loginToken" placeholder="JWT token" style="margin-top:10px" />
+
+    <div class="tabs" style="margin:12px 0 4px">
+      <button type="button" id="tabSignin" class="active">تسجيل الدخول</button>
+      <button type="button" id="tabSignup">حساب جديد</button>
+    </div>
+
+    <!-- الاسم للتسجيل وحده. autocomplete صحيح يجعل مدير كلمات المرور
+         في المتصفح يعرض العرض الصحيح ويحفظها — تفصيلٌ يقرّر أيعود
+         المسافر أم ينسى كلمته. -->
+    <label id="nameRow" class="hidden" style="display:block;margin-top:10px">
+      <span class="note">الاسم</span>
+      <input id="authName" autocomplete="name" placeholder="اسمك" />
+    </label>
+    <label style="display:block;margin-top:10px">
+      <span class="note">البريد الإلكتروني</span>
+      <input id="authEmail" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" />
+    </label>
+    <label style="display:block;margin-top:10px">
+      <span class="note">كلمة المرور</span>
+      <input id="authPassword" type="password" autocomplete="current-password" placeholder="٨ أحرف على الأقل" />
+    </label>
+
     <div id="loginError" class="error hidden"></div>
     <div style="display:flex;gap:10px;margin-top:14px">
       <button class="primary" id="loginConfirm">دخول</button>
@@ -935,6 +958,20 @@
       $('app').classList.add('hidden');
     }
 
+    /**
+     * 🔤 يفكّ حمولة التوكن **بترميز UTF-8 صحيح**.
+     * `atob` وحدها تُرجع سلسلة بايتات لاتينية، فاسم «خالد» يصير
+     * «Ø®Ø§ÙØ¯» حرفياً (رصده متصفحٌ بعد أن مرّ كل شيء آخر). ولم يظهر
+     * قبل حسابات Jatrava لأن أسماء المنصة الأم إنجليزية بحكم نمطها.
+     * وbase64url في JWT ليست base64 القياسية: `-_` تُبدَّل و`=` تُكمَّل.
+     */
+    function decodeJwtPayload(t) {
+      const b64 = t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+        .padEnd(Math.ceil(t.split('.')[1].length / 4) * 4, '=');
+      const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      return JSON.parse(new TextDecoder().decode(bytes));
+    }
+
     async function boot() {
       initToken();
       // 🚪 لا بوابةَ قبل التصفّح: الزائر يدخل التطبيق مباشرةً ويبحث ويرى
@@ -944,8 +981,12 @@
       config = await res.json();
       if (token) {
         try {
-          const payload = JSON.parse(atob(token.split('.')[1]));
-          $('userBadge').textContent = '👤 ' + (payload.username || '');
+          const payload = decodeJwtPayload(token);
+          // 🏷️ الاسم قبل البريد: حساب Jatrava اسمُ مستخدمه بريدُه الكامل،
+          // وعرضه في الترويسة يكشفه لمن ينظر فوق الكتف ويقطع التخطيط.
+          // ونأخذ ما قبل @ إن لم يذكر اسماً — أوجزُ من البريد كاملاً.
+          const label = payload.name || String(payload.username || '').split('@')[0];
+          $('userBadge').textContent = label ? '👤 ' + label : '';
         } catch { /* عرض تجميلي فقط */ }
       } else {
         // تبويبات لا معنى لها بلا حساب — تُخفى بدل أن تَعِد بفراغ
@@ -1012,28 +1053,77 @@
       if (token) refreshBell();
     }
 
-    $('tokenSave').addEventListener('click', () => {
-      const t = $('tokenInput').value.trim();
-      if (!t) return;
-      localStorage.setItem('jaolaTravelToken', t);
-      location.reload();
-    });
+    // ─── 👤 التسجيل والدخول ──────────────────────────────────────────
+    let authMode = 'signin'; // 'signin' | 'signup'
 
-    $('loginConfirm').addEventListener('click', () => {
-      const t = $('loginToken').value.trim();
-      if (!t) {
-        $('loginError').textContent = 'ألصق توكن الجلسة أولاً.';
-        $('loginError').classList.remove('hidden');
+    function setAuthMode(mode) {
+      authMode = mode;
+      const up = mode === 'signup';
+      $('tabSignin').classList.toggle('active', !up);
+      $('tabSignup').classList.toggle('active', up);
+      $('nameRow').classList.toggle('hidden', !up);
+      $('loginConfirm').textContent = up ? 'أنشئ الحساب' : 'دخول';
+      // 🔑 يخبر مدير كلمات المرور أيقترح كلمةً قوية جديدة أم يملأ القديمة
+      $('authPassword').setAttribute('autocomplete', up ? 'new-password' : 'current-password');
+      $('loginError').classList.add('hidden');
+    }
+
+    function openLogin(mode = 'signin') {
+      setAuthMode(mode);
+      $('loginError').classList.add('hidden');
+      if (!$('loginDialog').open) $('loginDialog').showModal();
+      $('authEmail').focus();
+    }
+
+    $('tabSignin').addEventListener('click', () => setAuthMode('signin'));
+    $('tabSignup').addEventListener('click', () => setAuthMode('signup'));
+    $('loginCancel').addEventListener('click', () => $('loginDialog').close());
+    $('guestSignIn').addEventListener('click', () => openLogin('signin'));
+    $('gateSignIn').addEventListener('click', () => openLogin('signin'));
+
+    async function submitAuth() {
+      const email = $('authEmail').value.trim();
+      const password = $('authPassword').value;
+      if (!email || !password) {
+        showLoginError('أدخل البريد وكلمة المرور.');
         return;
       }
-      localStorage.setItem('jaolaTravelToken', t);
-      location.reload();
-    });
-    $('loginCancel').addEventListener('click', () => $('loginDialog').close());
-    $('guestSignIn').addEventListener('click', () => {
-      $('loginError').classList.add('hidden');
-      $('loginDialog').showModal();
-    });
+      const btn = $('loginConfirm');
+      btn.disabled = true;
+      try {
+        // ⚠️ fetch مباشرةً لا api(): ردّ 401 هنا **متوقَّع** (كلمة مرور
+        // خاطئة) ولا يعني «سجّل دخولك» — وapi() تفتح النافذة على نفسها.
+        const res = await fetch('/api/travel/auth/' + (authMode === 'signup' ? 'signup' : 'login'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-UI-Lang': uiLang },
+          body: JSON.stringify(authMode === 'signup'
+            ? { email, password, name: $('authName').value.trim() }
+            : { email, password }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.token) {
+          showLoginError(data.error || 'تعذّر إتمام الطلب — حاول مجدداً.');
+          return;
+        }
+        localStorage.setItem('jaolaTravelToken', data.token);
+        location.reload();
+      } catch {
+        showLoginError('تعذّر الاتصال بالخادم — تحقق من اتصالك.');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function showLoginError(msg) {
+      $('loginError').textContent = msg;
+      $('loginError').classList.remove('hidden');
+    }
+
+    $('loginConfirm').addEventListener('click', submitAuth);
+    // Enter داخل أي حقل يُرسل — لا يُجبَر المسافر على قصد الزر
+    for (const id of ['authEmail', 'authPassword', 'authName']) {
+      $(id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submitAuth(); } });
+    }
 
     // ─── التبويبات ───
     document.querySelectorAll('.tabs button').forEach(btn =>
