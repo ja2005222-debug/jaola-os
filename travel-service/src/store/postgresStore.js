@@ -40,6 +40,12 @@ ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS reminder_sent_at BIGINT;
 ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS package_id TEXT;
 ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS compensation_json JSONB;
 ALTER TABLE travel_bookings ALTER COLUMN sell_amount DROP NOT NULL;
+-- ⚠️ عطب إنتاجي: كلفة المقعد الصافية **اختيارية** في الباقات المجدولة
+-- (يُنشئها المالك أحياناً بلا كلفة مسجَّلة)، فيصل netAmount فارغاً —
+-- ومخزن الملفات يقبله بينما رفَضَه هذا العمود، فكان حجز أي باقة بلا
+-- كلفة مسجَّلة **يفشل في الإنتاج وحده**. «لا نعرف الكلفة» ≠ «الكلفة صفر»:
+-- الثانية تضخّم الربح في نظرة الأدمن، فالعمود يقبل الفراغ والحساب يستثنيه.
+ALTER TABLE travel_bookings ALTER COLUMN net_amount DROP NOT NULL;
 CREATE INDEX IF NOT EXISTS travel_bookings_package_idx ON travel_bookings (package_id);
 CREATE INDEX IF NOT EXISTS travel_bookings_user_idx ON travel_bookings (username, at);
 CREATE INDEX IF NOT EXISTS travel_bookings_status_idx ON travel_bookings (status);
@@ -201,7 +207,8 @@ function rowToBooking(r) {
         offer: r.offer_json,
         passengers: r.passengers_json,
         contact: r.contact_json,
-        netAmount: Number(r.net_amount),
+        // NULL = كلفة غير مسجَّلة (لا صفر): Number(null) كان سيدّعي ربحاً كاملاً
+        netAmount: r.net_amount != null ? Number(r.net_amount) : null,
         // NULL لابن الباقة (الهامش على الأب) — Number(null) كان سيحوّله صفراً كاذباً
         sellAmount: r.sell_amount != null ? Number(r.sell_amount) : null,
         currency: r.currency,

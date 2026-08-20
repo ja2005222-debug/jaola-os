@@ -2339,13 +2339,18 @@ export function createApp({
         const byStatus = {};
         const byKind = {};
         let revenue = 0;
+        let unknownCost = 0; // حجوزات مُصدَرة بلا كلفة مسجَّلة — تُعلَن ولا تُخمَّن
         let revenueCurrencies = new Set();
         for (const b of bookings) {
             byStatus[b.status] = (byStatus[b.status] || 0) + 1;
             byKind[b.kind || 'flight'] = (byKind[b.kind || 'flight'] || 0) + 1;
-            if (b.status === 'issued' && b.sellAmount != null) {
+            // كلفة غير مسجَّلة تُستثنى من الربح ولا تُحسب صفراً: باقةٌ بلا
+            // كلفة كانت ستظهر ربحاً بكامل سعرها فتكذب النظرة المالية كلها.
+            if (b.status === 'issued' && b.sellAmount != null && b.netAmount != null) {
                 revenue += b.sellAmount - b.netAmount;
                 revenueCurrencies.add(b.currency);
+            } else if (b.status === 'issued' && b.sellAmount != null) {
+                unknownCost += 1;
             }
         }
         const contracts = await store.listContracts();
@@ -2358,6 +2363,9 @@ export function createApp({
                 revenue: Math.round(revenue * 100) / 100,
                 revenueCurrencies: [...revenueCurrencies],
                 revenueMixedCurrencies: revenueCurrencies.size > 1,
+                // حجوزات خارج حساب الربح لغياب كلفتها — تُعلَن كي لا يُقرأ
+                // الإيراد على أنه شامل بينما هو ناقص
+                unknownCostBookings: unknownCost,
             },
             contracts: {
                 total: contracts.length,
@@ -2394,7 +2402,10 @@ export function createApp({
                 ...publicBooking(b),
                 username: b.username,
                 netAmount: b.netAmount,
-                margin: b.sellAmount != null ? Math.round((b.sellAmount - b.netAmount) * 100) / 100 : null,
+                // كلفة فارغة تعني «غير مسجَّلة» لا صفراً — و(800 - null) في
+                // جافاسكربت = 800، أي هامشٌ مُختلَق بكامل السعر. null أصدق.
+                margin: (b.sellAmount != null && b.netAmount != null)
+                    ? Math.round((b.sellAmount - b.netAmount) * 100) / 100 : null,
                 compensation: b.compensation || null,
             })),
         });

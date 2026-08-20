@@ -3397,10 +3397,20 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(overview.status, 200);
             const all = (await call('/api/travel/admin/bookings?limit=500', { token: admin })).data.bookings;
             // الإيراد المعلن = جمع هوامش المُصدَر (أبناء الباقات مستثنون بأن sellAmount=null)
-            const expected = Math.round(all
-                .filter(b => b.status === 'issued' && b.sellAmount != null)
+            //
+            // ⚠️ والكلفة غير المسجَّلة تُستثنى ولا تُحسب صفراً: باقة مجدولة
+            // بلا `netPerSeat` كانت تُحسب ربحاً **بكامل سعرها** فتضخّم
+            // الإيراد (عطب حقيقي كشفه هذا الاختبار بعد تصحيح القراءة).
+            const counted = all.filter(b => b.status === 'issued' && b.sellAmount != null && b.netAmount != null);
+            const expected = Math.round(counted
                 .reduce((s, b) => s + (b.sellAmount - b.netAmount), 0) * 100) / 100;
             assert.equal(overview.data.bookings.revenue, expected);
+            const unknown = all.filter(b => b.status === 'issued' && b.sellAmount != null && b.netAmount == null);
+            assert.equal(overview.data.bookings.unknownCostBookings, unknown.length,
+                'الحجوزات بلا كلفة مسجَّلة تُعلَن عدداً بدل أن تختفي في رقم الإيراد');
+            if (unknown.length) {
+                assert.ok(unknown.every(b => b.margin == null), 'لا هامش مُختلَق لحجزٍ لا كلفة له');
+            }
             // للأدمن الصافي والهامش والمستخدم — وللمسافر العادي لا شيء منها
             const withMargin = all.find(b => b.margin != null);
             assert.ok(withMargin);
