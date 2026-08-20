@@ -1284,7 +1284,11 @@ export function jaolaTravel() {
         description: 'منصّة سفر عاملة غنيّة يقودها منتج «الباقات الجاهزة»: فندق متعاقَد + مقاعد طيران محجوزة مسبقاً (حجز جماعي/حصة/موزّع/عارض) تُباع كسعر واحد بانطلاقات مجدولة، مع عدّاد مقاعد وسعر مبكّر وعربون وإضافات وقائمة انتظار وطلب عرض خاص. إضافةً لبحث طيران وفنادق وسيّارات + عروض + حجوزات موحّدة. جاهزة لِـ API و White-label.',
         nameEn: 'Travel Platform (Packages-first)',
         descriptionEn: 'Packages-first travel platform: pre-contracted hotel + pre-blocked flight seats sold as one price with scheduled departures, seat countdown, early-bird, deposit, add-ons, waitlist and custom quotes — plus flights/hotels/cars search, deals and unified bookings. API-ready and white-label.',
-        keywords: ['سفر', 'سياحة', 'طيران', 'رحلات', 'تذاكر', 'حجز فندق', 'فنادق', 'تأجير سيارات', 'باقات', 'باقة سياحية', 'عروض سفر', 'أنطاليا', 'شارتر', 'travel', 'flight', 'hotel', 'booking', 'tourism', 'trip', 'package', 'charter', 'حجوزات', 'عطلة'],
+        // ⚠️ «باقات»/«package» مفردتين *ممنوعتان* هنا: كل قالب يبيع باقات
+        // (استوديو تصوير، نادٍ رياضي، صالون…)، فكانتا تخطفان طلباتهم لقالب
+        // السفر — «باقات جلسات تصوير» وُجّهت لـjaola-travel فعلاً. الكلمة
+        // المفتاحية تُقيَّد بالسفر صراحةً.
+        keywords: ['سفر', 'سياحة', 'طيران', 'رحلات', 'تذاكر', 'حجز فندق', 'فنادق', 'تأجير سيارات', 'باقات سفر', 'باقات سياحية', 'باقة سياحية', 'باقة سفر', 'عروض سفر', 'أنطاليا', 'شارتر', 'travel', 'flight', 'hotel', 'booking', 'tourism', 'trip', 'travel package', 'holiday package', 'tour package', 'charter', 'حجوزات', 'عطلة'],
         externalApi: 'API-ready (طبقة مزوّد قابلة للربط) + White-label',
         model: {
             entities: [

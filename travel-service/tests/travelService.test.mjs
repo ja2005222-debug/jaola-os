@@ -1537,6 +1537,84 @@ describe('صحة صياغة سكربتات الواجهة — درس عطل إن
     });
 });
 
+describe('🧳 تجميع الحجوزات في سفرات (منطق نقيّ)', () => {
+    const code = fs.readFileSync(new URL('../public/trips.js', import.meta.url), 'utf8');
+    const w = {};
+    new Function('window', code)(w);
+    const { groupTrips, bookingSpan, bookingDestination, tripDestinations } = w.JAOLA_TRIPS;
+
+    const flight = (from, to, status = 'issued') => ({
+        id: 'f' + from, status, kind: 'flight',
+        offer: { slices: [{ origin: 'RUH', destination: 'DXB', departAt: from + 'T08:00', arriveAt: (to || from) + 'T11:00' }] },
+    });
+    const stay = (inD, outD, status = 'issued') => ({
+        id: 's' + inD, status, kind: 'stay',
+        offer: { name: 'فندق', city: 'دبي', checkInDate: inD, checkOutDate: outD },
+    });
+
+    test('🗓️ المدى الزمني يُقرأ من كل نوع بحقوله هو', () => {
+        assert.deepEqual(bookingSpan(flight('2026-09-01', '2026-09-01')), { from: '2026-09-01', to: '2026-09-01' });
+        assert.deepEqual(bookingSpan(stay('2026-09-01', '2026-09-05')), { from: '2026-09-01', to: '2026-09-05' });
+        assert.deepEqual(
+            bookingSpan({ kind: 'fixed_package', offer: { departDate: '2026-09-10', nights: 7 } }),
+            { from: '2026-09-10', to: '2026-09-17' });
+        assert.equal(bookingSpan({ kind: 'flight', offer: {} }), null, 'بلا موعد → لا مدى');
+        assert.equal(bookingDestination(stay('2026-09-01', '2026-09-05')), 'دبي');
+
+        // الطيران يعرف وجهته برمز المطار والفندق باسم المدينة — ومكانٌ
+        // واحد يجب أن يظهر مرة واحدة باسمه لا مرتين («دبي · DXB»)
+        const withIata = { ...stay('2026-09-01', '2026-09-05'), offer: { city: 'دبي', iata: 'DXB', checkInDate: '2026-09-01', checkOutDate: '2026-09-05' } };
+        assert.deepEqual(tripDestinations([flight('2026-09-01'), withIata]), ['دبي']);
+        // والفندق بلا رمز مطار (الحال الفعلي لدى مزوّدينا) — يُعرض بمدينته
+        assert.deepEqual(tripDestinations([flight('2026-09-01'), stay('2026-09-01', '2026-09-05')]), ['دبي']);
+    });
+
+    test('🧩 المتداخلة تُجمع في سفرة واحدة، والمتباعدة تبقى سفرتين', () => {
+        const { groups } = groupTrips([
+            stay('2026-09-01', '2026-09-05'),
+            flight('2026-09-01', '2026-09-01'),
+            flight('2026-12-20', '2026-12-20'), // سفرة أخرى بعد أشهر
+        ]);
+        assert.equal(groups.length, 2);
+        assert.equal(groups[0].items.length, 2, 'الطيران والفندق سفرة واحدة');
+        assert.equal(groups[0].from, '2026-09-01');
+        assert.equal(groups[0].to, '2026-09-05');
+        assert.equal(groups[1].items.length, 1);
+    });
+
+    test('🌙 رحلة تصل ليلاً وفندق يبدأ الغد: سفرة واحدة (تلامس يوم)', () => {
+        const { groups } = groupTrips([
+            flight('2026-09-01', '2026-09-01'),
+            stay('2026-09-02', '2026-09-06'),
+        ]);
+        assert.equal(groups.length, 1, 'يوم واحد بينهما لا يفصل سفرة');
+
+        // ...ويومان يفصلان — وإلا لصارت كل حجوزات الشهر «سفرة» واحدة
+        const far = groupTrips([
+            flight('2026-09-01', '2026-09-01'),
+            stay('2026-09-04', '2026-09-08'),
+        ]);
+        assert.equal(far.groups.length, 2);
+    });
+
+    test('🚫 المُلغى والفاشل لا يُجمَعان ولا يمدّان مدى السفرة', () => {
+        const { groups, loose } = groupTrips([
+            flight('2026-09-01', '2026-09-01'),
+            flight('2026-09-02', '2026-09-02', 'failed'),
+            flight('2026-09-03', '2026-09-03', 'cancelled'),
+        ]);
+        assert.equal(groups.length, 1);
+        assert.equal(groups[0].items.length, 1);
+        assert.equal(groups[0].to, '2026-09-01', 'الفاشل لم يمدّ المدى');
+        assert.equal(loose.length, 2, 'يبقيان مستقلَّين كما هما');
+    });
+
+    test('📆 السفرات مرتّبة بالأقرب موعداً لا بالأحدث حجزاً', () => {
+        const { groups } = groupTrips([flight('2027-01-05'), flight('2026-09-01'), flight('2026-11-11')]);
+        assert.deepEqual(groups.map(g => g.from), ['2026-09-01', '2026-11-11', '2027-01-05']);
+    });
+});
+
 describe('i18n: جدول الترجمة لا يتباعد عن الصفحة', () => {
     const code = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
     const w = {};
@@ -3268,8 +3346,12 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(issued.length, 2, 'الغرفة الثالثة من حصة غرفتين لا تُباع أبداً');
             for (const r of results.filter(r => r.status !== 200)) {
                 // مساران صحيحان للرفض حسب توقيت السباق: الحصة نفدت أثناء
-                // الحجز (502) أو نفدت قبل جلب العرض فاختفى العرض أصلاً (404)
-                assert.match(r.data.error, /نفدت حصة|غير موجود/);
+                // الحجز («نفدت حصة الغرف…») أو نفدت قبل جلب العرض فاختفى
+                // العرض أصلاً («عرض العقد غير متاح — نفدت الحصة…»). النمط
+                // يطابق **معنى** الرفض لا صياغةً بعينها: كان يشترط «غير
+                // موجود» حرفياً فسقط على Postgres حين سلك السباق المسار
+                // الآخر — والرسالتان كلتاهما صادقتان ومفهومتان للمسافر.
+                assert.match(r.data.error, /نفدت|غير متاح|غير موجود/);
             }
             assert.equal((await call('/api/travel/admin/contracts', { token: admin }))
                 .data.contracts.find(c => c.id === cid).usedRooms, 2);
@@ -3292,6 +3374,52 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 body: { iata: 'CAI', checkInDate: checkIn, checkOutDate: checkOut, adults: 1, rooms: 1 },
             });
             assert.ok(!after.data.offers.some(o => o.contracted));
+        });
+
+        test('🗄️ عقد المخزن: رقعة transitionBooking تُحفظ **كاملةً** في المخزنين', async () => {
+            // 🚨 حارس عطبٍ إنتاجي حقيقي: مخزن الملفات كان يدمج الرقعة كلها
+            // (Object.assign) بينما Postgres يكتب قائمةً بيضاء من الأعمدة
+            // ويُسقط الباقي **بلا خطأ**. فكل حقول الدفع (جلسة Stripe،
+            // معرّف الدفعة، وقت الدفع، عملة التحصيل، أرقام التذاكر) وخطة
+            // العربون والمقاعد كانت تعمل في التطوير وتضيع في الإنتاج —
+            // فلا استئناف دفع ولا استرداد ولا تحرير مقاعد. هذا الاختبار
+            // يمرّ على المخزنين معاً فيكشف أي انفصال بينهما فوراً.
+            const booking = await store.createBooking({
+                username: 'store-contract', provider: 'fixed', kind: 'fixed_package', status: 'pending',
+                offer: { title: 'عقد المخزن' }, passengers: [], contact: { email: 'c@x.com' },
+                netAmount: null, sellAmount: 500, currency: 'USD',
+            });
+            assert.equal(booking.netAmount ?? null, null, 'كلفة غير مسجَّلة تبقى فارغة لا صفراً');
+
+            const patch = {
+                paymentPlan: { mode: 'deposit', paidNow: 150, remaining: 350, dueDate: '2026-12-01' },
+                seats: 2, namesDeadline: '2026-11-20',
+                stripeSessionId: 'cs_contract', checkoutExpiresAt: 1234567890,
+                paymentIntentId: 'pi_contract', paidAt: 1700000000000,
+                billing: { amount: 1875, currency: 'SAR', rate: 3.75, source: 'peg' },
+                tickets: [{ type: 'electronic_ticket', number: '123-4567890123' }],
+            };
+            await store.transitionBooking(booking.id, { from: ['pending'], to: 'pending', patch });
+            const back = await store.getBooking(booking.id);
+            assert.deepEqual(back.paymentPlan, patch.paymentPlan, 'خطة الدفع تبقى كاملة');
+            assert.equal(back.seats, 2);
+            assert.equal(back.namesDeadline, '2026-11-20');
+            assert.equal(back.stripeSessionId, 'cs_contract');
+            assert.equal(back.paymentIntentId, 'pi_contract');
+            assert.equal(back.paidAt, 1700000000000);
+            assert.deepEqual(back.billing, patch.billing);
+            assert.deepEqual(back.tickets, patch.tickets);
+
+            // ورقعة لاحقة تُراكم ولا تمحو ما سبقها (سداد المتبقي مثلاً)
+            await store.transitionBooking(booking.id, {
+                from: ['pending'], to: 'issued',
+                patch: { paymentPlan: { ...patch.paymentPlan, remaining: 0 }, bookingReference: 'FP-XYZ' },
+            });
+            const after = await store.getBooking(booking.id);
+            assert.equal(after.status, 'issued');
+            assert.equal(after.paymentPlan.remaining, 0);
+            assert.equal(after.bookingReference, 'FP-XYZ');
+            assert.equal(after.stripeSessionId, 'cs_contract', 'الحقول القديمة لم تُمحَ');
         });
 
         test('🔒 العدّاد في المخزن نفسه ذرّي — لا اعتماد على فحوصات ما قبله', async () => {
@@ -3319,10 +3447,20 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(overview.status, 200);
             const all = (await call('/api/travel/admin/bookings?limit=500', { token: admin })).data.bookings;
             // الإيراد المعلن = جمع هوامش المُصدَر (أبناء الباقات مستثنون بأن sellAmount=null)
-            const expected = Math.round(all
-                .filter(b => b.status === 'issued' && b.sellAmount != null)
+            //
+            // ⚠️ والكلفة غير المسجَّلة تُستثنى ولا تُحسب صفراً: باقة مجدولة
+            // بلا `netPerSeat` كانت تُحسب ربحاً **بكامل سعرها** فتضخّم
+            // الإيراد (عطب حقيقي كشفه هذا الاختبار بعد تصحيح القراءة).
+            const counted = all.filter(b => b.status === 'issued' && b.sellAmount != null && b.netAmount != null);
+            const expected = Math.round(counted
                 .reduce((s, b) => s + (b.sellAmount - b.netAmount), 0) * 100) / 100;
             assert.equal(overview.data.bookings.revenue, expected);
+            const unknown = all.filter(b => b.status === 'issued' && b.sellAmount != null && b.netAmount == null);
+            assert.equal(overview.data.bookings.unknownCostBookings, unknown.length,
+                'الحجوزات بلا كلفة مسجَّلة تُعلَن عدداً بدل أن تختفي في رقم الإيراد');
+            if (unknown.length) {
+                assert.ok(unknown.every(b => b.margin == null), 'لا هامش مُختلَق لحجزٍ لا كلفة له');
+            }
             // للأدمن الصافي والهامش والمستخدم — وللمسافر العادي لا شيء منها
             const withMargin = all.find(b => b.margin != null);
             assert.ok(withMargin);

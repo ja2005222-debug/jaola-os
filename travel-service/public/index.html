@@ -697,6 +697,7 @@
   </dialog>
 
   <script src="i18n.js"></script>
+  <script src="trips.js"></script>
   <script>
     const $ = id => document.getElementById(id);
     let token = null, config = null, selectedOffer = null, selectedStayOffer = null, selectedCarOffer = null, lastFlightSearch = null;
@@ -2751,7 +2752,10 @@
       };
       $('tripsList').innerHTML = topLevel.length === 0
         ? '<p class="note">لا حجوزات بعد — ابدأ من تبويب البحث أو اطلب من المساعد.</p>'
-        : topLevel.map(b => `
+        : renderTripsList(topLevel);
+      // بطاقة حجزٍ واحد — تُستعمل مفردةً وداخل بطاقة السفرة معاً
+      function bookingCardHtml(b) {
+        return `
           <div class="card">
             <div class="offer">
               <div style="flex:1">
@@ -2779,7 +2783,47 @@
                 ${b.status === 'issued' ? `<button class="chip" data-cancel="${esc(b.id)}" data-kind="${esc(b.kind || 'flight')}">إلغاء الحجز</button>` : ''}
               </div>
             </div>
-          </div>`).join('');
+          </div>`;
+      }
+
+      /**
+       * 🧳 السفرة الواحدة: طيرانها وفندقها وسيارتها في بطاقة واحدة بخط
+       * زمني ومهلة. المنطق النقيّ (أيّ حجز مع أيّ) في trips.js المُختبَر —
+       * وهنا الرسم وحده. حجزٌ لا رفيق له يبقى بطاقةً كما كان تماماً: لا
+       * نُلبس المفرد ثوب «سفرة» فنضيف إطاراً بلا معنى.
+       */
+      function tripCountdown(from, to) {
+        const today = new Date().toISOString().slice(0, 10);
+        if (to < today) return T('منتهية', 'Completed');
+        if (from <= today) return T('جارية الآن', 'In progress');
+        const days = Math.round((Date.parse(from + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400000);
+        if (days === 1) return T('تبدأ غداً', 'Starts tomorrow');
+        return uiLang === 'en' ? `In ${days} days` : `بعد ${days} يوماً`;
+      }
+      function renderTripsList(list) {
+        const TR = window.JAOLA_TRIPS;
+        if (!TR) return list.map(bookingCardHtml).join(''); // تدهور آمن
+        const { groups, loose } = TR.groupTrips(list);
+        const html = [];
+        for (const g of groups) {
+          if (g.items.length < 2) { html.push(bookingCardHtml(g.items[0])); continue; }
+          const dests = TR.tripDestinations(g.items);
+          html.push(`
+            <div class="card" style="border-color:var(--accent);padding-bottom:6px">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+                <strong style="font-size:16px">🧳 ${T('سفرة', 'Trip')} ${esc(dests.join(' · '))}</strong>
+                <span class="chip" style="margin:0;border-color:var(--accent);color:var(--accent)">${esc(tripCountdown(g.from, g.to))}</span>
+              </div>
+              <div class="note">${esc(g.from)} → ${esc(g.to)} · ${
+                uiLang === 'en' ? `${g.items.length} bookings` : `${g.items.length} حجوزات`}</div>
+              <div style="margin-top:8px;border-inline-start:2px solid var(--border);padding-inline-start:10px">
+                ${g.items.map(bookingCardHtml).join('')}
+              </div>
+            </div>`);
+        }
+        html.push(...loose.map(bookingCardHtml));
+        return html.join('');
+      }
       document.querySelectorAll('[data-cancel]').forEach(btn =>
         btn.addEventListener('click', async () => {
           if (!confirm('إلغاء هذا الحجز؟ مبلغ الاسترداد يحدده المزوّد.')) return;
