@@ -4,10 +4,36 @@
       <stop offset="0" stop-color="#38bdf8"/>
       <stop offset="1" stop-color="#0ea5e9"/>
     </linearGradient>
+    <clipPath id="globeClip">
+      <circle cx="220" cy="300" r="148"/>
+    </clipPath>
   </defs>
   <rect width="512" height="512" rx="112" fill="#0b1120"/>
-  <g transform="translate(256 262)">
-    <path fill="url(#g)" d="M-170 44 L-18 8 L-146 -92 L-108 -104 L34 -6 L142 -32 C168 -38 190 -28 194 -10 C198 8 184 24 158 30 L-150 104 C-166 108 -180 100 -182 88 C-184 76 -178 62 -162 56 Z"/>
-    <circle cx="150" cy="-96" r="34" fill="#fbbf24"/>
+
+  <!-- الكرة الأرضية: حدّها وخط طول وخط استواء فقط — تبقى واضحة بحجم صغير
+       (favicon/تبويب المتصفح 16-32px) -->
+  <g fill="none" stroke="url(#g)" stroke-width="11">
+    <circle cx="220" cy="300" r="148"/>
+    <ellipse cx="220" cy="300" rx="52" ry="148"/>
+    <line x1="72" y1="300" x2="368" y2="300"/>
   </g>
+
+  <!-- سلسلة جبال أسفل الكرة -->
+  <g clip-path="url(#globeClip)">
+    <path fill="url(#g)" opacity="0.92"
+      d="M46 392 L128 316 L176 354 L232 288 L300 360 L366 332 L400 352 L400 460 L46 460 Z"/>
+  </g>
+
+  <!-- أثر الطائرة فوق الكرة -->
+  <path fill="none" stroke="url(#g)" stroke-width="15" stroke-linecap="round"
+    d="M104 214 C 186 128, 288 104, 352 122"/>
+
+  <!-- طائرة ورقية بسيطة: جسم + طيّة جناح -->
+  <g transform="translate(348 68) rotate(28)">
+    <path fill="url(#g)" d="M0 40 L150 0 L46 66 L30 46 Z"/>
+    <path fill="#0ea5e9" opacity="0.85" d="M46 66 L74 84 L30 46 Z"/>
+  </g>
+
+  <!-- نقطة البوصلة -->
+  <circle cx="452" cy="94" r="18" fill="#fbbf24"/>
 </svg>
