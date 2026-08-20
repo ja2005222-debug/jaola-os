@@ -17,7 +17,7 @@ import crypto from 'crypto';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
-import { buildVerifyToken } from './src/auth.js';
+import { buildVerifyToken, buildOptionalToken } from './src/auth.js';
 import { readMarkupPct, readPackageMarkupPct, readCategoryMarkupPct, applyMarkup } from './src/pricing.js';
 import { quotePackage, bookPackage, cancelPackage, retryPackageCompensations } from './src/packages.js';
 import {
@@ -497,6 +497,8 @@ export function createApp({
     app.use(express.static(path.join(__dirname, 'public')));
 
     const verifyToken = buildVerifyToken(jwtSecret);
+    // 👤 للمسارات التي يتصفّحها الزائر بلا حساب (البحث والعرض) — انظر auth.js
+    const optionalToken = buildOptionalToken(jwtSecret);
     const userOf = req => String(req.user?.username || '').trim().toLowerCase();
 
     // 🎚️ المستوى الأول: هامش كل فئة منتج على حدة — قبل هذا كانت applyMarkup
@@ -531,13 +533,26 @@ export function createApp({
         next();
     };
 
-    // مفتاح محدّدات المعدل أدناه: اسم المستخدم لا عنوان IP — verifyToken
-    // يعمل قبلها دوماً في كل مسار، والتصحيح بالمستخدم صحيح بصرف النظر عن
-    // إعداد الوكيل العكسي (خلاف trust proxy وحده الذي لا يحل تشارك عنوان
-    // NAT/شبكة شركة بين عدة مستخدمين حقيقيين).
-    const byUser = req => userOf(req) || ipKeyGenerator(req.ip); // احتياطي IPv6-آمن قبل verifyToken
-    // بحث المزوّدات مكلف/محدود المعدل لديهم — درع أمامي عندنا أولاً
-    const searchLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, keyGenerator: byUser });
+    // مفتاح محدّدات المعدل أدناه: اسم المستخدم متى عُرف، وإلا عنوان IP.
+    // التصحيح بالمستخدم صحيح بصرف النظر عن إعداد الوكيل العكسي (خلاف
+    // trust proxy وحده الذي لا يحل تشارك عنوان NAT/شبكة شركة بين عدة
+    // مستخدمين حقيقيين).
+    // ⚠️ كان هنا «verifyToken يعمل قبلها دوماً في كل مسار» — لم يعد صحيحاً
+    // منذ التصفّح بلا حساب: مسارات البحث تمر بـoptionalToken، فمفتاح
+    // الزائر هو IPه فعلاً لا احتياطاً نظرياً.
+    const byUser = req => userOf(req) || ipKeyGenerator(req.ip);
+    // بحث المزوّدات مكلف/محدود المعدل لديهم — درع أمامي عندنا أولاً.
+    // 💸 **حدّان لا واحد**: الزائر المجهول أضيق كثيراً من الداخل، لأن كل
+    // بحث نداءٌ مدفوع لـDuffel/LiteAPI، والزائر **غير محاسَب**: لا حساب
+    // يُعلَّق ولا هوية تُلاحَق، ومفتاحه IP يُبدَّل بلا كلفة. والداخل يبقى
+    // على حدّه القديم كما كان بالضبط — لا تضييق على من له حساب.
+    const GUEST_SEARCH_MAX = 10;
+    const USER_SEARCH_MAX = 30;
+    const searchLimiter = rateLimit({
+        windowMs: 5 * 60 * 1000, standardHeaders: true, legacyHeaders: false,
+        keyGenerator: byUser,
+        max: req => (req.user ? USER_SEARCH_MAX : GUEST_SEARCH_MAX),
+    });
     const agentLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, keyGenerator: byUser });
     // نتيجة أهم الوجهات مُخزَّنة عالمياً (topDestinations.js) فلا تكلفة
     // حقيقية على المزوّد إلا أول طلب كل 6 ساعات — حد أخف من searchLimiter يكفي.
@@ -1208,17 +1223,17 @@ export function createApp({
     // 🔤 بحث المطارات بالاسم/الدولة/الرمز — عربي أو إنجليزي.
     // بحث محلي بحت في airports.js: لا نداء مزوّد ولا تكلفة، فلا محدّد
     // معدّل خاص به (verifyToken وحده يكفي كبقية المسارات).
-    app.get('/api/travel/airports', verifyToken, wrap(async (req, res) => {
+    app.get('/api/travel/airports', optionalToken, wrap(async (req, res) => {
         res.json({ airports: searchAirports(req.query.q, 8) });
     }));
 
     // مطار الانطلاق الافتراضي من المنطقة الزمنية للمتصفح — قيمة مقترحة
     // لا مفروضة: الواجهة تعبّئها ويغيّرها المستخدم متى شاء، وتحفظ اختياره.
-    app.get('/api/travel/airports/default', verifyToken, wrap(async (req, res) => {
+    app.get('/api/travel/airports/default', optionalToken, wrap(async (req, res) => {
         res.json({ airport: airportForTimezone(req.query.tz) });
     }));
 
-    app.get('/api/travel/config', verifyToken, wrap(async (req, res) => {
+    app.get('/api/travel/config', optionalToken, wrap(async (req, res) => {
         res.json({
             cabins: CABINS,
             maxAdults: MAX_ADULTS,
@@ -1243,7 +1258,7 @@ export function createApp({
     // إلى قوالب النصوص أو تعليمات النموذج.
     const uiLangOf = req => (req.headers['x-ui-lang'] === 'en' ? 'en' : 'ar');
 
-    app.post('/api/travel/flights/search', verifyToken, searchLimiter, wrap(async (req, res) => {
+    app.post('/api/travel/flights/search', optionalToken, searchLimiter, wrap(async (req, res) => {
         try {
             const offers = await doSearch(req.body);
             // قراءة الايجنت تُحسب هنا حتمياً (دوال نقية، بلا شبكة) فلا تضيف
@@ -1262,9 +1277,11 @@ export function createApp({
     // /Google Flights) — كان حكراً على أداة الايجنت find_flexible_dates،
     // الآن للواجهة أيضاً. نفس المنطق حرفياً: حارس checkFlexLimit الأشدّ
     // (نداءات مزوّد متعددة لكل طلب) + كاش الأسعار أعلاه يمتصّ التكرار.
-    app.post('/api/travel/flights/calendar', verifyToken, wrap(async (req, res) => {
+    app.post('/api/travel/flights/calendar', optionalToken, searchLimiter, wrap(async (req, res) => {
         try {
-            const days = await doFindFlexibleDates(userOf(req), {
+            // 🔑 مفتاح checkFlexLimit: byUser لا userOf — الزائر اسمُه ''
+            // فكان الزوّار كلهم يتشاركون دلواً واحداً، وواحدٌ يحجب البقية.
+            const days = await doFindFlexibleDates(byUser(req), {
                 origin: req.body?.origin, destination: req.body?.destination,
                 aroundDate: req.body?.aroundDate, windowDays: req.body?.windowDays,
                 cabin: req.body?.cabin,
@@ -1276,7 +1293,7 @@ export function createApp({
         }
     }));
 
-    app.get('/api/travel/flights/offers/:id', verifyToken, wrap(async (req, res) => {
+    app.get('/api/travel/flights/offers/:id', optionalToken, wrap(async (req, res) => {
         const offer = await doGetOffer(req.params.id);
         if (!offer) return res.status(404).json({ error: 'العرض غير موجود أو انتهت صلاحيته.' });
         res.json({ offer });
@@ -1425,7 +1442,7 @@ export function createApp({
 
     // ─── الفنادق (Duffel Stays) — محاذاة مسارات الطيران أعلاه ──────────
 
-    app.post('/api/travel/stays/search', verifyToken, searchLimiter, wrap(async (req, res) => {
+    app.post('/api/travel/stays/search', optionalToken, searchLimiter, wrap(async (req, res) => {
         try {
             const offers = await doSearchStays(req.body);
             res.json({ offers, insight: buildStayInsight(offers, uiLangOf(req)) });
@@ -1435,7 +1452,7 @@ export function createApp({
         }
     }));
 
-    app.get('/api/travel/stays/offers/:id', verifyToken, wrap(async (req, res) => {
+    app.get('/api/travel/stays/offers/:id', optionalToken, wrap(async (req, res) => {
         try {
             const offer = await doGetStayOffer(req.params.id);
             if (!offer) return res.status(404).json({ error: 'عرض الفندق غير موجود أو انتهت صلاحيته.' });
@@ -1447,7 +1464,7 @@ export function createApp({
     }));
 
     // نداء مزوّد حقيقي لكل فتح تفاصيل — searchLimiter نفسه يحميه.
-    app.get('/api/travel/stays/hotels/:hotelId', verifyToken, searchLimiter, wrap(async (req, res) => {
+    app.get('/api/travel/stays/hotels/:hotelId', optionalToken, searchLimiter, wrap(async (req, res) => {
         try {
             const hotel = await doGetHotelDetails(req.params.hotelId);
             if (!hotel) return res.status(404).json({ error: 'تفاصيل الفندق غير متاحة.' });
@@ -1479,7 +1496,7 @@ export function createApp({
 
     // ─── السيارات (Duffel Cars) — محاذاة مسارات الفنادق أعلاه ──────────
 
-    app.post('/api/travel/cars/search', verifyToken, searchLimiter, wrap(async (req, res) => {
+    app.post('/api/travel/cars/search', optionalToken, searchLimiter, wrap(async (req, res) => {
         try {
             const offers = await doSearchCars(req.body);
             res.json({ offers, insight: buildCarInsight(offers, uiLangOf(req)) });
@@ -1489,7 +1506,7 @@ export function createApp({
         }
     }));
 
-    app.get('/api/travel/cars/offers/:id', verifyToken, wrap(async (req, res) => {
+    app.get('/api/travel/cars/offers/:id', optionalToken, wrap(async (req, res) => {
         try {
             const offer = await doGetCarOffer(req.params.id);
             if (!offer) return res.status(404).json({ error: 'عرض السيارة غير موجود أو انتهت صلاحيته.' });
@@ -1543,7 +1560,7 @@ export function createApp({
         };
     }
 
-    app.post('/api/travel/packages/quote', verifyToken, wrap(async (req, res) => {
+    app.post('/api/travel/packages/quote', optionalToken, searchLimiter, wrap(async (req, res) => {
         requirePackages();
         try {
             const q = await quotePackage({
@@ -1631,11 +1648,14 @@ export function createApp({
         } catch { /* الإشعار إثراء — لا يُفشل الإلغاء/التعديل */ }
     }
 
-    app.get('/api/travel/fixed-packages', verifyToken, wrap(async (req, res) => {
+    app.get('/api/travel/fixed-packages', optionalToken, wrap(async (req, res) => {
         const today = todayUtc();
         const all = await store.listFixedPackages();
+        // المفضلة تخصّ صاحب حساب — الزائر لا استعلام له ولا كل باقاته مفضلة
         const username = userOf(req);
-        const wishlist = new Set((await store.listWishlistByUser(username)).map(w => w.packageId));
+        const wishlist = new Set(username
+            ? (await store.listWishlistByUser(username)).map(w => w.packageId)
+            : []);
         const upcoming = all.filter(p => p.active !== false && p.departDate > today);
         // ⭐ تقييم كل باقة يُجمع من مراجعاتها الموثقة + ❤️ حالة مفضلة المستخدم
         const packages = [];
@@ -1652,7 +1672,7 @@ export function createApp({
 
     // ─── ⭐ مراجعات موثقة: لا يراجع إلا من حجز فعلاً وانطلقت رحلته ──────
 
-    app.get('/api/travel/fixed-packages/:id/reviews', verifyToken, wrap(async (req, res) => {
+    app.get('/api/travel/fixed-packages/:id/reviews', optionalToken, wrap(async (req, res) => {
         const pkg = await store.getFixedPackage(String(req.params.id || ''));
         if (!pkg) return res.status(404).json({ error: 'الباقة غير موجودة.' });
         const reviews = await store.listReviewsByPackage(pkg.id);
@@ -1690,7 +1710,7 @@ export function createApp({
         res.json({ wishlisted: false });
     }));
 
-    app.post('/api/travel/fixed-packages/:id/quote', verifyToken, wrap(async (req, res) => {
+    app.post('/api/travel/fixed-packages/:id/quote', optionalToken, wrap(async (req, res) => {
         const pkg = await store.getFixedPackage(String(req.params.id || ''));
         if (!pkg || pkg.active === false) return res.status(404).json({ error: 'الباقة غير موجودة.' });
         try {
@@ -2291,7 +2311,7 @@ export function createApp({
     const FX_TTL_MS = 12 * 60 * 60 * 1000;
     const fxCache = new Map();
 
-    app.get('/api/travel/fx', verifyToken, wrap(async (req, res) => {
+    app.get('/api/travel/fx', optionalToken, wrap(async (req, res) => {
         const from = String(req.query.from || '').trim().toUpperCase();
         const to = String(req.query.to || '').trim().toUpperCase();
         const key = `${from}_${to}`;
@@ -2310,7 +2330,7 @@ export function createApp({
         }
     }));
 
-    app.get('/api/travel/fx/currencies', verifyToken, (req, res) => {
+    app.get('/api/travel/fx/currencies', optionalToken, (req, res) => {
         res.json({ currencies: DISPLAY_CURRENCIES });
     });
 
@@ -2321,7 +2341,7 @@ export function createApp({
 
     // ─── 🗺️ أهم الوجهات (صور Wikimedia + أرخص سعر حقيقي) ──────────────
 
-    app.get('/api/travel/destinations/top', verifyToken, destinationsLimiter, wrap(async (req, res) => {
+    app.get('/api/travel/destinations/top', optionalToken, destinationsLimiter, wrap(async (req, res) => {
         const origin = String(req.query.origin || '').trim().toUpperCase();
         if (!IATA_RE.test(origin)) {
             return res.status(400).json({ error: 'رمز مطار الأصل يجب أن يكون IATA من ثلاثة أحرف (مثل RUH).' });

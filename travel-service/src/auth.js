@@ -5,6 +5,12 @@
  * الرئيسية بنفس JWT_SECRET، فيعمل نفس تسجيل الدخول في الخدمتين.
  * العقد مطابق حرفياً لعقد backend/server.js (verifyToken) و
  * backend/middleware/adminOnly.js حتى لا يتباعد السلوك بين الخدمتين.
+ *
+ * وسيطان لا واحد:
+ * - `verifyToken`  — التوكن **إلزامي** (الحجز، رحلاتي، الملف، الأدمن…).
+ * - `optionalToken` — التوكن **اختياري** (البحث والتصفّح): الزائر يمر بلا
+ *   حساب، والداخل يُعرَف فيُخصَّص له الرد. انظر تحذيره: توكنٌ فاسد يُرفض
+ *   ولا يُعامَل معاملة الزائر.
  */
 import jwt from 'jsonwebtoken';
 
@@ -38,6 +44,34 @@ export function buildVerifyToken(jwtSecret) {
         if (!token) {
             return res.status(401).json({ error: 'غير مصرح: التوكن مفقود.' });
         }
+
+        try {
+            req.user = verifyWithSecrets(token, secrets);
+            next();
+        } catch {
+            return res.status(401).json({ error: 'غير مصرح: التوكن منتهي أو غير صالح.' });
+        }
+    };
+}
+
+/**
+ * 👤 التوكن اختياري: يقرأه إن وُجد ولا يرفض إن غاب — أساس **التصفّح بلا
+ * حساب** (يبحث الزائر ويرى الأسعار، ويُطلب الحساب عند الحجز فقط، كما في
+ * كبار مواقع السفر).
+ *
+ * 🔴 توكنٌ **موجود لكنه فاسد أو منتهٍ يُرفض 401** ولا يُعامَل معاملة الزائر:
+ * من أرسل توكناً يقصد أن يكون نفسه، وابتلاعُه صامتاً يُظهر له نتائج زائر
+ * وكأنه داخل — فيظن حجوزاته اختفت. الغياب وحده هو الضيافة.
+ */
+export function buildOptionalToken(jwtSecret) {
+    const secrets = (Array.isArray(jwtSecret) ? jwtSecret : [jwtSecret]).filter(Boolean);
+    if (secrets.length === 0) throw new Error('JWT_SECRET مطلوب.');
+
+    return function optionalToken(req, res, next) {
+        const authHeader = req.headers['authorization'];
+        const token = authHeader && authHeader.split(' ')[1];
+
+        if (!token) return next(); // زائر — req.user يبقى undefined
 
         try {
             req.user = verifyWithSecrets(token, secrets);

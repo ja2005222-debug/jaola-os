@@ -2576,19 +2576,57 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(await p.getOffer('لا-وجود'), null);
         });
 
-        test('🔐 كل المسارات محمية بالتوكن', async () => {
-            for (const [method, pathname] of [
-                ['GET', '/api/travel/config'],
-                ['POST', '/api/travel/flights/search'],
-                ['GET', '/api/travel/bookings'],
-                ['POST', '/api/travel/agent/chat'],
-                ['POST', '/api/travel/stays/search'],
-                ['POST', '/api/travel/stays/bookings'],
+        // 🚪 الخطّ الفاصل بين ما يتصفّحه الزائر وما يحتاج حساباً — أهم من
+        // «كلٌّ محميّ»: توسيعُه بالخطأ يفتح بيانات مستخدمين، وتضييقُه يعيد
+        // شاشةَ التوكن الفارغة التي كانت تطرد كل زائر يصل jatrava.com.
+        test('🚪 الزائر يتصفّح ويبحث، ولا يحجز ولا يرى بيانات أحد', async () => {
+            // مفتوحة بلا توكن: التصفّح والبحث وعرض الأسعار
+            for (const [method, pathname, body] of [
+                ['GET', '/api/travel/health', null],
+                ['GET', '/api/travel/config', null],
+                ['GET', '/api/travel/airports?q=jed', null],
+                ['GET', '/api/travel/fixed-packages', null],
+                ['POST', '/api/travel/flights/search', SEARCH_BODY()],
+                ['POST', '/api/travel/stays/search', STAY_SEARCH_BODY()],
             ]) {
-                assert.equal((await call(pathname, { method })).status, 401, pathname);
+                const r = await call(pathname, { method, body });
+                assert.notEqual(r.status, 401, `يجب أن تكون مفتوحة للزائر: ${pathname}`);
             }
-            // health عام — مراقبة الحياة بلا توكن
-            assert.equal((await call('/api/travel/health')).status, 200);
+
+            // مغلقة بلا توكن: كل ما يحجز أو يخصّ حساباً بعينه
+            for (const [method, pathname] of [
+                ['POST', '/api/travel/bookings'],
+                ['GET', '/api/travel/bookings'],
+                ['POST', '/api/travel/stays/bookings'],
+                ['POST', '/api/travel/cars/bookings'],
+                ['POST', '/api/travel/agent/chat'],
+                ['GET', '/api/travel/profile'],
+                ['GET', '/api/travel/notifications'],
+                ['GET', '/api/travel/loyalty'],
+                ['POST', '/api/travel/calendar/subscribe'],
+            ]) {
+                assert.equal((await call(pathname, { method })).status, 401, `يجب أن تُغلق عن الزائر: ${pathname}`);
+            }
+        });
+
+        test('🚪 التوكن الفاسد يُرفض على مسارٍ عام ولا يُعامَل معاملة الزائر', async () => {
+            // من أرسل توكناً يقصد أن يكون نفسه — وابتلاعُه صامتاً يُريه
+            // نتائج زائرٍ وهو يظن نفسه داخلاً (فيحسب حجوزاته اختفت)
+            const r = await call('/api/travel/config', { token: 'not.a.real.token' });
+            assert.equal(r.status, 401);
+        });
+
+        test('🚪 الزائر ليس مشرفاً ولا مفضلةَ له', async () => {
+            const cfg = await call('/api/travel/config');
+            assert.equal(cfg.status, 200);
+            assert.equal(cfg.data.isAdmin, false);
+
+            // listWishlistByUser('') لا تُنادى أصلاً للزائر — ولا باقة مفضّلة
+            const pkgs = await call('/api/travel/fixed-packages');
+            assert.equal(pkgs.status, 200);
+            for (const p of pkgs.data.packages || []) {
+                assert.equal(p.wishlisted, false, 'الزائر لا مفضلة له');
+            }
         });
 
         test('🔎 البحث: تحقق صارم من المعايير + الهامش مطبَّق والصافي لا يتسرب', async () => {
@@ -4210,7 +4248,8 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
 
         test('🔤🧭 مسارا المطارات: البحث بالاسم ومطار الانطلاق الافتراضي', async () => {
             const token = makeToken('airport-user');
-            assert.equal((await call('/api/travel/airports?q=RUH')).status, 401); // محمي بالتوكن
+            // 🚪 مفتوح للزائر: الإكمال التلقائي يعمل قبل الدخول (بيانات ثابتة، لا نداء مزوّد)
+            assert.equal((await call('/api/travel/airports?q=RUH')).status, 200);
             const search = await call('/api/travel/airports?q=' + encodeURIComponent('الرياض'), { token });
             assert.equal(search.status, 200);
             assert.equal(search.data.airports[0].iata, 'RUH');
@@ -4234,7 +4273,8 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.ok(Array.isArray(ok.data.hotel.facilities));
             assert.equal(ok.data.hotel.sellAmount, undefined); // بلا أسعار
 
-            assert.equal((await call('/api/travel/stays/hotels/x')).status, 401); // محمي بالتوكن
+            // 🚪 مفتوح للزائر: تفاصيل الفندق جزءٌ من التصفّح قبل الحجز
+            assert.notEqual((await call('/api/travel/stays/hotels/x')).status, 401);
 
             // مزوّد بلا القدرة (كـDuffel Stays) → 501 صريح لا تعطّل
             const bare = { name: 'no-details', mode: 'mock', async searchStays() { return []; } };
@@ -6185,8 +6225,10 @@ describe('الايجنت الحاجز', () => {
     test('🗺️ GET /api/travel/destinations/top: مصادقة + تحقق + شكل الرد', async () => {
         const stubFetch = async (url) => ({ ok: true, json: async () => ({ thumbnail: { source: String(url) + '.jpg' } }) });
         await withAgentApp(null, async call => {
+            // 🚪 مفتوح للزائر: أهم الوجهات واجهةُ الموقع الأولى، ونتيجتها
+            // مكيَّشة عالمياً 6 ساعات فلا كلفة مزوّد على كل طلب
             const noAuth = await call('/api/travel/destinations/top?origin=RUH');
-            assert.equal(noAuth.status, 401);
+            assert.equal(noAuth.status, 200);
 
             const token = makeToken('dest-seeker');
             const badOrigin = await call('/api/travel/destinations/top?origin=xx', { token });
