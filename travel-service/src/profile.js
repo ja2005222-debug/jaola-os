@@ -33,6 +33,8 @@ export function defaultProfile() {
         prefs: { homeAirport: null, cabin: null, savePassengers: false, whatsappPhone: null },
         travellers: [],
         conversation: [],
+        // 📆 مفتاح اشتراك التقويم — يُولَّد عند أول اشتراك ويبقى null قبله
+        calendarKey: null,
     };
 }
 
@@ -72,6 +74,11 @@ export function mergeProfile(current, patch) {
         prefs: patch.prefs ? normalizePrefs({ ...base.prefs, ...patch.prefs }) : base.prefs,
         travellers: patch.travellers !== undefined ? patch.travellers : base.travellers,
         conversation: patch.conversation !== undefined ? patch.conversation : base.conversation,
+        // ⚠️ كل حقل جديد يجب أن يُذكر هنا صراحةً. هذه الدالة تبني كائناً
+        // جديداً لا تدمج فوق القديم، فحقلٌ منسيٌّ **يُمحى صامتاً** عند أول
+        // حفظٍ لأي شيء آخر (يحفظ المستخدم تفضيلاً فيموت اشتراك تقويمه).
+        // نفس صنف العطب الذي أسقط الحقول غير المُدرَجة في transitionBooking.
+        calendarKey: patch.calendarKey !== undefined ? patch.calendarKey : (base.calendarKey ?? null),
     };
 }
 

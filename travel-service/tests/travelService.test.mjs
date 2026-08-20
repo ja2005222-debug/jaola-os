@@ -45,6 +45,7 @@ import { createPostgresStore } from '../src/store/postgresStore.js';
 import { createTravelAgent, executeAgentTool, buildTravelAgent, AGENT_TOOLS, retryDelayMs, compactToolResult, buildFallbackProvider, MAX_TOOL_RESULT_CHARS } from '../src/agent/agent.js';
 import { listPriceWatchesByUser, cancelPriceWatch } from '../src/priceWatches.js';
 import { deriveShareSecret, signShareToken, verifyShareToken, clampShareHours, SHARE_DEFAULT_HOURS, SHARE_MAX_HOURS } from '../src/shareLinks.js';
+import { newCalendarKey, encodeFeedToken, parseFeedToken, calendarKeyMatches, bookingEvents, bookingIcs, buildFeedIcs, icsFold } from '../src/calendarFeed.js';
 import { checkWatches } from '../src/priceWatchPoller.js';
 import { sendTripReminders, isReminderDue, renderTripReminder, departureAt } from '../src/tripReminders.js';
 import { searchAirports, airportForTimezone, AIRPORT_COORDS } from '../src/airports.js';
@@ -2043,6 +2044,109 @@ describe('🔗 روابط المشاركة المؤقّتة: توقيع بلا �
     });
 });
 
+describe('📆 تقويم الحجوزات: بناء ICS ومفتاح الاشتراك', () => {
+    const FLIGHT = {
+        id: 'bk1', kind: 'flight', status: 'issued', bookingReference: 'JAO77',
+        offer: {
+            owner: 'سماء العرب',
+            slices: [{
+                origin: 'RUH', destination: 'CAI',
+                departAt: '2027-03-05T17:35', arriveAt: '2027-03-05T21:40',
+                segments: [{ carrier: 'JA', flightNumber: '855' }],
+            }],
+        },
+    };
+    const STAY = {
+        id: 'bk2', kind: 'stay', status: 'issued', bookingReference: 'JAO88',
+        offer: { name: 'فندق الكورنيش', city: 'جدة', roomName: 'غرفة مزدوجة', checkInDate: '2027-03-05', checkOutDate: '2027-03-09' },
+    };
+
+    test('الرحلة: حدثٌ لكل شريحة بتوقيت عائم (بلا Z) — التوقيت محلي بمطاره', () => {
+        const ics = bookingIcs(FLIGHT, { now: Date.parse('2027-01-01T00:00:00Z') });
+        assert.match(ics, /BEGIN:VCALENDAR/);
+        assert.match(ics, /DTSTART:20270305T173500\r\n/, 'بلا Z: إلحاقها يزيح الموعد ساعات');
+        assert.match(ics, /DTEND:20270305T214000/);
+        assert.match(ics, /UID:bk1-0@jaola\.travel/);
+        assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, 1);
+        // DTSTAMP وحده هو الذي يحمل Z (لحظة الإنشاء، وهي فعلاً UTC)
+        assert.match(ics, /DTSTAMP:20270101T000000Z/);
+    });
+
+    test('الفندق: حدثٌ بأيام كاملة، والسيارة بتوقيت، والباقة تشتقّ نهايتها من الليالي', () => {
+        assert.match(bookingIcs(STAY), /DTSTART;VALUE=DATE:20270305/);
+        assert.match(bookingIcs(STAY), /DTEND;VALUE=DATE:20270309/);
+        const pkg = {
+            id: 'bk3', kind: 'fixed_package', status: 'issued',
+            offer: { title: 'أسبوع في أنطاليا', hotelName: 'منتجع الشاطئ', city: 'أنطاليا', departDate: '2027-06-01', nights: 7 },
+        };
+        assert.match(bookingIcs(pkg), /DTEND;VALUE=DATE:20270608/, '1 يونيو + 7 ليالٍ = 8 يونيو');
+        const car = {
+            id: 'bk4', kind: 'car', status: 'issued',
+            offer: { vehicleName: 'تويوتا يارِس', supplier: 'Hertz', pickupLocation: 'مطار الرياض', pickUpAt: '2027-04-02T10:00', dropOffAt: '2027-04-05T10:00' },
+        };
+        assert.match(bookingIcs(car), /DTSTART:20270402T100000/);
+    });
+
+    test('حجزٌ بلا تواريخ لا يُنتج ملفاً (لا VEVENT فارغ)', () => {
+        assert.equal(bookingIcs({ id: 'x', kind: 'flight', offer: {} }), null);
+        assert.equal(bookingIcs({ id: 'y', kind: 'stay', offer: { name: 'بلا تواريخ' } }), null);
+        assert.deepEqual(bookingEvents({ id: 'z', kind: 'car', offer: {} }), []);
+    });
+
+    test('الطيّ لا يقطع رمزاً تعبيرياً نصفين (زوج بديل)', () => {
+        // سطر طويل ينتهي فيه القطع عند رمز تعبيري بالضبط
+        const line = 'SUMMARY:' + 'a'.repeat(64) + '✈️🎒🏨🚗';
+        const folded = icsFold(line);
+        for (const part of folded.split('\r\n')) {
+            // لا نصف زوجٍ بديل معلّقاً في طرف أي سطر
+            assert.ok(!/[\uD800-\uDBFF]$/.test(part), 'نصف رمز تعبيري في آخر سطر');
+            assert.ok(!/^[\uDC00-\uDFFF]/.test(part.replace(/^ /, '')), 'نصف رمز تعبيري في أول سطر');
+        }
+        assert.ok(folded.includes('\r\n '), 'الأسطر التالية تبدأ بمسافة');
+    });
+
+    test('التغذية: المُلغى والفاشل يُستبعدان — التقويم يعرض ما سيحدث', () => {
+        const feed = buildFeedIcs([
+            FLIGHT,
+            STAY,
+            { ...FLIGHT, id: 'bkX', status: 'cancelled' },
+            { ...FLIGHT, id: 'bkY', status: 'failed' },
+        ]);
+        assert.equal((feed.match(/BEGIN:VEVENT/g) || []).length, 2, 'حدثان فقط: الرحلة والفندق');
+        assert.ok(!feed.includes('bkX'), 'المُلغى لا يبقى في التقويم');
+        assert.ok(!feed.includes('bkY'));
+        // اسم التقويم ووتيرة التحديث — ما تقرؤه التطبيقات فعلاً
+        assert.match(feed, /X-WR-CALNAME:/);
+        assert.match(feed, /REFRESH-INTERVAL;VALUE=DURATION:PT12H/);
+    });
+
+    test('اللغة تتبع الطالب: الوصف بالإنجليزية حين يُطلب', () => {
+        assert.match(bookingIcs(FLIGHT, { lang: 'en' }), /Airline check-in opens/);
+        assert.match(bookingIcs(FLIGHT, { lang: 'ar' }), /تسجيل الوصول يفتح/);
+        assert.match(buildFeedIcs([FLIGHT], { lang: 'en' }), /X-WR-CALNAME:My trips/);
+    });
+
+    test('مفتاح الاشتراك: توكن يُفكّ، وصيغ تالفة تُرفض، ومقارنة ثابتة الزمن', () => {
+        const key = newCalendarKey();
+        assert.match(key, /^[0-9a-f]{32}$/);
+        assert.notEqual(newCalendarKey(), key, 'عشوائي فعلاً');
+
+        const token = encodeFeedToken('jamal', key);
+        assert.deepEqual(parseFeedToken(token), { username: 'jamal', key });
+        // اسم مستخدم بمحارف غير لاتينية يمرّ سالماً (base64url لا يفترض ASCII)
+        const arabicToken = encodeFeedToken('جمال', key);
+        assert.equal(parseFeedToken(arabicToken).username, 'جمال');
+
+        for (const bad of ['', 'abc', 'a.b.c', '.k', 'x.', null, undefined, `${Buffer.from('u').toString('base64url')}.zzz`]) {
+            assert.equal(parseFeedToken(bad), null, String(bad));
+        }
+        assert.ok(calendarKeyMatches(key, key));
+        assert.ok(!calendarKeyMatches(key, newCalendarKey()));
+        assert.ok(!calendarKeyMatches(key, key.slice(0, 31)), 'اختلاف الطول لا يرمي');
+        assert.ok(!calendarKeyMatches(null, key));
+    });
+});
+
 describe('searchAirports: بحث بالمدينة أو الدولة، عربياً أو إنجليزياً', () => {
     const codes = q => searchAirports(q, 8).map(a => a.iata);
 
@@ -2259,6 +2363,86 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 secret: deriveShareSecret(JWT_SECRET),
             });
             assert.equal((await call(`/api/travel/share/${ghost}`)).status, 404);
+        });
+
+        test('📆 اشتراك التقويم: تغذية حيّة، وتجديد يقتل القديم، وإلغاء يُنهيه', async () => {
+            const token = makeToken('calman');
+            const search = await call('/api/travel/flights/search', { method: 'POST', token, body: SEARCH_BODY() });
+            const booked = await call('/api/travel/bookings', {
+                method: 'POST', token, body: { offerId: search.data.offers[0].id, ...VALID_PAX },
+            });
+            const b = booked.data.booking;
+
+            // تنزيل حجزٍ واحد — نفس البنّاء الذي تستعمله التغذية
+            const one = await fetch(`${baseUrl}/api/travel/bookings/${b.id}/calendar.ics`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            assert.equal(one.status, 200);
+            assert.match(one.headers.get('content-type'), /text\/calendar/);
+            const oneBody = await one.text();
+            assert.match(oneBody, /BEGIN:VCALENDAR/);
+            assert.match(oneBody, new RegExp(`UID:${b.id}-0@jaola\\.travel`));
+
+            // وغير المالك لا ينزّل تقويم غيره
+            assert.equal((await fetch(`${baseUrl}/api/travel/bookings/${b.id}/calendar.ics`, {
+                headers: { Authorization: `Bearer ${makeToken('stranger')}` },
+            })).status, 404);
+
+            const sub = await call('/api/travel/calendar/subscribe', { method: 'POST', token, body: {} });
+            assert.equal(sub.status, 200);
+            assert.match(sub.data.httpUrl, /\/api\/travel\/calendar\/[^/]+\.ics$/);
+            // webcal:// هو نفس الرابط بمخطّط يفهمه التقويم كـ«اشترك»
+            assert.equal(sub.data.webcalUrl, sub.data.httpUrl.replace(/^https?:/, 'webcal:'));
+
+            const feedPath = new URL(sub.data.httpUrl).pathname;
+            // الفتح **بلا توكن دخول** — تطبيق التقويم لا يحمل واحداً
+            const feed = await fetch(baseUrl + feedPath);
+            assert.equal(feed.status, 200);
+            const body = await feed.text();
+            assert.match(body, /X-WR-CALNAME:/);
+            assert.match(body, new RegExp(`UID:${b.id}-0@jaola\\.travel`));
+            // 🔒 التغذية مواعيد لا هوية: لا بريد ولا هاتف
+            assert.ok(!body.includes('a@test.com'), 'البريد لا يتسرّب في التقويم');
+            assert.ok(!body.includes('+966500000000'));
+
+            // 🌐 لغة الاشتراك تُخبَز في الرابط: تطبيق التقويم لا يرسل
+            // X-UI-Lang أبداً، فبلا هذا يصل المشترك الإنجليزيّ تقويمٌ عربي
+            const subEn = await call('/api/travel/calendar/subscribe', {
+                method: 'POST', token, body: {}, headers: { 'X-UI-Lang': 'en' },
+            });
+            assert.match(subEn.data.httpUrl, /\?lang=en$/);
+            const enUrl = new URL(subEn.data.httpUrl);
+            const enFeed = await (await fetch(baseUrl + enUrl.pathname + enUrl.search)).text();
+            assert.match(enFeed, /X-WR-CALNAME:My trips/);
+            assert.match(enFeed, /Airline check-in opens/);
+            // ونفس التغذية بلا استعلام تبقى عربية (الافتراض)
+            assert.match(await (await fetch(baseUrl + enUrl.pathname)).text(), /X-WR-CALNAME:رحلاتي/);
+
+            // الاشتراك ثابت: نداءٌ ثانٍ يعيد نفس الرابط لا رابطاً جديداً
+            // (وإلا مات اشتراك المستخدم كلّما فتح الصفحة)
+            const again = await call('/api/travel/calendar/subscribe', { method: 'POST', token, body: {} });
+            assert.equal(again.data.httpUrl, sub.data.httpUrl);
+
+            // ⚠️ حفظ تفضيلٍ آخر يجب ألّا يمحو مفتاح التقويم (mergeProfile
+            // تبني كائناً جديداً — حقلٌ منسيّ فيها يقتل الاشتراك صامتاً)
+            await call('/api/travel/profile/prefs', { method: 'PUT', token, body: { prefs: { homeAirport: 'RUH' } } });
+            assert.equal((await fetch(baseUrl + feedPath)).status, 200, 'الاشتراك نجا من حفظ التفضيلات');
+
+            // التجديد يقتل القديم فوراً ويعطي جديداً يعمل
+            const rotated = await call('/api/travel/calendar/subscribe', { method: 'POST', token, body: { rotate: true } });
+            assert.notEqual(rotated.data.httpUrl, sub.data.httpUrl);
+            assert.equal((await fetch(baseUrl + feedPath)).status, 404, 'الرابط القديم مات');
+            const newPath = new URL(rotated.data.httpUrl).pathname;
+            assert.equal((await fetch(baseUrl + newPath)).status, 200);
+
+            // والإلغاء يُنهي الاشتراك كلّه
+            assert.equal((await call('/api/travel/calendar', { method: 'DELETE', token })).status, 200);
+            assert.equal((await fetch(baseUrl + newPath)).status, 404);
+
+            // توكن تالف أو لمستخدم لا وجود له → 404 واحد لا يفرّق
+            assert.equal((await fetch(`${baseUrl}/api/travel/calendar/garbage.ics`)).status, 404);
+            const ghost = `${Buffer.from('nobody').toString('base64url')}.${'a'.repeat(32)}`;
+            assert.equal((await fetch(`${baseUrl}/api/travel/calendar/${ghost}.ics`)).status, 404);
         });
 
         test('🎫 آلة الحالات: المسارات المسموحة فقط', () => {
