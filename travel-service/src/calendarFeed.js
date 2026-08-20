@@ -95,7 +95,7 @@ const T = (lang, ar, en) => (lang === 'en' ? en : ar);
  */
 export function bookingEvents(b, lang = 'ar') {
     const ref = b.bookingReference ? ` (${b.bookingReference})` : '';
-    const tail = T(lang, 'التوقيت محلي بمكانه. عبر جولا ترافل.', 'Times are local to the location. Via JAOLA Travel.');
+    const tail = T(lang, 'التوقيت محلي بمكانه. عبر Jatrava.', 'Times are local to the location. Via Jatrava.');
     const o = b.offer || {};
     const out = [];
     const add = (uid, summary, start, end, allDay, desc, loc) => {
@@ -134,7 +134,7 @@ export function bookingEvents(b, lang = 'ar') {
 function eventBlock(ev, stamp) {
     return [
         'BEGIN:VEVENT',
-        `UID:${ev.uid}@jaola.travel`,
+        `UID:${ev.uid}@jatrava.com`,
         `DTSTAMP:${stamp}`,
         ev.allDay ? `DTSTART;VALUE=DATE:${ev.start}` : `DTSTART:${ev.start}`,
         ev.allDay ? `DTEND;VALUE=DATE:${ev.end}` : `DTEND:${ev.end}`,
@@ -172,7 +172,7 @@ export function buildFeedIcs(bookings, { lang = 'ar', now = Date.now() } = {}) {
         for (const ev of bookingEvents(b, lang)) blocks.push(eventBlock(ev, stamp));
     }
     return wrapCalendar(blocks, {
-        name: T(lang, 'رحلاتي — جولا ترافل', 'My trips — JAOLA Travel'),
+        name: T(lang, 'رحلاتي — Jatrava', 'My trips — Jatrava'),
     });
 }
 
@@ -180,7 +180,7 @@ function wrapCalendar(blocks, { name = null } = {}) {
     return [
         'BEGIN:VCALENDAR',
         'VERSION:2.0',
-        'PRODID:-//JAOLA Travel//AR//',
+        'PRODID:-//Jatrava//AR//',
         'CALSCALE:GREGORIAN',
         'METHOD:PUBLISH',
         ...(name ? [icsFold(`X-WR-CALNAME:${icsEsc(name)}`), 'REFRESH-INTERVAL;VALUE=DURATION:PT12H', 'X-PUBLISHED-TTL:PT12H'] : []),

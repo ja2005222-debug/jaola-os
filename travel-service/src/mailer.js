@@ -25,7 +25,7 @@ export async function sendMail({ to, subject, text, replyTo } = {}, deps = {}) {
     }
     if (!isEmail(to)) return { error: 'عنوان بريد غير صالح.' };
     const payload = {
-        from: env.MAIL_FROM || 'JAOLA Travel <onboarding@resend.dev>',
+        from: env.MAIL_FROM || 'Jatrava <onboarding@resend.dev>',
         to: [String(to).trim()],
         subject: String(subject || '(بلا موضوع)').slice(0, 150),
         text: String(text || '').slice(0, 5000),

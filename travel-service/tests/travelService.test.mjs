@@ -2071,7 +2071,7 @@ describe('📆 تقويم الحجوزات: بناء ICS ومفتاح الاشت
         assert.match(ics, /BEGIN:VCALENDAR/);
         assert.match(ics, /DTSTART:20270305T173500\r\n/, 'بلا Z: إلحاقها يزيح الموعد ساعات');
         assert.match(ics, /DTEND:20270305T214000/);
-        assert.match(ics, /UID:bk1-0@jaola\.travel/);
+        assert.match(ics, /UID:bk1-0@jatrava\.com/);
         assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, 1);
         // DTSTAMP وحده هو الذي يحمل Z (لحظة الإنشاء، وهي فعلاً UTC)
         assert.match(ics, /DTSTAMP:20270101T000000Z/);
@@ -2454,7 +2454,7 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.match(one.headers.get('content-type'), /text\/calendar/);
             const oneBody = await one.text();
             assert.match(oneBody, /BEGIN:VCALENDAR/);
-            assert.match(oneBody, new RegExp(`UID:${b.id}-0@jaola\\.travel`));
+            assert.match(oneBody, new RegExp(`UID:${b.id}-0@jatrava\\.com`));
 
             // وغير المالك لا ينزّل تقويم غيره
             assert.equal((await fetch(`${baseUrl}/api/travel/bookings/${b.id}/calendar.ics`, {
@@ -2473,7 +2473,7 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(feed.status, 200);
             const body = await feed.text();
             assert.match(body, /X-WR-CALNAME:/);
-            assert.match(body, new RegExp(`UID:${b.id}-0@jaola\\.travel`));
+            assert.match(body, new RegExp(`UID:${b.id}-0@jatrava\\.com`));
             // 🔒 التغذية مواعيد لا هوية: لا بريد ولا هاتف
             assert.ok(!body.includes('a@test.com'), 'البريد لا يتسرّب في التقويم');
             assert.ok(!body.includes('+966500000000'));

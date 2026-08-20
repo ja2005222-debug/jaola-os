@@ -1,4 +1,4 @@
-# ✈️ JAOLA Travel — بوابة السفر
+# ✈️ Jatrava — بوابة السفر
 
 خدمة مستقلة كلياً عن منصة JAOLA الرئيسية (نفس فلسفة `video-service/`):
 صفر استيراد من `backend/` — الرابط الوحيد هو **الدخول الموحّد** (نفس
@@ -528,7 +528,7 @@ LiteAPI الكاملة — بحث ← قفل سعر ← حجز ← إلغاء �
 |---|---|---|
 | Render (بيئة الخدمة) | `CRON_SECRET` | سرّ عشوائي طويل |
 | GitHub → Settings → Secrets → Actions | `TRAVEL_CRON_SECRET` | **نفس** القيمة |
-| GitHub → Settings → Secrets → Actions | `TRAVEL_SERVICE_URL` | `https://jaola-travel.onrender.com` |
+| GitHub → Settings → Secrets → Actions | `TRAVEL_SERVICE_URL` | `https://jatrava.onrender.com` |
 
 بلا `CRON_SECRET` يرد المسار **503 صريحاً** لا قبولاً صامتاً.
 

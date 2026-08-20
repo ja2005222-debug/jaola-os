@@ -1,5 +1,5 @@
 {
-  "name": "jaola-travel-service",
+  "name": "jatrava-service",
   "version": "1.0.0",
   "type": "module",
   "description": "بوابة السفر — خدمة مستقلة عن منصة JAOLA بدخول موحّد عبر نفس JWT (المرحلة ١: طيران + ايجنت حاجز)",

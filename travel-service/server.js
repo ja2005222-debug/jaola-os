@@ -1,5 +1,5 @@
 /**
- * ✈️ JAOLA Travel — بوابة السفر (المرحلة ١: طيران + ايجنت حاجز)
+ * ✈️ Jatrava — بوابة السفر (المرحلة ١: طيران + ايجنت حاجز)
  *
  * خدمة مستقلة كلياً عن منصة JAOLA الرئيسية — نفس فلسفة خدمة الفيديو
  * حرفياً: صفر استيراد من backend/، الرابط الوحيد هو الدخول الموحّد
@@ -1181,7 +1181,7 @@ export function createApp({
     // ─── المسارات ─────────────────────────────────────────────────────
 
     app.get('/api/travel/health', (req, res) => {
-        res.json({ ok: true, service: 'jaola-travel', provider: provider.name });
+        res.json({ ok: true, service: 'jatrava', provider: provider.name });
     });
 
     // ─── 🔔 Duffel webhooks — بلا verifyToken (Duffel لا يحمل توكن JWT
@@ -1365,7 +1365,7 @@ export function createApp({
         }
         const ics = bookingIcs(booking, { lang: uiLangOf(req) });
         if (!ics) return res.status(400).json({ error: 'لا مواعيد قابلة للإضافة في هذا الحجز.' });
-        icsResponse(res, ics, `jaola-${booking.bookingReference || booking.id}.ics`);
+        icsResponse(res, ics, `jatrava-${booking.bookingReference || booking.id}.ics`);
     }));
 
     /** يضمن وجود مفتاح تقويم للمستخدم — يولّده عند أول اشتراك فقط. */
@@ -1420,7 +1420,7 @@ export function createApp({
         // لغة التغذية من الرابط نفسه (انظر feedUrls) — والترويسة احتياطٌ
         // لمن يجلبها من متصفّح.
         const lang = req.query.lang === 'en' ? 'en' : uiLangOf(req);
-        icsResponse(res, buildFeedIcs(bookings, { lang }), 'jaola-trips.ics');
+        icsResponse(res, buildFeedIcs(bookings, { lang }), 'jatrava-trips.ics');
     }));
 
     // ─── الفنادق (Duffel Stays) — محاذاة مسارات الطيران أعلاه ──────────

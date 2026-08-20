@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>✈️ JAOLA Travel — بوابة السفر</title>
+  <title>✈️ Jatrava — بوابة السفر</title>
   <!-- 📱 PWA: تطبيق قابل للتثبيت — القشرة تُكيَّش والـ API حي دوماً (sw.js) -->
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
@@ -314,7 +314,10 @@
 <body>
   <div id="modeBanner" class="banner hidden">🧪 بيئة تجريبية — الحجوزات هنا لا تُصدر تذاكر حقيقية ولا تُحصَّل أموال.</div>
   <header>
-    <h1>✈️ JAOLA Travel <span style="color:var(--muted);font-size:13px">بوابة السفر</span></h1>
+    <h1 style="display:flex;align-items:center;gap:10px">
+      <img src="icon.svg" alt="" width="30" height="30" style="border-radius:8px;flex-shrink:0">
+      Jatrava <span style="color:var(--muted);font-size:13px">بوابة السفر</span>
+    </h1>
     <div style="display:flex;align-items:center;gap:14px">
       <button id="langBtn" title="اللغة / Language" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:6px 10px;font-size:13px">EN</button>
       <select id="fxSel" class="hidden" title="عملة العرض التقريبية" style="width:auto;padding:6px 8px;font-size:13px">
@@ -3022,13 +3025,13 @@
       }
       if (b.bookingReference) L.push(`${T('المرجع', 'Reference')}: ${b.bookingReference}`);
       L.push(`${T('الإجمالي', 'Total')}: ${money}`);
-      L.push('— JAOLA Travel');
+      L.push('— Jatrava');
       return L.filter(Boolean).join('\n');
     }
     async function shareBooking(b) {
       const text = bookingShareText(b);
       if (navigator.share) {
-        try { await navigator.share({ title: T('حجزي عبر جولا ترافل', 'My JAOLA Travel booking'), text }); return; }
+        try { await navigator.share({ title: T('حجزي عبر Jatrava', 'My Jatrava booking'), text }); return; }
         catch (e) { if (e?.name === 'AbortError') return; /* غير مدعومة فعلياً → النسخ أدناه */ }
       }
       try {
@@ -3098,7 +3101,7 @@
       const url = URL.createObjectURL(await res.blob());
       const a = document.createElement('a');
       a.href = url;
-      a.download = `jaola-${b.bookingReference || b.id}.ics`;
+      a.download = `jatrava-${b.bookingReference || b.id}.ics`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 4000);
     }
