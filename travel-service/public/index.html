@@ -7,16 +7,18 @@
   <!-- 📱 PWA: تطبيق قابل للتثبيت — القشرة تُكيَّش والـ API حي دوماً (sw.js) -->
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-  <meta name="theme-color" content="#0b1120" />
+  <meta name="theme-color" content="#f4f6f8" />
   <style>
     :root {
-      --bg: #0b1120; --card: #111a2e; --border: #1e2a44;
-      --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8;
-      --ok: #34d399; --warn: #fbbf24; --bad: #f87171;
+      /* 🎨 لوحة فاتحة مشتقّة من الشعار نفسه: خلفيته الرمادية الفاتحة
+         أرضيةً، وأزرقه الملكي لوناً رئيسياً، ورماد كلمته نصّاً. */
+      --bg: #f4f6f8; --card: #ffffff; --border: #dbe3ec;
+      --text: #2d323a; --muted: #5c6b7f; --accent: #2c5fc9;
+      --ok: #087a4c; --warn: #b45309; --bad: #dc2626;
       /* 🎁 لون خامس مخصَّص للحصري (عقود فنادق مباشرة) — عمداً غير --warn:
          الكهرماني هنا معناه "تحذير" (بيئة تجريبية)، واستعارته لـ"صفقة
          حصرية" كان يجعل المزايا تبدو مشكلة. */
-      --exclusive: #a78bfa;
+      --exclusive: #7c3aed;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -36,12 +38,12 @@
       button, .tabs button, .chip, .card.offer, .pkg-pick, .dest-card, .ac-item,
       .card.offer:hover, .pkg-pick:hover, .dest-card:hover { transition: none; transform: none; }
     }
-    button.primary:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 4px 14px rgba(56,189,248,.35); }
+    button.primary:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 4px 14px rgba(44,95,201,.30); }
     .chip:hover { border-color: var(--accent); color: var(--accent); }
     .tabs button:hover { border-color: var(--accent); }
     .card.offer:hover, .pkg-pick:hover, .dest-card:hover {
       transform: translateY(-2px); border-color: var(--accent);
-      box-shadow: 0 8px 20px rgba(0,0,0,.35);
+      box-shadow: 0 8px 20px rgba(15,23,42,.12);
     }
 
     header {
@@ -50,7 +52,7 @@
     }
     header h1 { font-size: 20px; }
     .banner {
-      background: #fbbf2422; color: var(--warn); border: 1px solid #fbbf2455;
+      background: #fef3c7; color: var(--warn); border: 1px solid #fcd34d;
       padding: 8px 14px; text-align: center; font-size: 13px;
     }
     main { max-width: 1000px; margin: 0 auto; padding: 20px; }
@@ -65,7 +67,7 @@
     .card {
       background: var(--card); border: 1px solid var(--border);
       border-radius: 14px; padding: 16px; margin-bottom: 14px;
-      box-shadow: 0 1px 4px rgba(0,0,0,.25); /* عمق خفيف في الراحة — لا كل شيء صندوق مسطّح */
+      box-shadow: 0 1px 3px rgba(15,23,42,.07); /* عمق خفيف في الراحة — لا كل شيء صندوق مسطّح */
     }
     label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
     input, select {
@@ -74,7 +76,7 @@
     }
     .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
     button.primary {
-      background: var(--accent); color: #06202e; border: none; border-radius: 10px;
+      background: var(--accent); color: #fff; border: none; border-radius: 10px;
       padding: 12px 22px; font-size: 15px; font-weight: 700; cursor: pointer; margin-top: 14px;
     }
     button.primary:disabled { opacity: .5; cursor: wait; }
@@ -97,12 +99,12 @@
        الذكاء المحسوب حبيس فقرة تُقرأ ثم تُنسى. */
     .card.offer-best {
       position: relative; border-color: var(--ok);
-      box-shadow: 0 1px 4px rgba(0,0,0,.25), 0 0 0 1px var(--ok) inset;
+      box-shadow: 0 1px 3px rgba(15,23,42,.07), 0 0 0 1px var(--ok) inset;
     }
-    .card.offer-best:hover { border-color: var(--ok); box-shadow: 0 8px 20px rgba(52,211,153,.2), 0 0 0 1px var(--ok) inset; }
+    .card.offer-best:hover { border-color: var(--ok); box-shadow: 0 8px 20px rgba(8,122,76,.18), 0 0 0 1px var(--ok) inset; }
     .card.offer-best::before {
       content: '🤖 الأفضل'; position: absolute; top: -11px; right: 16px;
-      background: var(--ok); color: #06202e; font-size: 11px; font-weight: 800;
+      background: var(--ok); color: #fff; font-size: 11px; font-weight: 800;
       padding: 2px 10px; border-radius: 999px; letter-spacing: .2px;
     }
     /* 🌐 نص مولَّد بالـCSS لا يمر على مترجم الـDOM أصلاً — يُترجم بمحدد
@@ -137,20 +139,20 @@
     .fare-line { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
     .fare-chip {
       font-size: 12px; padding: 2px 8px; border-radius: 8px;
-      background: rgba(148,163,184,.14); color: var(--muted); white-space: nowrap;
+      background: rgba(92,107,127,.10); color: var(--muted); white-space: nowrap;
     }
     .fare-chip:first-child { color: var(--text); font-weight: 600; }
 
     .badge-exclusive {
       display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 12px;
-      font-weight: 600; background: rgba(167,139,250,.16); color: var(--exclusive);
+      font-weight: 600; background: rgba(124,58,237,.10); color: var(--exclusive);
     }
 
     /* هيكل تحميل بشكل النتيجة القادمة — بدل نصّ "جارٍ البحث…" في كل مكان.
        نفس تدرّج promoShimmer أدناه؛ سطر واحد لكل شكل (صفّ نتيجة/بطاقة شبكة). */
     .skel-card {
       border-radius: 14px; border: 1px solid var(--border); margin-bottom: 14px;
-      background: linear-gradient(90deg, var(--card) 25%, #1b2b3d 50%, var(--card) 75%) 0/400% 100%;
+      background: linear-gradient(90deg, var(--card) 25%, #eef2f7 50%, var(--card) 75%) 0/400% 100%;
       animation: promoShimmer 1.4s linear infinite;
     }
     .skel-card.row { height: 96px; }
@@ -162,11 +164,11 @@
     .ac-list {
       position: absolute; z-index: 50; inset-inline: 0; top: 100%;
       background: var(--card); border: 1px solid var(--accent); border-radius: 10px;
-      margin-top: 4px; max-height: 260px; overflow-y: auto; box-shadow: 0 8px 24px #0008;
+      margin-top: 4px; max-height: 260px; overflow-y: auto; box-shadow: 0 8px 24px rgba(15,23,42,.14);
     }
     .ac-item { padding: 9px 12px; cursor: pointer; font-size: 14px; border-bottom: 1px solid var(--border); }
     .ac-item:last-child { border-bottom: none; }
-    .ac-item:hover, .ac-item.active { background: #0e3350; }
+    .ac-item:hover, .ac-item.active { background: #eaf1fd; }
     .ac-item .ac-code { color: var(--accent); font-weight: 700; margin-inline-start: 6px; }
     .ac-item .ac-sub { color: var(--muted); font-size: 12px; }
     .ac-empty { padding: 9px 12px; color: var(--muted); font-size: 13px; }
@@ -214,7 +216,7 @@
       font-size: 10px; font-weight: 700; border-radius: 999px; padding: 1px 5px; min-width: 16px;
     }
     .ntf { border-right: 3px solid var(--border); padding: 10px 12px; margin-bottom: 8px; background: var(--card); border-radius: 10px; }
-    .ntf.unread { border-right-color: var(--ok); background: #0e2438; }
+    .ntf.unread { border-right-color: var(--ok); background: #eefaf4; }
     .ntf-title { font-weight: 700; font-size: 14px; }
     .ntf-body { font-size: 13px; color: var(--muted); white-space: pre-wrap; line-height: 1.7; margin-top: 4px; }
     .ntf-time { font-size: 11px; color: var(--muted); margin-top: 6px; }
@@ -225,17 +227,17 @@
     .pkg-pick { cursor: pointer; }
     .pkg-pick.sel { outline: 2px solid var(--accent); border-radius: 12px; }
     /* شارة التوفير — أخضر التوفير نفسه المستخدم في .offer .price، لا لون مستعار من صفحة أخرى */
-    .pkg-badge { display:inline-block; padding:2px 8px; border-radius:8px; font-size:12px; font-weight:600; background:rgba(52,211,153,.15); color:var(--ok); }
+    .pkg-badge { display:inline-block; padding:2px 8px; border-radius:8px; font-size:12px; font-weight:600; background:rgba(8,122,76,.12); color:var(--ok); }
     .pkg-strike { text-decoration: line-through; opacity:.6; }
 
     /* 🤖 قراءة المساعد فوق النتائج — حضور الايجنت بلا أن يُسأل */
     .insight {
-      display: block; border-right: 3px solid var(--ok); background: #0e2438;
+      display: block; border-right: 3px solid var(--ok); background: #eefaf4;
       padding: 12px 14px; margin-bottom: 12px;
     }
     .insight-head { font-size: 12px; color: var(--ok); margin-bottom: 6px; font-weight: 700; }
     .insight-text { font-size: 14px; line-height: 1.75; }
-    .insight-text strong { color: #fff; }
+    .insight-text strong { color: var(--text); }
     .insight.phrasing .insight-text { opacity: .75; }
 
     /* الشريط الترويجي أسفل البحث — رفّ أفقي لا شبكة: يوحي بوجود المزيد
@@ -246,7 +248,7 @@
     .promo-strip .dest-card { flex: 0 0 200px; height: 130px; scroll-snap-align: start; }
     .promo-skel {
       flex: 0 0 200px; height: 130px; border-radius: 14px; border: 1px solid var(--border);
-      background: linear-gradient(90deg, var(--card) 25%, #1b2b3d 50%, var(--card) 75%) 0/400% 100%;
+      background: linear-gradient(90deg, var(--card) 25%, #eef2f7 50%, var(--card) 75%) 0/400% 100%;
       animation: promoShimmer 1.4s linear infinite;
     }
     @keyframes promoShimmer { to { background-position: -400% 0; } }
@@ -255,7 +257,7 @@
     /* المساعد */
     #chatLog { max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px; }
     .msg { max-width: 85%; padding: 10px 14px; border-radius: 14px; font-size: 14px; white-space: pre-wrap; line-height: 1.6; }
-    .msg.user { background: #0e3350; align-self: flex-start; }
+    .msg.user { background: #eaf1fd; align-self: flex-start; }
     .msg.bot { background: var(--card); border: 1px solid var(--border); align-self: flex-end; }
     .action-chip {
       align-self: flex-end; font-size: 12px; color: var(--accent);
@@ -268,7 +270,7 @@
       background: var(--card); color: var(--text); border: 1px solid var(--border);
       border-radius: 14px; padding: 20px; max-width: 560px; width: 92%;
     }
-    dialog::backdrop { background: #000a; }
+    dialog::backdrop { background: rgba(15,23,42,.45); }
     /* ─── 📱 الهاتف ───────────────────────────────────────────────
        قِيست هذه الأرقام على عرض 375px فعلياً لا تخميناً: التبويبات كانت
        تلتف ثلاثة صفوف فتلتهم ~300px (38% من الشاشة)، فلا يبقى للنتائج
