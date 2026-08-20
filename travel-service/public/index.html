@@ -337,6 +337,49 @@
       <button class="primary" id="tokenSave">دخول</button>
     </div>
 
+    <!-- 🪧 تعريف ما قبل الدخول: زائرٌ يصل jatrava.com مباشرةً لا يعرف ما
+         الخدمة، وكانت الصفحة لا تريه إلا حقل توكن. هذه الكتلة تُظهر ما
+         نبيعه فعلاً — والأرقام هنا **ثابتة وصحيحة بنيوياً** (عدد المطارات
+         من airports.js) لا وعوداً تسويقية: لا «أرخص سعر» ولا «أفضل موقع»،
+         فالعرف: كل رقم من مصدر حقيقي. تُخفى مع authGate بعد الدخول. -->
+    <div id="introBlock" class="card hidden" style="margin-top:14px">
+      <h2 style="font-size:17px;margin-bottom:6px">✈️ Jatrava — بوابة السفر</h2>
+      <p style="color:var(--muted);font-size:14px;line-height:1.7;margin-bottom:14px">
+        نحجز لك التذكرة والفندق والسيارة بتأكيد فوري، ونركّب لك باقات سفر
+        كاملة — بأسعار حقيقية بلا خصومات وهمية ولا أسعار مشطوبة.
+      </p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+        <div style="border:1px solid var(--border);border-radius:10px;padding:12px">
+          <div style="font-size:20px;margin-bottom:4px">🔎</div>
+          <strong style="font-size:14px">طيران</strong>
+          <p style="color:var(--muted);font-size:12.5px;margin-top:4px">
+            بحث بأكثر من ١٥٠ مطاراً، بأمتعة كل قطاع وشروط التذكرة قبل الحجز.
+          </p>
+        </div>
+        <div style="border:1px solid var(--border);border-radius:10px;padding:12px">
+          <div style="font-size:20px;margin-bottom:4px">🏨</div>
+          <strong style="font-size:14px">فنادق</strong>
+          <p style="color:var(--muted);font-size:12.5px;margin-top:4px">
+            سياسة الإلغاء بمواعيدها ومبالغها، والرسوم التي تُدفع بالفندق معلنة.
+          </p>
+        </div>
+        <div style="border:1px solid var(--border);border-radius:10px;padding:12px">
+          <div style="font-size:20px;margin-bottom:4px">🎒</div>
+          <strong style="font-size:14px">باقات جاهزة</strong>
+          <p style="color:var(--muted);font-size:12.5px;margin-top:4px">
+            انطلاقات بتواريخ ثابتة، عربون الآن والمتبقي قبل السفر.
+          </p>
+        </div>
+        <div style="border:1px solid var(--border);border-radius:10px;padding:12px">
+          <div style="font-size:20px;margin-bottom:4px">🤖</div>
+          <strong style="font-size:14px">مساعد يحجز</strong>
+          <p style="color:var(--muted);font-size:12.5px;margin-top:4px">
+            اطلب رحلتك بالعربية، وهو يبحث ويحجز فعلياً بتأكيدك الصريح.
+          </p>
+        </div>
+      </div>
+    </div>
+
     <div id="app" class="hidden">
       <div class="tabs">
         <button data-tab="search" class="active">🔎 بحث الرحلات</button>
@@ -842,6 +885,7 @@
 
     function showGate() {
       $('authGate').classList.remove('hidden');
+      $('introBlock').classList.remove('hidden');
       $('app').classList.add('hidden');
     }
 
@@ -869,6 +913,7 @@
       }
       $('app').classList.remove('hidden');
       $('authGate').classList.add('hidden');
+      $('introBlock').classList.add('hidden');
       fxInit().catch(() => {}); // منتقي العملة إثراء — فشله لا يمس البوابة
 
       // وضع "صفحة فنادق منفصلة": فُتح هذا التبويب من مربع "أضف فنادق
