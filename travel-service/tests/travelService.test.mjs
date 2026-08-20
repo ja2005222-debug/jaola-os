@@ -2810,6 +2810,109 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal((await call('/api/travel/loyalty', { token })).data.loyalty.points, 0);
         });
 
+        test('💱 التحصيل بعملة محلية: تحويل معلَن، واسترداد على المُحصَّل لا على سعر البيع', async () => {
+            // شرط أي تقسيط خليجي (Tabby/Tamara لا يقبلان إلا SAR/AED) —
+            // وبنفسه راحةٌ للمسافر: لا رسوم تحويل بنكه فوق سعرنا.
+            const prevCur = process.env.TRAVEL_BILLING_CURRENCY;
+            const prevBuf = process.env.TRAVEL_FX_BUFFER_PCT;
+            process.env.TRAVEL_BILLING_CURRENCY = 'SAR';
+            process.env.TRAVEL_FX_BUFFER_PCT = '2';
+            const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaola-fx-'));
+            const store3 = createFileStore({ dataDir: dir });
+            await store3.init();
+            const charges = [], refunds = [];
+            const fakeStripe = {
+                name: 'stripe',
+                async createCheckoutSession(a) { charges.push(a); return { id: 'cs_fx', url: 'https://pay.test/1', expiresAt: 0 }; },
+                async getCheckoutSession(id) { return { id, status: 'open', paymentStatus: 'unpaid', paymentIntent: 'pi_fx', metadata: {}, url: 'https://pay.test/1' }; },
+                async createRefund(a) { refunds.push(a); return { id: 're_fx', status: 'succeeded', amount: a.amount, currency: 'SAR' }; },
+            };
+            const app3 = createApp({
+                store: store3, jwtSecret: JWT_SECRET, provider: createMockTravelProvider(),
+                staysProvider: createMockStaysProvider(), carsProvider: createMockCarsProvider(),
+                adminUsers: ['admin'], stripeClient: fakeStripe, stripeWebhookSecret: 'whsec_fx',
+                publicUrl: 'https://portal.test',
+                // العرض بالدولار والتحصيل بالريال: ربط رسمي 3.75 بلا شبكة
+                travelInfoFetch: async () => { throw new Error('لا شبكة في الاختبار'); },
+            });
+            const server3 = await new Promise(r => { const x = app3.listen(0, () => r(x)); });
+            const base3 = `http://127.0.0.1:${server3.address().port}`;
+            const call3 = async (p, { method = 'GET', token, body } = {}) => {
+                const res = await fetch(base3 + p, {
+                    method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                    body: body === undefined ? undefined : JSON.stringify(body),
+                });
+                return { status: res.status, data: await res.json().catch(() => null) };
+            };
+            try {
+                const buyer = makeToken('fx-payer');
+                const pkg = await call3('/api/travel/admin/fixed-packages', {
+                    method: 'POST', token: makeToken('admin'),
+                    body: {
+                        title: 'باقة بالريال', city: 'دبي', iata: 'DXB', hotelName: 'فندق',
+                        departDate: futureDate(60), nights: 3, seatCapacity: 4,
+                        sourcing: 'group', currency: 'USD', pricePerSeat: 1000, depositPct: 100,
+                    },
+                });
+                const booked = await call3(`/api/travel/fixed-packages/${pkg.data.package.id}/bookings`, {
+                    method: 'POST', token: buyer,
+                    body: { adults: 1, pay: 'full', leadName: 'وائل', contact: { email: 'w@x.com' } },
+                });
+                assert.equal(booked.status, 200);
+                // 1000 USD × 3.75 (ربط رسمي) × 1.02 (هامش معلَن) = 3825 SAR
+                assert.equal(charges[0].currency, 'SAR', 'الجلسة بعملة التحصيل');
+                assert.equal(charges[0].amount, 3825);
+                const bl = booked.data.booking.billing;
+                assert.equal(bl.currency, 'SAR');
+                assert.equal(bl.fromCurrency, 'USD');
+                assert.equal(bl.rate, 3.75);
+                assert.equal(bl.source, 'peg', 'ربط رسمي بلا شبكة — لا تخمين');
+                assert.equal(bl.bufferPct, 2, 'الهامش معلَن على الحجز لا مستتر');
+
+                // الإصدار ثم الإلغاء: الرد بالريال المُحصَّل لا بالدولار المبيع
+                const done = (() => {
+                    const raw = JSON.stringify({ type: 'checkout.session.completed',
+                        data: { object: { payment_intent: 'pi_fx', metadata: { bookingId: booked.data.booking.id, purpose: 'fixed_booking' } } } });
+                    const t = Math.floor(Date.now() / 1000);
+                    const v1 = crypto.createHmac('sha256', 'whsec_fx').update(`${t}.${raw}`).digest('hex');
+                    return { raw, t, v1 };
+                })();
+                await fetch(`${base3}/api/travel/webhooks/stripe`, {
+                    method: 'POST', body: done.raw,
+                    headers: { 'Content-Type': 'application/json', 'stripe-signature': `t=${done.t},v1=${done.v1}` },
+                });
+                const cancel = await call3(`/api/travel/fixed-packages/bookings/${booked.data.booking.id}/cancel`, { method: 'POST', token: buyer });
+                assert.equal(cancel.status, 200);
+                assert.equal(cancel.data.booking.refund.stripeRefundId, 're_fx');
+                assert.equal(refunds.length, 1);
+                assert.equal(refunds[0].amount ?? null, null, 'رد كامل للمُحصَّل — لا مبلغ بعملة أخرى');
+
+                // فشل الصرف (عملة عائمة وشبكة معطوبة) لا يمنع بيعاً: نسقط
+                // إلى عملة المزوّد ونُكمل — بوابةٌ تتوقف عن البيع لأن سعر
+                // صرف تعذّر أسوأ من بوابةٍ تحصّل باليورو.
+                const eurPkg = await call3('/api/travel/admin/fixed-packages', {
+                    method: 'POST', token: makeToken('admin'),
+                    body: {
+                        title: 'باقة باليورو', city: 'دبي', iata: 'DXB', hotelName: 'فندق',
+                        departDate: futureDate(60), nights: 3, seatCapacity: 4,
+                        sourcing: 'group', currency: 'EUR', pricePerSeat: 500, depositPct: 100,
+                    },
+                });
+                const eurBooked = await call3(`/api/travel/fixed-packages/${eurPkg.data.package.id}/bookings`, {
+                    method: 'POST', token: buyer,
+                    body: { adults: 1, pay: 'full', leadName: 'وائل', contact: { email: 'w@x.com' } },
+                });
+                assert.equal(eurBooked.status, 200, 'البيع لا يتوقف لتعذّر الصرف');
+                assert.equal(charges.at(-1).currency, 'EUR', 'سقوط آمن لعملة المزوّد');
+                assert.equal(eurBooked.data.booking.billing, null);
+            } finally {
+                await new Promise(r => server3.close(r));
+                await store3.close();
+                if (prevCur === undefined) delete process.env.TRAVEL_BILLING_CURRENCY; else process.env.TRAVEL_BILLING_CURRENCY = prevCur;
+                if (prevBuf === undefined) delete process.env.TRAVEL_FX_BUFFER_PCT; else process.env.TRAVEL_FX_BUFFER_PCT = prevBuf;
+            }
+        });
+
         test('💳 دورة الدفع كاملة: معلّق → webhook → مُصدَر، وانتهاء المهلة يحرر المقاعد', async () => {
             const WHSEC = 'whsec_flow_secret';
             const sessions = new Map(); // ما «أنشأه» العميل الوهمي — للمصالحة

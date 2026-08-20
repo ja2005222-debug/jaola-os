@@ -404,6 +404,9 @@ function publicBooking(b) {
         // 🎫 أرقام التذاكر الإلكترونية ووقت الدفع — تفاصيل يسأل عنها المسافر
         // فعلاً («متى تأكد؟ وأين تذكرتي؟»)، وليست أسراراً كالصافي.
         tickets: b.tickets, paidAt: b.paidAt,
+        // 💱 ما حُصِّل فعلاً حين تختلف عملة التحصيل عن عملة البيع — يُعرض
+        // للمسافر بسعره ومصدره، فلا يفاجئه رقمٌ آخر في كشف بطاقته
+        billing: b.billing || null,
         packageId: b.packageId || null, // الواجهة تجمع أبناء الباقة تحت أبيهم
         // حقول الباقات المجدولة — undefined لغيرها فلا تظهر في JSON أصلاً
         paymentPlan: b.paymentPlan,
@@ -1577,10 +1580,12 @@ export function createApp({
             // 💳 جلسة دفع للمطلوب الآن (عربون أو كامل) — المقاعد محجوزة للحجز
             // المعلّق، وانتهاء الجلسة (30 دقيقة) يحرّرها عبر webhook/المصالحة
             const base = requestBaseUrl(req);
+            const fxBilling = await resolveBilling(quote.paidNow, quote.currency);
             let session;
             try {
                 session = await stripeClient.createCheckoutSession({
-                    amount: quote.paidNow, currency: quote.currency,
+                    amount: fxBilling?.amount ?? quote.paidNow,
+                    currency: fxBilling?.currency ?? quote.currency,
                     title: `${booking.offer?.title || 'باقة مجدولة'} — ${quote.pay === 'deposit' ? `عربون ${quote.depositPct}%` : 'دفع كامل'} (${booking.bookingReference})`,
                     bookingId: booking.id, purpose: 'fixed_booking',
                     customerEmail: contactCheck.value.email,
@@ -1596,7 +1601,7 @@ export function createApp({
             }
             await store.transitionBooking(booking.id, {
                 from: ['pending'], to: 'pending',
-                patch: { stripeSessionId: session.id, checkoutExpiresAt: session.expiresAt },
+                patch: { stripeSessionId: session.id, checkoutExpiresAt: session.expiresAt, billing: fxBilling },
             });
             res.json({ booking: publicBooking(await getBooking(store, booking.id)), checkoutUrl: session.url });
         } catch (e) {
@@ -1649,9 +1654,11 @@ export function createApp({
         const isFixed = booking.kind === 'fixed_package';
         const amount = isFixed ? (booking.paymentPlan?.paidNow ?? booking.sellAmount) : booking.sellAmount;
         const base = requestBaseUrl(req);
+        const billing = await resolveBilling(amount, booking.currency);
         try {
             const session = await stripeClient.createCheckoutSession({
-                amount, currency: booking.currency,
+                amount: billing?.amount ?? amount,
+                currency: billing?.currency ?? booking.currency,
                 title: `${bookingSummaryLine(booking).slice(0, 200)} (${booking.bookingReference || booking.id})`,
                 bookingId: booking.id,
                 purpose: isFixed ? 'fixed_booking' : 'issue_booking',
@@ -1661,7 +1668,7 @@ export function createApp({
             });
             await store.transitionBooking(booking.id, {
                 from: ['pending'], to: 'pending',
-                patch: { stripeSessionId: session.id, checkoutExpiresAt: session.expiresAt },
+                patch: { stripeSessionId: session.id, checkoutExpiresAt: session.expiresAt, billing },
             });
             res.json({ checkoutUrl: session.url });
         } catch (e) {
@@ -1680,8 +1687,12 @@ export function createApp({
         const remaining = booking.paymentPlan?.remaining || 0;
         if (!(remaining > 0)) return res.status(400).json({ error: 'لا متبقٍّ على هذا الحجز — مدفوع بالكامل.' });
         const base = requestBaseUrl(req);
+        // سعر الصرف يُحسب لحظة كل تحصيل — عربونٌ اليوم ومتبقٍّ بعد شهرين
+        // لا يشتركان في سعر واحد، وادّعاء ذلك تجميدٌ لخطر لا نملكه.
+        const balanceBilling = await resolveBilling(remaining, booking.currency);
         const session = await stripeClient.createCheckoutSession({
-            amount: remaining, currency: booking.currency,
+            amount: balanceBilling?.amount ?? remaining,
+            currency: balanceBilling?.currency ?? booking.currency,
             title: `سداد متبقي ${booking.offer?.title || 'باقة'} (${booking.bookingReference})`,
             bookingId: booking.id, purpose: 'fixed_balance',
             customerEmail: booking.contact?.email,
@@ -1770,12 +1781,54 @@ export function createApp({
      * (عروض Duffel قصيرة الأجل، والحد الأدنى لجلسة Stripe 30 دقيقة) —
      * فيُرد المبلغ كاملاً آلياً في settleProviderBookingPaid أدناه.
      */
+    /**
+     * 💱 عملة التحصيل — الحاجز الأول أمام أي تقسيط خليجي.
+     *
+     * نبيع بعملة المزوّد (يورو Duffel، دولار LiteAPI) ونحصّل بها. لكن
+     * **Tabby وTamara لا يقبلان إلا الريال والدرهم** (وكذلك مدى وأغلب
+     * وسائل الدفع المحلية) — فالفوترة بعملة أجنبية تُقصينا عنها كلها،
+     * وتُحمّل المسافر الخليجي رسوم تحويل بنكه فوق سعرنا.
+     *
+     * الضبط بمتغيّر بيئة واحد (`TRAVEL_BILLING_CURRENCY=SAR`): غيابه يُبقي
+     * السلوك كما هو حرفياً. والتحويل يحمل **هامش صرف معلَن** لا مخفياً
+     * (`TRAVEL_FX_BUFFER_PCT`، 2% افتراضاً): بين لحظة التحصيل ولحظة
+     * تسوية بطاقتنا مع المزوّد يتحرك السعر، ومن يبيع بعملة ويشتري بأخرى
+     * بلا هامش يخسر على كل حركة. الرقم يظهر للمسافر بمصدره ونسبته —
+     * فلا «رقم مُختلَق» ولا كلفة مستترة.
+     *
+     * وفشل الصرف لا يمنع بيعاً: نسقط إلى عملة المزوّد ونُكمل.
+     */
+    const billingCurrency = String(process.env.TRAVEL_BILLING_CURRENCY || '').trim().toUpperCase() || null;
+    const fxBufferPct = (() => {
+        const raw = Number(process.env.TRAVEL_FX_BUFFER_PCT);
+        return Number.isFinite(raw) && raw >= 0 && raw <= 10 ? raw : 2;
+    })();
+
+    async function resolveBilling(amount, currency) {
+        const from = String(currency || '').toUpperCase();
+        if (!billingCurrency || !from || billingCurrency === from) return null;
+        try {
+            const fx = await fxRate({ from, to: billingCurrency, fetchImpl: travelInfoFetch });
+            const converted = Math.ceil(amount * fx.rate * (1 + fxBufferPct / 100) * 100) / 100;
+            return {
+                amount: converted, currency: billingCurrency,
+                rate: fx.rate, source: fx.source, bufferPct: fxBufferPct,
+                fromAmount: amount, fromCurrency: from, at: Date.now(),
+            };
+        } catch (e) {
+            console.warn(`⚠️ تعذّر تحويل ${from}→${billingCurrency} للتحصيل (${e.message}) — سنحصّل بعملة المزوّد.`);
+            return null;
+        }
+    }
+
     async function startBookingCheckout({ booking, baseUrl, title }) {
         const base = baseUrl || publicUrl || '';
+        const billing = await resolveBilling(booking.sellAmount, booking.currency);
         let session;
         try {
             session = await stripeClient.createCheckoutSession({
-                amount: booking.sellAmount, currency: booking.currency,
+                amount: billing?.amount ?? booking.sellAmount,
+                currency: billing?.currency ?? booking.currency,
                 title: `${title} (${booking.id})`.slice(0, 250),
                 bookingId: booking.id, purpose: 'issue_booking',
                 customerEmail: booking.contact?.email,
@@ -1789,7 +1842,7 @@ export function createApp({
         }
         await store.transitionBooking(booking.id, {
             from: ['pending'], to: 'pending',
-            patch: { stripeSessionId: session.id, checkoutExpiresAt: session.expiresAt },
+            patch: { stripeSessionId: session.id, checkoutExpiresAt: session.expiresAt, billing },
         });
         return { ...publicBooking(await getBooking(store, booking.id)), checkoutUrl: session.url };
     }
@@ -1892,7 +1945,10 @@ export function createApp({
      * وإلا نترك القرار للمالك بتنبيه صريح بدل رقمٍ مخترَع.
      */
     function refundPlanFor(booking, providerRefund) {
-        const paid = Number(booking.sellAmount);
+        // ⚠️ المرجع هو ما **حُصِّل فعلاً** لا ما بِيع به: مع الفوترة بعملة
+        // محلية يختلف الرقمان، ورد نسبةٍ من سعر البيع كان سيرد بعملة أخرى
+        // مبلغاً لا علاقة له بما خرج من بطاقة المسافر.
+        const paid = Number(booking.billing?.amount ?? booking.sellAmount);
         const net = Number(booking.netAmount);
         const back = Number(providerRefund?.amount);
         if (Number.isFinite(back) && Number.isFinite(net) && net > 0) {
@@ -1922,10 +1978,11 @@ export function createApp({
             }
             return { amount: null, pendingReview: true };
         }
+        const charged = Number(booking.billing?.amount ?? booking.sellAmount);
         try {
             const r = await stripeClient.createRefund({
                 paymentIntentId: booking.paymentIntentId,
-                amount: plan.amount < Number(booking.sellAmount) ? plan.amount : null,
+                amount: plan.amount < charged ? plan.amount : null,
             });
             return { amount: r.amount, currency: r.currency, stripeRefundId: r.id };
         } catch (e) {
@@ -2581,6 +2638,10 @@ if (isMain) {
         if (process.env.STRIPE_SECRET_KEY) {
             const live = process.env.STRIPE_SECRET_KEY.startsWith('sk_live_');
             console.log(`💳 الدفع مفعَّل عبر Stripe (${live ? 'حساب حي' : 'وضع تجريبي sk_test'})${process.env.STRIPE_WEBHOOK_SECRET ? '' : ' — ⚠️ STRIPE_WEBHOOK_SECRET غير مضبوط: التسوية ستعتمد على المصالحة الدورية فقط'}.`);
+            const bc = String(process.env.TRAVEL_BILLING_CURRENCY || '').trim().toUpperCase();
+            console.log(bc
+                ? `💱 التحصيل بعملة ${bc} (تحويل من عملة المزوّد بهامش صرف ${process.env.TRAVEL_FX_BUFFER_PCT || 2}% معلَن).`
+                : '💱 التحصيل بعملة المزوّد — اضبط TRAVEL_BILLING_CURRENCY=SAR للتحصيل بالريال (شرط أي تقسيط خليجي لاحقاً).');
         } else {
             console.warn('⚠️ الدفع الإلكتروني غير مفعَّل — اضبط STRIPE_SECRET_KEY وSTRIPE_WEBHOOK_SECRET لتحصيل حجوزات الباقات فعلياً.');
         }

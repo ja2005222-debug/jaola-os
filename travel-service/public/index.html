@@ -2861,7 +2861,15 @@
         rows.push(`${T('المطلوب', 'Due')}: <strong>${b.sellAmount} ${esc(b.currency)}</strong>`);
       }
       if (b.paidAt) rows.push(`${T('وقت الدفع', 'Paid at')}: ${esc(fmtWhen(b.paidAt))}`);
-      return `<div class="seg">💳 ${rows.join(' · ')}</div>`;
+      // 💱 ما يظهر في كشف البطاقة فعلاً حين تختلف عملة التحصيل — بسعره
+      // ونسبة هامشه صراحةً، فلا رقم يفاجئ المسافر بعد الدفع
+      const bl = b.billing;
+      const fxLine = bl && bl.currency !== b.currency
+        ? `<div class="note">💱 ${T('يُحصَّل', 'Charged')}: <strong>${bl.amount} ${esc(bl.currency)}</strong> — ${
+            T('تحويل من', 'converted from')} ${bl.fromAmount} ${esc(bl.fromCurrency)} ${
+            T('بسعر', 'at')} ${bl.rate}${bl.bufferPct ? ` + ${bl.bufferPct}% ${T('رسوم تحويل', 'conversion fee')}` : ''}</div>`
+        : '';
+      return `<div class="seg">💳 ${rows.join(' · ')}</div>${fxLine}`;
     }
     function detailsHtml(b) {
       const paxRows = (b.passengers || []).map((p, i) => `<li>${
