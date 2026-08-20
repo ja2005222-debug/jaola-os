@@ -1537,6 +1537,84 @@ describe('صحة صياغة سكربتات الواجهة — درس عطل إن
     });
 });
 
+describe('🧳 تجميع الحجوزات في سفرات (منطق نقيّ)', () => {
+    const code = fs.readFileSync(new URL('../public/trips.js', import.meta.url), 'utf8');
+    const w = {};
+    new Function('window', code)(w);
+    const { groupTrips, bookingSpan, bookingDestination, tripDestinations } = w.JAOLA_TRIPS;
+
+    const flight = (from, to, status = 'issued') => ({
+        id: 'f' + from, status, kind: 'flight',
+        offer: { slices: [{ origin: 'RUH', destination: 'DXB', departAt: from + 'T08:00', arriveAt: (to || from) + 'T11:00' }] },
+    });
+    const stay = (inD, outD, status = 'issued') => ({
+        id: 's' + inD, status, kind: 'stay',
+        offer: { name: 'فندق', city: 'دبي', checkInDate: inD, checkOutDate: outD },
+    });
+
+    test('🗓️ المدى الزمني يُقرأ من كل نوع بحقوله هو', () => {
+        assert.deepEqual(bookingSpan(flight('2026-09-01', '2026-09-01')), { from: '2026-09-01', to: '2026-09-01' });
+        assert.deepEqual(bookingSpan(stay('2026-09-01', '2026-09-05')), { from: '2026-09-01', to: '2026-09-05' });
+        assert.deepEqual(
+            bookingSpan({ kind: 'fixed_package', offer: { departDate: '2026-09-10', nights: 7 } }),
+            { from: '2026-09-10', to: '2026-09-17' });
+        assert.equal(bookingSpan({ kind: 'flight', offer: {} }), null, 'بلا موعد → لا مدى');
+        assert.equal(bookingDestination(stay('2026-09-01', '2026-09-05')), 'دبي');
+
+        // الطيران يعرف وجهته برمز المطار والفندق باسم المدينة — ومكانٌ
+        // واحد يجب أن يظهر مرة واحدة باسمه لا مرتين («دبي · DXB»)
+        const withIata = { ...stay('2026-09-01', '2026-09-05'), offer: { city: 'دبي', iata: 'DXB', checkInDate: '2026-09-01', checkOutDate: '2026-09-05' } };
+        assert.deepEqual(tripDestinations([flight('2026-09-01'), withIata]), ['دبي']);
+        // والفندق بلا رمز مطار (الحال الفعلي لدى مزوّدينا) — يُعرض بمدينته
+        assert.deepEqual(tripDestinations([flight('2026-09-01'), stay('2026-09-01', '2026-09-05')]), ['دبي']);
+    });
+
+    test('🧩 المتداخلة تُجمع في سفرة واحدة، والمتباعدة تبقى سفرتين', () => {
+        const { groups } = groupTrips([
+            stay('2026-09-01', '2026-09-05'),
+            flight('2026-09-01', '2026-09-01'),
+            flight('2026-12-20', '2026-12-20'), // سفرة أخرى بعد أشهر
+        ]);
+        assert.equal(groups.length, 2);
+        assert.equal(groups[0].items.length, 2, 'الطيران والفندق سفرة واحدة');
+        assert.equal(groups[0].from, '2026-09-01');
+        assert.equal(groups[0].to, '2026-09-05');
+        assert.equal(groups[1].items.length, 1);
+    });
+
+    test('🌙 رحلة تصل ليلاً وفندق يبدأ الغد: سفرة واحدة (تلامس يوم)', () => {
+        const { groups } = groupTrips([
+            flight('2026-09-01', '2026-09-01'),
+            stay('2026-09-02', '2026-09-06'),
+        ]);
+        assert.equal(groups.length, 1, 'يوم واحد بينهما لا يفصل سفرة');
+
+        // ...ويومان يفصلان — وإلا لصارت كل حجوزات الشهر «سفرة» واحدة
+        const far = groupTrips([
+            flight('2026-09-01', '2026-09-01'),
+            stay('2026-09-04', '2026-09-08'),
+        ]);
+        assert.equal(far.groups.length, 2);
+    });
+
+    test('🚫 المُلغى والفاشل لا يُجمَعان ولا يمدّان مدى السفرة', () => {
+        const { groups, loose } = groupTrips([
+            flight('2026-09-01', '2026-09-01'),
+            flight('2026-09-02', '2026-09-02', 'failed'),
+            flight('2026-09-03', '2026-09-03', 'cancelled'),
+        ]);
+        assert.equal(groups.length, 1);
+        assert.equal(groups[0].items.length, 1);
+        assert.equal(groups[0].to, '2026-09-01', 'الفاشل لم يمدّ المدى');
+        assert.equal(loose.length, 2, 'يبقيان مستقلَّين كما هما');
+    });
+
+    test('📆 السفرات مرتّبة بالأقرب موعداً لا بالأحدث حجزاً', () => {
+        const { groups } = groupTrips([flight('2027-01-05'), flight('2026-09-01'), flight('2026-11-11')]);
+        assert.deepEqual(groups.map(g => g.from), ['2026-09-01', '2026-11-11', '2027-01-05']);
+    });
+});
+
 describe('i18n: جدول الترجمة لا يتباعد عن الصفحة', () => {
     const code = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
     const w = {};

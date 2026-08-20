@@ -631,7 +631,14 @@ export function createApp({
             // بالصافي (لا يعرف الهامش ولا يجب): التحويل هنا، والهامش
             // رتيب فالتكافؤ محفوظ.
             const { maxPrice, ...vals } = check.values;
-            if (maxPrice != null) vals.maxNetAmount = maxPrice / (1 + flightMkt / 100);
+            // ⚠️ عطب حقيقي أصلحه هذا السطر: القسمة العكسية المباشرة
+            // (maxPrice / 1.08) تُنزل السقف تحت صافي أرخص عرضٍ بأجزاءِ
+            // سنتٍ عائمة، فمن يضع سقفاً **يساوي أرخص سعر معروض** لا يرى
+            // شيئاً. applyMarkup يحسب بالسنتات ويقرّب لأعلى، فالعكس يجب
+            // أن يحسب بالسنتات ويقرّب لأسفل — عندها يتكافأ الطرفان تماماً.
+            if (maxPrice != null) {
+                vals.maxNetAmount = Math.floor(Math.round(maxPrice * 100) / (1 + flightMkt / 100) + 1e-6) / 100;
+            }
             const offers = await provider.searchOffers(vals);
             return offers.map(o => publicOffer(o, flightMkt));
         } catch (e) {
