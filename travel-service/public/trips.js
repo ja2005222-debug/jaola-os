@@ -82,15 +82,20 @@
         return destinationOf(booking).label;
     }
 
+    const isCityName = label => !IATA_RE.test(label);
+
+    /** أيّ التسميتين أولى لنفس الوجهة: اسم المدينة يتقدّم على رمز المطار. */
+    function preferredLabel(current, next) {
+        if (current === undefined) return next;
+        return IATA_RE.test(current) && isCityName(next) ? next : current;
+    }
+
     /** أسماء وجهات السفرة بلا تكرار — رمزٌ واحد يظهر مرة باسم مدينته. */
     function tripDestinations(items) {
         const byCode = new Map();
         for (const booking of items || []) {
             const { code, label } = destinationOf(booking);
-            if (!code) continue;
-            const known = byCode.get(code);
-            // اسم المدينة يتقدّم على الرمز لنفس الوجهة
-            if (known === undefined || (IATA_RE.test(known) && !IATA_RE.test(label))) byCode.set(code, label);
+            if (code) byCode.set(code, preferredLabel(byCode.get(code), label));
         }
         const labels = [...byCode.values()];
         // ⚠️ الفنادق لا تحمل رمز مطار أصلاً (تعرف مكانها بالمدينة فقط)،
@@ -98,8 +103,8 @@
         // واحدة (مواعيد متداخلة) المكان واحدٌ عملياً — فيُعرض اسم المدينة
         // ويُطوى الرمز. الثمن المقبول: سفرةٌ بمدينتين إحداهما بلا اسم
         // تُعرض بمدينتها المعروفة — وتفاصيل كل حجز في بطاقته.
-        const cities = labels.filter(label => !IATA_RE.test(label));
-        return cities.length ? cities : labels;
+        const cities = labels.filter(isCityName);
+        return cities.length > 0 ? cities : labels;
     }
 
     const GROUPABLE = new Set(['issued', 'pending']);
@@ -109,7 +114,8 @@
      * كل مجموعة: { from, to, items } — ومجموعةٌ بعنصر واحد تبقى كما هي
      * (لا نُلبس حجزاً مفرداً ثوب «سفرة» ونضيف ضجيجاً بلا فائدة).
      */
-    function groupTrips(bookings, { gapDays = 1 } = {}) {
+    /** يفصل ما له موعد ويصلح للتجميع عمّا يبقى مستقلاً، مرتَّباً بالأقرب. */
+    function splitByGroupable(bookings) {
         const dated = [];
         const loose = [];
         for (const booking of bookings || []) {
@@ -118,18 +124,27 @@
             else loose.push(booking);
         }
         dated.sort((a, b) => a.span.from.localeCompare(b.span.from));
+        return { dated, loose };
+    }
 
-        const groups = [];
-        for (const entry of dated) {
-            const current = groups[groups.length - 1];
-            // التلامس يُقاس على نهاية المجموعة كاملةً لا على آخر عنصر أُضيف
-            if (current && entry.span.from <= addDays(current.to, gapDays)) {
-                current.items.push(entry.booking);
-                if (entry.span.to > current.to) current.to = entry.span.to;
-            } else {
-                groups.push({ from: entry.span.from, to: entry.span.to, items: [entry.booking] });
-            }
+    /**
+     * يضم الحجز إلى السفرة الأخيرة إن لامسها، وإلا يبدأ سفرة جديدة.
+     * التلامس يُقاس على نهاية المجموعة كاملةً لا على آخر عنصر أُضيف.
+     */
+    function absorbIntoTrip(groups, entry, gapDays) {
+        const current = groups[groups.length - 1];
+        if (!current || entry.span.from > addDays(current.to, gapDays)) {
+            groups.push({ from: entry.span.from, to: entry.span.to, items: [entry.booking] });
+            return;
         }
+        current.items.push(entry.booking);
+        if (entry.span.to > current.to) current.to = entry.span.to;
+    }
+
+    function groupTrips(bookings, { gapDays = 1 } = {}) {
+        const { dated, loose } = splitByGroupable(bookings);
+        const groups = [];
+        for (const entry of dated) absorbIntoTrip(groups, entry, gapDays);
         return { groups, loose };
     }
 
