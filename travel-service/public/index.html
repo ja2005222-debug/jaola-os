@@ -326,6 +326,7 @@
         <option value="">💵 العملة الأصلية</option>
       </select>
       <button id="bellBtn" class="bell hidden" title="التنبيهات">🔔<span id="bellCount" class="bell-count hidden">0</span></button>
+      <button id="guestSignIn" class="chip hidden" type="button">🔐 دخول</button>
       <span id="userBadge" style="color:var(--muted);font-size:13px"></span>
     </div>
   </header>
@@ -388,8 +389,8 @@
         <button data-tab="packages" id="pkgTabBtn">🎁 ركّب باقتك</button>
         <button data-tab="destinations">🗺️ أهم الوجهات</button>
         <button data-tab="cars" id="carsTabBtn">🚗 سيارات</button>
-        <button data-tab="trips">🧳 رحلاتي</button>
-        <button data-tab="notifications">🔔 التنبيهات</button>
+        <button data-tab="trips" id="tripsTabBtn">🧳 رحلاتي</button>
+        <button data-tab="notifications" id="notifTabBtn">🔔 التنبيهات</button>
         <button data-tab="agent" id="agentTabBtn">🤖 المساعد</button>
         <button id="adminLink" class="hidden" type="button">⚙️ الإدارة</button>
       </div>
@@ -654,6 +655,21 @@
     </div>
   </main>
 
+  <!-- 🔐 نافذة «الحجز يحتاج حساباً»: الزائر يبحث ويرى الأسعار بلا حساب،
+       ولا يُطلب الحساب إلا عند الحجز. نافذةٌ لا استبدالُ الصفحة عمداً —
+       إظهار authGate هنا يمحو نتائج بحثه فيبدأ من الصفر بعد الدخول. -->
+  <dialog id="loginDialog">
+    <h3 style="margin-bottom:6px">🔐 الحجز يحتاج حساباً</h3>
+    <p class="note">تصفّحُ الأسعار مفتوح للجميع، أمّا الحجز فيحتاج حساباً
+      لتصل إليك التذكرة والتأكيد، وتجد حجزك في «رحلاتي» لاحقاً.</p>
+    <input id="loginToken" placeholder="JWT token" style="margin-top:10px" />
+    <div id="loginError" class="error hidden"></div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="primary" id="loginConfirm">دخول</button>
+      <button class="chip" id="loginCancel" type="button">أكمل التصفّح</button>
+    </div>
+  </dialog>
+
   <!-- نافذة بيانات الركاب -->
   <dialog id="bookDialog">
     <h3 style="margin-bottom:6px">🎫 بيانات المسافرين</h3>
@@ -877,9 +893,39 @@
         ...opts,
         // 🌐 X-UI-Lang: الخادم يصوغ به قراءات المساعد وردود الايجنت بلغة
         // الواجهة — جُمَل بأرقام مُدرَجة يستحيل التقاطها بجدول ترجمة العميل.
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-UI-Lang': uiLang, ...(opts.headers || {}) },
+        // 🔴 ترويسة Authorization **تُحذف كلياً** للزائر: إرسال `Bearer null`
+        // يجعل optionalToken يراه توكناً موجوداً فاسداً فيرد 401 — فينكسر
+        // التصفّح بلا حساب من أول نداء. الغياب لا القيمة الفارغة.
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          'X-UI-Lang': uiLang,
+          ...(opts.headers || {}),
+        },
       });
-      if (res.status === 401) { localStorage.removeItem('jaolaTravelToken'); showGate(); }
+      if (res.status === 401) {
+        if (token) {
+          // كان له توكن فانتهى أو فسد — إخراجٌ صريح إلى البوابة
+          localStorage.removeItem('jaolaTravelToken');
+          token = null;
+          showGate();
+        } else if (!opts.bg) {
+          // زائرٌ لمس مساراً يحتاج حساباً **بقصدٍ صريح** (حجز، مفضلة،
+          // مراقبة سعر) — دعوةٌ للدخول بلا هدم تصفّحه.
+          // 🔴 `bg: true` للنداءات الخلفية والإثرائية: صياغةُ قراءةٍ
+          // بالنموذج ردّها 401 كان يفتح النافذة على زائرٍ لم يطلب شيئاً
+          // سوى البحث. النافذة تتبع القصد لا الشبكة.
+          $('loginError').classList.add('hidden');
+          $('loginDialog').showModal();
+          // ونستبدل جسم الرد بنصٍّ يفهمه مسافر: «غير مصرح: التوكن مفقود»
+          // لغةُ مبرمجين، و22 موضعاً في الواجهة تعرض data.error حرفياً —
+          // فالتصحيح هنا مرةً واحدة يصحّحها كلها (مصدر حقيقة واحد).
+          return new Response(
+            JSON.stringify({ error: T('سجّل دخولك لإتمام هذه الخطوة.', 'Sign in to complete this step.') }),
+            { status: 401, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+      }
       return res;
     }
 
@@ -891,14 +937,22 @@
 
     async function boot() {
       initToken();
-      if (!token) return showGate();
+      // 🚪 لا بوابةَ قبل التصفّح: الزائر يدخل التطبيق مباشرةً ويبحث ويرى
+      // الأسعار — والحساب يُطلب عند الحجز وحده (loginDialog في api()).
       const res = await api('/api/travel/config');
       if (!res.ok) return; // 401 عالجها api()
       config = await res.json();
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        $('userBadge').textContent = '👤 ' + (payload.username || '');
-      } catch { /* عرض تجميلي فقط */ }
+      if (token) {
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          $('userBadge').textContent = '👤 ' + (payload.username || '');
+        } catch { /* عرض تجميلي فقط */ }
+      } else {
+        // تبويبات لا معنى لها بلا حساب — تُخفى بدل أن تَعِد بفراغ
+        $('tripsTabBtn').classList.add('hidden');
+        $('notifTabBtn').classList.add('hidden');
+        $('guestSignIn').classList.remove('hidden');
+      }
       if (config.providerMode !== 'live') $('modeBanner').classList.remove('hidden');
       if (!config.agentEnabled) $('agentTabBtn').title = T('غير مفعَّل على هذا الخادم', 'Not enabled on this server');
       if (!config.staysEnabled) $('includeStaysLabel').classList.add('hidden');
@@ -934,8 +988,10 @@
       }
 
       ['fOrigin', 'fDest', 'carIata', 'destOrigin', 'prefHome', 'stayIata', 'pkgOrigin', 'pkgDest'].forEach(id => attachAirportAutocomplete($(id)));
-      // الملف يسبق مطار الأصل: تفضيل محفوظ على الخادم يتقدّم على الاستنتاج
-      await loadProfile();
+      // 🔴 محمّلات بيانات الحساب (ملف/حجوزات/تنبيهات) **لا تُنادى للزائر**:
+      // ردّها 401 يفتح نافذة الدخول في api()، فكانت تنبثق فور فتح الصفحة
+      // على من لم يطلب شيئاً بعد. النافذة لقصدٍ صريح (حجز) لا لتحميلٍ خلفي.
+      if (token) await loadProfile();
       await applyDefaultOrigin(); // الشريط الترويجي يحتاج مطار الأصل مُستقرّاً أولاً
 
       // تاريخ افتراضي: بعد أسبوع
@@ -951,9 +1007,9 @@
       // input، فمزامنةٌ سابقة كانت تُبقي صف الإخفاء على حقلٍ صار ذا قيمة
       // فتخفي التاريخ نفسه (رصده اختبار متصفح قبل النشر لا مستخدم بعده).
       syncDateHints(document.body);
-      loadTrips();
+      if (token) loadTrips();
       loadPromos(); // بلا await: الشريط زينة، لا يؤخّر جاهزية الصفحة
-      refreshBell();
+      if (token) refreshBell();
     }
 
     $('tokenSave').addEventListener('click', () => {
@@ -961,6 +1017,22 @@
       if (!t) return;
       localStorage.setItem('jaolaTravelToken', t);
       location.reload();
+    });
+
+    $('loginConfirm').addEventListener('click', () => {
+      const t = $('loginToken').value.trim();
+      if (!t) {
+        $('loginError').textContent = 'ألصق توكن الجلسة أولاً.';
+        $('loginError').classList.remove('hidden');
+        return;
+      }
+      localStorage.setItem('jaolaTravelToken', t);
+      location.reload();
+    });
+    $('loginCancel').addEventListener('click', () => $('loginDialog').close());
+    $('guestSignIn').addEventListener('click', () => {
+      $('loginError').classList.add('hidden');
+      $('loginDialog').showModal();
     });
 
     // ─── التبويبات ───
@@ -1658,7 +1730,7 @@
       if (!insight || !insight.findings || !insight.findings.length) return;
       try {
         const res = await api('/api/travel/insights/phrase', {
-          method: 'POST', body: JSON.stringify({ findings: insight.findings }),
+          method: 'POST', bg: true, body: JSON.stringify({ findings: insight.findings }),
         });
         if (!res.ok) return;
         const { text } = await res.json();
