@@ -8,6 +8,7 @@
  */
 
 import { seedOf, pad } from './mockUtils.js';
+import { normalizeFareConditions } from '../fareConditions.js';
 import { sortOffers, totalDurationMin, applyOfferFilters } from './duffelProvider.js';
 import { buildSearchPassengers } from '../passengerAges.js';
 
@@ -77,6 +78,17 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
                 const netAmount = Math.round(base * cabinFactor * paxCount * 100) / 100;
                 const slices = [buildSlice(origin, destination, departDate, s, i === 2 ? 1 : 0)];
                 if (returnDate) slices.push(buildSlice(destination, origin, returnDate, s + 7, i === 2 ? 1 : 0));
+                // 🎟️ عائلات سعر متمايزة عمداً: الأرخص مقيَّدة والأغلى مرنة —
+                // فيرى المطوّر (والاختبار) الحالات الحقيقية الثلاث لا حالةً
+                // واحدة وردية. الثالثة تُبقي الرسم null: «مسموح والرسم يحدّده
+                // الناقل»، وهي الحالة التي تُنسى فتُعرض خطأً كأنها مجانية.
+                const FARES = [
+                    { brand: 'Economy Light', change: { allowed: false }, refund: { allowed: false } },
+                    { brand: 'Economy Flex', change: { allowed: true, penalty_amount: '75', penalty_currency: MOCK_CURRENCY }, refund: { allowed: true, penalty_amount: '150', penalty_currency: MOCK_CURRENCY } },
+                    { brand: 'Economy Standard', change: { allowed: true }, refund: { allowed: false } },
+                ];
+                const fare = FARES[i % FARES.length];
+                for (const sl of slices) sl.fareBrand = fare.brand;
                 const offer = {
                     id: `mock_off_${seed}_${i}`,
                     owner: MOCK_AIRLINES[s % MOCK_AIRLINES.length],
@@ -91,6 +103,10 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
                     ownerLogo: null,
                     ownerIata: null,
                     totalDurationMin: totalDurationMin(slices),
+                    conditions: normalizeFareConditions({
+                        change_before_departure: fare.change,
+                        refund_before_departure: fare.refund,
+                    }),
                     slices,
                 };
                 offers.set(offer.id, offer);
