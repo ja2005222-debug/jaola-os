@@ -44,6 +44,7 @@ import { createFileStore } from '../src/store/fileStore.js';
 import { createPostgresStore } from '../src/store/postgresStore.js';
 import { createTravelAgent, executeAgentTool, buildTravelAgent, AGENT_TOOLS, retryDelayMs, compactToolResult, buildFallbackProvider, MAX_TOOL_RESULT_CHARS } from '../src/agent/agent.js';
 import { listPriceWatchesByUser, cancelPriceWatch } from '../src/priceWatches.js';
+import { deriveShareSecret, signShareToken, verifyShareToken, clampShareHours, SHARE_DEFAULT_HOURS, SHARE_MAX_HOURS } from '../src/shareLinks.js';
 import { checkWatches } from '../src/priceWatchPoller.js';
 import { sendTripReminders, isReminderDue, renderTripReminder, departureAt } from '../src/tripReminders.js';
 import { searchAirports, airportForTimezone, AIRPORT_COORDS } from '../src/airports.js';
@@ -1517,7 +1518,7 @@ describe('صحة صياغة سكربتات الواجهة — درس عطل إن
     // لأن سكربت المتصفح لا يمرّ على Node إطلاقاً. هذا الاختبار يفكّك كل
     // <script> مضمَّن في الصفحتين ويفحص صياغته كما سيفعل المتصفح —
     // فأي قوس/سلسلة مكسورة تكسر الاختبار قبل أن تكسر الإنتاج.
-    for (const page of ['public/index.html', 'public/admin.html']) {
+    for (const page of ['public/index.html', 'public/admin.html', 'public/share.html']) {
         test(`🧩 ${page}: كل سكربت مضمَّن يتحلّل بلا خطأ صياغة`, () => {
             const html = fs.readFileSync(new URL('../' + page, import.meta.url), 'utf8');
             const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
@@ -1976,6 +1977,72 @@ describe('packages/contracts: وحدات نقية بلا شبكة', () => {
 });
 
 // ─── 🔤 بحث المطارات بالاسم (عربي/إنجليزي) بدل حفظ رموز IATA ──────────
+describe('🔗 روابط المشاركة المؤقّتة: توقيع بلا حالة', () => {
+    const secret = deriveShareSecret('test-secret-not-for-production');
+
+    test('السرّ مشتقّ لا مطابق لـJWT_SECRET (فصل نطاقي)', () => {
+        // توكن مشاركة مسروق يجب ألّا يصلح توكن دخول ولا العكس
+        assert.notEqual(secret.toString('hex'), Buffer.from('test-secret-not-for-production').toString('hex'));
+        assert.equal(secret.length, 32);
+        // الاشتقاق حتمي: نفس السرّ ينتج نفس المفتاح (وإلا بطلت الروابط بكل إعادة تشغيل)
+        assert.deepEqual(deriveShareSecret('test-secret-not-for-production'), secret);
+        // ومصفوفة الأسرار (تدوير المفتاح) تأخذ الحالي — أوّل العناصر
+        assert.deepEqual(deriveShareSecret(['test-secret-not-for-production', 'old']), secret);
+    });
+
+    test('توكن صحيح يُفكّ لمعرّفه ومهلته', () => {
+        const expiresAt = Date.now() + 3600_000;
+        const token = signShareToken({ bookingId: 'bk_1', expiresAt, secret });
+        const out = verifyShareToken(token, { secret });
+        assert.equal(out.bookingId, 'bk_1');
+        // الثواني تُقرَّب لأسفل عند التوقيع — نقارن بالثانية لا بالمللي
+        assert.equal(Math.floor(expiresAt / 1000), Math.floor(out.expiresAt / 1000));
+        assert.equal(out.error, undefined);
+    });
+
+    test('العبث بالحمولة يُبطل التوقيع — لا يُقرأ حجز غير المقصود', () => {
+        const token = signShareToken({ bookingId: 'bk_1', expiresAt: Date.now() + 3600_000, secret });
+        const [, sig] = token.split('.');
+        // نُبدّل الحمولة لحجز آخر مع إبقاء التوقيع — الهجوم المباشر
+        const forged = Buffer.from(JSON.stringify({ b: 'bk_victim', e: 99999999999 })).toString('base64url');
+        assert.equal(verifyShareToken(`${forged}.${sig}`, { secret }).error, 'invalid');
+        // وتمديد المهلة بحمولة موقّعة بسرّ آخر لا يمرّ كذلك
+        const otherSecret = deriveShareSecret('another-secret');
+        const alien = signShareToken({ bookingId: 'bk_1', expiresAt: Date.now() + 3600_000, secret: otherSecret });
+        assert.equal(verifyShareToken(alien, { secret }).error, 'invalid');
+    });
+
+    test('الصيغ التالفة تُرفض بلا رمي استثناء', () => {
+        for (const bad of ['', 'abc', 'a.b.c', '.sig', 'payload.', 'not-base64!.x', null, undefined]) {
+            assert.equal(verifyShareToken(bad, { secret }).error, 'invalid', String(bad));
+        }
+        // حمولة موقّعة صحيحاً لكنها ليست JSON — يجب ألّا تنهار
+        const junk = Buffer.from('لا-جيسون').toString('base64url');
+        const sig = signShareToken({ bookingId: 'x', expiresAt: Date.now() + 1000, secret }).split('.')[1];
+        assert.equal(verifyShareToken(`${junk}.${sig}`, { secret }).error, 'invalid');
+    });
+
+    test('المنتهي يُميَّز عن غير الصالح — «انتهى» ليست «خاطئ»', () => {
+        const token = signShareToken({ bookingId: 'bk_1', expiresAt: Date.now() - 1000, secret });
+        assert.equal(verifyShareToken(token, { secret }).error, 'expired');
+        // وصالح لحظةَ ما قبل الانتهاء بالضبط
+        const soon = Date.now() + 5000;
+        const t2 = signShareToken({ bookingId: 'bk_1', expiresAt: soon, secret });
+        assert.equal(verifyShareToken(t2, { secret, now: soon - 1000 }).bookingId, 'bk_1');
+        assert.equal(verifyShareToken(t2, { secret, now: soon + 1000 }).error, 'expired');
+    });
+
+    test('قصّ المهلة: الفارغ للافتراضي، والمبالغ للسقف، ولا مهلة صفرية', () => {
+        assert.equal(clampShareHours(undefined), SHARE_DEFAULT_HOURS);
+        assert.equal(clampShareHours('garbage'), SHARE_DEFAULT_HOURS);
+        assert.equal(clampShareHours(99999), SHARE_MAX_HOURS);
+        assert.equal(clampShareHours(0), 1);
+        assert.equal(clampShareHours(-5), 1);
+        assert.equal(clampShareHours(48), 48);
+        assert.equal(clampShareHours(2.9), 2); // كسور الساعة تُقصّ لأسفل
+    });
+});
+
 describe('searchAirports: بحث بالمدينة أو الدولة، عربياً أو إنجليزياً', () => {
     const codes = q => searchAirports(q, 8).map(a => a.iata);
 
@@ -2135,6 +2202,63 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(readMarkupPct({ TRAVEL_MARKUP_PCT: '-3' }), DEFAULT_MARKUP_PCT);
             assert.equal(readMarkupPct({ TRAVEL_MARKUP_PCT: '99' }), DEFAULT_MARKUP_PCT);
             assert.equal(readMarkupPct({}), DEFAULT_MARKUP_PCT);
+        });
+
+        test('🔗 رابط المشاركة: يفتحه من لا حساب له، ولا يكشف بريداً ولا تذكرة ولا صافياً', async () => {
+            const token = makeToken('sharer');
+            const search = await call('/api/travel/flights/search', { method: 'POST', token, body: SEARCH_BODY() });
+            const offerId = search.data.offers[0].id;
+            const booked = await call('/api/travel/bookings', { method: 'POST', token, body: { offerId, ...VALID_PAX } });
+            const b = booked.data.booking;
+
+            // إنشاء الرابط يتطلّب الملكية — وغير المالك يُرد 404 لا 403
+            // (نفس قاعدة البوابة: لا نؤكّد وجود حجز لمن لا يملكه)
+            assert.equal((await call(`/api/travel/bookings/${b.id}/share`, {
+                method: 'POST', token: makeToken('stranger'), body: {},
+            })).status, 404);
+            assert.equal((await call(`/api/travel/bookings/${b.id}/share`, { method: 'POST', body: {} })).status, 401);
+
+            const made = await call(`/api/travel/bookings/${b.id}/share`, { method: 'POST', token, body: { hours: 48 } });
+            assert.equal(made.status, 200);
+            assert.equal(made.data.hours, 48);
+            assert.ok(new Date(made.data.expiresAt).getTime() > Date.now());
+            // ⚠️ التوكن في الـfragment: لا يُسجَّل في سجلّات الخادم ولا يُرسَل في Referer
+            assert.match(made.data.url, /\/share\.html#/);
+            const shareToken = made.data.url.split('#')[1];
+
+            // الفتح **بلا أي توكن دخول** — هذا هو بيت القصيد
+            const opened = await call(`/api/travel/share/${shareToken}`);
+            assert.equal(opened.status, 200);
+            const shared = opened.data.booking;
+            assert.equal(shared.id, b.id);
+            assert.equal(shared.bookingReference, b.bookingReference);
+            assert.equal(shared.sellAmount, b.sellAmount);
+            assert.equal(shared.passengerCount, 1);
+
+            // 🔒 خط الخصوصية نفسه الموعود في زر المشاركة النصّية
+            assert.equal(shared.contact, undefined, 'لا بريد ولا هاتف');
+            assert.equal(shared.tickets, undefined, 'لا أرقام تذاكر (بها يُعدَّل الحجز لدى الناقل)');
+            assert.equal(shared.passengers, undefined, 'لا أسماء ركّاب');
+            assert.equal(shared.billing, undefined, 'لا كشف بطاقة');
+            // والصافي لا يقترب من أي مسار عام
+            assert.equal(shared.netAmount, undefined);
+            assert.equal(shared.offer?.netAmount, undefined);
+            assert.ok(!JSON.stringify(opened.data).includes('a@test.com'), 'البريد لا يتسرّب في أي حقل');
+
+            // توكن ملفّق → 404، ومنتهٍ → 410 مميَّز عنه
+            assert.equal((await call('/api/travel/share/not-a-real-token')).status, 404);
+            const expired = signShareToken({
+                bookingId: b.id, expiresAt: Date.now() - 1000,
+                secret: deriveShareSecret(JWT_SECRET),
+            });
+            assert.equal((await call(`/api/travel/share/${expired}`)).status, 410);
+
+            // توكن موقّع لحجز غير موجود لا يكشف شيئاً (نفس رد الملفّق)
+            const ghost = signShareToken({
+                bookingId: 'bk_ghost', expiresAt: Date.now() + 60_000,
+                secret: deriveShareSecret(JWT_SECRET),
+            });
+            assert.equal((await call(`/api/travel/share/${ghost}`)).status, 404);
         });
 
         test('🎫 آلة الحالات: المسارات المسموحة فقط', () => {

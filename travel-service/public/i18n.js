@@ -229,6 +229,7 @@ window.JAOLA_I18N = {
         'للتقويم: حدّد «من» و«إلى» وتاريخ الذهاب أولاً.': 'For the calendar: set From, To and the departure date first.',
         '📄 تفاصيل الحجز': '📄 Booking details',
         '📤 مشاركة': '📤 Share',
+        '🔗 رابط مؤقّت': '🔗 Temporary link',
         '💬 واتساب': '💬 WhatsApp',
         '📅 أضف للتقويم': '📅 Add to calendar',
         '🔁 ابحث عن بديل': '🔁 Find an alternative',

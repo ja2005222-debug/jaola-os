@@ -57,6 +57,7 @@ import { getDestinationWeather, convertCurrency, MAX_FORECAST_DAYS_AHEAD } from 
 import { buildTopDestinations, CURATED_DESTINATIONS } from './src/topDestinations.js';
 import { sendMail, mailReady } from './src/mailer.js';
 import { sendWhatsAppTemplate, whatsappReady, isWhatsAppPhone } from './src/whatsapp.js';
+import { deriveShareSecret, signShareToken, verifyShareToken, clampShareHours } from './src/shareLinks.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -415,6 +416,26 @@ function publicBooking(b) {
     };
 }
 
+/**
+ * 🔗 نسخة الحجز التي يراها **حاملُ رابط المشاركة** — أضيقُ من publicBooking.
+ *
+ * الوعد المكتوب في الواجهة منذ زرّ المشاركة النصّية: «تُشارَك خطة الرحلة
+ * والمرجع فقط — بلا بريدك ولا هاتفك ولا أرقام تذاكرك». الرابط قناةٌ ثانية
+ * لنفس الوعد، فيلتزم به حرفياً: لا contact ولا tickets ولا أسماء ركّاب
+ * (عددهم يكفي لفهم القسيمة)، ولا billing — كشفُ بطاقة صاحبها لا يخصّ من
+ * أُرسل له الرابط. والصافي لا يقترب من هنا أصلاً كعادة كل مسار عام.
+ */
+function sharedBooking(b) {
+    return {
+        id: b.id, at: b.at, status: b.status, kind: b.kind || 'flight',
+        bookingReference: b.bookingReference,
+        sellAmount: b.sellAmount, currency: b.currency,
+        offer: b.offer,
+        passengerCount: Array.isArray(b.passengers) ? b.passengers.length : null,
+        seats: b.seats,
+    };
+}
+
 /** سطر ملخّص نصّي لحجز (بريد التأكيد/الإلغاء) — نفس منطق bookingBodyHtml في الواجهة. */
 function bookingSummaryLine(b) {
     if (b.kind === 'fixed_package') {
@@ -520,6 +541,16 @@ export function createApp({
     // نتيجة أهم الوجهات مُخزَّنة عالمياً (topDestinations.js) فلا تكلفة
     // حقيقية على المزوّد إلا أول طلب كل 6 ساعات — حد أخف من searchLimiter يكفي.
     const destinationsLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 15, standardHeaders: true, legacyHeaders: false, keyGenerator: byUser });
+
+    // 🔗 سرّ توقيع روابط المشاركة — مشتقّ من jwtSecret بفصلٍ نطاقي، فلا
+    // متغيّر بيئة جديد ولا يصلح توكن مشاركةٍ توكنَ دخول (انظر shareLinks.js).
+    const shareSecretKey = deriveShareSecret(jwtSecret);
+    // المسار العام الوحيد بلا verifyToken: المفتاح IP إجباراً، والحدّ ضيق
+    // لأن كل طلب فاشل هنا محاولة تخمين توقيع.
+    const shareLimiter = rateLimit({
+        windowMs: 5 * 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false,
+        keyGenerator: req => ipKeyGenerator(req.ip),
+    });
 
     // كل تنبيه في البوابة يمر من هنا: يفحص تفضيلات المستخدم، يحفظ سجلاً
     // داخل البوابة، ويرسل بريداً إن رغب. قبل هذا كان كل مصدر يرسل بريده
@@ -1275,6 +1306,41 @@ export function createApp({
             if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;
         }
+    }));
+
+    // ─── 🔗 رابط المشاركة المؤقّت ────────────────────────────────────
+    // إنشاء الرابط يتطلّب ملكية الحجز؛ فتحُه لا يتطلّب حساباً إطلاقاً —
+    // هذا هو بيت القصيد (يُرسَل لمرافقٍ أو لمكتب تأشيرات). انظر
+    // src/shareLinks.js لسبب انعدام الحالة ولثمنه المُعلَن (لا إلغاء مبكّر).
+
+    app.post('/api/travel/bookings/:id/share', verifyToken, wrap(async (req, res) => {
+        const booking = await getBooking(store, String(req.params.id || ''));
+        if (!booking || booking.username !== userOf(req)) {
+            return res.status(404).json({ error: 'الحجز غير موجود.' });
+        }
+        const hours = clampShareHours(req.body?.hours);
+        const expiresAt = Date.now() + hours * 60 * 60 * 1000;
+        const token = signShareToken({ bookingId: booking.id, expiresAt, secret: shareSecretKey });
+        res.json({
+            url: `${requestBaseUrl(req)}/share.html#${token}`,
+            expiresAt: new Date(expiresAt).toISOString(),
+            hours,
+        });
+    }));
+
+    // مسار عام بلا توكن — محدّد المعدل هنا بالـIP لا بالمستخدم (لا مستخدم
+    // أصلاً)، ودرعٌ ضروري: بلا هذا يصير المسار مِقْصَلة تخمينٍ للتواقيع.
+    app.get('/api/travel/share/:token', shareLimiter, wrap(async (req, res) => {
+        const result = verifyShareToken(req.params.token, { secret: shareSecretKey });
+        if (result.error === 'expired') {
+            // 410 لا 404: «كان صحيحاً وانتهى» معلومة مفيدة لصاحب الرابط،
+            // ولا تكشف شيئاً — التوقيع أثبت أنّا نحن من أصدره.
+            return res.status(410).json({ error: 'انتهت صلاحية هذا الرابط. اطلب من صاحب الحجز رابطاً جديداً.' });
+        }
+        if (result.error) return res.status(404).json({ error: 'رابط غير صالح.' });
+        const booking = await getBooking(store, result.bookingId);
+        if (!booking) return res.status(404).json({ error: 'رابط غير صالح.' });
+        res.json({ booking: sharedBooking(booking), expiresAt: new Date(result.expiresAt).toISOString() });
     }));
 
     // ─── الفنادق (Duffel Stays) — محاذاة مسارات الطيران أعلاه ──────────

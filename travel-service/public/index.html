@@ -689,6 +689,7 @@
     <div id="detailsActions" style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
       <button class="chip" id="detailsClose" type="button">إغلاق</button>
       <button class="chip" id="detailsShare" type="button">📤 مشاركة</button>
+      <button class="chip" id="detailsLink" type="button">🔗 رابط مؤقّت</button>
       <button class="chip" id="detailsWhatsApp" type="button">💬 واتساب</button>
       <button class="chip" id="detailsCalendar" type="button">📅 أضف للتقويم</button>
       <button class="chip" id="detailsPrint" type="button">🖨️ طباعة / حفظ PDF</button>
@@ -2992,6 +2993,47 @@
     }
 
     /**
+     * 🔗 رابط مشاركة مؤقّت — صفحةٌ يفتحها أي أحد بلا حساب، وتموت وحدها.
+     *
+     * لماذا بجانب المشاركة النصّية لا بديلاً عنها؟ لأنهما حاجتان مختلفتان:
+     * النصّ يُلصَق في محادثة سريعة، والرابط يُرسَل لمن يريد **قسيمةً**
+     * يقرأها ويطبعها (مرافقٌ في الرحلة، مكتب تأشيرات، جهة عمل). قبله كان
+     * الحل الشائع لقطةَ شاشة — أو تسليم بيانات الدخول.
+     *
+     * ⚠️ ننسخ الرابط ونقول مدّته صراحةً. لا نَعِد بزرّ إلغاء: التوكن موقّع
+     * بلا حالة (انظر src/shareLinks.js)، والمهلة هي الحماية — ووعدٌ بإلغاء
+     * لا نملكه أسوأ من غيابه.
+     */
+    async function createShareLink(b) {
+      const res = await api(`/api/travel/bookings/${b.id}/share`, {
+        method: 'POST',
+        body: JSON.stringify({ hours: 24 }),
+      });
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        alert(error || T('تعذّر إنشاء الرابط.', 'Could not create the link.'));
+        return;
+      }
+      const { url, expiresAt } = await res.json();
+      const until = fmtWhen(expiresAt);
+      const msg = T(`نُسخ الرابط. ينتهي في ${until}.`, `Link copied. It expires on ${until}.`);
+      // 🔗 المشاركة الأصلية أولاً حيث تتوفّر (تفتح ورقة المشاركة بالرابط
+      // مباشرة)، وإلا الحافظة، وإلا prompt — نفس تدرّج shareBooking.
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: T('قسيمة حجزي', 'My booking voucher'), url });
+          return;
+        } catch (e) { if (e?.name === 'AbortError') return; }
+      }
+      try {
+        await navigator.clipboard.writeText(url);
+        alert(msg);
+      } catch {
+        prompt(T('انسخ الرابط المؤقّت:', 'Copy the temporary link:'), url);
+      }
+    }
+
+    /**
      * 📅 ملف تقويم (.ics) يُبنى في المتصفح بلا مكتبة ولا نداء خادم.
      *
      * ⚠️ التوقيت «عائم» (بلا منطقة زمنية) عن قصد: مواعيد الرحلات محلية
@@ -3109,7 +3151,7 @@
       $('detailsBody').innerHTML = detailsHtml(b);
       // حجز فاشل لا يُشارَك ولا يُضاف لتقويم — لا موعد فيه أصلاً
       const usable = b.status === 'issued' || b.status === 'pending';
-      for (const id2 of ['detailsShare', 'detailsWhatsApp', 'detailsCalendar']) {
+      for (const id2 of ['detailsShare', 'detailsLink', 'detailsWhatsApp', 'detailsCalendar']) {
         $(id2).classList.toggle('hidden', !usable);
       }
       $('detailsShareNote').classList.toggle('hidden', !usable);
@@ -3119,6 +3161,7 @@
     $('detailsPrint').addEventListener('click', () => window.print());
     $('detailsShare').addEventListener('click', () => detailsBooking && shareBooking(detailsBooking));
     $('detailsCalendar').addEventListener('click', () => detailsBooking && downloadIcs(detailsBooking));
+    $('detailsLink').addEventListener('click', () => detailsBooking && createShareLink(detailsBooking));
     // واتساب أولاً في سوقنا: رابط رسمي يفتح المحادثة بالنص جاهزاً
     $('detailsWhatsApp').addEventListener('click', () => {
       if (!detailsBooking) return;
