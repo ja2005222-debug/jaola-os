@@ -166,7 +166,10 @@
 ## كيف تُشغّل وتَختبر
 ```bash
 cd travel-service && npm install
-npm test                      # ~200 اختبار، بلا شبكة ولا مفاتيح
+npm test                      # ~220 اختبار، بلا شبكة ولا مفاتيح
 JWT_SECRET=dev node server.js # منفذ 4200 بمزوّدات المحاكاة
-# Postgres أيضاً: TEST_DATABASE_URL=postgres://... npm test
+# ⚠️ **شغّله ضد Postgres أيضاً قبل أي دمج** — الإنتاج Postgres، وعطبان
+# حقيقيان (رفض net_amount الفارغ، وإسقاط حقول الرقعة غير المُعمَّدة) لم
+# يظهرا في مخزن الملفات إطلاقاً:
+# TEST_DATABASE_URL=postgres://... npm test
 ```

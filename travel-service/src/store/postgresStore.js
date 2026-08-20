@@ -46,6 +46,15 @@ ALTER TABLE travel_bookings ALTER COLUMN sell_amount DROP NOT NULL;
 -- كلفة مسجَّلة **يفشل في الإنتاج وحده**. «لا نعرف الكلفة» ≠ «الكلفة صفر»:
 -- الثانية تضخّم الربح في نظرة الأدمن، فالعمود يقبل الفراغ والحساب يستثنيه.
 ALTER TABLE travel_bookings ALTER COLUMN net_amount DROP NOT NULL;
+-- 🚨 عطب إنتاجي صامت: transitionBooking كان يكتب قائمةً بيضاء من الحقول
+-- فقط، بينما مخزن الملفات يدمج الرقعة كاملةً (Object.assign). فكل حقل
+-- خارج القائمة كان **يُكتب في التطوير ويضيع في الإنتاج بلا خطأ**:
+-- خطة العربون والمقاعد وموعد الأسماء، وكل حقول الدفع (معرّف جلسة
+-- Stripe، معرّف الدفعة، وقت الدفع، عملة التحصيل، أرقام التذاكر).
+-- أثره العملي: لا استئناف دفع، ولا استرداد، ولا مصالحة، ولا تحرير
+-- مقاعد عند انتهاء المهلة — كلها تقرأ حقولاً غير موجودة. العمود أدناه
+-- يحفظ كل ما لا عمود له، فيتطابق المخزنان كما يقتضي عقدهما.
+ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS extra_json JSONB NOT NULL DEFAULT '{}'::jsonb;
 CREATE INDEX IF NOT EXISTS travel_bookings_package_idx ON travel_bookings (package_id);
 CREATE INDEX IF NOT EXISTS travel_bookings_user_idx ON travel_bookings (username, at);
 CREATE INDEX IF NOT EXISTS travel_bookings_status_idx ON travel_bookings (status);
@@ -203,6 +212,8 @@ function rowToBooking(r) {
         username: r.username,
         provider: r.provider,
         status: r.status,
+        // الإضافات أولاً: أعمدةُ الجدول مصدرُ الحقيقة فتتقدّم عليها لو تصادما
+        ...(r.extra_json || {}),
         kind: r.kind,
         offer: r.offer_json,
         passengers: r.passengers_json,
@@ -445,6 +456,13 @@ export function createPostgresStore({ connectionString }) {
             }
             for (const [key, col] of Object.entries(textCols)) {
                 if (key in patch) { sets.push(`${col} = $${i++}`); vals.push(patch[key]); }
+            }
+            // ما لا عمود له يُدمج في extra_json — بلا هذا يضيع صامتاً
+            const mapped = new Set([...Object.keys(jsonCols), ...Object.keys(textCols)]);
+            const extras = Object.fromEntries(Object.entries(patch).filter(([key]) => !mapped.has(key)));
+            if (Object.keys(extras).length > 0) {
+                sets.push(`extra_json = COALESCE(extra_json, '{}'::jsonb) || $${i++}::jsonb`);
+                vals.push(JSON.stringify(extras));
             }
             vals.push(from);
             return withClient(async c => {

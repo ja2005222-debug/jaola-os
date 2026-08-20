@@ -3346,8 +3346,12 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(issued.length, 2, 'الغرفة الثالثة من حصة غرفتين لا تُباع أبداً');
             for (const r of results.filter(r => r.status !== 200)) {
                 // مساران صحيحان للرفض حسب توقيت السباق: الحصة نفدت أثناء
-                // الحجز (502) أو نفدت قبل جلب العرض فاختفى العرض أصلاً (404)
-                assert.match(r.data.error, /نفدت حصة|غير موجود/);
+                // الحجز («نفدت حصة الغرف…») أو نفدت قبل جلب العرض فاختفى
+                // العرض أصلاً («عرض العقد غير متاح — نفدت الحصة…»). النمط
+                // يطابق **معنى** الرفض لا صياغةً بعينها: كان يشترط «غير
+                // موجود» حرفياً فسقط على Postgres حين سلك السباق المسار
+                // الآخر — والرسالتان كلتاهما صادقتان ومفهومتان للمسافر.
+                assert.match(r.data.error, /نفدت|غير متاح|غير موجود/);
             }
             assert.equal((await call('/api/travel/admin/contracts', { token: admin }))
                 .data.contracts.find(c => c.id === cid).usedRooms, 2);
@@ -3370,6 +3374,52 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 body: { iata: 'CAI', checkInDate: checkIn, checkOutDate: checkOut, adults: 1, rooms: 1 },
             });
             assert.ok(!after.data.offers.some(o => o.contracted));
+        });
+
+        test('🗄️ عقد المخزن: رقعة transitionBooking تُحفظ **كاملةً** في المخزنين', async () => {
+            // 🚨 حارس عطبٍ إنتاجي حقيقي: مخزن الملفات كان يدمج الرقعة كلها
+            // (Object.assign) بينما Postgres يكتب قائمةً بيضاء من الأعمدة
+            // ويُسقط الباقي **بلا خطأ**. فكل حقول الدفع (جلسة Stripe،
+            // معرّف الدفعة، وقت الدفع، عملة التحصيل، أرقام التذاكر) وخطة
+            // العربون والمقاعد كانت تعمل في التطوير وتضيع في الإنتاج —
+            // فلا استئناف دفع ولا استرداد ولا تحرير مقاعد. هذا الاختبار
+            // يمرّ على المخزنين معاً فيكشف أي انفصال بينهما فوراً.
+            const booking = await store.createBooking({
+                username: 'store-contract', provider: 'fixed', kind: 'fixed_package', status: 'pending',
+                offer: { title: 'عقد المخزن' }, passengers: [], contact: { email: 'c@x.com' },
+                netAmount: null, sellAmount: 500, currency: 'USD',
+            });
+            assert.equal(booking.netAmount ?? null, null, 'كلفة غير مسجَّلة تبقى فارغة لا صفراً');
+
+            const patch = {
+                paymentPlan: { mode: 'deposit', paidNow: 150, remaining: 350, dueDate: '2026-12-01' },
+                seats: 2, namesDeadline: '2026-11-20',
+                stripeSessionId: 'cs_contract', checkoutExpiresAt: 1234567890,
+                paymentIntentId: 'pi_contract', paidAt: 1700000000000,
+                billing: { amount: 1875, currency: 'SAR', rate: 3.75, source: 'peg' },
+                tickets: [{ type: 'electronic_ticket', number: '123-4567890123' }],
+            };
+            await store.transitionBooking(booking.id, { from: ['pending'], to: 'pending', patch });
+            const back = await store.getBooking(booking.id);
+            assert.deepEqual(back.paymentPlan, patch.paymentPlan, 'خطة الدفع تبقى كاملة');
+            assert.equal(back.seats, 2);
+            assert.equal(back.namesDeadline, '2026-11-20');
+            assert.equal(back.stripeSessionId, 'cs_contract');
+            assert.equal(back.paymentIntentId, 'pi_contract');
+            assert.equal(back.paidAt, 1700000000000);
+            assert.deepEqual(back.billing, patch.billing);
+            assert.deepEqual(back.tickets, patch.tickets);
+
+            // ورقعة لاحقة تُراكم ولا تمحو ما سبقها (سداد المتبقي مثلاً)
+            await store.transitionBooking(booking.id, {
+                from: ['pending'], to: 'issued',
+                patch: { paymentPlan: { ...patch.paymentPlan, remaining: 0 }, bookingReference: 'FP-XYZ' },
+            });
+            const after = await store.getBooking(booking.id);
+            assert.equal(after.status, 'issued');
+            assert.equal(after.paymentPlan.remaining, 0);
+            assert.equal(after.bookingReference, 'FP-XYZ');
+            assert.equal(after.stripeSessionId, 'cs_contract', 'الحقول القديمة لم تُمحَ');
         });
 
         test('🔒 العدّاد في المخزن نفسه ذرّي — لا اعتماد على فحوصات ما قبله', async () => {
