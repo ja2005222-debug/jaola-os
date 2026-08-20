@@ -21,7 +21,7 @@ import { buildVerifyToken, buildOptionalToken } from './src/auth.js';
 import {
     deriveAccountSecret, normalizeEmail, isValidEmail, normalizeName,
     passwordProblem, hashPassword, verifyPassword, signAccountToken, publicUser,
-    DUMMY_HASH,
+    dummyHash,
 } from './src/accounts.js';
 import { readMarkupPct, readPackageMarkupPct, readCategoryMarkupPct, applyMarkup } from './src/pricing.js';
 import { quotePackage, bookPackage, cancelPackage, retryPackageCompensations } from './src/packages.js';
@@ -1282,7 +1282,7 @@ export function createApp({
         // 🕰️ **نتحقق حتى لو لم يوجد الحساب**: الردّ الفوري للبريد غير
         // المسجَّل مقابل التأخّر 50ms للمسجَّل فرقٌ يُقاس، وبه يُعدّ
         // المهاجم حساباتنا رغم توحيد نصّ الخطأ. الهاش الوهمي يسوّي الزمن.
-        const ok = await verifyPassword(password, user?.passwordHash || DUMMY_HASH);
+        const ok = await verifyPassword(password, user?.passwordHash || await dummyHash());
         if (!user || !user.passwordHash || !ok) {
             return res.status(401).json({ error: 'البريد أو كلمة المرور غير صحيحة.' });
         }
