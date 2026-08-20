@@ -1,14 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#38bdf8"/>
-      <stop offset="1" stop-color="#0ea5e9"/>
+      <stop offset="0" stop-color="#3b6fd4"/>
+      <stop offset="1" stop-color="#1e4fa8"/>
     </linearGradient>
     <clipPath id="globeClip">
       <circle cx="220" cy="300" r="148"/>
     </clipPath>
   </defs>
-  <rect width="512" height="512" rx="112" fill="#0b1120"/>
+  <rect width="512" height="512" rx="112" fill="#f4f6f8"/>
 
   <!-- الكرة الأرضية: حدّها وخط طول وخط استواء فقط — تبقى واضحة بحجم صغير
        (favicon/تبويب المتصفح 16-32px) -->
@@ -31,9 +31,9 @@
   <!-- طائرة ورقية بسيطة: جسم + طيّة جناح -->
   <g transform="translate(348 68) rotate(28)">
     <path fill="url(#g)" d="M0 40 L150 0 L46 66 L30 46 Z"/>
-    <path fill="#0ea5e9" opacity="0.85" d="M46 66 L74 84 L30 46 Z"/>
+    <path fill="#1e4fa8" opacity="0.85" d="M46 66 L74 84 L30 46 Z"/>
   </g>
 
   <!-- نقطة البوصلة -->
-  <circle cx="452" cy="94" r="18" fill="#fbbf24"/>
+  <circle cx="452" cy="94" r="18" fill="#b45309"/>
 </svg>

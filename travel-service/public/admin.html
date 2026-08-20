@@ -8,9 +8,9 @@
     :root {
       /* 🎨 نفس لوحة index.html حرفياً — كانت مختلفة (أزرق أفتح، بطاقات
          أفتح) فبدت صفحة الإدارة كأنها منتج آخر. هذا إصلاح هوية لا ذوق. */
-      --bg: #0b1120; --card: #111a2e; --border: #1e2a44; --text: #e2e8f0;
-      --muted: #94a3b8; --accent: #38bdf8; --ok: #34d399; --err: #f87171; --warn: #fbbf24;
-      --exclusive: #a78bfa;
+      --bg: #f4f6f8; --card: #ffffff; --border: #dbe3ec; --text: #2d323a;
+      --muted: #5c6b7f; --accent: #2c5fc9; --ok: #087a4c; --err: #dc2626; --warn: #b45309;
+      --exclusive: #7c3aed;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, sans-serif; }
     body { background: var(--bg); color: var(--text); min-height: 100vh; padding: 18px; }
@@ -24,20 +24,20 @@
     .cards { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
     .card {
       background: var(--card); border: 1px solid var(--border); border-radius: 14px;
-      padding: 14px; flex: 1; min-width: 200px; box-shadow: 0 1px 4px rgba(0,0,0,.25);
+      padding: 14px; flex: 1; min-width: 200px; box-shadow: 0 1px 3px rgba(15,23,42,.07);
     }
     .big { font-size: 26px; font-weight: 700; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
     th, td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--border); }
     th { color: var(--muted); font-weight: 600; }
     tbody tr { transition: background-color .15s ease; }
-    tbody tr:hover { background: rgba(56,189,248,.06); }
+    tbody tr:hover { background: rgba(44,95,201,.05); }
     .st { padding: 2px 8px; border-radius: 8px; font-size: 12px; }
-    .st-issued { background: rgba(52,211,153,.15); color: var(--ok); }
-    .st-pending { background: rgba(251,191,36,.15); color: var(--warn); }
-    .st-failed, .st-cancelled { background: rgba(248,113,113,.12); color: var(--err); }
+    .st-issued { background: rgba(8,122,76,.12); color: var(--ok); }
+    .st-pending { background: rgba(180,83,9,.12); color: var(--warn); }
+    .st-failed, .st-cancelled { background: rgba(220,38,38,.10); color: var(--err); }
     button {
-      background: var(--accent); color: #06101f; border: 0; border-radius: 10px;
+      background: var(--accent); color: #fff; border: 0; border-radius: 10px;
       padding: 8px 14px; font-size: 14px; cursor: pointer; font-weight: 600;
       transition: transform .15s ease, box-shadow .15s ease, filter .15s ease, border-color .15s ease;
     }
@@ -52,7 +52,7 @@
     .row > div { flex: 1; min-width: 130px; }
     .tbl-wrap { overflow-x: auto; }
     dialog { background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 14px; padding: 18px; max-width: 560px; width: 92vw; }
-    dialog::backdrop { background: rgba(0,0,0,.6); }
+    dialog::backdrop { background: rgba(15,23,42,.45); }
   </style>
 </head>
 <body>

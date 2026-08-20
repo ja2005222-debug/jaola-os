@@ -12,7 +12,7 @@
  * - الـ API لا يُلمس إطلاقاً (أسعار ومقاعد حية).
  * - رفع الإصدار في CACHE_NAME يمسح كاش النسخ القديمة عند التفعيل.
  */
-const CACHE_NAME = 'jatrava-shell-v4';
+const CACHE_NAME = 'jatrava-shell-v5';
 const SHELL = ['/', '/index.html', '/i18n.js', '/trips.js', '/fare.js', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
