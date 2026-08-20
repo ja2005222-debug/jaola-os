@@ -1,3 +1,4 @@
+'use strict';
 /**
  * 🎟️ fare.js — صياغة عائلة السعر وشروطه، بلغة المستخدم.
  *
@@ -14,12 +15,15 @@
  * `allowed: true` مع رسمٍ **غير معلوم** ليست «مجاني» — بل «مسموح والرسم
  * يحدّده الناقل». وغياب المعلومة ليس «ممنوع» بل صمت. راجع تعليق
  * `src/fareConditions.js`.
+ *
+ * 🧩 النصوص بجدولٍ مُفهرَس بالنوع ثم اللغة ثم الحالة — لا سلسلة شروط:
+ * الحالات خمسٌ والأنواع اثنان واللغتان اثنتان، وسلسلة `if` كانت تتضخّم
+ * تعقيداً مع كل حالة جديدة.
  */
-(function (global) {
-    'use strict';
+(function () {
+    const money = (amount, currency) => `${amount}${currency ? ` ${currency}` : ''}`;
 
-    const money = (amount, currency) => `${amount}${currency ? ' ' + currency : ''}`;
-
+    // الحالة → نصّها. الدالة تعني «رسمٌ معلوم يُدرَج في الجملة».
     const TEXT = {
         change: {
             ar: {
@@ -56,12 +60,8 @@
      * كتابة «غير معلوم» في كل بطاقة فنملأ الشاشة بضجيج بلا قرار.
      */
     function conditionLabel(cond, kind, lang) {
-        const state = cond && cond.state;
-        if (!state || state === 'unknown') return null;
-        const table = TEXT[kind] && TEXT[kind][lang === 'en' ? 'en' : 'ar'];
-        if (!table) return null;
-        const entry = table[state];
-        if (entry === undefined) return null;
+        const entry = TEXT[kind]?.[lang === 'en' ? 'en' : 'ar']?.[cond?.state];
+        if (entry === undefined) return null; // يشمل unknown وأي حالة طارئة
         return typeof entry === 'function' ? entry(money(cond.amount, cond.currency)) : entry;
     }
 
@@ -71,29 +71,24 @@
      * عائلتُها مختلفة في العودة تضليلٌ لا اختصار.
      */
     function fareBrandOf(offer) {
-        const slices = (offer && offer.slices) || [];
-        const brands = slices.map(s => s && s.fareBrand).filter(Boolean);
+        const slices = offer?.slices ?? [];
+        const brands = slices.map(slice => slice?.fareBrand).filter(Boolean);
         if (brands.length === 0 || brands.length !== slices.length) return null;
-        return brands.every(b => b === brands[0]) ? brands[0] : null;
+        return brands.every(brand => brand === brands[0]) ? brands[0] : null;
     }
 
     /** أجزاء سطر الشروط (عائلة السعر ثم التغيير ثم الاسترداد) — قد تكون فارغة. */
     function fareParts(offer, lang) {
-        const out = [];
-        const brand = fareBrandOf(offer);
-        if (brand) out.push(brand);
-        const conditions = (offer && offer.conditions) || {};
-        const change = conditionLabel(conditions.change, 'change', lang);
-        const refund = conditionLabel(conditions.refund, 'refund', lang);
-        if (change) out.push(change);
-        if (refund) out.push(refund);
-        return out;
+        const conditions = offer?.conditions ?? {};
+        return [
+            fareBrandOf(offer),
+            conditionLabel(conditions.change, 'change', lang),
+            conditionLabel(conditions.refund, 'refund', lang),
+        ].filter(Boolean);
     }
 
     /** السطر الجاهز، أو '' إن لا معلومة تستحق سطراً. */
-    function fareSummary(offer, lang) {
-        return fareParts(offer, lang).join(' · ');
-    }
+    const fareSummary = (offer, lang) => fareParts(offer, lang).join(' · ');
 
-    global.JAOLA_FARE = { conditionLabel, fareBrandOf, fareParts, fareSummary };
-}(typeof window !== 'undefined' ? window : globalThis));
+    window.JAOLA_FARE = { conditionLabel, fareBrandOf, fareParts, fareSummary };
+})();
