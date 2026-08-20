@@ -58,6 +58,7 @@ import { buildTopDestinations, CURATED_DESTINATIONS } from './src/topDestination
 import { sendMail, mailReady } from './src/mailer.js';
 import { sendWhatsAppTemplate, whatsappReady, isWhatsAppPhone } from './src/whatsapp.js';
 import { deriveShareSecret, signShareToken, verifyShareToken, clampShareHours } from './src/shareLinks.js';
+import { newCalendarKey, encodeFeedToken, parseFeedToken, calendarKeyMatches, bookingIcs, buildFeedIcs } from './src/calendarFeed.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -549,6 +550,11 @@ export function createApp({
     // لأن كل طلب فاشل هنا محاولة تخمين توقيع.
     const shareLimiter = rateLimit({
         windowMs: 5 * 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false,
+        keyGenerator: req => ipKeyGenerator(req.ip),
+    });
+    // تطبيقات التقويم تُحدِّث دورياً وبلا توكن — حدٌّ أوسع، وموجود.
+    const calendarLimiter = rateLimit({
+        windowMs: 5 * 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false,
         keyGenerator: req => ipKeyGenerator(req.ip),
     });
 
@@ -1341,6 +1347,80 @@ export function createApp({
         const booking = await getBooking(store, result.bookingId);
         if (!booking) return res.status(404).json({ error: 'رابط غير صالح.' });
         res.json({ booking: sharedBooking(booking), expiresAt: new Date(result.expiresAt).toISOString() });
+    }));
+
+    // ─── 📆 التقويم: تنزيل حجزٍ واحد + اشتراك دائم ────────────────────
+    // كلا المسارين يبنيان الملفّ من `src/calendarFeed.js` نفسه، فلا
+    // يمكن أن يفترق ما يُنزَّل عمّا يُشترَك فيه (انظر تعليق الملف).
+
+    const icsResponse = (res, body, filename) => res
+        .type('text/calendar; charset=utf-8')
+        .set('Content-Disposition', `attachment; filename="${filename}"`)
+        .send(body);
+
+    app.get('/api/travel/bookings/:id/calendar.ics', verifyToken, wrap(async (req, res) => {
+        const booking = await getBooking(store, String(req.params.id || ''));
+        if (!booking || booking.username !== userOf(req)) {
+            return res.status(404).json({ error: 'الحجز غير موجود.' });
+        }
+        const ics = bookingIcs(booking, { lang: uiLangOf(req) });
+        if (!ics) return res.status(400).json({ error: 'لا مواعيد قابلة للإضافة في هذا الحجز.' });
+        icsResponse(res, ics, `jaola-${booking.bookingReference || booking.id}.ics`);
+    }));
+
+    /** يضمن وجود مفتاح تقويم للمستخدم — يولّده عند أول اشتراك فقط. */
+    async function ensureCalendarKey(username, { rotate = false } = {}) {
+        const profile = await loadProfile(username);
+        if (profile.calendarKey && !rotate) return profile.calendarKey;
+        const calendarKey = newCalendarKey();
+        await store.setProfile(username, mergeProfile(profile, { calendarKey }));
+        return calendarKey;
+    }
+
+    const feedUrls = (req, token) => {
+        const base = requestBaseUrl(req);
+        // 🌐 اللغة تُخبَز في الرابط لا تُقرأ من ترويسة: تطبيق التقويم يجلب
+        // التغذية بنفسه ولا يرسل X-UI-Lang أبداً، فمشتركٌ إنجليزيّ كان
+        // يستقبل تقويماً عربياً كل مرة. الاستعلام يبقى في الرابط المحفوظ
+        // لدى التطبيق فيصمد عبر كل تحديث. (كشفه فحصٌ بمتصفح حقيقي.)
+        const lang = uiLangOf(req) === 'en' ? '?lang=en' : '';
+        const httpUrl = `${base}/api/travel/calendar/${token}.ics${lang}`;
+        // webcal:// ليس بروتوكولاً حقيقياً بل إشارة للنظام «افتح هذا في
+        // التقويم واشترك به» — نفس الرابط بمخطّط مختلف. نعطي الاثنين:
+        // الأول للنقر على الهاتف، والثاني للّصق في تقويم سطح المكتب.
+        return { webcalUrl: httpUrl.replace(/^https?:/, 'webcal:'), httpUrl };
+    };
+
+    app.post('/api/travel/calendar/subscribe', verifyToken, wrap(async (req, res) => {
+        const username = userOf(req);
+        const key = await ensureCalendarKey(username, { rotate: req.body?.rotate === true });
+        res.json(feedUrls(req, encodeFeedToken(username, key)));
+    }));
+
+    app.delete('/api/travel/calendar', verifyToken, wrap(async (req, res) => {
+        const username = userOf(req);
+        const profile = await loadProfile(username);
+        await store.setProfile(username, mergeProfile(profile, { calendarKey: null }));
+        res.json({ ok: true });
+    }));
+
+    // عام بلا توكن دخول — تطبيق التقويم لا يحمل واحداً. محدّد المعدل
+    // بالـIP: أجهزة كثيرة قد تُحدِّث من نفس الشبكة، فالحدّ أوسع من رابط
+    // المشاركة لكنه موجود.
+    app.get('/api/travel/calendar/:token.ics', calendarLimiter, wrap(async (req, res) => {
+        const parsed = parseFeedToken(req.params.token);
+        if (!parsed) return res.status(404).json({ error: 'رابط تقويم غير صالح.' });
+        const profile = await store.getProfile(parsed.username);
+        if (!profile?.calendarKey || !calendarKeyMatches(profile.calendarKey, parsed.key)) {
+            // 404 واحد لكل الحالات: مفتاح خاطئ، أو مُلغى، أو مستخدم لا
+            // وجود له — لا نفرّق فنؤكّد لحاملِ رابطٍ قديم أن الحساب قائم.
+            return res.status(404).json({ error: 'رابط تقويم غير صالح.' });
+        }
+        const bookings = await listBookingsByUser(store, parsed.username, 200);
+        // لغة التغذية من الرابط نفسه (انظر feedUrls) — والترويسة احتياطٌ
+        // لمن يجلبها من متصفّح.
+        const lang = req.query.lang === 'en' ? 'en' : uiLangOf(req);
+        icsResponse(res, buildFeedIcs(bookings, { lang }), 'jaola-trips.ics');
     }));
 
     // ─── الفنادق (Duffel Stays) — محاذاة مسارات الطيران أعلاه ──────────

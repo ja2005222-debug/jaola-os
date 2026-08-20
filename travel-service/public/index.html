@@ -503,6 +503,23 @@
 
       <!-- ─── رحلاتي ─── -->
       <section id="tab-trips" class="hidden">
+        <!-- 📆 اشتراك التقويم: رابط يُحدِّث نفسه، لا ملفٌّ يُنزَّل مرة -->
+        <div class="card" style="margin-bottom:14px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <strong>📆 اشترك بتقويمك</strong>
+            <span class="note" style="margin:0">حجوزاتك تظهر في تقويم هاتفك وتتحدّث وحدها.</span>
+            <button class="chip" id="calSub" type="button" style="margin-inline-start:auto">إنشاء رابط الاشتراك</button>
+          </div>
+          <div id="calBox" class="hidden" style="margin-top:10px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <input id="calUrl" readonly style="flex:1;min-width:220px">
+              <button class="chip" id="calCopy" type="button">📋 انسخ</button>
+              <a class="chip" id="calOpen" href="#" style="text-decoration:none">📲 افتح في التقويم</a>
+              <button class="chip" id="calRotate" type="button">🔄 جدّد الرابط</button>
+            </div>
+            <p class="note">أضِف الرابط في تقويمك كـ«اشتراك في تقويم». من يملك هذا الرابط يرى مواعيد رحلاتك — جدّده إن تسرّب.</p>
+          </div>
+        </div>
         <div id="tripsList"></div>
       </section>
 
@@ -3034,82 +3051,50 @@
     }
 
     /**
-     * 📅 ملف تقويم (.ics) يُبنى في المتصفح بلا مكتبة ولا نداء خادم.
+     * 📅 ملف التقويم يُبنى **في الخادم** (`src/calendarFeed.js`) لا هنا.
      *
-     * ⚠️ التوقيت «عائم» (بلا منطقة زمنية) عن قصد: مواعيد الرحلات محلية
-     * بمطاراتها، ولا نملك جدول مناطق زمنية للمطارات — فإلحاق Z كان
-     * سيزيح الموعد ساعاتٍ عن الحقيقة. العائم يعرضه التقويم كما كُتب،
-     * والوصف يذكر أن التوقيت محلي بمكانه.
+     * كان يُبنى في المتصفح — ثم جاء اشتراك التقويم فاحتاج نفس قواعد
+     * RFC 5545 على الخادم. نسختان من قواعد الطيّ والتهريب تتباعدان بصمت
+     * (وهو صنف العطب الذي كلّفنا في transitionBooking وفي قاموس التوطين)،
+     * فصار المصدر واحداً: ما تنزّله هنا هو حرفياً ما يشترك به تقويمك.
      */
-    const icsEsc = s => String(s || '').replace(/[\\;,]/g, m => '\\' + m).replace(/\n/g, '\\n');
-    const icsLocal = iso => String(iso || '').replace(/[-:]/g, '').slice(0, 15).padEnd(15, '0');
-    const icsDate = d => String(d || '').replace(/-/g, '');
-    // RFC 5545: أسطر مطويّة، والتالي منها يبدأ بمسافة. القطع لا يقع بين
-    // نصفَي رمز تعبيري (زوج بديل) وإلا خرج حرفٌ مكسور في ملف التقويم.
-    function icsFold(line) {
-      const chunks = [];
-      let s = line, limit = 73;
-      while (s.length > limit) {
-        let cut = limit;
-        if (/[\uD800-\uDBFF]/.test(s[cut - 1])) cut -= 1;
-        chunks.push(s.slice(0, cut));
-        s = s.slice(cut);
-        limit = 72; // الأسطر التالية تُصدَّر بمسافة فينقص المتاح حرفاً
+    async function downloadIcs(b) {
+      const res = await api(`/api/travel/bookings/${b.id}/calendar.ics`);
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({}));
+        alert(error || T('تعذّر بناء ملف التقويم.', 'Could not build the calendar file.'));
+        return;
       }
-      chunks.push(s);
-      return chunks.map((c, i) => (i ? ' ' + c : c)).join('\r\n');
-    }
-    function bookingIcs(b) {
-      const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
-      const ref = b.bookingReference ? ` (${b.bookingReference})` : '';
-      const tail = T('التوقيت محلي بمكانه. عبر جولا ترافل.', 'Times are local to the location. Via JAOLA Travel.');
-      const ev = [];
-      const push = (uid, summary, start, end, allDay, desc, loc) => ev.push([
-        'BEGIN:VEVENT', `UID:${uid}@jaola.travel`, `DTSTAMP:${stamp}`,
-        allDay ? `DTSTART;VALUE=DATE:${start}` : `DTSTART:${start}`,
-        allDay ? `DTEND;VALUE=DATE:${end}` : `DTEND:${end}`,
-        icsFold(`SUMMARY:${icsEsc(summary)}`),
-        icsFold(`DESCRIPTION:${icsEsc(desc)}`),
-        loc ? icsFold(`LOCATION:${icsEsc(loc)}`) : '',
-        'END:VEVENT',
-      ].filter(Boolean).join('\r\n'));
-
-      if (b.kind === 'stay') {
-        const o = b.offer || {};
-        push(b.id, `🏨 ${o.name || ''}${ref}`, icsDate(o.checkInDate), icsDate(o.checkOutDate), true,
-          `${o.roomName || ''}\n${tail}`, o.city || '');
-      } else if (b.kind === 'fixed_package') {
-        const o = b.offer || {};
-        const end = new Date(new Date(o.departDate + 'T00:00:00Z').getTime() + (Number(o.nights) || 1) * 86400000);
-        push(b.id, `🎒 ${o.title || ''}${ref}`, icsDate(o.departDate), icsDate(end.toISOString().slice(0, 10)), true,
-          `${o.hotelName || ''}\n${tail}`, o.city || '');
-      } else if (b.kind === 'car') {
-        const o = b.offer || {};
-        push(b.id, `🚗 ${o.vehicleName || ''}${ref}`, icsLocal(o.pickUpAt), icsLocal(o.dropOffAt || o.pickUpAt), false,
-          `${o.supplier || ''}\n${tail}`, o.pickupLocation || '');
-      } else {
-        const slices = b.offer?.flight?.slices || b.offer?.slices || [];
-        const owner = b.offer?.owner || b.offer?.flight?.owner || '';
-        slices.forEach((s, i) => {
-          const nums = (s.segments || []).map(g => `${g.carrier} ${g.flightNumber}`).join(' → ');
-          push(`${b.id}-${i}`, `✈️ ${s.origin} → ${s.destination}${ref}`,
-            icsLocal(s.departAt), icsLocal(s.arriveAt), false,
-            `${owner}\n${nums}\n${T('تسجيل الوصول يفتح لدى الناقل قبل الإقلاع بـ24–48 ساعة.', 'Airline check-in opens 24–48 hours before departure.')}\n${tail}`,
-            s.origin);
-        });
-      }
-      if (!ev.length) return null;
-      return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//JAOLA Travel//AR//', 'CALSCALE:GREGORIAN', ...ev, 'END:VCALENDAR'].join('\r\n');
-    }
-    function downloadIcs(b) {
-      const ics = bookingIcs(b);
-      if (!ics) return alert(T('لا مواعيد قابلة للإضافة في هذا الحجز.', 'This booking has no dates to add.'));
-      const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
+      const url = URL.createObjectURL(await res.blob());
       const a = document.createElement('a');
       a.href = url;
       a.download = `jaola-${b.bookingReference || b.id}.ics`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }
+
+    /**
+     * 📆 اشتراك التقويم: رابط دائم يُحدِّث نفسه، بدل ملفٍّ يُنزَّل مرة.
+     *
+     * الفرق عملياً: الحجز الجديد يظهر في تقويمك وحده، والمُلغى يختفي منه
+     * وحده — لأن التغذية تُبنى من حجوزاتك الحالية في كل تحديث.
+     *
+     * وبعكس رابط المشاركة (موقّع بلا حالة، بلا إلغاء)، هذا المفتاح
+     * **مخزَّن** في ملفّك — لأنه يعيش سنين في تقويم هاتفك، فوجب أن يُلغى:
+     * «جدّد الرابط» يقتل القديم في اللحظة نفسها.
+     */
+    async function subscribeCalendar(rotate = false) {
+      if (rotate && !confirm(T(
+        'سيتوقّف الرابط القديم فوراً، وعليك استبدال الاشتراك في تقويمك. متابعة؟',
+        'The old link stops working immediately and you must replace the subscription in your calendar. Continue?'))) return;
+      const res = await api('/api/travel/calendar/subscribe', {
+        method: 'POST', body: JSON.stringify({ rotate }),
+      });
+      if (!res.ok) return alert(T('تعذّر إنشاء رابط التقويم.', 'Could not create the calendar link.'));
+      const { webcalUrl, httpUrl } = await res.json();
+      $('calUrl').value = httpUrl;
+      $('calOpen').href = webcalUrl;
+      $('calBox').classList.remove('hidden');
     }
 
     /** يعيد ملء نموذج البحث من حجزٍ فاشل ويبحث فوراً — بلا إعادة إدخال. */
@@ -3162,6 +3147,16 @@
     $('detailsShare').addEventListener('click', () => detailsBooking && shareBooking(detailsBooking));
     $('detailsCalendar').addEventListener('click', () => detailsBooking && downloadIcs(detailsBooking));
     $('detailsLink').addEventListener('click', () => detailsBooking && createShareLink(detailsBooking));
+    $('calSub').addEventListener('click', () => subscribeCalendar(false));
+    $('calRotate').addEventListener('click', () => subscribeCalendar(true));
+    $('calCopy').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('calUrl').value);
+        alert(T('نُسخ رابط التقويم.', 'Calendar link copied.'));
+      } catch {
+        $('calUrl').select();
+      }
+    });
     // واتساب أولاً في سوقنا: رابط رسمي يفتح المحادثة بالنص جاهزاً
     $('detailsWhatsApp').addEventListener('click', () => {
       if (!detailsBooking) return;
