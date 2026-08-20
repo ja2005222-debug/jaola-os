@@ -22,6 +22,7 @@
 
 import { createDuffelClient } from './duffelClient.js';
 import { buildSearchPassengers } from '../passengerAges.js';
+import { normalizeFareConditions } from '../fareConditions.js';
 
 const MAX_RESULTS = 10; // ما يكفي شاشة النتائج — Duffel قد يعيد المئات
 
@@ -71,6 +72,11 @@ export function normalizeDuffelOffer(raw, passengerRefs) {
             origin: first.origin, destination: last.destination,
             departAt: first.departAt, arriveAt: last.arriveAt,
             durationMin, stops: Math.max(0, segments.length - 1), segments,
+            // 🎟️ عائلة السعر: Duffel يضعها على الشريحة لا على العرض
+            // (`slice.fare_brand_name`، سلسلة نصية اختيارية — مؤكَّدة من
+            // سِجلّ تغييرات Duffel ومن SDKها الرسمي). غيابها ← null،
+            // والواجهة تسكت عنها بدل أن تخترع اسماً.
+            fareBrand: slice.fare_brand_name || null,
         };
     });
     return {
@@ -88,6 +94,9 @@ export function normalizeDuffelOffer(raw, passengerRefs) {
         passengerCount: (raw.passengers || []).length || passengerIds.length,
         expiresAt: raw.expires_at || null,
         totalDurationMin: totalDurationMin(slices),
+        // 🎟️ شرطا التغيير والاسترداد قبل المغادرة. ثلاثيّان لا ثنائيّان:
+        // انظر src/fareConditions.js لسبب ذلك ولخطورة اختزالهما.
+        conditions: normalizeFareConditions(raw.conditions),
         passengerIds,
         passengers,
         slices,

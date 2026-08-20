@@ -12,8 +12,8 @@
  * - الـ API لا يُلمس إطلاقاً (أسعار ومقاعد حية).
  * - رفع الإصدار في CACHE_NAME يمسح كاش النسخ القديمة عند التفعيل.
  */
-const CACHE_NAME = 'jaola-travel-shell-v2';
-const SHELL = ['/', '/index.html', '/i18n.js', '/manifest.webmanifest', '/icon.svg'];
+const CACHE_NAME = 'jaola-travel-shell-v3';
+const SHELL = ['/', '/index.html', '/i18n.js', '/trips.js', '/fare.js', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
     event.waitUntil(

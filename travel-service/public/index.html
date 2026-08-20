@@ -131,6 +131,16 @@
     /* شارتان بمعنيين مختلفين لا تُخلَطان: توفير الباقة (أخضر — "ربحت
        مالاً") مقابل السعر الحصري المتعاقَد (بنفسجي — "لا تجده في مكان
        آخر"). قبل هذا كان الاثنان يتشاركان لون التوفير نفسه فيضيع الفرق. */
+    /* 🎟️ رقاقات شروط التذكرة — محايدة اللون عمداً: «غير قابلة للاسترداد»
+       ليست خطأً ولا تحذيراً بل واقعُ التذكرة الأرخص، وتلوينها أحمر كان
+       يجعل الخيار الاقتصادي يبدو معطوباً. */
+    .fare-line { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .fare-chip {
+      font-size: 12px; padding: 2px 8px; border-radius: 8px;
+      background: rgba(148,163,184,.14); color: var(--muted); white-space: nowrap;
+    }
+    .fare-chip:first-child { color: var(--text); font-weight: 600; }
+
     .badge-exclusive {
       display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 12px;
       font-weight: 600; background: rgba(167,139,250,.16); color: var(--exclusive);
@@ -716,6 +726,7 @@
 
   <script src="i18n.js"></script>
   <script src="trips.js"></script>
+  <script src="fare.js"></script>
   <script>
     const $ = id => document.getElementById(id);
     let token = null, config = null, selectedOffer = null, selectedStayOffer = null, selectedCarOffer = null, lastFlightSearch = null;
@@ -1579,6 +1590,20 @@
     }
     function offerCardClass(best, i) { return 'card offer' + (best.has(i) ? ' offer-best' : ''); }
 
+    /**
+     * 🎟️ سطر عائلة السعر وشروطه — يظهر في كرت النتائج وفي القسيمة معاً
+     * من **نفس** الدالة (`public/fare.js`)، فلا يقول أحدهما «تغيير مجاني»
+     * ويقول الآخر غيره عن التذكرة نفسها.
+     *
+     * 🔒 يسكت تماماً حين لا معلومة: مزوّدٌ لا يرسل الشروط لا يعني «غير
+     * قابلة للاسترداد» — والصمت أصدق من تخمينٍ يبني عليه المسافر قراره.
+     */
+    function fareLineHtml(o) {
+      const parts = window.JAOLA_FARE.fareParts(o, uiLang);
+      if (parts.length === 0) return '';
+      return `<div class="fare-line">${parts.map(p => `<span class="fare-chip">${esc(p)}</span>`).join('')}</div>`;
+    }
+
     async function refineInsight(insight, key = 'flight') {
       if (!insight || !insight.findings || !insight.findings.length) return;
       try {
@@ -1666,6 +1691,7 @@
               <div class="route">${airlineLogoHtml(o)}${esc(o.owner)}${
                 o.totalDurationMin ? `<span class="note" style="margin-right:8px">${T('إجمالي', 'Total')} ${fmtDur(o.totalDurationMin)}</span>` : ''}</div>
               ${o.slices.map(sliceHtml).join('')}
+              ${fareLineHtml(o)}
               <button class="det-toggle" data-flight-det="${i}">▾ تفاصيل الرحلة والأمتعة</button>
             </div>
             <div style="text-align:center">
@@ -2948,7 +2974,11 @@
       // قائم يوهم بأنه ينتهي.
       const noExpiry = o => ({ ...(o || {}), expiresAt: null });
       if (b.kind === 'stay') parts.push(stayPolicyHtml(b.offer || {}));
-      else if (!b.kind || b.kind === 'flight') parts.push(flightDetailsHtml(noExpiry(b.offer)));
+      else if (!b.kind || b.kind === 'flight') {
+        // شروط التذكرة المحفوظة وقت الحجز — يسألها المسافر بعد الحجز لا قبله فقط
+        parts.push(fareLineHtml(b.offer || {}));
+        parts.push(flightDetailsHtml(noExpiry(b.offer)));
+      }
       else if (b.kind === 'package') {
         parts.push(flightDetailsHtml(noExpiry(b.offer?.flight)));
         parts.push(stayPolicyHtml(b.offer?.stay || {}));

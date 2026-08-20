@@ -46,6 +46,7 @@ import { createTravelAgent, executeAgentTool, buildTravelAgent, AGENT_TOOLS, ret
 import { listPriceWatchesByUser, cancelPriceWatch } from '../src/priceWatches.js';
 import { deriveShareSecret, signShareToken, verifyShareToken, clampShareHours, SHARE_DEFAULT_HOURS, SHARE_MAX_HOURS } from '../src/shareLinks.js';
 import { newCalendarKey, encodeFeedToken, parseFeedToken, calendarKeyMatches, bookingEvents, bookingIcs, buildFeedIcs, icsFold } from '../src/calendarFeed.js';
+import { normalizeCondition, normalizeFareConditions, CONDITION_STATES } from '../src/fareConditions.js';
 import { checkWatches } from '../src/priceWatchPoller.js';
 import { sendTripReminders, isReminderDue, renderTripReminder, departureAt } from '../src/tripReminders.js';
 import { searchAirports, airportForTimezone, AIRPORT_COORDS } from '../src/airports.js';
@@ -1533,6 +1534,10 @@ describe('صحة صياغة سكربتات الواجهة — درس عطل إن
         const code = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
         assert.doesNotThrow(() => new Function(code));
     });
+    test('🧩 fare.js يتحلّل بلا خطأ صياغة', () => {
+        const code = fs.readFileSync(new URL('../public/fare.js', import.meta.url), 'utf8');
+        assert.doesNotThrow(() => new Function('window', code));
+    });
     test('🧩 i18n.js يتحلّل بلا خطأ صياغة', () => {
         const code = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
         assert.doesNotThrow(() => new Function('window', code));
@@ -2147,6 +2152,74 @@ describe('📆 تقويم الحجوزات: بناء ICS ومفتاح الاشت
     });
 });
 
+describe('🎟️ عائلة السعر وشروطه: ثلاثيّة لا ثنائية', () => {
+    const code = fs.readFileSync(new URL('../public/fare.js', import.meta.url), 'utf8');
+    const w = {};
+    new Function('window', code)(w);
+    const { conditionLabel, fareBrandOf, fareParts, fareSummary } = w.JAOLA_FARE;
+
+    test('التطبيع: الحالات الخمس متمايزة — و«مسموح برسمٍ مجهول» ليست «مجاني»', () => {
+        assert.equal(normalizeCondition({ allowed: false }).state, 'no');
+        assert.equal(normalizeCondition({ allowed: true, penalty_amount: '0', penalty_currency: 'SAR' }).state, 'free');
+        assert.equal(normalizeCondition({ allowed: true, penalty_amount: '75', penalty_currency: 'SAR' }).state, 'fee');
+        // 🔴 الفخّ: مسموح والرسم null — ليست مجانية أبداً
+        assert.equal(normalizeCondition({ allowed: true }).state, 'feeUnknown');
+        assert.equal(normalizeCondition({ allowed: true, penalty_amount: null }).state, 'feeUnknown');
+        // غياب المعلومة ليس منعاً
+        assert.equal(normalizeCondition(undefined).state, 'unknown');
+        assert.equal(normalizeCondition(null).state, 'unknown');
+        assert.equal(normalizeCondition({}).state, 'unknown');
+        // رقم فاسد ليس صفراً
+        assert.equal(normalizeCondition({ allowed: true, penalty_amount: 'abc' }).state, 'feeUnknown');
+        // كل الحالات المُصدَّرة مغطّاة أعلاه
+        assert.deepEqual([...CONDITION_STATES].sort(), ['fee', 'feeUnknown', 'free', 'no', 'unknown']);
+    });
+
+    test('التطبيع الكامل يقرأ مفتاحَي Duffel الموثّقين', () => {
+        const out = normalizeFareConditions({
+            change_before_departure: { allowed: true, penalty_amount: '50', penalty_currency: 'USD' },
+            refund_before_departure: { allowed: false },
+        });
+        assert.deepEqual(out.change, { state: 'fee', amount: 50, currency: 'USD' });
+        assert.equal(out.refund.state, 'no');
+        assert.equal(normalizeFareConditions(undefined).change.state, 'unknown');
+    });
+
+    test('الصياغة: «غير معلوم» تُسكَت لا تُكتب، والرسم المجهول يُقال صراحةً', () => {
+        assert.equal(conditionLabel({ state: 'unknown' }, 'change', 'ar'), null, 'الصمت لا الضجيج');
+        assert.equal(conditionLabel({ state: 'no' }, 'refund', 'ar'), 'غير قابلة للاسترداد');
+        assert.equal(conditionLabel({ state: 'no' }, 'refund', 'en'), 'Non-refundable');
+        assert.equal(conditionLabel({ state: 'free' }, 'change', 'ar'), 'تغيير مجاني');
+        assert.equal(conditionLabel({ state: 'fee', amount: 75, currency: 'SAR' }, 'change', 'ar'), 'تغيير برسم 75 SAR');
+        assert.equal(conditionLabel({ state: 'fee', amount: 75, currency: 'SAR' }, 'change', 'en'), 'Change fee 75 SAR');
+        // 🔴 لا تُصاغ أبداً كأنها مجانية
+        const unknownFee = conditionLabel({ state: 'feeUnknown', amount: null, currency: null }, 'change', 'ar');
+        assert.match(unknownFee, /الناقل/);
+        assert.ok(!unknownFee.includes('مجاني'), 'رسمٌ مجهول لا يُقال عنه مجاني');
+        assert.ok(!conditionLabel({ state: 'feeUnknown' }, 'refund', 'en').includes('Free'));
+    });
+
+    test('عائلة السعر تُعرض حين تتفق الشرائح فقط — لا اسمٌ يعمّ رحلةً مختلطة', () => {
+        assert.equal(fareBrandOf({ slices: [{ fareBrand: 'Economy Flex' }, { fareBrand: 'Economy Flex' }] }), 'Economy Flex');
+        assert.equal(fareBrandOf({ slices: [{ fareBrand: 'Economy Light' }, { fareBrand: 'Economy Flex' }] }), null, 'شرائح مختلفة → صمت');
+        assert.equal(fareBrandOf({ slices: [{ fareBrand: 'Flex' }, {}] }), null, 'شريحة بلا عائلة → صمت');
+        assert.equal(fareBrandOf({ slices: [] }), null);
+        assert.equal(fareBrandOf({}), null);
+    });
+
+    test('السطر يسكت تماماً بلا معلومة، ويرتّب العائلة أولاً', () => {
+        assert.equal(fareSummary({ slices: [{}] }, 'ar'), '');
+        assert.equal(fareSummary({}, 'ar'), '');
+        assert.deepEqual(fareParts({
+            slices: [{ fareBrand: 'Economy Light' }],
+            conditions: { change: { state: 'no' }, refund: { state: 'no' } },
+        }, 'ar'), ['Economy Light', 'غير قابلة للتغيير', 'غير قابلة للاسترداد']);
+        // عائلة بلا شروط، وشروط بلا عائلة — كلاهما يعمل
+        assert.deepEqual(fareParts({ slices: [{ fareBrand: 'Flex' }] }, 'ar'), ['Flex']);
+        assert.deepEqual(fareParts({ slices: [{}], conditions: { refund: { state: 'free' } } }, 'en'), ['Fully refundable']);
+    });
+});
+
 describe('searchAirports: بحث بالمدينة أو الدولة، عربياً أو إنجليزياً', () => {
     const codes = q => searchAirports(q, 8).map(a => a.iata);
 
@@ -2443,6 +2516,40 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal((await fetch(`${baseUrl}/api/travel/calendar/garbage.ics`)).status, 404);
             const ghost = `${Buffer.from('nobody').toString('base64url')}.${'a'.repeat(32)}`;
             assert.equal((await fetch(`${baseUrl}/api/travel/calendar/${ghost}.ics`)).status, 404);
+        });
+
+        test('🎟️ شروط التذكرة تصل البحث وتُحفظ في الحجز — بلا تسريب صافٍ', async () => {
+            const token = makeToken('fareman');
+            const search = await call('/api/travel/flights/search', { method: 'POST', token, body: SEARCH_BODY() });
+            const offers = search.data.offers;
+            assert.equal(offers.length, 3);
+
+            // المحاكاة تعطي العائلات الثلاث المتمايزة عمداً
+            const brands = offers.map(o => o.slices[0].fareBrand);
+            assert.deepEqual(brands, ['Economy Light', 'Economy Flex', 'Economy Standard']);
+
+            assert.equal(offers[0].conditions.change.state, 'no');
+            assert.equal(offers[0].conditions.refund.state, 'no');
+            assert.deepEqual(offers[1].conditions.change, { state: 'fee', amount: 75, currency: offers[1].currency });
+            // 🔴 الثالثة: مسموح والرسم مجهول — يجب ألّا تصل الواجهة كأنها مجانية
+            assert.equal(offers[2].conditions.change.state, 'feeUnknown');
+            assert.equal(offers[2].conditions.change.amount, null);
+
+            // الشروط ليست سرّاً مالياً — لكن الصافي يبقى كذلك
+            assert.equal(offers[0].netAmount, undefined);
+
+            // وتُحفظ مع الحجز فتظهر في القسيمة بعد السفر لا قبله فقط
+            const booked = await call('/api/travel/bookings', {
+                method: 'POST', token, body: { offerId: offers[1].id, ...VALID_PAX },
+            });
+            const b = booked.data.booking;
+            assert.equal(b.offer.slices[0].fareBrand, 'Economy Flex');
+            assert.equal(b.offer.conditions.change.state, 'fee');
+            assert.equal(b.offer.netAmount, undefined, 'الملخّص المحفوظ بلا صافٍ');
+
+            // وتصل القسيمة عبر publicBooking كما هي
+            const fetched = await call(`/api/travel/bookings/${b.id}`, { token });
+            assert.equal(fetched.data.booking.offer.conditions.refund.state, 'fee');
         });
 
         test('🎫 آلة الحالات: المسارات المسموحة فقط', () => {
