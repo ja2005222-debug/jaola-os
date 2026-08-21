@@ -21,7 +21,7 @@ import { buildVerifyToken, buildOptionalToken } from './src/auth.js';
 import {
     deriveAccountSecret, normalizeEmail, isValidEmail, normalizeName,
     passwordProblem, hashPassword, verifyPassword, signAccountToken, publicUser,
-    dummyHash,
+    dummyHash, newResetToken, hashResetToken, resetTokenValid, RESET_TTL_MIN,
 } from './src/accounts.js';
 import { readMarkupPct, readPackageMarkupPct, readCategoryMarkupPct, applyMarkup } from './src/pricing.js';
 import { quotePackage, bookPackage, cancelPackage, retryPackageCompensations } from './src/packages.js';
@@ -1300,6 +1300,103 @@ export function createApp({
             username: userOf(req),
             issuer: req.user?.iss === 'jatrava' ? 'jatrava' : 'jaola',
         });
+    }));
+
+    // ─── 🔑 استعادة كلمة المرور ──────────────────────────────────────
+    // ⚠️ **عطبٌ كان قاتلاً بلا هذا المسار**: من ينسى كلمته يفقد حسابه
+    // وكل حجوزاته نهائياً — لا مسار دعمٍ يستعيدها، لأن التعمية أحادية
+    // والبريد هو الهوية الوحيدة. تُبنى قبل أول مسافر حقيقي لا بعده.
+
+    // 📮 طابور إرسالٍ خلفي: الإرسال لا يعوق الرد (انظر أدناه)، لكن
+    // الاختبار يحتاج نقطةَ انتظارٍ حاسمة بدل استطلاعٍ متذبذب.
+    let resetMailQueue = Promise.resolve();
+    app.locals.flushResetMail = () => resetMailQueue;
+
+    /**
+     * 🕰️ **الرد لا ينتظر البريد**: إرسال Resend نداءُ شبكةٍ ~200ms. لو
+     * انتظرناه لكان الفرق بين بريدٍ مسجَّل (ينتظر) وغير مسجَّل (يرد فوراً)
+     * فرقاً **يُقاس بالعين المجردة**، فيصير هذا المسار عدّادَ حساباتٍ
+     * مجانياً رغم توحيد نص الرد. ما نبقيه في المسار كتابةُ صفٍّ واحد
+     * (~بضعة أجزاء من الألف) يبتلعها اضطراب الشبكة، ويمنع محدّدُ الـIP
+     * (٢٠/١٥د) تكرارَها بما يكفي لاستخراج متوسطٍ ذي دلالة.
+     */
+    app.post('/api/travel/auth/forgot', authLimiter, wrap(async (req, res) => {
+        const email = normalizeEmail(req.body?.email);
+        if (!isValidEmail(email)) return res.status(400).json({ error: 'أدخل بريداً إلكترونياً صحيحاً.' });
+
+        const user = await store.getUserByEmail(email);
+        if (user) {
+            const { token, hash, expiresAt } = newResetToken();
+            // 🔐 يُخزَّن **البصمة لا الرمز**: نسخةٌ مسروقة من قاعدة
+            // البيانات لا تُقلَب إلى روابط دخولٍ صالحة.
+            await store.updateUser(user.id, { resetTokenHash: hash, resetExpiresAt: expiresAt });
+            const link = `${requestBaseUrl(req)}/?reset=${encodeURIComponent(token)}`;
+            resetMailQueue = resetMailQueue.then(() => dispatchResetMail(user, link)).catch(() => {});
+        }
+
+        // ✉️ **ردٌّ واحد للحالتين**: لا «هذا البريد غير مسجَّل» ولا رمز في
+        // الجسم. لو عاد الرابط في الرد لَكفى المهاجمَ أن يعرف بريدك
+        // ليأخذ حسابك — البريد نفسه هو قناة التحقق، فلا يغادر إليها.
+        res.json({
+            ok: true,
+            message: `إن كان هذا البريد مسجَّلاً لدينا فستصلك رسالة بها رابط لإعادة التعيين خلال ${RESET_TTL_MIN} دقيقة.`,
+        });
+    }));
+
+    async function dispatchResetMail(user, link) {
+        const result = await mailer.sendMail({
+            to: user.email,
+            subject: 'إعادة تعيين كلمة المرور — Jatrava',
+            text: [
+                `مرحباً ${user.name || ''}`.trim(),
+                '',
+                'وصلنا طلب إعادة تعيين كلمة مرور حسابك في Jatrava.',
+                `افتح الرابط التالي خلال ${RESET_TTL_MIN} دقيقة:`,
+                link,
+                '',
+                'إن لم تطلب ذلك فتجاهل هذه الرسالة — كلمة مرورك لم تتغيّر.',
+            ].join('\n'),
+        });
+        // 🖨️ بلا RESEND_API_KEY يُطبع الرابط في سجل الخادم **ولا يعود في
+        // الرد أبداً**: يبقى مالك الخادم قادراً على إنقاذ مسافرٍ عالق،
+        // ولا يصير المسار بابَ استيلاءٍ على أي حساب بمجرد معرفة بريده.
+        if (result?.notConfigured) {
+            console.warn(`🔑 [استعادة كلمة المرور] البريد غير مُفعّل — رابط ${user.email}: ${link}`);
+        } else if (result?.error) {
+            console.warn(`⚠️ تعذّر إرسال رابط الاستعادة إلى ${user.email}: ${result.error}`);
+        }
+    }
+
+    /**
+     * 🔁 الرمز **يُستهلَك مرةً واحدة**: يُصفَّر مع نجاح التغيير في نفس
+     * الترقيع. بلا ذلك يبقى رابطٌ صالحاً في بريدٍ قد يُخترَق لاحقاً.
+     *
+     * ⚠️ **حدٌّ معروف**: التوكنات عديمة الحالة (JWT)، فتغييرُ الكلمة **لا
+     * يُبطل توكناً مسروقاً** أصدره المهاجم قبل الاستعادة — يبقى صالحاً
+     * حتى انتهاء مدته. إبطال الجلسات يحتاج قراءةَ صفِّ المستخدم في كل
+     * طلب، وهو تغييرٌ مستقل موثَّق في CLAUDE.md لا يُهرَّب هنا بصمت.
+     */
+    app.post('/api/travel/auth/reset', authLimiter, wrap(async (req, res) => {
+        const token = String(req.body?.token || '');
+        const password = req.body?.password;
+
+        const pwProblem = passwordProblem(password);
+        if (pwProblem) return res.status(400).json({ error: pwProblem });
+
+        const user = token ? await store.getUserByResetTokenHash(hashResetToken(token)) : null;
+        // نصٌّ واحد لكل أسباب الفشل (لا رمز، منتهٍ، مستهلَك): تمييزها
+        // يخبر المهاجم أيّ رابطٍ كان صحيحاً يوماً ما.
+        if (!resetTokenValid(user, token)) {
+            return res.status(400).json({ error: 'رابط إعادة التعيين منتهٍ أو غير صالح — اطلب رابطاً جديداً.' });
+        }
+
+        const updated = await store.updateUser(user.id, {
+            passwordHash: await hashPassword(password),
+            resetTokenHash: null, resetExpiresAt: null,
+        });
+
+        // يدخل فوراً: أثبت ملكيته للبريد، وإجباره على دخولٍ ثانٍ بلا فائدة
+        res.json({ token: signAccountToken(updated, accountSecret), user: publicUser(updated) });
     }));
 
     app.get('/api/travel/airports', optionalToken, wrap(async (req, res) => {

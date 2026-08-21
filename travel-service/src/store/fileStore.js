@@ -435,6 +435,11 @@ export function createFileStore({ dataDir }) {
                 passwordHash: u.passwordHash || null,
                 provider: u.provider || 'password',
                 emailVerifiedAt: u.emailVerifiedAt || null,
+                // 🔑 يُهيّآن صراحةً لا ضمناً: الحقل الغائب في JSON يعود
+                // undefined بينما يعود من Postgres null، فيختلف المخزنان
+                // في أول مقارنةٍ صارمة. العقد واحد فالتهيئة واحدة.
+                resetTokenHash: null,
+                resetExpiresAt: null,
                 createdAt: Date.now(),
                 updatedAt: Date.now(),
             };
@@ -447,6 +452,16 @@ export function createFileStore({ dataDir }) {
             const key = String(email || '').trim().toLowerCase();
             if (!key) return null;
             const row = readUsers().find(r => r.email === key);
+            return row ? { ...row } : null;
+        },
+
+        // ⏳ **لا يُصفّي المنتهي**: الصلاحية يقرّرها resetTokenValid وحده في
+        // accounts.js. لو صفّاها المخزنان أيضاً لصار للانتهاء مصدران،
+        // ولاختلف السلوك بينهما عند أول تعديلٍ لأحدهما.
+        async getUserByResetTokenHash(hash) {
+            const key = String(hash || '').trim();
+            if (!key) return null;
+            const row = readUsers().find(r => r.resetTokenHash === key);
             return row ? { ...row } : null;
         },
 

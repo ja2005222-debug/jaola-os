@@ -50,6 +50,7 @@ import { normalizeCondition, normalizeFareConditions, CONDITION_STATES } from '.
 import { checkWatches } from '../src/priceWatchPoller.js';
 import { sendTripReminders, isReminderDue, renderTripReminder, departureAt } from '../src/tripReminders.js';
 import { searchAirports, airportForTimezone, AIRPORT_COORDS } from '../src/airports.js';
+import { hashResetToken, RESET_TTL_MIN } from '../src/accounts.js';
 import { ageOn, buildSearchPassengers, validateChildrenDobs, checkPassengerAges } from '../src/passengerAges.js';
 import { getDestinationWeather, convertCurrency } from '../src/travelInfo.js';
 import { buildTopDestinations, CURATED_DESTINATIONS } from '../src/topDestinations.js';
@@ -1530,6 +1531,47 @@ describe('صحة صياغة سكربتات الواجهة — درس عطل إن
             }
         });
     }
+    // ⚠️ عطبٌ حقيقي في نافذة الدخول: المُحدِّد `.tabs button` غير المقيَّد
+    // كان يلتقط زرَّي تبويب النافذة (دخول/حساب جديد) وزرَّ الإدارة — وهي
+    // بلا data-tab، فيُخفي المبدِّل **كل** أقسام التطبيق خلف النافذة بلا
+    // خطأ في الطرفية. من بدّل ثم ضغط «أكمل التصفّح» وجد صفحةً فارغة.
+    test('🧩 مبدّل التبويبات مقيَّد بـ[data-tab] وحده', () => {
+        const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+        assert.ok(html.includes(".tabs button[data-tab]"), 'المُحدِّد غير مقيَّد');
+        assert.ok(!/querySelectorAll\('\.tabs button'\)/.test(html), 'بقي مُحدِّد غير مقيَّد يلتقط أزرار النافذة');
+        // وكل زرٍّ داخل شريط التبويبات الرئيسي له data-tab فعلاً (عدا الإدارة)
+        const bar = /<div class="tabs">([\s\S]*?)<\/div>/.exec(html)[1];
+        for (const btn of bar.match(/<button[^>]*>/g) || []) {
+            assert.ok(/data-tab=/.test(btn) || /id="adminLink"/.test(btn), `زرّ تبويب بلا data-tab: ${btn}`);
+        }
+    });
+
+    // نافذة الدخول تلمس عناصرها بالمعرّف؛ معرّفٌ مفقود يرمي عند أول تبديل
+    // وضعٍ فتموت النافذة صامتةً — والمسافر يعجز عن الدخول أو الاستعادة.
+    test('🧩 كل معرّف تحتاجه نافذة الدخول موجود في الصفحة', () => {
+        const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+        for (const id of [
+            'loginDialog', 'loginTitle', 'loginIntro', 'loginConfirm', 'loginCancel',
+            'loginError', 'loginNote', 'authTabs', 'tabSignin', 'tabSignup',
+            'nameRow', 'emailRow', 'passwordRow', 'password2Row', 'passwordLabel',
+            'authName', 'authEmail', 'authPassword', 'authPassword2',
+            'forgotLink', 'backToSignin',
+        ]) {
+            assert.ok(html.includes(`id="${id}"`), `معرّف مفقود من الترميز: ${id}`);
+        }
+    });
+
+    // 🔴 رمز الاستعادة في شريط العنوان يتسرّب في ترويسة Referer إلى كل
+    // مضيفٍ خارجي تجلب منه الصفحة (صور ويكيميديا، بلاطات OSM) ويبقى في
+    // سجل المتصفح. مسحُه فور قراءته ليس تجميلاً.
+    test('🧩 رمز الاستعادة يُمسح من شريط العنوان فور قراءته', () => {
+        const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+        const init = /function initToken\(\)([\s\S]*?)\n    }/.exec(html)[1];
+        assert.ok(init.includes("searchParams.get('reset')"), 'لا يُقرأ الرمز أصلاً');
+        assert.ok(init.includes("searchParams.delete('reset')"), 'الرمز يبقى في الشريط!');
+        assert.ok(init.includes('history.replaceState'), 'لا يُستبدل العنوان');
+    });
+
     test('🧩 sw.js يتحلّل بلا خطأ صياغة', () => {
         const code = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
         assert.doesNotThrow(() => new Function(code));
@@ -2735,6 +2777,178 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             // مستخدم منصةٍ أمّ باسمٍ قريب — لا يرى شيئاً
             const stranger = await call('/api/travel/bookings', { token: makeToken('iso') });
             assert.equal(stranger.data.bookings.length, 0, 'تسرّبت حجوزات حساب Jatrava!');
+        });
+
+        // ─── 🔑 استعادة كلمة المرور ──────────────────────────────────
+        //
+        // ⚠️ **تطبيقٌ جديد لكل اختبار هنا، عمداً**: محدّد الحسابات بالـIP
+        // (٢٠/١٥د) وكل الاختبارات تنطلق من 127.0.0.1، فلو تشاركت سلةً
+        // واحدة لسقط آخرها بـ429 لا لعطبٍ فيه بل لأن جاره استهلك الحصّة —
+        // وهو فشلٌ يتحرّك كلما أُضيف اختبار. سلةٌ لكل اختبار تعزل ذلك،
+        // والحدّ نفسه يُختبر صراحةً في اختبارٍ مخصَّص أدناه.
+        async function withResetApp(fn) {
+            const sent = [];
+            const app = createApp({
+                store, jwtSecret: JWT_SECRET, provider, staysProvider, carsProvider,
+                markupPct: MARKUP, packageMarkupPct: PKG_MARKUP, adminUsers: ['admin'],
+                // نفس دلالات «البريد غير مُفعّل» بالضبط (بلا RESEND_API_KEY)
+                // مع التقاط الرسالة: لا نغيّر السلوك لنقرأ الرابط.
+                mailer: {
+                    mailReady: () => false,
+                    sendMail: async m => { sent.push(m); return { error: 'البريد غير مُفعّل', notConfigured: true }; },
+                },
+            });
+            const srv = await new Promise(r => { const x = app.listen(0, () => r(x)); });
+            const url = `http://127.0.0.1:${srv.address().port}`;
+            const c = async (pathname, { method = 'GET', token = null, body = null } = {}) => {
+                const headers = { 'Content-Type': 'application/json' };
+                if (token) headers.Authorization = `Bearer ${token}`;
+                const r = await fetch(url + pathname, { method, headers, body: body ? JSON.stringify(body) : undefined });
+                return { status: r.status, data: await r.json().catch(() => null) };
+            };
+            // نقطة الانتظار الحاسمة: الإرسال خلفيّ عمداً (تسوية الزمن)
+            const flush = () => app.locals.flushResetMail();
+            const linkToken = () => {
+                const m = /[?&]reset=([^\s&]+)/.exec(sent.at(-1)?.text || '');
+                return m ? decodeURIComponent(m[1]) : null;
+            };
+            try { return await fn({ call: c, sent, flush, linkToken }); }
+            finally { await new Promise(r => srv.close(r)); }
+        }
+
+        const PW = 'travel2026x';
+        async function seedUser(call, email) {
+            const r = await call('/api/travel/auth/signup', { method: 'POST', body: { email, password: PW, name: 'مسافر' } });
+            assert.equal(r.status, 201, JSON.stringify(r.data));
+            return r.data;
+        }
+
+        test('🔑 طلب الاستعادة يرسل رابطاً، ولا يعيد الرمز في الرد أبداً', async () => {
+            await withResetApp(async ({ call, sent, flush, linkToken }) => {
+                await seedUser(call, 'forgot@example.com');
+                const r = await call('/api/travel/auth/forgot', { method: 'POST', body: { email: 'FORGOT@Example.com ' } });
+                assert.equal(r.status, 200);
+                assert.equal(r.data.ok, true);
+                await flush();
+                assert.equal(sent.length, 1, 'لم تُرسل رسالة');
+                assert.equal(sent[0].to, 'forgot@example.com', 'البريد لم يُطبَّع قبل الإرسال');
+
+                const token = linkToken();
+                assert.ok(token && token.length >= 40, 'لا رمز في الرابط');
+                // 🔴 الرابط في البريد وحده: لو عاد في الجسم لكفى المهاجمَ
+                // أن يعرف بريدك ليأخذ حسابك.
+                assert.ok(!JSON.stringify(r.data).includes(token), 'الرمز تسرّب في الرد!');
+
+                // وفي المخزن **بصمة لا رمز**
+                const row = await store.getUserByEmail('forgot@example.com');
+                assert.notEqual(row.resetTokenHash, token, 'الرمز الخام مخزَّن كما هو!');
+                assert.equal(row.resetTokenHash, hashResetToken(token));
+                assert.ok(row.resetExpiresAt > Date.now(), 'الرمز منتهٍ لحظةَ إنشائه');
+                assert.ok(row.resetExpiresAt <= Date.now() + RESET_TTL_MIN * 60 * 1000);
+            });
+        });
+
+        test('🔑 بريدٌ غير مسجَّل: نفس الرد حرفياً وبلا أي رسالة (لا عدّاد حسابات)', async () => {
+            await withResetApp(async ({ call, sent, flush }) => {
+                await seedUser(call, 'known@example.com');
+                const known = await call('/api/travel/auth/forgot', { method: 'POST', body: { email: 'known@example.com' } });
+                const ghost = await call('/api/travel/auth/forgot', { method: 'POST', body: { email: 'ghost-nobody@example.com' } });
+                await flush();
+
+                assert.equal(known.status, ghost.status);
+                assert.deepEqual(known.data, ghost.data, 'الردّان مختلفان — بهما يُعدّ المهاجم حساباتنا');
+                // ولا نُرسل بريداً لعنوانٍ لا نعرفه (إزعاجٌ وإهدار حصّة)
+                assert.equal(sent.length, 1);
+                assert.equal(sent[0].to, 'known@example.com');
+            });
+        });
+
+        test('🔑 الرابط يُغيّر الكلمة ويدخل فوراً، والقديمة تبطل، ولا يعمل مرتين', async () => {
+            await withResetApp(async ({ call, flush, linkToken }) => {
+                await seedUser(call, 'cycle@example.com');
+                await call('/api/travel/auth/forgot', { method: 'POST', body: { email: 'cycle@example.com' } });
+                await flush();
+                const token = linkToken();
+
+                const done = await call('/api/travel/auth/reset', { method: 'POST', body: { token, password: 'newpass-2026' } });
+                assert.equal(done.status, 200, JSON.stringify(done.data));
+                assert.ok(done.data.token, 'لم يدخل فوراً بعد التعيين');
+                assert.equal(done.data.user.email, 'cycle@example.com');
+                assert.equal(done.data.user.passwordHash, undefined, 'الهاش تسرّب');
+                assert.equal((await call('/api/travel/bookings', { token: done.data.token })).status, 200);
+
+                const old = await call('/api/travel/auth/login', { method: 'POST', body: { email: 'cycle@example.com', password: PW } });
+                assert.equal(old.status, 401, 'الكلمة القديمة ما زالت تعمل!');
+                const fresh = await call('/api/travel/auth/login', { method: 'POST', body: { email: 'cycle@example.com', password: 'newpass-2026' } });
+                assert.equal(fresh.status, 200);
+
+                // 🔁 استهلاكٌ مرة واحدة: رابطٌ باقٍ في بريدٍ يُخترَق لاحقاً سلاح
+                const again = await call('/api/travel/auth/reset', { method: 'POST', body: { token, password: 'another-pass-9' } });
+                assert.equal(again.status, 400, 'الرابط عمل مرتين!');
+                assert.equal((await store.getUserByEmail('cycle@example.com')).resetTokenHash, null);
+            });
+        });
+
+        test('🔑 المنتهي والملفَّق والناقص: كلها 400 بنفس النصّ', async () => {
+            await withResetApp(async ({ call, flush, linkToken }) => {
+                const u = await seedUser(call, 'expired@example.com');
+                assert.ok(u.token);
+                await call('/api/travel/auth/forgot', { method: 'POST', body: { email: 'expired@example.com' } });
+                await flush();
+                const token = linkToken();
+
+                // نُقدِّم الساعة بدل انتظار ٣٠ دقيقة — الانتهاء يُقرأ من الصف
+                const row = await store.getUserByEmail('expired@example.com');
+                await store.updateUser(row.id, { resetExpiresAt: Date.now() - 1000 });
+
+                const expired = await call('/api/travel/auth/reset', { method: 'POST', body: { token, password: 'newpass-2026' } });
+                const forged = await call('/api/travel/auth/reset', { method: 'POST', body: { token: 'x'.repeat(43), password: 'newpass-2026' } });
+                const missing = await call('/api/travel/auth/reset', { method: 'POST', body: { password: 'newpass-2026' } });
+                for (const [r, why] of [[expired, 'منتهٍ'], [forged, 'ملفَّق'], [missing, 'ناقص']]) {
+                    assert.equal(r.status, 400, why);
+                }
+                // تمييز الأسباب يخبر المهاجم أيّ رابطٍ كان صحيحاً يوماً
+                assert.equal(expired.data.error, forged.data.error);
+                assert.equal(forged.data.error, missing.data.error);
+                // والكلمة لم تتغيّر رغم الرمز المنتهي
+                assert.equal((await call('/api/travel/auth/login', { method: 'POST', body: { email: 'expired@example.com', password: PW } })).status, 200);
+            });
+        });
+
+        test('🔑 كلمة ضعيفة تُرفض قبل الرمز، وطلبٌ جديد يُبطل الرابط السابق', async () => {
+            await withResetApp(async ({ call, flush, linkToken }) => {
+                await seedUser(call, 'rotate@example.com');
+                await call('/api/travel/auth/forgot', { method: 'POST', body: { email: 'rotate@example.com' } });
+                await flush();
+                const first = linkToken();
+
+                // الضعف يُفحص أولاً: رمزٌ صالح + كلمة شائعة = 400 ولا استهلاك
+                const weak = await call('/api/travel/auth/reset', { method: 'POST', body: { token: first, password: 'password123' } });
+                assert.equal(weak.status, 400);
+                assert.notEqual(weak.data.error, 'رابط إعادة التعيين منتهٍ أو غير صالح — اطلب رابطاً جديداً.');
+
+                await call('/api/travel/auth/forgot', { method: 'POST', body: { email: 'rotate@example.com' } });
+                await flush();
+                const second = linkToken();
+                assert.notEqual(second, first, 'الرمز لم يتغيّر بين طلبين');
+
+                // الأول مات فوراً — وإلا لبقيت روابطُ كل طلبٍ سابق حيّة معاً
+                assert.equal((await call('/api/travel/auth/reset', { method: 'POST', body: { token: first, password: 'newpass-2026' } })).status, 400);
+                assert.equal((await call('/api/travel/auth/reset', { method: 'POST', body: { token: second, password: 'newpass-2026' } })).status, 200);
+            });
+        });
+
+        test('🔑 التخمين محدود بالـIP: وابل محاولات الاستعادة يُصدّ بـ429', async () => {
+            await withResetApp(async ({ call }) => {
+                let blocked = 0;
+                for (let i = 0; i < 25; i++) {
+                    const r = await call('/api/travel/auth/reset', {
+                        method: 'POST', body: { token: `guess-${i}`.padEnd(43, '0'), password: 'newpass-2026' },
+                    });
+                    if (r.status === 429) blocked++;
+                }
+                assert.ok(blocked > 0, 'لا حدّ على تخمين رموز الاستعادة!');
+            });
         });
 
         test('👤 /auth/me يميّز مُصدِر التوكن، ولا صفَّ لمستخدم المنصة الأم', async () => {
@@ -6444,10 +6658,20 @@ if (process.env.TEST_DATABASE_URL) {
         makeStore: async () => {
             const s = createPostgresStore({ connectionString: process.env.TEST_DATABASE_URL });
             await s.init();
-            // عزل كل تشغيل: جدول نظيف (التشغيل المحلي المتكرر ضد نفس القاعدة)
+            // 🧹 عزل كل تشغيل: **كل** جداول الخدمة لا الحجوزات وحدها.
+            // ⚠️ كان التنظيف على travel_bookings فقط، فبقيت الحسابات
+            // والملفات والتنبيهات بين التشغيلات: تشغيلٌ ثانٍ محلياً ضد
+            // نفس القاعدة يرد 409 على تسجيل بريدٍ مسجَّل في التشغيل
+            // السابق، ويرى عدّاد تنبيهاتٍ ليس من إنشائه. في CI لا يظهر
+            // (قاعدةٌ جديدة كل مرة) — فهو فشلٌ يصيب المطوّر وحده.
+            // والأسماء تُكتشف لا تُعدَّد: جدولٌ يُضاف لاحقاً يُنظَّف معها.
             const pg = (await import('pg')).default;
             const pool = new pg.Pool({ connectionString: process.env.TEST_DATABASE_URL, max: 1 });
-            await pool.query('DELETE FROM travel_bookings');
+            const { rows } = await pool.query(
+                "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'travel\\_%'");
+            if (rows.length) {
+                await pool.query(`TRUNCATE ${rows.map(r => `"${r.tablename}"`).join(', ')} RESTART IDENTITY CASCADE`);
+            }
             await pool.end();
             return s;
         },

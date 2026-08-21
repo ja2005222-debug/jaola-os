@@ -84,6 +84,11 @@
       background: none; border: 1px solid var(--border); color: var(--text);
       border-radius: 999px; padding: 6px 14px; font-size: 13px; cursor: pointer;
     }
+    /* زرٌّ بهيئة رابط: «نسيت كلمة المرور؟» فعلٌ ثانوي لا يزاحم الدخول */
+    button.linkish {
+      background: none; border: none; color: var(--accent); font-size: 13px;
+      padding: 0; margin-top: 10px; cursor: pointer; text-decoration: underline;
+    }
     .note { color: var(--muted); font-size: 12px; margin-top: 8px; }
     .error { color: var(--bad); font-size: 13px; margin-top: 8px; }
 
@@ -662,10 +667,10 @@
        إظهار authGate هنا يمحو نتائج بحثه فيبدأ من الصفر بعد الدخول. -->
   <dialog id="loginDialog">
     <h3 id="loginTitle" style="margin-bottom:6px">🔐 الحجز يحتاج حساباً</h3>
-    <p class="note">تصفّحُ الأسعار مفتوح للجميع، أمّا الحجز فيحتاج حساباً
+    <p id="loginIntro" class="note">تصفّحُ الأسعار مفتوح للجميع، أمّا الحجز فيحتاج حساباً
       لتصل إليك التذكرة والتأكيد، وتجد حجزك في «رحلاتي» لاحقاً.</p>
 
-    <div class="tabs" style="margin:12px 0 4px">
+    <div id="authTabs" class="tabs" style="margin:12px 0 4px">
       <button type="button" id="tabSignin" class="active">تسجيل الدخول</button>
       <button type="button" id="tabSignup">حساب جديد</button>
     </div>
@@ -677,19 +682,31 @@
       <span class="note">الاسم</span>
       <input id="authName" autocomplete="name" placeholder="اسمك" />
     </label>
-    <label style="display:block;margin-top:10px">
+    <label id="emailRow" style="display:block;margin-top:10px">
       <span class="note">البريد الإلكتروني</span>
       <input id="authEmail" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com" />
     </label>
-    <label style="display:block;margin-top:10px">
-      <span class="note">كلمة المرور</span>
+    <label id="passwordRow" style="display:block;margin-top:10px">
+      <span id="passwordLabel" class="note">كلمة المرور</span>
       <input id="authPassword" type="password" autocomplete="current-password" placeholder="٨ أحرف على الأقل" />
+    </label>
+    <!-- التأكيد في وضع الاستعادة وحده: كلمةٌ مكتوبة على العمياء مرةً
+         واحدة قد تُحفظ بخطأ مطبعي، فيخرج المسافر من حسابه فور خروجه
+         من الجلسة — ويحتاج رابطاً جديداً لا يعرف أنه يحتاجه. -->
+    <label id="password2Row" class="hidden" style="display:block;margin-top:10px">
+      <span class="note">أعد كتابة كلمة المرور</span>
+      <input id="authPassword2" type="password" autocomplete="new-password" placeholder="نفس الكلمة مرة أخرى" />
     </label>
 
     <div id="loginError" class="error hidden"></div>
-    <div style="display:flex;gap:10px;margin-top:14px">
+    <div id="loginNote" class="note hidden"></div>
+    <div style="display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap">
       <button class="primary" id="loginConfirm">دخول</button>
       <button class="chip" id="loginCancel" type="button">أكمل التصفّح</button>
+    </div>
+    <div>
+      <button type="button" id="forgotLink" class="linkish">نسيت كلمة المرور؟</button>
+      <button type="button" id="backToSignin" class="linkish hidden">← العودة لتسجيل الدخول</button>
     </div>
   </dialog>
 
@@ -911,6 +928,17 @@
         url.searchParams.delete('token');
         history.replaceState(null, '', url.toString());
       }
+      // 🔴 رمز الاستعادة **يُنتزَع من الشريط فوراً**: الصفحة تجلب صور
+      // ويكيميديا وبلاطات خرائط OSM، وكل نداءٍ خارجي يحمل ترويسة Referer
+      // بعنوان الصفحة كاملاً — فيصل الرمزُ طرفاً ثالثاً ويُسجَّل عنده.
+      // ويبقى في سجل المتصفح والمشاركة بالنسخ. نقرؤه للذاكرة ونمسحه
+      // قبل أي طلبٍ آخر — لذا هذه أول سطور الإقلاع لا آخرها.
+      const fromLink = url.searchParams.get('reset');
+      if (fromLink) {
+        resetToken = fromLink;
+        url.searchParams.delete('reset');
+        history.replaceState(null, '', url.toString());
+      }
       token = localStorage.getItem('jaolaTravelToken');
     }
 
@@ -997,6 +1025,8 @@
         $('notifTabBtn').classList.add('hidden');
         $('guestSignIn').classList.remove('hidden');
       }
+      // من فتح رابط الاستعادة يرى النموذج فوراً — لا يبحث عنه في الصفحة
+      if (resetToken) openLogin('reset');
       if (config.providerMode !== 'live') $('modeBanner').classList.remove('hidden');
       if (!config.agentEnabled) $('agentTabBtn').title = T('غير مفعَّل على هذا الخادم', 'Not enabled on this server');
       if (!config.staysEnabled) $('includeStaysLabel').classList.add('hidden');
@@ -1057,38 +1087,98 @@
     }
 
     // ─── 👤 التسجيل والدخول ──────────────────────────────────────────
-    let authMode = 'signin'; // 'signin' | 'signup'
+    // 🔑 نافذةٌ واحدة بأربعة أوضاع لا أربع صفحات: من ضغط «نسيت كلمتي»
+    // يعود لتسجيل الدخول بضغطة، ونتائج بحثه خلف النافذة سليمة لم تُمسح.
+    let authMode = 'signin'; // 'signin' | 'signup' | 'forgot' | 'reset'
+    let resetToken = null;   // من ?reset= — يُمسح من الشريط فور قراءته
+
+    const AUTH_MODES = {
+      signin: {
+        title: '🔐 الحجز يحتاج حساباً', confirm: 'دخول',
+        intro: 'تصفّحُ الأسعار مفتوح للجميع، أمّا الحجز فيحتاج حساباً لتصل إليك التذكرة والتأكيد، وتجد حجزك في «رحلاتي» لاحقاً.',
+        rows: { name: false, email: true, password: true, password2: false },
+        tabs: true, forgot: true, back: false, autocomplete: 'current-password',
+      },
+      signup: {
+        title: '🔐 الحجز يحتاج حساباً', confirm: 'أنشئ الحساب',
+        intro: 'تصفّحُ الأسعار مفتوح للجميع، أمّا الحجز فيحتاج حساباً لتصل إليك التذكرة والتأكيد، وتجد حجزك في «رحلاتي» لاحقاً.',
+        rows: { name: true, email: true, password: true, password2: false },
+        tabs: true, forgot: false, back: false, autocomplete: 'new-password',
+      },
+      forgot: {
+        title: '🔑 استعادة كلمة المرور', confirm: 'أرسل رابط الاستعادة',
+        intro: 'اكتب بريدك المسجَّل وسنرسل إليك رابطاً لاختيار كلمة مرور جديدة. الرابط صالح ٣٠ دقيقة ويعمل مرة واحدة.',
+        rows: { name: false, email: true, password: false, password2: false },
+        tabs: false, forgot: false, back: true, autocomplete: 'current-password',
+      },
+      reset: {
+        title: '🔑 اختر كلمة مرور جديدة', confirm: 'احفظ وادخل',
+        intro: 'اختر كلمة مرور جديدة لحسابك. سندخلك مباشرةً بعد الحفظ.',
+        rows: { name: false, email: false, password: true, password2: true },
+        tabs: false, forgot: false, back: false, autocomplete: 'new-password',
+      },
+    };
 
     function setAuthMode(mode) {
       authMode = mode;
-      const up = mode === 'signup';
-      $('tabSignin').classList.toggle('active', !up);
-      $('tabSignup').classList.toggle('active', up);
-      $('nameRow').classList.toggle('hidden', !up);
-      $('loginConfirm').textContent = up ? 'أنشئ الحساب' : 'دخول';
+      const m = AUTH_MODES[mode] || AUTH_MODES.signin;
+      $('loginTitle').textContent = m.title;
+      $('loginIntro').textContent = m.intro;
+      $('loginConfirm').textContent = m.confirm;
+      $('tabSignin').classList.toggle('active', mode === 'signin');
+      $('tabSignup').classList.toggle('active', mode === 'signup');
+      $('authTabs').classList.toggle('hidden', !m.tabs);
+      $('nameRow').classList.toggle('hidden', !m.rows.name);
+      $('emailRow').classList.toggle('hidden', !m.rows.email);
+      $('passwordRow').classList.toggle('hidden', !m.rows.password);
+      $('password2Row').classList.toggle('hidden', !m.rows.password2);
+      $('passwordLabel').textContent = mode === 'reset' ? 'كلمة المرور الجديدة' : 'كلمة المرور';
+      $('forgotLink').classList.toggle('hidden', !m.forgot);
+      $('backToSignin').classList.toggle('hidden', !m.back);
       // 🔑 يخبر مدير كلمات المرور أيقترح كلمةً قوية جديدة أم يملأ القديمة
-      $('authPassword').setAttribute('autocomplete', up ? 'new-password' : 'current-password');
+      $('authPassword').setAttribute('autocomplete', m.autocomplete);
       $('loginError').classList.add('hidden');
+      $('loginNote').classList.add('hidden');
     }
 
     function openLogin(mode = 'signin') {
       setAuthMode(mode);
       $('loginError').classList.add('hidden');
       if (!$('loginDialog').open) $('loginDialog').showModal();
-      $('authEmail').focus();
+      (AUTH_MODES[mode]?.rows.email ? $('authEmail') : $('authPassword')).focus();
     }
 
     $('tabSignin').addEventListener('click', () => setAuthMode('signin'));
     $('tabSignup').addEventListener('click', () => setAuthMode('signup'));
+    $('forgotLink').addEventListener('click', () => setAuthMode('forgot'));
+    $('backToSignin').addEventListener('click', () => setAuthMode('signin'));
     $('loginCancel').addEventListener('click', () => $('loginDialog').close());
     $('guestSignIn').addEventListener('click', () => openLogin('signin'));
     $('gateSignIn').addEventListener('click', () => openLogin('signin'));
 
-    async function submitAuth() {
+    // كل وضعٍ ومساره وجسمه ومتطلَّبه — بدل سلسلة if متشعّبة تتباعد
+    function authRequest() {
       const email = $('authEmail').value.trim();
       const password = $('authPassword').value;
-      if (!email || !password) {
-        showLoginError('أدخل البريد وكلمة المرور.');
+      const name = $('authName').value.trim();
+      if (authMode === 'signup') return { path: 'signup', body: { email, password, name }, need: email && password };
+      if (authMode === 'forgot') return { path: 'forgot', body: { email }, need: !!email };
+      if (authMode === 'reset') {
+        if (password !== $('authPassword2').value) {
+          return { error: 'الكلمتان غير متطابقتين — أعد كتابتهما.' };
+        }
+        return { path: 'reset', body: { token: resetToken, password }, need: !!password };
+      }
+      return { path: 'login', body: { email, password }, need: email && password };
+    }
+
+    async function submitAuth() {
+      const req = authRequest();
+      if (req.error) { showLoginError(req.error); return; }
+      if (!req.need) {
+        showLoginError(authMode === 'forgot' ? 'أدخل بريدك المسجَّل.'
+          : authMode === 'reset' ? 'أدخل كلمة المرور الجديدة.'
+          : 'أدخل البريد وكلمة المرور.');
         return;
       }
       const btn = $('loginConfirm');
@@ -1096,14 +1186,24 @@
       try {
         // ⚠️ fetch مباشرةً لا api(): ردّ 401 هنا **متوقَّع** (كلمة مرور
         // خاطئة) ولا يعني «سجّل دخولك» — وapi() تفتح النافذة على نفسها.
-        const res = await fetch('/api/travel/auth/' + (authMode === 'signup' ? 'signup' : 'login'), {
+        const res = await fetch('/api/travel/auth/' + req.path, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-UI-Lang': uiLang },
-          body: JSON.stringify(authMode === 'signup'
-            ? { email, password, name: $('authName').value.trim() }
-            : { email, password }),
+          body: JSON.stringify(req.body),
         });
         const data = await res.json().catch(() => ({}));
+
+        // 📮 «أُرسل» لا «وُجد»: الخادم يرد نفس الرد للبريد المسجَّل وغيره
+        // عمداً، فالواجهة لا تدّعي علماً لا تملكه ولا تقول «تحقق من بريدك»
+        // بنبرةٍ توحي بوجود الحساب.
+        if (authMode === 'forgot') {
+          if (!res.ok) { showLoginError(data.error || 'تعذّر إتمام الطلب — حاول مجدداً.'); return; }
+          $('loginError').classList.add('hidden');
+          $('loginNote').textContent = data.message || 'إن كان هذا البريد مسجَّلاً فستصلك رسالة بها رابط إعادة التعيين.';
+          $('loginNote').classList.remove('hidden');
+          return;
+        }
+
         if (!res.ok || !data.token) {
           showLoginError(data.error || 'تعذّر إتمام الطلب — حاول مجدداً.');
           return;
@@ -1124,14 +1224,19 @@
 
     $('loginConfirm').addEventListener('click', submitAuth);
     // Enter داخل أي حقل يُرسل — لا يُجبَر المسافر على قصد الزر
-    for (const id of ['authEmail', 'authPassword', 'authName']) {
+    for (const id of ['authEmail', 'authPassword', 'authPassword2', 'authName']) {
       $(id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submitAuth(); } });
     }
 
     // ─── التبويبات ───
-    document.querySelectorAll('.tabs button').forEach(btn =>
+    // 🔴 `[data-tab]` **شرطٌ لا زينة**: المُحدِّد بلا قيدٍ يلتقط أزرار
+    // تبويبَي النافذة (دخول/حساب جديد) وزرَّ الإدارة أيضاً — وهي بلا
+    // data-tab، فيصير `t !== undefined` صحيحاً لكل قسم **فتُخفى الصفحة
+    // كاملةً** خلف النافذة. من بدّل إلى «حساب جديد» ثم ضغط «أكمل
+    // التصفّح» كان يجد تطبيقاً فارغاً بلا خطأ في الطرفية.
+    document.querySelectorAll('.tabs button[data-tab]').forEach(btn =>
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b === btn));
+        document.querySelectorAll('.tabs button[data-tab]').forEach(b => b.classList.toggle('active', b === btn));
         ['search', 'stays', 'fixed', 'packages', 'destinations', 'cars', 'trips', 'notifications', 'agent'].forEach(t =>
           $('tab-' + t).classList.toggle('hidden', t !== btn.dataset.tab));
         if (btn.dataset.tab === 'fixed') loadFixedPackages();

@@ -216,6 +216,14 @@ CREATE TABLE IF NOT EXISTS travel_users (
     created_at        BIGINT NOT NULL,
     updated_at        BIGINT NOT NULL
 );
+-- 🔑 استعادة كلمة المرور: يُخزَّن **بصمة الرمز لا الرمز**. تسريب نسخةٍ من
+-- قاعدة البيانات عندها لا يعني استيلاءً على الحسابات — البصمة لا تُقلب
+-- إلى رابطٍ صالح. العمودان NULL في الأغلبية الساحقة من الصفوف، فالفهرس
+-- جزئيٌّ عليهما وحدهما.
+ALTER TABLE travel_users ADD COLUMN IF NOT EXISTS reset_token_hash TEXT;
+ALTER TABLE travel_users ADD COLUMN IF NOT EXISTS reset_expires_at BIGINT;
+CREATE INDEX IF NOT EXISTS travel_users_reset_idx
+    ON travel_users (reset_token_hash) WHERE reset_token_hash IS NOT NULL;
 `;
 
 function rowToUser(r) {
@@ -227,6 +235,8 @@ function rowToUser(r) {
         passwordHash: r.password_hash || null,
         provider: r.provider || 'password',
         emailVerifiedAt: r.email_verified_at == null ? null : Number(r.email_verified_at),
+        resetTokenHash: r.reset_token_hash || null,
+        resetExpiresAt: r.reset_expires_at == null ? null : Number(r.reset_expires_at),
         createdAt: Number(r.created_at),
         updatedAt: Number(r.updated_at),
     };
@@ -911,6 +921,18 @@ export function createPostgresStore({ connectionString }) {
             });
         },
 
+        // ⏳ **لا يُصفّي المنتهي**: الصلاحية يقرّرها resetTokenValid وحده في
+        // accounts.js. لو صفّاها المخزنان أيضاً لصار للانتهاء مصدران،
+        // ولاختلف السلوك بينهما عند أول تعديلٍ لأحدهما.
+        async getUserByResetTokenHash(hash) {
+            const key = String(hash || '').trim();
+            if (!key) return null;
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM travel_users WHERE reset_token_hash = $1', [key]);
+                return rowToUser(res.rows[0]);
+            });
+        },
+
         async updateUser(id, patch = {}) {
             return withClient(async c => {
                 // البريد والمعرّف لا يُرقَّعان (انظر fileStore): الهوية
@@ -918,6 +940,7 @@ export function createPostgresStore({ connectionString }) {
                 const map = {
                     name: 'name', passwordHash: 'password_hash',
                     provider: 'provider', emailVerifiedAt: 'email_verified_at',
+                    resetTokenHash: 'reset_token_hash', resetExpiresAt: 'reset_expires_at',
                 };
                 const sets = [], vals = [];
                 for (const [k, col] of Object.entries(map)) {
