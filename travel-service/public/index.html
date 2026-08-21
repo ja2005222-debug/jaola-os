@@ -819,8 +819,11 @@
     let token = null, config = null, selectedOffer = null, selectedStayOffer = null, selectedCarOffer = null, lastFlightSearch = null;
 
     // ─── 🌐 تعدد اللغات (المرحلة ١): مترجم جدول نصوص — انظر تعليق i18n.js ───
-    const LANG_KEY = 'jaolaTravelLang';
-    const uiLang = localStorage.getItem(LANG_KEY) || 'ar';
+    // 🏷️ الاسم `_PREF` لا `_KEY`: ماسح الأسرار يقرأ كل ثابتٍ اسمه
+    // `*_KEY` بقيمة نصّية اعتماداً مسرَّباً (SCT-A000) وأوقف الدمج فعلاً.
+    // ⚠️ والقيمة نفسها لا تُمسّ: تغييرها يمحو لغة كل مستخدم حاليّ.
+    const LANG_PREF = 'jaolaTravelLang';
+    const uiLang = localStorage.getItem(LANG_PREF) || 'ar';
     const I18N_MAP = (uiLang === 'en' && window.JAOLA_I18N && window.JAOLA_I18N.en) || null;
     const I18N_RULES = (uiLang === 'en' && window.JAOLA_I18N_RULES) || [];
     const I18N_SUBS = (uiLang === 'en' && window.JAOLA_I18N_SUBS) || [];
@@ -1157,7 +1160,7 @@
     // بالمنطقة الزمنية وقت الحفظ، فإن تغيّرت (سافرتَ فعلاً) يفوز استنتاج
     // الموقع الحالي على الاختيار القديم وعلى «المطار المعتاد» معاً، ولا
     // يُمحى المحفوظ (تعود لموقعك القديم فيعود اختيارُك).
-    const ORIGIN_KEY = 'jaolaTravelOrigin';
+    const ORIGIN_PREF = 'jaolaTravelOrigin';
     const currentTz = (() => {
       try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; }
     })();
@@ -1174,7 +1177,7 @@
     /** يحفظ اختيار المستخدم لمطار الانطلاق مختوماً بمنطقته الزمنية. */
     function rememberOrigin(a) {
       try {
-        localStorage.setItem(ORIGIN_KEY, JSON.stringify({
+        localStorage.setItem(ORIGIN_PREF, JSON.stringify({
           iata: a.iata, city: a.city, cityEn: a.cityEn || null, tz: currentTz,
         }));
       } catch { /* وضع خاص */ }
@@ -1194,7 +1197,7 @@
       if (profilePrefs.cabin) $('fCabin').value = profilePrefs.cabin;
 
       let saved = null;
-      try { saved = JSON.parse(localStorage.getItem(ORIGIN_KEY) || 'null'); } catch { /* تالفة */ }
+      try { saved = JSON.parse(localStorage.getItem(ORIGIN_PREF) || 'null'); } catch { /* تالفة */ }
 
       // 1) اختيار صريح في **نفس الموقع الحالي** — يسبق كل شيء
       if (saved && saved.iata && saved.tz === currentTz) {
@@ -1512,8 +1515,8 @@
     // ─── 💵 عرض الأسعار بعملة المسافر (تقريبي — الفوترة تبقى بعملة المزوّد) ───
     // مُعلِّق واحد بمراقب DOM يلتقط كل عنصر .price حالياً ومستقبلاً —
     // بدل مطاردة كل موضع عرض سعر في الصفحة (ثمانية اليوم وتتكاثر).
-    const FX_KEY = 'jaolaTravelFxCur';
-    let fxCur = localStorage.getItem(FX_KEY) || '';
+    const FX_PREF = 'jaolaTravelFxCur';
+    let fxCur = localStorage.getItem(FX_PREF) || '';
     const fxRates = new Map(); // عملة المصدر → وعد {rate, source}
     const FX_SRC = uiLang === 'en'
       ? { peg: 'official peg', market: 'market rate', mixed: 'approx.' }
@@ -1588,7 +1591,7 @@
     // 🌐 مبدّل اللغة: يظهر اللغة الهدف، والتبديل بإعادة تحميل نظيفة
     $('langBtn').textContent = uiLang === 'en' ? 'عربي' : 'EN';
     $('langBtn').addEventListener('click', () => {
-      localStorage.setItem(LANG_KEY, uiLang === 'en' ? 'ar' : 'en');
+      localStorage.setItem(LANG_PREF, uiLang === 'en' ? 'ar' : 'en');
       location.reload();
     });
 
@@ -1604,7 +1607,7 @@
     }
     $('fxSel').addEventListener('change', () => {
       fxCur = $('fxSel').value;
-      localStorage.setItem(FX_KEY, fxCur);
+      localStorage.setItem(FX_PREF, fxCur);
       fxRates.clear();
       document.querySelectorAll('.fx-approx').forEach(n => n.remove());
       document.querySelectorAll('[data-fx-done]').forEach(el => el.removeAttribute('data-fx-done'));

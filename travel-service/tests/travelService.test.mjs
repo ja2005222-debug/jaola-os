@@ -2524,23 +2524,36 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             const offers = search.data.offers;
             assert.equal(offers.length, 3);
 
-            // المحاكاة تعطي العائلات الثلاث المتمايزة عمداً
+            // المحاكاة تعطي العائلات الثلاث المتمايزة عمداً.
+            // 🐞 **لا نفترض ترتيبها**: كان هذا السطر يقارن قائمةً مرتّبة
+            // حرفياً، فيفشل في أيامٍ بعينها بلا أن يتغيّر سطرُ كود واحد —
+            // بذرةُ المحاكاة مشتقّة من `departDate`، وهو `futureDate(14)`
+            // أي متحرّك مع التقويم، والعروض تُفرز بالسعر بعده. عطبٌ كامن
+            // انفجر عند تقلّب التاريخ، ومُثبت على main نفسه لا على فرعٍ.
+            // المهمّ أن العائلات الثلاث **موجودة**، لا ترتيبها.
             const brands = offers.map(o => o.slices[0].fareBrand);
-            assert.deepEqual(brands, ['Economy Light', 'Economy Flex', 'Economy Standard']);
+            assert.deepEqual([...brands].sort(), ['Economy Flex', 'Economy Light', 'Economy Standard']);
 
-            assert.equal(offers[0].conditions.change.state, 'no');
-            assert.equal(offers[0].conditions.refund.state, 'no');
-            assert.deepEqual(offers[1].conditions.change, { state: 'fee', amount: 75, currency: offers[1].currency });
-            // 🔴 الثالثة: مسموح والرسم مجهول — يجب ألّا تصل الواجهة كأنها مجانية
-            assert.equal(offers[2].conditions.change.state, 'feeUnknown');
-            assert.equal(offers[2].conditions.change.amount, null);
+            // ونفحص كل حالة **بعائلتها** لا بموضعها في المصفوفة
+            const byBrand = Object.fromEntries(offers.map(o => [o.slices[0].fareBrand, o]));
+            const light = byBrand['Economy Light'];
+            const flex = byBrand['Economy Flex'];
+            const standard = byBrand['Economy Standard'];
+
+            assert.equal(light.conditions.change.state, 'no');
+            assert.equal(light.conditions.refund.state, 'no');
+            assert.deepEqual(flex.conditions.change, { state: 'fee', amount: 75, currency: flex.currency });
+            // 🔴 «مسموح والرسم مجهول» — يجب ألّا تصل الواجهة كأنها مجانية
+            assert.equal(standard.conditions.change.state, 'feeUnknown');
+            assert.equal(standard.conditions.change.amount, null);
 
             // الشروط ليست سرّاً مالياً — لكن الصافي يبقى كذلك
             assert.equal(offers[0].netAmount, undefined);
 
-            // وتُحفظ مع الحجز فتظهر في القسيمة بعد السفر لا قبله فقط
+            // وتُحفظ مع الحجز فتظهر في القسيمة بعد السفر لا قبله فقط.
+            // بالعائلة لا بالموضع — لنفس سبب أعلاه.
             const booked = await call('/api/travel/bookings', {
-                method: 'POST', token, body: { offerId: offers[1].id, ...VALID_PAX },
+                method: 'POST', token, body: { offerId: flex.id, ...VALID_PAX },
             });
             const b = booked.data.booking;
             assert.equal(b.offer.slices[0].fareBrand, 'Economy Flex');
