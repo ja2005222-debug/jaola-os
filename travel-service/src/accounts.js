@@ -149,6 +149,46 @@ export function dummyHash() {
     return dummyHashPromise;
 }
 
+// ─── استعادة كلمة المرور ───────────────────────────────────────────────
+export const RESET_TTL_MIN = 30; // نافذةٌ ضيّقة: رابطٌ في بريدٍ مسروق سلاح
+
+/**
+ * 🔑 رمزُ استعادةٍ عشوائي — **يُخزَّن مُعمّى لا خاماً**.
+ *
+ * لماذا التعمية وهو ينتهي بعد نصف ساعة؟ لأن تسريب قاعدة البيانات عندها
+ * لا يعني استيلاءً على الحسابات: من قرأ الجدول يرى بصماتٍ لا مفاتيح.
+ * وهي نفس قاعدة كلمات المرور، والرمزُ **مفتاحُ تبديلها** فلا يقلّ عنها
+ * خطراً — بل هو أخطر: يعمل بلا معرفة كلمة المرور القديمة.
+ *
+ * SHA-256 لا scrypt هنا عمداً: المدخل ٣٢ بايتاً عشوائية لا كلمة مرور
+ * يخمّنها قاموس، فلا حاجة لبطءٍ متعمَّد — والسرعة مطلوبة في التحقق.
+ */
+export function newResetToken() {
+    const token = crypto.randomBytes(32).toString('base64url');
+    return {
+        token,
+        hash: hashResetToken(token),
+        expiresAt: Date.now() + RESET_TTL_MIN * 60 * 1000,
+    };
+}
+
+export function hashResetToken(token) {
+    return crypto.createHash('sha256').update(String(token || '')).digest('hex');
+}
+
+/**
+ * يقرّر صلاحية الرمز المقدَّم مقابل ما في المخزن.
+ * ⚠️ **المقارنة ثابتة الزمن**: مقارنةُ السلاسل العادية تخرج عند أول بايت
+ * مختلف، فيقيس المهاجم كم بايتاً أصاب ويبني الرمز بايتاً بايتاً.
+ */
+export function resetTokenValid(user, token) {
+    if (!user?.resetTokenHash || !user?.resetExpiresAt) return false;
+    if (Date.now() > Number(user.resetExpiresAt)) return false;
+    const a = Buffer.from(hashResetToken(token), 'hex');
+    const b = Buffer.from(String(user.resetTokenHash), 'hex');
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 // ─── التوكن ────────────────────────────────────────────────────────────
 export const ACCOUNT_TOKEN_DAYS = 30; // المسافر يعود بعد أسابيع لا دقائق
 
