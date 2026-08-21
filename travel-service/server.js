@@ -18,6 +18,11 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { buildVerifyToken, buildOptionalToken } from './src/auth.js';
+import {
+    deriveAccountSecret, normalizeEmail, isValidEmail, normalizeName,
+    passwordProblem, hashPassword, verifyPassword, signAccountToken, publicUser,
+    dummyHash,
+} from './src/accounts.js';
 import { readMarkupPct, readPackageMarkupPct, readCategoryMarkupPct, applyMarkup } from './src/pricing.js';
 import { quotePackage, bookPackage, cancelPackage, retryPackageCompensations } from './src/packages.js';
 import {
@@ -496,9 +501,15 @@ export function createApp({
     app.use(express.json({ limit: '256kb', verify: (req, res, buf) => { req.rawBody = buf; } }));
     app.use(express.static(path.join(__dirname, 'public')));
 
-    const verifyToken = buildVerifyToken(jwtSecret);
+    // 🔐 سرّ حسابات Jatrava — **مشتقّ** من jwtSecret بفصلٍ نطاقي، فتوكن
+    // المسافر لا يصلح على منصة JAOLA أبداً (انظر accounts.js). والتحقق
+    // يقبل السرّين معاً: توكنُ المنصة الأم يعمل هنا كما كان، وتوكنُ
+    // Jatrava يعمل هنا وحده — الاتجاه واحد عمداً.
+    const accountSecret = deriveAccountSecret(jwtSecret);
+    const allSecrets = [...(Array.isArray(jwtSecret) ? jwtSecret : [jwtSecret]).filter(Boolean), accountSecret];
+    const verifyToken = buildVerifyToken(allSecrets);
     // 👤 للمسارات التي يتصفّحها الزائر بلا حساب (البحث والعرض) — انظر auth.js
-    const optionalToken = buildOptionalToken(jwtSecret);
+    const optionalToken = buildOptionalToken(allSecrets);
     const userOf = req => String(req.user?.username || '').trim().toLowerCase();
 
     // 🎚️ المستوى الأول: هامش كل فئة منتج على حدة — قبل هذا كانت applyMarkup
@@ -557,6 +568,16 @@ export function createApp({
     // نتيجة أهم الوجهات مُخزَّنة عالمياً (topDestinations.js) فلا تكلفة
     // حقيقية على المزوّد إلا أول طلب كل 6 ساعات — حد أخف من searchLimiter يكفي.
     const destinationsLimiter = rateLimit({ windowMs: 5 * 60 * 1000, max: 15, standardHeaders: true, legacyHeaders: false, keyGenerator: byUser });
+
+    // 🔒 محدّد الحسابات: **بالـIP دائماً** لا بالبريد المُرسَل — الحدّ
+    // بالبريد يجعل المهاجم يبدّله كل محاولة فيتخطّاه، ويجعله يستنفد حدّ
+    // ضحيةٍ بعينها فيمنعها من الدخول (حجبٌ بالوكالة). وهو ضيّق لأن كل
+    // طلبٍ هنا محاولةُ تخمين كلمة مرور محتملة.
+    const authLimiter = rateLimit({
+        windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false,
+        keyGenerator: req => ipKeyGenerator(req.ip),
+        message: { error: 'محاولات كثيرة — انتظر قليلاً ثم أعد المحاولة.' },
+    });
 
     // 🔗 سرّ توقيع روابط المشاركة — مشتقّ من jwtSecret بفصلٍ نطاقي، فلا
     // متغيّر بيئة جديد ولا يصلح توكن مشاركةٍ توكنَ دخول (انظر shareLinks.js).
@@ -1223,6 +1244,64 @@ export function createApp({
     // 🔤 بحث المطارات بالاسم/الدولة/الرمز — عربي أو إنجليزي.
     // بحث محلي بحت في airports.js: لا نداء مزوّد ولا تكلفة، فلا محدّد
     // معدّل خاص به (verifyToken وحده يكفي كبقية المسارات).
+    // ─── 👤 حسابات Jatrava: تسجيل ودخول ─────────────────────────────
+    // ⚠️ **لا نكشف وجود البريد من عدمه** في أي ردّ: «البريد أو كلمة المرور
+    // غير صحيحة» واحدةٌ للحالتين، ورسالة التسجيل بالمكرر عامة كذلك. كشفُه
+    // يعطي المهاجم قائمة عملائنا مجاناً (عدّاد حسابات صالحة).
+
+    app.post('/api/travel/auth/signup', authLimiter, wrap(async (req, res) => {
+        const email = normalizeEmail(req.body?.email);
+        const name = normalizeName(req.body?.name);
+        const password = req.body?.password;
+
+        if (!isValidEmail(email)) return res.status(400).json({ error: 'أدخل بريداً إلكترونياً صحيحاً.' });
+        const pwProblem = passwordProblem(password);
+        if (pwProblem) return res.status(400).json({ error: pwProblem });
+
+        const user = await store.createUser({
+            email, name, provider: 'password',
+            passwordHash: await hashPassword(password),
+        });
+        // null = البريد مستعمَل. لا نقول «مسجَّل سلفاً» صراحةً بل ندلّه
+        // على الدخول — يفهمها صاحب الحساب ولا تفيد من يعدّ الحسابات.
+        if (!user) {
+            return res.status(409).json({ error: 'تعذّر إنشاء الحساب بهذا البريد — جرّب تسجيل الدخول.' });
+        }
+
+        res.status(201).json({
+            token: signAccountToken(user, accountSecret),
+            user: publicUser(user),
+        });
+    }));
+
+    app.post('/api/travel/auth/login', authLimiter, wrap(async (req, res) => {
+        const email = normalizeEmail(req.body?.email);
+        const password = req.body?.password;
+        const user = email ? await store.getUserByEmail(email) : null;
+
+        // 🕰️ **نتحقق حتى لو لم يوجد الحساب**: الردّ الفوري للبريد غير
+        // المسجَّل مقابل التأخّر 50ms للمسجَّل فرقٌ يُقاس، وبه يُعدّ
+        // المهاجم حساباتنا رغم توحيد نصّ الخطأ. الهاش الوهمي يسوّي الزمن.
+        const ok = await verifyPassword(password, user?.passwordHash || await dummyHash());
+        if (!user || !user.passwordHash || !ok) {
+            return res.status(401).json({ error: 'البريد أو كلمة المرور غير صحيحة.' });
+        }
+
+        res.json({ token: signAccountToken(user, accountSecret), user: publicUser(user) });
+    }));
+
+    // من أنا؟ — الواجهة تعرض الاسم، وتتأكد أن التوكن المخزَّن حيّ
+    app.get('/api/travel/auth/me', verifyToken, wrap(async (req, res) => {
+        const email = normalizeEmail(req.user?.email || req.user?.username);
+        const user = email ? await store.getUserByEmail(email) : null;
+        // مستخدمُ المنصة الأم لا صفَّ له عندنا — وهذا صحيح لا خطأ
+        res.json({
+            user: publicUser(user),
+            username: userOf(req),
+            issuer: req.user?.iss === 'jatrava' ? 'jatrava' : 'jaola',
+        });
+    }));
+
     app.get('/api/travel/airports', optionalToken, wrap(async (req, res) => {
         res.json({ airports: searchAirports(req.query.q, 8) });
     }));

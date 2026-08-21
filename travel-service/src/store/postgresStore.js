@@ -201,7 +201,36 @@ CREATE TABLE IF NOT EXISTS travel_wishlist (
     at          BIGINT NOT NULL,
     PRIMARY KEY (username, package_id)
 );
+
+-- 👤 حسابات Jatrava الذاتية (بريد وكلمة مرور)
+-- البريد UNIQUE في المخطّط نفسه لا في الكود: فحصٌ قبل الإدراج يسمح
+-- بسباق تسجيلين متزامنين بنفس البريد، والقيد يمنعه بنيوياً.
+-- password_hash يقبل NULL عمداً — حساب جوجل لاحقاً بلا كلمة مرور.
+CREATE TABLE IF NOT EXISTS travel_users (
+    id                TEXT PRIMARY KEY,
+    email             TEXT NOT NULL UNIQUE,
+    name              TEXT NOT NULL DEFAULT '',
+    password_hash     TEXT,
+    provider          TEXT NOT NULL DEFAULT 'password',
+    email_verified_at BIGINT,
+    created_at        BIGINT NOT NULL,
+    updated_at        BIGINT NOT NULL
+);
 `;
+
+function rowToUser(r) {
+    if (!r) return null;
+    return {
+        id: r.id,
+        email: r.email,
+        name: r.name || '',
+        passwordHash: r.password_hash || null,
+        provider: r.provider || 'password',
+        emailVerifiedAt: r.email_verified_at == null ? null : Number(r.email_verified_at),
+        createdAt: Number(r.created_at),
+        updatedAt: Number(r.updated_at),
+    };
+}
 
 function rowToBooking(r) {
     if (!r) return null;
@@ -846,6 +875,59 @@ export function createPostgresStore({ connectionString }) {
                     [username, packageId]
                 );
                 return rowToReview(res.rows[0]);
+            });
+        },
+
+        // ─── 👤 حسابات Jatrava الذاتية ───────────────────────────────
+
+        async createUser(u) {
+            return withClient(async c => {
+                const email = String(u.email || '').trim().toLowerCase();
+                if (!email) throw new Error('البريد مطلوب.');
+                const id = 'usr_' + Array.from(crypto.getRandomValues(new Uint8Array(10)))
+                    .map(x => x.toString(16).padStart(2, '0')).join('');
+                const now = Date.now();
+                // ON CONFLICT DO NOTHING على قيد UNIQUE: البريد المستعمَل
+                // يعيد null بلا رمي — والسباق محسوم في المحرّك لا في الكود.
+                const res = await c.query(
+                    `INSERT INTO travel_users
+                       (id, email, name, password_hash, provider, email_verified_at, created_at, updated_at)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$7)
+                     ON CONFLICT (email) DO NOTHING
+                     RETURNING *`,
+                    [id, email, u.name || '', u.passwordHash || null,
+                     u.provider || 'password', u.emailVerifiedAt || null, now]
+                );
+                return res.rows[0] ? rowToUser(res.rows[0]) : null;
+            });
+        },
+
+        async getUserByEmail(email) {
+            const key = String(email || '').trim().toLowerCase();
+            if (!key) return null;
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM travel_users WHERE email = $1', [key]);
+                return rowToUser(res.rows[0]);
+            });
+        },
+
+        async updateUser(id, patch = {}) {
+            return withClient(async c => {
+                // البريد والمعرّف لا يُرقَّعان (انظر fileStore): الهوية
+                // مفهرسة بالبريد، وتغييره ييتّم حجوزات صاحبه بصمت.
+                const map = {
+                    name: 'name', passwordHash: 'password_hash',
+                    provider: 'provider', emailVerifiedAt: 'email_verified_at',
+                };
+                const sets = [], vals = [];
+                for (const [k, col] of Object.entries(map)) {
+                    if (Object.hasOwn(patch, k)) { vals.push(patch[k]); sets.push(`${col} = $${vals.length}`); }
+                }
+                vals.push(Date.now()); sets.push(`updated_at = $${vals.length}`);
+                vals.push(id);
+                const res = await c.query(
+                    `UPDATE travel_users SET ${sets.join(', ')} WHERE id = $${vals.length} RETURNING *`, vals);
+                return rowToUser(res.rows[0]);
             });
         },
 
