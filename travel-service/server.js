@@ -23,6 +23,7 @@ import {
     passwordProblem, hashPassword, verifyPassword, signAccountToken, publicUser,
     dummyHash, newResetToken, hashResetToken, resetTokenValid, RESET_TTL_MIN,
 } from './src/accounts.js';
+import { checkedBaggage, arrivalDayOffset, layovers } from './src/itinerary.js';
 import { readMarkupPct, readPackageMarkupPct, readCategoryMarkupPct, applyMarkup } from './src/pricing.js';
 import { quotePackage, bookPackage, cancelPackage, retryPackageCompensations } from './src/packages.js';
 import {
@@ -227,7 +228,10 @@ export function validateSearchParams(body) {
             return { error: 'سقف السعر رقم موجب.' };
         }
     }
-    return { values: { origin, destination, departDate, returnDate, adults, childrenDobs, cabin, sort, maxStops, airline, maxPrice } };
+    // 🧳 صندوق اختيار لا قيمة حرّة: صيغته الوحيدة صحيحة أو غائبة
+    const checkedBagOnly = body?.checkedBagOnly === true || body?.checkedBagOnly === 'true';
+
+    return { values: { origin, destination, departDate, returnDate, adults, childrenDobs, cabin, sort, maxStops, airline, maxPrice, checkedBagOnly } };
 }
 
 /** يتحقق من بيانات الركاب والتواصل — {error} أو {values}. */
@@ -396,6 +400,15 @@ function effectiveMarkupPct(offer, categoryPct) {
 function publicOffer(offer, categoryPct) {
     const { netAmount, passengerIds, passengers, marginPct: _mp, ...rest } = offer;
     const pub = { ...rest, sellAmount: applyMarkup(netAmount, effectiveMarkupPct(offer, categoryPct)) };
+    // 🧭 حقائق الرحلة تُحسب **هنا مرّة واحدة** لا في المتصفح: لو استنتجتها
+    // الواجهةُ لصار للحقيقة نسختان — واحدة تفلتر بها الخدمة وأخرى تعرض بها
+    // الصفحة — فيُخفي الفلترُ عرضاً تَعِد الشارةُ بأنه يحمل حقيبة.
+    pub.checkedBag = checkedBaggage(offer);
+    pub.slices = (rest.slices || []).map(sl => ({
+        ...sl,
+        arrivalDayOffset: arrivalDayOffset(sl),
+        layovers: layovers(sl),
+    }));
     const safe = publicPassengers(passengers);
     if (safe) pub.passengers = safe;
     return pub;

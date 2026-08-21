@@ -23,6 +23,7 @@
 import { createDuffelClient } from './duffelClient.js';
 import { buildSearchPassengers } from '../passengerAges.js';
 import { normalizeFareConditions } from '../fareConditions.js';
+import { checkedBaggage } from '../itinerary.js';
 
 const MAX_RESULTS = 10; // ما يكفي شاشة النتائج — Duffel قد يعيد المئات
 
@@ -134,8 +135,9 @@ export function sortOffers(offers, sort = 'price') {
  * - airline: اسم الناقل (احتواء، غير حساس لحالة الأحرف) أو رمز IATA مطابق
  * - maxNetAmount: سقف الصافي (الخادم يحوّل سقف البيع إليه قبل التمرير —
  *   الهامش لا يعرفه المزوّد ولا يجب أن يعرفه)
+ * - checkedBagOnly: يُسقط ما **نعرف** خلوّه من حقيبة مسجَّلة (انظر أدناه)
  */
-export function applyOfferFilters(offers, { maxStops = null, airline = null, maxNetAmount = null } = {}) {
+export function applyOfferFilters(offers, { maxStops = null, airline = null, maxNetAmount = null, checkedBagOnly = false } = {}) {
     let list = offers;
     if (maxStops != null) {
         list = list.filter(o => (o.slices || []).every(s => (s.stops || 0) <= maxStops));
@@ -150,6 +152,15 @@ export function applyOfferFilters(offers, { maxStops = null, airline = null, max
     if (maxNetAmount != null) {
         list = list.filter(o => o.netAmount <= maxNetAmount);
     }
+    if (checkedBagOnly) {
+        // 🧳 **ثلاثيّة لا ثنائية**: `null` تعني «المزوّد لم يصرّح» لا «لا
+        // حقيبة». نُسقط المعروفَ خلوُّه فقط، ونُبقي غيرَ المصرَّح **موسوماً**
+        // في الواجهة. الإسقاطُ الصارم كان سيُفرغ القائمة كلها كلما صمت
+        // المزوّد عن الأمتعة — وهو الغالب (انظر extractBaggage) — فيظنّ
+        // المسافر أن لا رحلة بحقيبة أصلاً. والإبقاءُ بلا وسمٍ يَعِد بما
+        // لا نعرفه. الوسمُ هو المخرج الصادق الوحيد.
+        list = list.filter(o => checkedBaggage(o) !== false);
+    }
     return list;
 }
 
@@ -161,7 +172,7 @@ export function createDuffelProvider({ apiKey, apiUrl, fetchImpl }) {
         name: 'duffel',
         mode: client.mode,
 
-        async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, childrenDobs = [], cabin = 'economy', sort = 'price', maxStops = null, airline = null, maxNetAmount = null }) {
+        async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, childrenDobs = [], cabin = 'economy', sort = 'price', maxStops = null, airline = null, maxNetAmount = null, checkedBagOnly = false }) {
             const slices = [{ origin, destination, departure_date: departDate }];
             if (returnDate) slices.push({ origin: destination, destination: origin, departure_date: returnDate });
             // كان هنا `age: 8` ثابتاً لكل طفل — رقم مخترَع يناقض تاريخ
@@ -182,7 +193,7 @@ export function createDuffelProvider({ apiKey, apiUrl, fetchImpl }) {
                 .map(o => normalizeDuffelOffer(o, requestPassengers))
                 .filter(o => Number.isFinite(o.netAmount));
             // الفلترة قبل الترتيب والاقتطاع — انظر تعليق applyOfferFilters
-            const filtered = applyOfferFilters(normalized, { maxStops, airline, maxNetAmount });
+            const filtered = applyOfferFilters(normalized, { maxStops, airline, maxNetAmount, checkedBagOnly });
             return sortOffers(filtered, sort).slice(0, MAX_RESULTS);
         },
 

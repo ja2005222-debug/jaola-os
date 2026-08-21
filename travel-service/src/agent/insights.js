@@ -37,26 +37,11 @@ function totalStops(offer) {
     return sum;
 }
 
-/**
- * هل يشمل العرض حقيبة مسجَّلة؟ true/false/null.
- *
- * null ليست تفصيلاً: Duffel قد لا يصرّح بالأمتعة إطلاقاً (موثَّق في
- * duffelProvider.js). «لا نعرف» تختلف عن «لا توجد» — وادّعاء الثانية
- * مكان الأولى يجعل المسافر يدفع رسوم حقيبة لم نحذّره منها.
- */
-export function checkedBaggage(offer) {
-    let sawAny = false;
-    for (const slice of offer?.slices || []) {
-        for (const seg of slice?.segments || []) {
-            if (!Array.isArray(seg?.baggage)) continue;
-            sawAny = true;
-            for (const b of seg.baggage) {
-                if (b?.type === 'checked' && Number(b.quantity) > 0) return true;
-            }
-        }
-    }
-    return sawAny ? false : null;
-}
+// 🧳 انتقلت إلى src/itinerary.js لمّا صارت الفلترةُ تحتاجها كما يحتاجها
+// السرد: نسختان تتباعدان بصمت، فتُخفي الفلترةُ عرضاً يمدحه المساعد.
+// وتُعاد التصديرَ من هنا فلا ينكسر مستورِدٌ قائم.
+import { checkedBaggage } from '../itinerary.js';
+export { checkedBaggage };
 
 const isDirect = offer => totalStops(offer) === 0;
 const price = offer => Number(offer?.sellAmount);
