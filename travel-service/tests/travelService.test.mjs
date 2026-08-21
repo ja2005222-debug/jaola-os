@@ -51,6 +51,7 @@ import { checkWatches } from '../src/priceWatchPoller.js';
 import { sendTripReminders, isReminderDue, renderTripReminder, departureAt } from '../src/tripReminders.js';
 import { searchAirports, airportForTimezone, AIRPORT_COORDS } from '../src/airports.js';
 import { hashResetToken, RESET_TTL_MIN } from '../src/accounts.js';
+import { arrivalDayOffset, layoverMinutes, layovers } from '../src/itinerary.js';
 import { ageOn, buildSearchPassengers, validateChildrenDobs, checkPassengerAges } from '../src/passengerAges.js';
 import { getDestinationWeather, convertCurrency } from '../src/travelInfo.js';
 import { buildTopDestinations, CURATED_DESTINATIONS } from '../src/topDestinations.js';
@@ -1702,6 +1703,63 @@ describe('i18n: جدول الترجمة لا يتباعد عن الصفحة', ()
     });
 });
 
+describe('🧭 itinerary: حقائق الرحلة تُقرأ من شكلها لا تُخمَّن', () => {
+    const sl = (...segs) => ({ segments: segs });
+    const seg = (departAt, arriveAt, origin = 'RUH', destination = 'CAI') =>
+        ({ origin, destination, departAt, arriveAt });
+
+    test('🛬 وصولٌ في اليوم التالي يُرصَد — الساعةُ وحدها كانت تكذب بصمت', () => {
+        // رحلةٌ ليلية: الساعة المعروضة صحيحة، والناقصُ يومُها. من يحجز
+        // فندقاً على أساسها يخسر ليلة كاملة بلا أن يخطئ أحد ظاهرياً.
+        assert.equal(arrivalDayOffset(sl(seg('2026-09-15T23:40:00', '2026-09-16T06:00:00'))), 1);
+        assert.equal(arrivalDayOffset(sl(seg('2026-09-15T08:00:00', '2026-09-15T11:30:00'))), 0);
+        // عبر منتصف الليل بيومين (رحلة طويلة بتوقفات)
+        assert.equal(arrivalDayOffset(sl(
+            seg('2026-09-15T22:00:00', '2026-09-16T04:00:00'),
+            seg('2026-09-16T23:00:00', '2026-09-17T05:00:00'))), 2);
+    });
+
+    test('🌏 عبور خطّ التاريخ غرباً يُعطي فارقاً سالباً — ولا نُصفّره كذباً', () => {
+        // طوكيو → هونولولو يصل «قبل» أن يقلع بالتقويم المحلي. هذه حقيقةٌ
+        // على التذكرة لا خطأ حساب، وتصفيرُها يُخفي عن المسافر يوماً كاملاً.
+        assert.equal(arrivalDayOffset(sl(seg('2026-09-15T20:00:00', '2026-09-14T08:30:00', 'NRT', 'HNL'))), -1);
+    });
+
+    test('⏱️ مدة التوقف تُحسب داخل المطار الواحد فتصحّ رغم غياب الإزاحة', () => {
+        assert.equal(layoverMinutes('2026-09-15T10:00:00', '2026-09-15T13:20:00'), 200);
+        assert.equal(layoverMinutes('2026-09-15T23:00:00', '2026-09-16T01:30:00'), 150); // عبر منتصف الليل
+        assert.equal(layoverMinutes(null, '2026-09-15T13:20:00'), null);
+    });
+
+    test('🕰️ الحساب لا يتغيّر بتغيّر منطقة الخادم — عطبٌ يظهر بعد الترحيل وحده', () => {
+        // توقيتات المزوّد بلا إزاحة، فبلا تثبيت UTC يفسّرها Node بتوقيت
+        // الخادم. نفس البيانات يجب أن تعطي نفس الرقم في طوكيو والرياض.
+        const prev = process.env.TZ;
+        const read = tz => {
+            process.env.TZ = tz;
+            return [
+                layoverMinutes('2026-09-15T22:30:00', '2026-09-16T02:00:00'),
+                arrivalDayOffset(sl(seg('2026-09-15T23:40:00', '2026-09-16T06:00:00'))),
+            ];
+        };
+        try {
+            assert.deepEqual(read('UTC'), read('Asia/Tokyo'));
+            assert.deepEqual(read('UTC'), read('America/Los_Angeles'));
+            assert.deepEqual(read('UTC'), [210, 1]);
+        } finally {
+            if (prev === undefined) delete process.env.TZ; else process.env.TZ = prev;
+        }
+    });
+
+    test('🛑 التوقفات: مدينةُ كلٍّ ومدته، ولا توقف لرحلةٍ مباشرة', () => {
+        assert.deepEqual(layovers(sl(seg('2026-09-15T08:00:00', '2026-09-15T11:00:00'))), []);
+        assert.deepEqual(layovers(sl(
+            seg('2026-09-15T08:00:00', '2026-09-15T11:00:00', 'RUH', 'DXB'),
+            seg('2026-09-15T14:00:00', '2026-09-15T18:00:00', 'DXB', 'CAI'))),
+            [{ airport: 'DXB', minutes: 180 }]);
+    });
+});
+
 describe('applyOfferFilters: فلترة قبل الاقتطاع — وحدة نقية', () => {
     const offers = [
         { id: 'a', netAmount: 100, owner: 'الخطوط السعودية', ownerIata: 'SV', slices: [{ stops: 0 }] },
@@ -2949,6 +3007,48 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 }
                 assert.ok(blocked > 0, 'لا حدّ على تخمين رموز الاستعادة!');
             });
+        });
+
+        test('🧳 فلتر الحقيبة: يُسقط المعروفَ خلوُّه ويُبقي غيرَ المصرَّح موسوماً', async () => {
+            const token = makeToken('bagman');
+            const all = await call('/api/travel/flights/search', { method: 'POST', token, body: SEARCH_BODY() });
+            assert.equal(all.status, 200);
+            const seen = all.data.offers.map(o => o.checkedBag);
+            // 🔴 الحقل يصل الواجهة محسوباً من الخادم — لو غاب لاستنتجته
+            // الصفحة بنفسها فصار للحقيقة نسختان تتباعدان.
+            assert.ok(seen.every(v => v === true || v === false || v === null), 'checkedBag ليس ثلاثيّاً');
+            assert.ok(seen.includes(true) && seen.includes(false) && seen.includes(null),
+                `المحاكاة لا تمثّل الفروع الثلاثة: ${JSON.stringify(seen)}`);
+
+            const filtered = await call('/api/travel/flights/search', {
+                method: 'POST', token, body: { ...SEARCH_BODY(), checkedBagOnly: true },
+            });
+            assert.equal(filtered.status, 200);
+            const after = filtered.data.offers.map(o => o.checkedBag);
+            // «لا نعرف» ≠ «لا توجد»: الإسقاط الصارم يُفرغ القائمة كلما صمت
+            // المزوّد عن الأمتعة، فيظنّ المسافر أن لا رحلة بحقيبة أصلاً.
+            assert.ok(!after.includes(false), 'نجا عرضٌ معروفُ الخلوّ من الحقيبة');
+            assert.ok(after.includes(null), 'أُسقط غيرُ المصرَّح — القائمة تُفرَّغ بلا داعٍ');
+            assert.ok(after.length < all.data.offers.length, 'الفلتر لم يُسقط شيئاً');
+        });
+
+        test('🛬 حقائق المسار تصل الواجهة محسوبةً من الخادم', async () => {
+            const token = makeToken('itinman');
+            const r = await call('/api/travel/flights/search', { method: 'POST', token, body: SEARCH_BODY() });
+            assert.equal(r.status, 200);
+            for (const o of r.data.offers) {
+                for (const sl of o.slices) {
+                    assert.equal(typeof sl.arrivalDayOffset, 'number', 'فارق يوم الوصول مفقود');
+                    assert.ok(Array.isArray(sl.layovers), 'قائمة التوقفات مفقودة');
+                    assert.equal(sl.layovers.length, sl.stops, 'عدد التوقفات لا يطابق stops');
+                    for (const l of sl.layovers) {
+                        assert.ok(l.airport, 'توقفٌ بلا مطار');
+                        assert.ok(Number.isFinite(l.minutes) && l.minutes > 0, 'مدة توقفٍ غير صالحة');
+                    }
+                }
+            }
+            // 🔴 الصافي لا يتسرّب مع الحقول الجديدة
+            assert.ok(!JSON.stringify(r.data.offers).includes('netAmount'), 'الصافي تسرّب!');
         });
 
         test('👤 /auth/me يميّز مُصدِر التوكن، ولا صفَّ لمستخدم المنصة الأم', async () => {

@@ -20,6 +20,17 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
     const orders = new Map();  // orderId → طلب
     let orderSeq = 0;
 
+    // 🧳 أمتعةٌ محاكاة **ثلاثيّة القيم عمداً**: مصرَّحة بحقيبة، ومصرَّحة
+    // بلا حقيبة، وغير مصرَّحة أصلاً (null). المزوّد الحي يُنتج الثلاث،
+    // فمحاكاةٌ تُنتج واحدة تترك فرعين من فلتر الأمتعة بلا اختبار —
+    // ويظهر عطبهما في الإنتاج وحده. الاشتقاق من البذرة فيبقى حتمياً.
+    function mockBaggage(seed) {
+        const kind = seed % 3;
+        if (kind === 0) return null;                                  // لم يصرّح
+        if (kind === 1) return [{ type: 'carry_on', quantity: 1 }];   // بلا مسجَّلة
+        return [{ type: 'carry_on', quantity: 1 }, { type: 'checked', quantity: 1 }];
+    }
+
     function buildSlice(origin, destination, date, seed, stops) {
         const depHour = 6 + (seed % 12);
         const durationMin = 90 + (seed % 300) + stops * 95;
@@ -33,6 +44,7 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
                 arriveAt: arrive.toISOString().slice(0, 19),
                 carrier: MOCK_AIRLINES[seed % MOCK_AIRLINES.length],
                 flightNumber: 'JA' + (100 + (seed % 900)),
+                baggage: mockBaggage(seed),
             });
         } else {
             const mid = 'HUB';
@@ -43,6 +55,7 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
                 arriveAt: midAt.toISOString().slice(0, 19),
                 carrier: MOCK_AIRLINES[seed % MOCK_AIRLINES.length],
                 flightNumber: 'JA' + (100 + (seed % 900)),
+                baggage: mockBaggage(seed),
             });
             const leg2 = new Date(midAt); leg2.setUTCMinutes(leg2.getUTCMinutes() + 80);
             segments.push({
@@ -50,12 +63,16 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
                 arriveAt: arrive.toISOString().slice(0, 19),
                 carrier: MOCK_AIRLINES[(seed + 1) % MOCK_AIRLINES.length],
                 flightNumber: 'JA' + (500 + (seed % 400)),
+                baggage: mockBaggage(seed),
             });
         }
         return {
             origin, destination, departAt,
             arriveAt: arrive.toISOString().slice(0, 19),
             durationMin, stops, segments,
+            // نفس حقل الشريحة في الرد الحي — بلا هذا تبقى شارة العائلة
+            // في الواجهة بلا اختبارٍ يمرّ عليها.
+            fareBrand: ['Basic', 'Standard', 'Flex'][seed % 3],
         };
     }
 
@@ -63,7 +80,7 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
         name: 'mock',
         mode: 'mock',
 
-        async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, childrenDobs = [], cabin = 'economy', sort = 'price', maxStops = null, airline = null, maxNetAmount = null }) {
+        async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, childrenDobs = [], cabin = 'economy', sort = 'price', maxStops = null, airline = null, maxNetAmount = null, checkedBagOnly = false }) {
             const seed = seedOf(`${origin}${destination}${departDate}${cabin}`);
             const paxCount = adults + childrenDobs.length;
             // نفس ترتيب duffelProvider (بالغون ثم أطفال) ونفس شكل الكائن —
@@ -113,7 +130,7 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
                 results.push({ ...offer });
             }
             // نفس عقد duffelProvider حرفياً: فلترة قبل الترتيب
-            return sortOffers(applyOfferFilters(results, { maxStops, airline, maxNetAmount }), sort);
+            return sortOffers(applyOfferFilters(results, { maxStops, airline, maxNetAmount, checkedBagOnly }), sort);
         },
 
         async getOffer(offerId) {
