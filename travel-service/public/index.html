@@ -507,7 +507,7 @@
         <button data-tab="stays" id="staysTabBtn">🏨 الفنادق</button>
         <button data-tab="fixed" id="fixedTabBtn">🎒 باقات جاهزة</button>
         <button data-tab="packages" id="pkgTabBtn">🎁 ركّب باقتك</button>
-        <button data-tab="destinations">🗺️ أهم الوجهات</button>
+        <button data-tab="destinations">🗺️ وجهات مقترحة</button>
         <button data-tab="cars" id="carsTabBtn">🚗 سيارات</button>
         <button data-tab="trips" id="tripsTabBtn">🧳 رحلاتي</button>
         <button data-tab="notifications" id="notifTabBtn">🔔 التنبيهات</button>
@@ -582,8 +582,14 @@
         </div>
         <div id="promoWrap" class="hidden">
           <div class="promo-head">
-            <h3>✨ وجهات رائجة من مطارك</h3>
-            <span class="note" style="margin:0">أرخص سعر وجدناه اليوم — ذهاب فقط بعد ٣٠ يوماً</span>
+<!-- ⚠️ **«مقترحة» لا «رائجة»**: القائمة منسَّقة يدوياً في
+                 topDestinations.js ولا تعرف ما يبحث عنه الناس ولا ما
+                 يُحجز فعلاً. و«رائجة» ادّعاءُ شعبيةٍ لا نملك ما يثبته —
+                 وهو من صنف «الخصم المختلَق» الذي يحرّمه عرف المستودع:
+                 كل رقمٍ وكل وصفٍ من مصدرٍ حقيقي. تُشتقّ من الحجوزات
+                 الفعلية يوماً ما، وعندها وحدها تُسمّى رائجة. -->
+            <h3>✨ وجهات مقترحة من مطارك</h3>
+            <span class="note" style="margin:0">اختيارٌ من فريقنا — والسعر أرخص ما وجدناه اليوم، ذهاب فقط بعد ٣٠ يوماً</span>
           </div>
           <div id="promoStrip" class="promo-strip"></div>
         </div>
