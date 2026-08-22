@@ -1294,6 +1294,37 @@
       return { path: 'login', body: { email, password }, need: email && password };
     }
 
+    /**
+     * 🎯 **القصد المعلَّق**: ما كان المسافر يفعله حين اعترضته بوابة الدخول.
+     *
+     * ⚠️ عطبٌ حقيقي بلّغ عنه المالك: الزائر يبحث، ويختار رحلة، **ويملأ
+     * بيانات المسافرين كاملة** (اسم ولقب وميلاد وبريد وهاتف لكل راكب)،
+     * ثم يضغط «أكّد الحجز» فيُطلب منه التسجيل — وكان `location.reload()`
+     * يمحو **كل ذلك**: النتائج والاختيار وما كتبه بيده. فيعود إلى صفحةٍ
+     * فارغة ليبدأ من الصفر في **اللحظة التي بلغت فيها نيّة الشراء ذروتها**.
+     * لا شيء يُسقط مسافراً كهذا.
+     */
+    let pendingIntent = null;
+
+    /**
+     * يُفعّل الجلسة **في مكانها** بدل إعادة التحميل — فتبقى النتائج
+     * والنوافذ المفتوحة وما كُتب فيها كما هو. يفعل ما يفعله `boot()`
+     * لمن معه توكن، لا أكثر.
+     */
+    async function applySession() {
+      try {
+        const payload = decodeJwtPayload(token);
+        const label = payload.name || String(payload.username || '').split('@')[0];
+        $('userBadge').textContent = label ? '👤 ' + label : '';
+      } catch { /* عرض تجميلي فقط */ }
+      $('tripsTabBtn').classList.remove('hidden');
+      $('notifTabBtn').classList.remove('hidden');
+      $('guestSignIn').classList.add('hidden');
+      // المسافرون المحفوظون تقرأهم نافذة الحجز — تُحمَّل قبل الاستئناف
+      try { await loadProfile(); } catch { /* لا يمنع الاستئناف */ }
+      refreshBell();
+    }
+
     async function submitAuth() {
       const req = authRequest();
       if (req.error) { showLoginError(req.error); return; }
@@ -1331,7 +1362,19 @@
           return;
         }
         localStorage.setItem('jaolaTravelToken', data.token);
-        location.reload();
+        token = data.token;
+        await applySession();
+        $('loginDialog').close();
+        // 🎯 يُستأنف ما اعترضته البوابة — ونافذة الحجز ما زالت مفتوحة
+        // خلفها ببياناتها كاملة، فالضغطة تعيد إرسال ما كتبه بلا لمسة.
+        // رسالة «سجّل دخولك» صارت لاغية — تُمسح قبل الاستئناف فلا
+        // تومض في وجه من صار داخلاً فعلاً.
+        for (const id of ['bookError', 'stayBookError', 'carBookError', 'fixedDlgError']) {
+          $(id)?.classList.add('hidden');
+        }
+        const resume = pendingIntent;
+        pendingIntent = null;
+        if (resume) setTimeout(resume, 80);
       } catch {
         showLoginError('تعذّر الاتصال بالخادم — تحقق من اتصالك.');
       } finally {
@@ -2403,6 +2446,8 @@
         const res = await api('/api/travel/bookings', { method: 'POST', body: JSON.stringify(body) });
         const data = await res.json();
         if (!res.ok) {
+          // 401 هنا تعني بوابة الدخول لا خطأً في البيانات — نحفظ القصد
+          if (res.status === 401) pendingIntent = () => $('bookConfirm').click();
           $('bookError').textContent = data.error || 'تعذّر الحجز.';
           $('bookError').classList.remove('hidden');
           return;
@@ -2653,6 +2698,7 @@
         const res = await api('/api/travel/stays/bookings', { method: 'POST', body: JSON.stringify(body) });
         const data = await res.json();
         if (!res.ok) {
+          if (res.status === 401) pendingIntent = () => $('stayBookConfirm').click();
           $('stayBookError').textContent = data.error || 'تعذّر الحجز.';
           $('stayBookError').classList.remove('hidden');
           return;
@@ -3032,6 +3078,7 @@
         const res = await api('/api/travel/cars/bookings', { method: 'POST', body: JSON.stringify(body) });
         const data = await res.json();
         if (!res.ok) {
+          if (res.status === 401) pendingIntent = () => $('carBookConfirm').click();
           $('carBookError').textContent = data.error || 'تعذّر الحجز.';
           $('carBookError').classList.remove('hidden');
           return;
@@ -3218,6 +3265,7 @@
       });
       const data = await res.json();
       if (!res.ok) {
+        if (res.status === 401) pendingIntent = () => $('fixedConfirm').click();
         $('fixedDlgError').textContent = data.error || 'تعذّر الحجز.';
         $('fixedDlgError').classList.remove('hidden');
         return;

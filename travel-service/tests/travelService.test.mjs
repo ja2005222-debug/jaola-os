@@ -1573,6 +1573,31 @@ describe('صحة صياغة سكربتات الواجهة — درس عطل إن
         assert.ok(init.includes('history.replaceState'), 'لا يُستبدل العنوان');
     });
 
+    // ⚠️ عطبٌ بلّغ عنه المالك من الموقع الحيّ: الزائر يبحث، ويختار رحلة،
+    // **ويملأ بيانات المسافرين كاملة**، ثم تعترضه بوابة الدخول — وكان
+    // `location.reload()` بعد التسجيل يمحو النتائج والاختيار وما كتبه
+    // بيده، فيبدأ من الصفر في لحظة ذروة نيّة الشراء. الجلسة تُفعَّل الآن
+    // في مكانها ويُستأنف القصد المعلَّق.
+    test('🎯 التسجيل لا يُعيد تحميل الصفحة ولا يُضيّع ما كتبه الزائر', () => {
+        const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+        const submit = /async function submitAuth\(\)([\s\S]*?)\n    }/.exec(html)[1];
+        assert.ok(!submit.includes('location.reload'),
+            'عاد `location.reload()` إلى submitAuth — يمحو بحث الزائر وبياناته');
+        assert.ok(submit.includes('applySession'), 'الجلسة لا تُفعَّل في مكانها');
+        assert.ok(submit.includes('pendingIntent'), 'القصد المعلَّق لا يُستأنف');
+
+        // وكل نافذة حجزٍ تسجّل قصدها عند اعتراض البوابة (401)
+        for (const btn of ['bookConfirm', 'stayBookConfirm', 'carBookConfirm', 'fixedConfirm']) {
+            assert.ok(html.includes(`pendingIntent = () => $('${btn}').click()`),
+                `نافذة ${btn} لا تسجّل قصدها — من يُعترَض فيها يبدأ من الصفر`);
+        }
+        // applySession تفعل ما يفعله boot لمن معه توكن
+        const apply = /async function applySession\(\)([\s\S]*?)\n    }/.exec(html)[1];
+        for (const need of ['userBadge', 'tripsTabBtn', 'notifTabBtn', 'guestSignIn', 'loadProfile', 'refreshBell']) {
+            assert.ok(apply.includes(need), `applySession لا تُهيّئ ${need}`);
+        }
+    });
+
     test('🧩 sw.js يتحلّل بلا خطأ صياغة', () => {
         const code = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
         assert.doesNotThrow(() => new Function(code));
@@ -2567,11 +2592,20 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             // webcal:// هو نفس الرابط بمخطّط يفهمه التقويم كـ«اشترك»
             assert.equal(sub.data.webcalUrl, sub.data.httpUrl.replace(/^https?:/, 'webcal:'));
 
+            // ⏰ **يُفكّ الطيّ قبل أي مطابقة** — امتدادٌ لعرف «لا اختبارَ
+            // تقرّره بذرةٌ متحرّكة بالتاريخ»: RFC 5545 يطوي السطر عند ٧٥
+            // **بايتاً**، وأسماء الناقلين عربية متعدّدة البايتات ومشتقّة من
+            // بذرةٍ تتحرّك مع التقويم — فموضع الطيّ يزحف كل يوم. وقد انفجر
+            // فعلاً: «Airline check-in opens» انقطعت عند «Airline c» في يومٍ
+            // بعينه بلا تغيّر سطرِ كود. والفكّ يشدّ فحوص التسريب أيضاً:
+            // بريدٌ يقع على حدّ الطيّ كان يُفلت من `includes` صامتاً.
+            const unfold = ics => ics.replace(/\r\n[ \t]/g, '');
+
             const feedPath = new URL(sub.data.httpUrl).pathname;
             // الفتح **بلا توكن دخول** — تطبيق التقويم لا يحمل واحداً
             const feed = await fetch(baseUrl + feedPath);
             assert.equal(feed.status, 200);
-            const body = await feed.text();
+            const body = unfold(await feed.text());
             assert.match(body, /X-WR-CALNAME:/);
             assert.match(body, new RegExp(`UID:${b.id}-0@jatrava\\.com`));
             // 🔒 التغذية مواعيد لا هوية: لا بريد ولا هاتف
@@ -2585,11 +2619,11 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             });
             assert.match(subEn.data.httpUrl, /\?lang=en$/);
             const enUrl = new URL(subEn.data.httpUrl);
-            const enFeed = await (await fetch(baseUrl + enUrl.pathname + enUrl.search)).text();
+            const enFeed = unfold(await (await fetch(baseUrl + enUrl.pathname + enUrl.search)).text());
             assert.match(enFeed, /X-WR-CALNAME:My trips/);
             assert.match(enFeed, /Airline check-in opens/);
             // ونفس التغذية بلا استعلام تبقى عربية (الافتراض)
-            assert.match(await (await fetch(baseUrl + enUrl.pathname)).text(), /X-WR-CALNAME:رحلاتي/);
+            assert.match(unfold(await (await fetch(baseUrl + enUrl.pathname)).text()), /X-WR-CALNAME:رحلاتي/);
 
             // الاشتراك ثابت: نداءٌ ثانٍ يعيد نفس الرابط لا رابطاً جديداً
             // (وإلا مات اشتراك المستخدم كلّما فتح الصفحة)
