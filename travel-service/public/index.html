@@ -431,10 +431,16 @@
   </style>
 </head>
 <body>
+<!-- 🌐 عرضٌ لا فرض: يظهر لمن لا اختيار لغةٍ له وجهازُه غير عربي -->
+  <div id="langOffer" class="banner hidden" style="background:var(--accent-soft);color:var(--accent-deep);border-color:var(--accent)">
+    This site is available in English.
+    <button class="chip" id="langOfferGo" style="margin-inline:8px">Switch to English</button>
+    <button class="chip" id="langOfferNo">لا، شكراً</button>
+  </div>
   <div id="modeBanner" class="banner hidden">🧪 بيئة تجريبية — الحجوزات هنا لا تُصدر تذاكر حقيقية ولا تُحصَّل أموال.</div>
   <header>
     <h1 style="display:flex;align-items:center;gap:10px">
-      <img src="icon.svg" alt="" width="30" height="30" style="border-radius:8px;border:1px solid var(--border);flex-shrink:0">
+      <img src="/icon.svg" alt="" width="30" height="30" style="border-radius:8px;border:1px solid var(--border);flex-shrink:0">
       Jatrava <span style="color:var(--muted);font-size:13px">بوابة السفر</span>
     </h1>
     <div style="display:flex;align-items:center;gap:14px">
@@ -956,9 +962,12 @@
     <p class="note" id="detailsShareNote">تُشارَك خطة الرحلة والمرجع فقط — بلا بريدك ولا هاتفك ولا أرقام تذاكرك.</p>
   </dialog>
 
-  <script src="i18n.js"></script>
-  <script src="trips.js"></script>
-  <script src="fare.js"></script>
+<!-- ⚠️ **مسارات جذرية لا نسبية**: الصفحة تُخدَم من `/` ومن `/en/` معاً،
+       والنسبيّ يصير `/en/i18n.js` — أي 404 صامت يترك الصفحة إنجليزية
+       العنوان عربية المحتوى. أي أصلٍ يُضاف هنا يبدأ بـ`/`. -->
+  <script src="/i18n.js"></script>
+  <script src="/trips.js"></script>
+  <script src="/fare.js"></script>
   <script>
     const $ = id => document.getElementById(id);
     let token = null, config = null, selectedOffer = null, selectedStayOffer = null, selectedCarOffer = null, lastFlightSearch = null;
@@ -968,7 +977,62 @@
     // `*_KEY` بقيمة نصّية اعتماداً مسرَّباً (SCT-A000) وأوقف الدمج فعلاً.
     // ⚠️ والقيمة نفسها لا تُمسّ: تغييرها يمحو لغة كل مستخدم حاليّ.
     const LANG_PREF = 'jaolaTravelLang';
-    const uiLang = localStorage.getItem(LANG_PREF) || 'ar';
+
+    /**
+     * 🌐 **العنوان يقرّر اللغة، لا التخزين المحلي.**
+     *
+     * الخادم يخدم `/` عربيةً و`/en/` إنجليزيةً بـ`lang` و`dir` و`canonical`
+     * و`hreflang` صحيحة (انظر LOCALES في server.js). فالصفحة المُسلَّمة هي
+     * الحقيقة، والعميل يقرؤها من `<html lang>` لا يخمّنها.
+     *
+     * وقبلها كانت اللغة في `localStorage` وحده: نسخةٌ إنجليزية كاملة **بلا
+     * عنوان** — لا تُفهرَس ولا تُشارَك ولا تُفتَح برابط.
+     */
+    const uiLang = document.documentElement.lang === 'en' ? 'en' : 'ar';
+    const LANG_PATH = { ar: '/', en: '/en/' };
+
+    /**
+     * 🧭 لغة الزائر: **اختيارُه الصريح يسود، ولغةُ جهازه تُعرَض ولا تُفرَض.**
+     *
+     * - وجودُ `LANG_PREF` أصلاً يعني اختياراً صريحاً (لا يُكتب إلا بضغطة
+     *   المبدّل أو ردٍّ على الشريط)، فمن اختار مرةً يُبحَر به إلى عنوان
+     *   لغته ولو دخل الآخر.
+     * - ومن لا اختيار له وجهازُه غير عربي: **شريطٌ يعرض** ولا يحوّل.
+     *   🔴 التحويل التلقائي بلغة المتصفح يعمي الزاحف: جوجل يزور بلغته هو،
+     *   فيُحوَّل دوماً إلى الإنجليزية ولا تُفهرَس العربية أبداً.
+     * - وحارسُ مرّة واحدة لكل جلسة: لو تعطّل `/en/` يوماً لصارت حلقةً.
+     */
+    (function resolveLanguage() {
+      const chosen = localStorage.getItem(LANG_PREF);
+      if (chosen && LANG_PATH[chosen] && chosen !== uiLang) {
+        if (!sessionStorage.getItem('langHop')) {
+          sessionStorage.setItem('langHop', '1');
+          location.replace(LANG_PATH[chosen]);
+        }
+        return;
+      }
+      sessionStorage.removeItem('langHop');
+      if (chosen || uiLang !== 'ar') return;
+      // `languages` جمعاً لا `language` مفرداً: قائمةٌ مرتّبة بالأفضلية
+      const prefs = navigator.languages || [navigator.language || ''];
+      if (prefs.some(l => String(l).toLowerCase().startsWith('ar'))) return;
+      const show = () => {
+        const bar = $('langOffer');
+        if (!bar) return;
+        bar.classList.remove('hidden');
+        $('langOfferGo').addEventListener('click', () => {
+          localStorage.setItem(LANG_PREF, 'en');
+          location.href = LANG_PATH.en;
+        });
+        // «لا شكراً» اختيارٌ صريح كذلك — فلا يُسأل في كل زيارة
+        $('langOfferNo').addEventListener('click', () => {
+          localStorage.setItem(LANG_PREF, 'ar');
+          bar.classList.add('hidden');
+        });
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show);
+      else show();
+    })();
     const I18N_MAP = (uiLang === 'en' && window.JAOLA_I18N && window.JAOLA_I18N.en) || null;
     const I18N_RULES = (uiLang === 'en' && window.JAOLA_I18N_RULES) || [];
     const I18N_SUBS = (uiLang === 'en' && window.JAOLA_I18N_SUBS) || [];
@@ -1915,11 +1979,13 @@
     translateTree(document.body); // الهيكل الثابت يُترجم فور التحميل
     syncDateHints(document.body);
 
-    // 🌐 مبدّل اللغة: يظهر اللغة الهدف، والتبديل بإعادة تحميل نظيفة
+    // 🌐 مبدّل اللغة: **يُبحر إلى عنوانٍ آخر** لا يقلب مفتاحاً محلياً —
+    // فما يراه المسافر هو ما سيراه من يفتح الرابط الذي يشاركه.
     $('langBtn').textContent = uiLang === 'en' ? 'عربي' : 'EN';
     $('langBtn').addEventListener('click', () => {
-      localStorage.setItem(LANG_PREF, uiLang === 'en' ? 'ar' : 'en');
-      location.reload();
+      const next = uiLang === 'en' ? 'ar' : 'en';
+      localStorage.setItem(LANG_PREF, next); // اختيارٌ صريح — يُحترَم دوماً
+      location.href = LANG_PATH[next];
     });
 
     async function fxInit() {

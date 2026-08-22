@@ -1598,6 +1598,29 @@ describe('صحة صياغة سكربتات الواجهة — درس عطل إن
         }
     });
 
+    // ⚠️ عطبٌ صامت: الصفحة تُخدَم من `/` ومن `/en/` معاً، فمسارٌ نسبيّ
+    // يصير `/en/i18n.js` — 404 بلا خطأ ظاهر، فتبقى الصفحة **إنجليزية
+    // العنوان عربية المحتوى**. انفجر فعلاً في التحقق بالمتصفح.
+    test('🔗 أصول الصفحة بمسارات جذرية — تعمل تحت /en/ كما تحت /', () => {
+        const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+        const head = html.slice(0, html.indexOf('</head>'));
+        const rel = [...head.matchAll(/(?:src|href)="([^"]+)"/g)]
+            .map(m => m[1])
+            .filter(u => !/^(https?:|\/|#|data:|mailto:)/.test(u));
+        assert.deepEqual(rel, [], `أصولٌ نسبية تنكسر تحت /en/:\n${rel.join('\n')}`);
+    });
+
+    // ⚠️ `cache.addAll` **يرفض أي رد إعادة توجيه** فيُسقط تثبيت الـSW
+    // كلّه — لا العنوان وحده. و`/index.html` صار 301 بعد فصل النسختين،
+    // فبقاؤه في القشرة كان سيكسر الـPWA لكل مستخدم بلا خطأ ظاهر.
+    test('🛰️ قشرة الـSW بلا عنوانٍ يُعيد التوجيه', () => {
+        const sw = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+        const shell = /const SHELL = \[([^\]]+)\]/.exec(sw)[1];
+        assert.ok(!shell.includes("'/index.html'"), '/index.html يُعيد 301 — يكسر تثبيت الـSW');
+        assert.ok(shell.includes("'/en/'"), 'النسخة الإنجليزية لا تعمل دون اتصال');
+        assert.ok(shell.includes("'/'"), 'القشرة العربية مفقودة');
+    });
+
     test('🧩 sw.js يتحلّل بلا خطأ صياغة', () => {
         const code = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
         assert.doesNotThrow(() => new Function(code));
@@ -3041,6 +3064,54 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 }
                 assert.ok(blocked > 0, 'لا حدّ على تخمين رموز الاستعادة!');
             });
+        });
+
+        test('🌐 نسختان بعنوانين: /en/ تُخدَم إنجليزيةً بـhreflang وcanonical', async () => {
+            const ar = await fetch(baseUrl + '/');
+            const en = await fetch(baseUrl + '/en/');
+            assert.equal(ar.status, 200);
+            assert.equal(en.status, 200);
+            const [arHtml, enHtml] = [await ar.text(), await en.text()];
+
+            // ⚠️ الجوهر: الخادم يسلّم لغةً مختلفة لعنوانٍ مختلف — لا صفحةً
+            // واحدة يقلبها localStorage (فتبقى الإنجليزية بلا عنوان يُفهرَس)
+            assert.match(arHtml, /<html lang="ar" dir="rtl">/);
+            assert.match(enHtml, /<html lang="en" dir="ltr">/);
+            assert.match(arHtml, /<title>[^<]*بوابة السفر<\/title>/);
+            assert.match(enHtml, /<title>[^<]*Travel Portal<\/title>/);
+
+            for (const [html, self_] of [[arHtml, '/'], [enHtml, '/en/']]) {
+                assert.match(html, /<meta name="description" content="[^"]{40,}"/, 'وصفٌ مفقود');
+                assert.match(html, new RegExp(`rel="canonical" href="[^"]*${self_ === '/' ? '/"' : '/en/"'}`));
+                // hreflang **مطلق** — النسبي يتجاهله جوجل
+                assert.match(html, /hreflang="ar" href="https?:\/\/[^"]+\/"/);
+                assert.match(html, /hreflang="en" href="https?:\/\/[^"]+\/en\/"/);
+                assert.match(html, /hreflang="x-default"/);
+            }
+
+            // ⚠️ حلقةٌ لا نهائية كانت هنا: Express يرى /en و/en/ مساراً
+            // واحداً، فتوجيه الأول التقط الثاني وأعاده إلى نفسه.
+            const bare = await fetch(baseUrl + '/en', { redirect: 'manual' });
+            assert.equal(bare.status, 200, '/en تُعيد توجيهاً — حلقة محتملة');
+
+            // ونسخةٌ ثانية بنفس المحتوى تُشتّت الترتيب — عنوانٌ واحد
+            const dup = await fetch(baseUrl + '/index.html', { redirect: 'manual' });
+            assert.equal(dup.status, 301);
+            assert.equal(dup.headers.get('location'), '/');
+        });
+
+        test('🤖 خريطة الموقع وrobots: الزاحف يعرف النسختين ولا يفهرس ما يخصّ الناس', async () => {
+            const sm = await (await fetch(baseUrl + '/sitemap.xml')).text();
+            assert.match(sm, /<loc>https?:\/\/[^<]+\/<\/loc>/);
+            assert.match(sm, /<loc>https?:\/\/[^<]+\/en\/<\/loc>/);
+            assert.match(sm, /hreflang="en"/);
+
+            const rb = await (await fetch(baseUrl + '/robots.txt')).text();
+            assert.match(rb, /Sitemap: https?:\/\/[^\s]+\/sitemap\.xml/);
+            // 🔒 قسيمةٌ مؤقّتة في نتائج بحثٍ عامة تفضح خطة رحلةٍ لصاحبها
+            for (const off of ['/api/', '/share.html', '/admin.html']) {
+                assert.ok(rb.includes(`Disallow: ${off}`), `${off} غير محجوب عن الزاحف`);
+            }
         });
 
         test('🧳 فلتر الحقيبة: يُسقط المعروفَ خلوُّه ويُبقي غيرَ المصرَّح موسوماً', async () => {
