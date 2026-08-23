@@ -143,6 +143,42 @@ window.JAOLA_I18N_TABLE = {
     'حفظ التفضيلات': { en: 'Save preferences' },
     'تعليم الكل كمقروء': { en: 'Mark all read' },
 
+    // ─── نافذة الدخول/التسجيل + بوابة الجلسة + الترويسة ───
+    '🔐 دخول': { en: '🔐 Sign in' },
+    '🚪 خروج': { en: '🚪 Sign out' },
+    '🔐 انتهت جلستك — سجّل دخولك من جديد للوصول إلى حجوزاتك.': { en: '🔐 Your session has ended — sign in again to access your bookings.' },
+    '🔐 الحجز يحتاج حساباً': { en: '🔐 Booking requires an account' },
+    'تصفّحُ الأسعار مفتوح للجميع، أمّا الحجز فيحتاج حساباً لتصل إليك التذكرة والتأكيد، وتجد حجزك في «رحلاتي» لاحقاً.': { en: 'Browsing prices is open to everyone — booking requires an account so your ticket and confirmation reach you, and you can find your booking later under "My trips."' },
+    'تسجيل الدخول': { en: 'Sign in' },
+    'حساب جديد': { en: 'New account' },
+    '🔑 استعادة كلمة المرور': { en: '🔑 Reset password' },
+    'اكتب بريدك المسجَّل وسنرسل إليك رابطاً لاختيار كلمة مرور جديدة. الرابط صالح ٣٠ دقيقة ويعمل مرة واحدة.': { en: "Enter your registered email and we'll send you a link to choose a new password. The link is valid for 30 minutes and works once." },
+    '🔑 اختر كلمة مرور جديدة': { en: '🔑 Choose a new password' },
+    'اختر كلمة مرور جديدة لحسابك. سندخلك مباشرةً بعد الحفظ.': { en: "Choose a new password for your account. You'll be signed in immediately after saving." },
+    'الاسم': { en: 'Name' },
+    'اسمك': { en: 'Your name' },
+    'كلمة المرور': { en: 'Password' },
+    'كلمة المرور الجديدة': { en: 'New password' },
+    '٨ أحرف على الأقل': { en: 'At least 8 characters' },
+    'أعد كتابة كلمة المرور': { en: 'Confirm password' },
+    'نفس الكلمة مرة أخرى': { en: 'Same password again' },
+    'أنشئ الحساب': { en: 'Create account' },
+    'أرسل رابط الاستعادة': { en: 'Send reset link' },
+    'احفظ وادخل': { en: 'Save and sign in' },
+    'أكمل التصفّح': { en: 'Continue browsing' },
+    'نسيت كلمة المرور؟': { en: 'Forgot your password?' },
+    '← العودة لتسجيل الدخول': { en: '← Back to sign in' },
+    '— أو —': { en: '— or —' },
+    // رسائل تحقق العميل (submitAuth/onGoogleCredential في index.html)
+    'أدخل بريدك المسجَّل.': { en: 'Enter your registered email.' },
+    'أدخل كلمة المرور الجديدة.': { en: 'Enter your new password.' },
+    'أدخل البريد وكلمة المرور.': { en: 'Enter your email and password.' },
+    'الكلمتان غير متطابقتين — أعد كتابتهما.': { en: "The passwords don't match — enter them again." },
+    'تعذّر إتمام الطلب — حاول مجدداً.': { en: "Couldn't complete the request — try again." },
+    'تعذّر الاتصال بالخادم — تحقق من اتصالك.': { en: "Couldn't reach the server — check your connection." },
+    'إن كان هذا البريد مسجَّلاً فستصلك رسالة بها رابط إعادة التعيين.': { en: "If this email is registered, you'll receive a message with a reset link." },
+    'تعذّر الدخول بحساب جوجل — حاول مجدداً.': { en: "Couldn't sign in with Google — try again." },
+
     // ─── التنبيهات والملف ───
     '🔔 تنبيهاتك': { en: '🔔 Your notifications' },
     'مطار الانطلاق المعتاد': { en: 'Usual departure airport' },
@@ -300,6 +336,29 @@ window.JAOLA_I18N_TABLE = {
  * وعمود لغة لكل ترجمة، فلغةٌ جديدة تضيف حقلاً لا مصفوفة قواعد كاملة.
  */
 window.JAOLA_I18N_RULES = [
+    // ─── حسابات Jatrava: رسائل خادم بأرقامٍ مُدرَجة (accounts.js/googleAuth.js) ───
+    { pattern: /^كلمة المرور (\d+) أحرف على الأقل\.$/u, en: 'Password must be at least $1 characters.' },
+    { pattern: /^كلمة المرور أطول من (\d+) حرفاً\.$/u, en: 'Password must be at most $1 characters.' },
+    { pattern: /^تعذّر جلب مفاتيح جوجل العامة \((\d+)\)\.$/u, en: "Couldn't fetch Google's public keys ($1)." },
+    // ─── حسابات Jatrava: رسائل خادم ثابتة بلا أرقام (server.js/googleAuth.js) ───
+    // ليست في الجدول عمداً: نصوصٌ لا تظهر حرفياً في index.html (تصل عبر
+    // data.error من رد الخادم)، فحارس الانجراف الصارم على الجدول يرفضها —
+    // نفس السبب الذي يضع رسائل الحجوزات المخزَّنة أدناه في RULES لا الجدول.
+    { pattern: /^أدخل بريداً إلكترونياً صحيحاً\.$/u, en: 'Enter a valid email address.' },
+    { pattern: /^كلمة المرور شائعة جداً — اختر غيرها\.$/u, en: 'This password is too common — choose another.' },
+    { pattern: /^تعذّر إنشاء الحساب بهذا البريد — جرّب تسجيل الدخول\.$/u, en: "Couldn't create an account with this email — try signing in." },
+    { pattern: /^البريد أو كلمة المرور غير صحيحة\.$/u, en: 'Incorrect email or password.' },
+    { pattern: /^الدخول بحساب جوجل غير مفعَّل على هذا الخادم\.$/u, en: "Google sign-in isn't enabled on this server." },
+    { pattern: /^رمز جوجل مفقود\.$/u, en: 'Google token missing.' },
+    { pattern: /^تعذّر التحقق من حساب جوجل\.$/u, en: "Couldn't verify the Google account." },
+    { pattern: /^بريد حساب جوجل غير مؤكَّد — تعذّر إتمام الدخول\.$/u, en: 'Google account email is unverified — sign-in failed.' },
+    { pattern: /^بريد حساب جوجل غير صالح\.$/u, en: 'Invalid Google account email.' },
+    { pattern: /^تعذّر إتمام الدخول — حاول مجدداً\.$/u, en: "Couldn't sign in — try again." },
+    { pattern: /^رابط إعادة التعيين منتهٍ أو غير صالح — اطلب رابطاً جديداً\.$/u, en: 'This reset link is expired or invalid — request a new one.' },
+    // ردود src/googleAuth.js (تُمرَّر عبر e.message في مسار /auth/google)
+    { pattern: /^رمز جوجل غير صالح\.$/u, en: 'Invalid Google token.' },
+    { pattern: /^تعذّر التحقق من حساب جوجل — حاول مجدداً\.$/u, en: "Couldn't verify the Google account — try again." },
+    { pattern: /^حساب جوجل بلا بريد إلكتروني — تعذّر إتمام الدخول\.$/u, en: 'Google account has no email — sign-in failed.' },
     { pattern: /^(\d+) ليالٍ$/u, en: '$1 nights' },
     { pattern: /^متاح: (\d+) مقاعد$/u, en: 'Available: $1 seats' },
     { pattern: /^🔥 تبقى (\d+) مقاعد فقط$/u, en: '🔥 Only $1 seats left' },
