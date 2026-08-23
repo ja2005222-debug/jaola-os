@@ -467,6 +467,10 @@
       <button id="bellBtn" class="bell hidden" title="التنبيهات">🔔<span id="bellCount" class="bell-count hidden">0</span></button>
       <button id="guestSignIn" class="chip hidden" type="button">🔐 دخول</button>
       <span id="userBadge" style="color:var(--muted);font-size:13px"></span>
+      <!-- 🚪 تسجيل الخروج: كان غائباً تماماً — من دخل بحساب لا يملك طريقة
+           للخروج منه سوى مسح localStorage يدوياً (مثلاً ليجرّب حساب جوجل
+           بدل الذي دخل به). زرٌّ صريح بدل الاعتماد على انتهاء التوكن. -->
+      <button id="logoutBtn" class="chip hidden" type="button">🚪 خروج</button>
     </div>
   </header>
 
@@ -1248,11 +1252,13 @@
           const label = payload.name || String(payload.username || '').split('@')[0];
           $('userBadge').textContent = label ? '👤 ' + label : '';
         } catch { /* عرض تجميلي فقط */ }
+        $('logoutBtn').classList.remove('hidden');
       } else {
         // تبويبات لا معنى لها بلا حساب — تُخفى بدل أن تَعِد بفراغ
         $('tripsTabBtn').classList.add('hidden');
         $('notifTabBtn').classList.add('hidden');
         $('guestSignIn').classList.remove('hidden');
+        $('logoutBtn').classList.add('hidden');
       }
       // من فتح رابط الاستعادة يرى النموذج فوراً — لا يبحث عنه في الصفحة
       if (resetToken) openLogin('reset');
@@ -1387,6 +1393,14 @@
     $('backToSignin').addEventListener('click', () => setAuthMode('signin'));
     $('loginCancel').addEventListener('click', () => $('loginDialog').close());
     $('guestSignIn').addEventListener('click', () => openLogin('signin'));
+    // 🚪 خروجٌ بسيط بإعادة تحميل: بخلاف الدخول (حيث نُفعّل الجلسة في
+    // مكانها كي لا نمحو بحث الزائر وبياناته)، الخروج يقصد إنهاء كل ذلك
+    // فعلاً — إعادة تحميل الصفحة تعيد boot() ليُظهر حالة الزائر الصحيحة
+    // بلا إعادة كتابة كل تبديل واجهة يدوياً هنا (تبويبات، ملف، جرس...).
+    $('logoutBtn').addEventListener('click', () => {
+        localStorage.removeItem('jaolaTravelToken');
+        location.reload();
+    });
     $('gateSignIn').addEventListener('click', () => openLogin('signin'));
 
     // كل وضعٍ ومساره وجسمه ومتطلَّبه — بدل سلسلة if متشعّبة تتباعد
@@ -1431,6 +1445,7 @@
       $('tripsTabBtn').classList.remove('hidden');
       $('notifTabBtn').classList.remove('hidden');
       $('guestSignIn').classList.add('hidden');
+      $('logoutBtn').classList.remove('hidden');
       // المسافرون المحفوظون تقرأهم نافذة الحجز — تُحمَّل قبل الاستئناف
       try { await loadProfile(); } catch { /* لا يمنع الاستئناف */ }
       refreshBell();
