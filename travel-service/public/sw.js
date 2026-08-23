@@ -40,7 +40,7 @@ self.addEventListener('fetch', (event) => {
     // القشرة: شبكة أولاً (أحدث نشر فوراً) + تحديث الكاش، والكاش للانقطاع فقط
     event.respondWith(
         fetch(event.request).then(res => {
-            if (res && res.ok) {
+            if (res?.ok) {
                 const copy = res.clone();
                 caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
             }
