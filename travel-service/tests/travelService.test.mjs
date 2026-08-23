@@ -1733,13 +1733,29 @@ describe('i18n: جدول الترجمة لا يتباعد عن الصفحة', ()
     const code = fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8');
     const w = {};
     new Function('window', code)(w);
-    const en = w.JAOLA_I18N?.en;
+    const table = w.JAOLA_I18N_TABLE;
+    // مُشتقّة من الجدول لا مصدرَ ثانٍ — بقيّة هذا الوصف يقرأ عبر هذه فقط.
+    const en = table && Object.fromEntries(Object.entries(table).map(([k, v]) => [k, v.en]));
 
     test('🌐 الجدول موجود وكل قيمة إنجليزية غير فارغة ومختلفة عن مفتاحها', () => {
         assert.ok(en && Object.keys(en).length >= 80, 'جدول وافٍ للهيكل الرئيسي');
         for (const [ar, enVal] of Object.entries(en)) {
             assert.ok(typeof enVal === 'string' && enVal.trim(), `قيمة فارغة للمفتاح: ${ar}`);
             assert.notEqual(enVal, ar, `ترجمة مطابقة لمفتاحها: ${ar}`);
+        }
+    });
+
+    // 🧭 جدولٌ واحد بعمود لكل لغة — لا جدولٌ منفصل لكل لغة (راجع رأس
+    // i18n.js): يحرس هذا الاختبار الشكل نفسه، فعودةٌ صامتة للصيغة القديمة
+    // (جدولٌ إنجليزي مستقل) لا تكسر أي اختبار آخر لأنها لا تزال صالحة
+    // بنيوياً — يكسرها فقط فحصٌ يتحقق من العمود صراحةً.
+    test('🧭 كل مدخل كائنٌ بعمود لغة — لا نصٌّ مباشر (الصيغة القديمة)', () => {
+        for (const [ar, val] of Object.entries(table)) {
+            assert.equal(typeof val, 'object', `مدخل غير كائن: ${ar}`);
+            assert.ok(!Array.isArray(val), `مدخل مصفوفة لا كائن: ${ar}`);
+            assert.equal(typeof val.en, 'string', `عمود en مفقود أو غير نصّي: ${ar}`);
+            // العربية عمداً خارج الجدول — HTML عربي المصدر دوماً (الميزة 24)
+            assert.equal(val.ar, undefined, `عمود ar لا ينبغي وجوده: ${ar}`);
         }
     });
 
@@ -1756,14 +1772,17 @@ describe('i18n: جدول الترجمة لا يتباعد عن الصفحة', ()
         const w2 = {};
         new Function('window', code)(w2);
         assert.ok(Array.isArray(w2.JAOLA_I18N_RULES) && w2.JAOLA_I18N_RULES.length >= 8);
-        for (const [re, rep] of w2.JAOLA_I18N_RULES) {
-            assert.ok(re instanceof RegExp && typeof rep === 'string');
+        for (const { pattern, en: rep } of w2.JAOLA_I18N_RULES) {
+            assert.ok(pattern instanceof RegExp && typeof rep === 'string');
         }
         // عيّنة تطبيق فعلية
-        const r = w2.JAOLA_I18N_RULES.find(([re]) => re.test('متاح: 7 مقاعد'));
+        const r = w2.JAOLA_I18N_RULES.find(({ pattern }) => pattern.test('متاح: 7 مقاعد'));
         assert.ok(r, 'قاعدة المقاعد موجودة');
-        assert.equal('متاح: 7 مقاعد'.replace(r[0], r[1]), 'Available: 7 seats');
+        assert.equal('متاح: 7 مقاعد'.replace(r.pattern, r.en), 'Available: 7 seats');
         assert.ok(Array.isArray(w2.JAOLA_I18N_SUBS) && w2.JAOLA_I18N_SUBS.length >= 6);
+        for (const { ar, en: rep } of w2.JAOLA_I18N_SUBS) {
+            assert.ok(typeof ar === 'string' && ar && typeof rep === 'string' && rep);
+        }
     });
 });
 
@@ -5247,6 +5266,11 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 owner: { name: 'Test Air' },
                 passengers: [{ id: 'pas_1' }, { id: 'pas_2' }],
                 slices: [{
+                    // RUH (UTC+3) → CAI (UTC+2): فرق منطقةٍ ساعة كاملة. المدة
+                    // الحقيقية ٣س٣٠د (08:00 RUH = 05:00 UTC ← 10:30 CAI =
+                    // 08:30 UTC)، وDuffel يرسلها جاهزةً — راجع تعليق الإصلاح
+                    // في duffelProvider.js لسبب عدم الاكتفاء بفرق التوقيتين.
+                    duration: 'PT3H30M',
                     segments: [{
                         origin: { iata_code: 'RUH' }, destination: { iata_code: 'CAI' },
                         departing_at: '2027-01-15T08:00:00', arriving_at: '2027-01-15T10:30:00',
@@ -5259,11 +5283,63 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(offer.netAmount, 250.5);
             assert.equal(offer.passengerCount, 2);
             assert.equal(offer.slices[0].origin, 'RUH');
-            assert.equal(offer.slices[0].durationMin, 150);
+            assert.equal(offer.slices[0].durationMin, 210);
             assert.equal(offer.slices[0].stops, 0);
             assert.equal(offer.slices[0].segments[0].flightNumber, 'TA101');
             assert.deepEqual(offer.passengerIds, ['pas_1', 'pas_2']);
             assert.equal(offer.slices[0].segments[0].baggage, null); // بلا حقل خام → null لا اختلاق
+        });
+
+        // 🔴 عطبٌ حقيقي موثَّق في CLAUDE.md: طرح التوقيتين الخام بلا مراعاة
+        // فرق المنطقة الزمنية بين مطارين مختلفين ينقص المدة بفارق المنطقتين
+        // بالضبط. AMS→RAK كانت تظهر ٢س٥٠د بدل ٣س٥٠د فعلياً في الإنتاج —
+        // وحدها، لأن المحاكاة تولّد الوصول بالجمع فلا تُنتج هذا الفرع أبداً.
+        test('🔴 durationMin يُقرأ من slice.duration لا من فرق التوقيتين الخام', () => {
+            const raw = (duration) => ({
+                id: 'off_1', total_amount: '100', total_currency: 'EUR',
+                slices: [{
+                    duration,
+                    segments: [{
+                        origin: { iata_code: 'AMS' }, destination: { iata_code: 'RAK' },
+                        departing_at: '2026-09-02T14:45:00', arriving_at: '2026-09-02T17:35:00',
+                    }],
+                }],
+            });
+            // ٣س٥٠د الحقيقية — لا ٢س٥٠د التي كان يعطيها الطرح الخام قبل الإصلاح
+            assert.equal(normalizeDuffelOffer(raw('PT3H50M'), []).slices[0].durationMin, 230);
+            assert.equal(normalizeDuffelOffer(raw('PT45M'), []).slices[0].durationMin, 45);
+            // صيغة فاسدة تُعامَل كغائبة — تسقط للاحتياطي لا لرقمٍ ملفَّق
+            assert.equal(
+                normalizeDuffelOffer(raw('garbage'), []).slices[0].durationMin,
+                normalizeDuffelOffer(raw(undefined), []).slices[0].durationMin,
+            );
+        });
+
+        test('🕰️ احتياطي durationMin (بلا slice.duration) لا يتغيّر بمنطقة الخادم', () => {
+            // الاحتياطي يبقى تقريبياً بين مطارين مختلفَي المنطقة (نفس عطب
+            // AMS→RAK أعلاه إن غاب الحقل) — لكنه الآن **حتميّ** لا عشوائي
+            // بمنطقة خادم النشر، بعد تثبيته UTC عبر instant() من itinerary.js.
+            const raw = {
+                id: 'off_1', total_amount: '100', total_currency: 'EUR',
+                slices: [{
+                    segments: [{
+                        origin: { iata_code: 'RUH' }, destination: { iata_code: 'CAI' },
+                        departing_at: '2027-02-01T09:00:00', arriving_at: '2027-02-01T11:00:00',
+                    }],
+                }],
+            };
+            const prev = process.env.TZ;
+            const read = tz => {
+                process.env.TZ = tz;
+                return normalizeDuffelOffer(raw, []).slices[0].durationMin;
+            };
+            try {
+                assert.equal(read('UTC'), read('Asia/Tokyo'));
+                assert.equal(read('UTC'), read('America/Los_Angeles'));
+                assert.equal(read('UTC'), 120);
+            } finally {
+                if (prev === undefined) delete process.env.TZ; else process.env.TZ = prev;
+            }
         });
 
         test('🧳 إثراء الأمتعة: يُستخرج إن وُجد، وnull بأمان إن غاب', () => {

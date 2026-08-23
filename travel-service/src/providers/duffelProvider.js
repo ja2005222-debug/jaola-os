@@ -23,7 +23,7 @@
 import { createDuffelClient } from './duffelClient.js';
 import { buildSearchPassengers } from '../passengerAges.js';
 import { normalizeFareConditions } from '../fareConditions.js';
-import { checkedBaggage } from '../itinerary.js';
+import { checkedBaggage, instant } from '../itinerary.js';
 
 const MAX_RESULTS = 10; // ما يكفي شاشة النتائج — Duffel قد يعيد المئات
 
@@ -48,6 +48,20 @@ function normalizePassengerRefs(list) {
         : { id: p?.id ?? null, type: p?.type ?? null, age: p?.age ?? null }));
 }
 
+/**
+ * 🕰️ يفكّ مدة ISO 8601 (`PT3H50M`) إلى دقائق — صيغة `slice.duration` عند
+ * Duffel (موثَّقة في SDKها الرسمي ومشتقّاتها؛ راجع الملاحظة أعلى هذا
+ * الملف عن مستوى التحقق العام لصيغ Duffel هنا). تدعم الأيام احتياطاً
+ * (`P1DT...`) رغم ندرتها في شريحة واحدة، وترفض أي صيغة لا تطابق بدل
+ * تخمين رقم.
+ */
+function parseIsoDurationMin(iso) {
+    const m = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/.exec(String(iso || '').trim());
+    if (!m || !(m[1] || m[2] || m[3] || m[4])) return null;
+    const total = Number(m[1] || 0) * 1440 + Number(m[2] || 0) * 60 + Number(m[3] || 0) + Number(m[4] || 0) / 60;
+    return Number.isFinite(total) ? Math.round(total) : null;
+}
+
 /** يطبّع عرض Duffel الخام إلى شكل العرض الموحّد الذي يفهمه بقية النظام. */
 export function normalizeDuffelOffer(raw, passengerRefs) {
     const passengers = normalizePassengerRefs(passengerRefs);
@@ -64,11 +78,23 @@ export function normalizeDuffelOffer(raw, passengerRefs) {
         }));
         const first = segments[0] || {};
         const last = segments[segments.length - 1] || {};
-        // مدة الرحلة من فرق التوقيتين الفعليين — duration الخام صيغة ISO8601
-        // نصية (PT2H30M) لا نحتاج تفكيكها ما دام لدينا الطرفان.
-        const durationMin = first.departAt && last.arriveAt
-            ? Math.round((new Date(last.arriveAt) - new Date(first.departAt)) / 60000)
-            : null;
+        // 🔴 عطبٌ حقيقي رُصد ووُثِّق قبل إصلاحه: الافتراض القديم («فرق
+        // التوقيتين يكفي، لا حاجة لتفكيك ISO8601») كان خاطئاً. توقيتا
+        // Duffel محليّان بلا إزاحة (راجع itinerary.js) — فرقهما صحيحٌ حين
+        // يتشارك الطرفان مطاراً واحداً (توقّف) لأن الإزاحة تُلغي نفسها،
+        // وخاطئٌ بين مطارين مختلفين بفارق منطقةٍ زمنية: رحلة AMS→RAK
+        // المباشرة (فرق ساعة) كانت تظهر ٢س٥٠د بدل ٣س٥٠د فعلياً — لا خطأ
+        // تقريب، بل نقصانٌ بمقدار فرق المنطقتين بالضبط.
+        // العلاج: `slice.duration` يصل من Duffel نفسه بصيغة ISO 8601
+        // محسوبةً بمنطقتي المطارين الحقيقيتين — لا نُخمّنها. وحين تغيب
+        // (رد قديم أو توثيقٌ غير مطابق تماماً؛ انظر تحفّظ الملف العام) نسقط
+        // لطريقة الطرح القديمة **بعد تثبيتها UTC صراحةً** (`instant` من
+        // itinerary.js) بدل تركها تتغيّر بمنطقة خادم النشر كما كانت — وهي
+        // تبقى تقريبية بين مطارين مختلفين، لكنها الآن حتمية لا عشوائية.
+        const isoDurationMin = parseIsoDurationMin(slice.duration);
+        const durationMin = isoDurationMin ?? (first.departAt && last.arriveAt
+            ? Math.round((instant(last.arriveAt) - instant(first.departAt)) / 60000)
+            : null);
         return {
             origin: first.origin, destination: last.destination,
             departAt: first.departAt, arriveAt: last.arriveAt,
