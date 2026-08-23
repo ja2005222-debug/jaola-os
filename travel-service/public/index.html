@@ -75,6 +75,17 @@
       background: #fef3c7; color: var(--warn); border: 1px solid #fcd34d;
       padding: 8px 14px; text-align: center; font-size: 13px;
     }
+    /* 🎯 شريط الثقة: الوعد الوحيد الذي يستحق قوله هو ما بنيناه فعلاً لا
+       شعاراً. خارج main وخارج authGate/introBlock/app عمداً — تلك الثلاثة
+       تتبادل الإخفاء بحسب حالة الدخول (وأحياناً بلا أن يراها الزائر أصلاً
+       أثناء لحظة boot()), وهذا الشريط يظهر فور الرسم الأول بلا شرط، لأنها
+       اللحظة التي يقرر فيها زائرٌ لا يعرفنا الوثوق بنا أمام عمالقة السوق. */
+    .trust-strip {
+      display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 22px;
+      background: var(--accent-soft); color: var(--accent-deep);
+      border-bottom: 1px solid var(--border); padding: 8px 16px;
+      font-size: 12.5px; font-weight: 600; text-align: center;
+    }
     main { max-width: 1000px; margin: 0 auto; padding: 20px; }
 
     .tabs { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
@@ -438,6 +449,11 @@
     <button class="chip" id="langOfferNo">لا، شكراً</button>
   </div>
   <div id="modeBanner" class="banner hidden">🧪 بيئة تجريبية — الحجوزات هنا لا تُصدر تذاكر حقيقية ولا تُحصَّل أموال.</div>
+  <div class="trust-strip">
+    <span>💯 السعر الذي تراه هو ما تدفعه — لا رسوم تُضاف بعد الحجز</span>
+    <span>🎫 شرط الاسترداد يظهر قبل الحجز لا بعده</span>
+    <span>🎒 باقاتنا المجدولة مقاعد محجوزة فعلياً — لا عروض تتغيّر تحتك</span>
+  </div>
   <header>
     <h1 style="display:flex;align-items:center;gap:10px">
       <img src="/icon.svg" alt="" width="30" height="30" style="border-radius:8px;border:1px solid var(--border);flex-shrink:0">

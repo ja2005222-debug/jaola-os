@@ -13,6 +13,11 @@
  */
 window.JAOLA_I18N = {
     en: {
+        // ─── شريط الثقة ─── (المفتاح يشمل الرمز التعبيري: عقدة نصٍّ واحدة)
+        '💯 السعر الذي تراه هو ما تدفعه — لا رسوم تُضاف بعد الحجز': '💯 The price you see is the price you pay — no fees added after booking',
+        '🎫 شرط الاسترداد يظهر قبل الحجز لا بعده': '🎫 Refund terms shown before you book, not after',
+        '🎒 باقاتنا المجدولة مقاعد محجوزة فعلياً — لا عروض تتغيّر تحتك': '🎒 Our scheduled packages hold real seats — not offers that shift under you',
+
         // ─── الرأس والتبويبات ───
         'بوابة السفر': 'Travel Portal',
         '⚙️ الإدارة': '⚙️ Admin',

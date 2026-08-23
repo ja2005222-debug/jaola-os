@@ -1610,6 +1610,22 @@ describe('صحة صياغة سكربتات الواجهة — درس عطل إن
         assert.deepEqual(rel, [], `أصولٌ نسبية تنكسر تحت /en/:\n${rel.join('\n')}`);
     });
 
+    // 🎯 شريط الثقة (لماذا Jatrava) هو وعدٌ يُقرأ في لحظة القرار: زائرٌ
+    // يقارننا بعمالقة السوق قبل أن يثق بنا. introBlock نفسه لا يُرى في
+    // هذه اللحظة فعلياً — boot() يُخفيه فور نجاح /api/travel/config التي
+    // تنجح للزائر أيضاً (البحث مفتوح بلا حساب)، فلا يبقى ظاهراً إلا في
+    // ومضة showGate(). الشريط هنا **خارج main** عمداً فلا يتبع authGate/
+    // introBlock/app في تبديل الإخفاء، ويُرسَم فور تحليل HTML لا بعد أي
+    // نداء شبكة.
+    test('🎯 شريط الثقة ظاهرٌ فوراً — خارج main وبلا شرط تسجيل دخول', () => {
+        const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+        const stripIdx = html.indexOf('class="trust-strip"');
+        const mainIdx = html.indexOf('<main>');
+        assert.ok(stripIdx > -1, 'الشريط موجود في الصفحة');
+        assert.ok(mainIdx > -1 && stripIdx < mainIdx, 'الشريط قبل <main> — لا يُخفى مع authGate/introBlock/app');
+        assert.ok(!/<div class="trust-strip"[^>]*\bhidden\b/.test(html), 'الشريط لا يحمل class hidden');
+    });
+
     // ⚠️ `cache.addAll` **يرفض أي رد إعادة توجيه** فيُسقط تثبيت الـSW
     // كلّه — لا العنوان وحده. و`/index.html` صار 301 بعد فصل النسختين،
     // فبقاؤه في القشرة كان سيكسر الـPWA لكل مستخدم بلا خطأ ظاهر.
