@@ -1049,9 +1049,22 @@
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show);
       else show();
     })();
-    const I18N_MAP = (uiLang === 'en' && window.JAOLA_I18N && window.JAOLA_I18N.en) || null;
-    const I18N_RULES = (uiLang === 'en' && window.JAOLA_I18N_RULES) || [];
-    const I18N_SUBS = (uiLang === 'en' && window.JAOLA_I18N_SUBS) || [];
+    // 🌐 i18n.js يصدّر جدولاً واحداً بعمود لكل لغة (لا جدولاً منفصلاً لكل
+    // لغة — راجع رأس الملف) — القراءة هنا عامة بمفتاح uiLang لا ثابتة على
+    // 'en'، فإضافة لغة ثالثة لاحقاً لا تلمس هذا السطر، وغياب عمودها في
+    // مدخلٍ ما يسقطه عربياً (نفس تدهور «غير المطابق» الموثَّق في i18n.js).
+    const I18N_TABLE = window.JAOLA_I18N_TABLE || null;
+    const I18N_MAP = (uiLang !== 'ar' && I18N_TABLE)
+        ? Object.fromEntries(Object.entries(I18N_TABLE)
+            .filter(([, v]) => v[uiLang])
+            .map(([k, v]) => [k, v[uiLang]]))
+        : null;
+    const I18N_RULES = (uiLang !== 'ar' && window.JAOLA_I18N_RULES)
+        ? window.JAOLA_I18N_RULES.filter(r => r[uiLang]).map(r => [r.pattern, r[uiLang]])
+        : [];
+    const I18N_SUBS = (uiLang !== 'ar' && window.JAOLA_I18N_SUBS)
+        ? window.JAOLA_I18N_SUBS.filter(s => s[uiLang]).map(s => [s.ar, s[uiLang]])
+        : [];
     const AR_RE = /[؀-ۿ]/; // لا عمل على عقدة بلا حرف عربي أصلاً
     // استبدال جزئي محروس بحدّ كلمة (انظر translateText) — يُبنى مرة ويُكيَّش
     const SUB_CACHE = new Map();
