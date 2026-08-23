@@ -15,6 +15,7 @@ import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { buildVerifyToken, buildOptionalToken } from './src/auth.js';
@@ -512,6 +513,100 @@ export function createApp({
     // webhook يحتاج الجسم الخام بالضبط كما وصل، لا نسخة مُعاد تسلسلها من
     // JSON المُفكَّك (قد تختلف بايتاً بايت: ترتيب مفاتيح، مسافات...).
     app.use(express.json({ limit: '256kb', verify: (req, res, buf) => { req.rawBody = buf; } }));
+
+    // ─── 🌐 نسختان بعنوانين، لا نسخةٌ تُترجَم في المتصفح ───────────────
+    //
+    // ⚠️ **عطبٌ تسويقيّ صامت**: الترجمة كانت في المتصفح وحده — الخادم
+    // يرسل HTML عربياً دائماً، و`localStorage` يقرّر ما يُعرض. فالنسخة
+    // الإنجليزية **بلا عنوان**: لا `/en/` ولا `hreflang` ولا عنوانٌ
+    // يُشارَك. من يبحث بالإنجليزية عن رحلةٍ من الرياض لا يصل إلينا أبداً،
+    // ونحن نملك الترجمة كاملة منذ شهور. صفحةٌ بلا URL غير موجودة.
+    //
+    // 🔴 **ولا إعادة توجيه تلقائية بلغة المتصفح** — لا هنا ولا في العميل:
+    // زاحف جوجل يزور بلغته هو، فتوجيهه يعني ألّا تُفهرَس العربية أبداً.
+    // العنوان يقرّر المحتوى، والزائر يُعرض عليه التبديل ولا يُفرَض عليه.
+    const LOCALES = {
+        ar: {
+            dir: 'rtl', path: '/',
+            title: '✈️ Jatrava — بوابة السفر',
+            desc: 'احجز طيرانك وفنادقك وسياراتك وباقاتك مع Jatrava — أسعار شفافة بلا خصومات مختلقة، ومقاعد بعدّاد حقيقي.',
+        },
+        en: {
+            dir: 'ltr', path: '/en/',
+            title: '✈️ Jatrava — Travel Portal',
+            desc: 'Book flights, hotels, cars and packages with Jatrava — transparent pricing, no invented discounts, real seat counts.',
+        },
+    };
+    const INDEX_HTML = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
+    // مفتاحه `${lang}|${base}` — والأساس يُشتقّ من الطلب حين لا يُضبط
+    // TRAVEL_PUBLIC_URL، فلا يبقى hreflang نسبياً (وجوجل يرفض النسبي).
+    const pageCache = new Map();
+
+    function localizedIndex(lang, base) {
+        const key = `${lang}|${base}`;
+        if (pageCache.has(key)) return pageCache.get(key);
+        const L = LOCALES[lang];
+        const alts = Object.entries(LOCALES)
+            .map(([code, m]) => `<link rel="alternate" hreflang="${code}" href="${base}${m.path.slice(1)}" />`)
+            .join('\n  ');
+        const head = [
+            `<meta name="description" content="${L.desc}" />`,
+            `<link rel="canonical" href="${base}${L.path.slice(1)}" />`,
+            alts,
+            // x-default للزائر الذي لا تطابق لغتُه أياً منهما — العربية أصلنا
+            `<link rel="alternate" hreflang="x-default" href="${base}" />`,
+        ].join('\n  ');
+
+        const html = INDEX_HTML
+            .replace('<html lang="ar" dir="rtl">', `<html lang="${lang}" dir="${L.dir}">`)
+            .replace(/<title>[^<]*<\/title>/, `<title>${L.title}</title>\n  ${head}`);
+        pageCache.set(key, html);
+        return html;
+    }
+
+    function sendIndex(lang) {
+        return (req, res) => {
+            res.type('html').send(localizedIndex(lang, requestBaseUrl(req) + '/'));
+        };
+    }
+
+    app.get('/', sendIndex('ar'));
+    // نسخةٌ ثانية بنفس المحتوى تُشتّت ترتيب الصفحة لدى الزاحف — عنوانٌ واحد
+    app.get('/index.html', (req, res) => res.redirect(301, '/'));
+    // ⚠️ **حلقة إعادة توجيه لا نهائية** كانت هنا: Express بلا `strict
+    // routing` يرى `/en` و`/en/` مساراً واحداً، فتوجيهُ الأول التقط
+    // الثاني وأعاد توجيهه إلى نفسه. المسار الواحد يخدم الشكلين،
+    // و`canonical` يخبر الزاحف أيّهما الأصل — وهو الحلّ القياسي.
+    app.get('/en', sendIndex('en'));
+
+    // 🤖 خريطة الموقع وrobots: بلا هذين لا يعرف الزاحف أن `/en/` موجودة
+    app.get('/sitemap.xml', (req, res) => {
+        const base = requestBaseUrl(req) + '/';
+        const urls = Object.entries(LOCALES).map(([code, m]) => `  <url>
+    <loc>${base}${m.path.slice(1)}</loc>
+${Object.entries(LOCALES).map(([c2, m2]) =>
+        `    <xhtml:link rel="alternate" hreflang="${c2}" href="${base}${m2.path.slice(1)}"/>`).join('\n')}
+    <changefreq>daily</changefreq>
+  </url>`).join('\n');
+        res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+${urls}
+</urlset>`);
+    });
+    app.get('/robots.txt', (req, res) => {
+        // 🔒 مسارات الحساب والمشاركة لا تُفهرَس: قسيمةٌ مؤقّتة في نتائج
+        // بحثٍ عامة تفضح خطة رحلةٍ لصاحبها (والصفحة noindex أصلاً — هذا
+        // حزامٌ ثانٍ)، ومسارات الـAPI ليست صفحات.
+        res.type('text/plain').send([
+            'User-agent: *',
+            'Disallow: /api/',
+            'Disallow: /share.html',
+            'Disallow: /admin.html',
+            `Sitemap: ${requestBaseUrl(req)}/sitemap.xml`,
+            '',
+        ].join('\n'));
+    });
+
     app.use(express.static(path.join(__dirname, 'public')));
 
     // 🔐 سرّ حسابات Jatrava — **مشتقّ** من jwtSecret بفصلٍ نطاقي، فتوكن
