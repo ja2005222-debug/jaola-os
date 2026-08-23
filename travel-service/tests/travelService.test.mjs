@@ -51,6 +51,7 @@ import { checkWatches } from '../src/priceWatchPoller.js';
 import { sendTripReminders, isReminderDue, renderTripReminder, departureAt } from '../src/tripReminders.js';
 import { searchAirports, airportForTimezone, AIRPORT_COORDS } from '../src/airports.js';
 import { hashResetToken, RESET_TTL_MIN } from '../src/accounts.js';
+import { createGoogleAuthClient } from '../src/googleAuth.js';
 import { arrivalDayOffset, layoverMinutes, layovers } from '../src/itinerary.js';
 import { ageOn, buildSearchPassengers, validateChildrenDobs, checkPassengerAges } from '../src/passengerAges.js';
 import { getDestinationWeather, convertCurrency } from '../src/travelInfo.js';
@@ -1583,8 +1584,14 @@ describe('صحة صياغة سكربتات الواجهة — درس عطل إن
         const submit = /async function submitAuth\(\)([\s\S]*?)\n    }/.exec(html)[1];
         assert.ok(!submit.includes('location.reload'),
             'عاد `location.reload()` إلى submitAuth — يمحو بحث الزائر وبياناته');
-        assert.ok(submit.includes('applySession'), 'الجلسة لا تُفعَّل في مكانها');
-        assert.ok(submit.includes('pendingIntent'), 'القصد المعلَّق لا يُستأنف');
+        // 🔵 ذيل النجاح مشترَك مع الدخول بجوجل (onAuthSuccess) — نسختان
+        // منفصلتان كانتا ستتباعدان بصمت (نفس درس ICS والتوطين)
+        assert.ok(submit.includes('onAuthSuccess'), 'ذيل النجاح المشترك لا يُستدعى');
+        const onSuccess = /async function onAuthSuccess\(data\)([\s\S]*?)\n    }/.exec(html)[1];
+        assert.ok(!onSuccess.includes('location.reload'),
+            'عاد `location.reload()` إلى onAuthSuccess — يمحو بحث الزائر وبياناته');
+        assert.ok(onSuccess.includes('applySession'), 'الجلسة لا تُفعَّل في مكانها');
+        assert.ok(onSuccess.includes('pendingIntent'), 'القصد المعلَّق لا يُستأنف');
 
         // وكل نافذة حجزٍ تسجّل قصدها عند اعتراض البوابة (401)
         for (const btn of ['bookConfirm', 'stayBookConfirm', 'carBookConfirm', 'fixedConfirm']) {
@@ -2047,6 +2054,95 @@ describe('reviews/balanceReminders: وحدات نقية', () => {
         assert.match(title, /متبقي/);
         assert.match(body, /500 USD/);
         assert.match(body, /FP-ABC123/);
+    });
+});
+
+describe('🔵 googleAuth.js: التحقق من Google ID Token — وحدات نقية', () => {
+    // مفتاحٌ حقيقي مولَّد محلياً (لا مفتاح جوجل فعلي بالطبع) — التحقق
+    // كاملاً بالتشفير الحقيقي (RS256 + JWKS) بلا أي نداء شبكة، عبر
+    // fetchImpl المُحقَن (نفس نمط اختبارات createStripeClient أعلاه).
+    const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const KID = 'test-kid-1';
+    const CLIENT_ID = 'test-client-id.apps.googleusercontent.com';
+    const jwk = { ...publicKey.export({ format: 'jwk' }), kid: KID, use: 'sig', alg: 'RS256' };
+    const fetchJwks = async () => ({ ok: true, json: async () => ({ keys: [jwk] }) });
+
+    function mintToken(overrides = {}) {
+        const payload = {
+            email: 'traveller@gmail.com', email_verified: true, name: 'مسافر جوجل',
+            ...overrides.payload,
+        };
+        return jwt.sign(payload, privateKey, {
+            algorithm: 'RS256', keyid: overrides.kid ?? KID,
+            audience: overrides.audience ?? CLIENT_ID,
+            issuer: overrides.issuer ?? 'https://accounts.google.com',
+            expiresIn: overrides.expiresIn ?? '5m',
+        });
+    }
+
+    test('🔒 بلا clientId: لا عميل إطلاقاً — لا مسار يعمل ولا زرّ يظهر', () => {
+        assert.equal(createGoogleAuthClient({ clientId: null }), null);
+        assert.equal(createGoogleAuthClient({ clientId: '' }), null);
+    });
+
+    test('✅ رمزٌ صحيح موقَّع ومطابق الجمهور والمُصدِر → هوية مستخرجة', async () => {
+        const client = createGoogleAuthClient({ clientId: CLIENT_ID, fetchImpl: fetchJwks });
+        const identity = await client.verifyIdToken(mintToken());
+        assert.equal(identity.email, 'traveller@gmail.com');
+        assert.equal(identity.emailVerified, true);
+        assert.equal(identity.name, 'مسافر جوجل');
+    });
+
+    test('🚫 جمهورٌ (aud) مختلف يُرفض — توكنٌ صالحٌ لتطبيقٍ آخر', async () => {
+        const client = createGoogleAuthClient({ clientId: CLIENT_ID, fetchImpl: fetchJwks });
+        await assert.rejects(() => client.verifyIdToken(mintToken({ audience: 'someone-elses-app.apps.googleusercontent.com' })));
+    });
+
+    test('🚫 مُصدِرٌ (iss) غير جوجل يُرفض', async () => {
+        const client = createGoogleAuthClient({ clientId: CLIENT_ID, fetchImpl: fetchJwks });
+        await assert.rejects(() => client.verifyIdToken(mintToken({ issuer: 'https://evil.example.com' })));
+    });
+
+    test('🚫 رمزٌ منتهٍ يُرفض', async () => {
+        const client = createGoogleAuthClient({ clientId: CLIENT_ID, fetchImpl: fetchJwks });
+        await assert.rejects(() => client.verifyIdToken(mintToken({ expiresIn: '-1s' })));
+    });
+
+    test('🚫 kid غير معروف (بعد إعادة جلب JWKS) يُرفض — لا مفتاح جوجل حقيقي يطابقه', async () => {
+        const client = createGoogleAuthClient({ clientId: CLIENT_ID, fetchImpl: fetchJwks });
+        await assert.rejects(() => client.verifyIdToken(mintToken({ kid: 'kid-not-in-jwks' })));
+    });
+
+    test('🚫 بريدٌ غير مؤكَّد من جوجل نفسها يظهر بوضوح في الهوية المستخرجة', async () => {
+        const client = createGoogleAuthClient({ clientId: CLIENT_ID, fetchImpl: fetchJwks });
+        const identity = await client.verifyIdToken(mintToken({ payload: { email: 'x@gmail.com', email_verified: false } }));
+        assert.equal(identity.emailVerified, false, 'الحارس ضد الانتحال في server.js يعتمد هذا الحقل');
+    });
+
+    test('🔴 alg مُبدَّل (هجوم تبديل الخوارزمية) يُرفض بنيوياً — algorithms صريحة', async () => {
+        // توقيعٌ بـHS256 باستخدام PEM المفتاح العام كـ"سرّ" — هجومٌ معروف
+        // حين يقرأ المتحقق الخوارزمية من التوكن نفسه بدل فرضها صراحةً.
+        const client = createGoogleAuthClient({ clientId: CLIENT_ID, fetchImpl: fetchJwks });
+        const forged = jwt.sign(
+            { email: 'x@gmail.com', email_verified: true, aud: CLIENT_ID, iss: 'https://accounts.google.com' },
+            publicKey.export({ format: 'pem', type: 'spki' }),
+            { algorithm: 'HS256', keyid: KID },
+        );
+        await assert.rejects(() => client.verifyIdToken(forged));
+    });
+
+    test('🚫 رمزٌ بلا kid في الترويسة يُرفض فوراً بلا نداء شبكة', async () => {
+        let fetchCalls = 0;
+        const client = createGoogleAuthClient({
+            clientId: CLIENT_ID,
+            fetchImpl: async (...a) => { fetchCalls++; return fetchJwks(...a); },
+        });
+        const noKidToken = jwt.sign(
+            { email: 'x@gmail.com', email_verified: true },
+            privateKey, { algorithm: 'RS256', audience: CLIENT_ID, issuer: 'https://accounts.google.com' },
+        );
+        await assert.rejects(() => client.verifyIdToken(noKidToken));
+        assert.equal(fetchCalls, 0, 'بلا kid لا فائدة من جلب JWKS أصلاً');
     });
 });
 
@@ -2927,6 +3023,107 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             // مستخدم منصةٍ أمّ باسمٍ قريب — لا يرى شيئاً
             const stranger = await call('/api/travel/bookings', { token: makeToken('iso') });
             assert.equal(stranger.data.bookings.length, 0, 'تسرّبت حجوزات حساب Jatrava!');
+        });
+
+        // ─── 🔵 الدخول بحساب جوجل ──────────────────────────────────
+        // ⚠️ **تطبيقٌ جديد لكل اختبار هنا** — نفس سبب withResetApp أعلاه
+        // (محدّد الحسابات بالـIP)، ونفس التحقق الحقيقي بالتشفير (RS256 +
+        // JWKS) المُختبَر منفرداً أعلاه في googleAuth.js، عبر fetchImpl
+        // مُحقَن — لا نداء شبكة حقيقي لجوجل، ولا اختصار للتحقق نفسه.
+        const GOOGLE_KP = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+        const GOOGLE_CLIENT_ID = 'test-client.apps.googleusercontent.com';
+        const GOOGLE_KID = 'srv-kid-1';
+        const GOOGLE_JWK = { ...GOOGLE_KP.publicKey.export({ format: 'jwk' }), kid: GOOGLE_KID };
+        const fetchGoogleJwks = async () => ({ ok: true, json: async () => ({ keys: [GOOGLE_JWK] }) });
+        function mintGoogleToken(payload) {
+            return jwt.sign({ email_verified: true, ...payload }, GOOGLE_KP.privateKey, {
+                algorithm: 'RS256', keyid: GOOGLE_KID,
+                audience: GOOGLE_CLIENT_ID, issuer: 'https://accounts.google.com', expiresIn: '5m',
+            });
+        }
+
+        async function withGoogleApp(fn) {
+            const app = createApp({
+                store, jwtSecret: JWT_SECRET, provider, staysProvider, carsProvider,
+                markupPct: MARKUP, packageMarkupPct: PKG_MARKUP, adminUsers: ['admin'],
+                googleClient: createGoogleAuthClient({ clientId: GOOGLE_CLIENT_ID, fetchImpl: fetchGoogleJwks }),
+            });
+            const srv = await new Promise(r => { const x = app.listen(0, () => r(x)); });
+            const url = `http://127.0.0.1:${srv.address().port}`;
+            const c = async (pathname, { method = 'GET', token = null, body = null } = {}) => {
+                const headers = { 'Content-Type': 'application/json' };
+                if (token) headers.Authorization = `Bearer ${token}`;
+                const r = await fetch(url + pathname, { method, headers, body: body ? JSON.stringify(body) : undefined });
+                return { status: r.status, data: await r.json().catch(() => null) };
+            };
+            try { return await fn(c); }
+            finally { await new Promise(r => srv.close(r)); }
+        }
+
+        test('🔵 بلا GOOGLE_CLIENT_ID: المسار يرد 503 صريحاً لا قبولاً صامتاً', async () => {
+            // app الرئيسي في هذا الوصف بلا googleClient أصلاً
+            const r = await call('/api/travel/auth/google', { method: 'POST', body: { credential: 'x' } });
+            assert.equal(r.status, 503);
+        });
+
+        test('🔵 رمز جوجل صحيح لبريدٍ جديد → حسابٌ يُنشأ بـprovider=google بلا كلمة مرور', async () => {
+            await withGoogleApp(async call => {
+                const token = mintGoogleToken({ email: 'newbie@gmail.com', name: 'ريم' });
+                const r = await call('/api/travel/auth/google', { method: 'POST', body: { credential: token } });
+                assert.equal(r.status, 200, JSON.stringify(r.data));
+                assert.ok(r.data.token);
+                assert.equal(r.data.user.email, 'newbie@gmail.com');
+                assert.equal(r.data.user.provider, 'google');
+                assert.equal(r.data.user.name, 'ريم');
+                // التوكن يفتح ما كان مغلقاً على الزائر — نفس عقد التسجيل العادي
+                assert.equal((await call('/api/travel/bookings', { token: r.data.token })).status, 200);
+            });
+        });
+
+        test('🔵 بريدٌ مسجَّل سابقاً بكلمة مرور + دخول بجوجل بنفس البريد → نفس الحساب لا حسابان', async () => {
+            await withGoogleApp(async call => {
+                const signup = await call('/api/travel/auth/signup', {
+                    method: 'POST', body: { email: 'both@example.com', password: 'travel2026x', name: 'قديم' },
+                });
+                assert.equal(signup.status, 201);
+                const offers = await call('/api/travel/flights/search', { method: 'POST', token: signup.data.token, body: SEARCH_BODY() });
+                const pwdBooked = await call('/api/travel/bookings', {
+                    method: 'POST', token: signup.data.token,
+                    body: { offerId: offers.data.offers[0].id, ...VALID_PAX },
+                });
+                assert.equal(pwdBooked.status, 200, JSON.stringify(pwdBooked.data));
+
+                const g = await call('/api/travel/auth/google', {
+                    method: 'POST', body: { credential: mintGoogleToken({ email: 'BOTH@Example.com' }) },
+                });
+                assert.equal(g.status, 200);
+                assert.equal(g.data.user.provider, 'password', 'الحساب الأصلي لا يُستبدَل ولا يُنشأ حسابٌ ثانٍ');
+
+                // نفس الحساب فعلياً: توكن جوجل يرى الحجز الذي أنشأه توكن كلمة المرور
+                const mine = await call('/api/travel/bookings', { token: g.data.token });
+                assert.equal(mine.data.bookings.length, 1, 'توكن جوجل لم يصل لحساب واحد موحّد');
+            });
+        });
+
+        test('🔵 بريدٌ غير مؤكَّد من جوجل نفسها → 401 لا دخول', async () => {
+            await withGoogleApp(async call => {
+                const token = mintGoogleToken({ email: 'unverified@gmail.com', email_verified: false });
+                const r = await call('/api/travel/auth/google', { method: 'POST', body: { credential: token } });
+                assert.equal(r.status, 401);
+            });
+        });
+
+        test('🔵 رمزٌ مزوَّر أو منتهٍ أو مفقود → 401/400 لا 200', async () => {
+            await withGoogleApp(async call => {
+                assert.equal((await call('/api/travel/auth/google', { method: 'POST', body: {} })).status, 400, 'بلا credential');
+                assert.equal((await call('/api/travel/auth/google', { method: 'POST', body: { credential: 'garbage.not.a.jwt' } })).status, 401, 'مشوَّه');
+                const expiredSigned = jwt.sign(
+                    { email: 'late@gmail.com', email_verified: true },
+                    GOOGLE_KP.privateKey,
+                    { algorithm: 'RS256', keyid: GOOGLE_KID, audience: GOOGLE_CLIENT_ID, issuer: 'https://accounts.google.com', expiresIn: '-1s' },
+                );
+                assert.equal((await call('/api/travel/auth/google', { method: 'POST', body: { credential: expiredSigned } })).status, 401, 'منتهٍ');
+            });
         });
 
         // ─── 🔑 استعادة كلمة المرور ──────────────────────────────────

@@ -37,6 +37,7 @@ import { sendBalanceReminders } from './src/balanceReminders.js';
 import { fxRate, DISPLAY_CURRENCIES } from './src/fx.js';
 import { computeLoyalty } from './src/loyalty.js';
 import { createStripeClient, verifyStripeWebhookSignature } from './src/payments/stripeClient.js';
+import { createGoogleAuthClient } from './src/googleAuth.js';
 import { normalizeContract } from './src/contracts.js';
 import { createContractedStaysProvider, withContractedStays } from './src/providers/contractedStaysProvider.js';
 import { createBooking, getBooking, getBookingByProviderOrderId, listBookingsByUser, transitionBooking } from './src/bookings.js';
@@ -503,6 +504,10 @@ export function createApp({
     stripeClient = null,          // من STRIPE_SECRET_KEY (قابل للحقن في الاختبارات)
     stripeWebhookSecret = null,   // من STRIPE_WEBHOOK_SECRET — بلا هذا يرد المسار 503
     publicUrl = null,             // من TRAVEL_PUBLIC_URL — روابط العودة من صفحة الدفع
+    // 🔵 الدخول بحساب جوجل — كائنٌ واحد يحمل clientId والتحقق معاً (نفس
+    // نمط stripeClient): بلا GOOGLE_CLIENT_ID يبقى null فلا مسار `/auth/google`
+    // يعمل ولا زرّ يظهر في الواجهة (بلا هذا الشرط: زرٌّ لا يعمل خيرٌ من عدمه).
+    googleClient = null,
 }) {
     const app = express();
     // خلف وكيل عكسي واحد (Render وأمثالها) — بدونه req.ip هو عنوان الوكيل
@@ -1398,6 +1403,50 @@ ${urls}
         res.json({ token: signAccountToken(user, accountSecret), user: publicUser(user) });
     }));
 
+    /**
+     * 🔵 الدخول بحساب جوجل: العميل يرسل الرمز الذي أرجعته مكتبة جوجل
+     * (Google Identity Services) بعد اختيار المستخدم حسابه — لا كلمة
+     * مرور ولا سرّ عميل هنا، فقط تحقق توقيع (googleAuth.js).
+     *
+     * 🔴 **بريدٌ غير مؤكَّد من جوجل نفسها يُرفض**: قبوله يفتح انتحال بريد
+     * غيرك عبر حساب Workspace لم يُثبَت امتلاكه فعلياً.
+     *
+     * 🌐 **البريد هو نقطة الالتقاء**: من سجّل سابقاً بكلمة مرور ثم دخل
+     * بجوجل بنفس البريد هو نفسه — لا حسابان (انظر التصميم في accounts.js).
+     */
+    app.post('/api/travel/auth/google', authLimiter, wrap(async (req, res) => {
+        if (!googleClient) return res.status(503).json({ error: 'الدخول بحساب جوجل غير مفعَّل على هذا الخادم.' });
+        const credential = req.body?.credential;
+        if (!credential) return res.status(400).json({ error: 'رمز جوجل مفقود.' });
+
+        let identity;
+        try {
+            identity = await googleClient.verifyIdToken(credential);
+        } catch (e) {
+            return res.status(401).json({ error: e.message || 'تعذّر التحقق من حساب جوجل.' });
+        }
+        if (!identity.emailVerified) {
+            return res.status(401).json({ error: 'بريد حساب جوجل غير مؤكَّد — تعذّر إتمام الدخول.' });
+        }
+        const email = normalizeEmail(identity.email);
+        if (!isValidEmail(email)) return res.status(400).json({ error: 'بريد حساب جوجل غير صالح.' });
+
+        let user = await store.getUserByEmail(email);
+        if (!user) {
+            user = await store.createUser({
+                email, name: normalizeName(identity.name), provider: 'google',
+                passwordHash: null, emailVerifiedAt: Date.now(),
+            });
+            // سباق نادر (تسجيلان متزامنان بنفس البريد): createUser يرجع
+            // null عند التصادم بدل رمي خطأ — من وصل هنا فعلاً أثبت ملكية
+            // هذا البريد لدى جوجل، فالقراءة بدل الفشل صحيحة لا تحايل.
+            if (!user) user = await store.getUserByEmail(email);
+        }
+        if (!user) return res.status(500).json({ error: 'تعذّر إتمام الدخول — حاول مجدداً.' });
+
+        res.json({ token: signAccountToken(user, accountSecret), user: publicUser(user) });
+    }));
+
     // من أنا؟ — الواجهة تعرض الاسم، وتتأكد أن التوكن المخزَّن حيّ
     app.get('/api/travel/auth/me', verifyToken, wrap(async (req, res) => {
         const email = normalizeEmail(req.user?.email || req.user?.username);
@@ -1533,6 +1582,7 @@ ${urls}
             agentEnabled: !!agent,
             packagesEnabled: !!staysProvider, // الباقة = طيران + فندق؛ الطيران موجود دوماً
             paymentsEnabled: !!stripeClient, // 💳 حجز الباقات المجدولة يتحول لدفع فعلي
+            googleClientId: googleClient?.clientId || null, // زرّ «الدخول بجوجل» يظهر فقط حين يوجد
             isAdmin: isAdmin(req), // رابط ⚙️ الإدارة يظهر لأصحابه فقط
         });
     }));
@@ -3096,6 +3146,9 @@ if (isMain) {
         stripeClient: createStripeClient({ secretKey: process.env.STRIPE_SECRET_KEY || null }),
         stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || null,
         publicUrl: process.env.TRAVEL_PUBLIC_URL || null,
+        // 🔵 الدخول بجوجل — GOOGLE_CLIENT_ID من Google Cloud Console
+        // (OAuth client من نوع Web، بلا سرّ عميل: تدفّق ID-token فقط)
+        googleClient: createGoogleAuthClient({ clientId: process.env.GOOGLE_CLIENT_ID || null }),
     });
 
     const port = Number(process.env.PORT || 4200);
@@ -3115,6 +3168,9 @@ if (isMain) {
         }
         if (store.name === 'file') {
             console.warn('⚠️ تخزين بالملفات — على منصة ذات قرص مؤقت تُمسح الحجوزات مع كل إعادة نشر. اضبط DATABASE_URL للإنتاج.');
+        }
+        if (!process.env.GOOGLE_CLIENT_ID) {
+            console.warn('⚠️ الدخول بجوجل غير مفعَّل — اضبط GOOGLE_CLIENT_ID لإظهار زرّ «الدخول بحساب جوجل».');
         }
     });
 

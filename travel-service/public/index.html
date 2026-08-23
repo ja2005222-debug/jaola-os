@@ -825,6 +825,14 @@
       <button type="button" id="tabSignup">حساب جديد</button>
     </div>
 
+    <!-- 🔵 الدخول بجوجل: يظهر فقط حين GOOGLE_CLIENT_ID مضبوطاً على الخادم
+         (config.googleClientId) — بلا هذا الشرط زرٌّ لا يعمل خيرٌ من عدمه.
+         مخفيٌّ في وضعَي الاستعادة (forgot/reset) عبر setAuthMode أيضاً. -->
+    <div id="googleSignInRow" class="hidden" style="margin-top:12px">
+      <div id="googleSignInBtn" style="display:flex;justify-content:center"></div>
+      <div class="note" style="text-align:center;margin:10px 0">— أو —</div>
+    </div>
+
     <!-- الاسم للتسجيل وحده. autocomplete صحيح يجعل مدير كلمات المرور
          في المتصفح يعرض العرض الصحيح ويحفظها — تفصيلٌ يقرّر أيعود
          المسافر أم ينسى كلمته. -->
@@ -1248,6 +1256,7 @@
       }
       // من فتح رابط الاستعادة يرى النموذج فوراً — لا يبحث عنه في الصفحة
       if (resetToken) openLogin('reset');
+      maybeInitGoogleSignIn();
       if (config.providerMode !== 'live') $('modeBanner').classList.remove('hidden');
       if (!config.agentEnabled) $('agentTabBtn').title = T('غير مفعَّل على هذا الخادم', 'Not enabled on this server');
       if (!config.staysEnabled) $('includeStaysLabel').classList.add('hidden');
@@ -1356,6 +1365,9 @@
       $('passwordLabel').textContent = mode === 'reset' ? 'كلمة المرور الجديدة' : 'كلمة المرور';
       $('forgotLink').classList.toggle('hidden', !m.forgot);
       $('backToSignin').classList.toggle('hidden', !m.back);
+      // بلا كلمة مرور معناها هنا: تظهر لتسجيل الدخول/حساب جديد فقط،
+      // لا لاستعادة كلمة المرور (جوجل لا يملك كلمة مرور يستعيدها أصلاً)
+      $('googleSignInRow').classList.toggle('hidden', !(config?.googleClientId && (mode === 'signin' || mode === 'signup')));
       // 🔑 يخبر مدير كلمات المرور أيقترح كلمةً قوية جديدة أم يملأ القديمة
       $('authPassword').setAttribute('autocomplete', m.autocomplete);
       $('loginError').classList.add('hidden');
@@ -1460,20 +1472,7 @@
           showLoginError(data.error || 'تعذّر إتمام الطلب — حاول مجدداً.');
           return;
         }
-        localStorage.setItem('jaolaTravelToken', data.token);
-        token = data.token;
-        await applySession();
-        $('loginDialog').close();
-        // 🎯 يُستأنف ما اعترضته البوابة — ونافذة الحجز ما زالت مفتوحة
-        // خلفها ببياناتها كاملة، فالضغطة تعيد إرسال ما كتبه بلا لمسة.
-        // رسالة «سجّل دخولك» صارت لاغية — تُمسح قبل الاستئناف فلا
-        // تومض في وجه من صار داخلاً فعلاً.
-        for (const id of ['bookError', 'stayBookError', 'carBookError', 'fixedDlgError']) {
-          $(id)?.classList.add('hidden');
-        }
-        const resume = pendingIntent;
-        pendingIntent = null;
-        if (resume) setTimeout(resume, 80);
+        await onAuthSuccess(data);
       } catch {
         showLoginError('تعذّر الاتصال بالخادم — تحقق من اتصالك.');
       } finally {
@@ -1481,9 +1480,75 @@
       }
     }
 
+    /**
+     * 🔑 ذيل نجاح الدخول المشترك — submitAuth (بريد/كلمة مرور) وgoogle
+     * (onGoogleCredential) كلاهما ينتهي بالضبط هنا. نسختان منفصلتان
+     * كانتا ستتباعدان بصمت (نفس درس ICS والتوطين): إحداهما تُحدَّث
+     * والأخرى تُنسى.
+     */
+    async function onAuthSuccess(data) {
+      localStorage.setItem('jaolaTravelToken', data.token);
+      token = data.token;
+      await applySession();
+      $('loginDialog').close();
+      // 🎯 يُستأنف ما اعترضته البوابة — ونافذة الحجز ما زالت مفتوحة
+      // خلفها ببياناتها كاملة، فالضغطة تعيد إرسال ما كتبه بلا لمسة.
+      // رسالة «سجّل دخولك» صارت لاغية — تُمسح قبل الاستئناف فلا
+      // تومض في وجه من صار داخلاً فعلاً.
+      for (const id of ['bookError', 'stayBookError', 'carBookError', 'fixedDlgError']) {
+        $(id)?.classList.add('hidden');
+      }
+      const resume = pendingIntent;
+      pendingIntent = null;
+      if (resume) setTimeout(resume, 80);
+    }
+
     function showLoginError(msg) {
       $('loginError').textContent = msg;
       $('loginError').classList.remove('hidden');
+    }
+
+    /**
+     * 🔵 الدخول بجوجل: يُحمَّل سكربت جوجل الرسمي كسولاً — فقط حين يوجد
+     * googleClientId فعلاً (بلا هذا الشرط: نداء شبكة خارجي بلا فائدة
+     * لكل زائر، حتى من لا يرى الزرّ إطلاقاً). نفس نمط تحميل خرائط OSM
+     * الكسول في تفاصيل الفندق.
+     */
+    let googleSignInReady = false;
+    function maybeInitGoogleSignIn() {
+      if (!config?.googleClientId || googleSignInReady) return;
+      googleSignInReady = true;
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.onload = () => {
+        google.accounts.id.initialize({ client_id: config.googleClientId, callback: onGoogleCredential });
+        google.accounts.id.renderButton($('googleSignInBtn'), {
+          type: 'standard', theme: 'outline', size: 'large', width: 320,
+          locale: uiLang === 'en' ? 'en' : 'ar',
+        });
+      };
+      document.head.appendChild(script);
+    }
+
+    /** رمز جوجل (JWT) يصل هنا بعد اختيار المستخدم حسابه — نتحقق منه في الخادم. */
+    async function onGoogleCredential(response) {
+      $('loginError').classList.add('hidden');
+      try {
+        const res = await fetch('/api/travel/auth/google', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-UI-Lang': uiLang },
+          body: JSON.stringify({ credential: response.credential }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.token) {
+          showLoginError(data.error || 'تعذّر الدخول بحساب جوجل — حاول مجدداً.');
+          return;
+        }
+        await onAuthSuccess(data);
+      } catch {
+        showLoginError('تعذّر الاتصال بالخادم — تحقق من اتصالك.');
+      }
     }
 
     $('loginConfirm').addEventListener('click', submitAuth);
