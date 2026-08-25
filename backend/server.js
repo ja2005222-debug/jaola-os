@@ -79,6 +79,7 @@ import * as oauth from './services/oauthLite.js';
 import * as ghFiles from './services/githubFiles.js';
 import { teamPlan, BACKEND_TEAM } from './agents/backendTeam/index.js';
 import { frontendTeamPlan, FRONTEND_TEAM } from './agents/frontendTeam/index.js';
+import { isStaticAssetPath } from './utils/spaFallback.js';
 import { listStarters, selectStarter, resolveStack, STARTERS } from './agents/starterRegistry.js';
 import { fetchStarter, fetchRepoFiles, parseRepoUrl } from './agents/starterFetch.js';
 import * as siteCms from './services/siteCms.js';
@@ -255,7 +256,7 @@ if (fs.existsSync(frontendDistPath)) {
     // (frontend/src/ErrorBoundary.jsx).
     app.get('*', (req, res, next) => {
         if (req.path.startsWith('/api') || req.path.startsWith('/workspace')) return next();
-        if (req.path.startsWith('/assets/') || /\.[a-z0-9]{2,5}$/i.test(req.path)) return res.status(404).end();
+        if (isStaticAssetPath(req.path)) return res.status(404).end();
         res.sendFile(path.join(frontendDistPath, 'index.html'));
     });
 }
