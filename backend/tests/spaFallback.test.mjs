@@ -41,10 +41,21 @@ test('الواجهة: <App/> مغلَّف بحدّ أخطاء ومستمع vite:
     assert.match(main, /reloadOnceForStaleChunk/, 'التعافي من الحزمة المتقادمة');
 });
 
-test('الواجهة: احتياط vercel.json يستثني /assets/ كما يفعل الخادم', () => {
+// ⚠️ درسٌ مكلف (٢٦ أغسطس ٢٠٢٦): استثناء `/assets/` هنا كان مكتوباً بـ
+// negative lookahead — `/((?!assets/).*)`. هذا بناءٌ من regex الكامل، لا
+// من صياغة path-to-regexp التي يوثّقها Vercel لحقل `source`. النتيجة على
+// الموقع الحيّ: طلبات `/assets/index-*.js` و`/assets/index-*.css` كانت
+// تُرَدّ **٥٠٠** من محرّك توجيه Vercel نفسه — لا 404 ولا حجب متصفح — عبر
+// كل متصفح وشبكة جرّبها المالك؛ الدليل القاطع أن العلّة في محرّك التوجيه
+// لا في العميل. والاستثناء أصلاً لم يكن ضرورياً في الحالة الشائعة: Vercel
+// يخدم الملف الثابت الموجود فعلياً **قبل** تطبيق أي rewrite بحكم توثيقه
+// الرسمي، فطلب أصلٍ موجود لا يصل لقاعدة الاستثناء أصلاً. أُعيد النمط إلى
+// catch-all بسيط مدعوم رسمياً، ولن يُقبل أي بناء regex غير قياسي هنا مجدداً.
+test('الواجهة: rewrite بلا أي بناء regex غير مدعوم في محرّك Vercel', () => {
     const cfg = JSON.parse(fs.readFileSync(new URL('../../frontend/vercel.json', import.meta.url), 'utf8'));
     const src = cfg.rewrites?.[0]?.source || '';
-    assert.match(src, /\(\?!assets\//, 'الأصول المفقودة لا تُبتلع في index.html');
+    assert.ok(src.length > 0, 'قاعدة rewrite موجودة');
+    assert.ok(!/\(\?[!=<]/.test(src), 'لا negative/positive lookahead أو lookbehind — غير مدعومة رسمياً وسبّبت 500 حيّة');
 });
 
 // ⚠️ درس فوري (٢٥ أغسطس ٢٠٢٦): أُضيف مفتاح `"//"` تعليقاً في vercel.json،
@@ -137,4 +148,21 @@ test('الحكم يفرّق بين فشل تحميل عنصر واستثناء �
     assert.match(guard, /classifyErrors/, 'تصنيف صريح بدل معاملة كل خطأ بالتساوي');
     assert.match(guard, /entryBlocked/, 'الحكم مقيَّد بحزمة الدخول نفسها لا أي مورد عرَضي');
     assert.match(guard, /رفض تحميل المورد كعنصر/, 'حكمٌ مستقل حين يُحجب العنصر لا حين يُرمى استثناء');
+});
+
+// 🔥 بلاغ jaola.dev الرابع (٢٦ أغسطس ٢٠٢٦): الأدلة أثبتت البطاقة أنها كانت
+// عاجزة عن رؤيته — status 500 من الخادم نفسه على /assets/index-*.js
+// و/assets/index-*.css تحديداً، عبر متصفحات وشبكات متعددة جرّبها المالك،
+// من تبويب Console مباشرةً (لا من تشخيص بطاقتنا). السبب: negative lookahead
+// `(?!assets/)` في rewrite بملف frontend/vercel.json — بناء regex كامل لا
+// يدعمه محرّك توجيه Vercel رسمياً (يوثّق صياغة path-to-regexp فقط)، وتعثّر
+// المحرّك عند تقييمه لهذين المسارين تحديداً فردّ 500. لا سبيل لي لإعادة
+// إنتاج توجيه Vercel محلياً، فهذا اختبار **بنيوي** يمنع عودة أي بناء regex
+// غير قياسي في هذا الملف تحديداً — لا اختبار سلوكي على محرّك لا أملكه.
+test('لا يعود negative/positive lookahead أو lookbehind إلى أي rewrite في vercel.json', () => {
+    const cfg = JSON.parse(fs.readFileSync(new URL('../../frontend/vercel.json', import.meta.url), 'utf8'));
+    for (const rule of cfg.rewrites || []) {
+        assert.ok(!/\(\?[!=<]/.test(rule.source || ''),
+            `rewrite "${rule.source}" يحوي بناء regex غير مدعوم رسمياً في Vercel`);
+    }
 });
