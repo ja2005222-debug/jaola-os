@@ -79,6 +79,7 @@ import * as oauth from './services/oauthLite.js';
 import * as ghFiles from './services/githubFiles.js';
 import { teamPlan, BACKEND_TEAM } from './agents/backendTeam/index.js';
 import { frontendTeamPlan, FRONTEND_TEAM } from './agents/frontendTeam/index.js';
+import { isStaticAssetPath } from './utils/spaFallback.js';
 import { listStarters, selectStarter, resolveStack, STARTERS } from './agents/starterRegistry.js';
 import { fetchStarter, fetchRepoFiles, parseRepoUrl } from './agents/starterFetch.js';
 import * as siteCms from './services/siteCms.js';
@@ -247,8 +248,15 @@ if (fs.existsSync(frontendDistPath)) {
             else if (/\.(js|css|jpg|png|svg|woff2?)$/.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
         },
     }));
+    // ⚠️ الاحتياط لتوجيه SPA يجب ألا يبتلع **الأصول المفقودة**: طلب
+    // `/assets/index-<hash>.js` لم يعد موجوداً (تبويب قديم بعد نشر جديد)
+    // كان يتلقى index.html بترويسة text/html، فيرفض المتصفح تنفيذه كوحدة
+    // جافاسكربت وتُفرَّغ الشجرة → صفحة بيضاء صامتة. 404 صريحة أصدق: تصل
+    // للواجهة كـvite:preloadError فتُعاد التحميل مرة واحدة تلقائياً
+    // (frontend/src/ErrorBoundary.jsx).
     app.get('*', (req, res, next) => {
         if (req.path.startsWith('/api') || req.path.startsWith('/workspace')) return next();
+        if (isStaticAssetPath(req.path)) return res.status(404).end();
         res.sendFile(path.join(frontendDistPath, 'index.html'));
     });
 }
