@@ -125,3 +125,16 @@ test('العدّ يبدأ من DOMContentLoaded، ومسارٌ سريع لا ي�
     assert.match(guard, /DOMContentLoaded/, 'لا ننتظر load — يتأخّر حين يكون العطب في مورد');
     assert.match(guard, /FAST_FAIL_AFTER/, 'خطأ مُسجَّل + جذر فارغ = حكم قاطع بلا انتظار');
 });
+
+// 🎯 بلاغ jaola.dev الثالث: البطاقة عرضت status:200 وcontent-type سليم،
+// و__jaolaErrors فيه إدخالان بادئتهما `load-failed:` (عنصر <script>/<link>
+// فشل تحميله)، لكن الحكم النصّي قال «تصل سليمة لكنها ترمي عند التنفيذ» —
+// وهذا خطأ: `load-failed` ليس استثناءً رُمي، بل فشل تحميل. الحكم القديم كان
+// يعامل أي إدخالٍ في __jaolaErrors كدليل تنفيذٍ فاشل بلا تمييز.
+test('الحكم يفرّق بين فشل تحميل عنصر واستثناء حقيقي عند التنفيذ', () => {
+    const html = fs.readFileSync(new URL('../../frontend/index.html', import.meta.url), 'utf8');
+    const guard = html.slice(html.lastIndexOf('<script>'));
+    assert.match(guard, /classifyErrors/, 'تصنيف صريح بدل معاملة كل خطأ بالتساوي');
+    assert.match(guard, /entryBlocked/, 'الحكم مقيَّد بحزمة الدخول نفسها لا أي مورد عرَضي');
+    assert.match(guard, /رفض تحميل المورد كعنصر/, 'حكمٌ مستقل حين يُحجب العنصر لا حين يُرمى استثناء');
+});

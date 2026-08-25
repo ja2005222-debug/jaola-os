@@ -175,21 +175,59 @@
           return list.length ? '\n\n--- errors ---\n' + list.join('\n') : '\n\n(no JS errors captured)';
         }
 
+        // ⚠️ درس (٢٥ أغسطس ٢٠٢٦، jaola.dev حيّاً): الحكم كان يعامل **كل** خطأٍ
+        // مُسجَّل على أنه استثناءٌ عند التنفيذ، فقال «تصل سليمة لكنها ترمي»
+        // بينما الأخطاء الفعلية كانت جميعها `load-failed:` — عنصر تحميل (سكربت أو ستايل)
+        // فشل تحميله (حدث error على العنصر)، لا استثناءً رُمي بعد تنفيذ الشيفرة.
+        // هذا فرقٌ جوهري: الأول يعني «المتصفح رفض الطلب»، والثاني يعني «الطلب
+        // نجح والشيفرة عطبة». الحكم الآن يفرّق بينهما بدل استنتاجٍ خاطئ واحد.
+        function classifyErrors(entrySrcUrl) {
+            var list = window.__jaolaErrors || [];
+            var loadFailed = [], thrown = [], entryBlocked = false;
+            for (var i = 0; i < list.length; i++) {
+                if (list[i].indexOf('load-failed:') === 0) {
+                    loadFailed.push(list[i]);
+                    // 🎯 المهم هو حزمة الدخول نفسها، لا أي مورد آخر: CSS قد يفشل
+                    // لسببٍ عرَضي غير مرتبط (خط مفقود مثلاً) بينما حزمة الدخول
+                    // تُنفَّذ وترمي فعلاً — فحصر الحكم بها يمنع تشخيصاً خاطئاً.
+                    if (entrySrcUrl && list[i].indexOf(entrySrcUrl) !== -1) entryBlocked = true;
+                } else {
+                    thrown.push(list[i]);
+                }
+            }
+            return { loadFailed: loadFailed, thrown: thrown, entryBlocked: entryBlocked };
+        }
+
         // يجلب حزمة الدخول ليقول **لماذا** فشلت: 404؟ أم HTML مكان جافاسكربت؟
         function diagnose() {
-          var errs = window.__jaolaErrors || [];
           var src = entrySrc();
+          var cls = classifyErrors(src);
           var base = 'entry: ' + (src || '(no module script found)');
           if (!src || typeof fetch !== 'function') return card(base);
           fetch(src, { cache: 'no-store' }).then(function (res) {
             var ct = res.headers.get('content-type') || '(none)';
-            var verdict = !res.ok
-              ? 'الحزمة غير موجودة على الخادم (نشر متقادم أو ناقص).'
-              : /html/i.test(ct)
-                ? 'الخادم يردّ HTML مكان جافاسكربت — احتياط توجيه SPA يبتلع الأصل المفقود.'
-                : errs.length
-                  ? 'الحزمة تصل سليمة لكنها ترمي عند التنفيذ — الخطأ أعلاه.'
-                  : 'الحزمة تصل سليمة ولا ترمي شيئاً — يُرجَّح تدخّل service worker أو إضافة متصفح.';
+            var verdict;
+            if (!res.ok) {
+              verdict = 'الحزمة غير موجودة على الخادم (نشر متقادم أو ناقص).';
+            } else if (/html/i.test(ct)) {
+              verdict = 'الخادم يردّ HTML مكان جافاسكربت — احتياط توجيه SPA يبتلع الأصل المفقود.';
+            } else if (cls.entryBlocked) {
+              // 🧩 التناقض هو الدليل: عنصر التحميل (وسم سكربت أو وسم ستايل) فشل
+              // تحميله (حدث error)، بينما fetch() لنفس الرابط هنا ينجح بـ200 ونوع
+              // محتوى سليم في اللحظة نفسها تقريباً. الخادم إذن ليس العلّة — شيءٌ
+              // بين المتصفح والشبكة يميّز طلب عنصر التحميل عن طلب fetch() العادي
+              // ويرفض الأول فقط: إضافة حجب إعلانات/خصوصية، أو طبقة أمان (بروكسي/
+              // جدار شركة) تصنّف الطلبات بنوعها. جرّب نافذة خاصة بلا إضافات، أو
+              // متصفحاً آخر، أو شبكة أخرى (بيانات الجوال بدل واي فاي) لعزل الطبقة.
+              verdict = 'المتصفح رفض تحميل المورد كعنصر (لا فشل تنفيذ) — لكن نفس الرابط '
+                + 'يستجيب سليماً حين يُجلب هنا مباشرة. الخادم سليم؛ الأرجح إضافة '
+                + 'متصفح أو طبقة أمان شبكية تحجب حسب نوع الطلب. جرّب نافذة خاصة '
+                + 'بلا إضافات، أو متصفحاً/شبكةً أخرى.';
+            } else if (cls.thrown.length) {
+              verdict = 'الحزمة تصل سليمة لكنها ترمي عند التنفيذ — الخطأ أعلاه.';
+            } else {
+              verdict = 'الحزمة تصل سليمة ولا ترمي شيئاً — يُرجَّح تدخّل service worker أو إضافة متصفح.';
+            }
             card(base + '\nstatus: ' + res.status + '\ncontent-type: ' + ct
               + '\n' + env() + errors() + '\n\n' + verdict);
           }).catch(function (err) {
