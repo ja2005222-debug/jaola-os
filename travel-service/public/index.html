@@ -63,6 +63,10 @@
       padding: 14px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap;
     }
     header h1 { font-size: 23px; letter-spacing: -.2px; }
+    /* 🎨 الشعار: `height` وحده يقود القياس و`width:auto` يحفظ النسبة —
+       وسمتا width/height في الوسم تحجزان مكانه قبل تحميله فلا تقفز
+       الترويسة عند وصوله (انزياح تخطيط يزعج من بدأ يقرأ). */
+    .brand-logo { height: 52px; width: auto; display: block; flex-shrink: 0; }
     /* 🎨 روحُ العلامة في أعلى الصفحة: شريطٌ رفيع بتدرّج أزرق الشعار.
        سطرٌ واحد يجعل الصفحة «تخصّ أحداً» بدل بياضٍ محايد لا هوية له. */
     header { background: var(--card); box-shadow: 0 1px 0 var(--border); }
@@ -407,6 +411,8 @@
       main { padding: 14px 12px; }
       header { padding: 10px 12px; }
       header h1 { font-size: 17px; }
+      /* الجوال: الشعار يصغر ليتّسع لأزرار الترويسة، ويبقى مقروءاً */
+      .brand-logo { height: 38px; }
 
       /* رفّ أفقي بدل ثلاثة صفوف — يوفّر ~200px رأسياً */
       .tabs {
@@ -455,9 +461,20 @@
     <span>🎒 باقاتنا المجدولة مقاعد محجوزة فعلياً — لا عروض تتغيّر تحتك</span>
   </div>
   <header>
-    <h1 style="display:flex;align-items:center;gap:10px">
-      <img src="/icon.svg" alt="" width="30" height="30" style="border-radius:8px;border:1px solid var(--border);flex-shrink:0">
-      Jatrava <span style="color:var(--muted);font-size:13px">بوابة السفر</span>
+    <!-- 🎨 الشعار صورةٌ لا نصّاً: الكلمة نفسها («JaTrava») مرسومةٌ بالألوان
+         داخل الشعار، فكتابتها نصّاً بجانبه تكرارٌ مرئي. و`alt` يبقيها نصّاً
+         لقارئ الشاشة ولمحرّك البحث — الاسم لا يضيع بتحوّله صورةً.
+         🔷 **SVG لا PNG**: الأصل المُسلَّم صورةٌ نقطية، فتُتبِّعت أشكالها
+         إلى مسارات متجهة بلونٍ مسطّح لكل لون علامة. مكسبان: حدّةٌ مطلقة
+         على كل كثافة شاشة وكل قياس (لا نسخة @2x تُنسى)، وحجمٌ أصغر.
+         ⚠️ **وبلا خلفية أصلاً** — لا بيضاء ولا سواها: المسارات وحدها
+         تُرسم، فيتبع الشعار لون الترويسة أيّاً كان ولا يظهر مربّعٌ أبيض
+         إن تغيّر لونها لاحقاً (أثبتته صفحة القسيمة: أرضيتها ليست بيضاء).
+         و«بوابة السفر» تبقى نصّاً — مفتاح ترجمة حيّ في i18n.js، وتصف ما
+         لا يقوله الاسم وحده. -->
+    <h1 style="display:flex;align-items:center;gap:12px;margin:0">
+      <img src="/logo.svg" alt="Jatrava" class="brand-logo" width="1626" height="442">
+      <span style="color:var(--muted);font-size:13px;font-weight:600">بوابة السفر</span>
     </h1>
     <div style="display:flex;align-items:center;gap:14px">
       <button id="langBtn" title="اللغة / Language" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:6px 10px;font-size:13px">EN</button>
