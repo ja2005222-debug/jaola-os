@@ -47,6 +47,23 @@ test('الواجهة: احتياط vercel.json يستثني /assets/ كما يف
     assert.match(src, /\(\?!assets\//, 'الأصول المفقودة لا تُبتلع في index.html');
 });
 
+// ⚠️ درس فوري (٢٥ أغسطس ٢٠٢٦): أُضيف مفتاح `"//"` تعليقاً في vercel.json،
+// فرفضه مُصادِق مخطط Vercel («should NOT have additional property //»)
+// وفشل النشر بالكامل. JSON بلا تعليقات، وVercel لا يتسامح مع مفتاح زائد —
+// والتوثيق مكانه تعليق جافاسكربت في الشيفرة لا مفتاح في ملف الإعداد.
+test('vercel.json بلا مفاتيح خارج مخطط Vercel — وإلا فشل النشر كلّه', () => {
+    const raw = fs.readFileSync(new URL('../../frontend/vercel.json', import.meta.url), 'utf8');
+    const cfg = JSON.parse(raw);
+    const ALLOWED = new Set([
+        'buildCommand', 'cleanUrls', 'crons', 'devCommand', 'framework', 'functions',
+        'headers', 'ignoreCommand', 'images', 'installCommand', 'outputDirectory',
+        'public', 'redirects', 'regions', 'rewrites', 'trailingSlash',
+    ]);
+    for (const key of Object.keys(cfg)) {
+        assert.ok(ALLOWED.has(key), `مفتاح غير مدعوم في vercel.json: ${JSON.stringify(key)}`);
+    }
+});
+
 test('الواجهة: إعادة التحميل محروسة بـsessionStorage — لا حلقة لا نهائية', () => {
     const helper = fs.readFileSync(new URL('../../frontend/src/chunkReload.js', import.meta.url), 'utf8');
     assert.match(helper, /sessionStorage/, 'حارس دائم عبر إعادات التحميل');
