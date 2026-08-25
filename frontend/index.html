@@ -21,5 +21,139 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <!--
+      🩺 حارس الإقلاع — آخر خط دفاع، **خارج الحزمة عمداً**.
+
+      ⚠️ درس مدفوع الثمن (٢٥ أغسطس ٢٠٢٦): أُضيف حدّ أخطاء React (ErrorBoundary)
+      لعلاج «صفحة بيضاء فقط» على jaola.dev، فبقيت الصفحة بيضاء **بلا بطاقة خطأ**
+      بعد النشر. والسبب أن حدّ الأخطاء يعيش داخل حزمة الدخول نفسها: إن فشلت
+      الحزمة في التحميل أو التنفيذ فلا شيء من React يعمل أصلاً — لا حدّ أخطاء
+      ولا بطاقة ولا رسالة. فالبياض الصامت يبقى صامتاً.
+
+      هذا السكربت **عادي لا وحدة (no module)** ومضمّن في الـHTML، فيعمل دائماً
+      حتى لو لم تُحمَّل أي حزمة. مهمّته:
+        ١. يرصد بقاء #root فارغاً بعد مهلة (أو فشل تحميل السكربت فوراً).
+        ٢. يجرّب إعادة تحميل **واحدة** بتجاوز الكاش — تعالج index.html المتقادم
+           المخزّن في المتصفح أو على الحافة، وهو السبب الأشيع.
+        ٣. إن فشلت، يجلب عنوان الحزمة ويعرض **تشخيصاً حقيقياً** (رمز الحالة
+           ونوع المحتوى) في بطاقة مرئية — بدل بياضٍ لا يقول شيئاً.
+      لا يتدخّل إطلاقاً في المسار السليم: أول ما يُرسم شيء في #root يُلغى كلّه.
+    -->
+    <script>
+      (function () {
+        var RETRY_KEY = 'jaolaBootRetriedAt';
+        var RETRY_TTL = 60000;   // نافذة الحارس: محاولة واحدة كل دقيقة
+        var BOOT_TIMEOUT = 12000; // مهلة سخيّة — شبكات الجوال البطيئة ليست عطباً
+        var root = document.getElementById('root');
+        var settled = false;
+        var timer = null;
+
+        function booted() { return root && root.childElementCount > 0; }
+
+        function ss(fn, fallback) {           // التصفح الخاص قد يمنع التخزين
+          try { return fn(); } catch (e) { return fallback; }
+        }
+
+        // نجح الإقلاع → نظّف أثر إعادة المحاولة من شريط العنوان وأوقف الحارس
+        function onBooted() {
+          settled = true;
+          if (timer) clearTimeout(timer);
+          if (location.search.indexOf('_jaolaRetry=') !== -1) {
+            var clean = location.pathname + location.search
+              .replace(/[?&]_jaolaRetry=\d+/, '').replace(/^&/, '?') + location.hash;
+            try { history.replaceState(null, '', clean); } catch (e) { /* لا ضير */ }
+          }
+        }
+
+        function entrySrc() {
+          var el = document.querySelector('script[type="module"][src]');
+          return el ? el.src : null;
+        }
+
+        function card(diagnosis) {
+          if (!root) return;
+          root.innerHTML = '';
+          var box = document.createElement('div');
+          box.setAttribute('dir', 'rtl');
+          box.style.cssText = 'min-height:100dvh;background:#050810;color:#e2e8f0;display:flex;'
+            + 'align-items:center;justify-content:center;padding:24px;'
+            + 'font-family:system-ui,-apple-system,"Segoe UI",sans-serif';
+          var inner = document.createElement('div');
+          inner.style.cssText = 'max-width:560px;text-align:center';
+          inner.innerHTML =
+            '<div style="font-size:40px;margin-bottom:12px">⚠️</div>'
+            + '<h1 style="font-size:20px;margin:0 0 10px">تعذّر تحميل التطبيق'
+            + '<span style="display:block;font-size:14px;color:#94a3b8;margin-top:4px">'
+            + 'The application failed to load</span></h1>'
+            + '<p style="color:#94a3b8;font-size:14px;line-height:1.8;margin:0 0 18px">'
+            + 'لم تُنفَّذ حزمة التطبيق، فلم يبدأ شيء. أعد التحميل، وإن تكرر فأرسل لنا النصّ أدناه.</p>';
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = 'إعادة التحميل — Reload';
+          btn.style.cssText = 'background:#3b82f6;color:#fff;border:0;border-radius:10px;'
+            + 'padding:10px 22px;font-size:15px;font-weight:600;cursor:pointer';
+          btn.onclick = function () { location.reload(); };
+          var pre = document.createElement('pre');
+          pre.style.cssText = 'margin-top:18px;text-align:left;direction:ltr;font-size:11px;'
+            + 'color:#64748b;white-space:pre-wrap;word-break:break-word;max-height:160px;overflow:auto';
+          pre.textContent = diagnosis;
+          inner.appendChild(btn);
+          inner.appendChild(pre);
+          box.appendChild(inner);
+          root.appendChild(box);
+        }
+
+        // يجلب حزمة الدخول ليقول **لماذا** فشلت: 404؟ أم HTML مكان جافاسكربت؟
+        function diagnose() {
+          var src = entrySrc();
+          var base = 'entry: ' + (src || '(no module script found)');
+          if (!src || typeof fetch !== 'function') return card(base);
+          fetch(src, { cache: 'no-store' }).then(function (res) {
+            var ct = res.headers.get('content-type') || '(none)';
+            var verdict = !res.ok
+              ? 'الحزمة غير موجودة على الخادم (نشر متقادم أو ناقص).'
+              : /html/i.test(ct)
+                ? 'الخادم يردّ HTML مكان جافاسكربت — احتياط توجيه SPA يبتلع الأصل المفقود.'
+                : 'الحزمة تصل سليمة لكنها لا تُنفَّذ — راجع Console.';
+            card(base + '\nstatus: ' + res.status + '\ncontent-type: ' + ct + '\n\n' + verdict);
+          }).catch(function (err) {
+            card(base + '\nfetch failed: ' + (err && err.message ? err.message : err)
+              + '\n\nتعذّر الوصول للحزمة أصلاً — شبكة أو حجب.');
+          });
+        }
+
+        function fail() {
+          if (settled) return;              // انتهى الأمر — نجاحاً أو بتشخيصٍ معروض
+          if (booted()) { onBooted(); return; }
+          settled = true;
+          if (timer) clearTimeout(timer);
+          // محاولة واحدة بتجاوز الكاش — تعالج index.html المتقادم، وهو الأشيع
+          var last = ss(function () { return Number(sessionStorage.getItem(RETRY_KEY) || 0); }, NaN);
+          if (!isNaN(last) && Date.now() - last > RETRY_TTL) {
+            ss(function () { sessionStorage.setItem(RETRY_KEY, String(Date.now())); });
+            var sep = location.search ? '&' : '?';
+            location.replace(location.pathname + location.search + sep + '_jaolaRetry=' + Date.now() + location.hash);
+            return;
+          }
+          diagnose();
+        }
+
+        // فشل تحميل/تنفيذ سكربت الوحدة يصل هنا في طور الالتقاط — أسرع من المهلة
+        window.addEventListener('error', function (e) {
+          var t = e && e.target;
+          if (t && t.tagName === 'SCRIPT' && t.type === 'module') fail();
+        }, true);
+
+        window.addEventListener('load', function () {
+          if (booted()) return onBooted();
+          timer = setTimeout(fail, BOOT_TIMEOUT);
+          // فحص خفيف كل نصف ثانية كي ننهي الحارس فور نجاح الرسم
+          var poll = setInterval(function () {
+            if (settled) return clearInterval(poll);
+            if (booted()) { clearInterval(poll); onBooted(); }
+          }, 500);
+        });
+      })();
+    </script>
   </body>
 </html>
