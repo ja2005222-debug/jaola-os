@@ -2,6 +2,34 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      🎙️ مسجّل الأخطاء المبكّر — يسبق كل سكربت آخر عمداً.
+
+      ⚠️ درس (٢٥ أغسطس ٢٠٢٦): حارس الإقلاع أسفل الصفحة كان يرشّح أحداث
+      window.error إلى **فشل تحميل السكربتات** وحدها، فإن نُفِّذت الحزمة
+      ورمت خطأً عند أعلى مستواها ضاعت الرسالة، وقالت البطاقة «راجع Console»
+      بدل أن تسمّي العطب. على jaola.dev وصلت الحزمة بـ200 وبنوع محتوى سليم
+      ولم يُرسم شيء — وهي بالضبط هذه الحالة.
+      هنا نلتقط **كل** خطأ غير مُلتقَط ورفضٍ غير معالَج ونحتفظ بأوّله، ليعرضه
+      الحارس في البطاقة. أوّل خطأ هو المهم: ما بعده غالباً تبعات له.
+    -->
+    <script>
+      window.__jaolaErrors = [];
+      window.addEventListener('error', function (e) {
+        var t = e && e.target;
+        if (t && t !== window && t.tagName) {         // فشل تحميل مورد
+          window.__jaolaErrors.push('load-failed: ' + (t.src || t.href || t.tagName));
+        } else if (e && e.message) {                   // استثناء غير مُلتقَط
+          window.__jaolaErrors.push(e.message
+            + (e.filename ? '\n  at ' + e.filename + ':' + e.lineno + ':' + e.colno : ''));
+        }
+      }, true);
+      window.addEventListener('unhandledrejection', function (e) {
+        var r = e && e.reason;
+        window.__jaolaErrors.push('unhandled rejection: '
+          + (r && r.message ? r.message : String(r)));
+      });
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="manifest" href="/manifest.json" />
@@ -43,7 +71,8 @@
       (function () {
         var RETRY_KEY = 'jaolaBootRetriedAt';
         var RETRY_TTL = 60000;   // نافذة الحارس: محاولة واحدة كل دقيقة
-        var BOOT_TIMEOUT = 12000; // مهلة سخيّة — شبكات الجوال البطيئة ليست عطباً
+        var BOOT_TIMEOUT = 12000;  // مهلة سخيّة — شبكات الجوال البطيئة ليست عطباً
+        var FAST_FAIL_AFTER = 3000; // لكن خطأً مُسجَّلاً لا ينتظر المهلة
         var root = document.getElementById('root');
         var settled = false;
         var timer = null;
@@ -93,18 +122,62 @@
           btn.style.cssText = 'background:#3b82f6;color:#fff;border:0;border-radius:10px;'
             + 'padding:10px 22px;font-size:15px;font-weight:600;cursor:pointer';
           btn.onclick = function () { location.reload(); };
+          var nuke = document.createElement('button');
+          nuke.type = 'button';
+          nuke.textContent = 'تنظيف الكاش وSW ثم إعادة التحميل';
+          nuke.style.cssText = 'margin-inline-start:8px;background:transparent;color:#94a3b8;'
+            + 'border:1px solid #334155;border-radius:10px;padding:10px 18px;font-size:14px;cursor:pointer';
+          nuke.onclick = function () {
+            var jobs = [];
+            try {
+              if ('serviceWorker' in navigator) {
+                jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+                  return Promise.all(rs.map(function (r) { return r.unregister(); }));
+                }));
+              }
+            } catch (e) { /* لا ضير */ }
+            try {
+              if (window.caches && caches.keys) {
+                jobs.push(caches.keys().then(function (ks) {
+                  return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+                }));
+              }
+            } catch (e) { /* لا ضير */ }
+            Promise.all(jobs).catch(function () {}).then(function () {
+              try { sessionStorage.removeItem(RETRY_KEY); } catch (e) { /* لا ضير */ }
+              location.replace(location.pathname);
+            });
+          };
           var pre = document.createElement('pre');
           pre.style.cssText = 'margin-top:18px;text-align:left;direction:ltr;font-size:11px;'
-            + 'color:#64748b;white-space:pre-wrap;word-break:break-word;max-height:160px;overflow:auto';
+            + 'color:#64748b;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto';
           pre.textContent = diagnosis;
           inner.appendChild(btn);
+          inner.appendChild(nuke);
           inner.appendChild(pre);
           box.appendChild(inner);
           root.appendChild(box);
         }
 
+        // service worker مسيطر يفسّر «تصل سليمة ولا تُنفَّذ» — يستحق الذكر دائماً
+        function env() {
+          var sw = 'no';
+          try {
+            if ('serviceWorker' in navigator) {
+              sw = navigator.serviceWorker.controller ? 'CONTROLLING' : 'registered-or-none';
+            }
+          } catch (e) { sw = 'unknown'; }
+          return 'service-worker: ' + sw;
+        }
+
+        function errors() {
+          var list = (window.__jaolaErrors || []).slice(0, 3);
+          return list.length ? '\n\n--- errors ---\n' + list.join('\n') : '\n\n(no JS errors captured)';
+        }
+
         // يجلب حزمة الدخول ليقول **لماذا** فشلت: 404؟ أم HTML مكان جافاسكربت؟
         function diagnose() {
+          var errs = window.__jaolaErrors || [];
           var src = entrySrc();
           var base = 'entry: ' + (src || '(no module script found)');
           if (!src || typeof fetch !== 'function') return card(base);
@@ -114,11 +187,14 @@
               ? 'الحزمة غير موجودة على الخادم (نشر متقادم أو ناقص).'
               : /html/i.test(ct)
                 ? 'الخادم يردّ HTML مكان جافاسكربت — احتياط توجيه SPA يبتلع الأصل المفقود.'
-                : 'الحزمة تصل سليمة لكنها لا تُنفَّذ — راجع Console.';
-            card(base + '\nstatus: ' + res.status + '\ncontent-type: ' + ct + '\n\n' + verdict);
+                : errs.length
+                  ? 'الحزمة تصل سليمة لكنها ترمي عند التنفيذ — الخطأ أعلاه.'
+                  : 'الحزمة تصل سليمة ولا ترمي شيئاً — يُرجَّح تدخّل service worker أو إضافة متصفح.';
+            card(base + '\nstatus: ' + res.status + '\ncontent-type: ' + ct
+              + '\n' + env() + errors() + '\n\n' + verdict);
           }).catch(function (err) {
             card(base + '\nfetch failed: ' + (err && err.message ? err.message : err)
-              + '\n\nتعذّر الوصول للحزمة أصلاً — شبكة أو حجب.');
+              + '\n' + env() + errors() + '\n\nتعذّر الوصول للحزمة أصلاً — شبكة أو حجب.');
           });
         }
 
@@ -144,15 +220,35 @@
           if (t && t.tagName === 'SCRIPT' && t.type === 'module') fail();
         }, true);
 
-        window.addEventListener('load', function () {
+        // ⏱️ العدّ يبدأ من DOMContentLoaded لا من load. الفرق ليس تجميلياً:
+        // حدث load ينتظر كل الموارد، وحين يكون العطب في المورد نفسه يتأخّر
+        // load كثيراً — قياسٌ فعلي أظهر ظهور البطاقة بعد ٥٣ ثانية بدل ١٢.
+        // والمستخدم أمام بياضٍ طوالها، وهو ما جئنا نعالجه أصلاً.
+        var started = 0;
+        function start() {
+          if (started) return;
+          started = Date.now();
           if (booted()) return onBooted();
           timer = setTimeout(fail, BOOT_TIMEOUT);
-          // فحص خفيف كل نصف ثانية كي ننهي الحارس فور نجاح الرسم
           var poll = setInterval(function () {
             if (settled) return clearInterval(poll);
-            if (booted()) { clearInterval(poll); onBooted(); }
+            if (booted()) { clearInterval(poll); onBooted(); return; }
+            // 🏃 مسار سريع: خطأ مُسجَّل + جذر فارغ = حكمٌ قاطع، فلا داعي
+            // لاستنفاد المهلة. المهلة الطويلة للشبكة البطيئة، لا لعطبٍ معلوم.
+            var errs = window.__jaolaErrors || [];
+            if (errs.length && Date.now() - started > FAST_FAIL_AFTER) {
+              clearInterval(poll);
+              fail();
+            }
           }, 500);
-        });
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', start);
+        } else {
+          start();
+        }
+        window.addEventListener('load', start);   // شبكة أمان لو فات الأول
       })();
     </script>
   </body>

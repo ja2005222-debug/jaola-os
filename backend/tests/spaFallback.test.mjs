@@ -93,3 +93,35 @@ test('حارس الإقلاع لا يعتمد على وحدات أو مكتبا�
     assert.ok(!/\brequire\(/.test(guard), 'لا require');
     assert.ok(!/=>/.test(guard), 'ES5 صِرف — لا يسقط على متصفح قديم قبل أن يشخّص');
 });
+
+// 🎙️ الجولة الثانية على jaola.dev: الحارس عرض بطاقةً تقول «status: 200،
+// content-type: application/javascript» ثم «راجع Console» — أي أنه شخّص
+// التسليم ولم يشخّص التنفيذ. السبب أنه كان يرشّح أحداث window.error إلى
+// فشل تحميل السكربتات وحدها، فيضيع الاستثناء المرمي عند أعلى مستوى الحزمة.
+// الآن مسجّلٌ مبكّر في <head> يلتقط كل خطأ ورفضٍ غير معالَج، والبطاقة تعرضه.
+test('مسجّل الأخطاء المبكّر يسبق كل سكربت آخر ويلتقط الاستثناءات والرفض', () => {
+    const html = fs.readFileSync(new URL('../../frontend/index.html', import.meta.url), 'utf8');
+    const headEnd = html.indexOf('</head>');
+    const recorder = html.slice(0, headEnd);
+    assert.match(recorder, /__jaolaErrors/, 'المسجّل داخل <head> — قبل أي سكربت');
+    assert.match(recorder, /unhandledrejection/, 'الرفض غير المعالَج يضيع بلا هذا');
+    assert.ok(recorder.indexOf('__jaolaErrors') < html.indexOf('type="module"'),
+        'يسبق حزمة الدخول، وإلا فاته ما ترميه عند أعلى مستواها');
+});
+
+test('بطاقة التشخيص تعرض الخطأ الملتقَط وحالة الـservice worker', () => {
+    const html = fs.readFileSync(new URL('../../frontend/index.html', import.meta.url), 'utf8');
+    const guard = html.slice(html.lastIndexOf('<script>'));
+    assert.match(guard, /--- errors ---/, 'نصّ الخطأ يظهر في البطاقة لا في Console وحدها');
+    assert.match(guard, /service-worker:/, 'SW مسيطر يفسّر «تصل سليمة ولا تُنفَّذ»');
+    assert.match(guard, /unregister/, 'زرّ تنظيف SW والكاش — علاجٌ لا تشخيصٌ فقط');
+});
+
+// ⏱️ قياسٌ فعلي: البطاقة كانت تظهر بعد ٥٣ ثانية لأن العدّ يبدأ من load،
+// وload ينتظر الموارد — ومنها المورد المعطوب نفسه. والزائر أمام بياضٍ طوالها.
+test('العدّ يبدأ من DOMContentLoaded، ومسارٌ سريع لا ينتظر المهلة عند خطأ مُسجَّل', () => {
+    const html = fs.readFileSync(new URL('../../frontend/index.html', import.meta.url), 'utf8');
+    const guard = html.slice(html.lastIndexOf('<script>'));
+    assert.match(guard, /DOMContentLoaded/, 'لا ننتظر load — يتأخّر حين يكون العطب في مورد');
+    assert.match(guard, /FAST_FAIL_AFTER/, 'خطأ مُسجَّل + جذر فارغ = حكم قاطع بلا انتظار');
+});
