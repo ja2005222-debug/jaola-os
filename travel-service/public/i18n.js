@@ -359,6 +359,75 @@ window.JAOLA_I18N_RULES = [
     { pattern: /^رمز جوجل غير صالح\.$/u, en: 'Invalid Google token.' },
     { pattern: /^تعذّر التحقق من حساب جوجل — حاول مجدداً\.$/u, en: "Couldn't verify the Google account — try again." },
     { pattern: /^حساب جوجل بلا بريد إلكتروني — تعذّر إتمام الدخول\.$/u, en: 'Google account has no email — sign-in failed.' },
+
+    // ─── تحقّق مُدخلات البحث والحجز (server.js + passengerAges.js) ───
+    // في RULES لا الجدول لنفس سبب رسائل الحسابات: تصل عبر `data.error`
+    // من رد الشبكة فلا تظهر حرفياً في index.html، وحارس الانجراف الصارم
+    // على الجدول يرفضها بحق. **وهذه أكثر الرسائل ظهوراً لمسافرٍ حقيقي**:
+    // كشفها المالك بلقطةٍ من الموقع الحيّ — بحثٌ بحقل وجهةٍ فارغ على
+    // `/en/` فظهرت رسالة عربية وسط صفحة إنجليزية.
+    // المطارات والوجهات
+    { pattern: /^رمزا المطار يجب أن يكونا IATA من ثلاثة أحرف \(مثل RUH وCAI\)\.$/u, en: 'Both airport codes must be 3-letter IATA codes (e.g. RUH and CAI).' },
+    { pattern: /^رمز الوجهة يجب أن يكون IATA من ثلاثة أحرف \(مثل RUH وCAI\)\.$/u, en: 'The destination must be a 3-letter IATA code (e.g. RUH or CAI).' },
+    { pattern: /^رمز موقع الاستلام يجب أن يكون IATA من ثلاثة أحرف \(مثل RUH وCAI\)\.$/u, en: 'The pick-up location must be a 3-letter IATA code (e.g. RUH or CAI).' },
+    { pattern: /^مطار المغادرة والوصول متطابقان\.$/u, en: 'Departure and arrival airports are the same.' },
+    { pattern: /^الوجهة (.+) غير مغطّاة حالياً في بحث الفنادق\.$/u, en: 'Destination $1 is not covered by hotel search yet.' },
+    { pattern: /^الوجهة (.+) غير مغطّاة حالياً في بحث السيارات\.$/u, en: 'Destination $1 is not covered by car search yet.' },
+    // التواريخ والأوقات
+    { pattern: /^تاريخ الذهاب بصيغة YYYY-MM-DD\.$/u, en: 'Departure date must be in YYYY-MM-DD format.' },
+    { pattern: /^تاريخ العودة بصيغة YYYY-MM-DD\.$/u, en: 'Return date must be in YYYY-MM-DD format.' },
+    { pattern: /^تاريخ الوصول بصيغة YYYY-MM-DD\.$/u, en: 'Check-in date must be in YYYY-MM-DD format.' },
+    { pattern: /^تاريخ المغادرة بصيغة YYYY-MM-DD\.$/u, en: 'Check-out date must be in YYYY-MM-DD format.' },
+    { pattern: /^تاريخ الاستلام بصيغة YYYY-MM-DD\.$/u, en: 'Pick-up date must be in YYYY-MM-DD format.' },
+    { pattern: /^تاريخ التسليم بصيغة YYYY-MM-DD\.$/u, en: 'Drop-off date must be in YYYY-MM-DD format.' },
+    { pattern: /^وقت الاستلام بصيغة HH:MM\.$/u, en: 'Pick-up time must be in HH:MM format.' },
+    { pattern: /^وقت التسليم بصيغة HH:MM\.$/u, en: 'Drop-off time must be in HH:MM format.' },
+    { pattern: /^تاريخ الذهاب في الماضي\.$/u, en: 'The departure date is in the past.' },
+    { pattern: /^تاريخ الوصول في الماضي\.$/u, en: 'The check-in date is in the past.' },
+    { pattern: /^تاريخ الاستلام في الماضي\.$/u, en: 'The pick-up date is in the past.' },
+    { pattern: /^تاريخ العودة قبل الذهاب\.$/u, en: 'The return date is before the departure date.' },
+    { pattern: /^تاريخ المغادرة يجب أن يكون بعد الوصول\.$/u, en: 'The check-out date must be after the check-in date.' },
+    { pattern: /^وقت التسليم يجب أن يكون بعد الاستلام\.$/u, en: 'The drop-off time must be after the pick-up time.' },
+    { pattern: /^تاريخ الذهاب أبعد من نافذة الحجز \((\d+) يوماً\)\.$/u, en: 'The departure date is beyond the booking window ($1 days).' },
+    { pattern: /^تاريخ العودة أبعد من نافذة الحجز \((\d+) يوماً\)\.$/u, en: 'The return date is beyond the booking window ($1 days).' },
+    { pattern: /^تاريخ الوصول أبعد من نافذة الحجز \((\d+) يوماً\)\.$/u, en: 'The check-in date is beyond the booking window ($1 days).' },
+    { pattern: /^تاريخ الاستلام أبعد من نافذة الحجز \((\d+) يوماً\)\.$/u, en: 'The pick-up date is beyond the booking window ($1 days).' },
+    { pattern: /^أقصى مدة إقامة (\d+) ليلة\.$/u, en: 'Maximum stay is $1 nights.' },
+    { pattern: /^أقصى مدة استئجار (\d+) يوماً\.$/u, en: 'Maximum rental period is $1 days.' },
+    // الأعداد والفلاتر
+    { pattern: /^عدد البالغين بين 1 و(\d+)\.$/u, en: 'Number of adults must be between 1 and $1.' },
+    { pattern: /^عدد الغرف بين 1 و(\d+)\.$/u, en: 'Number of rooms must be between 1 and $1.' },
+    { pattern: /^عدد الأطفال بين 0 و(\d+)\.$/u, en: 'Number of children must be between 0 and $1.' },
+    { pattern: /^حد التوقفات عدد صحيح بين 0 \(مباشر\) و3\.$/u, en: 'Stops must be a whole number between 0 (direct) and 3.' },
+    { pattern: /^سقف السعر رقم موجب\.$/u, en: 'Max price must be a positive number.' },
+    // ⚠️ القائمتان تُجمعان بفاصلةٍ **عربية** (`join('، ')`)، فالتقاطهما
+    // بـ`(.+)` يسحب علامة ترقيم عربية إلى جملةٍ إنجليزية. وهما ثابتتان
+    // في المصدر (CABINS/SORTS) لا مُدخَل مستخدم، فتُطابَقان حرفياً
+    // وتُعاد كتابة القائمة بفاصلةٍ لاتينية. كشف هذا فحصُ الأنماط لا العين.
+    { pattern: /^درجة غير معروفة \(المتاح: economy، premium_economy، business، first\)\.$/u,
+        en: 'Unknown cabin (available: economy, premium_economy, business, first).' },
+    { pattern: /^ترتيب غير معروف \(المتاح: price، duration\)\.$/u,
+        en: 'Unknown sort order (available: price, duration).' },
+    // الركاب والضيوف والسائقون
+    { pattern: /^بيانات الركاب مطلوبة\.$/u, en: 'Passenger details are required.' },
+    { pattern: /^بيانات الضيوف مطلوبة\.$/u, en: 'Guest details are required.' },
+    { pattern: /^بيانات السائق مطلوبة\.$/u, en: 'Driver details are required.' },
+    { pattern: /^العرض لعدد (\d+) مسافرين — وصلت بيانات (\d+)\.$/u, en: 'The offer is for $1 traveller(s) — details for $2 were received.' },
+    { pattern: /^المسافر (\d+): اللقب mr أو ms أو mrs\.$/u, en: 'Traveller $1: title must be mr, ms or mrs.' },
+    { pattern: /^المسافر (\d+): الاسمان بالحروف اللاتينية كما في الجواز \(حتى 40 حرفاً\)\.$/u, en: 'Traveller $1: both names in Latin letters as in the passport (up to 40 characters).' },
+    { pattern: /^المسافر (\d+): تاريخ ميلاد صالح بصيغة YYYY-MM-DD\.$/u, en: 'Traveller $1: a valid date of birth in YYYY-MM-DD format.' },
+    { pattern: /^المسافر (\d+): الجنس m أو f\.$/u, en: 'Traveller $1: gender must be m or f.' },
+    { pattern: /^الضيف (\d+): الاسمان بالحروف اللاتينية \(حتى 40 حرفاً\)\.$/u, en: 'Guest $1: both names in Latin letters (up to 40 characters).' },
+    { pattern: /^السائق (\d+): الاسمان بالحروف اللاتينية \(حتى 40 حرفاً\)\.$/u, en: 'Driver $1: both names in Latin letters (up to 40 characters).' },
+    { pattern: /^الطفل (\d+): تاريخ ميلاد صالح بصيغة YYYY-MM-DD\.$/u, en: 'Child $1: a valid date of birth in YYYY-MM-DD format.' },
+    { pattern: /^الطفل (\d+): تاريخ الميلاد بعد تاريخ السفر\.$/u, en: 'Child $1: date of birth is after the travel date.' },
+    { pattern: /^الطفل (\d+): عمره (\d+) سنة يوم السفر — يُحجز ضمن البالغين\.$/u, en: 'Child $1: aged $2 on the travel date — must be booked as an adult.' },
+    { pattern: /^تواريخ ميلاد الأطفال يجب أن تكون قائمة\.$/u, en: "Children's dates of birth must be a list." },
+    { pattern: /^أرسل childrenDobs \(تواريخ ميلاد الأطفال\) بدل children — سعر تذكرة الطفل يتبع عمره يوم السفر\.$/u,
+        en: "Send childrenDobs (children's dates of birth) instead of children — a child's fare follows their age on the travel date." },
+    // التواصل
+    { pattern: /^بريد تواصل صالح مطلوب\.$/u, en: 'A valid contact email is required.' },
+    { pattern: /^هاتف بصيغة دولية يبدأ بـ\+ ورمز الدولة \(مثل \+966501234567\)\.$/u, en: 'Phone in international format starting with + and the country code (e.g. +966501234567).' },
     { pattern: /^(\d+) ليالٍ$/u, en: '$1 nights' },
     { pattern: /^متاح: (\d+) مقاعد$/u, en: 'Available: $1 seats' },
     { pattern: /^🔥 تبقى (\d+) مقاعد فقط$/u, en: '🔥 Only $1 seats left' },
