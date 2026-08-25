@@ -70,3 +70,26 @@ test('الواجهة: إعادة التحميل محروسة بـsessionStorage 
     assert.match(helper, /window\.location\.reload\(\)/);
     assert.match(helper, /catch\s*\{/, 'التصفح الخاص قد يمنع التخزين → لا إعادة تحميل بلا حارس');
 });
+
+// 🩺 الثغرة التي كشفها النشر (٢٥ أغسطس ٢٠٢٦): حدّ أخطاء React لا يمكنه أن
+// يمسك فشل **حزمة الدخول نفسها** — فهو يعيش داخلها. بقيت jaola.dev بيضاء
+// بلا بطاقة بعد نشر الإصلاح، وهذا هو السبب. العلاج حارسٌ مضمّن في
+// index.html كسكربت عادي (لا وحدة) يعمل حتى لو لم تُحمَّل أي حزمة.
+test('index.html يحمل حارس إقلاع مضمّناً خارج الحزمة', () => {
+    const html = fs.readFileSync(new URL('../../frontend/index.html', import.meta.url), 'utf8');
+    const guard = html.slice(html.indexOf('<script>'));
+    assert.ok(html.includes('<script>'), 'سكربت عادي مضمّن — لا وحدة، كي يعمل بلا حزم');
+    assert.match(guard, /childElementCount/, 'يرصد بقاء #root فارغاً');
+    assert.match(guard, /sessionStorage/, 'حارس ضد حلقة إعادة التحميل');
+    assert.match(guard, /_jaolaRetry/, 'إعادة محاولة بتجاوز كاش index.html المتقادم');
+    assert.match(guard, /content-type/i, 'يشخّص HTML المموّه مكان الجافاسكربت');
+    assert.match(guard, /addEventListener\('error'[\s\S]{0,200}true\)/, 'التقاط فشل السكربت في طور الالتقاط');
+});
+
+test('حارس الإقلاع لا يعتمد على وحدات أو مكتبات — يعمل ولو فشل كل شيء', () => {
+    const html = fs.readFileSync(new URL('../../frontend/index.html', import.meta.url), 'utf8');
+    const guard = html.slice(html.indexOf('<script>'), html.lastIndexOf('</script>'));
+    assert.ok(!/\bimport\s/.test(guard), 'لا import — سكربت عادي');
+    assert.ok(!/\brequire\(/.test(guard), 'لا require');
+    assert.ok(!/=>/.test(guard), 'ES5 صِرف — لا يسقط على متصفح قديم قبل أن يشخّص');
+});
