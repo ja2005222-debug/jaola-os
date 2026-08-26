@@ -51,6 +51,10 @@ export function createFileStore({ dataDir }) {
     }
 
     return {
+        // نفس عقد postgresStore — لا تهيئة ولا إغلاق لملفات JSON
+        async init() {},
+        async close() {},
+
         // ─── جولات المسودات ─────────────────────────────────────────
         async recordDraftRound({ ipHash, username = null, prompt, params, images }) {
             const rounds = readDrafts();

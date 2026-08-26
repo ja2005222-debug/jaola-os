@@ -1,11 +1,15 @@
 /**
  * 🧪 اختبارات JALOGO — الوحدات (برومبت/حدود) + التكامل (المسارات كاملة)
  *
- * بلا شبكة إطلاقاً: مزوّدات محاكاة ومخزن ملفات في مجلد مؤقت لكل اختبار.
- * كل سقفٍ وسلوكِ بوابةٍ هنا **درعُ فاتورة** — كسرُه في PR لاحق يعني
- * تكلفة حقيقية غير محدودة، فهذه الاختبارات صارمة عمداً.
+ * نفس عقيدة خدمة الفيديو حرفياً: المجموعة المعتمدة على المخزن تُشغَّل
+ * ضد **كلا المخزنين** — الملفات دوماً، وPostgres إذا ضُبط
+ * TEST_DATABASE_URL (مضبوط في CI عبر حاوية خدمة postgres) — فلا يتباعد
+ * سلوكهما بصمت، وهو الخطر الوحيد في وجود تطبيقين للعقد نفسه.
+ *
+ * بلا شبكة إطلاقاً: مزوّدات محاكاة. كل سقفٍ وبوابةٍ هنا **درعُ فاتورة**
+ * — كسرُه في PR لاحق يعني تكلفة حقيقية غير محدودة، فالاختبارات صارمة.
  */
-import { test } from 'node:test';
+import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 import os from 'os';
@@ -18,16 +22,12 @@ import {
     checkDraftAllowed, checkFinalAllowed, maybeAlertCost,
 } from '../src/limits.js';
 import { createFileStore } from '../src/store/fileStore.js';
+import { createPostgresStore } from '../src/store/postgresStore.js';
 import { extractImageUrl } from '../src/providers/falImageProvider.js';
 import { createApp } from '../server.js';
 
 const SECRET = 'test-secret';
 const tokenFor = (username, extra = {}) => jwt.sign({ username, ...extra }, SECRET);
-
-function tmpStore() {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jalogo-test-'));
-    return createFileStore({ dataDir: dir });
-}
 
 /** مزوّد محاكاة: يرقّم الصور ويسجّل النداءات — والفشل قابل للبرمجة. */
 function fakeProvider(name, { failTimes = 0 } = {}) {
@@ -44,24 +44,6 @@ function fakeProvider(name, { failTimes = 0 } = {}) {
     };
 }
 
-/** يشغّل التطبيق على منفذ عشوائي ويعيد baseUrl + إغلاقاً نظيفاً. */
-async function startApp(overrides = {}) {
-    const store = overrides.store || tmpStore();
-    const draft = overrides.draftProvider || fakeProvider('draft');
-    const final = overrides.finalProvider || fakeProvider('final');
-    const app = createApp({
-        store, jwtSecret: SECRET,
-        draftProvider: draft, finalProvider: final,
-        adminUsersCsv: 'boss',
-        limits: { ...readLimits({}), ...overrides.limits },
-    });
-    const server = await new Promise(resolve => {
-        const s = app.listen(0, () => resolve(s));
-    });
-    const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    return { baseUrl, store, draft, final, close: () => new Promise(r => server.close(r)) };
-}
-
 const post = (base, p, body, token) => fetch(`${base}${p}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -73,7 +55,7 @@ const get = (base, p, token) => fetch(`${base}${p}`, {
 
 const VALID_INPUT = { brandName: 'Jatrava', industry: 'travel and tourism', style: 'minimal' };
 
-// ═══ الوحدات: البرومبت ═══════════════════════════════════════════════
+// ═══ الوحدات الصِرفة (بلا مخزن) ═════════════════════════════════════
 
 test('validateLogoInput: يرفض غياب الاسم والمجال والأسلوب المجهول واللون التالف', () => {
     assert.equal(validateLogoInput({}).ok, false);
@@ -108,8 +90,6 @@ test('كل أسلوب في الكتالوج يُنتج برومبت صالحاً
     }
 });
 
-// ═══ الوحدات: الحدود ════════════════════════════════════════════════
-
 test('hashIp: ثابت لنفس العنوان، مختلف بين عنوانين، ولا يحوي العنوان الخام', () => {
     assert.equal(hashIp('1.2.3.4', 's'), hashIp('1.2.3.4', 's'));
     assert.notEqual(hashIp('1.2.3.4', 's'), hashIp('5.6.7.8', 's'));
@@ -122,51 +102,6 @@ test('readLimits: قيمة بيئة تالفة تسقط للافتراضي ال�
     assert.equal(l.monthlyFinalCapPerUser, DEFAULTS.monthlyFinalCapPerUser);
 });
 
-test('checkDraftAllowed: حد الزائر بالـIP يُفرض، وصاحب الحساب لا يقيده الـIP', async () => {
-    const store = tmpStore();
-    const limits = { ...DEFAULTS, dailyDraftCapPerIp: 1 };
-    const ipHash = hashIp('9.9.9.9', 's');
-
-    assert.equal((await checkDraftAllowed(store, { ipHash, limits })).allowed, true);
-    await store.recordDraftRound({ ipHash, username: null, prompt: 'p', params: {}, images: [] });
-    const denied = await checkDraftAllowed(store, { ipHash, limits });
-    assert.equal(denied.allowed, false);
-    assert.equal(denied.code, 'guest_cap_reached');
-
-    // نفس الـIP لكن بحساب — يمر (حد المستخدم مستقل عن حد الزائر)
-    assert.equal((await checkDraftAllowed(store, { ipHash, username: 'sara', limits })).allowed, true);
-});
-
-test('checkDraftAllowed: السقف العام صفر = إيقاف طوارئ كامل', async () => {
-    const store = tmpStore();
-    const denied = await checkDraftAllowed(store, {
-        ipHash: 'x', limits: { ...DEFAULTS, dailyDraftCap: 0 },
-    });
-    assert.equal(denied.allowed, false);
-    assert.equal(denied.code, 'daily_cap_reached');
-});
-
-test('checkFinalAllowed: السقف الشهري يُفرض ويتجدد مطلع الشهر', async () => {
-    const store = tmpStore();
-    const limits = { ...DEFAULTS, monthlyFinalCapPerUser: 1 };
-    assert.equal((await checkFinalAllowed(store, { username: 'ali', limits })).allowed, true);
-    await store.recordFinal({ username: 'ali', roundId: 'r', prompt: 'p', params: {}, imageUrl: 'u' });
-    const denied = await checkFinalAllowed(store, { username: 'ali', limits });
-    assert.equal(denied.allowed, false);
-    assert.equal(denied.code, 'monthly_final_cap_reached');
-    // نافذة الشهر القادم فارغة — العدّ من بداية الشهر لا نافذة منزلقة
-    const nextMonth = startOfUtcMonth() + 32 * 24 * 3600 * 1000;
-    assert.equal((await checkFinalAllowed(store, { username: 'ali', limits, now: nextMonth })).allowed, true);
-});
-
-test('maybeAlertCost: ينبّه مرة واحدة فقط في اليوم وعند العتبة فقط', async () => {
-    const store = tmpStore();
-    const limits = { ...DEFAULTS, dailyDraftCap: 10, alertAtPct: 80, alertWebhookUrl: '' };
-    assert.equal(await maybeAlertCost(store, { limits, count: 7 }), false);
-    assert.equal(await maybeAlertCost(store, { limits, count: 8 }), true);
-    assert.equal(await maybeAlertCost(store, { limits, count: 9 }), false); // نُبِّه اليوم بالفعل
-});
-
 test('extractImageUrl: يفهم كل صيغ رد fal المعروفة', () => {
     assert.equal(extractImageUrl({ images: [{ url: 'a' }] }), 'a');
     assert.equal(extractImageUrl({ image: { url: 'b' } }), 'b');
@@ -174,164 +109,250 @@ test('extractImageUrl: يفهم كل صيغ رد fal المعروفة', () => {
     assert.equal(extractImageUrl({}), null);
 });
 
-// ═══ التكامل: المسارات ══════════════════════════════════════════════
+// ═══ المجموعة المعتمدة على المخزن — تعمل على المخزنين ═══════════════
 
-test('الصحة والكتالوج علنيان بلا توكن', async () => {
-    const app = await startApp();
-    try {
-        const h = await (await get(app.baseUrl, '/api/health')).json();
-        assert.equal(h.ok, true);
-        const res = await get(app.baseUrl, '/api/logo/options');
-        assert.equal(res.status, 200);
-        const opts = await res.json();
-        assert.ok(opts.styles.length >= 5);
-        assert.ok(opts.styles.every(s => s.id && s.nameAr && s.nameEn));
-        assert.equal(opts.guestDailyAttempts, DEFAULTS.dailyDraftCapPerIp);
-    } finally { await app.close(); }
-});
+function runSuite(storeLabel, { makeStore, resetStore }) {
+    describe(`jalogo — تخزين: ${storeLabel}`, () => {
+        let store;
+        const servers = [];
 
-test('مسودات الزائر: جولة كاملة تعيد الخيارات، والحد اليومي يقفل بعدها بـ429', async () => {
-    const app = await startApp({ limits: { dailyDraftCapPerIp: 1, draftVariants: 4 } });
-    try {
-        const res = await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT);
-        assert.equal(res.status, 200);
-        const body = await res.json();
-        assert.equal(body.images.length, 4);
-        assert.ok(body.id);
-        assert.equal(body.remaining, 0);
-        // البرومبت وصل للمزوّد الرخيص بمقاس مربع وبلا نص
-        assert.equal(app.draft.calls.length, 4);
-        assert.equal(app.draft.calls[0].extra.image_size, 'square');
-        assert.ok(app.draft.calls[0].prompt.includes('no text'));
+        before(async () => {
+            store = await makeStore();
+            await store.init();
+        });
+        after(async () => {
+            for (const close of servers) await close();
+            await store.close();
+        });
+        beforeEach(async () => { await resetStore(store); });
 
-        const denied = await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT);
-        assert.equal(denied.status, 429);
-        assert.equal((await denied.json()).code, 'guest_cap_reached');
-    } finally { await app.close(); }
-});
+        /** يشغّل التطبيق على منفذ عشوائي بالمخزن المشترك (يُفرَّغ قبل كل اختبار). */
+        async function startApp(overrides = {}) {
+            const draft = overrides.draftProvider || fakeProvider('draft');
+            const final = overrides.finalProvider || fakeProvider('final');
+            const app = createApp({
+                store, jwtSecret: SECRET,
+                draftProvider: draft, finalProvider: final,
+                adminUsersCsv: 'boss',
+                limits: { ...readLimits({}), ...overrides.limits },
+            });
+            const server = await new Promise(resolve => {
+                const s = app.listen(0, () => resolve(s));
+            });
+            servers.push(() => new Promise(r => server.close(r)));
+            return { baseUrl: `http://127.0.0.1:${server.address().port}`, draft, final };
+        }
 
-test('مسودات: مدخل تالف يُرفض بـ400 قبل أي نداء للمزوّد', async () => {
-    const app = await startApp();
-    try {
-        const res = await post(app.baseUrl, '/api/logo/drafts', { brandName: '', industry: 'x' });
-        assert.equal(res.status, 400);
-        assert.equal(app.draft.calls.length, 0);
-    } finally { await app.close(); }
-});
+        // ─── الحدود (منطق مباشر على المخزن) ─────────────────────────
+        test('checkDraftAllowed: حد الزائر بالـIP يُفرض، وصاحب الحساب لا يقيده الـIP', async () => {
+            const limits = { ...DEFAULTS, dailyDraftCapPerIp: 1 };
+            const ipHash = hashIp('9.9.9.9', 's');
 
-test('مسودات صاحب الحساب: حده مستقل وأرحب من حد الزائر', async () => {
-    const app = await startApp({ limits: { dailyDraftCapPerIp: 0, dailyDraftCapPerUser: 2 } });
-    try {
-        // الزائر مقفول تماماً (سقفه 0) لكن صاحب الحساب يمر من نفس الـIP
-        const guest = await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT);
-        assert.equal(guest.status, 429);
-        const res = await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT, tokenFor('sara'));
-        assert.equal(res.status, 200);
-        assert.equal((await res.json()).remaining, 1);
-    } finally { await app.close(); }
-});
+            assert.equal((await checkDraftAllowed(store, { ipHash, limits })).allowed, true);
+            await store.recordDraftRound({ ipHash, username: null, prompt: 'p', params: {}, images: [] });
+            const denied = await checkDraftAllowed(store, { ipHash, limits });
+            assert.equal(denied.allowed, false);
+            assert.equal(denied.code, 'guest_cap_reached');
 
-test('مسودات: نجاح جزئي للمزوّد يعيد ما نجح، وفشل كامل يعيد 502', async () => {
-    const partial = await startApp({
-        limits: { draftVariants: 4 },
-        draftProvider: fakeProvider('draft', { failTimes: 2 }),
+            assert.equal((await checkDraftAllowed(store, { ipHash, username: 'sara', limits })).allowed, true);
+        });
+
+        test('checkDraftAllowed: السقف العام صفر = إيقاف طوارئ كامل', async () => {
+            const denied = await checkDraftAllowed(store, {
+                ipHash: 'x', limits: { ...DEFAULTS, dailyDraftCap: 0 },
+            });
+            assert.equal(denied.allowed, false);
+            assert.equal(denied.code, 'daily_cap_reached');
+        });
+
+        test('checkFinalAllowed: السقف الشهري يُفرض ويتجدد مطلع الشهر', async () => {
+            const limits = { ...DEFAULTS, monthlyFinalCapPerUser: 1 };
+            assert.equal((await checkFinalAllowed(store, { username: 'ali', limits })).allowed, true);
+            await store.recordFinal({ username: 'ali', roundId: 'r', prompt: 'p', params: {}, imageUrl: 'u' });
+            const denied = await checkFinalAllowed(store, { username: 'ali', limits });
+            assert.equal(denied.allowed, false);
+            assert.equal(denied.code, 'monthly_final_cap_reached');
+            const nextMonth = startOfUtcMonth() + 32 * 24 * 3600 * 1000;
+            assert.equal((await checkFinalAllowed(store, { username: 'ali', limits, now: nextMonth })).allowed, true);
+        });
+
+        test('maybeAlertCost: ينبّه مرة واحدة فقط في اليوم وعند العتبة فقط', async () => {
+            const limits = { ...DEFAULTS, dailyDraftCap: 10, alertAtPct: 80, alertWebhookUrl: '' };
+            assert.equal(await maybeAlertCost(store, { limits, count: 7 }), false);
+            assert.equal(await maybeAlertCost(store, { limits, count: 8 }), true);
+            assert.equal(await maybeAlertCost(store, { limits, count: 9 }), false); // نُبِّه اليوم بالفعل
+        });
+
+        test('المخزن: عدّ الجولات يفرّق بين IP ومستخدم ونافذة زمنية', async () => {
+            await store.recordDraftRound({ ipHash: 'a', username: null, prompt: 'p', params: {}, images: [] });
+            await store.recordDraftRound({ ipHash: 'a', username: 'sara', prompt: 'p', params: {}, images: [] });
+            const since = startOfUtcDay();
+            assert.equal(await store.countDraftRoundsSince(since), 2);
+            assert.equal(await store.countDraftRoundsSinceForIp('a', since), 2);
+            assert.equal(await store.countDraftRoundsSinceForUser('sara', since), 1);
+            assert.equal(await store.countDraftRoundsSince(Date.now() + 1000), 0);
+        });
+
+        test('المخزن: الجولة تُسترجع بحقولها كاملة، والعلَم يُكتب ويُحدَّث', async () => {
+            const round = await store.recordDraftRound({
+                ipHash: 'h', username: 'omar', prompt: 'prompt-x',
+                params: { brandName: 'Jatrava' }, images: ['u1', 'u2'],
+            });
+            const got = await store.getDraftRound(round.id);
+            assert.equal(got.username, 'omar');
+            assert.equal(got.prompt, 'prompt-x');
+            assert.deepEqual(got.images, ['u1', 'u2']);
+            assert.equal(got.params.brandName, 'Jatrava');
+            assert.equal(await store.getDraftRound('ghost'), null);
+
+            await store.setFlag('k', '1');
+            assert.equal(await store.getFlag('k'), '1');
+            await store.setFlag('k', '2');
+            assert.equal(await store.getFlag('k'), '2');
+            assert.equal(await store.getFlag('missing'), null);
+        });
+
+        // ─── المسارات ───────────────────────────────────────────────
+        test('الصحة والكتالوج علنيان بلا توكن', async () => {
+            const app = await startApp();
+            const h = await (await get(app.baseUrl, '/api/health')).json();
+            assert.equal(h.ok, true);
+            const res = await get(app.baseUrl, '/api/logo/options');
+            assert.equal(res.status, 200);
+            const opts = await res.json();
+            assert.ok(opts.styles.length >= 5);
+            assert.ok(opts.styles.every(s => s.id && s.nameAr && s.nameEn));
+            assert.equal(opts.guestDailyAttempts, DEFAULTS.dailyDraftCapPerIp);
+        });
+
+        test('مسودات الزائر: جولة كاملة تعيد الخيارات، والحد اليومي يقفل بعدها بـ429', async () => {
+            const app = await startApp({ limits: { dailyDraftCapPerIp: 1, draftVariants: 4 } });
+            const res = await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT);
+            assert.equal(res.status, 200);
+            const body = await res.json();
+            assert.equal(body.images.length, 4);
+            assert.ok(body.id);
+            assert.equal(body.remaining, 0);
+            assert.equal(app.draft.calls.length, 4);
+            assert.equal(app.draft.calls[0].extra.image_size, 'square');
+            assert.ok(app.draft.calls[0].prompt.includes('no text'));
+
+            const denied = await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT);
+            assert.equal(denied.status, 429);
+            assert.equal((await denied.json()).code, 'guest_cap_reached');
+        });
+
+        test('مسودات: مدخل تالف يُرفض بـ400 قبل أي نداء للمزوّد', async () => {
+            const app = await startApp();
+            const res = await post(app.baseUrl, '/api/logo/drafts', { brandName: '', industry: 'x' });
+            assert.equal(res.status, 400);
+            assert.equal(app.draft.calls.length, 0);
+        });
+
+        test('مسودات صاحب الحساب: حده مستقل وأرحب من حد الزائر', async () => {
+            const app = await startApp({ limits: { dailyDraftCapPerIp: 0, dailyDraftCapPerUser: 2 } });
+            const guest = await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT);
+            assert.equal(guest.status, 429);
+            const res = await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT, tokenFor('sara'));
+            assert.equal(res.status, 200);
+            assert.equal((await res.json()).remaining, 1);
+        });
+
+        test('مسودات: نجاح جزئي للمزوّد يعيد ما نجح، وفشل كامل يعيد 502', async () => {
+            const partial = await startApp({
+                limits: { draftVariants: 4 },
+                draftProvider: fakeProvider('draft', { failTimes: 2 }),
+            });
+            const res = await post(partial.baseUrl, '/api/logo/drafts', VALID_INPUT);
+            assert.equal(res.status, 200);
+            assert.equal((await res.json()).images.length, 2);
+
+            const dead = await startApp({
+                limits: { draftVariants: 2 },
+                draftProvider: fakeProvider('draft', { failTimes: 99 }),
+            });
+            const deadRes = await post(dead.baseUrl, '/api/logo/drafts', VALID_INPUT);
+            assert.equal(deadRes.status, 502);
+        });
+
+        test('النهائي: بلا توكن 401 — بوابة التسجيل هي جوهر النموذج', async () => {
+            const app = await startApp();
+            const res = await post(app.baseUrl, '/api/logo/final', { roundId: 'x' });
+            assert.equal(res.status, 401);
+        });
+
+        test('النهائي: جولة الزائر تُتبنى بالحساب الجديد، وتُرفض جولة حساب آخر', async () => {
+            const app = await startApp();
+            const draft = await (await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT)).json();
+
+            const res = await post(app.baseUrl, '/api/logo/final', { roundId: draft.id }, tokenFor('sara'));
+            assert.equal(res.status, 200);
+            const body = await res.json();
+            assert.ok(body.imageUrl.startsWith('https://img.test/final-'));
+            assert.equal(app.final.calls[0].extra.image_size, 'square_hd');
+            assert.ok(app.final.calls[0].prompt.includes('"Jatrava"'));
+
+            const owned = await (await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT, tokenFor('sara'))).json();
+            const stranger = await post(app.baseUrl, '/api/logo/final', { roundId: owned.id }, tokenFor('omar'));
+            assert.equal(stranger.status, 403);
+
+            const missing = await post(app.baseUrl, '/api/logo/final', { roundId: 'ghost' }, tokenFor('sara'));
+            assert.equal(missing.status, 404);
+        });
+
+        test('النهائي: السقف الشهري يقفل بـ429، و«شعاراتي» تسرد ما وُلّد', async () => {
+            const app = await startApp({ limits: { monthlyFinalCapPerUser: 1, dailyDraftCapPerIp: 5 } });
+            const d1 = await (await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT)).json();
+            const d2 = await (await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT)).json();
+
+            const ok = await post(app.baseUrl, '/api/logo/final', { roundId: d1.id }, tokenFor('sara'));
+            assert.equal(ok.status, 200);
+            const capped = await post(app.baseUrl, '/api/logo/final', { roundId: d2.id }, tokenFor('sara'));
+            assert.equal(capped.status, 429);
+            assert.equal((await capped.json()).code, 'monthly_final_cap_reached');
+
+            const mine = await (await get(app.baseUrl, '/api/logo/mine', tokenFor('sara'))).json();
+            assert.equal(mine.logos.length, 1);
+            assert.ok(mine.logos[0].imageUrl);
+
+            const other = await (await get(app.baseUrl, '/api/logo/mine', tokenFor('omar'))).json();
+            assert.equal(other.logos.length, 0);
+        });
+
+        test('لوحة المشرف: 403 لغير المشرف، وعدّادات الاستهلاك للمشرف', async () => {
+            const app = await startApp();
+            assert.equal((await get(app.baseUrl, '/api/logo/admin/status', tokenFor('sara'))).status, 403);
+            await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT);
+            const res = await get(app.baseUrl, '/api/logo/admin/status', tokenFor('boss'));
+            assert.equal(res.status, 200);
+            const body = await res.json();
+            assert.equal(body.todayDraftRounds, 1);
+            assert.equal(body.dailyDraftCap, DEFAULTS.dailyDraftCap);
+        });
+
+        test('createApp: يرفض التشغيل بلا سر أو بلا مزوّدين — فشل صاخب عند الإقلاع', () => {
+            const p = fakeProvider('x');
+            assert.throws(() => createApp({ store, jwtSecret: '', draftProvider: p, finalProvider: p }), /JWT_SECRET/);
+            assert.throws(() => createApp({ store, jwtSecret: SECRET, draftProvider: null, finalProvider: p }), /مزوّدا/);
+        });
     });
-    try {
-        const res = await post(partial.baseUrl, '/api/logo/drafts', VALID_INPUT);
-        assert.equal(res.status, 200);
-        assert.equal((await res.json()).images.length, 2);
-    } finally { await partial.close(); }
+}
 
-    const dead = await startApp({
-        limits: { draftVariants: 2 },
-        draftProvider: fakeProvider('draft', { failTimes: 99 }),
+// ─── الملفات: دائماً ─────────────────────────────────────────────────
+const fileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jalogo-test-'));
+runSuite('file', {
+    makeStore: async () => createFileStore({ dataDir: fileDir }),
+    resetStore: async () => {
+        for (const f of fs.readdirSync(fileDir)) fs.rmSync(path.join(fileDir, f), { force: true });
+    },
+});
+
+// ─── Postgres: فقط حين يتوفر (CI أو تطوير مجهّز) ────────────────────
+if (process.env.TEST_DATABASE_URL) {
+    runSuite('postgres', {
+        makeStore: async () => createPostgresStore({ connectionString: process.env.TEST_DATABASE_URL }),
+        resetStore: store => store.truncateAllForTest(),
     });
-    try {
-        const res = await post(dead.baseUrl, '/api/logo/drafts', VALID_INPUT);
-        assert.equal(res.status, 502);
-    } finally { await dead.close(); }
-});
-
-test('النهائي: بلا توكن 401 — بوابة التسجيل هي جوهر النموذج', async () => {
-    const app = await startApp();
-    try {
-        const res = await post(app.baseUrl, '/api/logo/final', { roundId: 'x' });
-        assert.equal(res.status, 401);
-    } finally { await app.close(); }
-});
-
-test('النهائي: جولة الزائر تُتبنى بالحساب الجديد، وتُرفض جولة حساب آخر', async () => {
-    const app = await startApp();
-    try {
-        // ولّد كزائر (القمع الحقيقي: جرّب أولاً، سجّل للتنزيل)
-        const draft = await (await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT)).json();
-
-        const res = await post(app.baseUrl, '/api/logo/final', { roundId: draft.id }, tokenFor('sara'));
-        assert.equal(res.status, 200);
-        const body = await res.json();
-        assert.ok(body.imageUrl.startsWith('https://img.test/final-'));
-        // النهائي بالجودة العالية (square_hd) وبنفس برومبت الجولة
-        assert.equal(app.final.calls[0].extra.image_size, 'square_hd');
-        assert.ok(app.final.calls[0].prompt.includes('"Jatrava"'));
-
-        // جولة بحساب — لا يفتحها حساب آخر
-        const owned = await (await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT, tokenFor('sara'))).json();
-        const stranger = await post(app.baseUrl, '/api/logo/final', { roundId: owned.id }, tokenFor('omar'));
-        assert.equal(stranger.status, 403);
-
-        const missing = await post(app.baseUrl, '/api/logo/final', { roundId: 'ghost' }, tokenFor('sara'));
-        assert.equal(missing.status, 404);
-    } finally { await app.close(); }
-});
-
-test('النهائي: السقف الشهري يقفل بـ429، و«شعاراتي» تسرد ما وُلّد', async () => {
-    const app = await startApp({ limits: { monthlyFinalCapPerUser: 1, dailyDraftCapPerIp: 5 } });
-    try {
-        const d1 = await (await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT)).json();
-        const d2 = await (await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT)).json();
-
-        const ok = await post(app.baseUrl, '/api/logo/final', { roundId: d1.id }, tokenFor('sara'));
-        assert.equal(ok.status, 200);
-        const capped = await post(app.baseUrl, '/api/logo/final', { roundId: d2.id }, tokenFor('sara'));
-        assert.equal(capped.status, 429);
-        assert.equal((await capped.json()).code, 'monthly_final_cap_reached');
-
-        const mine = await (await get(app.baseUrl, '/api/logo/mine', tokenFor('sara'))).json();
-        assert.equal(mine.logos.length, 1);
-        assert.ok(mine.logos[0].imageUrl);
-
-        const other = await (await get(app.baseUrl, '/api/logo/mine', tokenFor('omar'))).json();
-        assert.equal(other.logos.length, 0);
-    } finally { await app.close(); }
-});
-
-test('لوحة المشرف: 403 لغير المشرف، وعدّادات الاستهلاك للمشرف', async () => {
-    const app = await startApp();
-    try {
-        assert.equal((await get(app.baseUrl, '/api/logo/admin/status', tokenFor('sara'))).status, 403);
-        await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT);
-        const res = await get(app.baseUrl, '/api/logo/admin/status', tokenFor('boss'));
-        assert.equal(res.status, 200);
-        const body = await res.json();
-        assert.equal(body.todayDraftRounds, 1);
-        assert.equal(body.dailyDraftCap, DEFAULTS.dailyDraftCap);
-    } finally { await app.close(); }
-});
-
-test('createApp: يرفض التشغيل بلا سر أو بلا مزوّدين — فشل صاخب عند الإقلاع', () => {
-    const store = tmpStore();
-    const p = fakeProvider('x');
-    assert.throws(() => createApp({ store, jwtSecret: '', draftProvider: p, finalProvider: p }), /JWT_SECRET/);
-    assert.throws(() => createApp({ store, jwtSecret: SECRET, draftProvider: null, finalProvider: p }), /مزوّدا/);
-});
-
-test('المخزن: عدّ الجولات يفرّق بين IP ومستخدم ونافذة زمنية', async () => {
-    const store = tmpStore();
-    await store.recordDraftRound({ ipHash: 'a', username: null, prompt: 'p', params: {}, images: [] });
-    await store.recordDraftRound({ ipHash: 'a', username: 'sara', prompt: 'p', params: {}, images: [] });
-    const since = startOfUtcDay();
-    assert.equal(await store.countDraftRoundsSince(since), 2);
-    assert.equal(await store.countDraftRoundsSinceForIp('a', since), 2);
-    assert.equal(await store.countDraftRoundsSinceForUser('sara', since), 1);
-    assert.equal(await store.countDraftRoundsSince(Date.now() + 1000), 0);
-});
+} else {
+    console.warn('⚠️ TEST_DATABASE_URL غير مضبوط — تُتخطى مجموعة postgres (تعمل في CI).');
+}

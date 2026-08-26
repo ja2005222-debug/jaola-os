@@ -61,3 +61,15 @@ export function openTravelPortal() {
   const token = localStorage.getItem('token') || '';
   window.open(`${TRAVEL_PORTAL_URL}/?token=${encodeURIComponent(token)}`, '_blank', 'noopener');
 }
+
+// 🎨 صانع الشعارات JALOGO — خدمة منفصلة تماماً (logo-service/) بنفس
+// قاعدة الاستوديو والبوابة حرفياً: VITE_LOGO_STUDIO_URL وقت البناء،
+// وبدونها لا يظهر الزر أصلاً — لا رابط مكسور ولا تخمين لعنوان غير مؤكد.
+export const LOGO_STUDIO_URL = (import.meta.env.VITE_LOGO_STUDIO_URL || '').replace(/\/$/, '');
+
+/** يفتح صانع الشعارات بتسليم توكن الجلسة الحالية (الدخول الموحّد). */
+export function openLogoStudio() {
+  if (!LOGO_STUDIO_URL) return;
+  const token = localStorage.getItem('token') || '';
+  window.open(`${LOGO_STUDIO_URL}/?token=${encodeURIComponent(token)}`, '_blank', 'noopener');
+}
