@@ -216,6 +216,10 @@
       <span class="pill-btn credits-chip" id="creditsChip"><span data-i18n="creditsLabel">الرصيد:</span> …</span>
       <button class="pill-btn plan-badge" id="upgradeBtn" type="button" data-i18n="upgradeBtn">⭐ الترقية للاحترافي</button>
       <button class="pill-btn" id="langToggleBtn" type="button" data-i18n="langToggle">English</button>
+      <!-- 🚪 تسجيل الخروج: كانت الخدمة بلا زر خروج صريح — نفس ثغرة jatrava
+           (PR #382) قبل إصلاحها. تظهر فقط بعد نجاح تحميل الرصيد (أي بعد
+           التأكد أن التوكن صالح فعلاً)، وتمسح التوكن ثم تعيد التحميل. -->
+      <button class="pill-btn hidden" id="logoutBtn" type="button" data-i18n="logoutBtn">🚪 خروج</button>
     </div>
   </header>
 
@@ -426,6 +430,7 @@
         gate_body2: 'افتح الاستوديو من داخل المنصة بعد تسجيل الدخول، أو مرّر التوكن عبر الرابط:',
         navStudio: '🎬 الاستوديو', navPostRoom: '🎛️ غرفة الإخراج',
         navLibrary: '🗂️ مكتبة الأفلام', navAccountHub: '💳 الحساب',
+        logoutBtn: '🚪 خروج',
         upgradeAlert: 'باقات الترقية والاشتراك المدفوع قادمة قريباً.',
         headerTitle: '🎬 الاستديو السينمائي ', headerProject: '📁 المشروع:',
         freeShots: 'لقطات حرة', creditsLabel: 'الرصيد:', notRegistered: 'غير مسجَّل',
@@ -578,6 +583,7 @@
         gate_body2: 'Open the studio from inside the platform after logging in, or pass the token via the link:',
         navStudio: '🎬 Studio', navPostRoom: '🎛️ Production Room',
         navLibrary: '🗂️ Film Library', navAccountHub: '💳 Account',
+        logoutBtn: '🚪 Logout',
         upgradeAlert: 'Upgrade plans and paid subscriptions are coming soon.',
         headerTitle: '🎬 Cinematic Studio ', headerProject: '📁 Project:',
         freeShots: 'Free shots', creditsLabel: 'Credits:', notRegistered: 'Not signed in',
@@ -812,6 +818,7 @@
       $('gate').classList.remove('hidden');
       $('studio').classList.add('hidden');
       $('creditsChip').textContent = tr('notRegistered');
+      $('logoutBtn').classList.add('hidden');
     }
 
     function escapeHtml(s) {
@@ -2595,6 +2602,12 @@
       }
     }
 
+    // 🚪 خروجٌ بإعادة تحميل — يمسح التوكن فتُظهر init() البوابة من جديد،
+    // بلا حاجة لإعادة كتابة تبديل الواجهة (القوائم/المشاريع/الرصيد...) هنا.
+    $('logoutBtn').addEventListener('click', () => {
+      localStorage.removeItem('token');
+      location.reload();
+    });
     $('submitBtn').addEventListener('click', submitRender);
     $('charCreateBtn').addEventListener('click', createCharacter);
     // معاينة حية مع كل ضغطة — ما لم يكن التحرير اليدوي فعّالاً.
@@ -2608,6 +2621,7 @@
       const ok = await loadCredits();
       if (!ok) return;
       $('studio').classList.remove('hidden');
+      $('logoutBtn').classList.remove('hidden');
       // استعادة آخر وجهة كان عليها المستخدم (تُمرِّر زر القائمة النشط
       // ليظهر كاملاً على الجوال أيضاً — القائمة أفقية هناك).
       switchView(localStorage.getItem('studioView') || 'studio', { scroll: false });
