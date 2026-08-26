@@ -75,6 +75,18 @@ export function createFileStore({ dataDir }) {
         async countDraftRoundsSinceForUser(username, since) {
             return readDrafts().filter(r => r.at >= since && r.username === username).length;
         },
+        /** أحدث الأيقونات المولّدة (للمعرض العلني) — صور فقط، لا أسماء ولا أصحاب. */
+        async listRecentImages(limit = 12) {
+            const rounds = readDrafts().sort((a, b) => b.at - a.at);
+            const images = [];
+            for (const r of rounds) {
+                for (const url of r.images || []) {
+                    images.push(url);
+                    if (images.length >= limit) return images;
+                }
+            }
+            return images;
+        },
 
         // ─── النسخ النهائية ─────────────────────────────────────────
         async recordFinal({ username, roundId, prompt, params, imageUrl }) {
