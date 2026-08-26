@@ -73,13 +73,29 @@ test('validateLogoInput: يقبل المدخل السليم ويطبّع الأ�
     assert.equal(r.value.styleId, 'minimal');
 });
 
-test('composeLogoPrompt: يضم قصاصة الأسلوب والاسم والألوان وحارس «بلا نص»', () => {
+test('composeLogoPrompt الافتراضي: أيقونة نظيفة — الاسم لا يُذكر للنموذج إطلاقاً', () => {
+    // درس إنتاج (جولة JaOla): ذكر الاسم وحده يُغري النموذج برسمه رغم حارس
+    // «بلا نص» — فالافتراضي يحجبه كلياً ويُبقي الحارس الكامل.
     const r = validateLogoInput({ ...VALID_INPUT, style: 'emblem', colors: ['#112233'] });
     const p = composeLogoPrompt(r.value);
     assert.ok(p.includes(LOGO_STYLES.find(s => s.id === 'emblem').fragment));
-    assert.ok(p.includes('"Jatrava"'));
+    assert.ok(!p.includes('Jatrava'));
     assert.ok(p.includes('#112233'));
+    assert.ok(p.includes('travel and tourism'));
     assert.ok(p.includes('no text, no letters'));
+});
+
+test('composeLogoPrompt مع nameInLogo: يطلب رسم الاسم صراحةً ويرفع حارس النص', () => {
+    const r = validateLogoInput({ ...VALID_INPUT, nameInLogo: true });
+    assert.equal(r.value.nameInLogo, true);
+    const p = composeLogoPrompt(r.value);
+    assert.ok(p.includes('"Jatrava"'));
+    assert.ok(p.includes('lettering'));
+    assert.ok(!p.includes('no text'));
+    assert.ok(p.includes('no watermark')); // بقية الحراس باقية
+    // القيمة الغائبة/غير المنطقية = false (لا يُفعَّل بالخطأ)
+    assert.equal(validateLogoInput(VALID_INPUT).value.nameInLogo, false);
+    assert.equal(validateLogoInput({ ...VALID_INPUT, nameInLogo: 'yes' }).value.nameInLogo, false);
 });
 
 test('كل أسلوب في الكتالوج يُنتج برومبت صالحاً يحمل حارس «بلا نص»', () => {
@@ -290,7 +306,7 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             const body = await res.json();
             assert.ok(body.imageUrl.startsWith('https://img.test/final-'));
             assert.equal(app.final.calls[0].extra.image_size, 'square_hd');
-            assert.ok(app.final.calls[0].prompt.includes('"Jatrava"'));
+            assert.ok(app.final.calls[0].prompt.includes('travel and tourism'));
 
             const owned = await (await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT, tokenFor('sara'))).json();
             const stranger = await post(app.baseUrl, '/api/logo/final', { roundId: owned.id }, tokenFor('omar'));
