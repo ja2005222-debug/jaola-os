@@ -87,26 +87,47 @@ export function validateLogoInput(body = {}) {
         }
     }
 
-    return { ok: true, value: { brandName, industry, styleId, colors: colors.map(c => c.toLowerCase()) } };
+    return {
+        ok: true,
+        value: {
+            brandName, industry, styleId,
+            colors: colors.map(c => c.toLowerCase()),
+            // ✍️ اختيار المستخدم: النموذج يرسم الاسم داخل الشعار (يجيد
+            // اللاتينية) أم أيقونة نظيفة والاسم يُركّب نصاً في الواجهة
+            nameInLogo: body.nameInLogo === true,
+        },
+    };
 }
 
 /**
  * يركّب برومبت التوليد من مدخلات متحقَّق منها (خرج validateLogoInput).
- * حارس "بلا نص" مكرر عمداً (وصفاً ونفياً) — أثبت النمطان معاً فاعلية
- * أعلى من أحدهما وحده في كبح النماذج عن كتابة حروف عشوائية.
+ *
+ * درسٌ من الإنتاج (جولة JaOla الحقيقية): مجرد ذكر الاسم في البرومبت
+ * («for a brand called "X"») يُغري النموذج برسمه داخل الأيقونة رغم
+ * حارس «بلا نص» — فيتكرر الاسم مع المركّب. لذا مساران صريحان:
+ *
+ *   nameInLogo=false (الافتراضي): الاسم **لا يُذكر للنموذج إطلاقاً** —
+ *     أيقونة نظيفة مضمونة والاسم يأتي من المركّب حصراً (آمن للعربية).
+ *   nameInLogo=true: نطلب رسم الاسم صراحةً بحروف نظيفة — النماذج تجيد
+ *     اللاتينية، والواجهة تحذّر عند الأحرف العربية.
  */
-export function composeLogoPrompt({ brandName, industry, styleId, colors }) {
+export function composeLogoPrompt({ brandName, industry, styleId, colors, nameInLogo = false }) {
     const style = LOGO_STYLES.find(s => s.id === styleId) || LOGO_STYLES[0];
 
-    const parts = [
-        `Professional ${style.fragment}`,
-        `for a brand called "${brandName}" in the ${industry} industry`,
-        'icon only, centered on a plain solid background, high contrast, crisp edges',
-    ];
+    const parts = [`Professional ${style.fragment}`];
+    if (nameInLogo) {
+        parts.push(`featuring the brand name "${brandName}" written in clean bold custom lettering as part of the logo`);
+        parts.push(`for a brand in the ${industry} industry`);
+    } else {
+        parts.push(`for a brand in the ${industry} industry`);
+    }
+    parts.push('centered on a plain solid background, high contrast, crisp edges');
     if (colors.length > 0) {
         parts.push(`brand color palette: ${colors.join(', ')}`);
     }
-    parts.push('no text, no letters, no words, no typography, no watermark, no photo, no mockup');
+    parts.push(nameInLogo
+        ? 'no watermark, no photo, no mockup'
+        : 'icon only, no text, no letters, no words, no typography, no watermark, no photo, no mockup');
 
     return parts.join(', ');
 }

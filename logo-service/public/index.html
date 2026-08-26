@@ -141,6 +141,13 @@
     <section class="card" id="wizard">
       <label for="brandName" data-i18n="lblBrand">اسم العلامة</label>
       <input type="text" id="brandName" maxlength="60" placeholder="Jatrava" autocomplete="off" />
+      <!-- ✍️ خيار المنتج: النموذج يرسم الاسم داخل الشعار (يجيد اللاتينية)
+           أم أيقونة نظيفة والاسم نصٌّ مركّب (الآمن للعربية — الافتراضي) -->
+      <label style="display:flex;align-items:center;gap:9px;margin-top:10px;font-size:12.5px;cursor:pointer;color:var(--text)">
+        <input type="checkbox" id="nameInLogo" style="width:16px;height:16px;accent-color:var(--accent2);cursor:pointer" />
+        <span data-i18n="nameInLogoLbl">✍️ اكتب الاسم داخل الشعار نفسه (الأنسب للأسماء اللاتينية)</span>
+      </label>
+      <div class="note hidden" id="arabicWarn" style="text-align:start;color:#fbbf24" data-i18n="arabicWarn">⚠️ الذكاء الاصطناعي يشوّه الحروف العربية غالباً — الأفضل تركها للتركيب النصي أسفل الأيقونة</div>
       <label for="industry" data-i18n="lblIndustry">مجال النشاط</label>
       <input type="text" id="industry" maxlength="80" data-i18n-ph="phIndustry" placeholder="سفر وسياحة" autocomplete="off" />
       <div class="ind-chips" id="indChips"></div>
@@ -187,6 +194,12 @@
           <div id="previewName"></div>
         </div>
         <div>
+          <!-- حين رُسم الاسم داخل الأيقونة (nameInLogo) يصبح المركّب مكرراً —
+               مفتاح صريح بدل تخمين، ويُضبط تلقائياً حسب نمط الجولة -->
+          <label style="display:flex;align-items:center;gap:9px;font-size:12.5px;cursor:pointer;color:var(--text);margin-top:0">
+            <input type="checkbox" id="showNameChk" checked style="width:16px;height:16px;accent-color:var(--accent2);cursor:pointer" />
+            <span data-i18n="showComposedName">إظهار الاسم النصي أسفل الأيقونة</span>
+          </label>
           <label data-i18n="lblFont">الخط</label>
           <select id="fontSelect" style="width:100%"></select>
           <div class="ctrl-row">
@@ -267,6 +280,9 @@
         shareBtn: '🔗 شارك هذه الخيارات', shareCopied: '✅ نُسخ الرابط — أرسله لصديق',
         packBtn: '📦 نزّل حزمة العلامة كاملة (favicon + تواصل)',
         packWorking: '📦 تُجهَّز الحزمة… 4 ملفات',
+        nameInLogoLbl: '✍️ اكتب الاسم داخل الشعار نفسه (الأنسب للأسماء اللاتينية)',
+        arabicWarn: '⚠️ الذكاء الاصطناعي يشوّه الحروف العربية غالباً — الأفضل تركها للتركيب النصي أسفل الأيقونة',
+        showComposedName: 'إظهار الاسم النصي أسفل الأيقونة',
         resultsTitle: 'اختر الأيقونة الأقرب لروح علامتك',
         resultsSub: 'اضغط أي خيار لتركيب اسم علامتك عليه وتخصيصه',
         regenerate: '🔄 جولة جديدة بنفس المواصفات',
@@ -301,6 +317,9 @@
         shareBtn: '🔗 Share these options', shareCopied: '✅ Link copied — send it to a friend',
         packBtn: '📦 Download the full brand pack (favicon + social)',
         packWorking: '📦 Preparing the pack… 4 files',
+        nameInLogoLbl: '✍️ Write the name inside the logo itself (best for Latin names)',
+        arabicWarn: '⚠️ AI often distorts Arabic letters — better to leave them to the text overlay below the icon',
+        showComposedName: 'Show the text name below the icon',
         resultsTitle: 'Pick the icon closest to your brand',
         resultsSub: 'Click any option to compose your brand name on it',
         regenerate: '🔄 New round, same brief',
@@ -431,6 +450,15 @@
       $(id).addEventListener('input', () => { renderStyles(); updateWizardPreview(); }));
     $('brandName').addEventListener('input', updateWizardPreview);
 
+    // ⚠️ تحذير العربية: النماذج تشوّه حروفها — يظهر فقط عند تفعيل الرسم
+    // داخل الشعار مع اسم يحوي حروفاً عربية (لا إزعاج لغير المعنيين)
+    function updateArabicWarn() {
+      const risky = $('nameInLogo').checked && /[\u0600-\u06FF]/.test($('brandName').value);
+      $('arabicWarn').classList.toggle('hidden', !risky);
+    }
+    $('nameInLogo').addEventListener('input', updateArabicWarn);
+    $('brandName').addEventListener('input', updateArabicWarn);
+
     const showErr = (id, msg) => { const el = $(id); el.textContent = msg; el.style.display = 'block'; };
     const hideErr = id => { $(id).style.display = 'none'; };
 
@@ -486,6 +514,7 @@
             $('brandName').value = p.brandName || '';
             $('industry').value = p.industry || '';
             if (p.styleId && STYLE_MARKS[p.styleId]) activeStyle = p.styleId;
+            $('nameInLogo').checked = p.nameInLogo === true;
             const cols = p.colors || [];
             [['c1', 'c1on'], ['c2', 'c2on'], ['c3', 'c3on']].forEach(([c, on], i) => {
               if (cols[i]) { $(c).value = cols[i]; $(on).checked = true; }
@@ -510,7 +539,7 @@
       [['c1','c1on'],['c2','c2on'],['c3','c3on']].forEach(([c, on]) => {
         if ($(on).checked) colors.push($(c).value);
       });
-      return { value: { brandName, industry, style: activeStyle, colors } };
+      return { value: { brandName, industry, style: activeStyle, colors, nameInLogo: $('nameInLogo').checked } };
     }
 
     async function generate() {
@@ -587,6 +616,7 @@
       selectedIdx = i;
       finalUrl = null; // نهائي جديد لكل أيقونة مختارة
       $('packBtn').classList.add('hidden');
+      $('showNameChk').checked = !currentRound?.params?.nameInLogo;
       document.querySelectorAll('.draft-card').forEach((c, j) => c.classList.toggle('active', j === i));
       $('previewIcon').src = currentRound.images[i];
       $('previewIcon').crossOrigin = 'anonymous';
@@ -602,6 +632,7 @@
       const name = $('brandName').value.trim() || 'Brand';
       const bg = $('bgSelect').value;
       const p = $('previewName');
+      p.style.display = $('showNameChk').checked ? '' : 'none';
       p.textContent = name;
       p.style.fontFamily = currentFont().css;
       p.style.color = $('textColor').value;
@@ -610,7 +641,7 @@
       $('previewBox').style.background = bg === 'transparent'
         ? 'repeating-conic-gradient(#1e2735 0% 25%, #10151f 0% 50%) 50% / 24px 24px' : bg;
     }
-    ['fontSelect', 'textColor', 'bgSelect', 'sizeRange'].forEach(id =>
+    ['fontSelect', 'textColor', 'bgSelect', 'sizeRange', 'showNameChk'].forEach(id =>
       $(id).addEventListener('input', updatePreview));
     $('brandName').addEventListener('input', () => {
       if (!$('composer').classList.contains('hidden')) updatePreview();
@@ -627,22 +658,26 @@
       await new Promise((ok, bad) => { img.onload = ok; img.onerror = bad; img.src = iconUrl; });
 
       const name = $('brandName').value.trim() || 'Brand';
+      const showName = $('showNameChk').checked;
       const bg = $('bgSelect').value;
       const fontPx = Math.round(Number($('sizeRange').value) * (size / 512));
       const pad = Math.round(size * 0.08);
-      const iconSide = Math.round(size * 0.62);
+      // بلا اسم مركّب (مرسوم داخل الأيقونة): الأيقونة تملأ اللوحة
+      const iconSide = Math.round(size * (showName ? 0.62 : 0.84));
       const canvas = document.createElement('canvas');
       canvas.width = size;
-      canvas.height = Math.round(size * 0.92) + fontPx;
+      canvas.height = showName ? Math.round(size * 0.92) + fontPx : size;
       const ctx = canvas.getContext('2d');
 
       if (bg !== 'transparent') { ctx.fillStyle = bg; ctx.fillRect(0, 0, canvas.width, canvas.height); }
-      ctx.drawImage(img, (size - iconSide) / 2, pad, iconSide, iconSide);
-      ctx.fillStyle = $('textColor').value;
-      ctx.font = `900 ${fontPx}px ${currentFont().css}`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      ctx.fillText(name, size / 2, pad + iconSide + Math.round(size * 0.05));
+      ctx.drawImage(img, (size - iconSide) / 2, showName ? pad : (size - iconSide) / 2, iconSide, iconSide);
+      if (showName) {
+        ctx.fillStyle = $('textColor').value;
+        ctx.font = `900 ${fontPx}px ${currentFont().css}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText(name, size / 2, pad + iconSide + Math.round(size * 0.05));
+      }
 
       if (watermark) {
         ctx.fillStyle = bg === '#0a0e17' ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.35)';
@@ -692,6 +727,12 @@
       const ctx = canvas.getContext('2d');
       if (bg !== 'transparent') { ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h); }
       ctx.fillStyle = $('textColor').value;
+      // الاسم مرسوم داخل الأيقونة نفسها → كل التخطيطات أيقونة متمركزة
+      if (!$('showNameChk').checked && layout !== 'icon') {
+        const side = Math.round(Math.min(w, h) * 0.8);
+        ctx.drawImage(img, (w - side) / 2, (h - side) / 2, side, side);
+        return canvas.toDataURL('image/png');
+      }
       if (layout === 'icon') {
         // أيقونة صرفة (favicon/تطبيق): بلا اسم — الحروف لا تُقرأ بهذي المقاسات
         const side = Math.round(Math.min(w, h) * 0.92);
