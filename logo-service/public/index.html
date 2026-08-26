@@ -50,6 +50,14 @@
       padding: 10px 8px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; text-align: center; transition: all .15s;
     }
     .style-chip.active { border-color: var(--accent2); background: rgba(236,72,153,0.12); }
+    .style-chip svg { width: 46px; height: 46px; display: block; margin: 0 auto 7px; border-radius: 11px; }
+    .ind-chips { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 8px; }
+    .ind-chip { border: 1px solid var(--border); background: #0d1117; color: var(--muted); border-radius: 999px; padding: 5px 12px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all .15s; }
+    .ind-chip:hover { border-color: var(--accent3); color: var(--text); }
+    .wiz-preview { margin-top: 18px; border: 1px dashed var(--border); border-radius: 14px; padding: 18px 16px; display: flex; align-items: center; gap: 16px; background: rgba(255,255,255,0.015); }
+    .wiz-preview svg { width: 76px; height: 76px; border-radius: 17px; flex-shrink: 0; }
+    .wiz-preview .wp-name { font-weight: 900; font-size: 22px; line-height: 1.2; word-break: break-word; }
+    .wiz-preview .wp-hint { font-size: 11px; color: var(--muted); margin-top: 5px; line-height: 1.6; }
     .colors-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
     .colors-row input[type=color] { width: 42px; height: 42px; border: 1px solid var(--border); border-radius: 10px; background: #0d1117; padding: 4px; cursor: pointer; }
     .colors-row .hint { font-size: 12px; color: var(--muted); }
@@ -125,6 +133,7 @@
       <input type="text" id="brandName" maxlength="60" placeholder="Jatrava" autocomplete="off" />
       <label for="industry" data-i18n="lblIndustry">مجال النشاط</label>
       <input type="text" id="industry" maxlength="80" data-i18n-ph="phIndustry" placeholder="سفر وسياحة" autocomplete="off" />
+      <div class="ind-chips" id="indChips"></div>
       <label data-i18n="lblStyle">الأسلوب</label>
       <div class="styles-grid" id="stylesGrid"></div>
       <label data-i18n="lblColors">ألوان العلامة (اختياري)</label>
@@ -133,6 +142,15 @@
         <input type="color" id="c2" value="#8b5cf6" /><input type="checkbox" id="c2on" />
         <input type="color" id="c3" value="#f59e0b" /><input type="checkbox" id="c3on" />
         <span class="hint" data-i18n="colorsHint">فعّل ما تريد إرساله للنموذج</span>
+      </div>
+      <!-- 👁️ معاينة تقريبية حية — يرى المستخدم اتجاه اختياراته (أسلوب/
+           ألوان/اسم) قبل إنفاق أي محاولة توليد: رسم SVG محلي، صفر تكلفة. -->
+      <div class="wiz-preview">
+        <div id="wizMark"></div>
+        <div>
+          <div class="wp-name" id="wizName">اسم علامتك</div>
+          <div class="wp-hint" data-i18n="previewHint">معاينة تقريبية لاتجاه الأسلوب والألوان — الذكاء الاصطناعي سيرسم نسخاً أغنى وأدق بكثير</div>
+        </div>
       </div>
       <button class="cta" id="generateBtn" type="button" data-i18n="generateBtn">✨ ولّد خيارات الشعار</button>
       <div class="error-box" id="wizardError"></div>
@@ -230,6 +248,7 @@
         lblBrand: 'اسم العلامة', lblIndustry: 'مجال النشاط', phIndustry: 'سفر وسياحة',
         lblStyle: 'الأسلوب', lblColors: 'ألوان العلامة (اختياري)',
         colorsHint: 'فعّل ما تريد إرساله للنموذج',
+        previewHint: 'معاينة تقريبية لاتجاه الأسلوب والألوان — الذكاء الاصطناعي سيرسم نسخاً أغنى وأدق بكثير',
         generateBtn: '✨ ولّد خيارات الشعار', generating: 'يرسم الذكاء الاصطناعي خياراتك… ثوانٍ قليلة',
         resultsTitle: 'اختر الأيقونة الأقرب لروح علامتك',
         resultsSub: 'اضغط أي خيار لتركيب اسم علامتك عليه وتخصيصه',
@@ -259,6 +278,7 @@
         lblBrand: 'Brand name', lblIndustry: 'Industry', phIndustry: 'travel and tourism',
         lblStyle: 'Style', lblColors: 'Brand colors (optional)',
         colorsHint: 'Enable the ones to send to the model',
+        previewHint: 'A rough preview of your style and colors — the AI will draw far richer, sharper versions',
         generateBtn: '✨ Generate logo options', generating: 'AI is drawing your options… a few seconds',
         resultsTitle: 'Pick the icon closest to your brand',
         resultsSub: 'Click any option to compose your brand name on it',
@@ -291,6 +311,8 @@
       document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = tr(el.dataset.i18n); });
       document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.placeholder = tr(el.dataset.i18nPh); });
       renderStyles();
+      renderIndustryChips();
+      updateWizardPreview();
     }
     $('langToggleBtn').addEventListener('click', () => {
       lang = lang === 'ar' ? 'en' : 'ar';
@@ -319,18 +341,74 @@
       $('fontSelect').appendChild(o);
     });
 
+    // ─── معاينات الأساليب: رسوم SVG محلية — صفر تكلفة وتتلوّن فوراً ───
+    // ليست ناتج الذكاء الاصطناعي بل «اتجاه بصري» لكل أسلوب، كي لا يختار
+    // المستخدم أعمى ثم يتفاجأ بالشكل بعد إنفاق محاولة توليد كاملة.
+    function activeColors() {
+      const picked = [['c1', 'c1on'], ['c2', 'c2on'], ['c3', 'c3on']]
+        .filter(([, on]) => $(on).checked).map(([c]) => $(c).value);
+      return [picked[0] || '#8b5cf6', picked[1] || picked[0] || '#ec4899'];
+    }
+    const SVG_OPEN = '<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" rx="14" fill="#0d1117"/>';
+    const STYLE_MARKS = {
+      minimal: (a) => `${SVG_OPEN}<rect x="18" y="18" width="28" height="28" rx="9" fill="${a}"/></svg>`,
+      geometric: (a, b) => `${SVG_OPEN}<polygon points="32,12 52,46 12,46" fill="${a}"/><polygon points="32,27 42,45 22,45" fill="${b}"/></svg>`,
+      gradient: (a, b) => `${SVG_OPEN}<defs><linearGradient id="wg${a.slice(1)}${b.slice(1)}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><circle cx="32" cy="32" r="17" fill="url(#wg${a.slice(1)}${b.slice(1)})"/></svg>`,
+      emblem: (a, b) => `${SVG_OPEN}<circle cx="32" cy="32" r="21" fill="none" stroke="${a}" stroke-width="4"/><polygon points="32,20 36,29 46,30 39,37 41,46 32,41 23,46 25,37 18,30 28,29" fill="${b}"/></svg>`,
+      mascot: (a, b) => `${SVG_OPEN}<circle cx="21" cy="19" r="6" fill="${b}"/><circle cx="43" cy="19" r="6" fill="${b}"/><circle cx="32" cy="35" r="17" fill="${a}"/><circle cx="26" cy="32" r="2.7" fill="#0d1117"/><circle cx="38" cy="32" r="2.7" fill="#0d1117"/><path d="M25 40 Q32 46 39 40" stroke="#0d1117" stroke-width="2.6" fill="none" stroke-linecap="round"/></svg>`,
+      monogram: (a, b) => `${SVG_OPEN}<path d="M22 42 a13 13 0 1 1 13 -13" stroke="${a}" stroke-width="6.5" fill="none" stroke-linecap="round"/><path d="M42 22 a13 13 0 1 1 -13 13" stroke="${b}" stroke-width="6.5" fill="none" stroke-linecap="round"/></svg>`,
+    };
+
     function renderStyles() {
       const grid = $('stylesGrid');
+      const [a, b] = activeColors();
       grid.innerHTML = '';
       styles.forEach(s => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'style-chip' + (s.id === activeStyle ? ' active' : '');
-        b.textContent = lang === 'ar' ? s.nameAr : s.nameEn;
-        b.addEventListener('click', () => { activeStyle = s.id; renderStyles(); });
-        grid.appendChild(b);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'style-chip' + (s.id === activeStyle ? ' active' : '');
+        btn.innerHTML = (STYLE_MARKS[s.id] ? STYLE_MARKS[s.id](a, b) : '') +
+          `<span>${lang === 'ar' ? s.nameAr : s.nameEn}</span>`;
+        btn.addEventListener('click', () => { activeStyle = s.id; renderStyles(); updateWizardPreview(); });
+        grid.appendChild(btn);
       });
     }
+
+    // المعاينة الحية فوق زر التوليد — تتبع الاسم والأسلوب والألوان لحظياً
+    function updateWizardPreview() {
+      const [a, b] = activeColors();
+      $('wizMark').innerHTML = (STYLE_MARKS[activeStyle] || STYLE_MARKS.minimal)(a, b);
+      const name = $('brandName').value.trim();
+      $('wizName').textContent = name || (lang === 'ar' ? 'اسم علامتك' : 'Your brand');
+    }
+
+    // رقاقات المجالات الشائعة — نقرة بدل كتابة (والحقل الحر يبقى متاحاً)
+    const INDUSTRIES = [
+      { ar: 'سفر وسياحة', en: 'Travel & tourism' },
+      { ar: 'مطاعم وقهوة', en: 'Food & coffee' },
+      { ar: 'تقنية وبرمجيات', en: 'Tech & software' },
+      { ar: 'صحة وعيادات', en: 'Health & clinics' },
+      { ar: 'تعليم وتدريب', en: 'Education' },
+      { ar: 'عقارات', en: 'Real estate' },
+      { ar: 'متجر إلكتروني', en: 'E-commerce' },
+      { ar: 'جمال وعناية', en: 'Beauty & care' },
+    ];
+    function renderIndustryChips() {
+      const box = $('indChips');
+      box.innerHTML = '';
+      INDUSTRIES.forEach(i => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'ind-chip';
+        b.textContent = lang === 'ar' ? i.ar : i.en;
+        b.addEventListener('click', () => { $('industry').value = b.textContent; });
+        box.appendChild(b);
+      });
+    }
+
+    ['c1', 'c2', 'c3', 'c1on', 'c2on', 'c3on'].forEach(id =>
+      $(id).addEventListener('input', () => { renderStyles(); updateWizardPreview(); }));
+    $('brandName').addEventListener('input', updateWizardPreview);
 
     const showErr = (id, msg) => { const el = $(id); el.textContent = msg; el.style.display = 'block'; };
     const hideErr = id => { $(id).style.display = 'none'; };
