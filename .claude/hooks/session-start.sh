@@ -1,7 +1,7 @@
 #!/bin/bash
 # 🧰 SessionStart — تثبيت اعتماديات كل الخدمات قبل بدء الجلسة.
 #
-# لماذا؟ المستودع أربع حزم npm مستقلّة (لا workspaces)، وتثبيتٌ جزئي لأيٍّ
+# لماذا؟ المستودع خمس حزم npm مستقلّة (لا workspaces)، وتثبيتٌ جزئي لأيٍّ
 # منها يُسقط اختباراتٍ **بلا أن يكون في الكود عطب**. حدث فعلاً (٢٠ أغسطس
 # ٢٠٢٦): backend/node_modules وصل بلا react و@babel/standalone فسقطت 4
 # اختبارات، وvideo-service/node_modules كان فارغاً تماماً (٧ من ٧ مفقودة)
@@ -31,5 +31,6 @@ install_pkg frontend
 install_pkg backend --ignore-scripts
 install_pkg travel-service
 install_pkg video-service
+install_pkg logo-service
 
-echo "✅ اكتمل تثبيت اعتماديات الخدمات الأربع."
+echo "✅ اكتمل تثبيت اعتماديات الخدمات الخمس."

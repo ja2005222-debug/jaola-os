@@ -94,6 +94,24 @@ jobs:
           TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/traveltest
         run: npm test
 
+  logo-service-tests:
+    name: اختبارات خدمة الشعارات
+    runs-on: ubuntu-latest
+    # مخزن ملفات فقط في هذه المرحلة — مخزن Postgres يُضاف مع خدمته لاحقاً
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: logo-service/package-lock.json
+      - name: تثبيت تبعيات خدمة الشعارات
+        working-directory: logo-service
+        run: npm ci
+      - name: تشغيل الاختبارات
+        working-directory: logo-service
+        run: npm test
+
   frontend-build:
     name: بناء الواجهة
     runs-on: ubuntu-latest
