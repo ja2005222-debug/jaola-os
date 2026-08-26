@@ -372,6 +372,13 @@ export default function Dashboard() {
 
   const { files, logs, streamingContent, agentStates, projects, activeProject, currentUser, vercelUrl, chatMessages, setChatMessages, setActiveProject, previewTimestamp, refreshPreview, isConnected, connectionError, metrics, latencyMs, missionPhase, presenceCount } = useSocket(isAuthenticated, handleAuthError);
 
+  // بث المهمة داخل الشات: فقاعات بمستوى كلاود — خطوات مطويّة + أدوات hover
+  // useMemo: لا يُعاد بناء المجموعات إلا عند تغيّر الرسائل فعلاً (لا مع كل حدث لوحة)
+  // 🔒 يجب أن يُستدعى قبل أي early-return (isLoading/!isAuthenticated/!booted) بالأسفل —
+  // كان موضعه سابقاً بعدها فسبّب React error #310 (Rendered more hooks) عند اكتمال
+  // الإقلاع ضمن نفس تركيب المكوّن (booted يتحول false→true بلا remount).
+  const feedGroups = useMemo(() => groupFeed(chatMessages), [chatMessages]);
+
   const t = useI18n(s => s.t);
   const uiLang = useI18n(s => s.lang);
 
@@ -1446,9 +1453,6 @@ export default function Dashboard() {
     </div>
   );
 
-  // بث المهمة داخل الشات: فقاعات بمستوى كلاود — خطوات مطويّة + أدوات hover
-  // useMemo: لا يُعاد بناء المجموعات إلا عند تغيّر الرسائل فعلاً (لا مع كل حدث لوحة)
-  const feedGroups = useMemo(() => groupFeed(chatMessages), [chatMessages]);
   const lastUserText = [...chatMessages].reverse().find(m => m.sender === 'user')?.text || '';
 
   // 🔒 دوال مستقرة الهوية لعناصر القائمة — الدوال السهمية المضمّنة كانت تهزم
