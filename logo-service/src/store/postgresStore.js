@@ -86,6 +86,20 @@ export function createPostgresStore({ connectionString }) {
                 'SELECT COUNT(*)::int AS n FROM logo_draft_rounds WHERE username = $1 AND at >= $2', [username, since]);
             return rows[0].n;
         },
+        /** أحدث الأيقونات المولّدة (للمعرض العلني) — صور فقط، لا أسماء ولا أصحاب. */
+        async listRecentImages(limit = 12) {
+            // جولة = حتى ٨ صور؛ جلب limit جولة يضمن كفاية الصور بلا مسح كامل
+            const { rows } = await pool.query(
+                'SELECT images_json FROM logo_draft_rounds ORDER BY at DESC LIMIT $1', [limit]);
+            const images = [];
+            for (const r of rows) {
+                for (const url of r.images_json || []) {
+                    images.push(url);
+                    if (images.length >= limit) return images;
+                }
+            }
+            return images;
+        },
 
         // ─── النسخ النهائية ─────────────────────────────────────────
         async recordFinal({ username, roundId, prompt, params, imageUrl }) {

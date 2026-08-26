@@ -319,6 +319,38 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(other.logos.length, 0);
         });
 
+        test('المعرض العلني: فارغ ثم يعرض أحدث الأيقونات بلا أسماء — وبسقف 12', async () => {
+            const app = await startApp({ limits: { dailyDraftCapPerIp: 10, draftVariants: 4 } });
+            const empty = await (await get(app.baseUrl, '/api/logo/showcase')).json();
+            assert.deepEqual(empty.images, []);
+
+            for (let i = 0; i < 4; i++) await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT);
+            const res = await get(app.baseUrl, '/api/logo/showcase');
+            assert.equal(res.status, 200);
+            const body = await res.json();
+            assert.equal(body.images.length, 12); // 16 صورة وُلّدت — السقف يقص
+            assert.ok(body.images.every(u => typeof u === 'string' && u.startsWith('https://')));
+            // صور فقط — لا تسريب أسماء أو مواصفات في المعرض
+            assert.ok(!JSON.stringify(body).includes('Jatrava'));
+        });
+
+        test('الجولة المشتركة: تُقرأ علناً بمعرّفها، و404 لمعرّف مجهول', async () => {
+            const app = await startApp();
+            const round = await (await post(app.baseUrl, '/api/logo/drafts', VALID_INPUT)).json();
+
+            const res = await get(app.baseUrl, `/api/logo/rounds/${round.id}`);
+            assert.equal(res.status, 200);
+            const body = await res.json();
+            assert.equal(body.id, round.id);
+            assert.equal(body.images.length, round.images.length);
+            assert.equal(body.params.brandName, 'Jatrava');
+            // لا يتسرب ما لا يخص المشارَك معه: لا ipHash ولا username
+            assert.equal(body.ipHash, undefined);
+            assert.equal(body.username, undefined);
+
+            assert.equal((await get(app.baseUrl, '/api/logo/rounds/ghost')).status, 404);
+        });
+
         test('لوحة المشرف: 403 لغير المشرف، وعدّادات الاستهلاك للمشرف', async () => {
             const app = await startApp();
             assert.equal((await get(app.baseUrl, '/api/logo/admin/status', tokenFor('sara'))).status, 403);

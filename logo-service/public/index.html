@@ -61,6 +61,9 @@
     .colors-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
     .colors-row input[type=color] { width: 42px; height: 42px; border: 1px solid var(--border); border-radius: 10px; background: #0d1117; padding: 4px; cursor: pointer; }
     .colors-row .hint { font-size: 12px; color: var(--muted); }
+    .gallery-title { text-align: center; font-size: 12px; color: var(--muted); font-weight: 700; margin-bottom: 10px; }
+    .gallery-strip { display: flex; gap: 10px; overflow-x: auto; padding: 4px 2px 12px; scrollbar-width: thin; }
+    .gallery-strip img { width: 72px; height: 72px; border-radius: 14px; flex-shrink: 0; border: 1px solid var(--border); object-fit: cover; }
     .cta {
       width: 100%; margin-top: 22px; border: none; border-radius: 12px; padding: 15px; font-size: 16px; font-weight: 900;
       font-family: inherit; color: #fff; cursor: pointer; background: linear-gradient(90deg, var(--accent1), var(--accent2), var(--accent3));
@@ -127,6 +130,13 @@
     <h1><span class="grad" data-i18n="heroA">شعارك الاحترافي</span> <span data-i18n="heroB">في ثوانٍ</span></h1>
     <p class="sub" data-i18n="heroSub">اكتب اسم علامتك ومجالها، اختر أسلوباً، واحصل على خيارات فورية بالذكاء الاصطناعي — جرّب مجاناً بلا تسجيل.</p>
 
+    <!-- ✨ إثبات اجتماعي: أحدث ما وُلّد فعلاً (أيقونات بلا أسماء) — يظهر
+         فقط حين توجد صور، فلا صندوق فارغ في الأيام الأولى. -->
+    <div class="hidden" id="gallery" style="margin-bottom:26px">
+      <div class="gallery-title" data-i18n="galleryTitle">✨ شعارات وُلّدت هنا للتو</div>
+      <div class="gallery-strip" id="galleryStrip"></div>
+    </div>
+
     <!-- ١) المعالج -->
     <section class="card" id="wizard">
       <label for="brandName" data-i18n="lblBrand">اسم العلامة</label>
@@ -164,6 +174,7 @@
       <div class="loading-box hidden" id="draftsLoading"><div class="spinner"></div><p style="margin-top:12px" data-i18n="generating">يرسم الذكاء الاصطناعي خياراتك… ثوانٍ قليلة</p></div>
       <div class="drafts-grid" id="draftsGrid"></div>
       <button class="pill" id="regenerateBtn" type="button" style="margin-top:14px" data-i18n="regenerate">🔄 جولة جديدة بنفس المواصفات</button>
+      <button class="pill" id="shareBtn" type="button" style="margin-top:14px" data-i18n="shareBtn">🔗 شارك هذه الخيارات</button>
     </section>
 
     <!-- ٣) المُركّب: الاسم نصٌّ حقيقي فوق الأيقونة — حادّ بأي مقاس -->
@@ -198,6 +209,8 @@
             <button class="btn2 btn-free" id="downloadPreviewBtn" type="button" data-i18n="dlPreview">⬇️ معاينة مجانية (بعلامة)</button>
             <button class="btn2 btn-final" id="downloadFinalBtn" type="button" data-i18n="dlFinal">👑 النسخة النهائية عالية الجودة</button>
           </div>
+          <!-- 📦 مكافأة النهائي: حزمة العلامة كاملة — تظهر بعد نجاح التوليد -->
+          <button class="btn2 btn-free hidden" id="packBtn" type="button" style="margin-top:10px;width:100%" data-i18n="packBtn">📦 نزّل حزمة العلامة كاملة (favicon + تواصل)</button>
           <div class="error-box" id="composerError"></div>
           <p class="note" data-i18n="finalNote">النسخة النهائية: جودة أعلى وبلا علامة — تتطلب حساب JAOLA المجاني</p>
         </div>
@@ -250,6 +263,10 @@
         colorsHint: 'فعّل ما تريد إرساله للنموذج',
         previewHint: 'معاينة تقريبية لاتجاه الأسلوب والألوان — الذكاء الاصطناعي سيرسم نسخاً أغنى وأدق بكثير',
         generateBtn: '✨ ولّد خيارات الشعار', generating: 'يرسم الذكاء الاصطناعي خياراتك… ثوانٍ قليلة',
+        galleryTitle: '✨ شعارات وُلّدت هنا للتو',
+        shareBtn: '🔗 شارك هذه الخيارات', shareCopied: '✅ نُسخ الرابط — أرسله لصديق',
+        packBtn: '📦 نزّل حزمة العلامة كاملة (favicon + تواصل)',
+        packWorking: '📦 تُجهَّز الحزمة… 4 ملفات',
         resultsTitle: 'اختر الأيقونة الأقرب لروح علامتك',
         resultsSub: 'اضغط أي خيار لتركيب اسم علامتك عليه وتخصيصه',
         regenerate: '🔄 جولة جديدة بنفس المواصفات',
@@ -280,6 +297,10 @@
         colorsHint: 'Enable the ones to send to the model',
         previewHint: 'A rough preview of your style and colors — the AI will draw far richer, sharper versions',
         generateBtn: '✨ Generate logo options', generating: 'AI is drawing your options… a few seconds',
+        galleryTitle: '✨ Logos just made here',
+        shareBtn: '🔗 Share these options', shareCopied: '✅ Link copied — send it to a friend',
+        packBtn: '📦 Download the full brand pack (favicon + social)',
+        packWorking: '📦 Preparing the pack… 4 files',
         resultsTitle: 'Pick the icon closest to your brand',
         resultsSub: 'Click any option to compose your brand name on it',
         regenerate: '🔄 New round, same brief',
@@ -436,6 +457,47 @@
           if (payload.username) $('userBadge').textContent = '👤 ' + payload.username;
         } catch { /* عرض تجميلي فقط */ }
       }
+
+      // ✨ المعرض: أحدث ما وُلّد فعلاً — يظهر فقط حين توجد صور
+      try {
+        const sc = await (await api('/api/logo/showcase')).json();
+        if (sc.images?.length) {
+          const strip = $('galleryStrip');
+          sc.images.forEach(u => {
+            const im = document.createElement('img');
+            im.src = u; im.alt = ''; im.loading = 'lazy';
+            strip.appendChild(im);
+          });
+          $('gallery').classList.remove('hidden');
+        }
+      } catch { /* المعرض زينة — غيابه لا يعطل شيئاً */ }
+
+      // 🔗 جولة مشتركة بالرابط (?r=): يفتح الصديق نفس الخيارات ويجرب
+      // المركّب فوراً — ثم يولّد نسخته هو (قمع النمو المجاني)
+      const sharedId = new URLSearchParams(location.search).get('r');
+      if (sharedId) {
+        try {
+          const res = await api(`/api/logo/rounds/${encodeURIComponent(sharedId)}`);
+          if (res.ok) {
+            const round = await res.json();
+            currentRound = round;
+            finalUrl = null;
+            const p = round.params || {};
+            $('brandName').value = p.brandName || '';
+            $('industry').value = p.industry || '';
+            if (p.styleId && STYLE_MARKS[p.styleId]) activeStyle = p.styleId;
+            const cols = p.colors || [];
+            [['c1', 'c1on'], ['c2', 'c2on'], ['c3', 'c3on']].forEach(([c, on], i) => {
+              if (cols[i]) { $(c).value = cols[i]; $(on).checked = true; }
+              else { $(on).checked = false; }
+            });
+            renderStyles();
+            updateWizardPreview();
+            renderRound(round);
+            $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        } catch { /* رابط تالف/منتهٍ = صفحة عادية */ }
+      }
     })();
 
     // ─── التوليد ────────────────────────────────────────────────────
@@ -475,16 +537,7 @@
         currentRound = body;
         finalUrl = null;
         $('attemptsNote').textContent = typeof body.remaining === 'number' ? tr('attemptsLeft')(body.remaining) : '';
-        const grid = $('draftsGrid');
-        body.images.forEach((url, i) => {
-          const card = document.createElement('div');
-          card.className = 'draft-card';
-          const img = document.createElement('img');
-          img.src = url; img.alt = `logo option ${i + 1}`; img.crossOrigin = 'anonymous';
-          card.appendChild(img);
-          card.addEventListener('click', () => selectDraft(i));
-          grid.appendChild(card);
-        });
+        renderRound(body);
       } catch {
         showErr('wizardError', tr('errNetwork'));
         $('results').classList.add('hidden');
@@ -497,10 +550,43 @@
     $('generateBtn').addEventListener('click', generate);
     $('regenerateBtn').addEventListener('click', generate);
 
+    /** يرسم شبكة خيارات الجولة — يخدم التوليد الجديد والجولة المشتركة بالرابط. */
+    function renderRound(body) {
+      $('results').classList.remove('hidden');
+      const grid = $('draftsGrid');
+      grid.innerHTML = '';
+      body.images.forEach((url, i) => {
+        const card = document.createElement('div');
+        card.className = 'draft-card';
+        const img = document.createElement('img');
+        img.src = url; img.alt = `logo option ${i + 1}`; img.crossOrigin = 'anonymous';
+        card.appendChild(img);
+        card.addEventListener('click', () => selectDraft(i));
+        grid.appendChild(card);
+      });
+    }
+
+    // 🔗 مشاركة الجولة: رابط يفتح نفس الخيارات عند صديق — قناة النمو
+    $('shareBtn').addEventListener('click', async () => {
+      if (!currentRound) return;
+      const url = `${location.origin}/?r=${encodeURIComponent(currentRound.id)}`;
+      try {
+        if (navigator.share) { await navigator.share({ title: 'JALOGO', url }); return; }
+        await navigator.clipboard.writeText(url);
+        const b = $('shareBtn');
+        b.textContent = tr('shareCopied');
+        setTimeout(() => { b.textContent = tr('shareBtn'); }, 2000);
+      } catch {
+        // لا مشاركة ولا حافظة (متصفح قديم/بلا صلاحية) — أظهر الرابط للنسخ اليدوي
+        window.prompt('URL', url);
+      }
+    });
+
     // ─── المُركّب ───────────────────────────────────────────────────
     function selectDraft(i) {
       selectedIdx = i;
       finalUrl = null; // نهائي جديد لكل أيقونة مختارة
+      $('packBtn').classList.add('hidden');
       document.querySelectorAll('.draft-card').forEach((c, j) => c.classList.toggle('active', j === i));
       $('previewIcon').src = currentRound.images[i];
       $('previewIcon').crossOrigin = 'anonymous';
@@ -586,6 +672,80 @@
       }
     }
 
+    // ─── 📦 حزمة العلامة: مقاسات جاهزة من النسخة النهائية ──────────
+    // كلها تركيب Canvas محلي من صورة النهائي الواحدة — لا توليد إضافي.
+    function fitFont(ctx, text, family, maxPx, maxWidth) {
+      let px = maxPx;
+      while (px > 10) {
+        ctx.font = `900 ${px}px ${family}`;
+        if (ctx.measureText(text).width <= maxWidth) break;
+        px -= 2;
+      }
+      return px;
+    }
+    async function composeAsset(img, { w, h, layout }) {
+      const name = $('brandName').value.trim() || 'Brand';
+      const bg = $('bgSelect').value;
+      const fam = currentFont().css;
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (bg !== 'transparent') { ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h); }
+      ctx.fillStyle = $('textColor').value;
+      if (layout === 'icon') {
+        // أيقونة صرفة (favicon/تطبيق): بلا اسم — الحروف لا تُقرأ بهذي المقاسات
+        const side = Math.round(Math.min(w, h) * 0.92);
+        ctx.drawImage(img, (w - side) / 2, (h - side) / 2, side, side);
+      } else if (layout === 'stack') {
+        const side = Math.round(h * 0.5);
+        const top = Math.round(h * 0.14);
+        ctx.drawImage(img, (w - side) / 2, top, side, side);
+        const px = fitFont(ctx, name, fam, Math.round(h * 0.09), w * 0.82);
+        ctx.font = `900 ${px}px ${fam}`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        ctx.fillText(name, w / 2, top + side + Math.round(h * 0.045));
+      } else { // غلاف عريض: الأيقونة في ثلث والاسم في الثلثين
+        const side = Math.round(h * 0.62);
+        ctx.drawImage(img, Math.round(w * 0.30) - side / 2, (h - side) / 2, side, side);
+        const px = fitFont(ctx, name, fam, Math.round(h * 0.22), w * 0.42);
+        ctx.font = `900 ${px}px ${fam}`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(name, Math.round(w * 0.63), h / 2);
+      }
+      return canvas.toDataURL('image/png');
+    }
+    const PACK_ASSETS = [
+      { file: 'jalogo-favicon-64.png', w: 64, h: 64, layout: 'icon' },
+      { file: 'jalogo-icon-512.png', w: 512, h: 512, layout: 'icon' },
+      { file: 'jalogo-social-1080.png', w: 1080, h: 1080, layout: 'stack' },
+      { file: 'jalogo-cover-1500x500.png', w: 1500, h: 500, layout: 'wide' },
+    ];
+    $('packBtn').addEventListener('click', async () => {
+      if (!finalUrl) return;
+      hideErr('composerError');
+      const btn = $('packBtn');
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = tr('packWorking');
+      try {
+        await document.fonts.ready;
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        await new Promise((ok, bad) => { img.onload = ok; img.onerror = bad; img.src = finalUrl; });
+        for (const a of PACK_ASSETS) {
+          downloadDataUrl(await composeAsset(img, a), a.file);
+          // المتصفحات تُسقط التنزيلات المتراصة بلا مهلة بينها
+          await new Promise(r => setTimeout(r, 400));
+        }
+      } catch {
+        showErr('composerError', tr('errCanvas'));
+        window.open(finalUrl, '_blank', 'noopener');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    });
+
     $('downloadPreviewBtn').addEventListener('click', async () => {
       if (!currentRound) return;
       hideErr('composerError');
@@ -617,6 +777,7 @@
           finalUrl = body.imageUrl;
         }
         btn.textContent = tr('finalDone');
+        $('packBtn').classList.remove('hidden'); // مكافأة النهائي: الحزمة الكاملة
         await tryComposeDownload({
           iconUrl: finalUrl, size: 1024, watermark: false,
           filename: 'jalogo-final.png',

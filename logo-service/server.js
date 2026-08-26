@@ -87,6 +87,22 @@ export function createApp({
         });
     });
 
+    // ─── المعرض العلني: أحدث الأيقونات المولّدة — إثبات اجتماعي ─────
+    // صور فقط بلا أسماء ولا أصحاب (الأيقونات بلا نص أصلاً بقرار المنتج،
+    // فلا تسريب هوية). يتجدد ذاتياً مع كل توليد جديد.
+    app.get('/api/logo/showcase', wrap(async (req, res) => {
+        res.json({ images: await store.listRecentImages(12) });
+    }));
+
+    // ─── جولة مشتركة بالرابط: قراءة فقط — قناة النمو المجانية ────────
+    // المعرّف غير قابل للتخمين، والمشارِك يشارك رابطه بإرادته (الرابط
+    // يكشف اسم العلامة والمواصفات لمن يملكه — هذا هو الغرض).
+    app.get('/api/logo/rounds/:id', wrap(async (req, res) => {
+        const round = await store.getDraftRound(String(req.params.id));
+        if (!round) return res.status(404).json({ error: 'الجولة غير موجودة أو انتهت.' });
+        res.json({ id: round.id, images: round.images, params: round.params });
+    }));
+
     // ─── جولة مسودات: مفتوحة للزائر (بحدود) ولصاحب الحساب (أرحب) ───
     app.post('/api/logo/drafts', generateRateLimit, optionalToken, wrap(async (req, res) => {
         const checked = validateLogoInput(req.body);
