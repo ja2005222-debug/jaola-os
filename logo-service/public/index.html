@@ -4,39 +4,552 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>JALOGO — صانع الشعارات بالذكاء الاصطناعي</title>
-  <meta name="description" content="ولّد شعاراً احترافياً لعلامتك بالذكاء الاصطناعي في ثوانٍ — مجاناً." />
-  <!-- 🚧 صفحة مبدئية لربط النطاق والتحقق من النشر — واجهة التوليد
-       الكاملة (المعالج، شبكة المسودات، تركيب الاسم) في المرحلة التالية. -->
+  <meta name="description" content="ولّد شعاراً احترافياً لعلامتك بالذكاء الاصطناعي في ثوانٍ — مجاناً، وبلا تسجيل للتجربة." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23f59e0b'/%3E%3Cstop offset='1' stop-color='%23ec4899'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='22' fill='url(%23g)'/%3E%3Ctext x='50' y='68' font-size='52' text-anchor='middle'%3E🎨%3C/text%3E%3C/svg%3E" />
+  <!-- خطوط الاسم المركّب: الحروف نصٌّ حقيقي فوق الأيقونة (قرار المنتج:
+       النماذج تشوّه الحروف) — لذا الخطوط جزء جوهري من المنتج لا زينة. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@700;900&family=Tajawal:wght@700;900&family=Amiri:wght@700&family=Poppins:wght@700;900&family=Montserrat:wght@700;900&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet" />
   <style>
     * { box-sizing: border-box; margin: 0; }
+    :root {
+      --bg: #0a0e17; --panel: #10151f; --border: #1e2735; --text: #e2e8f0;
+      --muted: #94a3b8; --accent1: #f59e0b; --accent2: #ec4899; --accent3: #8b5cf6;
+      --ok: #10b981; --bad: #f87171;
+    }
     body {
-      min-height: 100dvh; display: flex; align-items: center; justify-content: center;
-      background: #0a0e17; color: #e2e8f0; font-family: system-ui, -apple-system, sans-serif;
-      padding: 24px; text-align: center;
+      min-height: 100dvh; background: var(--bg); color: var(--text);
+      font-family: 'Tajawal', system-ui, -apple-system, sans-serif; line-height: 1.7;
     }
-    .card { max-width: 460px; }
-    .mark {
-      width: 72px; height: 72px; margin: 0 auto 20px; border-radius: 18px;
-      background: linear-gradient(135deg, #f59e0b, #ec4899, #8b5cf6);
-      display: flex; align-items: center; justify-content: center; font-size: 34px;
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 20px; border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; background: rgba(10,14,23,0.92); backdrop-filter: blur(8px); z-index: 5;
     }
-    h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; }
-    h1 span { background: linear-gradient(90deg, #f59e0b, #ec4899); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
-    p { color: #94a3b8; font-size: 14px; line-height: 1.9; margin-top: 12px; }
-    .soon { display: inline-block; margin-top: 20px; padding: 8px 18px; border-radius: 999px;
-      background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35);
-      color: #fbbf24; font-size: 13px; font-weight: 700; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 900; font-size: 18px; }
+    .brand .mark { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 17px; background: linear-gradient(135deg, var(--accent1), var(--accent2), var(--accent3)); }
+    .brand span { background: linear-gradient(90deg, var(--accent1), var(--accent2)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+    .pill { border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 999px; padding: 7px 14px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; transition: border-color .15s, filter .15s; }
+    .pill:hover { border-color: var(--accent2); filter: brightness(1.15); }
+    main { max-width: 900px; margin: 0 auto; padding: 28px 18px 80px; }
+    h1 { font-size: clamp(24px, 5vw, 36px); font-weight: 900; text-align: center; letter-spacing: -0.5px; }
+    h1 .grad { background: linear-gradient(90deg, var(--accent1), var(--accent2), var(--accent3)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+    .sub { text-align: center; color: var(--muted); font-size: 14px; margin: 10px auto 26px; max-width: 520px; }
+
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 22px; }
+    label { display: block; font-size: 13px; font-weight: 700; color: var(--muted); margin: 16px 0 6px; }
+    input[type=text] {
+      width: 100%; background: #0d1117; border: 1px solid #21262d; border-radius: 10px;
+      padding: 12px 14px; color: var(--text); font-size: 16px; font-family: inherit; outline: none; transition: border-color .2s;
+    }
+    input[type=text]:focus { border-color: var(--accent2); }
+    .styles-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+    .style-chip {
+      border: 1px solid var(--border); background: #0d1117; color: var(--text); border-radius: 10px;
+      padding: 10px 8px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; text-align: center; transition: all .15s;
+    }
+    .style-chip.active { border-color: var(--accent2); background: rgba(236,72,153,0.12); }
+    .colors-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .colors-row input[type=color] { width: 42px; height: 42px; border: 1px solid var(--border); border-radius: 10px; background: #0d1117; padding: 4px; cursor: pointer; }
+    .colors-row .hint { font-size: 12px; color: var(--muted); }
+    .cta {
+      width: 100%; margin-top: 22px; border: none; border-radius: 12px; padding: 15px; font-size: 16px; font-weight: 900;
+      font-family: inherit; color: #fff; cursor: pointer; background: linear-gradient(90deg, var(--accent1), var(--accent2), var(--accent3));
+      transition: filter .15s, transform .1s;
+    }
+    .cta:hover:not(:disabled) { filter: brightness(1.12); }
+    .cta:active:not(:disabled) { transform: scale(0.99); }
+    .cta:disabled { opacity: 0.6; cursor: not-allowed; }
+    .note { font-size: 12px; color: var(--muted); text-align: center; margin-top: 10px; }
+    .error-box { display: none; margin-top: 14px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.35); border-radius: 10px; padding: 10px 14px; color: var(--bad); font-size: 13px; }
+
+    /* شبكة المسودات */
+    .drafts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-top: 16px; }
+    .draft-card { border: 2px solid var(--border); border-radius: 14px; overflow: hidden; cursor: pointer; background: #0d1117; transition: border-color .15s, transform .15s; position: relative; }
+    .draft-card:hover { transform: translateY(-2px); border-color: var(--accent3); }
+    .draft-card.active { border-color: var(--accent2); }
+    .draft-card img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+    .section-title { font-size: 18px; font-weight: 900; margin-bottom: 4px; }
+    .section-sub { font-size: 13px; color: var(--muted); }
+
+    /* المُركّب */
+    .composer-wrap { display: grid; grid-template-columns: 1fr; gap: 18px; margin-top: 16px; }
+    @media (min-width: 720px) { .composer-wrap { grid-template-columns: 1.2fr 1fr; } }
+    .preview-box {
+      border: 1px solid var(--border); border-radius: 14px; padding: 28px 20px; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 14px; min-height: 320px; transition: background .2s;
+    }
+    .preview-box img { width: min(200px, 55vw); border-radius: 16px; }
+    #previewName { font-weight: 900; text-align: center; line-height: 1.2; word-break: break-word; }
+    .ctrl-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+    select, .ctrl-row input[type=color] { background: #0d1117; border: 1px solid #21262d; border-radius: 10px; color: var(--text); padding: 9px 10px; font-family: inherit; font-size: 14px; cursor: pointer; outline: none; }
+    input[type=range] { width: 100%; accent-color: var(--accent2); }
+    .dl-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+    .btn2 { flex: 1; min-width: 170px; border-radius: 12px; padding: 13px; font-size: 14px; font-weight: 900; font-family: inherit; cursor: pointer; transition: filter .15s; }
+    .btn-free { background: #0d1117; border: 1px solid var(--accent3); color: #c4b5fd; }
+    .btn-final { background: linear-gradient(90deg, var(--accent1), var(--accent2)); border: none; color: #fff; }
+    .btn2:hover:not(:disabled) { filter: brightness(1.15); }
+    .btn2:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .spinner { width: 26px; height: 26px; border: 3px solid var(--accent2); border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-box { text-align: center; padding: 34px 10px; color: var(--muted); font-size: 14px; }
+    .hidden { display: none !important; }
+
+    dialog { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 16px; padding: 26px; max-width: 400px; width: 92vw; font-family: inherit; }
+    dialog::backdrop { background: rgba(0,0,0,0.65); }
+
+    footer { border-top: 1px solid var(--border); padding: 26px 18px; text-align: center; color: var(--muted); font-size: 13px; }
+    footer .eco { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
+    footer a { color: #93c5fd; text-decoration: none; font-weight: 700; }
+    footer a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
-  <div class="card">
-    <div class="mark">🎨</div>
-    <h1><span>JALOGO</span> — شعارك في ثوانٍ</h1>
-    <p>
-      صانع شعارات بالذكاء الاصطناعي: اكتب اسم علامتك ومجالها، واختر أسلوباً،
-      واحصل على خيارات احترافية فوراً — مجاناً.
-    </p>
-    <span class="soon">🚀 الإطلاق قريباً — الخدمة قيد التجهيز</span>
-  </div>
+  <header>
+    <div class="brand"><div class="mark">🎨</div><span>JALOGO</span></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span id="userBadge" style="color:var(--muted);font-size:12px"></span>
+      <button class="pill" id="langToggleBtn" type="button" data-i18n="langToggle">English</button>
+    </div>
+  </header>
+
+  <main>
+    <h1><span class="grad" data-i18n="heroA">شعارك الاحترافي</span> <span data-i18n="heroB">في ثوانٍ</span></h1>
+    <p class="sub" data-i18n="heroSub">اكتب اسم علامتك ومجالها، اختر أسلوباً، واحصل على خيارات فورية بالذكاء الاصطناعي — جرّب مجاناً بلا تسجيل.</p>
+
+    <!-- ١) المعالج -->
+    <section class="card" id="wizard">
+      <label for="brandName" data-i18n="lblBrand">اسم العلامة</label>
+      <input type="text" id="brandName" maxlength="60" placeholder="Jatrava" autocomplete="off" />
+      <label for="industry" data-i18n="lblIndustry">مجال النشاط</label>
+      <input type="text" id="industry" maxlength="80" data-i18n-ph="phIndustry" placeholder="سفر وسياحة" autocomplete="off" />
+      <label data-i18n="lblStyle">الأسلوب</label>
+      <div class="styles-grid" id="stylesGrid"></div>
+      <label data-i18n="lblColors">ألوان العلامة (اختياري)</label>
+      <div class="colors-row">
+        <input type="color" id="c1" value="#3b82f6" /><input type="checkbox" id="c1on" checked />
+        <input type="color" id="c2" value="#8b5cf6" /><input type="checkbox" id="c2on" />
+        <input type="color" id="c3" value="#f59e0b" /><input type="checkbox" id="c3on" />
+        <span class="hint" data-i18n="colorsHint">فعّل ما تريد إرساله للنموذج</span>
+      </div>
+      <button class="cta" id="generateBtn" type="button" data-i18n="generateBtn">✨ ولّد خيارات الشعار</button>
+      <div class="error-box" id="wizardError"></div>
+      <p class="note" id="attemptsNote"></p>
+    </section>
+
+    <!-- ٢) المسودات -->
+    <section id="results" class="hidden" style="margin-top:26px">
+      <div class="section-title" data-i18n="resultsTitle">اختر الأيقونة الأقرب لروح علامتك</div>
+      <div class="section-sub" data-i18n="resultsSub">اضغط أي خيار لتركيب اسم علامتك عليه وتخصيصه</div>
+      <div class="loading-box hidden" id="draftsLoading"><div class="spinner"></div><p style="margin-top:12px" data-i18n="generating">يرسم الذكاء الاصطناعي خياراتك… ثوانٍ قليلة</p></div>
+      <div class="drafts-grid" id="draftsGrid"></div>
+      <button class="pill" id="regenerateBtn" type="button" style="margin-top:14px" data-i18n="regenerate">🔄 جولة جديدة بنفس المواصفات</button>
+    </section>
+
+    <!-- ٣) المُركّب: الاسم نصٌّ حقيقي فوق الأيقونة — حادّ بأي مقاس -->
+    <section id="composer" class="hidden" style="margin-top:26px">
+      <div class="section-title" data-i18n="composerTitle">ركّب اسم علامتك</div>
+      <div class="section-sub" data-i18n="composerSub">الاسم يُرسم بخط حقيقي لا بالذكاء الاصطناعي — فيبقى حاداً وقابلاً للتعديل مجاناً</div>
+      <div class="composer-wrap">
+        <div class="preview-box" id="previewBox" style="background:#ffffff">
+          <img id="previewIcon" alt="" />
+          <div id="previewName"></div>
+        </div>
+        <div>
+          <label data-i18n="lblFont">الخط</label>
+          <select id="fontSelect" style="width:100%"></select>
+          <div class="ctrl-row">
+            <div style="flex:1">
+              <label data-i18n="lblTextColor">لون الاسم</label>
+              <input type="color" id="textColor" value="#111827" />
+            </div>
+            <div style="flex:1">
+              <label data-i18n="lblBg">الخلفية</label>
+              <select id="bgSelect">
+                <option value="#ffffff" data-i18n="bgWhite">أبيض</option>
+                <option value="#0a0e17" data-i18n="bgDark">داكن</option>
+                <option value="transparent" data-i18n="bgTransparent">شفافة (PNG)</option>
+              </select>
+            </div>
+          </div>
+          <label data-i18n="lblSize">حجم الاسم</label>
+          <input type="range" id="sizeRange" min="18" max="64" value="34" />
+          <div class="dl-row">
+            <button class="btn2 btn-free" id="downloadPreviewBtn" type="button" data-i18n="dlPreview">⬇️ معاينة مجانية (بعلامة)</button>
+            <button class="btn2 btn-final" id="downloadFinalBtn" type="button" data-i18n="dlFinal">👑 النسخة النهائية عالية الجودة</button>
+          </div>
+          <div class="error-box" id="composerError"></div>
+          <p class="note" data-i18n="finalNote">النسخة النهائية: جودة أعلى وبلا علامة — تتطلب حساب JAOLA المجاني</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- بوابة الحساب: قلب القمع التسويقي — تظهر فقط عند طلب النهائي بلا توكن -->
+  <dialog id="gateDialog">
+    <h3 style="font-weight:900;font-size:18px;margin-bottom:8px" data-i18n="gateTitle">🔑 خطوة أخيرة: حساب مجاني</h3>
+    <p style="font-size:14px;color:var(--muted)" data-i18n="gateBody">النسخة النهائية عالية الجودة تُحفظ في حسابك على منصة JAOLA — الحساب مجاني ويفتح لك أيضاً بناء المواقع واستوديو الفيديو وبوابة السفر.</p>
+    <a href="https://www.jaola.dev/dashboard" target="_blank" rel="noopener" style="display:block;text-align:center;margin-top:16px;padding:13px;border-radius:12px;background:linear-gradient(90deg,var(--accent1),var(--accent2));color:#fff;font-weight:900;text-decoration:none" data-i18n="gateCta">إنشاء حساب مجاني في JAOLA</a>
+    <p style="font-size:12px;color:var(--muted);margin-top:12px" data-i18n="gateHint">بعد الدخول افتح JALOGO من لوحة المنصة ليصلك توكن جلستك تلقائياً، وستجد مسوداتك بانتظارك.</p>
+    <button class="pill" id="gateClose" type="button" style="margin-top:14px;width:100%" data-i18n="gateClose">لاحقاً</button>
+  </dialog>
+
+  <footer>
+    <div data-i18n="footerLine">JALOGO جزء من منظومة JAOLA — حساب واحد يفتح كل الخدمات</div>
+    <div class="eco">
+      <a href="https://www.jaola.dev" target="_blank" rel="noopener">🏗️ JAOLA OS</a>
+      <a href="https://www.jatrava.com" target="_blank" rel="noopener">✈️ Jatrava</a>
+      <a href="https://www.jaola.net" target="_blank" rel="noopener">🎬 Cinematic Studio</a>
+    </div>
+  </footer>
+
+  <script>
+    // ─── التوكن الموحد: من الرابط (تسليم من المنصة) ثم يُخزَّن محلياً ───
+    // نفس نمط استوديو الفيديو حرفياً — نفس حساب JAOLA في كل الخدمات.
+    (function captureToken() {
+      const params = new URLSearchParams(location.search);
+      const t = params.get('token');
+      if (t) {
+        localStorage.setItem('token', t);
+        params.delete('token');
+        const qs = params.toString();
+        history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
+      }
+    })();
+    const token = () => localStorage.getItem('token') || '';
+    const $ = id => document.getElementById(id);
+
+    // ─── اللغة ──────────────────────────────────────────────────────
+    const I18N = {
+      ar: {
+        docTitle: 'JALOGO — صانع الشعارات بالذكاء الاصطناعي',
+        langToggle: 'English', heroA: 'شعارك الاحترافي', heroB: 'في ثوانٍ',
+        heroSub: 'اكتب اسم علامتك ومجالها، اختر أسلوباً، واحصل على خيارات فورية بالذكاء الاصطناعي — جرّب مجاناً بلا تسجيل.',
+        lblBrand: 'اسم العلامة', lblIndustry: 'مجال النشاط', phIndustry: 'سفر وسياحة',
+        lblStyle: 'الأسلوب', lblColors: 'ألوان العلامة (اختياري)',
+        colorsHint: 'فعّل ما تريد إرساله للنموذج',
+        generateBtn: '✨ ولّد خيارات الشعار', generating: 'يرسم الذكاء الاصطناعي خياراتك… ثوانٍ قليلة',
+        resultsTitle: 'اختر الأيقونة الأقرب لروح علامتك',
+        resultsSub: 'اضغط أي خيار لتركيب اسم علامتك عليه وتخصيصه',
+        regenerate: '🔄 جولة جديدة بنفس المواصفات',
+        composerTitle: 'ركّب اسم علامتك',
+        composerSub: 'الاسم يُرسم بخط حقيقي لا بالذكاء الاصطناعي — فيبقى حاداً وقابلاً للتعديل مجاناً',
+        lblFont: 'الخط', lblTextColor: 'لون الاسم', lblBg: 'الخلفية', lblSize: 'حجم الاسم',
+        bgWhite: 'أبيض', bgDark: 'داكن', bgTransparent: 'شفافة (PNG)',
+        dlPreview: '⬇️ معاينة مجانية (بعلامة)', dlFinal: '👑 النسخة النهائية عالية الجودة',
+        finalNote: 'النسخة النهائية: جودة أعلى وبلا علامة — تتطلب حساب JAOLA المجاني',
+        gateTitle: '🔑 خطوة أخيرة: حساب مجاني',
+        gateBody: 'النسخة النهائية عالية الجودة تُحفظ في حسابك على منصة JAOLA — الحساب مجاني ويفتح لك أيضاً بناء المواقع واستوديو الفيديو وبوابة السفر.',
+        gateCta: 'إنشاء حساب مجاني في JAOLA',
+        gateHint: 'بعد الدخول افتح JALOGO من لوحة المنصة ليصلك توكن جلستك تلقائياً، وستجد مسوداتك بانتظارك.',
+        gateClose: 'لاحقاً',
+        footerLine: 'JALOGO جزء من منظومة JAOLA — حساب واحد يفتح كل الخدمات',
+        attemptsLeft: n => `المتبقي اليوم: ${n} ${n === 1 ? 'محاولة' : 'محاولات'}`,
+        finalWorking: '👑 يُولَّد بأعلى جودة…', finalDone: '✅ اكتملت — يبدأ التنزيل',
+        errNetwork: 'تعذّر الاتصال بالخدمة — تحقق من الشبكة وحاول مجدداً.',
+        errCanvas: 'المتصفح منع تركيب الصورة محلياً — فُتحت الأيقونة الخام في تبويب جديد.',
+        needBrand: 'اكتب اسم العلامة أولاً.', needIndustry: 'اكتب مجال النشاط أولاً.',
+      },
+      en: {
+        docTitle: 'JALOGO — AI Logo Maker',
+        langToggle: 'العربية', heroA: 'Your professional logo', heroB: 'in seconds',
+        heroSub: 'Type your brand name and industry, pick a style, and get instant AI options — try free, no signup.',
+        lblBrand: 'Brand name', lblIndustry: 'Industry', phIndustry: 'travel and tourism',
+        lblStyle: 'Style', lblColors: 'Brand colors (optional)',
+        colorsHint: 'Enable the ones to send to the model',
+        generateBtn: '✨ Generate logo options', generating: 'AI is drawing your options… a few seconds',
+        resultsTitle: 'Pick the icon closest to your brand',
+        resultsSub: 'Click any option to compose your brand name on it',
+        regenerate: '🔄 New round, same brief',
+        composerTitle: 'Compose your brand name',
+        composerSub: 'The name is real text, not AI-drawn — always crisp and free to edit',
+        lblFont: 'Font', lblTextColor: 'Name color', lblBg: 'Background', lblSize: 'Name size',
+        bgWhite: 'White', bgDark: 'Dark', bgTransparent: 'Transparent (PNG)',
+        dlPreview: '⬇️ Free preview (watermarked)', dlFinal: '👑 Final high-quality version',
+        finalNote: 'Final: higher quality, no watermark — requires a free JAOLA account',
+        gateTitle: '🔑 One last step: a free account',
+        gateBody: 'The final high-quality version is saved to your JAOLA account — free, and it also unlocks site building, the video studio and the travel portal.',
+        gateCta: 'Create a free JAOLA account',
+        gateHint: 'After signing in, open JALOGO from the platform dashboard so your session token arrives automatically — your drafts will be waiting.',
+        gateClose: 'Later',
+        footerLine: 'JALOGO is part of the JAOLA ecosystem — one account unlocks everything',
+        attemptsLeft: n => `Remaining today: ${n} ${n === 1 ? 'attempt' : 'attempts'}`,
+        finalWorking: '👑 Generating at top quality…', finalDone: '✅ Done — download starting',
+        errNetwork: 'Could not reach the service — check your connection and retry.',
+        errCanvas: 'The browser blocked local composition — the raw icon opened in a new tab.',
+        needBrand: 'Type the brand name first.', needIndustry: 'Type the industry first.',
+      },
+    };
+    let lang = localStorage.getItem('jalogoLang') || 'ar';
+    const tr = k => { const v = I18N[lang][k]; return typeof v === 'function' ? v : (v ?? k); };
+    function applyI18n() {
+      document.documentElement.lang = lang;
+      document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+      document.title = I18N[lang].docTitle;
+      document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = tr(el.dataset.i18n); });
+      document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.placeholder = tr(el.dataset.i18nPh); });
+      renderStyles();
+    }
+    $('langToggleBtn').addEventListener('click', () => {
+      lang = lang === 'ar' ? 'en' : 'ar';
+      localStorage.setItem('jalogoLang', lang);
+      applyI18n();
+    });
+
+    // ─── الحالة ─────────────────────────────────────────────────────
+    let styles = [];            // من /api/logo/options
+    let activeStyle = 'minimal';
+    let currentRound = null;    // {id, images, params}
+    let selectedIdx = 0;
+    let finalUrl = null;        // رابط النهائي بعد توليده (لا يعاد توليده مرتين)
+
+    const FONTS = [
+      { id: 'tajawal', label: 'Tajawal', css: "'Tajawal', sans-serif" },
+      { id: 'cairo', label: 'Cairo', css: "'Cairo', sans-serif" },
+      { id: 'amiri', label: 'Amiri', css: "'Amiri', serif" },
+      { id: 'poppins', label: 'Poppins', css: "'Poppins', sans-serif" },
+      { id: 'montserrat', label: 'Montserrat', css: "'Montserrat', sans-serif" },
+      { id: 'playfair', label: 'Playfair Display', css: "'Playfair Display', serif" },
+    ];
+    FONTS.forEach(f => {
+      const o = document.createElement('option');
+      o.value = f.id; o.textContent = f.label; o.style.fontFamily = f.css;
+      $('fontSelect').appendChild(o);
+    });
+
+    function renderStyles() {
+      const grid = $('stylesGrid');
+      grid.innerHTML = '';
+      styles.forEach(s => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'style-chip' + (s.id === activeStyle ? ' active' : '');
+        b.textContent = lang === 'ar' ? s.nameAr : s.nameEn;
+        b.addEventListener('click', () => { activeStyle = s.id; renderStyles(); });
+        grid.appendChild(b);
+      });
+    }
+
+    const showErr = (id, msg) => { const el = $(id); el.textContent = msg; el.style.display = 'block'; };
+    const hideErr = id => { $(id).style.display = 'none'; };
+
+    const api = (path, opts = {}) => fetch(path, {
+      ...opts,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token() ? { Authorization: 'Bearer ' + token() } : {}),
+        ...(opts.headers || {}),
+      },
+    });
+
+    // ─── التحميل الأولي: الكتالوج + شارة الحساب ─────────────────────
+    (async function boot() {
+      applyI18n();
+      try {
+        const opts = await (await api('/api/logo/options')).json();
+        styles = opts.styles || [];
+        renderStyles();
+      } catch { /* الكتالوج زينة اختيار — النموذج يعمل بالأسلوب الافتراضي */ }
+      if (token()) {
+        try {
+          const payload = JSON.parse(atob(token().split('.')[1]));
+          if (payload.username) $('userBadge').textContent = '👤 ' + payload.username;
+        } catch { /* عرض تجميلي فقط */ }
+      }
+    })();
+
+    // ─── التوليد ────────────────────────────────────────────────────
+    function collectInput() {
+      const brandName = $('brandName').value.trim();
+      const industry = $('industry').value.trim();
+      if (!brandName) return { error: tr('needBrand') };
+      if (!industry) return { error: tr('needIndustry') };
+      const colors = [];
+      [['c1','c1on'],['c2','c2on'],['c3','c3on']].forEach(([c, on]) => {
+        if ($(on).checked) colors.push($(c).value);
+      });
+      return { value: { brandName, industry, style: activeStyle, colors } };
+    }
+
+    async function generate() {
+      hideErr('wizardError');
+      const input = collectInput();
+      if (input.error) return showErr('wizardError', input.error);
+
+      $('generateBtn').disabled = true;
+      $('regenerateBtn').disabled = true;
+      $('results').classList.remove('hidden');
+      $('composer').classList.add('hidden');
+      $('draftsGrid').innerHTML = '';
+      $('draftsLoading').classList.remove('hidden');
+      $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      try {
+        const res = await api('/api/logo/drafts', { method: 'POST', body: JSON.stringify(input.value) });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showErr('wizardError', body.error || tr('errNetwork'));
+          $('results').classList.add('hidden');
+          return;
+        }
+        currentRound = body;
+        finalUrl = null;
+        $('attemptsNote').textContent = typeof body.remaining === 'number' ? tr('attemptsLeft')(body.remaining) : '';
+        const grid = $('draftsGrid');
+        body.images.forEach((url, i) => {
+          const card = document.createElement('div');
+          card.className = 'draft-card';
+          const img = document.createElement('img');
+          img.src = url; img.alt = `logo option ${i + 1}`; img.crossOrigin = 'anonymous';
+          card.appendChild(img);
+          card.addEventListener('click', () => selectDraft(i));
+          grid.appendChild(card);
+        });
+      } catch {
+        showErr('wizardError', tr('errNetwork'));
+        $('results').classList.add('hidden');
+      } finally {
+        $('draftsLoading').classList.add('hidden');
+        $('generateBtn').disabled = false;
+        $('regenerateBtn').disabled = false;
+      }
+    }
+    $('generateBtn').addEventListener('click', generate);
+    $('regenerateBtn').addEventListener('click', generate);
+
+    // ─── المُركّب ───────────────────────────────────────────────────
+    function selectDraft(i) {
+      selectedIdx = i;
+      finalUrl = null; // نهائي جديد لكل أيقونة مختارة
+      document.querySelectorAll('.draft-card').forEach((c, j) => c.classList.toggle('active', j === i));
+      $('previewIcon').src = currentRound.images[i];
+      $('previewIcon').crossOrigin = 'anonymous';
+      $('composer').classList.remove('hidden');
+      updatePreview();
+      $('composer').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function currentFont() {
+      return FONTS.find(f => f.id === $('fontSelect').value) || FONTS[0];
+    }
+    function updatePreview() {
+      const name = $('brandName').value.trim() || 'Brand';
+      const bg = $('bgSelect').value;
+      const p = $('previewName');
+      p.textContent = name;
+      p.style.fontFamily = currentFont().css;
+      p.style.color = $('textColor').value;
+      p.style.fontSize = $('sizeRange').value + 'px';
+      // «شفافة» تُعاين على رمادي شطرنجي مبسط كي يفهم المستخدم المقصود
+      $('previewBox').style.background = bg === 'transparent'
+        ? 'repeating-conic-gradient(#1e2735 0% 25%, #10151f 0% 50%) 50% / 24px 24px' : bg;
+    }
+    ['fontSelect', 'textColor', 'bgSelect', 'sizeRange'].forEach(id =>
+      $(id).addEventListener('input', updatePreview));
+    $('brandName').addEventListener('input', () => {
+      if (!$('composer').classList.contains('hidden')) updatePreview();
+    });
+
+    // ─── التركيب على Canvas وتنزيل PNG ─────────────────────────────
+    // الأيقونة من مزوّد خارجي: crossOrigin=anonymous يبقي الكانفس نظيفاً
+    // إن أرسل المزوّد ترويسات CORS؛ وإن رفضها المتصفح نسقط بلطف لفتح
+    // الصورة الخام بدل فشل صامت.
+    async function composePng({ iconUrl, size, watermark }) {
+      await document.fonts.ready;
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      await new Promise((ok, bad) => { img.onload = ok; img.onerror = bad; img.src = iconUrl; });
+
+      const name = $('brandName').value.trim() || 'Brand';
+      const bg = $('bgSelect').value;
+      const fontPx = Math.round(Number($('sizeRange').value) * (size / 512));
+      const pad = Math.round(size * 0.08);
+      const iconSide = Math.round(size * 0.62);
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = Math.round(size * 0.92) + fontPx;
+      const ctx = canvas.getContext('2d');
+
+      if (bg !== 'transparent') { ctx.fillStyle = bg; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+      ctx.drawImage(img, (size - iconSide) / 2, pad, iconSide, iconSide);
+      ctx.fillStyle = $('textColor').value;
+      ctx.font = `900 ${fontPx}px ${currentFont().css}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(name, size / 2, pad + iconSide + Math.round(size * 0.05));
+
+      if (watermark) {
+        ctx.fillStyle = bg === '#0a0e17' ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.35)';
+        ctx.font = `700 ${Math.round(size * 0.028)}px Tajawal, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText('jalogo.online', size / 2, canvas.height - Math.round(size * 0.045));
+      }
+      return canvas.toDataURL('image/png');
+    }
+
+    function downloadDataUrl(dataUrl, filename) {
+      const a = document.createElement('a');
+      a.href = dataUrl; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+
+    async function tryComposeDownload({ iconUrl, size, watermark, filename }) {
+      try {
+        const dataUrl = await composePng({ iconUrl, size, watermark });
+        downloadDataUrl(dataUrl, filename);
+        return true;
+      } catch {
+        // كانفس ملوث (لا ترويسات CORS من المزوّد) أو فشل تحميل — لا فشل صامت
+        showErr('composerError', tr('errCanvas'));
+        window.open(iconUrl, '_blank', 'noopener');
+        return false;
+      }
+    }
+
+    $('downloadPreviewBtn').addEventListener('click', async () => {
+      if (!currentRound) return;
+      hideErr('composerError');
+      $('downloadPreviewBtn').disabled = true;
+      await tryComposeDownload({
+        iconUrl: currentRound.images[selectedIdx], size: 512, watermark: true,
+        filename: 'jalogo-preview.png',
+      });
+      $('downloadPreviewBtn').disabled = false;
+    });
+
+    // ─── النهائي: بوابة الحساب — قلب القمع ─────────────────────────
+    $('gateClose').addEventListener('click', () => $('gateDialog').close());
+    $('downloadFinalBtn').addEventListener('click', async () => {
+      if (!currentRound) return;
+      hideErr('composerError');
+      if (!token()) { $('gateDialog').showModal(); return; }
+
+      const btn = $('downloadFinalBtn');
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = tr('finalWorking');
+      try {
+        if (!finalUrl) {
+          const res = await api('/api/logo/final', { method: 'POST', body: JSON.stringify({ roundId: currentRound.id }) });
+          const body = await res.json().catch(() => ({}));
+          if (res.status === 401) { localStorage.removeItem('token'); $('gateDialog').showModal(); return; }
+          if (!res.ok) { showErr('composerError', body.error || tr('errNetwork')); return; }
+          finalUrl = body.imageUrl;
+        }
+        btn.textContent = tr('finalDone');
+        await tryComposeDownload({
+          iconUrl: finalUrl, size: 1024, watermark: false,
+          filename: 'jalogo-final.png',
+        });
+      } catch {
+        showErr('composerError', tr('errNetwork'));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    });
+  </script>
 </body>
 </html>
