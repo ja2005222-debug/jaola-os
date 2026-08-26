@@ -23,7 +23,7 @@ import { validateLogoInput, composeLogoPrompt, publicStyles } from './src/prompt
 import {
     readLimits, hashIp, checkDraftAllowed, checkFinalAllowed, maybeAlertCost, startOfUtcDay,
 } from './src/limits.js';
-import { createFileStore } from './src/store/fileStore.js';
+import { buildStore } from './src/store/index.js';
 import { buildLogoProviders } from './src/providers/falImageProvider.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -182,12 +182,14 @@ const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv
 if (isMain) {
     const jwtSecret = [process.env.JWT_SECRET, process.env.JWT_SECRET_PREVIOUS].filter(Boolean);
     const { draft, final } = buildLogoProviders(process.env);
-    const store = createFileStore({
+    const store = buildStore({
+        databaseUrl: process.env.DATABASE_URL,
         dataDir: process.env.DATA_DIR || path.join(__dirname, 'data'),
     });
+    await store.init();
     const app = createApp({ store, jwtSecret, draftProvider: draft, finalProvider: final });
     const port = Number(process.env.PORT || 4100);
     app.listen(port, () => {
-        console.log(`🎨 JALOGO يعمل على المنفذ ${port}`);
+        console.log(`🎨 JALOGO يعمل على المنفذ ${port} (تخزين: ${process.env.DATABASE_URL ? 'postgres' : 'ملفات'})`);
     });
 }

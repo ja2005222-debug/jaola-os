@@ -9,7 +9,7 @@ import { Markdown } from '../components/Markdown.jsx';
 import { PreviewPanel } from '../components/PreviewPanel.jsx';
 import { TimelinePanel } from '../components/TimelinePanel.jsx';
 import { useJaolaStore } from '../store/useJaolaStore.js';
-import { BACKEND_URL, VIDEO_STUDIO_URL, openVideoStudio, TRAVEL_PORTAL_URL, openTravelPortal, describeFetchFailure } from '../config.js';
+import { BACKEND_URL, VIDEO_STUDIO_URL, openVideoStudio, TRAVEL_PORTAL_URL, openTravelPortal, LOGO_STUDIO_URL, openLogoStudio, describeFetchFailure } from '../config.js';
 import { useI18n } from '../i18n.js';
 import { LanguageSwitcher } from '../components/LanguageSwitcher.jsx';
 
@@ -2863,6 +2863,12 @@ export default function Dashboard() {
                     <span style={{ fontSize:16 }}>✈️</span> {t('travelPortalTitle')}
                   </button>
                 )}
+                {LOGO_STUDIO_URL && (
+                  <button onClick={() => { setShowMobileMenu(false); openLogoStudio(); }}
+                    style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'transparent', border:'none', color:S.text, fontSize:13, fontWeight:600, textAlign:'start' }}>
+                    <span style={{ fontSize:16 }}>🎨</span> {t('logoStudioTitle')}
+                  </button>
+                )}
                 {canInstall && (
                   <button onClick={() => { setShowMobileMenu(false); promptInstall(); }}
                     style={{ display:'flex', alignItems:'center', gap:9, padding:'11px 10px', borderRadius:9, background:'rgba(139,92,246,0.1)', border:'1px solid rgba(139,92,246,0.25)', color:S.text, fontSize:13, fontWeight:700, textAlign:'start' }}>
@@ -3256,6 +3262,14 @@ export default function Dashboard() {
           <button onClick={openTravelPortal} title={t('travelPortalTitle')}
             style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 10px', color:S.muted, fontSize:13, cursor:'pointer' }}>
             ✈️
+          </button>
+        )}
+
+        {/* 🎨 صانع الشعارات JALOGO — خدمة منفصلة؛ نفس القاعدة حرفياً */}
+        {LOGO_STUDIO_URL && (
+          <button onClick={openLogoStudio} title={t('logoStudioTitle')}
+            style={{ background:'transparent', border:`1px solid ${S.border}`, borderRadius:7, padding:'5px 10px', color:S.muted, fontSize:13, cursor:'pointer' }}>
+            🎨
           </button>
         )}
 
