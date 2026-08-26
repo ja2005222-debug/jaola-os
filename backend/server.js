@@ -80,6 +80,7 @@ import * as ghFiles from './services/githubFiles.js';
 import { teamPlan, BACKEND_TEAM } from './agents/backendTeam/index.js';
 import { frontendTeamPlan, FRONTEND_TEAM } from './agents/frontendTeam/index.js';
 import { isStaticAssetPath } from './utils/spaFallback.js';
+import { isCorsRejection } from './utils/corsErrors.js';
 import { listStarters, selectStarter, resolveStack, STARTERS } from './agents/starterRegistry.js';
 import { fetchStarter, fetchRepoFiles, parseRepoUrl } from './agents/starterFetch.js';
 import * as siteCms from './services/siteCms.js';
@@ -3440,7 +3441,13 @@ app.post('/api/newsletter/send', verifyToken, validateProjectOwnership, async (r
 });
 
 // ─── معالج أخطاء عام ────────────────────────────────────────────────
+// رفض CORS المتعمَّد (راجع utils/corsErrors.js) يُردّ عليه بـ403 صريح لا
+// بـ500 عام — الفرق ليس شكلياً: 500 يوهم بعطبٍ داخلي بينما القرار أمنيٌّ.
 app.use((err, req, res, next) => {
+    if (isCorsRejection(err)) {
+        console.error('CORS rejected:', err.message);
+        return res.status(403).json({ error: err.message });
+    }
     console.error('Server Error:', err.message);
     recordError({ source: 'express', message: err?.message, stack: err?.stack, path: req?.path, method: req?.method });
     res.status(500).json({ error: 'خطأ داخلي في الخادم.' });
