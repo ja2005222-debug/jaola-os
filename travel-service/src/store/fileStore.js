@@ -9,6 +9,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { generateReferralCode, normalizeReferralCode } from '../referrals.js';
 
 export function createFileStore({ dataDir }) {
     const bookingsPath = path.join(dataDir, 'bookings.json');
@@ -23,6 +24,7 @@ export function createFileStore({ dataDir }) {
     const reviewsPath = path.join(dataDir, 'packageReviews.json');
     const wishlistPath = path.join(dataDir, 'wishlist.json');
     const usersPath = path.join(dataDir, 'users.json');
+    const referralsPath = path.join(dataDir, 'referrals.json');
 
     function ensureDir() {
         fs.mkdirSync(dataDir, { recursive: true });
@@ -65,6 +67,15 @@ export function createFileStore({ dataDir }) {
     const writeWishlist = rows => writeJson(wishlistPath, rows);
     const readUsers = () => readJson(usersPath);
     const writeUsers = rows => writeJson(usersPath, rows);
+    const readReferrals = () => readJson(referralsPath);
+    const writeReferrals = rows => writeJson(referralsPath, rows);
+    // تفرّد الرمز: تصادمٌ على أبجدية 32 حرفاً بطول 7 يكاد يكون معدوماً
+    // (32^7)، لكن التحقق رخيصٌ والتأكّد أرخص من عطبٍ صامت لاحقاً.
+    function newUniqueReferralCode(rows) {
+        let code;
+        do { code = generateReferralCode(); } while (rows.some(r => r.code === code));
+        return code;
+    }
 
     return {
         name: 'file',
@@ -628,6 +639,90 @@ export function createFileStore({ dataDir }) {
             else rows.push({ username, prefs });
             writePrefs(rows);
             return prefs;
+        },
+
+        // ─── 🤝 برنامج الإحالة (referrals.js) ─────────────────────────
+        // مفهرسٌ بـusername كبقية الخدمة — لا صلة بـtravel_users (انظر
+        // شرح النطاق في referrals.js).
+
+        async ensureReferralCode(username) {
+            const uname = String(username || '').trim().toLowerCase();
+            if (!uname) return null;
+            const rows = readReferrals();
+            const row = rows.find(r => r.username === uname);
+            if (row) return row.code;
+            const code = newUniqueReferralCode(rows);
+            rows.push({ username: uname, code, referredBy: null, bonusPoints: 0, rewardGrantedAt: null, createdAt: Date.now() });
+            writeReferrals(rows);
+            return code;
+        },
+
+        async getUsernameByReferralCode(code) {
+            const c = normalizeReferralCode(code);
+            if (!c) return null;
+            const row = readReferrals().find(r => r.code === c);
+            return row ? row.username : null;
+        },
+
+        // ⚠️ **أول كتابةٍ تفوز ولا تُستبدل لاحقاً** — نفس عرف رمز الاستعادة
+        // في accounts.js: حساب مُنشأ بالفعل لا يصبح "مُحالاً" بأثر رجعي.
+        async recordReferralSignup(username, referrerUsername) {
+            const uname = String(username || '').trim().toLowerCase();
+            const referrer = String(referrerUsername || '').trim().toLowerCase();
+            if (!uname || !referrer || referrer === uname) return false; // لا إحالة الذات
+            const rows = readReferrals();
+            const row = rows.find(r => r.username === uname);
+            if (row) {
+                if (row.referredBy) return false;
+                row.referredBy = referrer;
+                writeReferrals(rows);
+                return true;
+            }
+            const code = newUniqueReferralCode(rows);
+            rows.push({ username: uname, code, referredBy: referrer, bonusPoints: 0, rewardGrantedAt: null, createdAt: Date.now() });
+            writeReferrals(rows);
+            return true;
+        },
+
+        async getReferralInfo(username) {
+            const uname = String(username || '').trim().toLowerCase();
+            const rows = readReferrals();
+            const row = rows.find(r => r.username === uname);
+            return {
+                code: row?.code || null,
+                referredBy: row?.referredBy || null,
+                bonusPoints: row?.bonusPoints || 0,
+                referredCount: rows.filter(r => r.referredBy === uname).length,
+            };
+        },
+
+        // ذرّي في معنى مخزن الملفات: كتلةٌ متزامنة بلا await، فلا يتداخل
+        // طلبان (نفس عرف عدّادات المقاعد في fixedPackages.js).
+        async grantReferralRewardIfDue(username, points) {
+            const uname = String(username || '').trim().toLowerCase();
+            const rows = readReferrals();
+            const row = rows.find(r => r.username === uname);
+            if (!row || !row.referredBy || row.rewardGrantedAt) return { granted: false, referredBy: null };
+            row.bonusPoints = (row.bonusPoints || 0) + points;
+            row.rewardGrantedAt = Date.now();
+            writeReferrals(rows);
+            return { granted: true, referredBy: row.referredBy };
+        },
+
+        // للمُحيل بعد منح المُحال — بلا حارس مرّة واحدة هنا: الحارس الوحيد
+        // اللازم هو rewardGrantedAt على صفّ المُحال، وهذه الدالة تُستدعى
+        // مرّةً واحدة بالضبط لكل مكافأةٍ فعلية (maybeRewardReferral).
+        async addBonusPoints(username, points) {
+            const uname = String(username || '').trim().toLowerCase();
+            if (!uname) return;
+            const rows = readReferrals();
+            let row = rows.find(r => r.username === uname);
+            if (!row) {
+                row = { username: uname, code: newUniqueReferralCode(rows), referredBy: null, bonusPoints: 0, rewardGrantedAt: null, createdAt: Date.now() };
+                rows.push(row);
+            }
+            row.bonusPoints = (row.bonusPoints || 0) + points;
+            writeReferrals(rows);
         },
     };
 }

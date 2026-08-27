@@ -7,6 +7,7 @@
  * معه، بينما ما نستعلم عنه (المستخدم/الحالة/الوقت) أعمدة مفهرسة.
  */
 import pg from 'pg';
+import { generateReferralCode, normalizeReferralCode } from '../referrals.js';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS travel_bookings (
@@ -224,6 +225,20 @@ ALTER TABLE travel_users ADD COLUMN IF NOT EXISTS reset_token_hash TEXT;
 ALTER TABLE travel_users ADD COLUMN IF NOT EXISTS reset_expires_at BIGINT;
 CREATE INDEX IF NOT EXISTS travel_users_reset_idx
     ON travel_users (reset_token_hash) WHERE reset_token_hash IS NOT NULL;
+
+-- 🤝 برنامج الإحالة — مفهرسٌ بـusername كبقية الخدمة (ملف شخصي، مفضلة)
+-- لا بمعرّف travel_users، فيعمل لأي هوية بصرف النظر عن مصدر توكنها.
+-- انظر شرح النطاق الكامل في referrals.js.
+CREATE TABLE IF NOT EXISTS travel_referrals (
+    username           TEXT PRIMARY KEY,
+    code               TEXT NOT NULL UNIQUE,
+    referred_by        TEXT,
+    bonus_points       BIGINT NOT NULL DEFAULT 0,
+    reward_granted_at  BIGINT,
+    created_at         BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS travel_referrals_by_idx ON travel_referrals (referred_by)
+    WHERE referred_by IS NOT NULL;
 `;
 
 function rowToUser(r) {
@@ -951,6 +966,129 @@ export function createPostgresStore({ connectionString }) {
                 const res = await c.query(
                     `UPDATE travel_users SET ${sets.join(', ')} WHERE id = $${vals.length} RETURNING *`, vals);
                 return rowToUser(res.rows[0]);
+            });
+        },
+
+        // ─── 🤝 برنامج الإحالة (referrals.js) ─────────────────────────
+        // مفهرسٌ بـusername كبقية الخدمة — لا صلة بـtravel_users (انظر
+        // شرح النطاق الكامل في referrals.js).
+
+        async ensureReferralCode(username) {
+            const uname = String(username || '').trim().toLowerCase();
+            if (!uname) return null;
+            return withClient(async c => {
+                const existing = await c.query('SELECT code FROM travel_referrals WHERE username = $1', [uname]);
+                if (existing.rows[0]) return existing.rows[0].code;
+                // تصادم الرمز نادرٌ جداً (32^7) — إعادة المحاولة أرخص من
+                // قفلٍ أو تسلسلٍ إضافي، والتحقّق الصريح أرخص من عطبٍ صامت.
+                for (let attempt = 0; attempt < 5; attempt++) {
+                    const code = generateReferralCode();
+                    try {
+                        const res = await c.query(
+                            `INSERT INTO travel_referrals (username, code, bonus_points, created_at)
+                             VALUES ($1, $2, 0, $3) RETURNING code`,
+                            [uname, code, Date.now()]);
+                        return res.rows[0].code;
+                    } catch (e) {
+                        if (e.code !== '23505') throw e; // ليس تصادم تفرّد — عطبٌ حقيقي
+                        // إمّا سباق username (طلبان متزامنان لنفس المستخدم) أو تصادم الرمز
+                        const again = await c.query('SELECT code FROM travel_referrals WHERE username = $1', [uname]);
+                        if (again.rows[0]) return again.rows[0].code;
+                    }
+                }
+                throw new Error('تعذّر توليد رمز إحالة فريد.');
+            });
+        },
+
+        async getUsernameByReferralCode(code) {
+            const key = normalizeReferralCode(code);
+            if (!key) return null;
+            return withClient(async c => {
+                const res = await c.query('SELECT username FROM travel_referrals WHERE code = $1', [key]);
+                return res.rows[0]?.username || null;
+            });
+        },
+
+        // ⚠️ **أول كتابةٍ تفوز ولا تُستبدل لاحقاً** — نفس عرف رمز الاستعادة
+        // في accounts.js: حساب مُنشأ بالفعل لا يصبح "مُحالاً" بأثر رجعي.
+        async recordReferralSignup(username, referrerUsername) {
+            const uname = String(username || '').trim().toLowerCase();
+            const referrer = String(referrerUsername || '').trim().toLowerCase();
+            if (!uname || !referrer || referrer === uname) return false; // لا إحالة الذات
+            return withClient(async c => {
+                for (let attempt = 0; attempt < 5; attempt++) {
+                    const code = generateReferralCode();
+                    try {
+                        const res = await c.query(
+                            `INSERT INTO travel_referrals (username, code, referred_by, bonus_points, created_at)
+                             VALUES ($1, $2, $3, 0, $4)
+                             ON CONFLICT (username) DO NOTHING
+                             RETURNING username`,
+                            [uname, code, referrer, Date.now()]);
+                        return !!res.rows[0]; // false = الصفّ موجودٌ سلفاً بريفيرال أو بلاه
+                    } catch (e) {
+                        if (e.code !== '23505') throw e;
+                        // تصادم الرمز تحديداً (تعارض username يمتصّه ON CONFLICT بلا رمي)
+                    }
+                }
+                throw new Error('تعذّر توليد رمز إحالة فريد.');
+            });
+        },
+
+        async getReferralInfo(username) {
+            const uname = String(username || '').trim().toLowerCase();
+            return withClient(async c => {
+                const row = (await c.query(
+                    'SELECT code, referred_by, bonus_points FROM travel_referrals WHERE username = $1', [uname])).rows[0];
+                const countRes = await c.query(
+                    'SELECT COUNT(*)::int AS n FROM travel_referrals WHERE referred_by = $1', [uname]);
+                return {
+                    code: row?.code || null,
+                    referredBy: row?.referred_by || null,
+                    bonusPoints: row ? Number(row.bonus_points) : 0,
+                    referredCount: countRes.rows[0]?.n || 0,
+                };
+            });
+        },
+
+        // ذرّي فعلياً: شرطٌ داخل UPDATE واحد — طلبان متزامنان لا يمكن أن
+        // يفوز كلاهما، فمهما حاولا يظفر أحدهما فقط بـreward_granted_at.
+        async grantReferralRewardIfDue(username, points) {
+            const uname = String(username || '').trim().toLowerCase();
+            return withClient(async c => {
+                const res = await c.query(
+                    `UPDATE travel_referrals
+                     SET bonus_points = bonus_points + $2, reward_granted_at = $3
+                     WHERE username = $1 AND referred_by IS NOT NULL AND reward_granted_at IS NULL
+                     RETURNING referred_by`,
+                    [uname, points, Date.now()]);
+                if (!res.rows[0]) return { granted: false, referredBy: null };
+                return { granted: true, referredBy: res.rows[0].referred_by };
+            });
+        },
+
+        // upsert ذرّي: `bonus_points = travel_referrals.bonus_points + الجديد`
+        // يصحّ حتى لو تزامن نداءان لنفس المُحيل (لا يحدث عملياً هنا، لكن
+        // الصحة لا تعتمد على الاحتمال).
+        async addBonusPoints(username, points) {
+            const uname = String(username || '').trim().toLowerCase();
+            if (!uname) return;
+            await withClient(async c => {
+                for (let attempt = 0; attempt < 5; attempt++) {
+                    const code = generateReferralCode();
+                    try {
+                        await c.query(
+                            `INSERT INTO travel_referrals (username, code, bonus_points, created_at)
+                             VALUES ($1, $2, $3, $4)
+                             ON CONFLICT (username) DO UPDATE
+                             SET bonus_points = travel_referrals.bonus_points + EXCLUDED.bonus_points`,
+                            [uname, code, points, Date.now()]);
+                        return;
+                    } catch (e) {
+                        if (e.code !== '23505') throw e; // تصادم رمزٍ نادر — لا يمسّ bonus_points
+                    }
+                }
+                throw new Error('تعذّر توليد رمز إحالة فريد.');
             });
         },
 

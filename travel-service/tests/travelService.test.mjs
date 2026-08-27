@@ -3149,6 +3149,147 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             });
         });
 
+        // ─── 🤝 برنامج الإحالة ────────────────────────────────────────
+        // مستويان: عقد المخزن مباشرةً (ذرّية المنح، وأول-كتابةٍ-تفوز)،
+        // ثم التكامل عبر HTTP (تسجيل → حجزٌ يُصدَر → مكافأة الطرفين).
+
+        test('🤝 عقد المخزن: رمزٌ ثابتٌ لكل مستخدم، وتفرّده مضمون', async () => {
+            const codeA1 = await store.ensureReferralCode('refA@example.com');
+            const codeA2 = await store.ensureReferralCode('refA@example.com');
+            assert.equal(codeA1, codeA2, 'الرمز يجب أن يبقى ثابتاً لنفس المستخدم');
+            const codeB = await store.ensureReferralCode('refB@example.com');
+            assert.notEqual(codeA1, codeB);
+            assert.equal(await store.getUsernameByReferralCode(codeA1), 'refa@example.com');
+            assert.equal(await store.getUsernameByReferralCode('لا-وجود-له'), null);
+        });
+
+        test('🤝 عقد المخزن: recordReferralSignup — أول كتابةٍ تفوز، ولا إحالة ذاتٍ', async () => {
+            const first = await store.recordReferralSignup('invitee1@example.com', 'inviter1@example.com');
+            assert.equal(first, true);
+            const info = await store.getReferralInfo('invitee1@example.com');
+            assert.equal(info.referredBy, 'inviter1@example.com');
+
+            // محاولة كتابةٍ ثانية بمُحيلٍ مختلف — لا تُستبدَل
+            const second = await store.recordReferralSignup('invitee1@example.com', 'someone-else@example.com');
+            assert.equal(second, false);
+            assert.equal((await store.getReferralInfo('invitee1@example.com')).referredBy, 'inviter1@example.com');
+
+            // إحالة الذات: مرفوضة بنيوياً
+            assert.equal(await store.recordReferralSignup('self@example.com', 'self@example.com'), false);
+        });
+
+        test('🤝 عقد المخزن: grantReferralRewardIfDue مرّةً واحدة بالضبط', async () => {
+            await store.recordReferralSignup('invitee2@example.com', 'inviter2@example.com');
+            const r1 = await store.grantReferralRewardIfDue('invitee2@example.com', 500);
+            assert.deepEqual(r1, { granted: true, referredBy: 'inviter2@example.com' });
+
+            const r2 = await store.grantReferralRewardIfDue('invitee2@example.com', 500);
+            assert.equal(r2.granted, false, 'لا مكافأة ثانية لنفس المُحال');
+
+            // بلا referredBy أصلاً (مستخدمٌ لم يُدعَ) — لا مكافأة
+            const r3 = await store.grantReferralRewardIfDue('nobody-invited@example.com', 500);
+            assert.equal(r3.granted, false);
+
+            const info = await store.getReferralInfo('invitee2@example.com');
+            assert.equal(info.bonusPoints, 500, 'المُحال نفسه يكسب المكافأة أيضاً');
+        });
+
+        test('🤝 عقد المخزن: addBonusPoints تراكميّة لمستخدمٍ قائم أو جديد', async () => {
+            await store.ensureReferralCode('accumulator@example.com');
+            await store.addBonusPoints('accumulator@example.com', 200);
+            await store.addBonusPoints('accumulator@example.com', 300);
+            assert.equal((await store.getReferralInfo('accumulator@example.com')).bonusPoints, 500);
+
+            // مستخدمٌ بلا صفٍّ من الأساس — يُنشَأ ضمناً
+            await store.addBonusPoints('brand-new-recipient@example.com', 150);
+            assert.equal((await store.getReferralInfo('brand-new-recipient@example.com')).bonusPoints, 150);
+        });
+
+        test('🤝 عقد المخزن: referredCount يعدّ من دعاهم مستخدمٌ بعينه', async () => {
+            const inviter = 'popular-inviter@example.com';
+            await store.recordReferralSignup('friend1@example.com', inviter);
+            await store.recordReferralSignup('friend2@example.com', inviter);
+            assert.equal((await store.getReferralInfo(inviter)).referredCount, 2);
+        });
+
+        test('🤝 HTTP: تسجيلٌ برمز إحالة صحيح، فحجزٌ يُصدَر، فمكافأةٌ للطرفين', async () => {
+            const inviter = await call('/api/travel/auth/signup', { method: 'POST', body: SIGNUP({ email: 'inviter-http@example.com' }) });
+            assert.equal(inviter.status, 201);
+            const inviterInfo = await call('/api/travel/referral/mine', { token: inviter.data.token });
+            assert.equal(inviterInfo.status, 200);
+            assert.ok(inviterInfo.data.code);
+            assert.equal(inviterInfo.data.referredCount, 0);
+            assert.equal(inviterInfo.data.bonusPoints, 0);
+
+            const invitee = await call('/api/travel/auth/signup', {
+                method: 'POST', body: SIGNUP({ email: 'invitee-http@example.com', ref: inviterInfo.data.code }),
+            });
+            assert.equal(invitee.status, 201);
+
+            // فور التسجيل: لا مكافأة بعد — الحجز لم يُصدَر بعد
+            assert.equal((await call('/api/travel/referral/mine', { token: inviter.data.token })).data.bonusPoints, 0);
+
+            // حجزٌ يُصدَر فعلياً (مزوّد المحاكاة يُصدر فوراً)
+            const offers = await call('/api/travel/flights/search', { method: 'POST', token: invitee.data.token, body: SEARCH_BODY() });
+            const booked = await call('/api/travel/bookings', {
+                method: 'POST', token: invitee.data.token, body: { offerId: offers.data.offers[0].id, ...VALID_PAX },
+            });
+            assert.equal(booked.status, 200, JSON.stringify(booked.data));
+            assert.equal(booked.data.booking.status, 'issued');
+
+            const afterInviter = await call('/api/travel/referral/mine', { token: inviter.data.token });
+            assert.equal(afterInviter.data.referredCount, 1);
+            assert.equal(afterInviter.data.bonusPoints, afterInviter.data.bonusPerReferral);
+
+            // المُحال أيضاً يرى مكافأته مضافةً في نقاط ولائه
+            const inviteeLoyalty = await call('/api/travel/loyalty', { token: invitee.data.token });
+            assert.equal(inviteeLoyalty.data.loyalty.bonusPoints, afterInviter.data.bonusPerReferral);
+
+            // حجزٌ ثانٍ لنفس المُحال — لا مكافأة إضافية (مرّةً واحدة بالضبط)
+            const offers2 = await call('/api/travel/flights/search', { method: 'POST', token: invitee.data.token, body: SEARCH_BODY() });
+            await call('/api/travel/bookings', {
+                method: 'POST', token: invitee.data.token, body: { offerId: offers2.data.offers[0].id, ...VALID_PAX },
+            });
+            const stillSame = await call('/api/travel/referral/mine', { token: inviter.data.token });
+            assert.equal(stillSame.data.bonusPoints, afterInviter.data.bonusPoints, 'مكافأةٌ ثانية غير مستحقة');
+        });
+
+        test('🤝 HTTP: رمز إحالة فاسد أو مجهول لا يكسر التسجيل ولا يمنح شيئاً', async () => {
+            const r = await call('/api/travel/auth/signup', {
+                method: 'POST', body: SIGNUP({ email: 'no-such-ref@example.com', ref: 'NOTAREALCODE' }),
+            });
+            assert.equal(r.status, 201, 'رمزٌ فاسد لا يمنع التسجيل');
+            const offers = await call('/api/travel/flights/search', { method: 'POST', token: r.data.token, body: SEARCH_BODY() });
+            const booked = await call('/api/travel/bookings', {
+                method: 'POST', token: r.data.token, body: { offerId: offers.data.offers[0].id, ...VALID_PAX },
+            });
+            assert.equal(booked.status, 200);
+            // لا مُحيل حقيقياً — بلا خطأ، وببساطة لا مكافأة تُمنح لأحد
+            const mine = await call('/api/travel/referral/mine', { token: r.data.token });
+            assert.equal(mine.data.bonusPoints, 0);
+        });
+
+        test('🤝 HTTP: تسجيلٌ جديد بجوجل برمز إحالة صحيح يُسجَّل أيضاً', async () => {
+            await withGoogleApp(async gcall => {
+                const inviter = await gcall('/api/travel/auth/signup', { method: 'POST', body: SIGNUP({ email: 'g-inviter@example.com' }) });
+                const inviterInfo = await gcall('/api/travel/referral/mine', { token: inviter.data.token });
+
+                const g = await gcall('/api/travel/auth/google', {
+                    method: 'POST',
+                    body: { credential: mintGoogleToken({ email: 'g-invitee@gmail.com' }), ref: inviterInfo.data.code },
+                });
+                assert.equal(g.status, 200);
+                assert.equal(g.data.isNewUser, true);
+
+                const offers = await gcall('/api/travel/flights/search', { method: 'POST', token: g.data.token, body: SEARCH_BODY() });
+                await gcall('/api/travel/bookings', {
+                    method: 'POST', token: g.data.token, body: { offerId: offers.data.offers[0].id, ...VALID_PAX },
+                });
+                const afterInviter = await gcall('/api/travel/referral/mine', { token: inviter.data.token });
+                assert.equal(afterInviter.data.referredCount, 1, 'تسجيل جوجل الجديد لم يُسجَّل كإحالة');
+            });
+        });
+
         // ─── 🔑 استعادة كلمة المرور ──────────────────────────────────
         //
         // ⚠️ **تطبيقٌ جديد لكل اختبار هنا، عمداً**: محدّد الحسابات بالـIP

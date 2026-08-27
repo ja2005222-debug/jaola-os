@@ -36,6 +36,7 @@ import { submitReview, publicReview, aggregateRating } from './src/reviews.js';
 import { sendBalanceReminders } from './src/balanceReminders.js';
 import { fxRate, DISPLAY_CURRENCIES } from './src/fx.js';
 import { computeLoyalty } from './src/loyalty.js';
+import { readReferralBonusPoints } from './src/referrals.js';
 import { createStripeClient, verifyStripeWebhookSignature } from './src/payments/stripeClient.js';
 import { createGoogleAuthClient } from './src/googleAuth.js';
 import { normalizeContract } from './src/contracts.js';
@@ -1385,6 +1386,12 @@ ${urls}
         if (!user) {
             return res.status(409).json({ error: 'تعذّر إنشاء الحساب بهذا البريد — جرّب تسجيل الدخول.' });
         }
+        // 🤝 برنامج الإحالة: رمزٌ في الرابط عند التسجيل فقط — أفضل جهد،
+        // رمزٌ فاسد أو مفقود لا يمنع إنشاء الحساب أبداً.
+        if (req.body?.ref) {
+            const referrer = await store.getUsernameByReferralCode(req.body.ref).catch(() => null);
+            if (referrer) await store.recordReferralSignup(user.email, referrer).catch(() => {});
+        }
 
         res.status(201).json({
             token: signAccountToken(user, accountSecret),
@@ -1450,6 +1457,11 @@ ${urls}
             // null عند التصادم بدل رمي خطأ — من وصل هنا فعلاً أثبت ملكية
             // هذا البريد لدى جوجل، فالقراءة بدل الفشل صحيحة لا تحايل.
             if (!user) user = await store.getUserByEmail(email);
+            // 🤝 برنامج الإحالة — أفضل جهد، ولا يعمل إلا لتسجيلٍ جديدٍ فعلاً
+            if (isNewUser && req.body?.ref) {
+                const referrer = await store.getUsernameByReferralCode(req.body.ref).catch(() => null);
+                if (referrer) await store.recordReferralSignup(user.email, referrer).catch(() => {});
+            }
         }
         if (!user) return res.status(500).json({ error: 'تعذّر إتمام الدخول — حاول مجدداً.' });
 
@@ -2683,7 +2695,32 @@ ${urls}
 
     app.get('/api/travel/loyalty', verifyToken, wrap(async (req, res) => {
         const bookings = await store.listBookingsByUser(userOf(req), 500);
-        res.json({ loyalty: computeLoyalty(bookings) });
+        const loyalty = computeLoyalty(bookings);
+        // 🤝 نقاط الإحالة تُضاف فوق المشتقّة من الحجوزات — مصدرا حقيقةٍ
+        // منفصلان (محسوبة مقابل مخزَّنة) يُجمعان للعرض فقط، لا يختلطان.
+        const referral = store.getReferralInfo ? await store.getReferralInfo(userOf(req)) : null;
+        const bonusPoints = referral?.bonusPoints || 0;
+        res.json({
+            loyalty: bonusPoints
+                ? { ...loyalty, points: loyalty.points + bonusPoints, bonusPoints }
+                : { ...loyalty, bonusPoints: 0 },
+        });
+    }));
+
+    // 🤝 رابط الإحالة الخاص بالحساب — يُنشأ عند أول طلب (ensureReferralCode
+    // كسول). يعمل لأي حساب Jatrava بصرف النظر عمّن أحاله هو نفسه.
+    app.get('/api/travel/referral/mine', verifyToken, wrap(async (req, res) => {
+        if (!store.ensureReferralCode) return res.status(503).json({ error: 'برنامج الإحالة غير مفعَّل على هذا الخادم.' });
+        const username = userOf(req);
+        const code = await store.ensureReferralCode(username);
+        const info = await store.getReferralInfo(username);
+        res.json({
+            code,
+            link: `${requestBaseUrl(req)}/?ref=${encodeURIComponent(code)}`,
+            referredCount: info.referredCount,
+            bonusPoints: info.bonusPoints,
+            bonusPerReferral: readReferralBonusPoints(),
+        });
     }));
 
     // ─── 🗺️ أهم الوجهات (صور Wikimedia + أرخص سعر حقيقي) ──────────────
