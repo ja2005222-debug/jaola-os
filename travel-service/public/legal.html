@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>من نحن · الشروط · الخصوصية · الاسترجاع — Jatrava</title>
+  <meta name="description" content="من نحن، بيانات التواصل، الشروط والأحكام، سياسة الخصوصية، وسياسة الاسترجاع والإلغاء لدى Jatrava." />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <meta name="theme-color" content="#f4f6f8" />
+  <style>
+    :root {
+      --bg: #eef2f7; --card: #ffffff; --border: #ccd7e5;
+      --text: #1b222d; --muted: #4a5768; --accent: #2450b8;
+      --accent-soft: #e8effc; --accent-deep: #1a3d8f;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, 'Noto Sans Arabic',
+        'Dubai', Tahoma, Arial, sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh;
+      font-size: 16px; line-height: 1.75;
+    }
+    a { color: var(--accent); }
+    header {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 14px 20px; border-bottom: 1px solid var(--border);
+      background: var(--card); flex-wrap: wrap;
+    }
+    header a.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+    .brand-logo { height: 40px; width: auto; display: block; }
+    header .sub { color: var(--muted); font-size: 13px; font-weight: 600; }
+    #langBtn {
+      background: transparent; border: 1px solid var(--border); color: var(--muted);
+      padding: 6px 12px; border-radius: 999px; font-size: 13px; cursor: pointer;
+    }
+    #langBtn:hover { border-color: var(--accent); color: var(--accent); }
+    main { max-width: 820px; margin: 0 auto; padding: 24px 20px 60px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+    .tabs button {
+      background: var(--card); color: var(--text); border: 1px solid var(--border);
+      border-radius: 999px; padding: 9px 16px; cursor: pointer; font-size: 14px; font-weight: 600;
+      font-family: inherit;
+    }
+    .tabs button.active {
+      border-color: var(--accent); color: var(--accent-deep); background: var(--accent-soft);
+    }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 24px; box-shadow: 0 1px 3px rgba(15,23,42,.07);
+    }
+    .card h2 { font-size: 21px; margin-bottom: 14px; }
+    .card h3 { font-size: 16px; margin: 18px 0 6px; color: var(--accent-deep); }
+    .card p, .card li { color: var(--text); font-size: 15px; }
+    .card p { margin-bottom: 10px; }
+    .card ul { margin: 6px 0 10px; padding-inline-start: 22px; }
+    .card li { margin-bottom: 6px; }
+    .biz-box {
+      background: var(--accent-soft); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px 16px; margin: 14px 0; font-size: 14px;
+    }
+    .biz-box dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
+    .biz-box dt { color: var(--muted); font-weight: 600; white-space: nowrap; }
+    .biz-box dd { color: var(--text); }
+    .updated { color: var(--muted); font-size: 13px; margin-top: 18px; }
+    footer.back { max-width: 820px; margin: 0 auto; padding: 0 20px 40px; }
+    footer.back a { font-size: 14px; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <a class="brand" href="/">
+      <img src="/logo.svg" alt="Jatrava" class="brand-logo" width="1626" height="442">
+      <span class="sub" id="brandSub">بوابة السفر</span>
+    </a>
+    <button id="langBtn" type="button">EN</button>
+  </header>
+
+  <main>
+    <div class="tabs" id="tabs"></div>
+    <div class="card" id="content"></div>
+    <div class="updated" id="updated"></div>
+  </main>
+  <footer class="back"><a href="/" id="backLink">← العودة إلى بوابة السفر</a></footer>
+
+  <script>
+    /**
+     * 📜 legal.html — صفحةٌ ذاتية الاحتواء (بلا إطار عمل) لخمسة أقسام
+     * قانونية/تعريفية: من نحن، اتصل بنا، الشروط، الخصوصية، الاسترجاع.
+     *
+     * لماذا صفحة منفصلة بترجمة داخلية خاصة بها لا جدول i18n.js الكبير؟
+     * جدول index.html مصمَّم لمطابقة نصوص **ثابتة** حرفياً (حارس انجراف
+     * صارم يربط كل مفتاح بنص في تلك الصفحة تحديداً) — محتوى قانوني طويل
+     * ومتغيّر أنسب له نمط `T(ar, en)` المستقل، وهو نفس النمط المستعمل
+     * أصلاً في share.html لصفحة مستقلة صغيرة.
+     *
+     * البيانات هنا حقيقية من السجل التجاري الهولندي (KVK) — لا نص تجريبي.
+     */
+    const $ = id => document.getElementById(id);
+    const qs = new URLSearchParams(location.search);
+    let lang = qs.get('lang') === 'en' ? 'en' : 'ar';
+    const T = (ar, en) => (lang === 'en' ? en : ar);
+
+    const BIZ = {
+      name: 'JaTrava',
+      legalName: 'Nalia Diensten',
+      kvk: '71937633',
+      established: '22-06-2018',
+      address: 'Lodewijk Napoleonplantsoen 82, 3582TX Utrecht, Netherlands',
+      sbi: '79110',
+      email: 'support@jatrava.com',
+    };
+
+    function bizBox() {
+      return `<div class="biz-box"><dl>
+        <dt>${T('الاسم التجاري', 'Trading name')}</dt><dd>${BIZ.name}</dd>
+        <dt>${T('المنشأة المسجَّلة', 'Registered entity')}</dt><dd>${BIZ.legalName} (${T('منشأة فردية', 'sole proprietorship')})</dd>
+        <dt>${T('السجل التجاري (KVK)', 'Chamber of Commerce (KVK)')}</dt><dd>${BIZ.kvk}</dd>
+        <dt>${T('تاريخ التأسيس', 'Established')}</dt><dd>${BIZ.established}</dd>
+        <dt>${T('العنوان المسجَّل', 'Registered address')}</dt><dd>${BIZ.address}</dd>
+        <dt>${T('تصنيف النشاط (SBI)', 'Activity code (SBI)')}</dt><dd>${BIZ.sbi} — ${T('وكالة سفر', 'travel agency')}</dd>
+        <dt>${T('البريد الإلكتروني', 'Email')}</dt><dd><a href="mailto:${BIZ.email}">${BIZ.email}</a></dd>
+      </dl></div>`;
+    }
+
+    const TABS = [
+      { id: 'about', ar: 'من نحن', en: 'About us' },
+      { id: 'contact', ar: 'اتصل بنا', en: 'Contact' },
+      { id: 'terms', ar: 'الشروط والأحكام', en: 'Terms & Conditions' },
+      { id: 'privacy', ar: 'سياسة الخصوصية', en: 'Privacy Policy' },
+      { id: 'refund', ar: 'الاسترجاع والإلغاء', en: 'Refunds & Cancellations' },
+    ];
+
+    function renderAbout() {
+      return `<h2>${T('🏢 من نحن', '🏢 About us')}</h2>
+        <p>${T(
+          'Jatrava بوابة سفرٍ رقمية تتيح حجز الطيران والفنادق والسيارات والباقات السياحية بأسعارٍ شفافة — نحن البائع المباشر لا مجرّد وسيط: نشتري صافياً من شركائنا (Duffel وLiteAPI) ونبيع بسعرٍ نهائي واحد بلا رسوم مفاجئة بعد الحجز.',
+          'Jatrava is a digital travel portal for booking flights, hotels, cars and travel packages with transparent pricing. We act as the direct seller of record, not a mere intermediary: we buy net fares from our partners (Duffel and LiteAPI) and sell at one final price, with no surprise fees after booking.'
+        )}</p>
+        <p>${T(
+          'الخدمة تشغّلها وتملكها منشأة Nalia Diensten، وهي منشأةٌ فردية (Eenmanszaak) مسجَّلة رسمياً في السجل التجاري الهولندي (Kamer van Koophandel) تحت النشاط التجاري «JaTrava»، ومسجَّلة تحديداً كوكالة سفر (تصنيف SBI رقم 79110).',
+          'The service is operated and owned by Nalia Diensten, a sole proprietorship (Eenmanszaak) officially registered with the Dutch Chamber of Commerce (Kamer van Koophandel) under the trade name “JaTrava”, specifically registered as a travel agency (SBI code 79110).'
+        )}</p>
+        <h3>${T('بيانات التسجيل الرسمية', 'Official registration details')}</h3>
+        ${bizBox()}`;
+    }
+
+    function renderContact() {
+      return `<h2>${T('✉️ اتصل بنا', '✉️ Contact us')}</h2>
+        <p>${T(
+          'لأي استفسار عن حجزٍ قائم، أو مشكلة في الدفع، أو طلب تعديل أو استرداد، أو أي سؤال آخر — راسلنا على البريد التالي وسنرد عليك في أقرب وقت ممكن:',
+          'For any question about an existing booking, a payment issue, a change or refund request, or anything else — email us at the address below and we will get back to you as soon as possible:'
+        )}</p>
+        <p style="font-size:20px;font-weight:700"><a href="mailto:${BIZ.email}">${BIZ.email}</a></p>
+        <p>${T(
+          'يمكنك أيضاً استخدام «المساعد» أو نموذج التواصل داخل بوابة رحلاتي (My trips) لمن لديه حساب — تصل رسالتك مباشرةً مرتبطةً بحجزك.',
+          'If you have an account, you can also use the in-app assistant or the contact option inside My trips — your message reaches us linked directly to your booking.'
+        )}</p>
+        <h3>${T('العنوان المسجَّل', 'Registered address')}</h3>
+        <p>Nalia Diensten (JaTrava)<br>${BIZ.address}</p>
+        <h3>${T('السجل التجاري', 'Business registration')}</h3>
+        <p>KVK ${BIZ.kvk}</p>`;
+    }
+
+    function renderTerms() {
+      return `<h2>${T('📄 الشروط والأحكام', '📄 Terms & Conditions')}</h2>
+        <p>${T('باستخدامك موقع Jatrava أو حجزك عبره، فإنك توافق على الشروط التالية.',
+          'By using the Jatrava website or booking through it, you agree to the following terms.')}</p>
+
+        <h3>${T('1. طبيعة الخدمة', '1. Nature of the service')}</h3>
+        <p>${T(
+          'Jatrava (المُشغَّلة من قِبل Nalia Diensten) تبيع خدمات سفر (طيران، فنادق، سيارات، وباقات) بصفتها البائع المباشر، معتمدةً على مزوّدين متخصصين (شركات طيران، فنادق، ومزوّدي أنظمة حجز مثل Duffel وLiteAPI) لتنفيذ الحجز فعلياً. السعر المعروض نهائي ويشمل هامش الخدمة، ولا رسوم إضافية تُضاف بعد إتمام الحجز.',
+          'Jatrava (operated by Nalia Diensten) sells travel services (flights, hotels, cars, and packages) as the direct seller of record, relying on specialised suppliers (airlines, hotels, and booking infrastructure providers such as Duffel and LiteAPI) to actually fulfil each booking. The displayed price is final and includes our service margin — no extra fees are added after the booking is confirmed.'
+        )}</p>
+
+        <h3>${T('2. الحسابات', '2. Accounts')}</h3>
+        <p>${T(
+          'التصفّح والبحث عن الأسعار متاحان بلا حساب. إنشاء حجزٍ يتطلب حساباً (بريد وكلمة مرور، أو الدخول بحساب جوجل) لضمان تواصلٍ صحيح بخصوص حجزك. أنت مسؤول عن دقّة البيانات التي تُدخلها وعن سرّية كلمة مرورك.',
+          'Browsing and searching prices requires no account. Creating a booking requires an account (email and password, or Google sign-in) to ensure we can reach you about your booking. You are responsible for the accuracy of the information you provide and for keeping your password confidential.'
+        )}</p>
+
+        <h3>${T('3. الحجز والدفع', '3. Booking and payment')}</h3>
+        <p>${T(
+          'يُدفَع ثمن الحجز إلكترونياً عبر مزوّد الدفع Stripe؛ لا نخزّن بيانات بطاقتك على خوادمنا. لبعض الباقات المجدولة يمكن دفع عربونٍ والباقي لاحقاً قبل موعدٍ محدَّد يظهر عند الحجز. يُعتبر الحجز مؤكَّداً فقط بعد استلام تأكيدٍ صريح من الخدمة (مرجع حجز/تذكرة).',
+          'Booking payment is processed electronically via Stripe; we do not store your card details on our servers. Certain scheduled packages allow paying a deposit with the balance due by a specified date shown at booking time. A booking is confirmed only once you receive an explicit confirmation from the service (a booking reference/ticket).'
+        )}</p>
+
+        <h3>${T('4. الإلغاء والاسترداد', '4. Cancellation and refunds')}</h3>
+        <p>${T(
+          'شروط الاسترداد والتغيير تحدّدها شركة الطيران أو الفندق أو مزوّد السيارة صاحب المخزون، وتُعرض قبل إتمام الحجز حين تتوفر من المزوّد. التفاصيل الكاملة في سياسة الاسترجاع والإلغاء أدناه.',
+          'Refund and change conditions are set by the airline, hotel, or car supplier that owns the inventory, and are shown before you complete the booking whenever the supplier provides them. Full details are in the Refund & Cancellation Policy below.'
+        )}</p>
+
+        <h3>${T('5. حدود المسؤولية', '5. Limitation of liability')}</h3>
+        <p>${T(
+          'لسنا الناقل الجوي ولا مُشغّل الفندق أو السيارة، ولا نتحمّل مسؤولية تصرفات هذه الجهات (تأخير، إلغاء من طرفهم، جودة الخدمة الفعلية في الموقع). نُبذل عناية معقولة في عرض معلومات دقيقة وقت البحث، وقد تتغيّر الأسعار والتوفر لدى المزوّد بين لحظة البحث ولحظة التأكيد.',
+          'We are not the airline, hotel operator, or car rental company, and we are not responsible for their actions (delays, supplier-side cancellations, actual on-site service quality). We take reasonable care to display accurate information at search time, though supplier prices and availability can change between search and confirmation.'
+        )}</p>
+
+        <h3>${T('6. القانون الحاكم', '6. Governing law')}</h3>
+        <p>${T(
+          'تخضع هذه الشروط لقوانين هولندا، والمنشأة المسجَّلة (Nalia Diensten) مقرّها أوتريخت، هولندا.',
+          'These terms are governed by the laws of the Netherlands, where the registered business (Nalia Diensten) is based in Utrecht.'
+        )}</p>
+
+        <h3>${T('7. التعديلات', '7. Changes to these terms')}</h3>
+        <p>${T('قد نُحدّث هذه الشروط من وقتٍ لآخر؛ يُنشر أي تعديل جوهري على هذه الصفحة.',
+          'We may update these terms from time to time; any material change will be published on this page.')}</p>`;
+    }
+
+    function renderPrivacy() {
+      return `<h2>${T('🔒 سياسة الخصوصية', '🔒 Privacy Policy')}</h2>
+        <p>${T(
+          'تلتزم Nalia Diensten (المُشغِّلة لـJatrava)، ومقرّها هولندا، بحماية بياناتك الشخصية وفق القوانين الأوروبية المعمول بها (بما فيها اللائحة العامة لحماية البيانات GDPR).',
+          'Nalia Diensten (operator of Jatrava), based in the Netherlands, is committed to protecting your personal data in accordance with applicable EU law, including the General Data Protection Regulation (GDPR).'
+        )}</p>
+
+        <h3>${T('ما نجمعه', 'What we collect')}</h3>
+        <ul>
+          <li>${T('بيانات الحساب: البريد الإلكتروني (يُستخدم كمعرّف الحساب) وكلمة مرور مُعمّاة (أو معرّف دخول جوجل).', 'Account data: your email address (used as your account identifier) and an encrypted password (or your Google sign-in identity).')}</li>
+          <li>${T('بيانات المسافرين: الاسم والميلاد وبيانات التواصل اللازمة لإصدار تذاكر الطيران والحجوزات الفندقية باسمك.', 'Traveller data: name, date of birth, and contact details required to issue flight tickets and hotel bookings in your name.')}</li>
+          <li>${T('بيانات الدفع: تُعالَج مباشرةً عبر Stripe؛ لا تصل تفاصيل بطاقتك إلى خوادمنا ولا تُخزَّن لدينا.', 'Payment data: processed directly by Stripe; your card details never reach or are stored on our servers.')}</li>
+          <li>${T('تفضيلاتك: لغة العرض، عملة العرض، وقنوات التنبيه (بريد/واتساب) التي تختارها.', 'Your preferences: display language, display currency, and the notification channels (email/WhatsApp) you choose.')}</li>
+        </ul>
+
+        <h3>${T('كيف نستخدمها', 'How we use it')}</h3>
+        <p>${T(
+          'حصراً لإتمام حجزك وإدارته (بما في ذلك التواصل مع المزوّد المعني)، وإرسال التنبيهات التي وافقت عليها، والامتثال لالتزاماتنا القانونية والمحاسبية.',
+          'Solely to complete and manage your booking (including communicating with the relevant supplier), to send you the notifications you opted into, and to meet our legal and accounting obligations.'
+        )}</p>
+
+        <h3>${T('من نشاركهم البيانات', 'Who we share it with')}</h3>
+        <p>${T('لا نبيع بياناتك لأي طرف. نشارك الحدّ الأدنى اللازم فقط مع:', 'We never sell your data. We share only the minimum necessary with:')}</p>
+        <ul>
+          <li>${T('Duffel وLiteAPI — لإصدار حجوزات الطيران والفنادق فعلياً.', 'Duffel and LiteAPI — to actually issue flight and hotel bookings.')}</li>
+          <li>${T('Stripe — لمعالجة الدفع الإلكتروني بأمان.', 'Stripe — to process payments securely.')}</li>
+          <li>${T('مزوّد البريد Resend، ووسيط واتساب الأعمال (Meta) — لإرسال التنبيهات التي فعّلتها فقط.', 'Our email provider Resend, and the WhatsApp Business messaging channel (Meta) — only for notifications you have enabled.')}</li>
+        </ul>
+
+        <h3>${T('الاحتفاظ بالبيانات', 'Data retention')}</h3>
+        <p>${T(
+          'نحتفظ ببيانات الحجز للمدة اللازمة قانونياً ومحاسبياً. يمكنك طلب حذف بياناتك (خارج ما يلزم قانوناً الاحتفاظ به) من داخل حسابك أو بمراسلتنا.',
+          'We retain booking data for as long as legally and accounting-wise required. You may request deletion of your data (beyond what must be legally retained) from within your account or by contacting us.'
+        )}</p>
+
+        <h3>${T('حقوقك', 'Your rights')}</h3>
+        <p>${T(
+          'بموجب اللائحة الأوروبية GDPR يحق لك الوصول إلى بياناتك وتصحيحها ونقلها وطلب حذفها. لممارسة أي من هذه الحقوق راسلنا على البريد أدناه.',
+          'Under the EU GDPR you have the right to access, correct, port, and request deletion of your data. To exercise any of these rights, email us at the address below.'
+        )}</p>
+
+        <h3>${T('ملفات تعريف الارتباط والتخزين المحلي', 'Cookies and local storage')}</h3>
+        <p>${T(
+          'نستخدم تخزيناً محلياً في متصفحك (لا ملفات تتبّع إعلانية) لحفظ توكن الدخول وتفضيلات اللغة والعملة فقط.',
+          'We use local storage in your browser (no advertising trackers) solely to keep your login token and your language/currency preferences.'
+        )}</p>
+
+        <h3>${T('تواصل معنا', 'Contact us')}</h3>
+        <p><a href="mailto:${BIZ.email}">${BIZ.email}</a></p>`;
+    }
+
+    function renderRefund() {
+      return `<h2>${T('↩️ سياسة الاسترجاع والإلغاء', '↩️ Refund & Cancellation Policy')}</h2>
+
+        <h3>${T('طيران وفنادق وسيارات (حسب توفّر المزوّد)', 'Flights, hotels & cars (subject to supplier terms)')}</h3>
+        <p>${T(
+          'شروط الاسترداد والتغيير يحدّدها المزوّد (شركة الطيران أو الفندق أو مزوّد السيارة)، لا نحن. تُعرض هذه الشروط — حين يوفّرها المزوّد — قبل إتمام حجزك، وتُحفظ مع حجزك لمراجعتها لاحقاً من صفحة «رحلاتي». حين لا يفصح المزوّد عن الشرط، لا نفترض قابليةً للاسترداد ولا عدمها — نعرض الحالة كما هي: «غير معروفة».',
+          'Refund and change conditions are set by the supplier (the airline, hotel, or car provider) — not by us. These conditions, when provided by the supplier, are shown before you complete your booking and saved with it for later review under “My trips”. When a supplier does not disclose the condition, we neither assume it is refundable nor that it isn’t — we show it plainly as “unknown”.'
+        )}</p>
+        <p>${T(
+          'إلغاء حجزٍ يجري من صفحة «رحلاتي» بزر الإلغاء المتاح، ما دام المزوّد يسمح بذلك. المبلغ المُسترَد يعتمد على ما يردّه المزوّد فعلياً: رد كامل من المزوّد ⇐ رد كامل لك، ورد جزئي ⇐ نفس النسبة، وإن التزمنا بإلغاءٍ مجاني ولم يوضّح المزوّد مبلغاً فيُرد المبلغ كاملاً. المعالجة تتم عبر Stripe وتظهر عادةً خلال أيام العمل التالية بحسب سياسة البنك المُصدِر لبطاقتك.',
+          'Cancellation is done from the “My trips” page via the available cancel button, as long as the supplier allows it. The refunded amount depends on what the supplier actually refunds: a full supplier refund means a full refund to you, a partial one means the same proportion, and if we have committed to a free cancellation and the supplier does not specify an amount, a full refund is issued. Processing goes through Stripe and typically appears within the following business days, depending on your card issuer’s policy.'
+        )}</p>
+
+        <h3>${T('الباقات المجدولة (بعربون)', 'Scheduled packages (deposit-based)')}</h3>
+        <p>${T(
+          'لبعض الباقات المجدولة يُدفَع عربونٌ عند الحجز والمتبقي قبل موعد تسليم الأسماء للناقل/الفندق (يظهر تاريخه صراحةً عند الحجز). الإلغاء الذاتي متاحٌ حتى ذلك الموعد باسترداد المبلغ المدفوع فعلياً؛ بعده يخضع الإلغاء لسياسة الباقة المحدَّدة والتي تُعرض عند الحجز.',
+          'For some scheduled packages a deposit is paid at booking time, with the balance due before the names-submission deadline to the airline/hotel (its date is shown explicitly at booking time). Self-service cancellation is available up to that deadline with a refund of the amount actually paid; after it, cancellation follows the specific package policy shown at booking time.'
+        )}</p>
+
+        <h3>${T('استئناف دفعٍ فاشل أو منتهي المهلة', 'Failed or expired payment sessions')}</h3>
+        <p>${T(
+          'إن انتهت مهلة صفحة الدفع أو فشلت المعاملة بعد أن حجزنا لك مقعداً/مخزوناً مؤقتاً، يُحرَّر المخزون تلقائياً ولا يُخصَم منك أي مبلغ. يمكنك استئناف الدفع أو إعادة البحث من صفحة «رحلاتي».',
+          'If the payment page times out or the transaction fails after we temporarily held a seat/inventory for you, that hold is released automatically and you are not charged. You can resume payment or search again from “My trips”.'
+        )}</p>
+
+        <h3>${T('كيف تطلب استرداداً', 'How to request a refund')}</h3>
+        <p>${T(
+          'من صفحة «رحلاتي» عبر زر الإلغاء المتاح على حجزك، أو بمراسلتنا على البريد أدناه مع ذكر مرجع الحجز.',
+          'From “My trips” via the cancel button available on your booking, or by emailing us at the address below with your booking reference.'
+        )}</p>
+        <p><a href="mailto:${BIZ.email}">${BIZ.email}</a></p>`;
+    }
+
+    const RENDERERS = { about: renderAbout, contact: renderContact, terms: renderTerms, privacy: renderPrivacy, refund: renderRefund };
+
+    function currentTab() {
+      const h = location.hash.replace('#', '');
+      return RENDERERS[h] ? h : 'about';
+    }
+
+    function renderTabs(active) {
+      $('tabs').innerHTML = TABS.map(t =>
+        `<button data-tab="${t.id}" class="${t.id === active ? 'active' : ''}">${T(t.ar, t.en)}</button>`
+      ).join('');
+      $('tabs').querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => { location.hash = btn.dataset.tab; });
+      });
+    }
+
+    function renderPage() {
+      const tab = currentTab();
+      renderTabs(tab);
+      $('content').innerHTML = RENDERERS[tab]();
+      $('updated').textContent = T('آخر تحديث: أغسطس 2026', 'Last updated: August 2026');
+      document.title = `${T(TABS.find(t => t.id === tab).ar, TABS.find(t => t.id === tab).en)} — Jatrava`;
+    }
+
+    function applyLangChrome() {
+      document.documentElement.lang = lang;
+      document.documentElement.dir = lang === 'en' ? 'ltr' : 'rtl';
+      $('langBtn').textContent = lang === 'en' ? 'ع' : 'EN';
+      $('brandSub').textContent = T('بوابة السفر', 'Travel Portal');
+      $('backLink').textContent = T('← العودة إلى بوابة السفر', '← Back to the travel portal');
+    }
+
+    $('langBtn').addEventListener('click', () => {
+      lang = lang === 'en' ? 'ar' : 'en';
+      const url = new URL(location.href);
+      if (lang === 'en') url.searchParams.set('lang', 'en'); else url.searchParams.delete('lang');
+      history.replaceState(null, '', url);
+      applyLangChrome();
+      renderPage();
+    });
+    window.addEventListener('hashchange', renderPage);
+
+    applyLangChrome();
+    renderPage();
+  </script>
+</body>
+</html>

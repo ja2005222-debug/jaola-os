@@ -445,6 +445,23 @@
     #includeStaysLabel { flex: 1 1 100%; }
     #includeStaysLabel span { margin: 0; flex: 1; }
     #includeStaysLabel input { width: auto; flex: 0 0 auto; }
+
+    /* 🏢 التذييل: بيانات الشركة الحقيقية (السجل التجاري والعنوان) ظاهرة
+       على كل صفحة بلا نقرة — إشارة الثقة التي تبحث عنها جهات مثل شركاء
+       الدفع/السفر عند مراجعة الموقع، لا مدفونة في صفحة لا يصل إليها أحد. */
+    footer {
+      border-top: 1px solid var(--border); margin-top: 32px;
+      padding: 24px 20px 32px; color: var(--muted); font-size: 13px;
+    }
+    footer .foot-wrap { max-width: 1000px; margin: 0 auto; }
+    footer .foot-links {
+      display: flex; flex-wrap: wrap; gap: 6px 18px; margin-bottom: 12px;
+      font-size: 13px;
+    }
+    footer .foot-links a { color: var(--muted); text-decoration: none; }
+    footer .foot-links a:hover { color: var(--accent); text-decoration: underline; }
+    footer .foot-legal { line-height: 1.8; }
+    footer .foot-legal strong { color: var(--text); }
   </style>
 </head>
 <body>
@@ -832,6 +849,25 @@
       </section>
     </div>
   </main>
+
+  <footer>
+    <div class="foot-wrap">
+      <div class="foot-links">
+        <a href="/legal.html#about">من نحن</a>
+        <a href="/legal.html#contact">اتصل بنا</a>
+        <a href="/legal.html#terms">الشروط والأحكام</a>
+        <a href="/legal.html#privacy">سياسة الخصوصية</a>
+        <a href="/legal.html#refund">سياسة الاسترجاع والإلغاء</a>
+      </div>
+      <div class="foot-legal">
+        <strong>JaTrava</strong> <span>علامة تجارية تابعة لمنشأة</span> <strong>Nalia Diensten</strong> —
+        <span>سجل تجاري هولندي (KVK) رقم</span> <strong>71937633</strong>،
+        <span>منشأة فردية مؤسَّسة في 22-06-2018</span>،
+        <span>العنوان المسجَّل</span>: Lodewijk Napoleonplantsoen 82, 3582TX Utrecht, <span>هولندا</span>.
+        <span>نشاط وكالة سفر مسجَّل تحت تصنيف SBI 79110</span>.
+      </div>
+    </div>
+  </footer>
 
   <!-- 🔐 نافذة «الحجز يحتاج حساباً»: الزائر يبحث ويرى الأسعار بلا حساب،
        ولا يُطلب الحساب إلا عند الحجز. نافذةٌ لا استبدالُ الصفحة عمداً —

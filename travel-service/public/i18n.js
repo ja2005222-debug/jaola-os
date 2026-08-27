@@ -327,6 +327,19 @@ window.JAOLA_I18N_TABLE = {
     'الفندق، التنظيم، الطيران...': { en: 'Hotel, organisation, flight...' },
     'سجل الوقائع محفوظ دوماً': { en: 'The event log is always kept' },
     'واتساب غير مُفعّل على الخادم': { en: 'WhatsApp is not enabled on this server' },
+
+    // ─── التذييل (بيانات الشركة وروابط الصفحات القانونية) ───
+    'من نحن': { en: 'About us' },
+    'اتصل بنا': { en: 'Contact us' },
+    'الشروط والأحكام': { en: 'Terms & Conditions' },
+    'سياسة الخصوصية': { en: 'Privacy Policy' },
+    'سياسة الاسترجاع والإلغاء': { en: 'Refund & Cancellation Policy' },
+    'علامة تجارية تابعة لمنشأة': { en: 'a trading name of' },
+    'سجل تجاري هولندي (KVK) رقم': { en: 'Dutch Chamber of Commerce (KVK) no.' },
+    'منشأة فردية مؤسَّسة في 22-06-2018': { en: 'a sole proprietorship established on 22-06-2018' },
+    'العنوان المسجَّل': { en: 'Registered address' },
+    'نشاط وكالة سفر مسجَّل تحت تصنيف SBI 79110': { en: 'Registered travel agency activity under SBI code 79110' },
+    'هولندا': { en: 'the Netherlands' },
 };
 
 /**
