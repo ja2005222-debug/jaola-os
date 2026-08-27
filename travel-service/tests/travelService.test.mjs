@@ -2917,6 +2917,25 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(r.status, 401);
         });
 
+        test('📊 تتبّع التحويل: غائبٌ افتراضياً، ويُقرأ من البيئة حين يُضبط', async () => {
+            // بلا BEFORE/AFTER على process.env يبقى تأثير هذا الاختبار
+            // محصوراً فيه وحده — نفس عرف عزل الاختبارات في هذا الملف.
+            const cfg1 = await call('/api/travel/config');
+            assert.equal(cfg1.data.gaMeasurementId, null);
+            assert.equal(cfg1.data.metaPixelId, null);
+
+            process.env.GA_MEASUREMENT_ID = 'G-TEST123';
+            process.env.META_PIXEL_ID = '1234567890';
+            try {
+                const cfg2 = await call('/api/travel/config');
+                assert.equal(cfg2.data.gaMeasurementId, 'G-TEST123');
+                assert.equal(cfg2.data.metaPixelId, '1234567890');
+            } finally {
+                delete process.env.GA_MEASUREMENT_ID;
+                delete process.env.META_PIXEL_ID;
+            }
+        });
+
         test('🚪 الزائر ليس مشرفاً ولا مفضلةَ له', async () => {
             const cfg = await call('/api/travel/config');
             assert.equal(cfg.status, 200);
@@ -3075,6 +3094,9 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 assert.equal(r.data.user.email, 'newbie@gmail.com');
                 assert.equal(r.data.user.provider, 'google');
                 assert.equal(r.data.user.name, 'ريم');
+                // 📊 hooks تتبّع التسجيل في العميل تعتمد هذا العلم حصراً —
+                // العميل لا يعرف بنفسه إن كان هذا أول ظهورٍ لهذا البريد.
+                assert.equal(r.data.isNewUser, true);
                 // التوكن يفتح ما كان مغلقاً على الزائر — نفس عقد التسجيل العادي
                 assert.equal((await call('/api/travel/bookings', { token: r.data.token })).status, 200);
             });
@@ -3098,6 +3120,7 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 });
                 assert.equal(g.status, 200);
                 assert.equal(g.data.user.provider, 'password', 'الحساب الأصلي لا يُستبدَل ولا يُنشأ حسابٌ ثانٍ');
+                assert.equal(g.data.isNewUser, false, 'دخولٌ لحسابٍ قائم لا تسجيل جديد');
 
                 // نفس الحساب فعلياً: توكن جوجل يرى الحجز الذي أنشأه توكن كلمة المرور
                 const mine = await call('/api/travel/bookings', { token: g.data.token });

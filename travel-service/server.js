@@ -1437,11 +1437,15 @@ ${urls}
         if (!isValidEmail(email)) return res.status(400).json({ error: 'بريد حساب جوجل غير صالح.' });
 
         let user = await store.getUserByEmail(email);
+        // 📊 لتتبّع "sign_up" في الواجهة لا "login" — الخادم وحده يعرف
+        // يقيناً إن كان هذا أول ظهورٍ لهذا البريد هنا أم دخولاً متكرراً.
+        let isNewUser = false;
         if (!user) {
             user = await store.createUser({
                 email, name: normalizeName(identity.name), provider: 'google',
                 passwordHash: null, emailVerifiedAt: Date.now(),
             });
+            isNewUser = !!user;
             // سباق نادر (تسجيلان متزامنان بنفس البريد): createUser يرجع
             // null عند التصادم بدل رمي خطأ — من وصل هنا فعلاً أثبت ملكية
             // هذا البريد لدى جوجل، فالقراءة بدل الفشل صحيحة لا تحايل.
@@ -1449,7 +1453,7 @@ ${urls}
         }
         if (!user) return res.status(500).json({ error: 'تعذّر إتمام الدخول — حاول مجدداً.' });
 
-        res.json({ token: signAccountToken(user, accountSecret), user: publicUser(user) });
+        res.json({ token: signAccountToken(user, accountSecret), user: publicUser(user), isNewUser });
     }));
 
     // من أنا؟ — الواجهة تعرض الاسم، وتتأكد أن التوكن المخزَّن حيّ
@@ -1589,6 +1593,10 @@ ${urls}
             paymentsEnabled: !!stripeClient, // 💳 حجز الباقات المجدولة يتحول لدفع فعلي
             googleClientId: googleClient?.clientId || null, // زرّ «الدخول بجوجل» يظهر فقط حين يوجد
             isAdmin: isAdmin(req), // رابط ⚙️ الإدارة يظهر لأصحابه فقط
+            // 📊 تتبّع التحويل — بلا هذين لا يُحمَّل أي سكربت خارجي إطلاقاً
+            // (نفس نمط googleClientId): زائرٌ على خادم تطوير لا يرسل شيئاً.
+            gaMeasurementId: process.env.GA_MEASUREMENT_ID || null,
+            metaPixelId: process.env.META_PIXEL_ID || null,
         });
     }));
 

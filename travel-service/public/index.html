@@ -1187,6 +1187,89 @@
     // تُصاغ باللغة الصحيحة من المنبع بدل مطاردتها بأنماط هشّة.
     const T = (ar, en) => (uiLang === 'en' ? en : ar);
 
+    /**
+     * 📊 تتبّع التحويل (GA4 + Meta Pixel) — معطَّل تماماً بلا إعداد على
+     * الخادم (نفس نمط زرّ الدخول بجوجل الكسول): زائرٌ على خادم تطوير أو
+     * بيئة بلا `GA_MEASUREMENT_ID`/`META_PIXEL_ID` لا يحمّل أي سكربت خارجي
+     * ولا يرسل أي نداء شبكة لهما إطلاقاً.
+     *
+     * حدثان قياسيان (`search`، `sign_up`) يُرسَلان مباشرةً من نقاط
+     * حدوثهما، وحدث `purchase` وحده مركزيٌّ في loadTrips() — حجزٌ قد
+     * يُصدَر بعد دقائق عبر webhook دفع (لا في لحظة الضغط على "احجز")،
+     * فأقرب لحظةٍ نعرف فيها يقيناً أن حجزاً "issued" فعلاً هي عرضه في
+     * «رحلاتي»، لا كل مسار حجزٍ على حدة (تسعة مساراتٍ في الخادم وحده) —
+     * تكرارها في كلٍّ كان يعني نسخاً تتباعد بصمت (نفس درس ICS والتوطين).
+     */
+    let analyticsReady = false;
+    function initAnalytics(cfg) {
+      if (cfg?.gaMeasurementId) {
+        const s = document.createElement('script');
+        s.async = true;
+        s.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(cfg.gaMeasurementId)}`;
+        document.head.appendChild(s);
+        window.dataLayer = window.dataLayer || [];
+        window.gtag = function () { window.dataLayer.push(arguments); };
+        gtag('js', new Date());
+        gtag('config', cfg.gaMeasurementId);
+      }
+      if (cfg?.metaPixelId) {
+        // كود Meta الرسمي حرفياً (بلا تصرّف) — يسهّل مطابقته بتوثيقهم لاحقاً
+        (function (f, b, e, v, n, t, s2) {
+          if (f.fbq) return; n = f.fbq = function () { n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments); };
+          if (!f._fbq) f._fbq = n; n.push = n; n.loaded = true; n.version = '2.0'; n.queue = [];
+          t = b.createElement(e); t.async = true; t.src = v;
+          s2 = b.getElementsByTagName(e)[0]; s2.parentNode.insertBefore(t, s2);
+        })(window, document, 'script', 'https://connect.facebook.net/en_US/fbevents.js');
+        fbq('init', cfg.metaPixelId);
+        fbq('track', 'PageView');
+      }
+      analyticsReady = !!(cfg?.gaMeasurementId || cfg?.metaPixelId);
+    }
+    // أسماء أحداثنا الداخلية ← أسماء GA4/Meta القياسية — مصدرٌ واحد بدل
+    // تفرّع if/else عند كل نداء تتبّع.
+    const GA_EVENT_NAMES = { search: 'search', sign_up: 'sign_up', purchase: 'purchase' };
+    const FB_EVENT_NAMES = { search: 'Search', sign_up: 'CompleteRegistration', purchase: 'Purchase' };
+    function trackEvent(name, params = {}) {
+      if (!analyticsReady) return;
+      try {
+        if (window.gtag) window.gtag('event', GA_EVENT_NAMES[name] || name, params);
+        if (window.fbq) {
+          const fbParams = {};
+          if (params.value != null) fbParams.value = params.value;
+          if (params.currency) fbParams.currency = params.currency;
+          if (params.search_term) fbParams.search_string = params.search_term;
+          if (params.content_type) fbParams.content_type = params.content_type;
+          window.fbq('track', FB_EVENT_NAMES[name] || name, fbParams);
+        }
+      } catch { /* تتبّعٌ فاشل لا يجوز أن يُسقط أي وظيفة أخرى في الصفحة */ }
+    }
+    // 🧾 حجزٌ واحدٌ لا يُحتسب مرتين: معرّفات الحجوزات المُصدَرة التي أُرسل
+    // عنها حدث "purchase" بالفعل — تُحفَظ في المتصفح نفسه (لا حاجة لحقل
+    // خادمي جديد) لأن `loadTrips()` يُنادى مراراً لنفس الحجز (كل مرة يُفتح
+    // فيها تبويب «رحلاتي»، وبعد كل إجراء حجزٍ آخر).
+    const TRACKED_PURCHASES_KEY = 'trackedPurchases';
+    function trackNewPurchases(bookings) {
+      if (!analyticsReady) return;
+      let tracked;
+      try { tracked = new Set(JSON.parse(localStorage.getItem(TRACKED_PURCHASES_KEY) || '[]')); }
+      catch { tracked = new Set(); }
+      let changed = false;
+      for (const b of bookings || []) {
+        if (b.status !== 'issued' || tracked.has(b.id)) continue;
+        trackEvent('purchase', {
+          transaction_id: b.id,
+          value: b.paymentPlan?.paidNow ?? b.sellAmount,
+          currency: b.currency,
+          content_type: b.kind,
+        });
+        tracked.add(b.id);
+        changed = true;
+      }
+      if (changed) {
+        try { localStorage.setItem(TRACKED_PURCHASES_KEY, JSON.stringify([...tracked])); } catch {}
+      }
+    }
+
     // 🗓️ حقول التاريخ: يُخفى تلميح الصيغة (انظر CSS أعلاه) حين تختلف لغة
     // المتصفح عن لغة الواجهة فقط — فمتصفحٌ متوافق يبقى بتلميحه كاملاً.
     const browserAr = String(navigator.language || '').toLowerCase().startsWith('ar');
@@ -1296,6 +1379,7 @@
       const res = await api('/api/travel/config');
       if (!res.ok) return; // 401 عالجها api()
       config = await res.json();
+      initAnalytics(config);
       if (token) {
         try {
           const payload = decodeJwtPayload(token);
@@ -1540,6 +1624,7 @@
           showLoginError(data.error || 'تعذّر إتمام الطلب — حاول مجدداً.');
           return;
         }
+        if (authMode === 'signup') trackEvent('sign_up', { method: 'password' });
         await onAuthSuccess(data);
       } catch {
         showLoginError('تعذّر الاتصال بالخادم — تحقق من اتصالك.');
@@ -1613,6 +1698,9 @@
           showLoginError(data.error || 'تعذّر الدخول بحساب جوجل — حاول مجدداً.');
           return;
         }
+        // الخادم وحده يعرف يقيناً إن كان هذا أول ظهورٍ للبريد هنا (تسجيل)
+        // أم دخولاً متكرراً — العميل لا يخمّن.
+        if (data.isNewUser) trackEvent('sign_up', { method: 'google' });
         await onAuthSuccess(data);
       } catch {
         showLoginError('تعذّر الاتصال بالخادم — تحقق من اتصالك.');
@@ -2451,6 +2539,7 @@
           return;
         }
         lastFlightSearch = body;
+        trackEvent('search', { search_term: `${body.origin}-${body.destination}`, content_type: 'flight' });
         if (!data.offers.length) {
           $('results').innerHTML = '<p class="note">لا رحلات متاحة لهذا البحث.</p>';
           return;
@@ -2886,6 +2975,7 @@
         err.classList.remove('hidden');
         return;
       }
+      trackEvent('search', { search_term: iata, content_type: 'stay' });
       $('staySearchBtn').disabled = true;
       try {
         await renderStaysInto($('stayTabResults'), {
@@ -3059,6 +3149,7 @@
           $('carSearchError').classList.remove('hidden');
           return;
         }
+        trackEvent('search', { search_term: body.iata, content_type: 'car' });
         if (!data.offers.length) {
           $('carResults').innerHTML = '<p class="note">لا سيارات متاحة لهذا البحث.</p>';
           return;
@@ -3114,6 +3205,7 @@
       if (!depart || !ret) return pkgErr('الباقة ذهاب وعودة — حدّد التاريخين، فالفندق يُحجز بينهما.');
       if (ret <= depart) return pkgErr('تاريخ العودة يجب أن يكون بعد الذهاب.');
       const adults = Number($('pkgAdults').value) || 1;
+      trackEvent('search', { search_term: `${origin}-${dest}`, content_type: 'package' });
       $('pkgSearchBtn').disabled = true;
       $('pkgResults').classList.remove('hidden');
       $('pkgFlights').innerHTML = $('pkgStays').innerHTML = skeletonHtml(2);
@@ -3615,6 +3707,7 @@
       if (!res.ok) return;
       const { bookings } = await res.json();
       lastTrips = bookings; // نافذة التفاصيل تقرأ منها بلا نداء إضافي
+      trackNewPurchases(bookings);
       // 🎁 أبناء الباقات لا يظهرون صفوفاً مستقلة — يُجمَعون داخل بطاقة
       // أبيهم بمرجعَيهما، والإلغاء من الأب وحده (الساغا تدير الاثنين معاً)
       const childrenOf = {};
