@@ -584,6 +584,10 @@ export function createApp({
     // و`canonical` يخبر الزاحف أيّهما الأصل — وهو الحلّ القياسي.
     app.get('/en', sendIndex('en'));
 
+    // 📄 صفحة «من نحن/اتصل/الشروط/الخصوصية/الاسترجاع» — رابطٌ صديق
+    // (`/legal`) بدل `/legal.html` وحده، لتذييل الصفحة ولمراجعي الأعمال.
+    app.get('/legal', (req, res) => res.sendFile(path.join(__dirname, 'public', 'legal.html')));
+
     // 🤖 خريطة الموقع وrobots: بلا هذين لا يعرف الزاحف أن `/en/` موجودة
     app.get('/sitemap.xml', (req, res) => {
         const base = requestBaseUrl(req) + '/';
@@ -596,6 +600,7 @@ ${Object.entries(LOCALES).map(([c2, m2]) =>
         res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
 ${urls}
+  <url><loc>${base}legal</loc><changefreq>monthly</changefreq></url>
 </urlset>`);
     });
     app.get('/robots.txt', (req, res) => {
