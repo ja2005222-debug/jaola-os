@@ -1252,11 +1252,11 @@
     // عنها حدث "purchase" بالفعل — تُحفَظ في المتصفح نفسه (لا حاجة لحقل
     // خادمي جديد) لأن `loadTrips()` يُنادى مراراً لنفس الحجز (كل مرة يُفتح
     // فيها تبويب «رحلاتي»، وبعد كل إجراء حجزٍ آخر).
-    const TRACKED_PURCHASES_KEY = 'trackedPurchases';
+    const TRACKED_PURCHASES_PREF = 'trackedPurchases';
     function trackNewPurchases(bookings) {
       if (!analyticsReady) return;
       let tracked;
-      try { tracked = new Set(JSON.parse(localStorage.getItem(TRACKED_PURCHASES_KEY) || '[]')); }
+      try { tracked = new Set(JSON.parse(localStorage.getItem(TRACKED_PURCHASES_PREF) || '[]')); }
       catch { tracked = new Set(); }
       let changed = false;
       for (const b of bookings || []) {
@@ -1271,7 +1271,7 @@
         changed = true;
       }
       if (changed) {
-        try { localStorage.setItem(TRACKED_PURCHASES_KEY, JSON.stringify([...tracked])); } catch {}
+        try { localStorage.setItem(TRACKED_PURCHASES_PREF, JSON.stringify([...tracked])); } catch {}
       }
     }
 
