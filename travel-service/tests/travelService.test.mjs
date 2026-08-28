@@ -3495,8 +3495,13 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
 
             // ⚠️ الجوهر: الخادم يسلّم لغةً مختلفة لعنوانٍ مختلف — لا صفحةً
             // واحدة يقلبها localStorage (فتبقى الإنجليزية بلا عنوان يُفهرَس)
-            assert.match(arHtml, /<html lang="ar" dir="rtl">/);
-            assert.match(enHtml, /<html lang="en" dir="ltr">/);
+            assert.match(arHtml, /<html lang="ar" dir="rtl"/);
+            assert.match(enHtml, /<html lang="en" dir="ltr"/);
+            // ⚠️ ترجمة المتصفح الآلية (Chrome/Google Translate) فوق صفحةٍ
+            // مترجَمة يدوياً فعلاً تُنتج كلماتٍ مضلِّلة — `notranslate` يمنعها،
+            // ويجب أن يبقى بعد استبدال وسم <html> لكل لغة لا الافتراضية وحدها.
+            assert.match(arHtml, /<html lang="ar" dir="rtl" class="notranslate" translate="no">/);
+            assert.match(enHtml, /<html lang="en" dir="ltr" class="notranslate" translate="no">/);
             assert.match(arHtml, /<title>[^<]*بوابة السفر<\/title>/);
             assert.match(enHtml, /<title>[^<]*Travel Portal<\/title>/);
 
