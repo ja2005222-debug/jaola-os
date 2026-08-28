@@ -542,6 +542,20 @@ export function createApp({
             title: '✈️ Jatrava — Travel Portal',
             desc: 'Book flights, hotels, cars and packages with Jatrava — transparent pricing, no invented discounts, real seat counts.',
         },
+        // 🎯 أول توسّعٍ للجدول أحادي العمود (i18n.js) — جمهور الجاليات
+        // المقيمة بالخليج مهملٌ من كبار مواقع السفر (انظر الميزة 24)، والأردية
+        // أولى لغاته. والهولندية لأن المنشأة المسجِّلة (Nalia Diensten) هولندية
+        // الأصل — سوقٌ صغير لكنه طبيعي لعلامةٍ مسجَّلة هناك.
+        ur: {
+            dir: 'rtl', path: '/ur/',
+            title: '✈️ Jatrava — سفری پورٹل',
+            desc: 'Jatrava کے ساتھ اپنی پروازیں، ہوٹلز، گاڑیاں اور پیکجز بک کریں — شفاف قیمتیں، جعلی رعایتیں نہیں، حقیقی نشستوں کی گنتی۔',
+        },
+        nl: {
+            dir: 'ltr', path: '/nl/',
+            title: '✈️ Jatrava — Reisportaal',
+            desc: 'Boek uw vluchten, hotels, auto’s en pakketten met Jatrava — transparante prijzen, geen verzonnen kortingen, echte stoelaantallen.',
+        },
     };
     const INDEX_HTML = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
     // مفتاحه `${lang}|${base}` — والأساس يُشتقّ من الطلب حين لا يُضبط
@@ -584,6 +598,8 @@ export function createApp({
     // الثاني وأعاد توجيهه إلى نفسه. المسار الواحد يخدم الشكلين،
     // و`canonical` يخبر الزاحف أيّهما الأصل — وهو الحلّ القياسي.
     app.get('/en', sendIndex('en'));
+    app.get('/ur', sendIndex('ur'));
+    app.get('/nl', sendIndex('nl'));
 
     // 📄 صفحة «من نحن/اتصل/الشروط/الخصوصية/الاسترجاع» — رابطٌ صديق
     // (`/legal`) بدل `/legal.html` وحده، لتذييل الصفحة ولمراجعي الأعمال.

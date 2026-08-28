@@ -188,6 +188,8 @@
     /* 🌐 نص مولَّد بالـCSS لا يمر على مترجم الـDOM أصلاً — يُترجم بمحدد
        لغة الجذر (يضبطها سكربت i18n فور التحميل) */
     html[lang="en"] .card.offer-best::before { content: '🤖 Best'; }
+    html[lang="ur"] .card.offer-best::before { content: '🤖 بہترین'; }
+    html[lang="nl"] .card.offer-best::before { content: '🤖 Beste'; }
 
     /* 🗓️ صيغة التاريخ داخل <input type="date"> يكتبها المتصفح بلغته هو لا
        بلغة الصفحة، ولا تملك الصفحة تغييرها. ومتصفح عربي داخل واجهة
@@ -494,7 +496,12 @@
       <span style="color:var(--muted);font-size:13px;font-weight:600">بوابة السفر</span>
     </h1>
     <div style="display:flex;align-items:center;gap:14px">
-      <button id="langBtn" title="اللغة / Language" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:6px 10px;font-size:13px">EN</button>
+      <select id="langBtn" title="اللغة / Language / زبان / Taal" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:6px 10px;font-size:13px;width:auto">
+        <option value="ar">العربية</option>
+        <option value="en">English</option>
+        <option value="ur">اردو</option>
+        <option value="nl">Nederlands</option>
+      </select>
       <select id="fxSel" class="hidden" title="عملة العرض التقريبية" style="width:auto;padding:6px 8px;font-size:13px">
         <option value="">💵 العملة الأصلية</option>
       </select>
@@ -1074,8 +1081,11 @@
      * وقبلها كانت اللغة في `localStorage` وحده: نسخةٌ إنجليزية كاملة **بلا
      * عنوان** — لا تُفهرَس ولا تُشارَك ولا تُفتَح برابط.
      */
-    const uiLang = document.documentElement.lang === 'en' ? 'en' : 'ar';
-    const LANG_PATH = { ar: '/', en: '/en/' };
+    // 🌐 خريطة اللغات المدعومة: اتجاه كل لغة ومسارها — إضافة لغة تعني
+    // سطراً هنا + عموداً في i18n.js + LOCALES في server.js، لا أكثر.
+    const LANGS = { ar: { dir: 'rtl' }, en: { dir: 'ltr' }, ur: { dir: 'rtl' }, nl: { dir: 'ltr' } };
+    const uiLang = LANGS[document.documentElement.lang] ? document.documentElement.lang : 'ar';
+    const LANG_PATH = { ar: '/', en: '/en/', ur: '/ur/', nl: '/nl/' };
 
     /**
      * 🧭 لغة الزائر: **اختيارُه الصريح يسود، ولغةُ جهازه تُعرَض ولا تُفرَض.**
@@ -1185,8 +1195,8 @@
       if (root.placeholder && I18N_MAP[root.placeholder]) root.placeholder = I18N_MAP[root.placeholder];
     }
     if (I18N_MAP) {
-      document.documentElement.lang = 'en';
-      document.documentElement.dir = 'ltr';
+      document.documentElement.lang = uiLang;
+      document.documentElement.dir = LANGS[uiLang].dir;
     }
     // نصوص تُبنى بالجافاسكربت بأجزاء مُدرَجة لا يلتقطها جدول المطابقة —
     // تُصاغ باللغة الصحيحة من المنبع بدل مطاردتها بأنماط هشّة.
@@ -1277,8 +1287,10 @@
 
     // 🗓️ حقول التاريخ: يُخفى تلميح الصيغة (انظر CSS أعلاه) حين تختلف لغة
     // المتصفح عن لغة الواجهة فقط — فمتصفحٌ متوافق يبقى بتلميحه كاملاً.
-    const browserAr = String(navigator.language || '').toLowerCase().startsWith('ar');
-    const DATE_HINT_MISMATCH = (uiLang === 'en') === browserAr;
+    // ⚠️ عمّم لأزواج لغاتٍ متعددة لا ar/en وحدهما: المتصفح يرسم تلميح
+    // `<input type=date>` بلغته هو دوماً، فأي اختلافٍ عن uiLang يُخفيه.
+    const browserLang = String(navigator.language || '').toLowerCase().slice(0, 2);
+    const DATE_HINT_MISMATCH = browserLang !== uiLang;
     function markDateHint(el) {
       if (!el || el.tagName !== 'INPUT' || el.type !== 'date') return;
       el.classList.toggle('date-hint-off', !el.value);
@@ -1698,7 +1710,7 @@
         google.accounts.id.initialize({ client_id: config.googleClientId, callback: onGoogleCredential });
         google.accounts.id.renderButton($('googleSignInBtn'), {
           type: 'standard', theme: 'outline', size: 'large', width: 320,
-          locale: uiLang === 'en' ? 'en' : 'ar',
+          locale: uiLang, // جوجل يقبل رموز 'ar'/'en'/'ur'/'nl' مباشرةً
         });
       };
       document.head.appendChild(script);
@@ -2251,10 +2263,12 @@
     syncDateHints(document.body);
 
     // 🌐 مبدّل اللغة: **يُبحر إلى عنوانٍ آخر** لا يقلب مفتاحاً محلياً —
-    // فما يراه المسافر هو ما سيراه من يفتح الرابط الذي يشاركه.
-    $('langBtn').textContent = uiLang === 'en' ? 'عربي' : 'EN';
-    $('langBtn').addEventListener('click', () => {
-      const next = uiLang === 'en' ? 'ar' : 'en';
+    // فما يراه المسافر هو ما سيراه من يفتح الرابط الذي يشاركه. قائمةٌ
+    // منسدلة لا زرّاً واحداً بعد أن صارت اللغات أربعاً لا لغتين.
+    $('langBtn').value = uiLang;
+    $('langBtn').addEventListener('change', () => {
+      const next = $('langBtn').value;
+      if (next === uiLang) return;
       localStorage.setItem(LANG_PREF, next); // اختيارٌ صريح — يُحترَم دوماً
       location.href = LANG_PATH[next];
     });

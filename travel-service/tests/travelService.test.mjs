@@ -1791,6 +1791,30 @@ describe('i18n: جدول الترجمة لا يتباعد عن الصفحة', ()
             assert.ok(typeof ar === 'string' && ar && typeof rep === 'string' && rep);
         }
     });
+
+    // 🇵🇰🇳🇱 الأردية والهولندية (الميزة 36): نفس عمود en لكن ur/nl — تحرس
+    // اكتمال العمودين الجديدين بلا تكرار فحص المطابقة الحرفية مع index.html
+    // (ذاك يتحقق منه اختبار en وحده، فالجدول مصدر واحد بعمود لكل لغة).
+    for (const lang of ['ur', 'nl']) {
+        test(`🌐 عمود ${lang}: كل قيمة غير فارغة ومختلفة عن مفتاحها العربي وعن en`, () => {
+            for (const [ar, val] of Object.entries(table)) {
+                const v = val[lang];
+                assert.ok(typeof v === 'string' && v.trim(), `عمود ${lang} فارغ أو مفقود: ${ar}`);
+                assert.notEqual(v, ar, `عمود ${lang} مطابق لمفتاحه العربي: ${ar}`);
+            }
+        });
+
+        test(`🌐 عمود ${lang} في RULES وSUBS معرَّف لكل مدخل`, () => {
+            const w3 = {};
+            new Function('window', code)(w3);
+            for (const rule of w3.JAOLA_I18N_RULES) {
+                assert.ok(typeof rule[lang] === 'string' && rule[lang].trim(), `RULES بلا عمود ${lang}: ${rule.pattern}`);
+            }
+            for (const sub of w3.JAOLA_I18N_SUBS) {
+                assert.ok(typeof sub[lang] === 'string' && sub[lang].trim(), `SUBS بلا عمود ${lang}: ${sub.ar}`);
+            }
+        });
+    }
 });
 
 describe('🧭 itinerary: حقائق الرحلة تُقرأ من شكلها لا تُخمَّن', () => {
