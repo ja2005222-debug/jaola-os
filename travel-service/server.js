@@ -578,7 +578,7 @@ export function createApp({
         ].join('\n  ');
 
         const html = INDEX_HTML
-            .replace('<html lang="ar" dir="rtl">', `<html lang="${lang}" dir="${L.dir}">`)
+            .replace('<html lang="ar" dir="rtl" class="notranslate" translate="no">', `<html lang="${lang}" dir="${L.dir}" class="notranslate" translate="no">`)
             .replace(/<title>[^<]*<\/title>/, `<title>${L.title}</title>\n  ${head}`);
         pageCache.set(key, html);
         return html;
