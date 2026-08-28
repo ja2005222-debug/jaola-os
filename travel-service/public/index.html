@@ -2279,6 +2279,15 @@
       location.href = LANG_PATH[next];
     });
 
+    // 📜 روابط الذيل القانونية تحمل لغة الصفحة الحالية: legal.html صفحةٌ
+    // ثابتة لا يستبدل الخادم وسم <html> لها كالرئيسية، فتقرأ `?lang=` من
+    // الرابط — بدونها كان زائر الهولندية يهبط على القانونية بالعربية.
+    if (uiLang !== 'ar') {
+      document.querySelectorAll('a[href^="/legal.html"]').forEach(a => {
+        a.href = `/legal.html?lang=${uiLang}${a.hash}`;
+      });
+    }
+
     async function fxInit() {
       const res = await api('/api/travel/fx/currencies');
       if (!res.ok) return;

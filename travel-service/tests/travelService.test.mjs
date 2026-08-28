@@ -1815,6 +1815,22 @@ describe('i18n: جدول الترجمة لا يتباعد عن الصفحة', ()
             }
         });
     }
+
+    // 📜 legal.html صفحة مستقلة بنمط T(ar,en,ur,nl) خاصٍّ بها لا الجدول
+    // الكبير (انظر رأسها) — هذا الحارس يمنع عودتها بصمت إلى لغتين، ويضمن
+    // أن روابط الذيل تُمرّر اللغة وأن الترجمة الآلية للمتصفح ممنوعة عنها.
+    test('📜 legal.html بأربع لغات: سكربت سليم، محتوى ur/nl حاضر، وnotranslate مفعَّل', () => {
+        const legal = fs.readFileSync(new URL('../public/legal.html', import.meta.url), 'utf8');
+        new Function(legal.match(/<script>([\s\S]*)<\/script>/)[1]); // صياغة السكربت
+        for (const marker of ['سفری پورٹل', 'Reisportaal', 'رازداری کی پالیسی', 'Privacybeleid']) {
+            assert.ok(legal.includes(marker), `لغة ناقصة في legal.html: ${marker}`);
+        }
+        assert.match(legal, /<html [^>]*translate="no"/);
+        assert.match(legal, /<meta name="google" content="notranslate"/);
+        // ذيل index.html يُمرّر لغة الصفحة إلى legal.html عبر ?lang=
+        const index = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+        assert.ok(index.includes('/legal.html?lang='), 'روابط الذيل لا تُمرّر اللغة إلى legal.html');
+    });
 });
 
 describe('🧭 itinerary: حقائق الرحلة تُقرأ من شكلها لا تُخمَّن', () => {
