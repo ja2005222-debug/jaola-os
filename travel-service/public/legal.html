@@ -1,8 +1,11 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" class="notranslate" translate="no">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- 🌐 نفس قرار index.html: الصفحة مترجَمة يدوياً بأربع لغات، وترجمة
+       المتصفح الآلية فوقها تُفسِدها («Van» → «By») — فنعلنها مترجمة. -->
+  <meta name="google" content="notranslate" />
   <title>من نحن · الشروط · الخصوصية · الاسترجاع — Jatrava</title>
   <meta name="description" content="من نحن، بيانات التواصل، الشروط والأحكام، سياسة الخصوصية، وسياسة الاسترجاع والإلغاء لدى Jatrava." />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
@@ -32,6 +35,7 @@
     #langBtn {
       background: transparent; border: 1px solid var(--border); color: var(--muted);
       padding: 6px 12px; border-radius: 999px; font-size: 13px; cursor: pointer;
+      font-family: inherit;
     }
     #langBtn:hover { border-color: var(--accent); color: var(--accent); }
     main { max-width: 820px; margin: 0 auto; padding: 24px 20px 60px; }
@@ -72,7 +76,12 @@
       <img src="/logo.svg" alt="Jatrava" class="brand-logo" width="1626" height="442">
       <span class="sub" id="brandSub">بوابة السفر</span>
     </a>
-    <button id="langBtn" type="button">EN</button>
+    <select id="langBtn" title="اللغة / Language / زبان / Taal">
+      <option value="ar">العربية</option>
+      <option value="en">English</option>
+      <option value="ur">اردو</option>
+      <option value="nl">Nederlands</option>
+    </select>
   </header>
 
   <main>
@@ -90,15 +99,25 @@
      * لماذا صفحة منفصلة بترجمة داخلية خاصة بها لا جدول i18n.js الكبير؟
      * جدول index.html مصمَّم لمطابقة نصوص **ثابتة** حرفياً (حارس انجراف
      * صارم يربط كل مفتاح بنص في تلك الصفحة تحديداً) — محتوى قانوني طويل
-     * ومتغيّر أنسب له نمط `T(ar, en)` المستقل، وهو نفس النمط المستعمل
-     * أصلاً في share.html لصفحة مستقلة صغيرة.
+     * ومتغيّر أنسب له نمط `T(ar, en, ur, nl)` المستقل، وهو تعميم نفس
+     * النمط الثنائي المستعمل أصلاً في share.html.
+     *
+     * اللغة تصل عبر `?lang=` من روابط ذيل index.html (الصفحة ثابتة —
+     * لا يستبدل الخادم وسم `<html>` هنا كما يفعل للصفحة الرئيسية).
+     *
+     * ⚠️ الأردية والهولندية مترجمتان آلياً (LLM) بلا مراجعة متحدثٍ أصلي —
+     * كما وثّقت الميزة 36 في CLAUDE.md، تستحق الشروط والخصوصية مراجعةً
+     * بشرية قبل الاعتماد القانوني الكامل بهاتين اللغتين.
      *
      * البيانات هنا حقيقية من السجل التجاري الهولندي (KVK) — لا نص تجريبي.
      */
     const $ = id => document.getElementById(id);
     const qs = new URLSearchParams(location.search);
-    let lang = qs.get('lang') === 'en' ? 'en' : 'ar';
-    const T = (ar, en) => (lang === 'en' ? en : ar);
+    const qsLang = qs.get('lang');
+    let lang = ['en', 'ur', 'nl'].includes(qsLang) ? qsLang : 'ar';
+    const T = (ar, en, ur, nl) => ({ ar, en, ur, nl })[lang];
+    const LANG_DIR = { ar: 'rtl', en: 'ltr', ur: 'rtl', nl: 'ltr' };
+    const LANG_HOME = { ar: '/', en: '/en/', ur: '/ur/', nl: '/nl/' };
 
     const BIZ = {
       name: 'JaTrava',
@@ -112,181 +131,226 @@
 
     function bizBox() {
       return `<div class="biz-box"><dl>
-        <dt>${T('الاسم التجاري', 'Trading name')}</dt><dd>${BIZ.name}</dd>
-        <dt>${T('المنشأة المسجَّلة', 'Registered entity')}</dt><dd>${BIZ.legalName} (${T('منشأة فردية', 'sole proprietorship')})</dd>
-        <dt>${T('السجل التجاري (KVK)', 'Chamber of Commerce (KVK)')}</dt><dd>${BIZ.kvk}</dd>
-        <dt>${T('تاريخ التأسيس', 'Established')}</dt><dd>${BIZ.established}</dd>
-        <dt>${T('العنوان المسجَّل', 'Registered address')}</dt><dd>${BIZ.address}</dd>
-        <dt>${T('تصنيف النشاط (SBI)', 'Activity code (SBI)')}</dt><dd>${BIZ.sbi} — ${T('وكالة سفر', 'travel agency')}</dd>
-        <dt>${T('البريد الإلكتروني', 'Email')}</dt><dd><a href="mailto:${BIZ.email}">${BIZ.email}</a></dd>
+        <dt>${T('الاسم التجاري', 'Trading name', 'تجارتی نام', 'Handelsnaam')}</dt><dd>${BIZ.name}</dd>
+        <dt>${T('المنشأة المسجَّلة', 'Registered entity', 'رجسٹرڈ ادارہ', 'Geregistreerde onderneming')}</dt><dd>${BIZ.legalName} (${T('منشأة فردية', 'sole proprietorship', 'انفرادی ملکیت', 'eenmanszaak')})</dd>
+        <dt>${T('السجل التجاري (KVK)', 'Chamber of Commerce (KVK)', 'چیمبر آف کامرس (KVK)', 'Kamer van Koophandel (KVK)')}</dt><dd>${BIZ.kvk}</dd>
+        <dt>${T('تاريخ التأسيس', 'Established', 'قیام', 'Opgericht')}</dt><dd>${BIZ.established}</dd>
+        <dt>${T('العنوان المسجَّل', 'Registered address', 'رجسٹرڈ پتہ', 'Geregistreerd adres')}</dt><dd>${BIZ.address}</dd>
+        <dt>${T('تصنيف النشاط (SBI)', 'Activity code (SBI)', 'سرگرمی کوڈ (SBI)', 'SBI-code')}</dt><dd>${BIZ.sbi} — ${T('وكالة سفر', 'travel agency', 'ٹریول ایجنسی', 'reisbureau')}</dd>
+        <dt>${T('البريد الإلكتروني', 'Email', 'ای میل', 'E-mail')}</dt><dd><a href="mailto:${BIZ.email}">${BIZ.email}</a></dd>
       </dl></div>`;
     }
 
     const TABS = [
-      { id: 'about', ar: 'من نحن', en: 'About us' },
-      { id: 'contact', ar: 'اتصل بنا', en: 'Contact' },
-      { id: 'terms', ar: 'الشروط والأحكام', en: 'Terms & Conditions' },
-      { id: 'privacy', ar: 'سياسة الخصوصية', en: 'Privacy Policy' },
-      { id: 'refund', ar: 'الاسترجاع والإلغاء', en: 'Refunds & Cancellations' },
+      { id: 'about', ar: 'من نحن', en: 'About us', ur: 'ہمارے بارے میں', nl: 'Over ons' },
+      { id: 'contact', ar: 'اتصل بنا', en: 'Contact', ur: 'ہم سے رابطہ کریں', nl: 'Contact' },
+      { id: 'terms', ar: 'الشروط والأحكام', en: 'Terms & Conditions', ur: 'شرائط و ضوابط', nl: 'Algemene voorwaarden' },
+      { id: 'privacy', ar: 'سياسة الخصوصية', en: 'Privacy Policy', ur: 'رازداری کی پالیسی', nl: 'Privacybeleid' },
+      { id: 'refund', ar: 'الاسترجاع والإلغاء', en: 'Refunds & Cancellations', ur: 'واپسی اور منسوخی', nl: 'Restituties & annuleringen' },
     ];
+    const tabLabel = t => T(t.ar, t.en, t.ur, t.nl);
 
     function renderAbout() {
-      return `<h2>${T('🏢 من نحن', '🏢 About us')}</h2>
+      return `<h2>${T('🏢 من نحن', '🏢 About us', '🏢 ہمارے بارے میں', '🏢 Over ons')}</h2>
         <p>${T(
           'Jatrava بوابة سفرٍ رقمية تتيح حجز الطيران والفنادق والسيارات والباقات السياحية بأسعارٍ شفافة — نحن البائع المباشر لا مجرّد وسيط: نشتري صافياً من شركائنا (Duffel وLiteAPI) ونبيع بسعرٍ نهائي واحد بلا رسوم مفاجئة بعد الحجز.',
-          'Jatrava is a digital travel portal for booking flights, hotels, cars and travel packages with transparent pricing. We act as the direct seller of record, not a mere intermediary: we buy net fares from our partners (Duffel and LiteAPI) and sell at one final price, with no surprise fees after booking.'
+          'Jatrava is a digital travel portal for booking flights, hotels, cars and travel packages with transparent pricing. We act as the direct seller of record, not a mere intermediary: we buy net fares from our partners (Duffel and LiteAPI) and sell at one final price, with no surprise fees after booking.',
+          'Jatrava ایک ڈیجیٹل سفری پورٹل ہے جہاں آپ پروازیں، ہوٹل، گاڑیاں اور سیاحتی پیکجز شفاف قیمتوں پر بک کر سکتے ہیں — ہم براہِ راست فروخت کنندہ ہیں، محض ثالث نہیں: ہم اپنے شراکت داروں (Duffel اور LiteAPI) سے خالص قیمت پر خریدتے ہیں اور ایک حتمی قیمت پر بیچتے ہیں، بکنگ کے بعد کوئی اچانک فیس نہیں۔',
+          'Jatrava is een digitaal reisportaal voor het boeken van vluchten, hotels, auto’s en reispakketten met transparante prijzen. Wij treden op als directe verkoper, niet als tussenpersoon: we kopen nettotarieven in bij onze partners (Duffel en LiteAPI) en verkopen tegen één definitieve prijs, zonder verrassingskosten na de boeking.'
         )}</p>
         <p>${T(
           'الخدمة تشغّلها وتملكها منشأة Nalia Diensten، وهي منشأةٌ فردية (Eenmanszaak) مسجَّلة رسمياً في السجل التجاري الهولندي (Kamer van Koophandel) تحت النشاط التجاري «JaTrava»، ومسجَّلة تحديداً كوكالة سفر (تصنيف SBI رقم 79110).',
-          'The service is operated and owned by Nalia Diensten, a sole proprietorship (Eenmanszaak) officially registered with the Dutch Chamber of Commerce (Kamer van Koophandel) under the trade name “JaTrava”, specifically registered as a travel agency (SBI code 79110).'
+          'The service is operated and owned by Nalia Diensten, a sole proprietorship (Eenmanszaak) officially registered with the Dutch Chamber of Commerce (Kamer van Koophandel) under the trade name “JaTrava”, specifically registered as a travel agency (SBI code 79110).',
+          'یہ سروس Nalia Diensten کی ملکیت ہے اور اسی کے زیرِ انتظام چلتی ہے — ایک انفرادی ملکیت (Eenmanszaak) جو ڈچ چیمبر آف کامرس (Kamer van Koophandel) میں تجارتی نام «JaTrava» کے تحت باضابطہ رجسٹرڈ ہے، اور خاص طور پر ٹریول ایجنسی (SBI کوڈ 79110) کے طور پر درج ہے۔',
+          'De dienst wordt geëxploiteerd en is eigendom van Nalia Diensten, een eenmanszaak die officieel is ingeschreven bij de Kamer van Koophandel onder de handelsnaam “JaTrava”, specifiek geregistreerd als reisbureau (SBI-code 79110).'
         )}</p>
-        <h3>${T('بيانات التسجيل الرسمية', 'Official registration details')}</h3>
+        <h3>${T('بيانات التسجيل الرسمية', 'Official registration details', 'سرکاری رجسٹریشن کی تفصیلات', 'Officiële registratiegegevens')}</h3>
         ${bizBox()}`;
     }
 
     function renderContact() {
-      return `<h2>${T('✉️ اتصل بنا', '✉️ Contact us')}</h2>
+      return `<h2>${T('✉️ اتصل بنا', '✉️ Contact us', '✉️ ہم سے رابطہ کریں', '✉️ Contact')}</h2>
         <p>${T(
           'لأي استفسار عن حجزٍ قائم، أو مشكلة في الدفع، أو طلب تعديل أو استرداد، أو أي سؤال آخر — راسلنا على البريد التالي وسنرد عليك في أقرب وقت ممكن:',
-          'For any question about an existing booking, a payment issue, a change or refund request, or anything else — email us at the address below and we will get back to you as soon as possible:'
+          'For any question about an existing booking, a payment issue, a change or refund request, or anything else — email us at the address below and we will get back to you as soon as possible:',
+          'کسی موجودہ بکنگ، ادائیگی کے مسئلے، تبدیلی یا ریفنڈ کی درخواست، یا کسی بھی اور سوال کے لیے — نیچے دیے گئے ای میل پر ہمیں لکھیں، ہم جلد از جلد جواب دیں گے:',
+          'Voor vragen over een bestaande boeking, een betalingsprobleem, een wijzigings- of restitutieverzoek, of iets anders — mail ons op onderstaand adres en we nemen zo snel mogelijk contact met u op:'
         )}</p>
         <p style="font-size:20px;font-weight:700"><a href="mailto:${BIZ.email}">${BIZ.email}</a></p>
         <p>${T(
           'يمكنك أيضاً استخدام «المساعد» أو نموذج التواصل داخل بوابة رحلاتي (My trips) لمن لديه حساب — تصل رسالتك مباشرةً مرتبطةً بحجزك.',
-          'If you have an account, you can also use the in-app assistant or the contact option inside My trips — your message reaches us linked directly to your booking.'
+          'If you have an account, you can also use the in-app assistant or the contact option inside My trips — your message reaches us linked directly to your booking.',
+          'اگر آپ کا اکاؤنٹ ہے تو آپ «میرے سفر» کے اندر اسسٹنٹ یا رابطہ آپشن بھی استعمال کر سکتے ہیں — آپ کا پیغام براہِ راست آپ کی بکنگ سے منسلک ہو کر ہم تک پہنچتا ہے۔',
+          'Als u een account heeft, kunt u ook de assistent of de contactoptie binnen «Mijn reizen» gebruiken — uw bericht bereikt ons direct gekoppeld aan uw boeking.'
         )}</p>
-        <h3>${T('العنوان المسجَّل', 'Registered address')}</h3>
+        <h3>${T('العنوان المسجَّل', 'Registered address', 'رجسٹرڈ پتہ', 'Geregistreerd adres')}</h3>
         <p>Nalia Diensten (JaTrava)<br>${BIZ.address}</p>
-        <h3>${T('السجل التجاري', 'Business registration')}</h3>
+        <h3>${T('السجل التجاري', 'Business registration', 'کاروباری رجسٹریشن', 'Bedrijfsregistratie')}</h3>
         <p>KVK ${BIZ.kvk}</p>`;
     }
 
     function renderTerms() {
-      return `<h2>${T('📄 الشروط والأحكام', '📄 Terms & Conditions')}</h2>
+      return `<h2>${T('📄 الشروط والأحكام', '📄 Terms & Conditions', '📄 شرائط و ضوابط', '📄 Algemene voorwaarden')}</h2>
         <p>${T('باستخدامك موقع Jatrava أو حجزك عبره، فإنك توافق على الشروط التالية.',
-          'By using the Jatrava website or booking through it, you agree to the following terms.')}</p>
+          'By using the Jatrava website or booking through it, you agree to the following terms.',
+          'Jatrava کی ویب سائٹ استعمال کرنے یا اس کے ذریعے بکنگ کرنے سے آپ درج ذیل شرائط سے اتفاق کرتے ہیں۔',
+          'Door de website van Jatrava te gebruiken of erdoor te boeken, gaat u akkoord met de volgende voorwaarden.')}</p>
 
-        <h3>${T('1. طبيعة الخدمة', '1. Nature of the service')}</h3>
+        <h3>${T('1. طبيعة الخدمة', '1. Nature of the service', '1. سروس کی نوعیت', '1. Aard van de dienst')}</h3>
         <p>${T(
           'Jatrava (المُشغَّلة من قِبل Nalia Diensten) تبيع خدمات سفر (طيران، فنادق، سيارات، وباقات) بصفتها البائع المباشر، معتمدةً على مزوّدين متخصصين (شركات طيران، فنادق، ومزوّدي أنظمة حجز مثل Duffel وLiteAPI) لتنفيذ الحجز فعلياً. السعر المعروض نهائي ويشمل هامش الخدمة، ولا رسوم إضافية تُضاف بعد إتمام الحجز.',
-          'Jatrava (operated by Nalia Diensten) sells travel services (flights, hotels, cars, and packages) as the direct seller of record, relying on specialised suppliers (airlines, hotels, and booking infrastructure providers such as Duffel and LiteAPI) to actually fulfil each booking. The displayed price is final and includes our service margin — no extra fees are added after the booking is confirmed.'
+          'Jatrava (operated by Nalia Diensten) sells travel services (flights, hotels, cars, and packages) as the direct seller of record, relying on specialised suppliers (airlines, hotels, and booking infrastructure providers such as Duffel and LiteAPI) to actually fulfil each booking. The displayed price is final and includes our service margin — no extra fees are added after the booking is confirmed.',
+          'Jatrava (جسے Nalia Diensten چلاتی ہے) سفری خدمات (پروازیں، ہوٹل، گاڑیاں اور پیکجز) براہِ راست فروخت کنندہ کی حیثیت سے بیچتی ہے، اور ہر بکنگ کی عملی تکمیل کے لیے متخصص فراہم کنندگان (ایئرلائنز، ہوٹل، اور Duffel و LiteAPI جیسے بکنگ انفراسٹرکچر فراہم کنندگان) پر انحصار کرتی ہے۔ دکھائی گئی قیمت حتمی ہے اور اس میں ہمارا سروس مارجن شامل ہے — بکنگ کی تصدیق کے بعد کوئی اضافی فیس نہیں لی جاتی۔',
+          'Jatrava (geëxploiteerd door Nalia Diensten) verkoopt reisdiensten (vluchten, hotels, auto’s en pakketten) als directe verkoper en vertrouwt op gespecialiseerde leveranciers (luchtvaartmaatschappijen, hotels en aanbieders van boekingsinfrastructuur zoals Duffel en LiteAPI) om elke boeking daadwerkelijk uit te voeren. De getoonde prijs is definitief en omvat onze servicemarge — na bevestiging van de boeking worden geen extra kosten toegevoegd.'
         )}</p>
 
-        <h3>${T('2. الحسابات', '2. Accounts')}</h3>
+        <h3>${T('2. الحسابات', '2. Accounts', '2. اکاؤنٹس', '2. Accounts')}</h3>
         <p>${T(
           'التصفّح والبحث عن الأسعار متاحان بلا حساب. إنشاء حجزٍ يتطلب حساباً (بريد وكلمة مرور، أو الدخول بحساب جوجل) لضمان تواصلٍ صحيح بخصوص حجزك. أنت مسؤول عن دقّة البيانات التي تُدخلها وعن سرّية كلمة مرورك.',
-          'Browsing and searching prices requires no account. Creating a booking requires an account (email and password, or Google sign-in) to ensure we can reach you about your booking. You are responsible for the accuracy of the information you provide and for keeping your password confidential.'
+          'Browsing and searching prices requires no account. Creating a booking requires an account (email and password, or Google sign-in) to ensure we can reach you about your booking. You are responsible for the accuracy of the information you provide and for keeping your password confidential.',
+          'براؤزنگ اور قیمتوں کی تلاش کے لیے اکاؤنٹ درکار نہیں۔ بکنگ کرنے کے لیے اکاؤنٹ ضروری ہے (ای میل اور پاس ورڈ، یا گوگل سائن اِن) تاکہ ہم آپ کی بکنگ کے بارے میں آپ سے رابطہ کر سکیں۔ آپ اپنی فراہم کردہ معلومات کی درستی اور اپنے پاس ورڈ کی رازداری کے ذمہ دار ہیں۔',
+          'Zoeken en prijzen bekijken kan zonder account. Voor het maken van een boeking is een account nodig (e-mail en wachtwoord, of inloggen met Google), zodat we u over uw boeking kunnen bereiken. U bent verantwoordelijk voor de juistheid van de door u verstrekte gegevens en voor de vertrouwelijkheid van uw wachtwoord.'
         )}</p>
 
-        <h3>${T('3. الحجز والدفع', '3. Booking and payment')}</h3>
+        <h3>${T('3. الحجز والدفع', '3. Booking and payment', '3. بکنگ اور ادائیگی', '3. Boeken en betalen')}</h3>
         <p>${T(
           'يُدفَع ثمن الحجز إلكترونياً عبر مزوّد الدفع Stripe؛ لا نخزّن بيانات بطاقتك على خوادمنا. لبعض الباقات المجدولة يمكن دفع عربونٍ والباقي لاحقاً قبل موعدٍ محدَّد يظهر عند الحجز. يُعتبر الحجز مؤكَّداً فقط بعد استلام تأكيدٍ صريح من الخدمة (مرجع حجز/تذكرة).',
-          'Booking payment is processed electronically via Stripe; we do not store your card details on our servers. Certain scheduled packages allow paying a deposit with the balance due by a specified date shown at booking time. A booking is confirmed only once you receive an explicit confirmation from the service (a booking reference/ticket).'
+          'Booking payment is processed electronically via Stripe; we do not store your card details on our servers. Certain scheduled packages allow paying a deposit with the balance due by a specified date shown at booking time. A booking is confirmed only once you receive an explicit confirmation from the service (a booking reference/ticket).',
+          'بکنگ کی ادائیگی الیکٹرانک طور پر ادائیگی فراہم کنندہ Stripe کے ذریعے ہوتی ہے؛ ہم آپ کے کارڈ کی تفصیلات اپنے سرورز پر محفوظ نہیں کرتے۔ بعض شیڈول شدہ پیکجز میں بیعانہ ادا کر کے بقیہ رقم ایک مقررہ تاریخ تک ادا کی جا سکتی ہے جو بکنگ کے وقت دکھائی جاتی ہے۔ بکنگ صرف اسی وقت مصدقہ سمجھی جاتی ہے جب آپ کو سروس کی طرف سے واضح تصدیق (بکنگ ریفرنس/ٹکٹ) موصول ہو جائے۔',
+          'De betaling van een boeking verloopt elektronisch via betaalprovider Stripe; wij slaan uw kaartgegevens niet op onze servers op. Bij bepaalde geplande pakketten kunt u een aanbetaling doen en het restant vóór een bij het boeken getoonde datum voldoen. Een boeking geldt pas als bevestigd zodra u een expliciete bevestiging van de dienst ontvangt (een boekingsreferentie/ticket).'
         )}</p>
 
-        <h3>${T('4. الإلغاء والاسترداد', '4. Cancellation and refunds')}</h3>
+        <h3>${T('4. الإلغاء والاسترداد', '4. Cancellation and refunds', '4. منسوخی اور ریفنڈ', '4. Annulering en restitutie')}</h3>
         <p>${T(
           'شروط الاسترداد والتغيير تحدّدها شركة الطيران أو الفندق أو مزوّد السيارة صاحب المخزون، وتُعرض قبل إتمام الحجز حين تتوفر من المزوّد. التفاصيل الكاملة في سياسة الاسترجاع والإلغاء أدناه.',
-          'Refund and change conditions are set by the airline, hotel, or car supplier that owns the inventory, and are shown before you complete the booking whenever the supplier provides them. Full details are in the Refund & Cancellation Policy below.'
+          'Refund and change conditions are set by the airline, hotel, or car supplier that owns the inventory, and are shown before you complete the booking whenever the supplier provides them. Full details are in the Refund & Cancellation Policy below.',
+          'ریفنڈ اور تبدیلی کی شرائط وہ ایئرلائن، ہوٹل یا گاڑی فراہم کنندہ طے کرتا ہے جس کی انوینٹری ہے، اور جب فراہم کنندہ انہیں مہیا کرے تو یہ بکنگ مکمل کرنے سے پہلے دکھائی جاتی ہیں۔ مکمل تفصیلات نیچے «واپسی اور منسوخی کی پالیسی» میں ہیں۔',
+          'Restitutie- en wijzigingsvoorwaarden worden bepaald door de luchtvaartmaatschappij, het hotel of de autoverhuurder die de voorraad bezit, en worden vóór het afronden van uw boeking getoond wanneer de leverancier ze verstrekt. De volledige details staan hieronder in het restitutie- en annuleringsbeleid.'
         )}</p>
 
-        <h3>${T('5. حدود المسؤولية', '5. Limitation of liability')}</h3>
+        <h3>${T('5. حدود المسؤولية', '5. Limitation of liability', '5. ذمہ داری کی حدود', '5. Beperking van aansprakelijkheid')}</h3>
         <p>${T(
           'لسنا الناقل الجوي ولا مُشغّل الفندق أو السيارة، ولا نتحمّل مسؤولية تصرفات هذه الجهات (تأخير، إلغاء من طرفهم، جودة الخدمة الفعلية في الموقع). نُبذل عناية معقولة في عرض معلومات دقيقة وقت البحث، وقد تتغيّر الأسعار والتوفر لدى المزوّد بين لحظة البحث ولحظة التأكيد.',
-          'We are not the airline, hotel operator, or car rental company, and we are not responsible for their actions (delays, supplier-side cancellations, actual on-site service quality). We take reasonable care to display accurate information at search time, though supplier prices and availability can change between search and confirmation.'
+          'We are not the airline, hotel operator, or car rental company, and we are not responsible for their actions (delays, supplier-side cancellations, actual on-site service quality). We take reasonable care to display accurate information at search time, though supplier prices and availability can change between search and confirmation.',
+          'ہم نہ ایئرلائن ہیں، نہ ہوٹل چلانے والے، نہ گاڑی کرائے پر دینے والی کمپنی، اور ان اداروں کے اقدامات (تاخیر، ان کی جانب سے منسوخی، موقع پر اصل سروس کا معیار) کے ذمہ دار نہیں۔ ہم تلاش کے وقت درست معلومات دکھانے کی معقول کوشش کرتے ہیں، تاہم فراہم کنندہ کی قیمتیں اور دستیابی تلاش اور تصدیق کے درمیان تبدیل ہو سکتی ہیں۔',
+          'Wij zijn niet de luchtvaartmaatschappij, de hotelexploitant of het autoverhuurbedrijf, en wij zijn niet verantwoordelijk voor hun handelen (vertragingen, annuleringen aan leverancierszijde, de feitelijke servicekwaliteit ter plaatse). We besteden redelijke zorg aan het tonen van juiste informatie op het moment van zoeken, al kunnen prijzen en beschikbaarheid bij de leverancier veranderen tussen zoeken en bevestiging.'
         )}</p>
 
-        <h3>${T('6. القانون الحاكم', '6. Governing law')}</h3>
+        <h3>${T('6. القانون الحاكم', '6. Governing law', '6. قابلِ اطلاق قانون', '6. Toepasselijk recht')}</h3>
         <p>${T(
           'تخضع هذه الشروط لقوانين هولندا، والمنشأة المسجَّلة (Nalia Diensten) مقرّها أوتريخت، هولندا.',
-          'These terms are governed by the laws of the Netherlands, where the registered business (Nalia Diensten) is based in Utrecht.'
+          'These terms are governed by the laws of the Netherlands, where the registered business (Nalia Diensten) is based in Utrecht.',
+          'ان شرائط پر نیدرلینڈز کے قوانین لاگو ہوتے ہیں، جہاں رجسٹرڈ ادارہ (Nalia Diensten) یوٹریکٹ میں قائم ہے۔',
+          'Op deze voorwaarden is Nederlands recht van toepassing; de geregistreerde onderneming (Nalia Diensten) is gevestigd in Utrecht.'
         )}</p>
 
-        <h3>${T('7. التعديلات', '7. Changes to these terms')}</h3>
+        <h3>${T('7. التعديلات', '7. Changes to these terms', '7. شرائط میں تبدیلیاں', '7. Wijzigingen van deze voorwaarden')}</h3>
         <p>${T('قد نُحدّث هذه الشروط من وقتٍ لآخر؛ يُنشر أي تعديل جوهري على هذه الصفحة.',
-          'We may update these terms from time to time; any material change will be published on this page.')}</p>`;
+          'We may update these terms from time to time; any material change will be published on this page.',
+          'ہم وقتاً فوقتاً یہ شرائط اپ ڈیٹ کر سکتے ہیں؛ کوئی بھی اہم تبدیلی اسی صفحے پر شائع کی جائے گی۔',
+          'We kunnen deze voorwaarden van tijd tot tijd bijwerken; elke wezenlijke wijziging wordt op deze pagina gepubliceerd.')}</p>`;
     }
 
     function renderPrivacy() {
-      return `<h2>${T('🔒 سياسة الخصوصية', '🔒 Privacy Policy')}</h2>
+      return `<h2>${T('🔒 سياسة الخصوصية', '🔒 Privacy Policy', '🔒 رازداری کی پالیسی', '🔒 Privacybeleid')}</h2>
         <p>${T(
           'تلتزم Nalia Diensten (المُشغِّلة لـJatrava)، ومقرّها هولندا، بحماية بياناتك الشخصية وفق القوانين الأوروبية المعمول بها (بما فيها اللائحة العامة لحماية البيانات GDPR).',
-          'Nalia Diensten (operator of Jatrava), based in the Netherlands, is committed to protecting your personal data in accordance with applicable EU law, including the General Data Protection Regulation (GDPR).'
+          'Nalia Diensten (operator of Jatrava), based in the Netherlands, is committed to protecting your personal data in accordance with applicable EU law, including the General Data Protection Regulation (GDPR).',
+          'نیدرلینڈز میں قائم Nalia Diensten (Jatrava کی آپریٹر) آپ کے ذاتی ڈیٹا کے تحفظ کے لیے قابلِ اطلاق یورپی قوانین، بشمول جنرل ڈیٹا پروٹیکشن ریگولیشن (GDPR)، کی پابند ہے۔',
+          'Nalia Diensten (exploitant van Jatrava), gevestigd in Nederland, beschermt uw persoonsgegevens in overeenstemming met het toepasselijke EU-recht, waaronder de Algemene Verordening Gegevensbescherming (AVG/GDPR).'
         )}</p>
 
-        <h3>${T('ما نجمعه', 'What we collect')}</h3>
+        <h3>${T('ما نجمعه', 'What we collect', 'ہم کیا جمع کرتے ہیں', 'Wat we verzamelen')}</h3>
         <ul>
-          <li>${T('بيانات الحساب: البريد الإلكتروني (يُستخدم كمعرّف الحساب) وكلمة مرور مُعمّاة (أو معرّف دخول جوجل).', 'Account data: your email address (used as your account identifier) and an encrypted password (or your Google sign-in identity).')}</li>
-          <li>${T('بيانات المسافرين: الاسم والميلاد وبيانات التواصل اللازمة لإصدار تذاكر الطيران والحجوزات الفندقية باسمك.', 'Traveller data: name, date of birth, and contact details required to issue flight tickets and hotel bookings in your name.')}</li>
-          <li>${T('بيانات الدفع: تُعالَج مباشرةً عبر Stripe؛ لا تصل تفاصيل بطاقتك إلى خوادمنا ولا تُخزَّن لدينا.', 'Payment data: processed directly by Stripe; your card details never reach or are stored on our servers.')}</li>
-          <li>${T('تفضيلاتك: لغة العرض، عملة العرض، وقنوات التنبيه (بريد/واتساب) التي تختارها.', 'Your preferences: display language, display currency, and the notification channels (email/WhatsApp) you choose.')}</li>
+          <li>${T('بيانات الحساب: البريد الإلكتروني (يُستخدم كمعرّف الحساب) وكلمة مرور مُعمّاة (أو معرّف دخول جوجل).', 'Account data: your email address (used as your account identifier) and an encrypted password (or your Google sign-in identity).', 'اکاؤنٹ ڈیٹا: آپ کا ای میل پتہ (اکاؤنٹ شناخت کے طور پر) اور خفیہ کردہ پاس ورڈ (یا آپ کی گوگل سائن اِن شناخت)۔', 'Accountgegevens: uw e-mailadres (gebruikt als accountidentificatie) en een versleuteld wachtwoord (of uw Google-inlogidentiteit).')}</li>
+          <li>${T('بيانات المسافرين: الاسم والميلاد وبيانات التواصل اللازمة لإصدار تذاكر الطيران والحجوزات الفندقية باسمك.', 'Traveller data: name, date of birth, and contact details required to issue flight tickets and hotel bookings in your name.', 'مسافروں کا ڈیٹا: نام، تاریخِ پیدائش اور رابطے کی وہ تفصیلات جو آپ کے نام پر فلائٹ ٹکٹ اور ہوٹل بکنگ جاری کرنے کے لیے درکار ہیں۔', 'Reizigersgegevens: naam, geboortedatum en contactgegevens die nodig zijn om vliegtickets en hotelboekingen op uw naam uit te geven.')}</li>
+          <li>${T('بيانات الدفع: تُعالَج مباشرةً عبر Stripe؛ لا تصل تفاصيل بطاقتك إلى خوادمنا ولا تُخزَّن لدينا.', 'Payment data: processed directly by Stripe; your card details never reach or are stored on our servers.', 'ادائیگی کا ڈیٹا: براہِ راست Stripe پروسیس کرتا ہے؛ آپ کے کارڈ کی تفصیلات نہ ہمارے سرورز تک پہنچتی ہیں اور نہ وہاں محفوظ ہوتی ہیں۔', 'Betaalgegevens: rechtstreeks verwerkt door Stripe; uw kaartgegevens bereiken onze servers nooit en worden er niet opgeslagen.')}</li>
+          <li>${T('تفضيلاتك: لغة العرض، عملة العرض، وقنوات التنبيه (بريد/واتساب) التي تختارها.', 'Your preferences: display language, display currency, and the notification channels (email/WhatsApp) you choose.', 'آپ کی ترجیحات: ڈسپلے کی زبان، کرنسی، اور وہ اطلاعاتی چینلز (ای میل/واٹس ایپ) جو آپ منتخب کرتے ہیں۔', 'Uw voorkeuren: weergavetaal, weergavevaluta en de notificatiekanalen (e-mail/WhatsApp) die u kiest.')}</li>
         </ul>
 
-        <h3>${T('كيف نستخدمها', 'How we use it')}</h3>
+        <h3>${T('كيف نستخدمها', 'How we use it', 'ہم اسے کیسے استعمال کرتے ہیں', 'Hoe we ze gebruiken')}</h3>
         <p>${T(
           'حصراً لإتمام حجزك وإدارته (بما في ذلك التواصل مع المزوّد المعني)، وإرسال التنبيهات التي وافقت عليها، والامتثال لالتزاماتنا القانونية والمحاسبية.',
-          'Solely to complete and manage your booking (including communicating with the relevant supplier), to send you the notifications you opted into, and to meet our legal and accounting obligations.'
+          'Solely to complete and manage your booking (including communicating with the relevant supplier), to send you the notifications you opted into, and to meet our legal and accounting obligations.',
+          'صرف آپ کی بکنگ مکمل کرنے اور اس کے انتظام کے لیے (بشمول متعلقہ فراہم کنندہ سے رابطہ)، آپ کی منظور کردہ اطلاعات بھیجنے کے لیے، اور اپنی قانونی و محاسبی ذمہ داریاں پوری کرنے کے لیے۔',
+          'Uitsluitend om uw boeking te voltooien en te beheren (inclusief communicatie met de betrokken leverancier), om u de notificaties te sturen waarvoor u koos, en om aan onze wettelijke en boekhoudkundige verplichtingen te voldoen.'
         )}</p>
 
-        <h3>${T('من نشاركهم البيانات', 'Who we share it with')}</h3>
-        <p>${T('لا نبيع بياناتك لأي طرف. نشارك الحدّ الأدنى اللازم فقط مع:', 'We never sell your data. We share only the minimum necessary with:')}</p>
+        <h3>${T('من نشاركهم البيانات', 'Who we share it with', 'ہم ڈیٹا کن سے شیئر کرتے ہیں', 'Met wie we ze delen')}</h3>
+        <p>${T('لا نبيع بياناتك لأي طرف. نشارك الحدّ الأدنى اللازم فقط مع:', 'We never sell your data. We share only the minimum necessary with:', 'ہم آپ کا ڈیٹا کسی کو نہیں بیچتے۔ صرف کم از کم ضروری حد تک ان کے ساتھ شیئر کرتے ہیں:', 'We verkopen uw gegevens nooit. We delen alleen het strikt noodzakelijke met:')}</p>
         <ul>
-          <li>${T('Duffel وLiteAPI — لإصدار حجوزات الطيران والفنادق فعلياً.', 'Duffel and LiteAPI — to actually issue flight and hotel bookings.')}</li>
-          <li>${T('Stripe — لمعالجة الدفع الإلكتروني بأمان.', 'Stripe — to process payments securely.')}</li>
-          <li>${T('مزوّد البريد Resend، ووسيط واتساب الأعمال (Meta) — لإرسال التنبيهات التي فعّلتها فقط.', 'Our email provider Resend, and the WhatsApp Business messaging channel (Meta) — only for notifications you have enabled.')}</li>
+          <li>${T('Duffel وLiteAPI — لإصدار حجوزات الطيران والفنادق فعلياً.', 'Duffel and LiteAPI — to actually issue flight and hotel bookings.', 'Duffel اور LiteAPI — فلائٹ اور ہوٹل بکنگز کے حقیقی اجرا کے لیے۔', 'Duffel en LiteAPI — om vlucht- en hotelboekingen daadwerkelijk uit te geven.')}</li>
+          <li>${T('Stripe — لمعالجة الدفع الإلكتروني بأمان.', 'Stripe — to process payments securely.', 'Stripe — ادائیگیوں کی محفوظ پروسیسنگ کے لیے۔', 'Stripe — om betalingen veilig te verwerken.')}</li>
+          <li>${T('مزوّد البريد Resend، ووسيط واتساب الأعمال (Meta) — لإرسال التنبيهات التي فعّلتها فقط.', 'Our email provider Resend, and the WhatsApp Business messaging channel (Meta) — only for notifications you have enabled.', 'ہمارا ای میل فراہم کنندہ Resend، اور واٹس ایپ بزنس چینل (Meta) — صرف ان اطلاعات کے لیے جو آپ نے فعال کی ہیں۔', 'Onze e-mailprovider Resend en het WhatsApp Business-kanaal (Meta) — alleen voor notificaties die u heeft ingeschakeld.')}</li>
         </ul>
 
-        <h3>${T('الاحتفاظ بالبيانات', 'Data retention')}</h3>
+        <h3>${T('الاحتفاظ بالبيانات', 'Data retention', 'ڈیٹا کی مدتِ حفاظت', 'Bewaartermijn')}</h3>
         <p>${T(
           'نحتفظ ببيانات الحجز للمدة اللازمة قانونياً ومحاسبياً. يمكنك طلب حذف بياناتك (خارج ما يلزم قانوناً الاحتفاظ به) من داخل حسابك أو بمراسلتنا.',
-          'We retain booking data for as long as legally and accounting-wise required. You may request deletion of your data (beyond what must be legally retained) from within your account or by contacting us.'
+          'We retain booking data for as long as legally and accounting-wise required. You may request deletion of your data (beyond what must be legally retained) from within your account or by contacting us.',
+          'ہم بکنگ ڈیٹا اتنے عرصے تک رکھتے ہیں جتنا قانونی اور محاسبی طور پر ضروری ہو۔ آپ اپنے اکاؤنٹ کے اندر سے یا ہمیں لکھ کر اپنا ڈیٹا حذف کرنے کی درخواست کر سکتے ہیں (اس کے سوا جو قانوناً رکھنا لازم ہے)۔',
+          'We bewaren boekingsgegevens zolang dat wettelijk en boekhoudkundig vereist is. U kunt verwijdering van uw gegevens aanvragen (buiten wat wettelijk bewaard moet blijven) vanuit uw account of door contact met ons op te nemen.'
         )}</p>
 
-        <h3>${T('حقوقك', 'Your rights')}</h3>
+        <h3>${T('حقوقك', 'Your rights', 'آپ کے حقوق', 'Uw rechten')}</h3>
         <p>${T(
           'بموجب اللائحة الأوروبية GDPR يحق لك الوصول إلى بياناتك وتصحيحها ونقلها وطلب حذفها. لممارسة أي من هذه الحقوق راسلنا على البريد أدناه.',
-          'Under the EU GDPR you have the right to access, correct, port, and request deletion of your data. To exercise any of these rights, email us at the address below.'
+          'Under the EU GDPR you have the right to access, correct, port, and request deletion of your data. To exercise any of these rights, email us at the address below.',
+          'یورپی GDPR کے تحت آپ کو اپنے ڈیٹا تک رسائی، اس کی درستی، منتقلی اور حذف کی درخواست کا حق حاصل ہے۔ ان میں سے کوئی بھی حق استعمال کرنے کے لیے نیچے دیے گئے ای میل پر ہمیں لکھیں۔',
+          'Onder de AVG heeft u het recht op inzage, correctie, overdraagbaarheid en verwijdering van uw gegevens. Om een van deze rechten uit te oefenen, mailt u ons op onderstaand adres.'
         )}</p>
 
-        <h3>${T('ملفات تعريف الارتباط والتخزين المحلي', 'Cookies and local storage')}</h3>
+        <h3>${T('ملفات تعريف الارتباط والتخزين المحلي', 'Cookies and local storage', 'کوکیز اور لوکل اسٹوریج', 'Cookies en lokale opslag')}</h3>
         <p>${T(
           'نستخدم تخزيناً محلياً في متصفحك (لا ملفات تتبّع إعلانية) لحفظ توكن الدخول وتفضيلات اللغة والعملة فقط.',
-          'We use local storage in your browser (no advertising trackers) solely to keep your login token and your language/currency preferences.'
+          'We use local storage in your browser (no advertising trackers) solely to keep your login token and your language/currency preferences.',
+          'ہم آپ کے براؤزر میں لوکل اسٹوریج استعمال کرتے ہیں (کوئی اشتہاری ٹریکر نہیں) — صرف آپ کے لاگ اِن ٹوکن اور زبان/کرنسی کی ترجیحات محفوظ رکھنے کے لیے۔',
+          'We gebruiken lokale opslag in uw browser (geen advertentietrackers), uitsluitend om uw inlogtoken en uw taal-/valutavoorkeuren te bewaren.'
         )}</p>
 
-        <h3>${T('تواصل معنا', 'Contact us')}</h3>
+        <h3>${T('تواصل معنا', 'Contact us', 'ہم سے رابطہ کریں', 'Contact')}</h3>
         <p><a href="mailto:${BIZ.email}">${BIZ.email}</a></p>`;
     }
 
     function renderRefund() {
-      return `<h2>${T('↩️ سياسة الاسترجاع والإلغاء', '↩️ Refund & Cancellation Policy')}</h2>
+      return `<h2>${T('↩️ سياسة الاسترجاع والإلغاء', '↩️ Refund & Cancellation Policy', '↩️ واپسی اور منسوخی کی پالیسی', '↩️ Restitutie- en annuleringsbeleid')}</h2>
 
-        <h3>${T('طيران وفنادق وسيارات (حسب توفّر المزوّد)', 'Flights, hotels & cars (subject to supplier terms)')}</h3>
+        <h3>${T('طيران وفنادق وسيارات (حسب توفّر المزوّد)', 'Flights, hotels & cars (subject to supplier terms)', 'پروازیں، ہوٹل اور گاڑیاں (فراہم کنندہ کی شرائط کے تابع)', 'Vluchten, hotels & auto’s (afhankelijk van leveranciersvoorwaarden)')}</h3>
         <p>${T(
           'شروط الاسترداد والتغيير يحدّدها المزوّد (شركة الطيران أو الفندق أو مزوّد السيارة)، لا نحن. تُعرض هذه الشروط — حين يوفّرها المزوّد — قبل إتمام حجزك، وتُحفظ مع حجزك لمراجعتها لاحقاً من صفحة «رحلاتي». حين لا يفصح المزوّد عن الشرط، لا نفترض قابليةً للاسترداد ولا عدمها — نعرض الحالة كما هي: «غير معروفة».',
-          'Refund and change conditions are set by the supplier (the airline, hotel, or car provider) — not by us. These conditions, when provided by the supplier, are shown before you complete your booking and saved with it for later review under “My trips”. When a supplier does not disclose the condition, we neither assume it is refundable nor that it isn’t — we show it plainly as “unknown”.'
+          'Refund and change conditions are set by the supplier (the airline, hotel, or car provider) — not by us. These conditions, when provided by the supplier, are shown before you complete your booking and saved with it for later review under “My trips”. When a supplier does not disclose the condition, we neither assume it is refundable nor that it isn’t — we show it plainly as “unknown”.',
+          'ریفنڈ اور تبدیلی کی شرائط فراہم کنندہ (ایئرلائن، ہوٹل یا گاڑی فراہم کنندہ) طے کرتا ہے — ہم نہیں۔ جب فراہم کنندہ یہ شرائط مہیا کرے تو یہ آپ کی بکنگ مکمل ہونے سے پہلے دکھائی جاتی ہیں اور بعد میں «میرے سفر» سے دیکھنے کے لیے بکنگ کے ساتھ محفوظ رہتی ہیں۔ جب فراہم کنندہ شرط ظاہر نہ کرے تو ہم نہ ریفنڈ ممکن ہونا فرض کرتے ہیں نہ ناممکن — ہم حالت جوں کی توں دکھاتے ہیں: «نامعلوم»۔',
+          'Restitutie- en wijzigingsvoorwaarden worden bepaald door de leverancier (de luchtvaartmaatschappij, het hotel of de autoverhuurder) — niet door ons. Deze voorwaarden worden, wanneer de leverancier ze verstrekt, vóór het afronden van uw boeking getoond en bij uw boeking bewaard om later terug te lezen onder «Mijn reizen». Wanneer een leverancier de voorwaarde niet bekendmaakt, nemen we niet aan dat de boeking restitueerbaar is en ook niet dat ze dat niet is — we tonen de status zoals hij is: «onbekend».'
         )}</p>
         <p>${T(
           'إلغاء حجزٍ يجري من صفحة «رحلاتي» بزر الإلغاء المتاح، ما دام المزوّد يسمح بذلك. المبلغ المُسترَد يعتمد على ما يردّه المزوّد فعلياً: رد كامل من المزوّد ⇐ رد كامل لك، ورد جزئي ⇐ نفس النسبة، وإن التزمنا بإلغاءٍ مجاني ولم يوضّح المزوّد مبلغاً فيُرد المبلغ كاملاً. المعالجة تتم عبر Stripe وتظهر عادةً خلال أيام العمل التالية بحسب سياسة البنك المُصدِر لبطاقتك.',
-          'Cancellation is done from the “My trips” page via the available cancel button, as long as the supplier allows it. The refunded amount depends on what the supplier actually refunds: a full supplier refund means a full refund to you, a partial one means the same proportion, and if we have committed to a free cancellation and the supplier does not specify an amount, a full refund is issued. Processing goes through Stripe and typically appears within the following business days, depending on your card issuer’s policy.'
+          'Cancellation is done from the “My trips” page via the available cancel button, as long as the supplier allows it. The refunded amount depends on what the supplier actually refunds: a full supplier refund means a full refund to you, a partial one means the same proportion, and if we have committed to a free cancellation and the supplier does not specify an amount, a full refund is issued. Processing goes through Stripe and typically appears within the following business days, depending on your card issuer’s policy.',
+          'بکنگ کی منسوخی «میرے سفر» کے صفحے سے دستیاب منسوخی کے بٹن کے ذریعے ہوتی ہے، جب تک فراہم کنندہ اس کی اجازت دے۔ واپس ہونے والی رقم اس پر منحصر ہے جو فراہم کنندہ حقیقتاً واپس کرے: فراہم کنندہ کا مکمل ریفنڈ ⇐ آپ کو مکمل ریفنڈ، جزوی ⇐ اسی تناسب سے، اور اگر ہم نے مفت منسوخی کا وعدہ کیا ہو اور فراہم کنندہ رقم واضح نہ کرے تو پوری رقم واپس کی جاتی ہے۔ پروسیسنگ Stripe کے ذریعے ہوتی ہے اور عام طور پر اگلے کاروباری دنوں میں، آپ کے کارڈ جاری کرنے والے بینک کی پالیسی کے مطابق، ظاہر ہو جاتی ہے۔',
+          'Annuleren doet u vanaf de pagina «Mijn reizen» via de beschikbare annuleerknop, zolang de leverancier dat toestaat. Het terugbetaalde bedrag hangt af van wat de leverancier daadwerkelijk terugbetaalt: een volledige restitutie van de leverancier betekent een volledige terugbetaling aan u, een gedeeltelijke dezelfde verhouding, en als wij gratis annulering hebben toegezegd terwijl de leverancier geen bedrag specificeert, wordt het volledige bedrag terugbetaald. De verwerking loopt via Stripe en is doorgaans binnen de volgende werkdagen zichtbaar, afhankelijk van het beleid van uw kaartuitgever.'
         )}</p>
 
-        <h3>${T('الباقات المجدولة (بعربون)', 'Scheduled packages (deposit-based)')}</h3>
+        <h3>${T('الباقات المجدولة (بعربون)', 'Scheduled packages (deposit-based)', 'شیڈول شدہ پیکجز (بیعانے کے ساتھ)', 'Geplande pakketten (met aanbetaling)')}</h3>
         <p>${T(
           'لبعض الباقات المجدولة يُدفَع عربونٌ عند الحجز والمتبقي قبل موعد تسليم الأسماء للناقل/الفندق (يظهر تاريخه صراحةً عند الحجز). الإلغاء الذاتي متاحٌ حتى ذلك الموعد باسترداد المبلغ المدفوع فعلياً؛ بعده يخضع الإلغاء لسياسة الباقة المحدَّدة والتي تُعرض عند الحجز.',
-          'For some scheduled packages a deposit is paid at booking time, with the balance due before the names-submission deadline to the airline/hotel (its date is shown explicitly at booking time). Self-service cancellation is available up to that deadline with a refund of the amount actually paid; after it, cancellation follows the specific package policy shown at booking time.'
+          'For some scheduled packages a deposit is paid at booking time, with the balance due before the names-submission deadline to the airline/hotel (its date is shown explicitly at booking time). Self-service cancellation is available up to that deadline with a refund of the amount actually paid; after it, cancellation follows the specific package policy shown at booking time.',
+          'بعض شیڈول شدہ پیکجز میں بکنگ کے وقت بیعانہ ادا کیا جاتا ہے اور بقیہ رقم ناقل/ہوٹل کو نام جمع کرانے کی آخری تاریخ سے پہلے (جو بکنگ کے وقت صراحتاً دکھائی جاتی ہے)۔ اس تاریخ تک خود منسوخی ممکن ہے اور حقیقتاً ادا شدہ رقم واپس ملتی ہے؛ اس کے بعد منسوخی اس پیکج کی مخصوص پالیسی کے تابع ہے جو بکنگ کے وقت دکھائی جاتی ہے۔',
+          'Bij sommige geplande pakketten betaalt u bij het boeken een aanbetaling en het restant vóór de deadline voor het doorgeven van de namen aan de maatschappij/het hotel (die datum wordt bij het boeken expliciet getoond). Tot die deadline kunt u zelf annuleren met terugbetaling van het daadwerkelijk betaalde bedrag; daarna volgt annulering het specifieke pakketbeleid dat bij het boeken werd getoond.'
         )}</p>
 
-        <h3>${T('استئناف دفعٍ فاشل أو منتهي المهلة', 'Failed or expired payment sessions')}</h3>
+        <h3>${T('استئناف دفعٍ فاشل أو منتهي المهلة', 'Failed or expired payment sessions', 'ناکام یا میعاد ختم شدہ ادائیگی', 'Mislukte of verlopen betaalsessies')}</h3>
         <p>${T(
           'إن انتهت مهلة صفحة الدفع أو فشلت المعاملة بعد أن حجزنا لك مقعداً/مخزوناً مؤقتاً، يُحرَّر المخزون تلقائياً ولا يُخصَم منك أي مبلغ. يمكنك استئناف الدفع أو إعادة البحث من صفحة «رحلاتي».',
-          'If the payment page times out or the transaction fails after we temporarily held a seat/inventory for you, that hold is released automatically and you are not charged. You can resume payment or search again from “My trips”.'
+          'If the payment page times out or the transaction fails after we temporarily held a seat/inventory for you, that hold is released automatically and you are not charged. You can resume payment or search again from “My trips”.',
+          'اگر ادائیگی کے صفحے کی میعاد ختم ہو جائے یا لین دین ناکام ہو جبکہ ہم نے عارضی طور پر آپ کے لیے نشست/انوینٹری روک رکھی ہو، تو وہ ہولڈ خودکار طور پر آزاد ہو جاتی ہے اور آپ سے کوئی رقم نہیں لی جاتی۔ آپ «میرے سفر» سے ادائیگی دوبارہ شروع کر سکتے ہیں یا نئی تلاش کر سکتے ہیں۔',
+          'Als de betaalpagina verloopt of de transactie mislukt nadat we tijdelijk een stoel/voorraad voor u hadden vastgehouden, wordt die reservering automatisch vrijgegeven en wordt er niets bij u in rekening gebracht. U kunt de betaling hervatten of opnieuw zoeken vanaf «Mijn reizen».'
         )}</p>
 
-        <h3>${T('كيف تطلب استرداداً', 'How to request a refund')}</h3>
+        <h3>${T('كيف تطلب استرداداً', 'How to request a refund', 'ریفنڈ کی درخواست کیسے کریں', 'Zo vraagt u een restitutie aan')}</h3>
         <p>${T(
           'من صفحة «رحلاتي» عبر زر الإلغاء المتاح على حجزك، أو بمراسلتنا على البريد أدناه مع ذكر مرجع الحجز.',
-          'From “My trips” via the cancel button available on your booking, or by emailing us at the address below with your booking reference.'
+          'From “My trips” via the cancel button available on your booking, or by emailing us at the address below with your booking reference.',
+          '«میرے سفر» کے صفحے سے اپنی بکنگ پر دستیاب منسوخی کے بٹن کے ذریعے، یا بکنگ ریفرنس کے ساتھ نیچے دیے گئے ای میل پر ہمیں لکھ کر۔',
+          'Vanaf de pagina «Mijn reizen» via de annuleerknop op uw boeking, of door ons te mailen op onderstaand adres met vermelding van uw boekingsreferentie.'
         )}</p>
         <p><a href="mailto:${BIZ.email}">${BIZ.email}</a></p>`;
     }
@@ -300,7 +364,7 @@
 
     function renderTabs(active) {
       $('tabs').innerHTML = TABS.map(t =>
-        `<button data-tab="${t.id}" class="${t.id === active ? 'active' : ''}">${T(t.ar, t.en)}</button>`
+        `<button data-tab="${t.id}" class="${t.id === active ? 'active' : ''}">${tabLabel(t)}</button>`
       ).join('');
       $('tabs').querySelectorAll('button').forEach(btn => {
         btn.addEventListener('click', () => { location.hash = btn.dataset.tab; });
@@ -311,22 +375,26 @@
       const tab = currentTab();
       renderTabs(tab);
       $('content').innerHTML = RENDERERS[tab]();
-      $('updated').textContent = T('آخر تحديث: أغسطس 2026', 'Last updated: August 2026');
-      document.title = `${T(TABS.find(t => t.id === tab).ar, TABS.find(t => t.id === tab).en)} — Jatrava`;
+      $('updated').textContent = T('آخر تحديث: أغسطس 2026', 'Last updated: August 2026', 'آخری اپ ڈیٹ: اگست 2026', 'Laatst bijgewerkt: augustus 2026');
+      document.title = `${tabLabel(TABS.find(t => t.id === tab))} — Jatrava`;
     }
 
     function applyLangChrome() {
       document.documentElement.lang = lang;
-      document.documentElement.dir = lang === 'en' ? 'ltr' : 'rtl';
-      $('langBtn').textContent = lang === 'en' ? 'ع' : 'EN';
-      $('brandSub').textContent = T('بوابة السفر', 'Travel Portal');
-      $('backLink').textContent = T('← العودة إلى بوابة السفر', '← Back to the travel portal');
+      document.documentElement.dir = LANG_DIR[lang];
+      $('langBtn').value = lang;
+      $('brandSub').textContent = T('بوابة السفر', 'Travel Portal', 'سفری پورٹل', 'Reisportaal');
+      // العودة والشعار يقودان إلى جذر **نفس اللغة** — لا الجذر العربي دوماً
+      document.querySelector('a.brand').href = LANG_HOME[lang];
+      const back = $('backLink');
+      back.href = LANG_HOME[lang];
+      back.textContent = T('← العودة إلى بوابة السفر', '← Back to the travel portal', '← سفری پورٹل پر واپس', '← Terug naar het reisportaal');
     }
 
-    $('langBtn').addEventListener('click', () => {
-      lang = lang === 'en' ? 'ar' : 'en';
+    $('langBtn').addEventListener('change', () => {
+      lang = $('langBtn').value;
       const url = new URL(location.href);
-      if (lang === 'en') url.searchParams.set('lang', 'en'); else url.searchParams.delete('lang');
+      if (lang === 'ar') url.searchParams.delete('lang'); else url.searchParams.set('lang', lang);
       history.replaceState(null, '', url);
       applyLangChrome();
       renderPage();
