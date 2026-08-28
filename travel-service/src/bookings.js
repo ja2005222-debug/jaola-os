@@ -7,7 +7,13 @@
  *
  * كل الانتقالات تمر عبر transitionBooking الذرّي في المخزن — لا كتابة
  * حالة مباشرة في أي مكان آخر، فلا تعارض بين طلبين متزامنين.
+ *
+ * 🤝 مكافأة الإحالة (referrals.js) تُطلَق من **هنا حصراً** عند "issued" —
+ * لا من أيٍّ من مسارات الإصدار التسعة في server.js (بعضها خلف webhook
+ * دفعٍ غير متزامن). نقطة انتقالٍ واحدة = فرصة مكافأةٍ واحدة، بلا نسخ
+ * تتكرر عند كل مسار وتتباعد بصمت (نفس درس ICS والتوطين في هذه الخدمة).
  */
+import { maybeRewardReferral } from './referrals.js';
 
 export const BOOKING_STATUSES = ['pending', 'issued', 'failed', 'cancelled'];
 
@@ -47,5 +53,7 @@ export async function listBookingsByUser(store, username, limit = 50) {
 export async function transitionBooking(store, id, to, patch = {}) {
     const from = Object.keys(ALLOWED).filter(s => canTransition(s, to));
     if (from.length === 0) return null;
-    return store.transitionBooking(id, { from, to, patch });
+    const booking = await store.transitionBooking(id, { from, to, patch });
+    if (to === 'issued' && booking) await maybeRewardReferral(store, booking);
+    return booking;
 }
