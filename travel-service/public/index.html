@@ -1205,8 +1205,10 @@
       document.documentElement.dir = LANGS[uiLang].dir;
     }
     // نصوص تُبنى بالجافاسكربت بأجزاء مُدرَجة لا يلتقطها جدول المطابقة —
-    // تُصاغ باللغة الصحيحة من المنبع بدل مطاردتها بأنماط هشّة.
-    const T = (ar, en) => (uiLang === 'en' ? en : ar);
+    // تُصاغ باللغة الصحيحة من المنبع بدل مطاردتها بأنماط هشّة. ur/nl
+    // اختياريان: نداءٌ بلا عمودَيهما (كودٌ قديم لم يُحدَّث بعد) يرتدّ
+    // للإنجليزية لا للعربية — أسلم من تسريب عربية صامتة في صفحة هولندية.
+    const T = (ar, en, ur, nl) => ({ ar, en, ur, nl }[uiLang] ?? en);
 
     /**
      * 📊 تتبّع التحويل (GA4 + Meta Pixel) — معطَّل تماماً بلا إعداد على
@@ -1377,7 +1379,7 @@
           // لغةُ مبرمجين، و22 موضعاً في الواجهة تعرض data.error حرفياً —
           // فالتصحيح هنا مرةً واحدة يصحّحها كلها (مصدر حقيقة واحد).
           return new Response(
-            JSON.stringify({ error: T('سجّل دخولك لإتمام هذه الخطوة.', 'Sign in to complete this step.') }),
+            JSON.stringify({ error: T('سجّل دخولك لإتمام هذه الخطوة.', 'Sign in to complete this step.', 'یہ مرحلہ مکمل کرنے کے لیے سائن اِن کریں۔', 'Log in om deze stap te voltooien.') }),
             { status: 401, headers: { 'Content-Type': 'application/json' } },
           );
         }
@@ -1434,7 +1436,7 @@
       if (resetToken) openLogin('reset');
       maybeInitGoogleSignIn();
       if (config.providerMode !== 'live') $('modeBanner').classList.remove('hidden');
-      if (!config.agentEnabled) $('agentTabBtn').title = T('غير مفعَّل على هذا الخادم', 'Not enabled on this server');
+      if (!config.agentEnabled) $('agentTabBtn').title = T('غير مفعَّل على هذا الخادم', 'Not enabled on this server', 'اس سرور پر فعال نہیں', 'Niet ingeschakeld op deze server');
       if (!config.staysEnabled) $('includeStaysLabel').classList.add('hidden');
       // تبويب بلا مزوّد فنادق يعد بما لا يُنجَز — يُخفى كتبويب السيارات
       if (!config.staysEnabled) $('staysTabBtn').classList.add('hidden');
@@ -1794,8 +1796,11 @@
       try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; }
     })();
 
-    // اسم المطار بلغة الواجهة — كان يعرض «القاهرة (CAI)» حتى في الإنجليزية
-    const airportName = a => (uiLang === 'en' && a.cityEn) ? a.cityEn : (a.city || a.iata);
+    // اسم المطار بلغة الواجهة — كان يعرض «القاهرة (CAI)» حتى في الإنجليزية.
+    // ⚠️ قاعدة بيانات المطارات (airports.js) بعمودين فقط (city عربي/cityEn
+    // إنجليزي) — لا ترجمة أردية/هولندية لكل مطار. أي لغة غير العربية
+    // ترتدّ للإنجليزية (اسم مدينة لاتيني مفهوم عالمياً) بدل تسريب العربية.
+    const airportName = a => (uiLang !== 'ar' && a.cityEn) ? a.cityEn : (a.city || a.iata);
 
     function setOriginField(input, a) {
       if (!input || !a) return;
@@ -1876,7 +1881,7 @@
           list.innerHTML = airports.map(a => `
             <div class="ac-item" data-iata="${esc(a.iata)}">
               <span>${esc(airportName(a))}</span><span class="ac-code">${esc(a.iata)}</span>
-              <div class="ac-sub">${esc(uiLang === 'en' ? (a.countryEn || a.country) : a.country)} · ${esc(uiLang === 'en' ? a.city : a.cityEn)}</div>
+              <div class="ac-sub">${esc(uiLang !== 'ar' ? (a.countryEn || a.country) : a.country)} · ${esc(uiLang !== 'ar' ? a.city : a.cityEn)}</div>
             </div>`).join('');
           [...list.children].forEach((el, i) =>
             el.addEventListener('mousedown', ev => { ev.preventDefault(); choose(airports[i]); }));
@@ -1916,9 +1921,14 @@
     }
 
     const fmtTime = iso => (iso || '').slice(11, 16);
-    const fmtDur = min => min == null ? '' : (uiLang === 'en'
-      ? `${Math.floor(min / 60)}h ${min % 60}m`
-      : `${Math.floor(min / 60)}س ${min % 60}د`);
+    const fmtDur = min => {
+      if (min == null) return '';
+      const h = Math.floor(min / 60), m = min % 60;
+      return uiLang === 'ar' ? `${h}س ${m}د`
+        : uiLang === 'ur' ? `${h}گھ ${m}م`
+        : uiLang === 'nl' ? `${h}u ${m}m`
+        : `${h}h ${m}m`;
+    };
 
     /**
      * 🛬 علامة اليوم التالي — **ليست تزييناً**.
@@ -1931,7 +1941,7 @@
       const d = s.arrivalDayOffset || 0;
       if (!d) return '';
       const sign = d > 0 ? '+' : '−';
-      return `<sup class="day-off" title="${T('يصل في يومٍ مختلف عن يوم الإقلاع', 'Arrives on a different day than departure')}">${sign}${Math.abs(d)}</sup>`;
+      return `<sup class="day-off" title="${T('يصل في يومٍ مختلف عن يوم الإقلاع', 'Arrives on a different day than departure', 'روانگی سے مختلف دن پہنچتی ہے', 'Komt aan op een andere dag dan het vertrek')}">${sign}${Math.abs(d)}</sup>`;
     }
 
     /** مدينة التوقف ومدته — «توقف ٦س ٢٠د في HUB» بدل «١ توقف» مجرّدة. */
@@ -1945,10 +1955,10 @@
       const long = list.some(l => (l.minutes ?? 0) >= LONG_MIN);
       const parts = list.map(l => {
         const dur = l.minutes == null ? '' : fmtDur(l.minutes);
-        const at = l.airport ? `${T('في', 'in')} ${esc(l.airport)}` : '';
+        const at = l.airport ? `${T('في', 'in', 'میں', 'in')} ${esc(l.airport)}` : '';
         return [dur, at].filter(Boolean).join(' ');
       });
-      return `<span class="fact layover${long ? ' layover-long' : ''}">${T('توقف', 'Layover')} ${parts.join(' + ')}</span>`;
+      return `<span class="fact layover${long ? ' layover-long' : ''}">${T('توقف', 'Layover', 'ٹھہراؤ', 'Tussenstop')} ${parts.join(' + ')}</span>`;
     }
 
     /**
@@ -1957,13 +1967,13 @@
      * «٦س ٥٩د» على الجوال، فيقرأ المسافر مدةً مقطوعة بين سطرين.
      */
     function sliceHtml(s) {
-      const stopsTxt = s.stops === 0 ? T('مباشرة', 'Direct') : `${s.stops} ${T('توقف', 'stop(s)')}`;
+      const stopsTxt = s.stops === 0 ? T('مباشرة', 'Direct', 'براہ راست', 'Direct') : `${s.stops} ${T('توقف', 'stop(s)', 'ٹھہراؤ', 'tussenstop(s)')}`;
       const facts = [
         `<span class="fact route-ends"><strong>${esc(s.origin)} ${fmtTime(s.departAt)}</strong> ← <strong>${esc(s.destination)} ${fmtTime(s.arriveAt)}${dayOffsetHtml(s)}</strong></span>`,
         `<span class="fact">${fmtDur(s.durationMin)}</span>`,
         `<span class="fact stops${s.stops}">${stopsTxt}</span>`,
         layoversHtml(s),
-        `<span class="fact carriers">${s.segments.map(g => esc(g.carrier + ' ' + g.flightNumber)).join(T(' ثم ', ' then '))}</span>`,
+        `<span class="fact carriers">${s.segments.map(g => esc(g.carrier + ' ' + g.flightNumber)).join(T(' ثم ', ' then ', ' پھر ', ' dan '))}</span>`,
       ].filter(Boolean);
       return `<div class="seg">${facts.join('<span class="fact-sep">·</span>')}</div>`;
     }
@@ -1975,9 +1985,9 @@
      * رحلةً تشملها ظنّاً أنها لا تشملها.
      */
     function bagBadgeHtml(o) {
-      if (o.checkedBag === true) return `<span class="bag bag-yes">🧳 ${T('حقيبة مسجَّلة مشمولة', 'Checked bag included')}</span>`;
-      if (o.checkedBag === false) return `<span class="bag bag-no">🚫 ${T('بلا حقيبة مسجَّلة', 'No checked bag')}</span>`;
-      return `<span class="bag bag-unknown" title="${T('الناقل لم يصرّح بالأمتعة لهذا السعر', 'The carrier did not declare baggage for this fare')}">🧳 ${T('الأمتعة غير مصرَّحة', 'Baggage not declared')}</span>`;
+      if (o.checkedBag === true) return `<span class="bag bag-yes">🧳 ${T('حقيبة مسجَّلة مشمولة', 'Checked bag included', 'رجسٹرڈ بیگ شامل ہے', 'Incheckbagage inbegrepen')}</span>`;
+      if (o.checkedBag === false) return `<span class="bag bag-no">🚫 ${T('بلا حقيبة مسجَّلة', 'No checked bag', 'رجسٹرڈ بیگ شامل نہیں', 'Geen incheckbagage')}</span>`;
+      return `<span class="bag bag-unknown" title="${T('الناقل لم يصرّح بالأمتعة لهذا السعر', 'The carrier did not declare baggage for this fare', 'کیریئر نے اس کرائے کے لیے سامان کا اعلان نہیں کیا', 'De maatschappij heeft geen bagage opgegeven voor deze tarief')}">🧳 ${T('الأمتعة غير مصرَّحة', 'Baggage not declared', 'سامان کا اعلان نہیں ہوا', 'Bagage niet opgegeven')}</span>`;
     }
 
     /**
@@ -2135,7 +2145,8 @@
 
     // ─── 🔔 التنبيهات ───
 
-    const fmtWhen = ts => new Date(ts).toLocaleString(uiLang === 'en' ? 'en' : 'ar', { dateStyle: 'medium', timeStyle: 'short' });
+    // Intl يدعم ur/nl مباشرةً — لا حاجة لارتدادٍ ثنائي كبقية النصوص الجاهزة.
+    const fmtWhen = ts => new Date(ts).toLocaleString(uiLang, { dateStyle: 'medium', timeStyle: 'short' });
 
     function setBell(unread) {
       $('bellBtn').classList.remove('hidden');
@@ -2198,9 +2209,12 @@
     const FX_PREF = 'jaolaTravelFxCur';
     let fxCur = localStorage.getItem(FX_PREF) || '';
     const fxRates = new Map(); // عملة المصدر → وعد {rate, source}
-    const FX_SRC = uiLang === 'en'
-      ? { peg: 'official peg', market: 'market rate', mixed: 'approx.' }
-      : { peg: 'ربط رسمي', market: 'سوق', mixed: 'تقريبي' };
+    const FX_SRC = {
+      ar: { peg: 'ربط رسمي', market: 'سوق', mixed: 'تقريبي' },
+      en: { peg: 'official peg', market: 'market rate', mixed: 'approx.' },
+      ur: { peg: 'سرکاری ربط', market: 'مارکیٹ ریٹ', mixed: 'تخمینی' },
+      nl: { peg: 'officiële koppeling', market: 'marktkoers', mixed: 'ca.' },
+    }[uiLang];
 
     function fxGetRate(from) {
       if (!fxRates.has(from)) {
@@ -2317,38 +2331,69 @@
       // بـT() لا بجدول المطابقة: السطر يحمل أرقاماً مُدرَجة فكان الاستبدال
       // الجزئي ينتج هجيناً («مستواك: traveller(s) — 976 نقطة» من صورة
       // عطب حقيقية للمالك).
-      const TIER_EN = { member: 'Traveller', silver: 'Silver', gold: 'Gold' };
-      const TIER_PERK_EN = {
-        member: 'Track your points from your first booking',
-        silver: 'Priority replies to custom-offer requests',
-        gold: 'Waitlist priority + early offers',
+      const TIER_LABELS = {
+        member: { en: 'Traveller', ur: 'مسافر', nl: 'Reiziger' },
+        silver: { en: 'Silver', ur: 'سلور', nl: 'Zilver' },
+        gold: { en: 'Gold', ur: 'گولڈ', nl: 'Goud' },
       };
-      const tierLabel = t => (uiLang === 'en' ? (TIER_EN[t.id] || t.label) : t.label);
+      const TIER_PERKS = {
+        member: {
+          en: 'Track your points from your first booking',
+          ur: 'اپنی پہلی بکنگ سے پوائنٹس ٹریک کریں',
+          nl: 'Volg uw punten vanaf uw eerste boeking',
+        },
+        silver: {
+          en: 'Priority replies to custom-offer requests',
+          ur: 'مخصوص پیشکش کی درخواستوں پر ترجیحی جواب',
+          nl: 'Voorrang bij antwoorden op aangepaste-aanbieding-aanvragen',
+        },
+        gold: {
+          en: 'Waitlist priority + early offers',
+          ur: 'ویٹنگ لسٹ میں ترجیح + جلد پیشکشیں',
+          nl: 'Voorrang op wachtlijst + vroege aanbiedingen',
+        },
+      };
+      const tierLabel = t => (uiLang !== 'ar' && TIER_LABELS[t.id]?.[uiLang]) || t.label;
+      const tierPerk = t => (uiLang !== 'ar' && TIER_PERKS[t.id]?.[uiLang]) || t.perk;
       $('loyaltyBody').innerHTML = `
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <span style="font-size:30px">${L.tier.icon}</span>
           <div style="flex:1;min-width:200px">
-            <strong>${T('مستواك:', 'Your tier:')} ${esc(tierLabel(L.tier))}</strong> — ${uiLang === 'en'
-              ? `${L.points.toLocaleString('en-US')} points from ${L.trips} trip(s)`
-              : `${L.points.toLocaleString('en-US')} نقطة من ${L.trips} رحلة`}
-            <div class="note">${esc(uiLang === 'en' ? (TIER_PERK_EN[L.tier.id] || '') : L.tier.perk)}</div>
+            <strong>${T('مستواك:', 'Your tier:', 'آپ کا درجہ:', 'Uw niveau:')} ${esc(tierLabel(L.tier))}</strong> — ${{
+              ar: `${L.points.toLocaleString('en-US')} نقطة من ${L.trips} رحلة`,
+              en: `${L.points.toLocaleString('en-US')} points from ${L.trips} trip(s)`,
+              ur: `${L.points.toLocaleString('en-US')} پوائنٹس، ${L.trips} سفر(وں) سے`,
+              nl: `${L.points.toLocaleString('en-US')} punten van ${L.trips} reis/reizen`,
+            }[uiLang]}
+            <div class="note">${esc(tierPerk(L.tier))}</div>
             ${L.nextTier ? `
               <div style="height:6px;background:var(--border);border-radius:4px;margin-top:6px;overflow:hidden">
                 <div style="height:100%;width:${L.progressPct}%;background:var(--accent)"></div>
               </div>
-              <div class="note">${uiLang === 'en'
-                ? `${L.nextTier.pointsNeeded.toLocaleString('en-US')} points to ${L.nextTier.icon} ${esc(tierLabel(L.nextTier))}`
-                : `${L.nextTier.pointsNeeded.toLocaleString('en-US')} نقطة تفصلك عن ${L.nextTier.icon} ${esc(L.nextTier.label)}`}</div>`
-              : `<div class="note ok">${T('🏆 أنت في القمة', "🏆 You're at the top")}</div>`}
-            ${L.mixedCurrencies ? `<div class="note">${uiLang === 'en'
-              ? `⚠️ Your points span multiple currencies (${L.currencies.join(', ')}) — the total is approximate`
-              : `⚠️ نقاطك من عملات متعددة (${L.currencies.join('، ')}) — الجمع تقريبي`}</div>` : ''}
-            <div class="note">${uiLang === 'en'
-              ? 'Points accrue from today — redeeming them for discounts activates with e-payments.'
-              : esc(L.redeemNote)}</div>
-            ${L.bonusPoints ? `<div class="note ok">${uiLang === 'en'
-              ? `🤝 Includes ${L.bonusPoints.toLocaleString('en-US')} referral bonus points`
-              : `🤝 منها ${L.bonusPoints.toLocaleString('en-US')} نقطة مكافأة إحالة`}</div>` : ''}
+              <div class="note">${{
+                ar: `${L.nextTier.pointsNeeded.toLocaleString('en-US')} نقطة تفصلك عن ${L.nextTier.icon} ${esc(L.nextTier.label)}`,
+                en: `${L.nextTier.pointsNeeded.toLocaleString('en-US')} points to ${L.nextTier.icon} ${esc(tierLabel(L.nextTier))}`,
+                ur: `${L.nextTier.pointsNeeded.toLocaleString('en-US')} پوائنٹس ${L.nextTier.icon} ${esc(tierLabel(L.nextTier))} تک`,
+                nl: `${L.nextTier.pointsNeeded.toLocaleString('en-US')} punten tot ${L.nextTier.icon} ${esc(tierLabel(L.nextTier))}`,
+              }[uiLang]}</div>`
+              : `<div class="note ok">${T('🏆 أنت في القمة', "🏆 You're at the top", '🏆 آپ سب سے اوپر ہیں', '🏆 U staat aan de top')}</div>`}
+            ${L.mixedCurrencies ? `<div class="note">${{
+              ar: `⚠️ نقاطك من عملات متعددة (${L.currencies.join('، ')}) — الجمع تقريبي`,
+              en: `⚠️ Your points span multiple currencies (${L.currencies.join(', ')}) — the total is approximate`,
+              ur: `⚠️ آپ کے پوائنٹس متعدد کرنسیوں پر مشتمل ہیں (${L.currencies.join('، ')}) — مجموعہ تخمینی ہے`,
+              nl: `⚠️ Uw punten omvatten meerdere valuta (${L.currencies.join(', ')}) — het totaal is bij benadering`,
+            }[uiLang]}</div>` : ''}
+            <div class="note">${uiLang === 'ar' ? esc(L.redeemNote) : T(
+              '', 'Points accrue from today — redeeming them for discounts activates with e-payments.',
+              'پوائنٹس آج سے جمع ہوتے ہیں — انہیں رعایتوں کے لیے استعمال کرنا الیکٹرانک ادائیگیوں کے ساتھ فعال ہوتا ہے۔',
+              'Punten worden vanaf vandaag opgebouwd — inwisselen voor kortingen wordt geactiveerd bij elektronische betalingen.'
+            )}</div>
+            ${L.bonusPoints ? `<div class="note ok">${{
+              ar: `🤝 منها ${L.bonusPoints.toLocaleString('en-US')} نقطة مكافأة إحالة`,
+              en: `🤝 Includes ${L.bonusPoints.toLocaleString('en-US')} referral bonus points`,
+              ur: `🤝 اس میں ${L.bonusPoints.toLocaleString('en-US')} ریفرل بونس پوائنٹس شامل ہیں`,
+              nl: `🤝 Inclusief ${L.bonusPoints.toLocaleString('en-US')} verwijzingsbonuspunten`,
+            }[uiLang]}</div>` : ''}
           </div>
         </div>`;
     }
@@ -2359,23 +2404,27 @@
       if (!res.ok) { $('referralCard').classList.add('hidden'); return; } // خدمة الإحالة غير مفعَّلة (503)
       const r = await res.json();
       $('referralBody').innerHTML = `
-        <p style="margin-bottom:8px">${T(
-          `شارك رابطك — أول حجزٍ يُصدَر لمن يسجّل عبره يمنحكما ${r.bonusPerReferral.toLocaleString('en-US')} نقطة ولاء لكلٍّ منكما.`,
-          `Share your link — your friend’s first issued booking earns you both ${r.bonusPerReferral.toLocaleString('en-US')} loyalty points.`
-        )}</p>
+        <p style="margin-bottom:8px">${{
+          ar: `شارك رابطك — أول حجزٍ يُصدَر لمن يسجّل عبره يمنحكما ${r.bonusPerReferral.toLocaleString('en-US')} نقطة ولاء لكلٍّ منكما.`,
+          en: `Share your link — your friend’s first issued booking earns you both ${r.bonusPerReferral.toLocaleString('en-US')} loyalty points.`,
+          ur: `اپنا لنک شیئر کریں — جو دوست اس کے ذریعے سائن اَپ کرے اس کی پہلی بکنگ جاری ہونے پر تم دونوں کو ${r.bonusPerReferral.toLocaleString('en-US')} لائلٹی پوائنٹس ملتے ہیں۔`,
+          nl: `Deel uw link — de eerste geboekte reis van wie zich via uw link aanmeldt levert u beiden ${r.bonusPerReferral.toLocaleString('en-US')} loyaliteitspunten op.`,
+        }[uiLang]}</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <input id="referralLinkInput" readonly value="${esc(r.link)}" style="flex:1;min-width:220px;font-size:13px" />
-          <button class="chip" id="referralCopyBtn" type="button" style="margin-top:0">📋 ${T('نسخ', 'Copy')}</button>
+          <button class="chip" id="referralCopyBtn" type="button" style="margin-top:0">📋 ${T('نسخ', 'Copy', 'کاپی', 'Kopiëren')}</button>
         </div>
-        <div class="note" style="margin-top:8px">${T(
-          `👥 ${r.referredCount} صديق انضمّ عبر رابطك · 🎁 ${r.bonusPoints.toLocaleString('en-US')} نقطة مكافأة أُنجزت`,
-          `👥 ${r.referredCount} friend(s) joined via your link · 🎁 ${r.bonusPoints.toLocaleString('en-US')} bonus points earned`
-        )}</div>`;
+        <div class="note" style="margin-top:8px">${{
+          ar: `👥 ${r.referredCount} صديق انضمّ عبر رابطك · 🎁 ${r.bonusPoints.toLocaleString('en-US')} نقطة مكافأة أُنجزت`,
+          en: `👥 ${r.referredCount} friend(s) joined via your link · 🎁 ${r.bonusPoints.toLocaleString('en-US')} bonus points earned`,
+          ur: `👥 ${r.referredCount} دوست آپ کے لنک سے شامل ہوئے · 🎁 ${r.bonusPoints.toLocaleString('en-US')} بونس پوائنٹس حاصل ہوئے`,
+          nl: `👥 ${r.referredCount} vriend(en) aangemeld via uw link · 🎁 ${r.bonusPoints.toLocaleString('en-US')} bonuspunten verdiend`,
+        }[uiLang]}</div>`;
       $('referralCopyBtn').addEventListener('click', async () => {
         try {
           await navigator.clipboard.writeText(r.link);
-          $('referralCopyBtn').textContent = T('✅ نُسخ', '✅ Copied');
-          setTimeout(() => { $('referralCopyBtn').textContent = '📋 ' + T('نسخ', 'Copy'); }, 1800);
+          $('referralCopyBtn').textContent = T('✅ نُسخ', '✅ Copied', '✅ کاپی ہو گیا', '✅ Gekopieerd');
+          setTimeout(() => { $('referralCopyBtn').textContent = '📋 ' + T('نسخ', 'Copy', 'کاپی', 'Kopiëren'); }, 1800);
         } catch {
           $('referralLinkInput').select();
         }
@@ -2394,31 +2443,34 @@
         const waReady = !!whatsapp?.enabled;
         const waPhone = whatsapp?.phone || null;
         const waUsable = waReady && !!waPhone;
-        const waHint = !waReady ? T('واتساب غير مُفعّل على الخادم', 'WhatsApp is not enabled on this server')
-          : !waPhone ? T('أضف رقم واتساب أدناه أولاً', 'Add a WhatsApp number below first') : '';
+        const waHint = !waReady ? T('واتساب غير مُفعّل على الخادم', 'WhatsApp is not enabled on this server', 'واٹس ایپ اس سرور پر فعال نہیں ہے', 'WhatsApp is niet ingeschakeld op deze server')
+          : !waPhone ? T('أضف رقم واتساب أدناه أولاً', 'Add a WhatsApp number below first', 'پہلے نیچے واٹس ایپ نمبر شامل کریں', 'Voeg hieronder eerst een WhatsApp-nummer toe') : '';
         // 🌐 تسميات الفئات تصل من الخادم عربيةً (عقد ثابت لا يتغيّر بلغة
         // العميل) — تُترجم هنا بمعرّف الفئة لا بنصها، ففئة جديدة في الخادم
         // تظهر بنصها العربي بدل أن تختفي.
-        const CAT_EN = {
-          booking_issued: 'Booking confirmed', booking_cancelled: 'Booking cancelled',
-          airline_change: 'Airline change', price_drop: 'Watched price drop',
-          trip_reminder: 'Pre-trip reminder', admin_alert: 'Admin alert (staff)',
+        const CAT_LABELS = {
+          booking_issued: { en: 'Booking confirmed', ur: 'بکنگ کی تصدیق ہو گئی', nl: 'Boeking bevestigd' },
+          booking_cancelled: { en: 'Booking cancelled', ur: 'بکنگ منسوخ ہو گئی', nl: 'Boeking geannuleerd' },
+          airline_change: { en: 'Airline change', ur: 'ایئرلائن کی تبدیلی', nl: 'Wijziging luchtvaartmaatschappij' },
+          price_drop: { en: 'Watched price drop', ur: 'دیکھی گئی قیمت میں کمی', nl: 'Gevolgde prijsdaling' },
+          trip_reminder: { en: 'Pre-trip reminder', ur: 'سفر سے پہلے یاد دہانی', nl: 'Herinnering vóór de reis' },
+          admin_alert: { en: 'Admin alert (staff)', ur: 'ایڈمن الرٹ (عملہ)', nl: 'Beheerdersmelding (personeel)' },
         };
-        const catLabel = (key, meta) => (uiLang === 'en' ? (CAT_EN[key] || meta.label) : meta.label);
+        const catLabel = (key, meta) => (uiLang !== 'ar' && CAT_LABELS[key]?.[uiLang]) || meta.label;
         $('prefRows').innerHTML = Object.entries(categories).map(([key, meta]) => `
           <div class="pref-row" data-cat="${esc(key)}">
             <span class="pref-name">${esc(catLabel(key, meta))}</span>
-            <label class="${meta.alwaysInApp ? 'locked' : ''}" title="${meta.alwaysInApp ? T('سجل الوقائع محفوظ دوماً', 'The event log is always kept') : ''}">
+            <label class="${meta.alwaysInApp ? 'locked' : ''}" title="${meta.alwaysInApp ? T('سجل الوقائع محفوظ دوماً', 'The event log is always kept', 'واقعات کا لاگ ہمیشہ محفوظ رہتا ہے', 'Het gebeurtenissenlogboek wordt altijd bewaard') : ''}">
               <input type="checkbox" data-ch="inApp" ${prefs[key].inApp ? 'checked' : ''} ${meta.alwaysInApp ? 'disabled' : ''} />
-              ${T('داخل البوابة', 'In portal')}
+              ${T('داخل البوابة', 'In portal', 'پورٹل میں', 'In het portaal')}
             </label>
             <label>
               <input type="checkbox" data-ch="email" ${prefs[key].email ? 'checked' : ''} />
-              ${T('بريد', 'Email')}
+              ${T('بريد', 'Email', 'ای میل', 'E-mail')}
             </label>
             <label class="${waUsable ? '' : 'locked'}" title="${esc(waHint)}">
               <input type="checkbox" data-ch="whatsapp" ${prefs[key].whatsapp ? 'checked' : ''} ${waUsable ? '' : 'disabled'} />
-              ${T('واتساب', 'WhatsApp')}
+              ${T('واتساب', 'WhatsApp', 'واٹس ایپ', 'WhatsApp')}
             </label>
           </div>`).join('');
         $('prefRows').querySelectorAll('input[type=checkbox]').forEach(cb =>
@@ -2631,7 +2683,7 @@
           <div class="${offerCardClass(bestFlights, i)}">
             <div style="flex:1">
               <div class="route">${airlineLogoHtml(o)}${esc(o.owner)}${
-                o.totalDurationMin ? `<span class="note total-dur">${T('إجمالي', 'Total')} ${fmtDur(o.totalDurationMin)}</span>` : ''}</div>
+                o.totalDurationMin ? `<span class="note total-dur">${T('إجمالي', 'Total', 'کل', 'Totaal')} ${fmtDur(o.totalDurationMin)}</span>` : ''}</div>
               ${o.slices.map(sliceHtml).join('')}
               <div class="badges">${bagBadgeHtml(o)}${fareLineHtml(o)}</div>
               <button class="det-toggle" data-flight-det="${i}">▾ تفاصيل الرحلة والأمتعة</button>
@@ -2734,7 +2786,7 @@
       const cheapest = priced.length ? Math.min(...priced.map(d => d.price)) : null;
       // 🌐 لغة أسماء الأيام تتبع الواجهة — كانت 'ar' ثابتة فظهر «الخميس، 20
       // أغسطس» وسط واجهة إنجليزية بالكامل (من صورة عطب حقيقية للمالك)
-      const dayName = d => new Date(d + 'T00:00:00Z').toLocaleDateString(uiLang === 'en' ? 'en' : 'ar', { weekday: 'short', day: 'numeric', month: 'short' });
+      const dayName = d => new Date(d + 'T00:00:00Z').toLocaleDateString(uiLang, { weekday: 'short', day: 'numeric', month: 'short' });
       $('calStrip').innerHTML =
         '<div class="note" style="margin-bottom:6px">📅 أرخص سعر لكل يوم (لمسافر واحد) — اضغط يوماً لتبحث به:</div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
@@ -2755,10 +2807,10 @@
      * بشرطٍ وضعه هو ونسيه. كل رقاقة تُزيل شرطها بضغطة وتعيد البحث.
      */
     const FILTER_FIELDS = [
-      { id: 'fMaxStops', label: v => v === '0' ? T('مباشر فقط', 'Direct only') : T('توقف واحد كحد أقصى', 'Max 1 stop'), clear: el => { el.value = ''; } },
-      { id: 'fAirline', label: v => `${T('الناقل', 'Airline')}: ${v}`, clear: el => { el.value = ''; } },
-      { id: 'fMaxPrice', label: v => `${T('حتى', 'Up to')} ${v}`, clear: el => { el.value = ''; } },
-      { id: 'fCheckedBag', label: () => T('حقيبة مسجَّلة', 'Checked bag'), clear: el => { el.checked = false; }, isCheck: true },
+      { id: 'fMaxStops', label: v => v === '0' ? T('مباشر فقط', 'Direct only', 'صرف براہ راست', 'Alleen direct') : T('توقف واحد كحد أقصى', 'Max 1 stop', 'زیادہ سے زیادہ 1 ٹھہراؤ', 'Max. 1 tussenstop'), clear: el => { el.value = ''; } },
+      { id: 'fAirline', label: v => `${T('الناقل', 'Airline', 'ایئرلائن', 'Maatschappij')}: ${v}`, clear: el => { el.value = ''; } },
+      { id: 'fMaxPrice', label: v => `${T('حتى', 'Up to', 'تک', 'Tot')} ${v}`, clear: el => { el.value = ''; } },
+      { id: 'fCheckedBag', label: () => T('حقيبة مسجَّلة', 'Checked bag', 'رجسٹرڈ بیگ', 'Incheckbagage'), clear: el => { el.checked = false; }, isCheck: true },
     ];
 
     function renderFilterChips() {
@@ -2771,7 +2823,7 @@
       if (!active.length) { box.innerHTML = ''; return; }
       box.innerHTML = active.map(f =>
         `<button class="fchip" data-clear-filter="${f.id}">${esc(f.label($(f.id).value))} ✕</button>`).join('')
-        + `<button class="fchip fchip-all" data-clear-filter="*">${T('امسح الكل', 'Clear all')}</button>`;
+        + `<button class="fchip fchip-all" data-clear-filter="*">${T('امسح الكل', 'Clear all', 'سب صاف کریں', 'Alles wissen')}</button>`;
       box.querySelectorAll('[data-clear-filter]').forEach(btn =>
         btn.addEventListener('click', () => {
           const id = btn.dataset.clearFilter;
@@ -2873,13 +2925,16 @@
       d.setUTCDate(d.getUTCDate() + days);
       return d.toISOString().slice(0, 10);
     }
-    const BOARD_AR = {
-      'Room Only': 'بلا وجبات', 'Breakfast Included': 'إفطار مشمول',
-      'Half Board': 'إقامة نصف كاملة', 'Full Board': 'إقامة كاملة', 'All Inclusive': 'شامل الكل',
+    const BOARD_LABELS = {
+      'Room Only': { ar: 'بلا وجبات', ur: 'صرف کمرہ', nl: 'Alleen kamer' },
+      'Breakfast Included': { ar: 'إفطار مشمول', ur: 'ناشتہ شامل', nl: 'Ontbijt inbegrepen' },
+      'Half Board': { ar: 'إقامة نصف كاملة', ur: 'ہاف بورڈ', nl: 'Halfpension' },
+      'Full Board': { ar: 'إقامة كاملة', ur: 'فل بورڈ', nl: 'Volpension' },
+      'All Inclusive': { ar: 'شامل الكل', ur: 'آل اِنکلوسیو', nl: 'All inclusive' },
     };
     // المزوّد يرسل أسماء الإعاشة إنجليزيةً أصلاً — في واجهة إنجليزية تمرّ
-    // كما هي، والتعريب للعربية فقط.
-    const boardAr = b => (uiLang === 'en' ? (b || '') : (BOARD_AR[b] || b));
+    // كما هي، وتُترجم لبقية اللغات من الخريطة أعلاه.
+    const boardAr = b => (uiLang === 'en' ? (b || '') : (BOARD_LABELS[b]?.[uiLang] || b));
 
     /** سياسات العرض نفسه — متاحة فوراً بلا نداء (تصل مع نتيجة البحث). */
     function stayPolicyHtml(o) {
@@ -3031,7 +3086,9 @@
 
     /** الصفحة المنفصلة التي تُفتح من مربع «أضف فنادق الوجهة». */
     async function renderStaysPage({ iata, checkIn, checkOut, adults }) {
-      $('staysPageTitle').textContent = uiLang === 'en' ? `🏨 ${iata} hotels` : `🏨 فنادق ${iata}`;
+      $('staysPageTitle').textContent = {
+        ar: `🏨 فنادق ${iata}`, en: `🏨 ${iata} hotels`, ur: `🏨 ${iata} کے ہوٹل`, nl: `🏨 ${iata} hotels`,
+      }[uiLang];
       await renderStaysInto($('staysPageResults'), { iata, checkIn, checkOut, adults, rooms: 1 });
     }
 
@@ -3124,9 +3181,9 @@
       return `
         <div class="dest-card" data-dest='${esc(JSON.stringify({ iata: d.iata, origin }))}' ${d.image ? `style="background-image:url('${esc(d.image)}')"` : ''}>
           <div class="dest-overlay">
-            <div class="dest-city">${esc(uiLang === 'en' && d.cityEn ? d.cityEn : d.city)}${
-              (uiLang === 'en' ? d.countryEn : d.country) ? ' · ' + esc(uiLang === 'en' ? d.countryEn : d.country) : ''}</div>
-            <div class="dest-price">${d.fromPrice != null ? `${T('من', 'From')} ${d.fromPrice} ${esc(d.currency)}` : T('السعر غير متاح حالياً', 'Price unavailable right now')}</div>
+            <div class="dest-city">${esc(uiLang !== 'ar' && d.cityEn ? d.cityEn : d.city)}${
+              (uiLang !== 'ar' ? d.countryEn : d.country) ? ' · ' + esc(uiLang !== 'ar' ? d.countryEn : d.country) : ''}</div>
+            <div class="dest-price">${d.fromPrice != null ? `${T('من', 'From', 'سے', 'Vanaf')} ${d.fromPrice} ${esc(d.currency)}` : T('السعر غير متاح حالياً', 'Price unavailable right now', 'قیمت فی الحال دستیاب نہیں', 'Prijs momenteel niet beschikbaar')}</div>
           </div>
         </div>`;
     }
@@ -3739,7 +3796,7 @@
     // السداد، فالمعلّق ينتظر المسافرَ لا الخادم. تسمية صادقة تمنع سؤال
     // «لماذا لا يكتمل؟» أصلاً (سؤال المالك حرفياً: «كيف أكمل الدفع؟»).
     const statusLabel = b => (b.status === 'pending' && config?.paymentsEnabled
-      ? T('بانتظار الدفع', 'Awaiting payment') : (ST_LABEL[b.status] || b.status));
+      ? T('بانتظار الدفع', 'Awaiting payment', 'ادائیگی کا انتظار', 'Wachten op betaling') : (ST_LABEL[b.status] || b.status));
     const CANCEL_PATH = {
       flight: id => `/api/travel/bookings/${id}/cancel`,
       stay: id => `/api/travel/stays/bookings/${id}/cancel`,
@@ -3850,11 +3907,13 @@
        */
       function tripCountdown(from, to) {
         const today = new Date().toISOString().slice(0, 10);
-        if (to < today) return T('منتهية', 'Completed');
-        if (from <= today) return T('جارية الآن', 'In progress');
+        if (to < today) return T('منتهية', 'Completed', 'مکمل', 'Voltooid');
+        if (from <= today) return T('جارية الآن', 'In progress', 'جاری ہے', 'Bezig');
         const days = Math.round((Date.parse(from + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400000);
-        if (days === 1) return T('تبدأ غداً', 'Starts tomorrow');
-        return uiLang === 'en' ? `In ${days} days` : `بعد ${days} يوماً`;
+        if (days === 1) return T('تبدأ غداً', 'Starts tomorrow', 'کل شروع ہوگی', 'Begint morgen');
+        return {
+          ar: `بعد ${days} يوماً`, en: `In ${days} days`, ur: `${days} دن میں`, nl: `Over ${days} dagen`,
+        }[uiLang];
       }
       function renderTripsList(list) {
         const TR = window.JAOLA_TRIPS;
@@ -3867,11 +3926,13 @@
           html.push(`
             <div class="card" style="border-color:var(--accent);padding-bottom:6px">
               <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-                <strong style="font-size:16px">🧳 ${T('سفرة', 'Trip')} ${esc(dests.join(' · '))}</strong>
+                <strong style="font-size:16px">🧳 ${T('سفرة', 'Trip', 'سفر', 'Reis')} ${esc(dests.join(' · '))}</strong>
                 <span class="chip" style="margin:0;border-color:var(--accent);color:var(--accent)">${esc(tripCountdown(g.from, g.to))}</span>
               </div>
-              <div class="note">${esc(g.from)} → ${esc(g.to)} · ${
-                uiLang === 'en' ? `${g.items.length} bookings` : `${g.items.length} حجوزات`}</div>
+              <div class="note">${esc(g.from)} → ${esc(g.to)} · ${{
+                ar: `${g.items.length} حجوزات`, en: `${g.items.length} bookings`,
+                ur: `${g.items.length} بکنگز`, nl: `${g.items.length} boekingen`,
+              }[uiLang]}</div>
               <div style="margin-top:8px;border-inline-start:2px solid var(--border);padding-inline-start:10px">
                 ${g.items.map(bookingCardHtml).join('')}
               </div>
@@ -3929,57 +3990,67 @@
     function ticketNoteHtml(b) {
       if (b.kind === 'stay') {
         return `<div class="note">🏨 ${T('التأكيد نهائي: يكفي إبراز رقم المرجع أعلاه في استقبال الفندق مع هوية المسافر — لا تذكرة ورقية هنا.',
-          'Confirmation is final: show the reference above at the hotel desk with an ID — there is no paper ticket here.')}</div>`;
+          'Confirmation is final: show the reference above at the hotel desk with an ID — there is no paper ticket here.',
+          'تصدیق حتمی ہے: مذکورہ بالا ریفرنس نمبر شناختی کارڈ کے ساتھ ہوٹل ڈیسک پر دکھانا کافی ہے — یہاں کوئی کاغذی ٹکٹ نہیں۔',
+          'Bevestiging is definitief: toon bovenstaande referentie samen met een ID-bewijs bij de hotelbalie — er is hier geen papieren ticket.')}</div>`;
       }
       if (b.kind === 'car') {
         return `<div class="note">🚗 ${T('يُبرَز رقم المرجع ورخصة القيادة وبطاقة ائتمان باسم السائق عند الاستلام.',
-          'Show the reference, a driving licence and a credit card in the driver’s name at pickup.')}</div>`;
+          'Show the reference, a driving licence and a credit card in the driver’s name at pickup.',
+          'وصولی کے وقت ریفرنس نمبر، ڈرائیونگ لائسنس اور ڈرائیور کے نام کا کریڈٹ کارڈ دکھانا ضروری ہے۔',
+          'Toon bij het ophalen de referentie, een rijbewijs en een creditcard op naam van de bestuurder.')}</div>`;
       }
       const tickets = (b.tickets || []).filter(t => t?.number);
       return `<div class="note" style="line-height:1.8">
-        ✈️ <strong>${T('عن التذكرة وبطاقة الصعود:', 'About your ticket and boarding pass:')}</strong><br>
+        ✈️ <strong>${T('عن التذكرة وبطاقة الصعود:', 'About your ticket and boarding pass:', 'ٹکٹ اور بورڈنگ پاس کے بارے میں:', 'Over uw ticket en instapkaart:')}</strong><br>
         ${T('حجزك مؤكَّد لدى الناقل برقم المرجع (PNR) أعلاه — وهو التذكرة نفسها اليوم: تذاكر الطيران إلكترونية بالكامل ولا تُصدر ورقاً.',
-            'Your booking is confirmed with the airline under the reference (PNR) above — that is the ticket itself today: air tickets are fully electronic and no paper is issued.')}<br>
+            'Your booking is confirmed with the airline under the reference (PNR) above — that is the ticket itself today: air tickets are fully electronic and no paper is issued.',
+            'آپ کی بکنگ ایئرلائن کے ہاں مذکورہ بالا ریفرنس (PNR) کے تحت مصدقہ ہے — یہی آج کل خود ٹکٹ ہے: ہوائی ٹکٹ مکمل طور پر الیکٹرانک ہیں، کوئی کاغذی ٹکٹ جاری نہیں ہوتا۔',
+            'Uw boeking is bij de luchtvaartmaatschappij bevestigd onder bovenstaande referentie (PNR) — dat is tegenwoordig het ticket zelf: vliegtickets zijn volledig elektronisch en er wordt geen papier uitgegeven.')}<br>
         ${tickets.length
-          ? `🎫 ${T('رقم التذكرة الإلكترونية:', 'E-ticket number:')} <strong>${tickets.map(t => esc(t.number)).join('، ')}</strong><br>`
+          ? `🎫 ${T('رقم التذكرة الإلكترونية:', 'E-ticket number:', 'ای ٹکٹ نمبر:', 'E-ticketnummer:')} <strong>${tickets.map(t => esc(t.number)).join('، ')}</strong><br>`
           : `🎫 ${T('رقم التذكرة الإلكترونية يصدره الناقل بعد التأكيد وقد يتأخر دقائق — المرجع كافٍ حتى ذلك.',
-                   'The e-ticket number is issued by the airline after confirmation and may take a few minutes — the reference is enough until then.')}<br>`}
-        🪪 <strong>${T('بطاقة الصعود لا تصدر من هنا', 'The boarding pass is not issued here')}</strong>: ${
+                   'The e-ticket number is issued by the airline after confirmation and may take a few minutes — the reference is enough until then.',
+                   'ای ٹکٹ نمبر تصدیق کے بعد ایئرلائن جاری کرتی ہے، اس میں چند منٹ لگ سکتے ہیں — تب تک ریفرنس نمبر کافی ہے۔',
+                   'Het e-ticketnummer wordt na bevestiging door de maatschappij uitgegeven en kan enkele minuten duren — tot dan volstaat de referentie.')}<br>`}
+        🪪 <strong>${T('بطاقة الصعود لا تصدر من هنا', 'The boarding pass is not issued here', 'بورڈنگ پاس یہاں سے جاری نہیں ہوتا', 'De instapkaart wordt hier niet uitgegeven')}</strong>: ${
           T('يفتح تسجيل الوصول لدى الناقل قبل الإقلاع بـ24–48 ساعة، فتستخرجها من موقع الناقل أو تطبيقه أو من مكتب المطار برقم المرجع وجواز السفر.',
-            'Airline check-in opens 24–48 hours before departure; get it from the airline’s site or app, or at the airport desk, using the reference and your passport.')}
+            'Airline check-in opens 24–48 hours before departure; get it from the airline’s site or app, or at the airport desk, using the reference and your passport.',
+            'ایئرلائن کا چیک اِن روانگی سے 24–48 گھنٹے پہلے کھلتا ہے؛ ریفرنس نمبر اور پاسپورٹ کے ساتھ ایئرلائن کی ویب سائٹ، ایپ یا ایئرپورٹ ڈیسک سے حاصل کریں۔',
+            'Incheck bij de maatschappij opent 24–48 uur voor vertrek; haal de instapkaart via de site of app van de maatschappij, of aan de balie op de luchthaven, met de referentie en uw paspoort.')}
       </div>`;
     }
     function paymentLineHtml(b) {
       const plan = b.paymentPlan;
       const rows = [];
       if (plan) {
-        rows.push(`${T('المدفوع', 'Paid')}: <strong>${plan.paidNow} ${esc(b.currency)}</strong>`);
-        if (plan.remaining > 0) rows.push(`${T('المتبقي', 'Remaining')}: <strong>${plan.remaining} ${esc(b.currency)}</strong>${plan.dueDate ? ` (${T('قبل', 'before')} ${esc(plan.dueDate)})` : ''}`);
+        rows.push(`${T('المدفوع', 'Paid', 'ادا شدہ', 'Betaald')}: <strong>${plan.paidNow} ${esc(b.currency)}</strong>`);
+        if (plan.remaining > 0) rows.push(`${T('المتبقي', 'Remaining', 'باقی', 'Resterend')}: <strong>${plan.remaining} ${esc(b.currency)}</strong>${plan.dueDate ? ` (${T('قبل', 'before', 'سے پہلے', 'vóór')} ${esc(plan.dueDate)})` : ''}`);
       } else if (b.status === 'issued') {
-        rows.push(`${T('المدفوع', 'Paid')}: <strong>${b.sellAmount} ${esc(b.currency)}</strong>`);
+        rows.push(`${T('المدفوع', 'Paid', 'ادا شدہ', 'Betaald')}: <strong>${b.sellAmount} ${esc(b.currency)}</strong>`);
       } else {
-        rows.push(`${T('المطلوب', 'Due')}: <strong>${b.sellAmount} ${esc(b.currency)}</strong>`);
+        rows.push(`${T('المطلوب', 'Due', 'واجب الادا', 'Verschuldigd')}: <strong>${b.sellAmount} ${esc(b.currency)}</strong>`);
       }
-      if (b.paidAt) rows.push(`${T('وقت الدفع', 'Paid at')}: ${esc(fmtWhen(b.paidAt))}`);
+      if (b.paidAt) rows.push(`${T('وقت الدفع', 'Paid at', 'ادائیگی کا وقت', 'Betaald op')}: ${esc(fmtWhen(b.paidAt))}`);
       // 💱 ما يظهر في كشف البطاقة فعلاً حين تختلف عملة التحصيل — بسعره
       // ونسبة هامشه صراحةً، فلا رقم يفاجئ المسافر بعد الدفع
       const bl = b.billing;
       const fxLine = bl && bl.currency !== b.currency
-        ? `<div class="note">💱 ${T('يُحصَّل', 'Charged')}: <strong>${bl.amount} ${esc(bl.currency)}</strong> — ${
-            T('تحويل من', 'converted from')} ${bl.fromAmount} ${esc(bl.fromCurrency)} ${
-            T('بسعر', 'at')} ${bl.rate}${bl.bufferPct ? ` + ${bl.bufferPct}% ${T('رسوم تحويل', 'conversion fee')}` : ''}</div>`
+        ? `<div class="note">💱 ${T('يُحصَّل', 'Charged', 'وصول کی گئی رقم', 'In rekening gebracht')}: <strong>${bl.amount} ${esc(bl.currency)}</strong> — ${
+            T('تحويل من', 'converted from', 'تبدیل شدہ از', 'omgerekend van')} ${bl.fromAmount} ${esc(bl.fromCurrency)} ${
+            T('بسعر', 'at', 'بہ شرح', 'tegen')} ${bl.rate}${bl.bufferPct ? ` + ${bl.bufferPct}% ${T('رسوم تحويل', 'conversion fee', 'تبادلے کی فیس', 'omrekenkosten')}` : ''}</div>`
         : '';
       return `<div class="seg">💳 ${rows.join(' · ')}</div>${fxLine}`;
     }
     function detailsHtml(b) {
       const paxRows = (b.passengers || []).map((p, i) => `<li>${
-        esc([p.title, p.givenName, p.familyName].filter(Boolean).join(' ') || `${T('مسافر', 'Traveller')} ${i + 1}`)}${
+        esc([p.title, p.givenName, p.familyName].filter(Boolean).join(' ') || `${T('مسافر', 'Traveller', 'مسافر', 'Reiziger')} ${i + 1}`)}${
         p.bornOn ? ` · ${esc(p.bornOn)}` : ''}</li>`).join('');
       const parts = [];
-      parts.push(`<h3 style="margin-bottom:6px">📄 ${T('تفاصيل الحجز', 'Booking details')}</h3>`);
-      parts.push(`<div class="seg">${T('الحالة', 'Status')}: <span class="st st-${esc(b.status)}">${esc(statusLabel(b))}</span>
-        ${b.bookingReference ? ` · ${T('المرجع', 'Reference')}: <strong>${esc(b.bookingReference)}</strong>` : ''}
-        · ${T('حُجز في', 'Booked on')} ${esc(fmtWhen(b.at))}</div>`);
+      parts.push(`<h3 style="margin-bottom:6px">📄 ${T('تفاصيل الحجز', 'Booking details', 'بکنگ کی تفصیلات', 'Boekingsdetails')}</h3>`);
+      parts.push(`<div class="seg">${T('الحالة', 'Status', 'حالت', 'Status')}: <span class="st st-${esc(b.status)}">${esc(statusLabel(b))}</span>
+        ${b.bookingReference ? ` · ${T('المرجع', 'Reference', 'ریفرنس', 'Referentie')}: <strong>${esc(b.bookingReference)}</strong>` : ''}
+        · ${T('حُجز في', 'Booked on', 'بک کیا گیا:', 'Geboekt op')} ${esc(fmtWhen(b.at))}</div>`);
       parts.push(bookingBodyHtml(b));
       // تفاصيل المكوّن نفسه — نفس اللوحات المستعملة في نتائج البحث، لكن
       // بلا «صلاحية السعر»: مهلة عرضٍ انقضت بالحجز نفسه، وعرضها على حجز
@@ -3995,7 +4066,7 @@
         parts.push(flightDetailsHtml(noExpiry(b.offer?.flight)));
         parts.push(stayPolicyHtml(b.offer?.stay || {}));
       }
-      if (paxRows) parts.push(`<div><strong>${T('المسافرون', 'Travellers')}</strong><ul>${paxRows}</ul></div>`);
+      if (paxRows) parts.push(`<div><strong>${T('المسافرون', 'Travellers', 'مسافرین', 'Reizigers')}</strong><ul>${paxRows}</ul></div>`);
       if (b.contact?.email || b.contact?.phone) {
         parts.push(`<div class="seg">📧 ${esc(b.contact.email || '')} ${b.contact.phone ? '· 📱 ' + esc(b.contact.phone) : ''}</div>`);
       }
@@ -4003,7 +4074,9 @@
       if (b.status === 'issued') parts.push(ticketNoteHtml(b));
       if (b.status === 'pending') {
         parts.push(`<div class="note">💳 ${T('لم يُصدر شيء بعد ولم تُحاسَب: أكمل الدفع من زر «أكمل الدفع الآن» في بطاقة الحجز، وتصلك التأكيدات فور وصوله.',
-          'Nothing is issued yet and you have not been charged: complete payment from the “Pay now” button on the booking card, and confirmations arrive as soon as it lands.')}</div>`);
+          'Nothing is issued yet and you have not been charged: complete payment from the “Pay now” button on the booking card, and confirmations arrive as soon as it lands.',
+          'ابھی کچھ جاری نہیں ہوا اور آپ سے رقم نہیں لی گئی: بکنگ کارڈ پر «ابھی ادائیگی کریں» بٹن سے ادائیگی مکمل کریں، اور تصدیقات پہنچتے ہی موصول ہوں گی۔',
+          'Er is nog niets uitgegeven en er is nog niets in rekening gebracht: rond de betaling af via de knop “Nu betalen” op de boekingskaart — bevestigingen komen binnen zodra deze binnenkomen.')}</div>`);
       }
       if (b.error) parts.push(`<div class="error">${esc(b.error)}</div>`);
       return parts.join('');
@@ -4018,7 +4091,7 @@
       const money = `${b.sellAmount} ${b.currency}`;
       if (b.kind === 'fixed_package') {
         L.push(`🎒 ${b.offer?.title || ''}`);
-        L.push(`🏨 ${b.offer?.hotelName || ''} · ${T('انطلاق', 'Departs')} ${b.offer?.departDate || ''} (${b.offer?.nights || '؟'} ${T('ليالٍ', 'nights')})`);
+        L.push(`🏨 ${b.offer?.hotelName || ''} · ${T('انطلاق', 'Departs', 'روانگی', 'Vertrek')} ${b.offer?.departDate || ''} (${b.offer?.nights || '؟'} ${T('ليالٍ', 'nights', 'راتیں', 'nachten')})`);
       } else if (b.kind === 'stay') {
         L.push(`🏨 ${b.offer?.name || ''}`);
         L.push(`${b.offer?.city || ''} · ${b.offer?.checkInDate || ''} → ${b.offer?.checkOutDate || ''}`);
@@ -4032,22 +4105,22 @@
           L.push(`${s.origin} ${fmtDateTime(s.departAt)} → ${s.destination} ${fmtDateTime(s.arriveAt)}`);
         }
       }
-      if (b.bookingReference) L.push(`${T('المرجع', 'Reference')}: ${b.bookingReference}`);
-      L.push(`${T('الإجمالي', 'Total')}: ${money}`);
+      if (b.bookingReference) L.push(`${T('المرجع', 'Reference', 'ریفرنس', 'Referentie')}: ${b.bookingReference}`);
+      L.push(`${T('الإجمالي', 'Total', 'کل', 'Totaal')}: ${money}`);
       L.push('— Jatrava');
       return L.filter(Boolean).join('\n');
     }
     async function shareBooking(b) {
       const text = bookingShareText(b);
       if (navigator.share) {
-        try { await navigator.share({ title: T('حجزي عبر Jatrava', 'My Jatrava booking'), text }); return; }
+        try { await navigator.share({ title: T('حجزي عبر Jatrava', 'My Jatrava booking', 'میری Jatrava بکنگ', 'Mijn Jatrava-boeking'), text }); return; }
         catch (e) { if (e?.name === 'AbortError') return; /* غير مدعومة فعلياً → النسخ أدناه */ }
       }
       try {
         await navigator.clipboard.writeText(text);
-        alert(T('نُسخت تفاصيل الحجز — الصقها أينما شئت.', 'Booking details copied — paste them anywhere.'));
+        alert(T('نُسخت تفاصيل الحجز — الصقها أينما شئت.', 'Booking details copied — paste them anywhere.', 'بکنگ کی تفصیلات کاپی ہو گئیں — جہاں چاہیں پیسٹ کریں۔', 'Boekingsgegevens gekopieerd — plak ze waar u wilt.'));
       } catch {
-        prompt(T('انسخ التفاصيل:', 'Copy the details:'), text);
+        prompt(T('انسخ التفاصيل:', 'Copy the details:', 'تفصیلات کاپی کریں:', 'Kopieer de gegevens:'), text);
       }
     }
 
@@ -4070,17 +4143,20 @@
       });
       if (!res.ok) {
         const { error } = await res.json().catch(() => ({}));
-        alert(error || T('تعذّر إنشاء الرابط.', 'Could not create the link.'));
+        alert(error || T('تعذّر إنشاء الرابط.', 'Could not create the link.', 'لنک بنانا ممکن نہیں ہوا۔', 'Kon de link niet aanmaken.'));
         return;
       }
       const { url, expiresAt } = await res.json();
       const until = fmtWhen(expiresAt);
-      const msg = T(`نُسخ الرابط. ينتهي في ${until}.`, `Link copied. It expires on ${until}.`);
+      const msg = T(
+        `نُسخ الرابط. ينتهي في ${until}.`, `Link copied. It expires on ${until}.`,
+        `لنک کاپی ہو گیا۔ اس کی میعاد ${until} کو ختم ہوگی۔`, `Link gekopieerd. Verloopt op ${until}.`
+      );
       // 🔗 المشاركة الأصلية أولاً حيث تتوفّر (تفتح ورقة المشاركة بالرابط
       // مباشرة)، وإلا الحافظة، وإلا prompt — نفس تدرّج shareBooking.
       if (navigator.share) {
         try {
-          await navigator.share({ title: T('قسيمة حجزي', 'My booking voucher'), url });
+          await navigator.share({ title: T('قسيمة حجزي', 'My booking voucher', 'میری بکنگ کی رسید', 'Mijn boekingsvoucher'), url });
           return;
         } catch (e) { if (e?.name === 'AbortError') return; }
       }
@@ -4088,7 +4164,7 @@
         await navigator.clipboard.writeText(url);
         alert(msg);
       } catch {
-        prompt(T('انسخ الرابط المؤقّت:', 'Copy the temporary link:'), url);
+        prompt(T('انسخ الرابط المؤقّت:', 'Copy the temporary link:', 'عارضی لنک کاپی کریں:', 'Kopieer de tijdelijke link:'), url);
       }
     }
 
@@ -4104,7 +4180,7 @@
       const res = await api(`/api/travel/bookings/${b.id}/calendar.ics`);
       if (!res.ok) {
         const { error } = await res.json().catch(() => ({}));
-        alert(error || T('تعذّر بناء ملف التقويم.', 'Could not build the calendar file.'));
+        alert(error || T('تعذّر بناء ملف التقويم.', 'Could not build the calendar file.', 'کیلنڈر فائل بنانا ممکن نہیں ہوا۔', 'Kon het agendabestand niet maken.'));
         return;
       }
       const url = URL.createObjectURL(await res.blob());
@@ -4128,11 +4204,14 @@
     async function subscribeCalendar(rotate = false) {
       if (rotate && !confirm(T(
         'سيتوقّف الرابط القديم فوراً، وعليك استبدال الاشتراك في تقويمك. متابعة؟',
-        'The old link stops working immediately and you must replace the subscription in your calendar. Continue?'))) return;
+        'The old link stops working immediately and you must replace the subscription in your calendar. Continue?',
+        'پرانا لنک فوری طور پر کام کرنا بند کر دے گا، اور آپ کو اپنے کیلنڈر میں سبسکرپشن بدلنی ہوگی۔ جاری رکھیں؟',
+        'De oude link stopt onmiddellijk met werken en u moet het abonnement in uw agenda vervangen. Doorgaan?'
+      ))) return;
       const res = await api('/api/travel/calendar/subscribe', {
         method: 'POST', body: JSON.stringify({ rotate }),
       });
-      if (!res.ok) return alert(T('تعذّر إنشاء رابط التقويم.', 'Could not create the calendar link.'));
+      if (!res.ok) return alert(T('تعذّر إنشاء رابط التقويم.', 'Could not create the calendar link.', 'کیلنڈر لنک بنانا ممکن نہیں ہوا۔', 'Kon de agendalink niet aanmaken.'));
       const { webcalUrl, httpUrl } = await res.json();
       $('calUrl').value = httpUrl;
       $('calOpen').href = webcalUrl;
@@ -4194,7 +4273,7 @@
     $('calCopy').addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText($('calUrl').value);
-        alert(T('نُسخ رابط التقويم.', 'Calendar link copied.'));
+        alert(T('نُسخ رابط التقويم.', 'Calendar link copied.', 'کیلنڈر لنک کاپی ہو گیا۔', 'Agendalink gekopieerd.'));
       } catch {
         $('calUrl').select();
       }
