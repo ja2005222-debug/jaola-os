@@ -12,12 +12,13 @@
  * - الـ API لا يُلمس إطلاقاً (أسعار ومقاعد حية).
  * - رفع الإصدار في CACHE_NAME يمسح كاش النسخ القديمة عند التفعيل.
  */
-const CACHE_NAME = 'jatrava-shell-v8';
+const CACHE_NAME = 'jatrava-shell-v9';
 // ⚠️ **`/index.html` أُزيل عمداً ولا يُعاد**: صار يردّ 301 إلى `/` بعد
 // فصل نسختَي اللغة، و`cache.addAll` **يرفض أي رد إعادة توجيه** فيسقط
 // تثبيت الـSW كلّه — لا هذا الملف وحده. أي عنوانٍ يُضاف هنا يجب أن يردّ
 // 200 مباشرةً. و`/en/` و`/ur/` و`/nl/` مضافة كي تعمل كل نسخة لغة دون اتصال أيضاً.
-const SHELL = ['/', '/en/', '/ur/', '/nl/', '/i18n.js', '/trips.js', '/fare.js', '/manifest.webmanifest', '/icon.svg', '/logo.svg'];
+const SHELL = ['/', '/en/', '/ur/', '/nl/', '/i18n.js', '/trips.js', '/fare.js', '/manifest.webmanifest',
+    '/icon.svg', '/logo.svg', '/icon-192.png', '/icon-512.png', '/icon-maskable-192.png', '/icon-maskable-512.png'];
 
 self.addEventListener('install', (event) => {
     event.waitUntil(

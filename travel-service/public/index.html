@@ -13,6 +13,9 @@
   <!-- 📱 PWA: تطبيق قابل للتثبيت — القشرة تُكيَّش والـ API حي دوماً (sw.js) -->
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <!-- iOS Safari يتجاهل manifest.webmanifest تماماً لأيقونة «أضف إلى الشاشة
+       الرئيسية» — يقرأ apple-touch-icon حصراً، وSVG غير مدعوم هناك. -->
+  <link rel="apple-touch-icon" href="/icon-192.png" />
   <meta name="theme-color" content="#f4f6f8" />
   <style>
     :root {
