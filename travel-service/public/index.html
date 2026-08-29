@@ -157,6 +157,40 @@
       border-radius: 999px; padding: 7px 15px; font-size: 14px; cursor: pointer;
       font-weight: 600;
     }
+    /* 🎨 أزرار الترويسة تحديداً: امتلاءٌ خفيف بدل الشفافية + ارتفاعٌ وظلٌّ
+       عند hover — الـchip الأساسي (أزرار الحوارات والفلاتر) يبقى كما هو،
+       فالتحسين محصورٌ بصرياً في أعلى الصفحة حيث يراه كل زائر فوراً. */
+    header .chip {
+      background: rgba(36,80,184,.07); border-color: transparent;
+    }
+    header .chip:hover {
+      background: rgba(36,80,184,.13); border-color: transparent;
+      transform: translateY(-1px); box-shadow: 0 3px 10px rgba(36,80,184,.18);
+    }
+    /* 🔽 سهمٌ مرسوم بدل سهم المتصفح الافتراضي: يتوقّف عن التطابق مع بقية
+       الأزرار المستديرة حوله. الموضع يتبع اتجاه الصفحة (نهاية النص
+       المنطقية) لأن الترويسة نفسها تُقرأ RTL بالعربية/الأردية وLTR
+       بالإنجليزية/الهولندية. */
+    select.hdr-select {
+      appearance: none; -webkit-appearance: none; -moz-appearance: none;
+      background-color: rgba(36,80,184,.07); border: 1px solid transparent;
+      border-radius: 999px; font-weight: 600; color: var(--muted);
+      width: auto; font-size: 13px; padding-block: 7px; padding-inline-start: 15px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%232450b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 7l5 5 5-5'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-size: 13px;
+      padding-inline-end: 30px;
+    }
+    html:not([dir="rtl"]) select.hdr-select { background-position: right 10px center; }
+    html[dir="rtl"] select.hdr-select { background-position: left 10px center; }
+    select.hdr-select:hover {
+      background-color: rgba(36,80,184,.13);
+      transform: translateY(-1px); box-shadow: 0 3px 10px rgba(36,80,184,.18);
+    }
+    /* ⚠️ حلقة التركيز الافتراضية (`select:focus` أعلاه) تضبط `border-color`
+       أيضاً — وقاعدة hdr-select العادية (حدٌّ شفاف بلا شرط) نفس خصوصيتها
+       وأحدث ترتيباً، فكانت ستُلغي لون التركيز صمتاً. خصوصيةٌ أعلى هنا
+       تعيده بلا مواربة (فقدان مؤشر التركيز يضرّ التنقّل بلوحة المفاتيح). */
+    select.hdr-select:focus { border-color: var(--accent); }
     /* زرٌّ بهيئة رابط: «نسيت كلمة المرور؟» فعلٌ ثانوي لا يزاحم الدخول */
     button.linkish {
       background: none; border: none; color: var(--accent); font-size: 13px;
@@ -349,10 +383,15 @@
     .dest-card .dest-city { font-weight: 700; font-size: 15px; }
     .dest-card .dest-price { color: var(--ok); font-size: 13px; margin-top: 2px; }
 
-    /* 🔔 التنبيهات */
+    /* 🔔 التنبيهات — امتلاءٌ دائري خفيف بدل الشفافية، بنفس أسرة أزرار
+       الترويسة (chip/select) لا لوناً منفصلاً. */
     .bell {
-      position: relative; background: none; border: none; color: var(--text);
-      font-size: 20px; cursor: pointer; padding: 4px; line-height: 1;
+      position: relative; background: rgba(36,80,184,.07); border: none; color: var(--text);
+      font-size: 20px; cursor: pointer; padding: 4px; line-height: 1; border-radius: 999px;
+    }
+    .bell:hover {
+      background: rgba(36,80,184,.13);
+      transform: translateY(-1px); box-shadow: 0 3px 10px rgba(36,80,184,.18);
     }
     .bell-count {
       position: absolute; top: -2px; left: -6px; background: var(--bad); color: #fff;
@@ -505,13 +544,13 @@
       <span style="color:var(--muted);font-size:13px;font-weight:600">بوابة السفر</span>
     </h1>
     <div style="display:flex;align-items:center;gap:14px">
-      <select id="langBtn" title="اللغة / Language / زبان / Taal" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:6px 10px;font-size:13px;width:auto">
+      <select id="langBtn" class="hdr-select" title="اللغة / Language / زبان / Taal">
         <option value="ar">العربية</option>
         <option value="en">English</option>
         <option value="ur">اردو</option>
         <option value="nl">Nederlands</option>
       </select>
-      <select id="fxSel" class="hidden" title="عملة العرض التقريبية" style="width:auto;padding:6px 8px;font-size:13px">
+      <select id="fxSel" class="hdr-select hidden" title="عملة العرض التقريبية">
         <option value="">💵 العملة الأصلية</option>
       </select>
       <button id="bellBtn" class="bell hidden" title="التنبيهات">🔔<span id="bellCount" class="bell-count hidden">0</span></button>
