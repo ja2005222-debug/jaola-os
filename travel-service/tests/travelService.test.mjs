@@ -1433,6 +1433,49 @@ describe('passengerAges: العمر مشتقّ من الميلاد لا مخمَ
         assert.deepEqual(sent.data.passengers, [{ type: 'adult' }, { age: 3 }]);
     });
 
+    test('🧳 Duffel: getOffer يطلب available_services صراحةً، وcreateOrder يمرّرها للطلب', async () => {
+        // بلاغ إنتاجي حقيقي: خطوة الأمتعة كانت تصمت دوماً على عروض Duffel
+        // حيّة لأن الحقل لا يصل بلا ?return_available_services=true صريحاً.
+        let lastOfferUrl = null, lastOrderBody = null;
+        const fetchImpl = async (url, opts) => {
+            if (url.includes('/air/offers/')) {
+                lastOfferUrl = url;
+                return {
+                    ok: true, status: 200,
+                    text: async () => JSON.stringify({
+                        data: {
+                            id: 'off_1', total_amount: '100', total_currency: 'EUR', slices: [],
+                            passengers: [{ id: 'pas_1' }],
+                            available_services: [
+                                { id: 'ase_1', type: 'baggage', total_amount: '20.00', total_currency: 'EUR', maximum_quantity: 2, metadata: { maximum_weight_kg: '23' } },
+                                { id: 'ase_2', type: 'seat', total_amount: '5.00', total_currency: 'EUR' }, // ليست أمتعة — تُستبعد
+                            ],
+                        },
+                    }),
+                };
+            }
+            if (url.includes('/air/orders')) {
+                lastOrderBody = JSON.parse(opts.body);
+                return { ok: true, status: 200, text: async () => JSON.stringify({ data: { id: 'ord_1', booking_reference: 'JAO1' } }) };
+            }
+            throw new Error('رابطٌ غير متوقَّع: ' + url);
+        };
+        const p = createDuffelProvider({ apiKey: 'duffel_test_x', fetchImpl });
+        const offer = await p.getOffer('off_1');
+        assert.match(lastOfferUrl, /\?return_available_services=true$/);
+        assert.deepEqual(offer.availableServices, [
+            { id: 'ase_1', type: 'checked_bag', maxWeightKg: 23, netAmount: 20, currency: 'EUR', maxQuantity: 2 },
+        ]);
+
+        await p.createOrder({
+            offerId: 'off_1',
+            passengers: [{ title: 'mr', givenName: 'A', familyName: 'B', bornOn: '1990-01-01', gender: 'm' }],
+            contact: { email: 'a@test.com', phone: '+1234567' },
+            services: [{ id: 'ase_1', quantity: 2 }],
+        });
+        assert.deepEqual(lastOrderBody.data.services, [{ id: 'ase_1', quantity: 2 }]);
+    });
+
     test('🔗 normalizeDuffelOffer: يقبل المعرّفات المجرّدة والكائنات بالأعمار', () => {
         const raw = { id: 'off_1', total_amount: '100', total_currency: 'EUR', slices: [] };
         const legacy = normalizeDuffelOffer(raw, ['pas_1', 'pas_2']);

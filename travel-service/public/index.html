@@ -3357,10 +3357,94 @@
     }
 
     // ─── الحجز ───
+    /**
+     * 🧳 صفوف الأمتعة الإضافية + غلافها — دالّة مستقلة كي يُعاد استعمالها
+     * سواء وصلت الخدمات مع نتيجة البحث (المحاكاة، وربما Duffel أحياناً)
+     * أو من نداءٍ لاحق (أدناه). فارغة إن لا خدمات، بلا افتراض مصدرها.
+     */
+    function extrasSectionHtml(services) {
+      if (!(services || []).length) return '';
+      let html = `<div style="margin-top:10px;border:1px dashed var(--border);border-radius:10px;padding:10px">
+        <strong>${T('أمتعة إضافية (اختياري)', 'Extra baggage (optional)', 'اضافی سامان (اختیاری)', 'Extra bagage (optioneel)')}</strong>`;
+      for (const svc of services) {
+        const max = Number(svc.maxQuantity) || 1;
+        html += `<div class="row" data-extra="${esc(svc.id)}" data-extra-max="${max}" data-extra-price="${svc.sellAmount}" style="align-items:center;margin-top:8px">
+          <div>🧳 ${esc(baggageServiceLabel(svc))} <span class="note">(${svc.sellAmount} ${esc(svc.currency)} ${
+            T('لكل حقيبة', 'per bag', 'فی بیگ', 'per tas')})</span></div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button type="button" class="chip" data-extra-dec>−</button>
+            <span data-extra-qty>0</span>
+            <button type="button" class="chip" data-extra-inc>+</button>
+          </div>
+        </div>`;
+      }
+      html += `<div id="bookExtrasNote" class="note" style="margin-top:6px"></div></div>`;
+      return html;
+    }
+    /** يربط عدّادات +/‑ لصفوف [data-extra] الموجودة فعلاً في bookForm بملاحظة إجمالٍ حيّة. */
+    function wireExtrasSection(offer) {
+      function updateExtrasNote() {
+        const note = $('bookExtrasNote');
+        if (!note) return;
+        let extra = 0;
+        $('bookForm').querySelectorAll('[data-extra]').forEach(row => {
+          const qty = Number(row.querySelector('[data-extra-qty]').textContent) || 0;
+          extra += Number(row.dataset.extraPrice) * qty;
+        });
+        extra = Math.round(extra * 100) / 100;
+        const total = Math.round((offer.sellAmount + extra) * 100) / 100;
+        note.textContent = extra > 0
+          ? T(`+ ${extra} ${offer.currency} أمتعة إضافية — الإجمالي بعدها ${total} ${offer.currency}`,
+              `+ ${extra} ${offer.currency} for extra baggage — total then ${total} ${offer.currency}`,
+              `+ ${extra} ${offer.currency} اضافی سامان — کل رقم اس کے بعد ${total} ${offer.currency}`,
+              `+ ${extra} ${offer.currency} extra bagage — totaal dan ${total} ${offer.currency}`)
+          : '';
+      }
+      $('bookForm').querySelectorAll('[data-extra]').forEach(row => {
+        if (row.dataset.extraWired) return; // لا تُضاعِف الاستماع لصفٍّ سبق ربطه
+        row.dataset.extraWired = '1';
+        const qtyEl = row.querySelector('[data-extra-qty]');
+        const max = Number(row.dataset.extraMax) || 1;
+        row.querySelector('[data-extra-inc]').addEventListener('click', () => {
+          qtyEl.textContent = String(Math.min(max, Number(qtyEl.textContent) + 1));
+          updateExtrasNote();
+        });
+        row.querySelector('[data-extra-dec]').addEventListener('click', () => {
+          qtyEl.textContent = String(Math.max(0, Number(qtyEl.textContent) - 1));
+          updateExtrasNote();
+        });
+      });
+    }
+    /**
+     * 🔴 عطبٌ حقيقي رصده بلاغ المالك بلقطة إنتاجية: خطوة الأمتعة كانت
+     * تصمت دوماً على عروض Duffel الحيّة رغم وجود حقيبة إضافية فعلية لدى
+     * الناقل — لأن `availableServices` لم تصل قط مع نتيجة البحث. توثيق
+     * Duffel العام: هذا الحقل يصل فقط من نداء عرضٍ مفرد صريح
+     * (`GET /air/offers/:id?return_available_services=true`، انظر
+     * duffelProvider.js)، لا من قائمة `/air/offer_requests` المُستعمَلة في
+     * البحث — تصميمٌ متعمَّد من Duffel نفسها (جلب خدمات كل عرضٍ في قائمة
+     * نتائج طويلة كلفةٌ لا تُبرَّر قبل أن يختار المسافر عرضاً بعينه).
+     * فحين لا تصل الخدمات مع العرض المفتوح للحجز، نطلبها بنداءٍ خلفي غير
+     * حاجب هنا — يُهمَل بصمت إن فشل أو عاد بلا شيء (نفس عرف التدهور الآمن
+     * المتَّبع في كل هذا الملف)، ولا يُعاد جلبها إن وصلت أصلاً (المحاكاة).
+     */
+    async function loadExtraBaggageAsync(offer) {
+      try {
+        const res = await api(`/api/travel/flights/offers/${encodeURIComponent(offer.id)}`, { bg: true });
+        if (!res.ok) return;
+        const data = await res.json().catch(() => null);
+        const services = data?.offer?.availableServices;
+        if (!services?.length || selectedOffer?.id !== offer.id) return; // أُغلق الحوار أو تغيّر العرض أثناء الانتظار
+        const slot = $('bookExtrasSlot');
+        if (!slot) return;
+        slot.innerHTML = extrasSectionHtml(services);
+        wireExtrasSection(offer);
+      } catch { /* إثراءٌ اختياري — فشله لا يعطّل الحجز نفسه */ }
+    }
     function openBooking(offer) {
       selectedOffer = offer;
-      $('bookSummary').textContent =
-        `${offer.owner} — الإجمالي ${offer.sellAmount} ${offer.currency} لعدد ${offer.passengerCount} مسافر`;
+      $('bookSummary').textContent = `${offer.owner} — ${T('الإجمالي', 'Total', 'کل', 'Totaal')} ${offer.sellAmount} ${offer.currency} ${
+        T('لعدد', 'for', 'برائے', 'voor')} ${offer.passengerCount} ${T('مسافر', 'traveller(s)', 'مسافر(وں)', 'reiziger(s)')}`;
       let html = '';
       // قائمة المسافرين المحفوظين: أكبر احتكاك في البوابة كان إدخال
       // خمسة حقول لكل مسافر في كل حجز — عائلة من أربعة تعني عشرين حقلاً.
@@ -3393,59 +3477,17 @@
       // 🧳 أمتعة إضافية (اختياري): كتالوج العرض نفسه (مصدر السعر الوحيد
       // المعتمَد — انظر validateSelectedServices في server.js)، خطوةٌ
       // كاملة لا شارة عرضٍ فقط لأن القرار (كم حقيبة؟) يُتَّخذ هنا فعلاً.
-      if ((offer.availableServices || []).length) {
-        html += `<div style="margin-top:10px;border:1px dashed var(--border);border-radius:10px;padding:10px">
-          <strong>${T('أمتعة إضافية (اختياري)', 'Extra baggage (optional)', 'اضافی سامان (اختیاری)', 'Extra bagage (optioneel)')}</strong>`;
-        for (const svc of offer.availableServices) {
-          const max = Number(svc.maxQuantity) || 1;
-          html += `<div class="row" data-extra="${esc(svc.id)}" data-extra-max="${max}" data-extra-price="${svc.sellAmount}" style="align-items:center;margin-top:8px">
-            <div>🧳 ${esc(baggageServiceLabel(svc))} <span class="note">(${svc.sellAmount} ${esc(svc.currency)} ${
-              T('لكل حقيبة', 'per bag', 'فی بیگ', 'per tas')})</span></div>
-            <div style="display:flex;align-items:center;gap:8px">
-              <button type="button" class="chip" data-extra-dec>−</button>
-              <span data-extra-qty>0</span>
-              <button type="button" class="chip" data-extra-inc>+</button>
-            </div>
-          </div>`;
-        }
-        html += `<div id="bookExtrasNote" class="note" style="margin-top:6px"></div></div>`;
-      }
+      // ⚠️ فتحةٌ دوماً حتى إن غابت الخدمات الآن — قد تصل بنداءٍ خلفي لاحقاً
+      // (loadExtraBaggageAsync أدناه، لعروض Duffel الحيّة تحديداً).
+      const hasExtrasNow = (offer.availableServices || []).length > 0;
+      html += `<div id="bookExtrasSlot">${extrasSectionHtml(offer.availableServices)}</div>`;
       html += `<div class="row" style="margin-top:10px">
         <div><label>البريد الإلكتروني</label><input id="cEmail" type="email" placeholder="you@example.com" /></div>
         <div><label>الهاتف (بصيغة دولية)</label><input id="cPhone" placeholder="+966501234567" /></div>
       </div>`;
       $('bookForm').innerHTML = html;
-      // +/‑ الأمتعة الإضافية: يحدّث العدّاد ثم ملاحظة الإجمالي فوراً —
-      // السعر النهائي الفعلي يُحسب في الخادم دوماً، هذا عرضٌ توقّعي فقط.
-      function updateExtrasNote() {
-        const note = $('bookExtrasNote');
-        if (!note) return;
-        let extra = 0;
-        $('bookForm').querySelectorAll('[data-extra]').forEach(row => {
-          const qty = Number(row.querySelector('[data-extra-qty]').textContent) || 0;
-          extra += Number(row.dataset.extraPrice) * qty;
-        });
-        extra = Math.round(extra * 100) / 100;
-        const total = Math.round((offer.sellAmount + extra) * 100) / 100;
-        note.textContent = extra > 0
-          ? T(`+ ${extra} ${offer.currency} أمتعة إضافية — الإجمالي بعدها ${total} ${offer.currency}`,
-              `+ ${extra} ${offer.currency} for extra baggage — total then ${total} ${offer.currency}`,
-              `+ ${extra} ${offer.currency} اضافی سامان — کل رقم اس کے بعد ${total} ${offer.currency}`,
-              `+ ${extra} ${offer.currency} extra bagage — totaal dan ${total} ${offer.currency}`)
-          : '';
-      }
-      $('bookForm').querySelectorAll('[data-extra]').forEach(row => {
-        const qtyEl = row.querySelector('[data-extra-qty]');
-        const max = Number(row.dataset.extraMax) || 1;
-        row.querySelector('[data-extra-inc]').addEventListener('click', () => {
-          qtyEl.textContent = String(Math.min(max, Number(qtyEl.textContent) + 1));
-          updateExtrasNote();
-        });
-        row.querySelector('[data-extra-dec]').addEventListener('click', () => {
-          qtyEl.textContent = String(Math.max(0, Number(qtyEl.textContent) - 1));
-          updateExtrasNote();
-        });
-      });
+      if (hasExtrasNow) wireExtrasSection(offer);
+      else loadExtraBaggageAsync(offer); // بلا await: لا تُحجَب فتحة الحوار لأجل إثراء اختياري
       // ملء بيانات مسافر محفوظ في مجموعته — يبقى كل حقل قابلاً للتعديل
       $('bookForm').querySelectorAll('[data-fill]').forEach(sel =>
         sel.addEventListener('change', () => {
