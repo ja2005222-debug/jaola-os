@@ -31,6 +31,25 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
         return [{ type: 'carry_on', quantity: 1 }, { type: 'checked', quantity: 1 }];
     }
 
+    // 🧳 خدمة أمتعة إضافية محاكاة واحدة لكل عرض — كافية لاختبار التدفق
+    // الكامل (كتالوج → اختيار → سعر إجمالي → إصدار → إلغاء يرد نصيبها).
+    // السعر حتميّ من البذرة كبقية المحاكاة، لا عشوائي.
+    // ⚠️ بلا وصفٍ نصّي جاهز عمداً: `type`/`maxWeightKg` بنيويان تصوغ منهما
+    // الواجهة تسميتها بلغتها عبر T() — نصٌّ عربي جاهز هنا كان سيصل لغةً
+    // إنجليزية بمترجم DOM جزئي (يلتقط "حقيبة مسجَّلة" وحدها من القاموس
+    // فيُبقي البقية عربية، رُصد فعلياً بمعاينة حيّة قبل هذا الإصلاح).
+    function mockAvailableServices(seed, paxCount) {
+        const netAmount = Math.round((15 + (seed % 20)) * 100) / 100; // 15–34
+        return [{
+            id: `mock_svc_bag_${seed}`,
+            type: 'checked_bag',
+            maxWeightKg: 23,
+            netAmount,
+            currency: MOCK_CURRENCY,
+            maxQuantity: Math.max(1, paxCount) * 2,
+        }];
+    }
+
     function buildSlice(origin, destination, date, seed, stops) {
         const depHour = 6 + (seed % 12);
         const durationMin = 90 + (seed % 300) + stops * 95;
@@ -124,6 +143,7 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
                         change_before_departure: fare.change,
                         refund_before_departure: fare.refund,
                     }),
+                    availableServices: mockAvailableServices(s, paxCount),
                     slices,
                 };
                 offers.set(offer.id, offer);
@@ -138,16 +158,22 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
             return offer ? { ...offer } : null;
         },
 
-        async createOrder({ offerId, passengers, contact }) {
+        async createOrder({ offerId, passengers, contact, services = [] }) {
             if (failCreate) throw new Error('محاكاة: المزوّد رفض إصدار الحجز.');
             const offer = offers.get(offerId);
             if (!offer) throw new Error('العرض غير موجود أو انتهت صلاحيته.');
             orderSeq += 1;
+            // 🧳 كلفة الخدمات الإضافية تُحسب من كتالوج العرض (مصدر الثقة)
+            // لا من أي سعر يصل من الطالب — نفس مبدأ عدم الوثوق بسعر عميل.
+            const extraNet = (services || []).reduce((sum, sel) => {
+                const svc = (offer.availableServices || []).find(x => x.id === sel.id);
+                return sum + (svc ? svc.netAmount * Number(sel.quantity || 0) : 0);
+            }, 0);
             const order = {
                 orderId: 'mock_ord_' + orderSeq,
                 bookingReference: 'JAO' + String(1000 + orderSeq),
                 status: 'issued',
-                netAmount: offer.netAmount,
+                netAmount: Math.round((offer.netAmount + extraNet) * 100) / 100,
                 currency: offer.currency,
                 passengers, contact,
             };
