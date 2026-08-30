@@ -242,6 +242,35 @@ export function validateSearchParams(body) {
     return { values: { origin, destination, departDate, returnDate, adults, childrenDobs, cabin, sort, maxStops, airline, maxPrice, checkedBagOnly } };
 }
 
+// أقصى كمية لأي بند خدمة إضافية واحد — دفاعٌ مستقل عن `maxQuantity` الذي
+// يزعمه العرض/المزوّد؛ الأدنى بينهما هو الفعلي (انظر validateSelectedServices).
+const MAX_SERVICE_QTY_PER_LINE = 10;
+
+/**
+ * 🧳 يتحقق من الخدمات الإضافية المختارة (أمتعة إضافية) ضد **كتالوج العرض
+ * نفسه** — لا تُقبل أي هوية أو سعر يخترعه الطالب: `id` يجب أن يطابق
+ * `offer.availableServices`، والسعر يُقرأ من هناك حصراً (نفس مبدأ عدم
+ * الوثوق بسعر عميل في applyMarkup/effectiveMarkupPct). غياب الحقل كلياً
+ * (لا اختيار) قيمةٌ صالحة تماماً — لا كل حاجز يشتري أمتعة إضافية.
+ */
+export function validateSelectedServices(selectedServices, offer) {
+    if (selectedServices == null) return { values: [] };
+    if (!Array.isArray(selectedServices)) return { error: 'صيغة الخدمات الإضافية غير صالحة.' };
+    const catalog = new Map((offer?.availableServices || []).map(s => [s.id, s]));
+    const clean = [];
+    for (const sel of selectedServices) {
+        const svc = catalog.get(String(sel?.id || ''));
+        if (!svc) return { error: 'خدمة إضافية غير معروفة أو انتهى عرضها — أعد البحث واختر من جديد.' };
+        const quantity = Number(sel?.quantity);
+        const maxQty = Math.min(Number(svc.maxQuantity) || 1, MAX_SERVICE_QTY_PER_LINE);
+        if (!Number.isInteger(quantity) || quantity < 1 || quantity > maxQty) {
+            return { error: `الكمية المطلوبة من الأمتعة الإضافية يجب أن تكون عدداً صحيحاً بين 1 و${maxQty}.` };
+        }
+        clean.push({ id: svc.id, type: svc.type, maxWeightKg: svc.maxWeightKg ?? null, quantity, netAmount: svc.netAmount, currency: svc.currency });
+    }
+    return { values: clean };
+}
+
 /** يتحقق من بيانات الركاب والتواصل — {error} أو {values}. */
 export function validatePassengers(body, expectedCount) {
     const passengers = Array.isArray(body?.passengers) ? body.passengers : null;
@@ -406,8 +435,9 @@ function effectiveMarkupPct(offer, categoryPct) {
 }
 
 function publicOffer(offer, categoryPct) {
-    const { netAmount, passengerIds, passengers, marginPct: _mp, ...rest } = offer;
-    const pub = { ...rest, sellAmount: applyMarkup(netAmount, effectiveMarkupPct(offer, categoryPct)) };
+    const { netAmount, passengerIds, passengers, marginPct: _mp, availableServices, ...rest } = offer;
+    const markupPct = effectiveMarkupPct(offer, categoryPct);
+    const pub = { ...rest, sellAmount: applyMarkup(netAmount, markupPct) };
     // 🧭 حقائق الرحلة تُحسب **هنا مرّة واحدة** لا في المتصفح: لو استنتجتها
     // الواجهةُ لصار للحقيقة نسختان — واحدة تفلتر بها الخدمة وأخرى تعرض بها
     // الصفحة — فيُخفي الفلترُ عرضاً تَعِد الشارةُ بأنه يحمل حقيبة.
@@ -417,6 +447,15 @@ function publicOffer(offer, categoryPct) {
         arrivalDayOffset: arrivalDayOffset(sl),
         layovers: layovers(sl),
     }));
+    // 🧳 خدمات إضافية (أمتعة) للعرض — الصافي **لا يغادر الخادم** هنا أيضاً:
+    // سعر بيع لكل وحدة فقط، بنفس هامش العرض (marginPct الخاص إن وُجد).
+    if (Array.isArray(availableServices) && availableServices.length) {
+        pub.availableServices = availableServices.map(s => ({
+            id: s.id, type: s.type, maxWeightKg: s.maxWeightKg ?? null,
+            sellAmount: applyMarkup(s.netAmount, markupPct),
+            currency: s.currency, maxQuantity: s.maxQuantity ?? null,
+        }));
+    }
     const safe = publicPassengers(passengers);
     if (safe) pub.passengers = safe;
     return pub;
@@ -867,7 +906,7 @@ ${urls}
         return offer ? publicOffer(offer, flightMkt) : null;
     }
 
-    async function doBook(username, { offerId, passengers, contact }, baseUrl = null) {
+    async function doBook(username, { offerId, passengers, contact, selectedServices }, baseUrl = null) {
         const offer = await provider.getOffer(String(offerId || ''));
         if (!offer) throw Object.assign(new Error('العرض غير موجود أو انتهت صلاحيته — أعد البحث.'), { status: 404 });
         const check = validatePassengers({ passengers, contact }, offer.passengerCount);
@@ -884,15 +923,34 @@ ${urls}
         });
         if (ageError) throw Object.assign(new Error(ageError), { status: 400 });
 
-        const sellAmount = applyMarkup(offer.netAmount, flightMkt);
+        const svcCheck = validateSelectedServices(selectedServices, offer);
+        if (svcCheck.error) throw Object.assign(new Error(svcCheck.error), { status: 400 });
+        const purchased = svcCheck.values;
+
+        const svcMarkupPct = effectiveMarkupPct(offer, flightMkt);
+        // 🧳 أمتعة إضافية: تُضاف لصافي وبيع الحجز **قبل** إنشائه — فيُحاسَب
+        // عليها Stripe كجزءٍ من نفس الإجمالي (لا نداء دفعٍ ثانٍ)، ويصحّ
+        // بها نصيبها من الاسترداد لاحقاً (refundPlanFor يقارن على netAmount).
+        const extraNet = purchased.reduce((sum, s) => sum + s.netAmount * s.quantity, 0);
+        const extraSell = purchased.reduce((sum, s) => sum + applyMarkup(s.netAmount * s.quantity, svcMarkupPct), 0);
+        const netAmount = offer.netAmount + extraNet;
+        const sellAmount = applyMarkup(offer.netAmount, svcMarkupPct) + extraSell;
         // ملخص العرض المخزَّن على الحجز: بلا صافٍ ولا معرّفات مزوّد داخلية
-        const { netAmount: _net, passengerIds: _ids, passengers: _pax, ...offerSummary } = offer;
+        // ولا كتالوج الخدمات كاملاً (كان سيسرّب صافي كل خدمة) — الحقيبة
+        // **المشتراة فعلاً** فقط، بسعر بيعها لا صافيها (نفس منطق الحجز كله).
+        const { netAmount: _net, passengerIds: _ids, passengers: _pax, availableServices: _avail, ...offerSummary } = offer;
+        if (purchased.length) {
+            offerSummary.extraBaggage = purchased.map(s => ({
+                id: s.id, type: s.type, maxWeightKg: s.maxWeightKg, quantity: s.quantity,
+                sellAmount: applyMarkup(s.netAmount * s.quantity, svcMarkupPct), currency: s.currency,
+            }));
+        }
         const booking = await createBooking(store, {
             username, provider: provider.name,
             offer: offerSummary,
             passengers: check.values.passengers,
             contact: check.values.contact,
-            netAmount: offer.netAmount, sellAmount, currency: offer.currency,
+            netAmount, sellAmount, currency: offer.currency,
         });
         // 💳 الدفع قبل الإصدار — لا نلمس المزوّد قبل وصول المال (انظر
         // startBookingCheckout: تذكرة تُصدر بلا مقابل خسارة نقدية فورية)
@@ -907,6 +965,7 @@ ${urls}
                 offerId: offer.id,
                 passengers: check.values.passengers,
                 contact: check.values.contact,
+                services: purchased.map(s => ({ id: s.id, quantity: s.quantity })),
             });
             const issued = await transitionBooking(store, booking.id, 'issued', {
                 providerOrderId: order.orderId,
@@ -1926,7 +1985,9 @@ ${urls}
 
     /** التقييم للعميل: أرقام البيع فقط — الصافي وتقسيمه الداخلي لا يغادران الخادم. */
     function publicQuote(q, lang = 'ar') {
-        const { netAmount: _nf, passengerIds: _ids, passengers, ...flight } = q.flight;
+        // availableServices: كتالوجٌ يحمل صافياً لكل خدمة (انظر publicOffer) —
+        // الباقات لا تدعم شراء أمتعة إضافية بعد، فيُسقَط كلياً لا يُسرَّب خاماً.
+        const { netAmount: _nf, passengerIds: _ids, passengers, availableServices: _avail, ...flight } = q.flight;
         const { netAmount: _ns, marginPct: _mp, ...stay } = q.stay;
         return {
             flight: { ...flight, passengers: publicPassengers(passengers) },
@@ -2412,7 +2473,10 @@ ${urls}
             requireCars();
             return carsProvider.createCarOrder({ offerId, drivers: booking.passengers, contact });
         }
-        return provider.createOrder({ offerId, passengers: booking.passengers, contact });
+        // 🧳 أمتعة إضافية مختارة وقت الحجز — محفوظة على الحجز نفسه لأن هذا
+        // المسار يجري لاحقاً غير متزامن (webhook الدفع)، لا وقت البحث.
+        const services = (booking.offer?.extraBaggage || []).map(s => ({ id: s.id, quantity: s.quantity }));
+        return provider.createOrder({ offerId, passengers: booking.passengers, contact, services });
     }
 
     const KIND_LABEL = { stay: 'الفندق', car: 'السيارة' };

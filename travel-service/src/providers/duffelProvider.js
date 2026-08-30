@@ -38,6 +38,34 @@ function extractBaggage(seg) {
 }
 
 /**
+ * 🧳 أمتعة إضافية قابلة للشراء (المرحلة ٢د): Duffel يُرجع `available_services`
+ * على العرض وفق توثيقها العام — كائن لكل خدمة يحمل `id`/`type`/
+ * `total_amount`/`total_currency`/`maximum_quantity`، وحقيبةٌ إضافية
+ * نوعها `baggage`. **لم يُتحقَّق من هذا الشكل ضد رد حي بعد** (نفس صراحة
+ * الملف كله) — غيابه أو اختلافه لا يكسر شيئاً: قائمة فارغة فتختفي
+ * خطوة «أمتعة إضافية» من الواجهة بدل أن تعرض خياراً وهمياً أو تُسقط.
+ * فلترة `type === 'baggage'` فقط: خدمات أخرى (مقعد، وجبة...) قد تصل
+ * لاحقاً بنفس الشكل ولا نعرضها بعد كأمتعة.
+ *
+ * ⚠️ بلا وصفٍ نصّي جاهز عمداً: `type`/`maxWeightKg` بنيويان تصوغ منهما
+ * الواجهة تسميتها بلغتها عبر T() — نفس درس mockProvider.js (نصٌّ عربي
+ * جاهز من الخادم يصل لغةً أخرى نصف مترجم بمترجم DOM الجزئي).
+ */
+function extractAvailableServices(raw) {
+    const list = Array.isArray(raw.available_services) ? raw.available_services : [];
+    return list
+        .filter(s => s?.type === 'baggage' && s?.id && Number.isFinite(Number(s.total_amount)))
+        .map(s => ({
+            id: s.id,
+            type: s.metadata?.type === 'carry_on' ? 'carry_on_bag' : 'checked_bag',
+            maxWeightKg: Number.isFinite(Number(s.metadata?.maximum_weight_kg)) ? Number(s.metadata.maximum_weight_kg) : null,
+            netAmount: Number(s.total_amount),
+            currency: s.total_currency,
+            maxQuantity: Number.isFinite(Number(s.maximum_quantity)) ? Number(s.maximum_quantity) : 1,
+        }));
+}
+
+/**
  * يوحّد قائمة ركاب Duffel: قد تصل معرّفات مجرّدة (نصوص) أو كائنات تحمل
  * `type`/`age` معها. الأعمار هي ما سُعِّر به العرض فعلاً، ويطابقها الخادم
  * بتواريخ الميلاد قبل الحجز — فغيابها يعطّل الفحص ولا يكسره.
@@ -124,6 +152,7 @@ export function normalizeDuffelOffer(raw, passengerRefs) {
         // 🎟️ شرطا التغيير والاسترداد قبل المغادرة. ثلاثيّان لا ثنائيّان:
         // انظر src/fareConditions.js لسبب ذلك ولخطورة اختزالهما.
         conditions: normalizeFareConditions(raw.conditions),
+        availableServices: extractAvailableServices(raw),
         passengerIds,
         passengers,
         slices,
@@ -234,7 +263,7 @@ export function createDuffelProvider({ apiKey, apiUrl, fetchImpl }) {
             }
         },
 
-        async createOrder({ offerId, passengers, contact }) {
+        async createOrder({ offerId, passengers, contact, services = [] }) {
             const offer = await this.getOffer(offerId);
             if (!offer) throw new Error('العرض غير موجود أو انتهت صلاحيته.');
             const duffelPassengers = passengers.map((p, i) => ({
@@ -247,11 +276,18 @@ export function createDuffelProvider({ apiKey, apiUrl, fetchImpl }) {
                 email: contact.email,
                 phone_number: contact.phone,
             }));
+            // 🧳 أمتعة إضافية مُختارة وقت الحجز — وفق توثيق Duffel العام
+            // (غير مُتحقَّق منه ضد رد حي، انظر extractAvailableServices):
+            // `services: [{ id, quantity }]` على نفس نداء إنشاء الطلب. المبلغ
+            // الإجمالي المرسل في payments **لا يُعدَّل هنا يدوياً** — الصافي
+            // المخزَّن على الحجز (booking.netAmount) يشمل الإضافات أصلاً
+            // (server.js:doBook)، وDuffel نفسه يحتسب سعر الخدمات على الطلب.
             const data = await duffel('POST', '/air/orders', {
                 data: {
                     selected_offers: [offerId],
                     passengers: duffelPassengers,
                     payments: [{ type: 'balance', amount: String(offer.netAmount), currency: offer.currency }],
+                    ...(services.length ? { services: services.map(s => ({ id: s.id, quantity: s.quantity })) } : {}),
                 },
             });
             return {

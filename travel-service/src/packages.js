@@ -72,7 +72,9 @@ export async function quotePackage({ provider, staysProvider, flightOfferId, sta
 
 /** ملخّصا العرضين المخزَّنان على الحجوزات — بلا صافٍ ولا معرّفات مزوّد داخلية. */
 function publicSummaries(q) {
-    const { netAmount: _nf, passengerIds: _ids, passengers: _pax, ...flightSummary } = q.flight;
+    // availableServices: كتالوجٌ يحمل صافياً لكل خدمة (انظر publicOffer في
+    // server.js) — الباقات لا تدعم شراء أمتعة إضافية بعد، فيُسقَط كلياً.
+    const { netAmount: _nf, passengerIds: _ids, passengers: _pax, availableServices: _avail, ...flightSummary } = q.flight;
     const { netAmount: _ns, marginPct: _mp, ...staySummary } = q.stay;
     return { flightSummary, staySummary };
 }

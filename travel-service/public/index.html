@@ -2106,6 +2106,24 @@
     }
 
     /**
+     * 🧳 تسمية خدمة أمتعة إضافية — تُبنى من حقول بنيوية (`type`/`maxWeightKg`)
+     * لا وصفٍ نصّي جاهز من الخادم عمداً: نصٌّ عربي جاهز كان سيصل واجهةً
+     * إنجليزية فيلتقط مترجم DOM (`i18n.js`) عبارة "حقيبة مسجَّلة" وحدها من
+     * قاموسه ويُبقي البقية عربية — رُصد فعلياً بمعاينة حيّة ("checked bag
+     * إضافية 23 كجم" مختلطاً) قبل هذا الإصلاح.
+     */
+    function baggageServiceLabel(s) {
+      if (s.type === 'carry_on_bag') {
+        return T('حقيبة يد إضافية', 'Extra carry-on bag', 'اضافی ہینڈ بیگ', 'Extra handbagage');
+      }
+      const kg = s.maxWeightKg;
+      return kg
+        ? T(`حقيبة مسجَّلة إضافية حتى ${kg} كجم`, `Extra checked bag up to ${kg}kg`,
+            `اضافی چیک اِن بیگ ${kg} کلوگرام تک`, `Extra ruimbagage tot ${kg}kg`)
+        : T('حقيبة مسجَّلة إضافية', 'Extra checked bag', 'اضافی چیک اِن بیگ', 'Extra ruimbagage');
+    }
+
+    /**
      * شعار الناقل — يُعرض فقط إن أعاد المزوّد رابطاً فعلياً. غيابه يعيد
      * سلسلة فارغة فتبقى البطاقة كما كانت بالاسم النصي، بلا صورة مكسورة
      * ولا رابط مُختلَق من رمز IATA (لا نخترع مصادر صور).
@@ -3372,11 +3390,62 @@
           ${lockedDob ? '<div class="note" style="margin:6px 0 0">تاريخ الميلاد من البحث — لتغييره أعد البحث، فالسعر يتبع العمر.</div>' : ''}
         </fieldset>`;
       }
+      // 🧳 أمتعة إضافية (اختياري): كتالوج العرض نفسه (مصدر السعر الوحيد
+      // المعتمَد — انظر validateSelectedServices في server.js)، خطوةٌ
+      // كاملة لا شارة عرضٍ فقط لأن القرار (كم حقيبة؟) يُتَّخذ هنا فعلاً.
+      if ((offer.availableServices || []).length) {
+        html += `<div style="margin-top:10px;border:1px dashed var(--border);border-radius:10px;padding:10px">
+          <strong>${T('أمتعة إضافية (اختياري)', 'Extra baggage (optional)', 'اضافی سامان (اختیاری)', 'Extra bagage (optioneel)')}</strong>`;
+        for (const svc of offer.availableServices) {
+          const max = Number(svc.maxQuantity) || 1;
+          html += `<div class="row" data-extra="${esc(svc.id)}" data-extra-max="${max}" data-extra-price="${svc.sellAmount}" style="align-items:center;margin-top:8px">
+            <div>🧳 ${esc(baggageServiceLabel(svc))} <span class="note">(${svc.sellAmount} ${esc(svc.currency)} ${
+              T('لكل حقيبة', 'per bag', 'فی بیگ', 'per tas')})</span></div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <button type="button" class="chip" data-extra-dec>−</button>
+              <span data-extra-qty>0</span>
+              <button type="button" class="chip" data-extra-inc>+</button>
+            </div>
+          </div>`;
+        }
+        html += `<div id="bookExtrasNote" class="note" style="margin-top:6px"></div></div>`;
+      }
       html += `<div class="row" style="margin-top:10px">
         <div><label>البريد الإلكتروني</label><input id="cEmail" type="email" placeholder="you@example.com" /></div>
         <div><label>الهاتف (بصيغة دولية)</label><input id="cPhone" placeholder="+966501234567" /></div>
       </div>`;
       $('bookForm').innerHTML = html;
+      // +/‑ الأمتعة الإضافية: يحدّث العدّاد ثم ملاحظة الإجمالي فوراً —
+      // السعر النهائي الفعلي يُحسب في الخادم دوماً، هذا عرضٌ توقّعي فقط.
+      function updateExtrasNote() {
+        const note = $('bookExtrasNote');
+        if (!note) return;
+        let extra = 0;
+        $('bookForm').querySelectorAll('[data-extra]').forEach(row => {
+          const qty = Number(row.querySelector('[data-extra-qty]').textContent) || 0;
+          extra += Number(row.dataset.extraPrice) * qty;
+        });
+        extra = Math.round(extra * 100) / 100;
+        const total = Math.round((offer.sellAmount + extra) * 100) / 100;
+        note.textContent = extra > 0
+          ? T(`+ ${extra} ${offer.currency} أمتعة إضافية — الإجمالي بعدها ${total} ${offer.currency}`,
+              `+ ${extra} ${offer.currency} for extra baggage — total then ${total} ${offer.currency}`,
+              `+ ${extra} ${offer.currency} اضافی سامان — کل رقم اس کے بعد ${total} ${offer.currency}`,
+              `+ ${extra} ${offer.currency} extra bagage — totaal dan ${total} ${offer.currency}`)
+          : '';
+      }
+      $('bookForm').querySelectorAll('[data-extra]').forEach(row => {
+        const qtyEl = row.querySelector('[data-extra-qty]');
+        const max = Number(row.dataset.extraMax) || 1;
+        row.querySelector('[data-extra-inc]').addEventListener('click', () => {
+          qtyEl.textContent = String(Math.min(max, Number(qtyEl.textContent) + 1));
+          updateExtrasNote();
+        });
+        row.querySelector('[data-extra-dec]').addEventListener('click', () => {
+          qtyEl.textContent = String(Math.max(0, Number(qtyEl.textContent) - 1));
+          updateExtrasNote();
+        });
+      });
       // ملء بيانات مسافر محفوظ في مجموعته — يبقى كل حقل قابلاً للتعديل
       $('bookForm').querySelectorAll('[data-fill]').forEach(sel =>
         sel.addEventListener('change', () => {
@@ -3399,9 +3468,13 @@
         const val = name => fs.querySelector(`[data-p="${name}"]`).value.trim();
         return { title: val('title'), givenName: val('givenName'), familyName: val('familyName'), bornOn: val('bornOn'), gender: val('gender') };
       });
+      const selectedServices = [...$('bookForm').querySelectorAll('[data-extra]')]
+        .map(row => ({ id: row.dataset.extra, quantity: Number(row.querySelector('[data-extra-qty]').textContent) || 0 }))
+        .filter(s => s.quantity > 0);
       const body = {
         offerId: selectedOffer.id, passengers,
         contact: { email: $('cEmail').value.trim(), phone: $('cPhone').value.trim() },
+        ...(selectedServices.length ? { selectedServices } : {}),
       };
       $('bookConfirm').disabled = true;
       try {
@@ -4547,6 +4620,15 @@
         : '';
       return `<div class="seg">💳 ${rows.join(' · ')}</div>${fxLine}`;
     }
+    // 🧳 أمتعة إضافية اشتُريت وقت الحجز — مخزَّنة على offer.extraBaggage
+    // بسعر بيعها لا صافيها (server.js:doBook)، فلا حساب هنا إطلاقاً.
+    function extraBaggageHtml(o) {
+      const items = o?.extraBaggage || [];
+      if (!items.length) return '';
+      const lines = items.map(s =>
+        `<li>🧳 ${esc(baggageServiceLabel(s))} ×${s.quantity} — ${s.sellAmount} ${esc(s.currency)}</li>`).join('');
+      return `<div class="seg"><strong>${T('أمتعة إضافية مشتراة', 'Extra baggage purchased', 'خریدا گیا اضافی سامان', 'Gekochte extra bagage')}</strong><ul>${lines}</ul></div>`;
+    }
     function detailsHtml(b) {
       const paxRows = (b.passengers || []).map((p, i) => `<li>${
         esc([p.title, p.givenName, p.familyName].filter(Boolean).join(' ') || `${T('مسافر', 'Traveller', 'مسافر', 'Reiziger')} ${i + 1}`)}${
@@ -4566,6 +4648,7 @@
         // شروط التذكرة المحفوظة وقت الحجز — يسألها المسافر بعد الحجز لا قبله فقط
         parts.push(fareLineHtml(b.offer || {}));
         parts.push(flightDetailsHtml(noExpiry(b.offer)));
+        parts.push(extraBaggageHtml(b.offer));
       }
       else if (b.kind === 'package') {
         parts.push(flightDetailsHtml(noExpiry(b.offer?.flight)));

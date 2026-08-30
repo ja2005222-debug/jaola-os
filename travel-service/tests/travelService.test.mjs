@@ -16,7 +16,7 @@ import os from 'os';
 import path from 'path';
 import jwt from 'jsonwebtoken';
 
-import { createApp, validateSearchParams, validatePassengers, validateStaySearchParams, validateGuests, validateCarSearchParams, validateDrivers, verifyDuffelWebhookSignature } from '../server.js';
+import { createApp, validateSearchParams, validatePassengers, validateSelectedServices, validateStaySearchParams, validateGuests, validateCarSearchParams, validateDrivers, verifyDuffelWebhookSignature } from '../server.js';
 import crypto from 'crypto';
 import { createMockTravelProvider } from '../src/providers/mockProvider.js';
 import { createDuffelProvider, normalizeDuffelOffer, sortOffers, totalDurationMin, applyOfferFilters } from '../src/providers/duffelProvider.js';
@@ -5194,6 +5194,71 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.ok(cancelled.data.booking.refund.amount > 0);
             // إلغاء مكرر → 400 (ليس issued بعد الآن)
             assert.equal((await call(`/api/travel/bookings/${b.id}/cancel`, { method: 'POST', token })).status, 400);
+        });
+
+        test('🧳 validateSelectedServices: كتالوج العرض هو المرجع الوحيد للهوية والسعر والسقف', () => {
+            const offer = { availableServices: [{ id: 'svc1', type: 'checked_bag', maxWeightKg: 23, netAmount: 20, currency: 'USD', maxQuantity: 3 }] };
+            // بلا اختيار أصلاً: قيمة صالحة (لا كل حاجز يشتري أمتعة إضافية)
+            assert.deepEqual(validateSelectedServices(null, offer), { values: [] });
+            assert.deepEqual(validateSelectedServices(undefined, offer), { values: [] });
+            // صيغة غير مصفوفة
+            assert.ok(validateSelectedServices({ id: 'svc1', quantity: 1 }, offer).error);
+            // هوية مجهولة (عرضٌ آخر انتهت صلاحيته أو لا يملك هذه الخدمة)
+            assert.ok(validateSelectedServices([{ id: 'ghost', quantity: 1 }], offer).error);
+            // كمية صفرية أو سالبة أو كسرية أو تتجاوز maxQuantity
+            for (const quantity of [0, -1, 1.5, 4]) {
+                assert.ok(validateSelectedServices([{ id: 'svc1', quantity }], offer).error, `قُبلت كمية فاسدة: ${quantity}`);
+            }
+            // اختيار صحيح: يعيد بيانات الخدمة كاملةً من الكتالوج (لا مما أرسله الطالب)
+            const ok = validateSelectedServices([{ id: 'svc1', quantity: 2, netAmount: 1 /* مُتجاهَل عمداً */ }], offer);
+            assert.deepEqual(ok.values, [{ id: 'svc1', type: 'checked_bag', maxWeightKg: 23, quantity: 2, netAmount: 20, currency: 'USD' }]);
+        });
+
+        test('🧳 أمتعة إضافية: كتالوج بلا صافٍ في البحث، شراء يرفع الإجمالي ويظهر في الحجز، والاسترداد يشمل نصيبها', async () => {
+            const token = makeToken('baggage-user');
+            const searchBody = SEARCH_BODY();
+            const search = await call('/api/travel/flights/search', { method: 'POST', token, body: searchBody });
+            const offer = search.data.offers[0];
+            assert.ok(Array.isArray(offer.availableServices) && offer.availableServices.length > 0);
+            const svc = offer.availableServices[0];
+            assert.equal(svc.netAmount, undefined); // الصافي لا يغادر الخادم حتى لخدمةٍ إضافية
+
+            // المرجع الحقيقي (الصافي) عبر المزوّد مباشرة — للتحقق من صحة سعر البيع
+            const rawOffers = await provider.searchOffers({ ...searchBody, childrenDobs: [], cabin: 'economy' });
+            const rawOffer = rawOffers.find(o => o.id === offer.id);
+            const rawSvc = rawOffer.availableServices.find(s => s.id === svc.id);
+            assert.equal(svc.sellAmount, applyMarkup(rawSvc.netAmount, MARKUP));
+
+            // خدمة مجهولة → 400
+            assert.equal((await call('/api/travel/bookings', {
+                method: 'POST', token, body: { offerId: offer.id, ...VALID_PAX, selectedServices: [{ id: 'ghost_svc', quantity: 1 }] },
+            })).status, 400);
+            // كمية تتجاوز السقف → 400
+            assert.equal((await call('/api/travel/bookings', {
+                method: 'POST', token, body: { offerId: offer.id, ...VALID_PAX, selectedServices: [{ id: svc.id, quantity: svc.maxQuantity + 1 }] },
+            })).status, 400);
+
+            // شراء صحيح: حقيبتان إضافيتان
+            const booked = await call('/api/travel/bookings', {
+                method: 'POST', token, body: { offerId: offer.id, ...VALID_PAX, selectedServices: [{ id: svc.id, quantity: 2 }] },
+            });
+            assert.equal(booked.status, 200);
+            const b = booked.data.booking;
+            assert.equal(b.status, 'issued');
+            assert.equal(b.offer.extraBaggage.length, 1);
+            assert.equal(b.offer.extraBaggage[0].quantity, 2);
+            assert.equal(b.offer.extraBaggage[0].netAmount, undefined); // الصافي لا يُخزَّن على الحجز العلني أيضاً
+            const expectedExtraSell = applyMarkup(rawSvc.netAmount * 2, MARKUP);
+            assert.equal(b.offer.extraBaggage[0].sellAmount, expectedExtraSell);
+            const expectedTotal = Math.round((offer.sellAmount + expectedExtraSell) * 100) / 100;
+            assert.equal(b.sellAmount, expectedTotal); // الإجمالي المدفوع يشمل الأمتعة فعلاً
+
+            // الإلغاء: استرداد المزوّد (80% صافياً في المحاكاة) يشمل نصيب الأمتعة
+            const combinedNet = Math.round((rawOffer.netAmount + rawSvc.netAmount * 2) * 100) / 100;
+            const expectedRefund = Math.round(combinedNet * 0.8 * 100) / 100;
+            const cancelled = await call(`/api/travel/bookings/${b.id}/cancel`, { method: 'POST', token });
+            assert.equal(cancelled.status, 200);
+            assert.equal(cancelled.data.booking.refund.amount, expectedRefund);
         });
 
         test('💥 فشل المزوّد وقت الإصدار: الحجز يتحول failed برسالة، والرد 502', async () => {
