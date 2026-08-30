@@ -3310,6 +3310,7 @@
                 <div class="note" style="margin-top:2px">إجمالي ${o.passengerCount} مسافر</div>
               </div>
               <button class="primary" data-book='${esc(JSON.stringify({ id: o.id }))}'>احجز</button>
+              ${o.slices.length === 2 && config.packagesEnabled ? `<button class="chip" style="margin-top:0" data-pkg-cta='${esc(JSON.stringify({ id: o.id }))}'>🎁 ${T('أضف فندقاً ووفّر', 'Add a hotel & save', 'ہوٹل شامل کریں اور بچت کریں', 'Voeg een hotel toe en bespaar')}</button>` : ''}
             </div>
             <div class="hidden" id="flightDet${i}"></div>
           </div>`).join('');
@@ -3326,6 +3327,9 @@
         document.querySelectorAll('[data-book]').forEach(btn =>
           btn.addEventListener('click', () => openBooking(
             data.offers.find(o => o.id === JSON.parse(btn.dataset.book).id))));
+        document.querySelectorAll('[data-pkg-cta]').forEach(btn =>
+          btn.addEventListener('click', () => startPackageFromFlight(
+            data.offers.find(o => o.id === JSON.parse(btn.dataset.pkgCta).id))));
         refineInsight(data.insight); // بلا await: النتائج معروضة سلفاً
         revealResults($('results'));
         renderFilterChips();
@@ -4044,6 +4048,11 @@
     // الاختياران يعيشان هنا حتى التقييم — التقييم نفسه (السعر والتوفير)
     // يأتي من الخادم حصراً: الواجهة لا تجمع ولا تخصم، فلا تكذب.
     const pkgState = { flights: [], stays: [], flightId: null, stayId: null, quote: null };
+    // 🎁 رحلة قادمة من زر «أضف فندقاً ووفّر» على نتائج الطيران — دون pkgState
+    // نفسه لأن doPkgSearch يصفّر flightId/stayId في بدايته؛ يُستهلك مرة واحدة
+    // بعد وصول نتائج البحث فور تطابق نفس المعرّف (يظهر فعلياً في المحاكاة
+    // الحتمية؛ في Duffel الحي بحثٌ جديد يولّد معرّفات جديدة فيُتجاوَز صامتاً).
+    let pkgPreselectFlightId = null;
 
     function pkgErr(msg) {
       $('pkgError').textContent = msg;
@@ -4076,6 +4085,10 @@
         const sData = await sRes.json();
         pkgState.flights = fRes.ok ? fData.offers : [];
         pkgState.stays = sRes.ok ? (sData.offers || []).filter(o => o.cancellable) : [];
+        if (pkgPreselectFlightId && pkgState.flights.some(o => o.id === pkgPreselectFlightId)) {
+          pkgState.flightId = pkgPreselectFlightId;
+        }
+        pkgPreselectFlightId = null;
         renderPkgFlights(fRes.ok ? null : fData.error);
         renderPkgStays(sRes.ok ? null : sData.error,
           sRes.ok ? (sData.offers || []).length - pkgState.stays.length : 0);
@@ -4084,6 +4097,27 @@
       } finally {
         $('pkgSearchBtn').disabled = false;
       }
+    }
+
+    /**
+     * 🎁 من زر «أضف فندقاً ووفّر» على نتائج بحث الطيران العادي — ينقل رحلة
+     * ذهاب/عودة مختارة سلفاً إلى تبويب الباقات بدل إجبار المستخدم على إعادة
+     * كتابة الوجهة والتواريخ يدوياً في تبويب منفصل (فجوة الاحتكاك الحقيقية
+     * مقابل "Fly Stay Save" في سكاي‌سكانر — محرّك التسعير نفسه لدينا أصلاً).
+     */
+    function startPackageFromFlight(offer) {
+      if (!offer || offer.slices.length !== 2) return;
+      const [outbound, inbound] = offer.slices;
+      $('pkgOrigin').value = outbound.origin;
+      $('pkgOrigin').dataset.iata = outbound.origin;
+      $('pkgDest').value = outbound.destination;
+      $('pkgDest').dataset.iata = outbound.destination;
+      $('pkgDepart').value = outbound.departAt.slice(0, 10);
+      $('pkgReturn').value = inbound.departAt.slice(0, 10);
+      $('pkgAdults').value = Math.min(9, Math.max(1, offer.passengerCount || 1));
+      pkgPreselectFlightId = offer.id;
+      document.querySelector('[data-tab="packages"]').click();
+      doPkgSearch();
     }
 
     function renderPkgFlights(error) {
