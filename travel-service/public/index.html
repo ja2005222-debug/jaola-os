@@ -167,30 +167,44 @@
       background: rgba(36,80,184,.13); border-color: transparent;
       transform: translateY(-1px); box-shadow: 0 3px 10px rgba(36,80,184,.18);
     }
-    /* 🔽 سهمٌ مرسوم بدل سهم المتصفح الافتراضي: يتوقّف عن التطابق مع بقية
-       الأزرار المستديرة حوله. الموضع يتبع اتجاه الصفحة (نهاية النص
-       المنطقية) لأن الترويسة نفسها تُقرأ RTL بالعربية/الأردية وLTR
-       بالإنجليزية/الهولندية. */
-    select.hdr-select {
-      appearance: none; -webkit-appearance: none; -moz-appearance: none;
-      background-color: rgba(36,80,184,.07); border: 1px solid transparent;
-      border-radius: 999px; font-weight: 600; color: var(--muted);
-      width: auto; font-size: 13px; padding-block: 7px; padding-inline-start: 15px;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%232450b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 7l5 5 5-5'/%3E%3C/svg%3E");
-      background-repeat: no-repeat; background-size: 13px;
-      padding-inline-end: 30px;
+    /* 🎛️ قائمة منسدلة مخصّصة (`buildDropdown` في السكربت) بدل `<select>`
+       الأصلي — نمط WAI-ARIA listbox: زرٌّ يفتح قائمةً مبنيّة بـ`<ul>`/`<li>`
+       بدل صندوق المتصفح القياسي. `.dd-list` يُموضَع بخاصيات منطقية
+       (`inset-inline-start`) فيتبع اتجاه الصفحة تلقائياً بلا شرط `[dir]`
+       صريح كما احتاج سهم `<select>` سابقاً. */
+    .dd { position: relative; display: inline-block; }
+    .dd-trigger {
+      appearance: none; background-color: rgba(36,80,184,.07); border: 1px solid transparent;
+      border-radius: 999px; font-weight: 600; color: var(--muted); font-family: inherit;
+      font-size: 13px; padding: 7px 15px; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 6px;
     }
-    html:not([dir="rtl"]) select.hdr-select { background-position: right 10px center; }
-    html[dir="rtl"] select.hdr-select { background-position: left 10px center; }
-    select.hdr-select:hover {
+    /* ⬇️ سهمٌ فيزيائي الشكل (لا منطقي) عمداً: رأس سهمٍ لأسفل لا يحمل
+       اتجاهاً يستوجب المرآة بين RTL/LTR — المرآة يستحقها سهم "التالي/رجوع"
+       لا "أسفل". الجهة التي يظهر عندها بالنسبة للنص تتكفّل بها flexbox
+       تلقائياً (ترتيب عناصر الصفّ يتبع `direction` الموروثة من `dir`). */
+    .dd-trigger::after {
+      content: ''; width: 8px; height: 8px;
+      border-right: 2px solid var(--accent); border-bottom: 2px solid var(--accent);
+      transform: rotate(45deg) translateY(-2px);
+    }
+    .dd-trigger:hover, .dd[data-open] .dd-trigger {
       background-color: rgba(36,80,184,.13);
       transform: translateY(-1px); box-shadow: 0 3px 10px rgba(36,80,184,.18);
     }
-    /* ⚠️ حلقة التركيز الافتراضية (`select:focus` أعلاه) تضبط `border-color`
-       أيضاً — وقاعدة hdr-select العادية (حدٌّ شفاف بلا شرط) نفس خصوصيتها
-       وأحدث ترتيباً، فكانت ستُلغي لون التركيز صمتاً. خصوصيةٌ أعلى هنا
-       تعيده بلا مواربة (فقدان مؤشر التركيز يضرّ التنقّل بلوحة المفاتيح). */
-    select.hdr-select:focus { border-color: var(--accent); }
+    .dd-trigger:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(36,80,184,.15); }
+    .dd-list {
+      position: absolute; top: calc(100% + 6px); inset-inline-start: 0; z-index: 30;
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+      box-shadow: 0 10px 28px rgba(15,23,42,.16); padding: 6px; margin: 0; list-style: none;
+      min-width: 100%; max-height: 260px; overflow-y: auto; white-space: nowrap;
+    }
+    .dd-list:focus { outline: none; }
+    .dd-list li {
+      padding: 8px 12px; border-radius: 8px; font-size: 14px; cursor: pointer; color: var(--text);
+    }
+    .dd-list li.dd-active { background: var(--accent-soft); }
+    .dd-list li[aria-selected="true"] { font-weight: 700; color: var(--accent-deep); }
     /* زرٌّ بهيئة رابط: «نسيت كلمة المرور؟» فعلٌ ثانوي لا يزاحم الدخول */
     button.linkish {
       background: none; border: none; color: var(--accent); font-size: 13px;
@@ -544,15 +558,11 @@
       <span style="color:var(--muted);font-size:13px;font-weight:600">بوابة السفر</span>
     </h1>
     <div style="display:flex;align-items:center;gap:14px">
-      <select id="langBtn" class="hdr-select" title="اللغة / Language / زبان / Taal">
-        <option value="ar">العربية</option>
-        <option value="en">English</option>
-        <option value="ur">اردو</option>
-        <option value="nl">Nederlands</option>
-      </select>
-      <select id="fxSel" class="hdr-select hidden" title="عملة العرض التقريبية">
-        <option value="">💵 العملة الأصلية</option>
-      </select>
+      <!-- 🎛️ langBtn/fxSel كانتا <select> أصليّاً — استُبدلتا بقائمة منسدلة
+           مخصّصة (`buildDropdown` في السكربت، انظر تعليق `.dd` في الأنماط
+           أعلاه) تُبنى وتُملأ داخل هذين الوعاءين وقت boot(). -->
+      <div id="langBtn"></div>
+      <div id="fxSel" class="hidden"></div>
       <button id="bellBtn" class="bell hidden" title="التنبيهات">🔔<span id="bellCount" class="bell-count hidden">0</span></button>
       <button id="guestSignIn" class="chip hidden" type="button">🔐 دخول</button>
       <span id="userBadge" style="color:var(--muted);font-size:13px"></span>
@@ -2324,15 +2334,118 @@
     translateTree(document.body); // الهيكل الثابت يُترجم فور التحميل
     syncDateHints(document.body);
 
+    // 🎛️ قائمة منسدلة مخصّصة — نمط WAI-ARIA listbox (زرٌّ + `<ul role="listbox">`)
+    // بدل `<select>` الأصلي: تبدو أقرب لواجهة تطبيقٍ حقيقي (بطاقة، تظليل
+    // الخيار النشط، سهمٌ مرسوم) — الثمن أن سلوك `<select>` المجاني (تنقّل
+    // كيبورد، قارئ شاشة، فتح باللمس) صار كوداً يُبنى يدوياً هنا لا يُورَث.
+    // ⚠️ **عنصر تركيزٍ واحد لا اثنان**: لا نُبقي `<select>` الأصلي مخفياً
+    // موازياً لهذه القائمة — عنصران قابلان للتركيز بنفس القيمة يربكان
+    // قارئ الشاشة (أيّهما الحقيقي؟)، فالزرّ وحده هو ما يُنادى ويُقرأ.
+    function buildDropdown(container, { title, options, value, onChange }) {
+      const uid = 'dd' + Math.random().toString(36).slice(2, 8);
+      container.classList.add('dd');
+      container.innerHTML = `
+        <button type="button" class="dd-trigger" id="${uid}-btn" title="${esc(title)}"
+          aria-haspopup="listbox" aria-expanded="false" aria-controls="${uid}-list">
+          <span class="dd-label"></span>
+        </button>
+        <ul class="dd-list hidden" id="${uid}-list" role="listbox" tabindex="-1" aria-labelledby="${uid}-btn"></ul>`;
+      const btn = container.querySelector('.dd-trigger');
+      const label = container.querySelector('.dd-label');
+      const list = container.querySelector('.dd-list');
+      let opts = options, val = value;
+
+      function render() {
+        const current = opts.find(o => o.value === val) || opts[0];
+        label.textContent = current ? current.label : '';
+        list.innerHTML = opts.map(o => `<li role="option" id="${uid}-${esc(o.value)}" data-value="${esc(o.value)}"
+          aria-selected="${o.value === val}">${esc(o.label)}</li>`).join('');
+      }
+      const isOpen = () => !list.classList.contains('hidden');
+      function setActive(li) {
+        list.querySelectorAll('.dd-active').forEach(n => n.classList.remove('dd-active'));
+        if (!li) return;
+        li.classList.add('dd-active');
+        li.scrollIntoView({ block: 'nearest' });
+        btn.setAttribute('aria-activedescendant', li.id);
+      }
+      function onDocClick(e) { if (!container.contains(e.target)) close(); }
+      function open() {
+        if (isOpen()) return;
+        list.classList.remove('hidden');
+        container.setAttribute('data-open', '');
+        btn.setAttribute('aria-expanded', 'true');
+        setActive(list.querySelector(`[data-value="${CSS.escape(val)}"]`) || list.firstElementChild);
+        list.focus();
+        document.addEventListener('click', onDocClick, true);
+      }
+      function close() {
+        if (!isOpen()) return;
+        list.classList.add('hidden');
+        container.removeAttribute('data-open');
+        btn.setAttribute('aria-expanded', 'false');
+        btn.removeAttribute('aria-activedescendant');
+        document.removeEventListener('click', onDocClick, true);
+      }
+      function moveActive(dir) {
+        const items = [...list.children];
+        if (!items.length) return;
+        const curIdx = items.findIndex(li => li.classList.contains('dd-active'));
+        setActive(items[(curIdx === -1 ? 0 : curIdx + dir + items.length) % items.length]);
+      }
+      function choose(v) {
+        close(); btn.focus();
+        if (v === val) return;
+        val = v; render();
+        onChange(v);
+      }
+      btn.addEventListener('click', () => (isOpen() ? close() : open()));
+      btn.addEventListener('keydown', e => {
+        if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(e.key)) { e.preventDefault(); open(); }
+        else if (e.key === 'Escape') close();
+      });
+      list.addEventListener('keydown', e => {
+        if (e.key === 'ArrowDown') { e.preventDefault(); moveActive(1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); moveActive(-1); }
+        else if (e.key === 'Home') { e.preventDefault(); setActive(list.firstElementChild); }
+        else if (e.key === 'End') { e.preventDefault(); setActive(list.lastElementChild); }
+        else if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          const active = list.querySelector('.dd-active');
+          if (active) choose(active.dataset.value);
+        } else if (e.key === 'Escape') { e.preventDefault(); close(); btn.focus(); }
+        else if (e.key === 'Tab') close();
+      });
+      list.addEventListener('click', e => {
+        const li = e.target.closest('[role="option"]');
+        if (li) choose(li.dataset.value);
+      });
+      render();
+      return {
+        get value() { return val; },
+        setValue(v) { val = v; render(); },
+        setOptions(newOpts) { opts = newOpts; render(); },
+        show() { container.classList.remove('hidden'); },
+        hide() { container.classList.add('hidden'); },
+      };
+    }
+
     // 🌐 مبدّل اللغة: **يُبحر إلى عنوانٍ آخر** لا يقلب مفتاحاً محلياً —
     // فما يراه المسافر هو ما سيراه من يفتح الرابط الذي يشاركه. قائمةٌ
-    // منسدلة لا زرّاً واحداً بعد أن صارت اللغات أربعاً لا لغتين.
-    $('langBtn').value = uiLang;
-    $('langBtn').addEventListener('change', () => {
-      const next = $('langBtn').value;
-      if (next === uiLang) return;
-      localStorage.setItem(LANG_PREF, next); // اختيارٌ صريح — يُحترَم دوماً
-      location.href = LANG_PATH[next];
+    // منسدلة مخصّصة لا <select> أصلياً — انظر `buildDropdown` أعلاه.
+    buildDropdown($('langBtn'), {
+      title: 'اللغة / Language / زبان / Taal',
+      options: [
+        { value: 'ar', label: 'العربية' },
+        { value: 'en', label: 'English' },
+        { value: 'ur', label: 'اردو' },
+        { value: 'nl', label: 'Nederlands' },
+      ],
+      value: uiLang,
+      onChange: next => {
+        localStorage.setItem(LANG_PREF, next); // اختيارٌ صريح — يُحترَم دوماً
+        location.href = LANG_PATH[next];
+      },
     });
 
     // 📜 روابط الذيل القانونية تحمل لغة الصفحة الحالية: legal.html صفحةٌ
@@ -2344,24 +2457,29 @@
       });
     }
 
+    const fxDropdown = buildDropdown($('fxSel'), {
+      title: 'عملة العرض التقريبية',
+      options: [{ value: '', label: '💵 العملة الأصلية' }],
+      value: fxCur,
+      onChange: next => {
+        fxCur = next;
+        localStorage.setItem(FX_PREF, fxCur);
+        fxRates.clear();
+        document.querySelectorAll('.fx-approx').forEach(n => n.remove());
+        document.querySelectorAll('[data-fx-done]').forEach(el => el.removeAttribute('data-fx-done'));
+        fxAnnotateAll();
+      },
+    });
     async function fxInit() {
       const res = await api('/api/travel/fx/currencies');
       if (!res.ok) return;
       const { currencies } = await res.json();
-      $('fxSel').innerHTML = '<option value="">💵 العملة الأصلية</option>' +
-        currencies.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-      $('fxSel').value = fxCur;
-      $('fxSel').classList.remove('hidden');
+      fxDropdown.setOptions([{ value: '', label: '💵 العملة الأصلية' },
+        ...currencies.map(c => ({ value: c, label: c }))]);
+      fxDropdown.setValue(fxCur);
+      fxDropdown.show();
       fxAnnotateAll();
     }
-    $('fxSel').addEventListener('change', () => {
-      fxCur = $('fxSel').value;
-      localStorage.setItem(FX_PREF, fxCur);
-      fxRates.clear();
-      document.querySelectorAll('.fx-approx').forEach(n => n.remove());
-      document.querySelectorAll('[data-fx-done]').forEach(el => el.removeAttribute('data-fx-done'));
-      fxAnnotateAll();
-    });
 
     // ─── 🎁 الولاء ───
     async function loadLoyalty() {
