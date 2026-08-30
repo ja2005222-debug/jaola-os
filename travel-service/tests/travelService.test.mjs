@@ -16,7 +16,7 @@ import os from 'os';
 import path from 'path';
 import jwt from 'jsonwebtoken';
 
-import { createApp, validateSearchParams, validateMultiCitySearchParams, validatePassengers, validateSelectedServices, validateStaySearchParams, validateGuests, validateCarSearchParams, validateDrivers, verifyDuffelWebhookSignature } from '../server.js';
+import { createApp, validateSearchParams, validateMultiCitySearchParams, validatePassengers, validateSelectedServices, validateStaySearchParams, validateGuests, validateCarSearchParams, validateDrivers, validateEsimSearchParams, validateEsimTraveller, verifyDuffelWebhookSignature } from '../server.js';
 import crypto from 'crypto';
 import { createMockTravelProvider } from '../src/providers/mockProvider.js';
 import { createDuffelProvider, normalizeDuffelOffer, sortOffers, totalDurationMin, applyOfferFilters } from '../src/providers/duffelProvider.js';
@@ -24,7 +24,8 @@ import { createMockStaysProvider } from '../src/providers/mockStaysProvider.js';
 import { normalizeDuffelStayResult } from '../src/providers/duffelStaysProvider.js';
 import { createMockCarsProvider } from '../src/providers/mockCarsProvider.js';
 import { normalizeDuffelCarResult } from '../src/providers/duffelCarsProvider.js';
-import { buildProvider, buildStaysProvider, buildCarsProvider } from '../src/providers/index.js';
+import { createMockEsimProvider } from '../src/providers/mockEsimProvider.js';
+import { buildProvider, buildStaysProvider, buildCarsProvider, buildEsimProvider } from '../src/providers/index.js';
 import { readMarkupPct, applyMarkup, DEFAULT_MARKUP_PCT, readPackageMarkupPct, DEFAULT_PACKAGE_MARKUP_PCT, readCategoryMarkupPct, MAX_MARKUP_PCT } from '../src/pricing.js';
 import { normalizeContract, contractCoversStay, contractOfferId, parseContractOfferId } from '../src/contracts.js';
 import {
@@ -108,6 +109,13 @@ const CAR_SEARCH_BODY = () => ({
 
 const VALID_DRIVERS = {
     drivers: [{ givenName: 'AHMED', familyName: 'ALI' }],
+    contact: { email: 'a@test.com', phone: '+966500000000' },
+};
+
+const ESIM_SEARCH_BODY = () => ({ iata: 'CDG', days: 10 });
+
+const VALID_ESIM_TRAVELLER = {
+    passengers: [{ givenName: 'AHMED', familyName: 'ALI' }],
     contact: { email: 'a@test.com', phone: '+966500000000' },
 };
 
@@ -2724,7 +2732,7 @@ describe('searchAirports: بحث بالمدينة أو الدولة، عربيا
 // ─── المجموعة الكاملة، مُعامَلة بمصنع المخزن ──────────────────────────
 function runSuite(storeLabel, { makeStore, resetStore }) {
     describe(`بوابة السفر — تخزين: ${storeLabel}`, () => {
-        let store, server, baseUrl, provider, staysProvider, carsProvider;
+        let store, server, baseUrl, provider, staysProvider, carsProvider, esimProvider;
 
         async function call(pathname, { method = 'GET', token = null, body = null, headers: extraHeaders = {} } = {}) {
             const headers = { 'Content-Type': 'application/json', ...extraHeaders };
@@ -2743,8 +2751,9 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             provider = createMockTravelProvider();
             staysProvider = createMockStaysProvider();
             carsProvider = createMockCarsProvider();
+            esimProvider = createMockEsimProvider();
             const app = createApp({
-                store, jwtSecret: JWT_SECRET, provider, staysProvider, carsProvider,
+                store, jwtSecret: JWT_SECRET, provider, staysProvider, carsProvider, esimProvider,
                 markupPct: MARKUP, packageMarkupPct: PKG_MARKUP, adminUsers: ['admin'],
             });
             server = await new Promise(r => { const s = app.listen(0, () => r(s)); });
@@ -5991,6 +6000,9 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             const dc = buildCarsProvider({ DUFFEL_API_KEY: 'duffel_test_abc' });
             assert.equal(dc.name, 'duffel-cars');
             assert.equal(dc.mode, 'sandbox');
+
+            // 📶 eSIM: محاكاة فقط دوماً حالياً — لا مزوّد حي بعد (راجع providers/index.js)
+            assert.equal(buildEsimProvider({}).name, 'mock-esim');
         });
 
         test('🏨 بحث الفنادق: تحقق صارم من المعايير + الهامش مطبَّق والصافي لا يتسرب', async () => {
@@ -6150,6 +6162,77 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(cancelled.data.booking.status, 'cancelled');
             assert.ok(cancelled.data.booking.refund.amount > 0);
             assert.equal((await call(`/api/travel/cars/bookings/${b.id}/cancel`, { method: 'POST', token })).status, 400);
+        });
+
+        test('📶 بحث باقات eSIM: تحقق صارم من المعايير + الهامش مطبَّق والصافي لا يتسرب', async () => {
+            const token = makeToken('esim-searcher');
+            for (const bad of [
+                { ...ESIM_SEARCH_BODY(), iata: 'CDGX' },   // IATA فاسد
+                { ...ESIM_SEARCH_BODY(), iata: 'ZZZ' },    // غير مغطّى
+                { ...ESIM_SEARCH_BODY(), days: 0 },        // أقل من الحد
+                { ...ESIM_SEARCH_BODY(), days: 45 },       // أطول من الحد
+                { ...ESIM_SEARCH_BODY(), days: 3.5 },      // ليس عدداً صحيحاً
+            ]) {
+                const r = await call('/api/travel/esim/search', { method: 'POST', token, body: bad });
+                assert.equal(r.status, 400, JSON.stringify(bad));
+            }
+
+            const ok = await call('/api/travel/esim/search', { method: 'POST', token, body: ESIM_SEARCH_BODY() });
+            assert.equal(ok.status, 200);
+            assert.ok(ok.data.offers.length > 0);
+            // كل عرض صالح لمدة ≥ أيام الرحلة — لا باقة تنقص المسافر يوماً واحداً
+            for (const o of ok.data.offers) assert.ok(o.validityDays >= ESIM_SEARCH_BODY().days);
+
+            const validated = validateEsimSearchParams(ESIM_SEARCH_BODY());
+            const rawOffers = await esimProvider.searchEsims(validated.values);
+            for (const [i, offer] of ok.data.offers.entries()) {
+                assert.equal(offer.sellAmount, applyMarkup(rawOffers[i].netAmount, MARKUP));
+                assert.equal(offer.netAmount, undefined); // 💰 لا تسريب للصافي
+            }
+
+            const one = await call(`/api/travel/esim/offers/${rawOffers[0].id}`, { token });
+            assert.equal(one.status, 200);
+            assert.equal(one.data.offer.netAmount, undefined);
+            assert.equal((await call('/api/travel/esim/offers/ghost', { token })).status, 404);
+        });
+
+        test('📶🎫 حجز باقة eSIM كامل: كود تفعيل حقيقي، بلا زرّ إلغاء، وحجوزاتي موحّدة', async () => {
+            const token = makeToken('esim-booker');
+            const search = await call('/api/travel/esim/search', { method: 'POST', token, body: ESIM_SEARCH_BODY() });
+            const offerId = search.data.offers[0].id;
+
+            for (const badBody of [
+                {},
+                { ...VALID_ESIM_TRAVELLER, passengers: [] },                                          // بلا مسافر
+                { ...VALID_ESIM_TRAVELLER, passengers: [{ givenName: 'أحمد', familyName: 'ALI' }] },   // غير لاتيني
+                { ...VALID_ESIM_TRAVELLER, contact: { email: 'bad', phone: '+966500000000' } },        // بريد فاسد
+            ]) {
+                const r = await call('/api/travel/esim/bookings', { method: 'POST', token, body: { offerId, ...badBody } });
+                assert.equal(r.status, 400, JSON.stringify(badBody).slice(0, 80));
+            }
+
+            assert.equal((await call('/api/travel/esim/bookings', {
+                method: 'POST', token, body: { offerId: 'ghost', ...VALID_ESIM_TRAVELLER },
+            })).status, 404);
+
+            const booked = await call('/api/travel/esim/bookings', { method: 'POST', token, body: { offerId, ...VALID_ESIM_TRAVELLER } });
+            assert.equal(booked.status, 200);
+            const b = booked.data.booking;
+            assert.equal(b.status, 'issued');
+            assert.equal(b.kind, 'esim');
+            assert.match(b.bookingReference, /^JAE\d+/);
+            // 🔑 كود التفعيل والشريحة يصلان العميل — هما ما يشتريه المسافر فعلياً
+            assert.match(b.esim.activationCode, /^LPA:/);
+            assert.ok(b.esim.iccid);
+
+            const list = await call('/api/travel/bookings', { token });
+            assert.equal(list.data.bookings.length, 1);
+            assert.equal(list.data.bookings[0].kind, 'esim');
+
+            // ⛔ لا مسار إلغاء لباقات eSIM إطلاقاً — ملفٌّ رقمي يُسلَّم فوراً
+            // ولا يُسترد بعده (راجع التعليق أعلى doSearchEsim في server.js)
+            assert.equal((await call(`/api/travel/esim/bookings/${b.id}/cancel`, { method: 'POST', token })).status, 404);
+            assert.equal((await call(`/api/travel/bookings/${b.id}/cancel`, { method: 'POST', token })).status, 404);
         });
 
         test('✈️🚗 تطبيع نتيجة Duffel Cars: الشكل المُستنتَج → العرض الموحّد', () => {

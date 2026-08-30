@@ -43,7 +43,7 @@ import { normalizeContract } from './src/contracts.js';
 import { createContractedStaysProvider, withContractedStays } from './src/providers/contractedStaysProvider.js';
 import { createBooking, getBooking, getBookingByProviderOrderId, listBookingsByUser, transitionBooking } from './src/bookings.js';
 import { buildStore } from './src/store/index.js';
-import { buildProvider, buildStaysProvider, buildCarsProvider } from './src/providers/index.js';
+import { buildProvider, buildStaysProvider, buildCarsProvider, buildEsimProvider } from './src/providers/index.js';
 import { buildTravelAgent } from './src/agent/agent.js';
 import {
     buildInsight, buildStayInsight, buildCarInsight, buildPackageInsight,
@@ -495,6 +495,48 @@ export function validateDrivers(body) {
     return { values: { drivers: clean, contact: { email, phone } } };
 }
 
+/**
+ * يتحقق من معايير بحث باقات eSIM ويطبّعها — {error} أو {values}.
+ * الوجهة رمز IATA (بلد لا مطار — يُشتق البلد منه في المزوّد) لإعادة
+ * استعمال نفس حقل الإدخال والتحقق المستعمَل في بحث السيارات، بلا قائمة
+ * دول جديدة يحفظها المسافر بذهنه.
+ */
+export function validateEsimSearchParams(body) {
+    const iata = String(body?.iata || '').trim().toUpperCase();
+    if (!IATA_RE.test(iata)) {
+        return { error: 'رمز وجهة الرحلة يجب أن يكون IATA من ثلاثة أحرف (مثل CDG أو IST).' };
+    }
+    if (!airportCoords(iata)) {
+        return { error: `الوجهة ${iata} غير مغطّاة حالياً في بحث باقات eSIM.` };
+    }
+    const days = Number(body?.days);
+    if (!Number.isInteger(days) || days < 1 || days > MAX_RENTAL_DAYS) {
+        return { error: `مدة الرحلة بالأيام عدد صحيح بين 1 و${MAX_RENTAL_DAYS}.` };
+    }
+    return { values: { iata, days } };
+}
+
+/**
+ * يتحقق من بيانات مسافر باقة eSIM وتواصله — {error} أو {values}.
+ * مسافر واحد بالضبط (لا مصفوفة مفتوحة كالسيارات): كل باقة ملفٌّ رقمي
+ * واحد لجهاز واحد، والاسم للعرض في «رحلاتي» فقط — لا يصل المزوّد (كتالوجه
+ * لا يعرف أسماء، والبريد وحده يكفيه لتسليم كود التفعيل).
+ */
+export function validateEsimTraveller(body) {
+    const passengers = Array.isArray(body?.passengers) ? body.passengers : null;
+    if (!passengers || passengers.length !== 1) return { error: 'باقة eSIM لمسافر واحد بالضبط.' };
+    const givenName = String(passengers[0]?.givenName || '').trim();
+    const familyName = String(passengers[0]?.familyName || '').trim();
+    if (!NAME_RE.test(givenName) || !NAME_RE.test(familyName)) {
+        return { error: 'اسم المسافر بالحروف اللاتينية (حتى 40 حرفاً).' };
+    }
+    const email = String(body?.contact?.email || '').trim();
+    const phone = normalizePhone(body?.contact?.phone);
+    if (!EMAIL_RE.test(email)) return { error: 'بريد لتسليم كود التفعيل مطلوب.' };
+    if (!PHONE_RE.test(phone)) return { error: PHONE_HINT };
+    return { values: { passengers: [{ givenName, familyName }], contact: { email, phone } } };
+}
+
 /** عرض للعميل: sellAmount فقط — الصافي netAmount **لا يغادر الخادم**. */
 /**
  * أعمار الركاب تصل الواجهة، ومعرّفات المزوّد لا.
@@ -554,6 +596,9 @@ function publicBooking(b) {
         // 🎫 أرقام التذاكر الإلكترونية ووقت الدفع — تفاصيل يسأل عنها المسافر
         // فعلاً («متى تأكد؟ وأين تذكرتي؟»)، وليست أسراراً كالصافي.
         tickets: b.tickets, paidAt: b.paidAt,
+        // 📶 كود تفعيل eSIM (ICCID + LPA) — يظهر هنا فقط بعد الإصدار، ولا
+        // يقترب من sharedBooking أبداً (تسريبه يعادل تسليم بطاقتك لغيرك).
+        esim: b.esim || null,
         // 💱 ما حُصِّل فعلاً حين تختلف عملة التحصيل عن عملة البيع — يُعرض
         // للمسافر بسعره ومصدره، فلا يفاجئه رقمٌ آخر في كشف بطاقته
         billing: b.billing || null,
@@ -615,11 +660,13 @@ export function createApp({
     provider,
     staysProvider = null,
     carsProvider = null,
+    esimProvider = null,          // باقات إنترنت السفر (eSIM) — محاكاة فقط حالياً (راجع providers/index.js)
     agent = null,
     markupPct = readMarkupPct(),  // الافتراض العام: تسقط عليه كل فئة لم تُخصَّص لها قيمة
     flightMarkupPct = null,       // يُشتق من markupPct إن لم يُمرَّر (TRAVEL_MARKUP_PCT_FLIGHT)
     stayMarkupPct = null,         // كذلك (TRAVEL_MARKUP_PCT_STAY) — وفندق التعاقد يتقدّم عليه بهامشه الخاص إن وُجد
     carMarkupPct = null,          // كذلك (TRAVEL_MARKUP_PCT_CAR)
+    esimMarkupPct = null,         // كذلك (TRAVEL_MARKUP_PCT_ESIM)
     packageMarkupPct = null,      // يُشتق من markupPct إن لم يُمرَّر — محروس أدنى منه
     adminUsers = [],              // أسماء مستخدمي الأدمن (من TRAVEL_ADMIN_USERS)
     travelInfoFetch = fetch, // قابل للحقن في الاختبارات (طقس/عملة بلا شبكة حقيقية)
@@ -781,6 +828,7 @@ ${urls}
     const flightMkt = flightMarkupPct != null ? flightMarkupPct : readCategoryMarkupPct('flight', process.env, markupPct);
     const stayMkt = stayMarkupPct != null ? stayMarkupPct : readCategoryMarkupPct('stay', process.env, markupPct);
     const carMkt = carMarkupPct != null ? carMarkupPct : readCategoryMarkupPct('car', process.env, markupPct);
+    const esimMkt = esimMarkupPct != null ? esimMarkupPct : readCategoryMarkupPct('esim', process.env, markupPct);
 
     // هامش الباقة النهائي — محروس أن يبقى أدنى من **الأضيق** بين هامشَي
     // مكوّنَيها (لا الهامش العام وحده): فبعد فصل الفئات لم يعد هناك رقم
@@ -1204,6 +1252,10 @@ ${urls}
         if (!carsProvider) throw Object.assign(new Error('استئجار السيارات غير مفعَّل حالياً.'), { status: 503 });
     }
 
+    function requireEsim() {
+        if (!esimProvider) throw Object.assign(new Error('باقات إنترنت السفر (eSIM) غير مفعَّلة حالياً.'), { status: 503 });
+    }
+
     async function doSearchCars(params) {
         requireCars();
         const check = validateCarSearchParams(params);
@@ -1282,6 +1334,70 @@ ${urls}
         const finalBooking = cancelled || await getBooking(store, booking.id);
         await notifyBookingCancelled(finalBooking);
         return publicBooking(finalBooking);
+    }
+
+    // ─── 📶 باقات إنترنت السفر (eSIM) — محاذاة دوال السيارات أعلاه ─────
+    //
+    // بلا doCancelEsim عمداً: ملفّ eSIM رقمي يُسلَّم فوراً عند الإصدار،
+    // ولا مسار إلغاء/استرداد بعده في الصناعة الفعلية — فلا دالة هنا
+    // تُبنى عليها لاحقاً بالخطأ، ولا مسار HTTP يستدعيها.
+
+    async function doSearchEsim(params) {
+        requireEsim();
+        const check = validateEsimSearchParams(params);
+        if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
+        try {
+            const offers = await esimProvider.searchEsims(check.values);
+            return offers.map(o => publicOffer(o, esimMkt));
+        } catch (e) {
+            throw Object.assign(new Error(`تعذّر بحث باقات eSIM: ${e.message}`), { status: 502 });
+        }
+    }
+
+    async function doGetEsimOffer(offerId) {
+        requireEsim();
+        const offer = await esimProvider.getEsimOffer(String(offerId || ''));
+        return offer ? publicOffer(offer, esimMkt) : null;
+    }
+
+    async function doBookEsim(username, { offerId, passengers, contact }, baseUrl = null) {
+        requireEsim();
+        const offer = await esimProvider.getQuote(String(offerId || ''));
+        if (!offer) throw Object.assign(new Error('عرض باقة eSIM غير موجود أو انتهت صلاحيته — أعد البحث.'), { status: 404 });
+        const check = validateEsimTraveller({ passengers, contact });
+        if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
+
+        const sellAmount = applyMarkup(offer.netAmount, esimMkt);
+        const { netAmount: _net, ...offerSummary } = offer;
+        const booking = await createBooking(store, {
+            username, provider: esimProvider.name, kind: 'esim',
+            offer: offerSummary,
+            passengers: check.values.passengers,
+            contact: check.values.contact,
+            netAmount: offer.netAmount, sellAmount, currency: offer.currency,
+        });
+        if (stripeClient) {
+            return startBookingCheckout({
+                booking, baseUrl,
+                title: `📶 eSIM ${offer.countryEn || ''} · ${offer.dataGb}GB`,
+            });
+        }
+        try {
+            const order = await esimProvider.createEsimOrder({
+                offerId: offer.id,
+                contact: check.values.contact,
+            });
+            const issued = await transitionBooking(store, booking.id, 'issued', {
+                providerOrderId: order.orderId,
+                bookingReference: order.bookingReference,
+                esim: order.esim,
+            });
+            await notifyBookingIssued(issued);
+            return publicBooking(issued);
+        } catch (e) {
+            await transitionBooking(store, booking.id, 'failed', { error: e.message });
+            throw Object.assign(new Error(`تعذّر إصدار باقة eSIM: ${e.message}`), { status: 502 });
+        }
     }
 
     // ─── إيجاد الحلول (أدوات ايجنت فقط — لا مسارات HTTP مباشرة) ────────
@@ -1764,6 +1880,8 @@ ${urls}
             staysProviderMode: staysProvider?.mode || null,
             carsEnabled: !!carsProvider,
             carsProviderMode: carsProvider?.mode || null,
+            esimEnabled: !!esimProvider,
+            esimProviderMode: esimProvider?.mode || null,
             agentEnabled: !!agent,
             packagesEnabled: !!staysProvider, // الباقة = طيران + فندق؛ الطيران موجود دوماً
             paymentsEnabled: !!stripeClient, // 💳 حجز الباقات المجدولة يتحول لدفع فعلي
@@ -2053,6 +2171,39 @@ ${urls}
     app.post('/api/travel/cars/bookings/:id/cancel', verifyToken, wrap(async (req, res) => {
         try {
             res.json({ booking: await doCancelCar(userOf(req), req.params.id) });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
+    // ─── 📶 باقات إنترنت السفر (eSIM) — محاذاة مسارات السيارات أعلاه ───
+    // بلا مسار إلغاء عمداً (راجع doSearchEsim وجوارها أعلاه).
+
+    app.post('/api/travel/esim/search', optionalToken, searchLimiter, wrap(async (req, res) => {
+        try {
+            res.json({ offers: await doSearchEsim(req.body) });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
+    app.get('/api/travel/esim/offers/:id', optionalToken, wrap(async (req, res) => {
+        try {
+            const offer = await doGetEsimOffer(req.params.id);
+            if (!offer) return res.status(404).json({ error: 'عرض باقة eSIM غير موجود أو انتهت صلاحيته.' });
+            res.json({ offer });
+        } catch (e) {
+            if (e.status) return res.status(e.status).json({ error: e.message });
+            throw e;
+        }
+    }));
+
+    app.post('/api/travel/esim/bookings', verifyToken, wrap(async (req, res) => {
+        try {
+            const booking = await doBookEsim(userOf(req), req.body || {}, requestBaseUrl(req));
+            res.json({ booking, ...(booking.checkoutUrl ? { checkoutUrl: booking.checkoutUrl } : {}) });
         } catch (e) {
             if (e.status) return res.status(e.status).json({ error: e.message });
             throw e;
@@ -2557,13 +2708,17 @@ ${urls}
             requireCars();
             return carsProvider.createCarOrder({ offerId, drivers: booking.passengers, contact });
         }
+        if (booking.kind === 'esim') {
+            requireEsim();
+            return esimProvider.createEsimOrder({ offerId, contact });
+        }
         // 🧳 أمتعة إضافية مختارة وقت الحجز — محفوظة على الحجز نفسه لأن هذا
         // المسار يجري لاحقاً غير متزامن (webhook الدفع)، لا وقت البحث.
         const services = (booking.offer?.extraBaggage || []).map(s => ({ id: s.id, quantity: s.quantity }));
         return provider.createOrder({ offerId, passengers: booking.passengers, contact, services });
     }
 
-    const KIND_LABEL = { stay: 'الفندق', car: 'السيارة' };
+    const KIND_LABEL = { stay: 'الفندق', car: 'السيارة', esim: 'باقة eSIM' };
 
     /**
      * دفع حجز مزوّد اكتمل → الإصدار الآن (النداء الوحيد للمزوّد في الرحلة
@@ -2585,6 +2740,7 @@ ${urls}
                 providerOrderId: order.orderId,
                 bookingReference: order.bookingReference,
                 tickets: order.tickets || [],
+                esim: order.esim,
                 paymentIntentId, paidAt: Date.now(),
             });
             if (issued) await notifyBookingIssued(issued);
@@ -3099,8 +3255,9 @@ ${urls}
                 provider: provider.name, providerMode: provider.mode || 'live',
                 staysProvider: staysBase?.name || null, staysProviderMode: staysBase?.mode || null,
                 carsEnabled: !!carsProvider,
+                esimEnabled: !!esimProvider,
                 markupPct, // الافتراض العام — يظهر لتوضيح ما تسقط عليه فئة لم تُخصَّص
-                flightMarkupPct: flightMkt, stayMarkupPct: stayMkt, carMarkupPct: carMkt,
+                flightMarkupPct: flightMkt, stayMarkupPct: stayMkt, carMarkupPct: carMkt, esimMarkupPct: esimMkt,
                 packageMarkupPct: pkgMarkupPct,
                 agentEnabled: !!agent,
                 mailReady: !!mailer?.mailReady?.(),
@@ -3339,6 +3496,7 @@ if (isMain) {
     const provider = buildProvider();
     const staysProvider = buildStaysProvider();
     const carsProvider = buildCarsProvider();
+    const esimProvider = buildEsimProvider();
     const agent = buildTravelAgent();
     const markupPct = readMarkupPct();
     // مراقب الأسعار أدناه يعمل خارج نطاق createApp، فيحتاج نسخته الخاصة من
@@ -3354,6 +3512,7 @@ if (isMain) {
         provider,
         staysProvider,
         carsProvider,
+        esimProvider,
         agent,
         markupPct,
         // أدمن البوابة: أسماء مستخدمين مفصولة بفواصل — بلا ضبط لا صفحة إدارة
@@ -3372,7 +3531,7 @@ if (isMain) {
 
     const port = Number(process.env.PORT || 4200);
     app.listen(port, () => {
-        console.log(`✈️ بوابة السفر على المنفذ ${port} (المزوّد: ${provider.name}/${provider.mode || 'live'}، الفنادق: ${staysProvider.name}/${staysProvider.mode || 'live'}، السيارات: ${carsProvider.name}/${carsProvider.mode || 'live'}، التخزين: ${store.name}، الهامش: ${markupPct}%)`);
+        console.log(`✈️ بوابة السفر على المنفذ ${port} (المزوّد: ${provider.name}/${provider.mode || 'live'}، الفنادق: ${staysProvider.name}/${staysProvider.mode || 'live'}، السيارات: ${carsProvider.name}/${carsProvider.mode || 'live'}، eSIM: ${esimProvider.name}/${esimProvider.mode || 'live'}، التخزين: ${store.name}، الهامش: ${markupPct}%)`);
         if (!agent) console.warn('⚠️ الايجنت غير مفعَّل — اضبط TRAVEL_AGENT_API_KEY لتفعيل المساعد الحاجز.');
         if (provider.name === 'mock') console.warn('⚠️ مزوّد محاكاة — اضبط DUFFEL_API_KEY (يبدأ بـduffel_test للتجريبي).');
         if (process.env.STRIPE_SECRET_KEY) {

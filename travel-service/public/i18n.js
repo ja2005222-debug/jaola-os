@@ -98,6 +98,17 @@ window.JAOLA_I18N_TABLE = {
     '▾ تفاصيل الرحلة والأمتعة': { en: '▾ Flight details & baggage', ur: '▾ پرواز کی تفصیلات اور سامان', nl: '▾ Vluchtdetails & bagage' },
     'سياسة الإلغاء': { en: 'Cancellation policy', ur: 'منسوخی کی پالیسی', nl: 'Annuleringsbeleid' },
 
+    // ─── 📶 باقات إنترنت السفر (eSIM) ───
+    '📶 إنترنت السفر': { en: '📶 Travel eSIM', ur: '📶 سفری eSIM', nl: '📶 Reis-eSIM' },
+    '📶 باقة بيانات رقمية تُثبَّت بكود واحد بلا شريحة فعلية — تصلك فور الإصدار.': { en: '📶 A digital data plan installed with one code, no physical SIM — delivered as soon as it is issued.', ur: '📶 ایک ڈیجیٹل ڈیٹا پلان جو ایک کوڈ سے انسٹال ہوتا ہے، کوئی فزیکل سم نہیں — جاری ہوتے ہی موصول ہو جاتا ہے۔', nl: '📶 Een digitaal databundel die met één code wordt geïnstalleerd, geen fysieke simkaart — geleverd zodra deze is uitgegeven.' },
+    'مدة الرحلة (أيام)': { en: 'Trip length (days)', ur: 'سفر کی مدت (دن)', nl: 'Reisduur (dagen)' },
+    'باريس أو CDG': { en: 'Paris or CDG', ur: 'پیرس یا CDG', nl: 'Parijs of CDG' },
+    '🔎 ابحث عن باقة': { en: '🔎 Search plans', ur: '🔎 پیکجز تلاش کریں', nl: '🔎 Zoek bundels' },
+    'لا باقات تغطّي كامل مدة رحلتك لهذه الوجهة — جرّب مدة أقصر.': { en: 'No plans cover your full trip length for this destination — try a shorter duration.', ur: 'اس منزل کے لیے آپ کے سفر کی پوری مدت کا احاطہ کرنے والا کوئی پیکج نہیں — مختصر مدت آزمائیں۔', nl: 'Geen bundels dekken uw volledige reisduur voor deze bestemming — probeer een kortere periode.' },
+    '📶 بيانات المسافر': { en: '📶 Traveller details', ur: '📶 مسافر کی تفصیلات', nl: '📶 Reizigersgegevens' },
+    'المسافر': { en: 'Traveller', ur: 'مسافر', nl: 'Reiziger' },
+    'البريد الإلكتروني (لتسليم كود التفعيل)': { en: 'Email (to deliver the activation code)', ur: 'ای میل (ایکٹیویشن کوڈ کی ترسیل کے لیے)', nl: 'E-mail (voor de activeringscode)' },
+
     // ─── الباقات الجاهزة ───
     'احجز الآن': { en: 'Book now', ur: 'ابھی بک کریں', nl: 'Nu boeken' },
     'احجز الباقة': { en: 'Book package', ur: 'پیکج بک کریں', nl: 'Pakket boeken' },

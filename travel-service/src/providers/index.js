@@ -12,6 +12,7 @@ import { createLiteApiStaysProvider } from './liteApiStaysProvider.js';
 import { createMockStaysProvider } from './mockStaysProvider.js';
 import { createDuffelCarsProvider } from './duffelCarsProvider.js';
 import { createMockCarsProvider } from './mockCarsProvider.js';
+import { createMockEsimProvider } from './mockEsimProvider.js';
 
 export function buildProvider(env = process.env) {
     if (env.DUFFEL_API_KEY) {
@@ -52,4 +53,14 @@ export function buildCarsProvider(env = process.env) {
         });
     }
     return createMockCarsProvider();
+}
+
+/**
+ * باقات إنترنت السفر (eSIM) — محاكاة فقط حالياً: لا مزوّد حي متعاقَد بعد.
+ * أُبقيت دالة بناء مستقلة (لا مجرد `createMockEsimProvider()` مباشرة في
+ * server.js) كي يضاف فرع حي لاحقاً بنفس نمط باقي المزوّدين بلا تغيير أي
+ * مستدعٍ — «لا صيغة مزوّد بلا توثيق مؤكَّد» تمنع بناءه اليوم فقط، لا بنية التبديل.
+ */
+export function buildEsimProvider(env = process.env) {
+    return createMockEsimProvider();
 }
