@@ -364,6 +364,52 @@
     .ac-item .ac-sub { color: var(--muted); font-size: 12px; }
     .ac-empty { padding: 9px 12px; color: var(--muted); font-size: 13px; }
 
+    /* 📅 تقويم أسعار مخصّص لتاريخ الذهاب (`buildPriceDatePicker`) — شبكة
+       شهرٍ حقيقية بدل صندوق منتقي المتصفح الفارغ، بسعرٍ تحت كل يوم
+       كـGoogle Flights. نفس أسرة `.dd`/`.ac-wrap` البصرية (بطاقة مرتفعة
+       الظل تحت حقلٍ يبدو كبقية حقول النموذج). */
+    .cal-wrap { position: relative; }
+    .cal-trigger {
+      width: 100%; padding: 11px 13px; border-radius: 10px; font-size: 16px;
+      border: 1px solid var(--border); background: #fff; color: var(--text);
+      text-align: start; cursor: pointer; display: block; font-family: inherit;
+    }
+    .cal-trigger.cal-placeholder { color: var(--muted); }
+    .cal-trigger:focus-visible {
+      outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(36,80,184,.15);
+    }
+    .cal-popup {
+      position: absolute; z-index: 50; inset-inline-start: 0; top: calc(100% + 4px);
+      background: var(--card); border: 1px solid var(--accent); border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(15,23,42,.14); padding: 12px; width: 300px; max-width: 90vw;
+    }
+    .cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .cal-nav button {
+      background: none; border: none; font-size: 15px; cursor: pointer; color: var(--accent);
+      padding: 5px 12px; border-radius: 8px; font-weight: 700;
+    }
+    .cal-nav button:hover { background: var(--accent-soft); }
+    .cal-nav button:disabled { opacity: .3; cursor: default; }
+    .cal-nav .cal-month-label { font-weight: 700; font-size: 14px; }
+    .cal-weekdays, .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+    .cal-weekdays { text-align: center; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    .cal-grid { gap: 2px; }
+    .cal-day {
+      aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      border-radius: 8px; cursor: pointer; font-size: 13px; border: 1px solid transparent;
+      background: none; color: var(--text); padding: 2px; font-family: inherit;
+    }
+    .cal-day .cal-price { font-size: 9.5px; color: var(--muted); line-height: 1.15; }
+    .cal-day:hover:not(.cal-disabled):not(.cal-empty) { background: var(--accent-soft); }
+    .cal-day.cal-focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .cal-day.cal-selected { background: var(--accent); color: #fff; }
+    .cal-day.cal-selected .cal-price { color: #e8effc; }
+    .cal-day.cal-today:not(.cal-selected) { font-weight: 800; color: var(--accent-deep); }
+    .cal-day.cal-cheapest:not(.cal-selected) .cal-price { color: var(--ok); font-weight: 700; }
+    .cal-day.cal-disabled { opacity: .3; cursor: default; }
+    .cal-day.cal-empty { visibility: hidden; cursor: default; }
+    .cal-note { font-size: 11.5px; color: var(--muted); margin-top: 8px; text-align: center; }
+
     /* لوحة التفاصيل (رحلة/فندق) */
     .details {
       border-top: 1px dashed var(--border); margin-top: 10px; padding-top: 10px;
@@ -647,7 +693,13 @@
           <div class="row">
             <div class="ac-wrap"><label>من</label><input id="fOrigin" placeholder="الرياض أو RUH" autocomplete="off" /></div>
             <div class="ac-wrap"><label>إلى</label><input id="fDest" placeholder="القاهرة أو CAI" autocomplete="off" /></div>
-            <div><label>تاريخ الذهاب</label><input id="fDepart" type="date" /></div>
+            <div><label>تاريخ الذهاب</label>
+              <!-- 📅 تقويم أسعار مخصّص (buildPriceDatePicker في السكربت) يحلّ
+                   محلّ منتقي المتصفح الأصلي — شبكة شهرٍ حقيقية بسعرٍ تحت كل
+                   يوم كـGoogle Flights، لا صندوق فارغ. الحقل الأصلي يبقى
+                   موجوداً (مخفياً) كي لا يتغيّر أي كودٍ يقرأ/يكتب `.value`. -->
+              <div class="cal-wrap" id="fDepartCal"><input id="fDepart" type="date" class="hidden" /></div>
+            </div>
             <div><label>العودة (اختياري)</label><input id="fReturn" type="date" /></div>
           </div>
           <div class="row">
@@ -1541,6 +1593,9 @@
       // input، فمزامنةٌ سابقة كانت تُبقي صف الإخفاء على حقلٍ صار ذا قيمة
       // فتخفي التاريخ نفسه (رصده اختبار متصفح قبل النشر لا مستخدم بعده).
       syncDateHints(document.body);
+      // نفس العلّة بالضبط تخصّ زرّ تقويم الأسعار المخصّص: `.value` تغيّر
+      // للتوّ فوق بلا أي حدث يُطلَق، وتسميته المعروضة بُنيت قبل ذلك بفراغ.
+      fDepartCal.refresh();
       if (token) loadTrips();
       loadPromos(); // بلا await: الشريط زينة، لا يؤخّر جاهزية الصفحة
       if (token) refreshBell();
@@ -2430,6 +2485,233 @@
       };
     }
 
+    // 📅 تقويم أسعار مخصّص لحقل تاريخ الذهاب — شبكة شهرٍ حقيقية (كـGoogle
+    // Flights) بدل صندوق `<input type="date">` الفارغ الذي كان يفتحه
+    // المتصفح (لقطة المالك: تقويم أندرويد الأصلي بلا أي سعر). يقرأ نفس
+    // مسار `/api/travel/flights/calendar` الذي يغذّي شريط «تقويم الأسعار»
+    // أسفل نتائج البحث (لا نسخة ثانية من منطق التسعير).
+    // ⚠️ **الحقل الأصلي `<input type="date">` يبقى مصدر الحقيقة**: مخفيٌّ
+    // لا محذوف، فكل كودٍ يقرأ/يكتب `.value` (البحث، شريط الأسعار، إعادة
+    // البحث من حجزٍ سابق) يعمل بلا أي تعديل — هذا العنصر يكتب إليه فقط.
+    function buildPriceDatePicker(wrap, hiddenInput, { getRoute }) {
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const rtl = document.documentElement.dir === 'rtl';
+      let view = { year: 0, month: 0 }; // يُضبط فعلياً عند أول open()
+      let priceMap = new Map();
+      let focusIso = null;
+      let fetchSeq = 0;
+
+      wrap.classList.add('cal-wrap');
+      const trigger = document.createElement('button');
+      trigger.type = 'button'; trigger.className = 'cal-trigger';
+      trigger.setAttribute('aria-haspopup', 'dialog');
+      trigger.setAttribute('aria-expanded', 'false');
+      const popup = document.createElement('div');
+      popup.className = 'cal-popup hidden';
+      popup.setAttribute('role', 'dialog');
+      popup.setAttribute('aria-label', T('اختيار تاريخ', 'Choose a date', 'تاریخ منتخب کریں', 'Kies een datum'));
+      popup.innerHTML = `
+        <div class="cal-nav">
+          <button type="button" class="cal-prev" aria-label="${esc(T('الشهر السابق', 'Previous month', 'پچھلا مہینہ', 'Vorige maand'))}">${rtl ? '›' : '‹'}</button>
+          <span class="cal-month-label"></span>
+          <button type="button" class="cal-next" aria-label="${esc(T('الشهر التالي', 'Next month', 'اگلا مہینہ', 'Volgende maand'))}">${rtl ? '‹' : '›'}</button>
+        </div>
+        <div class="cal-weekdays"></div>
+        <div class="cal-grid" role="grid"></div>
+        <div class="cal-note"></div>`;
+      wrap.append(trigger, popup);
+
+      const monthLabelEl = popup.querySelector('.cal-month-label');
+      const weekdaysEl = popup.querySelector('.cal-weekdays');
+      const gridEl = popup.querySelector('.cal-grid');
+      const noteEl = popup.querySelector('.cal-note');
+      const prevBtn = popup.querySelector('.cal-prev');
+      const nextBtn = popup.querySelector('.cal-next');
+
+      // رؤوس الأيام أسبوعياً لا تتغيّر بتغيّر الشهر — تُبنى مرّة واحدة.
+      // الاثنين أولاً (تقليد التقويم العربي/الأوروبي الشائع في هذا التطبيق).
+      {
+        const monday = Date.UTC(2023, 0, 2);
+        weekdaysEl.innerHTML = Array.from({ length: 7 }, (_, i) =>
+          `<span>${esc(new Date(monday + i * 86400000).toLocaleDateString(uiLang, { weekday: 'narrow' }))}</span>`).join('');
+      }
+
+      function refresh() {
+        if (hiddenInput.value) {
+          trigger.textContent = new Date(hiddenInput.value + 'T00:00:00Z')
+            .toLocaleDateString(uiLang, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+          trigger.classList.remove('cal-placeholder');
+        } else {
+          trigger.textContent = T('اختر تاريخاً', 'Choose a date', 'تاریخ منتخب کریں', 'Kies een datum');
+          trigger.classList.add('cal-placeholder');
+        }
+      }
+
+      function isOpen() { return !popup.classList.contains('hidden'); }
+      function onDocClick(e) { if (!wrap.contains(e.target)) close(); }
+      function open() {
+        if (isOpen()) return;
+        const base = hiddenInput.value || todayIso;
+        const d = new Date(base + 'T00:00:00Z');
+        view = { year: d.getUTCFullYear(), month: d.getUTCMonth() };
+        popup.classList.remove('hidden');
+        trigger.setAttribute('aria-expanded', 'true');
+        renderMonth();
+        // ⚠️ renderMonth() يضبط الخلية النشطة بصمت (`silent`) كي لا تسرق
+        // التركيز أثناء التنقّل بين الشهور وسط استخدامٍ آخر — لكن الفتح
+        // نفسه **يجب** أن ينقل التركيز فعلياً، وإلا بقي على الزرّ فتذهب كل
+        // ضغطات الأسهم إليه لا إلى الشبكة (لم يكن يعمل قبل هذا السطر).
+        focusCell(focusIso);
+        fetchPrices();
+        document.addEventListener('click', onDocClick, true);
+      }
+      function close() {
+        if (!isOpen()) return;
+        popup.classList.add('hidden');
+        trigger.setAttribute('aria-expanded', 'false');
+        document.removeEventListener('click', onDocClick, true);
+      }
+      trigger.addEventListener('click', () => (isOpen() ? close() : open()));
+      trigger.addEventListener('keydown', e => {
+        if (['ArrowDown', 'Enter', ' '].includes(e.key)) { e.preventDefault(); open(); }
+      });
+
+      function isDisabled(iso) { return iso < todayIso; }
+
+      function renderMonth() {
+        monthLabelEl.textContent = new Date(Date.UTC(view.year, view.month, 1))
+          .toLocaleDateString(uiLang, { month: 'long', year: 'numeric' });
+        const firstDow = (new Date(Date.UTC(view.year, view.month, 1)).getUTCDay() + 6) % 7; // 0=الاثنين
+        const daysInMonth = new Date(Date.UTC(view.year, view.month + 1, 0)).getUTCDate();
+        // الشهر السابق كلّه ماضٍ؟ فلا داعي لزرّه — نفس منطق `min` بمنتقي المتصفح
+        prevBtn.disabled = new Date(Date.UTC(view.year, view.month, 0)).toISOString().slice(0, 10) < todayIso;
+
+        let html = '';
+        for (let i = 0; i < firstDow; i++) html += '<span class="cal-day cal-empty"></span>';
+        for (let day = 1; day <= daysInMonth; day++) {
+          const iso = `${view.year}-${String(view.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const disabled = isDisabled(iso);
+          const cls = ['cal-day'];
+          if (disabled) cls.push('cal-disabled');
+          if (iso === hiddenInput.value) cls.push('cal-selected');
+          if (iso === todayIso) cls.push('cal-today');
+          html += `<button type="button" class="${cls.join(' ')}" data-iso="${iso}" tabindex="-1"
+            role="gridcell"${disabled ? ' disabled' : ''}><span class="cal-daynum">${day}</span><span class="cal-price"></span></button>`;
+        }
+        gridEl.innerHTML = html;
+        // الخلية النشطة عند دخول شهرٍ جديد (فتحٌ أول أو تنقّل): التاريخ
+        // المختار فعلاً إن كان داخل هذا الشهر — لا اليوم الأول منه — وإلا
+        // أقرب يومٍ متاح. ابتداءً من "١" كان يُبعد التركيز عن الاختيار
+        // القائم فعلاً بلا سبب (رُصد بمساري ↓/↑ بلوحة المفاتيح فعلياً).
+        const inView = iso => {
+          const dt = new Date(iso + 'T00:00:00Z');
+          return dt.getUTCFullYear() === view.year && dt.getUTCMonth() === view.month;
+        };
+        if (!focusIso || !inView(focusIso)) {
+          focusIso = (hiddenInput.value && inView(hiddenInput.value) && !isDisabled(hiddenInput.value) && hiddenInput.value)
+            || [...gridEl.querySelectorAll('.cal-day[data-iso]:not(.cal-disabled)')][0]?.dataset.iso
+            || `${view.year}-${String(view.month + 1).padStart(2, '0')}-01`;
+        }
+        focusCell(focusIso, /* silent */ true);
+        paintPrices();
+      }
+
+      function paintPrices() {
+        let cheapest = null;
+        for (const d of priceMap.values()) if (cheapest == null || d.price < cheapest) cheapest = d.price;
+        gridEl.querySelectorAll('.cal-day[data-iso]').forEach(cell => {
+          const d = priceMap.get(cell.dataset.iso);
+          cell.classList.toggle('cal-cheapest', !!d && d.price === cheapest);
+          cell.querySelector('.cal-price').textContent = d ? `${d.price} ${d.currency}` : '';
+        });
+      }
+
+      async function fetchPrices() {
+        const route = getRoute();
+        if (!route?.origin || !route?.destination) {
+          priceMap = new Map(); paintPrices();
+          noteEl.textContent = T('حدّد المطارين لرؤية أرخص سعر لكل يوم.',
+            'Pick both airports to see the cheapest price per day.',
+            'ہر دن کی سب سے سستی قیمت دیکھنے کے لیے دونوں ہوائی اڈے منتخب کریں۔',
+            'Kies beide luchthavens om de laagste prijs per dag te zien.');
+          return;
+        }
+        const seq = ++fetchSeq;
+        noteEl.textContent = T('📅 نجمع الأسعار...', '📅 Gathering prices...', '📅 قیمتیں جمع ہو رہی ہیں...', '📅 Prijzen worden verzameld...');
+        const mid = `${view.year}-${String(view.month + 1).padStart(2, '0')}-16`;
+        const res = await api('/api/travel/flights/calendar', {
+          method: 'POST', bg: true,
+          body: JSON.stringify({ origin: route.origin, destination: route.destination, aroundDate: mid, windowDays: 16, cabin: route.cabin || 'economy' }),
+        });
+        if (seq !== fetchSeq) return; // شهرٌ آخر طُلب أثناء الانتظار — نتيجةٌ فائتة تُهمَل
+        const data = res.ok ? await res.json().catch(() => null) : null;
+        priceMap = new Map((data?.days || []).filter(d => d.price != null).map(d => [d.date, d]));
+        noteEl.textContent = '';
+        paintPrices();
+      }
+
+      function focusCell(iso, silent = false) {
+        focusIso = iso;
+        gridEl.querySelectorAll('.cal-day[data-iso]').forEach(c => {
+          const active = c.dataset.iso === iso;
+          c.classList.toggle('cal-focus', active && !silent);
+          c.tabIndex = active ? 0 : -1;
+        });
+        if (!silent) gridEl.querySelector(`.cal-day[data-iso="${iso}"]`)?.focus();
+      }
+
+      function choose(iso) {
+        if (isDisabled(iso)) return;
+        hiddenInput.value = iso;
+        refresh();
+        close();
+        trigger.focus();
+      }
+
+      function prevMonth() {
+        view = view.month === 0 ? { year: view.year - 1, month: 11 } : { year: view.year, month: view.month - 1 };
+        renderMonth(); fetchPrices();
+      }
+      function nextMonth() {
+        view = view.month === 11 ? { year: view.year + 1, month: 0 } : { year: view.year, month: view.month + 1 };
+        renderMonth(); fetchPrices();
+      }
+      prevBtn.addEventListener('click', prevMonth);
+      nextBtn.addEventListener('click', nextMonth);
+
+      function moveFocus(deltaDays) {
+        const dt = new Date((focusIso || todayIso) + 'T00:00:00Z');
+        dt.setUTCDate(dt.getUTCDate() + deltaDays);
+        const iso = dt.toISOString().slice(0, 10);
+        if (dt.getUTCFullYear() !== view.year || dt.getUTCMonth() !== view.month) {
+          view = { year: dt.getUTCFullYear(), month: dt.getUTCMonth() };
+          focusIso = iso;
+          renderMonth(); fetchPrices();
+          focusCell(iso);
+        } else {
+          focusCell(iso);
+        }
+      }
+      gridEl.addEventListener('click', e => {
+        const btn = e.target.closest('.cal-day[data-iso]');
+        if (btn && !btn.disabled) choose(btn.dataset.iso);
+      });
+      gridEl.addEventListener('keydown', e => {
+        const stepMap = { ArrowRight: rtl ? -1 : 1, ArrowLeft: rtl ? 1 : -1, ArrowDown: 7, ArrowUp: -7 };
+        if (e.key in stepMap) { e.preventDefault(); moveFocus(stepMap[e.key]); }
+        else if (e.key === 'Home') { e.preventDefault(); moveFocus(-((new Date(focusIso + 'T00:00:00Z').getUTCDay() + 6) % 7)); }
+        else if (e.key === 'End') { e.preventDefault(); moveFocus(6 - ((new Date(focusIso + 'T00:00:00Z').getUTCDay() + 6) % 7)); }
+        else if (e.key === 'PageUp') { e.preventDefault(); prevMonth(); focusCell(focusIso); }
+        else if (e.key === 'PageDown') { e.preventDefault(); nextMonth(); focusCell(focusIso); }
+        else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(focusIso); }
+        else if (e.key === 'Escape') { e.preventDefault(); close(); trigger.focus(); }
+        else if (e.key === 'Tab') close();
+      });
+
+      refresh();
+      return { refresh };
+    }
+
     // 🌐 مبدّل اللغة: **يُبحر إلى عنوانٍ آخر** لا يقلب مفتاحاً محلياً —
     // فما يراه المسافر هو ما سيراه من يفتح الرابط الذي يشاركه. قائمةٌ
     // منسدلة مخصّصة لا <select> أصلياً — انظر `buildDropdown` أعلاه.
@@ -2480,6 +2762,17 @@
       fxDropdown.show();
       fxAnnotateAll();
     }
+
+    // 📅 تقويم أسعار تاريخ الذهاب — انظر تعليق `buildPriceDatePicker` أعلاه.
+    // المطاران يُقرآن كسولاً وقت الفتح/التنقّل (`getRoute`) لا مرّة واحدة
+    // هنا: الزائر عادةً يفتح التقويم **قبل** إكمال حقلي «من»/«إلى».
+    const fDepartCal = buildPriceDatePicker($('fDepartCal'), $('fDepart'), {
+      getRoute: () => ({
+        origin: selectedIata($('fOrigin')),
+        destination: selectedIata($('fDest')),
+        cabin: $('fCabin').value,
+      }),
+    });
 
     // ─── 🎁 الولاء ───
     async function loadLoyalty() {
@@ -2956,7 +3249,11 @@
               ${esc(dayName(d.date))}<br><small>${d.price === cheapest ? '🏆 ' : ''}${d.price} ${esc(d.currency)}</small></button>`
         ).join('') + '</div>';
       document.querySelectorAll('[data-cal-day]').forEach(btn =>
-        btn.addEventListener('click', () => { $('fDepart').value = btn.dataset.calDay; doSearch(); }));
+        btn.addEventListener('click', () => {
+          $('fDepart').value = btn.dataset.calDay;
+          fDepartCal.refresh(); // نفس علّة boot(): `.value` تغيّر بلا حدثٍ يُطلَق
+          doSearch();
+        }));
     }
 
     $('calendarBtn').addEventListener('click', () => loadPriceStrip({ silent: false }));
@@ -4405,6 +4702,7 @@
       if (s.destination) $('fDest').value = s.destination;
       if (s.departAt) $('fDepart').value = String(s.departAt).slice(0, 10);
       if (back?.departAt) $('fReturn').value = String(back.departAt).slice(0, 10);
+      fDepartCal.refresh(); // نفس علّة boot(): `.value` تغيّر بلا حدثٍ يُطلَق
       document.querySelector('[data-tab="search"]').click();
       $('searchBtn').click();
     }

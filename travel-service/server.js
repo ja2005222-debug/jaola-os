@@ -82,7 +82,12 @@ const MAX_BOOKING_WINDOW_DAYS = 330; // أقصى ما تفتحه أنظمة ال
 const MAX_NOTIFICATIONS = 50; // صندوق يُقرأ لا أرشيف يُنقَّب
 const MAX_AGENT_MESSAGES = 30;
 const MAX_AGENT_MESSAGE_CHARS = 4000;
-const MAX_FLEX_WINDOW_DAYS = 7;
+// ⚠️ رُفع من ٧ إلى ١٦ (٣٣ يوماً محتملاً) لخدمة تقويم شهرٍ كامل (الميزة
+// الجديدة: تقويم أسعار داخل شبكة شهرية كـGoogle Flights بدل شريط أيام
+// ضيّق). الكلفة الحقيقية تقع مرّة واحدة فقط لكل (مسار، شهر) بفضل كاش
+// FLEX_PRICE_TTL_MS الوحيد المشترك بين كل المستخدمين — أول من يفتح شهراً
+// يدفع النداءات الفعلية للمزوّد، ومن يليه خلال ٦ ساعات يُخدَم من الكاش.
+const MAX_FLEX_WINDOW_DAYS = 16;
 const FLEX_CONCURRENCY = 3;
 const FLEX_WINDOW_MS = 5 * 60 * 1000;
 const FLEX_MAX_CALLS = 5; // أغلى من بحث عادي (نداءات مزوّد متعددة لكل طلب)
