@@ -399,7 +399,7 @@
       border-radius: 8px; cursor: pointer; font-size: 13px; border: 1px solid transparent;
       background: none; color: var(--text); padding: 2px; font-family: inherit;
     }
-    .cal-day .cal-price { font-size: 9.5px; color: var(--muted); line-height: 1.15; }
+    .cal-day .cal-price { font-size: 11px; color: var(--muted); line-height: 1.2; margin-top: 1px; white-space: nowrap; }
     .cal-day:hover:not(.cal-disabled):not(.cal-empty) { background: var(--accent-soft); }
     .cal-day.cal-focus { outline: 2px solid var(--accent); outline-offset: -2px; }
     .cal-day.cal-selected { background: var(--accent); color: #fff; }
@@ -409,6 +409,12 @@
     .cal-day.cal-disabled { opacity: .3; cursor: default; }
     .cal-day.cal-empty { visibility: hidden; cursor: default; }
     .cal-note { font-size: 11.5px; color: var(--muted); margin-top: 8px; text-align: center; }
+    .cal-clear-btn {
+      display: block; width: 100%; margin-top: 6px; padding: 6px; border-radius: 8px;
+      border: 1px solid var(--border); background: none; color: var(--muted); font-size: 12px;
+      font-family: inherit; cursor: pointer;
+    }
+    .cal-clear-btn:hover { background: var(--accent-soft); color: var(--text); }
 
     /* لوحة التفاصيل (رحلة/فندق) */
     .details {
@@ -700,7 +706,9 @@
                    موجوداً (مخفياً) كي لا يتغيّر أي كودٍ يقرأ/يكتب `.value`. -->
               <div class="cal-wrap" id="fDepartCal"><input id="fDepart" type="date" class="hidden" /></div>
             </div>
-            <div><label>العودة (اختياري)</label><input id="fReturn" type="date" /></div>
+            <div><label>العودة (اختياري)</label>
+              <div class="cal-wrap" id="fReturnCal"><input id="fReturn" type="date" class="hidden" /></div>
+            </div>
           </div>
           <div class="row">
             <div><label>بالغون</label><input id="fAdults" type="number" min="1" max="9" value="1" /></div>
@@ -2493,8 +2501,16 @@
     // ⚠️ **الحقل الأصلي `<input type="date">` يبقى مصدر الحقيقة**: مخفيٌّ
     // لا محذوف، فكل كودٍ يقرأ/يكتب `.value` (البحث، شريط الأسعار، إعادة
     // البحث من حجزٍ سابق) يعمل بلا أي تعديل — هذا العنصر يكتب إليه فقط.
-    function buildPriceDatePicker(wrap, hiddenInput, { getRoute }) {
+    function buildPriceDatePicker(wrap, hiddenInput, { getRoute, getMinDate }) {
       const todayIso = new Date().toISOString().slice(0, 10);
+      // ⚠️ **حدّان لا واحد**: `todayIso` وحدها تقرّر شارة «اليوم» (تبقى
+      // ثابتة دوماً)، و`effectiveMin()` تقرّر التعطيل — أوسعهما لتاريخ
+      // العودة: لا يصحّ قبل اليوم **ولا قبل تاريخ الذهاب المختار فعلاً**
+      // (`getMinDate` اختياري، يمرَّره حقل العودة فقط).
+      const effectiveMin = () => {
+        const extra = getMinDate?.();
+        return extra && extra > todayIso ? extra : todayIso;
+      };
       const rtl = document.documentElement.dir === 'rtl';
       let view = { year: 0, month: 0 }; // يُضبط فعلياً عند أول open()
       let priceMap = new Map();
@@ -2518,7 +2534,8 @@
         </div>
         <div class="cal-weekdays"></div>
         <div class="cal-grid" role="grid"></div>
-        <div class="cal-note"></div>`;
+        <div class="cal-note"></div>
+        <button type="button" class="cal-clear-btn hidden">${esc(T('مسح التاريخ', 'Clear date', 'تاریخ صاف کریں', 'Datum wissen'))}</button>`;
       wrap.append(trigger, popup);
 
       const monthLabelEl = popup.querySelector('.cal-month-label');
@@ -2527,6 +2544,7 @@
       const noteEl = popup.querySelector('.cal-note');
       const prevBtn = popup.querySelector('.cal-prev');
       const nextBtn = popup.querySelector('.cal-next');
+      const clearBtn = popup.querySelector('.cal-clear-btn');
 
       // رؤوس الأيام أسبوعياً لا تتغيّر بتغيّر الشهر — تُبنى مرّة واحدة.
       // الاثنين أولاً (تقليد التقويم العربي/الأوروبي الشائع في هذا التطبيق).
@@ -2545,13 +2563,14 @@
           trigger.textContent = T('اختر تاريخاً', 'Choose a date', 'تاریخ منتخب کریں', 'Kies een datum');
           trigger.classList.add('cal-placeholder');
         }
+        clearBtn.classList.toggle('hidden', !hiddenInput.value);
       }
 
       function isOpen() { return !popup.classList.contains('hidden'); }
       function onDocClick(e) { if (!wrap.contains(e.target)) close(); }
       function open() {
         if (isOpen()) return;
-        const base = hiddenInput.value || todayIso;
+        const base = hiddenInput.value || getMinDate?.() || todayIso;
         const d = new Date(base + 'T00:00:00Z');
         view = { year: d.getUTCFullYear(), month: d.getUTCMonth() };
         popup.classList.remove('hidden');
@@ -2576,15 +2595,16 @@
         if (['ArrowDown', 'Enter', ' '].includes(e.key)) { e.preventDefault(); open(); }
       });
 
-      function isDisabled(iso) { return iso < todayIso; }
+      function isDisabled(iso) { return iso < effectiveMin(); }
 
       function renderMonth() {
         monthLabelEl.textContent = new Date(Date.UTC(view.year, view.month, 1))
           .toLocaleDateString(uiLang, { month: 'long', year: 'numeric' });
         const firstDow = (new Date(Date.UTC(view.year, view.month, 1)).getUTCDay() + 6) % 7; // 0=الاثنين
         const daysInMonth = new Date(Date.UTC(view.year, view.month + 1, 0)).getUTCDate();
-        // الشهر السابق كلّه ماضٍ؟ فلا داعي لزرّه — نفس منطق `min` بمنتقي المتصفح
-        prevBtn.disabled = new Date(Date.UTC(view.year, view.month, 0)).toISOString().slice(0, 10) < todayIso;
+        // الشهر السابق كلّه قبل الحدّ الأدنى؟ فلا داعي لزرّه — نفس منطق
+        // `min` بمنتقي المتصفح، بالحدّ الفعلي (اليوم أو تاريخ الذهاب أيّهما أبعد)
+        prevBtn.disabled = new Date(Date.UTC(view.year, view.month, 0)).toISOString().slice(0, 10) < effectiveMin();
 
         let html = '';
         for (let i = 0; i < firstDow; i++) html += '<span class="cal-day cal-empty"></span>';
@@ -2622,7 +2642,10 @@
         gridEl.querySelectorAll('.cal-day[data-iso]').forEach(cell => {
           const d = priceMap.get(cell.dataset.iso);
           cell.classList.toggle('cal-cheapest', !!d && d.price === cheapest);
-          cell.querySelector('.cal-price').textContent = d ? `${d.price} ${d.currency}` : '';
+          // ⚠️ رقمٌ مقرَّب بلا رمز العملة داخل كل خلية — لا "177.69 EUR"
+          // مكرَّرة ٣٠ مرّة (تفيض عن عرض الخلية فتلتفّ سطرين وتبدو مزدحمة،
+          // بلاغ المالك). العملة تُقال مرّةً واحدة فوق الشبكة (انظر fetchPrices).
+          cell.querySelector('.cal-price').textContent = d ? Math.round(d.price) : '';
         });
       }
 
@@ -2646,7 +2669,12 @@
         if (seq !== fetchSeq) return; // شهرٌ آخر طُلب أثناء الانتظار — نتيجةٌ فائتة تُهمَل
         const data = res.ok ? await res.json().catch(() => null) : null;
         priceMap = new Map((data?.days || []).filter(d => d.price != null).map(d => [d.date, d]));
-        noteEl.textContent = '';
+        const cur = priceMap.values().next().value?.currency;
+        noteEl.textContent = cur
+          ? T(`الأسعار بعملة ${cur} لكل شخص (اتجاه واحد).`, `Prices in ${cur} per person (one-way).`,
+              `فی شخص ${cur} میں قیمتیں (ایک طرفہ)۔`, `Prijzen in ${cur} per persoon (enkele reis).`)
+          : T('لا تتوفر أسعار لهذا الشهر.', 'No prices available for this month.',
+              'اس مہینے کے لیے قیمتیں دستیاب نہیں۔', 'Geen prijzen beschikbaar voor deze maand.');
         paintPrices();
       }
 
@@ -2667,6 +2695,13 @@
         close();
         trigger.focus();
       }
+
+      clearBtn.addEventListener('click', () => {
+        hiddenInput.value = '';
+        refresh();
+        close();
+        trigger.focus();
+      });
 
       function prevMonth() {
         view = view.month === 0 ? { year: view.year - 1, month: 11 } : { year: view.year, month: view.month - 1 };
@@ -2772,6 +2807,19 @@
         destination: selectedIata($('fDest')),
         cabin: $('fCabin').value,
       }),
+    });
+    // ⚠️ تسعير العودة **تقريبيّ**: نعيد استخدام نفس مسار الذهاب/الإياب
+    // أحادي الاتجاه (`/flights/calendar`) بعكس المطارين — سعر الاتجاه
+    // المعاكس ليوم بعينه، لا سعر رحلة الذهاب+الإياب الفعلي معاً (يتطلّب
+    // ذاك استعلام كل زوج تاريخي ذهاب×عودة — مكلفٌ ومعقّد). موثّقٌ في
+    // CLAUDE.md كتبسيطٍ متعمَّد، لا تسعيرة ذهاب وعودة حقيقية.
+    const fReturnCal = buildPriceDatePicker($('fReturnCal'), $('fReturn'), {
+      getRoute: () => ({
+        origin: selectedIata($('fDest')),
+        destination: selectedIata($('fOrigin')),
+        cabin: $('fCabin').value,
+      }),
+      getMinDate: () => $('fDepart').value || null,
     });
 
     // ─── 🎁 الولاء ───
@@ -4703,6 +4751,7 @@
       if (s.departAt) $('fDepart').value = String(s.departAt).slice(0, 10);
       if (back?.departAt) $('fReturn').value = String(back.departAt).slice(0, 10);
       fDepartCal.refresh(); // نفس علّة boot(): `.value` تغيّر بلا حدثٍ يُطلَق
+      fReturnCal.refresh();
       document.querySelector('[data-tab="search"]').click();
       $('searchBtn').click();
     }
