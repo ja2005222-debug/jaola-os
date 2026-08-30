@@ -689,6 +689,7 @@
         <button data-tab="packages" id="pkgTabBtn">🎁 ركّب باقتك</button>
         <button data-tab="destinations">🗺️ وجهات مقترحة</button>
         <button data-tab="cars" id="carsTabBtn">🚗 سيارات</button>
+        <button data-tab="esim" id="esimTabBtn">📶 إنترنت السفر</button>
         <button data-tab="trips" id="tripsTabBtn">🧳 رحلاتي</button>
         <button data-tab="notifications" id="notifTabBtn">🔔 التنبيهات</button>
         <button data-tab="agent" id="agentTabBtn">🤖 المساعد</button>
@@ -892,6 +893,20 @@
           <div id="carSearchError" class="error hidden"></div>
         </div>
         <div id="carResults"></div>
+      </section>
+
+      <!-- ─── 📶 باقات إنترنت السفر (eSIM) ─── -->
+      <section id="tab-esim" class="hidden">
+        <div class="card">
+          <p class="note" style="margin-bottom:0">📶 باقة بيانات رقمية تُثبَّت بكود واحد بلا شريحة فعلية — تصلك فور الإصدار.</p>
+          <div class="row">
+            <div class="ac-wrap"><label>إلى</label><input id="esimDest" placeholder="باريس أو CDG" autocomplete="off" /></div>
+            <div><label>مدة الرحلة (أيام)</label><input id="esimDays" type="number" min="1" max="30" value="7" /></div>
+          </div>
+          <button class="primary" id="esimSearchBtn">🔎 ابحث عن باقة</button>
+          <div id="esimSearchError" class="error hidden"></div>
+        </div>
+        <div id="esimResults"></div>
       </section>
 
       <!-- ─── رحلاتي ─── -->
@@ -1172,6 +1187,18 @@
     </div>
   </dialog>
 
+  <!-- نافذة بيانات مسافر باقة eSIM -->
+  <dialog id="esimBookDialog">
+    <h3 style="margin-bottom:6px">📶 بيانات المسافر</h3>
+    <p id="esimBookSummary" class="note"></p>
+    <form id="esimBookForm" method="dialog"></form>
+    <div id="esimBookError" class="error hidden"></div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="primary" id="esimBookConfirm">أكّد الحجز</button>
+      <button class="chip" id="esimBookCancel" type="button">إلغاء</button>
+    </div>
+  </dialog>
+
   <!-- 📄 قسيمة الحجز: كل ما نملكه عن الحجز في مكان واحد — يسأل عنه المسافر
        فعلاً («تفاصيل الحجز مقتضبة»، «أين تذكرتي؟»). للطباعة أيضاً. -->
   <dialog id="detailsDialog" style="max-width:720px">
@@ -1195,7 +1222,7 @@
   <script src="/fare.js"></script>
   <script>
     const $ = id => document.getElementById(id);
-    let token = null, config = null, selectedOffer = null, selectedStayOffer = null, selectedCarOffer = null, lastFlightSearch = null;
+    let token = null, config = null, selectedOffer = null, selectedStayOffer = null, selectedCarOffer = null, selectedEsimOffer = null, lastFlightSearch = null;
 
     // ─── 🌐 تعدد اللغات (المرحلة ١): مترجم جدول نصوص — انظر تعليق i18n.js ───
     // 🏷️ الاسم `_PREF` لا `_KEY`: ماسح الأسرار يقرأ كل ثابتٍ اسمه
@@ -1568,6 +1595,7 @@
       if (!config.staysEnabled) $('staysTabBtn').classList.add('hidden');
       if (!config.packagesEnabled) $('pkgTabBtn').classList.add('hidden');
       if (!config.carsEnabled) $('carsTabBtn').classList.add('hidden');
+      if (!config.esimEnabled) $('esimTabBtn').classList.add('hidden');
       // ⚙️ رابط الإدارة لأصحابه فقط — الخادم يخفي المسارات عن غيرهم أصلاً
       if (config.isAdmin) {
         $('adminLink').classList.remove('hidden');
@@ -1595,7 +1623,7 @@
         return;
       }
 
-      ['fOrigin', 'fDest', 'carIata', 'destOrigin', 'prefHome', 'stayIata', 'pkgOrigin', 'pkgDest'].forEach(id => attachAirportAutocomplete($(id)));
+      ['fOrigin', 'fDest', 'carIata', 'destOrigin', 'prefHome', 'stayIata', 'pkgOrigin', 'pkgDest', 'esimDest'].forEach(id => attachAirportAutocomplete($(id)));
       // 🔴 محمّلات بيانات الحساب (ملف/حجوزات/تنبيهات) **لا تُنادى للزائر**:
       // ردّها 401 يفتح نافذة الدخول في api()، فكانت تنبثق فور فتح الصفحة
       // على من لم يطلب شيئاً بعد. النافذة لقصدٍ صريح (حجز) لا لتحميلٍ خلفي.
@@ -1892,7 +1920,7 @@
     document.querySelectorAll('.tabs button[data-tab]').forEach(btn =>
       btn.addEventListener('click', () => {
         document.querySelectorAll('.tabs button[data-tab]').forEach(b => b.classList.toggle('active', b === btn));
-        ['search', 'stays', 'fixed', 'packages', 'destinations', 'cars', 'trips', 'notifications', 'agent'].forEach(t =>
+        ['search', 'stays', 'fixed', 'packages', 'destinations', 'cars', 'esim', 'trips', 'notifications', 'agent'].forEach(t =>
           $('tab-' + t).classList.toggle('hidden', t !== btn.dataset.tab));
         if (btn.dataset.tab === 'fixed') loadFixedPackages();
         if (btn.dataset.tab === 'trips') loadTrips();
@@ -4309,6 +4337,103 @@
       }
     });
 
+    // ─── 📶 باقات إنترنت السفر (eSIM) ───
+    async function doSearchEsim() {
+      $('esimSearchError').classList.add('hidden');
+      $('esimResults').innerHTML = skeletonHtml(3);
+      $('esimSearchBtn').disabled = true;
+      try {
+        const body = {
+          iata: selectedIata($('esimDest')),
+          days: Number($('esimDays').value) || 7,
+        };
+        const res = await api('/api/travel/esim/search', { method: 'POST', body: JSON.stringify(body) });
+        const data = await res.json();
+        if (!res.ok) {
+          $('esimResults').innerHTML = '';
+          $('esimSearchError').textContent = data.error || 'تعذّر البحث.';
+          $('esimSearchError').classList.remove('hidden');
+          return;
+        }
+        trackEvent('search', { search_term: body.iata, content_type: 'esim' });
+        if (!data.offers.length) {
+          $('esimResults').innerHTML = '<p class="note">لا باقات تغطّي كامل مدة رحلتك لهذه الوجهة — جرّب مدة أقصر.</p>';
+          return;
+        }
+        $('esimResults').innerHTML = data.offers.map(o => `
+          <div class="card offer">
+            <div style="flex:1">
+              <div class="route">📶 ${esc(o.countryEn || o.country)} — ${o.dataGb}GB</div>
+              <div class="seg">${esc(o.network || '')} · ${T('صالحة', 'Valid', 'معیاد', 'Geldig')} ${o.validityDays} ${T('يوماً', 'days', 'دن', 'dagen')}</div>
+            </div>
+            <div style="text-align:center">
+              <div class="price">${o.sellAmount} ${esc(o.currency)}</div>
+              <button class="primary" data-esim-book='${esc(JSON.stringify({ id: o.id }))}'>احجز</button>
+            </div>
+          </div>`).join('');
+        document.querySelectorAll('[data-esim-book]').forEach(ebtn =>
+          ebtn.addEventListener('click', () => openEsimBooking(
+            data.offers.find(o => o.id === JSON.parse(ebtn.dataset.esimBook).id))));
+        revealResults($('esimResults'));
+      } catch {
+        $('esimResults').innerHTML = '';
+        $('esimSearchError').textContent = 'تعذّر البحث — حاول مجدداً بعد قليل.';
+        $('esimSearchError').classList.remove('hidden');
+      } finally {
+        $('esimSearchBtn').disabled = false;
+      }
+    }
+    $('esimSearchBtn').addEventListener('click', doSearchEsim);
+
+    function openEsimBooking(offer) {
+      selectedEsimOffer = offer;
+      $('esimBookSummary').textContent = `📶 ${offer.countryEn || offer.country} — ${offer.dataGb}GB — ${
+        T('الإجمالي', 'Total', 'کل', 'Totaal')} ${offer.sellAmount} ${offer.currency}`;
+      $('esimBookForm').innerHTML = `
+        <fieldset style="border:1px dashed var(--border);border-radius:10px;padding:10px;margin-top:10px">
+          <legend style="font-size:13px;color:var(--muted)">المسافر</legend>
+          <div class="row">
+            <div><label>الاسم الأول (لاتيني)</label><input data-e="givenName" placeholder="AHMED" /></div>
+            <div><label>اسم العائلة (لاتيني)</label><input data-e="familyName" placeholder="ALI" /></div>
+          </div>
+        </fieldset>
+        <div class="row" style="margin-top:10px">
+          <div><label>البريد الإلكتروني (لتسليم كود التفعيل)</label><input id="eEmail" type="email" placeholder="you@example.com" /></div>
+          <div><label>الهاتف (بصيغة دولية)</label><input id="ePhone" placeholder="+966501234567" /></div>
+        </div>`;
+      $('esimBookError').classList.add('hidden');
+      $('esimBookDialog').showModal();
+    }
+    $('esimBookCancel').addEventListener('click', () => $('esimBookDialog').close());
+
+    $('esimBookConfirm').addEventListener('click', async (e) => {
+      e.preventDefault();
+      const fs = $('esimBookForm').querySelector('fieldset');
+      const val = name => fs.querySelector(`[data-e="${name}"]`).value.trim();
+      const body = {
+        offerId: selectedEsimOffer.id,
+        passengers: [{ givenName: val('givenName'), familyName: val('familyName') }],
+        contact: { email: $('eEmail').value.trim(), phone: $('ePhone').value.trim() },
+      };
+      $('esimBookConfirm').disabled = true;
+      try {
+        const res = await api('/api/travel/esim/bookings', { method: 'POST', body: JSON.stringify(body) });
+        const data = await res.json();
+        if (!res.ok) {
+          if (res.status === 401) pendingIntent = () => $('esimBookConfirm').click();
+          $('esimBookError').textContent = data.error || 'تعذّر الحجز.';
+          $('esimBookError').classList.remove('hidden');
+          return;
+        }
+        $('esimBookDialog').close();
+        if (data.checkoutUrl) { window.location.href = data.checkoutUrl; return; }
+        alert(`✅ صدرت باقتك!\nالمرجع: ${data.booking.bookingReference}\nالإجمالي: ${data.booking.sellAmount} ${data.booking.currency}\nكود التفعيل في «رحلاتي».`);
+        document.querySelector('[data-tab="trips"]').click();
+      } finally {
+        $('esimBookConfirm').disabled = false;
+      }
+    });
+
     // ─── 🎒 الباقات الجاهزة (انطلاقات مجدولة) ───
     let fixedPkgs = [], fixedSel = null;
 
@@ -4589,6 +4714,11 @@
             <span class="st st-${esc(b.status)}">${esc(statusLabel(b))}</span></div>
           <div class="seg">${esc(b.offer?.supplier || '')} · ${esc(b.offer?.pickupLocation || '')}</div>`;
       }
+      if (b.kind === 'esim') {
+        return `<div class="route">📶 ${esc(b.offer?.countryEn || b.offer?.country || '')} — ${b.offer?.dataGb}GB
+            <span class="st st-${esc(b.status)}">${esc(statusLabel(b))}</span></div>
+          <div class="seg">${esc(b.offer?.network || '')} · ${T('صالحة', 'Valid', 'معیاد', 'Geldig')} ${b.offer?.validityDays || '؟'} ${T('يوماً', 'days', 'دن', 'dagen')}</div>`;
+      }
       return `<div class="route">${esc(b.offer?.owner || '')}
           <span class="st st-${esc(b.status)}">${esc(statusLabel(b))}</span></div>
         ${(b.offer?.slices || []).map(sliceHtml).join('')}`;
@@ -4645,7 +4775,7 @@
               </div>
               <div style="text-align:center">
                 ${b.sellAmount != null ? `<div class="price">${b.sellAmount} ${esc(b.currency)}</div>` : ''}
-                ${b.status === 'issued' ? `<button class="chip" data-cancel="${esc(b.id)}" data-kind="${esc(b.kind || 'flight')}">إلغاء الحجز</button>` : ''}
+                ${b.status === 'issued' && b.kind !== 'esim' ? `<button class="chip" data-cancel="${esc(b.id)}" data-kind="${esc(b.kind || 'flight')}">إلغاء الحجز</button>` : ''}
               </div>
             </div>
           </div>`;
@@ -4745,6 +4875,18 @@
           'Confirmation is final: show the reference above at the hotel desk with an ID — there is no paper ticket here.',
           'تصدیق حتمی ہے: مذکورہ بالا ریفرنس نمبر شناختی کارڈ کے ساتھ ہوٹل ڈیسک پر دکھانا کافی ہے — یہاں کوئی کاغذی ٹکٹ نہیں۔',
           'Bevestiging is definitief: toon bovenstaande referentie samen met een ID-bewijs bij de hotelbalie — er is hier geen papieren ticket.')}</div>`;
+      }
+      if (b.kind === 'esim') {
+        const e = b.esim || {};
+        return `<div class="note" style="line-height:1.8">
+          📶 <strong>${T('عن باقتك:', 'About your plan:', 'آپ کے پیکج کے بارے میں:', 'Over uw bundel:')}</strong><br>
+          ${T('من إعدادات جهازك اختر «إضافة خط/eSIM جديد» ثم امسح الكود أدناه (أو أدخله يدوياً)، وفعّل التجوال للبيانات فور الوصول.',
+              'From your device settings, choose “Add eSIM”, then scan the code below (or enter it manually), and enable data roaming on arrival.',
+              'اپنی ڈیوائس کی سیٹنگز سے «eSIM شامل کریں» منتخب کریں، پھر نیچے دیا گیا کوڈ اسکین کریں (یا دستی طور پر درج کریں)، اور پہنچتے ہی ڈیٹا رومنگ فعال کریں۔',
+              'Kies in de instellingen van uw toestel “eSIM toevoegen”, scan onderstaande code (of voer deze handmatig in) en schakel dataroaming in bij aankomst.')}<br>
+          ${e.activationCode ? `🔑 ${T('كود التفعيل (LPA):', 'Activation code (LPA):', 'ایکٹیویشن کوڈ (LPA):', 'Activeringscode (LPA):')} <strong style="word-break:break-all">${esc(e.activationCode)}</strong><br>` : ''}
+          ${e.iccid ? `🪪 ${T('رقم الشريحة (ICCID):', 'SIM number (ICCID):', 'سم نمبر (ICCID):', 'SIM-nummer (ICCID):')} <strong>${esc(e.iccid)}</strong>` : ''}
+        </div>`;
       }
       if (b.kind === 'car') {
         return `<div class="note">🚗 ${T('يُبرَز رقم المرجع ورخصة القيادة وبطاقة ائتمان باسم السائق عند الاستلام.',
@@ -4860,6 +5002,9 @@
       } else if (b.kind === 'car') {
         L.push(`🚗 ${b.offer?.vehicleName || ''}`);
         L.push(`${b.offer?.pickupLocation || ''} · ${b.offer?.pickUpAt || ''}`);
+      } else if (b.kind === 'esim') {
+        L.push(`📶 ${b.offer?.countryEn || b.offer?.country || ''} — ${b.offer?.dataGb}GB`);
+        L.push(`${T('صالحة', 'Valid', 'معیاد', 'Geldig')} ${b.offer?.validityDays || '؟'} ${T('يوماً', 'days', 'دن', 'dagen')}`);
       } else {
         const slices = b.offer?.flight?.slices || b.offer?.slices || [];
         L.push(`✈️ ${b.offer?.owner || b.offer?.flight?.owner || ''}`);
