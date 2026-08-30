@@ -234,13 +234,18 @@ export function createDuffelProvider({ apiKey, apiUrl, fetchImpl }) {
         name: 'duffel',
         mode: client.mode,
 
-        async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, childrenDobs = [], cabin = 'economy', sort = 'price', maxStops = null, airline = null, maxNetAmount = null, checkedBagOnly = false }) {
-            const slices = [{ origin, destination, departure_date: departDate }];
-            if (returnDate) slices.push({ origin: destination, destination: origin, departure_date: returnDate });
+        async searchOffers({ origin, destination, departDate, returnDate = null, legs = null, adults = 1, childrenDobs = [], cabin = 'economy', sort = 'price', maxStops = null, airline = null, maxNetAmount = null, checkedBagOnly = false }) {
+            // 🛫 ملتي سيتي: Duffel يقبل مصفوفة `slices` بأي طول أصلاً — لا
+            // حاجة لنداءٍ مختلف، فقط بناء الشرائح من `legs` إن وصلت بدل
+            // زوج ذهاب/عودة واحد. اختياري بالكامل وخلفه توافقاً (انظر تعليق
+            // mockProvider.js المطابق لنفس هذا التغيير).
+            const slices = Array.isArray(legs) && legs.length
+                ? legs.map(l => ({ origin: l.origin, destination: l.destination, departure_date: l.departDate }))
+                : [{ origin, destination, departure_date: departDate }, ...(returnDate ? [{ origin: destination, destination: origin, departure_date: returnDate }] : [])];
             // كان هنا `age: 8` ثابتاً لكل طفل — رقم مخترَع يناقض تاريخ
             // الميلاد وقت الحجز (422) ويسعّر الرحلة لعمر خاطئ. الآن العمر
             // مشتقّ من تاريخ الميلاد على تاريخ السفر. راجع passengerAges.js.
-            const passengers = buildSearchPassengers({ adults, childrenDobs, departDate });
+            const passengers = buildSearchPassengers({ adults, childrenDobs, departDate: slices[0].departure_date });
             const data = await duffel('POST', '/air/offer_requests?return_offers=true', {
                 data: { slices, passengers, cabin_class: cabin },
             });

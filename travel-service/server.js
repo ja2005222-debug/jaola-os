@@ -76,6 +76,8 @@ const SORTS = ['price', 'duration']; // الأرخص | الأسرع
 const MAX_ADULTS = 9;
 const MAX_CHILDREN = 8;
 const MAX_ROOMS = 5;
+const MIN_MULTICITY_LEGS = 2;
+const MAX_MULTICITY_LEGS = 6; // كأغلب مواقع السفر الكبرى (Google Flights/Kayak)
 const MAX_STAY_NIGHTS = 30;
 const MAX_RENTAL_DAYS = 30;
 const MAX_BOOKING_WINDOW_DAYS = 330; // أقصى ما تفتحه أنظمة الحجز عادةً
@@ -240,6 +242,87 @@ export function validateSearchParams(body) {
     const checkedBagOnly = body?.checkedBagOnly === true || body?.checkedBagOnly === 'true';
 
     return { values: { origin, destination, departDate, returnDate, adults, childrenDobs, cabin, sort, maxStops, airline, maxPrice, checkedBagOnly } };
+}
+
+/**
+ * 🛫 يتحقق من بحث ملتي سيتي (سلسلة محطات) ويطبّعه — {error} أو {values}.
+ * دالّةٌ مستقلة عن validateSearchParams عمداً لا فرعاً داخلها: تكرارٌ بسيط
+ * (فلاتر/ركاب) أرخص من خطر تعديل دالّةٍ تغطّيها عشرات الاختبارات القائمة
+ * بحثاً عن تجريدٍ مشترك لم يطلبه أحد.
+ */
+export function validateMultiCitySearchParams(body) {
+    const rawLegs = Array.isArray(body?.legs) ? body.legs : null;
+    if (!rawLegs || rawLegs.length < MIN_MULTICITY_LEGS || rawLegs.length > MAX_MULTICITY_LEGS) {
+        return { error: `ملتي سيتي يحتاج بين ${MIN_MULTICITY_LEGS} و${MAX_MULTICITY_LEGS} محطات.` };
+    }
+    const legs = [];
+    let prevDate = null;
+    for (const [i, raw] of rawLegs.entries()) {
+        const origin = String(raw?.origin || '').trim().toUpperCase();
+        const destination = String(raw?.destination || '').trim().toUpperCase();
+        if (!IATA_RE.test(origin) || !IATA_RE.test(destination)) {
+            return { error: `المحطة ${i + 1}: رمزا المطار يجب أن يكونا IATA من ثلاثة أحرف (مثل RUH وCAI).` };
+        }
+        if (origin === destination) return { error: `المحطة ${i + 1}: مطار المغادرة والوصول متطابقان.` };
+        const departDate = String(raw?.departDate || '').trim();
+        if (!DATE_RE.test(departDate) || isNaN(Date.parse(departDate))) {
+            return { error: `المحطة ${i + 1}: تاريخ الذهاب بصيغة YYYY-MM-DD.` };
+        }
+        const offset = daysFromToday(departDate);
+        if (offset < 0) return { error: `المحطة ${i + 1}: التاريخ في الماضي.` };
+        if (offset > MAX_BOOKING_WINDOW_DAYS) {
+            return { error: `المحطة ${i + 1}: أبعد من نافذة الحجز (${MAX_BOOKING_WINDOW_DAYS} يوماً).` };
+        }
+        // ⚠️ توالٍ زمني لا تطابق مطارات: ملتي سيتي حقيقي قد يعيد نفس
+        // المطار لاحقاً (رحلة مفتوحة الفك) — الممنوع الوحيد فعلياً هو
+        // محطة تقلع قبل أن تهبط سابقتها.
+        if (prevDate != null && departDate < prevDate) {
+            return { error: `المحطة ${i + 1}: تاريخها قبل المحطة السابقة — يجب أن تتوالى المحطات زمنياً.` };
+        }
+        prevDate = departDate;
+        legs.push({ origin, destination, departDate });
+    }
+    const adults = body?.adults != null ? Number(body.adults) : 1;
+    if (!Number.isInteger(adults) || adults < 1 || adults > MAX_ADULTS) {
+        return { error: `عدد البالغين بين 1 و${MAX_ADULTS}.` };
+    }
+    if (body?.children != null) {
+        return { error: 'أرسل childrenDobs (تواريخ ميلاد الأطفال) بدل children — سعر تذكرة الطفل يتبع عمره يوم السفر.' };
+    }
+    // عمر الطفل يوم انطلاق الرحلة كلها — أول محطة، لا كل محطة على حدة
+    const childrenCheck = validateChildrenDobs(body?.childrenDobs, legs[0].departDate, MAX_CHILDREN);
+    if (childrenCheck.error) return { error: childrenCheck.error };
+    const childrenDobs = childrenCheck.values;
+    const cabin = body?.cabin ? String(body.cabin) : 'economy';
+    if (!CABINS.includes(cabin)) {
+        return { error: `درجة غير معروفة (المتاح: ${CABINS.join('، ')}).` };
+    }
+    const sort = body?.sort ? String(body.sort) : 'price';
+    if (!SORTS.includes(sort)) {
+        return { error: `ترتيب غير معروف (المتاح: ${SORTS.join('، ')}).` };
+    }
+    let maxStops = null;
+    if (body?.maxStops != null && body.maxStops !== '') {
+        maxStops = Number(body.maxStops);
+        if (!Number.isInteger(maxStops) || maxStops < 0 || maxStops > 3) {
+            return { error: 'حد التوقفات عدد صحيح بين 0 (مباشر) و3.' };
+        }
+    }
+    let airline = null;
+    if (body?.airline != null && body.airline !== '') {
+        airline = String(body.airline).trim().slice(0, 60);
+        if (!airline) airline = null;
+    }
+    let maxPrice = null;
+    if (body?.maxPrice != null && body.maxPrice !== '') {
+        maxPrice = Number(body.maxPrice);
+        if (!Number.isFinite(maxPrice) || maxPrice <= 0) {
+            return { error: 'سقف السعر رقم موجب.' };
+        }
+    }
+    const checkedBagOnly = body?.checkedBagOnly === true || body?.checkedBagOnly === 'true';
+
+    return { values: { legs, adults, childrenDobs, cabin, sort, maxStops, airline, maxPrice, checkedBagOnly } };
 }
 
 // أقصى كمية لأي بند خدمة إضافية واحد — دفاعٌ مستقل عن `maxQuantity` الذي
@@ -876,7 +959,8 @@ ${urls}
     // (هذا ما يجعل الايجنت "بلا التفاف": أي حارس هنا يسري عليه حتماً)
 
     async function doSearch(params) {
-        const check = validateSearchParams(params);
+        // 🛫 ملتي سيتي: مجرد وجود legs يكفي للتفريق — مسارٌ عادٍ لا يرسلها إطلاقاً
+        const check = Array.isArray(params?.legs) ? validateMultiCitySearchParams(params) : validateSearchParams(params);
         if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
         try {
             // سقف السعر يصل من المستخدم بسعر **البيع** — المزوّد يفلتر

@@ -16,7 +16,7 @@ import os from 'os';
 import path from 'path';
 import jwt from 'jsonwebtoken';
 
-import { createApp, validateSearchParams, validatePassengers, validateSelectedServices, validateStaySearchParams, validateGuests, validateCarSearchParams, validateDrivers, verifyDuffelWebhookSignature } from '../server.js';
+import { createApp, validateSearchParams, validateMultiCitySearchParams, validatePassengers, validateSelectedServices, validateStaySearchParams, validateGuests, validateCarSearchParams, validateDrivers, verifyDuffelWebhookSignature } from '../server.js';
 import crypto from 'crypto';
 import { createMockTravelProvider } from '../src/providers/mockProvider.js';
 import { createDuffelProvider, normalizeDuffelOffer, sortOffers, totalDurationMin, applyOfferFilters } from '../src/providers/duffelProvider.js';
@@ -1474,6 +1474,33 @@ describe('passengerAges: العمر مشتقّ من الميلاد لا مخمَ
             services: [{ id: 'ase_1', quantity: 2 }],
         });
         assert.deepEqual(lastOrderBody.data.services, [{ id: 'ase_1', quantity: 2 }]);
+    });
+
+    test('🛫 Duffel: ملتي سيتي يبني شرائح slices بعدد legs، وذهاب/عودة القديم بلا تغيير', async () => {
+        let sentRegular = null, sentMultiCity = null;
+        const emptyOffers = { ok: true, status: 200, text: async () => JSON.stringify({ data: { passengers: [], offers: [] } }) };
+        const p = createDuffelProvider({
+            apiKey: 'duffel_test_x',
+            fetchImpl: async (url, opts) => { sentRegular = JSON.parse(opts.body); return emptyOffers; },
+        });
+        await p.searchOffers({ origin: 'RUH', destination: 'CAI', departDate: '2026-09-01', returnDate: '2026-09-05', adults: 1 });
+        // الطريق القديم بلا legs: بنفس الشكل حرفياً (زوج ذهاب/عودة)
+        assert.deepEqual(sentRegular.data.slices, [
+            { origin: 'RUH', destination: 'CAI', departure_date: '2026-09-01' },
+            { origin: 'CAI', destination: 'RUH', departure_date: '2026-09-05' },
+        ]);
+
+        const p2 = createDuffelProvider({
+            apiKey: 'duffel_test_x',
+            fetchImpl: async (url, opts) => { sentMultiCity = JSON.parse(opts.body); return emptyOffers; },
+        });
+        const legs = [
+            { origin: 'RUH', destination: 'CAI', departDate: '2026-09-01' },
+            { origin: 'CAI', destination: 'IST', departDate: '2026-09-05' },
+            { origin: 'IST', destination: 'RUH', departDate: '2026-09-10' },
+        ];
+        await p2.searchOffers({ legs, adults: 1 });
+        assert.deepEqual(sentMultiCity.data.slices, legs.map(l => ({ origin: l.origin, destination: l.destination, departure_date: l.departDate })));
     });
 
     test('🔗 normalizeDuffelOffer: يقبل المعرّفات المجرّدة والكائنات بالأعمار', () => {
@@ -3690,6 +3717,77 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             assert.equal(one.status, 200);
             assert.equal(one.data.offer.netAmount, undefined);
             assert.equal((await call('/api/travel/flights/offers/ghost', { token })).status, 404);
+        });
+
+        test('🛫 validateMultiCitySearchParams: عدد المحطات وتوالٍ زمني وفلاتر مشتركة', () => {
+            const leg = (o, d, dep) => ({ origin: o, destination: d, departDate: dep });
+            const d1 = futureDate(10), d2 = futureDate(15), d3 = futureDate(20);
+
+            // عدد محطات خارج المدى (0، 1، أو أكثر من الأقصى)
+            for (const legs of [[], [leg('RUH', 'CAI', d1)], Array(7).fill(leg('RUH', 'CAI', d1))]) {
+                assert.ok(validateMultiCitySearchParams({ legs }).error, `قُبل عدد فاسد: ${legs.length}`);
+            }
+            // ليست مصفوفة أصلاً
+            assert.ok(validateMultiCitySearchParams({ legs: 'x' }).error);
+            // IATA فاسد، ومطاران متطابقان في محطةٍ واحدة
+            assert.ok(validateMultiCitySearchParams({ legs: [leg('RUHX', 'CAI', d1), leg('CAI', 'IST', d2)] }).error);
+            assert.ok(validateMultiCitySearchParams({ legs: [leg('RUH', 'RUH', d1), leg('RUH', 'CAI', d2)] }).error);
+            // تاريخٌ في الماضي
+            assert.ok(validateMultiCitySearchParams({ legs: [leg('RUH', 'CAI', '2020-01-01'), leg('CAI', 'IST', d2)] }).error);
+            // محطةٌ تسبق سابقتها زمنياً — الممنوع الوحيد فعلياً
+            assert.ok(validateMultiCitySearchParams({ legs: [leg('RUH', 'CAI', d2), leg('CAI', 'IST', d1)] }).error);
+            // مطارٌ يتكرر عبر محطات غير متتالية (رحلة مفتوحة الفك) — مسموح
+            const openJaw = validateMultiCitySearchParams({ legs: [leg('RUH', 'CAI', d1), leg('IST', 'RUH', d3)] });
+            assert.ok(!openJaw.error, openJaw.error);
+
+            // اختيارٌ صحيح كامل: ٣ محطات + فلاتر — كلّها تُطبَّع وتمرّ
+            const ok = validateMultiCitySearchParams({
+                legs: [leg('RUH', 'CAI', d1), leg('CAI', 'IST', d2), leg('IST', 'RUH', d3)],
+                adults: 2, childrenDobs: ['2020-01-01'], cabin: 'business', sort: 'duration',
+                maxStops: 1, airline: 'SV', maxPrice: 5000, checkedBagOnly: true,
+            });
+            assert.ok(!ok.error, ok.error);
+            assert.deepEqual(ok.values.legs, [leg('RUH', 'CAI', d1), leg('CAI', 'IST', d2), leg('IST', 'RUH', d3)]);
+            assert.equal(ok.values.adults, 2);
+            assert.equal(ok.values.cabin, 'business');
+            assert.equal(ok.values.sort, 'duration');
+            assert.equal(ok.values.maxStops, 1);
+            assert.equal(ok.values.airline, 'SV');
+            assert.equal(ok.values.maxPrice, 5000);
+            assert.equal(ok.values.checkedBagOnly, true);
+
+            // نفس عرف الحقل القديم "children" — مرفوض معلناً هنا أيضاً
+            assert.ok(validateMultiCitySearchParams({ legs: [leg('RUH', 'CAI', d1), leg('CAI', 'RUH', d2)], children: 2 }).error);
+        });
+
+        test('🛫 بحث ملتي سيتي كامل: ٣ محطات تُصبح ٣ شرائح، وحجزٌ ناجح يشملها كلّها', async () => {
+            const token = makeToken('multicity-user');
+            const legs = [
+                { origin: 'RUH', destination: 'CAI', departDate: futureDate(10) },
+                { origin: 'CAI', destination: 'IST', departDate: futureDate(14) },
+                { origin: 'IST', destination: 'RUH', departDate: futureDate(20) },
+            ];
+            const search = await call('/api/travel/flights/search', { method: 'POST', token, body: { legs, adults: 1 } });
+            assert.equal(search.status, 200);
+            assert.ok(search.data.offers.length > 0);
+            const offer = search.data.offers[0];
+            assert.equal(offer.slices.length, 3);
+            assert.deepEqual(offer.slices.map(s => [s.origin, s.destination]), legs.map(l => [l.origin, l.destination]));
+            assert.equal(offer.netAmount, undefined); // نفس ضمانات البحث العادي
+
+            // الحجز يمرّ بلا تعديل — العرض/الحجز/الإصدار عمياء عن عدد الشرائح
+            const booked = await call('/api/travel/bookings', { method: 'POST', token, body: { offerId: offer.id, ...VALID_PAX } });
+            assert.equal(booked.status, 200);
+            assert.equal(booked.data.booking.status, 'issued');
+            assert.equal(booked.data.booking.offer.slices.length, 3);
+
+            // خطأ محطة واحدة (تاريخٌ في الماضي) لا يعطّل غيره ولا يمرّر بصمت
+            const bad = await call('/api/travel/flights/search', {
+                method: 'POST', token,
+                body: { legs: [legs[0], { ...legs[1], departDate: '2020-01-01' }, legs[2]], adults: 1 },
+            });
+            assert.equal(bad.status, 400);
+            assert.match(bad.data.error, /المحطة 2/);
         });
 
         // 👶 انحدار حجز إنتاج حقيقي: Duffel رفض بـ 422 «age does not match

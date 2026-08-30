@@ -157,6 +157,9 @@
       border-radius: 999px; padding: 7px 15px; font-size: 14px; cursor: pointer;
       font-weight: 600;
     }
+    .search-mode-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .search-mode-btn.active:hover { color: #fff; }
+    .chip:disabled { opacity: .4; cursor: default; }
     /* 🎨 أزرار الترويسة تحديداً: امتلاءٌ خفيف بدل الشفافية + ارتفاعٌ وظلٌّ
        عند hover — الـchip الأساسي (أزرار الحوارات والفلاتر) يبقى كما هو،
        فالتحسين محصورٌ بصرياً في أعلى الصفحة حيث يراه كل زائر فوراً. */
@@ -696,7 +699,14 @@
       <!-- ─── البحث ─── -->
       <section id="tab-search">
         <div class="card">
-          <div class="row">
+          <!-- 🛫 ملتي سيتي: وضعٌ بديل منفصل تماماً عن الحقول العادية — لا
+               تعديل عليها، فحقل العودة الفارغ يبقى «ذهاب فقط» كما كان دوماً،
+               وهذا فقط زرّان يبدّلان أيّ مجموعة حقول تُرسَل عند البحث. -->
+          <div style="display:flex;gap:8px;margin-bottom:10px">
+            <button type="button" class="chip search-mode-btn active" id="modeRegularBtn" data-mode="regular">✈️ ذهاب / عودة</button>
+            <button type="button" class="chip search-mode-btn" id="modeMultiCityBtn" data-mode="multicity">🗺️ ملتي سيتي</button>
+          </div>
+          <div id="regularSearchFields" class="row">
             <div class="ac-wrap"><label>من</label><input id="fOrigin" placeholder="الرياض أو RUH" autocomplete="off" /></div>
             <div class="ac-wrap"><label>إلى</label><input id="fDest" placeholder="القاهرة أو CAI" autocomplete="off" /></div>
             <div><label>تاريخ الذهاب</label>
@@ -709,6 +719,10 @@
             <div><label>العودة (اختياري)</label>
               <div class="cal-wrap" id="fReturnCal"><input id="fReturn" type="date" class="hidden" /></div>
             </div>
+          </div>
+          <div id="multiCitySearchFields" class="hidden">
+            <div id="multiCityLegs"></div>
+            <button type="button" class="chip" id="addLegBtn">+ أضف محطة</button>
           </div>
           <div class="row">
             <div><label>بالغون</label><input id="fAdults" type="number" min="1" max="9" value="1" /></div>
@@ -3160,6 +3174,71 @@
     $('fChildren').addEventListener('input', renderChildDobs);
     renderChildDobs();
 
+    // ─── 🛫 ملتي سيتي: تبديل الوضع + محطات ديناميكية ───
+    // وضعٌ بديل لا تحويرٌ للحقول العادية: `searchMode` يقرّر أيّ مجموعة
+    // حقول doSearch() تقرأ منها — الحقول العادية نفسها بلا أي تعديل.
+    let searchMode = 'regular';
+    const MAX_MULTICITY_LEGS = 6, MIN_MULTICITY_LEGS = 2;
+    function setSearchMode(mode) {
+      searchMode = mode;
+      $('modeRegularBtn').classList.toggle('active', mode === 'regular');
+      $('modeMultiCityBtn').classList.toggle('active', mode === 'multicity');
+      $('regularSearchFields').classList.toggle('hidden', mode === 'multicity');
+      $('multiCitySearchFields').classList.toggle('hidden', mode !== 'multicity');
+      // تقويم الأسعار وفنادق الوجهة يفترضان طرفي رحلةٍ واحدين — لا معنى
+      // لهما مع سلسلة محطات (أيّها "الوجهة"؟)، فيختفيان في هذا الوضع.
+      $('calendarBtn').classList.toggle('hidden', mode === 'multicity');
+      $('includeStaysLabel').classList.toggle('hidden', mode === 'multicity');
+      // أول دخولٍ للوضع: محطتان ابتداءً (أقلّ ملتي سيتي منطقي)
+      if (mode === 'multicity' && !$('multiCityLegs').children.length) {
+        addMultiCityLeg(); addMultiCityLeg();
+      }
+    }
+    $('modeRegularBtn').addEventListener('click', () => setSearchMode('regular'));
+    $('modeMultiCityBtn').addEventListener('click', () => setSearchMode('multicity'));
+
+    function refreshMultiCityControls() {
+      const rows = [...$('multiCityLegs').children];
+      rows.forEach(row => row.querySelector('.mc-remove')?.classList.toggle('hidden', rows.length <= MIN_MULTICITY_LEGS));
+      $('addLegBtn').disabled = rows.length >= MAX_MULTICITY_LEGS;
+    }
+    function addMultiCityLeg() {
+      if ($('multiCityLegs').children.length >= MAX_MULTICITY_LEGS) return;
+      const row = document.createElement('div');
+      row.className = 'row multicity-leg';
+      row.innerHTML = `
+        <div class="ac-wrap"><label>من</label><input class="mc-origin" placeholder="الرياض أو RUH" autocomplete="off" /></div>
+        <div class="ac-wrap"><label>إلى</label><input class="mc-dest" placeholder="القاهرة أو CAI" autocomplete="off" /></div>
+        <div><label>التاريخ</label><input class="mc-date" type="date" /></div>
+        <button type="button" class="chip mc-remove hidden" style="align-self:end">✕ إزالة</button>`;
+      $('multiCityLegs').appendChild(row);
+      attachAirportAutocomplete(row.querySelector('.mc-origin'));
+      attachAirportAutocomplete(row.querySelector('.mc-dest'));
+      row.querySelector('.mc-remove').addEventListener('click', () => {
+        if ($('multiCityLegs').children.length <= MIN_MULTICITY_LEGS) return;
+        row.remove();
+        refreshMultiCityControls();
+      });
+      refreshMultiCityControls();
+    }
+    $('addLegBtn').addEventListener('click', () => addMultiCityLeg());
+
+    /** يقرأ محطات ملتي سيتي من الصفوف الحيّة — {error} أو {legs}. */
+    function readMultiCityLegs() {
+      const rows = [...$('multiCityLegs').children];
+      const legs = [];
+      for (const [i, row] of rows.entries()) {
+        const origin = selectedIata(row.querySelector('.mc-origin'));
+        const destination = selectedIata(row.querySelector('.mc-dest'));
+        const departDate = row.querySelector('.mc-date').value;
+        if (!origin || !destination || !departDate) {
+          return { error: `أكمل بيانات المحطة ${i + 1} (من/إلى/التاريخ).` };
+        }
+        legs.push({ origin, destination, departDate });
+      }
+      return { legs };
+    }
+
     async function doSearch() {
       $('searchError').classList.add('hidden');
       $('results').innerHTML = skeletonHtml(3);
@@ -3172,17 +3251,32 @@
           $('searchError').classList.remove('hidden');
           return;
         }
-        const body = {
-          origin: selectedIata($('fOrigin')), destination: selectedIata($('fDest')),
-          departDate: $('fDepart').value, returnDate: $('fReturn').value || null,
+        // 🔍 الفلاتر مشتركة بين الوضعين — تُرسَل فقط حين ضُبطت
+        const filters = {
           adults: Number($('fAdults').value), childrenDobs,
           cabin: $('fCabin').value, sort: $('fSort').value,
-          // 🔍 الفلاتر الاختيارية — تُرسَل فقط حين ضُبطت
           maxStops: $('fMaxStops').value === '' ? undefined : Number($('fMaxStops').value),
           airline: $('fAirline').value.trim() || undefined,
           maxPrice: $('fMaxPrice').value === '' ? undefined : Number($('fMaxPrice').value),
           checkedBagOnly: $('fCheckedBag').checked || undefined,
         };
+        let body;
+        if (searchMode === 'multicity') {
+          const legsCheck = readMultiCityLegs();
+          if (legsCheck.error) {
+            $('results').innerHTML = '';
+            $('searchError').textContent = legsCheck.error;
+            $('searchError').classList.remove('hidden');
+            return;
+          }
+          body = { legs: legsCheck.legs, ...filters };
+        } else {
+          body = {
+            origin: selectedIata($('fOrigin')), destination: selectedIata($('fDest')),
+            departDate: $('fDepart').value, returnDate: $('fReturn').value || null,
+            ...filters,
+          };
+        }
         const res = await api('/api/travel/flights/search', { method: 'POST', body: JSON.stringify(body) });
         const data = await res.json();
         if (!res.ok) {
@@ -3192,7 +3286,10 @@
           return;
         }
         lastFlightSearch = body;
-        trackEvent('search', { search_term: `${body.origin}-${body.destination}`, content_type: 'flight' });
+        trackEvent('search', {
+          search_term: body.legs ? body.legs.map(l => l.origin).join('-') + '-' + body.legs[body.legs.length - 1].destination : `${body.origin}-${body.destination}`,
+          content_type: 'flight',
+        });
         if (!data.offers.length) {
           $('results').innerHTML = '<p class="note">لا رحلات متاحة لهذا البحث.</p>';
           return;
@@ -3234,8 +3331,9 @@
         renderFilterChips();
         loadPriceStrip({ silent: true }); // بلا await: إثراءٌ لا يؤخّر النتائج
         // مربع "أضف فنادق الوجهة" — بحسب رغبة العميل، تفتح في تبويب منفصل
-        // (نفس التطبيق بوضع عرض مختلف) لا مضمَّنة في نفس الصفحة.
-        if ($('fIncludeStays').checked && config.staysEnabled) {
+        // (نفس التطبيق بوضع عرض مختلف) لا مضمَّنة في نفس الصفحة. لا معنى
+        // له في ملتي سيتي (أيّ محطة هي "الوجهة"؟) فيُتجاوَز صامتاً هناك.
+        if (searchMode !== 'multicity' && $('fIncludeStays').checked && config.staysEnabled) {
           const url = new URL(location.href);
           url.search = '';
           url.searchParams.set('stays', '1');
@@ -4877,6 +4975,7 @@
       if (back?.departAt) $('fReturn').value = String(back.departAt).slice(0, 10);
       fDepartCal.refresh(); // نفس علّة boot(): `.value` تغيّر بلا حدثٍ يُطلَق
       fReturnCal.refresh();
+      setSearchMode('regular'); // هذا التدفّق يملأ الحقول العادية دوماً — لا ملتي سيتي
       document.querySelector('[data-tab="search"]').click();
       $('searchBtn').click();
     }
