@@ -99,21 +99,37 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
         name: 'mock',
         mode: 'mock',
 
-        async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, childrenDobs = [], cabin = 'economy', sort = 'price', maxStops = null, airline = null, maxNetAmount = null, checkedBagOnly = false }) {
-            const seed = seedOf(`${origin}${destination}${departDate}${cabin}`);
+        async searchOffers({ origin, destination, departDate, returnDate = null, legs = null, adults = 1, childrenDobs = [], cabin = 'economy', sort = 'price', maxStops = null, airline = null, maxNetAmount = null, checkedBagOnly = false }) {
+            // 🛫 ملتي سيتي: سلسلة محطات صريحة (legs) بدل زوج ذهاب/عودة واحد —
+            // اختياري تماماً وخلفه توافقاً: غيابه يسلك الطريق القديم حرفياً
+            // (نفس البذرة والشكل)، فلا يتأثر أي استدعاء قائم (الايجنت، مراقبة
+            // الأسعار، تقويم الأسعار، ولا اختبار واحد يمرّر legs اليوم).
+            const isMultiCity = Array.isArray(legs) && legs.length > 0;
+            const legList = isMultiCity
+                ? legs
+                : [{ origin, destination, departDate }, ...(returnDate ? [{ origin: destination, destination: origin, departDate: returnDate }] : [])];
+            const firstDepart = legList[0].departDate;
+            // ⚠️ بذرة الطريق القديم تبقى **حرفياً** كما كانت (لا تشمل returnDate
+            // قط، وحدها من قرّرت ذلك أصلاً) — أي تغييرٍ هنا يُزحزح كل عرضٍ
+            // ذهاب/عودة موجود (المعرّف والسعر والناقل) رغم أنه لم يطلب ملتي سيتي.
+            const seed = isMultiCity
+                ? seedOf(legList.map(l => `${l.origin}${l.destination}${l.departDate}`).join('') + cabin)
+                : seedOf(`${origin}${destination}${departDate}${cabin}`);
             const paxCount = adults + childrenDobs.length;
             // نفس ترتيب duffelProvider (بالغون ثم أطفال) ونفس شكل الكائن —
             // فيسري فحص الأعمار في الخادم على المحاكاة كما على المزوّد الحي.
-            const passengers = buildSearchPassengers({ adults, childrenDobs, departDate })
+            const passengers = buildSearchPassengers({ adults, childrenDobs, departDate: firstDepart })
                 .map((p, idx) => ({ id: `mock_pas_${idx}`, type: p.type ?? null, age: p.age ?? null }));
             const results = [];
             for (let i = 0; i < 3; i++) {
                 const s = seed + i * 137;
                 const base = 80 + (s % 420);
                 const cabinFactor = { economy: 1, premium_economy: 1.7, business: 3.2, first: 5 }[cabin] || 1;
+                // ⚠️ تبسيطٌ متعمَّد: السعر لا يتناسب مع عدد المحطات (نفس صيغة
+                // الذهاب المفرد حرفياً) — بيانات محاكاة لاختبار الشكل والتدفق
+                // لا محاكاة تسعير حقيقي؛ Duffel الحي يسعّر ملتي سيتي فعلياً.
                 const netAmount = Math.round(base * cabinFactor * paxCount * 100) / 100;
-                const slices = [buildSlice(origin, destination, departDate, s, i === 2 ? 1 : 0)];
-                if (returnDate) slices.push(buildSlice(destination, origin, returnDate, s + 7, i === 2 ? 1 : 0));
+                const slices = legList.map((l, idx) => buildSlice(l.origin, l.destination, l.departDate, s + idx * 7, i === 2 ? 1 : 0));
                 // 🎟️ عائلات سعر متمايزة عمداً: الأرخص مقيَّدة والأغلى مرنة —
                 // فيرى المطوّر (والاختبار) الحالات الحقيقية الثلاث لا حالةً
                 // واحدة وردية. الثالثة تُبقي الرسم null: «مسموح والرسم يحدّده

@@ -49,6 +49,11 @@ window.JAOLA_I18N_TABLE = {
     '💵 العملة الأصلية': { en: '💵 Original currency', ur: '💵 اصل کرنسی', nl: '💵 Oorspronkelijke valuta' },
 
     // ─── نموذج بحث الرحلات ───
+    '✈️ ذهاب / عودة': { en: '✈️ One-way / round-trip', ur: '✈️ یک طرفہ / راؤنڈ ٹرپ', nl: '✈️ Enkele reis / retour' },
+    '🗺️ ملتي سيتي': { en: '🗺️ Multi-city', ur: '🗺️ ملٹی سٹی', nl: '🗺️ Multi-stad' },
+    '+ أضف محطة': { en: '+ Add a stop', ur: '+ اسٹاپ شامل کریں', nl: '+ Voeg een tussenstop toe' },
+    'التاريخ': { en: 'Date', ur: 'تاریخ', nl: 'Datum' },
+    '✕ إزالة': { en: '✕ Remove', ur: '✕ ہٹائیں', nl: '✕ Verwijderen' },
     'من': { en: 'From', ur: 'سے', nl: 'Van' },
     'إلى': { en: 'To', ur: 'تک', nl: 'Naar' },
     'تاريخ الذهاب': { en: 'Departure date', ur: 'روانگی کی تاریخ', nl: 'Vertrekdatum' },
