@@ -685,6 +685,9 @@ export function createApp({
     stripeClient = null,          // من STRIPE_SECRET_KEY (قابل للحقن في الاختبارات)
     stripeWebhookSecret = null,   // من STRIPE_WEBHOOK_SECRET — بلا هذا يرد المسار 503
     publicUrl = null,             // من TRAVEL_PUBLIC_URL — روابط العودة من صفحة الدفع
+    // 🔎 التحقق من ملكية الموقع لدى Google Search Console — قيمة `content`
+    // من وسم التحقق الذي تعطيه جوجل (GOOGLE_SITE_VERIFICATION). بلا قيمة لا وسم.
+    googleSiteVerification = process.env.GOOGLE_SITE_VERIFICATION || null,
     // 🔵 الدخول بحساب جوجل — كائنٌ واحد يحمل clientId والتحقق معاً (نفس
     // نمط stripeClient): بلا GOOGLE_CLIENT_ID يبقى null فلا مسار `/auth/google`
     // يعمل ولا زرّ يظهر في الواجهة (بلا هذا الشرط: زرٌّ لا يعمل خيرٌ من عدمه).
@@ -773,12 +776,38 @@ export function createApp({
         const alts = Object.entries(LOCALES)
             .map(([code, m]) => `<link rel="alternate" hreflang="${code}" href="${base}${m.path.slice(1)}" />`)
             .join('\n  ');
+        // 🏷️ بيانات منظَّمة (JSON-LD) لبطاقة الأعمال في نتائج جوجل: نفس
+        // بيانات السجل التجاري المعروضة في التذييل وصفحة «من نحن» — لا تلفيق.
+        const jsonLd = JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'TravelAgency',
+            name: 'Jatrava',
+            legalName: 'Nalia Diensten',
+            url: base,
+            logo: `${base}logo.svg`,
+            image: `${base}icon-512.png`,
+            description: L.desc,
+            address: {
+                '@type': 'PostalAddress',
+                streetAddress: 'Lodewijk Napoleonplantsoen 82',
+                postalCode: '3582TX',
+                addressLocality: 'Utrecht',
+                addressCountry: 'NL',
+            },
+            identifier: { '@type': 'PropertyValue', propertyID: 'KVK', value: '71937633' },
+            availableLanguage: Object.keys(LOCALES),
+        });
         const head = [
             `<meta name="description" content="${L.desc}" />`,
             `<link rel="canonical" href="${base}${L.path.slice(1)}" />`,
             alts,
             // x-default للزائر الذي لا تطابق لغتُه أياً منهما — العربية أصلنا
             `<link rel="alternate" hreflang="x-default" href="${base}" />`,
+            // وسم Search Console يظهر فقط حين تُضبط القيمة — لا وسم فارغاً
+            ...(googleSiteVerification
+                ? [`<meta name="google-site-verification" content="${String(googleSiteVerification).replace(/"/g, '')}" />`]
+                : []),
+            `<script type="application/ld+json">${jsonLd}</script>`,
         ].join('\n  ');
 
         const html = INDEX_HTML
@@ -3563,6 +3592,7 @@ if (isMain) {
         stripeClient: createStripeClient({ secretKey: process.env.STRIPE_SECRET_KEY || null }),
         stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || null,
         publicUrl: process.env.TRAVEL_PUBLIC_URL || null,
+        googleSiteVerification: process.env.GOOGLE_SITE_VERIFICATION || null,
         // 🔵 الدخول بجوجل — GOOGLE_CLIENT_ID من Google Cloud Console
         // (OAuth client من نوع Web، بلا سرّ عميل: تدفّق ID-token فقط)
         googleClient: createGoogleAuthClient({ clientId: process.env.GOOGLE_CLIENT_ID || null }),
