@@ -667,6 +667,13 @@ export function createApp({
     // الحساب غير معتمد له (Duffel Cars: 403 "not approved to access Live mode")
     disabledProducts = String(process.env.TRAVEL_DISABLED_PRODUCTS || '')
         .split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
+    // ✅ عكس disabledProducts: قرار مالك صريح بالثقة بمنتجٍ رغم أن مزوّده
+    // بمسمّى «غير حي» (مثال: LiteAPI Sandbox — موثَّق أعلاه حجزٌ/إلغاءٌ حيّان
+    // فعليان بنفس المفتاح رغم بادئة sand_). خلافاً لـTRAVEL_ALLOW_NON_LIVE_PRODUCTS
+    // (يعطّل الحارس كله — يعيد أيضاً السيارات المكسورة والـeSIM الوهمية)، هذا
+    // يستثني منتجاً بعينه فقط وبصراحة، وconfig يعلن الاستثناء بصدق.
+    trustedNonLiveProducts = String(process.env.TRAVEL_TRUSTED_NON_LIVE_PRODUCTS || '')
+        .split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
     agent = null,
     markupPct = readMarkupPct(),  // الافتراض العام: تسقط عليه كل فئة لم تُخصَّص لها قيمة
     flightMarkupPct = null,       // يُشتق من markupPct إن لم يُمرَّر (TRAVEL_MARKUP_PCT_FLIGHT)
@@ -709,7 +716,7 @@ export function createApp({
     // الحساب: Duffel Cars يرد 403 حياً حتى تفعّله مبيعات Duffel. لذلك
     // قائمة إيقاف صريحة بالبيئة تتقدّم على كل شيء (TRAVEL_DISABLED_PRODUCTS).
     const productOn = (name, p) => !!p && !disabledProducts.includes(name)
-        && (!liveGuardActive || (p.mode || 'live') === 'live');
+        && (!liveGuardActive || (p.mode || 'live') === 'live' || trustedNonLiveProducts.includes(name));
     const staysOn = productOn('stays', staysProvider);
     const carsOn = productOn('cars', carsProvider);
     const esimOn = productOn('esim', esimProvider);
@@ -1939,6 +1946,7 @@ ${urls}
             // يكون الطيران حياً (والخادم يرد 503 على مساراته أيضاً — لا واجهةً وحدها)
             liveGuardActive,
             disabledProducts, // ⛔ ما أُوقف صراحةً بالبيئة — يظهر بصدق لا يُخفى
+            trustedNonLiveProducts, // ✅ ما استُثني صراحةً رغم مزوّده «غير حي» بالمسمّى
             staysEnabled: staysOn,
             staysProviderMode: staysProvider?.mode || null,
             carsEnabled: carsOn,
