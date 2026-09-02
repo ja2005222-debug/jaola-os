@@ -7755,6 +7755,50 @@ describe('🔒 حارس الإنتاج: طيرانٌ حيّ يُخفي كل من
     });
 });
 
+describe('🔎 جاهزية Search Console: وسم التحقق بالبيئة وحدها + JSON-LD بالبيانات المعروضة', () => {
+    async function boot(opts) {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaola-travel-seo-'));
+        const app = createApp({
+            store: createFileStore({ dataDir: dir }), jwtSecret: JWT_SECRET,
+            provider: createMockTravelProvider(), publicUrl: 'https://www.example.test', ...opts,
+        });
+        const server = await new Promise(r => { const x = app.listen(0, () => r(x)); });
+        const base = `http://127.0.0.1:${server.address().port}`;
+        return { html: p => fetch(base + p).then(r => r.text()), close: () => new Promise(r => server.close(r)) };
+    }
+
+    test('بلا GOOGLE_SITE_VERIFICATION لا وسم؛ ومعه يظهر في كل اللغات مُنظَّفاً', async () => {
+        const off = await boot({ googleSiteVerification: null });
+        try {
+            assert.doesNotMatch(await off.html('/'), /google-site-verification/);
+        } finally { await off.close(); }
+        const on = await boot({ googleSiteVerification: 'abc"123' }); // اقتباس دخيل يُزال لا يكسر الوسم
+        try {
+            for (const p of ['/', '/en', '/nl']) {
+                const h = await on.html(p);
+                assert.match(h, /<meta name="google-site-verification" content="abc123" \/>/, p);
+            }
+        } finally { await on.close(); }
+    });
+
+    test('JSON-LD TravelAgency: بيانات السجل التجاري نفسها، والرابط من النطاق الأصلي المضبوط', async () => {
+        const { html, close } = await boot({});
+        try {
+            const h = await html('/en');
+            const m = h.match(/<script type="application\/ld\+json">([^<]+)<\/script>/);
+            assert.ok(m, 'JSON-LD موجود');
+            const ld = JSON.parse(m[1]);
+            assert.equal(ld['@type'], 'TravelAgency');
+            assert.equal(ld.url, 'https://www.example.test/');
+            assert.equal(ld.identifier.value, '71937633'); // نفس KVK في التذييل
+            assert.equal(ld.address.addressLocality, 'Utrecht');
+            assert.ok(ld.availableLanguage.includes('ar') && ld.availableLanguage.includes('en'));
+            // canonical يتبع TRAVEL_PUBLIC_URL بالضبط — درس تعارض www/apex
+            assert.match(h, /<link rel="canonical" href="https:\/\/www\.example\.test\/en\/" \/>/);
+        } finally { await close(); }
+    });
+});
+
 if (process.env.TEST_DATABASE_URL) {
     runSuite('postgres', {
         makeStore: async () => {
