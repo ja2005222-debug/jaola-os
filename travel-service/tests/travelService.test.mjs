@@ -7718,6 +7718,31 @@ describe('🔒 حارس الإنتاج: طيرانٌ حيّ يُخفي كل من
         } finally { await close(); }
     });
 
+    test('TRAVEL_DISABLED_PRODUCTS: إيقاف صريح يتقدّم على كل شيء — حتى لمنتجٍ «حي» بالمفتاح', async () => {
+        // السيناريو الحقيقي: طيران live + سيارات live بالمفتاح لكن الحساب غير معتمد (403)
+        const { call, close } = await boot({
+            provider: liveFlights(),
+            carsProvider: { ...createMockCarsProvider(), mode: 'live' },
+            disabledProducts: ['cars'],
+        });
+        try {
+            const c = (await call('/api/travel/config')).data;
+            assert.deepEqual(c.disabledProducts, ['cars']);
+            assert.equal(c.carsEnabled, false);   // موقوف صراحةً رغم mode=live
+            assert.equal((await call('/api/travel/cars/search', {})).status, 503);
+            assert.notEqual((await call('/api/travel/flights/search', {})).status, 503);
+        } finally { await close(); }
+        // وفي التطوير (بلا حارس) الإيقاف الصريح يعمل أيضاً — قرار المالك لا وضع المزوّد
+        const dev = await boot({ provider: createMockTravelProvider(), disabledProducts: ['esim'] });
+        try {
+            const c = (await dev.call('/api/travel/config')).data;
+            assert.equal(c.liveGuardActive, false);
+            assert.equal(c.esimEnabled, false);
+            assert.equal(c.staysEnabled, true);
+            assert.equal((await dev.call('/api/travel/esim/search', {})).status, 503);
+        } finally { await dev.close(); }
+    });
+
     test('TRAVEL_ALLOW_NON_LIVE_PRODUCTS: تجاوزٌ صريح يعطّل الحارس (اختبار فقط)', async () => {
         const { call, close } = await boot({ provider: liveFlights(), allowNonLiveProducts: true });
         try {
