@@ -34,6 +34,11 @@ export const NOTIFICATION_CATEGORIES = {
     // للأدمن فقط عملياً (تعويض باقة عالق ونحوه) — سجلّ وقائع يخصّ مال
     // المنصة فلا يُطفأ داخل البوابة، كفئات الوقائع المالية للمسافر.
     admin_alert: { label: 'تنبيه إداري (للمشرفين)', alwaysInApp: true, defaultEmail: true, template: 'jaola_admin_alert' },
+    // 📢 حملات تسويقية (إعلان تفعيل الحجز الحي وأمثاله) — خلافاً لكل ما
+    // سبق، هذه ليست واقعة على مال المسافر أو سفره فتُحفظ رغماً عنه؛
+    // alwaysInApp: false عمداً كي يملك إيقافها كاملةً (سجلاً وبريداً معاً)
+    // بنفس مفتاح price_drop — إعلانٌ لا حدثاً.
+    promo: { label: 'عروض وتنبيهات تسويقية', alwaysInApp: false, defaultEmail: true, template: 'jaola_promo' },
 };
 
 export const NOTIFICATION_CHANNELS = ['inApp', 'email', 'whatsapp'];

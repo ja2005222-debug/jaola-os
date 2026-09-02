@@ -5102,6 +5102,74 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             await call('/api/travel/admin/discounts/FLIGHTSONLY', { method: 'DELETE', token: admin });
         });
 
+        // ─── 📢 إعلان تفعيل الحجز الحي ──────────────────────────────────
+
+        test('📢 إعلان الحجز الحي: كودٌ ترحيبي تلقائي، تنبيه لكل حساب Jatrava، وبلا تكرار', async () => {
+            const admin = makeToken('admin');
+            await call('/api/travel/admin/discounts/LAUNCH15', { method: 'DELETE', token: admin }); // تنظيف جولة سابقة
+
+            // ⚠️ تطبيقٌ جديد للتسجيل هنا عمداً (نفس عرف اختبارات استعادة
+            // كلمة المرور أعلاه): محدّد /auth/signup بالـIP، واختبارات
+            // كثيرة سبقت هذا سجّلت حسابات على نفس 127.0.0.1 فتُستهلَك
+            // الحصّة — سلةٌ جديدة بنفس المخزن (لا بيانات جديدة) تعزل ذلك.
+            const authApp = createApp({
+                store, jwtSecret: JWT_SECRET, provider, staysProvider, carsProvider,
+                markupPct: MARKUP, packageMarkupPct: PKG_MARKUP, adminUsers: ['admin'],
+            });
+            const authSrv = await new Promise(r => { const s = authApp.listen(0, () => r(s)); });
+            const authUrl = `http://127.0.0.1:${authSrv.address().port}`;
+            const authCall = async (pathname, body) => {
+                const r = await fetch(authUrl + pathname, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+                });
+                return { status: r.status, data: await r.json().catch(() => null) };
+            };
+            const SIGNUP2 = (over = {}) => ({ email: 'x@example.com', password: 'travel2026x', name: 'م', ...over });
+            const u1 = await authCall('/api/travel/auth/signup', SIGNUP2({ email: 'announce1@example.com' }));
+            const u2 = await authCall('/api/travel/auth/signup', SIGNUP2({ email: 'announce2@example.com' }));
+            await new Promise(r => authSrv.close(r));
+            assert.equal(u1.status, 201);
+            assert.equal(u2.status, 201);
+
+            // غير الأدمن: 404
+            assert.equal((await call('/api/travel/admin/announce-live-booking', { method: 'POST', token: u1.data.token, body: {} })).status, 404);
+
+            const run1 = await call('/api/travel/admin/announce-live-booking', {
+                method: 'POST', token: admin,
+                body: { discountCode: 'launch15', discountPercent: 20, expiresInDays: 10 },
+            });
+            assert.equal(run1.status, 200);
+            assert.equal(run1.data.discountCode, 'LAUNCH15');
+            assert.ok(run1.data.sent >= 2, 'كلا الحسابين الجديدين استلما التنبيه على الأقل');
+
+            // كود الخصم أُنشئ فعلاً بالقيم المُرسَلة
+            const dc = (await call('/api/travel/admin/discounts', { token: admin })).data.discounts.find(d => d.code === 'LAUNCH15');
+            assert.equal(dc.value, 20);
+            assert.equal(dc.type, 'percent');
+
+            // وصل صندوق تنبيهات كل مستخدم فعلاً، وفيه كود الخصم نصّاً
+            const inbox1 = await call('/api/travel/notifications', { token: u1.data.token });
+            const promoNotif = inbox1.data.notifications.find(n => n.category === 'promo');
+            assert.ok(promoNotif, 'لا تنبيه promo وصل صندوق المستخدم الأول');
+            assert.match(promoNotif.body, /LAUNCH15/);
+
+            // ⛔ تشغيلٌ ثانٍ: لا إرسال مزدوج لمن استلم فعلاً، والكود لا يُعاد إنشاؤه
+            const run2 = await call('/api/travel/admin/announce-live-booking', {
+                method: 'POST', token: admin, body: { discountCode: 'launch15' },
+            });
+            assert.equal(run2.status, 200);
+            assert.equal(run2.data.sent, 0, 'لا أحد يستلم مرتين');
+            assert.ok(run2.data.skipped >= 2);
+            const inbox1After = await call('/api/travel/notifications', { token: u1.data.token });
+            assert.equal(
+                inbox1After.data.notifications.filter(n => n.category === 'promo').length,
+                inbox1.data.notifications.filter(n => n.category === 'promo').length,
+                'صندوق التنبيهات لم يتضاعف',
+            );
+
+            await call('/api/travel/admin/discounts/LAUNCH15', { method: 'DELETE', token: admin });
+        });
+
         test('🗄️ عقد المخزن: رقعة transitionBooking تُحفظ **كاملةً** في المخزنين', async () => {
             // 🚨 حارس عطبٍ إنتاجي حقيقي: مخزن الملفات كان يدمج الرقعة كلها
             // (Object.assign) بينما Postgres يكتب قائمةً بيضاء من الأعمدة

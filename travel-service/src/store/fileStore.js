@@ -454,6 +454,10 @@ export function createFileStore({ dataDir }) {
                 // في أول مقارنةٍ صارمة. العقد واحد فالتهيئة واحدة.
                 resetTokenHash: null,
                 resetExpiresAt: null,
+                // 📢 نفس عرف الحقلين أعلاه — يُهيّأ صراحةً null لا يُترَك
+                // غائباً، فمقارنة `!!u.liveAnnouncementSentAt` تتصرّف
+                // بالتطابق في المخزنين منذ اللحظة الأولى.
+                liveAnnouncementSentAt: null,
                 createdAt: Date.now(),
                 updatedAt: Date.now(),
             };
@@ -467,6 +471,12 @@ export function createFileStore({ dataDir }) {
             if (!key) return null;
             const row = readUsers().find(r => r.email === key);
             return row ? { ...row } : null;
+        },
+
+        // 📢 لحملات تُرسَل لكل حسابات Jatrava الذاتية (إعلان تفعيل الحجز
+        // الحي وأمثاله) — الأقدم أولاً فيصل من سجّل أثناء التجربة أولاً.
+        async listUsers() {
+            return readUsers().sort((a, b) => a.createdAt - b.createdAt).map(r => ({ ...r }));
         },
 
         // ⏳ **لا يُصفّي المنتهي**: الصلاحية يقرّرها resetTokenValid وحده في
