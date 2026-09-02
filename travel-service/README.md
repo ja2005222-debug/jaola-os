@@ -722,7 +722,8 @@ API حقيقي مقروء (نفس معيار Stays لا Cars — صيغ مُخم
 | `DUFFEL_API_KEY` | مفتاح إنتاج | Duffel حي — **يتطلب رصيد Duffel مشحوناً** + نفس تفعيل Stays/Cars |
 | (غير مضبوط) | — | مزوّد محاكاة حتمي للثلاثة (تطوير كامل التدفق بلا مفاتيح) |
 | `LITEAPI_API_KEY` | يبدأ بـ`sand_` | LiteAPI/Nuitee Sandbox — **مزوّد الفنادق الفعلي الآن** (أولوية على Duffel Stays المعطَّل)؛ البحث والحجز **مُتحقَّق منهما حياً** بحجز فعلي، والإلغاء وحده لم يُجرَّب بعد (راجع المرحلة ٣د) |
-| `DUFFEL_WEBHOOK_SECRET` | من لوحة Duffel (Developers → Webhooks) | إشعارات تغيير الطيران بعد الحجز (`order.airline_initiated_change_detected`) — راجع المرحلة ٣هـ. بلا هذا: `/api/travel/webhooks/duffel` يرد 503 |
+| `DUFFEL_WEBHOOK_SECRET` | من لوحة Duffel (Developers → Webhooks) | إشعارات تغيير الطيران بعد الحجز (`order.airline_initiated_change_detected`) — راجع المرحلة ٣هـ. بلا هذا: `/api/travel/webhooks/duffel` يرد 503. **الـwebhooks لكل وضع على حدة**: مفتاح Duffel حي يحتاج webhook جديداً بسرّ جديد من وضع Live |
+| `TRAVEL_ALLOW_NON_LIVE_PRODUCTS` | `1` (اختبار فقط) | يعطّل **حارس الإنتاج**: افتراضياً حين يكون الطيران حياً (مفتاح Duffel إنتاج) تُخفى تلقائياً كل المنتجات التي مزوّدها غير حي — الفنادق على LiteAPI Sandbox، الـeSIM المحاكاة، السيارات المحظورة — واجهةً (`config.*Enabled=false`) وخادماً (503 على مساراتها) معاً، كي لا يدفع عميل فعلياً مقابل منتج تجريبي. لا تضبطه في الإنتاج أبداً |
 
 الايجنت: `TRAVEL_AGENT_API_KEY` (+ اختيارياً `TRAVEL_AGENT_API_URL` و
 `TRAVEL_AGENT_MODEL`) — أي خدمة متوافقة مع OpenAI chat/completions تدعم

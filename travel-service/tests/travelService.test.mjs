@@ -7645,6 +7645,91 @@ runSuite('file', {
     },
 });
 
+describe('🔒 حارس الإنتاج: طيرانٌ حيّ يُخفي كل منتجٍ مزوّده تجريبي — واجهةً وخادماً', () => {
+    // مزوّد طيران «حي» شكلاً: نفس المحاكاة بوضع live — الحارس يقرأ mode لا الاسم
+    const liveFlights = () => ({ ...createMockTravelProvider(), mode: 'live' });
+    async function boot(opts) {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaola-travel-guard-'));
+        const app = createApp({
+            store: createFileStore({ dataDir: dir }), jwtSecret: JWT_SECRET,
+            staysProvider: createMockStaysProvider(), carsProvider: createMockCarsProvider(),
+            esimProvider: createMockEsimProvider(), ...opts,
+        });
+        const server = await new Promise(r => { const x = app.listen(0, () => r(x)); });
+        const base = `http://127.0.0.1:${server.address().port}`;
+        const call = async (p, body) => {
+            const res = await fetch(base + p, {
+                method: body === undefined ? 'GET' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: body === undefined ? undefined : JSON.stringify(body),
+            });
+            return { status: res.status, data: await res.json().catch(() => null) };
+        };
+        return { call, close: () => new Promise(r => server.close(r)) };
+    }
+
+    test('طيران mock (تطوير): لا حارس — كل المنتجات ظاهرة كما كانت', async () => {
+        const { call, close } = await boot({ provider: createMockTravelProvider() });
+        try {
+            const c = (await call('/api/travel/config')).data;
+            assert.equal(c.liveGuardActive, false);
+            assert.equal(c.staysEnabled, true);
+            assert.equal(c.carsEnabled, true);
+            assert.equal(c.esimEnabled, true);
+            assert.equal(c.packagesEnabled, true);
+            assert.notEqual((await call('/api/travel/esim/search', {})).status, 503);
+        } finally { await close(); }
+    });
+
+    test('طيران live + فنادق/سيارات/eSIM تجريبية: تختفي من config وترد مساراتها 503', async () => {
+        const { call, close } = await boot({ provider: liveFlights() });
+        try {
+            const c = (await call('/api/travel/config')).data;
+            assert.equal(c.providerMode, 'live');
+            assert.equal(c.liveGuardActive, true);
+            assert.equal(c.staysEnabled, false);
+            assert.equal(c.carsEnabled, false);
+            assert.equal(c.esimEnabled, false);
+            assert.equal(c.packagesEnabled, false); // باقة = فندق، والفندق تجريبي
+            // الخادم لا يكتفي بإخفاء الواجهة — نداء مباشر يُرفض صراحةً
+            for (const p of ['/api/travel/stays/search', '/api/travel/cars/search', '/api/travel/esim/search', '/api/travel/packages/quote']) {
+                const r = await call(p, {});
+                assert.equal(r.status, 503, p);
+            }
+            assert.equal((await call('/api/travel/stays/offers/x')).status, 503);
+            // الطيران نفسه (الحي) يعمل: ليس 503 (400 لمعاملات ناقصة أمرٌ طبيعي)
+            assert.notEqual((await call('/api/travel/search', {})).status, 503);
+        } finally { await close(); }
+    });
+
+    test('منتجٌ حي بجانب الطيران الحي يبقى ظاهراً — الحارس يميّز لا يعمّم', async () => {
+        const { call, close } = await boot({
+            provider: liveFlights(),
+            staysProvider: { ...createMockStaysProvider(), mode: 'live' },
+        });
+        try {
+            const c = (await call('/api/travel/config')).data;
+            assert.equal(c.liveGuardActive, true);
+            assert.equal(c.staysEnabled, true);   // مزوّد الفنادق حيٌّ → يبقى
+            assert.equal(c.packagesEnabled, true);
+            assert.equal(c.esimEnabled, false);   // المحاكاة تختفي
+            assert.notEqual((await call('/api/travel/stays/search', {})).status, 503);
+            assert.equal((await call('/api/travel/esim/search', {})).status, 503);
+        } finally { await close(); }
+    });
+
+    test('TRAVEL_ALLOW_NON_LIVE_PRODUCTS: تجاوزٌ صريح يعطّل الحارس (اختبار فقط)', async () => {
+        const { call, close } = await boot({ provider: liveFlights(), allowNonLiveProducts: true });
+        try {
+            const c = (await call('/api/travel/config')).data;
+            assert.equal(c.liveGuardActive, false);
+            assert.equal(c.staysEnabled, true);
+            assert.equal(c.esimEnabled, true);
+            assert.notEqual((await call('/api/travel/esim/search', {})).status, 503);
+        } finally { await close(); }
+    });
+});
+
 if (process.env.TEST_DATABASE_URL) {
     runSuite('postgres', {
         makeStore: async () => {
