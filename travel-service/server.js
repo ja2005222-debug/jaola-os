@@ -661,6 +661,8 @@ export function createApp({
     staysProvider = null,
     carsProvider = null,
     esimProvider = null,          // باقات إنترنت السفر (eSIM) — محاكاة فقط حالياً (راجع providers/index.js)
+    // 🔒 حارس الإنتاج (انظر أدناه): TRAVEL_ALLOW_NON_LIVE_PRODUCTS=1 يعطّله عمداً
+    allowNonLiveProducts = process.env.TRAVEL_ALLOW_NON_LIVE_PRODUCTS === '1',
     agent = null,
     markupPct = readMarkupPct(),  // الافتراض العام: تسقط عليه كل فئة لم تُخصَّص لها قيمة
     flightMarkupPct = null,       // يُشتق من markupPct إن لم يُمرَّر (TRAVEL_MARKUP_PCT_FLIGHT)
@@ -684,6 +686,26 @@ export function createApp({
     // يعمل ولا زرّ يظهر في الواجهة (بلا هذا الشرط: زرٌّ لا يعمل خيرٌ من عدمه).
     googleClient = null,
 }) {
+    // ─── 🔒 حارس الإنتاج: لا منتج تجريبياً بجانب طيرانٍ حيّ ──────────────
+    //
+    // لحظة تبديل DUFFEL_API_KEY إلى مفتاح حي يصبح الطيران بمالٍ حقيقي —
+    // بينما الفنادق قد تبقى على LiteAPI Sandbox والـeSIM محاكاةً والسيارات
+    // محظورةً على الحساب. بلا هذا الحارس يدفع العميل عبر Stripe فعلياً مقابل
+    // فندقٍ تجريبي لا يوجد. القاعدة: إن كان الطيران حياً، يُعرض فقط ما مزوّده
+    // حيٌّ مثله — واجهةً (أعلام config) وخادماً (503 على المسارات) معاً، لا
+    // إخفاءً في الواجهة وحدها. في التطوير (كل شيء mock) لا يتغير شيء.
+    // التجاوز صريحٌ بالبيئة لا ضمنيٌّ — لبيئات الاختبار فقط.
+    // بلا مزوّد طيران أصلاً (بعض اختبارات الوحدة) لا حارس — كما قبل
+    const flightsLive = !!provider && (provider.mode || 'live') === 'live';
+    const liveGuardActive = flightsLive && !allowNonLiveProducts;
+    const productOn = p => !!p && (!liveGuardActive || (p.mode || 'live') === 'live');
+    const staysOn = productOn(staysProvider);
+    const carsOn = productOn(carsProvider);
+    const esimOn = productOn(esimProvider);
+    const PRODUCT_OFF_MSG = 'هذا المنتج غير متاح حالياً على النسخة الحية.';
+    const requireProduct = on => (_req, res, next) =>
+        on ? next() : res.status(503).json({ error: PRODUCT_OFF_MSG });
+
     const app = express();
     // خلف وكيل عكسي واحد (Render وأمثالها) — بدونه req.ip هو عنوان الوكيل
     // نفسه لكل الطلبات، فيتشارك كل المستخدمين نفس سلة محدّد المعدل أدناه.
@@ -1876,14 +1898,17 @@ ${urls}
             provider: provider.name,
             // sandbox/mock → الواجهة تعرض لافتة "بيئة تجريبية" بصدق
             providerMode: provider.mode || 'live',
-            staysEnabled: !!staysProvider,
+            // 🔒 الأعلام تمر عبر حارس الإنتاج: منتجٌ مزوّده تجريبي يختفي حين
+            // يكون الطيران حياً (والخادم يرد 503 على مساراته أيضاً — لا واجهةً وحدها)
+            liveGuardActive,
+            staysEnabled: staysOn,
             staysProviderMode: staysProvider?.mode || null,
-            carsEnabled: !!carsProvider,
+            carsEnabled: carsOn,
             carsProviderMode: carsProvider?.mode || null,
-            esimEnabled: !!esimProvider,
+            esimEnabled: esimOn,
             esimProviderMode: esimProvider?.mode || null,
             agentEnabled: !!agent,
-            packagesEnabled: !!staysProvider, // الباقة = طيران + فندق؛ الطيران موجود دوماً
+            packagesEnabled: staysOn, // الباقة = طيران + فندق؛ الطيران موجود دوماً
             paymentsEnabled: !!stripeClient, // 💳 حجز الباقات المجدولة يتحول لدفع فعلي
             googleClientId: googleClient?.clientId || null, // زرّ «الدخول بجوجل» يظهر فقط حين يوجد
             isAdmin: isAdmin(req), // رابط ⚙️ الإدارة يظهر لأصحابه فقط
@@ -2083,7 +2108,9 @@ ${urls}
 
     // ─── الفنادق (Duffel Stays) — محاذاة مسارات الطيران أعلاه ──────────
 
-    app.post('/api/travel/stays/search', optionalToken, searchLimiter, wrap(async (req, res) => {
+    // requireProduct(staysOn) قبل كل شيء: حارس الإنتاج يرد 503 صريحاً —
+    // مسارات الإلغاء تبقى مفتوحة عمداً (حجزٌ قائم من قبل التبديل حق صاحبه).
+    app.post('/api/travel/stays/search', requireProduct(staysOn), optionalToken, searchLimiter, wrap(async (req, res) => {
         try {
             const offers = await doSearchStays(req.body);
             res.json({ offers, insight: buildStayInsight(offers, uiLangOf(req)) });
@@ -2093,7 +2120,7 @@ ${urls}
         }
     }));
 
-    app.get('/api/travel/stays/offers/:id', optionalToken, wrap(async (req, res) => {
+    app.get('/api/travel/stays/offers/:id', requireProduct(staysOn), optionalToken, wrap(async (req, res) => {
         try {
             const offer = await doGetStayOffer(req.params.id);
             if (!offer) return res.status(404).json({ error: 'عرض الفندق غير موجود أو انتهت صلاحيته.' });
@@ -2105,7 +2132,7 @@ ${urls}
     }));
 
     // نداء مزوّد حقيقي لكل فتح تفاصيل — searchLimiter نفسه يحميه.
-    app.get('/api/travel/stays/hotels/:hotelId', optionalToken, searchLimiter, wrap(async (req, res) => {
+    app.get('/api/travel/stays/hotels/:hotelId', requireProduct(staysOn), optionalToken, searchLimiter, wrap(async (req, res) => {
         try {
             const hotel = await doGetHotelDetails(req.params.hotelId);
             if (!hotel) return res.status(404).json({ error: 'تفاصيل الفندق غير متاحة.' });
@@ -2116,7 +2143,7 @@ ${urls}
         }
     }));
 
-    app.post('/api/travel/stays/bookings', verifyToken, wrap(async (req, res) => {
+    app.post('/api/travel/stays/bookings', requireProduct(staysOn), verifyToken, wrap(async (req, res) => {
         try {
             const booking = await doBookStay(userOf(req), req.body || {}, requestBaseUrl(req));
             res.json({ booking, ...(booking.checkoutUrl ? { checkoutUrl: booking.checkoutUrl } : {}) });
@@ -2137,7 +2164,7 @@ ${urls}
 
     // ─── السيارات (Duffel Cars) — محاذاة مسارات الفنادق أعلاه ──────────
 
-    app.post('/api/travel/cars/search', optionalToken, searchLimiter, wrap(async (req, res) => {
+    app.post('/api/travel/cars/search', requireProduct(carsOn), optionalToken, searchLimiter, wrap(async (req, res) => {
         try {
             const offers = await doSearchCars(req.body);
             res.json({ offers, insight: buildCarInsight(offers, uiLangOf(req)) });
@@ -2147,7 +2174,7 @@ ${urls}
         }
     }));
 
-    app.get('/api/travel/cars/offers/:id', optionalToken, wrap(async (req, res) => {
+    app.get('/api/travel/cars/offers/:id', requireProduct(carsOn), optionalToken, wrap(async (req, res) => {
         try {
             const offer = await doGetCarOffer(req.params.id);
             if (!offer) return res.status(404).json({ error: 'عرض السيارة غير موجود أو انتهت صلاحيته.' });
@@ -2158,7 +2185,7 @@ ${urls}
         }
     }));
 
-    app.post('/api/travel/cars/bookings', verifyToken, wrap(async (req, res) => {
+    app.post('/api/travel/cars/bookings', requireProduct(carsOn), verifyToken, wrap(async (req, res) => {
         try {
             const booking = await doBookCar(userOf(req), req.body || {}, requestBaseUrl(req));
             res.json({ booking, ...(booking.checkoutUrl ? { checkoutUrl: booking.checkoutUrl } : {}) });
@@ -2180,7 +2207,7 @@ ${urls}
     // ─── 📶 باقات إنترنت السفر (eSIM) — محاذاة مسارات السيارات أعلاه ───
     // بلا مسار إلغاء عمداً (راجع doSearchEsim وجوارها أعلاه).
 
-    app.post('/api/travel/esim/search', optionalToken, searchLimiter, wrap(async (req, res) => {
+    app.post('/api/travel/esim/search', requireProduct(esimOn), optionalToken, searchLimiter, wrap(async (req, res) => {
         try {
             res.json({ offers: await doSearchEsim(req.body) });
         } catch (e) {
@@ -2189,7 +2216,7 @@ ${urls}
         }
     }));
 
-    app.get('/api/travel/esim/offers/:id', optionalToken, wrap(async (req, res) => {
+    app.get('/api/travel/esim/offers/:id', requireProduct(esimOn), optionalToken, wrap(async (req, res) => {
         try {
             const offer = await doGetEsimOffer(req.params.id);
             if (!offer) return res.status(404).json({ error: 'عرض باقة eSIM غير موجود أو انتهت صلاحيته.' });
@@ -2200,7 +2227,7 @@ ${urls}
         }
     }));
 
-    app.post('/api/travel/esim/bookings', verifyToken, wrap(async (req, res) => {
+    app.post('/api/travel/esim/bookings', requireProduct(esimOn), verifyToken, wrap(async (req, res) => {
         try {
             const booking = await doBookEsim(userOf(req), req.body || {}, requestBaseUrl(req));
             res.json({ booking, ...(booking.checkoutUrl ? { checkoutUrl: booking.checkoutUrl } : {}) });
@@ -2213,7 +2240,8 @@ ${urls}
     // ─── 🎁 الباقات (طيران + فندق — خصم حقيقي من التنازل عن جزء من العمولة) ──
 
     function requirePackages() {
-        if (!staysProvider) {
+        // staysOn لا staysProvider: فندقٌ تجريبي بجانب طيرانٍ حيّ لا يصنع باقة
+        if (!staysOn) {
             throw Object.assign(new Error('الباقات تتطلب مزوّد فنادق مُفعّلاً.'), { status: 503 });
         }
     }
@@ -2236,7 +2264,9 @@ ${urls}
         };
     }
 
-    app.post('/api/travel/packages/quote', optionalToken, searchLimiter, wrap(async (req, res) => {
+    // requireProduct(staysOn) هنا أيضاً: requirePackages() تُرمى خارج try
+    // فتصل المعالج العام كـ500 — الوسيط يرد 503 صريحاً قبل ذلك
+    app.post('/api/travel/packages/quote', requireProduct(staysOn), optionalToken, searchLimiter, wrap(async (req, res) => {
         requirePackages();
         try {
             const q = await quotePackage({
@@ -2251,7 +2281,7 @@ ${urls}
         }
     }));
 
-    app.post('/api/travel/packages/bookings', verifyToken, wrap(async (req, res) => {
+    app.post('/api/travel/packages/bookings', requireProduct(staysOn), verifyToken, wrap(async (req, res) => {
         requirePackages();
         try {
             const result = await bookPackage({
