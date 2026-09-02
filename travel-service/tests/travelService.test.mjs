@@ -7743,6 +7743,33 @@ describe('🔒 حارس الإنتاج: طيرانٌ حيّ يُخفي كل من
         } finally { await dev.close(); }
     });
 
+    test('TRAVEL_TRUSTED_NON_LIVE_PRODUCTS: يستثني منتجاً بعينه بلا فتح الباقي', async () => {
+        // السيناريو الحقيقي: طيران live + فنادق LiteAPI بمسمّى sandbox (موثَّق
+        // حجزاً/إلغاءً حيّين فعليين) + سيارات مكسورة تبقى موقوفة رغم الاستثناء العام
+        const { call, close } = await boot({
+            provider: liveFlights(),
+            trustedNonLiveProducts: ['stays'],
+        });
+        try {
+            const c = (await call('/api/travel/config')).data;
+            assert.deepEqual(c.trustedNonLiveProducts, ['stays']);
+            assert.equal(c.staysEnabled, true);     // استُثنيت صراحةً
+            assert.equal(c.packagesEnabled, true);  // الباقة تتبع الفندق
+            assert.equal(c.esimEnabled, false);     // لم تُستثنَ — تبقى مخفية
+            assert.notEqual((await call('/api/travel/stays/search', {})).status, 503);
+            assert.equal((await call('/api/travel/esim/search', {})).status, 503);
+        } finally { await close(); }
+        // disabledProducts يتقدّم حتى على الاستثناء — لا تناقض بين القرارين
+        const both = await boot({
+            provider: liveFlights(),
+            trustedNonLiveProducts: ['stays'],
+            disabledProducts: ['stays'],
+        });
+        try {
+            assert.equal((await both.call('/api/travel/config')).data.staysEnabled, false);
+        } finally { await both.close(); }
+    });
+
     test('TRAVEL_ALLOW_NON_LIVE_PRODUCTS: تجاوزٌ صريح يعطّل الحارس (اختبار فقط)', async () => {
         const { call, close } = await boot({ provider: liveFlights(), allowNonLiveProducts: true });
         try {
