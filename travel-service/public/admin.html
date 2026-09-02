@@ -83,6 +83,11 @@
     <div class="tbl-wrap"><table id="fixedTable"></table></div>
     <button id="fixedNew" style="margin-top:10px">➕ باقة جديدة</button>
 
+    <h2>🏷️ أكواد الخصم (حملات تسويقية)</h2>
+    <p class="note">كودٌ داخلي — لا كوبونات Stripe العامة — فيمكن تقييد كل كودٍ بمنتج ومدة وعدد استخدامات، وتتبّع من استعمله.</p>
+    <div class="tbl-wrap"><table id="discountsTable"></table></div>
+    <button id="discountNew" style="margin-top:10px">➕ كود جديد</button>
+
     <h2>🔔 قائمة الانتظار وطلبات العروض الخاصة</h2>
     <div class="tbl-wrap"><table id="interestsTable"></table></div>
 
@@ -184,6 +189,47 @@
     </form>
   </dialog>
 
+  <!-- 🏷️ حوار كود خصم -->
+  <dialog id="discountDialog">
+    <h2 id="discountDialogTitle">كود خصم</h2>
+    <form method="dialog" id="discountForm">
+      <div class="row">
+        <div><label>الكود</label><input id="dcCode" placeholder="RAMADAN20" maxlength="24" style="text-transform:uppercase" /></div>
+        <div>
+          <label>النوع</label>
+          <select id="dcType">
+            <option value="percent">نسبة مئوية</option>
+            <option value="fixed">مبلغ ثابت</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div><label id="dcValueLabel">النسبة ٪</label><input id="dcValue" type="number" step="0.01" min="0" /></div>
+        <div><label>العملة (للمبلغ الثابت فقط)</label><input id="dcCurrency" placeholder="SAR" maxlength="3" /></div>
+      </div>
+      <label>المنتجات المسموحة (فاصلة بينها — اتركه فارغاً لكل المنتجات)</label>
+      <input id="dcProducts" placeholder="flight, stay, car, esim" />
+      <div class="row">
+        <div><label>سقف الخصم (اختياري)</label><input id="dcMaxDiscount" type="number" step="0.01" min="0" /></div>
+        <div><label>الحد الأدنى للطلب (اختياري)</label><input id="dcMinAmount" type="number" step="0.01" min="0" /></div>
+      </div>
+      <div class="row">
+        <div><label>الحد الأقصى للاستخدام (اختياري)</label><input id="dcMaxUses" type="number" min="1" /></div>
+        <div><label>تاريخ الانتهاء (اختياري)</label><input id="dcExpiresAt" type="date" /></div>
+      </div>
+      <label>ملاحظة (اسم الحملة — للإدارة فقط)</label>
+      <input id="dcNote" placeholder="حملة رمضان — إنستغرام" />
+      <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer">
+        <input id="dcActive" type="checkbox" checked style="width:auto" /> نشط
+      </label>
+      <div id="discountErr" class="error hidden"></div>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <button id="discountSave" type="button">💾 حفظ</button>
+        <button class="ghost" type="button" onclick="document.getElementById('discountDialog').close()">إغلاق</button>
+      </div>
+    </form>
+  </dialog>
+
   <script>
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -212,7 +258,7 @@
       const ov = await res.json();
       $('panel').classList.remove('hidden');
       renderOverview(ov);
-      await Promise.all([loadContracts(), loadFixedPkgs(), loadInterests(), loadBookings()]);
+      await Promise.all([loadContracts(), loadFixedPkgs(), loadDiscounts(), loadInterests(), loadBookings()]);
     }
 
     function renderOverview(ov) {
@@ -432,6 +478,93 @@
       }
       $('fixedPkgDialog').close();
       loadFixedPkgs(); loadInterests();
+    });
+
+    // ─── 🏷️ أكواد الخصم ───
+    const PRODUCT_LABEL = { flight: '✈️ طيران', stay: '🏨 فندق', car: '🚗 سيارة', esim: '📶 eSIM' };
+    let editingDiscountCode = null;
+
+    async function loadDiscounts() {
+      const res = await api('/api/travel/admin/discounts');
+      if (!res.ok) return;
+      const { discounts } = await res.json();
+      $('discountsTable').innerHTML = `
+        <tr><th>الكود</th><th>الخصم</th><th>المنتجات</th><th>الاستخدام</th><th>الانتهاء</th><th>الحالة</th><th></th></tr>` +
+        (discounts.length === 0 ? '<tr><td colspan="7" class="note">لا أكواد بعد — الأول يبدأ من زر «كود جديد».</td></tr>' :
+        discounts.map(d => `
+          <tr>
+            <td><code>${esc(d.code)}</code>${d.note ? `<div class="note">${esc(d.note)}</div>` : ''}</td>
+            <td>${d.type === 'percent' ? `${d.value}%` : `${d.value} ${esc(d.currency)}`}${d.maxDiscount != null ? `<div class="note">سقف ${d.maxDiscount}</div>` : ''}${d.minAmount != null ? `<div class="note">حدٌّ أدنى ${d.minAmount}</div>` : ''}</td>
+            <td class="note">${(d.products || []).length ? d.products.map(p => PRODUCT_LABEL[p] || p).join('، ') : 'الكل'}</td>
+            <td>${d.usedCount}${d.maxUses != null ? ` / ${d.maxUses}` : ''}</td>
+            <td class="note">${d.expiresAt ? new Date(d.expiresAt).toLocaleDateString('ar') : '—'}</td>
+            <td>${d.active ? '<span class="ok">نشط</span>' : '<span class="note">موقوف</span>'}</td>
+            <td style="white-space:nowrap">
+              <button class="ghost" data-edit="${esc(d.code)}">تعديل</button>
+              <button class="danger" data-del="${esc(d.code)}">حذف</button>
+            </td>
+          </tr>`).join(''));
+      document.querySelectorAll('[data-edit]').forEach(b =>
+        b.addEventListener('click', () => openDiscount(discounts.find(d => d.code === b.dataset.edit))));
+      document.querySelectorAll('[data-del]').forEach(b =>
+        b.addEventListener('click', async () => {
+          if (!confirm('حذف الكود نهائياً؟ الحجوزات التي استُعمل فيها لا تتأثر.')) return;
+          await api('/api/travel/admin/discounts/' + b.dataset.del, { method: 'DELETE' });
+          loadDiscounts();
+        }));
+    }
+
+    function openDiscount(d) {
+      editingDiscountCode = d?.code || null;
+      $('discountDialogTitle').textContent = d ? `تعديل: ${d.code}` : 'كود خصم جديد';
+      $('dcCode').value = d?.code || '';
+      $('dcCode').disabled = !!d; // الكود مفتاحٌ لا يتغيّر بعد الإنشاء
+      $('dcType').value = d?.type || 'percent';
+      $('dcValue').value = d?.value ?? '';
+      $('dcCurrency').value = d?.currency || '';
+      $('dcProducts').value = (d?.products || []).join(', ');
+      $('dcMaxDiscount').value = d?.maxDiscount ?? '';
+      $('dcMinAmount').value = d?.minAmount ?? '';
+      $('dcMaxUses').value = d?.maxUses ?? '';
+      $('dcExpiresAt').value = d?.expiresAt ? new Date(d.expiresAt).toISOString().slice(0, 10) : '';
+      $('dcNote').value = d?.note || '';
+      $('dcActive').checked = d ? d.active !== false : true;
+      $('discountErr').classList.add('hidden');
+      updateDiscountValueLabel();
+      $('discountDialog').showModal();
+    }
+    function updateDiscountValueLabel() {
+      $('dcValueLabel').textContent = $('dcType').value === 'fixed' ? 'المبلغ' : 'النسبة ٪';
+    }
+    $('dcType').addEventListener('change', updateDiscountValueLabel);
+    $('discountNew').addEventListener('click', () => openDiscount(null));
+
+    $('discountSave').addEventListener('click', async () => {
+      const opt = id => ($(id).value.trim() === '' ? null : Number($(id).value));
+      const body = {
+        code: $('dcCode').value.trim().toUpperCase(),
+        type: $('dcType').value,
+        value: Number($('dcValue').value),
+        currency: $('dcCurrency').value.trim().toUpperCase() || null,
+        products: $('dcProducts').value.trim(), // فاصلة — normalizeDiscountCode يفكّها
+        maxDiscount: opt('dcMaxDiscount'),
+        minAmount: opt('dcMinAmount'),
+        maxUses: opt('dcMaxUses'),
+        expiresAt: $('dcExpiresAt').value ? new Date($('dcExpiresAt').value + 'T23:59:59Z').getTime() : null,
+        note: $('dcNote').value.trim(),
+        active: $('dcActive').checked,
+      };
+      const res = await api(
+        editingDiscountCode ? '/api/travel/admin/discounts/' + editingDiscountCode : '/api/travel/admin/discounts',
+        { method: editingDiscountCode ? 'PUT' : 'POST', body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) {
+        $('discountErr').textContent = data.error || 'تعذّر الحفظ.';
+        $('discountErr').classList.remove('hidden');
+        return;
+      }
+      $('discountDialog').close();
+      loadDiscounts();
     });
 
     async function loadInterests() {

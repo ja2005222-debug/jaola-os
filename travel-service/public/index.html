@@ -1089,6 +1089,11 @@
     <h3 style="margin-bottom:6px">🎫 بيانات المسافرين</h3>
     <p id="bookSummary" class="note"></p>
     <form id="bookForm" method="dialog"></form>
+    <div class="row" style="margin-top:10px;align-items:flex-end">
+      <div style="flex:2"><label>🏷️ كود خصم (اختياري)</label><input id="bookDiscountCode" placeholder="مثال: RAMADAN20" style="text-transform:uppercase" /></div>
+      <div><button class="chip" type="button" id="bookDiscountApply">تطبيق</button></div>
+    </div>
+    <p id="bookDiscountNote" class="note hidden"></p>
     <div id="bookError" class="error hidden"></div>
     <div style="display:flex;gap:10px;margin-top:14px">
       <button class="primary" id="bookConfirm">أكّد الحجز</button>
@@ -1113,6 +1118,11 @@
     <h3 style="margin-bottom:6px">🏨 بيانات النزلاء</h3>
     <p id="stayBookSummary" class="note"></p>
     <form id="stayBookForm" method="dialog"></form>
+    <div class="row" style="margin-top:10px;align-items:flex-end">
+      <div style="flex:2"><label>🏷️ كود خصم (اختياري)</label><input id="stayBookDiscountCode" placeholder="مثال: RAMADAN20" style="text-transform:uppercase" /></div>
+      <div><button class="chip" type="button" id="stayBookDiscountApply">تطبيق</button></div>
+    </div>
+    <p id="stayBookDiscountNote" class="note hidden"></p>
     <div id="stayBookError" class="error hidden"></div>
     <div style="display:flex;gap:10px;margin-top:14px">
       <button class="primary" id="stayBookConfirm">أكّد الحجز</button>
@@ -1180,6 +1190,11 @@
     <h3 style="margin-bottom:6px">🚗 بيانات السائق</h3>
     <p id="carBookSummary" class="note"></p>
     <form id="carBookForm" method="dialog"></form>
+    <div class="row" style="margin-top:10px;align-items:flex-end">
+      <div style="flex:2"><label>🏷️ كود خصم (اختياري)</label><input id="carBookDiscountCode" placeholder="مثال: RAMADAN20" style="text-transform:uppercase" /></div>
+      <div><button class="chip" type="button" id="carBookDiscountApply">تطبيق</button></div>
+    </div>
+    <p id="carBookDiscountNote" class="note hidden"></p>
     <div id="carBookError" class="error hidden"></div>
     <div style="display:flex;gap:10px;margin-top:14px">
       <button class="primary" id="carBookConfirm">أكّد الحجز</button>
@@ -1192,6 +1207,11 @@
     <h3 style="margin-bottom:6px">📶 بيانات المسافر</h3>
     <p id="esimBookSummary" class="note"></p>
     <form id="esimBookForm" method="dialog"></form>
+    <div class="row" style="margin-top:10px;align-items:flex-end">
+      <div style="flex:2"><label>🏷️ كود خصم (اختياري)</label><input id="esimBookDiscountCode" placeholder="مثال: RAMADAN20" style="text-transform:uppercase" /></div>
+      <div><button class="chip" type="button" id="esimBookDiscountApply">تطبيق</button></div>
+    </div>
+    <p id="esimBookDiscountNote" class="note hidden"></p>
     <div id="esimBookError" class="error hidden"></div>
     <div style="display:flex;gap:10px;margin-top:14px">
       <button class="primary" id="esimBookConfirm">أكّد الحجز</button>
@@ -3571,8 +3591,53 @@
         wireExtrasSection(offer);
       } catch { /* إثراءٌ اختياري — فشله لا يعطّل الحجز نفسه */ }
     }
+    // 🏷️ كود خصم — مربّعٌ واحد بأربع نسخ (طيران/فندق/سيارة/eSIM)، معرّفٌ
+    // بادئةً (`book`/`stayBook`/`carBook`/`esimBook`). زرّ «تطبيق» هنا
+    // للراحة فقط (يعاين المبلغ بلا استهلاك عبر /discounts/validate) —
+    // الخادم هو من يتحقّق ويستهلك فعلياً عند التأكيد، فقيمة الحقل تُرسَل
+    // كما هي بلا انتظار ضغطة «تطبيق» (نفس مبدأ عدم الثقة بالعميل).
+    function resetDiscountField(prefix) {
+      const input = $(`${prefix}DiscountCode`);
+      if (input) input.value = '';
+      const note = $(`${prefix}DiscountNote`);
+      if (note) { note.textContent = ''; note.classList.add('hidden'); }
+    }
+    function wireDiscountField(prefix, amountFn, currencyFn, product) {
+      const btn = $(`${prefix}DiscountApply`);
+      // تُنادى من كل فتحة حوار — التوصيل مرّة واحدة فقط لكل زرّ
+      if (!btn || btn.dataset.wired) return;
+      btn.dataset.wired = '1';
+      btn.addEventListener('click', async () => {
+        const code = $(`${prefix}DiscountCode`).value.trim();
+        const note = $(`${prefix}DiscountNote`);
+        note.classList.remove('hidden');
+        if (!code) { note.textContent = ''; note.classList.add('hidden'); return; }
+        note.textContent = T('...جارٍ التحقق', 'Checking…', '...جانچ ہو رہی ہے', '...controleren');
+        try {
+          const res = await api('/api/travel/discounts/validate', {
+            method: 'POST',
+            body: JSON.stringify({ code, amount: amountFn(), currency: currencyFn(), product }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            note.textContent = `❌ ${data.error || T('كود غير صالح', 'Invalid code', 'غلط کوڈ', 'Ongeldige code')}`;
+            return;
+          }
+          note.textContent = `✅ ${T('خصمٌ', 'Discount', 'رعایت', 'Korting')} ${data.discountAmount} ${currencyFn()}`;
+        } catch {
+          note.textContent = '❌ ' + T('تعذّر التحقق من الكود.', 'Could not check the code.', 'کوڈ چیک نہیں ہو سکا۔', 'Kon code niet controleren.');
+        }
+      });
+    }
+    function readDiscountCode(prefix) {
+      const v = $(`${prefix}DiscountCode`)?.value.trim();
+      return v || null;
+    }
+
     function openBooking(offer) {
       selectedOffer = offer;
+      resetDiscountField('book');
+      wireDiscountField('book', () => selectedOffer.sellAmount, () => selectedOffer.currency, 'flight');
       $('bookSummary').textContent = `${offer.owner} — ${T('الإجمالي', 'Total', 'کل', 'Totaal')} ${offer.sellAmount} ${offer.currency} ${
         T('لعدد', 'for', 'برائے', 'voor')} ${offer.passengerCount} ${T('مسافر', 'traveller(s)', 'مسافر(وں)', 'reiziger(s)')}`;
       let html = '';
@@ -3647,6 +3712,7 @@
         offerId: selectedOffer.id, passengers,
         contact: { email: $('cEmail').value.trim(), phone: $('cPhone').value.trim() },
         ...(selectedServices.length ? { selectedServices } : {}),
+        ...(readDiscountCode('book') ? { discountCode: readDiscountCode('book') } : {}),
       };
       $('bookConfirm').disabled = true;
       try {
@@ -3879,6 +3945,8 @@
 
     function openStayBooking(offer) {
       selectedStayOffer = offer;
+      resetDiscountField('stayBook');
+      wireDiscountField('stayBook', () => selectedStayOffer.sellAmount, () => selectedStayOffer.currency, 'stay');
       $('stayBookSummary').textContent = `${offer.name} — الإجمالي ${offer.sellAmount} ${offer.currency}`;
       $('stayBookForm').innerHTML = `
         <fieldset style="border:1px dashed var(--border);border-radius:10px;padding:10px;margin-top:10px">
@@ -3905,6 +3973,7 @@
         offerId: selectedStayOffer.id,
         guests: [{ givenName: val('givenName'), familyName: val('familyName') }],
         contact: { email: $('sEmail').value.trim(), phone: $('sPhone').value.trim() },
+        ...(readDiscountCode('stayBook') ? { discountCode: readDiscountCode('stayBook') } : {}),
       };
       $('stayBookConfirm').disabled = true;
       try {
@@ -4291,6 +4360,8 @@
 
     function openCarBooking(offer) {
       selectedCarOffer = offer;
+      resetDiscountField('carBook');
+      wireDiscountField('carBook', () => selectedCarOffer.sellAmount, () => selectedCarOffer.currency, 'car');
       $('carBookSummary').textContent = `${offer.vehicleName} — الإجمالي ${offer.sellAmount} ${offer.currency}`;
       $('carBookForm').innerHTML = `
         <fieldset style="border:1px dashed var(--border);border-radius:10px;padding:10px;margin-top:10px">
@@ -4317,6 +4388,7 @@
         offerId: selectedCarOffer.id,
         drivers: [{ givenName: val('givenName'), familyName: val('familyName') }],
         contact: { email: $('dEmail').value.trim(), phone: $('dPhone').value.trim() },
+        ...(readDiscountCode('carBook') ? { discountCode: readDiscountCode('carBook') } : {}),
       };
       $('carBookConfirm').disabled = true;
       try {
@@ -4387,6 +4459,8 @@
 
     function openEsimBooking(offer) {
       selectedEsimOffer = offer;
+      resetDiscountField('esimBook');
+      wireDiscountField('esimBook', () => selectedEsimOffer.sellAmount, () => selectedEsimOffer.currency, 'esim');
       $('esimBookSummary').textContent = `📶 ${offer.countryEn || offer.country} — ${offer.dataGb}GB — ${
         T('الإجمالي', 'Total', 'کل', 'Totaal')} ${offer.sellAmount} ${offer.currency}`;
       $('esimBookForm').innerHTML = `
@@ -4414,6 +4488,7 @@
         offerId: selectedEsimOffer.id,
         passengers: [{ givenName: val('givenName'), familyName: val('familyName') }],
         contact: { email: $('eEmail').value.trim(), phone: $('ePhone').value.trim() },
+        ...(readDiscountCode('esimBook') ? { discountCode: readDiscountCode('esimBook') } : {}),
       };
       $('esimBookConfirm').disabled = true;
       try {
