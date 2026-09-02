@@ -88,6 +88,18 @@
     <div class="tbl-wrap"><table id="discountsTable"></table></div>
     <button id="discountNew" style="margin-top:10px">➕ كود جديد</button>
 
+    <div id="announceBox" style="margin-top:22px">
+      <h2>📢 إعلان «الحجز الحي متاح الآن»</h2>
+      <p class="note">يصل مرّةً واحدة لكل حساب Jatrava (صندوق التنبيهات + البريد) مع كود خصم ترحيبي — من استلمه سابقاً لا يصله مرّة ثانية مهما ضغطت الزرّ.</p>
+      <div class="row">
+        <div><label>نسبة الخصم ٪</label><input id="anPercent" type="number" min="1" max="100" value="15" /></div>
+        <div><label>صالح لعدد أيام</label><input id="anDays" type="number" min="1" value="30" /></div>
+        <div><label>كود الخصم</label><input id="anCode" value="WELCOME15" style="text-transform:uppercase" /></div>
+      </div>
+      <button id="announceSend" style="margin-top:10px">📢 أرسل الإعلان الآن</button>
+      <span id="announceResult" class="note"></span>
+    </div>
+
     <h2>🔔 قائمة الانتظار وطلبات العروض الخاصة</h2>
     <div class="tbl-wrap"><table id="interestsTable"></table></div>
 
@@ -301,6 +313,27 @@
           : (r.error || 'تعذّر');
         load();
       } finally { $('compRetry').disabled = false; }
+    });
+
+    $('announceSend').addEventListener('click', async () => {
+      if (!confirm('إرسال إعلان «الحجز الحي متاح الآن» لكل حسابات Jatrava التي لم تستلمه بعد؟')) return;
+      $('announceSend').disabled = true;
+      $('announceResult').textContent = '...جارٍ الإرسال';
+      try {
+        const res = await api('/api/travel/admin/announce-live-booking', {
+          method: 'POST',
+          body: JSON.stringify({
+            discountPercent: Number($('anPercent').value) || 15,
+            expiresInDays: Number($('anDays').value) || 30,
+            discountCode: $('anCode').value.trim().toUpperCase() || 'WELCOME15',
+          }),
+        });
+        const r = await res.json();
+        $('announceResult').textContent = res.ok
+          ? `✅ أُرسل لِ ${r.sent} حساباً (${r.skipped} استلموه سابقاً) — الكود ${r.discountCode}`
+          : (r.error || 'تعذّر الإرسال');
+        if (res.ok) loadDiscounts();
+      } finally { $('announceSend').disabled = false; }
     });
 
     async function loadContracts() {

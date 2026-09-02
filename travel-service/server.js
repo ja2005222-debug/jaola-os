@@ -3463,6 +3463,55 @@ ${urls}
         res.json({ deleted: true });
     }));
 
+    /**
+     * 📢 «الحجز الحي متاح الآن» — حملة واحدة لكل حسابات Jatrava الذاتية
+     * (من سجّل وقت التجربة قبل تفعيل الطيران الحي). كودُ خصمٍ ترحيبي
+     * يُنشأ تلقائياً إن لم يكن موجوداً (نفس مخزن الخصومات أعلاه حرفياً —
+     * لا آلية موازية)، ويصل الجميع عبر notifier (صندوق + بريد) بفئة
+     * `promo` القابلة للإيقاف كاملة، لا `admin_alert` (ليست واقعة حجزٍ).
+     * ⚠️ **قابلة للتكرار بأمان**: `liveAnnouncementSentAt` على كل مستخدم
+     * يمنع إرسالاً مزدوجاً لو أُعيد الزرّ بالخطأ — لا يُعاد إنشاء الكود
+     * أيضاً إن كان موجوداً سلفاً (يُستعمل بقيمه المحفوظة كما هي).
+     */
+    app.post('/api/travel/admin/announce-live-booking', verifyToken, requireAdmin, wrap(async (req, res) => {
+        const percent = Number(req.body?.discountPercent) || 15;
+        const expiresInDays = Number(req.body?.expiresInDays) || 30;
+        const code = String(req.body?.discountCode || 'WELCOME15').trim().toUpperCase();
+
+        let discount = await store.getDiscountCodeByCode(code);
+        if (!discount) {
+            const check = normalizeDiscountCode({
+                code, type: 'percent', value: percent,
+                expiresAt: Date.now() + expiresInDays * 86400000,
+                note: 'حملة تفعيل الحجز الحي',
+            });
+            if (check.error) return res.status(400).json({ error: check.error });
+            discount = await store.createDiscountCode(check.value);
+        }
+
+        const expiresLabel = discount.expiresAt
+            ? new Date(discount.expiresAt).toLocaleDateString('ar')
+            : null;
+        const title = '✈️ الحجز الحقيقي صار متاحاً على Jatrava';
+        const body = [
+            'سجّلت عندنا في فترة التجربة — والآن صرنا نبيع رحلاتٍ حقيقية بأسعارٍ حقيقية.',
+            '',
+            `كود ترحيبي: ${discount.code} — خصم ${discount.value}%${expiresLabel ? ` على أول حجز، صالح حتى ${expiresLabel}` : ' على أول حجز'}.`,
+            '',
+            'ابحث واحجز الآن من بوابة السفر.',
+        ].join('\n');
+
+        const users = await store.listUsers();
+        let sent = 0, skipped = 0;
+        for (const u of users) {
+            if (u.liveAnnouncementSentAt) { skipped += 1; continue; }
+            await notifier.deliver({ username: u.email, category: 'promo', title, body, email: u.email });
+            await store.updateUser(u.id, { liveAnnouncementSentAt: Date.now() });
+            sent += 1;
+        }
+        res.json({ sent, skipped, total: users.length, discountCode: discount.code });
+    }));
+
     app.get('/api/travel/admin/contracts', verifyToken, requireAdmin, wrap(async (req, res) => {
         res.json({ contracts: await store.listContracts() });
     }));

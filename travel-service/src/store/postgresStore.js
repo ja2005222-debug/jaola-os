@@ -231,6 +231,10 @@ ALTER TABLE travel_users ADD COLUMN IF NOT EXISTS reset_token_hash TEXT;
 ALTER TABLE travel_users ADD COLUMN IF NOT EXISTS reset_expires_at BIGINT;
 CREATE INDEX IF NOT EXISTS travel_users_reset_idx
     ON travel_users (reset_token_hash) WHERE reset_token_hash IS NOT NULL;
+-- 📢 علامة إرسال حملة إعلان الحجز الحي (وأمثالها لاحقاً) — NULL = لم
+-- تصله بعد. عمودٌ لا extra_json (لا صلة له بجدول الحجوزات) ولا صفٌّ
+-- منفصل (حملة واحدة اليوم لا تستحق جدول حملات كاملاً بعد).
+ALTER TABLE travel_users ADD COLUMN IF NOT EXISTS live_announcement_sent_at BIGINT;
 
 -- 🤝 برنامج الإحالة — مفهرسٌ بـusername كبقية الخدمة (ملف شخصي، مفضلة)
 -- لا بمعرّف travel_users، فيعمل لأي هوية بصرف النظر عن مصدر توكنها.
@@ -280,6 +284,7 @@ function rowToUser(r) {
         emailVerifiedAt: r.email_verified_at == null ? null : Number(r.email_verified_at),
         resetTokenHash: r.reset_token_hash || null,
         resetExpiresAt: r.reset_expires_at == null ? null : Number(r.reset_expires_at),
+        liveAnnouncementSentAt: r.live_announcement_sent_at == null ? null : Number(r.live_announcement_sent_at),
         createdAt: Number(r.created_at),
         updatedAt: Number(r.updated_at),
     };
@@ -987,6 +992,14 @@ export function createPostgresStore({ connectionString }) {
             });
         },
 
+        // 📢 لحملات تُرسَل لكل حسابات Jatrava الذاتية — الأقدم أولاً.
+        async listUsers() {
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM travel_users ORDER BY created_at ASC');
+                return res.rows.map(rowToUser);
+            });
+        },
+
         // ⏳ **لا يُصفّي المنتهي**: الصلاحية يقرّرها resetTokenValid وحده في
         // accounts.js. لو صفّاها المخزنان أيضاً لصار للانتهاء مصدران،
         // ولاختلف السلوك بينهما عند أول تعديلٍ لأحدهما.
@@ -1007,6 +1020,7 @@ export function createPostgresStore({ connectionString }) {
                     name: 'name', passwordHash: 'password_hash',
                     provider: 'provider', emailVerifiedAt: 'email_verified_at',
                     resetTokenHash: 'reset_token_hash', resetExpiresAt: 'reset_expires_at',
+                    liveAnnouncementSentAt: 'live_announcement_sent_at',
                 };
                 const sets = [], vals = [];
                 for (const [k, col] of Object.entries(map)) {
