@@ -166,3 +166,63 @@ queue + persistence) في نظامٍ يعمل بالفعل، ومطابقٌ تم
 الملف الأصلي نفسه: "لا نعيد كتابة الأنظمة القوية قبل فهم dependencies".
 تُبقى موثّقةً هنا كخيارٍ جاهز التنفيذ لحظة ظهور حاجة فعلية (مثلاً: طلب
 مالك بمشاهدة تاريخ محاولات بناء مشروع).
+
+## 📐 Phase 1 — العقود الحقيقية (توثيقٌ لا كودٌ جديد، 2026-09-02)
+
+⚠️ **قرارٌ متعمَّد**: لا ملفات كود جديدة (`contracts.js` ونحوه) في هذه
+المرحلة — إضافة تجريد غير مُستهلَك الآن تكرّر خطأ `agentOrchestrator.js`
+نفسه الذي حذفناه للتوّ (كودٌ يطمح لمستقبل ولا يستدعيه أحد). بدل ذلك:
+توثيق **الشكل الفعلي المُستعمَل اليوم** لكل عقدٍ، مأخوذاً من الاستدعاء
+الحقيقي لا التصميم النظري — أي كودٍ مستقبلي (Kernel، إلخ) يبدأ من هنا.
+
+### Mission (كما يُستهلَك فعلياً من `server.js` → `jcr.js`)
+```
+{ message, roomName, projectPath, username, activeProject, uiLang, track }
+```
+لا معرّف `missionId` مستقل اليوم (راجع القسم أعلاه) — الهوية الفعلية هي
+`${username}:${activeProject}` (المشروع نفسه *هو* المهمة النشطة الوحيدة).
+
+### Agent (كائن `agents` المُمرَّر حرفياً من `server.js:1961` إلى `runtime.handleUserMessage`)
+مجموعة دوال مسطّحة لا registry ولا class موحّدة — كل مفتاح دالّة مستوردة
+مباشرة: `coreClassifyIntent, coreGenerateCodePlan, coreEditCodePlan,
+architectReview, qaVerify, deployProject, templateAgent, needsBackend,
+generateBackend, generateFrontendAPIIntegration, startClarification,
+processAnswer, isConfirmation, deleteProject, generateAiImages,
+diagnoseAiImages, getFinalGoal, clearState, getState`. **لا "عقد" موحّد
+اليوم بين هذه الدوال** (توقيعات مختلفة، بعضها sync وبعضها async) — أول
+خطوة تجريد حقيقية لاحقاً هي توحيد توقيعها لا مجرد تسميتها.
+
+### Tool — **لا يوجد اليوم كتجريدٍ منفصل عن Agent**
+لا يوجد ملفٌّ أو كائنٌ باسم "Tool" منفصل عن الوكيل الذي يستدعيه — الوكيل
+هو من يفتح الملفات وينفّذ الأوامر مباشرة (`fs.writeFile`، إلخ داخل كل
+`*Agent.js`). فصل "الوكيل يفكّر / الأداة تنفّذ" **غير موجودٍ اليوم في
+الكود** — فجوةٌ حقيقية موثَّقة، لا افتراضٌ يُبنى عليه.
+
+### Event (`stateMachine.js: STATE_EVENTS`, مؤكَّد بالكود)
+اسمٌ قانوني واحد لكل حالة: `MissionAccepted, ArchitectureStarted,
+CodingStarted, ReviewStarted, VerificationStarted, DeployStarted,
+MissionCompleted, MissionFailed, MissionPaused, MissionReset` — يُبَث عبر
+`stateEmitter` (Socket.io، مُسجَّل من `server.js` بـ`setStateEmitter`)
+مع كل `transitionState` ناجح. **هذا العقد الوحيد الناضج فعلاً بين الكل**.
+
+### Evidence (`projectBrain.js`, مؤكَّد بالكود شكلاً وسلوكاً)
+`buildProjectBrain(mem, files)` (دالّة نقية) تُرجع
+`{ filesCount, files, structure, decisions, progress: {done, remaining,
+percent}, lastActivity, updatedAt }` — و`progress.works` (true/false/null)
+يُضاف **بعد الإرجاع** بمعرفة `jcr.js` (سطر 1073) من نتيجة تحقّقٍ سلوكي
+فعلي منفصل — نمط تركيب متأخر (late augmentation) لا خللاً: "المئوية"
+من الملفات، و"يعمل فعلاً؟" من تشغيلٍ حقيقي، ولا يُخترَع أحدهما من الآخر.
+
+### Permission/Capability — **غير موجود إطلاقاً، لا "غير مكتمل"**
+تحقّقٌ مباشر من `middleware/security.js` (93 سطراً كاملة): **لا** أي ذكرٍ
+لكلمة `capability`/`permission` في الملف كله — فقط `sanitizePath` (منع
+اجتياز المسار) و`schemas`/`validate` (Zod). التشخيص الأصلي وصفه بأنه
+"غير مكتمل (Capability Security)" — التصحيح: **لا يوجد بعد أصلاً**، لا
+نسخة أولى ناقصة. أي عمل مستقبلي هنا يبدأ من الصفر لا من "تكملة".
+
+**الخلاصة**: من أصل ستة عقود اقترحتها الوثيقة الأصلية، **واحدٌ فقط**
+(Event) موجودٌ وناضجٌ اليوم بالفعل. البقية إما غير موحَّدة (Agent/Mission)
+أو غير موجودة إطلاقاً (Tool/Permission). هذا يعني أن "Phase 1: تعريف
+العقود" ليست صياغة رسمية لما هو قائم — بل **تصميمٌ جديدٌ فعلي** لأربعة
+من ستة عقود، وهذا عملٌ أكبر من إعادة توثيق، ويستحق جلسةً مخصَّصة له
+لاحقاً بدل استخراج غير متعجّل من هذه الجلسة.
