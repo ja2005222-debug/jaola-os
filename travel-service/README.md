@@ -723,6 +723,7 @@ API حقيقي مقروء (نفس معيار Stays لا Cars — صيغ مُخم
 | (غير مضبوط) | — | مزوّد محاكاة حتمي للثلاثة (تطوير كامل التدفق بلا مفاتيح) |
 | `LITEAPI_API_KEY` | يبدأ بـ`sand_` | LiteAPI/Nuitee Sandbox — **مزوّد الفنادق الفعلي الآن** (أولوية على Duffel Stays المعطَّل)؛ البحث والحجز **مُتحقَّق منهما حياً** بحجز فعلي، والإلغاء وحده لم يُجرَّب بعد (راجع المرحلة ٣د) |
 | `DUFFEL_WEBHOOK_SECRET` | من لوحة Duffel (Developers → Webhooks) | إشعارات تغيير الطيران بعد الحجز (`order.airline_initiated_change_detected`) — راجع المرحلة ٣هـ. بلا هذا: `/api/travel/webhooks/duffel` يرد 503. **الـwebhooks لكل وضع على حدة**: مفتاح Duffel حي يحتاج webhook جديداً بسرّ جديد من وضع Live |
+| `TRAVEL_DISABLED_PRODUCTS` | `cars` (أو `stays,cars,esim`) | **إيقاف صريح لمنتجات بعينها** واجهةً وخادماً (503) — للحالة التي يكون فيها المزوّد «حياً» بالمفتاح لكن الحساب غير معتمد له: Duffel Cars على الحساب الحي يرد `403 Your account is not approved to access Live mode` (مُلتقَط فعلياً ٢ سبتمبر ٢٠٢٦). اضبط `cars` في الإنتاج حتى تفعّل مبيعات Duffel السيارات، ثم أزله |
 | `TRAVEL_ALLOW_NON_LIVE_PRODUCTS` | `1` (اختبار فقط) | يعطّل **حارس الإنتاج**: افتراضياً حين يكون الطيران حياً (مفتاح Duffel إنتاج) تُخفى تلقائياً كل المنتجات التي مزوّدها غير حي — الفنادق على LiteAPI Sandbox، الـeSIM المحاكاة، السيارات المحظورة — واجهةً (`config.*Enabled=false`) وخادماً (503 على مساراتها) معاً، كي لا يدفع عميل فعلياً مقابل منتج تجريبي. لا تضبطه في الإنتاج أبداً |
 
 الايجنت: `TRAVEL_AGENT_API_KEY` (+ اختيارياً `TRAVEL_AGENT_API_URL` و

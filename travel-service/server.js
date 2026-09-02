@@ -663,6 +663,10 @@ export function createApp({
     esimProvider = null,          // باقات إنترنت السفر (eSIM) — محاكاة فقط حالياً (راجع providers/index.js)
     // 🔒 حارس الإنتاج (انظر أدناه): TRAVEL_ALLOW_NON_LIVE_PRODUCTS=1 يعطّله عمداً
     allowNonLiveProducts = process.env.TRAVEL_ALLOW_NON_LIVE_PRODUCTS === '1',
+    // ⛔ إيقاف صريح لمنتجات بعينها (stays,cars,esim): مزوّدٌ «حي» بالمفتاح لكن
+    // الحساب غير معتمد له (Duffel Cars: 403 "not approved to access Live mode")
+    disabledProducts = String(process.env.TRAVEL_DISABLED_PRODUCTS || '')
+        .split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
     agent = null,
     markupPct = readMarkupPct(),  // الافتراض العام: تسقط عليه كل فئة لم تُخصَّص لها قيمة
     flightMarkupPct = null,       // يُشتق من markupPct إن لم يُمرَّر (TRAVEL_MARKUP_PCT_FLIGHT)
@@ -698,10 +702,14 @@ export function createApp({
     // بلا مزوّد طيران أصلاً (بعض اختبارات الوحدة) لا حارس — كما قبل
     const flightsLive = !!provider && (provider.mode || 'live') === 'live';
     const liveGuardActive = flightsLive && !allowNonLiveProducts;
-    const productOn = p => !!p && (!liveGuardActive || (p.mode || 'live') === 'live');
-    const staysOn = productOn(staysProvider);
-    const carsOn = productOn(carsProvider);
-    const esimOn = productOn(esimProvider);
+    // الحارس يقرأ mode المزوّد — لكن «حي» بالمفتاح لا يعني «معتمداً» على
+    // الحساب: Duffel Cars يرد 403 حياً حتى تفعّله مبيعات Duffel. لذلك
+    // قائمة إيقاف صريحة بالبيئة تتقدّم على كل شيء (TRAVEL_DISABLED_PRODUCTS).
+    const productOn = (name, p) => !!p && !disabledProducts.includes(name)
+        && (!liveGuardActive || (p.mode || 'live') === 'live');
+    const staysOn = productOn('stays', staysProvider);
+    const carsOn = productOn('cars', carsProvider);
+    const esimOn = productOn('esim', esimProvider);
     const PRODUCT_OFF_MSG = 'هذا المنتج غير متاح حالياً على النسخة الحية.';
     const requireProduct = on => (_req, res, next) =>
         on ? next() : res.status(503).json({ error: PRODUCT_OFF_MSG });
@@ -1901,6 +1909,7 @@ ${urls}
             // 🔒 الأعلام تمر عبر حارس الإنتاج: منتجٌ مزوّده تجريبي يختفي حين
             // يكون الطيران حياً (والخادم يرد 503 على مساراته أيضاً — لا واجهةً وحدها)
             liveGuardActive,
+            disabledProducts, // ⛔ ما أُوقف صراحةً بالبيئة — يظهر بصدق لا يُخفى
             staysEnabled: staysOn,
             staysProviderMode: staysProvider?.mode || null,
             carsEnabled: carsOn,

@@ -1162,6 +1162,17 @@
       من قبل التبديل حق صاحبه. `requirePackages` صار على `staysOn`.
     - **التجاوز صريحٌ بالبيئة**: `TRAVEL_ALLOW_NON_LIVE_PRODUCTS=1` لبيئات
       الاختبار فقط، و`config.liveGuardActive` يعلن حالة الحارس بصدق.
+    - **🔴 ثغرة ظهرت أول ساعة على المفتاح الحي**: «حي بالمفتاح» ≠ «معتمد
+      على الحساب». بعد التبديل صار `carsProviderMode: live` فأبقى الحارس
+      السيارات ظاهرة — بينما بحث سيارات حقيقي على `www.jatrava.com` رد
+      `502: Duffel HTTP 403 Your account is not approved to access Live
+      mode` (مُلتقَط فعلياً). الحارس لا يستطيع معرفة هذا من `mode` وحده،
+      ولا نريد نداءً استكشافياً عند الإقلاع (نداء مدفوع وقد يفشل عابراً).
+      العلاج: `TRAVEL_DISABLED_PRODUCTS` (قائمة `stays,cars,esim`) قائمة
+      إيقاف صريحة تتقدّم على كل شيء في `productOn(name, p)`، وتظهر في
+      `config.disabledProducts` بصدق. **في الإنتاج الآن: `cars`** حتى
+      تفعّل مبيعات Duffel السيارات. الطيران الحي نفسه مُثبت: بحث AMS→RUH
+      حقيقي أعاد 10 عروض (الاتحاد، الملكية الأردنية...) في ٣ ثوانٍ.
     - **قائمة تشغيل Duffel الحي المسجَّلة** (لا كود فيها): توكن Live من
       Developers → Access tokens؛ شحن رصيد Balance (الحجوزات من الرصيد،
       البحث مجاني)؛ **الـwebhooks لكل وضع على حدة** — webhook جديد بسرّ
