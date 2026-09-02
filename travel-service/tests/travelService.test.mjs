@@ -28,6 +28,7 @@ import { createMockEsimProvider } from '../src/providers/mockEsimProvider.js';
 import { buildProvider, buildStaysProvider, buildCarsProvider, buildEsimProvider } from '../src/providers/index.js';
 import { readMarkupPct, applyMarkup, DEFAULT_MARKUP_PCT, readPackageMarkupPct, DEFAULT_PACKAGE_MARKUP_PCT, readCategoryMarkupPct, MAX_MARKUP_PCT } from '../src/pricing.js';
 import { normalizeContract, contractCoversStay, contractOfferId, parseContractOfferId } from '../src/contracts.js';
+import { normalizeDiscountCode, computeDiscount } from '../src/discounts.js';
 import {
     normalizeFixedPackage, priceFixedPackage, publicFixedPackage,
     isEarlyBird, seatsLeft as fixedSeatsLeft, SEAT_SOURCING, addDaysStr,
@@ -2376,6 +2377,55 @@ describe('packages/contracts: وحدات نقية بلا شبكة', () => {
         assert.equal(parseContractOfferId('mock_stay_55_1'), null); // ليس لنا
         assert.equal(parseContractOfferId('ctr_مشوَّه'), null);
         assert.equal(parseContractOfferId(''), null);
+    });
+});
+
+describe('🏷️ discounts.js: وحدات نقية — منقّي الإنشاء وحاسبة الخصم', () => {
+    test('normalizeDiscountCode: يرفض ما لا يصلح ويطبّع الصالح', () => {
+        assert.equal(normalizeDiscountCode({ code: 'ab', type: 'percent', value: 10 }).error != null, true, 'كود قصير');
+        assert.equal(normalizeDiscountCode({ code: 'رمضان', type: 'percent', value: 10 }).error != null, true, 'أحرف غير إنجليزية');
+        assert.equal(normalizeDiscountCode({ code: 'RAMADAN', type: 'percent', value: 0 }).error != null, true, 'نسبة صفر');
+        assert.equal(normalizeDiscountCode({ code: 'RAMADAN', type: 'percent', value: 101 }).error != null, true, 'نسبة فوق 100');
+        assert.equal(normalizeDiscountCode({ code: 'FIXED10', type: 'fixed', value: 10 }).error != null, true, 'كود ثابت بلا عملة');
+        assert.equal(normalizeDiscountCode({ code: 'RAMADAN', type: 'percent', value: 10, products: ['spaceship'] }).error != null, true, 'منتج غير معروف');
+
+        const ok = normalizeDiscountCode({
+            code: 'ramadan20', type: 'percent', value: 20, products: 'flight, stay',
+            maxDiscount: 100, minAmount: 50, maxUses: 500, note: '  حملة رمضان  ',
+        });
+        assert.equal(ok.error, undefined);
+        assert.deepEqual(ok.value, {
+            code: 'RAMADAN20', type: 'percent', value: 20, currency: null,
+            products: ['flight', 'stay'], maxDiscount: 100, minAmount: 50, maxUses: 500,
+            expiresAt: null, active: true, note: 'حملة رمضان',
+        });
+
+        const fixed = normalizeDiscountCode({ code: 'SAR50', type: 'fixed', value: 50, currency: 'sar' });
+        assert.equal(fixed.value.currency, 'SAR');
+        assert.equal(fixed.value.products, null); // بلا تقييد منتج = كل شيء
+    });
+
+    test('computeDiscount: نسبة مئوية بسقف، وثابت بعملة مطابقة، وأسباب رفض صريحة', () => {
+        const pct = { active: true, type: 'percent', value: 20, maxDiscount: 30, usedCount: 0 };
+        // 20% من 100 = 20 (دون السقف)
+        assert.equal(computeDiscount(pct, { sellAmount: 100, currency: 'USD', product: 'flight' }).value, 20);
+        // 20% من 300 = 60 لكن السقف 30
+        assert.equal(computeDiscount(pct, { sellAmount: 300, currency: 'USD', product: 'flight' }).value, 30);
+
+        const fixed = { active: true, type: 'fixed', value: 50, currency: 'SAR', usedCount: 0 };
+        assert.equal(computeDiscount(fixed, { sellAmount: 200, currency: 'SAR', product: 'stay' }).value, 50);
+        // عملة مختلفة — يُرفض لا يُحوَّل
+        assert.match(computeDiscount(fixed, { sellAmount: 200, currency: 'USD', product: 'stay' }).error, /عملة/);
+
+        // لا يتجاوز سعر البيع نفسه أبداً (كودٌ ثابت أكبر من مبلغ صغير)
+        assert.equal(computeDiscount(fixed, { sellAmount: 10, currency: 'SAR', product: 'stay' }).value, 10);
+
+        // معطَّل / منتهي / نفدت الكمية / منتج غير مسموح / دون الحد الأدنى
+        assert.match(computeDiscount({ ...pct, active: false }, { sellAmount: 100, currency: 'USD', product: 'flight' }).error, /غير صالح/);
+        assert.match(computeDiscount({ ...pct, expiresAt: Date.now() - 1000 }, { sellAmount: 100, currency: 'USD', product: 'flight' }).error, /انتهت/);
+        assert.match(computeDiscount({ ...pct, maxUses: 5, usedCount: 5 }, { sellAmount: 100, currency: 'USD', product: 'flight' }).error, /نفدت/);
+        assert.match(computeDiscount({ ...pct, products: ['stay'] }, { sellAmount: 100, currency: 'USD', product: 'flight' }).error, /لا ينطبق/);
+        assert.match(computeDiscount({ ...pct, minAmount: 500 }, { sellAmount: 100, currency: 'USD', product: 'flight' }).error, /يقل عن/);
     });
 });
 
@@ -4957,6 +5007,99 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
                 body: { iata: 'CAI', checkInDate: checkIn, checkOutDate: checkOut, adults: 1, rooms: 1 },
             });
             assert.ok(!after.data.offers.some(o => o.contracted));
+        });
+
+        // ─── 🏷️ أكواد الخصم الداخلية ───────────────────────────────────
+
+        test('🏷️ أكواد الخصم: CRUD أدمن، معاينة بلا استهلاك، وتطبيق فعلي عند الحجز', async () => {
+            const admin = makeToken('admin');
+            const user = makeToken('discount-guest');
+
+            // غير الأدمن: 404 لا 403
+            assert.equal((await call('/api/travel/admin/discounts', { token: user })).status, 404);
+            assert.equal((await call('/api/travel/admin/discounts', { method: 'POST', token: user, body: {} })).status, 404);
+
+            // كودٌ فاسد يُرفض بالمنقّي نفسه
+            assert.equal((await call('/api/travel/admin/discounts', {
+                method: 'POST', token: admin, body: { code: 'x', type: 'percent', value: 10 },
+            })).status, 400);
+
+            const created = await call('/api/travel/admin/discounts', {
+                method: 'POST', token: admin,
+                body: { code: 'test20', type: 'percent', value: 20, maxUses: 1, products: ['flight'] },
+            });
+            assert.equal(created.status, 200);
+            assert.equal(created.data.discount.code, 'TEST20');
+            assert.equal(created.data.discount.usedCount, 0);
+
+            // كودٌ مستعمَل سلفاً يُرفض
+            assert.equal((await call('/api/travel/admin/discounts', {
+                method: 'POST', token: admin, body: { code: 'TEST20', type: 'percent', value: 5 },
+            })).status, 400);
+
+            const search = await call('/api/travel/flights/search', { method: 'POST', token: user, body: SEARCH_BODY() });
+            const offerId = search.data.offers[0].id;
+            const grossSell = search.data.offers[0].sellAmount;
+
+            // 🔍 معاينة عامة **بلا استهلاك** — نفس الكود يبقى صالحاً بعدها
+            const preview = await call('/api/travel/discounts/validate', {
+                method: 'POST', token: user,
+                body: { code: 'TEST20', amount: grossSell, currency: search.data.offers[0].currency, product: 'flight' },
+            });
+            assert.equal(preview.status, 200);
+            assert.equal(preview.data.discountAmount, Math.round(grossSell * 0.2 * 100) / 100);
+            assert.equal((await call('/api/travel/admin/discounts', { token: admin }))
+                .data.discounts.find(d => d.code === 'TEST20').usedCount, 0, 'المعاينة لا تستهلك');
+
+            // 🎯 الحجز الفعلي: sellAmount المخزَّن مخصومٌ فعلاً، والكود يظهر على الحجز
+            const booked = await call('/api/travel/bookings', {
+                method: 'POST', token: user, body: { offerId, ...VALID_PAX, discountCode: 'test20' },
+            });
+            assert.equal(booked.status, 200);
+            const expectedSell = Math.round((grossSell - grossSell * 0.2) * 100) / 100;
+            assert.equal(booked.data.booking.sellAmount, expectedSell);
+            assert.equal(booked.data.booking.discountCode, 'TEST20');
+            assert.equal(booked.data.booking.discountAmount, Math.round(grossSell * 0.2 * 100) / 100);
+
+            // ⛔ maxUses=1 استُهلك — محاولة ثانية تُرفض 400 ولا تُنشئ حجزاً
+            const search2 = await call('/api/travel/flights/search', { method: 'POST', token: user, body: SEARCH_BODY() });
+            const second = await call('/api/travel/bookings', {
+                method: 'POST', token: user,
+                body: { offerId: search2.data.offers[0].id, ...VALID_PAX, discountCode: 'TEST20' },
+            });
+            assert.equal(second.status, 400);
+            assert.match(second.data.error, /غير صالح|نفدت/);
+
+            // كودٌ غير موجود
+            const search3 = await call('/api/travel/flights/search', { method: 'POST', token: user, body: SEARCH_BODY() });
+            const bogus = await call('/api/travel/bookings', {
+                method: 'POST', token: user,
+                body: { offerId: search3.data.offers[0].id, ...VALID_PAX, discountCode: 'NOPE' },
+            });
+            assert.equal(bogus.status, 400);
+            assert.match(bogus.data.error, /غير صحيح/);
+
+            // 🚫 كودٌ مقيَّد بمنتجٍ آخر لا يعمل على الفنادق
+            await call('/api/travel/admin/discounts', {
+                method: 'POST', token: admin,
+                body: { code: 'FLIGHTSONLY', type: 'percent', value: 10, products: ['flight'] },
+            });
+            const stayOffer = (await call('/api/travel/stays/search', { method: 'POST', token: user, body: STAY_SEARCH_BODY() })).data.offers[0];
+            const stayBooked = await call('/api/travel/stays/bookings', {
+                method: 'POST', token: user,
+                body: { offerId: stayOffer.id, ...VALID_GUESTS, discountCode: 'FLIGHTSONLY' },
+            });
+            assert.equal(stayBooked.status, 400);
+            assert.match(stayBooked.data.error, /لا ينطبق/);
+
+            // تعديل ثم حذف
+            const updated = await call('/api/travel/admin/discounts/TEST20', {
+                method: 'PUT', token: admin, body: { active: false },
+            });
+            assert.equal(updated.data.discount.active, false);
+            assert.equal((await call('/api/travel/admin/discounts/TEST20', { method: 'DELETE', token: admin })).status, 200);
+            assert.equal((await call('/api/travel/admin/discounts/TEST20', { method: 'DELETE', token: admin })).status, 404);
+            await call('/api/travel/admin/discounts/FLIGHTSONLY', { method: 'DELETE', token: admin });
         });
 
         test('🗄️ عقد المخزن: رقعة transitionBooking تُحفظ **كاملةً** في المخزنين', async () => {

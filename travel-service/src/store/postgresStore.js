@@ -56,6 +56,12 @@ ALTER TABLE travel_bookings ALTER COLUMN net_amount DROP NOT NULL;
 -- مقاعد عند انتهاء المهلة — كلها تقرأ حقولاً غير موجودة. العمود أدناه
 -- يحفظ كل ما لا عمود له، فيتطابق المخزنان كما يقتضي عقدهما.
 ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS extra_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+-- 🏷️ كود الخصم المُطبَّق وقت الإنشاء (إن وُجد) — عمودان حقيقيان لا
+-- extra_json لأنهما (خلافاً لحقول الرقعة اللاحقة) معروفان وقت الإنشاء
+-- نفسه، بنفس مكانة package_id تماماً — قد يُستعلَم عنهما لاحقاً (تقرير
+-- أداء حملة) فيستحقان فهرسة ممكنة لا الدفن داخل JSONB.
+ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS discount_code TEXT;
+ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(12,2);
 CREATE INDEX IF NOT EXISTS travel_bookings_package_idx ON travel_bookings (package_id);
 CREATE INDEX IF NOT EXISTS travel_bookings_user_idx ON travel_bookings (username, at);
 CREATE INDEX IF NOT EXISTS travel_bookings_status_idx ON travel_bookings (status);
@@ -239,6 +245,28 @@ CREATE TABLE IF NOT EXISTS travel_referrals (
 );
 CREATE INDEX IF NOT EXISTS travel_referrals_by_idx ON travel_referrals (referred_by)
     WHERE referred_by IS NOT NULL;
+
+-- 🏷️ أكواد الخصم (discounts.js) — الكود ذاته المفتاح الأساسي (نصٌّ يطبعه
+-- المالك بيده لا معرّفاً مولَّداً، فلا حاجة لعمود id منفصل). used_count
+-- يُزاد ذرّياً بشرط عدم تجاوز max_uses داخل UPDATE واحد — نفس فلسفة
+-- عدّادات المقاعد/الغرف حرفياً، فطلبان متزامنان على آخر استعمالٍ من كودٍ
+-- محدود لا يفوزان معاً.
+CREATE TABLE IF NOT EXISTS travel_discount_codes (
+    code          TEXT PRIMARY KEY,
+    at            BIGINT NOT NULL,
+    updated_at    BIGINT NOT NULL,
+    type          TEXT NOT NULL,
+    value         NUMERIC(12,2) NOT NULL,
+    currency      TEXT,
+    products_json JSONB,
+    max_discount  NUMERIC(12,2),
+    min_amount    NUMERIC(12,2),
+    max_uses      INTEGER,
+    used_count    INTEGER NOT NULL DEFAULT 0,
+    expires_at    BIGINT,
+    active        BOOLEAN NOT NULL DEFAULT TRUE,
+    note          TEXT
+);
 `;
 
 function rowToUser(r) {
@@ -284,6 +312,8 @@ function rowToBooking(r) {
         packageId: r.package_id || null,
         compensation: r.compensation_json || null,
         reminderSentAt: r.reminder_sent_at != null ? Number(r.reminder_sent_at) : null,
+        discountCode: r.discount_code || null,
+        discountAmount: r.discount_amount != null ? Number(r.discount_amount) : null,
     };
 }
 
@@ -365,6 +395,26 @@ function rowToReview(r) {
     };
 }
 
+function rowToDiscountCode(r) {
+    if (!r) return null;
+    return {
+        code: r.code,
+        at: Number(r.at),
+        updatedAt: Number(r.updated_at),
+        type: r.type,
+        value: Number(r.value),
+        currency: r.currency || null,
+        products: r.products_json || null,
+        maxDiscount: r.max_discount != null ? Number(r.max_discount) : null,
+        minAmount: r.min_amount != null ? Number(r.min_amount) : null,
+        maxUses: r.max_uses != null ? Number(r.max_uses) : null,
+        usedCount: Number(r.used_count || 0),
+        expiresAt: r.expires_at != null ? Number(r.expires_at) : null,
+        active: r.active,
+        note: r.note || null,
+    };
+}
+
 function rowToWatch(r) {
     if (!r) return null;
     return {
@@ -436,12 +486,13 @@ export function createPostgresStore({ connectionString }) {
                 const res = await c.query(
                     `INSERT INTO travel_bookings
                      (id, at, updated_at, username, provider, status, kind, offer_json,
-                      passengers_json, contact_json, net_amount, sell_amount, currency, package_id)
-                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+                      passengers_json, contact_json, net_amount, sell_amount, currency, package_id,
+                      discount_code, discount_amount)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
                     [id, now, now, b.username, b.provider, b.status, b.kind || 'flight',
                         JSON.stringify(b.offer), JSON.stringify(b.passengers),
                         JSON.stringify(b.contact), b.netAmount, b.sellAmount ?? null, b.currency,
-                        b.packageId || null]
+                        b.packageId || null, b.discountCode || null, b.discountAmount ?? null]
                 );
                 return rowToBooking(res.rows[0]);
             });
@@ -1089,6 +1140,97 @@ export function createPostgresStore({ connectionString }) {
                     }
                 }
                 throw new Error('تعذّر توليد رمز إحالة فريد.');
+            });
+        },
+
+        // ─── 🏷️ أكواد الخصم (discounts.js) ─────────────────────────────
+
+        async createDiscountCode(dData) {
+            const now = Date.now();
+            return withClient(async c => {
+                try {
+                    const res = await c.query(
+                        `INSERT INTO travel_discount_codes
+                         (code, at, updated_at, type, value, currency, products_json,
+                          max_discount, min_amount, max_uses, used_count, expires_at, active, note)
+                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,$11,$12,$13) RETURNING *`,
+                        [dData.code, now, now, dData.type, dData.value, dData.currency || null,
+                            dData.products ? JSON.stringify(dData.products) : null,
+                            dData.maxDiscount ?? null, dData.minAmount ?? null, dData.maxUses ?? null,
+                            dData.expiresAt ?? null, dData.active !== false, dData.note || null]
+                    );
+                    return rowToDiscountCode(res.rows[0]);
+                } catch (e) {
+                    if (e.code === '23505') return null; // مستعمَل سلفاً
+                    throw e;
+                }
+            });
+        },
+
+        async getDiscountCodeByCode(code) {
+            const key = String(code || '').trim().toUpperCase();
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM travel_discount_codes WHERE code = $1', [key]);
+                return rowToDiscountCode(res.rows[0]);
+            });
+        },
+
+        async listDiscountCodes() {
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM travel_discount_codes ORDER BY at DESC');
+                return res.rows.map(rowToDiscountCode);
+            });
+        },
+
+        async updateDiscountCode(code, patch = {}) {
+            const sets = ['updated_at = $2'];
+            const vals = [code, Date.now()];
+            let i = 3;
+            const cols = {
+                type: 'type', value: 'value', currency: 'currency',
+                maxDiscount: 'max_discount', minAmount: 'min_amount',
+                maxUses: 'max_uses', expiresAt: 'expires_at', active: 'active', note: 'note',
+            };
+            for (const [key, col] of Object.entries(cols)) {
+                if (key in patch) { sets.push(`${col} = $${i++}`); vals.push(patch[key]); }
+            }
+            if ('products' in patch) {
+                sets.push(`products_json = $${i++}`);
+                vals.push(patch.products ? JSON.stringify(patch.products) : null);
+            }
+            return withClient(async c => {
+                const res = await c.query(
+                    `UPDATE travel_discount_codes SET ${sets.join(', ')} WHERE code = $1 RETURNING *`,
+                    vals
+                );
+                return rowToDiscountCode(res.rows[0]);
+            });
+        },
+
+        async deleteDiscountCode(code) {
+            return withClient(async c => {
+                const res = await c.query('DELETE FROM travel_discount_codes WHERE code = $1', [code]);
+                return res.rowCount > 0;
+            });
+        },
+
+        /**
+         * استهلاكٌ ذرّي: الشرط (نشط/غير منتهٍ/دون السقف) داخل UPDATE نفسه —
+         * طلبان متزامنان على آخر استعمالٍ من كودٍ محدود لا يفوزان معاً.
+         * يعيد null حين الكود غير صالح للاستهلاك (جوابٌ تجاري صريح لا خطأ).
+         */
+        async redeemDiscountCode(code) {
+            return withClient(async c => {
+                const res = await c.query(
+                    `UPDATE travel_discount_codes
+                     SET used_count = used_count + 1, updated_at = $2
+                     WHERE code = $1 AND active = TRUE
+                       AND (expires_at IS NULL OR expires_at > $2)
+                       AND (max_uses IS NULL OR used_count < max_uses)
+                     RETURNING *`,
+                    [code, Date.now()]
+                );
+                return rowToDiscountCode(res.rows[0]);
             });
         },
 

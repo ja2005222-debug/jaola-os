@@ -25,6 +25,7 @@ export function createFileStore({ dataDir }) {
     const wishlistPath = path.join(dataDir, 'wishlist.json');
     const usersPath = path.join(dataDir, 'users.json');
     const referralsPath = path.join(dataDir, 'referrals.json');
+    const discountCodesPath = path.join(dataDir, 'discountCodes.json');
 
     function ensureDir() {
         fs.mkdirSync(dataDir, { recursive: true });
@@ -69,6 +70,8 @@ export function createFileStore({ dataDir }) {
     const writeUsers = rows => writeJson(usersPath, rows);
     const readReferrals = () => readJson(referralsPath);
     const writeReferrals = rows => writeJson(referralsPath, rows);
+    const readDiscountCodes = () => readJson(discountCodesPath);
+    const writeDiscountCodes = rows => writeJson(discountCodesPath, rows);
     // تفرّد الرمز: تصادمٌ على أبجدية 32 حرفاً بطول 7 يكاد يكون معدوماً
     // (32^7)، لكن التحقق رخيصٌ والتأكّد أرخص من عطبٍ صامت لاحقاً.
     function newUniqueReferralCode(rows) {
@@ -723,6 +726,69 @@ export function createFileStore({ dataDir }) {
             }
             row.bonusPoints = (row.bonusPoints || 0) + points;
             writeReferrals(rows);
+        },
+
+        // ─── 🏷️ أكواد الخصم (discounts.js) — نفس عقد postgresStore بالتطابق ─
+
+        async createDiscountCode(dData) {
+            const rows = readDiscountCodes();
+            if (rows.some(r => r.code === dData.code)) return null; // مستعمَل سلفاً
+            const row = {
+                at: Date.now(), updatedAt: Date.now(), usedCount: 0,
+                ...dData,
+            };
+            rows.push(row);
+            writeDiscountCodes(rows);
+            return { ...row };
+        },
+
+        async getDiscountCodeByCode(code) {
+            const key = String(code || '').trim().toUpperCase();
+            const row = readDiscountCodes().find(r => r.code === key);
+            return row ? { ...row } : null;
+        },
+
+        async listDiscountCodes() {
+            return readDiscountCodes().sort((a, b) => b.at - a.at).map(r => ({ ...r }));
+        },
+
+        async updateDiscountCode(code, patch = {}) {
+            const rows = readDiscountCodes();
+            const row = rows.find(r => r.code === code);
+            if (!row) return null;
+            const allowed = ['type', 'value', 'currency', 'products', 'maxDiscount',
+                'minAmount', 'maxUses', 'expiresAt', 'active', 'note'];
+            for (const key of allowed) {
+                if (key in patch) row[key] = patch[key];
+            }
+            row.updatedAt = Date.now();
+            writeDiscountCodes(rows);
+            return { ...row };
+        },
+
+        async deleteDiscountCode(code) {
+            const rows = readDiscountCodes();
+            const next = rows.filter(r => r.code !== code);
+            if (next.length === rows.length) return false;
+            writeDiscountCodes(next);
+            return true;
+        },
+
+        // ⚠️ نفس ذرّية عدّادات المقاعد/الغرف أعلاه حرفياً: كتلةٌ متزامنة بلا
+        // await بينها — الفحص والزيادة والكتابة معاً، فلا يستهلك طلبان
+        // متزامنان آخر استعمالٍ من كودٍ محدود معاً (postgresStore يضمنها
+        // بشرط داخل UPDATE واحد). يعيد null حين الكود غير صالح للاستهلاك
+        // (نفدت الكمية/انتهت الصلاحية/معطَّل) — جوابٌ تجاري صريح لا خطأ.
+        async redeemDiscountCode(code) {
+            const rows = readDiscountCodes();
+            const row = rows.find(r => r.code === code);
+            if (!row || row.active === false) return null;
+            if (row.expiresAt != null && Date.now() > row.expiresAt) return null;
+            if (row.maxUses != null && (row.usedCount || 0) >= row.maxUses) return null;
+            row.usedCount = (row.usedCount || 0) + 1;
+            row.updatedAt = Date.now();
+            writeDiscountCodes(rows);
+            return { ...row };
         },
     };
 }

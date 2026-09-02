@@ -40,6 +40,7 @@ import { readReferralBonusPoints } from './src/referrals.js';
 import { createStripeClient, verifyStripeWebhookSignature } from './src/payments/stripeClient.js';
 import { createGoogleAuthClient } from './src/googleAuth.js';
 import { normalizeContract } from './src/contracts.js';
+import { normalizeDiscountCode, computeDiscount } from './src/discounts.js';
 import { createContractedStaysProvider, withContractedStays } from './src/providers/contractedStaysProvider.js';
 import { createBooking, getBooking, getBookingByProviderOrderId, listBookingsByUser, transitionBooking } from './src/bookings.js';
 import { buildStore } from './src/store/index.js';
@@ -593,6 +594,8 @@ function publicBooking(b) {
         sellAmount: b.sellAmount, currency: b.currency,
         offer: b.offer, passengers: b.passengers, contact: b.contact,
         error: b.error, refund: b.refund,
+        // 🏷️ كود الخصم المُطبَّق (إن وُجد) — undefined بلا كود فلا يظهر في JSON
+        discountCode: b.discountCode || undefined, discountAmount: b.discountAmount || undefined,
         // 🎫 أرقام التذاكر الإلكترونية ووقت الدفع — تفاصيل يسأل عنها المسافر
         // فعلاً («متى تأكد؟ وأين تذكرتي؟»)، وليست أسراراً كالصافي.
         tickets: b.tickets, paidAt: b.paidAt,
@@ -969,6 +972,12 @@ ${urls}
         windowMs: 5 * 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false,
         keyGenerator: req => ipKeyGenerator(req.ip),
     });
+    // 🏷️ معاينة كود خصم: نداءٌ مجاني (بلا مزوّد) لكنه محاولة تخمين كودٍ
+    // محتملة — حدٌّ بـbyUser يكفي، أضيق من searchLimiter لأنه أرخص فعلياً.
+    const discountLimiter = rateLimit({
+        windowMs: 5 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false,
+        keyGenerator: byUser,
+    });
 
     // كل تنبيه في البوابة يمر من هنا: يفحص تفضيلات المستخدم، يحفظ سجلاً
     // داخل البوابة، ويرسل بريداً إن رغب. قبل هذا كان كل مصدر يرسل بريده
@@ -1104,7 +1113,31 @@ ${urls}
         return offer ? publicOffer(offer, flightMkt) : null;
     }
 
-    async function doBook(username, { offerId, passengers, contact, selectedServices }, baseUrl = null) {
+    /**
+     * 🏷️ يطبّق كود خصمٍ اختيارياً قبل إنشاء أي حجز — نقطة استدعاءٍ واحدة
+     * للمنتجات الأربعة المباشرة (الباقات خارج نطاق هذا الإصدار عمداً).
+     * الاستهلاك الذرّي (`redeemDiscountCode`) يقع هنا آخر خطوة قبل
+     * `createBooking` مباشرة — بعد أن نجحت كل تحققات الحجز الأخرى، فلا
+     * يُستهلَك كودٌ محدود لمحاولةٍ كانت سترفض بغضّ النظر عنه.
+     */
+    async function applyDiscountCode(discountCode, { sellAmount, currency, product }) {
+        const raw = String(discountCode || '').trim().toUpperCase();
+        if (!raw) return { sellAmount, discountCode: null, discountAmount: null };
+        const dc = await store.getDiscountCodeByCode(raw);
+        if (!dc) throw Object.assign(new Error('كود الخصم غير صحيح.'), { status: 400 });
+        const calc = computeDiscount(dc, { sellAmount, currency, product });
+        if (calc.error) throw Object.assign(new Error(calc.error), { status: 400 });
+        const redeemed = await store.redeemDiscountCode(dc.code);
+        if (!redeemed) {
+            throw Object.assign(new Error('كود الخصم لم يعد صالحاً (انتهت صلاحيته أو نفدت كميته) — أعد المحاولة بلا كود.'), { status: 400 });
+        }
+        return {
+            sellAmount: Math.round((sellAmount - calc.value) * 100) / 100,
+            discountCode: dc.code, discountAmount: calc.value,
+        };
+    }
+
+    async function doBook(username, { offerId, passengers, contact, selectedServices, discountCode }, baseUrl = null) {
         const offer = await provider.getOffer(String(offerId || ''));
         if (!offer) throw Object.assign(new Error('العرض غير موجود أو انتهت صلاحيته — أعد البحث.'), { status: 404 });
         const check = validatePassengers({ passengers, contact }, offer.passengerCount);
@@ -1132,7 +1165,11 @@ ${urls}
         const extraNet = purchased.reduce((sum, s) => sum + s.netAmount * s.quantity, 0);
         const extraSell = purchased.reduce((sum, s) => sum + applyMarkup(s.netAmount * s.quantity, svcMarkupPct), 0);
         const netAmount = offer.netAmount + extraNet;
-        const sellAmount = applyMarkup(offer.netAmount, svcMarkupPct) + extraSell;
+        const grossSellAmount = applyMarkup(offer.netAmount, svcMarkupPct) + extraSell;
+        const discount = await applyDiscountCode(discountCode, {
+            sellAmount: grossSellAmount, currency: offer.currency, product: 'flight',
+        });
+        const sellAmount = discount.sellAmount;
         // ملخص العرض المخزَّن على الحجز: بلا صافٍ ولا معرّفات مزوّد داخلية
         // ولا كتالوج الخدمات كاملاً (كان سيسرّب صافي كل خدمة) — الحقيبة
         // **المشتراة فعلاً** فقط، بسعر بيعها لا صافيها (نفس منطق الحجز كله).
@@ -1149,6 +1186,7 @@ ${urls}
             passengers: check.values.passengers,
             contact: check.values.contact,
             netAmount, sellAmount, currency: offer.currency,
+            discountCode: discount.discountCode, discountAmount: discount.discountAmount,
         });
         // 💳 الدفع قبل الإصدار — لا نلمس المزوّد قبل وصول المال (انظر
         // startBookingCheckout: تذكرة تُصدر بلا مقابل خسارة نقدية فورية)
@@ -1246,7 +1284,7 @@ ${urls}
         }
     }
 
-    async function doBookStay(username, { offerId, guests, contact }, baseUrl = null) {
+    async function doBookStay(username, { offerId, guests, contact, discountCode }, baseUrl = null) {
         requireStays();
         // offerId هنا quote id (من get_stay_offer السابقة) — getQuote يجلبه
         // كما هو دون إنشاء quote جديد؛ getStayOffer كانت لتنشئ quote ثانياً
@@ -1259,7 +1297,11 @@ ${urls}
         // فندق التعاقد يتقدّم بهامشه الخاص إن ضبطه المالك — نفس منطق
         // publicOffer، مكرَّر هنا لأن الحجز لا يمرّ عبرها (نداء مباشر لـ
         // applyMarkup لا عبر عرض بحث مُطبَّع).
-        const sellAmount = applyMarkup(offer.netAmount, effectiveMarkupPct(offer, stayMkt));
+        const grossSellAmount = applyMarkup(offer.netAmount, effectiveMarkupPct(offer, stayMkt));
+        const discount = await applyDiscountCode(discountCode, {
+            sellAmount: grossSellAmount, currency: offer.currency, product: 'stay',
+        });
+        const sellAmount = discount.sellAmount;
         const { netAmount: _net, marginPct: _mp, ...offerSummary } = offer;
         const booking = await createBooking(store, {
             username, provider: staysProvider.name, kind: 'stay',
@@ -1267,6 +1309,7 @@ ${urls}
             passengers: check.values.guests,
             contact: check.values.contact,
             netAmount: offer.netAmount, sellAmount, currency: offer.currency,
+            discountCode: discount.discountCode, discountAmount: discount.discountAmount,
         });
         if (stripeClient) {
             return startBookingCheckout({
@@ -1340,7 +1383,7 @@ ${urls}
         return offer ? publicOffer(offer, carMkt) : null;
     }
 
-    async function doBookCar(username, { offerId, drivers, contact }, baseUrl = null) {
+    async function doBookCar(username, { offerId, drivers, contact, discountCode }, baseUrl = null) {
         requireCars();
         // نفس تفرقة rate/quote لدى الفنادق: offerId هنا quote id — getQuote
         // يجلبه كما هو دون إنشاء quote جديد.
@@ -1349,7 +1392,11 @@ ${urls}
         const check = validateDrivers({ drivers, contact });
         if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
 
-        const sellAmount = applyMarkup(offer.netAmount, carMkt);
+        const grossSellAmount = applyMarkup(offer.netAmount, carMkt);
+        const discount = await applyDiscountCode(discountCode, {
+            sellAmount: grossSellAmount, currency: offer.currency, product: 'car',
+        });
+        const sellAmount = discount.sellAmount;
         const { netAmount: _net, ...offerSummary } = offer;
         const booking = await createBooking(store, {
             username, provider: carsProvider.name, kind: 'car',
@@ -1357,6 +1404,7 @@ ${urls}
             passengers: check.values.drivers,
             contact: check.values.contact,
             netAmount: offer.netAmount, sellAmount, currency: offer.currency,
+            discountCode: discount.discountCode, discountAmount: discount.discountAmount,
         });
         if (stripeClient) {
             return startBookingCheckout({
@@ -1426,14 +1474,18 @@ ${urls}
         return offer ? publicOffer(offer, esimMkt) : null;
     }
 
-    async function doBookEsim(username, { offerId, passengers, contact }, baseUrl = null) {
+    async function doBookEsim(username, { offerId, passengers, contact, discountCode }, baseUrl = null) {
         requireEsim();
         const offer = await esimProvider.getQuote(String(offerId || ''));
         if (!offer) throw Object.assign(new Error('عرض باقة eSIM غير موجود أو انتهت صلاحيته — أعد البحث.'), { status: 404 });
         const check = validateEsimTraveller({ passengers, contact });
         if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
 
-        const sellAmount = applyMarkup(offer.netAmount, esimMkt);
+        const grossSellAmount = applyMarkup(offer.netAmount, esimMkt);
+        const discount = await applyDiscountCode(discountCode, {
+            sellAmount: grossSellAmount, currency: offer.currency, product: 'esim',
+        });
+        const sellAmount = discount.sellAmount;
         const { netAmount: _net, ...offerSummary } = offer;
         const booking = await createBooking(store, {
             username, provider: esimProvider.name, kind: 'esim',
@@ -1441,6 +1493,7 @@ ${urls}
             passengers: check.values.passengers,
             contact: check.values.contact,
             netAmount: offer.netAmount, sellAmount, currency: offer.currency,
+            discountCode: discount.discountCode, discountAmount: discount.discountAmount,
         });
         if (stripeClient) {
             return startBookingCheckout({
@@ -2009,6 +2062,22 @@ ${urls}
         const offer = await doGetOffer(req.params.id);
         if (!offer) return res.status(404).json({ error: 'العرض غير موجود أو انتهت صلاحيته.' });
         res.json({ offer });
+    }));
+
+    // 🏷️ معاينة كود خصم **بلا استهلاك**: زرّ «تطبيق» في نموذج الحجز يستدعي
+    // هذا قبل الإرسال ليُري المسافر مقدار التوفير — الاستهلاك الذرّي الفعلي
+    // (applyDiscountCode) يقع لاحقاً عند الحجز الحقيقي وحده. optionalToken
+    // لأن الزائر يقارن أسعاراً بلا حساب أيضاً (نفس فلسفة البحث المفتوح).
+    app.post('/api/travel/discounts/validate', optionalToken, discountLimiter, wrap(async (req, res) => {
+        const dc = await store.getDiscountCodeByCode(req.body?.code);
+        if (!dc) return res.status(400).json({ error: 'كود الخصم غير صحيح.' });
+        const calc = computeDiscount(dc, {
+            sellAmount: Number(req.body?.amount) || 0,
+            currency: String(req.body?.currency || '').trim().toUpperCase(),
+            product: String(req.body?.product || '').trim().toLowerCase(),
+        });
+        if (calc.error) return res.status(400).json({ error: calc.error });
+        res.json({ discountAmount: calc.value });
     }));
 
     app.post('/api/travel/bookings', verifyToken, wrap(async (req, res) => {
@@ -3361,6 +3430,37 @@ ${urls}
                 compensation: b.compensation || null,
             })),
         });
+    }));
+
+    // ─── 🏷️ إدارة أكواد الخصم ─────────────────────────────────────────
+
+    app.get('/api/travel/admin/discounts', verifyToken, requireAdmin, wrap(async (req, res) => {
+        res.json({ discounts: await store.listDiscountCodes() });
+    }));
+
+    app.post('/api/travel/admin/discounts', verifyToken, requireAdmin, wrap(async (req, res) => {
+        const check = normalizeDiscountCode(req.body || {});
+        if (check.error) return res.status(400).json({ error: check.error });
+        const created = await store.createDiscountCode(check.value);
+        if (!created) return res.status(400).json({ error: 'هذا الكود مستعمَل سلفاً.' });
+        res.json({ discount: created });
+    }));
+
+    // الكود نفسه هو المفتاح ولا يتغيّر بالتعديل — التعديل يمرّ على نفس
+    // منقّي الإنشاء (نفس عرف العقود/الباقات المجدولة حرفياً).
+    app.put('/api/travel/admin/discounts/:code', verifyToken, requireAdmin, wrap(async (req, res) => {
+        const code = String(req.params.code || '').trim().toUpperCase();
+        const existing = await store.getDiscountCodeByCode(code);
+        if (!existing) return res.status(404).json({ error: 'كود الخصم غير موجود.' });
+        const check = normalizeDiscountCode({ ...existing, ...req.body, code: existing.code });
+        if (check.error) return res.status(400).json({ error: check.error });
+        res.json({ discount: await store.updateDiscountCode(existing.code, check.value) });
+    }));
+
+    app.delete('/api/travel/admin/discounts/:code', verifyToken, requireAdmin, wrap(async (req, res) => {
+        const deleted = await store.deleteDiscountCode(String(req.params.code || '').trim().toUpperCase());
+        if (!deleted) return res.status(404).json({ error: 'كود الخصم غير موجود.' });
+        res.json({ deleted: true });
     }));
 
     app.get('/api/travel/admin/contracts', verifyToken, requireAdmin, wrap(async (req, res) => {

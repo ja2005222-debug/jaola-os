@@ -28,11 +28,15 @@ export function canTransition(from, to) {
     return (ALLOWED[from] || []).includes(to);
 }
 
-export async function createBooking(store, { username, provider, offer, passengers, contact, netAmount, sellAmount, currency, kind = 'flight', packageId = null }) {
+// ⚠️ قائمة تفريغٍ بيضاء (destructure) — حقلٌ جديد لا يُذكَر هنا **يُسقَط
+// صامتاً** مهما مرَّره الطالب (نفس عطب extra_json الموثَّق في postgresStore
+// حرفياً، لكنه هنا حتى قبل الوصول للمخزن). discountCode/discountAmount
+// أُضيفا بعد اكتشاف هذا العطب بالضبط في هذه الميزة.
+export async function createBooking(store, { username, provider, offer, passengers, contact, netAmount, sellAmount, currency, kind = 'flight', packageId = null, discountCode = null, discountAmount = null }) {
     return store.createBooking({
         username: String(username || '').trim().toLowerCase(),
         provider, offer, passengers, contact,
-        netAmount, sellAmount, currency, kind, packageId,
+        netAmount, sellAmount, currency, kind, packageId, discountCode, discountAmount,
         status: 'pending',
     });
 }
