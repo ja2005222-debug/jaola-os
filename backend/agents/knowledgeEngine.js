@@ -69,7 +69,7 @@ export function detectProjectType(userGoal, typeHint = null) {
 
     for (const [typeName, typeData] of Object.entries(types)) {
         const keywords = getKeywordsForType(typeName);
-        const score = keywords.filter(kw => goal.includes(kw)).length;
+        const score = keywords.filter(kw => keywordMatches(goal, kw)).length;
         if (score > bestScore) {
             bestScore = score;
             bestMatch = typeName;
@@ -79,11 +79,26 @@ export function detectProjectType(userGoal, typeHint = null) {
     return bestMatch;
 }
 
+/**
+ * مطابقة كلمة مفتاحية على حدود الكلمات لا كنصّ فرعي.
+ * `goal.includes('طبي')` كانت تطابق «تطبيق» فيُصنَّف «تطبيق توصيل طعام» طبياً
+ * (عطل موثَّق في ARCHITECTURE_MIGRATION.md). نسمح فقط بسوابق العربية اللاصقة
+ * (و/ف/ب/ل/ك + ال/لل) ولواحقها الشائعة (ة/ات/ين/ون/ي/ك/كم/نا/ه/ها/هم) حول
+ * الكلمة، وبحدود الكلمات في اللاتينية.
+ */
+const AR_PREFIX = '(?:و|ف|ب|ل|ك)?(?:ال|لل)?';
+const AR_SUFFIX = '(?:ة|ات|ين|ون|ي|ك|كم|نا|ه|ها|هم|s|es)?'; // + جمع اللاتينية
+function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+export function keywordMatches(goal, kw) {
+    const re = new RegExp(`(?<![\\p{L}\\p{N}])${AR_PREFIX}${escapeRe(kw)}${AR_SUFFIX}(?![\\p{L}\\p{N}])`, 'iu');
+    return re.test(goal);
+}
+
 function getKeywordsForType(typeName) {
     const keywordMap = {
         tool:       ['أداة', 'حاسبة', 'محول', 'مولد', 'converter', 'calculator', 'generator', 'tool', 'utility'],
-        medical:    ['طبي', 'مستشفى', 'عيادة', 'صحة', 'دكتور', 'طبيب', 'مرضى', 'medical', 'hospital', 'clinic', 'doctor', 'health'],
-        restaurant: ['مطعم', 'قهوة', 'كافيه', 'طعام', 'أكل', 'وجبة', 'شيف', 'مقهى', 'restaurant', 'cafe', 'food', 'menu', 'coffee'],
+        medical:    ['طبي', 'أطباء', 'مستشفى', 'عيادة', 'صحة', 'دكتور', 'طبيب', 'مرضى', 'medical', 'hospital', 'clinic', 'doctor', 'health'],
+        restaurant: ['مطعم', 'مطاعم', 'توصيل طعام', 'قهوة', 'كافيه', 'طعام', 'أكل', 'وجبة', 'شيف', 'مقهى', 'restaurant', 'cafe', 'food', 'menu', 'coffee'],
         ecommerce:  ['متجر', 'بيع', 'شراء', 'منتج', 'تسوق', 'ماركة', 'ازياء', 'ملابس', 'سلة', 'shop', 'store', 'product', 'buy', 'ecommerce', 'cart'],
         hotel:      ['فندق', 'نزل', 'سكن', 'غرفة', 'حجز', 'إقامة', 'منتجع', 'hotel', 'resort', 'room', 'booking', 'accommodation'],
         education:  ['تعليم', 'مدرسة', 'دورة', 'كورس', 'أكاديمية', 'تدريب', 'تعلم', 'education', 'school', 'course', 'academy', 'learning'],

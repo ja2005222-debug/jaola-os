@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getAvailableTemplates, getTemplate } from '../agents/templateLibrary.js';
-import { detectProjectType } from '../agents/knowledgeEngine.js';
+import { detectProjectType, keywordMatches } from '../agents/knowledgeEngine.js';
 
 test('30 قالباً وكلها مكتملة (css_vars + قسمان+)', () => {
     const all = getAvailableTemplates();
@@ -34,3 +34,23 @@ test('كشف النوع يصيب الفئات الجديدة', () => {
         assert.equal(detectProjectType(goal), expected, `"${goal}"`);
     }
 });
+
+test('كشف النوع على حدود الكلمات: «تطبيق» لا تُطابق «طبي» (كانت تصنّف توصيل الطعام طبياً)', () => {
+    assert.equal(detectProjectType('تطبيق توصيل طعام مع سائقين ومطاعم'), 'restaurant');
+    assert.equal(detectProjectType('تطبيق توصيل طعام للمطاعم مع تتبع الطلب'), 'restaurant');
+    assert.equal(detectProjectType('Food delivery app for restaurants'), 'restaurant');
+    assert.equal(detectProjectType('موقع طبي للمستشفى'), 'medical');
+    assert.equal(detectProjectType('تطبيق للأطباء'), 'medical');
+    assert.equal(detectProjectType('my application for doctors'), 'medical');
+});
+
+test('keywordMatches: سوابق ولواحق العربية اللاصقة مسموحة، والنصّ الفرعي داخل كلمة أخرى لا', () => {
+    assert.equal(keywordMatches('تطبيق', 'طبي'), false);
+    assert.equal(keywordMatches('application', 'app'), false);
+    assert.equal(keywordMatches('والمطعمُ الجديد', 'مطعم'), true);
+    assert.equal(keywordMatches('للمطاعم', 'مطاعم'), true);
+    assert.equal(keywordMatches('عيادات الأسنان', 'عيادة'), false, 'جمع «عيادات» جذره «عياد» — لاحقة ات على «عيادة» لا تطابق');
+    assert.equal(keywordMatches('عيادات الأسنان', 'عياد'), true);
+    assert.equal(keywordMatches('two restaurants', 'restaurant'), true);
+});
+
