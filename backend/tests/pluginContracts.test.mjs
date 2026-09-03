@@ -40,20 +40,18 @@ test('PluginLoader: القدرات الصالحة تُحمَّل مُنقّاة�
     assert.match(errors[0].error, /capabilities غير صالحة.*NotValid/);
 });
 
-test('PluginOrchestrator: فهرس القدرات يتبع التفعيل، وfindByCapability يعيد أسماء الإضافات، وstatus يعرضها', async () => {
+test('PluginOrchestrator: فهرس القدرات يتبع التفعيل فوراً، وstatus يعرضه', async () => {
     const dir = pluginsDir({
         'a.js': manifest({ name: 'checker-a', agent: 'a', body: "capabilities: ['site.check']," }),
         'b.js': manifest({ name: 'checker-b', agent: 'b', body: "capabilities: ['site.check', 'seo.audit']," }),
     });
     const orch = new PluginOrchestrator();
     const status = await orch.init(dir);
-    assert.deepEqual(orch.findByCapability('site.check').sort(), ['checker-a', 'checker-b']);
-    assert.deepEqual(orch.findByCapability('seo.audit'), ['checker-b']);
-    assert.deepEqual(orch.findByCapability('nope.x'), []);
     assert.equal(status.capabilities.length, 3);
     assert.deepEqual(status.plugins.find((p) => p.name === 'checker-b').capabilities, ['site.check', 'seo.audit']);
     // تعطيل إضافة يُخرج قدراتها من الفهرس فوراً (لا إعادة تحميل)
     orch.setEnabled('checker-b', false);
-    assert.deepEqual(orch.findByCapability('seo.audit'), []);
-    assert.deepEqual(orch.findByCapability('site.check'), ['checker-a']);
+    const caps = orch.capabilities().map((e) => `${e.plugin}:${e.capability}`);
+    assert.deepEqual(caps, ['checker-a:site.check'], 'قدرات المعطَّلة تختفي');
+    assert.equal(orch.status().capabilities.length, 1);
 });

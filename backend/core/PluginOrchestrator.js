@@ -91,8 +91,15 @@ export class PluginOrchestrator {
     getAgent(name) { return this.agents.get(name); }
     listAgents() { return [...this.agents.keys()]; }
 
-    // 📐 عقد Capability: فهرس القدرات المُعلَنة في manifests الإضافات المفعّلة —
-    // الوكيل/المشرف يسأل «من يقدر على site.check؟» لا «ما اسم الملف؟»
+    // 📐 عقد Capability: فهرس القدرات المُعلَنة في manifests الإضافات المفعّلة.
+    // مستهلكه الحيّ `status()` → `/api/admin/plugins`، والفهرس يتبع التفعيل
+    // فوراً بلا إعادة تحميل.
+    //
+    // ⚠️ حُذفت معها `findByCapability(name)` التي شُحنت في Sprint 1: لم يكن
+    // لها مستهلكٌ إنتاجي واحد — اختبارها وحده — وهذا بالضبط ما يمنعه المبدأ
+    // العاشر «لا تجريد بلا مستهلك حقيقي»، وقد طبّقتُه على غيري في Sprints
+    // 3 و4 فوجب تطبيقه على ما كتبتُه. تعود يوم يوجد موجِّهٌ يسأل «من يقدر
+    // على X؟» فعلاً — وهي سطرٌ واحد فوق `capabilities()` القائمة.
     capabilities() {
         const out = [];
         for (const p of this.plugins.values()) {
@@ -100,9 +107,6 @@ export class PluginOrchestrator {
             for (const c of p.capabilities || []) out.push({ capability: c, plugin: p.name });
         }
         return out;
-    }
-    findByCapability(name) {
-        return this.capabilities().filter((e) => e.capability === name).map((e) => e.plugin);
     }
 
     setEnabled(name, enabled) {
