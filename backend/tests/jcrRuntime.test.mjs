@@ -161,6 +161,17 @@ test('buildMissionAndMeta: مسار الاحتياط يترك ميزانية ك�
     const logs = s.events.filter(e => e.ev === 'log').map(e => e.payload.message).join('\n');
     assert.match(logs, /2\. MISSION & META/);
     assert.doesNotMatch(logs, /EXECUTIVE BRAIN/);
+    assert.match(logs, /ℹ️ تعذّر تحليل المهمة \(Budget exhausted\) — الاحتياط الحتمي: ميزانية medium \(7 استدعاءات\)/);
+});
+
+test('buildMissionAndMeta بلا مزوّد AI: السبب يُقال كما هو — لا «Cannot read properties of null»', async () => {
+    const s = scenario();
+    const ctx = kernelContext();
+    await s.rt.buildMissionAndMeta(ctx, s.ctx.roomName);
+    assert.equal(ctx.budget.maxApiCalls, 7);
+    const logs = s.events.filter(e => e.ev === 'log').map(e => e.payload.message).join('\n');
+    assert.match(logs, /تعذّر تحليل المهمة \(لا مزوّد AI مُهيأ\)/);
+    assert.doesNotMatch(logs, /Cannot read properties|فشل الاستدعاء الموحد/);
 });
 
 test('المجاهيل تُعرض للمستخدم عند ثقة منخفضة فقط — وبلا LLM', () => {

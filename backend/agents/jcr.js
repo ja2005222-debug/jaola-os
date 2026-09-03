@@ -226,6 +226,9 @@ export class JaolaCognitiveRuntime {
         try {
             if (!context.budget) context.budget = new CognitiveBudget();
             if (!context.budget.consumeCall()) throw new Error('Budget exhausted');
+            // بلا مزوّد كان السطر التالي يرمي «Cannot read properties of null (reading 'chat')»
+            // فيبدو عطلاً برمجياً في السجل — السبب الحقيقي غياب المزوّد، ونقوله كما هو
+            if (!groq) throw new Error('لا مزوّد AI مُهيأ');
             const completion = await groq.chat.completions.create({
                 messages: [
                     { role: "system", content: "أنتج JSON: mission: { businessGoal, technicalGoal, uxGoal, successCriteria, risks }, meta: { confidence: رقم, unknowns: مصفوفة, priority: 'Critical'|'High'|'Medium'|'Low' }" },
@@ -259,7 +262,8 @@ export class JaolaCognitiveRuntime {
             context.mentalModel.businessGoal = "بناء كود الموقع";
             context.metaReasoning.confidence = 70;
             context.budget = new CognitiveBudget('medium');
-            this.emitLiveLog(roomName, '2. MISSION & META', 'Mission+Meta', `⚠️ فشل الاستدعاء الموحد: ${e.message}`);
+            this.emitLiveLog(roomName, '2. MISSION & META', 'Mission+Meta',
+                `ℹ️ تعذّر تحليل المهمة (${e.message}) — الاحتياط الحتمي: ميزانية medium (${context.budget.maxApiCalls} استدعاءات)`);
         }
     }
 
@@ -747,10 +751,15 @@ export class JaolaCognitiveRuntime {
                         else if (evt.type === 'agent_error') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `⚠️ ${evt.role}: ${evt.error}`);
                     },
                 });
-                if (team.mode === 'execute') {
-                    // احفظ وثيقة مرجعية موجزة
+                const delivered = team.mode === 'execute' ? team.results.filter(r => !r.skipped && !r.error) : [];
+                if (team.mode === 'execute' && delivered.length === 0) {
+                    // لا أحد أنجز (مزوّد غائب/أعطال) — لا وثيقة فريق ولا ادّعاء؛ المولّد التقليدي يتكفّل
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `⚠️ لم يُنجز أي وكيل من ${team.results.length} — الاحتياط: المولّد التقليدي`);
+                }
+                if (team.mode === 'execute' && delivered.length > 0) {
+                    // احفظ وثيقة مرجعية موجزة — فقط حين يوجد ما يُوثَّق
                     const doc = [`# Backend Team\n`, `> ${team.summary}\n`,
-                        ...team.results.filter(r => !r.skipped && !r.error).map(r => `## ${r.role}\n${r.summary}\n`)].join('\n');
+                        ...delivered.map(r => `## ${r.role}\n${r.summary}\n`)].join('\n');
                     await fsPromises.writeFile(path.join(context.projectPath, 'BACKEND_TEAM.md'), doc).catch(() => {});
 
                     // اكتب ملفات الفريق الحقيقية عبر CodeGuard (فحص/إصلاح قبل الحفظ)
