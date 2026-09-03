@@ -66,6 +66,7 @@ Policy/Permission، Identity، Plugin.
 | `services/pluginStore.js` | 87 | تخزين الإضافات في Mongo واستعادتها للقرص | KEEP | Plugin | `core/plugins/` (Sprint 7) |
 | ✅ `core/runtime/TaskGraph.js` (جديد، Sprint 2a) | 46 | `orderTasks(items, {key})` — ترتيب طوبولوجي مستقرّ من `dependsOn` + كشف الدورات (خوارزمية `planExecution` حرفياً معمَّمة) | ADDED | Task | مستهلكاه: `runDynamicMultiAgentRuntime` (DELIVERY_STAGES) و`planExecution` (الفرق) |
 | ✅ `core/runtime/ExecutionContext.js` (جديد، Sprint 2b) | 66 | `createExecutionContext`/`contextFromRequest`/`withAgents` — بيئة المهمة في كائن مجمَّد (الحقول الستة المتكرّرة) | ADDED | Mission | 11 توقيعاً في `jcr.js` + المعالجات السبعة |
+| ✅ `core/runtime/AgentRuntime.js` (جديد، Sprint 2d) | 89 | `runAgent` + `gatherCooperationInputs` — منفّذ الوكيل الواحد: عقدٌ → نداء نموذج → ملفات مُطهَّرة | MOVED (Sprint 2d ✅، حرفياً عدا إسقاط افتراض `TEAM_BY_ID` الميت) | **Agent** | `runBackendTeam` (فريقا الخلفية **والواجهة** معاً) |
 | ✅ `core/runtime/workspacePaths.js` (جديد، Sprint 2c) | 62 | `isInsideRoot`/`resolveInside` + `safeRelPath` — نواة احتواء المسار المشتركة (السياسات تبقى عند كل موضع) | ADDED | Tool | `writePlanFiles` (jcr)، `writeBackendTeamFiles`، `sanitizePath` |
 
 ### ✅ التحقّق من مسار `orchestrator.init` (البند 21 من الخط الأساس)
