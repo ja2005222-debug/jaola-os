@@ -480,3 +480,33 @@ plan ? [_stageGuardAndWrite … _stageBehaviorVerify] → success
    «Cannot read properties of null»، والسطر يوضح الاحتياط الحتمي وميزانيته.
    اختبار في `jcrRuntime.test.mjs`. `logLocalizer` حُدِّث للأجزاء الجديدة.
 
+## 🧩 الاستخراج — الدفعة 4 (2026-09-03): `_runMissionNow` من 341 إلى 107 أسطر
+
+**خط الأساس كان جاهزاً**: `jcrMissionStrategy.test.mjs` (14) يثبّت قرار
+الاستراتيجية بمدخلاته الحقيقية، و`jcrRuntimePipeline` (10) النواة، و`Flows`
+(16) و`Runtime` (11) البقية — 52/52 قبل النقل وبعده، والحزمة 797/797.
+
+**النقل الحرفي** (بلا تغيير سطرٍ داخل الكتل):
+- `_understandGoal(goal, username, activeProject, roomName)` → `{ enrichedGoal,
+  blueprint, blueprintContext, domainModelContext }` — ذاكرة/ملف شخصي ← مخطط
+  التطبيق ← نموذج المجال.
+- `_selectBuildStrategy(goal, blueprint, projectPath, username, activeProject,
+  roomName, agents)` → نتيجة المهمة (Registry / Clone / «يعمل» / React) أو
+  `null` ← النواة. حماياتها الثلاث (الاستئناف لا يعيد البناء، التطبيق العامل
+  لا يُستبدل، React للجديد الكبير فقط) انتقلت كما هي.
+- `_enrichBuildContext(...)` → `{ requirementsContext, imageContext,
+  pluginContext }`.
+- `_reportMissionSuccess(goal, projectPath, username, activeProject, roomName)`
+  — تقرير التسليم والاقتراحات وقائمة الملفات والدفع التلقائي واللقطة والمقاييس
+  وhook afterBuild.
+
+ما بقي في `_runMissionNow` هو الهيكل الصريح: فهم ← استراتيجية ← إثراء ←
+سياق ← إحاطة ← نموذج العالم ← تحليل المهمة ← النواة ← نجاح/فشل/إيقاف.
+ملاحظة صادقة: `isFreshBuild` يُحسب مرتين داخل `_selectBuildStrategy` (كلون
+ثم موجّه هجين) بقراءتين للقرص — كان كذلك قبل النقل، ويُوحَّد مع التنظيف
+الداخلي لاحقاً لا الآن.
+
+**التالي في الخطة**: `handleUserMessage` (643 سطراً، أعلى قيمة وأعلى خطورة)
+بشبكة أمان `Flows` (16) + `Runtime` (11) — استخراج فروعها المحروسة إلى
+معالجات باسم النية، فرعاً فرعاً مع تشغيل الخط بينها.
+
