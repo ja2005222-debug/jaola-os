@@ -28,7 +28,7 @@ const PLAN_FILES = () => [
     { name: 'script.js', content: JS },
 ];
 
-function kernelScenario(prefix, { coder, architect, qa } = {}) {
+function kernelScenario(prefix, { coder, architect, qa, extraAgents = {} } = {}) {
     const s = scenario(prefix);
     setUserLanguage(s.ctx.username, 'ar');
     const dir = emptyProject();
@@ -42,6 +42,7 @@ function kernelScenario(prefix, { coder, architect, qa } = {}) {
         architectReview: async (plan) => { calls.architect.push(plan); return architect ? architect(calls.architect.length) : { approved: true, feedback: '' }; },
         qaVerify: async (plan) => { calls.qa.push(plan); return qa ? qa(calls.qa.length) : { passed: true, logs: [] }; },
         needsBackend: () => false,
+        ...extraAgents,
     };
     const run = () => s.rt._runMissionNow(GOAL, dir, s.ctx.username, s.ctx.activeProject, s.ctx.roomName, agents, null);
     const state = () => getProjectState(s.ctx.username, s.ctx.activeProject).state;
@@ -90,6 +91,11 @@ test('المسار السعيد: دورة واحدة → الملفات على �
     assert.match(s.logs(), /\[ReviewAgent\]: .*الجودة: [ABC] \(\d+\/100\)/);
     assert.match(s.logs(), /\[TestingAgent\]: /);
     assert.match(s.logs(), /\[SecurityAgent\]: ✅ Security/);
+    // محقّق المتطلبات يبدأ (المخطط الاحتياطي لأداة يحمل مكوّناً وظيفياً) ثم يصمت
+    // بغياب المزوّد — لا قائمة تحقق ولا «تخطّي» (verifyRequirements تُرجع null)
+    assert.match(s.logs(), /\[Requirements\]: 📋 التحقق من تنفيذ متطلبات المشروع/);
+    assert.doesNotMatch(s.logs(), /متطلب منفّذ|تخطّي التحقق/);
+    assert.doesNotMatch(s.logs(), /\[BackendAgent\]/, 'needsBackend=false → لا مرحلة خلفية');
     // تقرير التسليم للمستخدم
     assert.match(s.replies().join('\n'), /اكتملت المهمة — تقرير التسليم/);
     assert.ok(s.events.some(e => e.ev === 'stream_done'));
@@ -159,4 +165,61 @@ test('رد بلا ملفات → إعادة المحاولة بدرس CODER_EMPT
     assert.equal(s.agentCalls.coder.length, 2);
     assert.match(s.logs(), /لم يتم استخراج أي ملفات من رد النموذج/);
     assert.match(s.agentCalls.coder[1].prompt, /CODER_EMPTY_RESPONSE/);
+});
+
+test('مشروع يحتاج خادماً: فريق الخلفية يسقط بلا مزوّد → المولّد التقليدي يكتب api/ ويحدّث script.js، ثم قاعدة بيانات', async () => {
+    const calls = { generateBackend: [], integrate: [] };
+    const s = kernelScenario('pipe7', {
+        extraAgents: {
+            needsBackend: () => true,
+            generateBackend: async (goal, frontendContext) => {
+                calls.generateBackend.push({ goal, frontendContext });
+                return { success: true, files: [{ name: 'api/items.js', content: 'export default function handler(req,res){res.json([]);}' }] };
+            },
+            generateFrontendAPIIntegration: async (goal, files, script) => {
+                calls.integrate.push({ goal, files, script });
+                return `${script}\n// API: /api/items`;
+            },
+        },
+    });
+    const r = await s.run();
+    assert.equal(r.success, true);
+    assert.equal(s.state(), STATES.COMPLETED);
+
+    // المولّد التقليدي استُدعي مرة بسياق الواجهة الحقيقي من القرص، والتكامل مرة بملفاته
+    assert.equal(calls.generateBackend.length, 1);
+    assert.match(calls.generateBackend[0].frontendContext, /--- index\.html ---/);
+    assert.equal(calls.integrate.length, 1);
+    assert.equal(calls.integrate[0].files[0].name, 'api/items.js');
+    assert.match(calls.integrate[0].script, /rates\[0\]\.rate/);
+
+    // على القرص: ملف الـAPI، script.js المحدَّث، اتصال قاعدة البيانات، ووثيقة الفريق
+    assert.match(fs.readFileSync(path.join(s.dir, 'api', 'items.js'), 'utf-8'), /res\.json/);
+    assert.match(fs.readFileSync(path.join(s.dir, 'script.js'), 'utf-8'), /\/\/ API: \/api\/items/);
+    assert.ok(fs.existsSync(path.join(s.dir, 'api', 'db.js')), 'api/db.js');
+    assert.ok(fs.existsSync(path.join(s.dir, '.env.example')), '.env.example');
+    // حقيقة اليوم (لا تصميم): وثيقة الفريق تُكتب حتى حين لا يُنجز أحد
+    assert.match(fs.readFileSync(path.join(s.dir, 'BACKEND_TEAM.md'), 'utf-8'), /0\/7 وكيل أنجز/);
+    assert.ok(!fs.existsSync(path.join(s.dir, 'prisma')), 'لا Prisma لهدف بلا كلمات علاقية');
+    assert.ok(!fs.existsSync(path.join(s.dir, 'login.html')) && !fs.existsSync(path.join(s.dir, 'api', 'auth.js')), 'لا مصادقة لهدف بلا كلماتها');
+
+    // ترتيب الخلفية داخل خطّ التسليم: بعد Git وقبل Render
+    const order = [
+        /\[GitAgent\].*تم الحفظ/,
+        /\[BackendAgent\]: ⚙️ المشروع يحتاج خادماً/,
+        /\[BackendTeam\]: 🏛️ Backend Architect يعمل/,
+        /\[BackendTeam\]: ⚠️ Backend Architect: /,
+        /\[BackendTeam\]: ⏭️ Backend Debug Agent/,
+        /\[BackendVerify\]: ✅ الكود المولّد اجتاز الفحص/,
+        /\[BackendAgent\]: ✅ تم توليد 1 ملف \(api\/items\.js\)/,
+        /\[BackendAgent\]: 🔗 تم تحديث script\.js/,
+        /\[DatabaseAgent\]: 🗄️ جاري توليد قاعدة البيانات/,
+        /\[DatabaseAgent\]: ✅ mongodb — 2 ملف/,
+        /\[RenderAgent\]/,
+        /✨ نجاح/,
+    ];
+    const idx = order.map(re => s.logAt(re));
+    idx.forEach((i, k) => assert.ok(i >= 0, `سطر مفقود: ${order[k]}`));
+    for (let k = 1; k < idx.length; k++) assert.ok(idx[k] > idx[k - 1], `ترتيب خاطئ عند ${order[k]}`);
+    assert.doesNotMatch(s.logs(), /\[PostgresAgent\]|\[AuthAgent\]|تعذّر توليد الخادم|خطأ في BackendAgent/);
 });

@@ -401,3 +401,41 @@ async _stageX(context, roomName, agents) → void
 الحلقة (تحتاجان `initialCodeContext` على السياق)، ثم حلقة النقاش نفسها.
 بعدها يصبح `runDynamicMultiAgentRuntime` قائمةَ مراحل مرتّبة — أساس
 Model Router وMission Control لاحقاً بلا إعادة كتابة.
+
+## 🧩 الاستخراج — الدفعة 2 (2026-09-03): محقّق المتطلبات، الذاكرتان، وكتلة الخلفية
+
+**خط الأساس أولاً** (على الكود قبل النقل): `jcrRuntimePipeline.test.mjs` صار 7
+اختبارات — أُضيف مسار «مشروع يحتاج خادماً» بوكلاء `generateBackend`/
+`generateFrontendAPIIntegration` وهميين: فريق الخلفية يسقط عضواً عضواً بلا
+مزوّد، المولّد التقليدي يكتب `api/items.js` ويحدّث `script.js`، قاعدة البيانات
+تكتب `api/db.js` + `.env.example`، لا Prisma ولا مصادقة لهدف بلا كلماتهما،
+والترتيب داخل خطّ التسليم مثبَّت حرفياً: Git ← Backend ← Database ← Render.
+وفي المسار السعيد ثُبِّت أن محقّق المتطلبات *يبدأ* (المخطط الاحتياطي لأداة
+يحمل مكوّناً وظيفياً) ثم يصمت بغياب المزوّد (`verifyRequirements` تُرجع null —
+لا قائمة تحقق ولا «تخطّي»).
+
+**ثم النقل الحرفي** (خط الأساس مطابق قبل/بعد، 787/787):
+`_stageRequirementsVerify(context, roomName, agents)` (~65 سطراً، يستهلك
+`agents.coreEditCodePlan`)، `_stageExecutiveMemory(context)` (حفظ الهوية
+البصرية + `context.files`)، `_stageProjectMemory(context)` (هيكل/تصميم ذاكرة
+المشروع)، `_stageBackend(context, roomName, agents)` (~170 سطراً: فريق
+الخلفية ← المولّد التقليدي ← DB/Postgres/Auth). المرحلتان الصغيرتان بلا
+`roomName`/`agents` في التوقيع لأن DeepSource يرفض المعاملات غير المستعملة؛
+موقع النداء موحّد على أي حال. `runDynamicMultiAgentRuntime` بقياس awk نفسه
+(من السطر الافتتاحي حتى أول `    }`): **434 → 184** سطراً.
+
+**اكتشافات جانبية وثّقها خط الأساس ولم تُصلَح (سلوك اليوم، لا تصميم)**:
+- `BACKEND_TEAM.md` يُكتب حتى حين ينجز الفريق 0/7 وكيل، و`BackendVerify` يعلن
+  «✅ اجتاز الفحص» على صفر ملفات — نجاحٌ أجوف بالمعنى الذي حُذف من التحقّق السلوكي.
+- `DatabaseAgent` حين يفشل مخطط Mongoose الديناميكي (نوع مشروع خارج القوالب
+  وبلا مزوّد) يكتب `api/db.js` + `.env.example` فقط لكن ملخّصه يقول
+  «(schema, seed, connection)» — ملخّص ثابت لا يعكس ما كُتب.
+- `buildMissionAndMeta` تسجّل «⚠️ فشل الاستدعاء الموحد: Cannot read properties
+  of null (reading 'chat')» لأن `_runMissionNow` يمرّر `llm=null` — السقوط إلى
+  الميزانية الاحتياطية صحيح لكن الرسالة تُخيف بلا داعٍ.
+هذه تُعالَج بعد اكتمال الاستخراج (الدفعة 3) لا أثناءه — قاعدة «نقل حرفي».
+
+**ما بقي للدفعة 3**: مرحلتا القالب والمصمّم قبل الحلقة (تحتاجان
+`initialCodeContext` على السياق)، ثم حلقة النقاش نفسها (`_debateLoop`)؛
+بعدها يصبح `runDynamicMultiAgentRuntime` قائمةَ مراحل مرتّبة.
+
