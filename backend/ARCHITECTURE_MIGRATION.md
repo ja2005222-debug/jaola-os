@@ -658,3 +658,51 @@ LLM بلا طلب) يُترك للمالك، والبنية جاهزة له (`lo
 `dbStatus` + `checks[]` للنقّاد → 3) Kernel كمصفوفة مراحل → 4) Model Router →
 5) Verification طبقةً → 6) Mission Control (+ `log` منظّم) → 7) Plugin Runtime
 2.0؛ وبالتوازي `workspaceGuard` الموحّد (Tool).
+
+## 🧭 تبنّي الخط الأساس المعماري + الخريطة ملفاً بملف (2026-09-03)
+
+المالك أرفق وثيقة «السجل المعماري الكامل للجلسة» (JAOLA OS v2: Core Runtime
+بعقود Mission/Task/Agent/Tool/Policy/Event/Transaction، وTravel أول Plugin تجاري،
+وخطة 7 Sprints). حُفظت داخل المستودع: **`docs/ARCHITECTURE_BASELINE_2026-09-03.md`**
+وهي الآن **Baseline**: أي انحراف عنها يُسجَّل هنا كقرار معماري (سبب/أثر/بديل
+مرفوض/تراجع). خطوتها التالية المعتمدة (البند 22) نُفِّذت: **`ARCHITECTURE_MAP.md`**
+— 241 وحدة backend + 50 وحدة travel-service بالأعمدة الخمسة، مبنية على جرد آلي
+(سطور، مستوردون، رأس الملف، تاريخ git) لا انطباع.
+
+**ما أكّدته الخريطة بالدليل**:
+- **مسار `orchestrator.init` موجود ورسمي** (البند 21 طلب التحقّق): `server.js:3691`
+  يحمّل الإضافات قبل `listen`، ويعيد التحميل عند جاهزية Mongo ومن مسارات الأدمِن؛
+  النواة تستهلك `beforeBuild` (توجيهات تُحقن في prompt المولّد، `jcr.js:1534`)
+  و`afterBuild` (`jcr.js:1613`)؛ `getAgent` في `/api/agents/:name/run`؛ واختبار
+  `siteChecker.test.mjs` يستدعي `init()` فعلاً. الحدّ: hooks البناء نصّية لا أدوات.
+- **30 ملفاً ميتاً** (7 في `agents/` + 23 في `services/`/`utils/`/`websocket/`/
+  `lib/`): كلّها من يوم سقالة واحد (2026-08-05، commit واحد)، صفر قرّاء عبر backend
+  + frontend + tests + .github. منها سلسلة `serverBuilder → spec/AgentSpec.js`
+  التي تحوي نصّ سكربت shell مضمّناً (ملف مولَّد بالخطأ)، و`taskWorker.js` يستورد
+  `taskQueue.js` **الفارغ** (0 سطر). أنماط كاذبة استُبعدت يدوياً: `dbConfig.js` حيّ
+  (استيراد تأثير جانبي `server.js:2`)، و`utils/api.js` طابق `./api/db.js` داخل
+  نصّ قالب.
+- **النماذج المرجعية لعقود Sprint 1 موجودة فعلاً في الكود**: `bookings.js`
+  (Transaction/State Machine)، `bookingIntent.js` (Tool بتأكيد)، `providers/index.js`
+  (Provider Registry)، `backendTeam/agentSpec.js` (Agent)، `tradingBotLedger.js`
+  (Audit/Idempotency). التصميم يعمّمها لا يخترعها.
+- **أعمدة منتجات داخل النواة**: finance (بوت التداول + 3 مستشارين، 17 ملفاً)،
+  marketing (5)، bot (4) — تعيش في `services/`/`agents/` وتُنقل إلى `plugins/`
+  بعد نجاح Travel Adapter لا قبله.
+
+**قرارات معمارية (انحرافات مسجَّلة عن الخط الأساس)**:
+1. **ترتيب الخطوات**: الخط الأساس يبدأ Sprint 1 بتسعة عقود دفعة واحدة؛ `CONTRACTS.md`
+   ثبّت ستة منها من الكود وأجّل Task/Capability/Provider/Transaction. **القرار**:
+   Sprint 1 يُكمَل بالأربعة الباقية *من نماذجها المرجعية أعلاه* قبل أي Runtime —
+   سبب: مبدأ 10 (لا تجريد بلا مستهلك) يُلزم بمستهلك حيّ لكل عقد. أثر: لا تأخير؛
+   بديل مرفوض: كتابة العقود التسعة نظرياً. تراجع: لا شيء يُحذف.
+2. **AgentBundle → Agent Registry**: الخط الأساس محقّ أن الحزمة المسطّحة لن تتوسّع.
+   **القرار**: الشكل القانوني هو `defineAgent` القائم (`backendTeam/agentSpec.js`)،
+   ويُنقل إلى `core/runtime/AgentSpec.js` في Sprint 1، والحزمة تبقى كطبقة توافق
+   حتى Sprint 2 (Agent Runtime) — لا كسر لـ`/api/chat`.
+3. **الحذف قبل النقل**: الخط الأساس لا يذكر حذفاً. **القرار**: الـ30 ملفاً تُحذف في
+   PR مستقل بخط أساس اختباري قبل Sprint 1 — نفس سابقة `agentOrchestrator.js`
+   (سطر واحد في `git log`، صفر مستوردين، الاختبارات كاملة بعده). تراجع: `git revert`.
+4. **`server.js`**: لا يُفكَّك دفعة واحدة (البند 19)؛ الخريطة تسمّي 14 مجالاً كمرشّحي
+   `routes/*.js` على نمط `routes/billing.js` القائم — يخرج مجال واحد في كل PR وعند
+   الحاجة فقط.
