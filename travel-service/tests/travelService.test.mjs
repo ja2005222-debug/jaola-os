@@ -16,7 +16,7 @@ import os from 'os';
 import path from 'path';
 import jwt from 'jsonwebtoken';
 
-import { createApp, validateSearchParams, validateMultiCitySearchParams, validatePassengers, validateSelectedServices, validateStaySearchParams, validateGuests, validateCarSearchParams, validateDrivers, validateEsimSearchParams, validateEsimTraveller, verifyDuffelWebhookSignature } from '../server.js';
+import { createApp, cancellationFeeAt, validateSearchParams, validateMultiCitySearchParams, validatePassengers, validateSelectedServices, validateStaySearchParams, validateGuests, validateCarSearchParams, validateDrivers, validateEsimSearchParams, validateEsimTraveller, verifyDuffelWebhookSignature } from '../server.js';
 import crypto from 'crypto';
 import { createMockTravelProvider } from '../src/providers/mockProvider.js';
 import { createDuffelProvider, normalizeDuffelOffer, sortOffers, totalDurationMin, applyOfferFilters } from '../src/providers/duffelProvider.js';
@@ -8265,5 +8265,160 @@ describe('🔐 نية الحجز الموقّعة', () => {
         assert.equal(INTENT_TTL_MS, 15 * 60 * 1000);
         const token = signBookingIntent(PAYLOAD(), SECRET, { now: 0 });
         assert.equal(verifyBookingIntent(token, SECRET, { now: 0 }).values.exp, INTENT_TTL_MS);
+    });
+});
+
+describe('💸 غرامة الإلغاء: عطبٌ ماليّ كشفه تجهيز مفتاح LiteAPI الإنتاجي', () => {
+    // الجدول أدناه **رد LiteAPI حقيقي** مُلتقَط، هو نفسه المستعمل في اختبار
+    // searchStays أعلى الملف: سعرٌ موسوم RFN وغرامته 381.62 USD ابتداءً من
+    // ٢٠٢٧/٠١/١٣. دلالة الحقول من توثيق LiteAPI: cancelTime هو الموعد الذي
+    // **ابتداءً منه** تُخصم amount — لا آخر موعد للإلغاء المجاني.
+    const REAL = {
+        currency: 'USD', cancellable: true,
+        cancelPolicy: [{ before: '2027-01-13 07:00:00', amount: 381.62, currency: 'USD' }],
+    };
+    const AT = ms => Date.parse(ms);
+
+    test('قبل أول موعد = مجاني، وبعده = الغرامة المعلنة بحرفها', () => {
+        assert.equal(cancellationFeeAt(REAL, AT('2027-01-12T07:00:00Z')), 0);
+        assert.equal(cancellationFeeAt(REAL, AT('2027-01-13T07:00:00Z')), 381.62, 'اللحظة نفسها مشمولة');
+        assert.equal(cancellationFeeAt(REAL, AT('2027-02-01T00:00:00Z')), 381.62);
+    });
+
+    test('جدول متعدّد الدرجات: تسود الدرجة السارية الآن لا الأولى ولا الأخيرة', () => {
+        const tiered = {
+            currency: 'USD', cancellable: true,
+            cancelPolicy: [
+                { before: '2027-03-01 00:00:00', amount: 50, currency: 'USD' },
+                { before: '2027-03-10 00:00:00', amount: 200, currency: 'USD' },
+            ],
+        };
+        assert.equal(cancellationFeeAt(tiered, AT('2027-02-20T00:00:00Z')), 0);
+        assert.equal(cancellationFeeAt(tiered, AT('2027-03-05T00:00:00Z')), 50);
+        assert.equal(cancellationFeeAt(tiered, AT('2027-03-20T00:00:00Z')), 200);
+        // الترتيب غير مضمون من المزوّد — النتيجة لا تتغيّر بعكسه
+        assert.equal(cancellationFeeAt({ ...tiered, cancelPolicy: [...tiered.cancelPolicy].reverse() },
+            AT('2027-03-05T00:00:00Z')), 50);
+    });
+
+    test('«لا تخمّن»: بلا جدول، أو برسمٍ مجهول، أو بعملة أخرى ⇒ null لا صفر', () => {
+        assert.equal(cancellationFeeAt({ currency: 'USD', cancelPolicy: [] }), null, 'بلا جدول');
+        assert.equal(cancellationFeeAt({ currency: 'USD' }), null, 'بلا حقل أصلاً');
+        assert.equal(cancellationFeeAt(null), null);
+        // «رسوم يحددها الفندق» — ما تعرضه الواجهة حين amount غائب
+        assert.equal(cancellationFeeAt({ currency: 'USD', cancelPolicy: [{ before: '2027-01-13 07:00:00', amount: null }] },
+            AT('2027-02-01T00:00:00Z')), null);
+        assert.equal(cancellationFeeAt({ currency: 'USD', cancelPolicy: [{ before: '2027-01-13 07:00:00', amount: 100, currency: 'EUR' }] },
+            AT('2027-02-01T00:00:00Z')), null, 'لا خلط عملات صامت');
+        assert.equal(cancellationFeeAt({ currency: 'USD', cancelPolicy: [{ before: 'ليس تاريخاً', amount: 100 }] },
+            AT('2027-02-01T00:00:00Z')), null, 'موعد تالف يُهمَل');
+    });
+});
+
+describe('💸 الإلغاء المتأخر لسعرٍ قابل للاسترداد: المسار الكامل بمالٍ حقيقي', () => {
+    // مزوّد يحاكي LiteAPI بدقّة في الموضع الحرج: يعرض سعراً موسوماً RFN
+    // بجدول غرامة، ثم **يصمت عن مبلغ الاسترداد عند الإلغاء** (`null`) —
+    // وهو ما فعله LiteAPI حرفياً في الإلغاء الحي المُجرَّب.
+    const NET = 400, FEE = 300, PAST = '2020-01-01 00:00:00';
+    function createSilentRefundStays({ policy, declaredRefund = null }) {
+        const offer = {
+            id: 'rate_late', name: 'فندق التجربة', currency: 'USD', netAmount: NET,
+            checkInDate: '2027-01-20', checkOutDate: '2027-01-22', nights: 2, adults: 1, rooms: 1,
+            cancellable: true, cancelPolicy: policy,
+        };
+        return {
+            name: 'silent-refund-stays', mode: 'live',
+            async searchStays() { return [{ ...offer }]; },
+            async getQuote(id) { return id === offer.id ? { ...offer } : null; },
+            async createStayOrder() { return { orderId: 'ord_1', bookingReference: 'REF123', status: 'issued', netAmount: NET, currency: 'USD' }; },
+            // 👇 قلب الاختبار: نجاح إلغاء بلا أي مبلغ — كما فعل LiteAPI
+            async cancelStayOrder() { return { status: 'cancelled', refundAmount: declaredRefund, currency: declaredRefund == null ? null : 'USD' }; },
+        };
+    }
+
+    async function bookPayCancel({ policy, declaredRefund = null }) {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jaola-fee-'));
+        const store = createFileStore({ dataDir: dir });
+        await store.init();
+        const refunds = [];
+        const fakeStripe = {
+            name: 'stripe',
+            async createCheckoutSession() { return { id: 'cs_fee', url: 'https://pay.test/1', expiresAt: 0 }; },
+            async getCheckoutSession(id) { return { id, status: 'open', paymentStatus: 'unpaid', paymentIntent: 'pi_fee', metadata: {}, url: 'https://pay.test/1' }; },
+            async createRefund(a) { refunds.push(a); return { id: 're_fee', status: 'succeeded', amount: a.amount, currency: 'USD' }; },
+        };
+        const app = createApp({
+            store, jwtSecret: JWT_SECRET, provider: createMockTravelProvider(),
+            staysProvider: createSilentRefundStays({ policy, declaredRefund }),
+            adminUsers: ['admin'], stripeClient: fakeStripe, stripeWebhookSecret: 'whsec_fee',
+            publicUrl: 'https://portal.test',
+        });
+        const server = await new Promise(r => { const x = app.listen(0, () => r(x)); });
+        const base = `http://127.0.0.1:${server.address().port}`;
+        const call = async (p, { method = 'GET', token, body } = {}) => {
+            const res = await fetch(base + p, {
+                method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                body: body === undefined ? undefined : JSON.stringify(body),
+            });
+            return { status: res.status, data: await res.json().catch(() => null) };
+        };
+        try {
+            const user = makeToken('late-canceller');
+            const search = await call('/api/travel/stays/search', { method: 'POST', token: user, body: STAY_SEARCH_BODY() });
+            const offer = search.data.offers[0];
+            const booked = await call('/api/travel/stays/bookings', { method: 'POST', token: user, body: { offerId: offer.id, ...VALID_GUESTS } });
+            assert.equal(booked.status, 200);
+
+            const raw = JSON.stringify({ type: 'checkout.session.completed',
+                data: { object: { payment_intent: 'pi_fee', metadata: { bookingId: booked.data.booking.id, purpose: 'issue_booking' } } } });
+            const t = Math.floor(Date.now() / 1000);
+            const v1 = crypto.createHmac('sha256', 'whsec_fee').update(`${t}.${raw}`).digest('hex');
+            await fetch(`${base}/api/travel/webhooks/stripe`, {
+                method: 'POST', body: raw,
+                headers: { 'Content-Type': 'application/json', 'stripe-signature': `t=${t},v1=${v1}` },
+            });
+            const cancel = await call(`/api/travel/stays/bookings/${booked.data.booking.id}/cancel`, { method: 'POST', token: user });
+            return { cancel, refunds, paid: booked.data.booking.sellAmount };
+        } finally {
+            await new Promise(r => server.close(r));
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    }
+
+    test('🐛 صمت المزوّد كان يُقرأ «صفر»: المسافر لا يُرد له شيء آلياً', async () => {
+        const { cancel, refunds, paid } = await bookPayCancel({
+            policy: [{ before: PAST, amount: FEE, currency: 'USD' }],
+        });
+        assert.equal(cancel.status, 200);
+        // قبل الإصلاح: `Number(null) === 0` ⇒ نسبة صفر ⇒ لا نداء Stripe
+        // إطلاقاً، وتنبيه «مراجعة استرداد» للمالك على كل إلغاء فندقي.
+        // بعده: تُخصم الغرامة المعلنة وحدها ويُرد الباقي فوراً.
+        const expected = Math.round(paid * ((NET - FEE) / NET) * 100) / 100;
+        assert.equal(refunds.length, 1, 'رد فعلي عبر Stripe — لا مراجعة يدوية');
+        assert.equal(refunds[0].amount, expected);
+        assert.ok(refunds[0].amount > 0 && refunds[0].amount < paid, 'جزئي: لا صفر ولا كامل');
+        assert.equal(cancel.data.booking.refund.amount, expected);
+    });
+
+    test('صفرٌ **مُعلَن** من المزوّد يبقى صفراً — التمييز لا يلغي التصريح', async () => {
+        const { refunds } = await bookPayCancel({
+            policy: [{ before: PAST, amount: FEE, currency: 'USD' }],
+            declaredRefund: 0,
+        });
+        assert.equal(refunds.length, 0, 'لا رد آلي حين صرّح المزوّد بصفر');
+    });
+
+    test('الإلغاء قبل موعد الغرامة يبقى رداً كاملاً — لا تشدّد على المسافر', async () => {
+        const { refunds, paid } = await bookPayCancel({
+            policy: [{ before: '2099-01-01 00:00:00', amount: FEE, currency: 'USD' }],
+        });
+        assert.equal(refunds.length, 1);
+        assert.equal(refunds[0].amount ?? paid, paid, 'رد كامل (Stripe يقبل null للكامل)');
+    });
+
+    test('بلا جدولٍ أصلاً: الوعد المعلن «قابل للإلغاء» يبقى الحكم', async () => {
+        const { refunds, paid } = await bookPayCancel({ policy: [] });
+        assert.equal(refunds.length, 1);
+        assert.equal(refunds[0].amount ?? paid, paid);
     });
 });
