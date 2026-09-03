@@ -510,3 +510,35 @@ plan ? [_stageGuardAndWrite … _stageBehaviorVerify] → success
 بشبكة أمان `Flows` (16) + `Runtime` (11) — استخراج فروعها المحروسة إلى
 معالجات باسم النية، فرعاً فرعاً مع تشغيل الخط بينها.
 
+## 🧩 الاستخراج — الدفعة 5 (2026-09-03): `handleUserMessage` من 643 إلى 139 سطراً
+
+**خط الأساس كان جاهزاً**: `jcrRuntimeFlows` (16) + `jcrRuntime` (11) يثبّتان كل
+الفروع الحتمية (clarifier، التراجع، «نعم»/«نفذ»، نوايا CEO، الحجب/الإصرار،
+نمط التعديل، الأسئلة على مشروع قائم، البناء الصريح/الواسع) — 52/52 مع
+Strategy وPipeline قبل النقل وبعده، والحزمة 797/797.
+
+**العقد الثاني الذي انبثق من الكود** (بعد عقد المرحلة في خطّ التسليم):
+```
+async _handleX(req, agents) → boolean
+  • req = { message, normalizedMessage, meaningIntent, roomName, projectPath,
+            username, activeProject, userLang, dbStatus, clarifierState }
+  • true  = تولّى الرسالة وانتهى (كان `return;` في جسد الدالة)
+  • false = ليست له ← المعالج التالي بالترتيب نفسه
+```
+الترتيب محفوظ حرفياً (هو جزء من السلوك: الحتمي الحسّاس أولاً ثم LLM ثم
+الاحتياط): `_handlePlanningStage` → `_handleUndo` → `_handleBareConfirmations`
+→ `_handleCeoIntent` → `_handleUnifiedRoute` → `_handleModifyPattern` →
+`_handleClassifiedIntent`. ما بقي في `handleUserMessage`: المسار/اللغة،
+الهدف المعلّق، `__CONFIRM_BUILD__`، قفل اللغة، الحذف، الصور، مرحلة التوضيح،
+ثم بناء `req` وسلسلة المعالجات — أي «الفرز الأول» فقط. كل معالج يفكّ من
+`req` ما يستعمله فعلاً لا أكثر.
+
+**ما لم يتغيّر عمداً**: `langInfo` غير مستعمل داخل `handleUserMessage` (كان
+كذلك قبل النقل) — يُنظَّف مع التنظيف الداخلي. الدوال العملاقة الثلاث في تشريح
+jcr.js صارت كلها هياكل قصيرة: 45 / 107 / 139 سطراً (كانت ~630 / ~350 / ~640).
+
+**التالي في الخطة**: التنظيف الداخلي للأجساد المنقولة (تكرار `isFreshBuild`،
+`langInfo`، استيرادات `fs/path` الديناميكية داخل `_stageBackend`)، ثم
+الاكتشافات القديمة (`detectProjectType` → `medical`، `staticKind` → brochure
+→ Registry تحت الاحتياط، تقليم مخطط `buildMissionAndMeta`).
+

@@ -2607,6 +2607,22 @@ User preferences: ${JSON.stringify(execMemory)}` },
             return;
         }
 
+        // 📨 طلب المستخدم كاملاً — العقد الموحّد لمعالجات النية أدناه:
+        // async _handleX(req, agents) → true إن تولّى الرسالة (وانتهى)، false ← المعالج التالي.
+        const req = { message, normalizedMessage, meaningIntent, roomName, projectPath, username, activeProject, userLang, dbStatus, clarifierState };
+
+        if (await this._handlePlanningStage(req, agents)) return;
+        if (await this._handleUndo(req, agents)) return;
+        if (await this._handleBareConfirmations(req, agents)) return;
+        if (await this._handleCeoIntent(req, agents)) return;
+        if (await this._handleUnifiedRoute(req, agents)) return;
+        if (await this._handleModifyPattern(req, agents)) return;
+        if (await this._handleClassifiedIntent(req, agents)) return;
+    }
+
+    // مرحلة الخطة في حوار التوضيح: تأكيد → بناء، سؤال → ملخّص الخطة، إيقاف/لون/تعديل → تسجيل في الإجابات.
+    async _handlePlanningStage(req, agents) {
+        const { message, roomName, projectPath, username, activeProject, userLang, dbStatus, clarifierState } = req;
         // إذا كنا في مرحلة الخطة — ننتظر تأكيد أو تعديل
         if (clarifierState?.stage === 'planning') {
             if (agents.isConfirmation?.(message)) {
@@ -2651,7 +2667,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                             ? 'تم إلغاء الخطة. يمكنك البدء من جديد متى شئت.'
                             : 'Plan cancelled. You can start over anytime.';
                         this.io.to(roomName).emit('chat_reply', { message: stopMsg });
-                        return;
+                        return true;
                     }
 
                     // كشف طلبات تغيير اللون
@@ -2664,7 +2680,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         this.io.to(roomName).emit('chat_reply', { message: colorMsg });
                         const state = agents.getState(username);
                         if (state) state.answers.push(`color change requested: ${message}`);
-                        return;
+                        return true;
                     }
 
                     // تعديل عام على الخطة
@@ -2676,9 +2692,14 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     if (state) state.answers.push(`edit: ${message}`);
                 }
             }
-            return;
+            return true;
         }
+        return false;
+    }
 
+    // «تراجع»: استرجاع حتمي فوري لآخر نسخة احتياطية كاملة — لا تفسير ذكاء.
+    async _handleUndo(req, agents) {
+        const { message, roomName, projectPath, username, activeProject, userLang } = req;
         // ⏪ "تراجع/استرجع/undo" — استرجاع حتمي فوري لآخر نسخة احتياطية كاملة
         // (شبكة أمان من الشات مكافئة لـ Version Restore عند المنافسين):
         // لا تفسير ذكاء، لا مجال لانحراف — نسخة، استرجاع، انتهى.
@@ -2693,14 +2714,14 @@ User preferences: ${JSON.stringify(execMemory)}` },
                             ? 'No saved snapshot yet — snapshots are taken automatically before every upcoming edit, so "undo" will work from the next change onward.'
                             : 'لا توجد نسخة سابقة محفوظة بعد — النسخ تُلتقط تلقائياً قبل كل تعديل قادم، فأمر «تراجع» سيعمل من التعديل التالي فصاعداً.',
                     });
-                    return;
+                    return true;
                 }
                 const r = await restoreSnapshot(projectPath, latest.name);
                 if (!r.success) {
                     this.io.to(roomName).emit('chat_reply', {
                         message: lang === 'en' ? `❌ Restore failed: ${r.error}` : `❌ تعذّر الاسترجاع: ${r.error}`,
                     });
-                    return;
+                    return true;
                 }
                 this.emitLiveLog(roomName, 'EDIT', 'Undo', `⏪ استُرجعت النسخة ${latest.name} (${r.restored.length} ملف).`);
                 this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
@@ -2718,9 +2739,14 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     message: lang === 'en' ? `❌ Restore failed: ${e.message}` : `❌ تعذّر الاسترجاع: ${e.message}`,
                 });
             }
-            return;
+            return true;
         }
+        return false;
+    }
 
+    // «نعم» و«نفذ» المجرّدتان: تنفيذ الطلب المحجوب/الاستئناف/آخر ما نوقش — لا ارتجال شات.
+    async _handleBareConfirmations(req, agents) {
+        const { message, roomName, projectPath, username, activeProject, userLang, dbStatus } = req;
         // 🆕 "نعم/تمام/ok" مجرّدة بلا هدف معلق ولا clarifier: موافقة على
         // المتابعة — إن وُجد مشروع قابل للاستئناف نكمله فعلياً بدل إسقاطها
         // في الشات ليرتجل حواراً (سجل تاكسي: "نعم" كانت تدور بلا فعل).
@@ -2738,7 +2764,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     '✅ "نعم" بعد حجب → تنفيذ الطلب المحجوب تعديلاً موضعياً (لا استئناف عام).');
                 recordEdit(username, gated);
                 this.surgicalEdit(gated, projectPath, username, activeProject, roomName, agents, dbStatus);
-                return;
+                return true;
             }
             const contGoal = buildContinuationGoal(username, activeProject);
             const d = decide('continue', username, activeProject);
@@ -2750,7 +2776,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     message: lang === 'ar' ? '⚡ تمام — أكمل من حيث توقفنا...' : '⚡ Alright — resuming where we left off...'
                 });
                 this.executeMission(contGoal, projectPath, username, activeProject, roomName, agents, dbStatus);
-                return;
+                return true;
             }
         }
 
@@ -2773,7 +2799,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         : `Apply to the current site what was agreed in chat:\n"${message.trim()}" refers to:\n${lastAssistant.content.slice(0, 600)}`);
                     recordEdit(username, instruction.slice(0, 100));
                     this.surgicalEdit(instruction, projectPath, username, activeProject, roomName, agents, dbStatus);
-                    return;
+                    return true;
                 }
             } catch (e) { /* سقوط آمن للشات */ }
             this.io.to(roomName).emit('chat_reply', {
@@ -2781,9 +2807,14 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     ? 'ماذا تريد أن أنفّذ بالضبط؟ صِف التغيير بجملة (مثال: "اضف صفحة للسائق وصفحة للعميل").'
                     : 'What exactly should I execute? Describe the change in one sentence.'
             });
-            return;
+            return true;
         }
+        return false;
+    }
 
+    // نوايا CEO الحتمية (حالة/تحية/اكمل/انشر/ادفع) قبل أي LLM.
+    async _handleCeoIntent(req, agents) {
+        const { message, normalizedMessage, roomName, projectPath, username, activeProject, userLang, dbStatus } = req;
         // ── 🧠 CEO Brain: Intent Engine → Decision Engine → Execution ─────
         // النوايا الإدارية (كمل/أين وصلنا/انشر/ادفع/تحية) تُعالج هنا قبل أي LLM
         const fastIntent = classifyIntentFast(normalizedMessage || message);
@@ -2799,12 +2830,12 @@ User preferences: ${JSON.stringify(execMemory)}` },
             switch (fastIntent.intent) {
                 case 'status': {
                     this.io.to(roomName).emit('chat_reply', { message: buildStatusReply(username, activeProject, lang) });
-                    return;
+                    return true;
                 }
 
                 case 'greeting': {
                     this.io.to(roomName).emit('chat_reply', { message: greetingReply(username, activeProject, lang) });
-                    return;
+                    return true;
                 }
 
                 case 'continue': {
@@ -2813,7 +2844,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                             ? '⚙️ الفريق يعمل على المشروع الآن بالفعل — تابع التقدم الحي هنا.'
                             : '⚙️ The team is already working on it — watch the live progress here.';
                         this.io.to(roomName).emit('chat_reply', { message: busyMsg });
-                        return;
+                        return true;
                     }
                     const continuationGoal = buildContinuationGoal(username, activeProject);
                     if (!continuationGoal) {
@@ -2822,14 +2853,14 @@ User preferences: ${JSON.stringify(execMemory)}` },
                             ? `لا أجد مشروعاً سابقاً في (${activeProject}) لأكمله.\nأخبرني: ماذا تريد أن نبني؟ (مثال: "متجر بيض بلدي مع سلة وطلب أونلاين")`
                             : `I don't find a previous project in (${activeProject}) to continue.\nTell me: what should we build? (e.g., "an egg store with cart and online ordering")`;
                         this.io.to(roomName).emit('chat_reply', { message: noMemMsg });
-                        return;
+                        return true;
                     }
                     const resumeMsg = lang === 'ar'
                         ? '📂 وجدت المشروع في الذاكرة — الفريق يستأنف من حيث توقف...'
                         : '📂 Project found in memory — the team is resuming where it left off...';
                     this.io.to(roomName).emit('chat_reply', { message: resumeMsg });
                     this.executeMission(continuationGoal, projectPath, username, activeProject, roomName, agents, dbStatus);
-                    return;
+                    return true;
                 }
 
                 case 'deploy': {
@@ -2838,7 +2869,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                             ? '⏳ البناء جارٍ الآن — سأنشر تلقائياً بعد اكتماله، أو اطلب النشر لاحقاً.'
                             : '⏳ Build in progress — deploy after it completes.';
                         this.io.to(roomName).emit('chat_reply', { message: waitMsg });
-                        return;
+                        return true;
                     }
                     // 🧭 المشاريع full-stack (فيها دوال api/ حقيقية) تُنشر على Render
                     // كخادم دائم — يزيل حدّ Vercel Hobby (12 دالة) ويُبقي DB متصلة.
@@ -2870,7 +2901,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         }).catch(err => {
                             this.io.to(roomName).emit('log', { message: `❌ [Render]: ${err.message}` });
                         });
-                        return;
+                        return true;
                     }
 
                     const deployMsg = lang === 'ar'
@@ -2884,7 +2915,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     ).catch(err => {
                         this.io.to(roomName).emit('log', { message: `❌ [DEPLOY]: ${err.message}` });
                     });
-                    return;
+                    return true;
                 }
 
                 case 'github_push': {
@@ -2900,11 +2931,16 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     }).catch(err => {
                         this.io.to(roomName).emit('chat_reply', { message: `❌ GitHub: ${err.message}` });
                     });
-                    return;
+                    return true;
                 }
             }
         }
+        return false;
+    }
 
+    // الموجّه الموحّد (نداء LLM منظّم) بشبكة أمان الحجب/الإصرار؛ فشله أو «build» → المسار القديم.
+    async _handleUnifiedRoute(req, agents) {
+        const { message, roomName, projectPath, username, activeProject, userLang, dbStatus } = req;
         // ── 🧭 الموجّه الموحّد — نداء LLM منظّم واحد بدل شبكة الـ regex ────
         // المسارات الحتمية الحسّاسة (الحذف، القفل، اكمل، اللغة، clarifier)
         // عملت أعلاه. فشل الموجّه → يسقط بصمت للمسار القديم أدناه (احتياط كامل).
@@ -2935,21 +2971,21 @@ User preferences: ${JSON.stringify(execMemory)}` },
                             recordEdit(username, message);
                             recordEditAction(username, activeProject);
                             this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
-                            return;
+                            return true;
                         }
                         if (hasProj && !isQuestionMessage(message)) {
                             // نحجب مرة واحدة بردّ حتمي (لا LLM يهلوس "أعد الإرسال")
                             this.gatedMessages.set(username, message.trim());
                             this.io.to(roomName).emit('chat_reply', { message: this.gateConfirmReply(userLang) });
-                            return;
+                            return true;
                         }
                         await this.generateChatResponse(message, username, roomName, userLang);
-                        return;
+                        return true;
                     }
                     if (route.action === 'edit') {
                         recordEdit(username, message);
                         this.surgicalEdit(route.instruction || message, projectPath, username, activeProject, roomName, agents, dbStatus);
-                        return;
+                        return true;
                     }
                     if (route.action === 'delete_project') {
                         const lang = getUserLanguage(username) || userLang;
@@ -2960,7 +2996,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                                     ? `⚠️ حذف المشروع «${activeProject}» **نهائي** — الملفات والسجل، ولا يمكن التراجع.\nللتأكيد اكتب حرفياً: **احذف نهائياً ${activeProject}**`
                                     : `⚠️ Deleting "${activeProject}" is **permanent**.\nTo confirm, type exactly: **delete permanently ${activeProject}**`),
                         });
-                        return;
+                        return true;
                     }
                     if (route.action === 'stop') {
                         agents.clearState?.(username);
@@ -2969,13 +3005,18 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         this.io.to(roomName).emit('chat_reply', {
                             message: lang === 'ar' ? '🛑 تم الإيقاف. أخبرني بما تريد.' : '🛑 Stopped. Tell me what you need.',
                         });
-                        return;
+                        return true;
                     }
                     // 'build' → يسقط عمداً للمسار القديم (حوار التوضيح + التأكيد بالهدف)
                 }
             } catch (e) { /* فشل الموجّه → المسار القديم أدناه */ }
         }
+        return false;
+    }
 
+    // كشف التعديل المباشر بالنمط (احتياط الموجّه) — وفي مرحلة الخطة يُعامَل كتعديل عليها.
+    async _handleModifyPattern(req, agents) {
+        const { message, roomName, projectPath, username, activeProject, userLang, dbStatus, clarifierState } = req;
         // ── 1. كشف التعديل المباشر (مسار احتياطي عند فشل الموجّه) ─────────
         // النمط مكتوب بدون همزات لأننا نفحص النص المطبّع (اضف = أضف = إضف)
         // يقبل النقطتين بعد الفعل ("عدّل: ..." التي يقترحها المساعد نفسه) لا المسافة فقط
@@ -2999,13 +3040,18 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     const state = agents.getState(username);
                     if (state) state.answers.push(`edit: ${message}`);
                 }
-                return;
+                return true;
             }
             this.emitLiveLog(roomName, 'INTENT', 'Classifier', 'نية: modify (ثقة: 100%) - قاعدة مباشرة');
             this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
-            return;
+            return true;
         }
+        return false;
+    }
 
+    // تصنيف النية (مصنّف + معنى) ثم build/modify/stop/محادثة بحُرّاسها (الجملة الوصفية، السؤال، الإصرار).
+    async _handleClassifiedIntent(req, agents) {
+        const { message, normalizedMessage, meaningIntent, roomName, projectPath, username, activeProject, userLang, dbStatus } = req;
         // ── 2. تصنيف النية ───────────────────────────────────────────────
         const intentResult = await this.classifyIntent(normalizedMessage || message, username);
         // إذا كشف Text Normalizer النية بثقة عالية — استخدمها
@@ -3032,12 +3078,12 @@ User preferences: ${JSON.stringify(execMemory)}` },
                             '✏️ طلب فعل على مشروع قائم (صُنّف build) → تعديل جراحي مباشر (لا حلقة تأكيد).');
                         recordEdit(username, message);
                         this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
-                        return;
+                        return true;
                     }
                     this.emitLiveLog(roomName, 'INTENT', 'Classifier',
                         '🛡️ جملة غير آمرة على مشروع قائم — ليست بناءً جديداً؛ رد محادثة بدل تأكيد بناء.');
                     await this.generateChatResponse(message, username, roomName, userLang);
-                    return;
+                    return true;
                 }
             }
         }
@@ -3051,7 +3097,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             if (clar?.type === 'clarification') {
                 this.emitLiveLog(roomName, 'INTENT', 'Clarifier', '🎯 طلب استراتيجي — بدء حوار التخطيط');
                 this.io.to(roomName).emit('chat_reply', { message: clar.message, options: clar.options });
-                return;
+                return true;
             }
 
             // ⚡ طلب واضح → تأكيد سريع ثم بناء
@@ -3077,11 +3123,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     this.gatedMessages.set(username, message.trim());
                     this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛡️ صُنّفت modify لكنها جملة إخبارية — حجب لمرة واحدة (الرسالة التالية تُنفَّذ).');
                     this.io.to(roomName).emit('chat_reply', { message: this.gateConfirmReply(userLang) });
-                    return;
+                    return true;
                 }
                 this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛡️ سؤال — رد محادثة (لا تعديل).');
                 await this.generateChatResponse(message, username, roomName, userLang);
-                return;
+                return true;
             }
             // 🔁 رسالة مُعادة بعد حجبها = إصرار → نفّذ (يمنع حلقة "اكتب X")
             if (repeatedGated) {
@@ -3113,14 +3159,15 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     repeated ? '🔁 رسالة بعد حجب — إصرار → تعديل جراحي' : '✏️ طلب على مشروع قائم → تعديل جراحي');
                 recordEdit(username, message);
                 this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
-                return;
+                return true;
             }
             if (hasProject && !isQuestion && !isSmalltalk) {
                 this.gatedMessages.set(username, message.trim());
                 this.io.to(roomName).emit('chat_reply', { message: this.gateConfirmReply(userLang) });
-                return;
+                return true;
             }
             await this.generateChatResponse(message, username, roomName, userLang);
         }
+        return true;
     }
 }
