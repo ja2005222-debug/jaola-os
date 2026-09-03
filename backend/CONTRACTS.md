@@ -74,10 +74,16 @@ frontend/src/hooks/useSocket.js  (19 مستمعاً)
 - **الهوية تبقى `username:activeProject`** حتى إشارة منتجية بسجلّ مهام تاريخي
   (قرار مسجَّل). حين يأتي `missionId` حقيقي يُضاف *حقلاً* إلى `MissionRequest`
   و`enqueueMission` وسجلّ `mission_ledger.json` لا استبدالاً للمفتاح.
-- `dbStatus` مرشَّح للنقل إلى **سياق وقت التشغيل** (`JCRContext`) بدل التمرير
-  اليدوي — تغيير توقيع 6 دوال، يُؤجَّل إلى الخطوة 2 (توحيد التوقيعات) ليُنفَّذ
-  دفعة واحدة مع بقية المعاملات الموضعية (`goal, projectPath, username,
-  activeProject, roomName, agents, dbStatus` تتكرّر حرفياً في 5 توقيعات).
+- ✅ **Sprint 2b**: المعاملات الموضعية المتكرّرة (`projectPath, username,
+  activeProject, roomName, agents, dbStatus`) صارت **`ExecutionContext`** واحداً
+  مجمَّداً (`core/runtime/ExecutionContext.js`) في **11 توقيعاً**:
+  `executeMission`, `_runMissionNow`, `surgicalEdit`, `_runSurgicalEditNow`,
+  `_understandGoal`, `_selectBuildStrategy`, `_enrichBuildContext`,
+  `_reportMissionSuccess`, `_buildFromRegistry`, `_buildFromClone`,
+  `_buildReactProject`. الهدف/التعليمة يبقى معاملاً أول صريحاً (عملٌ لا بيئة).
+  `handleUserMessage` تبنيه مرة واحدة، والمعالجات السبعة عبر
+  `contextFromRequest(req, agents)` — نفس الحقول الستة بالضبط (مثبَّت باختبار
+  تطابق). `dbStatus` لم يعد يعبر أربع طبقات يدوياً: يركب السياق.
 
 ---
 

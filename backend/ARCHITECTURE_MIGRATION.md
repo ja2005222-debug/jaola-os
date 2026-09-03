@@ -782,3 +782,32 @@ ExecutionContext. الدفعة الأولى تضع الأساس بلا تغيي�
   بنفس الناتج ونفس رسالة الدورة. هذا يفتح Sprint 2b: `dependsOn` بين مراحل
   التسليم (مثلاً `behavior-verify` بعد `backend`) بلا لمس النواة.
 - الاختبارات: `tests/taskGraph.test.mjs` (4) + كل خطوط الأساس. **815/815**.
+
+## 🧭 Sprint 2b — ExecutionContext: بيئة المهمة في كائن واحد (2026-09-03)
+
+البند 11 من الخط الأساس («Context موحّد بدل تمرير username/project/roomName/
+agents/projectPath مسطّحاً») نُفِّذ من الكود لا من التصميم: الحقول الستة هي
+بالضبط ما كان يتكرّر حرفياً في توقيعات `jcr.js` — لا حقل واحد اختُرع.
+
+- **`core/runtime/ExecutionContext.js`**: `createExecutionContext({username,
+  activeProject, projectPath, roomName, agents, dbStatus})` → كائن **مجمَّد**
+  (مهمة واحدة لا تُعيد تعريف مشروعها في منتصفها)، بقيم محايدة للناقص (`agents:{}`,
+  `dbStatus:null`) حفاظاً على تسامح المسار الحالي؛ `contextFromRequest(req, agents)`
+  للمعالجات السبعة؛ `withAgents` لمسار التراجع بلا وكلاء.
+- **11 توقيعاً** تحوّلت إلى `(work, ctx)`: `executeMission`, `_runMissionNow`,
+  `surgicalEdit`, `_runSurgicalEditNow`, `_understandGoal`, `_selectBuildStrategy`,
+  `_enrichBuildContext`, `_reportMissionSuccess`, `_buildFromRegistry`,
+  `_buildFromClone`, `_buildReactProject`. الأجساد **حرفية**: كل دالة تفكّ من
+  السياق ما تستعمله فقط (فحص آلي أزال 13 متغيّراً صار غير مستعمل — لا تحذيرات).
+- **الهدف/التعليمة خارج السياق عمداً**: هو *العمل* لا *البيئة*، ويختلف بين
+  استدعاءين على نفس المشروع («اكمل» يبني هدف استئناف جديد) — يبقى معاملاً أول.
+- **`dbStatus`** لم يعد يعبر أربع طبقات يدوياً ليقرأه سطر واحد: يركب السياق.
+- **`agents` الميت انكشف**: `_buildFromRegistry` و`_buildFromClone` كانتا تستقبلان
+  `agents` ولا تستعملانه — مع السياق اختفى المعامل الوهمي بلا تغيير سلوك.
+- 🐛 **عطل أدخلته وأصلحته قبل الدفع**: موضعا `executeMission` داخل
+  `handleUserMessage` نفسها يسبقان تعريف `req` (`Cannot access 'req' before
+  initialization` — كشفته 3 اختبارات فوراً). الإصلاح الصحيح لا الالتفاف:
+  السياق يُبنى **مرة واحدة** في أول `handleUserMessage` ويُستعمل في الموضعين،
+  والمعالجات تبنيه من `req` بنفس الحقول.
+- الاختبارات: `tests/executionContext.test.mjs` (4) + تحديث ثلاث توكيدات كانت
+  تقرأ المعاملات موضعياً (نفس القيم المفحوصة، من الكائن). **819/819**.

@@ -53,6 +53,7 @@ import { classifyIntentFast, decide, buildContinuationGoal, buildStatusReply, mi
 import { setUserLanguage } from './languageDetector.js';
 import { assertBuildAgents, DELIVERY_STAGES } from '../core/contracts/index.js';
 import { orderTasks } from '../core/runtime/TaskGraph.js';
+import { createExecutionContext, contextFromRequest } from '../core/runtime/ExecutionContext.js';
 import { registerMission, throwIfAborted, clearMission } from '../core/runtime/AbortRegistry.js';
 import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import { snapshotWorkspace } from '../services/workspaceStore.js';
@@ -1210,13 +1211,14 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
     // 🚦 كل المهام تمر عبر صف التنفيذ: لا توازي لنفس المشروع + حد توازٍ كلي
     // يحمي حصة الـ LLM — كل مواقع الاستدعاء تبقى كما هي
-    executeMission(goal, projectPath, username, activeProject, roomName, agents, dbStatus) {
+    executeMission(goal, ctx) {
+        const { username, activeProject, roomName } = ctx;
         const lang = resolveGoalLanguage(goal, getUserLanguage(username)); // لا ردّ إنجليزي على طلب عربيّ
         const result = enqueueMission({
             username,
             project: activeProject,
             goal, roomName, // 🧾 للسجلّ الدائم — كي لا تسقط المهمة صامتة عند إعادة التشغيل
-            run: () => this._runMissionNow(goal, projectPath, username, activeProject, roomName, agents, dbStatus),
+            run: () => this._runMissionNow(goal, ctx),
             onWait: (position) => {
                 const msg = lang === 'ar'
                     ? `⏳ الفريق مشغول بمهمة أخرى — مهمتك في الصف (المركز ${position}) وستبدأ تلقائياً.`
@@ -1234,15 +1236,16 @@ User preferences: ${JSON.stringify(execMemory)}` },
         return result;
     }
 
-    async _runMissionNow(goal, projectPath, username, activeProject, roomName, agents, dbStatus) {
+    async _runMissionNow(goal, ctx) {
+        const { projectPath, username, activeProject, roomName, agents, dbStatus } = ctx;
         const { enrichedGoal, blueprint, blueprintContext, domainModelContext } =
-            await this._understandGoal(goal, username, activeProject, roomName);
+            await this._understandGoal(goal, ctx);
 
-        const strategyResult = await this._selectBuildStrategy(goal, blueprint, projectPath, username, activeProject, roomName, agents);
+        const strategyResult = await this._selectBuildStrategy(goal, blueprint, ctx);
         if (strategyResult) return strategyResult;
 
         const { requirementsContext, imageContext, pluginContext } =
-            await this._enrichBuildContext(goal, blueprint, projectPath, username, activeProject, roomName);
+            await this._enrichBuildContext(goal, blueprint, ctx);
 
         const finalGoalWithRequirements = `${enrichedGoal}${blueprintContext}${domainModelContext}\n${requirementsContext}${imageContext}${pluginContext}`;
 
@@ -1300,7 +1303,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             this._learnFromOutcome(roomName, { success: execResult.success });
             if (execResult.success) {
                 transitionState(username, activeProject, STATES.COMPLETED);
-                this._reportMissionSuccess(goal, projectPath, username, activeProject, roomName);
+                this._reportMissionSuccess(goal, ctx);
             }
             if (!execResult.success) {
                 // الحالة FAILED فوراً — لا انتظار لمؤقت القفل العالق
@@ -1345,7 +1348,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
     // ── مراحل _runMissionNow (نُقلت حرفياً — الدفعة 4) ────────────────────
     // 🧭 الفهم: ذاكرة المشروع/الملف الشخصي ← مخطط التطبيق ← نموذج المجال.
     // لا تفشل أبداً (كل خطوة باحتياطها)؛ تُرجع الهدف المُثرى وسياقات الحقن.
-    async _understandGoal(goal, username, activeProject, roomName) {
+    async _understandGoal(goal, ctx) {
+        const { username, activeProject, roomName } = ctx;
         // 🆕 دمج Project Memory + User Profile في سياق الهدف
         const memoryContext = buildMemoryContext(username, activeProject);
         const profileContext = buildProfileContext(username);
@@ -1399,7 +1403,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
     // 🧭 اختيار استراتيجية البناء: Registry (صفحة تسويقية) / Clone (تطبيق مطابق) /
     // React (مشروع كبير جديد) بحماياتها (استئناف، «يعمل فعلاً» → لا استبدال)،
     // وإلا null ← النواة. أي قيمة غير null هي نتيجة المهمة النهائية.
-    async _selectBuildStrategy(goal, blueprint, projectPath, username, activeProject, roomName, agents) {
+    async _selectBuildStrategy(goal, blueprint, ctx) {
+        const { projectPath, username, activeProject, roomName } = ctx;
         // «بناء جديد» = لا شفرة قائمة تُذكر (< 80 حرفاً). تُحسب مرة واحدة: لا مسار
         // أدناه يكتب على القرص قبل أن يُرجع نتيجته، فالقراءة الثانية كانت تكراراً.
         const existingCtx = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
@@ -1441,7 +1446,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         return { success: true, skipped: 'works' };
                     }
                 }
-                return await this._buildFromRegistry(goal, projectPath, username, activeProject, roomName, agents);
+                return await this._buildFromRegistry(goal, ctx);
             }
 
             const clone = (continuation && !isFreshBuild)
@@ -1462,7 +1467,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     apply = broken;
                 }
                 if (apply) {
-                    return await this._buildFromClone(clone, goal, projectPath, username, activeProject, roomName, agents);
+                    return await this._buildFromClone(clone, goal, ctx);
                 }
                 // 🛡️ المشروع القائم يعمل وليس طلب إعادة بناء صريح → لا نُعيد البناء
                 // الكامل (كان مسار Vanilla يدهس الكلون العامل عند «اكمل»). نُبلغ
@@ -1491,7 +1496,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             // فقط لبناء جديد (لا تعديل على مشروع قائم)
             if (stack === 'react-next' && isFreshBuild) {
                 this.emitLiveLog(roomName, 'STACK', 'HybridRouter', `🧰 مشروع كبير → React/Next${starter ? ` (${starter.name})` : ''}`);
-                return await this._buildReactProject(goal, projectPath, username, activeProject, roomName, {
+                return await this._buildReactProject(goal, ctx, {
                     sections: blueprint?.keySections || [], starter,
                 });
             }
@@ -1502,7 +1507,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
     // 🧩 إثراء سياق البناء: محلّل المتطلبات الضمنية + صور مطابقة + توجيهات
     // وكلاء الإضافات (hook beforeBuild). كلها اختيارية.
-    async _enrichBuildContext(goal, blueprint, projectPath, username, activeProject, roomName) {
+    async _enrichBuildContext(goal, blueprint, ctx) {
+        const { projectPath, username, activeProject, roomName } = ctx;
         // 🆕 Smart Requirement Analyzer — يُثري الهدف بمتطلبات ضمنية
         let requirementsContext = '';
         let imageContext = '';
@@ -1539,7 +1545,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
     // 📣 ما بعد النجاح: تقرير التسليم بلغة المستخدم، الاقتراحات، قائمة الملفات،
     // الدفع التلقائي، اللقطة الدائمة، المقاييس، وhook afterBuild.
-    _reportMissionSuccess(goal, projectPath, username, activeProject, roomName) {
+    _reportMissionSuccess(goal, ctx) {
+        const { projectPath, username, activeProject, roomName } = ctx;
         const langMsg = getUserLanguage(username) || 'ar';
 
         // 9️⃣ تقرير التسليم التنفيذي — ماذا أُنجز بالضبط
@@ -1699,11 +1706,12 @@ User preferences: ${JSON.stringify(execMemory)}` },
     }
 
     // ✂️ التعديل الجراحي — يمرّ عبر صف التنفيذ كالبناء (حماية التوازي)
-    surgicalEdit(instruction, projectPath, username, activeProject, roomName, agents, dbStatus) {
+    surgicalEdit(instruction, ctx) {
+        const { username, activeProject, roomName } = ctx;
         const lang = getUserLanguage(username) || 'ar';
         const result = enqueueMission({
             username, project: activeProject,
-            run: () => this._runSurgicalEditNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus),
+            run: () => this._runSurgicalEditNow(instruction, ctx),
             onWait: (position) => this.io.to(roomName).emit('chat_reply', {
                 message: lang === 'ar' ? `⏳ مهمتك في الصف (المركز ${position}).` : `⏳ Queued (position ${position}).`,
             }),
@@ -1748,7 +1756,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             content = JSON.parse(src.slice(src.indexOf('{'), src.lastIndexOf('}') + 1));
         } catch (e) {
             this.emitLiveLog(roomName, 'EDIT', 'AddPage', `⚠️ تعذّر قراءة المحتوى — عودة للبناء: ${e.message}`);
-            return this._runMissionNow(instruction, projectPath, username, activeProject, roomName, {}, null);
+            return this._runMissionNow(instruction, createExecutionContext({ ...ctx, agents: {}, dbStatus: null }));
         }
 
         const pageLabel = this._extractPageName(instruction, lang);
@@ -1917,7 +1925,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
         return { success: false, notFound: name };
     }
 
-    async _runSurgicalEditNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus) {
+    async _runSurgicalEditNow(instruction, ctx) {
+        const { projectPath, username, activeProject, roomName, agents } = ctx;
         const lang = getUserLanguage(username) || 'ar';
         const files = await this.readProjectFilesArray(projectPath);
 
@@ -1950,7 +1959,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // فيدهس الكلون العامل). إضافة الصفحات/الميزات تبقى تعديلاً جراحياً.
         const bigChange = /أعد التصميم|اعد التصميم|أعد البناء|اعد البناء|أعد بناء|اعد بناء|من جديد|من الصفر|ابنِ?\s|ابن\s|أبنِ?\s|تطبيق\s+جديد|موقع\s+جديد|redesign|rebuild|from scratch|start over/i.test(instruction);
         if (files.length === 0 || bigChange || !agents.coreEditCodePlan) {
-            return this._runMissionNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus);
+            return this._runMissionNow(instruction, ctx);
         }
 
         // نوجّه التعديل للمصدر (lib/content.js، المكوّنات) لا لصفحات HTML المولّدة
@@ -2006,7 +2015,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             } catch (e) {
                 this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', `⚠️ تعذّر — عودة للبناء الكامل: ${e.message}`);
                 this.io.to(roomName).emit('stream_done', {});
-                return this._runMissionNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus);
+                return this._runMissionNow(instruction, ctx);
             }
         }
         this.io.to(roomName).emit('stream_done', {});
@@ -2014,7 +2023,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // فشل الجراحي → عودة آمنة للبناء الكامل
         if (!plan || plan.error || !plan.files?.length) {
             this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', '⚠️ بلا نتيجة — عودة للبناء الكامل');
-            return this._runMissionNow(instruction, projectPath, username, activeProject, roomName, agents, dbStatus);
+            return this._runMissionNow(instruction, ctx);
         }
 
         // فحص الملفات المتغيّرة عبر CodeGuard ثم كتابتها فقط
@@ -2128,7 +2137,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
     // 🍔 بناء من كلون عامل — يكتب تطبيقاً يعمل فعلاً، يضع البصمة (تخصيص محتوى
     // آمن مع تراجع عند الكسر)، يتحقّق سلوكياً، ويُنهي كبناءٍ ناجح.
-    async _buildFromClone(clone, goal, projectPath, username, activeProject, roomName, agents) {
+    async _buildFromClone(clone, goal, ctx) {
+        const { projectPath, username, activeProject, roomName } = ctx;
         const lang = resolveGoalLanguage(goal, getUserLanguage(username)); // لا ردّ إنجليزي على طلب عربيّ
         (this.roomLang ||= new Map()).set(roomName, lang);
         const t0 = Date.now();
@@ -2304,7 +2314,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
     // 🧱 بناء بإعادة التركيب من JAOLA Registry — صفحة تسويقيّة/تعريفيّة *كاملة
     // واحترافية* من بلوكات جاهزة مختبَرة (Hero/Features/Pricing/…)، ثم بصمة
     // (علامة/لون) + أيقونة + تلميع. لا توليد من الصفر (أسرع وأنظف وأكمل).
-    async _buildFromRegistry(goal, projectPath, username, activeProject, roomName, agents) {
+    async _buildFromRegistry(goal, ctx) {
+        const { projectPath, username, activeProject, roomName } = ctx;
         const lang = resolveGoalLanguage(goal, getUserLanguage(username)); // لا ردّ إنجليزي على طلب عربيّ
         const t0 = Date.now();
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
@@ -2358,7 +2369,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
     }
 
     // ⚛️ بناء مشروع React/Next حقيقي + معاينة حيّة في الـ iframe + خيار النشر
-    async _buildReactProject(goal, projectPath, username, activeProject, roomName, { sections = [], starter } = {}) {
+    async _buildReactProject(goal, ctx, { sections = [], starter } = {}) {
+        const { projectPath, username, activeProject, roomName } = ctx;
         const lang = getUserLanguage(username) || 'ar';
         const t0 = Date.now();
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
@@ -2473,6 +2485,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
     async handleUserMessage(socket, data, agents, dbStatus) {
         const { message, roomName, projectPath, username, activeProject, uiLang, track } = data;
+        // 🧭 سياق التنفيذ (core/runtime/ExecutionContext): بيئة هذه الرسالة كاملةً
+        // في كائن واحد مجمَّد — يُمرَّر لكل إطلاق مهمة/تعديل بدل ستة معاملات موضعية.
+        // معالجات النية تبنيه من `req` بـ`contextFromRequest` (نفس الحقول الستة).
+        const ctx = createExecutionContext({ username, activeProject, projectPath, roomName, agents, dbStatus });
 
         // 🧭 مسار البناء (موقع/سيستم داخلي) — يصل من زر الواجهة مع كل رسالة
         // ويُحفظ للغرفة كي تلتزم به تأكيدات المتابعة («نعم ابنه الآن»)
@@ -2511,7 +2527,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 const lang = getUserLanguage(username) || userLang;
                 const msg = lang === 'ar' ? '⚡ ممتاز! أبني الآن...' : '⚡ Building now...';
                 this.io.to(roomName).emit('chat_reply', { message: msg });
-                this.executeMission(pendingGoal, projectPath, username, activeProject, roomName, agents, dbStatus);
+                this.executeMission(pendingGoal, ctx);
                 return;
             } else if (isNo) {
                 clearDialog(username);
@@ -2527,7 +2543,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             const lang = getUserLanguage(username) || userLang;
             const msg = lang === 'ar' ? '⚡ ممتاز! أبني الآن...' : '⚡ Building now...';
             this.io.to(roomName).emit('chat_reply', { message: msg });
-            this.executeMission(goal, projectPath, username, activeProject, roomName, agents, dbStatus);
+            this.executeMission(goal, ctx);
             return;
         }
 
@@ -2625,7 +2641,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
     // مرحلة الخطة في حوار التوضيح: تأكيد → بناء، سؤال → ملخّص الخطة، إيقاف/لون/تعديل → تسجيل في الإجابات.
     async _handlePlanningStage(req, agents) {
-        const { message, roomName, projectPath, username, activeProject, userLang, dbStatus, clarifierState } = req;
+        const { message, roomName, username, activeProject, userLang, clarifierState } = req;
         // إذا كنا في مرحلة الخطة — ننتظر تأكيد أو تعديل
         if (clarifierState?.stage === 'planning') {
             if (agents.isConfirmation?.(message)) {
@@ -2645,7 +2661,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     recordProject(username, activeProject, clarifierData.projectType || 'business');
                 }
 
-                this.executeMission(finalGoal, projectPath, username, activeProject, roomName, agents, dbStatus);
+                this.executeMission(finalGoal, contextFromRequest(req, agents));
             } else {
                 // تمييز: هل هو سؤال عن الخطة أم تعديل عليها؟
                 const lang = clarifierState.lang || userLang;
@@ -2749,7 +2765,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
     // «نعم» و«نفذ» المجرّدتان: تنفيذ الطلب المحجوب/الاستئناف/آخر ما نوقش — لا ارتجال شات.
     async _handleBareConfirmations(req, agents) {
-        const { message, roomName, projectPath, username, activeProject, userLang, dbStatus } = req;
+        const { message, roomName, username, activeProject, userLang } = req;
         // 🆕 "نعم/تمام/ok" مجرّدة بلا هدف معلق ولا clarifier: موافقة على
         // المتابعة — إن وُجد مشروع قابل للاستئناف نكمله فعلياً بدل إسقاطها
         // في الشات ليرتجل حواراً (سجل تاكسي: "نعم" كانت تدور بلا فعل).
@@ -2766,7 +2782,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 this.emitLiveLog(roomName, 'INTENT', 'Engine',
                     '✅ "نعم" بعد حجب → تنفيذ الطلب المحجوب تعديلاً موضعياً (لا استئناف عام).');
                 recordEdit(username, gated);
-                this.surgicalEdit(gated, projectPath, username, activeProject, roomName, agents, dbStatus);
+                this.surgicalEdit(gated, contextFromRequest(req, agents));
                 return true;
             }
             const contGoal = buildContinuationGoal(username, activeProject);
@@ -2778,7 +2794,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 this.io.to(roomName).emit('chat_reply', {
                     message: lang === 'ar' ? '⚡ تمام — أكمل من حيث توقفنا...' : '⚡ Alright — resuming where we left off...'
                 });
-                this.executeMission(contGoal, projectPath, username, activeProject, roomName, agents, dbStatus);
+                this.executeMission(contGoal, contextFromRequest(req, agents));
                 return true;
             }
         }
@@ -2801,7 +2817,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         ? `نفّذ على الموقع الحالي ما تم الاتفاق عليه في المحادثة التالية (طلب المستخدم الأصلي ثم وصف المساعد):\n"${message.trim()}" يشير إلى:\n${lastAssistant.content.slice(0, 600)}`
                         : `Apply to the current site what was agreed in chat:\n"${message.trim()}" refers to:\n${lastAssistant.content.slice(0, 600)}`);
                     recordEdit(username, instruction.slice(0, 100));
-                    this.surgicalEdit(instruction, projectPath, username, activeProject, roomName, agents, dbStatus);
+                    this.surgicalEdit(instruction, contextFromRequest(req, agents));
                     return true;
                 }
             } catch (e) { /* سقوط آمن للشات */ }
@@ -2817,7 +2833,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
     // نوايا CEO الحتمية (حالة/تحية/اكمل/انشر/ادفع) قبل أي LLM.
     async _handleCeoIntent(req, agents) {
-        const { message, normalizedMessage, roomName, projectPath, username, activeProject, userLang, dbStatus } = req;
+        const { message, normalizedMessage, roomName, projectPath, username, activeProject, userLang } = req;
         // ── 🧠 CEO Brain: Intent Engine → Decision Engine → Execution ─────
         // النوايا الإدارية (كمل/أين وصلنا/انشر/ادفع/تحية) تُعالج هنا قبل أي LLM
         const fastIntent = classifyIntentFast(normalizedMessage || message);
@@ -2862,7 +2878,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         ? '📂 وجدت المشروع في الذاكرة — الفريق يستأنف من حيث توقف...'
                         : '📂 Project found in memory — the team is resuming where it left off...';
                     this.io.to(roomName).emit('chat_reply', { message: resumeMsg });
-                    this.executeMission(continuationGoal, projectPath, username, activeProject, roomName, agents, dbStatus);
+                    this.executeMission(continuationGoal, contextFromRequest(req, agents));
                     return true;
                 }
 
@@ -2943,7 +2959,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
     // الموجّه الموحّد (نداء LLM منظّم) بشبكة أمان الحجب/الإصرار؛ فشله أو «build» → المسار القديم.
     async _handleUnifiedRoute(req, agents) {
-        const { message, roomName, projectPath, username, activeProject, userLang, dbStatus } = req;
+        const { message, roomName, projectPath, username, activeProject, userLang } = req;
         // ── 🧭 الموجّه الموحّد — نداء LLM منظّم واحد بدل شبكة الـ regex ────
         // المسارات الحتمية الحسّاسة (الحذف، القفل، اكمل، اللغة، clarifier)
         // عملت أعلاه. فشل الموجّه → يسقط بصمت للمسار القديم أدناه (احتياط كامل).
@@ -2973,7 +2989,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                             this.gatedMessages.delete(username);
                             recordEdit(username, message);
                             recordEditAction(username, activeProject);
-                            this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
+                            this.surgicalEdit(message, contextFromRequest(req, agents));
                             return true;
                         }
                         if (hasProj && !isQuestionMessage(message)) {
@@ -2987,7 +3003,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     }
                     if (route.action === 'edit') {
                         recordEdit(username, message);
-                        this.surgicalEdit(route.instruction || message, projectPath, username, activeProject, roomName, agents, dbStatus);
+                        this.surgicalEdit(route.instruction || message, contextFromRequest(req, agents));
                         return true;
                     }
                     if (route.action === 'delete_project') {
@@ -3019,7 +3035,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
     // كشف التعديل المباشر بالنمط (احتياط الموجّه) — وفي مرحلة الخطة يُعامَل كتعديل عليها.
     async _handleModifyPattern(req, agents) {
-        const { message, roomName, projectPath, username, activeProject, userLang, dbStatus, clarifierState } = req;
+        const { message, roomName, username, userLang, clarifierState } = req;
         // ── 1. كشف التعديل المباشر (مسار احتياطي عند فشل الموجّه) ─────────
         // النمط مكتوب بدون همزات لأننا نفحص النص المطبّع (اضف = أضف = إضف)
         // يقبل النقطتين بعد الفعل ("عدّل: ..." التي يقترحها المساعد نفسه) لا المسافة فقط
@@ -3046,7 +3062,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 return true;
             }
             this.emitLiveLog(roomName, 'INTENT', 'Classifier', 'نية: modify (ثقة: 100%) - قاعدة مباشرة');
-            this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
+            this.surgicalEdit(message, contextFromRequest(req, agents));
             return true;
         }
         return false;
@@ -3054,7 +3070,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
     // تصنيف النية (مصنّف + معنى) ثم build/modify/stop/محادثة بحُرّاسها (الجملة الوصفية، السؤال، الإصرار).
     async _handleClassifiedIntent(req, agents) {
-        const { message, normalizedMessage, meaningIntent, roomName, projectPath, username, activeProject, userLang, dbStatus } = req;
+        const { message, normalizedMessage, meaningIntent, roomName, projectPath, username, activeProject, userLang } = req;
         // ── 2. تصنيف النية ───────────────────────────────────────────────
         const intentResult = await this.classifyIntent(normalizedMessage || message, username);
         // إذا كشف Text Normalizer النية بثقة عالية — استخدمها
@@ -3080,7 +3096,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         this.emitLiveLog(roomName, 'INTENT', 'Classifier',
                             '✏️ طلب فعل على مشروع قائم (صُنّف build) → تعديل جراحي مباشر (لا حلقة تأكيد).');
                         recordEdit(username, message);
-                        this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
+                        this.surgicalEdit(message, contextFromRequest(req, agents));
                         return true;
                     }
                     this.emitLiveLog(roomName, 'INTENT', 'Classifier',
@@ -3138,7 +3154,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🔁 تكرار رسالة محجوبة — إصرار المستخدم → تنفيذ التعديل.');
             }
             recordEdit(username, message);
-            this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
+            this.surgicalEdit(message, contextFromRequest(req, agents));
             // Git commit للتعديل يحدث داخل المهمة بعد النجاح
         } else if (finalIntent.intent === 'stop') {
             this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛑 أمر إيقاف.');
@@ -3161,7 +3177,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 this.emitLiveLog(roomName, 'INTENT', 'Classifier',
                     repeated ? '🔁 رسالة بعد حجب — إصرار → تعديل جراحي' : '✏️ طلب على مشروع قائم → تعديل جراحي');
                 recordEdit(username, message);
-                this.surgicalEdit(message, projectPath, username, activeProject, roomName, agents, dbStatus);
+                this.surgicalEdit(message, contextFromRequest(req, agents));
                 return true;
             }
             if (hasProject && !isQuestion && !isSmalltalk) {

@@ -46,12 +46,13 @@ test('__CONFIRM_BUILD__ يُطلق executeMission بالهدف الحرفي وب
     await s.send('__CONFIRM_BUILD__ابنِ متجراً للعطور');
 
     assert.equal(s.calls.executeMission.length, 1);
-    const [goal, projectPath, username, activeProject, roomName] = s.calls.executeMission[0];
+    // العقد الجديد: (goal, ExecutionContext) — نفس سياق الغرفة، في كائن واحد
+    const [goal, ec] = s.calls.executeMission[0];
     assert.equal(goal, 'ابنِ متجراً للعطور');
-    assert.equal(projectPath, s.ctx.projectPath);
-    assert.equal(username, s.ctx.username);
-    assert.equal(activeProject, s.ctx.activeProject);
-    assert.equal(roomName, s.ctx.roomName);
+    assert.equal(ec.projectPath, s.ctx.projectPath);
+    assert.equal(ec.username, s.ctx.username);
+    assert.equal(ec.activeProject, s.ctx.activeProject);
+    assert.equal(ec.roomName, s.ctx.roomName);
     assert.match(s.replies().join('\n'), /أبني الآن|Building now/);
     assertNoHeavyPath(s.calls, 'تأكيد البناء');
 });

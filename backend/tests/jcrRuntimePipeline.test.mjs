@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import path from 'path';
 import { scenario, emptyProject } from './helpers/jcrScenario.mjs';
+import { createExecutionContext } from '../core/runtime/ExecutionContext.js';
 import { getProjectState, STATES } from '../agents/stateMachine.js';
 import { setUserLanguage } from '../agents/languageDetector.js';
 import { resetLessons, topLessons } from '../services/platformLessons.js';
@@ -44,7 +45,7 @@ function kernelScenario(prefix, { coder, architect, qa, extraAgents = {}, dir = 
         needsBackend: () => false,
         ...extraAgents,
     };
-    const run = () => s.rt._runMissionNow(GOAL, dir, s.ctx.username, s.ctx.activeProject, s.ctx.roomName, agents, null);
+    const run = () => s.rt._runMissionNow(GOAL, createExecutionContext({ ...s.ctx, projectPath: dir, agents }));
     const state = () => getProjectState(s.ctx.username, s.ctx.activeProject).state;
     const logAt = (re) => s.logs().split('\n').findIndex(l => re.test(l));
     return { ...s, dir, agentCalls: calls, run, state, logAt };
