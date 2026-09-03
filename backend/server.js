@@ -21,7 +21,6 @@ import BotTenant from './models/BotTenant.js';
 import Conversation from './models/Conversation.js';
 
 import {
-    coreClassifyIntent,
     coreGenerateCodePlan,
     coreEditCodePlan,
     architectReview,
@@ -1959,7 +1958,6 @@ app.post('/api/chat', verifyToken, aiLimit, validate(schemas.sendMessage), valid
     res.json({ accepted: true });
 
     const agents = {
-        coreClassifyIntent,
         coreGenerateCodePlan,
         coreEditCodePlan,
         architectReview,

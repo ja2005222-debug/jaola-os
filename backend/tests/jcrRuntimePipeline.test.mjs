@@ -283,3 +283,23 @@ test('مجلد فيه أكثر من ملف → لا استدعاء للقالب 
     assert.equal(called, 0);
     assert.doesNotMatch(s.logs(), /\[TemplateAgent\]/);
 });
+
+test('عقد الوكلاء: غياب المبرمج → فشل فوري مُسمّى، لا دورات نقاش ولا درس debate_exhausted كاذب', async () => {
+    resetLessons();
+    const s = kernelScenario('pipe12');
+    // kernelScenario يبني الحزمة الكاملة — نُسقط العضو الإلزامي من الحزمة التي تصل للنواة
+    const origRun = s.rt.runDynamicMultiAgentRuntime.bind(s.rt);
+    s.rt.runDynamicMultiAgentRuntime = (context, roomName, agents) => {
+        const { coreGenerateCodePlan, ...rest } = agents; // eslint-disable-line no-unused-vars
+        return origRun(context, roomName, rest);
+    };
+    const result = await s.run();
+    assert.equal(result.success, false);
+    assert.equal(s.state(), STATES.FAILED);
+    assert.match(s.logs(), /عقد الوكلاء ناقص — أعضاء إلزامية غائبة: coreGenerateCodePlan/);
+    assert.doesNotMatch(s.logs(), /كتابة الشفرة \(دورة 1/);
+    assert.doesNotMatch(s.logs(), /is not a function/);
+    assert.equal(s.agentCalls.architect.length, 0);
+    assert.equal(s.agentCalls.qa.length, 0);
+    assert.ok(!topLessons().some(l => l.key === 'debate_exhausted'), JSON.stringify(topLessons()));
+});

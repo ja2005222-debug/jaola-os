@@ -67,6 +67,7 @@ const LOG_DICT = [
     ['تعذّر تحليل المهمة (', 'Mission analysis unavailable ('],
     [') — الاحتياط الحتمي: ميزانية medium (', ') — deterministic fallback: medium budget ('],
     ['لا مزوّد AI مُهيأ', 'no AI provider configured'],
+    ['عقد الوكلاء ناقص — أعضاء إلزامية غائبة: ', 'Agent contract incomplete — required members missing: '],
     ['مهمة سابقة (كانت جارية) سقطت مع إعادة تشغيل الخادم: ', 'A previous mission (was running) was lost to a server restart: '],
     ['مهمة سابقة (كانت منتظرة) سقطت مع إعادة تشغيل الخادم: ', 'A previous mission (was waiting) was lost to a server restart: '],
     ['لم يُنجز أي وكيل من ', 'No agent delivered out of '],
