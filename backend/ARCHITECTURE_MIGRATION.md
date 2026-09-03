@@ -118,7 +118,7 @@ POST /api/chat  (server.js:1953)
 | الملف | الحالة | الإجراء |
 |---|---|---|
 | `services/agentOrchestrator.js` | 🔴 كان ميتاً — صفر مستدعين | ✅ **حُذف** (2026-09-02، 735/735 اختبار سليم بعده) |
-| `agents/jcr.js` | 🟡 حيّ، مسارٌ واحد متماسك لكنه ضخم (3059 سطراً) | **KEEP + استخراج تدريجي لاحقاً** (لم يُخطَّط تفصيلياً بعد) |
+| `agents/jcr.js` | 🟡 حيّ، مسارٌ واحد متماسك لكنه ضخم (~3040 سطراً) — **شُرِّح بالكامل** (القسم الأخير أدناه) | **KEEP** — أول شبكة أمان أُضيفت (`tests/jcrRuntime.test.mjs`)، كودٌ ميت حُذف، والاستخراج مشروطٌ بتوسيع الاختبارات |
 | `agents/ceoBrain.js` | 🟢 حيّ — يُستدعى من jcr.js، تصنيف نيّة وقرار | **KEEP** |
 | `core/PluginOrchestrator.js` | 🟢 حيّ، نظامٌ مستقلٌّ عن قصد (إضافات + مسار أدمن اختباري) | **KEEP كما هو — لا توحيد** |
 | `services/missionQueue.js` | 🟢 حيّ — فُحص بالكامل (78 سطراً) | **KEEP** — راجع التحليل أدناه |
@@ -226,3 +226,84 @@ percent}, lastActivity, updatedAt }` — و`progress.works` (true/false/null)
 العقود" ليست صياغة رسمية لما هو قائم — بل **تصميمٌ جديدٌ فعلي** لأربعة
 من ستة عقود، وهذا عملٌ أكبر من إعادة توثيق، ويستحق جلسةً مخصَّصة له
 لاحقاً بدل استخراج غير متعجّل من هذه الجلسة.
+
+## 🔬 jcr.js — التشريح الكامل (2026-09-03)
+
+### الحقيقة الأولى: صفر تغطية اختبارية للمسار الجوهري — وأول شبكة أمان
+86 ملف اختبار / 735 اختباراً: **لا واحد** يستورد `agents/jcr.js` ولا
+`agents/index.js` ولا `server.js`، ولا اختبار يلمس `/api/chat` أو
+`handleUserMessage` (grep على `tests/`). أي تفكيك للملف كان سيجري بلا أي
+شبكة أمان — لذا كانت هذه الخطوة الأولى لا الاستخراج.
+
+✅ **أُنجز**: `tests/jcrRuntime.test.mjs` — 8 اختبارات *توصيفية*
+(characterization) للفروع الحتمية في `handleUserMessage` التي تعمل بلا
+نموذج لغوي: `__CONFIRM_BUILD__`، الهدف المعلّق (نعم/لا)، قفل اللغة، نية
+الحذف وتأكيده الحرفي وحماية `sandbox_app`، توليد الصور/البنّر. الأسلوب:
+`io` وهمي يلتقط البثّ، حقيبة `agents` وهمية، واستبدال
+`executeMission/surgicalEdit/generateChatResponse` بمسجِّلات — فلا LLM ولا
+شبكة ولا كتابة مشاريع. حقيقتان مُقاستان: استيراد `jcr.js` ينجح بلا أي مفتاح
+API (`groq` يصبح `null` في `baseAgent.js:11`)، و`node --test` يخرج وحده
+بعد بناء الـruntime (<1 ثانية) — أي لا مؤقّتات ولا اتصالات معلّقة عند
+التحميل.
+
+ملاحظة منهجية: تاريخ git للمستودع كله يبدأ في 2026-08-05 (#299) — كل ملف
+يُظهر commit جذر واحداً، فـ`git log --follow` **لا يفيد** في أي أثر تاريخي
+هنا (بخلاف ما نفع به في `agentOrchestrator.js`، حيث أكّد فقط غياب أي تعديل).
+
+### الحقيقة الثانية: ثلاث دوال عملاقة ≈ 53% من الملف
+| الدالة | الحجم | الطبيعة الفعلية |
+|---|---|---|
+| `runDynamicMultiAgentRuntime` | ~630 سطراً | خطٌّ مستقيم من ~18 مرحلة وكيل (Template → Designer → حلقة Coder/نقّاد → Review → Refactor → Testing → Requirements → SEO → Security → Git → Backend team → DB → Postgres → Auth → Advanced → FullStack → Render → تحقّق سلوكي → ModelLibrary)، كل مرحلة في `try/catch` تتخطّى بـ«⚠️ تخطّي» |
+| `handleUserMessage` | ~640 سطراً | شجرة توجيه من ~15 فرعاً محروساً، 12+ موضع إطلاق لـ`executeMission`/`surgicalEdit`/`generateChatResponse`، كثيفة بتعليقات «عطل إنتاجي حقيقي» — أعلى قيمة وأعلى خطورة |
+| `_runMissionNow` | ~350 سطراً | اختيار استراتيجية البناء (Registry / Clone / React / Vanilla) بحمايات الاستئناف، ثم «النواة» (المراحل 1 → 2 → 3 → 5 → 6) |
+
+### الحقيقة الثالثة: «الطبقة المعرفية» (JCOS v4.0) زخرفية في معظمها — بالدليل
+- **`runExecutiveBrain`**: استدعاء Groq كامل يُنتج `taskGraph`/`priorityQueue`
+  **لا يقرؤهما أي سطر** (grep: تُضبط ثم يُعدّ طولها في سطر سجل واحد فقط).
+  مخرجه الوحيد المستهلَك هو `actionType = 'STOP_AND_ASK'` عند استنفاد
+  الميزانية — وهو **غير قابل للوصول عملياً**: الميزانية تُنشأ جديدة في
+  `buildMissionAndMeta` مباشرة قبله (`apiCallsUsed = 1` من ≥ 7، والمؤقّت
+  180 ثانية بدأ للتوّ). الصافي لكل مهمة: استدعاء LLM + وحدة ميزانية + زمن
+  انتظار، مقابل سطر «✓ N مهام فرعية».
+- **`buildMissionAndMeta`**: استدعاء LLM واحد. المُستهلَك فعلاً: `visualIdentity`
+  (يصل للمصمّم والمبرمج والذاكرة التنفيذية وذاكرة المشروع) + الأولوية ← حجم
+  الميزانية. أما `businessGoal/technicalGoal/successCriteria/risks` فلا تُقرأ
+  إلا مسلسلةً داخل prompt `runExecutiveBrain` (الذي لا يُقرأ مخرجه)،
+  و`confidence/unknowns/needsUserClarification` ← سجلّ فقط.
+- **`runReflectionAndSelfImprovement`**: يكتب `{missionId, goal, success,
+  retries, takeaways: 'نجحت'|'فشلت'}` إلى `memory/reflection_knowledge_graph.json`
+  (آخر 50) — **لا قارئ** في `backend/` ولا `frontend/src` (grep). «التحسين
+  الذاتي» = سجلّ إلحاقي لا يقرؤه أحد؛ التعلّم الحقيقي الوحيد في النظام هو
+  `platformLessons.recordLesson` (يُستهلَك فعلاً في المولّد لاحقاً).
+- **`runCuriosityInBackground`**: يفحص هل `styles.css` > 5000 حرف ويطبع سطر
+  سجل. لا فعل.
+- **`CognitiveCapabilities.runSecurityAudit`**: يفحص فقط `innerHTML` بلا
+  `textContent` في `index.html` — يُستهلَك فعلاً كنقد في حلقة النقاش (حقيقي
+  لكنه بدائي جداً لاسمه).
+- **`missionId = mission_<timestamp>`** موجود في `JCRContext` لكنه يظهر في
+  السجل والتأمل فقط — لا يصل للطابور ولا لآلة الحالة (يؤكّد قسم
+  `username:project` أعلاه بالدليل من الجهة الأخرى).
+- ✅ **حُذف الآن (صفر قرّاء، grep)**: `generateAIImage` — كانت تكتب SVG
+  **وهمياً** معنوناً «🖼️ صورة ذكاء اصطناعي» في مجلد المستخدم — وغير قابلة
+  للوصول أصلاً لأن `coreGenerateCodePlan` يعيد `images: []` دائماً
+  (`coderAgent.js:234`)؛ ومعها `context.images` وموضع استهلاكه؛ والحقول
+  الوهمية `gitState`/`previousBuilds`/`resources = {cpu:14, ram:42, latency:12}`
+  في `WorldRepresentation`؛ و`JCRContext.reflection`. **743/743** بعدها.
+
+### القرارات
+1. ⏭️ **PR منفصل تالٍ**: إزالة استدعاء LLM في `runExecutiveBrain` (+ بوابة
+   `actionType` غير القابلة للوصول). تغييرٌ سلوكي *إيجابي* (−1 استدعاء Groq
+   لكل مهمة، −زمن انتظار، +وحدة ميزانية لحلقة الكود الفعلية) لكنه يستحق PR
+   مستقلاً قابلاً للتراجع وحده — لا يُخلط بحذف الكود الميت الصِّرف.
+2. ⏸️ **مؤجَّل (قرارٌ منتجي لا تقني)**: حذف `runReflectionAndSelfImprovement`
+   و`runCuriosityInBackground`. كلاهما يظهر للمستخدم في سجل البناء الحي
+   («6. REFLECTION ✓ تم الحفظ»، «5. CURIOSITY 🧩 فضول تلقائي»)، فحذفهما
+   يغيّر ما يراه المستخدم (اختفاء «تعلّم» لم يكن يحدث أصلاً). التوصية: حذف
+   صريح، أو استبدال بتعلّم حقيقي عبر `platformLessons` — القرار للمالك.
+3. 🚫 **لا تفكيك للدوال العملاقة الثلاث بعد.** الشرط المسبق: توسيع الاختبار
+   التوصيفي ليغطي (أ) بقية فروع `handleUserMessage` الحتمية (undo، clarifier،
+   الرسائل المحجوبة/الإصرار، «نفذ» المجرّدة)، و(ب) اختيار الاستراتيجية في
+   `_runMissionNow` بحقن `agents` وهمية. خريطة الاستخراج حين يحين وقتها:
+   `runDynamicMultiAgentRuntime` ← دوال مرحلة بتوقيع موحّد
+   `(context, roomName, agents) → result` — وهذا هو **عقد Agent الحقيقي
+   الأول** (Phase 1) ينبثق من الكود القائم لا من تصميم نظري.
