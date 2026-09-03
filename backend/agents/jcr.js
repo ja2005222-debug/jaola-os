@@ -56,7 +56,7 @@ import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import { snapshotWorkspace } from '../services/workspaceStore.js';
 import { orchestrator } from '../core/PluginOrchestrator.js';
 import { guardFiles, guardSingleJS, scrubPlaceholders, ensureEditIntegrity } from '../services/codeGuard.js';
-import { recordLesson } from '../services/platformLessons.js';
+import { recordLesson, recordMissionOutcome, recordBehaviorGaps, matureLessons, lessonDirective, MIN_COUNT_TO_TEACH } from '../services/platformLessons.js';
 import { getPlatformKnowledge } from '../services/platformKnowledge.js';
 import { getProjectSecrets } from '../services/projectSecrets.js';
 import { buildImageContext } from '../services/imageService.js';
@@ -144,16 +144,6 @@ const CognitiveCapabilities = {
             }
         });
         return { isSafe, critique };
-    },
-    runPerformanceAudit(files) {
-        let score = 95, recommendations = [];
-        files.forEach(file => {
-            if (file.name === 'styles.css' && file.content.length > 5000) {
-                score = 80;
-                recommendations.push("حجم ملف CSS كبير نسبياً، يرجى اختصاره وتفادي التكرار.");
-            }
-        });
-        return { score, recommendations };
     }
 };
 
@@ -181,7 +171,6 @@ export class JaolaCognitiveRuntime {
     constructor(ioInstance) {
         this.io = ioInstance;
         this.memoryDir = path.resolve(__dirname, '../memory');
-        this.reflectionPath = path.join(this.memoryDir, 'reflection_knowledge_graph.json');
         this.executiveMemoryPath = path.join(this.memoryDir, 'executive_memory.json');
         // 🔁 كاسر الحلقات: آخر رسالة حُجبت عن التعديل (بوابة الفعل) لكل مستخدم —
         // تكرارها حرفياً = إصرار صريح → تُنفَّذ كتعديل بدل حلقة "اكتب X" اللانهائية.
@@ -913,31 +902,30 @@ export class JaolaCognitiveRuntime {
         throw new Error(`فشل الفريق بعد ${maxDebateCycles} دورات. آخر الانتقادات: ${JSON.stringify(lastCritiques)}`);
     }
 
-    async runCuriosityInBackground(context, roomName) {
+    // 📚 التعلّم الحقيقي بعد كل مهمة — عبر ذاكرة دروس المنصة (platformLessons).
+    // حلّ محلّ «runReflectionAndSelfImprovement» (كانت تكتب JSON لا يقرؤه أحد)
+    // و«runCuriosityInBackground» (سطر سجل عن حجم CSS). لا LLM: سبب الفشل يُصنَّف
+    // حتمياً ويتراكم، وبعد MIN_COUNT_TO_TEACH تكرارات يصبح توجيهاً دائماً في
+    // prompt المولّد (coderAgent ← buildLessonsPromptBlock) إن كان مما يستطيع
+    // المولّد تجنّبه، وإلا بقي نمطاً مرئياً للمشرف. السجل صادق: يظهر فقط حين
+    // يُسجَّل درس فعلاً أو يُبنى المشروع بدروس ناضجة.
+    _learnFromOutcome(roomName, { success = false, error = null } = {}) {
         try {
-            this.emitLiveLog(roomName, '5. CURIOSITY', 'Curiosity', '🧩 فضول تلقائي...');
-            const perf = CognitiveCapabilities.runPerformanceAudit(context.files);
-            if (perf.score < 90 && perf.recommendations.length) {
-                this.emitLiveLog(roomName, '5. CURIOSITY', 'Curiosity', `🔎 تحسين الأداء (${perf.score}%)...`);
+            const entry = recordMissionOutcome({ success, error });
+            if (entry) {
+                const matured = entry.count >= MIN_COUNT_TO_TEACH;
+                const tail = !matured ? ''
+                    : lessonDirective(entry) ? ' — أصبح توجيهاً دائماً للمولّد'
+                    : ' — نمطٌ متكرر يظهر للمشرف';
+                this.emitLiveLog(roomName, '6. LEARNING', 'Lessons', `📚 درس مسجَّل: ${entry.key} (تكرار ${entry.count})${tail}`);
+                return entry;
             }
-        } catch (e) {}
-    }
-
-    async runReflectionAndSelfImprovement(context, roomName, isSuccess) {
-        const node = {
-            missionId: context.missionId, timestamp: new Date().toISOString(), goal: context.goal,
-            success: isSuccess, retries: context.internalDebate.criticTranscripts.length,
-            takeaways: isSuccess ? 'نجحت' : 'فشلت'
-        };
-        try {
-            let kg = [];
-            if (fs.existsSync(this.reflectionPath)) {
-                kg = JSON.parse(await fsPromises.readFile(this.reflectionPath, 'utf-8') || "[]");
+            if (success) {
+                const n = matureLessons().filter(lessonDirective).length;
+                if (n) this.emitLiveLog(roomName, '6. LEARNING', 'Lessons', `📚 بُني هذا المشروع بـ${n} درساً متراكماً من مشاريع سابقة`);
             }
-            kg.push(node);
-            await fsPromises.writeFile(this.reflectionPath, JSON.stringify(kg.slice(-50), null, 2));
-            this.emitLiveLog(roomName, '6. REFLECTION', 'Learning', '✓ تم الحفظ.');
-        } catch (e) { console.warn('[Reflection]', 'فشل حفظ رسم المعرفة:', e.message); }
+        } catch (e) { console.warn('[Lessons]', 'تعذّر تسجيل الدرس:', e.message); }
+        return null;
     }
 
     async classifyIntent(userMessage, username) {
@@ -1372,7 +1360,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 // بقفل "مهمة تعمل" حتى ينقذه مؤقت العشر دقائق
                 transitionState(username, activeProject, STATES.FAILED, { error: runtimeError.message });
                 this.emitAgentError(roomName, 'coder');
-                await this.runReflectionAndSelfImprovement(context, roomName, false);
+                this._learnFromOutcome(roomName, { success: false, error: runtimeError });
                 this.emitLiveLog(roomName, 'JCOS', 'Kernel', `❌ فشل نهائياً: ${runtimeError.message}`);
                 // 💬 الشات لا يصمت عند الفشل — رسالة حتمية بلغة المستخدم (بلا نموذج)
                 this.io.to(roomName).emit('chat_reply', {
@@ -1383,10 +1371,9 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
             if (execResult.success) {
                 this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
-                this.runCuriosityInBackground(context, roomName);
             }
 
-            await this.runReflectionAndSelfImprovement(context, roomName, execResult.success);
+            this._learnFromOutcome(roomName, { success: execResult.success });
             if (execResult.success) {
                 transitionState(username, activeProject, STATES.COMPLETED);
                 const langMsg = getUserLanguage(username) || 'ar';
@@ -1484,7 +1471,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             }
             this.emitAgentError(roomName, 'planner');
             this.emitLiveLog(roomName, 'JCOS', 'Kernel', `❌ تعطلت المهمة: ${error.message}`);
-            await this.runReflectionAndSelfImprovement(context, roomName, false);
+            this._learnFromOutcome(roomName, { success: false, error });
             return { success: false, error: error.message };
         } finally {
             clearMission(roomName);
@@ -1544,6 +1531,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     }
                 }
             }
+            recordBehaviorGaps(verdict); // 📚 ما بقي من ثغرات بعد الإصلاح = ما يستلمه المستخدم = درس للمنصة
             return verdict;
         } catch (e) { console.warn('[BehaviorVerify]', 'تعذّر التحقّق السلوكي:', e.message); return null; }
     }
