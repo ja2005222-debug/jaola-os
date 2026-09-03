@@ -64,7 +64,7 @@ import { generateBlueprint, buildBlueprintContext } from './appBlueprint.js';
 import { recommendFullStack, buildFullStackProject } from './fullstackTemplates.js';
 import { recordScore, recordBuild, recordEditAction, buildMetricsPayload } from '../services/metricsStore.js';
 import { setPendingGoal, getPendingGoal, consumePendingGoal, clearDialog } from '../services/conversationManager.js';
-import { enqueueMission } from '../services/missionQueue.js';
+import { enqueueMission, takeLostMission } from '../services/missionQueue.js';
 import { loadForPrompt as loadConversation, recordTurn } from '../services/conversationStore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1220,6 +1220,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const result = enqueueMission({
             username,
             project: activeProject,
+            goal, roomName, // 🧾 للسجلّ الدائم — كي لا تسقط المهمة صامتة عند إعادة التشغيل
             run: () => this._runMissionNow(goal, projectPath, username, activeProject, roomName, agents, dbStatus),
             onWait: (position) => {
                 const msg = lang === 'ar'
@@ -2491,6 +2492,19 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const userLang = initUserLanguage(username, message);
         // 🌐 لغة الغرفة — يقرؤها قمع emitLiveLog ليترجم سجلّ البناء الحي
         (this.roomLang ||= new Map()).set(roomName, userLang);
+
+        // 🧾 مهمة سقطت مع إعادة تشغيل الخادم قبل اكتمالها؟ نقولها بصدق مرة واحدة
+        // (كانت تختفي بلا أثر: لا رسالة ولا سجل — المستخدم ينتظر بناءً لن يأتي)
+        const lost = takeLostMission(username, activeProject);
+        if (lost) {
+            const goalHint = (lost.goal || '').slice(0, 60);
+            this.emitLiveLog(roomName, 'QUEUE', 'Ledger', `🧾 مهمة سابقة (${lost.state === 'running' ? 'كانت جارية' : 'كانت منتظرة'}) سقطت مع إعادة تشغيل الخادم: ${goalHint}`);
+            this.io.to(roomName).emit('chat_reply', {
+                message: userLang === 'en'
+                    ? `⚠️ Heads-up: your previous mission${goalHint ? ` ("${goalHint}")` : ''} was interrupted by a server restart before it finished. Type "continue" to resume it, or send the request again.`
+                    : `⚠️ تنبيه: مهمتك السابقة${goalHint ? ` («${goalHint}»)` : ''} انقطعت بإعادة تشغيل الخادم قبل اكتمالها. اكتب «اكمل» لاستئنافها، أو أعد إرسال الطلب.`,
+            });
+        }
 
         // 🆕 Conversation Manager — فحص الهدف المعلق (دائم، ينجو من إعادة النشر)
         if (getPendingGoal(username)) {

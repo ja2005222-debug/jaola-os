@@ -7,11 +7,47 @@
  * - يمنع بنائين متوازيين لنفس المشروع (username:project)
  * - يحد التوازي الكلي عبر MAX_CONCURRENT_MISSIONS (افتراضي 2)
  * - يخبر المستخدم بمركزه في الصف بدل صمت الانتظار
+ * - 🧾 سجلّ دائم (memory/mission_ledger.json): المهام الجارية/المنتظرة تُكتب
+ *   على القرص، فعند إعادة تشغيل العملية لا تختفي بلا أثر — تُقرأ كـ«مهام
+ *   ساقطة» ويُخبَر صاحبها في أول رسالة (كانت الحالة كلها في الذاكرة فتضيع صامتة).
  */
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const LEDGER_FILE = process.env.MISSION_LEDGER_PATH || path.join(__dirname, '../memory/mission_ledger.json');
 
 const waiting = [];               // المهام المنتظرة
 let runningCount = 0;
 const activeKeys = new Set();     // مشاريع قيد التنفيذ الآن
+const inflight = new Map();       // key → { username, project, goal, roomName, state, enqueuedAt } (للسجلّ)
+const lostMissions = new Map();   // key → ما تركته العملية السابقة بلا إكمال
+
+function writeLedger() {
+    try {
+        fs.mkdirSync(path.dirname(LEDGER_FILE), { recursive: true });
+        fs.writeFileSync(LEDGER_FILE, JSON.stringify([...inflight.values()], null, 2));
+    } catch (e) { console.warn('[MissionQueue] تعذّر كتابة سجلّ المهام:', e.message); }
+}
+
+// عند التحميل: كل ما بقي في السجلّ هو مهمة لم تُكمل — العملية السابقة ماتت فوقها
+function restoreLedger() {
+    try {
+        if (!fs.existsSync(LEDGER_FILE)) return;
+        const rows = JSON.parse(fs.readFileSync(LEDGER_FILE, 'utf-8') || '[]');
+        for (const r of Array.isArray(rows) ? rows : []) noteLostMission(r);
+        if (lostMissions.size) console.warn(`[MissionQueue] ${lostMissions.size} مهمة سقطت مع إعادة التشغيل السابقة — ستُبلَّغ لأصحابها.`);
+        fs.writeFileSync(LEDGER_FILE, '[]');
+    } catch (e) { console.warn('[MissionQueue] تعذّر قراءة سجلّ المهام:', e.message); }
+}
+/** تسجيل مهمة ساقطة (من السجلّ عند التحميل، أو من الاختبارات) */
+export function noteLostMission(entry) {
+    if (!entry?.username || !entry?.project) return false;
+    lostMissions.set(`${entry.username}:${entry.project}`, entry);
+    return true;
+}
+restoreLedger();
 
 const MAX_CONCURRENT = Math.max(1, Number(process.env.MAX_CONCURRENT_MISSIONS) || 2);
 
@@ -24,6 +60,8 @@ function pump() {
         const job = waiting.splice(idx, 1)[0];
         runningCount++;
         activeKeys.add(job.key);
+        const entry = inflight.get(job.key);
+        if (entry) { entry.state = 'running'; entry.startedAt = Date.now(); writeLedger(); }
 
         Promise.resolve()
             .then(job.run)
@@ -31,6 +69,8 @@ function pump() {
             .finally(() => {
                 runningCount--;
                 activeKeys.delete(job.key);
+                inflight.delete(job.key);
+                writeLedger();
                 pump();
             });
     }
@@ -40,7 +80,7 @@ function pump() {
  * إدراج مهمة — تنفذ فوراً إن توفرت سعة، وإلا تنتظر بدورها.
  * onWait(position) يُستدعى فقط عند الانتظار الفعلي.
  */
-export function enqueueMission({ username, project, run, onWait }) {
+export function enqueueMission({ username, project, run, onWait, goal = '', roomName = '' }) {
     const key = `${username}:${project}`;
 
     // نفس المشروع يبني الآن؟ ارفض — الحماية من التوازي الذاتي
@@ -54,6 +94,8 @@ export function enqueueMission({ username, project, run, onWait }) {
 
     const willWait = runningCount >= MAX_CONCURRENT;
     waiting.push({ key, run, enqueuedAt: Date.now() });
+    inflight.set(key, { username, project, goal: String(goal || '').slice(0, 200), roomName, state: 'waiting', enqueuedAt: Date.now() });
+    writeLedger();
 
     if (willWait && onWait) {
         onWait(waiting.length);
@@ -76,3 +118,18 @@ export function isMissionActive(username, project) {
     const key = `${username}:${project}`;
     return activeKeys.has(key) || waiting.some(j => j.key === key);
 }
+
+/**
+ * 🧾 مهمة سقطت مع إعادة تشغيل سابقة لهذا المشروع؟ تُؤخذ مرة واحدة (تُحذف)
+ * — يستعملها jcr ليُخبر المستخدم بصدق بدل الصمت، ثم لا يكرّر الإشعار.
+ */
+export function takeLostMission(username, project) {
+    const key = `${username}:${project}`;
+    const lost = lostMissions.get(key) || null;
+    if (lost) lostMissions.delete(key);
+    return lost;
+}
+
+/** مسار السجلّ الفعلي (للاختبارات والتشخيص) */
+export function ledgerPath() { return LEDGER_FILE; }
+
