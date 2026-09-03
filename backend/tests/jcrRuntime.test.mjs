@@ -9,7 +9,7 @@
 // فلا LLM ولا شبكة ولا كتابة مشاريع على القرص.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { JaolaCognitiveRuntime } from '../agents/jcr.js';
+import { JaolaCognitiveRuntime, resolveProjectType } from '../agents/jcr.js';
 import { setPendingGoal, getPendingGoal } from '../services/conversationManager.js';
 import { setUserLanguage, getUserLanguage } from '../agents/languageDetector.js';
 import { resetLessons } from '../services/platformLessons.js';
@@ -234,3 +234,11 @@ test('بنّر: «غير صورة البنر» يُمرَّر بعلم hero إل
     assert.equal(seen[0].hero, true);
     assertNoHeavyPath(s.calls, 'بنّر');
 });
+
+test('resolveProjectType: فئة المخطّط تُعتمد من النموذج فقط — الاحتياط وother يسقطان إلى كشف الكلمات', () => {
+    assert.equal(resolveProjectType('متجر عطور', { category: 'ecommerce', _source: 'llm' }), 'ecommerce');
+    assert.equal(resolveProjectType('متجر عطور', { category: 'business', _source: 'fallback' }), 'ecommerce', 'الاحتياط لا يُعتمد');
+    assert.equal(resolveProjectType('متجر عطور', { category: 'other', _source: 'llm' }), 'ecommerce', 'other لا تُعتمد');
+    assert.equal(resolveProjectType('متجر عطور', null), 'ecommerce', 'بلا مخطّط');
+});
+

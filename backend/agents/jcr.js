@@ -167,6 +167,17 @@ async function writePlanFiles(projectPath, files) {
 // ==========================================
 // 🚀 JAOLA Cognitive Runtime
 // ==========================================
+/**
+ * نوع المشروع للتوجيه والمتطلبات: فئة المخطّط فقط حين تأتي من النموذج —
+ * الاحتياط يضع 'business' دائماً فكان يعطّل الموجّه الهجين ومحلّل المتطلبات
+ * كلما غاب الـLLM (عطل كشفه التوصيف، راجع ARCHITECTURE_MIGRATION.md).
+ */
+export function resolveProjectType(goal, blueprint) {
+    return blueprint?.category && blueprint.category !== 'other' && blueprint._source !== 'fallback'
+        ? blueprint.category
+        : detectProjectType(goal);
+}
+
 export class JaolaCognitiveRuntime {
     constructor(ioInstance) {
         this.io = ioInstance;
@@ -658,10 +669,8 @@ export class JaolaCognitiveRuntime {
             if (seoResult.success) {
                 plan.files = seoResult.files;
                 // حفظ robots.txt و sitemap.xml
-                const { promises: fsp } = await import('fs');
-                const pathMod = await import('path');
                 for (const file of seoResult.newFiles) {
-                    await fsp.writeFile(pathMod.default.join(context.projectPath, file.name), file.content);
+                    await fsPromises.writeFile(path.join(context.projectPath, file.name), file.content);
                 }
                 this.emitLiveLog(roomName, '5. RUNTIME', 'SEOAgent', `✅ ${seoResult.summary}`);
                 // 📊 حزمة SEO كاملة طُبقت (robots + sitemap + meta + schema)
@@ -679,10 +688,8 @@ export class JaolaCognitiveRuntime {
             const secResult = await runSecurity(plan.files);
             if (secResult.success) {
                 plan.files = secResult.fixedFiles;
-                const { promises: fsp } = await import('fs');
-                const pathMod = await import('path');
                 for (const file of secResult.newFiles) {
-                    await fsp.writeFile(pathMod.default.join(context.projectPath, file.name), file.content);
+                    await fsPromises.writeFile(path.join(context.projectPath, file.name), file.content);
                 }
                 const secEmoji = secResult.grade === 'A' ? '✅' : secResult.grade === 'B' ? '🟡' : '🟠';
                 this.emitLiveLog(roomName, '5. RUNTIME', 'SecurityAgent',
@@ -843,12 +850,10 @@ export class JaolaCognitiveRuntime {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'DatabaseAgent', '🗄️ جاري توليد قاعدة البيانات...');
                 const dbResult = await generateDatabase(context.originalGoal, projectType, context.projectPath);
                 if (dbResult.success) {
-                    const { promises: fsp } = await import('fs');
-                    const pathMod = await import('path');
                     for (const file of dbResult.files) {
-                        const filePath = pathMod.default.join(context.projectPath, file.name);
-                        await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
-                        await fsp.writeFile(filePath, file.content);
+                        const filePath = path.join(context.projectPath, file.name);
+                        await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
+                        await fsPromises.writeFile(filePath, file.content);
                     }
                     this.emitLiveLog(roomName, '5. RUNTIME', 'DatabaseAgent',
                         `✅ ${dbResult.summary}`
@@ -869,12 +874,10 @@ export class JaolaCognitiveRuntime {
                     const projectType = context.mentalModel?.designBrief?.projectType || 'ecommerce';
                     const pgResult = await generatePrismaSetup(context.originalGoal, projectType);
                     if (pgResult.success) {
-                        const { promises: fsp } = await import('fs');
-                        const pathMod = await import('path');
                         for (const file of pgResult.files) {
-                            const filePath = pathMod.default.join(context.projectPath, file.name);
-                            await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
-                            await fsp.writeFile(filePath, file.content);
+                            const filePath = path.join(context.projectPath, file.name);
+                            await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
+                            await fsPromises.writeFile(filePath, file.content);
                         }
                         this.emitLiveLog(roomName, '5. RUNTIME', 'PostgresAgent',
                             `✅ ${pgResult.summary}`
@@ -891,12 +894,10 @@ export class JaolaCognitiveRuntime {
                     this.emitLiveLog(roomName, '5. RUNTIME', 'AuthAgent', '🔐 جاري توليد نظام المصادقة...');
                     const authResult = await generateAuth(context.originalGoal, context.projectPath, getUserLanguage(context.username) || 'en');
                     if (authResult.success) {
-                        const { promises: fsp } = await import('fs');
-                        const pathMod = await import('path');
                         for (const file of authResult.files) {
-                            const filePath = pathMod.default.join(context.projectPath, file.name);
-                            await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
-                            await fsp.writeFile(filePath, file.content);
+                            const filePath = path.join(context.projectPath, file.name);
+                            await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
+                            await fsPromises.writeFile(filePath, file.content);
                         }
                         this.emitLiveLog(roomName, '5. RUNTIME', 'AuthAgent',
                             `✅ ${authResult.summary}`
@@ -914,12 +915,10 @@ export class JaolaCognitiveRuntime {
         try {
             const advResult = await generateAdvancedModules(context.originalGoal, context.projectPath);
             if (advResult.files.length > 0) {
-                const { promises: fsp } = await import('fs');
-                const pathMod = await import('path');
                 for (const file of advResult.files) {
-                    const filePath = pathMod.default.join(context.projectPath, file.name);
-                    await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
-                    await fsp.writeFile(filePath, file.content);
+                    const filePath = path.join(context.projectPath, file.name);
+                    await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
+                    await fsPromises.writeFile(filePath, file.content);
                 }
                 const features = Object.entries(advResult.features)
                     .filter(([, v]) => v)
@@ -941,13 +940,11 @@ export class JaolaCognitiveRuntime {
                 context.originalGoal, context.blueprint?.category, context.blueprint?.kind
             );
             if (fsRec.fullstack) {
-                const { promises: fsp } = await import('fs');
-                const pathMod = await import('path');
                 const { category, files } = buildFullStackProject(fsRec.category, context.activeProject);
                 for (const file of files) {
-                    const filePath = pathMod.default.join(context.projectPath, 'fullstack', file.name);
-                    await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
-                    await fsp.writeFile(filePath, file.content);
+                    const filePath = path.join(context.projectPath, 'fullstack', file.name);
+                    await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
+                    await fsPromises.writeFile(filePath, file.content);
                 }
                 this.emitLiveLog(roomName, '5. RUNTIME', 'FullStackAgent',
                     `🏗️ نسخة Full-Stack (${category}) في مجلد fullstack/ — Next.js + API + Prisma (${files.length} ملف)`
@@ -1407,12 +1404,15 @@ User preferences: ${JSON.stringify(execMemory)}` },
     // React (مشروع كبير جديد) بحماياتها (استئناف، «يعمل فعلاً» → لا استبدال)،
     // وإلا null ← النواة. أي قيمة غير null هي نتيجة المهمة النهائية.
     async _selectBuildStrategy(goal, blueprint, projectPath, username, activeProject, roomName, agents) {
+        // «بناء جديد» = لا شفرة قائمة تُذكر (< 80 حرفاً). تُحسب مرة واحدة: لا مسار
+        // أدناه يكتب على القرص قبل أن يُرجع نتيجته، فالقراءة الثانية كانت تكراراً.
+        const existingCtx = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
+        const isFreshBuild = !existingCtx || existingCtx.trim().length < 80;
+
         // 🍔 كلون عامل — للتطبيقات المعقّدة المطابقة نبدأ من *تطبيق يعمل فعلاً*
         // (يجتاز التحقّق السلوكي) بدل التوليد من الصفر الذي يفشل (app.js لا يُكتب،
         // أدوار ناقصة)، ثم نضع البصمة. هذا يضمن أن يعمل مشروع التوصيل من أول مرة.
         try {
-            const existingCtx = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
-            const isFreshBuild = !existingCtx || existingCtx.trim().length < 80;
             // 🛡️ استئناف («اكمل») على مشروع قائم = تطوير الموجود حصراً — لا
             // إعادة بناء ولا كلون يستبدله ولا هوية جديدة، مهما احتوى نصّ الهدف.
             // (عطل إنتاجي: «لا تبدأ من الصفر» طابقت «من الصفر» فدهست المشروع.)
@@ -1488,14 +1488,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
         try {
             // 🛡️ فئة المخطّط تُعتمد فقط حين تأتي من النموذج — الاحتياط يضع 'business'
             // دائماً فكان يُعطّل الموجّه الهجين (React للمشاريع الكبيرة) كلما غاب الـLLM
-            const ptype = blueprint?.category && blueprint.category !== 'other' && blueprint._source !== 'fallback'
-                ? blueprint.category : detectProjectType(goal);
+            const ptype = resolveProjectType(goal, blueprint);
             const scope = getProjectMemory(username, activeProject)?.plan?.scope || '';
             const stack = resolveStack({ projectType: ptype, scope });
             const starter = selectStarter({ projectType: ptype, scope });
             // فقط لبناء جديد (لا تعديل على مشروع قائم)
-            const existingCtx = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
-            const isFreshBuild = !existingCtx || existingCtx.trim().length < 80;
             if (stack === 'react-next' && isFreshBuild) {
                 this.emitLiveLog(roomName, 'STACK', 'HybridRouter', `🧰 مشروع كبير → React/Next${starter ? ` (${starter.name})` : ''}`);
                 return await this._buildReactProject(goal, projectPath, username, activeProject, roomName, {
@@ -1515,9 +1512,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         let imageContext = '';
         try {
             // نوع المشروع من المخطط الذكي (أدق من كشف الكلمات المفتاحية) مع احتياط
-            const projectType = blueprint?.category && blueprint.category !== 'other' && blueprint._source !== 'fallback'
-                ? blueprint.category
-                : detectProjectType(goal);
+            const projectType = resolveProjectType(goal, blueprint);
             const reqAnalysis = await analyzeRequirements(goal, projectType);
             requirementsContext = buildRequirementsContext(reqAnalysis);
 
@@ -2494,7 +2489,6 @@ User preferences: ${JSON.stringify(execMemory)}` },
             setUserLanguage(username, uiLang);
         }
         const userLang = initUserLanguage(username, message);
-        const langInfo = getLangInfo(userLang);
         // 🌐 لغة الغرفة — يقرؤها قمع emitLiveLog ليترجم سجلّ البناء الحي
         (this.roomLang ||= new Map()).set(roomName, userLang);
 
