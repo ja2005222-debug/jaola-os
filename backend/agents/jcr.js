@@ -429,263 +429,13 @@ export class JaolaCognitiveRuntime {
             await this._stageReview(context, roomName, agents);
             await this._stageRefactor(context, roomName, agents);
             await this._stageTesting(context, roomName, agents);
-
-            // 📋 Requirements Verifier — الأهم: هل نُفِّذت متطلبات المشروع فعلاً؟
-            // يفحص كل مكوّن وظيفي من الـ Blueprint ضد الكود المبني، يُصلح الناقص
-            // تلقائياً (جولة واحدة مستهدفة)، ويعرض قائمة تحقق صادقة للمستخدم.
-            try {
-                if (context.blueprint?.functionalComponents?.length && plan?.files?.length) {
-                    const lang = getUserLanguage(context.username) || 'ar';
-                    transitionState(context.username, context.activeProject, STATES.VERIFYING, { agent: 'Requirements' });
-                    this.emitLiveLog(roomName, '6. VERIFY', 'Requirements', '📋 التحقق من تنفيذ متطلبات المشروع...');
-                    let verdict = await verifyRequirements(context.blueprint, plan.files);
-                    const fixedNames = [];
-
-                    // 📚 المتطلبات التي تُسلَّم ناقصة دروسٌ متراكمة للمنصة
-                    for (const m of verdict?.missing || []) recordLesson('verifier_missing', m.name);
-
-                    // 🏗️ إكمال الشاشات الناقصة — بناءُ الشاشات هو *جوهر* المشروع، فلا
-                    // نتركه رهين ميزانية النقاش (تُستنزف قبله بفريق الخلفية والمراجعة).
-                    // جولات محدودة (احتياطي مخصّص) تبني شاشةً فشاشة مدفوعةً بالنموذج،
-                    // وتتوقّف عند اكتمالها أو انعدام التقدّم. سجل المستخدم: 4 شاشات
-                    // ناقصة (طلب/مطعم/توصيل/تتبّع) لم تُبنَ لأن الجولة الواحدة تعذّرت.
-                    const domainModel = getDomainModel(context.username, context.activeProject);
-                    const MAX_COMPLETION_ROUNDS = 3;
-                    for (let round = 1; round <= MAX_COMPLETION_ROUNDS && verdict?.missing?.length && agents.coreEditCodePlan; round++) {
-                        const beforeCount = verdict.missing.length;
-                        this.emitLiveLog(roomName, '6. VERIFY', 'Requirements',
-                            `🏗️ إكمال الشاشات ${round}/${MAX_COMPLETION_ROUNDS} — ${beforeCount} ناقصة: ${verdict.missing.map(m => m.name).join('، ')}`);
-                        const fixPlan = await agents.coreEditCodePlan(
-                            buildFixInstruction(verdict.missing, domainModel), plan.files, lang
-                        );
-                        if (!fixPlan?.files?.length || fixPlan.error) break;
-
-                        const emitFixGuard = (m) => this.emitLiveLog(roomName, '6. VERIFY', 'CodeGuard', m);
-                        const guardedFix = await ensureEditIntegrity(
-                            await guardFiles(
-                                scrubPlaceholders(fixPlan.files, context.activeProject),
-                                emitFixGuard
-                            ),
-                            context.projectPath, emitFixGuard);
-                        // دمج الملفات المُصلحة في الخطة وكتابتها على القرص
-                        for (const f of guardedFix) {
-                            if (!f?.name || typeof f.content !== 'string') continue;
-                            const idx = plan.files.findIndex(p => p.name === f.name);
-                            if (idx >= 0) plan.files[idx] = f; else plan.files.push(f);
-                            const fp = path.join(context.projectPath, f.name);
-                            await fsPromises.mkdir(path.dirname(fp), { recursive: true });
-                            await fsPromises.writeFile(fp, f.content);
-                        }
-                        const before = new Set(verdict.missing.map(m => m.name));
-                        verdict = await verifyRequirements(context.blueprint, plan.files);
-                        for (const r of verdict.results.filter(r => r.implemented && before.has(r.name))) {
-                            if (!fixedNames.includes(r.name)) fixedNames.push(r.name);
-                        }
-                        // توقّف إن لم يتقدّم شيء (تجنّب جولات بلا فائدة)
-                        if (verdict.missing.length >= beforeCount) break;
-                    }
-
-                    if (verdict) {
-                        const checklist = formatChecklist(verdict, lang, fixedNames);
-                        this.emitLiveLog(roomName, '6. VERIFY', 'Requirements',
-                            `📋 ${verdict.implementedCount}/${verdict.results.length} متطلب منفّذ${fixedNames.length ? ` (+${fixedNames.length} أُصلح تلقائياً)` : ''}`);
-                        if (checklist) this.io.to(roomName).emit('chat_reply', { message: checklist });
-                        addToHistory(context.username, context.activeProject,
-                            `تحقق المتطلبات: ${verdict.implementedCount}/${verdict.results.length} منفّذ`);
-                    }
-                }
-            } catch (e) {
-                this.emitLiveLog(roomName, '6. VERIFY', 'Requirements', `⚠️ تخطّي التحقق: ${e.message}`);
-            }
-            await this.saveExecutiveMemory(context.username, context.mentalModel.visualIdentity);
-            context.files = plan?.files || [];
-
+            await this._stageRequirementsVerify(context, roomName, agents);
+            await this._stageExecutiveMemory(context, roomName, agents);
             await this._stageSEO(context, roomName, agents);
             await this._stageSecurity(context, roomName, agents);
             await this._stageGitBackup(context, roomName, agents);
-
-            // 🆕 تحديث Project Memory بهيكل الموقع المبني
-            if (context.mentalModel?.templateSections?.length) {
-                updateStructure(context.username, context.activeProject, context.mentalModel.templateSections);
-            }
-            if (context.mentalModel?.visualIdentity) {
-                updateDesign(context.username, context.activeProject, { style: context.mentalModel.visualIdentity });
-            }
-
-            // 🆕 مرحلة Backend — إذا كان المشروع يحتاج خادماً
-            if (agents.needsBackend && agents.needsBackend(context.goal)) {
-                this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', '⚙️ المشروع يحتاج خادماً — جاري توليد APIs...');
-
-                // 👥 فريق الوكلاء الخلفي المتخصص — ينتج ملفات الخلفية الحقيقية تعاونياً (best-effort)
-                let teamGuidance = '';
-                let teamWroteFiles = 0;
-                try {
-                    const buildLang = getUserLanguage(context.username) || 'en';
-                    const team = await runBackendTeam(context.goal, {
-                        lang: buildLang,
-                        verify: true, // فحص تنفيذي حقيقي + إصلاح Debug تلقائي
-                        llm: (messages, options) => smartChat(messages, options),
-                        onEvent: (evt) => {
-                            if (evt.type === 'agent_start') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `${evt.icon} ${evt.role} يعمل...`);
-                            else if (evt.type === 'agent_done') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `✅ ${evt.role}: ${evt.summary} (${evt.files} ملف)`);
-                            else if (evt.type === 'agent_skipped') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `⏭️ ${evt.role} (${evt.reason})`);
-                            else if (evt.type === 'verify_failed') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendVerify', `🔎 فحص: ${evt.failures} خطأ — Debug يصلح (جولة ${evt.round})...`);
-                            else if (evt.type === 'verify_done') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendVerify', evt.ok ? `✅ الكود المولّد اجتاز الفحص` : `⚠️ بقي ${evt.failures} خطأ بعد ${evt.rounds} جولة`);
-                            else if (evt.type === 'agent_error') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `⚠️ ${evt.role}: ${evt.error}`);
-                        },
-                    });
-                    if (team.mode === 'execute') {
-                        // احفظ وثيقة مرجعية موجزة
-                        const doc = [`# Backend Team\n`, `> ${team.summary}\n`,
-                            ...team.results.filter(r => !r.skipped && !r.error).map(r => `## ${r.role}\n${r.summary}\n`)].join('\n');
-                        await fsPromises.writeFile(path.join(context.projectPath, 'BACKEND_TEAM.md'), doc).catch(() => {});
-
-                        // اكتب ملفات الفريق الحقيقية عبر CodeGuard (فحص/إصلاح قبل الحفظ)
-                        if (team.files.length > 0) {
-                            const guarded = await guardFiles(
-                                team.files.map(f => ({ name: f.path, content: f.content })),
-                                (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m)
-                            );
-                            const byPath = Object.fromEntries(guarded.map(g => [g.name, g.content]));
-                            teamWroteFiles = await writeBackendTeamFiles(
-                                team.files.map(f => ({ ...f, content: byPath[f.path] ?? f.content })),
-                                context.projectPath
-                            ).then(w => w.length);
-                            this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `📦 كتب الفريق ${teamWroteFiles} ملف خلفية`);
-                        }
-                        teamGuidance = `\n\n## توجيهات فريق الخلفية المتخصص (اتبعها ولا تكرّر ملفاته):\n${team.results.filter(r => r.summary).map(r => `- ${r.role}: ${r.summary}`).join('\n')}`;
-                    }
-                } catch (e) {
-                    this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `⚠️ تخطّي فريق الخلفية: ${e.message}`);
-                }
-
-                // إن أنتج الفريق ملفات كافية، نكتفي بها؛ وإلا نُكمل بالمولّد التقليدي (fallback)
-                try {
-                    if (teamWroteFiles >= 2) {
-                        this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', `✅ اعتمد ملفات فريق الخلفية (${teamWroteFiles})`);
-                    }
-                    const frontendContext = await this.readCurrentCodeContextAsync(context.projectPath);
-                    const backendResult = teamWroteFiles >= 2
-                        ? { success: false, files: [] }   // الفريق كفى — تخطّى المولّد التقليدي
-                        : await agents.generateBackend(context.goal + teamGuidance, frontendContext);
-
-                    if (backendResult.success && backendResult.files.length > 0) {
-                        // 🛡️ فحص ملفات الـ Backend قبل الحفظ
-                        backendResult.files = await guardFiles(backendResult.files,
-                            (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m));
-
-                        // حفظ ملفات الـ Backend
-                        for (const file of backendResult.files) {
-                            const filePath = path.join(context.projectPath, file.name);
-                            // تأكد من وجود المجلد (مثل api/)
-                            await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
-                            await fsPromises.writeFile(filePath, file.content);
-                        }
-                        this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent',
-                            `✅ تم توليد ${backendResult.files.length} ملف (${backendResult.files.map(f => f.name).join(', ')})`
-                        );
-
-                        // تحديث script.js ليستدعي الـ APIs
-                        if (agents.generateFrontendAPIIntegration) {
-                            const updatedScript = await agents.generateFrontendAPIIntegration(
-                                context.goal,
-                                backendResult.files,
-                                plan.files.find(f => f.name === 'script.js')?.content || ''
-                            );
-                            if (updatedScript) {
-                                // 🛡️ فحص script.js المحدَّث قبل الحفظ
-                                const guardedScript = await guardSingleJS('script.js', updatedScript,
-                                    (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m));
-                                await fsPromises.writeFile(
-                                    path.join(context.projectPath, 'script.js'),
-                                    guardedScript
-                                );
-                                this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', '🔗 تم تحديث script.js ليستدعي الـ APIs');
-                            }
-                        }
-                    } else if (teamWroteFiles < 2) {
-                        // إنذار حقيقي فقط حين يفشل المولّد التقليدي فعلاً — لا حين
-                        // يكون الفريق قد كفى (كنا نطبع "undefined" في تلك الحالة)
-                        this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', `⚠️ تعذّر توليد الخادم: ${backendResult.error || 'لم يُنتج ملفات صالحة'}`);
-                    }
-                } catch (e) {
-                    this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', `❌ خطأ في BackendAgent: ${e.message}`);
-                }
-
-                // 🆕 DatabaseAgent — يُولّد Schema + Seed Data مع Backend.
-                // ⛔ فقط إن لم يتكفّل فريق الخلفية بطبقة البيانات — وإلا نُنتج
-                // قاعدتَي بيانات متضاربتين (SQLite من الفريق + MongoDB من هنا).
-                if (teamWroteFiles < 2) {
-                  try {
-                    const projectType = context.mentalModel?.designBrief?.projectType || 'business';
-                    this.emitLiveLog(roomName, '5. RUNTIME', 'DatabaseAgent', '🗄️ جاري توليد قاعدة البيانات...');
-                    const dbResult = await generateDatabase(context.originalGoal, projectType, context.projectPath);
-                    if (dbResult.success) {
-                        const { promises: fsp } = await import('fs');
-                        const pathMod = await import('path');
-                        for (const file of dbResult.files) {
-                            const filePath = pathMod.default.join(context.projectPath, file.name);
-                            await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
-                            await fsp.writeFile(filePath, file.content);
-                        }
-                        this.emitLiveLog(roomName, '5. RUNTIME', 'DatabaseAgent',
-                            `✅ ${dbResult.summary}`
-                        );
-                    }
-                  } catch (e) {
-                    this.emitLiveLog(roomName, '5. RUNTIME', 'DatabaseAgent', `⚠️ تخطّي: ${e.message}`);
-                  }
-                } else {
-                    this.emitLiveLog(roomName, '5. RUNTIME', 'DatabaseAgent', 'ℹ️ فريق الخلفية تكفّل بقاعدة البيانات — تخطّي المولّد المستقل.');
-                }
-
-                // 🆕 PostgreSQL + Prisma — للمشاريع التي تحتاج قاعدة علاقية
-                // (أيضاً فقط إن لم يتكفّل الفريق — منعاً لتكدّس قواعد البيانات)
-                if (teamWroteFiles < 2 && needsPostgres(context.originalGoal)) {
-                    try {
-                        this.emitLiveLog(roomName, '5. RUNTIME', 'PostgresAgent', '🐘 جاري توليد Prisma Schema...');
-                        const projectType = context.mentalModel?.designBrief?.projectType || 'ecommerce';
-                        const pgResult = await generatePrismaSetup(context.originalGoal, projectType);
-                        if (pgResult.success) {
-                            const { promises: fsp } = await import('fs');
-                            const pathMod = await import('path');
-                            for (const file of pgResult.files) {
-                                const filePath = pathMod.default.join(context.projectPath, file.name);
-                                await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
-                                await fsp.writeFile(filePath, file.content);
-                            }
-                            this.emitLiveLog(roomName, '5. RUNTIME', 'PostgresAgent',
-                                `✅ ${pgResult.summary}`
-                            );
-                        }
-                    } catch (e) {
-                        this.emitLiveLog(roomName, '5. RUNTIME', 'PostgresAgent', `⚠️ تخطّي: ${e.message}`);
-                    }
-                }
-
-                // 🆕 Auth Agent — يُضيف نظام تسجيل دخول إذا احتاجه المشروع
-                if (needsAuth(context.originalGoal)) {
-                    try {
-                        this.emitLiveLog(roomName, '5. RUNTIME', 'AuthAgent', '🔐 جاري توليد نظام المصادقة...');
-                        const authResult = await generateAuth(context.originalGoal, context.projectPath, getUserLanguage(context.username) || 'en');
-                        if (authResult.success) {
-                            const { promises: fsp } = await import('fs');
-                            const pathMod = await import('path');
-                            for (const file of authResult.files) {
-                                const filePath = pathMod.default.join(context.projectPath, file.name);
-                                await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
-                                await fsp.writeFile(filePath, file.content);
-                            }
-                            this.emitLiveLog(roomName, '5. RUNTIME', 'AuthAgent',
-                                `✅ ${authResult.summary}`
-                            );
-                        }
-                    } catch (e) {
-                        this.emitLiveLog(roomName, '5. RUNTIME', 'AuthAgent', `⚠️ تخطّي: ${e.message}`);
-                    }
-                }
-            }
-
+            await this._stageProjectMemory(context, roomName, agents);
+            await this._stageBackend(context, roomName, agents);
             await this._stageAdvancedModules(context, roomName, agents);
             await this._stageFullStackScaffold(context, roomName, agents);
             await this._stageRenderConfig(context, roomName, agents);
@@ -791,6 +541,84 @@ export class JaolaCognitiveRuntime {
         }
     }
 
+    // 📋 Requirements Verifier — الأهم: هل نُفِّذت متطلبات المشروع فعلاً؟
+    // يفحص كل مكوّن وظيفي من الـ Blueprint ضد الكود المبني، يُصلح الناقص
+    // تلقائياً (جولات محدودة مستهدفة عبر agents.coreEditCodePlan)، ويعرض قائمة تحقق صادقة للمستخدم.
+    async _stageRequirementsVerify(context, roomName, agents) {
+        const plan = context.plan;
+        try {
+            if (context.blueprint?.functionalComponents?.length && plan?.files?.length) {
+                const lang = getUserLanguage(context.username) || 'ar';
+                transitionState(context.username, context.activeProject, STATES.VERIFYING, { agent: 'Requirements' });
+                this.emitLiveLog(roomName, '6. VERIFY', 'Requirements', '📋 التحقق من تنفيذ متطلبات المشروع...');
+                let verdict = await verifyRequirements(context.blueprint, plan.files);
+                const fixedNames = [];
+
+                // 📚 المتطلبات التي تُسلَّم ناقصة دروسٌ متراكمة للمنصة
+                for (const m of verdict?.missing || []) recordLesson('verifier_missing', m.name);
+
+                // 🏗️ إكمال الشاشات الناقصة — بناءُ الشاشات هو *جوهر* المشروع، فلا
+                // نتركه رهين ميزانية النقاش (تُستنزف قبله بفريق الخلفية والمراجعة).
+                // جولات محدودة (احتياطي مخصّص) تبني شاشةً فشاشة مدفوعةً بالنموذج،
+                // وتتوقّف عند اكتمالها أو انعدام التقدّم. سجل المستخدم: 4 شاشات
+                // ناقصة (طلب/مطعم/توصيل/تتبّع) لم تُبنَ لأن الجولة الواحدة تعذّرت.
+                const domainModel = getDomainModel(context.username, context.activeProject);
+                const MAX_COMPLETION_ROUNDS = 3;
+                for (let round = 1; round <= MAX_COMPLETION_ROUNDS && verdict?.missing?.length && agents.coreEditCodePlan; round++) {
+                    const beforeCount = verdict.missing.length;
+                    this.emitLiveLog(roomName, '6. VERIFY', 'Requirements',
+                        `🏗️ إكمال الشاشات ${round}/${MAX_COMPLETION_ROUNDS} — ${beforeCount} ناقصة: ${verdict.missing.map(m => m.name).join('، ')}`);
+                    const fixPlan = await agents.coreEditCodePlan(
+                        buildFixInstruction(verdict.missing, domainModel), plan.files, lang
+                    );
+                    if (!fixPlan?.files?.length || fixPlan.error) break;
+
+                    const emitFixGuard = (m) => this.emitLiveLog(roomName, '6. VERIFY', 'CodeGuard', m);
+                    const guardedFix = await ensureEditIntegrity(
+                        await guardFiles(
+                            scrubPlaceholders(fixPlan.files, context.activeProject),
+                            emitFixGuard
+                        ),
+                        context.projectPath, emitFixGuard);
+                    // دمج الملفات المُصلحة في الخطة وكتابتها على القرص
+                    for (const f of guardedFix) {
+                        if (!f?.name || typeof f.content !== 'string') continue;
+                        const idx = plan.files.findIndex(p => p.name === f.name);
+                        if (idx >= 0) plan.files[idx] = f; else plan.files.push(f);
+                        const fp = path.join(context.projectPath, f.name);
+                        await fsPromises.mkdir(path.dirname(fp), { recursive: true });
+                        await fsPromises.writeFile(fp, f.content);
+                    }
+                    const before = new Set(verdict.missing.map(m => m.name));
+                    verdict = await verifyRequirements(context.blueprint, plan.files);
+                    for (const r of verdict.results.filter(r => r.implemented && before.has(r.name))) {
+                        if (!fixedNames.includes(r.name)) fixedNames.push(r.name);
+                    }
+                    // توقّف إن لم يتقدّم شيء (تجنّب جولات بلا فائدة)
+                    if (verdict.missing.length >= beforeCount) break;
+                }
+
+                if (verdict) {
+                    const checklist = formatChecklist(verdict, lang, fixedNames);
+                    this.emitLiveLog(roomName, '6. VERIFY', 'Requirements',
+                        `📋 ${verdict.implementedCount}/${verdict.results.length} متطلب منفّذ${fixedNames.length ? ` (+${fixedNames.length} أُصلح تلقائياً)` : ''}`);
+                    if (checklist) this.io.to(roomName).emit('chat_reply', { message: checklist });
+                    addToHistory(context.username, context.activeProject,
+                        `تحقق المتطلبات: ${verdict.implementedCount}/${verdict.results.length} منفّذ`);
+                }
+            }
+        } catch (e) {
+            this.emitLiveLog(roomName, '6. VERIFY', 'Requirements', `⚠️ تخطّي التحقق: ${e.message}`);
+        }
+    }
+
+    // 🧠 الذاكرة التنفيذية للمستخدم (الهوية البصرية المفضّلة) + إتاحة الملفات للسياق
+    async _stageExecutiveMemory(context) {
+        const plan = context.plan;
+        await this.saveExecutiveMemory(context.username, context.mentalModel.visualIdentity);
+        context.files = plan?.files || [];
+    }
+
     // 🆕 SEO Agent
     async _stageSEO(context, roomName) {
         const plan = context.plan;
@@ -859,6 +687,195 @@ export class JaolaCognitiveRuntime {
             }
         } catch (e) {
             // Git اختياري — لا يوقف البناء
+        }
+    }
+
+    // 🗂️ تحديث Project Memory بهيكل الموقع المبني وهويته البصرية
+    async _stageProjectMemory(context) {
+        if (context.mentalModel?.templateSections?.length) {
+            updateStructure(context.username, context.activeProject, context.mentalModel.templateSections);
+        }
+        if (context.mentalModel?.visualIdentity) {
+            updateDesign(context.username, context.activeProject, { style: context.mentalModel.visualIdentity });
+        }
+    }
+
+    // ⚙️ مرحلة Backend — إذا كان المشروع يحتاج خادماً: فريق الخلفية المتخصص
+    // (best-effort) ← المولّد التقليدي احتياطاً ← قاعدة البيانات/Postgres/المصادقة.
+    // الجزء الوحيد بلا حارس هو استدعاء agents.needsBackend نفسه (كما كان).
+    async _stageBackend(context, roomName, agents) {
+        const plan = context.plan;
+        if (agents.needsBackend && agents.needsBackend(context.goal)) {
+            this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', '⚙️ المشروع يحتاج خادماً — جاري توليد APIs...');
+
+            // 👥 فريق الوكلاء الخلفي المتخصص — ينتج ملفات الخلفية الحقيقية تعاونياً (best-effort)
+            let teamGuidance = '';
+            let teamWroteFiles = 0;
+            try {
+                const buildLang = getUserLanguage(context.username) || 'en';
+                const team = await runBackendTeam(context.goal, {
+                    lang: buildLang,
+                    verify: true, // فحص تنفيذي حقيقي + إصلاح Debug تلقائي
+                    llm: (messages, options) => smartChat(messages, options),
+                    onEvent: (evt) => {
+                        if (evt.type === 'agent_start') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `${evt.icon} ${evt.role} يعمل...`);
+                        else if (evt.type === 'agent_done') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `✅ ${evt.role}: ${evt.summary} (${evt.files} ملف)`);
+                        else if (evt.type === 'agent_skipped') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `⏭️ ${evt.role} (${evt.reason})`);
+                        else if (evt.type === 'verify_failed') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendVerify', `🔎 فحص: ${evt.failures} خطأ — Debug يصلح (جولة ${evt.round})...`);
+                        else if (evt.type === 'verify_done') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendVerify', evt.ok ? `✅ الكود المولّد اجتاز الفحص` : `⚠️ بقي ${evt.failures} خطأ بعد ${evt.rounds} جولة`);
+                        else if (evt.type === 'agent_error') this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `⚠️ ${evt.role}: ${evt.error}`);
+                    },
+                });
+                if (team.mode === 'execute') {
+                    // احفظ وثيقة مرجعية موجزة
+                    const doc = [`# Backend Team\n`, `> ${team.summary}\n`,
+                        ...team.results.filter(r => !r.skipped && !r.error).map(r => `## ${r.role}\n${r.summary}\n`)].join('\n');
+                    await fsPromises.writeFile(path.join(context.projectPath, 'BACKEND_TEAM.md'), doc).catch(() => {});
+
+                    // اكتب ملفات الفريق الحقيقية عبر CodeGuard (فحص/إصلاح قبل الحفظ)
+                    if (team.files.length > 0) {
+                        const guarded = await guardFiles(
+                            team.files.map(f => ({ name: f.path, content: f.content })),
+                            (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m)
+                        );
+                        const byPath = Object.fromEntries(guarded.map(g => [g.name, g.content]));
+                        teamWroteFiles = await writeBackendTeamFiles(
+                            team.files.map(f => ({ ...f, content: byPath[f.path] ?? f.content })),
+                            context.projectPath
+                        ).then(w => w.length);
+                        this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `📦 كتب الفريق ${teamWroteFiles} ملف خلفية`);
+                    }
+                    teamGuidance = `\n\n## توجيهات فريق الخلفية المتخصص (اتبعها ولا تكرّر ملفاته):\n${team.results.filter(r => r.summary).map(r => `- ${r.role}: ${r.summary}`).join('\n')}`;
+                }
+            } catch (e) {
+                this.emitLiveLog(roomName, '5. RUNTIME', 'BackendTeam', `⚠️ تخطّي فريق الخلفية: ${e.message}`);
+            }
+
+            // إن أنتج الفريق ملفات كافية، نكتفي بها؛ وإلا نُكمل بالمولّد التقليدي (fallback)
+            try {
+                if (teamWroteFiles >= 2) {
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', `✅ اعتمد ملفات فريق الخلفية (${teamWroteFiles})`);
+                }
+                const frontendContext = await this.readCurrentCodeContextAsync(context.projectPath);
+                const backendResult = teamWroteFiles >= 2
+                    ? { success: false, files: [] }   // الفريق كفى — تخطّى المولّد التقليدي
+                    : await agents.generateBackend(context.goal + teamGuidance, frontendContext);
+
+                if (backendResult.success && backendResult.files.length > 0) {
+                    // 🛡️ فحص ملفات الـ Backend قبل الحفظ
+                    backendResult.files = await guardFiles(backendResult.files,
+                        (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m));
+
+                    // حفظ ملفات الـ Backend
+                    for (const file of backendResult.files) {
+                        const filePath = path.join(context.projectPath, file.name);
+                        // تأكد من وجود المجلد (مثل api/)
+                        await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
+                        await fsPromises.writeFile(filePath, file.content);
+                    }
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent',
+                        `✅ تم توليد ${backendResult.files.length} ملف (${backendResult.files.map(f => f.name).join(', ')})`
+                    );
+
+                    // تحديث script.js ليستدعي الـ APIs
+                    if (agents.generateFrontendAPIIntegration) {
+                        const updatedScript = await agents.generateFrontendAPIIntegration(
+                            context.goal,
+                            backendResult.files,
+                            plan.files.find(f => f.name === 'script.js')?.content || ''
+                        );
+                        if (updatedScript) {
+                            // 🛡️ فحص script.js المحدَّث قبل الحفظ
+                            const guardedScript = await guardSingleJS('script.js', updatedScript,
+                                (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m));
+                            await fsPromises.writeFile(
+                                path.join(context.projectPath, 'script.js'),
+                                guardedScript
+                            );
+                            this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', '🔗 تم تحديث script.js ليستدعي الـ APIs');
+                        }
+                    }
+                } else if (teamWroteFiles < 2) {
+                    // إنذار حقيقي فقط حين يفشل المولّد التقليدي فعلاً — لا حين
+                    // يكون الفريق قد كفى (كنا نطبع "undefined" في تلك الحالة)
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', `⚠️ تعذّر توليد الخادم: ${backendResult.error || 'لم يُنتج ملفات صالحة'}`);
+                }
+            } catch (e) {
+                this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent', `❌ خطأ في BackendAgent: ${e.message}`);
+            }
+
+            // 🆕 DatabaseAgent — يُولّد Schema + Seed Data مع Backend.
+            // ⛔ فقط إن لم يتكفّل فريق الخلفية بطبقة البيانات — وإلا نُنتج
+            // قاعدتَي بيانات متضاربتين (SQLite من الفريق + MongoDB من هنا).
+            if (teamWroteFiles < 2) {
+              try {
+                const projectType = context.mentalModel?.designBrief?.projectType || 'business';
+                this.emitLiveLog(roomName, '5. RUNTIME', 'DatabaseAgent', '🗄️ جاري توليد قاعدة البيانات...');
+                const dbResult = await generateDatabase(context.originalGoal, projectType, context.projectPath);
+                if (dbResult.success) {
+                    const { promises: fsp } = await import('fs');
+                    const pathMod = await import('path');
+                    for (const file of dbResult.files) {
+                        const filePath = pathMod.default.join(context.projectPath, file.name);
+                        await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
+                        await fsp.writeFile(filePath, file.content);
+                    }
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'DatabaseAgent',
+                        `✅ ${dbResult.summary}`
+                    );
+                }
+              } catch (e) {
+                this.emitLiveLog(roomName, '5. RUNTIME', 'DatabaseAgent', `⚠️ تخطّي: ${e.message}`);
+              }
+            } else {
+                this.emitLiveLog(roomName, '5. RUNTIME', 'DatabaseAgent', 'ℹ️ فريق الخلفية تكفّل بقاعدة البيانات — تخطّي المولّد المستقل.');
+            }
+
+            // 🆕 PostgreSQL + Prisma — للمشاريع التي تحتاج قاعدة علاقية
+            // (أيضاً فقط إن لم يتكفّل الفريق — منعاً لتكدّس قواعد البيانات)
+            if (teamWroteFiles < 2 && needsPostgres(context.originalGoal)) {
+                try {
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'PostgresAgent', '🐘 جاري توليد Prisma Schema...');
+                    const projectType = context.mentalModel?.designBrief?.projectType || 'ecommerce';
+                    const pgResult = await generatePrismaSetup(context.originalGoal, projectType);
+                    if (pgResult.success) {
+                        const { promises: fsp } = await import('fs');
+                        const pathMod = await import('path');
+                        for (const file of pgResult.files) {
+                            const filePath = pathMod.default.join(context.projectPath, file.name);
+                            await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
+                            await fsp.writeFile(filePath, file.content);
+                        }
+                        this.emitLiveLog(roomName, '5. RUNTIME', 'PostgresAgent',
+                            `✅ ${pgResult.summary}`
+                        );
+                    }
+                } catch (e) {
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'PostgresAgent', `⚠️ تخطّي: ${e.message}`);
+                }
+            }
+
+            // 🆕 Auth Agent — يُضيف نظام تسجيل دخول إذا احتاجه المشروع
+            if (needsAuth(context.originalGoal)) {
+                try {
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'AuthAgent', '🔐 جاري توليد نظام المصادقة...');
+                    const authResult = await generateAuth(context.originalGoal, context.projectPath, getUserLanguage(context.username) || 'en');
+                    if (authResult.success) {
+                        const { promises: fsp } = await import('fs');
+                        const pathMod = await import('path');
+                        for (const file of authResult.files) {
+                            const filePath = pathMod.default.join(context.projectPath, file.name);
+                            await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
+                            await fsp.writeFile(filePath, file.content);
+                        }
+                        this.emitLiveLog(roomName, '5. RUNTIME', 'AuthAgent',
+                            `✅ ${authResult.summary}`
+                        );
+                    }
+                } catch (e) {
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'AuthAgent', `⚠️ تخطّي: ${e.message}`);
+                }
+            }
         }
     }
 
