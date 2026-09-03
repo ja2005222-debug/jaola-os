@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decide, classifyIntentFast } from '../agents/ceoBrain.js';
 import { transitionState, getProjectState, STATES, isBuilding } from '../agents/stateMachine.js';
-import { enqueueMission, isMissionActive } from '../services/missionQueue.js';
+import { enqueueMission, isMissionActive } from '../core/runtime/ExecutionQueue.js';
 
 const U = '__lock_test__', P = 'stale-project';
 

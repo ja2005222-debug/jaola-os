@@ -17,7 +17,7 @@ import fs from 'fs';
 import path from 'path';
 import mongoose from 'mongoose';
 import { fileURLToPath } from 'url';
-import { queueStatus } from '../services/missionQueue.js';
+import { queueStatus } from '../core/runtime/ExecutionQueue.js';
 import { orchestrator } from '../core/PluginOrchestrator.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

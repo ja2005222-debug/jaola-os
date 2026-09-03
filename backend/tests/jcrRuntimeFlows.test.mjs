@@ -11,10 +11,10 @@ import { scenario, tempProject, assertNoHeavyPath } from './helpers/jcrScenario.
 import { backupProject } from '../agents/fileManager.js';
 import { updateStructure } from '../agents/projectMemory.js';
 import { recordTurn } from '../services/conversationStore.js';
-import { enqueueMission } from '../services/missionQueue.js';
+import { enqueueMission } from '../core/runtime/ExecutionQueue.js';
 import { getPendingGoal } from '../services/conversationManager.js';
 import { classifyIntentFast } from '../agents/ceoBrain.js';
-import { noteLostMission } from '../services/missionQueue.js';
+import { noteLostMission } from '../core/runtime/ExecutionQueue.js';
 
 // ── Clarifier: مرحلة التوضيح ثم مرحلة الخطة بفروعها ──────────────────────
 test('clarifying: الإجابة تُمرَّر لمعالج الحوار ويُعاد ردّه بخياراته — لا بناء', async () => {

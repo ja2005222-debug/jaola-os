@@ -763,3 +763,22 @@ Sprint 1؛ أُجّل إلى Sprint 2 ليُنقل **مع** Agent Runtime الذ
 إلى `core/runtime/` قبل وجود runtime هناك تجريدٌ بلا مستهلك. تراجع: لا شيء.
 
 الاختبارات: **811/811** (+3 `pluginContracts`، +1 `contracts`، +3 مرحّلة).
+
+## ⚙️ Sprint 2a — Runtime: `core/runtime/` يبدأ بنقل حرفي + TaskGraph بمستهلكَين (2026-09-03)
+
+الخط الأساس: Sprint 2 = MissionRuntime + AgentRuntime + ToolRuntime +
+ExecutionContext. الدفعة الأولى تضع الأساس بلا تغيير سلوك:
+- **نقل حرفي إلى `core/runtime/`** (نفس الصادرات، تحديث المستوردين فقط):
+  `services/missionQueue.js` → `ExecutionQueue.js` (11 موضع استيراد؛ مسار
+  السجلّ الدائم عُدِّل لمستوى المجلد الجديد و`MISSION_LEDGER_PATH` كما هو)،
+  `services/abortRegistry.js` → `AbortRegistry.js`، `agents/backendTeam/agentSpec.js`
+  → `AgentSpec.js` (4 مستوردين). القرار السابق (تأجيل agentSpec حتى وجود
+  runtime) تحقّق شرطه الآن: `core/runtime/` موجود ويحمل TaskGraph.
+- **`TaskGraph.orderTasks(items, {key, label})`**: خوارزمية `planExecution`
+  حرفياً (ترتيب طوبولوجي مستقرّ من `dependsOn`، تجاهل اعتمادية خارج المجموعة،
+  رمي عند الدورة) معمَّمة على أي مفتاح هوية. **مستهلكان حيّان**: النواة ترتّب
+  `DELIVERY_STAGES` بها (بلا `dependsOn` اليوم → الناتج = ترتيب المصفوفة
+  الحرفي، مثبَّت باختبار)، و`backendTeam.planExecution` صار غلافاً رقيقاً لها
+  بنفس الناتج ونفس رسالة الدورة. هذا يفتح Sprint 2b: `dependsOn` بين مراحل
+  التسليم (مثلاً `behavior-verify` بعد `backend`) بلا لمس النواة.
+- الاختبارات: `tests/taskGraph.test.mjs` (4) + كل خطوط الأساس. **815/815**.

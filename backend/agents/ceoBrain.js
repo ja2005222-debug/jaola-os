@@ -15,7 +15,7 @@
 
 import { getProjectMemory } from './projectMemory.js';
 import { getProjectState, getProjectSummary, STATES } from './stateMachine.js';
-import { isMissionActive } from '../services/missionQueue.js';
+import { isMissionActive } from '../core/runtime/ExecutionQueue.js';
 import { normalizeArabic } from './textNormalizer.js';
 
 // ═══════════════════════════════════════════════════════

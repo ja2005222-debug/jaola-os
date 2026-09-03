@@ -279,9 +279,12 @@ DELIVERY_STAGES: ReadonlyArray<Task>  — 15 مرحلة بالترتيب الح�
   (`for (const stage of DELIVERY_STAGES) await this[stage.run](…)`) — نقل
   حرفي، خط الأساس `jcrRuntimePipeline` (11) مطابق، واختبار يثبّت الأسماء
   والترتيب وأن كل `run` دالة حقيقية على النواة.
-- **الخطوة التالية (Sprint 2)**: `TaskGraph` يعمّم `planExecution` على
-  `DELIVERY_STAGES` عبر `dependsOn` (اليوم كلّها خطّية فالترتيب = ترتيب
-  المصفوفة)، ثم التشغيل الجزئي/الإيقاف بين المراحل.
+- ✅ **Sprint 2a**: `core/runtime/TaskGraph.js` — `orderTasks(items, {key, label})`
+  هي خوارزمية `planExecution` حرفياً معمَّمة على أي مفتاح؛ النواة ترتّب
+  `DELIVERY_STAGES` بها (بلا `dependsOn` اليوم فالناتج = ترتيب المصفوفة، مثبَّت
+  باختبار) و`planExecution` صار غلافاً لها (نفس الناتج والرسالة). 4 اختبارات.
+- **التالي (Sprint 2b)**: التشغيل الجزئي/الإيقاف بين المهام فوق الترتيب،
+  و`ExecutionContext` بدل المعاملات الموضعية.
 
 ---
 
