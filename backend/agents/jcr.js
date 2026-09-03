@@ -75,10 +75,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 class WorldRepresentation {
     constructor(projectPath) {
         this.fileTree = [];
-        this.gitState = 'clean';
         this.dbState = 'standby';
-        this.previousBuilds = [];
-        this.resources = { cpu: 14, ram: 42, latency: 12 };
     }
     scan(projectPath, dbStatus) {
         try {
@@ -135,7 +132,6 @@ class JCRContext {
         this.metaReasoning = { confidence: 100, unknowns: [], needsUserClarification: false };
         this.executiveDecision = { actionType: 'EXECUTE', taskGraph: [], priorityQueue: [] };
         this.internalDebate = { currentConfidence: 100, criticTranscripts: [], specialistPersonality: 'ReactExpert' };
-        this.reflection = { failurePatterns: [], successfulStrategies: [], tokensUsed: 0, learningTakeaway: "" };
     }
 }
 
@@ -161,18 +157,6 @@ const CognitiveCapabilities = {
         return { score, recommendations };
     }
 };
-
-async function generateAIImage(prompt, projectPath, fileName) {
-    try {
-        const placeholderContent = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300">
-  <rect width="100%" height="100%" fill="#1a1a2e"/>
-  <text x="50%" y="50%" fill="#e94560" text-anchor="middle" dy=".3em" font-size="24">
-    🖼️ صورة ذكاء اصطناعي: ${prompt.substring(0, 50)}
-  </text>
-</svg>`;
-        await fsPromises.writeFile(path.join(projectPath, fileName), placeholderContent);
-    } catch (error) { console.error('[IMAGE] فشل:', error); }
-}
 
 // 💾 كتابة آمنة لكل ملفات الخطة — القائمة البيضاء القديمة
 // ['index.html','styles.css','script.js'] كانت تُسقط بصمت أي ملف باسم مختلف
@@ -606,7 +590,6 @@ export class JaolaCognitiveRuntime {
             }
             await this.saveExecutiveMemory(context.username, context.mentalModel.visualIdentity);
             context.files = plan?.files || [];
-            context.images = plan?.images || [];
 
             // 🆕 SEO Agent
             try {
@@ -1437,9 +1420,6 @@ User preferences: ${JSON.stringify(execMemory)}` },
             if (execResult.success) {
                 this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
                 this.runCuriosityInBackground(context, roomName);
-                if (context.images?.length) {
-                    await Promise.all(context.images.map(img => generateAIImage(img.prompt, projectPath, img.fileName)));
-                }
             }
 
             await this.runReflectionAndSelfImprovement(context, roomName, execResult.success);
