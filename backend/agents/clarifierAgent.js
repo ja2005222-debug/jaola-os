@@ -1,6 +1,7 @@
 import { groq, smartChat } from './baseAgent.js';
 import { detectProjectType } from './knowledgeEngine.js';
 import { detectLanguage, initUserLanguage, getUserLanguage, setUserLanguage } from './languageDetector.js';
+import { isConfirmed } from '../core/policy/ConfirmationManager.js';
 
 // ═══════════════════════════════════════════════════════
 // 🤖 Dynamic Question Generator — يولّد أسئلة ذكية بـ AI
@@ -402,10 +403,13 @@ ${phases ? `\n**🗺️ خارطة الطريق:**\n${phases}\n` : ''}
 // ═══════════════════════════════════════════════════════
 // ✅ تأكيد البناء بعد عرض الخطة
 // ═══════════════════════════════════════════════════════
-const CONFIRM_PATTERNS = /^(ابدأ|ابدا|ابد|نفذ|تمام|موافق|نعم|اكمل|يلا|امشي|هيا|اوكي|اوك|يس|go|yes|ok|okay|start|proceed|build|build it|let's go|do it|اكيد|صح|بالتوفيق|كمل|هيه|اه|آه|يي|yep|sure|alright|begin|execute|run|launch|deploy|lets go|let go|يلا|هلا)/i;
-
+// ⚠️ كانت هنا `CONFIRM_PATTERNS`: مطابقةُ **بادئةٍ** بلا حدود كلمات، فكانت
+// تقرأ موافقةً في «نعمل إيه؟» و«goodbye» و«okay but wait» — وتبدأ بناءً
+// كاملاً على سؤالٍ أو تحفّظ. القرار انتقل إلى بوّابة واحدة تُميّز الموافقة
+// من السؤال من الرفض بحدود Unicode (`\b` لا تعمل في العربية أصلاً).
+// الاسم يبقى كما هو فلا يتغيّر أي مستدعٍ (`server.js`، `jcr.js`).
 export function isConfirmation(message) {
-    return CONFIRM_PATTERNS.test(message.trim());
+    return isConfirmed(message);
 }
 
 export function getFinalGoal(username) {
