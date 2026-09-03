@@ -11,6 +11,7 @@
 
 import { z } from 'zod';
 import path from 'path';
+import { isInsideRoot } from '../core/runtime/workspacePaths.js';
 
 // ─── Path Traversal Guard ───────────────────────────────────────────
 // يُرجع المسار المطلق الآمن داخل projectRoot أو يرمي خطأ.
@@ -29,7 +30,7 @@ export const sanitizePath = (filePath, projectRoot) => {
     const resolved = path.resolve(root, filePath);
 
     // المقارنة مع فاصل المسار — تمنع تجاوز البادئة (مثل /project-evil مقابل /project)
-    if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+    if (!isInsideRoot(root, resolved)) {
         throw new Error('Access denied: Path outside project scope');
     }
 

@@ -168,10 +168,20 @@ requirementsVerifier, behaviorVerifier, modelLibrary, backendTeam, baseAgent`
   `workspace.writeFiles(projectPath, files) → { written[], rejected[{name, reason}] }`
   و`workspace.readFiles(projectPath, {max}) → files[]` و`workspace.exec(projectPath,
   cmd, {timeout}) → { code, stdout, stderr }`.
-- **أول خطوة قابلة للاختبار**: توحيد الحرّاس الثلاثة في دالة واحدة
-  (`services/workspaceGuard.js`) تستهلكها المواضع الثلاثة — استخراج حرفي بخط
-  أساس (اختبارات المسارات الموجودة في `backendTeam.test.mjs` + اختبار جديد
-  لـ`writePlanFiles`). لا يُلمس أي وكيل آخر في هذه الخطوة.
+- ✅ **Sprint 2c — نُفِّذ، لكن ليس كما خُطِّط أولاً**: الفحص كشف أن الحرّاس
+  الثلاثة **ليسوا نفس الدالة**، ودمجهم الأعمى كان سيغيّر سلوك ثلاثة مسارات
+  حيّة معاً: `safeRelPath` يرفض بقائمة أحرف بيضاء ويعيد `null` صامتاً؛
+  `sanitizePath` يقبل أي أحرف لكنه **يرمي** ويعيد مطلقاً؛ `writePlanFiles`
+  يرفض الملفات المخفية ويتخطّى صامتاً. المشترك الحقيقي هو **الاحتواء** وحده.
+  فوُحِّد هو فقط في `core/runtime/workspacePaths.js`
+  (`isInsideRoot`/`resolveInside` + `safeRelPath` منقولاً حرفياً لموقع محايد)،
+  وكل موضع يحتفظ بسياسته الصريحة ويستدعي النواة.
+- 🐛 **دفاعٌ معطوب أُصلح**: فحص الاحتواء في `writePlanFiles` كان
+  `fp.startsWith(projectPath)` **بلا فاصل مسار** — شقيق باسم `<root>-evil`
+  يمرّ منطقياً. لم يكن قابلاً للاستغلال فعلياً (سياسة `..` تسبقه و`path.join`
+  يُطبّع)، لكنه دفاعٌ في العمق ضعيف؛ `isInsideRoot` يصلحه.
+- 📌 **الحرّاس الثلاثة كانوا بلا اختبار واحد** قبل هذه الدفعة —
+  `tests/workspacePaths.test.mjs` (5) أول تغطية لهم، وتثبّت كل سياسة كما هي.
 - الوكلاء الـ24 تُهاجَر لاحقاً وحدةً وحدةً (الأثقل أولاً) — كل هجرة PR مستقل
   بخط أساس. **لا كتابة `Tool` عام قبل أن يستهلكه موضعان على الأقل.**
 
