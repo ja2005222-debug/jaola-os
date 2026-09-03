@@ -70,6 +70,7 @@ import { recordScore, recordBuild, recordEditAction, buildMetricsPayload } from 
 import { setPendingGoal, getPendingGoal, consumePendingGoal, clearDialog } from '../services/conversationManager.js';
 import { enqueueMission, takeLostMission } from '../core/runtime/ExecutionQueue.js';
 import { loadForPrompt as loadConversation, recordTurn } from '../services/conversationStore.js';
+import { renderCritique, failures as evidenceFailures } from '../core/evidence/Check.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -474,12 +475,28 @@ export class JaolaCognitiveRuntime {
             const [archResult, qaResult] = await Promise.all([archPromise, qaPromise]);
 
             const newCritiques = [];
-            if (!archResult.approved) newCritiques.push({ agent: 'Architect', critique: archResult.feedback });
+            if (!archResult.approved) {
+                // النقد صار **كل** ما وجده المعماري لا أوّله: كان يعود عند
+                // أول مشكلة فتُصلَح واحدةً واحدة، وكل جولة تحرق نداءً من
+                // الميزانية. `feedback` يبقى احتياطاً لمزوّدٍ بلا `checks`.
+                newCritiques.push({ agent: 'Architect', critique: renderCritique(archResult.checks) || archResult.feedback });
+            }
             if (!secAudit.isSafe) newCritiques.push({ agent: 'Security', critique: secAudit.critique });
             if (!qaResult.passed) {
-                newCritiques.push({ agent: 'QA', critique: qaResult.logs.join(' | ') });
-                // 📚 كل سبب رفض درسٌ للمنصة — الأنماط المتكررة تُحقن مستقبلاً في المولّد
-                for (const log of qaResult.logs || []) recordLesson('qa_failure', log);
+                newCritiques.push({ agent: 'QA', critique: renderCritique(qaResult.checks) || qaResult.logs.join(' | ') });
+                // 📚 درس الفشل من **الأعطاب وحدها**. كان يسجّل كل سطر في
+                // `logs` باسم `qa_failure` — و`logs` عند الفشل تخلط الأعطاب
+                // بالتحذيرات، فكان «لا يوجد footer» يُحفظ في ذاكرة المنصة
+                // بوصفه سبب فشل بناء، ثم يُحقن في prompt المولّد مستقبلاً.
+                // أي أن النظام كان يتعلّم من وصفٍ غير صحيح لما جرى.
+                // ⚠️ وسقوطٌ صريح لمزوّدٍ لا يعيد `checks` (مُحاكٍ، إضافة، نسخة
+                // أقدم): بلا دليلٍ على التمييز **لا نخترعه** — تُسجَّل `logs`
+                // كما كانت تماماً. الأسوأ من خلط التحذيرات بالأعطاب أن نصمت
+                // عنها جميعاً لأن الحقل الجديد غائب.
+                const qaLessons = Array.isArray(qaResult.checks)
+                    ? evidenceFailures(qaResult.checks).map((c) => c.detail)
+                    : (qaResult.logs || []);
+                for (const detail of qaLessons) recordLesson('qa_failure', detail);
             }
 
             if (newCritiques.length > 0) {
