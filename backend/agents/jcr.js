@@ -130,7 +130,6 @@ class JCRContext {
         this.mentalModel = new MentalModel();
         this.budget = null;
         this.metaReasoning = { confidence: 100, unknowns: [], needsUserClarification: false };
-        this.executiveDecision = { actionType: 'EXECUTE', taskGraph: [], priorityQueue: [] };
         this.internalDebate = { currentConfidence: 100, criticTranscripts: [], specialistPersonality: 'ReactExpert' };
     }
 }
@@ -260,6 +259,7 @@ export class JaolaCognitiveRuntime {
             context.metaReasoning.confidence = confidence || 70;
             context.metaReasoning.unknowns = Array.isArray(result.meta.unknowns) ? result.meta.unknowns : [];
             context.metaReasoning.needsUserClarification = (context.metaReasoning.confidence < 45) && (context.metaReasoning.unknowns.length > 0);
+            this._noteUnknowns(context, roomName);
 
             const allowed = ['Critical', 'High', 'Medium', 'Low'];
             const priority = allowed.includes(result.meta.priority) ? result.meta.priority : 'Medium';
@@ -274,41 +274,15 @@ export class JaolaCognitiveRuntime {
         }
     }
 
-    async runExecutiveBrain(context, roomName, agents) {
-        this.emitLiveLog(roomName, '3. EXECUTIVE BRAIN', 'CEO', '🎯 تفكيك الأهداف...');
-        const unknowns = Array.isArray(context.metaReasoning.unknowns) ? context.metaReasoning.unknowns : [];
-
-        if (context.metaReasoning.needsUserClarification && unknowns.length > 0) {
-            this.emitLiveLog(roomName, '3. EXECUTIVE BRAIN', 'CEO', '🟡 ملاحظة: توجد مجاهيل، لكننا سنحاول المتابعة.');
-            this.emitLiveLog(roomName, '3. EXECUTIVE BRAIN', 'CEO', `الأسئلة المحتملة:\n${unknowns.map((u,i)=>`${i+1}. ${u}`).join('\n')}`);
-        }
-
-        if (!context.budget.consumeCall()) {
-            this.emitLiveLog(roomName, '3. EXECUTIVE BRAIN', 'CEO', '❌ الميزانية استنفدت.');
-            context.executiveDecision.actionType = 'STOP_AND_ASK';
-            return;
-        }
-        try {
-            const completion = await groq.chat.completions.create({
-                messages: [
-                    {
-                        role: "system",
-                        content: "أنت مخطط مهام. أعد كائن JSON يحتوي على 'taskGraph' (مصفوفة من سلاسل تصف المهام الفرعية) و 'priorityQueue' (مصفوفة من كائنات تحتوي على 'taskName' و 'priority' و 'estimatedTime'). مثال: {\"taskGraph\": [\"تصميم الهيكل\", \"كتابة الكود\"], \"priorityQueue\": [{\"taskName\": \"تصميم الهيكل\", \"priority\": \"High\", \"estimatedTime\": 2}]}"
-                    },
-                    { role: "user", content: `المشروع: ${JSON.stringify(context.mentalModel)}` }
-                ],
-                model: "llama-3.3-70b-versatile",
-                response_format: { type: "json_object" },
-                temperature: 0.2
-            });
-            const result = JSON.parse(completion.choices[0].message.content);
-            context.executiveDecision.taskGraph = result.taskGraph || [];
-            context.executiveDecision.priorityQueue = result.priorityQueue || [];
-            this.emitLiveLog(roomName, '3. EXECUTIVE BRAIN', 'CEO', `✓ ${context.executiveDecision.taskGraph.length} مهام فرعية.`);
-        } catch (e) {
-            context.executiveDecision.taskGraph = ["بناء وتحديث كود الواجهة"];
-            this.emitLiveLog(roomName, '3. EXECUTIVE BRAIN', 'CEO', `⚠️ فشل التفكيك: ${e.message}`);
-        }
+    // 🟡 المجاهيل التي كشفها تحليل المهمة تُعرض للمستخدم بشفافية (كانت الجزء
+    // الوحيد المفيد في «Executive Brain» المحذوف — استدعاء LLM كان يُنتج
+    // taskGraph لا يقرؤه أي سطر، راجع ARCHITECTURE_MIGRATION.md).
+    _noteUnknowns(context, roomName) {
+        const unknowns = Array.isArray(context.metaReasoning?.unknowns) ? context.metaReasoning.unknowns : [];
+        if (!context.metaReasoning?.needsUserClarification || unknowns.length === 0) return false;
+        this.emitLiveLog(roomName, '2. MISSION & META', 'Mission+Meta', '🟡 ملاحظة: توجد مجاهيل، لكننا سنحاول المتابعة.');
+        this.emitLiveLog(roomName, '2. MISSION & META', 'Mission+Meta', `الأسئلة المحتملة:\n${unknowns.map((u, i) => `${i + 1}. ${u}`).join('\n')}`);
+        return true;
     }
 
     async runDynamicMultiAgentRuntime(context, roomName, agents) {
@@ -657,10 +631,7 @@ export class JaolaCognitiveRuntime {
 
             // 🆕 تحديث Project Memory بهيكل الموقع المبني
             if (context.mentalModel?.templateSections?.length) {
-                updateStructure(context.username, context.activeProject,
-                    context.mentalModel.templateSections,
-                    context.executiveDecision?.subTasks?.map(t => t.description) || []
-                );
+                updateStructure(context.username, context.activeProject, context.mentalModel.templateSections);
             }
             if (context.mentalModel?.visualIdentity) {
                 updateDesign(context.username, context.activeProject, { style: context.mentalModel.visualIdentity });
@@ -1391,13 +1362,6 @@ User preferences: ${JSON.stringify(execMemory)}` },
             throwIfAborted(roomName);
             await this.buildMissionAndMeta(context, roomName);
             throwIfAborted(roomName);
-            await this.runExecutiveBrain(context, roomName, agents);
-            throwIfAborted(roomName);
-            if (context.executiveDecision.actionType !== 'EXECUTE') {
-                await this.runReflectionAndSelfImprovement(context, roomName, true);
-                this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'waiting', coder: 'waiting', qa: 'waiting', deploy: 'waiting' });
-                return { success: true };
-            }
 
             let execResult;
             try {

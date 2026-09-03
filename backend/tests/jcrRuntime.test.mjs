@@ -133,6 +133,48 @@ test('نية توليد الصور تذهب لمولّد الصور مباشرة
     assertNoHeavyPath(s.calls, 'توليد الصور');
 });
 
+// ── النواة: تحليل المهمة بلا «Executive Brain» ──────────────────────────
+// runExecutiveBrain حُذف (استدعاء LLM كان يُنتج taskGraph لا يقرؤه أحد).
+// هذان الاختباران يثبّتان ما بقي: ميزانية سليمة في مسار الاحتياط، وعرض
+// المجاهيل للمستخدم — بلا أي نموذج لغوي (الميزانية المُستنفدة تُجبر الاحتياط).
+function kernelContext(over = {}) {
+    return {
+        username: `__jcr_k${++seq}__`,
+        goal: 'موقع لمطعم',
+        mentalModel: {},
+        metaReasoning: { confidence: 100, unknowns: [], needsUserClarification: false },
+        budget: null,
+        ...over,
+    };
+}
+
+test('buildMissionAndMeta: مسار الاحتياط يترك ميزانية كاملة لحلقة الكود (لا وحدة تُحرق بلا فائدة)', async () => {
+    const s = scenario();
+    const ctx = kernelContext({ budget: { consumeCall: () => false } }); // يُجبر الاحتياط حتمياً
+    await s.rt.buildMissionAndMeta(ctx, s.ctx.roomName);
+
+    assert.equal(ctx.budget.maxApiCalls, 7, 'ميزانية "medium"');
+    assert.equal(ctx.budget.apiCallsUsed, 0, 'لا استهلاك قبل حلقة الكود');
+    assert.equal(ctx.metaReasoning.confidence, 70);
+    assert.equal(typeof s.rt.runExecutiveBrain, 'undefined', 'لا مرحلة CEO وهمية بعد الآن');
+    const logs = s.events.filter(e => e.ev === 'log').map(e => e.payload.message).join('\n');
+    assert.match(logs, /2\. MISSION & META/);
+    assert.doesNotMatch(logs, /EXECUTIVE BRAIN/);
+});
+
+test('المجاهيل تُعرض للمستخدم عند ثقة منخفضة فقط — وبلا LLM', () => {
+    const shown = scenario();
+    const ctx = kernelContext({ metaReasoning: { confidence: 30, unknowns: ['أي مدينة؟', 'أي لغة؟'], needsUserClarification: true } });
+    assert.equal(shown.rt._noteUnknowns(ctx, shown.ctx.roomName), true);
+    const logs = shown.events.filter(e => e.ev === 'log').map(e => e.payload.message).join('\n');
+    assert.match(logs, /توجد مجاهيل/);
+    assert.match(logs, /1\. أي مدينة؟\n2\. أي لغة؟/);
+
+    const quiet = scenario();
+    assert.equal(quiet.rt._noteUnknowns(kernelContext(), quiet.ctx.roomName), false);
+    assert.equal(quiet.events.length, 0, 'لا ضجيج عند غياب المجاهيل');
+});
+
 test('بنّر: «غير صورة البنر» يُمرَّر بعلم hero إلى المولّد', async () => {
     const s = scenario();
     const seen = [];
