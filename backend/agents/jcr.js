@@ -276,9 +276,54 @@ export class JaolaCognitiveRuntime {
 
     async runDynamicMultiAgentRuntime(context, roomName, agents) {
         this.emitLiveLog(roomName, '5. RUNTIME & DEBATE', 'Orchestrator', '💻 إطلاق حلقة النقاش...');
-        let initialCodeContext = await this.readCurrentCodeContextAsync(context.projectPath);
+        context.initialCodeContext = await this.readCurrentCodeContextAsync(context.projectPath);
         const maxDebateCycles = context.budget.maxApiCalls;
 
+        await this._stageTemplate(context, roomName, agents);
+        await this._stageDesigner(context, roomName, agents);
+        const plan = await this._stageDebate(context, roomName, agents);
+        if (plan) {
+            // ✅ الخطة مقبولة — من هنا خطّ التسليم: مراحل بتوقيع موحّد
+            // (context, roomName, agents) تقرأ/تكتب context.plan.files (عقد Agent الأول)
+            context.plan = plan;
+            await this._stageGuardAndWrite(context, roomName, agents);
+            await this._stageReview(context, roomName, agents);
+            await this._stageRefactor(context, roomName, agents);
+            await this._stageTesting(context, roomName, agents);
+            await this._stageRequirementsVerify(context, roomName, agents);
+            await this._stageExecutiveMemory(context, roomName, agents);
+            await this._stageSEO(context, roomName, agents);
+            await this._stageSecurity(context, roomName, agents);
+            await this._stageGitBackup(context, roomName, agents);
+            await this._stageProjectMemory(context, roomName, agents);
+            await this._stageBackend(context, roomName, agents);
+            await this._stageAdvancedModules(context, roomName, agents);
+            await this._stageFullStackScaffold(context, roomName, agents);
+            await this._stageRenderConfig(context, roomName, agents);
+            await this._stageBehaviorVerify(context, roomName, agents);
+
+            return { success: true };
+        }
+
+        const lastCritiques = context.internalDebate.criticTranscripts.slice(-3);
+        const reasonsText = lastCritiques.length > 0
+            ? lastCritiques.map(c => `• [${c.agent}] ${c.critique}`).join('\n')
+            : 'لم يتم تسجيل أسباب محددة.';
+
+        this.emitLiveLog(roomName, '5. RUNTIME', 'Orchestrator',
+            `❌ فشل بناء الموقع بعد ${maxDebateCycles} محاولة. الأسباب الأخيرة:\n${reasonsText}`
+        );
+        this.emitLiveLog(roomName, '5. RUNTIME', 'Orchestrator',
+            `💡 جرّب صياغة طلبك بشكل أبسط أو أوضح، أو حاول مرة أخرى — أحياناً يكون السبب ضغطاً مؤقتاً على خدمة الذكاء الاصطناعي.`
+        );
+
+        throw new Error(`فشل الفريق بعد ${maxDebateCycles} دورات. آخر الانتقادات: ${JSON.stringify(lastCritiques)}`);
+    }
+
+    // 📥 مرحلة القالب — على مجلد فارغ فقط: يطبّق قالباً جاهزاً، يحقن توجيهاته
+    // في الهوية البصرية، ويستبدل أقسامه التعريفية بشاشات الأدوار للتطبيقات،
+    // ثم يُعيد قراءة السياق الأولي (context.initialCodeContext) ليراه المبرمج.
+    async _stageTemplate(context, roomName, agents) {
         try {
             const dirFiles = await fsPromises.readdir(context.projectPath);
             const currentFilesCount = dirFiles.filter(f => f !== '.backups' && f !== 'template.zip').length;
@@ -308,7 +353,7 @@ export class JaolaCognitiveRuntime {
                                 `🧩 تطبيق تفاعلي — استُبدلت أقسام البروشور بشاشات الأدوار: ${appSections.join('، ')}`);
                         }
                     }
-                    initialCodeContext = await this.readCurrentCodeContextAsync(context.projectPath);
+                    context.initialCodeContext = await this.readCurrentCodeContextAsync(context.projectPath);
                 } else {
                     this.emitLiveLog(roomName, '5. RUNTIME', 'TemplateAgent', `❌ فشل: ${result?.error || 'سبب غير معروف'}`);
                 }
@@ -316,8 +361,10 @@ export class JaolaCognitiveRuntime {
         } catch (e) {
             this.emitLiveLog(roomName, '5. RUNTIME', 'TemplateAgent', `❌ خطأ: ${e.message}`);
         }
+    }
 
-        // 🆕 مرحلة Designer Agent — قرار بصري قبل Coder
+    // 🎨 مرحلة Designer Agent — قرار بصري قبل Coder (احتياط حتمي: لوحة minimal)
+    async _stageDesigner(context, roomName) {
         try {
             this.emitLiveLog(roomName, '5. RUNTIME', 'DesignerAgent', '🎨 جاري توليد الـ Design Brief...');
             const designResult = await generateDesignBrief(
@@ -338,7 +385,13 @@ export class JaolaCognitiveRuntime {
         } catch (e) {
             this.emitLiveLog(roomName, '5. RUNTIME', 'DesignerAgent', `⚠️ تخطّي: ${e.message}`);
         }
+    }
 
+    // 🗣️ حلقة النقاش — المبرمج ← (المعماري ∥ الجودة ∥ تدقيق الأمن) حتى القبول أو
+    // استنفاد الدورات. تُرجع الخطة المقبولة، أو null عند الاستنفاد/الميزانية.
+    // عطل مزوّد دائم (aiUnavailable) يُرمى فوراً — الدورات الباقية عبث.
+    async _stageDebate(context, roomName, agents) {
+        const maxDebateCycles = context.budget.maxApiCalls;
         transitionState(context.username, context.activeProject, STATES.GENERATING, { agent: 'Coder' });
         for (let cycle = 0; cycle < maxDebateCycles; cycle++) {
             if (context.budget.isExhausted()) {
@@ -352,7 +405,7 @@ export class JaolaCognitiveRuntime {
             const critiquesText = recentCritiques.length > 0
                 ? `\n⚠️ انتقادات يجب معالجتها:\n${JSON.stringify(recentCritiques, null, 2)}\n`
                 : '';
-            const prompt = `${context.goal}\n${critiquesText}\nالسياق الحالي:\n${initialCodeContext}`;
+            const prompt = `${context.goal}\n${critiquesText}\nالسياق الحالي:\n${context.initialCodeContext}`;
 
             this.emitLiveLog(roomName, '5. RUNTIME & DEBATE', 'Coder', `كتابة الشفرة (دورة ${cycle+1}/${maxDebateCycles})...`);
             if (!context.budget.consumeCall()) break;
@@ -361,7 +414,7 @@ export class JaolaCognitiveRuntime {
             try {
                 plan = await agents.coreGenerateCodePlan(
                     prompt,
-                    initialCodeContext,
+                    context.initialCodeContext,
                     context.mentalModel.visualIdentity,
                     [],
                     (chunk) => this.io.to(roomName).emit('code_stream_chunk', chunk),
@@ -422,41 +475,9 @@ export class JaolaCognitiveRuntime {
                 continue;
             }
 
-            // ✅ الخطة مقبولة — من هنا خطّ التسليم: مراحل بتوقيع موحّد
-            // (context, roomName, agents) تقرأ/تكتب context.plan.files (عقد Agent الأول)
-            context.plan = plan;
-            await this._stageGuardAndWrite(context, roomName, agents);
-            await this._stageReview(context, roomName, agents);
-            await this._stageRefactor(context, roomName, agents);
-            await this._stageTesting(context, roomName, agents);
-            await this._stageRequirementsVerify(context, roomName, agents);
-            await this._stageExecutiveMemory(context, roomName, agents);
-            await this._stageSEO(context, roomName, agents);
-            await this._stageSecurity(context, roomName, agents);
-            await this._stageGitBackup(context, roomName, agents);
-            await this._stageProjectMemory(context, roomName, agents);
-            await this._stageBackend(context, roomName, agents);
-            await this._stageAdvancedModules(context, roomName, agents);
-            await this._stageFullStackScaffold(context, roomName, agents);
-            await this._stageRenderConfig(context, roomName, agents);
-            await this._stageBehaviorVerify(context, roomName, agents);
-
-            return { success: true };
+            return plan;
         }
-
-        const lastCritiques = context.internalDebate.criticTranscripts.slice(-3);
-        const reasonsText = lastCritiques.length > 0
-            ? lastCritiques.map(c => `• [${c.agent}] ${c.critique}`).join('\n')
-            : 'لم يتم تسجيل أسباب محددة.';
-
-        this.emitLiveLog(roomName, '5. RUNTIME', 'Orchestrator',
-            `❌ فشل بناء الموقع بعد ${maxDebateCycles} محاولة. الأسباب الأخيرة:\n${reasonsText}`
-        );
-        this.emitLiveLog(roomName, '5. RUNTIME', 'Orchestrator',
-            `💡 جرّب صياغة طلبك بشكل أبسط أو أوضح، أو حاول مرة أخرى — أحياناً يكون السبب ضغطاً مؤقتاً على خدمة الذكاء الاصطناعي.`
-        );
-
-        throw new Error(`فشل الفريق بعد ${maxDebateCycles} دورات. آخر الانتقادات: ${JSON.stringify(lastCritiques)}`);
+        return null;
     }
 
     // ══════════════════════════════════════════════════════════════════════
