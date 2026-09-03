@@ -1242,6 +1242,117 @@ User preferences: ${JSON.stringify(execMemory)}` },
     }
 
     async _runMissionNow(goal, projectPath, username, activeProject, roomName, agents, dbStatus) {
+        const { enrichedGoal, blueprint, blueprintContext, domainModelContext } =
+            await this._understandGoal(goal, username, activeProject, roomName);
+
+        const strategyResult = await this._selectBuildStrategy(goal, blueprint, projectPath, username, activeProject, roomName, agents);
+        if (strategyResult) return strategyResult;
+
+        const { requirementsContext, imageContext, pluginContext } =
+            await this._enrichBuildContext(goal, blueprint, projectPath, username, activeProject, roomName);
+
+        const finalGoalWithRequirements = `${enrichedGoal}${blueprintContext}${domainModelContext}\n${requirementsContext}${imageContext}${pluginContext}`;
+
+        // تسجيل هذا الطلب في تاريخ المشروع
+        addToHistory(username, activeProject, goal.slice(0, 80));
+
+        const context = new JCRContext(finalGoalWithRequirements || enrichedGoal, projectPath, username, activeProject);
+        context.originalGoal = goal;
+        context.blueprint = blueprint;   // متاح للـ template agent وباقي المراحل
+        // 🔄 المهمة تبدأ بمرحلة المعمارية (نموذج العالم + المخطط + القرار) —
+        // GENERATING تُعلن لاحقاً عند دخول حلقة كتابة الشفرة فعلاً
+        transitionState(username, activeProject, STATES.ARCHITECTURE, { agent: 'Architect' });
+
+        // ⏹️ تسجيل المهمة في سجل الإيقاف — تسمح للمستخدم بإيقافها من الواجهة
+        registerMission(roomName);
+
+        // 🧠 CEO Personality — إحاطة مهمة كاملة: تحليل + تعيين وكلاء + وقت متوقع
+        const existingFiles = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
+        const hasExistingProject = existingFiles && existingFiles.trim().length > 100;
+        const userLangForMsg = getUserLanguage(username) || 'ar';
+
+        this.io.to(roomName).emit('chat_reply', {
+            message: missionBriefing({ lang: userLangForMsg, goal, hasExisting: hasExistingProject })
+        });
+
+        this.emitLiveLog(roomName, 'JCOS', 'Kernel', `🏁 بدء المهمة: ${context.missionId}`);
+        try {
+            await this.buildWorldModel(context, roomName, dbStatus);
+            throwIfAborted(roomName);
+            await this.buildMissionAndMeta(context, roomName);
+            throwIfAborted(roomName);
+
+            let execResult;
+            try {
+                execResult = await this.runDynamicMultiAgentRuntime(context, roomName, agents);
+            } catch (runtimeError) {
+                if (runtimeError.aborted) throw runtimeError; // الإيقاف ليس فشلاً — يُعالج في الأسفل
+                // الحالة تتحول FAILED فوراً — كانت تبقى GENERATING فيُحجب المستخدم
+                // بقفل "مهمة تعمل" حتى ينقذه مؤقت العشر دقائق
+                transitionState(username, activeProject, STATES.FAILED, { error: runtimeError.message });
+                this.emitAgentError(roomName, 'coder');
+                this._learnFromOutcome(roomName, { success: false, error: runtimeError });
+                this.emitLiveLog(roomName, 'JCOS', 'Kernel', `❌ فشل نهائياً: ${runtimeError.message}`);
+                // 💬 الشات لا يصمت عند الفشل — رسالة حتمية بلغة المستخدم (بلا نموذج)
+                this.io.to(roomName).emit('chat_reply', {
+                    message: buildFailureChatMessage(getUserLanguage(username) || 'ar', runtimeError),
+                });
+                return { success: false, error: runtimeError.message };
+            }
+
+            if (execResult.success) {
+                this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+            }
+
+            this._learnFromOutcome(roomName, { success: execResult.success });
+            if (execResult.success) {
+                transitionState(username, activeProject, STATES.COMPLETED);
+                this._reportMissionSuccess(goal, projectPath, username, activeProject, roomName);
+            }
+            if (!execResult.success) {
+                // الحالة FAILED فوراً — لا انتظار لمؤقت القفل العالق
+                transitionState(username, activeProject, STATES.FAILED, { error: execResult.error || 'build_failed' });
+                // 📊 البنايات الفاشلة تُسجل أيضاً — التاريخ الصادق جزء من الذكاء
+                recordBuild(username, activeProject, {
+                    success: false,
+                    durationSec: getProjectSummary(username, activeProject).duration || 0,
+                    filesCount: 0, goal: goal || '',
+                });
+                this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
+            }
+            this.emitLiveLog(roomName, 'JCOS', 'Kernel', execResult.success ? '✨ نجاح' : '❌ فشل');
+            return execResult;
+        } catch (error) {
+            // ⏹️ إيقاف بطلب المستخدم — ليس فشلاً
+            if (error.aborted) {
+                transitionState(username, activeProject, STATES.PAUSED);
+                this.io.to(roomName).emit('agent_states', {
+                    planner: 'waiting', architect: 'waiting', coder: 'waiting', qa: 'waiting', deploy: 'waiting'
+                });
+                const langAbort = getUserLanguage(username) || 'ar';
+                const abortMsg = langAbort === 'ar'
+                    ? '⏹️ تم إيقاف المهمة بناءً على طلبك.\nأخبرني بما تريد فعله الآن.'
+                    : '⏹️ Mission stopped at your request.\nTell me what you want to do next.';
+                this.io.to(roomName).emit('chat_reply', { message: abortMsg });
+                this.emitLiveLog(roomName, 'JCOS', 'Kernel', '⏹️ المهمة أُوقفت من قبل المستخدم');
+                return { success: false, aborted: true };
+            }
+            this.emitAgentError(roomName, 'planner');
+            this.emitLiveLog(roomName, 'JCOS', 'Kernel', `❌ تعطلت المهمة: ${error.message}`);
+            this._learnFromOutcome(roomName, { success: false, error });
+            return { success: false, error: error.message };
+        } finally {
+            clearMission(roomName);
+            // 🛠️ إنهاء بث الكود دائماً (نجاح/فشل/إيقاف) — بدونها تبقى طبقة
+            // "يكتب الكود الآن" تغطي المعاينة للأبد عند أي فشل أو إيقاف
+            this.io.to(roomName).emit('stream_done', { timestamp: Date.now() });
+        }
+    }
+
+    // ── مراحل _runMissionNow (نُقلت حرفياً — الدفعة 4) ────────────────────
+    // 🧭 الفهم: ذاكرة المشروع/الملف الشخصي ← مخطط التطبيق ← نموذج المجال.
+    // لا تفشل أبداً (كل خطوة باحتياطها)؛ تُرجع الهدف المُثرى وسياقات الحقن.
+    async _understandGoal(goal, username, activeProject, roomName) {
         // 🆕 دمج Project Memory + User Profile في سياق الهدف
         const memoryContext = buildMemoryContext(username, activeProject);
         const profileContext = buildProfileContext(username);
@@ -1289,7 +1400,13 @@ User preferences: ${JSON.stringify(execMemory)}` },
             this.emitLiveLog(roomName, 'MODEL', 'DomainAnalyst',
                 `🧩 نموذج المشروع: ${summarizeModel(model)}${newIdentity ? ' (هوية جديدة — استُبدل النموذج القديم)' : seed ? ' (مبذور من مكتبة الفئة)' : ''}`);
         } catch (e) { console.warn('[ProjectModel]', 'فشل استخلاص نموذج المشروع:', e.message); }
+        return { enrichedGoal, blueprint, blueprintContext, domainModelContext };
+    }
 
+    // 🧭 اختيار استراتيجية البناء: Registry (صفحة تسويقية) / Clone (تطبيق مطابق) /
+    // React (مشروع كبير جديد) بحماياتها (استئناف، «يعمل فعلاً» → لا استبدال)،
+    // وإلا null ← النواة. أي قيمة غير null هي نتيجة المهمة النهائية.
+    async _selectBuildStrategy(goal, blueprint, projectPath, username, activeProject, roomName, agents) {
         // 🍔 كلون عامل — للتطبيقات المعقّدة المطابقة نبدأ من *تطبيق يعمل فعلاً*
         // (يجتاز التحقّق السلوكي) بدل التوليد من الصفر الذي يفشل (app.js لا يُكتب،
         // أدوار ناقصة)، ثم نضع البصمة. هذا يضمن أن يعمل مشروع التوصيل من أول مرة.
@@ -1387,7 +1504,12 @@ User preferences: ${JSON.stringify(execMemory)}` },
             }
             this.emitLiveLog(roomName, 'STACK', 'HybridRouter', `🧰 مسار سريع → Vanilla${starter ? ` (قالب: ${starter.name})` : ''}`);
         } catch (e) { /* اختياري — نُكمل بالمسار الافتراضي */ }
+        return null; // لا استراتيجية خاصة → النواة (Vanilla) على الهدف المُثرى
+    }
 
+    // 🧩 إثراء سياق البناء: محلّل المتطلبات الضمنية + صور مطابقة + توجيهات
+    // وكلاء الإضافات (hook beforeBuild). كلها اختيارية.
+    async _enrichBuildContext(goal, blueprint, projectPath, username, activeProject, roomName) {
         // 🆕 Smart Requirement Analyzer — يُثري الهدف بمتطلبات ضمنية
         let requirementsContext = '';
         let imageContext = '';
@@ -1421,166 +1543,76 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     `🔌 شارك ${guidance.length} وكيل إضافي في التوجيه`);
             }
         } catch (e) { /* الإضافات اختيارية */ }
+        return { requirementsContext, imageContext, pluginContext };
+    }
 
-        const finalGoalWithRequirements = `${enrichedGoal}${blueprintContext}${domainModelContext}\n${requirementsContext}${imageContext}${pluginContext}`;
+    // 📣 ما بعد النجاح: تقرير التسليم بلغة المستخدم، الاقتراحات، قائمة الملفات،
+    // الدفع التلقائي، اللقطة الدائمة، المقاييس، وhook afterBuild.
+    _reportMissionSuccess(goal, projectPath, username, activeProject, roomName) {
+        const langMsg = getUserLanguage(username) || 'ar';
 
-        // تسجيل هذا الطلب في تاريخ المشروع
-        addToHistory(username, activeProject, goal.slice(0, 80));
+        // 9️⃣ تقرير التسليم التنفيذي — ماذا أُنجز بالضبط
+        let builtFiles = [];
+        try {
+            builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules');
+        } catch (e) {}
+        const durationSec = getProjectSummary(username, activeProject).duration || 0;
+        const durText = durationSec >= 60
+            ? `${Math.floor(durationSec / 60)}:${String(durationSec % 60).padStart(2, '0')} د`
+            : `${durationSec} ث`;
+        const memSections = getProjectMemory(username, activeProject)?.structure?.sections || [];
 
-        const context = new JCRContext(finalGoalWithRequirements || enrichedGoal, projectPath, username, activeProject);
-        context.originalGoal = goal;
-        context.blueprint = blueprint;   // متاح للـ template agent وباقي المراحل
-        // 🔄 المهمة تبدأ بمرحلة المعمارية (نموذج العالم + المخطط + القرار) —
-        // GENERATING تُعلن لاحقاً عند دخول حلقة كتابة الشفرة فعلاً
-        transitionState(username, activeProject, STATES.ARCHITECTURE, { agent: 'Architect' });
+        const reportLines = langMsg === 'ar'
+            ? [
+                '✅ اكتملت المهمة — تقرير التسليم:',
+                `⏱️ مدة التنفيذ: ${durText}`,
+                builtFiles.length ? `📁 الملفات (${builtFiles.length}): ${builtFiles.slice(0, 8).join('، ')}` : null,
+                memSections.length ? `🧱 الأقسام: ${memSections.join('، ')}` : null,
+                '',
+                '🖥️ المعاينة الحية تحدّثت وفُتحت تلقائياً — راجعها الآن.',
+                'ما الخطوة التالية؟',
+            ].filter(Boolean)
+            : [
+                '✅ Mission complete — Delivery report:',
+                `⏱️ Duration: ${durText}`,
+                builtFiles.length ? `📁 Files (${builtFiles.length}): ${builtFiles.slice(0, 8).join(', ')}` : null,
+                memSections.length ? `🧱 Sections: ${memSections.join(', ')}` : null,
+                '',
+                '🖥️ Live preview updated and opened automatically.',
+                'What is the next step?',
+            ].filter(Boolean);
 
-        // ⏹️ تسجيل المهمة في سجل الإيقاف — تسمح للمستخدم بإيقافها من الواجهة
-        registerMission(roomName);
-
-        // 🧠 CEO Personality — إحاطة مهمة كاملة: تحليل + تعيين وكلاء + وقت متوقع
-        const existingFiles = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
-        const hasExistingProject = existingFiles && existingFiles.trim().length > 100;
-        const userLangForMsg = getUserLanguage(username) || 'ar';
+        // 🔟 اقتراحات استباقية — أزرار الخطوة التالية داخل الشات
+        const suggestions = langMsg === 'ar'
+            ? ['🚀 انشر الآن', '🐙 ادفع إلى GitHub', '📊 أين وصلنا']
+            : ['🚀 Deploy now', '🐙 Push to GitHub', '📊 Status'];
 
         this.io.to(roomName).emit('chat_reply', {
-            message: missionBriefing({ lang: userLangForMsg, goal, hasExisting: hasExistingProject })
+            message: reportLines.join('\n'),
+            options: suggestions,
         });
 
-        this.emitLiveLog(roomName, 'JCOS', 'Kernel', `🏁 بدء المهمة: ${context.missionId}`);
-        try {
-            await this.buildWorldModel(context, roomName, dbStatus);
-            throwIfAborted(roomName);
-            await this.buildMissionAndMeta(context, roomName);
-            throwIfAborted(roomName);
+        // 🛠️ تحديث قائمة الملفات في الواجهة بعد البناء (كانت تبقى فارغة)
+        this.io.to(roomName).emit('workspace_files', builtFiles);
 
-            let execResult;
-            try {
-                execResult = await this.runDynamicMultiAgentRuntime(context, roomName, agents);
-            } catch (runtimeError) {
-                if (runtimeError.aborted) throw runtimeError; // الإيقاف ليس فشلاً — يُعالج في الأسفل
-                // الحالة تتحول FAILED فوراً — كانت تبقى GENERATING فيُحجب المستخدم
-                // بقفل "مهمة تعمل" حتى ينقذه مؤقت العشر دقائق
-                transitionState(username, activeProject, STATES.FAILED, { error: runtimeError.message });
-                this.emitAgentError(roomName, 'coder');
-                this._learnFromOutcome(roomName, { success: false, error: runtimeError });
-                this.emitLiveLog(roomName, 'JCOS', 'Kernel', `❌ فشل نهائياً: ${runtimeError.message}`);
-                // 💬 الشات لا يصمت عند الفشل — رسالة حتمية بلغة المستخدم (بلا نموذج)
-                this.io.to(roomName).emit('chat_reply', {
-                    message: buildFailureChatMessage(getUserLanguage(username) || 'ar', runtimeError),
-                });
-                return { success: false, error: runtimeError.message };
-            }
+        // 🐙 الدفع التلقائي لـ GitHub إذا كان مفعلاً لهذا المشروع
+        autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
 
-            if (execResult.success) {
-                this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
-            }
+        // 🗄️ لقطة دائمة لملفات المشروع في MongoDB — تنجو من إعادة نشر Render
+        snapshotWorkspace(username, activeProject, projectPath)
+            .then(r => { if (r.success) this.emitLiveLog(roomName, 'STORAGE', 'Snapshot', `🗄️ حُفظت نسخة دائمة (${r.count} ملف)`); })
+            .catch(() => {});
 
-            this._learnFromOutcome(roomName, { success: execResult.success });
-            if (execResult.success) {
-                transitionState(username, activeProject, STATES.COMPLETED);
-                const langMsg = getUserLanguage(username) || 'ar';
+        // 📊 تسجيل البناء + بث المقاييس الحقيقية للوحة الذكاء
+        recordBuild(username, activeProject, {
+            success: true, durationSec, filesCount: builtFiles.length, goal: goal || '',
+        });
+        this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
 
-                // 9️⃣ تقرير التسليم التنفيذي — ماذا أُنجز بالضبط
-                let builtFiles = [];
-                try {
-                    builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules');
-                } catch (e) {}
-                const durationSec = getProjectSummary(username, activeProject).duration || 0;
-                const durText = durationSec >= 60
-                    ? `${Math.floor(durationSec / 60)}:${String(durationSec % 60).padStart(2, '0')} د`
-                    : `${durationSec} ث`;
-                const memSections = getProjectMemory(username, activeProject)?.structure?.sections || [];
-
-                const reportLines = langMsg === 'ar'
-                    ? [
-                        '✅ اكتملت المهمة — تقرير التسليم:',
-                        `⏱️ مدة التنفيذ: ${durText}`,
-                        builtFiles.length ? `📁 الملفات (${builtFiles.length}): ${builtFiles.slice(0, 8).join('، ')}` : null,
-                        memSections.length ? `🧱 الأقسام: ${memSections.join('، ')}` : null,
-                        '',
-                        '🖥️ المعاينة الحية تحدّثت وفُتحت تلقائياً — راجعها الآن.',
-                        'ما الخطوة التالية؟',
-                    ].filter(Boolean)
-                    : [
-                        '✅ Mission complete — Delivery report:',
-                        `⏱️ Duration: ${durText}`,
-                        builtFiles.length ? `📁 Files (${builtFiles.length}): ${builtFiles.slice(0, 8).join(', ')}` : null,
-                        memSections.length ? `🧱 Sections: ${memSections.join(', ')}` : null,
-                        '',
-                        '🖥️ Live preview updated and opened automatically.',
-                        'What is the next step?',
-                    ].filter(Boolean);
-
-                // 🔟 اقتراحات استباقية — أزرار الخطوة التالية داخل الشات
-                const suggestions = langMsg === 'ar'
-                    ? ['🚀 انشر الآن', '🐙 ادفع إلى GitHub', '📊 أين وصلنا']
-                    : ['🚀 Deploy now', '🐙 Push to GitHub', '📊 Status'];
-
-                this.io.to(roomName).emit('chat_reply', {
-                    message: reportLines.join('\n'),
-                    options: suggestions,
-                });
-
-                // 🛠️ تحديث قائمة الملفات في الواجهة بعد البناء (كانت تبقى فارغة)
-                this.io.to(roomName).emit('workspace_files', builtFiles);
-
-                // 🐙 الدفع التلقائي لـ GitHub إذا كان مفعلاً لهذا المشروع
-                autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
-
-                // 🗄️ لقطة دائمة لملفات المشروع في MongoDB — تنجو من إعادة نشر Render
-                snapshotWorkspace(username, activeProject, projectPath)
-                    .then(r => { if (r.success) this.emitLiveLog(roomName, 'STORAGE', 'Snapshot', `🗄️ حُفظت نسخة دائمة (${r.count} ملف)`); })
-                    .catch(() => {});
-
-                // 📊 تسجيل البناء + بث المقاييس الحقيقية للوحة الذكاء
-                recordBuild(username, activeProject, {
-                    success: true, durationSec, filesCount: builtFiles.length, goal: goal || '',
-                });
-                this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
-
-                // 🔌 وكلاء الإضافات: hook afterBuild — تنفيذ ما بعد البناء
-                orchestrator.runHook('afterBuild', {
-                    success: true, goal, username, project: activeProject, projectPath, files: builtFiles,
-                }).catch(() => {});
-            }
-            if (!execResult.success) {
-                // الحالة FAILED فوراً — لا انتظار لمؤقت القفل العالق
-                transitionState(username, activeProject, STATES.FAILED, { error: execResult.error || 'build_failed' });
-                // 📊 البنايات الفاشلة تُسجل أيضاً — التاريخ الصادق جزء من الذكاء
-                recordBuild(username, activeProject, {
-                    success: false,
-                    durationSec: getProjectSummary(username, activeProject).duration || 0,
-                    filesCount: 0, goal: goal || '',
-                });
-                this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
-            }
-            this.emitLiveLog(roomName, 'JCOS', 'Kernel', execResult.success ? '✨ نجاح' : '❌ فشل');
-            return execResult;
-        } catch (error) {
-            // ⏹️ إيقاف بطلب المستخدم — ليس فشلاً
-            if (error.aborted) {
-                transitionState(username, activeProject, STATES.PAUSED);
-                this.io.to(roomName).emit('agent_states', {
-                    planner: 'waiting', architect: 'waiting', coder: 'waiting', qa: 'waiting', deploy: 'waiting'
-                });
-                const langAbort = getUserLanguage(username) || 'ar';
-                const abortMsg = langAbort === 'ar'
-                    ? '⏹️ تم إيقاف المهمة بناءً على طلبك.\nأخبرني بما تريد فعله الآن.'
-                    : '⏹️ Mission stopped at your request.\nTell me what you want to do next.';
-                this.io.to(roomName).emit('chat_reply', { message: abortMsg });
-                this.emitLiveLog(roomName, 'JCOS', 'Kernel', '⏹️ المهمة أُوقفت من قبل المستخدم');
-                return { success: false, aborted: true };
-            }
-            this.emitAgentError(roomName, 'planner');
-            this.emitLiveLog(roomName, 'JCOS', 'Kernel', `❌ تعطلت المهمة: ${error.message}`);
-            this._learnFromOutcome(roomName, { success: false, error });
-            return { success: false, error: error.message };
-        } finally {
-            clearMission(roomName);
-            // 🛠️ إنهاء بث الكود دائماً (نجاح/فشل/إيقاف) — بدونها تبقى طبقة
-            // "يكتب الكود الآن" تغطي المعاينة للأبد عند أي فشل أو إيقاف
-            this.io.to(roomName).emit('stream_done', { timestamp: Date.now() });
-        }
+        // 🔌 وكلاء الإضافات: hook afterBuild — تنفيذ ما بعد البناء
+        orchestrator.runHook('afterBuild', {
+            success: true, goal, username, project: activeProject, projectPath, files: builtFiles,
+        }).catch(() => {});
     }
 
     async readCurrentCodeContextAsync(projectPath) {
