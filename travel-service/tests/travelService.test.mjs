@@ -36,7 +36,7 @@ import {
 import { normalizeReview, maskReviewerName, aggregateRating, publicReview } from '../src/reviews.js';
 import { pegRate, fxRate, USD_PEGS, DISPLAY_CURRENCIES } from '../src/fx.js';
 import { bookingPoints, computeLoyalty, LOYALTY_TIERS } from '../src/loyalty.js';
-import { parseStripeSignature, verifyStripeWebhookSignature, toStripeForm, createStripeClient } from '../src/payments/stripeClient.js';
+import { parseStripeSignature, verifyStripeWebhookSignature, toStripeForm, createStripeClient, stripeKeyMode } from '../src/payments/stripeClient.js';
 import { isBalanceReminderDue, renderBalanceReminder, sendBalanceReminders, BALANCE_REMINDER_DAYS_AHEAD } from '../src/balanceReminders.js';
 import { createContractedStaysProvider, withContractedStays } from '../src/providers/contractedStaysProvider.js';
 import { retryPackageCompensations } from '../src/packages.js';
@@ -8526,5 +8526,51 @@ describe('🚨 حارس إعداد النِسَب: السقوط الآمن يب�
         // بينما الحساب يستعمل 2% — إعلانٌ يخالف الفعل
         assert.equal(readFxBufferPct({ TRAVEL_FX_BUFFER_PCT: '99' }), DEFAULT_FX_BUFFER_PCT);
         assert.equal(readFxBufferPct({ TRAVEL_FX_BUFFER_PCT: KEY }), DEFAULT_FX_BUFFER_PCT);
+    });
+});
+
+describe('💳 وضع مفتاح Stripe: «لا أعرف» ليست «تجريبي»', () => {
+    // ⚠️ من سجلّ إقلاع حقيقي على الإنتاج: أعلن الخادم «وضع تجريبي sk_test»
+    // بينما المالك واضعٌ مفتاح حساب حيّ. السبب `startsWith('sk_live_')`.
+    test('المفتاح المقيَّد rk_live_ حيٌّ — وStripe نفسه يحثّ عليه اليوم', () => {
+        assert.equal(stripeKeyMode('rk_live_51ABCdef'), 'live');
+        assert.equal(stripeKeyMode('sk_live_51ABCdef'), 'live');
+        assert.equal(stripeKeyMode('rk_test_51ABCdef'), 'test');
+        assert.equal(stripeKeyMode('sk_test_51ABCdef'), 'test');
+    });
+
+    test('المسافة أو السطر الجديد من اللصق لا يقلبان الحيّ تجريبياً', () => {
+        assert.equal(stripeKeyMode('  sk_live_51ABC'), 'live');
+        assert.equal(stripeKeyMode('sk_live_51ABC\n'), 'live');
+        assert.equal(stripeKeyMode('\trk_live_51ABC  '), 'live');
+    });
+
+    test('ما لا يُعرف يُقال «غير معروف» — لا يُدّعى تجريبياً', () => {
+        // الادّعاء بالتجريبية عن مفتاح حيّ يطمئن المالك أن لا مال يُحصَّل
+        assert.equal(stripeKeyMode('sk_51ABCdef'), 'unknown', 'مفتاح قديم بلا وسم وضع');
+        assert.equal(stripeKeyMode('لصقٌ خاطئ'), 'unknown');
+        assert.equal(stripeKeyMode(''), null, 'بلا مفتاح ≠ مفتاح مجهول');
+        assert.equal(stripeKeyMode('   '), null);
+        assert.equal(stripeKeyMode(null), null);
+        assert.equal(stripeKeyMode(undefined), null);
+    });
+
+    test('العميل يقصّ المفتاح قبل ترويسة Authorization ويعلن وضعه', async () => {
+        let sentAuth = null;
+        const client = createStripeClient({
+            secretKey: '  sk_live_51ABC\n',
+            fetchImpl: async (_url, opts) => {
+                sentAuth = opts.headers.Authorization;
+                return { ok: true, json: async () => ({ id: 'cs_1', url: 'https://pay/1' }) };
+            },
+        });
+        assert.equal(client.mode, 'live');
+        await client.createCheckoutSession({
+            amount: 100, currency: 'USD', successUrl: 'https://x/s', cancelUrl: 'https://x/c',
+            metadata: {}, purpose: 'issue_booking',
+        });
+        // 🔒 سطرٌ جديد عالقٌ يجعل قيمة الترويسة غير صالحة فيفشل كل نداء
+        assert.equal(sentAuth, 'Bearer sk_live_51ABC');
+        assert.equal(createStripeClient({ secretKey: '   ' }), null, 'الفراغ ليس مفتاحاً');
     });
 });

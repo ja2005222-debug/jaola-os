@@ -37,7 +37,7 @@ import { sendBalanceReminders } from './src/balanceReminders.js';
 import { fxRate, DISPLAY_CURRENCIES } from './src/fx.js';
 import { computeLoyalty } from './src/loyalty.js';
 import { readReferralBonusPoints } from './src/referrals.js';
-import { createStripeClient, verifyStripeWebhookSignature } from './src/payments/stripeClient.js';
+import { createStripeClient, verifyStripeWebhookSignature, stripeKeyMode } from './src/payments/stripeClient.js';
 import { createGoogleAuthClient } from './src/googleAuth.js';
 import { normalizeContract } from './src/contracts.js';
 import { normalizeDiscountCode, computeDiscount } from './src/discounts.js';
@@ -3998,8 +3998,13 @@ if (isMain) {
         if (!agent) console.warn('⚠️ الايجنت غير مفعَّل — اضبط TRAVEL_AGENT_API_KEY لتفعيل المساعد الحاجز.');
         if (provider.name === 'mock') console.warn('⚠️ مزوّد محاكاة — اضبط DUFFEL_API_KEY (يبدأ بـduffel_test للتجريبي).');
         if (process.env.STRIPE_SECRET_KEY) {
-            const live = process.env.STRIPE_SECRET_KEY.startsWith('sk_live_');
-            console.log(`💳 الدفع مفعَّل عبر Stripe (${live ? 'حساب حي' : 'وضع تجريبي sk_test'})${process.env.STRIPE_WEBHOOK_SECRET ? '' : ' — ⚠️ STRIPE_WEBHOOK_SECRET غير مضبوط: التسوية ستعتمد على المصالحة الدورية فقط'}.`);
+            // ⚠️ كان `startsWith('sk_live_')` يقول «تجريبي» عن مفتاح حيّ
+            // مقيَّد (`rk_live_`) أو ملصوقٍ بمسافة سابقة — راجع stripeKeyMode.
+            const mode = stripeKeyMode(process.env.STRIPE_SECRET_KEY);
+            const label = mode === 'live' ? 'حساب حي'
+                : mode === 'test' ? 'وضع تجريبي'
+                    : '⚠️ نوع المفتاح غير معروف — لا يحمل _live_ ولا _test_';
+            console.log(`💳 الدفع مفعَّل عبر Stripe (${label})${process.env.STRIPE_WEBHOOK_SECRET ? '' : ' — ⚠️ STRIPE_WEBHOOK_SECRET غير مضبوط: التسوية ستعتمد على المصالحة الدورية فقط'}.`);
             const bc = String(process.env.TRAVEL_BILLING_CURRENCY || '').trim().toUpperCase();
             console.log(bc
                 ? `💱 التحصيل بعملة ${bc} (تحويل من عملة المزوّد بهامش صرف ${readFxBufferPct()}% معلَن).`
