@@ -59,8 +59,8 @@ Policy/Permission، Identity، Plugin.
 
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `core/PluginLoader.js` | 85 | اكتشاف `.js`/`index.js`، تحقّق manifest (`name` مطلوب، `type ∈ agent/hook/service`، `enabled`)، عزل فشل الإضافة | KEEP/MODIFY | Plugin (manifest يتوسّع بـcapabilities/tools/permissions) | `core/PluginLoader.js` |
-| `core/PluginOrchestrator.js` | 116 | سجلّ الإضافات + مشغّل hooks (`onLoad`, `beforeBuild`, `afterBuild`) + مسجّل وكلاء (`registerAgent`) + `reload/status/setEnabled` | KEEP/MODIFY | Plugin + Agent (Registry) — يتطوّر لا يُستبدل | `core/PluginOrchestrator.js` |
+| `core/PluginLoader.js` | 94 | اكتشاف `.js`/`index.js`، تحقّق manifest (`name` مطلوب، `type`، `enabled`، ✅ `capabilities` بالشكل `domain.action`)، عزل فشل الإضافة | KEEP/MODIFY (Sprint 1 ✅ capabilities) | Plugin + Capability (يتوسّع لاحقاً بـtools/permissions) | `core/PluginLoader.js` |
+| `core/PluginOrchestrator.js` | 133 | سجلّ الإضافات + مشغّل hooks + مسجّل وكلاء + `reload/status/setEnabled` + ✅ فهرس القدرات `capabilities()/findByCapability()` | KEEP/MODIFY (Sprint 1 ✅) | Plugin + Capability + Agent (Registry) — يتطوّر لا يُستبدل | `core/PluginOrchestrator.js` |
 | `plugins/site-checker.js` | 94 | وكيل فحص موقع حيّ (type: agent, `registerAgent → {name, handler}`) | KEEP | Agent (أول وكيل إضافة حقيقي) | `plugins/site-checker.js` |
 | `plugin-templates/AgentPluginTemplate.js` | 47 | قالب إضافة وكيل | KEEP | Plugin | كما هو |
 | `services/pluginStore.js` | 87 | تخزين الإضافات في Mongo واستعادتها للقرص | KEEP | Plugin | `core/plugins/` (Sprint 7) |
@@ -86,7 +86,7 @@ Policy/Permission، Identity، Plugin.
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
 | `jcr.js` | 3185 | وقت التشغيل المعرفي: `handleUserMessage` → 7 معالجات نية → `executeMission` → `_runMissionNow` → 15 مرحلة | MODIFY (تدريجي، بلا إعادة كتابة) | Mission + Agent + Task (المراحل → TaskGraph) + Event | يبقى؛ يتقلّص مع كل Sprint لصالح `core/runtime/*` |
-| `contracts.js` | 99 | typedefs + `assertBuildAgents` | MOVE | كل عقود Sprint 1 تُضاف هنا أولاً | `core/contracts/` (Sprint 1) |
+| `contracts.js` → ✅ `core/contracts/index.js` | 99 → 190 | typedefs الأحد عشر + `assertBuildAgents` + `DELIVERY_STAGES` + مدقّقا Capability | MOVED (Sprint 1 ✅) | Mission/Agent/Task/Capability/Provider/Transaction | `core/contracts/index.js` |
 | `stateMachine.js` | 238 | Build State Machine (10 حالات + `STATE_EVENTS` + emitter) | KEEP | Event — تبقى متخصّصة، وMission Lifecycle فوقها | `core/missions/BuildStateMachine.js` (Sprint 2) |
 | `ceoBrain.js` | 240 | تصنيف نية سريع، قرار، رسائل إحاطة/حالة | MODIFY | Mission (Intent/CEO في مسار v2) | `core/runtime/` |
 | `router.js` | 94 | الموجّه الموحّد للرسائل | MODIFY | Mission | مع `ceoBrain` |
@@ -124,7 +124,7 @@ Policy/Permission، Identity، Plugin.
 ### C4. الفرق التصريحية (العقد الوحيد الموحّد اليوم — `CONTRACTS.md` §2ب)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `backendTeam/agentSpec.js` | 133 | `defineAgent/validateSpec/compileSpecToPrompt` | MOVE | **Agent** (الشكل القانوني للوكيل في v2) | `core/runtime/AgentSpec.js` (Sprint 1) |
+| `backendTeam/agentSpec.js` | 133 | `defineAgent/validateSpec/compileSpecToPrompt` | MOVE | **Agent** (الشكل القانوني للوكيل في v2) | `core/runtime/AgentSpec.js` (Sprint 2 — مع Agent Runtime الذي يستهلكه، لا قبله) |
 | `backendTeam/backendTeam.js` | 262 | منسّق عام `runBackendTeam/runAgent` + `safeRelPath/writeBackendTeamFiles` | MOVE (المنسّق) / MODIFY (الكتابة → Tool) | Agent Runtime + Tool | `core/runtime/AgentRuntime.js` (Sprint 2) |
 | `backendTeam/backendVerify.js` | 57 | فحص syntax تنفيذي | KEEP | Evidence | `core/verification/` |
 | `backendTeam/specs.js`, `frontendTeam/specs.js` | 334/167 | 6+6 وكلاء تصريحيين | KEEP | Agent | `plugins/coding/agents/` |

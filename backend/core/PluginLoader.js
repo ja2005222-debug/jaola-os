@@ -10,6 +10,7 @@
  *     type: 'agent' | 'hook' | 'service',
  *     description: '...',
  *     enabled: true,            // اختياري (افتراضي true)
+ *     capabilities: ['site.check'],  // اختياري — عقد Capability (domain.action)
  *     hooks: { onLoad, beforeBuild, afterBuild, ... }  // دوال lifecycle
  *   }
  *
@@ -19,6 +20,7 @@
 import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
+import { validateCapabilities } from './contracts/index.js';
 
 function validateManifest(mod, source) {
     const m = mod?.default || mod;
@@ -28,6 +30,12 @@ function validateManifest(mod, source) {
     if (!m.name || typeof m.name !== 'string') {
         return { valid: false, error: 'حقل name مفقود أو غير نصي' };
     }
+    // 📐 عقد Capability: أسماء `domain.action` فقط — اسم مرفوض يُسقط الإضافة
+    // بخطأ واضح (كما name المفقود) لا بصمت، فلا يُفهرَس ما لا يُفهَم
+    const caps = validateCapabilities(m.capabilities);
+    if (!caps.ok) {
+        return { valid: false, error: `capabilities غير صالحة (الشكل domain.action): ${caps.invalid.join(', ')}` };
+    }
     return {
         valid: true,
         manifest: {
@@ -36,6 +44,7 @@ function validateManifest(mod, source) {
             type: m.type || 'hook',
             description: m.description || '',
             enabled: m.enabled !== false,
+            capabilities: caps.capabilities,
             hooks: (m.hooks && typeof m.hooks === 'object') ? m.hooks : {},
             source,
         },

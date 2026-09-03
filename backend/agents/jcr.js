@@ -51,7 +51,7 @@ import { matchDeleteCommand, matchImageCommand, isImageDiagCommand, isBareYes, i
 import { verifyRequirements, buildFixInstruction, formatChecklist } from './requirementsVerifier.js';
 import { classifyIntentFast, decide, buildContinuationGoal, buildStatusReply, missionBriefing, greetingReply } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
-import { assertBuildAgents } from './contracts.js';
+import { assertBuildAgents, DELIVERY_STAGES } from '../core/contracts/index.js';
 import { registerMission, throwIfAborted, clearMission } from '../services/abortRegistry.js';
 import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import { snapshotWorkspace } from '../services/workspaceStore.js';
@@ -305,21 +305,11 @@ export class JaolaCognitiveRuntime {
             // ✅ الخطة مقبولة — من هنا خطّ التسليم: مراحل بتوقيع موحّد
             // (context, roomName, agents) تقرأ/تكتب context.plan.files (عقد Agent الأول)
             context.plan = plan;
-            await this._stageGuardAndWrite(context, roomName, agents);
-            await this._stageReview(context, roomName, agents);
-            await this._stageRefactor(context, roomName, agents);
-            await this._stageTesting(context, roomName, agents);
-            await this._stageRequirementsVerify(context, roomName, agents);
-            await this._stageExecutiveMemory(context, roomName, agents);
-            await this._stageSEO(context, roomName, agents);
-            await this._stageSecurity(context, roomName, agents);
-            await this._stageGitBackup(context, roomName, agents);
-            await this._stageProjectMemory(context, roomName, agents);
-            await this._stageBackend(context, roomName, agents);
-            await this._stageAdvancedModules(context, roomName, agents);
-            await this._stageFullStackScaffold(context, roomName, agents);
-            await this._stageRenderConfig(context, roomName, agents);
-            await this._stageBehaviorVerify(context, roomName, agents);
+            // 📐 عقد Task (core/contracts): القائمة المسمّاة المرتّبة هي مصدر الحقيقة
+            // للترتيب — نفس الاستدعاءات الحرفية السابقة، الواحدة تلو الأخرى
+            for (const stage of DELIVERY_STAGES) {
+                await this[stage.run](context, roomName, agents);
+            }
 
             return { success: true };
         }
