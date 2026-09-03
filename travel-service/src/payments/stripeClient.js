@@ -72,14 +72,38 @@ export function toStripeForm(obj, prefix = '', out = new URLSearchParams()) {
     return out;
 }
 
+/**
+ * وضع مفتاح Stripe من شكله — بلا نداء شبكة.
+ *
+ * ⚠️ كان الفحص `secretKey.startsWith('sk_live_')`، وهو يخطئ في حالتين
+ * واقعيتين ويقول «وضع تجريبي» عن حسابٍ حيّ:
+ *   • **المفتاح المقيَّد** `rk_live_…` — وStripe نفسه يحثّ عليه اليوم.
+ *   • **مسافة أو سطر جديد** في أول القيمة من لصقٍ في لوحة الاستضافة.
+ *
+ * والأهم أن ما لا يُعرف يُقال «غير معروف» لا «تجريبي»: ادّعاء التجريبية
+ * عن مفتاح حيّ يطمئن المالك إلى أن لا مال يُحصَّل، وهو الاتجاه الخطر.
+ *
+ * @returns {'live'|'test'|'unknown'|null} و`null` حين لا مفتاح أصلاً.
+ */
+export function stripeKeyMode(secretKey) {
+    const key = String(secretKey || '').trim();
+    if (!key) return null;
+    if (key.includes('_live_')) return 'live';
+    if (key.includes('_test_')) return 'test';
+    return 'unknown';
+}
+
 export function createStripeClient({ secretKey, fetchImpl = fetch }) {
-    if (!secretKey) return null;
+    // 🔒 القصّ لا تجميلٌ: سطرٌ جديد عالقٌ من اللصق يجعل قيمة ترويسة
+    // Authorization غير صالحة، فيفشل كل نداء Stripe بخطأ لا يذكر السبب.
+    const key = String(secretKey || '').trim();
+    if (!key) return null;
 
     async function stripeRequest(method, path, body = null) {
         const res = await fetchImpl(`${STRIPE_API}${path}`, {
             method,
             headers: {
-                Authorization: `Bearer ${secretKey}`,
+                Authorization: `Bearer ${key}`,
                 ...(body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
             },
             body: body ? toStripeForm(body).toString() : undefined,
@@ -94,6 +118,7 @@ export function createStripeClient({ secretKey, fetchImpl = fetch }) {
 
     return {
         name: 'stripe',
+        mode: stripeKeyMode(key), // يظهر في سجلّ الإقلاع بصدق
 
         /**
          * جلسة Checkout لمبلغ محدد — Stripe يريد وحدات صغرى (سنتات) عدداً
