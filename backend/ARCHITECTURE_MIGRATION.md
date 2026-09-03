@@ -725,3 +725,41 @@ LLM بلا طلب) يُترك للمالك، والبنية جاهزة له (`lo
 `agents/index.js` سليم، لا مرجع متبقٍ لأي اسم محذوف (المطابقات الوحيدة هي النصّ
 `'server.js'` كاسم ملف في المشاريع المولَّدة — ليست استيرادات)، والمجموعة الكاملة
 807/807. الأثر: `agents/` 123 → 116، `services/` 90 → 67. التراجع: `git revert`.
+
+## 📐 Sprint 1 — Contracts مكتمل (2026-09-03): Task وCapability بمستهلك حيّ، Provider وTransaction نوعان موثّقان
+
+الخط الأساس طلب في Sprint 1 «تثبيت Mission/Task/Agent/Tool/Capability/Provider/
+Event/Transaction/Evidence». الستة الأولى ثُبّتت في الخطوة 1 (`CONTRACTS.md`
+§1–6)؛ هذا القسم يُكمل الأربعة الباقية **من نماذجها المرجعية في الكود** (القرار
+المعماري 1) وبقاعدة «لا تجريد بلا مستهلك»:
+
+- **العقود انتقلت إلى `core/contracts/index.js`** (كان `agents/contracts.js`) —
+  أول ملف في `core/` من شجرة v2، مستهلكاه `jcr.js` و`PluginLoader.js`.
+- **Task ✅ (مستهلك حيّ)**: `DELIVERY_STAGES` — 15 مرحلة مسمّاة مرتّبة
+  (`{name, run, optional}`) تكرّر عليها `runDynamicMultiAgentRuntime` بدل 15
+  استدعاءً مضمّناً. نقل حرفي: خط الأساس `jcrRuntimePipeline` (11) مطابق،
+  واختبار يثبّت الأسماء والترتيب وأن كل `run` دالة على النواة. النموذج
+  المرجعي للخطوة التالية (TaskGraph، Sprint 2) موجود ويعمل:
+  `backendTeam.planExecution` (ترتيب طوبولوجي من `dependsOn` مع كشف الدورات).
+- **Capability ✅ (مستهلك حيّ)**: `manifest.capabilities: ['domain.action']` —
+  `PluginLoader` يتحقّق (اسم مرفوض يُسقط الإضافة بخطأ يسمّيه، لا بصمت)،
+  `PluginOrchestrator.capabilities()/findByCapability()` فهرس يتبع التفعيل
+  فوراً و`status()` يعرضه للأدمِن، `site-checker` يعلن `site.check`.
+  3 اختبارات على مجلد إضافات مؤقّت + التكاملي القائم. **المعنى**: أول تحقيق
+  للمبدأ 4 («القدرات هي الواجهة التي يرى بها الوكيل النظام») — Tool Runtime
+  سيختار المنفّذ بالقدرة لا باسم الملف.
+- **Provider (نوع موثّق)**: النموذج المرجعي `travel-service/src/providers/
+  index.js` (اختيار بمفتاح البيئة، سلسلة أولوية صريحة، احتياط محاكاة دائم)
+  + `baseAgent` (failover Groq → DeepSeek → Gemini → OpenAI خلف واجهة واحدة)
+  + `aiProviderCheck` (`probe` فعلي بمستهلك في `/api/admin`). **قرار**: لا
+  `ProviderRegistry` قبل Model Router (الخطوة 4) — مستهلكه الوحيد.
+- **Transaction (نوع موثّق)**: النموذج المرجعي `bookings.js` (آلة حالات
+  متخصّصة + انتقال ذرّي `{from[], to, patch}` في UPDATE واحد) +
+  `tradingBotLedger` (append-only + `findStalePending`). **قرار**: آلات حالات
+  متخصّصة لكل نوع (المبدأ 9)، أول مستهلك Travel Adapter (Sprint 5).
+
+**انحراف مسجَّل عن الخريطة**: `backendTeam/agentSpec.js` كان مُعلَّماً MOVE في
+Sprint 1؛ أُجّل إلى Sprint 2 ليُنقل **مع** Agent Runtime الذي يستهلكه — نقله
+إلى `core/runtime/` قبل وجود runtime هناك تجريدٌ بلا مستهلك. تراجع: لا شيء.
+
+الاختبارات: **811/811** (+3 `pluginContracts`، +1 `contracts`، +3 مرحّلة).

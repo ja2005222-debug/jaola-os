@@ -14,6 +14,7 @@ export default {
     type: 'agent',                      // 'agent' يسجّل وكيلاً قابلاً للاستدعاء
     description: 'إضافة مثال توضّح واجهة الوكلاء',
     enabled: true,
+    capabilities: ['example.echo'],     // اختياري — قدرات بالشكل domain.action (تُفهرَس في المنسّق)
 
     hooks: {
         // يُستدعى مرة عند تحميل الإضافة

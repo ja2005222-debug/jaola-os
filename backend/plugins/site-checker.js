@@ -72,6 +72,7 @@ export default {
     type: 'agent',
     description: 'يفحص موقعاً حياً فعلياً: يجلبه، ويتحقّق من حالته وسرعته وأساسيات SEO — لا تخمين، فحص حقيقي.',
     enabled: true,
+    capabilities: ['site.check'], // 📐 عقد Capability — ما يقدر عليه هذا الوكيل
 
     hooks: {
         async registerAgent() {

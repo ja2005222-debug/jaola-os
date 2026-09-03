@@ -16,7 +16,7 @@ import { loadPluginsFrom } from './PluginLoader.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_PLUGINS_DIR = path.join(__dirname, '../plugins');
 
-class PluginOrchestrator {
+export class PluginOrchestrator {
     constructor() {
         this.plugins = new Map();   // name → manifest
         this.agents = new Map();     // agentName → handler (من الإضافات)
@@ -91,6 +91,20 @@ class PluginOrchestrator {
     getAgent(name) { return this.agents.get(name); }
     listAgents() { return [...this.agents.keys()]; }
 
+    // 📐 عقد Capability: فهرس القدرات المُعلَنة في manifests الإضافات المفعّلة —
+    // الوكيل/المشرف يسأل «من يقدر على site.check؟» لا «ما اسم الملف؟»
+    capabilities() {
+        const out = [];
+        for (const p of this.plugins.values()) {
+            if (!p.enabled) continue;
+            for (const c of p.capabilities || []) out.push({ capability: c, plugin: p.name });
+        }
+        return out;
+    }
+    findByCapability(name) {
+        return this.capabilities().filter((e) => e.capability === name).map((e) => e.plugin);
+    }
+
     setEnabled(name, enabled) {
         const p = this.plugins.get(name);
         if (!p) return false;
@@ -104,7 +118,9 @@ class PluginOrchestrator {
             plugins: [...this.plugins.values()].map(p => ({
                 name: p.name, version: p.version, type: p.type,
                 enabled: p.enabled, description: p.description,
+                capabilities: p.capabilities || [],
             })),
+            capabilities: this.capabilities(),
             registeredAgents: this.listAgents(),
             errors: this.errors,
         };

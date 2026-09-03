@@ -5,7 +5,7 @@
 >
 > **القاعدة الحاكمة** (نفسها): كل عقد هنا مأخوذ من استدعاء حقيقي في الكود
 > (مسار + سطر + grep) لا من تصميم نظري. الجزء التشغيلي الوحيد هو
-> `agents/contracts.js`، وفيه فقط ما له مستهلك حيّ اليوم — لا تجريد بلا مستهلك
+> `core/contracts/index.js`، وفيه فقط ما له مستهلك حيّ اليوم — لا تجريد بلا مستهلك
 > (درس `agentOrchestrator.js` المحذوف).
 
 ## 🗺️ خريطة الحدود (أين يعيش كل عقد)
@@ -48,7 +48,7 @@ frontend/src/hooks/useSocket.js  (19 مستمعاً)
   `uiLang` ≤5، `track ∈ {site, system}`)، و`projectPath`/`activeProject` يضبطهما
   `validateProjectOwnership` (`server.js:585`) لا العميل.
 - **داخل الوقت التشغيلي** يتحوّل إلى `MissionRequest` (`jcr.js` نهاية
-  `handleUserMessage`) — الحقول العشرة موثّقة كـ`@typedef` في `agents/contracts.js`.
+  `handleUserMessage`) — الحقول العشرة موثّقة كـ`@typedef` في `core/contracts/index.js`.
   استهلاك كل معالج لها (grep على `= req`):
 
   | المعالج | الحقول المستهلكة |
@@ -125,7 +125,7 @@ requirementsVerifier, behaviorVerifier, modelLibrary, backendTeam, baseAgent`
 
 ### التصميم المستهدف (Phase 1)
 1. ✅ **الآن**: الحزمة صارت عقداً صريحاً — `BUILD_AGENTS_REQUIRED` (3) /
-   `BUILD_AGENTS_OPTIONAL` (15) في `agents/contracts.js`، والنواة تتحقّق منه
+   `BUILD_AGENTS_OPTIONAL` (15) في `core/contracts/index.js`، والنواة تتحقّق منه
    (`assertBuildAgents`) في أول سطر من `runDynamicMultiAgentRuntime` فيفشل
    البناء **فوراً وباسم العضو الغائب** (`error.contract = 'Agent'`) بدل استنفاد
    الدورات. العضو الميت `coreClassifyIntent` حُذف من الحزمة ومن الـbarrel، ومعه
@@ -259,6 +259,117 @@ requirementsVerifier, behaviorVerifier, modelLibrary, backendTeam, baseAgent`
 
 ---
 
+## 7) Task — **مراحل التسليم كقائمة مسمّاة (Sprint 1 ✅)**
+
+### الشكل الفعلي (دليل)
+- **النموذج المرجعي 1**: خطّ التسليم في `runDynamicMultiAgentRuntime` — 15
+  استدعاءً متتالياً `await this._stageX(context, roomName, agents)` بعد قبول
+  الخطة (الدفعات 1–3)، كلٌّ مغلق على نفسه («⚠️ تخطّي» لا يُسقط البناء).
+- **النموذج المرجعي 2**: `backendTeam.planExecution(team)`
+  (`agents/backendTeam/backendTeam.js:50`) — ترتيب طوبولوجي مستقرّ من
+  `dependsOn` مع كشف الدورات («دورة اعتمادية … تعذّر ترتيب التنفيذ»). هذا
+  **TaskGraph مصغّر يعمل فعلاً** على 6 وكلاء.
+
+### العقد (`core/contracts/index.js`)
+```
+Task = { name: 'kebab-case', run: '_stageX' (StageFn على الكلاس), optional?: true, dependsOn?: string[] }
+DELIVERY_STAGES: ReadonlyArray<Task>  — 15 مرحلة بالترتيب الحرفي السابق
+```
+- **المستهلك الحيّ**: `runDynamicMultiAgentRuntime` تكرّر على `DELIVERY_STAGES`
+  (`for (const stage of DELIVERY_STAGES) await this[stage.run](…)`) — نقل
+  حرفي، خط الأساس `jcrRuntimePipeline` (11) مطابق، واختبار يثبّت الأسماء
+  والترتيب وأن كل `run` دالة حقيقية على النواة.
+- **الخطوة التالية (Sprint 2)**: `TaskGraph` يعمّم `planExecution` على
+  `DELIVERY_STAGES` عبر `dependsOn` (اليوم كلّها خطّية فالترتيب = ترتيب
+  المصفوفة)، ثم التشغيل الجزئي/الإيقاف بين المراحل.
+
+---
+
+## 8) Capability — **الإضافة تعلن ما تقدر عليه (Sprint 1 ✅)**
+
+### الشكل الفعلي قبل Sprint 1 (دليل)
+لا وجود. الوكيل/المشرف يعرف الإضافة **باسم ملفها** فقط (`orchestrator.getAgent('siteChecker')`
+في `server.js`)، والخط الأساس (المبدأ 4) يريد العكس: «Capabilities هي الواجهة
+التي يرى بها Agent النظام».
+
+### العقد (`core/contracts/index.js`)
+```
+CapabilityName = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/   — site.check, travel.booking
+manifest.capabilities?: CapabilityName[]
+isCapabilityName(name) / validateCapabilities(list) → { ok, capabilities (مُنقّاة), invalid }
+```
+- **المستهلكون الحيّون**: `core/PluginLoader.validateManifest` (اسم مرفوض يُسقط
+  الإضافة بخطأ يسمّيه — كما `name` المفقود، لا بصمت)؛
+  `PluginOrchestrator.capabilities()` / `findByCapability(name)` (فهرس يتبع
+  التفعيل فوراً) و`status()` يعرضها لكل إضافة ولوحة الأدمِن؛
+  `plugins/site-checker.js` يعلن `['site.check']`؛ القالب `AgentPluginTemplate`
+  يوثّق الحقل.
+- **الاختبارات**: `tests/pluginContracts.test.mjs` (3) على مجلد إضافات مؤقّت +
+  `siteChecker` التكاملي كما هو.
+- **الخطوة التالية**: Tool Runtime (Sprint 2) يختار المنفّذ عبر
+  `findByCapability` لا الاسم؛ Policy (Sprint 3) تربط الأذونات بالقدرات
+  (`travel.book` ← `travel.booking`).
+
+---
+
+## 9) Provider — **نموذجه المرجعي موجود في خدمة السفر (Sprint 1: نوع موثّق)**
+
+### الشكل الفعلي (دليل)
+- **النموذج المرجعي**: `travel-service/src/providers/index.js` — دالة بناء لكل
+  نوع (`buildProvider`/`buildStaysProvider`/`buildCarsProvider`/`buildEsimProvider`)
+  تختار بمفتاح البيئة (`DUFFEL_API_KEY`, `LITEAPI_API_KEY`) بسلسلة أولوية
+  صريحة (LiteAPI → Duffel Stays → mock) واحتياط محاكاة حتمي **دائماً** —
+  «نقطة التبديل الوحيدة». المزوّدات الحيّة بلا SDK (`duffelClient`, `liteApiClient`).
+- **في الخلفية**: `agents/baseAgent.js` — سلسلة failover مضمّنة
+  Groq → DeepSeek → Gemini → OpenAI خلف واجهة `groq.chat.completions.create`
+  (25 مستورداً لا يعرفون بالتبديل)، وتصنيف أعطال حتمي `classifyAIError` →
+  `quota|auth|ratelimit|config|transient`؛ و`services/aiProviderCheck.js` —
+  فحص حيّ لكل مزوّد `{configured, keyTail, ok, detail}` يستهلكه
+  `/api/admin/…` (`server.js:2516`) و5 اختبارات.
+
+### العقد (`core/contracts/index.js`، نوع فقط)
+```
+Provider = { name, kind: 'llm'|'flights'|'stays'|'cars'|'payment'|'email'|…, configured(env) → boolean, probe?() → {ok, detail}, priority? }
+```
+- **لماذا لا Registry الآن**: المستهلك الوحيد الذي يحتاج «سجلّاً» عاماً هو
+  Model Router (الخطوة 4) — بناء `ProviderRegistry` قبله تجريد بلا مستهلك.
+  `checkAiProviders` هو `probe` فعلاً و`buildXProvider` هو `configured`
+  فعلاً؛ التعميم يعني توحيد الشكلين لا اختراع ثالث.
+- **المبدأ 3**: الوكيل لا يصل إلى Provider مباشرة — اليوم `baseAgent` يُخفي
+  التبديل عن الوكلاء (جيد)، لكن وكلاء المراحل تستدعي مزوّدات النشر/Git مباشرة
+  (`deployAgent`, `gitAgent`) — يُغلق مع Tool Runtime.
+
+---
+
+## 10) Transaction — **نموذجه المرجعي موجود في خدمة السفر (Sprint 1: نوع موثّق)**
+
+### الشكل الفعلي (دليل)
+- **النموذج المرجعي 1**: `travel-service/src/bookings.js` — آلة حالات
+  **متخصّصة** بجدول صريح (`pending → issued|failed`, `issued → cancelled`،
+  النهائيتان بلا إحياء) وانتقال **ذرّي** في المخزن
+  (`store.transitionBooking(id, {from[], to, patch})` = `UPDATE … WHERE status
+  = ANY(from)` في `postgresStore.js:552`) — «لا كتابة حالة مباشرة في أي مكان
+  آخر»، وأثر جانبي واحد عند `issued` (مكافأة الإحالة) من نقطة انتقال واحدة.
+- **النموذج المرجعي 2**: `services/tradingBotLedger.js` — سجلّ append-only
+  لكل فرصة اعتُبرت (حتى المتجاهَلة) `{id, at, kind, status: 'pending'→…,
+  txHash, gasCostBnb, realizedPnlBnb, error, updatedAt}` + `findStalePending`
+  (المعلّق العالق) + heartbeat — هذا **Audit + Idempotency** عاملان.
+- **في الخلفية**: لا Transaction عام. النشر (`deployAutomation`) والاشتراكات
+  (`stripeService`) كلٌّ بحالته الخاصة.
+
+### العقد (`core/contracts/index.js`، نوع فقط)
+```
+Transaction = { id, idempotencyKey?, actor, plugin, capability, status, provider?, providerReference?, createdAt, updatedAt, attempts, error, evidence: check[] }
+```
+- **قرار**: `status` من آلة حالات **متخصّصة لكل نوع** (Booking/Payment/
+  Fulfillment — البند 13 من الخط الأساس، المبدأ 9) لا آلة عالمية؛ الانتقال
+  ذرّي بنمط `{from[], to, patch}`؛ `evidence` بنفس شكل Evidence (`check`).
+- **أول مستهلك**: Travel Adapter (Sprint 5) يعرض `bookings.js` عبر هذا
+  الشكل. المستهلك الثاني المرشّح في الخلفية: `deployAutomation` (نشر = عملية
+  ذات محاولات ومرجع خارجي) — بعد أن يثبت الشكل على الحجز.
+
+---
+
 ## 📋 ملخّص القرارات
 
 | العقد | الحالة قبل | القرار | أوّل مستهلك |
@@ -269,9 +380,16 @@ requirementsVerifier, behaviorVerifier, modelLibrary, backendTeam, baseAgent`
 | Event | ناضج بطبقتين | يبقى؛ `log` منظّم لاحقاً بإضافة حقول | قائم |
 | Evidence | `check` متماسك | يُثبَّت؛ النقّاد يُضيفون `checks[]` في الخطوة 2 | قائم |
 | Permission | عند الحدّ فقط | `req.caps` مشتقّ عند الحدّ — مؤجَّل لمستهلك ثانٍ | `generateAiImages` (مغلق حالياً) |
+| Task | 15 استدعاءً مضمّناً | `DELIVERY_STAGES` قائمة مسمّاة مرتّبة (+ `planExecution` نموذج TaskGraph) | `runDynamicMultiAgentRuntime` (✅ Sprint 1) |
+| Capability | لا شيء (الوكيل باسم الملف) | `manifest.capabilities` + فهرس في المنسّق | `PluginLoader`/`PluginOrchestrator`/`site-checker` (✅ Sprint 1) |
+| Provider | تبديل مضمّن في مكانين | نوع موثّق من `providers/index.js` + `baseAgent` + `aiProviderCheck` — Registry مع Model Router | `checkAiProviders` (probe) قائم |
+| Transaction | لا شيء عام | نوع موثّق من `bookings.js` + `tradingBotLedger` — آلات حالات متخصّصة + انتقال ذرّي | Travel Adapter (Sprint 5) |
 
 ## 🔗 الترتيب المعتمد للخطوات التالية (يقود الخطة)
 1. ✅ هذه الوثيقة + `assertBuildAgents` + حذف العضو الميت.
+1b. ✅ **Sprint 1 (Contracts) مكتمل**: العقود في `core/contracts/index.js` — Task
+   (`DELIVERY_STAGES`) وCapability (loader/orchestrator) بمستهلك حيّ، Provider
+   وTransaction نوعان موثّقان بنماذجهما المرجعية ومستهلكهما المسمّى.
 2. توحيد **مخرجات** الحزمة (`{ok, …}`) عبر مُهايئات في `server.js`، ثم المدخلات
    `(input, ctx)`؛ نقل `dbStatus` إلى `JCRContext`؛ `checks[]` للنقّاد.
 3. Kernel: `runDynamicMultiAgentRuntime` من قائمة استدعاءات إلى مصفوفة مراحل
