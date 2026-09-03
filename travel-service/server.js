@@ -60,6 +60,7 @@ import {
 } from './src/profile.js';
 import { airportCoords, searchAirports, airportForTimezone } from './src/airports.js';
 import { validateChildrenDobs, checkPassengerAges } from './src/passengerAges.js';
+import { signBookingIntent, verifyBookingIntent } from './src/bookingIntent.js';
 import { createPriceWatch, listPriceWatchesByUser, cancelPriceWatch } from './src/priceWatches.js';
 import { checkWatches } from './src/priceWatchPoller.js';
 import { sendTripReminders } from './src/tripReminders.js';
@@ -890,6 +891,22 @@ ${urls}
     const optionalToken = buildOptionalToken(allSecrets);
     const userOf = req => String(req.user?.username || '').trim().toLowerCase();
 
+    // 🔐 سرّ توقيع نوايا الحجز. نوقّع بالسرّ **الحالي** (الأول) ونتحقق
+    // بكل الأسرار — نفس منطق تدوير المفتاح في auth.js تماماً، فنيّة
+    // صدرت قبل التدوير تبقى قابلة للتأكيد بعده بدل أن تسقط في وجه
+    // مستخدم يضغط زر تأكيد كان أمامه.
+    const intentSecrets = (Array.isArray(jwtSecret) ? jwtSecret : [jwtSecret]).filter(Boolean);
+    const signIntent = payload => signBookingIntent(payload, intentSecrets[0]);
+    function verifyIntent(token) {
+        let last = { error: 'نية الحجز غير صالحة.' };
+        for (const secret of intentSecrets) {
+            const out = verifyBookingIntent(token, secret);
+            if (out.values) return out;
+            last = out;
+        }
+        return last;
+    }
+
     // 🎚️ المستوى الأول: هامش كل فئة منتج على حدة — قبل هذا كانت applyMarkup
     // تُنادى بنفس markupPct للطيران والفندق والسيارة حرفياً في كل مسار
     // (تحقّق: كل نداء applyMarkup في هذا الملف). بلا أي متغيّر بيئة جديد
@@ -1242,6 +1259,28 @@ ${urls}
         return bookings.map(publicBooking);
     }
 
+    /**
+     * حجز واحد بالمعرّف أو بالمرجع — **المصدر الوحيد الصادق لسعر حجز**.
+     *
+     * ⚠️ عطب إنتاج: سُئل الايجنت «تفاصيل الرحلة؟» عن حجز قائم، فنادى
+     * get_offer (سعر **حيّ** من المزوّد) وعرض 213.05 كأنه سعر التذكرة —
+     * والمحجوز فعلاً 206.51. العرض الحيّ يتحرّك؛ الحجز لا. هذه الدالة
+     * تعطي النموذج طريقاً صحيحاً بدل أن نكتفي بنهيه عن الخاطئ.
+     */
+    async function doGetMyBooking(username, idOrRef) {
+        const key = String(idOrRef || '').trim();
+        if (!key) throw Object.assign(new Error('معرّف الحجز مطلوب.'), { status: 400 });
+        let booking = await getBooking(store, key);
+        if (!booking || booking.username !== username) {
+            // المستخدم يعرف المرجع (H7ULWF) لا المعرّف الداخلي عادةً
+            const all = await listBookingsByUser(store, username);
+            booking = all.find(b => String(b.bookingReference || '').toUpperCase() === key.toUpperCase()) || null;
+            if (!booking) throw Object.assign(new Error('الحجز غير موجود.'), { status: 404 });
+            return booking;
+        }
+        return publicBooking(booking);
+    }
+
     // ─── الفنادق (Duffel Stays) — محاذاة دوال الطيران أعلاه سطراً بسطر ──
 
     function requireStays() {
@@ -1429,6 +1468,90 @@ ${urls}
             await transitionBooking(store, booking.id, 'failed', { error: e.message });
             throw Object.assign(new Error(`تعذّر إصدار حجز السيارة: ${e.message}`), { status: 502 });
         }
+    }
+
+    /**
+     * 🔐 يُصدر **نية حجز موقّعة** بدل أن يحجز. هذا هو المسار الوحيد
+     * المتاح للايجنت بعد واقعة «سؤال أنتج حجزاً» (راجع bookingIntent.js).
+     *
+     * يفعل كل ما يفعله الحجز الحقيقي **عدا الحجز**: يجلب العرض الحقيقي،
+     * ويتحقق من بيانات المسافرين، ويحسب السعر النهائي بالهامش. فما
+     * تراه بطاقة التأكيد هو ما سيُحجز حرفياً — لا وصفٌ صاغه النموذج.
+     * وأي خطأ في البيانات يظهر **الآن** لا بعد ضغط زر التأكيد.
+     */
+    async function proposeBooking(username, kind, args) {
+        const offerId = String(args?.offerId || '');
+        let offer = null;
+        let travellers = null;
+        let contact = null;
+        let categoryPct = flightMkt;
+
+        if (kind === 'flight') {
+            offer = await provider.getOffer(offerId);
+            if (!offer) throw Object.assign(new Error('العرض غير موجود أو انتهت صلاحيته — أعد البحث.'), { status: 404 });
+            const check = validatePassengers({ passengers: args?.passengers, contact: args?.contact }, offer.passengerCount);
+            if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
+            const ageError = checkPassengerAges({
+                passengers: check.values.passengers,
+                offerPassengers: offer.passengers,
+                departAt: offer.slices?.[0]?.departAt,
+            });
+            if (ageError) throw Object.assign(new Error(ageError), { status: 400 });
+            travellers = check.values.passengers;
+            contact = check.values.contact;
+        } else if (kind === 'stay') {
+            requireStays();
+            offer = await staysProvider.getQuote(offerId);
+            if (!offer) throw Object.assign(new Error('عرض الفندق غير موجود أو انتهت صلاحيته — أعد البحث.'), { status: 404 });
+            const check = validateGuests({ guests: args?.guests, contact: args?.contact });
+            if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
+            travellers = check.values.guests;
+            contact = check.values.contact;
+            categoryPct = effectiveMarkupPct(offer, stayMkt);
+        } else if (kind === 'car') {
+            requireCars();
+            offer = await carsProvider.getQuote(offerId);
+            if (!offer) throw Object.assign(new Error('عرض السيارة غير موجود أو انتهت صلاحيته — أعد البحث.'), { status: 404 });
+            const check = validateDrivers({ drivers: args?.drivers, contact: args?.contact });
+            if (check.error) throw Object.assign(new Error(check.error), { status: 400 });
+            travellers = check.values.drivers;
+            contact = check.values.contact;
+            categoryPct = carMkt;
+        } else {
+            throw Object.assign(new Error('نوع حجز غير معروف.'), { status: 400 });
+        }
+
+        const sellAmount = applyMarkup(offer.netAmount, categoryPct);
+        const intent = signIntent({
+            kind, username, offerId: offer.id, sellAmount, currency: offer.currency,
+            travellers, contact,
+        });
+        // ⚠️ بلا netAmount ولا marginPct: بطاقة التأكيد تُعرض للمسافر
+        const { netAmount: _net, marginPct: _mp, passengerIds: _ids, ...offerSummary } = offer;
+        return {
+            intent,
+            kind,
+            offer: offerSummary,
+            sellAmount,
+            currency: offer.currency,
+            travellerCount: travellers.length,
+        };
+    }
+
+    /** يُنفّذ نية موقّعة تحقّق منها المسار — الحجز الفعلي الوحيد للايجنت. */
+    async function confirmBookingIntent(username, values) {
+        const { kind, offerId, sellAmount } = values;
+        const args = { offerId, contact: values.contact };
+        let booking;
+        if (kind === 'flight') booking = await doBook(username, { ...args, passengers: values.travellers });
+        else if (kind === 'stay') booking = await doBookStay(username, { ...args, guests: values.travellers });
+        else booking = await doBookCar(username, { ...args, drivers: values.travellers });
+
+        // ⚠️ السعر يُقارَن بما وُقّع عليه: لو تحرّك سعر المزوّد بين العرض
+        // والتأكيد فقد دفع المسافر مبلغاً لم يره. لا نُلغي الحجز (تمّ
+        // فعلاً) لكن نُعلن الفرق صراحةً بدل ابتلاعه صامتاً.
+        const priceChanged = Number(booking.sellAmount) !== Number(sellAmount);
+        return { ...booking, priceChanged, quotedAmount: sellAmount };
     }
 
     async function doCancelCar(username, bookingId) {
@@ -3235,16 +3358,20 @@ ${urls}
         const services = {
             searchFlights: params => doSearch(params),
             getOffer: id => doGetOffer(id),
-            bookFlight: args => doBook(username, args, requestBaseUrl(req)),
+            // 🔐 الايجنت **لا يحجز**: هذه تُصدر نية موقّعة يؤكّدها المسافر
+            // بزر في الواجهة. راجع src/bookingIntent.js للواقعة التي
+            // فرضت ذلك (سؤال عن التوفّر أنتج حجزاً فعلياً).
+            proposeFlight: args => proposeBooking(username, 'flight', args),
             listBookings: () => listMine(username),
+            getBooking: id => doGetMyBooking(username, id),
             cancelBooking: id => doCancel(username, id),
             searchStays: staysProvider ? params => doSearchStays(params) : null,
             getStayOffer: staysProvider ? id => doGetStayOffer(id) : null,
-            bookStay: staysProvider ? args => doBookStay(username, args, requestBaseUrl(req)) : null,
+            proposeStay: staysProvider ? args => proposeBooking(username, 'stay', args) : null,
             cancelStay: staysProvider ? id => doCancelStay(username, id) : null,
             searchCars: carsProvider ? params => doSearchCars(params) : null,
             getCarOffer: carsProvider ? id => doGetCarOffer(id) : null,
-            bookCar: carsProvider ? args => doBookCar(username, args, requestBaseUrl(req)) : null,
+            proposeCar: carsProvider ? args => proposeBooking(username, 'car', args) : null,
             cancelCar: carsProvider ? id => doCancelCar(username, id) : null,
             findFlexibleDates: params => doFindFlexibleDates(username, params),
             checkTripConflicts: () => doCheckTripConflicts(username),
@@ -3279,6 +3406,25 @@ ${urls}
         } catch (e) {
             res.status(502).json({ error: `تعذّر رد المساعد: ${e.message}` });
         }
+    }));
+
+    /**
+     * 🔐 تأكيد نية حجز صادرة عن المساعد — **نقطة الحجز الوحيدة للايجنت**.
+     *
+     * لا يمرّ النموذج من هنا إطلاقاً: يصل التوكن من زر ضغطه المسافر في
+     * الواجهة. والتحقق يسبق كل شيء، ثم يُقارَن صاحب النية بصاحب التوكن
+     * — نية مسرّبة لا تُحجز على حساب غير صاحبها.
+     */
+    app.post('/api/travel/agent/confirm', verifyToken, wrap(async (req, res) => {
+        const check = verifyIntent(req.body?.intent);
+        if (check.error) return res.status(400).json({ error: check.error });
+        const username = userOf(req);
+        if (check.values.username !== username) {
+            // 404 لا 403: لا نؤكّد لصاحب توكن آخر أن هذه النية موجودة أصلاً
+            return res.status(404).json({ error: 'نية الحجز غير موجودة.' });
+        }
+        const booking = await confirmBookingIntent(username, check.values);
+        res.status(201).json(booking);
     }));
 
     // آخر محادثة محفوظة — تُستأنف عند فتح تبويب المساعد بدل البدء من صفر

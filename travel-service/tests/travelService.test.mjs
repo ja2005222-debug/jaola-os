@@ -68,6 +68,7 @@ import {
     renderAirlineChangeNotice, isChannelEnabled, templateNameFor,
 } from '../src/notifications.js';
 import { sendWhatsAppTemplate, whatsappReady, isWhatsAppPhone } from '../src/whatsapp.js';
+import { signBookingIntent, verifyBookingIntent, INTENT_TTL_MS } from '../src/bookingIntent.js';
 import {
     defaultProfile, normalizePrefs, normalizeTraveller, mergeProfile,
     buildAgentMemory, frequentDestinations, trimConversation, MAX_MEMORY_MESSAGES,
@@ -6767,40 +6768,50 @@ describe('الايجنت الحاجز', () => {
         });
     });
 
-    test('🛡️ حارس الحجز: confirmed=false يُرفض بلا حجز، وconfirmed=true يحجز فعلاً', async () => {
+    // ⚠️ الحارس القديم (راية confirmed يضبطها النموذج على نفسه) سقط في
+    // الإنتاج: «هل يوجد فندق قرب المطار؟» — سؤال — أنتج حجزاً فعلياً.
+    // الحارس الآن بنيوي: أدوات book_* لا تحجز إطلاقاً، بل تُصدر نية
+    // موقّعة لا يملك النموذج مفتاحها. هذه الاختبارات تحرس **العجز** لا
+    // الامتثال: لا سبيل للنموذج إلى حجز مهما فعل بالوسائط.
+    test('🛡️ حارس الحجز البنيوي: أداة الحجز تُصدر نية ولا تحجز أبداً', async () => {
         const username = 'agent-booker';
-        const offers = await provider.searchOffers({ ...SEARCH_BODY(), returnDate: null, children: 0, cabin: 'economy' });
+        let bookedCount = 0;
         const services = {
             searchFlights: async () => [],
             getOffer: async () => null,
             listBookings: async () => store.listBookingsByUser(username),
-            bookFlight: async (args) => {
-                // نفس مسار doBook منطقياً — هنا نتحقق فقط أن المنفّذ وصل
-                const booking = await createBooking(store, {
-                    username, provider: 'mock',
-                    offer: { owner: 'x', slices: [] },
-                    passengers: args.passengers, contact: args.contact,
-                    netAmount: 100, sellAmount: 110, currency: 'USD',
-                });
-                return { ...booking, bookingReference: 'JAO9999', status: 'issued', sellAmount: 110, currency: 'USD' };
+            proposeFlight: async () => {
+                bookedCount += 0; // الاقتراح لا يحجز
+                return {
+                    intent: 'signed.token', kind: 'flight',
+                    offer: { owner: 'Iberia' }, sellAmount: 110, currency: 'USD', travellerCount: 1,
+                };
             },
             cancelBooking: async () => ({ status: 'cancelled' }),
         };
-        const bookArgs = { offerId: offers[0].id, ...VALID_PAX };
 
-        // بلا تأكيد → رسالة تعليمية ولا حجز
-        const refused = await executeAgentTool('book_flight', { ...bookArgs, confirmed: false }, services);
-        assert.equal(refused.ok, false);
-        assert.match(refused.data.error, /موافقة المستخدم الصريحة/);
-        assert.equal((await store.listBookingsByUser(username)).length, 0);
+        const out = await executeAgentTool('book_flight', { offerId: 'off_1', ...VALID_PAX }, services);
+        assert.equal(out.ok, true);
+        // النية تخرج للواجهة، لا للنموذج
+        assert.equal(out.intent.intent, 'signed.token');
+        assert.equal(out.data.pendingConfirmation, true);
+        assert.ok(!('intent' in out.data), 'التوقيع لا يُسلَّم للنموذج — لا حاجة له به');
+        // والنصّ المُعاد للنموذج ينهاه صراحةً عن ادّعاء الحجز
+        assert.match(out.data.note, /لم يتم الحجز بعد/);
+        assert.match(out.data.note, /ولا تقل إن الحجز تمّ/);
+        assert.equal(bookedCount, 0);
+        assert.equal((await store.listBookingsByUser(username)).length, 0, 'لا حجز في المخزن — الأداة لا تحجز');
 
-        // بتأكيد صريح → حجز فعلي
-        const done = await executeAgentTool('book_flight', { ...bookArgs, confirmed: true }, services);
-        assert.equal(done.ok, true);
-        assert.equal(done.data.bookingReference, 'JAO9999');
-        assert.equal((await store.listBookingsByUser(username)).length, 1);
+        // ولا توجد راية confirmed أصلاً ليضبطها النموذج: أُزيلت من المخطط
+        const bookTools = ['book_flight', 'book_stay', 'book_car'];
+        for (const name of bookTools) {
+            const tool = AGENT_TOOLS.find(t => t.function.name === name);
+            const props = tool.function.parameters.properties;
+            assert.ok(!('confirmed' in props), `${name}: راية confirmed يجب أن تختفي — كانت حارساً يحرس نفسه`);
+            assert.ok(!tool.function.parameters.required.includes('confirmed'));
+        }
 
-        // نفس الحارس للإلغاء
+        // حارس الإلغاء يبقى كما هو (لا مال يُخصَم، والفعل عكوس)
         const cancelRefused = await executeAgentTool('cancel_booking', { bookingId: 'b1', confirmed: false }, services);
         assert.equal(cancelRefused.ok, false);
         // أداة مجهولة → رسالة لا استثناء
@@ -6813,75 +6824,202 @@ describe('الايجنت الحاجز', () => {
         for (const t of AGENT_TOOLS) assert.ok(t.function.parameters);
     });
 
-    test('🏨 حارس حجز الفندق: بلا خدمة → رسالة تعليمية، وconfirmed=true يحجز فعلاً', async () => {
-        const username = 'agent-stay-booker';
-        const bookArgs = { offerId: 'off_x', ...VALID_GUESTS };
+    test('🏨🚗 حارس الفندق والسيارة: نية لا حجز، وبلا خدمة رسالة تعليمية', async () => {
+        const disabledStay = await executeAgentTool('book_stay', { offerId: 'o', ...VALID_GUESTS }, {});
+        assert.equal(disabledStay.ok, false);
+        assert.match(disabledStay.data.error, /غير مفعَّل/);
 
-        // الخدمة غير محقونة (حجز فنادق معطَّل على هذا الخادم) → رسالة لا استثناء
-        const disabled = await executeAgentTool('book_stay', { ...bookArgs, confirmed: true }, {});
-        assert.equal(disabled.ok, false);
-        assert.match(disabled.data.error, /غير مفعَّل/);
+        const disabledCar = await executeAgentTool('book_car', { offerId: 'o', ...VALID_DRIVERS }, {});
+        assert.equal(disabledCar.ok, false);
+        assert.match(disabledCar.data.error, /غير مفعَّل/);
 
-        const services = {
-            bookStay: async (args) => {
-                const booking = await createBooking(store, {
-                    username, provider: 'mock-stays', kind: 'stay',
-                    offer: { name: 'x' },
-                    passengers: args.guests, contact: args.contact,
-                    netAmount: 200, sellAmount: 220, currency: 'USD',
-                });
-                return { ...booking, bookingReference: 'JAH9999', status: 'issued', sellAmount: 220, currency: 'USD' };
-            },
-            cancelStay: async () => ({ status: 'cancelled' }),
-        };
+        const stayOut = await executeAgentTool('book_stay', { offerId: 'o', ...VALID_GUESTS }, {
+            proposeStay: async () => ({ intent: 's.t', kind: 'stay', offer: {}, sellAmount: 220, currency: 'USD', travellerCount: 1 }),
+        });
+        assert.equal(stayOut.ok, true);
+        assert.equal(stayOut.data.pendingConfirmation, true);
+        assert.match(stayOut.summary, /بانتظار تأكيدك/);
 
-        // بلا تأكيد → رسالة تعليمية ولا حجز
-        const refused = await executeAgentTool('book_stay', { ...bookArgs, confirmed: false }, services);
-        assert.equal(refused.ok, false);
-        assert.equal((await store.listBookingsByUser(username)).length, 0);
-
-        // بتأكيد صريح → حجز فعلي
-        const done = await executeAgentTool('book_stay', { ...bookArgs, confirmed: true }, services);
-        assert.equal(done.ok, true);
-        assert.equal(done.data.bookingReference, 'JAH9999');
-        assert.equal((await store.listBookingsByUser(username)).length, 1);
-
-        const cancelRefused = await executeAgentTool('cancel_stay', { bookingId: 'b1', confirmed: false }, services);
-        assert.equal(cancelRefused.ok, false);
+        const carOut = await executeAgentTool('book_car', { offerId: 'o', ...VALID_DRIVERS }, {
+            proposeCar: async () => ({ intent: 'c.t', kind: 'car', offer: {}, sellAmount: 66, currency: 'USD', travellerCount: 1 }),
+        });
+        assert.equal(carOut.ok, true);
+        assert.equal(carOut.data.pendingConfirmation, true);
     });
 
-    test('🚗 حارس حجز السيارة: بلا خدمة → رسالة تعليمية، وconfirmed=true يحجز فعلاً', async () => {
-        const username = 'agent-car-booker';
-        const bookArgs = { offerId: 'off_x', ...VALID_DRIVERS };
+    // 🔐 الإثبات من طرف إلى طرف: النموذج يطلب الحجز عبر chat الحقيقي،
+    // فلا يقع حجز — بل تعود نية. ثم يقع الحجز فعلاً عند تأكيد المسافر
+    // على المسار المستقل. هذا هو الفرق الذي سقط في الإنتاج.
+    test('🔐 من طرف إلى طرف: الايجنت يقترح، والمسافر وحده يحجز', async () => {
+        const username = 'intent-e2e';
+        const token = makeToken(username);
+        const offers = await provider.searchOffers({ ...SEARCH_BODY(), returnDate: null, childrenDobs: [], cabin: 'economy', sort: 'price' });
+        const offerId = offers[0].id;
 
-        const disabled = await executeAgentTool('book_car', { ...bookArgs, confirmed: true }, {});
-        assert.equal(disabled.ok, false);
-        assert.match(disabled.data.error, /غير مفعَّل/);
+        const agent = createTravelAgent({
+            apiKey: 'k',
+            fetchImpl: scriptedFetch([
+                {
+                    role: 'assistant', content: null,
+                    tool_calls: [{
+                        id: 'c1', type: 'function',
+                        function: { name: 'book_flight', arguments: JSON.stringify({ offerId, ...VALID_PAX }) },
+                    }],
+                },
+                { content: 'بطاقة التأكيد أمامك — اضغط الزر لإتمام الحجز.' },
+            ]),
+        });
 
-        const services = {
-            bookCar: async (args) => {
-                const booking = await createBooking(store, {
-                    username, provider: 'mock-cars', kind: 'car',
-                    offer: { vehicleName: 'x' },
-                    passengers: args.drivers, contact: args.contact,
-                    netAmount: 60, sellAmount: 66, currency: 'USD',
-                });
-                return { ...booking, bookingReference: 'JAC9999', status: 'issued', sellAmount: 66, currency: 'USD' };
-            },
-            cancelCar: async () => ({ status: 'cancelled' }),
+        await withAgentApp(agent, async call => {
+            const before = (await store.listBookingsByUser(username)).length;
+            const chat = await call('/api/travel/agent/chat', {
+                method: 'POST', token,
+                body: { messages: [{ role: 'user', content: 'احجز لي هذه الرحلة' }] },
+            });
+            assert.equal(chat.status, 200, JSON.stringify(chat.data));
+
+            // ١) لا حجز وقع رغم أن النموذج نادى أداة الحجز
+            assert.equal((await store.listBookingsByUser(username)).length, before,
+                'نداء أداة الحجز يجب ألا يُنشئ حجزاً — هذا جوهر الحارس');
+
+            // ٢) النية عادت للواجهة بسعرها النهائي
+            assert.equal(chat.data.intents.length, 1);
+            const proposal = chat.data.intents[0];
+            assert.ok(proposal.intent, 'التوقيع يصل الواجهة');
+            assert.ok(proposal.sellAmount > 0);
+            assert.equal(proposal.kind, 'flight');
+
+            // ٣) نية مزوّرة تُرفض
+            const forged = await call('/api/travel/agent/confirm', {
+                method: 'POST', token, body: { intent: 'ff.zz' },
+            });
+            assert.equal(forged.status, 400);
+            assert.equal((await store.listBookingsByUser(username)).length, before);
+
+            // ٤) نية صاحبها غيرك تُرفض كأنها غير موجودة (لا تسريب وجود)
+            const otherUser = await call('/api/travel/agent/confirm', {
+                method: 'POST', token: makeToken('someone-else'), body: { intent: proposal.intent },
+            });
+            assert.equal(otherUser.status, 404);
+
+            // ٥) وبتأكيد صاحبها → الحجز يقع فعلاً
+            const confirmed = await call('/api/travel/agent/confirm', {
+                method: 'POST', token, body: { intent: proposal.intent },
+            });
+            assert.equal(confirmed.status, 201, JSON.stringify(confirmed.data));
+            assert.equal(confirmed.data.status, 'issued');
+            assert.ok(confirmed.data.bookingReference);
+            assert.equal(confirmed.data.priceChanged, false, 'السعر المؤكَّد هو المعروض');
+            assert.equal((await store.listBookingsByUser(username)).length, before + 1);
+        });
+    });
+
+    // 💳 مع بوابة دفع مفعَّلة لا يكتمل الحجز بالتأكيد: يعود معلّقاً مع رابط
+    // Stripe. الواجهة تُحوّل للدفع بدل «✅ تم الحجز» — نفس عقد مسارات الحجز
+    // المباشر (checkoutUrl على الجذر)، وإلا لأخبرنا المسافر بحجزٍ لم يقع.
+    test('💳 تأكيد النية مع بوابة دفع → حجز معلّق + checkoutUrl، لا ادّعاء إصدار', async () => {
+        const username = 'intent-pay';
+        const token = makeToken(username);
+        const offers = await provider.searchOffers({ ...SEARCH_BODY(), returnDate: null, childrenDobs: [], cabin: 'economy', sort: 'price' });
+        const offerId = offers[0].id;
+        const fakeStripe = {
+            name: 'stripe',
+            async createCheckoutSession() { return { id: 'cs_intent', url: 'https://checkout.stripe.test/cs_intent', expiresAt: 999 }; },
+            async getCheckoutSession(id) { return { id, status: 'open', paymentStatus: 'unpaid', url: 'https://checkout.stripe.test/cs_intent' }; },
         };
+        const agent = createTravelAgent({
+            apiKey: 'k',
+            fetchImpl: scriptedFetch([
+                { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'book_flight', arguments: JSON.stringify({ offerId, ...VALID_PAX }) } }] },
+                { content: 'بطاقة التأكيد أمامك.' },
+            ]),
+        });
+        await withAgentApp(agent, async call => {
+            const chat = await call('/api/travel/agent/chat', {
+                method: 'POST', token, body: { messages: [{ role: 'user', content: 'احجز لي هذه الرحلة' }] },
+            });
+            assert.equal(chat.status, 200, JSON.stringify(chat.data));
+            const proposal = chat.data.intents[0];
+            const confirmed = await call('/api/travel/agent/confirm', { method: 'POST', token, body: { intent: proposal.intent } });
+            assert.equal(confirmed.status, 201, JSON.stringify(confirmed.data));
+            assert.equal(confirmed.data.status, 'pending', 'لا إصدار قبل الدفع');
+            assert.equal(confirmed.data.checkoutUrl, 'https://checkout.stripe.test/cs_intent');
+            assert.equal(confirmed.data.priceChanged, false);
+            const mine = await store.listBookingsByUser(username);
+            assert.equal(mine.length, 1);
+            assert.equal(mine[0].status, 'pending');
+        }, { stripeClient: fakeStripe, stripeWebhookSecret: 'whsec_intent', publicUrl: 'https://portal.test' });
+    });
 
-        const refused = await executeAgentTool('book_car', { ...bookArgs, confirmed: false }, services);
-        assert.equal(refused.ok, false);
-        assert.equal((await store.listBookingsByUser(username)).length, 0);
+    // العيب ٥: أربع عمليات بحث متطابقة استنزفت الجولات ومات الطلب
+    test('🔁 نداء مكرّر بنفس الوسائط يُقطع بدل استنزاف الجولات', async () => {
+        let searches = 0;
+        const services = { searchStays: async () => { searches += 1; return [{ id: 's1', sellAmount: 100, currency: 'USD' }]; } };
+        const sameCall = {
+            id: 'c1', type: 'function',
+            function: { name: 'search_stays', arguments: JSON.stringify({ iata: 'RUH', checkInDate: futureDate(3), checkOutDate: futureDate(4) }) },
+        };
+        let round = 0;
+        const agent = createTravelAgent({
+            apiKey: 'k',
+            fetchImpl: async () => {
+                round += 1;
+                // النموذج عالق: يعيد نفس النداء أربع مرات ثم يستسلم
+                const message = round <= 4
+                    ? { role: 'assistant', content: null, tool_calls: [{ ...sameCall, id: `c${round}` }] }
+                    : { content: 'إليك الفنادق المتاحة.' };
+                return { ok: true, json: async () => ({ choices: [{ message }] }) };
+            },
+        });
+        const result = await agent.chat({ messages: [{ role: 'user', content: 'احجز فندقاً' }], services });
+        assert.equal(result.reply, 'إليك الفنادق المتاحة.', 'المحادثة تنتهي برد لا بحدّ الجولات');
+        assert.equal(searches, 1, 'الأداة نُفّذت مرة واحدة فقط رغم أربعة نداءات متطابقة');
+    });
 
-        const done = await executeAgentTool('book_car', { ...bookArgs, confirmed: true }, services);
-        assert.equal(done.ok, true);
-        assert.equal(done.data.bookingReference, 'JAC9999');
-        assert.equal((await store.listBookingsByUser(username)).length, 1);
+    // العيبان ٤ و٦: بحث أعاد ١٠ فعدّد النموذج ١١ (بند مكرّر)، وقائمة
+    // حجوزات قالت الرقاقة ٢٥ والنموذج «٢ نشط» ثم عدّد ٣. الأعداد الآن
+    // في البيانات نفسها — مرساة يقرؤها لا يحسبها.
+    test('🔢 نتائج الأدوات تحمل عدداً صريحاً لا مصفوفة عارية', async () => {
+        const ten = Array.from({ length: 10 }, (_, i) => ({ id: `o${i}`, sellAmount: 100 + i }));
+        const flights = await executeAgentTool('search_flights', { origin: 'AMS', destination: 'RUH' }, {
+            searchFlights: async () => ten,
+        });
+        assert.equal(flights.data.count, 10, 'العدد صريح في البيانات');
+        assert.equal(flights.data.items.length, 10);
 
-        const cancelRefused = await executeAgentTool('cancel_car', { bookingId: 'b1', confirmed: false }, services);
-        assert.equal(cancelRefused.ok, false);
+        const stays = await executeAgentTool('search_stays', { iata: 'RUH' }, { searchStays: async () => ten.slice(0, 3) });
+        assert.equal(stays.data.count, 3);
+
+        const cars = await executeAgentTool('search_cars', { iata: 'RUH' }, { searchCars: async () => [] });
+        assert.equal(cars.data.count, 0);
+
+        // الحجوزات: إجمالي + تفصيل بالحالة (لا يعدّ النموذج «النشط» بنفسه)
+        const bookings = await executeAgentTool('list_my_bookings', {}, {
+            listBookings: async () => ([
+                { id: 'b1', status: 'issued' }, { id: 'b2', status: 'issued' },
+                { id: 'b3', status: 'cancelled' }, { id: 'b4', status: 'failed' },
+            ]),
+        });
+        assert.equal(bookings.data.total, 4);
+        assert.deepEqual(bookings.data.countByStatus, { issued: 2, cancelled: 1, failed: 1 });
+        assert.equal(bookings.data.items.length, 4);
+    });
+
+    // العيب ٣: «تفاصيل الرحلة؟» عن حجز قائم أجابها get_offer بسعر حيّ
+    // (213.05) والمدفوع فعلاً 206.51.
+    test('💰 سعر الحجز يُفصَل عن السعر الحيّ صراحةً في البيانات', async () => {
+        const live = await executeAgentTool('get_offer', { offerId: 'o1' }, {
+            getOffer: async () => ({ id: 'o1', sellAmount: 213.05, currency: 'EUR' }),
+        });
+        assert.match(live.data.priceKind, /ليس سعر حجز/);
+        assert.match(live.data.priceKind, /get_booking/, 'يدلّ على الطريق الصحيح لا ينهى فقط');
+
+        const booked = await executeAgentTool('get_booking', { bookingRef: 'H7ULWF' }, {
+            getBooking: async () => ({ id: 'b1', bookingReference: 'H7ULWF', sellAmount: 206.51, currency: 'EUR', status: 'issued' }),
+        });
+        assert.equal(booked.data.sellAmount, 206.51);
+        assert.match(booked.data.priceKind, /المدفوع فعلاً/);
+        assert.match(booked.summary, /H7ULWF/);
     });
 
     test('📅 find_flexible_dates حقيقي عبر الوكيل: نطاق تواريخ + محدّد معدّل مخصّص', async () => {
@@ -7683,15 +7821,22 @@ describe('الايجنت الحاجز', () => {
     // هامش الأمان المحسوب (٨٨٪ من الحصّة متروك للتزامن وإعادة المحاولة).
     test('📈 MAX_TOOL_RESULT_CHARS: 12000 — أسوأ حالة داخل ~12% من حصّة Developer', () => {
         assert.equal(MAX_TOOL_RESULT_CHARS, 12000);
-        // نفس المقياس التجريبي الموثَّق في README (٣٣٠١ ثابت + ٢.٧٨ رمز/حرف
-        // عبر عشر جولات تراكمية) — أسوأ حالة يجب أن تبقى بعيدة عن حافة
-        // حصّة Developer (300,000 TPM لـllama-3.3-70b-versatile)، لا قريبة
-        // منها كما كان الحال اضطرارياً مع المجاني (كانت ~97% من 12,000).
-        const worstCaseTokens = 3301 + 2.78 * MAX_TOOL_RESULT_CHARS;
+        // ⚠️ الثابت **مقيس حيّاً** من `Requested` في ردّ 429 الفعلي لـGroq
+        // على نداء أول بلا نتائج أدوات — لا مُقدَّراً. التقدير الأول
+        // (٣٬٣٠١) كان أقل من الواقع ٢.٦ ضعفاً، فصُحّح من بيانات حيّة.
+        const STATIC_TOKENS = 8740;
+        const worstCaseTokens = STATIC_TOKENS + 2.78 * MAX_TOOL_RESULT_CHARS;
         const DEVELOPER_TPM = 300000;
         assert.ok(worstCaseTokens < DEVELOPER_TPM * 0.15,
             `أسوأ حالة (${Math.round(worstCaseTokens)}) يجب أن تبقى دون 15% من حصّة Developer`);
         assert.ok(worstCaseTokens > 25000, 'تحسين حقيقي لا رقم رمزي — أكثر من ضعف الحدّ القديم (~11,631)');
+
+        // 🚨 والحدّ مشروط بالترقية: على المجاني (12,000 TPM) تلتهم الحمولة
+        // الثابتة وحدها أكثر من ٧٠% من الحصّة الدقيقة — الايجنت لا يعمل
+        // هناك مهما صغّرنا هذا الرقم، فلا تُعالَج 429 بخفضه.
+        const FREE_TPM = 12000;
+        assert.ok(STATIC_TOKENS / FREE_TPM > 0.7,
+            'الحمولة الثابتة وحدها تتجاوز ٧٠% من حصّة المجاني — التوثيق يعتمد على هذه الحقيقة');
     });
 
     // ⚠️ عطب إنتاج حقيقي: Groq يتحقق من مخطط الأداة قبل أن يصل الطلب إلى
@@ -8061,3 +8206,64 @@ if (process.env.TEST_DATABASE_URL) {
         },
     });
 }
+
+// ⚠️ نواة الحارس الذي حلّ محلّ راية confirmed الساقطة. الاختبارات هنا
+// تحرس خصائص أمنية لا سلوكاً ودّياً: تزوير، عبث، انتهاء، وعزل ملكية.
+describe('🔐 نية الحجز الموقّعة', () => {
+    const SECRET = 'intent-secret';
+    const PAYLOAD = () => ({
+        kind: 'flight', username: 'ali', offerId: 'off_1',
+        sellAmount: 110, currency: 'USD', travellers: [{ givenName: 'A' }], contact: { email: 'a@b.c' },
+    });
+
+    test('توقيع صالح يمرّ، وحمولته تعود كما وُقّعت', () => {
+        const token = signBookingIntent(PAYLOAD(), SECRET);
+        const out = verifyBookingIntent(token, SECRET);
+        assert.ok(out.values, out.error);
+        assert.equal(out.values.username, 'ali');
+        assert.equal(out.values.sellAmount, 110);
+        assert.ok(out.values.exp > out.values.iat);
+    });
+
+    test('🚫 سرّ آخر لا يفتح النية — النموذج لا يملك المفتاح فلا يزوّر', () => {
+        const token = signBookingIntent(PAYLOAD(), SECRET);
+        assert.ok(verifyBookingIntent(token, 'wrong-secret').error);
+    });
+
+    test('🚫 العبث بالحمولة يُكشف — رفع السعر أو تبديل المالك', () => {
+        const token = signBookingIntent(PAYLOAD(), SECRET);
+        const [encoded, sig] = token.split('.');
+        const body = JSON.parse(Buffer.from(encoded.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
+
+        // نفس التوقيع مع حمولة مُبدَّلة (المستخدم صار غيره)
+        body.username = 'attacker';
+        const forged = Buffer.from(JSON.stringify(body)).toString('base64')
+            .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        assert.ok(verifyBookingIntent(`${forged}.${sig}`, SECRET).error, 'حمولة مُبدَّلة يجب أن تُرفض');
+    });
+
+    test('🚫 نية منتهية تُرفض برسالة تقول ما العمل', () => {
+        const token = signBookingIntent(PAYLOAD(), SECRET, { now: 1000, ttlMs: 60 });
+        assert.ok(verifyBookingIntent(token, SECRET, { now: 1000 }).values, 'داخل المدة تمرّ');
+        const expired = verifyBookingIntent(token, SECRET, { now: 2000 });
+        assert.match(expired.error, /انتهت صلاحية/);
+    });
+
+    test('🚫 صيغ فاسدة لا ترمي استثناءً — تعود كخطأ مُعلَن', () => {
+        for (const bad of [null, '', 'no-dot', 'a.b.c', '.', 'x.', '.y']) {
+            const out = verifyBookingIntent(bad, SECRET);
+            assert.ok(out.error, `يجب رفض: ${JSON.stringify(bad)}`);
+        }
+    });
+
+    test('🚫 نوع حجز مجهول يُرفض حتى بتوقيع صحيح', () => {
+        const token = signBookingIntent({ ...PAYLOAD(), kind: 'teleport' }, SECRET);
+        assert.match(verifyBookingIntent(token, SECRET).error, /نوع نية حجز/);
+    });
+
+    test('المدة الافتراضية ١٥ دقيقة — قصيرة عمداً', () => {
+        assert.equal(INTENT_TTL_MS, 15 * 60 * 1000);
+        const token = signBookingIntent(PAYLOAD(), SECRET, { now: 0 });
+        assert.equal(verifyBookingIntent(token, SECRET, { now: 0 }).values.exp, INTENT_TTL_MS);
+    });
+});
