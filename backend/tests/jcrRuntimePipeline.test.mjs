@@ -198,8 +198,10 @@ test('مشروع يحتاج خادماً: فريق الخلفية يسقط بل�
     assert.match(fs.readFileSync(path.join(s.dir, 'script.js'), 'utf-8'), /\/\/ API: \/api\/items/);
     assert.ok(fs.existsSync(path.join(s.dir, 'api', 'db.js')), 'api/db.js');
     assert.ok(fs.existsSync(path.join(s.dir, '.env.example')), '.env.example');
-    // حقيقة اليوم (لا تصميم): وثيقة الفريق تُكتب حتى حين لا يُنجز أحد
-    assert.match(fs.readFileSync(path.join(s.dir, 'BACKEND_TEAM.md'), 'utf-8'), /0\/7 وكيل أنجز/);
+    // لا أحد أنجز → لا وثيقة فريق (كانت تُكتب بـ«0/7 أنجز») ولا فحص أجوف على صفر ملفات
+    assert.ok(!fs.existsSync(path.join(s.dir, 'BACKEND_TEAM.md')), 'لا BACKEND_TEAM.md بلا إنجاز');
+    assert.doesNotMatch(s.logs(), /\[BackendVerify\]/);
+    assert.match(s.logs(), /\[BackendTeam\]: ⚠️ لم يُنجز أي وكيل من 7 — الاحتياط: المولّد التقليدي/);
     assert.ok(!fs.existsSync(path.join(s.dir, 'prisma')), 'لا Prisma لهدف بلا كلمات علاقية');
     assert.ok(!fs.existsSync(path.join(s.dir, 'login.html')) && !fs.existsSync(path.join(s.dir, 'api', 'auth.js')), 'لا مصادقة لهدف بلا كلماتها');
 
@@ -210,11 +212,11 @@ test('مشروع يحتاج خادماً: فريق الخلفية يسقط بل�
         /\[BackendTeam\]: 🏛️ Backend Architect يعمل/,
         /\[BackendTeam\]: ⚠️ Backend Architect: /,
         /\[BackendTeam\]: ⏭️ Backend Debug Agent/,
-        /\[BackendVerify\]: ✅ الكود المولّد اجتاز الفحص/,
+        /\[BackendTeam\]: ⚠️ لم يُنجز أي وكيل/,
         /\[BackendAgent\]: ✅ تم توليد 1 ملف \(api\/items\.js\)/,
         /\[BackendAgent\]: 🔗 تم تحديث script\.js/,
         /\[DatabaseAgent\]: 🗄️ جاري توليد قاعدة البيانات/,
-        /\[DatabaseAgent\]: ✅ mongodb — 2 ملف/,
+        /\[DatabaseAgent\]: ✅ mongodb — 2 ملف \(api\/db\.js, \.env\.example\)/,
         /\[RenderAgent\]/,
         /✨ نجاح/,
     ];

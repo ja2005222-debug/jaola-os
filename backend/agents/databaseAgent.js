@@ -241,7 +241,9 @@ export async function connectDB() {
         success: true,
         dbType,
         files,
-        summary: `${dbType} — ${files.length} ملف (schema, seed, connection)`
+        // الملخّص يعدّد ما كُتب فعلاً — كان ثابتاً «(schema, seed, connection)» حتى حين
+        // يغيب المخطط والبذور (نوع مشروع خارج القوالب بلا مزوّد)
+        summary: `${dbType} — ${files.length} ملف (${files.map(f => f.name).join(', ')})`
     };
 }
 

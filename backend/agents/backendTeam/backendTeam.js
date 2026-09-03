@@ -215,7 +215,8 @@ export async function runBackendTeam(goal, opts = {}) {
     // ✅ فحص تنفيذي حقيقي: node --check على الكود المولّد، والأخطاء تُغذّى Debug ليصلحها
     let verification = null;
     const debug = team.find((a) => a.debugFor); // وكيل الإصلاح (عام)
-    if (opts.verify && debug) {
+    // لا فحص على صفر ملفات — «اجتاز الفحص» بلا شيء يُفحص نجاحٌ أجوف يضلّل السجل
+    if (opts.verify && debug && Object.keys(fileMap).length > 0) {
         const qaKey = debug.debugFor;
         const maxRounds = Number.isInteger(opts.maxVerifyRounds) ? opts.maxVerifyRounds : 2;
         let ver = await syntaxCheckFiles(Object.values(fileMap));
