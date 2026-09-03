@@ -1,3 +1,4 @@
+import { isBareConsent } from '../core/policy/ConfirmationManager.js';
 /**
  * 🎛️ Chat Commands — أنماط الأوامر الحتمية للشات (نقية وقابلة للاختبار)
  *
@@ -97,9 +98,11 @@ export function isImageDiagCommand(message) {
 }
 
 // ─── التأكيد المجرّد ("نعم/تمام" وحدها → استئناف) ───────────────────
-const BARE_YES = /^\s*(نعم|ايوه|أيوه|اه|آه|تمام|طيب|يلا|ok|okay|yes|sure|yep|go)\s*[.!؟?]*\s*$/i;
+// نفس المفردات بحرفها، لكن مصدرها صار بوّابة الموافقة الموحّدة
+// (`core/policy/ConfirmationManager.js`) — سؤالٌ مختلف عن `isConfirmation`
+// («هل الرسالة *ليست إلا* نعم؟») فتبقى قائمته مستقلة هناك عمداً.
 export function isBareYes(message) {
-    return BARE_YES.test(message || '');
+    return isBareConsent(message);
 }
 
 // ─── أمر التراجع ("تراجع/استرجع آخر نسخة/undo") → استرجاع حتمي بلا LLM ──
