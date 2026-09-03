@@ -52,7 +52,8 @@ import { verifyRequirements, buildFixInstruction, formatChecklist } from './requ
 import { classifyIntentFast, decide, buildContinuationGoal, buildStatusReply, missionBriefing, greetingReply } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
 import { assertBuildAgents, DELIVERY_STAGES } from '../core/contracts/index.js';
-import { registerMission, throwIfAborted, clearMission } from '../services/abortRegistry.js';
+import { orderTasks } from '../core/runtime/TaskGraph.js';
+import { registerMission, throwIfAborted, clearMission } from '../core/runtime/AbortRegistry.js';
 import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import { snapshotWorkspace } from '../services/workspaceStore.js';
 import { orchestrator } from '../core/PluginOrchestrator.js';
@@ -65,7 +66,7 @@ import { generateBlueprint, buildBlueprintContext } from './appBlueprint.js';
 import { recommendFullStack, buildFullStackProject } from './fullstackTemplates.js';
 import { recordScore, recordBuild, recordEditAction, buildMetricsPayload } from '../services/metricsStore.js';
 import { setPendingGoal, getPendingGoal, consumePendingGoal, clearDialog } from '../services/conversationManager.js';
-import { enqueueMission, takeLostMission } from '../services/missionQueue.js';
+import { enqueueMission, takeLostMission } from '../core/runtime/ExecutionQueue.js';
 import { loadForPrompt as loadConversation, recordTurn } from '../services/conversationStore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -305,9 +306,9 @@ export class JaolaCognitiveRuntime {
             // ✅ الخطة مقبولة — من هنا خطّ التسليم: مراحل بتوقيع موحّد
             // (context, roomName, agents) تقرأ/تكتب context.plan.files (عقد Agent الأول)
             context.plan = plan;
-            // 📐 عقد Task (core/contracts): القائمة المسمّاة المرتّبة هي مصدر الحقيقة
-            // للترتيب — نفس الاستدعاءات الحرفية السابقة، الواحدة تلو الأخرى
-            for (const stage of DELIVERY_STAGES) {
+            // 📐 عقد Task: TaskGraph يرتّب المراحل من dependsOn (اليوم كلّها خطّية
+            // فالناتج = ترتيب المصفوفة الحرفي) — نفس الاستدعاءات، الواحدة تلو الأخرى
+            for (const stage of orderTasks(DELIVERY_STAGES, { key: 'name', label: 'مراحل التسليم' })) {
                 await this[stage.run](context, roomName, agents);
             }
 

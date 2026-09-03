@@ -64,6 +64,7 @@ Policy/Permission، Identity، Plugin.
 | `plugins/site-checker.js` | 94 | وكيل فحص موقع حيّ (type: agent, `registerAgent → {name, handler}`) | KEEP | Agent (أول وكيل إضافة حقيقي) | `plugins/site-checker.js` |
 | `plugin-templates/AgentPluginTemplate.js` | 47 | قالب إضافة وكيل | KEEP | Plugin | كما هو |
 | `services/pluginStore.js` | 87 | تخزين الإضافات في Mongo واستعادتها للقرص | KEEP | Plugin | `core/plugins/` (Sprint 7) |
+| ✅ `core/runtime/TaskGraph.js` (جديد، Sprint 2a) | 46 | `orderTasks(items, {key})` — ترتيب طوبولوجي مستقرّ من `dependsOn` + كشف الدورات (خوارزمية `planExecution` حرفياً معمَّمة) | ADDED | Task | مستهلكاه: `runDynamicMultiAgentRuntime` (DELIVERY_STAGES) و`planExecution` (الفرق) |
 
 ### ✅ التحقّق من مسار `orchestrator.init` (البند 21 من الخط الأساس)
 مؤكَّد بالكود لا بالفهرس:
@@ -124,8 +125,8 @@ Policy/Permission، Identity، Plugin.
 ### C4. الفرق التصريحية (العقد الوحيد الموحّد اليوم — `CONTRACTS.md` §2ب)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `backendTeam/agentSpec.js` | 133 | `defineAgent/validateSpec/compileSpecToPrompt` | MOVE | **Agent** (الشكل القانوني للوكيل في v2) | `core/runtime/AgentSpec.js` (Sprint 2 — مع Agent Runtime الذي يستهلكه، لا قبله) |
-| `backendTeam/backendTeam.js` | 262 | منسّق عام `runBackendTeam/runAgent` + `safeRelPath/writeBackendTeamFiles` | MOVE (المنسّق) / MODIFY (الكتابة → Tool) | Agent Runtime + Tool | `core/runtime/AgentRuntime.js` (Sprint 2) |
+| `backendTeam/agentSpec.js` → ✅ `core/runtime/AgentSpec.js` | 133 | `defineAgent/validateSpec/compileSpecToPrompt` | MOVED (Sprint 2a ✅، حرفياً) | **Agent** (الشكل القانوني للوكيل في v2) | `core/runtime/AgentSpec.js` |
+| `backendTeam/backendTeam.js` | 240 | منسّق عام `runBackendTeam/runAgent` + `safeRelPath/writeBackendTeamFiles`؛ ✅ `planExecution` صار غلافاً لـ`TaskGraph.orderTasks` | MOVE (المنسّق) / MODIFY (الكتابة → Tool) | Agent Runtime + Task + Tool | `core/runtime/AgentRuntime.js` (Sprint 2b) |
 | `backendTeam/backendVerify.js` | 57 | فحص syntax تنفيذي | KEEP | Evidence | `core/verification/` |
 | `backendTeam/specs.js`, `frontendTeam/specs.js` | 334/167 | 6+6 وكلاء تصريحيين | KEEP | Agent | `plugins/coding/agents/` |
 | `backendTeam/index.js`, `frontendTeam/index.js` | 7/19 | barrels (`runFrontendTeam` غير موصول بالنواة) | KEEP | — | كما هي |
@@ -161,8 +162,8 @@ Policy/Permission، Identity، Plugin.
 ### D1. وقت التشغيل (مرشّحة لـ`core/`)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `missionQueue.js` | 135 | طابور المهام + سجلّ دائم للساقطة | MOVE | Mission (Execution Queue عامة) | `core/runtime/ExecutionQueue.js` (Sprint 2) |
-| `abortRegistry.js` | 49 | إيقاف مهمة جارية | MOVE | Mission | `core/runtime/` |
+| `missionQueue.js` → ✅ `core/runtime/ExecutionQueue.js` | 135 | طابور المهام + سجلّ دائم للساقطة (نفس الصادرات) | MOVED (Sprint 2a ✅، حرفياً) | Mission (Execution Queue عامة) | `core/runtime/ExecutionQueue.js` |
+| `abortRegistry.js` → ✅ `core/runtime/AbortRegistry.js` | 49 | إيقاف مهمة جارية | MOVED (Sprint 2a ✅، حرفياً) | Mission | `core/runtime/AbortRegistry.js` |
 | `platformLessons.js` | 184 | دروس الفشل + ثغرات السلوك (التعلّم الحقيقي) | MOVE | Evidence + Memory | `core/verification/` أو `core/memory/` |
 | `projectBrain.js` | 196 | دماغ المشروع (دالة نقية) | MOVE | Evidence | `core/verification/` (Sprint 4) |
 | `codeGuard.js` | 343 | حارس جودة الكود المولَّد | KEEP | Verification | `plugins/coding/` |

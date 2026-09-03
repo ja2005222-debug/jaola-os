@@ -5,7 +5,7 @@
  * وقسم Cooperation، فيعمل الفريق كسلسلة إنتاج لا كوكيل واحد يفعل كل شيء.
  */
 
-import { defineAgent } from './agentSpec.js';
+import { defineAgent } from '../../core/runtime/AgentSpec.js';
 
 export const BACKEND_ARCHITECT = defineAgent({
     id: 'backend-architect',

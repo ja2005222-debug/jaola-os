@@ -12,7 +12,8 @@
 
 import path from 'path';
 import { promises as fsp } from 'fs';
-import { compileSpecToPrompt } from './agentSpec.js';
+import { compileSpecToPrompt } from '../../core/runtime/AgentSpec.js';
+import { orderTasks } from '../../core/runtime/TaskGraph.js';
 import { BACKEND_TEAM, TEAM_BY_ID, BACKEND_DEBUG_AGENT } from './specs.js';
 import { syntaxCheckFiles } from './backendVerify.js';
 
@@ -48,34 +49,9 @@ export async function writeBackendTeamFiles(files, projectPath, { transform } = 
 
 /** ترتيب التنفيذ عبر فرز طوبولوجي لاعتماديات dependsOn (Kahn) */
 export function planExecution(team = BACKEND_TEAM) {
-    const ids = new Set(team.map((a) => a.id));
-    const indeg = new Map(team.map((a) => [a.id, 0]));
-    const adj = new Map(team.map((a) => [a.id, []]));
-    for (const a of team) {
-        for (const dep of a.dependsOn || []) {
-            if (!ids.has(dep)) continue; // تجاهل اعتمادية خارج الفريق
-            indeg.set(a.id, indeg.get(a.id) + 1);
-            adj.get(dep).push(a.id);
-        }
-    }
-    // طابور مستقر: يحافظ على ترتيب التعريف عند تساوي الدرجة
-    const order = [];
-    let queue = team.filter((a) => indeg.get(a.id) === 0).map((a) => a.id);
-    while (queue.length) {
-        const next = [];
-        for (const id of queue) {
-            order.push(id);
-            for (const m of adj.get(id)) {
-                indeg.set(m, indeg.get(m) - 1);
-                if (indeg.get(m) === 0) next.push(m);
-            }
-        }
-        queue = next;
-    }
-    if (order.length !== team.length) {
-        throw new Error('دورة اعتمادية في فريق الوكلاء — تعذّر ترتيب التنفيذ');
-    }
-    return order;
+    // 📐 عقد Task: الخوارزمية نفسها انتقلت حرفياً إلى core/runtime/TaskGraph.js
+    // (ترتيب طوبولوجي مستقرّ من dependsOn + كشف الدورات) — الفريق يبقى مستهلكها الأول
+    return orderTasks(team, { key: 'id', label: 'فريق الوكلاء' }).map((a) => a.id);
 }
 
 /** خطة الفريق (بلا تنفيذ) — للعرض في لوحة الأدمِن والاختبار */

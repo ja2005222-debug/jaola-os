@@ -71,7 +71,7 @@ import {
 } from './agents/clarifierAgent.js';
 
 import { schemas, validate, sanitizePath } from './middleware/security.js';
-import { abortMission, hasActiveMission } from './services/abortRegistry.js';
+import { abortMission, hasActiveMission } from './core/runtime/AbortRegistry.js';
 import { pushProject, getIntegration, isPlatformRepo } from './services/githubSync.js';
 import { encryptSecret, decryptSecret } from './utils/secretVault.js';
 import * as oauth from './services/oauthLite.js';
@@ -134,7 +134,7 @@ import { setProjectSecret, deleteProjectSecret, getProjectSecretNames, getProjec
 import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
 import { recordTurn } from './services/conversationStore.js';
 import { buildMetricsPayload } from './services/metricsStore.js';
-import { queueStatus } from './services/missionQueue.js';
+import { queueStatus } from './core/runtime/ExecutionQueue.js';
 import { getCommitHistory, rollbackToCommit } from './agents/gitAgent.js';
 import { adminOnly, isAdminUser } from './middleware/adminOnly.js';
 // 🔑 تحقق يقبل السر السابق أثناء تدوير المفتاح — التوقيع يبقى بالحالي دوماً

@@ -5,7 +5,7 @@
  * الترتيب: Architect → (Component + UI/UX) → (Accessibility + QA) → Debug
  */
 
-import { defineAgent } from '../backendTeam/agentSpec.js';
+import { defineAgent } from '../../core/runtime/AgentSpec.js';
 
 export const FRONTEND_ARCHITECT = defineAgent({
     id: 'frontend-architect',

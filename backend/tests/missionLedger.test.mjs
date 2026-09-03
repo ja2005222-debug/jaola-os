@@ -5,7 +5,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { enqueueMission, takeLostMission, noteLostMission, ledgerPath } from '../services/missionQueue.js';
+import { enqueueMission, takeLostMission, noteLostMission, ledgerPath } from '../core/runtime/ExecutionQueue.js';
 
 const readLedger = () => JSON.parse(fs.readFileSync(ledgerPath(), 'utf-8') || '[]');
 
@@ -29,7 +29,7 @@ test('عملية جديدة تقرأ السجلّ كمهام ساقطة وتُف
     const file = path.join(dir, 'mission_ledger.json');
     fs.writeFileSync(file, JSON.stringify([{ username: 'amal', project: 'shop', goal: 'متجر', roomName: 'r', state: 'waiting' }]));
     const script = `
-        import { takeLostMission } from '${path.resolve('services/missionQueue.js').replace(/\\/g, '/')}';
+        import { takeLostMission } from '${path.resolve('core/runtime/ExecutionQueue.js').replace(/\\/g, '/')}';
         const a = takeLostMission('amal', 'shop'); const b = takeLostMission('amal', 'shop');
         console.log(JSON.stringify({ a, b }));`;
     const out = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
