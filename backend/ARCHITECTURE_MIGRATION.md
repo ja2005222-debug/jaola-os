@@ -706,3 +706,22 @@ LLM بلا طلب) يُترك للمالك، والبنية جاهزة له (`lo
 4. **`server.js`**: لا يُفكَّك دفعة واحدة (البند 19)؛ الخريطة تسمّي 14 مجالاً كمرشّحي
    `routes/*.js` على نمط `routes/billing.js` القائم — يخرج مجال واحد في كل PR وعند
    الحاجة فقط.
+
+## 🧹 حذف السقالة الميتة — 30 ملفاً (2026-09-03، القرار المعماري 3 أعلاه)
+
+نُفِّذ ما علّمته الخريطة **DELETE** (C7 + D6): 7 في `agents/` (`deployer.agent`,
+`qa.agent`, `git.agent`, `github.agent`, `serverBuilder`, `spec/AgentSpec`,
+`spec/servercraft.spec`) + 23 في `services/` (`architectureExplorer`,
+`contextBuilder`, `fileBridge`, `fileService`, `git.service`, `intentEngine`,
+`monaco.service`, `orchestrator`, `portManager`, `scanner`, `systemPrompt`,
+`taskWorker`, `taskQueue`, `vercelDeploy`, `vision.service`, `websocket`,
+`workspace.service`) و`lib/templateGenerator`, `utils/api`, `utils/hooks`,
+`utils/realtime`, `websocket/server`, `websocket/socketManager`. المجلدات
+`agents/spec/`, `lib/`, `websocket/` صارت فارغة فأُزيلت.
+
+**الدليل قبل الحذف**: صفر مستوردين لكل ملف عبر backend + frontend/src + tests +
+.github (grep على اسم الملف)؛ كلّها commit واحد من 2026-08-05 (سقالة اليوم الأول)
+عدا `serverBuilder` (2). **بعد الحذف**: `node --check server.js` سليم، استيراد
+`agents/index.js` سليم، لا مرجع متبقٍ لأي اسم محذوف (المطابقات الوحيدة هي النصّ
+`'server.js'` كاسم ملف في المشاريع المولَّدة — ليست استيرادات)، والمجموعة الكاملة
+807/807. الأثر: `agents/` 123 → 116، `services/` 90 → 67. التراجع: `git revert`.
