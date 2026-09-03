@@ -44,6 +44,10 @@ export function useSocket(isAuthenticated, handleAuthError) {
   // مرجع لتتبع عدد أخطاء الاتصال لمنع حلقة الـ reload
   const connectErrorCountRef = useRef(0);
 
+  // buffer تجميع دفعات بث الكود (code_stream_chunk) — يُفرَّغ مرة لكل إطار رسم
+  const codeBufRef = useRef('');
+  const codeFlushRef = useRef(0);
+
   // ✨ كشف ناعم بمستوى كلاود: النموذج يبثّ دفعاتٍ قد تقفز — نفصل الوصول عن
   // العرض. الشبكة تُراكم في `target`، وحلقة rAF تكشف الحروف بإيقاع ثابت
   // (تتسارع كلما اتّسعت الفجوة فلا تتأخّر أبداً، وتنعم على الدفعات الصغيرة).
@@ -127,18 +131,38 @@ export function useSocket(isAuthenticated, handleAuthError) {
       }
     });
 
+    const clearCodeBuffer = () => {
+      codeBufRef.current = '';
+      if (codeFlushRef.current) {
+        cancelAnimationFrame(codeFlushRef.current);
+        codeFlushRef.current = 0;
+      }
+    };
+
     socket.off('preview_updated').on('preview_updated', (data) => {
+      clearCodeBuffer();
       setStreamingContent('');
       setPreviewTimestamp(data.timestamp || Date.now());
     });
 
     // 🛠️ نهاية بث الكود (نجاح/فشل/إيقاف) — يزيل طبقة "يكتب الكود" عن المعاينة دائماً
     socket.off('stream_done').on('stream_done', () => {
+      clearCodeBuffer();
       setStreamingContent('');
     });
 
     socket.off('code_stream_chunk').on('code_stream_chunk', (chunk) => {
-      setStreamingContent((prev) => prev + chunk);
+      // تجميع الدفعات في buffer وتفريغه مرة لكل إطار رسم — الدفعات تصل أسرع
+      // من 60fps أثناء البث الكثيف، وكل setState هنا يعيد رسم شجرة Dashboard كاملة
+      codeBufRef.current += chunk;
+      if (!codeFlushRef.current) {
+        codeFlushRef.current = requestAnimationFrame(() => {
+          codeFlushRef.current = 0;
+          const buffered = codeBufRef.current;
+          codeBufRef.current = '';
+          if (buffered) setStreamingContent((prev) => prev + buffered);
+        });
+      }
     });
 
     socket.off('agent_states').on('agent_states', setAgentStates);
@@ -156,7 +180,9 @@ export function useSocket(isAuthenticated, handleAuthError) {
     });
 
     socket.off('log').on('log', (newLog) => {
-      setLogs((prev) => [...prev.slice(-100), newLog]);
+      // طابع وقت الوصول يُسجَّل هنا مرة واحدة — العرض يقرأه جاهزاً بدل توليد
+      // new Date() لكل سطر في كل render (وكان يعرض وقتاً خاطئاً أصلاً)
+      setLogs((prev) => [...prev.slice(-100), { ...newLog, time: new Date().toLocaleTimeString() }]);
 
       // 🆕 إحياء دور الشات: الأحداث المهمة تظهر كأسطر حالة داخل الشات مباشرة
       // بدل أن تبقى مدفونة في تاب Logs — المستخدم يرى ماذا يحدث لحظة بلحظة
@@ -314,6 +340,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
 
     return () => {
       if (revealRef.current.raf) { cancelAnimationFrame(revealRef.current.raf); revealRef.current.raf = null; }
+      clearCodeBuffer();
       socket.off('workspace_files');
       socket.off('user_projects');
       socket.off('preview_updated');

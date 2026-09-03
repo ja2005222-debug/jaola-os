@@ -79,7 +79,8 @@ export function createMockStaysProvider({ failCreate = false, failCancel = false
                 reviewCount: 100 + (s % 900),
                 checkinTime: '03:00 PM',
                 checkoutTime: '12:00 PM',
-                location: null,
+                // إحداثيات حتمية (حول دبي) — فتظهر الخريطة المضمّنة في التطوير
+                location: { lat: 25.2 + (s % 50) / 1000, lon: 55.27 + (s % 50) / 1000 },
                 images: [],
                 facilities: ['واي فاي مجاني', 'موقف سيارات', 'مصعد'],
             };

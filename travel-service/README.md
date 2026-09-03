@@ -1,4 +1,4 @@
-# ✈️ JAOLA Travel — بوابة السفر
+# ✈️ Jatrava — بوابة السفر
 
 خدمة مستقلة كلياً عن منصة JAOLA الرئيسية (نفس فلسفة `video-service/`):
 صفر استيراد من `backend/` — الرابط الوحيد هو **الدخول الموحّد** (نفس
@@ -528,7 +528,7 @@ LiteAPI الكاملة — بحث ← قفل سعر ← حجز ← إلغاء �
 |---|---|---|
 | Render (بيئة الخدمة) | `CRON_SECRET` | سرّ عشوائي طويل |
 | GitHub → Settings → Secrets → Actions | `TRAVEL_CRON_SECRET` | **نفس** القيمة |
-| GitHub → Settings → Secrets → Actions | `TRAVEL_SERVICE_URL` | `https://jaola-travel.onrender.com` |
+| GitHub → Settings → Secrets → Actions | `TRAVEL_SERVICE_URL` | `https://jatrava.onrender.com` |
 
 بلا `CRON_SECRET` يرد المسار **503 صريحاً** لا قبولاً صامتاً.
 
@@ -722,7 +722,11 @@ API حقيقي مقروء (نفس معيار Stays لا Cars — صيغ مُخم
 | `DUFFEL_API_KEY` | مفتاح إنتاج | Duffel حي — **يتطلب رصيد Duffel مشحوناً** + نفس تفعيل Stays/Cars |
 | (غير مضبوط) | — | مزوّد محاكاة حتمي للثلاثة (تطوير كامل التدفق بلا مفاتيح) |
 | `LITEAPI_API_KEY` | يبدأ بـ`sand_` | LiteAPI/Nuitee Sandbox — **مزوّد الفنادق الفعلي الآن** (أولوية على Duffel Stays المعطَّل)؛ البحث والحجز **مُتحقَّق منهما حياً** بحجز فعلي، والإلغاء وحده لم يُجرَّب بعد (راجع المرحلة ٣د) |
-| `DUFFEL_WEBHOOK_SECRET` | من لوحة Duffel (Developers → Webhooks) | إشعارات تغيير الطيران بعد الحجز (`order.airline_initiated_change_detected`) — راجع المرحلة ٣هـ. بلا هذا: `/api/travel/webhooks/duffel` يرد 503 |
+| `DUFFEL_WEBHOOK_SECRET` | من لوحة Duffel (Developers → Webhooks) | إشعارات تغيير الطيران بعد الحجز (`order.airline_initiated_change_detected`) — راجع المرحلة ٣هـ. بلا هذا: `/api/travel/webhooks/duffel` يرد 503. **الـwebhooks لكل وضع على حدة**: مفتاح Duffel حي يحتاج webhook جديداً بسرّ جديد من وضع Live |
+| `GOOGLE_SITE_VERIFICATION` | قيمة `content` من وسم التحقق في Search Console | يحقن `<meta name="google-site-verification">` في `/` و`/en/` وبقية اللغات لإثبات ملكية الموقع لجوجل. **مع `TRAVEL_PUBLIC_URL=https://www.jatrava.com` بالضبط** (النطاق المُخدَم فعلياً؛ `jatrava.com` يعيد التوجيه إليه) — وإلا تشير canonical وخريطة الموقع إلى نطاقٍ يعيد التوجيه فيرتبك الزاحف |
+| `TRAVEL_DISABLED_PRODUCTS` | `cars` (أو `stays,cars,esim`) | **إيقاف صريح لمنتجات بعينها** واجهةً وخادماً (503) — للحالة التي يكون فيها المزوّد «حياً» بالمفتاح لكن الحساب غير معتمد له: Duffel Cars على الحساب الحي يرد `403 Your account is not approved to access Live mode` (مُلتقَط فعلياً ٢ سبتمبر ٢٠٢٦). اضبط `cars` في الإنتاج حتى تفعّل مبيعات Duffel السيارات، ثم أزله |
+| `TRAVEL_TRUSTED_NON_LIVE_PRODUCTS` | `stays` | **عكس `TRAVEL_DISABLED_PRODUCTS`**: يستثني منتجاً بعينه من حارس الإنتاج رغم أن مزوّده «غير حي» بالمسمّى فقط — لا يفتح الباقي (خلافاً لـ`TRAVEL_ALLOW_NON_LIVE_PRODUCTS` الذي يعطّل الحارس كله). حالة الاستخدام الموثَّقة: LiteAPI Sandbox (راجع المرحلة ٣د) — بحث وحجز وإلغاء **حقيقية مُتحقَّق منها حياً بمرجع فعلي**، رغم بادئة `sand_` في المفتاح؛ تسمية LiteAPI لا دليل خلوّها من واقعية. اضبط `stays` مؤقتاً حتى تحصل على مفتاح LiteAPI إنتاج (`prod_`) يُكتشف تلقائياً كحيّ فيغني عن هذا المتغيّر. `config.trustedNonLiveProducts` يعلن الاستثناء بصدق |
+| `TRAVEL_ALLOW_NON_LIVE_PRODUCTS` | `1` (اختبار فقط) | يعطّل **حارس الإنتاج**: افتراضياً حين يكون الطيران حياً (مفتاح Duffel إنتاج) تُخفى تلقائياً كل المنتجات التي مزوّدها غير حي — الفنادق على LiteAPI Sandbox، الـeSIM المحاكاة، السيارات المحظورة — واجهةً (`config.*Enabled=false`) وخادماً (503 على مساراتها) معاً، كي لا يدفع عميل فعلياً مقابل منتج تجريبي. لا تضبطه في الإنتاج أبداً |
 
 الايجنت: `TRAVEL_AGENT_API_KEY` (+ اختيارياً `TRAVEL_AGENT_API_URL` و
 `TRAVEL_AGENT_MODEL`) — أي خدمة متوافقة مع OpenAI chat/completions تدعم

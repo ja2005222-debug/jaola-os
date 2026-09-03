@@ -9,6 +9,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { generateReferralCode, normalizeReferralCode } from '../referrals.js';
 
 export function createFileStore({ dataDir }) {
     const bookingsPath = path.join(dataDir, 'bookings.json');
@@ -18,6 +19,13 @@ export function createFileStore({ dataDir }) {
     const profilesPath = path.join(dataDir, 'profiles.json');
     const contractsPath = path.join(dataDir, 'hotelContracts.json');
     const allocationsPath = path.join(dataDir, 'contractAllocations.json');
+    const fixedPackagesPath = path.join(dataDir, 'fixedPackages.json');
+    const interestsPath = path.join(dataDir, 'packageInterests.json');
+    const reviewsPath = path.join(dataDir, 'packageReviews.json');
+    const wishlistPath = path.join(dataDir, 'wishlist.json');
+    const usersPath = path.join(dataDir, 'users.json');
+    const referralsPath = path.join(dataDir, 'referrals.json');
+    const discountCodesPath = path.join(dataDir, 'discountCodes.json');
 
     function ensureDir() {
         fs.mkdirSync(dataDir, { recursive: true });
@@ -50,6 +58,27 @@ export function createFileStore({ dataDir }) {
     const writeContracts = rows => writeJson(contractsPath, rows);
     const readAllocations = () => readJson(allocationsPath);
     const writeAllocations = rows => writeJson(allocationsPath, rows);
+    const readFixedPackages = () => readJson(fixedPackagesPath);
+    const writeFixedPackages = rows => writeJson(fixedPackagesPath, rows);
+    const readInterests = () => readJson(interestsPath);
+    const writeInterests = rows => writeJson(interestsPath, rows);
+    const readReviews = () => readJson(reviewsPath);
+    const writeReviews = rows => writeJson(reviewsPath, rows);
+    const readWishlist = () => readJson(wishlistPath);
+    const writeWishlist = rows => writeJson(wishlistPath, rows);
+    const readUsers = () => readJson(usersPath);
+    const writeUsers = rows => writeJson(usersPath, rows);
+    const readReferrals = () => readJson(referralsPath);
+    const writeReferrals = rows => writeJson(referralsPath, rows);
+    const readDiscountCodes = () => readJson(discountCodesPath);
+    const writeDiscountCodes = rows => writeJson(discountCodesPath, rows);
+    // تفرّد الرمز: تصادمٌ على أبجدية 32 حرفاً بطول 7 يكاد يكون معدوماً
+    // (32^7)، لكن التحقق رخيصٌ والتأكّد أرخص من عطبٍ صامت لاحقاً.
+    function newUniqueReferralCode(rows) {
+        let code;
+        do { code = generateReferralCode(); } while (rows.some(r => r.code === code));
+        return code;
+    }
 
     return {
         name: 'file',
@@ -244,6 +273,259 @@ export function createFileStore({ dataDir }) {
             return { ...allocation };
         },
 
+        // ─── 🎒 الباقات المجدولة (نفس عقد postgresStore بالتطابق) ───────
+
+        async createFixedPackage(pData) {
+            const rows = readFixedPackages();
+            const pkg = {
+                id: 'fxp_' + crypto.randomBytes(10).toString('hex'),
+                at: Date.now(),
+                updatedAt: Date.now(),
+                seatsSold: 0,
+                ...pData,
+            };
+            rows.push(pkg);
+            writeFixedPackages(rows);
+            return { ...pkg };
+        },
+
+        async getFixedPackage(id) {
+            const pkg = readFixedPackages().find(p => p.id === id);
+            return pkg ? { ...pkg } : null;
+        },
+
+        async listFixedPackages() {
+            return readFixedPackages()
+                .sort((a, b) => String(a.departDate).localeCompare(String(b.departDate)))
+                .map(p => ({ ...p }));
+        },
+
+        async updateFixedPackage(id, patch = {}) {
+            const rows = readFixedPackages();
+            const pkg = rows.find(p => p.id === id);
+            if (!pkg) return null;
+            const allowed = ['title', 'city', 'iata', 'hotelName', 'board', 'description',
+                'departDate', 'nights', 'seatCapacity', 'sourcing', 'releaseDate',
+                'currency', 'netPerSeat', 'pricePerSeat', 'singleSupplement', 'childPrice',
+                'ebPct', 'ebUntil', 'depositPct', 'active'];
+            for (const key of allowed) {
+                if (key in patch) pkg[key] = patch[key];
+            }
+            // السعة لا تهبط دون المباع — تقليصها تحت الحجوزات القائمة بيعٌ زائد بأثر رجعي
+            if (pkg.seatCapacity < (pkg.seatsSold || 0)) pkg.seatCapacity = pkg.seatsSold;
+            pkg.updatedAt = Date.now();
+            writeFixedPackages(rows);
+            return { ...pkg };
+        },
+
+        async deleteFixedPackage(id) {
+            const rows = readFixedPackages();
+            const pkg = rows.find(p => p.id === id);
+            if (!pkg) return false;
+            if ((pkg.seatsSold || 0) > 0) return false; // عليها حجوزات — تُغلق (active=false) لا تُحذف
+            writeFixedPackages(rows.filter(p => p.id !== id));
+            return true;
+        },
+
+        // ⚠️ نفس ضمان ذرّية حصص العقود أعلاه: فحص وزيادة وكتابة كتلة
+        // متزامنة بلا await بينها — postgresStore يضمنها بشرط داخل UPDATE واحد.
+        async allocateFixedSeats(id, seats) {
+            const rows = readFixedPackages();
+            const pkg = rows.find(p => p.id === id);
+            if (!pkg || pkg.active === false) return null;
+            if ((pkg.seatsSold || 0) + seats > pkg.seatCapacity) return null;
+            pkg.seatsSold = (pkg.seatsSold || 0) + seats;
+            pkg.updatedAt = Date.now();
+            writeFixedPackages(rows);
+            return { ...pkg };
+        },
+
+        async releaseFixedSeats(id, seats) {
+            const rows = readFixedPackages();
+            const pkg = rows.find(p => p.id === id);
+            if (!pkg) return null;
+            pkg.seatsSold = Math.max(0, (pkg.seatsSold || 0) - seats);
+            pkg.updatedAt = Date.now();
+            writeFixedPackages(rows);
+            return { ...pkg };
+        },
+
+        // ─── 🔔 اهتمامات الباقات: قائمة انتظار + طلبات عروض خاصة ────────
+
+        async createPackageInterest(entry) {
+            const rows = readInterests();
+            // انتظار مكرَّر لنفس (مستخدم، باقة) يُعاد كما هو — لا صفوف مكرّرة
+            if (entry.kind === 'waitlist') {
+                const dup = rows.find(r => r.kind === 'waitlist' && r.status === 'new'
+                    && r.username === entry.username && r.packageId === entry.packageId);
+                if (dup) return { ...dup, duplicate: true };
+            }
+            const row = {
+                id: 'pin_' + crypto.randomBytes(10).toString('hex'),
+                at: Date.now(),
+                status: 'new',
+                packageId: null,
+                ...entry,
+            };
+            rows.push(row);
+            writeInterests(rows);
+            return { ...row };
+        },
+
+        async listPackageInterests(limit = 200) {
+            return readInterests()
+                .sort((a, b) => b.at - a.at)
+                .slice(0, limit)
+                .map(r => ({ ...r }));
+        },
+
+        async listWaitlistByPackage(packageId) {
+            return readInterests()
+                .filter(r => r.kind === 'waitlist' && r.packageId === packageId && r.status === 'new')
+                .map(r => ({ ...r }));
+        },
+
+        async updatePackageInterest(id, patch = {}) {
+            const rows = readInterests();
+            const row = rows.find(r => r.id === id);
+            if (!row) return null;
+            Object.assign(row, patch);
+            writeInterests(rows);
+            return { ...row };
+        },
+
+        // ─── ⭐ مراجعات الباقات (موثقة بحجز — نفس عقد postgresStore) ─────
+
+        // مراجعة واحدة لكل (مستخدم، باقة): الثانية تحديثٌ للأولى لا صف جديد
+        async upsertReview(rData) {
+            const rows = readReviews();
+            const existing = rows.find(r => r.username === rData.username && r.packageId === rData.packageId);
+            if (existing) {
+                Object.assign(existing, {
+                    rating: rData.rating, title: rData.title, text: rData.text,
+                    bookingId: rData.bookingId, updatedAt: Date.now(),
+                });
+                writeReviews(rows);
+                return { ...existing };
+            }
+            const row = {
+                id: 'rev_' + crypto.randomBytes(10).toString('hex'),
+                at: Date.now(),
+                updatedAt: Date.now(),
+                ...rData,
+            };
+            rows.push(row);
+            writeReviews(rows);
+            return { ...row };
+        },
+
+        async listReviewsByPackage(packageId, limit = 100) {
+            return readReviews()
+                .filter(r => r.packageId === packageId)
+                .sort((a, b) => b.at - a.at)
+                .slice(0, limit)
+                .map(r => ({ ...r }));
+        },
+
+        async getReviewByUser(username, packageId) {
+            const row = readReviews().find(r => r.username === username && r.packageId === packageId);
+            return row ? { ...row } : null;
+        },
+
+        // ─── 👤 حسابات Jatrava الذاتية ───────────────────────────────────
+        // البريد **مفتاح فريد**: getUserByEmail قبل الإنشاء لا يكفي وحده
+        // (سباقُ تسجيلين بنفس البريد)، فالإنشاء نفسه يفحص مجدداً في نفس
+        // الكتلة المتزامنة بلا await — نفس عرف العدّادات الذرّية هنا.
+
+        async createUser(u) {
+            const rows = readUsers();
+            const email = String(u.email || '').trim().toLowerCase();
+            if (!email) throw new Error('البريد مطلوب.');
+            if (rows.some(r => r.email === email)) return null; // مستعمَل سلفاً
+            const row = {
+                id: 'usr_' + crypto.randomBytes(10).toString('hex'),
+                email,
+                name: u.name || '',
+                passwordHash: u.passwordHash || null,
+                provider: u.provider || 'password',
+                emailVerifiedAt: u.emailVerifiedAt || null,
+                // 🔑 يُهيّآن صراحةً لا ضمناً: الحقل الغائب في JSON يعود
+                // undefined بينما يعود من Postgres null، فيختلف المخزنان
+                // في أول مقارنةٍ صارمة. العقد واحد فالتهيئة واحدة.
+                resetTokenHash: null,
+                resetExpiresAt: null,
+                // 📢 نفس عرف الحقلين أعلاه — يُهيّأ صراحةً null لا يُترَك
+                // غائباً، فمقارنة `!!u.liveAnnouncementSentAt` تتصرّف
+                // بالتطابق في المخزنين منذ اللحظة الأولى.
+                liveAnnouncementSentAt: null,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+            };
+            rows.push(row);
+            writeUsers(rows);
+            return { ...row };
+        },
+
+        async getUserByEmail(email) {
+            const key = String(email || '').trim().toLowerCase();
+            if (!key) return null;
+            const row = readUsers().find(r => r.email === key);
+            return row ? { ...row } : null;
+        },
+
+        // 📢 لحملات تُرسَل لكل حسابات Jatrava الذاتية (إعلان تفعيل الحجز
+        // الحي وأمثاله) — الأقدم أولاً فيصل من سجّل أثناء التجربة أولاً.
+        async listUsers() {
+            return readUsers().sort((a, b) => a.createdAt - b.createdAt).map(r => ({ ...r }));
+        },
+
+        // ⏳ **لا يُصفّي المنتهي**: الصلاحية يقرّرها resetTokenValid وحده في
+        // accounts.js. لو صفّاها المخزنان أيضاً لصار للانتهاء مصدران،
+        // ولاختلف السلوك بينهما عند أول تعديلٍ لأحدهما.
+        async getUserByResetTokenHash(hash) {
+            const key = String(hash || '').trim();
+            if (!key) return null;
+            const row = readUsers().find(r => r.resetTokenHash === key);
+            return row ? { ...row } : null;
+        },
+
+        async updateUser(id, patch = {}) {
+            const rows = readUsers();
+            const row = rows.find(r => r.id === id);
+            if (!row) return null;
+            // البريد والمعرّف لا يُرقَّعان: البريد هو الهوية وكل ملكيةٍ
+            // مفهرسة به، فتغييره هنا ييتّم حجوزات صاحبه بصمت.
+            const { id: _i, email: _e, createdAt: _c, ...safe } = patch;
+            Object.assign(row, safe, { updatedAt: Date.now() });
+            writeUsers(rows);
+            return { ...row };
+        },
+
+        // ─── ❤️ المفضلة (قائمة رغبات لكل مستخدم) ────────────────────────
+
+        async addWishlist(username, packageId) {
+            const rows = readWishlist();
+            if (rows.some(w => w.username === username && w.packageId === packageId)) return false;
+            rows.push({ username, packageId, at: Date.now() });
+            writeWishlist(rows);
+            return true;
+        },
+
+        async removeWishlist(username, packageId) {
+            const rows = readWishlist();
+            const next = rows.filter(w => !(w.username === username && w.packageId === packageId));
+            if (next.length === rows.length) return false;
+            writeWishlist(next);
+            return true;
+        },
+
+        async listWishlistByUser(username) {
+            return readWishlist()
+                .filter(w => w.username === username)
+                .sort((a, b) => b.at - a.at)
+                .map(w => ({ ...w }));
+        },
+
         async createPriceWatch(w) {
             const watches = readWatches();
             const watch = {
@@ -370,6 +652,153 @@ export function createFileStore({ dataDir }) {
             else rows.push({ username, prefs });
             writePrefs(rows);
             return prefs;
+        },
+
+        // ─── 🤝 برنامج الإحالة (referrals.js) ─────────────────────────
+        // مفهرسٌ بـusername كبقية الخدمة — لا صلة بـtravel_users (انظر
+        // شرح النطاق في referrals.js).
+
+        async ensureReferralCode(username) {
+            const uname = String(username || '').trim().toLowerCase();
+            if (!uname) return null;
+            const rows = readReferrals();
+            const row = rows.find(r => r.username === uname);
+            if (row) return row.code;
+            const code = newUniqueReferralCode(rows);
+            rows.push({ username: uname, code, referredBy: null, bonusPoints: 0, rewardGrantedAt: null, createdAt: Date.now() });
+            writeReferrals(rows);
+            return code;
+        },
+
+        async getUsernameByReferralCode(code) {
+            const c = normalizeReferralCode(code);
+            if (!c) return null;
+            const row = readReferrals().find(r => r.code === c);
+            return row ? row.username : null;
+        },
+
+        // ⚠️ **أول كتابةٍ تفوز ولا تُستبدل لاحقاً** — نفس عرف رمز الاستعادة
+        // في accounts.js: حساب مُنشأ بالفعل لا يصبح "مُحالاً" بأثر رجعي.
+        async recordReferralSignup(username, referrerUsername) {
+            const uname = String(username || '').trim().toLowerCase();
+            const referrer = String(referrerUsername || '').trim().toLowerCase();
+            if (!uname || !referrer || referrer === uname) return false; // لا إحالة الذات
+            const rows = readReferrals();
+            const row = rows.find(r => r.username === uname);
+            if (row) {
+                if (row.referredBy) return false;
+                row.referredBy = referrer;
+                writeReferrals(rows);
+                return true;
+            }
+            const code = newUniqueReferralCode(rows);
+            rows.push({ username: uname, code, referredBy: referrer, bonusPoints: 0, rewardGrantedAt: null, createdAt: Date.now() });
+            writeReferrals(rows);
+            return true;
+        },
+
+        async getReferralInfo(username) {
+            const uname = String(username || '').trim().toLowerCase();
+            const rows = readReferrals();
+            const row = rows.find(r => r.username === uname);
+            return {
+                code: row?.code || null,
+                referredBy: row?.referredBy || null,
+                bonusPoints: row?.bonusPoints || 0,
+                referredCount: rows.filter(r => r.referredBy === uname).length,
+            };
+        },
+
+        // ذرّي في معنى مخزن الملفات: كتلةٌ متزامنة بلا await، فلا يتداخل
+        // طلبان (نفس عرف عدّادات المقاعد في fixedPackages.js).
+        async grantReferralRewardIfDue(username, points) {
+            const uname = String(username || '').trim().toLowerCase();
+            const rows = readReferrals();
+            const row = rows.find(r => r.username === uname);
+            if (!row || !row.referredBy || row.rewardGrantedAt) return { granted: false, referredBy: null };
+            row.bonusPoints = (row.bonusPoints || 0) + points;
+            row.rewardGrantedAt = Date.now();
+            writeReferrals(rows);
+            return { granted: true, referredBy: row.referredBy };
+        },
+
+        // للمُحيل بعد منح المُحال — بلا حارس مرّة واحدة هنا: الحارس الوحيد
+        // اللازم هو rewardGrantedAt على صفّ المُحال، وهذه الدالة تُستدعى
+        // مرّةً واحدة بالضبط لكل مكافأةٍ فعلية (maybeRewardReferral).
+        async addBonusPoints(username, points) {
+            const uname = String(username || '').trim().toLowerCase();
+            if (!uname) return;
+            const rows = readReferrals();
+            let row = rows.find(r => r.username === uname);
+            if (!row) {
+                row = { username: uname, code: newUniqueReferralCode(rows), referredBy: null, bonusPoints: 0, rewardGrantedAt: null, createdAt: Date.now() };
+                rows.push(row);
+            }
+            row.bonusPoints = (row.bonusPoints || 0) + points;
+            writeReferrals(rows);
+        },
+
+        // ─── 🏷️ أكواد الخصم (discounts.js) — نفس عقد postgresStore بالتطابق ─
+
+        async createDiscountCode(dData) {
+            const rows = readDiscountCodes();
+            if (rows.some(r => r.code === dData.code)) return null; // مستعمَل سلفاً
+            const row = {
+                at: Date.now(), updatedAt: Date.now(), usedCount: 0,
+                ...dData,
+            };
+            rows.push(row);
+            writeDiscountCodes(rows);
+            return { ...row };
+        },
+
+        async getDiscountCodeByCode(code) {
+            const key = String(code || '').trim().toUpperCase();
+            const row = readDiscountCodes().find(r => r.code === key);
+            return row ? { ...row } : null;
+        },
+
+        async listDiscountCodes() {
+            return readDiscountCodes().sort((a, b) => b.at - a.at).map(r => ({ ...r }));
+        },
+
+        async updateDiscountCode(code, patch = {}) {
+            const rows = readDiscountCodes();
+            const row = rows.find(r => r.code === code);
+            if (!row) return null;
+            const allowed = ['type', 'value', 'currency', 'products', 'maxDiscount',
+                'minAmount', 'maxUses', 'expiresAt', 'active', 'note'];
+            for (const key of allowed) {
+                if (key in patch) row[key] = patch[key];
+            }
+            row.updatedAt = Date.now();
+            writeDiscountCodes(rows);
+            return { ...row };
+        },
+
+        async deleteDiscountCode(code) {
+            const rows = readDiscountCodes();
+            const next = rows.filter(r => r.code !== code);
+            if (next.length === rows.length) return false;
+            writeDiscountCodes(next);
+            return true;
+        },
+
+        // ⚠️ نفس ذرّية عدّادات المقاعد/الغرف أعلاه حرفياً: كتلةٌ متزامنة بلا
+        // await بينها — الفحص والزيادة والكتابة معاً، فلا يستهلك طلبان
+        // متزامنان آخر استعمالٍ من كودٍ محدود معاً (postgresStore يضمنها
+        // بشرط داخل UPDATE واحد). يعيد null حين الكود غير صالح للاستهلاك
+        // (نفدت الكمية/انتهت الصلاحية/معطَّل) — جوابٌ تجاري صريح لا خطأ.
+        async redeemDiscountCode(code) {
+            const rows = readDiscountCodes();
+            const row = rows.find(r => r.code === code);
+            if (!row || row.active === false) return null;
+            if (row.expiresAt != null && Date.now() > row.expiresAt) return null;
+            if (row.maxUses != null && (row.usedCount || 0) >= row.maxUses) return null;
+            row.usedCount = (row.usedCount || 0) + 1;
+            row.updatedAt = Date.now();
+            writeDiscountCodes(rows);
+            return { ...row };
         },
     };
 }

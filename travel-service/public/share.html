@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>📄 قسيمة حجز — Jatrava</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <meta name="theme-color" content="#f4f6f8" />
+  <!-- 🔒 لا فهرسة: الرابط سرٌّ بذاته (التوقيع هو المفتاح)، ووصول محرّك
+       بحث إليه يحوّل «مؤقّت وخاص» إلى «عام وأبدي». -->
+  <meta name="robots" content="noindex, nofollow" />
+  <!-- 🔒 المِرجع لا يُرسَل: التوكن في الـfragment فلا يغادر المتصفح أصلاً،
+       وهذا يمنع تسرّبه عبر أي رابط خارجي داخل الصفحة. -->
+  <meta name="referrer" content="no-referrer" />
+  <style>
+    :root {
+      --bg: #f4f6f8; --card: #ffffff; --border: #dbe3ec;
+      --text: #2d323a; --muted: #5c6b7f; --accent: #2c5fc9;
+      --ok: #087a4c; --warn: #b45309; --bad: #dc2626;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh;
+      padding: 24px 16px; line-height: 1.6;
+    }
+    .wrap { max-width: 680px; margin: 0 auto; }
+    .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+    .brand h1 { font-size: 18px; font-weight: 700; }
+    .brand .sub { color: var(--muted); font-size: 13px; }
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 16px; padding: 20px;
+    }
+    h2 { font-size: 20px; margin-bottom: 10px; }
+    .route { font-size: 17px; font-weight: 600; margin-bottom: 8px; }
+    .seg { color: var(--text); font-size: 14px; margin-top: 6px; }
+    .note { color: var(--muted); font-size: 13px; margin-top: 10px; }
+    .total { font-size: 18px; font-weight: 700; margin-top: 14px; }
+    .st { font-size: 12px; padding: 2px 10px; border-radius: 999px; font-weight: 600; }
+    .st-issued { background: rgba(8,122,76,.12); color: var(--ok); }
+    .st-pending { background: rgba(180,83,9,.12); color: var(--warn); }
+    .st-cancelled, .st-failed { background: rgba(220,38,38,.10); color: var(--bad); }
+    .ref { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 16px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+    hr { border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
+    button {
+      background: transparent; color: var(--text); border: 1px solid var(--border);
+      border-radius: 999px; padding: 8px 16px; font-size: 14px; cursor: pointer;
+      font-family: inherit;
+    }
+    button:hover { border-color: var(--accent); color: var(--accent); }
+    .msg { text-align: center; padding: 40px 20px; color: var(--muted); }
+    .msg .big { font-size: 40px; display: block; margin-bottom: 12px; }
+    .cta { display: inline-block; margin-top: 16px; }
+    @media print {
+      body { background: #fff; color: #000; padding: 0; }
+      .card { border: 0; background: #fff; }
+      .note, .brand .sub { color: #444; }
+      #actions, #langBtn { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- الشعار نفسه المستعمل في البوابة — من يفتح قسيمةً مُشارَكة قد لا
+         يعرفنا، فتطابُق العلامة بين الصفحتين هو ما يجعلها تبدو جهةً واحدة. -->
+    <div class="brand">
+      <div>
+        <h1 style="margin:0"><img src="/logo.svg" alt="Jatrava" width="1626" height="442"
+          style="height:40px;width:auto;display:block"></h1>
+        <div class="sub" id="brandSub">قسيمة حجز مُشارَكة</div>
+      </div>
+      <button id="langBtn" style="margin-inline-start:auto;padding:4px 12px;font-size:13px">EN</button>
+    </div>
+    <div id="out" class="msg"><span class="big">⏳</span><span id="loading">جارٍ فتح القسيمة…</span></div>
+  </div>
+
+  <script>
+    /**
+     * 🔗 صفحة الرابط المؤقّت — تعرض قسيمةً للقراءة فقط لمن لا حساب له.
+     *
+     * ⚠️ التوكن في الـ**fragment** (`#`) لا في المسار ولا في الاستعلام،
+     * عن قصد: الـfragment لا يُرسَل في ترويسة Referer ولا يُسجَّل في
+     * سجلّات الخادم ولا في سجلّ الوكيل العكسي. رابطٌ سرّي في مسارٍ يُسجَّل
+     * هو رابطٌ مسرَّب. الصفحة تقرؤه بالجافاسكربت وتناديه في الـAPI.
+     *
+     * الصفحة تعرض ما يسمح به الخادم فقط (sharedBooking) — لا بريد ولا
+     * هاتف ولا أرقام تذاكر. لا تكرّر هنا قرار الخصوصية: الخادم يحسمه.
+     */
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    let lang = new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'ar';
+    const T = (ar, en) => (lang === 'en' ? en : ar);
+
+    const fmtTime = iso => {
+      if (!iso) return '';
+      // التوقيت محلّي بمكانه (كما يعرضه المزوّد) — نعرضه كما ورد بلا إزاحة
+      const [d, t] = String(iso).split('T');
+      return `${d || ''} ${(t || '').slice(0, 5)}`.trim();
+    };
+    const fmtWhen = iso => {
+      if (!iso) return '';
+      const dt = new Date(iso);
+      return Number.isNaN(dt.getTime()) ? String(iso)
+        : dt.toLocaleString(lang === 'en' ? 'en-GB' : 'ar', { dateStyle: 'medium', timeStyle: 'short' });
+    };
+    const ST = {
+      ar: { issued: 'مؤكَّد', pending: 'بانتظار الدفع', cancelled: 'مُلغى', failed: 'فشل' },
+      en: { issued: 'Confirmed', pending: 'Awaiting payment', cancelled: 'Cancelled', failed: 'Failed' },
+    };
+    const statusLabel = b => ST[lang][b.status] || b.status;
+
+    function sliceHtml(s) {
+      const stops = s.stops === 0 ? T('مباشرة', 'Direct') : `${s.stops} ${T('توقف', 'stop(s)')}`;
+      const flights = (s.segments || []).map(g => esc(`${g.carrier} ${g.flightNumber}`)).join(T(' ثم ', ' then '));
+      return `<div class="seg">
+        <strong>${esc(s.origin)} ${esc(fmtTime(s.departAt))}</strong> ←
+        <strong>${esc(s.destination)} ${esc(fmtTime(s.arriveAt))}</strong>
+        · ${stops}${flights ? ' · ' + flights : ''}</div>`;
+    }
+
+    /** جسم القسيمة حسب نوع الحجز — نفس ترتيب حقول البوابة الرئيسية. */
+    function bodyHtml(b) {
+      const o = b.offer || {};
+      if (b.kind === 'fixed_package') {
+        return `<div class="route">🎒 ${esc(o.title || T('باقة مجدولة', 'Scheduled package'))}</div>
+          <div class="seg">🏨 ${esc(o.hotelName || '')} · ${T('انطلاق', 'Departs')} ${esc(o.departDate || '')}
+            ${o.nights ? `(${o.nights} ${T('ليالٍ', 'nights')})` : ''}
+            ${b.seats ? `· ${b.seats} ${T('مقاعد', 'seats')}` : ''}</div>`;
+      }
+      if (b.kind === 'package') {
+        const out = o.flight?.slices?.[0] || {};
+        return `<div class="route">🎁 ${esc(out.origin || '؟')} ⇄ ${esc(out.destination || '؟')} + 🏨 ${esc(o.stay?.name || '')}</div>
+          ${(o.flight?.slices || []).map(sliceHtml).join('')}
+          ${o.stay?.checkInDate ? `<div class="seg">🏨 ${esc(o.stay.checkInDate)} → ${esc(o.stay.checkOutDate || '')}</div>` : ''}`;
+      }
+      if (b.kind === 'stay') {
+        return `<div class="route">🏨 ${esc(o.name || '')}</div>
+          <div class="seg">${esc(o.city || '')} · ${esc(o.checkInDate || '')} → ${esc(o.checkOutDate || '')}</div>`;
+      }
+      if (b.kind === 'car') {
+        return `<div class="route">🚗 ${esc(o.vehicleName || '')}</div>
+          <div class="seg">${esc(o.supplier || '')} · ${esc(o.pickupLocation || '')}
+            ${o.pickUpAt ? `· ${esc(fmtTime(o.pickUpAt))}` : ''}
+            ${o.dropOffAt ? `→ ${esc(fmtTime(o.dropOffAt))}` : ''}</div>`;
+      }
+      return `<div class="route">✈️ ${esc(o.owner || '')}</div>
+        ${(o.slices || []).map(sliceHtml).join('')}`;
+    }
+
+    function render(b, expiresAt) {
+      const pax = b.passengerCount;
+      $('out').className = '';
+      $('out').innerHTML = `
+        <div class="card">
+          <h2>📄 ${T('قسيمة الحجز', 'Booking voucher')}</h2>
+          <div class="row">
+            <span class="st st-${esc(b.status)}">${esc(statusLabel(b))}</span>
+            ${b.bookingReference
+              ? `<span>${T('المرجع', 'Reference')}: <strong class="ref">${esc(b.bookingReference)}</strong></span>` : ''}
+          </div>
+          <hr>
+          ${bodyHtml(b)}
+          ${pax ? `<div class="seg">👤 ${pax} ${T('مسافر', pax === 1 ? 'traveller' : 'travellers')}</div>` : ''}
+          <div class="total">${T('الإجمالي', 'Total')}: ${esc(b.sellAmount)} ${esc(b.currency)}</div>
+          ${b.at ? `<div class="note">${T('حُجز في', 'Booked on')} ${esc(fmtWhen(b.at))}</div>` : ''}
+          <div class="note">🔗 ${T('رابط مؤقّت للاطّلاع فقط — ينتهي في', 'Temporary view-only link — expires on')}
+            <strong>${esc(fmtWhen(expiresAt))}</strong>.</div>
+          <div class="note">🔒 ${T('لا يعرض هذا الرابط بريد صاحب الحجز ولا هاتفه ولا أرقام تذاكره، ولا يسمح بأي تعديل.',
+            'This link shows no email, phone number, or ticket numbers, and allows no changes.')}</div>
+          <div class="row" id="actions">
+            <button id="printBtn">🖨️ ${T('طباعة / حفظ PDF', 'Print / Save PDF')}</button>
+          </div>
+        </div>`;
+      $('printBtn').addEventListener('click', () => window.print());
+    }
+
+    function showMessage(emoji, text) {
+      $('out').className = 'msg';
+      $('out').innerHTML = `<span class="big">${emoji}</span>${esc(text)}
+        <div><a class="cta" href="/">${T('اذهب إلى بوابة السفر', 'Go to the travel portal')}</a></div>`;
+    }
+
+    async function load() {
+      const token = location.hash.slice(1);
+      if (!token) return showMessage('🔗', T('رابط ناقص — تأكّد من نسخه كاملاً.', 'Incomplete link — make sure it was copied in full.'));
+      let res;
+      try {
+        res = await fetch(`/api/travel/share/${encodeURIComponent(token)}`);
+      } catch {
+        return showMessage('📡', T('تعذّر الاتصال — تحقّق من شبكتك وأعد المحاولة.', 'Connection failed — check your network and try again.'));
+      }
+      if (res.status === 410) {
+        return showMessage('⌛', T('انتهت صلاحية هذا الرابط. اطلب من صاحب الحجز رابطاً جديداً.',
+          'This link has expired. Ask the booking owner for a new one.'));
+      }
+      if (!res.ok) {
+        return showMessage('🚫', T('رابط غير صالح.', 'Invalid link.'));
+      }
+      const { booking, expiresAt } = await res.json();
+      render(booking, expiresAt);
+    }
+
+    $('langBtn').addEventListener('click', () => {
+      lang = lang === 'en' ? 'ar' : 'en';
+      document.documentElement.lang = lang;
+      document.documentElement.dir = lang === 'en' ? 'ltr' : 'rtl';
+      $('langBtn').textContent = lang === 'en' ? 'ع' : 'EN';
+      $('brandSub').textContent = T('قسيمة حجز مُشارَكة', 'Shared booking voucher');
+      document.title = T('📄 قسيمة حجز — Jatrava', '📄 Booking voucher — Jatrava');
+      load();
+    });
+
+    if (lang === 'en') {
+      document.documentElement.lang = 'en';
+      document.documentElement.dir = 'ltr';
+      $('langBtn').textContent = 'ع';
+      $('brandSub').textContent = 'Shared booking voucher';
+      $('loading').textContent = 'Opening the voucher…';
+    }
+    load();
+  </script>
+</body>
+</html>

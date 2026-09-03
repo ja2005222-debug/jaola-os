@@ -7,7 +7,13 @@
  *
  * كل الانتقالات تمر عبر transitionBooking الذرّي في المخزن — لا كتابة
  * حالة مباشرة في أي مكان آخر، فلا تعارض بين طلبين متزامنين.
+ *
+ * 🤝 مكافأة الإحالة (referrals.js) تُطلَق من **هنا حصراً** عند "issued" —
+ * لا من أيٍّ من مسارات الإصدار التسعة في server.js (بعضها خلف webhook
+ * دفعٍ غير متزامن). نقطة انتقالٍ واحدة = فرصة مكافأةٍ واحدة، بلا نسخ
+ * تتكرر عند كل مسار وتتباعد بصمت (نفس درس ICS والتوطين في هذه الخدمة).
  */
+import { maybeRewardReferral } from './referrals.js';
 
 export const BOOKING_STATUSES = ['pending', 'issued', 'failed', 'cancelled'];
 
@@ -22,11 +28,15 @@ export function canTransition(from, to) {
     return (ALLOWED[from] || []).includes(to);
 }
 
-export async function createBooking(store, { username, provider, offer, passengers, contact, netAmount, sellAmount, currency, kind = 'flight', packageId = null }) {
+// ⚠️ قائمة تفريغٍ بيضاء (destructure) — حقلٌ جديد لا يُذكَر هنا **يُسقَط
+// صامتاً** مهما مرَّره الطالب (نفس عطب extra_json الموثَّق في postgresStore
+// حرفياً، لكنه هنا حتى قبل الوصول للمخزن). discountCode/discountAmount
+// أُضيفا بعد اكتشاف هذا العطب بالضبط في هذه الميزة.
+export async function createBooking(store, { username, provider, offer, passengers, contact, netAmount, sellAmount, currency, kind = 'flight', packageId = null, discountCode = null, discountAmount = null }) {
     return store.createBooking({
         username: String(username || '').trim().toLowerCase(),
         provider, offer, passengers, contact,
-        netAmount, sellAmount, currency, kind, packageId,
+        netAmount, sellAmount, currency, kind, packageId, discountCode, discountAmount,
         status: 'pending',
     });
 }
@@ -47,5 +57,7 @@ export async function listBookingsByUser(store, username, limit = 50) {
 export async function transitionBooking(store, id, to, patch = {}) {
     const from = Object.keys(ALLOWED).filter(s => canTransition(s, to));
     if (from.length === 0) return null;
-    return store.transitionBooking(id, { from, to, patch });
+    const booking = await store.transitionBooking(id, { from, to, patch });
+    if (to === 'issued' && booking) await maybeRewardReferral(store, booking);
+    return booking;
 }

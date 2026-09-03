@@ -8,7 +8,8 @@
  */
 
 import { seedOf, pad } from './mockUtils.js';
-import { sortOffers, totalDurationMin } from './duffelProvider.js';
+import { normalizeFareConditions } from '../fareConditions.js';
+import { sortOffers, totalDurationMin, applyOfferFilters } from './duffelProvider.js';
 import { buildSearchPassengers } from '../passengerAges.js';
 
 const MOCK_AIRLINES = ['طيران جاولا', 'أجنحة الصقر', 'سماء العرب'];
@@ -18,6 +19,36 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
     const offers = new Map();  // id → عرض كامل (بالصافي)
     const orders = new Map();  // orderId → طلب
     let orderSeq = 0;
+
+    // 🧳 أمتعةٌ محاكاة **ثلاثيّة القيم عمداً**: مصرَّحة بحقيبة، ومصرَّحة
+    // بلا حقيبة، وغير مصرَّحة أصلاً (null). المزوّد الحي يُنتج الثلاث،
+    // فمحاكاةٌ تُنتج واحدة تترك فرعين من فلتر الأمتعة بلا اختبار —
+    // ويظهر عطبهما في الإنتاج وحده. الاشتقاق من البذرة فيبقى حتمياً.
+    function mockBaggage(seed) {
+        const kind = seed % 3;
+        if (kind === 0) return null;                                  // لم يصرّح
+        if (kind === 1) return [{ type: 'carry_on', quantity: 1 }];   // بلا مسجَّلة
+        return [{ type: 'carry_on', quantity: 1 }, { type: 'checked', quantity: 1 }];
+    }
+
+    // 🧳 خدمة أمتعة إضافية محاكاة واحدة لكل عرض — كافية لاختبار التدفق
+    // الكامل (كتالوج → اختيار → سعر إجمالي → إصدار → إلغاء يرد نصيبها).
+    // السعر حتميّ من البذرة كبقية المحاكاة، لا عشوائي.
+    // ⚠️ بلا وصفٍ نصّي جاهز عمداً: `type`/`maxWeightKg` بنيويان تصوغ منهما
+    // الواجهة تسميتها بلغتها عبر T() — نصٌّ عربي جاهز هنا كان سيصل لغةً
+    // إنجليزية بمترجم DOM جزئي (يلتقط "حقيبة مسجَّلة" وحدها من القاموس
+    // فيُبقي البقية عربية، رُصد فعلياً بمعاينة حيّة قبل هذا الإصلاح).
+    function mockAvailableServices(seed, paxCount) {
+        const netAmount = Math.round((15 + (seed % 20)) * 100) / 100; // 15–34
+        return [{
+            id: `mock_svc_bag_${seed}`,
+            type: 'checked_bag',
+            maxWeightKg: 23,
+            netAmount,
+            currency: MOCK_CURRENCY,
+            maxQuantity: Math.max(1, paxCount) * 2,
+        }];
+    }
 
     function buildSlice(origin, destination, date, seed, stops) {
         const depHour = 6 + (seed % 12);
@@ -32,6 +63,7 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
                 arriveAt: arrive.toISOString().slice(0, 19),
                 carrier: MOCK_AIRLINES[seed % MOCK_AIRLINES.length],
                 flightNumber: 'JA' + (100 + (seed % 900)),
+                baggage: mockBaggage(seed),
             });
         } else {
             const mid = 'HUB';
@@ -42,6 +74,7 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
                 arriveAt: midAt.toISOString().slice(0, 19),
                 carrier: MOCK_AIRLINES[seed % MOCK_AIRLINES.length],
                 flightNumber: 'JA' + (100 + (seed % 900)),
+                baggage: mockBaggage(seed),
             });
             const leg2 = new Date(midAt); leg2.setUTCMinutes(leg2.getUTCMinutes() + 80);
             segments.push({
@@ -49,12 +82,16 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
                 arriveAt: arrive.toISOString().slice(0, 19),
                 carrier: MOCK_AIRLINES[(seed + 1) % MOCK_AIRLINES.length],
                 flightNumber: 'JA' + (500 + (seed % 400)),
+                baggage: mockBaggage(seed),
             });
         }
         return {
             origin, destination, departAt,
             arriveAt: arrive.toISOString().slice(0, 19),
             durationMin, stops, segments,
+            // نفس حقل الشريحة في الرد الحي — بلا هذا تبقى شارة العائلة
+            // في الواجهة بلا اختبارٍ يمرّ عليها.
+            fareBrand: ['Basic', 'Standard', 'Flex'][seed % 3],
         };
     }
 
@@ -62,21 +99,48 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
         name: 'mock',
         mode: 'mock',
 
-        async searchOffers({ origin, destination, departDate, returnDate = null, adults = 1, childrenDobs = [], cabin = 'economy', sort = 'price' }) {
-            const seed = seedOf(`${origin}${destination}${departDate}${cabin}`);
+        async searchOffers({ origin, destination, departDate, returnDate = null, legs = null, adults = 1, childrenDobs = [], cabin = 'economy', sort = 'price', maxStops = null, airline = null, maxNetAmount = null, checkedBagOnly = false }) {
+            // 🛫 ملتي سيتي: سلسلة محطات صريحة (legs) بدل زوج ذهاب/عودة واحد —
+            // اختياري تماماً وخلفه توافقاً: غيابه يسلك الطريق القديم حرفياً
+            // (نفس البذرة والشكل)، فلا يتأثر أي استدعاء قائم (الايجنت، مراقبة
+            // الأسعار، تقويم الأسعار، ولا اختبار واحد يمرّر legs اليوم).
+            const isMultiCity = Array.isArray(legs) && legs.length > 0;
+            const legList = isMultiCity
+                ? legs
+                : [{ origin, destination, departDate }, ...(returnDate ? [{ origin: destination, destination: origin, departDate: returnDate }] : [])];
+            const firstDepart = legList[0].departDate;
+            // ⚠️ بذرة الطريق القديم تبقى **حرفياً** كما كانت (لا تشمل returnDate
+            // قط، وحدها من قرّرت ذلك أصلاً) — أي تغييرٍ هنا يُزحزح كل عرضٍ
+            // ذهاب/عودة موجود (المعرّف والسعر والناقل) رغم أنه لم يطلب ملتي سيتي.
+            const seed = isMultiCity
+                ? seedOf(legList.map(l => `${l.origin}${l.destination}${l.departDate}`).join('') + cabin)
+                : seedOf(`${origin}${destination}${departDate}${cabin}`);
             const paxCount = adults + childrenDobs.length;
             // نفس ترتيب duffelProvider (بالغون ثم أطفال) ونفس شكل الكائن —
             // فيسري فحص الأعمار في الخادم على المحاكاة كما على المزوّد الحي.
-            const passengers = buildSearchPassengers({ adults, childrenDobs, departDate })
+            const passengers = buildSearchPassengers({ adults, childrenDobs, departDate: firstDepart })
                 .map((p, idx) => ({ id: `mock_pas_${idx}`, type: p.type ?? null, age: p.age ?? null }));
             const results = [];
             for (let i = 0; i < 3; i++) {
                 const s = seed + i * 137;
                 const base = 80 + (s % 420);
                 const cabinFactor = { economy: 1, premium_economy: 1.7, business: 3.2, first: 5 }[cabin] || 1;
+                // ⚠️ تبسيطٌ متعمَّد: السعر لا يتناسب مع عدد المحطات (نفس صيغة
+                // الذهاب المفرد حرفياً) — بيانات محاكاة لاختبار الشكل والتدفق
+                // لا محاكاة تسعير حقيقي؛ Duffel الحي يسعّر ملتي سيتي فعلياً.
                 const netAmount = Math.round(base * cabinFactor * paxCount * 100) / 100;
-                const slices = [buildSlice(origin, destination, departDate, s, i === 2 ? 1 : 0)];
-                if (returnDate) slices.push(buildSlice(destination, origin, returnDate, s + 7, i === 2 ? 1 : 0));
+                const slices = legList.map((l, idx) => buildSlice(l.origin, l.destination, l.departDate, s + idx * 7, i === 2 ? 1 : 0));
+                // 🎟️ عائلات سعر متمايزة عمداً: الأرخص مقيَّدة والأغلى مرنة —
+                // فيرى المطوّر (والاختبار) الحالات الحقيقية الثلاث لا حالةً
+                // واحدة وردية. الثالثة تُبقي الرسم null: «مسموح والرسم يحدّده
+                // الناقل»، وهي الحالة التي تُنسى فتُعرض خطأً كأنها مجانية.
+                const FARES = [
+                    { brand: 'Economy Light', change: { allowed: false }, refund: { allowed: false } },
+                    { brand: 'Economy Flex', change: { allowed: true, penalty_amount: '75', penalty_currency: MOCK_CURRENCY }, refund: { allowed: true, penalty_amount: '150', penalty_currency: MOCK_CURRENCY } },
+                    { brand: 'Economy Standard', change: { allowed: true }, refund: { allowed: false } },
+                ];
+                const fare = FARES[i % FARES.length];
+                for (const sl of slices) sl.fareBrand = fare.brand;
                 const offer = {
                     id: `mock_off_${seed}_${i}`,
                     owner: MOCK_AIRLINES[s % MOCK_AIRLINES.length],
@@ -91,12 +155,18 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
                     ownerLogo: null,
                     ownerIata: null,
                     totalDurationMin: totalDurationMin(slices),
+                    conditions: normalizeFareConditions({
+                        change_before_departure: fare.change,
+                        refund_before_departure: fare.refund,
+                    }),
+                    availableServices: mockAvailableServices(s, paxCount),
                     slices,
                 };
                 offers.set(offer.id, offer);
                 results.push({ ...offer });
             }
-            return sortOffers(results, sort);
+            // نفس عقد duffelProvider حرفياً: فلترة قبل الترتيب
+            return sortOffers(applyOfferFilters(results, { maxStops, airline, maxNetAmount, checkedBagOnly }), sort);
         },
 
         async getOffer(offerId) {
@@ -104,16 +174,22 @@ export function createMockTravelProvider({ failCreate = false, failCancel = fals
             return offer ? { ...offer } : null;
         },
 
-        async createOrder({ offerId, passengers, contact }) {
+        async createOrder({ offerId, passengers, contact, services = [] }) {
             if (failCreate) throw new Error('محاكاة: المزوّد رفض إصدار الحجز.');
             const offer = offers.get(offerId);
             if (!offer) throw new Error('العرض غير موجود أو انتهت صلاحيته.');
             orderSeq += 1;
+            // 🧳 كلفة الخدمات الإضافية تُحسب من كتالوج العرض (مصدر الثقة)
+            // لا من أي سعر يصل من الطالب — نفس مبدأ عدم الوثوق بسعر عميل.
+            const extraNet = (services || []).reduce((sum, sel) => {
+                const svc = (offer.availableServices || []).find(x => x.id === sel.id);
+                return sum + (svc ? svc.netAmount * Number(sel.quantity || 0) : 0);
+            }, 0);
             const order = {
                 orderId: 'mock_ord_' + orderSeq,
                 bookingReference: 'JAO' + String(1000 + orderSeq),
                 status: 'issued',
-                netAmount: offer.netAmount,
+                netAmount: Math.round((offer.netAmount + extraNet) * 100) / 100,
                 currency: offer.currency,
                 passengers, contact,
             };

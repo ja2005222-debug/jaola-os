@@ -37,26 +37,11 @@ function totalStops(offer) {
     return sum;
 }
 
-/**
- * هل يشمل العرض حقيبة مسجَّلة؟ true/false/null.
- *
- * null ليست تفصيلاً: Duffel قد لا يصرّح بالأمتعة إطلاقاً (موثَّق في
- * duffelProvider.js). «لا نعرف» تختلف عن «لا توجد» — وادّعاء الثانية
- * مكان الأولى يجعل المسافر يدفع رسوم حقيبة لم نحذّره منها.
- */
-export function checkedBaggage(offer) {
-    let sawAny = false;
-    for (const slice of offer?.slices || []) {
-        for (const seg of slice?.segments || []) {
-            if (!Array.isArray(seg?.baggage)) continue;
-            sawAny = true;
-            for (const b of seg.baggage) {
-                if (b?.type === 'checked' && Number(b.quantity) > 0) return true;
-            }
-        }
-    }
-    return sawAny ? false : null;
-}
+// 🧳 انتقلت إلى src/itinerary.js لمّا صارت الفلترةُ تحتاجها كما يحتاجها
+// السرد: نسختان تتباعدان بصمت، فتُخفي الفلترةُ عرضاً يمدحه المساعد.
+// وتُعاد التصديرَ من هنا فلا ينكسر مستورِدٌ قائم.
+import { checkedBaggage } from '../itinerary.js';
+export { checkedBaggage };
 
 const isDirect = offer => totalStops(offer) === 0;
 const price = offer => Number(offer?.sellAmount);
@@ -307,72 +292,103 @@ export function analyzeCarOffers(offers) {
     return withSpread(findings, list).slice(0, MAX_FINDINGS);
 }
 
-/** «7 س 30 د» — صياغة مدة مقروءة بالعربية. */
-export function formatDuration(min) {
+/** «7 س 30 د» — صياغة مدة مقروءة بلغة الواجهة (عربية افتراضاً). */
+export function formatDuration(min, lang = 'ar') {
     if (!Number.isFinite(min) || min <= 0) return '';
     const h = Math.floor(min / 60);
     const m = min % 60;
+    if (lang === 'en') {
+        if (h === 0) return `${m}m`;
+        return m === 0 ? `${h}h` : `${h}h ${m}m`;
+    }
     if (h === 0) return `${m} د`;
     return m === 0 ? `${h} س` : `${h} س ${m} د`;
 }
 
 const money = (amount, currency) => `${amount} ${currency || ''}`.trim();
-const optionNo = index => `الخيار ${index + 1}`;
+const optionNo = (index, lang = 'ar') => (lang === 'en' ? `Option ${index + 1}` : `الخيار ${index + 1}`);
 
 /**
  * صياغة حتمية للنتائج — ليست «بديلاً احتياطياً» بل المسار الافتراضي:
  * تعمل بلا مفتاح ايجنت وبلا كلفة نداء وبلا زمن انتظار.
+ *
+ * 🌐 اللغة تُصاغ هنا في الخادم لا في جدول ترجمة الواجهة: الجمل تحمل
+ * أرقاماً مُدرَجة بلا حصر (سعر، نسبة، مدة، تقييم) فمطابقة نصية حرفية
+ * أو أنماط في العميل ستتكسر مع كل تعديل صياغة — بينما القالب هنا مصدر
+ * الحقيقة الواحد، وترجمة القالب نفسه لا تنكسر أبداً.
  */
-export function renderInsight(findings) {
+export function renderInsight(findings, lang = 'ar') {
     const parts = [];
+    const en = lang === 'en';
     for (const f of findings || []) {
         switch (f.type) {
             case 'direct_alternative':
-                parts.push(
-                    `${optionNo(f.index)} **مباشر** ويوفّر ${formatDuration(f.savedMin)}` +
-                    `${f.stopsAvoided ? ` وتوقفاً${f.stopsAvoided > 1 ? ` (${f.stopsAvoided} توقفات)` : ''}` : ''}` +
-                    ` مقابل ${money(f.extraAmount, f.currency)} فقط (+${f.extraPct}%).`);
+                parts.push(en
+                    ? `${optionNo(f.index, lang)} is **direct** and saves ${formatDuration(f.savedMin, lang)}` +
+                      `${f.stopsAvoided ? ` and ${f.stopsAvoided > 1 ? `${f.stopsAvoided} stops` : 'a stop'}` : ''}` +
+                      ` for just ${money(f.extraAmount, f.currency)} more (+${f.extraPct}%).`
+                    : `${optionNo(f.index)} **مباشر** ويوفّر ${formatDuration(f.savedMin)}` +
+                      `${f.stopsAvoided ? ` وتوقفاً${f.stopsAvoided > 1 ? ` (${f.stopsAvoided} توقفات)` : ''}` : ''}` +
+                      ` مقابل ${money(f.extraAmount, f.currency)} فقط (+${f.extraPct}%).`);
                 break;
             case 'cheapest_is_fastest':
-                parts.push(`${optionNo(f.index)} هو الأرخص **والأسرع** معاً — لا مقايضة هنا.`);
+                parts.push(en
+                    ? `${optionNo(f.index, lang)} is both the cheapest **and the fastest** — no trade-off here.`
+                    : `${optionNo(f.index)} هو الأرخص **والأسرع** معاً — لا مقايضة هنا.`);
                 break;
             case 'fastest_premium':
-                parts.push(
-                    `${optionNo(f.index)} أسرع بـ${formatDuration(f.savedMin)} مقابل ` +
-                    `${money(f.extraAmount, f.currency)} زيادة (+${f.extraPct}%).`);
+                parts.push(en
+                    ? `${optionNo(f.index, lang)} is ${formatDuration(f.savedMin, lang)} faster for ` +
+                      `${money(f.extraAmount, f.currency)} more (+${f.extraPct}%).`
+                    : `${optionNo(f.index)} أسرع بـ${formatDuration(f.savedMin)} مقابل ` +
+                      `${money(f.extraAmount, f.currency)} زيادة (+${f.extraPct}%).`);
                 break;
             case 'cheapest_no_baggage':
-                parts.push(
-                    `الأرخص (${optionNo(f.index)}) **لا يشمل حقيبة مسجَّلة**، بينما ` +
-                    `${optionNo(f.alternativeIndex)} يشملها بفارق ${money(f.extraAmount, f.currency)}.`);
+                parts.push(en
+                    ? `The cheapest (${optionNo(f.index, lang)}) **includes no checked bag**, while ` +
+                      `${optionNo(f.alternativeIndex, lang)} does for ${money(f.extraAmount, f.currency)} more.`
+                    : `الأرخص (${optionNo(f.index)}) **لا يشمل حقيبة مسجَّلة**، بينما ` +
+                      `${optionNo(f.alternativeIndex)} يشملها بفارق ${money(f.extraAmount, f.currency)}.`);
                 break;
             case 'price_spread':
-                parts.push(`الفرق بين الأرخص والأغلى ${f.spreadPct}% — تصفّح أبعد من أول نتيجة.`);
+                parts.push(en
+                    ? `Prices spread ${f.spreadPct}% between cheapest and priciest — browse beyond the first result.`
+                    : `الفرق بين الأرخص والأغلى ${f.spreadPct}% — تصفّح أبعد من أول نتيجة.`);
                 break;
             case 'package_savings':
-                parts.push(
-                    `🎁 هذه الباقة توفّر ${money(f.savings, f.currency)} (${f.savingsPct}%) ` +
-                    `مقارنةً بحجز الطيران والفندق منفصلَين عندنا (${money(f.separateTotal, f.currency)}).`);
+                parts.push(en
+                    ? `🎁 This bundle saves ${money(f.savings, f.currency)} (${f.savingsPct}%) ` +
+                      `versus booking the flight and hotel separately with us (${money(f.separateTotal, f.currency)}).`
+                    : `🎁 هذه الباقة توفّر ${money(f.savings, f.currency)} (${f.savingsPct}%) ` +
+                      `مقارنةً بحجز الطيران والفندق منفصلَين عندنا (${money(f.separateTotal, f.currency)}).`);
                 break;
             case 'rating_upgrade':
-                parts.push(
-                    `${optionNo(f.index)} تقييمه **${f.rating}** مقابل ${f.cheapestRating} للأرخص، ` +
-                    `بفارق ${money(f.extraAmount, f.currency)} فقط (+${f.extraPct}%).`);
+                parts.push(en
+                    ? `${optionNo(f.index, lang)} is rated **${f.rating}** versus ${f.cheapestRating} for the cheapest, ` +
+                      `for just ${money(f.extraAmount, f.currency)} more (+${f.extraPct}%).`
+                    : `${optionNo(f.index)} تقييمه **${f.rating}** مقابل ${f.cheapestRating} للأرخص، ` +
+                      `بفارق ${money(f.extraAmount, f.currency)} فقط (+${f.extraPct}%).`);
                 break;
             case 'breakfast_included':
-                parts.push(
-                    `${optionNo(f.index)} يشمل **الفطور** مقابل ${money(f.extraAmount, f.currency)} ` +
-                    `زيادة (+${f.extraPct}%).`);
+                parts.push(en
+                    ? `${optionNo(f.index, lang)} includes **breakfast** for ${money(f.extraAmount, f.currency)} ` +
+                      `more (+${f.extraPct}%).`
+                    : `${optionNo(f.index)} يشمل **الفطور** مقابل ${money(f.extraAmount, f.currency)} ` +
+                      `زيادة (+${f.extraPct}%).`);
                 break;
             case 'cheapest_not_refundable':
-                parts.push(
-                    `الأرخص (${optionNo(f.index)}) **غير قابل للإلغاء**، بينما ` +
-                    `${optionNo(f.alternativeIndex)} قابل للإلغاء بفارق ${money(f.extraAmount, f.currency)} (+${f.extraPct}%).`);
+                parts.push(en
+                    ? `The cheapest (${optionNo(f.index, lang)}) is **non-refundable**, while ` +
+                      `${optionNo(f.alternativeIndex, lang)} is cancellable for ${money(f.extraAmount, f.currency)} more (+${f.extraPct}%).`
+                    : `الأرخص (${optionNo(f.index)}) **غير قابل للإلغاء**، بينما ` +
+                      `${optionNo(f.alternativeIndex)} قابل للإلغاء بفارق ${money(f.extraAmount, f.currency)} (+${f.extraPct}%).`);
                 break;
             case 'fees_at_property':
-                parts.push(
-                    `⚠️ ${optionNo(f.index)} عليه **${money(f.feesAmount, f.currency)} رسوم تُدفع في الفندق** ` +
-                    `خارج السعر المعروض.`);
+                parts.push(en
+                    ? `⚠️ ${optionNo(f.index, lang)} carries **${money(f.feesAmount, f.currency)} in fees paid at the hotel** ` +
+                      `on top of the displayed price.`
+                    : `⚠️ ${optionNo(f.index)} عليه **${money(f.feesAmount, f.currency)} رسوم تُدفع في الفندق** ` +
+                      `خارج السعر المعروض.`);
                 break;
             default:
                 break; // نوع غير معروف يُتجاهل بدل كسر القراءة كلها
@@ -422,20 +438,20 @@ export function sanitizeFindings(raw) {
 }
 
 /** القراءة الكاملة لعروض — null حين لا يوجد ما يستحق الذكر. */
-function wrap(findings) {
+function wrap(findings, lang = 'ar') {
     if (findings.length === 0) return null;
-    return { findings, text: renderInsight(findings) };
+    return { findings, text: renderInsight(findings, lang) };
 }
 
-export const buildInsight = offers => wrap(analyzeOffers(offers));
-export const buildStayInsight = offers => wrap(analyzeStayOffers(offers));
-export const buildCarInsight = offers => wrap(analyzeCarOffers(offers));
+export const buildInsight = (offers, lang) => wrap(analyzeOffers(offers), lang);
+export const buildStayInsight = (offers, lang) => wrap(analyzeStayOffers(offers), lang);
+export const buildCarInsight = (offers, lang) => wrap(analyzeCarOffers(offers), lang);
 
 /**
  * قراءة الباقة — حتمية من أرقام التسعير نفسها لا من نموذج لغوي.
  * توفيرٌ صفري (تقريب سنتات على مبالغ ضئيلة) لا يُدّعى — null أصدق.
  */
-export function buildPackageInsight(quote) {
+export function buildPackageInsight(quote, lang) {
     if (!quote || !(quote.savings > 0)) return null;
     return wrap([{
         type: 'package_savings',
@@ -443,5 +459,5 @@ export function buildPackageInsight(quote) {
         savingsPct: quote.savingsPct,
         separateTotal: quote.separateTotal,
         currency: quote.currency,
-    }]);
+    }], lang);
 }

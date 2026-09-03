@@ -36,15 +36,30 @@ const INDEX_HTML = `<!DOCTYPE html>
       <div class="hero">
         <div class="ph hero-bg"><img src="https://images.unsplash.com/photo-1436491865332-7a61a109cc05?w=1400&q=80&auto=format&fit=crop" alt="" onerror="this.style.display='none'"></div>
         <div class="hero-in">
-          <span class="eyebrow">طيران · فنادق · سيّارات</span>
+          <span class="eyebrow">باقات · طيران · فنادق · سيّارات</span>
           <h1 id="heroTitle">وجهتك القادمة<br><span class="accent-txt">تبدأ هنا</span></h1>
           <p id="heroTag" class="hero-tag"></p>
+          <div class="hero-cta"><button class="btn primary" data-action="tab" data-view="packages">🎒 تصفّح الباقات الجاهزة</button></div>
         </div>
       </div>
+      <h2 class="sec-title">✨ باقات مكتملة — طيران + فندق بسعر واحد</h2>
+      <div id="pkgTeaser" class="grid pkgs"></div>
       <h2 class="sec-title">أهمّ الوجهات</h2>
       <div id="destGrid" class="grid dest"></div>
       <h2 class="sec-title">عروض مختارة</h2>
       <div id="offerGrid" class="grid offers"></div>
+    </section>
+
+    <!-- الباقات الجاهزة (فندق متعاقد + طيران محجوز مسبقاً) -->
+    <section id="view-packages" class="view hidden">
+      <h2 class="sec-title">🎒 الباقات الجاهزة</h2>
+      <p class="hint">فندق متعاقد + مقاعد طيران محجوزة مسبقاً — سعر نهائي واحد، بلا بحث ولا مفاجآت.</p>
+      <div id="pkgGrid" class="grid pkgs"></div>
+      <div class="panel quote-cta">
+        <h3>🎯 ما ناسبك تاريخ أو وجهة؟</h3>
+        <p class="hint">اطلب عرضاً خاصاً ويجهّز لك فريقنا باقة على مقاسك.</p>
+        <button class="btn" data-action="openQuote">اطلب عرضاً خاصاً</button>
+      </div>
     </section>
 
     <!-- طيران -->
@@ -114,6 +129,41 @@ const INDEX_HTML = `<!DOCTYPE html>
         <button class="btn primary" data-action="saveBrand">حفظ وتطبيق</button>
       </div>
       <div class="panel">
+        <h3>🎒 الباقات والانطلاقات</h3>
+        <p class="hint">أضف انطلاقة لباقة: حدّد مصدر مقاعد الطيران (حجز جماعي / حصة موسمية / موزّع جملة / طيران عارض) وتاريخ استرجاع المقاعد غير المباعة.</p>
+        <div class="search-grid">
+          <div class="fld"><label>الباقة</label><select id="adPkg" class="sel"></select></div>
+          <div class="fld"><label>تاريخ الانطلاق</label><input id="adDate" type="date"></div>
+          <div class="fld"><label>المقاعد</label><input id="adCap" type="number" min="1" max="300" value="20"></div>
+          <div class="fld"><label>مصدر المقاعد</label><select id="adSrc" class="sel">
+            <option value="group">حجز جماعي (Group)</option>
+            <option value="allotment">حصة موسمية (Allotment)</option>
+            <option value="consolidator">موزّع جملة (Consolidator)</option>
+            <option value="charter">طيران عارض (Charter)</option>
+          </select></div>
+          <div class="fld"><label>تاريخ الاسترجاع</label><input id="adRel" type="date"></div>
+          <div class="fld"><label>سعر مبكّر حتى</label><input id="adEb" type="date"></div>
+        </div>
+        <button class="btn primary" data-action="admAddDep">➕ إضافة الانطلاقة</button>
+        <div id="adminPkgs" class="mini-list adm-pkgs"></div>
+        <div class="new-pkg">
+          <h3>إنشاء باقة جديدة</h3>
+          <div class="search-grid">
+            <div class="fld"><label>اسم الباقة</label><input id="anTitle" placeholder="مثال: أسبوع في أنطاليا"></div>
+            <div class="fld"><label>المدينة</label><input id="anCity" placeholder="أنطاليا"></div>
+            <div class="fld"><label>الفندق</label><input id="anHotel" placeholder="اسم الفندق المتعاقَد"></div>
+            <div class="fld"><label>سعر الأسبوع/شخص</label><input id="anP7" type="number" min="1" placeholder="2450"></div>
+            <div class="fld"><label>سعر الأسبوعين/شخص</label><input id="anP14" type="number" min="1" placeholder="4200"></div>
+          </div>
+          <button class="btn" data-action="admNewPkg">إنشاء الباقة</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>📋 قائمة الانتظار وطلبات العروض</h3>
+        <div id="adminWaitlist" class="mini-list"></div>
+        <div id="adminQuotes" class="mini-list adm-quotes"></div>
+      </div>
+      <div class="panel">
         <h3>العروض</h3>
         <div id="adminOffers" class="mini-list"></div>
       </div>
@@ -127,6 +177,39 @@ const INDEX_HTML = `<!DOCTYPE html>
       </div>
     </section>
   </main>
+
+  <!-- نافذة الباقة: انطلاقات + مدد + مسافرون + إضافات + عربون -->
+  <div id="pkgModal" class="modal hidden">
+    <div class="modal-box pkg-box">
+      <button class="icon-btn close-x" data-action="closePkg">×</button>
+      <div id="pkgDetail"></div>
+      <div id="pkgForm">
+        <label>اسم المسافر الرئيسي</label>
+        <input id="pkName" placeholder="الاسم الكامل">
+        <label>البريد / الجوّال</label>
+        <input id="pkContact" placeholder="للتواصل والتأكيد">
+        <p id="pkgErr" class="err-msg hidden"></p>
+        <button class="btn primary block" data-action="confirmPkg" id="pkgBookBtn">تأكيد الحجز</button>
+        <button class="btn block hidden" data-action="joinWaitlist" id="pkgWaitBtn">🔔 أضفني لقائمة الانتظار</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- نافذة طلب عرض خاص -->
+  <div id="quoteModal" class="modal hidden">
+    <div class="modal-box">
+      <button class="icon-btn close-x" data-action="closeQuote">×</button>
+      <h2>طلب عرض خاص</h2>
+      <p class="hint">أخبرنا بما تريد ونرد عليك بباقة على مقاسك.</p>
+      <label>الوجهة</label><input id="qDest" placeholder="مثال: أنطاليا">
+      <label>التاريخ التقريبي</label><input id="qDate" type="date">
+      <label>عدد المسافرين</label><input id="qPax" type="number" min="1" max="30" value="2">
+      <label>الاسم</label><input id="qName" placeholder="الاسم">
+      <label>البريد / الجوّال</label><input id="qContact" placeholder="للتواصل">
+      <p id="quoteErr" class="err-msg hidden">أكمل الاسم ووسيلة التواصل.</p>
+      <button class="btn primary block" data-action="submitQuote">إرسال الطلب</button>
+    </div>
+  </div>
 
   <!-- نافذة الحجز -->
   <div id="bookModal" class="modal hidden">
@@ -242,6 +325,72 @@ const CARS = [
   { id: 'c6', city: 'الدمام', name: 'تويوتا كامري', emoji: '🚙', cls: 'متوسّط', price: 200, seats: 5, trans: 'أوتوماتيك' },
 ];
 
+/* ====================== الباقات الجاهزة (المنتج الرئيسي) ================= */
+// النموذج: باقة (فندق متعاقَد + مشمولات) ← انطلاقات مجدولة، لكل انطلاقة سعة
+// مقاعد خاصة ومصدر تعاقد طيران (حجز جماعي/حصة/موزّع/عارض) وتاريخ استرجاع.
+const SOURCING = {
+  group: { label: 'حجز جماعي', hint: 'مقاعد مثبّتة بعربون — الأسماء تُسلَّم قبل الإقلاع' },
+  allotment: { label: 'حصة موسمية', hint: 'حصة مقاعد بعقد موسمي مع تاريخ استرجاع' },
+  consolidator: { label: 'موزّع جملة', hint: 'مقاعد من موزّع تذاكر — بلا التزام مباشر' },
+  charter: { label: 'طيران عارض', hint: 'طائرة مستأجرة كلّياً أو جزئياً' },
+};
+const PACKAGES = [
+  {
+    id: 'p1', title: 'أسبوع في أنطاليا', city: 'أنطاليا', country: 'تركيا', emoji: '🏖️',
+    img: '1507525428034-b723cf961d3e', hotel: 'منتجع لارا الشاطئي', rating: 5, board: 'شامل الإفطار',
+    flight: 'طيران مباشر ذهاباً وعودة', includes: ['تنقّلات المطار', 'أمتعة 23كغ', 'إفطار يومي'],
+    durations: [
+      { nights: 7, label: 'أسبوع', pp: 2450, single: 650, child: 1250 },
+      { nights: 14, label: 'أسبوعان', pp: 4200, single: 1150, child: 2100 },
+    ],
+    addons: [
+      { id: 'a1', label: 'تأمين سفر', emoji: '🛡️', price: 95, per: 'person' },
+      { id: 'a2', label: 'جولة يومية خاصة', emoji: '🗺️', price: 350, per: 'booking' },
+      { id: 'a3', label: 'غرفة بإطلالة بحر', emoji: '🌊', price: 420, per: 'booking' },
+    ],
+    depositPct: 30, ebPct: 12,
+    departures: [
+      { id: 'p1d1', date: isoDate(21), capacity: 20, booked: 14, sourcing: 'group', release: isoDate(7), ebUntil: isoDate(5), open: true },
+      { id: 'p1d2', date: isoDate(35), capacity: 20, booked: 6, sourcing: 'group', release: isoDate(21), ebUntil: isoDate(14), open: true },
+      { id: 'p1d3', date: isoDate(49), capacity: 16, booked: 16, sourcing: 'allotment', release: isoDate(35), ebUntil: isoDate(21), open: true },
+    ],
+  },
+  {
+    id: 'p2', title: 'سحر إسطنبول', city: 'إسطنبول', country: 'تركيا', emoji: '🕌',
+    img: '1524231757912-21f4fe3a7200', hotel: 'بيت البسفور', rating: 4, board: 'شامل الإفطار',
+    flight: 'طيران مباشر ذهاباً وعودة', includes: ['تنقّلات المطار', 'أمتعة 23كغ', 'جولة البسفور'],
+    durations: [
+      { nights: 5, label: '٥ ليالٍ', pp: 1850, single: 480, child: 950 },
+      { nights: 8, label: '٨ ليالٍ', pp: 2650, single: 720, child: 1350 },
+    ],
+    addons: [
+      { id: 'a1', label: 'تأمين سفر', emoji: '🛡️', price: 85, per: 'person' },
+      { id: 'a2', label: 'عشاء على البسفور', emoji: '🍽️', price: 260, per: 'person' },
+    ],
+    depositPct: 30, ebPct: 10,
+    departures: [
+      { id: 'p2d1', date: isoDate(14), capacity: 25, booked: 11, sourcing: 'consolidator', release: isoDate(7), ebUntil: isoDate(4), open: true },
+      { id: 'p2d2', date: isoDate(28), capacity: 25, booked: 3, sourcing: 'group', release: isoDate(14), ebUntil: isoDate(10), open: true },
+    ],
+  },
+  {
+    id: 'p3', title: 'طرابزون والطبيعة', city: 'طرابزون', country: 'تركيا', emoji: '⛰️',
+    img: '1506905925346-21bda4d32df4', hotel: 'فندق أوزنجول', rating: 4, board: 'إفطار وعشاء',
+    flight: 'طيران عارض مباشر', includes: ['تنقّلات المطار', 'أمتعة 23كغ', 'جولة أوزنجول'],
+    durations: [
+      { nights: 7, label: 'أسبوع', pp: 2950, single: 720, child: 1450 },
+    ],
+    addons: [
+      { id: 'a1', label: 'تأمين سفر', emoji: '🛡️', price: 95, per: 'person' },
+      { id: 'a2', label: 'جولة السلطان مراد', emoji: '🏞️', price: 300, per: 'booking' },
+    ],
+    depositPct: 25, ebPct: 8,
+    departures: [
+      { id: 'p3d1', date: isoDate(30), capacity: 40, booked: 22, sourcing: 'charter', release: isoDate(16), ebUntil: isoDate(12), open: true },
+    ],
+  },
+];
+
 /* ============================== الحالة/التخزين ========================== */
 const STAFF = { admin: { pass: '1234', role: 'admin', name: 'مدير المنصّة' } };
 
@@ -254,9 +403,12 @@ function save(key, val) { try { localStorage.setItem('jtr_' + key, JSON.stringif
 let brand = Object.assign({}, BRAND, load('brand', {}));
 let offers = load('offers', OFFERS);
 let bookings = load('bookings', []);
+let packages = load('packages', PACKAGES);
+let waitlist = load('waitlist', []);
+let quotes = load('quotes', []);
 const results = { flights: [], hotels: [], cars: [] };
 
-const state = { user: null, view: 'explore', authMode: 'login', pending: null };
+const state = { user: null, view: 'explore', authMode: 'login', pending: null, pkg: null };
 
 /* ================================ أدوات ================================= */
 function byId(id) { return document.getElementById(id); }
@@ -328,7 +480,8 @@ function applyBrand() {
 function renderTabs() {
   const role = state.user && state.user.role;
   let tabs = [
-    { id: 'explore', label: 'استكشف' }, { id: 'flights', label: 'طيران' },
+    { id: 'explore', label: 'استكشف' }, { id: 'packages', label: '🎒 باقات' },
+    { id: 'flights', label: 'طيران' },
     { id: 'hotels', label: 'فنادق' }, { id: 'cars', label: 'سيّارات' },
     { id: 'bookings', label: 'حجوزاتي' },
   ];
@@ -338,7 +491,7 @@ function renderTabs() {
   }).join('');
 }
 function applyAccess() {
-  ['explore', 'flights', 'hotels', 'cars', 'bookings', 'admin'].forEach(function (v) {
+  ['explore', 'packages', 'flights', 'hotels', 'cars', 'bookings', 'admin'].forEach(function (v) {
     let ok = state.view === v;
     if (v === 'admin') ok = ok && state.user && state.user.role === 'admin';
     show(byId('view-' + v), ok);
@@ -352,6 +505,7 @@ function setView(view) {
   state.view = view;
   applyAccess();
   if (view === 'explore') renderExplore();
+  if (view === 'packages') renderPackages();
   if (view === 'flights') { fillAirports(); renderFlights(); }
   if (view === 'hotels') { fillCities('hCity'); renderHotels(); }
   if (view === 'cars') { fillCities('cCity'); renderCars(); }
@@ -361,6 +515,7 @@ function setView(view) {
 
 /* ================================ استكشف =============================== */
 async function renderExplore() {
+  renderPkgTeaser();
   const dests = await Provider.destinations();
   byId('destGrid').innerHTML = dests.map(function (d) {
     return '<div class="card dest-card" data-action="exploreDest" data-city="' + d.city + '">' +
@@ -464,6 +619,218 @@ function renderCars() {
   }).join('');
 }
 
+/* =============================== الباقات =============================== */
+function pkgById(id) { return packages.find(function (p) { return p.id === id; }) || null; }
+function depOf(p, depId) { return p ? (p.departures.find(function (d) { return d.id === depId; }) || null) : null; }
+function seatsLeft(dep) { return Math.max(0, (dep.capacity || 0) - (dep.booked || 0)); }
+function isEb(dep) { return !!(dep.ebUntil && isoDate(0) <= dep.ebUntil); }
+function ebPrice(base, pkg, dep) { return isEb(dep) ? Math.round(base * (1 - (pkg.ebPct || 0) / 100)) : base; }
+function isoAddDays(dateStr, delta) {
+  const d = new Date(dateStr + 'T00:00:00'); d.setDate(d.getDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+function openDeps(p) { return p.departures.filter(function (d) { return d.open !== false; }); }
+function bookableDep(p) { return openDeps(p).find(function (d) { return seatsLeft(d) > 0; }) || null; }
+function pkgMinPrice(p) {
+  const dur = p.durations[0]; if (!dur) return 0;
+  let min = dur.pp;
+  openDeps(p).forEach(function (d) { const v = ebPrice(dur.pp, p, d); if (v < min) min = v; });
+  return min;
+}
+function waitlistCount(depId) { return waitlist.filter(function (w) { return w.depId === depId; }).length; }
+
+function pkgCard(p) {
+  const dep = bookableDep(p);
+  const anyEb = openDeps(p).some(isEb);
+  let seatsHtml = '';
+  if (dep) {
+    const left = seatsLeft(dep);
+    seatsHtml = '<span class="seat-badge ' + (left <= 5 ? 'urgent' : '') + '">' +
+      (left <= 5 ? '🔥 تبقى ' + left + ' مقاعد فقط' : '✓ مقاعد متاحة') + '</span>';
+  } else {
+    seatsHtml = '<span class="seat-badge soldout">اكتمل — قائمة انتظار</span>';
+  }
+  return '<div class="card pkg-card" data-action="openPkg" data-id="' + p.id + '">' +
+    '<div class="dest-media">' + photo(p) + '<div class="dest-scrim"></div>' +
+    (anyEb ? '<span class="eb-badge">⚡ سعر مبكّر −' + p.ebPct + '%</span>' : '') + '</div>' +
+    '<div class="dest-body"><div class="dest-city">' + p.title + '</div>' +
+    '<div class="dest-tag">🏨 ' + p.hotel + ' ' + stars(p.rating) + ' · ' + p.board + '</div>' +
+    '<div class="dest-tag">✈️ ' + p.flight + (dep ? ' · أقرب انطلاقة ' + dep.date : '') + '</div>' +
+    '<div class="pkg-foot"><span class="dest-from">من ' + money(pkgMinPrice(p)) + ' / شخص</span>' + seatsHtml + '</div>' +
+    '</div></div>';
+}
+function renderPackages() {
+  const el = byId('pkgGrid'); if (el) el.innerHTML = packages.map(pkgCard).join('');
+}
+function renderPkgTeaser() {
+  const el = byId('pkgTeaser'); if (el) el.innerHTML = packages.slice(0, 3).map(pkgCard).join('');
+}
+
+/* ── نافذة الباقة: اختيار الانطلاقة والمدة والمسافرين والإضافات ───────── */
+function openPkg(id) {
+  const p = pkgById(id); if (!p) return;
+  const dep = bookableDep(p) || openDeps(p)[0] || p.departures[0];
+  state.pkg = { id: id, depId: dep ? dep.id : null, durIdx: 0, adults: 2, singles: 0, children: 0, addons: {}, pay: 'deposit' };
+  const nm = byId('pkName'), ct = byId('pkContact');
+  if (nm) nm.value = state.user && state.user.role === 'traveler' ? state.user.name : '';
+  if (ct) ct.value = '';
+  show(byId('pkgErr'), false);
+  renderPkgDetail();
+  show(byId('pkgModal'), true);
+}
+function closePkg() { show(byId('pkgModal'), false); state.pkg = null; }
+function pkgSeats() { const s = state.pkg; return s ? s.adults + s.singles + s.children : 0; }
+function pkgTotals() {
+  const s = state.pkg; if (!s) return { total: 0, deposit: 0, lines: [] };
+  const p = pkgById(s.id); const dep = depOf(p, s.depId); const dur = p.durations[s.durIdx] || p.durations[0];
+  const lines = [];
+  let total = 0;
+  if (s.adults > 0) { const v = ebPrice(dur.pp, p, dep) * s.adults; total += v; lines.push([s.adults + ' بالغ (غرفة مزدوجة)', v]); }
+  if (s.singles > 0) { const v = (ebPrice(dur.pp, p, dep) + dur.single) * s.singles; total += v; lines.push([s.singles + ' غرفة مفردة', v]); }
+  if (s.children > 0) { const v = ebPrice(dur.child, p, dep) * s.children; total += v; lines.push([s.children + ' طفل', v]); }
+  p.addons.forEach(function (a) {
+    if (!s.addons[a.id]) return;
+    const v = a.per === 'person' ? a.price * pkgSeats() : a.price;
+    total += v; lines.push([a.emoji + ' ' + a.label, v]);
+  });
+  const deposit = Math.ceil(total * (p.depositPct || 30) / 100);
+  return { total: total, deposit: deposit, lines: lines, pkg: p, dep: dep, dur: dur };
+}
+function renderPkgDetail() {
+  const s = state.pkg; if (!s) return;
+  const p = pkgById(s.id); if (!p) return;
+  const dep = depOf(p, s.depId);
+  const t = pkgTotals();
+  const soldOut = dep ? seatsLeft(dep) <= 0 : true;
+
+  let html = '<div class="pkg-head-row"><span class="bs-icon">' + p.emoji + '</span>' +
+    '<div><h2>' + p.title + '</h2>' +
+    '<div class="bs-detail">🏨 ' + p.hotel + ' ' + stars(p.rating) + ' · ' + p.board + ' · ✈️ ' + p.flight + '</div></div></div>';
+  html += '<div class="inc-chips">' + p.includes.map(function (i) { return '<span class="inc">✓ ' + i + '</span>'; }).join('') + '</div>';
+
+  html += '<label class="grp-label">تاريخ الانطلاقة</label><div class="chip-row">' +
+    openDeps(p).map(function (d) {
+      const left = seatsLeft(d); const sold = left <= 0;
+      return '<button class="chip ' + (d.id === s.depId ? 'active' : '') + (sold ? ' soldout' : '') + '" data-action="pkgDep" data-id="' + d.id + '">' +
+        d.date + (sold ? ' · اكتمل' : (left <= 5 ? ' · 🔥 ' + left + ' مقاعد' : '')) +
+        (isEb(d) ? ' ⚡' : '') + '</button>';
+    }).join('') + '</div>';
+  if (dep && isEb(dep)) html += '<p class="eb-note">⚡ سعر مبكّر: خصم ' + p.ebPct + '% لهذه الانطلاقة حتى ' + dep.ebUntil + '</p>';
+
+  html += '<label class="grp-label">المدة</label><div class="chip-row">' +
+    p.durations.map(function (d, i) {
+      return '<button class="chip ' + (i === s.durIdx ? 'active' : '') + '" data-action="pkgDur" data-idx="' + i + '">' +
+        d.label + ' (' + d.nights + ' ليالٍ) · ' + money(dep ? ebPrice(d.pp, p, dep) : d.pp) + '/شخص</button>';
+    }).join('') + '</div>';
+
+  html += '<label class="grp-label">المسافرون</label><div class="cnt-grid">' +
+    cntRow('بالغ — غرفة مزدوجة', 'adults', s.adults) +
+    cntRow('غرفة مفردة (+' + money(t.dur.single) + ')', 'singles', s.singles) +
+    cntRow('طفل (سرير إضافي)', 'children', s.children) + '</div>';
+
+  if (p.addons.length) {
+    html += '<label class="grp-label">إضافات اختيارية</label><div class="chip-row">' +
+      p.addons.map(function (a) {
+        return '<button class="chip addon ' + (s.addons[a.id] ? 'active' : '') + '" data-action="pkgAddon" data-id="' + a.id + '">' +
+          a.emoji + ' ' + a.label + ' · ' + money(a.price) + (a.per === 'person' ? '/شخص' : '') + '</button>';
+      }).join('') + '</div>';
+  }
+
+  if (!soldOut) {
+    html += '<label class="grp-label">طريقة الدفع</label><div class="chip-row">' +
+      '<button class="chip ' + (s.pay === 'deposit' ? 'active' : '') + '" data-action="pkgPay" data-mode="deposit">عربون ' + (p.depositPct || 30) + '% الآن</button>' +
+      '<button class="chip ' + (s.pay === 'full' ? 'active' : '') + '" data-action="pkgPay" data-mode="full">دفع كامل</button></div>';
+    html += '<div class="brk">' + t.lines.map(function (l) {
+      return '<div class="brk-row"><span>' + l[0] + '</span><span>' + money(l[1]) + '</span></div>';
+    }).join('') +
+      '<div class="brk-row total"><span>الإجمالي</span><span>' + money(t.total) + '</span></div>' +
+      (s.pay === 'deposit'
+        ? '<div class="brk-row due"><span>المطلوب الآن (عربون)</span><span>' + money(t.deposit) + '</span></div>' +
+          '<div class="brk-row rest"><span>المتبقّي قبل ' + (dep ? isoAddDays(dep.date, -14) : '—') + '</span><span>' + money(t.total - t.deposit) + '</span></div>'
+        : '<div class="brk-row due"><span>المطلوب الآن</span><span>' + money(t.total) + '</span></div>') +
+      '</div>';
+  } else {
+    html += '<div class="soldout-note">😔 اكتملت مقاعد هذه الانطلاقة' +
+      (waitlistCount(s.depId) ? ' — ' + waitlistCount(s.depId) + ' بانتظارها' : '') +
+      '. انضم لقائمة الانتظار وسنبلغك فور توفّر مقاعد أو فتح انطلاقة جديدة.</div>';
+  }
+
+  byId('pkgDetail').innerHTML = html;
+  show(byId('pkgBookBtn'), !soldOut);
+  show(byId('pkgWaitBtn'), soldOut);
+}
+function cntRow(label, key, val) {
+  return '<div class="cnt-row"><span>' + label + '</span><span class="cnt-ctl">' +
+    '<button class="cnt-btn" data-action="pkgCount" data-k="' + key + '" data-d="-1">−</button>' +
+    '<b>' + val + '</b>' +
+    '<button class="cnt-btn" data-action="pkgCount" data-k="' + key + '" data-d="1">+</button></span></div>';
+}
+function pkgCount(k, d) {
+  const s = state.pkg; if (!s) return;
+  const min = k === 'adults' ? 1 : 0;
+  s[k] = Math.max(min, Math.min(9, (s[k] || 0) + d));
+  renderPkgDetail();
+}
+function confirmPkg() {
+  const s = state.pkg; if (!s) return;
+  const t = pkgTotals(); const p = t.pkg, dep = t.dep, dur = t.dur;
+  const name = (byId('pkName').value || '').trim();
+  const contact = (byId('pkContact').value || '').trim();
+  const err = byId('pkgErr');
+  if (!name || !contact) { err.textContent = 'أكمل الاسم ووسيلة التواصل.'; show(err, true); return; }
+  const seats = pkgSeats();
+  if (!dep || seatsLeft(dep) < seats) {
+    err.textContent = 'المقاعد المتبقية (' + (dep ? seatsLeft(dep) : 0) + ') لا تكفي طلبك — قلّل العدد أو اختر انطلاقة أخرى.';
+    show(err, true); return;
+  }
+  if (!state.user || state.user.role === 'admin') state.user = { name: name, role: 'traveler' };
+  const payDeposit = s.pay === 'deposit';
+  const booking = {
+    id: uid('b'), type: 'package', pkgId: p.id, depId: dep.id, seats: seats,
+    title: p.title + ' · ' + dur.label, detail: '🏨 ' + p.hotel + ' · انطلاق ' + dep.date + ' · ' + seats + ' مسافر',
+    total: t.total, paidNow: payDeposit ? t.deposit : t.total,
+    remaining: payDeposit ? t.total - t.deposit : 0, dueDate: isoAddDays(dep.date, -14),
+    traveler: name, contact: contact, status: 'مؤكّد', at: isoDate(0),
+  };
+  dep.booked = (dep.booked || 0) + seats;
+  bookings.push(booking);
+  save('packages', packages); save('bookings', bookings);
+  closePkg(); applyAccess();
+  toast('✅ تأكّد حجزك — ' + (payDeposit ? 'عربون ' + money(t.deposit) + ' والباقي قبل ' + booking.dueDate : 'مدفوع بالكامل'));
+  setView('bookings');
+}
+function joinWaitlist() {
+  const s = state.pkg; if (!s) return;
+  const name = (byId('pkName').value || '').trim();
+  const contact = (byId('pkContact').value || '').trim();
+  const err = byId('pkgErr');
+  if (!name || !contact) { err.textContent = 'أكمل الاسم ووسيلة التواصل للانضمام.'; show(err, true); return; }
+  waitlist.push({ id: uid('w'), pkgId: s.id, depId: s.depId, name: name, contact: contact, at: isoDate(0) });
+  save('waitlist', waitlist);
+  closePkg(); toast('🔔 أُضفت لقائمة الانتظار — سنتواصل معك فور توفّر مقاعد');
+}
+
+/* ── طلب عرض خاص (الطلبات المخصّصة خارج الباقات المجدولة) ─────────────── */
+function openQuote() {
+  ['qDest', 'qName', 'qContact'].forEach(function (i) { const el = byId(i); if (el) el.value = ''; });
+  const d = byId('qDate'); if (d) d.value = isoDate(30);
+  show(byId('quoteErr'), false);
+  show(byId('quoteModal'), true);
+}
+function closeQuote() { show(byId('quoteModal'), false); }
+function submitQuote() {
+  const name = (byId('qName').value || '').trim();
+  const contact = (byId('qContact').value || '').trim();
+  if (!name || !contact) { show(byId('quoteErr'), true); return; }
+  quotes.push({
+    id: uid('q'), dest: (byId('qDest').value || '').trim() || '—', date: byId('qDate').value || '—',
+    pax: Math.max(1, Number(byId('qPax').value || 2)), name: name, contact: contact,
+    status: 'جديد', at: isoDate(0),
+  });
+  save('quotes', quotes);
+  closeQuote(); toast('🎯 استلمنا طلبك — سيصلك عرض خاص قريباً');
+}
+
 /* ================================ الحجز =============================== */
 function startBooking(type, item, unitLabel, qty) {
   state.pending = { type: type, title: item.title, detail: item.detail, unit: item.unit, qty: qty, base: item.base };
@@ -524,15 +891,17 @@ function confirmBooking() {
 }
 
 /* ============================== حجوزاتي =============================== */
-function typeIcon(t) { return t === 'flight' ? '🛫' : (t === 'hotel' ? '🏨' : '🚗'); }
+function typeIcon(t) { return t === 'package' ? '🎒' : (t === 'flight' ? '🛫' : (t === 'hotel' ? '🏨' : '🚗')); }
 function renderBookings() {
   const mine = state.user ? bookings.filter(function (b) {
     return state.user.role === 'admin' || b.traveler === state.user.name;
   }) : [];
   byId('bookingList').innerHTML = mine.length ? mine.slice().reverse().map(function (b) {
+    const payLine = b.type === 'package' && b.remaining > 0
+      ? '<div class="res-sub pay-line">💳 مدفوع ' + money(b.paidNow) + ' · المتبقّي ' + money(b.remaining) + ' قبل ' + b.dueDate + '</div>' : '';
     return '<div class="res-card booking"><div class="res-lead">' + typeIcon(b.type) + '</div>' +
       '<div class="res-main"><div class="res-title">' + b.title + '</div>' +
-      '<div class="res-sub">' + b.detail + ' · ' + b.at + (b.promo ? ' · كود ' + b.promo : '') + '</div></div>' +
+      '<div class="res-sub">' + b.detail + ' · ' + b.at + (b.promo ? ' · كود ' + b.promo : '') + '</div>' + payLine + '</div>' +
       '<div class="res-side"><div class="res-price">' + money(b.total) + '</div>' +
       '<span class="pill ' + (b.status === 'ملغى' ? 'wait' : 'ok') + '">' + b.status + '</span>' +
       (b.status === 'ملغى' ? '' : '<button class="btn sm" data-action="cancelBooking" data-id="' + b.id + '">إلغاء</button>') +
@@ -541,16 +910,29 @@ function renderBookings() {
 }
 function cancelBooking(id) {
   const b = bookings.find(x => x.id === id); if (!b) return;
-  b.status = 'ملغى'; save('bookings', bookings); renderBookings(); toast('أُلغي الحجز');
+  b.status = 'ملغى';
+  // حجز باقة: تُعاد مقاعده للانطلاقة فوراً — فتظهر متاحة لقائمة الانتظار
+  if (b.type === 'package' && b.depId) {
+    const dep = depOf(pkgById(b.pkgId), b.depId);
+    if (dep) { dep.booked = Math.max(0, (dep.booked || 0) - (b.seats || 0)); save('packages', packages); }
+  }
+  save('bookings', bookings); renderBookings(); toast('أُلغي الحجز');
 }
 
 /* ============================== الإدارة =============================== */
 function renderAdmin() {
   const live = bookings.filter(b => b.status !== 'ملغى');
   const revenue = live.reduce(function (s, b) { return s + b.total; }, 0);
+  const collected = live.reduce(function (s, b) { return s + (b.paidNow != null ? b.paidNow : b.total); }, 0);
+  let seatsSold = 0, seatsAll = 0;
+  packages.forEach(function (p) { p.departures.forEach(function (d) { seatsSold += d.booked || 0; seatsAll += d.capacity || 0; }); });
   byId('adminStats').innerHTML =
     stat('الحجوزات', bookings.length) + stat('الفعّالة', live.length) +
-    stat('العروض', activeOffers().length) + stat('الإيراد', money(revenue));
+    stat('مقاعد مباعة', seatsSold + '/' + seatsAll) +
+    stat('إشغال الباقات', (seatsAll ? Math.round(seatsSold * 100 / seatsAll) : 0) + '%') +
+    stat('قيمة العقود', money(revenue)) + stat('المحصَّل فعلاً', money(collected));
+  renderAdminPkgs();
+  renderAdminWaitQuotes();
   byId('wlName').value = brand.name; byId('wlEmoji').value = brand.emoji;
   byId('wlColor').value = brand.primary; byId('wlCurrency').value = brand.currency;
   byId('adminOffers').innerHTML = offers.map(function (o) {
@@ -567,6 +949,85 @@ function renderAdmin() {
     ? ('مربوط بـ API حيّ: ' + CONFIG.api.base + ' (يرتدّ للبيانات المبدئية عند فشل الشبكة).')
     : 'يعمل حالياً ببيانات مبدئية (seed). لتفعيل الجلب الحيّ اضبط CONFIG.api.base في app.js.';
 }
+/* ── إدارة الباقات والانطلاقات ────────────────────────────────────────── */
+function renderAdminPkgs() {
+  const sel = byId('adPkg');
+  if (sel) sel.innerHTML = packages.map(function (p) { return '<option value="' + p.id + '">' + p.emoji + ' ' + p.title + '</option>'; }).join('');
+  const dt = byId('adDate'); if (dt && !dt.value) dt.value = isoDate(45);
+  const rl = byId('adRel'); if (rl && !rl.value) rl.value = isoDate(31);
+  const eb = byId('adEb'); if (eb && !eb.value) eb.value = isoDate(20);
+  const box = byId('adminPkgs'); if (!box) return;
+  box.innerHTML = packages.map(function (p) {
+    const deps = p.departures.map(function (d) {
+      const left = seatsLeft(d); const pct = d.capacity ? Math.round((d.booked || 0) * 100 / d.capacity) : 0;
+      const src = SOURCING[d.sourcing] || { label: d.sourcing };
+      const wl = waitlistCount(d.id);
+      return '<div class="mini-row dep-row"><span>📅 ' + d.date + ' · ' + src.label +
+        (d.release ? ' · استرجاع ' + d.release : '') + (isEb(d) ? ' · ⚡مبكّر' : '') + '</span>' +
+        '<span class="occ"><span class="occ-bar"><span class="occ-fill" style="width:' + pct + '%"></span></span> ' +
+        (d.booked || 0) + '/' + d.capacity + (wl ? ' · 🔔' + wl : '') + '</span>' +
+        '<span><button class="btn sm" data-action="admSeats" data-pkg="' + p.id + '" data-id="' + d.id + '">+5 مقاعد</button>' +
+        '<button class="btn sm" data-action="admTogDep" data-pkg="' + p.id + '" data-id="' + d.id + '">' + (d.open === false ? 'فتح' : 'إغلاق') + '</button></span></div>';
+    }).join('');
+    return '<div class="adm-pkg"><div class="adm-pkg-title">' + p.emoji + ' <b>' + p.title + '</b> — ' + p.hotel +
+      ' · عربون ' + (p.depositPct || 30) + '%</div>' + (deps || '<p class="empty">لا انطلاقات بعد — أضف واحدة أعلاه.</p>') + '</div>';
+  }).join('');
+}
+function admAddDep() {
+  const p = pkgById(byId('adPkg') && byId('adPkg').value); if (!p) { toast('اختر باقة أولاً'); return; }
+  const date = byId('adDate').value; if (!date) { toast('حدّد تاريخ الانطلاق'); return; }
+  p.departures.push({
+    id: uid('d'), date: date, capacity: Math.max(1, Number(byId('adCap').value || 20)), booked: 0,
+    sourcing: (byId('adSrc') && byId('adSrc').value) || 'group',
+    release: byId('adRel').value || null, ebUntil: byId('adEb').value || null, open: true,
+  });
+  p.departures.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+  save('packages', packages); renderAdmin(); toast('✅ أُضيفت الانطلاقة — المقاعد مفتوحة للحجز');
+}
+function admTogDep(pkgId, depId) {
+  const dep = depOf(pkgById(pkgId), depId); if (!dep) return;
+  dep.open = dep.open === false; save('packages', packages); renderAdmin();
+}
+function admSeats(pkgId, depId) {
+  const dep = depOf(pkgById(pkgId), depId); if (!dep) return;
+  dep.capacity = (dep.capacity || 0) + 5; save('packages', packages); renderAdmin();
+  toast('زيدت السعة — أبلغ قائمة الانتظار إن وُجدت');
+}
+function admNewPkg() {
+  const title = (byId('anTitle').value || '').trim();
+  const city = (byId('anCity').value || '').trim();
+  const hotel = (byId('anHotel').value || '').trim();
+  const p7 = Number(byId('anP7').value || 0);
+  if (!title || !city || !hotel || p7 <= 0) { toast('أكمل: الاسم، المدينة، الفندق، وسعر الأسبوع'); return; }
+  const p14 = Number(byId('anP14').value || 0);
+  const durations = [{ nights: 7, label: 'أسبوع', pp: p7, single: Math.round(p7 * 0.25), child: Math.round(p7 * 0.5) }];
+  if (p14 > 0) durations.push({ nights: 14, label: 'أسبوعان', pp: p14, single: Math.round(p14 * 0.25), child: Math.round(p14 * 0.5) });
+  packages.push({
+    id: uid('p'), title: title, city: city, country: '', emoji: '🧳', img: '',
+    hotel: hotel, rating: 4, board: 'شامل الإفطار', flight: 'طيران ذهاباً وعودة',
+    includes: ['تنقّلات المطار', 'أمتعة 23كغ'],
+    durations: durations,
+    addons: [{ id: 'a1', label: 'تأمين سفر', emoji: '🛡️', price: 95, per: 'person' }],
+    depositPct: 30, ebPct: 10, departures: [],
+  });
+  save('packages', packages);
+  ['anTitle', 'anCity', 'anHotel', 'anP7', 'anP14'].forEach(function (i) { const el = byId(i); if (el) el.value = ''; });
+  renderAdmin(); toast('🎒 أُنشئت الباقة «' + title + '» — أضف لها انطلاقة الآن');
+}
+function renderAdminWaitQuotes() {
+  const wl = byId('adminWaitlist');
+  if (wl) wl.innerHTML = waitlist.length ? waitlist.slice().reverse().map(function (w) {
+    const p = pkgById(w.pkgId); const dep = depOf(p, w.depId);
+    return '<div class="mini-row"><span>🔔 ' + w.name + ' — ' + (p ? p.title : '؟') + (dep ? ' (' + dep.date + ')' : '') + '</span>' +
+      '<span class="tagline">' + w.contact + '</span><span class="pill wait">انتظار</span></div>';
+  }).join('') : '<p class="empty">لا أحد في قائمة الانتظار.</p>';
+  const qs = byId('adminQuotes');
+  if (qs) qs.innerHTML = quotes.length ? quotes.slice().reverse().map(function (q) {
+    return '<div class="mini-row"><span>🎯 ' + q.name + ' — ' + q.dest + ' · ' + q.date + ' · ' + q.pax + ' مسافر</span>' +
+      '<span class="tagline">' + q.contact + '</span><span class="pill ok">' + q.status + '</span></div>';
+  }).join('') : '<p class="empty">لا طلبات عروض خاصة.</p>';
+}
+
 function toggleOffer(id) {
   const o = offers.find(x => x.id === id); if (!o) return;
   o.active = !o.active; save('offers', offers); renderAdmin();
@@ -631,6 +1092,22 @@ function handleClick(e) {
     case 'bookFlight': bookFlight(id); break;
     case 'bookHotel': bookHotel(id); break;
     case 'bookCar': bookCar(id); break;
+    case 'openPkg': openPkg(id); break;
+    case 'closePkg': closePkg(); break;
+    case 'pkgDep': if (state.pkg) { state.pkg.depId = id; renderPkgDetail(); } break;
+    case 'pkgDur': if (state.pkg) { state.pkg.durIdx = Number(a.dataset.idx || 0); renderPkgDetail(); } break;
+    case 'pkgCount': pkgCount(a.dataset.k, Number(a.dataset.d)); break;
+    case 'pkgAddon': if (state.pkg) { state.pkg.addons[id] = !state.pkg.addons[id]; renderPkgDetail(); } break;
+    case 'pkgPay': if (state.pkg) { state.pkg.pay = a.dataset.mode; renderPkgDetail(); } break;
+    case 'confirmPkg': confirmPkg(); break;
+    case 'joinWaitlist': joinWaitlist(); break;
+    case 'openQuote': openQuote(); break;
+    case 'closeQuote': closeQuote(); break;
+    case 'submitQuote': submitQuote(); break;
+    case 'admAddDep': admAddDep(); break;
+    case 'admTogDep': admTogDep(a.dataset.pkg, id); break;
+    case 'admSeats': admSeats(a.dataset.pkg, id); break;
+    case 'admNewPkg': admNewPkg(); break;
     case 'closeBooking': closeBooking(); break;
     case 'confirmBooking': confirmBooking(); break;
     case 'cancelBooking': cancelBooking(id); break;
@@ -755,20 +1232,70 @@ input[type=color]{height:42px;padding:4px}
 .demo code{background:var(--card);padding:1px 6px;border-radius:5px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:linear-gradient(105deg,var(--brand),var(--accent));color:#04283a;padding:11px 20px;border-radius:12px;font-weight:700;font-size:14px;z-index:70;box-shadow:var(--shadow)}
 h1,h2,h3{color:var(--text)}
+/* ── الباقات ── */
+.hero-cta{margin-top:18px}
+.grid.pkgs{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+.pkg-card .dest-media{height:160px}
+.pkg-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;flex-wrap:wrap}
+.seat-badge{font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;background:rgba(34,197,94,.14);color:var(--good)}
+.seat-badge.urgent{background:rgba(245,158,11,.16);color:var(--warn)}
+.seat-badge.soldout{background:rgba(239,68,68,.14);color:#f87171}
+.eb-badge{position:absolute;top:10px;right:10px;z-index:3;background:linear-gradient(105deg,var(--accent),#fbbf24);color:#3a2504;font-size:11px;font-weight:800;padding:4px 10px;border-radius:20px}
+.pkg-box{width:min(560px,100%)}
+.pkg-head-row{display:flex;gap:12px;align-items:center;margin-bottom:10px}
+.pkg-head-row h2{margin:0;font-size:18px}
+.inc-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.inc{font-size:11px;font-weight:700;color:var(--good);background:rgba(34,197,94,.1);border-radius:8px;padding:3px 9px}
+.grp-label{display:block;font-size:12px;color:var(--muted);font-weight:800;margin:14px 0 7px}
+.chip-row{display:flex;gap:7px;flex-wrap:wrap}
+.chip{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:11px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font)}
+.chip.active{border-color:var(--brand);background:color-mix(in srgb,var(--brand) 16%,var(--card));box-shadow:0 0 0 1px var(--brand) inset}
+.chip.soldout{opacity:.55;text-decoration:line-through}
+.chip.addon.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;background:color-mix(in srgb,var(--accent) 12%,var(--card))}
+.eb-note{color:var(--accent);font-size:12px;font-weight:700;margin-top:7px}
+.cnt-grid{display:flex;flex-direction:column;gap:7px}
+.cnt-row{display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:13px}
+.cnt-ctl{display:flex;align-items:center;gap:12px}
+.cnt-btn{width:28px;height:28px;border-radius:8px;background:var(--surface);border:1px solid var(--border);color:var(--text);font-size:15px;font-weight:800;cursor:pointer}
+.brk{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-top:14px}
+.brk-row{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);padding:3px 0}
+.brk-row.total{border-top:1px solid var(--border);margin-top:6px;padding-top:8px;color:var(--text);font-weight:800}
+.brk-row.due{color:var(--brand);font-weight:800}
+.brk-row.rest{color:var(--warn);font-size:12px}
+.soldout-note{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#fca5a5;border-radius:12px;padding:12px 14px;margin-top:14px;font-size:13px}
+.quote-cta{text-align:center;border-style:dashed;margin-top:22px}
+.pay-line{color:var(--warn)}
+.adm-pkgs{margin-top:14px}
+.adm-pkg{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:4px}
+.adm-pkg-title{font-size:14px;margin-bottom:8px}
+.dep-row{background:var(--surface)}
+.occ{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.occ-bar{display:inline-block;width:70px;height:6px;border-radius:4px;background:var(--border);overflow:hidden}
+.occ-fill{display:block;height:100%;background:linear-gradient(90deg,var(--brand),var(--accent))}
+.new-pkg{border-top:1px dashed var(--border);margin-top:16px;padding-top:14px}
+.adm-quotes{margin-top:10px}
 `;
 
 export function jaolaTravel() {
     return {
         id: 'jaola-travel',
         category: 'travel',
-        name: 'منصّة سفر (طيران + فنادق + سيّارات)',
-        description: 'منصّة سفر عاملة غنيّة: بحث طيران وفنادق وسيّارات + أهمّ الوجهات + عروض وخصومات + حجوزات موحّدة. جاهزة لِـ API (طبقة مزوّد ترتدّ للبيانات المبدئية) و White-label (كائن علامة + لوحة تحكّم تغيّر الاسم/اللون/العملة حيّاً).',
-        nameEn: 'Travel Platform',
-        descriptionEn: 'Flights + hotels + cars + destinations + deals with unified bookings. API-ready provider layer and live white-label branding.',
-        keywords: ['سفر', 'سياحة', 'طيران', 'رحلات', 'تذاكر', 'حجز فندق', 'فنادق', 'تأجير سيارات', 'travel', 'flight', 'hotel', 'booking', 'tourism', 'trip', 'حجوزات', 'عطلة'],
+        name: 'منصّة سفر (باقات جاهزة + طيران + فنادق + سيّارات)',
+        description: 'منصّة سفر عاملة غنيّة يقودها منتج «الباقات الجاهزة»: فندق متعاقَد + مقاعد طيران محجوزة مسبقاً (حجز جماعي/حصة/موزّع/عارض) تُباع كسعر واحد بانطلاقات مجدولة، مع عدّاد مقاعد وسعر مبكّر وعربون وإضافات وقائمة انتظار وطلب عرض خاص. إضافةً لبحث طيران وفنادق وسيّارات + عروض + حجوزات موحّدة. جاهزة لِـ API و White-label.',
+        nameEn: 'Travel Platform (Packages-first)',
+        descriptionEn: 'Packages-first travel platform: pre-contracted hotel + pre-blocked flight seats sold as one price with scheduled departures, seat countdown, early-bird, deposit, add-ons, waitlist and custom quotes — plus flights/hotels/cars search, deals and unified bookings. API-ready and white-label.',
+        // ⚠️ «باقات»/«package» مفردتين *ممنوعتان* هنا: كل قالب يبيع باقات
+        // (استوديو تصوير، نادٍ رياضي، صالون…)، فكانتا تخطفان طلباتهم لقالب
+        // السفر — «باقات جلسات تصوير» وُجّهت لـjaola-travel فعلاً. الكلمة
+        // المفتاحية تُقيَّد بالسفر صراحةً.
+        keywords: ['سفر', 'سياحة', 'طيران', 'رحلات', 'تذاكر', 'حجز فندق', 'فنادق', 'تأجير سيارات', 'باقات سفر', 'باقات سياحية', 'باقة سياحية', 'باقة سفر', 'عروض سفر', 'أنطاليا', 'شارتر', 'travel', 'flight', 'hotel', 'booking', 'tourism', 'trip', 'travel package', 'holiday package', 'tour package', 'charter', 'حجوزات', 'عطلة'],
         externalApi: 'API-ready (طبقة مزوّد قابلة للربط) + White-label',
         model: {
             entities: [
+                { name: 'Package', fields: [{ name: 'title', type: 'string' }, { name: 'hotel', type: 'string' }, { name: 'board', type: 'string' }, { name: 'depositPct', type: 'number' }, { name: 'ebPct', type: 'number' }], ownedBy: 'Admin' },
+                { name: 'Departure', fields: [{ name: 'date', type: 'string' }, { name: 'capacity', type: 'number' }, { name: 'booked', type: 'number' }, { name: 'sourcing', type: 'string' }, { name: 'release', type: 'string' }], ownedBy: 'Admin' },
+                { name: 'WaitlistEntry', fields: [{ name: 'name', type: 'string' }, { name: 'contact', type: 'string' }, { name: 'depId', type: 'string' }], ownedBy: 'Traveler' },
+                { name: 'QuoteRequest', fields: [{ name: 'dest', type: 'string' }, { name: 'date', type: 'string' }, { name: 'pax', type: 'number' }, { name: 'status', type: 'string' }], ownedBy: 'Traveler' },
                 { name: 'Flight', fields: [{ name: 'from', type: 'string' }, { name: 'to', type: 'string' }, { name: 'airline', type: 'string' }, { name: 'price', type: 'number' }], ownedBy: 'Provider' },
                 { name: 'Hotel', fields: [{ name: 'city', type: 'string' }, { name: 'name', type: 'string' }, { name: 'rating', type: 'number' }, { name: 'price', type: 'number' }], ownedBy: 'Provider' },
                 { name: 'Car', fields: [{ name: 'city', type: 'string' }, { name: 'name', type: 'string' }, { name: 'cls', type: 'string' }, { name: 'price', type: 'number' }], ownedBy: 'Provider' },
@@ -776,10 +1303,13 @@ export function jaolaTravel() {
                 { name: 'Booking', fields: [{ name: 'id', type: 'string' }, { name: 'type', type: 'string' }, { name: 'total', type: 'number' }, { name: 'status', type: 'string' }], ownedBy: 'Traveler' },
             ],
             roles: [
-                { name: 'Traveler', description: 'يبحث ويحجز', capabilities: ['تصفّح الوجهات', 'بحث طيران/فنادق/سيّارات', 'تطبيق عرض', 'حجز', 'إدارة حجوزاته'] },
-                { name: 'Admin', description: 'يدير المنصّة والعلامة', capabilities: ['إحصاءات', 'إدارة العروض', 'white-label حيّ', 'كل الحجوزات', 'حالة الربط'] },
+                { name: 'Traveler', description: 'يبحث ويحجز', capabilities: ['حجز باقة جاهزة (انطلاقة/مدة/إضافات/عربون)', 'قائمة انتظار', 'طلب عرض خاص', 'تصفّح الوجهات', 'بحث طيران/فنادق/سيّارات', 'تطبيق عرض', 'حجز', 'إدارة حجوزاته'] },
+                { name: 'Admin', description: 'يدير المنصّة والعلامة', capabilities: ['إنشاء باقات وانطلاقات بمصدر مقاعد (جماعي/حصة/موزّع/عارض)', 'متابعة الإشغال وقوائم الانتظار وطلبات العروض', 'إحصاءات', 'إدارة العروض', 'white-label حيّ', 'كل الحجوزات', 'حالة الربط'] },
             ],
             flows: [
+                { name: 'حجز باقة جاهزة', actor: 'Traveler', steps: ['يفتح باقة', 'يختار الانطلاقة والمدة وعدد المسافرين', 'يضيف إضافات اختيارية', 'يختار عربوناً أو دفعاً كاملاً', 'يؤكّد فيُخصم من مقاعد الانطلاقة'], touches: ['Package', 'Departure', 'Booking'], realtime: false },
+                { name: 'قائمة انتظار انطلاقة مكتملة', actor: 'Traveler', steps: ['يفتح باقة مكتملة', 'يترك اسمه ووسيلة تواصله', 'يُبلَّغ عند توفّر مقاعد'], touches: ['Departure', 'WaitlistEntry'], realtime: false },
+                { name: 'إدارة الانطلاقات ومصادر المقاعد', actor: 'Admin', steps: ['ينشئ باقة', 'يضيف انطلاقة بمصدر مقاعد وتاريخ استرجاع', 'يتابع الإشغال ويزيد السعة أو يغلق'], touches: ['Package', 'Departure', 'WaitlistEntry', 'QuoteRequest'], realtime: false },
                 { name: 'حجز رحلة/فندق/سيّارة', actor: 'Traveler', steps: ['يبحث', 'يختار نتيجة', 'يطبّق كود خصم (اختياري)', 'يؤكّد الحجز'], touches: ['Flight', 'Hotel', 'Car', 'Booking', 'Offer'], realtime: false },
                 { name: 'إعادة العلامة (white-label)', actor: 'Admin', steps: ['يفتح الإدارة', 'يغيّر الاسم/اللون/العملة', 'يحفظ فتُطبَّق حيّاً'], touches: ['Offer', 'Booking'], realtime: false },
             ],

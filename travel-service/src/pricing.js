@@ -35,6 +35,7 @@ export const CATEGORY_MARKUP_ENV = {
     flight: 'TRAVEL_MARKUP_PCT_FLIGHT',
     stay: 'TRAVEL_MARKUP_PCT_STAY',
     car: 'TRAVEL_MARKUP_PCT_CAR',
+    esim: 'TRAVEL_MARKUP_PCT_ESIM',
 };
 
 export function readCategoryMarkupPct(category, env = process.env, defaultPct = DEFAULT_MARKUP_PCT) {

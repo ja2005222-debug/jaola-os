@@ -803,6 +803,7 @@ const STRINGS = {
   // video studio (خدمة منفصلة — يُفتح بتسليم التوكن)
   videoStudioTitle: { en: 'Video Studio', ar: 'استوديو الفيديو', es: 'Estudio de vídeo', fr: 'Studio vidéo' },
   travelPortalTitle: { en: 'Travel Portal', ar: 'بوابة السفر', es: 'Portal de viajes', fr: 'Portail de voyage' },
+  logoStudioTitle: { en: 'Logo Maker', ar: 'صانع الشعارات', es: 'Creador de logos', fr: 'Créateur de logos' },
 
   // تثبيت PWA (زر يظهر فقط حين يدعمه المتصفح ولم يُثبَّت التطبيق أصلاً)
   installAppTitle: { en: 'Install App', ar: 'ثبّت التطبيق', es: 'Instalar app', fr: "Installer l'appli" },

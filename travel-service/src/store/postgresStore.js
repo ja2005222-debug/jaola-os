@@ -7,6 +7,7 @@
  * معه، بينما ما نستعلم عنه (المستخدم/الحالة/الوقت) أعمدة مفهرسة.
  */
 import pg from 'pg';
+import { generateReferralCode, normalizeReferralCode } from '../referrals.js';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS travel_bookings (
@@ -40,6 +41,27 @@ ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS reminder_sent_at BIGINT;
 ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS package_id TEXT;
 ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS compensation_json JSONB;
 ALTER TABLE travel_bookings ALTER COLUMN sell_amount DROP NOT NULL;
+-- ⚠️ عطب إنتاجي: كلفة المقعد الصافية **اختيارية** في الباقات المجدولة
+-- (يُنشئها المالك أحياناً بلا كلفة مسجَّلة)، فيصل netAmount فارغاً —
+-- ومخزن الملفات يقبله بينما رفَضَه هذا العمود، فكان حجز أي باقة بلا
+-- كلفة مسجَّلة **يفشل في الإنتاج وحده**. «لا نعرف الكلفة» ≠ «الكلفة صفر»:
+-- الثانية تضخّم الربح في نظرة الأدمن، فالعمود يقبل الفراغ والحساب يستثنيه.
+ALTER TABLE travel_bookings ALTER COLUMN net_amount DROP NOT NULL;
+-- 🚨 عطب إنتاجي صامت: transitionBooking كان يكتب قائمةً بيضاء من الحقول
+-- فقط، بينما مخزن الملفات يدمج الرقعة كاملةً (Object.assign). فكل حقل
+-- خارج القائمة كان **يُكتب في التطوير ويضيع في الإنتاج بلا خطأ**:
+-- خطة العربون والمقاعد وموعد الأسماء، وكل حقول الدفع (معرّف جلسة
+-- Stripe، معرّف الدفعة، وقت الدفع، عملة التحصيل، أرقام التذاكر).
+-- أثره العملي: لا استئناف دفع، ولا استرداد، ولا مصالحة، ولا تحرير
+-- مقاعد عند انتهاء المهلة — كلها تقرأ حقولاً غير موجودة. العمود أدناه
+-- يحفظ كل ما لا عمود له، فيتطابق المخزنان كما يقتضي عقدهما.
+ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS extra_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+-- 🏷️ كود الخصم المُطبَّق وقت الإنشاء (إن وُجد) — عمودان حقيقيان لا
+-- extra_json لأنهما (خلافاً لحقول الرقعة اللاحقة) معروفان وقت الإنشاء
+-- نفسه، بنفس مكانة package_id تماماً — قد يُستعلَم عنهما لاحقاً (تقرير
+-- أداء حملة) فيستحقان فهرسة ممكنة لا الدفن داخل JSONB.
+ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS discount_code TEXT;
+ALTER TABLE travel_bookings ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(12,2);
 CREATE INDEX IF NOT EXISTS travel_bookings_package_idx ON travel_bookings (package_id);
 CREATE INDEX IF NOT EXISTS travel_bookings_user_idx ON travel_bookings (username, at);
 CREATE INDEX IF NOT EXISTS travel_bookings_status_idx ON travel_bookings (status);
@@ -133,7 +155,140 @@ CREATE TABLE IF NOT EXISTS travel_contract_allocations (
     status       TEXT NOT NULL DEFAULT 'active'
 );
 CREATE INDEX IF NOT EXISTS travel_contract_allocations_contract_idx ON travel_contract_allocations (contract_id);
+
+-- 🎒 الباقات المجدولة: مخزون مملوك (فندق متعاقَد + مقاعد محجوزة سلفاً)
+-- يُباع بانطلاقات ثابتة. seats_sold يُزاد ذرّياً بشرط عدم تجاوز السعة
+-- داخل UPDATE واحد — نفس حارس البيع الزائد في حصص العقود حرفياً.
+-- التفاصيل الوصفية في data_json؛ الأعمدة المفصولة هي ما تحتاجه الذرّية
+-- والفرز فقط (سعة/مباع/نشط/تاريخ الانطلاق).
+CREATE TABLE IF NOT EXISTS travel_fixed_packages (
+    id            TEXT PRIMARY KEY,
+    at            BIGINT NOT NULL,
+    updated_at    BIGINT NOT NULL,
+    depart_date   TEXT NOT NULL,
+    seat_capacity INTEGER NOT NULL,
+    seats_sold    INTEGER NOT NULL DEFAULT 0,
+    active        BOOLEAN NOT NULL DEFAULT TRUE,
+    data_json     JSONB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS travel_fixed_packages_depart_idx ON travel_fixed_packages (depart_date);
+
+-- 🔔 اهتمامات الباقات: قائمة انتظار انطلاقة مكتملة + طلبات عروض خاصة.
+CREATE TABLE IF NOT EXISTS travel_package_interests (
+    id          TEXT PRIMARY KEY,
+    at          BIGINT NOT NULL,
+    kind        TEXT NOT NULL,
+    package_id  TEXT,
+    username    TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'new',
+    data_json   JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+CREATE INDEX IF NOT EXISTS travel_package_interests_pkg_idx ON travel_package_interests (package_id);
+
+-- ⭐ مراجعات الباقات — موثقة بنيوياً: كل صف يحمل booking_id لحجز حقيقي،
+-- ومراجعة واحدة لكل (مستخدم، باقة) بقيد فريد — الإرسال الثاني تحديث.
+CREATE TABLE IF NOT EXISTS travel_package_reviews (
+    id          TEXT PRIMARY KEY,
+    at          BIGINT NOT NULL,
+    updated_at  BIGINT NOT NULL,
+    package_id  TEXT NOT NULL,
+    username    TEXT NOT NULL,
+    booking_id  TEXT NOT NULL,
+    rating      INTEGER NOT NULL,
+    title       TEXT,
+    text        TEXT,
+    UNIQUE (username, package_id)
+);
+CREATE INDEX IF NOT EXISTS travel_package_reviews_pkg_idx ON travel_package_reviews (package_id);
+
+-- ❤️ المفضلة — صف لكل (مستخدم، باقة)
+CREATE TABLE IF NOT EXISTS travel_wishlist (
+    username    TEXT NOT NULL,
+    package_id  TEXT NOT NULL,
+    at          BIGINT NOT NULL,
+    PRIMARY KEY (username, package_id)
+);
+
+-- 👤 حسابات Jatrava الذاتية (بريد وكلمة مرور)
+-- البريد UNIQUE في المخطّط نفسه لا في الكود: فحصٌ قبل الإدراج يسمح
+-- بسباق تسجيلين متزامنين بنفس البريد، والقيد يمنعه بنيوياً.
+-- password_hash يقبل NULL عمداً — حساب جوجل لاحقاً بلا كلمة مرور.
+CREATE TABLE IF NOT EXISTS travel_users (
+    id                TEXT PRIMARY KEY,
+    email             TEXT NOT NULL UNIQUE,
+    name              TEXT NOT NULL DEFAULT '',
+    password_hash     TEXT,
+    provider          TEXT NOT NULL DEFAULT 'password',
+    email_verified_at BIGINT,
+    created_at        BIGINT NOT NULL,
+    updated_at        BIGINT NOT NULL
+);
+-- 🔑 استعادة كلمة المرور: يُخزَّن **بصمة الرمز لا الرمز**. تسريب نسخةٍ من
+-- قاعدة البيانات عندها لا يعني استيلاءً على الحسابات — البصمة لا تُقلب
+-- إلى رابطٍ صالح. العمودان NULL في الأغلبية الساحقة من الصفوف، فالفهرس
+-- جزئيٌّ عليهما وحدهما.
+ALTER TABLE travel_users ADD COLUMN IF NOT EXISTS reset_token_hash TEXT;
+ALTER TABLE travel_users ADD COLUMN IF NOT EXISTS reset_expires_at BIGINT;
+CREATE INDEX IF NOT EXISTS travel_users_reset_idx
+    ON travel_users (reset_token_hash) WHERE reset_token_hash IS NOT NULL;
+-- 📢 علامة إرسال حملة إعلان الحجز الحي (وأمثالها لاحقاً) — NULL = لم
+-- تصله بعد. عمودٌ لا extra_json (لا صلة له بجدول الحجوزات) ولا صفٌّ
+-- منفصل (حملة واحدة اليوم لا تستحق جدول حملات كاملاً بعد).
+ALTER TABLE travel_users ADD COLUMN IF NOT EXISTS live_announcement_sent_at BIGINT;
+
+-- 🤝 برنامج الإحالة — مفهرسٌ بـusername كبقية الخدمة (ملف شخصي، مفضلة)
+-- لا بمعرّف travel_users، فيعمل لأي هوية بصرف النظر عن مصدر توكنها.
+-- انظر شرح النطاق الكامل في referrals.js.
+CREATE TABLE IF NOT EXISTS travel_referrals (
+    username           TEXT PRIMARY KEY,
+    code               TEXT NOT NULL UNIQUE,
+    referred_by        TEXT,
+    bonus_points       BIGINT NOT NULL DEFAULT 0,
+    reward_granted_at  BIGINT,
+    created_at         BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS travel_referrals_by_idx ON travel_referrals (referred_by)
+    WHERE referred_by IS NOT NULL;
+
+-- 🏷️ أكواد الخصم (discounts.js) — الكود ذاته المفتاح الأساسي (نصٌّ يطبعه
+-- المالك بيده لا معرّفاً مولَّداً، فلا حاجة لعمود id منفصل). used_count
+-- يُزاد ذرّياً بشرط عدم تجاوز max_uses داخل UPDATE واحد — نفس فلسفة
+-- عدّادات المقاعد/الغرف حرفياً، فطلبان متزامنان على آخر استعمالٍ من كودٍ
+-- محدود لا يفوزان معاً.
+CREATE TABLE IF NOT EXISTS travel_discount_codes (
+    code          TEXT PRIMARY KEY,
+    at            BIGINT NOT NULL,
+    updated_at    BIGINT NOT NULL,
+    type          TEXT NOT NULL,
+    value         NUMERIC(12,2) NOT NULL,
+    currency      TEXT,
+    products_json JSONB,
+    max_discount  NUMERIC(12,2),
+    min_amount    NUMERIC(12,2),
+    max_uses      INTEGER,
+    used_count    INTEGER NOT NULL DEFAULT 0,
+    expires_at    BIGINT,
+    active        BOOLEAN NOT NULL DEFAULT TRUE,
+    note          TEXT
+);
 `;
+
+function rowToUser(r) {
+    if (!r) return null;
+    return {
+        id: r.id,
+        email: r.email,
+        name: r.name || '',
+        passwordHash: r.password_hash || null,
+        provider: r.provider || 'password',
+        emailVerifiedAt: r.email_verified_at == null ? null : Number(r.email_verified_at),
+        resetTokenHash: r.reset_token_hash || null,
+        resetExpiresAt: r.reset_expires_at == null ? null : Number(r.reset_expires_at),
+        liveAnnouncementSentAt: r.live_announcement_sent_at == null ? null : Number(r.live_announcement_sent_at),
+        createdAt: Number(r.created_at),
+        updatedAt: Number(r.updated_at),
+    };
+}
 
 function rowToBooking(r) {
     if (!r) return null;
@@ -144,11 +299,14 @@ function rowToBooking(r) {
         username: r.username,
         provider: r.provider,
         status: r.status,
+        // الإضافات أولاً: أعمدةُ الجدول مصدرُ الحقيقة فتتقدّم عليها لو تصادما
+        ...(r.extra_json || {}),
         kind: r.kind,
         offer: r.offer_json,
         passengers: r.passengers_json,
         contact: r.contact_json,
-        netAmount: Number(r.net_amount),
+        // NULL = كلفة غير مسجَّلة (لا صفر): Number(null) كان سيدّعي ربحاً كاملاً
+        netAmount: r.net_amount != null ? Number(r.net_amount) : null,
         // NULL لابن الباقة (الهامش على الأب) — Number(null) كان سيحوّله صفراً كاذباً
         sellAmount: r.sell_amount != null ? Number(r.sell_amount) : null,
         currency: r.currency,
@@ -159,6 +317,8 @@ function rowToBooking(r) {
         packageId: r.package_id || null,
         compensation: r.compensation_json || null,
         reminderSentAt: r.reminder_sent_at != null ? Number(r.reminder_sent_at) : null,
+        discountCode: r.discount_code || null,
+        discountAmount: r.discount_amount != null ? Number(r.discount_amount) : null,
     };
 }
 
@@ -195,6 +355,68 @@ function rowToAllocation(r) {
         checkIn: r.check_in,
         checkOut: r.check_out,
         status: r.status,
+    };
+}
+
+function rowToFixedPackage(r) {
+    if (!r) return null;
+    return {
+        ...(r.data_json || {}),
+        id: r.id,
+        at: Number(r.at),
+        updatedAt: Number(r.updated_at),
+        departDate: r.depart_date,
+        seatCapacity: Number(r.seat_capacity),
+        seatsSold: Number(r.seats_sold),
+        active: r.active,
+    };
+}
+
+function rowToInterest(r) {
+    if (!r) return null;
+    return {
+        ...(r.data_json || {}),
+        id: r.id,
+        at: Number(r.at),
+        kind: r.kind,
+        packageId: r.package_id || null,
+        username: r.username,
+        status: r.status,
+    };
+}
+
+function rowToReview(r) {
+    if (!r) return null;
+    return {
+        id: r.id,
+        at: Number(r.at),
+        updatedAt: Number(r.updated_at),
+        packageId: r.package_id,
+        username: r.username,
+        bookingId: r.booking_id,
+        rating: Number(r.rating),
+        title: r.title,
+        text: r.text,
+    };
+}
+
+function rowToDiscountCode(r) {
+    if (!r) return null;
+    return {
+        code: r.code,
+        at: Number(r.at),
+        updatedAt: Number(r.updated_at),
+        type: r.type,
+        value: Number(r.value),
+        currency: r.currency || null,
+        products: r.products_json || null,
+        maxDiscount: r.max_discount != null ? Number(r.max_discount) : null,
+        minAmount: r.min_amount != null ? Number(r.min_amount) : null,
+        maxUses: r.max_uses != null ? Number(r.max_uses) : null,
+        usedCount: Number(r.used_count || 0),
+        expiresAt: r.expires_at != null ? Number(r.expires_at) : null,
+        active: r.active,
+        note: r.note || null,
     };
 }
 
@@ -269,12 +491,13 @@ export function createPostgresStore({ connectionString }) {
                 const res = await c.query(
                     `INSERT INTO travel_bookings
                      (id, at, updated_at, username, provider, status, kind, offer_json,
-                      passengers_json, contact_json, net_amount, sell_amount, currency, package_id)
-                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+                      passengers_json, contact_json, net_amount, sell_amount, currency, package_id,
+                      discount_code, discount_amount)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
                     [id, now, now, b.username, b.provider, b.status, b.kind || 'flight',
                         JSON.stringify(b.offer), JSON.stringify(b.passengers),
                         JSON.stringify(b.contact), b.netAmount, b.sellAmount ?? null, b.currency,
-                        b.packageId || null]
+                        b.packageId || null, b.discountCode || null, b.discountAmount ?? null]
                 );
                 return rowToBooking(res.rows[0]);
             });
@@ -343,6 +566,13 @@ export function createPostgresStore({ connectionString }) {
             }
             for (const [key, col] of Object.entries(textCols)) {
                 if (key in patch) { sets.push(`${col} = $${i++}`); vals.push(patch[key]); }
+            }
+            // ما لا عمود له يُدمج في extra_json — بلا هذا يضيع صامتاً
+            const mapped = new Set([...Object.keys(jsonCols), ...Object.keys(textCols)]);
+            const extras = Object.fromEntries(Object.entries(patch).filter(([key]) => !mapped.has(key)));
+            if (Object.keys(extras).length > 0) {
+                sets.push(`extra_json = COALESCE(extra_json, '{}'::jsonb) || $${i++}::jsonb`);
+                vals.push(JSON.stringify(extras));
             }
             vals.push(from);
             return withClient(async c => {
@@ -512,6 +742,542 @@ export function createPostgresStore({ connectionString }) {
                     await c.query('ROLLBACK');
                     throw e;
                 }
+            });
+        },
+
+        // ─── 🎒 الباقات المجدولة ──────────────────────────────────────
+
+        async createFixedPackage(pData) {
+            const id = 'fxp_' + Array.from(crypto.getRandomValues(new Uint8Array(10)))
+                .map(x => x.toString(16).padStart(2, '0')).join('');
+            const now = Date.now();
+            const { departDate, seatCapacity, active, ...data } = pData;
+            return withClient(async c => {
+                const res = await c.query(
+                    `INSERT INTO travel_fixed_packages
+                     (id, at, updated_at, depart_date, seat_capacity, seats_sold, active, data_json)
+                     VALUES ($1,$2,$3,$4,$5,0,$6,$7) RETURNING *`,
+                    [id, now, now, departDate, seatCapacity, active !== false, JSON.stringify(data)]
+                );
+                return rowToFixedPackage(res.rows[0]);
+            });
+        },
+
+        async getFixedPackage(id) {
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM travel_fixed_packages WHERE id = $1', [id]);
+                return rowToFixedPackage(res.rows[0]);
+            });
+        },
+
+        async listFixedPackages() {
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM travel_fixed_packages ORDER BY depart_date ASC');
+                return res.rows.map(rowToFixedPackage);
+            });
+        },
+
+        async updateFixedPackage(id, patch = {}) {
+            const { departDate, seatCapacity, active, ...dataPatch } = patch;
+            return withClient(async c => {
+                try {
+                    await c.query('BEGIN');
+                    const cur = await c.query('SELECT * FROM travel_fixed_packages WHERE id = $1 FOR UPDATE', [id]);
+                    if (!cur.rows[0]) { await c.query('ROLLBACK'); return null; }
+                    const row = cur.rows[0];
+                    const mergedData = { ...(row.data_json || {}), ...dataPatch };
+                    // السعة لا تهبط دون المباع — تقليصها تحت الحجوزات القائمة بيعٌ زائد بأثر رجعي
+                    const nextCapRaw = seatCapacity !== undefined ? seatCapacity : Number(row.seat_capacity);
+                    const nextCap = Math.max(nextCapRaw, Number(row.seats_sold));
+                    const res = await c.query(
+                        `UPDATE travel_fixed_packages
+                         SET updated_at = $2, depart_date = $3, seat_capacity = $4, active = $5, data_json = $6
+                         WHERE id = $1 RETURNING *`,
+                        [id, Date.now(),
+                            departDate !== undefined ? departDate : row.depart_date,
+                            nextCap,
+                            active !== undefined ? active : row.active,
+                            JSON.stringify(mergedData)]
+                    );
+                    await c.query('COMMIT');
+                    return rowToFixedPackage(res.rows[0]);
+                } catch (e) {
+                    await c.query('ROLLBACK');
+                    throw e;
+                }
+            });
+        },
+
+        async deleteFixedPackage(id) {
+            return withClient(async c => {
+                // عليها حجوزات (seats_sold > 0) → تُغلق لا تُحذف — الشرط داخل DELETE
+                const res = await c.query(
+                    'DELETE FROM travel_fixed_packages WHERE id = $1 AND seats_sold = 0', [id]
+                );
+                return res.rowCount > 0;
+            });
+        },
+
+        /**
+         * حجز مقاعد ذرّي: الشرط `seats_sold + n <= seat_capacity` داخل
+         * UPDATE نفسه — طلبان متزامنان على آخر مقعد لا يمرّان معاً أبداً.
+         * null عند نفاد السعة (جواب تجاري صريح لا خطأ).
+         */
+        async allocateFixedSeats(id, seats) {
+            return withClient(async c => {
+                const res = await c.query(
+                    `UPDATE travel_fixed_packages
+                     SET seats_sold = seats_sold + $2, updated_at = $3
+                     WHERE id = $1 AND active = TRUE AND seats_sold + $2 <= seat_capacity
+                     RETURNING *`,
+                    [id, seats, Date.now()]
+                );
+                return rowToFixedPackage(res.rows[0]);
+            });
+        },
+
+        async releaseFixedSeats(id, seats) {
+            return withClient(async c => {
+                const res = await c.query(
+                    `UPDATE travel_fixed_packages
+                     SET seats_sold = GREATEST(0, seats_sold - $2), updated_at = $3
+                     WHERE id = $1 RETURNING *`,
+                    [id, seats, Date.now()]
+                );
+                return rowToFixedPackage(res.rows[0]);
+            });
+        },
+
+        // ─── 🔔 اهتمامات الباقات (انتظار + طلبات عروض) ────────────────
+
+        async createPackageInterest(entry) {
+            const { kind, packageId = null, username, status, ...data } = entry;
+            return withClient(async c => {
+                if (kind === 'waitlist') {
+                    // انتظار مكرَّر لنفس (مستخدم، باقة) يُعاد كما هو — لا صفوف مكرّرة
+                    const dup = await c.query(
+                        `SELECT * FROM travel_package_interests
+                         WHERE kind = 'waitlist' AND status = 'new' AND username = $1 AND package_id = $2
+                         LIMIT 1`,
+                        [username, packageId]
+                    );
+                    if (dup.rows[0]) return { ...rowToInterest(dup.rows[0]), duplicate: true };
+                }
+                const id = 'pin_' + Array.from(crypto.getRandomValues(new Uint8Array(10)))
+                    .map(x => x.toString(16).padStart(2, '0')).join('');
+                const res = await c.query(
+                    `INSERT INTO travel_package_interests
+                     (id, at, kind, package_id, username, status, data_json)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+                    [id, Date.now(), kind, packageId, username, status || 'new', JSON.stringify(data)]
+                );
+                return rowToInterest(res.rows[0]);
+            });
+        },
+
+        async listPackageInterests(limit = 200) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'SELECT * FROM travel_package_interests ORDER BY at DESC LIMIT $1', [limit]
+                );
+                return res.rows.map(rowToInterest);
+            });
+        },
+
+        async listWaitlistByPackage(packageId) {
+            return withClient(async c => {
+                const res = await c.query(
+                    `SELECT * FROM travel_package_interests
+                     WHERE kind = 'waitlist' AND package_id = $1 AND status = 'new'`,
+                    [packageId]
+                );
+                return res.rows.map(rowToInterest);
+            });
+        },
+
+        async updatePackageInterest(id, patch = {}) {
+            const { status, ...dataPatch } = patch;
+            return withClient(async c => {
+                try {
+                    await c.query('BEGIN');
+                    const cur = await c.query('SELECT * FROM travel_package_interests WHERE id = $1 FOR UPDATE', [id]);
+                    if (!cur.rows[0]) { await c.query('ROLLBACK'); return null; }
+                    const mergedData = { ...(cur.rows[0].data_json || {}), ...dataPatch };
+                    const res = await c.query(
+                        `UPDATE travel_package_interests SET status = $2, data_json = $3 WHERE id = $1 RETURNING *`,
+                        [id, status !== undefined ? status : cur.rows[0].status, JSON.stringify(mergedData)]
+                    );
+                    await c.query('COMMIT');
+                    return rowToInterest(res.rows[0]);
+                } catch (e) {
+                    await c.query('ROLLBACK');
+                    throw e;
+                }
+            });
+        },
+
+        // ─── ⭐ مراجعات الباقات ────────────────────────────────────────
+
+        async upsertReview(rData) {
+            const id = 'rev_' + Array.from(crypto.getRandomValues(new Uint8Array(10)))
+                .map(x => x.toString(16).padStart(2, '0')).join('');
+            const now = Date.now();
+            return withClient(async c => {
+                // upsert بقيد (username, package_id) — الإرسال الثاني تحديث ذرّي
+                const res = await c.query(
+                    `INSERT INTO travel_package_reviews
+                     (id, at, updated_at, package_id, username, booking_id, rating, title, text)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                     ON CONFLICT (username, package_id) DO UPDATE SET
+                       updated_at = EXCLUDED.updated_at, booking_id = EXCLUDED.booking_id,
+                       rating = EXCLUDED.rating, title = EXCLUDED.title, text = EXCLUDED.text
+                     RETURNING *`,
+                    [id, now, now, rData.packageId, rData.username, rData.bookingId,
+                        rData.rating, rData.title, rData.text]
+                );
+                return rowToReview(res.rows[0]);
+            });
+        },
+
+        async listReviewsByPackage(packageId, limit = 100) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'SELECT * FROM travel_package_reviews WHERE package_id = $1 ORDER BY at DESC LIMIT $2',
+                    [packageId, limit]
+                );
+                return res.rows.map(rowToReview);
+            });
+        },
+
+        async getReviewByUser(username, packageId) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'SELECT * FROM travel_package_reviews WHERE username = $1 AND package_id = $2',
+                    [username, packageId]
+                );
+                return rowToReview(res.rows[0]);
+            });
+        },
+
+        // ─── 👤 حسابات Jatrava الذاتية ───────────────────────────────
+
+        async createUser(u) {
+            return withClient(async c => {
+                const email = String(u.email || '').trim().toLowerCase();
+                if (!email) throw new Error('البريد مطلوب.');
+                const id = 'usr_' + Array.from(crypto.getRandomValues(new Uint8Array(10)))
+                    .map(x => x.toString(16).padStart(2, '0')).join('');
+                const now = Date.now();
+                // ON CONFLICT DO NOTHING على قيد UNIQUE: البريد المستعمَل
+                // يعيد null بلا رمي — والسباق محسوم في المحرّك لا في الكود.
+                const res = await c.query(
+                    `INSERT INTO travel_users
+                       (id, email, name, password_hash, provider, email_verified_at, created_at, updated_at)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$7)
+                     ON CONFLICT (email) DO NOTHING
+                     RETURNING *`,
+                    [id, email, u.name || '', u.passwordHash || null,
+                     u.provider || 'password', u.emailVerifiedAt || null, now]
+                );
+                return res.rows[0] ? rowToUser(res.rows[0]) : null;
+            });
+        },
+
+        async getUserByEmail(email) {
+            const key = String(email || '').trim().toLowerCase();
+            if (!key) return null;
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM travel_users WHERE email = $1', [key]);
+                return rowToUser(res.rows[0]);
+            });
+        },
+
+        // 📢 لحملات تُرسَل لكل حسابات Jatrava الذاتية — الأقدم أولاً.
+        async listUsers() {
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM travel_users ORDER BY created_at ASC');
+                return res.rows.map(rowToUser);
+            });
+        },
+
+        // ⏳ **لا يُصفّي المنتهي**: الصلاحية يقرّرها resetTokenValid وحده في
+        // accounts.js. لو صفّاها المخزنان أيضاً لصار للانتهاء مصدران،
+        // ولاختلف السلوك بينهما عند أول تعديلٍ لأحدهما.
+        async getUserByResetTokenHash(hash) {
+            const key = String(hash || '').trim();
+            if (!key) return null;
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM travel_users WHERE reset_token_hash = $1', [key]);
+                return rowToUser(res.rows[0]);
+            });
+        },
+
+        async updateUser(id, patch = {}) {
+            return withClient(async c => {
+                // البريد والمعرّف لا يُرقَّعان (انظر fileStore): الهوية
+                // مفهرسة بالبريد، وتغييره ييتّم حجوزات صاحبه بصمت.
+                const map = {
+                    name: 'name', passwordHash: 'password_hash',
+                    provider: 'provider', emailVerifiedAt: 'email_verified_at',
+                    resetTokenHash: 'reset_token_hash', resetExpiresAt: 'reset_expires_at',
+                    liveAnnouncementSentAt: 'live_announcement_sent_at',
+                };
+                const sets = [], vals = [];
+                for (const [k, col] of Object.entries(map)) {
+                    if (Object.hasOwn(patch, k)) { vals.push(patch[k]); sets.push(`${col} = $${vals.length}`); }
+                }
+                vals.push(Date.now()); sets.push(`updated_at = $${vals.length}`);
+                vals.push(id);
+                const res = await c.query(
+                    `UPDATE travel_users SET ${sets.join(', ')} WHERE id = $${vals.length} RETURNING *`, vals);
+                return rowToUser(res.rows[0]);
+            });
+        },
+
+        // ─── 🤝 برنامج الإحالة (referrals.js) ─────────────────────────
+        // مفهرسٌ بـusername كبقية الخدمة — لا صلة بـtravel_users (انظر
+        // شرح النطاق الكامل في referrals.js).
+
+        async ensureReferralCode(username) {
+            const uname = String(username || '').trim().toLowerCase();
+            if (!uname) return null;
+            return withClient(async c => {
+                const existing = await c.query('SELECT code FROM travel_referrals WHERE username = $1', [uname]);
+                if (existing.rows[0]) return existing.rows[0].code;
+                // تصادم الرمز نادرٌ جداً (32^7) — إعادة المحاولة أرخص من
+                // قفلٍ أو تسلسلٍ إضافي، والتحقّق الصريح أرخص من عطبٍ صامت.
+                for (let attempt = 0; attempt < 5; attempt++) {
+                    const code = generateReferralCode();
+                    try {
+                        const res = await c.query(
+                            `INSERT INTO travel_referrals (username, code, bonus_points, created_at)
+                             VALUES ($1, $2, 0, $3) RETURNING code`,
+                            [uname, code, Date.now()]);
+                        return res.rows[0].code;
+                    } catch (e) {
+                        if (e.code !== '23505') throw e; // ليس تصادم تفرّد — عطبٌ حقيقي
+                        // إمّا سباق username (طلبان متزامنان لنفس المستخدم) أو تصادم الرمز
+                        const again = await c.query('SELECT code FROM travel_referrals WHERE username = $1', [uname]);
+                        if (again.rows[0]) return again.rows[0].code;
+                    }
+                }
+                throw new Error('تعذّر توليد رمز إحالة فريد.');
+            });
+        },
+
+        async getUsernameByReferralCode(code) {
+            const key = normalizeReferralCode(code);
+            if (!key) return null;
+            return withClient(async c => {
+                const res = await c.query('SELECT username FROM travel_referrals WHERE code = $1', [key]);
+                return res.rows[0]?.username || null;
+            });
+        },
+
+        // ⚠️ **أول كتابةٍ تفوز ولا تُستبدل لاحقاً** — نفس عرف رمز الاستعادة
+        // في accounts.js: حساب مُنشأ بالفعل لا يصبح "مُحالاً" بأثر رجعي.
+        async recordReferralSignup(username, referrerUsername) {
+            const uname = String(username || '').trim().toLowerCase();
+            const referrer = String(referrerUsername || '').trim().toLowerCase();
+            if (!uname || !referrer || referrer === uname) return false; // لا إحالة الذات
+            return withClient(async c => {
+                for (let attempt = 0; attempt < 5; attempt++) {
+                    const code = generateReferralCode();
+                    try {
+                        const res = await c.query(
+                            `INSERT INTO travel_referrals (username, code, referred_by, bonus_points, created_at)
+                             VALUES ($1, $2, $3, 0, $4)
+                             ON CONFLICT (username) DO NOTHING
+                             RETURNING username`,
+                            [uname, code, referrer, Date.now()]);
+                        return !!res.rows[0]; // false = الصفّ موجودٌ سلفاً بريفيرال أو بلاه
+                    } catch (e) {
+                        if (e.code !== '23505') throw e;
+                        // تصادم الرمز تحديداً (تعارض username يمتصّه ON CONFLICT بلا رمي)
+                    }
+                }
+                throw new Error('تعذّر توليد رمز إحالة فريد.');
+            });
+        },
+
+        async getReferralInfo(username) {
+            const uname = String(username || '').trim().toLowerCase();
+            return withClient(async c => {
+                const row = (await c.query(
+                    'SELECT code, referred_by, bonus_points FROM travel_referrals WHERE username = $1', [uname])).rows[0];
+                const countRes = await c.query(
+                    'SELECT COUNT(*)::int AS n FROM travel_referrals WHERE referred_by = $1', [uname]);
+                return {
+                    code: row?.code || null,
+                    referredBy: row?.referred_by || null,
+                    bonusPoints: row ? Number(row.bonus_points) : 0,
+                    referredCount: countRes.rows[0]?.n || 0,
+                };
+            });
+        },
+
+        // ذرّي فعلياً: شرطٌ داخل UPDATE واحد — طلبان متزامنان لا يمكن أن
+        // يفوز كلاهما، فمهما حاولا يظفر أحدهما فقط بـreward_granted_at.
+        async grantReferralRewardIfDue(username, points) {
+            const uname = String(username || '').trim().toLowerCase();
+            return withClient(async c => {
+                const res = await c.query(
+                    `UPDATE travel_referrals
+                     SET bonus_points = bonus_points + $2, reward_granted_at = $3
+                     WHERE username = $1 AND referred_by IS NOT NULL AND reward_granted_at IS NULL
+                     RETURNING referred_by`,
+                    [uname, points, Date.now()]);
+                if (!res.rows[0]) return { granted: false, referredBy: null };
+                return { granted: true, referredBy: res.rows[0].referred_by };
+            });
+        },
+
+        // upsert ذرّي: `bonus_points = travel_referrals.bonus_points + الجديد`
+        // يصحّ حتى لو تزامن نداءان لنفس المُحيل (لا يحدث عملياً هنا، لكن
+        // الصحة لا تعتمد على الاحتمال).
+        async addBonusPoints(username, points) {
+            const uname = String(username || '').trim().toLowerCase();
+            if (!uname) return;
+            await withClient(async c => {
+                for (let attempt = 0; attempt < 5; attempt++) {
+                    const code = generateReferralCode();
+                    try {
+                        await c.query(
+                            `INSERT INTO travel_referrals (username, code, bonus_points, created_at)
+                             VALUES ($1, $2, $3, $4)
+                             ON CONFLICT (username) DO UPDATE
+                             SET bonus_points = travel_referrals.bonus_points + EXCLUDED.bonus_points`,
+                            [uname, code, points, Date.now()]);
+                        return;
+                    } catch (e) {
+                        if (e.code !== '23505') throw e; // تصادم رمزٍ نادر — لا يمسّ bonus_points
+                    }
+                }
+                throw new Error('تعذّر توليد رمز إحالة فريد.');
+            });
+        },
+
+        // ─── 🏷️ أكواد الخصم (discounts.js) ─────────────────────────────
+
+        async createDiscountCode(dData) {
+            const now = Date.now();
+            return withClient(async c => {
+                try {
+                    const res = await c.query(
+                        `INSERT INTO travel_discount_codes
+                         (code, at, updated_at, type, value, currency, products_json,
+                          max_discount, min_amount, max_uses, used_count, expires_at, active, note)
+                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,$11,$12,$13) RETURNING *`,
+                        [dData.code, now, now, dData.type, dData.value, dData.currency || null,
+                            dData.products ? JSON.stringify(dData.products) : null,
+                            dData.maxDiscount ?? null, dData.minAmount ?? null, dData.maxUses ?? null,
+                            dData.expiresAt ?? null, dData.active !== false, dData.note || null]
+                    );
+                    return rowToDiscountCode(res.rows[0]);
+                } catch (e) {
+                    if (e.code === '23505') return null; // مستعمَل سلفاً
+                    throw e;
+                }
+            });
+        },
+
+        async getDiscountCodeByCode(code) {
+            const key = String(code || '').trim().toUpperCase();
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM travel_discount_codes WHERE code = $1', [key]);
+                return rowToDiscountCode(res.rows[0]);
+            });
+        },
+
+        async listDiscountCodes() {
+            return withClient(async c => {
+                const res = await c.query('SELECT * FROM travel_discount_codes ORDER BY at DESC');
+                return res.rows.map(rowToDiscountCode);
+            });
+        },
+
+        async updateDiscountCode(code, patch = {}) {
+            const sets = ['updated_at = $2'];
+            const vals = [code, Date.now()];
+            let i = 3;
+            const cols = {
+                type: 'type', value: 'value', currency: 'currency',
+                maxDiscount: 'max_discount', minAmount: 'min_amount',
+                maxUses: 'max_uses', expiresAt: 'expires_at', active: 'active', note: 'note',
+            };
+            for (const [key, col] of Object.entries(cols)) {
+                if (key in patch) { sets.push(`${col} = $${i++}`); vals.push(patch[key]); }
+            }
+            if ('products' in patch) {
+                sets.push(`products_json = $${i++}`);
+                vals.push(patch.products ? JSON.stringify(patch.products) : null);
+            }
+            return withClient(async c => {
+                const res = await c.query(
+                    `UPDATE travel_discount_codes SET ${sets.join(', ')} WHERE code = $1 RETURNING *`,
+                    vals
+                );
+                return rowToDiscountCode(res.rows[0]);
+            });
+        },
+
+        async deleteDiscountCode(code) {
+            return withClient(async c => {
+                const res = await c.query('DELETE FROM travel_discount_codes WHERE code = $1', [code]);
+                return res.rowCount > 0;
+            });
+        },
+
+        /**
+         * استهلاكٌ ذرّي: الشرط (نشط/غير منتهٍ/دون السقف) داخل UPDATE نفسه —
+         * طلبان متزامنان على آخر استعمالٍ من كودٍ محدود لا يفوزان معاً.
+         * يعيد null حين الكود غير صالح للاستهلاك (جوابٌ تجاري صريح لا خطأ).
+         */
+        async redeemDiscountCode(code) {
+            return withClient(async c => {
+                const res = await c.query(
+                    `UPDATE travel_discount_codes
+                     SET used_count = used_count + 1, updated_at = $2
+                     WHERE code = $1 AND active = TRUE
+                       AND (expires_at IS NULL OR expires_at > $2)
+                       AND (max_uses IS NULL OR used_count < max_uses)
+                     RETURNING *`,
+                    [code, Date.now()]
+                );
+                return rowToDiscountCode(res.rows[0]);
+            });
+        },
+
+        // ─── ❤️ المفضلة ───────────────────────────────────────────────
+
+        async addWishlist(username, packageId) {
+            return withClient(async c => {
+                const res = await c.query(
+                    `INSERT INTO travel_wishlist (username, package_id, at)
+                     VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+                    [username, packageId, Date.now()]
+                );
+                return res.rowCount > 0;
+            });
+        },
+
+        async removeWishlist(username, packageId) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'DELETE FROM travel_wishlist WHERE username = $1 AND package_id = $2',
+                    [username, packageId]
+                );
+                return res.rowCount > 0;
+            });
+        },
+
+        async listWishlistByUser(username) {
+            return withClient(async c => {
+                const res = await c.query(
+                    'SELECT * FROM travel_wishlist WHERE username = $1 ORDER BY at DESC',
+                    [username]
+                );
+                return res.rows.map(r => ({ username: r.username, packageId: r.package_id, at: Number(r.at) }));
             });
         },
 
