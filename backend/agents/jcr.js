@@ -1270,7 +1270,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
         // 🧰 المسار الهجين — مشروع كبير → React/Next حقيقي بمعاينة حيّة؛ غيره → Vanilla سريع
         try {
-            const ptype = blueprint?.category && blueprint.category !== 'other' ? blueprint.category : detectProjectType(goal);
+            // 🛡️ فئة المخطّط تُعتمد فقط حين تأتي من النموذج — الاحتياط يضع 'business'
+            // دائماً فكان يُعطّل الموجّه الهجين (React للمشاريع الكبيرة) كلما غاب الـLLM
+            const ptype = blueprint?.category && blueprint.category !== 'other' && blueprint._source !== 'fallback'
+                ? blueprint.category : detectProjectType(goal);
             const scope = getProjectMemory(username, activeProject)?.plan?.scope || '';
             const stack = resolveStack({ projectType: ptype, scope });
             const starter = selectStarter({ projectType: ptype, scope });
@@ -1291,7 +1294,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         let imageContext = '';
         try {
             // نوع المشروع من المخطط الذكي (أدق من كشف الكلمات المفتاحية) مع احتياط
-            const projectType = blueprint?.category && blueprint.category !== 'other'
+            const projectType = blueprint?.category && blueprint.category !== 'other' && blueprint._source !== 'fallback'
                 ? blueprint.category
                 : detectProjectType(goal);
             const reqAnalysis = await analyzeRequirements(goal, projectType);
