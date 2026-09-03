@@ -28,10 +28,10 @@ const PLAN_FILES = () => [
     { name: 'script.js', content: JS },
 ];
 
-function kernelScenario(prefix, { coder, architect, qa, extraAgents = {} } = {}) {
+function kernelScenario(prefix, { coder, architect, qa, extraAgents = {}, dir = null } = {}) {
     const s = scenario(prefix);
     setUserLanguage(s.ctx.username, 'ar');
-    const dir = emptyProject();
+    dir = dir || emptyProject();
     const calls = { coder: [], architect: [], qa: [] };
     const agents = {
         getState: () => null,
@@ -222,4 +222,62 @@ test('مشروع يحتاج خادماً: فريق الخلفية يسقط بل�
     idx.forEach((i, k) => assert.ok(i >= 0, `سطر مفقود: ${order[k]}`));
     for (let k = 1; k < idx.length; k++) assert.ok(idx[k] > idx[k - 1], `ترتيب خاطئ عند ${order[k]}`);
     assert.doesNotMatch(s.logs(), /\[PostgresAgent\]|\[AuthAgent\]|تعذّر توليد الخادم|خطأ في BackendAgent/);
+});
+
+// ── مرحلة القالب (قبل حلقة النقاش) — خط أساس الدفعة 3 ─────────────────────
+const TEMPLATE_HTML = '<!DOCTYPE html><html><head><title>TPL-MARKER</title></head><body><header>قالب</header></body></html>';
+
+test('القالب ينجح على مجلد فارغ: توجيهاته تدخل السياق، وأقسامه التعريفية تُستبدل بشاشات الأدوار للتطبيق', async () => {
+    const tpl = [];
+    const s = kernelScenario('pipe8', {
+        extraAgents: {
+            templateAgent: async (goal, projectPath, category) => {
+                tpl.push({ goal, projectPath, category });
+                fs.writeFileSync(path.join(projectPath, 'index.html'), TEMPLATE_HTML);
+                fs.writeFileSync(path.join(projectPath, 'styles.css'), 'header{color:red}');
+                return { success: true, template: 'biz', source: 'local', context: { visualGuide: 'GUIDE-X', sections: ['القائمة', 'عنّا'] } };
+            },
+        },
+    });
+    const r = await s.run();
+    assert.equal(r.success, true);
+    assert.equal(tpl.length, 1);
+    assert.equal(tpl[0].projectPath, s.dir);
+    assert.match(s.logs(), /\[TemplateAgent\]: ✅ تم تطبيق قالب biz \(local\)/);
+    // الهدف تطبيق/أداة → أقسام البروشور تُستبدل بشاشات الأدوار من نموذج المجال
+    assert.match(s.logs(), /\[TemplateAgent\]: 🧩 تطبيق تفاعلي — استُبدلت أقسام البروشور بشاشات الأدوار: واجهة /);
+    const coder = s.agentCalls.coder[0];
+    assert.ok(coder.sections.length >= 1 && coder.sections.some(x => /^واجهة /.test(x)), JSON.stringify(coder.sections));
+    assert.ok(!coder.sections.includes('القائمة'), 'أقسام القالب التعريفية لا تصل للمبرمج في تطبيق');
+    // السياق الأولي يُعاد قراءته بعد القالب → المبرمج يرى ملفات القالب
+    assert.match(coder.codeContext, /TPL-MARKER/);
+    assert.match(coder.prompt, /TPL-MARKER/);
+    // ترتيب: القالب قبل المصمّم قبل المبرمج
+    const i = [s.logAt(/\[TemplateAgent\]: 📥/), s.logAt(/\[DesignerAgent\]: 🎨/), s.logAt(/كتابة الشفرة \(دورة 1/)];
+    assert.ok(i[0] >= 0 && i[0] < i[1] && i[1] < i[2], i.join(','));
+    // حقيقة اليوم: المصمّم يعمل بعد القالب ويكتب فوق visualGuide الخاص به
+    assert.notEqual(s.agentCalls.coder[0].prompt.includes('GUIDE-X'), true);
+});
+
+test('القالب يفشل أو يرمي → سطر ❌ صادق ولا يسقط البناء، والمبرمج يبدأ من سياق فارغ', async () => {
+    const a = kernelScenario('pipe9', { extraAgents: { templateAgent: async () => ({ success: false, error: 'لا شبكة' }) } });
+    assert.equal((await a.run()).success, true);
+    assert.match(a.logs(), /\[TemplateAgent\]: ❌ فشل: لا شبكة/);
+    assert.equal(a.agentCalls.coder[0].codeContext, '');
+
+    const b = kernelScenario('pipe10', { extraAgents: { templateAgent: async () => { throw new Error('انفجار'); } } });
+    assert.equal((await b.run()).success, true);
+    assert.match(b.logs(), /\[TemplateAgent\]: ❌ خطأ: انفجار/);
+    assert.doesNotMatch(b.logs(), /تم تطبيق قالب/);
+});
+
+test('مجلد فيه أكثر من ملف → لا استدعاء للقالب أصلاً', async () => {
+    const dir = emptyProject();
+    fs.writeFileSync(path.join(dir, 'notes.txt'), 'a');
+    fs.writeFileSync(path.join(dir, 'README.md'), 'b');
+    let called = 0;
+    const s = kernelScenario('pipe11', { dir, extraAgents: { templateAgent: async () => { called++; return { success: true, template: 'x', source: 'y' }; } } });
+    assert.equal((await s.run()).success, true);
+    assert.equal(called, 0);
+    assert.doesNotMatch(s.logs(), /\[TemplateAgent\]/);
 });

@@ -439,3 +439,31 @@ Model Router وMission Control لاحقاً بلا إعادة كتابة.
 `initialCodeContext` على السياق)، ثم حلقة النقاش نفسها (`_debateLoop`)؛
 بعدها يصبح `runDynamicMultiAgentRuntime` قائمةَ مراحل مرتّبة.
 
+## 🧩 الاستخراج — الدفعة 3 (2026-09-03): القالب والمصمّم وحلقة النقاش — الدالة صارت قائمة مراحل
+
+**خط الأساس أولاً** (3 اختبارات جديدة في `jcrRuntimePipeline`، شُغّلت على الكود
+القديم فمرّت): القالب ينجح على مجلد فارغ → توجيهاته تدخل السياق الأولي
+(`TPL-MARKER` يصل إلى prompt المبرمج وcodeContext)، وأقسامه التعريفية تُستبدل
+بشاشات الأدوار لأن الهدف تطبيق/أداة، والترتيب قالب ← مصمّم ← مبرمج؛ القالب
+يفشل أو يرمي → سطر ❌ صادق بلا إسقاط البناء وسياق فارغ للمبرمج؛ مجلد فيه
+أكثر من ملف → لا استدعاء للقالب أصلاً. حقيقة موثّقة: المصمّم يعمل *بعد*
+القالب فيكتب فوق `visualGuide` الخاص به (الهوية البصرية النهائية للمصمّم دائماً).
+
+**ثم النقل الحرفي** (790/790، خط الأساس مطابق): `_stageTemplate(context,
+roomName, agents)`، `_stageDesigner(context, roomName)`، `_stageDebate(context,
+roomName, agents)` — الأخيرة تُرجع الخطة المقبولة أو `null` عند الاستنفاد/
+الميزانية وترمي فوراً عند عطل المزوّد الدائم. `initialCodeContext` صار
+`context.initialCodeContext` (تكتبه مرحلة القالب ويقرؤه النقاش — نفس عقد
+`context.plan`). `runDynamicMultiAgentRuntime` بقياس awk نفسه: **184 → 45**
+سطراً، وهي الآن حرفياً:
+
+```
+initialCodeContext ← قراءة القرص
+_stageTemplate → _stageDesigner → plan = _stageDebate
+plan ? [_stageGuardAndWrite … _stageBehaviorVerify] → success
+     : سجل الأسباب الأخيرة → throw
+```
+هذا هو الأساس الذي يقف عليه Model Router (كل مرحلة تُسأل أي نموذج تريد)
+وMission Control (كل مرحلة حدثٌ قابل للعرض/الإيقاف) بلا إعادة كتابة.
+مجموع الدفعات الثلاث: 434+ سطراً من جسد حلقة واحدة إلى 18 مرحلة معنونة.
+
