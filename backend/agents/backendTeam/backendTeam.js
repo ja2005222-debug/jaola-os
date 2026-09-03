@@ -14,18 +14,13 @@ import path from 'path';
 import { promises as fsp } from 'fs';
 import { compileSpecToPrompt } from '../../core/runtime/AgentSpec.js';
 import { orderTasks } from '../../core/runtime/TaskGraph.js';
+import { safeRelPath, resolveInside } from '../../core/runtime/workspacePaths.js';
 import { BACKEND_TEAM, TEAM_BY_ID, BACKEND_DEBUG_AGENT } from './specs.js';
 import { syntaxCheckFiles } from './backendVerify.js';
 
-/** يطهّر مساراً نسبياً: يمنع الجذر المطلق و.. وأحرف خطيرة، ويوحّد الفواصل */
-export function safeRelPath(p) {
-    if (typeof p !== 'string') return null;
-    let clean = p.trim().replace(/\\/g, '/').replace(/^\/+/, '');
-    if (!clean || clean.includes('..') || /[<>:"|?*\0]/.test(clean)) return null;
-    // احصر الطول والأحرف المسموحة
-    if (clean.length > 200 || !/^[\w.\-\/ ]+$/.test(clean)) return null;
-    return clean;
-}
+// 🛡️ حارس المسار انتقل حرفياً إلى core/runtime/workspacePaths.js (محور Tool)
+// ويُعاد تصديره هنا كي يبقى عقد هذه الوحدة كما هو لكل مستورديها.
+export { safeRelPath };
 
 /** يكتب ملفات الفريق إلى مجلد المشروع بأمان (خارج المشروع = مرفوض) */
 export async function writeBackendTeamFiles(files, projectPath, { transform } = {}) {
@@ -34,8 +29,8 @@ export async function writeBackendTeamFiles(files, projectPath, { transform } = 
     for (const f of files) {
         const rel = safeRelPath(f.path);
         if (!rel) continue;
-        const abs = path.resolve(root, rel);
-        if (abs !== root && !abs.startsWith(root + path.sep)) continue; // منع الخروج من المشروع
+        const abs = resolveInside(root, rel); // نواة الاحتواء المشتركة
+        if (!abs) continue; // منع الخروج من المشروع
         let content = f.content;
         if (typeof transform === 'function') {
             try { content = await transform(rel, content); } catch { /* أبقِ الأصل */ }

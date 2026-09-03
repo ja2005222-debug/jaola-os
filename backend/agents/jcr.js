@@ -54,6 +54,7 @@ import { setUserLanguage } from './languageDetector.js';
 import { assertBuildAgents, DELIVERY_STAGES } from '../core/contracts/index.js';
 import { orderTasks } from '../core/runtime/TaskGraph.js';
 import { createExecutionContext, contextFromRequest } from '../core/runtime/ExecutionContext.js';
+import { resolveInside } from '../core/runtime/workspacePaths.js';
 import { registerMission, throwIfAborted, clearMission } from '../core/runtime/AbortRegistry.js';
 import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import { snapshotWorkspace } from '../services/workspaceStore.js';
@@ -160,8 +161,9 @@ async function writePlanFiles(projectPath, files) {
         const safe = path.normalize(f.name).replace(/\\/g, '/');
         // لا مسارات مطلقة، لا صعود خارج المشروع، لا ملفات مخفية (لن تُخدَّم أصلاً)
         if (path.isAbsolute(safe) || safe.split('/').some(p => p === '..' || p.startsWith('.'))) continue;
-        const fp = path.join(projectPath, safe);
-        if (!fp.startsWith(projectPath)) continue;
+        // الاحتواء عبر النواة المشتركة: الفحص السابق كان بلا فاصل مسار (دفاعٌ معطوب)
+        const fp = resolveInside(projectPath, safe);
+        if (!fp) continue;
         await fsPromises.mkdir(path.dirname(fp), { recursive: true });
         await fsPromises.writeFile(fp, f.content);
     }
