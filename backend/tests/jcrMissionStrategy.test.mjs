@@ -7,6 +7,7 @@
 // المخطّط ونموذج المجال يسقطان فوراً إلى احتياطهما الحتمي لغياب المزوّد.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createExecutionContext } from '../core/runtime/ExecutionContext.js';
 import { scenario, tempProject, workingProject, emptyProject } from './helpers/jcrScenario.mjs';
 import { getProjectState, STATES, isBuilding } from '../agents/stateMachine.js';
 import { analyzeProjectStatic } from '../agents/behaviorVerifier.js';
@@ -23,7 +24,7 @@ function missionScenario(prefix) {
     s.rt._buildReactProject = async (...a) => { strat.react.push(a); return { success: true, react: true }; };
     s.rt.runDynamicMultiAgentRuntime = async (context) => { strat.kernel.push(context); return { success: true }; };
     const run = (goal, projectPath, agents = {}) =>
-        s.rt._runMissionNow(goal, projectPath, s.ctx.username, s.ctx.activeProject, s.ctx.roomName, agents, null);
+        s.rt._runMissionNow(goal, createExecutionContext({ ...s.ctx, projectPath, agents }));
     const chosen = () => Object.entries(strat).filter(([, v]) => v.length).map(([k]) => k);
     const state = () => getProjectState(s.ctx.username, s.ctx.activeProject).state;
     return { ...s, strat, run, chosen, state };
@@ -49,12 +50,14 @@ test('هدف تسويقي على مجلد فارغ → JAOLA Registry حصراً
     const dir = emptyProject();
     const r = await s.run(LANDING_GOAL, dir);
     assert.deepEqual(s.chosen(), ['registry']);
-    const [goal, projectPath, username, project, room] = s.strat.registry[0];
+    // العقد الجديد: (goal, ExecutionContext) — نفس القيم، في كائن واحد
+    const [goal, ec] = s.strat.registry[0];
     assert.equal(goal, LANDING_GOAL);
-    assert.equal(projectPath, dir);
-    assert.equal(username, s.ctx.username);
-    assert.equal(project, s.ctx.activeProject);
-    assert.equal(room, s.ctx.roomName);
+    assert.equal(ec.projectPath, dir);
+    assert.equal(ec.username, s.ctx.username);
+    assert.equal(ec.activeProject, s.ctx.activeProject);
+    assert.equal(ec.roomName, s.ctx.roomName);
+    assert.ok(Object.isFrozen(ec), 'السياق مجمَّد');
     assert.equal(r.registry, true);
 });
 
@@ -120,7 +123,7 @@ test('مشروع كبير (saas) على مجلد فارغ → React/Next بأق�
     await s.run(BIG_GOAL, emptyProject());
     assert.deepEqual(s.chosen(), ['react']);
     assert.match(s.logs(), /مشروع كبير → React\/Next/);
-    const opts = s.strat.react[0][5];
+    const opts = s.strat.react[0][2]; // (goal, ctx, opts)
     assert.ok(Array.isArray(opts.sections), 'أقسام المخطّط تُمرَّر');
 });
 
@@ -172,7 +175,7 @@ test('executeMission: القبول، ثم رفض تكرار المشروع نف�
     setUserLanguage(s.ctx.username, 'ar');
     delete s.rt.executeMission; // المساعد يستبدلها بمسجِّل — هنا نختبر الأصلية من الـprototype
     s.rt._runMissionNow = () => new Promise(() => {});
-    const go = (project) => s.rt.executeMission('ابني موقعاً', s.ctx.projectPath, s.ctx.username, project, s.ctx.roomName, {}, null);
+    const go = (project) => s.rt.executeMission('ابني موقعاً', createExecutionContext({ ...s.ctx, activeProject: project }));
 
     assert.equal(go('q-a').accepted, true);
     assert.equal(go('q-a').accepted, false, 'المشروع نفسه نشط');
