@@ -26,7 +26,7 @@ import { createMockCarsProvider } from '../src/providers/mockCarsProvider.js';
 import { normalizeDuffelCarResult } from '../src/providers/duffelCarsProvider.js';
 import { createMockEsimProvider } from '../src/providers/mockEsimProvider.js';
 import { buildProvider, buildStaysProvider, buildCarsProvider, buildEsimProvider } from '../src/providers/index.js';
-import { readMarkupPct, applyMarkup, DEFAULT_MARKUP_PCT, readPackageMarkupPct, DEFAULT_PACKAGE_MARKUP_PCT, readCategoryMarkupPct, MAX_MARKUP_PCT } from '../src/pricing.js';
+import { readMarkupPct, applyMarkup, DEFAULT_MARKUP_PCT, readPackageMarkupPct, DEFAULT_PACKAGE_MARKUP_PCT, readCategoryMarkupPct, MAX_MARKUP_PCT, readFxBufferPct, DEFAULT_FX_BUFFER_PCT, MAX_FX_BUFFER_PCT, PERCENT_ENV_RULES, collectPercentConfigIssues, formatPercentIssue } from '../src/pricing.js';
 import { normalizeContract, contractCoversStay, contractOfferId, parseContractOfferId } from '../src/contracts.js';
 import { normalizeDiscountCode, computeDiscount } from '../src/discounts.js';
 import {
@@ -8457,5 +8457,74 @@ describe('💸 الإلغاء المتأخر لسعرٍ قابل للاسترد�
         const { refunds, paid } = await bookPayCancel({ policy: [] });
         assert.equal(refunds.length, 1);
         assert.equal(refunds[0].amount ?? paid, paid);
+    });
+});
+
+describe('🚨 حارس إعداد النِسَب: السقوط الآمن يبقى، لكنه يصير مسموعاً', () => {
+    // ⚠️ الحادثة الحقيقية بحرفها (٣ سبتمبر ٢٠٢٦): مفتاح LiteAPI لُصق في
+    // متغيّر هامش الطيران على لوحة الاستضافة، فسقط الهامش على الافتراضي
+    // بلا خطأ ولا سجلّ ولا عَرَضٍ واحد في الخدمة.
+    const KEY = 'sand_98ef61b4-6c8f-46df-b4c4-357ed4d53918';
+
+    test('مفتاح API في حقل نسبة: يُكتشف، ويُلمَّح لسببه، وقيمته لا تُطبع', () => {
+        const issues = collectPercentConfigIssues({ TRAVEL_MARKUP_PCT_FLIGHT: KEY });
+        assert.equal(issues.length, 1);
+        assert.equal(issues[0].envVar, 'TRAVEL_MARKUP_PCT_FLIGHT');
+        assert.equal(issues[0].reason, 'not-a-number');
+        assert.equal(issues[0].looksLikeKey, true);
+
+        const msg = formatPercentIssue(issues[0]);
+        assert.match(msg, /لُصقت في المتغيّر الخطأ/);
+        // 🔒 الأهم: التشخيص لا يتحوّل تسريباً — لا القيمة ولا أي جزء منها
+        assert.ok(!msg.includes(KEY), 'القيمة الخام لا تُطبع');
+        assert.ok(!msg.includes('98ef61b4'), 'ولا جزءٌ منها');
+        assert.ok(msg.includes(String(KEY.length)), 'يُذكر الطول وحده للتشخيص');
+    });
+
+    test('القيمة الفارغة تُميَّز: تُقرأ صفراً فعلاً — لا سقوطاً على الافتراضي', () => {
+        // Number('') === 0 وهو رقمٌ سليمٌ في المدى، فيمرّ ويصير «بلا عمولة»
+        assert.equal(readCategoryMarkupPct('flight', { TRAVEL_MARKUP_PCT_FLIGHT: '' }, 8), 0,
+            'السلوك القائم موثَّق لا مُغيَّر: الفارغ صفرٌ فعلاً');
+        const [issue] = collectPercentConfigIssues({ TRAVEL_MARKUP_PCT_FLIGHT: '  ' });
+        assert.equal(issue.reason, 'empty');
+        assert.match(formatPercentIssue(issue), /بلا عمولة/);
+    });
+
+    test('المتغيّر غير المضبوط ليس عطباً — غيابه سقوطٌ مقصود', () => {
+        assert.deepEqual(collectPercentConfigIssues({}), []);
+        assert.deepEqual(collectPercentConfigIssues({ TRAVEL_MARKUP_PCT: '12', TRAVEL_FX_BUFFER_PCT: '3' }), []);
+        assert.deepEqual(collectPercentConfigIssues({ TRAVEL_MARKUP_PCT_STAY: ' 7 ' }), [], 'المسافات تُقصّ');
+        assert.deepEqual(collectPercentConfigIssues({ TRAVEL_MARKUP_PCT: '0' }), [], 'صفرٌ صريح قرارٌ لا خطأ');
+    });
+
+    test('الخروج عن المدى يُكتشف بحدّ كل متغيّر لا بحدٍّ واحد', () => {
+        const [over] = collectPercentConfigIssues({ TRAVEL_MARKUP_PCT: String(MAX_MARKUP_PCT + 1) });
+        assert.equal(over.reason, 'out-of-range');
+        assert.equal(over.max, MAX_MARKUP_PCT);
+        // نفس الرقم مقبولٌ كهامش ومرفوضٌ كهامش صرف — الحدّان مختلفان فعلاً
+        assert.deepEqual(collectPercentConfigIssues({ TRAVEL_MARKUP_PCT: '20' }), []);
+        const [fx] = collectPercentConfigIssues({ TRAVEL_FX_BUFFER_PCT: '20' });
+        assert.equal(fx.max, MAX_FX_BUFFER_PCT);
+        assert.deepEqual(collectPercentConfigIssues({ TRAVEL_MARKUP_PCT: '-1' })[0].reason, 'out-of-range');
+    });
+
+    test('الحارس يغطّي كل متغيّرات النِسَب السبعة — لا قائمة تنسى واحداً', () => {
+        const covered = PERCENT_ENV_RULES.map(r => r.envVar).sort();
+        assert.deepEqual(covered, [
+            'TRAVEL_FX_BUFFER_PCT', 'TRAVEL_MARKUP_PCT', 'TRAVEL_MARKUP_PCT_CAR',
+            'TRAVEL_MARKUP_PCT_ESIM', 'TRAVEL_MARKUP_PCT_FLIGHT', 'TRAVEL_MARKUP_PCT_STAY',
+            'TRAVEL_PACKAGE_MARKUP_PCT',
+        ]);
+        // كلها تُكتشف دفعةً واحدة لا أولها فقط
+        assert.equal(collectPercentConfigIssues(Object.fromEntries(covered.map(k => [k, 'x']))).length, 7);
+    });
+
+    test('readFxBufferPct: مصدر واحد — سجلّ الإقلاع كان يعلن قيمةً لا تُستعمل', () => {
+        assert.equal(readFxBufferPct({ TRAVEL_FX_BUFFER_PCT: '3' }), 3);
+        assert.equal(readFxBufferPct({}), DEFAULT_FX_BUFFER_PCT);
+        // كان السجلّ يطبع `process.env.TRAVEL_FX_BUFFER_PCT || 2` أي «99%»
+        // بينما الحساب يستعمل 2% — إعلانٌ يخالف الفعل
+        assert.equal(readFxBufferPct({ TRAVEL_FX_BUFFER_PCT: '99' }), DEFAULT_FX_BUFFER_PCT);
+        assert.equal(readFxBufferPct({ TRAVEL_FX_BUFFER_PCT: KEY }), DEFAULT_FX_BUFFER_PCT);
     });
 });

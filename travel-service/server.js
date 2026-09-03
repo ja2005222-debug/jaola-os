@@ -25,7 +25,7 @@ import {
     dummyHash, newResetToken, hashResetToken, resetTokenValid, RESET_TTL_MIN,
 } from './src/accounts.js';
 import { checkedBaggage, arrivalDayOffset, layovers } from './src/itinerary.js';
-import { readMarkupPct, readPackageMarkupPct, readCategoryMarkupPct, applyMarkup } from './src/pricing.js';
+import { readMarkupPct, readPackageMarkupPct, readCategoryMarkupPct, applyMarkup, readFxBufferPct, collectPercentConfigIssues, formatPercentIssue } from './src/pricing.js';
 import { quotePackage, bookPackage, cancelPackage, retryPackageCompensations } from './src/packages.js';
 import {
     normalizeFixedPackage, priceFixedPackage, publicFixedPackage,
@@ -2974,10 +2974,7 @@ ${urls}
      * وفشل الصرف لا يمنع بيعاً: نسقط إلى عملة المزوّد ونُكمل.
      */
     const billingCurrency = String(process.env.TRAVEL_BILLING_CURRENCY || '').trim().toUpperCase() || null;
-    const fxBufferPct = (() => {
-        const raw = Number(process.env.TRAVEL_FX_BUFFER_PCT);
-        return Number.isFinite(raw) && raw >= 0 && raw <= 10 ? raw : 2;
-    })();
+    const fxBufferPct = readFxBufferPct();
 
     async function resolveBilling(amount, currency) {
         const from = String(currency || '').toUpperCase();
@@ -3990,6 +3987,14 @@ if (isMain) {
     const port = Number(process.env.PORT || 4200);
     app.listen(port, () => {
         console.log(`✈️ بوابة السفر على المنفذ ${port} (المزوّد: ${provider.name}/${provider.mode || 'live'}، الفنادق: ${staysProvider.name}/${staysProvider.mode || 'live'}، السيارات: ${carsProvider.name}/${carsProvider.mode || 'live'}، eSIM: ${esimProvider.name}/${esimProvider.mode || 'live'}، التخزين: ${store.name}، الهامش: ${markupPct}%)`);
+        // 🚨 أولاً: إعدادُ نسبةٍ مضبوطٌ ولا يُستعمل. يُطبع قبل كل تحذير
+        // آخر لأنه الوحيد الذي لا عَرَض له في الخدمة نفسها (راجع حارس
+        // النِسَب في pricing.js) — من لا يقرأ السجلّ لن يعرف به أبداً.
+        const pctIssues = collectPercentConfigIssues();
+        for (const issue of pctIssues) console.error(formatPercentIssue(issue));
+        if (pctIssues.length) {
+            console.error(`⚠️ ${pctIssues.length} متغيّر نسبةٍ مضبوطٌ ولا تُستعمل قيمته — راجع إعداد الاستضافة.`);
+        }
         if (!agent) console.warn('⚠️ الايجنت غير مفعَّل — اضبط TRAVEL_AGENT_API_KEY لتفعيل المساعد الحاجز.');
         if (provider.name === 'mock') console.warn('⚠️ مزوّد محاكاة — اضبط DUFFEL_API_KEY (يبدأ بـduffel_test للتجريبي).');
         if (process.env.STRIPE_SECRET_KEY) {
@@ -3997,7 +4002,7 @@ if (isMain) {
             console.log(`💳 الدفع مفعَّل عبر Stripe (${live ? 'حساب حي' : 'وضع تجريبي sk_test'})${process.env.STRIPE_WEBHOOK_SECRET ? '' : ' — ⚠️ STRIPE_WEBHOOK_SECRET غير مضبوط: التسوية ستعتمد على المصالحة الدورية فقط'}.`);
             const bc = String(process.env.TRAVEL_BILLING_CURRENCY || '').trim().toUpperCase();
             console.log(bc
-                ? `💱 التحصيل بعملة ${bc} (تحويل من عملة المزوّد بهامش صرف ${process.env.TRAVEL_FX_BUFFER_PCT || 2}% معلَن).`
+                ? `💱 التحصيل بعملة ${bc} (تحويل من عملة المزوّد بهامش صرف ${readFxBufferPct()}% معلَن).`
                 : '💱 التحصيل بعملة المزوّد — اضبط TRAVEL_BILLING_CURRENCY=SAR للتحصيل بالريال (شرط أي تقسيط خليجي لاحقاً).');
         } else {
             console.warn('⚠️ الدفع الإلكتروني غير مفعَّل — اضبط STRIPE_SECRET_KEY وSTRIPE_WEBHOOK_SECRET لتحصيل حجوزات الباقات فعلياً.');
