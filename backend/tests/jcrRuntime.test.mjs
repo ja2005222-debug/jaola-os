@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { JaolaCognitiveRuntime } from '../agents/jcr.js';
 import { setPendingGoal, getPendingGoal } from '../services/conversationManager.js';
 import { setUserLanguage, getUserLanguage } from '../agents/languageDetector.js';
+import { resetLessons } from '../services/platformLessons.js';
 
 let seq = 0;
 function scenario() {
@@ -173,6 +174,44 @@ test('المجاهيل تُعرض للمستخدم عند ثقة منخفضة ف
     const quiet = scenario();
     assert.equal(quiet.rt._noteUnknowns(kernelContext(), quiet.ctx.roomName), false);
     assert.equal(quiet.events.length, 0, 'لا ضجيج عند غياب المجاهيل');
+});
+
+// ── التعلّم بعد المهمة: platformLessons بدل «التأمل» و«الفضول» الوهميين ──
+test('التعلّم بعد المهمة: الفشل يُسجَّل درساً بسجلٍّ صادق، والإيقاف والنجاح بلا دروس صامتان', () => {
+    resetLessons();
+    try {
+        const s = scenario();
+        const logs = () => s.events.filter(e => e.ev === 'log').map(e => e.payload.message).join('\n');
+
+        const aborted = new Error('MISSION_ABORTED'); aborted.aborted = true;
+        assert.equal(s.rt._learnFromOutcome(s.ctx.roomName, { success: false, error: aborted }), null);
+        assert.equal(s.rt._learnFromOutcome(s.ctx.roomName, { success: true }), null);
+        assert.equal(logs(), '', 'لا سجل بلا درس');
+
+        // عطل مزوّد ×3 → ناضج لكنه ليس توجيهاً للمولّد — السجل لا يدّعي ذلك
+        const ai = new Error('x'); ai.aiUnavailable = true;
+        s.rt._learnFromOutcome(s.ctx.roomName, { success: false, error: ai });
+        s.rt._learnFromOutcome(s.ctx.roomName, { success: false, error: ai });
+        const third = s.rt._learnFromOutcome(s.ctx.roomName, { success: false, error: ai });
+        assert.equal(third.count, 3);
+        assert.match(logs(), /6\. LEARNING/);
+        assert.match(logs(), /درس مسجَّل: ai_unavailable \(تكرار 3\) — نمطٌ متكرر يظهر للمشرف/);
+
+        // فشل يستطيع المولّد تجنّبه ×3 → توجيه دائم
+        const noFiles = new Error('لم يتم استخراج أي ملفات من رد النموذج');
+        for (let i = 0; i < 3; i++) s.rt._learnFromOutcome(s.ctx.roomName, { success: false, error: noFiles });
+        assert.match(logs(), /درس مسجَّل: no_files \(تكرار 3\) — أصبح توجيهاً دائماً للمولّد/);
+
+        // نجاح بعد نضج توجيه واحد → سطر صادق بعدد الدروس المحقونة فقط (لا يعدّ عطل المزوّد)
+        const ok = scenario();
+        ok.rt._learnFromOutcome(ok.ctx.roomName, { success: true });
+        assert.match(ok.events.map(e => e.payload?.message || '').join('\n'), /بُني هذا المشروع بـ1 درساً متراكماً/);
+
+        assert.equal(typeof s.rt.runReflectionAndSelfImprovement, 'undefined', 'لا «تأمل» وهمي');
+        assert.equal(typeof s.rt.runCuriosityInBackground, 'undefined', 'لا «فضول» وهمي');
+    } finally {
+        resetLessons();
+    }
 });
 
 test('بنّر: «غير صورة البنر» يُمرَّر بعلم hero إلى المولّد', async () => {

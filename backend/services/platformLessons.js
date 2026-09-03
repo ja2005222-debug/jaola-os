@@ -26,7 +26,7 @@ onMongoReady(() => hydrateStore('platformLessons', (key, value) => {
     if (!current || (value?.count || 0) > (current.count || 0)) lessons.set(key, value);
 }));
 
-const MIN_COUNT_TO_TEACH = 3;  // درس لم يتكرر 3 مرات ليس نمطاً بعد
+export const MIN_COUNT_TO_TEACH = 3;  // درس لم يتكرر 3 مرات ليس نمطاً بعد
 const MAX_TAUGHT_LESSONS = 6;  // لا نضخّم الـ prompt — الأثقل تكراراً فقط
 
 export function recordLesson(type, key, sample = '') {
@@ -72,6 +72,65 @@ export function recordEditLesson(instruction = '') {
     return recordLesson('post_build_edit', category, instruction);
 }
 
+// ─── دروس مآلات المهام — تحلّ محلّ «التأمل» و«الفضول» الوهميين في jcr ──
+// كان jcr يكتب {success, takeaways:'نجحت'|'فشلت'} في ملف JSON لا يقرؤه أحد.
+// الآن: سبب الفشل الحقيقي يُصنَّف حتمياً (لا LLM) إلى فئة ثابتة تتراكم،
+// والفئات التي يستطيع المولّد تجنّبها تُحقن توجيهاتٍ بعد النضج، والبقية
+// (عطل مزوّد، مهلة) تبقى مرئية للمشرف في topLessons دون تلويث الـ prompt.
+const FAILURE_CATEGORIES = [
+    ['no_files', /لم يتم استخراج أي ملفات|لم يُنتج ملف|no files (were )?(extracted|produced)/i],
+    ['debate_exhausted', /فشل الفريق بعد \d+ دورات|بعد \d+ محاولة/i],
+    ['budget_exhausted', /budget exhausted|الميزانية استنفدت/i],
+    ['syntax', /syntaxerror|unexpected token|unexpected end of input/i],
+    ['rate_limited', /rate.?limit|too many requests|momentarily busy|\b429\b/i],
+    ['timeout', /timed? ?out|etimedout|مهلة/i],
+];
+const AI_DOWN_HINT = /غير متاحة حالياً|رصيد المزوّد|insufficient_quota|exceeded your current quota|invalid api key|incorrect api key/i;
+
+/** تصنيف حتمي لسبب فشل مهمة — null للإيقاف بطلب المستخدم (ليس درساً). */
+export function classifyMissionFailure(error) {
+    if (!error || error.aborted) return null;
+    const msg = String(error?.message ?? error ?? '').slice(0, 400);
+    if (msg === 'MISSION_ABORTED') return null;
+    if (error.aiUnavailable || AI_DOWN_HINT.test(msg)) return 'ai_unavailable';
+    for (const [category, re] of FAILURE_CATEGORIES) {
+        if (re.test(msg)) return category;
+    }
+    return 'other';
+}
+
+/** يُستدعى مرة واحدة عند نهاية كل مهمة — النجاح ليس درساً، الفشل المصنَّف درس. */
+export function recordMissionOutcome({ success = false, error = null } = {}) {
+    if (success) return null;
+    const category = classifyMissionFailure(error);
+    if (!category) return null;
+    return recordLesson('mission_failure', category, String(error?.message ?? error ?? ''));
+}
+
+/** ثغرات التحقّق السلوكي التي بقيت بعد الإصلاح التلقائي — ما يستلمه المستخدم فعلاً. */
+export function recordBehaviorGaps(verdict) {
+    if (!verdict?.ran || verdict.skipped) return [];
+    return (verdict.checks || [])
+        .filter(c => c?.status === 'fail' && c.name)
+        .map(c => recordLesson('behavior_gap', c.name, c.detail || ''))
+        .filter(Boolean);
+}
+
+// فقط ما يستطيع المولّد تجنّبه فعلاً — عطل المزوّد أو المهلة ليسا خطأه
+const FAILURE_DIRECTIVES = {
+    no_files: 'كثيراً ما فشل البناء لأن الرد لم يحوِ أي ملف قابل للاستخراج — أعد الملفات بالصيغة المطلوبة حرفياً (اسم الملف ثم محتواه كاملاً)، ولا تختصر ولا تشرح خارجها.',
+    debate_exhausted: 'كثيراً ما تُرفض المخرجات عدة دورات متتالية حتى تنفد المحاولات — التزم بملاحظات النقّاد المرفقة من الدورة الأولى ولا تكرّر الخطأ نفسه.',
+    syntax: 'كثيراً ما وصل الكود بأخطاء صياغة (أقواس/فواصل ناقصة، توكن غير متوقع) — راجع صياغة كل ملف قبل إعادته.',
+};
+
+/** الدروس الناضجة (≥ العتبة) مرتبة بالتكرار ومحدودة العدد — المصدر الواحد للحقن والعرض. */
+export function matureLessons() {
+    return [...lessons.values()]
+        .filter(l => l.count >= MIN_COUNT_TO_TEACH)
+        .sort((a, b) => b.count - a.count)
+        .slice(0, MAX_TAUGHT_LESSONS);
+}
+
 // ─── تحويل الفئات المتكررة إلى توجيهات جاهزة للمولّد ───────────────
 // صياغات مكتوبة يدوياً (لا توليد) — جودة ثابتة وحجم محدود
 const CATEGORY_DIRECTIVES = {
@@ -86,26 +145,32 @@ const CATEGORY_DIRECTIVES = {
     animations: 'طلبات إضافة الحركة متكررة — ضمّن transitions وscroll animations خفيفة افتراضياً.',
 };
 
+/** التوجيه الجاهز لدرسٍ ما، أو null إن كان الدرس للمشرف فقط (لا يُحقن). */
+export function lessonDirective(l) {
+    if (!l) return null;
+    if (l.type === 'post_build_edit') return CATEGORY_DIRECTIVES[l.key] || null;
+    if (l.type === 'verifier_missing') return `متطلب "${l.key}" كثيراً ما يُسلَّم ناقصاً — إن طُلب مثله فنفّذه كوظيفة عاملة فعلاً (منطق JS حقيقي، ليس عنصراً شكلياً).`;
+    if (l.type === 'qa_failure') return `فاحص الجودة كثيراً ما يرفض بسبب: ${l.key} — تجنّبه من البداية.`;
+    if (l.type === 'mission_failure') return FAILURE_DIRECTIVES[l.key] || null;
+    if (l.type === 'behavior_gap') {
+        const sample = l.samples?.[0] ? ` (مثال: ${l.samples[0]})` : '';
+        return `التحقّق السلوكي بعد التسليم كثيراً ما يفشل في فحص "${l.key}"${sample} — اجعل هذا يعمل فعلاً من أول مرة.`;
+    }
+    return null;
+}
+
 /**
  * كتلة الدروس المتراكمة للحقن في prompt المولّد.
  * ترجع '' عندما لا توجد دروس ناضجة — فلا أثر على الـ prompt إطلاقاً.
  */
 export function buildLessonsPromptBlock() {
-    const mature = [...lessons.values()]
-        .filter(l => l.count >= MIN_COUNT_TO_TEACH)
-        .sort((a, b) => b.count - a.count)
-        .slice(0, MAX_TAUGHT_LESSONS);
+    const mature = matureLessons();
     if (!mature.length) return '';
 
     const lines = [];
     for (const l of mature) {
-        if (l.type === 'post_build_edit' && CATEGORY_DIRECTIVES[l.key]) {
-            lines.push(`- ${CATEGORY_DIRECTIVES[l.key]}`);
-        } else if (l.type === 'verifier_missing') {
-            lines.push(`- متطلب "${l.key}" كثيراً ما يُسلَّم ناقصاً — إن طُلب مثله فنفّذه كوظيفة عاملة فعلاً (منطق JS حقيقي، ليس عنصراً شكلياً).`);
-        } else if (l.type === 'qa_failure') {
-            lines.push(`- فاحص الجودة كثيراً ما يرفض بسبب: ${l.key} — تجنّبه من البداية.`);
-        }
+        const directive = lessonDirective(l);
+        if (directive) lines.push(`- ${directive}`);
     }
     if (!lines.length) return '';
     return `\n## 📚 دروس متراكمة من مشاريع سابقة على المنصة (طبّقها دون انتظار الطلب):\n${lines.join('\n')}`;
