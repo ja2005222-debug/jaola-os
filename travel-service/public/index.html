@@ -1626,7 +1626,32 @@
       // من فتح رابط الاستعادة يرى النموذج فوراً — لا يبحث عنه في الصفحة
       if (resetToken) openLogin('reset');
       maybeInitGoogleSignIn();
-      if (config.providerMode !== 'live') $('modeBanner').classList.remove('hidden');
+      // 🧪 اللافتة تتبع **كل** المنتجات المعروضة لا مزوّد الطيران وحده:
+      // فنادقُ بمفتاح إنتاج بجانب طيرانٍ تجريبي تعني مالاً حقيقياً يُحصَّل،
+      // وإخفاء ذلك خلف «لا تُحصَّل أموال» أخطر من إظهاره.
+      const nonLive = config.nonLiveProducts || (config.providerMode !== 'live' ? ['flights'] : []);
+      if (nonLive.length) {
+        const NAMES = {
+          flights: T('الطيران', 'Flights', 'پروازیں', 'Vluchten'),
+          stays: T('الفنادق', 'Hotels', 'ہوٹل', 'Hotels'),
+          cars: T('السيارات', 'Cars', 'گاڑیاں', 'Auto’s'),
+          esim: T('باقات الإنترنت', 'eSIM plans', 'eSIM پیکجز', 'eSIM-pakketten'),
+        };
+        // «تجريبي بالكامل» = كل منتجٍ معروضٍ غير حيّ (الطيران معروض دوماً)
+        const shown = 1 + (config.staysEnabled ? 1 : 0) + (config.carsEnabled ? 1 : 0) + (config.esimEnabled ? 1 : 0);
+        const all = nonLive.length >= shown;
+        const listed = nonLive.map(k => NAMES[k] || k).join('، ');
+        $('modeBanner').textContent = all
+          ? T('🧪 بيئة تجريبية — الحجوزات هنا لا تُصدر تذاكر حقيقية ولا تُحصَّل أموال.',
+              '🧪 Test environment — bookings here issue no real tickets and charge no money.',
+              '🧪 ٹیسٹ ماحول — یہاں کی بکنگ حقیقی ٹکٹ جاری نہیں کرتی اور رقم وصول نہیں کی جاتی۔',
+              '🧪 Testomgeving — boekingen hier geven geen echte tickets en er wordt niet afgerekend.')
+          : T(`🧪 تجريبي في: ${listed} — أما بقية المنتجات فحجوزاتها حقيقية وتُحصَّل أموالها فعلاً.`,
+              `🧪 Test mode for: ${listed} — all other products book for real and are charged for real.`,
+              `🧪 ٹیسٹ موڈ: ${listed} — باقی مصنوعات کی بکنگ حقیقی ہے اور رقم وصول کی جاتی ہے۔`,
+              `🧪 Testmodus voor: ${listed} — overige producten worden echt geboekt en afgerekend.`);
+        $('modeBanner').classList.remove('hidden');
+      }
       if (!config.agentEnabled) $('agentTabBtn').title = T('غير مفعَّل على هذا الخادم', 'Not enabled on this server', 'اس سرور پر فعال نہیں', 'Niet ingeschakeld op deze server');
       if (!config.staysEnabled) $('includeStaysLabel').classList.add('hidden');
       // تبويب بلا مزوّد فنادق يعد بما لا يُنجَز — يُخفى كتبويب السيارات

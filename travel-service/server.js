@@ -561,6 +561,47 @@ function effectiveMarkupPct(offer, categoryPct) {
     return offer.marginPct != null ? offer.marginPct : categoryPct;
 }
 
+/**
+ * 💸 غرامة الإلغاء المستحقّة **الآن** حسب جدول المزوّد المخزَّن على العرض.
+ *
+ * ⚠️ عطبٌ ماليّ حقيقي كشفه تجهيز مفتاح LiteAPI الإنتاجي: `refundPlanFor`
+ * كان يقرأ `offer.cancellable` وحده، فيرد المدفوع **كاملاً** لسعرٍ موسوم
+ * `RFN` أُلغي بعد موعد الغرامة — بينما الواجهة نفسها كانت تُعلن للمسافر
+ * «ابتداءً من ٢٠٢٧/٠١/١٣ تُخصم 381.62 USD». الفارق يخرج من جيب جترافا في
+ * كل إلغاء متأخر. لا يظهر على Sandbox لأن لا مال يجري.
+ *
+ * دلالة الحقول من توثيق LiteAPI نفسه: `cancelTime` هو الموعد الذي
+ * **ابتداءً منه** تُخصم `amount`، و`RFN` يعني مجاناً قبل أول موعد.
+ * ⚠️ اسم حقلنا `before` مضلِّل إذن (معناه «from» لا «before») — وهو نفسه
+ * ما أغرى القارئ السابق؛ أُبقي كما هو لأن تغييره يمسّ المزوّد والواجهة
+ * والمحاكاة والاختبارات معاً، والتوثيق هنا يكفي لمنع تكرار الخطأ.
+ *
+ * @returns {number|null} الغرامة بعملة العرض، `0` لإلغاء مجاني، و`null`
+ *   حين لا جدول أصلاً أو المبلغ غير معلوم («رسوم يحددها الفندق») أو
+ *   بعملة أخرى — و`null` هنا تعني «لا تخمّن» فيسقط القرار للمراجعة اليدوية.
+ */
+export function cancellationFeeAt(offer, nowMs = Date.now()) {
+    const schedule = Array.isArray(offer?.cancelPolicy) ? offer.cancelPolicy : [];
+    const entries = [];
+    for (const p of schedule) {
+        const at = Date.parse(String(p?.before || '').replace(' ', 'T'));
+        if (!Number.isFinite(at)) continue; // موعد تالف: يُهمَل لا يُخمَّن
+        entries.push({ at, amount: p?.amount, currency: p?.currency || null });
+    }
+    if (entries.length === 0) return null;
+    entries.sort((a, b) => a.at - b.at);
+    const due = entries.filter(e => e.at <= nowMs).pop();
+    if (!due) return 0; // قبل أول موعد = إلغاء مجاني (نصّ الواجهة حرفياً)
+    // ⚠️ `null` هنا «رسوم يحددها الفندق» لا «بلا رسوم» — و`Number(null)`
+    // يساوي صفراً، فبدون هذا الحارس يصير المجهول رداً كاملاً بصمت.
+    if (due.amount == null || due.amount === '') return null;
+    const amount = Number(due.amount);
+    if (!Number.isFinite(amount) || amount < 0) return null;
+    // غرامة بعملة غير عملة العرض لا تُطرح من صافيه — خلط عملات صامت
+    if (due.currency && offer?.currency && due.currency !== offer.currency) return null;
+    return amount;
+}
+
 function publicOffer(offer, categoryPct) {
     const { netAmount, passengerIds, passengers, marginPct: _mp, availableServices, ...rest } = offer;
     const markupPct = effectiveMarkupPct(offer, categoryPct);
@@ -724,6 +765,20 @@ export function createApp({
     const staysOn = productOn('stays', staysProvider);
     const carsOn = productOn('cars', carsProvider);
     const esimOn = productOn('esim', esimProvider);
+
+    // 🧪 أي منتجٍ **معروضٍ فعلاً** مزوّدُه غير حيّ — بالاسم لا بلافتة عامة.
+    //
+    // كانت الواجهة تقرأ `providerMode` (مزوّد الطيران وحده) فتقول «بيئة
+    // تجريبية — لا تُحصَّل أموال». وهذا يصير كذبةً في الاتجاه الخطر لحظةَ
+    // يصير مفتاح الفنادق إنتاجياً بينما الطيران على مفتاح تجريبي: حجزٌ
+    // فندقي حقيقي بمالٍ حقيقي، ولافتةٌ تطمئن المسافر أن لا مال يُحصَّل.
+    // الحارس أعلاه يعالج الاتجاه المعاكس (تجريبيٌّ بجانب طيرانٍ حيّ) فقط.
+    const nonLiveProducts = [
+        ['flights', true, provider],
+        ['stays', staysOn, staysProvider],
+        ['cars', carsOn, carsProvider],
+        ['esim', esimOn, esimProvider],
+    ].filter(([, on, p]) => on && p && (p.mode || 'live') !== 'live').map(([name]) => name);
     const PRODUCT_OFF_MSG = 'هذا المنتج غير متاح حالياً على النسخة الحية.';
     const requireProduct = on => (_req, res, next) =>
         on ? next() : res.status(503).json({ error: PRODUCT_OFF_MSG });
@@ -2121,6 +2176,9 @@ ${urls}
             // 🔒 الأعلام تمر عبر حارس الإنتاج: منتجٌ مزوّده تجريبي يختفي حين
             // يكون الطيران حياً (والخادم يرد 503 على مساراته أيضاً — لا واجهةً وحدها)
             liveGuardActive,
+            // 🧪 المصدر الوحيد للافتة «بيئة تجريبية» — يشمل كل منتج معروض،
+            // فلا تَعِد اللافتة بأن لا مال يُحصَّل بينما منتجٌ آخر حيّ فعلاً
+            nonLiveProducts,
             disabledProducts, // ⛔ ما أُوقف صراحةً بالبيئة — يظهر بصدق لا يُخفى
             trustedNonLiveProducts, // ✅ ما استُثني صراحةً رغم مزوّده «غير حي» بالمسمّى
             staysEnabled: staysOn,
@@ -3066,8 +3124,16 @@ ${urls}
      * صفر ⇒ صفر (وهو ما أعلناه له قبل الحجز: «غير قابل للاسترداد»).
      *
      * ⚠️ ومزوّد صامت عن المبلغ حالة حقيقية لا فرضية (LiteAPI أعاد `null`
-     * في إلغاء مُجرَّب): لا نخمّن — إن كنا وعدنا بإلغاء مجاني نرد كاملاً،
-     * وإلا نترك القرار للمالك بتنبيه صريح بدل رقمٍ مخترَع.
+     * في إلغاء مُجرَّب). ترتيب الأصدق فالأقلّ: ما ردّه المزوّد فعلاً، ثم
+     * **جدول الغرامة الذي أعلنّاه للمسافر قبل الحجز** (`cancellationFeeAt`)،
+     * ثم الوعد العام «قابل للإلغاء» لمزوّدٍ بلا جدول أصلاً. وإن غاب الثلاثة
+     * تُرَك القرار للمالك بتنبيه صريح بدل رقمٍ مخترَع.
+     *
+     * 💸 العطب الذي كشفه تجهيز مفتاح الإنتاج ليس في الترتيب بل في قراءة
+     * الصمت: `Number(null) === 0` جعل «لم يصرّح» تساوي «صرّح بصفر»، فكان
+     * كل إلغاء فندقي على LiteAPI يعطي المسافر **صفراً** آلياً ويُلقى على
+     * مراجعةٍ يدوية — ولو كان إلغاؤه مجانياً بنصّ ما عُرض عليه. الدرجتان
+     * التاليتان لم تكونا تُبلَغان أصلاً.
      */
     function refundPlanFor(booking, providerRefund) {
         // ⚠️ المرجع هو ما **حُصِّل فعلاً** لا ما بِيع به: مع الفوترة بعملة
@@ -3075,11 +3141,25 @@ ${urls}
         // مبلغاً لا علاقة له بما خرج من بطاقة المسافر.
         const paid = Number(booking.billing?.amount ?? booking.sellAmount);
         const net = Number(booking.netAmount);
-        const back = Number(providerRefund?.amount);
+        // ⚠️ `Number(null) === 0` — ومزوّدٌ **صامت** عن المبلغ ليس مزوّداً
+        // أعلن صفراً. بلا هذا التمييز كان صمت LiteAPI (`refundAmount: null`،
+        // سلوكٌ مُشاهَد حياً) يُقرأ «رُدَّ صفر»: فلا يُرد للمسافر شيءٌ آلياً
+        // ولو وعدناه بإلغاء مجاني، ويُلقى كل إلغاء فندقي على مراجعةٍ يدوية —
+        // وتصير درجتا القرار التاليتان أدناه شيفرةً ميتة لا تُبلَغ أبداً.
+        const declared = providerRefund?.amount;
+        const back = declared == null || declared === '' ? NaN : Number(declared);
         if (Number.isFinite(back) && Number.isFinite(net) && net > 0) {
             const share = Math.max(0, Math.min(1, back / net));
             return { amount: Math.round(paid * share * 100) / 100, manual: false };
         }
+        // المزوّد صامت — لكن جدول الغرامة الذي **أعلنّاه للمسافر قبل الحجز**
+        // محفوظ على الحجز نفسه، فهو أصدق من افتراض «قابل للإلغاء ⇒ رد كامل».
+        const fee = cancellationFeeAt(booking.offer, Date.now());
+        if (fee != null && Number.isFinite(net) && net > 0) {
+            const share = Math.max(0, Math.min(1, (net - fee) / net));
+            return { amount: Math.round(paid * share * 100) / 100, manual: false };
+        }
+        // بلا جدولٍ أصلاً (مزوّدٌ لا يُصرّح بواحد) يبقى الوعد المعلن هو الحكم
         if (booking.offer?.cancellable === true) return { amount: paid, manual: false };
         return { amount: null, manual: true };
     }
@@ -3092,16 +3172,22 @@ ${urls}
         if (!stripeClient || !booking.paymentIntentId) return null;
         const plan = refundPlanFor(booking, providerRefund);
         if (plan.manual || !(plan.amount > 0)) {
+            // ⚠️ الحالتان تتشاركان «لا استرداد آلياً» وتفترقان في السبب،
+            // وخلطهما كان يبعث للمالك جملةً **غير صحيحة**: «لم يُحدَّد
+            // المبلغ» عن حجزٍ حُدِّد مبلغه بصفر لأن الغرامة استوعبت المدفوع.
+            const reason = plan.manual
+                ? 'لم يُحدَّد مبلغ الرد آلياً (المزوّد لم يصرّح بالمبلغ، ولا جدول غرامة معلوماً على الحجز، وسياسة العرض ليست إلغاءً مجانياً)'
+                : 'غرامة الإلغاء المعلنة للمسافر استوعبت كامل المدفوع — لا مبلغ يُرد آلياً';
             for (const admin of adminSet) {
                 await notifier.deliver({
                     username: admin, category: 'admin_alert',
                     title: `🧯 مراجعة استرداد — ${booking.bookingReference || booking.id}`,
-                    body: `أُلغي حجز مدفوع ولم يُحدَّد مبلغ الرد آلياً (المزوّد لم يصرّح بالمبلغ وسياسة العرض ليست إلغاءً مجانياً).\n`
+                    body: `أُلغي حجز مدفوع: ${reason}.\n`
                         + `المدفوع: ${booking.sellAmount} ${booking.currency}\npayment_intent: ${booking.paymentIntentId}`,
                     meta: { bookingId: booking.id },
                 });
             }
-            return { amount: null, pendingReview: true };
+            return { amount: plan.manual ? null : 0, pendingReview: true };
         }
         const charged = Number(booking.billing?.amount ?? booking.sellAmount);
         try {
