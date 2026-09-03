@@ -12,10 +12,10 @@
 
 import path from 'path';
 import { promises as fsp } from 'fs';
-import { compileSpecToPrompt } from '../../core/runtime/AgentSpec.js';
 import { orderTasks } from '../../core/runtime/TaskGraph.js';
+import { runAgent } from '../../core/runtime/AgentRuntime.js';
 import { safeRelPath, resolveInside } from '../../core/runtime/workspacePaths.js';
-import { BACKEND_TEAM, TEAM_BY_ID, BACKEND_DEBUG_AGENT } from './specs.js';
+import { BACKEND_TEAM, BACKEND_DEBUG_AGENT } from './specs.js';
 import { syntaxCheckFiles } from './backendVerify.js';
 
 // 🛡️ حارس المسار انتقل حرفياً إلى core/runtime/workspacePaths.js (محور Tool)
@@ -49,11 +49,21 @@ export function planExecution(team = BACKEND_TEAM) {
     return orderTasks(team, { key: 'id', label: 'فريق الوكلاء' }).map((a) => a.id);
 }
 
-/** خطة الفريق (بلا تنفيذ) — للعرض في لوحة الأدمِن والاختبار */
+/**
+ * خطة الفريق (بلا تنفيذ) — للعرض في لوحة الأدمِن والاختبار.
+ *
+ * ⚠️ كان البحث `TEAM_BY_ID[id] || team.find(...)`: خريطةُ **فريق الخلفية**
+ * تُستشار أولاً حتى حين تكون الخطة المطلوبة لفريق الواجهة
+ * (`frontendTeamPlan` يمرّ من هنا بـ`FRONTEND_TEAM`). لا أثر له اليوم —
+ * تحقّقتُ بتشغيل المعرّفين: لا تصادم بين الفريقين إطلاقاً — لكنه فخّ
+ * مؤجَّل: وكيل واجهةٍ يُسمّى باسم وكيل خلفيةٍ يُعرض بدور الخلفية ومخرجاتها
+ * بصمت. الخريطة تُبنى الآن من الفريق الممرَّر نفسه، فلا مصدر ثانٍ للحقيقة.
+ */
 export function teamPlan(team = BACKEND_TEAM) {
     const order = planExecution(team);
+    const byId = Object.fromEntries(team.map((a) => [a.id, a]));
     return order.map((id) => {
-        const a = TEAM_BY_ID[id] || team.find((x) => x.id === id);
+        const a = byId[id];
         return {
             id: a.id, role: a.role, icon: a.icon,
             mission: a.mission,
@@ -61,75 +71,6 @@ export function teamPlan(team = BACKEND_TEAM) {
             outputs: a.outputs,
         };
     });
-}
-
-/** يجمع مخرجات الوكلاء الذين يعتمد عليهم هذا الوكيل (التعاون) */
-function gatherCooperationInputs(agent, artifacts, byId) {
-    const parts = [];
-    for (const dep of agent.dependsOn || []) {
-        if (artifacts[dep]) {
-            const a = byId[dep];
-            parts.push(`### مخرجات ${a ? a.role : dep}:\n${artifacts[dep].summary || JSON.stringify(artifacts[dep].output).slice(0, 1500)}`);
-        }
-    }
-    return parts.join('\n\n');
-}
-
-async function runAgent(agent, { goal, lang, artifacts, fileMap, llm, byId }) {
-    const system = compileSpecToPrompt(agent, { lang });
-    const coop = gatherCooperationInputs(agent, artifacts, byId || TEAM_BY_ID);
-
-    // المُعدِّلون يستقبلون الملفات الحالية ليصلحوها/يحصّنوها (عام عبر flag العقد)
-    let currentFilesBlock = '';
-    if (agent.modifier) {
-        const files = Object.values(fileMap);
-        if (files.length) {
-            currentFilesBlock = `\n## الملفات الحالية (عدّل ما يلزم منها وأعِدها بنفس المسار مع action="modify"):\n` +
-                files.map((f) => `### ${f.path}\n\`\`\`\n${(f.content || '').slice(0, 1200)}\n\`\`\``).join('\n');
-        }
-        // وكيل الـ debug: زوّده بأخطاء وكيل QA المرتبط تحديداً
-        if (agent.debugFor) {
-            const qa = artifacts[agent.debugFor];
-            if (qa?.issues?.length) currentFilesBlock += `\n## أخطاء لإصلاحها:\n${qa.issues.map((i) => `- ${i}`).join('\n')}`;
-        }
-    }
-
-    const user = `## المشروع
-${goal}
-
-${coop ? `## مخرجات الوكلاء السابقين (استخدمها كمدخلات):\n${coop}\n` : ''}${currentFilesBlock}
-
-أنجز مهمتك بحسب Outputs في عقدك، وأنتج **ملفات حقيقية** بمسارات صحيحة.
-أعِد **JSON فقط** بهذا الشكل:
-{
-  "summary": "ملخص ما أنجزته (سطران)",
-  "files": [ { "path": "api/routes/users.js", "kind": "code|schema|migration|config|tests|doc", "action": "create|modify", "content": "المحتوى الكامل للملف" } ],
-  "issues": [ "مشاكل مكتشفة إن وُجدت" ],
-  "selfReviewPassed": true
-}`;
-
-    const raw = await llm(
-        [{ role: 'system', content: system }, { role: 'user', content: user }],
-        { max_tokens: 2500, temperature: 0.2, json: true }
-    );
-    let parsed;
-    try { parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; }
-    catch { parsed = { summary: String(raw).slice(0, 300), files: [], issues: ['رد غير صالح JSON'], selfReviewPassed: false }; }
-
-    const files = (Array.isArray(parsed.files) ? parsed.files : [])
-        .map((f) => ({ path: safeRelPath(f.path), kind: f.kind || 'code', action: f.action === 'modify' ? 'modify' : 'create', content: typeof f.content === 'string' ? f.content : '' }))
-        .filter((f) => f.path && f.content);
-
-    return {
-        agent: agent.id,
-        role: agent.role,
-        summary: parsed.summary || '',
-        output: parsed,
-        files,
-        artifacts: files.map((f) => ({ name: f.path, kind: f.kind })), // توافق خلفي
-        issues: Array.isArray(parsed.issues) ? parsed.issues : [],
-        selfReviewPassed: parsed.selfReviewPassed !== false,
-    };
 }
 
 /**

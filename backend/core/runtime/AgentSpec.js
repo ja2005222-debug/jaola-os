@@ -91,7 +91,14 @@ const bullets = (arr) => arr.map((x) => `- ${x}`).join('\n');
  * الثبات في البنية هو ما يجعل الوكيل مستقراً عبر النماذج المختلفة.
  */
 export function compileSpecToPrompt(spec, ctx = {}) {
-    const a = spec.id ? spec : defineAgent(spec);
+    // ⚠️ كان الشرط `spec.id ? spec : defineAgent(spec)`: وجود `id` وحده
+    // دليلاً على أن العقد مُطبَّع. عقدٌ مكتوبٌ يدوياً بـ`id` وبلا
+    // `cooperation` كان يعبر الحارس ثم ينهار داخلاً بـ«Cannot read
+    // properties of undefined» لا يذكر العقد ولا الحقل الناقص.
+    // `defineAgent` مُتساوي القوى (يتحقّق ثم ينسخ)، وتشغيلُه على العقود
+    // الحيّة الأربعة عشر يجتاز جميعاً — فالتطبيع الدائم مطابقٌ سلوكياً
+    // لكل مسارٍ قائم، ويعطي غيرَه رسالة العقد الصريحة بدل انهيارٍ غامض.
+    const a = defineAgent(spec);
     const coop = a.cooperation.length
         ? a.cooperation.map((c) => `- مع ${c.with}: ${c.how}`).join('\n')
         : '- يعمل مستقلاً في هذه المهمة';
