@@ -14,6 +14,7 @@ import { recordTurn } from '../services/conversationStore.js';
 import { enqueueMission } from '../services/missionQueue.js';
 import { getPendingGoal } from '../services/conversationManager.js';
 import { classifyIntentFast } from '../agents/ceoBrain.js';
+import { noteLostMission } from '../services/missionQueue.js';
 
 // ── Clarifier: مرحلة التوضيح ثم مرحلة الخطة بفروعها ──────────────────────
 test('clarifying: الإجابة تُمرَّر لمعالج الحوار ويُعاد ردّه بخياراته — لا بناء', async () => {
@@ -252,3 +253,18 @@ test('طلب بناء واسع → حوار التوضيح أولاً (خيار�
     assert.equal(getPendingGoal(s.ctx.username), null);
     assertNoHeavyPath(assert, s.calls, 'توضيح');
 });
+
+test('مهمة سقطت مع إعادة تشغيل الخادم → إشعار صادق مرة واحدة في أول رسالة، ثم يمضي المسار الطبيعي', async () => {
+    const s = scenario('lost');
+    noteLostMission({ username: s.ctx.username, project: s.ctx.activeProject, goal: 'ابني متجر عطور فاخر', roomName: s.ctx.roomName, state: 'running' });
+    await s.send('مرحبا');
+    const replies = s.replies();
+    assert.match(replies[0], /انقطعت بإعادة تشغيل الخادم/);
+    assert.match(replies[0], /ابني متجر عطور فاخر/);
+    assert.match(s.logs(), /\[Ledger\]: 🧾 مهمة سابقة \(كانت جارية\) سقطت/);
+    assert.ok(replies.length >= 2, 'ثم رُدّ على التحية نفسها');
+    // الرسالة التالية بلا إشعار — أُخذت مرة واحدة
+    await s.send('مرحبا');
+    assert.equal(s.replies().filter(r => /انقطعت بإعادة تشغيل/.test(r)).length, 1);
+});
+
