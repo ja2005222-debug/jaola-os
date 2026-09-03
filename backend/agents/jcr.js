@@ -422,67 +422,13 @@ export class JaolaCognitiveRuntime {
                 continue;
             }
 
-            // 🛡️ Code Guard — فحص syntax وإصلاح ذاتي قبل أي حفظ
-            plan.files = await guardFiles(plan.files,
-                (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m));
-            // 🧷 سلامة المراجع قبل الكتابة: رابط تنسيق مفقود/مكسور (href="/styles.css"
-            // أو style.css غير الموجود) كان يصل للمستخدم موقعاً خاماً بلا تصميم
-            plan.files = await ensureEditIntegrity(plan.files, context.projectPath,
-                (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m));
-
-            await writePlanFiles(context.projectPath, plan.files);
-
-            // 🆕 Review Agent — يراجع ويُصلح تلقائياً قبل العرض النهائي
-            transitionState(context.username, context.activeProject, STATES.REVIEWING, { agent: 'ReviewAgent' });
-            try {
-                this.emitLiveLog(roomName, '5. RUNTIME', 'ReviewAgent', '🔍 مراجعة جودة الكود...');
-                const reviewResult = await reviewCode(plan.files, context.originalGoal, getUserLanguage(context.username) || 'en');
-
-                if (reviewResult.fixedCount > 0) {
-                    // حفظ الملفات المُصلحة — كل الملفات، لا القائمة البيضاء
-                    await writePlanFiles(context.projectPath, reviewResult.fixedFiles);
-                    plan.files = reviewResult.fixedFiles;
-                }
-
-                const statusEmoji = reviewResult.grade === 'A' ? '✅' : reviewResult.grade === 'B' ? '🟡' : '🟠';
-                this.emitLiveLog(roomName, '5. RUNTIME', 'ReviewAgent',
-                    `${statusEmoji} الجودة: ${reviewResult.grade} (${reviewResult.score}/100) — ${reviewResult.overallQuality}${reviewResult.fixedCount > 0 ? ` — تم إصلاح ${reviewResult.fixedCount} مشكلة` : ''}`
-                );
-                // 📊 تسجيل درجة الجودة الفعلية للوحة الذكاء
-                recordScore(context.username, context.activeProject, 'quality', reviewResult);
-            } catch (e) {
-                this.emitLiveLog(roomName, '5. RUNTIME', 'ReviewAgent', `⚠️ تخطّي: ${e.message}`);
-            }
-            // 🆕 Refactor Agent — تنظيف الكود
-            try {
-                const refactorResult = await refactorCode(plan.files, getUserLanguage(context.username) || 'en');
-                if (refactorResult.success) {
-                    plan.files = refactorResult.files;
-                    if (refactorResult.totalReduction > 0) {
-                        this.emitLiveLog(roomName, '5. RUNTIME', 'RefactorAgent',
-                            `✅ ${refactorResult.summary}`
-                        );
-                    }
-                }
-            } catch (e) { console.warn('[RefactorAgent]', 'فشل التحسين (تخطٍّ):', e.message); }
-
-            // 🆕 Testing Agent — اختبار شامل للكود المُنتج
-            try {
-                if (!plan?.files) throw new Error('plan is not defined');
-                const testResult = await runTests(plan.files, getUserLanguage(context.username) || 'en');
-                const emoji = testResult.grade === 'A' ? '✅' : testResult.grade === 'B' ? '🟡' : '🟠';
-                this.emitLiveLog(roomName, '5. RUNTIME', 'TestingAgent',
-                    `${emoji} ${testResult.report}`
-                );
-                // إذا كان هناك اختبارات فاشلة — سجّلها كتحذير
-                if (testResult.failedTests.length > 0) {
-                    this.emitLiveLog(roomName, '5. RUNTIME', 'TestingAgent',
-                        `⚠️ اختبارات فاشلة: ${testResult.failedTests.join(' | ')}`
-                    );
-                }
-            } catch (e) {
-                this.emitLiveLog(roomName, '5. RUNTIME', 'TestingAgent', `⚠️ تخطّي: ${e.message}`);
-            }
+            // ✅ الخطة مقبولة — من هنا خطّ التسليم: مراحل بتوقيع موحّد
+            // (context, roomName, agents) تقرأ/تكتب context.plan.files (عقد Agent الأول)
+            context.plan = plan;
+            await this._stageGuardAndWrite(context, roomName, agents);
+            await this._stageReview(context, roomName, agents);
+            await this._stageRefactor(context, roomName, agents);
+            await this._stageTesting(context, roomName, agents);
 
             // 📋 Requirements Verifier — الأهم: هل نُفِّذت متطلبات المشروع فعلاً؟
             // يفحص كل مكوّن وظيفي من الـ Blueprint ضد الكود المبني، يُصلح الناقص
@@ -554,69 +500,9 @@ export class JaolaCognitiveRuntime {
             await this.saveExecutiveMemory(context.username, context.mentalModel.visualIdentity);
             context.files = plan?.files || [];
 
-            // 🆕 SEO Agent
-            try {
-                const projectName = context.originalGoal?.split(' ').slice(0, 3).join(' ') || context.activeProject;
-                const seoResult = await runSEO(plan.files, {
-                    name: projectName,
-                    description: context.originalGoal?.slice(0, 150) || projectName,
-                    url: `https://${context.username}-${context.activeProject}.vercel.app`,
-                    lang: getUserLanguage(context.username) || 'ar',
-                });
-                if (seoResult.success) {
-                    plan.files = seoResult.files;
-                    // حفظ robots.txt و sitemap.xml
-                    const { promises: fsp } = await import('fs');
-                    const pathMod = await import('path');
-                    for (const file of seoResult.newFiles) {
-                        await fsp.writeFile(pathMod.default.join(context.projectPath, file.name), file.content);
-                    }
-                    this.emitLiveLog(roomName, '5. RUNTIME', 'SEOAgent', `✅ ${seoResult.summary}`);
-                    // 📊 حزمة SEO كاملة طُبقت (robots + sitemap + meta + schema)
-                    recordScore(context.username, context.activeProject, 'seo', { grade: 'A', score: 100 });
-                }
-            } catch (e) {
-                this.emitLiveLog(roomName, '5. RUNTIME', 'SEOAgent', `⚠️ تخطّي: ${e.message}`);
-            }
-
-            // 🆕 Security Agent
-            try {
-                const secResult = await runSecurity(plan.files);
-                if (secResult.success) {
-                    plan.files = secResult.fixedFiles;
-                    const { promises: fsp } = await import('fs');
-                    const pathMod = await import('path');
-                    for (const file of secResult.newFiles) {
-                        await fsp.writeFile(pathMod.default.join(context.projectPath, file.name), file.content);
-                    }
-                    const secEmoji = secResult.grade === 'A' ? '✅' : secResult.grade === 'B' ? '🟡' : '🟠';
-                    this.emitLiveLog(roomName, '5. RUNTIME', 'SecurityAgent',
-                        `${secEmoji} ${secResult.summary}`
-                    );
-                    // 📊 تسجيل درجة الأمان الفعلية
-                    recordScore(context.username, context.activeProject, 'security', secResult);
-                }
-            } catch (e) {
-                this.emitLiveLog(roomName, '5. RUNTIME', 'SecurityAgent', `⚠️ تخطّي: ${e.message}`);
-            }
-
-            // 🆕 Refactor Agent
-            // 🆕 Git Agent — commit تلقائي + نسخة احتياطية
-            try {
-                await backupProject(context.projectPath, 'build');
-                const commitResult = await commitBuild(
-                    context.projectPath,
-                    context.originalGoal?.slice(0, 60) || context.goal.slice(0, 60),
-                    'build'
-                );
-                if (commitResult.success && !commitResult.skipped) {
-                    this.emitLiveLog(roomName, '5. RUNTIME', 'GitAgent',
-                        `✅ تم الحفظ [${commitResult.hash}]`
-                    );
-                }
-            } catch (e) {
-                // Git اختياري — لا يوقف البناء
-            }
+            await this._stageSEO(context, roomName, agents);
+            await this._stageSecurity(context, roomName, agents);
+            await this._stageGitBackup(context, roomName, agents);
 
             // 🆕 تحديث Project Memory بهيكل الموقع المبني
             if (context.mentalModel?.templateSections?.length) {
@@ -800,89 +686,10 @@ export class JaolaCognitiveRuntime {
                 }
             }
 
-            // 🆕 Advanced Modules — Stripe, Upload, OAuth
-            try {
-                const advResult = await generateAdvancedModules(context.originalGoal, context.projectPath);
-                if (advResult.files.length > 0) {
-                    const { promises: fsp } = await import('fs');
-                    const pathMod = await import('path');
-                    for (const file of advResult.files) {
-                        const filePath = pathMod.default.join(context.projectPath, file.name);
-                        await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
-                        await fsp.writeFile(filePath, file.content);
-                    }
-                    const features = Object.entries(advResult.features)
-                        .filter(([, v]) => v)
-                        .map(([k]) => k.replace('needs', ''))
-                        .join(', ');
-                    this.emitLiveLog(roomName, '5. RUNTIME', 'AdvancedAgent',
-                        `✅ ${features} (${advResult.files.length} ملف)`
-                    );
-                }
-            } catch (e) { console.warn('[AdvancedModules]', 'فشل كتابة الوحدات المتقدمة:', e.message); }
-
-            // 🏗️ Full-Stack Scaffold — للفئات المتقدمة (متجر/حجوزات/عقارات…)
-            // يُولّد مشروع Next.js + API + Prisma كامل في مجلد fullstack/ بجانب
-            // الموقع الثابت (لا يتعارض معه) — نقطة انطلاق جاهزة للتشغيل والنشر.
-            try {
-                const fsRec = recommendFullStack(
-                    context.originalGoal, context.blueprint?.category, context.blueprint?.kind
-                );
-                if (fsRec.fullstack) {
-                    const { promises: fsp } = await import('fs');
-                    const pathMod = await import('path');
-                    const { category, files } = buildFullStackProject(fsRec.category, context.activeProject);
-                    for (const file of files) {
-                        const filePath = pathMod.default.join(context.projectPath, 'fullstack', file.name);
-                        await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
-                        await fsp.writeFile(filePath, file.content);
-                    }
-                    this.emitLiveLog(roomName, '5. RUNTIME', 'FullStackAgent',
-                        `🏗️ نسخة Full-Stack (${category}) في مجلد fullstack/ — Next.js + API + Prisma (${files.length} ملف)`
-                    );
-                }
-            } catch (e) { console.warn('[FullStack]', 'فشل كتابة سكافولد fullstack/:', e.message); }
-
-            // 🆕 Render Deploy Config — يُعدّ المشروع للنشر على Render
-            try {
-                const projectName = context.activeProject
-                    .toLowerCase()
-                    .replace(/[^a-z0-9-]/g, '-')
-                    .slice(0, 50);
-                const hasBackend = needsBackend(context.originalGoal);
-                const renderResult = await prepareRenderDeploy(
-                    context.projectPath,
-                    `${context.username}-${projectName}`,
-                    hasBackend
-                );
-                if (renderResult.success) {
-                    this.emitLiveLog(roomName, '5. RUNTIME', 'RenderAgent',
-                        `✅ ${renderResult.summary}`
-                    );
-                }
-            } catch (e) { console.warn('[RenderDeploy]', 'فشل إعداد النشر:', e.message); }
-
-            // 🔬 التحقّق السلوكي + جولة إصلاح تلقائية (طريقة مشتركة مع مسار التعديل)
-            // محاط بحارس: خطأ في التحقّق يجب ألّا يُسقط بناءً ناجحاً أبداً.
-            try {
-                const verdict = await this._verifyAndAutofix({
-                    projectPath: context.projectPath, blueprint: context.blueprint,
-                    username: context.username, activeProject: context.activeProject, roomName, agents,
-                    lang: getUserLanguage(context.username) || 'ar',
-                    canFix: !!context.budget?.consumeCall?.(),
-                });
-                // 📚 مساهمة في مكتبة النماذج — فهم مُجرَّب (مرّ بالتحقّق) يُغني فئته
-                // فيبدأ كل مشروع لاحق من نضجٍ أعلى. نساهم فقط بما نجح تحقّقه.
-                if (verdict?.ok && context.blueprint?.category) {
-                    const contributed = recordModel(
-                        context.blueprint.category,
-                        getDomainModel(context.username, context.activeProject),
-                        { verified: true }
-                    );
-                    if (contributed) this.emitLiveLog(roomName, '6. VERIFY', 'ModelLibrary',
-                        `📚 أُغني فهم فئة «${context.blueprint.category}» بنموذج مُجرَّب — يستفيد منه كل مشروع لاحق.`);
-                }
-            } catch (e) { console.warn('[BehaviorVerify]', 'تخطّي التحقّق (لا يُسقط البناء):', e.message); }
+            await this._stageAdvancedModules(context, roomName, agents);
+            await this._stageFullStackScaffold(context, roomName, agents);
+            await this._stageRenderConfig(context, roomName, agents);
+            await this._stageBehaviorVerify(context, roomName, agents);
 
             return { success: true };
         }
@@ -900,6 +707,251 @@ export class JaolaCognitiveRuntime {
         );
 
         throw new Error(`فشل الفريق بعد ${maxDebateCycles} دورات. آخر الانتقادات: ${JSON.stringify(lastCritiques)}`);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 🧩 مراحل خطّ التسليم — عقد Agent الأول (ARCHITECTURE_MIGRATION.md)
+    // التوقيع الموحّد: async _stageX(context, roomName, agents) → void
+    //   - المدخل/المخرج المشترك: context.plan.files (تُقرأ وتُستبدل في مكانها)
+    //   - كل مرحلة مغلقة على نفسها: فشلها يُسجَّل «⚠️ تخطّي» ولا يُسقط البناء
+    //   - لا مرحلة تعرف ما قبلها أو بعدها؛ الترتيب في runDynamicMultiAgentRuntime وحده
+    // نُقلت حرفياً من جسد الحلقة (الدفعة 1) — التنظيف الداخلي يأتي لاحقاً.
+    // ══════════════════════════════════════════════════════════════════════
+
+    // 🛡️ Code Guard — فحص syntax وإصلاح ذاتي قبل أي حفظ، ثم سلامة المراجع
+    // (رابط تنسيق مفقود/مكسور كان يصل للمستخدم موقعاً خاماً بلا تصميم)، ثم الكتابة
+    async _stageGuardAndWrite(context, roomName) {
+        const plan = context.plan;
+        plan.files = await guardFiles(plan.files,
+            (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m));
+        plan.files = await ensureEditIntegrity(plan.files, context.projectPath,
+            (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m));
+        await writePlanFiles(context.projectPath, plan.files);
+    }
+
+    // 🆕 Review Agent — يراجع ويُصلح تلقائياً قبل العرض النهائي
+    async _stageReview(context, roomName) {
+        const plan = context.plan;
+        transitionState(context.username, context.activeProject, STATES.REVIEWING, { agent: 'ReviewAgent' });
+        try {
+            this.emitLiveLog(roomName, '5. RUNTIME', 'ReviewAgent', '🔍 مراجعة جودة الكود...');
+            const reviewResult = await reviewCode(plan.files, context.originalGoal, getUserLanguage(context.username) || 'en');
+
+            if (reviewResult.fixedCount > 0) {
+                // حفظ الملفات المُصلحة — كل الملفات، لا القائمة البيضاء
+                await writePlanFiles(context.projectPath, reviewResult.fixedFiles);
+                plan.files = reviewResult.fixedFiles;
+            }
+
+            const statusEmoji = reviewResult.grade === 'A' ? '✅' : reviewResult.grade === 'B' ? '🟡' : '🟠';
+            this.emitLiveLog(roomName, '5. RUNTIME', 'ReviewAgent',
+                `${statusEmoji} الجودة: ${reviewResult.grade} (${reviewResult.score}/100) — ${reviewResult.overallQuality}${reviewResult.fixedCount > 0 ? ` — تم إصلاح ${reviewResult.fixedCount} مشكلة` : ''}`
+            );
+            // 📊 تسجيل درجة الجودة الفعلية للوحة الذكاء
+            recordScore(context.username, context.activeProject, 'quality', reviewResult);
+        } catch (e) {
+            this.emitLiveLog(roomName, '5. RUNTIME', 'ReviewAgent', `⚠️ تخطّي: ${e.message}`);
+        }
+    }
+
+    // 🆕 Refactor Agent — تنظيف الكود
+    async _stageRefactor(context, roomName) {
+        const plan = context.plan;
+        try {
+            const refactorResult = await refactorCode(plan.files, getUserLanguage(context.username) || 'en');
+            if (refactorResult.success) {
+                plan.files = refactorResult.files;
+                if (refactorResult.totalReduction > 0) {
+                    this.emitLiveLog(roomName, '5. RUNTIME', 'RefactorAgent',
+                        `✅ ${refactorResult.summary}`
+                    );
+                }
+            }
+        } catch (e) { console.warn('[RefactorAgent]', 'فشل التحسين (تخطٍّ):', e.message); }
+    }
+
+    // 🆕 Testing Agent — اختبار شامل للكود المُنتج
+    async _stageTesting(context, roomName) {
+        const plan = context.plan;
+        try {
+            if (!plan?.files) throw new Error('plan is not defined');
+            const testResult = await runTests(plan.files, getUserLanguage(context.username) || 'en');
+            const emoji = testResult.grade === 'A' ? '✅' : testResult.grade === 'B' ? '🟡' : '🟠';
+            this.emitLiveLog(roomName, '5. RUNTIME', 'TestingAgent',
+                `${emoji} ${testResult.report}`
+            );
+            // إذا كان هناك اختبارات فاشلة — سجّلها كتحذير
+            if (testResult.failedTests.length > 0) {
+                this.emitLiveLog(roomName, '5. RUNTIME', 'TestingAgent',
+                    `⚠️ اختبارات فاشلة: ${testResult.failedTests.join(' | ')}`
+                );
+            }
+        } catch (e) {
+            this.emitLiveLog(roomName, '5. RUNTIME', 'TestingAgent', `⚠️ تخطّي: ${e.message}`);
+        }
+    }
+
+    // 🆕 SEO Agent
+    async _stageSEO(context, roomName) {
+        const plan = context.plan;
+        try {
+            const projectName = context.originalGoal?.split(' ').slice(0, 3).join(' ') || context.activeProject;
+            const seoResult = await runSEO(plan.files, {
+                name: projectName,
+                description: context.originalGoal?.slice(0, 150) || projectName,
+                url: `https://${context.username}-${context.activeProject}.vercel.app`,
+                lang: getUserLanguage(context.username) || 'ar',
+            });
+            if (seoResult.success) {
+                plan.files = seoResult.files;
+                // حفظ robots.txt و sitemap.xml
+                const { promises: fsp } = await import('fs');
+                const pathMod = await import('path');
+                for (const file of seoResult.newFiles) {
+                    await fsp.writeFile(pathMod.default.join(context.projectPath, file.name), file.content);
+                }
+                this.emitLiveLog(roomName, '5. RUNTIME', 'SEOAgent', `✅ ${seoResult.summary}`);
+                // 📊 حزمة SEO كاملة طُبقت (robots + sitemap + meta + schema)
+                recordScore(context.username, context.activeProject, 'seo', { grade: 'A', score: 100 });
+            }
+        } catch (e) {
+            this.emitLiveLog(roomName, '5. RUNTIME', 'SEOAgent', `⚠️ تخطّي: ${e.message}`);
+        }
+    }
+
+    // 🆕 Security Agent
+    async _stageSecurity(context, roomName) {
+        const plan = context.plan;
+        try {
+            const secResult = await runSecurity(plan.files);
+            if (secResult.success) {
+                plan.files = secResult.fixedFiles;
+                const { promises: fsp } = await import('fs');
+                const pathMod = await import('path');
+                for (const file of secResult.newFiles) {
+                    await fsp.writeFile(pathMod.default.join(context.projectPath, file.name), file.content);
+                }
+                const secEmoji = secResult.grade === 'A' ? '✅' : secResult.grade === 'B' ? '🟡' : '🟠';
+                this.emitLiveLog(roomName, '5. RUNTIME', 'SecurityAgent',
+                    `${secEmoji} ${secResult.summary}`
+                );
+                // 📊 تسجيل درجة الأمان الفعلية
+                recordScore(context.username, context.activeProject, 'security', secResult);
+            }
+        } catch (e) {
+            this.emitLiveLog(roomName, '5. RUNTIME', 'SecurityAgent', `⚠️ تخطّي: ${e.message}`);
+        }
+    }
+
+    // 🆕 Git Agent — commit تلقائي + نسخة احتياطية (اختياري — لا يوقف البناء)
+    async _stageGitBackup(context, roomName) {
+        try {
+            await backupProject(context.projectPath, 'build');
+            const commitResult = await commitBuild(
+                context.projectPath,
+                context.originalGoal?.slice(0, 60) || context.goal.slice(0, 60),
+                'build'
+            );
+            if (commitResult.success && !commitResult.skipped) {
+                this.emitLiveLog(roomName, '5. RUNTIME', 'GitAgent',
+                    `✅ تم الحفظ [${commitResult.hash}]`
+                );
+            }
+        } catch (e) {
+            // Git اختياري — لا يوقف البناء
+        }
+    }
+
+    // 🆕 Advanced Modules — Stripe, Upload, OAuth
+    async _stageAdvancedModules(context, roomName) {
+        try {
+            const advResult = await generateAdvancedModules(context.originalGoal, context.projectPath);
+            if (advResult.files.length > 0) {
+                const { promises: fsp } = await import('fs');
+                const pathMod = await import('path');
+                for (const file of advResult.files) {
+                    const filePath = pathMod.default.join(context.projectPath, file.name);
+                    await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
+                    await fsp.writeFile(filePath, file.content);
+                }
+                const features = Object.entries(advResult.features)
+                    .filter(([, v]) => v)
+                    .map(([k]) => k.replace('needs', ''))
+                    .join(', ');
+                this.emitLiveLog(roomName, '5. RUNTIME', 'AdvancedAgent',
+                    `✅ ${features} (${advResult.files.length} ملف)`
+                );
+            }
+        } catch (e) { console.warn('[AdvancedModules]', 'فشل كتابة الوحدات المتقدمة:', e.message); }
+    }
+
+    // 🏗️ Full-Stack Scaffold — للفئات المتقدمة (متجر/حجوزات/عقارات…)
+    // يُولّد مشروع Next.js + API + Prisma كامل في مجلد fullstack/ بجانب
+    // الموقع الثابت (لا يتعارض معه) — نقطة انطلاق جاهزة للتشغيل والنشر.
+    async _stageFullStackScaffold(context, roomName) {
+        try {
+            const fsRec = recommendFullStack(
+                context.originalGoal, context.blueprint?.category, context.blueprint?.kind
+            );
+            if (fsRec.fullstack) {
+                const { promises: fsp } = await import('fs');
+                const pathMod = await import('path');
+                const { category, files } = buildFullStackProject(fsRec.category, context.activeProject);
+                for (const file of files) {
+                    const filePath = pathMod.default.join(context.projectPath, 'fullstack', file.name);
+                    await fsp.mkdir(pathMod.default.dirname(filePath), { recursive: true });
+                    await fsp.writeFile(filePath, file.content);
+                }
+                this.emitLiveLog(roomName, '5. RUNTIME', 'FullStackAgent',
+                    `🏗️ نسخة Full-Stack (${category}) في مجلد fullstack/ — Next.js + API + Prisma (${files.length} ملف)`
+                );
+            }
+        } catch (e) { console.warn('[FullStack]', 'فشل كتابة سكافولد fullstack/:', e.message); }
+    }
+
+    // 🆕 Render Deploy Config — يُعدّ المشروع للنشر على Render
+    async _stageRenderConfig(context, roomName) {
+        try {
+            const projectName = context.activeProject
+                .toLowerCase()
+                .replace(/[^a-z0-9-]/g, '-')
+                .slice(0, 50);
+            const hasBackend = needsBackend(context.originalGoal);
+            const renderResult = await prepareRenderDeploy(
+                context.projectPath,
+                `${context.username}-${projectName}`,
+                hasBackend
+            );
+            if (renderResult.success) {
+                this.emitLiveLog(roomName, '5. RUNTIME', 'RenderAgent',
+                    `✅ ${renderResult.summary}`
+                );
+            }
+        } catch (e) { console.warn('[RenderDeploy]', 'فشل إعداد النشر:', e.message); }
+    }
+
+    // 🔬 التحقّق السلوكي + جولة إصلاح تلقائية (طريقة مشتركة مع مسار التعديل)
+    // محاط بحارس: خطأ في التحقّق يجب ألّا يُسقط بناءً ناجحاً أبداً.
+    async _stageBehaviorVerify(context, roomName, agents) {
+        try {
+            const verdict = await this._verifyAndAutofix({
+                projectPath: context.projectPath, blueprint: context.blueprint,
+                username: context.username, activeProject: context.activeProject, roomName, agents,
+                lang: getUserLanguage(context.username) || 'ar',
+                canFix: !!context.budget?.consumeCall?.(),
+            });
+            // 📚 مساهمة في مكتبة النماذج — فهم مُجرَّب (مرّ بالتحقّق) يُغني فئته
+            // فيبدأ كل مشروع لاحق من نضجٍ أعلى. نساهم فقط بما نجح تحقّقه.
+            if (verdict?.ok && context.blueprint?.category) {
+                const contributed = recordModel(
+                    context.blueprint.category,
+                    getDomainModel(context.username, context.activeProject),
+                    { verified: true }
+                );
+                if (contributed) this.emitLiveLog(roomName, '6. VERIFY', 'ModelLibrary',
+                    `📚 أُغني فهم فئة «${context.blueprint.category}» بنموذج مُجرَّب — يستفيد منه كل مشروع لاحق.`);
+            }
+        } catch (e) { console.warn('[BehaviorVerify]', 'تخطّي التحقّق (لا يُسقط البناء):', e.message); }
     }
 
     // 📚 التعلّم الحقيقي بعد كل مهمة — عبر ذاكرة دروس المنصة (platformLessons).

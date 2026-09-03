@@ -365,3 +365,39 @@ API (`groq` يصبح `null` في `baseAgent.js:11`)، و`node --test` يخرج �
    `runDynamicMultiAgentRuntime` ← دوال مرحلة بتوقيع موحّد
    `(context, roomName, agents) → result` — وهذا هو **عقد Agent الحقيقي
    الأول** (Phase 1) ينبثق من الكود القائم لا من تصميم نظري.
+
+## 🧩 الاستخراج — الدفعة 1 (2026-09-03): عقد Agent الأول يظهر من الكود
+
+**خط الأساس أولاً**: `tests/jcrRuntimePipeline.test.mjs` (6 اختبارات) يمرّ في
+النواة نفسها عبر `_runMissionNow` الحقيقي بوكلاء ثقيلة وهمية (مبرمج/معماري/
+جودة) وبقية المراحل حقيقية: المسار السعيد (ملفات على القرص + ترتيب مراحل
+التسليم حرفياً + COMPLETED)، رفض المعماري ← دورة ثانية بالنقد في الـprompt،
+رفض الجودة ← دروس، استنفاد الدورات ← FAILED + `debate_exhausted`، عطل مزوّد
+← إيقاف فوري بلا حرق دورات، ردّ بلا ملفات ← إعادة محاولة. اكتشاف جانبي: المصمّم
+والمراجع يملكان احتياطاً حتمياً خاصاً (لوحة `minimal` / درجة جودة إرشادية) —
+لا «تخطّي» كما ظننت.
+
+**ثم الاستخراج** (نقلٌ حرفي، صفر تغيير سلوك — خط الأساس مطابق قبل/بعد):
+10 مراحل ما بعد قبول الخطة صارت دوالّ على الكلاس بتوقيع موحّد:
+`_stageGuardAndWrite`، `_stageReview`، `_stageRefactor`، `_stageTesting`،
+`_stageSEO`، `_stageSecurity`، `_stageGitBackup`، `_stageAdvancedModules`،
+`_stageFullStackScaffold`، `_stageRenderConfig`، `_stageBehaviorVerify`.
+
+**العقد كما انبثق فعلاً** (لا كما صُمِّم نظرياً):
+```
+async _stageX(context, roomName, agents) → void
+  • المدخل/المخرج المشترك: context.plan.files (تُقرأ وتُستبدل في مكانها)
+  • مغلقة على نفسها: فشلها «⚠️ تخطّي» في السجل ولا يُسقط البناء
+  • لا تعرف ما قبلها أو بعدها — الترتيب في runDynamicMultiAgentRuntime وحده
+```
+`context.plan = plan` يُضبط لحظة القبول؛ `plan` لم يكن يُستعمل بعد القبول
+إلا عبر `plan.files` (grep) فالوضع على السياق آمن (نفس الكائن).
+الحجم: `runDynamicMultiAgentRuntime` من ~630 سطراً إلى **434** بعد هذه الدفعة.
+
+**ما بقي داخل الحلقة للدفعة 2**: محقّق المتطلبات (~65 سطراً، يستدعي
+`agents.coreEditCodePlan`)، حفظ الذاكرة التنفيذية + `context.files`، تحديث
+ذاكرة المشروع، وكتلة الخلفية (~170 سطراً: فريق الخلفية/المولّد التقليدي/
+قاعدة البيانات/Postgres/المصادقة). وللدفعة 3: مرحلتا القالب والمصمّم قبل
+الحلقة (تحتاجان `initialCodeContext` على السياق)، ثم حلقة النقاش نفسها.
+بعدها يصبح `runDynamicMultiAgentRuntime` قائمةَ مراحل مرتّبة — أساس
+Model Router وMission Control لاحقاً بلا إعادة كتابة.
