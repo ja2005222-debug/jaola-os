@@ -192,9 +192,9 @@ export function createLiteApiStaysProvider({ apiKey, apiUrl, bookApiUrl, fetchIm
                 includeCreditBalance: false,
                 payment: { gateway: 'STRIPE', useOwnSecretKey: false },
             });
-            // ⚠️ مسار الحقول أدناه غير مُتحقَّق ضد رد نجاح فعلي (راجع
-            // التحذير أعلى الملف) — احتياط دفاعي بمسارات محتملة متعددة
-            // بدل افتراض واحد قد يكون خاطئاً بصمت.
+            // ✅ صار مُتحقَّقاً: الحجز الحي الناجح (راجع رأس الملف) أثبت أن
+            // استخراج `prebookId` أدناه صحيح. تعدّد المسارات باقٍ احتياطاً
+            // دفاعياً لا شكّاً — كان تخميناً وقت الكتابة فأكّدته التجربة.
             const prebookId = data?.data?.prebookId || data?.prebookId;
             if (!prebookId) {
                 throw new Error('رد /rates/prebook بلا prebookId — راجع الشكل الفعلي وحدّث الصيغة (لم يصل رد نجاح حقيقي بعد وقت كتابة هذا الكود).');
@@ -227,8 +227,8 @@ export function createLiteApiStaysProvider({ apiKey, apiUrl, bookApiUrl, fetchIm
                 })),
                 payment: { method: 'ACC_CREDIT_CARD' },
             });
-            // ⚠️ نفس تحذير getQuote أعلاه — مسار الحقول تخمين مبني على
-            // تناسق الشكل العام لردود LiteAPI، لا رد نجاح فعلي مُشاهَد.
+            // ✅ نفس حال getQuote: كان تخميناً، وأثبته حجزٌ حيّ ناجح بمرجع
+            // فعلي صادر من LiteAPI (راجع رأس الملف).
             const booking = data?.data || data?.booking || data;
             const bookingId = booking?.bookingId || booking?.id;
             if (!bookingId) {
@@ -246,8 +246,13 @@ export function createLiteApiStaysProvider({ apiKey, apiUrl, bookApiUrl, fetchIm
         // bookingId (من createStayOrder) → إلغاء عبر PUT /bookings/{id}.
         async cancelStayOrder(orderId) {
             const data = await liteApiBook('PUT', `/bookings/${encodeURIComponent(orderId)}`);
-            // ⚠️ نفس تحذير getQuote/createStayOrder — مسار الحقول تخمين
-            // مبني على تناسق شكل ردود LiteAPI، لا رد نجاح فعلي مُشاهَد.
+            // ⚠️ الإلغاء نفسه **نجح حياً** (الحجز انتقل إلى cancelled)، لكن
+            // `refundAmount` عاد `null` — ولم نميّز بعدُ: أمسارات الحقول
+            // أدناه خاطئة أم أن LiteAPI لا يُعيد مبلغاً أصلاً؟ لذلك يبقى
+            // `null` صريحاً بدل رقمٍ مخترَع.
+            //
+            // 💸 وهذا `null` **ليس صفراً**: `refundPlanFor` في `server.js`
+            // يميّزهما صراحةً ويسقط على جدول الغرامة المعلن للمسافر.
             const result = data?.data || data;
             return {
                 status: 'cancelled',

@@ -8024,6 +8024,43 @@ describe('🔒 حارس الإنتاج: طيرانٌ حيّ يُخفي كل من
         return { call, close: () => new Promise(r => server.close(r)) };
     }
 
+    // 🧪 الحالة التي تفتحها نقلة مفتاح LiteAPI إلى الإنتاج: فنادق حيّة
+    // بجانب طيرانٍ تجريبي — الاتجاه الذي لا يغطّيه الحارس (فهو يحرس العكس).
+    const liveStays = () => ({ ...createMockStaysProvider(), mode: 'live' });
+
+    test('🧪 فنادق حيّة + طيران تجريبي: اللافتة تسمّي التجريبي ولا تَعِد بأن لا مال يُحصَّل', async () => {
+        const { call, close } = await boot({ provider: createMockTravelProvider(), staysProvider: liveStays() });
+        try {
+            const c = (await call('/api/travel/config')).data;
+            assert.equal(c.staysEnabled, true, 'لا حارس — الطيران ليس حياً');
+            assert.ok(c.nonLiveProducts.includes('flights'));
+            assert.ok(!c.nonLiveProducts.includes('stays'), 'الفنادق حيّة فلا تُعدّ تجريبية');
+            // ⚠️ العطب الذي يصلحه هذا الحقل: providerMode وحده كان سيقول
+            // «بيئة تجريبية — لا تُحصَّل أموال» بينما حجز الفندق حقيقي.
+            assert.notEqual(c.providerMode, 'live');
+        } finally { await close(); }
+    });
+
+    test('كل المزوّدين أحياء ⇒ لا لافتة إطلاقاً', async () => {
+        const { call, close } = await boot({
+            provider: liveFlights(), staysProvider: liveStays(),
+            carsProvider: { ...createMockCarsProvider(), mode: 'live' },
+            esimProvider: { ...createMockEsimProvider(), mode: 'live' },
+        });
+        try {
+            assert.deepEqual((await call('/api/travel/config')).data.nonLiveProducts, []);
+        } finally { await close(); }
+    });
+
+    test('المنتج المخفيّ بالحارس لا يُحسب تجريبياً — لا يُعلَن عمّا لا يُعرض', async () => {
+        const { call, close } = await boot({ provider: liveFlights() }); // فنادق/سيارات/eSIM تجريبية ⇒ مخفيّة
+        try {
+            const c = (await call('/api/travel/config')).data;
+            assert.equal(c.staysEnabled, false);
+            assert.deepEqual(c.nonLiveProducts, [], 'الطيران حيّ والباقي مُخفى — لا لافتة');
+        } finally { await close(); }
+    });
+
     test('طيران mock (تطوير): لا حارس — كل المنتجات ظاهرة كما كانت', async () => {
         const { call, close } = await boot({ provider: createMockTravelProvider() });
         try {

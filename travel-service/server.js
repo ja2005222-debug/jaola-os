@@ -765,6 +765,20 @@ export function createApp({
     const staysOn = productOn('stays', staysProvider);
     const carsOn = productOn('cars', carsProvider);
     const esimOn = productOn('esim', esimProvider);
+
+    // 🧪 أي منتجٍ **معروضٍ فعلاً** مزوّدُه غير حيّ — بالاسم لا بلافتة عامة.
+    //
+    // كانت الواجهة تقرأ `providerMode` (مزوّد الطيران وحده) فتقول «بيئة
+    // تجريبية — لا تُحصَّل أموال». وهذا يصير كذبةً في الاتجاه الخطر لحظةَ
+    // يصير مفتاح الفنادق إنتاجياً بينما الطيران على مفتاح تجريبي: حجزٌ
+    // فندقي حقيقي بمالٍ حقيقي، ولافتةٌ تطمئن المسافر أن لا مال يُحصَّل.
+    // الحارس أعلاه يعالج الاتجاه المعاكس (تجريبيٌّ بجانب طيرانٍ حيّ) فقط.
+    const nonLiveProducts = [
+        ['flights', true, provider],
+        ['stays', staysOn, staysProvider],
+        ['cars', carsOn, carsProvider],
+        ['esim', esimOn, esimProvider],
+    ].filter(([, on, p]) => on && p && (p.mode || 'live') !== 'live').map(([name]) => name);
     const PRODUCT_OFF_MSG = 'هذا المنتج غير متاح حالياً على النسخة الحية.';
     const requireProduct = on => (_req, res, next) =>
         on ? next() : res.status(503).json({ error: PRODUCT_OFF_MSG });
@@ -2162,6 +2176,9 @@ ${urls}
             // 🔒 الأعلام تمر عبر حارس الإنتاج: منتجٌ مزوّده تجريبي يختفي حين
             // يكون الطيران حياً (والخادم يرد 503 على مساراته أيضاً — لا واجهةً وحدها)
             liveGuardActive,
+            // 🧪 المصدر الوحيد للافتة «بيئة تجريبية» — يشمل كل منتج معروض،
+            // فلا تَعِد اللافتة بأن لا مال يُحصَّل بينما منتجٌ آخر حيّ فعلاً
+            nonLiveProducts,
             disabledProducts, // ⛔ ما أُوقف صراحةً بالبيئة — يظهر بصدق لا يُخفى
             trustedNonLiveProducts, // ✅ ما استُثني صراحةً رغم مزوّده «غير حي» بالمسمّى
             staysEnabled: staysOn,
