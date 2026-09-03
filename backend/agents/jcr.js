@@ -2521,7 +2521,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     }
 
                     // كشف طلبات تغيير اللون
-                    const isColorChange = /color|لون|colour|ألوان|colors/i.test(message);
+                    // «الالوان» بلا همزة هي الكتابة الشائعة — كانت تسقط في «تعديل عام»
+                    const isColorChange = /color|لون|colour|ألوان|الوان|colors/i.test(message);
                     if (isColorChange) {
                         const colorMsg = lang === 'ar'
                             ? 'ما اللون أو التدرج اللوني الذي تفضله؟ (مثال: أزرق داكن، أخضر طبيعي، ذهبي فاخر...)'
@@ -2850,7 +2851,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             // إذا كنا في مرحلة Planning — عالج كتعديل على الخطة وليس بناء
             if (clarifierState?.stage === 'planning') {
                 const lang = clarifierState.lang || userLang;
-                const isColorChange = /color|لون|colour|ألوان/i.test(message);
+                const isColorChange = /color|لون|colour|ألوان|الوان/i.test(message);
                 if (isColorChange) {
                     const colorMsg = lang === 'ar'
                         ? 'ما اللون المفضل؟ (مثال: أزرق داكن، أخضر، ذهبي...)'
