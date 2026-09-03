@@ -614,3 +614,47 @@ LLM ماتوا معها)، بل بأصغر ما يجعل السقوط *مرئي�
 إعادة إطلاق المهمة من الصفر عند الإقلاع بلا مستخدم حاضر — قرار منتجي (تكلفة
 LLM بلا طلب) يُترك للمالك، والبنية جاهزة له (`lostMissions` تحمل الهدف والغرفة).
 
+
+## 📐 Phase 1 — تصميم العقود من الكود الفعلي (2026-09-03): `CONTRACTS.md` + أول مستهلك
+
+القسم الأقدم أعلاه («Phase 1 — العقود الحقيقية») أثبت أن عقداً واحداً من ستة
+ناضج (Event) وأن الباقي إمّا غير موحّد أو غير موجود، وأجّل *التصميم* إلى جلسة
+مخصّصة. هذه هي. الناتج وثيقة مرجعية مستقلة **`backend/CONTRACTS.md`** (الشكل
+الفعلي بالدليل + الشكل المستهدف + خطة الهجرة لكل عقد) وجزء تشغيلي صغير له
+مستهلك حيّ. أهم ما كشفه الجرد (grep على 37 موضع `agents.X` في jcr.js):
+
+- **Agent ثلاث طبقات لا واحدة**: (أ) الحزمة المسطّحة من `server.js` — **3
+  إلزامية** تُستدعى بلا حارس داخل حلقة النقاش (`coreGenerateCodePlan`,
+  `architectReview`, `qaVerify`)، **15 اختيارية** كلّها محروسة بـ`&&`/`?.`،
+  و**عضو ميت** `coreClassifyIntent` يُمرَّر ولا يُستدعى (التصنيف الفعلي في
+  `ceoBrain.js`)؛ (ب) عقد تصريحي ناضج بالفعل `defineAgent` في فرق الخلفية
+  والواجهة (12 وكيلاً، نتيجة موحّدة لكل وكيل) — **العقد الوحيد الموحّد فعلاً في
+  النظام**، وهو الاتجاه بعيد المدى؛ (ج) 20 وحدة وكيل تستوردها jcr.js مباشرة
+  داخل المراحل — مراحل لا وكلاء قابلة للاستبدال.
+- **Tool**: لا تجريد، لكن حارس المسار مكرَّر ثلاث مرات بمنطق متقارب
+  (`writePlanFiles` في jcr، `safeRelPath` في backendTeam، `sanitizePath` في
+  security.js) — أول خطوة واقعية في هذا المحور هي توحيدها لا كتابة Tool عام.
+- **Permission**: كلّه عند حدّ HTTP؛ يصل الداخل بطريقة واحدة فقط (`isAdmin`
+  مغلق داخل `generateAiImages`). التصميم: `req.caps` مشتقّ عند الحدّ — مؤجَّل
+  حتى مستهلك ثانٍ (قاعدة «موضعان على الأقل»).
+- **Evidence**: وحدته `check = {name, status, detail}` متماسكة عبر
+  behaviorVerifier/projectBrain/platformLessons — تُثبَّت لا تُعاد.
+- **Mission**: `MissionRequest` بحقوله العشرة واستهلاك كل معالج لها موثّق؛
+  `dbStatus` يعبر أربع طبقات ليقرأه سطر واحد — مرشّح للنقل إلى `JCRContext` مع
+  توحيد التوقيعات (الخطوة 2).
+
+**الجزء التشغيلي** (`agents/contracts.js`): typedefs لـ`MissionRequest` /
+`AgentBundle` / `StageFn` / `HandlerFn` (صفر تشغيل)، و`assertBuildAgents(agents)`
+يُستدعى في أول سطر من `runDynamicMultiAgentRuntime`. **عطل حقيقي أغلقه**: غياب
+عضو إلزامي كان يُلتقط داخل `try` الحلقة كـ«❌ استثناء: … is not a function»
+ويُعاد حتى استنفاد كل الدورات ثم يُسجَّل درساً كاذباً `debate_exhausted`؛ الآن
+فشل فوري باسم العضو (`error.contract = 'Agent'`). حُذف `coreClassifyIntent` من
+الحزمة والـbarrel ومعه `agents/ceoAgent.js` (صفر قرّاء بعده، grep).
+الاختبارات: `tests/contracts.test.mjs` (2) + اختبار نواة في
+`jcrRuntimePipeline` (لا دورات، لا `is not a function`، لا درس كاذب). **807/807**.
+
+**الترتيب المعتمد بعدها** (في `CONTRACTS.md` بالتفصيل): 2) توحيد مخرجات
+الحزمة `{ok, …}` بمُهايئات في server.js ثم المدخلات `(input, ctx)` + نقل
+`dbStatus` + `checks[]` للنقّاد → 3) Kernel كمصفوفة مراحل → 4) Model Router →
+5) Verification طبقةً → 6) Mission Control (+ `log` منظّم) → 7) Plugin Runtime
+2.0؛ وبالتوازي `workspaceGuard` الموحّد (Tool).

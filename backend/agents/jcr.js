@@ -51,6 +51,7 @@ import { matchDeleteCommand, matchImageCommand, isImageDiagCommand, isBareYes, i
 import { verifyRequirements, buildFixInstruction, formatChecklist } from './requirementsVerifier.js';
 import { classifyIntentFast, decide, buildContinuationGoal, buildStatusReply, missionBriefing, greetingReply } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
+import { assertBuildAgents } from './contracts.js';
 import { registerMission, throwIfAborted, clearMission } from '../services/abortRegistry.js';
 import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import { snapshotWorkspace } from '../services/workspaceStore.js';
@@ -290,6 +291,9 @@ export class JaolaCognitiveRuntime {
     }
 
     async runDynamicMultiAgentRuntime(context, roomName, agents) {
+        // 📐 عقد الوكلاء (contracts.js): الأعضاء الإلزامية قبل إطلاق الحلقة — غيابها
+        // خطأ تهيئة يُعلَن فوراً، لا «استثناء» يُعاد حتى استنفاد الدورات كدرسٍ كاذب
+        assertBuildAgents(agents);
         this.emitLiveLog(roomName, '5. RUNTIME & DEBATE', 'Orchestrator', '💻 إطلاق حلقة النقاش...');
         context.initialCodeContext = await this.readCurrentCodeContextAsync(context.projectPath);
         const maxDebateCycles = context.budget.maxApiCalls;
