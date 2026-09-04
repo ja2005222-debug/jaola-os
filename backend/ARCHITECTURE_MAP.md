@@ -60,7 +60,7 @@ Policy/Permission، Identity، Plugin.
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
 | `core/PluginLoader.js` | 94 | اكتشاف `.js`/`index.js`، تحقّق manifest (`name` مطلوب، `type`، `enabled`، ✅ `capabilities` بالشكل `domain.action`)، عزل فشل الإضافة | KEEP/MODIFY (Sprint 1 ✅ capabilities) | Plugin + Capability (يتوسّع لاحقاً بـtools/permissions) | `core/PluginLoader.js` |
-| `core/PluginOrchestrator.js` | 136 | سجلّ الإضافات + مشغّل hooks + مسجّل وكلاء + `reload/status/setEnabled` + ✅ فهرس القدرات `capabilities()/findByCapability()` | KEEP/MODIFY (Sprint 1 ✅) | Plugin + Capability + Agent (Registry) — يتطوّر لا يُستبدل | `core/PluginOrchestrator.js` |
+| `core/PluginOrchestrator.js` | 149 | سجلّ الإضافات + مشغّل hooks + مسجّل وكلاء + `reload/status/setEnabled` + ✅ فهرس القدرات `capabilities()/findByCapability()` | KEEP/MODIFY (Sprint 1 ✅) | Plugin + Capability + Agent (Registry) — يتطوّر لا يُستبدل | `core/PluginOrchestrator.js` |
 | `plugins/site-checker.js` | 95 | وكيل فحص موقع حيّ (type: agent, `registerAgent → {name, handler}`) | KEEP | Agent (أول وكيل إضافة حقيقي) | `plugins/site-checker.js` |
 | `plugin-templates/AgentPluginTemplate.js` | 48 | قالب إضافة وكيل | KEEP | Plugin | كما هو |
 | `services/pluginStore.js` | 87 | تخزين الإضافات في Mongo واستعادتها للقرص | KEEP | Plugin | `core/plugins/` (Sprint 7) |
