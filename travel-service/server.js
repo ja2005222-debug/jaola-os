@@ -38,6 +38,7 @@ import { fxRate, DISPLAY_CURRENCIES } from './src/fx.js';
 import { computeLoyalty } from './src/loyalty.js';
 import { readReferralBonusPoints } from './src/referrals.js';
 import { createStripeClient, verifyStripeWebhookSignature, stripeKeyMode } from './src/payments/stripeClient.js';
+import { collectLaunchBlockers, formatLaunchReport } from './src/launchReadiness.js';
 import { createGoogleAuthClient } from './src/googleAuth.js';
 import { normalizeContract } from './src/contracts.js';
 import { normalizeDiscountCode, computeDiscount } from './src/discounts.js';
@@ -779,9 +780,22 @@ export function createApp({
         ['cars', carsOn, carsProvider],
         ['esim', esimOn, esimProvider],
     ].filter(([, on, p]) => on && p && (p.mode || 'live') !== 'live').map(([name]) => name);
+    // ونقيضه: المعروضُ ومزوّده **حيّ** — يلزم تقرير الجاهزية ليميّز «بيئة
+    // تطوير لا مال فيها» من «تعارضٍ يكلّف مالاً». نفس المصفوفة، مرشّحٌ معاكس.
+    const liveProducts = [
+        ['flights', true, provider],
+        ['stays', staysOn, staysProvider],
+        ['cars', carsOn, carsProvider],
+        ['esim', esimOn, esimProvider],
+    ].filter(([, on, p]) => on && p && (p.mode || 'live') === 'live').map(([name]) => name);
     const PRODUCT_OFF_MSG = 'هذا المنتج غير متاح حالياً على النسخة الحية.';
     const requireProduct = on => (_req, res, next) =>
         on ? next() : res.status(503).json({ error: PRODUCT_OFF_MSG });
+
+    // 🚦 حالة الحارس كما حُسبت هنا — يقرؤها تقرير جاهزية الإطلاق عند
+    // الإقلاع. تُنشر لا تُعاد حسابها: دالةٌ ثانية تقرّر «أي منتج معروض؟»
+    // كانت ستصير مصدرَ حقيقةٍ ثانياً.
+    const launchState = { liveGuardActive, nonLiveProducts, liveProducts, disabledProducts, trustedNonLiveProducts, allowNonLiveProducts };
 
     const app = express();
     // خلف وكيل عكسي واحد (Render وأمثالها) — بدونه req.ip هو عنوان الوكيل
@@ -2068,6 +2082,7 @@ ${urls}
     // 📮 طابور إرسالٍ خلفي: الإرسال لا يعوق الرد (انظر أدناه)، لكن
     // الاختبار يحتاج نقطةَ انتظارٍ حاسمة بدل استطلاعٍ متذبذب.
     let resetMailQueue = Promise.resolve();
+    app.locals.launchState = launchState;
     app.locals.flushResetMail = () => resetMailQueue;
 
     /**
@@ -4021,6 +4036,20 @@ if (isMain) {
         if (!process.env.GOOGLE_CLIENT_ID) {
             console.warn('⚠️ الدخول بجوجل غير مفعَّل — اضبط GOOGLE_CLIENT_ID لإظهار زرّ «الدخول بحساب جوجل».');
         }
+
+        // 🚦 الحكم أخيراً — بعد التفاصيل، فيبقى آخر ما يُقرأ في سجلّ الاستضافة.
+        const ls = app.locals.launchState || {};
+        const report = formatLaunchReport(collectLaunchBlockers({
+            nonLiveProducts: ls.nonLiveProducts,
+            liveProducts: ls.liveProducts,
+            trustedNonLiveProducts: ls.trustedNonLiveProducts,
+            allowNonLiveProducts: ls.allowNonLiveProducts,
+            storeName: store.name,
+            stripeMode: process.env.STRIPE_SECRET_KEY ? stripeKeyMode(process.env.STRIPE_SECRET_KEY) : null,
+            hasStripeWebhookSecret: !!process.env.STRIPE_WEBHOOK_SECRET,
+            percentIssueCount: pctIssues.length,
+        }));
+        for (const line of report) console.log(line);
     });
 
     // 👁️ مراقب الأسعار: يعمل فقط أثناء يقظة الخدمة (لا setInterval يبقيها
