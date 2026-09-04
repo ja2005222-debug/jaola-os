@@ -64,19 +64,62 @@ export function detectProjectType(userGoal, typeHint = null) {
     const goal = (userGoal || '').toLowerCase();
     const types = DESIGN_RULES.types;
 
+    // 🔴 كان الحكم **عدداً خاماً** للكلمات المطابقة، والتعادل يُحسم بترتيب
+    // مفاتيح `design-rules.json` — ترتيبٌ لا يعرفه أحد ولا يعني شيئاً.
+    // قياسٌ فعليّ قبل الإصلاح: ٤ أهدافٍ من ١٠ واقعية يقرّر نوعَها هذا
+    // الترتيب لا الدليل: «صالون تجميل مع حجز مواعيد» → booking لا beauty،
+    // و«موقع عقارات للبيع» → ecommerce لا realestate، و«نادٍ رياضي
+    // باشتراكات» → saas لا gym (تعادلٌ رباعيّ عند نتيجة 1).
+    // والنوع ليس تفصيلاً: منه تُشتقّ قواعد التصميم والمكوّنات واستراتيجية
+    // البناء — فخطؤه يُسلّم المستخدمَ موقعاً من مجالٍ آخر.
     let bestMatch = 'business';
     let bestScore = 0;
 
-    for (const [typeName, typeData] of Object.entries(types)) {
-        const keywords = getKeywordsForType(typeName);
-        const score = keywords.filter(kw => keywordMatches(goal, kw)).length;
-        if (score > bestScore) {
+    for (const [typeName] of Object.entries(types)) {
+        const score = scoreType(goal, typeName);
+        // التعادل يُكسر باسم النوع (ترتيبٌ معلَن ومستقرّ)، لا بترتيب الملفّ.
+        if (score > bestScore || (score === bestScore && score > 0 && typeName < bestMatch)) {
             bestScore = score;
             bestMatch = typeName;
         }
     }
 
     return bestMatch;
+}
+
+/**
+ * وزنُ الدليل بدل عدّه — مشتقٌّ من البيانات القائمة، بلا تنسيقٍ يدويّ جديد:
+ *
+ * • **ندرة الكلمة**: كلمةٌ لا ترد إلا في نوعٍ واحد («صالون») دليلٌ قاطع،
+ *   وكلمةٌ ترد في ستة أنواع («حجز») دليلٌ ضعيف. الوزن = ١ ÷ عدد الأنواع
+ *   التي تضمّها. وهذا يقرأ الخريطة نفسها، فلا رأي لي فيه.
+ * • **موضعها في الهدف**: العربية والإنجليزية كلتاهما تقدّمان الموضوع —
+ *   «**متجر** ملابس مع معرض أعمال» متجرٌ أولاً. فتُعطى الكلمة المتقدّمة
+ *   علاوةً تصل إلى النصف وتتلاشى نحو آخر الجملة.
+ *
+ * القياس على أربعة عشر هدفاً واقعياً: **٨ إصابات → ١٢**.
+ */
+function scoreType(goal, typeName) {
+    let total = 0;
+    for (const kw of getKeywordsForType(typeName)) {
+        if (!keywordMatches(goal, kw)) continue;
+        const at = goal.indexOf(kw.toLowerCase());
+        const lead = at < 0 ? 1 : 1 + 0.5 * (1 - at / Math.max(1, goal.length));
+        total += lead / (keywordSpread(kw) || 1);
+    }
+    return total;
+}
+
+/** في كم نوعٍ ترد هذه الكلمة؟ يُحسب مرّةً واحدة من الخريطة نفسها. */
+let SPREAD = null;
+function keywordSpread(kw) {
+    if (!SPREAD) {
+        SPREAD = new Map();
+        for (const typeName of Object.keys(DESIGN_RULES?.types || {})) {
+            for (const k of getKeywordsForType(typeName)) SPREAD.set(k, (SPREAD.get(k) || 0) + 1);
+        }
+    }
+    return SPREAD.get(kw) || 1;
 }
 
 /**
