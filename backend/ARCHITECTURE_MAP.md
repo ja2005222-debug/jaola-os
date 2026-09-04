@@ -297,3 +297,52 @@ permissions ويستدعي الخدمة عبر HTTP بنفس JWT. لا شيء ه
    المعاملات السبعة المكرّرة في 5 توقيعات.
 4. الأعمدة المنتجية (finance/marketing/bot) تُنقل إلى `plugins/` **بعد** نجاح
    Travel Adapter (Sprint 5) لا قبله — حتى لا نبني Plugin Contract على مجال داخلي.
+
+---
+
+## 🧭 اليتامى — ما لا يصل إليه `server.js`
+
+هذا القسم **محسوبٌ لا موصوف**: `tests/moduleReachability.test.mjs` يمشي بيان
+الاستيراد من `server.js` (ثابتاً وديناميكياً) ويقارن الناتج بالقائمة أدناه.
+تيتُّمُ وحدةٍ جديدة يُسقط الاختبار، ووصلُ يتيمةٍ يُسقطه أيضاً.
+
+🔴 **ولمَ لزم هذا القسم**: الجدول أعلاه صنّف الوحدات ورقةً ورقة ولم يمشِ
+البيان. فأعطى `fileEditor.js` و`twin.js` و`knowledgeService.js` حكم **KEEP**
+و`broadcast.js` حكم **MODIFY** — وهي كلّها وراء `services/taskExecutor.js`،
+وهو **غائبٌ عن هذا الملف كلّه** ولا يستورده شيء. أحكامٌ على وحداتٍ لا يصل
+إليها الخادم، والملفّ الذي كان سيصل إليها لم يُذكر أصلاً.
+
+| الملف | سطور | لا يصل إليه إلا | يُحمَّل؟ |
+|---|---|---|---|
+| `services/taskExecutor.js` | 226 | **لا شيء** (جذر الجزيرة) | ❌ `simple-git` غير مثبَّت |
+| `services/fileEditor.js` | 53 | `taskExecutor` | ✅ |
+| `services/broadcast.js` | 43 | `taskExecutor` (استيراد ديناميكي) | ✅ |
+| `services/knowledgeService.js` | 102 | `taskExecutor` (استيراد ديناميكي) | ❌ عبر `projectManager` |
+| `services/projectManager.js` | 83 | `knowledgeService` و`twin` (كلاهما يتيم) | ❌ `uuid` غير مثبَّت |
+| `services/twin.js` | 70 | `knowledgeService` (يتيم) | ❌ عبر `projectManager` |
+| `services/logger.js` | 37 | `twin` (يتيم) | ✅ |
+| `services/db.js` | 59 | لا شيء | ❌ `better-sqlite3` غير مثبَّت |
+| `utils/aiProvider.js` | 39 | لا شيء | ✅ |
+| `utils/performance.js` | 61 | لا شيء | ✅ |
+| `utils/security.js` | 22 | لا شيء | ✅ |
+
+**وقائع أُثبتت بالتشغيل، لا استنتاجات:**
+
+1. `taskExecutor.js` يستورد `simple-git` وهي **ليست في `package.json`** — فلا
+   يُستورَد الملفّ أصلاً (`ERR_MODULE_NOT_FOUND`). لم يظهر ذلك يوماً لأن لا
+   أحد يستورده.
+2. ويستورد ديناميكياً `agents/architect.agent.js` و
+   `agents/projectInitializer.agent.js` — **وكلاهما غير موجود**. الحيّ اسمه
+   `agents/architectAgent.js` ويُصدَّر عبر `agents/index.js`؛ أُعيدت التسمية
+   ولم يتبعها هذا الملف.
+3. خمسٌ من الإحدى عشرة لا تُحمَّل (اعتماداتٌ غير مثبَّتة). فحكم **KEEP** على
+   `twin.js` و`knowledgeService.js` حكمٌ على وحدتين ترميان عند الاستيراد.
+4. `utils/security.js` يشارك اسمَ `middleware/security.js` الحيّ ويختلف عنه
+   محتوىً (`escapeHtml` مقابل `sanitizePath`/`schemas`/`validate`). فمن قرأ
+   الاسم قرأ الميتَ ظانّاً أنه الحيّ.
+
+📌 **ولا يُحذف شيءٌ هنا الآن.** شرطُ المالك «لا نحذف قبل فهم dependencies»،
+وهذا القسم هو الفهم؛ والحذف قرارٌ مستقلّ بـPR مستقلّ كما جرى مع الثلاثين
+ملفاً سابقاً. ما أُصلح الآن شيءٌ واحد: حارسُ الاحتواء في `fileEditor.js` —
+لأن الخريطة تعده بـ`plugins/coding/`، فلا يُوصَل لاحقاً وهو يحمل عطباً
+سمّاه `workspacePaths.js` وأصلحه في موضعٍ آخر.
