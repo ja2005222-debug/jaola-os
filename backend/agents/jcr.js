@@ -28,7 +28,7 @@ import { detectProjectType } from './knowledgeEngine.js';
 import { hasKeyword } from './keywordMatch.js';
 import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
 import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
-import { generateDatabase, selectDatabase } from './databaseAgent.js';
+import { generateDatabase } from './databaseAgent.js';
 import { generateAuth, needsAuth } from './authAgent.js';
 import { generateAdvancedModules, needsBackend } from './backendAgent.js';
 import { generatePrismaSetup, needsPostgres } from './postgresAgent.js';

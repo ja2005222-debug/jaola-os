@@ -9,21 +9,21 @@
  */
 
 import { groq, smartChat } from './baseAgent.js';
+import { needsRelationalDb } from './backendNeed.js';
 
 // ═══════════════════════════════════════════════════════
 // 🔍 تحديد نوع قاعدة البيانات المناسبة
 // ═══════════════════════════════════════════════════════
-const POSTGRES_KEYWORDS = [
-    'مالي', 'محاسبة', 'فاتورة', 'دفع', 'payment', 'finance',
-    'accounting', 'invoice', 'bank', 'بنك', 'عملات', 'currency'
-];
-
-export function selectDatabase(userGoal, projectType) {
-    const goal = (userGoal || '').toLowerCase();
-    const needsPostgres = POSTGRES_KEYWORDS.some(kw => goal.includes(kw));
-
-    if (needsPostgres) return 'postgresql';
-    return 'mongodb'; // الافتراضي — أسهل للمبتدئين وأسرع للنماذج الأولية
+// كانت هنا قائمةُ مفاتيحَ ثانيةٌ (`POSTGRES_KEYWORDS`) تُطابَق بـ`includes`،
+// فكان السؤالُ الواحد «أيحتاج قاعدةً علاقيّة؟» يُسأل مرّتين ويُجاب جوابَين:
+//   • «متجر ملابس بتصميم جمالي» → postgresql، لأنّ «مالي» ⊂ «جمالي»
+//     (وهي العلّةُ نفسها التي أُصلحت في postgresAgent بـSprint 2r، وبقي توأمُها).
+//   • «موقع فواتير ودفع» و«invoice management system» → postgresql هنا،
+//     بينما `needsPostgres` تقول لا، فلا يُولَّد Prisma. توصيةٌ بلا منفّذ.
+// فصار الجوابُ من مصدر الحقيقة الواحد نفسه الذي يُشغّل PostgresAgent.
+// و`projectType` لم يكن يُقرأ قطّ؛ أُبقي في التوقيع لأن للمستدعي أن يمرّره.
+export function selectDatabase(userGoal, _projectType) {
+    return needsRelationalDb(userGoal) ? 'postgresql' : 'mongodb';
 }
 
 // ═══════════════════════════════════════════════════════
@@ -189,7 +189,14 @@ export const rooms = [
 // 🚀 الدالة الرئيسية
 // ═══════════════════════════════════════════════════════
 export async function generateDatabase(userGoal, projectType, projectPath) {
-    const dbType = selectDatabase(userGoal, projectType);
+    // ما يُكتب في هذه الدالة **مونغو دائماً**: `api/db.js` يستورد mongoose،
+    // و`.env.example` يضع MONGODB_URI، والمخطط من MONGODB_SCHEMAS. وكان
+    // `dbType` يحمل ناتجَ selectDatabase فيُطبع في سجلّ المستخدم الحيّ
+    // «✅ postgresql — 4 ملف» فوق أربعةِ ملفاتٍ مونغويّة. فالحقلُ يصف
+    // المكتوب، والتوصيةُ تُذكر توصيةً — ومنفّذُها PostgresAgent بعد هذه
+    // المرحلة بأسطر (jcr.js:889)، بالشرط نفسه بعد التوحيد أعلاه.
+    const recommended = selectDatabase(userGoal, projectType);
+    const dbType = 'mongodb';
     const schema = MONGODB_SCHEMAS[projectType] || await generateDynamicSchema(userGoal, projectType);
     const seedData = SEED_DATA[projectType] || '';
 
@@ -240,10 +247,12 @@ export async function connectDB() {
     return {
         success: true,
         dbType,
+        recommended,
         files,
         // الملخّص يعدّد ما كُتب فعلاً — كان ثابتاً «(schema, seed, connection)» حتى حين
         // يغيب المخطط والبذور (نوع مشروع خارج القوالب بلا مزوّد)
         summary: `${dbType} — ${files.length} ملف (${files.map(f => f.name).join(', ')})`
+            + (recommended === dbType ? '' : ` · التوصية: ${recommended} (يتولّاه PostgresAgent)`)
     };
 }
 
