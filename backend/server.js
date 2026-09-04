@@ -3043,8 +3043,10 @@ app.post('/api/public/auth/set-password', authLimit, async (req, res) => {
     const v = verifyBotToken(req.body?.token);
     if (!v?.u || !v?.p) return res.status(204).end();
     try {
-        const r = await setProjectPassword(APPAUTH_DIR, v.u, v.p, req.body?.password);
-        if (r.error) return res.status(400).json({ error: r.error });
+        // 🔒 `currentPassword` إلزاميّ متى كانت هناك كلمة مرور مضبوطة: التوكن
+        // وحده لا يكفي لأنه منشورٌ في صفحة الموقع نفسها (انظر projectAuth.js).
+        const r = await setProjectPassword(APPAUTH_DIR, v.u, v.p, req.body?.password, req.body?.currentPassword);
+        if (r.error) return res.status(r.status || 400).json({ error: r.error });
         res.json({ success: true });
     } catch { res.status(500).json({ success: false }); }
 });

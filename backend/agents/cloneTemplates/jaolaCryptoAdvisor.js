@@ -85,6 +85,8 @@ export function jaolaCryptoAdvisor() {
         <div id="coinSearchResults" class="watchlist-box"></div>
       </div>
       <div class="panel form-col">
+        <label>كلمة المرور الحالية</label>
+        <input id="stPassCur" type="password" placeholder="مطلوبة لتغيير كلمة المرور">
         <label id="newPassLabel">كلمة المرور الجديدة</label>
         <input id="stPass" type="password" placeholder="اتركها فارغة للإبقاء">
         <button class="btn primary" id="savePassBtn" data-action="saveSettings">حفظ كلمة المرور</button>
@@ -417,7 +419,7 @@ function setView(v) {
     renderTfTabs(); renderAnalysisShell(); loadAnalysis(state.activeCoin);
     startPolling('analysis', function () { loadAnalysis(state.activeCoin); }, 60000);
   }
-  if (v === 'settings') { renderWatchlistSettings(); byId('coinSearchInput').value = ''; byId('stPass').value = ''; loadLimits(); }
+  if (v === 'settings') { renderWatchlistSettings(); byId('coinSearchInput').value = ''; byId('stPass').value = ''; byId('stPassCur').value = ''; loadLimits(); }
 }
 function renderTfTabs() {
   byId('tfTabs').innerHTML = TIMEFRAME_ORDER.map(function (tf) {
@@ -690,9 +692,9 @@ function saveSettings() {
   var np = byId('stPass').value.trim();
   var sync = window.JAOLA_SYNC;
   if (np) {
-    if (sync) { fetch(sync.api + '/api/public/auth/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: np }), signal: AbortSignal.timeout(8000) }).catch(function () {}); }
+    if (sync) { fetch(sync.api + '/api/public/auth/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: np, currentPassword: byId('stPassCur').value }), signal: AbortSignal.timeout(8000) }).then(function (r) { if (!r.ok) toast('كلمة المرور الحالية غير صحيحة'); else toast('تم تغيير كلمة المرور'); }).catch(function () {}); }
     else { settings.pass = np; save('settings', settings); }
-    byId('stPass').value = '';
+    byId('stPass').value = ''; byId('stPassCur').value = '';
   }
   toast(t('passwordSaved'));
 }

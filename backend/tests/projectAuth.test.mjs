@@ -51,3 +51,61 @@ test('projectAuth: لا يخزّن التجزئة كنص صريح، ولا ير�
     assert.equal(await verifyPassword(dir, 'u2', 'p2', 'admin'), true, 'ملف تالف → يُعامَل كغير موجود (افتراضية)');
     fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// 🔴 استيلاءٌ كامل على لوحة التطبيق المنشور، بلا معرفة كلمة المرور.
+//
+// `/api/public/auth/set-password` كان محروساً بتوكن المشروع وحده — والتوكن
+// **ليس سرّاً**: `dataSync.js` يكتبه حرفياً في `jaola-data.js` داخل الموقع
+// المنشور ويعرضه على `window.JAOLA_SYNC.token`. فأي زائر يفتح الطرفية،
+// يقرؤه، ويستبدل كلمة المرور — فيدخل ويُقصي المالك.
+//
+// ووجودُ `/auth/login` نفسه هو الدليل على أن كلمة المرور اعتمادٌ حقيقي:
+// التجزيء لا يغادر الخادم، والتحقق في هذا الملف وحده. ثم كان مسارٌ شقيق
+// يسلّم الاعتماد لمن طلبه — حارسٌ يَعِد بما ينقضه جارُه.
+test('🔒 استبدالُ كلمة مرور مضبوطة يتطلّب معرفتها — لا التوكن وحده', async () => {
+    const dir = tmp();
+    assert.ok((await setPassword(dir, 'owner', 'shop', 'S3cret-Owner-Pass')).ok);
+
+    // مهاجمٌ يملك التوكن (منشورٌ في الصفحة) ولا يعرف كلمة المرور
+    const noProof = await setPassword(dir, 'owner', 'shop', 'attacker-owns-you');
+    assert.ok(noProof.error, 'استُبدل الاعتماد بلا إثبات — الاستيلاء ما زال ممكناً');
+    assert.equal(noProof.status, 403);
+    const wrongProof = await setPassword(dir, 'owner', 'shop', 'attacker-owns-you', 'admin');
+    assert.ok(wrongProof.error, 'تخمينٌ خاطئ للحالية مرّ');
+
+    // والمالك لم يُمسّ
+    assert.equal(await verifyPassword(dir, 'owner', 'shop', 'S3cret-Owner-Pass'), true);
+    assert.equal(await verifyPassword(dir, 'owner', 'shop', 'attacker-owns-you'), false);
+
+    // ويغيّرها هو بالحالية الصحيحة
+    assert.ok((await setPassword(dir, 'owner', 'shop', 'New-Owner-Pass', 'S3cret-Owner-Pass')).ok);
+    assert.equal(await verifyPassword(dir, 'owner', 'shop', 'New-Owner-Pass'), true);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// 📌 حدٌّ معلومٌ يُقال لا يُدَّعى خلافُه: مشروعٌ لم تُضبط له كلمة مرور بعدُ
+// يبقى على الافتراضية `'admin'` — **معلنةً في المصدر ويعرفها الجميع**،
+// فلا إثباتَ فيها يُطلَب. اشتراطُها كان سيمنع أصحاب التطبيقات المنشورة
+// سلفاً من أول تغيير بلا أن يمنع مهاجماً يعرفها أصلاً. الحماية الحقيقية
+// لتلك الحالة قرارُ منتَج (إلزام ضبط كلمة مرور عند أول نشر) لا شرطٌ هنا.
+test('📌 أول ضبطٍ يبقى بلا إثبات (الافتراضية معلنة) — ثم يُقفَل', async () => {
+    const dir = tmp();
+    assert.ok((await setPassword(dir, 'u', 'p', 'First-Real-Pass')).ok, 'أول ضبط لم يعد ممكناً');
+    const after = await setPassword(dir, 'u', 'p', 'Attacker-Pass-Long');
+    assert.ok(after.error && after.status === 403, 'لم يُقفَل بعد أول ضبط');
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// كل قالبٍ يرسل الكلمة الحالية فعلاً، وله حقلٌ يجمعها — وإلا صار المسار
+// يرفض تغييراً مشروعاً من لوحةٍ لا تملك ما تُثبت به.
+test('🧩 القوالب الـ19 كلها ترسل currentPassword ولها حقلٌ يجمعها', async () => {
+    const dir = new URL('../agents/cloneTemplates/', import.meta.url);
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.js'));
+    const senders = files.filter(f => fs.readFileSync(new URL(f, dir), 'utf8').includes('auth/set-password'));
+    assert.ok(senders.length >= 19, `قوالب تغيّر كلمة المرور: ${senders.length}`);
+    for (const f of senders) {
+        const src = fs.readFileSync(new URL(f, dir), 'utf8');
+        assert.ok(src.includes('currentPassword'), `${f}: لا يرسل الكلمة الحالية`);
+        assert.ok(/id="stPassCur"|value=\{curPass\}/.test(src), `${f}: لا حقل يجمع الكلمة الحالية`);
+    }
+});

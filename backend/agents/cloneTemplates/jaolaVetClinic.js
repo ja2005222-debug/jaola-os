@@ -87,6 +87,8 @@ export function jaolaVetClinic() {
       <div class="view-head"><h2>الإعدادات</h2></div>
       <div class="panel form-col">
         <label>اسم العيادة</label><input id="stName">
+        <label>كلمة المرور الحالية</label><input id="stPassCur" type="password" placeholder="مطلوبة لتغيير كلمة المرور">
+        <label>كلمة المرور الحالية</label><input id="stPassCur" type="password" placeholder="مطلوبة لتغيير كلمة المرور">
         <label>كلمة المرور الجديدة</label><input id="stPass" type="password" placeholder="اتركها فارغة للإبقاء">
         <label>صورة العيادة (اختياري)</label>
         <input id="stPhotoFile" type="file" accept="image/*">
@@ -158,7 +160,7 @@ function setView(v) {
   if (v === 'owners') renderOwners();
   if (v === 'pets') renderPets();
   if (v === 'reports') renderReports();
-  if (v === 'settings') { byId('stName').value = settings.name; byId('stPass').value = ''; pendingPhotoDataUrl = null; byId('stPhotoFile').value = ''; show(byId('stPhotoPreview'), false); }
+  if (v === 'settings') { byId('stName').value = settings.name; byId('stPass').value = ''; byId('stPassCur').value = ''; pendingPhotoDataUrl = null; byId('stPhotoFile').value = ''; show(byId('stPhotoPreview'), false); }
 }
 function renderTabs() {
   if (!session) { byId('tabs').innerHTML = ''; return; }
@@ -320,7 +322,7 @@ function saveSettings() {
   settings.name = byId('stName').value.trim() || settings.name;
   var np = byId('stPass').value.trim();
   var sync = window.JAOLA_SYNC;
-  if (np) { if (sync) { fetch(sync.api + '/api/public/auth/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: np }), signal: AbortSignal.timeout(8000) }).catch(function () {}); } else settings.pass = np; }
+  if (np) { if (sync) { fetch(sync.api + '/api/public/auth/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: np, currentPassword: byId('stPassCur').value }), signal: AbortSignal.timeout(8000) }).then(function (r) { if (!r.ok) toast('كلمة المرور الحالية غير صحيحة'); else toast('تم تغيير كلمة المرور'); }).catch(function () {}); } else settings.pass = np; }
   if (pendingPhotoDataUrl && sync) {
     fetch(sync.api + '/api/public/assets/clinicPhoto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, dataUrl: pendingPhotoDataUrl }), signal: AbortSignal.timeout(15000) })
       .then(function () { pendingPhotoDataUrl = null; loadClinicPhoto(); }).catch(function () {});
