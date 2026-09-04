@@ -655,48 +655,6 @@
       <button class="primary" id="gateSignIn" style="margin-top:10px">تسجيل الدخول</button>
     </div>
 
-    <!-- 🪧 تعريف ما قبل الدخول: زائرٌ يصل jatrava.com مباشرةً لا يعرف ما
-         الخدمة، وكانت الصفحة لا تريه إلا حقل توكن. هذه الكتلة تُظهر ما
-         نبيعه فعلاً — والأرقام هنا **ثابتة وصحيحة بنيوياً** (عدد المطارات
-         من airports.js) لا وعوداً تسويقية: لا «أرخص سعر» ولا «أفضل موقع»،
-         فالعرف: كل رقم من مصدر حقيقي. تُخفى مع authGate بعد الدخول. -->
-    <div id="introBlock" class="card hidden" style="margin-top:14px">
-      <h2 style="font-size:17px;margin-bottom:6px">✈️ Jatrava — بوابة السفر</h2>
-      <p style="color:var(--muted);font-size:14px;line-height:1.7;margin-bottom:14px">
-        نحجز لك التذكرة والفندق والسيارة بتأكيد فوري، ونركّب لك باقات سفر
-        كاملة — بأسعار حقيقية بلا خصومات وهمية ولا أسعار مشطوبة.
-      </p>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
-        <div style="border:1px solid var(--border);border-radius:10px;padding:12px">
-          <div style="font-size:20px;margin-bottom:4px">🔎</div>
-          <strong style="font-size:14px">طيران</strong>
-          <p style="color:var(--muted);font-size:12.5px;margin-top:4px">
-            بحث بأكثر من ١٥٠ مطاراً، بأمتعة كل قطاع وشروط التذكرة قبل الحجز.
-          </p>
-        </div>
-        <div style="border:1px solid var(--border);border-radius:10px;padding:12px">
-          <div style="font-size:20px;margin-bottom:4px">🏨</div>
-          <strong style="font-size:14px">فنادق</strong>
-          <p style="color:var(--muted);font-size:12.5px;margin-top:4px">
-            سياسة الإلغاء بمواعيدها ومبالغها، والرسوم التي تُدفع بالفندق معلنة.
-          </p>
-        </div>
-        <div style="border:1px solid var(--border);border-radius:10px;padding:12px">
-          <div style="font-size:20px;margin-bottom:4px">🎒</div>
-          <strong style="font-size:14px">باقات جاهزة</strong>
-          <p style="color:var(--muted);font-size:12.5px;margin-top:4px">
-            انطلاقات بتواريخ ثابتة، عربون الآن والمتبقي قبل السفر.
-          </p>
-        </div>
-        <div style="border:1px solid var(--border);border-radius:10px;padding:12px">
-          <div style="font-size:20px;margin-bottom:4px">🤖</div>
-          <strong style="font-size:14px">مساعد يحجز</strong>
-          <p style="color:var(--muted);font-size:12.5px;margin-top:4px">
-            اطلب رحلتك بالعربية، وهو يبحث ويحجز فعلياً بتأكيدك الصريح.
-          </p>
-        </div>
-      </div>
-    </div>
 
     <div id="app" class="hidden">
       <div class="tabs-wrap">
@@ -1024,6 +982,44 @@
           <p class="note">المساعد ينفّذ فعلياً: يبحث ويقارن ويحجز ويلغي بالحوار — وكل إجراء نفّذه يظهر كرقاقة شفافية.</p>
         </div>
       </section>
+    </div>
+
+    <!-- 🪧 تعريف الخدمة لزائرٍ جديد — **يظهر للزائر فعلاً الآن**.
+         كان يُعرَض من `showGate()` وحدها، وهي لا تقع إلا حين يُرفض توكنٌ
+         قائم (جلسة منتهية). ولمّا فُتح التصفّح بلا حساب صار
+         `/api/travel/config` ينجح للزائر أيضاً، فلا 401 ولا showGate —
+         و`boot()` يُخفي الكتلة عند كل نجاح. كتلةٌ كُتبت للزائر الجديد
+         ولا يراها زائرٌ جديد قط. الشرط الآن **وجود الجلسة** لا فشلُها.
+
+         وموضعها **بعد `#app` لا قبله**: كُتبت يوم كانت الصفحة لا تُري
+         الزائر إلا حقل توكن، فصدّرت الصفحة عن حقّ. واليوم البحث نفسه
+         أمامه ويعمل — فتصديرُها يدفعه أسفل الشاشة على الجوال. الشرح
+         لمن يريده، والبحث أولاً. -->
+    <div id="introBlock" class="card hidden" style="margin-top:18px">
+      <h2 style="font-size:17px;margin-bottom:6px">✈️ ما الذي تجده في Jatrava؟</h2>
+      <p style="color:var(--muted);font-size:14px;line-height:1.7;margin-bottom:14px">نحجز لك التذكرة والفندق والسيارة بتأكيد فوري، ونركّب لك باقات سفر كاملة — بأسعار حقيقية بلا خصومات وهمية ولا أسعار مشطوبة.</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+        <div style="border:1px solid var(--border);border-radius:10px;padding:12px">
+          <div style="font-size:20px;margin-bottom:4px">🔎</div>
+          <strong style="font-size:14px">طيران بشروطٍ معلنة</strong>
+          <p style="color:var(--muted);font-size:12.5px;margin-top:4px">بحث بأكثر من ١٥٠ مطاراً، بأمتعة كل قطاع وشروط التذكرة قبل الحجز.</p>
+        </div>
+        <div style="border:1px solid var(--border);border-radius:10px;padding:12px">
+          <div style="font-size:20px;margin-bottom:4px">🏨</div>
+          <strong style="font-size:14px">فنادق بلا مفاجآت</strong>
+          <p style="color:var(--muted);font-size:12.5px;margin-top:4px">سياسة الإلغاء بمواعيدها ومبالغها، والرسوم التي تُدفع بالفندق معلنة.</p>
+        </div>
+        <div style="border:1px solid var(--border);border-radius:10px;padding:12px">
+          <div style="font-size:20px;margin-bottom:4px">🎒</div>
+          <strong style="font-size:14px">باقات جاهزة بمقاعد محجوزة</strong>
+          <p style="color:var(--muted);font-size:12.5px;margin-top:4px">انطلاقات بتواريخ ثابتة، عربون الآن والمتبقي قبل السفر.</p>
+        </div>
+        <div style="border:1px solid var(--border);border-radius:10px;padding:12px">
+          <div style="font-size:20px;margin-bottom:4px">🤖</div>
+          <strong style="font-size:14px">مساعد يحجز فعلاً</strong>
+          <p style="color:var(--muted);font-size:12.5px;margin-top:4px">اطلب رحلتك بالعربية، وهو يبحث ويحجز فعلياً بتأكيدك الصريح.</p>
+        </div>
+      </div>
     </div>
   </main>
 
@@ -1666,7 +1662,10 @@
       }
       $('app').classList.remove('hidden');
       $('authGate').classList.add('hidden');
-      $('introBlock').classList.add('hidden');
+      // 🪧 تعريف الخدمة **للزائر**: كان يُخفى هنا بلا شرط، فلم يره زائرٌ
+      // قط (شرحُه فوق الكتلة). و`token` هنا هو الفارق الحقيقي بين زائرٍ
+      // وصاحبِ حساب — نفس الفارق الذي تتفرّع عليه التبويبات أدناه.
+      $('introBlock').classList.toggle('hidden', !!token);
       fxInit().catch(() => {}); // منتقي العملة إثراء — فشله لا يمس البوابة
 
       // وضع "صفحة فنادق منفصلة": فُتح هذا التبويب من مربع "أضف فنادق
@@ -1843,6 +1842,7 @@
       $('notifTabBtn').classList.remove('hidden');
       $('guestSignIn').classList.add('hidden');
       $('logoutBtn').classList.remove('hidden');
+      $('introBlock').classList.add('hidden'); // صار صاحبَ حساب — لا تعريفَ بعد
       // المسافرون المحفوظون تقرأهم نافذة الحجز — تُحمَّل قبل الاستئناف
       try { await loadProfile(); } catch { /* لا يمنع الاستئناف */ }
       refreshBell();

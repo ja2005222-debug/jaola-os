@@ -16,6 +16,7 @@ import os from 'os';
 import path from 'path';
 import jwt from 'jsonwebtoken';
 
+import { declaredNumber } from '../src/declaredNumber.js';
 import { createApp, cancellationFeeAt, validateSearchParams, validateMultiCitySearchParams, validatePassengers, validateSelectedServices, validateStaySearchParams, validateGuests, validateCarSearchParams, validateDrivers, validateEsimSearchParams, validateEsimTraveller, verifyDuffelWebhookSignature } from '../server.js';
 import crypto from 'crypto';
 import { createMockTravelProvider } from '../src/providers/mockProvider.js';
@@ -1625,6 +1626,50 @@ describe('صحة صياغة سكربتات الواجهة — درس عطل إن
         const bar = /<div class="tabs">([\s\S]*?)<\/div>/.exec(html)[1];
         for (const btn of bar.match(/<button[^>]*>/g) || []) {
             assert.ok(/data-tab=/.test(btn) || /id="adminLink"/.test(btn), `زرّ تبويب بلا data-tab: ${btn}`);
+        }
+    });
+
+    // 🪧 عطبٌ عاش طويلاً: كتلة تعريف الخدمة (`introBlock`) كُتبت لزائرٍ
+    // جديد، ولم يرها زائرٌ جديد **قط**. شرطُ عرضها كان `showGate()` وحدها،
+    // وهي لا تقع إلا حين يُرفض توكنٌ قائم — أي جلسةٌ منتهية. ولمّا فُتح
+    // التصفّح بلا حساب (الميزة 20) صار `/api/travel/config` ينجح للزائر،
+    // فلا 401 ولا showGate، و`boot()` يُخفيها عند كل نجاح. ميزةٌ كاملة
+    // ميّتة، وميزةٌ ميتة تُخفي عيوبها: كانت الكتلة كلّها بلا ترجمة أيضاً،
+    // ولم يظهر ذلك لأنها لا تُعرض. هذا الاختبار يحرس الشرط والموضع معاً.
+    test('🪧 تعريف الخدمة شرطُه وجودُ الجلسة لا فشلُها، وموضعُه بعد البحث', () => {
+        const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+
+        // (١) لا إخفاءَ غيرَ مشروط: هو بعينه ما جعل الكتلة ميّتة.
+        assert.ok(!/\$\('introBlock'\)\.classList\.add\('hidden'\);\s*\n\s*fxInit/.test(html),
+            'عاد الإخفاء غير المشروط في boot() — الكتلة تموت ثانيةً');
+        assert.ok(/\$\('introBlock'\)\.classList\.toggle\('hidden', !!token\)/.test(html),
+            'الشرط ليس وجودَ الجلسة');
+
+        // (٢) الدخول يُخفيها — وإلا بقيت أمام صاحب حساب لا يحتاجها.
+        const apply = /async function applySession\(\)([\s\S]*?)\n    }/.exec(html)[1];
+        assert.ok(apply.includes("$('introBlock').classList.add('hidden')"),
+            'الدخول لا يُخفي التعريف');
+
+        // (٣) الموضع بعد `#app`: كُتبت يوم كانت الصفحة لا تُري إلا حقل
+        // توكن، واليوم البحث أمامه — فتصديرُها يدفع البحث تحت الطيّة.
+        assert.ok(html.indexOf('id="introBlock"') > html.indexOf('id="app"'),
+            'التعريف قبل البحث — يدفعه أسفل الشاشة على الجوال');
+
+        // (٤) وكلُّ نصٍّ فيها مترجَمٌ بالأعمدة الثلاثة: إحياءُ الكتلة هو
+        // ما كشف خلوَّها من الترجمة، فلا تُحيا نصفَ مترجمة.
+        const w = {};
+        new Function('window', fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8'))(w);
+        const table = w.JAOLA_I18N_TABLE;
+        const block = /id="introBlock"[\s\S]*?\n    <\/div>/.exec(html)[0];
+        const texts = [...block.matchAll(/>([^<>]*[\u0600-\u06FF][^<>]*)</g)]
+            .map(m => m[1].trim()).filter(t => t && !/^[\s\d.,-]+$/.test(t));
+        assert.ok(texts.length >= 9, `نصوصٌ أقل من المتوقَّع: ${texts.length}`);
+        for (const t of texts) {
+            const e = table[t];
+            assert.ok(e, `نصٌّ بلا مدخل ترجمة: ${t}`);
+            for (const lang of ['en', 'ur', 'nl']) {
+                assert.ok(e[lang] && e[lang].trim(), `${t} — عمود ${lang} مفقود`);
+            }
         }
     });
 
@@ -5602,6 +5647,54 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             // اختيار صحيح: يعيد بيانات الخدمة كاملةً من الكتالوج (لا مما أرسله الطالب)
             const ok = validateSelectedServices([{ id: 'svc1', quantity: 2, netAmount: 1 /* مُتجاهَل عمداً */ }], offer);
             assert.deepEqual(ok.values, [{ id: 'svc1', type: 'checked_bag', maxWeightKg: 23, quantity: 2, netAmount: 20, currency: 'USD' }]);
+        });
+
+        // 🔴 **صفرٌ ليس «لم يُصرَّح»**. كان الحدُّ `Number(maxQuantity) || 1`،
+        // فمزوّدٌ يقول `maxQuantity: 0` — أي **لا شيء متاح** — يصير حدُّه
+        // واحداً، فتُباع حقيبةٌ قال الناقل إنه لا يملكها ويُقبض ثمنها.
+        // ومحوّل Duffel يستعمل `Number.isFinite` عمداً ليحفظ الصفر عن
+        // الغياب: طبقةٌ تحفظ التمييز بعناية وطبقةٌ فوقها تُلغيه — والتعليق
+        // فوق الحارس يَعِد بأن «الأدنى بينهما هو الفعلي»، وهو ما يكسره
+        // `|| 1` عند الصفر بالضبط.
+        test('🧳 حدُّ الكمية: صفرٌ يمنع البيع، والغيابُ وحده يسقط على واحدة', () => {
+            const withMax = (maxQuantity) => ({
+                availableServices: [{
+                    id: 'b', type: 'checked_bag', maxWeightKg: 23, netAmount: 20, currency: 'USD',
+                    ...(maxQuantity === undefined ? {} : { maxQuantity }),
+                }],
+            });
+            const pick = (max, quantity) => validateSelectedServices([{ id: 'b', quantity }], withMax(max));
+
+            // صفر = لا شيء متاح → لا تُباع ولو واحدة، وبرسالةٍ تقول السبب
+            const none = pick(0, 1);
+            assert.ok(none.error, 'بيعٌ لخدمةٍ قال المزوّد إنها غير متاحة');
+            assert.match(none.error, /غير متاحة/);
+            for (const bad of [-1, -5]) assert.ok(pick(bad, 1).error, `حدٌّ سالب قُبل: ${bad}`);
+
+            // الغياب يبقى واحدة — سقوطٌ محافظ لا «بلا حدّ»
+            assert.equal(pick(undefined, 1).values[0].quantity, 1);
+            assert.ok(pick(undefined, 2).error, 'الغياب فُهم «بلا حدّ»');
+            for (const junk of [null, 'كثير', NaN]) {
+                assert.equal(pick(junk, 1).values?.[0]?.quantity, 1, `قيمة غير رقمية لم تسقط على واحدة: ${junk}`);
+                assert.ok(pick(junk, 2).error);
+            }
+
+            // وسقف المنصة يبقى فوق ما يزعمه المزوّد مهما علا
+            assert.equal(pick(99, 10).values[0].quantity, 10);
+            assert.ok(pick(99, 11).error, 'تُجووِز سقف المنصة');
+        });
+
+        // 🔢 القاعدة نفسها تحكم المحوّل والحارس معاً — نسختان منها تتباعدان
+        // فيقرأ أحدهما «صفر» ما يقرؤه الآخر «سكوتاً».
+        test('🔢 declaredNumber: الصفر تصريحٌ، والسكوت null — في الاتجاهين', () => {
+            for (const [input, expected] of [
+                [0, 0], ['0', 0], [3, 3], ['7', 7], [-2, -2],
+                [null, null], [undefined, null], ['', null], ['   ', null],
+                [[], null], [{}, null], [NaN, null], [Infinity, null],
+                [true, null], ['كثير', null],
+            ]) {
+                assert.equal(declaredNumber(input), expected, `declaredNumber(${JSON.stringify(input)})`);
+            }
         });
 
         test('🧳 أمتعة إضافية: كتالوج بلا صافٍ في البحث، شراء يرفع الإجمالي ويظهر في الحجز، والاسترداد يشمل نصيبها', async () => {

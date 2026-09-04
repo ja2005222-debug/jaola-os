@@ -26,6 +26,7 @@ import {
 } from './src/accounts.js';
 import { checkedBaggage, arrivalDayOffset, layovers } from './src/itinerary.js';
 import { readMarkupPct, readPackageMarkupPct, readCategoryMarkupPct, applyMarkup, roundMoney, readFxBufferPct, collectPercentConfigIssues, formatPercentIssue } from './src/pricing.js';
+import { declaredNumber } from './src/declaredNumber.js';
 import { quotePackage, bookPackage, cancelPackage, retryPackageCompensations } from './src/packages.js';
 import {
     normalizeFixedPackage, priceFixedPackage, publicFixedPackage,
@@ -348,7 +349,23 @@ export function validateSelectedServices(selectedServices, offer) {
         const svc = catalog.get(String(sel?.id || ''));
         if (!svc) return { error: 'خدمة إضافية غير معروفة أو انتهى عرضها — أعد البحث واختر من جديد.' };
         const quantity = Number(sel?.quantity);
-        const maxQty = Math.min(Number(svc.maxQuantity) || 1, MAX_SERVICE_QTY_PER_LINE);
+        // 🔴 **صفرٌ ليس «لم يُصرَّح»**: كان `Number(svc.maxQuantity) || 1`،
+        // فمزوّدٌ يقول `maxQuantity: 0` — أي **لا شيء متاح** — يصير حدُّه
+        // واحداً، فتُباع للمسافر حقيبةٌ قال الناقل إنه لا يملكها ويُقبض
+        // ثمنها. ومحوّل Duffel يستعمل `Number.isFinite` **عمداً** ليحفظ
+        // الصفر عن الغياب (`duffelProvider.js`) — فطبقةٌ تحفظ التمييز
+        // بعناية وطبقةٌ فوقها تُلغيه. نفس قاعدة المحوّل تُطبَّق هنا.
+        //
+        // 📌 والغيابُ يبقى واحداً: مزوّدٌ لم يصرّح بحدٍّ لا يعني «بلا حدّ»
+        // — السقوط المحافظ هو الصواب، وهو ما كان يفعله الكود أصلاً لهذه
+        // الحالة وحدها.
+        // `declaredNumber` لا `Number`: `Number(null)` صفرٌ، فسكوتٌ صريح
+        // كان سيُقرأ «صفر متاح» فيمنع بيعاً مشروعاً — العطب نفسه معكوساً.
+        const declared = declaredNumber(svc.maxQuantity);
+        const maxQty = Math.min(declared === null ? 1 : declared, MAX_SERVICE_QTY_PER_LINE);
+        if (maxQty < 1) {
+            return { error: 'هذه الخدمة الإضافية غير متاحة على هذا العرض — أعد البحث واختر من جديد.' };
+        }
         if (!Number.isInteger(quantity) || quantity < 1 || quantity > maxQty) {
             return { error: `الكمية المطلوبة من الأمتعة الإضافية يجب أن تكون عدداً صحيحاً بين 1 و${maxQty}.` };
         }

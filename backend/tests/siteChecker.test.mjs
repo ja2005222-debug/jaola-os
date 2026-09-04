@@ -30,7 +30,17 @@ test('checkSite: صفحة سليمة (title + meta description + viewport + gzip
         assert.equal(r.hasViewport, true);
         assert.equal(r.imgsNoAlt, 0);
         assert.equal(r.compressed, true);
-        assert.deepEqual(r.issues, []);
+        // ⏱️ زمن الاستجابة **ليس خاصيةً للصفحة** بل قياسٌ لحِمل الآلة:
+        // `checkSite` يضيف ملاحظة «بطيء» فوق 3000ms، والجلبُ المحلي يتجاوزها
+        // فعلاً حين تُشغَّل الحزمة كلها بالتوازي على معالجٍ مشبع. فتأكيدُ
+        // «بلا ملاحظاتٍ إطلاقاً» كان يدّعي يقيناً لا يملكه — يسقط في
+        // التوازي وحده وينجح منفرداً، وهو التذبذب الموثَّق. أُعيد إنتاجه
+        // بخادمٍ يتأخّر 3.2s: صفحةٌ سليمةٌ حرفياً وissues غير فارغة.
+        //
+        // 📌 والعتبة تبقى في المنتج كما هي — موقعٌ حقيقي بطيء يستحق
+        // الملاحظة. المُصلَح هو ادّعاء الاختبار لا سلوك الفاحص.
+        const contentIssues = r.issues.filter(i => !i.includes('زمن استجابة'));
+        assert.deepEqual(contentIssues, [], `ملاحظات محتوى غير متوقَّعة: ${r.issues.join(' | ')}`);
     } finally { server.close(); }
 });
 
