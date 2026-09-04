@@ -75,8 +75,13 @@ export function applyContentPatch(content, patch = {}) {
     if (patch.sections && typeof patch.sections === 'object') {
         out.sections = { ...(out.sections || {}) };
         for (const key of Object.keys(patch.sections)) {
-            if (!out.sections[key]) continue;                 // لا يُنشئ أقساماً جديدة (بنية ثابتة)
+            // 🛡️ الملكية لا الوراثة: `!out.sections[key]` كان يسأل السلسلة
+            // الأصلية كلها، فـ`constructor` و`toString` و`hasOwnProperty`
+            // وأخواتها تُقرأ «موجودة» فتمرّ — وقائمةُ سماحٍ تَعِد ببنيةٍ
+            // ثابتة كانت تكتب سبعة أقسامٍ جديدة باسم المهاجم.
+            if (!Object.prototype.hasOwnProperty.call(out.sections, key)) continue;
             const s = patch.sections[key], cur = out.sections[key];
+            if (!s || typeof s !== 'object') continue;        // تعديلٌ ليس كائناً لا يُفهم قسماً
             out.sections[key] = {
                 heading: s.heading != null ? str(s.heading, 160) : cur.heading,
                 subheading: s.subheading != null ? str(s.subheading, 300) : cur.subheading,

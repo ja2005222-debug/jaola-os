@@ -54,3 +54,24 @@ test('appAssets: يفرض سقف عدد الصور لكل مشروع', () => {
     assert.ok(saveAsset(dir, 'u', 'p', 'slot0', JPG_1PX).ok, 'استبدال slot موجود لا يُحسب جديداً');
     fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// 🗝️ العزل أعلاه («مشروع آخر معزول تماماً») كان صحيحاً للأسماء البسيطة
+// فقط: المفتاح `clean(u)__clean(p)__clean(slot)` يجمع ثلاثة حقولٍ بفاصلٍ
+// تحتمله الحقول نفسها، فثلاثيّتان مختلفتان تقرآن الصورة نفسها.
+test('appAssets: مشروعا مستخدمَين مختلفَين لا يتشاركان صورةً واحدة', () => {
+    const dir = tmp();
+    assert.ok(saveAsset(dir, 'alice__bob', 'site', 'clinicPhoto', PNG_1PX).ok);
+    assert.equal(readAsset(dir, 'alice', 'bob__site', 'clinicPhoto'), null,
+        'صورة مشروعٍ آخر كانت تُقرأ — والرفع كان يدهسها');
+    assert.ok(saveAsset(dir, 'alice', 'bob__site', 'clinicPhoto', JPG_1PX).ok);
+    assert.equal(readAsset(dir, 'alice__bob', 'site', 'clinicPhoto').mime, 'image/png', 'صورته لم تُدهَس');
+    assert.equal(readAsset(dir, 'alice', 'bob__site', 'clinicPhoto').mime, 'image/jpeg');
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('appAssets: التباسُ الشريحة كذلك — (p, a__b) ليست (p__a, b)', () => {
+    const dir = tmp();
+    assert.ok(saveAsset(dir, 'u', 'p', 'a__b', PNG_1PX).ok);
+    assert.equal(readAsset(dir, 'u', 'p__a', 'b'), null);
+    fs.rmSync(dir, { recursive: true, force: true });
+});

@@ -11,8 +11,11 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { storeKey } from './storeKey.js';
 
-const slug = (u, p) => `${String(u || '').replace(/[^a-zA-Z0-9_-]/g, '_')}__${String(p || '').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+// 🗝️ المفتاح مبايِنٌ الآن: الفاصل `__` كان يحتمله الحقلان نفساهما
+// (انظر `storeKey.js`) — فزوجان مختلفان يكتبان ملفاً واحداً.
+const slug = (u, p) => storeKey(u, p);
 const storePath = (dir, u, p) => path.join(dir, slug(u, p) + '.json');
 
 function readEntry(dir, user, project) {

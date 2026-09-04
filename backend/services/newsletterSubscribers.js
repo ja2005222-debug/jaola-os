@@ -6,11 +6,14 @@
 
 import fs from 'fs';
 import path from 'path';
+import { storeKey } from './storeKey.js';
 
 const MAX_SUBSCRIBERS = 5000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-const key = (u, p) => `${String(u || '').replace(/[^a-zA-Z0-9_-]/g, '_')}__${String(p || '').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+// 🗝️ المفتاح مبايِنٌ الآن: الفاصل `__` كان يحتمله الحقلان نفساهما
+// (انظر `storeKey.js`) — فزوجان مختلفان يكتبان ملفاً واحداً.
+const key = (u, p) => storeKey(u, p);
 const storePath = (dir, u, p) => path.join(dir, key(u, p) + '.json');
 
 export function isValidEmail(v) {

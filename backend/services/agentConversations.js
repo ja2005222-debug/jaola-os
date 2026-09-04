@@ -8,6 +8,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { storeKey } from './storeKey.js';
 
 const MAX_EXCHANGES = 200;   // الأحدث يبقى، الأقدم يُقصّ
 const MAX_DAYS = 366;
@@ -22,7 +23,9 @@ function sanitize(v, max) {
     return out.trim().slice(0, max);
 }
 
-const key = (u, a) => `${String(u || '').replace(/[^a-zA-Z0-9_-]/g, '_')}__${String(a || '').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+// 🗝️ المفتاح مبايِنٌ الآن: الفاصل `__` كان يحتمله الحقلان نفساهما
+// (انظر `storeKey.js`) — فزوجان مختلفان يكتبان ملفاً واحداً.
+const key = (u, a) => storeKey(u, a);
 const storePath = (dir, u, a) => path.join(dir, key(u, a) + '.json');
 
 export function readConversations(dir, user, agentId) {

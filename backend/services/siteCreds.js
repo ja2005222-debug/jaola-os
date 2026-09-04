@@ -27,12 +27,20 @@
 
 import fs from 'fs';
 import path from 'path';
+import { storeKey } from './storeKey.js';
 
-const seg = (v) => String(v ?? '').replace(/[^a-zA-Z0-9_-]/g, '_');
-
-/** مسار ملفّ الاعتماد — نفس صياغة `cmsKey` السابقة حرفياً. */
+/**
+ * مسار ملفّ الاعتماد.
+ *
+ * 🔴 كان `seg(user) + '__' + seg(project)` — وهو **ليس مبايناً**: `_`
+ * حرفٌ مشروع داخل الحقلين، فـ(`alice`, `bob__site`) و(`alice__bob`,
+ * `site`) يشيران إلى الملفّ نفسه. ومَن يطالب بأحدهما — بمشروعه هو —
+ * يملك لوحة الآخر: تُردّ مطالبة صاحبها بـ«معيّنة سلفاً»، ويدخل هو
+ * بكلمته فيأخذ توكناً موقّعاً على مشروعها صحيحاً تماماً. المطالبة
+ * الذرّية أعلاه كانت تحرس الملفّ الصحيح؛ لكن الملفّ كان خطأ.
+ */
 export const siteCredPath = (dir, username, project) =>
-    path.join(dir, `${seg(username)}__${seg(project)}.json`);
+    path.join(dir, `${storeKey(username, project)}.json`);
 
 export function readSiteCred(dir, username, project) {
     try { return JSON.parse(fs.readFileSync(siteCredPath(dir, username, project), 'utf8')); }
