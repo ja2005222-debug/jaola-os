@@ -88,7 +88,6 @@ export function jaolaVetClinic() {
       <div class="panel form-col">
         <label>اسم العيادة</label><input id="stName">
         <label>كلمة المرور الحالية</label><input id="stPassCur" type="password" placeholder="مطلوبة لتغيير كلمة المرور">
-        <label>كلمة المرور الحالية</label><input id="stPassCur" type="password" placeholder="مطلوبة لتغيير كلمة المرور">
         <label>كلمة المرور الجديدة</label><input id="stPass" type="password" placeholder="اتركها فارغة للإبقاء">
         <label>صورة العيادة (اختياري)</label>
         <input id="stPhotoFile" type="file" accept="image/*">
@@ -286,7 +285,7 @@ var pendingPhotoDataUrl = null;
 function clinicPhotoSrc() {
   var sync = window.JAOLA_SYNC;
   if (!sync) return '';
-  return sync.api + '/api/public/assets/clinicPhoto?token=' + encodeURIComponent(sync.token) + '&t=' + Date.now();
+  return sync.api + '/api/public/assets/clinicPhoto?t=' + Date.now() + '&token=' + encodeURIComponent(sync.token);
 }
 function loadClinicPhoto() {
   var src = clinicPhotoSrc(); if (!src) return;

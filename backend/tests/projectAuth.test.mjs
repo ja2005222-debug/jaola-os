@@ -114,6 +114,11 @@ test('🧩 القوالب الـ19 كلها ترسل currentPassword ولها ح
     for (const f of senders) {
         const src = fs.readFileSync(new URL(f, dir), 'utf8');
         assert.ok(src.includes('currentPassword'), `${f}: لا يرسل الكلمة الحالية`);
-        assert.ok(/id="stPassCur"|value=\{curPass\}/.test(src), `${f}: لا حقل يجمع الكلمة الحالية`);
+        // 🪞 «واحدٌ» لا «واحدٌ فأكثر»: صيغتي الأولى قبلت التكرار، فمرّ حقلٌ
+        // مضاعفٌ في jaolaVetClinic — مُعرِّفٌ مكرَّر لا يبلغه getElementById
+        // ويراه صاحب اللوحة مرّتين. الحارس يعدّ الآن لا يكتفي بالوجود.
+        const fields = (src.match(/id="stPassCur"/g) || []).length
+            + (src.match(/value=\{curPass\}/g) || []).length;
+        assert.equal(fields, 1, `${f}: عدد حقول الكلمة الحالية ${fields} لا 1`);
     }
 });
