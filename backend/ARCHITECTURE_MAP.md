@@ -85,20 +85,21 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## C) `backend/agents/*` — 116 وحدة (منها 42 قالب كلون)
+## C) `backend/agents/*` — 117 وحدة (منها 42 قالب كلون)
 
 ### C1. النواة (Kernel candidates)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `jcr.js` | 3212 | وقت التشغيل المعرفي: `handleUserMessage` → 7 معالجات نية → `executeMission` → `_runMissionNow` → 15 مرحلة | MODIFY (تدريجي، بلا إعادة كتابة) | Mission + Agent + Task (المراحل → TaskGraph) + Event | يبقى؛ يتقلّص مع كل Sprint لصالح `core/runtime/*` |
+| `jcr.js` | 3216 | وقت التشغيل المعرفي: `handleUserMessage` → 7 معالجات نية → `executeMission` → `_runMissionNow` → 15 مرحلة | MODIFY (تدريجي، بلا إعادة كتابة) | Mission + Agent + Task (المراحل → TaskGraph) + Event | يبقى؛ يتقلّص مع كل Sprint لصالح `core/runtime/*` |
 | `contracts.js` → ✅ `core/contracts/index.js` | 99/197 | typedefs الأحد عشر + `assertBuildAgents` + `DELIVERY_STAGES` + مدقّقا Capability | MOVED (Sprint 1 ✅) | Mission/Agent/Task/Capability/Provider/Transaction | `core/contracts/index.js` |
 | `stateMachine.js` | 238 | Build State Machine (10 حالات + `STATE_EVENTS` + emitter) | KEEP | Event — تبقى متخصّصة، وMission Lifecycle فوقها | `core/missions/BuildStateMachine.js` (Sprint 2) |
 | `ceoBrain.js` | 240 | تصنيف نية سريع، قرار، رسائل إحاطة/حالة | MODIFY | Mission (Intent/CEO في مسار v2) | `core/runtime/` |
 | `router.js` | 94 | الموجّه الموحّد للرسائل | MODIFY | Mission | مع `ceoBrain` |
 | `chatCommands.js`, `textNormalizer.js`, `languageDetector.js`, `languageManager.js`, `logLocalizer.js`, `failureMessages.js` | 120/275/192/89/204/25 | أوامر حتمية، تطبيع نص، لغة، ترجمة السجل، رسائل الفشل | KEEP | — | `agents/` (أدوات النواة اللغوية) |
 | `baseAgent.js` | 147 (25 مستورداً) | عميل LLM المشترك (`groq`, `smartChat`) | MODIFY | Provider (LLM Provider Registry) — Model Router لاحقاً | `core/plugins/ProviderRegistry.js` |
-| `knowledgeEngine.js` | 299 (7) | كشف نوع المشروع + سياق معرفي + `needsBackend` | KEEP | — | `plugins/coding/` |
-| `backendNeed.js` | 95 | **مصدرُ الحقيقة الواحد** لـ«أيحتاج خلفيةً؟» (Sprint 7/1) + العلاقية مجموعةً جزئيّة منه (2r) | KEEP | — | `plugins/coding/` |
+| `knowledgeEngine.js` | 335 | كشف نوع المشروع + سياق معرفي + `needsBackend` | KEEP | — | `plugins/coding/` |
+| `backendNeed.js` | 68 | **مصدرُ الحقيقة الواحد** لـ«أيحتاج خلفيةً؟» (Sprint 7/1) + العلاقية مجموعةً جزئيّة منه (2r) | KEEP | — | `plugins/coding/` |
+| ✅ `keywordMatch.js` (جديد، 2s) | 60 | مطابقةُ كلماتٍ بحدودها لا باحتوائها — سابقةٌ عربية مقيَّدة ولاحقةٌ من مجموعةٍ مغلقة | ADDED | — | `plugins/coding/` |
 
 ### C2. وكلاء الحزمة (AgentBundle — `CONTRACTS.md` §2أ)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
@@ -116,7 +117,7 @@ Policy/Permission، Identity، Plugin.
 ### C3. وكلاء المراحل (StageFn — تُستورد مباشرة في jcr.js)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `designerAgent.js` | 298 | ملخّص تصميم + احتياط حتمي + تخصيصُ AI ناطقٌ بسبب تخلّفه (2p) | KEEP | Task | `plugins/coding/stages/` |
+| `designerAgent.js` | 300 | ملخّص تصميم + احتياط حتمي + تخصيصُ AI ناطقٌ بسبب تخلّفه (2p) | KEEP | Task | `plugins/coding/stages/` |
 | `reviewAgent.js`, `refactorAgent.js`, `testingAgent.js` | 240/146/224 | مراجعة/إعادة هيكلة/اختبارات مولَّدة | KEEP | Task | `plugins/coding/stages/` |
 | `seoAgent.js`, `seoPack.js`, `securityAgent.js`, `polishPack.js`, `pwaAgent.js` | 150/118/158/63/202 | حزم حتمية عند التسليم | KEEP | Task | `plugins/coding/stages/` |
 | `gitAgent.js` | 187 | commit/init/stats (ينفّذ git) | MODIFY | Tool (`git`, exec محروس) | `plugins/coding/tools/` |
@@ -143,7 +144,7 @@ Policy/Permission، Identity، Plugin.
 | `templateLibrary.js`, `templateLibraryExtended.js`, `templateLocalizer.js` | 1034/1382/1943 | مكتبة القوالب وترجمتها | KEEP | — | `plugins/coding/templates/` (Sprint 6) |
 | `cloneTemplates/*` (42 ملفاً، 17,406 سطر؛ `jaolaClinic.js` يُستورد من 27 قالباً كأساس مشترك) | — | قوالب تطبيقات عاملة | KEEP | — | `plugins/coding/templates/clones/` |
 | `cloneAssets.js`, `seedStamp.js`, `fullstackTemplates.js`, `reactGenerator.js`, `blockRegistry.js`, `starterRegistry.js`, `starterFetch.js`, `libraryRegistry.js`, `referenceBlueprints.js`, `appBlueprint.js`, `requirementAnalyzer.js` | 74/116/603/367/259/74/171/78/195/146/198 | استراتيجيات البناء ومخططاته | KEEP | Task (استراتيجية = Task Graph مختلف) | `plugins/coding/` |
-| `projectModel.js`, `projectMemory.js`, `userProfile.js` | 247/234/230 | ذاكرة المشروع والمستخدم | KEEP | Memory | `core/memory/` (لاحقاً) |
+| `projectModel.js`, `projectMemory.js`, `userProfile.js` | 247/234/233 | ذاكرة المشروع والمستخدم | KEEP | Memory | `core/memory/` (لاحقاً) |
 | `componentMarketplace.js`, `platformContext.js` | 278/42 | مكوّنات جاهزة (markupها يُحقن بميزانية، 2q) + معلومات المنصّة | KEEP | — | `plugins/coding/` |
 
 ### C6. منتجات تعيش في `agents/` وليست وكلاء نواة

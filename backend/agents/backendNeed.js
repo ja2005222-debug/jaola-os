@@ -1,3 +1,5 @@
+import { matchersFor, matchesAny } from './keywordMatch.js';
+
 /**
  * 🎯 «هل يحتاج هذا المشروع خادماً؟» — مصدر الحقيقة الواحد
  *
@@ -45,40 +47,11 @@ export const BACKEND_KEYWORDS = Object.freeze([
 /** ما يدلّ على حاجةٍ إلى قاعدةٍ **علاقية** تحديداً — مجموعةٌ جزئيّة من الاتحاد */
 export const RELATIONAL_KEYWORDS_LIST = RELATIONAL_KEYWORDS;
 
-const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-// لغتان، قاعدتا مطابقة — لأن الصرف يختلف:
-//
-// • العربية: بدايةٌ مقيَّدة بالسوابق المعروفة، والنهايةُ حرّة. السوابقُ
-//   واللواحق تلتصق بالكلمة («الحساب»، «حسابات»، «للمستخدمين»)، فحدُّ
-//   الكلمة الكامل يُسقط المطابقات الصحيحة. لكنّ الاحتواءَ المجرّد كان
-//   يقرأ «مالي» داخل *جمالي* و*أعمالي* و*الشمالي* و*الإجمالي* — فيولّد
-//   Prisma لطلبٍ اسمُه «تصميم جمالي». فالسابقةُ لا تكون إلا من
-//   [و ف] ثمّ [ب ك] ثمّ [لل ال ل]، وما عداها حرفٌ أصليّ يُبطل المطابقة.
-//
-// • اللاتينية: حدود كلمات مع لاحقة جمع إنجليزية اختيارية. الاحتواء
-//   المجرّد كان يقرأ «api» داخل *therapist* و«auth» داخل *author*
-//   و«cart» داخل *cartoon* و«store» داخل *restore* — فيولّد خادماً
-//   لصفحة تعريفية ساكنة، ويحرق ميزانية نداءات المستخدم بلا سبب.
-//   ⚠️ ثمن معلوم مقبول: «bookstore» لم تعد تُطابق `store` — يغطّيها
-//   `cart`/`order`/`checkout`/«متجر» في أي هدف تسوّقٍ حقيقي.
-const isLatin = (kw) => /^[\x20-\x7E]+$/.test(kw);
-
-const arabicMatcher = (kw) =>
-    new RegExp(`(?<![\\p{L}\\p{N}])(?:[وف])?(?:[بك])?(?:لل|ال|ل)?${escapeRe(kw)}`, 'u');
-const latinMatcher = (kw) =>
-    new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(kw)}(?:es|s)?(?![\\p{L}\\p{N}])`, 'iu');
-
-const matchersFor = (list) => list.map((kw) => (isLatin(kw) ? latinMatcher(kw) : arabicMatcher(kw)));
-
+// 📐 قاعدتا المطابقة انتقلتا إلى `keywordMatch.js` — أداةٌ واحدة لعلّةٍ
+// تكرّرت خمس مرّات (طبي/تطبيق، api/therapist، مالي/جمالي، كاش/كاشير،
+// شيل/تشيلي). فما كان هنا نسخةً صار مصدراً مشتركاً.
 const BACKEND_MATCHERS = matchersFor(BACKEND_KEYWORDS);
 const RELATIONAL_MATCHERS = matchersFor(RELATIONAL_KEYWORDS);
-
-const matchesAny = (matchers, userGoal) => {
-    const goal = String(userGoal ?? '').toLowerCase();
-    if (!goal) return false;
-    return matchers.some((re) => re.test(goal));
-};
 
 export function needsBackend(userGoal) {
     return matchesAny(BACKEND_MATCHERS, userGoal);

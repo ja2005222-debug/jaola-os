@@ -90,7 +90,11 @@ test('أعدادُ الأسطر المُعلَنة تطابق القرص', () =>
         if (!line.startsWith('|')) continue;
         const cells = line.replace(/^\||\|$/g, '').split('|');
         const names = [...(cells[0]?.matchAll(/`([^`]+\.m?js)`/g) || [])].map((m) => m[1]);
-        const nums = cells[1]?.match(/\d+/g) || [];
+        let nums = cells[1]?.match(/\d+/g) || [];
+        // 🔴 ثغرةٌ كشفها صفُّ `knowledgeEngine.js | 299 (7)`: عددان لاسمٍ واحد،
+        //    فكان الشرطُ أدناه يتخطّى الصفَّ كلَّه — وانحرف 36 سطراً بلا قياس.
+        //    فالاسمُ الواحد يُقاس بأوّل عددٍ في خانته مهما تبعه.
+        if (names.length === 1 && nums.length > 1) nums = [nums[0]];
         if (!names.length || names.length !== nums.length) continue;
         names.forEach((n, i) => {
             const cands = byName.get(path.basename(n)) || [];

@@ -11,6 +11,7 @@
  * يُقرأ في كل محادثة ليُخصّص ردود JAOLA.
  */
 
+import { hasKeyword } from './keywordMatch.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -183,7 +184,9 @@ export function recordEdit(username, editMessage) {
     if (/جريء|bold|dark/i.test(editMessage)) profile.designPrefs.favoriteStyle = 'جريء';
 
     // استنتاج تفضيل PWA
-    if (/pwa|تطبيق|app/i.test(editMessage)) profile.preferences.wantsPWA = true;
+    // 🔤 `app` كانت تُقرأ داخل happy وwrapper وapple — فرسالةُ «make it happy»
+    //    تُسجَّل رغبةً في PWA. المُطابِقُ المشترك يفرض حدَّ الكلمة.
+    if (hasKeyword(editMessage, ['pwa', 'تطبيق', 'app'])) profile.preferences.wantsPWA = true;
 
     // 📚 كل تعديل بعد البناء درسٌ للمنصة كلها — النقطة المركزية الوحيدة
     // التي تمر منها جميع مسارات التعديل

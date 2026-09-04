@@ -25,6 +25,7 @@ import { polishHtml } from './polishPack.js';
 import { composePage, isMarketingPageGoal, brandFromGoal, selectBlocks, applyBrandName } from './blockRegistry.js';
 import { verifyBehavior, buildBehaviorFixInstruction, analyzeProjectStatic, readPageCode, extractDefinedFunctions } from './behaviorVerifier.js';
 import { detectProjectType } from './knowledgeEngine.js';
+import { hasKeyword } from './keywordMatch.js';
 import { getUserProfile, updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
 import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
 import { generateDatabase, selectDatabase } from './databaseAgent.js';
@@ -2078,7 +2079,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // الفصل: (أ) تعديل المستخدم نفسه أتلف → استرجاع ما قبله (كما كان).
         //        (ب) جولة الإصلاح التلقائي أتلفت → إلغاء الإصلاح وحده،
         //            وتعديل المستخدم الناجح يبقى.
-        const isRemoval = /احذف|امسح|أزل|إزالة|شيل|بسّ?ط|remove|delete|drop|simplify/i.test(instruction);
+        // 🔤 «شيل» كانت تُقرأ داخل «تشيلي»، فطلبُ **إضافة** يُعطّل حارسَ الارتداد
+        //    أدناه فيضيع ما فقده التعديلُ صامتاً. المُطابِقُ المشترك يمنعها.
+        const isRemoval = /احذف|امسح|أزل|إزالة|بسّ?ط|remove|delete|drop|simplify/i.test(instruction)
+            || hasKeyword(instruction, ['شيل']);
         const readLostFns = async () => {
             const js = (await this.readProjectFilesArray(projectPath))
                 .filter(f => /\.(m?js)$/i.test(f.name)).map(f => f.content).join('\n');
