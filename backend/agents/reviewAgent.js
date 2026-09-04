@@ -100,7 +100,9 @@ export function runStaticReview(files, lang = 'en') {
     const score = Math.max(0, 100 - (issues.length * 8));
     const grade = score >= 90 ? 'A' : score >= 75 ? 'B' : score >= 60 ? 'C' : 'D';
 
-    return { issues, score, grade, fixable: issues.filter(i => ['rtl', 'charset', 'viewport'].includes(i.type)) };
+    // 📌 كان هنا `fixable` — تنبّؤٌ بما سيُصلحه autoFix. والتنبّؤ بسلوك دالّةٍ
+    // أخرى هو العطب نفسه: autoFix يقول اليوم ما فعله، فلا حاجة لمن يخمّنه.
+    return { issues, score, grade };
 }
 
 // ═══════════════════════════════════════════════════════
@@ -130,40 +132,70 @@ export async function runAIReview(files, projectGoal) {
 // ═══════════════════════════════════════════════════════
 // 🔧 إصلاح تلقائي للمشاكل البسيطة
 // ═══════════════════════════════════════════════════════
+/**
+ * 🔧 الإصلاح التلقائي — ويقول **ما فعله**، لا ما يُتوقّع أن يفعله.
+ *
+ * كان `reviewCode` يبلّغ `fixedCount` من `runStaticReview().fixable`، وهي
+ * تنبّؤٌ بسلوك دالّةٍ أخرى. والدالّتان تختلفان: `fixable` ثلاثة أنواع
+ * (rtl/charset/viewport) و`autoFix` يُصلح ستّة. فكان يقع الأمران:
+ * إصلاحٌ يُحسب ويُرمى، وإصلاحٌ يُبلَّغ ولم يقع. القياسُ في CONTRACTS (2l).
+ *
+ * @returns {{ files: {name,content}[], fixes: {file:string,type:string}[] }}
+ */
 export function autoFix(files, lang = 'en') {
     const rtl = isRTLLang(lang);
     const code = (lang || 'en').toLowerCase();
     const dir = rtl ? 'rtl' : 'ltr';
     const altText = rtl ? 'صورة' : 'image';
-    return files.map(file => {
+    const fixes = [];
+    const out = files.map(file => {
         if (!file.content) return file;
         let content = file.content;
+        const note = (type) => fixes.push({ file: file.name, type });
 
         // 🆕 إصلاح تباين CSS تلقائياً
         if (file.name === 'styles.css') {
             const hasDarkBg = /--bg[^:]*:\s*#(0[0-2])/i.test(content) || content.includes('--bg-dark');
             if (hasDarkBg && !content.includes('color: #f') && !content.includes('color: white')) {
+                const before = content;
                 content = content.replace(/(body\s*\{)/, (m) => m + "\n    color: #f1f5f9;");
+                if (content !== before) note('contrast');
             }
         }
         if (file.name === 'index.html' || file.name.endsWith('.html')) {
-            // ضبط الاتجاه واللغة حسب لغة المستخدم — فقط إذا لم يحددها الـ Coder
-            if (!/\bdir\s*=/.test(content) && !/<html[^>]*\blang\s*=/.test(content)) {
-                content = content.replace('<html', `<html dir="${dir}" lang="${code}"`);
+            // ضبط الاتجاه واللغة — كلُّ سمةٍ على حِدة، فقط إن غابت هي.
+            // 📌 كان الشرط: لا تلمس شيئاً إن وُجدت **إحداهما**. فصفحةٌ عربية
+            // كتب لها المولّد lang="ar" ولم يكتب dir كانت تبقى بلا اتجاه —
+            // تُعرَض من اليسار — ويراها المراجعُ عطباً ويمتنع عن إصلاحه.
+            // وجودُ lang ليس دليلاً على أن dir قُصد.
+            const hasDir = /<html[^>]*\bdir\s*=/.test(content);
+            const hasLang = /<html[^>]*\blang\s*=/.test(content);
+            if (!hasDir || !hasLang) {
+                const add = `${hasDir ? '' : ` dir="${dir}"`}${hasLang ? '' : ` lang="${code}"`}`;
+                const before = content;
+                content = content.replace(/<html/i, `<html${add}`);
+                if (content !== before) note(hasDir ? 'lang' : 'rtl');
             }
 
             // إضافة viewport إذا مفقود
             if (!content.includes('viewport') && content.includes('<head>')) {
                 content = content.replace('<head>', '<head>\n    <meta name="viewport" content="width=device-width, initial-scale=1.0">');
+                note('viewport');
             }
 
             // إضافة charset إذا مفقود
             if (!content.includes('charset') && content.includes('<head>')) {
                 content = content.replace('<head>', '<head>\n    <meta charset="UTF-8">');
+                note('charset');
             }
 
             // إضافة alt للصور بدون alt (بلغة المستخدم)
-            content = content.replace(/<img(?![^>]*alt=)([^>]*)>/gi, `<img$1 alt="${altText}">`);
+            let altAdded = 0;
+            content = content.replace(/<img(?![^>]*alt=)([^>]*?)(\s*\/?)>/gi, (m, attrs, close) => {
+                altAdded++;
+                return `<img${attrs} alt="${altText}"${close}>`;   // الشرطةُ المُغلِقة تبقى في محلّها
+            });
+            for (let i = 0; i < altAdded; i++) note('accessibility');
         }
 
         if (file.name === 'script.js') {
@@ -171,12 +203,14 @@ export function autoFix(files, lang = 'en') {
             let logCount = 0;
             content = content.replace(/console\.log\([^)]*\);?\n?/g, (match) => {
                 logCount++;
-                return logCount > 3 ? '' : match;
+                if (logCount > 3) { note('cleanup'); return ''; }
+                return match;
             });
         }
 
-        return { ...file, content };
+        return content === file.content ? file : { ...file, content };
     });
+    return { files: out, fixes };
 }
 
 // ═══════════════════════════════════════════════════════
@@ -186,8 +220,8 @@ export async function reviewCode(files, projectGoal, lang = 'en') {
     // الفحص الثابت السريع
     const staticResult = runStaticReview(files, lang);
 
-    // الإصلاح التلقائي للمشاكل البسيطة
-    const fixedFiles = autoFix(files, lang);
+    // الإصلاح التلقائي للمشاكل البسيطة — والعدُّ من الإصلاحات الواقعة نفسها
+    const { files: fixedFiles, fixes } = autoFix(files, lang);
 
     // مراجعة AI للجودة العامة (اختيارية)
     const aiResult = await runAIReview(fixedFiles, projectGoal);
@@ -196,7 +230,8 @@ export async function reviewCode(files, projectGoal, lang = 'en') {
         score: staticResult.score,
         grade: staticResult.grade,
         issues: staticResult.issues,
-        fixedCount: staticResult.fixable.length,
+        fixedCount: fixes.length,
+        fixes,
         strengths: aiResult?.strengths || [],
         improvements: aiResult?.improvements || [],
         overallQuality: aiResult?.overallQuality || (staticResult.grade === 'A' ? 'ممتاز' : 'جيد'),
