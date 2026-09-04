@@ -188,7 +188,7 @@ Policy/Permission، Identity، Plugin.
 | `deployAutomation.js`, `customDomains.js`, `hostNames.js`, `githubSync.js`, `githubFiles.js`, `projectExport.js`, `projectManager.js` | 241/207/37/110/83/37/82 | نشر ونطاقات وGitHub وتصدير | MODIFY | Tool (كل واحدة أداة بـriskLevel) + Transaction (للنشر) | `plugins/coding/tools/` |
 | `reactPreview.js`, `twin.js` | 477/69 | معاينة وتعديل | KEEP | Tool | `plugins/coding/` |
 | `siteConnect.js`, `siteCms.js`, `siteInbox.js`, `siteCreds.js`, `newsletterSubscribers.js`, `projectAuth.js`, `projectSecrets.js`, `storeKey.js`, `dataSync.js`, `appData.js`, `appCollections.js`, `appAssets.js` | 128/118/97/65/60/76/121/63/138/51/82/76 | خدمات مواقع العملاء المنشورة | KEEP | — | `plugins/coding/runtime-services/` |
-| `imageService.js`, `aiImages.js` | 69/393 | صور | KEEP | Provider | `plugins/coding/` |
+| `imageService.js`, `aiImages.js` | 69/433 | صور | KEEP | Provider | `plugins/coding/` |
 | `platformKnowledge.js` | 89 | معرفة للمساعد | KEEP | Memory | كما هي |
 
 ### D3. التجارة والهوية

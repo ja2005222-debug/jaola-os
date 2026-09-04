@@ -273,6 +273,33 @@ export function injectImgSync(js, map = {}) {
         + '/* /jaola:img-sync */\n';
     return prev ? js.replace(IMG_SYNC_RE, block) : block + js;
 }
+/**
+ * يُفرِّغ الكائنات المتداخلة داخل مقطع كائنٍ مع **حفظ الإزاحات** (يستبدلها
+ * بمسافاتٍ بالطول نفسه). فيُبحث عن حقول الكائن نفسه لا حقول أبنائه:
+ * `{ name:'فندق', rooms:[{img:''}], img:'' }` كان `img:''` الأوّل فيه هو
+ * حقلَ الغرفة لا الفندق.
+ */
+function blankNested(seg) {
+    const inner = topLevelObjectSpans(seg.slice(1, -1)).map(([a, b]) => [a + 1, b + 1]);
+    let out = seg;
+    for (const [a, b] of inner) out = out.slice(0, a) + ' '.repeat(b - a) + out.slice(b);
+    return out;
+}
+
+/** نطاقُ الهدف المطلق داخل `lit`: العنصرُ نفسه، أو الكائنُ المتداخل بعينه. */
+function targetSpan(lit, spans, job) {
+    const parent = spans[job.itemIndex];
+    if (!parent) return null;
+    if (!job.sub) return parent;
+    const seg = lit.slice(parent[0], parent[1]);
+    const m = new RegExp(`["']?\\b${escRe(job.sub.arrKey)}\\b["']?\\s*:\\s*\\[`).exec(blankNested(seg));
+    if (!m) return null;
+    const arrAt = m.index + m[0].length - 1;
+    const objs = topLevelObjectSpans(seg.slice(arrAt));
+    const own = objs[job.sub.index];
+    return own ? [parent[0] + arrAt + own[0], parent[0] + arrAt + own[1]] : null;
+}
+
 /** نمط قيمة img داخل كائن: img: '…' أو "img": "…" — بالقيمة القديمة للتمييز. */
 const imgValueRe = (oldImg) => oldImg
     ? new RegExp(`(\\bimg["']?\\s*[:=]\\s*["'])${escRe(oldImg)}(["'])`)
@@ -304,13 +331,17 @@ export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_
     // صورته أيّاً كانت — لكن العنصر المسمّى وحده، لا غيره.
     const wanted = String(targetLabel || '');
     const targets = [];
-    const collect = (obj, itemIndex, key) => {
+    const collect = (obj, itemIndex, key, sub = null) => {
         if (!('img' in obj)) return;
         const label = obj.name || obj.title || obj.city || '';
         const t = {
             itemIndex, key, label: label || wanted, oldImg: String(obj.img),
             oid: obj.id != null ? String(obj.id) : null,
             cat: obj.category || obj.cat || obj.type || '',
+            // موضعُ الهدف نصّياً: null للعنصر نفسه، و{arrKey,index} للكائن
+            // المتداخل. بدونه كان الاستبدال يقع على أوّل `img` داخل نطاق
+            // الأب — فتنزل صورةُ الفندق على أوّل غرفة.
+            sub,
         };
         if (wanted) {
             // المطابقة على الاسم/العنوان + التصنيف (بطاقة «مؤتمرات» = category)
@@ -326,7 +357,7 @@ export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_
         collect(item, i, id);
         for (const [k, v] of Object.entries(item)) {
             if (!Array.isArray(v)) continue;
-            v.forEach((sub, j) => { if (sub && typeof sub === 'object') collect(sub, i, `${id}-${k}-${String(sub.id || j)}`); });
+            v.forEach((sub, j) => { if (sub && typeof sub === 'object') collect(sub, i, `${id}-${k}-${String(sub.id || j)}`, { arrKey: k, index: j }); });
         }
     });
     if (!targets.length) {
@@ -345,7 +376,7 @@ export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_
         if (!r?.ok || !r.buf) { if (r?.error) lastError = r.error; continue; } // فشل صورة واحدة لا يفشل الدفعة
         // اسم فريد لكل توليد — الكتابة على نفس الاسم كانت تُري المتصفح
         // النسخة القديمة وميضاً (أو للأبد) قبل الجديدة
-        generated.push({ itemIndex: t.itemIndex, oldImg: t.oldImg, oid: t.oid, key: t.key, name: `images/ai-${t.key}-${stamp}.${r.ext || 'png'}`, buf: r.buf });
+        generated.push({ itemIndex: t.itemIndex, sub: t.sub, oldImg: t.oldImg, oid: t.oid, key: t.key, name: `images/ai-${t.key}-${stamp}.${r.ext || 'png'}`, buf: r.buf });
     }
     if (!generated.length) return { changed: false, reason: lastError || 'لم تُولَّد أي صورة' };
 
@@ -353,15 +384,24 @@ export async function applyAiImages(files = [], { goal = '', maxCount = MAX_PER_
     // للأول حتى لا تفسد الإزاحات. grad(...) وبقية الحقول تبقى حرفياً.
     let lit = seedArr.literal;
     const spans = topLevelObjectSpans(lit);
-    const applied = [];
-    for (const job of [...generated].sort((a, b) => b.itemIndex - a.itemIndex)) {
-        const span = spans[job.itemIndex];
+
+    // 🔴 كان يُحسب `spans` مرّةً ثم يُعدَّل `lit` داخل الحلقة، فيَبلى طولُ
+    //    النطاق بعد أوّل استبدالٍ في العنصر نفسه فتسقط بقيةُ أهدافه صامتةً
+    //    (وقد دُفع ثمنُ توليدها). فتُحسب المواضعُ **كلُّها أوّلاً**، ثم تُطبَّق
+    //    تنازليّاً بالإزاحة المطلقة فلا يُفسد سابقٌ لاحقاً.
+    const edits = [];
+    for (const job of generated) {
+        const span = targetSpan(lit, spans, job);
         if (!span) continue;
         const seg = lit.slice(span[0], span[1]);
-        const re = imgValueRe(job.oldImg);
-        if (!re.test(seg)) continue;
-        lit = lit.slice(0, span[0]) + seg.replace(re, `$1${job.name}$2`) + lit.slice(span[1]);
-        applied.push(job);
+        const m = imgValueRe(job.oldImg).exec(blankNested(seg));
+        if (!m) continue;
+        edits.push({ job, at: span[0] + m.index, len: m[0].length, text: `${m[1]}${job.name}${m[2]}` });
+    }
+    const applied = [];
+    for (const e of [...edits].sort((a, b) => b.at - a.at)) {
+        lit = lit.slice(0, e.at) + e.text + lit.slice(e.at + e.len);
+        applied.push(e.job);
     }
 
     // حارس البنية: نفس عدد العناصر ونفس مفاتيح كل عنصر بعد التعديل
