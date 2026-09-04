@@ -98,7 +98,7 @@ Policy/Permission، Identity، Plugin.
 | `chatCommands.js`, `textNormalizer.js`, `languageDetector.js`, `languageManager.js`, `logLocalizer.js`, `failureMessages.js` | 120/275/192/89/204/25 | أوامر حتمية، تطبيع نص، لغة، ترجمة السجل، رسائل الفشل | KEEP | — | `agents/` (أدوات النواة اللغوية) |
 | `baseAgent.js` | 147 (25 مستورداً) | عميل LLM المشترك (`groq`, `smartChat`) | MODIFY | Provider (LLM Provider Registry) — Model Router لاحقاً | `core/plugins/ProviderRegistry.js` |
 | `knowledgeEngine.js` | 299 (7) | كشف نوع المشروع + سياق معرفي + `needsBackend` | KEEP | — | `plugins/coding/` |
-| `backendNeed.js` | 61 | **مصدرُ الحقيقة الواحد** لـ«أيحتاج خلفيةً؟» (Sprint 7/1) | KEEP | — | `plugins/coding/` |
+| `backendNeed.js` | 95 | **مصدرُ الحقيقة الواحد** لـ«أيحتاج خلفيةً؟» (Sprint 7/1) + العلاقية مجموعةً جزئيّة منه (2r) | KEEP | — | `plugins/coding/` |
 
 ### C2. وكلاء الحزمة (AgentBundle — `CONTRACTS.md` §2أ)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
@@ -120,7 +120,7 @@ Policy/Permission، Identity، Plugin.
 | `reviewAgent.js`, `refactorAgent.js`, `testingAgent.js` | 240/146/224 | مراجعة/إعادة هيكلة/اختبارات مولَّدة | KEEP | Task | `plugins/coding/stages/` |
 | `seoAgent.js`, `seoPack.js`, `securityAgent.js`, `polishPack.js`, `pwaAgent.js` | 150/118/158/63/202 | حزم حتمية عند التسليم | KEEP | Task | `plugins/coding/stages/` |
 | `gitAgent.js` | 187 | commit/init/stats (ينفّذ git) | MODIFY | Tool (`git`, exec محروس) | `plugins/coding/tools/` |
-| `databaseAgent.js`, `postgresAgent.js`, `authAgent.js`, `generatedAppSecrets.js`, `migrationAgent.js`, `dependencyAgent.js` | 263/355/333/56/193/288 | كتلة الخلفية | KEEP | Task | `plugins/coding/stages/` |
+| `databaseAgent.js`, `postgresAgent.js`, `authAgent.js`, `generatedAppSecrets.js`, `migrationAgent.js`, `dependencyAgent.js` | 263/362/333/56/193/288 | كتلة الخلفية | KEEP | Task | `plugins/coding/stages/` |
 | `renderAgent.js` | 262 | نشر Render | MODIFY | Tool (deploy) | `plugins/coding/tools/` |
 | `requirementsVerifier.js` | 101 | هل نُفِّذت المتطلبات؟ | KEEP | Evidence | `core/verification/` (Sprint 4) |
 | `behaviorVerifier.js` | 511 | تحقّق ساكن + تشغيل حيّ (وحدة الدليل `check`) | MOVE | Evidence + Verification | `core/verification/VerificationEngine.js` (Sprint 4) |

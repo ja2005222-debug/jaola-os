@@ -16,6 +16,12 @@
  * كلماتٍ تصف متى يحتاج مشروعٌ مولَّدٌ خادماً هي منطق مجال البرمجة.
  */
 
+// كلماتُ القاعدة العلاقية — كانت في `postgresAgent.js` وحدها
+const RELATIONAL_KEYWORDS = Object.freeze([
+    'محاسبة', 'مالي', 'علاقية',
+    'postgres', 'postgresql', 'prisma', 'relational', 'finance', 'accounting',
+]);
+
 // كلمات تُشير أن المشروع يحتاج خادماً (اتحاد القائمتين السابقتين)
 export const BACKEND_KEYWORDS = Object.freeze([
     // عربي
@@ -29,15 +35,26 @@ export const BACKEND_KEYWORDS = Object.freeze([
     'dashboard', 'admin', 'database', 'booking', 'reservation',
     'upload', 'inventory', 'subscription', 'members', 'users',
     'api', 'backend', 'server', 'crud', 'store', 'stripe', 'paypal',
+    // 🔴 قائمةٌ ثالثة أغفلها الاتحاد: `postgresAgent.needsPostgres` كانت تقرّر
+    // وحدها أن المشروع يحتاج قاعدةً علاقية، فتُكتب ملفات Prisma في مشروعٍ
+    // يقول هذا الاتحادُ إنه بلا خادم أصلاً — schema بلا خادمٍ يُشغّلها.
+    // وما يحتاج قاعدةً علاقية يحتاج خادماً بالتعريف، فصارت جزءاً من الاتحاد.
+    ...RELATIONAL_KEYWORDS,
 ]);
+
+/** ما يدلّ على حاجةٍ إلى قاعدةٍ **علاقية** تحديداً — مجموعةٌ جزئيّة من الاتحاد */
+export const RELATIONAL_KEYWORDS_LIST = RELATIONAL_KEYWORDS;
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // لغتان، قاعدتا مطابقة — لأن الصرف يختلف:
 //
-// • العربية: مطابقة احتواء كما كانت. السوابق واللواحق تلتصق بالكلمة
-//   («الحساب»، «حسابات»، «للمستخدمين»)، فحدود الكلمات تُسقط المطابقات
-//   الصحيحة لا الخاطئة.
+// • العربية: بدايةٌ مقيَّدة بالسوابق المعروفة، والنهايةُ حرّة. السوابقُ
+//   واللواحق تلتصق بالكلمة («الحساب»، «حسابات»، «للمستخدمين»)، فحدُّ
+//   الكلمة الكامل يُسقط المطابقات الصحيحة. لكنّ الاحتواءَ المجرّد كان
+//   يقرأ «مالي» داخل *جمالي* و*أعمالي* و*الشمالي* و*الإجمالي* — فيولّد
+//   Prisma لطلبٍ اسمُه «تصميم جمالي». فالسابقةُ لا تكون إلا من
+//   [و ف] ثمّ [ب ك] ثمّ [لل ال ل]، وما عداها حرفٌ أصليّ يُبطل المطابقة.
 //
 // • اللاتينية: حدود كلمات مع لاحقة جمع إنجليزية اختيارية. الاحتواء
 //   المجرّد كان يقرأ «api» داخل *therapist* و«auth» داخل *author*
@@ -46,16 +63,33 @@ const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 //   ⚠️ ثمن معلوم مقبول: «bookstore» لم تعد تُطابق `store` — يغطّيها
 //   `cart`/`order`/`checkout`/«متجر» في أي هدف تسوّقٍ حقيقي.
 const isLatin = (kw) => /^[\x20-\x7E]+$/.test(kw);
-const ARABIC_KEYWORDS = BACKEND_KEYWORDS.filter((kw) => !isLatin(kw));
-const LATIN_MATCHERS = BACKEND_KEYWORDS.filter(isLatin).map(
-    (kw) => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(kw)}(?:es|s)?(?![\\p{L}\\p{N}])`, 'iu'),
-);
 
-export function needsBackend(userGoal) {
+const arabicMatcher = (kw) =>
+    new RegExp(`(?<![\\p{L}\\p{N}])(?:[وف])?(?:[بك])?(?:لل|ال|ل)?${escapeRe(kw)}`, 'u');
+const latinMatcher = (kw) =>
+    new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(kw)}(?:es|s)?(?![\\p{L}\\p{N}])`, 'iu');
+
+const matchersFor = (list) => list.map((kw) => (isLatin(kw) ? latinMatcher(kw) : arabicMatcher(kw)));
+
+const BACKEND_MATCHERS = matchersFor(BACKEND_KEYWORDS);
+const RELATIONAL_MATCHERS = matchersFor(RELATIONAL_KEYWORDS);
+
+const matchesAny = (matchers, userGoal) => {
     const goal = String(userGoal ?? '').toLowerCase();
     if (!goal) return false;
-    return ARABIC_KEYWORDS.some((kw) => goal.includes(kw))
-        || LATIN_MATCHERS.some((re) => re.test(goal));
+    return matchers.some((re) => re.test(goal));
+};
+
+export function needsBackend(userGoal) {
+    return matchesAny(BACKEND_MATCHERS, userGoal);
 }
 
-export default { needsBackend, BACKEND_KEYWORDS };
+/**
+ * هل يحتاج المشروع قاعدةً **علاقية**؟ مجموعةٌ جزئيّة من `needsBackend` بالبناء:
+ * كلماتُها داخل الاتحاد، فما يُثبت هذه يُثبت تلك حتماً — لا تناقضَ ممكن.
+ */
+export function needsRelationalDb(userGoal) {
+    return matchesAny(RELATIONAL_MATCHERS, userGoal);
+}
+
+export default { needsBackend, needsRelationalDb, BACKEND_KEYWORDS };
