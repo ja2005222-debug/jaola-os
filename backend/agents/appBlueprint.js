@@ -12,14 +12,41 @@
  */
 
 import { smartChat } from './baseAgent.js';
+import { keywordMatches } from './knowledgeEngine.js';
 
-// تصنيف احتياطي سريع (بدون LLM) — يميّز التطبيقات التفاعلية عن البروشورات
+/**
+ * تصنيف احتياطي (بلا LLM) — يميّز التطبيق التفاعلي من الموقع التعريفي.
+ * يُستعمل حين يسقط نداء الـLLM، ويقرّر أكثر ممّا يبدو: `kind` تقرأه
+ * `behaviorVerifier` ليعرف هل يفحص التفاعل أصلاً، و`blockRegistry` لاختيار
+ * الكتل، و`jcr` للتسمية المعروضة. فخطؤه يُسلّم تطبيقاً بلا ميزةٍ عاملة
+ * **وبلا فحصٍ يكشف ذلك**.
+ *
+ * 🔴 وكان مخطئاً في نصف الحالات لسببين مستقلّين، كلاهما مُثبَتٌ بالقياس:
+ *
+ * ١) **كلماتُ العميل تنقض كلماتِ المنتج.** كانت `شركة` و`مؤسسة` و`عيادة`
+ *    في قائمة البروشور، وهي تصف **مَن يطلب** لا **ما يُطلَب**؛ والشرط
+ *    `app && !brochure` يجعلها نقضاً مطلقاً. فـ«متجر إلكتروني لشركة ملابس»
+ *    و«نظام حجز مواعيد لعيادة أسنان» و«لوحة تحكم مبيعات لمؤسسة» كلّها
+ *    بروشورات. وكل طلبٍ تجاريّ يذكر «شركة» تقريباً. فبقيت في القائمة
+ *    **ألفاظُ المنتج وحدها**: تعريفي، بروشور، صفحة هبوط بسيطة.
+ *
+ * ٢) **مطابقةُ احتواءٍ بلا حدود كلمات** — `app` داخل «happy» و«apple»،
+ *    و`اب ` بمسافةٍ لاصقة. فصارت المطابقة بـ`keywordMatches` نفسها التي
+ *    يستعملها كشف نوع المشروع: حدود Unicode مع سوابق العربية اللاصقة.
+ */
+const APP_HINTS = ['تطبيق', 'app', 'application', 'منصة', 'platform', 'نظام', 'system',
+    'أداة', 'tool', 'حاسبة', 'calculator', 'محول', 'converter', 'لوحة تحكم', 'dashboard',
+    'بحث', 'search', 'حجز', 'طيران', 'flight', 'رحلات', 'booking', 'متجر', 'store', 'shop',
+    'سلة', 'cart', 'todo', 'قائمة مهام', 'chat', 'محادثة', 'خريطة', 'لعبة', 'game',
+    'تتبع', 'tracker'];
+// ألفاظُ المنتج وحدها — لا ألفاظ العميل. «شركة» تصف الطالب لا المطلوب.
+const BROCHURE_HINTS = ['تعريفي', 'بروشور', 'brochure', 'صفحة هبوط بسيطة'];
+
 function staticKind(goal) {
     const g = (goal || '').toLowerCase();
-    const appHints = /تطبيق|اب |app|application|منصة|platform|نظام|system|أداة|tool|حاسبة|calculator|محول|converter|لوحة تحكم|dashboard|بحث|search|حجز طيران|طيران|flight|رحلات|booking|متجر|store|shop|سلة|cart|to.?do|قائمة مهام|chat|محادثة|خريطة|map|لعبة|game|تتبع|tracker/;
-    const brochureHints = /تعريفي|بروشور|brochure|صفحة هبوط بسيطة|شركة|مؤسسة|عيادة|مطعم تعريفي/;
-    if (appHints.test(g) && !brochureHints.test(g)) return 'webapp';
-    return 'brochure';
+    const isApp = APP_HINTS.some((kw) => keywordMatches(g, kw));
+    const isBrochure = BROCHURE_HINTS.some((kw) => keywordMatches(g, kw));
+    return isApp && !isBrochure ? 'webapp' : 'brochure';
 }
 
 const BLUEPRINT_SYSTEM = `أنت محلل منتجات برمجية خبير. مهمتك تحويل طلب المستخدم (بأي لغة) إلى مخطط بناء منظّم.
