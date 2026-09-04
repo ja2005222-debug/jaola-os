@@ -2767,7 +2767,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     });
                     return true;
                 }
-                this.emitLiveLog(roomName, 'EDIT', 'Undo', `⏪ استُرجعت النسخة ${latest.name} (${r.restored.length} ملف).`);
+                // ما لم يُسترجَع يُقال، فلا يُقرأ «✅» على استرجاعٍ ناقص.
+                const rest = r.notRestored?.length
+                    ? ` — و${r.notRestored.length} ملفاً لم تشملها النسخة فبقيت كما هي (${r.notRestored.slice(0, 5).join('، ')}${r.notRestored.length > 5 ? '…' : ''})`
+                    : '';
+                this.emitLiveLog(roomName, 'EDIT', 'Undo', `⏪ استُرجعت النسخة ${latest.name} (${r.restored.length} ملف)${rest}.`);
                 this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
                 let undoFiles = [];
                 try { undoFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
