@@ -92,6 +92,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json());
 
+// 🛡️ ترويسات الأمان — تُكتب هنا لأن هذا هو مَن يُنشئ الملف.
+// (كانت في autoFixSecurity، وهو يعمل في مرحلة الأمان قبل إنشاء هذا
+//  الملف بستّ مراحل، فلم تكن تُضاف قطّ — انظر CONTRACTS.md / Sprint 2m)
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
 // 🔌 اتصال قاعدة البيانات (اختياري — يعمل الموقع بدونها لكن بلا حفظ)
 if (process.env.MONGODB_URI) {
   try {

@@ -702,7 +702,7 @@ export class JaolaCognitiveRuntime {
         try {
             const secResult = await runSecurity(plan.files);
             if (secResult.success) {
-                plan.files = secResult.fixedFiles;
+                // لا إسنادَ لـfixedFiles: لم يعد ثمّة مُصلِحٌ يغيّر شيئاً هنا
                 for (const file of secResult.newFiles) {
                     await fsPromises.writeFile(path.join(context.projectPath, file.name), file.content);
                 }
