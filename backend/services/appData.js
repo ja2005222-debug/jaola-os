@@ -11,6 +11,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { storeKey } from './storeKey.js';
 
 const MAX_KEYS = 60;                  // عدد مفاتيح كحد أقصى لكل مشروع
 const MAX_VALUE_BYTES = 512 * 1024;   // 512KB لكل مفتاح
@@ -18,7 +19,9 @@ const MAX_TOTAL_BYTES = 4 * 1024 * 1024; // 4MB إجمالي لكل مشروع
 const KEY_RE = /^[\w.-]{1,80}$/;
 const RESERVED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
-const slug = (u, p) => `${String(u || '').replace(/[^a-zA-Z0-9_-]/g, '_')}__${String(p || '').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+// 🗝️ المفتاح مبايِنٌ الآن: الفاصل `__` كان يحتمله الحقلان نفساهما
+// (انظر `storeKey.js`) — فزوجان مختلفان يكتبان ملفاً واحداً.
+const slug = (u, p) => storeKey(u, p);
 const storePath = (dir, u, p) => path.join(dir, slug(u, p) + '.json');
 
 /** يقرأ كل مفاتيح مشروع (كائن مسطّح key→value). لا يرمي أبداً. */

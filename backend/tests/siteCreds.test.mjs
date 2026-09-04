@@ -64,3 +64,26 @@ test('المسار مطهَّرٌ كما كان حرفياً، ولا يخرج �
     }
     assert.equal(readSiteCred(dir, 'nobody', 'nothing'), null, 'غير الموجود null لا رمية');
 });
+
+// 🔴 وعطبٌ ثانٍ كان أهدأ وأثقل: المطالبة الذرّية كانت تحرس الملفّ
+// الصحيح، لكن **الملفّ نفسه كان خطأ**. مفتاحه `seg(u) + '__' + seg(p)`
+// و`_` حرفٌ مشروع في الحقلين، فمشروعان لمستخدمَين مختلفَين يشيران إلى
+// ملفٍّ واحد — ومَن يطالب بمشروعه هو يملك لوحة الآخر.
+test('🗝️ مشروعان لمستخدمَين مختلفَين لا يتشاركان ملفّ اعتمادٍ واحداً', () => {
+    const dir = tmp();
+    assert.notEqual(siteCredPath(dir, 'alice', 'bob__site'), siteCredPath(dir, 'alice__bob', 'site'),
+        'مسارٌ واحد لزوجَين مختلفَين هو العطب بعينه');
+    assert.notEqual(siteCredPath(dir, 'ali_', 'shop'), siteCredPath(dir, 'ali', '_shop'),
+        'التباس الحدود: `_` طرفيٌّ يلتحم بالفاصل');
+});
+
+test('🛡️ المهاجم يطالب بمشروعه هو، فلا يملك لوحة غيره', () => {
+    const dir = tmp();
+    // المهاجم: اسمٌ مشروعٌ تماماً (`^[a-zA-Z][a-zA-Z0-9_-]{2,19}$`) ومشروعٌ خاصّ به.
+    assert.equal(claimSiteCred(dir, 'alice__bob', 'site', cred('ATTACKER')), true, 'مطالبةٌ مشروعة بمشروعه');
+    // الضحيّة: مستخدمٌ آخر، مشروعٌ آخر — ولا علاقة بينهما.
+    assert.equal(claimSiteCred(dir, 'alice', 'bob__site', cred('OWNER')), true,
+        'كانت تُردّ بـ«معيّنة سلفاً» — لوحتها مملوكةٌ قبل أن تفتحها');
+    assert.equal(readSiteCred(dir, 'alice', 'bob__site').password, 'OWNER', 'كلمتها هي، لا كلمته');
+    assert.equal(readSiteCred(dir, 'alice__bob', 'site').password, 'ATTACKER');
+});

@@ -11,13 +11,15 @@
 import fs from 'fs';
 import path from 'path';
 import { decodeDataUrl } from './siteCms.js';
+import { storeKey, cleanSegment } from './storeKey.js';
 
 const MAX_SLOTS = 30; // حدّ عدد الصور لكل مشروع
 const SLOT_RE = /^[\w.-]{1,60}$/;
 const RESERVED = new Set(['__proto__', 'constructor', 'prototype']);
 
-function clean(s) { return String(s || '').replace(/[^a-zA-Z0-9_-]/g, '_'); }
-const prefix = (u, p, s) => `${clean(u)}__${clean(p)}__${clean(s)}`;
+// 🗝️ المفتاح مبايِنٌ الآن: الفاصل `__` كان يحتمله كل حقلٍ من الثلاثة
+// (انظر `storeKey.js`) — فمشروعا مستخدمَين مختلفَين يقرآن صورةً واحدة.
+const prefix = (u, p, s) => storeKey(u, p, s);
 const validSlot = (s) => SLOT_RE.test(String(s || '')) && !RESERVED.has(s);
 
 /** يحذف أي ملف قديم لنفس الـslot (بأي امتداد) قبل كتابة الجديد. */
@@ -31,7 +33,10 @@ function removeExisting(dir, u, p, slot) {
 }
 
 function countSlots(dir, u, p) {
-    const pfx = `${clean(u)}__${clean(p)}__`;
+    // بادئةُ عدٍّ لا مفتاحَ قراءة: مفتاح الشريحة الملتبس يبدأ بها أيضاً
+    // (يُلحَق الوسم في آخره)، فالعدّ لا ينقص أبداً — وإن زاد على اسمٍ
+    // ملتبس فزيادته تشدّد الحصّة ولا ترخّيها.
+    const pfx = `${cleanSegment(u)}__${cleanSegment(p)}__`;
     try { return new Set(fs.readdirSync(dir).filter(f => f.startsWith(pfx)).map(f => f.replace(/\.[^.]+$/, ''))).size; }
     catch { return 0; }
 }

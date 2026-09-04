@@ -15,6 +15,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { storeKey } from './storeKey.js';
 
 const MAX_RECORDS = 2000;
 const MAX_RECORD_BYTES = 64 * 1024;
@@ -23,8 +24,9 @@ const NAME_RE = /^[\w.-]{1,60}$/;
 const ID_RE = /^[\w.-]{1,80}$/;
 const RESERVED = new Set(['__proto__', 'constructor', 'prototype']);
 
-function clean(s) { return String(s || '').replace(/[^a-zA-Z0-9_-]/g, '_'); }
-const slug = (u, p, c) => `${clean(u)}__${clean(p)}__${clean(c)}`;
+// 🗝️ المفتاح مبايِنٌ الآن: الفاصل `__` كان يحتمله كل حقلٍ من الثلاثة
+// (انظر `storeKey.js`) — فثلاثيّتان مختلفتان تكتبان ملفاً واحداً.
+const slug = (u, p, c) => storeKey(u, p, c);
 const storePath = (dir, u, p, c) => path.join(dir, slug(u, p, c) + '.json');
 const validName = (n) => NAME_RE.test(String(n || '')) && !RESERVED.has(n);
 
