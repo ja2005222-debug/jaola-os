@@ -39,7 +39,6 @@ import { runSEO } from './seoAgent.js';
 import { runSecurity } from './securityAgent.js';
 import { refactorCode } from './refactorAgent.js';
 import { migrateDatabase } from './migrationAgent.js';
-import { buildMarketplaceContext } from './componentMarketplace.js';
 import { reviewCode } from './reviewAgent.js';
 import { runTests } from './testingAgent.js';
 import { commitBuild, initProjectRepo, getProjectStats } from './gitAgent.js';
