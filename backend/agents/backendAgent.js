@@ -1,29 +1,9 @@
 import { groq, smartChat } from './baseAgent.js';
 
-// ============================================================
-// 🔍 كلمات مفتاحية تُشير أن المشروع يحتاج خادماً
-// ============================================================
-const BACKEND_KEYWORDS = [
-    // عربي
-    'تسجيل دخول', 'حساب', 'مستخدم', 'مستخدمين', 'دفع', 'دفع إلكتروني',
-    'حجز', 'حجوزات', 'لوحة تحكم', 'لوحة إدارة', 'قاعدة بيانات',
-    'إدارة', 'admin', 'تخزين', 'رفع', 'بيانات', 'سلة', 'طلبات',
-    'منتجات', 'مخزون', 'فاتورة', 'اشتراك', 'عضوية', 'تسجيل',
-    // إنجليزي
-    'login', 'signup', 'register', 'auth', 'authentication',
-    'payment', 'checkout', 'cart', 'order', 'orders',
-    'dashboard', 'admin', 'database', 'booking', 'reservation',
-    'upload', 'inventory', 'subscription', 'members', 'users',
-    'api', 'backend', 'server', 'crud', 'store'
-];
-
-/**
- * 🔍 يكشف هل المشروع يحتاج خادماً بناءً على وصف المستخدم
- */
-export function needsBackend(userGoal) {
-    const goal = (userGoal || '').toLowerCase();
-    return BACKEND_KEYWORDS.some(kw => goal.includes(kw));
-}
+// 🔍 هل يحتاج المشروع خادماً؟ — مصدرٌ واحد مشترك مع `knowledgeEngine`
+// (كانت هنا قائمة كلمات ثانية تخالف قائمته، فتتناقض إجابتا المهمة الواحدة).
+// الاسم المُصدَّر كما كان تماماً: `jcr.js:32` يستورده من هنا بلا تغيير.
+export { needsBackend } from './backendNeed.js';
 
 // ============================================================
 // 🤖 System Prompt لكتابة Vercel Functions

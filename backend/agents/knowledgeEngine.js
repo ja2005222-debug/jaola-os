@@ -271,15 +271,6 @@ ${marketplaceContext}`;
 // ═══════════════════════════════════════════════════════
 // 🔄 تصدير needsBackend للاستخدام من server.js
 // ═══════════════════════════════════════════════════════
-const BACKEND_KEYWORDS = [
-    'تسجيل دخول', 'حساب', 'مستخدم', 'دفع', 'حجز', 'لوحة تحكم',
-    'قاعدة بيانات', 'إدارة', 'سلة', 'طلبات', 'مخزون', 'فاتورة',
-    'اشتراك', 'عضوية', 'login', 'signup', 'payment', 'checkout',
-    'cart', 'order', 'dashboard', 'admin', 'database', 'booking',
-    'upload', 'inventory', 'subscription', 'members', 'crud',
-    'stripe', 'paypal', 'oauth', 'google login', 'رفع صور', 'دفع إلكتروني'
-];
-
 // كشف الميزات المتقدمة المطلوبة
 export function detectAdvancedFeatures(userGoal) {
     const goal = (userGoal || '').toLowerCase();
@@ -293,7 +284,6 @@ export function detectAdvancedFeatures(userGoal) {
     };
 }
 
-export function needsBackend(userGoal) {
-    const goal = (userGoal || '').toLowerCase();
-    return BACKEND_KEYWORDS.some(kw => goal.includes(kw));
-}
+// 🔄 هل يحتاج المشروع خادماً؟ — مصدرٌ واحد مشترك مع `backendAgent`.
+// الاسم المُصدَّر كما كان: `server.js:63` يستورده من هنا ويمرّره في `agents`.
+export { needsBackend } from './backendNeed.js';
