@@ -91,13 +91,19 @@ export async function fetchProfile(provider, accessToken) {
         const u = await uRes.json();
         if (!u || !u.id) throw new Error('تعذّر جلب ملف GitHub');
 
-        let email = u.email;
+        // 🔴 البريد هنا ليس حقلاً تجميلياً: `DB.upsertOAuthUser` **يربط
+        // الحسابات به** — يجد المستخدم القائم بالبريد ثم يعيد كتابة
+        // provider/providerId إليه ويسلّمه. فبريدٌ غير مؤكَّد = حسابُ غيرك.
+        // (بريد `/user` العلني آمن: GitHub لا يقبل جعل بريدٍ غير مؤكَّد علنياً.)
+        let email = u.email || null;
         if (!email) {
             try {
                 const eRes = await fetch('https://api.github.com/user/emails', { headers });
                 const emails = await eRes.json();
                 if (Array.isArray(emails)) {
-                    email = (emails.find((e) => e.primary && e.verified) || emails[0])?.email || null;
+                    // كان السقوط على `emails[0]` **مهما كان** — أي على غير المؤكَّد.
+                    const verified = emails.filter((e) => e && e.verified);
+                    email = (verified.find((e) => e.primary) || verified[0])?.email || null;
                 }
             } catch { /* اختياري */ }
         }
@@ -110,10 +116,17 @@ export async function fetchProfile(provider, accessToken) {
     });
     const u = await res.json();
     if (!u || !u.sub) throw new Error('تعذّر جلب ملف Google');
+    // 🔴 جوجل توثّق صراحةً أن `email` بلا `email_verified` لا يُوثق به،
+    // وخدمة السفر في هذا المستودع ترفضه لهذا السبب بعينه
+    // (`travel-service/src/googleAuth.js`). وهنا لم يكن يُفحَص إطلاقاً.
+    // 📌 ولا نرفض الدخول كما تفعل هي — لاختلاف المقدّمة: هناك **البريد هو
+    // الهوية**، وهنا الهوية معرّفُ المزوّد والبريدُ مفتاحُ ربطٍ فقط. فإسقاطه
+    // يغلق الانتحال بلا أن يحجب صاحب حسابٍ مؤسّسيّ لم يُثبَت بريده.
+    const email = u.email_verified === true ? (u.email || null) : null;
     return {
         providerId: u.sub,
-        username: (u.email || `google_${u.sub}`).split('@')[0],
-        email: u.email || null,
+        username: (email || `google_${u.sub}`).split('@')[0],
+        email,
         avatar: u.picture || null,
         name: u.name || null,
     };
