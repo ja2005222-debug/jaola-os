@@ -132,7 +132,7 @@ import { autoDeployFullStack, fullAutomationReady } from './services/deployAutom
 import { assetsFor, injectFaviconTag } from './agents/cloneAssets.js';
 import { listLibraries, getLibraryById, injectLibrary } from './agents/libraryRegistry.js';
 import { polishHtml } from './agents/polishPack.js';
-import { setProjectSecret, deleteProjectSecret, getProjectSecretNames, getProjectSecrets } from './services/projectSecrets.js';
+import { setProjectSecret, deleteProjectSecret, getProjectSecretNames, getProjectSecrets, getUnreadableSecretNames } from './services/projectSecrets.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
 import { recordTurn } from './services/conversationStore.js';
 import { buildMetricsPayload } from './services/metricsStore.js';
@@ -2018,20 +2018,38 @@ app.get('/api/project/state', verifyToken, validateProjectOwnership, async (req,
 
 // 🔑 أسرار المشروع (مفاتيح أطراف ثالثة مثل Travelpayouts) — مشفّرة، تُكتب في .env
 app.get('/api/project/secrets', verifyToken, validateProjectOwnership, (req, res) => {
-    res.json({ success: true, keys: getProjectSecretNames(req.user.username, req.activeProject) });
+    res.json({
+        success: true,
+        keys: getProjectSecretNames(req.user.username, req.activeProject),
+        // 🔑 أسرارٌ محفوظة لكنّا نعجز عن فكّها (تدوير PAT_ENCRYPTION_KEY/JWT_SECRET غالباً):
+        // تُقال صراحةً بدل أن تُعرض كأنها بخير بينما التطبيق لا يستلمها.
+        unreadable: getUnreadableSecretNames(req.user.username, req.activeProject),
+    });
 });
 app.post('/api/project/secret', verifyToken, validateProjectOwnership, async (req, res) => {
     try {
         const { key, value } = req.body || {};
         await setProjectSecret(req.user.username, req.activeProject, req.projectPath, key, value);
-        res.json({ success: true, keys: getProjectSecretNames(req.user.username, req.activeProject) });
+        res.json({
+            success: true,
+            keys: getProjectSecretNames(req.user.username, req.activeProject),
+            // 🔑 أسرارٌ محفوظة لكنّا نعجز عن فكّها (تدوير PAT_ENCRYPTION_KEY/JWT_SECRET غالباً):
+            // تُقال صراحةً بدل أن تُعرض كأنها بخير بينما التطبيق لا يستلمها.
+            unreadable: getUnreadableSecretNames(req.user.username, req.activeProject),
+        });
     } catch (e) { res.status(400).json({ error: e.message }); }
 });
 app.delete('/api/project/secret', verifyToken, validateProjectOwnership, async (req, res) => {
     try {
         const { key } = req.body || {};
         await deleteProjectSecret(req.user.username, req.activeProject, req.projectPath, key);
-        res.json({ success: true, keys: getProjectSecretNames(req.user.username, req.activeProject) });
+        res.json({
+            success: true,
+            keys: getProjectSecretNames(req.user.username, req.activeProject),
+            // 🔑 أسرارٌ محفوظة لكنّا نعجز عن فكّها (تدوير PAT_ENCRYPTION_KEY/JWT_SECRET غالباً):
+            // تُقال صراحةً بدل أن تُعرض كأنها بخير بينما التطبيق لا يستلمها.
+            unreadable: getUnreadableSecretNames(req.user.username, req.activeProject),
+        });
     } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
