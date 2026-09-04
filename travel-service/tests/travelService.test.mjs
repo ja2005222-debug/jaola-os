@@ -26,7 +26,7 @@ import { createMockCarsProvider } from '../src/providers/mockCarsProvider.js';
 import { normalizeDuffelCarResult } from '../src/providers/duffelCarsProvider.js';
 import { createMockEsimProvider } from '../src/providers/mockEsimProvider.js';
 import { buildProvider, buildStaysProvider, buildCarsProvider, buildEsimProvider } from '../src/providers/index.js';
-import { readMarkupPct, applyMarkup, DEFAULT_MARKUP_PCT, readPackageMarkupPct, DEFAULT_PACKAGE_MARKUP_PCT, readCategoryMarkupPct, MAX_MARKUP_PCT, readFxBufferPct, DEFAULT_FX_BUFFER_PCT, MAX_FX_BUFFER_PCT, PERCENT_ENV_RULES, collectPercentConfigIssues, formatPercentIssue } from '../src/pricing.js';
+import { readMarkupPct, applyMarkup, roundMoney, DEFAULT_MARKUP_PCT, readPackageMarkupPct, DEFAULT_PACKAGE_MARKUP_PCT, readCategoryMarkupPct, MAX_MARKUP_PCT, readFxBufferPct, DEFAULT_FX_BUFFER_PCT, MAX_FX_BUFFER_PCT, PERCENT_ENV_RULES, collectPercentConfigIssues, formatPercentIssue } from '../src/pricing.js';
 import { normalizeContract, contractCoversStay, contractOfferId, parseContractOfferId } from '../src/contracts.js';
 import { normalizeDiscountCode, computeDiscount } from '../src/discounts.js';
 import {
@@ -2378,6 +2378,34 @@ describe('packages/contracts: وحدات نقية بلا شبكة', () => {
         assert.equal(parseContractOfferId('mock_stay_55_1'), null); // ليس لنا
         assert.equal(parseContractOfferId('ctr_مشوَّه'), null);
         assert.equal(parseContractOfferId(''), null);
+    });
+});
+
+describe('💰 roundMoney: الجمع وحده يكسر ضبط السنت', () => {
+    test('المبلغان المضبوطان يعطيان معاً عدداً لا يُمثَّل ثنائياً — والتقريب يحسمه', () => {
+        // مبلغان مضبوطان للسنت، وجمعهما ليس كذلك — وهذا ما أسقط CI فعلاً
+        assert.equal(10.06 + 20.49, 30.549999999999997);   // ← ما كان يُخزَّن ويُرسَل لـStripe
+        assert.equal(roundMoney(10.06 + 20.49), 30.55);     // ← ما يُخزَّن الآن
+        assert.equal(roundMoney(10.07 + 20.51), 30.58);
+        // وناتج applyMarkup نفسه مضبوطٌ سلفاً: التقريب لا يزحزحه
+        for (const [net, pct] of [[100, 8], [99.99, 8], [15.5, 12], [0, 10]]) {
+            const sell = applyMarkup(net, pct);
+            assert.equal(roundMoney(sell), sell, `${net}@${pct}%`);
+        }
+    });
+
+    test('التراكم في reduce يُقرَّب مرةً واحدة في النهاية', () => {
+        const parts = [10.1, 20.2, 30.3];
+        assert.notEqual(parts.reduce((a, b) => a + b, 0), 60.6); // 60.599999999999994
+        assert.equal(roundMoney(parts.reduce((a, b) => a + b, 0)), 60.6);
+    });
+
+    test('ما ليس عدداً منتهياً يُرفض صراحةً — لا NaN صامتاً في المال', () => {
+        // null و'' و[] يقرؤها Number() **صفراً**، وtrue واحداً: غيابُ مبلغٍ
+        // كان سيمرّ «صفر ريال» بلا صوت لو اكتفينا بـNumber().
+        for (const bad of [null, undefined, '', '   ', 'abc', NaN, Infinity, -Infinity, {}, [], true, false])
+            assert.throws(() => roundMoney(bad), /مبلغ غير صالح للتقريب/, JSON.stringify(bad) ?? String(bad));
+        assert.equal(roundMoney('12.345'), 12.35); // النصّ الرقمي مقبول كما في بقية الخدمة
     });
 });
 
