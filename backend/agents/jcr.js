@@ -1788,9 +1788,12 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // اسم مكوّن + مسار (slug) فريدان
         const existingComps = new Set(Object.keys(content.sections || {}));
         const existingSlugs = new Set((content.routes || []).map(r => (r.href || '').replace(/^\//, '')));
-        let n = existingComps.size + 1;
-        let comp = compName(pageLabel, n);
-        while (existingComps.has(comp)) comp = compName(pageLabel, ++n);
+        // التفرّد بلاحقةٍ رقمية لا بإعادة الاشتقاق: `compName` صار يشتقّ الاسم
+        // من **معنى** التسمية لا من موضعها، فهو ثابتٌ مهما تغيّر `n` — وإعادةُ
+        // ندائه في حلقةٍ شرطُها ثباتُ القيمة حلقةٌ لا تنتهي.
+        const base = compName(pageLabel, existingComps.size);
+        let comp = base, dup = 1;
+        while (existingComps.has(comp)) comp = base + (++dup);
         let slug = slugify(comp), k = 1;
         while (existingSlugs.has(slug) || slug === '' ) { slug = slugify(comp) + '-' + (++k); }
 

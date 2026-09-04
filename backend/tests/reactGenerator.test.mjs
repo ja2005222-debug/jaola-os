@@ -142,10 +142,55 @@ test('لغةٌ من اليمين تُنتج dir=rtl في التخطيط', () => 
     assert.match(layout, /<html lang="ar" dir="rtl">/);
 });
 
-test('compName: الخريطة، ثمّ اللاتيني، ثمّ رقمُ القسم للعربي', () => {
+// ⚠️ كان هنا اختبارٌ يقول «ثمّ رقمُ القسم للعربي» ويُثبّت `compName('من نحن',2)
+// === 'Section3'`. وهو لم يكن يصف عقداً يخدم المستخدم بل يصف التنفيذ كما هو:
+// فالاشتقاق اللاتيني يحذف كلَّ ما ليس [a-z0-9]، فلا يبقى من اسمٍ عربيّ حرف.
+// النتيجةُ أنّ موقعاً عربيّاً كاملاً كان يخرج بمسارات `/section3 … /section8`.
+// حارسٌ يُثبّت العطبَ عقداً أخطرُ من غياب الحارس.
+test('compName: الخريطة، ثمّ القاموس العربي، ثمّ اللاتيني، ثمّ النقحرة', () => {
     assert.equal(compName('tables', 0), 'DataTable');
     assert.equal(compName('our services', 1), 'OurServices');
-    assert.equal(compName('من نحن', 2), 'Section3');
+    assert.equal(compName('من نحن', 2), 'About');
+});
+
+test('الأقسام العربية الشائعة تأخذ مسارها المتعارف لا رقماً أعمى', () => {
+    const cases = [
+        ['من نحن', 'About', 'about'], ['اتصل بنا', 'Contact', 'contact'],
+        ['خدماتنا', 'Services', 'services'], ['الخدمات', 'Services', 'services'],
+        ['الأسعار', 'Pricing', 'pricing'], ['الأسئلة الشائعة', 'Faq', 'faq'],
+        ['معرض الأعمال', 'Works', 'works'], ['آراء العملاء', 'Testimonials', 'testimonials'],
+        ['المدونة', 'Blog', 'blog'], ['سياسة الخصوصية', 'Privacy', 'privacy'],
+        ['الرئيسية', 'Home', 'home'],
+    ];
+    for (const [ar, comp, slug] of cases) {
+        assert.equal(compName(ar, 3), comp, `«${ar}» يجب أن يصير ${comp}`);
+        assert.equal(slugify(compName(ar, 3)), slug);
+    }
+});
+
+test('الموقع العربي يخرج بمسارات الموقع الإنجليزي نفسها', () => {
+    const ar = planSections(['الرئيسية', 'من نحن', 'خدماتنا', 'معرض الأعمال', 'آراء العملاء', 'اتصل بنا']);
+    const en = planSections(['home', 'about', 'services', 'works', 'testimonials', 'contact']);
+    assert.deepEqual(ar.comps, en.comps);
+    assert.ok(!ar.comps.some(c => /^Section\d+$/.test(c)), `بقي قسمٌ مرقّم: ${ar.comps.join(', ')}`);
+});
+
+// المسارُ يجب أن يكون دالّةَ **الاسم** لا دالّةَ الموضع: `SectionN` كان يجعل
+// الصفحةَ نفسها تأخذ رابطاً مختلفاً باختلاف ترتيبها في المخطّط.
+test('اسمٌ عربيّ خارج القاموس يُنقحَر، والنتيجة لا تتعلّق بموضع القسم', () => {
+    const a = compName('عروض رمضان', 0);
+    const b = compName('عروض رمضان', 9);
+    assert.equal(a, b, 'الاسمُ نفسه أعطى مكوّنين مختلفين باختلاف الموضع');
+    assert.ok(/^[A-Z][A-Za-z0-9]*$/.test(a), `ليس اسمَ مكوّنٍ صالحاً: ${a}`);
+    assert.ok(!/^Section\d+$/.test(a), `نُقحر إلى رقمٍ أعمى: ${a}`);
+    // ولا يُطابَق داخل الكلمات: «خدمات التوصيل» ليست «خدماتنا»
+    assert.notEqual(compName('خدمات التوصيل', 0), 'Services');
+});
+
+test('ما لا حرفَ فيه أصلاً يبقى مرقّماً — الرقمُ ملاذٌ أخير لا قاعدة', () => {
+    assert.equal(compName('', 3), 'Section4');
+    assert.equal(compName(null, 0), 'Section1');
+    assert.equal(compName('!!!', 2), 'Section3');
 });
 
 test('slugify: PascalCase → مسارٌ بشُرَط', () => {
