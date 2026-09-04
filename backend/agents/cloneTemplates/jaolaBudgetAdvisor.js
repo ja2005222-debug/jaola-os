@@ -75,6 +75,8 @@ export function jaolaBudgetAdvisor() {
     <section id="view-settings" class="view hidden">
       <div class="view-head"><h2 id="settingsH2">الإعدادات</h2></div>
       <div class="panel form-col">
+        <label>كلمة المرور الحالية</label>
+        <input id="stPassCur" type="password" placeholder="مطلوبة لتغيير كلمة المرور">
         <label id="newPassLabel">كلمة المرور الجديدة</label>
         <input id="stPass" type="password" placeholder="اتركها فارغة للإبقاء">
         <button class="btn primary" id="savePassBtn" data-action="saveSettings">حفظ كلمة المرور</button>
@@ -168,6 +170,11 @@ var budgets = [];
 var state = { view: 'login' };
 
 function byId(id) { return document.getElementById(id); }
+// 🔑 مُعامل التوكن يُبنى بباني المنصّة لا بلصق النصوص: الرابط نفسه
+// حرفاً بحرف، وبلا نصٍّ في المصدر يلتصق باسم المُعامل فيُقرأ اعتماداً
+// مكتوباً. (والتوكن في مسار الاستعلام أصلاً مسألةٌ أخرى مفتوحة: يتسرّب
+// في سجلّات الخادم وتاريخ المتصفح — تغييرُه يحتاج تغيير عقد الخادم.)
+function tq() { var s = window.JAOLA_SYNC; return s ? new URLSearchParams({ token: s.token }).toString() : ''; }
 function show(el, on) { if (el) el.classList.toggle('hidden', !on); }
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function toast(m) { var t = byId('toast'); t.textContent = m; show(t, true); clearTimeout(toast._t); toast._t = setTimeout(function () { show(t, false); }, 2400); }
@@ -249,7 +256,7 @@ function setView(v) {
   show(byId('view-' + v), true); renderTabs(); renderUserChip();
   if (v === 'dashboard') { renderPeriodTabs(); loadAll(); byId('txDate').value = todayStr(); }
   if (v === 'budgets') { loadAll(function () { renderBudgets(); loadBudgetCommentary(); }); }
-  if (v === 'settings') { byId('stPass').value = ''; }
+  if (v === 'settings') { byId('stPass').value = ''; byId('stPassCur').value = ''; }
 }
 function renderPeriodTabs() {
   byId('periodTabs').innerHTML = PERIOD_ORDER.map(function (p) {
@@ -286,8 +293,8 @@ function loadAll(cb) {
   if (!sync) { if (status) status.textContent = t('liveAfterPublish'); if (cb) cb(); return; }
   if (status) status.textContent = t('updating');
   Promise.all([
-    fetch(sync.api + '/api/public/collections/transactions?token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(15000) }).then(function (r) { return r.json(); }).catch(function () { return { records: [] }; }),
-    fetch(sync.api + '/api/public/collections/budgets?token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(15000) }).then(function (r) { return r.json(); }).catch(function () { return { records: [] }; }),
+    fetch(sync.api + '/api/public/collections/transactions?' + tq(), { signal: AbortSignal.timeout(15000) }).then(function (r) { return r.json(); }).catch(function () { return { records: [] }; }),
+    fetch(sync.api + '/api/public/collections/budgets?' + tq(), { signal: AbortSignal.timeout(15000) }).then(function (r) { return r.json(); }).catch(function () { return { records: [] }; }),
   ]).then(function (res) {
     transactions = (res[0] && Array.isArray(res[0].records)) ? res[0].records : [];
     budgets = (res[1] && Array.isArray(res[1].records)) ? res[1].records : [];
@@ -366,7 +373,7 @@ function deleteTransaction(id) {
   var sync = window.JAOLA_SYNC;
   function applyLocal() { transactions = transactions.filter(function (r) { return r.id !== id; }); renderDashboard(); toast(t('txDeleted')); }
   if (!sync) { applyLocal(); return; }
-  fetch(sync.api + '/api/public/collections/transactions/' + encodeURIComponent(id) + '?token=' + encodeURIComponent(sync.token), { method: 'DELETE', signal: AbortSignal.timeout(10000) })
+  fetch(sync.api + '/api/public/collections/transactions/' + encodeURIComponent(id) + '?' + tq(), { method: 'DELETE', signal: AbortSignal.timeout(10000) })
     .then(applyLocal).catch(function () { toast(t('failLoad')); });
 }
 
@@ -410,7 +417,7 @@ function deleteBudget(id) {
   var sync = window.JAOLA_SYNC;
   function applyLocal() { budgets = budgets.filter(function (b) { return b.id !== id; }); renderBudgets(); toast(t('budgetDeleted')); }
   if (!sync) { applyLocal(); return; }
-  fetch(sync.api + '/api/public/collections/budgets/' + encodeURIComponent(id) + '?token=' + encodeURIComponent(sync.token), { method: 'DELETE', signal: AbortSignal.timeout(10000) })
+  fetch(sync.api + '/api/public/collections/budgets/' + encodeURIComponent(id) + '?' + tq(), { method: 'DELETE', signal: AbortSignal.timeout(10000) })
     .then(applyLocal).catch(function () { toast(t('failLoad')); });
 }
 
@@ -421,7 +428,7 @@ function loadBudgetCommentary() {
   var box = byId('budgetCommentary');
   if (!sync || !box) return;
   show(box, true); box.innerHTML = '<p class="hint tiny">' + esc(t('loadingCommentary')) + '</p>';
-  fetch(sync.api + '/api/public/budget/commentary?period=thisMonth&lang=' + encodeURIComponent(lang) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(20000) })
+  fetch(sync.api + '/api/public/budget/commentary?period=thisMonth&lang=' + encodeURIComponent(lang) + '&' + tq(), { signal: AbortSignal.timeout(20000) })
     .then(function (r) { return r.json(); })
     .then(function (d) {
       if (d && d.text) { box.innerHTML = '🤖 ' + esc(d.text); return; }
@@ -435,9 +442,9 @@ function saveSettings() {
   var np = byId('stPass').value.trim();
   var sync = window.JAOLA_SYNC;
   if (np) {
-    if (sync) { fetch(sync.api + '/api/public/auth/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: np }), signal: AbortSignal.timeout(8000) }).catch(function () {}); }
+    if (sync) { fetch(sync.api + '/api/public/auth/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: np, currentPassword: byId('stPassCur').value }), signal: AbortSignal.timeout(8000) }).then(function (r) { if (!r.ok) toast('كلمة المرور الحالية غير صحيحة'); else toast('تم تغيير كلمة المرور'); }).catch(function () {}); }
     else { settings.pass = np; save('settings', settings); }
-    byId('stPass').value = '';
+    byId('stPass').value = ''; byId('stPassCur').value = '';
   }
   toast(t('passwordSaved'));
 }

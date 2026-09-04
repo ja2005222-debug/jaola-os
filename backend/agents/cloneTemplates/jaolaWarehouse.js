@@ -99,6 +99,7 @@ export function jaolaWarehouse() {
       <div class="view-head"><h2>الإعدادات</h2></div>
       <div class="panel form-col">
         <label>اسم المستودع</label><input id="stName">
+        <label>كلمة المرور الحالية</label><input id="stPassCur" type="password" placeholder="مطلوبة لتغيير كلمة المرور">
         <label>كلمة المرور الجديدة</label><input id="stPass" type="password" placeholder="اتركها فارغة للإبقاء">
         <button class="btn primary" data-action="saveSettings">حفظ الإعدادات</button>
       </div>
@@ -306,11 +307,11 @@ function exportShipmentsCsv() {
   csvDownload('shipments.csv', rows); toast('صُدّرت الشحنات CSV');
 }
 
-function renderSettings() { byId('stName').value = settings.name; byId('stPass').value = ''; }
+function renderSettings() { byId('stName').value = settings.name; byId('stPass').value = ''; byId('stPassCur').value = ''; }
 function saveSettings() {
   settings.name = byId('stName').value.trim() || settings.name;
   var np = byId('stPass').value.trim();
-  if (np) { var sync = window.JAOLA_SYNC; if (sync) { fetch(sync.api + '/api/public/auth/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: np }) }).catch(function () {}); } else settings.pass = np; }
+  if (np) { var sync = window.JAOLA_SYNC; if (sync) { fetch(sync.api + '/api/public/auth/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: np, currentPassword: byId('stPassCur').value }) }).then(function (r) { if (!r.ok) toast('كلمة المرور الحالية غير صحيحة'); else toast('تم تغيير كلمة المرور'); }).catch(function () {}); } else settings.pass = np; }
   save('settings', settings); byId('brandName').textContent = settings.name; toast('حُفظت الإعدادات');
 }
 

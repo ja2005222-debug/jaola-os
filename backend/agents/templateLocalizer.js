@@ -885,6 +885,12 @@ const DICT = [
     ['المبيعات والفواتير', 'Sales and invoices'],
     ['كلمة المرور غير صحيحة', 'Incorrect password'],
     ['كلمة المرور الجديدة', 'New password'],
+    // 🔒 تغيير كلمة مرور اللوحة صار يتطلّب الحالية (انظر projectAuth.js) —
+    // ونصوصُها تُترجَم كبقية القوالب وإلا ظهرت عربيةً في البناء الإنجليزي.
+    ['كلمة المرور الحالية غير صحيحة', 'Current password is incorrect'],
+    ['مطلوبة لتغيير كلمة المرور', 'Required to change the password'],
+    ['تم تغيير كلمة المرور', 'Password changed'],
+    ['كلمة المرور الحالية', 'Current password'],
     ['اكتب اسم الصنف', 'Enter item name'],
     ['لا دفعات إنتاج بعد.', 'No production batches yet.'],
     ['لا منصرفات مسجّلة.', 'No expenses recorded.'],

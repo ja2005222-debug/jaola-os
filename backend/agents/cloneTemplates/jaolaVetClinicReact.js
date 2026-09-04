@@ -80,6 +80,7 @@ function printVisit(v, pet, owner, clinicName, currency) {
 function Login({ onLogin }) {
   const [role, setRole] = useState('vet');
   const [pass, setPass] = useState('');
+  const [curPass, setCurPass] = useState(''); // 🔒 إثبات الاعتماد القائم — التوكن منشورٌ في الصفحة
   const [err, setErr] = useState(false);
 
   function submit(e) {
@@ -283,13 +284,13 @@ function Settings({ settings, saveSettings }) {
       if (sync) {
         fetch(sync.api + '/api/public/auth/set-password', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: sync.token, password: pass.trim() }),
+          body: JSON.stringify({ token: sync.token, password: pass.trim(), currentPassword: curPass }),
           signal: AbortSignal.timeout(8000),
-        }).catch(function () {});
+        }).then(function (r) { if (!r.ok) alert('كلمة المرور الحالية غير صحيحة'); }).catch(function () {});
       }
     }
     saveSettings(name.trim() || settings.name, sync ? null : (pass.trim() || null));
-    setPass('');
+    setPass(''); setCurPass('');
     toast('تم حفظ الإعدادات');
   }
   return (
@@ -297,6 +298,7 @@ function Settings({ settings, saveSettings }) {
       <div className="view-head"><h2>الإعدادات</h2></div>
       <div className="panel form-col">
         <label>اسم العيادة</label><input value={name} onChange={function (e) { setName(e.target.value); }} />
+        <label>كلمة المرور الحالية</label><input type="password" placeholder="مطلوبة لتغيير كلمة المرور" value={curPass} onChange={function (e) { setCurPass(e.target.value); }} />
         <label>كلمة المرور الجديدة</label><input type="password" placeholder="اتركها فارغة للإبقاء" value={pass} onChange={function (e) { setPass(e.target.value); }} />
         <button className="btn primary" onClick={submit}>حفظ الإعدادات</button>
       </div>

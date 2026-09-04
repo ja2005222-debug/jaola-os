@@ -85,6 +85,7 @@ export function jaolaRestaurantOps() {
         <label>اسم المطعم</label><input id="stName">
         <label>عدد الطاولات</label><input id="stTables" type="number" min="1" max="60">
         <label>العملة</label><input id="stCurrency">
+        <label>كلمة المرور الحالية</label><input id="stPassCur" type="password" placeholder="مطلوبة لتغيير كلمة المرور">
         <label>كلمة المرور الجديدة</label><input id="stPass" type="password" placeholder="اتركها فارغة للإبقاء">
         <button class="btn primary" data-action="saveSettings">حفظ الإعدادات</button>
       </div>
@@ -312,13 +313,13 @@ function exportBillsCsv() {
   csvDownload('bills.csv', rows); toast('صُدّرت الفواتير CSV');
 }
 
-function renderSettings() { byId('stName').value = settings.name; byId('stTables').value = settings.tables; byId('stCurrency').value = settings.currency; byId('stPass').value = ''; }
+function renderSettings() { byId('stName').value = settings.name; byId('stTables').value = settings.tables; byId('stCurrency').value = settings.currency; byId('stPass').value = ''; byId('stPassCur').value = ''; }
 function saveSettings() {
   settings.name = byId('stName').value.trim() || settings.name;
   var tbls = parseInt(byId('stTables').value, 10); if (tbls >= 1 && tbls <= 60) settings.tables = tbls;
   settings.currency = byId('stCurrency').value.trim() || settings.currency;
   var np = byId('stPass').value.trim();
-  if (np) { var sync = window.JAOLA_SYNC; if (sync) { fetch(sync.api + '/api/public/auth/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: np }) }).catch(function () {}); } else settings.pass = np; }
+  if (np) { var sync = window.JAOLA_SYNC; if (sync) { fetch(sync.api + '/api/public/auth/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, password: np, currentPassword: byId('stPassCur').value }) }).then(function (r) { if (!r.ok) toast('كلمة المرور الحالية غير صحيحة'); else toast('تم تغيير كلمة المرور'); }).catch(function () {}); } else settings.pass = np; }
   save('settings', settings); byId('brandName').textContent = settings.name; toast('حُفظت الإعدادات');
 }
 
