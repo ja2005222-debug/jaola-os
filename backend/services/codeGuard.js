@@ -19,17 +19,32 @@ import { groq } from '../agents/baseAgent.js';
 // ═══════════════════════════════════════════════════════
 // 🔍 الفحوص
 // ═══════════════════════════════════════════════════════
+// ⚖️ عقد هذه الدالة: **سليمة لا كاملة**.
+// «غير صالح» هنا ليس رأياً بل حكمٌ يُسلِّم الملفَ إلى LLM ليعيد كتابته
+// (guardFiles → repairJS). فإنذارٌ كاذبٌ واحد = إتلافُ ملفٍ صحيح بيد نموذج.
+// لذلك: عند الشكّ نقول «صالح». تفويتُ خطأٍ نادر أهونُ من إعادة كتابة الصحيح.
 export function checkJS(content) {
     // vm.Script يحلل CommonJS فقط — لكن ملفات الـ API المولّدة تستخدم ESM
-    // (import/export). نحيّد صيغة الوحدة (مع الحفاظ على أرقام الأسطر) حتى
-    // نتحقق من صحة المنطق دون إنذار كاذب على export/import صحيحين.
-    const isModule = /^\s*(import\s|export\s|export\{|export\s*default)/m.test(content);
+    // (import/export/import.meta/await علوي). نحيّد صيغة الوحدة (مع الحفاظ
+    // على أرقام الأسطر) حتى نتحقق من صحة المنطق دون إنذار كاذب.
+    const isModule = /^\s*(import\s|export\s|export\{|export\s*default)/m.test(content)
+        || /\bimport\.meta\b/.test(content);
     const toCheck = isModule ? neutralizeModuleSyntax(content) : content;
 
+    const compile = (src) => { new vm.Script(src, { filename: 'generated.js' }); };
     try {
-        new vm.Script(toCheck, { filename: 'generated.js' });
+        compile(toCheck);
         return { valid: true };
     } catch (e) {
+        // await على المستوى الأعلى مشروعٌ في الوحدات وحدها. نعيد المحاولة
+        // ملفوفاً في دالة غير متزامنة — البادئة على السطر الأول كي لا تنزاح
+        // أرقام الأسطر. لا نلفّ إلا على هذا الخطأ بعينه.
+        if (isModule && /await is only valid in/i.test(e.message || '')) {
+            try {
+                compile(`(async()=>{${toCheck}\n})()`);
+                return { valid: true };
+            } catch (inner) { e = inner; }
+        }
         const lineMatch = /generated\.js:(\d+)/.exec(e.stack || '');
         return {
             valid: false,
@@ -39,10 +54,36 @@ export function checkJS(content) {
 }
 
 // تحييد صيغة ESM لأغراض فحص الصياغة فقط (يحافظ على عدد الأسطر)
+const MAX_IMPORT_LINES = 30;   // سقفٌ يمنع ابتلاعَ الملف عند استيرادٍ لا يُغلق
+
+// تصريحُ استيرادٍ قد يمتدّ على أسطر. نمحو أسطرَه (لا نحذفها) فيبقى ترقيمُ
+// الأسطر مطابقاً للأصل، ويبقى الخطأُ المُبلَّغ على سطره الحقيقي.
+function blankImportDeclarations(src) {
+    const lines = src.split('\n');
+    let openFrom = -1;   // سطرُ بدء استيرادٍ لم يُغلق بعد
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (openFrom >= 0) {
+            lines[i] = '';
+            if (/\bfrom\s*['"]/.test(line) || /^\s*['"]/.test(line)) openFrom = -1;
+            else if (i - openFrom >= MAX_IMPORT_LINES) openFrom = -1;
+            continue;
+        }
+        // تصريح — لا import(...) الديناميكي ولا import.meta
+        if (!/^\s*import\s*[(.]/.test(line) && /^\s*import\b/.test(line)) {
+            const complete = /\bfrom\s*['"][^'"]*['"]/.test(line)
+                || /^\s*import\s+['"][^'"]*['"]/.test(line);
+            lines[i] = '';
+            if (!complete) openFrom = i;
+        }
+    }
+    return lines.join('\n');
+}
+
 function neutralizeModuleSyntax(src) {
-    return src
-        // import ... from '...';  و  import '...';  (سطر واحد)
-        .replace(/^\s*import\b[^\n]*$/gm, '')
+    return blankImportDeclarations(src)
+        // import.meta تعبيرٌ لا يُقبل خارج الوحدة — نبدّله بكائنٍ مكافئ الشكل
+        .replace(/\bimport\.meta\b/g, '({url:"",dirname:"",filename:"",resolve(){}})')
         // export default ...  →  void ...
         .replace(/^(\s*)export\s+default\s+/gm, '$1void ')
         // export { ... } (from '...')?;
@@ -54,8 +95,13 @@ function neutralizeModuleSyntax(src) {
 export function checkHTML(content) {
     const warnings = [];
     if (!/<\/html>/i.test(content)) warnings.push('وسم </html> مفقود');
-    const openScripts = (content.match(/<script\b(?![^>]*src)[^>]*>/gi) || []).length;
-    const closeScripts = (content.match(/<\/script>/gi) || []).length;
+    // الطرفان يجب أن يُعدّا من المجتمع نفسه. كان المفتوحُ يستثني السكربتات
+    // الخارجية بينما المغلقُ يعدّ إغلاقاتها كلَّها، فيَستُر سكربتٌ خارجيٌّ
+    // واحدٌ سكربتاً داخلياً غير مغلق. نُسقط الأزواجَ الخارجية الكاملة أولاً
+    // ثم نعدّ ما بقي — فتحاً وإغلاقاً — من البقيّة نفسها.
+    const rest = content.replace(/<script\b[^>]*\bsrc\s*=[^>]*>\s*<\/script>/gi, '');
+    const openScripts = (rest.match(/<script\b[^>]*>/gi) || []).length;
+    const closeScripts = (rest.match(/<\/script>/gi) || []).length;
     if (openScripts > closeScripts) warnings.push('وسم <script> غير مغلق');
     return { valid: warnings.length === 0, warnings };
 }
