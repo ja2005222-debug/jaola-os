@@ -60,14 +60,15 @@ Policy/Permission، Identity، Plugin.
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
 | `core/PluginLoader.js` | 94 | اكتشاف `.js`/`index.js`، تحقّق manifest (`name` مطلوب، `type`، `enabled`، ✅ `capabilities` بالشكل `domain.action`)، عزل فشل الإضافة | KEEP/MODIFY (Sprint 1 ✅ capabilities) | Plugin + Capability (يتوسّع لاحقاً بـtools/permissions) | `core/PluginLoader.js` |
-| `core/PluginOrchestrator.js` | 133 | سجلّ الإضافات + مشغّل hooks + مسجّل وكلاء + `reload/status/setEnabled` + ✅ فهرس القدرات `capabilities()/findByCapability()` | KEEP/MODIFY (Sprint 1 ✅) | Plugin + Capability + Agent (Registry) — يتطوّر لا يُستبدل | `core/PluginOrchestrator.js` |
-| `plugins/site-checker.js` | 94 | وكيل فحص موقع حيّ (type: agent, `registerAgent → {name, handler}`) | KEEP | Agent (أول وكيل إضافة حقيقي) | `plugins/site-checker.js` |
-| `plugin-templates/AgentPluginTemplate.js` | 47 | قالب إضافة وكيل | KEEP | Plugin | كما هو |
+| `core/PluginOrchestrator.js` | 136 | سجلّ الإضافات + مشغّل hooks + مسجّل وكلاء + `reload/status/setEnabled` + ✅ فهرس القدرات `capabilities()/findByCapability()` | KEEP/MODIFY (Sprint 1 ✅) | Plugin + Capability + Agent (Registry) — يتطوّر لا يُستبدل | `core/PluginOrchestrator.js` |
+| `plugins/site-checker.js` | 95 | وكيل فحص موقع حيّ (type: agent, `registerAgent → {name, handler}`) | KEEP | Agent (أول وكيل إضافة حقيقي) | `plugins/site-checker.js` |
+| `plugin-templates/AgentPluginTemplate.js` | 48 | قالب إضافة وكيل | KEEP | Plugin | كما هو |
 | `services/pluginStore.js` | 87 | تخزين الإضافات في Mongo واستعادتها للقرص | KEEP | Plugin | `core/plugins/` (Sprint 7) |
-| ✅ `core/runtime/TaskGraph.js` (جديد، Sprint 2a) | 46 | `orderTasks(items, {key})` — ترتيب طوبولوجي مستقرّ من `dependsOn` + كشف الدورات (خوارزمية `planExecution` حرفياً معمَّمة) | ADDED | Task | مستهلكاه: `runDynamicMultiAgentRuntime` (DELIVERY_STAGES) و`planExecution` (الفرق) |
-| ✅ `core/runtime/ExecutionContext.js` (جديد، Sprint 2b) | 66 | `createExecutionContext`/`contextFromRequest`/`withAgents` — بيئة المهمة في كائن مجمَّد (الحقول الستة المتكرّرة) | ADDED | Mission | 11 توقيعاً في `jcr.js` + المعالجات السبعة |
+| ✅ `core/runtime/TaskGraph.js` (جديد، Sprint 2a) | 50 | `orderTasks(items, {key})` — ترتيب طوبولوجي مستقرّ من `dependsOn` + كشف الدورات (خوارزمية `planExecution` حرفياً معمَّمة) | ADDED | Task | مستهلكاه: `runDynamicMultiAgentRuntime` (DELIVERY_STAGES) و`planExecution` (الفرق) |
+| ✅ `core/runtime/ExecutionContext.js` (جديد، Sprint 2b) | 67 | `createExecutionContext`/`contextFromRequest`/`withAgents` — بيئة المهمة في كائن مجمَّد (الحقول الستة المتكرّرة) | ADDED | Mission | 11 توقيعاً في `jcr.js` + المعالجات السبعة |
 | ✅ `core/runtime/AgentRuntime.js` (جديد، Sprint 2d) | 89 | `runAgent` + `gatherCooperationInputs` — منفّذ الوكيل الواحد: عقدٌ → نداء نموذج → ملفات مُطهَّرة | MOVED (Sprint 2d ✅، حرفياً عدا إسقاط افتراض `TEAM_BY_ID` الميت) | **Agent** | `runBackendTeam` (فريقا الخلفية **والواجهة** معاً) |
-| ✅ `core/runtime/workspacePaths.js` (جديد، Sprint 2c) | 62 | `isInsideRoot`/`resolveInside` + `safeRelPath` — نواة احتواء المسار المشتركة (السياسات تبقى عند كل موضع) | ADDED | Tool | `writePlanFiles` (jcr)، `writeBackendTeamFiles`، `sanitizePath` |
+| ✅ `core/policy/ConfirmationManager.js` (جديد، Sprint 3) | 82 | بوّابةُ تأكيدٍ واحدة تُميّز الموافقة من السؤال | ADDED | Permission | مستهلكها: مسارُ التأكيد في `jcr.js` |
+| ✅ `core/runtime/workspacePaths.js` (جديد، Sprint 2c) | 89 | `isInsideRoot`/`resolveInside` + `safeRelPath` — نواة احتواء المسار المشتركة (السياسات تبقى عند كل موضع) | ADDED | Tool | `writePlanFiles` (jcr)، `writeBackendTeamFiles`، `sanitizePath` |
 
 ### ✅ التحقّق من مسار `orchestrator.init` (البند 21 من الخط الأساس)
 مؤكَّد بالكود لا بالفهرس:
@@ -89,36 +90,38 @@ Policy/Permission، Identity، Plugin.
 ### C1. النواة (Kernel candidates)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `jcr.js` | 3185 | وقت التشغيل المعرفي: `handleUserMessage` → 7 معالجات نية → `executeMission` → `_runMissionNow` → 15 مرحلة | MODIFY (تدريجي، بلا إعادة كتابة) | Mission + Agent + Task (المراحل → TaskGraph) + Event | يبقى؛ يتقلّص مع كل Sprint لصالح `core/runtime/*` |
-| `contracts.js` → ✅ `core/contracts/index.js` | 99 → 190 | typedefs الأحد عشر + `assertBuildAgents` + `DELIVERY_STAGES` + مدقّقا Capability | MOVED (Sprint 1 ✅) | Mission/Agent/Task/Capability/Provider/Transaction | `core/contracts/index.js` |
+| `jcr.js` | 3210 | وقت التشغيل المعرفي: `handleUserMessage` → 7 معالجات نية → `executeMission` → `_runMissionNow` → 15 مرحلة | MODIFY (تدريجي، بلا إعادة كتابة) | Mission + Agent + Task (المراحل → TaskGraph) + Event | يبقى؛ يتقلّص مع كل Sprint لصالح `core/runtime/*` |
+| `contracts.js` → ✅ `core/contracts/index.js` | 99/197 | typedefs الأحد عشر + `assertBuildAgents` + `DELIVERY_STAGES` + مدقّقا Capability | MOVED (Sprint 1 ✅) | Mission/Agent/Task/Capability/Provider/Transaction | `core/contracts/index.js` |
 | `stateMachine.js` | 238 | Build State Machine (10 حالات + `STATE_EVENTS` + emitter) | KEEP | Event — تبقى متخصّصة، وMission Lifecycle فوقها | `core/missions/BuildStateMachine.js` (Sprint 2) |
 | `ceoBrain.js` | 240 | تصنيف نية سريع، قرار، رسائل إحاطة/حالة | MODIFY | Mission (Intent/CEO في مسار v2) | `core/runtime/` |
 | `router.js` | 94 | الموجّه الموحّد للرسائل | MODIFY | Mission | مع `ceoBrain` |
-| `chatCommands.js`, `textNormalizer.js`, `languageDetector.js`, `languageManager.js`, `logLocalizer.js`, `failureMessages.js` | 117/275/192/89/204/21 | أوامر حتمية، تطبيع نص، لغة، ترجمة السجل، رسائل الفشل | KEEP | — | `agents/` (أدوات النواة اللغوية) |
+| `chatCommands.js`, `textNormalizer.js`, `languageDetector.js`, `languageManager.js`, `logLocalizer.js`, `failureMessages.js` | 120/275/192/89/204/25 | أوامر حتمية، تطبيع نص، لغة، ترجمة السجل، رسائل الفشل | KEEP | — | `agents/` (أدوات النواة اللغوية) |
 | `baseAgent.js` | 147 (25 مستورداً) | عميل LLM المشترك (`groq`, `smartChat`) | MODIFY | Provider (LLM Provider Registry) — Model Router لاحقاً | `core/plugins/ProviderRegistry.js` |
 | `knowledgeEngine.js` | 299 (7) | كشف نوع المشروع + سياق معرفي + `needsBackend` | KEEP | — | `plugins/coding/` |
+| `backendNeed.js` | 61 | **مصدرُ الحقيقة الواحد** لـ«أيحتاج خلفيةً؟» (Sprint 7/1) | KEEP | — | `plugins/coding/` |
 
 ### C2. وكلاء الحزمة (AgentBundle — `CONTRACTS.md` §2أ)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
 | `coderAgent.js` | 388 | `coreGenerateCodePlan` / `coreEditCodePlan` (إلزامي) | MODIFY | Agent (spec تصريحي تحت Agent Runtime) | `plugins/coding/agents/` |
-| `architectAgent.js` | 25 | `architectReview` حتمي (إلزامي) | MODIFY | Agent + Evidence (`checks[]`) | `plugins/coding/agents/` |
-| `qaAgent.js` | 108 | `qaVerify` حتمي (إلزامي) | MODIFY | Agent + Evidence (`checks[]`) | `plugins/coding/agents/` |
-| `clarifierAgent.js` | 444 | حوار التوضيح (`startClarification/processAnswer/getFinalGoal/…`) | KEEP | Mission (Planning) | `plugins/coding/` |
+| `architectAgent.js` | 43 | `architectReview` حتمي (إلزامي) | MODIFY | Agent + Evidence (`checks[]`) | `plugins/coding/agents/` |
+| `qaAgent.js` | 115 | `qaVerify` حتمي (إلزامي) | MODIFY | Agent + Evidence (`checks[]`) | `plugins/coding/agents/` |
+| `core/evidence/Check.js` | 55 | عقدُ الدليل الذي يتكلّمه الناقدان (Sprint 4) | KEEP | Evidence | `core/evidence/` |
+| `clarifierAgent.js` | 448 | حوار التوضيح (`startClarification/processAnswer/getFinalGoal/…`) | KEEP | Mission (Planning) | `plugins/coding/` |
 | `template.agent.js` | 38 | `applyTemplate` | KEEP | — | `plugins/coding/` |
-| `backendAgent.js` | 343 | `generateBackend`, `generateFrontendAPIIntegration`, `generateAdvancedModules` | KEEP | Agent | `plugins/coding/agents/` |
-| `deployAgent.js` | 499 | نشر Vercel (يستقبل `io`) | MODIFY | Tool (`deploy`, requiresConfirmation, riskLevel: high) | `plugins/coding/tools/` |
-| `index.js` | 9 | barrel للحزمة | MODIFY | Agent (Registry يحلّ محلّه) | يُلغى عند Registry |
+| `backendAgent.js` | 324 | `generateBackend`, `generateFrontendAPIIntegration`, `generateAdvancedModules` | KEEP | Agent | `plugins/coding/agents/` |
+| `deployAgent.js` | 500 | نشر Vercel (يستقبل `io`) | MODIFY | Tool (`deploy`, requiresConfirmation, riskLevel: high) | `plugins/coding/tools/` |
+| `agents/index.js` | 9 | barrel للحزمة | MODIFY | Agent (Registry يحلّ محلّه) | يُلغى عند Registry |
 
 ### C3. وكلاء المراحل (StageFn — تُستورد مباشرة في jcr.js)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
 | `designerAgent.js` | 256 | ملخّص تصميم + احتياط حتمي | KEEP | Task | `plugins/coding/stages/` |
-| `reviewAgent.js`, `refactorAgent.js`, `testingAgent.js` | 205/146/224 | مراجعة/إعادة هيكلة/اختبارات مولَّدة | KEEP | Task | `plugins/coding/stages/` |
-| `seoAgent.js`, `seoPack.js`, `securityAgent.js`, `polishPack.js`, `pwaAgent.js` | 150/118/178/63/202 | حزم حتمية عند التسليم | KEEP | Task | `plugins/coding/stages/` |
+| `reviewAgent.js`, `refactorAgent.js`, `testingAgent.js` | 240/146/224 | مراجعة/إعادة هيكلة/اختبارات مولَّدة | KEEP | Task | `plugins/coding/stages/` |
+| `seoAgent.js`, `seoPack.js`, `securityAgent.js`, `polishPack.js`, `pwaAgent.js` | 150/118/158/63/202 | حزم حتمية عند التسليم | KEEP | Task | `plugins/coding/stages/` |
 | `gitAgent.js` | 187 | commit/init/stats (ينفّذ git) | MODIFY | Tool (`git`, exec محروس) | `plugins/coding/tools/` |
-| `databaseAgent.js`, `postgresAgent.js`, `authAgent.js`, `migrationAgent.js`, `dependencyAgent.js` | 263/355/332/193/288 | كتلة الخلفية | KEEP | Task | `plugins/coding/stages/` |
-| `renderAgent.js` | 217 | نشر Render | MODIFY | Tool (deploy) | `plugins/coding/tools/` |
+| `databaseAgent.js`, `postgresAgent.js`, `authAgent.js`, `generatedAppSecrets.js`, `migrationAgent.js`, `dependencyAgent.js` | 263/355/333/56/193/288 | كتلة الخلفية | KEEP | Task | `plugins/coding/stages/` |
+| `renderAgent.js` | 262 | نشر Render | MODIFY | Tool (deploy) | `plugins/coding/tools/` |
 | `requirementsVerifier.js` | 101 | هل نُفِّذت المتطلبات؟ | KEEP | Evidence | `core/verification/` (Sprint 4) |
 | `behaviorVerifier.js` | 511 | تحقّق ساكن + تشغيل حيّ (وحدة الدليل `check`) | MOVE | Evidence + Verification | `core/verification/VerificationEngine.js` (Sprint 4) |
 | `modelLibrary.js` | 69 | معرفة تراكمية | KEEP | Memory | `core/memory/` (لاحقاً) |
@@ -129,7 +132,7 @@ Policy/Permission، Identity، Plugin.
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
 | `backendTeam/agentSpec.js` → ✅ `core/runtime/AgentSpec.js` | 133 | `defineAgent/validateSpec/compileSpecToPrompt` | MOVED (Sprint 2a ✅، حرفياً) | **Agent** (الشكل القانوني للوكيل في v2) | `core/runtime/AgentSpec.js` |
-| `backendTeam/backendTeam.js` | 240 | منسّق عام `runBackendTeam/runAgent` + `safeRelPath/writeBackendTeamFiles`؛ ✅ `planExecution` صار غلافاً لـ`TaskGraph.orderTasks` | MOVE (المنسّق) / MODIFY (الكتابة → Tool) | Agent Runtime + Task + Tool | `core/runtime/AgentRuntime.js` (Sprint 2b) |
+| `backendTeam/backendTeam.js` | 174 | منسّق عام `runBackendTeam/runAgent` + `safeRelPath/writeBackendTeamFiles`؛ ✅ `planExecution` صار غلافاً لـ`TaskGraph.orderTasks` | MOVE (المنسّق) / MODIFY (الكتابة → Tool) | Agent Runtime + Task + Tool | `core/runtime/AgentRuntime.js` (Sprint 2b) |
 | `backendTeam/backendVerify.js` | 57 | فحص syntax تنفيذي | KEEP | Evidence | `core/verification/` |
 | `backendTeam/specs.js`, `frontendTeam/specs.js` | 334/167 | 6+6 وكلاء تصريحيين | KEEP | Agent | `plugins/coding/agents/` |
 | `backendTeam/index.js`, `frontendTeam/index.js` | 7/19 | barrels (`runFrontendTeam` غير موصول بالنواة) | KEEP | — | كما هي |
@@ -137,9 +140,9 @@ Policy/Permission، Identity، Plugin.
 ### C5. مكدّس التوليد والقوالب (منطق مجال Coding)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `templateLibrary.js`, `templateLibraryExtended.js`, `templateLocalizer.js` | 1034/1382/1937 | مكتبة القوالب وترجمتها | KEEP | — | `plugins/coding/templates/` (Sprint 6) |
+| `templateLibrary.js`, `templateLibraryExtended.js`, `templateLocalizer.js` | 1034/1382/1943 | مكتبة القوالب وترجمتها | KEEP | — | `plugins/coding/templates/` (Sprint 6) |
 | `cloneTemplates/*` (42 ملفاً، 17,406 سطر؛ `jaolaClinic.js` يُستورد من 27 قالباً كأساس مشترك) | — | قوالب تطبيقات عاملة | KEEP | — | `plugins/coding/templates/clones/` |
-| `cloneAssets.js`, `seedStamp.js`, `fullstackTemplates.js`, `reactGenerator.js`, `blockRegistry.js`, `starterRegistry.js`, `starterFetch.js`, `libraryRegistry.js`, `referenceBlueprints.js`, `appBlueprint.js`, `requirementAnalyzer.js` | 74/116/603/343/259/74/171/78/195/119/202 | استراتيجيات البناء ومخططاته | KEEP | Task (استراتيجية = Task Graph مختلف) | `plugins/coding/` |
+| `cloneAssets.js`, `seedStamp.js`, `fullstackTemplates.js`, `reactGenerator.js`, `blockRegistry.js`, `starterRegistry.js`, `starterFetch.js`, `libraryRegistry.js`, `referenceBlueprints.js`, `appBlueprint.js`, `requirementAnalyzer.js` | 74/116/603/367/259/74/171/78/195/146/198 | استراتيجيات البناء ومخططاته | KEEP | Task (استراتيجية = Task Graph مختلف) | `plugins/coding/` |
 | `projectModel.js`, `projectMemory.js`, `userProfile.js` | 247/234/230 | ذاكرة المشروع والمستخدم | KEEP | Memory | `core/memory/` (لاحقاً) |
 | `componentMarketplace.js`, `platformContext.js` | 251/42 | مكوّنات جاهزة + معلومات المنصّة | KEEP | — | `plugins/coding/` |
 
@@ -156,7 +159,7 @@ Policy/Permission، Identity، Plugin.
 |---|---|---|
 | `deployer.agent.js`, `qa.agent.js` | 6/6 | سطر prompt واحد، لا export مستهلَك |
 | `git.agent.js`, `github.agent.js` | 34/67 | نسخ قديمة من `gitAgent.js` (الحيّ) |
-| `serverBuilder.js` + `spec/AgentSpec.js` + `spec/servercraft.spec.js` | 234/170/57 | سلسلة ميتة كاملة: لا أحد يستورد `serverBuilder`؛ و`spec/AgentSpec.js` يحوي **نصّ سكربت shell** مضمّناً (`cat > spec/servercraft.spec.js << 'EOF'`) — ملف مولَّد بالخطأ. البديل الحيّ `backendTeam/agentSpec.js` |
+| `serverBuilder.js` + `spec/AgentSpec.js` + `spec/servercraft.spec.js` | 234/140/57 | سلسلة ميتة كاملة: لا أحد يستورد `serverBuilder`؛ و`spec/AgentSpec.js` يحوي **نصّ سكربت shell** مضمّناً (`cat > spec/servercraft.spec.js << 'EOF'`) — ملف مولَّد بالخطأ. البديل الحيّ `backendTeam/agentSpec.js` |
 
 ---
 
@@ -167,13 +170,13 @@ Policy/Permission، Identity، Plugin.
 |---|---|---|---|---|---|
 | `missionQueue.js` → ✅ `core/runtime/ExecutionQueue.js` | 135 | طابور المهام + سجلّ دائم للساقطة (نفس الصادرات) | MOVED (Sprint 2a ✅، حرفياً) | Mission (Execution Queue عامة) | `core/runtime/ExecutionQueue.js` |
 | `abortRegistry.js` → ✅ `core/runtime/AbortRegistry.js` | 49 | إيقاف مهمة جارية | MOVED (Sprint 2a ✅، حرفياً) | Mission | `core/runtime/AbortRegistry.js` |
-| `platformLessons.js` | 184 | دروس الفشل + ثغرات السلوك (التعلّم الحقيقي) | MOVE | Evidence + Memory | `core/verification/` أو `core/memory/` |
+| `platformLessons.js` | 187 | دروس الفشل + ثغرات السلوك (التعلّم الحقيقي) | MOVE | Evidence + Memory | `core/verification/` أو `core/memory/` |
 | `projectBrain.js` | 196 | دماغ المشروع (دالة نقية) | MOVE | Evidence | `core/verification/` (Sprint 4) |
-| `codeGuard.js` | 343 | حارس جودة الكود المولَّد | KEEP | Verification | `plugins/coding/` |
+| `codeGuard.js` | 389 | حارس جودة الكود المولَّد | KEEP | Verification | `plugins/coding/` |
 | `persistence.js` (11 مستورداً) | 74 | طبقة الحفظ (Mongo + احتياط) | KEEP | — | `core/` (Sprint 7) |
 | `workspaceStore.js` | 115 | نسخ ملفات المشاريع إلى Mongo | KEEP | Tool (workspace) | `core/runtime/` |
 | `conversationStore.js`, `conversationManager.js` | 170/80 | ذاكرة الحوار | KEEP | Memory | `core/memory/` |
-| `metricsStore.js`, `usageMeter.js`, `errorLog.js`, `logger.js`, `adminAudit.js` | 97/39/45/36/41 | قياس واستهلاك وتدقيق | MODIFY | Audit (AuditLog يوحّدها) | `core/audit/` (Sprint 4) |
+| `metricsStore.js`, `usageMeter.js`, `errorLog.js`, `logger.js`, `adminAudit.js` | 97/78/45/36/41 | قياس واستهلاك وتدقيق | MODIFY | Audit (AuditLog يوحّدها) | `core/audit/` (Sprint 4) |
 | `broadcast.js`, `presence.js` | 42/12 | بثّ Socket + حضور | MODIFY | Event (EventBus) | `core/events/` |
 | `httpRetry.js` | 30 | fetch مع إعادة محاولة | KEEP | Provider (سياسة إعادة المحاولة) | `core/` |
 | `aiProviderCheck.js` | 99 | فاحص مزوّدي الذكاء | MODIFY | Provider Registry | `core/plugins/ProviderRegistry.js` |
@@ -181,9 +184,9 @@ Policy/Permission، Identity، Plugin.
 ### D2. التسليم والنشر (مجال Coding)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `deployAutomation.js`, `customDomains.js`, `githubSync.js`, `githubFiles.js`, `projectExport.js`, `projectManager.js` | 241/185/110/83/37/82 | نشر ونطاقات وGitHub وتصدير | MODIFY | Tool (كل واحدة أداة بـriskLevel) + Transaction (للنشر) | `plugins/coding/tools/` |
-| `reactPreview.js`, `fileEditor.js`, `twin.js` | 452/52/69 | معاينة وتعديل | KEEP | Tool | `plugins/coding/` |
-| `siteConnect.js`, `siteCms.js`, `siteInbox.js`, `newsletterSubscribers.js`, `projectAuth.js`, `projectSecrets.js`, `dataSync.js`, `appData.js`, `appCollections.js`, `appAssets.js` | 128/113/94/57/45/82/138/48/80/71 | خدمات مواقع العملاء المنشورة | KEEP | — | `plugins/coding/runtime-services/` |
+| `deployAutomation.js`, `customDomains.js`, `hostNames.js`, `githubSync.js`, `githubFiles.js`, `projectExport.js`, `projectManager.js` | 241/207/37/110/83/37/82 | نشر ونطاقات وGitHub وتصدير | MODIFY | Tool (كل واحدة أداة بـriskLevel) + Transaction (للنشر) | `plugins/coding/tools/` |
+| `reactPreview.js`, `fileEditor.js`, `twin.js` | 477/73/69 | معاينة وتعديل | KEEP | Tool | `plugins/coding/` |
+| `siteConnect.js`, `siteCms.js`, `siteInbox.js`, `siteCreds.js`, `newsletterSubscribers.js`, `projectAuth.js`, `projectSecrets.js`, `storeKey.js`, `dataSync.js`, `appData.js`, `appCollections.js`, `appAssets.js` | 128/118/97/65/60/76/121/63/138/51/82/76 | خدمات مواقع العملاء المنشورة | KEEP | — | `plugins/coding/runtime-services/` |
 | `imageService.js`, `aiImages.js` | 69/393 | صور | KEEP | Provider | `plugins/coding/` |
 | `platformKnowledge.js`, `knowledgeService.js` | 89/101 | معرفة للمساعد | KEEP | Memory | كما هي |
 
@@ -191,24 +194,24 @@ Policy/Permission، Identity، Plugin.
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
 | `stripeService.js`, `subscriptionService.js`, `config/plans.js`, `routes/billing.js` | 141/138/140/112 | اشتراكات المنصّة (Stripe) | MODIFY | Transaction (Payment Contract العام؛ التنفيذ يبقى Stripe) | `core/transactions/` (العقد) + `routes/billing.js` (التنفيذ) |
-| `oauthLite.js`, `utils/auth.js`, `middleware/adminOnly.js` | 120/40/33 | OAuth + JWT + أدمِن | MODIFY | Identity + Permission | `core/identity/` (Sprint 2–3) |
+| `oauthLite.js`, `utils/auth.js`, `middleware/adminOnly.js` | 133/40/33 | OAuth + JWT + أدمِن | MODIFY | Identity + Permission | `core/identity/` (Sprint 2–3) |
 | `mailer.js` | 46 | Resend | KEEP | Provider | `core/plugins/ProviderRegistry.js` |
 
 ### D4. الإدارة وسوق الوكلاء
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
 | `adminService.js`, `adminUsers.js` | 229/66 | إدارة الإضافات والملفات والمستخدمين | KEEP | Permission | `routes/admin.js` |
-| `agentMarket.js`, `agentConversations.js` | 90/72 | المستخدم يصنع وكلاءه + محادثاتهم | MODIFY | Plugin + Agent (Registry) | `core/plugins/PluginRegistry.js` |
+| `agentMarket.js`, `agentConversations.js` | 90/75 | المستخدم يصنع وكلاءه + محادثاتهم | MODIFY | Plugin + Agent (Registry) | `core/plugins/PluginRegistry.js` |
 | `botTenants.js` | 37 | مستأجرو جولا بوت | MOVE | Plugin (bot) | `plugins/bot/` |
 
 ### D5. أعمدة منتجات تعيش في `services/` (ليست نواة)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
 | `postScheduler.js`, `socialChannels.js`, `telegramPublisher.js` | 80/126/89 | نشر اجتماعي | MOVE | Plugin (marketing) + Tool (send = حسب السياسة والقناة) | `plugins/marketing/` |
-| `budgetAlerts.js`, `budgetCommentary.js`, `budgetStats.js` | 56/56/71 | مستشار الميزانية | MOVE | Plugin (finance) | `plugins/finance/budget/` |
-| `cryptoAlerts.js`, `cryptoCommentary.js`, `cryptoMarket.js`, `signalTrackRecord.js` | 59/63/326/108 | مستشار الكريبتو | MOVE | Plugin (finance) + Provider (CoinGecko) | `plugins/finance/crypto/` |
+| `budgetAlerts.js`, `budgetCommentary.js`, `budgetStats.js` | 59/56/71 | مستشار الميزانية | MOVE | Plugin (finance) | `plugins/finance/budget/` |
+| `cryptoAlerts.js`, `cryptoCommentary.js`, `cryptoMarket.js`, `signalTrackRecord.js` | 62/63/326/108 | مستشار الكريبتو | MOVE | Plugin (finance) + Provider (CoinGecko) | `plugins/finance/crypto/` |
 | `stockCommentary.js`, `stockMarket.js` | 62/186 | مستشار الأسهم | MOVE | Plugin (finance) + Provider (Yahoo) | `plugins/finance/stocks/` |
-| `tradingBotEngine.js`, `tradingBotConfig.js`, `tradingBotCoins.js`, `tradingBotLedger.js`, `tradingBotStats.js`, `tradingBotCircuitBreaker.js`, `chainProvider.js`, `pancakeSwapExecutor.js` | 479/85/189/165/57/55/40/119 | بوت PancakeSwap: تنفيذ حقيقي على BNB Chain، سجلّ append-only، قاطع يومي | MOVE | Plugin (finance) + **Transaction** (`tradingBotLedger` نموذج جاهز لـIdempotency/Audit) + Tool (`swap` = requiresConfirmation/riskLevel: critical) + Provider (RPC) | `plugins/finance/trading/` (Sprint 6+) |
+| `tradingBotEngine.js`, `tradingBotConfig.js`, `tradingBotCoins.js`, `tradingBotLedger.js`, `tradingBotStats.js`, `tradingBotCircuitBreaker.js`, `chainProvider.js`, `pancakeSwapExecutor.js` | 479/92/189/165/57/55/40/167 | بوت PancakeSwap: تنفيذ حقيقي على BNB Chain، سجلّ append-only، قاطع يومي | MOVE | Plugin (finance) + **Transaction** (`tradingBotLedger` نموذج جاهز لـIdempotency/Audit) + Tool (`swap` = requiresConfirmation/riskLevel: critical) + Provider (RPC) | `plugins/finance/trading/` (Sprint 6+) |
 
 ### D6. DELETE — سقالة ميتة (صفر قرّاء، commit واحد 2026-08-05)
 `architectureExplorer.js` (22)، `contextBuilder.js` (22)، `fileBridge.js` (17)،
@@ -228,7 +231,7 @@ Policy/Permission، Identity، Plugin.
 ## E) بقية `backend/`
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `middleware/security.js` | 93 | `sanitizePath` + Zod schemas + `validate` | MODIFY | Tool (workspace guard موحّد — `CONTRACTS.md` §3) + Permission | `core/policy/` |
+| `middleware/security.js` | 94 | `sanitizePath` + Zod schemas + `validate` | MODIFY | Tool (workspace guard موحّد — `CONTRACTS.md` §3) + Permission | `core/policy/` |
 | `utils/secretVault.js` (6 مستوردين) | 39 | تشفير الأسرار | KEEP | Identity | `core/identity/` |
 | `utils/security.js`, `utils/corsErrors.js`, `utils/spaFallback.js`, `utils/performance.js`, `utils/aiProvider.js` | 21/15/19/60/38 | أدوات صغيرة حيّة | KEEP | — | كما هي |
 | `models/User.js`, `Project.js`, `Conversation.js`, `BotTenant.js` | 26/27/22/21 | مخطّطات Mongo (Core DB) | KEEP | Identity/Mission (Core DB — البند 14) | `models/` |
@@ -269,7 +272,7 @@ permissions ويستدعي الخدمة عبر HTTP بنفس JWT. لا شيء ه
 | `payments/stripeClient.js` | 153 | Stripe يدوي: Checkout + webhook HMAC + reconciliation | KEEP | Transaction (Payment Contract عام؛ التنفيذ هنا) |
 | `packages.js`, `fixedPackages.js` | 291/348 | ساغا الباقات + الباقات المجدولة | KEEP | Transaction (ساغا = Fulfillment) |
 | `store/index.js`, `fileStore.js`, `postgresStore.js` | 23/804/1447 | المخزنان بعقد متطابق (NUMERIC للأموال، عمليات ذرية) | KEEP | Travel DB (البند 14 — لا دمج) |
-| `auth.js`, `accounts.js`, `googleAuth.js` | 112/227/75 | SSO JWT (سرّان) + حسابات ذاتية + Google | KEEP | Identity (Core User ID هو الرابط) |
+| `auth.js`, `accounts.js`, `googleAuth.js` | 40/227/75 | SSO JWT (سرّان) + حسابات ذاتية + Google | KEEP | Identity (Core User ID هو الرابط) |
 | `notifications.js`, `mailer.js`, `whatsapp.js`, `tripReminders.js`, `balanceReminders.js`, `priceWatchPoller.js`, `priceWatches.js` | 214/46/127/136/88/106/30 | نقطة تسليم التنبيهات + قنواتها + الدوريات | KEEP | Event (تُبَث لاحقاً عبر EventBus) |
 | `pricing.js`, `discounts.js`, `fareConditions.js`, `passengerAges.js`, `itinerary.js`, `fx.js`, `airports.js`, `travelInfo.js`, `topDestinations.js`, `calendarFeed.js`, `shareLinks.js`, `loyalty.js`, `referrals.js`, `reviews.js`, `profile.js`, `contracts.js` | — | منطق مجال نقيّ | KEEP | — |
 | `public/*` (index.html 5462، admin.html 646، i18n.js 575، …) | — | واجهة Jatrava | KEEP | — (البند 19: لا إعادة تصميم) |
@@ -314,17 +317,17 @@ permissions ويستدعي الخدمة عبر HTTP بنفس JWT. لا شيء ه
 
 | الملف | سطور | لا يصل إليه إلا | يُحمَّل؟ |
 |---|---|---|---|
-| `services/taskExecutor.js` | 226 | **لا شيء** (جذر الجزيرة) | ❌ `simple-git` غير مثبَّت |
-| `services/fileEditor.js` | 53 | `taskExecutor` | ✅ |
-| `services/broadcast.js` | 43 | `taskExecutor` (استيراد ديناميكي) | ✅ |
-| `services/knowledgeService.js` | 102 | `taskExecutor` (استيراد ديناميكي) | ❌ عبر `projectManager` |
-| `services/projectManager.js` | 83 | `knowledgeService` و`twin` (كلاهما يتيم) | ❌ `uuid` غير مثبَّت |
-| `services/twin.js` | 70 | `knowledgeService` (يتيم) | ❌ عبر `projectManager` |
-| `services/logger.js` | 37 | `twin` (يتيم) | ✅ |
-| `services/db.js` | 59 | لا شيء | ❌ `better-sqlite3` غير مثبَّت |
-| `utils/aiProvider.js` | 39 | لا شيء | ✅ |
-| `utils/performance.js` | 61 | لا شيء | ✅ |
-| `utils/security.js` | 22 | لا شيء | ✅ |
+| `services/taskExecutor.js` | 225 | **لا شيء** (جذر الجزيرة) | ❌ `simple-git` غير مثبَّت |
+| `services/fileEditor.js` | 73 | `taskExecutor` | ✅ |
+| `services/broadcast.js` | 42 | `taskExecutor` (استيراد ديناميكي) | ✅ |
+| `services/knowledgeService.js` | 101 | `taskExecutor` (استيراد ديناميكي) | ❌ عبر `projectManager` |
+| `services/projectManager.js` | 82 | `knowledgeService` و`twin` (كلاهما يتيم) | ❌ `uuid` غير مثبَّت |
+| `services/twin.js` | 69 | `knowledgeService` (يتيم) | ❌ عبر `projectManager` |
+| `services/logger.js` | 36 | `twin` (يتيم) | ✅ |
+| `services/db.js` | 58 | لا شيء | ❌ `better-sqlite3` غير مثبَّت |
+| `utils/aiProvider.js` | 38 | لا شيء | ✅ |
+| `utils/performance.js` | 60 | لا شيء | ✅ |
+| `utils/security.js` | 21 | لا شيء | ✅ |
 
 **وقائع أُثبتت بالتشغيل، لا استنتاجات:**
 
