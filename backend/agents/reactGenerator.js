@@ -10,6 +10,58 @@ const RTL_LANGS = new Set(['ar', 'ur', 'he', 'fa']);
 const cap = (s) => (s || '').charAt(0).toUpperCase() + (s || '').slice(1);
 // اسم مكوّن (PascalCase) → مسار صفحة (slug): DataTable → data-table
 export const slugify = (comp) => (comp || '').replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'page';
+// ═══════════════════════════════════════════════════════
+// 🔤 الأقسام العربية → مقابلها الإنجليزيّ المتعارف
+//
+// جولا عربيّةٌ أوّلاً، وكلُّ اسمِ قسمٍ عربيّ كان ينهار إلى `SectionN` لأنّ
+// اشتقاقَ الاسم اللاتينيّ يحذف كلَّ ما ليس [a-z0-9] — فلا يبقى حرف. فموقعٌ
+// عربيّ كامل كان يخرج بمسارات `/section3 … /section8` بينما نظيرُه الإنجليزيّ
+// يخرج بـ`/about` و`/services` و`/contact`.
+//
+// المطابقة **على الاسم كاملاً** بعد التطبيع، لا على جزءٍ منه: المطابقةُ داخل
+// الكلمات هي عينُ العطب الذي عولج سبع مرّات في هذا المستودع.
+const AR_SECTION_WORDS = {
+    'الرئيسيه': 'home', 'رئيسيه': 'home', 'الصفحه الرئيسيه': 'home',
+    'من نحن': 'about', 'عنا': 'about', 'نبذه عنا': 'about', 'عن الشركه': 'about', 'من نحن؟': 'about',
+    'اتصل بنا': 'contact', 'تواصل معنا': 'contact', 'التواصل': 'contact', 'اتصل': 'contact',
+    'خدماتنا': 'services', 'الخدمات': 'services',
+    'منتجاتنا': 'products', 'المنتجات': 'products',
+    'الاسعار': 'pricing', 'التسعير': 'pricing', 'الباقات': 'pricing', 'باقاتنا': 'pricing',
+    'المميزات': 'features', 'الميزات': 'features', 'مميزاتنا': 'features',
+    'معرض الاعمال': 'works', 'اعمالنا': 'works', 'المعرض': 'gallery', 'معرض الصور': 'gallery', 'الصور': 'gallery',
+    'اراء العملاء': 'testimonials', 'التقييمات': 'testimonials', 'شهادات العملاء': 'testimonials',
+    'الاسئله الشائعه': 'faq', 'الاسئله': 'faq',
+    'القائمه': 'menu', 'قائمه الطعام': 'menu', 'المنيو': 'menu',
+    'الحجز': 'reservation', 'احجز الان': 'reservation',
+    'السله': 'cart', 'الدفع': 'checkout', 'بحث': 'search', 'البحث': 'search',
+    'لوحه التحكم': 'dashboard', 'حسابي': 'account', 'تسجيل الدخول': 'auth',
+    'المدونه': 'blog', 'المقالات': 'blog', 'الاخبار': 'news',
+    'فريق العمل': 'team', 'فريقنا': 'team', 'الفريق': 'team',
+    'الشروط والاحكام': 'terms', 'سياسه الخصوصيه': 'privacy',
+    'الوظائف': 'careers', 'التوظيف': 'careers',
+    'الفروع': 'locations', 'مواقعنا': 'locations',
+    'الشركاء': 'partners', 'العملاء': 'clients', 'المشاريع': 'projects',
+    'الدورات': 'courses', 'الاطباء': 'doctors', 'الغرف': 'rooms',
+};
+
+// تطبيعُ الحروف العربية — نسخةٌ مطابقةٌ لما في `agents/textNormalizer.js`.
+// لا تُستورَد منه لأنّ هذا المولّد يُستهلَك أيضاً في سياقاتٍ لا تُحمّل تلك
+// الوحدة، والاعتمادُ هنا حرفان لا منطق.
+const normAr = (t) => (t || '')
+    .replace(/[أإآا]/g, 'ا').replace(/[يى]/g, 'ي').replace(/ة/g, 'ه')
+    .replace(/[\u064B-\u0652]/g, '');
+
+// نقحرةٌ تقريبيّة: تُعطي مساراً ذا معنىً حين يعجز القاموس، وهي خيرٌ من رقمٍ
+// أعمى. تقريبيّةٌ ويُقال ذلك — الغرضُ مسارٌ يُقرأ ويُشارَك، لا نقلٌ صوتيّ دقيق.
+const AR_LETTERS = {
+    'ا': 'a', 'ب': 'b', 'ت': 't', 'ث': 'th', 'ج': 'j', 'ح': 'h', 'خ': 'kh',
+    'د': 'd', 'ذ': 'dh', 'ر': 'r', 'ز': 'z', 'س': 's', 'ش': 'sh', 'ص': 's',
+    'ض': 'd', 'ط': 't', 'ظ': 'z', 'ع': 'a', 'غ': 'gh', 'ف': 'f', 'ق': 'q',
+    'ك': 'k', 'ل': 'l', 'م': 'm', 'ن': 'n', 'ه': 'h', 'و': 'w', 'ي': 'y',
+    'ء': '', 'ئ': 'y', 'ؤ': 'w', 'ٱ': 'a',
+};
+const translitArabic = (t) => normAr(t).split('').map((ch) => (ch in AR_LETTERS ? AR_LETTERS[ch] : (/[a-zA-Z0-9]/.test(ch) ? ch : ' '))).join('');
+
 // اسم مكوّن صالح من اسم قسم (عربي/إنجليزي) → PascalCase لاتيني آمن
 export const compName = (section, i) => {
     const map = {
@@ -21,10 +73,23 @@ export const compName = (section, i) => {
         storefront: 'Storefront', product: 'Product', cart: 'Cart', checkout: 'Checkout', search: 'Search',
         landing: 'Landing', auth: 'Auth', dashboard: 'Dashboard', account: 'Account', sidebar: 'Sidebar',
     };
-    const key = (section || '').toString().trim().toLowerCase();
+    const raw = (section || '').toString().trim();
+    const key = raw.toLowerCase();
     if (map[key]) return map[key];
+
+    // القاموس العربي: مطابقةٌ على الاسم كاملاً بعد التطبيع، ثمّ محاولةٌ واحدة
+    // بعد نزع «ال» من أوّل كلمة (فـ«الخدمات» و«خدمات» اسمٌ واحد). وإخفاقُ
+    // النزع غيرُ ضارّ: يسقط الاسمُ إلى النقحرة لا إلى نتيجةٍ خاطئة.
+    const arKey = normAr(key).replace(/[؟?!.،,:؛]/g, '').replace(/\s+/g, ' ').trim();
+    const en = AR_SECTION_WORDS[arKey] || AR_SECTION_WORDS[arKey.replace(/^ال/, '')];
+    if (en) return map[en] || cap(en);
+
     const latin = key.replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).map(cap).join('');
-    return latin && /^[A-Za-z]/.test(latin) ? latin : `Section${i + 1}`;
+    if (latin && /^[A-Za-z]/.test(latin)) return latin;
+
+    // نقحرةٌ: اسمٌ يُقرأ خيرٌ من `SectionN` أعمى — والرقمُ يبقى لِما لا حرفَ فيه.
+    const tr = translitArabic(raw).replace(/[^a-zA-Z0-9]+/g, ' ').trim().split(/\s+/).map(cap).join('');
+    return tr && /^[A-Za-z]/.test(tr) ? tr : `Section${i + 1}`;
 };
 
 // المكوّنات تقرأ محتواها من lib/content.js (يملؤه الذكاء) — فالهيكل حتمي والمحتوى مخصّص
