@@ -10,7 +10,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { persistEntry, hydrateStore, onMongoReady } from '../services/persistence.js';
+import { persistEntry, hydrateStore, onMongoReady, shouldHydrate } from '../services/persistence.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MEMORY_FILE = path.join(__dirname, '../memory/project_memory.json');
@@ -27,7 +27,13 @@ function createProjectMemory(username, project, goal = '') {
         project,
         originalGoal: goal,
         createdAt: Date.now(),
-        updatedAt: Date.now(),
+        // 🔴 صفرٌ لا `Date.now()`: هذا سجلٌّ **أُنشئ ولم يُحدَّث بعد** — فارغٌ من
+        //    كل ما كتبه المستخدم. وقاعدةُ الترطيب من Mongo «الأحدثُ يفوز»، فلو
+        //    حمل طابعَ «الآن» لغلب المحفوظَ الحقيقيَّ من نشرةٍ سابقة فمُحي.
+        //    (يقع هذا كلَّ نشرةٍ على Render: الملفُّ يُمسح، فيصل طلبٌ قبل جهوز
+        //    Mongo، فيُنشأ فارغٌ بطابع الآن، ثم تجهز Mongo فيخسر المحفوظ.)
+        //    وكلُّ مُحدِّثٍ حقيقيّ يرفعه إلى `Date.now()` — فالصفرُ يعني «لم يُكتب».
+        updatedAt: 0,
         // قرارات التصميم
         design: {
             colors: null,        // مثال: "أزرق داكن مع ذهبي"
@@ -96,9 +102,7 @@ loadFromFile();
 // المدخل الأحدث (updatedAt) يفوز حتى لا نستبدل تعديلات الجلسة الحالية
 onMongoReady(() => hydrateStore('projectMemory', (key, value) => {
     const current = memoryCache.get(key);
-    if (!current || (value?.updatedAt || 0) > (current.updatedAt || 0)) {
-        memoryCache.set(key, value);
-    }
+    if (shouldHydrate(value, current)) memoryCache.set(key, value);
 }));
 
 // ═══════════════════════════════════════════════════════
@@ -195,6 +199,9 @@ export function initFromClarifier(username, project, clarifierData) {
         }
     }
 
+    // يكتب محتوىً حقيقياً (أقساماً وميزاتٍ وألواناً) فيرفع الطابع — وإلا بقي
+    // صفراً فبدا «لم يُكتب» وخسر أمام أيّ محفوظ.
+    mem.updatedAt = Date.now();
     memoryCache.set(key, mem);
     saveToFile();
     return mem;

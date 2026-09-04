@@ -15,7 +15,7 @@ import { hasKeyword } from './keywordMatch.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { persistEntry, hydrateStore, onMongoReady } from '../services/persistence.js';
+import { persistEntry, hydrateStore, onMongoReady, shouldHydrate } from '../services/persistence.js';
 import { recordEditLesson } from '../services/platformLessons.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -31,7 +31,13 @@ function createUserProfile(username) {
     return {
         username,
         createdAt: Date.now(),
-        updatedAt: Date.now(),
+        // 🔴 صفرٌ لا `Date.now()`: هذا سجلٌّ **أُنشئ ولم يُحدَّث بعد** — فارغٌ من
+        //    كل ما كتبه المستخدم. وقاعدةُ الترطيب من Mongo «الأحدثُ يفوز»، فلو
+        //    حمل طابعَ «الآن» لغلب المحفوظَ الحقيقيَّ من نشرةٍ سابقة فمُحي.
+        //    (يقع هذا كلَّ نشرةٍ على Render: الملفُّ يُمسح، فيصل طلبٌ قبل جهوز
+        //    Mongo، فيُنشأ فارغٌ بطابع الآن، ثم تجهز Mongo فيخسر المحفوظ.)
+        //    وكلُّ مُحدِّثٍ حقيقيّ يرفعه إلى `Date.now()` — فالصفرُ يعني «لم يُكتب».
+        updatedAt: 0,
 
         // اللغة والموقع
         language: null,
@@ -107,9 +113,7 @@ loadProfiles();
 // 💾 استرجاع ملفات المستخدمين الدائمة من MongoDB
 onMongoReady(() => hydrateStore('userProfiles', (key, value) => {
     const current = profilesCache.get(key);
-    if (!current || (value?.updatedAt || 0) > (current.updatedAt || 0)) {
-        profilesCache.set(key, value);
-    }
+    if (shouldHydrate(value, current)) profilesCache.set(key, value);
 }));
 
 // ═══════════════════════════════════════════════════════

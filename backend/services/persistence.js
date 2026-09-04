@@ -65,6 +65,26 @@ export async function hydrateStore(store, applyFn) {
     }
 }
 
+/**
+ * قاعدةُ الترطيب من Mongo: أيفوز المحفوظُ على ما في الذاكرة الآن؟
+ *
+ * كانت مكرّرةً حرفياً في أربعة مخازن (`projectMemory`، `stateMachine`،
+ * `userProfile`، `modelLibrary`) بصيغة:
+ *     if (!current || (value?.updatedAt || 0) > (current.updatedAt || 0))
+ *
+ * وهي صحيحةٌ **بشرط أن يعني `updatedAt` ما تظنّه**: آخرَ كتابةٍ حقيقيّة.
+ * وكانت ثلاثةٌ من الأربعة تُنشئ سجلاً فارغاً بطابع `Date.now()` عند أوّل
+ * قراءة، فيغلب الفارغُ المحفوظَ ويُمحى عملُ المستخدم. فصار الفارغُ يحمل
+ * صفراً، وصارت القاعدةُ في موضعٍ واحدٍ يُختبر بدل أربعةٍ تُقرأ.
+ *
+ * @param {{updatedAt?: number}|null|undefined} stored المحفوظُ في Mongo
+ * @param {{updatedAt?: number}|null|undefined} current ما في الذاكرة الآن
+ */
+export function shouldHydrate(stored, current) {
+    if (!current) return true;
+    return (stored?.updatedAt || 0) > (current.updatedAt || 0);
+}
+
 export function onMongoReady(fn) {
     if (online()) {
         fn();

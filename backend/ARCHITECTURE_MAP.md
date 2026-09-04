@@ -92,7 +92,7 @@ Policy/Permission، Identity، Plugin.
 |---|---|---|---|---|---|
 | `jcr.js` | 3220 | وقت التشغيل المعرفي: `handleUserMessage` → 7 معالجات نية → `executeMission` → `_runMissionNow` → 15 مرحلة | MODIFY (تدريجي، بلا إعادة كتابة) | Mission + Agent + Task (المراحل → TaskGraph) + Event | يبقى؛ يتقلّص مع كل Sprint لصالح `core/runtime/*` |
 | `contracts.js` → ✅ `core/contracts/index.js` | 99/197 | typedefs الأحد عشر + `assertBuildAgents` + `DELIVERY_STAGES` + مدقّقا Capability | MOVED (Sprint 1 ✅) | Mission/Agent/Task/Capability/Provider/Transaction | `core/contracts/index.js` |
-| `stateMachine.js` | 238 | Build State Machine (10 حالات + `STATE_EVENTS` + emitter) | KEEP | Event — تبقى متخصّصة، وMission Lifecycle فوقها | `core/missions/BuildStateMachine.js` (Sprint 2) |
+| `stateMachine.js` | 244 | Build State Machine (10 حالات + `STATE_EVENTS` + emitter) | KEEP | Event — تبقى متخصّصة، وMission Lifecycle فوقها | `core/missions/BuildStateMachine.js` (Sprint 2) |
 | `ceoBrain.js` | 240 | تصنيف نية سريع، قرار، رسائل إحاطة/حالة | MODIFY | Mission (Intent/CEO في مسار v2) | `core/runtime/` |
 | `router.js` | 94 | الموجّه الموحّد للرسائل | MODIFY | Mission | مع `ceoBrain` |
 | `chatCommands.js`, `textNormalizer.js`, `languageDetector.js`, `languageManager.js`, `logLocalizer.js`, `failureMessages.js` | 120/275/192/89/204/25 | أوامر حتمية، تطبيع نص، لغة، ترجمة السجل، رسائل الفشل | KEEP | — | `agents/` (أدوات النواة اللغوية) |
@@ -144,7 +144,7 @@ Policy/Permission، Identity، Plugin.
 | `templateLibrary.js`, `templateLibraryExtended.js`, `templateLocalizer.js` | 1034/1382/1943 | مكتبة القوالب وترجمتها | KEEP | — | `plugins/coding/templates/` (Sprint 6) |
 | `cloneTemplates/*` (42 ملفاً، 17,406 سطر؛ `jaolaClinic.js` يُستورد من 27 قالباً كأساس مشترك) | — | قوالب تطبيقات عاملة | KEEP | — | `plugins/coding/templates/clones/` |
 | `cloneAssets.js`, `seedStamp.js`, `fullstackTemplates.js`, `reactGenerator.js`, `blockRegistry.js`, `starterRegistry.js`, `starterFetch.js`, `libraryRegistry.js`, `referenceBlueprints.js`, `appBlueprint.js`, `requirementAnalyzer.js` | 74/116/603/367/259/74/171/78/195/146/198 | استراتيجيات البناء ومخططاته | KEEP | Task (استراتيجية = Task Graph مختلف) | `plugins/coding/` |
-| `projectModel.js`, `projectMemory.js`, `userProfile.js` | 247/234/233 | ذاكرة المشروع والمستخدم | KEEP | Memory | `core/memory/` (لاحقاً) |
+| `projectModel.js`, `projectMemory.js`, `userProfile.js` | 247/241/237 | ذاكرة المشروع والمستخدم | KEEP | Memory | `core/memory/` (لاحقاً) |
 | `componentMarketplace.js`, `platformContext.js` | 278/42 | مكوّنات جاهزة (markupها يُحقن بميزانية، 2q) + معلومات المنصّة | KEEP | — | `plugins/coding/` |
 
 ### C6. منتجات تعيش في `agents/` وليست وكلاء نواة
@@ -174,7 +174,7 @@ Policy/Permission، Identity، Plugin.
 | `platformLessons.js` | 187 | دروس الفشل + ثغرات السلوك (التعلّم الحقيقي) | MOVE | Evidence + Memory | `core/verification/` أو `core/memory/` |
 | `projectBrain.js` | 196 | دماغ المشروع (دالة نقية) | MOVE | Evidence | `core/verification/` (Sprint 4) |
 | `codeGuard.js` | 389 | حارس جودة الكود المولَّد | KEEP | Verification | `plugins/coding/` |
-| `persistence.js` (11 مستورداً) | 74 | طبقة الحفظ (Mongo + احتياط) | KEEP | — | `core/` (Sprint 7) |
+| `persistence.js` (11 مستورداً) | 94 | طبقة الحفظ (Mongo + احتياط) | KEEP | — | `core/` (Sprint 7) |
 | `workspaceStore.js` | 115 | نسخ ملفات المشاريع إلى Mongo | KEEP | Tool (workspace) | `core/runtime/` |
 | `conversationStore.js`, `conversationManager.js` | 170/80 | ذاكرة الحوار | KEEP | Memory | `core/memory/` |
 | `metricsStore.js`, `usageMeter.js`, `errorLog.js`, `logger.js`, `adminAudit.js` | 97/78/45/36/41 | قياس واستهلاك وتدقيق | MODIFY | Audit (AuditLog يوحّدها) | `core/audit/` (Sprint 4) |
