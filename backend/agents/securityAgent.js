@@ -76,34 +76,16 @@ export function runSecurityChecks(files) {
 }
 
 // ═══════════════════════════════════════════════════════
-// 🔧 Auto Fix للمشاكل البسيطة
+// 📌 كان هنا autoFixSecurity: مُصلِحٌ وحيدُ الفرع، يضيف ترويسات الأمان
+// إلى server.js. وقد قِيس بالتشغيل فلم يغيّر شيئاً قطّ — لا لأن منطقه
+// خطأ (لو عُرض عليه الملفُّ لأصلحه)، بل لأن **الترتيب** يمنعه: مرحلة
+// الأمان رقم 170 في DELIVERY_STAGES، وserver.js لا يُنشأ إلا في
+// render-config رقم 176. فالمُصلِح يسبق وجودَ ما يُصلح بستّ مراحل.
+//
+// فنُقلت الترويسات إلى generateServerEntry في renderAgent — إلى مَن
+// يكتب الملف. ولم يُترك مُصلِحٌ يُنادى ولا يفعل، ولا `fixedFiles` تُسنَد
+// إلى plan.files وهي نسخةٌ بلا تغيير.
 // ═══════════════════════════════════════════════════════
-export function autoFixSecurity(files) {
-    return files.map(file => {
-        if (!file.content) return file;
-        let content = file.content;
-
-        // إضافة textContent بدلاً من innerHTML حيث ممكن
-        // (نحذر فقط — لا نغيّر تلقائياً لأن بعض innerHTML مقصود)
-
-        // إضافة security headers في server.js
-        if (file.name === 'server.js' && !content.includes('X-Content-Type-Options')) {
-            const securityHeaders = `
-// Security Headers
-app.use((req, res, next) => {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('X-XSS-Protection', '1; mode=block');
-    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-    next();
-});
-`;
-            content = content.replace(/app\.use\(express\.json\(\)\)/, `app.use(express.json());\n${securityHeaders}`);
-        }
-
-        return { ...file, content };
-    });
-}
 
 // ═══════════════════════════════════════════════════════
 // 📄 توليد .env.example محسّن
@@ -147,7 +129,6 @@ export function generateEnvExample(files) {
 // ═══════════════════════════════════════════════════════
 export async function runSecurity(files) {
     const checks = runSecurityChecks(files);
-    const fixedFiles = autoFixSecurity(files);
 
     // توليد .env.example محسّن
     const envExample = generateEnvExample(files);
@@ -171,7 +152,6 @@ export async function runSecurity(files) {
         score: checks.score,
         issues: checks.issues.length,
         warnings: checks.warnings.length,
-        fixedFiles,
         newFiles,
         summary: `Security ${checks.grade} (${checks.score}/100) — ${checks.issues.length} مشكلة، ${checks.warnings.length} تحذير`
     };
