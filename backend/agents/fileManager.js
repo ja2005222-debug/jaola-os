@@ -180,28 +180,51 @@ export async function backupFile(projectPath, filename) {
 
 // مجلدات/حدود جمع ملفات النسخة — نفس فلسفة workspaceStore (سقف يمنع التضخم)
 const BACKUP_SKIP_DIRS = new Set(['.backups', '.git', 'node_modules', '.next', 'dist']);
-const BACKUP_MAX_FILES = 80;
-const BACKUP_MAX_FILE_BYTES = 400 * 1024;
 
-function collectBackupFiles(rootDir, dir = rootDir, acc = []) {
-    if (acc.length >= BACKUP_MAX_FILES) return acc;
+// 🔴 كان السقف 80 ملفاً يُقتطع بترتيب `readdir` — أي بترتيبٍ أبجديٍّ عملياً.
+//    فمشروعٌ فيه 98 ملفاً وقع `index.html` منه في الموضع 98، فلم يدخل النسخة
+//    أصلاً؛ ثم جاء أمرُ «تراجع» فأعاد ثمانين ملفاً **دون الملفّ الذي عُدّل**،
+//    وأعلن «⏪ استُرجعت النسخة (80 ملف)». نجاحٌ مُعلَنٌ فوق استرجاعٍ لم يقع.
+//    فالسقفُ صار على **الحجم** — وهو ما كان يُراد حمايته — لا على العدد وحده،
+//    وما يسقط رغم ذلك يُعلَن ولا يُبتلع.
+const BACKUP_MAX_FILES = 400;
+const BACKUP_MAX_FILE_BYTES = 400 * 1024;
+const BACKUP_MAX_TOTAL_BYTES = 8 * 1024 * 1024;
+
+// `.env.example` يكتبه databaseAgent في كل مشروع، وليس فيه سرّ (فالسرُّ في
+// `.env` وهو مستثنى). كان يسقط مع سائر الملفات المنقوطة فلا يُنسخ ولا يُسترجع.
+const BACKUP_DOTFILES = new Set(['.gitignore', '.env.example']);
+
+/**
+ * يجمع ملفات النسخة ويصف ما تعذّر جمعه بدل ابتلاعه.
+ * @returns {{files: string[], truncated: boolean, dropped: string[]}}
+ */
+function collectBackup(rootDir, dir = rootDir, st = { files: [], bytes: 0, truncated: false, dropped: [] }) {
     let entries = [];
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return acc; }
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return st; }
     for (const e of entries) {
-        if (acc.length >= BACKUP_MAX_FILES) break;
-        if (e.name.startsWith('.') && e.name !== '.gitignore') continue;
+        if (st.files.length >= BACKUP_MAX_FILES || st.bytes >= BACKUP_MAX_TOTAL_BYTES) {
+            st.truncated = true;
+            break;
+        }
+        if (e.name.startsWith('.') && !BACKUP_DOTFILES.has(e.name)) continue;
         const full = path.join(dir, e.name);
         if (e.isDirectory()) {
-            if (!BACKUP_SKIP_DIRS.has(e.name)) collectBackupFiles(rootDir, full, acc);
+            if (!BACKUP_SKIP_DIRS.has(e.name)) collectBackup(rootDir, full, st);
         } else if (e.isFile()) {
             try {
-                if (fs.statSync(full).size > BACKUP_MAX_FILE_BYTES) continue;
-                acc.push(path.relative(rootDir, full).split(path.sep).join('/'));
+                const size = fs.statSync(full).size;
+                const rel = path.relative(rootDir, full).split(path.sep).join('/');
+                // ملفٌّ أكبر من الحدّ يسقط — لكنّه يُسمّى، فلا يظنّ أحدٌ أنه محفوظ.
+                if (size > BACKUP_MAX_FILE_BYTES) { st.dropped.push(rel); st.truncated = true; continue; }
+                st.files.push(rel);
+                st.bytes += size;
             } catch { /* تجاهل */ }
         }
     }
-    return acc;
+    return st;
 }
+
 
 /**
  * نسخة احتياطية كاملة للمشروع — كل الملفات (بمساراتها المتداخلة api/…)
@@ -217,7 +240,8 @@ export async function backupProject(projectPath, label = '') {
         const snapshotDir = path.join(backupDir, `snapshot_${timestamp}${label ? '_' + label : ''}`);
         await fsPromises.mkdir(snapshotDir);
 
-        for (const rel of collectBackupFiles(projectPath)) {
+        const picked = collectBackup(projectPath);
+        for (const rel of picked.files) {
             const dest = path.join(snapshotDir, rel);
             await fsPromises.mkdir(path.dirname(dest), { recursive: true });
             await fsPromises.copyFile(path.join(projectPath, rel), dest);
@@ -234,7 +258,11 @@ export async function backupProject(projectPath, label = '') {
             }
         }
 
-        return { success: true, snapshot: snapshotDir, timestamp };
+        // النسخةُ تصف نفسها: كم حُفظ، وهل نقصت، وما الذي سقط بالاسم.
+        return {
+            success: true, snapshot: snapshotDir, timestamp,
+            saved: picked.files.length, truncated: picked.truncated, dropped: picked.dropped,
+        };
     } catch (e) {
         return { success: false, error: e.message };
     }
@@ -248,14 +276,20 @@ export async function restoreSnapshot(projectPath, snapshotName) {
             return { success: false, error: 'النسخة الاحتياطية غير موجودة' };
         }
 
-        const files = collectBackupFiles(snapshotDir);
+        const files = collectBackup(snapshotDir).files;
         for (const rel of files) {
             const dest = path.join(projectPath, rel);
             await fsPromises.mkdir(path.dirname(dest), { recursive: true });
             await fsPromises.copyFile(path.join(snapshotDir, rel), dest);
         }
 
-        return { success: true, restored: files, from: snapshotName };
+        // 🔴 الاسترجاع **ينسخ ولا يحذف**: ملفٌّ أُنشئ بعد النسخة يبقى، وملفٌّ لم
+        //    تسعه النسخةُ لا يعود. وكان كلاهما يُبتلع تحت «✅ استُرجعت النسخة».
+        //    فما لم يُسترجَع يُسمّى الآن، ويقرّر المستخدمُ ما يفعل به.
+        const inSnapshot = new Set(files);
+        const notRestored = collectBackup(projectPath).files.filter((f) => !inSnapshot.has(f));
+
+        return { success: true, restored: files, notRestored, from: snapshotName };
     } catch (e) {
         return { success: false, error: e.message };
     }
