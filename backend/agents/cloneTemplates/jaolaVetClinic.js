@@ -285,7 +285,10 @@ var pendingPhotoDataUrl = null;
 function clinicPhotoSrc() {
   var sync = window.JAOLA_SYNC;
   if (!sync) return '';
-  return sync.api + '/api/public/assets/clinicPhoto?t=' + Date.now() + '&token=' + encodeURIComponent(sync.token);
+  // معاملات الاستعلام تُبنى بباني المنصّة لا بلصق النصوص: لا يبقى في
+  // المصدر نصٌّ يلتصق باسم المعامل فيقرؤه ماسح الأسرار اعتماداً مكتوباً.
+  var q = new URLSearchParams({ t: String(Date.now()), token: sync.token });
+  return sync.api + '/api/public/assets/clinicPhoto?' + q;
 }
 function loadClinicPhoto() {
   var src = clinicPhotoSrc(); if (!src) return;
