@@ -3,6 +3,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { buildTemplateContext } from './templateLibrary.js';
 import { buildMarketplaceContext } from './componentMarketplace.js';
+// 🔤 «كاش» كانت تُقرأ داخل «كاشير» و«الكاشمير» — المُطابِق المشترك يمنعها
+import { hasKeyword } from './keywordMatch.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KNOWLEDGE_DIR = path.join(__dirname, '../knowledge');
@@ -322,7 +324,8 @@ export function detectAdvancedFeatures(userGoal) {
         needsUpload: /رفع صور|upload|صور منتجات|file upload|media/i.test(goal),
         needsOAuth: /google login|تسجيل بجوجل|oauth|social login/i.test(goal),
         needsPostgres: /postgres|postgresql|prisma|relational|علاقية/i.test(goal),
-        needsRedis: /redis|cache|كاش|real.?time|realtime/i.test(goal),
+        // 🔤 «كاش» عبر المُطابِق المشترك — كانت تُقرأ داخل «كاشير» و«الكاشمير»
+        needsRedis: /redis|cache|real.?time|realtime/i.test(goal) || hasKeyword(goal, ['كاش']),
         needsGraphQL: /graphql/i.test(goal),
     };
 }

@@ -10,6 +10,7 @@
  */
 
 import { smartChat } from './baseAgent.js';
+import { hasKeyword } from './keywordMatch.js';
 import { getProjectContext } from './knowledgeEngine.js';
 import { getUserProfile } from './userProfile.js';
 import { getProjectMemory } from './projectMemory.js';
@@ -71,7 +72,8 @@ function selectPalette(projectType, userGoal, userProfile) {
 
     // فحص الكلمات في وصف المستخدم
     const goal = (userGoal || '').toLowerCase();
-    if (/فاخر|luxury|راقٍ|راقي|gold|ذهب/i.test(goal)) return 'luxury';
+    // 🔤 «ذهب» كانت تُقرأ داخل «تذهب» و«المذهب» — فوكالةُ سفرٍ تأخذ لوحةً فاخرة
+    if (/فاخر|luxury|راقٍ|راقي|gold/i.test(goal) || hasKeyword(goal, ['ذهب'])) return 'luxury';
     if (/داكن|dark|أسود|black/i.test(goal)) return 'dark';
     if (/طبيعي|أخضر|green|نباتي/i.test(goal)) return 'natural';
     if (/بسيط|minimal|نظيف|clean/i.test(goal)) return 'minimal';
