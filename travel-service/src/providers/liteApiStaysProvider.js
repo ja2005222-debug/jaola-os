@@ -32,6 +32,7 @@
  */
 import { createLiteApiClient } from './liteApiClient.js';
 import { airportCoords } from '../airports.js';
+import { declaredNumber } from '../declaredNumber.js';
 
 const DEFAULT_BOOK_API_URL = 'https://book.liteapi.travel/v3.0';
 const SEARCH_RADIUS_M = 15000;
@@ -90,7 +91,16 @@ export function createLiteApiStaysProvider({ apiKey, apiUrl, bookApiUrl, fetchIm
             const results = [];
             for (const hotelEntry of ratesRes.data || []) {
                 const meta = hotelMeta.get(hotelEntry.hotelId);
-                const expiresAt = new Date(now + (Number(hotelEntry.et) || 10800) * 1000).toISOString();
+                // ⏳ «صلاحية السعر حتى ...» تُقال للمسافر سطراً جازماً، فلا
+                // تُختلق: مدّةٌ **مُعلَنةٌ موجبة** وحدها تُعرض، وما عداها
+                // (سكوتٌ أو صفر) لا يُقال فيه شيء — نفس ما يفعله مزوّدو
+                // Duffel الثلاثة (`|| null`) ومزوّد العقود أصلاً.
+                // 📌 ولا يقرّر هذا معنى `et: 0` عند المزوّد: `OFFER_TTL_MS`
+                // الذي يحكم بقاء العرض قابلاً للحجز لم يُمَسّ.
+                const etSeconds = declaredNumber(hotelEntry.et);
+                const expiresAt = etSeconds !== null && etSeconds > 0
+                    ? new Date(now + etSeconds * 1000).toISOString()
+                    : null;
                 for (const roomType of hotelEntry.roomTypes || []) {
                     const firstRate = (roomType.rates || [])[0] || {};
                     const policy = firstRate.cancellationPolicies || {};
