@@ -58,3 +58,32 @@ export function safeRelPath(p) {
     if (clean.length > 200 || !/^[\w.\-\/ ]+$/.test(clean)) return null;
     return clean;
 }
+
+/**
+ * 📁 مسار مشروع داخل مساحة العمل — **اشتقاقٌ نقيّ بلا أثر على القرص**.
+ *
+ * كان `getProjectPath` في `server.js` يفعل الأمرين معاً: يشتقّ المسار
+ * **ويُنشئ المجلد** (`mkdirSync`) قبل أن يعيده. وهذا يُبطل كل فحص وجودٍ
+ * مبنيّ عليه:
+ *
+ *     if (!fs.existsSync(getProjectPath(username, project)))
+ *         return res.status(404).json({ error: 'المشروع غير موجود' });
+ *
+ * الفحص يُنشئ ما يفحصه فيراه موجوداً **دائماً** — حارسٌ لا يقع أبداً.
+ * وموضعه `/api/site/password`: مسارٌ **بلا مصادقة** تُعيَّن به أول كلمة
+ * مرور للوحة موقعٍ منشور. فكان أيُّ أحد يعيّنها لمشروعٍ لا وجود له، فإذا
+ * أنشأ صاحبه مشروعاً بذلك الاسم لاحقاً وجد لوحته مملوكةً سلفاً.
+ *
+ * التطهير منقولٌ حرفياً من `server.js` — والمحرف البديل `_` لم يُغيَّر كي
+ * لا يتغيّر أيُّ مسارٍ قائم على القرص.
+ */
+export const safeSegment = (value, fallback) =>
+    String(value || fallback).replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
+
+export function projectPathOf(baseWorkspace, username, activeProject) {
+    return path.join(
+        baseWorkspace,
+        safeSegment(username, 'guest_user'),
+        safeSegment(activeProject, 'sandbox_app'),
+    );
+}

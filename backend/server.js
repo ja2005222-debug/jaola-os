@@ -126,6 +126,7 @@ import { getUserLanguage } from './agents/languageDetector.js';
 import { setDomainModel, setCloneTrack, getCloneTrack } from './agents/projectMemory.js';
 import { mergeProjectModel } from './agents/projectModel.js';
 import { prepareRenderDeploy, renderServiceName } from './agents/renderAgent.js';
+import { projectPathOf, isInsideRoot } from './core/runtime/workspacePaths.js';
 import { autoDeployFullStack, fullAutomationReady } from './services/deployAutomation.js';
 import { assetsFor, injectFaviconTag } from './agents/cloneAssets.js';
 import { listLibraries, getLibraryById, injectLibrary } from './agents/libraryRegistry.js';
@@ -419,16 +420,17 @@ const BASE_WORKSPACE = path.resolve(__dirname, '../workspace');
 const USAGE_DIR = path.join(BASE_WORKSPACE, '.usage');
 if (!fs.existsSync(BASE_WORKSPACE)) fs.mkdirSync(BASE_WORKSPACE);
 
+// 📁 اشتقاقٌ نقيّ بلا أثر على القرص — للقراءة وفحص الوجود
+const projectDir = (username, activeProject) => projectPathOf(BASE_WORKSPACE, username, activeProject);
+
 // كاش للمسارات المضمونة الوجود — getProjectPath تُستدعى في كل طلب معاينة وأغلب
 // مسارات الـ API، وكانت تنفّذ 4 استدعاءات fs متزامنة (حاجبة) في كل مرة
 const ensuredPaths = new Set();
 
+// ⚠️ هذه الدالة **تُنشئ** المجلد، فلا تصلح لفحص وجود: استعمل
+// `projectDir()` أدناه في القراءة والحراسة، وهذه في الكتابة وحدها.
 const getProjectPath = (username, activeProject) => {
-    // تطهير المدخلات لمنع path traversal
-    const safeUser = (username || 'guest_user').replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
-    const safeProject = (activeProject || 'sandbox_app').replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
-
-    const projectPath = path.join(BASE_WORKSPACE, safeUser, safeProject);
+    const projectPath = projectPathOf(BASE_WORKSPACE, username, activeProject);
     if (!ensuredPaths.has(projectPath)) {
         fs.mkdirSync(projectPath, { recursive: true }); // recursive: ينشئ مجلد المستخدم والمشروع معاً ولا يفشل إن وُجدا
         ensuredPaths.add(projectPath);
@@ -810,7 +812,7 @@ function verifyPreviewAccess(req, res, next) {
 app.get('/workspace', verifyPreviewAccess, (req, res) => {
     const username = req.previewUser;
     const project = req.query.project || 'sandbox_app';
-    const projectPath = getProjectPath(username, project);
+    const projectPath = projectDir(username, project); // معاينةٌ قرائية: لا تُنشئ مجلداً
     const filePath = path.join(projectPath, 'index.html');
     // sendFile مع callback بدل فحص existsSync الحاجب — الملف يُفحص أثناء الإرسال نفسه
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
@@ -836,14 +838,16 @@ app.get('/workspace/:file(*)', verifyPreviewAccess, async (req, res) => {
         }
     }
 
-    const projectPath = getProjectPath(username, project);
+    const projectPath = projectDir(username, project); // معاينةٌ قرائية: لا تُنشئ مجلداً
 
     const safeFile = path.normalize(req.params.file)
         .replace(/^(\.\.[\/\\])+/, '')
         .replace(/^\/+/, '');
     const filePath = path.join(projectPath, safeFile);
 
-    if (!filePath.startsWith(projectPath)) {
+    // 🛡️ نواة الاحتواء بدل `startsWith` المجرّدة: المقارنة بفاصل المسار
+    // تمنع تجاوز البادئة (`<root>-evil`) — نفس العطب الموثَّق في النواة.
+    if (!isInsideRoot(projectPath, filePath)) {
         return res.status(403).send('Access Denied');
     }
     // لا تُخدَّم الملفات المخفية (.env، .sitecms…) — حماية من تسريب الأسرار
@@ -2884,7 +2888,9 @@ app.get('/api/site/status', (req, res) => {
 app.post('/api/site/password', (req, res) => {
     const { username, project, password } = req.body || {};
     if (!username || !project) return res.status(400).json({ error: 'مدخلات ناقصة' });
-    if (!fs.existsSync(getProjectPath(username, project))) return res.status(404).json({ error: 'المشروع غير موجود' });
+    // 🛡️ `projectDir` لا يُنشئ شيئاً — فيقع هذا الحارس فعلاً حين لا مشروع.
+    // كان `getProjectPath` يُنشئ المجلد ثم يراه موجوداً، وهذا مسارٌ بلا مصادقة.
+    if (!fs.existsSync(projectDir(username, project))) return res.status(404).json({ error: 'المشروع غير موجود' });
     if (readSiteCred(username, project)?.password) return res.status(409).json({ error: 'كلمة المرور معيّنة — استخدم الدخول' });
     if (typeof password !== 'string' || password.length < 4) return res.status(400).json({ error: 'كلمة مرور قصيرة (٤ أحرف على الأقل)' });
     writeSiteCred(username, project, { password: siteCms.hashPassword(password) });
@@ -2902,7 +2908,7 @@ app.post('/api/site/auth', (req, res) => {
 // قراءة محتوى الموقع (للوحة)
 app.get('/api/site/content', (req, res) => {
     if (!siteAuth(req, res)) return;
-    const content = readSiteContent(getProjectPath(req.query.username, req.query.project));
+    const content = readSiteContent(projectDir(req.query.username, req.query.project));
     if (!content) return res.status(404).json({ error: 'لا يوجد محتوى موقع' });
     res.json({ content });
 });
