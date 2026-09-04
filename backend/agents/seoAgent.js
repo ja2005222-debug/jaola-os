@@ -105,11 +105,20 @@ export function injectMetaTags(htmlContent, projectInfo) {
     return updated;
 }
 
+// صفحاتُ الموقع كما هي على القرص: الرئيسيةُ جذرٌ (''), وما عداها باسم ملفّه.
+// تُشتقّ من الملفات المسلَّمة لا تُفترَض، فإن لم يكن ثمّة HTML بقيت الجذرَ وحده.
+function sitePages(files = []) {
+    const html = files.filter((f) => /\.html$/i.test(f?.name || '')).map((f) => f.name);
+    if (!html.length) return [''];
+    const rest = html.filter((n) => n !== 'index.html').sort();
+    return html.includes('index.html') ? ['', ...rest] : rest;
+}
+
 // ═══════════════════════════════════════════════════════
 // 🚀 الدالة الرئيسية
 // ═══════════════════════════════════════════════════════
 export async function runSEO(files, projectInfo) {
-    const { name, description, url } = projectInfo;
+    const { url } = projectInfo;
     const improvedFiles = [];
     const newFiles = [];
 
@@ -126,10 +135,15 @@ export async function runSEO(files, projectInfo) {
         content: generateRobotsTxt(url)
     });
 
-    // 3. sitemap.xml
+    // 3. sitemap.xml — على صفحات الموقع الفعلية.
+    // 🔴 كان يُنادى `generateSitemap(url)` بلا صفحات، فتبقى `pages` على
+    //    قيمتها الافتراضية `['']` ويخرج الملفُّ برابطٍ واحد: الرئيسية. فموقعٌ
+    //    من ثماني صفحات يُنشر وخريطتُه تُعلن صفحةً واحدة، و`robots.txt` يشير
+    //    إليها — فلا تعرف محرّكاتُ البحث بالبقيّة من هذا الطريق.
+    const pages = sitePages(files);
     newFiles.push({
         name: 'sitemap.xml',
-        content: generateSitemap(url)
+        content: generateSitemap(url, pages)
     });
 
     // 4. تحديث title إذا كان فارغاً
@@ -141,10 +155,24 @@ export async function runSEO(files, projectInfo) {
         return f;
     });
 
+    // 🔴 الدرجةُ كانت تُكتب في المستدعي ثابتةً: `{ grade: 'A', score: 100 }`
+    //    مهما جرى — إلى جانب درجتَي «الجودة» و«الأمان» المشتقّتين من نتائجهما،
+    //    فلا يميّز المستخدمُ المقياسَ من الثابت. وهي تُشتقّ هنا من واقعتين
+    //    مقيستين لا أكثر: أدُخلت الوسوم في صفحةٍ فعلية؟ وكم صفحةً في الخريطة؟
+    //    درجةٌ خشنة، لكنّها **تقيس** ما جرى بدل أن تدّعيه.
+    const metaInjected = improvedFiles.length > 0;
+    const applied = ['robots.txt', 'sitemap.xml'];
+    if (metaInjected) applied.push('meta tags (OG, Twitter, Schema.org)');
+
     return {
         success: true,
         files: updatedFiles,
         newFiles,
-        summary: `SEO — robots.txt + sitemap.xml + meta tags (OG, Twitter, Schema.org)`
+        metaInjected,
+        pages: pages.length,
+        grade: metaInjected ? 'A' : 'C',
+        score: metaInjected ? 100 : 60,
+        summary: `SEO — ${applied.join(' + ')} · ${pages.length} صفحة في الخريطة`
+            + (metaInjected ? '' : ' · لا index.html فلم تُدخَل الوسوم')
     };
 }
