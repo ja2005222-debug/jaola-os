@@ -1,6 +1,10 @@
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
-dotenv.config();
+// 🔴 dotenv@17 يطبع لافتةً ترويجية على **المخرَج القياسيّ** عند كل تحميل.
+// وهي القناةُ نفسها التي يُرسل عليها مُشغّلُ اختبارات Node نتائجَ كل ملفٍ
+// مُسلسَلة (وهو ما أفسده بيانُ PluginOrchestrator في #486). فتُسكَت —
+// بالخيار الذي تقترحه المكتبةُ نفسها في نصّ لافتتها.
+dotenv.config({ quiet: true });
 
 /**
  * المحرك الأساسي للاتصال بـ Groq API

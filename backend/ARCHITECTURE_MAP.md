@@ -96,7 +96,7 @@ Policy/Permission، Identity، Plugin.
 | `ceoBrain.js` | 240 | تصنيف نية سريع، قرار، رسائل إحاطة/حالة | MODIFY | Mission (Intent/CEO في مسار v2) | `core/runtime/` |
 | `router.js` | 94 | الموجّه الموحّد للرسائل | MODIFY | Mission | مع `ceoBrain` |
 | `chatCommands.js`, `textNormalizer.js`, `languageDetector.js`, `languageManager.js`, `logLocalizer.js`, `failureMessages.js` | 120/275/192/89/204/25 | أوامر حتمية، تطبيع نص، لغة، ترجمة السجل، رسائل الفشل | KEEP | — | `agents/` (أدوات النواة اللغوية) |
-| `baseAgent.js` | 147 (25 مستورداً) | عميل LLM المشترك (`groq`, `smartChat`) | MODIFY | Provider (LLM Provider Registry) — Model Router لاحقاً | `core/plugins/ProviderRegistry.js` |
+| `baseAgent.js` | 151 (25 مستورداً) | عميل LLM المشترك (`groq`, `smartChat`) | MODIFY | Provider (LLM Provider Registry) — Model Router لاحقاً | `core/plugins/ProviderRegistry.js` |
 | `knowledgeEngine.js` | 335 | كشف نوع المشروع + سياق معرفي + `needsBackend` | KEEP | — | `plugins/coding/` |
 | `backendNeed.js` | 68 | **مصدرُ الحقيقة الواحد** لـ«أيحتاج خلفيةً؟» (Sprint 7/1) + العلاقية مجموعةً جزئيّة منه (2r) | KEEP | — | `plugins/coding/` |
 | ✅ `keywordMatch.js` (جديد، 2s) | 60 | مطابقةُ كلماتٍ بحدودها لا باحتوائها — سابقةٌ عربية مقيَّدة ولاحقةٌ من مجموعةٍ مغلقة | ADDED | — | `plugins/coding/` |
@@ -234,7 +234,7 @@ Policy/Permission، Identity، Plugin.
 |---|---|---|---|---|---|
 | `middleware/security.js` | 94 | `sanitizePath` + Zod schemas + `validate` | MODIFY | Tool (workspace guard موحّد — `CONTRACTS.md` §3) + Permission | `core/policy/` |
 | `utils/secretVault.js` (6 مستوردين) | 39 | تشفير الأسرار | KEEP | Identity | `core/identity/` |
-| `utils/security.js`, `utils/corsErrors.js`, `utils/spaFallback.js`, `utils/performance.js`, `utils/aiProvider.js` | 21/15/19/60/38 | أدوات صغيرة حيّة | KEEP | — | كما هي |
+| `utils/security.js`, `utils/corsErrors.js`, `utils/spaFallback.js`, `utils/performance.js`, `utils/aiProvider.js` | 21/15/19/60/42 | أدوات صغيرة حيّة | KEEP | — | كما هي |
 | `models/User.js`, `Project.js`, `Conversation.js`, `BotTenant.js` | 26/27/22/21 | مخطّطات Mongo (Core DB) | KEEP | Identity/Mission (Core DB — البند 14) | `models/` |
 | `dbConfig.js` | 6 | إعداد mongoose (استيراد تأثير جانبي `server.js:2`) | KEEP | — | كما هو |
 | `scripts/harvestTemplateScreenshots.mjs` | 102 | أداة تطوير | KEEP | — | كما هو |
@@ -329,7 +329,7 @@ permissions ويستدعي الخدمة عبر HTTP بنفس JWT. لا شيء ه
 | `services/twin.js` | 69 | `knowledgeService` (يتيم) | ❌ عبر `projectManager` | باقٍ |
 | `services/logger.js` | 36 | `twin` (يتيم) | ✅ | باقٍ |
 | `services/db.js` | 58 | لا شيء | ❌ `better-sqlite3` غير مثبَّت | باقٍ |
-| `utils/aiProvider.js` | 38 | لا شيء | ✅ | باقٍ |
+| `utils/aiProvider.js` | 42 | لا شيء | ✅ | باقٍ |
 | `utils/performance.js` | 60 | لا شيء | ✅ | باقٍ |
 | `utils/security.js` | 21 | لا شيء | ✅ | باقٍ |
 
