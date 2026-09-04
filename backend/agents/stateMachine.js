@@ -67,16 +67,14 @@ export function setStateEmitter(fn) { stateEmitter = typeof fn === 'function' ? 
 // ═══════════════════════════════════════════════════════
 // 💾 تخزين حالات المشاريع
 // ═══════════════════════════════════════════════════════
-import { persistEntry, hydrateStore, onMongoReady } from '../services/persistence.js';
+import { persistEntry, hydrateStore, onMongoReady, shouldHydrate } from '../services/persistence.js';
 
 const projectStates = new Map(); // key: `${username}:${project}` → ProjectState
 
 // 💾 استرجاع الحالات الدائمة من MongoDB عند توفر الاتصال
 onMongoReady(() => hydrateStore('projectStates', (key, value) => {
     const current = projectStates.get(key);
-    if (!current || (value?.updatedAt || 0) > (current.updatedAt || 0)) {
-        projectStates.set(key, value);
-    }
+    if (shouldHydrate(value, current)) projectStates.set(key, value);
 }));
 
 function createProjectState(username, project) {
@@ -86,7 +84,13 @@ function createProjectState(username, project) {
         state: STATES.IDLE,
         previousState: null,
         startedAt: null,
-        updatedAt: Date.now(),
+        // 🔴 صفرٌ لا `Date.now()`: هذا سجلٌّ **أُنشئ ولم يُحدَّث بعد** — فارغٌ من
+        //    كل ما كتبه المستخدم. وقاعدةُ الترطيب من Mongo «الأحدثُ يفوز»، فلو
+        //    حمل طابعَ «الآن» لغلب المحفوظَ الحقيقيَّ من نشرةٍ سابقة فمُحي.
+        //    (يقع هذا كلَّ نشرةٍ على Render: الملفُّ يُمسح، فيصل طلبٌ قبل جهوز
+        //    Mongo، فيُنشأ فارغٌ بطابع الآن، ثم تجهز Mongo فيخسر المحفوظ.)
+        //    وكلُّ مُحدِّثٍ حقيقيّ يرفعه إلى `Date.now()` — فالصفرُ يعني «لم يُكتب».
+        updatedAt: 0,
         progress: {
             planning: false,
             designing: false,
@@ -180,6 +184,8 @@ export function markAgentComplete(username, project, agentName) {
 export function resetProjectState(username, project) {
     const key = getKey(username, project);
     const fresh = createProjectState(username, project);
+    // تصفيرٌ **مقصود** لا سجلٌّ لم يُكتب — فيحمل طابعه، وإلا لم يُرطَّب أبداً.
+    fresh.updatedAt = Date.now();
     projectStates.set(key, fresh);
     persistEntry('projectStates', key, fresh);
 }

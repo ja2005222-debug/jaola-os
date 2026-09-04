@@ -9,7 +9,7 @@
  * دائم عبر MongoDB (قرص Render يُمسح مع كل نشر) بمفتاح = الفئة.
  */
 
-import { persistEntry, hydrateStore, onMongoReady } from '../services/persistence.js';
+import { persistEntry, hydrateStore, onMongoReady, shouldHydrate } from '../services/persistence.js';
 import { normalizeProjectModel, mergeProjectModel } from './projectModel.js';
 
 const STORE = 'modelLibrary';
@@ -18,7 +18,7 @@ const library = new Map(); // category → { model, count, verifiedCount, update
 // استرجاع دائم عند توفّر Mongo — الأحدث يفوز (لا نطمس تراكم الجلسة الحالية)
 onMongoReady(() => hydrateStore(STORE, (key, value) => {
     const cur = library.get(key);
-    if (!cur || (value?.updatedAt || 0) > (cur.updatedAt || 0)) library.set(key, value);
+    if (shouldHydrate(value, cur)) library.set(key, value);
 }));
 
 function keyOf(category) {
