@@ -5244,6 +5244,47 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             await call('/api/travel/admin/discounts/LAUNCH15', { method: 'DELETE', token: admin });
         });
 
+        // 🔴 حملةُ الإطلاق تُنفَق مرّةً واحدة: `liveAnnouncementSentAt` يمنع
+        // إعادة الإرسال، فالكود الذي وصل الجميع هو الكود نهائياً. ومع ذلك
+        // كان المسار يقرأ `Number(req.body?.discountPercent) || 15` —
+        // فصفرٌ **مُعلَنٌ صراحةً** (وكذلك NaN ونصٌّ فارغ) يسقط إلى ١٥٪.
+        // والمُحقِّق `normalizeDiscountCode` يرفض ما دون ١ صراحةً، لكنه
+        // لا يرى القيمة أصلاً: الافتراضيُّ ابتلعها قبله. **حارسٌ قائمٌ
+        // يُلتَفُّ عليه** — نفس عائلة Sprint 8/3: صفرٌ يُقرأ سكوتاً.
+        test('🔴 صفرٌ مُعلَنٌ في حملة الإطلاق يبلغ المُحقِّق ولا يصير ١٥٪ صامتة', async () => {
+            const admin = makeToken('admin');
+            const zero = await call('/api/travel/admin/announce-live-booking', {
+                method: 'POST', token: admin,
+                body: { discountCode: 'zeropct', discountPercent: 0, expiresInDays: 10 },
+            });
+            assert.equal(zero.status, 400, 'صفرٌ مرّ فصار خصماً افتراضياً على كل الحسابات');
+            assert.match(zero.data.error, /بين 1 و100/);
+            const after = (await call('/api/travel/admin/discounts', { token: admin })).data.discounts;
+            assert.ok(!after.some(d => d.code === 'ZEROPCT'), 'أُنشئ كودٌ رغم الرفض');
+
+            // ومدّةُ صفرٍ مُعلَنة تعني «منتهٍ الآن» لا «ثلاثين يوماً»
+            const zeroDays = await call('/api/travel/admin/announce-live-booking', {
+                method: 'POST', token: admin,
+                body: { discountCode: 'zerodays', discountPercent: 20, expiresInDays: 0 },
+            });
+            assert.equal(zeroDays.status, 200);
+            const dz = (await call('/api/travel/admin/discounts', { token: admin })).data.discounts
+                .find(d => d.code === 'ZERODAYS');
+            assert.ok(dz.expiresAt <= Date.now() + 5000, `صفر يوم صار ${Math.round((dz.expiresAt - Date.now()) / 86400000)} يوماً`);
+            await call('/api/travel/admin/discounts/ZERODAYS', { method: 'DELETE', token: admin });
+
+            // والغيابُ الحقيقي يبقى على الافتراضيّ الموثَّق (١٥٪ / ٣٠ يوماً)
+            const silent = await call('/api/travel/admin/announce-live-booking', {
+                method: 'POST', token: admin, body: { discountCode: 'silentdef' },
+            });
+            assert.equal(silent.status, 200);
+            const ds = (await call('/api/travel/admin/discounts', { token: admin })).data.discounts
+                .find(d => d.code === 'SILENTDEF');
+            assert.equal(ds.value, 15, 'الغياب لم يعد يأخذ الافتراضيّ');
+            assert.ok(ds.expiresAt > Date.now() + 29 * 86400000, 'الغياب لم يعد يأخذ ٣٠ يوماً');
+            await call('/api/travel/admin/discounts/SILENTDEF', { method: 'DELETE', token: admin });
+        });
+
         test('🗄️ عقد المخزن: رقعة transitionBooking تُحفظ **كاملةً** في المخزنين', async () => {
             // 🚨 حارس عطبٍ إنتاجي حقيقي: مخزن الملفات كان يدمج الرقعة كلها
             // (Object.assign) بينما Postgres يكتب قائمةً بيضاء من الأعمدة
