@@ -3738,8 +3738,14 @@ ${urls}
      * أيضاً إن كان موجوداً سلفاً (يُستعمل بقيمه المحفوظة كما هي).
      */
     app.post('/api/travel/admin/announce-live-booking', verifyToken, requireAdmin, wrap(async (req, res) => {
-        const percent = Number(req.body?.discountPercent) || 15;
-        const expiresInDays = Number(req.body?.expiresInDays) || 30;
+        // 🔴 `declaredNumber` لا `Number(x) || D`: هذه حملةٌ **تُنفَق مرّة**
+        // (`liveAnnouncementSentAt` يمنع إعادة الإرسال)، فالكود الذي يصل
+        // الجميع نهائيّ. و`|| D` يبتلع الصفر والنصّ الفارغ وNaN معاً قبل
+        // أن يراها `normalizeDiscountCode` — وهي ترفض ما دون ١ صراحةً.
+        // فحارسٌ قائمٌ يُلتَفُّ عليه، وأدمنُ كتب صفراً يُهدي ١٥٪ للجميع.
+        // الغيابُ وحده يأخذ الافتراضيّ؛ والمُعلَن يبلغ المُحقِّق فيحكم فيه.
+        const percent = declaredNumber(req.body?.discountPercent) ?? 15;
+        const expiresInDays = declaredNumber(req.body?.expiresInDays) ?? 30;
         const code = String(req.body?.discountCode || 'WELCOME15').trim().toUpperCase();
 
         let discount = await store.getDiscountCodeByCode(code);
