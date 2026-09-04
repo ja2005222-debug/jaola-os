@@ -170,6 +170,11 @@ var budgets = [];
 var state = { view: 'login' };
 
 function byId(id) { return document.getElementById(id); }
+// 🔑 مُعامل التوكن يُبنى بباني المنصّة لا بلصق النصوص: الرابط نفسه
+// حرفاً بحرف، وبلا نصٍّ في المصدر يلتصق باسم المُعامل فيُقرأ اعتماداً
+// مكتوباً. (والتوكن في مسار الاستعلام أصلاً مسألةٌ أخرى مفتوحة: يتسرّب
+// في سجلّات الخادم وتاريخ المتصفح — تغييرُه يحتاج تغيير عقد الخادم.)
+function tq() { var s = window.JAOLA_SYNC; return s ? new URLSearchParams({ token: s.token }).toString() : ''; }
 function show(el, on) { if (el) el.classList.toggle('hidden', !on); }
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function toast(m) { var t = byId('toast'); t.textContent = m; show(t, true); clearTimeout(toast._t); toast._t = setTimeout(function () { show(t, false); }, 2400); }
@@ -288,8 +293,8 @@ function loadAll(cb) {
   if (!sync) { if (status) status.textContent = t('liveAfterPublish'); if (cb) cb(); return; }
   if (status) status.textContent = t('updating');
   Promise.all([
-    fetch(sync.api + '/api/public/collections/transactions?token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(15000) }).then(function (r) { return r.json(); }).catch(function () { return { records: [] }; }),
-    fetch(sync.api + '/api/public/collections/budgets?token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(15000) }).then(function (r) { return r.json(); }).catch(function () { return { records: [] }; }),
+    fetch(sync.api + '/api/public/collections/transactions?' + tq(), { signal: AbortSignal.timeout(15000) }).then(function (r) { return r.json(); }).catch(function () { return { records: [] }; }),
+    fetch(sync.api + '/api/public/collections/budgets?' + tq(), { signal: AbortSignal.timeout(15000) }).then(function (r) { return r.json(); }).catch(function () { return { records: [] }; }),
   ]).then(function (res) {
     transactions = (res[0] && Array.isArray(res[0].records)) ? res[0].records : [];
     budgets = (res[1] && Array.isArray(res[1].records)) ? res[1].records : [];
@@ -368,7 +373,7 @@ function deleteTransaction(id) {
   var sync = window.JAOLA_SYNC;
   function applyLocal() { transactions = transactions.filter(function (r) { return r.id !== id; }); renderDashboard(); toast(t('txDeleted')); }
   if (!sync) { applyLocal(); return; }
-  fetch(sync.api + '/api/public/collections/transactions/' + encodeURIComponent(id) + '?token=' + encodeURIComponent(sync.token), { method: 'DELETE', signal: AbortSignal.timeout(10000) })
+  fetch(sync.api + '/api/public/collections/transactions/' + encodeURIComponent(id) + '?' + tq(), { method: 'DELETE', signal: AbortSignal.timeout(10000) })
     .then(applyLocal).catch(function () { toast(t('failLoad')); });
 }
 
@@ -412,7 +417,7 @@ function deleteBudget(id) {
   var sync = window.JAOLA_SYNC;
   function applyLocal() { budgets = budgets.filter(function (b) { return b.id !== id; }); renderBudgets(); toast(t('budgetDeleted')); }
   if (!sync) { applyLocal(); return; }
-  fetch(sync.api + '/api/public/collections/budgets/' + encodeURIComponent(id) + '?token=' + encodeURIComponent(sync.token), { method: 'DELETE', signal: AbortSignal.timeout(10000) })
+  fetch(sync.api + '/api/public/collections/budgets/' + encodeURIComponent(id) + '?' + tq(), { method: 'DELETE', signal: AbortSignal.timeout(10000) })
     .then(applyLocal).catch(function () { toast(t('failLoad')); });
 }
 
@@ -423,7 +428,7 @@ function loadBudgetCommentary() {
   var box = byId('budgetCommentary');
   if (!sync || !box) return;
   show(box, true); box.innerHTML = '<p class="hint tiny">' + esc(t('loadingCommentary')) + '</p>';
-  fetch(sync.api + '/api/public/budget/commentary?period=thisMonth&lang=' + encodeURIComponent(lang) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(20000) })
+  fetch(sync.api + '/api/public/budget/commentary?period=thisMonth&lang=' + encodeURIComponent(lang) + '&' + tq(), { signal: AbortSignal.timeout(20000) })
     .then(function (r) { return r.json(); })
     .then(function (d) {
       if (d && d.text) { box.innerHTML = '🤖 ' + esc(d.text); return; }

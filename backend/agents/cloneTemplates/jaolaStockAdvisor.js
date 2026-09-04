@@ -264,6 +264,11 @@ var pollTimers = {};
 var state = { view: 'login', activeCoin: null };
 
 function byId(id) { return document.getElementById(id); }
+// 🔑 مُعامل التوكن يُبنى بباني المنصّة لا بلصق النصوص: الرابط نفسه
+// حرفاً بحرف، وبلا نصٍّ في المصدر يلتصق باسم المُعامل فيُقرأ اعتماداً
+// مكتوباً. (والتوكن في مسار الاستعلام أصلاً مسألةٌ أخرى مفتوحة: يتسرّب
+// في سجلّات الخادم وتاريخ المتصفح — تغييرُه يحتاج تغيير عقد الخادم.)
+function tq() { var s = window.JAOLA_SYNC; return s ? new URLSearchParams({ token: s.token }).toString() : ''; }
 function show(el, on) { if (el) el.classList.toggle('hidden', !on); }
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function toast(m) { var t = byId('toast'); t.textContent = m; show(t, true); clearTimeout(toast._t); toast._t = setTimeout(function () { show(t, false); }, 2400); }
@@ -422,7 +427,7 @@ function loadMarkets() {
   if (!watchlist.length) return;
   if (status) status.textContent = t('updating');
   var ids = watchlist.join(',');
-  fetch(sync.api + '/api/public/stock/markets?ids=' + encodeURIComponent(ids) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(22000) })
+  fetch(sync.api + '/api/public/stock/markets?ids=' + encodeURIComponent(ids) + '&' + tq(), { signal: AbortSignal.timeout(22000) })
     .then(function (r) { return r.json(); })
     .then(function (d) {
       var symbols = (d && Array.isArray(d.symbols)) ? d.symbols : [];
@@ -445,7 +450,7 @@ function loadOpportunities() {
   var wrap = byId('oppTicker');
   if (!wrap) return;
   if (!sync || !watchlist.length) { show(wrap, false); return; }
-  fetch(sync.api + '/api/public/stock/opportunities?ids=' + encodeURIComponent(watchlist.join(',')) + '&timeframe=' + encodeURIComponent(timeframe) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(22000) })
+  fetch(sync.api + '/api/public/stock/opportunities?ids=' + encodeURIComponent(watchlist.join(',')) + '&timeframe=' + encodeURIComponent(timeframe) + '&' + tq(), { signal: AbortSignal.timeout(22000) })
     .then(function (r) { return r.json(); })
     .then(function (d) {
       var list = (d && Array.isArray(d.opportunities)) ? d.opportunities : [];
@@ -470,7 +475,7 @@ function loadAnalysis(id) {
   var sync = window.JAOLA_SYNC;
   if (!sync) { byId('anaBody').innerHTML = '<p class="hint">' + esc(t('liveAfterPublish')) + '</p>'; return; }
   if (!id) return;
-  fetch(sync.api + '/api/public/stock/analysis/' + encodeURIComponent(id) + '?timeframe=' + encodeURIComponent(timeframe) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(22000) })
+  fetch(sync.api + '/api/public/stock/analysis/' + encodeURIComponent(id) + '?timeframe=' + encodeURIComponent(timeframe) + '&' + tq(), { signal: AbortSignal.timeout(22000) })
     .then(function (r) { return r.json(); })
     .then(function (a) { renderAnalysis(a); if (a && !a.error) { loadCommentary(id); loadTrackRecord(id); loadAffiliate(id); } })
     .catch(function () { byId('anaBody').innerHTML = '<p class="hint">' + esc(t('failAnalysis')) + '</p>'; });
@@ -513,7 +518,7 @@ function loadAffiliate(id) {
   var sync = window.JAOLA_SYNC;
   var box = byId('anaAffiliate');
   if (!sync || !box) return;
-  fetch(sync.api + '/api/public/stock/affiliate/' + encodeURIComponent(id) + '?token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(8000) })
+  fetch(sync.api + '/api/public/stock/affiliate/' + encodeURIComponent(id) + '?' + tq(), { signal: AbortSignal.timeout(8000) })
     .then(function (r) { return r.json(); })
     .then(function (d) {
       if (!d || !d.url) { show(box, false); return; }
@@ -535,7 +540,7 @@ function loadTrackRecord(id) {
   var sync = window.JAOLA_SYNC;
   var box = byId('anaTrackRecord');
   if (!sync || !box) return;
-  fetch(sync.api + '/api/public/stock/track-record/' + encodeURIComponent(id) + '?timeframe=' + encodeURIComponent(timeframe) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(8000) })
+  fetch(sync.api + '/api/public/stock/track-record/' + encodeURIComponent(id) + '?timeframe=' + encodeURIComponent(timeframe) + '&' + tq(), { signal: AbortSignal.timeout(8000) })
     .then(function (r) { return r.json(); })
     .then(function (d) { renderTrackRecord(d); })
     .catch(function () {});
@@ -545,7 +550,7 @@ function loadCommentary(id) {
   var sync = window.JAOLA_SYNC;
   var box = byId('anaCommentary');
   if (!sync || !box) return;
-  fetch(sync.api + '/api/public/stock/commentary/' + encodeURIComponent(id) + '?symbol=' + encodeURIComponent(displaySymbol(id)) + '&timeframe=' + encodeURIComponent(timeframe) + '&lang=' + encodeURIComponent(lang) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(15000) })
+  fetch(sync.api + '/api/public/stock/commentary/' + encodeURIComponent(id) + '?symbol=' + encodeURIComponent(displaySymbol(id)) + '&timeframe=' + encodeURIComponent(timeframe) + '&lang=' + encodeURIComponent(lang) + '&' + tq(), { signal: AbortSignal.timeout(15000) })
     .then(function (r) { return r.json(); })
     .then(function (d) {
       if (d && d.text) { box.innerHTML = '🤖 ' + esc(d.text); show(box, true); return; }
@@ -582,7 +587,7 @@ function persistWatchlist() {
 function loadLimits() {
   var sync = window.JAOLA_SYNC;
   if (!sync) return;
-  fetch(sync.api + '/api/public/stock/limits?token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(8000) })
+  fetch(sync.api + '/api/public/stock/limits?' + tq(), { signal: AbortSignal.timeout(8000) })
     .then(function (r) { return r.json(); })
     .then(function (d) { if (d && Number.isFinite(d.watchlistMax)) { watchlistMax = d.watchlistMax; renderWatchlistSettings(); } })
     .catch(function () {});
@@ -611,7 +616,7 @@ function searchCoin() {
   if (!sync) { box.innerHTML = '<p class="hint tiny">' + esc(t('searchWorking')) + '</p>'; return; }
   if (q.length < 2) { toast(t('typeTwoChars')); return; }
   box.innerHTML = '<p class="hint tiny">' + esc(t('searching')) + '</p>';
-  fetch(sync.api + '/api/public/stock/search?q=' + encodeURIComponent(q) + '&token=' + encodeURIComponent(sync.token), { signal: AbortSignal.timeout(22000) })
+  fetch(sync.api + '/api/public/stock/search?q=' + encodeURIComponent(q) + '&' + tq(), { signal: AbortSignal.timeout(22000) })
     .then(function (r) { return r.json(); })
     .then(function (d) {
       var coins = (d && Array.isArray(d.coins)) ? d.coins : [];
