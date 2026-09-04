@@ -1628,6 +1628,50 @@ describe('صحة صياغة سكربتات الواجهة — درس عطل إن
         }
     });
 
+    // 🪧 عطبٌ عاش طويلاً: كتلة تعريف الخدمة (`introBlock`) كُتبت لزائرٍ
+    // جديد، ولم يرها زائرٌ جديد **قط**. شرطُ عرضها كان `showGate()` وحدها،
+    // وهي لا تقع إلا حين يُرفض توكنٌ قائم — أي جلسةٌ منتهية. ولمّا فُتح
+    // التصفّح بلا حساب (الميزة 20) صار `/api/travel/config` ينجح للزائر،
+    // فلا 401 ولا showGate، و`boot()` يُخفيها عند كل نجاح. ميزةٌ كاملة
+    // ميّتة، وميزةٌ ميتة تُخفي عيوبها: كانت الكتلة كلّها بلا ترجمة أيضاً،
+    // ولم يظهر ذلك لأنها لا تُعرض. هذا الاختبار يحرس الشرط والموضع معاً.
+    test('🪧 تعريف الخدمة شرطُه وجودُ الجلسة لا فشلُها، وموضعُه بعد البحث', () => {
+        const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+
+        // (١) لا إخفاءَ غيرَ مشروط: هو بعينه ما جعل الكتلة ميّتة.
+        assert.ok(!/\$\('introBlock'\)\.classList\.add\('hidden'\);\s*\n\s*fxInit/.test(html),
+            'عاد الإخفاء غير المشروط في boot() — الكتلة تموت ثانيةً');
+        assert.ok(/\$\('introBlock'\)\.classList\.toggle\('hidden', !!token\)/.test(html),
+            'الشرط ليس وجودَ الجلسة');
+
+        // (٢) الدخول يُخفيها — وإلا بقيت أمام صاحب حساب لا يحتاجها.
+        const apply = /async function applySession\(\)([\s\S]*?)\n    }/.exec(html)[1];
+        assert.ok(apply.includes("$('introBlock').classList.add('hidden')"),
+            'الدخول لا يُخفي التعريف');
+
+        // (٣) الموضع بعد `#app`: كُتبت يوم كانت الصفحة لا تُري إلا حقل
+        // توكن، واليوم البحث أمامه — فتصديرُها يدفع البحث تحت الطيّة.
+        assert.ok(html.indexOf('id="introBlock"') > html.indexOf('id="app"'),
+            'التعريف قبل البحث — يدفعه أسفل الشاشة على الجوال');
+
+        // (٤) وكلُّ نصٍّ فيها مترجَمٌ بالأعمدة الثلاثة: إحياءُ الكتلة هو
+        // ما كشف خلوَّها من الترجمة، فلا تُحيا نصفَ مترجمة.
+        const w = {};
+        new Function('window', fs.readFileSync(new URL('../public/i18n.js', import.meta.url), 'utf8'))(w);
+        const table = w.JAOLA_I18N_TABLE;
+        const block = /id="introBlock"[\s\S]*?\n    <\/div>/.exec(html)[0];
+        const texts = [...block.matchAll(/>([^<>]*[\u0600-\u06FF][^<>]*)</g)]
+            .map(m => m[1].trim()).filter(t => t && !/^[\s\d.,-]+$/.test(t));
+        assert.ok(texts.length >= 9, `نصوصٌ أقل من المتوقَّع: ${texts.length}`);
+        for (const t of texts) {
+            const e = table[t];
+            assert.ok(e, `نصٌّ بلا مدخل ترجمة: ${t}`);
+            for (const lang of ['en', 'ur', 'nl']) {
+                assert.ok(e[lang] && e[lang].trim(), `${t} — عمود ${lang} مفقود`);
+            }
+        }
+    });
+
     // نافذة الدخول تلمس عناصرها بالمعرّف؛ معرّفٌ مفقود يرمي عند أول تبديل
     // وضعٍ فتموت النافذة صامتةً — والمسافر يعجز عن الدخول أو الاستعادة.
     test('🧩 كل معرّف تحتاجه نافذة الدخول موجود في الصفحة', () => {

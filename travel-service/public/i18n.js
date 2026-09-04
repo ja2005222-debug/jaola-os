@@ -34,6 +34,21 @@ window.JAOLA_I18N_TABLE = {
     '🎫 شرط الاسترداد يظهر قبل الحجز لا بعده': { en: '🎫 Refund terms shown before you book, not after', ur: '🎫 ریفنڈ کی شرط بکنگ سے پہلے دکھائی جاتی ہے، بعد میں نہیں', nl: '🎫 De terugbetalingsvoorwaarden worden vóór het boeken getoond, niet erna' },
     '🎒 باقاتنا المجدولة مقاعد محجوزة فعلياً — لا عروض تتغيّر تحتك': { en: '🎒 Our scheduled packages hold real seats — not offers that shift under you', ur: '🎒 ہمارے شیڈول شدہ پیکجز میں نشستیں حقیقت میں محفوظ ہیں — ایسی پیشکشیں نہیں جو آپ کے نیچے بدل جائیں', nl: '🎒 Onze geplande pakketten hebben echt gereserveerde stoelen — geen aanbiedingen die onder u veranderen' },
 
+    // ─── تعريف الخدمة للزائر الجديد (introBlock) ───
+    // ⚠️ كانت الكتلة كلها بلا ترجمة — ولم يظهر ذلك لأنها كانت لا تُعرض
+    // أصلاً. ميزةٌ ميتة تُخفي عيوبها: أول ما أحياها الإصلاح انكشف أن
+    // زائر /en/ كان سيرى بطاقةً عربية كاملة وسط صفحةٍ إنجليزية.
+    '✈️ ما الذي تجده في Jatrava؟': { en: '✈️ What you get with Jatrava', ur: '✈️ Jatrava میں آپ کو کیا ملتا ہے؟', nl: '✈️ Wat vindt u bij Jatrava?' },
+    'نحجز لك التذكرة والفندق والسيارة بتأكيد فوري، ونركّب لك باقات سفر كاملة — بأسعار حقيقية بلا خصومات وهمية ولا أسعار مشطوبة.': { en: 'We book your flight, hotel and car with instant confirmation, and build complete travel packages — at real prices, with no fake discounts and no struck-through prices.', ur: 'ہم آپ کی پرواز، ہوٹل اور گاڑی فوری تصدیق کے ساتھ بک کرتے ہیں، اور مکمل سفری پیکجز بھی تیار کرتے ہیں — حقیقی قیمتوں پر، بغیر جعلی رعایتوں اور بغیر کاٹی ہوئی قیمتوں کے۔', nl: 'Wij boeken uw vlucht, hotel en auto met directe bevestiging en stellen complete reispakketten samen — tegen echte prijzen, zonder nepkortingen en zonder doorgestreepte prijzen.' },
+    'طيران بشروطٍ معلنة': { en: 'Flights with stated conditions', ur: 'واضح شرائط کے ساتھ پروازیں', nl: 'Vluchten met vermelde voorwaarden' },
+    'بحث بأكثر من ١٥٠ مطاراً، بأمتعة كل قطاع وشروط التذكرة قبل الحجز.': { en: 'Search across more than 150 airports, with per-leg baggage and ticket conditions shown before you book.', ur: '150 سے زیادہ ہوائی اڈوں پر تلاش، ہر مرحلے کے سامان اور ٹکٹ کی شرائط بکنگ سے پہلے۔', nl: 'Zoek in meer dan 150 luchthavens, met bagage per traject en ticketvoorwaarden vóór het boeken.' },
+    'فنادق بلا مفاجآت': { en: 'Hotels without surprises', ur: 'بغیر کسی حیرانی کے ہوٹل', nl: 'Hotels zonder verrassingen' },
+    'سياسة الإلغاء بمواعيدها ومبالغها، والرسوم التي تُدفع بالفندق معلنة.': { en: 'Cancellation policy with its dates and amounts, and fees paid at the hotel stated up front.', ur: 'منسوخی کی پالیسی اپنی تاریخوں اور رقوم کے ساتھ، اور ہوٹل میں ادا ہونے والی فیس واضح۔', nl: 'Annuleringsbeleid met data en bedragen, en de kosten die u in het hotel betaalt vooraf vermeld.' },
+    'باقات جاهزة بمقاعد محجوزة': { en: 'Ready packages with real held seats', ur: 'حقیقتاً محفوظ نشستوں کے ساتھ تیار پیکجز', nl: 'Kant-en-klare pakketten met echt gereserveerde stoelen' },
+    'انطلاقات بتواريخ ثابتة، عربون الآن والمتبقي قبل السفر.': { en: 'Fixed departure dates, a deposit now and the balance before you travel.', ur: 'مقررہ تاریخوں پر روانگی، ابھی پیشگی رقم اور باقی سفر سے پہلے۔', nl: 'Vaste vertrekdata, nu een aanbetaling en het restant vóór vertrek.' },
+    'مساعد يحجز فعلاً': { en: 'An assistant that actually books', ur: 'ایک معاون جو واقعی بکنگ کرتا ہے', nl: 'Een assistent die echt boekt' },
+    'اطلب رحلتك بالعربية، وهو يبحث ويحجز فعلياً بتأكيدك الصريح.': { en: 'Ask for your trip in your own words, and it searches and books for real — on your explicit confirmation.', ur: 'اپنے الفاظ میں اپنا سفر طلب کریں، اور یہ آپ کی صریح تصدیق پر واقعی تلاش اور بکنگ کرتا ہے۔', nl: 'Vraag uw reis in uw eigen woorden, en hij zoekt en boekt echt — na uw uitdrukkelijke bevestiging.' },
+
     // ─── الرأس والتبويبات ───
     'بوابة السفر': { en: 'Travel Portal', ur: 'سفری پورٹل', nl: 'Reisportaal' },
     '⚙️ الإدارة': { en: '⚙️ Admin', ur: '⚙️ ایڈمن', nl: '⚙️ Beheer' },
