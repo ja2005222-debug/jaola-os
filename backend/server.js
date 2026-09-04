@@ -145,7 +145,7 @@ import { orchestrator } from './core/PluginOrchestrator.js';
 import { runSystemDiagnostics } from './agents/systemDoctorAgent.js';
 import * as adminSvc from './services/adminService.js';
 import { canCreateProject, botAiQuota } from './services/subscriptionService.js';
-import { getUsageCount, bumpUsage } from './services/usageMeter.js';
+import { getUsageCount, bumpUsage, reserveUsage, releaseUsage } from './services/usageMeter.js';
 import { createBillingRouter } from './routes/billing.js';
 import { topLessons } from './services/platformLessons.js';
 import { setStateEmitter } from './agents/stateMachine.js';
@@ -1281,34 +1281,45 @@ app.post('/api/project/ai-images', verifyToken, aiLimit, validateProjectOwnershi
         const username = req.user.username;
         const owner = await DB.findUser(username).catch(() => null);
         const q = aiImagesQuota(owner);
-        let allowed = Infinity;
-        // 🔓 المشرف (مالك المنصة) بلا حصة — العدّ للعملاء المدفوعين
-        if (!isAdminUser(req.user) && Number.isFinite(q.monthly)) {
-            allowed = Math.max(0, q.monthly - getUsageCount(USAGE_DIR, username, 'aiImages'));
-            if (allowed === 0) return res.status(403).json({ error: `حصة صور AI لخطتك (${q.monthly}/شهر) نفدت — رقِّ خطتك.` });
+        // 🎟️ نحجز قبل التوليد لا نعدّ بعده: بين السؤال والأخذ نداءاتٌ مدفوعة،
+        // وتدفّقان متزامنان كانا يقرآن العدّ نفسه فينفقان الحصة مرّتين.
+        // 🔓 المشرف (مالك المنصة) بلا سقف — والعدّ يجري له كما كان.
+        const limit = isAdminUser(req.user) ? Infinity : q.monthly;
+        if (aiImagesBusyUsers.has(username)) {
+            return res.status(409).json({ error: 'توليد صور سابق ما زال يعمل على حسابك — انتظر انتهاءه ثم أعد المحاولة.' });
         }
+        aiImagesBusyUsers.add(username);
+        const reserved = reserveUsage(USAGE_DIR, username, 'aiImages', { limit, want: AI_IMAGES_PER_CALL });
+        let spent = 0;
+        try {
+            if (reserved === 0) return res.status(403).json({ error: `حصة صور AI لخطتك (${q.monthly}/شهر) نفدت — رقِّ خطتك.` });
 
-        const files = [{ name: 'app.js', content: fs.readFileSync(appPath, 'utf8') }];
-        const r = await applyAiImages(files, { goal: req.activeProject, maxCount: allowed });
-        if (r.notConfigured) return res.status(503).json({ error: r.reason, notConfigured: true });
-        if (!r.changed) {
-            const why = r.reason || 'لا عناصر مؤهّلة للتوليد.';
-            io.to(`${req.user.username}-${req.activeProject}`).emit('log', { message: `❌ [SYSTEM]: تعذّر توليد الصور — ${why}` });
-            return res.status(400).json({ error: why });
+            const files = [{ name: 'app.js', content: fs.readFileSync(appPath, 'utf8') }];
+            const r = await applyAiImages(files, { goal: req.activeProject, maxCount: reserved });
+            if (r.notConfigured) return res.status(503).json({ error: r.reason, notConfigured: true });
+            if (!r.changed) {
+                const why = r.reason || 'لا عناصر مؤهّلة للتوليد.';
+                io.to(`${req.user.username}-${req.activeProject}`).emit('log', { message: `❌ [SYSTEM]: تعذّر توليد الصور — ${why}` });
+                return res.status(400).json({ error: why });
+            }
+
+            fs.mkdirSync(path.join(req.projectPath, 'images'), { recursive: true });
+            cleanupOldAiImages(req.projectPath, r.images);
+            for (const img of r.images) fs.writeFileSync(path.join(req.projectPath, img.name), img.buf);
+            fs.writeFileSync(appPath, r.appJs);
+            spent = r.count;
+
+            const roomName = `${username}-${req.activeProject}`;
+            emitWorkspaceFiles(roomName, req.projectPath);
+            io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+            io.to(roomName).emit('log', { message: `🎨 [SYSTEM]: وُلّدت ${r.count} صورة حقيقية بالذكاء واستُبدلت بالصور المؤقتة.` });
+            snapshotWorkspace(username, req.activeProject, req.projectPath).catch(() => {});
+            res.json({ success: true, count: r.count });
+        } finally {
+            // ما حُجز ولم يُنفق يعود — مهما كان سبب الخروج
+            releaseUsage(USAGE_DIR, username, 'aiImages', reserved - spent);
+            aiImagesBusyUsers.delete(username);
         }
-
-        fs.mkdirSync(path.join(req.projectPath, 'images'), { recursive: true });
-        cleanupOldAiImages(req.projectPath, r.images);
-        for (const img of r.images) fs.writeFileSync(path.join(req.projectPath, img.name), img.buf);
-        fs.writeFileSync(appPath, r.appJs);
-        for (let i = 0; i < r.count; i++) bumpUsage(USAGE_DIR, username, 'aiImages');
-
-        const roomName = `${username}-${req.activeProject}`;
-        emitWorkspaceFiles(roomName, req.projectPath);
-        io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
-        io.to(roomName).emit('log', { message: `🎨 [SYSTEM]: وُلّدت ${r.count} صورة حقيقية بالذكاء واستُبدلت بالصور المؤقتة.` });
-        snapshotWorkspace(username, req.activeProject, req.projectPath).catch(() => {});
-        res.json({ success: true, count: r.count });
     } catch (err) {
         res.status(500).json({ error: 'تعذّر توليد الصور: ' + err.message });
     }
@@ -1336,18 +1347,27 @@ function cleanupOldAiImages(projectPath, images) {
     }
 }
 
-const aiImagesBusyRooms = new Set(); // 🔒 طلبات متكررة متزامنة لا تحرق الحصة مرتين
+// سقفُ الصور لكل نداء — مطابقٌ لـMAX_PER_CALL في services/aiImages.js،
+// وهو حجمُ الحجز فلا يُحجز أكثر ممّا يمكن أن يُنفق.
+const AI_IMAGES_PER_CALL = 8;
+
+// 🔒 قفلٌ **بالمستخدم** لا بالمشروع. كان بالمشروع وتعليقُه يقول إنه يمنع
+// حرقَ الحصة مرّتين — والحصةُ بالمستخدم، فمشروعان لصاحبٍ واحدٍ كانا يفلتان
+// منه ويُنفقان الحصة مرّتين. وبه يُسلسَل التوليد للمستخدم الواحد، فلا يحجز
+// طلبٌ معلَّقٌ متّسعَ غيره. والحجزُ في usageMeter هو الضمانة تحته.
+const aiImagesBusyUsers = new Set();
 async function generateAiImagesFromChat({ username, activeProject, projectPath, roomName, message, hero, target, isAdmin = false }) {
     // 💬 نحفظ الدورة في ذاكرة المشروع — وإلا اختفت «تم! ولّدت…» مع أول تحديث
     const say = (m) => {
         io.to(roomName).emit('chat_reply', { message: m });
         recordTurn(`${username}::${activeProject}`, message || 'صور', m).catch(() => {});
     };
-    if (aiImagesBusyRooms.has(roomName)) {
-        say('⏳ توليد صور سابق ما زال يعمل على هذا المشروع — انتظر رده ثم اطلب من جديد.');
+    if (aiImagesBusyUsers.has(username)) {
+        say('⏳ توليد صور سابق ما زال يعمل على حسابك — انتظر رده ثم اطلب من جديد.');
         return;
     }
-    aiImagesBusyRooms.add(roomName);
+    aiImagesBusyUsers.add(username);
+    let reserved = 0, spent = 0;
     try {
         if (!aiImagesReady()) {
             say('⚙️ توليد الصور غير مُفعّل بعد — اضبط GEMINI_API_KEY (يفتح صور Gemini) أو OPENAI_API_KEY في بيئة الخادم.');
@@ -1355,12 +1375,11 @@ async function generateAiImagesFromChat({ username, activeProject, projectPath, 
         }
         const owner = await DB.findUser(username).catch(() => null);
         const q = aiImagesQuota(owner);
-        let allowed = Infinity;
-        // 🔓 المشرف (مالك المنصة) بلا حصة — العدّ للعملاء المدفوعين
-        if (!isAdmin && Number.isFinite(q.monthly)) {
-            allowed = Math.max(0, q.monthly - getUsageCount(USAGE_DIR, username, 'aiImages'));
-            if (allowed === 0) { say(`❌ حصة صور AI لخطتك (${q.monthly}/شهر) نفدت — رقِّ خطتك من صفحة الفوترة.`); return; }
-        }
+        // 🎟️ حجزٌ قبل التوليد — انظر تعليق مسار /api/project/ai-images
+        // 🔓 المشرف (مالك المنصة) بلا سقف — والعدّ يجري له كما كان.
+        reserved = reserveUsage(USAGE_DIR, username, 'aiImages', { limit: isAdmin ? Infinity : q.monthly, want: AI_IMAGES_PER_CALL });
+        if (reserved === 0) { say(`❌ حصة صور AI لخطتك (${q.monthly}/شهر) نفدت — رقِّ خطتك من صفحة الفوترة.`); return; }
+        let allowed = reserved;
 
         io.to(roomName).emit('log', { message: '🎨 [SYSTEM]: بدأ توليد صور حقيقية بالذكاء...' });
         const done = [];
@@ -1381,7 +1400,7 @@ async function generateAiImagesFromChat({ username, activeProject, projectPath, 
                     try { for (const f of fs.readdirSync(path.join(projectPath, 'images'))) if (/^ai-hero.*\.png$/.test(f)) fs.unlinkSync(path.join(projectPath, 'images', f)); } catch (e) { /* تنظيف اختياري */ }
                     fs.writeFileSync(path.join(projectPath, heroName), r.buf);
                     fs.writeFileSync(idxPath, heroRes.html);
-                    bumpUsage(USAGE_DIR, username, 'aiImages');
+                    spent++;
                     allowed--;
                     done.push(`صورة البنر (${heroName})`);
                 } else errors.push(heroRes.reason);
@@ -1397,7 +1416,7 @@ async function generateAiImagesFromChat({ username, activeProject, projectPath, 
                 cleanupOldAiImages(projectPath, r.images);
                 for (const img of r.images) fs.writeFileSync(path.join(projectPath, img.name), img.buf);
                 fs.writeFileSync(appPath, r.appJs);
-                for (let i = 0; i < r.count; i++) bumpUsage(USAGE_DIR, username, 'aiImages');
+                spent += r.count;
                 done.push(`${r.count} صورة للعناصر`);
             } else if (!r.notConfigured && r.reason && !['لا عناصر مؤهّلة', 'لا مصفوفة بيانات', 'بيانات فارغة'].includes(r.reason)) {
                 errors.push(r.reason);
@@ -1417,7 +1436,9 @@ async function generateAiImagesFromChat({ username, activeProject, projectPath, 
     } catch (e) {
         say('❌ تعذّر توليد الصور: ' + e.message);
     } finally {
-        aiImagesBusyRooms.delete(roomName);
+        // ما حُجز ولم يُنفق يعود — مهما كان سبب الخروج
+        releaseUsage(USAGE_DIR, username, 'aiImages', reserved - spent);
+        aiImagesBusyUsers.delete(username);
     }
 }
 
