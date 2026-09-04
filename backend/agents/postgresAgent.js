@@ -329,7 +329,9 @@ const products = await prisma.product.findMany();
     return {
         success: true,
         files,
-        summary: `PostgreSQL + Prisma — ${files.length} ملف (schema, seed, client, readme)`
+        // 📌 الملخّصُ يسمّي ما كُتب فعلاً. كان يقول «seed» دائماً — ولا
+        //    seed إلا لأنواعٍ لها قالبٌ جاهز — ولا يذكر `.env.example` قطّ.
+        summary: `PostgreSQL + Prisma — ${files.length} ملف (${files.map((f) => f.name).join('، ')})`
     };
 }
 
@@ -350,6 +352,11 @@ async function generateDynamicSchema(userGoal, projectType) {
 }
 
 // كشف هل المشروع يحتاج PostgreSQL
-export function needsPostgres(userGoal) {
-    return /postgres|postgresql|prisma|relational|علاقية|مالي|محاسبة|finance|accounting/i.test(userGoal);
-}
+// 🔴 كانت هذه الدالة قائمةً **ثالثة** تُجيب سؤال «هل يحتاج المشروع خادماً؟»
+// وحدها، بمطابقة احتواءٍ مجرّدة. فأثمرت عطبين:
+//   • «مالي» داخل *جمالي* و*أعمالي* و*الشمالي* و*الإجمالي* — فطلبٌ اسمُه
+//     «تصميم جمالي راقٍ» كان يُكتب فيه schema.prisma وملفٌّ يطلب DATABASE_URL.
+//   • ولأنها مستقلّة عن `needsBackend`، كانت تقول «نعم» حيث يقول الاتحاد
+//     «لا»: «نظام محاسبة للشركة» يأخذ Prisma **بلا خادمٍ يُشغّلها**.
+// فصارت مجموعةً جزئيّة من الاتحاد نفسه: `needsPostgres ⟹ needsBackend` بالبناء.
+export { needsRelationalDb as needsPostgres } from './backendNeed.js';
