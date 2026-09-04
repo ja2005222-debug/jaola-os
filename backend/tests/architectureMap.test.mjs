@@ -109,3 +109,36 @@ test('عددُ القوالب المُعلَن جملةً يطابق ما على
     const onDisk = fs.readdirSync(path.join(BACKEND, 'agents/cloneTemplates')).filter((f) => f.endsWith('.js')).length;
     assert.equal(Number(m[1]), onDisk);
 });
+
+// ═══════════════════════════════════════════════════════
+// Sprint 2n قاس صفوفَ الجدول ولم يقس **عناوينَ الأقسام**. فبقيت تقول
+// «`services/*` — 90 وحدة» وعلى القرص 70، و«server.js — 3702 سطراً» وهو
+// 3753. عددٌ في عنوانٍ دعوى كعددٍ في صفّ، ولا يُصدَّق إلا محسوباً.
+// ═══════════════════════════════════════════════════════
+
+const dirCount = (prefix) => modules().filter((p) => p.startsWith(prefix + path.sep)).length;
+
+test('أعدادُ عناوين الأقسام تطابق القرص', () => {
+    const src = fs.readFileSync(path.join(BACKEND, 'server.js'), 'utf8');
+    const lines = src.split('\n');
+    // الاستيرادُ المحلّيّ: ساكنٌ من مسارٍ نسبيّ — وهو ما عنته الخريطة.
+    const localImports = lines.filter((l) => /^\s*import\s[^]*?from\s*['"]\./.test(l) || /^\s*import\s*['"]\./.test(l)).length;
+    const routes = lines.filter((l) => /^\s*app\.(get|post|put|patch|delete|all)\(/.test(l)).length;
+
+    const head = /^## A\)[^\n]*$/m.exec(MAP)[0];
+    const [decLines, decRoutes, decImports] = (head.match(/\d+/g) || []).map(Number);
+    assert.equal(decLines, countLines(path.join(BACKEND, 'server.js')), `عنوان A: أسطر server.js`);
+    assert.equal(decRoutes, routes, 'عنوان A: عدد المسارات');
+    assert.equal(decImports, localImports, 'عنوان A: عدد الاستيرادات المحلّية');
+
+    const agents = /^## C\)[^—]*— (\d+) وحدة \(منها (\d+) قالب/m.exec(MAP);
+    assert.ok(agents, 'عنوان C لم يعد يُعلن عدداً');
+    assert.equal(Number(agents[1]), dirCount('agents'), 'عنوان C: وحدات agents');
+    assert.equal(Number(agents[2]),
+        fs.readdirSync(path.join(BACKEND, 'agents/cloneTemplates')).filter((f) => f.endsWith('.js')).length,
+        'عنوان C: عدد القوالب');
+
+    const services = /^## D\)[^—]*— (\d+) وحدة/m.exec(MAP);
+    assert.ok(services, 'عنوان D لم يعد يُعلن عدداً');
+    assert.equal(Number(services[1]), dirCount('services'), 'عنوان D: وحدات services');
+});

@@ -28,7 +28,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## A) `backend/server.js` — 3702 سطراً، 157 مساراً، 96 استيراداً محلياً
+## A) `backend/server.js` — 3753 سطراً، 158 مساراً، 97 استيراداً محلياً
 
 لا يُفكَّك دفعة واحدة (البند 19). الخريطة **حسب المجال** لأن الملف واحد؛ كل صف = مرشّح
 ملف `routes/<domain>.js` مستقبلاً على نمط `routes/billing.js` القائم فعلاً («أول
@@ -85,7 +85,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## C) `backend/agents/*` — 123 وحدة (منها 42 قالب كلون)
+## C) `backend/agents/*` — 116 وحدة (منها 42 قالب كلون)
 
 ### C1. النواة (Kernel candidates)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
@@ -163,7 +163,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## D) `backend/services/*` — 90 وحدة
+## D) `backend/services/*` — 70 وحدة
 
 ### D1. وقت التشغيل (مرشّحة لـ`core/`)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
@@ -177,7 +177,7 @@ Policy/Permission، Identity، Plugin.
 | `workspaceStore.js` | 115 | نسخ ملفات المشاريع إلى Mongo | KEEP | Tool (workspace) | `core/runtime/` |
 | `conversationStore.js`, `conversationManager.js` | 170/80 | ذاكرة الحوار | KEEP | Memory | `core/memory/` |
 | `metricsStore.js`, `usageMeter.js`, `errorLog.js`, `logger.js`, `adminAudit.js` | 97/78/45/36/41 | قياس واستهلاك وتدقيق | MODIFY | Audit (AuditLog يوحّدها) | `core/audit/` (Sprint 4) |
-| `broadcast.js`, `presence.js` | 42/12 | بثّ Socket + حضور | MODIFY | Event (EventBus) | `core/events/` |
+| `presence.js` | 12 | حضور | MODIFY | Event (EventBus) | `core/events/` |
 | `httpRetry.js` | 30 | fetch مع إعادة محاولة | KEEP | Provider (سياسة إعادة المحاولة) | `core/` |
 | `aiProviderCheck.js` | 99 | فاحص مزوّدي الذكاء | MODIFY | Provider Registry | `core/plugins/ProviderRegistry.js` |
 
@@ -185,10 +185,10 @@ Policy/Permission، Identity، Plugin.
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
 | `deployAutomation.js`, `customDomains.js`, `hostNames.js`, `githubSync.js`, `githubFiles.js`, `projectExport.js`, `projectManager.js` | 241/207/37/110/83/37/82 | نشر ونطاقات وGitHub وتصدير | MODIFY | Tool (كل واحدة أداة بـriskLevel) + Transaction (للنشر) | `plugins/coding/tools/` |
-| `reactPreview.js`, `fileEditor.js`, `twin.js` | 477/73/69 | معاينة وتعديل | KEEP | Tool | `plugins/coding/` |
+| `reactPreview.js`, `twin.js` | 477/69 | معاينة وتعديل | KEEP | Tool | `plugins/coding/` |
 | `siteConnect.js`, `siteCms.js`, `siteInbox.js`, `siteCreds.js`, `newsletterSubscribers.js`, `projectAuth.js`, `projectSecrets.js`, `storeKey.js`, `dataSync.js`, `appData.js`, `appCollections.js`, `appAssets.js` | 128/118/97/65/60/76/121/63/138/51/82/76 | خدمات مواقع العملاء المنشورة | KEEP | — | `plugins/coding/runtime-services/` |
 | `imageService.js`, `aiImages.js` | 69/393 | صور | KEEP | Provider | `plugins/coding/` |
-| `platformKnowledge.js`, `knowledgeService.js` | 89/101 | معرفة للمساعد | KEEP | Memory | كما هي |
+| `platformKnowledge.js` | 89 | معرفة للمساعد | KEEP | Memory | كما هي |
 
 ### D3. التجارة والهوية
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
@@ -315,19 +315,22 @@ permissions ويستدعي الخدمة عبر HTTP بنفس JWT. لا شيء ه
 وهو **غائبٌ عن هذا الملف كلّه** ولا يستورده شيء. أحكامٌ على وحداتٍ لا يصل
 إليها الخادم، والملفّ الذي كان سيصل إليها لم يُذكر أصلاً.
 
-| الملف | سطور | لا يصل إليه إلا | يُحمَّل؟ |
-|---|---|---|---|
-| `services/taskExecutor.js` | 225 | **لا شيء** (جذر الجزيرة) | ❌ `simple-git` غير مثبَّت |
-| `services/fileEditor.js` | 73 | `taskExecutor` | ✅ |
-| `services/broadcast.js` | 42 | `taskExecutor` (استيراد ديناميكي) | ✅ |
-| `services/knowledgeService.js` | 101 | `taskExecutor` (استيراد ديناميكي) | ❌ عبر `projectManager` |
-| `services/projectManager.js` | 82 | `knowledgeService` و`twin` (كلاهما يتيم) | ❌ `uuid` غير مثبَّت |
-| `services/twin.js` | 69 | `knowledgeService` (يتيم) | ❌ عبر `projectManager` |
-| `services/logger.js` | 36 | `twin` (يتيم) | ✅ |
-| `services/db.js` | 58 | لا شيء | ❌ `better-sqlite3` غير مثبَّت |
-| `utils/aiProvider.js` | 38 | لا شيء | ✅ |
-| `utils/performance.js` | 60 | لا شيء | ✅ |
-| `utils/security.js` | 21 | لا شيء | ✅ |
+✅ **وقد حُذفت جزيرةُ `taskExecutor` (Sprint 2o)** — أربعةُ ملفات، 441 سطراً.
+الجدول أدناه يبقى **سِجلّاً** لما كان، لأن الفهم هو ما أجاز الحذف.
+
+| الملف | سطور | لا يصل إليه إلا | يُحمَّل؟ | الحال |
+|---|---|---|---|---|
+| ~~`services/taskExecutor.js`~~ | 225 | **لا شيء** (جذر الجزيرة) | ❌ `simple-git` غير مثبَّت | **DELETED** (2o) |
+| ~~`services/fileEditor.js`~~ | 73 | `taskExecutor` | ✅ | **DELETED** (2o) |
+| ~~`services/broadcast.js`~~ | 42 | `taskExecutor` (استيراد ديناميكي) | ✅ | **DELETED** (2o) |
+| ~~`services/knowledgeService.js`~~ | 101 | `taskExecutor` (استيراد ديناميكي) | ❌ عبر `projectManager` | **DELETED** (2o) |
+| `services/projectManager.js` | 82 | `knowledgeService` و`twin` (كلاهما يتيم) | ❌ `uuid` غير مثبَّت | باقٍ |
+| `services/twin.js` | 69 | `knowledgeService` (يتيم) | ❌ عبر `projectManager` | باقٍ |
+| `services/logger.js` | 36 | `twin` (يتيم) | ✅ | باقٍ |
+| `services/db.js` | 58 | لا شيء | ❌ `better-sqlite3` غير مثبَّت | باقٍ |
+| `utils/aiProvider.js` | 38 | لا شيء | ✅ | باقٍ |
+| `utils/performance.js` | 60 | لا شيء | ✅ | باقٍ |
+| `utils/security.js` | 21 | لا شيء | ✅ | باقٍ |
 
 **وقائع أُثبتت بالتشغيل، لا استنتاجات:**
 
@@ -344,8 +347,15 @@ permissions ويستدعي الخدمة عبر HTTP بنفس JWT. لا شيء ه
    محتوىً (`escapeHtml` مقابل `sanitizePath`/`schemas`/`validate`). فمن قرأ
    الاسم قرأ الميتَ ظانّاً أنه الحيّ.
 
-📌 **ولا يُحذف شيءٌ هنا الآن.** شرطُ المالك «لا نحذف قبل فهم dependencies»،
-وهذا القسم هو الفهم؛ والحذف قرارٌ مستقلّ بـPR مستقلّ كما جرى مع الثلاثين
-ملفاً سابقاً. ما أُصلح الآن شيءٌ واحد: حارسُ الاحتواء في `fileEditor.js` —
-لأن الخريطة تعده بـ`plugins/coding/`، فلا يُوصَل لاحقاً وهو يحمل عطباً
-سمّاه `workspacePaths.js` وأصلحه في موضعٍ آخر.
+📌 **الحذف وقع، وشرطُه استُوفي.** «لا نحذف قبل فهم dependencies» — وهذا
+القسم كان الفهم. فلمّا اكتمل، حُذفت الجزيرةُ بـPR مستقلّ كما جرى مع
+الثلاثين ملفاً سابقاً، لا ضمن Sprint آخر.
+
+**ولمَ الجزيرةُ وحدها دون بقيّة اليتامى؟** لأنها الوحدةُ المتماسكة: جذرٌ
+واحد وثلاثةٌ لا يصل إليها سواه، فحذفُها كلٌّ أو لا شيء. أما `db.js` و
+`logger.js` و`utils/*` فكلٌّ يتيمٌ قائمٌ بذاته، ولكلٍّ حكمُه على حِدة —
+تُترك ليُنظر فيها منفردة، لا لتُجرَف مع غيرها.
+
+**والحكم KEEP لم يكن حجّةً للإبقاء**، لأنه بعينه ما كشفه Sprint 8/11: حكمٌ
+أُعطي بالقراءة لا بمشي البيان. حجّةُ الحذف أن الخادم لا يبلغها، وأن جذرها
+لا يُحمَّل أصلاً (`simple-git` غير مثبَّتة)، وأن التاريخ يحفظها.
