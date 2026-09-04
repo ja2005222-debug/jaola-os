@@ -392,8 +392,11 @@ export class JaolaCognitiveRuntime {
                 saveDesignBrief(context.projectPath, brief);
                 context.mentalModel.visualIdentity = brief.coderInstructions;
                 context.mentalModel.designBrief = brief;
+                // 📌 السطر يقول ما جرى فعلاً: لوحةٌ دائماً، وتخصيصُ AI إن جرى
+                // وسببُ تخلّفه إن لم يجرِ. كان يعلن ✅ فوق تخصيصٍ لم يقع قطّ.
                 this.emitLiveLog(roomName, '5. RUNTIME', 'DesignerAgent',
                     `✅ Design Brief — ${brief.paletteName} palette`
+                    + (brief.aiEnhanced ? ' + تخصيص AI' : ` (بلا تخصيص AI: ${brief.aiSkipReason})`)
                 );
             }
         } catch (e) {

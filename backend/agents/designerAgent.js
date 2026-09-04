@@ -110,6 +110,69 @@ function getImages(projectType, count = 3) {
 }
 
 // ═══════════════════════════════════════════════════════
+// 🤖 تحسينات الـAI — معزولةٌ لتُختبر، وناطقةٌ بسبب تخلّفها
+// ═══════════════════════════════════════════════════════
+
+// ما دون هذا الطول وصفٌ مقتضبٌ لا يُغني نموذجاً — تخطٍّ مقصود لا فشل.
+const MIN_GOAL_FOR_AI = 30;
+
+/** يقبل ما يصلح فقط: نصّان وقائمةُ نصوص. الحقلُ المشوَّه يُسقَط ولا يُمرَّر. */
+function sanitizeEnhancements(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+    const out = {};
+    const slogan = str(raw.heroSlogan);
+    const touch = str(raw.uniqueTouch);
+    const anims = Array.isArray(raw.animations)
+        ? raw.animations.map(str).filter(Boolean).slice(0, 6) : [];
+    if (slogan) out.heroSlogan = slogan;
+    if (touch) out.uniqueTouch = touch;
+    if (anims.length) out.animations = anims;
+    return Object.keys(out).length ? out : null;
+}
+
+/**
+ * يطلب تخصيصاً بصرياً من الـLLM ويُرجع **نتيجةً صريحة**:
+ * `{ ok: true, data }` أو `{ ok: false, reason }` — فالسبب يُقال ولا يُبتلع.
+ * `chat` مُحقَّنٌ ليُختبر بلا شبكة.
+ */
+export async function requestAiEnhancements({ userGoal, projectType, paletteName, lang = 'en' }, chat = smartChat) {
+    const goal = (userGoal || '').toString();
+    if (goal.length <= MIN_GOAL_FOR_AI) return { ok: false, reason: 'الوصف أقصر من أن يُخصَّص' };
+
+    const messages = [{
+        role: 'system',
+        content: `أنت مصمم ويب خبير. أجب فقط بـ JSON صالح بدون أي نص خارجه. اكتب قيم heroSlogan وuniqueTouch بلغة المستخدم: ${lang || 'en'}.`,
+    }, {
+        role: 'user',
+        content: `للمشروع: "${goal}"
+النوع: ${projectType}، لوحة الألوان: ${paletteName}
+لغة المحتوى المطلوبة: ${lang || 'en'}
+
+أعطني JSON بهذا الشكل فقط (heroSlogan وuniqueTouch بلغة ${lang || 'en'}):
+{
+  "heroSlogan": "شعار قصير وجذاب للـ hero section",
+  "uniqueTouch": "لمسة تصميمية مميزة ومختلفة لهذا الموقع تحديداً",
+  "animations": ["تأثير hover للأزرار", "fade-in للأقسام"]
+}`,
+    }];
+
+    let text;
+    try {
+        text = await chat(messages, { max_tokens: 200, temperature: 0.7, json: true });
+    } catch (e) {
+        return { ok: false, reason: `تعذّر نداء المزوّد: ${e.message}` };
+    }
+
+    let parsed;
+    try { parsed = JSON.parse(text); }
+    catch { return { ok: false, reason: 'ردُّ المزوّد ليس JSON صالحاً' }; }
+
+    const data = sanitizeEnhancements(parsed);
+    return data ? { ok: true, data } : { ok: false, reason: 'ردُّ المزوّد بلا حقلٍ صالح' };
+}
+
+// ═══════════════════════════════════════════════════════
 // 📐 بناء design-brief كامل
 // ═══════════════════════════════════════════════════════
 export async function generateDesignBrief(userGoal, username, activeProject, lang = 'en') {
@@ -132,35 +195,12 @@ export async function generateDesignBrief(userGoal, username, activeProject, lan
         const savedColors = projectMem?.design?.colors;
         const savedStyle = projectMem?.design?.style;
 
-        // طلب من AI لتحسين الـ brief إن احتجنا لتخصيص أعمق
-        let aiEnhancements = null;
-        if (userGoal.length > 30) { // فقط للطلبات المفصّلة
-            try {
-                const completion = await groq.chat.completions.create({
-                    model: 'llama-3.3-70b-versatile',
-                    messages: [{
-                        role: 'system',
-                        content: `أنت مصمم ويب خبير. أجب فقط بـ JSON صالح بدون أي نص خارجه. اكتب قيم heroSlogan وuniqueTouch بلغة المستخدم: ${(lang || 'en')}.`
-                    }, {
-                        role: 'user',
-                        content: `للمشروع: "${userGoal}"
-النوع: ${ctx.projectType}، لوحة الألوان: ${paletteName}
-لغة المحتوى المطلوبة: ${(lang || 'en')}
-
-أعطني JSON بهذا الشكل فقط (heroSlogan وuniqueTouch بلغة ${(lang || 'en')}):
-{
-  "heroSlogan": "شعار قصير وجذاب للـ hero section",
-  "uniqueTouch": "لمسة تصميمية مميزة ومختلفة لهذا الموقع تحديداً",
-  "animations": ["تأثير hover للأزرار", "fade-in للأقسام"]
-}`
-                    }],
-                    max_tokens: 200,
-                    temperature: 0.7,
-                    response_format: { type: 'json_object' },
-                });
-                aiEnhancements = JSON.parse(completion.choices[0].message.content);
-            } catch (e) { /* تجاهل أخطاء AI واستخدام القيم الافتراضية */ }
-        }
+        // 🔴 كان هنا `groq.chat.completions.create(...)` و`groq` **غير مستورد في هذا
+        // الملف** — والمستورد `smartChat` لا يُستعمل. بصمةُ هجرةٍ بدأت ولم تكتمل.
+        // فكان كل نداءٍ يرمي ReferenceError يبتلعه `catch` فارغ، فلا تخصيصَ البتّة
+        // منذ كُتب الملف. والأسوأ أن `jcr` كان يعلن «✅ Design Brief» فوقه.
+        const ai = await requestAiEnhancements({ userGoal, projectType: ctx.projectType, paletteName, lang });
+        const aiEnhancements = ai.ok ? ai.data : null;
 
         const brief = {
             projectType: ctx.projectType,
@@ -205,10 +245,12 @@ export async function generateDesignBrief(userGoal, username, activeProject, lan
             // الأسلوب البصري
             mood: savedStyle || palette.mood,
 
-            // تحسينات AI
+            // تحسينات AI — و«هل جرت أصلاً» جزءٌ من الناتج لا يُستنتج
             heroSlogan: aiEnhancements?.heroSlogan || null,
             uniqueTouch: aiEnhancements?.uniqueTouch || null,
             animations: aiEnhancements?.animations || ['fade-in للأقسام عند الـ scroll', 'hover smooth على الأزرار'],
+            aiEnhanced: ai.ok,
+            aiSkipReason: ai.ok ? null : ai.reason,
 
             // تعليمات إلزامية للـ Coder
             coderInstructions: `
