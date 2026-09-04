@@ -1,14 +1,18 @@
 /**
- * 🧠 Smart Requirement Analyzer — JAOLA OS
+ * 🧠 Requirement Analyzer — JAOLA OS
  *
- * يُحلل طلب المستخدم بعمق ويستخرج:
- * - المتطلبات الصريحة (ما قاله المستخدم)
- * - المتطلبات الضمنية (ما يحتاجه بالضرورة ولم يقله)
- * - التعقيد التقني (بسيط / متوسط / متقدم)
- * - المخاطر والتحذيرات
- * - اقتراحات ذكية لتحسين المشروع
+ * يُثري هدف البناء بما لم يقله المستخدم ويحتاجه:
+ * - المتطلبات الضمنية: جدولٌ ثابتٌ حسب نوع المشروع
+ * - اقتراحات لتحسين المشروع
+ * - حقولُ الذكاء (اسم، جمهور، هدف، ميزات، محتوى، شخصية ألوان) — نداءٌ واحد
  *
- * يعمل بعد Clarifier ويُثري الـ goal قبل التنفيذ.
+ * 📌 الترويسةُ كانت تَعِد بأربعةٍ ويُسلَّم اثنان. «المتطلبات الصريحة» حقلٌ
+ *    لم يُملأ قطّ، و«التعقيد التقني» و«التحذيرات» كانا يُحسبان ولا يقرأهما
+ *    أحد — لا في هذه الوحدة ولا في الريبو كلّه. حُذفت الثلاثة، ولكلٍّ سببه
+ *    في CONTRACTS.md (Sprint 2k). فما بقي هنا هو ما يصل البناءَ فعلاً.
+ *
+ * ملاحظةٌ على المدخلات: إجاباتُ المُوضِّح تصل داخل نصّ الهدف نفسه
+ * (getFinalGoal يدمج «س/ج» في الهدف)، فلا تُمرَّر مصفوفةً منفصلة.
  */
 
 import { smartChat } from './baseAgent.js';
@@ -16,13 +20,10 @@ import { smartChat } from './baseAgent.js';
 // ═══════════════════════════════════════════════════════
 // 🔍 تحليل ثابت سريع (بدون AI)
 // ═══════════════════════════════════════════════════════
-export function staticAnalysis(userGoal, projectType, clarifierAnswers = []) {
+export function staticAnalysis(userGoal, projectType) {
     const goal = (userGoal || '').toLowerCase();
     const analysis = {
-        explicitRequirements: [],
         implicitRequirements: [],
-        technicalComplexity: 'simple',
-        warnings: [],
         suggestions: [],
     };
 
@@ -79,28 +80,19 @@ export function staticAnalysis(userGoal, projectType, clarifierAnswers = []) {
         'تصميم متجاوب للجوال',
     ];
 
-    // ── تحديد التعقيد التقني ──
-    const complexKeywords = [
-        'دفع', 'payment', 'cart', 'سلة', 'حجز', 'booking',
-        'لوحة تحكم', 'dashboard', 'admin', 'مستخدمين', 'users',
-        'api', 'قاعدة بيانات', 'database', 'اشتراك', 'subscription'
-    ];
-    const advancedCount = complexKeywords.filter(kw => goal.includes(kw)).length;
-
-    if (advancedCount >= 3) analysis.technicalComplexity = 'advanced';
-    else if (advancedCount >= 1) analysis.technicalComplexity = 'medium';
-    else analysis.technicalComplexity = 'simple';
-
-    // ── تحذيرات ذكية ──
-    if (goal.includes('فوري') || goal.includes('سريع') || goal.includes('quick')) {
-        analysis.warnings.push('طلب سريع — قد تكون بعض الأقسام مختصرة');
-    }
-    if (goal.length < 20) {
-        analysis.warnings.push('الوصف قصير — النتيجة ستكون نموذجاً عاماً');
-    }
-    if (advancedCount >= 3 && !goal.includes('قاعدة بيانات') && !goal.includes('database')) {
-        analysis.warnings.push('المشروع يحتاج قاعدة بيانات — سيتم إضافتها تلقائياً');
-    }
+    // 📌 هنا كان مسحٌ لكلماتٍ «متقدّمة» يحسب حقلَ التعقيد وثلاثةَ
+    // تحذيرات. أُزيل كلُّه، ولكلِّ قطعةٍ سببها:
+    //
+    // • حقلُ التعقيد — لا يقرأه أحد، وتوصيلُه اليوم يصنع إشارةَ تعقيدٍ
+    //   ثانية بجانب needsBackend — وهو المصدر الواحد الذي وُحِّد في Sprint 7/1.
+    // • «طلب سريع»: يستنتج عَجَلةَ الطالب من لفظٍ يصف المنتج. «مطعم وجبات
+    //   سريعة» كان يُقرأ استعجالاً. هو بعينه عطبُ Sprint 2f.
+    // • «يحتاج قاعدة بيانات»: حكمٌ يملكه needsBackend وحده.
+    // • «الوصف قصير»: صحيحٌ في ذاته، لكن قناته كانت prompt المبرمج — وهي
+    //   ليست مكان مخاطبة المستخدم. إن أُريد قولُه له فمن قناة السجلّ الحيّ،
+    //   وذلك قرارُ منتجٍ لم يُتَّخذ هنا.
+    // والمسحُ نفسه كان بـ includes الخام: «سلسلة مطاعم» يحوي «سلة»،
+    // و«capital» يحوي «api».
 
     // ── اقتراحات ذكية ──
     if (projectType === 'ecommerce' && !goal.includes('seo') && !goal.includes('سيو')) {
@@ -154,7 +146,7 @@ export async function deepAnalysis(userGoal, projectType, clarifierAnswers = [])
 // 🚀 التحليل الكامل
 // ═══════════════════════════════════════════════════════
 export async function analyzeRequirements(userGoal, projectType, clarifierAnswers = []) {
-    const static_analysis = staticAnalysis(userGoal, projectType, clarifierAnswers);
+    const static_analysis = staticAnalysis(userGoal, projectType);
     const ai_analysis = await deepAnalysis(userGoal, projectType, clarifierAnswers);
 
     return {
@@ -171,8 +163,12 @@ export async function analyzeRequirements(userGoal, projectType, clarifierAnswer
 // ═══════════════════════════════════════════════════════
 // 📝 توليد نص سياق مُثرى للـ Coder
 // ═══════════════════════════════════════════════════════
-export function buildRequirementsContext(analysis) {
+export function buildRequirementsContext(analysis = {}) {
     const parts = [];
+    // كلُّ حقلٍ يُقرأ بحارسه: الدالّتان مُصدَّرتان، وتركيبُهما الطبيعي
+    // buildRequirementsContext(staticAnalysis(...)) كان **يرمي** لأن
+    // keyFeatures وcontentSuggestions لا يضيفهما إلا مسارُ الذكاء.
+    const list = (v) => (Array.isArray(v) ? v : []);
 
     if (analysis.mainGoal) {
         parts.push(`الهدف الرئيسي: ${analysis.mainGoal}`);
@@ -180,20 +176,20 @@ export function buildRequirementsContext(analysis) {
     if (analysis.targetAudience) {
         parts.push(`الجمهور المستهدف: ${analysis.targetAudience}`);
     }
-    if (analysis.implicitRequirements.length > 0) {
-        parts.push(`متطلبات ضمنية يجب تضمينها:\n${analysis.implicitRequirements.map(r => `  - ${r}`).join('\n')}`);
+    if (list(analysis.implicitRequirements).length > 0) {
+        parts.push(`متطلبات ضمنية يجب تضمينها:\n${list(analysis.implicitRequirements).map(r => `  - ${r}`).join('\n')}`);
     }
-    if (analysis.keyFeatures.length > 0) {
-        parts.push(`الميزات الجوهرية:\n${analysis.keyFeatures.map(f => `  - ${f}`).join('\n')}`);
+    if (list(analysis.keyFeatures).length > 0) {
+        parts.push(`الميزات الجوهرية:\n${list(analysis.keyFeatures).map(f => `  - ${f}`).join('\n')}`);
     }
-    if (analysis.contentSuggestions.length > 0) {
-        parts.push(`محتوى مقترح:\n${analysis.contentSuggestions.map(s => `  - ${s}`).join('\n')}`);
+    if (list(analysis.contentSuggestions).length > 0) {
+        parts.push(`محتوى مقترح:\n${list(analysis.contentSuggestions).map(s => `  - ${s}`).join('\n')}`);
     }
     if (analysis.colorPersonality) {
         parts.push(`شخصية الألوان: ${analysis.colorPersonality}`);
     }
-    if (analysis.suggestions.length > 0) {
-        parts.push(`اقتراحات لتحسين المشروع:\n${analysis.suggestions.map(s => `  💡 ${s}`).join('\n')}`);
+    if (list(analysis.suggestions).length > 0) {
+        parts.push(`اقتراحات لتحسين المشروع:\n${list(analysis.suggestions).map(s => `  💡 ${s}`).join('\n')}`);
     }
 
     return parts.length > 0

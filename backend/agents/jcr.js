@@ -1527,12 +1527,18 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // 🆕 Smart Requirement Analyzer — يُثري الهدف بمتطلبات ضمنية
         let requirementsContext = '';
         let imageContext = '';
+        // نوع المشروع من المخطط الذكي (أدق من كشف الكلمات المفتاحية) مع احتياط
+        let projectType = 'business';
+        try { projectType = resolveProjectType(goal, blueprint); } catch { /* الاحتياط أعلاه */ }
+
+        // 🧱 إثراءان مستقلّان، ولكلٍّ احتياطه. كانا في try واحدة، فسقوطُ
+        // المحلّل يُسقط الصور معه صامتاً — وهما لا يعتمد أحدهما على الآخر.
         try {
-            // نوع المشروع من المخطط الذكي (أدق من كشف الكلمات المفتاحية) مع احتياط
-            const projectType = resolveProjectType(goal, blueprint);
             const reqAnalysis = await analyzeRequirements(goal, projectType);
             requirementsContext = buildRequirementsContext(reqAnalysis);
+        } catch (e) { /* اختياري */ }
 
+        try {
             // 🖼️ صور حقيقية مطابقة للموضوع تُحقن في سياق البناء
             const img = await buildImageContext(goal, projectType, activeProject);
             imageContext = img.context;
