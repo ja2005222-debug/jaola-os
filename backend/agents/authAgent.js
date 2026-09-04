@@ -12,6 +12,7 @@
 
 import { groq } from './baseAgent.js';
 import { jwtSecretSnippet } from './generatedAppSecrets.js';
+import { hasKeyword } from './keywordMatch.js';
 
 // ═══════════════════════════════════════════════════════
 // 🔍 كشف هل المشروع يحتاج مصادقة
@@ -20,12 +21,21 @@ const AUTH_KEYWORDS = [
     'تسجيل دخول', 'تسجيل حساب', 'حساب مستخدم', 'لوحة تحكم',
     'admin', 'إدارة', 'عضوية', 'اشتراك', 'مستخدمين',
     'login', 'signup', 'register', 'dashboard', 'members',
-    'account', 'profile', 'authentication', 'auth', 'users'
+    'account', 'profile', 'authentication', 'auth', 'users',
+    // إغفالٌ سابقٌ للإصلاح لا ناتجٌ عنه: أشيعُ صيغتين عربيّتين — «تسجيل
+    // الدخول» و«إنشاء حساب» — كانتا تفوتان `includes` أيضاً، لأنّ «ال»
+    // تتوسّط الكلمتين. فمن كتب «أريد موقعاً فيه تسجيل الدخول» لم يُولَّد له
+    // شيء. ولم تُضَفْ 'sign up' لأنّ «sign up for our newsletter» هدفٌ
+    // مشروعٌ لا يريد مصادقة — فالتوسعةُ تُقاس بضررها كما بنفعها.
+    'تسجيل الدخول', 'إنشاء حساب'
 ];
 
+// المطابقةُ بالكلمة لا بالحرف: `goal.includes('auth')` كان يُطابق «author»
+// و«authentic»، و`'account'` يُطابق «accountant» و«accounting»، و`'admin'`
+// يُطابق «administration» — فيُولَّد نظامُ مصادقةٍ كامل (خمسة ملفات) لمشروعٍ
+// لم يطلبه. وهذا سادسُ موضعٍ من العائلة نفسها، فيُصلَح بأداتها المشتركة.
 export function needsAuth(userGoal) {
-    const goal = (userGoal || '').toLowerCase();
-    return AUTH_KEYWORDS.some(kw => goal.includes(kw));
+    return hasKeyword(userGoal, AUTH_KEYWORDS);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -328,6 +338,9 @@ MONGODB_URI=mongodb+srv://...
     return {
         success: true,
         files,
-        summary: `JWT Auth — ${files.length} ملف (login, register, middleware, UI)`
+        // العددُ مشتقٌّ والقائمةُ كانت ثابتة: تقول «login, register, middleware, UI»
+        // لخمسة ملفاتٍ فيها نموذجُ المستخدم ودليلُ التركيب أيضاً. فما يُعلَن
+        // يُشتقّ ممّا كُتب — كما في postgresAgent (Sprint 2r).
+        summary: `JWT Auth — ${files.length} ملف (${files.map((f) => f.name).join('، ')})`
     };
 }
