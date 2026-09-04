@@ -12,8 +12,47 @@
  */
 import { ethers } from 'ethers';
 
-export const PANCAKE_ROUTER_V2 = '0x10ED43C718714eb63d5aA57B78B54704E256024'; // ⚠️ تحقّق يدوياً قبل الاستخدام الحقيقي
+// 🔴 كان هذا الثابت **٣٩ محرفاً** لا ٤٠ — عنوانٌ ناقصٌ محرفاً واحداً في آخره.
+// ولم يعترض شيء: `new ethers.Contract` يبنيه بلا شكوى، ثم تعامل ethers
+// النصَّ المشوَّه **اسمَ ENS** لا عنواناً (خطأ التشغيل حرفياً: «ENS resolution
+// requires a provider»). فالعنوان الفاسد لا يُرفَض، بل يُعاد تفسيره اسماً
+// يُبحَث عنه — ولا يظهر ذلك إلا عند أول صفقة، بعد أن يكون المالك قد رفع
+// addressesVerified ومَوَّل المحفظة.
+//
+// وتأكيدٌ يقرؤه إنسانٌ بعينه لا يرى محرفاً ناقصاً من أربعين. فصار التحقّق
+// البنيوي آلةً (`assertChainAddress` أدناه، وبوّابة `isReadyToEnable`)،
+// والتأكيد اليدوي يبقى للمالك حيث يلزم: **مَن** العقد، لا **كم** طوله.
+//
+// 🔍 والعنوان أدناه أُثبت من السلسلة نفسها لا من ذاكرة:
+//    • `eth_getCode` عليه يعيد بايتكود منشوراً على BSC mainnet.
+//    • `WETH()` يعيد 0xbb4CdB9C…bc095c — وهو **بعينه** ثابت WBNB الذي
+//      تحقّق منه المالك يدوياً على bscscan، فالمرساة قوله لا قولي.
+//    • `factory()` يعيد 0xcA143Ce3…50c73 (مصنع PancakeSwap V2).
+export const PANCAKE_ROUTER_V2 = '0x10ED43C718714eb63d5aA57B78B54704E256024E';
 export const WBNB = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'; // ✅ تحقّقه المستخدم يدوياً على bscscan.com
+
+/**
+ * يرفض أي عنوانٍ لا يصلح عنواناً — بنيةً وخانةَ تحقّق (checksum).
+ * ethers لا يفعل ذلك عند البناء: يمرّر المشوَّه ثم يفسّره اسمَ ENS.
+ * @throws {Error} برسالةٍ تسمّي الحقل، فلا يضيع السبب في عمق المزوّد.
+ */
+export function assertChainAddress(label, value) {
+    try {
+        return ethers.getAddress(String(value));
+    } catch {
+        const len = String(value ?? '').replace(/^0x/i, '').length;
+        throw new Error(`عنوان غير صالح (${label}): ${len} خانة سِتّ‑عشرية والمطلوب 40 — لا يُبنى عميلُ سلسلةٍ على عنوانٍ مشوَّه.`);
+    }
+}
+
+/** هل ثوابت العقود في هذه الوحدة صالحةٌ بنيوياً؟ تقرؤها بوّابة تفعيل البوت. */
+export function chainAddressConstantsValid() {
+    try {
+        assertChainAddress('PANCAKE_ROUTER_V2', PANCAKE_ROUTER_V2);
+        assertChainAddress('WBNB', WBNB);
+        return true;
+    } catch { return false; }
+}
 
 const ROUTER_ABI = [
     'function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts)',
@@ -41,6 +80,8 @@ export function applySlippage(amountOutBigInt, slippageBps = 75) {
  * تقليدها بكائن وهمي في الاختبارات.
  */
 export function createChainClient({ provider, signer }) {
+    assertChainAddress('PANCAKE_ROUTER_V2', PANCAKE_ROUTER_V2);
+    assertChainAddress('WBNB', WBNB);
     const router = new ethers.Contract(PANCAKE_ROUTER_V2, ROUTER_ABI, signer || provider);
 
     return {
@@ -50,6 +91,7 @@ export function createChainClient({ provider, signer }) {
         },
 
         async tokenBalance(tokenAddress, ownerAddress) {
+            assertChainAddress('tokenAddress', tokenAddress);
             const token = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
             return token.balanceOf(ownerAddress);
         },
@@ -68,6 +110,8 @@ export function createChainClient({ provider, signer }) {
 
         /** شراء توكن مقابل BNB أصلي (يُغلَّف WBNB تلقائياً عبر الراوتر). */
         async buy({ tokenAddress, amountInWei, amountOutMin, toAddress }) {
+            assertChainAddress('tokenAddress', tokenAddress);
+            assertChainAddress('toAddress', toAddress);
             const tx = await router.swapExactETHForTokens(
                 amountOutMin,
                 [WBNB, tokenAddress],
@@ -80,6 +124,8 @@ export function createChainClient({ provider, signer }) {
 
         /** يضمن سماحاً كافياً (allowance) للراوتر قبل بيع توكن — يتخطّى موافقة جديدة إن كانت الحالية كافية. */
         async ensureAllowance({ tokenAddress, ownerAddress, amountWei }) {
+            assertChainAddress('tokenAddress', tokenAddress);
+            assertChainAddress('ownerAddress', ownerAddress);
             const token = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
             const current = await token.allowance(ownerAddress, PANCAKE_ROUTER_V2);
             if (current >= BigInt(amountWei)) return null; // كافٍ بالفعل — لا معاملة إضافية
@@ -89,6 +135,8 @@ export function createChainClient({ provider, signer }) {
 
         /** بيع توكن مقابل BNB أصلي — استدعِ ensureAllowance أولاً دوماً. */
         async sell({ tokenAddress, amountInWei, amountOutMin, toAddress }) {
+            assertChainAddress('tokenAddress', tokenAddress);
+            assertChainAddress('toAddress', toAddress);
             const tx = await router.swapExactTokensForETH(
                 amountInWei,
                 amountOutMin,

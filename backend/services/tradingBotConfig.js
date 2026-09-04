@@ -8,6 +8,7 @@
 import fs from 'fs';
 import path from 'path';
 import { filterTradable } from './tradingBotCoins.js';
+import { chainAddressConstantsValid } from './pancakeSwapExecutor.js';
 
 const DEFAULTS = Object.freeze({
     enabled: false,
@@ -54,6 +55,12 @@ export function getConfig(dir) {
  * للتداول فعلياً (موجودة في القائمة البيضاء)، وتأكيد يدوي لعناوين العقود.
  */
 export function isReadyToEnable(dir, cfg) {
+    // 🔴 `addressesVerified` إقرارُ إنسانٍ نظر إلى bscscan — وإنسانٌ ينظر إلى
+    // أربعين خانةً لا يرى واحدةً ناقصة. وقد كان ثابت الراوتر **٣٩ خانة**،
+    // وكان هذا الإقرار وحده كافياً لتفعيل بوتٍ يتداول بمالٍ حقيقي. فما
+    // تستطيع الآلةُ الجزمَ به تجزم به الآلة، ويبقى للإنسان ما لا تعرفه هي:
+    // **مَن** هذا العقد، لا **كم** طولُ عنوانه.
+    if (!chainAddressConstantsValid()) return false;
     if (!cfg.addressesVerified) return false;
     if (!filterTradable(dir, cfg.coinIds).length) return false;
     if (!(Number(cfg.positionSizeBnb) > 0)) return false;
