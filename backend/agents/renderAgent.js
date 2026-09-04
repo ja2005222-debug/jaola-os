@@ -7,7 +7,7 @@
  * - يدعم Static Sites وWeb Services
  */
 
-import { createHash } from 'crypto';
+import { slugPart, nameFingerprint } from '../services/hostNames.js';
 
 // ═══════════════════════════════════════════════════════
 // 🏷️ اسم خدمة Render — مصدر الاشتقاق الواحد
@@ -33,17 +33,11 @@ import { createHash } from 'crypto';
 const MAX_SERVICE_NAME = 50;
 const MAX_USER_PART = 20; // سقف تسجيل اسم المستخدم نفسه — فلا يقتطع اسماً حقيقياً
 
-const slugPart = (v) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-
-// 🔑 اسمٌ لا يترك محرفاً لاتينياً («متجري») لا يُطوى إلى فراغ: يُختصر إلى
-// بصمةٍ ثابتة من نصّه الأصلي. بدونها يتصادم كل مشاريع المستخدم العربية
-// على خدمةٍ واحدة — وهو أسوأ من فشل النشر: نشرٌ **يدهس** مشروعاً آخر.
-const fingerprint = (raw) =>
-    'p' + createHash('sha1').update(String(raw ?? ''), 'utf8').digest('hex').slice(0, 6);
-
+// 🔑 التطهير والبصمة في `services/hostNames.js`: اسمُ مشروع Vercel كان
+// يقع في العطب نفسه حرفياً، فلا تُكتب البدائيّتان هنا وهناك.
 export function renderServiceName(username, project) {
     const user = slugPart(username).slice(0, MAX_USER_PART) || 'user';
-    const proj = slugPart(project) || fingerprint(project);
+    const proj = slugPart(project) || nameFingerprint(project);
     return `${user}-${proj}`.slice(0, MAX_SERVICE_NAME).replace(/-+$/g, '') || 'jaola-app';
 }
 

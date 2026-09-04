@@ -83,6 +83,7 @@ import { isCorsRejection } from './utils/corsErrors.js';
 import { listStarters, selectStarter, resolveStack, STARTERS } from './agents/starterRegistry.js';
 import { fetchStarter, fetchRepoFiles, parseRepoUrl } from './agents/starterFetch.js';
 import * as siteCms from './services/siteCms.js';
+import * as siteCreds from './services/siteCreds.js';
 import { recordMessage, recordVisit, readInbox, markSeen, visitSummary, unreadCount } from './services/siteInbox.js';
 import { subscribe as subscribeNewsletter, listSubscribers as listNewsletterSubscribers, unsubscribe as unsubscribeNewsletter } from './services/newsletterSubscribers.js';
 import { installSiteConnect } from './services/siteConnect.js';
@@ -2856,10 +2857,12 @@ app.put('/api/admin/github/file', verifyToken, adminOnly, async (req, res) => {
 //    محميّة بكلمة مرور خاصة بالموقع؛ تحفظ في lib/content.js وتعيد توليد الموقع.
 // ═══════════════════════════════════════════════════════════════════
 const SITECMS_DIR = path.join(BASE_WORKSPACE, '.sitecms');
-const cmsKey = (u, p) => `${String(u || '').replace(/[^a-zA-Z0-9_-]/g, '_')}__${String(p || '').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-const cmsCredPath = (u, p) => path.join(SITECMS_DIR, cmsKey(u, p) + '.json');
-function readSiteCred(u, p) { try { return JSON.parse(fs.readFileSync(cmsCredPath(u, p), 'utf8')); } catch { return null; } }
-function writeSiteCred(u, p, obj) { fs.mkdirSync(SITECMS_DIR, { recursive: true }); fs.writeFileSync(cmsCredPath(u, p), JSON.stringify(obj)); }
+// 🔑 المخزن نفسه في `services/siteCreds.js`: المطالبة **ذرّية** هناك
+// (إنشاءٌ حصري) لأن هذا المسار بلا مصادقة و«أول من يعيّن يفوز» كان وعداً
+// يجتازه طلبان متزامنان معاً — وكلاهما يخرج بتوكنٍ صالح ثماني ساعات.
+const readSiteCred = (u, p) => siteCreds.readSiteCred(SITECMS_DIR, u, p);
+const claimSiteCred = (u, p, obj) => siteCreds.claimSiteCred(SITECMS_DIR, u, p, obj);
+
 function readSiteContent(projectPath) {
     try { const s = fs.readFileSync(path.join(projectPath, 'lib/content.js'), 'utf8'); return JSON.parse(s.slice(s.indexOf('{'), s.lastIndexOf('}') + 1)); }
     catch { return null; }
@@ -2893,7 +2896,10 @@ app.post('/api/site/password', (req, res) => {
     if (!fs.existsSync(projectDir(username, project))) return res.status(404).json({ error: 'المشروع غير موجود' });
     if (readSiteCred(username, project)?.password) return res.status(409).json({ error: 'كلمة المرور معيّنة — استخدم الدخول' });
     if (typeof password !== 'string' || password.length < 4) return res.status(400).json({ error: 'كلمة مرور قصيرة (٤ أحرف على الأقل)' });
-    writeSiteCred(username, project, { password: siteCms.hashPassword(password) });
+    // 🔒 القراءة أعلاه رسالةٌ لطيفة لا حارس — الحارس هو الإنشاء الحصري:
+    // بلاه يجتاز طلبان متزامنان الفحص معاً ويخرج كلاهما بتوكنٍ صالح.
+    if (!claimSiteCred(username, project, { password: siteCms.hashPassword(password) }))
+        return res.status(409).json({ error: 'كلمة المرور معيّنة — استخدم الدخول' });
     res.json({ token: siteCms.signSiteToken({ user: username, project }, JWT_SECRET) });
 });
 
