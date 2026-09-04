@@ -11,7 +11,7 @@
  */
 
 import { groq } from './baseAgent.js';
-import { JWT_SECRET_SNIPPET } from './generatedAppSecrets.js';
+import { jwtSecretSnippet } from './generatedAppSecrets.js';
 
 // ═══════════════════════════════════════════════════════
 // 🔍 كشف هل المشروع يحتاج مصادقة
@@ -89,7 +89,7 @@ function authStrings(lang = 'en') {
 // ═══════════════════════════════════════════════════════
 // 📁 بناء ملفات Auth بلغة المستخدم
 // ═══════════════════════════════════════════════════════
-function buildAuthFiles(lang = 'en') {
+function buildAuthFiles(lang = 'en', projectPath = '') {
     const t = authStrings(lang);
     const code = (lang || 'en').toLowerCase();
     const isRTL = RTL_LANGS.has(code);
@@ -104,7 +104,7 @@ function buildAuthFiles(lang = 'en') {
         'api/middleware/auth.js': `
 import jwt from 'jsonwebtoken';
 
-${JWT_SECRET_SNIPPET}
+${jwtSecretSnippet(projectPath)}
 
 export function verifyToken(req, res, next) {
     const token = req.headers.authorization?.replace('Bearer ', '');
@@ -151,7 +151,7 @@ import User from './models/User.js';
 import { verifyToken } from './middleware/auth.js';
 
 const router = express.Router();
-${JWT_SECRET_SNIPPET}
+${jwtSecretSnippet(projectPath)}
 const JWT_EXPIRES = '7d';
 
 router.post('/register', async (req, res) => {
@@ -297,7 +297,7 @@ export async function generateAuth(userGoal, projectPath, lang = 'en') {
     const t = authStrings(lang);
     const files = [];
 
-    for (const [filename, content] of Object.entries(buildAuthFiles(lang))) {
+    for (const [filename, content] of Object.entries(buildAuthFiles(lang, projectPath))) {
         files.push({ name: filename, content });
     }
 

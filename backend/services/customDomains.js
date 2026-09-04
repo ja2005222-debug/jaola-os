@@ -12,6 +12,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { slugPart, nameFingerprint } from './hostNames.js';
 
 const VERCEL_API = 'https://api.vercel.com';
 // قيم Vercel الرسمية الثابتة لتوجيه DNS
@@ -52,9 +53,30 @@ export function dnsInstructionsFor(domain) {
     return [{ type: 'CNAME', host: labels[0], value: VERCEL_CNAME }];
 }
 
-/** اسم مشروع Vercel — نفس صياغة deployAgent حرفياً (مصدر الحقيقة عند النشر). */
+/**
+ * اسم مشروع Vercel — مصدر الحقيقة عند النشر وعند ربط النطاق المخصَّص معاً.
+ *
+ * 🔴 كانت الصيغة تطهّر النصّ المدموج وحده، فتقع في عطبٍ مزدوج على أي اسمٍ
+ * لا يحمل محرفاً لاتينياً واحداً — وأسماء المشاريع العربية كلها كذلك:
+ *
+ *     ('ali', 'متجري')  →  'ali-'
+ *     ('ali', 'دكاني')  →  'ali-'      ← **الاسم نفسه**
+ *
+ * والاسم المنتهي بشَرطة مرفوضٌ عند Vercel أصلاً، فالنشر يفشل. ولو قُبل
+ * لكان أسوأ: مشروعان بهويةِ نشرٍ واحدة، فالنطاق المخصَّص المربوط بأحدهما
+ * يشير إلى موقع الآخر — وهذا الملفّ نفسه يربط النطاقات بهذا الاسم في
+ * ثلاثة مواضع أدناه.
+ *
+ * الصيغة الآن مبنيّة على `hostNames.js` (نفس بدائيّات اسم خدمة Render —
+ * العطب كان واحداً فلا يُصلَح مرّتين). و**ناتجها مطابقٌ حرفياً** للصيغة
+ * القديمة في كل مُدخَلٍ كانت تُنتج له اسماً صالحاً أصلاً، فلا يُعاد تسمية
+ * مشروعٍ منشورٍ يعمل اليوم — لا يتغيّر إلا ما كان مكسوراً. اختبارٌ يحرس
+ * هذا التطابق على مجموعةٍ من الأسماء، لا التعليق وحده.
+ */
 export function vercelProjectNameOf(username, project) {
-    return `${username}-${project}`.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').slice(0, 100);
+    const user = slugPart(username) || 'user';
+    const proj = slugPart(project) || nameFingerprint(project);
+    return `${user}-${proj}`.slice(0, 100).replace(/-+$/g, '');
 }
 
 // ─── التخزين الملفّي ─────────────────────────────────────────────────
