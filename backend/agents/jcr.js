@@ -692,7 +692,7 @@ export class JaolaCognitiveRuntime {
                 }
                 this.emitLiveLog(roomName, '5. RUNTIME', 'SEOAgent', `✅ ${seoResult.summary}`);
                 // 📊 حزمة SEO كاملة طُبقت (robots + sitemap + meta + schema)
-                recordScore(context.username, context.activeProject, 'seo', { grade: 'A', score: 100 });
+                recordScore(context.username, context.activeProject, 'seo', seoResult);
             }
         } catch (e) {
             this.emitLiveLog(roomName, '5. RUNTIME', 'SEOAgent', `⚠️ تخطّي: ${e.message}`);
