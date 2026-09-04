@@ -52,7 +52,20 @@ export class PluginOrchestrator {
         }
 
         this.initialized = true;
-        console.log(`🔌 [Plugins]: حُمّلت ${this.plugins.size} إضافة${this.errors.length ? ` (${this.errors.length} خطأ)` : ''}`);
+        // 🔴 مُشغّلُ اختبارات Node يُرسل نتائج كل ملفٍ إلى العملية الأمّ
+        //    **مُسلسَلةً على المخرَج القياسيّ نفسه**. وطباعةُ هذا السطر من
+        //    داخل الطفل أثناء ذلك تُقحم بايتاتٍ في تلك القناة، فتعجز الأمُّ
+        //    عن فكّها ويسقط الملفُّ كلُّه بـ:
+        //      ERR_TEST_FAILURE: Unable to deserialize cloned data
+        //    قِيس: الملفّان الوحيدان اللذان سقطا بهذا الخطأ هما الوحيدان
+        //    اللذان يستدعيان `init()` — siteChecker وadminAgentGrounding —
+        //    ولم يسقط أيٌّ منهما منفرداً (٠ من ٢٠)، بل في التزاحم وحده.
+        //    فالبيانُ يُحجب عن مُشغّل الاختبارات وحده؛ ولا يتغيّر سلوكُ
+        //    المنسّق، ولا يُخفى شيءٌ في الإنتاج (`NODE_TEST_CONTEXT` يضبطه
+        //    Node في أبناء الاختبار حصراً).
+        if (!process.env.NODE_TEST_CONTEXT) {
+            console.log(`🔌 [Plugins]: حُمّلت ${this.plugins.size} إضافة${this.errors.length ? ` (${this.errors.length} خطأ)` : ''}`);
+        }
         return this.status();
     }
 
