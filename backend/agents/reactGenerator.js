@@ -177,22 +177,26 @@ function mergeContent(base, model) {
     };
 }
 
-/**
- * يولّد مشروع Next.js + Tailwind كاملاً.
- * @returns {{ files: {name,content}[] }}
- */
-export function generateNextScaffold({ projectName = 'jaola-app', sections = [], features = [], lang = 'en', title, content } = {}) {
-    const code = (lang || 'en').toLowerCase();
-    const dir = RTL_LANGS.has(code) ? 'rtl' : 'ltr';
-    const safeName = (projectName || 'jaola-app').toString().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'jaola-app';
-    const pageTitle = title || cap(safeName.replace(/-/g, ' '));
+const DEFAULT_SECTIONS = ['navbar', 'hero', 'features', 'about', 'contact', 'footer'];
+const CHROME_COMPS = ['Navbar', 'Hero', 'Footer'];
 
-    // أقسام افتراضية إن لم تُمرَّر
-    let secs = (sections && sections.length ? sections : ['navbar', 'hero', 'features', 'about', 'contact', 'footer']).slice(0, 12);
-    // ضمِن هيكل الموقع (شريط علوي + بطل + تذييل) حتى لو لم تُمرَّر — فكل موقع متعدّد
-    // الصفحات يحتاج تنقّلاً وتذييلاً، والرئيسية تحتاج بطلاً.
-    const mapped = secs.map((s, i) => compName(s, i));
-    if (!mapped.includes('Navbar')) secs.unshift('navbar');
+/**
+ * 🗝️ الاشتقاق **الوحيد** لمفاتيح الأقسام.
+ *
+ * كان يجري مرّتين: هنا في البناء، ومرّةً أخرى داخل generateContentModel
+ * بقواعد أخرى — بلا حقنٍ للهيكل وبلا فضٍّ للتكرار. فاختلف المفتاحان على
+ * المُدخل الواحد، فحطّ محتوى «خدماتنا» على صفحة «الرئيسية». مفتاحٌ واحدٌ
+ * لسؤالٍ واحد.
+ *
+ * @returns {{ secs: string[], comps: string[], labels: Record<string,string> }}
+ *   secs: الأقسام بعد حقن الهيكل | comps: اسم المكوّن لكل قسم (فريدٌ)
+ *   labels: المكوّن → تسمية صاحب المشروع الأصلية (هي المعنى، فلا تُفقد)
+ */
+export function planSections(sections = []) {
+    const secs = (sections && sections.length ? sections : DEFAULT_SECTIONS).slice(0, 12);
+    // ضمِن هيكل الموقع (شريط علوي + بطل + تذييل) حتى لو لم يُمرَّر — فكل موقع
+    // متعدّد الصفحات يحتاج تنقّلاً وتذييلاً، والرئيسية تحتاج بطلاً.
+    if (!secs.map((s, i) => compName(s, i)).includes('Navbar')) secs.unshift('navbar');
     if (!secs.map((s, i) => compName(s, i)).includes('Hero')) secs.splice(1, 0, 'hero');
     if (!secs.map((s, i) => compName(s, i)).includes('Footer')) secs.push('footer');
 
@@ -207,6 +211,20 @@ export function generateNextScaffold({ projectName = 'jaola-app', sections = [],
         if (orig) labels[n] = orig.charAt(0).toUpperCase() + orig.slice(1);
         return n;
     });
+    return { secs, comps, labels };
+}
+
+/**
+ * يولّد مشروع Next.js + Tailwind كاملاً.
+ * @returns {{ files: {name,content}[] }}
+ */
+export function generateNextScaffold({ projectName = 'jaola-app', sections = [], features = [], lang = 'en', title, content } = {}) {
+    const code = (lang || 'en').toLowerCase();
+    const dir = RTL_LANGS.has(code) ? 'rtl' : 'ltr';
+    const safeName = (projectName || 'jaola-app').toString().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'jaola-app';
+    const pageTitle = title || cap(safeName.replace(/-/g, ' '));
+
+    const { secs, comps, labels } = planSections(sections);
 
     // 🗺️ الصفحات: الرئيسية (بطل) + صفحة مستقلّة لكل قسم وظيفي — تنقّل حقيقي
     const CHROME = new Set(['Navbar', 'Hero', 'Footer']);
@@ -296,10 +314,16 @@ npm run build && npm start
  */
 export async function generateContentModel(goal, { sections = [], lang = 'en', llm } = {}) {
     if (typeof llm !== 'function') return null;
-    const comps = sections.map((s, i) => compName(s, i));
-    const generic = comps.filter((c) => !['Navbar', 'Hero', 'Footer'].includes(c));
+    // المفاتيح من الاشتقاق الواحد نفسه الذي يبني الصفحات — لا اشتقاقٍ موازٍ
+    const { comps, labels } = planSections(sections);
+    const generic = comps.filter((c) => !CHROME_COMPS.includes(c));
+    // المفتاح لاتينيٌّ بالضرورة (Section3)، والمعنى في تسمية صاحب المشروع.
+    // بغير هذا السطر يُطلب من النموذج محتوىً «غير عامّ» لقسمٍ لا يعرف ما هو.
+    const named = generic.map((c) => `"${c}" = ${JSON.stringify(labels[c] || c)}`).join('، ');
     const sys = `أنت كاتب محتوى ويب محترف. أعِد **JSON فقط** يملأ محتوى موقع بلغة: ${lang}.
-اكتب محتوى واقعياً ومقنعاً لمشروع المستخدم (لا نصوصاً عامة). الشكل:
+اكتب محتوى واقعياً ومقنعاً لمشروع المستخدم (لا نصوصاً عامة).
+كلُّ مفتاحٍ في "sections" يقابل قسماً سمّاه صاحب المشروع هكذا: ${named}.
+اكتب لكل مفتاحٍ محتوى قسمه هو بعينه. الشكل:
 {
   "brand": "اسم العلامة",
   "nav": ["رابط","رابط","رابط"],
