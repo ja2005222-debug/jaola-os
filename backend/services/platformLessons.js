@@ -87,6 +87,9 @@ const FAILURE_CATEGORIES = [
 ];
 const AI_DOWN_HINT = /غير متاحة حالياً|رصيد المزوّد|insufficient_quota|exceeded your current quota|invalid api key|incorrect api key/i;
 
+/** هل نصّ الخطأ يدلّ على تعطّل مزوّد الذكاء الاصطناعي؟ مصدرٌ واحد لمستهلكَيه. */
+export const isAiDownMessage = (message) => AI_DOWN_HINT.test(String(message ?? ''));
+
 /** تصنيف حتمي لسبب فشل مهمة — null للإيقاف بطلب المستخدم (ليس درساً). */
 export function classifyMissionFailure(error) {
     if (!error || error.aborted) return null;

@@ -1,4 +1,5 @@
 import { groq, smartChat } from './baseAgent.js';
+import { JWT_SECRET_SNIPPET } from './generatedAppSecrets.js';
 
 // 🔍 هل يحتاج المشروع خادماً؟ — مصدرٌ واحد مشترك مع `knowledgeEngine`
 // (كانت هنا قائمة كلمات ثانية تخالف قائمته، فتتناقض إجابتا المهمة الواحدة).
@@ -246,7 +247,7 @@ import { OAuth2Client } from 'google-auth-library';
 import jwt from 'jsonwebtoken';
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-const JWT_SECRET = process.env.JWT_SECRET || 'jaola-secret';
+${JWT_SECRET_SNIPPET}
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
