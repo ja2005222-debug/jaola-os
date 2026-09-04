@@ -11,6 +11,7 @@
  */
 
 import { groq } from './baseAgent.js';
+import { JWT_SECRET_SNIPPET } from './generatedAppSecrets.js';
 
 // ═══════════════════════════════════════════════════════
 // 🔍 كشف هل المشروع يحتاج مصادقة
@@ -103,7 +104,7 @@ function buildAuthFiles(lang = 'en') {
         'api/middleware/auth.js': `
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'jaola-secret-key-change-in-production';
+${JWT_SECRET_SNIPPET}
 
 export function verifyToken(req, res, next) {
     const token = req.headers.authorization?.replace('Bearer ', '');
@@ -150,7 +151,7 @@ import User from './models/User.js';
 import { verifyToken } from './middleware/auth.js';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'jaola-secret-key-change-in-production';
+${JWT_SECRET_SNIPPET}
 const JWT_EXPIRES = '7d';
 
 router.post('/register', async (req, res) => {

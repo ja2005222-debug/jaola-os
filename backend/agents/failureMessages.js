@@ -6,10 +6,14 @@
  * نموذج ليصيغ الرد). هذه الرسائل حتمية بلغة المستخدم — لا تحتاج أي نموذج.
  */
 
-const AI_DOWN_HINT = /غير متاحة حالياً|insufficient_quota|exceeded your current quota|invalid api key|incorrect api key/i;
+// 🔀 مصدرٌ واحد: كانت هذه العبارة مكتوبة هنا وفي `platformLessons.js`
+// بقيمتين — هذه تنقص «رصيد المزوّد». لا أثر حيّ اليوم لأن الرسالة الفعلية
+// (`AI_UNAVAILABLE_MSG` في baseAgent) تحمل العبارتين معاً فتُطابقهما كلتيهما،
+// لكنه سؤالٌ واحد بجوابين ينتظر أن يفترقا. النسخة الأوسع هي المحفوظة.
+import { isAiDownMessage } from '../services/platformLessons.js';
 
 export function buildFailureChatMessage(lang = 'ar', error = {}) {
-    const aiDown = !!error.aiUnavailable || AI_DOWN_HINT.test(String(error.message || ''));
+    const aiDown = !!error.aiUnavailable || isAiDownMessage(error.message);
     if (lang === 'en') {
         return aiDown
             ? '⛔ The AI service is temporarily unavailable (the provider ran out of credit or its keys are invalid). Your request is fine and your project files are untouched — please try again later, or let the platform admin know.'
