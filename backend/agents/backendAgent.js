@@ -1,5 +1,5 @@
 import { groq, smartChat } from './baseAgent.js';
-import { JWT_SECRET_SNIPPET } from './generatedAppSecrets.js';
+import { jwtSecretSnippet } from './generatedAppSecrets.js';
 
 // 🔍 هل يحتاج المشروع خادماً؟ — مصدرٌ واحد مشترك مع `knowledgeEngine`
 // (كانت هنا قائمة كلمات ثانية تخالف قائمته، فتتناقض إجابتا المهمة الواحدة).
@@ -239,7 +239,7 @@ npm install formidable
 // ═══════════════════════════════════════════════════════
 // 🔐 OAuth Google Module
 // ═══════════════════════════════════════════════════════
-export function generateOAuthModule() {
+export function generateOAuthModule(projectPath = '') {
     return {
         name: 'api/auth/google.js',
         content: `
@@ -247,7 +247,7 @@ import { OAuth2Client } from 'google-auth-library';
 import jwt from 'jsonwebtoken';
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-${JWT_SECRET_SNIPPET}
+${jwtSecretSnippet(projectPath)}
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -315,7 +315,7 @@ export async function generateAdvancedModules(userGoal, projectPath) {
     }
 
     if (features.needsOAuth) {
-        const oauth = generateOAuthModule();
+        const oauth = generateOAuthModule(projectPath);
         files.push(oauth);
         files.push({ name: 'OAUTH_README.md', content: oauth.readme });
     }

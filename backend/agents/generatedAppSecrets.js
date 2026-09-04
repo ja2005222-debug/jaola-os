@@ -11,23 +11,46 @@
  * دخول Google يوقَّع بسرٍّ، ويتحقّق منه الوسيط بسرٍّ آخر — **فيُرفَض فوراً**.
  * ميزةٌ مكتملة لا تعمل، وسببها قيمةٌ كُتبت مرّتين لا مرّة.
  *
- * وقيمةُ السقوط نفسها **معروفة علناً** في هذا المستودع: أي تطبيق يُنشر بلا
- * `JWT_SECRET` يمكن تزوير توكناته. أُبقيت السقوط كما هو (حذفه يُسقط تطبيقات
- * تعمل اليوم — قرارُ منتَجٍ لا قرارُ إصلاح)، لكن الصمت عنه أُزيل: الكود
- * المولَّد صار **ينذر عند الإقلاع** حين لا يجد المتغيّر. نفس مبدأ حارس
- * النِسَب في خدمة السفر: السقوط الآمن يبقى، والصمت هو ما يُصلَح.
+ * ثم كانت القيمة الموحَّدة **معروفة علناً** في هذا المستودع: أي تطبيق
+ * يُنشر بلا `JWT_SECRET` يمكن تزوير توكناته — بمعرفة سطرٍ واحد من كودٍ
+ * مفتوح. فصار السقوط **مشتقّاً لكل مشروع على حدة**:
+ *
+ *     HMAC-SHA256(سرّ جاولا نفسه، مسار المشروع)
+ *
+ * • ثابتٌ لمشروعٍ واحد → المولِّدان يتّفقان بلا تمرير حالة بينهما، ويبقى
+ *   السرّ نفسه بعد كل إعادة توليد فلا تسقط جلسات المستخدمين.
+ * • مختلفٌ بين مشروعين → لا يُفتح مشروعٌ بسرّ آخر.
+ * • غير متوقَّعٍ من الخارج → مفتاح جاولا نفسه هو الملح، وهو غير منشور.
+ *
+ * 📌 وهذا **لا يُغني** عن ضبط `JWT_SECRET` في بيئة التطبيق المنشور: السرّ
+ * المشتقّ يعيش في شيفرة المشروع، ومن يقرأ الشيفرة يقرأه. لذلك يبقى
+ * `process.env.JWT_SECRET` أولاً، والكود المولَّد **يُنذر عند الإقلاع**
+ * حين لا يجده. السقوط الآمن يبقى، والصمت هو ما أُصلح — نفس مبدأ حارس
+ * النِسَب في خدمة السفر.
  */
 
-/** قيمة السقوط الموحَّدة — قيمةٌ واحدة لثلاثة قوالب، فلا تتخالف التواقيع. */
+import { createHmac } from 'crypto';
+
+/** سقوطٌ أخير حين لا مسار ولا مفتاح لجاولا (لا يقع في الإنتاج: الخادم يرفض الإقلاع بلا JWT_SECRET). */
 export const GENERATED_JWT_SECRET_FALLBACK = 'jaola-dev-only-change-me';
+
+/** سرُّ المشروع: ثابتٌ له، مختلفٌ عن غيره، غير متوقَّعٍ بلا مفتاح جاولا. */
+export function projectJwtSecret(projectPath, env = process.env) {
+    const salt = String(env.JWT_SECRET || '').trim();
+    const scope = String(projectPath || '').trim();
+    if (!salt || !scope) return GENERATED_JWT_SECRET_FALLBACK;
+    return 'jaola_' + createHmac('sha256', salt).update(scope, 'utf8').digest('base64url').slice(0, 43);
+}
 
 /**
  * السطر الذي يُكتب في كل ملف مولَّد يحتاج السرّ. يُدرَج نصّاً في القوالب
- * (`${JWT_SECRET_SNIPPET}`) كي لا تعود القيمة تُكتب في أكثر من موضع.
+ * كي لا تعود القيمة تُكتب في أكثر من موضع.
  */
-export const JWT_SECRET_SNIPPET = `const JWT_SECRET = process.env.JWT_SECRET || (() => {
-    console.warn('⚠️  JWT_SECRET غير مضبوط — يُستعمل سرٌّ افتراضيٌّ معروف علناً. اضبطه في متغيّرات البيئة قبل النشر، وإلا أمكن تزوير جلسات المستخدمين.');
-    return ${JSON.stringify(GENERATED_JWT_SECRET_FALLBACK)};
+export function jwtSecretSnippet(projectPath, env = process.env) {
+    return `const JWT_SECRET = process.env.JWT_SECRET || (() => {
+    console.warn('⚠️  JWT_SECRET غير مضبوط — يُستعمل سرٌّ افتراضيٌّ مكتوبٌ في شيفرة المشروع. اضبطه في متغيّرات البيئة قبل النشر، وإلا أمكن لمن يقرأ الشيفرة تزوير جلسات المستخدمين.');
+    return ${JSON.stringify(projectJwtSecret(projectPath, env))};
 })();`;
+}
 
-export default { GENERATED_JWT_SECRET_FALLBACK, JWT_SECRET_SNIPPET };
+export default { GENERATED_JWT_SECRET_FALLBACK, projectJwtSecret, jwtSecretSnippet };
