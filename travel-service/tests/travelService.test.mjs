@@ -1357,6 +1357,47 @@ describe('liteApiStaysProvider: بحث فنادق حقيقي (رد Sandbox حي 
         assert.equal(await provider.getQuote('لا-وجود'), null);
     });
 
+
+    // 🔴 «صلاحية السعر حتى ...» وعدٌ يُقال للمسافر — فلا يُختلق حين يسكت
+    // المزوّد. كان `Number(hotelEntry.et) || 10800` يمنح كل عرضٍ ثلاث
+    // ساعاتٍ **مؤكَّدة** حتى حين لا يُصرّح المزوّد بمدّةٍ أصلاً (أو يُصرّح
+    // بصفر)، والواجهة تطبعها سطراً جازماً تحت العرض.
+    // والمزوّدون الأربعة الآخرون في هذا المجلّد يفعلون الصواب أصلاً
+    // (`raw.expires_at || null`، و`expiresAt: null` بتعليقٍ صريح في
+    // مزوّد العقود) — فهذا انفرادُ ملفٍّ واحد عن عرفٍ قائم، لا عرفٌ جديد.
+    // 📌 وما لا يقرّره هذا: **ماذا يعني `et: 0` عند LiteAPI**. لا توثيق
+    // مؤكَّداً لدينا، فلا يُخمَّن: الكاش (`OFFER_TTL_MS`) الذي يقرّر بقاء
+    // العرض قابلاً للحجز **لم يُمَسّ**. المتغيّر الوحيد أننا كففنا عن
+    // ادّعاء مدّةٍ لا نملكها. نفس عرف شروط التذكرة: الصمت عند الجهل.
+    test('🔴 صلاحية سعر الفندق لا تُختلق حين يسكت المزوّد أو يقول صفراً', async () => {
+        const ratesWithEt = (et) => async (url) => {
+            const u = String(url);
+            if (u.includes('/data/hotels')) {
+                return { ok: true, text: async () => JSON.stringify({ data: [{ id: 'lp1', name: 'H', city: 'NY', country: 'us' }] }) };
+            }
+            if (u.includes('/hotels/rates')) {
+                const entry = { hotelId: 'lp1', roomTypes: [{ offerId: 'o1', rates: [{ name: 'R' }], offerRetailRate: { amount: 100, currency: 'USD' } }] };
+                if (et !== undefined) entry.et = et;
+                return { ok: true, text: async () => JSON.stringify({ data: [entry] }) };
+            }
+            throw new Error('مسار غير متوقَّع: ' + u);
+        };
+        const search = async (et) => {
+            const provider = createLiteApiStaysProvider({ apiKey: 'sand_test123', fetchImpl: ratesWithEt(et) });
+            const offers = await provider.searchStays({ iata: 'RUH', checkInDate: '2027-01-15', checkOutDate: '2027-01-17' });
+            return offers[0];
+        };
+
+        assert.equal((await search(undefined)).expiresAt, null, 'سكوت المزوّد صار ثلاث ساعاتٍ مؤكَّدة');
+        assert.equal((await search(0)).expiresAt, null, 'صفرٌ مُعلَنٌ صار ثلاث ساعاتٍ مؤكَّدة');
+        assert.equal((await search(null)).expiresAt, null);
+
+        // ومدّةٌ حقيقية تُحترَم كما هي (٩٠٠ ثانية = ربع ساعة، لا ٣ ساعات)
+        const declared = await search(900);
+        const ms = new Date(declared.expiresAt) - Date.now();
+        assert.ok(ms > 14 * 60000 && ms <= 15 * 60000, `مدّة مُعلَنة لم تُحترَم: ${Math.round(ms / 60000)}د`);
+    });
+
 });
 
 // ─── 👶 عمر المسافر: مصدر حقيقة واحد ─────────────────────────────────
