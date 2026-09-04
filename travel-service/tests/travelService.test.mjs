@@ -16,6 +16,7 @@ import os from 'os';
 import path from 'path';
 import jwt from 'jsonwebtoken';
 
+import { declaredNumber } from '../src/declaredNumber.js';
 import { createApp, cancellationFeeAt, validateSearchParams, validateMultiCitySearchParams, validatePassengers, validateSelectedServices, validateStaySearchParams, validateGuests, validateCarSearchParams, validateDrivers, validateEsimSearchParams, validateEsimTraveller, verifyDuffelWebhookSignature } from '../server.js';
 import crypto from 'crypto';
 import { createMockTravelProvider } from '../src/providers/mockProvider.js';
@@ -5646,6 +5647,54 @@ function runSuite(storeLabel, { makeStore, resetStore }) {
             // اختيار صحيح: يعيد بيانات الخدمة كاملةً من الكتالوج (لا مما أرسله الطالب)
             const ok = validateSelectedServices([{ id: 'svc1', quantity: 2, netAmount: 1 /* مُتجاهَل عمداً */ }], offer);
             assert.deepEqual(ok.values, [{ id: 'svc1', type: 'checked_bag', maxWeightKg: 23, quantity: 2, netAmount: 20, currency: 'USD' }]);
+        });
+
+        // 🔴 **صفرٌ ليس «لم يُصرَّح»**. كان الحدُّ `Number(maxQuantity) || 1`،
+        // فمزوّدٌ يقول `maxQuantity: 0` — أي **لا شيء متاح** — يصير حدُّه
+        // واحداً، فتُباع حقيبةٌ قال الناقل إنه لا يملكها ويُقبض ثمنها.
+        // ومحوّل Duffel يستعمل `Number.isFinite` عمداً ليحفظ الصفر عن
+        // الغياب: طبقةٌ تحفظ التمييز بعناية وطبقةٌ فوقها تُلغيه — والتعليق
+        // فوق الحارس يَعِد بأن «الأدنى بينهما هو الفعلي»، وهو ما يكسره
+        // `|| 1` عند الصفر بالضبط.
+        test('🧳 حدُّ الكمية: صفرٌ يمنع البيع، والغيابُ وحده يسقط على واحدة', () => {
+            const withMax = (maxQuantity) => ({
+                availableServices: [{
+                    id: 'b', type: 'checked_bag', maxWeightKg: 23, netAmount: 20, currency: 'USD',
+                    ...(maxQuantity === undefined ? {} : { maxQuantity }),
+                }],
+            });
+            const pick = (max, quantity) => validateSelectedServices([{ id: 'b', quantity }], withMax(max));
+
+            // صفر = لا شيء متاح → لا تُباع ولو واحدة، وبرسالةٍ تقول السبب
+            const none = pick(0, 1);
+            assert.ok(none.error, 'بيعٌ لخدمةٍ قال المزوّد إنها غير متاحة');
+            assert.match(none.error, /غير متاحة/);
+            for (const bad of [-1, -5]) assert.ok(pick(bad, 1).error, `حدٌّ سالب قُبل: ${bad}`);
+
+            // الغياب يبقى واحدة — سقوطٌ محافظ لا «بلا حدّ»
+            assert.equal(pick(undefined, 1).values[0].quantity, 1);
+            assert.ok(pick(undefined, 2).error, 'الغياب فُهم «بلا حدّ»');
+            for (const junk of [null, 'كثير', NaN]) {
+                assert.equal(pick(junk, 1).values?.[0]?.quantity, 1, `قيمة غير رقمية لم تسقط على واحدة: ${junk}`);
+                assert.ok(pick(junk, 2).error);
+            }
+
+            // وسقف المنصة يبقى فوق ما يزعمه المزوّد مهما علا
+            assert.equal(pick(99, 10).values[0].quantity, 10);
+            assert.ok(pick(99, 11).error, 'تُجووِز سقف المنصة');
+        });
+
+        // 🔢 القاعدة نفسها تحكم المحوّل والحارس معاً — نسختان منها تتباعدان
+        // فيقرأ أحدهما «صفر» ما يقرؤه الآخر «سكوتاً».
+        test('🔢 declaredNumber: الصفر تصريحٌ، والسكوت null — في الاتجاهين', () => {
+            for (const [input, expected] of [
+                [0, 0], ['0', 0], [3, 3], ['7', 7], [-2, -2],
+                [null, null], [undefined, null], ['', null], ['   ', null],
+                [[], null], [{}, null], [NaN, null], [Infinity, null],
+                [true, null], ['كثير', null],
+            ]) {
+                assert.equal(declaredNumber(input), expected, `declaredNumber(${JSON.stringify(input)})`);
+            }
         });
 
         test('🧳 أمتعة إضافية: كتالوج بلا صافٍ في البحث، شراء يرفع الإجمالي ويظهر في الحجز، والاسترداد يشمل نصيبها', async () => {

@@ -24,6 +24,7 @@ import { createDuffelClient } from './duffelClient.js';
 import { buildSearchPassengers } from '../passengerAges.js';
 import { normalizeFareConditions } from '../fareConditions.js';
 import { checkedBaggage, instant } from '../itinerary.js';
+import { declaredNumber } from '../declaredNumber.js';
 
 const MAX_RESULTS = 10; // ما يكفي شاشة النتائج — Duffel قد يعيد المئات
 
@@ -68,7 +69,9 @@ function extractAvailableServices(raw) {
             maxWeightKg: Number.isFinite(Number(s.metadata?.maximum_weight_kg)) ? Number(s.metadata.maximum_weight_kg) : null,
             netAmount: Number(s.total_amount),
             currency: s.total_currency,
-            maxQuantity: Number.isFinite(Number(s.maximum_quantity)) ? Number(s.maximum_quantity) : 1,
+            // صفرٌ من المزوّد يبقى صفراً (لا شيء متاح)، وسكوتُه يبقى سكوتاً
+            // فيسقط على واحدة — و`Number(null)` صفرٌ فلا تصلح هنا وحدها.
+            maxQuantity: declaredNumber(s.maximum_quantity) ?? 1,
         }));
 }
 
