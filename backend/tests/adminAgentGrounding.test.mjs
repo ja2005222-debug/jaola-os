@@ -11,11 +11,10 @@ import os from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildPlatformContext } from '../agents/platformContext.js';
 import { generateAgentPluginCode } from '../services/adminService.js';
-import { orchestrator } from '../core/PluginOrchestrator.js';
+import { PluginOrchestrator } from '../core/PluginOrchestrator.js';
 import { listClones } from '../agents/cloneTemplates/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PLUGINS_DIR = path.resolve(__dirname, '../plugins');
 
 function serve(handler) {
     return new Promise((resolve) => {
@@ -102,14 +101,27 @@ test('تكامل حقيقي: وكيل مُولَّد يُحمَّل فعلياً
     const prevUrl = process.env.FRONTEND_URL;
     process.env.FRONTEND_URL = `http://127.0.0.1:${port}`;
 
-    const fileName = 'grounding-test-agent.js';
-    const target = path.join(PLUGINS_DIR, fileName);
-    fs.mkdirSync(PLUGINS_DIR, { recursive: true });
+    // 🔒 مجلّدٌ خاصٌّ بهذا الاختبار ومنسّقٌ خاصٌّ به — لا `plugins/` الحقيقي
+    // ولا المنسّق المفرد المشترك.
+    //
+    // 🔴 كان يكتب وكيلَه في `plugins/` نفسه ويُعيد تحميل المنسّق المفرد،
+    // بينما `siteChecker.test.mjs` ينادي `init()` على المجلّد ذاته ويؤكّد
+    // على ما حُمِّل. وnode يشغّل ملفّات الاختبار **بالتوازي**، فالتقاطعُ
+    // يُسقط أيّهما سبق: أحدهما يرى وكيلَ الآخر، أو يُعيد التهيئة تحت قدميه.
+    // مُثبَتٌ بالتشغيل: سقط `adminAgentGrounding` مرّةً و`siteChecker` مرّة،
+    // وكلٌّ منهما يمرّ منفرداً — واخضرارُ الحزمة كان يعتمد على الجدولة.
+    //
+    // والمجلّد شقيقٌ لـ`plugins/` بالعمق نفسه عمداً: الوكيل المولَّد يستورد
+    // `../agents/baseAgent.js`، فلو وُضع في `os.tmpdir()` لانكسر الاستيراد.
+    const isolatedDir = path.resolve(__dirname, `../.plugins-test-${process.pid}`);
+    const target = path.join(isolatedDir, 'grounding-test-agent.js');
+    fs.mkdirSync(isolatedDir, { recursive: true });
     fs.writeFileSync(target, generateAgentPluginCode({ name: 'grounding-test-agent', description: 'د', instructions: 'أنت مساعد اختباري' }));
+    const privateOrchestrator = new PluginOrchestrator();
 
     try {
-        await orchestrator.reload();
-        const handler = orchestrator.getAgent('groundingTestAgent');
+        await privateOrchestrator.init(isolatedDir);
+        const handler = privateOrchestrator.getAgent('groundingTestAgent');
         assert.ok(handler, 'الوكيل مسجَّل');
         // بلا مفاتيح AI في هذه البيئة: smartChat يفشل حتماً — لكن الفشل يجب أن
         // يكون تحديداً "لا مزوّد AI"، أي أن السياق (fetch + listClones) نُفّذ
@@ -120,8 +132,7 @@ test('تكامل حقيقي: وكيل مُولَّد يُحمَّل فعلياً
             'الفشل الوحيد المتوقع هو غياب مزوّد AI — أي أن السياق بُني بنجاح',
         );
     } finally {
-        fs.rmSync(target, { force: true });
-        await orchestrator.reload();
+        fs.rmSync(isolatedDir, { recursive: true, force: true });
         server.close();
         if (prevUrl === undefined) delete process.env.FRONTEND_URL; else process.env.FRONTEND_URL = prevUrl;
     }
