@@ -67,6 +67,24 @@ export function readPackageMarkupPct(env = process.env, markupPct = DEFAULT_MARK
  * تقريب **لأعلى** لآخر سنت — لا نبيع أبداً بأقل من الصافي + الهامش
  * بسبب كسور التقريب.
  */
+// 💰 المال يُخزَّن بالسنت — والجمع وحده يكسر ذلك
+//
+// `applyMarkup` تُخرج مبلغاً مضبوطاً للسنت، لكن **جمع** مبلغَين مضبوطَين
+// قد يعطي عدداً لا يُمثَّل ثنائياً: `197.4 + 82 === 279.40000000000003`.
+// وهذا ما كان يُخزَّن على الحجز ويُرسَل إلى Stripe ويُعرَض للمسافر حين
+// يشتري خدمةً إضافية بلا كود خصم — لأن التقريب الوحيد كان داخل فرع
+// الخصم وحده. مبلغٌ بأربعة عشر رقماً عشرياً ليس سعراً.
+export function roundMoney(amount) {
+    // ⚠️ `Number(null)` و`Number('')` و`Number([])` كلها **صفر**، و`Number(true)`
+    // واحد. تمريرها إلى `Number()` وحدها يجعل غيابَ مبلغٍ يُقرأ «صفر ريال»
+    // بلا صوت — وهو بعينه العطب الذي كُشف في استرداد المزوّد. فالتحويل
+    // هنا لا يقبل إلا عدداً، أو نصّاً رقمياً غير فارغ.
+    const n = typeof amount === 'number' ? amount
+        : (typeof amount === 'string' && amount.trim() !== '' ? Number(amount) : NaN);
+    if (!Number.isFinite(n)) throw new Error(`مبلغ غير صالح للتقريب: ${amount}`);
+    return Math.round(n * 100) / 100;
+}
+
 export function applyMarkup(netAmount, markupPct) {
     const net = Number(netAmount);
     if (!Number.isFinite(net) || net < 0) {

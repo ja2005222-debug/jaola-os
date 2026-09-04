@@ -25,7 +25,7 @@ import {
     dummyHash, newResetToken, hashResetToken, resetTokenValid, RESET_TTL_MIN,
 } from './src/accounts.js';
 import { checkedBaggage, arrivalDayOffset, layovers } from './src/itinerary.js';
-import { readMarkupPct, readPackageMarkupPct, readCategoryMarkupPct, applyMarkup, readFxBufferPct, collectPercentConfigIssues, formatPercentIssue } from './src/pricing.js';
+import { readMarkupPct, readPackageMarkupPct, readCategoryMarkupPct, applyMarkup, roundMoney, readFxBufferPct, collectPercentConfigIssues, formatPercentIssue } from './src/pricing.js';
 import { quotePackage, bookPackage, cancelPackage, retryPackageCompensations } from './src/packages.js';
 import {
     normalizeFixedPackage, priceFixedPackage, publicFixedPackage,
@@ -1234,10 +1234,13 @@ ${urls}
         // 🧳 أمتعة إضافية: تُضاف لصافي وبيع الحجز **قبل** إنشائه — فيُحاسَب
         // عليها Stripe كجزءٍ من نفس الإجمالي (لا نداء دفعٍ ثانٍ)، ويصحّ
         // بها نصيبها من الاسترداد لاحقاً (refundPlanFor يقارن على netAmount).
-        const extraNet = purchased.reduce((sum, s) => sum + s.netAmount * s.quantity, 0);
-        const extraSell = purchased.reduce((sum, s) => sum + applyMarkup(s.netAmount * s.quantity, svcMarkupPct), 0);
-        const netAmount = offer.netAmount + extraNet;
-        const grossSellAmount = applyMarkup(offer.netAmount, svcMarkupPct) + extraSell;
+        // 💰 كل جمعٍ هنا يُقرَّب للسنت: مبلغان مضبوطان يعطيان معاً عدداً لا
+        // يُمثَّل ثنائياً، وهذا هو المسار **الوحيد** الذي يجمع مبلغاً إلى
+        // مبلغ (الفنادق والسيارات وeSIM تستعمل applyMarkup وحدها).
+        const extraNet = roundMoney(purchased.reduce((sum, s) => sum + s.netAmount * s.quantity, 0));
+        const extraSell = roundMoney(purchased.reduce((sum, s) => sum + applyMarkup(s.netAmount * s.quantity, svcMarkupPct), 0));
+        const netAmount = roundMoney(offer.netAmount + extraNet);
+        const grossSellAmount = roundMoney(applyMarkup(offer.netAmount, svcMarkupPct) + extraSell);
         const discount = await applyDiscountCode(discountCode, {
             sellAmount: grossSellAmount, currency: offer.currency, product: 'flight',
         });
