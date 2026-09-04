@@ -239,13 +239,40 @@ export function searchComponents(query, projectType) {
 // ═══════════════════════════════════════════════════════
 // 📝 توليد context للـ Coder
 // ═══════════════════════════════════════════════════════
-export function buildMarketplaceContext(projectType) {
+
+// 🔴 كانت هذه الدالة تُرسل **أسماء** المكوّنات فقط وتقول للنموذج
+// «استخدم هذه الـ components كمرجع» — ومرجعٌ لم يره. 9,719 حرفاً من الـmarkup
+// المنسَّق في هذا الملف لا يبلغ النموذجَ منها حرف، و362 حرفاً من الأسماء تبلغه.
+// فالقائمةُ كانت قائمةَ طعامٍ بلا طعام.
+//
+// والآن يُحقن الـmarkup نفسه، **بميزانيّةٍ محدودة** لئلّا ينتفخ الـprompt كلّما
+// كبرت المكتبة. وما لا تتّسع له الميزانيةُ يُذكر اسمُه **مع التصريح بأن
+// markupه لم يُرسَل** — فلا يُطلب من النموذج أن يرجع إلى ما لا يملك.
+export const MARKETPLACE_CHAR_BUDGET = 9000;
+
+export function buildMarketplaceContext(projectType, { charBudget = MARKETPLACE_CHAR_BUDGET } = {}) {
     const components = searchComponents('', projectType);
     if (components.length === 0) return '';
 
-    const componentList = components
-        .map(c => `- **${c.id}**: ${c.name}`)
-        .join('\n');
+    const withMarkup = [];
+    const nameOnly = [];
+    let spent = 0;
+    for (const c of components) {
+        const cost = (c.html || '').length;
+        if (cost && spent + cost <= charBudget) { withMarkup.push(c); spent += cost; }
+        else nameOnly.push(c);
+    }
 
-    return `\n## Component Marketplace:\nاستخدم هذه الـ components كمرجع:\n${componentList}\n`;
+    const parts = ['\n## Component Marketplace:'];
+    if (withMarkup.length) {
+        parts.push('هذه الـ components جاهزةٌ أمامك — انسخ بنيتها وكيّفها على المحتوى:');
+        for (const c of withMarkup) {
+            parts.push(`\n### ${c.id} — ${c.name}\n\`\`\`html\n${c.html}\n\`\`\``);
+        }
+    }
+    if (nameOnly.length) {
+        parts.push(`\n**لم يُرسَل markup هذه** (خارج الميزانية) — استوحِ منها بأسلوبك:\n${
+            nameOnly.map((c) => `- **${c.id}**: ${c.name}`).join('\n')}`);
+    }
+    return parts.join('\n') + '\n';
 }
