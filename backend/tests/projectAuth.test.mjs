@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { verifyPassword, setPassword } from '../services/projectAuth.js';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'projectauth-'));
@@ -62,24 +63,31 @@ test('projectAuth: لا يخزّن التجزئة كنص صريح، ولا ير�
 // ووجودُ `/auth/login` نفسه هو الدليل على أن كلمة المرور اعتمادٌ حقيقي:
 // التجزيء لا يغادر الخادم، والتحقق في هذا الملف وحده. ثم كان مسارٌ شقيق
 // يسلّم الاعتماد لمن طلبه — حارسٌ يَعِد بما ينقضه جارُه.
+// ⚠️ كلمات المرور هنا **تُولَّد وقت التشغيل لا تُكتب في المصدر**: ثابتٌ
+// نصّي يشبه اعتماداً حقيقياً يوقفه ماسح الأسرار في CI — وقع ذلك فعلاً على
+// أول صياغةٍ لهذا الاختبار. نفس سبب توليد الهاش الوهمي في `accounts.js`
+// بخدمة السفر. والاختبار لا يعنيه نصُّ الكلمة بل **تمايزُها**.
+const pw = (tag) => `pw-${tag}-${randomUUID()}`;
+
 test('🔒 استبدالُ كلمة مرور مضبوطة يتطلّب معرفتها — لا التوكن وحده', async () => {
     const dir = tmp();
-    assert.ok((await setPassword(dir, 'owner', 'shop', 'S3cret-Owner-Pass')).ok);
+    const ownerPass = pw('owner'), attackerPass = pw('attacker'), rotatedPass = pw('rotated');
+    assert.ok((await setPassword(dir, 'owner', 'shop', ownerPass)).ok);
 
     // مهاجمٌ يملك التوكن (منشورٌ في الصفحة) ولا يعرف كلمة المرور
-    const noProof = await setPassword(dir, 'owner', 'shop', 'attacker-owns-you');
+    const noProof = await setPassword(dir, 'owner', 'shop', attackerPass);
     assert.ok(noProof.error, 'استُبدل الاعتماد بلا إثبات — الاستيلاء ما زال ممكناً');
     assert.equal(noProof.status, 403);
-    const wrongProof = await setPassword(dir, 'owner', 'shop', 'attacker-owns-you', 'admin');
+    const wrongProof = await setPassword(dir, 'owner', 'shop', attackerPass, 'admin');
     assert.ok(wrongProof.error, 'تخمينٌ خاطئ للحالية مرّ');
 
     // والمالك لم يُمسّ
-    assert.equal(await verifyPassword(dir, 'owner', 'shop', 'S3cret-Owner-Pass'), true);
-    assert.equal(await verifyPassword(dir, 'owner', 'shop', 'attacker-owns-you'), false);
+    assert.equal(await verifyPassword(dir, 'owner', 'shop', ownerPass), true);
+    assert.equal(await verifyPassword(dir, 'owner', 'shop', attackerPass), false);
 
     // ويغيّرها هو بالحالية الصحيحة
-    assert.ok((await setPassword(dir, 'owner', 'shop', 'New-Owner-Pass', 'S3cret-Owner-Pass')).ok);
-    assert.equal(await verifyPassword(dir, 'owner', 'shop', 'New-Owner-Pass'), true);
+    assert.ok((await setPassword(dir, 'owner', 'shop', rotatedPass, ownerPass)).ok);
+    assert.equal(await verifyPassword(dir, 'owner', 'shop', rotatedPass), true);
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -90,8 +98,8 @@ test('🔒 استبدالُ كلمة مرور مضبوطة يتطلّب معرف
 // لتلك الحالة قرارُ منتَج (إلزام ضبط كلمة مرور عند أول نشر) لا شرطٌ هنا.
 test('📌 أول ضبطٍ يبقى بلا إثبات (الافتراضية معلنة) — ثم يُقفَل', async () => {
     const dir = tmp();
-    assert.ok((await setPassword(dir, 'u', 'p', 'First-Real-Pass')).ok, 'أول ضبط لم يعد ممكناً');
-    const after = await setPassword(dir, 'u', 'p', 'Attacker-Pass-Long');
+    assert.ok((await setPassword(dir, 'u', 'p', pw('first'))).ok, 'أول ضبط لم يعد ممكناً');
+    const after = await setPassword(dir, 'u', 'p', pw('attacker'));
     assert.ok(after.error && after.status === 403, 'لم يُقفَل بعد أول ضبط');
     fs.rmSync(dir, { recursive: true, force: true });
 });
