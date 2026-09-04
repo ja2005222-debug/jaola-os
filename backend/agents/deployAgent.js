@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import fsSync from 'fs';
 import Project from '../models/Project.js';
 import { generatePackageJson } from './dependencyAgent.js';
+import { vercelProjectNameOf } from '../services/customDomains.js';
 
 const VERCEL_API = 'https://api.vercel.com';
 const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
@@ -408,12 +409,12 @@ export async function deployProject({ projectPath, activeProject, currentUser, e
             }
         }
 
-        // اسم مشروع صالح في Vercel: أحرف صغيرة وأرقام وشرطات فقط
-        const vercelProjectName = `${currentUser}-${activeProject}`
-            .toLowerCase()
-            .replace(/[^a-z0-9-]/g, '-')
-            .replace(/-+/g, '-')
-            .slice(0, 100);
+        // اسم مشروع صالح في Vercel: أحرف صغيرة وأرقام وشرطات فقط.
+        // 🔗 من `vercelProjectNameOf` لا بنسخةٍ ثانية: كانت الصيغة مكتوبة
+        // هنا وفي `customDomains.js` معاً — متطابقتين اليوم، وتعليقُ الثانية
+        // يعلن أنها «نفس صياغة deployAgent». نسختان لهويةٍ واحدة تنتظران
+        // أن تفترقا، فيُربط النطاق المخصّص بمشروعٍ غير الذي نُشر.
+        const vercelProjectName = vercelProjectNameOf(currentUser, activeProject);
 
         io.to(roomName).emit('log', { message: `📡 [DEPLOY]: جاري الرفع إلى Vercel (${deployFiles.length} ملف)...` });
 

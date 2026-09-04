@@ -31,7 +31,7 @@ import { generateDatabase, selectDatabase } from './databaseAgent.js';
 import { generateAuth, needsAuth } from './authAgent.js';
 import { generateAdvancedModules, needsBackend } from './backendAgent.js';
 import { generatePrismaSetup, needsPostgres } from './postgresAgent.js';
-import { prepareRenderDeploy, deployToRender } from './renderAgent.js';
+import { prepareRenderDeploy, renderServiceName, deployToRender } from './renderAgent.js';
 import { isFullStackProject } from './deployAgent.js';
 import { generateDependencies } from './dependencyAgent.js';
 import { transitionState, markAgentComplete, getProjectSummary, STATES, isBuilding, canStartNewBuild } from './stateMachine.js';
@@ -971,16 +971,12 @@ export class JaolaCognitiveRuntime {
     // 🆕 Render Deploy Config — يُعدّ المشروع للنشر على Render
     async _stageRenderConfig(context, roomName) {
         try {
-            const projectName = context.activeProject
-                .toLowerCase()
-                .replace(/[^a-z0-9-]/g, '-')
-                .slice(0, 50);
+            // 🏷️ اسم الخدمة من المصدر الواحد — كان هذا الموضع وحده يطهّر
+            // المشروع دون اسم المستخدم، فيكتب `guest_user-…` في render.yaml
+            // بينما تستعمل بقية المسارات `guest-user-…`: هويتان لمشروعٍ واحد.
+            const serviceName = renderServiceName(context.username, context.activeProject);
             const hasBackend = needsBackend(context.originalGoal);
-            const renderResult = await prepareRenderDeploy(
-                context.projectPath,
-                `${context.username}-${projectName}`,
-                hasBackend
-            );
+            const renderResult = await prepareRenderDeploy(context.projectPath, serviceName, hasBackend);
             if (renderResult.success) {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'RenderAgent',
                     `✅ ${renderResult.summary}`
@@ -2298,8 +2294,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
         // 3) إعداد النشر (موقع ثابت — لا خادم مطلوب للكلون التجريبي)
         try {
-            const projectName = `${username}-${activeProject}`.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 50);
-            await prepareRenderDeploy(projectPath, projectName, false);
+            await prepareRenderDeploy(projectPath, renderServiceName(username, activeProject), false);
         } catch { /* اختياري */ }
 
         // 4) نهائيات كبناءٍ ناجح
@@ -2361,8 +2356,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // 3) نموذج بسيط + نشر ثابت
         try { setDomainModel(username, activeProject, { entities: [], roles: [{ name: 'Visitor', capabilities: ['تصفّح'] }], flows: [], _source: 'registry' }); } catch {}
         try {
-            const projectName = `${username}-${activeProject}`.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 50);
-            await prepareRenderDeploy(projectPath, projectName, false);
+            await prepareRenderDeploy(projectPath, renderServiceName(username, activeProject), false);
         } catch { /* اختياري */ }
 
         // 4) نهائيات كبناءٍ ناجح
@@ -2917,8 +2911,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                             ? '🖥️ مشروع full-stack — سأجهّزه لخادم دائم على Render (بلا حدّ دوال)...'
                             : '🖥️ Full-stack project — preparing a persistent server on Render...';
                         this.io.to(roomName).emit('chat_reply', { message: renderMsg });
-                        const projectSlug = `${username}-${activeProject}`
-                            .toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 50);
+                        const projectSlug = renderServiceName(username, activeProject);
                         deployToRender(
                             { projectPath, projectName: projectSlug, username, activeProject, hasBackend: true },
                             this.io, roomName

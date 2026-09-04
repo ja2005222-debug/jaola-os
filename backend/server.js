@@ -125,7 +125,7 @@ import { localizeTemplateFiles } from './agents/templateLocalizer.js';
 import { getUserLanguage } from './agents/languageDetector.js';
 import { setDomainModel, setCloneTrack, getCloneTrack } from './agents/projectMemory.js';
 import { mergeProjectModel } from './agents/projectModel.js';
-import { prepareRenderDeploy } from './agents/renderAgent.js';
+import { prepareRenderDeploy, renderServiceName } from './agents/renderAgent.js';
 import { autoDeployFullStack, fullAutomationReady } from './services/deployAutomation.js';
 import { assetsFor, injectFaviconTag } from './agents/cloneAssets.js';
 import { listLibraries, getLibraryById, injectLibrary } from './agents/libraryRegistry.js';
@@ -2300,8 +2300,7 @@ app.post('/api/template/apply', verifyToken, validateProjectOwnership, async (re
         }
         // 4) تهيئة النشر (موقع ثابت) — أفضل جهد
         try {
-            const projectName = `${req.user.username}-${req.activeProject}`.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 50);
-            await prepareRenderDeploy(projectPath, projectName, false);
+            await prepareRenderDeploy(projectPath, renderServiceName(req.user.username, req.activeProject), false);
         } catch { /* اختياري */ }
 
         const roomName = `${req.user.username}-${req.activeProject}`;
@@ -2391,8 +2390,7 @@ app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) 
     // بلا حدّ 12 دالة، DB متصلة). نُعيد للواجهة نوع النشر ورابط الزر إن جاهز.
     if (isFullStackProject(req.projectPath)) {
         try {
-            const projectSlug = `${req.user.username}-${req.activeProject}`
-                .toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 50);
+            const projectSlug = renderServiceName(req.user.username, req.activeProject);
 
             // 🚀 الأتمتة الكاملة (الجولة أ): إن هُيّئت مفاتيح المنصّة
             // (GITHUB_PLATFORM_TOKEN + RENDER_API_KEY) → زر واحد → رابط حيّ:
