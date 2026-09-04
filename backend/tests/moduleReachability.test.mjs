@@ -1,10 +1,10 @@
 // 🗺️ حارسُ الإدراك: أيّ وحدةٍ يصل إليها الخادم فعلاً؟
 //
 // 🔴 `ARCHITECTURE_MAP.md` صنّف الوحدات ورقةً ورقة ولم يمشِ البيان. فأعطى
-// `fileEditor.js` و`twin.js` و`knowledgeService.js` حكم KEEP و`broadcast.js`
-// حكم MODIFY — وهي جميعاً وراء `taskExecutor.js`، وهو **غائبٌ عن الخريطة
-// كلّها** ولا يستورده شيء. أحكامٌ على وحداتٍ لا يصل إليها الخادم، والملفّ
-// الذي كان سيصل إليها لم يُذكر أصلاً.
+// وحداتٍ وراء `taskExecutor.js` حكم KEEP/MODIFY، وهو **غائبٌ عن الخريطة
+// كلّها** ولا يستورده شيء. أحكامٌ على وحداتٍ لا يصل إليها الخادم.
+// وقد حُذفت تلك الجزيرة (Sprint 2o)؛ وبقي هذا الحارس لأن العلّة ليست
+// الملفات بل الطريقة: حكمٌ يُكتَب في وثيقة تُصدَّق بدل أن يُحسَب.
 //
 // فالحكم هنا لا يُكتَب في وثيقة تُصدَّق: يُحسَب. الماشي يبدأ من `server.js`
 // ويتبع كل `import` نصّيّ (ثابتاً وديناميكياً)، والقائمة أدناه **إقرارٌ**
@@ -19,22 +19,16 @@ const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
 const SPEC = /(?:^|[^\w.])(?:import\s+(?:[\s\S]*?\s+from\s+)?|export\s+[\s\S]*?\s+from\s+|import\s*\(\s*)['"](\.[^'"]+)['"]/g;
 const SCANNED = ['services', 'agents', 'core', 'middleware', 'routes', 'config', 'models', 'utils'];
 
-// 📌 اليتامى المُقرّون. جزيرةُ `taskExecutor` مغلقةٌ على نفسها: جذرها بلا
-// مرجعٍ واحد، وكل ما تحته لا يصل إليه غيرها. والأربعة الأخيرة قائمةٌ
-// بذاتها — ومنها `utils/security.js` الذي يشارك اسمَ `middleware/security.js`
-// الحيّ ويختلف عنه محتوىً (escapeHtml مقابل sanitizePath)، فيَقرأ القارئُ
-// الميتَ ظانّاً أنه الحيّ.
-// وخمسةٌ منهم **لا تُحمَّل أصلاً** (اعتمادٌ غير مثبَّت: uuid، better-sqlite3،
-// simple-git) — مُثبَتٌ بمحاولة استيراد كلٍّ منها. فحكم KEEP على `twin.js`
-// و`knowledgeService.js` حكمٌ على وحدتين ترميان ERR_MODULE_NOT_FOUND.
+// 📌 اليتامى المُقرّون — ما بقي بعد حذف جزيرة `taskExecutor` (Sprint 2o).
+// `projectManager` و`twin` كانا يصلان عبرها، فصارا قائمَين بذاتهما.
+// ومنها `utils/security.js` الذي يشارك اسمَ `middleware/security.js` الحيّ
+// ويختلف عنه محتوىً (escapeHtml مقابل sanitizePath)، فيَقرأ القارئُ الميتَ
+// ظانّاً أنه الحيّ. وثلاثةٌ منهم **لا تُحمَّل أصلاً** (اعتمادٌ غير مثبَّت:
+// uuid، better-sqlite3) — مُثبَتٌ بمحاولة استيراد كلٍّ منها.
 const DECLARED_ORPHANS = [
-    'services/broadcast.js',
     'services/db.js',
-    'services/fileEditor.js',
-    'services/knowledgeService.js',
     'services/logger.js',
     'services/projectManager.js',
-    'services/taskExecutor.js',
     'services/twin.js',
     'utils/aiProvider.js',
     'utils/performance.js',
