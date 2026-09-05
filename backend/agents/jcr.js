@@ -28,12 +28,13 @@ import { runDesigner } from './stages/designer.js';
 import { runAdvancedModules, runFullStackScaffold, runProjectMemory } from './stages/scaffold.js';
 import { readCodeContext, readProjectFiles } from './projectReader.js';
 import { runBackendStage } from './stages/backend.js';
+import { verifyAndAutofix } from './stages/verify.js';
 import { handleUndo } from './stages/undo.js';
 // 🔁 إعادةُ تصدير: `resolveProjectType` بقيت واجهةً من `jcr` لمستورِديها (JCR/6)
 export { resolveProjectType };
 import { buildFailureChatMessage } from './failureMessages.js';
 import { isMarketingPageGoal } from './blockRegistry.js';
-import { verifyBehavior, buildBehaviorFixInstruction, analyzeProjectStatic, extractDefinedFunctions } from './behaviorVerifier.js';
+import { analyzeProjectStatic, extractDefinedFunctions } from './behaviorVerifier.js';
 import { hasKeyword } from './keywordMatch.js';
 import { updateLanguage, recordProject, recordEdit } from './userProfile.js';
 import { renderServiceName, deployToRender } from './renderAgent.js';
@@ -53,7 +54,7 @@ import { registerMission, throwIfAborted, clearMission } from '../core/runtime/A
 import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import { snapshotWorkspace } from '../services/workspaceStore.js';
 import { guardFiles, scrubPlaceholders, ensureEditIntegrity } from '../services/codeGuard.js';
-import { recordMissionOutcome, recordBehaviorGaps, matureLessons, lessonDirective, MIN_COUNT_TO_TEACH } from '../services/platformLessons.js';
+import { recordMissionOutcome, matureLessons, lessonDirective, MIN_COUNT_TO_TEACH } from '../services/platformLessons.js';
 import { getPlatformKnowledge } from '../services/platformKnowledge.js';
 import { getProjectSecrets } from '../services/projectSecrets.js';
 import { recordBuild, recordEditAction, buildMetricsPayload } from '../services/metricsStore.js';
@@ -943,46 +944,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
         return readCodeContext(projectPath);
     }
 
-    /** يقرأ الملفات الأساسية كمصفوفة {name, content} للتعديل الجراحي */
-    // 🔬 التحقّق السلوكي + جولة إصلاح تلقائية — مشتركة بين البناء والتعديل.
-    // نُشغّل الصفحة فعلاً؛ إن كُشفت ثغرة (خطأ JS/زر ميت/دور بلا واجهة) وأُتيح
-    // الإصلاح، نبني تعليمة مستهدفة ونُصلح ونُعيد التحقّق. جولة واحدة (لا حلقة).
-    async _verifyAndAutofix({ projectPath, blueprint = null, username, activeProject, roomName, agents, lang = 'ar', canFix = true }) {
-        try {
-            const domainModel = getDomainModel(username, activeProject);
-            const emitVerdict = (v, note = '') => {
-                const gaps = v.checks.filter(c => c.status !== 'pass')
-                    .map(c => `${c.status === 'fail' ? '❌' : '⚠️'} ${c.detail}`);
-                this.emitLiveLog(roomName, '6. VERIFY', 'BehaviorVerifier',
-                    v.ok
-                        ? `🔬 التحقّق السلوكي: يعمل (${v.summary})${note}${gaps.length ? '\n' + gaps.join('\n') : ''}`
-                        : `🔬 ثغرات سلوكية (${v.summary})${note} — لم يُعلَن النجاح أجوفاً:\n${gaps.join('\n')}`);
-            };
-
-            let verdict = await verifyBehavior({ projectPath, blueprint, domainModel });
-            if (!verdict.ran || verdict.skipped) return verdict;
-            emitVerdict(verdict);
-
-            if (!verdict.ok && canFix && agents?.coreEditCodePlan) {
-                const instruction = buildBehaviorFixInstruction(verdict, domainModel);
-                if (instruction) {
-                    this.emitLiveLog(roomName, '6. VERIFY', 'BehaviorVerifier', '🔧 جولة إصلاح سلوكية مستهدفة...');
-                    const files = await this.readProjectFilesArray(projectPath);
-                    const fixPlan = await agents.coreEditCodePlan(instruction, files, lang);
-                    if (fixPlan?.files?.length && !fixPlan.error) {
-                        const emitG = (m) => this.emitLiveLog(roomName, '6. VERIFY', 'CodeGuard', m);
-                        const guarded = await ensureEditIntegrity(
-                            await guardFiles(scrubPlaceholders(fixPlan.files, activeProject), emitG),
-                            projectPath, emitG);
-                        await writePlanFiles(projectPath, guarded);
-                        verdict = await verifyBehavior({ projectPath, blueprint, domainModel });
-                        emitVerdict(verdict, verdict.ok ? ' (أُصلح تلقائياً)' : ' (بعد الإصلاح — يحتاج مراجعتك)');
-                    }
-                }
-            }
-            recordBehaviorGaps(verdict); // 📚 ما بقي من ثغرات بعد الإصلاح = ما يستلمه المستخدم = درس للمنصة
-            return verdict;
-        } catch (e) { console.warn('[BehaviorVerify]', 'تعذّر التحقّق السلوكي:', e.message); return null; }
+    // 🔬 التحقّقُ السلوكيّ + الإصلاحُ خرجا إلى `stages/verify.js#verifyAndAutofix` (JCR/17) — تفويضٌ يُبقي
+    // المستدعين الثلاثة (والاستبدالَ في الاختبارات) كما هم؛ المُبلِّغُ يُمرَّر وسيطاً.
+    async _verifyAndAutofix(opts) {
+        return verifyAndAutofix(opts, this.reporter);
     }
 
     // 🚪 ردّ حتمي عند حجب رسالة غامضة — لا يطلب "إعادة إرسال نفس الجملة"
