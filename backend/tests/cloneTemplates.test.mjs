@@ -21,8 +21,12 @@ import { jaolaEvents } from '../agents/cloneTemplates/jaolaEvents.js';
 import { matchCloneTemplate, listClones, getCloneById } from '../agents/cloneTemplates/index.js';
 import { verifyBehavior, detectUndefinedFunctions } from '../agents/behaviorVerifier.js';
 
-// كل قوالب jaola يجب أن تجتاز التحقّق السلوكي فعلاً (jsdom) — لا دوال معلّقة،
-// ولا انهيار حتى مع كتم fetch (قوالب الـ API تصمد بالوصول المحميّ).
+// هذه الحلقةُ تُسمّي ثلاثةَ عشرَ قالباً باختباراتٍ مفردة. وليست هي الضمانَ
+// الشامل: التغطيةُ الكاملة للقوالب الواحد والأربعين في «تدقيق سلوكي شامل»
+// أسفلَ الملفّ — مشتقٌّ من `listClones()` ويؤكّد `v.ok` لكلٍّ منها باسمه.
+// (كان هنا تعليقٌ يقول «كل قوالب jaola»، وفوق حلقةٍ تدور على ثلاثة عشر —
+//  فيُقرأ الحارسُ شاملاً وهو ليس موضعَ الشمول. الشمولُ ثابتٌ، والدعوى نُقلت
+//  إلى موضعها.) وما تزيده هذه الحلقةُ فحصٌ ساكنٌ للدوال المعلّقة قبل jsdom.
 for (const build of [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaEvents, jaolaLms, jaolaSchool, jaolaWeather, jaolaCrypto, jaolaCurrency]) {
     const c = build();
     test(`قالب ${c.id}: لا دوال معلّقة`, () => {
