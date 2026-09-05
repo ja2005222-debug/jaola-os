@@ -66,6 +66,7 @@ Policy/Permission، Identity، Plugin.
 | `services/pluginStore.js` | 132 | تخزين الإضافات في Mongo واستعادتها للقرص | KEEP | Plugin | `core/plugins/` (Sprint 7) |
 | ✅ `core/runtime/TaskGraph.js` (جديد، Sprint 2a) | 50 | `orderTasks(items, {key})` — ترتيب طوبولوجي مستقرّ من `dependsOn` + كشف الدورات (خوارزمية `planExecution` حرفياً معمَّمة) | ADDED | Task | مستهلكاه: `runDynamicMultiAgentRuntime` (DELIVERY_STAGES) و`planExecution` (الفرق) |
 | ✅ `core/runtime/ExecutionContext.js` (جديد، Sprint 2b) | 67 | `createExecutionContext`/`contextFromRequest`/`withAgents` — بيئة المهمة في كائن مجمَّد (الحقول الستة المتكرّرة) | ADDED | Mission | 11 توقيعاً في `jcr.js` + المعالجات السبعة |
+| ✅ `core/runtime/RoomReporter.js` (جديد، JCR/2) | 56 | `send(room, event, payload)`/`liveLog`/`setLang` — بابُ البثّ الواحد إلى غرفة المستخدم؛ فصل ٦٥٪ من ترابط `jcr.js` عن `this`؛ المُترجمُ يُحقَن لا يُستورد (حدُّ core→agents) | ADDED | Event | مستهلكُه: `jcr.js` (١١٣ بثّاً مباشراً + `emitLiveLog` + لغةُ الغرفة)؛ `this.io` يبقى قيمةً لتسعِ تمريراتٍ خارجيّة |
 | ✅ `core/runtime/AgentRuntime.js` (جديد، Sprint 2d) | 89 | `runAgent` + `gatherCooperationInputs` — منفّذ الوكيل الواحد: عقدٌ → نداء نموذج → ملفات مُطهَّرة | MOVED (Sprint 2d ✅، حرفياً عدا إسقاط افتراض `TEAM_BY_ID` الميت) | **Agent** | `runBackendTeam` (فريقا الخلفية **والواجهة** معاً) |
 | ✅ `core/policy/ConfirmationManager.js` (جديد، Sprint 3) | 82 | بوّابةُ تأكيدٍ واحدة تُميّز الموافقة من السؤال | ADDED | Permission | مستهلكها: مسارُ التأكيد في `jcr.js` |
 | ✅ `core/runtime/workspacePaths.js` (جديد، Sprint 2c) | 149 | `isInsideRoot`/`resolveInside` + `safeRelPath` — نواة احتواء المسار المشتركة (السياسات تبقى عند كل موضع) | ADDED | Tool | `writePlanFiles` (jcr)، `writeBackendTeamFiles`، `sanitizePath` |
@@ -92,7 +93,7 @@ Policy/Permission، Identity، Plugin.
 ### C1. النواة (Kernel candidates)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `jcr.js` | 3247 | وقت التشغيل المعرفي: `handleUserMessage` → 7 معالجات نية → `executeMission` → `_runMissionNow` → 15 مرحلة | MODIFY (تدريجي، بلا إعادة كتابة) | Mission + Agent + Task (المراحل → TaskGraph) + Event | يبقى؛ يتقلّص مع كل Sprint لصالح `core/runtime/*` |
+| `jcr.js` | 3248 | وقت التشغيل المعرفي: `handleUserMessage` → 7 معالجات نية → `executeMission` → `_runMissionNow` → 15 مرحلة | MODIFY (تدريجي، بلا إعادة كتابة) | Mission + Agent + Task (المراحل → TaskGraph) + Event | يبقى؛ يتقلّص مع كل Sprint لصالح `core/runtime/*` |
 | `contracts.js` → ✅ `core/contracts/index.js` | 99/197 | typedefs الأحد عشر + `assertBuildAgents` + `DELIVERY_STAGES` + مدقّقا Capability | MOVED (Sprint 1 ✅) | Mission/Agent/Task/Capability/Provider/Transaction | `core/contracts/index.js` |
 | `stateMachine.js` | 270 | Build State Machine (10 حالات + `STATE_EVENTS` + emitter) | KEEP | Event — تبقى متخصّصة، وMission Lifecycle فوقها | `core/missions/BuildStateMachine.js` (Sprint 2) |
 | `ceoBrain.js` | 240 | تصنيف نية سريع، قرار، رسائل إحاطة/حالة | MODIFY | Mission (Intent/CEO في مسار v2) | `core/runtime/` |
