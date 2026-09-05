@@ -212,7 +212,7 @@ Policy/Permission، Identity، Plugin.
 | `budgetAlerts.js`, `budgetCommentary.js`, `budgetStats.js` | 59/56/71 | مستشار الميزانية | MOVE | Plugin (finance) | `plugins/finance/budget/` |
 | `cryptoAlerts.js`, `cryptoCommentary.js`, `cryptoMarket.js`, `signalTrackRecord.js` | 62/63/326/108 | مستشار الكريبتو | MOVE | Plugin (finance) + Provider (CoinGecko) | `plugins/finance/crypto/` |
 | `stockCommentary.js`, `stockMarket.js` | 62/186 | مستشار الأسهم | MOVE | Plugin (finance) + Provider (Yahoo) | `plugins/finance/stocks/` |
-| `tradingBotEngine.js`, `tradingBotConfig.js`, `tradingBotCoins.js`, `tradingBotLedger.js`, `tradingBotStats.js`, `tradingBotCircuitBreaker.js`, `chainProvider.js`, `pancakeSwapExecutor.js` | 479/92/189/165/57/55/40/167 | بوت PancakeSwap: تنفيذ حقيقي على BNB Chain، سجلّ append-only، قاطع يومي | MOVE | Plugin (finance) + **Transaction** (`tradingBotLedger` نموذج جاهز لـIdempotency/Audit) + Tool (`swap` = requiresConfirmation/riskLevel: critical) + Provider (RPC) | `plugins/finance/trading/` (Sprint 6+) |
+| `tradingBotEngine.js`, `tradingBotConfig.js`, `tradingBotCoins.js`, `tradingBotLedger.js`, `tradingBotStats.js`, `tradingBotCircuitBreaker.js`, `chainProvider.js`, `pancakeSwapExecutor.js` | 479/92/189/165/57/55/54/167 | بوت PancakeSwap: تنفيذ حقيقي على BNB Chain، سجلّ append-only، قاطع يومي | MOVE | Plugin (finance) + **Transaction** (`tradingBotLedger` نموذج جاهز لـIdempotency/Audit) + Tool (`swap` = requiresConfirmation/riskLevel: critical) + Provider (RPC) | `plugins/finance/trading/` (Sprint 6+) |
 
 ### D6. DELETE — سقالة ميتة (صفر قرّاء، commit واحد 2026-08-05)
 `architectureExplorer.js` (22)، `contextBuilder.js` (22)، `fileBridge.js` (17)،
