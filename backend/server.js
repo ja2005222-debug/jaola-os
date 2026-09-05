@@ -110,6 +110,7 @@ import { listRecords as listCollectionRecords, upsertRecord as upsertCollectionR
 import { summarize as summarizeBudget, lastMonths as budgetLastMonths, budgetStatus } from './services/budgetStats.js';
 import { generateBudgetCommentary } from './services/budgetCommentary.js';
 import { registerBudgetProject, listBudgetProjects, markBudgetAlerted, shouldAlertBudget } from './services/budgetAlerts.js';
+import { checkUniqueIndexes, formatIndexReport } from './services/indexHealth.js';
 import {
     listMarkets as listStockMarkets, getAnalysis as getStockAnalysis, getOpportunities as getStockOpportunities,
     searchSymbols, isValidSymbolId, MAX_WATCHLIST as STOCK_MAX_WATCHLIST, SUPPORTED_SYMBOLS, findSymbol,
@@ -277,7 +278,19 @@ let isDbConnected = false;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/jaola_os';
 
 mongoose.connect(MONGO_URI)
-    .then(() => { console.log('💾 [Database]: متصل بـ MongoDB.'); isDbConnected = true; })
+    .then(async () => {
+        console.log('💾 [Database]: متصل بـ MongoDB.'); isDbConnected = true;
+        // 🔐 قيودُ التفرّد المُعلَنة في النماذج لا يُنشئها التطبيق (autoIndex=false
+        //    ولا نداءَ createIndexes). فهل هي قائمةٌ في القاعدة؟ قراءةٌ فقط —
+        //    لا تُنشئ فهرساً ولا تحذفه، وسطرُها يقول الحقيقةَ للمالك في السجلّ.
+        try {
+            const report = await checkUniqueIndexes({
+                models: mongoose.models,
+                listIndexes: (c) => mongoose.connection.db.collection(c).indexes(),
+            });
+            console.log(formatIndexReport(report));
+        } catch (e) { console.log('🔐 [قيود التفرّد]: تعذّر الفحص —', e.message); }
+    })
     .catch(() => { console.log('⚠️ [Database]: وضع الصمود المؤقت نشط.'); isDbConnected = false; });
 
 // ─── غلاف DB مع graceful fallback ───────────────────────────────────
