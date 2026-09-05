@@ -8,19 +8,27 @@
  * - Rollback لأي نقطة سابقة
  */
 
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // ═══════════════════════════════════════════════════════
 // 🔧 دوال مساعدة
 // ═══════════════════════════════════════════════════════
-async function runGit(command, cwd) {
+// 🔴 كان هذا يبني سطرَ أمرٍ نصّياً ويمرّره على `exec` — أي على `/bin/sh`.
+// ورسالةُ الـcommit تُشتقّ من **هدف المستخدم الحرّ** (`jcr.js:_stageGitBackup`)،
+// فهدفٌ فيه `"` ثمّ `$(...)` كان يُنفَّذ على الخادم: تنفيذُ أوامرَ عن بُعد بحساب
+// الخدمة، حيث `JWT_SECRET` و`DATABASE_URL` والمفاتيح. قِيس بالتشغيل لا بالقراءة.
+//
+// والإصلاحُ ليس تهريبَ النصّ — التهريبُ يُنسى ويُخترَق — بل **إزالةُ الصدفة**:
+// `execFile` يُمرّر الوسائطَ إلى `git` مصفوفةً، فلا مُفسِّرَ بينهما يقرأ رموزاً.
+// لذلك `runGit` تأخذ الآن `string[]` لا نصّاً، ولا يُبنى أمرٌ بالدمج أبداً.
+async function runGit(args, cwd) {
     try {
-        const { stdout, stderr } = await execAsync(`git ${command}`, {
+        const { stdout } = await execFileAsync('git', args, {
             cwd,
             env: {
                 ...process.env,
@@ -45,7 +53,7 @@ export async function initProjectRepo(projectPath) {
     if (fs.existsSync(gitDir)) return { success: true, existed: true };
 
     // إنشاء repo جديد
-    const init = await runGit('init', projectPath);
+    const init = await runGit(['init'], projectPath);
     if (!init.success) return init;
 
     // إنشاء .gitignore
@@ -63,11 +71,11 @@ export async function commitBuild(projectPath, message, buildType = 'build') {
     await initProjectRepo(projectPath);
 
     // إضافة كل الملفات
-    const add = await runGit('add -A', projectPath);
+    const add = await runGit(['add', '-A'], projectPath);
     if (!add.success) return add;
 
     // تحقق هل هناك تغييرات
-    const status = await runGit('status --porcelain', projectPath);
+    const status = await runGit(['status', '--porcelain'], projectPath);
     if (!status.output) {
         return { success: true, skipped: true, reason: 'لا توجد تغييرات للحفظ' };
     }
@@ -75,12 +83,12 @@ export async function commitBuild(projectPath, message, buildType = 'build') {
     // Commit
     const emoji = buildType === 'build' ? '🏗️' : buildType === 'edit' ? '✏️' : '🔧';
     const commitMsg = `${emoji} ${message || 'JAOLA OS auto-commit'} [${new Date().toLocaleTimeString('ar-SA')}]`;
-    const commit = await runGit(`commit -m "${commitMsg}"`, projectPath);
+    const commit = await runGit(['commit', '-m', commitMsg], projectPath);
 
     if (!commit.success) return commit;
 
     // استخراج الـ hash
-    const hashResult = await runGit('rev-parse --short HEAD', projectPath);
+    const hashResult = await runGit(['rev-parse', '--short', 'HEAD'], projectPath);
     const hash = hashResult.output || 'unknown';
 
     return { success: true, hash, message: commitMsg };
@@ -90,8 +98,10 @@ export async function commitBuild(projectPath, message, buildType = 'build') {
 // 📋 قائمة آخر Commits
 // ═══════════════════════════════════════════════════════
 export async function getCommitHistory(projectPath, limit = 10) {
+    // العددُ يُقسَر صحيحاً موجباً محدوداً: وسيطٌ نصّيٌّ هنا يصير خياراً لـgit.
+    const n = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 200);
     const result = await runGit(
-        `log --oneline -${limit} --format="%h|%s|%ar"`,
+        ['log', '--oneline', `-${n}`, '--format=%h|%s|%ar'],
         projectPath
     );
 
@@ -111,7 +121,7 @@ export async function rollbackToCommit(projectPath, commitHash) {
     await commitBuild(projectPath, 'قبل الاسترجاع', 'backup');
 
     // استرجاع
-    const reset = await runGit(`checkout ${commitHash} -- .`, projectPath);
+    const reset = await runGit(['checkout', commitHash, '--', '.'], projectPath);
     if (!reset.success) return reset;
 
     // commit الاسترجاع
@@ -129,8 +139,8 @@ export async function getProjectStats(projectPath) {
         return { hasRepo: false };
     }
 
-    const countResult = await runGit('rev-list --count HEAD', projectPath);
-    const lastCommit = await runGit('log -1 --format="%s|%ar"', projectPath);
+    const countResult = await runGit(['rev-list', '--count', 'HEAD'], projectPath);
+    const lastCommit = await runGit(['log', '-1', '--format=%s|%ar'], projectPath);
 
     const [lastMsg, lastTime] = (lastCommit.output || '|').split('|');
 
@@ -150,27 +160,27 @@ export async function pushToGitHub(projectPath, repoUrl, branch = 'main', option
         await initProjectRepo(projectPath);
 
         // الـ remote يُخزَّن دائماً بالرابط النظيف — التوكن لا يُكتب في .git/config
-        const remoteCheck = await runGit('remote -v', projectPath);
+        const remoteCheck = await runGit(['remote', '-v'], projectPath);
 
         if (!remoteCheck.output?.includes('origin')) {
             // أضف remote
-            await runGit(`remote add origin "${repoUrl}"`, projectPath);
+            await runGit(['remote', 'add', 'origin', repoUrl], projectPath);
         } else {
             // حدّث remote
-            await runGit(`remote set-url origin "${repoUrl}"`, projectPath);
+            await runGit(['remote', 'set-url', 'origin', repoUrl], projectPath);
         }
 
         // تأكد أن كل شيء مُضاف
-        await runGit('add -A', projectPath);
+        await runGit(['add', '-A'], projectPath);
 
-        const status = await runGit('status --porcelain', projectPath);
+        const status = await runGit(['status', '--porcelain'], projectPath);
         if (status.output) {
-            await runGit(`commit -m "🚀 JAOLA OS auto-push [${new Date().toLocaleTimeString()}]"`, projectPath);
+            await runGit(['commit', '-m', `🚀 JAOLA OS auto-push [${new Date().toLocaleTimeString()}]`], projectPath);
         }
 
         // Push — نستخدم الرابط المُصادق (بالتوكن) مباشرة إن وُجد، بدون حفظه
-        const pushTarget = options.authUrl ? `"${options.authUrl}"` : 'origin';
-        const push = await runGit(`push ${pushTarget} HEAD:${branch} --force`, projectPath);
+        const pushTarget = options.authUrl || 'origin';
+        const push = await runGit(['push', pushTarget, `HEAD:${branch}`, '--force'], projectPath);
 
         if (!push.success) {
             // لا نُسرّب التوكن في رسالة الخطأ
