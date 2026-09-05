@@ -7902,3 +7902,66 @@ hook `afterBuild`) — والاختبارُ يثبّت أنّ الدالّةَ �
 ما بقي بالشكل نفسِه (`this` = بثٌّ فقط، لا نداءَ لطرائق الصنف): `_stageDesigner` (٢٨)، `_stageAdvancedModules` (٢٤)،
 `_stageFullStackScaffold` (١٩)، `_stageProjectMemory`، `_stageExecutiveMemory` (يستدعي `saveExecutiveMemory`)، و`_stageBackend`
 (١٦٧، ٢٨ سطرَ بثّ، يستدعي `readCurrentCodeContextAsync` الذي لا يحمل `this`). ثمّ ما يستدعي طرائقَ الصنف — يُقاس أوّلاً.
+
+---
+
+## JCR/14 — «المصمّمُ وثلاثُ مراحلِ سكافولد — والاحتياطُ اللغويّ الذي لا يقع»
+
+عاشرُ استخراجٍ من `jcr.js`، دفعةٌ ثانية: أربعُ مراحل بالشكل «بثٌّ فقط» (أو بلا بثٍّ أصلاً). **نقلٌ حرفيّ، لا تغييرَ في السلوك.**
+
+### ما نُقل
+
+- `_stageDesigner` → `agents/stages/designer.js#runDesigner(context, roomName, reporter)` (٣ أسطرِ بثّ؛ مستدعٍ واحد: `runDynamicMultiAgentRuntime`).
+- `_stageAdvancedModules`، `_stageFullStackScaffold` → `agents/stages/scaffold.js#runAdvancedModules/runFullStackScaffold(context, roomName, reporter)`؛
+  `_stageProjectMemory` → `runProjectMemory(context)` — **بلا مُبلِّغ**: الطريقةُ لا تبثّ شيئاً، ولا وسيطَ بلا مستهلك.
+- ٦٩ سطراً + عناوينها؛ أربعُ مفوِّضاتٍ بسطرٍ واحد في `jcr` (ثلاثٌ منها تُستدعى بالاسم من `DELIVERY_STAGES`).
+- أربعُ يتيماتٍ أُزيلت بالقياس: ثلاثةُ أسطرِ استيراد (`designerAgent`، `generateAdvancedModules`، `fullstackTemplates`) و`updateDesign` من سطرٍ مشترك (`updateStructure` بقيت — لها نداءٌ آخر).
+
+### أوّلُ توصيفٍ لأربعة أجسادٍ لم تُطرق
+
+بلا LLM: **المصمّم** يختار `ocean` لهدف البحر ويقول في السطر نفسِه إنّ تخصيصَ AI لم يجرِ ولماذا (بالنصّ: غيابُ المزوّد)،
+يحفظ `design-brief.json` ويُثبّت `coderInstructions` في `mentalModel`؛ الوصفُ القصير → `warm` و«الوصف أقصر من أن يُخصَّص»؛
+مجلّدٌ غائب → الحفظُ يفشل بصمتٍ (`saveDesignBrief` لا يُنشئ) والسطرُ يبقى. **الوحداتُ المتقدّمة:** Stripe+Upload تُكتب بأسمائها
+(`api/stripe.js`، `STRIPE_README.md`، `api/upload.js`) والسطرُ يعدّها؛ Travelpayouts يحمل تنبيهَ `TRAVELPAYOUTS_TOKEN`/`MARKER`
+(الاكتشافُ الذي رُفع في Sprint 4n)؛ صفحةُ هبوط → صمتٌ ولا ملفّ. **Full-Stack:** نيّةُ بياناتٍ + فئةٌ مدعومة → ١٦ ملفاً في
+`fullstack/` والموقعُ الثابت لا يُمَسّ؛ بروشور → صمتٌ ولا مجلّد. **ذاكرةُ المشروع:** الأقسامُ والهويّةُ تُكتب من `mentalModel`،
+وبلا `mentalModel` لا رميَ ولا تغيير — والقيمُ مختومةٌ بطابعِ الجولة لأنّ الذاكرةَ تبقى على القرص بين الجولات (درسُ JCR/8 —
+الطفرتان على الذاكرة **نجتا أوّلاً** لهذا السبب بالضبط، ثمّ أُمسكتا بعد الختم).
+
+### اكتشافٌ صغير — يُثبَّت بالقول لا بالكود
+
+`getUserLanguage(context.username) || 'en'` في المصمّم (وفي مراحل الجودة الستّ قبله): `getUserLanguage` لا تعود فارغةً أبداً
+(`sessionLanguages || profile || 'en'` في `languageDetector.js:124`)، فالاحتياطُ `|| 'en'` **ميّت** — أخو JCR/متابعة-أ
+(حيث كان `|| 'ar'` هو الميّت). الطفرةُ `'en'` → `'ar'` نجت، وهذا دليلُها. لا يُغيَّر هنا؛ مرحلةُ تنظيفٍ لاحقة تُزيل الاحتياطاتِ
+الميّتةَ كلَّها بقياسٍ واحد.
+
+### ثلاثَ عشرةَ طفرة — ١٢ أُمسكت، وواحدةٌ نجت بدليلٍ مكتوب
+
+| الطفرة | ما يُمسكها |
+|---|---|
+| S-1 المصمّم: الـbrief لا يُحفظ | `design-brief.json` |
+| S-2 المصمّم: الهويّةُ لا تُثبَّت | `mentalModel.visualIdentity` |
+| S-3 المصمّم: السطرُ يدّعي تخصيصاً | السطرُ بحروفه |
+| S-4 المصمّم: احتياطُ اللغة `'ar'` | **نجت** — الاحتياطُ ميّت (أعلاه) |
+| S-5 المتقدّمة: الملفّاتُ لا تُكتب | القرص |
+| S-6 المتقدّمة: تنبيهُ env يسقط | سطرُ Travelpayouts |
+| S-7 المتقدّمة: أسماءُ الميزات خام | `Stripe, Upload` |
+| S-8 المتقدّمة: السطرُ حتّى بلا ملفّات | صمتُ صفحة الهبوط |
+| S-9 Full-Stack: خارج `fullstack/` | الموقعُ الثابت لا يُمَسّ |
+| S-10 Full-Stack: يتجاهل التوصية | صمتُ البروشور |
+| S-11 Full-Stack: الفئةُ من الهدف لا المخطّط | السطرُ بحروفه |
+| S-12 الذاكرة: الأقسامُ لا تُكتب | القيمُ المختومة |
+| S-13 الذاكرة: الهويّةُ لا تُكتب | القيمُ المختومة |
+
+### الأثر
+
+- `jcr.js` **٢٤٨٣ ← ٢٤٢٣**؛ `stages/designer.js` ٣٦ + `stages/scaffold.js` ٦٥ (١٢٦ وحدةً في `agents/`).
+- الاختبارات **١٥٢٠ ← ١٥٢٧**.
+- `jcrReporterSeam` و`renderConfigShape` بلا تغيير (`this.io` ٧، `send` ٩٠).
+- الخريطة: صفّان جديدان، `jcr` ٢٤٢٣، عنوانُ C ١٢٦.
+
+### التالي
+
+انتهى ما هو «بثٌّ فقط» بلا نداءٍ لطرائق الصنف — إلّا `_stageBackend` (١٦٧ سطراً، ٢٨ سطرَ بثّ) الذي يستدعي
+`readCurrentCodeContextAsync` (١٧ سطراً، لا يحمل `this`، ٨ مستدعين) و`agents.*`. القرارُ التالي بالقياس: هل يخرج
+`readCurrentCodeContextAsync` أوّلاً دالّةً حرّة (مستدعوه الثمانية يتحوّلون معاً) ثمّ يتبعه `_stageBackend`؟
