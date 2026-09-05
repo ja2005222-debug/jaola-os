@@ -43,7 +43,8 @@ test('العلَمُ يقلب الإعدادَ فعلاً — وإلا فلا م
 test('مواضعُ الجواب الخمسة كما قِيست — أيُّ تغييرٍ قرارٌ لا انزلاق', () => {
     // تُشتقّ من القرص: النصُّ هو الحقيقة، لا قائمةٌ في ذاكرتي.
     const sites = [];
-    for (const f of ['agents/jcr.js', 'server.js', 'agents/renderAgent.js', 'services/deployAutomation.js']) {
+    // JCR/9: موضعُ `hasBackend` انتقل مع `_stageRenderConfig` إلى `stages/renderConfig.js` — القائمةُ تتبعه.
+    for (const f of ['agents/jcr.js', 'agents/stages/renderConfig.js', 'server.js', 'agents/renderAgent.js', 'services/deployAutomation.js']) {
         read(f).split('\n').forEach((line, i) => {
             const m = /prepareRenderDeploy\(|prepare\(projectPath/.exec(line);
             if (!m || /export (async )?function/.test(line)) return;
@@ -52,10 +53,10 @@ test('مواضعُ الجواب الخمسة كما قِيست — أيُّ تغ
         });
     }
     assert.deepEqual(sites.sort(), [
-        'agents/jcr.js:2031 → false',
-        'agents/jcr.js:2093 → false',
-        'agents/jcr.js:775 → hasBackend',   // ترتيبُ النصّ لا العدد
+        'agents/jcr.js:2009 → false',
+        'agents/jcr.js:2071 → false',
         'agents/renderAgent.js:172 → hasBackend',
+        'agents/stages/renderConfig.js:37 → hasBackend',
         'server.js:2391 → false',
         'services/deployAutomation.js:211 → true',
     ], 'مواضعُ تقرير شكل `render.yaml` تغيّرت — راجع الحارسَ والوثيقة معاً');
@@ -91,6 +92,9 @@ test('الحارسُ يعني ما يقوله: دالّةٌ حقيقيّةٌ ف�
 test('«أيحتاج خلفيةً؟» له مصدرٌ واحدٌ قائم — والمواضعُ الثابتة تتجاوزه', () => {
     const need = read('agents/backendNeed.js');
     assert.match(need, /export function needsBackend/, 'مصدرُ الحقيقة الواحد اختفى');
-    assert.match(read('agents/jcr.js'), /needsBackend\(context\.originalGoal\)/,
+    // JCR/9: السائلُ الوحيد انتقل مع `_stageRenderConfig` إلى `stages/renderConfig.js`؛ jcr لا يسأل بنفسه.
+    assert.match(read('agents/stages/renderConfig.js'), /needsBackend\(context\.originalGoal\)/,
         'الموضعُ الوحيد الذي يسأل المصدرَ الواحد لم يعد يفعل');
+    // (`agents.needsBackend(context.goal)` في jcr نداءٌ للحزمة المُحقَنة لا للوحدة — يبقى.)
+    assert.doesNotMatch(read('agents/jcr.js'), /(?<!agents\.)\bneedsBackend\(/, 'jcr عاد يسأل الوحدةَ بنفسه — مصدرٌ ثانٍ');
 });

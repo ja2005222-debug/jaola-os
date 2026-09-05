@@ -9,7 +9,7 @@ import { generateNextScaffold, generateContentModel, generateSectionContent, com
 import { buildStaticSite, buildStaticSiteFromSource, buildDashboardPage } from '../services/reactPreview.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO, resolveGoalLanguage } from './languageDetector.js';
-import { getProjectMemory, initFromClarifier, addToHistory, updateDesign, updateStructure, updateTech, setDomainModel, getDomainModel } from './projectMemory.js';
+import { getProjectMemory, initFromClarifier, addToHistory, updateDesign, updateStructure, setDomainModel, getDomainModel } from './projectMemory.js';
 import { mergeProjectModel, buildProjectModelContext, buildAppSections } from './projectModel.js';
 import { recordModel } from './modelLibrary.js';
 import { matchCloneTemplate } from './cloneTemplates/index.js';
@@ -23,6 +23,8 @@ import { runDebate } from './stages/debate.js';
 import { understandGoal } from './stages/understand.js';
 import { enrichBuildContext, resolveProjectType } from './stages/enrich.js';
 import { runRequirementsVerify } from './stages/requirementsVerify.js';
+import { runRenderConfig } from './stages/renderConfig.js';
+import { handleUndo } from './stages/undo.js';
 // 🔁 إعادةُ تصدير: `resolveProjectType` بقيت واجهةً من `jcr` لمستورِديها (JCR/6)
 export { resolveProjectType };
 import { buildFailureChatMessage } from './failureMessages.js';
@@ -35,10 +37,10 @@ import { updateLanguage, recordProject, recordEdit } from './userProfile.js';
 import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
 import { generateDatabase } from './databaseAgent.js';
 import { generateAuth, needsAuth } from './authAgent.js';
-import { generateAdvancedModules, needsBackend } from './backendAgent.js';
+import { generateAdvancedModules } from './backendAgent.js';
 import { generatePrismaSetup, needsPostgres } from './postgresAgent.js';
 import { prepareRenderDeploy, renderServiceName, deployToRender } from './renderAgent.js';
-import { isFullStackProject, listApiModules } from './deployAgent.js';
+import { isFullStackProject } from './deployAgent.js';
 import { transitionState, getProjectSummary, STATES } from './stateMachine.js';
 import { runSEO } from './seoAgent.js';
 import { runSecurity } from './securityAgent.js';
@@ -46,10 +48,10 @@ import { refactorCode } from './refactorAgent.js';
 import { reviewCode } from './reviewAgent.js';
 import { runTests } from './testingAgent.js';
 import { commitBuild } from './gitAgent.js';
-import { backupProject, listSnapshots, restoreSnapshot } from './fileManager.js';
+import { backupProject } from './fileManager.js';
 import { normalizeText, normalizeArabic, detectIntentFromMeaning, isQuestionMessage, hasActionIntent, isExplicitRebuild, isExplicitNewBuild, isContinuationGoal } from './textNormalizer.js';
 import { routeMessage } from './router.js';
-import { matchDeleteCommand, matchImageCommand, isImageDiagCommand, isBareYes, isBareExecute, isUndoCommand } from './chatCommands.js';
+import { matchDeleteCommand, matchImageCommand, isImageDiagCommand, isBareYes, isBareExecute } from './chatCommands.js';
 import { classifyIntentFast, decide, buildContinuationGoal, buildStatusReply, missionBriefing, greetingReply } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
 import { assertBuildAgents, DELIVERY_STAGES } from '../core/contracts/index.js';
@@ -751,34 +753,10 @@ export class JaolaCognitiveRuntime {
         } catch (e) { console.warn('[FullStack]', 'فشل كتابة سكافولد fullstack/:', e.message); }
     }
 
-    // 🆕 Render Deploy Config — يُعدّ المشروع للنشر على Render
+    // 🚀 إعدادُ النشر خرج إلى `stages/renderConfig.js` (JCR/9) — تفويضٌ يُبقي
+    // النداءَ بالاسم من `DELIVERY_STAGES`؛ المُبلِّغُ يُمرَّر وسيطاً.
     async _stageRenderConfig(context, roomName) {
-        try {
-            // 🏷️ اسم الخدمة من المصدر الواحد — كان هذا الموضع وحده يطهّر
-            // المشروع دون اسم المستخدم، فيكتب `guest_user-…` في render.yaml
-            // بينما تستعمل بقية المسارات `guest-user-…`: هويتان لمشروعٍ واحد.
-            const serviceName = renderServiceName(context.username, context.activeProject);
-            const hasBackend = needsBackend(context.originalGoal);
-
-            // 🔀 القرارُ يُحفظ لا يُنسى. كان `tech.hasBackend` و`tech.apis`
-            //    حقلَين **لا يكتبهما أحد**: يبقيان على قيمتهما الابتدائية
-            //    (`false` و`[]`) أبداً، وثلاثةُ قرّاءٍ يعتمدون عليهما فلا
-            //    يقع أيٌّ منهم. `hasBackend` **نيّةٌ** مشتقّةٌ من الهدف،
-            //    و`apis` **دليلٌ** مجرودٌ من القرص — ولا يُخلطان.
-            try {
-                updateTech(context.username, context.activeProject, {
-                    hasBackend,
-                    apis: listApiModules(context.projectPath),
-                });
-            } catch { /* حفظُ الذاكرة لا يُسقط بناءً ناجحاً */ }
-
-            const renderResult = await prepareRenderDeploy(context.projectPath, serviceName, hasBackend);
-            if (renderResult.success) {
-                this.emitLiveLog(roomName, '5. RUNTIME', 'RenderAgent',
-                    `✅ ${renderResult.summary}`
-                );
-            }
-        } catch (e) { console.warn('[RenderDeploy]', 'فشل إعداد النشر:', e.message); }
+        return runRenderConfig(context, roomName, this.reporter);
     }
 
     // 🔬 التحقّق السلوكي + جولة إصلاح تلقائية (طريقة مشتركة مع مسار التعديل)
@@ -2461,55 +2439,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
         return false;
     }
 
-    // «تراجع»: استرجاع حتمي فوري لآخر نسخة احتياطية كاملة — لا تفسير ذكاء.
+    // ⏪ «تراجع» خرج إلى `stages/undo.js` (JCR/9) — تفويضٌ يُبقي المستدعيَ كما هو؛
+    // `agents` لم يكن يُقرأ فلا يُمرَّر.
     async _handleUndo(req, agents) {
-        const { message, roomName, projectPath, username, activeProject, userLang } = req;
-        // ⏪ "تراجع/استرجع/undo" — استرجاع حتمي فوري لآخر نسخة احتياطية كاملة
-        // (شبكة أمان من الشات مكافئة لـ Version Restore عند المنافسين):
-        // لا تفسير ذكاء، لا مجال لانحراف — نسخة، استرجاع، انتهى.
-        if (isUndoCommand(message)) {
-            const lang = getUserLanguage(username) || userLang;
-            try {
-                const snaps = await listSnapshots(projectPath);
-                const latest = snaps.snapshots?.[0];
-                if (!latest) {
-                    this.reporter.send(roomName, 'chat_reply', {
-                        message: lang === 'en'
-                            ? 'No saved snapshot yet — snapshots are taken automatically before every upcoming edit, so "undo" will work from the next change onward.'
-                            : 'لا توجد نسخة سابقة محفوظة بعد — النسخ تُلتقط تلقائياً قبل كل تعديل قادم، فأمر «تراجع» سيعمل من التعديل التالي فصاعداً.',
-                    });
-                    return true;
-                }
-                const r = await restoreSnapshot(projectPath, latest.name);
-                if (!r.success) {
-                    this.reporter.send(roomName, 'chat_reply', {
-                        message: lang === 'en' ? `❌ Restore failed: ${r.error}` : `❌ تعذّر الاسترجاع: ${r.error}`,
-                    });
-                    return true;
-                }
-                // ما لم يُسترجَع يُقال، فلا يُقرأ «✅» على استرجاعٍ ناقص.
-                const rest = r.notRestored?.length
-                    ? ` — و${r.notRestored.length} ملفاً لم تشملها النسخة فبقيت كما هي (${r.notRestored.slice(0, 5).join('، ')}${r.notRestored.length > 5 ? '…' : ''})`
-                    : '';
-                this.emitLiveLog(roomName, 'EDIT', 'Undo', `⏪ استُرجعت النسخة ${latest.name} (${r.restored.length} ملف)${rest}.`);
-                this.reporter.send(roomName, 'preview_updated', { timestamp: Date.now() });
-                let undoFiles = [];
-                try { undoFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
-                this.reporter.send(roomName, 'workspace_files', undoFiles);
-                snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
-                this.reporter.send(roomName, 'chat_reply', {
-                    message: lang === 'en'
-                        ? `⏪ Done — restored the previous snapshot (${new Date(latest.timestamp).toLocaleString()}), ${r.restored.length} files. Preview updated.`
-                        : `⏪ تم — استُرجعت النسخة السابقة (${new Date(latest.timestamp).toLocaleString('ar')})، ${r.restored.length} ملفاً. المعاينة تحدّثت.`,
-                });
-            } catch (e) {
-                this.reporter.send(roomName, 'chat_reply', {
-                    message: lang === 'en' ? `❌ Restore failed: ${e.message}` : `❌ تعذّر الاسترجاع: ${e.message}`,
-                });
-            }
-            return true;
-        }
-        return false;
+        return handleUndo(req, this.reporter);
     }
 
     // «نعم» و«نفذ» المجرّدتان: تنفيذ الطلب المحجوب/الاستئناف/آخر ما نوقش — لا ارتجال شات.
