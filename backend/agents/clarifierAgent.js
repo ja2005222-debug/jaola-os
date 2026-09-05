@@ -1,4 +1,4 @@
-import { smartChat } from './baseAgent.js';
+import { smartChat } from '../core/providers/llm.js';
 import { detectProjectType } from './knowledgeEngine.js';
 import { detectLanguage, getUserLanguage, setUserLanguage } from './languageDetector.js';
 import { isConfirmed } from '../core/policy/ConfirmationManager.js';

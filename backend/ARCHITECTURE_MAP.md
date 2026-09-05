@@ -69,6 +69,7 @@ Policy/Permission، Identity، Plugin.
 | ✅ `core/runtime/AgentRuntime.js` (جديد، Sprint 2d) | 89 | `runAgent` + `gatherCooperationInputs` — منفّذ الوكيل الواحد: عقدٌ → نداء نموذج → ملفات مُطهَّرة | MOVED (Sprint 2d ✅، حرفياً عدا إسقاط افتراض `TEAM_BY_ID` الميت) | **Agent** | `runBackendTeam` (فريقا الخلفية **والواجهة** معاً) |
 | ✅ `core/policy/ConfirmationManager.js` (جديد، Sprint 3) | 82 | بوّابةُ تأكيدٍ واحدة تُميّز الموافقة من السؤال | ADDED | Permission | مستهلكها: مسارُ التأكيد في `jcr.js` |
 | ✅ `core/runtime/workspacePaths.js` (جديد، Sprint 2c) | 89 | `isInsideRoot`/`resolveInside` + `safeRelPath` — نواة احتواء المسار المشتركة (السياسات تبقى عند كل موضع) | ADDED | Tool | `writePlanFiles` (jcr)، `writeBackendTeamFiles`، `sanitizePath` |
+| ✅ `core/providers/llm.js` (Sprint 4g، مَنقول من `agents/baseAgent.js`) | 151 (25 مستورداً) | بوّابةُ الـLLM الوحيدة: `smartChat`/`ai`/`groq`/`deepseek` + سلسلة failover Groq → DeepSeek → Gemini → OpenAI + تصنيف الأعطال | MOVED (نقلٌ حرفيّ: لا سطرَ منطقٍ تغيّر) | Provider | `core/providers/llm.js` — لا Registry قبل Model Router (لا تجريد بلا مستهلك) |
 
 ### ✅ التحقّق من مسار `orchestrator.init` (البند 21 من الخط الأساس)
 مؤكَّد بالكود لا بالفهرس:
@@ -85,7 +86,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## C) `backend/agents/*` — 115 وحدة (منها 42 قالب كلون)
+## C) `backend/agents/*` — 114 وحدة (منها 42 قالب كلون)
 
 ### C1. النواة (Kernel candidates)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
@@ -96,7 +97,7 @@ Policy/Permission، Identity، Plugin.
 | `ceoBrain.js` | 240 | تصنيف نية سريع، قرار، رسائل إحاطة/حالة | MODIFY | Mission (Intent/CEO في مسار v2) | `core/runtime/` |
 | `router.js` | 94 | الموجّه الموحّد للرسائل | MODIFY | Mission | مع `ceoBrain` |
 | `chatCommands.js`, `textNormalizer.js`, `languageDetector.js`, `logLocalizer.js`, `failureMessages.js` | 120/275/192/204/25 | أوامر حتمية، تطبيع نص، لغة، ترجمة السجل، رسائل الفشل | KEEP | — | `agents/` (أدوات النواة اللغوية) |
-| `baseAgent.js` | 151 (25 مستورداً) | عميل LLM المشترك (`groq`, `smartChat`) | MODIFY | Provider (LLM Provider Registry) — Model Router لاحقاً | `core/plugins/ProviderRegistry.js` |
+| ~~`baseAgent.js`~~ | 151 | عميل LLM المشترك — **نُقل حرفياً** إلى `core/providers/llm.js` (Sprint 4g) | MOVED | Provider | `core/providers/llm.js` (القسم B) |
 | `knowledgeEngine.js` | 335 | كشف نوع المشروع + سياق معرفي + `needsBackend` | KEEP | — | `plugins/coding/` |
 | `backendNeed.js` | 68 | **مصدرُ الحقيقة الواحد** لـ«أيحتاج خلفيةً؟» (Sprint 7/1) + العلاقية مجموعةً جزئيّة منه (2r) | KEEP | — | `plugins/coding/` |
 | ✅ `keywordMatch.js` (جديد، 2s) | 60 | مطابقةُ كلماتٍ بحدودها لا باحتوائها — سابقةٌ عربية مقيَّدة ولاحقةٌ من مجموعةٍ مغلقة | ADDED | — | `plugins/coding/` |

@@ -8,7 +8,7 @@
 
 // 🔀 مصدرٌ واحد: كانت هذه العبارة مكتوبة هنا وفي `platformLessons.js`
 // بقيمتين — هذه تنقص «رصيد المزوّد». لا أثر حيّ اليوم لأن الرسالة الفعلية
-// (`AI_UNAVAILABLE_MSG` في baseAgent) تحمل العبارتين معاً فتُطابقهما كلتيهما،
+// (`AI_UNAVAILABLE_MSG` في `core/providers/llm.js`) تحمل العبارتين معاً فتُطابقهما كلتيهما،
 // لكنه سؤالٌ واحد بجوابين ينتظر أن يفترقا. النسخة الأوسع هي المحفوظة.
 import { isAiDownMessage } from '../services/platformLessons.js';
 

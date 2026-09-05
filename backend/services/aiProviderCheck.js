@@ -6,7 +6,7 @@
  * الرسمية). لا يُعاد أي مفتاح خاماً أبداً — الذيل الأخير فقط.
  */
 
-import { DEEPSEEK_MODEL } from '../agents/baseAgent.js';
+import { DEEPSEEK_MODEL } from '../core/providers/llm.js';
 import { GEMINI_IMAGE_MODELS } from './aiImages.js';
 
 const mask = (key) => (key ? `…${String(key).slice(-4)}` : null);

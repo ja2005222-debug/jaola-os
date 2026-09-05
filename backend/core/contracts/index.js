@@ -91,7 +91,7 @@
  * @typedef {object} Provider
  * مزوّد خارجي خلف قدرة — عقد Provider (النموذج المرجعي:
  * `travel-service/src/providers/index.js`: اختيار بمفتاح البيئة مع احتياط
- * محاكاة؛ و`agents/baseAgent.js`: سلسلة failover Groq → DeepSeek → Gemini →
+ * محاكاة؛ و`core/providers/llm.js`: سلسلة failover Groq → DeepSeek → Gemini →
  * OpenAI؛ و`services/aiProviderCheck.js`: فحص صحة `{configured, ok, detail}`).
  * @property {string} name                       `duffel`, `liteapi`, `groq`, `mock-flights`
  * @property {string} kind                       `llm` | `flights` | `stays` | `cars` | `payment` | `email` | …

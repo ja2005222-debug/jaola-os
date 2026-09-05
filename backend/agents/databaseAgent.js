@@ -8,7 +8,7 @@
  * - Connection setup
  */
 
-import { smartChat } from './baseAgent.js';
+import { smartChat } from '../core/providers/llm.js';
 import { needsRelationalDb } from './backendNeed.js';
 
 // ═══════════════════════════════════════════════════════

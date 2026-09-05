@@ -11,7 +11,7 @@
  * ثم يُحقن هذا في سياق المولّد ليبني ميزات عاملة لا زخارف.
  */
 
-import { smartChat } from './baseAgent.js';
+import { smartChat } from '../core/providers/llm.js';
 import { keywordMatches } from './knowledgeEngine.js';
 
 /**

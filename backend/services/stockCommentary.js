@@ -3,9 +3,9 @@
  * (عربي أو إنجليزي) تفسّر أرقام تحليل فني حقيقي (SMA/RSI/إشارة) لسهم أو
  * زوج فوركس بلغة مبسّطة، بلا أي أمر تنفيذي مباشر ("اشترِ الآن") — وصف
  * الزخم/الاتجاه فقط، لا توصية ملزمة. نفس بنية cryptoCommentary.js تماماً
- * (نفس سلسلة الـfailover في baseAgent.js)، ويصمت (يعيد null) عند أي عطل.
+ * (نفس سلسلة الـfailover في `core/providers/llm.js`)، ويصمت (يعيد null) عند أي عطل.
  */
-import { smartChat } from '../agents/baseAgent.js';
+import { smartChat } from '../core/providers/llm.js';
 
 const TTL_MS = 5 * 60 * 1000;
 const cache = new Map(); // "id|timeframe|lang|signal|reasonCode" → { text, at }

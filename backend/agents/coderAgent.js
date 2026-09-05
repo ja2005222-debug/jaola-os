@@ -1,4 +1,4 @@
-import { deepseek, groq, ai, isPermanentAIError, AI_UNAVAILABLE_MSG, DEEPSEEK_MODEL } from './baseAgent.js';
+import { deepseek, groq, ai, isPermanentAIError, AI_UNAVAILABLE_MSG, DEEPSEEK_MODEL } from '../core/providers/llm.js';
 import { buildContextPrompt } from './knowledgeEngine.js';
 import { buildLessonsPromptBlock } from '../services/platformLessons.js';
 import { buildBlueprintPrompt } from './referenceBlueprints.js';

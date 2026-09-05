@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { groq, smartChat } from './baseAgent.js';
+import { groq, smartChat } from '../core/providers/llm.js';
 import { runBackendTeam, writeBackendTeamFiles } from './backendTeam/index.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain, summarizeFacts } from '../services/projectBrain.js';
 import { resolveStack } from './starterRegistry.js';

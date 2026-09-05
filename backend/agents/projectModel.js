@@ -13,7 +13,7 @@
  * ويُدمج (لا يُستبدل) مع كل تعديل ليصير فهماً متراكماً للمشروع.
  */
 
-import { smartChat } from './baseAgent.js';
+import { smartChat } from '../core/providers/llm.js';
 
 const MODEL_SYSTEM = `أنت مهندس برمجيات ومحلل مجال (domain analyst) خبير.
 مهمتك تحويل طلب المستخدم (بأي لغة) إلى *نموذج مجال مُهيكَل* — لا كود، بل فهم البنية.

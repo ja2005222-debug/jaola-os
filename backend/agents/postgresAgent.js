@@ -8,7 +8,7 @@
  * - API routes تستخدم Prisma Client
  */
 
-import { smartChat } from './baseAgent.js';
+import { smartChat } from '../core/providers/llm.js';
 
 // ═══════════════════════════════════════════════════════
 // 📊 Schemas جاهزة لأشهر أنواع المشاريع

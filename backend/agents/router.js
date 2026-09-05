@@ -13,7 +13,7 @@
  *   محفور هنا.
  */
 
-import { smartChat } from './baseAgent.js';
+import { smartChat } from '../core/providers/llm.js';
 import { isQuestionMessage } from './textNormalizer.js';
 
 // الأفعال المسموحة من الموجّه — أي شيء خارجها يُرفض (fallback للمسار القديم)

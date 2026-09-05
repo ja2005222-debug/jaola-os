@@ -242,7 +242,7 @@ percent}, lastActivity, updatedAt }` — و`progress.works` (true/false/null)
 `io` وهمي يلتقط البثّ، حقيبة `agents` وهمية، واستبدال
 `executeMission/surgicalEdit/generateChatResponse` بمسجِّلات — فلا LLM ولا
 شبكة ولا كتابة مشاريع. حقيقتان مُقاستان: استيراد `jcr.js` ينجح بلا أي مفتاح
-API (`groq` يصبح `null` في `baseAgent.js:11`)، و`node --test` يخرج وحده
+API (`groq` يصبح `null` في `baseAgent.js:11` — صار `core/providers/llm.js:11` بعد Sprint 4g)، و`node --test` يخرج وحده
 بعد بناء الـruntime (<1 ثانية) — أي لا مؤقّتات ولا اتصالات معلّقة عند
 التحميل.
 
@@ -750,7 +750,8 @@ Event/Transaction/Evidence». الستة الأولى ثُبّتت في الخط
   سيختار المنفّذ بالقدرة لا باسم الملف.
 - **Provider (نوع موثّق)**: النموذج المرجعي `travel-service/src/providers/
   index.js` (اختيار بمفتاح البيئة، سلسلة أولوية صريحة، احتياط محاكاة دائم)
-  + `baseAgent` (failover Groq → DeepSeek → Gemini → OpenAI خلف واجهة واحدة)
+  + `baseAgent` (failover Groq → DeepSeek → Gemini → OpenAI خلف واجهة واحدة؛
+    نُقل في Sprint 4g إلى `core/providers/llm.js` — نقلٌ حرفيّ، والقرارُ أدناه قائم)
   + `aiProviderCheck` (`probe` فعلي بمستهلك في `/api/admin`). **قرار**: لا
   `ProviderRegistry` قبل Model Router (الخطوة 4) — مستهلكه الوحيد.
 - **Transaction (نوع موثّق)**: النموذج المرجعي `bookings.js` (آلة حالات

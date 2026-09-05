@@ -10,7 +10,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { smartChat } from './baseAgent.js';
+import { smartChat } from '../core/providers/llm.js';
 import { pickPalette } from './cloneAssets.js';
 import { forgeItemSVG, seedOf } from './imageForge.js';
 
