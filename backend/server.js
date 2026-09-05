@@ -134,7 +134,7 @@ import { assetsFor, injectFaviconTag } from './agents/cloneAssets.js';
 import { listLibraries, getLibraryById, injectLibrary } from './agents/libraryRegistry.js';
 import { polishHtml } from './agents/polishPack.js';
 import { setProjectSecret, deleteProjectSecret, getProjectSecretNames, getProjectSecrets, getUnreadableSecretNames, clearProjectSecrets } from './services/projectSecrets.js';
-import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
+import { snapshotWorkspace, restoreWorkspaceIfEmpty, clearWorkspaceSnapshot } from './services/workspaceStore.js';
 import { recordTurn } from './services/conversationStore.js';
 import { buildMetricsPayload, clearMetrics } from './services/metricsStore.js';
 import { queueStatus } from './core/runtime/ExecutionQueue.js';
@@ -1150,6 +1150,9 @@ async function deleteProjectCompletely(username, project) {
         // المحذوف ونموذجَ مجاله وحالةَ بنائه.
         await clearProjectMemory(username, safeProject);
         await clearProjectState(username, safeProject);
+        // 🔴 ولقطةُ الملفات: شيفرةُ المستخدم نفسُها. `restoreWorkspaceIfEmpty`
+        //    يكتبها في أيّ مجلدٍ فارغ — وهو حالُ مشروعٍ جديدٍ بالاسم نفسه.
+        await clearWorkspaceSnapshot(username, safeProject);
 
         // إذا كان هذا هو المشروع النشط حالياً للمستخدم، بلّغ الـ socket room
         const roomName = `${username}-${safeProject}`;

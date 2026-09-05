@@ -96,6 +96,30 @@ test('لا مخزنَ مفتاحُه user:project يبقى بلا مسحٍ عن�
         }
     })(BACKEND);
 
+    // 🔴 والمسحُ أعلاه يرى مخازنَ `persistEntry` وحدَها. و`workspaceStore`
+    //    يحفظ **شيفرةَ المستخدم** في نموذج mongoose خاصٍّ به بحقلَي
+    //    username+project — فمرّ من تحت الحارس وهو يُعلن الشمول. القاعدةُ
+    //    تشمل الآن أيَّ نموذجٍ يحمل الحقلين معاً.
+    (function walkModels(dir, rel = '') {
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+            if (['node_modules', 'tests', 'workspaces', 'memory', 'plugins'].includes(e.name) || e.name.startsWith('.')) continue;
+            const p = path.join(dir, e.name), r = rel ? `${rel}/${e.name}` : e.name;
+            if (e.isDirectory()) { walkModels(p, r); continue; }
+            if (!e.name.endsWith('.js')) continue;
+            const src = fs.readFileSync(p, 'utf8');
+            // 🔴 كُتب هذا أوّلاً بنمطٍ كسولٍ ينتهي عند أوّل `}` — وهو نهايةُ
+            //    حقلِ `username` لا نهايةُ المخطّط، فلم يُرَ `project` قطّ
+            //    ووجد الحارسُ **صفراً** ومرّ. نافذةٌ ثابتةٌ بعد رأس المخطّط.
+            for (const m of src.matchAll(/new mongoose\.Schema\(\{/g)) {
+                const body = src.slice(m.index, m.index + 1200);
+                if (/\busername\s*:/.test(body) && /\bproject\s*:/.test(body)) {
+                    const name = (/const\s+(\w+)\s*=\s*mongoose\.models\.(\w+)/.exec(src) || [])[2] || r;
+                    perProject.set(`نموذج:${name}`, r);
+                }
+            }
+        }
+    })(BACKEND);
+
     assert.ok(perProject.size >= 3, `لم يُعثر على مخازنِ المشروع (${perProject.size}) — راجِع الاشتقاق`);
 
     const del = fs.readFileSync(path.join(BACKEND, 'server.js'), 'utf8');
@@ -110,9 +134,12 @@ test('لا مخزنَ مفتاحُه user:project يبقى بلا مسحٍ عن�
         const clears = [...src.matchAll(/export (?:async )?function (clear\w+|remove\w+)\s*\([^)]*\)\s*\{/g)];
         const called = clears.filter(([, fn]) => new RegExp(`\\b${fn}\\s*\\(`).test(scope));
         if (!called.length) { unmopped.push(`${store} (${file})`); continue; }
+        // «يبلغ الدائمَ» لا «ينادي removeEntry»: مخازنُ persistEntry تمحو به،
+        // ونماذجُ mongoose بـdeleteMany/deleteOne. الشرطُ على الأثر لا على
+        // اسمِ الدالّة — وإلا رُدَّ ماسحٌ صحيحٌ لأنّه كُتب بأداةٍ أخرى.
         const reaches = called.some(([whole, fn]) => {
             const from = src.indexOf(whole);
-            return /removeEntry\s*\(/.test(src.slice(from, from + 800));
+            return /(removeEntry|deleteMany|deleteOne)\s*\(/.test(src.slice(from, from + 800));
         });
         if (!reaches) cacheOnly.push(`${store} (${file})`);
     }

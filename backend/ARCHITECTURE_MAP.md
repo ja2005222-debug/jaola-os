@@ -28,7 +28,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## A) `backend/server.js` — 3803 سطراً، 158 مساراً، 97 استيراداً محلياً
+## A) `backend/server.js` — 3806 سطراً، 158 مساراً، 97 استيراداً محلياً
 
 لا يُفكَّك دفعة واحدة (البند 19). الخريطة **حسب المجال** لأن الملف واحد؛ كل صف = مرشّح
 ملف `routes/<domain>.js` مستقبلاً على نمط `routes/billing.js` القائم فعلاً («أول
@@ -176,7 +176,7 @@ Policy/Permission، Identity، Plugin.
 | `codeGuard.js` | 389 | حارس جودة الكود المولَّد | KEEP | Verification | `plugins/coding/` |
 | `indexHealth.js` (1 مستورد) | 81 | فحصُ قيود التفرّد قراءةً (autoIndex=false ولا createIndexes) | KEEP | — | `core/` |
 | `persistence.js` (11 مستورداً) | 114 | طبقة الحفظ (Mongo + احتياط) | KEEP | — | `core/` (Sprint 7) |
-| `workspaceStore.js` | 153 | نسخ ملفات المشاريع إلى Mongo | KEEP | Tool (workspace) | `core/runtime/` |
+| `workspaceStore.js` | 173 | نسخ ملفات المشاريع إلى Mongo | KEEP | Tool (workspace) | `core/runtime/` |
 | `conversationStore.js`, `conversationManager.js` | 170/80 | ذاكرة الحوار | KEEP | Memory | `core/memory/` |
 | `metricsStore.js`, `usageMeter.js`, `errorLog.js`, `logger.js`, `adminAudit.js` | 120/78/45/36/41 | قياس واستهلاك وتدقيق | MODIFY | Audit (AuditLog يوحّدها) | `core/audit/` (Sprint 4) |
 | `presence.js` | 12 | حضور | MODIFY | Event (EventBus) | `core/events/` |
