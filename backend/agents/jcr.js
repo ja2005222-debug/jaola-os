@@ -51,7 +51,7 @@ import { setUserLanguage } from './languageDetector.js';
 import { assertBuildAgents, DELIVERY_STAGES } from '../core/contracts/index.js';
 import { orderTasks } from '../core/runtime/TaskGraph.js';
 import { createExecutionContext, contextFromRequest } from '../core/runtime/ExecutionContext.js';
-import { resolveInside, projectPathOf } from '../core/runtime/workspacePaths.js';
+import { resolveProjectFile, projectPathOf } from '../core/runtime/workspacePaths.js';
 import { registerMission, throwIfAborted, clearMission } from '../core/runtime/AbortRegistry.js';
 import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import { snapshotWorkspace } from '../services/workspaceStore.js';
@@ -154,18 +154,37 @@ const CognitiveCapabilities = {
 // ['index.html','styles.css','script.js'] كانت تُسقط بصمت أي ملف باسم مختلف
 // (style.css بلا s، css/styles.css، صفحات إضافية) فيصل الموقع للمستخدم
 // خاماً بلا تصميم. الآن يُكتب كل ملف بعد تعقيم مساره فقط.
+// 🛡️ الاحتواءُ صار **واحداً**: كانت سياسةُ `writePlanFiles` مطبَّقةً في موضعٍ
+// واحدٍ من عشرين داخل هذا الملفّ؛ والباقيةُ تكتب `path.join(root, f.name)`
+// مباشرةً بلا احتواء. أخطرُها مسارُ التعديل، فأسماؤه من **مخرجات النموذج**.
+/**
+ * ✍️ كتابةُ ملفٍّ واحدٍ من مولِّدٍ أو نموذجٍ — **محتوىً دائماً**.
+ * @returns {Promise<boolean>} `false` إن رُفض الاسم (خارج الجذر أو منقوطٌ غيرُ مسموح).
+ */
+async function writeProjectFile(root, name, content) {
+    const fp = resolveProjectFile(root, name);
+    if (!fp) return false;
+    await fsPromises.mkdir(path.dirname(fp), { recursive: true });
+    await fsPromises.writeFile(fp, content);
+    return true;
+}
+
+/**
+ * 💾 كتابةُ ملفّات الخطة كلِّها.
+ * @returns {{written: number, rejected: string[]}} — الرفضُ يُحصى لا يُبتلع.
+ */
 async function writePlanFiles(projectPath, files) {
+    const rejected = [];
+    let written = 0;
     for (const f of files || []) {
-        if (!f?.name || typeof f.content !== 'string') continue;
-        const safe = path.normalize(f.name).replace(/\\/g, '/');
-        // لا مسارات مطلقة، لا صعود خارج المشروع، لا ملفات مخفية (لن تُخدَّم أصلاً)
-        if (path.isAbsolute(safe) || safe.split('/').some(p => p === '..' || p.startsWith('.'))) continue;
-        // الاحتواء عبر النواة المشتركة: الفحص السابق كان بلا فاصل مسار (دفاعٌ معطوب)
-        const fp = resolveInside(projectPath, safe);
-        if (!fp) continue;
+        if (!f?.name || typeof f.content !== 'string') { if (f?.name) rejected.push(String(f.name)); continue; }
+        const fp = resolveProjectFile(projectPath, f.name);
+        if (!fp) { rejected.push(String(f.name)); continue; }
         await fsPromises.mkdir(path.dirname(fp), { recursive: true });
         await fsPromises.writeFile(fp, f.content);
+        written++;
     }
+    return { written, rejected };
 }
 
 // ==========================================
@@ -637,9 +656,7 @@ export class JaolaCognitiveRuntime {
                         if (!f?.name || typeof f.content !== 'string') continue;
                         const idx = plan.files.findIndex(p => p.name === f.name);
                         if (idx >= 0) plan.files[idx] = f; else plan.files.push(f);
-                        const fp = path.join(context.projectPath, f.name);
-                        await fsPromises.mkdir(path.dirname(fp), { recursive: true });
-                        await fsPromises.writeFile(fp, f.content);
+                        await writeProjectFile(context.projectPath, f.name, f.content);
                     }
                     const before = new Set(verdict.missing.map(m => m.name));
                     verdict = await verifyRequirements(context.blueprint, plan.files);
@@ -686,7 +703,7 @@ export class JaolaCognitiveRuntime {
                 plan.files = seoResult.files;
                 // حفظ robots.txt و sitemap.xml
                 for (const file of seoResult.newFiles) {
-                    await fsPromises.writeFile(path.join(context.projectPath, file.name), file.content);
+                    await writeProjectFile(context.projectPath, file.name, file.content);
                 }
                 this.emitLiveLog(roomName, '5. RUNTIME', 'SEOAgent', `✅ ${seoResult.summary}`);
                 // 📊 حزمة SEO كاملة طُبقت (robots + sitemap + meta + schema)
@@ -705,7 +722,7 @@ export class JaolaCognitiveRuntime {
             if (secResult.success) {
                 // لا إسنادَ لـfixedFiles: لم يعد ثمّة مُصلِحٌ يغيّر شيئاً هنا
                 for (const file of secResult.newFiles) {
-                    await fsPromises.writeFile(path.join(context.projectPath, file.name), file.content);
+                    await writeProjectFile(context.projectPath, file.name, file.content);
                 }
                 const secEmoji = secResult.grade === 'A' ? '✅' : secResult.grade === 'B' ? '🟡' : '🟠';
                 this.emitLiveLog(roomName, '5. RUNTIME', 'SecurityAgent',
@@ -821,10 +838,7 @@ export class JaolaCognitiveRuntime {
 
                     // حفظ ملفات الـ Backend
                     for (const file of backendResult.files) {
-                        const filePath = path.join(context.projectPath, file.name);
-                        // تأكد من وجود المجلد (مثل api/)
-                        await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
-                        await fsPromises.writeFile(filePath, file.content);
+                        await writeProjectFile(context.projectPath, file.name, file.content);
                     }
                     this.emitLiveLog(roomName, '5. RUNTIME', 'BackendAgent',
                         `✅ تم توليد ${backendResult.files.length} ملف (${backendResult.files.map(f => f.name).join(', ')})`
@@ -867,9 +881,7 @@ export class JaolaCognitiveRuntime {
                 const dbResult = await generateDatabase(context.originalGoal, projectType, context.projectPath);
                 if (dbResult.success) {
                     for (const file of dbResult.files) {
-                        const filePath = path.join(context.projectPath, file.name);
-                        await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
-                        await fsPromises.writeFile(filePath, file.content);
+                        await writeProjectFile(context.projectPath, file.name, file.content);
                     }
                     this.emitLiveLog(roomName, '5. RUNTIME', 'DatabaseAgent',
                         `✅ ${dbResult.summary}`
@@ -891,9 +903,7 @@ export class JaolaCognitiveRuntime {
                     const pgResult = await generatePrismaSetup(context.originalGoal, projectType);
                     if (pgResult.success) {
                         for (const file of pgResult.files) {
-                            const filePath = path.join(context.projectPath, file.name);
-                            await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
-                            await fsPromises.writeFile(filePath, file.content);
+                            await writeProjectFile(context.projectPath, file.name, file.content);
                         }
                         this.emitLiveLog(roomName, '5. RUNTIME', 'PostgresAgent',
                             `✅ ${pgResult.summary}`
@@ -911,9 +921,7 @@ export class JaolaCognitiveRuntime {
                     const authResult = await generateAuth(context.originalGoal, context.projectPath, getUserLanguage(context.username) || 'en');
                     if (authResult.success) {
                         for (const file of authResult.files) {
-                            const filePath = path.join(context.projectPath, file.name);
-                            await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
-                            await fsPromises.writeFile(filePath, file.content);
+                            await writeProjectFile(context.projectPath, file.name, file.content);
                         }
                         this.emitLiveLog(roomName, '5. RUNTIME', 'AuthAgent',
                             `✅ ${authResult.summary}`
@@ -932,9 +940,7 @@ export class JaolaCognitiveRuntime {
             const advResult = await generateAdvancedModules(context.originalGoal, context.projectPath);
             if (advResult.files.length > 0) {
                 for (const file of advResult.files) {
-                    const filePath = path.join(context.projectPath, file.name);
-                    await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
-                    await fsPromises.writeFile(filePath, file.content);
+                    await writeProjectFile(context.projectPath, file.name, file.content);
                 }
                 const features = Object.entries(advResult.features)
                     .filter(([, v]) => v)
@@ -961,9 +967,7 @@ export class JaolaCognitiveRuntime {
             if (fsRec.fullstack) {
                 const { category, files } = buildFullStackProject(fsRec.category, context.activeProject);
                 for (const file of files) {
-                    const filePath = path.join(context.projectPath, 'fullstack', file.name);
-                    await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
-                    await fsPromises.writeFile(filePath, file.content);
+                    await writeProjectFile(path.join(context.projectPath, 'fullstack'), file.name, file.content);
                 }
                 this.emitLiveLog(roomName, '5. RUNTIME', 'FullStackAgent',
                     `🏗️ نسخة Full-Stack (${category}) في مجلد fullstack/ — Next.js + API + Prisma (${files.length} ملف)`
@@ -1853,7 +1857,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
         // أعِد توليد الموقع الثابت كله (الصفحة الجديدة + الشريط المحدَّث في كل صفحة)
         for (const pg of buildStaticSite(content, lang)) {
-            await fsPromises.writeFile(path.join(projectPath, pg.name), pg.content);
+            await writeProjectFile(projectPath, pg.name, pg.content);
         }
 
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
@@ -1915,7 +1919,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         await fsPromises.writeFile(path.join(projectPath, 'lib/content.js'),
             `// محتوى الموقع — عدّله بحرّية. يملؤه JAOLA بالذكاء حسب مشروعك.\nexport const content = ${JSON.stringify(content, null, 2)};\n`);
         for (const pg of buildStaticSite(content, lang)) {
-            await fsPromises.writeFile(path.join(projectPath, pg.name), pg.content);
+            await writeProjectFile(projectPath, pg.name, pg.content);
         }
         this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
         addToHistory(username, activeProject, historyMsg);
@@ -2084,7 +2088,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             await guardFiles(scrubPlaceholders(plan.files, activeProject), emitGuard),
             projectPath, emitGuard);
         for (const file of guarded) {
-            await fsPromises.writeFile(path.join(projectPath, file.name), file.content);
+            await writeProjectFile(projectPath, file.name, file.content);
         }
 
         // React: أعِد توليد صفحات المعاينة الثابتة من المحتوى المحدَّث — فينعكس
@@ -2093,7 +2097,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             try {
                 const src = await fsPromises.readFile(path.join(projectPath, 'lib/content.js'), 'utf8');
                 for (const pg of buildStaticSiteFromSource(src, lang)) {
-                    await fsPromises.writeFile(path.join(projectPath, pg.name), pg.content);
+                    await writeProjectFile(projectPath, pg.name, pg.content);
                 }
             } catch (e) { this.emitLiveLog(roomName, 'EDIT', 'Preview', `⚠️ تعذّر تحديث المعاينة: ${e.message}`); }
         }
@@ -2115,11 +2119,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
             return existingFns.filter(n => !after.has(n));
         };
         const restoreFiles = async (snapshot) => {
-            for (const f of snapshot) await fsPromises.writeFile(path.join(projectPath, f.name), f.content);
+            for (const f of snapshot) await writeProjectFile(projectPath, f.name, f.content);
             if (isReact) {
                 try {
                     const src = await fsPromises.readFile(path.join(projectPath, 'lib/content.js'), 'utf8');
-                    for (const pg of buildStaticSiteFromSource(src, lang)) await fsPromises.writeFile(path.join(projectPath, pg.name), pg.content);
+                    for (const pg of buildStaticSiteFromSource(src, lang)) await writeProjectFile(projectPath, pg.name, pg.content);
                 } catch {}
             }
         };
@@ -2202,7 +2206,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const baseFiles = localizeTemplateFiles(clone.files, lang);
         if (lang === 'en') this.emitLiveLog(roomName, '5. RUNTIME', 'Localizer', '🌐 Template delivered in English (your selected language).');
         for (const f of baseFiles) {
-            await fsPromises.writeFile(path.join(projectPath, f.name), f.content);
+            await writeProjectFile(projectPath, f.name, f.content);
         }
         // احفظ نموذج الكلون (يُدمج + يُغني المكتبة)
         const model = mergeProjectModel(getDomainModel(username, activeProject) || {}, clone.model);
@@ -2302,7 +2306,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 if (broke) {
                     const why = lostFn.length ? `فقد دوال (${lostFn.slice(0, 3).join('، ')})` : `فشل جديد: ${newFails.join('، ')}`;
                     this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', `↩️ التخصيص أدخل عطلاً (${why}) — استرجاع الكلون العامل النظيف.`);
-                    for (const f of baseFiles) await fsPromises.writeFile(path.join(projectPath, f.name), f.content);
+                    for (const f of baseFiles) await writeProjectFile(projectPath, f.name, f.content);
                 } else {
                     this.emitLiveLog(roomName, '5. RUNTIME', 'CloneTemplate', `✅ البصمة وُضعت والتطبيق يعمل (${verdict.summary || 'تحقّق سلوكي'}).`);
                 }
@@ -2376,7 +2380,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const palette = pickPalette(goal);
         const brand = brandFromGoal(goal, activeProject);
         const { files, blocks } = composePage({ brand, accent: palette.accent, blocks: selectBlocks(goal) });
-        for (const f of files) await fsPromises.writeFile(path.join(projectPath, f.name), f.content);
+        for (const f of files) await writeProjectFile(projectPath, f.name, f.content);
         this.emitLiveLog(roomName, '5. RUNTIME', 'JaolaRegistry', `🧩 رُكّبت ${blocks.length} أقسام: ${blocks.join(' · ')}`);
 
         // 2) هوية بصرية + تلميع (خطّ + حركات) — حتميّ
@@ -2441,9 +2445,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // 1) سكافولد Next الحقيقي (للنشر/التنزيل) — بمحتوى مخصّص
         const scaffold = generateNextScaffold({ projectName: activeProject, sections, lang, content });
         for (const f of scaffold.files) {
-            const p = path.join(projectPath, f.name);
-            await fsPromises.mkdir(path.dirname(p), { recursive: true });
-            await fsPromises.writeFile(p, f.content);
+            await writeProjectFile(projectPath, f.name, f.content);
         }
 
         // 1.5) تخصيص محتوى **كل صفحة** بالذكاء: النموذج الدفعي قد يترك أقساماً
@@ -2479,7 +2481,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         //    (index.html + <slug>.html) — بلا CDN، فالتنقّل يفتح صفحات فعلية.
         const staticPages = buildStaticSite(finalContent, lang);
         for (const pg of staticPages) {
-            await fsPromises.writeFile(path.join(projectPath, pg.name), pg.content);
+            await writeProjectFile(projectPath, pg.name, pg.content);
         }
         // 🛠️ لوحة تحكم يديرها العميل لموقعه (dashboard.html) — يضبط كلمة مرورها أول مرة
         await fsPromises.writeFile(path.join(projectPath, 'dashboard.html'),
