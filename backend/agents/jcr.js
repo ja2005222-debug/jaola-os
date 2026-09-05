@@ -24,13 +24,14 @@ import { understandGoal } from './stages/understand.js';
 import { enrichBuildContext, resolveProjectType } from './stages/enrich.js';
 import { runRequirementsVerify } from './stages/requirementsVerify.js';
 import { runRenderConfig } from './stages/renderConfig.js';
+import { buildFromRegistry } from './stages/buildFromRegistry.js';
 import { handleUndo } from './stages/undo.js';
 // 🔁 إعادةُ تصدير: `resolveProjectType` بقيت واجهةً من `jcr` لمستورِديها (JCR/6)
 export { resolveProjectType };
 import { buildFailureChatMessage } from './failureMessages.js';
-import { assetsFor, injectFaviconTag, paletteHint, pickPalette } from './cloneAssets.js';
+import { assetsFor, injectFaviconTag, paletteHint } from './cloneAssets.js';
 import { polishHtml } from './polishPack.js';
-import { composePage, isMarketingPageGoal, brandFromGoal, selectBlocks, applyBrandName } from './blockRegistry.js';
+import { isMarketingPageGoal, brandFromGoal, applyBrandName } from './blockRegistry.js';
 import { verifyBehavior, buildBehaviorFixInstruction, analyzeProjectStatic, readPageCode, extractDefinedFunctions } from './behaviorVerifier.js';
 import { hasKeyword } from './keywordMatch.js';
 import { updateLanguage, recordProject, recordEdit } from './userProfile.js';
@@ -2037,60 +2038,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
         return { success: true, clone: clone.id };
     }
 
-    // 🧱 بناء بإعادة التركيب من JAOLA Registry — صفحة تسويقيّة/تعريفيّة *كاملة
-    // واحترافية* من بلوكات جاهزة مختبَرة (Hero/Features/Pricing/…)، ثم بصمة
-    // (علامة/لون) + أيقونة + تلميع. لا توليد من الصفر (أسرع وأنظف وأكمل).
+    // 🧱 بناءُ Registry خرج إلى `stages/buildFromRegistry.js` (JCR/10) — تفويضٌ يُبقي
+    // المستدعيَ كما هو؛ المُبلِّغُ يُمرَّر وسيطاً ويحمل `io` للدفع التلقائيّ.
     async _buildFromRegistry(goal, ctx) {
-        const { projectPath, username, activeProject, roomName } = ctx;
-        const lang = resolveGoalLanguage(goal, getUserLanguage(username)); // لا ردّ إنجليزي على طلب عربيّ
-        const t0 = Date.now();
-        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
-        this.emitLiveLog(roomName, '5. RUNTIME', 'JaolaRegistry', '🧱 إعادة تركيب صفحة احترافية من JAOLA Registry (بلوكات جاهزة) — لا توليد من الصفر');
-
-        // 1) ركّب صفحة كاملة مخصّصة (علامة + لون المجال) من البلوكات
-        const palette = pickPalette(goal);
-        const brand = brandFromGoal(goal, activeProject);
-        const { files, blocks } = composePage({ brand, accent: palette.accent, blocks: selectBlocks(goal) });
-        for (const f of files) await writeProjectFile(projectPath, f.name, f.content);
-        this.emitLiveLog(roomName, '5. RUNTIME', 'JaolaRegistry', `🧩 رُكّبت ${blocks.length} أقسام: ${blocks.join(' · ')}`);
-
-        // 2) هوية بصرية + تلميع (خطّ + حركات) — حتميّ
-        try {
-            const assets = assetsFor(goal);
-            await fsPromises.writeFile(path.join(projectPath, 'brand.svg'), assets.favicon);
-            const idxPath = path.join(projectPath, 'index.html');
-            let html = await fsPromises.readFile(idxPath, 'utf8');
-            html = injectFaviconTag(html, 'brand.svg');
-            html = polishHtml(html);
-            await fsPromises.writeFile(idxPath, html);
-        } catch { /* اختياري */ }
-
-        // 3) نموذج بسيط + نشر ثابت
-        try { setDomainModel(username, activeProject, { entities: [], roles: [{ name: 'Visitor', capabilities: ['تصفّح'] }], flows: [], _source: 'registry' }); } catch {}
-        try {
-            await prepareRenderDeploy(projectPath, renderServiceName(username, activeProject), false);
-        } catch { /* اختياري */ }
-
-        // 4) نهائيات كبناءٍ ناجح
-        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
-        transitionState(username, activeProject, STATES.COMPLETED);
-        addToHistory(username, activeProject, `registry: ${(goal || '').slice(0, 60)}`);
-        let builtFiles = [];
-        try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
-        this.reporter.send(roomName, 'workspace_files', builtFiles);
-        this.reporter.send(roomName, 'preview_updated', { timestamp: Date.now() });
-        snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
-        autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
-        const durationSec = Math.round((Date.now() - t0) / 1000);
-        recordBuild(username, activeProject, { success: true, durationSec, filesCount: builtFiles.length, goal: goal || '' });
-        this.reporter.send(roomName, 'project_metrics', buildMetricsPayload(username, activeProject));
-
-        const msg = lang === 'ar'
-            ? `✅ اكتمل — ركّبنا صفحة احترافية **كاملة** لـ «${brand}» من مكوّنات JAOLA الجاهزة (${blocks.length} قسم) ووضعنا بصمتك وهويتك البصرية. جرّبها في المعاينة، ثم اطلب أي تعديل.`
-            : `✅ Done — composed a **complete** professional page for "${brand}" from ${blocks.length} ready JAOLA blocks, with your brand and visual identity. Try it in the preview, then request any change.`;
-        this.reporter.send(roomName, 'chat_reply', { message: msg });
-        this.emitLiveLog(roomName, 'JCOS', 'Kernel', '✨ نجاح (إعادة تركيب من Registry)');
-        return { success: true, registry: true, blocks };
+        return buildFromRegistry(goal, ctx, this.reporter);
     }
 
     // ⚛️ بناء مشروع React/Next حقيقي + معاينة حيّة في الـ iframe + خيار النشر
