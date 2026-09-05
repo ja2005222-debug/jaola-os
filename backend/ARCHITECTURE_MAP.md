@@ -28,7 +28,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## A) `backend/server.js` — 3766 سطراً، 158 مساراً، 96 استيراداً محلياً
+## A) `backend/server.js` — 3781 سطراً، 158 مساراً، 96 استيراداً محلياً
 
 لا يُفكَّك دفعة واحدة (البند 19). الخريطة **حسب المجال** لأن الملف واحد؛ كل صف = مرشّح
 ملف `routes/<domain>.js` مستقبلاً على نمط `routes/billing.js` القائم فعلاً («أول
@@ -169,8 +169,8 @@ Policy/Permission، Identity، Plugin.
 ### D1. وقت التشغيل (مرشّحة لـ`core/`)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `missionQueue.js` → ✅ `core/runtime/ExecutionQueue.js` | 135 | طابور المهام + سجلّ دائم للساقطة (نفس الصادرات) | MOVED (Sprint 2a ✅، حرفياً) | Mission (Execution Queue عامة) | `core/runtime/ExecutionQueue.js` |
-| `abortRegistry.js` → ✅ `core/runtime/AbortRegistry.js` | 49 | إيقاف مهمة جارية | MOVED (Sprint 2a ✅، حرفياً) | Mission | `core/runtime/AbortRegistry.js` |
+| `missionQueue.js` → ✅ `core/runtime/ExecutionQueue.js` | 155 | طابور المهام + سجلّ دائم للساقطة (نفس الصادرات) | MOVED (Sprint 2a ✅، حرفياً) | Mission (Execution Queue عامة) | `core/runtime/ExecutionQueue.js` |
+| `abortRegistry.js` → ✅ `core/runtime/AbortRegistry.js` | 84 | إيقاف مهمة جارية | MOVED (Sprint 2a ✅، حرفياً) | Mission | `core/runtime/AbortRegistry.js` |
 | `platformLessons.js` | 187 | دروس الفشل + ثغرات السلوك (التعلّم الحقيقي) | MOVE | Evidence + Memory | `core/verification/` أو `core/memory/` |
 | `projectBrain.js` | 196 | دماغ المشروع (دالة نقية) | MOVE | Evidence | `core/verification/` (Sprint 4) |
 | `codeGuard.js` | 389 | حارس جودة الكود المولَّد | KEEP | Verification | `plugins/coding/` |
