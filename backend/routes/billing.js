@@ -79,6 +79,19 @@ export function createBillingRouter({ verifyToken, DB, getBotAiUsed = () => 0 })
     });
 
     // Webhook — يُحدّث اشتراك المستخدم بناءً على أحداث Stripe (جسم خام)
+    //
+    // 🔴 عقدُ الـwebhook: الرمز 2xx يقول لـStripe «استُلم وطُبِّق»، فيشطب
+    //    الحدثَ ولا يعيده. وكان هذا المعالج يقول ذلك في ثلاث حالاتٍ لم
+    //    يُطبَّق فيها شيء: قاعدةُ البيانات مقطوعة، والكتابةُ رمَت، ولا
+    //    مستخدمَ مطابق. فمن دفع أثناء انقطاعِ Mongo يبقى على المجانية
+    //    إلى الأبد، ولا أثرَ إلا سطرُ تحذيرٍ يمرّ. (والحالةُ ليست نظرية:
+    //    Mongo تتّصل بعد الإقلاع لا معه — راجع `onMongoReady`.)
+    //
+    //    الآن: ما يزول بالإعادة يُطلَب إعادتُه (5xx)، وما لا يزول يُستلَم
+    //    بصدقٍ مع `applied: false`. والإعادةُ عند Stripe محدودةٌ بمهلةٍ
+    //    ثمّ تتوقّف وتُعلَّم النقطةُ معطّلة — لا إعادةَ إلى ما لا نهاية
+    //    كما افترض التعليقُ السابق. والتطبيقُ نفسه مُحايدُ التكرار
+    //    (`$set` بالقيم ذاتها)، فإعادةُ الحدث لا تضرّ.
     router.post('/webhook', async (req, res) => {
         const signature = req.headers['stripe-signature'];
         let event;
@@ -88,24 +101,38 @@ export function createBillingRouter({ verifyToken, DB, getBotAiUsed = () => 0 })
             return res.status(400).send(`Webhook signature verification failed: ${err.message}`);
         }
 
-        try {
-            const update = interpretWebhookEvent(event);
-            if (update?.username && mongoose.connection.readyState === 1) {
-                const set = {};
-                if (update.plan) set['subscription.plan'] = update.plan;
-                if (update.status) set['subscription.status'] = update.status;
-                if (update.customerId) set['subscription.stripeCustomerId'] = update.customerId;
-                if (update.subscriptionId) set['subscription.stripeSubscriptionId'] = update.subscriptionId;
-                if (update.currentPeriodEnd) set['subscription.currentPeriodEnd'] = update.currentPeriodEnd;
-                set['subscription.cancelAtPeriodEnd'] = !!update.cancelAtPeriodEnd;
-                await User.updateOne({ username: update.username }, { $set: set });
-                console.log(`💳 [Billing] تحديث اشتراك ${update.username} → ${update.plan || '?'} (${update.status})`);
-            }
-        } catch (err) {
-            console.warn('[Billing] فشل تطبيق حدث webhook:', err.message);
-            // نُعيد 200 مع ذلك كي لا يعيد Stripe المحاولة إلى ما لا نهاية على خطأ داخلي
+        const update = interpretWebhookEvent(event);
+        if (!update?.username) {
+            if (update) console.warn(`[Billing] حدث ${event.type} بلا معرّف مستخدم — لم يُطبَّق`);
+            return res.json({ received: true, applied: false });
         }
-        res.json({ received: true });
+
+        if (mongoose.connection.readyState !== 1) {
+            console.error(`[Billing] قاعدة البيانات غير متصلة — ${event.type} لـ${update.username} لم يُطبَّق؛ نطلب من Stripe الإعادة`);
+            return res.status(503).json({ received: false, retry: true });
+        }
+
+        const set = {};
+        if (update.plan) set['subscription.plan'] = update.plan;
+        if (update.status) set['subscription.status'] = update.status;
+        if (update.customerId) set['subscription.stripeCustomerId'] = update.customerId;
+        if (update.subscriptionId) set['subscription.stripeSubscriptionId'] = update.subscriptionId;
+        if (update.currentPeriodEnd) set['subscription.currentPeriodEnd'] = update.currentPeriodEnd;
+        set['subscription.cancelAtPeriodEnd'] = !!update.cancelAtPeriodEnd;
+
+        try {
+            const result = await User.updateOne({ username: update.username }, { $set: set });
+            if (!result?.matchedCount) {
+                // غيابُ المستخدم لا يزول بالإعادة — نستلم بصدقٍ ولا نطلب تكراراً
+                console.warn(`[Billing] لا مستخدمَ باسم ${update.username} — ${event.type} لم يُطبَّق`);
+                return res.json({ received: true, applied: false });
+            }
+            console.log(`💳 [Billing] تحديث اشتراك ${update.username} → ${update.plan || '?'} (${update.status})`);
+            return res.json({ received: true, applied: true });
+        } catch (err) {
+            console.error(`[Billing] تعذّر تطبيق ${event.type} لـ${update.username}: ${err.message} — نطلب من Stripe الإعادة`);
+            return res.status(500).json({ received: false, retry: true });
+        }
     });
 
     return router;
