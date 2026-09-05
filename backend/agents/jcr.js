@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import { groq, smartChat } from './baseAgent.js';
 import { runBackendTeam, writeBackendTeamFiles } from './backendTeam/index.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain, summarizeFacts } from '../services/projectBrain.js';
-import { selectStarter, resolveStack } from './starterRegistry.js';
+import { resolveStack } from './starterRegistry.js';
 import { generateNextScaffold, generateContentModel, generateSectionContent, compName, slugify, componentSource, defaultSection, pageFileSource } from './reactGenerator.js';
 import { buildStaticSite, buildStaticSiteFromSource, buildDashboardPage } from '../services/reactPreview.js';
 import { promises as fsPromises } from 'fs';
@@ -1510,15 +1510,21 @@ User preferences: ${JSON.stringify(execMemory)}` },
             const ptype = resolveProjectType(goal, blueprint);
             const scope = getProjectMemory(username, activeProject)?.plan?.scope || '';
             const stack = resolveStack({ projectType: ptype, scope });
-            const starter = selectStarter({ projectType: ptype, scope });
-            // فقط لبناء جديد (لا تعديل على مشروع قائم)
+            // 🔴 كان يُختار هنا قالبٌ من السجلّ (`selectStarter`) ويُمرَّر إلى البناء
+            //    ثمّ يُسمَّى للمستخدم: «قالب: Next.js SaaS + Stripe». ولم يكن يُقرأ
+            //    في البناء إطلاقاً — `generateNextScaffold` لا يستقبل قالباً أصلاً.
+            //    مقيسٌ لا مفترَض: من خصائص ذلك القالب الأربع (subscriptions/auth/
+            //    stripe/dashboard) **صفرٌ** في السبعة عشر ملفاً المُسلَّمة. فكان
+            //    المستخدمُ يُخبَر أنّ مشروعه مبنيٌّ على قالبِ اشتراكاتٍ وStripe،
+            //    فيبني عليه توقّعاً كاذباً. والمسارُ يُقرّره `resolveStack` وحدَه.
+            //    حين يُجلب قالبٌ حقيقيّ فعلاً (عبر `fetchStarter`) يعود ذكرُه هنا.
             if (stack === 'react-next' && isFreshBuild) {
-                this.emitLiveLog(roomName, 'STACK', 'HybridRouter', `🧰 مشروع كبير → React/Next${starter ? ` (${starter.name})` : ''}`);
+                this.emitLiveLog(roomName, 'STACK', 'HybridRouter', '🧰 مشروع كبير → React/Next');
                 return await this._buildReactProject(goal, ctx, {
-                    sections: blueprint?.keySections || [], starter,
+                    sections: blueprint?.keySections || [],
                 });
             }
-            this.emitLiveLog(roomName, 'STACK', 'HybridRouter', `🧰 مسار سريع → Vanilla${starter ? ` (قالب: ${starter.name})` : ''}`);
+            this.emitLiveLog(roomName, 'STACK', 'HybridRouter', '🧰 مسار سريع → Vanilla');
         } catch (e) { /* اختياري — نُكمل بالمسار الافتراضي */ }
         return null; // لا استراتيجية خاصة → النواة (Vanilla) على الهدف المُثرى
     }
@@ -2397,7 +2403,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
     }
 
     // ⚛️ بناء مشروع React/Next حقيقي + معاينة حيّة في الـ iframe + خيار النشر
-    async _buildReactProject(goal, ctx, { sections = [], starter } = {}) {
+    async _buildReactProject(goal, ctx, { sections = [] } = {}) {
         const { projectPath, username, activeProject, roomName } = ctx;
         const lang = getUserLanguage(username) || 'ar';
         const t0 = Date.now();
@@ -2492,14 +2498,14 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const report = lang === 'ar'
             ? [
                 '✅ مشروع React/Next جاهز — معاينة متعدّدة الصفحات تعمل الآن.',
-                `⚛️ Next.js + Tailwind · ${pageCount} صفحة · ${scaffold.meta.components.length} مكوّن${starter ? ` · قالب: ${starter.name}` : ''}`,
+                `⚛️ Next.js + Tailwind · ${pageCount} صفحة · ${scaffold.meta.components.length} مكوّن`,
                 '🖥️ اضغط روابط الشريط للتنقّل بين صفحات حقيقية — كل تعديل ينعكس فوراً.',
                 '🛠️ لوحة إدارة موقعك: افتح `dashboard.html` وعيّن كلمة مرور — تدير بها النصوص والصور والمنتجات بنفسك.',
                 '⬇️ للتشغيل محلياً: npm install && npm run dev · وجاهز للنشر على Vercel.',
               ].join('\n')
             : [
                 '✅ React/Next project ready — multi-page preview running now.',
-                `⚛️ Next.js + Tailwind · ${pageCount} pages · ${scaffold.meta.components.length} components${starter ? ` · template: ${starter.name}` : ''}`,
+                `⚛️ Next.js + Tailwind · ${pageCount} pages · ${scaffold.meta.components.length} components`,
                 '🖥️ Click the nav links to move between real pages — every edit reflects instantly.',
                 '⬇️ Local run: npm install && npm run dev · Ready to deploy on Vercel.',
               ].join('\n');
