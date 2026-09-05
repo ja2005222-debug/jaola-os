@@ -121,7 +121,13 @@ export function runSystemDiagnostics() {
         'متغيرات البيئة الحرجة',
         missing.some(m => m === 'JWT_SECRET') ? CRIT : missing.length ? WARN : OK,
         missing.length ? `ناقص: ${missing.join('، ')}` : 'كل المتغيرات الحرجة مضبوطة',
-        missing.length ? 'اضبط المتغيرات الناقصة في بيئة الاستضافة.' : null
+        // إضافةُ PAT_ENCRYPTION_KEY لاحقاً كانت تُتلِف كلَّ سرٍّ مخزَّن تحت
+        // JWT_SECRET — أي أنّ هذه النصيحة نفسَها كانت تُتلِف. صار الفكُّ
+        // يجرّب المفتاحين، فالإضافةُ آمنة، والفائدةُ تُقال بدل أن تُفترض.
+        missing.length
+            ? 'اضبط المتغيرات الناقصة في بيئة الاستضافة. إضافة PAT_ENCRYPTION_KEY آمنة على الأسرار المخزَّنة، '
+              + 'وتفصل تشفير التوكنات عن تدوير JWT_SECRET.'
+            : null
     ));
 
     // ── الملخص ──

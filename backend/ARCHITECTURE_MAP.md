@@ -28,7 +28,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## A) `backend/server.js` — 3752 سطراً، 158 مساراً، 96 استيراداً محلياً
+## A) `backend/server.js` — 3758 سطراً، 158 مساراً، 96 استيراداً محلياً
 
 لا يُفكَّك دفعة واحدة (البند 19). الخريطة **حسب المجال** لأن الملف واحد؛ كل صف = مرشّح
 ملف `routes/<domain>.js` مستقبلاً على نمط `routes/billing.js` القائم فعلاً («أول
@@ -153,7 +153,7 @@ Policy/Permission، Identity، Plugin.
 | `jaolaBot.js`, `jaolaBotToken.js` | 295/45 | منتج جولا بوت (ودجت + توكن HMAC) | MOVE | Plugin (bot) | `plugins/bot/` |
 | `marketingAgent.js` | 163 | المساعد التسويقي | MOVE | Plugin (marketing) | `plugins/marketing/` |
 | `integrations/travelpayouts.js` | 157 | تكامل Travelpayouts لمواقع العملاء | MOVE | Provider | `plugins/travel/providers/` (أو يبقى مع coding — يُقرَّر عند Sprint 5) |
-| `systemDoctorAgent.js` | 202 | فحص صحة النظام | KEEP | Evidence | `core/audit/` |
+| `systemDoctorAgent.js` | 208 | فحص صحة النظام | KEEP | Evidence | `core/audit/` |
 
 ### C7. DELETE — سقالة ميتة (صفر قرّاء، commit واحد 2026-08-05)
 | الملف | سطور | الدليل |
@@ -233,7 +233,7 @@ Policy/Permission، Identity، Plugin.
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
 | `middleware/security.js` | 94 | `sanitizePath` + Zod schemas + `validate` | MODIFY | Tool (workspace guard موحّد — `CONTRACTS.md` §3) + Permission | `core/policy/` |
-| `utils/secretVault.js` (6 مستوردين) | 39 | تشفير الأسرار | KEEP | Identity | `core/identity/` |
+| `utils/secretVault.js` (6 مستوردين) | 85 | تشفير الأسرار | KEEP | Identity | `core/identity/` |
 | `utils/security.js`, `utils/corsErrors.js`, `utils/spaFallback.js`, `utils/performance.js`, `utils/aiProvider.js` | 21/15/19/60/42 | أدوات صغيرة حيّة | KEEP | — | كما هي |
 | `models/User.js`, `Project.js`, `Conversation.js`, `BotTenant.js` | 26/27/22/21 | مخطّطات Mongo (Core DB) | KEEP | Identity/Mission (Core DB — البند 14) | `models/` |
 | `dbConfig.js` | 6 | إعداد mongoose (استيراد تأثير جانبي `server.js:2`) | KEEP | — | كما هو |

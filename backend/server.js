@@ -377,8 +377,14 @@ const DB = {
             const rec = OFFLINE_GH_TOKENS.get(username); enc = rec.enc; githubLogin = rec.githubLogin;
         }
         if (!enc) return null;
+        // 🔴 «لا توكن مربوط» و«توكنٌ مربوطٌ لا نقرؤه» كانا ناتجاً واحداً (null)،
+        //    فيُطلَب من المستخدم أن يربط ما هو مربوطٌ أصلاً. الناتج يبقى null
+        //    (لا مستدعيَ يحتمل شكلاً آخر) والسببُ يُقال في السجلّ.
         try { return { token: decryptSecret(enc), githubLogin }; }
-        catch { return null; }
+        catch (e) {
+            console.warn(`🔑 [DB.getGithubToken] توكن GitHub محفوظٌ لـ${username} لكنّه غير مقروء (${e.reason || 'خطأ'}) — يلزم إعادة ربط الحساب.`);
+            return null;
+        }
     },
 
     // ─── 🤖 مستأجرو جولا بوت المستقلّون — ميزة تتطلّب Mongo دائماً (سجلّ
