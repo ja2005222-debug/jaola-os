@@ -8,7 +8,7 @@
  */
 
 import os from 'os';
-import { persistEntry, hydrateStore, onMongoReady } from './persistence.js';
+import { persistEntry, removeEntry, hydrateStore, onMongoReady } from './persistence.js';
 
 const metricsCache = new Map(); // `${username}:${project}` → metrics
 
@@ -68,14 +68,37 @@ export function recordEditAction(username, project) {
     save(username, project);
 }
 
+/**
+ * 🔴 درجةٌ قيست قبل آخر بناءٍ تصف كوداً لم يعد موجوداً.
+ *
+ * `recordScore` يُستدعى داخل `try` في jcr.js، ووكيلُ SEO يُخطَّى بصمت
+ * («⚠️ تخطّي») إن أخفق أو لم يُنتج ملفات. فيبقى البناءُ الأوّل معروضاً
+ * درجةً للبناء الثاني — ولوحةٌ عنوانُها «صحّة الموقع» تُفتي في موقعٍ
+ * لم تفحصه. الطابعُ `at` كان يُرسَل ولا يقرؤه أحد؛ فصار الحكمُ يُشتقّ
+ * هنا من بيانات موجودة أصلاً بدل أن يُترك لكلِّ مستهلكٍ يستنتجه.
+ */
+function withAge(score, lastBuildAt) {
+    if (!score) return null;
+    return { ...score, stale: !!lastBuildAt && (score.at || 0) < lastBuildAt };
+}
+
+/** محوُ مقاييس مشروعٍ حُذف — وإلّا ورثها مشروعٌ جديد بالاسم نفسه. */
+export async function clearMetrics(username, project) {
+    const key = getKey(username, project);
+    const existed = metricsCache.delete(key);
+    const removed = await removeEntry('projectMetrics', key);
+    return { existed, removed };
+}
+
 // الحمولة الكاملة المُرسلة للواجهة (درجات المشروع + مؤشرات النظام الحقيقية)
 export function buildMetricsPayload(username, project) {
     const m = getMetrics(username, project);
     const cores = os.cpus()?.length || 1;
+    const lastBuildAt = m.builds[0]?.at || 0;
     return {
-        seo: m.seo,
-        security: m.security,
-        quality: m.quality,
+        seo: withAge(m.seo, lastBuildAt),
+        security: withAge(m.security, lastBuildAt),
+        quality: withAge(m.quality, lastBuildAt),
         totalBuilds: m.totalBuilds,
         totalEdits: m.totalEdits,
         lastBuild: m.builds[0] || null,

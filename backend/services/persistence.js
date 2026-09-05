@@ -50,6 +50,26 @@ export function persistEntry(store, key, value) {
     }, 1500));
 }
 
+/**
+ * محوُ مدخلٍ محفوظ — نقيضُ `persistEntry`.
+ *
+ * 🔴 الكتابةُ مؤجَّلةٌ ١٥٠٠ms، فمحوٌ لا يُلغي المؤجَّلَ أوّلاً يُمحى بدوره:
+ *    يعود المدخلُ بعد لحظةٍ من طابور الكتابة كأنّ الحذف لم يقع.
+ */
+export async function removeEntry(store, key) {
+    const k = `${store}:${key}`;
+    clearTimeout(pendingWrites.get(k));
+    pendingWrites.delete(k);
+    if (!online()) return false;
+    try {
+        const r = await KV.deleteOne({ store, key });
+        return !!r?.deletedCount;
+    } catch (e) {
+        console.warn(`[Persistence] فشل محو ${k}:`, e.message);
+        return false;
+    }
+}
+
 export async function hydrateStore(store, applyFn) {
     if (!online()) return 0;
     try {

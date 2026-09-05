@@ -135,7 +135,7 @@ import { polishHtml } from './agents/polishPack.js';
 import { setProjectSecret, deleteProjectSecret, getProjectSecretNames, getProjectSecrets, getUnreadableSecretNames } from './services/projectSecrets.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
 import { recordTurn } from './services/conversationStore.js';
-import { buildMetricsPayload } from './services/metricsStore.js';
+import { buildMetricsPayload, clearMetrics } from './services/metricsStore.js';
 import { queueStatus } from './core/runtime/ExecutionQueue.js';
 import { getCommitHistory, rollbackToCommit } from './agents/gitAgent.js';
 import { adminOnly, isAdminUser } from './middleware/adminOnly.js';
@@ -1125,6 +1125,10 @@ async function deleteProjectCompletely(username, project) {
         if (DB._isOnline()) {
             try { await Project.deleteOne({ name: safeProject, owner: username }); } catch (e) {}
         }
+
+        // 🔴 المقاييسُ كانت تبقى بعد زوال المشروع، فيرث مشروعٌ جديد
+        //    بالاسم نفسه درجاتِ المحذوف وعددَ بنائاته ونصوصَ أهدافه.
+        await clearMetrics(username, safeProject);
 
         // إذا كان هذا هو المشروع النشط حالياً للمستخدم، بلّغ الـ socket room
         const roomName = `${username}-${safeProject}`;
