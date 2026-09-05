@@ -141,7 +141,7 @@ Policy/Permission، Identity، Plugin.
 ### C5. مكدّس التوليد والقوالب (منطق مجال Coding)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `templateLibrary.js`, `templateLibraryExtended.js`, `templateLocalizer.js` | 1034/1382/1943 | مكتبة القوالب وترجمتها | KEEP | — | `plugins/coding/templates/` (Sprint 6) |
+| `templateLibrary.js`, `templateLibraryExtended.js`, `templateLocalizer.js` | 1061/1382/1943 | مكتبة القوالب وترجمتها | KEEP | — | `plugins/coding/templates/` (Sprint 6) |
 | `cloneTemplates/*` (42 ملفاً، 17,406 سطر؛ `jaolaClinic.js` يُستورد من 27 قالباً كأساس مشترك) | — | قوالب تطبيقات عاملة | KEEP | — | `plugins/coding/templates/clones/` |
 | `cloneAssets.js`, `seedStamp.js`, `fullstackTemplates.js`, `reactGenerator.js`, `blockRegistry.js`, `starterRegistry.js`, `starterFetch.js`, `libraryRegistry.js`, `referenceBlueprints.js`, `appBlueprint.js`, `requirementAnalyzer.js` | 74/116/603/432/259/74/171/78/195/146/198 | استراتيجيات البناء ومخططاته | KEEP | Task (استراتيجية = Task Graph مختلف) | `plugins/coding/` |
 | `projectModel.js`, `projectMemory.js`, `userProfile.js` | 247/254/237 | ذاكرة المشروع والمستخدم | KEEP | Memory | `core/memory/` (لاحقاً) |
