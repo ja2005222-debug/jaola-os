@@ -237,7 +237,8 @@ Policy/Permission، Identity، Plugin.
 |---|---|---|---|---|---|
 | `middleware/security.js` | 96 | `sanitizePath` + Zod schemas + `validate` | MODIFY | Tool (workspace guard موحّد — `CONTRACTS.md` §3) + Permission | `core/policy/` |
 | `utils/secretVault.js` (6 مستوردين) | 85 | تشفير الأسرار | KEEP | Identity | `core/identity/` |
-| `utils/security.js`, `utils/corsErrors.js`, `utils/spaFallback.js`, `utils/performance.js`, `utils/aiProvider.js` | 21/15/19/60/42 | أدوات صغيرة حيّة | KEEP | — | كما هي |
+| `utils/corsErrors.js`, `utils/spaFallback.js` | 15/19 | أدوات صغيرة **حيّة** (٢ و١ مستورداً) | KEEP | — | كما هي |
+| `utils/security.js`, `utils/performance.js`, `utils/aiProvider.js` | 21/60/42 | 🔴 **يتيمة: صفرُ مستوردين** — لا «أدواتٌ حيّة» كما كان هذا الصفُّ يقول. مُقرَّةٌ في §اليتامى أدناه (أسطر ٣٣٥–٣٣٧) منذ 8/11، وهذا الصفُّ كان يناقضها. و`utils/security.js` يشارك اسمَ `middleware/security.js` **الحيّ** ويختلف عنه — وهو مصدرُ اللبس | KEEP (قرارُ إبقاءٍ واعٍ، لا وصفُ استعمال) | — | كما هي |
 | `models/User.js`, `Project.js`, `Conversation.js`, `BotTenant.js` | 26/27/22/21 | مخطّطات Mongo (Core DB) | KEEP | Identity/Mission (Core DB — البند 14) | `models/` |
 | `dbConfig.js` | 6 | إعداد mongoose (استيراد تأثير جانبي `server.js:2`) | KEEP | — | كما هو |
 | `scripts/harvestTemplateScreenshots.mjs` | 102 | أداة تطوير | KEEP | — | كما هو |
