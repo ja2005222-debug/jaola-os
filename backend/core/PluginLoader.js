@@ -66,7 +66,13 @@ export async function loadPluginsFrom(pluginsDir) {
     }
 
     for (const entry of entries) {
-        // نتخطى الملفات المخفية والقوالب
+        // 🔴 القاعدةُ الحقيقيّة: بادئةُ `.` أو `_` — لا «القوالب» بمعناها العام.
+        //    كان التعليقُ يقول «والقوالب»، وهي دعوى أوسعُ من الآليّة: القالبُ
+        //    الوحيدُ في المستودع (`plugin-templates/AgentPluginTemplate.js`) لا
+        //    يحمل بادئةً، ونجاتُه من التحميل سببُها أنّه في مجلَّدٍ آخر لا
+        //    يُمسح، لا أنّ هذا الشرطَ يمسكه. قِيس: نسخُه حرفيّاً إلى `plugins/`
+        //    يُحمّل ويُسجّل `example-agent` بـ`enabled: true`؛ ونسخةٌ بالبادئة
+        //    `_` تُتخطّى. فمَن سمّى قالباً بلا بادئةٍ ووثق بالتعليق، حمّله.
         if (entry.name.startsWith('.') || entry.name.startsWith('_')) continue;
 
         let filePath = null;
