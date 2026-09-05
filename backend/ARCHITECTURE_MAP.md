@@ -28,7 +28,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## A) `backend/server.js` — 3762 سطراً، 158 مساراً، 96 استيراداً محلياً
+## A) `backend/server.js` — 3766 سطراً، 158 مساراً، 96 استيراداً محلياً
 
 لا يُفكَّك دفعة واحدة (البند 19). الخريطة **حسب المجال** لأن الملف واحد؛ كل صف = مرشّح
 ملف `routes/<domain>.js` مستقبلاً على نمط `routes/billing.js` القائم فعلاً («أول
@@ -63,7 +63,7 @@ Policy/Permission، Identity، Plugin.
 | `core/PluginOrchestrator.js` | 149 | سجلّ الإضافات + مشغّل hooks + مسجّل وكلاء + `reload/status/setEnabled` + ✅ فهرس القدرات `capabilities()/findByCapability()` | KEEP/MODIFY (Sprint 1 ✅) | Plugin + Capability + Agent (Registry) — يتطوّر لا يُستبدل | `core/PluginOrchestrator.js` |
 | `plugins/site-checker.js` | 95 | وكيل فحص موقع حيّ (type: agent, `registerAgent → {name, handler}`) | KEEP | Agent (أول وكيل إضافة حقيقي) | `plugins/site-checker.js` |
 | `plugin-templates/AgentPluginTemplate.js` | 48 | قالب إضافة وكيل | KEEP | Plugin | كما هو |
-| `services/pluginStore.js` | 87 | تخزين الإضافات في Mongo واستعادتها للقرص | KEEP | Plugin | `core/plugins/` (Sprint 7) |
+| `services/pluginStore.js` | 131 | تخزين الإضافات في Mongo واستعادتها للقرص | KEEP | Plugin | `core/plugins/` (Sprint 7) |
 | ✅ `core/runtime/TaskGraph.js` (جديد، Sprint 2a) | 50 | `orderTasks(items, {key})` — ترتيب طوبولوجي مستقرّ من `dependsOn` + كشف الدورات (خوارزمية `planExecution` حرفياً معمَّمة) | ADDED | Task | مستهلكاه: `runDynamicMultiAgentRuntime` (DELIVERY_STAGES) و`planExecution` (الفرق) |
 | ✅ `core/runtime/ExecutionContext.js` (جديد، Sprint 2b) | 67 | `createExecutionContext`/`contextFromRequest`/`withAgents` — بيئة المهمة في كائن مجمَّد (الحقول الستة المتكرّرة) | ADDED | Mission | 11 توقيعاً في `jcr.js` + المعالجات السبعة |
 | ✅ `core/runtime/AgentRuntime.js` (جديد، Sprint 2d) | 89 | `runAgent` + `gatherCooperationInputs` — منفّذ الوكيل الواحد: عقدٌ → نداء نموذج → ملفات مُطهَّرة | MOVED (Sprint 2d ✅، حرفياً عدا إسقاط افتراض `TEAM_BY_ID` الميت) | **Agent** | `runBackendTeam` (فريقا الخلفية **والواجهة** معاً) |
@@ -201,7 +201,7 @@ Policy/Permission، Identity، Plugin.
 ### D4. الإدارة وسوق الوكلاء
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `adminService.js`, `adminUsers.js` | 229/66 | إدارة الإضافات والملفات والمستخدمين | KEEP | Permission | `routes/admin.js` |
+| `adminService.js`, `adminUsers.js` | 233/66 | إدارة الإضافات والملفات والمستخدمين | KEEP | Permission | `routes/admin.js` |
 | `agentMarket.js`, `agentConversations.js` | 90/75 | المستخدم يصنع وكلاءه + محادثاتهم | MODIFY | Plugin + Agent (Registry) | `core/plugins/PluginRegistry.js` |
 | `botTenants.js` | 37 | مستأجرو جولا بوت | MOVE | Plugin (bot) | `plugins/bot/` |
 
