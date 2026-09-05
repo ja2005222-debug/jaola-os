@@ -5,10 +5,12 @@
  * باستخدام توكن OAuth المخزّن مشفّراً. تُستدعى من مسارات الأدمِن فقط.
  */
 
+import { fetchWithTimeout, TIMEOUTS } from './httpRetry.js';
+
 const API = 'https://api.github.com';
 
 async function gh(token, urlPath, opts = {}) {
-    const res = await fetch(`${API}${urlPath}`, {
+    const res = await fetchWithTimeout(`${API}${urlPath}`, {
         ...opts,
         headers: {
             Authorization: `Bearer ${token}`,
@@ -18,7 +20,7 @@ async function gh(token, urlPath, opts = {}) {
             ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
             ...(opts.headers || {}),
         },
-    });
+    }, TIMEOUTS.api);
     const text = await res.text();
     let data;
     try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }

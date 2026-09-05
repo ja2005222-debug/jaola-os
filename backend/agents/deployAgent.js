@@ -2,6 +2,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import fsSync from 'fs';
 import { saveProjectFields } from '../services/projectRecord.js';
+import { fetchWithTimeout, TIMEOUTS } from '../services/httpRetry.js';
 import { generatePackageJson } from './dependencyAgent.js';
 import { vercelProjectNameOf } from '../services/customDomains.js';
 
@@ -32,9 +33,9 @@ export async function verifyVercelAuth() {
     // 1) صلاحية التوكن نفسه
     let account = null;
     try {
-        const res = await fetch(`${VERCEL_API}/v2/user`, {
+        const res = await fetchWithTimeout(`${VERCEL_API}/v2/user`, {
             headers: { Authorization: `Bearer ${VERCEL_TOKEN}` },
-        });
+        }, TIMEOUTS.api);
         const body = await res.json().catch(() => ({}));
         if (!res.ok) {
             return {
@@ -50,9 +51,9 @@ export async function verifyVercelAuth() {
     // 2) صلاحية الفريق (إن ضُبط)
     if (VERCEL_TEAM_ID) {
         try {
-            const res = await fetch(`${VERCEL_API}/v2/teams/${VERCEL_TEAM_ID}`, {
+            const res = await fetchWithTimeout(`${VERCEL_API}/v2/teams/${VERCEL_TEAM_ID}`, {
                 headers: { Authorization: `Bearer ${VERCEL_TOKEN}` },
-            });
+            }, TIMEOUTS.api);
             const body = await res.json().catch(() => ({}));
             if (!res.ok) {
                 return {
@@ -273,9 +274,9 @@ export function ensureFullStackDeploy(files) {
 async function fetchBuildErrorLogs(deploymentId) {
     const teamQuery = VERCEL_TEAM_ID ? `&teamId=${VERCEL_TEAM_ID}` : '';
     try {
-        const res = await fetch(`${VERCEL_API}/v3/deployments/${deploymentId}/events?direction=backward&limit=200${teamQuery}`, {
+        const res = await fetchWithTimeout(`${VERCEL_API}/v3/deployments/${deploymentId}/events?direction=backward&limit=200${teamQuery}`, {
             headers: { Authorization: `Bearer ${VERCEL_TOKEN}` },
-        });
+        }, TIMEOUTS.api);
         const body = await res.json().catch(() => null);
         const events = Array.isArray(body) ? body : (body?.events || []);
         const lines = events
@@ -291,6 +292,15 @@ async function fetchBuildErrorLogs(deploymentId) {
 /**
  * ⏳ يراقب حالة بناء النشر حتى READY أو ERROR (أو مهلة). يمنع تسليم رابط
  * لنشرة ما زالت تُبنى أو فشلت (سبب DEPLOYMENT_NOT_FOUND).
+ *
+ * 🔴 «أو مهلة» لم تكن صحيحة. الحدُّ هنا **على عدد المحاولات لا على الزمن**:
+ *    ثلاثون دورةً بينها أربعُ ثوانٍ من النوم. أمّا `fetch` داخلَ الدورة فكانت
+ *    بلا مهلة، و`fetch` في Node لا تنتهي مهلتُها أبداً بلا `AbortSignal`.
+ *    فمزوّدٌ معلَّقٌ عند الدورة الأولى يوقف الحلقةَ عندها إلى الأبد: لا تبلغ
+ *    الدورةَ الثانية، ولا تعود بـ`null`، ولا «تنقضي المهلة» التي وعد بها
+ *    هذا التعليق. **حدٌّ يحرس ما لا يعلَق، ويترك ما يعلَق بلا حراسة.**
+ *    بمهلةِ `TIMEOUTS.api` صار السقفُ الأسوأ محسوباً: ٣٠ × (٤ث نوم + ١٥ث
+ *    مهلة) ≈ ٩٫٥ دقائق، بدل ما لا نهاية له.
  * @returns {Promise<{readyState:string, errorMessage?:string}|null>}
  */
 async function waitForDeployment(deploymentId, roomName, io, { attempts = 30, intervalMs = 4000 } = {}) {
@@ -298,9 +308,9 @@ async function waitForDeployment(deploymentId, roomName, io, { attempts = 30, in
     for (let i = 0; i < attempts; i++) {
         await new Promise(r => setTimeout(r, intervalMs));
         try {
-            const res = await fetch(`${VERCEL_API}/v13/deployments/${deploymentId}${teamQuery}`, {
+            const res = await fetchWithTimeout(`${VERCEL_API}/v13/deployments/${deploymentId}${teamQuery}`, {
                 headers: { Authorization: `Bearer ${VERCEL_TOKEN}` },
-            });
+            }, TIMEOUTS.api);
             const d = await res.json().catch(() => ({}));
             const state = d?.readyState || d?.status;
             if (state === 'READY') return { readyState: 'READY' };
@@ -434,7 +444,7 @@ export async function deployProject({ projectPath, activeProject, currentUser, e
         io.to(roomName).emit('log', { message: `📡 [DEPLOY]: جاري الرفع إلى Vercel (${deployFiles.length} ملف)...` });
 
         const teamQuery = VERCEL_TEAM_ID ? `?teamId=${VERCEL_TEAM_ID}` : '';
-        const response = await fetch(`${VERCEL_API}/v13/deployments${teamQuery}`, {
+        const response = await fetchWithTimeout(`${VERCEL_API}/v13/deployments${teamQuery}`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${VERCEL_TOKEN}`,
@@ -451,7 +461,7 @@ export async function deployProject({ projectPath, activeProject, currentUser, e
                     framework: null, // لا framework — الثابت يُخدَم كما هو، ودوال api/ تُكتشف تلقائياً
                 }
             })
-        });
+        }, TIMEOUTS.upload);   // جسمُ الطلب يحمل محتوى الموقع كاملاً
 
         const result = await response.json();
 
