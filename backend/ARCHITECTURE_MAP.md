@@ -88,12 +88,12 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## C) `backend/agents/*` — 123 وحدة (منها 42 قالب كلون)
+## C) `backend/agents/*` — 124 وحدة (منها 42 قالب كلون)
 
 ### C1. النواة (Kernel candidates)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `jcr.js` | 2587 | وقت التشغيل المعرفي: `handleUserMessage` → 7 معالجات نية → `executeMission` → `_runMissionNow` → 15 مرحلة | MODIFY (تدريجي، بلا إعادة كتابة) | Mission + Agent + Task (المراحل → TaskGraph) + Event | يبقى؛ يتقلّص مع كل Sprint لصالح `core/runtime/*` |
+| `jcr.js` | 2483 | وقت التشغيل المعرفي: `handleUserMessage` → 7 معالجات نية → `executeMission` → `_runMissionNow` → 15 مرحلة | MODIFY (تدريجي، بلا إعادة كتابة) | Mission + Agent + Task (المراحل → TaskGraph) + Event | يبقى؛ يتقلّص مع كل Sprint لصالح `core/runtime/*` |
 | ✅ `stages/debate.js` (جديد، JCR/4) | 142 | `runDebate(context, roomName, agents, reporter)` + `runSecurityAudit` — حلقةُ النقاش خرجت من `jcr` نقلاً حرفيّاً؛ المُبلِّغُ وسيطٌ لا `this` | ADDED | Agent + Evidence | أوّلُ مرحلةٍ خارج الصنف؛ `jcr._stageDebate` مفوِّضٌ من سطر |
 | ✅ `stages/understand.js` (جديد، JCR/5) | 72 | `understandGoal(goal, ctx, reporter)` — الفهم: ذاكرة/ملفّ ← مخطّط ← نموذج المجال؛ نقلٌ حرفيّ، المُبلِّغُ وسيط | ADDED | Mission | `jcr._understandGoal` مفوِّضٌ من سطر؛ ٧ استيراداتٍ رحلت معها |
 | ✅ `stages/enrich.js` (جديد، JCR/6) | 68 | `enrichBuildContext(goal, blueprint, ctx, reporter)` + `resolveProjectType` — متطلّباتٌ ضمنيّة + صور + توجيهاتُ الإضافات؛ نقلٌ حرفيّ، المُبلِّغُ وسيط | ADDED | Mission | `jcr._enrichBuildContext` مفوِّضٌ من سطر؛ `resolveProjectType` يعيد `jcr` تصديرَها لمستورِديها |
@@ -103,6 +103,7 @@ Policy/Permission، Identity، Plugin.
 | ✅ `stages/buildFromRegistry.js` (جديد، JCR/10) | 78 | `buildFromRegistry(goal, ctx, reporter)` — صفحةٌ كاملة من بلوكات Registry + بصمة + تلميع + نشرٌ ثابت؛ أوّلُ بانٍ يخرج؛ `reporter.io` يُمرَّر للدفع التلقائيّ (تسريبٌ معلَن) | ADDED | Mission + Tool | مفوِّض `jcr._buildFromRegistry` من `_selectBuildStrategy` |
 | ✅ `stages/reportMissionSuccess.js` (جديد، JCR/11) | 84 | `reportMissionSuccess(goal, ctx, reporter)` — تقريرُ التسليم بلغة المستخدم + الاقتراحات + قائمةُ الملفّات + الدفعُ التلقائيّ (`reporter.io`، موضعٌ واحد معلَن) + اللقطة + المقاييس + hook afterBuild؛ متزامنةٌ كما كانت | ADDED | Mission + Event | مفوِّض `jcr._reportMissionSuccess` من `_runMissionNow` |
 | ✅ `stages/buildFromClone.js` (جديد، JCR/12) | 205 | `buildFromClone(clone, goal, ctx, reporter)` — البناءُ من كلونٍ عامل: ملفّاتُ القالب بلغة المستخدم + بصمةٌ موضعيّة (عيّنة/صور/علامة) بتراجعٍ عند الكسر + هويّةٌ ونشرٌ ثابت + نهائيّاتُ النجاح؛ `reporter.io` موضعٌ واحد معلَن | ADDED | Mission + Tool | مفوِّض `jcr._buildFromClone` من `_selectBuildStrategy` |
+| ✅ `stages/quality.js` (جديد، JCR/13) | 148 | مراحلُ الجودة الستّ `runReviewStage/runRefactorStage/runTestingStage/runSeoStage/runSecurityStage/runGitBackupStage(context, roomName, reporter)` — مراجعةٌ بإصلاحٍ تلقائيّ ودرجة، تنظيف، اختبار، SEO وأمان بملفّاتٍ جديدة ودرجات، ونسخٌ احتياطيّ + commit | ADDED | Task (مراحل التسليم) + Evidence | ستُّ مفوِّضاتٍ في `jcr` تُستدعى بالاسم من `DELIVERY_STAGES` |
 | `contracts.js` → ✅ `core/contracts/index.js` | 99/197 | typedefs الأحد عشر + `assertBuildAgents` + `DELIVERY_STAGES` + مدقّقا Capability | MOVED (Sprint 1 ✅) | Mission/Agent/Task/Capability/Provider/Transaction | `core/contracts/index.js` |
 | `stateMachine.js` | 270 | Build State Machine (10 حالات + `STATE_EVENTS` + emitter) | KEEP | Event — تبقى متخصّصة، وMission Lifecycle فوقها | `core/missions/BuildStateMachine.js` (Sprint 2) |
 | `ceoBrain.js` | 240 | تصنيف نية سريع، قرار، رسائل إحاطة/حالة | MODIFY | Mission (Intent/CEO في مسار v2) | `core/runtime/` |

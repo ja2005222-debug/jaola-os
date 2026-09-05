@@ -24,6 +24,7 @@ import { runRenderConfig } from './stages/renderConfig.js';
 import { buildFromRegistry } from './stages/buildFromRegistry.js';
 import { reportMissionSuccess } from './stages/reportMissionSuccess.js';
 import { buildFromClone } from './stages/buildFromClone.js';
+import { runReviewStage, runRefactorStage, runTestingStage, runSeoStage, runSecurityStage, runGitBackupStage } from './stages/quality.js';
 import { handleUndo } from './stages/undo.js';
 // 🔁 إعادةُ تصدير: `resolveProjectType` بقيت واجهةً من `jcr` لمستورِديها (JCR/6)
 export { resolveProjectType };
@@ -40,12 +41,6 @@ import { generatePrismaSetup, needsPostgres } from './postgresAgent.js';
 import { renderServiceName, deployToRender } from './renderAgent.js';
 import { isFullStackProject } from './deployAgent.js';
 import { transitionState, getProjectSummary, STATES } from './stateMachine.js';
-import { runSEO } from './seoAgent.js';
-import { runSecurity } from './securityAgent.js';
-import { refactorCode } from './refactorAgent.js';
-import { reviewCode } from './reviewAgent.js';
-import { runTests } from './testingAgent.js';
-import { commitBuild } from './gitAgent.js';
 import { backupProject } from './fileManager.js';
 import { normalizeText, normalizeArabic, detectIntentFromMeaning, isQuestionMessage, hasActionIntent, isExplicitRebuild, isExplicitNewBuild, isContinuationGoal } from './textNormalizer.js';
 import { routeMessage } from './router.js';
@@ -64,7 +59,7 @@ import { recordMissionOutcome, recordBehaviorGaps, matureLessons, lessonDirectiv
 import { getPlatformKnowledge } from '../services/platformKnowledge.js';
 import { getProjectSecrets } from '../services/projectSecrets.js';
 import { recommendFullStack, buildFullStackProject } from './fullstackTemplates.js';
-import { recordScore, recordBuild, recordEditAction, buildMetricsPayload } from '../services/metricsStore.js';
+import { recordBuild, recordEditAction, buildMetricsPayload } from '../services/metricsStore.js';
 import { setPendingGoal, getPendingGoal, consumePendingGoal, clearDialog } from '../services/conversationManager.js';
 import { enqueueMission, takeLostMission } from '../core/runtime/ExecutionQueue.js';
 import { loadForPrompt as loadConversation, recordTurn } from '../services/conversationStore.js';
@@ -387,66 +382,19 @@ export class JaolaCognitiveRuntime {
         await writePlanFiles(context.projectPath, plan.files);
     }
 
-    // 🆕 Review Agent — يراجع ويُصلح تلقائياً قبل العرض النهائي
+    // 🧪 خرجت إلى `stages/quality.js#runReviewStage` (JCR/13) — تفويضٌ يُبقي النداءَ بالاسم من `DELIVERY_STAGES`.
     async _stageReview(context, roomName) {
-        const plan = context.plan;
-        transitionState(context.username, context.activeProject, STATES.REVIEWING, { agent: 'ReviewAgent' });
-        try {
-            this.emitLiveLog(roomName, '5. RUNTIME', 'ReviewAgent', '🔍 مراجعة جودة الكود...');
-            const reviewResult = await reviewCode(plan.files, context.originalGoal, getUserLanguage(context.username) || 'en');
-
-            if (reviewResult.fixedCount > 0) {
-                // حفظ الملفات المُصلحة — كل الملفات، لا القائمة البيضاء
-                await writePlanFiles(context.projectPath, reviewResult.fixedFiles);
-                plan.files = reviewResult.fixedFiles;
-            }
-
-            const statusEmoji = reviewResult.grade === 'A' ? '✅' : reviewResult.grade === 'B' ? '🟡' : '🟠';
-            this.emitLiveLog(roomName, '5. RUNTIME', 'ReviewAgent',
-                `${statusEmoji} الجودة: ${reviewResult.grade} (${reviewResult.score}/100) — ${reviewResult.overallQuality}${reviewResult.fixedCount > 0 ? ` — تم إصلاح ${reviewResult.fixedCount} مشكلة` : ''}`
-            );
-            // 📊 تسجيل درجة الجودة الفعلية للوحة الذكاء
-            recordScore(context.username, context.activeProject, 'quality', reviewResult);
-        } catch (e) {
-            this.emitLiveLog(roomName, '5. RUNTIME', 'ReviewAgent', `⚠️ تخطّي: ${e.message}`);
-        }
+        return runReviewStage(context, roomName, this.reporter);
     }
 
-    // 🆕 Refactor Agent — تنظيف الكود
+    // 🧪 خرجت إلى `stages/quality.js#runRefactorStage` (JCR/13) — تفويضٌ يُبقي النداءَ بالاسم من `DELIVERY_STAGES`.
     async _stageRefactor(context, roomName) {
-        const plan = context.plan;
-        try {
-            const refactorResult = await refactorCode(plan.files, getUserLanguage(context.username) || 'en');
-            if (refactorResult.success) {
-                plan.files = refactorResult.files;
-                if (refactorResult.totalReduction > 0) {
-                    this.emitLiveLog(roomName, '5. RUNTIME', 'RefactorAgent',
-                        `✅ ${refactorResult.summary}`
-                    );
-                }
-            }
-        } catch (e) { console.warn('[RefactorAgent]', 'فشل التحسين (تخطٍّ):', e.message); }
+        return runRefactorStage(context, roomName, this.reporter);
     }
 
-    // 🆕 Testing Agent — اختبار شامل للكود المُنتج
+    // 🧪 خرجت إلى `stages/quality.js#runTestingStage` (JCR/13) — تفويضٌ يُبقي النداءَ بالاسم من `DELIVERY_STAGES`.
     async _stageTesting(context, roomName) {
-        const plan = context.plan;
-        try {
-            if (!plan?.files) throw new Error('plan is not defined');
-            const testResult = await runTests(plan.files, getUserLanguage(context.username) || 'en');
-            const emoji = testResult.grade === 'A' ? '✅' : testResult.grade === 'B' ? '🟡' : '🟠';
-            this.emitLiveLog(roomName, '5. RUNTIME', 'TestingAgent',
-                `${emoji} ${testResult.report}`
-            );
-            // إذا كان هناك اختبارات فاشلة — سجّلها كتحذير
-            if (testResult.failedTests.length > 0) {
-                this.emitLiveLog(roomName, '5. RUNTIME', 'TestingAgent',
-                    `⚠️ اختبارات فاشلة: ${testResult.failedTests.join(' | ')}`
-                );
-            }
-        } catch (e) {
-            this.emitLiveLog(roomName, '5. RUNTIME', 'TestingAgent', `⚠️ تخطّي: ${e.message}`);
-        }
+        return runTestingStage(context, roomName, this.reporter);
     }
 
     // 📋 التحقّقُ من المتطلبات خرج إلى `stages/requirementsVerify.js` (JCR/8) — تفويضٌ
@@ -462,71 +410,19 @@ export class JaolaCognitiveRuntime {
         context.files = plan?.files || [];
     }
 
-    // 🆕 SEO Agent
+    // 🧪 خرجت إلى `stages/quality.js#runSeoStage` (JCR/13) — تفويضٌ يُبقي النداءَ بالاسم من `DELIVERY_STAGES`.
     async _stageSEO(context, roomName) {
-        const plan = context.plan;
-        try {
-            const projectName = context.originalGoal?.split(' ').slice(0, 3).join(' ') || context.activeProject;
-            const seoResult = await runSEO(plan.files, {
-                name: projectName,
-                description: context.originalGoal?.slice(0, 150) || projectName,
-                url: `https://${context.username}-${context.activeProject}.vercel.app`,
-                lang: getUserLanguage(context.username) || 'ar',
-            });
-            if (seoResult.success) {
-                plan.files = seoResult.files;
-                // حفظ robots.txt و sitemap.xml
-                for (const file of seoResult.newFiles) {
-                    await writeProjectFile(context.projectPath, file.name, file.content);
-                }
-                this.emitLiveLog(roomName, '5. RUNTIME', 'SEOAgent', `✅ ${seoResult.summary}`);
-                // 📊 حزمة SEO كاملة طُبقت (robots + sitemap + meta + schema)
-                recordScore(context.username, context.activeProject, 'seo', seoResult);
-            }
-        } catch (e) {
-            this.emitLiveLog(roomName, '5. RUNTIME', 'SEOAgent', `⚠️ تخطّي: ${e.message}`);
-        }
+        return runSeoStage(context, roomName, this.reporter);
     }
 
-    // 🆕 Security Agent
+    // 🧪 خرجت إلى `stages/quality.js#runSecurityStage` (JCR/13) — تفويضٌ يُبقي النداءَ بالاسم من `DELIVERY_STAGES`.
     async _stageSecurity(context, roomName) {
-        const plan = context.plan;
-        try {
-            const secResult = await runSecurity(plan.files);
-            if (secResult.success) {
-                // لا إسنادَ لـfixedFiles: لم يعد ثمّة مُصلِحٌ يغيّر شيئاً هنا
-                for (const file of secResult.newFiles) {
-                    await writeProjectFile(context.projectPath, file.name, file.content);
-                }
-                const secEmoji = secResult.grade === 'A' ? '✅' : secResult.grade === 'B' ? '🟡' : '🟠';
-                this.emitLiveLog(roomName, '5. RUNTIME', 'SecurityAgent',
-                    `${secEmoji} ${secResult.summary}`
-                );
-                // 📊 تسجيل درجة الأمان الفعلية
-                recordScore(context.username, context.activeProject, 'security', secResult);
-            }
-        } catch (e) {
-            this.emitLiveLog(roomName, '5. RUNTIME', 'SecurityAgent', `⚠️ تخطّي: ${e.message}`);
-        }
+        return runSecurityStage(context, roomName, this.reporter);
     }
 
-    // 🆕 Git Agent — commit تلقائي + نسخة احتياطية (اختياري — لا يوقف البناء)
+    // 🧪 خرجت إلى `stages/quality.js#runGitBackupStage` (JCR/13) — تفويضٌ يُبقي النداءَ بالاسم من `DELIVERY_STAGES`.
     async _stageGitBackup(context, roomName) {
-        try {
-            await backupProject(context.projectPath, 'build');
-            const commitResult = await commitBuild(
-                context.projectPath,
-                context.originalGoal?.slice(0, 60) || context.goal.slice(0, 60),
-                'build'
-            );
-            if (commitResult.success && !commitResult.skipped) {
-                this.emitLiveLog(roomName, '5. RUNTIME', 'GitAgent',
-                    `✅ تم الحفظ [${commitResult.hash}]`
-                );
-            }
-        } catch (e) {
-            // Git اختياري — لا يوقف البناء
-        }
+        return runGitBackupStage(context, roomName, this.reporter);
     }
 
     // 🗂️ تحديث Project Memory بهيكل الموقع المبني وهويته البصرية
