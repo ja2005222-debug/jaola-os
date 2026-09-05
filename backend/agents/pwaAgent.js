@@ -90,20 +90,29 @@ function generateManifest({ appName, shortName, themeColor, backgroundColor }) {
 /**
  * ⚙️ توليد service worker بسيط: cache-first للملفات الثابتة، مناسب لمواقع JAOLA
  */
-function generateServiceWorker(appName) {
+// 🔴 كانت القائمةُ مكتوبةً بيدٍ: `['index.html','styles.css','script.js','icon.svg']`،
+// و`cache.addAll` **ذرّيّة**: يفشل ملفٌّ واحد فلا يُخزَّن أيُّ ملف. والـ`catch`
+// حولها كان يبتلع الخطأ وتعليقُه يقول «تجاهل الملفات غير الموجودة» — وهو
+// يتجاهل **الخطأ** لا الملف. فقِيس بتشغيل المعالج: مشروعٌ بلا `script.js`
+// (الحالةُ التي يسمّيها التعليقُ نفسه) يُخزّن **صفرَ ملفات**، والمستخدمُ
+// يُقال له إنّ التطبيق أُضيف. فلا عملَ دون اتصال البتّة.
+//
+// والقائمةُ الآن تُشتقّ من ملفات المشروع الفعلية — فصفحاتُ الموقع المتعدّدة
+// (`about.html` وأخواتُها) تُخزَّن هي أيضاً — والتخزينُ **ملفاً ملفاً** فلا
+// يُسقط غائبٌ واحد الباقين.
+function generateServiceWorker(appName, files = ['index.html', 'styles.css', 'script.js', 'icon.svg']) {
     const cacheName = `jaola-${(appName || 'app').toLowerCase().replace(/[^a-z0-9]/g, '-')}-v1`;
     return `// Service Worker تلقائي — تم توليده عبر JAOLA OS PWA Agent
 const CACHE_NAME = '${cacheName}';
-const FILES_TO_CACHE = ['index.html', 'styles.css', 'script.js', 'icon.svg'];
+const FILES_TO_CACHE = ${JSON.stringify(files)};
 
 self.addEventListener('install', (event) => {
     self.skipWaiting();
     event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => {
-            return cache.addAll(FILES_TO_CACHE).catch(() => {
-                // تجاهل الملفات غير الموجودة (مثل عدم وجود script.js في بعض المشاريع)
-            });
-        })
+        caches.open(CACHE_NAME).then((cache) =>
+            // ملفاً ملفاً لا addAll: الأخيرةُ ذرّيّة، فملفٌّ غائبٌ واحد يُفرغ الكاش كلَّه.
+            Promise.all(FILES_TO_CACHE.map((f) => cache.add(f).catch(() => {})))
+        )
     );
 });
 
@@ -165,6 +174,26 @@ function injectPWATags(htmlContent, themeColor) {
  * @param {object} options - { appName, shortName } من المستخدم
  * @returns {Promise<{success: boolean, error?: string}>}
  */
+// امتداداتٌ يفيد تخزينُها للعمل دون اتصال. الجذرُ وحده: مواقعُ جولا الثابتة
+// مسطّحة، والغوصُ في المجلّدات يجرّ `node_modules` وأخواتِها.
+const CACHEABLE_EXT = new Set(['html', 'css', 'js', 'svg', 'json', 'png', 'jpg', 'jpeg', 'webp', 'ico', 'woff2']);
+const MAX_CACHED_FILES = 60;
+
+function listCacheableFiles(projectPath) {
+    let names = [];
+    try {
+        names = fs.readdirSync(projectPath, { withFileTypes: true })
+            .filter((e) => e.isFile() && !e.name.startsWith('.'))
+            .map((e) => e.name)
+            .filter((n) => CACHEABLE_EXT.has((n.split('.').pop() || '').toLowerCase()));
+    } catch { return ['index.html']; }
+    // الرئيسيةُ أوّلاً (هي احتياطُ التنقّل)، ثمّ الباقي مرتّباً — وترتيبٌ ثابتٌ
+    // يجعل ملفَّ العامل نفسه ثابتاً بين البناءات فلا يتغيّر بلا سبب.
+    const rest = names.filter((n) => n !== 'index.html' && n !== 'service-worker.js').sort();
+    const out = (names.includes('index.html') ? ['index.html'] : []).concat(rest);
+    return out.slice(0, MAX_CACHED_FILES);
+}
+
 export async function generatePWA(projectPath, options = {}) {
     try {
         const indexPath = path.join(projectPath, 'index.html');
@@ -178,7 +207,9 @@ export async function generatePWA(projectPath, options = {}) {
         const themeColor = await extractThemeColor(projectPath);
         const iconSVG = generateIconSVG(appName, themeColor);
         const manifestJSON = generateManifest({ appName, shortName, themeColor, backgroundColor: '#ffffff' });
-        const swJS = generateServiceWorker(appName);
+        // تُحسب قبل كتابة manifest/icon كي تشملهما أيضاً (يُضافان صراحةً)
+        const cacheFiles = [...new Set([...listCacheableFiles(projectPath), 'manifest.json', 'icon.svg'])];
+        const swJS = generateServiceWorker(appName, cacheFiles);
 
         const htmlContent = await fsPromises.readFile(indexPath, 'utf-8');
         const updatedHTML = injectPWATags(htmlContent, themeColor);
@@ -194,7 +225,8 @@ export async function generatePWA(projectPath, options = {}) {
             success: true,
             appName,
             themeColor,
-            files: ['manifest.json', 'icon.svg', 'service-worker.js']
+            files: ['manifest.json', 'icon.svg', 'service-worker.js'],
+            cached: cacheFiles
         };
     } catch (error) {
         return { success: false, error: error.message };
