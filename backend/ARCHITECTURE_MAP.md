@@ -175,7 +175,7 @@ Policy/Permission، Identity، Plugin.
 | `projectBrain.js` | 196 | دماغ المشروع (دالة نقية) | MOVE | Evidence | `core/verification/` (Sprint 4) |
 | `codeGuard.js` | 389 | حارس جودة الكود المولَّد | KEEP | Verification | `plugins/coding/` |
 | `persistence.js` (11 مستورداً) | 94 | طبقة الحفظ (Mongo + احتياط) | KEEP | — | `core/` (Sprint 7) |
-| `workspaceStore.js` | 115 | نسخ ملفات المشاريع إلى Mongo | KEEP | Tool (workspace) | `core/runtime/` |
+| `workspaceStore.js` | 153 | نسخ ملفات المشاريع إلى Mongo | KEEP | Tool (workspace) | `core/runtime/` |
 | `conversationStore.js`, `conversationManager.js` | 170/80 | ذاكرة الحوار | KEEP | Memory | `core/memory/` |
 | `metricsStore.js`, `usageMeter.js`, `errorLog.js`, `logger.js`, `adminAudit.js` | 97/78/45/36/41 | قياس واستهلاك وتدقيق | MODIFY | Audit (AuditLog يوحّدها) | `core/audit/` (Sprint 4) |
 | `presence.js` | 12 | حضور | MODIFY | Event (EventBus) | `core/events/` |

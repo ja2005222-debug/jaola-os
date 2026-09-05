@@ -82,3 +82,34 @@ test('كلُّ تحميلٍ لـdotenv في المستودع صامتٌ', () => 
         assert.match(s.args, /quiet\s*:\s*true/, `${s.file}: تحميلُ dotenv بالوسائط «${s.args}» يطبع لافتةً على المخرَج القياسيّ — يلزمه { quiet: true }`);
     }
 });
+
+// ═══════════════════════════════════════════════════════
+// 🔇 صمتُ التشغيل لا صمتُ الاستيراد وحده — Sprint 3j
+//
+// حرّاسُ هذا الملفّ أعلاه تضمن أن **الاستيراد** صامت (عطب #486). وبقيت ثغرةٌ
+// كشفها #495: ما يطبعه الكودُ **أثناء** الاختبار يمرّره مشغّلُ Node عبر قناة
+// التقرير نفسها، فتنكسر أُطُرُها عند المحارف متعددة البايت تحت الحِمل ويسقط
+// الملفّ كلُّه. تجربةٌ ضابطة (بنيةٌ وحجمٌ واحد، ٢٤ تشغيلاً متزامناً):
+//   لاتينيٌّ بحت ٠/٢٤   —   إيموجي وعربية ١٢/٢٤
+// ═══════════════════════════════════════════════════════
+test('كاتمُ السجلّ يكتم فعلاً ويحتفظ بما كُتم', async () => {
+    const { quietConsole } = await import('./helpers/quietConsole.mjs');
+    const q = quietConsole();
+    let escaped = false;
+    const realWrite = process.stdout.write;
+    process.stdout.write = (...a) => { escaped = true; return realWrite.apply(process.stdout, a); };
+    try {
+        console.log('💳 [Billing] تحديث اشتراك omar → pro (active)');
+        console.warn('🗄️ [WorkspaceStore] استُعيد 2 من 3 ملف');
+        console.error('خطأ');
+    } finally {
+        process.stdout.write = realWrite;
+        q.restore();
+    }
+    assert.equal(escaped, false, 'سطرٌ تسرّب إلى القناة رغم الكتم');
+    assert.equal(q.lines.length, 3, 'الكتمُ يحتفظ بالسطور فلا يُخفي شيئاً');
+    assert.match(q.lines[0], /تحديث اشتراك omar/);
+
+    console.log = console.log;   // بعد `restore` تعود الطباعة كما كانت
+    assert.equal(typeof console.log, 'function');
+});
