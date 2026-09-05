@@ -8,6 +8,9 @@ import path from 'node:path';
 import os from 'node:os';
 import mongoose from 'mongoose';
 import { persistPlugin, removePlugin, restorePluginsToDisk } from '../services/pluginStore.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 const mkdir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'jaola-plugins-'));
 const setReady = (v) => Object.defineProperty(mongoose.connection, 'readyState', { value: v, configurable: true });

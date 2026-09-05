@@ -4,6 +4,9 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import fs from 'node:fs';
 import { queryForType, buildImageContext } from '../services/imageService.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 const TYPES = Object.keys(JSON.parse(
     fs.readFileSync(new URL('../knowledge/design-rules.json', import.meta.url), 'utf8')).types);

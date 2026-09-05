@@ -4,6 +4,9 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { generateDesignBrief, requestAiEnhancements, saveDesignBrief, loadDesignBrief } from '../agents/designerAgent.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 // ═══════════════════════════════════════════════════════
 // 🔴 العطب: `groq.chat.completions.create(...)` و`groq` غير مستوردٍ في

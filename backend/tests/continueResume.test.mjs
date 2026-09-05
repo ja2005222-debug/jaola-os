@@ -6,6 +6,9 @@ import assert from 'node:assert/strict';
 import { isExplicitRebuild, isExplicitNewBuild, isContinuationGoal } from '../agents/textNormalizer.js';
 import { classifyIntentFast, buildContinuationGoal } from '../agents/ceoBrain.js';
 import { updateStructure, getProjectMemory } from '../agents/projectMemory.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 test('العطل الأصلي: «لا تبدأ من الصفر» لا تعود تُصنَّف إعادةَ بناء', () => {
     assert.equal(isExplicitRebuild('لا تبدأ من الصفر — طوّر الموجود'), false);

@@ -5,6 +5,9 @@ import assert from 'node:assert/strict';
 import { decide, classifyIntentFast } from '../agents/ceoBrain.js';
 import { transitionState, getProjectState, STATES, isBuilding } from '../agents/stateMachine.js';
 import { enqueueMission, isMissionActive } from '../core/runtime/ExecutionQueue.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 const U = '__lock_test__', P = 'stale-project';
 

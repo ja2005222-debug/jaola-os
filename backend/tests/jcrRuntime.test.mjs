@@ -13,6 +13,9 @@ import { JaolaCognitiveRuntime, resolveProjectType } from '../agents/jcr.js';
 import { setPendingGoal, getPendingGoal } from '../services/conversationManager.js';
 import { setUserLanguage, getUserLanguage } from '../agents/languageDetector.js';
 import { resetLessons } from '../services/platformLessons.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 let seq = 0;
 function scenario() {

@@ -12,6 +12,9 @@ import { scenario, tempProject, workingProject, emptyProject } from './helpers/j
 import { getProjectState, STATES, isBuilding } from '../agents/stateMachine.js';
 import { analyzeProjectStatic } from '../agents/behaviorVerifier.js';
 import { setUserLanguage } from '../agents/languageDetector.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 function missionScenario(prefix) {
     const s = scenario(prefix);

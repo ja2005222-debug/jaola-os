@@ -2,6 +2,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateDatabase, selectDatabase } from '../agents/databaseAgent.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 test('نوع خارج القوالب بلا مزوّد → اتصال + .env فقط، والملخّص يسمّيهما (لا schema/seed مزعومين)', async () => {
     const r = await generateDatabase('أداة حاسبة زكاة', 'business', '/nonexistent');

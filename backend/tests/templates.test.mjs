@@ -4,6 +4,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getAvailableTemplates, getTemplate } from '../agents/templateLibrary.js';
 import { detectProjectType, keywordMatches } from '../agents/knowledgeEngine.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 test('30 قالباً وكلها مكتملة (css_vars + قسمان+)', () => {
     const all = getAvailableTemplates();

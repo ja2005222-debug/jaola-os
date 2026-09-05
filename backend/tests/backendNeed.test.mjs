@@ -7,6 +7,9 @@ import assert from 'node:assert/strict';
 import { needsBackend, BACKEND_KEYWORDS } from '../agents/backendNeed.js';
 import { needsBackend as fromKnowledge } from '../agents/knowledgeEngine.js';
 import { needsBackend as fromBackendAgent } from '../agents/backendAgent.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 // الأهداف التي كانت تتناقض إجاباتها فعلياً قبل التوحيد
 const DIVERGED = [

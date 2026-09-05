@@ -7,6 +7,9 @@ import path from 'node:path';
 import { readStore, writeKey } from '../services/appData.js';
 import { buildDataSyncJS, injectDataSyncTag, installDataSync } from '../services/dataSync.js';
 import { setCloneTrack, getCloneTrack } from '../agents/projectMemory.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'appdata-'));
 

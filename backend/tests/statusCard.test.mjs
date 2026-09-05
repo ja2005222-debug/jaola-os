@@ -14,6 +14,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { transitionState, getProjectSummary, resetProjectState, STATES } from '../agents/stateMachine.js';
 import { buildStatusReply } from '../agents/ceoBrain.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 // تسلسلُ البناءِ الحقيقيُّ كما في jcr.js (١٢٧٨ ← ٤١٢ ← ٥٣٩ ← ٦٠٦ ← ١٣٢٣)
 function runBuild(u, p, { fail = false } = {}) {

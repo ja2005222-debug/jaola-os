@@ -3,6 +3,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getFullStackCategories, buildFullStackProject, isFullStackCategory, resolveFullStackCategory, recommendFullStack } from '../agents/fullstackTemplates.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 test('كل الفئات تولّد مشاريع كاملة ومتّسقة', () => {
     for (const cat of getFullStackCategories()) {

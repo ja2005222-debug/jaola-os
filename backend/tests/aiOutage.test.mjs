@@ -5,6 +5,9 @@ import assert from 'node:assert/strict';
 import { classifyAIError, isPermanentAIError, AI_UNAVAILABLE_MSG } from '../agents/baseAgent.js';
 import { buildFailureChatMessage } from '../agents/failureMessages.js';
 import { localizeLog } from '../agents/logLocalizer.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 test('تصنيف الأعطال: الرصيد والمفاتيح دائمة، والضغط والشبكة عابرة', () => {
     assert.equal(classifyAIError({ status: 429, message: '429 You exceeded your current quota, please check your plan and billing details.' }), 'quota');

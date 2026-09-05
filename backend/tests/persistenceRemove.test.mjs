@@ -7,6 +7,9 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import mongoose from 'mongoose';
 import { persistEntry, removeEntry } from '../services/persistence.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 /** يجعل الطبقةَ تظنّ أنّها متصلة، ويستبدل عمليّتَي KV بمراقبَين. */
 function fakeOnline() {
