@@ -21,12 +21,14 @@ import { localizeLog } from './logLocalizer.js';
 import { RoomReporter } from '../core/runtime/RoomReporter.js';
 import { runDebate } from './stages/debate.js';
 import { understandGoal } from './stages/understand.js';
+import { enrichBuildContext, resolveProjectType } from './stages/enrich.js';
+// 🔁 إعادةُ تصدير: `resolveProjectType` بقيت واجهةً من `jcr` لمستورِديها (JCR/6)
+export { resolveProjectType };
 import { buildFailureChatMessage } from './failureMessages.js';
 import { assetsFor, injectFaviconTag, paletteHint, pickPalette } from './cloneAssets.js';
 import { polishHtml } from './polishPack.js';
 import { composePage, isMarketingPageGoal, brandFromGoal, selectBlocks, applyBrandName } from './blockRegistry.js';
 import { verifyBehavior, buildBehaviorFixInstruction, analyzeProjectStatic, readPageCode, extractDefinedFunctions } from './behaviorVerifier.js';
-import { detectProjectType } from './knowledgeEngine.js';
 import { hasKeyword } from './keywordMatch.js';
 import { updateLanguage, recordProject, recordEdit } from './userProfile.js';
 import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
@@ -44,7 +46,6 @@ import { reviewCode } from './reviewAgent.js';
 import { runTests } from './testingAgent.js';
 import { commitBuild } from './gitAgent.js';
 import { backupProject, listSnapshots, restoreSnapshot } from './fileManager.js';
-import { analyzeRequirements, buildRequirementsContext } from './requirementAnalyzer.js';
 import { normalizeText, normalizeArabic, detectIntentFromMeaning, isQuestionMessage, hasActionIntent, isExplicitRebuild, isExplicitNewBuild, isContinuationGoal } from './textNormalizer.js';
 import { routeMessage } from './router.js';
 import { matchDeleteCommand, matchImageCommand, isImageDiagCommand, isBareYes, isBareExecute, isUndoCommand } from './chatCommands.js';
@@ -63,7 +64,6 @@ import { guardFiles, guardSingleJS, scrubPlaceholders, ensureEditIntegrity } fro
 import { recordLesson, recordMissionOutcome, recordBehaviorGaps, matureLessons, lessonDirective, MIN_COUNT_TO_TEACH } from '../services/platformLessons.js';
 import { getPlatformKnowledge } from '../services/platformKnowledge.js';
 import { getProjectSecrets } from '../services/projectSecrets.js';
-import { buildImageContext } from '../services/imageService.js';
 import { recommendFullStack, buildFullStackProject } from './fullstackTemplates.js';
 import { recordScore, recordBuild, recordEditAction, buildMetricsPayload } from '../services/metricsStore.js';
 import { setPendingGoal, getPendingGoal, consumePendingGoal, clearDialog } from '../services/conversationManager.js';
@@ -179,17 +179,6 @@ async function writePlanFiles(projectPath, files) {
 // ==========================================
 // 🚀 JAOLA Cognitive Runtime
 // ==========================================
-/**
- * نوع المشروع للتوجيه والمتطلبات: فئة المخطّط فقط حين تأتي من النموذج —
- * الاحتياط يضع 'business' دائماً فكان يعطّل الموجّه الهجين ومحلّل المتطلبات
- * كلما غاب الـLLM (عطل كشفه التوصيف، راجع ARCHITECTURE_MIGRATION.md).
- */
-export function resolveProjectType(goal, blueprint) {
-    return blueprint?.category && blueprint.category !== 'other' && blueprint._source !== 'fallback'
-        ? blueprint.category
-        : detectProjectType(goal);
-}
-
 export class JaolaCognitiveRuntime {
     constructor(ioInstance) {
         this.io = ioInstance;   // يبقى: يُمرَّر قيمةً لتسعةِ نداءاتٍ خارجيّة تبثّ بنفسها
@@ -1391,48 +1380,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
         return null; // لا استراتيجية خاصة → النواة (Vanilla) على الهدف المُثرى
     }
 
-    // 🧩 إثراء سياق البناء: محلّل المتطلبات الضمنية + صور مطابقة + توجيهات
-    // وكلاء الإضافات (hook beforeBuild). كلها اختيارية.
+    // 🧩 الإثراءُ خرج إلى `stages/enrich.js` (JCR/6) — تفويضٌ يُبقي المستدعيَ كما هو؛
+    // المُبلِّغُ يُمرَّر وسيطاً.
     async _enrichBuildContext(goal, blueprint, ctx) {
-        const { projectPath, username, activeProject, roomName } = ctx;
-        // 🆕 Smart Requirement Analyzer — يُثري الهدف بمتطلبات ضمنية
-        let requirementsContext = '';
-        let imageContext = '';
-        // نوع المشروع من المخطط الذكي (أدق من كشف الكلمات المفتاحية) مع احتياط
-        let projectType = 'business';
-        try { projectType = resolveProjectType(goal, blueprint); } catch { /* الاحتياط أعلاه */ }
-
-        // 🧱 إثراءان مستقلّان، ولكلٍّ احتياطه. كانا في try واحدة، فسقوطُ
-        // المحلّل يُسقط الصور معه صامتاً — وهما لا يعتمد أحدهما على الآخر.
-        try {
-            const reqAnalysis = await analyzeRequirements(goal, projectType);
-            requirementsContext = buildRequirementsContext(reqAnalysis);
-        } catch (e) { /* اختياري */ }
-
-        try {
-            // 🖼️ صور حقيقية مطابقة للموضوع تُحقن في سياق البناء
-            const img = await buildImageContext(goal, projectType, activeProject);
-            imageContext = img.context;
-            this.emitLiveLog(roomName, 'ASSETS', 'ImageService', `🖼️ جُهزت ${img.count} صور (${img.source})`);
-        } catch (e) { /* اختياري */ }
-
-        // 🔌 وكلاء الإضافات: hook beforeBuild — يشاركون فعلياً في البناء
-        // كل وكيل يُرجع نصاً يُحقن في سياق البناء (توجيهات، متطلبات إضافية...)
-        let pluginContext = '';
-        try {
-            const hookResults = await orchestrator.runHook('beforeBuild', {
-                goal, username, project: activeProject, projectPath, blueprint,
-            });
-            const guidance = hookResults
-                .map(r => (typeof r.result === 'string' ? r.result : r.result?.guidance || r.result?.reply))
-                .filter(Boolean);
-            if (guidance.length) {
-                pluginContext = `\n## 🔌 توجيهات وكلاء إضافيين (التزم بها):\n${guidance.map(g => `- ${g}`).join('\n')}`;
-                this.emitLiveLog(roomName, 'PLUGINS', 'beforeBuild',
-                    `🔌 شارك ${guidance.length} وكيل إضافي في التوجيه`);
-            }
-        } catch (e) { /* الإضافات اختيارية */ }
-        return { requirementsContext, imageContext, pluginContext };
+        return enrichBuildContext(goal, blueprint, ctx, this.reporter);
     }
 
     // 📣 ما بعد النجاح: تقرير التسليم بلغة المستخدم، الاقتراحات، قائمة الملفات،
