@@ -9,19 +9,36 @@
  * تُحقن الروابط في سياق هدف البناء ليستخدمها وكيل البرمجة مباشرة.
  */
 
-// كلمة البحث الإنجليزية حسب نوع المشروع (Pexels يبحث بالإنجليزية)
-const TYPE_QUERIES = {
-    restaurant: 'restaurant food gourmet',
-    medical: 'hospital doctor medical',
-    clinic: 'clinic dental medical',
-    ecommerce: 'products shopping retail',
-    hotel: 'luxury hotel resort',
-    gym: 'gym fitness workout',
+/**
+ * كلماتٌ تُثري بحثَ Pexels لأنواعٍ اسمُها وحدَه غامض. وما لم يُذكر هنا
+ * يُبحث **باسم نوعه** — وأسماءُ الأنواع في `knowledge/design-rules.json`
+ * إنجليزيةٌ أصلاً، فالاشتقاقُ من السجلّ لا من قائمةٍ ثانيةٍ تنجرف عنه.
+ *
+ * 🔴 كانت هنا خريطةٌ يدويّةٌ بعشرة مفاتيح و`|| TYPE_QUERIES.business`.
+ *    وقياسُ التقاطع مع السجلّ الحيّ: **٢١ من ٣١ نوعاً** تسقط إلى
+ *    «business office team» — عرسٌ وصالونُ تجميل ومكتبُ محاماة ووكالةُ
+ *    سيارات وموقعُ سفر، كلُّها صورُ مكاتب. والسياقُ المحقون يقول للوكيل
+ *    «صور حقيقية جاهزة للاستخدام… استخدمها في img src مباشرة».
+ */
+const QUERY_HINTS = {
+    restaurant: 'food gourmet',
+    medical: 'hospital doctor',
+    clinic: 'dental medical',
+    ecommerce: 'shopping retail products',
+    hotel: 'luxury resort',
+    gym: 'fitness workout',
     portfolio: 'creative workspace design',
     realestate: 'modern house architecture',
     education: 'students learning classroom',
-    business: 'business office team',
+    business: 'office team',
 };
+
+/** كلمةُ بحثٍ لكلّ نوع — مشتقّةٌ من اسمه، لا من قائمةٍ قد تُغفِله. */
+export function queryForType(projectType) {
+    const type = String(projectType || '').trim().toLowerCase() || 'business';
+    const hint = QUERY_HINTS[type];
+    return hint ? `${type} ${hint}` : type;
+}
 
 async function fetchPexels(query, count = 6) {
     const key = process.env.PEXELS_API_KEY;
@@ -51,7 +68,7 @@ function picsumFallback(seedBase, count = 6) {
  * يجلب روابط صور مناسبة للمشروع ويعيد فقرة سياق جاهزة للحقن في هدف البناء
  */
 export async function buildImageContext(goal, projectType, projectName = 'site') {
-    const query = TYPE_QUERIES[projectType] || TYPE_QUERIES.business;
+    const query = queryForType(projectType);
 
     let urls = await fetchPexels(query);
     let source = 'Pexels';
@@ -61,9 +78,15 @@ export async function buildImageContext(goal, projectType, projectName = 'site')
     }
 
     const list = urls.map((u, i) => `${i + 1}. ${u}`).join('\n');
+    // صورُ picsum عشوائيةٌ لا صلةَ لها بالموضوع — يُقال ذلك للوكيل بدل أن
+    // يبني عليها تسمياتٍ موضوعيّةً كاذبة («فريقنا»، «طبقُ اليوم»).
+    const heading = source === 'Pexels'
+        ? `صور حقيقية مطابقة لموضوع «${query}»`
+        : 'صور عامّة (غير مطابقة للموضوع — استخدمها خلفياتٍ أو أغلفةً بلا تسمياتٍ موضوعيّة)';
     return {
         source,
+        query,
         count: urls.length,
-        context: `\n## صور حقيقية جاهزة للاستخدام (استخدمها في img src مباشرة — لا تخترع روابط صور):\n${list}\n`,
+        context: `\n## ${heading} — استخدمها في img src مباشرة، لا تخترع روابط صور:\n${list}\n`,
     };
 }
