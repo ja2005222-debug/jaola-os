@@ -28,7 +28,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## A) `backend/server.js` — 3807 سطراً، 158 مساراً، 98 استيراداً محلياً
+## A) `backend/server.js` — 3813 سطراً، 158 مساراً، 98 استيراداً محلياً
 
 لا يُفكَّك دفعة واحدة (البند 19). الخريطة **حسب المجال** لأن الملف واحد؛ كل صف = مرشّح
 ملف `routes/<domain>.js` مستقبلاً على نمط `routes/billing.js` القائم فعلاً («أول
@@ -68,7 +68,7 @@ Policy/Permission، Identity، Plugin.
 | ✅ `core/runtime/ExecutionContext.js` (جديد، Sprint 2b) | 67 | `createExecutionContext`/`contextFromRequest`/`withAgents` — بيئة المهمة في كائن مجمَّد (الحقول الستة المتكرّرة) | ADDED | Mission | 11 توقيعاً في `jcr.js` + المعالجات السبعة |
 | ✅ `core/runtime/AgentRuntime.js` (جديد، Sprint 2d) | 89 | `runAgent` + `gatherCooperationInputs` — منفّذ الوكيل الواحد: عقدٌ → نداء نموذج → ملفات مُطهَّرة | MOVED (Sprint 2d ✅، حرفياً عدا إسقاط افتراض `TEAM_BY_ID` الميت) | **Agent** | `runBackendTeam` (فريقا الخلفية **والواجهة** معاً) |
 | ✅ `core/policy/ConfirmationManager.js` (جديد، Sprint 3) | 82 | بوّابةُ تأكيدٍ واحدة تُميّز الموافقة من السؤال | ADDED | Permission | مستهلكها: مسارُ التأكيد في `jcr.js` |
-| ✅ `core/runtime/workspacePaths.js` (جديد، Sprint 2c) | 139 | `isInsideRoot`/`resolveInside` + `safeRelPath` — نواة احتواء المسار المشتركة (السياسات تبقى عند كل موضع) | ADDED | Tool | `writePlanFiles` (jcr)، `writeBackendTeamFiles`، `sanitizePath` |
+| ✅ `core/runtime/workspacePaths.js` (جديد، Sprint 2c) | 149 | `isInsideRoot`/`resolveInside` + `safeRelPath` — نواة احتواء المسار المشتركة (السياسات تبقى عند كل موضع) | ADDED | Tool | `writePlanFiles` (jcr)، `writeBackendTeamFiles`، `sanitizePath` |
 | ✅ `core/runtime/workspaceRoots.js` (جديد، Sprint 4h) | 43 | `WORKSPACE_ROOT`/`MEMORY_ROOT`/`PLUGINS_ROOT` — **تصريحٌ واحد** لجذور الكتابة الثلاثة (كانت تُشتقّ في ١٢ موضعاً). اشتقاقٌ نقيّ: لا يلمس القرص | ADDED | Tool (شرطُ أيّ بوّابةِ كتابةٍ لاحقة) | مستهلكوه: `server.js` + ٩ وحدات |
 | ✅ `core/providers/llm.js` (Sprint 4g، مَنقول من `agents/baseAgent.js`) | 151 (25 مستورداً) | بوّابةُ الـLLM الوحيدة: `smartChat`/`ai`/`groq`/`deepseek` + سلسلة failover Groq → DeepSeek → Gemini → OpenAI + تصنيف الأعطال | MOVED (نقلٌ حرفيّ: لا سطرَ منطقٍ تغيّر) | Provider | `core/providers/llm.js` — لا Registry قبل Model Router (لا تجريد بلا مستهلك) |
 

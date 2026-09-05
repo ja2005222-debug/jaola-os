@@ -128,7 +128,7 @@ import { getUserLanguage } from './agents/languageDetector.js';
 import { setDomainModel, setCloneTrack, getCloneTrack } from './agents/projectMemory.js';
 import { mergeProjectModel } from './agents/projectModel.js';
 import { prepareRenderDeploy, renderServiceName } from './agents/renderAgent.js';
-import { projectPathOf, isInsideRoot } from './core/runtime/workspacePaths.js';
+import { projectPathOf, isInsideRoot, resolveProjectFile } from './core/runtime/workspacePaths.js';
 import { WORKSPACE_ROOT } from './core/runtime/workspaceRoots.js';
 import { autoDeployFullStack, fullAutomationReady } from './services/deployAutomation.js';
 import { assetsFor, injectFaviconTag } from './agents/cloneAssets.js';
@@ -2346,7 +2346,13 @@ app.post('/api/template/apply', verifyToken, validateProjectOwnership, async (re
         //    لغة الواجهة المُرسلة صراحةً تتقدّم (لا افتراض en على مستخدم عربي لم يتحدّث بعد)
         const uiLang = (req.body?.lang === 'en' || req.body?.lang === 'ar') ? req.body.lang : getUserLanguage(req.user.username);
         const localized = localizeTemplateFiles(clone.files, uiLang);
-        for (const f of localized) fs.writeFileSync(path.join(projectPath, f.name), f.content);
+        // 🛡️ احتواءٌ كاحتواء `jcr.js`: الأسماءُ هنا من سجلّ القوالب (لا من
+        //    نموذج)، فلا ثغرةَ حيّة — لكنّ تركَ موضعٍ يكتب باسمٍ من كائنٍ بلا
+        //    احتواء يجعل الخاصّيّةَ «لا يُكتب خارج الجذر» دعوى لا ضمانة.
+        for (const f of localized) {
+            const fp = resolveProjectFile(projectPath, f?.name);
+            if (fp) { fs.mkdirSync(path.dirname(fp), { recursive: true }); fs.writeFileSync(fp, f.content); }
+        }
         // 2) اضبط نموذج المشروع (دمج مع أي نموذج سابق)
         const model = mergeProjectModel(getDomainModel(req.user.username, req.activeProject) || {}, clone.model);
         setDomainModel(req.user.username, req.activeProject, model);
