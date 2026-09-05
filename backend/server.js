@@ -58,7 +58,7 @@ import {
 import { generateSocialPosts, draftInboxReply, extractSiteFacts } from './agents/marketingAgent.js';
 import { signBotToken, verifyBotToken } from './agents/jaolaBotToken.js';
 import { genTenantId, isValidTenantId, sanitizeTenantConfig } from './services/botTenants.js';
-import { smartChat } from './agents/baseAgent.js';
+import { smartChat } from './core/providers/llm.js';
 import { generateBackend, generateFrontendAPIIntegration } from './agents/backendAgent.js';
 import { needsBackend } from './agents/knowledgeEngine.js';
 import {

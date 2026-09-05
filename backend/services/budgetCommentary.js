@@ -5,7 +5,7 @@
  * وصف واعٍ فقط، لا أمر تنفيذي ملزم ("أوقف الإنفاق على X فوراً"). يصمت
  * (يعيد null) عند أي عطل — الميزة إضافية لا تُعطّل الملخّص الرقمي الأساسي.
  */
-import { smartChat } from '../agents/baseAgent.js';
+import { smartChat } from '../core/providers/llm.js';
 
 const TTL_MS = 10 * 60 * 1000;
 const cache = new Map(); // "periodLabel|lang|income|expense|topCategory" → { text, at }

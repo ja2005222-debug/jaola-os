@@ -1,4 +1,4 @@
-import { smartChat } from './baseAgent.js';
+import { smartChat } from '../core/providers/llm.js';
 import { jwtSecretSnippet } from './generatedAppSecrets.js';
 
 // 🔍 هل يحتاج المشروع خادماً؟ — مصدرٌ واحد مشترك مع `knowledgeEngine`

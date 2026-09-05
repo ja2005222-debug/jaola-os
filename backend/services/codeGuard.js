@@ -14,7 +14,7 @@
 import vm from 'vm';
 import fsPromises from 'fs/promises';
 import path from 'path';
-import { groq } from '../agents/baseAgent.js';
+import { groq } from '../core/providers/llm.js';
 
 // ═══════════════════════════════════════════════════════
 // 🔍 الفحوص

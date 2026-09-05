@@ -15,7 +15,7 @@
  * (getFinalGoal يدمج «س/ج» في الهدف)، فلا تُمرَّر مصفوفةً منفصلة.
  */
 
-import { smartChat } from './baseAgent.js';
+import { smartChat } from '../core/providers/llm.js';
 
 // ═══════════════════════════════════════════════════════
 // 🔍 تحليل ثابت سريع (بدون AI)

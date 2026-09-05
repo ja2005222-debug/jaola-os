@@ -9,7 +9,7 @@
  * Clarifier → Designer → Architect → Coder → QA
  */
 
-import { smartChat } from './baseAgent.js';
+import { smartChat } from '../core/providers/llm.js';
 import { hasKeyword } from './keywordMatch.js';
 import { getProjectContext } from './knowledgeEngine.js';
 import { getUserProfile } from './userProfile.js';

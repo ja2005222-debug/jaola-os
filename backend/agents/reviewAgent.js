@@ -11,7 +11,7 @@
  * يُنتج تقرير مختصر ويُصلح المشاكل البسيطة تلقائياً.
  */
 
-import { smartChat } from './baseAgent.js';
+import { smartChat } from '../core/providers/llm.js';
 
 // اللغات ذات الاتجاه من اليمين لليسار
 const RTL_LANGS = new Set(['ar', 'ur', 'he', 'fa']);

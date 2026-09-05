@@ -2,7 +2,7 @@
 //    إصلاح حدود الكلمات في مترجم السجلّ (كانت «فشلت» تصير "Failedت")
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyAIError, isPermanentAIError, AI_UNAVAILABLE_MSG } from '../agents/baseAgent.js';
+import { classifyAIError, isPermanentAIError, AI_UNAVAILABLE_MSG } from '../core/providers/llm.js';
 import { buildFailureChatMessage } from '../agents/failureMessages.js';
 import { localizeLog } from '../agents/logLocalizer.js';
 import { divertConsoleToStderr } from './helpers/reportChannel.mjs';

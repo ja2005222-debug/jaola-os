@@ -59,25 +59,29 @@ POST /api/chat                                    server.js:2012
 (`HTTP → JCR → Runtime → …`) صحيحٌ **لمسارٍ واحد فقط** — مسار `/api/chat`.
 و**١٥٧ مساراً آخر** ينزل مباشرةً إلى الخدمات والوكلاء دون المرور بالنواة.
 
-**ج) انعكاسُ الطبقات.** `services → agents` = **١٤ حافّة**: الطبقةُ الأدنى
-تستورد الأعلى. القائمةُ كاملةً:
+**ج) انعكاسُ الطبقات.** `services → agents` = **١٤ حافّة** يومَ التدقيق:
+الطبقةُ الأدنى تستورد الأعلى. القائمةُ كاملةً (المشطوبُ زال في Sprint 4g):
 
 | الخدمة | الوكيل |
 |---|---|
-| `adminService.js` | `baseAgent.js` ×2، `platformContext.js` |
+| `adminService.js` | ~~`baseAgent.js` ×2~~، `platformContext.js` |
 | `aiImages.js` | `seedStamp.js`، `imageForge.js` |
-| `aiProviderCheck.js` | `baseAgent.js` |
-| `budgetCommentary.js` | `baseAgent.js` |
-| `codeGuard.js` | `baseAgent.js` |
+| ~~`aiProviderCheck.js`~~ | ~~`baseAgent.js`~~ |
+| ~~`budgetCommentary.js`~~ | ~~`baseAgent.js`~~ |
+| ~~`codeGuard.js`~~ | ~~`baseAgent.js`~~ |
 | `conversationManager.js` | `clarifierAgent.js`، `stateMachine.js` |
-| `cryptoCommentary.js` | `baseAgent.js` |
+| ~~`cryptoCommentary.js`~~ | ~~`baseAgent.js`~~ |
 | `deployAutomation.js` | `renderAgent.js` |
 | `githubSync.js` | `gitAgent.js` |
-| `stockCommentary.js` | `baseAgent.js` |
+| ~~`stockCommentary.js`~~ | ~~`baseAgent.js`~~ |
 
 سبعةٌ من الأربعة عشر سببُها واحد: **`baseAgent` هو بوّابةُ الـLLM الوحيدة**،
 وكلُّ خدمةٍ تحتاج نموذجاً مضطرّةٌ لاستيراد وكيل. فالانعكاسُ هنا **عَرَضٌ لا
 مرض**: العلّةُ أنّ بوّابة الـLLM تسكن طبقةَ الوكلاء لا طبقةً تحتها.
+
+> **بعد Sprint 4g**: البوّابةُ نزلت إلى `core/providers/llm.js`، فبقيت **٧
+> حواف** — كلُّها اعتمادٌ على منطقِ وكيلٍ حقيقيّ (صور، توضيح، حالة، نشر،
+> git، سياقُ المنصّة)، لا على النموذج. أُعيد القياسُ بنفسِ الأمر في §٧.
 
 **د) لا دوراتٍ مباشرة** (أ↔ب). فُحص ولم يُوجد شيء.
 
@@ -92,7 +96,7 @@ POST /api/chat                                    server.js:2012
 | **كتابةُ ملفٍّ في مساحة العمل** | **33** | services 25، agents 6، core 1، server.js 1 |
 | **نداءُ شبكةٍ خارجيّ** | **39** | agents 30، services 7، utils 1، plugins 1 |
 | **تشغيلُ أمرِ صدفة** | **16** | agents 9، services 6، plugins 1 |
-| **استدعاءُ LLM مباشرةً** | **4** | `agents/baseAgent.js`، `services/aiImages.js`، `services/aiProviderCheck.js`، `utils/aiProvider.js` |
+| **استدعاءُ LLM مباشرةً** | **4** | `core/providers/llm.js` (كان `agents/baseAgent.js`)، `services/aiImages.js`، `services/aiProviderCheck.js`، `utils/aiProvider.js` |
 
 **القدرةُ الوحيدة التي تقترب من بوّابةٍ واحدة هي الـLLM** (٤ مواضع، ثلاثةٌ منها
 حيّة). والباقي بلا بوّابة: عشرون كاتباً على القاعدة، وثلاثةٌ وثلاثون على القرص،
@@ -153,9 +157,12 @@ KEEP»، والسطر 333 يقول «لا يصل إليه إلا: **لا شيء*
 
 بلا تنفيذ، وبانتظار قرارك:
 
-1. **بوّابةُ الـLLM أوّلاً.** إنزالُ `baseAgent`'s LLM إلى طبقةٍ تحت الوكلاء
-   يُلغي **سبعاً** من حواف الانعكاس الأربعةَ عشرَ دفعةً واحدة. أرخصُ حركةٍ
-   بأكبر أثرٍ بنيويّ، ولا تمسّ منطقَ أيّ وكيل.
+1. ✅ **بوّابةُ الـLLM أوّلاً — نُفِّذت (Sprint 4g).** `agents/baseAgent.js`
+   → `core/providers/llm.js` بـ`git mv`، ١٥١ سطراً بلا تغييرٍ في سطرِ منطقٍ
+   واحد، وإعادةُ توجيه ٢٦ موضعَ استيراد. **المقيس بعد النقل: ٧ حواف انعكاس
+   لا ١٤** (§٣-ج أدناه محدَّثة)، و`core → agents` = صفر كما كان.
+   ولم يُبنَ `ProviderRegistry`: مستهلكُه الوحيد Model Router وهو غيرُ موجود
+   («لا تجريد بلا مستهلك حقيقي») — فالاسمُ يصف ما هو: مزوّدُ LLM تحت الوكلاء.
 2. **بوّابةُ الكتابة على القرص.** ٣٣ كاتباً، وأكثرهم في `services`. هذه هي
    القدرةُ التي تحتاجها أيُّ صلاحيّاتٍ مستقبليّة (`PermissionEngine` الموقوف).
 3. **بابُ النشر الواحد.** توحيدُ مدخلَي `/api/template/apply` و`/api/deploy`.

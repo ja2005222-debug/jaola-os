@@ -112,7 +112,7 @@ test('تكامل حقيقي: وكيل مُولَّد يُحمَّل فعلياً
     // وكلٌّ منهما يمرّ منفرداً — واخضرارُ الحزمة كان يعتمد على الجدولة.
     //
     // والمجلّد شقيقٌ لـ`plugins/` بالعمق نفسه عمداً: الوكيل المولَّد يستورد
-    // `../agents/baseAgent.js`، فلو وُضع في `os.tmpdir()` لانكسر الاستيراد.
+    // `../core/providers/llm.js`، فلو وُضع في `os.tmpdir()` لانكسر الاستيراد.
     const isolatedDir = path.resolve(__dirname, `../.plugins-test-${process.pid}`);
     const target = path.join(isolatedDir, 'grounding-test-agent.js');
     fs.mkdirSync(isolatedDir, { recursive: true });

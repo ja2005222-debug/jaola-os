@@ -17,7 +17,7 @@
  *   >>>>>>> REPLACE
  */
 
-import { smartChat } from './baseAgent.js';
+import { smartChat } from '../core/providers/llm.js';
 
 // ── تحليل كتل التعديل من مخرَج النموذج (دالة نقية) ─────────────────────
 export function parseEditBlocks(text = '') {

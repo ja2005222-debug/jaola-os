@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { checkAiProviders } from '../services/aiProviderCheck.js';
-import { DEEPSEEK_MODEL } from '../agents/baseAgent.js';
+import { DEEPSEEK_MODEL } from '../core/providers/llm.js';
 import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
 
 divertConsoleToStderr();
@@ -80,7 +80,7 @@ test('موديل DeepSeek ملغى يُكشف فوراً باقتراح المد
     assert.equal(r.deepseek.ok, false, 'الموديل المضبوط غير موجود في قائمتهم');
     assert.ok(/غير مدعوم/.test(r.deepseek.detail) && r.deepseek.detail.includes('deepseek-v9-ultra'), 'يقترح المدعوم فعلاً');
 
-    const { classifyAIError, isPermanentAIError } = await import('../agents/baseAgent.js');
+    const { classifyAIError, isPermanentAIError } = await import('../core/providers/llm.js');
     const modelErr = { status: 400, message: 'The supported API model names are deepseek-v4-pro or deepseek-v4-flash, but you provided deepseek-chat' };
     assert.equal(classifyAIError(modelErr), 'config');
     assert.ok(isPermanentAIError(modelErr), 'موديل ملغى = عطل دائم لا يُهدر عليه دورات');

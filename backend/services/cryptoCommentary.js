@@ -3,10 +3,10 @@
  * (عربي أو إنجليزي، حسب لغة واجهة المستخدم) تفسّر أرقام تحليل فني حقيقي
  * (SMA/RSI/إشارة) بلغة مبسّطة، بلا أي أمر تنفيذي مباشر ("اشترِ الآن") —
  * وصف الزخم/الاتجاه فقط، لا توصية ملزمة. يستخدم نفس سلسلة الـfailover
- * الموجودة في baseAgent.js (لا مزوّد جديد)، ويصمت (يعيد null) عند أي عطل
+ * الموجودة في `core/providers/llm.js` (لا مزوّد جديد)، ويصمت (يعيد null) عند أي عطل
  * — الميزة إضافية لا تُعطّل التحليل الرقمي الأساسي إن غاب الذكاء الاصطناعي.
  */
-import { smartChat } from '../agents/baseAgent.js';
+import { smartChat } from '../core/providers/llm.js';
 
 const TTL_MS = 5 * 60 * 1000; // يطابق مهلة كاش التحليل تقريباً
 const cache = new Map(); // "id|timeframe|lang|signal|reasonCode" → { text, at }

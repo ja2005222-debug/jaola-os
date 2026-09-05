@@ -52,7 +52,7 @@ export function generateAgentPluginCode({ name, description = '', instructions =
     // يستقبل هدف المشروع ويُرجع توجيهاً يُحقن في سياق البناء
     const beforeBuildHook = runsOnBuild ? `
     async beforeBuild({ goal, blueprint } = {}) {
-      const { smartChat } = await import('../agents/baseAgent.js');
+      const { smartChat } = await import('../core/providers/llm.js');
       const ctx = \`المشروع المطلوب: \${goal}\${blueprint ? \` (نوع: \${blueprint.appType || blueprint.category})\` : ''}\`;
       const guidance = await smartChat([
         { role: 'system', content: \`${sys}\\n\\nمهمتك: أعطِ توجيهاً موجزاً (سطر أو سطران) يُضاف لتعليمات بناء الموقع بناءً على تخصصك. لا تكتب كوداً — فقط توجيه واضح.\` },
@@ -79,7 +79,7 @@ export default {
       return {
         name: ${JSON.stringify(camel)},
         handler: async (input = {}) => {
-          const { smartChat } = await import('../agents/baseAgent.js');
+          const { smartChat } = await import('../core/providers/llm.js');
           const { buildPlatformContext } = await import('../agents/platformContext.js');
           const userText = typeof input === 'string'
             ? input
