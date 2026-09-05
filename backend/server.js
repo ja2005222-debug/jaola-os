@@ -3757,6 +3757,10 @@ orchestrator.init().catch(e => console.warn('[Plugins] init فشل:', e.message)
 onMongoReady(async () => {
     try {
         const r = await restorePluginsToDisk();
+        // 🔴 كان الشرطُ `restored > 0` وحدَه، و«صفرٌ مُستعاد» جوابَ الإخفاق
+        //    كما هو جوابُ «لا شيء ينتظر» — فيمرّ العجزُ صامتاً.
+        if (!r.ok) console.warn(`🗄️ [PluginStore] تعذّرت الاستعادة: ${r.reason} — الإضافاتُ على القرص وحده.`);
+        else if (r.failed) console.warn(`🗄️ [PluginStore] أخفقت استعادةُ ${r.failed} من ${r.available} إضافة.`);
         if (r.restored > 0) await orchestrator.reload();
     } catch (e) { console.warn('[PluginStore] استعادة فشلت:', e.message); }
 });

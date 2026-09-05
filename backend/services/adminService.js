@@ -118,8 +118,10 @@ export async function createAgentPlugin({ name, description, instructions, rawCo
 
     await fsp.mkdir(PLUGINS_DIR, { recursive: true });
     await fsp.writeFile(target, code);
-    await persistPlugin(fileName, code);   // 🗄️ دائم في MongoDB
-    return { file: fileName, created: true };
+    // 🔴 كان التعليقُ يدّعي الديمومةَ ولا يفحصها، فيرى المالكُ «أُنشئ»
+    //    ويمحو أوّلُ نشرٍ وكيلَه. الديمومةُ تُقال الآن كما وقعت.
+    const p = await persistPlugin(fileName, code);
+    return { file: fileName, created: true, durable: p.durable, durableReason: p.reason || null };
 }
 
 export function listPluginFiles() {
@@ -148,17 +150,19 @@ export async function writePluginCode(fileName, code) {
     const base = path.basename(fileName);
     const target = sanitizePath(base, PLUGINS_DIR);
     await fsp.writeFile(target, code);
-    await persistPlugin(base, code);       // 🗄️ حفظ التعديل دائماً
-    return { file: base, saved: true };
+    const p = await persistPlugin(base, code);
+    return { file: base, saved: true, durable: p.durable, durableReason: p.reason || null };
 }
 
 export async function deletePluginFile(fileName) {
     const base = path.basename(fileName);
     const target = sanitizePath(base, PLUGINS_DIR);
-    await removePlugin(base);               // 🗄️ حذف من MongoDB أيضاً
-    if (!fs.existsSync(target)) return { deleted: false };
-    await fsp.rm(target, { force: true });
-    return { deleted: true };
+    // 🔴 كان يمحو النسخةَ الدائمة ثمّ يردّ `deleted: false` إن غاب الملف عن
+    //    القرص — تقريرٌ بأنّ شيئاً لم يقع بينما وقع الجزءُ الذي لا يُستردّ.
+    const r = await removePlugin(base);
+    const onDisk = fs.existsSync(target);
+    if (onDisk) await fsp.rm(target, { force: true });
+    return { deleted: onDisk, durableRemoved: r.removed, durable: r.durable };
 }
 
 // ═══════════════════════════════════════════════════════
