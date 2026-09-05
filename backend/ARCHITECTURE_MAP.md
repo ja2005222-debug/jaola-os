@@ -113,7 +113,7 @@ Policy/Permission، Identity، Plugin.
 | `clarifierAgent.js` | 448 | حوار التوضيح (`startClarification/processAnswer/getFinalGoal/…`) | KEEP | Mission (Planning) | `plugins/coding/` |
 | `template.agent.js` | 38 | `applyTemplate` | KEEP | — | `plugins/coding/` |
 | `backendAgent.js` | 329 | `generateBackend`, `generateFrontendAPIIntegration`, `generateAdvancedModules` | KEEP | Agent | `plugins/coding/agents/` |
-| `deployAgent.js` | 512 | نشر Vercel (يستقبل `io`) | MODIFY | Tool (`deploy`, requiresConfirmation, riskLevel: high) | `plugins/coding/tools/` |
+| `deployAgent.js` | 522 | نشر Vercel (يستقبل `io`) | MODIFY | Tool (`deploy`, requiresConfirmation, riskLevel: high) | `plugins/coding/tools/` |
 | `agents/index.js` | 9 | barrel للحزمة | MODIFY | Agent (Registry يحلّ محلّه) | يُلغى عند Registry |
 
 ### C3. وكلاء المراحل (StageFn — تُستورد مباشرة في jcr.js)
@@ -182,13 +182,13 @@ Policy/Permission، Identity، Plugin.
 | `conversationStore.js`, `conversationManager.js` | 171/80 | ذاكرة الحوار | KEEP | Memory | `core/memory/` |
 | `metricsStore.js`, `usageMeter.js`, `errorLog.js`, `logger.js`, `adminAudit.js` | 120/78/45/36/41 | قياس واستهلاك وتدقيق | MODIFY | Audit (AuditLog يوحّدها) | `core/audit/` (Sprint 4) |
 | `presence.js` | 12 | حضور | MODIFY | Event (EventBus) | `core/events/` |
-| `httpRetry.js` | 30 | fetch مع إعادة محاولة | KEEP | Provider (سياسة إعادة المحاولة) | `core/` |
+| `httpRetry.js` | 70 | البابُ المشترك للنداء الصادر: مهلةٌ دائماً + إعادةُ محاولةٍ حيث تصحّ | KEEP | Provider (سياسةُ المهلة وإعادة المحاولة) | `core/` |
 | `aiProviderCheck.js` | 99 | فاحص مزوّدي الذكاء | MODIFY | Provider Registry | `core/plugins/ProviderRegistry.js` |
 
 ### D2. التسليم والنشر (مجال Coding)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `deployAutomation.js`, `customDomains.js`, `hostNames.js`, `githubSync.js`, `githubFiles.js`, `projectExport.js`, `projectManager.js` | 239/207/37/111/134/37/99 | نشر ونطاقات وGitHub وتصدير | MODIFY | Tool (كل واحدة أداة بـriskLevel) + Transaction (للنشر) | `plugins/coding/tools/` |
+| `deployAutomation.js`, `customDomains.js`, `hostNames.js`, `githubSync.js`, `githubFiles.js`, `projectExport.js`, `projectManager.js` | 239/207/37/111/136/37/99 | نشر ونطاقات وGitHub وتصدير | MODIFY | Tool (كل واحدة أداة بـriskLevel) + Transaction (للنشر) | `plugins/coding/tools/` |
 | `projectRecord.js` | 97 | بوّابةُ الكتابة على سجلّ المشروع (upsert + حارسُ اتّصالٍ + ناتجٌ صادق) | KEEP | Repository | `plugins/coding/tools/` |
 | `reactPreview.js`, `twin.js` | 477/69 | معاينة وتعديل | KEEP | Tool | `plugins/coding/` |
 | `siteConnect.js`, `siteCms.js`, `siteInbox.js`, `siteCreds.js`, `newsletterSubscribers.js`, `projectAuth.js`, `projectSecrets.js`, `storeKey.js`, `dataSync.js`, `appData.js`, `appCollections.js`, `appAssets.js` | 128/118/97/65/60/76/138/63/138/51/82/76 | خدمات مواقع العملاء المنشورة | KEEP | — | `plugins/coding/runtime-services/` |
@@ -199,7 +199,7 @@ Policy/Permission، Identity، Plugin.
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
 | `stripeService.js`, `subscriptionService.js`, `config/plans.js`, `routes/billing.js` | 141/138/140/139 | اشتراكات المنصّة (Stripe) | MODIFY | Transaction (Payment Contract العام؛ التنفيذ يبقى Stripe) | `core/transactions/` (العقد) + `routes/billing.js` (التنفيذ) |
-| `oauthLite.js`, `utils/auth.js`, `middleware/adminOnly.js` | 133/40/33 | OAuth + JWT + أدمِن | MODIFY | Identity + Permission | `core/identity/` (Sprint 2–3) |
+| `oauthLite.js`, `utils/auth.js`, `middleware/adminOnly.js` | 137/40/33 | OAuth + JWT + أدمِن | MODIFY | Identity + Permission | `core/identity/` (Sprint 2–3) |
 | `mailer.js` | 46 | Resend | KEEP | Provider | `core/plugins/ProviderRegistry.js` |
 
 ### D4. الإدارة وسوق الوكلاء
@@ -239,7 +239,7 @@ Policy/Permission، Identity، Plugin.
 | `middleware/security.js` | 96 | `sanitizePath` + Zod schemas + `validate` | MODIFY | Tool (workspace guard موحّد — `CONTRACTS.md` §3) + Permission | `core/policy/` |
 | `utils/secretVault.js` (6 مستوردين) | 85 | تشفير الأسرار | KEEP | Identity | `core/identity/` |
 | `utils/corsErrors.js`, `utils/spaFallback.js` | 15/19 | أدوات صغيرة **حيّة** (٢ و١ مستورداً) | KEEP | — | كما هي |
-| `utils/security.js`, `utils/performance.js`, `utils/aiProvider.js` | 21/60/42 | 🔴 **يتيمة: صفرُ مستوردين** — لا «أدواتٌ حيّة» كما كان هذا الصفُّ يقول. مُقرَّةٌ في §اليتامى أدناه (أسطر ٣٣٥–٣٣٧) منذ 8/11، وهذا الصفُّ كان يناقضها. و`utils/security.js` يشارك اسمَ `middleware/security.js` **الحيّ** ويختلف عنه — وهو مصدرُ اللبس | KEEP (قرارُ إبقاءٍ واعٍ، لا وصفُ استعمال) | — | كما هي |
+| `utils/security.js`, `utils/performance.js`, `utils/aiProvider.js` | 21/60/48 | 🔴 **يتيمة: صفرُ مستوردين** — لا «أدواتٌ حيّة» كما كان هذا الصفُّ يقول. مُقرَّةٌ في §اليتامى أدناه (أسطر ٣٣٥–٣٣٧) منذ 8/11، وهذا الصفُّ كان يناقضها. و`utils/security.js` يشارك اسمَ `middleware/security.js` **الحيّ** ويختلف عنه — وهو مصدرُ اللبس | KEEP (قرارُ إبقاءٍ واعٍ، لا وصفُ استعمال) | — | كما هي |
 | `models/User.js`, `Project.js`, `Conversation.js`, `BotTenant.js` | 26/27/22/21 | مخطّطات Mongo (Core DB) | KEEP | Identity/Mission (Core DB — البند 14) | `models/` |
 | `dbConfig.js` | 6 | إعداد mongoose (استيراد تأثير جانبي `server.js:2`) | KEEP | — | كما هو |
 | `scripts/harvestTemplateScreenshots.mjs` | 102 | أداة تطوير | KEEP | — | كما هو |
@@ -334,7 +334,7 @@ permissions ويستدعي الخدمة عبر HTTP بنفس JWT. لا شيء ه
 | `services/twin.js` | 69 | `knowledgeService` (يتيم) | ❌ عبر `projectManager` | باقٍ |
 | `services/logger.js` | 36 | `twin` (يتيم) | ✅ | باقٍ |
 | `services/db.js` | 58 | لا شيء | ❌ `better-sqlite3` غير مثبَّت | باقٍ |
-| `utils/aiProvider.js` | 42 | لا شيء | ✅ | باقٍ |
+| `utils/aiProvider.js` | 48 | لا شيء | ✅ | باقٍ |
 | `utils/performance.js` | 60 | لا شيء | ✅ | باقٍ |
 | `utils/security.js` | 21 | لا شيء | ✅ | باقٍ |
 

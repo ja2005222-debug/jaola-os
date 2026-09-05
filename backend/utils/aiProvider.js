@@ -16,7 +16,13 @@ export async function callAI(prompt) {
     }
 
     try {
+        // 🔴 بلا مهلة، و`node-fetch` كـ`fetch` لا تنتهي مهلتُها من تلقائها.
+        //    مهلةٌ سخيّةٌ هنا لأنّ توليدَ نموذجٍ لغويّ يطول مشروعاً؛ عشرُ ثوانٍ
+        //    كانت لتقطع نداءً سليماً. والوحدةُ **يتيمةٌ مُقرّة** (لا يصل إليها
+        //    الخادم — `tests/moduleReachability.test.mjs`)، فالعطبُ خامل؛
+        //    أُصلح لأنّ من يُحييها يرثه دون أن يعلم.
         const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            signal: AbortSignal.timeout(120_000),
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${apiKey}`,

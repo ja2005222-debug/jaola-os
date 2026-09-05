@@ -8,6 +8,8 @@
  * scope الـ github يشمل repo لتمكين قراءة/تعديل/رفع الملفات من لوحة الأدمِن.
  */
 
+import { fetchWithTimeout, TIMEOUTS } from './httpRetry.js';
+
 const PROVIDERS = {
     github: {
         authUrl: 'https://github.com/login/oauth/authorize',
@@ -67,11 +69,13 @@ export async function exchangeCode(provider, { code, redirectUri }) {
     };
     if (provider === 'google') body.grant_type = 'authorization_code';
 
-    const res = await fetch(p.tokenUrl, {
+    // 🔴 بلا مهلة: مزوّدٌ معلَّقٌ يُعلّق تسجيلَ الدخول إلى الأبد.
+    //    ولا إعادةَ محاولةٍ هنا: رمزُ التفويض يُستهلك مرّةً واحدة.
+    const res = await fetchWithTimeout(p.tokenUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify(body),
-    });
+    }, TIMEOUTS.oauth);
     const data = await res.json().catch(() => ({}));
     if (!data.access_token) {
         throw new Error(data.error_description || data.error || 'فشل تبادل التوكن مع المزوّد');
@@ -87,7 +91,7 @@ export async function fetchProfile(provider, accessToken) {
             Accept: 'application/vnd.github+json',
             'User-Agent': 'jaola-os',
         };
-        const uRes = await fetch('https://api.github.com/user', { headers });
+        const uRes = await fetchWithTimeout('https://api.github.com/user', { headers }, TIMEOUTS.oauth);
         const u = await uRes.json();
         if (!u || !u.id) throw new Error('تعذّر جلب ملف GitHub');
 
@@ -98,7 +102,7 @@ export async function fetchProfile(provider, accessToken) {
         let email = u.email || null;
         if (!email) {
             try {
-                const eRes = await fetch('https://api.github.com/user/emails', { headers });
+                const eRes = await fetchWithTimeout('https://api.github.com/user/emails', { headers }, TIMEOUTS.oauth);
                 const emails = await eRes.json();
                 if (Array.isArray(emails)) {
                     // كان السقوط على `emails[0]` **مهما كان** — أي على غير المؤكَّد.
@@ -111,9 +115,9 @@ export async function fetchProfile(provider, accessToken) {
     }
 
     // google
-    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    const res = await fetchWithTimeout('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    }, TIMEOUTS.oauth);
     const u = await res.json();
     if (!u || !u.sub) throw new Error('تعذّر جلب ملف Google');
     // 🔴 جوجل توثّق صراحةً أن `email` بلا `email_verified` لا يُوثق به،
