@@ -13,7 +13,7 @@ const DEFAULT_RPC_URLS = [
 ];
 
 let cachedProvider = null;
-let testOverride = undefined; // undefined = لا تجاوز، أي قيمة أخرى (بما فيها null) تُستخدَم كما هي
+let testOverride = undefined; // undefined = لا تجاوز
 
 function buildFallbackProvider() {
     const urls = [];
@@ -33,8 +33,22 @@ export function getProvider() {
     return cachedProvider;
 }
 
-/** للاختبارات فقط: يفرض مزوّداً وهمياً (أو null لإعادة الضبط). */
+/**
+ * للاختبارات فقط: يفرض مزوّداً وهمياً، أو يعيد الضبط بـ`null` (أو بلا وسيط).
+ *
+ * 🔴 كان التوثيقُ يقول «أو null لإعادة الضبط» ويفعل الكودُ نقيضَه:
+ *    `null` يُخزَّن تجاوزاً، فيعود `getProvider()` بـ`null` **لبقيّة عمر
+ *    العملية**. فمَن نظّف باتّباع العقد المكتوب سمّم كلَّ اختبارٍ بعده،
+ *    و`tradingBotEngine.js:54` يستلم `null` فيسقط بخطأٍ لا يدلّ على سببه.
+ *    وفي الملفّ نفسِه تعليقٌ يدّعي أنّ ذلك مقصود — مصدرا حقيقةٍ يتناقضان
+ *    في أربعين سطراً. لا مستهلكَ يحقن `null` عمداً (المزوّدُ الفارغ يكسر
+ *    كلَّ نداء)، فرُجّح العقدُ المكتوب وحُذفت الدعوى المخالفة.
+ */
 export function _setProviderForTest(providerOrNull) {
+    if (providerOrNull === undefined || providerOrNull === null) {
+        testOverride = undefined;
+        cachedProvider = null;
+        return;
+    }
     testOverride = providerOrNull;
-    if (providerOrNull === undefined) cachedProvider = null;
 }
