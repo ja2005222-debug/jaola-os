@@ -8027,3 +8027,62 @@ hook `afterBuild`) — والاختبارُ يثبّت أنّ الدالّةَ �
 الآن صار `_stageBackend` (١٦٧ سطراً، ٢٨ سطرَ بثّ) يستدعي `this.readCurrentCodeContextAsync` مفوِّضاً — فيُقاس خروجُه
 بالمنهج نفسِه (`reporter` + استيرادُ `readCodeContext` مباشرةً + `agents` وسيطاً كما هو). وتراكمت ثلاثةُ احتياطاتٍ ميّتة
 موثَّقة (JCR/متابعة-أ، JCR/14، JCR/15) تُزال معاً في مرحلة تنظيفٍ صغيرة بقياسٍ واحد.
+
+---
+
+## JCR/16 — «مرحلةُ الخلفية تخرج — أكبرُ مراحل التسليم، بلا مزوّدٍ تُوصَف بحروفها»
+
+ثاني عشرَ استخراجٍ من `jcr.js`: `_stageBackend` (١٦٥ سطراً، ٢٨ سطرَ بثّ) → `agents/stages/backend.js#runBackendStage(context, roomName, agents, reporter)`.
+**نقلٌ حرفيّ، لا تغييرَ في السلوك.**
+
+### ما نُقل — وما تغيّر في الشكل فقط
+
+- `this` فيها كان = `emitLiveLog` (٢٨) + `this.readCurrentCodeContextAsync` (١) — الأخيرُ صار استيراداً مباشراً لـ`readCodeContext`
+  من `projectReader.js` (JCR/15 مهّد له)؛ فلا مفوِّضَ يُستدعى من داخل المرحلة.
+- `agents` تبقى **وسيطاً كما كانت** (`needsBackend`، `generateBackend`، `generateFrontendAPIIntegration`) — لا تجريدَ جديد.
+- مفوِّضٌ واحد في `jcr` يحفظ النداءَ بالاسم من `DELIVERY_STAGES`. خمسُ يتيماتٍ أُزيلت بالقياس: أربعةُ أسطرِ استيراد
+  (`backendTeam`، `databaseAgent`، `authAgent`، `postgresAgent`) و`guardSingleJS` من سطرٍ مشترك (`guardFiles` بقيت — لها ٣ نداءات).
+
+### التوصيفُ المباشر — بلا LLM
+
+خطُّ الأساس (`jcrRuntimePipeline`: «مشروع يحتاج خادماً…») يمرّ بالمرحلة عبر التسليم كلِّه ويثبّت القرص. هنا الدالّةُ الحرّة
+مباشرةً: `needsBackend=false` → صمتٌ تامّ ولا كتابة؛ بلا مزوّد → سبعةُ وكلاءِ الفريق يسقطون واحداً واحداً بسطرِ «لا يوجد مزود AI»
+ثمّ «⚠️ لم يُنجز أي وكيل من 7 — الاحتياط: المولّد التقليدي»؛ المولّدُ التقليديّ يأخذ **سياقَ الواجهة من القرص** (`--- index.html ---`)
+ويكتب `api/items.js` ويُحدَّث `script.js` **عبر الحارس**؛ ثمّ قاعدةُ البيانات لنوع `business` (الافتراضيّ حين لا `designBrief`):
+`mongodb — 2 ملف (api/db.js, .env.example)` — لا schema ولا seed لهذا النوع؛ ولا Postgres ولا مصادقة بلا كلماتهما.
+بكلمات postgres والتسجيل: Prisma (٥ ملفّات) ثمّ JWT Auth (٥) **بهذا الترتيب** بعد القاعدة. فشلُ المولّد → «⚠️ تعذّر توليد الخادم: <السبب>»،
+لا `api/`، `script.js` لا يُمَسّ، والقاعدةُ تُولَّد رغم ذلك. التكافؤُ: المفوِّضُ والدالّةُ الحرّة يُنتجان البثَّ نفسَه والشجرةَ نفسَها.
+
+### اثنتا عشرةَ طفرة — أُمسكت كلُّها
+
+| الطفرة | ما يُمسكها |
+|---|---|
+| B-1 البوّابة: `needsBackend` يُهمَل | صمتُ `false` |
+| B-2 الفريق: سطرُ السقوط يسقط | السطرُ بحروفه |
+| B-3 الفريق: عتبةُ الاكتفاء ٠ بدل ٢ | المولّدُ لا يُستدعى → لا `api/items.js` |
+| B-4 المولّد: سياقُ الواجهة لا يُقرأ | `--- index.html ---` في النداء |
+| B-5 المولّد: الملفّاتُ لا تُكتب | القرص |
+| B-6 التكامل: `script.js` بلا حارس | المحتوى بحروفه |
+| B-7 التكامل: يُكتب باسمٍ آخر | `script.js` على القرص |
+| B-8 الفشل: سطرُ التعذّر يسقط | السطرُ بسببه |
+| B-9 القاعدة: نوعٌ افتراضيّ `ecommerce` | «2 ملف» لنوع business |
+| B-10 Postgres بلا كلماته | لا `[PostgresAgent]` |
+| B-11 المصادقة بلا كلماتها | لا `[AuthAgent]` |
+| B-12 المصادقة: ملفّاتُها لا تُكتب | `auth.html` |
+
+### الأثر
+
+- `jcr.js` **٢٣٩٢ ← ٢٢٢٦**؛ `stages/backend.js` ١٨٨ (١٢٨ وحدةً في `agents/`).
+- الاختبارات **١٥٣٣ ← ١٥٣٩**.
+- `jcrReporterSeam` (`this.io` ٧، `send` ٩٠) و`renderConfigShape` و`layerInversion` بلا تغيير.
+- الخريطة: صفٌّ جديد، `jcr` ٢٢٢٦، عنوانُ C ١٢٨.
+
+### ما بقي في jcr — قياسٌ بعد اثني عشر استخراجاً
+
+لم يبقَ في `jcr` جسدٌ بالشكل «بثٌّ فقط بلا نداءٍ لطرائق الصنف». الباقي ثلاثُ عائلات:
+1. **الطرائقُ التي تستدعي طرائقَ الصنف** (`_runSurgicalEditNow` ← `_verifyAndAutofix`/`_addPageNow`/…؛ `_buildReactProject` ← `_verifyAndAutofix`؛
+   `_runMissionNow` ← عشرُ طرائق). المدخلُ الطبيعيّ: `_verifyAndAutofix` (٤٠ سطراً، ٣ مستدعين، يستدعي `readProjectFilesArray` فقط —
+   وقد صار استيراداً متاحاً).
+2. **معالجاتُ النيّة** (`_handleCeoIntent`، `_handleClassifiedIntent`، `_handleUnifiedRoute`، …) تحمل `gatedMessages`/`trackByRoom` من حالة النسخة.
+3. **النواةُ** (`handleUserMessage`، `executeMission`، `_runMissionNow`، `runDynamicMultiAgentRuntime`) — تبقى في jcr بحكم التصميم.
+التالي بالقياس: `_verifyAndAutofix` أوّلاً، ثمّ يُعاد قياسُ مستدعيه الثلاثة.
