@@ -19,6 +19,7 @@ import mongoose from 'mongoose';
 import { fileURLToPath } from 'url';
 import { queueStatus } from '../core/runtime/ExecutionQueue.js';
 import { orchestrator } from '../core/PluginOrchestrator.js';
+import { WORKSPACE_ROOT } from '../core/runtime/workspaceRoots.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -77,7 +78,7 @@ export function runSystemDiagnostics() {
     // ── القرص (مساحة الـ workspace) ──
     // 🔴 كان يعدّ **عناصر** المجلّد ويقول `ok` دائماً، بينما ترويسةُ الملفّ
     //    تَعِد بقياس «الذاكرة والقرص (استهلاك)». فحصٌ لا يفشل ليس فحصاً.
-    const wsPath = path.resolve(__dirname, '../../workspace');
+    const wsPath = WORKSPACE_ROOT;
     const disk = diskFree(wsPath);
     if (disk) {
         const usedPct = Math.round((1 - disk.freeGb / disk.totalGb) * 100);

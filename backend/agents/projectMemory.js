@@ -11,9 +11,10 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { persistEntry, removeEntry, hydrateStore, onMongoReady, shouldHydrate } from '../services/persistence.js';
+import { memoryFile } from '../core/runtime/workspaceRoots.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const MEMORY_FILE = path.join(__dirname, '../memory/project_memory.json');
+const MEMORY_FILE = memoryFile('project_memory.json');
 
 // ذاكرة في RAM للوصول السريع
 const memoryCache = new Map(); // key: `${username}:${project}` → ProjectMemory

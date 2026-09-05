@@ -51,7 +51,7 @@ import { setUserLanguage } from './languageDetector.js';
 import { assertBuildAgents, DELIVERY_STAGES } from '../core/contracts/index.js';
 import { orderTasks } from '../core/runtime/TaskGraph.js';
 import { createExecutionContext, contextFromRequest } from '../core/runtime/ExecutionContext.js';
-import { resolveInside } from '../core/runtime/workspacePaths.js';
+import { resolveInside, projectPathOf } from '../core/runtime/workspacePaths.js';
 import { registerMission, throwIfAborted, clearMission } from '../core/runtime/AbortRegistry.js';
 import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import { snapshotWorkspace } from '../services/workspaceStore.js';
@@ -68,6 +68,7 @@ import { setPendingGoal, getPendingGoal, consumePendingGoal, clearDialog } from 
 import { enqueueMission, takeLostMission } from '../core/runtime/ExecutionQueue.js';
 import { loadForPrompt as loadConversation, recordTurn } from '../services/conversationStore.js';
 import { renderCritique, failures as evidenceFailures } from '../core/evidence/Check.js';
+import { MEMORY_ROOT, WORKSPACE_ROOT } from '../core/runtime/workspaceRoots.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -184,7 +185,7 @@ export function resolveProjectType(goal, blueprint) {
 export class JaolaCognitiveRuntime {
     constructor(ioInstance) {
         this.io = ioInstance;
-        this.memoryDir = path.resolve(__dirname, '../memory');
+        this.memoryDir = MEMORY_ROOT;
         this.executiveMemoryPath = path.join(this.memoryDir, 'executive_memory.json');
         // 🔁 كاسر الحلقات: آخر رسالة حُجبت عن التعديل (بوابة الفعل) لكل مستخدم —
         // تكرارها حرفياً = إصرار صريح → تُنفَّذ كتعديل بدل حلقة "اكتب X" اللانهائية.
@@ -1105,9 +1106,11 @@ export class JaolaCognitiveRuntime {
         const project = roomName.startsWith(username + '-') ? roomName.slice(username.length + 1) : null;
         try {
             if (project) {
-                const safeUser = username.replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
-                const safeProject = project.replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
-                const projectPath = path.resolve(__dirname, '../../workspace', safeUser, safeProject);
+                // 🔀 كان هذا يبني المسارَ بيده: نفسُ التطهير، لكن **بلا**
+                //    احتياطَي `projectPathOf` (`guest_user`/`sandbox_app`) —
+                //    فلو خلا أحدُ الاسمين لأشار هذا إلى مسارٍ غيرِ الذي يراه
+                //    بقيّةُ النظام. اشتقاقٌ ثانٍ لسؤالٍ له اشتقاقٌ رسميّ.
+                const projectPath = projectPathOf(WORKSPACE_ROOT, username, project);
                 const files = await scanProjectFiles(projectPath, { maxFiles: 300 });
                 const brain = buildProjectBrain(getProjectMemory(username, project), files);
 

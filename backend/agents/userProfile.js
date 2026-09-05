@@ -17,9 +17,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { persistEntry, hydrateStore, onMongoReady, shouldHydrate } from '../services/persistence.js';
 import { recordEditLesson } from '../services/platformLessons.js';
+import { memoryFile } from '../core/runtime/workspaceRoots.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROFILES_FILE = path.join(__dirname, '../memory/user_profiles.json');
+const PROFILES_FILE = memoryFile('user_profiles.json');
 
 // ذاكرة RAM للوصول السريع
 const profilesCache = new Map();

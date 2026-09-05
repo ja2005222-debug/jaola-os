@@ -129,6 +129,7 @@ import { setDomainModel, setCloneTrack, getCloneTrack } from './agents/projectMe
 import { mergeProjectModel } from './agents/projectModel.js';
 import { prepareRenderDeploy, renderServiceName } from './agents/renderAgent.js';
 import { projectPathOf, isInsideRoot } from './core/runtime/workspacePaths.js';
+import { WORKSPACE_ROOT } from './core/runtime/workspaceRoots.js';
 import { autoDeployFullStack, fullAutomationReady } from './services/deployAutomation.js';
 import { assetsFor, injectFaviconTag } from './agents/cloneAssets.js';
 import { listLibraries, getLibraryById, injectLibrary } from './agents/libraryRegistry.js';
@@ -435,7 +436,7 @@ const OFFLINE_USERS = new Map();
 const OFFLINE_GH_TOKENS = new Map();
 
 // ─── مسارات الـ workspace على القرص ─────────────────────────────────
-const BASE_WORKSPACE = path.resolve(__dirname, '../workspace');
+const BASE_WORKSPACE = WORKSPACE_ROOT;   // مُصرَّحٌ مرّةً في core/runtime/workspaceRoots.js
 // 📊 عدّادات الاستهلاك الشهرية المقيسة بالخطط (رسائل ذكاء البوت...)
 const USAGE_DIR = path.join(BASE_WORKSPACE, '.usage');
 if (!fs.existsSync(BASE_WORKSPACE)) fs.mkdirSync(BASE_WORKSPACE);
