@@ -10,7 +10,6 @@ import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO, resolveGoalLanguage } from './languageDetector.js';
 import { getProjectMemory, initFromClarifier, addToHistory, updateStructure, getDomainModel } from './projectMemory.js';
 import { buildProjectModelContext, buildAppSections } from './projectModel.js';
-import { recordModel } from './modelLibrary.js';
 import { matchCloneTemplate } from './cloneTemplates/index.js';
 import { patchEditPlan } from './patchEditor.js';
 import { localizeLog } from './logLocalizer.js';
@@ -28,7 +27,7 @@ import { runDesigner } from './stages/designer.js';
 import { runAdvancedModules, runFullStackScaffold, runProjectMemory } from './stages/scaffold.js';
 import { readCodeContext, readProjectFiles } from './projectReader.js';
 import { runBackendStage } from './stages/backend.js';
-import { verifyAndAutofix } from './stages/verify.js';
+import { verifyAndAutofix, runBehaviorVerifyStage } from './stages/verify.js';
 import { handleUndo } from './stages/undo.js';
 // 🔁 إعادةُ تصدير: `resolveProjectType` بقيت واجهةً من `jcr` لمستورِديها (JCR/6)
 export { resolveProjectType };
@@ -428,28 +427,10 @@ export class JaolaCognitiveRuntime {
         return runRenderConfig(context, roomName, this.reporter);
     }
 
-    // 🔬 التحقّق السلوكي + جولة إصلاح تلقائية (طريقة مشتركة مع مسار التعديل)
-    // محاط بحارس: خطأ في التحقّق يجب ألّا يُسقط بناءً ناجحاً أبداً.
+    // 🔬 مرحلةُ التحقّق خرجت إلى `stages/verify.js#runBehaviorVerifyStage` (JCR/18) — تفويضٌ يُبقي النداءَ بالاسم
+    // من `DELIVERY_STAGES`؛ `agents` وسيطاً كما كان، والمُبلِّغُ يُمرَّر.
     async _stageBehaviorVerify(context, roomName, agents) {
-        try {
-            const verdict = await this._verifyAndAutofix({
-                projectPath: context.projectPath, blueprint: context.blueprint,
-                username: context.username, activeProject: context.activeProject, roomName, agents,
-                lang: getUserLanguage(context.username) || 'ar',
-                canFix: !!context.budget?.consumeCall?.(),
-            });
-            // 📚 مساهمة في مكتبة النماذج — فهم مُجرَّب (مرّ بالتحقّق) يُغني فئته
-            // فيبدأ كل مشروع لاحق من نضجٍ أعلى. نساهم فقط بما نجح تحقّقه.
-            if (verdict?.ok && context.blueprint?.category) {
-                const contributed = recordModel(
-                    context.blueprint.category,
-                    getDomainModel(context.username, context.activeProject),
-                    { verified: true }
-                );
-                if (contributed) this.emitLiveLog(roomName, '6. VERIFY', 'ModelLibrary',
-                    `📚 أُغني فهم فئة «${context.blueprint.category}» بنموذج مُجرَّب — يستفيد منه كل مشروع لاحق.`);
-            }
-        } catch (e) { console.warn('[BehaviorVerify]', 'تخطّي التحقّق (لا يُسقط البناء):', e.message); }
+        return runBehaviorVerifyStage(context, roomName, agents, this.reporter);
     }
 
     // 📚 التعلّم الحقيقي بعد كل مهمة — عبر ذاكرة دروس المنصة (platformLessons).
