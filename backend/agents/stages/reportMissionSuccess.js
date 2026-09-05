@@ -17,7 +17,7 @@ import { recordBuild, buildMetricsPayload } from '../../services/metricsStore.js
 
 export function reportMissionSuccess(goal, ctx, reporter) {
     const { projectPath, username, activeProject, roomName } = ctx;
-    const langMsg = getUserLanguage(username) || 'ar';
+    const langMsg = getUserLanguage(username);
 
     // 9️⃣ تقرير التسليم التنفيذي — ماذا أُنجز بالضبط
     let builtFiles = [];

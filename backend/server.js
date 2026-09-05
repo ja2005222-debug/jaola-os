@@ -2977,7 +2977,7 @@ function siteAuth(req, res) {
     if (!v || v.project !== project || v.user !== username) { res.status(401).json({ error: 'غير مصرّح' }); return null; }
     return v;
 }
-function langOf(username) { try { return getUserLanguage(username) || 'ar'; } catch { return 'ar'; } }
+function langOf(username) { try { return getUserLanguage(username); } catch { return 'ar'; } }
 
 // حالة كلمة المرور (هل عُيّنت؟) — يقرّر الواجهة بين تسجيل الدخول أو التعيين الأول
 app.get('/api/site/status', (req, res) => {

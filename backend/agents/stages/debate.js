@@ -64,7 +64,7 @@ export async function runDebate(context, roomName, agents, reporter) {
                 [],
                 (chunk) => reporter.send(roomName, 'code_stream_chunk', chunk),
                 context.mentalModel.templateSections || [],
-                getUserLanguage(context.username) || 'en'
+                getUserLanguage(context.username)
             );
         } catch (e) {
             // ⛔ عطل مزوّد دائم (رصيد منتهٍ/مفاتيح) — الدورات الباقية عبث، نوقف فوراً

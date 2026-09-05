@@ -25,7 +25,7 @@ import { verifyAndAutofix } from './verify.js';
 // ⚛️ بناء مشروع React/Next حقيقي + معاينة حيّة في الـ iframe + خيار النشر
 export async function buildReactProject(goal, ctx, { sections = [] } = {}, reporter) {
     const { projectPath, username, activeProject, roomName } = ctx;
-    const lang = getUserLanguage(username) || 'ar';
+    const lang = getUserLanguage(username);
     const t0 = Date.now();
     reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
     reporter.liveLog(roomName, '5. RUNTIME', 'ReactGen', '⚛️ توليد مشروع Next.js + Tailwind...');

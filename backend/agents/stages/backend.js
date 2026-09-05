@@ -30,7 +30,7 @@ export async function runBackendStage(context, roomName, agents, reporter) {
         let teamGuidance = '';
         let teamWroteFiles = 0;
         try {
-            const buildLang = getUserLanguage(context.username) || 'en';
+            const buildLang = getUserLanguage(context.username);
             const team = await runBackendTeam(context.goal, {
                 lang: buildLang,
                 verify: true, // فحص تنفيذي حقيقي + إصلاح Debug تلقائي
@@ -171,7 +171,7 @@ export async function runBackendStage(context, roomName, agents, reporter) {
         if (needsAuth(context.originalGoal)) {
             try {
                 reporter.liveLog(roomName, '5. RUNTIME', 'AuthAgent', '🔐 جاري توليد نظام المصادقة...');
-                const authResult = await generateAuth(context.originalGoal, context.projectPath, getUserLanguage(context.username) || 'en');
+                const authResult = await generateAuth(context.originalGoal, context.projectPath, getUserLanguage(context.username));
                 if (authResult.success) {
                     for (const file of authResult.files) {
                         await writeProjectFile(context.projectPath, file.name, file.content);

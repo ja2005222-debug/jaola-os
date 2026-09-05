@@ -199,7 +199,7 @@ export function isBuildRequest(message) {
 // 💬 بدء مرحلة التوضيح
 // ═══════════════════════════════════════════════════════
 export async function startClarification(username, userGoal) {
-    const lang = getUserLanguage(username) || 'ar';
+    const lang = getUserLanguage(username);
     const projectType = detectProjectType(userGoal);
 
     // 🎯 طلب واسع وغامض → حوار استراتيجي (لا يبدأ مباشرة)
