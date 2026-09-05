@@ -88,15 +88,16 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## C) `backend/agents/*` — 117 وحدة (منها 42 قالب كلون)
+## C) `backend/agents/*` — 118 وحدة (منها 42 قالب كلون)
 
 ### C1. النواة (Kernel candidates)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `jcr.js` | 3003 | وقت التشغيل المعرفي: `handleUserMessage` → 7 معالجات نية → `executeMission` → `_runMissionNow` → 15 مرحلة | MODIFY (تدريجي، بلا إعادة كتابة) | Mission + Agent + Task (المراحل → TaskGraph) + Event | يبقى؛ يتقلّص مع كل Sprint لصالح `core/runtime/*` |
+| `jcr.js` | 2940 | وقت التشغيل المعرفي: `handleUserMessage` → 7 معالجات نية → `executeMission` → `_runMissionNow` → 15 مرحلة | MODIFY (تدريجي، بلا إعادة كتابة) | Mission + Agent + Task (المراحل → TaskGraph) + Event | يبقى؛ يتقلّص مع كل Sprint لصالح `core/runtime/*` |
 | ✅ `stages/debate.js` (جديد، JCR/4) | 142 | `runDebate(context, roomName, agents, reporter)` + `runSecurityAudit` — حلقةُ النقاش خرجت من `jcr` نقلاً حرفيّاً؛ المُبلِّغُ وسيطٌ لا `this` | ADDED | Agent + Evidence | أوّلُ مرحلةٍ خارج الصنف؛ `jcr._stageDebate` مفوِّضٌ من سطر |
 | ✅ `stages/understand.js` (جديد، JCR/5) | 72 | `understandGoal(goal, ctx, reporter)` — الفهم: ذاكرة/ملفّ ← مخطّط ← نموذج المجال؛ نقلٌ حرفيّ، المُبلِّغُ وسيط | ADDED | Mission | `jcr._understandGoal` مفوِّضٌ من سطر؛ ٧ استيراداتٍ رحلت معها |
 | ✅ `stages/enrich.js` (جديد، JCR/6) | 68 | `enrichBuildContext(goal, blueprint, ctx, reporter)` + `resolveProjectType` — متطلّباتٌ ضمنيّة + صور + توجيهاتُ الإضافات؛ نقلٌ حرفيّ، المُبلِّغُ وسيط | ADDED | Mission | `jcr._enrichBuildContext` مفوِّضٌ من سطر؛ `resolveProjectType` يعيد `jcr` تصديرَها لمستورِديها |
+| ✅ `stages/requirementsVerify.js` (جديد، JCR/8) | 87 | `runRequirementsVerify(context, roomName, agents, reporter, { verify })` — التحقّقُ من المتطلبات وإكمالُ الناقص بجولاتٍ محدودة؛ نقلٌ حرفيّ إلّا حقنَ `verify` اختياريّاً | ADDED | Evidence + Mission | تُنادى بالاسم من `DELIVERY_STAGES` عبر مفوِّض `jcr._stageRequirementsVerify` |
 | `contracts.js` → ✅ `core/contracts/index.js` | 99/197 | typedefs الأحد عشر + `assertBuildAgents` + `DELIVERY_STAGES` + مدقّقا Capability | MOVED (Sprint 1 ✅) | Mission/Agent/Task/Capability/Provider/Transaction | `core/contracts/index.js` |
 | `stateMachine.js` | 270 | Build State Machine (10 حالات + `STATE_EVENTS` + emitter) | KEEP | Event — تبقى متخصّصة، وMission Lifecycle فوقها | `core/missions/BuildStateMachine.js` (Sprint 2) |
 | `ceoBrain.js` | 240 | تصنيف نية سريع، قرار، رسائل إحاطة/حالة | MODIFY | Mission (Intent/CEO في مسار v2) | `core/runtime/` |
