@@ -12,9 +12,10 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { loadPluginsFrom } from './PluginLoader.js';
+import { PLUGINS_ROOT } from './runtime/workspaceRoots.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DEFAULT_PLUGINS_DIR = path.join(__dirname, '../plugins');
+const DEFAULT_PLUGINS_DIR = PLUGINS_ROOT;
 
 export class PluginOrchestrator {
     constructor() {

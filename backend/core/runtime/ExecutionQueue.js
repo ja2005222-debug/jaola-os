@@ -14,9 +14,10 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { memoryFile } from './workspaceRoots.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const LEDGER_FILE = process.env.MISSION_LEDGER_PATH || path.join(__dirname, '../../memory/mission_ledger.json');
+const LEDGER_FILE = process.env.MISSION_LEDGER_PATH || memoryFile('mission_ledger.json');
 
 const waiting = [];               // المهام المنتظرة
 let runningCount = 0;

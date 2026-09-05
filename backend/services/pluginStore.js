@@ -13,9 +13,10 @@ import { promises as fsp } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
+import { PLUGINS_ROOT } from '../core/runtime/workspaceRoots.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PLUGINS_DIR = path.resolve(__dirname, '../plugins');
+const PLUGINS_DIR = PLUGINS_ROOT;
 
 const PluginSchema = new mongoose.Schema({
     file: { type: String, required: true, unique: true }, // اسم الملف (مثل: arabic-poet.js)

@@ -20,9 +20,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import Conversation from '../models/Conversation.js';
+import { memoryFile } from '../core/runtime/workspaceRoots.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const FALLBACK_FILE = path.join(__dirname, '../memory/chat_memory.json');
+const FALLBACK_FILE = memoryFile('chat_memory.json');
 
 // آخر عدد رسائل يُرسل حرفياً للنموذج
 export const CONTEXT_WINDOW = 40;

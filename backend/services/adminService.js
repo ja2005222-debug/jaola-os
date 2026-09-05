@@ -15,10 +15,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { sanitizePath } from '../middleware/security.js';
 import { persistPlugin, removePlugin } from './pluginStore.js';
+import { PLUGINS_ROOT, WORKSPACE_ROOT } from '../core/runtime/workspaceRoots.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PLUGINS_DIR = path.resolve(__dirname, '../plugins');
-const WORKSPACE_DIR = path.resolve(__dirname, '../../workspace');
+const PLUGINS_DIR = PLUGINS_ROOT;
+const WORKSPACE_DIR = WORKSPACE_ROOT;
 
 // ═══════════════════════════════════════════════════════
 // 🔤 أدوات مساعدة
