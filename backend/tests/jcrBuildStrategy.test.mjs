@@ -23,15 +23,13 @@ function strategy(prefix, dir) {
     s.rt._buildFromClone = async (clone, goal, ctx) => { built.clone.push({ clone, goal, ctx }); return { success: true, via: 'clone' }; };
     s.rt._buildReactProject = async (goal, ctx, opts) => { built.react.push({ goal, ctx, opts }); return { success: true, via: 'react' }; };
     const ctx = createExecutionContext({ ...s.ctx, projectPath: dir, agents: {} });
-    // 🔎 اكتشافُ توصيف (مقيسٌ من سلسلة الاستدعاء لا مفترَض): `executeMission` يُدرج
-    //    `_runMissionNow` في الصفّ بلا انتقال، وهذه الطريقةُ تُستدعى **قبل** أوّلِ
-    //    `transitionState(ARCHITECTURE)` فيه. فتُدخَل من IDLE/COMPLETED/FAILED/PAUSED،
-    //    ولا واحدةٌ منها تسمح `→ COMPLETED` في جدول الآلة. نداءُ حارسَي «يعمل»
-    //    `transitionState(COMPLETED)` **مرفوضٌ صامتاً على كلِّ مسارٍ حقيقيّ**.
-    //    يُثبَّت الواقعُ هنا (idle يبقى idle)؛ والإصلاحُ في تغييرٍ مستقلّ.
+    // 🔎 في عزلةٍ تبقى الحالةُ idle، وآلةُ الحالة ترفض idle→completed — فحارسُ «يعمل»
+    //    لا يبلغ COMPLETED إلّا من موضعه في `_runMissionNow`. كان ذلك الموضعُ
+    //    **بعد** هذه الطريقة (عطبٌ مقيسٌ في JCR/1: خمسةُ نداءاتٍ مرفوضة)، وصار قبلها.
+    //    الاختبارُ الأخير أدناه يُثبت المسارَ الحقيقيّ؛ وهذه الاختباراتُ تُثبت العزلة.
     const pick = (goal, blueprint = null) => s.rt._selectBuildStrategy(goal, blueprint, ctx);
     const state = () => getProjectState(s.ctx.username, s.ctx.activeProject).state;
-    return { ...s, built, pick, state };
+    return { ...s, dir, built, pick, state };
 }
 const noneBuilt = (b) => b.registry.length + b.clone.length + b.react.length === 0;
 
@@ -122,4 +120,19 @@ test('بناءٌ جديد عاديّ → null (النواةُ الافتراضي
     assert.equal(r, null);
     assert.ok(noneBuilt(s.built));
     assert.match(s.logs(), /مسار سريع → Vanilla/);
+});
+
+// ── المسارُ الحقيقيّ: عبر _runMissionNow، ARCHITECTURE ثمّ COMPLETED ────────
+
+test('عبر _runMissionNow: حارسُ «يعمل» يبلغ COMPLETED فعلاً — وكان يُرفض', async () => {
+    const s = strategy('strat', workingProject());
+    // فهمُ الهدف يحتاج نموذجاً لغويّاً؛ هدفُ الاختبار ترتيبُ الانتقالات لا الفهم.
+    s.rt._understandGoal = async (goal) => ({ enrichedGoal: goal, blueprint: { kind: 'webapp' }, blueprintContext: '', domainModelContext: '' });
+    // 🔴 كنتُ أمرّر s.ctx.projectPath (= /nonexistent) فقُرئ المشروعُ جديداً وذهب للكلون.
+    const ctx = createExecutionContext({ ...s.ctx, projectPath: s.dir, agents: {} });
+    const r = await s.rt._runMissionNow('تطبيق توصيل طعام', ctx);
+    assert.deepEqual(r, { success: true, skipped: 'works' });
+    const st = getProjectState(s.ctx.username, s.ctx.activeProject);
+    assert.equal(st.state, STATES.COMPLETED, 'كان يبقى idle: COMPLETED مرفوضٌ من idle');
+    assert.equal(st.previousState, STATES.ARCHITECTURE, 'ARCHITECTURE سبقت اختيارَ الاستراتيجيّة');
 });

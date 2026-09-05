@@ -17,7 +17,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { JaolaCognitiveRuntime } from '../agents/jcr.js';
-import { setUserLanguage } from '../agents/languageDetector.js';
+import { setUserLanguage, clearUserLanguage } from '../agents/languageDetector.js';
+import { updateLanguage } from '../agents/userProfile.js';
 import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
 
 divertConsoleToStderr();
@@ -155,6 +156,21 @@ test('مشروعٌ غيرُ React: «أضف صفحة» ليست عمليّةَ �
 });
 
 // ── مسارُ التعديل ─────────────────────────────────────────────────────
+
+test('بعد إعادة تشغيل الخادم: لا جلسةَ لغةٍ، والملفُّ عربيّ → الردُّ عربيّ (كان إنجليزيّاً)', async () => {
+    // 🔴 اكتشافُ JCR/1: `getUserLanguage(username) || 'ar'` احتياطُه ميّت. الجذرُ
+    //    أُصلح في languageDetector (الملفُّ الدائم قبل 'en')، وهذا يُثبته من طرف المستخدم.
+    const dir = staticProject();
+    try {
+        const edited = jsWith([...FNS, 'applyCoupon']);
+        const s = scenario(dir, { plan: { files: [{ name: 'app.js', content: edited }] } });
+        updateLanguage(s.ctx.username, 'ar');
+        clearUserLanguage(s.ctx.username);       // scenario() ضبط الجلسة؛ نمحوها = إعادةُ تشغيل
+        const r = await s.run('أضف زر كوبون');
+        assert.equal(r.success, true);
+        assert.match(s.ev('chat_reply').at(-1).message, /طبّقت التعديل على/, 'عربيٌّ بلا جلسة');
+    } finally { cleanup(dir); }
+});
 
 test('تعديلٌ يحفظ الدوالَ ويضيف → يُكتب على القرص ويُبلَّغ المستخدم', async () => {
     const dir = staticProject();
