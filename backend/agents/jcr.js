@@ -27,12 +27,13 @@ import { buildFromClone } from './stages/buildFromClone.js';
 import { runReviewStage, runRefactorStage, runTestingStage, runSeoStage, runSecurityStage, runGitBackupStage } from './stages/quality.js';
 import { runDesigner } from './stages/designer.js';
 import { runAdvancedModules, runFullStackScaffold, runProjectMemory } from './stages/scaffold.js';
+import { readCodeContext, readProjectFiles } from './projectReader.js';
 import { handleUndo } from './stages/undo.js';
 // 🔁 إعادةُ تصدير: `resolveProjectType` بقيت واجهةً من `jcr` لمستورِديها (JCR/6)
 export { resolveProjectType };
 import { buildFailureChatMessage } from './failureMessages.js';
 import { isMarketingPageGoal } from './blockRegistry.js';
-import { verifyBehavior, buildBehaviorFixInstruction, analyzeProjectStatic, readPageCode, extractDefinedFunctions } from './behaviorVerifier.js';
+import { verifyBehavior, buildBehaviorFixInstruction, analyzeProjectStatic, extractDefinedFunctions } from './behaviorVerifier.js';
 import { hasKeyword } from './keywordMatch.js';
 import { updateLanguage, recordProject, recordEdit } from './userProfile.js';
 import { generateDatabase } from './databaseAgent.js';
@@ -1103,17 +1104,9 @@ User preferences: ${JSON.stringify(execMemory)}` },
         return reportMissionSuccess(goal, ctx, this.reporter);
     }
 
+    // خرج إلى `projectReader.js#readCodeContext` (JCR/15) — مفوِّضٌ يُبقي المستدعين (والاستبدالَ في الاختبارات) كما هم.
     async readCurrentCodeContextAsync(projectPath) {
-        let context = "";
-        try {
-            const files = await fsPromises.readdir(projectPath);
-            const relevant = files.filter(f => ['index.html', 'styles.css', 'script.js'].includes(f));
-            const contents = await Promise.all(relevant.map(async f => ({
-                name: f, content: await fsPromises.readFile(path.join(projectPath, f), 'utf-8')
-            })));
-            contents.forEach(f => { context += `\n--- ${f.name} ---\n${f.content}\n`; });
-        } catch (e) {}
-        return context;
+        return readCodeContext(projectPath);
     }
 
     /** يقرأ الملفات الأساسية كمصفوفة {name, content} للتعديل الجراحي */
@@ -1166,33 +1159,9 @@ User preferences: ${JSON.stringify(execMemory)}` },
             : '📝 If you meant a change to the project, confirm by sending "yes" or rephrase it as a command — I\'ll apply it right away. If it was a question, just ask.';
     }
 
-    // ملفات الواجهة للتعديل/الإصلاح: index.html + كل CSS + سكربتات الواجهة
-    // التي يشير إليها index.html فعلاً (لا server.js). كان مثبّتاً على
-    // "script.js" فقط، فمشروع يستخدم app.js كان *أعمى* للتعديل والإصلاح.
+    // خرج إلى `projectReader.js#readProjectFiles` (JCR/15) — مفوِّضٌ يُبقي المستدعين (والاستبدالَ في الاختبارات) كما هم.
     async readProjectFilesArray(projectPath) {
-        try {
-            const out = [];
-            const files = await fsPromises.readdir(projectPath);
-            // كل ملفات CSS (سياق التنسيق للتعديل)
-            for (const f of files) {
-                if (/\.css$/i.test(f)) {
-                    out.push({ name: f, content: await fsPromises.readFile(path.join(projectPath, f), 'utf-8') });
-                }
-            }
-            // index.html + السكربتات التي تُحمّلها الصفحة (نفس تحديد المُتحقّق)
-            const page = await readPageCode(projectPath);
-            if (page) {
-                out.push({ name: 'index.html', content: page.html });
-                for (const [name, content] of Object.entries(page.assets)) {
-                    if (!out.some(x => x.name === name)) out.push({ name, content });
-                }
-            }
-            // احتياط: script.js موجود لكن لم يشِر إليه index.html
-            if (files.includes('script.js') && !out.some(x => x.name === 'script.js')) {
-                out.push({ name: 'script.js', content: await fsPromises.readFile(path.join(projectPath, 'script.js'), 'utf-8') });
-            }
-            return out;
-        } catch { return []; }
+        return readProjectFiles(projectPath);
     }
 
     // ✂️ التعديل الجراحي — يمرّ عبر صف التنفيذ كالبناء (حماية التوازي)
