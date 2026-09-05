@@ -16,7 +16,7 @@ export async function runDesigner(context, roomName, reporter) {
             context.goal,
             context.username,
             context.activeProject,
-            getUserLanguage(context.username) || 'en'
+            getUserLanguage(context.username)
         );
         if (designResult.success) {
             const brief = designResult.brief;

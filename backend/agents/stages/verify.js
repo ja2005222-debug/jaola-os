@@ -63,7 +63,7 @@ export async function runBehaviorVerifyStage(context, roomName, agents, reporter
         const verdict = await verifyAndAutofix({
             projectPath: context.projectPath, blueprint: context.blueprint,
             username: context.username, activeProject: context.activeProject, roomName, agents,
-            lang: getUserLanguage(context.username) || 'ar',
+            lang: getUserLanguage(context.username),
             canFix: !!context.budget?.consumeCall?.(),
         }, reporter);
         // 📚 مساهمة في مكتبة النماذج — فهم مُجرَّب (مرّ بالتحقّق) يُغني فئته

@@ -712,7 +712,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         // 🧠 CEO Personality — إحاطة مهمة كاملة: تحليل + تعيين وكلاء + وقت متوقع
         const existingFiles = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
         const hasExistingProject = existingFiles && existingFiles.trim().length > 100;
-        const userLangForMsg = getUserLanguage(username) || 'ar';
+        const userLangForMsg = getUserLanguage(username);
 
         this.reporter.send(roomName, 'chat_reply', {
             message: missionBriefing({ lang: userLangForMsg, goal, hasExisting: hasExistingProject })
@@ -738,7 +738,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 this.emitLiveLog(roomName, 'JCOS', 'Kernel', `❌ فشل نهائياً: ${runtimeError.message}`);
                 // 💬 الشات لا يصمت عند الفشل — رسالة حتمية بلغة المستخدم (بلا نموذج)
                 this.reporter.send(roomName, 'chat_reply', {
-                    message: buildFailureChatMessage(getUserLanguage(username) || 'ar', runtimeError),
+                    message: buildFailureChatMessage(getUserLanguage(username), runtimeError),
                 });
                 return { success: false, error: runtimeError.message };
             }
@@ -772,7 +772,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 this.reporter.send(roomName, 'agent_states', {
                     planner: 'waiting', architect: 'waiting', coder: 'waiting', qa: 'waiting', deploy: 'waiting'
                 });
-                const langAbort = getUserLanguage(username) || 'ar';
+                const langAbort = getUserLanguage(username);
                 const abortMsg = langAbort === 'ar'
                     ? '⏹️ تم إيقاف المهمة بناءً على طلبك.\nأخبرني بما تريد فعله الآن.'
                     : '⏹️ Mission stopped at your request.\nTell me what you want to do next.';
@@ -833,7 +833,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     }).catch(() => null);
                     const worksNow = chk?.hasProject && !chk.checks.some(c => c.status === 'fail');
                     if (worksNow) {
-                        const lang = getUserLanguage(username) || 'ar';
+                        const lang = getUserLanguage(username);
                         this.emitLiveLog(roomName, 'STACK', 'JaolaRegistry',
                             'ℹ️ المشروع القائم يعمل — لا يُستبدل بصفحة تسويقية دون «أعد البناء» صريحة.');
                         this.reporter.send(roomName, 'chat_reply', {
@@ -949,7 +949,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
     // ✂️ التعديل الجراحي — يمرّ عبر صف التنفيذ كالبناء (حماية التوازي)
     surgicalEdit(instruction, ctx) {
         const { username, activeProject, roomName } = ctx;
-        const lang = getUserLanguage(username) || 'ar';
+        const lang = getUserLanguage(username);
         const result = enqueueMission({
             username, project: activeProject,
             run: () => this._runSurgicalEditNow(instruction, ctx),
@@ -1097,7 +1097,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
     async _runSurgicalEditNow(instruction, ctx) {
         const { projectPath, username, activeProject, roomName, agents } = ctx;
-        const lang = getUserLanguage(username) || 'ar';
+        const lang = getUserLanguage(username);
         const files = await this.readProjectFilesArray(projectPath);
 
         // 📸 نسخة احتياطية كاملة قبل كل تعديل — وقود أمر «تراجع» الفوري من

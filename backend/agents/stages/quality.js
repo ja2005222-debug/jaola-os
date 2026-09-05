@@ -24,7 +24,7 @@ export async function runReviewStage(context, roomName, reporter) {
     transitionState(context.username, context.activeProject, STATES.REVIEWING, { agent: 'ReviewAgent' });
     try {
         reporter.liveLog(roomName, '5. RUNTIME', 'ReviewAgent', '🔍 مراجعة جودة الكود...');
-        const reviewResult = await reviewCode(plan.files, context.originalGoal, getUserLanguage(context.username) || 'en');
+        const reviewResult = await reviewCode(plan.files, context.originalGoal, getUserLanguage(context.username));
 
         if (reviewResult.fixedCount > 0) {
             // حفظ الملفات المُصلحة — كل الملفات، لا القائمة البيضاء
@@ -47,7 +47,7 @@ export async function runReviewStage(context, roomName, reporter) {
 export async function runRefactorStage(context, roomName, reporter) {
     const plan = context.plan;
     try {
-        const refactorResult = await refactorCode(plan.files, getUserLanguage(context.username) || 'en');
+        const refactorResult = await refactorCode(plan.files, getUserLanguage(context.username));
         if (refactorResult.success) {
             plan.files = refactorResult.files;
             if (refactorResult.totalReduction > 0) {
@@ -64,7 +64,7 @@ export async function runTestingStage(context, roomName, reporter) {
     const plan = context.plan;
     try {
         if (!plan?.files) throw new Error('plan is not defined');
-        const testResult = await runTests(plan.files, getUserLanguage(context.username) || 'en');
+        const testResult = await runTests(plan.files, getUserLanguage(context.username));
         const emoji = testResult.grade === 'A' ? '✅' : testResult.grade === 'B' ? '🟡' : '🟠';
         reporter.liveLog(roomName, '5. RUNTIME', 'TestingAgent',
             `${emoji} ${testResult.report}`
@@ -89,7 +89,7 @@ export async function runSeoStage(context, roomName, reporter) {
             name: projectName,
             description: context.originalGoal?.slice(0, 150) || projectName,
             url: `https://${context.username}-${context.activeProject}.vercel.app`,
-            lang: getUserLanguage(context.username) || 'ar',
+            lang: getUserLanguage(context.username),
         });
         if (seoResult.success) {
             plan.files = seoResult.files;

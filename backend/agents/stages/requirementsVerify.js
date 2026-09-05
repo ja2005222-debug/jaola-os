@@ -24,7 +24,7 @@ export async function runRequirementsVerify(context, roomName, agents, reporter,
     const plan = context.plan;
     try {
         if (context.blueprint?.functionalComponents?.length && plan?.files?.length) {
-            const lang = getUserLanguage(context.username) || 'ar';
+            const lang = getUserLanguage(context.username);
             transitionState(context.username, context.activeProject, STATES.VERIFYING, { agent: 'Requirements' });
             reporter.liveLog(roomName, '6. VERIFY', 'Requirements', '📋 التحقق من تنفيذ متطلبات المشروع...');
             let verdict = await verify(context.blueprint, plan.files);
