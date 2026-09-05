@@ -153,7 +153,7 @@ Policy/Permission، Identity، Plugin.
 | `jaolaBot.js`, `jaolaBotToken.js` | 295/45 | منتج جولا بوت (ودجت + توكن HMAC) | MOVE | Plugin (bot) | `plugins/bot/` |
 | `marketingAgent.js` | 163 | المساعد التسويقي | MOVE | Plugin (marketing) | `plugins/marketing/` |
 | `integrations/travelpayouts.js` | 132 | تكامل Travelpayouts لمواقع العملاء | MOVE | Provider | `plugins/travel/providers/` (أو يبقى مع coding — يُقرَّر عند Sprint 5) |
-| `systemDoctorAgent.js` | 143 | فحص صحة النظام | KEEP | Evidence | `core/audit/` |
+| `systemDoctorAgent.js` | 202 | فحص صحة النظام | KEEP | Evidence | `core/audit/` |
 
 ### C7. DELETE — سقالة ميتة (صفر قرّاء، commit واحد 2026-08-05)
 | الملف | سطور | الدليل |
