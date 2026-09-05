@@ -18,6 +18,7 @@ import { stampSeed } from './seedStamp.js';
 import { forgeSeedImages } from './imageForge.js';
 import { localizeTemplateFiles } from './templateLocalizer.js';
 import { localizeLog } from './logLocalizer.js';
+import { RoomReporter } from '../core/runtime/RoomReporter.js';
 import { buildFailureChatMessage } from './failureMessages.js';
 import { assetsFor, injectFaviconTag, paletteHint, pickPalette } from './cloneAssets.js';
 import { polishHtml } from './polishPack.js';
@@ -203,7 +204,9 @@ export function resolveProjectType(goal, blueprint) {
 
 export class JaolaCognitiveRuntime {
     constructor(ioInstance) {
-        this.io = ioInstance;
+        this.io = ioInstance;   // يبقى: يُمرَّر قيمةً لتسعةِ نداءاتٍ خارجيّة تبثّ بنفسها
+        // 📡 البابُ الواحد للبثّ — الشقُّ الذي يفصل ٦٥٪ من ترابط الصنف عن `this`.
+        this.reporter = new RoomReporter(ioInstance, { localize: localizeLog });
         this.memoryDir = MEMORY_ROOT;
         this.executiveMemoryPath = path.join(this.memoryDir, 'executive_memory.json');
         // 🔁 كاسر الحلقات: آخر رسالة حُجبت عن التعديل (بوابة الفعل) لكل مستخدم —
@@ -213,16 +216,14 @@ export class JaolaCognitiveRuntime {
     }
 
     emitLiveLog(roomName, layer, agent, message) {
-        // 🌐 سجلّ البناء الحي بلغة المستخدم: الترجمة في القمع الواحد (حتميّة،
-        // شظايا ثابتة فقط — القيم المُقحمة تبقى). العربية هي الأصل.
-        const msg = this.roomLang?.get(roomName) === 'en' ? localizeLog(message) : message;
-        this.io.to(roomName).emit('log', { message: `[${layer}] ➔ [${agent}]: ${msg}` });
+        // 🌐 القمعُ الواحد للسجلّ الحيّ — الترجمةُ ولغةُ الغرفة في المُبلِّغ.
+        this.reporter.liveLog(roomName, layer, agent, message);
     }
 
     emitAgentError(roomName, failedAgentKey) {
         const states = { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'waiting' };
         states[failedAgentKey] = 'error';
-        this.io.to(roomName).emit('agent_states', states);
+        this.reporter.send(roomName, 'agent_states', states);
     }
 
     async loadExecutiveMemory(username) {
@@ -451,7 +452,7 @@ export class JaolaCognitiveRuntime {
                     context.initialCodeContext,
                     context.mentalModel.visualIdentity,
                     [],
-                    (chunk) => this.io.to(roomName).emit('code_stream_chunk', chunk),
+                    (chunk) => this.reporter.send(roomName, 'code_stream_chunk', chunk),
                     context.mentalModel.templateSections || [],
                     getUserLanguage(context.username) || 'en'
                 );
@@ -671,7 +672,7 @@ export class JaolaCognitiveRuntime {
                     const checklist = formatChecklist(verdict, lang, fixedNames);
                     this.emitLiveLog(roomName, '6. VERIFY', 'Requirements',
                         `📋 ${verdict.implementedCount}/${verdict.results.length} متطلب منفّذ${fixedNames.length ? ` (+${fixedNames.length} أُصلح تلقائياً)` : ''}`);
-                    if (checklist) this.io.to(roomName).emit('chat_reply', { message: checklist });
+                    if (checklist) this.reporter.send(roomName, 'chat_reply', { message: checklist });
                     addToHistory(context.username, context.activeProject,
                         `تحقق المتطلبات: ${verdict.implementedCount}/${verdict.results.length} منفّذ`);
                 }
@@ -1213,11 +1214,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     temperature: 0.6,
                     stream: true,
                 });
-                this.io.to(roomName).emit('chat_stream_start', {});
+                this.reporter.send(roomName, 'chat_stream_start', {});
                 let acc = '';
                 for await (const chunk of stream) {
                     const delta = chunk.choices?.[0]?.delta?.content || '';
-                    if (delta) { acc += delta; this.io.to(roomName).emit('chat_stream_chunk', { delta }); }
+                    if (delta) { acc += delta; this.reporter.send(roomName, 'chat_stream_chunk', { delta }); }
                 }
                 if (acc.trim()) { reply = acc; streamed = true; }
                 break;
@@ -1237,14 +1238,14 @@ User preferences: ${JSON.stringify(execMemory)}` },
         }
         // أنهِ البثّ بالنسخة النهائية (يستبدل النص المتراكم ويثبّته)؛
         // وإن لم ينجح البثّ (rate limit) أرسل الرد دفعة واحدة كالمعتاد
-        if (streamed) this.io.to(roomName).emit('chat_stream_end', { message: reply });
+        if (streamed) this.reporter.send(roomName, 'chat_stream_end', { message: reply });
         else this.emitChatReply(roomName, reply);
         this.emitLiveLog(roomName, '💬 Assistant', 'Chat Reply', reply);
         return reply;
     }
 
     emitChatReply(roomName, replyMessage) {
-        this.io.to(roomName).emit('chat_reply', { message: replyMessage });
+        this.reporter.send(roomName, 'chat_reply', { message: replyMessage });
     }
 
     // 🚦 كل المهام تمر عبر صف التنفيذ: لا توازي لنفس المشروع + حد توازٍ كلي
@@ -1261,7 +1262,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 const msg = lang === 'ar'
                     ? `⏳ الفريق مشغول بمهمة أخرى — مهمتك في الصف (المركز ${position}) وستبدأ تلقائياً.`
                     : `⏳ The team is busy — your mission is queued (position ${position}) and will start automatically.`;
-                this.io.to(roomName).emit('chat_reply', { message: msg });
+                this.reporter.send(roomName, 'chat_reply', { message: msg });
             },
         });
 
@@ -1269,7 +1270,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             const busyMsg = lang === 'ar'
                 ? '⚙️ يوجد بناء جارٍ لهذا المشروع بالفعل — تابع التقدم الحي أو اضغط ⏹ لإيقافه أولاً.'
                 : '⚙️ A build is already running for this project — watch the progress or press ⏹ to stop it first.';
-            this.io.to(roomName).emit('chat_reply', { message: busyMsg });
+            this.reporter.send(roomName, 'chat_reply', { message: busyMsg });
         }
         return result;
     }
@@ -1305,7 +1306,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const hasExistingProject = existingFiles && existingFiles.trim().length > 100;
         const userLangForMsg = getUserLanguage(username) || 'ar';
 
-        this.io.to(roomName).emit('chat_reply', {
+        this.reporter.send(roomName, 'chat_reply', {
             message: missionBriefing({ lang: userLangForMsg, goal, hasExisting: hasExistingProject })
         });
 
@@ -1328,14 +1329,14 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 this._learnFromOutcome(roomName, { success: false, error: runtimeError });
                 this.emitLiveLog(roomName, 'JCOS', 'Kernel', `❌ فشل نهائياً: ${runtimeError.message}`);
                 // 💬 الشات لا يصمت عند الفشل — رسالة حتمية بلغة المستخدم (بلا نموذج)
-                this.io.to(roomName).emit('chat_reply', {
+                this.reporter.send(roomName, 'chat_reply', {
                     message: buildFailureChatMessage(getUserLanguage(username) || 'ar', runtimeError),
                 });
                 return { success: false, error: runtimeError.message };
             }
 
             if (execResult.success) {
-                this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+                this.reporter.send(roomName, 'preview_updated', { timestamp: Date.now() });
             }
 
             this._learnFromOutcome(roomName, { success: execResult.success });
@@ -1352,7 +1353,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     durationSec: getProjectSummary(username, activeProject).duration || 0,
                     filesCount: 0, goal: goal || '',
                 });
-                this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
+                this.reporter.send(roomName, 'project_metrics', buildMetricsPayload(username, activeProject));
             }
             this.emitLiveLog(roomName, 'JCOS', 'Kernel', execResult.success ? '✨ نجاح' : '❌ فشل');
             return execResult;
@@ -1360,14 +1361,14 @@ User preferences: ${JSON.stringify(execMemory)}` },
             // ⏹️ إيقاف بطلب المستخدم — ليس فشلاً
             if (error.aborted) {
                 transitionState(username, activeProject, STATES.PAUSED);
-                this.io.to(roomName).emit('agent_states', {
+                this.reporter.send(roomName, 'agent_states', {
                     planner: 'waiting', architect: 'waiting', coder: 'waiting', qa: 'waiting', deploy: 'waiting'
                 });
                 const langAbort = getUserLanguage(username) || 'ar';
                 const abortMsg = langAbort === 'ar'
                     ? '⏹️ تم إيقاف المهمة بناءً على طلبك.\nأخبرني بما تريد فعله الآن.'
                     : '⏹️ Mission stopped at your request.\nTell me what you want to do next.';
-                this.io.to(roomName).emit('chat_reply', { message: abortMsg });
+                this.reporter.send(roomName, 'chat_reply', { message: abortMsg });
                 this.emitLiveLog(roomName, 'JCOS', 'Kernel', '⏹️ المهمة أُوقفت من قبل المستخدم');
                 return { success: false, aborted: true };
             }
@@ -1379,7 +1380,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             clearMission(roomName);
             // 🛠️ إنهاء بث الكود دائماً (نجاح/فشل/إيقاف) — بدونها تبقى طبقة
             // "يكتب الكود الآن" تغطي المعاينة للأبد عند أي فشل أو إيقاف
-            this.io.to(roomName).emit('stream_done', { timestamp: Date.now() });
+            this.reporter.send(roomName, 'stream_done', { timestamp: Date.now() });
         }
     }
 
@@ -1475,7 +1476,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         const lang = getUserLanguage(username) || 'ar';
                         this.emitLiveLog(roomName, 'STACK', 'JaolaRegistry',
                             'ℹ️ المشروع القائم يعمل — لا يُستبدل بصفحة تسويقية دون «أعد البناء» صريحة.');
-                        this.io.to(roomName).emit('chat_reply', {
+                        this.reporter.send(roomName, 'chat_reply', {
                             message: lang === 'en'
                                 ? '✅ Your current app is working, so I won\'t replace it with a static marketing page. Tell me a specific change to add to it, or type "rebuild" if you really want to start over as a landing page.'
                                 : '✅ تطبيقك الحالي يعمل، فلن أستبدله بصفحة تسويقية ثابتة. أخبرني بتعديل محدّد أضيفه إليه، أو اكتب «أعد البناء» إن كنت تريد فعلاً البدء من جديد كصفحة هبوط.',
@@ -1514,7 +1515,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     const okMsg = getUserLanguage(username) === 'en'
                         ? '✅ Your app is already working (customer + staff panels with role-based login). Tell me a specific change to add (e.g. "add a ratings section"), or "rebuild" to start fresh.'
                         : '✅ تطبيقك يعمل بالفعل (واجهة الزبون + لوحات الطاقم بدخول موجَّه حسب الصلاحية). أخبرني بتعديل محدّد لإضافته (مثل: «أضف قسم تقييمات»)، أو اكتب «أعد البناء» للبدء من جديد.';
-                    this.io.to(roomName).emit('chat_reply', { message: okMsg });
+                    this.reporter.send(roomName, 'chat_reply', { message: okMsg });
                     transitionState(username, activeProject, STATES.COMPLETED);
                     this.emitLiveLog(roomName, 'STACK', 'CloneTemplate', 'ℹ️ المشروع يعمل — تفادينا إعادة بناء تدهسه.');
                     return { success: true, skipped: 'works' };
@@ -1635,13 +1636,13 @@ User preferences: ${JSON.stringify(execMemory)}` },
             ? ['🚀 انشر الآن', '🐙 ادفع إلى GitHub', '📊 أين وصلنا']
             : ['🚀 Deploy now', '🐙 Push to GitHub', '📊 Status'];
 
-        this.io.to(roomName).emit('chat_reply', {
+        this.reporter.send(roomName, 'chat_reply', {
             message: reportLines.join('\n'),
             options: suggestions,
         });
 
         // 🛠️ تحديث قائمة الملفات في الواجهة بعد البناء (كانت تبقى فارغة)
-        this.io.to(roomName).emit('workspace_files', builtFiles);
+        this.reporter.send(roomName, 'workspace_files', builtFiles);
 
         // 🐙 الدفع التلقائي لـ GitHub إذا كان مفعلاً لهذا المشروع
         autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
@@ -1655,7 +1656,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         recordBuild(username, activeProject, {
             success: true, durationSec, filesCount: builtFiles.length, goal: goal || '',
         });
-        this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
+        this.reporter.send(roomName, 'project_metrics', buildMetricsPayload(username, activeProject));
 
         // 🔌 وكلاء الإضافات: hook afterBuild — تنفيذ ما بعد البناء
         orchestrator.runHook('afterBuild', {
@@ -1762,12 +1763,12 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const result = enqueueMission({
             username, project: activeProject,
             run: () => this._runSurgicalEditNow(instruction, ctx),
-            onWait: (position) => this.io.to(roomName).emit('chat_reply', {
+            onWait: (position) => this.reporter.send(roomName, 'chat_reply', {
                 message: lang === 'ar' ? `⏳ مهمتك في الصف (المركز ${position}).` : `⏳ Queued (position ${position}).`,
             }),
         });
         if (!result.accepted) {
-            this.io.to(roomName).emit('chat_reply', {
+            this.reporter.send(roomName, 'chat_reply', {
                 message: lang === 'ar' ? '⚙️ يوجد عمل جارٍ لهذا المشروع — انتظر أو اضغط ⏹.' : '⚙️ A task is already running — wait or press ⏹.',
             });
         }
@@ -1796,7 +1797,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
     // ➕ يضيف صفحة جديدة لمشروع React قائم دون إعادة بناء — يحفظ المحتوى الحالي:
     //    قسم + وجهة في lib/content.js، مكوّن، صفحة Next، ثم إعادة توليد الموقع الثابت.
     async _addPageNow(instruction, projectPath, username, activeProject, roomName, lang) {
-        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
+        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
         this.emitLiveLog(roomName, 'EDIT', 'AddPage', '➕ إضافة صفحة جديدة (بلا إعادة بناء)...');
 
         // اقرأ المحتوى الحالي (lib/content.js: export const content = {...})
@@ -1860,23 +1861,23 @@ User preferences: ${JSON.stringify(execMemory)}` },
             await writeProjectFile(projectPath, pg.name, pg.content);
         }
 
-        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
+        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
         addToHistory(username, activeProject, `إضافة صفحة: ${pageLabel}`);
         recordEdit(username, instruction);
         recordEditAction(username, activeProject); // عدّاد تعديلات اللوحة
 
-        this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
-        this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
+        this.reporter.send(roomName, 'preview_updated', { timestamp: Date.now() });
+        this.reporter.send(roomName, 'project_metrics', buildMetricsPayload(username, activeProject));
         let builtFiles = [];
         try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
-        this.io.to(roomName).emit('workspace_files', builtFiles);
+        this.reporter.send(roomName, 'workspace_files', builtFiles);
         snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
         autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
 
         const msg = lang === 'ar'
             ? `✅ أضفت صفحة **${pageLabel}** (\`${slug}.html\`) وربطتها بشريط التنقّل في كل الصفحات — المعاينة تحدّثت. اضغط رابطها لفتحها.`
             : `✅ Added page **${pageLabel}** (\`${slug}.html\`), linked in the nav across all pages — preview updated. Click its link to open it.`;
-        this.io.to(roomName).emit('chat_reply', {
+        this.reporter.send(roomName, 'chat_reply', {
             message: msg,
             options: lang === 'ar' ? ['➕ أضف صفحة أخرى', '✏️ عدّل محتواها', '🚀 انشر الآن'] : ['➕ Add another page', '✏️ Edit its content', '🚀 Deploy now'],
         });
@@ -1921,12 +1922,12 @@ User preferences: ${JSON.stringify(execMemory)}` },
         for (const pg of buildStaticSite(content, lang)) {
             await writeProjectFile(projectPath, pg.name, pg.content);
         }
-        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
+        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
         addToHistory(username, activeProject, historyMsg);
-        this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        this.reporter.send(roomName, 'preview_updated', { timestamp: Date.now() });
         let builtFiles = [];
         try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
-        this.io.to(roomName).emit('workspace_files', builtFiles);
+        this.reporter.send(roomName, 'workspace_files', builtFiles);
         snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
         autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
     }
@@ -1934,13 +1935,13 @@ User preferences: ${JSON.stringify(execMemory)}` },
     // 🖊️ إعادة تسمية صفحة (تسمية الوجهة + عنوان القسم) — تحفظ المسار والملفات
     async _renamePageNow(projectPath, username, activeProject, roomName, lang, oldName, newName) {
         const content = await this._readReactContent(projectPath);
-        if (!content) return this.io.to(roomName).emit('chat_reply', { message: lang === 'ar' ? '⚠️ تعذّر قراءة المشروع.' : '⚠️ Could not read project.' });
+        if (!content) return this.reporter.send(roomName, 'chat_reply', { message: lang === 'ar' ? '⚠️ تعذّر قراءة المشروع.' : '⚠️ Could not read project.' });
         const found = this._findPage(content, oldName);
         if (!found || !found.comp) return this._pageNotFound(content, roomName, lang, oldName);
         found.route.label = newName;
         if (content.sections[found.comp]) content.sections[found.comp].heading = newName;
         await this._persistReactContent(projectPath, content, username, activeProject, roomName, lang, `إعادة تسمية صفحة: ${oldName} → ${newName}`);
-        this.io.to(roomName).emit('chat_reply', {
+        this.reporter.send(roomName, 'chat_reply', {
             message: lang === 'ar' ? `✅ أعدت تسمية الصفحة إلى **${newName}** — حُدِّث الشريط في كل الصفحات.` : `✅ Renamed the page to **${newName}** — nav updated across all pages.`,
             options: lang === 'ar' ? ['➕ أضف صفحة', '🚀 انشر الآن'] : ['➕ Add a page', '🚀 Deploy now'],
         });
@@ -1950,7 +1951,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
     // 🗑️ حذف صفحة (الوجهة + القسم + الملفات) — لا يمكن حذف الرئيسية
     async _deletePageNow(projectPath, username, activeProject, roomName, lang, name) {
         const content = await this._readReactContent(projectPath);
-        if (!content) return this.io.to(roomName).emit('chat_reply', { message: lang === 'ar' ? '⚠️ تعذّر قراءة المشروع.' : '⚠️ Could not read project.' });
+        if (!content) return this.reporter.send(roomName, 'chat_reply', { message: lang === 'ar' ? '⚠️ تعذّر قراءة المشروع.' : '⚠️ Could not read project.' });
         const found = this._findPage(content, name);
         if (!found || !found.comp) return this._pageNotFound(content, roomName, lang, name);
         // احذف من المحتوى
@@ -1961,7 +1962,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         await fsPromises.rm(path.join(projectPath, `app/${found.slug}`), { recursive: true, force: true });
         await fsPromises.rm(path.join(projectPath, `${found.slug}.html`), { force: true });
         await this._persistReactContent(projectPath, content, username, activeProject, roomName, lang, `حذف صفحة: ${found.route.label}`);
-        this.io.to(roomName).emit('chat_reply', {
+        this.reporter.send(roomName, 'chat_reply', {
             message: lang === 'ar' ? `✅ حذفت صفحة **${found.route.label}** وأزلتها من شريط التنقّل — المعاينة تحدّثت.` : `✅ Deleted page **${found.route.label}** and removed it from the nav — preview updated.`,
             options: lang === 'ar' ? ['➕ أضف صفحة', '🚀 انشر الآن'] : ['➕ Add a page', '🚀 Deploy now'],
         });
@@ -1970,7 +1971,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
     _pageNotFound(content, roomName, lang, name) {
         const names = (content.routes || []).filter(r => r.href !== '/').map(r => r.label).join('، ');
-        this.io.to(roomName).emit('chat_reply', {
+        this.reporter.send(roomName, 'chat_reply', {
             message: lang === 'ar'
                 ? `⚠️ لم أجد صفحة باسم «${name}». الصفحات الحالية: ${names || '—'}`
                 : `⚠️ No page named "${name}". Current pages: ${names || '—'}`,
@@ -2020,7 +2021,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const editFiles = isReact ? files.filter(f => !/^[^/]+\.html$/.test(f.name)) : files;
 
         this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', '✂️ تعديل دقيق (لا إعادة بناء كاملة)...');
-        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
+        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
 
         // 🧩 نحقن نموذج المشروع في التعديل — يبقى التعديل متماسكاً مع كيانات
         // وأدوار وتدفّقات النظام (لا رقعة نصّية معزولة تكسر التماسك).
@@ -2064,14 +2065,14 @@ User preferences: ${JSON.stringify(execMemory)}` },
         if (!plan) {
             try {
                 plan = await agents.coreEditCodePlan(`${editInstruction}${preserveCtx}`, editFiles, lang,
-                    (chunk) => this.io.to(roomName).emit('code_stream_chunk', chunk));
+                    (chunk) => this.reporter.send(roomName, 'code_stream_chunk', chunk));
             } catch (e) {
                 this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', `⚠️ تعذّر — عودة للبناء الكامل: ${e.message}`);
-                this.io.to(roomName).emit('stream_done', {});
+                this.reporter.send(roomName, 'stream_done', {});
                 return this._runMissionNow(instruction, ctx);
             }
         }
-        this.io.to(roomName).emit('stream_done', {});
+        this.reporter.send(roomName, 'stream_done', {});
 
         // فشل الجراحي → عودة آمنة للبناء الكامل
         if (!plan || plan.error || !plan.files?.length) {
@@ -2135,11 +2136,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 this.emitLiveLog(roomName, 'EDIT', 'RegressionGuard',
                     `↩️ التعديل حذف ${lost.length} ميزة (${lost.slice(0, 5).join('، ')}) — استرجاع نسختك الكاملة.`);
                 await restoreFiles(files);
-                this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+                this.reporter.send(roomName, 'preview_updated', { timestamp: Date.now() });
                 const warn = lang === 'en'
                     ? `⚠️ This change would have dropped existing features (${lost.slice(0, 4).join(', ')}) — likely the file grew and the output was cut off. I kept your full working version. Try a smaller, more specific change (one feature at a time).`
                     : `⚠️ هذا التعديل كان سيحذف ميزات موجودة (${lost.slice(0, 4).join('، ')}) — غالباً لأن الملف كبر وانقطع الناتج. أبقيتُ نسختك الكاملة سليمة. جرّب طلباً **أصغر وأكثر تحديداً** (ميزة واحدة كل مرة).`;
-                this.io.to(roomName).emit('chat_reply', { message: warn });
+                this.reporter.send(roomName, 'chat_reply', { message: warn });
                 return { success: false, reverted: true, lost };
             }
         } catch (e) { console.warn('[RegressionGuard]', 'تعذّر فحص الارتداد:', e.message); }
@@ -2168,7 +2169,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             }
         } catch (e) { console.warn('[RegressionGuard]', 'تعذّر فحص ما بعد الإصلاح:', e.message); }
 
-        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
+        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
 
         const changedNames = guarded.map(f => f.name).join('، ');
         recordEdit(username, instruction);
@@ -2176,18 +2177,18 @@ User preferences: ${JSON.stringify(execMemory)}` },
         addToHistory(username, activeProject, `تعديل: ${instruction.slice(0, 60)}`);
 
         // تحديث المعاينة + قائمة الملفات + لقطة دائمة
-        this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
-        this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
+        this.reporter.send(roomName, 'preview_updated', { timestamp: Date.now() });
+        this.reporter.send(roomName, 'project_metrics', buildMetricsPayload(username, activeProject));
         let builtFiles = [];
         try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
-        this.io.to(roomName).emit('workspace_files', builtFiles);
+        this.reporter.send(roomName, 'workspace_files', builtFiles);
         snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
         autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
 
         const msg = lang === 'ar'
             ? `✅ طبّقت التعديل على: **${changedNames}** فقط (بلا إعادة بناء الموقع) — المعاينة تحدّثت.`
             : `✅ Applied the change to **${changedNames}** only (no full rebuild) — preview updated.`;
-        this.io.to(roomName).emit('chat_reply', { message: msg, options: lang === 'ar' ? ['🚀 انشر الآن', '📊 أين وصلنا'] : ['🚀 Deploy now', '📊 Status'] });
+        this.reporter.send(roomName, 'chat_reply', { message: msg, options: lang === 'ar' ? ['🚀 انشر الآن', '📊 أين وصلنا'] : ['🚀 Deploy now', '📊 Status'] });
         return { success: true, edited: guarded.map(f => f.name) };
     }
 
@@ -2196,9 +2197,9 @@ User preferences: ${JSON.stringify(execMemory)}` },
     async _buildFromClone(clone, goal, ctx) {
         const { projectPath, username, activeProject, roomName } = ctx;
         const lang = resolveGoalLanguage(goal, getUserLanguage(username)); // لا ردّ إنجليزي على طلب عربيّ
-        (this.roomLang ||= new Map()).set(roomName, lang);
+        this.reporter.setLang(roomName, lang);
         const t0 = Date.now();
-        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
+        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
         this.emitLiveLog(roomName, '5. RUNTIME', 'JaolaTemplate', `🧩 قالب jaola عامل: ${clone.name} (${clone.id})${clone.externalApi ? ` — API خارجي: ${clone.externalApi}` : ''} — نبدأ من تطبيق يعمل فعلاً (لا توليد من الصفر)`);
 
         // 1) اكتب ملفات الكلون العامل — بلغة المستخدم (توطين حتميّ للسلاسل
@@ -2339,21 +2340,21 @@ User preferences: ${JSON.stringify(execMemory)}` },
         } catch { /* اختياري */ }
 
         // 4) نهائيات كبناءٍ ناجح
-        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
+        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
         transitionState(username, activeProject, STATES.COMPLETED);
         updateStructure(username, activeProject,
             (clone.model.roles || []).map(r => `واجهة ${r.name}`),
             (clone.model.flows || []).map(f => f.name));
         addToHistory(username, activeProject, `كلون ${clone.id}: ${(goal || '').slice(0, 60)}`);
-        this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        this.reporter.send(roomName, 'preview_updated', { timestamp: Date.now() });
         let builtFiles = [];
         try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
-        this.io.to(roomName).emit('workspace_files', builtFiles);
+        this.reporter.send(roomName, 'workspace_files', builtFiles);
         snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
         autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
         const durationSec = Math.round((Date.now() - t0) / 1000);
         recordBuild(username, activeProject, { success: true, durationSec, filesCount: builtFiles.length, goal: goal || '' });
-        this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
+        this.reporter.send(roomName, 'project_metrics', buildMetricsPayload(username, activeProject));
         try { recordModel(clone.category, model, { verified: true }); } catch {}
 
         const rolesLabel = (clone.model?.roles || []).map(r => r.name).join(' · ');
@@ -2361,7 +2362,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const msg = lang === 'ar'
             ? `✅ اكتمل — بدأنا من قالب **${clone.name}** (jaola) يعمل فعلاً${rolesLabel ? ` — ${rolesLabel}` : ''}${apiNote} ووضعنا بصمتك. جرّبه في المعاينة، ثم اطلب أي تعديل.`
             : `✅ Done — started from a working **${clone.name}** jaola template${apiNote} and applied your brand. Try it in the preview, then request any change.`;
-        this.io.to(roomName).emit('chat_reply', { message: msg });
+        this.reporter.send(roomName, 'chat_reply', { message: msg });
         this.emitLiveLog(roomName, 'JCOS', 'Kernel', '✨ نجاح (قالب jaola عامل)');
         return { success: true, clone: clone.id };
     }
@@ -2373,7 +2374,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const { projectPath, username, activeProject, roomName } = ctx;
         const lang = resolveGoalLanguage(goal, getUserLanguage(username)); // لا ردّ إنجليزي على طلب عربيّ
         const t0 = Date.now();
-        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
+        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
         this.emitLiveLog(roomName, '5. RUNTIME', 'JaolaRegistry', '🧱 إعادة تركيب صفحة احترافية من JAOLA Registry (بلوكات جاهزة) — لا توليد من الصفر');
 
         // 1) ركّب صفحة كاملة مخصّصة (علامة + لون المجال) من البلوكات
@@ -2401,23 +2402,23 @@ User preferences: ${JSON.stringify(execMemory)}` },
         } catch { /* اختياري */ }
 
         // 4) نهائيات كبناءٍ ناجح
-        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
+        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
         transitionState(username, activeProject, STATES.COMPLETED);
         addToHistory(username, activeProject, `registry: ${(goal || '').slice(0, 60)}`);
         let builtFiles = [];
         try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
-        this.io.to(roomName).emit('workspace_files', builtFiles);
-        this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        this.reporter.send(roomName, 'workspace_files', builtFiles);
+        this.reporter.send(roomName, 'preview_updated', { timestamp: Date.now() });
         snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
         autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
         const durationSec = Math.round((Date.now() - t0) / 1000);
         recordBuild(username, activeProject, { success: true, durationSec, filesCount: builtFiles.length, goal: goal || '' });
-        this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
+        this.reporter.send(roomName, 'project_metrics', buildMetricsPayload(username, activeProject));
 
         const msg = lang === 'ar'
             ? `✅ اكتمل — ركّبنا صفحة احترافية **كاملة** لـ «${brand}» من مكوّنات JAOLA الجاهزة (${blocks.length} قسم) ووضعنا بصمتك وهويتك البصرية. جرّبها في المعاينة، ثم اطلب أي تعديل.`
             : `✅ Done — composed a **complete** professional page for "${brand}" from ${blocks.length} ready JAOLA blocks, with your brand and visual identity. Try it in the preview, then request any change.`;
-        this.io.to(roomName).emit('chat_reply', { message: msg });
+        this.reporter.send(roomName, 'chat_reply', { message: msg });
         this.emitLiveLog(roomName, 'JCOS', 'Kernel', '✨ نجاح (إعادة تركيب من Registry)');
         return { success: true, registry: true, blocks };
     }
@@ -2427,7 +2428,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const { projectPath, username, activeProject, roomName } = ctx;
         const lang = getUserLanguage(username) || 'ar';
         const t0 = Date.now();
-        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
+        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
         this.emitLiveLog(roomName, '5. RUNTIME', 'ReactGen', '⚛️ توليد مشروع Next.js + Tailwind...');
 
         // 🧩 نموذج المشروع يُثري هدف كتابة المحتوى — فيَعِي الكيانات والأدوار
@@ -2487,16 +2488,16 @@ User preferences: ${JSON.stringify(execMemory)}` },
         await fsPromises.writeFile(path.join(projectPath, 'dashboard.html'),
             buildDashboardPage(finalContent, { project: activeProject, username, lang }));
 
-        this.io.to(roomName).emit('agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
+        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
         transitionState(username, activeProject, STATES.COMPLETED);
         updateStructure(username, activeProject, sections, scaffold.meta.components);
         addToHistory(username, activeProject, `بناء React/Next: ${(goal || '').slice(0, 60)}`);
 
         // 3) تحديث المعاينة + قائمة الملفات + لقطة
-        this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+        this.reporter.send(roomName, 'preview_updated', { timestamp: Date.now() });
         let builtFiles = [];
         try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
-        this.io.to(roomName).emit('workspace_files', builtFiles);
+        this.reporter.send(roomName, 'workspace_files', builtFiles);
         snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
         autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
         // 🔬 تحقّق سلوكي على المعاينة (تقرير صادق؛ بلا إصلاح تلقائي لأن بنية
@@ -2510,7 +2511,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
         const durationSec = Math.round((Date.now() - t0) / 1000);
         recordBuild(username, activeProject, { success: true, durationSec, filesCount: builtFiles.length, goal: goal || '' });
-        this.io.to(roomName).emit('project_metrics', buildMetricsPayload(username, activeProject));
+        this.reporter.send(roomName, 'project_metrics', buildMetricsPayload(username, activeProject));
 
         const pageCount = scaffold.meta.pages?.length || staticPages.length;
         const report = lang === 'ar'
@@ -2527,7 +2528,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 '🖥️ Click the nav links to move between real pages — every edit reflects instantly.',
                 '⬇️ Local run: npm install && npm run dev · Ready to deploy on Vercel.',
               ].join('\n');
-        this.io.to(roomName).emit('chat_reply', {
+        this.reporter.send(roomName, 'chat_reply', {
             message: report,
             options: lang === 'ar' ? ['➕ أضف صفحة', '🚀 انشر على Vercel', '🐙 ادفع إلى GitHub', '✏️ عدّل قسماً'] : ['➕ Add a page', '🚀 Deploy to Vercel', '🐙 Push to GitHub', '✏️ Edit a section'],
         });
@@ -2554,7 +2555,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         }
         const userLang = initUserLanguage(username, message);
         // 🌐 لغة الغرفة — يقرؤها قمع emitLiveLog ليترجم سجلّ البناء الحي
-        (this.roomLang ||= new Map()).set(roomName, userLang);
+        this.reporter.setLang(roomName, userLang);
 
         // 🧾 مهمة سقطت مع إعادة تشغيل الخادم قبل اكتمالها؟ نقولها بصدق مرة واحدة
         // (كانت تختفي بلا أثر: لا رسالة ولا سجل — المستخدم ينتظر بناءً لن يأتي)
@@ -2562,7 +2563,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         if (lost) {
             const goalHint = (lost.goal || '').slice(0, 60);
             this.emitLiveLog(roomName, 'QUEUE', 'Ledger', `🧾 مهمة سابقة (${lost.state === 'running' ? 'كانت جارية' : 'كانت منتظرة'}) سقطت مع إعادة تشغيل الخادم: ${goalHint}`);
-            this.io.to(roomName).emit('chat_reply', {
+            this.reporter.send(roomName, 'chat_reply', {
                 message: userLang === 'en'
                     ? `⚠️ Heads-up: your previous mission${goalHint ? ` ("${goalHint}")` : ''} was interrupted by a server restart before it finished. Type "continue" to resume it, or send the request again.`
                     : `⚠️ تنبيه: مهمتك السابقة${goalHint ? ` («${goalHint}»)` : ''} انقطعت بإعادة تشغيل الخادم قبل اكتمالها. اكتب «اكمل» لاستئنافها، أو أعد إرسال الطلب.`,
@@ -2578,13 +2579,13 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 const pendingGoal = consumePendingGoal(username);
                 const lang = getUserLanguage(username) || userLang;
                 const msg = lang === 'ar' ? '⚡ ممتاز! أبني الآن...' : '⚡ Building now...';
-                this.io.to(roomName).emit('chat_reply', { message: msg });
+                this.reporter.send(roomName, 'chat_reply', { message: msg });
                 this.executeMission(pendingGoal, ctx);
                 return;
             } else if (isNo) {
                 clearDialog(username);
                 const msg = userLang === 'ar' ? 'تم الإلغاء. أخبرني بما تريد.' : 'Cancelled. Tell me what you need.';
-                this.io.to(roomName).emit('chat_reply', { message: msg });
+                this.reporter.send(roomName, 'chat_reply', { message: msg });
                 return;
             }
         }
@@ -2594,7 +2595,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             const goal = message.replace('__CONFIRM_BUILD__', '');
             const lang = getUserLanguage(username) || userLang;
             const msg = lang === 'ar' ? '⚡ ممتاز! أبني الآن...' : '⚡ Building now...';
-            this.io.to(roomName).emit('chat_reply', { message: msg });
+            this.reporter.send(roomName, 'chat_reply', { message: msg });
             this.executeMission(goal, ctx);
             return;
         }
@@ -2613,7 +2614,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             const confirmMsg = explicitLang === 'ar'
                 ? 'تم. سأتحدث معك بالعربية من الآن فصاعداً. 🇸🇦'
                 : 'Done. I will speak English from now on. 🇬🇧';
-            this.io.to(roomName).emit('chat_reply', { message: confirmMsg });
+            this.reporter.send(roomName, 'chat_reply', { message: confirmMsg });
             return;
         }
 
@@ -2625,7 +2626,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             // كتابة الاسم الحرفي هي التأكيد — sandbox_app محمي في المنفّذ.
             const lang = getUserLanguage(username) || userLang;
             const result = await agents.deleteProject(username, delCmd.target);
-            this.io.to(roomName).emit('chat_reply', {
+            this.reporter.send(roomName, 'chat_reply', {
                 message: result.success
                     ? (lang === 'ar'
                         ? `🗑️ تم حذف المشروع «${delCmd.target}» نهائياً (الملفات والسجل).\nبدّل لمشروع آخر أو أنشئ واحداً جديداً من القائمة.`
@@ -2638,7 +2639,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             const target = delCmd.target || activeProject;
             const lang = getUserLanguage(username) || userLang;
             this.emitLiveLog(roomName, 'INTENT', 'Engine', `🗑️ نية حذف مشروع (${target}) — طلب تأكيد صريح (لا تعديل محتوى).`);
-            this.io.to(roomName).emit('chat_reply', {
+            this.reporter.send(roomName, 'chat_reply', {
                 message: target === 'sandbox_app'
                     ? (lang === 'ar'
                         ? '⚠️ لا يمكن حذف المشروع الافتراضي sandbox_app.'
@@ -2673,7 +2674,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         if (clarifierState?.stage === 'clarifying') {
             const result = await agents.processAnswer(username, message);
             if (result) {
-                this.io.to(roomName).emit('chat_reply', { message: result.message, options: result.options });
+                this.reporter.send(roomName, 'chat_reply', { message: result.message, options: result.options });
             }
             return;
         }
@@ -2701,7 +2702,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 const finalGoal = agents.getFinalGoal(username);
                 const lang = clarifierState.lang || userLang;
                 const startMsg = lang === 'ar' ? '🚀 ممتاز! بدأت البناء الآن...' : '🚀 Great! Building now...';
-                this.io.to(roomName).emit('chat_reply', { message: startMsg });
+                this.reporter.send(roomName, 'chat_reply', { message: startMsg });
 
                 // 🆕 تهيئة Project Memory من نتائج Clarifier
                 if (clarifierData?.plan) {
@@ -2728,7 +2729,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     const replyMsg = lang === 'ar'
                         ? `الخطة الحالية تشمل: ${planSummary}\n\nاكتب **"ابدأ"** للتنفيذ أو أخبرني بأي تعديل.`
                         : `Current plan includes: ${planSummary}\n\nType **"start"** to build or tell me any changes.`;
-                    this.io.to(roomName).emit('chat_reply', { message: replyMsg });
+                    this.reporter.send(roomName, 'chat_reply', { message: replyMsg });
                 } else {
                     // كشف أوامر الإيقاف في مرحلة Planning
                     const isStop = /^(لا|توقف|الغ|إلغاء|cancel|stop|no|لا تبد|وقف)/i.test(message.trim());
@@ -2737,7 +2738,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         const stopMsg = lang === 'ar'
                             ? 'تم إلغاء الخطة. يمكنك البدء من جديد متى شئت.'
                             : 'Plan cancelled. You can start over anytime.';
-                        this.io.to(roomName).emit('chat_reply', { message: stopMsg });
+                        this.reporter.send(roomName, 'chat_reply', { message: stopMsg });
                         return true;
                     }
 
@@ -2748,7 +2749,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         const colorMsg = lang === 'ar'
                             ? 'ما اللون أو التدرج اللوني الذي تفضله؟ (مثال: أزرق داكن، أخضر طبيعي، ذهبي فاخر...)'
                             : 'What color or theme do you prefer? (e.g., dark blue, natural green, luxury gold...)';
-                        this.io.to(roomName).emit('chat_reply', { message: colorMsg });
+                        this.reporter.send(roomName, 'chat_reply', { message: colorMsg });
                         const state = agents.getState(username);
                         if (state) state.answers.push(`color change requested: ${message}`);
                         return true;
@@ -2758,7 +2759,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     const editMsg = lang === 'ar'
                         ? `فهمت! سأراعي: "${message}"\n\nاكتب **"ابدأ"** عندما تكون جاهزاً.`
                         : `Got it! I'll include: "${message}"\n\nType **"start"** when ready.`;
-                    this.io.to(roomName).emit('chat_reply', { message: editMsg });
+                    this.reporter.send(roomName, 'chat_reply', { message: editMsg });
                     const state = agents.getState(username);
                     if (state) state.answers.push(`edit: ${message}`);
                 }
@@ -2780,7 +2781,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 const snaps = await listSnapshots(projectPath);
                 const latest = snaps.snapshots?.[0];
                 if (!latest) {
-                    this.io.to(roomName).emit('chat_reply', {
+                    this.reporter.send(roomName, 'chat_reply', {
                         message: lang === 'en'
                             ? 'No saved snapshot yet — snapshots are taken automatically before every upcoming edit, so "undo" will work from the next change onward.'
                             : 'لا توجد نسخة سابقة محفوظة بعد — النسخ تُلتقط تلقائياً قبل كل تعديل قادم، فأمر «تراجع» سيعمل من التعديل التالي فصاعداً.',
@@ -2789,7 +2790,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 }
                 const r = await restoreSnapshot(projectPath, latest.name);
                 if (!r.success) {
-                    this.io.to(roomName).emit('chat_reply', {
+                    this.reporter.send(roomName, 'chat_reply', {
                         message: lang === 'en' ? `❌ Restore failed: ${r.error}` : `❌ تعذّر الاسترجاع: ${r.error}`,
                     });
                     return true;
@@ -2799,18 +2800,18 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     ? ` — و${r.notRestored.length} ملفاً لم تشملها النسخة فبقيت كما هي (${r.notRestored.slice(0, 5).join('، ')}${r.notRestored.length > 5 ? '…' : ''})`
                     : '';
                 this.emitLiveLog(roomName, 'EDIT', 'Undo', `⏪ استُرجعت النسخة ${latest.name} (${r.restored.length} ملف)${rest}.`);
-                this.io.to(roomName).emit('preview_updated', { timestamp: Date.now() });
+                this.reporter.send(roomName, 'preview_updated', { timestamp: Date.now() });
                 let undoFiles = [];
                 try { undoFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
-                this.io.to(roomName).emit('workspace_files', undoFiles);
+                this.reporter.send(roomName, 'workspace_files', undoFiles);
                 snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
-                this.io.to(roomName).emit('chat_reply', {
+                this.reporter.send(roomName, 'chat_reply', {
                     message: lang === 'en'
                         ? `⏪ Done — restored the previous snapshot (${new Date(latest.timestamp).toLocaleString()}), ${r.restored.length} files. Preview updated.`
                         : `⏪ تم — استُرجعت النسخة السابقة (${new Date(latest.timestamp).toLocaleString('ar')})، ${r.restored.length} ملفاً. المعاينة تحدّثت.`,
                 });
             } catch (e) {
-                this.io.to(roomName).emit('chat_reply', {
+                this.reporter.send(roomName, 'chat_reply', {
                     message: lang === 'en' ? `❌ Restore failed: ${e.message}` : `❌ تعذّر الاسترجاع: ${e.message}`,
                 });
             }
@@ -2847,7 +2848,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 const lang = getUserLanguage(username) || userLang;
                 this.emitLiveLog(roomName, 'INTENT', 'Engine',
                     `🎯 ${JSON.stringify({ intent: 'continue', project: activeProject, confidence: 90 })} — تأكيد مجرّد → استئناف فعلي`);
-                this.io.to(roomName).emit('chat_reply', {
+                this.reporter.send(roomName, 'chat_reply', {
                     message: lang === 'ar' ? '⚡ تمام — أكمل من حيث توقفنا...' : '⚡ Alright — resuming where we left off...'
                 });
                 this.executeMission(contGoal, contextFromRequest(req, agents));
@@ -2866,7 +2867,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 const lastAssistant = [...hist].reverse().find(m => m.role === 'assistant' && !/^⚠️|^⚡|^🗑️/.test(m.content || ''));
                 if (lastAssistant?.content) {
                     this.emitLiveLog(roomName, 'INTENT', 'Engine', '⚡ أمر تنفيذ مجرّد → تنفيذ ما نوقش للتو كتعديل فعلي.');
-                    this.io.to(roomName).emit('chat_reply', {
+                    this.reporter.send(roomName, 'chat_reply', {
                         message: lang === 'ar' ? '⚡ تمام — أنفّذ ما اتفقنا عليه الآن...' : '⚡ On it — executing what we just discussed...'
                     });
                     const instruction = (lang === 'ar'
@@ -2877,7 +2878,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     return true;
                 }
             } catch (e) { /* سقوط آمن للشات */ }
-            this.io.to(roomName).emit('chat_reply', {
+            this.reporter.send(roomName, 'chat_reply', {
                 message: lang === 'ar'
                     ? 'ماذا تريد أن أنفّذ بالضبط؟ صِف التغيير بجملة (مثال: "اضف صفحة للسائق وصفحة للعميل").'
                     : 'What exactly should I execute? Describe the change in one sentence.'
@@ -2904,12 +2905,12 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
             switch (fastIntent.intent) {
                 case 'status': {
-                    this.io.to(roomName).emit('chat_reply', { message: buildStatusReply(username, activeProject, lang) });
+                    this.reporter.send(roomName, 'chat_reply', { message: buildStatusReply(username, activeProject, lang) });
                     return true;
                 }
 
                 case 'greeting': {
-                    this.io.to(roomName).emit('chat_reply', { message: greetingReply(username, activeProject, lang) });
+                    this.reporter.send(roomName, 'chat_reply', { message: greetingReply(username, activeProject, lang) });
                     return true;
                 }
 
@@ -2918,7 +2919,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         const busyMsg = lang === 'ar'
                             ? '⚙️ الفريق يعمل على المشروع الآن بالفعل — تابع التقدم الحي هنا.'
                             : '⚙️ The team is already working on it — watch the live progress here.';
-                        this.io.to(roomName).emit('chat_reply', { message: busyMsg });
+                        this.reporter.send(roomName, 'chat_reply', { message: busyMsg });
                         return true;
                     }
                     const continuationGoal = buildContinuationGoal(username, activeProject);
@@ -2927,13 +2928,13 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         const noMemMsg = lang === 'ar'
                             ? `لا أجد مشروعاً سابقاً في (${activeProject}) لأكمله.\nأخبرني: ماذا تريد أن نبني؟ (مثال: "متجر بيض بلدي مع سلة وطلب أونلاين")`
                             : `I don't find a previous project in (${activeProject}) to continue.\nTell me: what should we build? (e.g., "an egg store with cart and online ordering")`;
-                        this.io.to(roomName).emit('chat_reply', { message: noMemMsg });
+                        this.reporter.send(roomName, 'chat_reply', { message: noMemMsg });
                         return true;
                     }
                     const resumeMsg = lang === 'ar'
                         ? '📂 وجدت المشروع في الذاكرة — الفريق يستأنف من حيث توقف...'
                         : '📂 Project found in memory — the team is resuming where it left off...';
-                    this.io.to(roomName).emit('chat_reply', { message: resumeMsg });
+                    this.reporter.send(roomName, 'chat_reply', { message: resumeMsg });
                     this.executeMission(continuationGoal, contextFromRequest(req, agents));
                     return true;
                 }
@@ -2943,7 +2944,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         const waitMsg = lang === 'ar'
                             ? '⏳ البناء جارٍ الآن — سأنشر تلقائياً بعد اكتماله، أو اطلب النشر لاحقاً.'
                             : '⏳ Build in progress — deploy after it completes.';
-                        this.io.to(roomName).emit('chat_reply', { message: waitMsg });
+                        this.reporter.send(roomName, 'chat_reply', { message: waitMsg });
                         return true;
                     }
                     // 🧭 المشاريع full-stack (فيها دوال api/ حقيقية) تُنشر على Render
@@ -2953,7 +2954,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         const renderMsg = lang === 'ar'
                             ? '🖥️ مشروع full-stack — سأجهّزه لخادم دائم على Render (بلا حدّ دوال)...'
                             : '🖥️ Full-stack project — preparing a persistent server on Render...';
-                        this.io.to(roomName).emit('chat_reply', { message: renderMsg });
+                        this.reporter.send(roomName, 'chat_reply', { message: renderMsg });
                         const projectSlug = renderServiceName(username, activeProject);
                         deployToRender(
                             { projectPath, projectName: projectSlug, username, activeProject, hasBackend: true },
@@ -2963,17 +2964,17 @@ User preferences: ${JSON.stringify(execMemory)}` },
                                 const okMsg = lang === 'ar'
                                     ? `✅ جاهز للنشر على Render (خادم دائم). اضغط الزر لإنشائه بضغطة واحدة — سيقرأ الإعداد تلقائياً ويطلب MONGODB_URI:\n\n👉 ${r.deployUrl}\n\nبعدها يُعيد Render النشر تلقائياً مع كل تعديل.`
                                     : `✅ Ready for Render (persistent server). One click to create it:\n\n👉 ${r.deployUrl}`;
-                                this.io.to(roomName).emit('chat_reply', { message: okMsg });
+                                this.reporter.send(roomName, 'chat_reply', { message: okMsg });
                             } else if (r.needsGitHub) {
                                 const ghMsg = lang === 'ar'
                                     ? `🔗 لنشر خادم دائم على Render نحتاج ربط المشروع بمستودع GitHub أولاً (Render ينشر من GitHub). افتح ⋯ → GitHub في الداش واربط المستودع، ثم اطلب النشر مجدداً.`
                                     : `🔗 Render deploys from GitHub — connect a repo first (⋯ → GitHub), then deploy again.`;
-                                this.io.to(roomName).emit('chat_reply', { message: ghMsg });
+                                this.reporter.send(roomName, 'chat_reply', { message: ghMsg });
                             } else {
-                                this.io.to(roomName).emit('log', { message: `❌ [Render]: ${r.error}` });
+                                this.reporter.send(roomName, 'log', { message: `❌ [Render]: ${r.error}` });
                             }
                         }).catch(err => {
-                            this.io.to(roomName).emit('log', { message: `❌ [Render]: ${err.message}` });
+                            this.reporter.send(roomName, 'log', { message: `❌ [Render]: ${err.message}` });
                         });
                         return true;
                     }
@@ -2981,13 +2982,13 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     const deployMsg = lang === 'ar'
                         ? '🚀 أمر النشر مقبول — جاري الرفع للإنتاج الآن...'
                         : '🚀 Deploy order accepted — shipping to production...';
-                    this.io.to(roomName).emit('chat_reply', { message: deployMsg });
+                    this.reporter.send(roomName, 'chat_reply', { message: deployMsg });
                     agents.deployProject?.(
                         { projectPath, activeProject, currentUser: username, env: getProjectSecrets(username, activeProject) },
                         this.io,
                         () => {}
                     ).catch(err => {
-                        this.io.to(roomName).emit('log', { message: `❌ [DEPLOY]: ${err.message}` });
+                        this.reporter.send(roomName, 'log', { message: `❌ [DEPLOY]: ${err.message}` });
                     });
                     return true;
                 }
@@ -2996,14 +2997,14 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     const pushMsg = lang === 'ar'
                         ? '🐙 جاري الدفع إلى GitHub...'
                         : '🐙 Pushing to GitHub...';
-                    this.io.to(roomName).emit('chat_reply', { message: pushMsg });
+                    this.reporter.send(roomName, 'chat_reply', { message: pushMsg });
                     pushProject(username, activeProject, projectPath).then(result => {
                         const doneMsg = result.success
                             ? (lang === 'ar' ? `✅ تم الدفع إلى ${result.url} (${result.branch})` : `✅ Pushed to ${result.url} (${result.branch})`)
                             : (lang === 'ar' ? `❌ فشل الدفع — ${result.error}` : `❌ Push failed — ${result.error}`);
-                        this.io.to(roomName).emit('chat_reply', { message: doneMsg });
+                        this.reporter.send(roomName, 'chat_reply', { message: doneMsg });
                     }).catch(err => {
-                        this.io.to(roomName).emit('chat_reply', { message: `❌ GitHub: ${err.message}` });
+                        this.reporter.send(roomName, 'chat_reply', { message: `❌ GitHub: ${err.message}` });
                     });
                     return true;
                 }
@@ -3050,7 +3051,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         if (hasProj && !isQuestionMessage(message)) {
                             // نحجب مرة واحدة بردّ حتمي (لا LLM يهلوس "أعد الإرسال")
                             this.gatedMessages.set(username, message.trim());
-                            this.io.to(roomName).emit('chat_reply', { message: this.gateConfirmReply(userLang) });
+                            this.reporter.send(roomName, 'chat_reply', { message: this.gateConfirmReply(userLang) });
                             return true;
                         }
                         await this.generateChatResponse(message, username, roomName, userLang);
@@ -3063,7 +3064,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     }
                     if (route.action === 'delete_project') {
                         const lang = getUserLanguage(username) || userLang;
-                        this.io.to(roomName).emit('chat_reply', {
+                        this.reporter.send(roomName, 'chat_reply', {
                             message: activeProject === 'sandbox_app'
                                 ? (lang === 'ar' ? '⚠️ لا يمكن حذف المشروع الافتراضي sandbox_app.' : '⚠️ The default sandbox_app project cannot be deleted.')
                                 : (lang === 'ar'
@@ -3076,7 +3077,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                         agents.clearState?.(username);
                         clearDialog(username);
                         const lang = getUserLanguage(username) || userLang;
-                        this.io.to(roomName).emit('chat_reply', {
+                        this.reporter.send(roomName, 'chat_reply', {
                             message: lang === 'ar' ? '🛑 تم الإيقاف. أخبرني بما تريد.' : '🛑 Stopped. Tell me what you need.',
                         });
                         return true;
@@ -3105,12 +3106,12 @@ User preferences: ${JSON.stringify(execMemory)}` },
                     const colorMsg = lang === 'ar'
                         ? 'ما اللون المفضل؟ (مثال: أزرق داكن، أخضر، ذهبي...)'
                         : 'What color do you prefer? (e.g., dark blue, green, gold...)';
-                    this.io.to(roomName).emit('chat_reply', { message: colorMsg });
+                    this.reporter.send(roomName, 'chat_reply', { message: colorMsg });
                 } else {
                     const editMsg = lang === 'ar'
                         ? `فهمت! سأراعي: "${message}"\n\nاكتب **"ابدأ"** عندما تكون جاهزاً.`
                         : `Got it! I'll include: "${message}"\n\nType **"start"** when ready.`;
-                    this.io.to(roomName).emit('chat_reply', { message: editMsg });
+                    this.reporter.send(roomName, 'chat_reply', { message: editMsg });
                     const state = agents.getState(username);
                     if (state) state.answers.push(`edit: ${message}`);
                 }
@@ -3170,7 +3171,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             const clar = await agents.startClarification?.(username, userGoal);
             if (clar?.type === 'clarification') {
                 this.emitLiveLog(roomName, 'INTENT', 'Clarifier', '🎯 طلب استراتيجي — بدء حوار التخطيط');
-                this.io.to(roomName).emit('chat_reply', { message: clar.message, options: clar.options });
+                this.reporter.send(roomName, 'chat_reply', { message: clar.message, options: clar.options });
                 return true;
             }
 
@@ -3184,7 +3185,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             const opts = lang === 'ar'
                 ? ['نعم، ابنه الآن ⚡', 'لا، أخبرني أكثر']
                 : ['Yes, build it now ⚡', 'No, tell me more'];
-            this.io.to(roomName).emit('chat_reply', { message: confirmQ, options: opts, pendingGoal: userGoal });
+            this.reporter.send(roomName, 'chat_reply', { message: confirmQ, options: opts, pendingGoal: userGoal });
             setPendingGoal(username, userGoal, activeProject);
         } else if (finalIntent.intent === 'modify') {
             // 🛡️ السؤال لا يُعامل أبداً كأمر تعديل حتى لو صنّفه النموذج modify —
@@ -3196,7 +3197,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
                 if (!isQuestionMessage(message)) {
                     this.gatedMessages.set(username, message.trim());
                     this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛡️ صُنّفت modify لكنها جملة إخبارية — حجب لمرة واحدة (الرسالة التالية تُنفَّذ).');
-                    this.io.to(roomName).emit('chat_reply', { message: this.gateConfirmReply(userLang) });
+                    this.reporter.send(roomName, 'chat_reply', { message: this.gateConfirmReply(userLang) });
                     return true;
                 }
                 this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛡️ سؤال — رد محادثة (لا تعديل).');
@@ -3237,7 +3238,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             }
             if (hasProject && !isQuestion && !isSmalltalk) {
                 this.gatedMessages.set(username, message.trim());
-                this.io.to(roomName).emit('chat_reply', { message: this.gateConfirmReply(userLang) });
+                this.reporter.send(roomName, 'chat_reply', { message: this.gateConfirmReply(userLang) });
                 return true;
             }
             await this.generateChatResponse(message, username, roomName, userLang);
