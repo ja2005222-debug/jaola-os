@@ -118,7 +118,7 @@ import {
 import { generateStockCommentary } from './services/stockCommentary.js';
 import { buildStaticSiteFromSource, buildDashboardPage } from './services/reactPreview.js';
 import { scanProjectFiles, buildProjectBrain } from './services/projectBrain.js';
-import { getProjectMemory, getDomainModel } from './agents/projectMemory.js';
+import { getProjectMemory, getDomainModel, clearProjectMemory } from './agents/projectMemory.js';
 import { summarizeModel } from './agents/projectModel.js';
 import { librarySummary } from './agents/modelLibrary.js';
 import { listClones, getCloneById } from './agents/cloneTemplates/index.js';
@@ -133,7 +133,7 @@ import { autoDeployFullStack, fullAutomationReady } from './services/deployAutom
 import { assetsFor, injectFaviconTag } from './agents/cloneAssets.js';
 import { listLibraries, getLibraryById, injectLibrary } from './agents/libraryRegistry.js';
 import { polishHtml } from './agents/polishPack.js';
-import { setProjectSecret, deleteProjectSecret, getProjectSecretNames, getProjectSecrets, getUnreadableSecretNames } from './services/projectSecrets.js';
+import { setProjectSecret, deleteProjectSecret, getProjectSecretNames, getProjectSecrets, getUnreadableSecretNames, clearProjectSecrets } from './services/projectSecrets.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty } from './services/workspaceStore.js';
 import { recordTurn } from './services/conversationStore.js';
 import { buildMetricsPayload, clearMetrics } from './services/metricsStore.js';
@@ -149,7 +149,7 @@ import { canCreateProject, botAiQuota } from './services/subscriptionService.js'
 import { getUsageCount, bumpUsage, reserveUsage, releaseUsage } from './services/usageMeter.js';
 import { createBillingRouter } from './routes/billing.js';
 import { topLessons } from './services/platformLessons.js';
-import { setStateEmitter } from './agents/stateMachine.js';
+import { setStateEmitter, clearProjectState } from './agents/stateMachine.js';
 import { restorePluginsToDisk } from './services/pluginStore.js';
 import { onMongoReady } from './services/persistence.js';
 
@@ -1143,6 +1143,13 @@ async function deleteProjectCompletely(username, project) {
         // 🔴 المقاييسُ كانت تبقى بعد زوال المشروع، فيرث مشروعٌ جديد
         //    بالاسم نفسه درجاتِ المحذوف وعددَ بنائاته ونصوصَ أهدافه.
         await clearMetrics(username, safeProject);
+        // 🔴 والأسرارُ كذلك: كانت تبقى بعد زوال المشروع فيرثها مشروعٌ جديد
+        //    بالاسم نفسه — مفتاحُ دفعٍ حيٌّ لمشروعٍ ظنّ صاحبُه أنّه أزاله.
+        await clearProjectSecrets(username, safeProject);
+        // والذاكرةُ والحالة كذلك: مشروعٌ جديدٌ بالاسم نفسه كان يرث خطّةَ
+        // المحذوف ونموذجَ مجاله وحالةَ بنائه.
+        await clearProjectMemory(username, safeProject);
+        await clearProjectState(username, safeProject);
 
         // إذا كان هذا هو المشروع النشط حالياً للمستخدم، بلّغ الـ socket room
         const roomName = `${username}-${safeProject}`;

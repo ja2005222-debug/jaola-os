@@ -10,7 +10,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { persistEntry, hydrateStore, onMongoReady, shouldHydrate } from '../services/persistence.js';
+import { persistEntry, removeEntry, hydrateStore, onMongoReady, shouldHydrate } from '../services/persistence.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MEMORY_FILE = path.join(__dirname, '../memory/project_memory.json');
@@ -111,6 +111,19 @@ onMongoReady(() => hydrateStore('projectMemory', (key, value) => {
 const getKey = (username, project) => `${username}:${project}`;
 
 /** استرجاع ذاكرة مشروع (أو إنشاء جديدة) */
+/**
+ * 🗑️ يمحو ذاكرةَ مشروعٍ زال.
+ * وإلا ورث مشروعٌ جديدٌ بالاسم نفسه خطّةَ المحذوف ونموذجَ مجاله وتاريخَه،
+ * فيُبنى على متطلّباتِ مشروعٍ آخر ويظنّ صاحبُه أنّه بدأ من بياض.
+ */
+export async function clearProjectMemory(username, project) {
+    const key = getKey(username, project);
+    const had = memoryCache.has(key);
+    memoryCache.delete(key);
+    await removeEntry('projectMemory', key);
+    return { cleared: had };
+}
+
 export function getProjectMemory(username, project) {
     const key = getKey(username, project);
     if (!memoryCache.has(key)) {

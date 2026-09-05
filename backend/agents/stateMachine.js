@@ -70,7 +70,7 @@ export function setStateEmitter(fn) { stateEmitter = typeof fn === 'function' ? 
 // ═══════════════════════════════════════════════════════
 // 💾 تخزين حالات المشاريع
 // ═══════════════════════════════════════════════════════
-import { persistEntry, hydrateStore, onMongoReady, shouldHydrate } from '../services/persistence.js';
+import { persistEntry, removeEntry, hydrateStore, onMongoReady, shouldHydrate } from '../services/persistence.js';
 
 const projectStates = new Map(); // key: `${username}:${project}` → ProjectState
 
@@ -186,6 +186,19 @@ export function transitionState(username, project, newState, meta = {}) {
         });
     } catch { /* البث لا يُفشل الانتقال أبداً */ }
     return true;
+}
+
+/**
+ * 🗑️ يمحو حالةَ مشروعٍ زال — لا يُصفّرها.
+ * الفرقُ جوهريّ: `resetProjectState` يكتب حالةً جديدةً فتبقى في السجلّ،
+ * فيرثها مشروعٌ جديدٌ بالاسم نفسه. والمحذوفُ لا يترك حالةً أصلاً.
+ */
+export async function clearProjectState(username, project) {
+    const key = getKey(username, project);
+    const had = projectStates.has(key);
+    projectStates.delete(key);
+    await removeEntry('projectStates', key);
+    return { cleared: had };
 }
 
 export function resetProjectState(username, project) {

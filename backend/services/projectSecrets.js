@@ -10,7 +10,7 @@
 import { promises as fsp } from 'fs';
 import path from 'path';
 import { encryptSecret, decryptSecret } from '../utils/secretVault.js';
-import { persistEntry, hydrateStore, onMongoReady } from './persistence.js';
+import { persistEntry, removeEntry, hydrateStore, onMongoReady } from './persistence.js';
 
 // user:project → { KEY: encryptedValue }
 const store = new Map();
@@ -53,6 +53,23 @@ export async function deleteProjectSecret(user, project, projectPath, key) {
     const { values, unreadable } = decryptAll(secrets);
     await writeEnvFile(projectPath, values, unreadable);
     return { ok: true, unreadable };
+}
+
+/**
+ * 🗑️ يمحو أسرارَ مشروعٍ زال — الذاكرةَ والسجلَّ المحفوظ معاً.
+ *
+ * 🔴 كان حذفُ المشروع «الكامل» يمسح القرصَ وصفَّ Project والمقاييس ويترك
+ *    الأسرار. مقيسٌ لا مفترَض: بعد الحذف تُقرأ `STRIPE_SECRET_KEY` كما هي،
+ *    ويرثها مشروعٌ جديدٌ بالاسم نفسه — فيُشغَّل بمفتاحِ دفعٍ لمشروعٍ ظنّ
+ *    صاحبُه أنّه أزاله. والمستخدمُ حذف ليُزيل، لا ليُخفي.
+ *    (نفسُ عائلة عطب المقاييس المُصلَح في Sprint 3n، والمادّةُ هنا أخطر.)
+ */
+export async function clearProjectSecrets(user, project) {
+    const k = keyOf(user, project);
+    const had = store.has(k);
+    store.delete(k);
+    await removeEntry('projectSecrets', k);   // يُلغي الكتابةَ المؤجَّلة أوّلاً
+    return { cleared: had };
 }
 
 /** أسماء المفاتيح فقط (بلا قيم) — آمن للواجهة */
