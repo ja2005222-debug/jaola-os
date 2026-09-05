@@ -92,7 +92,8 @@ test('الحدود: لا this، لا استيرادَ من jcr، المفوِّ�
     const mod = fs.readFileSync(path.join(HERE, '../agents/stages/verify.js'), 'utf8');
     const code = mod.replace(/\/\*[^]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     assert.ok(!/\bthis\./.test(code)); assert.ok(!/jcr\.js/.test(code)); assert.ok(!/reporter\.io\b/.test(code));
-    assert.equal((code.match(/reporter\.liveLog\(/g) || []).length, 3); assert.equal((code.match(/\breadProjectFiles\(/g) || []).length, 1);
+    // JCR/18: مرحلةُ التسليم `runBehaviorVerifyStage` تجاور الدالّةَ في الوحدة نفسِها وتبثّ سطرَ المكتبة — ٣ + ١.
+    assert.equal((code.match(/reporter\.liveLog\(/g) || []).length, 4); assert.equal((code.match(/\breadProjectFiles\(/g) || []).length, 1);
     const jcr = fs.readFileSync(path.join(HERE, '../agents/jcr.js'), 'utf8');
     assert.ok(jcr.includes('\n    async _verifyAndAutofix(opts) {\n        return verifyAndAutofix(opts, this.reporter);\n    }\n'));
     assert.equal((jcr.replace(/^import .*$/gm, '').match(/\bverifyBehavior\(|\bbuildBehaviorFixInstruction\(|\brecordBehaviorGaps\(/g) || []).length, 0);

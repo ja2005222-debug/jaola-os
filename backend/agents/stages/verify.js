@@ -12,6 +12,8 @@ import { readProjectFiles } from '../projectReader.js';
 import { guardFiles, scrubPlaceholders, ensureEditIntegrity } from '../../services/codeGuard.js';
 import { writePlanFiles } from '../../core/runtime/workspacePaths.js';
 import { recordBehaviorGaps } from '../../services/platformLessons.js';
+import { getUserLanguage } from '../languageDetector.js';
+import { recordModel } from '../modelLibrary.js';
 
 // 🔬 التحقّق السلوكي + جولة إصلاح تلقائية — مشتركة بين البناء والتعديل.
 // نُشغّل الصفحة فعلاً؛ إن كُشفت ثغرة (خطأ JS/زر ميت/دور بلا واجهة) وأُتيح
@@ -52,4 +54,28 @@ export async function verifyAndAutofix({ projectPath, blueprint = null, username
         recordBehaviorGaps(verdict); // 📚 ما بقي من ثغرات بعد الإصلاح = ما يستلمه المستخدم = درس للمنصة
         return verdict;
     } catch (e) { console.warn('[BehaviorVerify]', 'تعذّر التحقّق السلوكي:', e.message); return null; }
+}
+
+// 🔬 التحقّق السلوكي + جولة إصلاح تلقائية (طريقة مشتركة مع مسار التعديل)
+// محاط بحارس: خطأ في التحقّق يجب ألّا يُسقط بناءً ناجحاً أبداً.
+export async function runBehaviorVerifyStage(context, roomName, agents, reporter) {
+    try {
+        const verdict = await verifyAndAutofix({
+            projectPath: context.projectPath, blueprint: context.blueprint,
+            username: context.username, activeProject: context.activeProject, roomName, agents,
+            lang: getUserLanguage(context.username) || 'ar',
+            canFix: !!context.budget?.consumeCall?.(),
+        }, reporter);
+        // 📚 مساهمة في مكتبة النماذج — فهم مُجرَّب (مرّ بالتحقّق) يُغني فئته
+        // فيبدأ كل مشروع لاحق من نضجٍ أعلى. نساهم فقط بما نجح تحقّقه.
+        if (verdict?.ok && context.blueprint?.category) {
+            const contributed = recordModel(
+                context.blueprint.category,
+                getDomainModel(context.username, context.activeProject),
+                { verified: true }
+            );
+            if (contributed) reporter.liveLog(roomName, '6. VERIFY', 'ModelLibrary',
+                `📚 أُغني فهم فئة «${context.blueprint.category}» بنموذج مُجرَّب — يستفيد منه كل مشروع لاحق.`);
+        }
+    } catch (e) { console.warn('[BehaviorVerify]', 'تخطّي التحقّق (لا يُسقط البناء):', e.message); }
 }
