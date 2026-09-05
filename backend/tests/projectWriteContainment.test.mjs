@@ -70,7 +70,10 @@ test('لا موضعَ في `jcr.js` يكتب بمسارٍ غيرِ محتوى', 
     const src = fs.readFileSync(path.join(process.cwd(), 'agents/jcr.js'), 'utf8');
     const raw = [...src.matchAll(/writeFile\(\s*path\.join\([^)]*\.name\s*\)/g)];
     assert.deepEqual(raw.map((m) => m[0]), [], 'عاد موضعٌ يكتب بـ`path.join(root, x.name)` بلا احتواء');
-    assert.match(src, /async function writeProjectFile\(/, 'الكاتبُ المحتوى اختفى');
+    // JCR/7: الكاتبُ المحتوى صار في `core/runtime/workspacePaths.js`؛ jcr يستورده لا يعرّفه.
+    assert.match(src, /\bwriteProjectFile\b[^\n]*from '\.\.\/core\/runtime\/workspacePaths\.js'/, 'الكاتبُ المحتوى اختفى من jcr');
+    const wp = fs.readFileSync(path.join(process.cwd(), 'core/runtime/workspacePaths.js'), 'utf8');
+    assert.match(wp, /export async function writeProjectFile\(/, 'الكاتبُ المحتوى اختفى من بيته');
 });
 
 test('القائمةُ تشمل كلَّ منقوطٍ تكتبه المنصّةُ في المشروع — بأيِّ صيغة', () => {

@@ -55,7 +55,7 @@ import { setUserLanguage } from './languageDetector.js';
 import { assertBuildAgents, DELIVERY_STAGES } from '../core/contracts/index.js';
 import { orderTasks } from '../core/runtime/TaskGraph.js';
 import { createExecutionContext, contextFromRequest } from '../core/runtime/ExecutionContext.js';
-import { resolveProjectFile, projectPathOf } from '../core/runtime/workspacePaths.js';
+import { projectPathOf, writeProjectFile, writePlanFiles } from '../core/runtime/workspacePaths.js';
 import { registerMission, throwIfAborted, clearMission } from '../core/runtime/AbortRegistry.js';
 import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import { snapshotWorkspace } from '../services/workspaceStore.js';
@@ -138,43 +138,6 @@ class JCRContext {
     }
 }
 
-
-// 💾 كتابة آمنة لكل ملفات الخطة — القائمة البيضاء القديمة
-// ['index.html','styles.css','script.js'] كانت تُسقط بصمت أي ملف باسم مختلف
-// (style.css بلا s، css/styles.css، صفحات إضافية) فيصل الموقع للمستخدم
-// خاماً بلا تصميم. الآن يُكتب كل ملف بعد تعقيم مساره فقط.
-// 🛡️ الاحتواءُ صار **واحداً**: كانت سياسةُ `writePlanFiles` مطبَّقةً في موضعٍ
-// واحدٍ من عشرين داخل هذا الملفّ؛ والباقيةُ تكتب `path.join(root, f.name)`
-// مباشرةً بلا احتواء. أخطرُها مسارُ التعديل، فأسماؤه من **مخرجات النموذج**.
-/**
- * ✍️ كتابةُ ملفٍّ واحدٍ من مولِّدٍ أو نموذجٍ — **محتوىً دائماً**.
- * @returns {Promise<boolean>} `false` إن رُفض الاسم (خارج الجذر أو منقوطٌ غيرُ مسموح).
- */
-async function writeProjectFile(root, name, content) {
-    const fp = resolveProjectFile(root, name);
-    if (!fp) return false;
-    await fsPromises.mkdir(path.dirname(fp), { recursive: true });
-    await fsPromises.writeFile(fp, content);
-    return true;
-}
-
-/**
- * 💾 كتابةُ ملفّات الخطة كلِّها.
- * @returns {{written: number, rejected: string[]}} — الرفضُ يُحصى لا يُبتلع.
- */
-async function writePlanFiles(projectPath, files) {
-    const rejected = [];
-    let written = 0;
-    for (const f of files || []) {
-        if (!f?.name || typeof f.content !== 'string') { if (f?.name) rejected.push(String(f.name)); continue; }
-        const fp = resolveProjectFile(projectPath, f.name);
-        if (!fp) { rejected.push(String(f.name)); continue; }
-        await fsPromises.mkdir(path.dirname(fp), { recursive: true });
-        await fsPromises.writeFile(fp, f.content);
-        written++;
-    }
-    return { written, rejected };
-}
 
 // ==========================================
 // 🚀 JAOLA Cognitive Runtime
