@@ -461,6 +461,8 @@ const STRINGS = {
   mBuilds: { en: 'Builds', ar: 'عمليات البناء', es: 'Compilaciones', fr: 'Constructions', de: 'Builds', tr: 'Yapılar', pt: 'Builds', ur: 'بلڈز' },
   mEdits: { en: 'Edits', ar: 'التعديلات', es: 'Ediciones', fr: 'Modifications', de: 'Änderungen', tr: 'Düzenlemeler', pt: 'Edições', ur: 'ترامیم' },
   mSeo: { en: 'SEO', ar: 'SEO' },
+  admGhReposTruncated: { en: 'Repo list is truncated — showing the most recently updated only.', ar: 'القائمة مبتورة — تُعرض الأحدثُ تحديثاً فقط.' },
+
   scoreStale: { en: 'before last build', ar: 'قبل آخر بناء' },
   mSecurity: { en: 'Security', ar: 'الأمان' },
   mQuality: { en: 'Quality', ar: 'الجودة' },

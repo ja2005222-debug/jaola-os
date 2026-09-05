@@ -2886,7 +2886,8 @@ app.get('/api/admin/github/status', verifyToken, adminOnly, async (req, res) => 
 
 app.get('/api/admin/github/repos', verifyToken, adminOnly, async (req, res) => {
     const rec = await requireGithubToken(req, res); if (!rec) return;
-    try { res.json({ repos: await ghFiles.listRepos(rec.token) }); }
+    // `truncated` تُقال للواجهة، وإلّا كانت قائمةٌ مبتورةٌ تُقرأ كاملة.
+    try { const { repos, truncated } = await ghFiles.listRepos(rec.token); res.json({ repos, truncated }); }
     catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 

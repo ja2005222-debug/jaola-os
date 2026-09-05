@@ -1080,7 +1080,11 @@ function GitHubTab({ api }) {
   useEffect(() => { api('/api/admin/github/status').then(setStatus).catch(() => setStatus({ linked: false })); }, [api]);
   useEffect(() => {
     if (status?.linked && repos === null) {
-      api('/api/admin/github/repos').then(d => setRepos(d.repos || [])).catch(e => { setMsg(e.message); setRepos([]); });
+      api('/api/admin/github/repos').then(d => {
+        setRepos(d.repos || []);
+        // قائمةٌ مبتورةٌ تُقرأ كاملةً ما لم تقل إنّها مبتورة.
+        if (d.truncated) setMsg(tr('admGhReposTruncated'));
+      }).catch(e => { setMsg(e.message); setRepos([]); });
     }
   }, [status, repos, api]);
 

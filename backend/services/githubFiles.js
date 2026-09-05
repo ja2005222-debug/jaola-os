@@ -31,17 +31,36 @@ async function gh(token, urlPath, opts = {}) {
     return data;
 }
 
-/** قائمة مستودعات المستخدم (يملكها أو متعاون فيها) */
-export async function listRepos(token) {
-    const repos = await gh(token, '/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator');
-    return (repos || []).map((r) => ({
-        fullName: r.full_name,
-        name: r.name,
-        private: r.private,
-        defaultBranch: r.default_branch,
-        updatedAt: r.updated_at,
-        permissions: r.permissions || {},
-    }));
+/**
+ * قائمة مستودعات المستخدم (يملكها أو متعاون فيها).
+ *
+ * 🔴 كانت صفحةً واحدة (`per_page=100`) تُعرض على أنّها «قائمة مستودعات
+ *    المستخدم». فمن له أكثرُ من مئة لا يجد مستودعَه في المتصفّح، ولا شيء
+ *    يقول له إنّ القائمةَ مبتورة — يقرؤها «ليس لي هذا المستودع».
+ *
+ * @returns {Promise<{repos: object[], truncated: boolean}>}
+ */
+export async function listRepos(token, { maxPages = 5 } = {}) {
+    const repos = [];
+    let truncated = false;
+    for (let page = 1; page <= maxPages; page++) {
+        const batch = await gh(token,
+            `/user/repos?per_page=100&page=${page}&sort=updated&affiliation=owner,collaborator`);
+        if (!Array.isArray(batch) || batch.length === 0) break;
+        for (const r of batch) {
+            repos.push({
+                fullName: r.full_name,
+                name: r.name,
+                private: r.private,
+                defaultBranch: r.default_branch,
+                updatedAt: r.updated_at,
+                permissions: r.permissions || {},
+            });
+        }
+        if (batch.length < 100) break;
+        if (page === maxPages) truncated = true;   // بلغنا السقف ولم تنتهِ
+    }
+    return { repos, truncated };
 }
 
 /** محتويات مجلد داخل مستودع (ملفات ومجلدات) */
@@ -58,13 +77,45 @@ export async function listContents(token, fullName, dirPath = '') {
         .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1));
 }
 
-/** قراءة ملف — يُرجع المحتوى النصي و sha (لازم للتعديل) */
+function unsupported(message, reason) {
+    const err = new Error(message);
+    err.status = 415;     // Unsupported Media Type — ليس خطأَ الشبكة ولا خطأَ إذن
+    err.reason = reason;
+    return err;
+}
+
+/**
+ * قراءة ملف — يُرجع المحتوى النصي و sha (لازم للتعديل).
+ *
+ * محرّرُ اللوحة يضع ما يعود هنا في مربّع نصّ، ثمّ يكتبه `putFile` في مستودع
+ * المستخدم. فكلُّ ما يعود من هنا ادّعاءٌ بأنّه «نصُّ الملف» — وكان يكذب في
+ * حالتين، وكلتاهما تُتلف الملفَ عند الحفظ:
+ *
+ * 🔴 ١) ملفٌّ ثنائيّ (صورة، خطّ): `toString('utf8')` يُخرج محارفَ استبدال.
+ *      قياسٌ حقيقيٌّ على واجهة GitHub الحيّة، `apple-touch-icon.png`:
+ *          الحجم الحقيقيّ 8235 بايت → بعد فكّ utf8: 14763 بايت → لا تطابق.
+ *      فحفظُ ما يعرضه المحرّرُ يكتب التلفَ في مستودع المستخدم.
+ * 🔴 ٢) ملفٌّ لا ترسل الواجهةُ محتواه (`encoding` غير base64 أو `content`
+ *      فارغ — وهو ما توثّقه GitHub للملفات الكبيرة): كان يُفكّ إلى `''`،
+ *      فيُعرض ملفٌّ فارغٌ على أنّه المحتوى، وحفظُه يمحو الأصل.
+ *
+ * الجولةُ هي الحَكَم: ما لا يعود من utf8 كما دخل ليس نصّاً.
+ */
 export async function getFile(token, fullName, filePath) {
     const clean = (filePath || '').replace(/^\/+/, '');
     const url = `/repos/${fullName}/contents/${encodeURIComponent(clean).replace(/%2F/g, '/')}`;
     const data = await gh(token, url);
     if (data.type !== 'file') throw new Error('المسار ليس ملفاً');
-    const content = Buffer.from(data.content || '', data.encoding === 'base64' ? 'base64' : 'utf8').toString('utf8');
+    if (data.encoding !== 'base64' || !data.content) {
+        throw unsupported(
+            'لم تُرسل الواجهةُ محتوى هذا الملف (كبيرٌ جداً غالباً) — لا يُفتح في المحرّر.',
+            'no-content');
+    }
+    const raw = Buffer.from(data.content, 'base64');
+    const content = raw.toString('utf8');
+    if (!raw.equals(Buffer.from(content, 'utf8'))) {
+        throw unsupported('ملفٌّ ثنائيّ — لا يُفتح في محرّر النصّ (حفظُه يُتلفه).', 'binary');
+    }
     return { content, sha: data.sha, path: data.path, size: data.size };
 }
 
