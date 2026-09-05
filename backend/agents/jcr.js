@@ -22,6 +22,7 @@ import { RoomReporter } from '../core/runtime/RoomReporter.js';
 import { runDebate } from './stages/debate.js';
 import { understandGoal } from './stages/understand.js';
 import { enrichBuildContext, resolveProjectType } from './stages/enrich.js';
+import { runRequirementsVerify } from './stages/requirementsVerify.js';
 // 🔁 إعادةُ تصدير: `resolveProjectType` بقيت واجهةً من `jcr` لمستورِديها (JCR/6)
 export { resolveProjectType };
 import { buildFailureChatMessage } from './failureMessages.js';
@@ -49,7 +50,6 @@ import { backupProject, listSnapshots, restoreSnapshot } from './fileManager.js'
 import { normalizeText, normalizeArabic, detectIntentFromMeaning, isQuestionMessage, hasActionIntent, isExplicitRebuild, isExplicitNewBuild, isContinuationGoal } from './textNormalizer.js';
 import { routeMessage } from './router.js';
 import { matchDeleteCommand, matchImageCommand, isImageDiagCommand, isBareYes, isBareExecute, isUndoCommand } from './chatCommands.js';
-import { verifyRequirements, buildFixInstruction, formatChecklist } from './requirementsVerifier.js';
 import { classifyIntentFast, decide, buildContinuationGoal, buildStatusReply, missionBriefing, greetingReply } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
 import { assertBuildAgents, DELIVERY_STAGES } from '../core/contracts/index.js';
@@ -61,7 +61,7 @@ import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import { snapshotWorkspace } from '../services/workspaceStore.js';
 import { orchestrator } from '../core/PluginOrchestrator.js';
 import { guardFiles, guardSingleJS, scrubPlaceholders, ensureEditIntegrity } from '../services/codeGuard.js';
-import { recordLesson, recordMissionOutcome, recordBehaviorGaps, matureLessons, lessonDirective, MIN_COUNT_TO_TEACH } from '../services/platformLessons.js';
+import { recordMissionOutcome, recordBehaviorGaps, matureLessons, lessonDirective, MIN_COUNT_TO_TEACH } from '../services/platformLessons.js';
 import { getPlatformKnowledge } from '../services/platformKnowledge.js';
 import { getProjectSecrets } from '../services/projectSecrets.js';
 import { recommendFullStack, buildFullStackProject } from './fullstackTemplates.js';
@@ -450,73 +450,10 @@ export class JaolaCognitiveRuntime {
         }
     }
 
-    // 📋 Requirements Verifier — الأهم: هل نُفِّذت متطلبات المشروع فعلاً؟
-    // يفحص كل مكوّن وظيفي من الـ Blueprint ضد الكود المبني، يُصلح الناقص
-    // تلقائياً (جولات محدودة مستهدفة عبر agents.coreEditCodePlan)، ويعرض قائمة تحقق صادقة للمستخدم.
+    // 📋 التحقّقُ من المتطلبات خرج إلى `stages/requirementsVerify.js` (JCR/8) — تفويضٌ
+    // يُبقي النداءَ بالاسم من `DELIVERY_STAGES` كما هو؛ المُبلِّغُ يُمرَّر وسيطاً.
     async _stageRequirementsVerify(context, roomName, agents) {
-        const plan = context.plan;
-        try {
-            if (context.blueprint?.functionalComponents?.length && plan?.files?.length) {
-                const lang = getUserLanguage(context.username) || 'ar';
-                transitionState(context.username, context.activeProject, STATES.VERIFYING, { agent: 'Requirements' });
-                this.emitLiveLog(roomName, '6. VERIFY', 'Requirements', '📋 التحقق من تنفيذ متطلبات المشروع...');
-                let verdict = await verifyRequirements(context.blueprint, plan.files);
-                const fixedNames = [];
-
-                // 📚 المتطلبات التي تُسلَّم ناقصة دروسٌ متراكمة للمنصة
-                for (const m of verdict?.missing || []) recordLesson('verifier_missing', m.name);
-
-                // 🏗️ إكمال الشاشات الناقصة — بناءُ الشاشات هو *جوهر* المشروع، فلا
-                // نتركه رهين ميزانية النقاش (تُستنزف قبله بفريق الخلفية والمراجعة).
-                // جولات محدودة (احتياطي مخصّص) تبني شاشةً فشاشة مدفوعةً بالنموذج،
-                // وتتوقّف عند اكتمالها أو انعدام التقدّم. سجل المستخدم: 4 شاشات
-                // ناقصة (طلب/مطعم/توصيل/تتبّع) لم تُبنَ لأن الجولة الواحدة تعذّرت.
-                const domainModel = getDomainModel(context.username, context.activeProject);
-                const MAX_COMPLETION_ROUNDS = 3;
-                for (let round = 1; round <= MAX_COMPLETION_ROUNDS && verdict?.missing?.length && agents.coreEditCodePlan; round++) {
-                    const beforeCount = verdict.missing.length;
-                    this.emitLiveLog(roomName, '6. VERIFY', 'Requirements',
-                        `🏗️ إكمال الشاشات ${round}/${MAX_COMPLETION_ROUNDS} — ${beforeCount} ناقصة: ${verdict.missing.map(m => m.name).join('، ')}`);
-                    const fixPlan = await agents.coreEditCodePlan(
-                        buildFixInstruction(verdict.missing, domainModel), plan.files, lang
-                    );
-                    if (!fixPlan?.files?.length || fixPlan.error) break;
-
-                    const emitFixGuard = (m) => this.emitLiveLog(roomName, '6. VERIFY', 'CodeGuard', m);
-                    const guardedFix = await ensureEditIntegrity(
-                        await guardFiles(
-                            scrubPlaceholders(fixPlan.files, context.activeProject),
-                            emitFixGuard
-                        ),
-                        context.projectPath, emitFixGuard);
-                    // دمج الملفات المُصلحة في الخطة وكتابتها على القرص
-                    for (const f of guardedFix) {
-                        if (!f?.name || typeof f.content !== 'string') continue;
-                        const idx = plan.files.findIndex(p => p.name === f.name);
-                        if (idx >= 0) plan.files[idx] = f; else plan.files.push(f);
-                        await writeProjectFile(context.projectPath, f.name, f.content);
-                    }
-                    const before = new Set(verdict.missing.map(m => m.name));
-                    verdict = await verifyRequirements(context.blueprint, plan.files);
-                    for (const r of verdict.results.filter(r => r.implemented && before.has(r.name))) {
-                        if (!fixedNames.includes(r.name)) fixedNames.push(r.name);
-                    }
-                    // توقّف إن لم يتقدّم شيء (تجنّب جولات بلا فائدة)
-                    if (verdict.missing.length >= beforeCount) break;
-                }
-
-                if (verdict) {
-                    const checklist = formatChecklist(verdict, lang, fixedNames);
-                    this.emitLiveLog(roomName, '6. VERIFY', 'Requirements',
-                        `📋 ${verdict.implementedCount}/${verdict.results.length} متطلب منفّذ${fixedNames.length ? ` (+${fixedNames.length} أُصلح تلقائياً)` : ''}`);
-                    if (checklist) this.reporter.send(roomName, 'chat_reply', { message: checklist });
-                    addToHistory(context.username, context.activeProject,
-                        `تحقق المتطلبات: ${verdict.implementedCount}/${verdict.results.length} منفّذ`);
-                }
-            }
-        } catch (e) {
-            this.emitLiveLog(roomName, '6. VERIFY', 'Requirements', `⚠️ تخطّي التحقق: ${e.message}`);
-        }
+        return runRequirementsVerify(context, roomName, agents, this.reporter);
     }
 
     // 🧠 الذاكرة التنفيذية للمستخدم (الهوية البصرية المفضّلة) + إتاحة الملفات للسياق
