@@ -19,12 +19,14 @@ const SRC = fs.readFileSync(path.join(import.meta.dirname, '../agents/jcr.js'), 
 test('لا بثَّ مباشراً على io داخلَ jcr — المُبلِّغُ هو الباب', () => {
     assert.equal((SRC.match(/this\.io\.to\(/g) || []).length, 0, 'this.io.to( عاد إلى jcr');
     // JCR/10: تمريرةٌ خرجت مع `_buildFromRegistry` (صارت `reporter.io` هناك)؛ JCR/11: ثانيةٌ مع
-    // `_reportMissionSuccess`؛ JCR/12: ثالثةٌ مع `_buildFromClone`؛ JCR/19: رابعةٌ مع `_buildReactProject` — ٦ = الإسناد + ٥ تمريرات.
-    assert.equal((SRC.match(/this\.io\b/g) || []).length, 6, 'إسنادُ البانية + ٥ تمريراتٍ قيمةً — لا أكثر');
+    // `_reportMissionSuccess`؛ JCR/12: ثالثةٌ مع `_buildFromClone`؛ JCR/19: رابعةٌ مع `_buildReactProject`؛
+    // JCR/20: خامسةٌ مع `_persistReactContent` — ٥ = الإسناد + ٤ تمريرات.
+    assert.equal((SRC.match(/this\.io\b/g) || []).length, 5, 'إسنادُ البانية + ٤ تمريراتٍ قيمةً — لا أكثر');
     assert.ok(!/roomLang/.test(SRC), 'لغةُ الغرفة انتقلت إلى المُبلِّغ');
     // كان ≥ ١٠٠ يومَ الشقّ (١١٣ موضعاً)؛ الاستخراجاتُ JCR/4–12 أخذت معها بثّها — الأرضيّةُ تتبع القياس:
-    // 90 موضعاً بعد JCR/12 (أخذ ٦)، و84 بعد JCR/19 (بناءُ React أخذ ٦) — الأرضيّةُ ٨٠ ما زالت تُمسك عودةَ البثّ إلى الصنف بلا مُبلِّغ.
-    assert.ok((SRC.match(/this\.reporter\.send\(roomName, /g) || []).length >= 80, 'النقلُ الحرفيّ وقع — والبثُّ ما زال عبر المُبلِّغ');
+    // 90 موضعاً بعد JCR/12، و84 بعد JCR/19، و76 بعد JCR/20 (مساعداتُ الصفحات أخذت ٨) — الأرضيّةُ تنزل إلى ٧٠:
+    // ما زالت تُمسك عودةَ البثّ إلى الصنف بلا مُبلِّغ، وتُعاد بالقياس مع كلِّ استخراجٍ يأخذ بثَّه.
+    assert.ok((SRC.match(/this\.reporter\.send\(roomName, /g) || []).length >= 70, 'النقلُ الحرفيّ وقع — والبثُّ ما زال عبر المُبلِّغ');
 });
 
 test('البانيةُ تبني المُبلِّغَ من io نفسِه وتُبقي io للتمرير', () => {
