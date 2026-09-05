@@ -106,7 +106,11 @@ export function buildProjectBrain(mem = {}, files = []) {
         frontend: has(files, /(^|\/)index\.html$/i),
         styles: has(files, /\.css$/i),
         script: has(files, /(^|\/)script\.js$/i) || has(files, /\.jsx?$/i),
-        backend: has(files, /(^|\/)api\//i) || !!tech.hasBackend,
+        // 🔴 كان هنا `|| !!tech.hasBackend` — و`evidence` تعني **ما أُنجز**
+        //    لا ما نُوي. فلو صدق الحقلُ يوماً لأعلن هذا «خادم/واجهات API»
+        //    مُنجَزاً لمشروعٍ لم يُكتب فيه سطرُ خلفيةٍ بعد. النيّةُ تُقرأ
+        //    أدناه في «المتبقّي»، وهذا موضعُها الصحيح.
+        backend: has(files, /(^|\/)api\//i),
         database: has(files, /(^|\/)(db|prisma)\//i) || has(files, /schema\.(sql|prisma)$/i),
         auth: has(files, /auth/i),
         tests: has(files, /(^|\/)(tests?|__tests__)\//i) || has(files, /\.test\.[jt]sx?$/i),

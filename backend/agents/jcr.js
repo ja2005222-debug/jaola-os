@@ -9,7 +9,7 @@ import { generateNextScaffold, generateContentModel, generateSectionContent, com
 import { buildStaticSite, buildStaticSiteFromSource, buildDashboardPage } from '../services/reactPreview.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO, resolveGoalLanguage } from './languageDetector.js';
-import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure, setDomainModel, getDomainModel } from './projectMemory.js';
+import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure, updateTech, setDomainModel, getDomainModel } from './projectMemory.js';
 import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel, buildAppSections } from './projectModel.js';
 import { getLibraryModel, recordModel } from './modelLibrary.js';
 import { matchCloneTemplate } from './cloneTemplates/index.js';
@@ -32,7 +32,7 @@ import { generateAuth, needsAuth } from './authAgent.js';
 import { generateAdvancedModules, needsBackend } from './backendAgent.js';
 import { generatePrismaSetup, needsPostgres } from './postgresAgent.js';
 import { prepareRenderDeploy, renderServiceName, deployToRender } from './renderAgent.js';
-import { isFullStackProject } from './deployAgent.js';
+import { isFullStackProject, listApiModules } from './deployAgent.js';
 import { transitionState, getProjectSummary, STATES } from './stateMachine.js';
 import { runSEO } from './seoAgent.js';
 import { runSecurity } from './securityAgent.js';
@@ -980,6 +980,19 @@ export class JaolaCognitiveRuntime {
             // بينما تستعمل بقية المسارات `guest-user-…`: هويتان لمشروعٍ واحد.
             const serviceName = renderServiceName(context.username, context.activeProject);
             const hasBackend = needsBackend(context.originalGoal);
+
+            // 🔀 القرارُ يُحفظ لا يُنسى. كان `tech.hasBackend` و`tech.apis`
+            //    حقلَين **لا يكتبهما أحد**: يبقيان على قيمتهما الابتدائية
+            //    (`false` و`[]`) أبداً، وثلاثةُ قرّاءٍ يعتمدون عليهما فلا
+            //    يقع أيٌّ منهم. `hasBackend` **نيّةٌ** مشتقّةٌ من الهدف،
+            //    و`apis` **دليلٌ** مجرودٌ من القرص — ولا يُخلطان.
+            try {
+                updateTech(context.username, context.activeProject, {
+                    hasBackend,
+                    apis: listApiModules(context.projectPath),
+                });
+            } catch { /* حفظُ الذاكرة لا يُسقط بناءً ناجحاً */ }
+
             const renderResult = await prepareRenderDeploy(context.projectPath, serviceName, hasBackend);
             if (renderResult.success) {
                 this.emitLiveLog(roomName, '5. RUNTIME', 'RenderAgent',

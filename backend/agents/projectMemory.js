@@ -241,7 +241,10 @@ export function buildMemoryContext(username, project) {
     if (mem.structure.features.length) {
         parts.push(`الميزات المطلوبة: ${mem.structure.features.join('، ')}`);
     }
-    if (mem.tech.hasBackend) {
+    // 🔴 كان الشرطُ `hasBackend` والمطبوعُ `apis`: سؤالٌ عن شيءٍ وجوابٌ
+    //    عن آخر. فلو صدق الأوّلُ والثاني فارغٌ لطُبع «APIs موجودة: » خاوياً.
+    //    يُشترط ما يُطبع.
+    if (mem.tech.apis?.length) {
         parts.push(`APIs موجودة: ${mem.tech.apis.join(', ')}`);
     }
     if (mem.history.length) {
