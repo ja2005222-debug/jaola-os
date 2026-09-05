@@ -1280,6 +1280,14 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const { enrichedGoal, blueprint, blueprintContext, domainModelContext } =
             await this._understandGoal(goal, ctx);
 
+        // 🔄 المهمة تبدأ بمرحلة المعمارية (نموذج العالم + المخطط + القرار) —
+        // GENERATING تُعلن لاحقاً عند دخول حلقة كتابة الشفرة فعلاً.
+        // 🔴 كان هذا الانتقالُ **بعد** اختيار الاستراتيجيّة، فكانت خمسةُ نداءاتِ
+        //    COMPLETED في فرعها (حارسا «يعمل» والبُناةُ الثلاثة) تُدخَل من
+        //    IDLE/COMPLETED/FAILED/PAUSED وتُرفض صامتةً: بناءٌ ناجحٌ بكلونٍ يترك
+        //    بطاقةَ الحالة على «خامل». مقيسٌ في JCR/1، ومُثبَتٌ باختبارٍ هنا.
+        transitionState(username, activeProject, STATES.ARCHITECTURE, { agent: 'Architect' });
+
         const strategyResult = await this._selectBuildStrategy(goal, blueprint, ctx);
         if (strategyResult) return strategyResult;
 
@@ -1294,10 +1302,6 @@ User preferences: ${JSON.stringify(execMemory)}` },
         const context = new JCRContext(finalGoalWithRequirements || enrichedGoal, projectPath, username, activeProject);
         context.originalGoal = goal;
         context.blueprint = blueprint;   // متاح للـ template agent وباقي المراحل
-        // 🔄 المهمة تبدأ بمرحلة المعمارية (نموذج العالم + المخطط + القرار) —
-        // GENERATING تُعلن لاحقاً عند دخول حلقة كتابة الشفرة فعلاً
-        transitionState(username, activeProject, STATES.ARCHITECTURE, { agent: 'Architect' });
-
         // ⏹️ تسجيل المهمة في سجل الإيقاف — تسمح للمستخدم بإيقافها من الواجهة
         registerMission(roomName);
 

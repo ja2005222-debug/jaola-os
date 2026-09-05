@@ -129,6 +129,16 @@ export function getUserProfile(username) {
     return profilesCache.get(username);
 }
 
+/**
+ * لغةُ الملفّ الدائم بلا إنشاءِ ملفٍّ للمجهول — قراءةٌ صرفة.
+ * 🔴 `getUserLanguage` في languageDetector كانت جلسةً في الذاكرة فقط، فتنسى
+ *    عند إعادة تشغيل الخادم وتعود 'en' لمستخدمٍ عربيّ حتى يتكلّم مجدّداً — بينما
+ *    هذا الملفُّ يحفظ لغتَه دائماً (`updateLanguage` تُستدعى مع كلِّ رسالة).
+ */
+export function getProfileLanguage(username) {
+    return profilesCache.get(username)?.language || null;
+}
+
 /** تحديث لغة المستخدم */
 export function updateLanguage(username, language) {
     const profile = getUserProfile(username);

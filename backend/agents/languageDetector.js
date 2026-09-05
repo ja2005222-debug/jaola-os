@@ -9,6 +9,8 @@
 // ═══════════════════════════════════════════════════════
 // 🗂️ حفظ لغة كل مستخدم طوال الجلسة
 // ═══════════════════════════════════════════════════════
+import { getProfileLanguage } from './userProfile.js';
+
 const sessionLanguages = new Map(); // username → language code
 
 // ═══════════════════════════════════════════════════════
@@ -111,9 +113,15 @@ export function initUserLanguage(username, message) {
     return current;
 }
 
-/** يُعيد لغة المستخدم الحالية (أو en افتراضياً) */
+/**
+ * لغةُ المستخدم: الجلسةُ أوّلاً، ثمّ الملفُّ الدائم، ثمّ en.
+ * 🔴 كانت الجلسةَ وحدَها؛ فبعد إعادة تشغيل الخادم عادت 'en' لكلِّ عربيّ حتى
+ *    يتكلّم — و`|| 'ar'` في ثمانيةَ عشرَ موضعاً من jcr لم يُبلَغ قطّ لأنّ هذه
+ *    لا تعيد null أبداً. الجلسةُ لا تُبذَر من الملفّ عمداً: `hasUserLanguage`
+ *    تبقى تعني «هل ضُبطت في هذه الجلسة».
+ */
 export function getUserLanguage(username) {
-    return sessionLanguages.get(username) || 'en';
+    return sessionLanguages.get(username) || getProfileLanguage(username) || 'en';
 }
 
 /**
