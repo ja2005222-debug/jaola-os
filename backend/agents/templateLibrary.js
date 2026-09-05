@@ -1006,10 +1006,37 @@ export function getTemplateCSSVars(projectType) {
     return template.css_vars || '';
 }
 
+/** هل لهذا النوع قالبٌ خاصٌّ به فعلاً؟ (لا يكفي `getTemplate` — فهو يُرجع
+ *  قالبَ business لكلّ نوعٍ مجهول، فلا يُميّز الموجودَ من البديل) */
+export function hasTemplate(projectType) {
+    return Object.hasOwn(TEMPLATE_LIBRARY, projectType);
+}
+
 /** توليد context prompt يُحقن في الـ Coder */
 export function buildTemplateContext(projectType) {
     const template = getTemplate(projectType);
     if (!template) return '';
+
+    // 🔴 `design-rules.json` و`TEMPLATE_LIBRARY` سجلّان مختلفان، والكشفُ يُرجع
+    //    نوعاً من الأوّل بينما القالبُ يأتي من الثاني. فنوعٌ في الأوّل بلا قالبٍ
+    //    في الثاني (وقت الكتابة: `tool`، ويكشفه هدفٌ عاديّ كـ«أداة تحويل الصور
+    //    إلى PDF») كان يُسلَّم قالبَ business تحت ترويسة «قالب tool»، وأقسامُ
+    //    business تُعلَن «الأقسام المطلوبة» له. أي أنّ السياق يدّعي قالباً
+    //    لا يملكه. الصدقُ هنا ليس تجميلاً: الـ Coder يُلزَم بأقسامٍ من مجالٍ آخر.
+    if (!hasTemplate(projectType)) {
+        return `
+## Template Library — لا قالبَ جاهزاً لنوع «${projectType}»:
+
+### لوحةُ ألوانٍ محايدةٌ للانطلاق (ليست قالبَ هذا النوع):
+${template.css_vars}
+
+### الأقسام: اشتقّها من هدف المستخدم — لا تنسخ أقسامَ نوعٍ آخر.
+
+### تعليمات إلزامية:
+- استخدم CSS Variables أعلاه في كل الألوان
+- أضف محتوى واقعي (أسماء، أسعار، أوصاف) بلغة المستخدم المستهدفة
+- اضبط dir/lang على <html> حسب لغة المستخدم المحددة في تعليمات النظام (لا تفترض rtl)`;
+    }
 
     const sectionNames = Object.keys(template.sections || {}).join('، ');
     return `
