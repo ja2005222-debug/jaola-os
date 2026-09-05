@@ -193,7 +193,9 @@ function calculateScore(allResults) {
     const score = Math.max(0, Math.round((passed / total) * 100) - (warnings * 2));
     const grade = score >= 90 ? 'A' : score >= 75 ? 'B' : score >= 60 ? 'C' : 'D';
 
-    return { score, grade, passed, errors, warnings, total };
+    // 🔴 كان الاسمُ `passed` هنا عدداً، ويُدهَس في ناتج `runTests` بمنطقيّ
+    //    (`passed: errors === 0`). فحقلٌ واحد بمعنيين، والعددُ يضيع صامتاً.
+    return { score, grade, passedCount: passed, errors, warnings, total };
 }
 
 // ═══════════════════════════════════════════════════════
@@ -204,10 +206,28 @@ export async function runTests(files, lang = 'en') {
     const cssFile = files.find(f => f.name === 'styles.css');
     const jsFile = files.find(f => f.name === 'script.js');
 
+    // 🔴 الغيابُ كان أرخصَ من النقص. `calculateScore` يقسم على عدد الفحوص
+    //    **المُنفَّذة**، والملفُّ الغائب كان يُسهم بسقوطٍ واحد ويحذف من المقام
+    //    فحوصَه كلَّها ومعها تحذيراتُها (كلُّ تحذيرٍ −٢). فقِيس:
+    //        كامل ١٩ فحصاً → ٨٣ | بلا JS → ٨٤ | بلا CSS → ٨٥ | html وحده → ٨٦
+    //    أي أنّ **كلَّ ملفٍّ يُحذَف يرفع الدرجة**، وموقعٌ لا يُعرَض ولا يعمل
+    //    يُقال لصاحبه «🟡 B (86/100)».
+    //
+    //    فالملفُّ الغائب يُقاس بفحوصه على محتوىً فارغ — لا بسقوطٍ واحد — كي
+    //    يبقى المقامُ ثابتاً ويكون الغيابُ أسوأَ من النقص لا أهون.
+    const html = htmlFile?.content || '';
+    // 📌 وشرطُ ذلك دليلٌ من الصفحة نفسها: ملفٌّ **مرتبطٌ** فيها ثمّ غائب عطبٌ
+    //    حقيقيّ. أمّا موقعٌ تعريفيّ لا يربط سكربتاً أصلاً فلا يُعاقَب على غيابه.
+    const cssLinked = /<link[^>]+rel=["']?stylesheet/i.test(html);
+    const jsLinked = /<script[^>]+src=/i.test(html);
+
     const allResults = [
-        ...(htmlFile ? testHTML(htmlFile.content || '', lang) : [new TestResult('HTML', 'html').fail('index.html مفقود')]),
-        ...(cssFile ? testCSS(cssFile.content || '') : [new TestResult('CSS', 'css').fail('styles.css مفقود')]),
-        ...(jsFile ? testJS(jsFile.content || '') : [new TestResult('JS', 'js').warn('script.js مفقود')]),
+        ...(htmlFile ? testHTML(html, lang) : [new TestResult('HTML', 'html').fail('index.html مفقود')]),
+        ...(cssFile ? testCSS(cssFile.content || '')
+            : [new TestResult('CSS', 'css').fail('styles.css مفقود'), ...(cssLinked ? testCSS('') : [])]),
+        ...(jsFile ? testJS(jsFile.content || '')
+            : jsLinked ? [new TestResult('JS', 'js').fail('script.js مرتبطٌ في الصفحة ومفقود'), ...testJS('')]
+                : [new TestResult('JS', 'js').warn('script.js مفقود')]),
     ];
 
     const summary = calculateScore(allResults);
@@ -219,6 +239,6 @@ export async function runTests(files, lang = 'en') {
         failedTests,
         warningTests,
         passed: summary.errors === 0,
-        report: `${summary.grade} (${summary.score}/100) — ${summary.passed}/${summary.total} اختبار نجح${failedTests.length ? ` | فشل: ${failedTests.join(', ')}` : ''}`,
+        report: `${summary.grade} (${summary.score}/100) — ${summary.passedCount}/${summary.total} اختبار نجح${failedTests.length ? ` | فشل: ${failedTests.join(', ')}` : ''}`,
     };
 }
