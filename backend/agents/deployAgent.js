@@ -205,12 +205,27 @@ export async function ensurePackageJson(projectPath, projectName) {
  * (ملفات البيانات db.js/schema.js/seed.js وحدها ليست دوالاً — نتجاهلها.)
  */
 export function isFullStackProject(projectPath) {
+    return listApiModules(projectPath).length > 0;
+}
+
+// ملفاتُ بياناتٍ لا دوالّ — تُستثنى من عدّ «الدوالّ الحقيقية».
+// 🔴 قائمةٌ **واحدة**: كان جردُ الدوالّ مطلوباً في موضعٍ ثانٍ (حفظُ
+//    `tech.apis`)، ونسخُها هناك يصنع سؤالاً بجوابين — وهو العطبُ الذي
+//    عولج في 7/1 و7/2 و4h. فالجردُ دالّةٌ يستدعيها الحارسُ نفسُه.
+const API_DATA_FILES = Object.freeze(['db.js', 'schema.js', 'seed.js', 'connection.js']);
+
+/**
+ * 📇 أسماءُ دوالّ الـAPI الحقيقية في `api/` — مرتّبةً، بلا ملفّات البيانات.
+ * @returns {string[]} فارغةٌ إن غاب المجلّد أو تعذّرت قراءته.
+ */
+export function listApiModules(projectPath) {
     const apiDir = path.join(projectPath, 'api');
-    if (!fsSync.existsSync(apiDir)) return false;
+    if (!fsSync.existsSync(apiDir)) return [];
     try {
         return fsSync.readdirSync(apiDir)
-            .some(f => /\.(js|mjs|ts)$/.test(f) && !['db.js', 'schema.js', 'seed.js', 'connection.js'].includes(f));
-    } catch { return false; }
+            .filter((f) => /\.(js|mjs|ts)$/.test(f) && !API_DATA_FILES.includes(f))
+            .sort();
+    } catch { return []; }
 }
 
 /**

@@ -92,7 +92,7 @@ Policy/Permission، Identity، Plugin.
 ### C1. النواة (Kernel candidates)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `jcr.js` | 3232 | وقت التشغيل المعرفي: `handleUserMessage` → 7 معالجات نية → `executeMission` → `_runMissionNow` → 15 مرحلة | MODIFY (تدريجي، بلا إعادة كتابة) | Mission + Agent + Task (المراحل → TaskGraph) + Event | يبقى؛ يتقلّص مع كل Sprint لصالح `core/runtime/*` |
+| `jcr.js` | 3245 | وقت التشغيل المعرفي: `handleUserMessage` → 7 معالجات نية → `executeMission` → `_runMissionNow` → 15 مرحلة | MODIFY (تدريجي، بلا إعادة كتابة) | Mission + Agent + Task (المراحل → TaskGraph) + Event | يبقى؛ يتقلّص مع كل Sprint لصالح `core/runtime/*` |
 | `contracts.js` → ✅ `core/contracts/index.js` | 99/197 | typedefs الأحد عشر + `assertBuildAgents` + `DELIVERY_STAGES` + مدقّقا Capability | MOVED (Sprint 1 ✅) | Mission/Agent/Task/Capability/Provider/Transaction | `core/contracts/index.js` |
 | `stateMachine.js` | 270 | Build State Machine (10 حالات + `STATE_EVENTS` + emitter) | KEEP | Event — تبقى متخصّصة، وMission Lifecycle فوقها | `core/missions/BuildStateMachine.js` (Sprint 2) |
 | `ceoBrain.js` | 240 | تصنيف نية سريع، قرار، رسائل إحاطة/حالة | MODIFY | Mission (Intent/CEO في مسار v2) | `core/runtime/` |
@@ -113,7 +113,7 @@ Policy/Permission، Identity، Plugin.
 | `clarifierAgent.js` | 448 | حوار التوضيح (`startClarification/processAnswer/getFinalGoal/…`) | KEEP | Mission (Planning) | `plugins/coding/` |
 | `template.agent.js` | 38 | `applyTemplate` | KEEP | — | `plugins/coding/` |
 | `backendAgent.js` | 329 | `generateBackend`, `generateFrontendAPIIntegration`, `generateAdvancedModules` | KEEP | Agent | `plugins/coding/agents/` |
-| `deployAgent.js` | 500 | نشر Vercel (يستقبل `io`) | MODIFY | Tool (`deploy`, requiresConfirmation, riskLevel: high) | `plugins/coding/tools/` |
+| `deployAgent.js` | 515 | نشر Vercel (يستقبل `io`) | MODIFY | Tool (`deploy`, requiresConfirmation, riskLevel: high) | `plugins/coding/tools/` |
 | `agents/index.js` | 9 | barrel للحزمة | MODIFY | Agent (Registry يحلّ محلّه) | يُلغى عند Registry |
 
 ### C3. وكلاء المراحل (StageFn — تُستورد مباشرة في jcr.js)
@@ -146,7 +146,7 @@ Policy/Permission، Identity، Plugin.
 | `templateLibrary.js`, `templateLibraryExtended.js`, `templateLocalizer.js` | 1061/1382/1943 | مكتبة القوالب وترجمتها | KEEP | — | `plugins/coding/templates/` (Sprint 6) |
 | `cloneTemplates/*` (42 ملفاً، 17,406 سطر؛ `jaolaClinic.js` يُستورد من 27 قالباً كأساس مشترك) | — | قوالب تطبيقات عاملة | KEEP | — | `plugins/coding/templates/clones/` |
 | `cloneAssets.js`, `seedStamp.js`, `fullstackTemplates.js`, `reactGenerator.js`, `blockRegistry.js`, `starterRegistry.js`, `starterFetch.js`, `libraryRegistry.js`, `referenceBlueprints.js`, `appBlueprint.js`, `requirementAnalyzer.js` | 74/116/603/432/259/74/171/78/195/146/198 | استراتيجيات البناء ومخططاته | KEEP | Task (استراتيجية = Task Graph مختلف) | `plugins/coding/` |
-| `projectModel.js`, `projectMemory.js`, `userProfile.js` | 247/255/238 | ذاكرة المشروع والمستخدم | KEEP | Memory | `core/memory/` (لاحقاً) |
+| `projectModel.js`, `projectMemory.js`, `userProfile.js` | 247/258/238 | ذاكرة المشروع والمستخدم | KEEP | Memory | `core/memory/` (لاحقاً) |
 | `componentMarketplace.js`, `platformContext.js` | 278/42 | مكوّنات جاهزة (markupها يُحقن بميزانية، 2q) + معلومات المنصّة | KEEP | — | `plugins/coding/` |
 
 ### C6. منتجات تعيش في `agents/` وليست وكلاء نواة
@@ -174,7 +174,7 @@ Policy/Permission، Identity، Plugin.
 | `missionQueue.js` → ✅ `core/runtime/ExecutionQueue.js` | 155 | طابور المهام + سجلّ دائم للساقطة (نفس الصادرات) | MOVED (Sprint 2a ✅، حرفياً) | Mission (Execution Queue عامة) | `core/runtime/ExecutionQueue.js` |
 | `abortRegistry.js` → ✅ `core/runtime/AbortRegistry.js` | 84 | إيقاف مهمة جارية | MOVED (Sprint 2a ✅، حرفياً) | Mission | `core/runtime/AbortRegistry.js` |
 | `platformLessons.js` | 187 | دروس الفشل + ثغرات السلوك (التعلّم الحقيقي) | MOVE | Evidence + Memory | `core/verification/` أو `core/memory/` |
-| `projectBrain.js` | 196 | دماغ المشروع (دالة نقية) | MOVE | Evidence | `core/verification/` (Sprint 4) |
+| `projectBrain.js` | 200 | دماغ المشروع (دالة نقية) | MOVE | Evidence | `core/verification/` (Sprint 4) |
 | `codeGuard.js` | 389 | حارس جودة الكود المولَّد | KEEP | Verification | `plugins/coding/` |
 | `indexHealth.js` (1 مستورد) | 81 | فحصُ قيود التفرّد قراءةً (autoIndex=false ولا createIndexes) | KEEP | — | `core/` |
 | `persistence.js` (11 مستورداً) | 114 | طبقة الحفظ (Mongo + احتياط) | KEEP | — | `core/` (Sprint 7) |
