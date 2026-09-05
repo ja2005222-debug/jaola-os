@@ -51,7 +51,7 @@ Policy/Permission، Identity، Plugin.
 | `api/agents` (5) | إضافات/وكلاء المستخدم (agentMarket) | MODIFY | Plugin + Agent (Registry) | `core/plugins/PluginRegistry.js` |
 | `api/templates`, `api/template`, `api/library` (3) | مكتبة القوالب | KEEP | — | `plugins/coding/` (Sprint 6) |
 | `api/platform`, `api/health`, `api/ai`, `api/inbox`, `api/newsletter` (5) | خدمات متفرّقة | KEEP | — | `routes/misc.js` |
-| `routes/billing.js` (مستخرَج فعلاً، 112 سطراً) | Stripe للاشتراكات | KEEP | Transaction (لاحقاً، Payment Contract) | `routes/billing.js` |
+| `routes/billing.js` (مستخرَج فعلاً، 139 سطراً) | Stripe للاشتراكات | KEEP | Transaction (لاحقاً، Payment Contract) | `routes/billing.js` |
 
 ---
 
@@ -194,7 +194,7 @@ Policy/Permission، Identity، Plugin.
 ### D3. التجارة والهوية
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `stripeService.js`, `subscriptionService.js`, `config/plans.js`, `routes/billing.js` | 141/138/140/112 | اشتراكات المنصّة (Stripe) | MODIFY | Transaction (Payment Contract العام؛ التنفيذ يبقى Stripe) | `core/transactions/` (العقد) + `routes/billing.js` (التنفيذ) |
+| `stripeService.js`, `subscriptionService.js`, `config/plans.js`, `routes/billing.js` | 141/138/140/139 | اشتراكات المنصّة (Stripe) | MODIFY | Transaction (Payment Contract العام؛ التنفيذ يبقى Stripe) | `core/transactions/` (العقد) + `routes/billing.js` (التنفيذ) |
 | `oauthLite.js`, `utils/auth.js`, `middleware/adminOnly.js` | 133/40/33 | OAuth + JWT + أدمِن | MODIFY | Identity + Permission | `core/identity/` (Sprint 2–3) |
 | `mailer.js` | 46 | Resend | KEEP | Provider | `core/plugins/ProviderRegistry.js` |
 
