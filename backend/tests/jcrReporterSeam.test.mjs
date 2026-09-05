@@ -18,9 +18,11 @@ const SRC = fs.readFileSync(path.join(import.meta.dirname, '../agents/jcr.js'), 
 
 test('لا بثَّ مباشراً على io داخلَ jcr — المُبلِّغُ هو الباب', () => {
     assert.equal((SRC.match(/this\.io\.to\(/g) || []).length, 0, 'this.io.to( عاد إلى jcr');
-    assert.equal((SRC.match(/this\.io\b/g) || []).length, 10, 'إسنادُ البانية + ٩ تمريراتٍ قيمةً — لا أكثر');
+    // JCR/10: تمريرةٌ خرجت مع `_buildFromRegistry` (صارت `reporter.io` هناك) — ٩ = الإسناد + ٨ تمريرات.
+    assert.equal((SRC.match(/this\.io\b/g) || []).length, 9, 'إسنادُ البانية + ٨ تمريراتٍ قيمةً — لا أكثر');
     assert.ok(!/roomLang/.test(SRC), 'لغةُ الغرفة انتقلت إلى المُبلِّغ');
-    assert.ok((SRC.match(/this\.reporter\.send\(roomName, /g) || []).length >= 100, 'النقلُ الحرفيّ وقع');
+    // كان ≥ ١٠٠ يومَ الشقّ (١١٣ موضعاً)؛ الاستخراجاتُ JCR/4–10 أخذت معها بثّها — الأرضيّةُ تتبع القياس: 99 موضعاً الآن.
+    assert.ok((SRC.match(/this\.reporter\.send\(roomName, /g) || []).length >= 90, 'النقلُ الحرفيّ وقع — والبثُّ ما زال عبر المُبلِّغ');
 });
 
 test('البانيةُ تبني المُبلِّغَ من io نفسِه وتُبقي io للتمرير', () => {
