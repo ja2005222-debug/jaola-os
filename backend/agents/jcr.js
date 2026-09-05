@@ -4,11 +4,11 @@ import { fileURLToPath } from 'url';
 import { groq, smartChat } from '../core/providers/llm.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain, summarizeFacts } from '../services/projectBrain.js';
 import { resolveStack } from './starterRegistry.js';
-import { generateNextScaffold, generateContentModel, generateSectionContent, compName, slugify, componentSource, defaultSection, pageFileSource } from './reactGenerator.js';
-import { buildStaticSite, buildStaticSiteFromSource, buildDashboardPage } from '../services/reactPreview.js';
+import { generateSectionContent, compName, slugify, componentSource, defaultSection, pageFileSource } from './reactGenerator.js';
+import { buildStaticSite, buildStaticSiteFromSource } from '../services/reactPreview.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO, resolveGoalLanguage } from './languageDetector.js';
-import { getProjectMemory, initFromClarifier, addToHistory, updateStructure, getDomainModel } from './projectMemory.js';
+import { getProjectMemory, initFromClarifier, addToHistory, getDomainModel } from './projectMemory.js';
 import { buildProjectModelContext, buildAppSections } from './projectModel.js';
 import { matchCloneTemplate } from './cloneTemplates/index.js';
 import { patchEditPlan } from './patchEditor.js';
@@ -28,6 +28,7 @@ import { runAdvancedModules, runFullStackScaffold, runProjectMemory } from './st
 import { readCodeContext, readProjectFiles } from './projectReader.js';
 import { runBackendStage } from './stages/backend.js';
 import { verifyAndAutofix, runBehaviorVerifyStage } from './stages/verify.js';
+import { buildReactProject } from './stages/buildReact.js';
 import { handleUndo } from './stages/undo.js';
 // 🔁 إعادةُ تصدير: `resolveProjectType` بقيت واجهةً من `jcr` لمستورِديها (JCR/6)
 export { resolveProjectType };
@@ -1392,117 +1393,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
         return buildFromRegistry(goal, ctx, this.reporter);
     }
 
-    // ⚛️ بناء مشروع React/Next حقيقي + معاينة حيّة في الـ iframe + خيار النشر
-    async _buildReactProject(goal, ctx, { sections = [] } = {}) {
-        const { projectPath, username, activeProject, roomName } = ctx;
-        const lang = getUserLanguage(username) || 'ar';
-        const t0 = Date.now();
-        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
-        this.emitLiveLog(roomName, '5. RUNTIME', 'ReactGen', '⚛️ توليد مشروع Next.js + Tailwind...');
-
-        // 🧩 نموذج المشروع يُثري هدف كتابة المحتوى — فيَعِي الكيانات والأدوار
-        // والتدفّقات حتى في مسار React (كان يُشتقّ ويُحفظ لكن لا يُحقن هنا).
-        const reactModelCtx = buildProjectModelContext(getDomainModel(username, activeProject));
-        const modelAwareGoal = reactModelCtx ? `${goal}\n${reactModelCtx}` : goal;
-
-        // 🧠 محتوى بالذكاء (best-effort) يملأ الهيكل بمحتوى المشروع الفعلي
-        let content = null;
-        try {
-            this.emitLiveLog(roomName, '5. RUNTIME', 'ContentWriter', '✍️ كتابة محتوى المشروع...');
-            content = await generateContentModel(modelAwareGoal, { sections, lang, llm: (m, o) => smartChat(m, o) });
-        } catch { /* افتراضي */ }
-
-        // 1) سكافولد Next الحقيقي (للنشر/التنزيل) — بمحتوى مخصّص
-        const scaffold = generateNextScaffold({ projectName: activeProject, sections, lang, content });
-        for (const f of scaffold.files) {
-            await writeProjectFile(projectPath, f.name, f.content);
-        }
-
-        // 1.5) تخصيص محتوى **كل صفحة** بالذكاء: النموذج الدفعي قد يترك أقساماً
-        //      افتراضية (خاصة مع كثرة الصفحات). نملأ كل قسم بقي افتراضياً فردياً
-        //      (best-effort، تراجع آمن للافتراضي) — فلا صفحة بمحتوى قالبي.
-        const finalContent = scaffold.meta.content;
-        try {
-            const CHROME = new Set(['Navbar', 'Hero', 'Footer']);
-            const pageComps = (scaffold.meta.components || []).filter((c) => !CHROME.has(c));
-            const routes = scaffold.meta.pages || [];
-            for (const comp of pageComps) {
-                const cur = finalContent.sections?.[comp];
-                if (!cur) continue;
-                const label = (routes.find((r) => r.href === '/' + slugify(comp)) || {}).label || cur.heading;
-                // لم يخصّصه النموذج الدفعي؟ (لا يزال مطابقاً للافتراضي) → خصّصه فردياً
-                if (JSON.stringify(cur) !== JSON.stringify(defaultSection(label, lang))) continue;
-                this.emitLiveLog(roomName, '5. RUNTIME', 'ContentWriter', `✍️ محتوى صفحة: ${label}...`);
-                const model = await generateSectionContent(label, {
-                    brand: finalContent.brand || activeProject, goal, lang, llm: (m, o) => smartChat(m, o),
-                });
-                if (model) finalContent.sections[comp] = {
-                    heading: model.heading || cur.heading,
-                    subheading: model.subheading || cur.subheading,
-                    items: (model.items && model.items.length) ? model.items : cur.items,
-                };
-            }
-            // أعِد كتابة lib/content.js بالمحتوى المُثرى (المكوّنات تقرأ منه)
-            await fsPromises.writeFile(path.join(projectPath, 'lib/content.js'),
-                `// محتوى الموقع — عدّله بحرّية. يملؤه JAOLA بالذكاء حسب مشروعك.\nexport const content = ${JSON.stringify(finalContent, null, 2)};\n`);
-        } catch (e) { this.emitLiveLog(roomName, '5. RUNTIME', 'ContentWriter', `⚠️ تخصيص جزئي: ${e.message}`); }
-
-        // 2) معاينة ثابتة متعدّدة الصفحات: صفحة HTML حقيقية لكل مسار بروابط تعمل
-        //    (index.html + <slug>.html) — بلا CDN، فالتنقّل يفتح صفحات فعلية.
-        const staticPages = buildStaticSite(finalContent, lang);
-        for (const pg of staticPages) {
-            await writeProjectFile(projectPath, pg.name, pg.content);
-        }
-        // 🛠️ لوحة تحكم يديرها العميل لموقعه (dashboard.html) — يضبط كلمة مرورها أول مرة
-        await fsPromises.writeFile(path.join(projectPath, 'dashboard.html'),
-            buildDashboardPage(finalContent, { project: activeProject, username, lang }));
-
-        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
-        transitionState(username, activeProject, STATES.COMPLETED);
-        updateStructure(username, activeProject, sections, scaffold.meta.components);
-        addToHistory(username, activeProject, `بناء React/Next: ${(goal || '').slice(0, 60)}`);
-
-        // 3) تحديث المعاينة + قائمة الملفات + لقطة
-        this.reporter.send(roomName, 'preview_updated', { timestamp: Date.now() });
-        let builtFiles = [];
-        try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
-        this.reporter.send(roomName, 'workspace_files', builtFiles);
-        snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
-        autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
-        // 🔬 تحقّق سلوكي على المعاينة (تقرير صادق؛ بلا إصلاح تلقائي لأن بنية
-        // React تختلف عن ملفات vanilla الثلاثة التي يعدّلها المُصلِح). لا يوجد
-        // agents في هذا المسار (canFix=false) — نمرّر null صراحةً.
-        try {
-            await this._verifyAndAutofix({
-                projectPath, blueprint: null, username, activeProject, roomName, agents: null, lang, canFix: false,
-            });
-        } catch (e) { console.warn('[BehaviorVerify]', 'تخطّي تحقّق React:', e.message); }
-
-        const durationSec = Math.round((Date.now() - t0) / 1000);
-        recordBuild(username, activeProject, { success: true, durationSec, filesCount: builtFiles.length, goal: goal || '' });
-        this.reporter.send(roomName, 'project_metrics', buildMetricsPayload(username, activeProject));
-
-        const pageCount = scaffold.meta.pages?.length || staticPages.length;
-        const report = lang === 'ar'
-            ? [
-                '✅ مشروع React/Next جاهز — معاينة متعدّدة الصفحات تعمل الآن.',
-                `⚛️ Next.js + Tailwind · ${pageCount} صفحة · ${scaffold.meta.components.length} مكوّن`,
-                '🖥️ اضغط روابط الشريط للتنقّل بين صفحات حقيقية — كل تعديل ينعكس فوراً.',
-                '🛠️ لوحة إدارة موقعك: افتح `dashboard.html` وعيّن كلمة مرور — تدير بها النصوص والصور والمنتجات بنفسك.',
-                '⬇️ للتشغيل محلياً: npm install && npm run dev · وجاهز للنشر على Vercel.',
-              ].join('\n')
-            : [
-                '✅ React/Next project ready — multi-page preview running now.',
-                `⚛️ Next.js + Tailwind · ${pageCount} pages · ${scaffold.meta.components.length} components`,
-                '🖥️ Click the nav links to move between real pages — every edit reflects instantly.',
-                '⬇️ Local run: npm install && npm run dev · Ready to deploy on Vercel.',
-              ].join('\n');
-        this.reporter.send(roomName, 'chat_reply', {
-            message: report,
-            options: lang === 'ar' ? ['➕ أضف صفحة', '🚀 انشر على Vercel', '🐙 ادفع إلى GitHub', '✏️ عدّل قسماً'] : ['➕ Add a page', '🚀 Deploy to Vercel', '🐙 Push to GitHub', '✏️ Edit a section'],
-        });
-        this.emitLiveLog(roomName, 'JCOS', 'Kernel', '✨ نجاح');
-        return { success: true, stack: 'react-next', files: builtFiles };
+    // ⚛️ بناءُ React/Next خرج إلى `stages/buildReact.js#buildReactProject` (JCR/19) — تفويضٌ يُبقي المستدعيَ
+    // كما هو؛ المُبلِّغُ يُمرَّر وسيطاً أخيراً ويحمل `io` للدفع التلقائيّ.
+    async _buildReactProject(goal, ctx, opts = {}) {
+        return buildReactProject(goal, ctx, opts, this.reporter);
     }
 
     async handleUserMessage(socket, data, agents, dbStatus) {

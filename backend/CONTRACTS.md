@@ -8197,3 +8197,72 @@ hook `afterBuild`) — والاختبارُ يثبّت أنّ الدالّةَ �
 مستدعيا `_verifyAndAutofix` الباقيان: `_buildReactProject` (١١١ سطراً؛ `this` = بثٌّ ٦ + `emitLiveLog` ٥ + `io` ١ + المفوِّض ١ — بالمنهج
 نفسِه مع `reporter.io`)، ثمّ `_runSurgicalEditNow` (٢١٥؛ يستدعي ستَّ طرائق أخرى — يُقاس بعد أن يخرج ما يستدعيه: `_addPageNow`،
 `_deletePageNow`، `_renamePageNow`، `_cleanPageName`). ومرحلةُ تنظيفِ الاحتياطات الميّتة الأربعة تستحقّ دورَها قريباً.
+
+---
+
+## JCR/19 — «ثالثُ بانٍ يخرج — وبلا ذكاءٍ تُحاوَل كلُّ صفحةٍ وتبقى افتراضيّة»
+
+خامس عشرَ استخراجٍ من `jcr.js`: `_buildReactProject` (١١١ سطراً) → `agents/stages/buildReact.js#buildReactProject(goal, ctx, { sections }, reporter)`.
+**نقلٌ حرفيّ، لا تغييرَ في السلوك.**
+
+### ما نُقل
+
+- `this` فيها كان = `reporter.send` (٦) + `emitLiveLog` (٥) + `io` (١) + `this._verifyAndAutofix` (١). الأخيرُ صار نداءً مباشراً
+  `verifyAndAutofix({...}, reporter)` (JCR/17)؛ و`io` صار `reporter.io` في موضعٍ واحدٍ معلَن (قرارُ JCR/10).
+- مفوِّضٌ واحد `_buildReactProject(goal, ctx, opts = {})` يبقى؛ مستدعٍ واحد (`_selectBuildStrategy`) والاختباراتُ تستبدله.
+- أربعُ يتيماتٍ أُزيلت بالقياس من ثلاثة أسطرٍ مشتركة (`generateContentModel`، `generateNextScaffold`، `buildDashboardPage`،
+  `updateStructure` — الأخيرةُ صارت بلا نداءٍ في `jcr` بعد أن أخذت JCR/12 وJCR/14 نداءاتِها الأخرى).
+- `jcrReporterSeam` أُعيد تثبيتُه: `this.io` **٧ ← ٦**، `send` ٩٠ ← ٨٤ (الأرضيّةُ ٨٠ تبقى) — بسببٍ مكتوب.
+
+### أوّلُ توصيفٍ لجسدٍ لم يُطرق
+
+بلا LLM: كاتبُ المحتوى الدفعيّ يعود `null` فتُبنى الأقسامُ افتراضيّةً، ثمّ **تُحاوَل كلُّ صفحةٍ فرديّاً** (سطرُ «✍️ محتوى صفحة: X...» لكلٍّ
+من الأربع) وتبقى افتراضيّةً بلا كسر. على القرص: سكافولدُ Next كاملٌ (٢١ ملفاً: `package.json`، `tailwind.config.js`، `app/*/page.jsx`،
+`components/*.jsx`، `lib/content.js`، `README.md`) + معاينةٌ ثابتة لكلِّ مسار (`index/home/about/services/twasl.html`) + `dashboard.html`.
+`COMPLETED`؛ الذاكرةُ: الأقسامُ كما أُعطيت والمكوّناتُ السبعة (`Navbar…Footer`) — بعلامةٍ قديمةٍ مزروعةٍ أوّلاً لأنّ الذاكرةَ تبقى على
+القرص (الطفرةُ على المكوّنات **نجت أوّلاً** لهذا السبب ثمّ أُمسكت)؛ التقريرُ العربيّ `⚛️ Next.js + Tailwind · 5 صفحة · 7 مكوّن` بأزراره
+الأربعة؛ الإنجليزيّ بأربعة أسطر (بلا سطر اللوحة)؛ تحقّقٌ سلوكيّ على المعاينة **بلا إصلاح**؛ والناتجُ `{ success, stack: 'react-next', files }`
+بقائمة القرص.
+
+### ملاحظتان في المرور (مولّدُ React، لا المرحلة)
+
+- الأقسامُ `['الرئيسية', …]` تُنتج **صفحتَين للرئيسية** (`/` و`/home`) — فالتقريرُ يقول «5 صفحة» لأربعة أقسام. سلوكُ `generateNextScaffold`؛
+  يُدرَس في مكانه.
+- «تواصل» تُعرَّب مساراً إلى `twasl` (نقحرة)؛ الروابطُ تعمل، والاسمُ ليس عربيّاً ولا إنجليزيّاً. سلوكُ `slugify`؛ يُدرَس في مكانه.
+
+### ثلاثَ عشرةَ طفرة — ١١ أُمسكت، واثنتان نجتا بدليلٍ مكتوب
+
+| الطفرة | ما يُمسكها |
+|---|---|
+| RX-1 السكافولدُ لا يُكتب | `package.json` |
+| RX-2 التخصيصُ الفرديّ يُقفَز | أسطرُ «محتوى صفحة» |
+| RX-3 `lib/content.js` لا يُعاد كتابتُه | **نجت** — بلا ذكاءٍ يكتب السكافولد الملفَّ نفسَه بالمحتوى نفسِه؛ إعادةُ الكتابة تُرى فقط بعد إثراءٍ حقيقيّ (يحتاج LLM) |
+| RX-4 المعاينةُ الثابتة لا تُكتب | `about.html` |
+| RX-5 لوحةُ التحكّم لا تُكتب | `dashboard.html` |
+| RX-6 لا انتقالَ إلى COMPLETED | الحالة |
+| RX-7 الذاكرة: المكوّناتُ لا تُحفظ | **أُمسكت بعد أن نجت أوّلاً** — العلامةُ القديمة المزروعة |
+| RX-8 `reporter.io` → `null` | حارسُ الحدود `=== 1` |
+| RX-9 التحقّقُ يُصلح (`canFix: true`) | **نجت** — `agents: null` يجعل `canFix` بلا أثرٍ بالبناء (كما يقول تعليقُ الكود نفسُه)؛ الوسيطُ صادقٌ لا فاعل |
+| RX-10 التحقّقُ بلا مُبلِّغ | سطرُ `[BehaviorVerifier]` |
+| RX-11 عدُّ الصفحات من المكوّنات | «5 صفحة» |
+| RX-12 أزرارُ التقرير | الأزرارُ بحروفها |
+| RX-13 الناتجُ بلا الملفّات | `files` من القرص |
+
+### الأثر
+
+- `jcr.js` **٢١٧٢ ← ٢٠٦٦**؛ `stages/buildReact.js` ١٣٦ (١٣٠ وحدةً في `agents/`).
+- الاختبارات **١٥٥٢ ← ١٥٥٦**.
+- `jcrReporterSeam` أُعيد تثبيتُه (`this.io` ٦، `send` ٨٤ ≥ ٨٠)؛ `renderConfigShape` بلا تغيير.
+- الخريطة: صفٌّ جديد، `jcr` ٢٠٦٦، عنوانُ C ١٣٠.
+
+### ما بقي في jcr بعد خمسةَ عشرَ استخراجاً — القياسُ الثاني
+
+`jcr.js` **٣٢٥٢ ← ٢٠٦٦** منذ JCR/4. لم يبقَ بانٍ ولا مرحلةُ تسليمٍ خارجَ الصنف إلّا ما يستدعي طرائقَ الصنف أو يحمل حالتَه:
+1. **التعديلُ الجراحيّ** (`_runSurgicalEditNow` ٢١٥ + `_addPageNow` ٨٩ + `_deletePageNow`/`_renamePageNow`/`_persistReactContent`/
+   `_readReactContent`/`_findPage`/`_pageNotFound`/`_extractPageName`/`_cleanPageName`) — عائلةٌ متماسكة؛ تخرج **كتلةً واحدة** إلى
+   `stages/surgicalEdit.js` بعد قياس ما تحمله من `this` (المفوِّضان `_verifyAndAutofix`/`readProjectFilesArray` صارا استيرادَين، و`_runMissionNow`
+   يبقى نداءَ صنفٍ — يُمرَّر دالّةً).
+2. **معالجاتُ النيّة** (`_handle*`) تحمل `gatedMessages`/`trackByRoom` — حالةُ النسخة؛ تُقاس قبل أيّ قرار.
+3. **النواةُ** (`handleUserMessage`، `executeMission`، `_runMissionNow`، `_selectBuildStrategy`، `runDynamicMultiAgentRuntime`،
+   `generateChatResponse`، `buildMissionAndMeta`، `classifyIntent`) — تبقى بحكم التصميم، وقد صارت مقروءةً في ملفٍّ نصفِ حجمِه الأصليّ.
+والاحتياطاتُ الميّتة الأربعة (وأثرُ الرابعة ملموس) تستحقّ مرحلةً صغيرةً قبل التعديل الجراحيّ.
