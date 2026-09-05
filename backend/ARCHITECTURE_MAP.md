@@ -118,7 +118,7 @@ Policy/Permission، Identity، Plugin.
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
 | `designerAgent.js` | 300 | ملخّص تصميم + احتياط حتمي + تخصيصُ AI ناطقٌ بسبب تخلّفه (2p) | KEEP | Task | `plugins/coding/stages/` |
-| `reviewAgent.js`, `refactorAgent.js`, `testingAgent.js` | 240/146/244 | مراجعة/إعادة هيكلة/اختبارات مولَّدة | KEEP | Task | `plugins/coding/stages/` |
+| `reviewAgent.js`, `refactorAgent.js`, `testingAgent.js` | 240/234/244 | مراجعة/إعادة هيكلة/اختبارات مولَّدة | KEEP | Task | `plugins/coding/stages/` |
 | `seoAgent.js`, `seoPack.js`, `securityAgent.js`, `polishPack.js`, `pwaAgent.js` | 178/118/158/63/234 | حزم حتمية عند التسليم | KEEP | Task | `plugins/coding/stages/` |
 | `gitAgent.js` | 197 | commit/init/stats (ينفّذ git) | MODIFY | Tool (`git` عبر `execFile` بمصفوفة وسائط — لا صدفة) | `plugins/coding/tools/` |
 | `databaseAgent.js`, `postgresAgent.js`, `authAgent.js`, `generatedAppSecrets.js`, `dependencyAgent.js` | 272/362/345/56/288 | كتلة الخلفية | KEEP | Task | `plugins/coding/stages/` |

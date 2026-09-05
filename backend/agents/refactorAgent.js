@@ -13,33 +13,92 @@
 // ═══════════════════════════════════════════════════════
 // 🧹 تنظيف JavaScript
 // ═══════════════════════════════════════════════════════
+// حذفُ نداءِ `console` كاملاً بعدّ الأقواس لا بأوّل قوسٍ مغلق.
+// 🔴 كان النمط `console\.(log|warn|error)\([^)]*\);?` — و`[^)]*` يقف عند
+//    أوّل `)`، فـ`console.log(JSON.stringify({a:1}))` يُحذف نصفُه ويبقى `);`
+//    خطأً نحوياً يقتل صفحةَ المستخدم. والنداءاتُ المتشعّبة هي القاعدة لا الشذوذ.
+function stripConsoleCall(src, from) {
+    let i = src.indexOf('(', from);
+    if (i < 0) return -1;
+    let depth = 0, quote = null;
+    for (; i < src.length; i += 1) {
+        const c = src[i];
+        if (quote) {
+            if (c === '\\') { i += 1; continue; }
+            if (c === quote) quote = null;
+            continue;
+        }
+        if (c === '"' || c === "'" || c === '`') { quote = c; continue; }
+        if (c === '(') depth += 1;
+        else if (c === ')') {
+            depth -= 1;
+            if (depth === 0) {
+                let end = i + 1;
+                if (src[end] === ';') end += 1;
+                if (src[end] === '\n') end += 1;
+                return end;
+            }
+        }
+    }
+    return -1;   // قوسٌ غيرُ مغلق — لا نلمس ما لا نفهم
+}
+
+const KEEP_LOGS = 3;
+// `warn`/`error` ليست «زائدة»: حذفُ تسجيل أخطاء المستخدم ليس تنظيفاً.
+const NOISY = /console\.(log|debug)\s*\(/g;
+
+// ═══════════════════════════════════════════════════════
+// 🧹 تنظيف JavaScript
+// ═══════════════════════════════════════════════════════
 function refactorJS(content) {
     if (!content) return content;
     let result = content;
 
-    // إزالة console.log الزائدة (أكثر من 3)
-    let logCount = 0;
-    result = result.replace(/console\.(log|warn|error)\([^)]*\);?\n?/g, (match) => {
-        logCount++;
-        return logCount > 3 ? '' : match;
-    });
-
-    // استبدال var بـ const/let
-    result = result.replace(/\bvar\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=/g, (match, name) => {
-        // إذا كانت تُعاد تعيينها، استخدم let وإلا const
-        const reassigned = new RegExp(`\\b${name}\\s*=(?!=)`, 'g').test(result);
-        return `${reassigned ? 'let' : 'const'} ${name} =`;
-    });
-
-    // إضافة 'use strict' إذا لم يكن موجوداً
-    if (!result.includes("'use strict'") && !result.includes('"use strict"') && !result.includes('type="module"')) {
-        result = `'use strict';\n\n${result}`;
+    // إزالة console.log الزائدة (ما بعد الثالثة) بحدودٍ متوازنة
+    let seen = 0, out = '', cursor = 0;
+    NOISY.lastIndex = 0;
+    let m;
+    while ((m = NOISY.exec(result)) !== null) {
+        seen += 1;
+        if (seen <= KEEP_LOGS) continue;
+        const end = stripConsoleCall(result, m.index);
+        if (end < 0) continue;
+        out += result.slice(cursor, m.index);
+        cursor = end;
+        NOISY.lastIndex = end;
     }
+    result = out + result.slice(cursor);
+
+    // 🔴 حُذف تحويلُ `var` إلى `let`/`const`. لم يكن تجميلاً بل تغييرَ معنى:
+    //    `var` نطاقُه الدالة و`let` نطاقُه الكتلة، والفرقُ مقيسٌ بالتشغيل لا
+    //    مُفترَضاً — نفس الكود قبل التحويل وبعده:
+    //      var mode='light'; if (dark) { var mode='dark' } → "dark"  ثمّ  "light"
+    //      for (var i…) {…} return i;                      → 1      ثمّ  ReferenceError
+    //    أي خطأٌ صامتٌ في الأولى وسقوطٌ في الثانية. ولم يكن يُنتج `const` قطّ
+    //    رغم ما يقوله التعليقُ القديم: فحصُ «هل أُعيد تعيينُها؟» كان يبحث في
+    //    النصّ كلِّه فيجد تصريحَها نفسَه، فالجوابُ «نعم» دائماً.
+    //    و`var` كودٌ صحيح؛ لا عيبَ يُصلَح هنا، بل عيبٌ يُدخَل.
+
+    // 'use strict' — لا يُدَسّ قبل توجيهٍ ولا في وحدةٍ هي صارمةٌ أصلاً
+    if (needsUseStrict(result)) result = `'use strict';\n\n${result}`;
 
     // تنظيف أسطر فارغة متعددة (أكثر من 2)
     result = result.replace(/\n{3,}/g, '\n\n');
 
     return result;
+}
+
+// 🔴 التوجيهُ توجيهٌ ما دام أوّلَ جملة، فإن سبقته جملةٌ صار تعبيراً لا أثرَ له.
+//    مقيسٌ لا مفترَض: `1; 'use strict'; undeclared = 1` لا يُمنع، وبالتوجيه
+//    أوّلاً يُمنع. فدسُّ `'use strict'` فوق `'use client'` يُبطل الثانية —
+//    وهي حدُّ مكوّنِ العميل في Next. والوحداتُ (import/export) صارمةٌ بحكم
+//    التعريف، فإضافتُها فيها حشوٌ لا فائدةَ منه.
+function needsUseStrict(src) {
+    const head = src.replace(/^\uFEFF/, '').trimStart();
+    if (/^(['"])use [a-z-]+\1\s*;?/.test(head)) return false;        // توجيهٌ قائم
+    if (/^\s*(import|export)\s/m.test(src)) return false;            // وحدة ESM
+    if (/^\s*(import\s*\(|await\s)/m.test(src)) return false;
+    return true;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -49,8 +108,11 @@ function refactorCSS(content) {
     if (!content) return content;
     let result = content;
 
-    // إزالة تعريفات CSS المكررة (نفس الخاصية في نفس الـ selector)
-    result = result.replace(/([^}]+\{[^}]*?)(\s*([a-z-]+)\s*:[^;]+;)([^}]*)\3\s*:[^;]+;/g, '$1$2$4');
+    // 🔴 إزالةُ التكرار كانت تُبقي **الأولى** وتحذف الأخيرة:
+    //    `.card { color: red; color: blue }` تصير `color: red`.
+    //    وترتيبُ CSS يجعل الأخيرةَ هي النافذة، فكان «التنظيف» يقلب لونَ
+    //    موقع المستخدم إلى قيمةٍ كان قد تجاوزها. الأخيرةُ تبقى.
+    result = dedupeDeclarations(result);
 
     // تنظيف أسطر فارغة متعددة
     result = result.replace(/\n{3,}/g, '\n\n');
@@ -59,6 +121,30 @@ function refactorCSS(content) {
     if (!result.endsWith('\n')) result += '\n';
 
     return result;
+}
+
+// كتلةٌ بلا أقواسٍ متداخلة (فتشمل قواعدَ @media الداخلية)، وبلا اقتباسٍ
+// كي لا تُقطَع `content: "a;b"` على فاصلةٍ داخل نصّ.
+const BLOCK = /([^{}]*)\{([^{}]*)\}/g;
+
+function dedupeDeclarations(css) {
+    return css.replace(BLOCK, (whole, selector, body) => {
+        if (/["']/.test(body)) return whole;
+        const parts = body.split(';');
+        const tail = parts.pop();                       // ما بعد آخر فاصلة
+        const lastIndexOf = new Map();
+        parts.forEach((decl, i) => {
+            const prop = (decl.split(':')[0] || '').trim().toLowerCase();
+            if (prop && !prop.startsWith('--')) lastIndexOf.set(prop, i);
+        });
+        const kept = parts.filter((decl, i) => {
+            const prop = (decl.split(':')[0] || '').trim().toLowerCase();
+            if (!prop || prop.startsWith('--')) return true;
+            return lastIndexOf.get(prop) === i;         // الأخيرةُ هي النافذة
+        });
+        if (kept.length === parts.length) return whole;
+        return `${selector}{${kept.join(';')};${tail}}`;
+    });
 }
 
 // ═══════════════════════════════════════════════════════
@@ -74,13 +160,15 @@ function refactorHTML(content, lang = 'en') {
     result = result.replace(/\s+style=""\s*/g, ' ');
     result = result.replace(/\s+id=""\s*/g, ' ');
 
-    // تأكد من وجود lang (بلغة المستخدم لا العربية افتراضياً)
-    if (!result.includes('lang=')) {
+    // 🔴 `result.includes('lang=')` يُشبعه `hreflang="ar"` في وسمٍ آخر،
+    //    فصفحةٌ فيها رابطٌ بديلٌ لا تنال `lang` على `<html>` أبداً. نسأل عن
+    //    السمة في وسم `<html>` نفسه.
+    if (!/<html[^>]*\slang\s*=/i.test(result)) {
         result = result.replace('<html', `<html lang="${code}"`);
     }
 
-    // تأكد من وجود charset
-    if (!result.includes('charset') && result.includes('<head>')) {
+    // تأكد من وجود charset (في وسم meta لا في أيّ موضعٍ من الصفحة)
+    if (!/<meta[^>]+charset/i.test(result) && result.includes('<head>')) {
         result = result.replace('<head>', '<head>\n    <meta charset="UTF-8">');
     }
 
