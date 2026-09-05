@@ -1,4 +1,4 @@
-import { groq, smartChat } from './baseAgent.js';
+import { smartChat } from './baseAgent.js';
 import { jwtSecretSnippet } from './generatedAppSecrets.js';
 
 // 🔍 هل يحتاج المشروع خادماً؟ — مصدرٌ واحد مشترك مع `knowledgeEngine`

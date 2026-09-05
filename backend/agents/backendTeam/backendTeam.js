@@ -15,7 +15,7 @@ import { promises as fsp } from 'fs';
 import { orderTasks } from '../../core/runtime/TaskGraph.js';
 import { runAgent } from '../../core/runtime/AgentRuntime.js';
 import { safeRelPath, resolveInside } from '../../core/runtime/workspacePaths.js';
-import { BACKEND_TEAM, BACKEND_DEBUG_AGENT } from './specs.js';
+import { BACKEND_TEAM } from './specs.js';
 import { syntaxCheckFiles } from './backendVerify.js';
 
 // 🛡️ حارس المسار انتقل حرفياً إلى core/runtime/workspacePaths.js (محور Tool)

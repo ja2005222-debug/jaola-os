@@ -71,7 +71,7 @@ import {
 } from './agents/clarifierAgent.js';
 
 import { schemas, validate, sanitizePath } from './middleware/security.js';
-import { abortMission, hasActiveMission } from './core/runtime/AbortRegistry.js';
+import { abortMission } from './core/runtime/AbortRegistry.js';
 import { pushProject, getIntegration, isPlatformRepo } from './services/githubSync.js';
 import { encryptSecret, decryptSecret } from './utils/secretVault.js';
 import * as oauth from './services/oauthLite.js';
@@ -80,7 +80,7 @@ import { teamPlan, BACKEND_TEAM } from './agents/backendTeam/index.js';
 import { frontendTeamPlan, FRONTEND_TEAM } from './agents/frontendTeam/index.js';
 import { isStaticAssetPath } from './utils/spaFallback.js';
 import { isCorsRejection } from './utils/corsErrors.js';
-import { listStarters, selectStarter, resolveStack, STARTERS } from './agents/starterRegistry.js';
+import { listStarters, STARTERS } from './agents/starterRegistry.js';
 import { fetchStarter, fetchRepoFiles, parseRepoUrl } from './agents/starterFetch.js';
 import * as siteCms from './services/siteCms.js';
 import * as siteCreds from './services/siteCreds.js';
@@ -116,7 +116,7 @@ import {
 } from './services/stockMarket.js';
 import { generateStockCommentary } from './services/stockCommentary.js';
 import { buildStaticSiteFromSource, buildDashboardPage } from './services/reactPreview.js';
-import { scanProjectFiles, buildProjectBrain, summarizeBrain } from './services/projectBrain.js';
+import { scanProjectFiles, buildProjectBrain } from './services/projectBrain.js';
 import { getProjectMemory, getDomainModel } from './agents/projectMemory.js';
 import { summarizeModel } from './agents/projectModel.js';
 import { librarySummary } from './agents/modelLibrary.js';
@@ -2028,7 +2028,6 @@ app.post('/api/chat', verifyToken, aiLimit, validate(schemas.sendMessage), valid
 });
 
 // 🆕 مسار نشر صريح — أبسط وأوثق من الاعتماد على تصنيف نية AI غامض
-import { pushToGitHub } from './agents/gitAgent.js';
 
 import { getProjectSummary } from './agents/stateMachine.js';
 
