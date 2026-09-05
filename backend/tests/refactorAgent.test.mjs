@@ -13,6 +13,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { refactorCode } from '../agents/refactorAgent.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 const one = async (name, content, lang = 'en') =>
     (await refactorCode([{ name, content }], lang)).files[0].content;

@@ -4,6 +4,9 @@ import { shouldHydrate } from '../services/persistence.js';
 import { getProjectMemory } from '../agents/projectMemory.js';
 import { getProjectState } from '../agents/stateMachine.js';
 import { getUserProfile } from '../agents/userProfile.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 // ═══════════════════════════════════════════════════════
 // 🔴 «الأحدثُ يفوز» قاعدةٌ صحيحة — بشرط أن يعني `updatedAt` آخرَ كتابةٍ

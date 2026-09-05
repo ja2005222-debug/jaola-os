@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildCoderSystemPrompt } from '../agents/coderAgent.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 test('المشاريع العادية: تصميم مخصّص بلا إطار (لا Tailwind)', () => {
     const prompt = buildCoderSystemPrompt('ar', false);

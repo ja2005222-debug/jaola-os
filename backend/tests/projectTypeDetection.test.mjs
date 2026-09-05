@@ -8,6 +8,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { detectProjectType } from '../agents/knowledgeEngine.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 // أهدافٌ واقعية كُتبت **قبل** قياس أثر الإصلاح، لا مُنتقاةً بعده.
 const CORPUS = [

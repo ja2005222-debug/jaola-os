@@ -2,6 +2,9 @@
 // مرفوضاً فيبقى كل بناء ناجح "قيد التنفيذ" 10 دقائق (أصل القفل الوهمي).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 import {
     STATES, STATE_EVENTS, transitionState, getProjectState,
     isBuilding, canStartNewBuild, setStateEmitter, resetProjectState,

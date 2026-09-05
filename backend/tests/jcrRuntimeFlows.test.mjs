@@ -15,6 +15,9 @@ import { enqueueMission } from '../core/runtime/ExecutionQueue.js';
 import { getPendingGoal } from '../services/conversationManager.js';
 import { classifyIntentFast } from '../agents/ceoBrain.js';
 import { noteLostMission } from '../core/runtime/ExecutionQueue.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 // ── Clarifier: مرحلة التوضيح ثم مرحلة الخطة بفروعها ──────────────────────
 test('clarifying: الإجابة تُمرَّر لمعالج الحوار ويُعاد ردّه بخياراته — لا بناء', async () => {

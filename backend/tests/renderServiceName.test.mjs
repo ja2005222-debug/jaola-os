@@ -4,6 +4,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderServiceName } from '../agents/renderAgent.js';
 import { vercelProjectNameOf } from '../services/customDomains.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 // قاعدة تسمية مضيف DNS: يبدأ وينتهي بحرف أو رقم، وبينهما شرطات مسموحة
 const VALID_HOST_LABEL = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;

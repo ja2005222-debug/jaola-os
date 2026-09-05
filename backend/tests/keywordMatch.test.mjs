@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { hasKeyword, isLatin, arabicMatcher, latinMatcher } from '../agents/keywordMatch.js';
 import { detectAdvancedFeatures } from '../agents/knowledgeEngine.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 // ═══════════════════════════════════════════════════════
 // 🔴 علّةٌ واحدة وقعت في **خمسة** مواضع مستقلّة، ولها في كلٍّ إصلاحٌ منفصل:

@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { runSecurityChecks, runSecurity, generateEnvExample } from '../agents/securityAgent.js';
 import { generateServerEntry } from '../agents/renderAgent.js';
 import { DELIVERY_STAGES } from '../core/contracts/index.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 // ═══════════════════════════════════════════════════════
 // الترويسات عند مَن يكتب الملف — لا عند مُصلِحٍ يسبقه

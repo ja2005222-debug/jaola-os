@@ -14,6 +14,9 @@ import { createExecutionContext } from '../core/runtime/ExecutionContext.js';
 import { getProjectState, STATES } from '../agents/stateMachine.js';
 import { setUserLanguage } from '../agents/languageDetector.js';
 import { resetLessons, topLessons } from '../services/platformLessons.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 const GOAL = 'أداة حاسبة زكاة بسيطة';
 const HTML = `<!DOCTYPE html><html lang="ar"><head><meta charset="utf-8"><title>حاسبة الزكاة</title>

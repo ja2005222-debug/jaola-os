@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { needsPostgres, generatePrismaSetup } from '../agents/postgresAgent.js';
 import { needsBackend, RELATIONAL_KEYWORDS_LIST, BACKEND_KEYWORDS } from '../agents/backendNeed.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 // ═══════════════════════════════════════════════════════
 // 🔴 ثلاثةُ أعطابٍ في قرارٍ واحد:

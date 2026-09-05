@@ -8,6 +8,9 @@ import { generateOAuthModule } from '../agents/backendAgent.js';
 import { projectJwtSecret, jwtSecretSnippet, GENERATED_JWT_SECRET_FALLBACK } from '../agents/generatedAppSecrets.js';
 import { isAiDownMessage } from '../services/platformLessons.js';
 import { buildFailureChatMessage } from '../agents/failureMessages.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 // الخادم يرفض الإقلاع بلا JWT_SECRET (server.js) — فالاشتقاق في الإنتاج
 // مملَّحٌ دائماً. نحاكي ذلك هنا: بدونه يسقط الجميع على الثابت المعلن،

@@ -3,6 +3,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadForPrompt, recordTurn, clearConversation, CONTEXT_WINDOW } from '../services/conversationStore.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 const USER = '__stability_test_user__';
 

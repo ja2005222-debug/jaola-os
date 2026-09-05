@@ -16,6 +16,9 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { JaolaCognitiveRuntime } from '../agents/jcr.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 // مشروع Next حقيقي مصغَّر: `lib/content.js` هو ما يقرؤه المسار فعلاً.
 function nextProject(sections = {}, routes = [{ label: 'الرئيسية', href: '/' }]) {

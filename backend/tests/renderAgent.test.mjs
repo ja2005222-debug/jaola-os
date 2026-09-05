@@ -6,6 +6,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { generateServerEntry, generateRenderConfig, prepareRenderDeploy, buildRenderDeployUrl, deployToRender } from '../agents/renderAgent.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 test('server.js: يخدم الواجهة + يركّب api ديناميكياً + يتصل بـ Mongo + PORT', () => {
     const code = generateServerEntry();

@@ -6,6 +6,9 @@ import assert from 'node:assert/strict';
 import { slugPart, nameFingerprint } from '../services/hostNames.js';
 import { vercelProjectNameOf } from '../services/customDomains.js';
 import { renderServiceName } from '../agents/renderAgent.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 // اسم مضيف/مشروع صالح: يبدأ وينتهي بحرفٍ أو رقم، وبينهما شَرَطات.
 const isValidName = (n) => /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(n) && n.length <= 100;

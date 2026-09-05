@@ -3,6 +3,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { checkAiProviders } from '../services/aiProviderCheck.js';
 import { DEEPSEEK_MODEL } from '../agents/baseAgent.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 test('الموديل الافتراضي deepseek-v4-pro — الأسماء الأقدم (chat/coder) مُلغاة', () => {
     assert.equal(DEEPSEEK_MODEL, 'deepseek-v4-pro');
