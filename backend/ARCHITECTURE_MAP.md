@@ -154,7 +154,7 @@ Policy/Permission، Identity، Plugin.
 |---|---|---|---|---|---|
 | `jaolaBot.js`, `jaolaBotToken.js` | 295/45 | منتج جولا بوت (ودجت + توكن HMAC) | MOVE | Plugin (bot) | `plugins/bot/` |
 | `marketingAgent.js` | 163 | المساعد التسويقي | MOVE | Plugin (marketing) | `plugins/marketing/` |
-| `integrations/travelpayouts.js` | 157 | تكامل Travelpayouts لمواقع العملاء | MOVE | Provider | `plugins/travel/providers/` (أو يبقى مع coding — يُقرَّر عند Sprint 5) |
+| `integrations/travelpayouts.js` | 166 | تكامل Travelpayouts لمواقع العملاء | MOVE | Provider | `plugins/travel/providers/` (أو يبقى مع coding — يُقرَّر عند Sprint 5) |
 | `systemDoctorAgent.js` | 209 | فحص صحة النظام | KEEP | Evidence | `core/audit/` |
 
 ### C7. DELETE — سقالة ميتة (صفر قرّاء، commit واحد 2026-08-05)
@@ -188,7 +188,7 @@ Policy/Permission، Identity، Plugin.
 ### D2. التسليم والنشر (مجال Coding)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `deployAutomation.js`, `customDomains.js`, `hostNames.js`, `githubSync.js`, `githubFiles.js`, `projectExport.js`, `projectManager.js` | 241/207/37/111/134/37/82 | نشر ونطاقات وGitHub وتصدير | MODIFY | Tool (كل واحدة أداة بـriskLevel) + Transaction (للنشر) | `plugins/coding/tools/` |
+| `deployAutomation.js`, `customDomains.js`, `hostNames.js`, `githubSync.js`, `githubFiles.js`, `projectExport.js`, `projectManager.js` | 241/207/37/111/134/37/99 | نشر ونطاقات وGitHub وتصدير | MODIFY | Tool (كل واحدة أداة بـriskLevel) + Transaction (للنشر) | `plugins/coding/tools/` |
 | `reactPreview.js`, `twin.js` | 477/69 | معاينة وتعديل | KEEP | Tool | `plugins/coding/` |
 | `siteConnect.js`, `siteCms.js`, `siteInbox.js`, `siteCreds.js`, `newsletterSubscribers.js`, `projectAuth.js`, `projectSecrets.js`, `storeKey.js`, `dataSync.js`, `appData.js`, `appCollections.js`, `appAssets.js` | 128/118/97/65/60/76/138/63/138/51/82/76 | خدمات مواقع العملاء المنشورة | KEEP | — | `plugins/coding/runtime-services/` |
 | `imageService.js`, `aiImages.js` | 92/433 | صور | KEEP | Provider | `plugins/coding/` |
@@ -329,7 +329,7 @@ permissions ويستدعي الخدمة عبر HTTP بنفس JWT. لا شيء ه
 | ~~`services/fileEditor.js`~~ | 73 | `taskExecutor` | ✅ | **DELETED** (2o) |
 | ~~`services/broadcast.js`~~ | 42 | `taskExecutor` (استيراد ديناميكي) | ✅ | **DELETED** (2o) |
 | ~~`services/knowledgeService.js`~~ | 101 | `taskExecutor` (استيراد ديناميكي) | ❌ عبر `projectManager` | **DELETED** (2o) |
-| `services/projectManager.js` | 82 | `knowledgeService` و`twin` (كلاهما يتيم) | ❌ `uuid` غير مثبَّت | باقٍ |
+| `services/projectManager.js` | 99 | `knowledgeService` و`twin` (كلاهما يتيم) | ❌ `uuid` غير مثبَّت | باقٍ |
 | `services/twin.js` | 69 | `knowledgeService` (يتيم) | ❌ عبر `projectManager` | باقٍ |
 | `services/logger.js` | 36 | `twin` (يتيم) | ✅ | باقٍ |
 | `services/db.js` | 58 | لا شيء | ❌ `better-sqlite3` غير مثبَّت | باقٍ |
