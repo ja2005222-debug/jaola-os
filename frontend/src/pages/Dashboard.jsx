@@ -384,7 +384,9 @@ export default function Dashboard() {
 
   // 📊 قيم لوحة الذكاء الحقيقية (مع بدائل عند غياب البيانات)
   const gradeColor = (g) => g === 'A' ? '#10b981' : g === 'B' ? '#fbbf24' : g ? '#f97316' : '#334155';
-  const fmtScore = (s) => s ? `${s.grade}${s.score != null ? ` ${s.score}%` : ''}` : '—';
+  // 🔴 كانت تعرض «A 100%» عن قياسٍ سبق آخر بناء، فتُفتي اللوحةُ في
+  //    كودٍ لم تفحصه. الخادم يرسل `stale` مشتقّاً، والعرضُ يقوله الآن.
+  const fmtScore = (s) => s ? `${s.grade}${s.score != null ? ` ${s.score}%` : ''}${s.stale ? ` · ${t('scoreStale')}` : ''}` : '—';
   const sysUptime = metrics?.system?.uptimeSec ?? null;
   const fmtUptime = sysUptime == null ? '—'
     : sysUptime >= 3600 ? `${Math.floor(sysUptime/3600)}${t('unitHour')} ${Math.floor((sysUptime%3600)/60)}${t('unitMin')}`
