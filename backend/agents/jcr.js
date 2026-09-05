@@ -29,6 +29,7 @@ import { readCodeContext, readProjectFiles } from './projectReader.js';
 import { runBackendStage } from './stages/backend.js';
 import { verifyAndAutofix, runBehaviorVerifyStage } from './stages/verify.js';
 import { buildReactProject } from './stages/buildReact.js';
+import { extractPageName, cleanPageName, readReactContent, findPage, persistReactContent, renamePageNow, deletePageNow, pageNotFound } from './stages/reactPages.js';
 import { handleUndo } from './stages/undo.js';
 // 🔁 إعادةُ تصدير: `resolveProjectType` بقيت واجهةً من `jcr` لمستورِديها (JCR/6)
 export { resolveProjectType };
@@ -964,23 +965,9 @@ User preferences: ${JSON.stringify(execMemory)}` },
         return result;
     }
 
-    // يستخرج اسم الصفحة من أمر "أضف صفحة …" (عربي/إنجليزي)
+    // خرجت إلى `stages/reactPages.js#extractPageName` (JCR/20) — مفوِّضٌ يُبقي المستدعين (والاستبدالَ في الاختبارات) كما هم.
     _extractPageName(instruction, lang) {
-        let s = String(instruction || '').trim();
-        s = s.replace(/^[^\p{L}]+/u, '');   // أزل الرموز/الإيموجي في البداية (زر "➕ أضف صفحة")
-        s = s.replace(/^\s*(?:من فضلك|رجاء[ًا]?|please)\s+/i, '');
-        s = s.replace(/^\s*(?:أضف|اضف|أضِف|ضيف|زد|أنشئ|انشئ|اضافة|إضافة|add|create|make)\s+/i, '');
-        s = s.replace(/^\s*(?:لي|me)\s+/i, '');
-        s = s.replace(/^\s*(?:a|an)\s+/i, '');
-        s = s.replace(/^\s*(?:جديدة|جديد|new)\s+/i, '');
-        s = s.replace(/^\s*(?:صفحة|صفحه|page)\s+/i, '');
-        s = s.replace(/^\s*(?:جديدة|جديد|new)\s+/i, '');
-        s = s.replace(/^\s*(?:اسمها|بعنوان|باسم|تسمى|عنوانها|بـ|called|named|titled|about|for)\s+/i, '');
-        s = s.replace(/["'«»]/g, '').replace(/[.،,!?]+$/g, '').trim();
-        // بقايا من كلمات دالّة فقط (زر "أضف صفحة" بلا اسم) → افتراضي
-        s = s.replace(/^(?:صفحة|صفحه|page|جديدة|جديد|new)(?:\s+(?:صفحة|صفحه|page|جديدة|جديد|new))*$/i, '').trim();
-        if (!s || s.length > 60) return lang === 'ar' ? 'صفحة جديدة' : 'New Page';
-        return s;
+        return extractPageName(instruction, lang);
     }
 
     // ➕ يضيف صفحة جديدة لمشروع React قائم دون إعادة بناء — يحفظ المحتوى الحالي:
@@ -1073,99 +1060,39 @@ User preferences: ${JSON.stringify(execMemory)}` },
         return { success: true, addedPage: slug, label: pageLabel };
     }
 
-    // ينظّف اسم صفحة ملتقَط من أمر (يزيل الاقتباس/الترقيم/كلمة صفحة الزائدة)
+    // خرجت إلى `stages/reactPages.js#cleanPageName` (JCR/20) — مفوِّضٌ يُبقي المستدعين (والاستبدالَ في الاختبارات) كما هم.
     _cleanPageName(s) {
-        return String(s || '')
-            .replace(/["'«»]/g, '')
-            .replace(/^\s*(?:صفحة|صفحه|the|page)\s+/i, '')
-            .replace(/[.،,!?\s]+$/g, '')
-            .trim();
+        return cleanPageName(s);
     }
 
-    // يقرأ محتوى مشروع React من القرص (أو null)
+    // خرجت إلى `stages/reactPages.js#readReactContent` (JCR/20) — مفوِّضٌ يُبقي المستدعين (والاستبدالَ في الاختبارات) كما هم.
     async _readReactContent(projectPath) {
-        try {
-            const src = await fsPromises.readFile(path.join(projectPath, 'lib/content.js'), 'utf8');
-            return JSON.parse(src.slice(src.indexOf('{'), src.lastIndexOf('}') + 1));
-        } catch { return null; }
+        return readReactContent(projectPath);
     }
 
-    // يجد صفحة بالاسم (تطابق تسمية الوجهة، ثم تضمين، ثم المسار)
+    // خرجت إلى `stages/reactPages.js#findPage` (JCR/20) — مفوِّضٌ يُبقي المستدعين (والاستبدالَ في الاختبارات) كما هم.
     _findPage(content, name) {
-        const t = String(name || '').trim().toLowerCase();
-        const routes = (content.routes || []).filter(r => r.href !== '/');
-        const compBySlug = {};
-        for (const c of Object.keys(content.sections || {})) compBySlug[slugify(c)] = c;
-        const route = routes.find(r => (r.label || '').trim().toLowerCase() === t)
-            || routes.find(r => (r.label || '').trim().toLowerCase().includes(t) && t.length >= 2)
-            || routes.find(r => r.href.replace(/^\//, '') === slugify(t));
-        if (!route) return null;
-        const slug = route.href.replace(/^\//, '');
-        return { route, slug, comp: compBySlug[slug] };
+        return findPage(content, name);
     }
 
-    // كتابة المحتوى + إعادة توليد الموقع الثابت + بثّ التحديث (مشترك لعمليات الصفحات)
+    // خرجت إلى `stages/reactPages.js#persistReactContent` (JCR/20) — مفوِّضٌ يُبقي المستدعين (والاستبدالَ في الاختبارات) كما هم.
     async _persistReactContent(projectPath, content, username, activeProject, roomName, lang, historyMsg) {
-        await fsPromises.writeFile(path.join(projectPath, 'lib/content.js'),
-            `// محتوى الموقع — عدّله بحرّية. يملؤه JAOLA بالذكاء حسب مشروعك.\nexport const content = ${JSON.stringify(content, null, 2)};\n`);
-        for (const pg of buildStaticSite(content, lang)) {
-            await writeProjectFile(projectPath, pg.name, pg.content);
-        }
-        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
-        addToHistory(username, activeProject, historyMsg);
-        this.reporter.send(roomName, 'preview_updated', { timestamp: Date.now() });
-        let builtFiles = [];
-        try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
-        this.reporter.send(roomName, 'workspace_files', builtFiles);
-        snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
-        autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
+        return persistReactContent(projectPath, content, username, activeProject, roomName, lang, historyMsg, this.reporter);
     }
 
-    // 🖊️ إعادة تسمية صفحة (تسمية الوجهة + عنوان القسم) — تحفظ المسار والملفات
+    // خرجت إلى `stages/reactPages.js#renamePageNow` (JCR/20) — مفوِّضٌ يُبقي المستدعين (والاستبدالَ في الاختبارات) كما هم.
     async _renamePageNow(projectPath, username, activeProject, roomName, lang, oldName, newName) {
-        const content = await this._readReactContent(projectPath);
-        if (!content) return this.reporter.send(roomName, 'chat_reply', { message: lang === 'ar' ? '⚠️ تعذّر قراءة المشروع.' : '⚠️ Could not read project.' });
-        const found = this._findPage(content, oldName);
-        if (!found || !found.comp) return this._pageNotFound(content, roomName, lang, oldName);
-        found.route.label = newName;
-        if (content.sections[found.comp]) content.sections[found.comp].heading = newName;
-        await this._persistReactContent(projectPath, content, username, activeProject, roomName, lang, `إعادة تسمية صفحة: ${oldName} → ${newName}`);
-        this.reporter.send(roomName, 'chat_reply', {
-            message: lang === 'ar' ? `✅ أعدت تسمية الصفحة إلى **${newName}** — حُدِّث الشريط في كل الصفحات.` : `✅ Renamed the page to **${newName}** — nav updated across all pages.`,
-            options: lang === 'ar' ? ['➕ أضف صفحة', '🚀 انشر الآن'] : ['➕ Add a page', '🚀 Deploy now'],
-        });
-        return { success: true, renamed: found.slug, label: newName };
+        return renamePageNow(projectPath, username, activeProject, roomName, lang, oldName, newName, this.reporter);
     }
 
-    // 🗑️ حذف صفحة (الوجهة + القسم + الملفات) — لا يمكن حذف الرئيسية
+    // خرجت إلى `stages/reactPages.js#deletePageNow` (JCR/20) — مفوِّضٌ يُبقي المستدعين (والاستبدالَ في الاختبارات) كما هم.
     async _deletePageNow(projectPath, username, activeProject, roomName, lang, name) {
-        const content = await this._readReactContent(projectPath);
-        if (!content) return this.reporter.send(roomName, 'chat_reply', { message: lang === 'ar' ? '⚠️ تعذّر قراءة المشروع.' : '⚠️ Could not read project.' });
-        const found = this._findPage(content, name);
-        if (!found || !found.comp) return this._pageNotFound(content, roomName, lang, name);
-        // احذف من المحتوى
-        content.routes = (content.routes || []).filter(r => r.href !== found.route.href);
-        delete content.sections[found.comp];
-        // احذف الملفات (المكوّن + صفحة Next + صفحة المعاينة)
-        await fsPromises.rm(path.join(projectPath, `components/${found.comp}.jsx`), { force: true });
-        await fsPromises.rm(path.join(projectPath, `app/${found.slug}`), { recursive: true, force: true });
-        await fsPromises.rm(path.join(projectPath, `${found.slug}.html`), { force: true });
-        await this._persistReactContent(projectPath, content, username, activeProject, roomName, lang, `حذف صفحة: ${found.route.label}`);
-        this.reporter.send(roomName, 'chat_reply', {
-            message: lang === 'ar' ? `✅ حذفت صفحة **${found.route.label}** وأزلتها من شريط التنقّل — المعاينة تحدّثت.` : `✅ Deleted page **${found.route.label}** and removed it from the nav — preview updated.`,
-            options: lang === 'ar' ? ['➕ أضف صفحة', '🚀 انشر الآن'] : ['➕ Add a page', '🚀 Deploy now'],
-        });
-        return { success: true, deleted: found.slug };
+        return deletePageNow(projectPath, username, activeProject, roomName, lang, name, this.reporter);
     }
 
+    // خرجت إلى `stages/reactPages.js#pageNotFound` (JCR/20) — مفوِّضٌ يُبقي المستدعين (والاستبدالَ في الاختبارات) كما هم.
     _pageNotFound(content, roomName, lang, name) {
-        const names = (content.routes || []).filter(r => r.href !== '/').map(r => r.label).join('، ');
-        this.reporter.send(roomName, 'chat_reply', {
-            message: lang === 'ar'
-                ? `⚠️ لم أجد صفحة باسم «${name}». الصفحات الحالية: ${names || '—'}`
-                : `⚠️ No page named "${name}". Current pages: ${names || '—'}`,
-        });
-        return { success: false, notFound: name };
+        return pageNotFound(content, roomName, lang, name, this.reporter);
     }
 
     async _runSurgicalEditNow(instruction, ctx) {
