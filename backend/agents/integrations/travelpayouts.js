@@ -21,6 +21,7 @@ function proxyHandler() {
     return `// ✈️ وسيط بحث الطيران — Travelpayouts (التوكن يبقى على الخادم فقط)
 const TOKEN = process.env.TRAVELPAYOUTS_TOKEN;
 const MARKER = process.env.TRAVELPAYOUTS_MARKER || '';
+let warnedNoMarker = false;
 
 export default async function handler(req, res) {
     if (!TOKEN) return res.status(500).json({ error: 'TRAVELPAYOUTS_TOKEN غير مضبوط على الخادم' });
@@ -47,16 +48,33 @@ export default async function handler(req, res) {
         const data = await r.json();
         if (!data || data.success === false) return res.status(502).json({ error: 'فشل جلب النتائج من Travelpayouts' });
 
-        // تطبيع النتائج + رابط حجز بالإحالة (marker) — منه تربح عمولتك
+        // تطبيع النتائج + رابط حجز بالإحالة (marker) — منه تربح عمولتك.
+        // نتيجةٌ بلا \`link\` لا رابطَ لها: الصقُ المضيفِ وحدَه يُنتج رابطَ
+        // الصفحة الرئيسية — زرُّ حجزٍ يقود إلى لا مكان وبلا إحالة. \`null\`
+        // أصدقُ، والواجهةُ تُخفي الزرّ.
         const results = (data.data || []).map((f) => ({
             origin: f.origin, destination: f.destination,
             departure_at: f.departure_at, return_at: f.return_at || null,
             airline: f.airline, flight_number: f.flight_number,
             price: f.price, currency,
             transfers: f.transfers,
-            bookingUrl: 'https://www.aviasales.com' + (f.link || '') + (f.link && MARKER ? (f.link.includes('?') ? '&' : '?') + 'marker=' + MARKER : ''),
+            bookingUrl: f.link
+                ? 'https://www.aviasales.com' + f.link + (MARKER ? (f.link.includes('?') ? '&' : '?') + 'marker=' + MARKER : '')
+                : null,
         }));
-        res.json({ success: true, count: results.length, results });
+        // غيابُ الـmarker لا يكسر البحث، لكنّه يجعل كلَّ حجزٍ بلا عمولة —
+        // فلا يمرّ صامتاً: يُعلَن في الردّ ويُسجَّل مرّةً على الخادم.
+        if (!MARKER && !warnedNoMarker) {
+            warnedNoMarker = true;
+            console.warn('[Travelpayouts] TRAVELPAYOUTS_MARKER غير مضبوط — روابط الحجز تعمل بلا إحالة، ولا عمولة على أيّ حجز.');
+        }
+        res.json({
+            success: true,
+            count: results.length,
+            markerConfigured: !!MARKER,
+            bookableCount: results.filter((r) => r.bookingUrl).length,
+            results,
+        });
     } catch (e) {
         res.status(502).json({ error: 'تعذّر الاتصال بـ Travelpayouts: ' + e.message });
     }
@@ -87,7 +105,7 @@ async function searchFlights({ origin, destination, departure_at, currency = 'us
 //       \`<div class="flight-card">
 //         <b>\${f.origin} → \${f.destination}</b> · \${f.airline} · \${f.departure_at?.slice(0,10)}
 //         <span>\${f.price} \${f.currency}</span>
-//         <a href="\${f.bookingUrl}" target="_blank" rel="noopener">احجز</a>
+//         \${f.bookingUrl ? \`<a href="\${f.bookingUrl}" target="_blank" rel="noopener">احجز</a>\` : ''}
 //       </div>\`).join('') : 'لا نتائج.';
 //   } catch (err) { box.textContent = err.message; }
 // });
@@ -116,6 +134,13 @@ function readme() {
 
 ## ملاحظة العمولة
 روابط \`bookingUrl\` تحمل \`marker\` الخاص بك — منها تُحتسب عمولتك عند الحجز.
+
+> ⚠️ **بلا \`TRAVELPAYOUTS_MARKER\` يعمل البحثُ كاملاً ولا تُحتسب عمولةٌ على أيّ
+> حجز.** لذلك يُرجع الوسيطُ \`markerConfigured\` في كل ردّ، ويُسجّل تحذيراً على
+> الخادم مرّةً واحدة. تحقّق من \`markerConfigured: true\` قبل الإطلاق.
+
+> ℹ️ نتيجةٌ يُرجعها المزوّدُ بلا \`link\` تخرج بـ\`bookingUrl: null\` — لا زرَّ حجزٍ
+> لها. و\`bookableCount\` يقول كم نتيجةً قابلةً للحجز فعلاً من \`count\`.
 `;
 }
 

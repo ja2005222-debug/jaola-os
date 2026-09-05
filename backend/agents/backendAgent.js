@@ -297,9 +297,14 @@ export async function generateAdvancedModules(userGoal, projectPath) {
 
     // ✈️ تكامل Travelpayouts — وسيط بحث طيران آمن (توكن على الخادم + marker إحالة)
     const { needsTravelpayouts, generateTravelpayoutsModule } = await import('./integrations/travelpayouts.js');
+    const requiredEnv = [];
     if (needsTravelpayouts(userGoal)) {
         const tp = generateTravelpayoutsModule();
         for (const f of tp.files) files.push(f);
+        // 🔴 كانت `tp.env` تُعلَن ولا يقرؤها أحد. وهي ليست تفصيلاً: بلا
+        //    TRAVELPAYOUTS_MARKER يعمل البحثُ ولا تُحتسب عمولةٌ على أيّ حجز.
+        //    فتُرفَع الآن إلى المستدعي ليقولها للمالك.
+        for (const k of tp.env || []) if (!requiredEnv.includes(k)) requiredEnv.push(k);
         features.needsTravelpayouts = true;
     }
 
@@ -320,5 +325,5 @@ export async function generateAdvancedModules(userGoal, projectPath) {
         files.push({ name: 'OAUTH_README.md', content: oauth.readme });
     }
 
-    return { files, features };
+    return { files, features, requiredEnv };
 }

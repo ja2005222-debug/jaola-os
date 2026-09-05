@@ -90,7 +90,7 @@ Policy/Permission، Identity، Plugin.
 ### C1. النواة (Kernel candidates)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `jcr.js` | 3220 | وقت التشغيل المعرفي: `handleUserMessage` → 7 معالجات نية → `executeMission` → `_runMissionNow` → 15 مرحلة | MODIFY (تدريجي، بلا إعادة كتابة) | Mission + Agent + Task (المراحل → TaskGraph) + Event | يبقى؛ يتقلّص مع كل Sprint لصالح `core/runtime/*` |
+| `jcr.js` | 3223 | وقت التشغيل المعرفي: `handleUserMessage` → 7 معالجات نية → `executeMission` → `_runMissionNow` → 15 مرحلة | MODIFY (تدريجي، بلا إعادة كتابة) | Mission + Agent + Task (المراحل → TaskGraph) + Event | يبقى؛ يتقلّص مع كل Sprint لصالح `core/runtime/*` |
 | `contracts.js` → ✅ `core/contracts/index.js` | 99/197 | typedefs الأحد عشر + `assertBuildAgents` + `DELIVERY_STAGES` + مدقّقا Capability | MOVED (Sprint 1 ✅) | Mission/Agent/Task/Capability/Provider/Transaction | `core/contracts/index.js` |
 | `stateMachine.js` | 257 | Build State Machine (10 حالات + `STATE_EVENTS` + emitter) | KEEP | Event — تبقى متخصّصة، وMission Lifecycle فوقها | `core/missions/BuildStateMachine.js` (Sprint 2) |
 | `ceoBrain.js` | 240 | تصنيف نية سريع، قرار، رسائل إحاطة/حالة | MODIFY | Mission (Intent/CEO في مسار v2) | `core/runtime/` |
@@ -110,7 +110,7 @@ Policy/Permission، Identity، Plugin.
 | `core/evidence/Check.js` | 55 | عقدُ الدليل الذي يتكلّمه الناقدان (Sprint 4) | KEEP | Evidence | `core/evidence/` |
 | `clarifierAgent.js` | 448 | حوار التوضيح (`startClarification/processAnswer/getFinalGoal/…`) | KEEP | Mission (Planning) | `plugins/coding/` |
 | `template.agent.js` | 38 | `applyTemplate` | KEEP | — | `plugins/coding/` |
-| `backendAgent.js` | 324 | `generateBackend`, `generateFrontendAPIIntegration`, `generateAdvancedModules` | KEEP | Agent | `plugins/coding/agents/` |
+| `backendAgent.js` | 329 | `generateBackend`, `generateFrontendAPIIntegration`, `generateAdvancedModules` | KEEP | Agent | `plugins/coding/agents/` |
 | `deployAgent.js` | 500 | نشر Vercel (يستقبل `io`) | MODIFY | Tool (`deploy`, requiresConfirmation, riskLevel: high) | `plugins/coding/tools/` |
 | `agents/index.js` | 9 | barrel للحزمة | MODIFY | Agent (Registry يحلّ محلّه) | يُلغى عند Registry |
 
@@ -152,7 +152,7 @@ Policy/Permission، Identity، Plugin.
 |---|---|---|---|---|---|
 | `jaolaBot.js`, `jaolaBotToken.js` | 295/45 | منتج جولا بوت (ودجت + توكن HMAC) | MOVE | Plugin (bot) | `plugins/bot/` |
 | `marketingAgent.js` | 163 | المساعد التسويقي | MOVE | Plugin (marketing) | `plugins/marketing/` |
-| `integrations/travelpayouts.js` | 132 | تكامل Travelpayouts لمواقع العملاء | MOVE | Provider | `plugins/travel/providers/` (أو يبقى مع coding — يُقرَّر عند Sprint 5) |
+| `integrations/travelpayouts.js` | 157 | تكامل Travelpayouts لمواقع العملاء | MOVE | Provider | `plugins/travel/providers/` (أو يبقى مع coding — يُقرَّر عند Sprint 5) |
 | `systemDoctorAgent.js` | 202 | فحص صحة النظام | KEEP | Evidence | `core/audit/` |
 
 ### C7. DELETE — سقالة ميتة (صفر قرّاء، commit واحد 2026-08-05)

@@ -939,8 +939,11 @@ export class JaolaCognitiveRuntime {
                     .filter(([, v]) => v)
                     .map(([k]) => k.replace('needs', ''))
                     .join(', ');
+                const envNote = advResult.requiredEnv?.length
+                    ? ` — يتطلّب ضبط: ${advResult.requiredEnv.join('، ')}`
+                    : '';
                 this.emitLiveLog(roomName, '5. RUNTIME', 'AdvancedAgent',
-                    `✅ ${features} (${advResult.files.length} ملف)`
+                    `✅ ${features} (${advResult.files.length} ملف)${envNote}`
                 );
             }
         } catch (e) { console.warn('[AdvancedModules]', 'فشل كتابة الوحدات المتقدمة:', e.message); }
