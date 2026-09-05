@@ -44,6 +44,9 @@ const TRANSITIONS = {
     [STATES.PAUSED]:       [STATES.ARCHITECTURE, STATES.GENERATING, STATES.IDLE],
 };
 
+// حالاتٌ لا يعمل فيها وكيلٌ بحكم التعريف — بلوغُها ينهي دورَ من كان يعمل
+const TERMINAL_STATES = [STATES.COMPLETED, STATES.FAILED, STATES.PAUSED, STATES.IDLE];
+
 // 📡 أسماء الأحداث القانونية لكل حالة — لغة موحدة للواجهة والسجلات
 // بدل الصياغات المتفرقة في كل نقطة بث
 export const STATE_EVENTS = {
@@ -140,10 +143,24 @@ export function transitionState(username, project, newState, meta = {}) {
         state.startedAt = Date.now();
     }
 
+    // 🔴 حقلا البطاقة «أنجز» و«الوكيل الحالي» كانا يُكتبان بطريقين لا سالكَ
+    //    فيهما: `markAgentComplete` لم يستدعِها سطرٌ واحد في المستودع،
+    //    و`meta.completedAgent` لم يمرّرها أيُّ نداء. فكانت `completedAgents`
+    //    فارغةً أبداً، وبقي `currentAgent` على آخر وكيلٍ عُيّن — فيُقال للمالك
+    //    «🤖 الوكيل الحالي: Requirements» عن مشروعٍ فرغ بناؤه.
+    //    نشتقّهما الآن من الانتقال نفسه: المغادرُ أنجز (إلا أن يكون المصير
+    //    فشلاً فلا يُحسب إنجازاً)، وفي الحالة النهائية لا وكيلَ يعمل.
+    const leaving = state.currentAgent;
+    const finished = meta.completedAgent
+        || (leaving && leaving !== meta.agent && newState !== STATES.FAILED ? leaving : null);
+    if (finished && !state.completedAgents.includes(finished)) {
+        state.completedAgents.push(finished);
+    }
+
     if (meta.agent) state.currentAgent = meta.agent;
+    else if (TERMINAL_STATES.includes(newState)) state.currentAgent = null;
     if (meta.deployUrl) state.deployUrl = meta.deployUrl;
     if (meta.error) state.error = meta.error;
-    if (meta.completedAgent) state.completedAgents.push(meta.completedAgent);
 
     // تحديث التقدم
     const progressMap = {
@@ -171,16 +188,6 @@ export function transitionState(username, project, newState, meta = {}) {
     return true;
 }
 
-export function markAgentComplete(username, project, agentName) {
-    const state = getProjectState(username, project);
-    if (!state.completedAgents.includes(agentName)) {
-        state.completedAgents.push(agentName);
-    }
-    state.currentAgent = null;
-    state.updatedAt = Date.now();
-    persistEntry('projectStates', getKey(username, project), state);
-}
-
 export function resetProjectState(username, project) {
     const key = getKey(username, project);
     const fresh = createProjectState(username, project);
@@ -197,10 +204,16 @@ export function getProjectSummary(username, project) {
     const state = getProjectState(username, project);
     const completedCount = Object.values(state.progress).filter(Boolean).length;
     const totalStages = Object.keys(state.progress).length;
+    // 🔴 البناءُ الناجح يتخطّى مرحلتين اختياريتين (التخطيط والنشر)، فكانت
+    //    البطاقةُ تقول «مكتمل ✅ — 67%». الاكتمالُ مئةٌ ببلوغه لا بعدّ مراحلَ
+    //    لم تُطلَب. ولا نُقلّص المقام هرباً من النسبة — تلك علّةُ #492 بعينها.
+    const progress = state.state === STATES.COMPLETED
+        ? 100
+        : Math.round((completedCount / totalStages) * 100);
 
     return {
         state: state.state,
-        progress: Math.round((completedCount / totalStages) * 100),
+        progress,
         completedAgents: state.completedAgents,
         currentAgent: state.currentAgent,
         deployUrl: state.deployUrl,

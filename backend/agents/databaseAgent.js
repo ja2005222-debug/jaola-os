@@ -8,7 +8,7 @@
  * - Connection setup
  */
 
-import { groq, smartChat } from './baseAgent.js';
+import { smartChat } from './baseAgent.js';
 import { needsRelationalDb } from './backendNeed.js';
 
 // ═══════════════════════════════════════════════════════
