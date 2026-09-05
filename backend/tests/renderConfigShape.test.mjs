@@ -45,7 +45,7 @@ test('مواضعُ الجواب الخمسة كما قِيست — أيُّ تغ
     const sites = [];
     // JCR/9: موضعُ `hasBackend` انتقل مع `_stageRenderConfig` إلى `stages/renderConfig.js` — القائمةُ تتبعه.
     // JCR/10: موضعُ `false` الثاني انتقل مع `_buildFromRegistry` إلى `stages/buildFromRegistry.js`.
-    for (const f of ['agents/jcr.js', 'agents/stages/renderConfig.js', 'agents/stages/buildFromRegistry.js', 'server.js', 'agents/renderAgent.js', 'services/deployAutomation.js']) {
+    for (const f of ['agents/jcr.js', 'agents/stages/renderConfig.js', 'agents/stages/buildFromClone.js', 'agents/stages/buildFromRegistry.js', 'server.js', 'agents/renderAgent.js', 'services/deployAutomation.js']) {
         read(f).split('\n').forEach((line, i) => {
             const m = /prepareRenderDeploy\(|prepare\(projectPath/.exec(line);
             if (!m || /export (async )?function/.test(line)) return;
@@ -54,8 +54,8 @@ test('مواضعُ الجواب الخمسة كما قِيست — أيُّ تغ
         });
     }
     assert.deepEqual(sites.sort(), [
-        'agents/jcr.js:1946 → false',
         'agents/renderAgent.js:172 → hasBackend',
+        'agents/stages/buildFromClone.js:176 → false',
         'agents/stages/buildFromRegistry.js:55 → false',
         'agents/stages/renderConfig.js:37 → hasBackend',
         'server.js:2391 → false',
