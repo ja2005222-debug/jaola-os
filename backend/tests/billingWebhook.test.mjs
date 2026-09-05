@@ -17,15 +17,17 @@ import mongoose from 'mongoose';
 import Stripe from 'stripe';
 import User from '../models/User.js';
 import { createBillingRouter } from '../routes/billing.js';
+import { quietConsole } from './helpers/quietConsole.mjs';
 
 const SECRET = 'whsec_test_billing_webhook';
 const realUpdateOne = User.updateOne;
 const realDescriptor = Object.getOwnPropertyDescriptor(mongoose.connection, 'readyState');
 
 let server, port, stripe;
-let prevKey, prevHook;
+let prevKey, prevHook, quiet;
 
 before(() => {
+    quiet = quietConsole();   // سجلُّ الراوتر عربيٌّ بإيموجي — يكسر قناةَ التقرير
     prevKey = process.env.STRIPE_SECRET_KEY;
     prevHook = process.env.STRIPE_WEBHOOK_SECRET;
     process.env.STRIPE_SECRET_KEY = 'sk_test_billing_webhook';
@@ -43,6 +45,7 @@ before(() => {
 });
 
 after(() => {
+    quiet?.restore();
     server?.close();
     User.updateOne = realUpdateOne;
     if (realDescriptor) Object.defineProperty(mongoose.connection, 'readyState', realDescriptor);
