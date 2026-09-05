@@ -9,7 +9,7 @@ import { generateNextScaffold, generateContentModel, generateSectionContent, com
 import { buildStaticSite, buildStaticSiteFromSource, buildDashboardPage } from '../services/reactPreview.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO, resolveGoalLanguage } from './languageDetector.js';
-import { getProjectMemory, initFromClarifier, addToHistory, updateDesign, updateStructure, getDomainModel } from './projectMemory.js';
+import { getProjectMemory, initFromClarifier, addToHistory, updateStructure, getDomainModel } from './projectMemory.js';
 import { buildProjectModelContext, buildAppSections } from './projectModel.js';
 import { recordModel } from './modelLibrary.js';
 import { matchCloneTemplate } from './cloneTemplates/index.js';
@@ -25,6 +25,8 @@ import { buildFromRegistry } from './stages/buildFromRegistry.js';
 import { reportMissionSuccess } from './stages/reportMissionSuccess.js';
 import { buildFromClone } from './stages/buildFromClone.js';
 import { runReviewStage, runRefactorStage, runTestingStage, runSeoStage, runSecurityStage, runGitBackupStage } from './stages/quality.js';
+import { runDesigner } from './stages/designer.js';
+import { runAdvancedModules, runFullStackScaffold, runProjectMemory } from './stages/scaffold.js';
 import { handleUndo } from './stages/undo.js';
 // 🔁 إعادةُ تصدير: `resolveProjectType` بقيت واجهةً من `jcr` لمستورِديها (JCR/6)
 export { resolveProjectType };
@@ -33,10 +35,8 @@ import { isMarketingPageGoal } from './blockRegistry.js';
 import { verifyBehavior, buildBehaviorFixInstruction, analyzeProjectStatic, readPageCode, extractDefinedFunctions } from './behaviorVerifier.js';
 import { hasKeyword } from './keywordMatch.js';
 import { updateLanguage, recordProject, recordEdit } from './userProfile.js';
-import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
 import { generateDatabase } from './databaseAgent.js';
 import { generateAuth, needsAuth } from './authAgent.js';
-import { generateAdvancedModules } from './backendAgent.js';
 import { generatePrismaSetup, needsPostgres } from './postgresAgent.js';
 import { renderServiceName, deployToRender } from './renderAgent.js';
 import { isFullStackProject } from './deployAgent.js';
@@ -58,7 +58,6 @@ import { guardFiles, guardSingleJS, scrubPlaceholders, ensureEditIntegrity } fro
 import { recordMissionOutcome, recordBehaviorGaps, matureLessons, lessonDirective, MIN_COUNT_TO_TEACH } from '../services/platformLessons.js';
 import { getPlatformKnowledge } from '../services/platformKnowledge.js';
 import { getProjectSecrets } from '../services/projectSecrets.js';
-import { recommendFullStack, buildFullStackProject } from './fullstackTemplates.js';
 import { recordBuild, recordEditAction, buildMetricsPayload } from '../services/metricsStore.js';
 import { setPendingGoal, getPendingGoal, consumePendingGoal, clearDialog } from '../services/conversationManager.js';
 import { enqueueMission, takeLostMission } from '../core/runtime/ExecutionQueue.js';
@@ -329,31 +328,9 @@ export class JaolaCognitiveRuntime {
         }
     }
 
-    // 🎨 مرحلة Designer Agent — قرار بصري قبل Coder (احتياط حتمي: لوحة minimal)
+    // خرجت إلى `stages/designer.js#runDesigner` (JCR/14) — تفويضٌ يُبقي المستدعيَ كما هو.
     async _stageDesigner(context, roomName) {
-        try {
-            this.emitLiveLog(roomName, '5. RUNTIME', 'DesignerAgent', '🎨 جاري توليد الـ Design Brief...');
-            const designResult = await generateDesignBrief(
-                context.goal,
-                context.username,
-                context.activeProject,
-                getUserLanguage(context.username) || 'en'
-            );
-            if (designResult.success) {
-                const brief = designResult.brief;
-                saveDesignBrief(context.projectPath, brief);
-                context.mentalModel.visualIdentity = brief.coderInstructions;
-                context.mentalModel.designBrief = brief;
-                // 📌 السطر يقول ما جرى فعلاً: لوحةٌ دائماً، وتخصيصُ AI إن جرى
-                // وسببُ تخلّفه إن لم يجرِ. كان يعلن ✅ فوق تخصيصٍ لم يقع قطّ.
-                this.emitLiveLog(roomName, '5. RUNTIME', 'DesignerAgent',
-                    `✅ Design Brief — ${brief.paletteName} palette`
-                    + (brief.aiEnhanced ? ' + تخصيص AI' : ` (بلا تخصيص AI: ${brief.aiSkipReason})`)
-                );
-            }
-        } catch (e) {
-            this.emitLiveLog(roomName, '5. RUNTIME', 'DesignerAgent', `⚠️ تخطّي: ${e.message}`);
-        }
+        return runDesigner(context, roomName, this.reporter);
     }
 
     // 🗣️ حلقةُ النقاش خرجت إلى `stages/debate.js` (JCR/4) — تفويضٌ يُبقي المستدعيَ
@@ -425,14 +402,9 @@ export class JaolaCognitiveRuntime {
         return runGitBackupStage(context, roomName, this.reporter);
     }
 
-    // 🗂️ تحديث Project Memory بهيكل الموقع المبني وهويته البصرية
+    // خرجت إلى `stages/scaffold.js#runProjectMemory` (JCR/14) — تفويضٌ يُبقي النداءَ بالاسم من `DELIVERY_STAGES`.
     async _stageProjectMemory(context) {
-        if (context.mentalModel?.templateSections?.length) {
-            updateStructure(context.username, context.activeProject, context.mentalModel.templateSections);
-        }
-        if (context.mentalModel?.visualIdentity) {
-            updateDesign(context.username, context.activeProject, { style: context.mentalModel.visualIdentity });
-        }
+        return runProjectMemory(context);
     }
 
     // ⚙️ مرحلة Backend — إذا كان المشروع يحتاج خادماً: فريق الخلفية المتخصص
@@ -604,46 +576,14 @@ export class JaolaCognitiveRuntime {
         }
     }
 
-    // 🆕 Advanced Modules — Stripe, Upload, OAuth
+    // خرجت إلى `stages/scaffold.js#runAdvancedModules` (JCR/14) — تفويضٌ يُبقي النداءَ بالاسم من `DELIVERY_STAGES`.
     async _stageAdvancedModules(context, roomName) {
-        try {
-            const advResult = await generateAdvancedModules(context.originalGoal, context.projectPath);
-            if (advResult.files.length > 0) {
-                for (const file of advResult.files) {
-                    await writeProjectFile(context.projectPath, file.name, file.content);
-                }
-                const features = Object.entries(advResult.features)
-                    .filter(([, v]) => v)
-                    .map(([k]) => k.replace('needs', ''))
-                    .join(', ');
-                const envNote = advResult.requiredEnv?.length
-                    ? ` — يتطلّب ضبط: ${advResult.requiredEnv.join('، ')}`
-                    : '';
-                this.emitLiveLog(roomName, '5. RUNTIME', 'AdvancedAgent',
-                    `✅ ${features} (${advResult.files.length} ملف)${envNote}`
-                );
-            }
-        } catch (e) { console.warn('[AdvancedModules]', 'فشل كتابة الوحدات المتقدمة:', e.message); }
+        return runAdvancedModules(context, roomName, this.reporter);
     }
 
-    // 🏗️ Full-Stack Scaffold — للفئات المتقدمة (متجر/حجوزات/عقارات…)
-    // يُولّد مشروع Next.js + API + Prisma كامل في مجلد fullstack/ بجانب
-    // الموقع الثابت (لا يتعارض معه) — نقطة انطلاق جاهزة للتشغيل والنشر.
+    // خرجت إلى `stages/scaffold.js#runFullStackScaffold` (JCR/14) — تفويضٌ يُبقي النداءَ بالاسم من `DELIVERY_STAGES`.
     async _stageFullStackScaffold(context, roomName) {
-        try {
-            const fsRec = recommendFullStack(
-                context.originalGoal, context.blueprint?.category, context.blueprint?.kind
-            );
-            if (fsRec.fullstack) {
-                const { category, files } = buildFullStackProject(fsRec.category, context.activeProject);
-                for (const file of files) {
-                    await writeProjectFile(path.join(context.projectPath, 'fullstack'), file.name, file.content);
-                }
-                this.emitLiveLog(roomName, '5. RUNTIME', 'FullStackAgent',
-                    `🏗️ نسخة Full-Stack (${category}) في مجلد fullstack/ — Next.js + API + Prisma (${files.length} ملف)`
-                );
-            }
-        } catch (e) { console.warn('[FullStack]', 'فشل كتابة سكافولد fullstack/:', e.message); }
+        return runFullStackScaffold(context, roomName, this.reporter);
     }
 
     // 🚀 إعدادُ النشر خرج إلى `stages/renderConfig.js` (JCR/9) — تفويضٌ يُبقي
