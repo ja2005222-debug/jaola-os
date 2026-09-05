@@ -2096,7 +2096,7 @@ app.get('/api/project/brain', verifyToken, validateProjectOwnership, async (req,
 });
 
 app.post('/api/github/push', verifyToken, validate(schemas.githubPush), validateProjectOwnership, async (req, res) => {
-    const { repoUrl, branch } = req.body;
+    const { repoUrl, branch, overwriteRemote } = req.body;
     const roomName = `${req.user.username}-${req.activeProject}`;
 
     // repoUrl اختياري الآن — إن لم يُرسل نستخدم التكامل المحفوظ للمشروع
@@ -2109,7 +2109,8 @@ app.post('/api/github/push', verifyToken, validate(schemas.githubPush), validate
 
     try {
         io.to(roomName).emit('log', { message: '🐙 [GitHub]: جاري الرفع على GitHub...' });
-        const result = await pushProject(req.user.username, req.activeProject, req.projectPath, { repoUrl, branch });
+        const result = await pushProject(req.user.username, req.activeProject, req.projectPath,
+            { repoUrl, branch, force: !!overwriteRemote });
         if (result.success) {
             io.to(roomName).emit('log', { message: `✅ [GitHub]: تم الرفع على ${result.url} (${result.branch})` });
         } else {

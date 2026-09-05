@@ -76,7 +76,8 @@ export async function pushProject(username, projectName, projectPath, overrides 
     }
 
     const authUrl = buildAuthUrl(repoUrl, integration?.patEncrypted);
-    const result = await pushToGitHub(projectPath, repoUrl, branch, { authUrl });
+    // الإذنُ بمحو تاريخٍ بعيدٍ مفترق لا يُفترض — يصل صريحاً من المستخدم فقط.
+    const result = await pushToGitHub(projectPath, repoUrl, branch, { authUrl, force: !!overrides.force });
 
     if (result.success && dbOnline()) {
         try {

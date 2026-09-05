@@ -69,6 +69,8 @@ export const schemas = {
     githubPush: z.object({
         repoUrl: z.string().url().optional(),
         branch: z.string().max(100).regex(/^[\w\-\/\.]+$/).optional(),
+        // إذنٌ صريحٌ باستبدال تاريخٍ بعيدٍ مفترق — الافتراضُ الرفض.
+        overwriteRemote: z.boolean().optional(),
         project: projectField,
     }),
 
