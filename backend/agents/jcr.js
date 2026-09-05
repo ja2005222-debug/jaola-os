@@ -9,9 +9,9 @@ import { generateNextScaffold, generateContentModel, generateSectionContent, com
 import { buildStaticSite, buildStaticSiteFromSource, buildDashboardPage } from '../services/reactPreview.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO, resolveGoalLanguage } from './languageDetector.js';
-import { getProjectMemory, initFromClarifier, addToHistory, buildMemoryContext, updateDesign, updateStructure, updateTech, setDomainModel, getDomainModel } from './projectMemory.js';
-import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel, buildAppSections } from './projectModel.js';
-import { getLibraryModel, recordModel } from './modelLibrary.js';
+import { getProjectMemory, initFromClarifier, addToHistory, updateDesign, updateStructure, updateTech, setDomainModel, getDomainModel } from './projectMemory.js';
+import { mergeProjectModel, buildProjectModelContext, buildAppSections } from './projectModel.js';
+import { recordModel } from './modelLibrary.js';
 import { matchCloneTemplate } from './cloneTemplates/index.js';
 import { patchEditPlan } from './patchEditor.js';
 import { stampSeed } from './seedStamp.js';
@@ -20,6 +20,7 @@ import { localizeTemplateFiles } from './templateLocalizer.js';
 import { localizeLog } from './logLocalizer.js';
 import { RoomReporter } from '../core/runtime/RoomReporter.js';
 import { runDebate } from './stages/debate.js';
+import { understandGoal } from './stages/understand.js';
 import { buildFailureChatMessage } from './failureMessages.js';
 import { assetsFor, injectFaviconTag, paletteHint, pickPalette } from './cloneAssets.js';
 import { polishHtml } from './polishPack.js';
@@ -27,7 +28,7 @@ import { composePage, isMarketingPageGoal, brandFromGoal, selectBlocks, applyBra
 import { verifyBehavior, buildBehaviorFixInstruction, analyzeProjectStatic, readPageCode, extractDefinedFunctions } from './behaviorVerifier.js';
 import { detectProjectType } from './knowledgeEngine.js';
 import { hasKeyword } from './keywordMatch.js';
-import { updateLanguage, recordProject, recordEdit, buildProfileContext } from './userProfile.js';
+import { updateLanguage, recordProject, recordEdit } from './userProfile.js';
 import { generateDesignBrief, saveDesignBrief } from './designerAgent.js';
 import { generateDatabase } from './databaseAgent.js';
 import { generateAuth, needsAuth } from './authAgent.js';
@@ -63,7 +64,6 @@ import { recordLesson, recordMissionOutcome, recordBehaviorGaps, matureLessons, 
 import { getPlatformKnowledge } from '../services/platformKnowledge.js';
 import { getProjectSecrets } from '../services/projectSecrets.js';
 import { buildImageContext } from '../services/imageService.js';
-import { generateBlueprint, buildBlueprintContext } from './appBlueprint.js';
 import { recommendFullStack, buildFullStackProject } from './fullstackTemplates.js';
 import { recordScore, recordBuild, recordEditAction, buildMetricsPayload } from '../services/metricsStore.js';
 import { setPendingGoal, getPendingGoal, consumePendingGoal, clearDialog } from '../services/conversationManager.js';
@@ -1274,58 +1274,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
     }
 
     // ── مراحل _runMissionNow (نُقلت حرفياً — الدفعة 4) ────────────────────
-    // 🧭 الفهم: ذاكرة المشروع/الملف الشخصي ← مخطط التطبيق ← نموذج المجال.
-    // لا تفشل أبداً (كل خطوة باحتياطها)؛ تُرجع الهدف المُثرى وسياقات الحقن.
+    // 🧭 الفهمُ خرج إلى `stages/understand.js` (JCR/5) — تفويضٌ يُبقي المستدعيَ
+    // واختباراتِ الاستبدال على النسخة كما هي؛ المُبلِّغُ يُمرَّر وسيطاً.
     async _understandGoal(goal, ctx) {
-        const { username, activeProject, roomName } = ctx;
-        // 🆕 دمج Project Memory + User Profile في سياق الهدف
-        const memoryContext = buildMemoryContext(username, activeProject);
-        const profileContext = buildProfileContext(username);
-        const enrichedGoal = (memoryContext || profileContext)
-            ? `${goal}\n${memoryContext}${profileContext}`
-            : goal;
-
-        // 🧭 App Blueprint — يفهم نوع التطبيق ومكوّناته الوظيفية (أول وأهم خطوة)
-        // يمنع تحويل كل شيء لبروشور ويضمن بناء ميزات عاملة (بحث/فلترة/حجز...)
-        let blueprintContext = '';
-        let blueprint = null;
-        try {
-            blueprint = await generateBlueprint(goal);
-            blueprintContext = buildBlueprintContext(blueprint);
-            const kindLabel = { webapp: 'تطبيق تفاعلي', tool: 'أداة', landing: 'صفحة هبوط', brochure: 'موقع تعريفي' }[blueprint.kind] || blueprint.kind;
-            this.emitLiveLog(roomName, 'BLUEPRINT', 'AppAnalyzer',
-                `🧭 ${blueprint.appType} — ${kindLabel}${blueprint.functionalComponents?.length ? ` (${blueprint.functionalComponents.length} مكوّن وظيفي)` : ''}`);
-
-            // تحديث ذاكرة المشروع بأقسام المخطط الحقيقية — يمنع بقاء أقسام قديمة
-            // خاطئة في تقرير التسليم (كانت تظهر أقسام طبية لمشروع طيران)
-            if (blueprint.keySections?.length) {
-                updateStructure(username, activeProject, blueprint.keySections,
-                    (blueprint.functionalComponents || []).map(c => c.name));
-            }
-        } catch (e) { console.warn('[ProjectMemory]', 'فشل تحديث هيكل المشروع:', e.message); }
-
-        // 🧩 نموذج المشروع (طبقة الفهم) — يستخلص كيانات + أدوار + تدفّقات،
-        // يُدمج مع النموذج المحفوظ (فهم متراكم لا يُستبدل)، ويُحقن في التوليد
-        // ليبني الفريق على نظام متماسك لا على تخمين. لا يفشل أبداً (احتياطي مفيد).
-        let domainModelContext = '';
-        try {
-            // 📚 بذرة من مكتبة النماذج: فهم فئة المشروع المتراكم عبر كل المشاريع
-            // السابقة الناجحة — فلا نبدأ من الصفر. الأولوية: المشروع نفسه > اشتقاق
-            // هذه الجولة > مكتبة الفئة العامة.
-            const seed = getLibraryModel(blueprint?.category);
-            const derived = await deriveProjectModel(goal, blueprint);
-            const prior = getDomainModel(username, activeProject);
-            // 🆕 بناء بهوية جديدة («ابني متجر عطور») يستبدل النموذج القديم — لا يدمجه،
-            // كي لا يرث المتجر أدوار مشروع سابق (TeamMember/Driver) فيبني الشيء الخطأ.
-            const newIdentity = isExplicitNewBuild(goal);
-            let model = seed ? mergeProjectModel(seed, derived) : derived;
-            if (prior && !newIdentity) model = mergeProjectModel(model, prior);
-            setDomainModel(username, activeProject, model);
-            domainModelContext = buildProjectModelContext(model);
-            this.emitLiveLog(roomName, 'MODEL', 'DomainAnalyst',
-                `🧩 نموذج المشروع: ${summarizeModel(model)}${newIdentity ? ' (هوية جديدة — استُبدل النموذج القديم)' : seed ? ' (مبذور من مكتبة الفئة)' : ''}`);
-        } catch (e) { console.warn('[ProjectModel]', 'فشل استخلاص نموذج المشروع:', e.message); }
-        return { enrichedGoal, blueprint, blueprintContext, domainModelContext };
+        return understandGoal(goal, ctx, this.reporter);
     }
 
     // 🧭 اختيار استراتيجية البناء: Registry (صفحة تسويقية) / Clone (تطبيق مطابق) /
