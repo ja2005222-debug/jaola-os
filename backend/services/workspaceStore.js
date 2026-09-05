@@ -114,6 +114,26 @@ export async function snapshotWorkspace(username, project, projectPath) {
     }
 }
 
+/**
+ * 🗑️ يمحو لقطةَ مشروعٍ زال.
+ *
+ * 🔴 لم يكن حذفُ المشروع يمسّ اللقطة، وهي **شيفرةُ المستخدم نفسُها**. وليست
+ *    بقايا خاملة: `restoreWorkspaceIfEmpty` يكتبها في أيّ مجلدِ مشروعٍ
+ *    **فارغ** — وذلك بعينه حالُ مشروعٍ جديدٍ يُنشأ بالاسم نفسه. فتعود ملفاتُ
+ *    المحذوف داخل مشروعٍ آخر، وصاحبُه يظنّ أنّه بدأ من بياض.
+ */
+export async function clearWorkspaceSnapshot(username, project) {
+    if (!online()) return { deleted: 0, offline: true };
+    try {
+        const r = await WorkspaceFile.deleteMany({ username, project });
+        return { deleted: r?.deletedCount || 0 };
+    } catch (e) {
+        // لا يُقال «حُذف» لما لم يُحذف — الفشلُ يُرفع للمستدعي كما هو
+        console.warn('[WorkspaceStore] تعذّر مسح اللقطة:', e.message);
+        return { deleted: 0, error: e.message };
+    }
+}
+
 // استعادة الملفات إذا كان مجلد المشروع فارغاً (بعد إعادة نشر)
 export async function restoreWorkspaceIfEmpty(username, project, projectPath) {
     if (!online()) return { restored: 0 };
