@@ -151,6 +151,48 @@ export async function getProjectStats(projectPath) {
     };
 }
 
+/**
+ * رايةُ القوّة تبعاً لحال البعيد — مِفصلٌ نقيٌّ لأنّ القرارَ نفسَه هو المحروس.
+ *
+ * • الفرعُ غيرُ موجود → لا قوّةَ أصلاً.
+ * • موجودٌ وسلسلتُه معلومة → `--force-with-lease=<فرع>:<sha>`: القوّةُ لازمة
+ *   (لا تاريخَ مشتركاً بين مشروعٍ مولَّدٍ محلّيّاً والبعيد)، لكنّها ترفض إن
+ *   تحرّك البعيدُ بين الفحص والدفع — نافذةٌ صغيرةٌ لكنّها حقيقية.
+ * • موجودٌ وسلسلتُه مجهولة → لا حيازةَ نشترطها، فالقوّةُ عمياء.
+ *
+ * تُعاد **لاحقةً** لا الأمرَ كلَّه، ليبقى كلُّ نداءِ `runGit` مصفوفةً حرفيّةً
+ * كما يشترط حارسُ «الصدفةُ خارج الطريق» في `tests/gitAgent.test.mjs`.
+ */
+export function forceFlags(branch, remoteState = {}) {
+    if (!remoteState.exists) return [];
+    return [remoteState.sha ? `--force-with-lease=${branch}:${remoteState.sha}` : '--force'];
+}
+
+/**
+ * حالةُ الفرع على المستودع البعيد قبل الدفع.
+ *
+ * `ls-remote` يكشف الوجودَ والـSHA بلا جلبٍ كامل. ثمّ `fetch` لذلك المرجع
+ * وحدَه يتيح سؤالَ git: أهذا الالتزامُ سلفٌ لِما عندنا؟ فإن لم يكن، فالتاريخُ
+ * مفترق، ودفعُ القوّة يمحو عملاً ليس لنا.
+ */
+async function inspectRemoteBranch(projectPath, target, branch) {
+    const ls = await runGit(['ls-remote', target, `refs/heads/${branch}`], projectPath);
+    if (!ls.success) return { exists: false, diverged: false, sha: null, aheadCount: 0, unknown: true };
+    const sha = (ls.output || '').split(/\s+/)[0] || null;
+    if (!sha) return { exists: false, diverged: false, sha: null, aheadCount: 0 };
+
+    const fetched = await runGit(['fetch', '--no-tags', target, `refs/heads/${branch}`], projectPath);
+    if (!fetched.success) {
+        // لا نستطيع الحكم — نُبلّغ الجهل بدل ادّعاء الأمان
+        return { exists: true, diverged: true, sha, aheadCount: 0, unknown: true };
+    }
+    const ancestor = await runGit(['merge-base', '--is-ancestor', 'FETCH_HEAD', 'HEAD'], projectPath);
+    if (ancestor.success) return { exists: true, diverged: false, sha, aheadCount: 0 };
+
+    const count = await runGit(['rev-list', '--count', 'HEAD..FETCH_HEAD'], projectPath);
+    return { exists: true, diverged: true, sha, aheadCount: parseInt(count.output, 10) || 0 };
+}
+
 // ═══════════════════════════════════════════════════════
 // 🐙 GitHub Push
 // ═══════════════════════════════════════════════════════
@@ -180,7 +222,29 @@ export async function pushToGitHub(projectPath, repoUrl, branch = 'main', option
 
         // Push — نستخدم الرابط المُصادق (بالتوكن) مباشرة إن وُجد، بدون حفظه
         const pushTarget = options.authUrl || 'origin';
-        const push = await runGit(['push', pushTarget, `HEAD:${branch}`, '--force'], projectPath);
+
+        // 🔴 كان الدفعُ `--force` دائماً وبلا شرط. ومستودعُ المشروع هنا
+        //    يُنشأ بـ`git init` محلّيّاً، فلا تاريخَ مشتركاً له مع البعيد:
+        //    أيُّ عملٍ في مستودع المستخدم — التزاماتُ زملائه، فرعُه الحقيقيّ،
+        //    ما كتبه بيده — يُمحى في لحظة، بلا سؤالٍ ولا أثر.
+        //    فصار الدفعُ يسأل البعيدَ أوّلاً:
+        //      • الفرعُ غيرُ موجود        → دفعٌ عاديّ
+        //      • البعيدُ سلفٌ لِما عندنا  → دفعٌ عاديّ (تقدّمٌ سريع)
+        //      • تاريخٌ مفترق             → **يرفض** ويقول ما سيُمحى،
+        //                                   إلّا أن يأذن المستدعي بـ`force`
+        const remoteState = await inspectRemoteBranch(projectPath, pushTarget, branch);
+        if (remoteState.diverged && !options.force) {
+            return {
+                success: false,
+                diverged: true,
+                remoteCommits: remoteState.aheadCount,
+                error: `المستودع البعيد يحتوي ${remoteState.aheadCount} التزاماً ليس عندنا على الفرع «${branch}». `
+                    + 'الدفعُ سيمحوها نهائياً. اختر فرعاً آخر أو مستودعاً فارغاً، '
+                    + 'أو أعد المحاولة مع تأكيد الاستبدال.',
+            };
+        }
+
+        const push = await runGit(['push', pushTarget, `HEAD:${branch}`, ...forceFlags(branch, remoteState)], projectPath);
 
         if (!push.success) {
             // لا نُسرّب التوكن في رسالة الخطأ

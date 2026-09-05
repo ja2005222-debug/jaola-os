@@ -71,7 +71,7 @@ import {
 } from './agents/clarifierAgent.js';
 
 import { schemas, validate, sanitizePath } from './middleware/security.js';
-import { abortMission } from './core/runtime/AbortRegistry.js';
+import { stopMission } from './core/runtime/AbortRegistry.js';
 import { pushProject, getIntegration, isPlatformRepo } from './services/githubSync.js';
 import { encryptSecret, decryptSecret } from './utils/secretVault.js';
 import * as oauth from './services/oauthLite.js';
@@ -724,6 +724,7 @@ io.on('connection', (socket) => {
         socket.join(roomName);
         socket.roomName = roomName;
         socket.activeProject = safeProject;
+        socket.username = username;   // يحتاجه `stopMission` ليسأل الصفَّ أيضاً
         broadcastPresence(io, roomName);
 
         const projectPath = getProjectPath(username, safeProject);
@@ -760,10 +761,10 @@ io.on('connection', (socket) => {
 
     // ⏹️ إيقاف المهمة الجارية عبر الـ socket (بديل فوري لمسار /api/ai/abort)
     socket.on('abort_mission', () => {
-        if (!socket.roomName) return;
-        const wasActive = abortMission(socket.roomName);
-        if (wasActive) {
-            io.to(socket.roomName).emit('log', { message: '⏹️ [SYSTEM]: تم استلام طلب إيقاف المهمة...' });
+        if (!socket.roomName || !socket.username || !socket.activeProject) return;
+        const outcome = stopMission(socket.username, socket.activeProject, socket.roomName);
+        if (outcome !== 'none') {
+            io.to(socket.roomName).emit('log', { message: STOP_LOG[outcome] });
         }
     });
 
@@ -2095,7 +2096,7 @@ app.get('/api/project/brain', verifyToken, validateProjectOwnership, async (req,
 });
 
 app.post('/api/github/push', verifyToken, validate(schemas.githubPush), validateProjectOwnership, async (req, res) => {
-    const { repoUrl, branch } = req.body;
+    const { repoUrl, branch, overwriteRemote } = req.body;
     const roomName = `${req.user.username}-${req.activeProject}`;
 
     // repoUrl اختياري الآن — إن لم يُرسل نستخدم التكامل المحفوظ للمشروع
@@ -2108,7 +2109,8 @@ app.post('/api/github/push', verifyToken, validate(schemas.githubPush), validate
 
     try {
         io.to(roomName).emit('log', { message: '🐙 [GitHub]: جاري الرفع على GitHub...' });
-        const result = await pushProject(req.user.username, req.activeProject, req.projectPath, { repoUrl, branch });
+        const result = await pushProject(req.user.username, req.activeProject, req.projectPath,
+            { repoUrl, branch, force: !!overwriteRemote });
         if (result.success) {
             io.to(roomName).emit('log', { message: `✅ [GitHub]: تم الرفع على ${result.url} (${result.branch})` });
         } else {
@@ -2408,15 +2410,29 @@ app.post('/api/project/rollback', verifyToken, validateProjectOwnership, async (
 });
 
 // 🆕 إيقاف مهمة الـ AI الجارية للمشروع الحالي
+// ⏹ أطوارُ الإيقاف الأربعة — لكلٍّ جوابُه، فلا يُقال «لا توجد مهمة» عن
+// مهمةٍ في الصفّ أخبر النظامُ صاحبَها بمركزها فيه.
+const STOP_LOG = {
+    aborted: '⏹️ [SYSTEM]: تم استلام طلب إيقاف المهمة...',
+    cancelled: '⏹️ [SYSTEM]: أُلغيت مهمتك المنتظرة في الصف قبل أن تبدأ.',
+    pending: '⏹️ [SYSTEM]: المهمة بدأت للتوّ — ستتوقف عند أول نقطة فحص.',
+};
+const STOP_MESSAGE = {
+    aborted: 'جاري إيقاف المهمة.',
+    cancelled: 'أُلغيت المهمة المنتظرة قبل أن تبدأ.',
+    pending: 'المهمة بدأت للتوّ وستتوقف عند أول نقطة فحص.',
+    none: 'لا توجد مهمة نشطة.',
+};
+
 app.post('/api/ai/abort', verifyToken, validate(schemas.abortMission), validateProjectOwnership, (req, res) => {
     const roomName = `${req.user.username}-${req.activeProject}`;
-    const wasActive = abortMission(roomName);
+    // 🔴 كان يمرّ بـ`abortMission` وحدها، فلا يرى مهمةً في الصفّ ولا مهمةً
+    //    بدأت ولم تُسجَّل بعد — ويقول «لا توجد مهمة نشطة» عمّا أخبر به للتوّ.
+    const outcome = stopMission(req.user.username, req.activeProject, roomName);
 
-    if (wasActive) {
-        io.to(roomName).emit('log', { message: '⏹️ [SYSTEM]: تم استلام طلب إيقاف المهمة...' });
-    }
+    if (outcome !== 'none') io.to(roomName).emit('log', { message: STOP_LOG[outcome] });
 
-    res.json({ success: true, aborted: wasActive, message: wasActive ? 'جاري إيقاف المهمة.' : 'لا توجد مهمة نشطة.' });
+    res.json({ success: true, aborted: outcome !== 'none', outcome, message: STOP_MESSAGE[outcome] });
 });
 
 app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) => {

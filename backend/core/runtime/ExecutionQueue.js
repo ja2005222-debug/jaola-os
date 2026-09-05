@@ -105,6 +105,26 @@ export function enqueueMission({ username, project, run, onWait, goal = '', room
     return { accepted: true, waited: willWait };
 }
 
+/**
+ * إلغاء مهمةٍ ما تزال منتظرةً في الصف (لم تبدأ بعد).
+ *
+ * 🔴 كان زرّ ⏹ يمرّ بـ`abortMission` وحدها، وهي لا ترى إلّا مهمةً بلغت
+ *    `registerMission` داخل `_runMissionNow`. فالمهمة التي قال لها النظامُ
+ *    للتوّ «⏳ مهمتك في الصف (المركز N)» يُجاب عنها «لا توجد مهمة نشطة»،
+ *    ثمّ تبدأ وتُكمل. الصفُّ كان خارج مدى الزرّ كلَّه.
+ *
+ * @returns {boolean} أأُلغيت مهمةٌ منتظرة فعلاً؟
+ */
+export function cancelWaiting(username, project) {
+    const key = `${username}:${project}`;
+    const i = waiting.findIndex((j) => j.key === key);
+    if (i === -1) return false;
+    waiting.splice(i, 1);
+    inflight.delete(key);
+    writeLedger();
+    return true;
+}
+
 export function queueStatus() {
     return { running: runningCount, waiting: waiting.length, maxConcurrent: MAX_CONCURRENT };
 }

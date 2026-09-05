@@ -65,9 +65,14 @@ test('الواجهة: rewrite بلا أي بناء regex غير مدعوم في 
 test('vercel.json بلا مفاتيح خارج مخطط Vercel — وإلا فشل النشر كلّه', () => {
     const raw = fs.readFileSync(new URL('../../frontend/vercel.json', import.meta.url), 'utf8');
     const cfg = JSON.parse(raw);
+    // القائمةُ يدويّةٌ عمداً (لا شبكةَ في CI). كلُّ مفتاحٍ يُضاف يجب أن
+    // يُصادَق أوّلاً على المخطَّط الرسميّ `https://openapi.vercel.sh/vercel.json`،
+    // وهو `additionalProperties: false` — أي أنّ مفتاحاً خارجه يُفشل النشر كلَّه.
+    // `git` صودق بهذه الطريقة (٥ سبتمبر ٢٠٢٦) بـajv مع حارسَي نقيض: مفتاحٌ
+    // مخترَع يُرفض، وقيمةٌ من نوعٍ خاطئ تُرفض.
     const ALLOWED = new Set([
         'buildCommand', 'cleanUrls', 'crons', 'devCommand', 'framework', 'functions',
-        'headers', 'ignoreCommand', 'images', 'installCommand', 'outputDirectory',
+        'git', 'headers', 'ignoreCommand', 'images', 'installCommand', 'outputDirectory',
         'public', 'redirects', 'regions', 'rewrites', 'trailingSlash',
     ]);
     for (const key of Object.keys(cfg)) {
@@ -165,4 +170,19 @@ test('لا يعود negative/positive lookahead أو lookbehind إلى أي rewr
         assert.ok(!/\(\?[!=<]/.test(rule.source || ''),
             `rewrite "${rule.source}" يحوي بناء regex غير مدعوم رسمياً في Vercel`);
     }
+});
+
+// 🚦 معاينات Vercel: حصّةُ الحساب المجاني (١٠٠ نشرة/يوم) نفدت ثلاث مرّات في
+// عملٍ واحد، فصار كلُّ PR يحمل فحصاً أحمرَ لا علاقة له بالكود. الفرعُ الذي
+// يعمل عليه الوكيل مُعطَّلٌ صراحةً، و`main` غيرُ مذكورٍ فيبقى `true` بحكم
+// المخطَّط («Any non specified branch is `true` by default») — أي أنّ نشرَ
+// الإنتاج لا يتأثّر. هذا الاختبار يحرس الأمرين معاً.
+test('vercel.json يعطّل معاينات فرع الوكيل ولا يمسّ إنتاج main', () => {
+    const cfg = JSON.parse(fs.readFileSync(new URL('../../frontend/vercel.json', import.meta.url), 'utf8'));
+    const enabled = cfg.git?.deploymentEnabled;
+    assert.ok(enabled && typeof enabled === 'object', 'git.deploymentEnabled خريطةُ فروع');
+    assert.strictEqual(enabled['claude/performance-review-optimization-4czwh2'], false,
+        'فرعُ الوكيل معطَّل');
+    assert.ok(!('main' in enabled), 'main غيرُ مذكور — فيبقى مفعَّلاً بحكم المخطَّط');
+    assert.ok(cfg.rewrites?.length, 'ولم تُفقَد قاعدةُ الـSPA');
 });

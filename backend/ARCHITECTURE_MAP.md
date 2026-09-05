@@ -28,7 +28,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## A) `backend/server.js` — 3766 سطراً، 158 مساراً، 96 استيراداً محلياً
+## A) `backend/server.js` — 3782 سطراً، 158 مساراً، 96 استيراداً محلياً
 
 لا يُفكَّك دفعة واحدة (البند 19). الخريطة **حسب المجال** لأن الملف واحد؛ كل صف = مرشّح
 ملف `routes/<domain>.js` مستقبلاً على نمط `routes/billing.js` القائم فعلاً («أول
@@ -118,9 +118,9 @@ Policy/Permission، Identity، Plugin.
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
 | `designerAgent.js` | 300 | ملخّص تصميم + احتياط حتمي + تخصيصُ AI ناطقٌ بسبب تخلّفه (2p) | KEEP | Task | `plugins/coding/stages/` |
-| `reviewAgent.js`, `refactorAgent.js`, `testingAgent.js` | 240/234/244 | مراجعة/إعادة هيكلة/اختبارات مولَّدة | KEEP | Task | `plugins/coding/stages/` |
+| `reviewAgent.js`, `refactorAgent.js`, `testingAgent.js` | 240/239/244 | مراجعة/إعادة هيكلة/اختبارات مولَّدة | KEEP | Task | `plugins/coding/stages/` |
 | `seoAgent.js`, `seoPack.js`, `securityAgent.js`, `polishPack.js`, `pwaAgent.js` | 178/118/158/63/234 | حزم حتمية عند التسليم | KEEP | Task | `plugins/coding/stages/` |
-| `gitAgent.js` | 197 | commit/init/stats (ينفّذ git) | MODIFY | Tool (`git` عبر `execFile` بمصفوفة وسائط — لا صدفة) | `plugins/coding/tools/` |
+| `gitAgent.js` | 261 | commit/init/stats (ينفّذ git) | MODIFY | Tool (`git` عبر `execFile` بمصفوفة وسائط — لا صدفة) | `plugins/coding/tools/` |
 | `databaseAgent.js`, `postgresAgent.js`, `authAgent.js`, `generatedAppSecrets.js`, `dependencyAgent.js` | 272/362/345/56/288 | كتلة الخلفية | KEEP | Task | `plugins/coding/stages/` |
 | `renderAgent.js` | 262 | نشر Render | MODIFY | Tool (deploy) | `plugins/coding/tools/` |
 | `requirementsVerifier.js` | 101 | هل نُفِّذت المتطلبات؟ | KEEP | Evidence | `core/verification/` (Sprint 4) |
@@ -169,8 +169,8 @@ Policy/Permission، Identity، Plugin.
 ### D1. وقت التشغيل (مرشّحة لـ`core/`)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `missionQueue.js` → ✅ `core/runtime/ExecutionQueue.js` | 135 | طابور المهام + سجلّ دائم للساقطة (نفس الصادرات) | MOVED (Sprint 2a ✅، حرفياً) | Mission (Execution Queue عامة) | `core/runtime/ExecutionQueue.js` |
-| `abortRegistry.js` → ✅ `core/runtime/AbortRegistry.js` | 49 | إيقاف مهمة جارية | MOVED (Sprint 2a ✅، حرفياً) | Mission | `core/runtime/AbortRegistry.js` |
+| `missionQueue.js` → ✅ `core/runtime/ExecutionQueue.js` | 155 | طابور المهام + سجلّ دائم للساقطة (نفس الصادرات) | MOVED (Sprint 2a ✅، حرفياً) | Mission (Execution Queue عامة) | `core/runtime/ExecutionQueue.js` |
+| `abortRegistry.js` → ✅ `core/runtime/AbortRegistry.js` | 84 | إيقاف مهمة جارية | MOVED (Sprint 2a ✅، حرفياً) | Mission | `core/runtime/AbortRegistry.js` |
 | `platformLessons.js` | 187 | دروس الفشل + ثغرات السلوك (التعلّم الحقيقي) | MOVE | Evidence + Memory | `core/verification/` أو `core/memory/` |
 | `projectBrain.js` | 196 | دماغ المشروع (دالة نقية) | MOVE | Evidence | `core/verification/` (Sprint 4) |
 | `codeGuard.js` | 389 | حارس جودة الكود المولَّد | KEEP | Verification | `plugins/coding/` |
@@ -185,7 +185,7 @@ Policy/Permission، Identity، Plugin.
 ### D2. التسليم والنشر (مجال Coding)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `deployAutomation.js`, `customDomains.js`, `hostNames.js`, `githubSync.js`, `githubFiles.js`, `projectExport.js`, `projectManager.js` | 241/207/37/110/83/37/82 | نشر ونطاقات وGitHub وتصدير | MODIFY | Tool (كل واحدة أداة بـriskLevel) + Transaction (للنشر) | `plugins/coding/tools/` |
+| `deployAutomation.js`, `customDomains.js`, `hostNames.js`, `githubSync.js`, `githubFiles.js`, `projectExport.js`, `projectManager.js` | 241/207/37/111/83/37/82 | نشر ونطاقات وGitHub وتصدير | MODIFY | Tool (كل واحدة أداة بـriskLevel) + Transaction (للنشر) | `plugins/coding/tools/` |
 | `reactPreview.js`, `twin.js` | 477/69 | معاينة وتعديل | KEEP | Tool | `plugins/coding/` |
 | `siteConnect.js`, `siteCms.js`, `siteInbox.js`, `siteCreds.js`, `newsletterSubscribers.js`, `projectAuth.js`, `projectSecrets.js`, `storeKey.js`, `dataSync.js`, `appData.js`, `appCollections.js`, `appAssets.js` | 128/118/97/65/60/76/121/63/138/51/82/76 | خدمات مواقع العملاء المنشورة | KEEP | — | `plugins/coding/runtime-services/` |
 | `imageService.js`, `aiImages.js` | 69/433 | صور | KEEP | Provider | `plugins/coding/` |
@@ -232,7 +232,7 @@ Policy/Permission، Identity، Plugin.
 ## E) بقية `backend/`
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `middleware/security.js` | 94 | `sanitizePath` + Zod schemas + `validate` | MODIFY | Tool (workspace guard موحّد — `CONTRACTS.md` §3) + Permission | `core/policy/` |
+| `middleware/security.js` | 96 | `sanitizePath` + Zod schemas + `validate` | MODIFY | Tool (workspace guard موحّد — `CONTRACTS.md` §3) + Permission | `core/policy/` |
 | `utils/secretVault.js` (6 مستوردين) | 85 | تشفير الأسرار | KEEP | Identity | `core/identity/` |
 | `utils/security.js`, `utils/corsErrors.js`, `utils/spaFallback.js`, `utils/performance.js`, `utils/aiProvider.js` | 21/15/19/60/42 | أدوات صغيرة حيّة | KEEP | — | كما هي |
 | `models/User.js`, `Project.js`, `Conversation.js`, `BotTenant.js` | 26/27/22/21 | مخطّطات Mongo (Core DB) | KEEP | Identity/Mission (Core DB — البند 14) | `models/` |
