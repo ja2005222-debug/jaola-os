@@ -87,3 +87,53 @@ export function projectPathOf(baseWorkspace, username, activeProject) {
         safeSegment(activeProject, 'sandbox_app'),
     );
 }
+
+// ═══════════════════════════════════════════════════════
+// 📄 ملفّاتُ المشروع المولَّدة — السياسةُ الرابعة، ومكانُها هنا
+// ═══════════════════════════════════════════════════════
+
+/**
+ * ملفّاتٌ منقوطةٌ مشروعةٌ داخل مشروع المستخدم.
+ *
+ * 🔴 كانت هذه القائمةُ **مكرّرةً ومتضاربة**: `agents/fileManager.js` يسمح
+ *    بـ`.gitignore` و`.env.example`، و`services/projectBrain.js` يسمح
+ *    بـ`.env.example` وحده. فملفٌّ يُنسخ في النسخة الاحتياطية ولا يراه
+ *    «دماغُ المشروع». سؤالٌ واحدٌ بجوابين — عائلةُ 7/1 و7/2 و4h.
+ *
+ * والمقيسُ من المولّدات: لا يخرج منها اسمٌ منقوطٌ غيرُ هذين، ولا مجلّدَ
+ * منقوطٍ إطلاقاً. فالقائمةُ مغلقةٌ عن قياسٍ لا عن حدس.
+ */
+export const PROJECT_DOTFILES = Object.freeze(['.gitignore', '.env.example']);
+
+/**
+ * 🛡️ يحلّ اسمَ ملفٍّ **جاء من مولِّدٍ أو من نموذج** إلى مسارٍ مطلقٍ محتوىً
+ * داخل جذر المشروع — أو `null` إن كان الاسمُ غيرَ مقبول.
+ *
+ * السياسةُ منقولةٌ من `writePlanFiles` في `jcr.js`، حيث كانت **مطبَّقةً في
+ * موضعٍ واحدٍ من ستّةَ عشر**: خمسةَ عشرَ موضعاً في الملفّ نفسِه كانت تكتب
+ * `path.join(projectPath, file.name)` مباشرةً بلا احتواء. وأخطرُها مسارُ
+ * التعديل: الأسماءُ فيه من **مخرجات النموذج**، فاسمٌ مثل `../../x/index.html`
+ * يكتب خارج مشروع صاحبه.
+ *
+ * الفرقُ الوحيدُ عن الأصل: الملفّاتُ المنقوطةُ المشروعة تمرّ. كان الأصلُ
+ * يرفض كلَّ منقوطٍ بحجّة «لن تُخدَّم أصلاً» — وهي حجّةُ **خدمةٍ** لا حجّةُ
+ * **كتابة**؛ وتطبيقُها على المولّدات يُسقط `.env.example` صامتاً.
+ *
+ * @returns {string|null} مسارٌ مطلقٌ آمن، أو `null` مع سببٍ صامت.
+ */
+export function resolveProjectFile(root, name) {
+    if (typeof name !== 'string') return null;
+    const norm = path.normalize(name.trim()).replace(/\\/g, '/');
+    if (!norm || path.isAbsolute(norm)) return null;
+    const parts = norm.split('/').filter(Boolean);
+    if (!parts.length) return null;
+    for (const seg of parts) {
+        if (seg === '..') return null;
+        // منقوطٌ مسموحٌ **كاسمِ ملفٍّ أخير** فقط — لا مجلّداتٍ منقوطة.
+        if (seg.startsWith('.')) {
+            const isLast = seg === parts[parts.length - 1];
+            if (!isLast || !PROJECT_DOTFILES.includes(seg)) return null;
+        }
+    }
+    return resolveInside(root, norm);
+}

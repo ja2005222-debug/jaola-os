@@ -52,9 +52,9 @@ test('مواضعُ الجواب الخمسة كما قِيست — أيُّ تغ
         });
     }
     assert.deepEqual(sites.sort(), [
-        'agents/jcr.js:2334 → false',
-        'agents/jcr.js:2396 → false',
-        'agents/jcr.js:996 → hasBackend',
+        'agents/jcr.js:1000 → hasBackend',
+        'agents/jcr.js:2338 → false',
+        'agents/jcr.js:2400 → false',
         'agents/renderAgent.js:172 → hasBackend',
         'server.js:2382 → false',
         'services/deployAutomation.js:213 → true',

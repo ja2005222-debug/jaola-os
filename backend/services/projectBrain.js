@@ -9,6 +9,7 @@
 
 import { promises as fsp } from 'fs';
 import path from 'path';
+import { PROJECT_DOTFILES } from '../core/runtime/workspacePaths.js';
 
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.cache', 'coverage']);
 const kindOf = (p) => {
@@ -30,7 +31,9 @@ export async function scanProjectFiles(projectPath, { maxFiles = 500 } = {}) {
         try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
         for (const e of entries) {
             if (out.length >= maxFiles) break;
-            if (e.name.startsWith('.') && e.name !== '.env.example') continue;
+            // 🔴 كان يسمح بـ`.env.example` وحده بينما النسخُ الاحتياطيّ يسمح
+            //    بـ`.gitignore` أيضاً: ملفٌّ يُحفظ ولا يراه دماغُ المشروع.
+            if (e.name.startsWith('.') && !PROJECT_DOTFILES.includes(e.name)) continue;
             const abs = path.join(dir, e.name);
             const r = rel ? `${rel}/${e.name}` : e.name;
             if (e.isDirectory()) {

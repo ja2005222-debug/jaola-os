@@ -11,6 +11,7 @@
 import fs from 'fs';
 import { promises as fsPromises } from 'fs';
 import path from 'path';
+import { PROJECT_DOTFILES } from '../core/runtime/workspacePaths.js';
 
 // ═══════════════════════════════════════════════════════
 // 📂 عمليات أساسية
@@ -193,7 +194,7 @@ const BACKUP_MAX_TOTAL_BYTES = 8 * 1024 * 1024;
 
 // `.env.example` يكتبه databaseAgent في كل مشروع، وليس فيه سرّ (فالسرُّ في
 // `.env` وهو مستثنى). كان يسقط مع سائر الملفات المنقوطة فلا يُنسخ ولا يُسترجع.
-const BACKUP_DOTFILES = new Set(['.gitignore', '.env.example']);
+const BACKUP_DOTFILES = new Set(PROJECT_DOTFILES);   // مصدرٌ واحدٌ — كانت هنا نسخةٌ ثانية
 
 /**
  * يجمع ملفات النسخة ويصف ما تعذّر جمعه بدل ابتلاعه.
