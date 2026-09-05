@@ -54,7 +54,7 @@ test('مواضعُ الجواب الخمسة كما قِيست — أيُّ تغ
         });
     }
     assert.deepEqual(sites.sort(), [
-        'agents/jcr.js:2010 → false',
+        'agents/jcr.js:1946 → false',
         'agents/renderAgent.js:172 → hasBackend',
         'agents/stages/buildFromRegistry.js:55 → false',
         'agents/stages/renderConfig.js:37 → hasBackend',
