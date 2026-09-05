@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs/promises';
 import fsSync from 'fs';
-import Project from '../models/Project.js';
+import { saveProjectFields } from '../services/projectRecord.js';
 import { generatePackageJson } from './dependencyAgent.js';
 import { vercelProjectNameOf } from '../services/customDomains.js';
 
@@ -482,14 +482,11 @@ export async function deployProject({ projectPath, activeProject, currentUser, e
         // الرابط النظيف الثابت — يبقى ثابتاً عبر عمليات النشر المتتالية
         const vercelProductionUrl = `https://${cleanDeployUrl(result, vercelProjectName)}`;
 
-        // تحديث قاعدة البيانات
-        try {
-            await Project.findOneAndUpdate(
-                { name: activeProject, owner: currentUser },
-                { vercelUrl: vercelProductionUrl }
-            );
-        } catch (e) {
-            // فشل تحديث DB لا يجب أن يُفشل عملية النشر نفسها
+        // تحديث قاعدة البيانات — 🔴 كان `findOneAndUpdate` بلا `upsert`، فمع
+        // `sandbox_app` (لا مستندَ له) يطابق صفراً ويكتب صفراً بلا أثر، ولا
+        // حارسَ اتّصالٍ هنا فتُخزَّن العمليّةُ عشرَ ثوانٍ ثمّ تُرمى.
+        if (!await saveProjectFields(currentUser, activeProject, { vercelUrl: vercelProductionUrl })) {
+            console.warn(`🚀 [DEPLOY] نُشر ${currentUser}/${activeProject} على ${vercelProductionUrl} لكن لم يُحفظ الرابطُ في السجلّ.`);
         }
 
         io.to(roomName).emit('log', {

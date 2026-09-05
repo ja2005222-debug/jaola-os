@@ -7,6 +7,11 @@ import { ensureStaticDeploy, ensureFullStackDeploy, isFullStackProject, ensurePa
 import fs from 'node:fs';
 import os from 'node:os';
 import pathMod from 'node:path';
+// `deployAgent` صار يطبع تحذيرَ مشغّلٍ حين لا يُحفظ الرابطُ الحيّ في
+// السجلّ — والطباعةُ الخام تفسد قناةَ تقرير `node --test`.
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+
+divertConsoleToStderr();
 
 const f = (name, content = 'x') => ({ file: name, data: Buffer.from(content).toString('base64'), encoding: 'base64' });
 const cfgOf = (files) => {

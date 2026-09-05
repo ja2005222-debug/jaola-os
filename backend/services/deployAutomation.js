@@ -18,6 +18,7 @@
  */
 
 import { encryptSecret } from '../utils/secretVault.js';
+import { saveProjectFields } from './projectRecord.js';
 import { isPlatformRepo } from './githubSync.js';
 
 const GITHUB_API = 'https://api.github.com';
@@ -111,14 +112,11 @@ export async function ensureProjectRepo({ username, project, deps = {} }) {
     return { success: true, repoUrl, branch: 'main', created: !exists };
 }
 
+// 🔴 كانت تعيد `true` بعد `updateOne` بلا `upsert`: مع `sandbox_app` صفرُ
+//    مطابقاتٍ وصفرُ كتابة — والتكاملُ **وتوكنُه المعمّى** يضيعان، ويُعلَن
+//    الحفظُ ناجحاً. الناتجُ الآن يقول ما وقع فعلاً.
 async function defaultSaveIntegration(username, project, github) {
-    try {
-        const mongoose = (await import('mongoose')).default;
-        if (mongoose.connection.readyState !== 1) return false;
-        const Project = (await import('../models/Project.js')).default;
-        await Project.updateOne({ name: project, owner: username }, { $set: { github } });
-        return true;
-    } catch { return false; }
+    return saveProjectFields(username, project, { github });
 }
 
 async function renderFetch(fetchImpl, apiKey, path, options = {}) {

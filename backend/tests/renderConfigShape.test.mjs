@@ -56,8 +56,8 @@ test('مواضعُ الجواب الخمسة كما قِيست — أيُّ تغ
         'agents/jcr.js:2338 → false',
         'agents/jcr.js:2400 → false',
         'agents/renderAgent.js:172 → hasBackend',
-        'server.js:2388 → false',
-        'services/deployAutomation.js:213 → true',
+        'server.js:2391 → false',
+        'services/deployAutomation.js:211 → true',
     ], 'مواضعُ تقرير شكل `render.yaml` تغيّرت — راجع الحارسَ والوثيقة معاً');
 });
 

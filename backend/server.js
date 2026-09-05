@@ -135,6 +135,7 @@ import { assetsFor, injectFaviconTag } from './agents/cloneAssets.js';
 import { listLibraries, getLibraryById, injectLibrary } from './agents/libraryRegistry.js';
 import { polishHtml } from './agents/polishPack.js';
 import { setProjectSecret, deleteProjectSecret, getProjectSecretNames, getProjectSecrets, getUnreadableSecretNames, clearProjectSecrets } from './services/projectSecrets.js';
+import { saveProjectFields, projectLocalPath } from './services/projectRecord.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty, clearWorkspaceSnapshot } from './services/workspaceStore.js';
 import { recordTurn } from './services/conversationStore.js';
 import { buildMetricsPayload, clearMetrics } from './services/metricsStore.js';
@@ -335,7 +336,7 @@ const DB = {
         if (this._isOnline()) {
             // localPath مطلوب في المخطط — بدونه كان الإنشاء يفشل صامتاً
             try {
-                return await Project.create({ name, owner, localPath: `workspace/${owner}/${name}` });
+                return await Project.create({ name, owner, localPath: projectLocalPath(owner, name) });
             } catch (e) {
                 console.warn('[DB.createProject] فشل:', e.message);
             }
@@ -2176,7 +2177,9 @@ app.post('/api/github/connect', verifyToken, validate(schemas.githubConnect), va
             { name: req.activeProject, owner: req.user.username },
             {
                 $set: { github },
-                $setOnInsert: { name: req.activeProject, owner: req.user.username, localPath: req.projectPath },
+                // `localPath` بالصيغة النسبيّة نفسِها التي يكتبها `DB.createProject` —
+                // كان يُكتب هنا مساراً مطلقاً، فيختلف شكلُ الحقل باختلاف الطريق.
+                $setOnInsert: { name: req.activeProject, owner: req.user.username, localPath: projectLocalPath(req.user.username, req.activeProject) },
             },
             { upsert: true, new: true }
         );
@@ -2505,10 +2508,12 @@ app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) 
                 });
                 if (auto.success) {
                     io.to(roomName).emit('log', { message: `✅ [Render]: ${auto.serviceCreated ? 'أُنشئت خدمتك ويجري أول نشر' : 'أُعيد النشر'} — موقعك: ${auto.liveUrl}` });
-                    try {
-                        const Project = (await import('./models/Project.js')).default;
-                        await Project.findOneAndUpdate({ name: req.activeProject, owner: req.user.username }, { vercelUrl: auto.liveUrl });
-                    } catch { /* تحديث اختياري */ }
+                    // 🔴 كان `findOneAndUpdate` بلا `upsert` (واستيراداً ديناميكيّاً
+                    //    لنموذجٍ مستوردٍ أعلاه أصلاً): مع `sandbox_app` يطابق صفراً
+                    //    فيضيع الرابطُ الحيّ، والفشلُ مبتلَعٌ في `catch` فارغ.
+                    if (!await saveProjectFields(req.user.username, req.activeProject, { vercelUrl: auto.liveUrl })) {
+                        console.warn(`🚀 [Render] نُشر ${req.user.username}/${req.activeProject} على ${auto.liveUrl} لكن لم يُحفظ الرابطُ في السجلّ.`);
+                    }
                     emitUserProjects(roomName, req.user.username, req.activeProject);
                     return res.json({ accepted: true, target: 'render', liveUrl: auto.liveUrl, repoUrl: auto.repoUrl, serviceCreated: auto.serviceCreated });
                 }
