@@ -24,12 +24,12 @@ const collect = () => { const events = []; return { events, reporter: new RoomRe
 const reply = (events) => events.find(([ev]) => ev === 'chat_reply')[1].message;
 const GATES = (v) => v.gates.map(g => `${g.name}:${g.status}`);
 
-test('behaviorOutcome: لم يُشغَّل/تُخطّي → unverified بملخّصه؛ اجتاز → pass؛ ثغرات → fail بأسماء الفحوص؛ غائب → unverified', () => {
+test('behaviorOutcome: لم يُشغَّل/تُخطّي → unverified بملخّصه؛ اجتاز → pass؛ ثغرات → fail بأسماء الفحوص حين لا تفصيلَ لها (PM/10: الفاصلُ «؛»)؛ غائب → unverified', () => {
     assert.deepEqual(behaviorOutcome(null), { status: 'unverified', detail: 'تعذّر التحقّق السلوكي' });
     assert.deepEqual(behaviorOutcome({ ran: false, skipped: true, ok: true, summary: 'لا index.html للتحقّق منه.' }), { status: 'unverified', detail: 'لا index.html للتحقّق منه.' });
     assert.deepEqual(behaviorOutcome({ ran: true, ok: true, summary: '4 ✅' }), { status: 'pass', detail: '4 ✅' });
     assert.deepEqual(behaviorOutcome({ ran: true, ok: false, checks: [{ name: 'wiring-complete', status: 'fail' }, { name: 'x', status: 'pass' }, { name: 'role-coverage', status: 'fail' }] }),
-        { status: 'fail', detail: 'ثغراتٌ باقية: wiring-complete، role-coverage' });
+        { status: 'fail', detail: 'ثغراتٌ باقية: wiring-complete؛ role-coverage' }); // PM/10: «؛» بين الفحوص لأنّ تفاصيلَها تحوي «،»؛ وبلا تفصيلٍ يبقى الاسم
     assert.deepEqual(behaviorOutcome({ ran: true, ok: false, checks: [], summary: 'sum' }), { status: 'fail', detail: 'ثغراتٌ باقية: sum' });
 });
 
@@ -88,7 +88,8 @@ test('Clone: تحقّقٌ نهائيّ على ما وصل القرص — كلو�
     broken.files = broken.files.map(f => f.name === 'app.js' ? { ...f, content: 'nothing();' } : f.name === 'index.html' ? { ...f, content: '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><h1>x</h1><button onclick="missingFn()">go</button><script src="app.js"></script></body></html>' } : f);
     const bad = await run(broken, 'svclbad');
     assert.equal(bad.r.verdict.status, 'FAILED', JSON.stringify(bad.r.verdict));
-    assert.match(bad.r.verdict.gates[2].detail, /^ثغراتٌ باقية: .*wiring-complete/);
+    // PM/10: الثغراتُ بأسمائها لا بأسماء فحوصها — الدوالُّ الغائبة، الأدوارُ الغائبة، وخطأُ التشغيل (شرحُ كلِّ فحصٍ بعد «—» يُسقَط)
+    assert.equal(bad.r.verdict.gates[2].detail, 'ثغراتٌ باقية: دوال مُشار إليها وغير معرّفة (قشرة بلا منطق): nothing، missingFn؛ أدوار بلا واجهة/تمثيل: Customer، Admin؛ أخطاء JS وقت التشغيل: Uncaught [ReferenceError: nothing is not defined] | missingFn is not defined');
     // PM/7: الملفّاتُ المعطوبة أفرغت مفرداتِ المتجر أيضاً — فبوّابةُ المتطلّبات تسبق السلوكَ بثلاثةٍ بلا أثر (Admin وحدَه بقي في styles.css)
     assert.equal(bad.r.verdict.gates[1].detail, '3 متطلّب بلا أثر: شاشة Customer، بيانات Product، بيانات Order (1/4 له أثر — أثرٌ لا تنفيذ؛ 2 لا يُتتبَّع بالمفردات)');
     assert.match(bad.msg, /^⚠️ اكتمل — بدأنا من قالب/); assert.match(bad.msg, /\n⚠️ التحقّق وجد ثغرات — requirements-verify: 3 متطلّب بلا أثر: [^\n]* • behavior-verify: ثغراتٌ باقية: /);
@@ -111,7 +112,8 @@ test('الحدود: البناةُ الثلاثة يستوردون strategyVerdi
     for (const f of ['buildFromRegistry', 'buildFromClone', 'buildReact']) {
         const src = fs.readFileSync(path.join(HERE, `../agents/stages/${f}.js`), 'utf8').replace(/^\s*\/\/.*$/gm, '');
         assert.ok(/import \{ (verifyAndAutofix, )?strategyVerdict \} from '\.\/verify\.js';/.test(src), f + ' strategyVerdict');
-        assert.ok(src.includes("import { withVerdict } from './reportMissionSuccess.js';"), f + ' withVerdict');
+        assert.ok(src.includes("import { withVerdict, kernelOutcomeLine } from './reportMissionSuccess.js';"), f + ' withVerdict + kernelOutcomeLine (PM/10)');
+        assert.equal((src.match(/kernelOutcomeLine\(/g) || []).length, 1, f + ' سطرُ النواة بحكمه'); assert.ok(!/'✨ نجاح/.test(src), f + ' لا سطرَ نجاحٍ مكتوباً');
         assert.equal((src.match(/strategyVerdict\(\{/g) || []).length, 1, f);
         assert.equal((src.match(/withVerdict\(/g) || []).length, 1, f);
         assert.ok(/return \{ success: true, [^}]*verdict \};/.test(src), f + ' يعود بالحكم');

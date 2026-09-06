@@ -24,7 +24,7 @@ import { snapshotWorkspace } from '../../services/workspaceStore.js';
 import { recordBuild, buildMetricsPayload } from '../../services/metricsStore.js';
 import { writeProjectFile } from '../../core/runtime/workspacePaths.js';
 import { verifyAndAutofix, strategyVerdict } from './verify.js';
-import { withVerdict } from './reportMissionSuccess.js';
+import { withVerdict, kernelOutcomeLine } from './reportMissionSuccess.js';
 
 // ⚛️ بناء مشروع React/Next حقيقي + معاينة حيّة في الـ iframe + خيار النشر
 export async function buildReactProject(goal, ctx, { sections = [] } = {}, reporter) {
@@ -142,6 +142,6 @@ export async function buildReactProject(goal, ctx, { sections = [] } = {}, repor
         message: withVerdict(report, verdict, lang),
         options: lang === 'ar' ? ['➕ أضف صفحة', '🚀 انشر على Vercel', '🐙 ادفع إلى GitHub', '✏️ عدّل قسماً'] : ['➕ Add a page', '🚀 Deploy to Vercel', '🐙 Push to GitHub', '✏️ Edit a section'],
     });
-    reporter.liveLog(roomName, 'JCOS', 'Kernel', '✨ نجاح');
+    reporter.liveLog(roomName, 'JCOS', 'Kernel', kernelOutcomeLine(verdict));
     return { success: true, stack: 'react-next', files: builtFiles, verdict };
 }

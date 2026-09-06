@@ -33,7 +33,7 @@ import { snapshotWorkspace } from '../../services/workspaceStore.js';
 import { recordBuild, buildMetricsPayload } from '../../services/metricsStore.js';
 import { writeProjectFile, writePlanFiles } from '../../core/runtime/workspacePaths.js';
 import { strategyVerdict } from './verify.js';
-import { withVerdict } from './reportMissionSuccess.js';
+import { withVerdict, kernelOutcomeLine } from './reportMissionSuccess.js';
 
 export async function buildFromClone(clone, goal, ctx, reporter, { complete = patchEditPlan } = {}) {
     const { projectPath, username, activeProject, roomName } = ctx;
@@ -280,6 +280,6 @@ export async function buildFromClone(clone, goal, ctx, reporter, { complete = pa
         ? (lang === 'ar' ? `\n🏗️ أُكمل تلقائيّاً على القالب: ${completed.join('، ')}.` : `\n🏗️ Auto-completed on the template: ${completed.join(', ')}.`)
         : '';
     reporter.send(roomName, 'chat_reply', { message: withVerdict(msg + completionNote, verdict, lang) });
-    reporter.liveLog(roomName, 'JCOS', 'Kernel', '✨ نجاح (قالب jaola عامل)');
+    reporter.liveLog(roomName, 'JCOS', 'Kernel', kernelOutcomeLine(verdict, ' (قالب jaola عامل)'));
     return { success: true, clone: clone.id, verdict };
 }

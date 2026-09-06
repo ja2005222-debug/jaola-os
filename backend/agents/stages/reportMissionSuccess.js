@@ -41,6 +41,17 @@ export function withVerdict(message, verdict, lang = 'ar') {
     return `${body}\n${icon} ${lang === 'ar' ? (verdict.status === 'FAILED' ? 'التحقّق وجد ثغرات — ' : 'لم يكتمل التحقّق: ') : (verdict.status === 'FAILED' ? 'Verification found gaps — ' : 'Verification incomplete: ')}${note}\n${gateLine}`;
 }
 
+/**
+ * ⚖️ سطرُ النواة الختاميّ بحكمه (PM/10): كان «✨ نجاح» حتميّاً على كلِّ مهمّةٍ اكتملت — فيُبثّ بجوار «⚖️ الحكم: FAILED».
+ * «✨ نجاح» لما اجتاز (أو لما لا حكمَ له لأنّ شيئاً لم يُبنَ)؛ FAILED: اكتملت المهمّةُ ولم يجتز المنتج؛ وما سواهما: لم يكتمل التحقّق.
+ * `note` ملحقُ البُناة (« (قالب jaola عامل)») يبقى كما كان.
+ */
+export function kernelOutcomeLine(verdict, note = '') {
+    if (!verdict || verdict.status === 'PASS') return `✨ نجاح${note}`;
+    if (verdict.status === 'FAILED') return `⚠️ اكتملت المهمّة — ولم يجتز المنتجُ التحقّق${note}`;
+    return `☑️ اكتملت المهمّة — ولم يكتمل التحقّق${note}`;
+}
+
 export function reportMissionSuccess(goal, ctx, reporter, verdict = null) {
     const { projectPath, username, activeProject, roomName } = ctx;
     const langMsg = getUserLanguage(username);
