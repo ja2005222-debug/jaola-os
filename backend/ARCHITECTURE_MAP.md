@@ -200,7 +200,7 @@ Policy/Permission، Identity، Plugin.
 | `abortRegistry.js` → ✅ `core/runtime/AbortRegistry.js` | 84 | إيقاف مهمة جارية | MOVED (Sprint 2a ✅، حرفياً) | Mission | `core/runtime/AbortRegistry.js` |
 | `platformLessons.js` | 187 | دروس الفشل + ثغرات السلوك (التعلّم الحقيقي) | MOVE | Evidence + Memory | `core/verification/` أو `core/memory/` |
 | `projectBrain.js` | 203 | دماغ المشروع (دالة نقية) | MOVE | Evidence | `core/verification/` (Sprint 4) |
-| `codeGuard.js` | 389 | حارس جودة الكود المولَّد | KEEP | Verification | `plugins/coding/` |
+| `codeGuard.js` (حارسُ التعديل: تنسيقُ التلميع ليس تنسيقَ الصفحة) | 392 | حارس جودة الكود المولَّد | KEEP | Verification | `plugins/coding/` |
 | `indexHealth.js` (1 مستورد) | 81 | فحصُ قيود التفرّد قراءةً (autoIndex=false ولا createIndexes) | KEEP | — | `core/` |
 | `persistence.js` (11 مستورداً) | 114 | طبقة الحفظ (Mongo + احتياط) | KEEP | — | `core/` (Sprint 7) |
 | `workspaceStore.js` | 173 | نسخ ملفات المشاريع إلى Mongo | KEEP | Tool (workspace) | `core/runtime/` |

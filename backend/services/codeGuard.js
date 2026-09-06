@@ -260,8 +260,11 @@ export async function ensureEditIntegrity(files, projectPath, emit = () => { }) 
         }
 
         // 2) روابط التنسيق المحلية سقطت — وهي جوهر عطل «الموقع بلا تصميم»
+        //    تنسيقُ باقة التلميع (`<style data-jaola-polish>` — خطٌّ وحركاتٌ عامّة) ليس تنسيقَ الصفحة: كان يُرضي الشرطَ
+        //    فيظنّ الحارسُ الصفحةَ الملمَّعة منسَّقةً ولا يستعيد رابطَها المحلّيّ (قِيس في PM/8 على كلِّ كلونٍ يُعدَّل لاحقاً).
         const newLinks = (content.match(STYLESHEET_LINK) || []).map(localHrefOf).filter(Boolean);
-        if (newLinks.length === 0 && !/<style[\s>]/i.test(content) && /<\/head>/i.test(content)) {
+        const ownInlineStyle = /<style\b(?![^>]*data-jaola-polish)[^>]*>/i.test(content);
+        if (newLinks.length === 0 && !ownInlineStyle && /<\/head>/i.test(content)) {
             const oldLinks = (oldContent.match(STYLESHEET_LINK) || []).map(localHrefOf).filter(Boolean);
             let restore = oldLinks.filter(refExists);
             if (!restore.length) {
