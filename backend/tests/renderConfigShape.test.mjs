@@ -65,7 +65,10 @@ test('مواضعُ الجواب الخمسة كما قِيست — أيُّ تغ
 
 test('`true` عند النشر مقترنةٌ بحارسِ full-stack — والاقترانُ هو الصواب', () => {
     // الحارسُ يشترط دالّةً حقيقيّةً في `api/`؛ فالثابتُ نتيجةٌ لا افتراض.
-    for (const f of ['server.js', 'agents/jcr.js']) {
+    // JCR/24: مسارُ النشر من المحادثة خرج من `jcr` مع نوايا CEO إلى `stages/ceoIntent.js` — الحارسُ يتبعه إلى بيته،
+    // و`jcr` نفسُه لم يعد يستدعي `deployToRender` (يتيمٌ أُزيل بالقياس).
+    assert.ok(!/deployToRender\(/.test(read('agents/jcr.js')), '`jcr.js`: عاد نداءُ النشر إليه — مكانُه stages/ceoIntent.js');
+    for (const f of ['server.js', 'agents/stages/ceoIntent.js']) {
         const src = read(f);
         const guard = src.indexOf('isFullStackProject(');
         const call = src.indexOf('deployToRender(');
