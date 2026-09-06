@@ -8623,3 +8623,69 @@ hook `afterBuild`) — والاختبارُ يثبّت أنّ الدالّةَ �
 ### الأثر
 
 - `jcr.js` **١٥٨٧ ← ١٤٩٢** (٣٢٥٢ عند JCR/4 — خرج ٥٤٪). الاختبارات **١٥٨٦ ← ١٥٩٣**.
+
+
+---
+
+## JCR/26 — «أوّلُ حاملٍ لحالة الحجب يخرج — بشقِّ `gate` لا بكائنٍ جديد»
+
+الاستخراجُ السابعَ عشر. **لا تغييرَ في السلوك** — نقلٌ حرفيّ لـ`_handleBareConfirmations` (٦٦ سطراً) إلى
+`agents/stages/intentHandlers.js#handleBareConfirmations(req, agents, reporter, gate, ops) → boolean`، بعد القرار المكتوب أدناه.
+
+### JCR/26 — قرارُ حالةِ الحجب (`gatedMessages`) قبل النقل
+
+**القياس** (بعد JCR/25، `jcr.js` ١٤٩٢):
+
+| الحالة | النوع | يكتب | يقرأ/يمسح | خارج jcr |
+|---|---|---|---|---|
+| `this.gatedMessages` | `Map<username, message>` — الرسالةُ المحجوبة بانتظار الإصرار | `_handleUnifiedRoute` (١)، `_handleClassifiedIntent` (٢) | `_handleBareConfirmations` (get+delete)، `_handleUnifiedRoute` (has+delete)، `_handleClassifiedIntent` (has+delete ×٢) | الاختباراتُ تقرؤها وتكتبها **على النسخة** (`s.rt.gatedMessages.set/has/get`، ٨ مواضع في `jcrRuntimeFlows`/`jcrClassifiedIntent`) |
+| `gateConfirmReply(lang)` | دالّةٌ نقيّة (نصُّ الحجب بلغته) | — | المعالجاتُ الثلاثة (٣ نداءات) | الاختباراتُ تستدعيها على النسخة لمقارنة الردّ |
+| `this.trackByRoom` | `Map<roomName, 'site'\|'system'>` | `handleUserMessage` (١) | `_selectBuildStrategy` (١) | لا |
+
+**الحكم**:
+
+1. `gatedMessages` **حالةٌ مشتركة** بين ثلاثة معالجات عبر رسائل متعاقبة (حجبٌ في رسالة، إصرارٌ في التالية) — ليست حالةَ معالجٍ واحد، فلا
+   تُنقل مع أيٍّ منها. تبقى **على الصنف** (الاختباراتُ تملكها على النسخة، وهذا عقدٌ قائم). عند نقل كلِّ معالج تُمرَّر له كشقٍّ `gate` من
+   دوالَّ مربوطةٍ بالنسخة — **لا كائنَ جديد ولا تجريد**: `{ has: (u) => this.gatedMessages.has(u), get, set, delete, confirmReply: (lang) =>
+   this.gateConfirmReply(lang) }` — المنهجُ نفسُه الذي مرّر `executeMission`/`surgicalEdit` في JCR/22–25، فتبقى قراءاتُ الاختبارات وكتاباتُها
+   على النسخة نافذة. (البديلُ — `ConversationGate` صنفاً محقَناً — تجريدٌ بلا مستهلكٍ ثانٍ؛ يُؤجَّل حتّى يظهر مستهلكٌ خارج `jcr`.)
+2. `gateConfirmReply` تبقى على الصنف (الاختباراتُ تقارن بها)؛ نصُّها لا يُنسخ إلى المراحل بل يصل عبر `gate.confirmReply`.
+3. `trackByRoom` خارج نطاق المعالجات الثلاثة (كاتبُه `handleUserMessage` وقارئُه `_selectBuildStrategy`) — لا يُمسّ في هذه السلسلة.
+
+**الترتيب**: JCR/26 ينقل **أصغرَ الحاملين** `_handleBareConfirmations` (٦٧؛ `gate` قراءةً ومسحاً فقط + `ops = { executeMission, surgicalEdit }`)
+ليُثبت الشقَّ على الحالة قبل الأكبرَين؛ ثمّ `_handleUnifiedRoute` (٧٥) و`_handleClassifiedIntent` (١٢١) في JCR/27 بالشقّ نفسِه مضافاً إليه
+`generateChatResponse`/`readCurrentCodeContextAsync`/`classifyIntent` (الأخيرةُ حاملةُ `loadExecutiveMemory` — تُقاس عندها).
+
+### ما تغيّر
+
+- `jcr.js` **١٤٩٢ ← ١٤٤٥** (−٦٦ للجسد، +١٠ لـ`_gate()`). أرضيّةُ `reporter.send` **٣٠** تبقى (قِيس ٣٣). `## C)` تبقى ١٣٥ (الملفُّ قائم).
+- `_gate()` على الصنف: خمسُ دوالَّ مربوطةٍ بـ`this.gatedMessages` و`gateConfirmReply` — يعيد كائناً جديداً في كلِّ نداء لكنّ الخريطةَ واحدة.
+- أربعُ يتيماتٍ أُزيلت من سطرَين مشتركَين (`isBareYes`/`isBareExecute` من `chatCommands`، `decide`/`buildContinuationGoal` من `ceoBrain` —
+  `missionBriefing` يبقى لمستهلكٍ في `handleUserMessage`). بقاءُ تسعةِ أسماءٍ مشتركة مؤكَّد في السكربت.
+- حارسُ حدود JCR/25 (`intentHandlersStage`) أُعيد تثبيتُه بالقياس: أعدادُ `ops`/`reporter` على مستوى الملفّ (٢/٣/٥، ١٠/٤) وسطرُ الاستيراد.
+  وحارسُ JCR/24 (`ceoIntentStage`) كان يعدّ `decide`/`buildContinuationGoal` من «الباقين» في `jcr` — خرجا هنا فأُسقطا من قائمته.
+
+### الاختبار الجديد (`tests/bareConfirmationsStage.test.mjs`، ٧)
+
+- «نعم» بعد حجب: `gate.get` ثمّ `gate.delete` **بهذا الترتيب ولا غير** (مسجِّلُ النداءات)، الخريطةُ تُصفّى، `ops.surgicalEdit` بالمحجوب وسياقٍ مجمَّد،
+  والذاكرةُ القابلة للاستئناف **لا تسبق** المحجوب.
+- «نعم» بلا حجب: ذاكرةٌ + قرارُ تنفيذ → `ops.executeMission` بهدفٍ موسومٍ وردٌّ إنجليزيّ بلغة المستخدم؛ بلا ذاكرة → `false` بلا بثّ.
+- **مسارٌ لم يكن موصَّفاً**: ذاكرةٌ لكنّ القرارُ ردّ (مهمّةٌ نشطة في الصفّ للمشروع نفسِه) → لا استئناف ويسقط إلى `false` صامتاً
+  (أي يكمل المسارُ إلى المعالجات التالية — لا رسالةَ «الفريق يعمل» هنا؛ تلك لنيّة «اكمل» الصريحة في `ceoIntent`).
+- «نفّذ» مجرّدة: آخرُ ردٍّ للمساعد يصير تعليمةً تحمل الأمرَ والوصف؛ الردودُ التحذيريّة (`⚠️`/`⚡`/`🗑️`) تُتخطّى؛ الحاجزُ لا يُمسّ.
+- «نفّذ» بلا سجلّ أو بمساعدٍ تحذيريٍّ فقط → سؤالٌ محدَّد بلغته ولا تنفيذ.
+- التكافؤ مع المفوِّض: الخريطةُ على النسخة تُقرأ وتُصفّى عبر `gate`، والاستبدالُ على النسخة يصل؛ و`_gate()` مربوطٌ بالخريطة نفسِها وبنصّ الحجب نفسِه.
+- الحدود: `gate` قراءةً ومسحاً فقط في هذا المعالج (لا `set`)، `ops` بثلاثة نداءات، لا `this` ولا `io`، المفوِّضُ و`_gate` بنصّهما، اليتيماتُ
+  الأربع غائبة، والخريطةُ ما زالت تُنشأ في البانية مرّةً واحدة.
+
+### الطفرات (١٤، ضدّ `jcrRuntimeFlows` + `jcrClassifiedIntent` + `bareConfirmationsStage`)
+
+**١٤/١٤ أُمسكت** بعد تثبيت ثلاثٍ نجت في الجولة الأولى: «المحجوبُ لا يُسجَّل تعديلاً» (`recordEdit` — ثُبّت بعدّاد `stats.totalEdits`
+في ملفّ المستخدم)، «نفّذ بسياقٍ عارٍ» (لم يكن سياقُ «نفّذ» مفحوصَ التجميد — ثُبّت)، و«بلا نعم ولا نفّذ → true» (مرساةُ المُطفِّر كانت
+بمسافة ٨ لا ٤ — الدالّةُ حرّةٌ لا طريقة — فأُصلحت وأُضيف تأكيدُ `false` بلا بثّ لرسالةٍ عاديّة).
+
+### الأثر
+
+- `jcr.js` **١٤٩٢ ← ١٤٤٥** (٣٢٥٢ عند JCR/4 — خرج ٥٦٪). الاختبارات **١٥٩٣ ← ١٦٠٠**.
+- التالي (JCR/27): `_handleUnifiedRoute` (٧٥) و`_handleClassifiedIntent` (١٢١) بالشقّ نفسِه — يكتبان الحاجز (`gate.set` + `gate.confirmReply`)
+  ويحتاجان `generateChatResponse`/`readCurrentCodeContextAsync`/`classifyIntent` في `ops`؛ الأخيرةُ تقرأ `loadExecutiveMemory` — تُقاس عندها.

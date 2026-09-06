@@ -30,7 +30,7 @@ import { extractPageName, cleanPageName, readReactContent, findPage, persistReac
 import { runSurgicalEdit } from './stages/surgicalEdit.js';
 import { addPageNow } from './stages/addPage.js';
 import { handleCeoIntent } from './stages/ceoIntent.js';
-import { handlePlanningStage, handleModifyPattern } from './stages/intentHandlers.js';
+import { handlePlanningStage, handleModifyPattern, handleBareConfirmations } from './stages/intentHandlers.js';
 import { handleUndo } from './stages/undo.js';
 // 🔁 إعادةُ تصدير: `resolveProjectType` بقيت واجهةً من `jcr` لمستورِديها (JCR/6)
 export { resolveProjectType };
@@ -41,8 +41,8 @@ import { updateLanguage, recordEdit } from './userProfile.js';
 import { transitionState, getProjectSummary, STATES } from './stateMachine.js';
 import { normalizeText, detectIntentFromMeaning, isQuestionMessage, hasActionIntent, isExplicitRebuild, isExplicitNewBuild, isContinuationGoal } from './textNormalizer.js';
 import { routeMessage } from './router.js';
-import { matchDeleteCommand, matchImageCommand, isImageDiagCommand, isBareYes, isBareExecute } from './chatCommands.js';
-import { decide, buildContinuationGoal, missionBriefing } from './ceoBrain.js';
+import { matchDeleteCommand, matchImageCommand, isImageDiagCommand } from './chatCommands.js';
+import { missionBriefing } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
 import { assertBuildAgents, DELIVERY_STAGES } from '../core/contracts/index.js';
 import { orderTasks } from '../core/runtime/TaskGraph.js';
@@ -1208,72 +1208,25 @@ User preferences: ${JSON.stringify(execMemory)}` },
         return handleUndo(req, this.reporter);
     }
 
-    // «نعم» و«نفذ» المجرّدتان: تنفيذ الطلب المحجوب/الاستئناف/آخر ما نوقش — لا ارتجال شات.
+    // 🧭 التأكيداتُ المجرّدة خرجت إلى `stages/intentHandlers.js#handleBareConfirmations` (JCR/26) — تفويضٌ يُبقي المستدعيَ
+    // كما هو؛ المُبلِّغُ يُمرَّر، وحالةُ الحجب تبقى هنا وتصل دوالَّ مربوطة (`gate`)، و`executeMission`/`surgicalEdit` عبر `ops`.
     async _handleBareConfirmations(req, agents) {
-        const { message, roomName, username, activeProject, userLang } = req;
-        // 🆕 "نعم/تمام/ok" مجرّدة بلا هدف معلق ولا clarifier: موافقة على
-        // المتابعة — إن وُجد مشروع قابل للاستئناف نكمله فعلياً بدل إسقاطها
-        // في الشات ليرتجل حواراً (سجل تاكسي: "نعم" كانت تدور بلا فعل).
-        const bareYes = isBareYes(message); // النمط في chatCommands.js (مُختبَر)
-        if (bareYes) {
-            // 🛡️ رسالة محجوبة معلّقة أولاً — الحاجز نفسه قال للمستخدم حرفياً
-            // «أكّد بإرسال "نعم"»، فيجب أن تنفّذ "نعم" *ذلك الطلب المحجوب*
-            // تعديلاً موضعياً. بدون هذا كانت تسقط لمسار الاستئناف العام أدناه
-            // فتُشعل إعادة توليد كاملة تدهس المشروع (عطل إنتاجي: "اعطي الادمن
-            // صلاحية..." حُجبت، ثم "نعم" حوّلت المشروع لموقع آخر كلياً).
-            const gated = this.gatedMessages.get(username);
-            if (gated) {
-                this.gatedMessages.delete(username);
-                this.emitLiveLog(roomName, 'INTENT', 'Engine',
-                    '✅ "نعم" بعد حجب → تنفيذ الطلب المحجوب تعديلاً موضعياً (لا استئناف عام).');
-                recordEdit(username, gated);
-                this.surgicalEdit(gated, contextFromRequest(req, agents));
-                return true;
-            }
-            const contGoal = buildContinuationGoal(username, activeProject);
-            const d = decide('continue', username, activeProject);
-            if (contGoal && d.action === 'execute') {
-                const lang = getUserLanguage(username) || userLang;
-                this.emitLiveLog(roomName, 'INTENT', 'Engine',
-                    `🎯 ${JSON.stringify({ intent: 'continue', project: activeProject, confidence: 90 })} — تأكيد مجرّد → استئناف فعلي`);
-                this.reporter.send(roomName, 'chat_reply', {
-                    message: lang === 'ar' ? '⚡ تمام — أكمل من حيث توقفنا...' : '⚡ Alright — resuming where we left off...'
-                });
-                this.executeMission(contGoal, contextFromRequest(req, agents));
-                return true;
-            }
-        }
+        return handleBareConfirmations(req, agents, this.reporter, this._gate(), {
+            executeMission: (goal, c) => this.executeMission(goal, c),
+            surgicalEdit: (goal, c) => this.surgicalEdit(goal, c),
+        });
+    }
 
-        // 🆕 "نفذ/نفذهما/طبقها/do it" مجرّدة: أمر تنفيذ يشير لما نوقش للتو في
-        // الشات — ننفّذ آخر ما وصفه المساعد كتعليمة تعديل فعلية بدل وعود
-        // "سيقوم نظام البناء..." المتكررة (سجل: "تمام نفذهما" دارت بلا فعل ×3).
-        const bareExecute = isBareExecute(message); // النمط في chatCommands.js (مُختبَر)
-        if (bareExecute) {
-            const lang = getUserLanguage(username) || userLang;
-            try {
-                const { window: hist } = await loadConversation(`${username}::${activeProject}`);
-                const lastAssistant = [...hist].reverse().find(m => m.role === 'assistant' && !/^⚠️|^⚡|^🗑️/.test(m.content || ''));
-                if (lastAssistant?.content) {
-                    this.emitLiveLog(roomName, 'INTENT', 'Engine', '⚡ أمر تنفيذ مجرّد → تنفيذ ما نوقش للتو كتعديل فعلي.');
-                    this.reporter.send(roomName, 'chat_reply', {
-                        message: lang === 'ar' ? '⚡ تمام — أنفّذ ما اتفقنا عليه الآن...' : '⚡ On it — executing what we just discussed...'
-                    });
-                    const instruction = (lang === 'ar'
-                        ? `نفّذ على الموقع الحالي ما تم الاتفاق عليه في المحادثة التالية (طلب المستخدم الأصلي ثم وصف المساعد):\n"${message.trim()}" يشير إلى:\n${lastAssistant.content.slice(0, 600)}`
-                        : `Apply to the current site what was agreed in chat:\n"${message.trim()}" refers to:\n${lastAssistant.content.slice(0, 600)}`);
-                    recordEdit(username, instruction.slice(0, 100));
-                    this.surgicalEdit(instruction, contextFromRequest(req, agents));
-                    return true;
-                }
-            } catch (e) { /* سقوط آمن للشات */ }
-            this.reporter.send(roomName, 'chat_reply', {
-                message: lang === 'ar'
-                    ? 'ماذا تريد أن أنفّذ بالضبط؟ صِف التغيير بجملة (مثال: "اضف صفحة للسائق وصفحة للعميل").'
-                    : 'What exactly should I execute? Describe the change in one sentence.'
-            });
-            return true;
-        }
-        return false;
+    // 🚪 شقُّ حالة الحجب للمراحل: دوالُّ مربوطةٌ بخريطة النسخة نفسِها (الاختباراتُ تقرؤها وتكتبها على `rt.gatedMessages`)
+    // ونصُّ الحجب من `gateConfirmReply` — لا نسخةَ ولا كائنَ جديد (قرارُ JCR/26).
+    _gate() {
+        return {
+            has: (u) => this.gatedMessages.has(u),
+            get: (u) => this.gatedMessages.get(u),
+            set: (u, m) => this.gatedMessages.set(u, m),
+            delete: (u) => this.gatedMessages.delete(u),
+            confirmReply: (lang) => this.gateConfirmReply(lang),
+        };
     }
 
     // 🧠 نوايا CEO خرجت إلى `stages/ceoIntent.js#handleCeoIntent` (JCR/24) — تفويضٌ يُبقي المستدعيَ كما هو؛ المُبلِّغُ
