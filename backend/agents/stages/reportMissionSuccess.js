@@ -27,6 +27,20 @@ function verdictLines(verdict, lang) {
     return { headline: lang === 'ar' ? '✅ اكتملت المهمة — تقرير التسليم:' : '✅ Mission complete — Delivery report:', gateLine };
 }
 
+/**
+ * ⚖️ رسالةُ بانٍ (Registry/Clone/React) بحكمها (PM/2b): PASS يلحق سطرَ التحقّق؛ UNVERIFIED/FAILED يبدّل أيقونةَ
+ * «✅ اكتمل» ويقول ما لم يُتحقَّق أو ما وُجد — فلا يُقال «✅» إلّا لما اجتاز.
+ */
+export function withVerdict(message, verdict, lang = 'ar') {
+    if (!verdict) return message;
+    const { headline, gateLine } = verdictLines(verdict, lang);
+    if (verdict.status === 'PASS') return `${message}\n${gateLine}`;
+    const icon = verdict.status === 'FAILED' ? '⚠️' : '☑️';
+    const note = headline.replace(/^[^ ]+ /, '').replace(lang === 'ar' ? /^اكتمل البناء (لكنّ التحقّق وجد ثغرات — |— ولم يكتمل التحقّق: )/ : /^Build complete(, but verification found gaps — | — verification incomplete: )/, '');
+    const body = message.replace(/^✅/, icon);
+    return `${body}\n${icon} ${lang === 'ar' ? (verdict.status === 'FAILED' ? 'التحقّق وجد ثغرات — ' : 'لم يكتمل التحقّق: ') : (verdict.status === 'FAILED' ? 'Verification found gaps — ' : 'Verification incomplete: ')}${note}\n${gateLine}`;
+}
+
 export function reportMissionSuccess(goal, ctx, reporter, verdict = null) {
     const { projectPath, username, activeProject, roomName } = ctx;
     const langMsg = getUserLanguage(username);

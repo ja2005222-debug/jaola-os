@@ -30,6 +30,8 @@ import { autoPushIfEnabled } from '../../services/githubSync.js';
 import { snapshotWorkspace } from '../../services/workspaceStore.js';
 import { recordBuild, buildMetricsPayload } from '../../services/metricsStore.js';
 import { writeProjectFile, writePlanFiles } from '../../core/runtime/workspacePaths.js';
+import { strategyVerdict } from './verify.js';
+import { withVerdict } from './reportMissionSuccess.js';
 
 export async function buildFromClone(clone, goal, ctx, reporter) {
     const { projectPath, username, activeProject, roomName } = ctx;
@@ -176,6 +178,10 @@ export async function buildFromClone(clone, goal, ctx, reporter) {
         await prepareRenderDeploy(projectPath, renderServiceName(username, activeProject), false);
     } catch { /* اختياري */ }
 
+    // ⚖️ الحكم (PM/2b): تحقّقٌ نهائيّ على ما وصل القرصَ فعلاً (بعد البصمة أو الاسترجاع والتلميع) — لا على القالب النظيف.
+    const verdict = strategyVerdict({ filesCount: baseFiles.length, behavior: await verifyBehavior({ projectPath, blueprint: { kind: 'webapp' }, domainModel: model }),
+        requirementsNote: 'مسارُ الكلون — المواصفةُ نموذجُ الكلون نفسُه، لا محقّقَ متطلّبات' });
+
     // 4) نهائيات كبناءٍ ناجح
     reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
     transitionState(username, activeProject, STATES.COMPLETED);
@@ -199,7 +205,7 @@ export async function buildFromClone(clone, goal, ctx, reporter) {
     const msg = lang === 'ar'
         ? `✅ اكتمل — بدأنا من قالب **${clone.name}** (jaola) يعمل فعلاً${rolesLabel ? ` — ${rolesLabel}` : ''}${apiNote} ووضعنا بصمتك. جرّبه في المعاينة، ثم اطلب أي تعديل.`
         : `✅ Done — started from a working **${clone.name}** jaola template${apiNote} and applied your brand. Try it in the preview, then request any change.`;
-    reporter.send(roomName, 'chat_reply', { message: msg });
+    reporter.send(roomName, 'chat_reply', { message: withVerdict(msg, verdict, lang) });
     reporter.liveLog(roomName, 'JCOS', 'Kernel', '✨ نجاح (قالب jaola عامل)');
-    return { success: true, clone: clone.id };
+    return { success: true, clone: clone.id, verdict };
 }

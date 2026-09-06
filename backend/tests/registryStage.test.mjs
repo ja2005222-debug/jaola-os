@@ -38,7 +38,9 @@ test('البناءُ الحقيقيّ على مجلّدٍ فارغ: ٨ أقسا�
     try {
         const { events, reporter } = collect();
         const r = await buildFromRegistry(GOAL, { ...s.ctx, projectPath: dir }, reporter);
-        assert.deepEqual(r, { success: true, registry: true, blocks: ['nav', 'hero', 'logos', 'features', 'stats', 'testimonials', 'cta', 'footer'] });
+        const { verdict, ...rest } = r; // PM/2b: الصفحةُ المركّبة تُتحقَّق فعلاً وتعود بحكم
+        assert.deepEqual(rest, { success: true, registry: true, blocks: ['nav', 'hero', 'logos', 'features', 'stats', 'testimonials', 'cta', 'footer'] });
+        assert.equal(verdict.status, 'PASS', JSON.stringify(verdict));
         assert.deepEqual(fs.readdirSync(dir).sort(), ['RENDER_README.md', 'brand.svg', 'index.html', 'render.yaml', 'styles.css']);
         const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
         assert.match(html, /brand\.svg/, 'وسمُ الأيقونة حُقن'); assert.match(html, /استشارات/, 'العلامةُ من الهدف');
@@ -49,7 +51,7 @@ test('البناءُ الحقيقيّ على مجلّدٍ فارغ: ٨ أقسا�
         assert.equal(events[2][1].message, '[5. RUNTIME] ➔ [JaolaRegistry]: 🧩 رُكّبت 8 أقسام: nav · hero · logos · features · stats · testimonials · cta · footer');
         assert.deepEqual(events[3][1], { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
         assert.deepEqual([...events[4][1]].sort(), ['RENDER_README.md', 'brand.svg', 'index.html', 'render.yaml', 'styles.css'], 'قائمةُ الملفّات بلا المخفيّة');
-        assert.equal(events[7][1].message, '✅ اكتمل — ركّبنا صفحة احترافية **كاملة** لـ «استشارات» من مكوّنات JAOLA الجاهزة (8 قسم) ووضعنا بصمتك وهويتك البصرية. جرّبها في المعاينة، ثم اطلب أي تعديل.');
+        assert.equal(events[7][1].message, '✅ اكتمل — ركّبنا صفحة احترافية **كاملة** لـ «استشارات» من مكوّنات JAOLA الجاهزة (8 قسم) ووضعنا بصمتك وهويتك البصرية. جرّبها في المعاينة، ثم اطلب أي تعديل.' + '\n⚖️ التحقّق: guard-and-write ✓، requirements-verify –، behavior-verify ✓'); // PM/2b: سطرُ التحقّق يلحق الرسالة
         assert.equal(events[8][1].message, '[JCOS] ➔ [Kernel]: ✨ نجاح (إعادة تركيب من Registry)');
         assert.equal(getProjectState(s.ctx.username, s.ctx.activeProject)?.state, STATES.COMPLETED);
     } finally { resetProjectState(s.ctx.username, s.ctx.activeProject); }
