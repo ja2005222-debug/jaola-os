@@ -8,15 +8,19 @@
  * `_buildReactProject` — تستبدلها الاختباراتُ على النسخة → `ops`) + قراءةٌ واحدة لتلميح المسار `trackByRoom` (خريطةٌ على النسخة يكتبها
  * `handleUserMessage`) → `ops.trackOf(roomName)` دالّةً مربوطة، لا كائنَ جديد (على سابقة شقّ `gate` في JCR/26) + القارئُ `readCodeContext`
  * يُستورد. لا `io`. مستدعٍ واحد (`_runMissionNow`). نقلٌ حرفيّ.
+ *
+ * 📏 قياسُ مواصفة نقاط البيع (بعد JCR/29): القراءةُ الواحدةُ للتلميح صارت **قبل** الاختصار التسويقيّ لا داخل فرع الكلون —
+ *    لأنّ الاختصارَ كان يسبق الفهمَ كلَّه ويخطف الوثيقةَ بلفظ «شركة». التلميحُ يغذّي الآن بوّابتَين: إعفاءَ الوثيقة/السيستم
+ *    من الاختصار، ومطابقةَ الكلون. وسطرُ بثٍّ سادس يقول لماذا لم يُطبَّق الاختصار.
  */
 import { getUserLanguage } from '../languageDetector.js';
 import { getProjectMemory, getDomainModel } from '../projectMemory.js';
-import { matchCloneTemplateDetailed } from '../cloneTemplates/index.js';
+import { matchCloneTemplateDetailed, inferTrack } from '../cloneTemplates/index.js';
 import { resolveStack } from '../starterRegistry.js';
 import { isMarketingPageGoal } from '../blockRegistry.js';
 import { analyzeProjectStatic } from '../behaviorVerifier.js';
 import { transitionState, STATES } from '../stateMachine.js';
-import { isExplicitRebuild, isExplicitNewBuild, isContinuationGoal } from '../textNormalizer.js';
+import { isExplicitRebuild, isExplicitNewBuild, isContinuationGoal, isFullSpecification } from '../textNormalizer.js';
 import { readCodeContext } from '../projectReader.js';
 import { resolveProjectType } from './enrich.js';
 
@@ -44,7 +48,23 @@ export async function selectBuildStrategy(goal, blueprint, ctx, reporter, ops) {
 
         // 🧱 صفحة تسويقيّة/تعريفيّة (هبوط/بروشور/بورتفوليو/شركة) → إعادة تركيب من
         // JAOLA Registry: صفحة *كاملة واحترافية* من بلوكات جاهزة، لا توليد هشّ.
-        if (isMarketingPageGoal(goal, blueprint) && (isFreshBuild || explicitRebuild)) {
+        //
+        // 📏 قِيس (مواصفةُ نقاطِ البيع، ٤٤ بنداً): هذا الاختصارُ **يسبق الفهمَ كلَّه** ويُصيب بمطابقةِ
+        //    احتواءٍ على ٢٨ لفظاً — فكلمةُ «شركة» في بند «كل شركة مستأجر مستقل» أرسلت وثيقةَ نظامٍ من
+        //    ٣٨٠٠ حرفٍ إلى صفحةِ هبوط (nav · hero · logos · testimonials · cta) بحكم PASS. وثيقةٌ
+        //    (`isFullSpecification`) أو مسارُ سيستم (زرُّ الواجهة أو كلماتُ الطلب) لا يكونان بروشوراً
+        //    مهما ورد فيهما لفظُ عميل. القائمةُ نفسُها لم تُمَسّ: أصلحها `appBlueprint` في نسخته
+        //    («كلماتُ العميل تنقض كلماتِ المنتج») وبقيت هذه نسخةً ثانية — ديْنٌ مكتوب.
+        //    ومسارُ سيستم وحدَه لا يُعفي جملةً قال المخطّطُ إنّها بروشور/هبوط («موقع تعريفي لشركة محاماة»
+        //    تُصيب «محاماة» في لائحة السيستم) — فالإعفاءُ للوثيقة، أو لسيستم ليس بروشوراً بنوعه.
+        const track = ops.trackOf(roomName) || inferTrack(goal);
+        const brochureKind = blueprint?.kind === 'brochure' || blueprint?.kind === 'landing';
+        const documentOrSystem = isFullSpecification(goal) || (track === 'system' && !brochureKind);
+        if (documentOrSystem && isMarketingPageGoal(goal, blueprint)) {
+            reporter.liveLog(roomName, 'STACK', 'ProductMind',
+                `📋 وثيقةٌ/سيستم — الاختصارُ التسويقيّ لا ينطبق (${isFullSpecification(goal) ? 'مواصفةٌ كاملة' : 'مسار سيستم'}${track === 'system' && isFullSpecification(goal) ? '، مسار سيستم' : ''}) رغم لفظٍ تسويقيٍّ في النصّ.`);
+        }
+        if (!documentOrSystem && isMarketingPageGoal(goal, blueprint) && (isFreshBuild || explicitRebuild)) {
             // 🛡️ تطبيق قائم *يعمل* لا يُستبدل بصفحة هبوط ثابتة بجملة بناء عادية
             // («صمم تطبيق عرض صور لمطعم...») — مسار الكلونات يملك هذه الحماية
             // (worksNow → لا نكلبره) وهذا المسار كان بلا مثيلها فدهس تطبيق
@@ -74,7 +94,7 @@ export async function selectBuildStrategy(goal, blueprint, ctx, reporter, ops) {
         const pick = (continuation && !isFreshBuild)
             ? { clone: null, rejected: [] } // الاستئناف يكمل الموجود عبر المسار التزايدي — لا استبدال بالقالب
             : matchCloneTemplateDetailed(goal, blueprint, getDomainModel(username, activeProject),
-                { track: ops.trackOf(roomName) });
+                { track });  // قُرئ مرّةً أعلاه — يغذّي الإعفاءَ التسويقيَّ ومطابقةَ الكلون معاً
         const clone = pick.clone;
         // 🧠 الفهمُ يُقال (PM/1): ما استُبعد ولماذا، وما اختير وبأيّ دليل — لا اختيارَ صامت.
         if (pick.rejected.length) {

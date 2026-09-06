@@ -192,9 +192,11 @@ test('الحدود: matchCloneTemplate غلافٌ رقيق؛ الفيتو وال
     assert.equal(count(/sharedEntities\.length >= 1/g), 1, 'كيانٌ مشترك واحد لا نسبة');
     assert.ok(idx.includes("import { modelAffinity, conceptOf } from '../projectModel.js';"));
     const stage = fs.readFileSync(path.join(HERE, '../agents/stages/selectBuildStrategy.js'), 'utf8');
-    assert.ok(stage.includes("import { matchCloneTemplateDetailed } from '../cloneTemplates/index.js';"));
+    // قياسُ POS: المرحلةُ تستورد `inferTrack` معها — التلميحُ صار يُقرأ قبل الاختصار التسويقيّ لا داخل فرع الكلون فقط.
+    assert.ok(stage.includes("import { matchCloneTemplateDetailed, inferTrack } from '../cloneTemplates/index.js';"));
     assert.ok(!/\bmatchCloneTemplate\(/.test(stage), 'المرحلةُ لا تستعمل الغلافَ الأعمى');
-    assert.equal((stage.match(/'ProductMind'/g) || []).length, 3);
+    // PM/1 ثلاثةُ أسطرِ فهم؛ قياسُ POS أضاف رابعاً: «وثيقةٌ/سيستم — الاختصارُ التسويقيّ لا ينطبق» (الفهمُ يسبق الاختصارَ لا العكس).
+    assert.equal((stage.match(/'ProductMind'/g) || []).length, 4);
     const und = fs.readFileSync(path.join(HERE, '../agents/stages/understand.js'), 'utf8');
     assert.ok(und.includes("import { matchBlueprint, referenceModel } from '../referenceBlueprints.js';"));
     assert.ok(und.includes('if (refModel) model = mergeProjectModel(refModel, model);'));
