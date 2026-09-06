@@ -154,11 +154,14 @@ test('الحدود: لا this، لا استيرادَ من jcr، ops.runMission 
         });
     }\n`), 'المفوِّضُ سطرُ نداءٍ واحد بدالّةٍ مربوطةٍ بالنسخة');
     assert.ok(jcr.includes("import { addPageNow } from './stages/addPage.js';"));
+    // JCR/31: ردُّ الشات كان آخرَ مستهلكٍ لبعض هذه الأسماء في `jcr`، فخرج استيرادُها معه.
+    // ما غادر يُثبَّت غيابُه هنا صراحةً — لا يُحذف السطرُ بصمت.
+    assert.ok(!new RegExp(`\\bprojectPathOf\\b`).test(typeof plain !== 'undefined' ? plain : jcr), 'projectPathOf غادر jcr مع JCR/31');
     for (const n of ['autoPushIfEnabled', 'buildStaticSite', 'compName', 'componentSource', 'defaultSection', 'generateSectionContent', 'pageFileSource', 'slugify', 'snapshotWorkspace', 'writeProjectFile']) {
         assert.ok(!new RegExp(`\\b${n}\\b`).test(jcr.replace(/^\s*\/\/.*$/gm, '')), `${n} ما زال في jcr`);
     }
     // `pushProject` كان هنا يومَ JCR/23 — خرج بعدها مع نوايا CEO (JCR/24)؛ القائمةُ تتبع القياس.
-    for (const n of ['smartChat', 'createExecutionContext', 'extractPageName', 'projectPathOf', 'writePlanFiles']) {
+    for (const n of ['smartChat', 'createExecutionContext', 'extractPageName', 'writePlanFiles']) {
         assert.ok(new RegExp(`\\b${n}\\b`).test(jcr), `${n} بقي له مستهلكٌ في jcr`);
     }
 });

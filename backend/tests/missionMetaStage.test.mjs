@@ -193,6 +193,7 @@ test('الحدود: شريحتا الجسد — liveLog ٣ + ٢، ops واحدٌ
     assert.ok(jcr.includes("import { runMissionMeta, noteUnknowns } from './stages/missionMeta.js';"));
     const plain = jcr.replace(/^\s*\/\/.*$/gm, '');
     assert.ok(!/\bCognitiveBudget\b/.test(plain), 'الصنفُ ما زال في jcr');
-    assert.equal((plain.match(/\bgroq\b/g) || []).length, 3, 'الاستيرادُ + classifyIntent + generateChatResponse — ما زال له مستهلكان في jcr');
+    // JCR/31: ٣ ← ٢ — ردُّ الشات خرج بعميلٍ محقون، فلم يبقَ في الصنف مستهلكٌ إلّا `classifyIntent`.
+    assert.equal((plain.match(/\bgroq\b/g) || []).length, 2, 'الاستيرادُ + classifyIntent — آخرُ مستهلكٍ باقٍ في jcr');
     for (const n of ['smartChat', 'loadExecutiveMemory']) assert.ok(new RegExp(`\\b${n}\\b`).test(plain), `${n} بقي له مستهلكٌ في jcr`);
 });

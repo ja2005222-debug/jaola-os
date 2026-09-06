@@ -153,6 +153,10 @@ test('الحدود: شريحةُ الجسد — readCodeContext ×١، liveLog �
     assert.ok(jcr.includes("import { selectBuildStrategy } from './stages/selectBuildStrategy.js';"));
     const plain = jcr.replace(/^\s*\/\/.*$/gm, '');
     for (const n of ['isContinuationGoal', 'isExplicitNewBuild', 'isExplicitRebuild', 'isMarketingPageGoal', 'matchCloneTemplate', 'resolveStack']) assert.ok(!new RegExp(`\\b${n}\\b`).test(plain), `${n} ما زال في jcr`);
-    for (const n of ['analyzeProjectStatic', 'getDomainModel', 'transitionState', 'STATES', 'getProjectMemory', 'resolveProjectType', 'readCodeContext', 'normalizeText', 'detectIntentFromMeaning']) assert.ok(new RegExp(`\\b${n}\\b`).test(plain), `${n} بقي له مستهلكٌ في jcr`);
+    // JCR/31: ردُّ الشات كان آخرَ مستهلكٍ لبعض هذه الأسماء في `jcr`، فخرج استيرادُها معه.
+    // ما غادر يُثبَّت غيابُه هنا صراحةً — لا يُحذف السطرُ بصمت.
+    assert.ok(!new RegExp(`\\banalyzeProjectStatic\\b`).test(typeof plain !== 'undefined' ? plain : jcr), 'analyzeProjectStatic غادر jcr مع JCR/31');
+    assert.ok(!new RegExp(`\\bgetProjectMemory\\b`).test(typeof plain !== 'undefined' ? plain : jcr), 'getProjectMemory غادر jcr مع JCR/31');
+    for (const n of ['getDomainModel', 'transitionState', 'STATES', 'resolveProjectType', 'readCodeContext', 'normalizeText', 'detectIntentFromMeaning']) assert.ok(new RegExp(`\\b${n}\\b`).test(plain), `${n} بقي له مستهلكٌ في jcr`);
     assert.equal((plain.match(/this\.trackByRoom/g) || []).length, 2, 'الكاتبُ في handleUserMessage + الدالّةُ المربوطة في المفوِّض — لا قارئَ ثالث');
 });

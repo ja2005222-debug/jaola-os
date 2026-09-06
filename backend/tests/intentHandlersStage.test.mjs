@@ -144,5 +144,8 @@ test('الحدود: لا this، لا استيرادَ من jcr، لا io، أع�
     const plain = jcr.replace(/^\s*\/\/.*$/gm, '');
     for (const n of ['initFromClarifier', 'recordProject', 'normalizeArabic']) assert.ok(!new RegExp(`\\b${n}\\b`).test(plain), `${n} ما زال في jcr`);
     // `recordEdit`/`contextFromRequest` كانا هنا يومَ JCR/25 — خرجا بعدها مع المصنِّف الأخير (JCR/28)؛ القائمةُ تتبع القياس.
-    for (const n of ['getProjectMemory', 'addToHistory', 'getDomainModel', 'updateLanguage', 'normalizeText']) assert.ok(new RegExp(`\\b${n}\\b`).test(plain), `${n} بقي له مستهلكٌ في jcr`);
+    // JCR/31: ردُّ الشات كان آخرَ مستهلكٍ لبعض هذه الأسماء في `jcr`، فخرج استيرادُها معه.
+    // ما غادر يُثبَّت غيابُه هنا صراحةً — لا يُحذف السطرُ بصمت.
+    assert.ok(!new RegExp(`\\bgetProjectMemory\\b`).test(typeof plain !== 'undefined' ? plain : jcr), 'getProjectMemory غادر jcr مع JCR/31');
+    for (const n of ['addToHistory', 'getDomainModel', 'updateLanguage', 'normalizeText']) assert.ok(new RegExp(`\\b${n}\\b`).test(plain), `${n} بقي له مستهلكٌ في jcr`);
 });

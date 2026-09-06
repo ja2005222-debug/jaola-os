@@ -169,7 +169,11 @@ test('الحدود: gate يُقرأ ويُمسح فقط هنا (لا set)، ops 
     const plain = jcr.replace(/^\s*\/\/.*$/gm, '');
     for (const n of ['buildContinuationGoal', 'decide', 'isBareExecute', 'isBareYes']) assert.ok(!new RegExp(`\\b${n}\\b`).test(plain), `${n} ما زال في jcr`);
     // `recordEdit` كان هنا يومَ JCR/26 — خرج بعدها مع المصنِّف الأخير (JCR/28)؛ القائمةُ تتبع القياس.
-    for (const n of ['missionBriefing', 'matchDeleteCommand', 'loadConversation', 'recordTurn']) assert.ok(new RegExp(`\\b${n}\\b`).test(plain), `${n} بقي له مستهلكٌ في jcr`);
+    // JCR/31: ردُّ الشات كان آخرَ مستهلكٍ لبعض هذه الأسماء في `jcr`، فخرج استيرادُها معه.
+    // ما غادر يُثبَّت غيابُه هنا صراحةً — لا يُحذف السطرُ بصمت.
+    assert.ok(!new RegExp(`\\bloadConversation\\b`).test(typeof plain !== 'undefined' ? plain : jcr), 'loadConversation غادر jcr مع JCR/31');
+    assert.ok(!new RegExp(`\\brecordTurn\\b`).test(typeof plain !== 'undefined' ? plain : jcr), 'recordTurn غادر jcr مع JCR/31');
+    for (const n of ['missionBriefing', 'matchDeleteCommand']) assert.ok(new RegExp(`\\b${n}\\b`).test(plain), `${n} بقي له مستهلكٌ في jcr`);
     // الحالةُ تبقى على الصنف: خريطةٌ واحدة في البانية — قارئاها الأخيران (الموجّهُ الموحَّد والمصنِّفُ الأخير) خرجا في JCR/27–28 عبر الشقّ نفسِه.
     assert.equal((plain.match(/this\.gatedMessages = new Map\(\)/g) || []).length, 1);
 });
