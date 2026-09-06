@@ -39,10 +39,12 @@ test('writePlanFiles: الرفضُ يُحصى لا يُبتلع — والمحت
     assert.deepEqual(fs.readdirSync(r).sort(), ['.env.example', 'index.html']);
 });
 
-test('الحدود: jcr يستورد الكاتبَين ولا يعرّفهما؛ وبيتُهما في core لا يستورد من agents/services', () => {
+test('الحدود: jcr لا يعرّف الكاتبَين ولا يستهلك كاتبَ الملفّ الواحد؛ وبيتُهما في core لا يستورد من agents/services', () => {
     const jcr = fs.readFileSync(path.join(HERE, '../agents/jcr.js'), 'utf8');
     assert.ok(!/async function writeProjectFile\(|async function writePlanFiles\(/.test(jcr), 'التعريفُ رحل');
-    assert.match(jcr, /import \{[^}]*\bwriteProjectFile\b[^}]*\} from '\.\.\/core\/runtime\/workspacePaths\.js'/);
+    // JCR/7: كان jcr يستورد الكاتبَين. ثمّ خرج مستهلكو `writeProjectFile` العشرون كلُّهم مع مراحلهم (آخرُهم إضافةُ الصفحة، JCR/23)
+    // فلم يبقَ له في jcr مستهلك — واستيرادٌ بلا مستهلكٍ يتيمٌ يصطاده `deadImports`. `writePlanFiles` يبقى (مسارُ الخطّة في النواة).
+    assert.ok(!/\bwriteProjectFile\b/.test(jcr), 'عاد كاتبُ الملفّ الواحد إلى jcr — مستهلكوه في stages/*');
     assert.match(jcr, /import \{[^}]*\bwritePlanFiles\b[^}]*\} from '\.\.\/core\/runtime\/workspacePaths\.js'/);
     const wp = fs.readFileSync(path.join(HERE, '../core/runtime/workspacePaths.js'), 'utf8');
     assert.match(wp, /^export async function writeProjectFile\(root, name, content\) \{$/m);

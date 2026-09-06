@@ -66,12 +66,26 @@ test('القائمةُ واحدةٌ فعلاً — والنسختان القدي
     assert.doesNotMatch(pb, /e\.name !== '\.env\.example'/, 'عادت القائمةُ المنقوصة إلى `projectBrain`');
 });
 
-test('لا موضعَ في `jcr.js` يكتب بمسارٍ غيرِ محتوى', () => {
+test('لا موضعَ في `jcr.js` ولا في مراحله يكتب بمسارٍ غيرِ محتوى', () => {
     const src = fs.readFileSync(path.join(process.cwd(), 'agents/jcr.js'), 'utf8');
-    const raw = [...src.matchAll(/writeFile\(\s*path\.join\([^)]*\.name\s*\)/g)];
-    assert.deepEqual(raw.map((m) => m[0]), [], 'عاد موضعٌ يكتب بـ`path.join(root, x.name)` بلا احتواء');
-    // JCR/7: الكاتبُ المحتوى صار في `core/runtime/workspacePaths.js`؛ jcr يستورده لا يعرّفه.
-    assert.match(src, /\bwriteProjectFile\b[^\n]*from '\.\.\/core\/runtime\/workspacePaths\.js'/, 'الكاتبُ المحتوى اختفى من jcr');
+    const rawIn = (text) => [...text.matchAll(/writeFile\(\s*path\.join\([^)]*\.name\s*\)/g)].map((m) => m[0]);
+    assert.deepEqual(rawIn(src), [], 'عاد موضعٌ يكتب بـ`path.join(root, x.name)` بلا احتواء');
+    // JCR/7: الكاتبُ المحتوى صار في `core/runtime/workspacePaths.js`. ثمّ خرجت المواضعُ العشرون كلُّها مع مراحلها
+    // (JCR/10–23؛ آخرُها إضافةُ الصفحة في JCR/23) — فلم يبقَ في jcr كاتبُ ملفّاتِ مشروعٍ أصلاً، وكتابتُه الوحيدة
+    // ذاكرتُه التنفيذيّة لا ملفُّ مستخدم. الحارسُ يتبع الكتابةَ إلى بيتها الجديد: كلُّ مرحلةٍ تكتب باسمٍ متغيّر تمرّ بالكاتب المحتوى.
+    assert.doesNotMatch(src, /\bwriteProjectFile\b/, 'عاد كاتبُ ملفّاتٍ إلى jcr — الكتابةُ في المراحل');
+    assert.deepEqual([...src.matchAll(/writeFile\w*\(/g)].length, 1, 'كتابةٌ واحدة في jcr: ذاكرتُه التنفيذيّة');
+    const stagesDir = path.join(process.cwd(), 'agents/stages');
+    const writers = [];
+    for (const f of fs.readdirSync(stagesDir).filter((n) => n.endsWith('.js'))) {
+        const st = fs.readFileSync(path.join(stagesDir, f), 'utf8');
+        assert.deepEqual(rawIn(st), [], `stages/${f}: موضعٌ يكتب بـpath.join(root, x.name) بلا احتواء`);
+        if (/\bwriteProjectFile\(/.test(st)) {
+            assert.match(st, /\bwriteProjectFile\b[^\n]*from '\.\.\/\.\.\/core\/runtime\/workspacePaths\.js'/, `stages/${f}: الكاتبُ المحتوى ليس من بيته`);
+            writers.push(f);
+        }
+    }
+    assert.ok(writers.length >= 10, `عشرُ مراحلَ على الأقلّ تكتب عبر الكاتب المحتوى — وُجد ${writers.length}`);
     const wp = fs.readFileSync(path.join(process.cwd(), 'core/runtime/workspacePaths.js'), 'utf8');
     assert.match(wp, /export async function writeProjectFile\(/, 'الكاتبُ المحتوى اختفى من بيته');
 });
