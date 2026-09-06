@@ -4,8 +4,6 @@ import { fileURLToPath } from 'url';
 import { groq, smartChat } from '../core/providers/llm.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain, summarizeFacts } from '../services/projectBrain.js';
 import { resolveStack } from './starterRegistry.js';
-import { generateSectionContent, compName, slugify, componentSource, defaultSection, pageFileSource } from './reactGenerator.js';
-import { buildStaticSite } from '../services/reactPreview.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO, resolveGoalLanguage } from './languageDetector.js';
 import { getProjectMemory, initFromClarifier, addToHistory, getDomainModel } from './projectMemory.js';
@@ -30,6 +28,7 @@ import { verifyAndAutofix, runBehaviorVerifyStage } from './stages/verify.js';
 import { buildReactProject } from './stages/buildReact.js';
 import { extractPageName, cleanPageName, readReactContent, findPage, persistReactContent, renamePageNow, deletePageNow, pageNotFound } from './stages/reactPages.js';
 import { runSurgicalEdit } from './stages/surgicalEdit.js';
+import { addPageNow } from './stages/addPage.js';
 import { handleUndo } from './stages/undo.js';
 // 🔁 إعادةُ تصدير: `resolveProjectType` بقيت واجهةً من `jcr` لمستورِديها (JCR/6)
 export { resolveProjectType };
@@ -48,10 +47,9 @@ import { setUserLanguage } from './languageDetector.js';
 import { assertBuildAgents, DELIVERY_STAGES } from '../core/contracts/index.js';
 import { orderTasks } from '../core/runtime/TaskGraph.js';
 import { createExecutionContext, contextFromRequest } from '../core/runtime/ExecutionContext.js';
-import { projectPathOf, writeProjectFile, writePlanFiles } from '../core/runtime/workspacePaths.js';
+import { projectPathOf, writePlanFiles } from '../core/runtime/workspacePaths.js';
 import { registerMission, throwIfAborted, clearMission } from '../core/runtime/AbortRegistry.js';
-import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
-import { snapshotWorkspace } from '../services/workspaceStore.js';
+import { pushProject } from '../services/githubSync.js';
 import { guardFiles, ensureEditIntegrity } from '../services/codeGuard.js';
 import { recordMissionOutcome, matureLessons, lessonDirective, MIN_COUNT_TO_TEACH } from '../services/platformLessons.js';
 import { getPlatformKnowledge } from '../services/platformKnowledge.js';
@@ -968,97 +966,12 @@ User preferences: ${JSON.stringify(execMemory)}` },
         return extractPageName(instruction, lang);
     }
 
-    // ➕ يضيف صفحة جديدة لمشروع React قائم دون إعادة بناء — يحفظ المحتوى الحالي:
-    //    قسم + وجهة في lib/content.js، مكوّن، صفحة Next، ثم إعادة توليد الموقع الثابت.
+    // ➕ إضافةُ الصفحة خرجت إلى `stages/addPage.js#addPageNow` (JCR/23) — تفويضٌ يُبقي المستدعيَ كما هو؛ المُبلِّغُ
+    // يُمرَّر، و`_runMissionNow` تُمرَّر دالّةً (`ops`) حتّى يبقى استبدالُ الاختبارات على النسخة نافذاً.
     async _addPageNow(instruction, projectPath, username, activeProject, roomName, lang) {
-        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
-        this.emitLiveLog(roomName, 'EDIT', 'AddPage', '➕ إضافة صفحة جديدة (بلا إعادة بناء)...');
-
-        // اقرأ المحتوى الحالي (lib/content.js: export const content = {...})
-        let content;
-        try {
-            const src = await fsPromises.readFile(path.join(projectPath, 'lib/content.js'), 'utf8');
-            content = JSON.parse(src.slice(src.indexOf('{'), src.lastIndexOf('}') + 1));
-        } catch (e) {
-            this.emitLiveLog(roomName, 'EDIT', 'AddPage', `⚠️ تعذّر قراءة المحتوى — عودة للبناء: ${e.message}`);
-            // 🔴 كان `{ ...ctx }` — و`ctx` ليس من وسائط هذه الطريقة الستّ، فكان الاحتياطُ يرمي
-            //    `ReferenceError: ctx is not defined` بعد أن وعد السجلُّ بالعودة للبناء، وتموت المهمّةُ
-            //    في الصفّ بلا ردٍّ للمستخدم. السياقُ يُبنى من الوسائط نفسِها (مقيسٌ في JCR/متابعة-ج).
-            return this._runMissionNow(instruction, createExecutionContext({ projectPath, username, activeProject, roomName, agents: {}, dbStatus: null }));
-        }
-
-        const pageLabel = this._extractPageName(instruction, lang);
-
-        // اسم مكوّن + مسار (slug) فريدان
-        const existingComps = new Set(Object.keys(content.sections || {}));
-        const existingSlugs = new Set((content.routes || []).map(r => (r.href || '').replace(/^\//, '')));
-        // التفرّد بلاحقةٍ رقمية لا بإعادة الاشتقاق: `compName` صار يشتقّ الاسم
-        // من **معنى** التسمية لا من موضعها، فهو ثابتٌ مهما تغيّر `n` — وإعادةُ
-        // ندائه في حلقةٍ شرطُها ثباتُ القيمة حلقةٌ لا تنتهي.
-        const base = compName(pageLabel, existingComps.size);
-        let comp = base, dup = 1;
-        while (existingComps.has(comp)) comp = base + (++dup);
-        let slug = slugify(comp), k = 1;
-        while (existingSlugs.has(slug) || slug === '' ) { slug = slugify(comp) + '-' + (++k); }
-
-        // محتوى الصفحة: قالبي افتراضياً، ويخصّصه الذكاء بمحتوى واقعي (best-effort)
-        let section = defaultSection(pageLabel, lang);
-        try {
-            this.emitLiveLog(roomName, 'EDIT', 'ContentWriter', '✍️ تخصيص محتوى الصفحة بالذكاء...');
-            const model = await generateSectionContent(pageLabel, {
-                brand: content.brand || activeProject,
-                goal: content.hero?.title || content.hero?.subtitle || '',
-                lang, llm: (m, o) => smartChat(m, o),
-            });
-            if (model) section = {
-                heading: model.heading || section.heading,
-                subheading: model.subheading || section.subheading,
-                items: (model.items && model.items.length) ? model.items : section.items,
-            };
-        } catch { /* الافتراضي */ }
-
-        // حدّث المحتوى: قسم جديد + وجهة تنقّل
-        content.sections = content.sections || {};
-        content.sections[comp] = section;
-        content.routes = content.routes || [{ label: lang === 'ar' ? 'الرئيسية' : 'Home', href: '/' }];
-        content.routes.push({ label: pageLabel, href: '/' + slug });
-
-        // اكتب: content.js + مكوّن القسم + صفحة Next
-        await fsPromises.writeFile(path.join(projectPath, 'lib/content.js'),
-            `// محتوى الموقع — عدّله بحرّية. يملؤه JAOLA بالذكاء حسب مشروعك.\nexport const content = ${JSON.stringify(content, null, 2)};\n`);
-        await fsPromises.writeFile(path.join(projectPath, `components/${comp}.jsx`), componentSource(comp, lang));
-        await fsPromises.mkdir(path.join(projectPath, `app/${slug}`), { recursive: true });
-        const hasNav = fs.existsSync(path.join(projectPath, 'components/Navbar.jsx'));
-        const hasFooter = fs.existsSync(path.join(projectPath, 'components/Footer.jsx'));
-        const body = [hasNav ? 'Navbar' : null, comp, hasFooter ? 'Footer' : null].filter(Boolean);
-        await fsPromises.writeFile(path.join(projectPath, `app/${slug}/page.jsx`), pageFileSource('/' + slug, `${comp}Page`, body, 2));
-
-        // أعِد توليد الموقع الثابت كله (الصفحة الجديدة + الشريط المحدَّث في كل صفحة)
-        for (const pg of buildStaticSite(content, lang)) {
-            await writeProjectFile(projectPath, pg.name, pg.content);
-        }
-
-        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
-        addToHistory(username, activeProject, `إضافة صفحة: ${pageLabel}`);
-        recordEdit(username, instruction);
-        recordEditAction(username, activeProject); // عدّاد تعديلات اللوحة
-
-        this.reporter.send(roomName, 'preview_updated', { timestamp: Date.now() });
-        this.reporter.send(roomName, 'project_metrics', buildMetricsPayload(username, activeProject));
-        let builtFiles = [];
-        try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
-        this.reporter.send(roomName, 'workspace_files', builtFiles);
-        snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
-        autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
-
-        const msg = lang === 'ar'
-            ? `✅ أضفت صفحة **${pageLabel}** (\`${slug}.html\`) وربطتها بشريط التنقّل في كل الصفحات — المعاينة تحدّثت. اضغط رابطها لفتحها.`
-            : `✅ Added page **${pageLabel}** (\`${slug}.html\`), linked in the nav across all pages — preview updated. Click its link to open it.`;
-        this.reporter.send(roomName, 'chat_reply', {
-            message: msg,
-            options: lang === 'ar' ? ['➕ أضف صفحة أخرى', '✏️ عدّل محتواها', '🚀 انشر الآن'] : ['➕ Add another page', '✏️ Edit its content', '🚀 Deploy now'],
+        return addPageNow(instruction, projectPath, username, activeProject, roomName, lang, this.reporter, {
+            runMission: (goal, c) => this._runMissionNow(goal, c),
         });
-        return { success: true, addedPage: slug, label: pageLabel };
     }
 
     // خرجت إلى `stages/reactPages.js#cleanPageName` (JCR/20) — مفوِّضٌ يُبقي المستدعين (والاستبدالَ في الاختبارات) كما هم.
