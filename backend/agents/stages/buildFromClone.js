@@ -13,7 +13,7 @@ import { smartChat } from '../../core/providers/llm.js';
 import { getUserLanguage, resolveGoalLanguage } from '../languageDetector.js';
 import { addToHistory, updateStructure, setDomainModel, getDomainModel } from '../projectMemory.js';
 import { mergeProjectModel } from '../projectModel.js';
-import { composeRequirements } from '../requirementsVerifier.js';
+import { composeRequirements, traceRequirements, buildFixInstruction } from '../requirementsVerifier.js';
 import { readProjectFiles } from '../projectReader.js';
 import { recordModel } from '../modelLibrary.js';
 import { patchEditPlan } from '../patchEditor.js';
@@ -35,7 +35,7 @@ import { writeProjectFile, writePlanFiles } from '../../core/runtime/workspacePa
 import { strategyVerdict } from './verify.js';
 import { withVerdict } from './reportMissionSuccess.js';
 
-export async function buildFromClone(clone, goal, ctx, reporter) {
+export async function buildFromClone(clone, goal, ctx, reporter, { complete = patchEditPlan } = {}) {
     const { projectPath, username, activeProject, roomName } = ctx;
     const lang = resolveGoalLanguage(goal, getUserLanguage(username)); // لا ردّ إنجليزي على طلب عربيّ
     reporter.setLang(roomName, lang);
@@ -180,11 +180,61 @@ export async function buildFromClone(clone, goal, ctx, reporter) {
         await prepareRenderDeploy(projectPath, renderServiceName(username, activeProject), false);
     } catch { /* اختياري */ }
 
+    // 3.5) 🏗️ PM/8 — الحكمُ يسمّي الفجوةَ ثمّ يسدّها: جولةُ إكمالٍ **واحدة** لِما طلبه المستخدمُ ولا أثرَ له في الكلون.
+    //    قِيس قبل الكتابة: بوّابةُ الإكمال في الحلقة (`requirementsVerify` → `coreEditCodePlan`) تعيد الملفَّ كاملاً بعد قصّ
+    //    مدخله عند ٨٠٠٠ حرف، و`app.js` في الكلونات ١٣–١٥ ألفاً — أي عينُ «الملف الكبير يُبتَر فتُفقد الدوال» الممنوع أعلاه.
+    //    لذلك الرقعةُ الموضعيّة (SEARCH/REPLACE) وحدَها، بحارس البصمة نفسِه: فقدُ دالّة أو عطلٌ جديد → استرجاعُ ما كان على القرص.
+    const requirements = composeRequirements(null, model);
+    const completed = [];
+    try {
+        const snapshot = await readProjectFiles(projectPath);
+        const before = traceRequirements(requirements, snapshot);
+        if (before.missing.length && typeof complete === 'function') {
+            const missingReqs = requirements.filter(r => before.missing.includes(r.name));
+            reporter.liveLog(roomName, '5. RUNTIME', 'CloneCompletion',
+                `🏗️ إكمالُ ما لا أثرَ له (${before.missing.length}): ${before.missing.join('، ')} — رقعةٌ موضعيّة، لا إعادةَ كتابة.`);
+            const appBefore = snapshot.find(f => f.name === 'app.js');
+            const fnsBefore = new Set(appBefore ? extractDefinedFunctions(appBefore.content) : []);
+            let baseFails = new Set();
+            try {
+                const bv = await verifyBehavior({ projectPath, blueprint: { kind: 'webapp' }, domainModel: model });
+                if (bv.ran) baseFails = new Set(bv.checks.filter(c => c.status === 'fail').map(c => c.name));
+            } catch { /* تجاهل */ }
+            const instruction = buildFixInstruction(missingReqs.map(r => ({ name: r.name, fixInstruction: r.behavior })), model);
+            const patch = await complete(instruction, snapshot, lang);
+            if (patch?.ok && patch.files?.length) {
+                const emitG = (m) => reporter.liveLog(roomName, '5. RUNTIME', 'CodeGuard', m);
+                const guarded = await ensureEditIntegrity(
+                    await guardFiles(scrubPlaceholders(patch.files, activeProject), emitG), projectPath, emitG);
+                await writePlanFiles(projectPath, guarded);
+                const after = await readProjectFiles(projectPath);
+                const appAfter = after.find(f => f.name === 'app.js');
+                const fnsAfter = new Set(appAfter ? extractDefinedFunctions(appAfter.content) : []);
+                const lostFn = [...fnsBefore].filter(n => !fnsAfter.has(n));
+                const bv = await verifyBehavior({ projectPath, blueprint: { kind: 'webapp' }, domainModel: model });
+                const newFails = (bv.ran ? bv.checks.filter(c => c.status === 'fail').map(c => c.name) : []).filter(n => !baseFails.has(n));
+                if (lostFn.length || newFails.length) {
+                    const why = lostFn.length ? `فقد دوال (${lostFn.slice(0, 3).join('، ')})` : `فشل جديد: ${newFails.join('، ')}`;
+                    reporter.liveLog(roomName, '5. RUNTIME', 'CloneCompletion', `↩️ الإكمالُ أدخل عطلاً (${why}) — استرجاعُ ما كان على القرص.`);
+                    for (const f of snapshot) await writeProjectFile(projectPath, f.name, f.content);
+                } else {
+                    const traced = traceRequirements(requirements, after);
+                    completed.push(...before.missing.filter(n => traced.traced.includes(n)));
+                    reporter.liveLog(roomName, '5. RUNTIME', 'CloneCompletion', completed.length
+                        ? `✅ أُكمل (${completed.length}/${before.missing.length}): ${completed.join('، ')}${traced.missing.length ? ` — وبقي بلا أثر: ${traced.missing.join('، ')}` : ''}.`
+                        : `ℹ️ طُبّقت الرقعةُ ولم يظهر أثرٌ لِما طُلب — يبقى الحكمُ كما يقيسه.`);
+                }
+            } else {
+                reporter.liveLog(roomName, '5. RUNTIME', 'CloneCompletion', 'ℹ️ لم تُطبَّق رقعةٌ (لا مزوّد أو لا مطابقة) — الحكمُ يقول ما بقي بالاسم.');
+            }
+        }
+    } catch (e) { reporter.liveLog(roomName, '5. RUNTIME', 'CloneCompletion', `⚠️ تخطّي الإكمال (ما على القرص محفوظ): ${e.message}`); }
+
     // ⚖️ الحكم (PM/2b): تحقّقٌ نهائيّ على ما وصل القرصَ فعلاً (بعد البصمة أو الاسترجاع والتلميع) — لا على القالب النظيف.
     //    PM/7: المتطلّباتُ من الفهم المدمَج (ما فهمه جولا من الطلب + نموذجُ الكلون) تُتتبَّع في الملفّات نفسِها — فما طلبه
     //    المستخدمُ ولا يمثّله الكلونُ يُقال بالاسم، لا «لا ينطبق».
     const verdict = strategyVerdict({ filesCount: baseFiles.length, behavior: await verifyBehavior({ projectPath, blueprint: { kind: 'webapp' }, domainModel: model }),
-        requirements: composeRequirements(null, model), files: await readProjectFiles(projectPath),
+        requirements, files: await readProjectFiles(projectPath),
         requirementsNote: 'مسارُ الكلون — لا متطلّباتٍ من الفهم' });
 
     // 4) نهائيات كبناءٍ ناجح
@@ -210,7 +260,11 @@ export async function buildFromClone(clone, goal, ctx, reporter) {
     const msg = lang === 'ar'
         ? `✅ اكتمل — بدأنا من قالب **${clone.name}** (jaola) يعمل فعلاً${rolesLabel ? ` — ${rolesLabel}` : ''}${apiNote} ووضعنا بصمتك. جرّبه في المعاينة، ثم اطلب أي تعديل.`
         : `✅ Done — started from a working **${clone.name}** jaola template${apiNote} and applied your brand. Try it in the preview, then request any change.`;
-    reporter.send(roomName, 'chat_reply', { message: withVerdict(msg, verdict, lang) });
+    // PM/8: ما أُكمل تلقائيّاً يُقال للمستخدم بالاسم — قبل سطر الحكم الذي يقول ما بقي.
+    const completionNote = completed.length
+        ? (lang === 'ar' ? `\n🏗️ أُكمل تلقائيّاً على القالب: ${completed.join('، ')}.` : `\n🏗️ Auto-completed on the template: ${completed.join(', ')}.`)
+        : '';
+    reporter.send(roomName, 'chat_reply', { message: withVerdict(msg + completionNote, verdict, lang) });
     reporter.liveLog(roomName, 'JCOS', 'Kernel', '✨ نجاح (قالب jaola عامل)');
     return { success: true, clone: clone.id, verdict };
 }
