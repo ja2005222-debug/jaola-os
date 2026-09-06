@@ -45,10 +45,13 @@ function harness({ dir = null, lang = 'ar', track = undefined } = {}) {
 }
 const isDelivery = (r, built) => r?.via === 'clone' && /food|delivery/i.test(String(built.clone[0]?.clone?.id));
 
-test('trackOf: يُقرأ مرّةً باسم الغرفة في فرع الكلون فقط — لا في المسار التسويقيّ ولا عند الاستئناف — والتلميحُ system يُقصي كلونَ التوصيل', async () => {
+// 📏 قياسُ POS أعاد تثبيتَ هذا القرار: كان التلميحُ يُقرأ في فرع الكلون **فقط**، فكان الاختصارُ التسويقيّ (الذي يسبقه) أعمى عن
+//    مسار السيستم ويخطف وثيقةَ نظامٍ بلفظ «شركة». الآن يُقرأ **مرّةً واحدةً** قبل الاختصار ويغذّي البوّابتَين — فيُقرأ على
+//    المسار التسويقيّ والاستئنافِ أيضاً؛ ما بقي ثابتاً: قراءةٌ واحدة باسم الغرفة، والتلميحُ system يُقصي كلونَ التوصيل.
+test('trackOf: يُقرأ مرّةً باسم الغرفة قبل الاختصار التسويقيّ (فيصل المسارَ التسويقيّ والاستئنافَ أيضاً) — والتلميحُ system يُقصي كلونَ التوصيل', async () => {
     const m = harness({ dir: emptyProject() });
     assert.equal((await m.pick('صفحة هبوط لشركة استشارات', { kind: 'landing' })).via, 'registry');
-    assert.deepEqual(m.trackCalls, [], 'المسارُ التسويقيّ يعود قبل مطابقة الكلون');
+    assert.deepEqual(m.trackCalls, [m.roomName], 'يُقرأ قبل الاختصار — كي يعرف الاختصارُ إن كان هذا سيستم');
     const d = harness({ dir: emptyProject() });
     const r = await d.pick('تطبيق توصيل طعام من المطاعم', { kind: 'webapp' });
     assert.ok(isDelivery(r, d.built), 'بلا تلميحٍ → كلونُ التوصيل');
@@ -59,7 +62,7 @@ test('trackOf: يُقرأ مرّةً باسم الغرفة في فرع الكل�
     assert.equal(isDelivery(rs, sys.built), false, 'تلميحُ «نظام» يُقصي كلونات المواقع فلا يُطابَق التوصيل');
     const c = harness({ dir: workingProject() });
     assert.equal(await c.pick('[استئناف] تابع تطوير المشروع القائم — لا تبدأ من الصفر. تطبيق توصيل طعام', { kind: 'webapp' }), null);
-    assert.deepEqual(c.trackCalls, [], 'الاستئنافُ على مشروعٍ قائم لا يطابق كلوناً أصلاً');
+    assert.deepEqual(c.trackCalls, [c.roomName], 'يُقرأ مرّةً في المستهلّ حتّى عند الاستئناف — ولا يطابق كلوناً أصلاً (null)');
 });
 
 test('رسالتا «يعمل» بالإنجليزيّة نصّاً: تسويقيّ على تطبيقٍ يعمل، وكلونٌ مطابق على تطبيقٍ يعمل — بلا بناء', async () => {
@@ -139,7 +142,7 @@ test('الحدود: شريحةُ الجسد — readCodeContext ×١، liveLog �
         { registry: 1, clone: 1, react: 1, track: 1, all: 4 }, 'قِيست قبل النقل');
     assert.equal(count(/\breadCodeContext\(/g), 1, 'القارئُ يُستورد لا يُمرَّر');
     assert.equal(count(/reporter\.send\(/g), 2);
-    assert.equal(count(/reporter\.liveLog\(/g), 8, 'JCR/29: ٥؛ PM/1 أضاف ثلاثةَ أسطر «ProductMind» (المستبعَد بالفهم، والمختار بدليله، وفجوةُ الأدوار على مشروعٍ يعمل)');
+    assert.equal(count(/reporter\.liveLog\(/g), 9, 'JCR/29: ٥؛ PM/1 أضاف ثلاثةَ أسطر «ProductMind»؛ قياسُ POS أضاف رابعاً: لماذا لم يُطبَّق الاختصارُ التسويقيّ على وثيقة/سيستم');
     assert.equal(count(/\btransitionState\(/g), 2); assert.equal(count(/\banalyzeProjectStatic\(/g), 2);
     const jcr = fs.readFileSync(path.join(HERE, '../agents/jcr.js'), 'utf8');
     assert.ok(jcr.includes(`\n    async _selectBuildStrategy(goal, blueprint, ctx) {
