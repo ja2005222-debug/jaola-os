@@ -8,7 +8,7 @@ import path from 'path';
 import { generateChatResponse } from '../agents/stages/chatResponse.js';
 import { RoomReporter } from '../core/runtime/RoomReporter.js';
 import { scenario } from './helpers/jcrScenario.mjs';
-import { loadForPrompt } from '../services/conversationStore.js';
+import { loadForPrompt, clearConversation } from '../services/conversationStore.js';
 import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
 
 divertConsoleToStderr();
@@ -19,6 +19,11 @@ const HERE = import.meta.dirname;
 // طفرةٌ في جولةِ الطفرات كتبت دورةً فاشلة في المخزن فأخفت نفسَها عن التأكيد التالي).
 const STAMP = `#${Date.now()}`;
 const convKeyOf = (username, roomName) => (roomName.startsWith(username + '-') ? `${username}::${roomName.slice(username.length + 1)}` : username);
+// 🩹 وخَتْمُ الرسائل وحدَه لم يكفِ: المفتاحُ نفسُه حتميٌّ (`__chat1_u1__`)، فالدوراتُ **تتراكم**
+//    في `memory/chat_memory.json` جولةً بعد جولة. وبعد عشرين جولةً تجاوزت النافذةَ (`CONTEXT_WINDOW=40`)
+//    فانطلق الطيُّ، فسقط تأكيدُ «لا طيَّ على دورةٍ واحدة» — سقوطٌ متقطّعٌ في الجولة الخامسة، وقد قِيس:
+//    ١٠٠ رسالةٍ متراكمة تحت ذلك المفتاح. الاختبارُ يبدأ من صفحةٍ بيضاء ويُنظّف أثرَه.
+const fresh = async (s) => { await clearConversation(convKeyOf(s.ctx.username, s.ctx.roomName)); return s; };
 const collect = () => { const events = []; return { events, reporter: new RoomReporter({ to: () => ({ emit: (ev, p) => events.push([ev, p]) }) }) }; };
 const evs = (events) => events.map(([ev]) => ev);
 const logs = (events) => events.filter(([ev]) => ev === 'log').map(([, p]) => p.message);
@@ -35,7 +40,7 @@ const streamingClient = (parts) => ({
 const failingClient = (msg = 'rate limited') => ({ chat: { completions: { create: async () => { throw new Error(msg); } } } });
 
 test('البثُّ الحيّ: قطعٌ حرفاً-بحرف بين بدءٍ ونهاية، والردُّ هو المتراكم، والذاكرةُ التنفيذيّة تُقرأ والدورةُ تُسجَّل', async () => {
-    const s = scenario('chat1'); const { events, reporter } = collect(); const calls = [];
+    const s = await fresh(scenario('chat1')); const { events, reporter } = collect(); const calls = [];
     const reply = await generateChatResponse(`كيف حال المشروع؟ ${STAMP}`, s.ctx.username, s.ctx.roomName, 'ar',
         reporter, opsOf(calls), streamingClient(['مرح', 'باً ', 'بك']));
     assert.equal(reply, 'مرحباً بك');
@@ -55,7 +60,7 @@ test('البثُّ الحيّ: قطعٌ حرفاً-بحرف بين بدءٍ ون
 });
 
 test('فشلُ المزوّد: محاولتان بسطرَيهما، ثمّ رسالةٌ صادقة عن ضغط الحصّة تُرسَل دفعةً واحدة — ولا دورةٌ تُسجَّل', async () => {
-    const s = scenario('chat2'); const { events, reporter } = collect(); const calls = [];
+    const s = await fresh(scenario('chat2')); const { events, reporter } = collect(); const calls = [];
     const reply = await generateChatResponse(`مرحبا ${STAMP}`, s.ctx.username, s.ctx.roomName, 'ar',
         reporter, opsOf(calls), failingClient('429 too many'));
     assert.match(reply, /^⚠️ خدمة الذكاء مشغولة مؤقتاً/);
@@ -71,7 +76,7 @@ test('فشلُ المزوّد: محاولتان بسطرَيهما، ثمّ رس
 });
 
 test('الإنجليزيّةُ تُبقي الرسالةَ الصادقة بلغتها، والبثُّ الفارغ يُعامَل فشلاً', async () => {
-    const s = scenario('chat3'); const { events, reporter } = collect(); const calls = [];
+    const s = await fresh(scenario('chat3')); const { events, reporter } = collect(); const calls = [];
     const en = await generateChatResponse('hi', s.ctx.username, s.ctx.roomName, 'en', reporter, opsOf(calls), failingClient());
     assert.match(en, /^⚠️ AI service is momentarily busy/);
     const t = collect(); const c2 = [];
