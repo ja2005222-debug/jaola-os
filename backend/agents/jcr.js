@@ -25,6 +25,7 @@ import { runBackendStage } from './stages/backend.js';
 import { verifyAndAutofix, runBehaviorVerifyStage } from './stages/verify.js';
 import { buildReactProject } from './stages/buildReact.js';
 import { selectBuildStrategy } from './stages/selectBuildStrategy.js';
+import { runMissionMeta, noteUnknowns } from './stages/missionMeta.js';
 import { extractPageName, cleanPageName, readReactContent, findPage, persistReactContent, renamePageNow, deletePageNow, pageNotFound } from './stages/reactPages.js';
 import { runSurgicalEdit } from './stages/surgicalEdit.js';
 import { addPageNow } from './stages/addPage.js';
@@ -83,27 +84,6 @@ class MentalModel {
         this.technicalGoals = [];
         this.successCriteria = [];
         this.risks = [];
-    }
-}
-
-class CognitiveBudget {
-    constructor(complexity = 'medium') {
-        this.maxTokens = complexity === 'complex' ? 100000 : 30000;
-        this.tokensUsed = 0;
-        this.maxApiCalls = complexity === 'complex' ? 15 : 7;
-        this.apiCallsUsed = 0;
-        this.timeLimitMs = 180000;
-        this.startTime = Date.now();
-    }
-    isExhausted() {
-        return this.tokensUsed >= this.maxTokens ||
-               this.apiCallsUsed >= this.maxApiCalls ||
-               (Date.now() - this.startTime) >= this.timeLimitMs;
-    }
-    consumeCall() {
-        if (this.isExhausted()) return false;
-        this.apiCallsUsed++;
-        return true;
     }
 }
 
@@ -179,62 +159,16 @@ export class JaolaCognitiveRuntime {
         this.emitLiveLog(roomName, '1. PERCEPTION', 'World Scanner', `✓ الملفات: [${context.worldModel.fileTree.join(', ')}]`);
     }
 
+    // 🔍 مرحلةُ المهمّة والوعي الذاتيّ خرجت إلى `stages/missionMeta.js#runMissionMeta` (JCR/30) — تفويضٌ يُبقي المستدعيَ والاختباراتِ كما هي؛
+    // المُبلِّغُ يُمرَّر، وذاكرةُ التفضيلات عبر `ops`، وعميلُ النموذج بافتراضيّه في المرحلة.
     async buildMissionAndMeta(context, roomName) {
-        this.emitLiveLog(roomName, '2. MISSION & META', 'Mission+Meta', '🔍 تفكيك الهدف والوعي الذاتي...');
-        const execMemory = await this.loadExecutiveMemory(context.username);
-        try {
-            if (!context.budget) context.budget = new CognitiveBudget();
-            if (!context.budget.consumeCall()) throw new Error('Budget exhausted');
-            // بلا مزوّد كان السطر التالي يرمي «Cannot read properties of null (reading 'chat')»
-            // فيبدو عطلاً برمجياً في السجل — السبب الحقيقي غياب المزوّد، ونقوله كما هو
-            if (!groq) throw new Error('لا مزوّد AI مُهيأ');
-            const completion = await groq.chat.completions.create({
-                messages: [
-                    { role: "system", content: "أنتج JSON: mission: { businessGoal, technicalGoal, uxGoal, successCriteria, risks }, meta: { confidence: رقم, unknowns: مصفوفة, priority: 'Critical'|'High'|'Medium'|'Low' }" },
-                    { role: "user", content: `تفضيلات: ${JSON.stringify(execMemory)}\nالهدف: "${context.goal}"` }
-                ],
-                model: "llama-3.3-70b-versatile",
-                response_format: { type: "json_object" }
-            });
-            const result = JSON.parse(completion.choices[0].message.content);
-            context.mentalModel.businessGoal = result.mission.businessGoal || '';
-            context.mentalModel.technicalGoal = result.mission.technicalGoal || '';
-            context.mentalModel.visualIdentity = result.mission.uxGoal || '';
-            context.mentalModel.successCriteria = Array.isArray(result.mission.successCriteria) ? result.mission.successCriteria : [];
-            context.mentalModel.risks = Array.isArray(result.mission.risks) ? result.mission.risks : [];
-
-            let confidence = result.meta.confidence;
-            if (typeof confidence === 'number' && confidence <= 1) {
-                confidence = Math.round(confidence * 100);
-            }
-            context.metaReasoning.confidence = confidence || 70;
-            context.metaReasoning.unknowns = Array.isArray(result.meta.unknowns) ? result.meta.unknowns : [];
-            context.metaReasoning.needsUserClarification = (context.metaReasoning.confidence < 45) && (context.metaReasoning.unknowns.length > 0);
-            this._noteUnknowns(context, roomName);
-
-            const allowed = ['Critical', 'High', 'Medium', 'Low'];
-            const priority = allowed.includes(result.meta.priority) ? result.meta.priority : 'Medium';
-            context.budget = new CognitiveBudget(priority === 'Critical' || priority === 'High' ? 'complex' : 'medium');
-            context.budget.apiCallsUsed = 1;
-            this.emitLiveLog(roomName, '2. MISSION & META', 'Mission+Meta', `✓ الأولوية: ${priority}, الميزانية: ${context.budget.maxApiCalls} استدعاءات.`);
-        } catch (e) {
-            context.mentalModel.businessGoal = "بناء كود الموقع";
-            context.metaReasoning.confidence = 70;
-            context.budget = new CognitiveBudget('medium');
-            this.emitLiveLog(roomName, '2. MISSION & META', 'Mission+Meta',
-                `ℹ️ تعذّر تحليل المهمة (${e.message}) — الاحتياط الحتمي: ميزانية medium (${context.budget.maxApiCalls} استدعاءات)`);
-        }
+        return runMissionMeta(context, roomName, this.reporter, {
+            loadExecutiveMemory: (u) => this.loadExecutiveMemory(u),
+        });
     }
 
-    // 🟡 المجاهيل التي كشفها تحليل المهمة تُعرض للمستخدم بشفافية (كانت الجزء
-    // الوحيد المفيد في «Executive Brain» المحذوف — استدعاء LLM كان يُنتج
-    // taskGraph لا يقرؤه أي سطر، راجع ARCHITECTURE_MIGRATION.md).
     _noteUnknowns(context, roomName) {
-        const unknowns = Array.isArray(context.metaReasoning?.unknowns) ? context.metaReasoning.unknowns : [];
-        if (!context.metaReasoning?.needsUserClarification || unknowns.length === 0) return false;
-        this.emitLiveLog(roomName, '2. MISSION & META', 'Mission+Meta', '🟡 ملاحظة: توجد مجاهيل، لكننا سنحاول المتابعة.');
-        this.emitLiveLog(roomName, '2. MISSION & META', 'Mission+Meta', `الأسئلة المحتملة:\n${unknowns.map((u, i) => `${i + 1}. ${u}`).join('\n')}`);
-        return true;
+        return noteUnknowns(context, roomName, this.reporter);
     }
 
     async runDynamicMultiAgentRuntime(context, roomName, agents) {
