@@ -52,14 +52,16 @@ test('الحقيقةُ المقيسة ١: كلمةٌ واحدة («شركة» ف
     for (const c of ['product', 'invoice', 'customer', 'payment', 'shift', 'tenant', 'accountant', 'storekeeper']) assert.ok(seen.has(c), c);
 });
 
-test('الحقيقةُ المقيسة ٢: الفهمُ الحتميّ أعمى عن معجمه — بلا مزوّدٍ يخرج «User/Item» والمخطّطُ يسمّي المشروعَ بأوّل ستّين حرفاً', async () => {
+test('الحقيقةُ المقيسة ٢ (أُغلق نصفُها في PM/6): المخطّطُ الاحتياطيُّ ما زال يسمّي المشروعَ بأوّل ستّين حرفاً — أمّا الفهمُ فصار يقرأ معجمَه', async () => {
     const bp = await generateBlueprint(SPEC);
     assert.equal(bp._source, 'fallback');
-    assert.equal(bp.appType, SPEC.slice(0, 60), 'الاسمُ المعروضُ للمستخدم = مستهلُّ الوثيقة');
+    assert.equal(bp.appType, SPEC.slice(0, 60), 'الاسمُ المعروضُ للمستخدم = مستهلُّ الوثيقة — ديْنٌ باقٍ');
     assert.deepEqual(bp.functionalComponents.map(c => c.name), ['الميزة الأساسية التفاعلية'], 'مكوّنٌ واحدٌ عامّ لأربعةٍ وأربعين بنداً');
+    // كان: roles ['User'] / entities ['Item'] — الاحتياطُ لا يستشير conceptsInText. PM/6: يستشيرها بترتيب التكرار.
     const model = await deriveProjectModel(SPEC, bp);
-    assert.deepEqual({ roles: model.roles.map(r => r.name), entities: model.entities.map(e => e.name) }, { roles: ['User'], entities: ['Item'] },
-        'الاحتياطُ لا يستشير conceptsInText التي رأت ١٦ مفهوماً في النصّ نفسِه');
+    assert.equal(model._source, 'lexicon');
+    assert.deepEqual({ roles: model.roles.map(r => r.name), entities: model.entities.map(e => e.name).slice(0, 2) },
+        { roles: ['staff', 'customer', 'admin', 'tenant'], entities: ['product', 'invoice'] });
 });
 
 test('الحقيقةُ المقيسة ٣: على مسارات الاستراتيجيّة «المتطلّبات» تُتخطّى دائماً — فالحكمُ PASS مهما بلغت الوثيقة', () => {

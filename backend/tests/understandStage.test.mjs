@@ -63,7 +63,8 @@ test('«ابني …» هويةٌ جديدة: النموذجُ القديم يُ
     setDomainModel(b.ctx.username, b.ctx.activeProject, prior);
     await understandGoal('متجر عطور', { ...b.ctx, projectPath: emptyProject() }, reporterB);
     const merged = getDomainModel(b.ctx.username, b.ctx.activeProject);
-    assert.ok(names(merged, 'entities').includes('Driver') && names(merged, 'entities').includes('Item'), `الدمجُ يُبقي القديمَ ويضيف الجديد: ${names(merged, 'entities')}`);
+    // PM/6: «متجر عطور» بلا مزوّد يُشتقّ من المعجم (`store`) لا من الحدّ الأدنى `Item`.
+    assert.ok(names(merged, 'entities').includes('Driver') && names(merged, 'entities').includes('store'), `الدمجُ يُبقي القديمَ ويضيف الجديد: ${names(merged, 'entities')}`);
 });
 
 test('ذاكرةُ المشروع تُحقن في الهدف المُثرى — طفرةُ «الهدفُ كما هو دائماً» نجت قبل هذا', async () => {
