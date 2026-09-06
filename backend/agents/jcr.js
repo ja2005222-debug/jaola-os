@@ -983,7 +983,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
             content = JSON.parse(src.slice(src.indexOf('{'), src.lastIndexOf('}') + 1));
         } catch (e) {
             this.emitLiveLog(roomName, 'EDIT', 'AddPage', `⚠️ تعذّر قراءة المحتوى — عودة للبناء: ${e.message}`);
-            return this._runMissionNow(instruction, createExecutionContext({ ...ctx, agents: {}, dbStatus: null }));
+            // 🔴 كان `{ ...ctx }` — و`ctx` ليس من وسائط هذه الطريقة الستّ، فكان الاحتياطُ يرمي
+            //    `ReferenceError: ctx is not defined` بعد أن وعد السجلُّ بالعودة للبناء، وتموت المهمّةُ
+            //    في الصفّ بلا ردٍّ للمستخدم. السياقُ يُبنى من الوسائط نفسِها (مقيسٌ في JCR/متابعة-ج).
+            return this._runMissionNow(instruction, createExecutionContext({ projectPath, username, activeProject, roomName, agents: {}, dbStatus: null }));
         }
 
         const pageLabel = this._extractPageName(instruction, lang);
