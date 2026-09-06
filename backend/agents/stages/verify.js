@@ -15,7 +15,7 @@ import { recordBehaviorGaps } from '../../services/platformLessons.js';
 import { getUserLanguage } from '../languageDetector.js';
 import { recordModel } from '../modelLibrary.js';
 import { recordGateOutcome, deliveryVerdict } from '../../core/contracts/index.js';
-import { traceRequirements } from '../requirementsVerifier.js';
+import { traceRequirements, traceSections, sectionLabel } from '../requirementsVerifier.js';
 
 /** ⚖️ حكمُ بوّابة السلوك من ناتج `verifyBehavior` (PM/2): لم يُشغَّل/تُخطّي = لم يُتحقَّق، لا اجتياز. */
 export function behaviorOutcome(verdict) {
@@ -30,7 +30,22 @@ export function behaviorOutcome(verdict) {
  *   متطلّبٌ بلا أثر → `fail` بأسمائه (الغيابُ قاطع)؛ كلُّ المتتبَّع له أثر → `pass` مكتوباً عليه «أثرٌ لا تنفيذ».
  * قبل هذا كانت البوّابةُ `skipped` حتميّاً على هذه المسارات — فوثيقةٌ من ١٢ متطلّباً مسمّى على كلونٍ يمثّل ٧ منها كانت PASS.
  */
-export function requirementsTraceOutcome(requirements, files, note = 'لا محقّقَ متطلّبات على هذا المسار') {
+export function requirementsTraceOutcome(requirements, files, note = 'لا محقّقَ متطلّبات على هذا المسار', sections = null) {
+    // PM/9: وثيقةٌ مرقّمة → الحكمُ بلغتها: بنودُها بعينها تُتتبَّع بمفرداتها، والغائبُ يُسمّى برقمه وعنوانه (أوّلُ ستّة ثمّ «+N»).
+    if (sections?.length && files?.length) {
+        const d = traceSections(sections, files);
+        const traceable = d.traced.length + d.missing.length;
+        if (traceable) {
+            const lexicon = requirements?.length ? traceRequirements(requirements, files) : null;
+            const lexTail = lexicon && (lexicon.traced.length + lexicon.missing.length)
+                ? `؛ مفاهيمُ الفهم ${lexicon.traced.length}/${lexicon.traced.length + lexicon.missing.length}` : '';
+            if (d.missing.length) {
+                const names = d.missing.slice(0, 6).map(sectionLabel).join('، ') + (d.missing.length > 6 ? ` +${d.missing.length - 6}` : '');
+                return { status: 'fail', detail: `${d.missing.length} بنداً من ${traceable} في وثيقتك بلا أثر: ${names} (${d.traced.length}/${traceable} له أثر — أثرٌ لا تنفيذ${lexTail})` };
+            }
+            return { status: 'pass', detail: `${d.traced.length}/${traceable} بنداً من وثيقتك له أثر — أثرٌ لا تنفيذ${lexTail}` };
+        }
+    }
     if (!requirements?.length || !files?.length) return { status: 'skipped', detail: note };
     const t = traceRequirements(requirements, files);
     const traceable = t.traced.length + t.missing.length;
@@ -45,10 +60,10 @@ export function requirementsTraceOutcome(requirements, files, note = 'لا مح�
  * من تحقّقها الداخليّ — الحارسُ اجتاز بالكتابة، والمتطلّباتُ من أثرها في الملفّات (PM/7؛ وبلا متطلّباتٍ «لا ينطبق»
  * بسببٍ مكتوب)، والسلوكُ من `verifyBehavior`. لا حكمَ بلا تحقّقٍ فعليّ.
  */
-export function strategyVerdict({ filesCount = 0, behavior = null, requirementsNote = 'لا محقّقَ متطلّبات على هذا المسار', requirements = null, files = null } = {}) {
+export function strategyVerdict({ filesCount = 0, behavior = null, requirementsNote = 'لا محقّقَ متطلّبات على هذا المسار', requirements = null, files = null, sections = null } = {}) {
     const ctx = {};
     recordGateOutcome(ctx, 'guard-and-write', 'pass', `${filesCount} ملفّاً كُتبت`);
-    const r = requirementsTraceOutcome(requirements, files, requirementsNote);
+    const r = requirementsTraceOutcome(requirements, files, requirementsNote, sections);
     recordGateOutcome(ctx, 'requirements-verify', r.status, r.detail);
     const b = behaviorOutcome(behavior);
     recordGateOutcome(ctx, 'behavior-verify', b.status, b.detail);

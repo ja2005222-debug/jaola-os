@@ -14,6 +14,7 @@ import { getUserLanguage } from '../languageDetector.js';
 import { addToHistory, updateStructure, getDomainModel } from '../projectMemory.js';
 import { buildProjectModelContext } from '../projectModel.js';
 import { composeRequirements } from '../requirementsVerifier.js';
+import { isFullSpecification, specSections } from '../textNormalizer.js';
 import { readProjectFiles } from '../projectReader.js';
 import { generateNextScaffold, generateContentModel, generateSectionContent, slugify, defaultSection } from '../reactGenerator.js';
 import { buildStaticSite, buildDashboardPage } from '../../services/reactPreview.js';
@@ -115,6 +116,7 @@ export async function buildReactProject(goal, ctx, { sections = [] } = {}, repor
     //    PM/7: متطلّباتُ الفهم تُتتبَّع في المعاينة الثابتة (ما يقرؤه المحقّقُ نفسُه) — لا «لا ينطبق» حتميّاً.
     const verdict = strategyVerdict({ filesCount: builtFiles.length, behavior,
         requirements: composeRequirements(null, getDomainModel(username, activeProject)), files: await readProjectFiles(projectPath),
+        sections: isFullSpecification(goal) ? specSections(goal) : [],
         requirementsNote: 'مسارُ React — لا متطلّباتٍ من الفهم' });
 
     const durationSec = Math.round((Date.now() - t0) / 1000);

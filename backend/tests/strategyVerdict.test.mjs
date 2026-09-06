@@ -120,6 +120,6 @@ test('الحدود: البناةُ الثلاثة يستوردون strategyVerdi
     assert.equal((jcr.match(/'7\. VERDICT', 'Judge'/g) || []).length, 2);
     assert.ok(jcr.includes("if (strategyResult.verdict) this.emitLiveLog(roomName, '7. VERDICT', 'Judge', `⚖️ الحكم: ${strategyResult.verdict.status} — ${strategyResult.verdict.summary}`);"));
     const verify = fs.readFileSync(path.join(HERE, '../agents/stages/verify.js'), 'utf8').replace(/^\s*\/\/.*$/gm, '');
-    assert.ok(verify.includes('export function behaviorOutcome(verdict) {') && verify.includes("export function strategyVerdict({ filesCount = 0, behavior = null, requirementsNote = 'لا محقّقَ متطلّبات على هذا المسار', requirements = null, files = null } = {}) {"));
+    assert.ok(verify.includes('export function behaviorOutcome(verdict) {') && verify.includes("export function strategyVerdict({ filesCount = 0, behavior = null, requirementsNote = 'لا محقّقَ متطلّبات على هذا المسار', requirements = null, files = null, sections = null } = {}) {"));
     assert.ok(verify.includes("recordGateOutcome(context, 'behavior-verify', outcome.status, outcome.detail);"), 'المرحلةُ تستعمل التصنيفَ المشترك');
 });

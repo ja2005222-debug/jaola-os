@@ -29,13 +29,17 @@ const reply = (events) => events.find(([ev]) => ev === 'chat_reply')[1].message;
 const gate = (v, name) => v.gates.find(g => g.name === name);
 const read = (dir, f) => fs.readFileSync(path.join(dir, f), 'utf8');
 
-/** بناءٌ حقيقيّ لكلون نقاط البيع على فهم الوثيقة (PM/6) بمُكمِلٍ محقون. */
-async function buildPos(prefix, complete) {
+/**
+ * بناءٌ حقيقيّ لكلون نقاط البيع على فهم الوثيقة (PM/6) بمُكمِلٍ محقون. الهدفُ المُمرَّر قصيرٌ عمداً (لا وثيقة): فتعمل
+ * الجولةُ بلغة المعجم (PM/8) — أمّا الوثيقةُ نفسُها فتعمل بلغة بنودها (PM/9، `specVerdict.test`).
+ */
+const SHORT_GOAL = 'نظام نقاط بيع للمحلات مع كاشير ووردية';
+async function buildPos(prefix, complete, goal = SHORT_GOAL) {
     const s = scenario(prefix); setUserLanguage(s.ctx.username, 'ar'); const dir = emptyProject();
     setDomainModel(s.ctx.username, s.ctx.activeProject, await deriveProjectModel(SPEC, { kind: 'webapp' }));
     transitionState(s.ctx.username, s.ctx.activeProject, STATES.GENERATING, { agent: 't' });
     const { events, reporter } = collect();
-    try { const r = await buildFromClone(getCloneById('jaola-pos'), SPEC, { ...s.ctx, projectPath: dir }, reporter, complete ? { complete } : {}); return { r, events, dir }; }
+    try { const r = await buildFromClone(getCloneById('jaola-pos'), goal, { ...s.ctx, projectPath: dir }, reporter, complete ? { complete } : {}); return { r, events, dir }; }
     finally { resetProjectState(s.ctx.username, s.ctx.activeProject); }
 }
 const SECTION = (names) => `\n<section id="pm8"><h2>${names.join(' · ')}</h2></section>\n`;
@@ -150,7 +154,8 @@ test('المسارُ كاملاً بلا مزوّد (كما يراه المست�
         assert.equal(r.clone, 'jaola-pos'); assert.equal(r.verdict.status, 'FAILED');
         const seq = s.logs().split('\n').filter(l => /CloneCompletion|\[Judge\]/.test(l)).map(l => l.replace(/^.*➔ /, ''));
         assert.equal(seq.length, 3, seq.join('\n'));
-        assert.match(seq[0], /^\[CloneCompletion\]: 🏗️ إكمالُ ما لا أثرَ له \(3\)/); assert.match(seq[1], /^\[CloneCompletion\]: ℹ️ لم تُطبَّق رقعةٌ/);
+        // PM/9: الوثيقةُ تُكمَل بلغة بنودها — ٣١ بنداً بلا أثر، تُطلب أوّلُ ثمانية بنصّها
+        assert.match(seq[0], /^\[CloneCompletion\]: 🏗️ إكمالُ ما لا أثرَ له من وثيقتك \(31 بنداً؛ تُطلب أوّلُ 8 بنصّها\): 1 الصلاحيات والأدوار \(RBAC\)، 3 الباركود/); assert.match(seq[1], /^\[CloneCompletion\]: ℹ️ لم تُطبَّق رقعةٌ/);
         assert.match(seq[2], /^\[Judge\]: ⚖️ الحكم: FAILED — guard-and-write ✓، requirements-verify ✗/);
     } finally { resetProjectState(s.ctx.username, s.ctx.activeProject); }
 });
@@ -161,8 +166,8 @@ test('الحدود: المُكمِلُ محقونٌ بافتراضٍ هو رقع
     assert.equal((src.match(/await complete\(/g) || []).length, 1, 'نداءٌ واحد — لا حلقة');
     assert.ok(!/for \([^)]*round/.test(src), 'لا جولات');
     assert.ok(src.includes('for (const f of snapshot) await writeProjectFile(projectPath, f.name, f.content);'), 'الاسترجاعُ إلى ما كان على القرص');
-    assert.equal((src.match(/'CloneCompletion'/g) || []).length, 5, 'خمسةُ مواضع: طلب/استرجاع/أُكمل-أو-بلا-أثر/لم تُطبَّق/تخطّي');
-    assert.ok(src.includes("import { composeRequirements, traceRequirements, buildFixInstruction } from '../requirementsVerifier.js';"));
+    assert.equal((src.match(/'CloneCompletion'/g) || []).length, 6, 'ستّةُ مواضع: طلب/استرجاع/أُكمل-من-وثيقتك/أُكمل-أو-بلا-أثر/لم تُطبَّق/تخطّي (PM/9 أضاف فرعَ الوثيقة)');
+    assert.ok(src.includes("import { composeRequirements, traceRequirements, buildFixInstruction, traceSections, buildSectionFixInstruction, sectionLabel } from '../requirementsVerifier.js';"), 'PM/9 أضاف متتبِّعَ البنود وتعليمتَها');
     assert.ok(!src.includes('coreEditCodePlan'), 'لا إعادةَ كتابةٍ كاملة على الكلون');
     const jcr = fs.readFileSync(path.join(HERE, '../agents/jcr.js'), 'utf8');
     assert.match(jcr, /async _buildFromClone\(clone, goal, ctx\) \{\n\s+return buildFromClone\(clone, goal, ctx, this\.reporter\);\n\s+\}/);

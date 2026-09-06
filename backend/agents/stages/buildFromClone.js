@@ -13,7 +13,7 @@ import { smartChat } from '../../core/providers/llm.js';
 import { getUserLanguage, resolveGoalLanguage } from '../languageDetector.js';
 import { addToHistory, updateStructure, setDomainModel, getDomainModel } from '../projectMemory.js';
 import { mergeProjectModel } from '../projectModel.js';
-import { composeRequirements, traceRequirements, buildFixInstruction } from '../requirementsVerifier.js';
+import { composeRequirements, traceRequirements, buildFixInstruction, traceSections, buildSectionFixInstruction, sectionLabel } from '../requirementsVerifier.js';
 import { readProjectFiles } from '../projectReader.js';
 import { recordModel } from '../modelLibrary.js';
 import { patchEditPlan } from '../patchEditor.js';
@@ -25,7 +25,7 @@ import { polishHtml } from '../polishPack.js';
 import { brandFromGoal, applyBrandName } from '../blockRegistry.js';
 import { verifyBehavior, extractDefinedFunctions } from '../behaviorVerifier.js';
 import { prepareRenderDeploy, renderServiceName } from '../renderAgent.js';
-import { isExplicitNewBuild } from '../textNormalizer.js';
+import { isExplicitNewBuild, isFullSpecification, specSections } from '../textNormalizer.js';
 import { transitionState, STATES } from '../stateMachine.js';
 import { guardFiles, scrubPlaceholders, ensureEditIntegrity } from '../../services/codeGuard.js';
 import { autoPushIfEnabled } from '../../services/githubSync.js';
@@ -185,14 +185,20 @@ export async function buildFromClone(clone, goal, ctx, reporter, { complete = pa
     //    مدخله عند ٨٠٠٠ حرف، و`app.js` في الكلونات ١٣–١٥ ألفاً — أي عينُ «الملف الكبير يُبتَر فتُفقد الدوال» الممنوع أعلاه.
     //    لذلك الرقعةُ الموضعيّة (SEARCH/REPLACE) وحدَها، بحارس البصمة نفسِه: فقدُ دالّة أو عطلٌ جديد → استرجاعُ ما كان على القرص.
     const requirements = composeRequirements(null, model);
+    // PM/9: وثيقةٌ مرقّمة → الفجوةُ تُسمّى وتُسدّ بلغة الوثيقة (بنودُها بنصّها)، لا بلغة المعجم وحدَها.
+    const sections = isFullSpecification(goal) ? specSections(goal) : [];
     const completed = [];
     try {
         const snapshot = await readProjectFiles(projectPath);
         const before = traceRequirements(requirements, snapshot);
-        if (before.missing.length && typeof complete === 'function') {
+        const beforeDoc = sections.length ? traceSections(sections, snapshot) : null;
+        const gapNames = beforeDoc?.missing.length ? beforeDoc.missing.map(sectionLabel) : before.missing;
+        if (gapNames.length && typeof complete === 'function') {
             const missingReqs = requirements.filter(r => before.missing.includes(r.name));
-            reporter.liveLog(roomName, '5. RUNTIME', 'CloneCompletion',
-                `🏗️ إكمالُ ما لا أثرَ له (${before.missing.length}): ${before.missing.join('، ')} — رقعةٌ موضعيّة، لا إعادةَ كتابة.`);
+            const CAP = 8;
+            reporter.liveLog(roomName, '5. RUNTIME', 'CloneCompletion', beforeDoc?.missing.length
+                ? `🏗️ إكمالُ ما لا أثرَ له من وثيقتك (${beforeDoc.missing.length} بنداً؛ تُطلب أوّلُ ${Math.min(CAP, beforeDoc.missing.length)} بنصّها): ${beforeDoc.missing.slice(0, CAP).map(sectionLabel).join('، ')} — رقعةٌ موضعيّة، لا إعادةَ كتابة.`
+                : `🏗️ إكمالُ ما لا أثرَ له (${before.missing.length}): ${before.missing.join('، ')} — رقعةٌ موضعيّة، لا إعادةَ كتابة.`);
             const appBefore = snapshot.find(f => f.name === 'app.js');
             const fnsBefore = new Set(appBefore ? extractDefinedFunctions(appBefore.content) : []);
             let baseFails = new Set();
@@ -200,7 +206,9 @@ export async function buildFromClone(clone, goal, ctx, reporter, { complete = pa
                 const bv = await verifyBehavior({ projectPath, blueprint: { kind: 'webapp' }, domainModel: model });
                 if (bv.ran) baseFails = new Set(bv.checks.filter(c => c.status === 'fail').map(c => c.name));
             } catch { /* تجاهل */ }
-            const instruction = buildFixInstruction(missingReqs.map(r => ({ name: r.name, fixInstruction: r.behavior })), model);
+            const instruction = beforeDoc?.missing.length
+                ? buildSectionFixInstruction(beforeDoc.missing, sections, model, { limit: CAP })
+                : buildFixInstruction(missingReqs.map(r => ({ name: r.name, fixInstruction: r.behavior })), model);
             const patch = await complete(instruction, snapshot, lang);
             if (patch?.ok && patch.files?.length) {
                 const emitG = (m) => reporter.liveLog(roomName, '5. RUNTIME', 'CodeGuard', m);
@@ -217,6 +225,13 @@ export async function buildFromClone(clone, goal, ctx, reporter, { complete = pa
                     const why = lostFn.length ? `فقد دوال (${lostFn.slice(0, 3).join('، ')})` : `فشل جديد: ${newFails.join('، ')}`;
                     reporter.liveLog(roomName, '5. RUNTIME', 'CloneCompletion', `↩️ الإكمالُ أدخل عطلاً (${why}) — استرجاعُ ما كان على القرص.`);
                     for (const f of snapshot) await writeProjectFile(projectPath, f.name, f.content);
+                } else if (beforeDoc?.missing.length) {
+                    const traced = traceSections(sections, after);
+                    const gained = beforeDoc.missing.filter(m => traced.traced.some(t => t.n === m.n)).map(sectionLabel);
+                    completed.push(...gained);
+                    reporter.liveLog(roomName, '5. RUNTIME', 'CloneCompletion', gained.length
+                        ? `✅ أُكمل من وثيقتك (${gained.length}/${beforeDoc.missing.length}): ${gained.join('، ')}${traced.missing.length ? ` — وبقي بلا أثر ${traced.missing.length} بنداً` : ''}.`
+                        : `ℹ️ طُبّقت الرقعةُ ولم يظهر أثرٌ لِما طُلب — يبقى الحكمُ كما يقيسه.`);
                 } else {
                     const traced = traceRequirements(requirements, after);
                     completed.push(...before.missing.filter(n => traced.traced.includes(n)));
@@ -234,7 +249,7 @@ export async function buildFromClone(clone, goal, ctx, reporter, { complete = pa
     //    PM/7: المتطلّباتُ من الفهم المدمَج (ما فهمه جولا من الطلب + نموذجُ الكلون) تُتتبَّع في الملفّات نفسِها — فما طلبه
     //    المستخدمُ ولا يمثّله الكلونُ يُقال بالاسم، لا «لا ينطبق».
     const verdict = strategyVerdict({ filesCount: baseFiles.length, behavior: await verifyBehavior({ projectPath, blueprint: { kind: 'webapp' }, domainModel: model }),
-        requirements, files: await readProjectFiles(projectPath),
+        requirements, files: await readProjectFiles(projectPath), sections,
         requirementsNote: 'مسارُ الكلون — لا متطلّباتٍ من الفهم' });
 
     // 4) نهائيات كبناءٍ ناجح
