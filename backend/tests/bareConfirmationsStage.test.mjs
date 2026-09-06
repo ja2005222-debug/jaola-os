@@ -143,9 +143,12 @@ test('الحدود: gate يُقرأ ويُمسح فقط هنا (لا set)، ops 
     const mod = fs.readFileSync(path.join(HERE, '../agents/stages/intentHandlers.js'), 'utf8');
     const code = mod.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[^]*?\*\//g, '');
     assert.ok(!/\bthis\./.test(code)); assert.ok(!/jcr\.js/.test(code)); assert.ok(!/\bio\b/.test(code));
-    const count = (re) => (code.match(re) || []).length;
+    // عدُّ هذا المعالج وحدَه (شريحةُ جسده) — لا الملفّ كلِّه: JCR/27 أضاف معالجاً رابعاً يكتب الحاجز، وسجلُّ الملفّ في `intentHandlersStage`.
+    const fnStart = code.indexOf('export async function handleBareConfirmations(');
+    const body = code.slice(fnStart, code.indexOf('\n}\n', fnStart) + 3);
+    const count = (re) => (body.match(re) || []).length;
     assert.equal(count(/\bgate\.get\(/g), 1); assert.equal(count(/\bgate\.delete\(/g), 1); assert.equal(count(/\bgate\.\w+/g), 2, 'لا set ولا has ولا confirmReply في هذا المعالج');
-    assert.equal(count(/ops\.surgicalEdit\(/g), 3); assert.equal(count(/ops\.executeMission\(/g), 2); assert.equal(count(/\bops\.\w+/g), 5);
+    assert.equal(count(/ops\.surgicalEdit\(/g), 2); assert.equal(count(/ops\.executeMission\(/g), 1); assert.equal(count(/\bops\.\w+/g), 3);
     const jcr = fs.readFileSync(path.join(HERE, '../agents/jcr.js'), 'utf8');
     assert.ok(jcr.includes(`\n    async _handleBareConfirmations(req, agents) {
         return handleBareConfirmations(req, agents, this.reporter, this._gate(), {
@@ -162,7 +165,7 @@ test('الحدود: gate يُقرأ ويُمسح فقط هنا (لا set)، ops 
             confirmReply: (lang) => this.gateConfirmReply(lang),
         };
     }\n`));
-    assert.ok(jcr.includes("import { handlePlanningStage, handleModifyPattern, handleBareConfirmations } from './stages/intentHandlers.js';"));
+    assert.match(jcr, /import \{[^}]*\bhandleBareConfirmations\b[^}]*\} from '\.\/stages\/intentHandlers\.js';/);
     const plain = jcr.replace(/^\s*\/\/.*$/gm, '');
     for (const n of ['buildContinuationGoal', 'decide', 'isBareExecute', 'isBareYes']) assert.ok(!new RegExp(`\\b${n}\\b`).test(plain), `${n} ما زال في jcr`);
     for (const n of ['missionBriefing', 'matchDeleteCommand', 'loadConversation', 'recordTurn', 'recordEdit']) assert.ok(new RegExp(`\\b${n}\\b`).test(plain), `${n} بقي له مستهلكٌ في jcr`);

@@ -124,10 +124,10 @@ test('الحدود: لا this، لا استيرادَ من jcr، لا io، أع�
     const code = mod.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[^]*?\*\//g, '');
     assert.ok(!/\bthis\./.test(code)); assert.ok(!/jcr\.js/.test(code)); assert.ok(!/\bio\b/.test(code), 'لا io هنا — لا مرحلةَ تبثّ بنفسها');
     const count = (re) => (code.match(re) || []).length;
-    // JCR/26 أضاف `handleBareConfirmations` إلى الملفّ (executeMission +١، surgicalEdit +٢، send +٣، liveLog +٣) — الأعدادُ على مستوى
-    // الملفّ تتبع القياس؛ عقدُ كلِّ معالجٍ على حدة في اختباره (`bareConfirmationsStage` يعدّ `gate` أيضاً).
-    assert.equal(count(/ops\.executeMission\(/g), 2); assert.equal(count(/ops\.surgicalEdit\(/g), 3); assert.equal(count(/\bops\.\w+/g), 5);
-    assert.equal(count(/reporter\.send\(/g), 10); assert.equal(count(/reporter\.liveLog\(/g), 4);
+    // سجلُّ الملفّ بالقياس: JCR/26 أضاف `handleBareConfirmations` (executeMission +١، surgicalEdit +٢، send +٣، liveLog +٣)،
+    // وJCR/27 أضاف `handleUnifiedRoute` (surgicalEdit +٢، generateChatResponse +١، send +٣، liveLog +١). عقدُ كلِّ معالجٍ في اختباره.
+    assert.equal(count(/ops\.executeMission\(/g), 2); assert.equal(count(/ops\.surgicalEdit\(/g), 5); assert.equal(count(/ops\.generateChatResponse\(/g), 1); assert.equal(count(/\bops\.\w+/g), 8);
+    assert.equal(count(/reporter\.send\(/g), 13); assert.equal(count(/reporter\.liveLog\(/g), 5);
     const jcr = fs.readFileSync(path.join(HERE, '../agents/jcr.js'), 'utf8');
     assert.ok(jcr.includes(`\n    async _handlePlanningStage(req, agents) {
         return handlePlanningStage(req, agents, this.reporter, {
@@ -139,7 +139,7 @@ test('الحدود: لا this، لا استيرادَ من jcr، لا io، أع�
             surgicalEdit: (goal, c) => this.surgicalEdit(goal, c),
         });
     }\n`));
-    assert.ok(jcr.includes("import { handlePlanningStage, handleModifyPattern, handleBareConfirmations } from './stages/intentHandlers.js';"));
+    assert.ok(jcr.includes("import { handlePlanningStage, handleModifyPattern, handleBareConfirmations, handleUnifiedRoute } from './stages/intentHandlers.js';"));
     const plain = jcr.replace(/^\s*\/\/.*$/gm, '');
     for (const n of ['initFromClarifier', 'recordProject', 'normalizeArabic']) assert.ok(!new RegExp(`\\b${n}\\b`).test(plain), `${n} ما زال في jcr`);
     for (const n of ['getProjectMemory', 'addToHistory', 'getDomainModel', 'updateLanguage', 'recordEdit', 'normalizeText', 'contextFromRequest']) assert.ok(new RegExp(`\\b${n}\\b`).test(plain), `${n} بقي له مستهلكٌ في jcr`);

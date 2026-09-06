@@ -6,6 +6,10 @@
  *    `ops.surgicalEdit` بسياق الطلب.
  *  - `handleBareConfirmations` (JCR/26): «نعم/تمام» مجرّدةً — تنفيذُ الرسالة **المحجوبة** تعديلاً موضعيّاً إن وُجدت (تُمسح من الحاجز)،
  *    وإلّا استئنافٌ فعليّ من الذاكرة حين يسمح القرار؛ و«نفّذ/طبّق» مجرّدةً — تنفيذُ آخر ما وصفه المساعدُ في المحادثة كتعديل، أو سؤالٌ محدَّد.
+ *  - `handleUnifiedRoute` (JCR/27): الموجّهُ الموحَّد (نداءُ LLM منظَّم واحد) بشبكة أمان الحجب/الإصرار — `chat` على مشروعٍ قائم:
+ *    أمرٌ صريح أو إصرارٌ بعد حجب → تعديلٌ (يُمسح الحاجز)، جملةٌ إخباريّة → تُحجَب مرّةً بردٍّ حتميّ (`gate.set` + `gate.confirmReply`)،
+ *    سؤالٌ → محادثة؛ `edit` → تعديلٌ بتعليمة الموجّه؛ `delete_project` → طلبُ تأكيدٍ حرفيّ؛ `stop` → مسحُ الحالة؛ `build` وفشلُ الموجّه → `false`.
+ *    الموجّهُ `router` وسيطٌ أخير افتراضيُّه `routeMessage` — قابلٌ للحقن للاختبار على سابقة `router.js` نفسِها (`llm = smartChat`).
  * كلُّها تعود `true` إن التُقط الطلبُ وعولج، و`false` ليكمل المسارُ.
  *
  * تخرج من `JaolaCognitiveRuntime` بالمنهج نفسِه (JCR/25–26): المُبلِّغُ يُمرَّر، وطرائقُ الصنف التي كانت تُستدعى بـ`this`
@@ -16,10 +20,14 @@
 import { getUserLanguage } from '../languageDetector.js';
 import { initFromClarifier } from '../projectMemory.js';
 import { recordProject, recordEdit } from '../userProfile.js';
-import { normalizeArabic } from '../textNormalizer.js';
 import { isBareYes, isBareExecute } from '../chatCommands.js';
 import { decide, buildContinuationGoal } from '../ceoBrain.js';
+import { normalizeArabic, isQuestionMessage, hasActionIntent } from '../textNormalizer.js';
+import { routeMessage } from '../router.js';
+import { readCodeContext } from '../projectReader.js';
 import { loadForPrompt as loadConversation } from '../../services/conversationStore.js';
+import { clearDialog } from '../../services/conversationManager.js';
+import { recordEditAction } from '../../services/metricsStore.js';
 import { contextFromRequest } from '../../core/runtime/ExecutionContext.js';
 
 // مرحلة الخطة في حوار التوضيح: تأكيد → بناء، سؤال → ملخّص الخطة، إيقاف/لون/تعديل → تسجيل في الإجابات.
@@ -198,6 +206,83 @@ export async function handleBareConfirmations(req, agents, reporter, gate, ops) 
                 : 'What exactly should I execute? Describe the change in one sentence.'
         });
         return true;
+    }
+    return false;
+}
+
+// الموجّه الموحّد (نداء LLM منظّم) بشبكة أمان الحجب/الإصرار؛ فشله أو «build» → المسار القديم.
+// `router` قابلٌ للحقن للاختبار (افتراضيّاً `routeMessage`) — السابقةُ نفسُها في `router.js#routeMessage` (`llm = smartChat`).
+export async function handleUnifiedRoute(req, agents, reporter, gate, ops, router = routeMessage) {
+    const { message, roomName, projectPath, username, activeProject, userLang } = req;
+    // ── 🧭 الموجّه الموحّد — نداء LLM منظّم واحد بدل شبكة الـ regex ────
+    // المسارات الحتمية الحسّاسة (الحذف، القفل، اكمل، اللغة، clarifier)
+    // عملت أعلاه. فشل الموجّه → يسقط بصمت للمسار القديم أدناه (احتياط كامل).
+    if (!agents.getState?.(username)?.stage) { // ليس داخل حوار clarifier
+        try {
+            const existingCode = await readCodeContext(projectPath).catch(() => '');
+            const { window: hist } = await loadConversation(`${username}::${activeProject}`);
+            const lastAssistant = [...hist].reverse().find(m => m.role === 'assistant')?.content || '';
+            const route = await router(message, {
+                projectName: activeProject,
+                hasProject: existingCode.trim().length > 100,
+                lastAssistant,
+                lang: userLang,
+            });
+            if (route) {
+                reporter.liveLog(roomName, 'ROUTER', 'Unified',
+                    `🧭 ${route.action} (${route.confidence}%)${route.reason ? ` — ${route.reason}` : ''}`);
+                if (route.action === 'chat') {
+                    // 🛡️ شبكة أمان: الموجّه قد يصنّف تعديلاً صريحاً كمحادثة (حدث فعلاً مع
+                    // "عدّل: ..."). أمرٌ صريح أو تكرار مُصِرّ على مشروع قائم يُنفَّذ تعديلاً
+                    // بدل الدخول في حلقة "أعد إرسال نفس الجملة" التي يهلوسها الـ LLM.
+                    const hasProj = existingCode.trim().length > 100;
+                    // 🔁 أي رسالة محجوبة سابقاً = إصرار (لا نطابق النصّ حرفياً —
+                    // المساعد قد يقترح صياغة مختلفة فلا يتطابق الحرفي أبداً → حلقة).
+                    const pendingGate = gate.has(username);
+                    if (hasProj && !isQuestionMessage(message) && (hasActionIntent(message) || pendingGate)) {
+                        gate.delete(username);
+                        recordEdit(username, message);
+                        recordEditAction(username, activeProject);
+                        ops.surgicalEdit(message, contextFromRequest(req, agents));
+                        return true;
+                    }
+                    if (hasProj && !isQuestionMessage(message)) {
+                        // نحجب مرة واحدة بردّ حتمي (لا LLM يهلوس "أعد الإرسال")
+                        gate.set(username, message.trim());
+                        reporter.send(roomName, 'chat_reply', { message: gate.confirmReply(userLang) });
+                        return true;
+                    }
+                    await ops.generateChatResponse(message, username, roomName, userLang);
+                    return true;
+                }
+                if (route.action === 'edit') {
+                    recordEdit(username, message);
+                    ops.surgicalEdit(route.instruction || message, contextFromRequest(req, agents));
+                    return true;
+                }
+                if (route.action === 'delete_project') {
+                    const lang = getUserLanguage(username) || userLang;
+                    reporter.send(roomName, 'chat_reply', {
+                        message: activeProject === 'sandbox_app'
+                            ? (lang === 'ar' ? '⚠️ لا يمكن حذف المشروع الافتراضي sandbox_app.' : '⚠️ The default sandbox_app project cannot be deleted.')
+                            : (lang === 'ar'
+                                ? `⚠️ حذف المشروع «${activeProject}» **نهائي** — الملفات والسجل، ولا يمكن التراجع.\nللتأكيد اكتب حرفياً: **احذف نهائياً ${activeProject}**`
+                                : `⚠️ Deleting "${activeProject}" is **permanent**.\nTo confirm, type exactly: **delete permanently ${activeProject}**`),
+                    });
+                    return true;
+                }
+                if (route.action === 'stop') {
+                    agents.clearState?.(username);
+                    clearDialog(username);
+                    const lang = getUserLanguage(username) || userLang;
+                    reporter.send(roomName, 'chat_reply', {
+                        message: lang === 'ar' ? '🛑 تم الإيقاف. أخبرني بما تريد.' : '🛑 Stopped. Tell me what you need.',
+                    });
+                    return true;
+                }
+                // 'build' → يسقط عمداً للمسار القديم (حوار التوضيح + التأكيد بالهدف)
+            }
+        } catch (e) { /* فشل الموجّه → المسار القديم أدناه */ }
     }
     return false;
 }
