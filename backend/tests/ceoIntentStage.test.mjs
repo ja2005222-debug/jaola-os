@@ -124,8 +124,9 @@ test('الحدود: لا this، لا استيرادَ من jcr، ops.executeMiss
     for (const n of ['buildStatusReply', 'classifyIntentFast', 'deployToRender', 'getProjectSecrets', 'greetingReply', 'isFullStackProject', 'pushProject', 'renderServiceName']) {
         assert.ok(!new RegExp(`\\b${n}\\b`).test(plain), `${n} ما زال في jcr`);
     }
-    // `decide`/`buildContinuationGoal` كانا هنا يومَ JCR/24 — خرجا بعدها مع التأكيدات المجرّدة (JCR/26)؛ القائمةُ تتبع القياس.
-    for (const n of ['missionBriefing', 'contextFromRequest']) {
+    // `decide`/`buildContinuationGoal` كانا هنا يومَ JCR/24 — خرجا بعدها مع التأكيدات المجرّدة (JCR/26)، و`contextFromRequest`
+    // مع المصنِّف الأخير (JCR/28)؛ القائمةُ تتبع القياس.
+    for (const n of ['missionBriefing']) {
         assert.ok(new RegExp(`\\b${n}\\b`).test(plain), `${n} بقي له مستهلكٌ في jcr`);
     }
     // 🔒 آخرُ تمريرةٍ لـ`this.io` خرجت: لم يبقَ في jcr إلّا إسنادُ البانية.

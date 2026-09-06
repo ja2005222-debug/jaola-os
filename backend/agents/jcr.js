@@ -30,29 +30,29 @@ import { extractPageName, cleanPageName, readReactContent, findPage, persistReac
 import { runSurgicalEdit } from './stages/surgicalEdit.js';
 import { addPageNow } from './stages/addPage.js';
 import { handleCeoIntent } from './stages/ceoIntent.js';
-import { handlePlanningStage, handleModifyPattern, handleBareConfirmations, handleUnifiedRoute } from './stages/intentHandlers.js';
+import { handlePlanningStage, handleModifyPattern, handleBareConfirmations, handleUnifiedRoute, handleClassifiedIntent } from './stages/intentHandlers.js';
 import { handleUndo } from './stages/undo.js';
 // 🔁 إعادةُ تصدير: `resolveProjectType` بقيت واجهةً من `jcr` لمستورِديها (JCR/6)
 export { resolveProjectType };
 import { buildFailureChatMessage } from './failureMessages.js';
 import { isMarketingPageGoal } from './blockRegistry.js';
 import { analyzeProjectStatic } from './behaviorVerifier.js';
-import { updateLanguage, recordEdit } from './userProfile.js';
+import { updateLanguage } from './userProfile.js';
 import { transitionState, getProjectSummary, STATES } from './stateMachine.js';
-import { normalizeText, detectIntentFromMeaning, isQuestionMessage, hasActionIntent, isExplicitRebuild, isExplicitNewBuild, isContinuationGoal } from './textNormalizer.js';
+import { normalizeText, detectIntentFromMeaning, isExplicitRebuild, isExplicitNewBuild, isContinuationGoal } from './textNormalizer.js';
 import { matchDeleteCommand, matchImageCommand, isImageDiagCommand } from './chatCommands.js';
 import { missionBriefing } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
 import { assertBuildAgents, DELIVERY_STAGES } from '../core/contracts/index.js';
 import { orderTasks } from '../core/runtime/TaskGraph.js';
-import { createExecutionContext, contextFromRequest } from '../core/runtime/ExecutionContext.js';
+import { createExecutionContext } from '../core/runtime/ExecutionContext.js';
 import { projectPathOf, writePlanFiles } from '../core/runtime/workspacePaths.js';
 import { registerMission, throwIfAborted, clearMission } from '../core/runtime/AbortRegistry.js';
 import { guardFiles, ensureEditIntegrity } from '../services/codeGuard.js';
 import { recordMissionOutcome, matureLessons, lessonDirective, MIN_COUNT_TO_TEACH } from '../services/platformLessons.js';
 import { getPlatformKnowledge } from '../services/platformKnowledge.js';
 import { recordBuild, buildMetricsPayload } from '../services/metricsStore.js';
-import { setPendingGoal, getPendingGoal, consumePendingGoal, clearDialog } from '../services/conversationManager.js';
+import { getPendingGoal, consumePendingGoal, clearDialog } from '../services/conversationManager.js';
 import { enqueueMission, takeLostMission } from '../core/runtime/ExecutionQueue.js';
 import { loadForPrompt as loadConversation, recordTurn } from '../services/conversationStore.js';
 import { MEMORY_ROOT, WORKSPACE_ROOT } from '../core/runtime/workspaceRoots.js';
@@ -1253,125 +1253,13 @@ User preferences: ${JSON.stringify(execMemory)}` },
         });
     }
 
-    // تصنيف النية (مصنّف + معنى) ثم build/modify/stop/محادثة بحُرّاسها (الجملة الوصفية، السؤال، الإصرار).
+    // 🧭 المصنِّفُ الأخير خرج إلى `stages/intentHandlers.js#handleClassifiedIntent` (JCR/28) — آخرُ معالجِ نيّةٍ يغادر الصنف؛ المُبلِّغُ
+    // يُمرَّر، وحالةُ الحجب تصل دوالَّ مربوطة (`gate`)، و`classifyIntent`/`surgicalEdit`/`generateChatResponse` عبر `ops` (تستبدلها الاختبارات).
     async _handleClassifiedIntent(req, agents) {
-        const { message, normalizedMessage, meaningIntent, roomName, projectPath, username, activeProject, userLang } = req;
-        // ── 2. تصنيف النية ───────────────────────────────────────────────
-        const intentResult = await this.classifyIntent(normalizedMessage || message, username);
-        // إذا كشف Text Normalizer النية بثقة عالية — استخدمها
-        const finalIntent = meaningIntent.confidence >= 75
-            ? { intent: meaningIntent.intent, confidence: meaningIntent.confidence }
-            : intentResult;
-        this.emitLiveLog(roomName, 'INTENT', 'Classifier', `نية: ${finalIntent.intent} (ثقة: ${finalIntent.confidence}%)`);
-
-        // 🛡️ حارس (ب): جملة وصفية على مشروع قائم ليست طلب بناء جديد.
-        // "نحن نعمل على موقع تاكسي" وصف لا أمر — أمر البناء يبدأ بفعل صريح.
-        // بدونه كان المصنّف يعرض "هل تريد بناء موقع لـ..." في منتصف العمل.
-        if (finalIntent.intent === 'build') {
-            // ملاحظة: \b لا يعمل مع الحروف العربية في JS — نستخدم lookahead يونيكود
-            const explicitBuild = /^\s*(?:ابني|ابن|اصنع|أنشئ|انشئ|صمم|طوّر|طور|بني|سوّي|سوي|اعمل\s+لي|ابدأ\s+البناء|build|create|make|design|develop|generate|start\s+building)(?=\s|$|[^\p{L}\p{N}])/iu
-                .test((normalizedMessage || message).trim());
-            if (!explicitBuild) {
-                const existingCode = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
-                if (existingCode && existingCode.trim().length > 100) {
-                    // 🔧 طلب فعل صريح على مشروع قائم («فعّل الأزرار»، «أضف الفوترة») =
-                    // تعديل جراحي مباشر — لا حوار تأكيد يُعيد على المستخدم كلماته
-                    // (جذر حلقة «اكتب الجملة التالية»). الأسئلة/الجمل الإخبارية تبقى محادثة.
-                    if (hasActionIntent(message) && !isQuestionMessage(message)) {
-                        this.emitLiveLog(roomName, 'INTENT', 'Classifier',
-                            '✏️ طلب فعل على مشروع قائم (صُنّف build) → تعديل جراحي مباشر (لا حلقة تأكيد).');
-                        recordEdit(username, message);
-                        this.surgicalEdit(message, contextFromRequest(req, agents));
-                        return true;
-                    }
-                    this.emitLiveLog(roomName, 'INTENT', 'Classifier',
-                        '🛡️ جملة غير آمرة على مشروع قائم — ليست بناءً جديداً؛ رد محادثة بدل تأكيد بناء.');
-                    await this.generateChatResponse(message, username, roomName, userLang);
-                    return true;
-                }
-            }
-        }
-
-        if (finalIntent.intent === 'build') {
-            const userGoal = normalizedMessage || message;
-            const lang = getUserLanguage(username) || userLang;
-
-            // 🎯 طلب واسع وغامض → حوار استراتيجي أولاً (لا يبدأ مباشرة)
-            const clar = await agents.startClarification?.(username, userGoal);
-            if (clar?.type === 'clarification') {
-                this.emitLiveLog(roomName, 'INTENT', 'Clarifier', '🎯 طلب استراتيجي — بدء حوار التخطيط');
-                this.reporter.send(roomName, 'chat_reply', { message: clar.message, options: clar.options });
-                return true;
-            }
-
-            // ⚡ طلب واضح → تأكيد سريع ثم بناء
-            const projectHint = userGoal.replace(/^(ابني|اصنع|انشئ|بني|سوي|build|create|make)\s+/i, '').trim();
-            // 🏷️ (أ) نُظهر المشروع الهدف صراحةً كي لا يُبنى المحتوى في مشروع
-            // باسم مختلف دون أن ينتبه المستخدم (مثل بناء تاكسي داخل hotel-control).
-            const confirmQ = lang === 'ar'
-                ? `هل تريد بناء موقع لـ "${projectHint}"؟\n📂 سيُبنى داخل المشروع الحالي: «${activeProject}» — لمشروع منفصل أنشئ واحداً جديداً أولاً.`
-                : `Do you want me to build a website for "${projectHint}"?\n📂 It will build into your current project: "${activeProject}" — create a new project first if you want it separate.`;
-            const opts = lang === 'ar'
-                ? ['نعم، ابنه الآن ⚡', 'لا، أخبرني أكثر']
-                : ['Yes, build it now ⚡', 'No, tell me more'];
-            this.reporter.send(roomName, 'chat_reply', { message: confirmQ, options: opts, pendingGoal: userGoal });
-            setPendingGoal(username, userGoal, activeProject);
-        } else if (finalIntent.intent === 'modify') {
-            // 🛡️ السؤال لا يُعامل أبداً كأمر تعديل حتى لو صنّفه النموذج modify —
-            // (سجل حقيقي: "ماذا يمكن أن نضيف للمشروع؟" عدّلت الموقع فعلاً!)
-            // 🛡️ والجملة الإخبارية بلا فعل أمر/رغبة كذلك — ("ولكن قائمة
-            // الأصدقاء موجودة" تصحيحٌ من المستخدم، ليست طلب تعديل).
-            const repeatedGated = this.gatedMessages.has(username); // أي رسالة محجوبة = إصرار
-            if (!repeatedGated && (isQuestionMessage(message) || !hasActionIntent(message))) {
-                if (!isQuestionMessage(message)) {
-                    this.gatedMessages.set(username, message.trim());
-                    this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛡️ صُنّفت modify لكنها جملة إخبارية — حجب لمرة واحدة (الرسالة التالية تُنفَّذ).');
-                    this.reporter.send(roomName, 'chat_reply', { message: this.gateConfirmReply(userLang) });
-                    return true;
-                }
-                this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛡️ سؤال — رد محادثة (لا تعديل).');
-                await this.generateChatResponse(message, username, roomName, userLang);
-                return true;
-            }
-            // 🔁 رسالة مُعادة بعد حجبها = إصرار → نفّذ (يمنع حلقة "اكتب X")
-            if (repeatedGated) {
-                this.gatedMessages.delete(username);
-                this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🔁 تكرار رسالة محجوبة — إصرار المستخدم → تنفيذ التعديل.');
-            }
-            recordEdit(username, message);
-            this.surgicalEdit(message, contextFromRequest(req, agents));
-            // Git commit للتعديل يحدث داخل المهمة بعد النجاح
-        } else if (finalIntent.intent === 'stop') {
-            this.emitLiveLog(roomName, 'INTENT', 'Classifier', '🛑 أمر إيقاف.');
-            agents.clearState?.(username);
-            clearDialog(username);
-        } else {
-            // 🆕 على مشروع قائم: أي طلب غير استفهامي يُعامَل كتعديل تلقائياً
-            // (المستخدم لا يجب أن يكتب "عدل على نفس الموقع" في كل مرة —
-            //  "قم بربط..."، "استخدم قالب..." كلها تعديلات على الموجود)
-            const existing = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
-            const hasProject = existing && existing.trim().length > 100;
-            // كاشف أسئلة واعٍ بالعربية — \b القديم لم يكن يطابق "ماذا/هل..." أبداً
-            const isQuestion = isQuestionMessage(message);
-            const isSmalltalk = message.trim().length < 4;
-            // 🔁 أي رسالة محجوبة سابقاً = إصرار → تعديل (يكسر الحلقة بلا مطابقة حرفية)
-            const repeated = this.gatedMessages.has(username);
-
-            if (hasProject && !isQuestion && !isSmalltalk && (hasActionIntent(message) || repeated)) {
-                this.gatedMessages.delete(username);
-                this.emitLiveLog(roomName, 'INTENT', 'Classifier',
-                    repeated ? '🔁 رسالة بعد حجب — إصرار → تعديل جراحي' : '✏️ طلب على مشروع قائم → تعديل جراحي');
-                recordEdit(username, message);
-                this.surgicalEdit(message, contextFromRequest(req, agents));
-                return true;
-            }
-            if (hasProject && !isQuestion && !isSmalltalk) {
-                this.gatedMessages.set(username, message.trim());
-                this.reporter.send(roomName, 'chat_reply', { message: this.gateConfirmReply(userLang) });
-                return true;
-            }
-            await this.generateChatResponse(message, username, roomName, userLang);
-        }
-        return true;
+        return handleClassifiedIntent(req, agents, this.reporter, this._gate(), {
+            classifyIntent: (m, u) => this.classifyIntent(m, u),
+            surgicalEdit: (goal, c) => this.surgicalEdit(goal, c),
+            generateChatResponse: (...a) => this.generateChatResponse(...a),
+        });
     }
 }
