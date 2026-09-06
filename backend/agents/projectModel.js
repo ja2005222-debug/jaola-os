@@ -245,3 +245,147 @@ export function buildProjectModelContext(model) {
 
     return lines.join('\n');
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// 🧠 مفاهيمُ المنتج — الفهمُ يقارن نماذجَ لا كلمات (PM/1، `PRODUCT_MIND.md`)
+// ═══════════════════════════════════════════════════════════════════════
+// نموذجُ الفهم (أدوار/كيانات) يأتي بالعربيّة أو الإنجليزيّة، مفرداً أو جمعاً،
+// وأحياناً بصيغة «العميل (Passenger)». نماذجُ الكلونات كذلك. المقارنةُ الصادقة
+// تحتاج تطبيعاً إلى *مفهومٍ* واحد: راكب = Rider = Passenger، إدارة = Admin =
+// مالك = مدير. ما ليس في المعجم يبقى باسمه المطبَّع (فيُطابق نفسَه فقط).
+const CONCEPTS = {
+    // ── أدوار ──
+    user: ['user', 'users', 'visitor', 'مستخدم', 'مستخدمين', 'زائر', 'مالك الحساب', 'صاحب الحساب'],
+    customer: ['customer', 'customers', 'client', 'clients', 'buyer', 'buyers', 'shopper', 'consumer', 'عميل', 'عملاء', 'زبون', 'زبائن', 'مشتري', 'مشترين', 'مشترون'],
+    passenger: ['passenger', 'passengers', 'rider', 'riders', 'راكب', 'ركاب'],
+    traveler: ['traveler', 'traveller', 'tourist', 'مسافر', 'مسافرين', 'سائح', 'سياح'],
+    guest: ['guest', 'guests', 'نزيل', 'نزلاء', 'ضيف', 'ضيوف'],
+    tenant: ['tenant', 'tenants', 'renter', 'مستأجر', 'مستأجرين'],
+    patient: ['patient', 'patients', 'مريض', 'مرضى'],
+    student: ['student', 'students', 'learner', 'طالب', 'طلاب', 'طلبة', 'متعلم', 'متدرب'],
+    member: ['member', 'members', 'subscriber', 'عضو', 'أعضاء', 'مشترك'],
+    viewer: ['viewer', 'audience', 'مشاهد', 'مشاهدين'],
+    admin: ['admin', 'admins', 'administrator', 'administration', 'management', 'manager', 'owner', 'supervisor', 'moderator', 'schooladmin',
+        'إدارة', 'مدير', 'مدراء', 'مالك', 'مشرف', 'ادمن', 'أدمن'],
+    driver: ['driver', 'drivers', 'courier', 'couriers', 'captain', 'سائق', 'سائقين', 'كابتن', 'مندوب', 'مناديب'],
+    dispatcher: ['dispatcher', 'operator', 'موزع', 'مشغل', 'مشغّل'],
+    seller: ['seller', 'sellers', 'vendor', 'vendors', 'merchant', 'بائع', 'باعة', 'بائعين', 'تاجر', 'تجار'],
+    restaurant: ['restaurant', 'restaurants', 'مطعم', 'مطاعم'],
+    teacher: ['teacher', 'teachers', 'instructor', 'instructors', 'tutor', 'trainer', 'coach', 'معلم', 'معلّم', 'معلمين', 'مدرس', 'مدرّس', 'مدرب'],
+    parent: ['parent', 'parents', 'guardian', 'ولي أمر', 'ولي الأمر', 'أولياء الأمور'],
+    doctor: ['doctor', 'doctors', 'physician', 'vet', 'veterinarian', 'طبيب', 'أطباء', 'طبيب بيطري', 'بيطري'],
+    pharmacist: ['pharmacist', 'صيدلي'],
+    accountant: ['accountant', 'accounting', 'finance manager', 'محاسب', 'مدير مالي'],
+    staff: ['staff', 'employee', 'employees', 'worker', 'waiter', 'cashier', 'reception', 'receptionist', 'technician', 'secretary', 'agent', 'support agent', 'kitchen', 'chef',
+        'موظف', 'موظفين', 'عامل', 'نادل', 'كاشير', 'استقبال', 'موظف استقبال', 'فني', 'فنّي', 'سكرتير', 'سكرتير قانوني', 'وكيل', 'وكيل دعم', 'مطبخ', 'طباخ'],
+    organizer: ['organizer', 'organiser', 'host', 'منظم', 'منظّم'],
+    lawyer: ['lawyer', 'attorney', 'محامي', 'محامٍ', 'محام'],
+    storekeeper: ['storekeeper', 'warehouse manager', 'أمين المخزن', 'أمين مخزن', 'مدير مستودع', 'مشغل مغسلة', 'مشغّل مغسلة'],
+    fleet_manager: ['fleet manager', 'مدير أسطول'],
+    // ── كيانات ──
+    order: ['order', 'orders', 'طلب', 'طلبات', 'طلب مطبخ', 'طلب غسيل'],
+    item: ['item', 'items', 'عنصر', 'عناصر'],
+    product: ['product', 'products', 'sku', 'goods', 'menuitem', 'menu item', 'dish', 'meal',
+        'منتج', 'منتجات', 'صنف', 'أصناف', 'سلعة', 'بضاعة', 'صنف قائمة', 'وجبة', 'صنف غسيل'],
+    trip: ['trip', 'trips', 'ride', 'rides', 'journey', 'رحلة', 'رحلات', 'مشوار', 'مشاوير'],
+    vehicle: ['vehicle', 'vehicles', 'car', 'cars', 'cab', 'مركبة', 'مركبات', 'سيارة', 'سيارات', 'فئة سيارة'],
+    invoice: ['invoice', 'invoices', 'bill', 'receipt', 'فاتورة', 'فواتير', 'فاتورة بيع', 'فاتورة كشف', 'فاتورة طاولة', 'قسيمة'],
+    booking: ['booking', 'bookings', 'reservation', 'appointment', 'appointments', 'حجز', 'حجوزات', 'موعد', 'مواعيد', 'حجز تذكرة'],
+    ticket: ['ticket', 'tickets', 'ticket tier', 'تذكرة', 'تذاكر'],
+    support_ticket: ['support ticket', 'تذكرة دعم', 'تذاكر دعم'],
+    event: ['event', 'events', 'فعالية', 'فعاليات', 'مناسبة', 'مناسبات', 'حفلة', 'حفلات'],
+    course: ['course', 'courses', 'lesson', 'lessons', 'class', 'enrollment', 'دورة', 'دورات', 'كورس', 'كورسات', 'درس', 'دروس', 'مادة', 'مواد', 'حصة', 'حصص'],
+    property: ['property', 'properties', 'unit', 'listing', 'عقار', 'عقارات', 'وحدة', 'شقة', 'شقق'],
+    employee: ['staff member', 'موظف'],
+    pet: ['pet', 'pets', 'animal', 'حيوان', 'حيوان أليف', 'صاحب حيوان'],
+    medicine: ['medicine', 'drug', 'دواء', 'أدوية', 'عملية صرف'],
+    table: ['table', 'tables', 'طاولة', 'طاولات'],
+    store: ['store', 'stores', 'shop', 'متجر', 'متاجر', 'محل'],
+    payment: ['payment', 'payments', 'transaction', 'fare', 'دفع', 'دفعة', 'تحصيل', 'دفعة تحصيل', 'معاملة مالية', 'أجرة'],
+    location: ['location', 'locations', 'zone', 'zones', 'area', 'موقع', 'مواقع', 'منطقة', 'مناطق'],
+    room: ['room', 'rooms', 'room type', 'غرفة', 'غرف', 'نوع غرفة'],
+    package: ['package', 'packages', 'plan', 'باقة', 'باقات', 'باقة تصوير', 'باقة تنظيف'],
+    shipment: ['shipment', 'shipments', 'شحنة', 'شحنات', 'شحنة واردة', 'شحنة صادرة'],
+    account: ['account', 'accounts', 'ledger', 'journal entry', 'حساب', 'حسابات', 'قيد', 'قيد يومية', 'سطر قيد'],
+    currency: ['currency', 'currencies', 'coin', 'crypto', 'stock', 'عملة', 'عملات', 'عملة رقمية', 'سهم', 'أسهم'],
+    forecast: ['forecast', 'weather', 'طقس', 'توقعات'],
+    expense: ['expense', 'expenses', 'منصرف', 'منصرفات', 'مصروف', 'مصروفات'],
+    production: ['production', 'production batch', 'إنتاج', 'دفعة إنتاج'],
+    lease: ['lease', 'contract', 'عقد', 'عقود', 'عقد إيجار'],
+    legal_case: ['case', 'cases', 'hearing', 'قضية', 'قضايا', 'جلسة'],
+    service: ['service', 'services', 'خدمة', 'خدمات', 'بند خدمة'],
+    workspace: ['workspace', 'desk', 'مساحة عمل'],
+    salary: ['salary', 'payslip', 'راتب', 'رواتب', 'قسيمة راتب'],
+    attendance: ['attendance', 'حضور', 'سجل حضور'],
+    leave: ['leave', 'vacation', 'إجازة', 'طلب إجازة'],
+    shift: ['shift', 'وردية'],
+    film: ['film', 'movie', 'show', 'فيلم', 'أفلام', 'عرض'],
+    budget: ['budget', 'ميزانية', 'ميزانية شهرية', 'فئة إنفاق'],
+    analysis: ['analysis', 'technical analysis', 'تحليل', 'تحليل فني'],
+    visit: ['visit', 'visits', 'زيارة', 'زيارات'],
+    grade: ['grade', 'grades', 'assignment', 'درجة', 'درجات', 'واجب'],
+    announcement: ['announcement', 'إعلان', 'إعلانات'],
+    reply: ['reply', 'رد', 'ردود'],
+    maintenance: ['maintenance', 'صيانة', 'عملية صيانة'],
+    work_order: ['work order', 'job card', 'بطاقة عمل'],
+    inquiry: ['inquiry', 'استفسار', 'طلب عرض سعر'],
+};
+/** المفاهيمُ التي لا تحمل معلومةَ منتج — لا تُقيِّد الاختيار. */
+const GENERIC_CONCEPTS = new Set(['user', 'item', 'employee']);
+
+/** تطبيعٌ لغويّ خفيف: حروفٌ صغيرة، بلا تشكيل، همزاتٌ موحَّدة، بلا «ال»، ة → ه. */
+export function normalizeConceptText(s) {
+    return String(s || '').toLowerCase()
+        .replace(/[ً-ْـ]/g, '')
+        .replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه')
+        .replace(/[^\p{L}\p{N}\s/]/gu, ' ')
+        .split(/[\s/]+/).filter(Boolean)
+        .map(t => (t.length > 3 && t.startsWith('ال')) ? t.slice(2) : t)
+        .join(' ').trim();
+}
+const SYNONYMS = []; // [normalizedSynonym, concept] — الأطولُ أوّلاً كي يغلب «مدير أسطول» «مدير»
+for (const [concept, list] of Object.entries(CONCEPTS)) for (const s of list) SYNONYMS.push([normalizeConceptText(s), concept]);
+SYNONYMS.sort((a, b) => b[0].length - a[0].length);
+const EXACT = new Map(SYNONYMS.map(([s, c]) => [s, c]));
+
+/**
+ * مفهومُ اسمٍ واحد. «العميل (Passenger)»: ما بين القوسين هو المصطلحُ الأدقّ فيُقدَّم.
+ * الترتيب: مطابقةٌ تامّة → مرادفٌ متعدّدُ الكلمات مضمَّن → كلمةٌ واحدة → الاسمُ المطبَّع نفسُه.
+ */
+export function conceptOf(name) {
+    const raw = String(name || '');
+    const inParens = [...raw.matchAll(/\(([^)]+)\)/g)].map(m => m[1]);
+    const outside = raw.replace(/\([^)]*\)/g, ' ');
+    const candidates = [...inParens, outside].map(normalizeConceptText).filter(Boolean);
+    for (const s of candidates) {
+        if (EXACT.has(s)) return EXACT.get(s);
+        for (const [syn, c] of SYNONYMS) if (syn.includes(' ') && (' ' + s + ' ').includes(' ' + syn + ' ')) return c;
+        for (const tok of s.split(' ')) if (EXACT.has(tok)) return EXACT.get(tok);
+    }
+    return candidates[0] || '';
+}
+const conceptSet = (names, { dropGeneric = false } = {}) => new Set(
+    (names || []).map(conceptOf).filter(c => c && !(dropGeneric && GENERIC_CONCEPTS.has(c))));
+
+/**
+ * قربُ نموذجِ الفهم من نموذجِ مرشَّح (كلون/مرجع). دالّةٌ نقيّة.
+ * - `roleCoverage`: نسبةُ أدوار الفهم التي يغطّيها المرشَّح (null إن لم يكن للفهم أدوارٌ ذاتُ معنى).
+ *   دورٌ غيرُ مغطّى = واجهةٌ كاملة يطلبها المستخدم ولا يملكها المنتجُ المرشَّح.
+ * - `entityOverlap`: نسبةُ كيانات الفهم المشتركة (null إن لم تكن كيانات).
+ * - `substantive`: للفهم أدوارٌ أو كياناتٌ غيرُ عامّة — وإلّا لا شيءَ يُقارَن.
+ */
+export function modelAffinity(understood, candidate) {
+    const u = normalizeProjectModel(understood || {});
+    const c = normalizeProjectModel(candidate || {});
+    const uRoles = conceptSet(u.roles.map(r => r.name), { dropGeneric: true });
+    const cRoles = conceptSet(c.roles.map(r => r.name));
+    const uEnts = conceptSet(u.entities.map(e => e.name), { dropGeneric: true });
+    const cEnts = conceptSet(c.entities.map(e => e.name));
+    const missingRoles = [...uRoles].filter(k => !cRoles.has(k));
+    const sharedEntities = [...uEnts].filter(k => cEnts.has(k));
+    const roleCoverage = uRoles.size ? (uRoles.size - missingRoles.length) / uRoles.size : null;
+    const entityOverlap = uEnts.size ? sharedEntities.length / uEnts.size : null;
+    const parts = [roleCoverage, entityOverlap].filter(v => v !== null);
+    const score = parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : 0;
+    return { roleCoverage, entityOverlap, missingRoles, sharedEntities, score, substantive: uRoles.size + uEnts.size > 0 };
+}

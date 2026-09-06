@@ -18,6 +18,7 @@ import { getLibraryModel } from '../modelLibrary.js';
 import { buildProfileContext } from '../userProfile.js';
 import { isExplicitNewBuild } from '../textNormalizer.js';
 import { generateBlueprint, buildBlueprintContext } from '../appBlueprint.js';
+import { matchBlueprint, referenceModel } from '../referenceBlueprints.js';
 
 export async function understandGoal(goal, ctx, reporter) {
     const { username, activeProject, roomName } = ctx;
@@ -56,17 +57,22 @@ export async function understandGoal(goal, ctx, reporter) {
         // السابقة الناجحة — فلا نبدأ من الصفر. الأولوية: المشروع نفسه > اشتقاق
         // هذه الجولة > مكتبة الفئة العامة.
         const seed = getLibraryModel(blueprint?.category);
+        // 🧠 المعرفةُ المرجعيّة (PM/1): مجالٌ معروف في الطلب (تاكسي، توصيل طعام…) يبذر
+        // أدوارَه أوّلاً — فيوجد فهمٌ حتى بلا نموذجٍ لغويّ، ويُقارَن به الكلونُ لا بالكلمات.
+        const reference = matchBlueprint(goal);
+        const refModel = referenceModel(reference);
         const derived = await deriveProjectModel(goal, blueprint);
         const prior = getDomainModel(username, activeProject);
         // 🆕 بناء بهوية جديدة («ابني متجر عطور») يستبدل النموذج القديم — لا يدمجه،
         // كي لا يرث المتجر أدوار مشروع سابق (TeamMember/Driver) فيبني الشيء الخطأ.
         const newIdentity = isExplicitNewBuild(goal);
         let model = seed ? mergeProjectModel(seed, derived) : derived;
+        if (refModel) model = mergeProjectModel(refModel, model); // المرجعُ أوّلاً كي لا تُسقطه سقوفُ التطبيع
         if (prior && !newIdentity) model = mergeProjectModel(model, prior);
         setDomainModel(username, activeProject, model);
         domainModelContext = buildProjectModelContext(model);
         reporter.liveLog(roomName, 'MODEL', 'DomainAnalyst',
-            `🧩 نموذج المشروع: ${summarizeModel(model)}${newIdentity ? ' (هوية جديدة — استُبدل النموذج القديم)' : seed ? ' (مبذور من مكتبة الفئة)' : ''}`);
+            `🧩 نموذج المشروع: ${summarizeModel(model)}${newIdentity ? ' (هوية جديدة — استُبدل النموذج القديم)' : seed ? ' (مبذور من مكتبة الفئة)' : ''}${refModel ? ` (مرجع: ${reference.label})` : ''}`);
     } catch (e) { console.warn('[ProjectModel]', 'فشل استخلاص نموذج المشروع:', e.message); }
     return { enrichedGoal, blueprint, blueprintContext, domainModelContext };
 }

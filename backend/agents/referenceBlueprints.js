@@ -154,6 +154,20 @@ export const BLUEPRINTS = [
 ];
 
 // ─── المطابقة ───────────────────────────────────────────────────────
+/**
+ * 🧠 المرجعُ بصيغة نموذج المشروع (PM/1): أدوارُه «العميل (Passenger)» تصير
+ * `{ name: 'Passenger', description: 'العميل' }` — المصطلحُ الدقيق اسماً والعربيّةُ وصفاً —
+ * فيُبذَر بها نموذجُ الفهم قبل الاشتقاق، ويقارَن بنماذج الكلونات لا بالكلمات.
+ */
+export function referenceModel(bp) {
+    if (!bp || !Array.isArray(bp.roles) || !bp.roles.length) return null;
+    const roles = bp.roles.map((label) => {
+        const m = /^(.*?)\s*\(([^)]+)\)\s*$/.exec(String(label));
+        return m ? { name: m[2].trim(), description: m[1].trim() } : { name: String(label).trim() };
+    }).filter(r => r.name);
+    return { roles, entities: [], flows: [], _source: 'reference', reference: bp.id };
+}
+
 export function matchBlueprint(goal = '') {
     const t = (goal || '').toLowerCase();
     if (!t.trim()) return null;
