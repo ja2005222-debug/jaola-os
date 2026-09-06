@@ -28,6 +28,7 @@ const { scenario, tempProject } = await import('./helpers/jcrScenario.mjs');
 const { setUserLanguage } = await import('../agents/languageDetector.js');
 const { isMissionActive, ledgerPath } = await import('../core/runtime/ExecutionQueue.js');
 const { divertConsoleToStderr } = await import('./helpers/reportChannel.mjs');
+const { isFullSpecification, numberedSections } = await import('../agents/textNormalizer.js');
 
 divertConsoleToStderr();
 const HERE = import.meta.dirname;
@@ -53,20 +54,98 @@ function launcher(prefix, body) {
     return s;
 }
 
-test('العطبُ بعينه: مواصفةٌ طويلةٌ على مشروعٍ قائم تُقبَل ويبدأ العملُ — والغرفةُ تسمع إقرارَ استلامٍ واحداً بلا انتظار', async () => {
+// 📏 المتنُ الذي قِيست عليه العتبتان (١٢٠٠ حرفاً، ٦ بنودٍ مرقّمة). القياسُ هو الحجّة: المواصفةُ في طرفٍ
+//    وكلُّ ما عداها في الطرف الآخر بفارقٍ واسع — فليست العتبةُ ذوقاً بل خطّاً في فراغٍ مقيس.
+test('«وثيقةٌ لا جملة»: المواصفةُ وحدَها تعبر، وكلُّ رسائل الاستعمال اليوميّ لا تقترب', () => {
+    const spec = longSpec();
+    assert.ok(isFullSpecification(spec), 'المواصفةُ وثيقة');
+    assert.ok(spec.length > 1200 && numberedSections(spec) >= 6);
+    for (const t of [
+        'غيّر الألوان إلى أزرق',
+        'اضف قسم التقارير المالية مع رسم بياني للمبيعات الشهرية وزر تصدير Excel',
+        'ابني موقع مطعم مع قائمة طعام وحجز طاولة',
+        'ماذا يمكن أن نضيف للمشروع؟',
+        'ولكن قائمة الأصدقاء موجودة',
+        'أريد نظام حجز عيادة فيه المريض والطبيب والموعد والوصفة الطبية والفاتورة، مع لوحة للسكرتير وتقارير شهرية',
+        '', null, undefined,
+    ]) assert.equal(isFullSpecification(t), false, JSON.stringify(t));
+    // الشرطان **معاً**: طولٌ بلا تعداد، وتعدادٌ بلا طول — كلاهما ليس وثيقة.
+    assert.equal(isFullSpecification('غيّر اللون. '.repeat(200)), false, 'طولٌ بلا بنودٍ مرقّمة');
+    assert.equal(isFullSpecification('1. أحمر\n2. أزرق\n3. أخضر\n4. أصفر\n5. بنفسجي\n6. أسود'), false, 'بنودٌ بلا طول');
+    // والترقيمُ يُقرأ عربيَّ الأرقام ولاتينيَّها، بنقطةٍ أو قوسٍ أو شَرطة، في مستهلّ السطر لا في وسطه.
+    assert.equal(numberedSections('1. أ\n٢) ب\n3- ج'), 3);
+    assert.equal(numberedSections('السعر 1. والكمية 2. والخصم 3.'), 0, 'أرقامٌ في وسط السطر ليست بنوداً');
+});
+
+test('العطبُ بعينه: المواصفةُ الطويلةُ على مشروعٍ قائم تُسمَع — وتُوجَّه بناءً يُستأذن فيه، لا ترقيعَ ملفٍّ صامتاً', async () => {
     const spec = longSpec();
     assert.ok(spec.length > 5000, 'المواصفةُ طويلةٌ فعلاً — هذا شرطُ إعادةِ الإنتاج');
-    let seen = null;
-    const s = launcher('sil1', async (instruction) => { seen = instruction; });
+    let edited = null;
+    const s = launcher('sil1', async (instruction) => { edited = instruction; });
     setUserLanguage(s.ctx.username, 'ar');
     await s.send(spec, {}, { projectPath: tempProject() });
-    // المسارُ هو مسارُ الإنتاج نفسُه: المصنِّفُ بلا مزوّدٍ يسقط إلى chat/50٪ ثمّ فرعُ التعديل.
+    // المسارُ هو مسارُ الإنتاج نفسُه: المصنِّفُ بلا مزوّدٍ يسقط إلى chat/50٪ — وهذا ما رآه المالكُ حرفيّاً.
     assert.match(s.logs(), /نية: chat \(ثقة: 50%\)/);
-    assert.match(s.logs(), /تعديل جراحي/);
-    assert.equal(seen, spec, 'النصُّ كاملاً وصل الجسدَ (لا اقتطاع)');
+    // ثمّ يتدخّل حكمُ «مواصفةٌ كاملة» فوق المصنِّف، ويقول لماذا في السجلّ.
+    assert.match(s.logs(), /📋 مواصفةٌ كاملة \(18 بنداً مرقّماً، \d+ حرفاً\) — طلبُ بناءٍ لا تعديلاً جراحيّاً \(المصنِّفُ قال «chat»\)/);
+    assert.ok(!/تعديل جراحي/.test(s.logs()), 'لم تعد وثيقةُ نظامٍ تذهب إلى مُرقِّعِ ملفّ');
+    assert.equal(edited, null, 'ولا تعديلَ جراحيّاً أُطلق');
     const replies = s.replies();
-    assert.equal(replies.length, 1, `ردٌّ واحدٌ لا صفر (كان صفراً: هذا هو الصمت). جاء: ${JSON.stringify(replies)}`);
-    assert.ok(replies[0].includes('تسلّمتُ طلبك'), replies[0]);
+    assert.equal(replies.length, 1, `ردٌّ واحدٌ لا صفر (كان صفراً: هذا هو الصمت). جاء: ${JSON.stringify(replies).slice(0, 300)}`);
+    assert.ok(replies[0].startsWith('هل تريد بناء موقع لـ'), replies[0].slice(0, 120));
+    // 🔎 السؤالُ يُقرأ: السطرُ الأوّلُ لا الوثيقةُ كاملةً — وكان يبثّ ٢٦ ألفَ حرفٍ حين وُجِّهت هنا أوّلَ مرّة.
+    assert.ok(replies[0].length < 400, `سؤالٌ مقروء لا وثيقة (${replies[0].length} حرفاً)`);
+    assert.ok(replies[0].includes('نظام كاشير ونقطة بيع POS System'), 'ومع ذلك يُعرِّف بالمطلوب');
+});
+
+test('ولو صنّفها المصنِّفُ «build» لَما نجت أيضاً: حارسُ «فعلٍ في المستهلّ» كان يردّها إلى الترقيع — والمواصفةُ تتخطّاه', async () => {
+    const spec = longSpec();
+    let edited = null;
+    const s = launcher('sil1d', async (i) => { edited = i; });
+    s.rt.classifyIntent = async () => ({ intent: 'build', confidence: 90 });
+    setUserLanguage(s.ctx.username, 'ar');
+    await s.send(spec, {}, { projectPath: tempProject() });
+    assert.equal(edited, null, 'حارسُ (ب) يشترط فعلَ بناءٍ في المستهلّ، و«أريد منك بناء…» ليس كذلك — فكان يسقط في الترقيع');
+    assert.ok(s.replies()[0]?.startsWith('هل تريد بناء موقع لـ'), JSON.stringify(s.replies()).slice(0, 200));
+});
+
+test('صدرُ المصنِّف محدود: الوثيقةُ تُرسَل مقصوصةً بنقاطٍ مُعلَنة، والرسالةُ القصيرةُ كما هي', async () => {
+    const s = scenario('silcls');
+    const sent = [];
+    const recorder = async (messages) => { sent.push(messages[1].content); return '{"intent":"build","confidence":90}'; };
+    const spec = longSpec();
+    await s.rt.classifyIntent(spec, s.ctx.username, recorder);
+    await s.rt.classifyIntent('غيّر اللون', s.ctx.username, recorder);
+    // ٢٦ ألفَ حرفٍ لجوابٍ من ثمانين رمزاً هو ما أسقط المصنِّفَ إلى احتياطِه في الإنتاج.
+    assert.ok(sent[0].length < spec.length / 5, `قُصَّ فعلاً (${sent[0].length} من ${spec.length})`);
+    assert.ok(sent[0].includes('…'), 'والقصُّ مُعلَنٌ للنموذج لا مُخفى');
+    assert.ok(sent[0].includes('نظام كاشير ونقطة بيع'), 'والمستهلُّ — موضعُ النيّة — محفوظ');
+    assert.equal(sent[1], 'الرسالة: "غيّر اللون"', 'القصيرةُ لا تُمَسّ');
+});
+
+test('والهدفُ المعلَّقُ يبقى **كاملاً** رغم قِصَر السؤال — «نعم» تبني المواصفةَ لا سطرَها الأوّل', async () => {
+    const spec = longSpec();
+    const s = launcher('sil1b', async () => {});
+    delete s.rt.executeMission;
+    const built = []; s.rt._runMissionNow = async (goal) => { built.push(goal); };
+    setUserLanguage(s.ctx.username, 'ar');
+    await s.send(spec, {}, { projectPath: tempProject() });
+    await s.send('نعم', {}, { projectPath: tempProject() });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(built.length, 1, 'التأكيدُ أطلق البناء');
+    assert.equal(built[0], spec, 'بالمواصفة كاملةً — القصُّ كان للعرض لا للتنفيذ');
+});
+
+test('ولا يُصادَر التعديلُ العاديّ: طلبُ فعلٍ قصيرٌ على مشروعٍ قائم يبقى تعديلاً جراحيّاً ويسمع إقرارَه', async () => {
+    let seen = null;
+    const s = launcher('sil1c', async (instruction) => { seen = instruction; });
+    setUserLanguage(s.ctx.username, 'ar');
+    await s.send('اضف قسم التقارير المالية مع رسم بياني للمبيعات', {}, { projectPath: tempProject() });
+    // يلتقطها الموجّهُ الموحَّد قبل المصنِّف («قاعدة مباشرة») — والمهمّ أنّها بقيت تعديلاً.
+    assert.match(s.logs(), /نية: modify \(ثقة: 100%\)/);
+    assert.ok(!/مواصفةٌ كاملة/.test(s.logs()), 'جملةٌ ليست وثيقة');
+    assert.equal(seen, 'اضف قسم التقارير المالية مع رسم بياني للمبيعات');
+    assert.deepEqual(s.replies().map((m) => m.slice(0, 12)), ['✂️ تسلّمتُ ط']);
 });
 
 test('الإقرارُ بلغةِ المستخدم، ولا يُقال حين يُرفض الطلبُ لانشغالِ المشروع — الرسالتان لا تجتمعان', async () => {

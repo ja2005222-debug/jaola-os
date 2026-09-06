@@ -127,8 +127,9 @@ test('الحدود: لا this، لا استيرادَ من jcr، لا io، أع�
     // سجلُّ الملفّ بالقياس: JCR/26 أضاف `handleBareConfirmations` (executeMission +١، surgicalEdit +٢، send +٣، liveLog +٣)،
     // وJCR/27 أضاف `handleUnifiedRoute` (surgicalEdit +٢، generateChatResponse +١، send +٣، liveLog +١)، وJCR/28 أضاف `handleClassifiedIntent`
     // (classifyIntent +١، surgicalEdit +٣، generateChatResponse +٣، send +٤، liveLog +٩). عقدُ كلِّ معالجٍ في اختباره.
+    // و«المواصفةُ الكاملة» أضافت liveLog +١ (١٤ ← ١٥) — سطرٌ يقول لماذا خالفَ التوجيهُ المصنِّف. لا `ops` ولا `send` جديد.
     assert.equal(count(/ops\.executeMission\(/g), 2); assert.equal(count(/ops\.surgicalEdit\(/g), 8); assert.equal(count(/ops\.generateChatResponse\(/g), 4); assert.equal(count(/ops\.classifyIntent\(/g), 1); assert.equal(count(/\bops\.\w+/g), 15);
-    assert.equal(count(/reporter\.send\(/g), 17); assert.equal(count(/reporter\.liveLog\(/g), 14);
+    assert.equal(count(/reporter\.send\(/g), 17); assert.equal(count(/reporter\.liveLog\(/g), 15);
     const jcr = fs.readFileSync(path.join(HERE, '../agents/jcr.js'), 'utf8');
     assert.ok(jcr.includes(`\n    async _handlePlanningStage(req, agents) {
         return handlePlanningStage(req, agents, this.reporter, {

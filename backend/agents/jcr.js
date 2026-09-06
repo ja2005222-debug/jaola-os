@@ -389,7 +389,10 @@ export class JaolaCognitiveRuntime {
         return null;
     }
 
-    async classifyIntent(userMessage, username) {
+    // 🔌 `llm` وسيطٌ أخيرٌ بافتراضيٍّ (سابقة JCR/30): آخرُ مستهلكٍ للمزوّد في الصنف كان بلا شقٍّ،
+    //    فقصُّ الصدر أدناه — وهو جذرُ سوء التوجيه المقيس — لم يكن قابلاً للقياس في اختبار.
+    //    المستدعون في الإنتاج يمرّرون وسيطَين فيبقى الافتراضيُّ نافذاً.
+    async classifyIntent(userMessage, username, llm = smartChat) {
         const execMemory = await this.loadExecutiveMemory(username);
 
         // 🆕 كشف مباشر بالكلمات المفتاحية القوية — يتفادى استشارة النموذج لحالات واضحة
@@ -398,10 +401,14 @@ export class JaolaCognitiveRuntime {
             return { intent: 'build', confidence: 100 };
         }
 
+        // 🔎 صدرٌ محدود لا الرسالةُ كاملةً: الجوابُ المطلوبُ ثمانون رمزاً، والنيّةُ تُقرأ من المستهلّ.
+        //    وإرسالُ ٢٦ ألفَ حرفٍ لهذا السؤال هو الذي أسقط المصنِّفَ إلى احتياطِه `{chat, 50%}` في
+        //    بلاغ المالك، فذهبت مواصفةُ نظامٍ كاملةٍ إلى مسارٍ ليس مسارَها. القصُّ مُعلَنٌ بالنقاط.
+        const head = userMessage.length > 1500 ? `${userMessage.slice(0, 1500)}…` : userMessage;
         try {
-            const _intentRes = await smartChat([
+            const _intentRes = await llm([
                 { role: "system", content: 'صنف نية المستخدم. أعد JSON فقط: { "intent": "build|modify|query|chat|stop|acknowledge", "confidence": 0-100 }' },
-                { role: "user", content: `الرسالة: "${userMessage}"` }
+                { role: "user", content: `الرسالة: "${head}"` }
             ], { max_tokens: 80, temperature: 0.1, json: true });
             const result = JSON.parse(_intentRes);
             if (result.confidence && result.confidence <= 1) {
