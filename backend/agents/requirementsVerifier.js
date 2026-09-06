@@ -14,7 +14,7 @@
  */
 
 import { smartChat } from '../core/providers/llm.js';
-import { conceptOf, conceptKind, conceptsInText, isGenericConcept } from './projectModel.js';
+import { conceptOf, conceptKind, conceptsInText, isGenericConcept, normalizeConceptText } from './projectModel.js';
 
 const VERIFY_SYSTEM = `أنت مدقق جودة صارم لمواقع الويب. لديك متطلبات وظيفية وكود الموقع الفعلي.
 لكل متطلب، افحص الكود بدقة: هل نُفِّذ **فعلاً بشكل عامل** (عناصر UI موجودة + منطق JavaScript حقيقي يعمل عليها ببيانات) — أم مجرد شكل/زخرفة/غير موجود؟
@@ -78,6 +78,50 @@ export function traceRequirements(requirements, files) {
         (spoken.has(concept) ? out.traced : out.missing).push(r.name);
     }
     return out;
+}
+
+// كلماتُ الوثيقة التي لا تسمّي شيئاً: أدواتٌ وحروفٌ وألفاظُ إطارٍ («نظام»، «دعم»، «إمكانية») — لا تُعدّ أثراً.
+const SECTION_STOPWORDS = new Set(['نظام', 'دعم', 'امكانيه', 'امكانية', 'كل', 'مع', 'او', 'من', 'في', 'على', 'عن', 'الى', 'ان', 'يجب', 'يكون', 'ويجب',
+    'عبر', 'لكل', 'بين', 'حسب', 'عند', 'بعد', 'قبل', 'ذلك', 'هذا', 'هذه', 'ثم', 'اذا', 'لا', 'الا', 'غير', 'مثل', 'حتى', 'ايضا', 'مرحله',
+    'the', 'and', 'for', 'with', 'of', 'to', 'a', 'an', 'in', 'on', 'or', 'by', 'system', 'support', 'all', 'each', 'via', 'must', 'should']);
+
+/**
+ * 🔎 PM/9 — أثرُ بنود الوثيقة بعينها في الملفّات، حتميّاً وبلا مزوّد: لكلِّ بندٍ مرقّم مفرداتُ **عنوانه** (بعد التطبيع، بلا
+ * كلماتِ الإطار، ≥٣ أحرف)؛ إن نطقت الملفّاتُ بإحداها ككلمةٍ كاملة فللبند أثر. الغيابُ قاطع، والحضورُ أثرٌ لا تنفيذ (كما في
+ * `traceRequirements`) — لكن بلغة المستخدم: «الباركود» و«الموردون» لا «entity/role» يعرفها المعجم أو لا يعرفها.
+ * بندٌ بلا مفردةٍ صالحة (عنوانُه كلُّه كلماتُ إطار) لا يُتتبَّع.
+ * @returns {{ traced: Array<{n,title}>, missing: Array<{n,title}>, untraceable: Array<{n,title}> }}
+ */
+export function traceSections(sections, files) {
+    const corpus = ' ' + normalizeConceptText((files || []).map(f => f?.content || '').join('\n')) + ' ';
+    const out = { traced: [], missing: [], untraceable: [] };
+    for (const sec of (sections || [])) {
+        if (!sec?.title) continue;
+        const item = { n: sec.n, title: sec.title };
+        const toks = [...new Set(normalizeConceptText(sec.title).split(' ').filter(t => t.length >= 3 && !SECTION_STOPWORDS.has(t)))];
+        if (!toks.length) { out.untraceable.push(item); continue; }
+        (toks.some(t => corpus.includes(' ' + t + ' ')) ? out.traced : out.missing).push(item);
+    }
+    return out;
+}
+
+/** «٣ الباركود» — تسميةُ البند كما يراها المستخدم. */
+export const sectionLabel = (sec) => `${sec.n} ${String(sec.title).replace(/[:：]\s*$/, '')}`;
+
+/**
+ * تعليمةُ إكمالٍ من نصّ الوثيقة نفسِه (PM/9): البنودُ بلا أثر بعناوينها ومتونها كما كتبها المستخدم — لا صياغةٌ عامّة.
+ * تُقصّ إلى `limit` بنداً بترتيب الوثيقة (جولةٌ واحدة محدودة) ويُقال كم بقي.
+ */
+export function buildSectionFixInstruction(missing, sections, domainModel = null, { limit = 8 } = {}) {
+    const byN = new Map((sections || []).map(s => [s.n, s]));
+    const chosen = (missing || []).slice(0, limit).map(m => byN.get(m.n) || m);
+    if (!chosen.length) return '';
+    const items = chosen.map(s => `${s.n}. ${s.title}${s.body ? `\n${s.body}` : ''}`).join('\n\n');
+    const rest = Math.max(0, (missing || []).length - chosen.length);
+    const roles = Array.isArray(domainModel?.roles) ? domainModel.roles.map(r => r.name).filter(Boolean) : [];
+    const ents = Array.isArray(domainModel?.entities) ? domainModel.entities.map(e => e.name).filter(Boolean) : [];
+    const modelHint = (roles.length || ents.length) ? `\n\nنموذج المشروع: الأدوار [${roles.join('، ') || '—'}] والكيانات [${ents.join('، ') || '—'}] — على مصدر البيانات المشترك نفسِه.` : '';
+    return `نفّذ البنودَ التالية من مواصفة المستخدم كميزاتٍ **عاملة فعلياً** (عناصر UI حقيقية + منطق JavaScript على بيانات مشتركة واقعية)، بنصّها كما كُتب:\n\n${items}${rest ? `\n\n(وبقي ${rest} بنداً لجولةٍ لاحقة.)` : ''}${modelHint}\nأضِف ما ينقص دون حذف ما يعمل، واربط الأزرار بمعالجات فعلية (لا تترك دوالّ معلّقة).`;
 }
 
 /**

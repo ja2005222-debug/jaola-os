@@ -262,6 +262,26 @@ export function numberedSections(text) {
     return (String(text || '').match(NUMBERED_SECTION) || []).length;
 }
 
+const NUMBERED_LINE = /^[\t ]*([\d\u0660-\u0669]{1,2})\s*[.)\u061B:-]\s*(\S.*)$/u;
+const AR_DIGITS = '\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669';
+const toLatinDigits = (s) => String(s).replace(/[\u0660-\u0669]/g, (d) => String(AR_DIGITS.indexOf(d)));
+
+/**
+ * 📋 بنودُ الوثيقة بعينها (PM/9): كلُّ سطرٍ مرقّم بنداً — رقمُه، وعنوانُه (بقيّةُ السطر)، ومتنُه (الأسطرُ التالية حتّى
+ * البند التالي). هذه لغةُ المستخدم لا لغةُ المعجم: الحكمُ والإكمالُ يقرآنها كما كُتبت.
+ * @returns {Array<{ n: number, title: string, body: string }>}
+ */
+export function specSections(text) {
+    const out = [];
+    for (const raw of String(text || '').split('\n')) {
+        const m = NUMBERED_LINE.exec(raw);
+        if (m) { out.push({ n: Number(toLatinDigits(m[1])), title: m[2].trim(), body: '' }); continue; }
+        const last = out[out.length - 1];
+        if (last && raw.trim()) last.body = last.body ? `${last.body}\n${raw.trim()}` : raw.trim();
+    }
+    return out;
+}
+
 /** أهذه وثيقةُ مواصفاتٍ لنظامٍ كامل (لا جملةُ طلب)؟ */
 export function isFullSpecification(text) {
     const t = String(text || '');

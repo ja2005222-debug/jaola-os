@@ -76,14 +76,14 @@ test('المسارُ كاملاً: وثيقةُ نقاطِ البيع على م�
         const r = await s.rt._runMissionNow(SPEC, createExecutionContext({ ...s.ctx, projectPath: emptyProject(), agents: {} }));
         assert.equal(r.clone, 'jaola-pos'); assert.equal(r.success, true, 'المهمّةُ اكتملت — الحكمُ على المنتج شيءٌ آخر');
         assert.equal(r.verdict.status, 'FAILED', JSON.stringify(r.verdict));
+        // PM/9: الوثيقةُ المرقّمة تُحاكَم بلغتها — بنودُها بعينها (٣١ من ٤٤ بلا أثر) ومفاهيمُ الفهم ذيلاً (٧/١٠)
         assert.equal(gate(r.verdict, 'requirements-verify').detail,
-            '3 متطلّب بلا أثر: شاشة customer، شاشة tenant، بيانات account (7/10 له أثر — أثرٌ لا تنفيذ؛ 5 لا يُتتبَّع بالمفردات)',
-            'خمسةُ تدفّقات: «الفعل الأساسي» من فهم الوثيقة (PM/6) + أربعةُ الكلون — انتقالاتُ حالةٍ لا تُتتبَّع بالمفردات');
+            '31 بنداً من 44 في وثيقتك بلا أثر: 1 الصلاحيات والأدوار (RBAC)، 3 الباركود، 7 المرتجعات، 8 دفتر المخزون، 9 المشتريات، 10 الموردون +25 (13/44 له أثر — أثرٌ لا تنفيذ؛ مفاهيمُ الفهم 7/10)');
         assert.match(s.logs(), /\[Judge\]: ⚖️ الحكم: FAILED — guard-and-write ✓، requirements-verify ✗، behavior-verify ✗/);
         assert.equal(gate(r.verdict, 'behavior-verify').detail, 'ثغراتٌ باقية: role-coverage', 'والسلوكُ يقول الشيءَ نفسَه من جهته: أدوارٌ مفهومة بلا واجهة');
         const msg = s.replies().find(m => m.includes('بدأنا من قالب'));
         assert.match(msg, /^⚠️ اكتمل — بدأنا من قالب/);
-        assert.match(msg, /\n⚠️ التحقّق وجد ثغرات — requirements-verify: 3 متطلّب بلا أثر: شاشة customer، شاشة tenant، بيانات account/);
+        assert.match(msg, /\n⚠️ التحقّق وجد ثغرات — requirements-verify: 31 بنداً من 44 في وثيقتك بلا أثر: 1 الصلاحيات والأدوار \(RBAC\)، 3 الباركود/);
         // الفهمُ المدمَج هو ما حُوكم إليه: أدوارُ الوثيقة الأربعة وكياناتُها الستّة + نموذجُ الكلون
         const stored = getDomainModel(s.ctx.username, s.ctx.activeProject);
         for (const n of ['staff', 'customer', 'admin', 'tenant']) assert.ok(stored.roles.some(x => x.name === n), n);
@@ -114,9 +114,9 @@ test('الحدود: البناةُ الثلاثة يمرّرون requirements و
     assert.ok(src('../agents/stages/buildFromRegistry.js').includes('requirements: composeRequirements(null, registryModel), files,'));
     assert.ok(src('../agents/stages/buildReact.js').includes('requirements: composeRequirements(null, getDomainModel(username, activeProject)), files: await readProjectFiles(projectPath),'));
     const verify = src('../agents/stages/verify.js');
-    assert.ok(verify.includes("import { traceRequirements } from '../requirementsVerifier.js';"));
+    assert.ok(verify.includes("import { traceRequirements, traceSections, sectionLabel } from '../requirementsVerifier.js';"), 'PM/9 أضاف متتبِّعَ البنود وتسميتَها');
     assert.equal((verify.match(/requirementsTraceOutcome\(/g) || []).length, 2, 'تعريفٌ + نداءٌ واحد في strategyVerdict');
     const rv = src('../agents/requirementsVerifier.js');
-    assert.ok(rv.includes("import { conceptOf, conceptKind, conceptsInText, isGenericConcept } from './projectModel.js';"));
+    assert.ok(rv.includes("import { conceptOf, conceptKind, conceptsInText, isGenericConcept, normalizeConceptText } from './projectModel.js';"), 'PM/9: التطبيعُ نفسُه لمفردات البنود');
     assert.equal((rv.match(/_kind/g) || []).length, 2, 'الوسمُ يُكتب مرّةً ويُقرأ مرّة');
 });
