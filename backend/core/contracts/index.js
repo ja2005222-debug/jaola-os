@@ -160,22 +160,61 @@ export function assertBuildAgents(agents) {
  * @type {ReadonlyArray<Task>}
  */
 export const DELIVERY_STAGES = Object.freeze([
-    { name: 'guard-and-write',     run: '_stageGuardAndWrite',     optional: true },
-    { name: 'review',              run: '_stageReview',            optional: true },
-    { name: 'refactor',            run: '_stageRefactor',          optional: true },
-    { name: 'testing',             run: '_stageTesting',           optional: true },
-    { name: 'requirements-verify', run: '_stageRequirementsVerify', optional: true },
-    { name: 'executive-memory',    run: '_stageExecutiveMemory',   optional: true },
-    { name: 'seo',                 run: '_stageSEO',               optional: true },
-    { name: 'security',            run: '_stageSecurity',          optional: true },
-    { name: 'git-backup',          run: '_stageGitBackup',         optional: true },
-    { name: 'project-memory',      run: '_stageProjectMemory',     optional: true },
-    { name: 'backend',             run: '_stageBackend',           optional: true },
-    { name: 'advanced-modules',    run: '_stageAdvancedModules',   optional: true },
-    { name: 'fullstack-scaffold',  run: '_stageFullStackScaffold', optional: true },
-    { name: 'render-config',       run: '_stageRenderConfig',      optional: true },
-    { name: 'behavior-verify',     run: '_stageBehaviorVerify',    optional: true },
+    { name: 'guard-and-write',     run: '_stageGuardAndWrite',     optional: true, gate: 'gate' },
+    { name: 'review',              run: '_stageReview',            optional: true, gate: 'enhancement' },
+    { name: 'refactor',            run: '_stageRefactor',          optional: true, gate: 'enhancement' },
+    { name: 'testing',             run: '_stageTesting',           optional: true, gate: 'enhancement' },
+    { name: 'requirements-verify', run: '_stageRequirementsVerify', optional: true, gate: 'gate' },
+    { name: 'executive-memory',    run: '_stageExecutiveMemory',   optional: true, gate: 'advisory' },
+    { name: 'seo',                 run: '_stageSEO',               optional: true, gate: 'enhancement' },
+    { name: 'security',            run: '_stageSecurity',          optional: true, gate: 'enhancement' },
+    { name: 'git-backup',          run: '_stageGitBackup',         optional: true, gate: 'enhancement' },
+    { name: 'project-memory',      run: '_stageProjectMemory',     optional: true, gate: 'advisory' },
+    { name: 'backend',             run: '_stageBackend',           optional: true, gate: 'enhancement' },
+    { name: 'advanced-modules',    run: '_stageAdvancedModules',   optional: true, gate: 'enhancement' },
+    { name: 'fullstack-scaffold',  run: '_stageFullStackScaffold', optional: true, gate: 'enhancement' },
+    { name: 'render-config',       run: '_stageRenderConfig',      optional: true, gate: 'enhancement' },
+    { name: 'behavior-verify',     run: '_stageBehaviorVerify',    optional: true, gate: 'gate' },
 ].map(Object.freeze));
+
+// ⚖️ الحكمُ على التسليم (PM/2، `PRODUCT_MIND.md`). `optional` يبقى كما كان: لا مرحلةَ تُسقط
+// الحلقة. الجديدُ `gate`: **بوّابة** تحكم على المنتج (كتابةُ الملفّات، المتطلّبات، السلوك)،
+// **تحسين** يُغني ولا يحكم (SEO، أمان، خلفيّة…)، **استشاريّ** يتعلّم ويحفظ. قبل هذا كانت الحلقة
+// تعيد `success: true` دون أن تقرأ ما وجدته البوّابات — فكان «لم يُتحقَّق» يساوي «نجح».
+export const GATE_KINDS = Object.freeze(['gate', 'enhancement', 'advisory']);
+export const VERDICT = Object.freeze({ PASS: 'PASS', FAILED: 'FAILED', UNVERIFIED: 'UNVERIFIED' });
+const OUTCOME_STATUSES = new Set(['pass', 'fail', 'unverified', 'skipped']);
+
+/** تسجّل مرحلةٌ ما وجدته: `pass` اجتاز، `fail` وجد ثغراتٍ بقيت، `unverified` لم تستطع الحكم، `skipped` لا ينطبق. */
+export function recordGateOutcome(context, name, status, detail = '') {
+    if (!context || typeof context !== 'object') return null;
+    if (!OUTCOME_STATUSES.has(status)) throw new Error(`حالةُ بوّابةٍ غير معروفة: ${status}`);
+    const entry = { status, detail: String(detail || '').slice(0, 300) };
+    (context.verdicts ||= {})[name] = entry;
+    return entry;
+}
+
+/**
+ * الحكمُ من البوّابات وحدَها (دالّةٌ نقيّة):
+ *   ثغرةٌ باقية في أيّ بوّابة → FAILED؛ وإلّا بوّابةٌ لم تستطع الحكم (أو لم تسجّل) → UNVERIFIED؛
+ *   وإلّا اجتيازٌ واحد على الأقلّ → PASS؛ وكلُّها «لا ينطبق» → UNVERIFIED (لم يُتحقَّق من شيء).
+ */
+export function deliveryVerdict(outcomes = {}, stages = DELIVERY_STAGES) {
+    const gates = stages.filter(s => s.gate === 'gate').map(s => {
+        const o = outcomes?.[s.name];
+        return o && OUTCOME_STATUSES.has(o.status)
+            ? { name: s.name, status: o.status, detail: o.detail || '' }
+            : { name: s.name, status: 'unverified', detail: 'لم تسجّل المرحلةُ حكماً' };
+    });
+    const has = (st) => gates.some(g => g.status === st);
+    const status = has('fail') ? VERDICT.FAILED
+        : has('unverified') ? VERDICT.UNVERIFIED
+        : has('pass') ? VERDICT.PASS
+        : VERDICT.UNVERIFIED;
+    const mark = { pass: '✓', fail: '✗', unverified: '?', skipped: '–' };
+    const summary = gates.map(g => `${g.name} ${mark[g.status]}`).join('، ');
+    return { status, gates, summary };
+}
 
 const CAPABILITY_RE = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/;
 

@@ -100,8 +100,13 @@ test('المسار السعيد: دورة واحدة → الملفات على �
     assert.match(s.logs(), /\[Requirements\]: 📋 التحقق من تنفيذ متطلبات المشروع/);
     assert.doesNotMatch(s.logs(), /متطلب منفّذ|تخطّي التحقق/);
     assert.doesNotMatch(s.logs(), /\[BackendAgent\]/, 'needsBackend=false → لا مرحلة خلفية');
-    // تقرير التسليم للمستخدم
-    assert.match(s.replies().join('\n'), /اكتملت المهمة — تقرير التسليم/);
+    // تقرير التسليم للمستخدم — PM/2: بلا مزوّدٍ لا يستطيع محقّقُ المتطلّبات الحكمَ، فالحكمُ UNVERIFIED
+    // والعنوانُ يقولها بدل «اكتملت المهمة» (كان يُعلَن النجاحُ دون قراءة البوّابات).
+    assert.equal(r.verdict.status, 'UNVERIFIED');
+    assert.deepEqual(r.verdict.gates.map(g => `${g.name}:${g.status}`), ['guard-and-write:pass', 'requirements-verify:unverified', 'behavior-verify:pass']);
+    assert.match(s.logs(), /\[Judge\]: ⚖️ الحكم: UNVERIFIED — guard-and-write ✓، requirements-verify \?، behavior-verify ✓/);
+    assert.match(s.replies().join('\n'), /☑️ اكتمل البناء — ولم يكتمل التحقّق: requirements-verify: المحقّقُ لم يُجب/);
+    assert.doesNotMatch(s.replies().join('\n'), /اكتملت المهمة/);
     assert.ok(s.events.some(e => e.ev === 'stream_done'));
 });
 

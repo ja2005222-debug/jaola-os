@@ -15,7 +15,19 @@ import { autoPushIfEnabled } from '../../services/githubSync.js';
 import { snapshotWorkspace } from '../../services/workspaceStore.js';
 import { recordBuild, buildMetricsPayload } from '../../services/metricsStore.js';
 
-export function reportMissionSuccess(goal, ctx, reporter) {
+// ⚖️ عنوانُ التقرير من الحكم (PM/2): PASS كما كان؛ UNVERIFIED «اكتمل البناء ولم يكتمل التحقّق»؛
+// FAILED «اكتمل البناء لكنّ التحقّق وجد ثغرات» — ولا يُقال «اكتملت المهمة» إلّا لما اجتاز البوّابات.
+function verdictLines(verdict, lang) {
+    if (!verdict) return { headline: lang === 'ar' ? '✅ اكتملت المهمة — تقرير التسليم:' : '✅ Mission complete — Delivery report:', gateLine: null };
+    const bad = (verdict.gates || []).filter(g => g.status === 'fail' || g.status === 'unverified');
+    const why = bad.map(g => `${g.name}: ${g.detail}`).join(' • ');
+    const gateLine = lang === 'ar' ? `⚖️ التحقّق: ${verdict.summary}` : `⚖️ Verification: ${verdict.summary}`;
+    if (verdict.status === 'FAILED') return { headline: lang === 'ar' ? `⚠️ اكتمل البناء لكنّ التحقّق وجد ثغرات — ${why}` : `⚠️ Build complete, but verification found gaps — ${why}`, gateLine };
+    if (verdict.status === 'UNVERIFIED') return { headline: lang === 'ar' ? `☑️ اكتمل البناء — ولم يكتمل التحقّق: ${why}` : `☑️ Build complete — verification incomplete: ${why}`, gateLine };
+    return { headline: lang === 'ar' ? '✅ اكتملت المهمة — تقرير التسليم:' : '✅ Mission complete — Delivery report:', gateLine };
+}
+
+export function reportMissionSuccess(goal, ctx, reporter, verdict = null) {
     const { projectPath, username, activeProject, roomName } = ctx;
     const langMsg = getUserLanguage(username);
 
@@ -30,9 +42,11 @@ export function reportMissionSuccess(goal, ctx, reporter) {
         : `${durationSec} ث`;
     const memSections = getProjectMemory(username, activeProject)?.structure?.sections || [];
 
+    const { headline, gateLine } = verdictLines(verdict, langMsg);
     const reportLines = langMsg === 'ar'
         ? [
-            '✅ اكتملت المهمة — تقرير التسليم:',
+            headline,
+            gateLine,
             `⏱️ مدة التنفيذ: ${durText}`,
             builtFiles.length ? `📁 الملفات (${builtFiles.length}): ${builtFiles.slice(0, 8).join('، ')}` : null,
             memSections.length ? `🧱 الأقسام: ${memSections.join('، ')}` : null,
@@ -41,7 +55,8 @@ export function reportMissionSuccess(goal, ctx, reporter) {
             'ما الخطوة التالية؟',
         ].filter(Boolean)
         : [
-            '✅ Mission complete — Delivery report:',
+            headline,
+            gateLine,
             `⏱️ Duration: ${durText}`,
             builtFiles.length ? `📁 Files (${builtFiles.length}): ${builtFiles.slice(0, 8).join(', ')}` : null,
             memSections.length ? `🧱 Sections: ${memSections.join(', ')}` : null,
