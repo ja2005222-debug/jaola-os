@@ -90,7 +90,9 @@ test('الحدود: لا this، لا استيرادَ من jcr، المفوِّ�
     const mod = fs.readFileSync(path.join(HERE, '../agents/stages/backend.js'), 'utf8');
     const code = mod.replace(/\/\*[^]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     assert.ok(!/\bthis\./.test(code)); assert.ok(!/jcr\.js/.test(code)); assert.ok(!/reporter\.io\b/.test(code));
-    assert.equal((code.match(/reporter\.liveLog\(/g) || []).length, 28);
+    // PM/5: ٢٨ ← ٢٩ — سطرٌ واحد أُضيف: «لم يُولَّد Prisma» بسببه. كان الفشلُ صامتاً
+    // يخفي كتابةَ قالبِ مجالٍ آخر؛ صار يُقال. البثُّ زاد لأنّ الصدقَ زاد، لا لأنّ المرحلةَ توسّعت.
+    assert.equal((code.match(/reporter\.liveLog\(/g) || []).length, 29);
     assert.equal((code.match(/\breadCodeContext\(/g) || []).length, 1);
     const jcr = fs.readFileSync(path.join(HERE, '../agents/jcr.js'), 'utf8');
     assert.ok(jcr.includes('\n    async _stageBackend(context, roomName, agents) {\n        return runBackendStage(context, roomName, agents, this.reporter);\n    }\n'));

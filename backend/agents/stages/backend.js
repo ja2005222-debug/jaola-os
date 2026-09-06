@@ -17,10 +17,23 @@ import { generatePrismaSetup, needsPostgres } from '../postgresAgent.js';
 import { readCodeContext } from '../projectReader.js';
 import { guardFiles, guardSingleJS } from '../../services/codeGuard.js';
 import { writeProjectFile } from '../../core/runtime/workspacePaths.js';
+import { getDomainModel } from '../projectMemory.js';
+import { modelProjectType } from '../projectModel.js';
+import { detectProjectType } from '../knowledgeEngine.js';
 
 // ⚙️ مرحلة Backend — إذا كان المشروع يحتاج خادماً: فريق الخلفية المتخصص
 // (best-effort) ← المولّد التقليدي احتياطاً ← قاعدة البيانات/Postgres/المصادقة.
 // الجزء الوحيد بلا حارس هو استدعاء agents.needsBackend نفسه (كما كان).
+// 🎯 PM/5 — نوعُ المشروع بالدليل لا بالتخمين: بريفُ التصميم أوّلاً (هو نفسُه صار
+// يقرأ الفهم)، فالفهمُ المخزّن، فكشفُ النوع من الهدف نفسِه. كان الاحتياطُ ثابتاً
+// مكتوباً: 'business' لقاعدة البيانات و'ecommerce' لـPrisma — و'ecommerce' مفتاحٌ
+// موجود، فنظامُ تاكسي بلا نوعٍ في البريف كان يأخذ مخطّطَ متجرٍ إلكترونيّ حتميّاً.
+function resolveType(context) {
+    return context.mentalModel?.designBrief?.projectType
+        || modelProjectType(getDomainModel(context.username, context.activeProject))
+        || detectProjectType(context.originalGoal);
+}
+
 export async function runBackendStage(context, roomName, agents, reporter) {
     const plan = context.plan;
     if (agents.needsBackend && agents.needsBackend(context.goal)) {
@@ -129,7 +142,9 @@ export async function runBackendStage(context, roomName, agents, reporter) {
         // قاعدتَي بيانات متضاربتين (SQLite من الفريق + MongoDB من هنا).
         if (teamWroteFiles < 2) {
           try {
-            const projectType = context.mentalModel?.designBrief?.projectType || 'business';
+            // 🎯 PM/5: البريفُ أوّلاً، فالفهمُ، فاعترافٌ لا تخمين — 'unknown' ليست
+            // مفتاحاً في أيّ جدول مخطّطات، فيقرأ المولّدُ الهدفَ نفسَه بدل قالبٍ مغاير.
+            const projectType = resolveType(context);
             reporter.liveLog(roomName, '5. RUNTIME', 'DatabaseAgent', '🗄️ جاري توليد قاعدة البيانات...');
             const dbResult = await generateDatabase(context.originalGoal, projectType, context.projectPath);
             if (dbResult.success) {
@@ -152,7 +167,10 @@ export async function runBackendStage(context, roomName, agents, reporter) {
         if (teamWroteFiles < 2 && needsPostgres(context.originalGoal)) {
             try {
                 reporter.liveLog(roomName, '5. RUNTIME', 'PostgresAgent', '🐘 جاري توليد Prisma Schema...');
-                const projectType = context.mentalModel?.designBrief?.projectType || 'ecommerce';
+                // 🎯 PM/5: كان الاحتياطُ 'ecommerce' — وهو **مفتاحٌ موجود** في
+                // `PRISMA_SCHEMAS`، فنظامُ تاكسي بلا نوعٍ في البريف كان يأخذ
+                // Product/OrderItem/Review حتميّاً وبلا مزوّد. 'unknown' ليست مفتاحاً.
+                const projectType = resolveType(context);
                 const pgResult = await generatePrismaSetup(context.originalGoal, projectType);
                 if (pgResult.success) {
                     for (const file of pgResult.files) {
@@ -160,6 +178,11 @@ export async function runBackendStage(context, roomName, agents, reporter) {
                     }
                     reporter.liveLog(roomName, '5. RUNTIME', 'PostgresAgent',
                         `✅ ${pgResult.summary}`
+                    );
+                } else {
+                    // ⚖️ PM/5: الصمتُ هنا كان يخفي كتابةَ قالبٍ مغاير. الآن يُقال ما لم يقع.
+                    reporter.liveLog(roomName, '5. RUNTIME', 'PostgresAgent',
+                        `⚠️ لم يُولَّد Prisma: ${pgResult.reason || 'سببٌ غير معروف'}`
                     );
                 }
             } catch (e) {

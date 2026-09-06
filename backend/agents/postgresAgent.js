@@ -267,6 +267,10 @@ main().catch(console.error).finally(() => prisma.$disconnect());`,
 // ═══════════════════════════════════════════════════════
 export async function generatePrismaSetup(userGoal, projectType) {
     const schema = PRISMA_SCHEMAS[projectType] || await generateDynamicSchema(userGoal, projectType);
+    // ⚖️ PM/5: لا مخطّطَ ⇒ لا تسليم. لا نكتب قالبَ مجالٍ آخر لنملأ الفراغ.
+    if (!schema || !String(schema).trim()) {
+        return { success: false, files: [], summary: '', reason: `لا مخطّطَ Prisma للنوع «${projectType}» وتعذّر توليدُه (لا مزوّد) — لم يُكتب قالبُ مجالٍ آخر` };
+    }
     const seed = PRISMA_SEEDS[projectType] || '';
 
     const files = [];
@@ -347,7 +351,10 @@ async function generateDynamicSchema(userGoal, projectType) {
         }], { max_tokens: 800, temperature: 0.2 });
         return response;
     } catch (e) {
-        return PRISMA_SCHEMAS.ecommerce; // fallback
+        // 🔴 PM/5: كان الاحتياطُ هنا `PRISMA_SCHEMAS.ecommerce` — فمشروعٌ لا قالبَ له
+        // ولا مزوّدَ يكتب له مخطّطُ متجرٍ إلكترونيّ (Product/OrderItem/Review) داخل
+        // `catch` صامت. مخطّطٌ من مجالٍ آخر أسوأُ من لا مخطّط: المستخدمُ يبني عليه.
+        return null;
     }
 }
 

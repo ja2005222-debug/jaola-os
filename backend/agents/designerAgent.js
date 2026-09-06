@@ -177,9 +177,11 @@ export async function requestAiEnhancements({ userGoal, projectType, paletteName
 // ═══════════════════════════════════════════════════════
 // 📐 بناء design-brief كامل
 // ═══════════════════════════════════════════════════════
-export async function generateDesignBrief(userGoal, username, activeProject, lang = 'en') {
+export async function generateDesignBrief(userGoal, username, activeProject, lang = 'en', typeHint = null) {
     try {
-        const ctx = getProjectContext(userGoal);
+        // 🎯 PM/5: `getProjectContext` كانت تقبل تلميحَ نوعٍ منذ البداية ولا يمرّره أحد.
+        // الفهمُ (PM/1) يملؤه الآن؛ و`null` يعيد الكشفَ بالكلمات كما كان.
+        const ctx = getProjectContext(userGoal, typeHint);
         const userProfile = getUserProfile(username);
         const projectMem = getProjectMemory(username, activeProject);
 
