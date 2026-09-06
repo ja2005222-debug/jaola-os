@@ -45,6 +45,22 @@ test('التنسيق المضمّن <style> يُعتبر بديلاً مشروع
     assert.equal((out.content.match(/<link/g) || []).length, 0);
 });
 
+// 🧷 قِيس في PM/8 (`cloneCompletion.test`): على صفحةٍ ملمَّعة (`polishHtml` يحقن `<style data-jaola-polish>` وروابطَ خطوطٍ بعيدة)
+// كان الشرطُ «لا روابطَ محلّيّة ولا <style>» يُرضيه تنسيقُ التلميع العامّ، فيظنّ الحارسُ الصفحةَ منسَّقةً ولا يستعيد رابطَها
+// المحلّيّ — والعطبُ الحرفيّ أعلاه (test17-7-5) يعود بعينه على كلِّ كلونٍ/Registry يُعدَّل لاحقاً (جراحيّاً أو بالإكمال).
+test('صفحةٌ ملمَّعة أسقط تعديلُها رابطَ التنسيق المحلّيّ → يُعاد؛ تنسيقُ التلميع العامّ ليس تنسيقَ الصفحة', async () => {
+    const polishedNoLink = '<!DOCTYPE html>\n<html><head>\n    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo" data-jaola-polish>\n    <style data-jaola-polish>\n      html{scroll-behavior:smooth}\n    </style>\n  </head><body><h1>أكاديمية</h1><nav>جلسات الفيديو</nav><script src="script.js"></script></body></html>';
+    const [fixed] = await ensureEditIntegrity([{ name: 'index.html', content: polishedNoLink }], dir);
+    assert.match(fixed.content, /<link rel="stylesheet" href="styles\.css">/, 'الرابطُ المحلّيّ يُستعاد رغم تنسيق التلميع');
+    assert.ok(fixed.content.includes('data-jaola-polish'), 'والتلميعُ باقٍ كما هو');
+});
+
+test('صفحةٌ ملمَّعة تحمل تنسيقَها المضمَّن (<style> بلا علامة التلميع) → لا حقن، كما كان', async () => {
+    const polishedOwnStyle = '<!DOCTYPE html>\n<html><head><style data-jaola-polish>html{}</style><style>body{color:red}</style></head><body>x<script src="script.js"></script></body></html>';
+    const [out] = await ensureEditIntegrity([{ name: 'index.html', content: polishedOwnStyle }], dir);
+    assert.equal((out.content.match(/<link/g) || []).length, 0);
+});
+
 test('مرجع CSS لملف غير موجود + مرشح وحيد على القرص → يُصحَّح المسار', async () => {
     const edited = '<!DOCTYPE html>\n<html><head><link rel="stylesheet" href="main.css"></head><body>x<script src="script.js"></script></body></html>';
     const [fixed] = await ensureEditIntegrity([{ name: 'index.html', content: edited }], dir);

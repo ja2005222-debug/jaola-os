@@ -108,17 +108,16 @@ test('حارسُ الارتداد: رقعةٌ تُفقد دالّةً أو تُ�
     }
 });
 
-test('الحارسُ قبل الكتابة: رقعةٌ أسقطت رابطَ التنسيق وDOCTYPE تُصحَّح (ensureEditIntegrity) فتبقى الصفحةُ بتصميمها؛ ورقعةٌ «ناجحة» بلا ملفّات تُعدّ غيرَ مطبَّقة', async () => {
+test('الحارسُ قبل الكتابة: رقعةٌ أسقطت رابطَ التنسيق وDOCTYPE تُصحَّح (ensureEditIntegrity) فتبقى الصفحةُ بتصميمها — على الكلون الملمَّع أيضاً؛ ورقعةٌ «ناجحة» بلا ملفّات تُعدّ غيرَ مطبَّقة', async () => {
     const dropped = await buildPos('pm8guard', async (i, files) => { const idx = files.find(f => f.name === 'index.html');
         const content = idx.content.replace(/^\s*<!doctype html>\s*/i, '').replace(/<link[^>]*styles\.css[^>]*>\s*/i, '').replace('</body>', `${SECTION(['العميل', 'المستأجر', 'الحساب'])}</body>`);
         assert.ok(!/styles\.css/.test(content) && !/<!doctype/i.test(content));
         return { ok: true, applied: 1, files: [{ name: 'index.html', content }] }; });
     const html = read(dropped.dir, 'index.html');
     assert.match(html, /^<!DOCTYPE html>/); assert.ok(html.includes('<section id="pm8">'));
-    assert.ok(logs(dropped.events).some(l => /\[CodeGuard\].*DOCTYPE/.test(l)), logs(dropped.events).filter(l => l.includes('CodeGuard')).join('\n'));
-    // 📏 حقيقةٌ مقيسة (ديْنٌ مكتوب في CONTRACTS): رابطُ التنسيق المحلّيّ **لا** يُستعاد على كلونٍ ملمَّع — شرطُ الاستعادة في
-    // `ensureEditIntegrity` هو «لا روابطَ ولا <style>» بينما باقةُ التلميع تحقن <style data-jaola-polish> وروابطَ خطوطٍ بعيدة، فيظنّ الحارسُ الصفحةَ منسَّقة
-    assert.ok(!/href="styles\.css"/.test(html), 'يُثبَّت كما قِيس — إصلاحُه في codeGuard قرارٌ لا انزلاق');
+    // كان ديْناً مقيساً في PM/8: تنسيقُ التلميع `<style data-jaola-polish>` كان يُرضي شرطَ «الصفحةُ منسَّقة» فلا يُستعاد الرابطُ المحلّيّ — أُغلق في codeGuard
+    assert.match(html, /<link rel="stylesheet" href="styles\.css">/, 'رابطُ التنسيق المحلّيّ يُستعاد على الكلون الملمَّع');
+    assert.ok(logs(dropped.events).some(l => /\[CodeGuard\].*DOCTYPE.*رابط التنسيق \(styles\.css\)/.test(l)), logs(dropped.events).filter(l => l.includes('CodeGuard')).join('\n'));
     assert.equal(gate(dropped.r.verdict, 'requirements-verify').status, 'pass');
     const empty = await buildPos('pm8empty', async () => ({ ok: true, applied: 0, files: [] }));
     const E = logs(empty.events).filter(l => l.includes('CloneCompletion'));
