@@ -42,7 +42,7 @@ import { normalizeText, detectIntentFromMeaning } from './textNormalizer.js';
 import { matchDeleteCommand, matchImageCommand, isImageDiagCommand } from './chatCommands.js';
 import { missionBriefing } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
-import { assertBuildAgents, DELIVERY_STAGES } from '../core/contracts/index.js';
+import { assertBuildAgents, DELIVERY_STAGES, deliveryVerdict, recordGateOutcome } from '../core/contracts/index.js';
 import { orderTasks } from '../core/runtime/TaskGraph.js';
 import { createExecutionContext } from '../core/runtime/ExecutionContext.js';
 import { projectPathOf, writePlanFiles } from '../core/runtime/workspacePaths.js';
@@ -192,7 +192,12 @@ export class JaolaCognitiveRuntime {
                 await this[stage.run](context, roomName, agents);
             }
 
-            return { success: true };
+            // ⚖️ الحكمُ من البوّابات (PM/2): كانت الحلقة تعيد النجاحَ دون أن تقرأ ما وجدته
+            // مراحلُ التحقّق — فكان «لم يُتحقَّق» يساوي «نجح». الحالةُ تبقى COMPLETED (المهمّةُ
+            // اكتملت)؛ الحكمُ على *المنتج* يصل التقريرَ والمستدعي.
+            const verdict = deliveryVerdict(context.verdicts);
+            this.emitLiveLog(roomName, '7. VERDICT', 'Judge', `⚖️ الحكم: ${verdict.status} — ${verdict.summary}`);
+            return { success: true, verdict };
         }
 
         const lastCritiques = context.internalDebate.criticTranscripts.slice(-3);
@@ -282,6 +287,7 @@ export class JaolaCognitiveRuntime {
         plan.files = await ensureEditIntegrity(plan.files, context.projectPath,
             (m) => this.emitLiveLog(roomName, '5. RUNTIME', 'CodeGuard', m));
         await writePlanFiles(context.projectPath, plan.files);
+        recordGateOutcome(context, 'guard-and-write', 'pass', `${plan.files.length} ملفّاً كُتبت بعد الحراسة`);
     }
 
     // 🧪 خرجت إلى `stages/quality.js#runReviewStage` (JCR/13) — تفويضٌ يُبقي النداءَ بالاسم من `DELIVERY_STAGES`.
@@ -675,7 +681,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
             this._learnFromOutcome(roomName, { success: execResult.success });
             if (execResult.success) {
                 transitionState(username, activeProject, STATES.COMPLETED);
-                this._reportMissionSuccess(goal, ctx);
+                this._reportMissionSuccess(goal, ctx, execResult.verdict);
             }
             if (!execResult.success) {
                 // الحالة FAILED فوراً — لا انتظار لمؤقت القفل العالق
@@ -743,8 +749,8 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
     // 📣 تقريرُ التسليم خرج إلى `stages/reportMissionSuccess.js` (JCR/11) — تفويضٌ يُبقي
     // المستدعيَ كما هو؛ المُبلِّغُ يُمرَّر وسيطاً ويحمل `io` للدفع التلقائيّ.
-    _reportMissionSuccess(goal, ctx) {
-        return reportMissionSuccess(goal, ctx, this.reporter);
+    _reportMissionSuccess(goal, ctx, verdict = null) {
+        return reportMissionSuccess(goal, ctx, this.reporter, verdict);
     }
 
     // خرج إلى `projectReader.js#readCodeContext` (JCR/15) — مفوِّضٌ يُبقي المستدعين (والاستبدالَ في الاختبارات) كما هم.

@@ -14,6 +14,7 @@ import { writePlanFiles } from '../../core/runtime/workspacePaths.js';
 import { recordBehaviorGaps } from '../../services/platformLessons.js';
 import { getUserLanguage } from '../languageDetector.js';
 import { recordModel } from '../modelLibrary.js';
+import { recordGateOutcome } from '../../core/contracts/index.js';
 
 // 🔬 التحقّق السلوكي + جولة إصلاح تلقائية — مشتركة بين البناء والتعديل.
 // نُشغّل الصفحة فعلاً؛ إن كُشفت ثغرة (خطأ JS/زر ميت/دور بلا واجهة) وأُتيح
@@ -66,6 +67,10 @@ export async function runBehaviorVerifyStage(context, roomName, agents, reporter
             lang: getUserLanguage(context.username),
             canFix: !!context.budget?.consumeCall?.(),
         }, reporter);
+        // ⚖️ البوّابة تقول ما وجدت (PM/2): لم يُشغَّل/تُخطّي = لم يُتحقَّق، لا اجتياز.
+        if (!verdict || !verdict.ran || verdict.skipped) recordGateOutcome(context, 'behavior-verify', 'unverified', verdict?.summary || 'تعذّر التحقّق السلوكي');
+        else if (verdict.ok) recordGateOutcome(context, 'behavior-verify', 'pass', verdict.summary || 'اجتاز التحقّق السلوكي');
+        else recordGateOutcome(context, 'behavior-verify', 'fail', `ثغراتٌ باقية: ${(verdict.checks || []).filter(c => c.status === 'fail').map(c => c.name).join('، ') || verdict.summary || ''}`);
         // 📚 مساهمة في مكتبة النماذج — فهم مُجرَّب (مرّ بالتحقّق) يُغني فئته
         // فيبدأ كل مشروع لاحق من نضجٍ أعلى. نساهم فقط بما نجح تحقّقه.
         if (verdict?.ok && context.blueprint?.category) {
@@ -77,5 +82,8 @@ export async function runBehaviorVerifyStage(context, roomName, agents, reporter
             if (contributed) reporter.liveLog(roomName, '6. VERIFY', 'ModelLibrary',
                 `📚 أُغني فهم فئة «${context.blueprint.category}» بنموذج مُجرَّب — يستفيد منه كل مشروع لاحق.`);
         }
-    } catch (e) { console.warn('[BehaviorVerify]', 'تخطّي التحقّق (لا يُسقط البناء):', e.message); }
+    } catch (e) {
+        recordGateOutcome(context, 'behavior-verify', 'unverified', e.message);
+        console.warn('[BehaviorVerify]', 'تخطّي التحقّق (لا يُسقط البناء):', e.message);
+    }
 }

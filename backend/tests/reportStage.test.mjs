@@ -70,5 +70,6 @@ test('الحدود: لا this، لا استيرادَ من jcr، المفوِّ�
     assert.ok(!/\bthis\./.test(code)); assert.ok(!/jcr\.js/.test(code));
     assert.equal((code.match(/reporter\.io\b/g) || []).length, 1);
     const jcr = fs.readFileSync(path.join(HERE, '../agents/jcr.js'), 'utf8');
-    assert.match(jcr, /_reportMissionSuccess\(goal, ctx\) \{\n\s+return reportMissionSuccess\(goal, ctx, this\.reporter\);\n\s+\}/);
+    // PM/2: المفوِّضُ يمرّر الحكمَ (افتراضُه null يُبقي المستدعين القدامى كما هم)
+    assert.match(jcr, /_reportMissionSuccess\(goal, ctx, verdict = null\) \{\n\s+return reportMissionSuccess\(goal, ctx, this\.reporter, verdict\);\n\s+\}/);
 });

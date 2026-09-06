@@ -19,6 +19,7 @@ import { getDomainModel, addToHistory } from '../projectMemory.js';
 import { recordLesson } from '../../services/platformLessons.js';
 import { guardFiles, scrubPlaceholders, ensureEditIntegrity } from '../../services/codeGuard.js';
 import { writeProjectFile } from '../../core/runtime/workspacePaths.js';
+import { recordGateOutcome } from '../../core/contracts/index.js';
 
 export async function runRequirementsVerify(context, roomName, agents, reporter, { verify = verifyRequirements } = {}) {
     const plan = context.plan;
@@ -72,6 +73,10 @@ export async function runRequirementsVerify(context, roomName, agents, reporter,
                 if (verdict.missing.length >= beforeCount) break;
             }
 
+            // ⚖️ البوّابة تقول ما وجدت (PM/2): محقّقٌ صامت (لا مزوّد/ردٌّ غير صالح) ليس اجتيازاً.
+            if (!verdict) recordGateOutcome(context, 'requirements-verify', 'unverified', 'المحقّقُ لم يُجب (لا مزوّد أو ردٌّ غير صالح)');
+            else if (verdict.missing?.length) recordGateOutcome(context, 'requirements-verify', 'fail', `${verdict.missing.length} متطلّب ناقص: ${verdict.missing.map(m => m.name).join('، ')}`);
+            else recordGateOutcome(context, 'requirements-verify', 'pass', `${verdict.implementedCount}/${verdict.results.length} متطلّب منفّذ`);
             if (verdict) {
                 const checklist = formatChecklist(verdict, lang, fixedNames);
                 reporter.liveLog(roomName, '6. VERIFY', 'Requirements',
@@ -80,8 +85,11 @@ export async function runRequirementsVerify(context, roomName, agents, reporter,
                 addToHistory(context.username, context.activeProject,
                     `تحقق المتطلبات: ${verdict.implementedCount}/${verdict.results.length} منفّذ`);
             }
+        } else {
+            recordGateOutcome(context, 'requirements-verify', 'skipped', 'لا مكوّناتٍ وظيفيّة في المخطّط أو لا ملفّات');
         }
     } catch (e) {
+        recordGateOutcome(context, 'requirements-verify', 'unverified', e.message);
         reporter.liveLog(roomName, '6. VERIFY', 'Requirements', `⚠️ تخطّي التحقق: ${e.message}`);
     }
 }
