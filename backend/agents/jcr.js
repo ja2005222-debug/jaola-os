@@ -389,7 +389,10 @@ export class JaolaCognitiveRuntime {
         return null;
     }
 
-    async classifyIntent(userMessage, username) {
+    // 🔌 `llm` وسيطٌ أخيرٌ بافتراضيٍّ (سابقة JCR/30): آخرُ مستهلكٍ للمزوّد في الصنف كان بلا شقٍّ،
+    //    فقصُّ الصدر أدناه — وهو جذرُ سوء التوجيه المقيس — لم يكن قابلاً للقياس في اختبار.
+    //    المستدعون في الإنتاج يمرّرون وسيطَين فيبقى الافتراضيُّ نافذاً.
+    async classifyIntent(userMessage, username, llm = smartChat) {
         const execMemory = await this.loadExecutiveMemory(username);
 
         // 🆕 كشف مباشر بالكلمات المفتاحية القوية — يتفادى استشارة النموذج لحالات واضحة
@@ -398,10 +401,14 @@ export class JaolaCognitiveRuntime {
             return { intent: 'build', confidence: 100 };
         }
 
+        // 🔎 صدرٌ محدود لا الرسالةُ كاملةً: الجوابُ المطلوبُ ثمانون رمزاً، والنيّةُ تُقرأ من المستهلّ.
+        //    وإرسالُ ٢٦ ألفَ حرفٍ لهذا السؤال هو الذي أسقط المصنِّفَ إلى احتياطِه `{chat, 50%}` في
+        //    بلاغ المالك، فذهبت مواصفةُ نظامٍ كاملةٍ إلى مسارٍ ليس مسارَها. القصُّ مُعلَنٌ بالنقاط.
+        const head = userMessage.length > 1500 ? `${userMessage.slice(0, 1500)}…` : userMessage;
         try {
-            const _intentRes = await smartChat([
+            const _intentRes = await llm([
                 { role: "system", content: 'صنف نية المستخدم. أعد JSON فقط: { "intent": "build|modify|query|chat|stop|acknowledge", "confidence": 0-100 }' },
-                { role: "user", content: `الرسالة: "${userMessage}"` }
+                { role: "user", content: `الرسالة: "${head}"` }
             ], { max_tokens: 80, temperature: 0.1, json: true });
             const result = JSON.parse(_intentRes);
             if (result.confidence && result.confidence <= 1) {
@@ -459,7 +466,7 @@ export class JaolaCognitiveRuntime {
             username,
             project: activeProject,
             goal, roomName, // 🧾 للسجلّ الدائم — كي لا تسقط المهمة صامتة عند إعادة التشغيل
-            run: () => this._runMissionNow(goal, ctx),
+            run: () => this._reportIfCrashed(this._runMissionNow(goal, ctx), roomName, lang),
             onWait: (position) => {
                 const msg = lang === 'ar'
                     ? `⏳ الفريق مشغول بمهمة أخرى — مهمتك في الصف (المركز ${position}) وستبدأ تلقائياً.`
@@ -649,22 +656,58 @@ export class JaolaCognitiveRuntime {
     }
 
     // ✂️ التعديل الجراحي — يمرّ عبر صف التنفيذ كالبناء (حماية التوازي)
+    //
+    // 🔇 كان هذا **المُطلِقَ الصامتَ الوحيد**: كلُّ مسارٍ آخرَ يبدأ عملاً طويلاً يقول كلمةً أوّلاً
+    //    («⚡ ممتاز! أبني الآن...»، رسالةُ الصفّ، نصُّ الحجب) — أمّا هذا فيُدرِج المهمّةَ ويعود،
+    //    فلا يصل الشاتَ شيء. ثلاثةُ مواضعَ في `handleClassifiedIntent` وحدَها تناديه هكذا، وأحدُها
+    //    هو الذي ابتلع مواصفةَ نظامِ نقاطِ البيع كاملةً: سطرا سجلٍّ وصفرُ ردود (قِيس بإعادة إنتاج).
+    //    الإقرارُ هنا لا هناك: موضعٌ واحدٌ يغطّي كلَّ مستدعٍ حاضرٍ ولاحق.
     surgicalEdit(instruction, ctx) {
         const { username, activeProject, roomName } = ctx;
         const lang = getUserLanguage(username);
         const result = enqueueMission({
             username, project: activeProject,
-            run: () => this._runSurgicalEditNow(instruction, ctx),
+            // 🧾 التعديلُ كان يُسجَّل بهدفٍ فارغ، فإشعارُ «مهمّةٌ سقطت مع إعادة التشغيل» يخرج بلا تلميحٍ
+            //    يعرّف المستخدمَ بما ضاع. النصُّ نفسُه هو الهدف.
+            goal: instruction, roomName,
+            run: () => this._reportIfCrashed(this._runSurgicalEditNow(instruction, ctx), roomName, lang),
             onWait: (position) => this.reporter.send(roomName, 'chat_reply', {
                 message: lang === 'ar' ? `⏳ مهمتك في الصف (المركز ${position}).` : `⏳ Queued (position ${position}).`,
             }),
         });
+        // بدأ فوراً (لا انتظارَ في الصفّ، فرسالةُ `onWait` لم تُقَل) → قل إنّك تسلّمت وبدأت.
+        if (result.accepted && !result.waited) {
+            this.reporter.send(roomName, 'chat_reply', {
+                message: lang === 'ar'
+                    ? '✂️ تسلّمتُ طلبك وبدأتُ العمل عليه الآن — تابع السجلّ الحيّ، وسأعود إليك بالنتيجة.'
+                    : "✂️ Got your request — I've started working on it now. Follow the live log; I'll report back with the result.",
+            });
+        }
         if (!result.accepted) {
             this.reporter.send(roomName, 'chat_reply', {
                 message: lang === 'ar' ? '⚙️ يوجد عمل جارٍ لهذا المشروع — انتظر أو اضغط ⏹.' : '⚙️ A task is already running — wait or press ⏹.',
             });
         }
         return result;
+    }
+
+    /**
+     * 🔇 انهيارُ المهمّة يُقال حيث يَنظر المستخدم.
+     *
+     * `ExecutionQueue#pump` يلتقط رفضَ `run` بـ`console.error` ثمّ يُنهي المهمّة بهدوء — سطرٌ في
+     * سجلّ الخادم لا يراه صاحبُ الطلب، فينتظر رداً لن يأتي أبداً. نلفُّ الوعدَ هنا: نقول العطبَ
+     * في الشات ثمّ **نعيد رميَه** كي يبقى سطرُ الصفّ في السجلّ كما هو (لا نُخفي أثراً، نُضيف صوتاً).
+     */
+    _reportIfCrashed(promise, roomName, lang) {
+        return Promise.resolve(promise).catch((e) => {
+            const detail = String(e?.message || e || '').slice(0, 160);
+            this.reporter.send(roomName, 'chat_reply', {
+                message: lang === 'ar'
+                    ? `❌ توقّف العمل بخطأ غير متوقّع${detail ? ` (${detail})` : ''} — لم يكتمل طلبك. أعد إرساله، وإن تكرّر فجزّئه إلى طلبَين أصغر.`
+                    : `❌ The work stopped with an unexpected error${detail ? ` (${detail})` : ''} — your request did not complete. Send it again; if it repeats, split it into two smaller requests.`,
+            });
+            throw e;
+        });
     }
 
     // خرجت إلى `stages/reactPages.js#extractPageName` (JCR/20) — مفوِّضٌ يُبقي المستدعين (والاستبدالَ في الاختبارات) كما هم.

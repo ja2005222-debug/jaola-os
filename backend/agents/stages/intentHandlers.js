@@ -26,7 +26,7 @@ import { initFromClarifier } from '../projectMemory.js';
 import { recordProject, recordEdit } from '../userProfile.js';
 import { isBareYes, isBareExecute } from '../chatCommands.js';
 import { decide, buildContinuationGoal } from '../ceoBrain.js';
-import { normalizeArabic, isQuestionMessage, hasActionIntent } from '../textNormalizer.js';
+import { normalizeArabic, isQuestionMessage, hasActionIntent, isFullSpecification, numberedSections } from '../textNormalizer.js';
 import { routeMessage } from '../router.js';
 import { readCodeContext } from '../projectReader.js';
 import { loadForPrompt as loadConversation } from '../../services/conversationStore.js';
@@ -304,10 +304,27 @@ export async function handleClassifiedIntent(req, agents, reporter, gate, ops) {
         : intentResult;
     reporter.liveLog(roomName, 'INTENT', 'Classifier', `نية: ${finalIntent.intent} (ثقة: ${finalIntent.confidence}%)`);
 
+    // 📋 مواصفةٌ كاملة تسبق التصنيفَ كلَّه — وهذا جذرُ بلاغِ المالك.
+    //
+    //    مواصفةُ نظامِ نقاطِ بيعٍ من ٤٤ بنداً كانت تصل هنا بنيّةِ `chat` (فشلُ المصنِّف على
+    //    ٢٦ ألفَ حرف يسقط إلى `{chat, 50%}`)، فتنتهي في فرع «مشروعٌ قائم + نيّةُ فعل» →
+    //    **تعديلٌ جراحيّ**: وثيقةُ نظامٍ كاملةٍ تذهب إلى مُرقِّعِ ملفّ. ولو صنّفها `build`
+    //    لَما نجت أيضاً: حارسُ (ب) أدناه يشترط فعلَ بناءٍ في **مستهلّ** الرسالة، و«أريد منك
+    //    بناء…» ليس كذلك — فيسقط في التعديل الجراحيّ نفسِه. مسارانِ يلتقيان عند الخطأ ذاته.
+    //
+    //    المواصفةُ طلبُ بناءٍ مهما قال المصنِّف. ولا نبني فوق مشروعٍ قائمٍ بلا إذن: تذهب إلى
+    //    فرع البناء أدناه الذي **يسأل** ويحفظ الهدفَ معلّقاً (`setPendingGoal`).
+    const isSpec = isFullSpecification(message);
+    if (isSpec) {
+        reporter.liveLog(roomName, 'INTENT', 'Classifier',
+            `📋 مواصفةٌ كاملة (${numberedSections(message)} بنداً مرقّماً، ${message.length} حرفاً) — طلبُ بناءٍ لا تعديلاً جراحيّاً${finalIntent.intent === 'build' ? '' : ` (المصنِّفُ قال «${finalIntent.intent}»)`}.`);
+    }
+
     // 🛡️ حارس (ب): جملة وصفية على مشروع قائم ليست طلب بناء جديد.
     // "نحن نعمل على موقع تاكسي" وصف لا أمر — أمر البناء يبدأ بفعل صريح.
     // بدونه كان المصنّف يعرض "هل تريد بناء موقع لـ..." في منتصف العمل.
-    if (finalIntent.intent === 'build') {
+    // (المواصفةُ الكاملةُ تتخطّاه: طولُها وتعدادُها أمرُ بناءٍ أصرحُ من فعلٍ في مستهلٍّ.)
+    if (finalIntent.intent === 'build' && !isSpec) {
         // ملاحظة: \b لا يعمل مع الحروف العربية في JS — نستخدم lookahead يونيكود
         const explicitBuild = /^\s*(?:ابني|ابن|اصنع|أنشئ|انشئ|صمم|طوّر|طور|بني|سوّي|سوي|اعمل\s+لي|ابدأ\s+البناء|build|create|make|design|develop|generate|start\s+building)(?=\s|$|[^\p{L}\p{N}])/iu
             .test((normalizedMessage || message).trim());
@@ -332,7 +349,7 @@ export async function handleClassifiedIntent(req, agents, reporter, gate, ops) {
         }
     }
 
-    if (finalIntent.intent === 'build') {
+    if (finalIntent.intent === 'build' || isSpec) {
         const userGoal = normalizedMessage || message;
         const lang = getUserLanguage(username) || userLang;
 
@@ -345,7 +362,12 @@ export async function handleClassifiedIntent(req, agents, reporter, gate, ops) {
         }
 
         // ⚡ طلب واضح → تأكيد سريع ثم بناء
-        const projectHint = userGoal.replace(/^(ابني|اصنع|انشئ|بني|سوي|build|create|make)\s+/i, '').trim();
+        // 🔎 السؤالُ يُعيد الهدفَ على المستخدم ليقرأه — فلا يصحّ أن يكون الهدفُ وثيقةً من ٢٦ ألفَ حرف
+        //    (قِيس: توجيهُ المواصفة إلى هذا الفرع جعل السؤالَ يبثّ المواصفةَ كاملةً). السطرُ الأوّلُ
+        //    مقتضَبٌ يكفي للتعرّف، **والهدفُ المحفوظ يبقى كاملاً** — القصُّ للعرض لا للتنفيذ.
+        const rawHint = userGoal.replace(/^(ابني|اصنع|انشئ|بني|سوي|build|create|make)\s+/i, '').trim();
+        const firstLine = rawHint.split('\n')[0].trim() || rawHint;
+        const projectHint = firstLine.length > 140 ? `${firstLine.slice(0, 140).trimEnd()}…` : firstLine;
         // 🏷️ (أ) نُظهر المشروع الهدف صراحةً كي لا يُبنى المحتوى في مشروع
         // باسم مختلف دون أن ينتبه المستخدم (مثل بناء تاكسي داخل hotel-control).
         const confirmQ = lang === 'ar'

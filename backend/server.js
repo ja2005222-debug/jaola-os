@@ -2060,6 +2060,15 @@ app.post('/api/chat', verifyToken, aiLimit, validate(schemas.sendMessage), valid
         }, agents, dbStatus);
     } catch (error) {
         io.to(roomName).emit('log', { message: `❌ [ERROR]: ${error.message}` });
+        // 🔇 السطرُ أعلاه يذهب إلى لوحة السجلّ لا إلى الشات، والاستجابةُ رُدَّت قبله
+        //    (`{ accepted: true }`) — فكان الطلبُ يموت صامتاً في الواجهة: لا ردَّ ولا خطأ.
+        //    آخرُ حارسٍ في المسار يجب أن يتكلّم لغةَ المستخدم وفي المكان الذي ينظر إليه.
+        const lang = langOf(req.user.username);
+        io.to(roomName).emit('chat_reply', {
+            message: lang === 'ar'
+                ? `❌ تعذّر تنفيذ طلبك (${String(error.message || '').slice(0, 160)}) — أعد إرساله، وإن تكرّر فجزّئه إلى طلبَين أصغر.`
+                : `❌ Your request could not be processed (${String(error.message || '').slice(0, 160)}) — send it again; if it repeats, split it into two smaller requests.`,
+        });
     }
 });
 
