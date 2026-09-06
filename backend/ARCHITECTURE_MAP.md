@@ -93,7 +93,7 @@ Policy/Permission، Identity، Plugin.
 ### C1. النواة (Kernel candidates)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `jcr.js` | 1993 | وقت التشغيل المعرفي: `handleUserMessage` → 7 معالجات نية → `executeMission` → `_runMissionNow` → 15 مرحلة | MODIFY (تدريجي، بلا إعادة كتابة) | Mission + Agent + Task (المراحل → TaskGraph) + Event | يبقى؛ يتقلّص مع كل Sprint لصالح `core/runtime/*` |
+| `jcr.js` | 1996 | وقت التشغيل المعرفي: `handleUserMessage` → 7 معالجات نية → `executeMission` → `_runMissionNow` → 15 مرحلة | MODIFY (تدريجي، بلا إعادة كتابة) | Mission + Agent + Task (المراحل → TaskGraph) + Event | يبقى؛ يتقلّص مع كل Sprint لصالح `core/runtime/*` |
 | ✅ `stages/debate.js` (جديد، JCR/4) | 142 | `runDebate(context, roomName, agents, reporter)` + `runSecurityAudit` — حلقةُ النقاش خرجت من `jcr` نقلاً حرفيّاً؛ المُبلِّغُ وسيطٌ لا `this` | ADDED | Agent + Evidence | أوّلُ مرحلةٍ خارج الصنف؛ `jcr._stageDebate` مفوِّضٌ من سطر |
 | ✅ `stages/understand.js` (جديد، JCR/5) | 72 | `understandGoal(goal, ctx, reporter)` — الفهم: ذاكرة/ملفّ ← مخطّط ← نموذج المجال؛ نقلٌ حرفيّ، المُبلِّغُ وسيط | ADDED | Mission | `jcr._understandGoal` مفوِّضٌ من سطر؛ ٧ استيراداتٍ رحلت معها |
 | ✅ `stages/enrich.js` (جديد، JCR/6) | 68 | `enrichBuildContext(goal, blueprint, ctx, reporter)` + `resolveProjectType` — متطلّباتٌ ضمنيّة + صور + توجيهاتُ الإضافات؛ نقلٌ حرفيّ، المُبلِّغُ وسيط | ADDED | Mission | `jcr._enrichBuildContext` مفوِّضٌ من سطر؛ `resolveProjectType` يعيد `jcr` تصديرَها لمستورِديها |
