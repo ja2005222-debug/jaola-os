@@ -25,6 +25,7 @@ import { recordBuild, buildMetricsPayload } from '../../services/metricsStore.js
 import { writeProjectFile } from '../../core/runtime/workspacePaths.js';
 import { verifyBehavior } from '../behaviorVerifier.js';
 import { strategyVerdict } from './verify.js';
+import { composeRequirements } from '../requirementsVerifier.js';
 import { withVerdict } from './reportMissionSuccess.js';
 
 export async function buildFromRegistry(goal, ctx, reporter) {
@@ -56,7 +57,9 @@ export async function buildFromRegistry(goal, ctx, reporter) {
     const registryModel = { entities: [], roles: [{ name: 'Visitor', capabilities: ['تصفّح'] }], flows: [], _source: 'registry' };
     try { setDomainModel(username, activeProject, registryModel); } catch {}
     // ⚖️ الحكم (PM/2b): الصفحةُ المركّبة تُتحقَّق فعلاً (صفحةُ هبوط — لا شرطَ تفاعل) لا تُعلَن ناجحةً بلا فحص.
+    //    PM/7: المتطلّباتُ تُمرَّر كما على المسارات كلِّها — نموذجُ الزائر عامٌّ فلا يُتتبَّع، والبوّابةُ تقول ذلك بعدده لا تفترضه.
     const verdict = strategyVerdict({ filesCount: files.length, behavior: await verifyBehavior({ projectPath, blueprint: { kind: 'landing' }, domainModel: registryModel }),
+        requirements: composeRequirements(null, registryModel), files,
         requirementsNote: 'صفحةٌ من بلوكات Registry — لا مكوّناتٍ وظيفيّة تُتحقَّق' });
     try {
         await prepareRenderDeploy(projectPath, renderServiceName(username, activeProject), false);

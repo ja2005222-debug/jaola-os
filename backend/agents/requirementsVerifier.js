@@ -14,6 +14,7 @@
  */
 
 import { smartChat } from '../core/providers/llm.js';
+import { conceptOf, conceptKind, conceptsInText, isGenericConcept } from './projectModel.js';
 
 const VERIFY_SYSTEM = `أنت مدقق جودة صارم لمواقع الويب. لديك متطلبات وظيفية وكود الموقع الفعلي.
 لكل متطلب، افحص الكود بدقة: هل نُفِّذ **فعلاً بشكل عامل** (عناصر UI موجودة + منطق JavaScript حقيقي يعمل عليها ببيانات) — أم مجرد شكل/زخرفة/غير موجود؟
@@ -37,23 +38,46 @@ const VERIFY_SYSTEM = `أنت مدقق جودة صارم لمواقع الويب
 export function composeRequirements(blueprint, domainModel = null) {
     const comps = (blueprint?.functionalComponents || []).filter(c => c && c.name);
     const seen = new Set(comps.map(c => String(c.name).toLowerCase().trim()));
-    const add = (name, behavior) => {
+    // PM/7: `_kind` يقول من أيّ وجهٍ من الفهم جاء المتطلّب — المتتبِّعُ الحتميّ يقرؤه (التدفّقُ لا يُتتبَّع بالمفردات).
+    const add = (name, behavior, kind) => {
         const k = String(name).toLowerCase().trim();
         if (seen.has(k)) return;
         seen.add(k);
-        comps.push({ name, behavior, _source: 'model' });
+        comps.push({ name, behavior, _source: 'model', _kind: kind });
     };
     for (const r of (domainModel?.roles || [])) {
-        if (r?.name) add(`شاشة ${r.name}`, `قسمٌ/صفحةٌ مستقلّة للدور «${r.name}» تعمل فعلاً (عناصر + منطق JS)، لا ذكرَ اسمٍ في نصّ`);
+        if (r?.name) add(`شاشة ${r.name}`, `قسمٌ/صفحةٌ مستقلّة للدور «${r.name}» تعمل فعلاً (عناصر + منطق JS)، لا ذكرَ اسمٍ في نصّ`, 'role');
     }
     for (const e of (domainModel?.entities || [])) {
-        if (e?.name) add(`بيانات ${e.name}`, `تمثيلٌ فعليّ للكيان «${e.name}»: مصفوفةُ بياناتٍ واقعيّة تُعرض وتُحدَّث، لا عنوانٌ ثابت`);
+        if (e?.name) add(`بيانات ${e.name}`, `تمثيلٌ فعليّ للكيان «${e.name}»: مصفوفةُ بياناتٍ واقعيّة تُعرض وتُحدَّث، لا عنوانٌ ثابت`, 'entity');
     }
     for (const f of (domainModel?.flows || [])) {
         // اسمُ التدفّق قد يبدأ بالكلمة نفسِها («تدفّق حالة الرحلة») فلا نكرّرها
-        if (f?.name) add(String(f.name).startsWith('تدفّق') ? f.name : `تدفّق ${f.name}`, `انتقالُ الحالة${f.steps?.length ? ` (${f.steps.join(' → ')})` : ''} يعمل بـ JS على البيانات نفسِها`);
+        if (f?.name) add(String(f.name).startsWith('تدفّق') ? f.name : `تدفّق ${f.name}`, `انتقالُ الحالة${f.steps?.length ? ` (${f.steps.join(' → ')})` : ''} يعمل بـ JS على البيانات نفسِها`, 'flow');
     }
     return comps;
+}
+
+/**
+ * 🔎 PM/7 — أثرُ المتطلّبات في الملفّات، حتميّاً وبلا مزوّد: لكلِّ متطلّبٍ مفهومُه من المعجم (PM/1)، ثمّ هل
+ * تنطق الملفّاتُ به (`conceptsInText`، PM/3)؟
+ *
+ * ما يقوله وما لا يقوله — مكتوبٌ لأنّ الحكمَ يُبنى عليه: **الغيابُ قاطع** (مفهومٌ لا تذكره الملفّاتُ لم يُنفَّذ
+ * فيها)، أمّا **الحضورُ فأثرٌ لا تنفيذ** (لفظُ «عميل» في الصفحة لا يُثبت شاشةَ عميلٍ تعمل — ذلك للمحقّق السلوكيّ
+ * أو لمحقّق المتطلّبات بمزوّد). وما ليس في المعجم أو كان عامّاً (`user`/`item`) أو تدفّقاً (انتقالُ حالةٍ لا
+ * مفردة) **لا يُتتبَّع** ولا يُحسب له ولا عليه.
+ * @returns {{ traced: string[], missing: string[], untraceable: string[] }} أسماءُ المتطلّبات بترتيبها
+ */
+export function traceRequirements(requirements, files) {
+    const spoken = conceptsInText((files || []).map(f => f?.content || '').join('\n'));
+    const out = { traced: [], missing: [], untraceable: [] };
+    for (const r of (requirements || [])) {
+        if (!r?.name) continue;
+        const concept = r._kind === 'flow' ? '' : conceptOf(r.name);
+        if (!concept || !conceptKind(concept) || isGenericConcept(concept)) { out.untraceable.push(r.name); continue; }
+        (spoken.has(concept) ? out.traced : out.missing).push(r.name);
+    }
+    return out;
 }
 
 /**

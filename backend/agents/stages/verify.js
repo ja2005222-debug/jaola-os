@@ -15,6 +15,7 @@ import { recordBehaviorGaps } from '../../services/platformLessons.js';
 import { getUserLanguage } from '../languageDetector.js';
 import { recordModel } from '../modelLibrary.js';
 import { recordGateOutcome, deliveryVerdict } from '../../core/contracts/index.js';
+import { traceRequirements } from '../requirementsVerifier.js';
 
 /** ⚖️ حكمُ بوّابة السلوك من ناتج `verifyBehavior` (PM/2): لم يُشغَّل/تُخطّي = لم يُتحقَّق، لا اجتياز. */
 export function behaviorOutcome(verdict) {
@@ -24,14 +25,31 @@ export function behaviorOutcome(verdict) {
 }
 
 /**
- * ⚖️ حكمُ مسارات الاستراتيجيّة (PM/2b): Registry/Clone/React تعود قبل حلقة التسليم، فتبني حكمَها بالشكل نفسِه
- * من تحقّقها الداخليّ — الحارسُ اجتاز بالكتابة، والمتطلّباتُ «لا ينطبق» بسببٍ مكتوب (لا محقّقَ متطلّبات على هذه المسارات)،
- * والسلوكُ من `verifyBehavior`. لا حكمَ بلا تحقّقٍ فعليّ.
+ * ⚖️ حكمُ بوّابة المتطلّبات على مسارات الاستراتيجيّة (PM/7) — بلا مزوّد، من أثر المفردات (`traceRequirements`):
+ *   لا متطلّباتٍ أو لا ملفّات → `skipped` بالسبب المكتوب؛ كلُّها لا يُتتبَّع (عامّة/تدفّقات/خارج المعجم) → `skipped` بعددها؛
+ *   متطلّبٌ بلا أثر → `fail` بأسمائه (الغيابُ قاطع)؛ كلُّ المتتبَّع له أثر → `pass` مكتوباً عليه «أثرٌ لا تنفيذ».
+ * قبل هذا كانت البوّابةُ `skipped` حتميّاً على هذه المسارات — فوثيقةٌ من ١٢ متطلّباً مسمّى على كلونٍ يمثّل ٧ منها كانت PASS.
  */
-export function strategyVerdict({ filesCount = 0, behavior = null, requirementsNote = 'لا محقّقَ متطلّبات على هذا المسار' } = {}) {
+export function requirementsTraceOutcome(requirements, files, note = 'لا محقّقَ متطلّبات على هذا المسار') {
+    if (!requirements?.length || !files?.length) return { status: 'skipped', detail: note };
+    const t = traceRequirements(requirements, files);
+    const traceable = t.traced.length + t.missing.length;
+    if (!traceable) return { status: 'skipped', detail: `${note} — ${t.untraceable.length} متطلّب بلا مفردةٍ تُتتبَّع` };
+    const tail = `${t.traced.length}/${traceable} له أثر — أثرٌ لا تنفيذ${t.untraceable.length ? `؛ ${t.untraceable.length} لا يُتتبَّع بالمفردات` : ''}`;
+    if (t.missing.length) return { status: 'fail', detail: `${t.missing.length} متطلّب بلا أثر: ${t.missing.join('، ')} (${tail})` };
+    return { status: 'pass', detail: tail };
+}
+
+/**
+ * ⚖️ حكمُ مسارات الاستراتيجيّة (PM/2b): Registry/Clone/React تعود قبل حلقة التسليم، فتبني حكمَها بالشكل نفسِه
+ * من تحقّقها الداخليّ — الحارسُ اجتاز بالكتابة، والمتطلّباتُ من أثرها في الملفّات (PM/7؛ وبلا متطلّباتٍ «لا ينطبق»
+ * بسببٍ مكتوب)، والسلوكُ من `verifyBehavior`. لا حكمَ بلا تحقّقٍ فعليّ.
+ */
+export function strategyVerdict({ filesCount = 0, behavior = null, requirementsNote = 'لا محقّقَ متطلّبات على هذا المسار', requirements = null, files = null } = {}) {
     const ctx = {};
     recordGateOutcome(ctx, 'guard-and-write', 'pass', `${filesCount} ملفّاً كُتبت`);
-    recordGateOutcome(ctx, 'requirements-verify', 'skipped', requirementsNote);
+    const r = requirementsTraceOutcome(requirements, files, requirementsNote);
+    recordGateOutcome(ctx, 'requirements-verify', r.status, r.detail);
     const b = behaviorOutcome(behavior);
     recordGateOutcome(ctx, 'behavior-verify', b.status, b.detail);
     return deliveryVerdict(ctx.verdicts);

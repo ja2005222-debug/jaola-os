@@ -63,7 +63,8 @@ test('Registry: الصفحةُ المركّبة تُتحقَّق فعلاً — 
         const { events, reporter } = collect();
         const r = await buildFromRegistry('صفحة هبوط لشركة استشارات', { ...s.ctx, projectPath: dir }, reporter);
         assert.equal(r.verdict.status, 'PASS'); assert.deepEqual(GATES(r.verdict), ['guard-and-write:pass', 'requirements-verify:skipped', 'behavior-verify:pass']);
-        assert.equal(r.verdict.gates[1].detail, 'صفحةٌ من بلوكات Registry — لا مكوّناتٍ وظيفيّة تُتحقَّق');
+        // PM/7: المتطلّباتُ تُمرَّر وتُتتبَّع — نموذجُ الزائر (`Visitor` → `user`) عامٌّ فلا يُتتبَّع، والبوّابةُ تقول ذلك بعدده
+        assert.equal(r.verdict.gates[1].detail, 'صفحةٌ من بلوكات Registry — لا مكوّناتٍ وظيفيّة تُتحقَّق — 1 متطلّب بلا مفردةٍ تُتتبَّع');
         assert.match(r.verdict.gates[0].detail, /^\d+ ملفّاً كُتبت$/);
         // 🔬 الحكمُ من تحقّقٍ فعليّ: التفصيلُ بصيغة المحقّق نفسِها — قيمةٌ مُرضية مكتوبة يدوياً لا تُنتجها
         assert.match(r.verdict.gates[2].detail, /^\d+ ✅ \/ \d+ ⚠️ \/ \d+ ❌ \(\d+%\)$/, r.verdict.gates[2].detail);
@@ -80,14 +81,17 @@ test('Clone: تحقّقٌ نهائيّ على ما وصل القرص — كلو�
         finally { resetProjectState(s.ctx.username, s.ctx.activeProject); }
     };
     const good = await run(getCloneById('jaola-store'), 'svclok');
-    assert.equal(good.r.verdict.status, 'PASS'); assert.equal(good.r.verdict.gates[1].detail, 'مسارُ الكلون — المواصفةُ نموذجُ الكلون نفسُه، لا محقّقَ متطلّبات');
-    assert.match(good.msg, /^✅ اكتمل — بدأنا من قالب/); assert.match(good.msg, /\n⚖️ التحقّق: guard-and-write ✓، requirements-verify –، behavior-verify ✓$/);
+    // PM/7: متطلّباتُ نموذج المتجر (Customer/Admin/Product/Order) كلُّها لها أثرٌ في ملفّاته، والتدفّقان لا يُتتبَّعان بالمفردات — pass مكتوبٌ عليه «أثرٌ لا تنفيذ»
+    assert.equal(good.r.verdict.status, 'PASS'); assert.equal(good.r.verdict.gates[1].detail, '4/4 له أثر — أثرٌ لا تنفيذ؛ 2 لا يُتتبَّع بالمفردات');
+    assert.match(good.msg, /^✅ اكتمل — بدأنا من قالب/); assert.match(good.msg, /\n⚖️ التحقّق: guard-and-write ✓، requirements-verify ✓، behavior-verify ✓$/);
     const broken = getCloneById('jaola-store');
     broken.files = broken.files.map(f => f.name === 'app.js' ? { ...f, content: 'nothing();' } : f.name === 'index.html' ? { ...f, content: '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><h1>x</h1><button onclick="missingFn()">go</button><script src="app.js"></script></body></html>' } : f);
     const bad = await run(broken, 'svclbad');
     assert.equal(bad.r.verdict.status, 'FAILED', JSON.stringify(bad.r.verdict));
     assert.match(bad.r.verdict.gates[2].detail, /^ثغراتٌ باقية: .*wiring-complete/);
-    assert.match(bad.msg, /^⚠️ اكتمل — بدأنا من قالب/); assert.match(bad.msg, /\n⚠️ التحقّق وجد ثغرات — behavior-verify: ثغراتٌ باقية: /);
+    // PM/7: الملفّاتُ المعطوبة أفرغت مفرداتِ المتجر أيضاً — فبوّابةُ المتطلّبات تسبق السلوكَ بثلاثةٍ بلا أثر (Admin وحدَه بقي في styles.css)
+    assert.equal(bad.r.verdict.gates[1].detail, '3 متطلّب بلا أثر: شاشة Customer، بيانات Product، بيانات Order (1/4 له أثر — أثرٌ لا تنفيذ؛ 2 لا يُتتبَّع بالمفردات)');
+    assert.match(bad.msg, /^⚠️ اكتمل — بدأنا من قالب/); assert.match(bad.msg, /\n⚠️ التحقّق وجد ثغرات — requirements-verify: 3 متطلّب بلا أثر: [^\n]* • behavior-verify: ثغراتٌ باقية: /);
     assert.equal(bad.r.success, true, 'المهمّةُ اكتملت — الحكمُ على المنتج شيءٌ آخر');
 });
 
@@ -116,6 +120,6 @@ test('الحدود: البناةُ الثلاثة يستوردون strategyVerdi
     assert.equal((jcr.match(/'7\. VERDICT', 'Judge'/g) || []).length, 2);
     assert.ok(jcr.includes("if (strategyResult.verdict) this.emitLiveLog(roomName, '7. VERDICT', 'Judge', `⚖️ الحكم: ${strategyResult.verdict.status} — ${strategyResult.verdict.summary}`);"));
     const verify = fs.readFileSync(path.join(HERE, '../agents/stages/verify.js'), 'utf8').replace(/^\s*\/\/.*$/gm, '');
-    assert.ok(verify.includes('export function behaviorOutcome(verdict) {') && verify.includes("export function strategyVerdict({ filesCount = 0, behavior = null, requirementsNote = 'لا محقّقَ متطلّبات على هذا المسار' } = {}) {"));
+    assert.ok(verify.includes('export function behaviorOutcome(verdict) {') && verify.includes("export function strategyVerdict({ filesCount = 0, behavior = null, requirementsNote = 'لا محقّقَ متطلّبات على هذا المسار', requirements = null, files = null } = {}) {"));
     assert.ok(verify.includes("recordGateOutcome(context, 'behavior-verify', outcome.status, outcome.detail);"), 'المرحلةُ تستعمل التصنيفَ المشترك');
 });
