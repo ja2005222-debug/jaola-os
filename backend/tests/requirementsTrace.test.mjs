@@ -108,7 +108,9 @@ test('مسارُ React: فهمٌ لا تنطق به المعاينةُ الثا�
 
 test('الحدود: البناةُ الثلاثة يمرّرون requirements وfiles إلى strategyVerdict؛ الحكمُ يستورد المتتبِّعَ من المحقّق؛ والمتتبِّعُ يقرأ معجمَ projectModel لا قائمةً ثانية', () => {
     const src = (f) => fs.readFileSync(path.join(HERE, f), 'utf8').replace(/^\s*\/\/.*$/gm, '');
-    assert.ok(src('../agents/stages/buildFromClone.js').includes('requirements: composeRequirements(null, model), files: await readProjectFiles(projectPath),'));
+    // PM/8: المتطلّباتُ تُؤلَّف مرّةً في الكلون (جولةُ الإكمال ثمّ الحكم) — المتغيّرُ نفسُه يصل الحكم
+    const clone = src('../agents/stages/buildFromClone.js');
+    assert.ok(clone.includes('const requirements = composeRequirements(null, model);') && clone.includes('requirements, files: await readProjectFiles(projectPath),'));
     assert.ok(src('../agents/stages/buildFromRegistry.js').includes('requirements: composeRequirements(null, registryModel), files,'));
     assert.ok(src('../agents/stages/buildReact.js').includes('requirements: composeRequirements(null, getDomainModel(username, activeProject)), files: await readProjectFiles(projectPath),'));
     const verify = src('../agents/stages/verify.js');
