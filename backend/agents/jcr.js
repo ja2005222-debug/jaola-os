@@ -5,13 +5,12 @@ import { groq, smartChat } from '../core/providers/llm.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain, summarizeFacts } from '../services/projectBrain.js';
 import { resolveStack } from './starterRegistry.js';
 import { generateSectionContent, compName, slugify, componentSource, defaultSection, pageFileSource } from './reactGenerator.js';
-import { buildStaticSite, buildStaticSiteFromSource } from '../services/reactPreview.js';
+import { buildStaticSite } from '../services/reactPreview.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO, resolveGoalLanguage } from './languageDetector.js';
 import { getProjectMemory, initFromClarifier, addToHistory, getDomainModel } from './projectMemory.js';
-import { buildProjectModelContext, buildAppSections } from './projectModel.js';
+import { buildAppSections } from './projectModel.js';
 import { matchCloneTemplate } from './cloneTemplates/index.js';
-import { patchEditPlan } from './patchEditor.js';
 import { localizeLog } from './logLocalizer.js';
 import { RoomReporter } from '../core/runtime/RoomReporter.js';
 import { runDebate } from './stages/debate.js';
@@ -30,18 +29,17 @@ import { runBackendStage } from './stages/backend.js';
 import { verifyAndAutofix, runBehaviorVerifyStage } from './stages/verify.js';
 import { buildReactProject } from './stages/buildReact.js';
 import { extractPageName, cleanPageName, readReactContent, findPage, persistReactContent, renamePageNow, deletePageNow, pageNotFound } from './stages/reactPages.js';
+import { runSurgicalEdit } from './stages/surgicalEdit.js';
 import { handleUndo } from './stages/undo.js';
 // 🔁 إعادةُ تصدير: `resolveProjectType` بقيت واجهةً من `jcr` لمستورِديها (JCR/6)
 export { resolveProjectType };
 import { buildFailureChatMessage } from './failureMessages.js';
 import { isMarketingPageGoal } from './blockRegistry.js';
-import { analyzeProjectStatic, extractDefinedFunctions } from './behaviorVerifier.js';
-import { hasKeyword } from './keywordMatch.js';
+import { analyzeProjectStatic } from './behaviorVerifier.js';
 import { updateLanguage, recordProject, recordEdit } from './userProfile.js';
 import { renderServiceName, deployToRender } from './renderAgent.js';
 import { isFullStackProject } from './deployAgent.js';
 import { transitionState, getProjectSummary, STATES } from './stateMachine.js';
-import { backupProject } from './fileManager.js';
 import { normalizeText, normalizeArabic, detectIntentFromMeaning, isQuestionMessage, hasActionIntent, isExplicitRebuild, isExplicitNewBuild, isContinuationGoal } from './textNormalizer.js';
 import { routeMessage } from './router.js';
 import { matchDeleteCommand, matchImageCommand, isImageDiagCommand, isBareYes, isBareExecute } from './chatCommands.js';
@@ -54,7 +52,7 @@ import { projectPathOf, writeProjectFile, writePlanFiles } from '../core/runtime
 import { registerMission, throwIfAborted, clearMission } from '../core/runtime/AbortRegistry.js';
 import { autoPushIfEnabled, pushProject } from '../services/githubSync.js';
 import { snapshotWorkspace } from '../services/workspaceStore.js';
-import { guardFiles, scrubPlaceholders, ensureEditIntegrity } from '../services/codeGuard.js';
+import { guardFiles, ensureEditIntegrity } from '../services/codeGuard.js';
 import { recordMissionOutcome, matureLessons, lessonDirective, MIN_COUNT_TO_TEACH } from '../services/platformLessons.js';
 import { getPlatformKnowledge } from '../services/platformKnowledge.js';
 import { getProjectSecrets } from '../services/projectSecrets.js';
@@ -1098,217 +1096,17 @@ User preferences: ${JSON.stringify(execMemory)}` },
         return pageNotFound(content, roomName, lang, name, this.reporter);
     }
 
+    // ✂️ التعديلُ الجراحيّ خرج إلى `stages/surgicalEdit.js#runSurgicalEdit` (JCR/22) — تفويضٌ يُبقي المستدعيَ كما هو؛
+    // المُبلِّغُ يُمرَّر، وطرائقُ الصنف الخمس التي كانت تُستدعى بـ`this` تُمرَّر دوالَّ (`ops`) حتّى تبقى استبدالاتُ
+    // الاختبارات على النسخة نافذة.
     async _runSurgicalEditNow(instruction, ctx) {
-        const { projectPath, username, activeProject, roomName, agents } = ctx;
-        const lang = getUserLanguage(username);
-        const files = await this.readProjectFilesArray(projectPath);
-
-        // 📸 نسخة احتياطية كاملة قبل كل تعديل — وقود أمر «تراجع» الفوري من
-        // الشات (فشلها لا يعطّل التعديل أبداً).
-        if (files.length) await backupProject(projectPath, 'edit').catch(() => {});
-
-        // مشروع React؟ (يحوي lib/content.js أو app/page.jsx)
-        const isReact = files.some(f => f.name === 'lib/content.js' || f.name === 'app/page.jsx');
-
-        // 🗂️ عمليات الصفحات لمشروع React (تزايدية، تحفظ باقي المحتوى) — قبل فحص
-        // "التغيير الكبير" (الذي يلتقط "صفحة/صفحات" ويعيد البناء بالكامل).
-        if (isReact) {
-            // إعادة تسمية: "أعد تسمية صفحة X إلى Y" / "rename page X to Y"
-            const ren = instruction.match(/(?:أعد\s*تسمية|اعد\s*تسمية|غيّر\s*اسم|غير\s*اسم|rename)\s+(?:صفحة|صفحه|page\s+)?(.+?)\s+(?:إلى|الى|to)\s+(.+)/i);
-            if (ren) return this._renamePageNow(projectPath, username, activeProject, roomName, lang, this._cleanPageName(ren[1]), this._cleanPageName(ren[2]));
-            // حذف: "احذف صفحة X" / "delete page X"
-            const del = instruction.match(/(?:احذف|امسح|إحذف|delete|remove)\s+(?:صفحة|صفحه|page)\s+(.+)/i);
-            if (del) return this._deletePageNow(projectPath, username, activeProject, roomName, lang, this._cleanPageName(del[1]));
-            // إضافة: "أضف صفحة …"
-            const wantsAddPage = /(?:أضف|اضف|أضِف|ضيف|زد|أنشئ|انشئ|اضافة|إضافة)\s+(?:لي\s+)?(?:صفحة|صفحه)|صفحة\s*جديدة|add\s+(?:a\s+|an\s+)?page|new\s+page|create\s+(?:a\s+)?page/i.test(instruction);
-            if (wantsAddPage) return this._addPageNow(instruction, projectPath, username, activeProject, roomName, lang);
-        }
-
-        // لا مشروع قائم، أو تعديل كبير (إعادة تصميم/بناء) → البناء الكامل بدل الجراحي
-        // أوامر البناء الصريحة ("ابنِ تطبيق...") تعني بناءً كاملاً لا تعديلاً
-        // جراحياً على المشروع الحالي — منعاً لتشويه مشروع بنمط مختلف تماماً.
-        // إعادة بناء كاملة فقط لطلب صريح — لا لمجرّد ذكر «صفحات» (كان تحسينٌ
-        // على تطبيق يعمل «فعّل الخدمات مع صفحات خاصة» يُعيد البناء من الصفر
-        // فيدهس الكلون العامل). إضافة الصفحات/الميزات تبقى تعديلاً جراحياً.
-        const bigChange = /أعد التصميم|اعد التصميم|أعد البناء|اعد البناء|أعد بناء|اعد بناء|من جديد|من الصفر|ابنِ?\s|ابن\s|أبنِ?\s|تطبيق\s+جديد|موقع\s+جديد|redesign|rebuild|from scratch|start over/i.test(instruction);
-        if (files.length === 0 || bigChange || !agents.coreEditCodePlan) {
-            return this._runMissionNow(instruction, ctx);
-        }
-
-        // نوجّه التعديل للمصدر (lib/content.js، المكوّنات) لا لصفحات HTML المولّدة
-        // (index.html/*.html) — فتلك نُعيد توليدها من المحتوى بعد التعديل.
-        const editFiles = isReact ? files.filter(f => !/^[^/]+\.html$/.test(f.name)) : files;
-
-        this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', '✂️ تعديل دقيق (لا إعادة بناء كاملة)...');
-        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
-
-        // 🧩 نحقن نموذج المشروع في التعديل — يبقى التعديل متماسكاً مع كيانات
-        // وأدوار وتدفّقات النظام (لا رقعة نصّية معزولة تكسر التماسك).
-        const editModelCtx = buildProjectModelContext(getDomainModel(username, activeProject));
-
-        // 🔒 عقد الحفظ — التعديلات ليست تراكمية بطبيعتها: «أضف 3 مطاعم» أعاد
-        // كتابة app.js فحذف التفاصيل المالية السابقة (سجل المستخدم). نُلزم
-        // المولّد بقائمة الدوال/الميزات الحالية: احتفظ بها كلّها، أضِف فقط المطلوب.
-        const currentJs = editFiles.filter(f => /\.(m?js)$/i.test(f.name)).map(f => f.content).join('\n');
-        const existingFns = [...extractDefinedFunctions(currentJs)].filter(n => n.length > 2);
-        const preserveCtx = existingFns.length
-            ? `\n\n🔒 عقد الحفظ (إلزامي): الكود الحالي يعرّف هذه الدوال/الميزات — **احتفظ بها جميعاً كاملةً** ولا تحذف ولا تُبسّط أياً منها (خاصةً الميزات المُضافة سابقاً كالتقارير المالية). أضِف المطلوب فوقها، وأعِد الملف **كاملاً** بكل دواله السابقة + الإضافة الجديدة:\n${existingFns.join('، ')}`
-            : '';
-
-        const editInstruction = `${instruction}${editModelCtx || ''}`;
-
-        // 🩹 المسار النموذجي أولاً: تعديل موضعي (patch) — يُعيد الجزء المتغيّر
-        // فقط، فلا بتر مهما كبر المشروع، وما لا يُذكر لا يُلمس (حفظ حتمي). نسقط
-        // للمسار الكامل فقط إن تعذّر التطبيق الموضعي.
-        let plan = null;
-        try {
-            const patch = await patchEditPlan(instruction, editFiles, lang);
-            if (patch.ok && patch.files.length) {
-                plan = { files: patch.files };
-                this.emitLiveLog(roomName, 'EDIT', 'PatchEditor',
-                    `🩹 تعديل موضعي — ${patch.applied} تغيير على ${patch.files.map(f => f.name).join('، ')} (بلا إعادة كتابة كاملة).`);
-                if (patch.retried) {
-                    this.emitLiveLog(roomName, 'EDIT', 'PatchEditor',
-                        `🔁 صُحِّحت محاولة فاشلة تلقائياً بعد رؤية المحتوى الفعلي.`);
-                }
-                if (patch.partial) {
-                    this.emitLiveLog(roomName, 'EDIT', 'PatchEditor',
-                        `ℹ️ طُبّق ما أمكن موضعياً؛ تعذّر ${patch.failed.length} جزء (لم يُطابَق) — أعد صياغة الباقي إن لزم.`);
-                }
-            } else if (patch.failed?.length) {
-                this.emitLiveLog(roomName, 'EDIT', 'PatchEditor', `↩️ التعديل الموضعي لم يُطابِق — عودة للتعديل الكامل.`);
-            }
-        } catch (e) { console.warn('[PatchEditor]', e.message); }
-
-        // مسار كامل (احتياط): إعادة كتابة الملف مع عقد الحفظ + حارس الارتداد.
-        if (!plan) {
-            try {
-                plan = await agents.coreEditCodePlan(`${editInstruction}${preserveCtx}`, editFiles, lang,
-                    (chunk) => this.reporter.send(roomName, 'code_stream_chunk', chunk));
-            } catch (e) {
-                this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', `⚠️ تعذّر — عودة للبناء الكامل: ${e.message}`);
-                this.reporter.send(roomName, 'stream_done', {});
-                return this._runMissionNow(instruction, ctx);
-            }
-        }
-        this.reporter.send(roomName, 'stream_done', {});
-
-        // فشل الجراحي → عودة آمنة للبناء الكامل
-        if (!plan || plan.error || !plan.files?.length) {
-            this.emitLiveLog(roomName, 'EDIT', 'SurgicalEditor', '⚠️ بلا نتيجة — عودة للبناء الكامل');
-            return this._runMissionNow(instruction, ctx);
-        }
-
-        // فحص الملفات المتغيّرة عبر CodeGuard ثم كتابتها فقط
-        // (مع تنظيف أي placeholder قوالب تسرّب أثناء التعديل).
-        // ensureEditIntegrity قبل الكتابة حتماً — يقارن بالنسخة السابقة على
-        // القرص ويعيد ما أسقطه التعديل (رابط التنسيق، DOCTYPE، السكربتات).
-        const emitGuard = (m) => this.emitLiveLog(roomName, 'EDIT', 'CodeGuard', m);
-        const guarded = await ensureEditIntegrity(
-            await guardFiles(scrubPlaceholders(plan.files, activeProject), emitGuard),
-            projectPath, emitGuard);
-        for (const file of guarded) {
-            await writeProjectFile(projectPath, file.name, file.content);
-        }
-
-        // React: أعِد توليد صفحات المعاينة الثابتة من المحتوى المحدَّث — فينعكس
-        // التعديل على كل الصفحات (لا على index وحده).
-        if (isReact) {
-            try {
-                const src = await fsPromises.readFile(path.join(projectPath, 'lib/content.js'), 'utf8');
-                for (const pg of buildStaticSiteFromSource(src, lang)) {
-                    await writeProjectFile(projectPath, pg.name, pg.content);
-                }
-            } catch (e) { this.emitLiveLog(roomName, 'EDIT', 'Preview', `⚠️ تعذّر تحديث المعاينة: ${e.message}`); }
-        }
-        // 🛡️ حارس الارتداد على مرحلتين — العطل السابق: تعديل المستخدم كان يُطبَّق
-        // بنجاح، ثم جولة «الإصلاح السلوكي التلقائي» تعيد كتابة الملفات كاملة
-        // فتُبتر وتُسقط دوالاً، فيسترجع الحارس *ما قبل تعديل المستخدم* ويمسح
-        // تعديلاً نجح فعلاً — «كل تعديل يعود للنسخة الأصلية» (بلاغ مستخدم).
-        // الفصل: (أ) تعديل المستخدم نفسه أتلف → استرجاع ما قبله (كما كان).
-        //        (ب) جولة الإصلاح التلقائي أتلفت → إلغاء الإصلاح وحده،
-        //            وتعديل المستخدم الناجح يبقى.
-        // 🔤 «شيل» كانت تُقرأ داخل «تشيلي»، فطلبُ **إضافة** يُعطّل حارسَ الارتداد
-        //    أدناه فيضيع ما فقده التعديلُ صامتاً. المُطابِقُ المشترك يمنعها.
-        const isRemoval = /احذف|امسح|أزل|إزالة|بسّ?ط|remove|delete|drop|simplify/i.test(instruction)
-            || hasKeyword(instruction, ['شيل']);
-        const readLostFns = async () => {
-            const js = (await this.readProjectFilesArray(projectPath))
-                .filter(f => /\.(m?js)$/i.test(f.name)).map(f => f.content).join('\n');
-            const after = extractDefinedFunctions(js);
-            return existingFns.filter(n => !after.has(n));
-        };
-        const restoreFiles = async (snapshot) => {
-            for (const f of snapshot) await writeProjectFile(projectPath, f.name, f.content);
-            if (isReact) {
-                try {
-                    const src = await fsPromises.readFile(path.join(projectPath, 'lib/content.js'), 'utf8');
-                    for (const pg of buildStaticSiteFromSource(src, lang)) await writeProjectFile(projectPath, pg.name, pg.content);
-                } catch {}
-            }
-        };
-
-        // (أ) فحص تعديل المستخدم قبل أي إصلاح تلقائي
-        try {
-            const lost = await readLostFns();
-            if (lost.length >= 2 && !isRemoval) {
-                this.emitLiveLog(roomName, 'EDIT', 'RegressionGuard',
-                    `↩️ التعديل حذف ${lost.length} ميزة (${lost.slice(0, 5).join('، ')}) — استرجاع نسختك الكاملة.`);
-                await restoreFiles(files);
-                this.reporter.send(roomName, 'preview_updated', { timestamp: Date.now() });
-                const warn = lang === 'en'
-                    ? `⚠️ This change would have dropped existing features (${lost.slice(0, 4).join(', ')}) — likely the file grew and the output was cut off. I kept your full working version. Try a smaller, more specific change (one feature at a time).`
-                    : `⚠️ هذا التعديل كان سيحذف ميزات موجودة (${lost.slice(0, 4).join('، ')}) — غالباً لأن الملف كبر وانقطع الناتج. أبقيتُ نسختك الكاملة سليمة. جرّب طلباً **أصغر وأكثر تحديداً** (ميزة واحدة كل مرة).`;
-                this.reporter.send(roomName, 'chat_reply', { message: warn });
-                return { success: false, reverted: true, lost };
-            }
-        } catch (e) { console.warn('[RegressionGuard]', 'تعذّر فحص الارتداد:', e.message); }
-
-        // 📸 تعديل المستخدم سليم — لقطة ما بعده مرجعُ استرجاعٍ لأي عبث لاحق
-        let postEditSnapshot = [];
-        try { postEditSnapshot = await this.readProjectFilesArray(projectPath); } catch { /* الفحص (ب) سيُتخطى */ }
-
-        // 🔬 تحقّق سلوكي بعد التعديل — يمسك إن كسر التعديل تشغيل الصفحة أو
-        // ترك دوراً بلا واجهة، ويُصلح جولةً واحدة قبل إعلان النجاح.
-        try {
-            await this._verifyAndAutofix({
-                projectPath, blueprint: null, username, activeProject, roomName, agents, lang, canFix: true,
-            });
-        } catch (e) { console.warn('[BehaviorVerify]', 'تخطّي التحقّق بعد التعديل:', e.message); }
-
-        // (ب) فحص ما بعد الإصلاح التلقائي — إتلافه يُلغيه هو، لا تعديل المستخدم
-        try {
-            if (postEditSnapshot.length) {
-                const lost = await readLostFns();
-                if (lost.length >= 2 && !isRemoval) {
-                    this.emitLiveLog(roomName, 'EDIT', 'RegressionGuard',
-                        `↩️ جولة الإصلاح التلقائي أسقطت ${lost.length} ميزة (${lost.slice(0, 5).join('، ')}) — أُلغي الإصلاح وحده، تعديلك محفوظ.`);
-                    await restoreFiles(postEditSnapshot);
-                }
-            }
-        } catch (e) { console.warn('[RegressionGuard]', 'تعذّر فحص ما بعد الإصلاح:', e.message); }
-
-        this.reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
-
-        const changedNames = guarded.map(f => f.name).join('، ');
-        recordEdit(username, instruction);
-        recordEditAction(username, activeProject); // عدّاد تعديلات اللوحة — كان لا يُستدعى أبداً
-        addToHistory(username, activeProject, `تعديل: ${instruction.slice(0, 60)}`);
-
-        // تحديث المعاينة + قائمة الملفات + لقطة دائمة
-        this.reporter.send(roomName, 'preview_updated', { timestamp: Date.now() });
-        this.reporter.send(roomName, 'project_metrics', buildMetricsPayload(username, activeProject));
-        let builtFiles = [];
-        try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
-        this.reporter.send(roomName, 'workspace_files', builtFiles);
-        snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
-        autoPushIfEnabled(username, activeProject, projectPath, this.io, roomName).catch(() => {});
-
-        const msg = lang === 'ar'
-            ? `✅ طبّقت التعديل على: **${changedNames}** فقط (بلا إعادة بناء الموقع) — المعاينة تحدّثت.`
-            : `✅ Applied the change to **${changedNames}** only (no full rebuild) — preview updated.`;
-        this.reporter.send(roomName, 'chat_reply', { message: msg, options: lang === 'ar' ? ['🚀 انشر الآن', '📊 أين وصلنا'] : ['🚀 Deploy now', '📊 Status'] });
-        return { success: true, edited: guarded.map(f => f.name) };
+        return runSurgicalEdit(instruction, ctx, this.reporter, {
+            runMission: (goal, c) => this._runMissionNow(goal, c),
+            renamePage: (...a) => this._renamePageNow(...a),
+            deletePage: (...a) => this._deletePageNow(...a),
+            addPage: (...a) => this._addPageNow(...a),
+            verify: (opts) => this._verifyAndAutofix(opts),
+        });
     }
 
     // 🍔 البناءُ من كلونٍ عامل خرج إلى `stages/buildFromClone.js` (JCR/12) — تفويضٌ يُبقي
