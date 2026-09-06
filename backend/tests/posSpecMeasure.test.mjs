@@ -44,10 +44,11 @@ function missionScenario(prefix) {
 test('الحقيقةُ المقيسة ١: كلمةٌ واحدة («شركة» في بند تعدّد المستأجرين) تجعل وثيقةَ نظامٍ «صفحةً تسويقيّة» — والمعجمُ يرى ١٦ مفهوماً للمنتج', async () => {
     assert.ok(isFullSpecification(SPEC), 'وثيقةٌ لا جملة (≥١٢٠٠ حرفاً و≥٦ بنود)');
     assert.equal(inferTrack(SPEC), 'system', 'والمسارُ سيستم بكلماتها');
-    // الاختصارُ التسويقيّ يُصيبها بمطابقةِ احتواءٍ على «شركة» — وهذه هي الكلمةُ بعينها، مقيسةً:
-    assert.equal(isMarketingPageGoal(SPEC, { kind: 'webapp' }), true, 'إصابةٌ زائفة قائمة (تُقال كما هي — ديْنٌ مكتوب: نسخةٌ ثانية من قائمةٍ أصلحها appBlueprint)');
+    // كان الاختصارُ التسويقيّ يُصيبها بمطابقةِ احتواءٍ على «شركة» (ديْنٌ أُغلق في `marketingShortcut.test`): الفهمُ (kind=webapp)
+    // صار يسبق الكلمات، و«شركة» خرجت من القائمة — فلا إصابةَ بمخطّطٍ ولا بدونه
+    assert.equal(isMarketingPageGoal(SPEC, { kind: 'webapp' }), false, 'المخطّطُ يقول تطبيقاً فلا بروشور');
     assert.equal((SPEC.match(/شركة/g) || []).length, 2, 'تظهر مرّتين: «كل شركة مستأجر» و«إعدادات الشركة»');
-    assert.equal(isMarketingPageGoal(SPEC.replaceAll('شركة', 'جهة'), { kind: 'webapp' }), false, 'بلا «شركة» لا إصابة — فهي اللفظُ الوحيدُ المُصيب من ٢٨');
+    assert.equal(isMarketingPageGoal(SPEC), false, 'وبلا مخطّطٍ: «شركة» لم تعد لفظَ منتج');
     const seen = conceptsInText(SPEC);
     assert.ok(seen.size >= 14, `المعجمُ يرى المنتج: ${seen.size} مفهوماً`);
     for (const c of ['product', 'invoice', 'customer', 'payment', 'shift', 'tenant', 'accountant', 'storekeeper']) assert.ok(seen.has(c), c);
@@ -84,7 +85,8 @@ test('التوجيه بعد الإصلاح: الوثيقةُ على مجلّدٍ
     assert.deepEqual(s.chosen(), ['clone'], `المسارُ المختار: ${JSON.stringify(s.chosen())}`);
     assert.equal(r.clone, 'jaola-pos');
     assert.ok(!/JaolaRegistry/.test(s.logs()), 'لا ذكرَ للـRegistry في السجلّ');
-    assert.match(s.logs(), /📋 وثيقةٌ\/سيستم — الاختصارُ التسويقيّ لا ينطبق/);
+    // الاستثناءُ (وثيقة/سيستم) بقي حارساً ثانياً لكنّه لا يُستدعى هنا: الاختصارُ لم يعد يُصيب الوثيقةَ أصلاً (`marketingShortcut.test`)
+    assert.doesNotMatch(s.logs(), /📋 وثيقةٌ\/سيستم — الاختصارُ التسويقيّ لا ينطبق/);
 });
 
 test('ولا يُصادَر البروشور: «موقع تعريفي لشركة محاماة» و«صفحة هبوط لمطعم» يبقيان Registry، والجملةُ القصيرة بكلمة «شركة» كما كانت', async () => {
