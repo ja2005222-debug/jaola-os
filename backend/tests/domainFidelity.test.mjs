@@ -95,8 +95,9 @@ test('الحدود: المعجمُ واحد (الفحصُ يستورد domainFid
     assert.equal((src.match(/name: 'domain-fidelity'/g) || []).length, 3, 'fail/warn/pass');
     const pm = fs.readFileSync(path.join(HERE, '../agents/projectModel.js'), 'utf8').replace(/^\s*\/\/.*$/gm, '');
     assert.ok(pm.includes('export function conceptsInText(text, { limit = 200000 } = {}) {'));
-    // PM/6 أضاف `conceptFrequencies` على المعجم نفسِه — فالعامُّ يُستبعد في ثلاثة مواضع لا اثنين.
-    assert.equal((pm.match(/GENERIC_CONCEPTS\.has/g) || []).length, 3, 'العامُّ يُستبعد في المجموعات الثلاث');
+    // PM/6 أضاف `conceptFrequencies` على المعجم نفسِه، وPM/7 صدّر `isGenericConcept` للمتتبِّع — أربعةُ مواضع، والمجموعةُ واحدة.
+    assert.equal((pm.match(/GENERIC_CONCEPTS\.has/g) || []).length, 4, 'العامُّ يُستبعد في المجموعات الثلاث ويُسأل عنه من الخارج مرّةً');
+    assert.ok(pm.includes("export function isGenericConcept(concept) { return GENERIC_CONCEPTS.has(String(concept || '')); }"));
     assert.equal((pm.match(/const SYNONYMS = \[\]/g) || []).length, 1, 'فهرسٌ واحد للمرادفات');
     // 🔎 حدٌّ معروف: `ROLE_SYNONYMS` في المحقّق ما زالت قائمةً مستقلّةً لتغطية الأدوار (PM/3b يوحّدها بالمعجم).
     assert.ok(src.includes('const ROLE_SYNONYMS = ['), 'موجودةٌ بعد — التوحيدُ خطوةٌ لاحقة مكتوبة');

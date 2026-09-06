@@ -13,6 +13,8 @@ import { smartChat } from '../../core/providers/llm.js';
 import { getUserLanguage } from '../languageDetector.js';
 import { addToHistory, updateStructure, getDomainModel } from '../projectMemory.js';
 import { buildProjectModelContext } from '../projectModel.js';
+import { composeRequirements } from '../requirementsVerifier.js';
+import { readProjectFiles } from '../projectReader.js';
 import { generateNextScaffold, generateContentModel, generateSectionContent, slugify, defaultSection } from '../reactGenerator.js';
 import { buildStaticSite, buildDashboardPage } from '../../services/reactPreview.js';
 import { transitionState, STATES } from '../stateMachine.js';
@@ -110,7 +112,10 @@ export async function buildReactProject(goal, ctx, { sections = [] } = {}, repor
         }, reporter);
     } catch (e) { console.warn('[BehaviorVerify]', 'تخطّي تحقّق React:', e.message); }
     // ⚖️ الحكم (PM/2b): من التحقّق على المعاينة الثابتة — ما لا يراه المحقّقُ الثابت يُقال «لم يُتحقَّق» لا «نجح».
-    const verdict = strategyVerdict({ filesCount: builtFiles.length, behavior, requirementsNote: 'مسارُ React — لا محقّقَ متطلّبات على السكافولد' });
+    //    PM/7: متطلّباتُ الفهم تُتتبَّع في المعاينة الثابتة (ما يقرؤه المحقّقُ نفسُه) — لا «لا ينطبق» حتميّاً.
+    const verdict = strategyVerdict({ filesCount: builtFiles.length, behavior,
+        requirements: composeRequirements(null, getDomainModel(username, activeProject)), files: await readProjectFiles(projectPath),
+        requirementsNote: 'مسارُ React — لا متطلّباتٍ من الفهم' });
 
     const durationSec = Math.round((Date.now() - t0) / 1000);
     recordBuild(username, activeProject, { success: true, durationSec, filesCount: builtFiles.length, goal: goal || '' });

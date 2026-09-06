@@ -18,7 +18,8 @@ const { createExecutionContext } = await import('../core/runtime/ExecutionContex
 const { setUserLanguage } = await import('../agents/languageDetector.js');
 const { isMarketingPageGoal } = await import('../agents/blockRegistry.js');
 const { isFullSpecification } = await import('../agents/textNormalizer.js');
-const { conceptsInText, deriveProjectModel } = await import('../agents/projectModel.js');
+const { conceptsInText, deriveProjectModel, mergeProjectModel } = await import('../agents/projectModel.js');
+const { composeRequirements } = await import('../agents/requirementsVerifier.js');
 const { generateBlueprint } = await import('../agents/appBlueprint.js');
 const { matchCloneTemplateDetailed, inferTrack } = await import('../agents/cloneTemplates/index.js');
 const { strategyVerdict } = await import('../agents/stages/verify.js');
@@ -64,10 +65,17 @@ test('الحقيقةُ المقيسة ٢ (أُغلق نصفُها في PM/6): ا
         { roles: ['staff', 'customer', 'admin', 'tenant'], entities: ['product', 'invoice'] });
 });
 
-test('الحقيقةُ المقيسة ٣: على مسارات الاستراتيجيّة «المتطلّبات» تُتخطّى دائماً — فالحكمُ PASS مهما بلغت الوثيقة', () => {
-    const v = strategyVerdict({ filesCount: 3, behavior: { ran: true, ok: true, checks: [{ status: 'pass', name: 'x' }], summary: '1 ✅' } });
-    assert.equal(v.status, 'PASS');
-    assert.equal(v.gates.find(g => g.name === 'requirements-verify').status, 'skipped', 'لا محقّقَ متطلّبات على هذا المسار — بندٌ واحدٌ أو أربعةٌ وأربعون سواء');
+test('الحقيقةُ المقيسة ٣ (أُغلقت في PM/7): متطلّباتُ الوثيقة على كلون نقاط البيع — ٧ من ١٠ لها أثر، وثلاثةٌ بلا أثر تُقال بأسمائها فالحكمُ FAILED لا PASS', async () => {
+    // كان: `strategyVerdict` بلا متطلّبات → requirements-verify: skipped حتميّاً → PASS «بندٌ واحدٌ أو أربعةٌ وأربعون سواء».
+    const behavior = { ran: true, ok: true, checks: [{ status: 'pass', name: 'x' }], summary: '1 ✅' };
+    assert.equal(strategyVerdict({ filesCount: 3, behavior }).status, 'PASS', 'بلا متطلّباتٍ تُمرَّر: لا ينطبق — كما كان');
+    const { clone } = matchCloneTemplateDetailed(SPEC, { kind: 'webapp', category: 'business' }, await deriveProjectModel(SPEC, { kind: 'webapp' }));
+    assert.equal(clone?.id, 'jaola-pos');
+    const model = mergeProjectModel(await deriveProjectModel(SPEC, { kind: 'webapp' }), clone.model);
+    const v = strategyVerdict({ filesCount: 3, behavior, requirements: composeRequirements(null, model), files: clone.files });
+    assert.equal(v.status, 'FAILED');
+    assert.equal(v.gates.find(g => g.name === 'requirements-verify').detail,
+        '3 متطلّب بلا أثر: شاشة customer، شاشة tenant، بيانات account (7/10 له أثر — أثرٌ لا تنفيذ؛ 4 لا يُتتبَّع بالمفردات)');
 });
 
 test('التوجيه بعد الإصلاح: الوثيقةُ على مجلّدٍ فارغ تذهب إلى كلون نقاط البيع لا إلى صفحة الهبوط — والاختصارُ التسويقيّ لا يسبق الفهم', async () => {

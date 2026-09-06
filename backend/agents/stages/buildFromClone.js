@@ -13,6 +13,8 @@ import { smartChat } from '../../core/providers/llm.js';
 import { getUserLanguage, resolveGoalLanguage } from '../languageDetector.js';
 import { addToHistory, updateStructure, setDomainModel, getDomainModel } from '../projectMemory.js';
 import { mergeProjectModel } from '../projectModel.js';
+import { composeRequirements } from '../requirementsVerifier.js';
+import { readProjectFiles } from '../projectReader.js';
 import { recordModel } from '../modelLibrary.js';
 import { patchEditPlan } from '../patchEditor.js';
 import { stampSeed } from '../seedStamp.js';
@@ -179,8 +181,11 @@ export async function buildFromClone(clone, goal, ctx, reporter) {
     } catch { /* اختياري */ }
 
     // ⚖️ الحكم (PM/2b): تحقّقٌ نهائيّ على ما وصل القرصَ فعلاً (بعد البصمة أو الاسترجاع والتلميع) — لا على القالب النظيف.
+    //    PM/7: المتطلّباتُ من الفهم المدمَج (ما فهمه جولا من الطلب + نموذجُ الكلون) تُتتبَّع في الملفّات نفسِها — فما طلبه
+    //    المستخدمُ ولا يمثّله الكلونُ يُقال بالاسم، لا «لا ينطبق».
     const verdict = strategyVerdict({ filesCount: baseFiles.length, behavior: await verifyBehavior({ projectPath, blueprint: { kind: 'webapp' }, domainModel: model }),
-        requirementsNote: 'مسارُ الكلون — المواصفةُ نموذجُ الكلون نفسُه، لا محقّقَ متطلّبات' });
+        requirements: composeRequirements(null, model), files: await readProjectFiles(projectPath),
+        requirementsNote: 'مسارُ الكلون — لا متطلّباتٍ من الفهم' });
 
     // 4) نهائيات كبناءٍ ناجح
     reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });

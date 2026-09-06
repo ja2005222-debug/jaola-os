@@ -48,7 +48,8 @@ test('البناءُ الحقيقيّ بلا LLM: ٦ ملفّات، أيقونة
         const r = await buildFromClone(getCloneById('jaola-store'), GOAL, { ...s.ctx, projectPath: dir }, reporter);
         const { verdict, ...rest } = r; // PM/2b: الكلونُ يعود بحكمٍ من تحقّقٍ نهائيّ على ما وصل القرص
         assert.deepEqual(rest, { success: true, clone: 'jaola-store' });
-        assert.equal(verdict.status, 'PASS'); assert.deepEqual(verdict.gates.map(g => g.status), ['pass', 'skipped', 'pass']);
+        // PM/7: المتطلّباتُ لم تعد «لا ينطبق» على الكلون — تُتتبَّع في الملفّات (متجرٌ: ٤/٤ له أثر) فالبوّابةُ pass لا skipped
+        assert.equal(verdict.status, 'PASS'); assert.deepEqual(verdict.gates.map(g => g.status), ['pass', 'pass', 'pass']);
         assert.deepEqual(fs.readdirSync(dir).sort(), ['RENDER_README.md', 'app.js', 'brand.svg', 'index.html', 'render.yaml', 'styles.css']);
         const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
         assert.ok(html.includes('brand.svg'), 'وسمُ الأيقونة محقون');

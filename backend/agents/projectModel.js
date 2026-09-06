@@ -406,6 +406,8 @@ export function conceptKind(concept) {
 }
 /** المفاهيمُ التي لا تحمل معلومةَ منتج — لا تُقيِّد الاختيار. */
 const GENERIC_CONCEPTS = new Set(['user', 'item', 'employee']);
+/** هل المفهومُ عامٌّ (PM/7)؟ — عامٌّ لا يُتتبَّع في ملفّات: `conceptsInText` تستبعده أصلاً فغيابُه ليس ثغرة. */
+export function isGenericConcept(concept) { return GENERIC_CONCEPTS.has(String(concept || '')); }
 
 /** تطبيعٌ لغويّ خفيف: حروفٌ صغيرة، بلا تشكيل، همزاتٌ موحَّدة، بلا «ال»، ة → ه. */
 export function normalizeConceptText(s) {
