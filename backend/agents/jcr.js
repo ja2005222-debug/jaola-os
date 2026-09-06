@@ -30,7 +30,7 @@ import { extractPageName, cleanPageName, readReactContent, findPage, persistReac
 import { runSurgicalEdit } from './stages/surgicalEdit.js';
 import { addPageNow } from './stages/addPage.js';
 import { handleCeoIntent } from './stages/ceoIntent.js';
-import { handlePlanningStage, handleModifyPattern, handleBareConfirmations } from './stages/intentHandlers.js';
+import { handlePlanningStage, handleModifyPattern, handleBareConfirmations, handleUnifiedRoute } from './stages/intentHandlers.js';
 import { handleUndo } from './stages/undo.js';
 // 🔁 إعادةُ تصدير: `resolveProjectType` بقيت واجهةً من `jcr` لمستورِديها (JCR/6)
 export { resolveProjectType };
@@ -40,7 +40,6 @@ import { analyzeProjectStatic } from './behaviorVerifier.js';
 import { updateLanguage, recordEdit } from './userProfile.js';
 import { transitionState, getProjectSummary, STATES } from './stateMachine.js';
 import { normalizeText, detectIntentFromMeaning, isQuestionMessage, hasActionIntent, isExplicitRebuild, isExplicitNewBuild, isContinuationGoal } from './textNormalizer.js';
-import { routeMessage } from './router.js';
 import { matchDeleteCommand, matchImageCommand, isImageDiagCommand } from './chatCommands.js';
 import { missionBriefing } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
@@ -52,7 +51,7 @@ import { registerMission, throwIfAborted, clearMission } from '../core/runtime/A
 import { guardFiles, ensureEditIntegrity } from '../services/codeGuard.js';
 import { recordMissionOutcome, matureLessons, lessonDirective, MIN_COUNT_TO_TEACH } from '../services/platformLessons.js';
 import { getPlatformKnowledge } from '../services/platformKnowledge.js';
-import { recordBuild, recordEditAction, buildMetricsPayload } from '../services/metricsStore.js';
+import { recordBuild, buildMetricsPayload } from '../services/metricsStore.js';
 import { setPendingGoal, getPendingGoal, consumePendingGoal, clearDialog } from '../services/conversationManager.js';
 import { enqueueMission, takeLostMission } from '../core/runtime/ExecutionQueue.js';
 import { loadForPrompt as loadConversation, recordTurn } from '../services/conversationStore.js';
@@ -1237,80 +1236,13 @@ User preferences: ${JSON.stringify(execMemory)}` },
         });
     }
 
-    // الموجّه الموحّد (نداء LLM منظّم) بشبكة أمان الحجب/الإصرار؛ فشله أو «build» → المسار القديم.
+    // 🧭 الموجّهُ الموحَّد خرج إلى `stages/intentHandlers.js#handleUnifiedRoute` (JCR/27) — تفويضٌ يُبقي المستدعيَ كما هو؛ المُبلِّغُ
+    // يُمرَّر، وحالةُ الحجب تصل دوالَّ مربوطة (`gate`)، و`surgicalEdit`/`generateChatResponse` عبر `ops` (تستبدلهما الاختبارات).
     async _handleUnifiedRoute(req, agents) {
-        const { message, roomName, projectPath, username, activeProject, userLang } = req;
-        // ── 🧭 الموجّه الموحّد — نداء LLM منظّم واحد بدل شبكة الـ regex ────
-        // المسارات الحتمية الحسّاسة (الحذف، القفل، اكمل، اللغة، clarifier)
-        // عملت أعلاه. فشل الموجّه → يسقط بصمت للمسار القديم أدناه (احتياط كامل).
-        if (!agents.getState?.(username)?.stage) { // ليس داخل حوار clarifier
-            try {
-                const existingCode = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
-                const { window: hist } = await loadConversation(`${username}::${activeProject}`);
-                const lastAssistant = [...hist].reverse().find(m => m.role === 'assistant')?.content || '';
-                const route = await routeMessage(message, {
-                    projectName: activeProject,
-                    hasProject: existingCode.trim().length > 100,
-                    lastAssistant,
-                    lang: userLang,
-                });
-                if (route) {
-                    this.emitLiveLog(roomName, 'ROUTER', 'Unified',
-                        `🧭 ${route.action} (${route.confidence}%)${route.reason ? ` — ${route.reason}` : ''}`);
-                    if (route.action === 'chat') {
-                        // 🛡️ شبكة أمان: الموجّه قد يصنّف تعديلاً صريحاً كمحادثة (حدث فعلاً مع
-                        // "عدّل: ..."). أمرٌ صريح أو تكرار مُصِرّ على مشروع قائم يُنفَّذ تعديلاً
-                        // بدل الدخول في حلقة "أعد إرسال نفس الجملة" التي يهلوسها الـ LLM.
-                        const hasProj = existingCode.trim().length > 100;
-                        // 🔁 أي رسالة محجوبة سابقاً = إصرار (لا نطابق النصّ حرفياً —
-                        // المساعد قد يقترح صياغة مختلفة فلا يتطابق الحرفي أبداً → حلقة).
-                        const pendingGate = this.gatedMessages.has(username);
-                        if (hasProj && !isQuestionMessage(message) && (hasActionIntent(message) || pendingGate)) {
-                            this.gatedMessages.delete(username);
-                            recordEdit(username, message);
-                            recordEditAction(username, activeProject);
-                            this.surgicalEdit(message, contextFromRequest(req, agents));
-                            return true;
-                        }
-                        if (hasProj && !isQuestionMessage(message)) {
-                            // نحجب مرة واحدة بردّ حتمي (لا LLM يهلوس "أعد الإرسال")
-                            this.gatedMessages.set(username, message.trim());
-                            this.reporter.send(roomName, 'chat_reply', { message: this.gateConfirmReply(userLang) });
-                            return true;
-                        }
-                        await this.generateChatResponse(message, username, roomName, userLang);
-                        return true;
-                    }
-                    if (route.action === 'edit') {
-                        recordEdit(username, message);
-                        this.surgicalEdit(route.instruction || message, contextFromRequest(req, agents));
-                        return true;
-                    }
-                    if (route.action === 'delete_project') {
-                        const lang = getUserLanguage(username) || userLang;
-                        this.reporter.send(roomName, 'chat_reply', {
-                            message: activeProject === 'sandbox_app'
-                                ? (lang === 'ar' ? '⚠️ لا يمكن حذف المشروع الافتراضي sandbox_app.' : '⚠️ The default sandbox_app project cannot be deleted.')
-                                : (lang === 'ar'
-                                    ? `⚠️ حذف المشروع «${activeProject}» **نهائي** — الملفات والسجل، ولا يمكن التراجع.\nللتأكيد اكتب حرفياً: **احذف نهائياً ${activeProject}**`
-                                    : `⚠️ Deleting "${activeProject}" is **permanent**.\nTo confirm, type exactly: **delete permanently ${activeProject}**`),
-                        });
-                        return true;
-                    }
-                    if (route.action === 'stop') {
-                        agents.clearState?.(username);
-                        clearDialog(username);
-                        const lang = getUserLanguage(username) || userLang;
-                        this.reporter.send(roomName, 'chat_reply', {
-                            message: lang === 'ar' ? '🛑 تم الإيقاف. أخبرني بما تريد.' : '🛑 Stopped. Tell me what you need.',
-                        });
-                        return true;
-                    }
-                    // 'build' → يسقط عمداً للمسار القديم (حوار التوضيح + التأكيد بالهدف)
-                }
-            } catch (e) { /* فشل الموجّه → المسار القديم أدناه */ }
-        }
-        return false;
+        return handleUnifiedRoute(req, agents, this.reporter, this._gate(), {
+            surgicalEdit: (goal, c) => this.surgicalEdit(goal, c),
+            generateChatResponse: (...a) => this.generateChatResponse(...a),
+        });
     }
 
     // 🧭 كشفُ التعديل بالنمط خرج إلى `stages/intentHandlers.js#handleModifyPattern` (JCR/25) — تفويضٌ يُبقي المستدعيَ
