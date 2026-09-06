@@ -155,8 +155,9 @@ test('الحدود: شريحةُ الجسد — gate has/delete/set/confirmReply
             generateChatResponse: (...a) => this.generateChatResponse(...a),
         });
     }\n`), 'المفوِّضُ لا يمرّر موجّهاً — الافتراضيُّ هو الإنتاج');
-    assert.ok(jcr.includes("import { handlePlanningStage, handleModifyPattern, handleBareConfirmations, handleUnifiedRoute } from './stages/intentHandlers.js';"));
+    assert.match(jcr, /import \{[^}]*\bhandleUnifiedRoute\b[^}]*\} from '\.\/stages\/intentHandlers\.js';/);
     const plain = jcr.replace(/^\s*\/\/.*$/gm, '');
     for (const n of ['routeMessage', 'recordEditAction']) assert.ok(!new RegExp(`\\b${n}\\b`).test(plain), `${n} ما زال في jcr`);
-    for (const n of ['recordBuild', 'buildMetricsPayload', 'clearDialog', 'hasActionIntent', 'isQuestionMessage', 'readCodeContext']) assert.ok(new RegExp(`\\b${n}\\b`).test(plain), `${n} بقي له مستهلكٌ في jcr`);
+    // `hasActionIntent`/`isQuestionMessage` كانا هنا يومَ JCR/27 — خرجا بعدها مع المصنِّف الأخير (JCR/28)؛ القائمةُ تتبع القياس.
+    for (const n of ['recordBuild', 'buildMetricsPayload', 'clearDialog', 'readCodeContext']) assert.ok(new RegExp(`\\b${n}\\b`).test(plain), `${n} بقي له مستهلكٌ في jcr`);
 });

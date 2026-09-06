@@ -168,7 +168,8 @@ test('الحدود: gate يُقرأ ويُمسح فقط هنا (لا set)، ops 
     assert.match(jcr, /import \{[^}]*\bhandleBareConfirmations\b[^}]*\} from '\.\/stages\/intentHandlers\.js';/);
     const plain = jcr.replace(/^\s*\/\/.*$/gm, '');
     for (const n of ['buildContinuationGoal', 'decide', 'isBareExecute', 'isBareYes']) assert.ok(!new RegExp(`\\b${n}\\b`).test(plain), `${n} ما زال في jcr`);
-    for (const n of ['missionBriefing', 'matchDeleteCommand', 'loadConversation', 'recordTurn', 'recordEdit']) assert.ok(new RegExp(`\\b${n}\\b`).test(plain), `${n} بقي له مستهلكٌ في jcr`);
-    // الحالةُ تبقى على الصنف: خريطةٌ واحدة في البانية، وقُرّاؤها الباقون معالجان لم يُنقلا بعد.
+    // `recordEdit` كان هنا يومَ JCR/26 — خرج بعدها مع المصنِّف الأخير (JCR/28)؛ القائمةُ تتبع القياس.
+    for (const n of ['missionBriefing', 'matchDeleteCommand', 'loadConversation', 'recordTurn']) assert.ok(new RegExp(`\\b${n}\\b`).test(plain), `${n} بقي له مستهلكٌ في jcr`);
+    // الحالةُ تبقى على الصنف: خريطةٌ واحدة في البانية — قارئاها الأخيران (الموجّهُ الموحَّد والمصنِّفُ الأخير) خرجا في JCR/27–28 عبر الشقّ نفسِه.
     assert.equal((plain.match(/this\.gatedMessages = new Map\(\)/g) || []).length, 1);
 });
