@@ -80,7 +80,7 @@ test('المسارُ كاملاً: وثيقةُ نقاطِ البيع على م�
         assert.equal(gate(r.verdict, 'requirements-verify').detail,
             '31 بنداً من 44 في وثيقتك بلا أثر: 1 الصلاحيات والأدوار (RBAC)، 3 الباركود، 7 المرتجعات، 8 دفتر المخزون، 9 المشتريات، 10 الموردون +25 (13/44 له أثر — أثرٌ لا تنفيذ؛ مفاهيمُ الفهم 7/10)');
         assert.match(s.logs(), /\[Judge\]: ⚖️ الحكم: FAILED — guard-and-write ✓، requirements-verify ✗، behavior-verify ✗/);
-        assert.equal(gate(r.verdict, 'behavior-verify').detail, 'ثغراتٌ باقية: role-coverage', 'والسلوكُ يقول الشيءَ نفسَه من جهته: أدوارٌ مفهومة بلا واجهة');
+        assert.equal(gate(r.verdict, 'behavior-verify').detail, 'ثغراتٌ باقية: أدوار بلا واجهة/تمثيل: staff، tenant', 'والسلوكُ يقول الشيءَ نفسَه من جهته بأسماء الأدوار (PM/10) لا باسم فحصه');
         const msg = s.replies().find(m => m.includes('بدأنا من قالب'));
         assert.match(msg, /^⚠️ اكتمل — بدأنا من قالب/);
         assert.match(msg, /\n⚠️ التحقّق وجد ثغرات — requirements-verify: 31 بنداً من 44 في وثيقتك بلا أثر: 1 الصلاحيات والأدوار \(RBAC\)، 3 الباركود/);

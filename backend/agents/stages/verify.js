@@ -17,11 +17,16 @@ import { recordModel } from '../modelLibrary.js';
 import { recordGateOutcome, deliveryVerdict } from '../../core/contracts/index.js';
 import { traceRequirements, traceSections, sectionLabel } from '../requirementsVerifier.js';
 
-/** ⚖️ حكمُ بوّابة السلوك من ناتج `verifyBehavior` (PM/2): لم يُشغَّل/تُخطّي = لم يُتحقَّق، لا اجتياز. */
+/**
+ * ⚖️ حكمُ بوّابة السلوك من ناتج `verifyBehavior` (PM/2): لم يُشغَّل/تُخطّي = لم يُتحقَّق، لا اجتياز.
+ * PM/10: الفجوةُ تُسمّى بتفصيل فحصها لا باسمه — «أدوار بلا واجهة/تمثيل: customer، tenant» لا «role-coverage»؛ الشرحُ بعد «—»
+ * والنقطةُ الختاميّة يُسقطان، والفحصُ بلا تفصيلٍ يبقى باسمه. الفاصلُ «؛» لأنّ التفاصيلَ نفسَها تحوي «،».
+ */
 export function behaviorOutcome(verdict) {
     if (!verdict || !verdict.ran || verdict.skipped) return { status: 'unverified', detail: verdict?.summary || 'تعذّر التحقّق السلوكي' };
     if (verdict.ok) return { status: 'pass', detail: verdict.summary || 'اجتاز التحقّق السلوكي' };
-    return { status: 'fail', detail: `ثغراتٌ باقية: ${(verdict.checks || []).filter(c => c.status === 'fail').map(c => c.name).join('، ') || verdict.summary || ''}` };
+    const gap = (c) => (c.detail ? String(c.detail).split(' — ')[0].replace(/\.\s*$/, '') : c.name);
+    return { status: 'fail', detail: `ثغراتٌ باقية: ${(verdict.checks || []).filter(c => c.status === 'fail').map(gap).join('؛ ') || verdict.summary || ''}` };
 }
 
 /**

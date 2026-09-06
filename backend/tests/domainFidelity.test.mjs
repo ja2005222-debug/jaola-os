@@ -69,7 +69,7 @@ test('الفحصُ في المحقّق: تلوّثٌ → fail بمفاهيم ا�
     assert.equal(check(analyzeStatic({ html: RESTAURANT, js: '' })), undefined, 'بلا نموذجٍ إطلاقاً');
 });
 
-test('من طرفٍ إلى طرف: مشروعٌ يعمل تقنيّاً لكنّه منتجٌ آخر → المحقّقُ يسقطه، وبوّابةُ PM/2 تقول «ثغراتٌ باقية: domain-fidelity»', async () => {
+test('من طرفٍ إلى طرف: مشروعٌ يعمل تقنيّاً لكنّه منتجٌ آخر → المحقّقُ يسقطه، وبوّابةُ PM/2 تقول ما وجد باسمه (PM/10: «المبنيُّ يتكلّم لغةَ منتجٍ آخر: …» لا «domain-fidelity»)', async () => {
     const dir = emptyProject();
     fs.writeFileSync(path.join(dir, 'index.html'), `<!DOCTYPE html><html lang="ar"><head><meta charset="utf-8"><title>مطعم</title></head><body>
 <h1>مطعم البحر</h1><section id="menu"><h2>القائمة</h2><ul id="items"></ul></section><div>الطاولة 3</div><p>النادل</p>
@@ -82,7 +82,10 @@ document.getElementById('add').addEventListener('click',()=>{const li=document.c
     assert.equal(verdict.ok, false, 'يعمل تقنيّاً — لكنّه ليس المنتجَ المطلوب');
     assert.equal(check(verdict.checks).status, 'fail');
     const gate = behaviorOutcome(verdict);
-    assert.equal(gate.status, 'fail'); assert.match(gate.detail, /domain-fidelity/);
+    // PM/10: البوّابةُ تسمّي الفجوةَ بتفصيل الفحص (حتّى «—») لا بمعرّفه — فالمستخدمُ يقرأ المفرداتِ الأجنبيّة بعينها
+    assert.equal(gate.status, 'fail');
+    assert.equal(gate.detail, 'ثغراتٌ باقية: أدوار بلا واجهة/تمثيل: Passenger، Driver، Admin؛ المبنيُّ يتكلّم لغةَ منتجٍ آخر: table، restaurant، staff، product');
+    assert.doesNotMatch(gate.detail, /domain-fidelity/);
     // ونفسُ المشروع على فهمِ مطعمٍ صحيح: لا سقوطَ بصدق المجال
     const right = await verifyBehavior({ projectPath: dir, blueprint: { kind: 'webapp' }, domainModel: { roles: [{ name: 'نادل' }], entities: [{ name: 'طاولة' }, { name: 'صنف قائمة' }], flows: [] } });
     assert.notEqual(check(right.checks).status, 'fail', JSON.stringify(check(right.checks)));

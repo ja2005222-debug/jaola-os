@@ -14,7 +14,7 @@ import { enrichBuildContext, resolveProjectType } from './stages/enrich.js';
 import { runRequirementsVerify } from './stages/requirementsVerify.js';
 import { runRenderConfig } from './stages/renderConfig.js';
 import { buildFromRegistry } from './stages/buildFromRegistry.js';
-import { reportMissionSuccess } from './stages/reportMissionSuccess.js';
+import { reportMissionSuccess, kernelOutcomeLine } from './stages/reportMissionSuccess.js';
 import { buildFromClone } from './stages/buildFromClone.js';
 import { runReviewStage, runRefactorStage, runTestingStage, runSeoStage, runSecurityStage, runGitBackupStage } from './stages/quality.js';
 import { runDesigner } from './stages/designer.js';
@@ -572,7 +572,8 @@ export class JaolaCognitiveRuntime {
                 });
                 this.reporter.send(roomName, 'project_metrics', buildMetricsPayload(username, activeProject));
             }
-            this.emitLiveLog(roomName, 'JCOS', 'Kernel', execResult.success ? '✨ نجاح' : '❌ فشل');
+            // ⚖️ PM/10: السطرُ الختاميّ بحكم المنتج لا بحالة المهمّة وحدَها — لا «✨ نجاح» بعد «⚖️ الحكم: FAILED/UNVERIFIED».
+            this.emitLiveLog(roomName, 'JCOS', 'Kernel', execResult.success ? kernelOutcomeLine(execResult.verdict) : '❌ فشل');
             return execResult;
         } catch (error) {
             // ⏹️ إيقاف بطلب المستخدم — ليس فشلاً

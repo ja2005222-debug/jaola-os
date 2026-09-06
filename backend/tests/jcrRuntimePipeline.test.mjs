@@ -84,7 +84,7 @@ test('المسار السعيد: دورة واحدة → الملفات على �
         /\[GitAgent\].*تم الحفظ/,
         /\[RenderAgent\]/,
         /\[BehaviorVerifier\]/,
-        /✨ نجاح/,
+        /\[Kernel\]: ☑️ اكتملت المهمّة — ولم يكتمل التحقّق$/, // PM/10: بلا مزوّدٍ الحكمُ UNVERIFIED — فالسطرُ الختاميّ يقولها لا «✨ نجاح»
     ];
     const idx = order.map(re => s.logAt(re));
     idx.forEach((i, k) => assert.ok(i >= 0, `مرحلة مفقودة: ${order[k]}`));
@@ -227,7 +227,7 @@ test('مشروع يحتاج خادماً: فريق الخلفية يسقط بل�
         /\[DatabaseAgent\]: 🗄️ جاري توليد قاعدة البيانات/,
         /\[DatabaseAgent\]: ✅ mongodb — 2 ملف \(api\/db\.js, \.env\.example\)/,
         /\[RenderAgent\]/,
-        /✨ نجاح/,
+        /\[Kernel\]: ☑️ اكتملت المهمّة — ولم يكتمل التحقّق$/, // PM/10: بلا مزوّدٍ الحكمُ UNVERIFIED — فالسطرُ الختاميّ يقولها لا «✨ نجاح»
     ];
     const idx = order.map(re => s.logAt(re));
     idx.forEach((i, k) => assert.ok(i >= 0, `سطر مفقود: ${order[k]}`));
