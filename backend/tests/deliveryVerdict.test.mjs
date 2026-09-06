@@ -74,7 +74,8 @@ test('بوّابةُ المتطلّبات تقول ما وجدت: محقّقٌ �
     assert.deepEqual((await run(COMPS, async () => null)).out, { status: 'unverified', detail: 'المحقّقُ لم يُجب (لا مزوّد أو ردٌّ غير صالح)' });
     assert.deepEqual((await run(COMPS, async () => rvVerdict(['سلة التسوق']))).out, { status: 'fail', detail: '1 متطلّب ناقص: الدفع' });
     assert.deepEqual((await run(COMPS, async () => rvVerdict(['سلة التسوق', 'الدفع']))).out, { status: 'pass', detail: '2/2 متطلّب منفّذ' });
-    assert.deepEqual((await run([], async () => { throw new Error('لا يُستدعى'); })).out, { status: 'skipped', detail: 'لا مكوّناتٍ وظيفيّة في المخطّط أو لا ملفّات' });
+    // PM/4: شرطُ البوّابة صار «هل من متطلّبات؟» لا «هل في المخطّط مكوّنات؟» — فالسببُ يذكر الفهمَ أيضاً.
+    assert.deepEqual((await run([], async () => { throw new Error('لا يُستدعى'); })).out, { status: 'skipped', detail: 'لا متطلّباتٍ (لا مكوّناتٍ في المخطّط ولا فهمَ) أو لا ملفّات' });
     const thrown = await run(COMPS, async () => { throw new Error('انقطع'); });
     assert.deepEqual(thrown.out, { status: 'unverified', detail: 'انقطع' });
     assert.ok(thrown.logs.some(l => l.includes('⚠️ تخطّي التحقق: انقطع')), 'سطرُ التخطّي كما كان');

@@ -97,7 +97,7 @@ Policy/Permission، Identity، Plugin.
 | ✅ `stages/debate.js` (جديد، JCR/4) | 142 | `runDebate(context, roomName, agents, reporter)` + `runSecurityAudit` — حلقةُ النقاش خرجت من `jcr` نقلاً حرفيّاً؛ المُبلِّغُ وسيطٌ لا `this` | ADDED | Agent + Evidence | أوّلُ مرحلةٍ خارج الصنف؛ `jcr._stageDebate` مفوِّضٌ من سطر |
 | ✅ `stages/understand.js` (جديد، JCR/5؛ PM/1 يبذر الفهمَ من المراجع) | 78 | `understandGoal(goal, ctx, reporter)` — الفهم: ذاكرة/ملفّ ← مخطّط ← نموذج المجال؛ نقلٌ حرفيّ، المُبلِّغُ وسيط | ADDED | Mission | `jcr._understandGoal` مفوِّضٌ من سطر؛ ٧ استيراداتٍ رحلت معها |
 | ✅ `stages/enrich.js` (جديد، JCR/6) | 68 | `enrichBuildContext(goal, blueprint, ctx, reporter)` + `resolveProjectType` — متطلّباتٌ ضمنيّة + صور + توجيهاتُ الإضافات؛ نقلٌ حرفيّ، المُبلِّغُ وسيط | ADDED | Mission | `jcr._enrichBuildContext` مفوِّضٌ من سطر؛ `resolveProjectType` يعيد `jcr` تصديرَها لمستورِديها |
-| ✅ `stages/requirementsVerify.js` (جديد، JCR/8) | 95 | `runRequirementsVerify(context, roomName, agents, reporter, { verify })` — التحقّقُ من المتطلبات وإكمالُ الناقص بجولاتٍ محدودة؛ نقلٌ حرفيّ إلّا حقنَ `verify` اختياريّاً | ADDED | Evidence + Mission | تُنادى بالاسم من `DELIVERY_STAGES` عبر مفوِّض `jcr._stageRequirementsVerify` |
+| ✅ `stages/requirementsVerify.js` (جديد، JCR/8) | 98 | `runRequirementsVerify(context, roomName, agents, reporter, { verify })` — التحقّقُ من المتطلبات وإكمالُ الناقص بجولاتٍ محدودة؛ نقلٌ حرفيّ إلّا حقنَ `verify` اختياريّاً | ADDED | Evidence + Mission | تُنادى بالاسم من `DELIVERY_STAGES` عبر مفوِّض `jcr._stageRequirementsVerify` |
 | ✅ `stages/renderConfig.js` (جديد، JCR/9) | 44 | `runRenderConfig(context, roomName, reporter)` — اسمُ الخدمة من المصدر الواحد، قرارُ الخلفيّة يُحفظ في الذاكرة، `render.yaml` بالشكل المطابق؛ نقلٌ حرفيّ | ADDED | Tool | بالاسم من `DELIVERY_STAGES` عبر مفوِّض `jcr._stageRenderConfig`؛ حارسُ `renderConfigShape` يفحصها |
 | ✅ `stages/undo.js` (جديد، JCR/9) | 64 | `handleUndo(req, reporter)` — «تراجع»: استرجاعٌ حتميّ لآخر نسخة، ما لم يُسترجَع يُقال؛ أوّلُ معالجِ نيّة يخرج؛ نقلٌ حرفيّ | ADDED | Tool + Event | مفوِّض `jcr._handleUndo` من `handleUserMessage` |
 | ✅ `stages/buildFromRegistry.js` (جديد، JCR/10) | 85 | `buildFromRegistry(goal, ctx, reporter)` — صفحةٌ كاملة من بلوكات Registry + بصمة + تلميع + نشرٌ ثابت؛ أوّلُ بانٍ يخرج؛ `reporter.io` يُمرَّر للدفع التلقائيّ (تسريبٌ معلَن) | ADDED | Mission + Tool | مفوِّض `jcr._buildFromRegistry` من `_selectBuildStrategy` |
@@ -149,7 +149,7 @@ Policy/Permission، Identity، Plugin.
 | `gitAgent.js` | 261 | commit/init/stats (ينفّذ git) | MODIFY | Tool (`git` عبر `execFile` بمصفوفة وسائط — لا صدفة) | `plugins/coding/tools/` |
 | `databaseAgent.js`, `postgresAgent.js`, `authAgent.js`, `generatedAppSecrets.js`, `dependencyAgent.js` | 272/362/345/56/288 | كتلة الخلفية | KEEP | Task | `plugins/coding/stages/` |
 | `renderAgent.js` | 262 | نشر Render | MODIFY | Tool (deploy) | `plugins/coding/tools/` |
-| `requirementsVerifier.js` | 101 | هل نُفِّذت المتطلبات؟ | KEEP | Evidence | `core/verification/` (Sprint 4) |
+| `requirementsVerifier.js` (PM/4: `composeRequirements`) | 132 | هل نُفِّذت المتطلبات؟ | KEEP | Evidence | `core/verification/` (Sprint 4) |
 | `behaviorVerifier.js` | 528 | تحقّق ساكن + تشغيل حيّ (وحدة الدليل `check`) | MOVE | Evidence + Verification | `core/verification/VerificationEngine.js` (Sprint 4) |
 | `modelLibrary.js` | 69 | معرفة تراكمية | KEEP | Memory | `core/memory/` (لاحقاً) |
 | `fileManager.js`, `patchEditor.js` | 319/187 | كتابة/ترقيع ملفات مباشرة | MODIFY | Tool (workspace.writeFiles) | `core/runtime/ToolRuntime.js` |
@@ -169,8 +169,8 @@ Policy/Permission، Identity، Plugin.
 |---|---|---|---|---|---|
 | `templateLibrary.js`, `templateLibraryExtended.js`, `templateLocalizer.js` | 1061/1382/1943 | مكتبة القوالب وترجمتها | KEEP | — | `plugins/coding/templates/` (Sprint 6) |
 | `cloneTemplates/*` (42 ملفاً، 17,406 سطر؛ `jaolaClinic.js` يُستورد من 27 قالباً كأساس مشترك) | — | قوالب تطبيقات عاملة | KEEP | — | `plugins/coding/templates/clones/` |
-| `cloneAssets.js`, `seedStamp.js`, `fullstackTemplates.js`, `reactGenerator.js`, `blockRegistry.js`, `starterRegistry.js`, `starterFetch.js`, `libraryRegistry.js`, `referenceBlueprints.js` (PM/1: `referenceModel`), `appBlueprint.js`, `requirementAnalyzer.js` | 74/116/603/432/259/74/171/78/209/146/198 | استراتيجيات البناء ومخططاته | KEEP | Task (استراتيجية = Task Graph مختلف) | `plugins/coding/` |
-| `projectModel.js` (PM/1: معجمُ المفاهيم + `modelAffinity`؛ PM/3: `conceptsInText` + `domainFidelity`), `projectMemory.js`, `userProfile.js` | 430/258/248 | ذاكرة المشروع والمستخدم | KEEP | Memory | `core/memory/` (لاحقاً) |
+| `cloneAssets.js`, `seedStamp.js`, `fullstackTemplates.js`, `reactGenerator.js`, `blockRegistry.js`, `starterRegistry.js`, `starterFetch.js`, `libraryRegistry.js`, `referenceBlueprints.js` (PM/1: `referenceModel`؛ PM/4: `referenceEntities`/`referenceFlows`), `appBlueprint.js`, `requirementAnalyzer.js` | 74/116/603/432/259/74/171/78/249/146/198 | استراتيجيات البناء ومخططاته | KEEP | Task (استراتيجية = Task Graph مختلف) | `plugins/coding/` |
+| `projectModel.js` (PM/1: معجمُ المفاهيم + `modelAffinity`؛ PM/3: `conceptsInText` + `domainFidelity`؛ PM/4: `conceptKind`), `projectMemory.js`, `userProfile.js` | 445/258/248 | ذاكرة المشروع والمستخدم | KEEP | Memory | `core/memory/` (لاحقاً) |
 | `componentMarketplace.js`, `platformContext.js` | 278/42 | مكوّنات جاهزة (markupها يُحقن بميزانية، 2q) + معلومات المنصّة | KEEP | — | `plugins/coding/` |
 
 ### C6. منتجات تعيش في `agents/` وليست وكلاء نواة

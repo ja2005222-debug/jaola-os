@@ -27,13 +27,44 @@ const VERIFY_SYSTEM = `أنت مدقق جودة صارم لمواقع الويب
 - fixInstruction يجب أن تكفي وحدها لمحرر كود لتنفيذ المتطلب (اذكر الملفات والعناصر والسلوك المطلوب).`;
 
 /**
+ * 🧩 PM/4 — المتطلّباتُ من الفهم لا من قائمة المخطّط وحدَها.
+ *
+ * قِيس: بلا نموذجٍ لغويّ يخرج المخطّطُ بمكوّنٍ وظيفيٍّ واحدٍ اسمُه «الميزة الأساسية
+ * التفاعلية» — وهذه كلُّ مواصفةِ نظامِ تاكسي يعرف المرجعُ له خمسَ شاشات. فالمحقّقُ
+ * يتحقّق من عموميّةٍ ويسكت عمّا فُهم. هنا: كلُّ دورٍ مفهومٍ شاشتُه، وكلُّ كيانٍ تمثيلُه،
+ * وكلُّ تدفّقٍ انتقالُه — تُضاف لِما في المخطّط ولا تُزيحه، بلا تكرارِ ما هو مذكورٌ أصلاً.
+ */
+export function composeRequirements(blueprint, domainModel = null) {
+    const comps = (blueprint?.functionalComponents || []).filter(c => c && c.name);
+    const seen = new Set(comps.map(c => String(c.name).toLowerCase().trim()));
+    const add = (name, behavior) => {
+        const k = String(name).toLowerCase().trim();
+        if (seen.has(k)) return;
+        seen.add(k);
+        comps.push({ name, behavior, _source: 'model' });
+    };
+    for (const r of (domainModel?.roles || [])) {
+        if (r?.name) add(`شاشة ${r.name}`, `قسمٌ/صفحةٌ مستقلّة للدور «${r.name}» تعمل فعلاً (عناصر + منطق JS)، لا ذكرَ اسمٍ في نصّ`);
+    }
+    for (const e of (domainModel?.entities || [])) {
+        if (e?.name) add(`بيانات ${e.name}`, `تمثيلٌ فعليّ للكيان «${e.name}»: مصفوفةُ بياناتٍ واقعيّة تُعرض وتُحدَّث، لا عنوانٌ ثابت`);
+    }
+    for (const f of (domainModel?.flows || [])) {
+        // اسمُ التدفّق قد يبدأ بالكلمة نفسِها («تدفّق حالة الرحلة») فلا نكرّرها
+        if (f?.name) add(String(f.name).startsWith('تدفّق') ? f.name : `تدفّق ${f.name}`, `انتقالُ الحالة${f.steps?.length ? ` (${f.steps.join(' → ')})` : ''} يعمل بـ JS على البيانات نفسِها`);
+    }
+    return comps;
+}
+
+/**
  * @param {object} blueprint مخطط التطبيق (functionalComponents)
  * @param {Array<{name, content}>} files ملفات الموقع المبنية
  * @param {function} llm قابل للحقن (افتراضياً smartChat)
+ * @param {object} domainModel نموذجُ الفهم — متطلّباتُه تُضاف لقائمة المخطّط (PM/4)
  * @returns {Promise<{results: Array, missing: Array, implementedCount: number} | null>}
  */
-export async function verifyRequirements(blueprint, files, llm = smartChat) {
-    const comps = blueprint?.functionalComponents || [];
+export async function verifyRequirements(blueprint, files, llm = smartChat, domainModel = null) {
+    const comps = composeRequirements(blueprint, domainModel);
     if (!comps.length || !Array.isArray(files) || !files.length) return null;
 
     // الكود ذو الصلة — مقصوص بحدود آمنة للسياق

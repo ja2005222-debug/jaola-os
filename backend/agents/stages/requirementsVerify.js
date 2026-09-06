@@ -14,7 +14,7 @@
  */
 import { getUserLanguage } from '../languageDetector.js';
 import { transitionState, STATES } from '../stateMachine.js';
-import { verifyRequirements, buildFixInstruction, formatChecklist } from '../requirementsVerifier.js';
+import { verifyRequirements, buildFixInstruction, formatChecklist, composeRequirements } from '../requirementsVerifier.js';
 import { getDomainModel, addToHistory } from '../projectMemory.js';
 import { recordLesson } from '../../services/platformLessons.js';
 import { guardFiles, scrubPlaceholders, ensureEditIntegrity } from '../../services/codeGuard.js';
@@ -24,11 +24,15 @@ import { recordGateOutcome } from '../../core/contracts/index.js';
 export async function runRequirementsVerify(context, roomName, agents, reporter, { verify = verifyRequirements } = {}) {
     const plan = context.plan;
     try {
-        if (context.blueprint?.functionalComponents?.length && plan?.files?.length) {
+        // 🧩 PM/4: البوّابةُ تفتح على **ما فُهم** لا على قائمة المخطّط وحدَها. كان الشرطُ
+        // `blueprint.functionalComponents.length` فتُتخطّى المرحلةُ كلَّما خرج المخطّطُ
+        // رقيقاً (بلا مزوّدٍ يخرج بمكوّنٍ عامٍّ واحد) ولو كان الفهمُ يعرف أدوارَه وكياناتِه.
+        const domainModel = getDomainModel(context.username, context.activeProject);
+        if (composeRequirements(context.blueprint, domainModel).length && plan?.files?.length) {
             const lang = getUserLanguage(context.username);
             transitionState(context.username, context.activeProject, STATES.VERIFYING, { agent: 'Requirements' });
             reporter.liveLog(roomName, '6. VERIFY', 'Requirements', '📋 التحقق من تنفيذ متطلبات المشروع...');
-            let verdict = await verify(context.blueprint, plan.files);
+            let verdict = await verify(context.blueprint, plan.files, undefined, domainModel);
             const fixedNames = [];
 
             // 📚 المتطلبات التي تُسلَّم ناقصة دروسٌ متراكمة للمنصة
@@ -39,7 +43,6 @@ export async function runRequirementsVerify(context, roomName, agents, reporter,
             // جولات محدودة (احتياطي مخصّص) تبني شاشةً فشاشة مدفوعةً بالنموذج،
             // وتتوقّف عند اكتمالها أو انعدام التقدّم. سجل المستخدم: 4 شاشات
             // ناقصة (طلب/مطعم/توصيل/تتبّع) لم تُبنَ لأن الجولة الواحدة تعذّرت.
-            const domainModel = getDomainModel(context.username, context.activeProject);
             const MAX_COMPLETION_ROUNDS = 3;
             for (let round = 1; round <= MAX_COMPLETION_ROUNDS && verdict?.missing?.length && agents.coreEditCodePlan; round++) {
                 const beforeCount = verdict.missing.length;
@@ -65,7 +68,7 @@ export async function runRequirementsVerify(context, roomName, agents, reporter,
                     await writeProjectFile(context.projectPath, f.name, f.content);
                 }
                 const before = new Set(verdict.missing.map(m => m.name));
-                verdict = await verify(context.blueprint, plan.files);
+                verdict = await verify(context.blueprint, plan.files, undefined, domainModel);
                 for (const r of verdict.results.filter(r => r.implemented && before.has(r.name))) {
                     if (!fixedNames.includes(r.name)) fixedNames.push(r.name);
                 }
@@ -86,7 +89,7 @@ export async function runRequirementsVerify(context, roomName, agents, reporter,
                     `تحقق المتطلبات: ${verdict.implementedCount}/${verdict.results.length} منفّذ`);
             }
         } else {
-            recordGateOutcome(context, 'requirements-verify', 'skipped', 'لا مكوّناتٍ وظيفيّة في المخطّط أو لا ملفّات');
+            recordGateOutcome(context, 'requirements-verify', 'skipped', 'لا متطلّباتٍ (لا مكوّناتٍ في المخطّط ولا فهمَ) أو لا ملفّات');
         }
     } catch (e) {
         recordGateOutcome(context, 'requirements-verify', 'unverified', e.message);
