@@ -21,6 +21,8 @@ const collect = () => { const events = []; return { events, reporter: new RoomRe
 const logs = (events) => events.filter(([ev]) => ev === 'log').map(([, p]) => p.message);
 const NO_AI = 'تعذّر نداء المزوّد: لا يوجد مزود AI مُهيأ (GROQ_API_KEY / DEEPSEEK_API_KEY / OPENAI_API_KEY).';
 
+// PM/5: السطرُ صار يقول النوعَ **ومن أين جاء** — من الفهم أم من كلمات الهدف. بلا نموذجٍ مخزّنٍ
+// في هذين السيناريوهين فالمصدرُ الكلمات، وهذا هو السلوكُ القديم موصوفاً لا مغيَّراً.
 test('المصمّم: لوحةٌ حتميّة (ocean للبحر)، السطرُ يقول إنّ تخصيصَ AI لم يجرِ ولماذا، design-brief.json على القرص، والهويّةُ في mentalModel', async () => {
     const s = scenario('dsg'); setUserLanguage(s.ctx.username, 'ar'); const dir = emptyProject();
     const context = { ...s.ctx, projectPath: dir, goal: 'مطعم البحر للمأكولات البحرية مع قائمة طعام وحجز طاولة', mentalModel: {} };
@@ -28,7 +30,7 @@ test('المصمّم: لوحةٌ حتميّة (ocean للبحر)، السطرُ 
     await runDesigner(context, s.ctx.roomName, reporter);
     assert.deepEqual(logs(events), [
         '[5. RUNTIME] ➔ [DesignerAgent]: 🎨 جاري توليد الـ Design Brief...',
-        `[5. RUNTIME] ➔ [DesignerAgent]: ✅ Design Brief — ocean palette (بلا تخصيص AI: ${NO_AI})`,
+        `[5. RUNTIME] ➔ [DesignerAgent]: ✅ Design Brief — ocean palette — النوع: restaurant (من كلمات الهدف) (بلا تخصيص AI: ${NO_AI})`,
     ]);
     const saved = JSON.parse(fs.readFileSync(path.join(dir, 'design-brief.json'), 'utf8'));
     assert.equal(saved.paletteName, 'ocean'); assert.equal(saved.aiEnhanced, false);
@@ -42,7 +44,7 @@ test('المصمّم: وصفٌ قصير → تخطٍّ مقصودٌ بسببه (
     const context = { ...s.ctx, projectPath: path.join(emptyProject(), 'nope'), goal: 'مطعم', mentalModel: {} };
     const { events, reporter } = collect();
     await runDesigner(context, s.ctx.roomName, reporter);
-    assert.equal(logs(events)[1], '[5. RUNTIME] ➔ [DesignerAgent]: ✅ Design Brief — warm palette (بلا تخصيص AI: الوصف أقصر من أن يُخصَّص)');
+    assert.equal(logs(events)[1], '[5. RUNTIME] ➔ [DesignerAgent]: ✅ Design Brief — warm palette — النوع: restaurant (من كلمات الهدف) (بلا تخصيص AI: الوصف أقصر من أن يُخصَّص)');
     assert.ok(!fs.existsSync(context.projectPath), 'saveDesignBrief لا يُنشئ المجلّد');
     assert.equal(context.mentalModel.designBrief.paletteName, 'warm');
 });

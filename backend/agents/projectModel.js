@@ -338,6 +338,48 @@ const CONCEPTS = { ...ROLE_CONCEPTS, ...ENTITY_CONCEPTS };
 const ROLE_KEYS = new Set(Object.keys(ROLE_CONCEPTS));
 const ENTITY_KEYS = new Set(Object.keys(ENTITY_CONCEPTS));
 
+// 🎯 PM/5 — نوعُ المشروع من الفهم لا من تخمينٍ مكتوب.
+//
+// قِيس: `designer.js` لا يمرّر النموذجَ إطلاقاً، و`backend.js` يشتقّ النوعَ من
+// بريف التصميم باحتياطَين مكتوبَين: 'business' لقاعدة البيانات و'ecommerce'
+// لـPrisma. و'ecommerce' **مفتاحٌ موجود** في `PRISMA_SCHEMAS` — فنظامُ تاكسي
+// بلا نوعٍ في البريف كان يأخذ مخطّطَ متجرٍ إلكترونيّ (Product/OrderItem/Review)
+// حتميّاً وبلا مزوّد. الاحتياطُ الذي يُخمّن أسوأُ من الاحتياط الذي يعترف.
+//
+// التوقيعُ هنا: مجموعةُ مفاهيمَ دالّة → نوع. لا تُطابَق إلّا إن حضر ما يميّز،
+// وإلّا فـnull: «لا أعرف» جوابٌ صحيح يُمرَّر لمن يقرأ الهدفَ نفسَه.
+const TYPE_SIGNATURES = [
+    ['restaurant', ['restaurant', 'table', 'product', 'order']],
+    ['hotel', ['room', 'guest', 'booking']],
+    ['medical', ['patient', 'doctor', 'visit']],
+    ['clinic', ['patient', 'doctor', 'booking']],
+    ['education', ['course', 'student', 'teacher', 'grade']],
+    ['realestate', ['property', 'tenant', 'lease']],
+    ['travel', ['traveler', 'trip', 'booking', 'ticket']],
+    ['ecommerce', ['product', 'order', 'customer', 'store']],
+    ['booking', ['booking', 'service']],
+];
+
+/**
+ * نوعُ المشروع المستنتَجُ من الفهم، أو `null` إن لم يميّزه الفهم.
+ * الأعلى تطابقاً يفوز، والتعادلُ يُكسر باسم النوع (ترتيبٌ معلَنٌ مستقرّ لا ترتيبُ مصفوفة).
+ */
+export function modelProjectType(domainModel) {
+    const m = normalizeProjectModel(domainModel || {});
+    // لا حاجةَ لحارسِ حجمٍ هنا: `score ≤ have.size`، وشرطُ «مطابقتان فأكثر» أدناه
+    // يمنع وحدَه كلَّ فهمٍ أفقرَ من مفهومَين. ولا توقيعَ يحوي مفهوماً عامّاً (يثبّته
+    // اختبارُ الحدود)، فلا أثرَ لإسقاط العامّ على النتيجة.
+    const have = conceptSet([...m.entities.map(e => e.name), ...m.roles.map(r => r.name)]);
+    let best = null; let bestScore = 0;
+    for (const [type, sig] of TYPE_SIGNATURES) {
+        const score = sig.filter(c => have.has(c)).length;
+        // مفهومان دالّان على الأقلّ — الواحدُ يصادف
+        if (score < 2) continue;
+        if (score > bestScore || (score === bestScore && type < best)) { bestScore = score; best = type; }
+    }
+    return best;
+}
+
 /** نوعُ المفهوم: 'role' أو 'entity' أو null لما ليس في المعجم. */
 export function conceptKind(concept) {
     const c = String(concept || '');

@@ -59,7 +59,10 @@ test('needsPostgres ⟹ needsBackend — لا Prisma بلا خادمٍ يُشغ�
 });
 
 test('الملخّصُ يسمّي الملفات المكتوبة فعلاً لا قائمةً ثابتة', async () => {
-    const r = await generatePrismaSetup('نظام محاسبة', 'business');
+    // PM/5: كان هذا يُشغَّل بـ'business' — نوعٌ بلا قالب — فيمرّ عبر احتياطِ `catch`
+    // الذي كان يعيد مخطّطَ **متجرٍ إلكترونيّ** لنظام محاسبة. صار الاحتياطُ يعترف،
+    // فالتوصيفُ يُشغَّل على نوعٍ له قالبٌ فعلاً، والاعترافُ له اختبارُه أدناه.
+    const r = await generatePrismaSetup('نظام حجز فندق', 'hotel');
     assert.equal(r.success, true);
     const names = r.files.map((f) => f.name);
     assert.equal(r.summary.includes(`${names.length} ملف`), true);
@@ -71,12 +74,23 @@ test('الملخّصُ يسمّي الملفات المكتوبة فعلاً ل�
 });
 
 test('كل ملفٍ مولَّد له اسمٌ ومحتوى غير فارغ', async () => {
-    const r = await generatePrismaSetup('نظام محاسبة', 'business');
+    const r = await generatePrismaSetup('نظام حجز فندق', 'hotel');
     for (const f of r.files) {
         assert.ok(f.name && f.name.trim(), 'ملفٌّ بلا اسم');
         assert.ok(f.content && f.content.trim(), `«${f.name}» بمحتوى فارغ`);
     }
     assert.ok(r.files.some((f) => f.name === 'prisma/schema.prisma'), 'لا schema');
+});
+
+test('نوعٌ بلا قالبٍ وبلا مزوّد: لا يُكتب مخطّطُ مجالٍ آخر — تُقال الحقيقة وتُترك الملفّات فارغة', async () => {
+    const r = await generatePrismaSetup('نظام محاسبة للشركة', 'business');
+    assert.equal(r.success, false, 'كان يعود بـtrue فوق مخطّط متجرٍ إلكترونيّ');
+    assert.deepEqual(r.files, []);
+    assert.ok(r.reason.includes('business') && r.reason.includes('لا مخطّطَ Prisma'), r.reason);
+    // ولا أثرَ لمفردات المتجر في ما يُقال
+    assert.doesNotMatch(JSON.stringify(r), /Product|OrderItem/);
+    // والنوعُ الذي له قالبٌ يبقى كما كان تماماً
+    assert.equal((await generatePrismaSetup('متجر', 'ecommerce')).success, true);
 });
 
 test('الهدفُ الفارغ أو المعدوم لا يُثبت قاعدةً', () => {
