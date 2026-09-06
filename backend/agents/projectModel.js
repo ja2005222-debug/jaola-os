@@ -253,8 +253,7 @@ export function buildProjectModelContext(model) {
 // وأحياناً بصيغة «العميل (Passenger)». نماذجُ الكلونات كذلك. المقارنةُ الصادقة
 // تحتاج تطبيعاً إلى *مفهومٍ* واحد: راكب = Rider = Passenger، إدارة = Admin =
 // مالك = مدير. ما ليس في المعجم يبقى باسمه المطبَّع (فيُطابق نفسَه فقط).
-const CONCEPTS = {
-    // ── أدوار ──
+const ROLE_CONCEPTS = {
     user: ['user', 'users', 'visitor', 'مستخدم', 'مستخدمين', 'زائر', 'مالك الحساب', 'صاحب الحساب'],
     customer: ['customer', 'customers', 'client', 'clients', 'buyer', 'buyers', 'shopper', 'consumer', 'عميل', 'عملاء', 'زبون', 'زبائن', 'مشتري', 'مشترين', 'مشترون'],
     passenger: ['passenger', 'passengers', 'rider', 'riders', 'راكب', 'ركاب'],
@@ -282,7 +281,8 @@ const CONCEPTS = {
     lawyer: ['lawyer', 'attorney', 'محامي', 'محامٍ', 'محام'],
     storekeeper: ['storekeeper', 'warehouse manager', 'أمين المخزن', 'أمين مخزن', 'مدير مستودع', 'مشغل مغسلة', 'مشغّل مغسلة'],
     fleet_manager: ['fleet manager', 'مدير أسطول'],
-    // ── كيانات ──
+};
+const ENTITY_CONCEPTS = {
     order: ['order', 'orders', 'طلب', 'طلبات', 'طلب مطبخ', 'طلب غسيل'],
     item: ['item', 'items', 'عنصر', 'عناصر'],
     product: ['product', 'products', 'sku', 'goods', 'menuitem', 'menu item', 'dish', 'meal',
@@ -319,7 +319,9 @@ const CONCEPTS = {
     attendance: ['attendance', 'حضور', 'سجل حضور'],
     leave: ['leave', 'vacation', 'إجازة', 'طلب إجازة'],
     shift: ['shift', 'وردية'],
-    film: ['film', 'movie', 'show', 'فيلم', 'أفلام', 'عرض'],
+    // «عرض»/«show» مشتركتان لفظاً (عرض القيمة، عرض سعر، اعرض القائمة) فكانتا تجعلان
+    // كلَّ مشروعٍ مشروعَ أفلام — أُسقطتا وبقي ما لا يلتبس (PM/4).
+    film: ['film', 'movie', 'فيلم', 'أفلام'],
     budget: ['budget', 'ميزانية', 'ميزانية شهرية', 'فئة إنفاق'],
     analysis: ['analysis', 'technical analysis', 'تحليل', 'تحليل فني'],
     visit: ['visit', 'visits', 'زيارة', 'زيارات'],
@@ -330,6 +332,19 @@ const CONCEPTS = {
     work_order: ['work order', 'job card', 'بطاقة عمل'],
     inquiry: ['inquiry', 'استفسار', 'طلب عرض سعر'],
 };
+// المعجمُ واحدٌ كما كان (الأدوارُ أوّلاً ثمّ الكيانات — ترتيبُ البناء لم يتغيّر)، لكنّه
+// صار يعرف **نوعَ** كلِّ مفهوم: PM/4 يشتقّ من نصِّ المرجع كياناتِه لا أدوارَه فقط.
+const CONCEPTS = { ...ROLE_CONCEPTS, ...ENTITY_CONCEPTS };
+const ROLE_KEYS = new Set(Object.keys(ROLE_CONCEPTS));
+const ENTITY_KEYS = new Set(Object.keys(ENTITY_CONCEPTS));
+
+/** نوعُ المفهوم: 'role' أو 'entity' أو null لما ليس في المعجم. */
+export function conceptKind(concept) {
+    const c = String(concept || '');
+    if (ROLE_KEYS.has(c)) return 'role';
+    if (ENTITY_KEYS.has(c)) return 'entity';
+    return null;
+}
 /** المفاهيمُ التي لا تحمل معلومةَ منتج — لا تُقيِّد الاختيار. */
 const GENERIC_CONCEPTS = new Set(['user', 'item', 'employee']);
 

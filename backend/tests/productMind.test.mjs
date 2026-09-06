@@ -104,8 +104,14 @@ test('الفهمُ وحده يختار: «اكمل» بنموذج تاكسي →
 });
 
 test('المرجعُ يبذر الفهم بلا نموذجٍ لغويّ: طلبُ التاكسي يخرج من مرحلة الفهم بأدوار Passenger/Driver/Admin والسجلُّ يسمّي المرجع', async () => {
-    assert.deepEqual(referenceModel(matchBlueprint(TAXI_SYSTEM)),
-        { roles: [{ name: 'Passenger', description: 'العميل' }, { name: 'Driver', description: 'السائق' }, { name: 'Admin', description: 'الإدارة' }], entities: [], flows: [], _source: 'reference', reference: 'taxi_fleet' });
+    const refTaxi = referenceModel(matchBlueprint(TAXI_SYSTEM));
+    assert.deepEqual(refTaxi.roles, [{ name: 'Passenger', description: 'العميل' }, { name: 'Driver', description: 'السائق' }, { name: 'Admin', description: 'الإدارة' }]);
+    assert.equal(refTaxi._source, 'reference'); assert.equal(refTaxi.reference, 'taxi_fleet');
+    // PM/4: كان هذا التأكيدُ يثبّت `entities: []` — وهو بعينه ما تُصلحه الخطوة: المرجعُ يعرف
+    // خمسَ صفحاتٍ وأربعةَ مكوّنات، فلا يجوز أن يخرج فهمُ التاكسي بلا «رحلة» ولا «مركبة».
+    assert.ok(refTaxi.entities.some(e => e.name === 'trip') && refTaxi.entities.some(e => e.name === 'vehicle'),
+        refTaxi.entities.map(e => e.name).join(','));
+    assert.deepEqual(refTaxi.flows.map(f => f.name), ['تدفّق حالة الرحلة'], 'ما فيه سهمٌ تدفّق، وما سواه مكوّن');
     assert.equal(referenceModel(null), null);
     assert.equal(referenceModel({ id: 'x', roles: [] }), null);
     assert.deepEqual(referenceModel({ id: 'm', roles: ['المشتري'] }).roles, [{ name: 'المشتري' }], 'بلا قوسين: الاسمُ كما هو');

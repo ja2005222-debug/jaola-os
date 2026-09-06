@@ -12,6 +12,8 @@
  * الدوال نقية (نص → نتيجة) لتسهيل الاختبار.
  */
 
+import { conceptsInText, conceptKind } from './projectModel.js';
+
 // مكتبات مُنتقاة بحذر — فقط لقدرة لا يولّدها النموذج بموثوقية، CDN + تحميل
 // كسول، لا إطار CSS ولا jQuery. الوزن الزائد يخفض درجة الأداء لا يرفعها.
 export const CURATED_LIBS = {
@@ -165,7 +167,45 @@ export function referenceModel(bp) {
         const m = /^(.*?)\s*\(([^)]+)\)\s*$/.exec(String(label));
         return m ? { name: m[2].trim(), description: m[1].trim() } : { name: String(label).trim() };
     }).filter(r => r.name);
-    return { roles, entities: [], flows: [], _source: 'reference', reference: bp.id };
+    return {
+        roles,
+        entities: referenceEntities(bp),
+        flows: referenceFlows(bp),
+        _source: 'reference',
+        reference: bp.id,
+    };
+}
+
+// 🧩 PM/4 — المرجعُ يعرف صفحاتِه ومكوّناتِه، وكان الفهمُ يأخذ أدوارَه فقط: خمسُ
+// صفحاتٍ وأربعةُ مكوّناتٍ تُرمى، فيخرج نموذجُ تاكسي بلا «رحلة» ولا «مركبة» —
+// فتمرّ صفحةٌ تذكر الأدوارَ وحدَها من بوّابة صدق المجال (PM/3) بتغطيةٍ كاملة.
+// الاشتقاقُ حتميّ بمعجم PM/1 نفسِه: ما كان مفهومَ **كيان** في نصّ المرجع كيانٌ فيه.
+export function referenceEntities(bp) {
+    const text = [...(bp?.pages || []), ...(bp?.components || [])].join(' \n ');
+    if (!text.trim()) return [];
+    const found = [...conceptsInText(text)].filter(c => conceptKind(c) === 'entity');
+    // سقفُ النموذج ستّةُ كيانات، فالترتيبُ يقرّر مَن يبقى: الأكثرُ ذكراً في المرجع
+    // أرسخُ من العابر (مرّةً في جملةٍ واحدة). ترتيبٌ ثابت — لا اعتماد على ترتيب المجموعة.
+    const weight = (c) => (bp.pages || []).filter(p => conceptsInText(p).has(c)).length
+        + (bp.components || []).filter(x => conceptsInText(x).has(c)).length;
+    return found
+        .map(name => ({ name, w: weight(name) }))
+        .sort((a, b) => b.w - a.w || a.name.localeCompare(b.name))
+        .map(({ name }) => ({ name, description: 'من المعمارية المرجعية', _source: 'reference' }));
+}
+
+// التدفّقُ في المرجع يُكتب بسهم: «تدفّق حالة الرحلة: طلب → قبول → في الطريق → وصل».
+// ما لا سهمَ فيه مكوّنٌ لا تدفّق، فلا نخترع تدفّقاتٍ من عناوين.
+export function referenceFlows(bp) {
+    const flows = [];
+    for (const c of bp?.components || []) {
+        const t = String(c || '');
+        const [head, tail] = t.includes(':') ? [t.slice(0, t.indexOf(':')), t.slice(t.indexOf(':') + 1)] : ['', t];
+        const steps = tail.split('→').map(x => x.replace(/\([^)]*\)/g, '').trim()).filter(Boolean);
+        if (steps.length < 2) continue; // بلا سهمٍ لا انقسام، فهذا الشرطُ وحدَه يكفي حارساً
+        flows.push({ name: (head.trim() || steps[0]), steps, touches: [], realtime: false, _source: 'reference' });
+    }
+    return flows;
 }
 
 export function matchBlueprint(goal = '') {
