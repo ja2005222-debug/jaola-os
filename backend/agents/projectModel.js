@@ -112,8 +112,21 @@ function fallbackModel(goal, blueprint) {
     if (category && CATEGORY_FALLBACK[category]) {
         return normalizeProjectModel({ ...CATEGORY_FALLBACK[category], _source: 'fallback' });
     }
-    // نموذج أدنى عام: مستخدم واحد + كيان أساسي مشتقّ من مكوّنات المخطط
     const comps = Array.isArray(blueprint?.functionalComponents) ? blueprint.functionalComponents : [];
+    // 📏 PM/6 — الاحتياطُ يقرأ معجمَه: كان يعود بـ`User/Item` لأيّ طلبٍ بلا فئةٍ مجدولة، بينما `conceptsInText`
+    //    على النصّ نفسِه ترى المنتجَ (مواصفةُ نقاطِ البيع: ١٦ مفهوماً ← فهمٌ من دورٍ واحد وكيانٍ واحد؛
+    //    قِيس في posSpecMeasure). الأداةُ كانت موجودةً منذ PM/3 والاحتياطُ لا يستعملها. الآن: الأدوارُ
+    //    والكياناتُ من المعجم بترتيب التكرار، والتدفّقُ الوحيدُ من مكوّنات المخطّط كما كان — وفاعلُه أهمُّ
+    //    الأدوار لا `User` المكتوب. النصُّ الذي لا يسمّي شيئاً يبقى على الحدّ الأدنى القديم.
+    const lex = lexiconModel(goal);
+    if (lex.roles.length || lex.entities.length) {
+        const actor = lex.roles[0]?.name || 'User';
+        return normalizeProjectModel({
+            ...lex,
+            flows: comps.length ? [{ name: blueprint?.primaryAction || 'الفعل الأساسي', actor, steps: comps.map(c => c?.name).filter(Boolean).slice(0, 6), touches: lex.entities.slice(0, 1).map(e => e.name), realtime: false }] : [],
+        });
+    }
+    // نموذج أدنى عام: مستخدم واحد + كيان أساسي مشتقّ من مكوّنات المخطط
     return normalizeProjectModel({
         entities: [{ name: 'Item', fields: [{ name: 'id', type: 'string' }, { name: 'name', type: 'string' }], ownedBy: 'User', description: str(goal).slice(0, 60) }],
         roles: [{ name: 'User', description: 'المستخدم الأساسي', capabilities: comps.map(c => c?.name).filter(Boolean).slice(0, 6) }],
@@ -154,6 +167,10 @@ export function mergeProjectModel(existing, incoming) {
         const i = list.findIndex(x => x.name.toLowerCase() === item.name.toLowerCase());
         if (i === -1) list.push(item);
         else list[i] = { ...list[i], ...item, // الجديد يُحدّث القديم مع دمج الحقول/الصلاحيات
+            // PM/6: الاسمُ القائم يبقى — المطابقةُ لا تفرّق الحالة، فمفتاحُ معجمٍ (`admin`) لا يُطفئ
+            //    لقبَ المرجع (`Admin`)؛ والوصفُ الفارغ لا يمحو وصفاً قائماً.
+            name: list[i].name,
+            description: item.description || list[i].description || '',
             fields: dedupeByName([...(list[i].fields || []), ...(item.fields || [])]),
             capabilities: [...new Set([...(list[i].capabilities || []), ...(item.capabilities || [])])],
         };
@@ -440,6 +457,41 @@ export function conceptsInText(text, { limit = 200000 } = {}) {
         if (syn.length >= 3 && s.includes(' ' + syn + ' ')) found.add(concept);
     }
     return found;
+}
+
+/**
+ * 🔢 تكرارُ المفاهيم في نصّ (PM/6): كم مرّةً يُذكر كلُّ مفهومٍ — بمجموع مرادفاته ككلماتٍ/عباراتٍ كاملة.
+ *
+ * لماذا التكرار؟ `conceptsInText` تجمع المفاهيمَ بترتيب طول المرادف (الأطولُ أوّلاً) لا بأهمّيّتها، وسقوفُ
+ * التطبيع (٤ أدوار، ٦ كيانات) تقطع ما زاد — فمن ستّةَ عشرَ مفهوماً في مواصفةِ نقاطِ البيع وصل النموذجَ عشرة،
+ * وسقط `admin`/`accountant`/`payment` لا لأنّها أقلُّ شأناً بل لأنّ مرادفاتها أقصر. «فاتورة» في تلك المواصفة
+ * تتكرّر، و«عملة» عابرة — فالتكرارُ هو إشارةُ الأهمّيّة الصادقة بلا نموذجٍ لغويّ. المرادفاتُ المتداخلة
+ * («مدير أسطول» تحوي «مدير») تُعدّ لكليهما — للترتيب يكفي، وللدقّة ديْنٌ مكتوب. دالّةٌ نقيّة.
+ */
+export function conceptFrequencies(text, { limit = 200000 } = {}) {
+    const s = ' ' + normalizeConceptText(String(text || '').slice(0, limit)) + ' ';
+    const freq = new Map();
+    for (const [syn, concept] of SYNONYMS) {
+        if (GENERIC_CONCEPTS.has(concept) || syn.length < 3) continue;
+        const needle = ' ' + syn + ' ';
+        let i = 0, n = 0;
+        while ((i = s.indexOf(needle, i)) !== -1) { n += 1; i += needle.length - 1; }
+        if (n) freq.set(concept, (freq.get(concept) || 0) + n);
+    }
+    return freq;
+}
+
+/**
+ * 🧩 نموذجٌ من معجم الطلب (PM/6): الأدوارُ والكياناتُ التي ينطق بها النصُّ مرتّبةً بالتكرار ثمّ بالاسم.
+ * أسماؤها مفاتيحُ مفاهيمَ (`storekeeper`, `invoice`) على سابقة PM/4 — تكفي للمقارنة والتحقّق. لا تدفّقات:
+ * المعجمُ أسماءٌ لا أفعال. دالّةٌ نقيّة، تعود فارغةً لنصٍّ بلا مفاهيم.
+ */
+export function lexiconModel(text) {
+    const ranked = [...conceptFrequencies(text).entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([c]) => c);
+    const pick = (kind) => ranked.filter(c => conceptKind(c) === kind).map(name => ({ name, description: '' }));
+    return { roles: pick('role'), entities: pick('entity'), flows: [], _source: 'lexicon' };
 }
 
 /**

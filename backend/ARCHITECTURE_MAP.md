@@ -171,7 +171,7 @@ Policy/Permission، Identity، Plugin.
 | `templateLibrary.js`, `templateLibraryExtended.js`, `templateLocalizer.js` | 1061/1382/1943 | مكتبة القوالب وترجمتها | KEEP | — | `plugins/coding/templates/` (Sprint 6) |
 | `cloneTemplates/*` (42 ملفاً، 17,406 سطر؛ `jaolaClinic.js` يُستورد من 27 قالباً كأساس مشترك) | — | قوالب تطبيقات عاملة | KEEP | — | `plugins/coding/templates/clones/` |
 | `cloneAssets.js`, `seedStamp.js`, `fullstackTemplates.js`, `reactGenerator.js`, `blockRegistry.js`, `starterRegistry.js`, `starterFetch.js`, `libraryRegistry.js`, `referenceBlueprints.js` (PM/1: `referenceModel`؛ PM/4: `referenceEntities`/`referenceFlows`), `appBlueprint.js`, `requirementAnalyzer.js` | 74/116/603/432/259/74/171/78/249/146/198 | استراتيجيات البناء ومخططاته | KEEP | Task (استراتيجية = Task Graph مختلف) | `plugins/coding/` |
-| `projectModel.js` (PM/1: معجمُ المفاهيم + `modelAffinity`؛ PM/3: `conceptsInText` + `domainFidelity`؛ PM/4: `conceptKind`؛ PM/5: `modelProjectType`), `projectMemory.js`, `userProfile.js` | 487/258/248 | ذاكرة المشروع والمستخدم | KEEP | Memory | `core/memory/` (لاحقاً) |
+| `projectModel.js` (PM/1: معجمُ المفاهيم + `modelAffinity`؛ PM/3: `conceptsInText` + `domainFidelity`؛ PM/4: `conceptKind`؛ PM/5: `modelProjectType`؛ PM/6: `conceptFrequencies` + `lexiconModel` والاحتياطُ يقرأهما), `projectMemory.js`, `userProfile.js` | 539/258/248 | ذاكرة المشروع والمستخدم | KEEP | Memory | `core/memory/` (لاحقاً) |
 | `componentMarketplace.js`, `platformContext.js` | 278/42 | مكوّنات جاهزة (markupها يُحقن بميزانية، 2q) + معلومات المنصّة | KEEP | — | `plugins/coding/` |
 
 ### C6. منتجات تعيش في `agents/` وليست وكلاء نواة
