@@ -29,6 +29,7 @@ import { buildReactProject } from './stages/buildReact.js';
 import { extractPageName, cleanPageName, readReactContent, findPage, persistReactContent, renamePageNow, deletePageNow, pageNotFound } from './stages/reactPages.js';
 import { runSurgicalEdit } from './stages/surgicalEdit.js';
 import { addPageNow } from './stages/addPage.js';
+import { handleCeoIntent } from './stages/ceoIntent.js';
 import { handleUndo } from './stages/undo.js';
 // 🔁 إعادةُ تصدير: `resolveProjectType` بقيت واجهةً من `jcr` لمستورِديها (JCR/6)
 export { resolveProjectType };
@@ -36,24 +37,20 @@ import { buildFailureChatMessage } from './failureMessages.js';
 import { isMarketingPageGoal } from './blockRegistry.js';
 import { analyzeProjectStatic } from './behaviorVerifier.js';
 import { updateLanguage, recordProject, recordEdit } from './userProfile.js';
-import { renderServiceName, deployToRender } from './renderAgent.js';
-import { isFullStackProject } from './deployAgent.js';
 import { transitionState, getProjectSummary, STATES } from './stateMachine.js';
 import { normalizeText, normalizeArabic, detectIntentFromMeaning, isQuestionMessage, hasActionIntent, isExplicitRebuild, isExplicitNewBuild, isContinuationGoal } from './textNormalizer.js';
 import { routeMessage } from './router.js';
 import { matchDeleteCommand, matchImageCommand, isImageDiagCommand, isBareYes, isBareExecute } from './chatCommands.js';
-import { classifyIntentFast, decide, buildContinuationGoal, buildStatusReply, missionBriefing, greetingReply } from './ceoBrain.js';
+import { decide, buildContinuationGoal, missionBriefing } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
 import { assertBuildAgents, DELIVERY_STAGES } from '../core/contracts/index.js';
 import { orderTasks } from '../core/runtime/TaskGraph.js';
 import { createExecutionContext, contextFromRequest } from '../core/runtime/ExecutionContext.js';
 import { projectPathOf, writePlanFiles } from '../core/runtime/workspacePaths.js';
 import { registerMission, throwIfAborted, clearMission } from '../core/runtime/AbortRegistry.js';
-import { pushProject } from '../services/githubSync.js';
 import { guardFiles, ensureEditIntegrity } from '../services/codeGuard.js';
 import { recordMissionOutcome, matureLessons, lessonDirective, MIN_COUNT_TO_TEACH } from '../services/platformLessons.js';
 import { getPlatformKnowledge } from '../services/platformKnowledge.js';
-import { getProjectSecrets } from '../services/projectSecrets.js';
 import { recordBuild, recordEditAction, buildMetricsPayload } from '../services/metricsStore.js';
 import { setPendingGoal, getPendingGoal, consumePendingGoal, clearDialog } from '../services/conversationManager.js';
 import { enqueueMission, takeLostMission } from '../core/runtime/ExecutionQueue.js';
@@ -133,7 +130,7 @@ class JCRContext {
 // ==========================================
 export class JaolaCognitiveRuntime {
     constructor(ioInstance) {
-        this.io = ioInstance;   // يبقى: يُمرَّر قيمةً لتسعةِ نداءاتٍ خارجيّة تبثّ بنفسها
+        this.io = ioInstance;   // يبقى قيمةً: المراحلُ تصل إليه عبر `reporter.io` (JCR/10–24)؛ jcr نفسُه لا يمرّره بعد الآن
         // 📡 البابُ الواحد للبثّ — الشقُّ الذي يفصل ٦٥٪ من ترابط الصنف عن `this`.
         this.reporter = new RoomReporter(ioInstance, { localize: localizeLog });
         this.memoryDir = MEMORY_ROOT;
@@ -1347,129 +1344,12 @@ User preferences: ${JSON.stringify(execMemory)}` },
         return false;
     }
 
-    // نوايا CEO الحتمية (حالة/تحية/اكمل/انشر/ادفع) قبل أي LLM.
+    // 🧠 نوايا CEO خرجت إلى `stages/ceoIntent.js#handleCeoIntent` (JCR/24) — تفويضٌ يُبقي المستدعيَ كما هو؛ المُبلِّغُ
+    // يُمرَّر، و`executeMission` تُمرَّر دالّةً (`ops`) حتّى يبقى استبدالُ الاختبارات على النسخة نافذاً.
     async _handleCeoIntent(req, agents) {
-        const { message, normalizedMessage, roomName, projectPath, username, activeProject, userLang } = req;
-        // ── 🧠 CEO Brain: Intent Engine → Decision Engine → Execution ─────
-        // النوايا الإدارية (كمل/أين وصلنا/انشر/ادفع/تحية) تُعالج هنا قبل أي LLM
-        const fastIntent = classifyIntentFast(normalizedMessage || message);
-        if (fastIntent) {
-            const lang = getUserLanguage(username) || userLang;
-            const decision = decide(fastIntent.intent, username, activeProject);
-
-            // النية والقرار يظهران للمستخدم في بث المهمة — شفافية كاملة
-            this.emitLiveLog(roomName, 'INTENT', 'Engine',
-                `🎯 ${JSON.stringify({ intent: fastIntent.intent, project: activeProject, confidence: fastIntent.confidence })}`);
-            this.emitLiveLog(roomName, 'DECISION', 'Engine', `⚙️ ${decision.action} — ${decision.reason}`);
-
-            switch (fastIntent.intent) {
-                case 'status': {
-                    this.reporter.send(roomName, 'chat_reply', { message: buildStatusReply(username, activeProject, lang) });
-                    return true;
-                }
-
-                case 'greeting': {
-                    this.reporter.send(roomName, 'chat_reply', { message: greetingReply(username, activeProject, lang) });
-                    return true;
-                }
-
-                case 'continue': {
-                    if (decision.action === 'reply') {
-                        const busyMsg = lang === 'ar'
-                            ? '⚙️ الفريق يعمل على المشروع الآن بالفعل — تابع التقدم الحي هنا.'
-                            : '⚙️ The team is already working on it — watch the live progress here.';
-                        this.reporter.send(roomName, 'chat_reply', { message: busyMsg });
-                        return true;
-                    }
-                    const continuationGoal = buildContinuationGoal(username, activeProject);
-                    if (!continuationGoal) {
-                        // لا ذاكرة — نعرض الحالة ونسأل سؤالاً محدداً بدل "ماذا تقصد؟"
-                        const noMemMsg = lang === 'ar'
-                            ? `لا أجد مشروعاً سابقاً في (${activeProject}) لأكمله.\nأخبرني: ماذا تريد أن نبني؟ (مثال: "متجر بيض بلدي مع سلة وطلب أونلاين")`
-                            : `I don't find a previous project in (${activeProject}) to continue.\nTell me: what should we build? (e.g., "an egg store with cart and online ordering")`;
-                        this.reporter.send(roomName, 'chat_reply', { message: noMemMsg });
-                        return true;
-                    }
-                    const resumeMsg = lang === 'ar'
-                        ? '📂 وجدت المشروع في الذاكرة — الفريق يستأنف من حيث توقف...'
-                        : '📂 Project found in memory — the team is resuming where it left off...';
-                    this.reporter.send(roomName, 'chat_reply', { message: resumeMsg });
-                    this.executeMission(continuationGoal, contextFromRequest(req, agents));
-                    return true;
-                }
-
-                case 'deploy': {
-                    if (decision.action === 'reply') {
-                        const waitMsg = lang === 'ar'
-                            ? '⏳ البناء جارٍ الآن — سأنشر تلقائياً بعد اكتماله، أو اطلب النشر لاحقاً.'
-                            : '⏳ Build in progress — deploy after it completes.';
-                        this.reporter.send(roomName, 'chat_reply', { message: waitMsg });
-                        return true;
-                    }
-                    // 🧭 المشاريع full-stack (فيها دوال api/ حقيقية) تُنشر على Render
-                    // كخادم دائم — يزيل حدّ Vercel Hobby (12 دالة) ويُبقي DB متصلة.
-                    // المواقع الثابتة تبقى على Vercel (أسرع وأبسط).
-                    if (isFullStackProject(projectPath)) {
-                        const renderMsg = lang === 'ar'
-                            ? '🖥️ مشروع full-stack — سأجهّزه لخادم دائم على Render (بلا حدّ دوال)...'
-                            : '🖥️ Full-stack project — preparing a persistent server on Render...';
-                        this.reporter.send(roomName, 'chat_reply', { message: renderMsg });
-                        const projectSlug = renderServiceName(username, activeProject);
-                        deployToRender(
-                            { projectPath, projectName: projectSlug, username, activeProject, hasBackend: true },
-                            this.io, roomName
-                        ).then(r => {
-                            if (r.success) {
-                                const okMsg = lang === 'ar'
-                                    ? `✅ جاهز للنشر على Render (خادم دائم). اضغط الزر لإنشائه بضغطة واحدة — سيقرأ الإعداد تلقائياً ويطلب MONGODB_URI:\n\n👉 ${r.deployUrl}\n\nبعدها يُعيد Render النشر تلقائياً مع كل تعديل.`
-                                    : `✅ Ready for Render (persistent server). One click to create it:\n\n👉 ${r.deployUrl}`;
-                                this.reporter.send(roomName, 'chat_reply', { message: okMsg });
-                            } else if (r.needsGitHub) {
-                                const ghMsg = lang === 'ar'
-                                    ? `🔗 لنشر خادم دائم على Render نحتاج ربط المشروع بمستودع GitHub أولاً (Render ينشر من GitHub). افتح ⋯ → GitHub في الداش واربط المستودع، ثم اطلب النشر مجدداً.`
-                                    : `🔗 Render deploys from GitHub — connect a repo first (⋯ → GitHub), then deploy again.`;
-                                this.reporter.send(roomName, 'chat_reply', { message: ghMsg });
-                            } else {
-                                this.reporter.send(roomName, 'log', { message: `❌ [Render]: ${r.error}` });
-                            }
-                        }).catch(err => {
-                            this.reporter.send(roomName, 'log', { message: `❌ [Render]: ${err.message}` });
-                        });
-                        return true;
-                    }
-
-                    const deployMsg = lang === 'ar'
-                        ? '🚀 أمر النشر مقبول — جاري الرفع للإنتاج الآن...'
-                        : '🚀 Deploy order accepted — shipping to production...';
-                    this.reporter.send(roomName, 'chat_reply', { message: deployMsg });
-                    agents.deployProject?.(
-                        { projectPath, activeProject, currentUser: username, env: getProjectSecrets(username, activeProject) },
-                        this.io,
-                        () => {}
-                    ).catch(err => {
-                        this.reporter.send(roomName, 'log', { message: `❌ [DEPLOY]: ${err.message}` });
-                    });
-                    return true;
-                }
-
-                case 'github_push': {
-                    const pushMsg = lang === 'ar'
-                        ? '🐙 جاري الدفع إلى GitHub...'
-                        : '🐙 Pushing to GitHub...';
-                    this.reporter.send(roomName, 'chat_reply', { message: pushMsg });
-                    pushProject(username, activeProject, projectPath).then(result => {
-                        const doneMsg = result.success
-                            ? (lang === 'ar' ? `✅ تم الدفع إلى ${result.url} (${result.branch})` : `✅ Pushed to ${result.url} (${result.branch})`)
-                            : (lang === 'ar' ? `❌ فشل الدفع — ${result.error}` : `❌ Push failed — ${result.error}`);
-                        this.reporter.send(roomName, 'chat_reply', { message: doneMsg });
-                    }).catch(err => {
-                        this.reporter.send(roomName, 'chat_reply', { message: `❌ GitHub: ${err.message}` });
-                    });
-                    return true;
-                }
-            }
-        }
-        return false;
+        return handleCeoIntent(req, agents, this.reporter, {
+            executeMission: (goal, c) => this.executeMission(goal, c),
+        });
     }
 
     // الموجّه الموحّد (نداء LLM منظّم) بشبكة أمان الحجب/الإصرار؛ فشله أو «build» → المسار القديم.

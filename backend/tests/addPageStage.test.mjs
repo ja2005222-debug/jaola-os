@@ -157,7 +157,8 @@ test('الحدود: لا this، لا استيرادَ من jcr، ops.runMission 
     for (const n of ['autoPushIfEnabled', 'buildStaticSite', 'compName', 'componentSource', 'defaultSection', 'generateSectionContent', 'pageFileSource', 'slugify', 'snapshotWorkspace', 'writeProjectFile']) {
         assert.ok(!new RegExp(`\\b${n}\\b`).test(jcr.replace(/^\s*\/\/.*$/gm, '')), `${n} ما زال في jcr`);
     }
-    for (const n of ['smartChat', 'createExecutionContext', 'extractPageName', 'pushProject', 'projectPathOf', 'writePlanFiles']) {
+    // `pushProject` كان هنا يومَ JCR/23 — خرج بعدها مع نوايا CEO (JCR/24)؛ القائمةُ تتبع القياس.
+    for (const n of ['smartChat', 'createExecutionContext', 'extractPageName', 'projectPathOf', 'writePlanFiles']) {
         assert.ok(new RegExp(`\\b${n}\\b`).test(jcr), `${n} بقي له مستهلكٌ في jcr`);
     }
 });
