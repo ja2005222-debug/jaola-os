@@ -3,12 +3,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { groq, smartChat } from '../core/providers/llm.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain, summarizeFacts } from '../services/projectBrain.js';
-import { resolveStack } from './starterRegistry.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, getLangInfo, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO, resolveGoalLanguage } from './languageDetector.js';
 import { getProjectMemory, addToHistory, getDomainModel } from './projectMemory.js';
 import { buildAppSections } from './projectModel.js';
-import { matchCloneTemplate } from './cloneTemplates/index.js';
 import { localizeLog } from './logLocalizer.js';
 import { RoomReporter } from '../core/runtime/RoomReporter.js';
 import { runDebate } from './stages/debate.js';
@@ -26,6 +24,7 @@ import { readCodeContext, readProjectFiles } from './projectReader.js';
 import { runBackendStage } from './stages/backend.js';
 import { verifyAndAutofix, runBehaviorVerifyStage } from './stages/verify.js';
 import { buildReactProject } from './stages/buildReact.js';
+import { selectBuildStrategy } from './stages/selectBuildStrategy.js';
 import { extractPageName, cleanPageName, readReactContent, findPage, persistReactContent, renamePageNow, deletePageNow, pageNotFound } from './stages/reactPages.js';
 import { runSurgicalEdit } from './stages/surgicalEdit.js';
 import { addPageNow } from './stages/addPage.js';
@@ -35,11 +34,10 @@ import { handleUndo } from './stages/undo.js';
 // 🔁 إعادةُ تصدير: `resolveProjectType` بقيت واجهةً من `jcr` لمستورِديها (JCR/6)
 export { resolveProjectType };
 import { buildFailureChatMessage } from './failureMessages.js';
-import { isMarketingPageGoal } from './blockRegistry.js';
 import { analyzeProjectStatic } from './behaviorVerifier.js';
 import { updateLanguage } from './userProfile.js';
 import { transitionState, getProjectSummary, STATES } from './stateMachine.js';
-import { normalizeText, detectIntentFromMeaning, isExplicitRebuild, isExplicitNewBuild, isContinuationGoal } from './textNormalizer.js';
+import { normalizeText, detectIntentFromMeaning } from './textNormalizer.js';
 import { matchDeleteCommand, matchImageCommand, isImageDiagCommand } from './chatCommands.js';
 import { missionBriefing } from './ceoBrain.js';
 import { setUserLanguage } from './languageDetector.js';
@@ -792,115 +790,15 @@ User preferences: ${JSON.stringify(execMemory)}` },
         return understandGoal(goal, ctx, this.reporter);
     }
 
-    // 🧭 اختيار استراتيجية البناء: Registry (صفحة تسويقية) / Clone (تطبيق مطابق) /
-    // React (مشروع كبير جديد) بحماياتها (استئناف، «يعمل فعلاً» → لا استبدال)،
-    // وإلا null ← النواة. أي قيمة غير null هي نتيجة المهمة النهائية.
+    // 🧭 اختيارُ الاستراتيجيّة خرج إلى `stages/selectBuildStrategy.js#selectBuildStrategy` (JCR/29) — تفويضٌ يُبقي المستدعيَ كما هو؛
+    // المُبلِّغُ يُمرَّر، والبناةُ الثلاثة عبر `ops` (تستبدلها الاختبارات على النسخة)، وتلميحُ المسار `trackByRoom` دالّةً مربوطة.
     async _selectBuildStrategy(goal, blueprint, ctx) {
-        const { projectPath, username, activeProject, roomName } = ctx;
-        // «بناء جديد» = لا شفرة قائمة تُذكر (< 80 حرفاً). تُحسب مرة واحدة: لا مسار
-        // أدناه يكتب على القرص قبل أن يُرجع نتيجته، فالقراءة الثانية كانت تكراراً.
-        const existingCtx = await this.readCurrentCodeContextAsync(projectPath).catch(() => '');
-        const isFreshBuild = !existingCtx || existingCtx.trim().length < 80;
-
-        // 🍔 كلون عامل — للتطبيقات المعقّدة المطابقة نبدأ من *تطبيق يعمل فعلاً*
-        // (يجتاز التحقّق السلوكي) بدل التوليد من الصفر الذي يفشل (app.js لا يُكتب،
-        // أدوار ناقصة)، ثم نضع البصمة. هذا يضمن أن يعمل مشروع التوصيل من أول مرة.
-        try {
-            // 🛡️ استئناف («اكمل») على مشروع قائم = تطوير الموجود حصراً — لا
-            // إعادة بناء ولا كلون يستبدله ولا هوية جديدة، مهما احتوى نصّ الهدف.
-            // (عطل إنتاجي: «لا تبدأ من الصفر» طابقت «من الصفر» فدهست المشروع.)
-            const continuation = isContinuationGoal(goal);
-            const explicitRebuild = !continuation && (isExplicitRebuild(goal) || isExplicitNewBuild(goal));
-
-            // 🧱 صفحة تسويقيّة/تعريفيّة (هبوط/بروشور/بورتفوليو/شركة) → إعادة تركيب من
-            // JAOLA Registry: صفحة *كاملة واحترافية* من بلوكات جاهزة، لا توليد هشّ.
-            if (isMarketingPageGoal(goal, blueprint) && (isFreshBuild || explicitRebuild)) {
-                // 🛡️ تطبيق قائم *يعمل* لا يُستبدل بصفحة هبوط ثابتة بجملة بناء عادية
-                // («صمم تطبيق عرض صور لمطعم...») — مسار الكلونات يملك هذه الحماية
-                // (worksNow → لا نكلبره) وهذا المسار كان بلا مثيلها فدهس تطبيق
-                // test-edit2 التفاعلي بصفحة أقسام جاهزة (عطل إنتاجي حقيقي).
-                // الاستبدال يبقى ممكناً بطلب إعادة بناء صريح («أعد البناء/من الصفر»).
-                if (!isFreshBuild && !isExplicitRebuild(goal)) {
-                    const chk = await analyzeProjectStatic({
-                        projectPath, domainModel: getDomainModel(username, activeProject),
-                    }).catch(() => null);
-                    const worksNow = chk?.hasProject && !chk.checks.some(c => c.status === 'fail');
-                    if (worksNow) {
-                        const lang = getUserLanguage(username);
-                        this.emitLiveLog(roomName, 'STACK', 'JaolaRegistry',
-                            'ℹ️ المشروع القائم يعمل — لا يُستبدل بصفحة تسويقية دون «أعد البناء» صريحة.');
-                        this.reporter.send(roomName, 'chat_reply', {
-                            message: lang === 'en'
-                                ? '✅ Your current app is working, so I won\'t replace it with a static marketing page. Tell me a specific change to add to it, or type "rebuild" if you really want to start over as a landing page.'
-                                : '✅ تطبيقك الحالي يعمل، فلن أستبدله بصفحة تسويقية ثابتة. أخبرني بتعديل محدّد أضيفه إليه، أو اكتب «أعد البناء» إن كنت تريد فعلاً البدء من جديد كصفحة هبوط.',
-                        });
-                        transitionState(username, activeProject, STATES.COMPLETED);
-                        return { success: true, skipped: 'works' };
-                    }
-                }
-                return await this._buildFromRegistry(goal, ctx);
-            }
-
-            const clone = (continuation && !isFreshBuild)
-                ? null // الاستئناف يكمل الموجود عبر المسار التزايدي — لا استبدال بالقالب
-                : matchCloneTemplate(goal, blueprint, getDomainModel(username, activeProject),
-                    { track: this.trackByRoom?.get(roomName) });
-            if (clone) {
-                // نبدأ من الكلون العامل إن: (أ) بناء جديد/هوية جديدة، أو (ب) إعادة بناء
-                // صريحة، أو (ج) المشروع القائم معطّل فعلاً (نُصلح المكسور).
-                let apply = isFreshBuild || explicitRebuild;
-                let worksNow = false;
-                if (!apply) {
-                    const chk = await analyzeProjectStatic({
-                        projectPath, domainModel: getDomainModel(username, activeProject),
-                    });
-                    const broken = !chk.hasProject || chk.checks.some(c => c.status === 'fail');
-                    worksNow = chk.hasProject && !broken;
-                    apply = broken;
-                }
-                if (apply) {
-                    return await this._buildFromClone(clone, goal, ctx);
-                }
-                // 🛡️ المشروع القائم يعمل وليس طلب إعادة بناء صريح → لا نُعيد البناء
-                // الكامل (كان مسار Vanilla يدهس الكلون العامل عند «اكمل»). نُبلغ
-                // ونتوقّف — التعديلات المحدّدة تمرّ عبر التعديل الجراحي.
-                if (worksNow) {
-                    const okMsg = getUserLanguage(username) === 'en'
-                        ? '✅ Your app is already working (customer + staff panels with role-based login). Tell me a specific change to add (e.g. "add a ratings section"), or "rebuild" to start fresh.'
-                        : '✅ تطبيقك يعمل بالفعل (واجهة الزبون + لوحات الطاقم بدخول موجَّه حسب الصلاحية). أخبرني بتعديل محدّد لإضافته (مثل: «أضف قسم تقييمات»)، أو اكتب «أعد البناء» للبدء من جديد.';
-                    this.reporter.send(roomName, 'chat_reply', { message: okMsg });
-                    transitionState(username, activeProject, STATES.COMPLETED);
-                    this.emitLiveLog(roomName, 'STACK', 'CloneTemplate', 'ℹ️ المشروع يعمل — تفادينا إعادة بناء تدهسه.');
-                    return { success: true, skipped: 'works' };
-                }
-                this.emitLiveLog(roomName, 'STACK', 'CloneTemplate', 'ℹ️ يوجد كلون مطابق لكن المشروع القائم يعمل — لا نكلبره.');
-            }
-        } catch (e) { console.warn('[Clone]', 'تعذّر مطابقة الكلون:', e.message); }
-
-        // 🧰 المسار الهجين — مشروع كبير → React/Next حقيقي بمعاينة حيّة؛ غيره → Vanilla سريع
-        try {
-            // 🛡️ فئة المخطّط تُعتمد فقط حين تأتي من النموذج — الاحتياط يضع 'business'
-            // دائماً فكان يُعطّل الموجّه الهجين (React للمشاريع الكبيرة) كلما غاب الـLLM
-            const ptype = resolveProjectType(goal, blueprint);
-            const scope = getProjectMemory(username, activeProject)?.plan?.scope || '';
-            const stack = resolveStack({ projectType: ptype, scope });
-            // 🔴 كان يُختار هنا قالبٌ من السجلّ (`selectStarter`) ويُمرَّر إلى البناء
-            //    ثمّ يُسمَّى للمستخدم: «قالب: Next.js SaaS + Stripe». ولم يكن يُقرأ
-            //    في البناء إطلاقاً — `generateNextScaffold` لا يستقبل قالباً أصلاً.
-            //    مقيسٌ لا مفترَض: من خصائص ذلك القالب الأربع (subscriptions/auth/
-            //    stripe/dashboard) **صفرٌ** في السبعة عشر ملفاً المُسلَّمة. فكان
-            //    المستخدمُ يُخبَر أنّ مشروعه مبنيٌّ على قالبِ اشتراكاتٍ وStripe،
-            //    فيبني عليه توقّعاً كاذباً. والمسارُ يُقرّره `resolveStack` وحدَه.
-            //    حين يُجلب قالبٌ حقيقيّ فعلاً (عبر `fetchStarter`) يعود ذكرُه هنا.
-            if (stack === 'react-next' && isFreshBuild) {
-                this.emitLiveLog(roomName, 'STACK', 'HybridRouter', '🧰 مشروع كبير → React/Next');
-                return await this._buildReactProject(goal, ctx, {
-                    sections: blueprint?.keySections || [],
-                });
-            }
-            this.emitLiveLog(roomName, 'STACK', 'HybridRouter', '🧰 مسار سريع → Vanilla');
-        } catch (e) { /* اختياري — نُكمل بالمسار الافتراضي */ }
-        return null; // لا استراتيجية خاصة → النواة (Vanilla) على الهدف المُثرى
+        return selectBuildStrategy(goal, blueprint, ctx, this.reporter, {
+            buildFromRegistry: (g, c) => this._buildFromRegistry(g, c),
+            buildFromClone: (clone, g, c) => this._buildFromClone(clone, g, c),
+            buildReactProject: (g, c, o) => this._buildReactProject(g, c, o),
+            trackOf: (room) => this.trackByRoom?.get(room),
+        });
     }
 
     // 🧩 الإثراءُ خرج إلى `stages/enrich.js` (JCR/6) — تفويضٌ يُبقي المستدعيَ كما هو؛
