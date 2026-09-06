@@ -624,7 +624,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
         transitionState(username, activeProject, STATES.ARCHITECTURE, { agent: 'Architect' });
 
         const strategyResult = await this._selectBuildStrategy(goal, blueprint, ctx);
-        if (strategyResult) return strategyResult;
+        if (strategyResult) {
+            // ⚖️ حكمُ مسار الاستراتيجيّة يُقال كما يُقال حكمُ الحلقة (PM/2b) — «يعمل/تخطّي» بلا حكمٍ لأنّ شيئاً لم يُبنَ.
+            if (strategyResult.verdict) this.emitLiveLog(roomName, '7. VERDICT', 'Judge', `⚖️ الحكم: ${strategyResult.verdict.status} — ${strategyResult.verdict.summary}`);
+            return strategyResult;
+        }
 
         const { requirementsContext, imageContext, pluginContext } =
             await this._enrichBuildContext(goal, blueprint, ctx);

@@ -14,7 +14,28 @@ import { writePlanFiles } from '../../core/runtime/workspacePaths.js';
 import { recordBehaviorGaps } from '../../services/platformLessons.js';
 import { getUserLanguage } from '../languageDetector.js';
 import { recordModel } from '../modelLibrary.js';
-import { recordGateOutcome } from '../../core/contracts/index.js';
+import { recordGateOutcome, deliveryVerdict } from '../../core/contracts/index.js';
+
+/** ⚖️ حكمُ بوّابة السلوك من ناتج `verifyBehavior` (PM/2): لم يُشغَّل/تُخطّي = لم يُتحقَّق، لا اجتياز. */
+export function behaviorOutcome(verdict) {
+    if (!verdict || !verdict.ran || verdict.skipped) return { status: 'unverified', detail: verdict?.summary || 'تعذّر التحقّق السلوكي' };
+    if (verdict.ok) return { status: 'pass', detail: verdict.summary || 'اجتاز التحقّق السلوكي' };
+    return { status: 'fail', detail: `ثغراتٌ باقية: ${(verdict.checks || []).filter(c => c.status === 'fail').map(c => c.name).join('، ') || verdict.summary || ''}` };
+}
+
+/**
+ * ⚖️ حكمُ مسارات الاستراتيجيّة (PM/2b): Registry/Clone/React تعود قبل حلقة التسليم، فتبني حكمَها بالشكل نفسِه
+ * من تحقّقها الداخليّ — الحارسُ اجتاز بالكتابة، والمتطلّباتُ «لا ينطبق» بسببٍ مكتوب (لا محقّقَ متطلّبات على هذه المسارات)،
+ * والسلوكُ من `verifyBehavior`. لا حكمَ بلا تحقّقٍ فعليّ.
+ */
+export function strategyVerdict({ filesCount = 0, behavior = null, requirementsNote = 'لا محقّقَ متطلّبات على هذا المسار' } = {}) {
+    const ctx = {};
+    recordGateOutcome(ctx, 'guard-and-write', 'pass', `${filesCount} ملفّاً كُتبت`);
+    recordGateOutcome(ctx, 'requirements-verify', 'skipped', requirementsNote);
+    const b = behaviorOutcome(behavior);
+    recordGateOutcome(ctx, 'behavior-verify', b.status, b.detail);
+    return deliveryVerdict(ctx.verdicts);
+}
 
 // 🔬 التحقّق السلوكي + جولة إصلاح تلقائية — مشتركة بين البناء والتعديل.
 // نُشغّل الصفحة فعلاً؛ إن كُشفت ثغرة (خطأ JS/زر ميت/دور بلا واجهة) وأُتيح
@@ -68,9 +89,8 @@ export async function runBehaviorVerifyStage(context, roomName, agents, reporter
             canFix: !!context.budget?.consumeCall?.(),
         }, reporter);
         // ⚖️ البوّابة تقول ما وجدت (PM/2): لم يُشغَّل/تُخطّي = لم يُتحقَّق، لا اجتياز.
-        if (!verdict || !verdict.ran || verdict.skipped) recordGateOutcome(context, 'behavior-verify', 'unverified', verdict?.summary || 'تعذّر التحقّق السلوكي');
-        else if (verdict.ok) recordGateOutcome(context, 'behavior-verify', 'pass', verdict.summary || 'اجتاز التحقّق السلوكي');
-        else recordGateOutcome(context, 'behavior-verify', 'fail', `ثغراتٌ باقية: ${(verdict.checks || []).filter(c => c.status === 'fail').map(c => c.name).join('، ') || verdict.summary || ''}`);
+        const outcome = behaviorOutcome(verdict);
+        recordGateOutcome(context, 'behavior-verify', outcome.status, outcome.detail);
         // 📚 مساهمة في مكتبة النماذج — فهم مُجرَّب (مرّ بالتحقّق) يُغني فئته
         // فيبدأ كل مشروع لاحق من نضجٍ أعلى. نساهم فقط بما نجح تحقّقه.
         if (verdict?.ok && context.blueprint?.category) {

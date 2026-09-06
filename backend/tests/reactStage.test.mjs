@@ -33,6 +33,10 @@ test('البناءُ الحقيقيّ بلا LLM: سكافولدُ Next كامل
         const { events, reporter } = collect();
         const r = await buildReactProject(GOAL, { ...s.ctx, projectPath: dir }, { sections: SECTIONS }, reporter);
         assert.equal(r.success, true); assert.equal(r.stack, 'react-next');
+        // ⚖️ PM/2b: الحكمُ من تحقّقِ المعاينة الثابتة فعلاً — تفصيلُ السلوك بصيغة المحقّق (لا «تعذّر» ولا قيمةٌ مكتوبة)
+        assert.equal(r.verdict.status, 'PASS', JSON.stringify(r.verdict));
+        assert.deepEqual(r.verdict.gates.map((g) => g.status), ['pass', 'skipped', 'pass']);
+        assert.match(r.verdict.gates[2].detail, /^\d+ ✅ \/ \d+ ⚠️ \/ \d+ ❌ \(\d+%\)$/, r.verdict.gates[2].detail);
         for (const f of ['package.json', 'tailwind.config.js', 'app/layout.jsx', 'app/about/page.jsx', 'components/Navbar.jsx', 'lib/content.js', 'README.md',
             'index.html', 'home.html', 'about.html', 'services.html', 'twasl.html', 'dashboard.html']) assert.ok(fs.existsSync(path.join(dir, f)), f);
         assert.deepEqual([...r.files].sort(), fs.readdirSync(dir).filter((f) => !f.startsWith('.')).sort(), 'قائمةُ الملفّات من القرص');
@@ -70,7 +74,7 @@ test('جلسةٌ إنجليزيّة وبلا أقسام: يُبنى بأقلّ �
         assert.equal(r.success, true); assert.ok(fs.existsSync(path.join(dir, 'index.html')) && fs.existsSync(path.join(dir, 'dashboard.html')));
         const reply = events.find(([ev]) => ev === 'chat_reply')[1];
         assert.equal(reply.message.split('\n')[0], '✅ React/Next project ready — multi-page preview running now.');
-        assert.equal(reply.message.split('\n').length, 4, 'التقريرُ الإنجليزيّ بلا سطر لوحة التحكّم — أربعةُ أسطر');
+        assert.equal(reply.message.split('\n').length, 5, 'PM/2b: + سطرُ التحقّق — ' + 'التقريرُ الإنجليزيّ بلا سطر لوحة التحكّم — أربعةُ أسطر');
         assert.deepEqual(reply.options, ['➕ Add a page', '🚀 Deploy to Vercel', '🐙 Push to GitHub', '✏️ Edit a section']);
     } finally { resetProjectState(s.ctx.username, s.ctx.activeProject); }
 });

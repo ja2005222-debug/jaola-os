@@ -155,12 +155,13 @@ test('الحدود: الحكمُ في العقد لا في jcr؛ الحلقةُ 
     assert.ok(jcr.includes("recordGateOutcome(context, 'guard-and-write', 'pass', `${plan.files.length} ملفّاً كُتبت بعد الحراسة`);"));
     assert.ok(jcr.includes('this._reportMissionSuccess(goal, ctx, execResult.verdict);'));
     assert.equal((jcr.match(/recordGateOutcome\(/g) || []).length, 1, 'الحارسُ وحده في jcr — البوّابتان الأخريان في مرحلتيهما');
-    for (const f of ['agents/stages/requirementsVerify.js', 'agents/stages/verify.js']) {
-        const src = fs.readFileSync(path.join(HERE, '..', f), 'utf8');
-        assert.ok(src.includes("import { recordGateOutcome } from '../../core/contracts/index.js';"), f);
-    }
+    assert.ok(fs.readFileSync(path.join(HERE, '../agents/stages/requirementsVerify.js'), 'utf8').includes("import { recordGateOutcome } from '../../core/contracts/index.js';"));
+    // PM/2b: verify.js يحمل حكمَ مسارات الاستراتيجيّة أيضاً فيستورد deliveryVerdict
+    assert.ok(fs.readFileSync(path.join(HERE, '../agents/stages/verify.js'), 'utf8').includes("import { recordGateOutcome, deliveryVerdict } from '../../core/contracts/index.js';"));
     assert.equal((fs.readFileSync(path.join(HERE, '../agents/stages/requirementsVerify.js'), 'utf8').match(/recordGateOutcome\(context, 'requirements-verify', /g) || []).length, 5, 'خمسُ حالات: صامت/ناقص/مكتمل/لا ينطبق/رمي');
-    assert.equal((fs.readFileSync(path.join(HERE, '../agents/stages/verify.js'), 'utf8').match(/recordGateOutcome\(context, 'behavior-verify', /g) || []).length, 4, 'أربعُ حالات: لم يُشغَّل/اجتاز/ثغرات/رمي');
+    const vsrc = fs.readFileSync(path.join(HERE, '../agents/stages/verify.js'), 'utf8').replace(/^\s*\/\/.*$/gm, '');
+    assert.equal((vsrc.match(/recordGateOutcome\(context, 'behavior-verify', /g) || []).length, 2, 'PM/2b: التصنيفُ في behaviorOutcome (مشترك مع مسارات الاستراتيجيّة) + حالةُ الرمي');
+    assert.equal((vsrc.match(/\bbehaviorOutcome\(/g) || []).length, 3, 'تعريفٌ + المرحلة + strategyVerdict');
     const rep = fs.readFileSync(path.join(HERE, '../agents/stages/reportMissionSuccess.js'), 'utf8');
     assert.ok(rep.includes('export function reportMissionSuccess(goal, ctx, reporter, verdict = null) {'));
 });

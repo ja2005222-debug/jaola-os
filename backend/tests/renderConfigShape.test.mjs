@@ -55,8 +55,9 @@ test('مواضعُ الجواب الخمسة كما قِيست — أيُّ تغ
     }
     assert.deepEqual(sites.sort(), [
         'agents/renderAgent.js:172 → hasBackend',
-        'agents/stages/buildFromClone.js:176 → false',
-        'agents/stages/buildFromRegistry.js:55 → false',
+        // PM/2b: الرقمان انزاحا بإضافة حكم المسار قبل النهائيّات (لا موضعَ جديد — العددُ خمسةٌ كما هو)
+        'agents/stages/buildFromClone.js:178 → false',
+        'agents/stages/buildFromRegistry.js:62 → false',
         'agents/stages/renderConfig.js:37 → hasBackend',
         'server.js:2391 → false',
         'services/deployAutomation.js:211 → true',

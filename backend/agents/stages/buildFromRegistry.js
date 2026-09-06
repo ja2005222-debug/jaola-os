@@ -23,6 +23,9 @@ import { autoPushIfEnabled } from '../../services/githubSync.js';
 import { snapshotWorkspace } from '../../services/workspaceStore.js';
 import { recordBuild, buildMetricsPayload } from '../../services/metricsStore.js';
 import { writeProjectFile } from '../../core/runtime/workspacePaths.js';
+import { verifyBehavior } from '../behaviorVerifier.js';
+import { strategyVerdict } from './verify.js';
+import { withVerdict } from './reportMissionSuccess.js';
 
 export async function buildFromRegistry(goal, ctx, reporter) {
     const { projectPath, username, activeProject, roomName } = ctx;
@@ -50,7 +53,11 @@ export async function buildFromRegistry(goal, ctx, reporter) {
     } catch { /* اختياري */ }
 
     // 3) نموذج بسيط + نشر ثابت
-    try { setDomainModel(username, activeProject, { entities: [], roles: [{ name: 'Visitor', capabilities: ['تصفّح'] }], flows: [], _source: 'registry' }); } catch {}
+    const registryModel = { entities: [], roles: [{ name: 'Visitor', capabilities: ['تصفّح'] }], flows: [], _source: 'registry' };
+    try { setDomainModel(username, activeProject, registryModel); } catch {}
+    // ⚖️ الحكم (PM/2b): الصفحةُ المركّبة تُتحقَّق فعلاً (صفحةُ هبوط — لا شرطَ تفاعل) لا تُعلَن ناجحةً بلا فحص.
+    const verdict = strategyVerdict({ filesCount: files.length, behavior: await verifyBehavior({ projectPath, blueprint: { kind: 'landing' }, domainModel: registryModel }),
+        requirementsNote: 'صفحةٌ من بلوكات Registry — لا مكوّناتٍ وظيفيّة تُتحقَّق' });
     try {
         await prepareRenderDeploy(projectPath, renderServiceName(username, activeProject), false);
     } catch { /* اختياري */ }
@@ -72,7 +79,7 @@ export async function buildFromRegistry(goal, ctx, reporter) {
     const msg = lang === 'ar'
         ? `✅ اكتمل — ركّبنا صفحة احترافية **كاملة** لـ «${brand}» من مكوّنات JAOLA الجاهزة (${blocks.length} قسم) ووضعنا بصمتك وهويتك البصرية. جرّبها في المعاينة، ثم اطلب أي تعديل.`
         : `✅ Done — composed a **complete** professional page for "${brand}" from ${blocks.length} ready JAOLA blocks, with your brand and visual identity. Try it in the preview, then request any change.`;
-    reporter.send(roomName, 'chat_reply', { message: msg });
+    reporter.send(roomName, 'chat_reply', { message: withVerdict(msg, verdict, lang) });
     reporter.liveLog(roomName, 'JCOS', 'Kernel', '✨ نجاح (إعادة تركيب من Registry)');
-    return { success: true, registry: true, blocks };
+    return { success: true, registry: true, blocks, verdict };
 }

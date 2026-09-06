@@ -20,7 +20,8 @@ import { autoPushIfEnabled } from '../../services/githubSync.js';
 import { snapshotWorkspace } from '../../services/workspaceStore.js';
 import { recordBuild, buildMetricsPayload } from '../../services/metricsStore.js';
 import { writeProjectFile } from '../../core/runtime/workspacePaths.js';
-import { verifyAndAutofix } from './verify.js';
+import { verifyAndAutofix, strategyVerdict } from './verify.js';
+import { withVerdict } from './reportMissionSuccess.js';
 
 // ⚛️ بناء مشروع React/Next حقيقي + معاينة حيّة في الـ iframe + خيار النشر
 export async function buildReactProject(goal, ctx, { sections = [] } = {}, reporter) {
@@ -102,11 +103,14 @@ export async function buildReactProject(goal, ctx, { sections = [] } = {}, repor
     // 🔬 تحقّق سلوكي على المعاينة (تقرير صادق؛ بلا إصلاح تلقائي لأن بنية
     // React تختلف عن ملفات vanilla الثلاثة التي يعدّلها المُصلِح). لا يوجد
     // agents في هذا المسار (canFix=false) — نمرّر null صراحةً.
+    let behavior = null;
     try {
-        await verifyAndAutofix({
+        behavior = await verifyAndAutofix({
             projectPath, blueprint: null, username, activeProject, roomName, agents: null, lang, canFix: false,
         }, reporter);
     } catch (e) { console.warn('[BehaviorVerify]', 'تخطّي تحقّق React:', e.message); }
+    // ⚖️ الحكم (PM/2b): من التحقّق على المعاينة الثابتة — ما لا يراه المحقّقُ الثابت يُقال «لم يُتحقَّق» لا «نجح».
+    const verdict = strategyVerdict({ filesCount: builtFiles.length, behavior, requirementsNote: 'مسارُ React — لا محقّقَ متطلّبات على السكافولد' });
 
     const durationSec = Math.round((Date.now() - t0) / 1000);
     recordBuild(username, activeProject, { success: true, durationSec, filesCount: builtFiles.length, goal: goal || '' });
@@ -128,9 +132,9 @@ export async function buildReactProject(goal, ctx, { sections = [] } = {}, repor
             '⬇️ Local run: npm install && npm run dev · Ready to deploy on Vercel.',
           ].join('\n');
     reporter.send(roomName, 'chat_reply', {
-        message: report,
+        message: withVerdict(report, verdict, lang),
         options: lang === 'ar' ? ['➕ أضف صفحة', '🚀 انشر على Vercel', '🐙 ادفع إلى GitHub', '✏️ عدّل قسماً'] : ['➕ Add a page', '🚀 Deploy to Vercel', '🐙 Push to GitHub', '✏️ Edit a section'],
     });
     reporter.liveLog(roomName, 'JCOS', 'Kernel', '✨ نجاح');
-    return { success: true, stack: 'react-next', files: builtFiles };
+    return { success: true, stack: 'react-next', files: builtFiles, verdict };
 }
