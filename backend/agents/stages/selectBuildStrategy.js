@@ -11,7 +11,7 @@
  */
 import { getUserLanguage } from '../languageDetector.js';
 import { getProjectMemory, getDomainModel } from '../projectMemory.js';
-import { matchCloneTemplate } from '../cloneTemplates/index.js';
+import { matchCloneTemplateDetailed } from '../cloneTemplates/index.js';
 import { resolveStack } from '../starterRegistry.js';
 import { isMarketingPageGoal } from '../blockRegistry.js';
 import { analyzeProjectStatic } from '../behaviorVerifier.js';
@@ -71,11 +71,20 @@ export async function selectBuildStrategy(goal, blueprint, ctx, reporter, ops) {
             return await ops.buildFromRegistry(goal, ctx);
         }
 
-        const clone = (continuation && !isFreshBuild)
-            ? null // الاستئناف يكمل الموجود عبر المسار التزايدي — لا استبدال بالقالب
-            : matchCloneTemplate(goal, blueprint, getDomainModel(username, activeProject),
+        const pick = (continuation && !isFreshBuild)
+            ? { clone: null, rejected: [] } // الاستئناف يكمل الموجود عبر المسار التزايدي — لا استبدال بالقالب
+            : matchCloneTemplateDetailed(goal, blueprint, getDomainModel(username, activeProject),
                 { track: ops.trackOf(roomName) });
+        const clone = pick.clone;
+        // 🧠 الفهمُ يُقال (PM/1): ما استُبعد ولماذا، وما اختير وبأيّ دليل — لا اختيارَ صامت.
+        if (pick.rejected.length) {
+            reporter.liveLog(roomName, 'STACK', 'ProductMind',
+                `🧠 استُبعد بالفهم: ${pick.rejected.slice(0, 4).map(r => `${r.id} (بلا ${r.missingRoles.join('/')})`).join('، ')}${pick.rejected.length > 4 ? ` +${pick.rejected.length - 4}` : ''}`);
+        }
         if (clone) {
+            const why = clone.matchReason || {};
+            reporter.liveLog(roomName, 'STACK', 'ProductMind',
+                `🧠 اختيارٌ بالفهم: ${clone.id} — ${why.reason === 'model-only' ? 'نموذجُ المنتج مطابق بلا كلمات' : `كلمات: ${(why.hits || []).join('/') || '—'}`}${why.roleCoverage !== null && why.roleCoverage !== undefined ? `، الأدوار ${Math.round(why.roleCoverage * 100)}٪` : ''}`);
             // نبدأ من الكلون العامل إن: (أ) بناء جديد/هوية جديدة، أو (ب) إعادة بناء
             // صريحة، أو (ج) المشروع القائم معطّل فعلاً (نُصلح المكسور).
             let apply = isFreshBuild || explicitRebuild;
@@ -84,9 +93,14 @@ export async function selectBuildStrategy(goal, blueprint, ctx, reporter, ops) {
                 const chk = await analyzeProjectStatic({
                     projectPath, domainModel: getDomainModel(username, activeProject),
                 });
-                const broken = !chk.hasProject || chk.checks.some(c => c.status === 'fail');
+                // 🧠 فجوةُ الأدوار ليست عطلاً (PM/1): مشروعٌ يعمل لكنّه لا يغطّي كلَّ أدوار الفهم لا
+                // يُدهَس بكلونٍ دون «أعد البناء» صريحة — الفهمُ يُقال، والقرارُ للمستخدم (الحكمُ في PM/2).
+                const fails = chk.checks.filter(c => c.status === 'fail');
+                const roleGap = fails.find(c => c.name === 'role-coverage');
+                const broken = !chk.hasProject || fails.some(c => c.name !== 'role-coverage');
                 worksNow = chk.hasProject && !broken;
                 apply = broken;
+                if (worksNow && roleGap) reporter.liveLog(roomName, 'STACK', 'ProductMind', `🧠 يعمل لكنّه لا يغطّي كلَّ الأدوار — ${roleGap.detail}`);
             }
             if (apply) {
                 return await ops.buildFromClone(clone, goal, ctx);

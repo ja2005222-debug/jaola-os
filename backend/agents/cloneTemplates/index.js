@@ -43,6 +43,7 @@ import { jaolaCleaning } from './jaolaCleaning.js';
 import { jaolaCryptoAdvisor } from './jaolaCryptoAdvisor.js';
 import { jaolaBudgetAdvisor } from './jaolaBudgetAdvisor.js';
 import { jaolaStockAdvisor } from './jaolaStockAdvisor.js';
+import { modelAffinity, conceptOf } from '../projectModel.js';
 
 // كل قوالب jaola المتاحة (تُبنى مرة عند الحاجة)
 const BUILDERS = [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaEvents, jaolaLms, jaolaSchool, jaolaWeather, jaolaCrypto, jaolaCurrency, jaolaErp, jaolaClinic, jaolaHr, jaolaPos, jaolaRestaurantOps, jaolaPharmacy, jaolaProperty, jaolaCinema, jaolaWorkshop, jaolaGym, jaolaAccounting, jaolaSalon, jaolaWarehouse, jaolaHotel, jaolaLaundry, jaolaCarRental, jaolaLawfirm, jaolaCoworking, jaolaHelpdesk, jaolaPhotography, jaolaFleet, jaolaTutoring, jaolaVetClinic, jaolaCleaning, jaolaVetClinicReact, jaolaCryptoAdvisor, jaolaBudgetAdvisor, jaolaStockAdvisor];
@@ -76,10 +77,31 @@ export function listClones() {
  * فئة المخطّط. مخصّص للتطبيقات التفاعلية فقط (لا البروشورات).
  */
 export function matchCloneTemplate(goal = '', blueprint = null, domainModel = null, opts = {}) {
+    return matchCloneTemplateDetailed(goal, blueprint, domainModel, opts).clone;
+}
+
+/** عبارةُ مسارٍ لا منتج: «نظام إدارة»، «سيستم داخلي»… تقول *أيَّ نوعٍ من الأدوات* لا *أيَّ منتج*. */
+export function isTrackPhrase(keyword = '') {
+    return SYSTEM_INTENT_RE.test(String(keyword));
+}
+
+/**
+ * 🧠 الاختيارُ بالفهم (PM/1، `PRODUCT_MIND.md`) — يعيد `{ clone, rejected, reason }`.
+ *
+ * مصادرُ الدليل مرتّبةً: (١) كلماتُ المستخدم التي تسمّي *منتجاً* بعينه (لا عباراتُ المسار)؛
+ * (٢) نموذجُ الفهم (أدوار/كيانات) مقارَناً بنموذج كلِّ كلون؛ (٣) الفئةُ والكلماتُ العامّة ترجيحاً فقط.
+ * - **الفيتو**: كلونٌ لا يغطّي دوراً من أدوار الفهم يُستبعد — إلّا إن سمّى المستخدمُ منتجَه صراحةً
+ *   (كلماتُه الحرفيّة تغلب نموذجاً مُهلوَساً). «نظام إدارة» ليست تسميةَ منتج فلا ترفع الفيتو:
+ *   طلبُ تاكسي لن يصير ERP بسبب هذه العبارة (العطبُ الأصل).
+ * - **الترتيب**: كما كان (كلمة ١٠، فئة ٢) + قربُ النموذج (≤ ٨) فيَحسم بين المتعادلين.
+ * - **الفهمُ وحده**: بلا كلماتٍ أصلاً، كلونٌ يغطّي كلَّ الأدوار (دورَين فأكثر) ويشارك كياناً واحداً
+ *   على الأقلّ، ولا منافسَ له، يُختار. البوّابةُ القديمة (كلمة + مجموع ≥ ٢) تبقى للمسار المعتاد.
+ */
+export function matchCloneTemplateDetailed(goal = '', blueprint = null, domainModel = null, opts = {}) {
     const category = blueprint?.category;
     const isApp = blueprint?.kind === 'webapp' || blueprint?.kind === 'tool'
         || (Array.isArray(domainModel?.roles) && domainModel.roles.length > 1);
-    if (!isApp) return null; // البروشورات لا تحتاج كلون تطبيق
+    if (!isApp) return { clone: null, rejected: [], reason: 'not-app' }; // البروشورات لا تحتاج كلون تطبيق
 
     // 🧭 المسار: صريح من زر الواجهة، وإلا من كلمات الطلب. سيستم → قوالب
     // السيستم حصراً (أو لا شيء = بناء حر)، موقع → لا قوالب سيستم.
@@ -96,24 +118,54 @@ export function matchCloneTemplate(goal = '', blueprint = null, domainModel = nu
         ...(domainModel?.flows || []).map(f => f?.name),
     ].filter(Boolean).join(' ').toLowerCase();
 
-    let best = null, bestScore = 0, bestKw = 0;
+    let best = null, bestRaw = 0, bestRank = 0, bestKw = 0, bestWhy = null;
+    const rejected = [];
+    const byModel = []; // مرشّحو «الفهم وحده»
     for (const build of BUILDERS) {
         const c = build();
         if (!inTrack(c)) continue;
-        let score = 0, kwHits = 0;
-        if (category && c.category === category) score += 2;
+        let raw = 0, kwHits = 0, explicit = false;
+        const hits = [];
+        if (category && c.category === category) raw += 2;
         for (const kw of c.keywords || []) {
             const k = kw && kw.toLowerCase();
             if (!k) continue;
-            if (goalHay.includes(k)) { score += 10; kwHits += 1; } // كلمة المستخدم تحسم
-            else if (modelHay.includes(k)) { score += 1; kwHits += 1; }
+            if (goalHay.includes(k)) { raw += 10; kwHits += 1; hits.push(kw); if (!isTrackPhrase(kw)) explicit = true; } // كلمة المستخدم تحسم
+            else if (modelHay.includes(k)) { raw += 1; kwHits += 1; }
         }
-        if (score > bestScore) { bestScore = score; best = c; bestKw = kwHits; }
+        const affinity = modelAffinity(domainModel, c.model);
+        if (affinity.substantive && affinity.roleCoverage !== null && affinity.roleCoverage < 1 && !explicit) {
+            rejected.push({ id: c.id, missingRoles: affinity.missingRoles });
+            continue;
+        }
+        const rank = raw + Math.round(affinity.score * 8);
+        if (rank > bestRank) { bestRank = rank; bestRaw = raw; best = c; bestKw = kwHits; bestWhy = { hits, explicit, affinity }; }
+        // الفهمُ وحده: دورانِ فأكثر كلُّها مغطّاة + كيانٌ مشترك واحد على الأقلّ (نماذجُ الكلونات جزئيّة:
+        // كلونُ التاكسي يذكر Ride/Zone لا Vehicle/Fare — فالنسبةُ ظالمة والعددُ صادق).
+        if (affinity.substantive && affinity.roleCoverage === 1 && affinity.missingRoles.length === 0
+            && affinity.sharedEntities.length >= 1 && conceptCount(domainModel?.roles) >= 2) {
+            byModel.push({ c, affinity });
+        }
     }
     // 🛡️ دليل كافٍ = كلمة مفتاحية واحدة على الأقل *إلزامية* + مجموع ≥ 2.
     // الفئة وحدها لا تكفي: تصنيف مهلوس من المخطّط (مثل travel على نظام مخزون)
     // كان يفرض قالباً لا علاقة له بالطلب — عطل إنتاجي حقيقي.
-    return bestKw >= 1 && bestScore >= 2 ? best : null;
+    if (bestKw >= 1 && bestRaw >= 2) return { clone: tag(best, 'keywords+model', bestWhy, rejected), rejected, reason: 'keywords+model' };
+    byModel.sort((a, b) => b.affinity.score - a.affinity.score);
+    if (byModel.length && (byModel.length === 1 || byModel[0].affinity.score > byModel[1].affinity.score)) {
+        const { c, affinity } = byModel[0];
+        return { clone: tag(c, 'model-only', { hits: [], explicit: false, affinity }, rejected), rejected, reason: 'model-only' };
+    }
+    return { clone: null, rejected, reason: rejected.length ? 'rejected-by-understanding' : 'no-evidence' };
+
+    function tag(clone, reason, why, rej) {
+        clone.matchReason = { reason, hits: why.hits, explicit: why.explicit,
+            roleCoverage: why.affinity.roleCoverage, entityOverlap: why.affinity.entityOverlap, rejected: rej.map(r => r.id) };
+        return clone;
+    }
+    function conceptCount(roles) {
+        return new Set((roles || []).map(r => conceptOf(r?.name)).filter(Boolean)).size;
+    }
 }
 
 /** يجلب كلوناً بمعرّفه (للتطبيق المباشر/الاختبار). */
