@@ -150,7 +150,7 @@ Policy/Permission، Identity، Plugin.
 | `databaseAgent.js`, `postgresAgent.js`, `authAgent.js`, `generatedAppSecrets.js`, `dependencyAgent.js` | 272/362/345/56/288 | كتلة الخلفية | KEEP | Task | `plugins/coding/stages/` |
 | `renderAgent.js` | 262 | نشر Render | MODIFY | Tool (deploy) | `plugins/coding/tools/` |
 | `requirementsVerifier.js` | 101 | هل نُفِّذت المتطلبات؟ | KEEP | Evidence | `core/verification/` (Sprint 4) |
-| `behaviorVerifier.js` | 511 | تحقّق ساكن + تشغيل حيّ (وحدة الدليل `check`) | MOVE | Evidence + Verification | `core/verification/VerificationEngine.js` (Sprint 4) |
+| `behaviorVerifier.js` | 528 | تحقّق ساكن + تشغيل حيّ (وحدة الدليل `check`) | MOVE | Evidence + Verification | `core/verification/VerificationEngine.js` (Sprint 4) |
 | `modelLibrary.js` | 69 | معرفة تراكمية | KEEP | Memory | `core/memory/` (لاحقاً) |
 | `fileManager.js`, `patchEditor.js` | 319/187 | كتابة/ترقيع ملفات مباشرة | MODIFY | Tool (workspace.writeFiles) | `core/runtime/ToolRuntime.js` |
 | `imageForge.js` | 140 | صور مضمونة | KEEP | Provider | `plugins/coding/` |
@@ -170,7 +170,7 @@ Policy/Permission، Identity، Plugin.
 | `templateLibrary.js`, `templateLibraryExtended.js`, `templateLocalizer.js` | 1061/1382/1943 | مكتبة القوالب وترجمتها | KEEP | — | `plugins/coding/templates/` (Sprint 6) |
 | `cloneTemplates/*` (42 ملفاً، 17,406 سطر؛ `jaolaClinic.js` يُستورد من 27 قالباً كأساس مشترك) | — | قوالب تطبيقات عاملة | KEEP | — | `plugins/coding/templates/clones/` |
 | `cloneAssets.js`, `seedStamp.js`, `fullstackTemplates.js`, `reactGenerator.js`, `blockRegistry.js`, `starterRegistry.js`, `starterFetch.js`, `libraryRegistry.js`, `referenceBlueprints.js` (PM/1: `referenceModel`), `appBlueprint.js`, `requirementAnalyzer.js` | 74/116/603/432/259/74/171/78/209/146/198 | استراتيجيات البناء ومخططاته | KEEP | Task (استراتيجية = Task Graph مختلف) | `plugins/coding/` |
-| `projectModel.js` (PM/1: معجمُ المفاهيم + `modelAffinity`), `projectMemory.js`, `userProfile.js` | 391/258/248 | ذاكرة المشروع والمستخدم | KEEP | Memory | `core/memory/` (لاحقاً) |
+| `projectModel.js` (PM/1: معجمُ المفاهيم + `modelAffinity`؛ PM/3: `conceptsInText` + `domainFidelity`), `projectMemory.js`, `userProfile.js` | 430/258/248 | ذاكرة المشروع والمستخدم | KEEP | Memory | `core/memory/` (لاحقاً) |
 | `componentMarketplace.js`, `platformContext.js` | 278/42 | مكوّنات جاهزة (markupها يُحقن بميزانية، 2q) + معلومات المنصّة | KEEP | — | `plugins/coding/` |
 
 ### C6. منتجات تعيش في `agents/` وليست وكلاء نواة

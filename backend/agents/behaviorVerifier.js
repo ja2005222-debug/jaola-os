@@ -14,6 +14,7 @@
  */
 
 import { createRequire } from 'module';
+import { domainFidelity } from './projectModel.js';
 const require = createRequire(import.meta.url);
 
 // ── أدوات نقية (قابلة للاختبار بلا jsdom) ─────────────────────────────
@@ -240,6 +241,22 @@ export function analyzeStatic({ html = '', js = '', blueprint = null, domainMode
         checks.push(missing.length
             ? { name: 'role-coverage', status: 'fail', detail: `أدوار بلا واجهة/تمثيل: ${missing.join('، ')} — النموذج متعدّد الأدوار لكن بعضها غير مبنيّ.` }
             : { name: 'role-coverage', status: 'pass', detail: `كل الأدوار (${roles.length}) ممثَّلة.` });
+    }
+
+    // ⚖️ صدقُ المجال (PM/3): هل يتكلّم المبنيُّ لغةَ المنتج المفهوم؟ الفحصُ حتميّ بمعجم PM/1 نفسِه
+    // (لا قائمةَ كلماتٍ ثانية) ولا يعمل إلّا على فهمٍ ذي معنى (مفهومان فأكثر). ثلاثةُ مفاهيمَ أجنبيّة
+    // بلا أيِّ تقاطعٍ = الصفحةُ تسمّي منتجاً آخر (جذرُ «مطعم بعلامة تاكسي») → عطل؛ تغطيةٌ ناقصة → تنبيه.
+    const fidelity = domainFidelity(domainModel, `${html}\n${js}`);
+    if (fidelity.applicable) {
+        if (fidelity.contaminated) {
+            checks.push({ name: 'domain-fidelity', status: 'fail',
+                detail: `المبنيُّ يتكلّم لغةَ منتجٍ آخر: ${fidelity.foreign.slice(0, 5).join('، ')} — ولا أثرَ لمفاهيم المنتج المطلوب (${fidelity.expected.join('، ')}).` });
+        } else if (fidelity.missing.length) {
+            checks.push({ name: 'domain-fidelity', status: 'warn',
+                detail: `مفاهيمُ المنتج غير ظاهرة في الواجهة/الكود: ${fidelity.missing.join('، ')}.` });
+        } else {
+            checks.push({ name: 'domain-fidelity', status: 'pass', detail: `مفاهيمُ المنتج كلُّها حاضرة (${fidelity.covered.join('، ')}).` });
+        }
     }
 
     // وجود بيانات: التطبيقات التفاعلية تحتاج مصدر بيانات (مصفوفة كائنات أو fetch API)

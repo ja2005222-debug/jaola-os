@@ -340,6 +340,9 @@ export function normalizeConceptText(s) {
         .replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه')
         .replace(/[^\p{L}\p{N}\s/]/gu, ' ')
         .split(/[\s/]+/).filter(Boolean)
+        // «ال» التعريف وسوابقُ العطف/الجرّ الملتصقة بها (والسائق، بالمركبة، للراكب) تُنزع — بلا هذا
+        // تفلت نصفُ مفردات النصّ العربيّ. السابقةُ وحدها (بلا «ال») لا تُنزع: «وقت» ليست «قت».
+        .map(t => (t.length > 4 && /^[وفبكل]ال/.test(t)) ? t.slice(3) : t)
         .map(t => (t.length > 3 && t.startsWith('ال')) ? t.slice(2) : t)
         .join(' ').trim();
 }
@@ -366,6 +369,42 @@ export function conceptOf(name) {
 }
 const conceptSet = (names, { dropGeneric = false } = {}) => new Set(
     (names || []).map(conceptOf).filter(c => c && !(dropGeneric && GENERIC_CONCEPTS.has(c))));
+
+/**
+ * 🔎 المفاهيمُ التي ينطق بها نصٌّ فعلاً (PM/3): فهرسٌ عكسيّ للمعجم نفسِه — لا قائمةَ كلماتٍ ثانية.
+ * يُطبَّع النصُّ مرّةً ثمّ يُبحث عن كلِّ مرادفٍ ككلمةٍ كاملة (أو عبارةٍ كاملة). المفاهيمُ العامّة تُستبعد
+ * لأنّها لا تسمّي منتجاً. دالّةٌ نقيّة، بلا نموذجٍ لغويّ.
+ */
+export function conceptsInText(text, { limit = 200000 } = {}) {
+    const s = ' ' + normalizeConceptText(String(text || '').slice(0, limit)) + ' ';
+    const found = new Set();
+    for (const [syn, concept] of SYNONYMS) {
+        if (GENERIC_CONCEPTS.has(concept) || found.has(concept)) continue;
+        if (syn.length >= 3 && s.includes(' ' + syn + ' ')) found.add(concept);
+    }
+    return found;
+}
+
+/**
+ * ⚖️ صدقُ المجال (PM/3): هل يتكلّم المبنيُّ لغةَ المنتج المفهوم أم لغةَ منتجٍ آخر؟ دالّةٌ نقيّة.
+ * - `expected`: مفاهيمُ الفهم (كيانات + أدوار، بلا العامّة). `spoken`: ما ينطق به النصّ.
+ * - `foreign`: مفاهيمُ منتجٍ لا يذكرها الفهمُ إطلاقاً. `covered`: ما تقاطع.
+ * - **تلوّث** (`contaminated`): ثلاثةُ مفاهيمَ أجنبيّة فأكثر بلا أيِّ تقاطع — الصفحةُ تسمّي منتجاً آخر.
+ *   العتبةُ ثلاثة لا واحد: كلمةٌ عابرة («طلب»، «حجز») تظهر في كلّ منتجٍ تقريباً، أمّا ثلاثةٌ بلا تقاطعٍ فهويّةٌ كاملة.
+ */
+export function domainFidelity(understood, text) {
+    const m = normalizeProjectModel(understood || {});
+    const expected = conceptSet([...m.entities.map(e => e.name), ...m.roles.map(r => r.name)], { dropGeneric: true });
+    const spoken = conceptsInText(text);
+    const covered = [...expected].filter(c => spoken.has(c));
+    const foreign = [...spoken].filter(c => !expected.has(c));
+    const missing = [...expected].filter(c => !spoken.has(c));
+    return {
+        applicable: expected.size >= 2,
+        expected: [...expected], spoken: [...spoken], covered, foreign, missing,
+        contaminated: expected.size >= 2 && covered.length === 0 && foreign.length >= 3,
+    };
+}
 
 /**
  * قربُ نموذجِ الفهم من نموذجِ مرشَّح (كلون/مرجع). دالّةٌ نقيّة.
