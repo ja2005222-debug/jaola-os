@@ -66,7 +66,8 @@ test('requirementsTraceOutcome بوثيقة: fail برقمٍ وعنوان (ست�
     assert.equal(f.status, 'fail'); assert.ok(f.detail.length <= 300, String(f.detail.length));
     assert.equal(f.detail, '31 بنداً من 44 في وثيقتك بلا أثر: 1 الصلاحيات والأدوار (RBAC)، 3 الباركود، 7 المرتجعات، 8 دفتر المخزون، 9 المشتريات، 10 الموردون +25 (13/44 له أثر — أثرٌ لا تنفيذ؛ مفاهيمُ الفهم 1/2)');
     const all = [{ name: 'index.html', content: secs.map(s => s.title).join(' ') }];
-    assert.deepEqual(requirementsTraceOutcome(null, all, 'n', secs), { status: 'pass', detail: '44/44 بنداً من وثيقتك له أثر — أثرٌ لا تنفيذ' });
+    assert.deepEqual(requirementsTraceOutcome(null, all, 'n', secs), { status: 'pass', detail: '44/44 بنداً من وثيقتك له أثر — أثرٌ لا تنفيذ', docTraced: 44, docTraceable: 44 },
+        'PM/12: العددان يلحقان الحكمَ — حلقةُ التسليم تؤلّف بهما ذيلَها بدل انتزاعِه من نصٍّ مُنسَّق');
     assert.deepEqual(requirementsTraceOutcome([{ name: 'بيانات product', _kind: 'entity' }], [{ name: 'a.js', content: 'منتج' }], 'n', [{ n: 1, title: 'النظام:' }]),
         { status: 'pass', detail: '1/1 له أثر — أثرٌ لا تنفيذ' }, 'بنودٌ كلُّها كلماتُ إطار → المعجمُ يحكم');
     assert.deepEqual(requirementsTraceOutcome(null, [], 'n', secs), { status: 'skipped', detail: 'n' });

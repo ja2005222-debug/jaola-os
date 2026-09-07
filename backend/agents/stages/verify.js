@@ -44,11 +44,13 @@ export function requirementsTraceOutcome(requirements, files, note = 'لا مح�
             const lexicon = requirements?.length ? traceRequirements(requirements, files) : null;
             const lexTail = lexicon && (lexicon.traced.length + lexicon.missing.length)
                 ? `؛ مفاهيمُ الفهم ${lexicon.traced.length}/${lexicon.traced.length + lexicon.missing.length}` : '';
+            // PM/12: العددان يُعادان أيضاً — حلقةُ التسليم تؤلّف بهما ذيلَها بدل انتزاعِه من نصٍّ مُنسَّق.
+            const counts = { docTraced: d.traced.length, docTraceable: traceable };
             if (d.missing.length) {
                 const names = d.missing.slice(0, 6).map(sectionLabel).join('، ') + (d.missing.length > 6 ? ` +${d.missing.length - 6}` : '');
-                return { status: 'fail', detail: `${d.missing.length} بنداً من ${traceable} في وثيقتك بلا أثر: ${names} (${d.traced.length}/${traceable} له أثر — أثرٌ لا تنفيذ${lexTail})` };
+                return { ...counts, status: 'fail', detail: `${d.missing.length} بنداً من ${traceable} في وثيقتك بلا أثر: ${names} (${d.traced.length}/${traceable} له أثر — أثرٌ لا تنفيذ${lexTail})` };
             }
-            return { status: 'pass', detail: `${d.traced.length}/${traceable} بنداً من وثيقتك له أثر — أثرٌ لا تنفيذ${lexTail}` };
+            return { ...counts, status: 'pass', detail: `${d.traced.length}/${traceable} بنداً من وثيقتك له أثر — أثرٌ لا تنفيذ${lexTail}` };
         }
     }
     if (!requirements?.length || !files?.length) return { status: 'skipped', detail: note };

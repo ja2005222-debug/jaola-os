@@ -159,7 +159,7 @@ test('الحدود: الحكمُ في العقد لا في jcr؛ الحلقةُ 
     assert.ok(fs.readFileSync(path.join(HERE, '../agents/stages/requirementsVerify.js'), 'utf8').includes("import { recordGateOutcome } from '../../core/contracts/index.js';"));
     // PM/2b: verify.js يحمل حكمَ مسارات الاستراتيجيّة أيضاً فيستورد deliveryVerdict
     assert.ok(fs.readFileSync(path.join(HERE, '../agents/stages/verify.js'), 'utf8').includes("import { recordGateOutcome, deliveryVerdict } from '../../core/contracts/index.js';"));
-    assert.equal((fs.readFileSync(path.join(HERE, '../agents/stages/requirementsVerify.js'), 'utf8').match(/recordGateOutcome\(context, 'requirements-verify', /g) || []).length, 5, 'خمسُ حالات: صامت/ناقص/مكتمل/لا ينطبق/رمي');
+    assert.equal((fs.readFileSync(path.join(HERE, '../agents/stages/requirementsVerify.js'), 'utf8').match(/recordGateOutcome\(context, 'requirements-verify', /g) || []).length, 6, 'PM/12: ستُّ حالات — صامتٌ ولوثيقته بنودٌ تُتتبَّع (الجديدة)/صامتٌ بلا وثيقة/ناقص/مكتمل/لا ينطبق/رمي');
     const vsrc = fs.readFileSync(path.join(HERE, '../agents/stages/verify.js'), 'utf8').replace(/^\s*\/\/.*$/gm, '');
     assert.equal((vsrc.match(/recordGateOutcome\(context, 'behavior-verify', /g) || []).length, 2, 'PM/2b: التصنيفُ في behaviorOutcome (مشترك مع مسارات الاستراتيجيّة) + حالةُ الرمي');
     assert.equal((vsrc.match(/\bbehaviorOutcome\(/g) || []).length, 3, 'تعريفٌ + المرحلة + strategyVerdict');

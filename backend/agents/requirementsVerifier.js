@@ -15,6 +15,7 @@
 
 import { smartChat } from '../core/providers/llm.js';
 import { conceptOf, conceptKind, conceptsInText, isGenericConcept, normalizeConceptText } from './projectModel.js';
+import { clipWords } from './textNormalizer.js';
 
 const VERIFY_SYSTEM = `أنت مدقق جودة صارم لمواقع الويب. لديك متطلبات وظيفية وكود الموقع الفعلي.
 لكل متطلب، افحص الكود بدقة: هل نُفِّذ **فعلاً بشكل عامل** (عناصر UI موجودة + منطق JavaScript حقيقي يعمل عليها ببيانات) — أم مجرد شكل/زخرفة/غير موجود؟
@@ -106,7 +107,14 @@ export function traceSections(sections, files) {
 }
 
 /** «٣ الباركود» — تسميةُ البند كما يراها المستخدم. */
-export const sectionLabel = (sec) => `${sec.n} ${String(sec.title).replace(/[:：]\s*$/, '')}`;
+// 🏷️ وسمُ البند: رقمُه واسمُه — لا جملتُه. وثيقةٌ تضع تفصيلَها على السطر نفسِه بعد النقطتين («1. الأعضاء: تسجيل عضو
+// جديد بالاسم ورقم الهوية…») كانت تعطي وسماً من ١١١ حرفاً، فستّةُ أوسمةٍ سطرٌ من ٦٧٠ حرفاً في الشات (PM/12).
+// الاسمُ ما قبل أوّل نقطتين أو شرطة، مقصوصاً على حدّ كلمة؛ والتتبّعُ يبقى على العنوان كلِّه (إشارةٌ أغنى).
+export const sectionLabel = (sec) => {
+    const title = String(sec.title).replace(/[:：]\s*$/, '');
+    const name = title.split(/\s*[:：]\s|\s+[—–-]\s+/)[0].trim() || title;
+    return `${sec.n} ${clipWords(name, 38)}`;
+};
 
 /**
  * تعليمةُ إكمالٍ من نصّ الوثيقة نفسِه (PM/9): البنودُ بلا أثر بعناوينها ومتونها كما كتبها المستخدم — لا صياغةٌ عامّة.
