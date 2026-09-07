@@ -121,7 +121,9 @@ document.getElementById('q').addEventListener('input',e=>render(e.target.value))
         assert.doesNotMatch(s.logs(), /قالب jaola عامل|اختيارٌ بالفهم/);
         assert.match(s.logs(), /\[AppAnalyzer\]: 🧭 أريد بناء نظام إدارة مكتبة عامة متكامل للاستخدام الفعلي\. — تطبيق تفاعلي/);
         assert.match(s.logs(), /استُبعد بالفهم: .*jaola-pos \(بلا member\)/);
-        assert.match(s.logs(), /كتابة الشفرة/, 'حلقةُ التسليم بنت الوثيقة');
+        // PM/13: النوعُ صار صادقاً (`saas` لا `construction` — «بناء» كانت تُقرأ صناعةَ مقاولات)، وnظامُ إدارةٍ من
+        // الأنواع الكبيرة، فالمسارُ React/Next لا الحلقةَ الفانيلا. البناءُ من وثيقته لا من كلونٍ — وهو المقصود هنا.
+        assert.match(s.logs(), /🧰 مشروع كبير → React\/Next/, 'نظامُ إدارةٍ (saas) مشروعٌ كبير');
         assert.doesNotMatch(s.replies().join('\n'), /نقطة بيع|كاشير/);
     } finally { resetProjectState(s.ctx.username, s.ctx.activeProject); }
 });

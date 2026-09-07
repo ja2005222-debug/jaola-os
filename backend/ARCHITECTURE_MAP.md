@@ -124,7 +124,7 @@ Policy/Permission، Identity، Plugin.
 | `router.js` | 94 | الموجّه الموحّد للرسائل | MODIFY | Mission | مع `ceoBrain` |
 | `chatCommands.js`, `textNormalizer.js` (+`isFullSpecification`: وثيقةٌ لا جملة؛ PM/9: `specSections`؛ PM/11: `specHead`/`clipWords`), `languageDetector.js`, `logLocalizer.js`, `failureMessages.js` | 120/347/200/204/25 | أوامر حتمية، تطبيع نص، لغة، ترجمة السجل، رسائل الفشل | KEEP | — | `agents/` (أدوات النواة اللغوية) |
 | ~~`baseAgent.js`~~ | 151 | عميل LLM المشترك — **نُقل حرفياً** إلى `core/providers/llm.js` (Sprint 4g) | MOVED | Provider | `core/providers/llm.js` (القسم B) |
-| `knowledgeEngine.js` | 335 | كشف نوع المشروع + سياق معرفي + `needsBackend` | KEEP | — | `plugins/coding/` |
+| `knowledgeEngine.js` (PM/13: لا أفعالَ طلبٍ في كلمات الصناعات) | 339 | كشف نوع المشروع + سياق معرفي + `needsBackend` | KEEP | — | `plugins/coding/` |
 | `backendNeed.js` | 68 | **مصدرُ الحقيقة الواحد** لـ«أيحتاج خلفيةً؟» (Sprint 7/1) + العلاقية مجموعةً جزئيّة منه (2r) | KEEP | — | `plugins/coding/` |
 | ✅ `keywordMatch.js` (جديد، 2s) | 60 | مطابقةُ كلماتٍ بحدودها لا باحتوائها — سابقةٌ عربية مقيَّدة ولاحقةٌ من مجموعةٍ مغلقة | ADDED | — | `plugins/coding/` |
 
