@@ -27,9 +27,14 @@ const RELATIONAL_KEYWORDS = Object.freeze([
 // كلمات تُشير أن المشروع يحتاج خادماً (اتحاد القائمتين السابقتين)
 export const BACKEND_KEYWORDS = Object.freeze([
     // عربي
-    'تسجيل دخول', 'تسجيل', 'حساب', 'مستخدم', 'مستخدمين',
+    // 🔴 أُسقطت «تسجيل» المفردة (2026-09-07): «**تسجيل** ما حُفظ» في متتبّع حفظٍ ليس
+    //    تسجيلَ دخول. والصيغةُ الدقيقة «تسجيل دخول» باقيةٌ فوقها، و«صفحة تسجيل عضوية»
+    //    يلتقطها 'عضوية' — فما سقط هو الاتّساعُ وحدَه لا الإشارة (مقيسٌ: ٥٣ اختباراً خضراء).
+    'تسجيل دخول', 'حساب', 'مستخدم', 'مستخدمين',
     'دفع', 'دفع إلكتروني', 'حجز', 'حجوزات', 'لوحة تحكم', 'لوحة إدارة',
-    'قاعدة بيانات', 'إدارة', 'تخزين', 'رفع', 'رفع صور', 'بيانات',
+    // 🔴 وأُسقطت «بيانات» المفردة للسبب نفسِه: «بقاء **البيانات** … يبقى في المتصفّح»
+    //    نصٌّ يقول صراحةً إنّه بلا خادم. و«قاعدة بيانات» باقيةٌ هنا.
+    'قاعدة بيانات', 'إدارة', 'تخزين', 'رفع', 'رفع صور',
     'سلة', 'طلبات', 'منتجات', 'مخزون', 'فاتورة', 'اشتراك', 'عضوية',
     // إنجليزي
     'login', 'signup', 'register', 'auth', 'authentication', 'oauth',
@@ -53,8 +58,30 @@ export const RELATIONAL_KEYWORDS_LIST = RELATIONAL_KEYWORDS;
 const BACKEND_MATCHERS = matchersFor(BACKEND_KEYWORDS);
 const RELATIONAL_MATCHERS = matchersFor(RELATIONAL_KEYWORDS);
 
+/**
+ * 🚫 النفيُ يُطوى قبل المطابقة — الجملةُ التي تنفي لا تُوجب.
+ *
+ * قِيس من أوّل بناءٍ حرٍّ حيّ (`from0`): مواصفةٌ تقول «تعمل بالكامل داخل المتصفّح **بلا
+ * خادم ولا حساب**» خرجت بـNext.js + API + Prisma. والسببُ أنّ المطابقةَ كلماتٌ مفردةٌ
+ * لا ترى سياقاً، فالتقطت «حساب» من «بلا حساب» — أي أنّ **النفيَ نفسَه هو ما أوجب**.
+ *
+ * القاعدة: أداةُ نفيٍ (`بلا`/`بدون`/`دون`/`no`/`without`) تُلغي ما بعدها إلى أوّل فاصلٍ
+ * أو رابطِ استدراك (`لكن`/`إلّا`/`but`) — لا إلى آخر النصّ. فـ«متجرٌ بلا تسجيل دخول،
+ * لكنّ فيه دفعاً» يبقى بحاجةِ خادم، وذلك مقيسٌ باختبارٍ مستقلّ.
+ *
+ * و«ولا» بعد نفيٍ تمتدّ به: «بلا خادم **ولا** حساب» — نفيان لا نفيٌ وإثبات.
+ *
+ * دالّةٌ نقيّة. حدٌّ مكتوب: هذا نفيٌ **معجميّ** لا نحويّ؛ «لا أريد أن أبني بلا حساب»
+ * تُقرأ نفياً وهي إثبات. لم يُقَس مثالٌ حقيقيٌّ كهذا، ولا يُدَّعى تغطيتُه.
+ */
+const NEGATION_SCOPE = /(?:^|[\s،,.؛;:()])(?:بلا|بدون|دون|without|no)\s+((?:(?!\s(?:لكن|لكنّ|إلا|إلّا|but|however)\s)[^،,.؛;:()\n])*)/giu;
+
+export function stripNegated(text) {
+    return String(text || '').replace(NEGATION_SCOPE, ' ');
+}
+
 export function needsBackend(userGoal) {
-    return matchesAny(BACKEND_MATCHERS, userGoal);
+    return matchesAny(BACKEND_MATCHERS, stripNegated(userGoal));
 }
 
 /**
@@ -62,7 +89,7 @@ export function needsBackend(userGoal) {
  * كلماتُها داخل الاتحاد، فما يُثبت هذه يُثبت تلك حتماً — لا تناقضَ ممكن.
  */
 export function needsRelationalDb(userGoal) {
-    return matchesAny(RELATIONAL_MATCHERS, userGoal);
+    return matchesAny(RELATIONAL_MATCHERS, stripNegated(userGoal));
 }
 
-export default { needsBackend, needsRelationalDb, BACKEND_KEYWORDS };
+export default { needsBackend, needsRelationalDb, stripNegated, BACKEND_KEYWORDS };

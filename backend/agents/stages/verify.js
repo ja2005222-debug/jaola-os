@@ -149,7 +149,18 @@ export async function runBehaviorVerifyStage(context, roomName, agents, reporter
         recordGateOutcome(context, 'behavior-verify', outcome.status, outcome.detail);
         // 📚 مساهمة في مكتبة النماذج — فهم مُجرَّب (مرّ بالتحقّق) يُغني فئته
         // فيبدأ كل مشروع لاحق من نضجٍ أعلى. نساهم فقط بما نجح تحقّقه.
-        if (verdict?.ok && context.blueprint?.category) {
+        //
+        // 🔴 وكان الشرطُ `verdict?.ok` وحدَه — وهو حكمُ **المحقّق السلوكيّ** لا حكمُ المنتج.
+        //    قِيس في أوّل بناءٍ حرٍّ حيّ (`from0`): طُلب متتبّعُ حفظِ قرآن، فُهم منصّةَ تعليمٍ
+        //    مدرسيّة (student/teacher/parent/forumpost/grade)، وقال القاضي `FAILED` —
+        //    ثمّ طُبع «يستفيد منه كل مشروع لاحق» وأُودع الفهمُ المهلوَس ذاكرةً دائمة.
+        //    والتعليقُ أعلاه كان يَعِد بما لا يضمنه الشرط.
+        //    وهذا **يتراكم**: خطأٌ واحدٌ يُورَّث لكلِّ ما بعده في فئته. فالبوّاباتُ السابقة
+        //    مُسجَّلةٌ حين نصل هنا (`requirements-verify` قبلها في `DELIVERY_STAGES`)،
+        //    فيُقرأ ما سجّلته: فشلٌ أو «لم يُتحقَّق» يمنع الإيداع؛ والتخطّي لا يمنع.
+        const gatesClean = !Object.values(context?.verdicts || {})
+            .some(g => g?.status === 'fail' || g?.status === 'unverified');
+        if (verdict?.ok && gatesClean && context.blueprint?.category) {
             const contributed = recordModel(
                 context.blueprint.category,
                 getDomainModel(context.username, context.activeProject),
