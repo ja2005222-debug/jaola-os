@@ -91,9 +91,29 @@ document.getElementById('add').addEventListener('click',()=>{const li=document.c
     assert.notEqual(check(right.checks).status, 'fail', JSON.stringify(check(right.checks)));
 });
 
+test('PM/14: صفحةٌ بتنسيقٍ ووسومٍ بلا مجال لا «تغطّي» شيئاً — والبوّابةُ تسقط بالتلوّث لا تصمت', async () => {
+    const dir = emptyProject();
+    // صفحةُ تاكسي مزعومة، لا تذكر راكباً ولا سائقاً ولا رحلة — لكنّها مليئةٌ بمفردات المنصّة،
+    // ومن مجالٍ آخر (مطعم). قبل PM/14 كانت خصائصُ CSS وحدَها ترفع `covered` فتُخرِس التلوّث.
+    fs.writeFileSync(path.join(dir, 'index.html'), `<!DOCTYPE html><html lang="ar"><head><meta charset="utf-8"><title>ص</title>
+<style>.n{display:flex;order:1}.c{pointer-events:none;grid-area:a;transition-property:all}</style></head><body>
+<h1>مطعم البحر</h1><table class="t"><tr><td>الطاولة</td></tr></table><p>النادل يستلم الصنف</p>
+<button id="b">أضف</button><script src="script.js"></script></body></html>`);
+    fs.writeFileSync(path.join(dir, 'script.js'), `const d=[{name:'سمك'}];document.getElementById('b').addEventListener('click',()=>{});`);
+    const v = await verifyBehavior({ projectPath: dir, blueprint: { kind: 'webapp' }, domainModel: TAXI });
+    const c = check(v.checks);
+    assert.equal(c.status, 'fail', JSON.stringify(c));
+    assert.match(c.detail, /^المبنيُّ يتكلّم لغةَ منتجٍ آخر: /);
+    // الأجنبيُّ مفرداتُ المطعم وحدَها — لا `order` من خاصّة الترتيب ولا `property` من `transition-property`
+    for (const machine of ['order', 'property', 'location', 'course', 'event']) {
+        assert.doesNotMatch(c.detail, new RegExp(`\\b${machine}\\b`), `لفظُ الآلة «${machine}» عُدَّ مفردةَ منتج`);
+    }
+});
+
 test('الحدود: المعجمُ واحد (الفحصُ يستورد domainFidelity من projectModel ولا يبني قائمةً)، والفحصُ اسمٌ واحد بثلاث حالات', () => {
     const src = fs.readFileSync(path.join(HERE, '../agents/behaviorVerifier.js'), 'utf8');
-    assert.ok(src.includes("import { domainFidelity } from './projectModel.js';"));
+    // PM/14 أضاف `productText` من الوحدة نفسِها — الإسقاطُ حيث المعجم، فالمعجمُ يبقى واحداً ولا قائمةَ ثانية
+    assert.ok(src.includes("import { domainFidelity, productText } from './projectModel.js';"));
     assert.equal((src.match(/domainFidelity\(/g) || []).length, 1);
     assert.equal((src.match(/name: 'domain-fidelity'/g) || []).length, 3, 'fail/warn/pass');
     const pm = fs.readFileSync(path.join(HERE, '../agents/projectModel.js'), 'utf8').replace(/^\s*\/\/.*$/gm, '');

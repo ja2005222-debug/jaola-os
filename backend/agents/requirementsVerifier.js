@@ -14,7 +14,7 @@
  */
 
 import { smartChat } from '../core/providers/llm.js';
-import { conceptOf, conceptKind, conceptsInText, isGenericConcept, normalizeConceptText } from './projectModel.js';
+import { conceptOf, conceptKind, conceptsInText, isGenericConcept, normalizeConceptText, productText } from './projectModel.js';
 import { clipWords } from './textNormalizer.js';
 
 const VERIFY_SYSTEM = `أنت مدقق جودة صارم لمواقع الويب. لديك متطلبات وظيفية وكود الموقع الفعلي.
@@ -69,8 +69,12 @@ export function composeRequirements(blueprint, domainModel = null) {
  * مفردة) **لا يُتتبَّع** ولا يُحسب له ولا عليه.
  * @returns {{ traced: string[], missing: string[], untraceable: string[] }} أسماءُ المتطلّبات بترتيبها
  */
+/** نصُّ ما تقوله ملفّاتُ المشروع عن منتجه (PM/14) — بلا تنسيقٍ ولا أسماءِ وسوم. */
+const productCorpus = (files) => (files || []).map(f => productText(f?.content || '', f?.name || '')).join('\n');
+
 export function traceRequirements(requirements, files) {
-    const spoken = conceptsInText((files || []).map(f => f?.content || '').join('\n'));
+    // PM/14: نصُّ المنتج لا نصُّ الملفّ — تنسيقُ الصفحة وأسماءُ وسومها ليست مفرداتِ صاحب المشروع
+    const spoken = conceptsInText(productCorpus(files));
     const out = { traced: [], missing: [], untraceable: [] };
     for (const r of (requirements || [])) {
         if (!r?.name) continue;
@@ -94,7 +98,7 @@ const SECTION_STOPWORDS = new Set(['نظام', 'دعم', 'امكانيه', 'ام
  * @returns {{ traced: Array<{n,title}>, missing: Array<{n,title}>, untraceable: Array<{n,title}> }}
  */
 export function traceSections(sections, files) {
-    const corpus = ' ' + normalizeConceptText((files || []).map(f => f?.content || '').join('\n')) + ' ';
+    const corpus = ' ' + normalizeConceptText(productCorpus(files)) + ' ';
     const out = { traced: [], missing: [], untraceable: [] };
     for (const sec of (sections || [])) {
         if (!sec?.title) continue;

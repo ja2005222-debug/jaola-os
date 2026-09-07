@@ -447,6 +447,36 @@ const conceptSet = (names, { dropGeneric = false } = {}) => new Set(
     (names || []).map(conceptOf).filter(c => c && !(dropGeneric && GENERIC_CONCEPTS.has(c))));
 
 /**
+ * 🗣️ PM/14 — نصُّ **المنتج** من نصِّ الملفّ: لغةُ الآلة ليست لغةَ صاحب المشروع.
+ *
+ * قِيس: صفحةٌ لا تذكر المجالَ بكلمةٍ واحدة تنطق بستّة كياناتٍ من المعجم — `course` من السمة `class`، و`event`
+ * من `pointer-events`، و`order` من خاصّة الترتيب، و`location` من `grid-area`، و`property` من
+ * `transition-property`، و`table` من الوسم وخاصّته. فمنتجُ العقارات كان يجتاز بوّابةَ متطلّباته **٢/٢** على
+ * صفحةٍ فارغة، والمطعمُ ٢/٣ — و«الغيابُ قاطع» هو نصُّ عقد `traceRequirements`. وأسوأُ منه أنّ «المغطّى» يصير
+ * غيرَ صفر فتُخرَس بوّابةُ التلوّث (PM/3) الموضوعةُ لالتقاط «بُني منتجٌ آخر».
+ *
+ * القاعدةُ ثلاثٌ، بنيويّةٌ لا قائمةَ كلمات: **التنسيقُ لا يسمّي منتجاً** (ملفُّ CSS كلُّه، و`<style>` المضمَّن)؛
+ * **أسماءُ الوسوم والسمات كلماتُ المنصّة** (القيمةُ والنصُّ المرئيُّ يبقيان — «ابحث عن طلب» في `placeholder`
+ * أثرٌ صادق)؛ و**تعبيرُ المتصفّح المعروف يُسقَط** (`window.location.href`) لا الكلمةُ وحدَها، فـ`location`
+ * حقلَ بياناتٍ في تطبيق توصيلٍ أثرٌ صادق أيضاً.
+ * دالّةٌ نقيّة. لا تُستعمل على نصّ المستخدم (الهدف/الوثيقة) — هناك لا آلةَ تتكلّم.
+ * @param {string} content محتوى الملفّ  @param {string} name اسمُه (يُميّز CSS)
+ */
+export function productText(content = '', name = '') {
+    if (/\.css$/i.test(String(name))) return '';
+    let s = String(content).replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ');
+    // الوسمُ يُستبدل بقيم سماته وحدَها — إلّا `style` فقيمتُها تنسيقٌ أيضاً
+    s = s.replace(/<[^>]*>/g, (tag) => ' ' + [...tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)]
+        .filter(m => m[1].toLowerCase() !== 'style').map(m => m[2] ?? m[3]).join(' ') + ' ');
+    // تعبيراتُ المتصفّح المعروفة — لا الكلماتُ المفردة
+    return s
+        .replace(/\b(?:window|document|globalThis)\s*\.\s*location\b/g, ' ')
+        .replace(/\blocation\s*\.\s*(?:href|hash|search|pathname|origin|host|hostname|protocol|port|reload|assign|replace)\b/g, ' ')
+        .replace(/\b(?:Event|CustomEvent|EventTarget|PointerEvent|KeyboardEvent|MouseEvent)\b/g, ' ')
+        .replace(/\bclass\s+(?=[A-Z_$])/g, ' ');
+}
+
+/**
  * 🔎 المفاهيمُ التي ينطق بها نصٌّ فعلاً (PM/3): فهرسٌ عكسيّ للمعجم نفسِه — لا قائمةَ كلماتٍ ثانية.
  * يُطبَّع النصُّ مرّةً ثمّ يُبحث عن كلِّ مرادفٍ ككلمةٍ كاملة (أو عبارةٍ كاملة). المفاهيمُ العامّة تُستبعد
  * لأنّها لا تسمّي منتجاً. دالّةٌ نقيّة، بلا نموذجٍ لغويّ.

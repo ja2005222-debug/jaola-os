@@ -14,7 +14,7 @@
  */
 
 import { createRequire } from 'module';
-import { domainFidelity } from './projectModel.js';
+import { domainFidelity, productText } from './projectModel.js';
 const require = createRequire(import.meta.url);
 
 // ── أدوات نقية (قابلة للاختبار بلا jsdom) ─────────────────────────────
@@ -246,7 +246,8 @@ export function analyzeStatic({ html = '', js = '', blueprint = null, domainMode
     // ⚖️ صدقُ المجال (PM/3): هل يتكلّم المبنيُّ لغةَ المنتج المفهوم؟ الفحصُ حتميّ بمعجم PM/1 نفسِه
     // (لا قائمةَ كلماتٍ ثانية) ولا يعمل إلّا على فهمٍ ذي معنى (مفهومان فأكثر). ثلاثةُ مفاهيمَ أجنبيّة
     // بلا أيِّ تقاطعٍ = الصفحةُ تسمّي منتجاً آخر (جذرُ «مطعم بعلامة تاكسي») → عطل؛ تغطيةٌ ناقصة → تنبيه.
-    const fidelity = domainFidelity(domainModel, `${html}\n${js}`);
+    // PM/14: من نصّ المنتج — الصفحةُ الفارغةُ كانت «تغطّي» مفاهيمَ بخصائص CSS وأسماءِ السمات فتُخرِس البوّابة
+    const fidelity = domainFidelity(domainModel, `${productText(html, 'index.html')}\n${productText(js, 'script.js')}`);
     if (fidelity.applicable) {
         if (fidelity.contaminated) {
             checks.push({ name: 'domain-fidelity', status: 'fail',

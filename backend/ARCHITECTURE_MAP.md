@@ -150,8 +150,8 @@ Policy/Permission، Identity، Plugin.
 | `gitAgent.js` | 261 | commit/init/stats (ينفّذ git) | MODIFY | Tool (`git` عبر `execFile` بمصفوفة وسائط — لا صدفة) | `plugins/coding/tools/` |
 | `databaseAgent.js`, `postgresAgent.js` (PM/5: لا مخطّطَ ⇒ لا تسليم), `authAgent.js`, `generatedAppSecrets.js`, `dependencyAgent.js` | 272/369/345/56/288 | كتلة الخلفية | KEEP | Task | `plugins/coding/stages/` |
 | `renderAgent.js` | 262 | نشر Render | MODIFY | Tool (deploy) | `plugins/coding/tools/` |
-| `requirementsVerifier.js` (PM/4: `composeRequirements`؛ PM/7: `_kind` + `traceRequirements` بمعجم projectModel؛ PM/9: `traceSections` + `buildSectionFixInstruction` بلغة الوثيقة؛ PM/12: `sectionLabel` اسمُ البند لا جملتُه) | 208 | هل نُفِّذت المتطلبات؟ | KEEP | Evidence | `core/verification/` (Sprint 4) |
-| `behaviorVerifier.js` | 528 | تحقّق ساكن + تشغيل حيّ (وحدة الدليل `check`) | MOVE | Evidence + Verification | `core/verification/VerificationEngine.js` (Sprint 4) |
+| `requirementsVerifier.js` (PM/4: `composeRequirements`؛ PM/7: `_kind` + `traceRequirements` بمعجم projectModel؛ PM/9: `traceSections` + `buildSectionFixInstruction` بلغة الوثيقة؛ PM/12: `sectionLabel` اسمُ البند لا جملتُه؛ PM/14: `productCorpus` — المتتبِّعان يقرآن نصَّ المنتج لا نصَّ الملفّ) | 212 | هل نُفِّذت المتطلبات؟ | KEEP | Evidence | `core/verification/` (Sprint 4) |
+| `behaviorVerifier.js` (PM/14: بوّابةُ صدق المجال على نصّ المنتج) | 529 | تحقّق ساكن + تشغيل حيّ (وحدة الدليل `check`) | MOVE | Evidence + Verification | `core/verification/VerificationEngine.js` (Sprint 4) |
 | `modelLibrary.js` | 69 | معرفة تراكمية | KEEP | Memory | `core/memory/` (لاحقاً) |
 | `fileManager.js`, `patchEditor.js` | 319/187 | كتابة/ترقيع ملفات مباشرة | MODIFY | Tool (workspace.writeFiles) | `core/runtime/ToolRuntime.js` |
 | `imageForge.js` | 140 | صور مضمونة | KEEP | Provider | `plugins/coding/` |
@@ -171,7 +171,7 @@ Policy/Permission، Identity، Plugin.
 | `templateLibrary.js`, `templateLibraryExtended.js`, `templateLocalizer.js` | 1061/1382/1943 | مكتبة القوالب وترجمتها | KEEP | — | `plugins/coding/templates/` (Sprint 6) |
 | `cloneTemplates/*` (42 ملفاً، 17,406 سطر؛ `jaolaClinic.js` يُستورد من 27 قالباً كأساس مشترك) | — | قوالب تطبيقات عاملة | KEEP | — | `plugins/coding/templates/clones/` |
 | `cloneAssets.js`, `seedStamp.js`, `fullstackTemplates.js`, `reactGenerator.js`, `blockRegistry.js` (الاختصارُ التسويقيّ يقرأ الفهمَ قبل الكلمات؛ لا ألفاظَ عميلٍ في `MARKETING_HINTS`), `starterRegistry.js`, `starterFetch.js`, `libraryRegistry.js`, `referenceBlueprints.js` (PM/1: `referenceModel`؛ PM/4: `referenceEntities`/`referenceFlows`), `appBlueprint.js` (PM/11: `appType` من رأس الوثيقة على حدّ كلمة), `requirementAnalyzer.js` | 74/116/603/432/267/74/171/78/249/147/198 | استراتيجيات البناء ومخططاته | KEEP | Task (استراتيجية = Task Graph مختلف) | `plugins/coding/` |
-| `projectModel.js` (PM/1: معجمُ المفاهيم + `modelAffinity`؛ PM/3: `conceptsInText` + `domainFidelity`؛ PM/4: `conceptKind`؛ PM/5: `modelProjectType`؛ PM/6: `conceptFrequencies` + `lexiconModel` والاحتياطُ يقرأهما؛ PM/7: `isGenericConcept`), `projectMemory.js`, `userProfile.js` | 541/258/248 | ذاكرة المشروع والمستخدم | KEEP | Memory | `core/memory/` (لاحقاً) |
+| `projectModel.js` (PM/1: معجمُ المفاهيم + `modelAffinity`؛ PM/3: `conceptsInText` + `domainFidelity`؛ PM/4: `conceptKind`؛ PM/5: `modelProjectType`؛ PM/6: `conceptFrequencies` + `lexiconModel` والاحتياطُ يقرأهما؛ PM/7: `isGenericConcept`؛ PM/14: `productText` — التنسيقُ وأسماءُ الوسوم والسمات ليست لغةَ المنتج), `projectMemory.js`, `userProfile.js` | 571/258/248 | ذاكرة المشروع والمستخدم | KEEP | Memory | `core/memory/` (لاحقاً) |
 | `componentMarketplace.js`, `platformContext.js` | 278/42 | مكوّنات جاهزة (markupها يُحقن بميزانية، 2q) + معلومات المنصّة | KEEP | — | `plugins/coding/` |
 
 ### C6. منتجات تعيش في `agents/` وليست وكلاء نواة
