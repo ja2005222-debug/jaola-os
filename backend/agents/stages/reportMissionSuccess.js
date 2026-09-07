@@ -15,6 +15,7 @@ import { autoPushIfEnabled } from '../../services/githubSync.js';
 import { snapshotWorkspace } from '../../services/workspaceStore.js';
 import { recordBuild, buildMetricsPayload } from '../../services/metricsStore.js';
 import { readAIUsage, usageLine } from '../../core/providers/llm.js';
+import { rememberMissionNote } from '../../services/conversationStore.js';
 
 // ⚖️ عنوانُ التقرير من الحكم (PM/2): PASS كما كان؛ UNVERIFIED «اكتمل البناء ولم يكتمل التحقّق»؛
 // FAILED «اكتمل البناء لكنّ التحقّق وجد ثغرات» — ولا يُقال «اكتملت المهمة» إلّا لما اجتاز البوّابات.
@@ -96,10 +97,12 @@ export function reportMissionSuccess(goal, ctx, reporter, verdict = null) {
         ? ['🚀 انشر الآن', '🐙 ادفع إلى GitHub', '📊 أين وصلنا']
         : ['🚀 Deploy now', '🐙 Push to GitHub', '📊 Status'];
 
-    reporter.send(roomName, 'chat_reply', {
-        message: reportLines.join('\n'),
-        options: suggestions,
-    });
+    const reportMessage = reportLines.join('\n');
+    reporter.send(roomName, 'chat_reply', { message: reportMessage, options: suggestions });
+
+    // 🗂️ وخبرُ التسليم يُحفظ حيث يقرأه `join_project` — فمن غادر إلى متصفّحٍ آخر
+    // يجد مهمّتَه تامّةً وخبرَها بانتظاره، لا شاشةً بيضاءَ يظنّ معها أنّ البناءَ انقطع.
+    rememberMissionNote(username, activeProject, reportMessage).catch(() => {});
 
     // 🛠️ تحديث قائمة الملفات في الواجهة بعد البناء (كانت تبقى فارغة)
     reporter.send(roomName, 'workspace_files', builtFiles);

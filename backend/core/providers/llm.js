@@ -126,7 +126,12 @@ export const isPermanentAIError = (e) => ['quota', 'auth', 'config'].includes(cl
  */
 export function aggregateFailure(failures, lastError) {
     if (!failures.length) {
-        return lastError || new Error('لا يوجد مزود AI مُهيأ (GROQ_API_KEY / DEEPSEEK_API_KEY / OPENAI_API_KEY).');
+        // 🔴 لا مزوّدَ حاولَ أصلاً — لا مفاتيحَ أو كلُّها مُستبعَدةٌ بـ`AI_PROVIDERS`. وهذا **أدومُ**
+        // الأعطال: لا محاولةَ ثانيةٌ تُوجِد مفتاحاً. كان الغلافُ يعيد المحاولةَ عليه لأنّ الراية
+        // غابت — أوقعَته حزمةُ الاختبارات نفسُها (وهي تعمل بلا مفاتيح) بانتظارٍ لا سبب له.
+        const none = lastError || new Error('لا يوجد مزود AI مُهيأ (GROQ_API_KEY / DEEPSEEK_API_KEY / OPENAI_API_KEY).');
+        none.aiUnavailable = true;
+        return none;
     }
     const permanent = failures.every(isPermanentAIError);
     const diagnosis = failures
@@ -315,7 +320,28 @@ function tagged(provider, res) {
     return res;
 }
 
-async function createWithFailover(params, opts) {
+// ═══════════════════════════════════════════════════════
+// 🔁 إعادةُ المحاولة — «نعيد المحاولة» وعدٌ لم يكن الكودُ يفي به
+// ═══════════════════════════════════════════════════════
+/**
+ * قِيس من لقطة إنتاج: سقط سبعةُ وكلاءَ من سبعة بـ«تعذّر الوصول» (عطبٌ عابر)، فانتهى البناءُ
+ * إلى المولّد الكلاسيكيّ — بينما كانت تكفي محاولةٌ ثانيةٌ بعد أقلَّ من ثانية. و`createWithFailover`
+ * كان يجرّب كلَّ مزوّدٍ **مرّةً واحدة**؛ ورسالةُ `AI_RETRYABLE_MSG` تقول «نعيد المحاولة».
+ *
+ * والإعادةُ على العابر وحدَه: الرصيدُ المنتهي واسمُ الموديل الخاطئ لا تُجدي معهما محاولة —
+ * وتكرارُها هو عينُ ما أُغلق في #588 (سبعُ دوراتٍ تُحرق على بابٍ مغلق).
+ */
+export const AI_MAX_RETRIES = Math.min(3, Math.max(1, Number(process.env.AI_MAX_RETRIES) || 2));
+const RETRY_BASE_MS = Math.max(1, Number(process.env.AI_RETRY_BASE_MS) || 400);
+
+/** تراجعٌ تصاعديّ محدود — المستخدمُ ينتظر أمام شاشة، فالمجموعُ محسوب. */
+export function retryDelayMs(attempt) {
+    return RETRY_BASE_MS * Math.pow(3, attempt);
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function attemptChain(params, opts) {
     let lastError = null;
     const failures = [];
 
@@ -378,6 +404,23 @@ async function createWithFailover(params, opts) {
     }
 
     throw aggregateFailure(failures, lastError);
+}
+
+/**
+ * جولةٌ كاملةٌ على السلسلة، ثمّ إعادةٌ محدودةٌ إن كان الفشلُ عابراً.
+ * `aiUnavailable` تعني «كلُّها دائمة» — فلا إعادة.
+ */
+async function createWithFailover(params, opts) {
+    for (let attempt = 0; ; attempt++) {
+        try {
+            return await attemptChain(params, opts);
+        } catch (err) {
+            if (err?.aiUnavailable || attempt >= AI_MAX_RETRIES) throw err;
+            const wait = retryDelayMs(attempt);
+            console.warn(`[AI Retry] عطبٌ عابر — إعادةُ المحاولة ${attempt + 1}/${AI_MAX_RETRIES} بعد ${wait}ms`);
+            await sleep(wait);
+        }
+    }
 }
 
 // كائن متوافق مع واجهة Groq SDK — non-null ما دام أي مزود متاحاً

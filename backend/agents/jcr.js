@@ -49,6 +49,7 @@ import { guardFiles, ensureEditIntegrity } from '../services/codeGuard.js';
 import { recordMissionOutcome, matureLessons, lessonDirective, MIN_COUNT_TO_TEACH } from '../services/platformLessons.js';
 import { recordBuild, buildMetricsPayload } from '../services/metricsStore.js';
 import { getPendingGoal, consumePendingGoal, clearDialog } from '../services/conversationManager.js';
+import { rememberMissionNote } from '../services/conversationStore.js';
 import { enqueueMission, takeLostMission } from '../core/runtime/ExecutionQueue.js';
 import { MEMORY_ROOT } from '../core/runtime/workspaceRoots.js';
 import { generateChatResponse as runChatResponse } from './stages/chatResponse.js';
@@ -548,9 +549,10 @@ export class JaolaCognitiveRuntime {
                 this._learnFromOutcome(roomName, { success: false, error: runtimeError });
                 this.emitLiveLog(roomName, 'JCOS', 'Kernel', `❌ فشل نهائياً: ${runtimeError.message}`);
                 // 💬 الشات لا يصمت عند الفشل — رسالة حتمية بلغة المستخدم (بلا نموذج)
-                this.reporter.send(roomName, 'chat_reply', {
-                    message: buildFailureChatMessage(getUserLanguage(username), runtimeError),
-                });
+                const failureMessage = buildFailureChatMessage(getUserLanguage(username), runtimeError);
+                this.reporter.send(roomName, 'chat_reply', { message: failureMessage });
+                // 🗂️ والفشلُ يُحفظ كما يُحفظ النجاح — الصمتُ عن الفشل أسوأُ من الفشل نفسِه.
+                rememberMissionNote(username, activeProject, failureMessage).catch(() => {});
                 return { success: false, error: runtimeError.message };
             }
 
