@@ -37,12 +37,14 @@ test('traceRequirements: دورٌ/كيانٌ في المعجم يُتتبَّع 
         traced: ['شاشة customer', 'بيانات product'],
         missing: ['شاشة tenant', 'بيانات invoice', 'بيانات account'],
         untraceable: ['شاشة User', 'الميزة الأساسية التفاعلية', 'تدفّق بيع بالمنتج'],
+        // 🔤 ⊆ traced: أثرُهما في نثر index.html وحدَه؛ و`app.js` هنا `const rows = []` لا ينطق بشيء.
+        decorative: ['شاشة customer', 'بيانات product'],
     });
     assert.deepEqual(traceRequirements([{ name: 'تدفّق إغلاق وردية', _kind: 'flow' }], [{ name: 'a.js', content: 'وردية' }]).untraceable, ['تدفّق إغلاق وردية'], 'بلا _kind كانت ستُتتبَّع بمفردة «وردية» — التدفّقُ انتقالُ حالةٍ لا لفظ');
     assert.deepEqual(traceRequirements([{ name: 'بيانات وردية' }], [{ name: 'a.js', content: 'وردية' }]).traced, ['بيانات وردية'], 'بلا _kind: المعجمُ يقرّر');
-    assert.deepEqual(traceRequirements([], files), { traced: [], missing: [], untraceable: [] });
-    assert.deepEqual(traceRequirements([{ name: 'بيانات product', _kind: 'entity' }], []), { traced: [], missing: ['بيانات product'], untraceable: [] }, 'بلا ملفّات: كلُّ شيءٍ بلا أثر — والمستدعي يقرّر skipped قبل النداء');
-    assert.deepEqual(traceRequirements(null, null), { traced: [], missing: [], untraceable: [] });
+    assert.deepEqual(traceRequirements([], files), { traced: [], missing: [], untraceable: [], decorative: [] });
+    assert.deepEqual(traceRequirements([{ name: 'بيانات product', _kind: 'entity' }], []), { traced: [], missing: ['بيانات product'], untraceable: [], decorative: [] }, 'بلا ملفّات: كلُّ شيءٍ بلا أثر — والمستدعي يقرّر skipped قبل النداء');
+    assert.deepEqual(traceRequirements(null, null), { traced: [], missing: [], untraceable: [], decorative: [] });
 });
 
 test('requirementsTraceOutcome: لا متطلّبات/لا ملفّات → skipped بالسبب؛ كلُّها لا يُتتبَّع → skipped بعدده؛ بلا أثر → fail بالأسماء؛ كلُّه له أثر → pass «أثرٌ لا تنفيذ»', () => {
@@ -51,14 +53,23 @@ test('requirementsTraceOutcome: لا متطلّبات/لا ملفّات → skip
     assert.deepEqual(requirementsTraceOutcome([{ name: 'بيانات product', _kind: 'entity' }], [], 'سبب'), { status: 'skipped', detail: 'سبب' });
     assert.deepEqual(requirementsTraceOutcome(null, null), { status: 'skipped', detail: 'لا محقّقَ متطلّبات على هذا المسار' });
     assert.deepEqual(requirementsTraceOutcome([{ name: 'شاشة Visitor', _kind: 'role' }, { name: 'x' }], files, 'سبب'), { status: 'skipped', detail: 'سبب — 2 متطلّب بلا مفردةٍ تُتتبَّع' });
+    // 🔤 لا ذيلَ «لا يُتتبَّع» هنا؛ لكنّ الأثرَ نثرٌ (app.js في هذا الطُّعم `const rows = []`) فلا نجاح
     assert.deepEqual(requirementsTraceOutcome([{ name: 'بيانات product', _kind: 'entity' }, { name: 'شاشة customer', _kind: 'role' }], files, 'سبب'),
-        { status: 'pass', detail: '2/2 له أثر — أثرٌ لا تنفيذ' }, 'بلا غيرِ متتبَّع: لا ذيل');
+        { status: 'unverified', detail: '2/2 له أثر — أثرٌ لا تنفيذ؛ 2 أثرُه في نصٍّ لا يشغّله شيء: بيانات product، شاشة customer' },
+        'بلا غيرِ متتبَّع: لا ذيلَ لهُ — والأثرُ لا يصل شفرةً تعمل');
+    // وحين يصل الأثرُ شفرةً تعمل: نجاحٌ مكتوبٌ عليه «أثرٌ لا تنفيذ»
+    assert.deepEqual(requirementsTraceOutcome([{ name: 'بيانات product', _kind: 'entity' }],
+        [{ name: 'app.js', content: 'const المنتجات = []; render(المنتجات);' }], 'سبب'),
+        { status: 'pass', detail: '1/1 له أثر — أثرٌ لا تنفيذ' });
     assert.deepEqual(requirementsTraceOutcome([{ name: 'بيانات product', _kind: 'entity' }, { name: 'شاشة tenant', _kind: 'role' }, { name: 'تدفّق x', _kind: 'flow' }], files, 'سبب'),
         { status: 'fail', detail: '1 متطلّب بلا أثر: شاشة tenant (1/2 له أثر — أثرٌ لا تنفيذ؛ 1 لا يُتتبَّع بالمفردات)' });
     // strategyVerdict يقرؤها بعينها: fail يُسقط الحكمَ إلى FAILED، وskipped لا يمنع PASS كما كان (deliveryVerdict)
     const ok = { ran: true, ok: true, summary: 'ok' };
     assert.equal(strategyVerdict({ filesCount: 1, behavior: ok, requirements: [{ name: 'شاشة tenant', _kind: 'role' }], files }).status, 'FAILED');
-    assert.equal(strategyVerdict({ filesCount: 1, behavior: ok, requirements: [{ name: 'بيانات product', _kind: 'entity' }], files }).status, 'PASS');
+    // أثرُ «بيانات product» في هذا الطُّعم نثرٌ (`app.js` = `const rows = []`) → UNVERIFIED؛ ومع شفرةٍ تنطق به → PASS
+    assert.equal(strategyVerdict({ filesCount: 1, behavior: ok, requirements: [{ name: 'بيانات product', _kind: 'entity' }], files }).status, 'UNVERIFIED');
+    assert.equal(strategyVerdict({ filesCount: 1, behavior: ok, requirements: [{ name: 'بيانات product', _kind: 'entity' }],
+        files: [{ name: 'app.js', content: 'const المنتجات = []; render(المنتجات);' }] }).status, 'PASS');
     assert.equal(strategyVerdict({ filesCount: 1, behavior: ok, requirements: [{ name: 'شاشة Visitor', _kind: 'role' }], files }).summary, 'guard-and-write ✓، requirements-verify –، behavior-verify ✓');
 });
 

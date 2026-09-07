@@ -131,7 +131,8 @@ export function matchCloneTemplateDetailed(goal = '', blueprint = null, domainMo
     // على طلب «موقع فعاليات») كان يقلب الاختيار لقالب لا علاقة له بالطلب.
     const goalHay = String(goal || '').toLowerCase();
     // 🏷️ PM/11: وثيقةٌ مرقّمة تسمّي منتجَها في رأسها — كلمةٌ في المتن (بند «الطباعة: … إيصال») ترجّح ولا ترفع الفيتو.
-    const namingHay = numberedSections(goal) >= NAMING_MIN_SECTIONS ? specHead(goal).toLowerCase() : goalHay;
+    const isDoc = numberedSections(goal) >= NAMING_MIN_SECTIONS;
+    const namingHay = isDoc ? specHead(goal).toLowerCase() : goalHay;
     const modelHay = [
         ...(domainModel?.entities || []).map(e => e?.name),
         ...(domainModel?.roles || []).map(r => r?.name),
@@ -159,7 +160,10 @@ export function matchCloneTemplateDetailed(goal = '', blueprint = null, domainMo
             rejected.push({ id: c.id, missingRoles: affinity.missingRoles });
             continue;
         }
-        const rank = raw + Math.round(affinity.score * 8);
+        // 🏷️ PM/11: ما يسمّيه المستخدمُ في **رأس** وثيقته يغلب كلمةً في متنها. كان الوزنُ متساوياً،
+        //    فوثيقةٌ رأسُها «أريد بناء صيدلية» وبنودُها تذكر «الفواتير» يحسمها ترتيبُ البُناة لا الرأس.
+        //    (قِيس حين أوقعَ الفيتوُ الجديدُ مطابقةً صحيحة: المرشّحُ الفائز لم يكن المسمَّى في الرأس.)
+        const rank = raw + Math.round(affinity.score * 8) + (explicit ? 5 : 0);
         if (rank > bestRank) { bestRank = rank; bestRaw = raw; best = c; bestKw = kwHits; bestWhy = { hits, explicit, affinity }; }
         // الفهمُ وحده: دورانِ فأكثر كلُّها مغطّاة + كيانٌ مشترك واحد على الأقلّ (نماذجُ الكلونات جزئيّة:
         // كلونُ التاكسي يذكر Ride/Zone لا Vehicle/Fare — فالنسبةُ ظالمة والعددُ صادق).
@@ -171,6 +175,26 @@ export function matchCloneTemplateDetailed(goal = '', blueprint = null, domainMo
     // 🛡️ دليل كافٍ = كلمة مفتاحية واحدة على الأقل *إلزامية* + مجموع ≥ 2.
     // الفئة وحدها لا تكفي: تصنيف مهلوس من المخطّط (مثل travel على نظام مخزون)
     // كان يفرض قالباً لا علاقة له بالطلب — عطل إنتاجي حقيقي.
+    //
+    // 🧭 والكلمةُ العابرة (مقيسٌ من الإنتاج): وثيقةٌ من تسعة بنودٍ تطلب منصّةَ هندسةِ برمجيّات ذكرت
+    //    `marketplace` مرّةً في جملةٍ عن مستقبلٍ بعيد («…and an agent marketplace») — فبُني متجر.
+    //    وسندُ الاختيار المُسجَّل يفضح نفسَه: `hits:["marketplace"]، roleCoverage:null` — الفهمُ لم
+    //    يساهم بشيء. والتمييزُ كان محسوباً ولا يُقرأ: `explicit` لا تُرفع إلّا حين تقع الكلمةُ في
+    //    **رأس الوثيقة** حيث يسمّي المستخدمُ منتجَه (PM/11)، وهذه وقعت بعد البنود.
+    //
+    //    فالشرطُ اجتماعُ ضعفٍ على ضعف: كلمةٌ واحدةٌ لا غير + خارجَ ما يسمّي المستخدمُ به منتجَه +
+    //    لا سندَ من نموذج الفهم. وحينها **لا كلون**: البناءُ الحرّ أصدقُ
+    //    من قالبٍ لمنتجٍ آخر (والسببُ يُسمّى، فلا يبقى الاختيارُ صندوقاً مغلقاً).
+    //    و**شرطُ «وثيقةٌ مرقّمة» أُسقط لأنّه ميّت**: بغير وثيقةٍ يصير `namingHay` هو الهدفَ كلَّه،
+    //    فأيُّ إصابةٍ ترفع `explicit` ويسقط الفيتو من تلقائه. (يبقى الطلبُ القصير الذي إصابتُه
+    //    الوحيدة **عبارةُ مسار** — «نظام»/«سيستم» — فيُوقَف، وذلك هو المقصود: تلك لا تسمّي منتجاً.)
+    //    و`modelBacked` احتياطٌ **غيرُ مقيسٍ مستقلّاً**: كلُّ حالةٍ بُنيت وجدَ فيها شرطُ العدد
+    //    (`bestKw < 2`) يسبقه — لأنّ إصابةَ نموذجِ الفهم تُحسب في العدد أيضاً. يبقى مكتوباً ولا يُدَّعى.
+    const modelBacked = !!(bestWhy?.affinity?.substantive
+        && (bestWhy.affinity.roleCoverage > 0 || (bestWhy.affinity.sharedEntities || []).length > 0));
+    const incidental = bestKw >= 1 && bestRaw >= 2 && bestKw < 2
+        && !bestWhy?.explicit && !modelBacked;
+    if (incidental) return { clone: null, rejected, reason: `incidental-keyword:${(bestWhy?.hits || []).join('/')}` };
     if (bestKw >= 1 && bestRaw >= 2) return { clone: tag(best, 'keywords+model', bestWhy, rejected), rejected, reason: 'keywords+model' };
     byModel.sort((a, b) => b.affinity.score - a.affinity.score);
     if (byModel.length && (byModel.length === 1 || byModel[0].affinity.score > byModel[1].affinity.score)) {

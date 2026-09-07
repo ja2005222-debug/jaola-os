@@ -60,7 +60,8 @@ test('قارئُ الحكم يرى كلَّ صفحةٍ بُنيت — والقا
 test('حكمُ مسار React على ما بُني كلِّه: بندُ الوثيقة الذي كُتب في صفحته له أثر', async () => {
     const { verdict } = await buildLibrary('pm15b');
     const req = (verdict.gates || []).find(g => g.name === 'requirements-verify');
-    // كلُّ متطلّبات النموذج لها أثرٌ في الصفحات المكتوبة — وكانت «شاشة مدير» بلا أثرٍ لأنّ صفحتَها لم تُقرأ
+    // كلُّ متطلّبات النموذج لها أثرٌ في الصفحات المكتوبة — وكانت «شاشة مدير» بلا أثرٍ لأنّ صفحتَها لم تُقرأ.
+    // و`pass` تبقى هنا لأنّ الأثرَ يصل شفرةً تعمل، لا نثراً وحدَه (انظر `tests/lexicalEvidence.test.mjs`).
     assert.equal(req.status, 'pass', req.detail);
     assert.doesNotMatch(req.detail, /بلا أثر/, req.detail);
 });

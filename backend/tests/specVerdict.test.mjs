@@ -48,7 +48,7 @@ test('traceSections على كلون نقاط البيع: ١٠ من ٣٦ له أ�
     assert.ok(t.traced.some(x => x.n === 4) && t.traced.some(x => x.n === 6), 'شاشة الكاشير والفواتير لهما أثر');
     const u = traceSections([{ n: 1, title: 'النظام:' }, { n: 2, title: 'دعم كل النظام' }, { n: 3, title: 'الباركود' }, { n: 4, title: 'دعم كل شيء' }], [{ name: 'a.js', content: 'باركود' }]);
     assert.deepEqual({ t: u.traced.map(sectionLabel), m: u.missing.map(sectionLabel), u: u.untraceable.map(sectionLabel) }, { t: ['3 الباركود'], m: ['4 دعم كل شيء'], u: ['1 النظام', '2 دعم كل النظام'] }, '«شيء» مفردةٌ حقيقيّة فتُتتبَّع ولا تُوجَد');
-    assert.deepEqual(traceSections([], POS.files), { traced: [], missing: [], untraceable: [] });
+    assert.deepEqual(traceSections([], POS.files), { traced: [], missing: [], untraceable: [], decorative: [] });
 });
 
 test('buildSectionFixInstruction: البنودُ بنصّها كما كُتبت، ثمانيةٌ في الجولة وبقيّتُها مذكورة، وإرشادُ النموذج — وبلا بنودٍ لا تعليمة', () => {
@@ -69,11 +69,17 @@ test('requirementsTraceOutcome بوثيقة: fail برقمٍ وعنوان (ست�
     // 🗓️ PM/21: ٤٤ ← ٣٦ و١٣ ← ١٠. البنودُ ٣٧–٤٤ «المرحلة N» جدولٌ زمنيٌّ لا مطالب: ثلاثةٌ منها كانت تُعدّ «له أثر»
     //        بمفرداتِ بنودٍ عُدَّت قبلها (٣٨←منتجات/كاشير، ٣٩←فواتير/دفع، ٤٢←تقارير)، وخمسةٌ تُعدّ فجواتٍ لا تُبنى.
     assert.equal(f.detail, '26 بنداً من 36 في وثيقتك بلا أثر: 1 الصلاحيات والأدوار (RBAC)، 3 الباركود، 7 المرتجعات، 8 دفتر المخزون، 9 المشتريات، 10 الموردون +20 (10/36 له أثر — أثرٌ لا تنفيذ؛ مفاهيمُ الفهم 1/2؛ 8 من أسطر خطّة التسليم لا تُحسَب (لا تُبنى))');
+    // 🔤 وهذا الطُّعمُ هو العطبُ المقيسُ بعينه: صفحةٌ محتواها **عناوينُ البنود وحدَها** بلا سطرِ شفرة.
+    //    كان يُعلَن ٣٦/٣٦ ثمّ `pass` — أي أنّ كتابةَ الوثيقة في الصفحة تُرضي بوّابةَ الوثيقة.
+    //    الآن: كلُّها «أثرُه في نصٍّ لا يشغّله شيء»، والعددان يلحقان الحكمَ كما كانا (PM/12).
     const all = [{ name: 'index.html', content: secs.map(s => s.title).join(' ') }];
-    assert.deepEqual(requirementsTraceOutcome(null, all, 'n', secs), { status: 'pass', detail: '36/36 بنداً من وثيقتك له أثر — أثرٌ لا تنفيذ؛ 8 من أسطر خطّة التسليم لا تُحسَب (لا تُبنى)', docTraced: 36, docTraceable: 36 },
-        'PM/12: العددان يلحقان الحكمَ — حلقةُ التسليم تؤلّف بهما ذيلَها بدل انتزاعِه من نصٍّ مُنسَّق');
+    const lex = requirementsTraceOutcome(null, all, 'n', secs);
+    assert.equal(lex.status, 'unverified');
+    assert.equal(lex.docTraced, 36); assert.equal(lex.docTraceable, 36);
+    assert.match(lex.detail, /^36\/36 بنداً من وثيقتك له أثرٌ لفظيّ — و36 منها أثرُه في نصٍّ لا يشغّله شيء/);
+    assert.match(lex.detail, /8 من أسطر خطّة التسليم لا تُحسَب \(لا تُبنى\)$/);
     assert.deepEqual(requirementsTraceOutcome([{ name: 'بيانات product', _kind: 'entity' }], [{ name: 'a.js', content: 'منتج' }], 'n', [{ n: 1, title: 'النظام:' }]),
-        { status: 'pass', detail: '1/1 له أثر — أثرٌ لا تنفيذ' }, 'بنودٌ كلُّها كلماتُ إطار → المعجمُ يحكم');
+        { status: 'pass', detail: '1/1 له أثر — أثرٌ لا تنفيذ' }, 'بنودٌ كلُّها كلماتُ إطار → المعجمُ يحكم (والأثرُ في a.js)');
     assert.deepEqual(requirementsTraceOutcome(null, [], 'n', secs), { status: 'skipped', detail: 'n' });
     assert.equal(strategyVerdict({ filesCount: 3, behavior: { ran: true, ok: true, summary: 'ok' }, files: POS.files, sections: secs }).status, 'FAILED');
 });

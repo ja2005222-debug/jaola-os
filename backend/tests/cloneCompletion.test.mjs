@@ -83,10 +83,18 @@ test('جولةُ إكمالٍ واحدة: ما لا أثرَ له يُطلب ب�
     assert.match(msg, /\n🏗️ أُكمل تلقائيّاً على القالب: شاشة customer، شاشة tenant\.\n⚠️ التحقّق وجد ثغرات — requirements-verify: 1 متطلّب بلا أثر: بيانات account/);
 });
 
-test('رقعةٌ تسدّ الثلاثةَ → requirements-verify pass «10/10 له أثر»؛ والسلوكُ يحكم من جهته على ما وصل القرص', async () => {
+// 🔤 كان هذا الاختبارُ يُثبّت العطبَ نفسَه: «رقعةٌ تسدّ الثلاثةَ → pass». والرقعةُ تُبنى من **نصّ البنود
+// كما كُتبت** (`buildSectionFixInstruction`)، فإعلانُ النجاح بعدها إعلانٌ بأنّ الألفاظَ وصلت لا بأنّ
+// الميزةَ عملت.
+//
+// وتمييزُ موضع الأثر يكشف أكثرَ ممّا كان مقصوداً: الرقعةُ هنا تُقحم **أقساماً في index.html بلا سطرِ
+// شفرةٍ واحد** — فالثلاثةُ التي «أُكملت» أثرُها نثرٌ لا يشغّله شيء، والسطرُ «✅ أُكمل (3/3)» يبقى
+// كما هو. فالحكمُ يقول ما لا يقوله سطرُ الإكمال، وهذا هو المقصود من البوّابة.
+test('رقعةٌ تسدّ الثلاثةَ → لا بندَ بلا أثر، لكنّ أثرَها نثرٌ لا يشغّله شيء فالحكمُ «لم يكتمل التحقّق»؛ والسلوكُ يحكم من جهته على ما وصل القرص', async () => {
     const { r, events } = await buildPos('pm8all', adder(['العميل', 'المستأجر', 'الحساب']));
-    assert.equal(gate(r.verdict, 'requirements-verify').status, 'pass');
-    assert.equal(gate(r.verdict, 'requirements-verify').detail, '10/10 له أثر — أثرٌ لا تنفيذ؛ 4 لا يُتتبَّع بالمفردات');
+    assert.equal(gate(r.verdict, 'requirements-verify').status, 'unverified');
+    assert.equal(gate(r.verdict, 'requirements-verify').detail,
+        '10/10 له أثر — أثرٌ لا تنفيذ؛ 4 لا يُتتبَّع بالمفردات؛ 3 أثرُه في نصٍّ لا يشغّله شيء: شاشة customer، شاشة tenant، بيانات account');
     assert.match(logs(events).find(l => l.includes('✅ أُكمل')), /✅ أُكمل \(3\/3\): شاشة customer، شاشة tenant، بيانات account\.$/);
     assert.match(reply(events), /\n🏗️ أُكمل تلقائيّاً على القالب: شاشة customer، شاشة tenant، بيانات account\.\n/);
 });
@@ -122,7 +130,7 @@ test('الحارسُ قبل الكتابة: رقعةٌ أسقطت رابطَ ا�
     // كان ديْناً مقيساً في PM/8: تنسيقُ التلميع `<style data-jaola-polish>` كان يُرضي شرطَ «الصفحةُ منسَّقة» فلا يُستعاد الرابطُ المحلّيّ — أُغلق في codeGuard
     assert.match(html, /<link rel="stylesheet" href="styles\.css">/, 'رابطُ التنسيق المحلّيّ يُستعاد على الكلون الملمَّع');
     assert.ok(logs(dropped.events).some(l => /\[CodeGuard\].*DOCTYPE.*رابط التنسيق \(styles\.css\)/.test(l)), logs(dropped.events).filter(l => l.includes('CodeGuard')).join('\n'));
-    assert.equal(gate(dropped.r.verdict, 'requirements-verify').status, 'pass');
+    assert.equal(gate(dropped.r.verdict, 'requirements-verify').status, 'unverified'); // أثرٌ لفظيّ لا نجاح
     const empty = await buildPos('pm8empty', async () => ({ ok: true, applied: 0, files: [] }));
     const E = logs(empty.events).filter(l => l.includes('CloneCompletion'));
     assert.equal(E.length, 2, E.join('\n')); assert.match(E[0], /🏗️ إكمالُ ما لا أثرَ له \(3\)/); assert.match(E[1], /ℹ️ لم تُطبَّق رقعةٌ \(لا مزوّد أو لا مطابقة\)/);
