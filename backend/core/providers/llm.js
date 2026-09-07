@@ -129,11 +129,52 @@ export function aggregateFailure(failures, lastError) {
         return lastError || new Error('لا يوجد مزود AI مُهيأ (GROQ_API_KEY / DEEPSEEK_API_KEY / OPENAI_API_KEY).');
     }
     const permanent = failures.every(isPermanentAIError);
-    const err = new Error(permanent ? AI_UNAVAILABLE_MSG : AI_RETRYABLE_MSG);
+    const diagnosis = failures
+        .filter(f => f?.provider)
+        .map(f => ({ provider: f.provider, kind: classifyAIError(f) }));
+    // التشخيصُ في نصّ الخطأ نفسِه: سطرُ السجلّ الحيّ يعرض `message` مباشرةً، فبدونه يبقى
+    // أظهرُ ما يراه صاحبُ المشروع جملةً واحدةً لكلّ الأسباب.
+    const detail = describeAIFailure(diagnosis);
+    const err = new Error((permanent ? AI_UNAVAILABLE_MSG : AI_RETRYABLE_MSG) + (detail ? ` [${detail}]` : ''));
     if (permanent) err.aiUnavailable = true;
+    err.diagnosis = diagnosis;
     err.causes = failures.map(f => String(f.message).slice(0, 120));
+    // `causes` تحمل نصَّ المزوّد الخام وتبقى لسجلّ الخادم وحدَه؛ `diagnosis` أعلاه هو
+    // الوحيدُ المسموحُ عرضُه لصاحب المشروع.
     err.cause = lastError;
     return err;
+}
+
+/** لفظُنا لكلِّ صنف — العلاجُ يختلف، فاللفظُ يختلف. */
+const KIND_WORDS = {
+    ar: {
+        config: 'اسمُ الموديل المضبوط غير معروف عنده (يُصلَح من إعداد المنصّة بلا نشر)',
+        quota: 'رصيدُه منتهٍ',
+        auth: 'مفتاحُه غير صالح',
+        ratelimit: 'تجاوزَ حدَّ المعدّل مؤقّتاً',
+        transient: 'تعذّر الوصولُ إليه في هذه المحاولة',
+    },
+    en: {
+        config: 'does not recognize the configured model name (fixable in platform settings, no deploy)',
+        quota: 'is out of credit',
+        auth: 'key is not valid',
+        ratelimit: 'hit its rate limit temporarily',
+        transient: 'could not be reached on this attempt',
+    },
+};
+
+/**
+ * 🩺 سطرُ التشخيص لصاحب المشروع: مزوّدٌ وصنفُ عطبه بلفظِنا.
+ *
+ * قِيس أنّ جملةً واحدةً لكلّ الأسباب تجعل «لا جديد» صادقةً ولا تدلّ على شيء: اسمُ موديلٍ خاطئ
+ * (سطرٌ في الإعداد) ورصيدٌ منتهٍ (دفع) كانا يُقالان بالعبارة نفسِها.
+ */
+export function describeAIFailure(diagnosis, lang = 'ar') {
+    const words = KIND_WORDS[lang] || KIND_WORDS.ar;
+    const parts = (Array.isArray(diagnosis) ? diagnosis : [])
+        .filter((d) => d?.provider && words[d.kind])
+        .map((d) => `${d.provider}: ${words[d.kind]}`);
+    return parts.join(' · ');
 }
 
 /**
@@ -190,6 +231,7 @@ async function createWithFailover(params, opts) {
         try {
             return await groqClient.chat.completions.create(params, opts);
         } catch (e) {
+            e.provider = 'groq';
             lastError = e; failures.push(e);
             console.warn(`[AI Failover] Groq فشل (${e.status || ''} ${String(e.message).slice(0, 80)}) → DeepSeek`);
             await reportAvailableModels(groqClient, 'groq', e);
@@ -201,6 +243,7 @@ async function createWithFailover(params, opts) {
         try {
             return await deepseek.chat.completions.create({ ...params, model: DEEPSEEK_MODEL }, opts);
         } catch (e) {
+            e.provider = 'deepseek';
             lastError = e; failures.push(e);
             console.warn(`[AI Failover] DeepSeek فشل (${e.status || ''} ${String(e.message).slice(0, 80)}) → ${(ai && enabled('gemini')) ? 'Gemini' : (openaiClient && enabled('openai')) ? 'OpenAI' : 'لا بديل متبقٍ'}`);
             await reportAvailableModels(deepseek, 'deepseek', e);
@@ -223,6 +266,7 @@ async function createWithFailover(params, opts) {
             if (!out) throw new Error('Gemini أعاد رداً فارغاً');
             return { choices: [{ message: { content: out } }] };
         } catch (e) {
+            e.provider = 'gemini';
             lastError = e; failures.push(e);
             console.warn(`[AI Failover] Gemini فشل (${String(e.message).slice(0, 80)}) → ${(openaiClient && enabled('openai')) ? 'OpenAI' : 'لا بديل متبقٍ'}`);
         }
@@ -233,6 +277,7 @@ async function createWithFailover(params, opts) {
         try {
             return await openaiClient.chat.completions.create({ ...params, model: OPENAI_MODEL }, opts);
         } catch (e) {
+            e.provider = 'openai';
             lastError = e; failures.push(e);
             console.warn(`[AI Failover] OpenAI فشل (${e.status || ''} ${String(e.message).slice(0, 80)}) — لا بديل متبقٍ`);
             await reportAvailableModels(openaiClient, 'openai', e);

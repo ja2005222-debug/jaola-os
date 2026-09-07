@@ -11,15 +11,21 @@
 // (`AI_UNAVAILABLE_MSG` في `core/providers/llm.js`) تحمل العبارتين معاً فتُطابقهما كلتيهما،
 // لكنه سؤالٌ واحد بجوابين ينتظر أن يفترقا. النسخة الأوسع هي المحفوظة.
 import { isAiDownMessage } from '../services/platformLessons.js';
+import { describeAIFailure } from '../core/providers/llm.js';
 
 export function buildFailureChatMessage(lang = 'ar', error = {}) {
     const aiDown = !!error.aiUnavailable || isAiDownMessage(error.message);
+    // 🩺 صنفُ عطبِ كلِّ مزوّدٍ بلفظنا — لا نصَّه الخام. قِيس أنّ جملةً واحدةً لكلّ الأسباب تجعل
+    // «لا جديد» صادقةً ولا تدلّ على شيء: اسمُ موديلٍ خاطئ يُصلَح بسطرٍ في الإعداد، والرصيدُ
+    // المنتهي يُصلَح بالدفع — وكانا يُقالان بالعبارة نفسِها، فيُفتح سجلُّ الخادم في كلّ مرّة.
+    const diag = describeAIFailure(error.diagnosis, lang);
+    const detail = diag ? (lang === 'en' ? ` Detected: ${diag}.` : ` التشخيص: ${diag}.`) : '';
     if (lang === 'en') {
         return aiDown
-            ? '⛔ The AI service is temporarily unavailable (the provider ran out of credit or its keys are invalid). Your request is fine and your project files are untouched — please try again later, or let the platform admin know.'
+            ? `⛔ The AI service is temporarily unavailable (the provider ran out of credit or its keys are invalid).${detail} Your request is fine and your project files are untouched — please try again later, or let the platform admin know.`
             : '❌ The build could not be completed this time, and your project files are untouched. Try a simpler phrasing of your request, or try again in a few minutes.';
     }
     return aiDown
-        ? '⛔ خدمة الذكاء الاصطناعي غير متاحة مؤقتاً (نفد رصيد المزوّد أو مفاتيحه غير صالحة). طلبك سليم وملفات مشروعك لم تُمسّ — حاول لاحقاً أو أبلغ إدارة المنصة.'
+        ? `⛔ خدمة الذكاء الاصطناعي غير متاحة مؤقتاً (نفد رصيد المزوّد أو مفاتيحه غير صالحة).${detail} طلبك سليم وملفات مشروعك لم تُمسّ — حاول لاحقاً أو أبلغ إدارة المنصة.`
         : '❌ تعذّر إكمال البناء هذه المرّة، وملفات مشروعك لم تُمسّ. جرّب صياغة أبسط لطلبك أو أعد المحاولة بعد دقائق.';
 }
