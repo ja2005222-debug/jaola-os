@@ -122,7 +122,7 @@ Policy/Permission، Identity، Plugin.
 | `stateMachine.js` | 270 | Build State Machine (10 حالات + `STATE_EVENTS` + emitter) | KEEP | Event — تبقى متخصّصة، وMission Lifecycle فوقها | `core/missions/BuildStateMachine.js` (Sprint 2) |
 | `ceoBrain.js` | 240 | تصنيف نية سريع، قرار، رسائل إحاطة/حالة | MODIFY | Mission (Intent/CEO في مسار v2) | `core/runtime/` |
 | `router.js` | 94 | الموجّه الموحّد للرسائل | MODIFY | Mission | مع `ceoBrain` |
-| `chatCommands.js`, `textNormalizer.js` (+`isFullSpecification`: وثيقةٌ لا جملة؛ PM/9: `specSections`), `languageDetector.js`, `logLocalizer.js`, `failureMessages.js` | 120/328/200/204/25 | أوامر حتمية، تطبيع نص، لغة، ترجمة السجل، رسائل الفشل | KEEP | — | `agents/` (أدوات النواة اللغوية) |
+| `chatCommands.js`, `textNormalizer.js` (+`isFullSpecification`: وثيقةٌ لا جملة؛ PM/9: `specSections`؛ PM/11: `specHead`/`clipWords`), `languageDetector.js`, `logLocalizer.js`, `failureMessages.js` | 120/347/200/204/25 | أوامر حتمية، تطبيع نص، لغة، ترجمة السجل، رسائل الفشل | KEEP | — | `agents/` (أدوات النواة اللغوية) |
 | ~~`baseAgent.js`~~ | 151 | عميل LLM المشترك — **نُقل حرفياً** إلى `core/providers/llm.js` (Sprint 4g) | MOVED | Provider | `core/providers/llm.js` (القسم B) |
 | `knowledgeEngine.js` | 335 | كشف نوع المشروع + سياق معرفي + `needsBackend` | KEEP | — | `plugins/coding/` |
 | `backendNeed.js` | 68 | **مصدرُ الحقيقة الواحد** لـ«أيحتاج خلفيةً؟» (Sprint 7/1) + العلاقية مجموعةً جزئيّة منه (2r) | KEEP | — | `plugins/coding/` |
@@ -170,7 +170,7 @@ Policy/Permission، Identity، Plugin.
 |---|---|---|---|---|---|
 | `templateLibrary.js`, `templateLibraryExtended.js`, `templateLocalizer.js` | 1061/1382/1943 | مكتبة القوالب وترجمتها | KEEP | — | `plugins/coding/templates/` (Sprint 6) |
 | `cloneTemplates/*` (42 ملفاً، 17,406 سطر؛ `jaolaClinic.js` يُستورد من 27 قالباً كأساس مشترك) | — | قوالب تطبيقات عاملة | KEEP | — | `plugins/coding/templates/clones/` |
-| `cloneAssets.js`, `seedStamp.js`, `fullstackTemplates.js`, `reactGenerator.js`, `blockRegistry.js` (الاختصارُ التسويقيّ يقرأ الفهمَ قبل الكلمات؛ لا ألفاظَ عميلٍ في `MARKETING_HINTS`), `starterRegistry.js`, `starterFetch.js`, `libraryRegistry.js`, `referenceBlueprints.js` (PM/1: `referenceModel`؛ PM/4: `referenceEntities`/`referenceFlows`), `appBlueprint.js`, `requirementAnalyzer.js` | 74/116/603/432/267/74/171/78/249/146/198 | استراتيجيات البناء ومخططاته | KEEP | Task (استراتيجية = Task Graph مختلف) | `plugins/coding/` |
+| `cloneAssets.js`, `seedStamp.js`, `fullstackTemplates.js`, `reactGenerator.js`, `blockRegistry.js` (الاختصارُ التسويقيّ يقرأ الفهمَ قبل الكلمات؛ لا ألفاظَ عميلٍ في `MARKETING_HINTS`), `starterRegistry.js`, `starterFetch.js`, `libraryRegistry.js`, `referenceBlueprints.js` (PM/1: `referenceModel`؛ PM/4: `referenceEntities`/`referenceFlows`), `appBlueprint.js` (PM/11: `appType` من رأس الوثيقة على حدّ كلمة), `requirementAnalyzer.js` | 74/116/603/432/267/74/171/78/249/147/198 | استراتيجيات البناء ومخططاته | KEEP | Task (استراتيجية = Task Graph مختلف) | `plugins/coding/` |
 | `projectModel.js` (PM/1: معجمُ المفاهيم + `modelAffinity`؛ PM/3: `conceptsInText` + `domainFidelity`؛ PM/4: `conceptKind`؛ PM/5: `modelProjectType`؛ PM/6: `conceptFrequencies` + `lexiconModel` والاحتياطُ يقرأهما؛ PM/7: `isGenericConcept`), `projectMemory.js`, `userProfile.js` | 541/258/248 | ذاكرة المشروع والمستخدم | KEEP | Memory | `core/memory/` (لاحقاً) |
 | `componentMarketplace.js`, `platformContext.js` | 278/42 | مكوّنات جاهزة (markupها يُحقن بميزانية، 2q) + معلومات المنصّة | KEEP | — | `plugins/coding/` |
 

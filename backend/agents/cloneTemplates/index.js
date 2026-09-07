@@ -44,6 +44,8 @@ import { jaolaCryptoAdvisor } from './jaolaCryptoAdvisor.js';
 import { jaolaBudgetAdvisor } from './jaolaBudgetAdvisor.js';
 import { jaolaStockAdvisor } from './jaolaStockAdvisor.js';
 import { modelAffinity, conceptOf } from '../projectModel.js';
+import { isLatin, arabicMatcher, latinMatcher } from '../keywordMatch.js';
+import { specHead, numberedSections } from '../textNormalizer.js';
 
 // كل قوالب jaola المتاحة (تُبنى مرة عند الحاجة)
 const BUILDERS = [foodDeliveryClone, jaolaStore, jaolaBooking, jaolaRealestate, jaolaMarketplace, jaolaTaxi, jaolaTravel, jaolaEvents, jaolaLms, jaolaSchool, jaolaWeather, jaolaCrypto, jaolaCurrency, jaolaErp, jaolaClinic, jaolaHr, jaolaPos, jaolaRestaurantOps, jaolaPharmacy, jaolaProperty, jaolaCinema, jaolaWorkshop, jaolaGym, jaolaAccounting, jaolaSalon, jaolaWarehouse, jaolaHotel, jaolaLaundry, jaolaCarRental, jaolaLawfirm, jaolaCoworking, jaolaHelpdesk, jaolaPhotography, jaolaFleet, jaolaTutoring, jaolaVetClinic, jaolaCleaning, jaolaVetClinicReact, jaolaCryptoAdvisor, jaolaBudgetAdvisor, jaolaStockAdvisor];
@@ -80,10 +82,26 @@ export function matchCloneTemplate(goal = '', blueprint = null, domainModel = nu
     return matchCloneTemplateDetailed(goal, blueprint, domainModel, opts).clone;
 }
 
-/** عبارةُ مسارٍ لا منتج: «نظام إدارة»، «سيستم داخلي»… تقول *أيَّ نوعٍ من الأدوات* لا *أيَّ منتج*. */
+// 🏷️ PM/11: كلماتُ المسار العامّة — ما لا يسمّي منتجاً. كان `isTrackPhrase` يقرأ `SYSTEM_INTENT_RE` كلَّه (وهو كاشفُ
+// المسار، يحوي أسماءَ منتجات السيستم: كاشير، نقطة بيع، صيدلية، محاسبة…) فابتلع ١١٦ من ٦٤٦ كلمةَ كلون — كلَّ ما يسمّي
+// به المستخدمُ منتجَ سيستم — فلم يكن اسمُ المنتج يرفع الفيتو قطّ، وترفعه كلمةٌ عابرة («وردية»، «إيصال»).
+const TRACK_WORDS = new Set(['سيستم', 'نظام', 'داخلي', 'داخلية', 'إداري', 'اداري', 'إدارة', 'ادارة', 'internal', 'system', 'management']);
+/** عبارةُ مسارٍ لا منتج: لا يبقى منها شيءٌ بعد كلمات المسار العامّة («نظام إدارة»، «سيستم داخلي»)؛ «إدارة مصنع» تسمّي منتجاً. */
 export function isTrackPhrase(keyword = '') {
-    return SYSTEM_INTENT_RE.test(String(keyword));
+    const words = String(keyword).toLowerCase().split(/[\s\u0640]+/).filter(Boolean);
+    return words.length > 0 && words.every(w => TRACK_WORDS.has(w));
 }
+
+// 🔤 PM/11: الكلمةُ كلمةٌ كاملة بحدودها (`keywordMatch`) لا نصّاً فرعيّاً — «جرد» كانت تُصيب «مجرد» فتختار ERP لرأس وثيقة
+// نقاط البيع. مُطابِقٌ واحد لكلِّ كلمة يُبنى مرّةً.
+const KW_RE = new Map();
+function kwMatcher(k) {
+    let re = KW_RE.get(k);
+    if (!re) { re = isLatin(k) ? latinMatcher(k) : arabicMatcher(k); KW_RE.set(k, re); }
+    return re;
+}
+/** كم بنداً مرقّماً يجعل النصَّ وثيقةً تُقرأ تسميةُ منتجها من رأسها لا من متنها. */
+const NAMING_MIN_SECTIONS = 3;
 
 /**
  * 🧠 الاختيارُ بالفهم (PM/1، `PRODUCT_MIND.md`) — يعيد `{ clone, rejected, reason }`.
@@ -112,6 +130,8 @@ export function matchCloneTemplateDetailed(goal = '', blueprint = null, domainMo
     // وأسماء النموذج المحفوظ سند ثانوي فقط — نموذج مُهلوَس (Student/Grade
     // على طلب «موقع فعاليات») كان يقلب الاختيار لقالب لا علاقة له بالطلب.
     const goalHay = String(goal || '').toLowerCase();
+    // 🏷️ PM/11: وثيقةٌ مرقّمة تسمّي منتجَها في رأسها — كلمةٌ في المتن (بند «الطباعة: … إيصال») ترجّح ولا ترفع الفيتو.
+    const namingHay = numberedSections(goal) >= NAMING_MIN_SECTIONS ? specHead(goal).toLowerCase() : goalHay;
     const modelHay = [
         ...(domainModel?.entities || []).map(e => e?.name),
         ...(domainModel?.roles || []).map(r => r?.name),
@@ -130,8 +150,9 @@ export function matchCloneTemplateDetailed(goal = '', blueprint = null, domainMo
         for (const kw of c.keywords || []) {
             const k = kw && kw.toLowerCase();
             if (!k) continue;
-            if (goalHay.includes(k)) { raw += 10; kwHits += 1; hits.push(kw); if (!isTrackPhrase(kw)) explicit = true; } // كلمة المستخدم تحسم
-            else if (modelHay.includes(k)) { raw += 1; kwHits += 1; }
+            const re = kwMatcher(k);
+            if (re.test(goalHay)) { raw += 10; kwHits += 1; hits.push(kw); if (!isTrackPhrase(kw) && re.test(namingHay)) explicit = true; } // كلمة المستخدم تحسم
+            else if (re.test(modelHay)) { raw += 1; kwHits += 1; }
         }
         const affinity = modelAffinity(domainModel, c.model);
         if (affinity.substantive && affinity.roleCoverage !== null && affinity.roleCoverage < 1 && !explicit) {
