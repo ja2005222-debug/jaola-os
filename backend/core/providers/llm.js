@@ -73,6 +73,15 @@ if (ai && enabled('gemini')) console.log('♊ [AI Core]: محرك Gemini نشط 
 for (const [name, present] of [['groq', !!groqClient], ['deepseek', hasDeepseek], ['gemini', !!ai], ['openai', !!openaiClient]]) {
     if (present && !enabled(name)) console.log(`🔇 [AI Core]: ${name} مُستبعَد بـAI_PROVIDERS (مفتاحُه موجود، لم يُحذف).`);
 }
+// يُعلَن اسمُ **المزوّد العامل وحدَه**: مزوّدٌ بلا مفتاحٍ أو مستبعَدٌ لا يُعلَن اسمُ موديله — سطرٌ
+// عن مزوّدٍ لا يُنادى ضجيجٌ لا خبر. وهذا الشرطُ هو أيضاً ما يُبقي قناةَ المخرَج القياسيّ نظيفة:
+// أوّلُ صياغةٍ طبعت الأربعةَ بلا شرط، فأفسدت مخرَجَ مُشغّل الاختبارات — عطبُ #486 بعينه.
+for (const line of modelReportLines(
+    { groq: process.env.GROQ_MODEL, deepseek: process.env.DEEPSEEK_MODEL, gemini: process.env.GEMINI_MODEL, openai: process.env.OPENAI_MODEL },
+    { groq: GROQ_MODEL, deepseek: DEEPSEEK_MODEL, gemini: GEMINI_MODEL, openai: OPENAI_MODEL },
+    [['groq', !!groqClient], ['deepseek', hasDeepseek], ['gemini', !!ai], ['openai', !!openaiClient]]
+        .filter(([n, present]) => present && enabled(n)).map(([n]) => n),
+)) console.log(line);
 if (SELECTION.unknown.length) console.warn(`⚠️ [AI Core]: أسماءٌ لا تُعرف في AI_PROVIDERS: ${SELECTION.unknown.join('، ')} — المعروفُ منها وحدَه يُحترم (${PROVIDER_NAMES.join('، ')}).`);
 
 // ═══════════════════════════════════════════════════════
@@ -127,6 +136,51 @@ export function aggregateFailure(failures, lastError) {
     return err;
 }
 
+/**
+ * 🏷️ أسماءُ الموديلات — تُعلَن عند الإقلاع مع **مصدر** كلٍّ منها.
+ *
+ * قِيس من سجلّ إنتاج: صاحبُ المنصّة ضبط `GROQ_MODEL` في Render وبقي 404 — ولم يكن لأحدٍ جوابٌ
+ * عن «هل وصل الضبطُ أصلاً؟». سطرٌ واحد يُنهي السؤال. واسمُ الموديل ليس سرّاً (افتراضاتُه في
+ * المستودع)، فطبعُه لا يكشف مفتاحاً — وهذا ما يُميّزه عن كلّ ما لا يُطبع هنا.
+ */
+export function modelReportLines(env, resolved, only = PROVIDER_NAMES) {
+    return PROVIDER_NAMES.filter((n) => only.includes(n)).map((name) => {
+        const from = env[name] ? 'بيئة' : 'افتراضي';
+        return `🏷️ [AI Model]: ${name} = ${resolved[name]} (${from})`;
+    });
+}
+
+/** أقصى ما يُطبع من الأسماء المكتشفة — سطرُ سجلٍّ يُقرأ، لا مِلفّ. */
+export const MODEL_DISCOVERY_LIMIT = 20;
+
+/**
+ * 🔎 سؤالُ المزوّد عمّا يقبله. يُنادى **داخل معالج فشلٍ** من صنف `config`، فلا يرمي أبداً:
+ * رميةٌ منه تُحوّل عطبَ إعدادٍ مفهوماً إلى انهيارٍ غامض في مسارٍ هو أصلاً مسارُ عطب.
+ */
+export async function discoverModels(client) {
+    try {
+        const r = await client?.models?.list?.();
+        const rows = Array.isArray(r) ? r : Array.isArray(r?.data) ? r.data : [];
+        return rows
+            .map((m) => (typeof m?.id === 'string' ? m.id.trim() : ''))
+            .filter(Boolean)
+            .slice(0, MODEL_DISCOVERY_LIMIT);
+    } catch {
+        return [];   // المزوّدُ لا يجيب: نبقى على ما نعرف، ولا نُسقط المسار
+    }
+}
+
+// يُسأل المزوّدُ مرّةً واحدةً لكلِّ عمر عملية: العطبُ إعداديّ لا يتبدّل تحت التشغيل.
+const askedFor = new Set();
+async function reportAvailableModels(client, name, err) {
+    if (classifyAIError(err) !== 'config' || askedFor.has(name)) return;
+    askedFor.add(name);
+    const ids = await discoverModels(client);
+    console.warn(ids.length
+        ? `🔎 [AI Model]: ${name} لا يعرف الاسمَ المضبوط. الأسماءُ المتاحة عنده: ${ids.join('، ')}`
+        : `🔎 [AI Model]: ${name} لا يعرف الاسمَ المضبوط، ولم يُجب عن قائمة المتاح.`);
+}
+
 async function createWithFailover(params, opts) {
     let lastError = null;
     const failures = [];
@@ -138,6 +192,7 @@ async function createWithFailover(params, opts) {
         } catch (e) {
             lastError = e; failures.push(e);
             console.warn(`[AI Failover] Groq فشل (${e.status || ''} ${String(e.message).slice(0, 80)}) → DeepSeek`);
+            await reportAvailableModels(groqClient, 'groq', e);
         }
     }
 
@@ -148,6 +203,7 @@ async function createWithFailover(params, opts) {
         } catch (e) {
             lastError = e; failures.push(e);
             console.warn(`[AI Failover] DeepSeek فشل (${e.status || ''} ${String(e.message).slice(0, 80)}) → ${(ai && enabled('gemini')) ? 'Gemini' : (openaiClient && enabled('openai')) ? 'OpenAI' : 'لا بديل متبقٍ'}`);
+            await reportAvailableModels(deepseek, 'deepseek', e);
         }
     }
 
@@ -179,6 +235,7 @@ async function createWithFailover(params, opts) {
         } catch (e) {
             lastError = e; failures.push(e);
             console.warn(`[AI Failover] OpenAI فشل (${e.status || ''} ${String(e.message).slice(0, 80)}) — لا بديل متبقٍ`);
+            await reportAvailableModels(openaiClient, 'openai', e);
         }
     }
 
