@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { groq, smartChat, GROQ_MODEL } from '../core/providers/llm.js';
+import { groq, smartChat, GROQ_MODEL, readAIUsage } from '../core/providers/llm.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO, resolveGoalLanguage } from './languageDetector.js';
 import { addToHistory, getDomainModel } from './projectMemory.js';
@@ -527,6 +527,8 @@ export class JaolaCognitiveRuntime {
             message: missionBriefing({ lang: userLangForMsg, goal, hasExisting: hasExistingProject })
         });
 
+        // 💰 لقطةُ الرموز عند الإطلاق: الفرقُ عنها هو كلفةُ **هذه المهمّة**، لا مجموعُ العملية.
+        context.usageAtStart = readAIUsage();
         this.emitLiveLog(roomName, 'JCOS', 'Kernel', `🏁 بدء المهمة: ${context.missionId}`);
         try {
             await this.buildWorldModel(context, roomName, dbStatus);

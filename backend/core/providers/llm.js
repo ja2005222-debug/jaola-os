@@ -244,6 +244,77 @@ async function reportAvailableModels(client, name, err) {
         : `🔎 [AI Model]: ${name} لا يعرف الاسمَ المضبوط، ولم يُجب عن قائمة المتاح.`);
 }
 
+// ═══════════════════════════════════════════════════════
+// 💰 عدّادُ الرموز — «كم كلّف هذا البناء؟» سؤالٌ لم يكن له جواب
+// ═══════════════════════════════════════════════════════
+/**
+ * قِيس بالبحث: صفرُ مواضعَ تلتقط `total_tokens`. فكلفةُ بناءٍ واحدٍ مجهولةٌ تماماً، وكلُّ حكمٍ
+ * على «الأغلى/الأرخص» رأيٌ لا قياس. والكلفةُ ليست سعرَ الرمز وحدَه: هي السعر × الرموز ×
+ * **عدد النداءات** — وحلقةُ النقاش تبلغ سبعَ دورات.
+ *
+ * **حدٌّ مقصود**: لا يُرسَل معامِلٌ جديد للمزوّد (`stream_options`). مسارُ التدفّق هو مسارُ
+ * توليد الكود، وكسرُه بمعامِلٍ قد يرفضه مزوّدٌ ثمنٌ لا يُدفع لأجل عدّاد. يُقرأ ما يتطوّع به
+ * المزوّد، ويُقال صراحةً كم نداءً بقي بلا رقم.
+ */
+const acc = { calls: 0, counted: 0, prompt: 0, completion: 0, total: 0, byProvider: {} };
+const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+
+/** يُسجّل نداءً واحداً؛ `carrier` أيُّ كائنٍ قد يحمل `usage` (ردٌّ كامل أو آخرُ قطعةِ تدفّق). */
+export function noteUsage(provider, carrier) {
+    acc.calls++;
+    const usage = carrier?.usage;
+    const total = num(usage?.total_tokens);
+    const prompt = num(usage?.prompt_tokens);
+    const completion = num(usage?.completion_tokens);
+    if (!total && !prompt && !completion) return;   // نداءٌ صامت: يُعدّ ولا يُحسب
+    acc.counted++;
+    acc.prompt += prompt; acc.completion += completion;
+    acc.total += total || (prompt + completion);
+    const name = String(provider || 'مجهول');
+    const b = (acc.byProvider[name] ||= { calls: 0, total: 0 });
+    b.calls++; b.total += total || (prompt + completion);
+}
+
+/** لقطةٌ منفصلة — لا مرجعٌ حيّ يتبدّل تحت يد قارئه. */
+export function readAIUsage() {
+    return {
+        calls: acc.calls, counted: acc.counted, prompt: acc.prompt,
+        completion: acc.completion, total: acc.total,
+        byProvider: Object.fromEntries(Object.entries(acc.byProvider).map(([k, v]) => [k, { ...v }])),
+    };
+}
+
+export function resetAIUsage() {
+    Object.assign(acc, { calls: 0, counted: 0, prompt: 0, completion: 0, total: 0, byProvider: {} });
+}
+
+/** سطرُ الكلفة. بلقطةِ بدايةٍ يصير الفرقُ كلفةَ مهمّةٍ واحدة لا كلفةَ العملية كلِّها. */
+export function usageLine(now, before = null) {
+    const d = (k) => now[k] - (before ? before[k] : 0);
+    const calls = d('calls');
+    if (!calls) return '💰 [AI Usage]: لا نداءات.';
+    const silent = calls - d('counted');
+    const per = Object.entries(now.byProvider)
+        .map(([k, v]) => `${k} ${v.total - (before?.byProvider?.[k]?.total || 0)}`)
+        .join('، ');
+    return `💰 [AI Usage]: ${d('total')} رمزاً (دخل ${d('prompt')} / خرج ${d('completion')}) في ${calls} نداء`
+        + `${per ? ` — ${per}` : ''}`
+        + `${silent ? ` · ${silent} نداءً بلا أرقامٍ من المزوّد (غيرُ محسوبة)` : ''}`;
+}
+
+/**
+ * الردُّ الكامل يُحسب فوراً؛ والتدفّقُ يُوسَم باسم مزوّده ليحسبه مستهلكُه عند آخر قطعة —
+ * فالمستهلكُ وحدَه يعرف متى انتهى التدفّق.
+ */
+function tagged(provider, res) {
+    if (res && typeof res[Symbol.asyncIterator] === 'function') {
+        try { res.__aiProvider = provider; } catch { /* كائنٌ مُحكَم: يُحسب 'مجهول' */ }
+        return res;
+    }
+    noteUsage(provider, res);
+    return res;
+}
+
 async function createWithFailover(params, opts) {
     let lastError = null;
     const failures = [];
@@ -251,7 +322,7 @@ async function createWithFailover(params, opts) {
     // 1️⃣ Groq — الأسرع. أي فشل (rate limit/مفتاح/شبكة) → المزود التالي فوراً
     if (groqClient && enabled('groq')) {
         try {
-            return await groqClient.chat.completions.create(params, opts);
+            return tagged('groq', await groqClient.chat.completions.create(params, opts));
         } catch (e) {
             e.provider = 'groq';
             lastError = e; failures.push(e);
@@ -263,7 +334,7 @@ async function createWithFailover(params, opts) {
     // 2️⃣ DeepSeek — الاشتراك المدفوع، نفس واجهة OpenAI ويدعم البث و JSON mode
     if (hasDeepseek && enabled('deepseek')) {
         try {
-            return await deepseek.chat.completions.create({ ...params, model: DEEPSEEK_MODEL }, opts);
+            return tagged('deepseek', await deepseek.chat.completions.create({ ...params, model: DEEPSEEK_MODEL }, opts));
         } catch (e) {
             e.provider = 'deepseek';
             lastError = e; failures.push(e);
@@ -286,7 +357,7 @@ async function createWithFailover(params, opts) {
             });
             const out = r.response?.text?.() || r.candidates?.[0]?.content?.parts?.[0]?.text || '';
             if (!out) throw new Error('Gemini أعاد رداً فارغاً');
-            return { choices: [{ message: { content: out } }] };
+            return tagged('gemini', { choices: [{ message: { content: out } }], usage: r?.usageMetadata });
         } catch (e) {
             e.provider = 'gemini';
             lastError = e; failures.push(e);
@@ -297,7 +368,7 @@ async function createWithFailover(params, opts) {
     // 4️⃣ OpenAI — الخط الأخير
     if (openaiClient && enabled('openai')) {
         try {
-            return await openaiClient.chat.completions.create({ ...params, model: OPENAI_MODEL }, opts);
+            return tagged('openai', await openaiClient.chat.completions.create({ ...params, model: OPENAI_MODEL }, opts));
         } catch (e) {
             e.provider = 'openai';
             lastError = e; failures.push(e);
