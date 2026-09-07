@@ -1,4 +1,4 @@
-import { deepseek, groq, ai, isPermanentAIError, AI_UNAVAILABLE_MSG, DEEPSEEK_MODEL } from '../core/providers/llm.js';
+import { deepseek, groq, ai, isPermanentAIError, AI_UNAVAILABLE_MSG, DEEPSEEK_MODEL, GROQ_MODEL, GEMINI_MODEL } from '../core/providers/llm.js';
 import { buildContextPrompt } from './knowledgeEngine.js';
 import { buildLessonsPromptBlock } from '../services/platformLessons.js';
 import { buildBlueprintPrompt } from './referenceBlueprints.js';
@@ -338,7 +338,7 @@ async function callDeepSeek(userMessage, onChunk, systemPrompt = buildCoderSyste
 async function callGroq(userMessage, onChunk, systemPrompt = buildCoderSystemPrompt('en')) {
     if (onChunk) {
         const stream = await groq.chat.completions.create({
-            model: 'llama-3.3-70b-versatile',
+            model: GROQ_MODEL,
             messages: [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userMessage }
@@ -360,7 +360,7 @@ async function callGroq(userMessage, onChunk, systemPrompt = buildCoderSystemPro
     }
 
     const completion = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
+        model: GROQ_MODEL,
         messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage }
@@ -375,7 +375,7 @@ async function callGemini(userMessage, systemPrompt = buildCoderSystemPrompt('en
     if (!ai) throw new Error('Gemini غير مُفعّل (GEMINI_API_KEY غير موجود)');
     try {
         const result = await ai.models.generateContent({
-            model: 'gemini-2.0-flash',
+            model: GEMINI_MODEL,
             contents: [
                 { role: 'user', parts: [{ text: systemPrompt + '\n\n' + userMessage }] }
             ],

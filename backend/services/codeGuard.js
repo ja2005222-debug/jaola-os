@@ -14,7 +14,7 @@
 import vm from 'vm';
 import fsPromises from 'fs/promises';
 import path from 'path';
-import { groq } from '../core/providers/llm.js';
+import { groq, GROQ_MODEL } from '../core/providers/llm.js';
 
 // ═══════════════════════════════════════════════════════
 // 🔍 الفحوص
@@ -137,7 +137,7 @@ async function repairCSS(name, content, check) {
 
     try {
         const completion = await groq.chat.completions.create({
-            model: 'llama-3.3-70b-versatile',
+            model: GROQ_MODEL,
             temperature: 0.1,
             max_tokens: 8000,
             messages: [
@@ -158,7 +158,7 @@ async function repairCSS(name, content, check) {
 // ═══════════════════════════════════════════════════════
 async function repairJS(name, content, error) {
     const completion = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
+        model: GROQ_MODEL,
         temperature: 0.1,
         max_tokens: 8000,
         messages: [

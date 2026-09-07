@@ -26,6 +26,14 @@ const hasDeepseek = !!process.env.DEEPSEEK_API_KEY;
 // الافتراضي pro (جودة الكود أولاً — هو العمود الثاني بعد Groq)، وflash عبر البيئة.
 export const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-v4-pro';
 
+// 🏷️ أسماءُ الموديلات — من البيئة أوّلاً. قِيس في 2026-09-07 أنّ اسماً واحداً ميّتاً
+// (`llama-3.3-70b-versatile` → 404 عند Groq) كان مكتوباً في **تسعة مواضع**، وثانياً
+// (`gemini-2.0-flash`) في موضعَين — فتقاعُدُ موديلٍ عند مزوّده كان يُسقط السلسلةَ كلَّها
+// ولا يُصلَح إلّا بنشرِ كود. صارت تُضبط من Render في سطر.
+export const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+export const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+
 const openaiClient = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
 export const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
@@ -44,6 +52,8 @@ if (ai) console.log('♊ [AI Core]: محرك Gemini نشط كخطة بديلة �
 // ═══════════════════════════════════════════════════════
 // ── تصنيف أعطال المزوّدين — عطل دائم (رصيد/مفاتيح) لا يُجدى معه التكرار ──
 export const AI_UNAVAILABLE_MSG = 'خدمة الذكاء الاصطناعي غير متاحة حالياً (رصيد المزوّد منتهٍ أو مفاتيح غير صالحة) — طلبك سليم ولا فائدة من إعادة المحاولة الآن.';
+/** عطلٌ قد يزول: نُبلّغ صاحبَ المشروع أنّ المحاولة مستمرّة — بلا نصِّ المزوّد الخام. */
+export const AI_RETRYABLE_MSG = 'تعذّر نداء خدمة الذكاء الاصطناعي في هذه المحاولة — نعيد المحاولة.';
 
 export function classifyAIError(e) {
     if (e?.aiUnavailable) return 'quota';
@@ -53,13 +63,37 @@ export function classifyAIError(e) {
     if (/invalid api key|incorrect api key|api key not valid|no auth credentials|invalid authentication/.test(msg) || status === 401 || status === 403) return 'auth';
     if (status === 429) return 'ratelimit';
     // موديل غير موجود/غير مدعوم = خطأ إعداد دائم — التكرار عليه هدر محض
-    if (/model.*(not exist|not found|supported)|supported api model/.test(msg)) return 'config';
+    // قِيس من سجلّ إنتاجٍ حقيقيّ: Google تقول «no longer available» و`NOT_FOUND`، وOpenAI تقول
+    // «deprecated» — ولا يعرف المُصنِّفُ إلّا `not exist`/`not found`. فعطبُ إعدادٍ دائمٌ كان يُقرأ
+    // عابراً، فتُحرق كلُّ دورات النقاش على بابٍ مغلق. اللفظُ لفظُ المزوّد لا لفظُنا: أُسقطت
+    // `not_found` و`retired` بعد القياس — لا رسالةَ مزوّدٍ حقيقيّةٍ تحتاجهما (`supported` سابقةٌ لنا،
+    // بقيت كما كانت ولم تُقَس).
+    if (/model.*(not exist|not found|no longer available|deprecated|supported)|supported api model/.test(msg)) return 'config';
     if (/غير مُفعّل|لا يوجد مزود|not configured/.test(msg)) return 'config';
     return 'transient';
 }
 
 /** عطل لا يزول بإعادة المحاولة: رصيد منتهٍ، مفتاح غير صالح، أو مزوّد غير مُهيأ. */
 export const isPermanentAIError = (e) => ['quota', 'auth', 'config'].includes(classifyAIError(e));
+
+/**
+ * 🧾 قرارُ الفشل المجمَّع — موضعٌ واحد يقرّر أمرَين معاً:
+ *   • أيُوقَف التكرار؟ نعم إن كانت كلُّ الأعطال دائمة (رصيد/مفاتيح/إعداد) — `aiUnavailable`.
+ *   • وماذا يُقال لصاحب المشروع؟ **جملتُنا لا نصُّ المزوّد**. كان الخامُ يُرمى كما هو خارج تلك الحالة
+ *     الواحدة، فيقرأ من يبني متجراً رابطَ فوترةِ حسابِ المنصّة في سجلّ مشروعه. التفصيلُ الخام يبقى
+ *     في `causes` وفي `console.warn` أعلاه — للتشخيص لا للعرض.
+ */
+export function aggregateFailure(failures, lastError) {
+    if (!failures.length) {
+        return lastError || new Error('لا يوجد مزود AI مُهيأ (GROQ_API_KEY / DEEPSEEK_API_KEY / OPENAI_API_KEY).');
+    }
+    const permanent = failures.every(isPermanentAIError);
+    const err = new Error(permanent ? AI_UNAVAILABLE_MSG : AI_RETRYABLE_MSG);
+    if (permanent) err.aiUnavailable = true;
+    err.causes = failures.map(f => String(f.message).slice(0, 120));
+    err.cause = lastError;
+    return err;
+}
 
 async function createWithFailover(params, opts) {
     let lastError = null;
@@ -93,7 +127,7 @@ async function createWithFailover(params, opts) {
                 .map(m => (m.role === 'system' ? `تعليمات النظام:\n${m.content}` : m.content))
                 .join('\n\n');
             const r = await ai.models.generateContent({
-                model: 'gemini-2.0-flash',
+                model: GEMINI_MODEL,
                 contents: [{ role: 'user', parts: [{ text }] }],
                 ...(wantJson ? { generationConfig: { responseMimeType: 'application/json' } } : {}),
             });
@@ -109,23 +143,14 @@ async function createWithFailover(params, opts) {
     // 4️⃣ OpenAI — الخط الأخير
     if (openaiClient) {
         try {
-            return await openaiClient.chat.completions.create({ ...params, model: 'gpt-4o-mini' }, opts);
+            return await openaiClient.chat.completions.create({ ...params, model: OPENAI_MODEL }, opts);
         } catch (e) {
             lastError = e; failures.push(e);
             console.warn(`[AI Failover] OpenAI فشل (${e.status || ''} ${String(e.message).slice(0, 80)}) — لا بديل متبقٍ`);
         }
     }
 
-    // كل المزوّدين المتاحين فشلوا بأعطال دائمة → إشارة صريحة تُوقف دورات
-    // إعادة المحاولة العبثية أعلى السلسلة (كانت تحرق 7 دورات على مزوّد ميت)
-    if (failures.length && failures.every(isPermanentAIError)) {
-        const err = new Error(AI_UNAVAILABLE_MSG);
-        err.aiUnavailable = true;
-        err.causes = failures.map(f => String(f.message).slice(0, 120));
-        throw err;
-    }
-
-    throw lastError || new Error('لا يوجد مزود AI مُهيأ (GROQ_API_KEY / DEEPSEEK_API_KEY / OPENAI_API_KEY).');
+    throw aggregateFailure(failures, lastError);
 }
 
 // كائن متوافق مع واجهة Groq SDK — non-null ما دام أي مزود متاحاً
@@ -140,7 +165,7 @@ export const groq = (groqClient || hasDeepseek || ai || openaiClient)
 export async function smartChat(messages, options = {}) {
     const { max_tokens = 1000, temperature = 0.3, json = false } = options;
     const params = {
-        model: 'llama-3.3-70b-versatile',
+        model: GROQ_MODEL,
         messages,
         max_tokens,
         temperature,

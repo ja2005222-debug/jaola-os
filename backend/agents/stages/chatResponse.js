@@ -11,7 +11,7 @@
  *    `reporter.send(roomName, 'chat_reply', …)` — كُتب النداءُ صريحاً هنا، والغلافُ باقٍ في
  *    الصنف لمستدعيه الآخرين. لا تغييرَ سلوك.
  */
-import { groq } from '../../core/providers/llm.js';
+import { groq, GROQ_MODEL } from '../../core/providers/llm.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain, summarizeFacts } from '../../services/projectBrain.js';
 import { getLangInfo } from '../languageDetector.js';
 import { getProjectMemory, getDomainModel } from '../projectMemory.js';
@@ -125,7 +125,7 @@ User preferences: ${JSON.stringify(execMemory)}` },
         try {
             const stream = await client.chat.completions.create({
                 messages,
-                model: "llama-3.3-70b-versatile",
+                model: GROQ_MODEL,
                 max_tokens: 200,
                 temperature: 0.6,
                 stream: true,

@@ -167,7 +167,10 @@ test('الحدود: شريحتا الجسد — liveLog ٣ + ٢، ops واحدٌ
     const mod = fs.readFileSync(path.join(HERE, '../agents/stages/missionMeta.js'), 'utf8');
     const code = mod.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[^]*?\*\//g, '');
     assert.ok(!/jcr\.js/.test(code)); assert.ok(!/\bio\b/.test(code));
-    assert.ok(mod.includes("import { groq } from '../../core/providers/llm.js';"));
+    // اسمُ الموديل صار ثابتاً من البيئة (`GROQ_MODEL`) بعد أن قِيس أنّ اسماً ميّتاً واحداً كان مكتوباً
+    // في تسعة مواضع، فيُسقط السلسلةَ كلَّها ولا يُصلَح إلّا بنشرِ كود. الحدُّ المقصود لم يتغيّر:
+    // `groq` يبقى استيراداً + معاملاً افتراضيّاً، بلا استدعاءٍ مباشرٍ عليه (التأكيدُ التالي).
+    assert.ok(mod.includes("import { groq, GROQ_MODEL } from '../../core/providers/llm.js';"));
     assert.equal((code.match(/\bgroq\b/g) || []).length, 2, 'الاستيرادُ + الافتراضيُّ وحدهما — لا استدعاءَ مباشر على groq');
     const slice = (sig) => { const i = code.indexOf(sig); assert.ok(i > 0, sig); return code.slice(i, code.indexOf('\n}\n', i) + 3); };
     const run = slice('export async function runMissionMeta(context, roomName, reporter, ops, client = groq) {');
