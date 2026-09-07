@@ -12,7 +12,7 @@ import path from 'path';
 import { smartChat } from '../../core/providers/llm.js';
 import { generateSectionContent, compName, slugify, componentSource, defaultSection, pageFileSource } from '../reactGenerator.js';
 import { buildStaticSite } from '../../services/reactPreview.js';
-import { addToHistory } from '../projectMemory.js';
+import { addToHistory, getDomainModel } from '../projectMemory.js';
 import { recordEdit } from '../userProfile.js';
 import { autoPushIfEnabled } from '../../services/githubSync.js';
 import { snapshotWorkspace } from '../../services/workspaceStore.js';
@@ -20,6 +20,7 @@ import { recordEditAction, buildMetricsPayload } from '../../services/metricsSto
 import { createExecutionContext } from '../../core/runtime/ExecutionContext.js';
 import { writeProjectFile } from '../../core/runtime/workspacePaths.js';
 import { extractPageName } from './reactPages.js';
+import { buildProjectModelContext } from '../projectModel.js';
 
 // ➕ يضيف صفحة جديدة لمشروع React قائم دون إعادة بناء — يحفظ المحتوى الحالي:
 //    قسم + وجهة في lib/content.js، مكوّن، صفحة Next، ثم إعادة توليد الموقع الثابت.
@@ -58,10 +59,15 @@ export async function addPageNow(instruction, projectPath, username, activeProje
     let section = defaultSection(pageLabel, lang);
     try {
         reporter.liveLog(roomName, 'EDIT', 'ContentWriter', '✍️ تخصيص محتوى الصفحة بالذكاء...');
+        // PM/16: «سياقُ المشروع» كان `content.hero.title` — أي **«ابنِ شيئاً رائعاً»** على سكافولدٍ
+        //        افتراضيّ: أعمُّ نصٍّ ممكن يُطلب به محتوىً «غيرُ عامّ». وعنوانُ البطل نصٌّ تسويقيٌّ
+        //        لا وصفٌ للمنتج حتّى حين يُخصَّص؛ فنموذجُ المجال المفهوم هو السياق، ويعود عنوانُ
+        //        البطل احتياطاً وحدَه حين لا نموذجَ أصلاً (مشروعٌ بلا فهمٍ محفوظ).
+        const modelCtx = buildProjectModelContext(getDomainModel(username, activeProject));
         const model = await generateSectionContent(pageLabel, {
             brand: content.brand || activeProject,
-            goal: content.hero?.title || content.hero?.subtitle || '',
-            lang, llm: (m, o) => smartChat(m, o),
+            goal: modelCtx || content.hero?.title || content.hero?.subtitle || '',
+            lang, llm: ops.llm || ((m, o) => smartChat(m, o)),
         });
         if (model) section = {
             heading: model.heading || section.heading,

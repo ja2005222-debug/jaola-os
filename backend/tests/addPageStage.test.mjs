@@ -144,7 +144,10 @@ test('الحدود: لا this، لا استيرادَ من jcr، ops.runMission 
     const code = mod.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[^]*?\*\//g, '');
     assert.ok(!/\bthis\./.test(code)); assert.ok(!/jcr\.js/.test(code));
     const count = (re) => (code.match(re) || []).length;
-    assert.equal(count(/ops\.runMission\(/g), 1); assert.equal(count(/\bops\.\w+/g), 1, 'لا نداءَ على ops غيرَ runMission');
+    // PM/16 أضاف `ops.llm` منفذَ حقنٍ للنموذج اللغويّ — بلا مزوّدٍ لا يُستدعى الكاتبُ أصلاً، فما كان
+    // يمرّ إليه غيرَ قابلٍ للقياس. عضوان لا واحد: `runMission` و`llm`، وكلاهما **متعاونٌ مُحقَن** لا حالة.
+    assert.equal(count(/ops\.runMission\(/g), 1); assert.equal(count(/\bops\.\w+/g), 2, 'ops: runMission + llm لا غير');
+    assert.equal(count(/ops\.llm\b/g), 1, 'منفذُ الحقن موضعٌ واحد');
     assert.equal(count(/reporter\.io\b/g), 1); assert.equal(count(/reporter\.liveLog\(/g), 3); assert.equal(count(/reporter\.send\(/g), 6);
     assert.equal(count(/\bextractPageName\(/g), 1);
     const jcr = fs.readFileSync(path.join(HERE, '../agents/jcr.js'), 'utf8');
