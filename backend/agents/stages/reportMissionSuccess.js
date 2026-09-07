@@ -14,6 +14,7 @@ import { orchestrator } from '../../core/PluginOrchestrator.js';
 import { autoPushIfEnabled } from '../../services/githubSync.js';
 import { snapshotWorkspace } from '../../services/workspaceStore.js';
 import { recordBuild, buildMetricsPayload } from '../../services/metricsStore.js';
+import { readAIUsage, usageLine } from '../../core/providers/llm.js';
 
 // ⚖️ عنوانُ التقرير من الحكم (PM/2): PASS كما كان؛ UNVERIFIED «اكتمل البناء ولم يكتمل التحقّق»؛
 // FAILED «اكتمل البناء لكنّ التحقّق وجد ثغرات» — ولا يُقال «اكتملت المهمة» إلّا لما اجتاز البوّابات.
@@ -112,6 +113,10 @@ export function reportMissionSuccess(goal, ctx, reporter, verdict = null) {
         .catch(() => {});
 
     // 📊 تسجيل البناء + بث المقاييس الحقيقية للوحة الذكاء
+    // 💰 كلفةُ هذه المهمّة بالرموز — سؤالٌ («مش غالي شوي؟») لم يكن له جواب قبل هذا السطر.
+    // الفرقُ عن لقطة البداية، لا مجموعُ العملية: `ctx.usageAtStart` تُؤخذ عند إطلاق المهمّة.
+    console.log(usageLine(readAIUsage(), ctx?.usageAtStart || null));
+
     recordBuild(username, activeProject, {
         success: true, durationSec, filesCount: builtFiles.length, goal: goal || '',
     });
