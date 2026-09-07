@@ -243,6 +243,11 @@ function mergeContent(base, model) {
 }
 
 const DEFAULT_SECTIONS = ['navbar', 'hero', 'features', 'about', 'contact', 'footer'];
+// 🏷️ PM/20 — تسمياتُ الأقسام التي نحقنها نحن، بلغة صاحب المشروع. المفتاحُ يبقى لاتينيّاً (اسمُ مكوّنٍ
+//    ومسارُ صفحة)، والتسميةُ تُعرض عنواناً وتبويباً وبندَ تنقّل — فتلزمها لغتُه. لا تدخل هنا إلّا الأقسامُ
+//    التي تُعرض تسميتُها فعلاً: الشريطُ والبطلُ والتذييل هيكلٌ لا صفحاتٌ، فلا تسميةَ لها تُقرأ.
+//    (وقد كان `homeLabel` وحدَه مترجَماً، فخرج التنقّلُ «الرئيسية | Features | About | Contact».)
+const DEFAULT_LABELS = { ar: { features: 'المزايا', about: 'من نحن', contact: 'تواصل معنا' } };
 const CHROME_COMPS = ['Navbar', 'Hero', 'Footer'];
 
 /**
@@ -257,13 +262,16 @@ const CHROME_COMPS = ['Navbar', 'Hero', 'Footer'];
  *   secs: الأقسام بعد حقن الهيكل | comps: اسم المكوّن لكل قسم (فريدٌ)
  *   labels: المكوّن → تسمية صاحب المشروع الأصلية (هي المعنى، فلا تُفقد)
  */
-export function planSections(sections = []) {
-    const secs = (sections && sections.length ? sections : DEFAULT_SECTIONS).slice(0, 12);
+export function planSections(sections = [], lang = 'en') {
+    const named = !!(sections && sections.length);
+    const secs = (named ? sections : DEFAULT_SECTIONS).slice(0, 12);
+    // PM/20: ما حقنّاه نحن يُترجَم، وما سمّاه صاحبُ المشروع يبقى بنصّه (PM/9) — بأيّ لغةٍ كتبه.
+    const injected = new Set(named ? [] : DEFAULT_SECTIONS);
     // ضمِن هيكل الموقع (شريط علوي + بطل + تذييل) حتى لو لم يُمرَّر — فكل موقع
     // متعدّد الصفحات يحتاج تنقّلاً وتذييلاً، والرئيسية تحتاج بطلاً.
-    if (!secs.map((s, i) => compName(s, i)).includes('Navbar')) secs.unshift('navbar');
-    if (!secs.map((s, i) => compName(s, i)).includes('Hero')) secs.splice(1, 0, 'hero');
-    if (!secs.map((s, i) => compName(s, i)).includes('Footer')) secs.push('footer');
+    if (!secs.map((s, i) => compName(s, i)).includes('Navbar')) { secs.unshift('navbar'); injected.add('navbar'); }
+    if (!secs.map((s, i) => compName(s, i)).includes('Hero')) { secs.splice(1, 0, 'hero'); injected.add('hero'); }
+    if (!secs.map((s, i) => compName(s, i)).includes('Footer')) { secs.push('footer'); injected.add('footer'); }
 
     // اسم مكوّن فريد لكل قسم + احتفظ بالتسمية الأصلية (لعنوان ذي معنى)
     const seen = new Set();
@@ -273,7 +281,8 @@ export function planSections(sections = []) {
         while (seen.has(n)) n = n + (i + 1);
         seen.add(n);
         const orig = (s || '').toString().trim();
-        if (orig) labels[n] = orig.charAt(0).toUpperCase() + orig.slice(1);
+        const local = injected.has(orig) ? DEFAULT_LABELS[(lang || 'en').toLowerCase()]?.[orig] : null;
+        if (orig) labels[n] = local || orig.charAt(0).toUpperCase() + orig.slice(1);
         return n;
     });
     return { secs, comps, labels };
@@ -296,7 +305,7 @@ export function generateNextScaffold({ projectName = 'jaola-app', sections = [],
     const displayName = rawName.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
     const pageTitle = title || displayName || cap(safeName.replace(/-/g, ' '));
 
-    const { secs, comps, labels } = planSections(sections);
+    const { secs, comps, labels } = planSections(sections, code);
 
     // 🗺️ الصفحات: الرئيسية (بطل) + صفحة مستقلّة لكل قسم وظيفي — تنقّل حقيقي
     const CHROME = new Set(['Navbar', 'Hero', 'Footer']);
@@ -389,7 +398,7 @@ npm run build && npm start
 export async function generateContentModel(goal, { sections = [], lang = 'en', llm } = {}) {
     if (typeof llm !== 'function') return null;
     // المفاتيح من الاشتقاق الواحد نفسه الذي يبني الصفحات — لا اشتقاقٍ موازٍ
-    const { comps, labels } = planSections(sections);
+    const { comps, labels } = planSections(sections, lang);
     const generic = comps.filter((c) => !CHROME_COMPS.includes(c));
     // المفتاح لاتينيٌّ بالضرورة (Section3)، والمعنى في تسمية صاحب المشروع.
     // بغير هذا السطر يُطلب من النموذج محتوىً «غير عامّ» لقسمٍ لا يعرف ما هو.
