@@ -13,6 +13,7 @@
 
 import { smartChat } from '../core/providers/llm.js';
 import { keywordMatches } from './knowledgeEngine.js';
+import { specHead, clipWords } from './textNormalizer.js';
 
 /**
  * تصنيف احتياطي (بلا LLM) — يميّز التطبيق التفاعلي من الموقع التعريفي.
@@ -91,7 +92,7 @@ export async function generateBlueprint(goal) {
     } catch (e) {
         // مخطط احتياطي أدنى — يحافظ على معرفة أنه تطبيق وليس بروشور
         return {
-            appType: goal.slice(0, 60),
+            appType: clipWords(specHead(goal) || goal, 60), // PM/11: رأسُ الوثيقة على حدّ كلمة — لا سطرَ جديد ولا «1.»
             category: 'business',
             kind: fallbackKind,
             coreValue: goal.slice(0, 80),

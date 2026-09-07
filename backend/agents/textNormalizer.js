@@ -282,6 +282,25 @@ export function specSections(text) {
     return out;
 }
 
+/**
+ * 🏷️ رأسُ الوثيقة (PM/11): ما قبل أوّل بندٍ مرقّم — الجملةُ التي يسمّي فيها المستخدمُ منتجَه («أريد بناء نظام إدارة مكتبة…»).
+ * جملةٌ بلا بنود = رأسُها كلُّها؛ قائمةٌ مرقّمة من أوّلها = بلا رأس.
+ */
+export function specHead(text) {
+    const lines = String(text || '').split('\n');
+    const i = lines.findIndex(l => NUMBERED_LINE.test(l));
+    return (i === -1 ? lines : lines.slice(0, i)).join('\n').trim();
+}
+
+/** قصٌّ على حدّ كلمة بعلامة «…» — لا كلمةً مبتورة في منتصفها (اسمُ التطبيق المعروض). */
+export function clipWords(text, max = 60) {
+    const t = String(text || '').trim();
+    if (t.length <= max) return t;
+    const cut = t.slice(0, max);
+    const sp = cut.lastIndexOf(' ');
+    return (sp > 0 ? cut.slice(0, sp) : cut).replace(/[\s،,:;—-]+$/u, '') + '…';
+}
+
 /** أهذه وثيقةُ مواصفاتٍ لنظامٍ كامل (لا جملةُ طلب)؟ */
 export function isFullSpecification(text) {
     const t = String(text || '');

@@ -54,10 +54,10 @@ test('الحقيقةُ المقيسة ١: كلمةٌ واحدة («شركة» ف
     for (const c of ['product', 'invoice', 'customer', 'payment', 'shift', 'tenant', 'accountant', 'storekeeper']) assert.ok(seen.has(c), c);
 });
 
-test('الحقيقةُ المقيسة ٢ (أُغلق نصفُها في PM/6): المخطّطُ الاحتياطيُّ ما زال يسمّي المشروعَ بأوّل ستّين حرفاً — أمّا الفهمُ فصار يقرأ معجمَه', async () => {
+test('الحقيقةُ المقيسة ٢ (أُغلقت: PM/6 للفهم، PM/11 للاسم): المخطّطُ الاحتياطيُّ يسمّي المشروعَ برأس الوثيقة على حدّ كلمة — والفهمُ يقرأ معجمَه', async () => {
     const bp = await generateBlueprint(SPEC);
     assert.equal(bp._source, 'fallback');
-    assert.equal(bp.appType, SPEC.slice(0, 60), 'الاسمُ المعروضُ للمستخدم = مستهلُّ الوثيقة — ديْنٌ باقٍ');
+    assert.equal(bp.appType, 'أريد منك بناء نظام كاشير ونقطة بيع POS System متكامل وقابل…', 'PM/11: رأسُ الوثيقة مقطوعاً على حدّ كلمة — كان أوّلَ ستّين حرفاً مبتورةً في منتصف كلمة');
     assert.deepEqual(bp.functionalComponents.map(c => c.name), ['الميزة الأساسية التفاعلية'], 'مكوّنٌ واحدٌ عامّ لأربعةٍ وأربعين بنداً');
     // كان: roles ['User'] / entities ['Item'] — الاحتياطُ لا يستشير conceptsInText. PM/6: يستشيرها بترتيب التكرار.
     const model = await deriveProjectModel(SPEC, bp);
