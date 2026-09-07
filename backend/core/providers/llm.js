@@ -184,9 +184,31 @@ export function describeAIFailure(diagnosis, lang = 'ar') {
  * عن «هل وصل الضبطُ أصلاً؟». سطرٌ واحد يُنهي السؤال. واسمُ الموديل ليس سرّاً (افتراضاتُه في
  * المستودع)، فطبعُه لا يكشف مفتاحاً — وهذا ما يُميّزه عن كلّ ما لا يُطبع هنا.
  */
+/**
+ * 🔴 حقلٌ يملؤه إنسانٌ لا تُطبع قيمتُه قبل فحصِ شكلها.
+ *
+ * قِيس في الإنتاج: وُضع **مفتاح Groq** في `GROQ_MODEL`، فطبعه سطرُ الإقلاع كاملاً في السجلّ.
+ * وحكمُ #592 («اسمُ الموديل ليس سرّاً») صحيحٌ عن الاسم، خاطئٌ عن الحقل: الحقلُ يحمل ما يُكتب فيه.
+ *
+ * والفحصُ بالشكل: بادئةُ اعتمادٍ معروفة، أو سلسلةٌ طويلةٌ بلا `/` — وأطولُ اسمِ موديلٍ حقيقيٍّ
+ * قِيس بلا `/` هو `llama-3.3-70b-versatile` (٢٣ محرفاً)، فحدُّ ٣٦ يترك مسافةً واسعة.
+ */
+// تعريفُ دالّةٍ لا ثابتاً: سطورُ الإقلاع تنادي `modelReportLines` **قبل** هذا الموضع في الملفّ،
+// وثابتُ `const` في منطقة الموت الزمنيّ حينها فيرمي — أوقعه الاختبارُ قبل النشر.
+export function looksLikeSecret(v) {
+    const s = String(v ?? '').trim();
+    return /^(gsk_|sk-|AIza|gh[pousr]_|xai-|r8_|hf_|Bearer\s)/i.test(s)
+        || (s.length >= 36 && !s.includes('/'));
+}
+
 export function modelReportLines(env, resolved, only = PROVIDER_NAMES) {
     return PROVIDER_NAMES.filter((n) => only.includes(n)).map((name) => {
         const from = env[name] ? 'بيئة' : 'افتراضي';
+        // الخطأُ نفسُه يصير تشخيصاً: يُقال ما هو، ولا تُكشف القيمة
+        if (looksLikeSecret(resolved[name])) {
+            return `🔴 [AI Model]: ${name} — القيمةُ المضبوطة تشبه مفتاحاً لا اسمَ موديل (${from}). `
+                + `أُخفيت. ضع المفتاحَ في ${name.toUpperCase()}_API_KEY واجعل ${name.toUpperCase()}_MODEL اسمَ موديل.`;
+        }
         return `🏷️ [AI Model]: ${name} = ${resolved[name]} (${from})`;
     });
 }

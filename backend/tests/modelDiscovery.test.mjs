@@ -108,3 +108,44 @@ test('🔴 ولا يُعلَن اسمُ مزوّدٍ لا يعمل — وبه ت
     assert.match(two.join('\n'), /groq[\s\S]*deepseek/, 'الترتيبُ ترتيبُ السلسلة لا ترتيبُ الطلب');
     assert.doesNotMatch(two.join('\n'), /gemini|openai/, 'أُعلن مزوّدٌ لا يعمل');
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🔴 قِيس في الإنتاج (2026-09-07): صاحبُ المنصّة وضع **مفتاح Groq** في `GROQ_MODEL`،
+// فطبعه سطرُ الإقلاع الذي كتبتُه أنا كاملاً في سجلّ Render:
+//     🏷️ [AI Model]: groq = gsk_… (بيئة)
+//
+// وكان حكمي في #592: «اسمُ الموديل ليس سرّاً، فطبعُه لا يكشف مفتاحاً». وهو صحيحٌ عن
+// **الاسم**، وخاطئٌ عن **الحقل**: الحقلُ يحمل ما يضعه إنسان، والإنسانُ يخطئ. والحارسُ الذي
+// كتبتُه فحص نصَّ السطر بقيمٍ من عندي («g»/«d»)، فلم يمرّ عليه قطُّ قيمةٌ تشبه مفتاحاً.
+//
+// فالقاعدة: **لا تُطبع قيمةُ حقلٍ يملؤها إنسانٌ قبل فحصِ شكلها**. والخطأُ نفسُه يصير تشخيصاً:
+// «هذه قيمةٌ تشبه مفتاحاً، والمنتظَرُ اسمُ موديل» تدلّ على الخطأ بلا كشفه.
+test('🔴 قيمةٌ تشبه مفتاحاً لا تُطبع — والخطأُ يُسمّى بدل أن يُكشف', () => {
+    const shapes = [
+        'gsk_XYIMZabcdefghijklmnopqrstuvwxyz012345',   // Groq
+        'sk-proj-abcdefghijklmnopqrstuvwxyz0123456789',  // OpenAI
+        'AIzaSyAbcdefghijklmnopqrstuvwxyz01234567',      // Google
+        'ghp_abcdefghijklmnopqrstuvwxyz0123456789',      // GitHub
+        'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH',  // سلسلةٌ طويلة بلا بادئة
+        // قصيرةٌ عمداً (< ٣٦): البادئةُ وحدَها تُمسكها، فحدُّ الطول لا يُنجي حذفَها
+        'gsk_short12345', 'sk-short12345', 'AIzaShort1234', 'ghp_short1234',
+    ];
+    for (const secret of shapes) {
+        const line = modelReportLines({ groq: secret }, { groq: secret }, ['groq']).join('');
+        assert.doesNotMatch(line, new RegExp(secret.slice(0, 12)), `سُرّب: ${secret.slice(0, 8)}…`);
+        assert.match(line, /تشبه مفتاحاً|اسمَ موديل/, 'أُخفيت القيمةُ ولم يُقَل ما الخطأ');
+        assert.match(line, /groq/, 'اسمُ المزوّد يبقى — هو موضعُ الخطأ');
+    }
+});
+
+test('وأسماءُ الموديلات الحقيقيّة تُطبع كما هي — لا حجبَ زائد', () => {
+    // من قائمةٍ حقيقيّةٍ قالها Groq: فيها شرطات ومائلات وأرقام
+    for (const real of ['openai/gpt-oss-120b', 'qwen/qwen3.8-27b', 'llama-3.3-70b-versatile',
+        'deepseek-v4-pro', 'gemini-2.0-flash', 'meta-llama/llama-prompt-guard-2-86m',
+        // اسمٌ طويلٌ فيه مائلة: يتجاوز حدَّ الطول، والمائلةُ وحدَها تُميّزه عن مفتاح
+        'meta-llama/Llama-4-Maverick-17B-128E-Instruct']) {
+        const line = modelReportLines({ groq: real }, { groq: real }, ['groq']).join('');
+        assert.match(line, new RegExp(real.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `حُجب اسمٌ صحيح: ${real}`);
+        assert.doesNotMatch(line, /تشبه مفتاحاً/);
+    }
+});
