@@ -42,6 +42,40 @@ export async function readCodeContext(projectPath) {
  * ليس منتجَ المستخدم)، والثنائيّاتُ والصور. `[]` عند أيّ خطأ — كالقارئ القائم، فالحكمُ لا ينهار بمسارٍ غائب.
  * @returns {Promise<Array<{name: string, content: string}>>} الاسمُ مسارٌ نسبيٌّ بفواصل `/`
  */
+/**
+ * ⚛️ PM/22 — «نوعُ المشروع حقيقةٌ على القرص»: هل هذا مشروعُ React/Next؟ يُسأل القرصُ مباشرةً، لا قائمةُ
+ * `readProjectFiles` — فتلك تقرأ الصفحةَ وما تُحمّله وحدَها **بتصميمٍ مقصود** (انظر فوق)، فلا ترى
+ * `lib/content.js` قطّ. قِيس أنّ الاشتقاقَ منها يجعل `isReact` خطأً على كلِّ مشروع React حقيقيّ، فتموت
+ * عمليّاتُ الصفحات الثلاث ولا تُعاد المعاينةُ من مصدرها. الكشفُ هنا لا يُوسّع القارئَ ولا يمسّه.
+ */
+export async function isReactProject(projectPath) {
+    for (const marker of ['lib/content.js', 'app/page.jsx']) {
+        try { await fsPromises.access(path.join(projectPath, marker)); return true; } catch { /* التالي */ }
+    }
+    return false;
+}
+
+/**
+ * ⚛️ PM/22 — **مصادرُ** مشروع React: `lib/content.js` (المحتوى) + مكوّناتُ `components/`. قِيس أنّ فرعَ React
+ * في التعديل الجراحيّ يستبعد صفحاتِ HTML المولَّدة — وهو صحيح، فهي تُعاد من المصدر — لكنّ قارئَ التعديل
+ * لا يعود إلّا بـ`index.html`، فيبقى المُعدِّلُ بـ**صفر ملفّات**. هذا ليس توسيعاً لقارئ الصفحات (تحذيرُ PM/15
+ * قائم): هذه ليست صفحاتٍ يختار المُعدِّلُ خطأً من بينها، بل مصدرُ المشروع الوحيد الذي تُشتقّ منه كلُّ صفحاته.
+ * `[]` عند أيّ خطأ.
+ */
+export async function readReactSources(projectPath) {
+    const out = [];
+    const add = async (rel) => {
+        try { out.push({ name: rel, content: await fsPromises.readFile(path.join(projectPath, rel), 'utf-8') }); } catch { /* غائب */ }
+    };
+    await add('lib/content.js');
+    try {
+        for (const e of await fsPromises.readdir(path.join(projectPath, 'components'), { withFileTypes: true })) {
+            if (e.isFile() && /\.(jsx?|tsx?)$/i.test(e.name)) await add(`components/${e.name}`);
+        }
+    } catch { /* بلا مجلّد مكوّنات */ }
+    return out;
+}
+
 const SOURCE_EXT = /\.(html?|jsx?|tsx?|mjs|cjs|css|json|md|svg|txt)$/i;
 export async function readBuiltFiles(projectPath) {
     const out = [];
