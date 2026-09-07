@@ -286,8 +286,15 @@ export function planSections(sections = []) {
 export function generateNextScaffold({ projectName = 'jaola-app', sections = [], features = [], lang = 'en', title, content } = {}) {
     const code = (lang || 'en').toLowerCase();
     const dir = RTL_LANGS.has(code) ? 'rtl' : 'ltr';
-    const safeName = (projectName || 'jaola-app').toString().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'jaola-app';
-    const pageTitle = title || cap(safeName.replace(/-/g, ' '));
+    // 🏷️ PM/17 — قيمتان لغرضَين متعارضَين، لا قيمةٌ واحدة:
+    //   `safeName` مُعرِّفُ حزمة npm، ويجب أن يكون ASCII — فإسقاطُ ما ليس `[a-z0-9-]` صحيحٌ **له**.
+    //   `pageTitle` اسمٌ يقرؤه صاحبُ المشروع (العلامةُ في كلّ صفحة، و`<title>`، وREADME) — فيبقى كما كتبه.
+    //   قِيس أنّ إعادةَ استعمال الأوّل في الثاني تمحو العربيّةَ كلَّها: «مكتبة المدينة» و«مطعم البحر»
+    //   تخرجان **«Jaola app»**، و«متجر ABC» تخرج «Abc». والاحتياطُ يبقى للاسم الفارغ وحدَه.
+    const rawName = (projectName ?? '').toString();
+    const safeName = rawName.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'jaola-app';
+    const displayName = rawName.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const pageTitle = title || displayName || cap(safeName.replace(/-/g, ' '));
 
     const { secs, comps, labels } = planSections(sections);
 
