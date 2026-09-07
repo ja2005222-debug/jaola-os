@@ -9,7 +9,7 @@
  * تستهلك *النسخة* عبر `context.budget`). عميلُ النموذج `groq` يُحقَن بمعاملٍ افتراضيّ على سابقة `router` في JCR/27. لا `io`.
  * مستدعٍ واحد (`_runMissionNow`) + اختباراتُ التوصيف على المفوِّض. نقلٌ حرفيّ.
  */
-import { groq } from '../../core/providers/llm.js';
+import { groq, GROQ_MODEL } from '../../core/providers/llm.js';
 
 class CognitiveBudget {
     constructor(complexity = 'medium') {
@@ -48,7 +48,7 @@ export async function runMissionMeta(context, roomName, reporter, ops, client = 
                 { role: "system", content: "أنتج JSON: mission: { businessGoal, technicalGoal, uxGoal, successCriteria, risks }, meta: { confidence: رقم, unknowns: مصفوفة, priority: 'Critical'|'High'|'Medium'|'Low' }" },
                 { role: "user", content: `تفضيلات: ${JSON.stringify(execMemory)}\nالهدف: "${context.goal}"` }
             ],
-            model: "llama-3.3-70b-versatile",
+            model: GROQ_MODEL,
             response_format: { type: "json_object" }
         });
         const result = JSON.parse(completion.choices[0].message.content);

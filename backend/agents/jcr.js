@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { groq, smartChat } from '../core/providers/llm.js';
+import { groq, smartChat, GROQ_MODEL } from '../core/providers/llm.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO, resolveGoalLanguage } from './languageDetector.js';
 import { addToHistory, getDomainModel } from './projectMemory.js';
@@ -435,7 +435,7 @@ export class JaolaCognitiveRuntime {
                     { role: 'system', content: instruction },
                     { role: 'user', content: `الملخّص الحالي:\n${previousSummary || '(لا يوجد)'}\n\nرسائل جديدة:\n${transcript}` }
                 ],
-                model: 'llama-3.3-70b-versatile',
+                model: GROQ_MODEL,
                 max_tokens: 400,
                 temperature: 0.3
             });
