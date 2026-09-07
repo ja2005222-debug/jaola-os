@@ -1,4 +1,4 @@
-import { deepseek, groq, ai, isPermanentAIError, AI_UNAVAILABLE_MSG, DEEPSEEK_MODEL, GROQ_MODEL, GEMINI_MODEL } from '../core/providers/llm.js';
+import { deepseek, groq, ai, isPermanentAIError, isProviderEnabled, AI_UNAVAILABLE_MSG, DEEPSEEK_MODEL, GROQ_MODEL, GEMINI_MODEL } from '../core/providers/llm.js';
 import { buildContextPrompt } from './knowledgeEngine.js';
 import { buildLessonsPromptBlock } from '../services/platformLessons.js';
 import { buildBlueprintPrompt } from './referenceBlueprints.js';
@@ -169,6 +169,19 @@ function parseResponseToFiles(responseText) {
 // ============================================================
 // 🚀 الدالة الرئيسية مع Fallback للنماذج
 // ============================================================
+export const NO_PROVIDER_MSG = 'لا مزوّد AI مُفعَّل — راجع AI_PROVIDERS.';
+
+/**
+ * 🎚️ ترشيحُ حلقات المولّد بـ`AI_PROVIDERS`.
+ *
+ * `callDeepSeek` و`callGemini` ينادِيان العميلَ **مباشرةً** خارج `createWithFailover`، فحارسُ
+ * السلسلة لا يبلغهما: بلا هذا المرشِّح كان المزوّدُ المستبعَد يعمل من هنا. وهي دالّةٌ مصدَّرة
+ * لأنّ الحارسَ يُقاس سلوكاً — عدُّ مواضعِه في النصّ كان يَنجو منه حذفُ الترشيح نفسِه.
+ */
+export function selectModels(pipeline) {
+    return pipeline.filter((m) => isProviderEnabled(m.provider));
+}
+
 export async function coreGenerateCodePlan(prompt, currentCodeContext, visualIdentity, images, onChunk, templateSections, lang = 'en') {
     // 🆕 استخدام Knowledge Engine لتوليد سياق غني ومخصص
     const knowledgeContext = buildContextPrompt(prompt);
@@ -208,20 +221,28 @@ ${libraryAware ? '- 🔗 مشروع كبير: Tailwind Play CDN في <head> (dat
 - ثلاثة ملفات: index.html وstyles.css وscript.js`;
 
     // قائمة النماذج بالأولوية (Groq ← DeepSeek ← Gemini) — إذا فشل الأول، يجرب التالي
-    const modelPipeline = [
+    const modelPipeline = selectModels([
         {
             name: 'Groq Llama',
+            provider: 'groq',
             call: () => callGroq(userMessage, onChunk, systemPrompt)
         },
         {
             name: 'DeepSeek Coder',
+            provider: 'deepseek',
             call: () => callDeepSeek(userMessage, onChunk, systemPrompt)
         },
         {
             name: 'Gemini',
+            provider: 'gemini',
             call: () => callGemini(userMessage, systemPrompt)
         }
-    ];
+    ]);
+
+    if (!modelPipeline.length) {
+        // لا نقول «فشلت جميع النماذج» ولم يُجرَّب واحد: الرسالةُ تدلّ على الإعداد لا على عطل.
+        return { error: true, details: NO_PROVIDER_MSG };
+    }
 
     const failures = [];
     for (const model of modelPipeline) {

@@ -34,14 +34,46 @@ export const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 export const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
+/**
+ * 🎚️ `AI_PROVIDERS` — أيُّ حلقاتِ السلسلة تُجرَّب. قائمةٌ بفواصل، والافتراضُ (غيابُ المفتاح) كلُّها.
+ *
+ * غرضُه تشغيليّ: حصرُ التجارب في مزوّدٍ أو اثنين **دون حذف مفتاحٍ من البيئة** — فالحذفُ يُتلف إعداداً
+ * ويحتاج استرجاعاً، والحصرُ يُرفع بسطرٍ واحد. يصل السلسلةَ **ومسارَ المولّد المباشر** معاً: `coderAgent`
+ * ينادي `deepseek` و`ai` خارج `createWithFailover`، فحارسٌ في السلسلة وحدَها كان سيترك المستبعَد يعمل.
+ *
+ * والاسمُ المجهول لا يُصحَّح صامتاً: يُرصد ويُعلَن عند الإقلاع، والمعروفُ يُحترم كما كُتب. وإن لم يبقَ
+ * معروفٌ فلا مزوّد — «لا يوجد مزود AI مُهيأ» رسالةٌ تدلّ على الإعداد، والعودةُ الصامتة إلى «الكلّ» تُخفيه.
+ */
+export const PROVIDER_NAMES = Object.freeze(['groq', 'deepseek', 'gemini', 'openai']);
+
+export function resolveEnabledProviders(raw) {
+    const asked = String(raw ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+    if (!asked.length) return { enabled: new Set(PROVIDER_NAMES), asked: [], unknown: [] };
+    return {
+        enabled: new Set(asked.filter((n) => PROVIDER_NAMES.includes(n))),
+        asked,
+        unknown: asked.filter((n) => !PROVIDER_NAMES.includes(n)),
+    };
+}
+
+const SELECTION = resolveEnabledProviders(process.env.AI_PROVIDERS);
+const enabled = (name) => SELECTION.enabled.has(name);
+/** يقرؤه `coderAgent` لأنّه ينادي العملاءَ مباشرةً خارج السلسلة. */
+export const isProviderEnabled = (name) => enabled(name);
+
 const openaiClient = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
 export const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
 
-if (groqClient) console.log('⚡ [AI Core]: Groq نشط كخيار أول فائق السرعة.');
-if (hasDeepseek) console.log('🐋 [AI Core]: DeepSeek نشط كخط ثانٍ تلقائي (failover).');
-if (openaiClient) console.log('🧠 [AI Core]: OpenAI نشط كخط ثالث أخير.');
-if (ai) console.log('♊ [AI Core]: محرك Gemini نشط كخطة بديلة لحالات الضغط.');
+if (groqClient && enabled('groq')) console.log('⚡ [AI Core]: Groq نشط كخيار أول فائق السرعة.');
+if (hasDeepseek && enabled('deepseek')) console.log('🐋 [AI Core]: DeepSeek نشط كخط ثانٍ تلقائي (failover).');
+if (openaiClient && enabled('openai')) console.log('🧠 [AI Core]: OpenAI نشط كخط ثالث أخير.');
+if (ai && enabled('gemini')) console.log('♊ [AI Core]: محرك Gemini نشط كخطة بديلة لحالات الضغط.');
+// 🔇 مفتاحٌ موجودٌ ومزوّدٌ مستبعَد: يُقال صراحةً كي لا يُظنّ الغيابُ عطباً — والمجهولُ يُسمّى ليُصحَّح.
+for (const [name, present] of [['groq', !!groqClient], ['deepseek', hasDeepseek], ['gemini', !!ai], ['openai', !!openaiClient]]) {
+    if (present && !enabled(name)) console.log(`🔇 [AI Core]: ${name} مُستبعَد بـAI_PROVIDERS (مفتاحُه موجود، لم يُحذف).`);
+}
+if (SELECTION.unknown.length) console.warn(`⚠️ [AI Core]: أسماءٌ لا تُعرف في AI_PROVIDERS: ${SELECTION.unknown.join('، ')} — المعروفُ منها وحدَه يُحترم (${PROVIDER_NAMES.join('، ')}).`);
 
 // ═══════════════════════════════════════════════════════
 // 🔄 Failover تلقائي: Groq → DeepSeek → Gemini → OpenAI
@@ -100,7 +132,7 @@ async function createWithFailover(params, opts) {
     const failures = [];
 
     // 1️⃣ Groq — الأسرع. أي فشل (rate limit/مفتاح/شبكة) → المزود التالي فوراً
-    if (groqClient) {
+    if (groqClient && enabled('groq')) {
         try {
             return await groqClient.chat.completions.create(params, opts);
         } catch (e) {
@@ -110,17 +142,17 @@ async function createWithFailover(params, opts) {
     }
 
     // 2️⃣ DeepSeek — الاشتراك المدفوع، نفس واجهة OpenAI ويدعم البث و JSON mode
-    if (hasDeepseek) {
+    if (hasDeepseek && enabled('deepseek')) {
         try {
             return await deepseek.chat.completions.create({ ...params, model: DEEPSEEK_MODEL }, opts);
         } catch (e) {
             lastError = e; failures.push(e);
-            console.warn(`[AI Failover] DeepSeek فشل (${e.status || ''} ${String(e.message).slice(0, 80)}) → ${ai ? 'Gemini' : openaiClient ? 'OpenAI' : 'لا بديل متبقٍ'}`);
+            console.warn(`[AI Failover] DeepSeek فشل (${e.status || ''} ${String(e.message).slice(0, 80)}) → ${(ai && enabled('gemini')) ? 'Gemini' : (openaiClient && enabled('openai')) ? 'OpenAI' : 'لا بديل متبقٍ'}`);
         }
     }
 
     // 3️⃣ Gemini — واجهة مختلفة تُغلَّف بشكل OpenAI؛ لا يدعم بثّنا فيُتخطّى للبث
-    if (ai && !params.stream) {
+    if (ai && enabled('gemini') && !params.stream) {
         try {
             const wantJson = params.response_format?.type === 'json_object';
             const text = (params.messages || [])
@@ -136,12 +168,12 @@ async function createWithFailover(params, opts) {
             return { choices: [{ message: { content: out } }] };
         } catch (e) {
             lastError = e; failures.push(e);
-            console.warn(`[AI Failover] Gemini فشل (${String(e.message).slice(0, 80)}) → ${openaiClient ? 'OpenAI' : 'لا بديل متبقٍ'}`);
+            console.warn(`[AI Failover] Gemini فشل (${String(e.message).slice(0, 80)}) → ${(openaiClient && enabled('openai')) ? 'OpenAI' : 'لا بديل متبقٍ'}`);
         }
     }
 
     // 4️⃣ OpenAI — الخط الأخير
-    if (openaiClient) {
+    if (openaiClient && enabled('openai')) {
         try {
             return await openaiClient.chat.completions.create({ ...params, model: OPENAI_MODEL }, opts);
         } catch (e) {
@@ -154,7 +186,8 @@ async function createWithFailover(params, opts) {
 }
 
 // كائن متوافق مع واجهة Groq SDK — non-null ما دام أي مزود متاحاً
-export const groq = (groqClient || hasDeepseek || ai || openaiClient)
+export const groq = ((groqClient && enabled('groq')) || (hasDeepseek && enabled('deepseek'))
+    || (ai && enabled('gemini')) || (openaiClient && enabled('openai')))
     ? { chat: { completions: { create: createWithFailover } } }
     : null;
 

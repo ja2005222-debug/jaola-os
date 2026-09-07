@@ -71,7 +71,7 @@ Policy/Permission، Identity، Plugin.
 | ✅ `core/policy/ConfirmationManager.js` (جديد، Sprint 3) | 82 | بوّابةُ تأكيدٍ واحدة تُميّز الموافقة من السؤال | ADDED | Permission | مستهلكها: مسارُ التأكيد في `jcr.js` |
 | ✅ `core/runtime/workspacePaths.js` (جديد، Sprint 2c؛ الكاتبان JCR/7) | 187 | `isInsideRoot`/`resolveInside` + `safeRelPath` + `resolveProjectFile` — نواة احتواء المسار، ومعها الكاتبان المحتويان `writeProjectFile`/`writePlanFiles` (خرجا من jcr كي تستوردهما المراحل بلا دورة) | ADDED | Tool | `jcr` (٢٤ موضعَ نداء)، `writeBackendTeamFiles`، `sanitizePath` |
 | ✅ `core/runtime/workspaceRoots.js` (جديد، Sprint 4h) | 43 | `WORKSPACE_ROOT`/`MEMORY_ROOT`/`PLUGINS_ROOT` — **تصريحٌ واحد** لجذور الكتابة الثلاثة (كانت تُشتقّ في ١٢ موضعاً). اشتقاقٌ نقيّ: لا يلمس القرص | ADDED | Tool (شرطُ أيّ بوّابةِ كتابةٍ لاحقة) | مستهلكوه: `server.js` + ٩ وحدات |
-| ✅ `core/providers/llm.js` (Sprint 4g، مَنقول من `agents/baseAgent.js`) | 176 (25 مستورداً) | بوّابةُ الـLLM الوحيدة: `smartChat`/`ai`/`groq`/`deepseek` + سلسلة failover Groq → DeepSeek → Gemini → OpenAI + تصنيف الأعطال + `aggregateFailure` (قرارُ الإيقاف ونصُّ صاحب المشروع في موضعٍ واحد) + أسماءُ الموديلات من البيئة `GROQ_MODEL`/`GEMINI_MODEL`/`OPENAI_MODEL`/`DEEPSEEK_MODEL` | MOVED (نقلٌ حرفيّ: لا سطرَ منطقٍ تغيّر) | Provider | `core/providers/llm.js` — لا Registry قبل Model Router (لا تجريد بلا مستهلك) |
+| ✅ `core/providers/llm.js` (Sprint 4g، مَنقول من `agents/baseAgent.js`) | 209 (25 مستورداً) | بوّابةُ الـLLM الوحيدة: `smartChat`/`ai`/`groq`/`deepseek` + سلسلة failover Groq → DeepSeek → Gemini → OpenAI + تصنيف الأعطال + `aggregateFailure` (قرارُ الإيقاف ونصُّ صاحب المشروع في موضعٍ واحد) + أسماءُ الموديلات من البيئة `GROQ_MODEL`/`GEMINI_MODEL`/`OPENAI_MODEL`/`DEEPSEEK_MODEL` + `AI_PROVIDERS` (`PROVIDER_NAMES`/`resolveEnabledProviders`/`isProviderEnabled`): استبعادُ حلقةٍ بلا حذفِ مفتاحها | MOVED (نقلٌ حرفيّ: لا سطرَ منطقٍ تغيّر) | Provider | `core/providers/llm.js` — لا Registry قبل Model Router (لا تجريد بلا مستهلك) |
 
 ### ✅ التحقّق من مسار `orchestrator.init` (البند 21 من الخط الأساس)
 مؤكَّد بالكود لا بالفهرس:
@@ -131,7 +131,7 @@ Policy/Permission، Identity، Plugin.
 ### C2. وكلاء الحزمة (AgentBundle — `CONTRACTS.md` §2أ)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `coderAgent.js` | 388 | `coreGenerateCodePlan` / `coreEditCodePlan` (إلزامي) | MODIFY | Agent (spec تصريحي تحت Agent Runtime) | `plugins/coding/agents/` |
+| `coderAgent.js` | 409 | `coreGenerateCodePlan` / `coreEditCodePlan` (إلزامي) + `selectModels` (يُرشِّح خطَّ النماذج بـ`AI_PROVIDERS` — العملاءُ يُنادَون هنا مباشرةً خارج السلسلة) | MODIFY | Agent (spec تصريحي تحت Agent Runtime) | `plugins/coding/agents/` |
 | `architectAgent.js` | 43 | `architectReview` حتمي (إلزامي) | MODIFY | Agent + Evidence (`checks[]`) | `plugins/coding/agents/` |
 | `qaAgent.js` | 115 | `qaVerify` حتمي (إلزامي) | MODIFY | Agent + Evidence (`checks[]`) | `plugins/coding/agents/` |
 | `core/evidence/Check.js` | 55 | عقدُ الدليل الذي يتكلّمه الناقدان (Sprint 4) | KEEP | Evidence | `core/evidence/` |
