@@ -24,8 +24,16 @@ import { autoPushIfEnabled } from '../../services/githubSync.js';
 import { snapshotWorkspace } from '../../services/workspaceStore.js';
 import { recordEditAction, buildMetricsPayload } from '../../services/metricsStore.js';
 import { writeProjectFile } from '../../core/runtime/workspacePaths.js';
-import { readProjectFiles } from '../projectReader.js';
-import { cleanPageName } from './reactPages.js';
+import { readProjectFiles, isReactProject, readReactSources } from '../projectReader.js';
+import { cleanPageName, readReactContent, findPage } from './reactPages.js';
+
+/** ⚛️ PM/22 — هل يسمّي هذا النصُّ صفحةً موجودةً في المشروع؟ (لا يرمي أبداً؛ الغيابُ = لا). */
+async function namesAnExistingPage(projectPath, name) {
+    try {
+        const content = await readReactContent(projectPath);
+        return !!(content && findPage(content, name)?.comp);
+    } catch { return false; }
+}
 
 export async function runSurgicalEdit(instruction, ctx, reporter, ops) {
     const { projectPath, username, activeProject, roomName, agents } = ctx;
@@ -37,14 +45,25 @@ export async function runSurgicalEdit(instruction, ctx, reporter, ops) {
     if (files.length) await backupProject(projectPath, 'edit').catch(() => {});
 
     // مشروع React؟ (يحوي lib/content.js أو app/page.jsx)
-    const isReact = files.some(f => f.name === 'lib/content.js' || f.name === 'app/page.jsx');
+    // PM/22: يُسأل القرصُ لا قائمةُ `files` — فقارئُ التعديل يعود بالصفحة وما تُحمّله وحدَها (PM/15)،
+    //        فلا يرى `lib/content.js` أبداً. الاشتقاقُ منه كان يجعل هذا الشرطَ خطأً على كلِّ مشروع React.
+    const isReact = await isReactProject(projectPath);
 
     // 🗂️ عمليات الصفحات لمشروع React (تزايدية، تحفظ باقي المحتوى) — قبل فحص
     // "التغيير الكبير" (الذي يلتقط "صفحة/صفحات" ويعيد البناء بالكامل).
     if (isReact) {
         // إعادة تسمية: "أعد تسمية صفحة X إلى Y" / "rename page X to Y"
-        const ren = instruction.match(/(?:أعد\s*تسمية|اعد\s*تسمية|غيّر\s*اسم|غير\s*اسم|rename)\s+(?:صفحة|صفحه|page\s+)?(.+?)\s+(?:إلى|الى|to)\s+(.+)/i);
-        if (ren) return ops.renamePage(projectPath, username, activeProject, roomName, lang, cleanPageName(ren[1]), cleanPageName(ren[2]));
+        const ren = instruction.match(/(?:أعد\s*تسمية|اعد\s*تسمية|غيّر\s*اسم|غير\s*اسم|rename)\s+(صفحة|صفحه|page\s+)?(.+?)\s+(?:إلى|الى|to)\s+(.+)/i);
+        if (ren) {
+            // PM/22: كلمةُ «صفحة» اختياريّةٌ في هذا المُطابِق وحدَه (بخلاف الحذف والإضافة)، فـ«غيّر اسم **المتجر**
+            //        إلى زهور» تُطابقه أيضاً. فإن قالها صاحبُ المشروع صراحةً فهي عمليّةُ صفحة مهما كان الاسم —
+            //        و«لم أجد صفحة باسم…» جوابٌ صادقٌ نافع. وإن لم يقلها فلا نفترضها: لا تكون عمليّةَ صفحةٍ
+            //        إلّا إن سمّى صفحةً قائمةً فعلاً، وإلّا فهو تعديلٌ عاديّ.
+            const from = cleanPageName(ren[2]);
+            if (ren[1] || await namesAnExistingPage(projectPath, from)) {
+                return ops.renamePage(projectPath, username, activeProject, roomName, lang, from, cleanPageName(ren[3]));
+            }
+        }
         // حذف: "احذف صفحة X" / "delete page X"
         const del = instruction.match(/(?:احذف|امسح|إحذف|delete|remove)\s+(?:صفحة|صفحه|page)\s+(.+)/i);
         if (del) return ops.deletePage(projectPath, username, activeProject, roomName, lang, cleanPageName(del[1]));
@@ -66,7 +85,15 @@ export async function runSurgicalEdit(instruction, ctx, reporter, ops) {
 
     // نوجّه التعديل للمصدر (lib/content.js، المكوّنات) لا لصفحات HTML المولّدة
     // (index.html/*.html) — فتلك نُعيد توليدها من المحتوى بعد التعديل.
-    const editFiles = isReact ? files.filter(f => !/^[^/]+\.html$/.test(f.name)) : files;
+    // PM/22: واستبعادُ الصفحات وحدَه كان يترك المُعدِّلَ بصفر ملفّات — فقارئُ التعديل لا يعود إلّا
+    //        بـ`index.html` على مشروع React حقيقيّ. فمصادرُ المشروع تُضاف صراحةً إلى ما يراه القارئُ
+    //        أصلاً (لا بديلاً عنه: ملفٌّ جذريٌّ غيرُ HTML تُحمّله الصفحةُ يبقى هدفاً صالحاً للتعديل).
+    let editFiles = files;
+    if (isReact) {
+        const kept = files.filter(f => !/^[^/]+\.html$/.test(f.name));
+        const seen = new Set(kept.map(f => f.name));
+        editFiles = kept.concat((await readReactSources(projectPath)).filter(f => !seen.has(f.name)));
+    }
 
     reporter.liveLog(roomName, 'EDIT', 'SurgicalEditor', '✂️ تعديل دقيق (لا إعادة بناء كاملة)...');
     reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
