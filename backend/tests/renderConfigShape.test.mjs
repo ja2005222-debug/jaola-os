@@ -59,7 +59,7 @@ test('مواضعُ الجواب الخمسة كما قِيست — أيُّ تغ
         'agents/stages/buildFromClone.js:180 → false',
         'agents/stages/buildFromRegistry.js:65 → false',
         'agents/stages/renderConfig.js:37 → hasBackend',
-        'server.js:2400 → false',
+        'server.js:2401 → false',
         'services/deployAutomation.js:211 → true',
     ], 'مواضعُ تقرير شكل `render.yaml` تغيّرت — راجع الحارسَ والوثيقة معاً');
 });
