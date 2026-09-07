@@ -20,6 +20,8 @@ import { recordLesson } from '../../services/platformLessons.js';
 import { guardFiles, scrubPlaceholders, ensureEditIntegrity } from '../../services/codeGuard.js';
 import { writeProjectFile } from '../../core/runtime/workspacePaths.js';
 import { recordGateOutcome } from '../../core/contracts/index.js';
+import { isFullSpecification, specSections } from '../textNormalizer.js';
+import { requirementsTraceOutcome } from './verify.js';
 
 export async function runRequirementsVerify(context, roomName, agents, reporter, { verify = verifyRequirements } = {}) {
     const plan = context.plan;
@@ -76,10 +78,18 @@ export async function runRequirementsVerify(context, roomName, agents, reporter,
                 if (verdict.missing.length >= beforeCount) break;
             }
 
+            // 📋 PM/12: حين يكتب المستخدمُ وثيقةً مرقّمة يُحاكَم المنتجُ إلى بنودها هنا أيضاً — لا في مسار الكلون وحدَه (PM/9).
+            // قِيس: وثيقةُ مكتبةٍ من ١٢ بنداً عبر هذه الحلقة كانت تُقابَل بـ«المحقّقُ لم يُجب» بينما الأثرُ الحتميّ على
+            // الملفّات المكتوبة نفسِها ٥/١٢. المحقّقُ يقرأ الكود، والتتبّعُ يقرأ الحروفَ — فحين **يُجيب** المحقّقُ يبقى
+            // حكمُه (لا يُقلب اجتيازُه فشلاً بغيابٍ لفظيّ) ويلحقه ذيلُ الوثيقة إخباراً؛ وحين **يصمت** يحكم التتبّعُ بلغتها.
+            const sections = isFullSpecification(context.originalGoal) ? specSections(context.originalGoal) : [];
+            const doc = sections.length ? requirementsTraceOutcome(null, plan.files, '', sections) : null;
+            const docTail = doc?.docTraceable ? `؛ ${doc.docTraced}/${doc.docTraceable} بنداً من وثيقتك له أثر` : '';
             // ⚖️ البوّابة تقول ما وجدت (PM/2): محقّقٌ صامت (لا مزوّد/ردٌّ غير صالح) ليس اجتيازاً.
-            if (!verdict) recordGateOutcome(context, 'requirements-verify', 'unverified', 'المحقّقُ لم يُجب (لا مزوّد أو ردٌّ غير صالح)');
-            else if (verdict.missing?.length) recordGateOutcome(context, 'requirements-verify', 'fail', `${verdict.missing.length} متطلّب ناقص: ${verdict.missing.map(m => m.name).join('، ')}`);
-            else recordGateOutcome(context, 'requirements-verify', 'pass', `${verdict.implementedCount}/${verdict.results.length} متطلّب منفّذ`);
+            if (!verdict && doc && doc.status !== 'skipped') recordGateOutcome(context, 'requirements-verify', doc.status, doc.detail);
+            else if (!verdict) recordGateOutcome(context, 'requirements-verify', 'unverified', 'المحقّقُ لم يُجب (لا مزوّد أو ردٌّ غير صالح)');
+            else if (verdict.missing?.length) recordGateOutcome(context, 'requirements-verify', 'fail', `${verdict.missing.length} متطلّب ناقص: ${verdict.missing.map(m => m.name).join('، ')}${docTail}`);
+            else recordGateOutcome(context, 'requirements-verify', 'pass', `${verdict.implementedCount}/${verdict.results.length} متطلّب منفّذ${docTail}`);
             if (verdict) {
                 const checklist = formatChecklist(verdict, lang, fixedNames);
                 reporter.liveLog(roomName, '6. VERIFY', 'Requirements',
