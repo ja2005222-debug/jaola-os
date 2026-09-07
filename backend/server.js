@@ -35,6 +35,7 @@ import {
 import { generatePWA } from './agents/pwaAgent.js';
 import { generateJaolaBot, readBotManifest, buildEmbedBundle } from './agents/jaolaBot.js';
 import { mailReady, sendMail, isEmail } from './services/mailer.js';
+import { resolveBuildInfo, buildInfoLine } from './services/buildInfo.js';
 import { emailQuota, socialQuota, customAgentsMax, aiImagesQuota, customDomainsMax, cryptoWatchlistMax, stockWatchlistMax, getUserSubscription } from './services/subscriptionService.js';
 import { validateDomain, dnsInstructionsFor, attachDomain, domainStatus, detachDomain, readUserDomains, saveUserDomain, removeUserDomain, countUserDomains } from './services/customDomains.js';
 import { aiImagesReady, applyAiImages, applyHeroImage, generateProductImage, diagnoseImages } from './services/aiImages.js';
@@ -3810,7 +3811,11 @@ setInterval(async () => {
 
 // 🔌 تحميل الإضافات ثم تشغيل الخادم
 orchestrator.init().catch(e => console.warn('[Plugins] init فشل:', e.message)).finally(() => {
-    httpServer.listen(4000, '0.0.0.0', () => console.log('🟢 JAOLA OS Server on Port 4000'));
+    httpServer.listen(4000, '0.0.0.0', () => {
+        console.log('🟢 JAOLA OS Server on Port 4000');
+        // 🏷️ نسخةُ الكود العاملة — تُقال هنا كي لا يُستنتَج «هل الإصلاحُ منشور؟» من خارج السجلّ.
+        console.log(buildInfoLine(resolveBuildInfo()));
+    });
 });
 
 // 🗄️ عند جاهزية MongoDB: استعادة الإضافات الدائمة للقرص ثم إعادة تحميلها

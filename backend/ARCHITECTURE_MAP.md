@@ -28,7 +28,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## A) `backend/server.js` — 3827 سطراً، 158 مساراً، 99 استيراداً محلياً
+## A) `backend/server.js` — 3832 سطراً، 158 مساراً، 100 استيراداً محلياً
 
 لا يُفكَّك دفعة واحدة (البند 19). الخريطة **حسب المجال** لأن الملف واحد؛ كل صف = مرشّح
 ملف `routes/<domain>.js` مستقبلاً على نمط `routes/billing.js` القائم فعلاً («أول
@@ -191,7 +191,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## D) `backend/services/*` — 72 وحدة
+## D) `backend/services/*` — 73 وحدة
 
 ### D1. وقت التشغيل (مرشّحة لـ`core/`)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
@@ -209,6 +209,7 @@ Policy/Permission، Identity، Plugin.
 | `presence.js` | 12 | حضور | MODIFY | Event (EventBus) | `core/events/` |
 | `httpRetry.js` | 70 | البابُ المشترك للنداء الصادر: مهلةٌ دائماً + إعادةُ محاولةٍ حيث تصحّ | KEEP | Provider (سياسةُ المهلة وإعادة المحاولة) | `core/` |
 | `aiProviderCheck.js` | 99 | فاحص مزوّدي الذكاء | MODIFY | Provider Registry | `core/plugins/ProviderRegistry.js` |
+| `buildInfo.js` (جديد) | 46 | نسخةُ الكود العاملة تقولها الخدمةُ في سجلّها عند الإقلاع: `resolveBuildInfo(env, root)` من متغيّر المنصّة ثمّ `.git` قراءةً مباشرة (بلا تشغيل `git`)، و`buildInfoLine(info)` يقول «غير معروفة» صراحةً بدل الادّعاء — يُنهي سؤالَ «هل الإصلاحُ منشور؟» من داخل السجلّ | ADDED | Evidence | `server.js` عند `listen` |
 
 ### D2. التسليم والنشر (مجال Coding)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
