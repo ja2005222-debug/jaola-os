@@ -377,7 +377,9 @@ npm run build && npm start
 
     files.push({ name: '.gitignore', content: `node_modules\n.next\n.env\n` });
 
-    return { files, meta: { stack: 'react-next', components: comps, pages: routes, dir, lang: code, content: finalContent } };
+    // PM/19: الأقسامُ المبنيّةُ فعلاً تُعلَن — لا المطلوبةُ وحدَها. حين لا يُسمّي الطلبُ قسماً
+    //        يبني السكافولد افتراضيّاتِه، فمن يسجّل المدخلَ الفارغ يسجّل عدماً ويُبقي هيكلَ منتجٍ سابق.
+    return { files, meta: { stack: 'react-next', sections: secs, components: comps, pages: routes, dir, lang: code, content: finalContent } };
 }
 
 /**

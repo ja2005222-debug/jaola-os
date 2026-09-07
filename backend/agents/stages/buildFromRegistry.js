@@ -14,7 +14,7 @@ import { promises as fsPromises } from 'fs';
 import path from 'path';
 import { getUserLanguage, resolveGoalLanguage } from '../languageDetector.js';
 import { transitionState, STATES } from '../stateMachine.js';
-import { addToHistory, setDomainModel } from '../projectMemory.js';
+import { addToHistory, setDomainModel, updateStructure } from '../projectMemory.js';
 import { assetsFor, injectFaviconTag, pickPalette } from '../cloneAssets.js';
 import { polishHtml } from '../polishPack.js';
 import { brandFromGoal, composePage, selectBlocks } from '../blockRegistry.js';
@@ -68,6 +68,9 @@ export async function buildFromRegistry(goal, ctx, reporter) {
     // 4) نهائيات كبناءٍ ناجح
     reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
     transitionState(username, activeProject, STATES.COMPLETED);
+    // PM/19: البلوكاتُ المركّبةُ هي هيكلُ هذا المنتج — كانت تُبثّ في السجلّ ولا تُسجَّل قطّ،
+    //        فيرث تقريرُ التسليم «🧱 الأقسام» من منتجٍ سابقٍ في المشروع نفسِه.
+    updateStructure(username, activeProject, blocks);
     addToHistory(username, activeProject, `registry: ${(goal || '').slice(0, 60)}`);
     let builtFiles = [];
     try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}
