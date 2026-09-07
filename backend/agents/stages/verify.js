@@ -32,7 +32,9 @@ export function behaviorOutcome(verdict) {
 /**
  * ⚖️ حكمُ بوّابة المتطلّبات على مسارات الاستراتيجيّة (PM/7) — بلا مزوّد، من أثر المفردات (`traceRequirements`):
  *   لا متطلّباتٍ أو لا ملفّات → `skipped` بالسبب المكتوب؛ كلُّها لا يُتتبَّع (عامّة/تدفّقات/خارج المعجم) → `skipped` بعددها؛
- *   متطلّبٌ بلا أثر → `fail` بأسمائه (الغيابُ قاطع)؛ كلُّ المتتبَّع له أثر → `pass` مكتوباً عليه «أثرٌ لا تنفيذ».
+ *   متطلّبٌ بلا أثر → `fail` بأسمائه (الغيابُ قاطع)؛ أثرٌ في **نصٍّ لا يشغّله شيء** → `unverified` بعدده
+ *   وأسمائه (مقيسٌ في الإنتاج: بوّابةٌ أُرضيت بتذييلٍ يسرد عناوينَ البنود)؛ وأثرٌ يصل شفرةً تعمل → `pass`
+ *   مكتوباً عليه «أثرٌ لا تنفيذ».
  * قبل هذا كانت البوّابةُ `skipped` حتميّاً على هذه المسارات — فوثيقةٌ من ١٢ متطلّباً مسمّى على كلونٍ يمثّل ٧ منها كانت PASS.
  */
 export function requirementsTraceOutcome(requirements, files, note = 'لا محقّقَ متطلّبات على هذا المسار', sections = null) {
@@ -52,6 +54,16 @@ export function requirementsTraceOutcome(requirements, files, note = 'لا مح�
                 const names = d.missing.slice(0, 6).map(sectionLabel).join('، ') + (d.missing.length > 6 ? ` +${d.missing.length - 6}` : '');
                 return { ...counts, status: 'fail', detail: `${d.missing.length} بنداً من ${traceable} في وثيقتك بلا أثر: ${names} (${d.traced.length}/${traceable} له أثر — أثرٌ لا تنفيذ${lexTail}${planTail})` };
             }
+            // 🔤 قِيس من الإنتاج: سوقٌ إلكترونيٌّ لا علاقةَ له بوثيقةِ صاحب المنصّة أُعلن ٩/٩ ثمّ PASS،
+            //    وكلُّ دليله سطرٌ في `<footer>` يسرد عناوينَ بنوده — والمُكمِّلُ هو من كتبه، لأنّ
+            //    `buildSectionFixInstruction` تُسلّمه العناوينَ بنصّها. **بوّابةٌ تُرضى بألفاظها هي.**
+            //
+            //    والعلاجُ ليس تشاؤماً شاملاً: مقياسٌ يقول الشيءَ نفسَه لكلِّ بناءٍ لا يُقرأ (درسُ «لا جديد»).
+            //    بل **أين** وقع الأثر: بندٌ تصل مفرداتُه شفرةً تعمل دليلُه أقوى من بندٍ أثرُه نثرٌ لا يشغّله
+            //    شيء. فالأوّلُ يبقى `pass`، والثاني `unverified` بعدده معلَناً — وهو حالُ التذييل المقيس.
+            if (d.decorative?.length) {
+                return { ...counts, status: 'unverified', detail: `${d.traced.length}/${traceable} بنداً من وثيقتك له أثرٌ لفظيّ — و${d.decorative.length} منها أثرُه في نصٍّ لا يشغّله شيء (لا يمسّه سطرُ شفرة): ${d.decorative.slice(0, 6).map(sectionLabel).join('، ')}${d.decorative.length > 6 ? ` +${d.decorative.length - 6}` : ''}${lexTail}${planTail}` };
+            }
             return { ...counts, status: 'pass', detail: `${d.traced.length}/${traceable} بنداً من وثيقتك له أثر — أثرٌ لا تنفيذ${lexTail}${planTail}` };
         }
     }
@@ -61,6 +73,8 @@ export function requirementsTraceOutcome(requirements, files, note = 'لا مح�
     if (!traceable) return { status: 'skipped', detail: `${note} — ${t.untraceable.length} متطلّب بلا مفردةٍ تُتتبَّع` };
     const tail = `${t.traced.length}/${traceable} له أثر — أثرٌ لا تنفيذ${t.untraceable.length ? `؛ ${t.untraceable.length} لا يُتتبَّع بالمفردات` : ''}`;
     if (t.missing.length) return { status: 'fail', detail: `${t.missing.length} متطلّب بلا أثر: ${t.missing.join('، ')} (${tail})` };
+    // التمييزُ نفسُه على مسار المفردات: مفهومٌ لا تنطق به شفرةٌ تعمل أثرُه زينةٌ لا تنفيذ.
+    if (t.decorative.length) return { status: 'unverified', detail: `${tail}؛ ${t.decorative.length} أثرُه في نصٍّ لا يشغّله شيء: ${t.decorative.slice(0, 6).join('، ')}` };
     return { status: 'pass', detail: tail };
 }
 

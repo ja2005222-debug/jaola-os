@@ -72,15 +72,34 @@ export function composeRequirements(blueprint, domainModel = null) {
 /** نصُّ ما تقوله ملفّاتُ المشروع عن منتجه (PM/14) — بلا تنسيقٍ ولا أسماءِ وسوم. */
 const productCorpus = (files) => (files || []).map(f => productText(f?.content || '', f?.name || '')).join('\n');
 
+/**
+ * 🔤 نصُّ ما **يشغّله شيء**: ملفّاتُ السكربت و`<script>` المضمَّن وحدَها.
+ *
+ * لِمَ فُصل؟ لأنّ الأثرَ اللفظيّ في تذييلٍ نثريّ والأثرَ في شفرةٍ تعمل ليسا سواءً، وكانا يُخلطان
+ * في قمعٍ واحد. قِيس من الإنتاج: تسعةُ بنودٍ من وثيقة صاحب المنصّة أُعلنت «لها أثر» ٩/٩، وأثرُها
+ * كلُّه سطرٌ في `<footer>` يسرد عناوينَها. وهذا ليس صدفة: `buildSectionFixInstruction` تُسلّم
+ * النموذجَ **عناوينَ البنود بنصّها** وتطلب تنفيذها، فأرخصُ طريقٍ لإرضاء مقياسٍ يقرأ النثرَ هو
+ * كتابةُ ألفاظه. الفصلُ لا يُثبت التنفيذ — لكنّه يفرّق بين دليلٍ **قد** يكون تنفيذاً ودليلٍ لا يكون.
+ */
+const isScriptFile = (name) => /\.[cm]?js$/i.test(String(name || ''));
+const scriptCorpus = (files) => (files || []).map((f) => {
+    const content = String(f?.content || '');
+    if (isScriptFile(f?.name)) return productText(content, f?.name || '');
+    return [...content.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map(m => m[1]).join(' ');
+}).join('\n');
+
 export function traceRequirements(requirements, files) {
     // PM/14: نصُّ المنتج لا نصُّ الملفّ — تنسيقُ الصفحة وأسماءُ وسومها ليست مفرداتِ صاحب المشروع
     const spoken = conceptsInText(productCorpus(files));
-    const out = { traced: [], missing: [], untraceable: [] };
+    const running = conceptsInText(scriptCorpus(files));
+    const out = { traced: [], missing: [], untraceable: [], decorative: [] };
     for (const r of (requirements || [])) {
         if (!r?.name) continue;
         const concept = r._kind === 'flow' ? '' : conceptOf(r.name);
         if (!concept || !conceptKind(concept) || isGenericConcept(concept)) { out.untraceable.push(r.name); continue; }
-        (spoken.has(concept) ? out.traced : out.missing).push(r.name);
+        if (!spoken.has(concept)) { out.missing.push(r.name); continue; }
+        out.traced.push(r.name);
+        if (!running.has(concept)) out.decorative.push(r.name);
     }
     return out;
 }
@@ -111,11 +130,14 @@ export const isPlanRow = (title = '') => PLAN_ROW.test(String(title).trim());
  * كلماتِ الإطار، ≥٣ أحرف)؛ إن نطقت الملفّاتُ بإحداها ككلمةٍ كاملة فللبند أثر. الغيابُ قاطع، والحضورُ أثرٌ لا تنفيذ (كما في
  * `traceRequirements`) — لكن بلغة المستخدم: «الباركود» و«الموردون» لا «entity/role» يعرفها المعجم أو لا يعرفها.
  * بندٌ بلا مفردةٍ صالحة (عنوانُه كلُّه كلماتُ إطار) لا يُتتبَّع.
- * @returns {{ traced: Array<{n,title}>, missing: Array<{n,title}>, untraceable: Array<{n,title}> }}
+ * و`decorative` ⊆ `traced`: بنودٌ أثرُها في النثر وحدَه ولا يمسّها سطرُ شفرة — أضعفُ ما يكون الدليل.
+ * @returns {{ traced, missing, untraceable, decorative: Array<{n,title}> }}
  */
 export function traceSections(sections, files) {
     const corpus = ' ' + normalizeConceptText(productCorpus(files)) + ' ';
-    const out = { traced: [], missing: [], untraceable: [] };
+    // 🔤 وأينَ وُجد الأثر؟ `decorative` = بندٌ أثرُه في النثر وحدَه، لا يمسّه سطرُ شفرةٍ واحد.
+    const live = ' ' + normalizeConceptText(scriptCorpus(files)) + ' ';
+    const out = { traced: [], missing: [], untraceable: [], decorative: [] };
     for (const sec of (sections || [])) {
         if (!sec?.title) continue;
         const item = { n: sec.n, title: sec.title };
@@ -125,7 +147,9 @@ export function traceSections(sections, files) {
         if (isPlanRow(sec.title)) { out.untraceable.push(item); continue; }
         const toks = [...new Set(normalizeConceptText(sec.title).split(' ').filter(t => t.length >= 3 && !SECTION_STOPWORDS.has(t)))];
         if (!toks.length) { out.untraceable.push(item); continue; }
-        (toks.some(t => corpus.includes(' ' + t + ' ')) ? out.traced : out.missing).push(item);
+        if (!toks.some(t => corpus.includes(' ' + t + ' '))) { out.missing.push(item); continue; }
+        out.traced.push(item);
+        if (!toks.some(t => live.includes(' ' + t + ' '))) out.decorative.push(item);
     }
     return out;
 }

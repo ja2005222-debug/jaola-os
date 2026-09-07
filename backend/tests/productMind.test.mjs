@@ -55,7 +55,7 @@ test('قربُ النماذج: فهمُ التاكسي ضدّ ERP يفقد را�
     assert.equal(modelAffinity(null, erp).substantive, false);
 });
 
-test('العطبُ الأصل: «نظام إدارة وتشغيل تاكسي» مع فهمٍ → لا ERP ولا أيُّ كلون سيستم، والسببُ مُسمّى؛ وبلا فهمٍ تبقى الكلماتُ وحدَها (مثبَّت كحدٍّ أدنى لا كمرغوب)', () => {
+test('العطبُ الأصل: «نظام إدارة وتشغيل تاكسي» مع فهمٍ → لا ERP ولا أيُّ كلون سيستم، والسببُ مُسمّى؛ وبلا فهمٍ **أيضاً** — عبارةُ المسار وحدَها لم تعد تختار', () => {
     const r = matchCloneTemplateDetailed(TAXI_SYSTEM, APP, TAXI_MODEL);
     assert.equal(r.clone, null); assert.equal(r.reason, 'rejected-by-understanding');
     const erp = r.rejected.find(x => x.id === 'jaola-erp');
@@ -63,7 +63,13 @@ test('العطبُ الأصل: «نظام إدارة وتشغيل تاكسي» �
     assert.ok(r.rejected.every(x => getCloneById(x.id).track === 'system'), 'مسارُ السيستم وحده تُرشَّح كلوناتُه');
     assert.ok(!r.rejected.some(x => x.id === 'jaola-taxi'), 'كلونُ التاكسي (موقع) خارج المسار أصلاً لا مرفوض');
     assert.equal(matchCloneTemplate(TAXI_SYSTEM, APP, TAXI_MODEL), null, 'الغلافُ القديم يعيد الكلون فقط');
-    assert.equal(matchCloneTemplateDetailed(TAXI_SYSTEM, APP, null).clone?.id, 'jaola-erp', 'بلا أيّ فهم: الكلمةُ العامّة ما زالت تختار — لهذا يُبذَر الفهمُ من المراجع (الاختبار التالي)');
+    // 🧭 وهذه كانت **آخرَ بقيّةٍ من العطب الأصل**، مثبَّتةً هنا «حدّاً أدنى لا مرغوباً»: بلا أيِّ فهمٍ
+    //    كانت «نظام إدارة» — وهي عبارةُ مسارٍ لا تسمّي منتجاً — تختار ERP وحدَها. أغلقها فيتو الكلمة
+    //    العابرة: إصابةٌ واحدة، لا ترفع `explicit` (لأنّها عبارةُ مسار)، ولا سندَ من فهم ⇒ لا كلون.
+    //    فصار الحدُّ الأدنى هو المرغوب.
+    const bare = matchCloneTemplateDetailed(TAXI_SYSTEM, APP, null);
+    assert.equal(bare.clone, null, `بلا فهمٍ ما زالت الكلمةُ العامّة تختار: ${bare.clone?.id}`);
+    assert.equal(bare.reason, 'incidental-keyword:نظام إدارة', 'والسببُ يُسمّى لصاحب المشروع لا يُخفى');
 });
 
 test('عبارةُ المسار ليست تسميةَ منتج: «سيستم داخلي» لا ترفع الفيتو، و«تاكسي» ترفعه؛ التعادلُ بين كلونين يحسمه الفهم (مسار الموقع: تاكسي لا سوق)', () => {
