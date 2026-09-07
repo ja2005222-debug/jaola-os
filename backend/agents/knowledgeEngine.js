@@ -168,7 +168,11 @@ function getKeywordsForType(typeName) {
         nonprofit:  ['جمعية', 'خيرية', 'تبرع', 'تبرعات', 'غير ربحية', 'تطوع', 'إغاثة', 'nonprofit', 'charity', 'donate', 'ngo', 'volunteer'],
         agency:     ['وكالة', 'إبداعية', 'تسويق', 'إعلان', 'براندنج', 'هوية بصرية', 'agency', 'creative', 'marketing', 'branding'],
         finance:    ['مالية', 'استثمار', 'تأمين', 'محاسبة', 'بنك', 'تمويل', 'ثروات', 'finance', 'investment', 'insurance', 'accounting', 'bank'],
-        construction:['مقاولات', 'مقاول', 'بناء', 'إنشاءات', 'تشطيب', 'هندسي', 'construction', 'contractor', 'building', 'engineering'],
+        // 🏗️ PM/13: «بناء» و«building» خرجتا — فعلُ الطلب لا صناعةُ المنتج. قِيس: «أريد بناء X» كانت تقلب
+        // النوعَ إلى مقاولاتٍ في سبعةٍ من عشرة طلباتٍ حقيقيّة (مكتبة، مطعم، منصّة تعليميّة، حجز، نقاط بيع،
+        // عقارات…)، و«building a restaurant website» كذلك — والنوعُ يختار اللوحةَ والصورَ ويصل مولّدَ مخطّط
+        // قاعدة البيانات. الصناعةُ تبقى مسمّاةً بأسمائها. (المبدأُ نفسُه أخرج «شركة» من ألفاظ البروشور.)
+        construction:['مقاولات', 'مقاول', 'إنشاءات', 'تشطيب', 'هندسي', 'construction', 'contractor', 'engineering'],
         interior:   ['تصميم داخلي', 'ديكور', 'أثاث', 'ديكورات', 'مساحات', 'interior', 'decor', 'furniture', 'design studio'],
         gaming:     ['ألعاب', 'لعبة', 'قيمنق', 'رياضات إلكترونية', 'بطولة', 'لاعبين', 'gaming', 'game', 'esports', 'tournament', 'gamers'],
         crypto:     ['عملات رقمية', 'كريبتو', 'بيتكوين', 'تداول', 'بلوكتشين', 'محفظة رقمية', 'crypto', 'bitcoin', 'blockchain', 'web3', 'trading', 'nft'],
