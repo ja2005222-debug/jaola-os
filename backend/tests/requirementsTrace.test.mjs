@@ -110,9 +110,10 @@ test('الحدود: البناةُ الثلاثة يمرّرون requirements و
     const src = (f) => fs.readFileSync(path.join(HERE, f), 'utf8').replace(/^\s*\/\/.*$/gm, '');
     // PM/8: المتطلّباتُ تُؤلَّف مرّةً في الكلون (جولةُ الإكمال ثمّ الحكم) — المتغيّرُ نفسُه يصل الحكم
     const clone = src('../agents/stages/buildFromClone.js');
-    assert.ok(clone.includes('const requirements = composeRequirements(null, model);') && clone.includes('requirements, files: await readProjectFiles(projectPath),'));
+    // PM/15: الحكمُ يقرأ ما بُني كلَّه (`readBuiltFiles`) لا الصفحةَ وما تُحمّله — والقارئُ القائمُ يبقى للتعديل
+    assert.ok(clone.includes('const requirements = composeRequirements(null, model);') && clone.includes('requirements, files: await readBuiltFiles(projectPath),'));
     assert.ok(src('../agents/stages/buildFromRegistry.js').includes('requirements: composeRequirements(null, registryModel), files,'));
-    assert.ok(src('../agents/stages/buildReact.js').includes('requirements: composeRequirements(null, getDomainModel(username, activeProject)), files: await readProjectFiles(projectPath),'));
+    assert.ok(src('../agents/stages/buildReact.js').includes('requirements: composeRequirements(null, getDomainModel(username, activeProject)), files: await readBuiltFiles(projectPath),'));
     const verify = src('../agents/stages/verify.js');
     assert.ok(verify.includes("import { traceRequirements, traceSections, sectionLabel } from '../requirementsVerifier.js';"), 'PM/9 أضاف متتبِّعَ البنود وتسميتَها');
     assert.equal((verify.match(/requirementsTraceOutcome\(/g) || []).length, 2, 'تعريفٌ + نداءٌ واحد في strategyVerdict');
