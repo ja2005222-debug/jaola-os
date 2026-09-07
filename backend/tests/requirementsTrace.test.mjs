@@ -117,6 +117,7 @@ test('الحدود: البناةُ الثلاثة يمرّرون requirements و
     assert.ok(verify.includes("import { traceRequirements, traceSections, sectionLabel } from '../requirementsVerifier.js';"), 'PM/9 أضاف متتبِّعَ البنود وتسميتَها');
     assert.equal((verify.match(/requirementsTraceOutcome\(/g) || []).length, 2, 'تعريفٌ + نداءٌ واحد في strategyVerdict');
     const rv = src('../agents/requirementsVerifier.js');
-    assert.ok(rv.includes("import { conceptOf, conceptKind, conceptsInText, isGenericConcept, normalizeConceptText } from './projectModel.js';"), 'PM/9: التطبيعُ نفسُه لمفردات البنود');
+    assert.ok(rv.includes("import { conceptOf, conceptKind, conceptsInText, isGenericConcept, normalizeConceptText, productText } from './projectModel.js';"), 'PM/9: التطبيعُ نفسُه لمفردات البنود؛ وPM/14: الإسقاطُ نفسُه للمتتبِّعَين');
+    assert.equal((rv.match(/productCorpus\(files\)/g) || []).length, 2, 'PM/14: المتتبِّعان يقرآن نصَّ المنتج لا نصَّ الملفّ');
     assert.equal((rv.match(/_kind/g) || []).length, 2, 'الوسمُ يُكتب مرّةً ويُقرأ مرّة');
 });

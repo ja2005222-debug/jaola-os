@@ -90,9 +90,11 @@ test('Clone: تحقّقٌ نهائيّ على ما وصل القرص — كلو�
     assert.equal(bad.r.verdict.status, 'FAILED', JSON.stringify(bad.r.verdict));
     // PM/10: الثغراتُ بأسمائها لا بأسماء فحوصها — الدوالُّ الغائبة، الأدوارُ الغائبة، وخطأُ التشغيل (شرحُ كلِّ فحصٍ بعد «—» يُسقَط)
     assert.equal(bad.r.verdict.gates[2].detail, 'ثغراتٌ باقية: دوال مُشار إليها وغير معرّفة (قشرة بلا منطق): nothing، missingFn؛ أدوار بلا واجهة/تمثيل: Customer، Admin؛ أخطاء JS وقت التشغيل: Uncaught [ReferenceError: nothing is not defined] | missingFn is not defined');
-    // PM/7: الملفّاتُ المعطوبة أفرغت مفرداتِ المتجر أيضاً — فبوّابةُ المتطلّبات تسبق السلوكَ بثلاثةٍ بلا أثر (Admin وحدَه بقي في styles.css)
-    assert.equal(bad.r.verdict.gates[1].detail, '3 متطلّب بلا أثر: شاشة Customer، بيانات Product، بيانات Order (1/4 له أثر — أثرٌ لا تنفيذ؛ 2 لا يُتتبَّع بالمفردات)');
-    assert.match(bad.msg, /^⚠️ اكتمل — بدأنا من قالب/); assert.match(bad.msg, /\n⚠️ التحقّق وجد ثغرات — requirements-verify: 3 متطلّب بلا أثر: [^\n]* • behavior-verify: ثغراتٌ باقية: /);
+    // PM/7 ثمّ PM/14: الملفّاتُ المعطوبة أفرغت مفرداتِ المتجر — فبوّابةُ المتطلّبات تسبق السلوكَ بأربعةٍ بلا أثر.
+    // أُعيد التثبيتُ من ثلاثةٍ إلى أربعة: `Admin` كان «له أثر» لأنّ اللفظَ بقي **اسمَ صنفٍ في styles.css**
+    // (تعليقُ هذا الحارس نفسُه كان يقولها). التنسيقُ لا يسمّي منتجاً، فالصفرُ هنا هو الصادق.
+    assert.equal(bad.r.verdict.gates[1].detail, '4 متطلّب بلا أثر: شاشة Customer، شاشة Admin، بيانات Product، بيانات Order (0/4 له أثر — أثرٌ لا تنفيذ؛ 2 لا يُتتبَّع بالمفردات)');
+    assert.match(bad.msg, /^⚠️ اكتمل — بدأنا من قالب/); assert.match(bad.msg, /\n⚠️ التحقّق وجد ثغرات — requirements-verify: 4 متطلّب بلا أثر: [^\n]* • behavior-verify: ثغراتٌ باقية: /);
     assert.equal(bad.r.success, true, 'المهمّةُ اكتملت — الحكمُ على المنتج شيءٌ آخر');
 });
 
