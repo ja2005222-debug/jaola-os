@@ -169,3 +169,33 @@ export async function clearConversation(username) {
         try { await Conversation.deleteOne({ username }); } catch (e) {}
     }
 }
+
+/**
+ * 🗂️ خبرُ المهمّة يبقى — يُلحق سطرَ تقريرٍ من المنصّة بحوارِ المشروع نفسِه.
+ *
+ * قِيس: `Socket.IO` يبثّ إلى **غرفة**؛ فإن غادر صاحبُ المشروع إلى متصفّحٍ آخر
+ * صارت الغرفةُ فارغةً والحدثُ يُرمى في الفراغ. والمهمّةُ تُكمل على الخادم
+ * وتُنهي ملفّاتها — لكنّ خبرَها لا يصله ولا يعود، لأنّ `chat_history` يستعيد
+ * من `${username}::${project}` وحدَه، ولا يكتب فيه إلّا مسارُ الشات.
+ * فما يراه ليس مهمّةً مقطوعة بل مهمّةً تمّت ولم يصله خبرُها.
+ *
+ * ولمَ لا `recordTurn`؟ لأنّها تدفع **دورةً** (مستخدم + مساعد)، فتختلق على
+ * صاحب المشروع كلاماً لم يقلْه، ثمّ يدخل ذلك المختلَقُ نافذةَ النموذج.
+ * التقريرُ سطرُ مساعدٍ واحد، ولا طيَّ ملخّصٍ معه: لا تلخيصَ بلا نموذج.
+ *
+ * الفشلُ هنا لا يُعطّل مسارَ المستخدم — التقريرُ بُثّ أصلاً؛ هذا حفظُه.
+ */
+export async function rememberMissionNote(username, project, content) {
+    const text = String(content ?? '').trim();
+    if (!username || !project || !text) return { stored: false };
+    const key = `${username}::${project}`;
+    try {
+        const state = await load(key);
+        state.messages.push({ role: 'assistant', content: text, at: Date.now() });
+        await save(key, state);
+        return { stored: true, key };
+    } catch (e) {
+        console.warn('[ConversationStore] تعذّر حفظ خبر المهمّة:', e.message);
+        return { stored: false };
+    }
+}
