@@ -27,7 +27,7 @@ import { verifyAndAutofix, strategyVerdict } from './verify.js';
 import { withVerdict, kernelOutcomeLine } from './reportMissionSuccess.js';
 
 // ⚛️ بناء مشروع React/Next حقيقي + معاينة حيّة في الـ iframe + خيار النشر
-export async function buildReactProject(goal, ctx, { sections = [] } = {}, reporter) {
+export async function buildReactProject(goal, ctx, { sections = [], llm = smartChat } = {}, reporter) {
     const { projectPath, username, activeProject, roomName } = ctx;
     const lang = getUserLanguage(username);
     const t0 = Date.now();
@@ -43,7 +43,7 @@ export async function buildReactProject(goal, ctx, { sections = [] } = {}, repor
     let content = null;
     try {
         reporter.liveLog(roomName, '5. RUNTIME', 'ContentWriter', '✍️ كتابة محتوى المشروع...');
-        content = await generateContentModel(modelAwareGoal, { sections, lang, llm: (m, o) => smartChat(m, o) });
+        content = await generateContentModel(modelAwareGoal, { sections, lang, llm });
     } catch { /* افتراضي */ }
 
     // 1) سكافولد Next الحقيقي (للنشر/التنزيل) — بمحتوى مخصّص
@@ -67,8 +67,10 @@ export async function buildReactProject(goal, ctx, { sections = [] } = {}, repor
             // لم يخصّصه النموذج الدفعي؟ (لا يزال مطابقاً للافتراضي) → خصّصه فردياً
             if (JSON.stringify(cur) !== JSON.stringify(defaultSection(label, lang))) continue;
             reporter.liveLog(roomName, '5. RUNTIME', 'ContentWriter', `✍️ محتوى صفحة: ${label}...`);
+            // PM/16: الهدفُ **المُثرى بالنموذج** لا الخام — هذا الاحتياطُ يقع على كلِّ قسمٍ تركه
+            //        النموذجُ الدفعيُّ افتراضيّاً، أي أكثرَ الصفحات حاجةً إلى معرفة المجال.
             const model = await generateSectionContent(label, {
-                brand: finalContent.brand || activeProject, goal, lang, llm: (m, o) => smartChat(m, o),
+                brand: finalContent.brand || activeProject, goal: modelAwareGoal, lang, llm,
             });
             if (model) finalContent.sections[comp] = {
                 heading: model.heading || cur.heading,
