@@ -72,6 +72,39 @@ const BLUEPRINT_SYSTEM = `أنت محلل منتجات برمجية خبير. م
 - لا تحوّل كل شيء إلى بروشور. تطبيق طيران محوره حقل بحث يعمل ويعرض نتائج مفلترة.
 - اجعل mockData واقعية ومحددة.`;
 
+/** نصٌّ صالحٌ للعرض، أو `null`. يحرس من الغائب والفارغ ومن غير النصّ (كائنٌ يُطبع `[object Object]`). */
+const asText = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+
+/**
+ * 🛡️ تحصينُ المخطّط — **موضعٌ واحد لكلا المسارين**: ما أجاب به النموذج، وما نبنيه حين يفشل.
+ *
+ * كان التحصينُ يغطّي أربعةَ حقول (`kind`/`category`/`functionalComponents`/`keySections`) بينما
+ * `buildBlueprintContext` يُقحم `appType` و`coreValue` ووصفَ المكوّن بلا احتياط. فأيُّ ردِّ JSON صالحٍ
+ * ينقصه أحدُها كان يكتب كلمةَ «undefined» في السجلّ الحيّ **وفي هدف البناء نفسِه** — فيُقال للمولّد
+ * «النوع: undefined». و`JSON.parse` ينجح على أيّ JSON صالح، ولكلِّ نموذجٍ عادتُه في التسمية، فتغييرُ
+ * المزوّد يوسّع الفجوة. القاعدة: لا يخرج من هنا مخطّطٌ فيه حقلٌ معروضٌ بلا قيمة.
+ */
+export function hardenBlueprint(raw, goal) {
+    // `{...raw}` يكفي لكلِّ ما يعيده `JSON.parse` (نصّ/رقم/مصفوفة/`null`): مفاتيحُ زائدةٌ لا تُقرأ،
+    // والتحصينُ أدناه يملأ المعروضَ كلَّه. فحصُ النوع صراحةً لم يُمسك له مستهلكٌ مقيس، فلم يُكتب.
+    const bp = { ...raw };
+    const fallbackKind = staticKind(goal);
+    bp.kind = asText(bp.kind) || fallbackKind;
+    bp.category = asText(bp.category) || 'business';
+    // PM/11: رأسُ الوثيقة على حدّ كلمة — لا سطرَ جديد ولا «1.»
+    bp.appType = asText(bp.appType) || clipWords(specHead(goal) || goal, 60);
+    bp.coreValue = asText(bp.coreValue) || goal.slice(0, 80);
+    bp.primaryAction = asText(bp.primaryAction) || '';
+    bp.mockData = asText(bp.mockData) || 'بيانات وهمية واقعية مناسبة للمنتج';
+    // المكوّنُ يُعرض `الاسم — السلوك`؛ فما نقص أحدُ نصفَيه لا يُملى على المولّد ناقصاً.
+    bp.functionalComponents = (Array.isArray(bp.functionalComponents) ? bp.functionalComponents : [])
+        .filter((c) => c && asText(c.name) && asText(c.behavior))
+        .slice(0, 5)
+        .map((c) => ({ name: c.name.trim(), behavior: c.behavior.trim() }));
+    bp.keySections = (Array.isArray(bp.keySections) ? bp.keySections : []).map(asText).filter(Boolean);
+    return bp;
+}
+
 export async function generateBlueprint(goal) {
     const fallbackKind = staticKind(goal);
 
@@ -81,27 +114,17 @@ export async function generateBlueprint(goal) {
             { role: 'user', content: `الطلب: "${goal}"` },
         ], { max_tokens: 900, temperature: 0.3, json: true });
 
-        const bp = JSON.parse(raw);
-        // تحصين الحقول
-        bp.kind = bp.kind || fallbackKind;
-        bp.category = bp.category || 'business';
-        bp.functionalComponents = Array.isArray(bp.functionalComponents) ? bp.functionalComponents.slice(0, 5) : [];
-        bp.keySections = Array.isArray(bp.keySections) ? bp.keySections : [];
+        const bp = hardenBlueprint(JSON.parse(raw), goal);
         bp._source = 'llm';
         return bp;
     } catch (e) {
         // مخطط احتياطي أدنى — يحافظ على معرفة أنه تطبيق وليس بروشور
         return {
-            appType: clipWords(specHead(goal) || goal, 60), // PM/11: رأسُ الوثيقة على حدّ كلمة — لا سطرَ جديد ولا «1.»
-            category: 'business',
-            kind: fallbackKind,
-            coreValue: goal.slice(0, 80),
-            primaryAction: '',
-            functionalComponents: fallbackKind !== 'brochure'
-                ? [{ name: 'الميزة الأساسية التفاعلية', behavior: 'نفّذ الوظيفة الجوهرية للتطبيق بـ JavaScript على بيانات وهمية واقعية' }]
-                : [],
-            keySections: [],
-            mockData: 'بيانات وهمية واقعية مناسبة للمنتج',
+            ...hardenBlueprint({
+                functionalComponents: fallbackKind !== 'brochure'
+                    ? [{ name: 'الميزة الأساسية التفاعلية', behavior: 'نفّذ الوظيفة الجوهرية للتطبيق بـ JavaScript على بيانات وهمية واقعية' }]
+                    : [],
+            }, goal),
             _source: 'fallback',
         };
     }
