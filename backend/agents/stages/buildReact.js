@@ -95,7 +95,10 @@ export async function buildReactProject(goal, ctx, { sections = [], llm = smartC
 
     reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
     transitionState(username, activeProject, STATES.COMPLETED);
-    updateStructure(username, activeProject, sections, scaffold.meta.components);
+    // PM/19: الذاكرةُ لا تُترك على هيكلِ منتجٍ سابق. حين يسمّي الطلبُ أقسامَه تُسجَّل بأسمائها هي (تسميةُ
+    //        صاحب المشروع هي المعنى)؛ وحين لا يسمّي شيئاً — وهو حالُ المخطّط الاحتياطيّ بلا مزوّد — يُسجَّل
+    //        ما بناه السكافولد بالفعل، فالفارغُ لا يمحو (`updateStructure`) فيُورَّث ما ليس من هذا المنتج.
+    updateStructure(username, activeProject, sections.length ? sections : scaffold.meta.sections, scaffold.meta.components);
     addToHistory(username, activeProject, `بناء React/Next: ${(goal || '').slice(0, 60)}`);
 
     // 3) تحديث المعاينة + قائمة الملفات + لقطة
