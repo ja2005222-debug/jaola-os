@@ -14,7 +14,7 @@ import { getUserLanguage, resolveGoalLanguage } from '../languageDetector.js';
 import { addToHistory, updateStructure, setDomainModel, getDomainModel } from '../projectMemory.js';
 import { mergeProjectModel } from '../projectModel.js';
 import { composeRequirements, traceRequirements, buildFixInstruction, traceSections, buildSectionFixInstruction, sectionLabel } from '../requirementsVerifier.js';
-import { readProjectFiles } from '../projectReader.js';
+import { readProjectFiles, readBuiltFiles } from '../projectReader.js';
 import { recordModel } from '../modelLibrary.js';
 import { patchEditPlan } from '../patchEditor.js';
 import { stampSeed } from '../seedStamp.js';
@@ -249,7 +249,7 @@ export async function buildFromClone(clone, goal, ctx, reporter, { complete = pa
     //    PM/7: المتطلّباتُ من الفهم المدمَج (ما فهمه جولا من الطلب + نموذجُ الكلون) تُتتبَّع في الملفّات نفسِها — فما طلبه
     //    المستخدمُ ولا يمثّله الكلونُ يُقال بالاسم، لا «لا ينطبق».
     const verdict = strategyVerdict({ filesCount: baseFiles.length, behavior: await verifyBehavior({ projectPath, blueprint: { kind: 'webapp' }, domainModel: model }),
-        requirements, files: await readProjectFiles(projectPath), sections,
+        requirements, files: await readBuiltFiles(projectPath), sections,
         requirementsNote: 'مسارُ الكلون — لا متطلّباتٍ من الفهم' });
 
     // 4) نهائيات كبناءٍ ناجح

@@ -15,7 +15,7 @@ import { addToHistory, updateStructure, getDomainModel } from '../projectMemory.
 import { buildProjectModelContext } from '../projectModel.js';
 import { composeRequirements } from '../requirementsVerifier.js';
 import { isFullSpecification, specSections } from '../textNormalizer.js';
-import { readProjectFiles } from '../projectReader.js';
+import { readBuiltFiles } from '../projectReader.js';
 import { generateNextScaffold, generateContentModel, generateSectionContent, slugify, defaultSection } from '../reactGenerator.js';
 import { buildStaticSite, buildDashboardPage } from '../../services/reactPreview.js';
 import { transitionState, STATES } from '../stateMachine.js';
@@ -115,7 +115,7 @@ export async function buildReactProject(goal, ctx, { sections = [] } = {}, repor
     // ⚖️ الحكم (PM/2b): من التحقّق على المعاينة الثابتة — ما لا يراه المحقّقُ الثابت يُقال «لم يُتحقَّق» لا «نجح».
     //    PM/7: متطلّباتُ الفهم تُتتبَّع في المعاينة الثابتة (ما يقرؤه المحقّقُ نفسُه) — لا «لا ينطبق» حتميّاً.
     const verdict = strategyVerdict({ filesCount: builtFiles.length, behavior,
-        requirements: composeRequirements(null, getDomainModel(username, activeProject)), files: await readProjectFiles(projectPath),
+        requirements: composeRequirements(null, getDomainModel(username, activeProject)), files: await readBuiltFiles(projectPath),
         sections: isFullSpecification(goal) ? specSections(goal) : [],
         requirementsNote: 'مسارُ React — لا متطلّباتٍ من الفهم' });
 

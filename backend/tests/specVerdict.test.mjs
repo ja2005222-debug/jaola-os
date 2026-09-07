@@ -98,7 +98,7 @@ test('الكلون بوثيقة: الإكمالُ يطلب البنودَ بنص
 test('الحدود: الكلونُ وReact يمرّران بنودَ الوثيقة إلى الحكم، والوثيقةُ وحدَها تُشغّل فرعَها، والبنودُ تُقرأ من textNormalizer', () => {
     const src = (f) => fs.readFileSync(path.join(HERE, f), 'utf8').replace(/^\s*\/\/.*$/gm, '');
     const clone = src('../agents/stages/buildFromClone.js');
-    assert.ok(clone.includes('const sections = isFullSpecification(goal) ? specSections(goal) : [];') && clone.includes('requirements, files: await readProjectFiles(projectPath), sections,'));
+    assert.ok(clone.includes('const sections = isFullSpecification(goal) ? specSections(goal) : [];') && clone.includes('requirements, files: await readBuiltFiles(projectPath), sections,'));
     assert.ok(clone.includes("import { isExplicitNewBuild, isFullSpecification, specSections } from '../textNormalizer.js';"));
     assert.ok(src('../agents/stages/buildReact.js').includes('sections: isFullSpecification(goal) ? specSections(goal) : [],'));
     assert.ok(!src('../agents/stages/buildFromRegistry.js').includes('specSections'), 'البروشورُ ليس وثيقة');
