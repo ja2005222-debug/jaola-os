@@ -76,14 +76,16 @@ test('المسارُ كاملاً: وثيقةُ نقاطِ البيع على م�
         const r = await s.rt._runMissionNow(SPEC, createExecutionContext({ ...s.ctx, projectPath: emptyProject(), agents: {} }));
         assert.equal(r.clone, 'jaola-pos'); assert.equal(r.success, true, 'المهمّةُ اكتملت — الحكمُ على المنتج شيءٌ آخر');
         assert.equal(r.verdict.status, 'FAILED', JSON.stringify(r.verdict));
-        // PM/9: الوثيقةُ المرقّمة تُحاكَم بلغتها — بنودُها بعينها (٣١ من ٤٤ بلا أثر) ومفاهيمُ الفهم ذيلاً (٧/١٠)
+        // PM/9: الوثيقةُ المرقّمة تُحاكَم بلغتها — بنودُها بعينها ومفاهيمُ الفهم ذيلاً (٧/١٠)
+        // PM/21: ٣١/٤٤ ← ٢٦/٣٦ — أسطرُ «المرحلة N» جدولُ تسليمٍ لا مطالب، والحكمُ يقول لمَ نقص المقام.
         assert.equal(gate(r.verdict, 'requirements-verify').detail,
-            '31 بنداً من 44 في وثيقتك بلا أثر: 1 الصلاحيات والأدوار (RBAC)، 3 الباركود، 7 المرتجعات، 8 دفتر المخزون، 9 المشتريات، 10 الموردون +25 (13/44 له أثر — أثرٌ لا تنفيذ؛ مفاهيمُ الفهم 7/10)');
+            '26 بنداً من 36 في وثيقتك بلا أثر: 1 الصلاحيات والأدوار (RBAC)، 3 الباركود، 7 المرتجعات، 8 دفتر المخزون، 9 المشتريات، 10 الموردون +20 (10/36 له أثر — أثرٌ لا تنفيذ؛ مفاهيمُ الفهم 7/10؛ 8 من أسطر خطّة التسليم لا تُحسَب (لا تُبنى))');
         assert.match(s.logs(), /\[Judge\]: ⚖️ الحكم: FAILED — guard-and-write ✓، requirements-verify ✗، behavior-verify ✗/);
         assert.equal(gate(r.verdict, 'behavior-verify').detail, 'ثغراتٌ باقية: أدوار بلا واجهة/تمثيل: staff، tenant', 'والسلوكُ يقول الشيءَ نفسَه من جهته بأسماء الأدوار (PM/10) لا باسم فحصه');
         const msg = s.replies().find(m => m.includes('بدأنا من قالب'));
         assert.match(msg, /^⚠️ اكتمل — بدأنا من قالب/);
-        assert.match(msg, /\n⚠️ التحقّق وجد ثغرات — requirements-verify: 31 بنداً من 44 في وثيقتك بلا أثر: 1 الصلاحيات والأدوار \(RBAC\)، 3 الباركود/);
+        // 🗓️ PM/21: ٤٤ ← ٣٦ — أسطرُ «المرحلة N» جدولُ تسليمٍ لا مطالب، فتخرج من البسط والمقام معاً.
+        assert.match(msg, /\n⚠️ التحقّق وجد ثغرات — requirements-verify: 26 بنداً من 36 في وثيقتك بلا أثر: 1 الصلاحيات والأدوار \(RBAC\)، 3 الباركود/);
         // الفهمُ المدمَج هو ما حُوكم إليه: أدوارُ الوثيقة الأربعة وكياناتُها الستّة + نموذجُ الكلون
         const stored = getDomainModel(s.ctx.username, s.ctx.activeProject);
         for (const n of ['staff', 'customer', 'admin', 'tenant']) assert.ok(stored.roles.some(x => x.name === n), n);

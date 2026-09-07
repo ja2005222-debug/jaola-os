@@ -154,8 +154,9 @@ test('المسارُ كاملاً بلا مزوّد (كما يراه المست�
         assert.equal(r.clone, 'jaola-pos'); assert.equal(r.verdict.status, 'FAILED');
         const seq = s.logs().split('\n').filter(l => /CloneCompletion|\[Judge\]/.test(l)).map(l => l.replace(/^.*➔ /, ''));
         assert.equal(seq.length, 3, seq.join('\n'));
-        // PM/9: الوثيقةُ تُكمَل بلغة بنودها — ٣١ بنداً بلا أثر، تُطلب أوّلُ ثمانية بنصّها
-        assert.match(seq[0], /^\[CloneCompletion\]: 🏗️ إكمالُ ما لا أثرَ له من وثيقتك \(31 بنداً؛ تُطلب أوّلُ 8 بنصّها\): 1 الصلاحيات والأدوار \(RBAC\)، 3 الباركود/); assert.match(seq[1], /^\[CloneCompletion\]: ℹ️ لم تُطبَّق رقعةٌ/);
+        // PM/9: الوثيقةُ تُكمَل بلغة بنودها — تُطلب أوّلُ ثمانية بنصّها
+        // PM/21: ٣١ ← ٢٦ — لا يُطلب من النموذج أن «يبني» سطرَ جدولٍ زمنيّ («المرحلة 5: الإدارة»).
+        assert.match(seq[0], /^\[CloneCompletion\]: 🏗️ إكمالُ ما لا أثرَ له من وثيقتك \(26 بنداً؛ تُطلب أوّلُ 8 بنصّها\): 1 الصلاحيات والأدوار \(RBAC\)، 3 الباركود/); assert.match(seq[1], /^\[CloneCompletion\]: ℹ️ لم تُطبَّق رقعةٌ/);
         assert.match(seq[2], /^\[Judge\]: ⚖️ الحكم: FAILED — guard-and-write ✓، requirements-verify ✗/);
     } finally { resetProjectState(s.ctx.username, s.ctx.activeProject); }
 });

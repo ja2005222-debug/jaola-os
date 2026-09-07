@@ -39,9 +39,11 @@ test('specSections: البنودُ كما كُتبت — ٤٤ بنداً برق�
     assert.deepEqual(specSections('غيّر اللون إلى أزرق'), []); assert.deepEqual(specSections(''), []);
 });
 
-test('traceSections على كلون نقاط البيع: ١٣ من ٤٤ له أثرٌ بمفردات عنوانه، ٣١ بلا أثر بأسمائها — والعنوانُ من كلمات الإطار وحدَها لا يُتتبَّع', () => {
+test('traceSections على كلون نقاط البيع: ١٠ من ٣٦ له أثرٌ بمفردات عنوانه، ٢٦ بلا أثر بأسمائها — وأسطرُ الخطّة وما عنوانُه كلماتُ إطارٍ لا تُتتبَّع (PM/21)', () => {
     const t = traceSections(specSections(SPEC), POS.files);
-    assert.equal(t.traced.length, 13); assert.equal(t.missing.length, 31); assert.deepEqual(t.untraceable, []);
+    // 🗓️ PM/21: ١٣/٣١/٠ ← ١٠/٢٦/٨ — البنودُ ٣٧–٤٤ «المرحلة N» جدولُ تسليمٍ لا مطالبَ منتج، فلا تُعدّ في طرفٍ ولا في الآخر.
+    assert.equal(t.traced.length, 10); assert.equal(t.missing.length, 26);
+    assert.deepEqual(t.untraceable.map(sectionLabel), [37, 38, 39, 40, 41, 42, 43, 44].map((n) => sectionLabel(specSections(SPEC).find((x) => x.n === n))));
     assert.deepEqual(t.missing.slice(0, 8).map(sectionLabel), ['1 الصلاحيات والأدوار (RBAC)', '3 الباركود', '7 المرتجعات', '8 دفتر المخزون', '9 المشتريات', '10 الموردون', '11 العملاء', '12 الخصومات']);
     assert.ok(t.traced.some(x => x.n === 4) && t.traced.some(x => x.n === 6), 'شاشة الكاشير والفواتير لهما أثر');
     const u = traceSections([{ n: 1, title: 'النظام:' }, { n: 2, title: 'دعم كل النظام' }, { n: 3, title: 'الباركود' }, { n: 4, title: 'دعم كل شيء' }], [{ name: 'a.js', content: 'باركود' }]);
@@ -55,7 +57,7 @@ test('buildSectionFixInstruction: البنودُ بنصّها كما كُتبت�
     assert.match(i, /^نفّذ البنودَ التالية من مواصفة المستخدم/);
     assert.ok(i.includes('3. الباركود:\n- قراءة الباركود بالماسح وبالكاميرا'), 'المتنُ كما كُتب');
     assert.ok(i.includes('12. الخصومات:') && !i.includes('13. الضريبة'), 'ثمانيةٌ فقط بترتيب الوثيقة');
-    assert.ok(i.includes('(وبقي 23 بنداً لجولةٍ لاحقة.)')); assert.ok(i.includes('الأدوار [staff] والكيانات [product]'));
+    assert.ok(i.includes('(وبقي 18 بنداً لجولةٍ لاحقة.)'), i);   // PM/21: ٢٣ ← ١٨ — لا تُطلب أسطرُ الجدول الزمنيّ assert.ok(i.includes('الأدوار [staff] والكيانات [product]'));
     assert.equal(buildSectionFixInstruction([], secs), '');
     assert.ok(!buildSectionFixInstruction(t.missing.slice(0, 2), secs, null).includes('نموذج المشروع'), 'بلا نموذج لا إرشاد');
 });
@@ -64,9 +66,11 @@ test('requirementsTraceOutcome بوثيقة: fail برقمٍ وعنوان (ست�
     const secs = specSections(SPEC);
     const f = requirementsTraceOutcome([{ name: 'شاشة customer', _kind: 'role' }, { name: 'بيانات product', _kind: 'entity' }], POS.files, 'n', secs);
     assert.equal(f.status, 'fail'); assert.ok(f.detail.length <= 300, String(f.detail.length));
-    assert.equal(f.detail, '31 بنداً من 44 في وثيقتك بلا أثر: 1 الصلاحيات والأدوار (RBAC)، 3 الباركود، 7 المرتجعات، 8 دفتر المخزون، 9 المشتريات، 10 الموردون +25 (13/44 له أثر — أثرٌ لا تنفيذ؛ مفاهيمُ الفهم 1/2)');
+    // 🗓️ PM/21: ٤٤ ← ٣٦ و١٣ ← ١٠. البنودُ ٣٧–٤٤ «المرحلة N» جدولٌ زمنيٌّ لا مطالب: ثلاثةٌ منها كانت تُعدّ «له أثر»
+    //        بمفرداتِ بنودٍ عُدَّت قبلها (٣٨←منتجات/كاشير، ٣٩←فواتير/دفع، ٤٢←تقارير)، وخمسةٌ تُعدّ فجواتٍ لا تُبنى.
+    assert.equal(f.detail, '26 بنداً من 36 في وثيقتك بلا أثر: 1 الصلاحيات والأدوار (RBAC)، 3 الباركود، 7 المرتجعات، 8 دفتر المخزون، 9 المشتريات، 10 الموردون +20 (10/36 له أثر — أثرٌ لا تنفيذ؛ مفاهيمُ الفهم 1/2؛ 8 من أسطر خطّة التسليم لا تُحسَب (لا تُبنى))');
     const all = [{ name: 'index.html', content: secs.map(s => s.title).join(' ') }];
-    assert.deepEqual(requirementsTraceOutcome(null, all, 'n', secs), { status: 'pass', detail: '44/44 بنداً من وثيقتك له أثر — أثرٌ لا تنفيذ', docTraced: 44, docTraceable: 44 },
+    assert.deepEqual(requirementsTraceOutcome(null, all, 'n', secs), { status: 'pass', detail: '36/36 بنداً من وثيقتك له أثر — أثرٌ لا تنفيذ؛ 8 من أسطر خطّة التسليم لا تُحسَب (لا تُبنى)', docTraced: 36, docTraceable: 36 },
         'PM/12: العددان يلحقان الحكمَ — حلقةُ التسليم تؤلّف بهما ذيلَها بدل انتزاعِه من نصٍّ مُنسَّق');
     assert.deepEqual(requirementsTraceOutcome([{ name: 'بيانات product', _kind: 'entity' }], [{ name: 'a.js', content: 'منتج' }], 'n', [{ n: 1, title: 'النظام:' }]),
         { status: 'pass', detail: '1/1 له أثر — أثرٌ لا تنفيذ' }, 'بنودٌ كلُّها كلماتُ إطار → المعجمُ يحكم');
@@ -74,7 +78,7 @@ test('requirementsTraceOutcome بوثيقة: fail برقمٍ وعنوان (ست�
     assert.equal(strategyVerdict({ filesCount: 3, behavior: { ran: true, ok: true, summary: 'ok' }, files: POS.files, sections: secs }).status, 'FAILED');
 });
 
-test('الكلون بوثيقة: الإكمالُ يطلب البنودَ بنصّها، ورقعةٌ تُعطي أثراً لثلاثةٍ → «أُكمل من وثيقتك (3/31)» والحكمُ يعدّ ما بقي بلغة الوثيقة', async () => {
+test('الكلون بوثيقة: الإكمالُ يطلب البنودَ بنصّها، ورقعةٌ تُعطي أثراً لثلاثةٍ → «أُكمل من وثيقتك (3/26)» والحكمُ يعدّ ما بقي بلغة الوثيقة', async () => {
     const s = scenario('pm9clone'); setUserLanguage(s.ctx.username, 'ar'); const dir = emptyProject();
     setDomainModel(s.ctx.username, s.ctx.activeProject, await deriveProjectModel(SPEC, { kind: 'webapp' }));
     transitionState(s.ctx.username, s.ctx.activeProject, STATES.GENERATING, { agent: 't' });
@@ -86,12 +90,14 @@ test('الكلون بوثيقة: الإكمالُ يطلب البنودَ بنص
     try {
         const { events, reporter } = collect();
         const r = await buildFromClone(POS, SPEC, { ...s.ctx, projectPath: dir }, reporter, { complete });
-        assert.ok(seen.includes('3. الباركود:\n- قراءة الباركود بالماسح') && seen.includes('(وبقي 23 بنداً لجولةٍ لاحقة.)'), 'التعليمةُ من نصّ الوثيقة');
+        assert.ok(seen.includes('3. الباركود:\n- قراءة الباركود بالماسح') && seen.includes('(وبقي 18 بنداً لجولةٍ لاحقة.)'), 'التعليمةُ من نصّ الوثيقة');
         const L = logs(events).filter(l => l.includes('CloneCompletion'));
-        assert.match(L[0], /🏗️ إكمالُ ما لا أثرَ له من وثيقتك \(31 بنداً؛ تُطلب أوّلُ 8 بنصّها\): 1 الصلاحيات والأدوار \(RBAC\)، 3 الباركود/);
-        assert.equal(L[1], '[5. RUNTIME] ➔ [CloneCompletion]: ✅ أُكمل من وثيقتك (3/31): 3 الباركود، 7 المرتجعات، 8 دفتر المخزون — وبقي بلا أثر 28 بنداً.');
-        assert.equal(gate(r.verdict, 'requirements-verify').detail, '28 بنداً من 44 في وثيقتك بلا أثر: 1 الصلاحيات والأدوار (RBAC)، 9 المشتريات، 10 الموردون، 11 العملاء، 12 الخصومات، 13 الضريبة +22 (16/44 له أثر — أثرٌ لا تنفيذ؛ مفاهيمُ الفهم 7/10)');
-        assert.match(reply(events), /\n🏗️ أُكمل تلقائيّاً على القالب: 3 الباركود، 7 المرتجعات، 8 دفتر المخزون\.\n⚠️ التحقّق وجد ثغرات — requirements-verify: 28 بنداً من 44/);
+        // 🗓️ PM/21: ٣١ ← ٢٦ — ومكسبٌ أبعدُ من العدد: جولةُ الإكمال كانت تطلب من النموذج أن «يبني» «المرحلة 5: الإدارة».
+        assert.match(L[0], /🏗️ إكمالُ ما لا أثرَ له من وثيقتك \(26 بنداً؛ تُطلب أوّلُ 8 بنصّها\): 1 الصلاحيات والأدوار \(RBAC\)، 3 الباركود/);
+        assert.ok(!/المرحلة \d/.test(L[0]), 'لا سطرَ جدولٍ زمنيٍّ في تعليمة الإكمال');
+        assert.equal(L[1], '[5. RUNTIME] ➔ [CloneCompletion]: ✅ أُكمل من وثيقتك (3/26): 3 الباركود، 7 المرتجعات، 8 دفتر المخزون — وبقي بلا أثر 23 بنداً.');
+        assert.equal(gate(r.verdict, 'requirements-verify').detail, '23 بنداً من 36 في وثيقتك بلا أثر: 1 الصلاحيات والأدوار (RBAC)، 9 المشتريات، 10 الموردون، 11 العملاء، 12 الخصومات، 13 الضريبة +17 (13/36 له أثر — أثرٌ لا تنفيذ؛ مفاهيمُ الفهم 7/10؛ 8 من أسطر خطّة التسليم لا تُحسَب (لا تُبنى))');
+        assert.match(reply(events), /\n🏗️ أُكمل تلقائيّاً على القالب: 3 الباركود، 7 المرتجعات، 8 دفتر المخزون\.\n⚠️ التحقّق وجد ثغرات — requirements-verify: 23 بنداً من 36/);
     } finally { resetProjectState(s.ctx.username, s.ctx.activeProject); }
 });
 

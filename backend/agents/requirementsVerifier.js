@@ -96,6 +96,17 @@ const SECTION_STOPWORDS = new Set(['نظام', 'دعم', 'امكانيه', 'ام
     'the', 'and', 'for', 'with', 'of', 'to', 'a', 'an', 'in', 'on', 'or', 'by', 'system', 'support', 'all', 'each', 'via', 'must', 'should'].map(normalizeConceptText));
 
 /**
+ * 🗓️ PM/21 — سطرُ خطّةٍ زمنيّة لا مطلبُ منتج: «المرحلة ٢: النواة (منتجات، مخزون، كاشير)».
+ * ثلاثةُ شروطٍ مجتمعةً، وكلٌّ منها يمنع إسكاتَ مطلبٍ حقيقيّ:
+ *   • **في أوّل العنوان** — «تسليم المرحلة 3 يشمل الفواتير» مطلبٌ يذكر مرحلةً، لا سطرَ جدول.
+ *   • **مرقّمةٌ** — «مرحلة الدفع في المتجر» مطلبٌ يبقى.
+ *   • **بلفظٍ لا معنى له إلّا الجدولة**: `مرحلة`/`phase`/`milestone`/`sprint`. وأُخرجت `stage` و«جولة»
+ *     عمداً: لهما معنىً منتَجيٌّ حقيقيّ (مرحلةُ خطِّ معالجة، جولةٌ سياحيّة) فإسكاتُهما خطرٌ لا احتياط.
+ */
+const PLAN_ROW = /^\s*(?:ال)?(?:مرحل[ةه]|phase|milestone|sprint)\s*[\u0660-\u0669\d]+\s*(?:[:：.\u060C-]|$)/i;
+export const isPlanRow = (title = '') => PLAN_ROW.test(String(title).trim());
+
+/**
  * 🔎 PM/9 — أثرُ بنود الوثيقة بعينها في الملفّات، حتميّاً وبلا مزوّد: لكلِّ بندٍ مرقّم مفرداتُ **عنوانه** (بعد التطبيع، بلا
  * كلماتِ الإطار، ≥٣ أحرف)؛ إن نطقت الملفّاتُ بإحداها ككلمةٍ كاملة فللبند أثر. الغيابُ قاطع، والحضورُ أثرٌ لا تنفيذ (كما في
  * `traceRequirements`) — لكن بلغة المستخدم: «الباركود» و«الموردون» لا «entity/role» يعرفها المعجم أو لا يعرفها.
@@ -108,6 +119,10 @@ export function traceSections(sections, files) {
     for (const sec of (sections || [])) {
         if (!sec?.title) continue;
         const item = { n: sec.n, title: sec.title };
+        // PM/21: سطرُ الجدول الزمنيّ ليس مطلبَ منتج. عنوانُه يعدّد مزايا بنودٍ أخرى، فيُعلَن «له أثر» بدليلها
+        //        هي (٣ من ١٣ في مواصفة نقاط البيع)، أو «بلا أثر» فيُعرض فجوةً على صاحب المشروع — وهو لا يُبنى
+        //        أصلاً. فيخرج من البسط والمقام معاً: ما يصف *متى* نبني لا يصف *ماذا* نبني (PM/11، PM/13).
+        if (isPlanRow(sec.title)) { out.untraceable.push(item); continue; }
         const toks = [...new Set(normalizeConceptText(sec.title).split(' ').filter(t => t.length >= 3 && !SECTION_STOPWORDS.has(t)))];
         if (!toks.length) { out.untraceable.push(item); continue; }
         (toks.some(t => corpus.includes(' ' + t + ' ')) ? out.traced : out.missing).push(item);
