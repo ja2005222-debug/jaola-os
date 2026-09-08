@@ -527,6 +527,114 @@ export function lexiconModel(text) {
 }
 
 /**
+ * 🗣️ الكلماتُ الدالّة في نصّ طلب (PM/22): ما يقولُه صاحبُ المشروعِ بلفظِه هو، بلا معجم.
+ *
+ * المعجمُ (`CONCEPTS`) قائمةٌ **مغلقة**: ما ليس فيها لا يُرى. وقِيس أنّ ثمانيةَ أهدافٍ
+ * ممّا ليس موقعاً تجاريّاً (متتبّعُ حفظ، متتبّعُ عادات، بطاقاتُ مذاكرة، يوميّات، مترونوم، مواقيتُ
+ * صلاة، ميزانيّةٌ شخصيّة، لعبةُ كلمات) تُنتج **صفرَ مفاهيمَ في ثمانٍ من ثمان**، فيما يُنتج
+ * متجرٌ وعيادةٌ خمسةً لكلٍّ. فكلُّ بوّابات عقل المنتج تصمت هناك (`applicable:false`،
+ * `substantive:false`، `modelProjectType ← null`) ولا يبقى إلّا تخمينُ النموذج اللغويّ بلا رقيب.
+ *
+ * فهذه تقرأ الطلبَ بلا قائمة: الكلماتُ المتكرّرةُ بعد حذفِ أدواتِ الربط وألفاظِ المنصّة
+ * («تطبيق»، «صفحة»، «app»…) مرتّبةً بالتكرار. دالّةٌ نقيّة.
+ *
+ * حدٌّ **مقيسٌ ومقصود**: هذه صالحةٌ لـ**للمقارنة** لا لـ**للتسمية**. قِيس على الأهداف
+ * الثمانية أنّ مخرجاتِها تخلط إشارةً صادقة («حفظ، آيات، عادة، بطاقة، صلاة، قبلة، لاعب») بضوضاء
+ * («تزامه، بكل، ذهب، أتم») — فلا تُشتقَّ منها أسماءُ كيانات. ذلك دَينٌ مفتوح.
+ */
+const GOAL_STOPWORDS = new Set(normalizeConceptText(
+    'تطبيق تطبيقا برنامج موقع نظام صفحة صفحات شاشة شاشات زر أزرار واجهة واجهات بيانات معلومات أداة '
+    + 'كل من في على إلى عن مع أو ثم لا ما هو هي التي الذي بلا بدون دون يكون تكون يمكن بعض جميع هذا هذه ذلك '
+    + 'كما حيث عند أي إذا قد لكن إلا نفس بحسب داخل خارج بين قبل بعد فقط أيضا كذلك حين أثناء عبر خلال حول ضمن '
+    + 'نحو منذ حتى لدى غير سوى الآن اليوم أمس غدا كذا شيء أشياء عدد كم مثل نوع أنواع أريد ابن ابني أجل '
+    + 'app web page pages screen button data user tool system site build make create the a an of in on to for '
+    + 'with and or not is are be this that it as by from at all any each new one two how many what which when where'
+).split(' '));
+
+/**
+ * @param {string} text نصُّ الطلب  @returns {string[]} الكلماتُ الدالّة مرتّبةً بالتكرار ثمّ بالحرف
+ */
+export function goalWords(text, { min = 3, top = 60, limit = 200000 } = {}) {
+    const freq = new Map();
+    for (const t of normalizeConceptText(String(text || '').slice(0, limit)).split(' ')) {
+        if (t.length < min || GOAL_STOPWORDS.has(t) || /^\d+$/.test(t)) continue;
+        freq.set(t, (freq.get(t) || 0) + 1);
+    }
+    return [...freq.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, top).map(([w]) => w);
+}
+
+/**
+ * ⚖️ هل يمسُّ الفهمُ الطلبَ أصلاً؟ (PM/22) — `domainFidelity` تسأل عن **المبنيّ**، وهذه تسأل عن **المطلوب**.
+ *
+ * قِيس في تجربة `from0`: طُلب متتبّعُ حفظِ قرآن، فأعاد النموذجُ اللغويّ
+ * `Student/Teacher/Parent/Grade/ForumPost`، و`normalizeProjectModel` تفحص **شكلَ** النموذج ولا تفحص
+ * **صلتَه بالطلب** أبداً — فلا بوّابةَ بين الفهم والسؤال. وقُِيس أنّ `domainFidelity` لو طُبّقت
+ * على الطلب لما مَيّزت: المهلوَس والصادق كلاهما `covered:0` — لأنّ طرفَي المقارنة لا يتكلّمان
+ * لغةً واحدة: طرفُ الفهم **مفتوح** (`conceptOf` تعود بالاسم نفسِه حين يغيب المعجم)،
+ * وطرفُ النصّ **مغلق** (`conceptsInText` لا ترى إلّا المعجم). فالمقياسُ يقول الشيءَ نفسَه للصادق والكاذب.
+ *
+ * فهنا جسران، والاسمُ مسنودٌ إن عبَر أحدَهما:
+ *  1. **جسرُ المعجم**: الاسمُ مفهومٌ معروف، والطلبُ ينطق به — يجسر اللغتين (`Product` ↔ «منتجات»).
+ *  2. **جسرُ اللفظ**: إحدى كلماتِ الاسم تلتقي كلمةً دالّةً في الطلب — يعمل خارج المعجم كلِّه.
+ *
+ * مقيسٌ على مواصفة «وِرد»: المهلوَس ٠/٦ والصادق ٤/٤ — فصلٌ تامُّ.
+ *
+ * حدٌّ مقيسٌ مكتوب: فهمٌ **صادق** بأسماءٍ إنجليزيّة في مجالٍ **خارج المعجم** على طلبٍ عربيّ
+ * لا يعبر أيَّ جسر (`Wird/Surah/Memorizer` على وصفٍ عربيّ ← ٠/٤) — إنذارٌ كاذب. ولذلك لا يُسقِط
+ * مستهلِكُها بناءً ولا يستبدل فهماً: يقول «لم يُتحقَّق». والمجالُ المعروف لا يقع فيه: جسرُ
+ * المعجم يعبر بـ`Product/Order/Customer` إلى «منتجات/طلبات/عملاء» (مقيس).
+ *
+ * @param {object} understood نموذجُ الفهم  @param {string} goalText نصُّ الطلب كما كتبه صاحبُه
+ */
+export function goalFidelity(understood, goalText) {
+    const m = normalizeProjectModel(understood || {});
+    // الأسماءُ العامّة (`User`/`Item`) لا تُحسَب دليلاً ولا تُهمة — لا تسمّي منتجاً
+    const names = [...m.entities.map(e => e.name), ...m.roles.map(r => r.name)]
+        .filter(n => !isGenericConcept(conceptOf(n)));
+    // 🧭 لا نصَّ طلبٍ = لا حكم. قِيس: مسارٌ يستدعي المرحلةَ بسياقٍ بلا هدف كان يُدان فهمُه
+    //    «لا يمسّ الطلبَ» — وهو عينُ الخطأ الذي تُصلحه هذه الجولة: مقياسٌ بلا مُدخَلٍ يقول
+    //    «لا أستطيع الحكم» لا «مُدان». (`applicable:false` تُسكت الحكمَ كما في `domainFidelity`.)
+    if (!String(goalText || '').trim()) {
+        return { applicable: false, names, supported: [], groundless: [], words: [], ungrounded: false };
+    }
+    const spoken = conceptsInText(goalText);
+    const words = goalWords(goalText);
+    const supported = []; const groundless = [];
+    for (const name of names) {
+        const concept = conceptOf(name);
+        const byLexicon = !!concept && spoken.has(concept);
+        const byWord = normalizeConceptText(name).split(' ')
+            .some(t => t.length >= 3 && words.some(w => wordsMeet(t, w)));
+        (byLexicon || byWord ? supported : groundless).push(name);
+    }
+    return {
+        // مفهومان فأكثر — العتبةُ نفسُها في `domainFidelity`: الواحدُ يُصادَف
+        applicable: names.length >= 2,
+        names, supported, groundless, words,
+        // لا أحدَ من أسماء الفهم له أثرٌ في طلب صاحبِه — فهذا فهمُ منتجٍ آخر
+        ungrounded: names.length >= 2 && supported.length === 0,
+    };
+}
+
+/**
+ * هل تلتقي كلمتان؟ جذرٌ خشن: البدايةُ المشتركة تكفي (حفظ/يحفظ/حافظ) — مقياسٌ لا لغويّاتٌ،
+ * والتساهلُ مقصود: الإنذارُ هو الفعلُ الخطِر فيُمال إلى عدمِه.
+ *
+ * والاحتواءُ (لا البدايةُ وحدَها) لأربعةِ أحرفٍ فأكثر: `normalizeConceptText` تنزع «ال» وسوابقَها
+ * الملتصقة (`[وفبكل]ال`) ولا تنزع «لل» — فطلبٌ يقول «تعود **للمراجعة**» كان يُسقط اسماً صادقاً
+ * اسمُه «مراجعة» (مقيس). والحدُّ أربعةٌ لأنّ ما دونها يلتقي مصادفةً داخل كلماتٍ أخرى.
+ * أُصلح هنا لا في `normalizeConceptText`: نزعُ «لل» هناك يمسّ كلَّ المطابقات ويلتبس
+ * («للعبة» = لِـ+لعبة لا لِـ+اللعبة)، وهنا أثرُه في اتّجاه التساهل وحدَه.
+ */
+function wordsMeet(a, b) {
+    if (a === b) return true;
+    const short = a.length <= b.length ? a : b;
+    const long = a.length <= b.length ? b : a;
+    if (short.length < 3) return false;
+    return long.startsWith(short) || (short.length >= 4 && long.includes(short));
+}
+
+/**
  * ⚖️ صدقُ المجال (PM/3): هل يتكلّم المبنيُّ لغةَ المنتج المفهوم أم لغةَ منتجٍ آخر؟ دالّةٌ نقيّة.
  * - `expected`: مفاهيمُ الفهم (كيانات + أدوار، بلا العامّة). `spoken`: ما ينطق به النصّ.
  * - `foreign`: مفاهيمُ منتجٍ لا يذكرها الفهمُ إطلاقاً. `covered`: ما تقاطع.
