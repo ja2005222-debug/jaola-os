@@ -59,7 +59,10 @@ test('مواضعُ الجواب الخمسة كما قِيست — أيُّ تغ
         'agents/stages/buildFromClone.js:180 → false',
         'agents/stages/buildFromRegistry.js:65 → false',
         'agents/stages/renderConfig.js:37 → hasBackend',
-        'server.js:2401 → false',
+        // «صمتُ العودة»: إعادةُ بثِّ الشريط في مُعالِج الانضمام أضافت ١٠ أسطرٍ فوقه
+        // (٧٦٠ وما بعدها) فانزاح ٢٤٠١ → ٢٤١١. الموضعُ هو هو، والحجّةُ `false`، وداخلَ
+        // حارسِ full-stack نفسِه — انزياحٌ لا موضعَ جديد. العددُ خمسةٌ كما هو.
+        'server.js:2411 → false',
         'services/deployAutomation.js:211 → true',
     ], 'مواضعُ تقرير شكل `render.yaml` تغيّرت — راجع الحارسَ والوثيقة معاً');
 });
