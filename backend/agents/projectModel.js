@@ -657,20 +657,42 @@ export function headingEntityNames(goalText, { max = 6 } = {}) {
  * @param {string} goalText نصُّ الطلب كما كتبه صاحبُه
  * @returns {string[]} أسماءُ الأدوار بنصِّها كما كتبها (لا مُطبَّعةً — هي تُعرض للمستخدم وتُبنى له)
  */
-const ROLE_LABEL = /^[\s\-•*\u2022]*(?:ال)?(?:أدوار|ادوار|roles?|actors?|المستخدمون|المستخدمين|الفاعلون)\s*:/iu;
+// 🔤 لفظُ الأدوار **مصدرٌ واحد** لقارئَيه — الملصقُ والقوس. نسختان منه كانتا ستفترقان
+//    عند أوّل لفظٍ يُضاف، وهي علّةُ «النسختين» المتكرّرة في هذه الشجرة.
+const ROLE_WORD = '(?:ال)?(?:أدوار|ادوار|roles?|actors?|المستخدمون|المستخدمين|الفاعلون)';
+const ROLE_LABEL = new RegExp(`^[\\s\\-•*\\u2022]*${ROLE_WORD}\\s*:`, 'iu');
+// 🔗 والقوسُ **الملاصقُ للفظ** وحدَه — لا كلُّ قوس. قِيس على نصوصٍ حقيقيّة: ٢٩ قوساً،
+//    ٣ منها فقط (١٠٪) تلي لفظَ دور؛ فأخذُ الجميع كان سيُدخل ٢٦ قوساً فيها أسماءُ شاشات
+//    ومزايا وكيانات («POS Screen»، «Offline Sync»، «مقاس/لون»، «سحب وإفلات»).
+const ROLE_PAREN = new RegExp(`${ROLE_WORD}\\s*[(（]([^)）]{2,120})[)）]`, 'giu');
 const ROLE_SPLIT = /[،,\/|؛]/u;
+
+/** بنودُ قائمةٍ نظيفةٌ من نصٍّ خام — الفلترُ نفسُه للملصق والقوس، فلا يفترقان. */
+function pushRoleItems(out, value) {
+    for (const item of value.split(ROLE_SPLIT)) {
+        const name = item.trim();
+        // اسمُ دورٍ كلمةٌ أو كلمتان عادةً؛ الجملةُ الطويلة وصفٌ لا اسم
+        if (name.length < 2 || name.split(/\s+/u).length > 4 || out.includes(name)) continue;
+        out.push(name);
+    }
+}
 
 export function labelledRoleNames(goalText, { max = 6 } = {}) {
     const out = [];
     for (const raw of String(goalText || '').split('\n')) {
         const line = raw.trim();
-        if (!ROLE_LABEL.test(line)) continue;
-        const value = line.slice(line.indexOf(':') + 1).replace(/\.\s*$/u, '');
-        for (const item of value.split(ROLE_SPLIT)) {
-            const name = item.trim();
-            // اسمُ دورٍ كلمةٌ أو كلمتان عادةً؛ الجملةُ الطويلة وصفٌ لا اسم
-            if (name.length < 2 || name.split(/\s+/u).length > 4 || out.includes(name)) continue;
-            out.push(name);
+        if (ROLE_LABEL.test(line)) {
+            pushRoleItems(out, line.slice(line.indexOf(':') + 1).replace(/\.\s*$/u, ''));
+        }
+        // (لا `continue` هنا: كان مكتوباً «سطرٌ معنونٌ لا يُقرأ مرّتين»، وقِيس أنّه **يُنقص**
+        //  لا يحمي — سطرٌ فيه الاثنان يفقد به دورَين حقيقيَّين، والتكرارُ يمنعه `out.includes`
+        //  أصلاً. طفرةُ حذفِه نجت، فلمّا قيس أثرُها وُجد الحذفُ أصوبَ من الإبقاء.)
+        for (const m of line.matchAll(ROLE_PAREN)) {
+            // 🔢 **قائمةٌ لا مفردة**: بندان فأكثر. قِيس أنّ الوحيدَ الذي كان يمرّ بلا هذا
+            //    الشرط هو «الصلاحيات والأدوار (RBAC)» — اختصارُ المفهوم لا اسمُ دور،
+            //    وكان سيصير مطلباً تفحص `role-coverage` الصفحةَ بحثاً عنه.
+            if (!ROLE_SPLIT.test(m[1])) continue;
+            pushRoleItems(out, m[1]);
         }
     }
     return out.slice(0, max);
