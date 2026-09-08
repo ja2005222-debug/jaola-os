@@ -1,4 +1,4 @@
-import { deepseek, groq, ai, isPermanentAIError, isProviderEnabled, noteUsage, withUsageLabel, AI_UNAVAILABLE_MSG, DEEPSEEK_MODEL, GROQ_MODEL, GEMINI_MODEL } from '../core/providers/llm.js';
+import { deepseek, groq, ai, isPermanentAIError, isProviderEnabled, noteUsage, drainStream, withUsageLabel, AI_UNAVAILABLE_MSG, DEEPSEEK_MODEL, GROQ_MODEL, GEMINI_MODEL } from '../core/providers/llm.js';
 import { buildContextPrompt } from './knowledgeEngine.js';
 import { buildLessonsPromptBlock } from '../services/platformLessons.js';
 import { buildBlueprintPrompt } from './referenceBlueprints.js';
@@ -348,14 +348,14 @@ async function callDeepSeek(userMessage, onChunk, systemPrompt = buildCoderSyste
         });
 
         let fullResponse = '';
-        for await (const chunk of stream) {
-            noteUsage(stream.__aiProvider || 'تدفّق', chunk);   // آخرُ قطعةٍ تحمل usage عند من يتطوّع بها
+        // 🌊 التدفّقُ نداءٌ **واحد** يُحسب مرّةً بعد تصريفه — لا قطعةً قطعة (انظر `drainStream`).
+        await drainStream(stream, (chunk) => {
             const content = chunk.choices[0]?.delta?.content || '';
             if (content) {
                 fullResponse += content;
                 onChunk(content);
             }
-        }
+        });
         return fullResponse;
     }
 
@@ -390,14 +390,14 @@ async function callGroq(userMessage, onChunk, systemPrompt = buildCoderSystemPro
         });
 
         let fullResponse = '';
-        for await (const chunk of stream) {
-            noteUsage(stream.__aiProvider || 'تدفّق', chunk);   // آخرُ قطعةٍ تحمل usage عند من يتطوّع بها
+        // 🌊 التدفّقُ نداءٌ **واحد** يُحسب مرّةً بعد تصريفه — لا قطعةً قطعة (انظر `drainStream`).
+        await drainStream(stream, (chunk) => {
             const content = chunk.choices[0]?.delta?.content || '';
             if (content) {
                 fullResponse += content;
                 onChunk(content);
             }
-        }
+        });
         return fullResponse;
     }
 

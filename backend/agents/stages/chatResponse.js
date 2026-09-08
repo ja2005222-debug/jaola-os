@@ -11,7 +11,7 @@
  *    `reporter.send(roomName, 'chat_reply', …)` — كُتب النداءُ صريحاً هنا، والغلافُ باقٍ في
  *    الصنف لمستدعيه الآخرين. لا تغييرَ سلوك.
  */
-import { groq, GROQ_MODEL, noteUsage, withUsageLabel } from '../../core/providers/llm.js';
+import { groq, GROQ_MODEL, drainStream, withUsageLabel } from '../../core/providers/llm.js';
 import { scanProjectFiles, buildProjectBrain, summarizeBrain, summarizeFacts } from '../../services/projectBrain.js';
 import { getLangInfo } from '../languageDetector.js';
 import { getProjectMemory, getDomainModel } from '../projectMemory.js';
@@ -141,13 +141,10 @@ User preferences: ${JSON.stringify(execMemory)}` },
             let acc = '';
             // 🏷️ الوسمُ يلفّ **موضعَ الحساب** لا موضعَ الطلب: في التدفّق تُقرأ الأرقامُ من آخر
             //    قطعةٍ هنا، بعد أن عاد `create` بزمن — فلفُّ `create` وحدَه كان سيُسقط النداء.
-            await withUsageLabel('chat', async () => {
-                for await (const chunk of stream) {
-                    noteUsage(stream.__aiProvider || 'تدفّق', chunk);   // آخرُ قطعةٍ تحمل usage عند من يتطوّع بها
-                    const delta = chunk.choices?.[0]?.delta?.content || '';
-                    if (delta) { acc += delta; reporter.send(roomName, 'chat_stream_chunk', { delta }); }
-                }
-            });
+            await withUsageLabel('chat', () => drainStream(stream, (chunk) => {
+                const delta = chunk.choices?.[0]?.delta?.content || '';
+                if (delta) { acc += delta; reporter.send(roomName, 'chat_stream_chunk', { delta }); }
+            }));
             if (acc.trim()) { reply = acc; streamed = true; }
             break;
         } catch (e) {

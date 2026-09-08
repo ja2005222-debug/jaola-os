@@ -149,4 +149,8 @@ test('🏷️ نداءُ الشات يُنسَب إلى «chat» على المس
     assert.equal(usage.byLabel['chat']?.total, 50, 'الرموزُ تُنسَب إلى وكيل الشات');
     assert.equal(usage.byLabel['بلا وسم'], undefined, 'ولا يتسرّب النداءُ خارجَ كلِّ وسم');
     assert.equal(usage.total, 50, 'والمجموعُ لا يتغيّر بالوسم');
+    // 🌊 والنداءُ **واحد** مهما بلغت قِطَعُه: هذا ما فضحه سجلُّ صاحب المشروع («٧٩٩٥٤ نداء»
+    //    وحقيقتُها عشرات). القطعتان هنا كانتا تُعدّان نداءَين قبل `drainStream`.
+    assert.equal(usage.byLabel['chat'].calls, 1, 'قطعتان ⇒ نداءٌ واحد');
+    assert.equal(usage.calls, 1);
 });

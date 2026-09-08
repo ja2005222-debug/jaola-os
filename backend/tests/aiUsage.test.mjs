@@ -11,7 +11,7 @@
 // ثمنٌ لا يُدفع لأجل عدّاد. يُقرأ ما يتطوّع به المزوّد، ويُقال صراحةً كم نداءً بقي بلا رقم.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { noteUsage, readAIUsage, resetAIUsage, usageLine, usageByLabelLine, withUsageLabel, currentUsageLabel } from '../core/providers/llm.js';
+import { noteUsage, readAIUsage, resetAIUsage, usageLine, usageByLabelLine, withUsageLabel, currentUsageLabel, drainStream } from '../core/providers/llm.js';
 import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
 
 divertConsoleToStderr();
@@ -263,4 +263,72 @@ test('الحدّ: نداءٌ بلا أرقامٍ بأيِّ التسميتَين
     const r = readAIUsage();
     assert.equal(r.calls, 1);
     assert.equal(r.counted, 0);
+});
+
+// ═══════════════════════════════════════════════════════
+// 🌊 التدفّقُ نداءٌ واحد — عطبٌ خرج من سجلٍّ حيّ
+// ═══════════════════════════════════════════════════════
+// سجلُّ صاحب المشروع: «… في ٧٩٩٥٤ نداء … ٧٩٩١٣ نداءً بلا أرقام». والصامتُ لا يتجاوز
+// النداءاتِ أبداً، فالمحسوبُ ٤١ — أي قِطَعُ بثٍّ من نحو أربعين نداءً حقيقيّ. كان `noteUsage`
+// يُنادى لكلِّ قطعةٍ داخل `for await`.
+const streamOf = (chunks, provider = 'groq') => {
+    const s = (async function* () { for (const c of chunks) yield c; })();
+    s.__aiProvider = provider;
+    return s;
+};
+const parts = (n) => Array.from({ length: n }, () => ({ choices: [{ delta: { content: 'x' } }] }));
+const usageChunk = (p, c) => ({ choices: [{ delta: {} }], usage: { prompt_tokens: p, completion_tokens: c, total_tokens: p + c } });
+
+test('🔴 ألفُ قطعةٍ نداءٌ **واحد** — لا ألفُ نداء', async () => {
+    resetAIUsage();
+    await drainStream(streamOf([...parts(999), usageChunk(5000, 3000)]), () => {});
+    const u = readAIUsage();
+    assert.equal(u.calls, 1, 'النداءُ يُعدّ مرّةً بعد تصريف التدفّق');
+    assert.equal(u.counted, 1);
+    assert.equal(u.total, 8000);
+    assert.equal(u.byProvider.groq.calls, 1);
+});
+
+test('🔴 وتدفّقٌ لا يتطوّع المزوّدُ فيه بأرقامٍ = نداءٌ صامتٌ **واحد**', async () => {
+    resetAIUsage();
+    await drainStream(streamOf(parts(50)), () => {});
+    const u = readAIUsage();
+    assert.equal(u.calls, 1);
+    assert.equal(u.counted, 0, 'صامتٌ لأنّ المزوّد لم يُرسل أرقاماً — لا لأنّ القِطَعَ كثيرة');
+    assert.equal(usageLine(u), '💰 [AI Usage]: 0 رمزاً (دخل 0 / خرج 0) في 1 نداء · 1 نداءً بلا أرقامٍ من المزوّد (غيرُ محسوبة)');
+});
+
+test('كلُّ قطعةٍ تصل مستهلكَها — الحسابُ لا يبتلع المحتوى', async () => {
+    resetAIUsage();
+    let text = '';
+    await drainStream(streamOf([...parts(5), usageChunk(1, 1)]), (c) => { text += c.choices[0]?.delta?.content || ''; });
+    assert.equal(text, 'xxxxx');
+});
+
+test('🔴 والأرقامُ تُلتقط أيّاً كان موضعُ قطعتها — لا «آخرُ قطعةٍ» وحدَها', async () => {
+    resetAIUsage();
+    await drainStream(streamOf([...parts(3), usageChunk(10, 5), ...parts(3)]), () => {});
+    assert.equal(readAIUsage().total, 15, 'قطعةُ الأرقام في الوسط تُقرأ كما تُقرأ في الآخر');
+});
+
+test('🔴 وتدفّقٌ ينقطع في منتصفه نداءٌ **وقع فعلاً** — يُعدّ ولا يُبتلَع', async () => {
+    resetAIUsage();
+    const broken = (async function* () {
+        yield { choices: [{ delta: { content: 'a' } }] };
+        throw new Error('انقطع الاتّصال');
+    })();
+    broken.__aiProvider = 'groq';
+    await assert.rejects(() => drainStream(broken, () => {}), /انقطع/);
+    const u = readAIUsage();
+    assert.equal(u.calls, 1, 'الحسابُ في finally: النداءُ وقع وكلّف، فلا يختفي بفشله');
+    assert.equal(u.counted, 0);
+});
+
+test('🏷️ والوسمُ يبقى على النداء الواحد — لا يتوزّع على القِطَع', async () => {
+    resetAIUsage();
+    await withUsageLabel('coder:generate', () =>
+        drainStream(streamOf([...parts(200), usageChunk(700, 300)]), () => {}));
+    const { byLabel } = readAIUsage();
+    assert.deepEqual(byLabel['coder:generate'], { calls: 1, total: 1000 });
+    assert.equal(byLabel['بلا وسم'], undefined);
 });
