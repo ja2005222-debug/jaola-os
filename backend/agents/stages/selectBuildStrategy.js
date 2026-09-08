@@ -6,7 +6,7 @@
  *
  * تخرج من `JaolaCognitiveRuntime` في JCR/29 بالمنهج نفسِه: `this` = البثُّ (٥ + ٢) + ثلاثةُ بناةٍ (`_buildFromRegistry`/`_buildFromClone`/
  * `_buildReactProject` — تستبدلها الاختباراتُ على النسخة → `ops`) + قراءةٌ واحدة لتلميح المسار `trackByRoom` (خريطةٌ على النسخة يكتبها
- * `handleUserMessage`) → `ops.trackOf(roomName)` دالّةً مربوطة، لا كائنَ جديد (على سابقة شقّ `gate` في JCR/26) + القارئُ `readCodeContext`
+ * `handleUserMessage`) → `ops.trackOf(roomName)` دالّةً مربوطة، لا كائنَ جديد (على سابقة شقّ `gate` في JCR/26) + سؤالُ الوجود `hasProjectSource`
  * يُستورد. لا `io`. مستدعٍ واحد (`_runMissionNow`). نقلٌ حرفيّ.
  *
  * 📏 قياسُ مواصفة نقاط البيع (بعد JCR/29): القراءةُ الواحدةُ للتلميح صارت **قبل** الاختصار التسويقيّ لا داخل فرع الكلون —
@@ -21,20 +21,23 @@ import { isMarketingPageGoal } from '../blockRegistry.js';
 import { analyzeProjectStatic } from '../behaviorVerifier.js';
 import { transitionState, STATES } from '../stateMachine.js';
 import { isExplicitRebuild, isExplicitNewBuild, isContinuationGoal, isFullSpecification, isOutOfScopeRequest, foreignCodeArtifacts } from '../textNormalizer.js';
-import { readCodeContext } from '../projectReader.js';
+import { hasProjectSource } from '../projectReader.js';
 import { resolveProjectType } from './enrich.js';
 
 // 🧭 اختيار استراتيجية البناء: Registry (صفحة تسويقية) / Clone (تطبيق مطابق) /
 // React (مشروع كبير جديد) بحماياتها (استئناف، «يعمل فعلاً» → لا استبدال)،
 // وإلا null ← النواة. أي قيمة غير null هي نتيجة المهمة النهائية.
 // المُبلِّغُ يُمرَّر؛ البناةُ الثلاثة عبر `ops` (تستبدلها الاختبارات على النسخة)؛ تلميحُ المسار (`site`/`system`) عبر `ops.trackOf`
-// دالّةً مربوطةً بخريطة النسخة؛ القارئُ `readCodeContext` يُستورد (لا اختبارَ يستبدل مفوِّضَه).
+// دالّةً مربوطةً بخريطة النسخة؛ سؤالُ الوجود `hasProjectSource` يُستورد (لا اختبارَ يستبدل مفوِّضَه).
 export async function selectBuildStrategy(goal, blueprint, ctx, reporter, ops) {
     const { projectPath, username, activeProject, roomName } = ctx;
-    // «بناء جديد» = لا شفرة قائمة تُذكر (< 80 حرفاً). تُحسب مرة واحدة: لا مسار
-    // أدناه يكتب على القرص قبل أن يُرجع نتيجته، فالقراءة الثانية كانت تكراراً.
-    const existingCtx = await readCodeContext(projectPath).catch(() => '');
-    const isFreshBuild = !existingCtx || existingCtx.trim().length < 80;
+    // «بناء جديد» = لا مصدرَ يزن شيئاً على القرص. يُسأل مرّةً واحدة: لا مسار أدناه يكتب
+    // على القرص قبل أن يُرجع نتيجته، فالسؤالُ الثاني كان تكراراً.
+    // 🏗️ يُسأل للقرص لا لقارئ المحتوى: `readCodeContext` يفلتر بثلاثة أسماء، فمستودعٌ
+    //    عامرٌ بغيرها يُقرأ صفرَ حرفٍ فيصير `isFreshBuild = true` — وهو الشرطُ الذي **يُجيز
+    //    الاستبدالَ الكامل**. مقيسٌ: ٧ ملفّات PHP ← ٠ حرفاً ← يُدهَس صامتاً. العتبةُ هي هي
+    //    (٨٠) — الذي سقط هو قائمةُ الأسماء المغلقة وحدَها.
+    const isFreshBuild = !(await hasProjectSource(projectPath, { minBytes: 80 }));
 
     // 🚧 **أهذا من جنس ما نصنع؟** — قبل أيِّ بانٍ، لأنّ الثلاثةَ كلَّهم يُخرجون **موقعاً**
     //    (سطرٌ إلزاميّ في مُوجَّه `coderAgent`: «ثلاثة ملفات: index.html وstyles.css

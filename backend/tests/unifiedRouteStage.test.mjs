@@ -145,7 +145,10 @@ test('الحدود: شريحةُ الجسد — gate has/delete/set/confirmReply
         { has: count(/\bgate\.has\(/g), del: count(/\bgate\.delete\(/g), set: count(/\bgate\.set\(/g), confirm: count(/\bgate\.confirmReply\(/g), gateAll: count(/\bgate\.\w+/g) },
         { has: 1, del: 1, set: 1, confirm: 1, gateAll: 4 }, 'قِيست قبل النقل: الحجبُ يُقرأ ويُمسح ويُكتب وردُّه من الصنف');
     assert.deepEqual({ edit: count(/ops\.surgicalEdit\(/g), chat: count(/ops\.generateChatResponse\(/g), all: count(/\bops\.\w+/g) }, { edit: 2, chat: 1, all: 3 });
-    assert.equal(count(/\breadCodeContext\(/g), 1, 'القارئُ يُستورد لا يُمرَّر — لا اختبارَ يستبدل مفوِّضَه');
+    // 🏗️ سؤالُ الوجود فارقَ قارئَ المحتوى: `readCodeContext` ١ ← ٠ و`hasProjectSource` ٠ ← ١.
+    //    نداؤه الواحد كان يُستهلَك بـ`length > 100` مرّتَين ولا شيءَ غيرَهما — سؤالُ وجودٍ بثوبِ قراءةِ محتوى.
+    assert.equal(count(/\breadCodeContext\(/g), 0, 'قارئُ المحتوى لم يعد له مستهلكٌ هنا');
+    assert.equal(count(/\bhasProjectSource\(/g), 1, 'سؤالُ الوجود يُستورد لا يُمرَّر — لا اختبارَ يستبدل مفوِّضَه');
     assert.equal(count(/\bawait router\(/g), 1); assert.equal(count(/\brouteMessage\(/g), 0, 'النداءُ عبر الوسيط لا الاستيراد مباشرةً');
     assert.equal(count(/reporter\.send\(/g), 3); assert.equal(count(/reporter\.liveLog\(/g), 1);
     const jcr = fs.readFileSync(path.join(HERE, '../agents/jcr.js'), 'utf8');

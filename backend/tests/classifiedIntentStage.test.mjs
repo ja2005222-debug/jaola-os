@@ -178,7 +178,10 @@ test('الحدود: شريحةُ الجسد — gate has/delete/set/confirmReply
         { has: count(/\bgate\.has\(/g), del: count(/\bgate\.delete\(/g), set: count(/\bgate\.set\(/g), confirm: count(/\bgate\.confirmReply\(/g), gateAll: count(/\bgate\.\w+/g) },
         { has: 2, del: 2, set: 2, confirm: 2, gateAll: 8 }, 'قِيست قبل النقل: فرعا modify ووإلّا يقرآن ويكتبان ويمسحان');
     assert.deepEqual({ classify: count(/ops\.classifyIntent\(/g), edit: count(/ops\.surgicalEdit\(/g), chat: count(/ops\.generateChatResponse\(/g), all: count(/\bops\.\w+/g) }, { classify: 1, edit: 3, chat: 3, all: 7 });
-    assert.equal(count(/\breadCodeContext\(/g), 2, 'القارئُ يُستورد لا يُمرَّر — لا اختبارَ يستبدل مفوِّضَه');
+    // 🏗️ سؤالُ الوجود فارقَ قارئَ المحتوى: `readCodeContext` ٢ ← ٠ و`hasProjectSource` ٠ ← ٢.
+    //    الموضعان كانا يسألان الوجودَ عبر `length > 100` على قارئٍ بقائمةِ أسماءٍ مغلقة. العتبةُ (١٠٠) هي هي.
+    assert.equal(count(/\breadCodeContext\(/g), 0, 'قارئُ المحتوى لم يعد له مستهلكٌ هنا');
+    assert.equal(count(/\bhasProjectSource\(/g), 2, 'سؤالُ الوجود يُستورد لا يُمرَّر — لا اختبارَ يستبدل مفوِّضَه');
     // 📋 «مواصفةٌ كاملة» أضافت سطرَ سجلٍّ واحداً (٩ ← ١٠): يقول عددَ البنود والحروف ولماذا خالفَ المصنِّفَ.
     assert.equal(count(/reporter\.send\(/g), 4); assert.equal(count(/reporter\.liveLog\(/g), 10);
     assert.equal(count(/\bsetPendingGoal\(/g), 1); assert.equal(count(/\bclearDialog\(/g), 1); assert.equal(count(/\brecordEdit\(/g), 3);

@@ -76,6 +76,59 @@ export async function readReactSources(projectPath) {
     return out;
 }
 
+/**
+ * 🏗️ **أثمّة مشروعٌ هنا؟** — سؤالُ وجودٍ يُسأل **للقرص**، لا يُشتقّ من قارئ محتوى.
+ *
+ * **العطبُ المقيس**: أربعةٌ من مواضع نداء `readCodeContext` لا تريد المحتوى أصلاً —
+ * تسأل هذا السؤال عبر `length > 100` (وفي `selectBuildStrategy` عبر `< 80` باسم
+ * `isFreshBuild`). وذلك القارئُ يفلتر بقائمةٍ **مغلقة** من ثلاثة أسماء
+ * (`index.html`/`styles.css`/`script.js`). فمستودعٌ بسبعةِ ملفّات PHP حقيقيّة يُقرأ
+ * **صفرَ حرف** → `isFreshBuild = true` → وهو الشرطُ الذي **يُجيز الاستبدالَ الكامل**.
+ * أي أنّ مشروعاً عامراً **يُدهَس صامتاً**. (قِيس: ٧ ملفّات ← ٠ حرفاً ← يُعامَل فارغاً.)
+ *
+ * ولا يقتصر على المستودعات الغريبة: مشروعُ React خالص، أو مشروعٌ يسمّي ملفَّه `main.js`،
+ * يُقرأ فارغاً بالقدر نفسِه.
+ *
+ * **ما تغيّر وما لم يتغيّر**: العطبُ في **القائمة المغلقة** لا في **العتبة**. فالعتبةُ
+ * تبقى — مشروعٌ صفحتُه `<h1>x</h1>` (أحد عشر حرفاً) بقيّةُ ركامٍ من بناءٍ فاشل، لا
+ * منتجٌ يُخشى دهسُه؛ ولو عُدّ قائماً لامتنع مسارُ React عنه إلى الأبد. فالسؤالُ هنا:
+ * «أعلى القرص مصدرٌ يزن شيئاً؟» — **بلا قائمةِ أسماء ولا قائمةِ امتدادات**، وبالحجم
+ * وحدَه. والعتبةُ تُمرَّر من موضع النداء بقيمتِه التي كانت له، فلا رقمَ يتغيّر خلسة.
+ *
+ * **ولمَ لا يُوسَّع القارئُ القائم؟** تحذيرُ PM/15 قائمٌ حرفيّاً: «لو رأى المُعدِّلُ سبعَ
+ * صفحاتٍ لعدّل الخطأ منها». وهذه **سادسةُ** حالات المبدأ نفسِه (بعد PM/11 قائمة، PM/14 نصّ،
+ * PM/17 اسم، PM/19 ذاكرة، PM/20 مفتاح، PM/22 نوع): قارئٌ صحيحٌ لغرضه، أُعيد استعمالُه
+ * لغرضٍ آخر. والسابقةُ في هذا الملفّ نفسِه: `isReactProject` يسأل `access` ولا يقرأ محتوى.
+ *
+ * **رخيصٌ عمداً**: `stat` لا `readFile` — لا يُقرأ محتوى أصلاً؛ ويخرج عند تجاوز العتبة.
+ * وميزانيّةُ عقدٍ مقيَّدة (`budget`) تحدّه على مستودعٍ ضخم.
+ *
+ * ⚠️ **حدٌّ مكتوب**: يقول «أثمّة شيء؟» فقط. لا يقول ما هو، ولا أنّ جولا يفهمه — وقراءةُ
+ *    محتواه سؤالٌ آخر لم يُبنَ هنا ولا يُدَّعى.
+ */
+const NOISE_DIR = new Set(['node_modules', 'vendor', 'dist', 'build', '__pycache__']);
+const BINARY_EXT = /\.(png|jpe?g|gif|webp|ico|woff2?|ttf|eot|mp[34]|zip|gz|pdf|lock)$/i;
+
+export async function hasProjectSource(projectPath, { minBytes = 80, budget = 400 } = {}) {
+    let seen = 0;
+    let bytes = 0;
+    const walk = async (dir) => {
+        const entries = await fsPromises.readdir(dir, { withFileTypes: true });
+        const dirs = [];
+        for (const e of entries) {
+            if (++seen > budget) return false;
+            if (e.name.startsWith('.') || NOISE_DIR.has(e.name)) continue;
+            if (e.isDirectory()) { dirs.push(e.name); continue; }
+            if (BINARY_EXT.test(e.name)) continue;
+            bytes += (await fsPromises.stat(path.join(dir, e.name))).size;
+            if (bytes > minBytes) return true;          // كفى دليلاً
+        }
+        for (const d of dirs) if (await walk(path.join(dir, d))) return true;
+        return false;
+    };
+    try { return await walk(projectPath); } catch { return false; }
+}
+
 const SOURCE_EXT = /\.(html?|jsx?|tsx?|mjs|cjs|css|json|md|svg|txt)$/i;
 export async function readBuiltFiles(projectPath) {
     const out = [];
