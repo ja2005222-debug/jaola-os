@@ -105,6 +105,12 @@ test('🔴 كلماتُ الطلب تُسقط ألفاظَ المنصّة وأد
 
 // ─── ٢. مستهلكٌ حيٌّ: الفهمُ يُعلَن لصاحب المشروع ──────────────────────
 
+// 🧪 مستخدمٌ فريدٌ لكلِّ تشغيل: **ذاكرةُ المشروع تُكتب على القرص وتبقى بين الجولات**،
+//    فمستخدمٌ ثابتُ الاسم يرث نموذجَ الجولة السابقة فيُفسد الطُّعم. (قِيس: هذا الاختبارُ سقط
+//    بعد PM/24 لا لعطبٍ بل لأنّه ورث تسميةً كتبَتْها جولةٌ سابقة.) وهي علّةُ العزل نفسُها
+//    التي وُجدت في مكتبة الفئة — مصدرا حالةٍ مشتركةٍ لا يملكهما الطُّعم.
+const freshUser = (tag) => `__${tag}_${process.pid}_${Math.random().toString(36).slice(2, 8)}__`;
+
 test('🔴 مسارُ التوريث: فهمٌ مسمومٌ في المكتبة يُبذَر في مشروعٍ جديد — فيُقال، لا يُبتلع', async () => {
     const goal = 'متتبّعُ حفظِ القرآن: يحدّد الحافظُ سورةً وآياتٍ ويسجّل ما حفظ، وتعود المراجعةُ دورياً.';
     // لا نموذجَ لغويّ في الاختبارات: البذرةُ من المكتبة هي ما يحقن الأسماءَ الغريبة —
@@ -113,10 +119,13 @@ test('🔴 مسارُ التوريث: فهمٌ مسمومٌ في المكتبة 
     const events = [];
     const reporter = new RoomReporter({ to: () => ({ emit: (ev, p) => events.push(p?.message ?? p) }) });
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grounded-'));
-    await understandGoal(goal, { username: '__pm22_u__', activeProject: 'p', roomName: 'r', projectPath: dir }, reporter);
+    await understandGoal(goal, { username: freshUser('pm22_u'), activeProject: 'p', roomName: 'r', projectPath: dir }, reporter);
     // 🧪 سطرُ «🧩 نموذج المشروع» يطبع الأسماءَ نفسَها — فلو قِسنا على السجلّ كلِّه
     //    لمرّ تحذيرٌ فارغٌ من التسمية. القياسُ على سطر التحذير وحدَه (مقيس: الطفرةُ نجت قبله).
-    const warning = events.map(String).find(l => l.includes('لا يمسّ طلبَك'));
+    // 🧪 يُقاس **وقوعُ الإنذار وتسميتُه**, لا لفظُه: PM/24 صارت تُسمّي لهذا الطلب من أداة
+    //    التعريف («القرآن»، «الحافظ»، «المراجعة») فتغيّر صدرُ الجملة إلى «لم يمسّ». والمقيسُ
+    //    هنا أنّ صاحبَ المشروع أُخبر وسُمّي له ما لا أثرَ له — وذلك ثابتٌ في الحالتين.
+    const warning = events.map(String).find(l => /ل[ام] يمسّ طلبَك/.test(l));
     assert.ok(warning, 'بُذر فهمُ مدرسةٍ في متتبّعِ حفظٍ وصاحبُ المشروع لم يُخبَر');
     assert.match(warning, /Grade/, 'التحذيرُ لا يسمّي ما لا أثرَ له — فلا يُفيد قارئَه');
     assert.match(warning, /Teacher/);
@@ -127,7 +136,7 @@ test('🔴 والفهمُ الذي يمسُّ الطلبَ يمرّ بلا تح�
     const reporter = new RoomReporter({ to: () => ({ emit: (ev, p) => events.push(p?.message ?? p) }) });
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grounded-ok-'));
     await understandGoal('متجرٌ إلكترونيّ لبيع المنتجات مع سلّةٍ وطلباتٍ وفاتورة', {
-        username: '__pm22_ok__', activeProject: 'p', roomName: 'r', projectPath: dir,
+        username: freshUser('pm22_ok'), activeProject: 'p', roomName: 'r', projectPath: dir,
     }, reporter);
     assert.doesNotMatch(events.join('\n'), /لا يمسّ طلبَك/, 'إنذارٌ كاذبٌ على فهمٍ مشتقٍّ من الطلب نفسِه');
 });

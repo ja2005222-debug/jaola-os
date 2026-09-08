@@ -13,7 +13,7 @@
  * (`s.rt._understandGoal = …`) لم تتغيّر.
  */
 import { buildMemoryContext, updateStructure, setDomainModel, getDomainModel } from '../projectMemory.js';
-import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel, goalFidelity, headingEntityNames, normalizeProjectModel } from '../projectModel.js';
+import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel, goalFidelity, headingEntityNames, articleEntityNames, normalizeProjectModel } from '../projectModel.js';
 import { getLibraryModel } from '../modelLibrary.js';
 import { buildProfileContext } from '../userProfile.js';
 import { isExplicitNewBuild } from '../textNormalizer.js';
@@ -86,10 +86,16 @@ export async function understandGoal(goal, ctx, reporter) {
         //    ولا يقع إلّا حين يكون الفهمُ **بلا أثرٍ في الطلب أصلاً**: بديلٌ ٩٥٪ نظيف خيرٌ من فهمٍ
         //    قِيس أنّه فهمُ منتجٍ آخر. وما دون ذلك يبقى كما هو — لا نُصلح ما لم يُقَس كسرُه.
         //    وحدٌّ مكتوب: العناوينُ تسمّي **كياناتٍ** لا أدواراً، فالأدوارُ تسقط ولا تُختلق.
+        //
+        // 🏷️ PM/24 — ومصدرٌ ثانٍ للتسمية حين لا عناوين: **أداةُ التعريف**.
+        //    الطلبُ القصير بلا بنودٍ مرقّمة، وقِيس أنّ كلماتِه بالتكرار ٤٤٪ نظيفة فقط (أفعالٌ
+        //    ولواصقُ ضمائر). و«ال» لا تدخل على فعل — فهي وحدَها، بإسقاط صفةِ النسبة، **٩٦٪**.
+        //    العناوينُ أوّلاً لأنّها أدقُّ وأوسعُ أثراً؛ والأداةُ حين تعوزنا العناوين.
         const fidelity = goalFidelity(model, goal);
         let renamed = null;
         if (fidelity.ungrounded) {
-            const names = headingEntityNames(goal);
+            const heads = headingEntityNames(goal);
+            const names = heads.length >= 2 ? heads : articleEntityNames(goal);
             if (names.length >= 2) {
                 renamed = names;
                 model = normalizeProjectModel({

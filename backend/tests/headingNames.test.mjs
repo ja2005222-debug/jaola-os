@@ -17,7 +17,8 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { headingEntityNames, goalFidelity, goalWords, deriveProjectModel } from '../agents/projectModel.js';
+import { headingEntityNames, articleEntityNames, goalFidelity, goalWords, deriveProjectModel,
+         normalizeLetters, normalizeConceptText } from '../agents/projectModel.js';
 import { stripNegated } from '../agents/textNormalizer.js';
 import { stripNegated as viaBackendNeed } from '../agents/backendNeed.js';
 import { understandGoal } from '../agents/stages/understand.js';
@@ -93,12 +94,54 @@ test('🔴 والاحتياطُ لا يفهم ما نفاه صاحبُه — ث�
         'صار المنفيُّ كياناً — والاحتياطُ يقرأ ما لم يُطوَ نفيُه');
 });
 
+// ─── ٢ب. التسميةُ بأداة التعريف: الطلبُ القصير (PM/24) ───────────────
+
+test('🔴 «ال» علامةُ اسمٍ — والطلبُ القصير يُسمَّى بها إذ لا عناوينَ فيه', () => {
+    const goal = 'اصنع لي متتبّعاً لحفظ القرآن أحدّد فيه السورة والآيات وأتابع مراجعتي';
+    assert.deepEqual(headingEntityNames(goal), [], 'الطُّعمُ لا يعزل: فيه بنودٌ مرقّمة');
+    assert.deepEqual(articleEntityNames(goal), ['قران', 'سوره', 'ايات'],
+        'الأداةُ لم تُقرأ — أو دخل معها فعلٌ (والفعلُ لا تدخل عليه «ال»)');
+});
+
+test('🔴 وصفةُ النسبة تسقط — «اليوميّة» و«النسخيّ» تصفان ولا تسمّيان', () => {
+    for (const [goal, bad] of [
+        ['أريد تطبيقاً أسجّل فيه عاداتي اليوميّة وأرى سلسلة التزامي', 'يوميه'],
+        ['أداة تعرض الحروف العربيّة وتدرّب على الخطّ النسخيّ', 'نسخي'],
+    ]) assert.ok(!articleEntityNames(goal).includes(bad), `صفةُ نسبةٍ صارت كياناً: ${bad}`);
+});
+
+test('🔴 وألفاظُ إطار الوثيقة لا تسمّي منتجاً ولو حملت «ال»', () => {
+    const names = articleEntityNames('أداة فيها الإعدادات والشاشات مع السورة والآيات');
+    for (const frame of ['اعدادات', 'شاشات']) {
+        assert.ok(!names.includes(frame), `لفظُ إطارٍ صار كياناً بأداة التعريف: ${frame}`);
+    }
+    assert.deepEqual(names, ['سوره', 'ايات'], 'أُسقط مع الإطارِ ما ليس منه');
+});
+
+test('🔴 وطلبٌ بلا «ال» ولا عناوين لا يُسمَّى — يُقال ولا يُختلق', () => {
+    assert.deepEqual(articleEntityNames('بطاقات مذاكرة بوجهين سؤال وجواب مع تكرار ورزم'), []);
+});
+
+test('🔴 والنفيُ يُطوى هنا أيضاً — «بلا الحساب» ليست كياناً', () => {
+    assert.ok(!articleEntityNames('متتبّع حفظٍ يعمل بلا الحساب مع السورة والآيات').includes('حساب'),
+        'ما نفاه صاحبُه صار كياناً يُبنى له');
+});
+
+test('🔴 وتطبيعُ الحروف لا ينزع «ال» — وإلّا لم تكن هناك علامةٌ تُقرأ', () => {
+    assert.equal(normalizeLetters('القُرْآن'), 'القران', 'ابتُلعت الأداةُ في التطبيع الأساس');
+    assert.equal(normalizeConceptText('القُرْآن'), 'قران', 'تغيّر التطبيعُ القائم — وهو خطُّ الأساس');
+});
+
 // ─── ٣. المستهلكُ الحيّ ─────────────────────────────────────────────
 
 // 🧪 البذرةُ عبر **ذاكرة المشروع** لا عبر مكتبة الفئة: المكتبةُ مشتركةٌ بين ملفّات الجناح
 //    كلِّها ويُعاد ضبطُها في غيرِ هذا الملفّ، فكان الاختبارُ يمرّ منفرداً ويسقط في الجناح
 //    (مقيس). وذاكرةُ المشروع معزولةٌ بـ(مستخدم، مشروع) — فالطُّعمُ يملك ما يقيسه.
-async function understand(goal, user, seed = null) {
+// 🧪 مستخدمٌ فريدٌ لكلِّ تشغيل — ذاكرةُ المشروع تُكتب على القرص وتبقى بين الجولات (مقيس)
+const freshUser = (tag) => `__${tag}_${process.pid}_${Math.random().toString(36).slice(2, 8)}__`;
+
+async function understand(goal, tag, seed = null) {
+    const user = freshUser(tag);
     const events = [];
     const reporter = new RoomReporter({ to: () => ({ emit: (ev, p) => events.push(p?.message ?? p) }) });
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm23-'));
@@ -123,6 +166,29 @@ test('🔴 ولا عناوينَ = لا تسمية — يُقال ولا يُخ�
     assert.match(logs, /لا يمسّ طلبَك/, 'صمتَ عن فهمٍ لا يمسّ الطلب');
     assert.doesNotMatch(logs, /بنيتُ على عناوينك/, 'ادّعى تسميةً من عناوينَ لا وجودَ لها');
     assert.ok(domainModelContext.includes('Grade'), 'استُبدل النموذجُ بلا بديلٍ مقيس');
+});
+
+test('🔴 حيّاً: طلبٌ قصيرٌ بلا عناوين يُسمَّى بأداة التعريف — لا يُترَك للمهلوَس', async () => {
+    // 🧪 لا «اصنع/ابنِ» في الطُّعم: `isExplicitNewBuild` تُسقط النموذجَ السابق فلا تصل
+    //    البذرةُ المهلوَسة أصلاً، فلا يقيس الطُّعمُ شيئاً (مقيس — سقط الطُّعمُ الأوّل بها).
+    const { logs, domainModelContext } = await understand(
+        'متتبّعٌ لحفظ القرآن أحدّد فيه السورة والآيات وأتابع مراجعتي', 'pm24_a', HALLUCINATED);
+    assert.match(logs, /بنيتُ على عناوينك أنت/, 'طلبٌ قصيرٌ بقي على فهمٍ لا يمسّه');
+    for (const n of ['قران', 'سوره', 'ايات']) {
+        assert.ok(domainModelContext.includes(`**${n}**`), `اسمُ صاحب المشروع «${n}» لم يصل البُناة`);
+    }
+    assert.ok(!domainModelContext.includes('ForumPost'), 'فهمُ منتجٍ آخر ما زال يوجّه البناء');
+});
+
+test('🔴 والعناوينُ تسبق الأداةَ حين توجدان — الأدقُّ أوّلاً (٩٥٪ مقابل ٩٦٪ بتغطيةٍ أضيق)', async () => {
+    // 🧪 الطُّعمُ يعزل الأولويّة: عناوينُه تسمّي «ورد/مراجعه»، ومتنُه يحمل «ال» على
+    //    أسماءٍ أخرى («الحافظ»، «الجزء»). فلو انقلب الترتيبُ لظهرت هذه بدل تلك.
+    const SPEC = `# وِرد\n\n1. الورد\nيتابعه الحافظ ويقرأ الجزء.\n2. المراجعة\nيعود الحافظ للجزء.`;
+    const { domainModelContext } = await understand(SPEC, 'pm24_b', HALLUCINATED);
+    assert.ok(domainModelContext.includes('**ورد**') && domainModelContext.includes('**مراجعه**'),
+        'أسماءُ العناوين لم تصل البُناة');
+    assert.ok(!domainModelContext.includes('**حافظ**'),
+        'سبقت الأداةُ العناوينَ — والعناوينُ أدقُّ وأوسعُ أثراً');
 });
 
 test('🔴 والفهمُ الذي يمسُّ الطلبَ لا يُطرَح — لا نُصلح ما لم يُقَس كسرُه', async () => {
