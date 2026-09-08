@@ -16,7 +16,7 @@
 import { getUserLanguage } from '../languageDetector.js';
 import { getProjectMemory, getDomainModel } from '../projectMemory.js';
 import { matchCloneTemplateDetailed, inferTrack } from '../cloneTemplates/index.js';
-import { resolveStack } from '../starterRegistry.js';
+import { resolveStack, explicitStackRequest } from '../starterRegistry.js';
 import { isMarketingPageGoal } from '../blockRegistry.js';
 import { analyzeProjectStatic } from '../behaviorVerifier.js';
 import { transitionState, STATES } from '../stateMachine.js';
@@ -176,7 +176,11 @@ export async function selectBuildStrategy(goal, blueprint, ctx, reporter, ops) {
         // دائماً فكان يُعطّل الموجّه الهجين (React للمشاريع الكبيرة) كلما غاب الـLLM
         const ptype = resolveProjectType(goal, blueprint);
         const scope = getProjectMemory(username, activeProject)?.plan?.scope || '';
-        const stack = resolveStack({ projectType: ptype, scope });
+        // ⚛️ وذِكرُ الإطار في الطلب لا يُنقَض بتصنيف: قِيس حيّاً أنّ طلباً يقول «واجهة React»
+        //    خرج على Vanilla، لأنّ فئةَ المخطّط (`business` من نموذج) تغلب `detectProjectType`
+        //    التي كانت تقول `saas`. والحارسُ القائم يحمي من الاحتياط لا من نموذجٍ مخطئ.
+        const stack = resolveStack({ projectType: ptype, scope, goal });
+        const askedStack = explicitStackRequest(goal);
         // 🔴 كان يُختار هنا قالبٌ من السجلّ (`selectStarter`) ويُمرَّر إلى البناء
         //    ثمّ يُسمَّى للمستخدم: «قالب: Next.js SaaS + Stripe». ولم يكن يُقرأ
         //    في البناء إطلاقاً — `generateNextScaffold` لا يستقبل قالباً أصلاً.
@@ -186,7 +190,9 @@ export async function selectBuildStrategy(goal, blueprint, ctx, reporter, ops) {
         //    فيبني عليه توقّعاً كاذباً. والمسارُ يُقرّره `resolveStack` وحدَه.
         //    حين يُجلب قالبٌ حقيقيّ فعلاً (عبر `fetchStarter`) يعود ذكرُه هنا.
         if (stack === 'react-next' && isFreshBuild) {
-            reporter.liveLog(roomName, 'STACK', 'HybridRouter', '🧰 مشروع كبير → React/Next');
+            reporter.liveLog(roomName, 'STACK', 'HybridRouter', askedStack
+                ? '🧰 طلبتَ الإطارَ باسمه → React/Next (لا يُنقَض بتصنيف)'
+                : '🧰 مشروع كبير → React/Next');
             return await ops.buildReactProject(goal, ctx, {
                 sections: blueprint?.keySections || [],
             });
