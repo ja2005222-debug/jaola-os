@@ -185,3 +185,98 @@ export async function writePlanFiles(projectPath, files) {
     }
     return { written, rejected };
 }
+
+// ═══════════════════════════════════════════════════════
+// 📦 ملفّاتٌ نازلةٌ من مستودعٍ — السياسةُ الخامسة، وسببُ انفصالها
+// ═══════════════════════════════════════════════════════
+
+/**
+ * 🚫 ما لا ينزل من مستودعٍ أبداً — **حدّان لا استثناء لهما**:
+ *
+ *   • `.git/` — سجلُّ المستودع نفسُه. لو نزل لصار للمشروع تاريخٌ وريموتٌ
+ *     وإعداداتُ hooks لم يضعها صاحبُه، ولاختلط بسجلِّ `gitAgent` الذي
+ *     يُنشئه ويلتزم فيه. مجلَّدٌ يُمنع بمقطعِه أينما وقع، لا بلاحقةِ اسم.
+ *   • `.env` وأخواتُه (`.env.local`، `.env.production`…) — أسرارٌ حقيقيّة.
+ *     الجالبُ يُسقطها فعلاً (`starterFetch.js#SKIP_FILE`)، لكنّ الاعتمادَ على
+ *     مُصفٍّ فوقُ ليس سياسةَ كاتبٍ: **من يكتب على القرص يمنع بنفسِه**. دفاعٌ في
+ *     العمق مقصود.
+ *
+ * **واستثناءٌ واحدٌ مقيس**: `.env.example` **ينزل**. أوّلُ صياغةٍ لهذه القاعدة
+ * منعته مع إخوته، فقِيست على شجرةٍ واقعيّة ورُفض — وهو ليس سرّاً بل قالبٌ
+ * بقيمٍ فارغة، **وقد حسمته هذه المنصّةُ سلفاً** في `PROJECT_DOTFILES` أعلاه
+ * بوصفه ملفّاً مشروعاً. فمنعُه هنا كان تشدّداً يخالف قرارَ البيت نفسِه على
+ * ملفٍّ يقول للمُشغِّل **أيَّ مفاتيحَ يحتاج المشروع** — أي حذفُ التوثيق باسم الأمن.
+ */
+const REPO_NEVER_DIR = new Set(['.git']);
+const REPO_NEVER_FILE = (seg) => /^\.env(\.|$)/i.test(seg) && !PROJECT_DOTFILES.includes(seg.toLowerCase());
+
+/**
+ * 📦 يحلّ اسمَ ملفٍّ **جاء من مستودعٍ حقيقيّ** — لا من مولِّدٍ ولا من نموذج.
+ *
+ * **لمَ لا `resolveProjectFile`؟** سياستُها مكتوبةٌ فوقُ بنصِّها: «لأسماءٍ
+ * **يقترحها مولِّدٌ أو نموذج**»، ولذلك ترفض كلَّ مجلّدٍ منقوط وكلَّ ملفٍّ
+ * منقوطٍ خارج ثلاثةٍ مسمّاة. وذاك صوابٌ هناك: اسمٌ يهلوسه نموذجٌ لا يُؤتمن.
+ * أمّا ملفّاتُ مستودعٍ فليست اقتراحاً — هي موجودةٌ على GitHub قبل أن نسأل.
+ *
+ * **العطبُ مقيسٌ لا مُتوقَّع**: على شجرةِ مستودع Next.js واقعيّة، `writePlanFiles`
+ * تُنزل ١٤ من ٢٢ وترفض ثمانية: `.eslintrc.json`، `.prettierrc`، `.nvmrc`،
+ * `.editorconfig`، `.github/workflows/ci.yml`، `.github/dependabot.yml`،
+ * `.husky/pre-commit`، `.vscode/settings.json`. ومنها **`.github/workflows/ci.yml`**
+ * — وهو بعينه **دليلُ الصيانة**: اختباراتُ المستودع هي ما يُحكَم به على أيّ
+ * تعديلٍ فيه. فمشروعٌ يُنزَل بلا سير عمله يُصان بلا دليل.
+ *
+ * وهذه **سابعةُ** حالات PM/15 (بعد قائمة، نصّ، اسم، ذاكرة، مفتاح، نوع، وجود):
+ * سياسةٌ صحيحةٌ لغرضها، أُعيد استعمالُها لغرضٍ آخر.
+ *
+ * ⚠️ **حدٌّ مكتوب**: يقول «هذا الاسمُ ينزل هنا بأمان» فقط. لا يقول إنّ محتواه
+ *    مأمون، ولا إنّ تشغيلَه مأمون — **وتشغيلُ شفرةٍ غريبةٍ قرارٌ لم يُتَّخذ هنا**
+ *    ولا يُدَّعى (وهو ما وقفَ عنده البندُ اللاحق بانتظار قرارٍ صريح).
+ *
+ * @returns {string|null} مسارٌ مطلقٌ محتوىً، أو `null` مع سببٍ يُحصى عند المستدعي.
+ */
+export function resolveRepoFile(root, name) {
+    if (typeof name !== 'string') return null;
+    const norm = path.normalize(name.trim()).replace(/\\/g, '/');
+    if (!norm || path.isAbsolute(norm)) return null;
+    // (لا حارسَ لـ«المقاطعُ صفر»: بعد رفضِ الفارغِ والمطلقِ فوقُ لا يبقى اسمٌ
+    //  ينتج مقاطعَ صفراً — قِيس بالطفرة: حذفُ ذلك الحارس لا يُغيّر شيئاً، فحُذف.)
+    const parts = norm.split('/').filter(Boolean);
+    for (let i = 0; i < parts.length; i += 1) {
+        const seg = parts[i];
+        // 🔁 `..` هنا **قفلٌ ثانٍ مقصود**: بعد `path.normalize` لا يبقى `..` إلّا في
+        //    المقدّمة، وذاك ما يردّه `resolveInside` أصلاً — فطفرةُ حذفِ هذا الشرط
+        //    **تنجو**، وقد قِيس ذلك لا خُمِّن. يبقى لأنّ سياستَه سياسةُ الأخ
+        //    `resolveProjectFile` نفسِها، ولأنّ الاعتمادَ على قفلٍ واحدٍ في مسارٍ
+        //    يكتب على القرص ليس منهجَ هذا الملفّ. أمّا `.` فيقع فعلاً (الاسمُ `.`).
+        if (seg === '..' || seg === '.') return null;
+        if (REPO_NEVER_DIR.has(seg.toLowerCase())) return null;      // أينما وقع، لا في الجذر وحدَه
+        if (i === parts.length - 1 && REPO_NEVER_FILE(seg)) return null;
+    }
+    return resolveInside(root, norm);
+}
+
+/**
+ * 📦 **إنزالُ** ملفّاتِ مستودعٍ إلى مساحة عمل المشروع.
+ *
+ * على شكل `writePlanFiles` نفسِه (`{written, rejected}`) — **والرفضُ يُحصى لا
+ * يُبتلع**، فالمستدعي يقول لصاحب المشروع ما لم ينزل ولماذا. وهذا ليس زينةً:
+ * المجلوبُ **قصٌّ بحدود** (`starterFetch` يسقّف العددَ والبايتات ويأخذ النصوصَ
+ * وحدَها)، فادّعاءُ «نزل المستودع» دعوى فوق دليلها.
+ *
+ * @param {string} projectPath جذرُ المشروع
+ * @param {Array<{name:string, content:string}>} files
+ * @returns {Promise<{written:number, rejected:string[]}>}
+ */
+export async function landRepoFiles(projectPath, files) {
+    const rejected = [];
+    let written = 0;
+    for (const f of files || []) {
+        if (!f?.name || typeof f.content !== 'string') { if (f?.name) rejected.push(String(f.name)); continue; }
+        const fp = resolveRepoFile(projectPath, f.name);
+        if (!fp) { rejected.push(String(f.name)); continue; }
+        await fsPromises.mkdir(path.dirname(fp), { recursive: true });
+        await fsPromises.writeFile(fp, f.content);
+        written++;
+    }
+    return { written, rejected };
+}
