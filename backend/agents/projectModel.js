@@ -13,7 +13,7 @@
  * ويُدمج (لا يُستبدل) مع كل تعديل ليصير فهماً متراكماً للمشروع.
  */
 
-import { smartChat } from '../core/providers/llm.js';
+import { smartChat, withUsageLabel } from '../core/providers/llm.js';
 import { specSections, stripNegated } from './textNormalizer.js';
 
 const MODEL_SYSTEM = `أنت مهندس برمجيات ومحلل مجال (domain analyst) خبير.
@@ -154,10 +154,10 @@ function fallbackModel(goal, blueprint) {
  */
 export async function deriveProjectModel(goal, blueprint = null, { chat = smartChat } = {}) {
     try {
-        const raw = await chat([
+        const raw = await withUsageLabel('product-model', () => chat([
             { role: 'system', content: MODEL_SYSTEM },
             { role: 'user', content: `الطلب: "${goal}"${blueprint?.appType ? `\nنوع التطبيق: ${blueprint.appType} (فئة: ${blueprint.category})` : ''}` },
-        ], { max_tokens: 900, temperature: 0.2, json: true });
+        ], { max_tokens: 900, temperature: 0.2, json: true }));
         const parsed = JSON.parse(raw);
         const model = normalizeProjectModel({ ...parsed, _source: 'llm' });
         // إن جاء فارغاً فعلياً نستخدم الاحتياطي

@@ -201,3 +201,41 @@ test('🔴 والبناءُ الكامل مثلُه: «كلُّها دائمة»
     assert.equal(editRun('deepseek,gemini', allPermanent, PLAN_CALL).out.aiUnavailable, true);
 });
 
+
+// ═══════════════════════════════════════════════════════
+// 🏷️ وسمُ الكلفة على مسارَي المولّد — في عمليّةٍ ابنة لنفس السبب
+// ═══════════════════════════════════════════════════════
+// الطفرةُ التي أسقطت الوسمَ عن `model.call()` **نجت** من الحزمة كلِّها (٢٠١٢ اختباراً):
+// لا شيء كان يقرأ `byLabel` على هذا المسار. فالوسمُ يُقاس هنا حيث تُقاس السلسلة —
+// ويُستبدَل **عميلُ المزوّد** لا `groq` المصدَّر، كي يجري `tagged` → `noteUsage` حقيقةً
+// داخل النطاق بدل أن نحاكيَه فنُثبّت محاكاتَنا.
+const USAGE_STUB = `llm.deepseek.chat.completions.create = async () => ({
+    choices: [{ message: { content: '\`\`\`html\\n<h1>مرحبا يا عالم كامل</h1>\\n\`\`\`' } }],
+    usage: { prompt_tokens: 70, completion_tokens: 30, total_tokens: 100 },
+});`;
+const labelRun = (call) => {
+    const r = spawnSync(process.execPath, ['--input-type=module', '-e',
+        `for (const k of ['log','warn','error','info','debug']) console[k] = (...a) => process.stderr.write(a.join(' ') + '\\n');\n`
+        + `const llm = await import('${path.join(HERE, '../core/providers/llm.js')}');\n`
+        + `${USAGE_STUB}\n`
+        + `const coder = await import('${path.join(HERE, '../agents/coderAgent.js')}');\n`
+        + `await (${call});\n`
+        + `process.stdout.write(JSON.stringify(llm.readAIUsage()));`],
+    { env: { ...process.env, AI_PROVIDERS: 'deepseek', DEEPSEEK_API_KEY: 'test-only-never-sent' }, encoding: 'utf8' });
+    assert.equal(r.status, 0, `الابنُ فشل: ${r.stderr}`);
+    return JSON.parse(r.stdout);
+};
+
+test('🔴 رموزُ مسار التوليد تُنسَب إلى «coder:generate» — لا إلى «بلا وسم»', () => {
+    const u = labelRun(PLAN_CALL);
+    assert.equal(u.byLabel['coder:generate']?.total, 100);
+    assert.equal(u.byLabel['بلا وسم'], undefined);
+    assert.equal(u.total, 100, 'والوسمُ ينسب ولا يزيد المجموع');
+});
+
+test('🔴 ورموزُ مسار التعديل الجراحيّ تُنسَب إلى «coder:edit» — والمساران لا يختلطان', () => {
+    const u = labelRun(EDIT_CALL);
+    assert.equal(u.byLabel['coder:edit']?.total, 100);
+    assert.equal(u.byLabel['coder:generate'], undefined, 'مسارٌ لم يُسلَك لا يُحمَّل شيئاً');
+    assert.equal(u.byLabel['بلا وسم'], undefined);
+});

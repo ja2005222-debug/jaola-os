@@ -17,7 +17,7 @@
  *   >>>>>>> REPLACE
  */
 
-import { smartChat } from '../core/providers/llm.js';
+import { smartChat, withUsageLabel } from '../core/providers/llm.js';
 
 // ── تحليل كتل التعديل من مخرَج النموذج (دالة نقية) ─────────────────────
 export function parseEditBlocks(text = '') {
@@ -138,10 +138,10 @@ ${attemptsDump}
 ${fileDump}`;
     let raw = '';
     try {
-        raw = await chat([
+        raw = await withUsageLabel('patch', () => chat([
             { role: 'system', content: SYSTEM },
             { role: 'user', content: user },
-        ], { max_tokens: 2000, temperature: 0.1 });
+        ], { max_tokens: 2000, temperature: 0.1 }));
     } catch { return []; }
     return parseEditBlocks(raw);
 }
@@ -157,10 +157,10 @@ export async function patchEditPlan(instruction, files = [], lang = 'ar', { chat
     const user = `الملفات الحالية:\n\n${fileDump}\n\n---\nالمطلوب (عدّل موضعياً، لا تُعِد الملف كاملاً، لا تحذف ما هو موجود):\n${instruction}`;
     let raw = '';
     try {
-        raw = await chat([
+        raw = await withUsageLabel('patch', () => chat([
             { role: 'system', content: SYSTEM },
             { role: 'user', content: user },
-        ], { max_tokens: 4000, temperature: 0.1 });
+        ], { max_tokens: 4000, temperature: 0.1 }));
     } catch (e) {
         return { files: [], applied: 0, failed: [], ok: false, error: e.message, raw: '' };
     }

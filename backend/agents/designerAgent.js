@@ -9,7 +9,7 @@
  * Clarifier → Designer → Architect → Coder → QA
  */
 
-import { smartChat } from '../core/providers/llm.js';
+import { smartChat, withUsageLabel } from '../core/providers/llm.js';
 import { hasKeyword } from './keywordMatch.js';
 import { getProjectContext } from './knowledgeEngine.js';
 import { getUserProfile } from './userProfile.js';
@@ -161,7 +161,7 @@ export async function requestAiEnhancements({ userGoal, projectType, paletteName
 
     let text;
     try {
-        text = await chat(messages, { max_tokens: 200, temperature: 0.7, json: true });
+        text = await withUsageLabel('designer', () => chat(messages, { max_tokens: 200, temperature: 0.7, json: true }));
     } catch (e) {
         return { ok: false, reason: `تعذّر نداء المزوّد: ${e.message}` };
     }

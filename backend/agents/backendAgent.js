@@ -1,4 +1,4 @@
-import { smartChat } from '../core/providers/llm.js';
+import { smartChat, withUsageLabel } from '../core/providers/llm.js';
 import { jwtSecretSnippet } from './generatedAppSecrets.js';
 
 // 🔍 هل يحتاج المشروع خادماً؟ — مصدرٌ واحد مشترك مع `knowledgeEngine`
@@ -64,10 +64,10 @@ ${frontendContext ? frontendContext.substring(0, 3000) : 'موقع ويب عام
 تذكر: استخدم التنسيق // FILE: api/name.js لكل ملف`;
 
     try {
-        const responseText = await smartChat([
+        const responseText = await withUsageLabel('backend', () => smartChat([
             { role: 'system', content: BACKEND_SYSTEM_PROMPT },
             { role: 'user', content: userMessage }
-        ], { max_tokens: 6000, temperature: 0.2 });
+        ], { max_tokens: 6000, temperature: 0.2 }));
 
         const files = parseBackendFiles(responseText);
 
@@ -135,10 +135,10 @@ ${(currentScript || '').substring(0, 2000)}
 أخرج الكود مباشرة بدون تنسيق // FILE:`;
 
     try {
-        return await smartChat([
+        return await withUsageLabel('backend', () => smartChat([
             { role: 'system', content: 'أنت مطور Frontend متخصص في استدعاء APIs بـ JavaScript. اكتب كوداً نظيفاً يستدعي الـ APIs المعطاة.' },
             { role: 'user', content: userMessage }
-        ], { max_tokens: 3000, temperature: 0.2 });
+        ], { max_tokens: 3000, temperature: 0.2 }));
     } catch (e) {
         return null;
     }

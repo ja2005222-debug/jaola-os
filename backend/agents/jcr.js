@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { groq, smartChat, GROQ_MODEL, readAIUsage } from '../core/providers/llm.js';
+import { groq, smartChat, GROQ_MODEL, readAIUsage, withUsageLabel } from '../core/providers/llm.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO, resolveGoalLanguage } from './languageDetector.js';
 import { addToHistory, getDomainModel } from './projectMemory.js';
@@ -431,7 +431,7 @@ export class JaolaCognitiveRuntime {
             ? 'حدّث ملخّص الذاكرة التالي بدمج الرسائل الجديدة. احتفظ بكل الحقائق الدائمة (اسم المشروع، القرارات، التفضيلات، الالتزامات، ما يريده المستخدم وما رفضه). ⚠️ لا تسجّل ادّعاءات المساعد عن عمليات نفّذها أو فشلت (مثل "أضفت ملف X" أو "لم يعمل الحذف") — قد تكون خاطئة وتلوّث الذاكرة؛ سجّل طلبات المستخدم وقراراته فقط. اكتب فقرة مركّزة بالعربية دون تحية أو مقدمات.'
             : 'Update the memory summary below by merging the new messages. Preserve all durable facts (project name, decisions, preferences, commitments, what the user wants and rejected). ⚠️ Do NOT record assistant claims about operations it performed or that failed (e.g. "I added file X", "the delete didn\'t work") — they may be wrong and would poison memory; record only user requests and decisions. Write one focused paragraph, no greeting.';
         try {
-            const completion = await groq.chat.completions.create({
+            const completion = await withUsageLabel('memory:summarize', () => groq.chat.completions.create({
                 messages: [
                     { role: 'system', content: instruction },
                     { role: 'user', content: `الملخّص الحالي:\n${previousSummary || '(لا يوجد)'}\n\nرسائل جديدة:\n${transcript}` }
@@ -439,7 +439,7 @@ export class JaolaCognitiveRuntime {
                 model: GROQ_MODEL,
                 max_tokens: 400,
                 temperature: 0.3
-            });
+            }));
             return completion.choices?.[0]?.message?.content || previousSummary;
         } catch (e) {
             return previousSummary; // فشل التلخيص لا يُفقد أي رسالة — تبقى مخزّنة كاملة

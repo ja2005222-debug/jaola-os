@@ -8,7 +8,7 @@
  * - API routes تستخدم Prisma Client
  */
 
-import { smartChat } from '../core/providers/llm.js';
+import { smartChat, withUsageLabel } from '../core/providers/llm.js';
 
 // ═══════════════════════════════════════════════════════
 // 📊 Schemas جاهزة لأشهر أنواع المشاريع
@@ -342,13 +342,13 @@ const products = await prisma.product.findMany();
 // توليد Schema ديناميكي بـ AI
 async function generateDynamicSchema(userGoal, projectType) {
     try {
-        const response = await smartChat([{
+        const response = await withUsageLabel('db:postgres', () => smartChat([{
             role: 'system',
             content: 'أنت مهندس قواعد بيانات. اكتب Prisma Schema لـ PostgreSQL. كود فقط بدون شرح.'
         }, {
             role: 'user',
             content: `المشروع: ${userGoal}\nالنوع: ${projectType}\nاكتب Prisma Schema مناسباً.`
-        }], { max_tokens: 800, temperature: 0.2 });
+        }], { max_tokens: 800, temperature: 0.2 }));
         return response;
     } catch (e) {
         // 🔴 PM/5: كان الاحتياطُ هنا `PRISMA_SCHEMAS.ecommerce` — فمشروعٌ لا قالبَ له

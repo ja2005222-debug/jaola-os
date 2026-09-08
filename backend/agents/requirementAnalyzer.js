@@ -15,7 +15,7 @@
  * (getFinalGoal يدمج «س/ج» في الهدف)، فلا تُمرَّر مصفوفةً منفصلة.
  */
 
-import { smartChat } from '../core/providers/llm.js';
+import { smartChat, withUsageLabel } from '../core/providers/llm.js';
 
 // ═══════════════════════════════════════════════════════
 // 🔍 تحليل ثابت سريع (بدون AI)
@@ -117,7 +117,7 @@ export async function deepAnalysis(userGoal, projectType, clarifierAnswers = [])
         : '';
 
     try {
-        const response = await smartChat([{
+        const response = await withUsageLabel('requirements', () => smartChat([{
             role: 'system',
             content: `أنت محلل متطلبات ويب خبير. حلّل الطلب واستخرج المعلومات المطلوبة بـ JSON فقط.`
         }, {
@@ -134,7 +134,7 @@ export async function deepAnalysis(userGoal, projectType, clarifierAnswers = [])
   "contentSuggestions": ["محتوى مقترح 1", "محتوى مقترح 2"],
   "colorPersonality": "وصف شخصية الألوان المناسبة"
 }`
-        }], { max_tokens: 400, temperature: 0.4, json: true });
+        }], { max_tokens: 400, temperature: 0.4, json: true }));
 
         return JSON.parse(response);
     } catch (e) {

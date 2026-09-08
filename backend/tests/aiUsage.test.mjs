@@ -11,7 +11,7 @@
 // ثمنٌ لا يُدفع لأجل عدّاد. يُقرأ ما يتطوّع به المزوّد، ويُقال صراحةً كم نداءً بقي بلا رقم.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { noteUsage, readAIUsage, resetAIUsage, usageLine } from '../core/providers/llm.js';
+import { noteUsage, readAIUsage, resetAIUsage, usageLine, usageByLabelLine, withUsageLabel, currentUsageLabel } from '../core/providers/llm.js';
 import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
 
 divertConsoleToStderr();
@@ -107,4 +107,160 @@ test('🔴 والتدفّقُ لا يُحسب عند إنشائه — الرمو
     assert.equal(a.total, 10);
     assert.equal(a.byProvider.deepseek.total, 10, 'نُسبت الرموزُ لغير مزوّدها');
     delete process.env.AI_PROVIDERS;
+});
+
+// ─── 🏷️ وسمُ المنادي: «أيُّ وكيلٍ يحرق الرموز؟» ────────────────────────────────
+//
+// العدّادُ كان يسجّل لكلِّ **مزوّد**، فيجيب «كم» ولا يجيب «أين». وصاحبُ المنصّة عرض توزيعَ
+// موديلاتٍ على الوكلاء، فقِيس أوّلاً أنّ ذلك التوزيعَ **غيرُ قابلٍ للتطبيق اليوم** (موديلٌ
+// واحدٌ للمنصّة، والسلسلةُ تدهس أيَّ موديلٍ يمرّره المنادي)، وأنّ قرارَه بلا هذه الأرقام حدسٌ.
+//
+// والوسمُ **محيطيّ**: قِيس أنّ مواضعَ النداء المباشرة ١٩ في ١٤ ملفّاً، وأنّ وكلاء فريق الخلفية
+// كلَّهم يمرّون بـ`runAgent` وهو يعرف `agent.id` سلفاً — فتغييرُ التواقيع كان يمسّ كلَّ منادٍ
+// ليخدم عدّاداً.
+const U = (t) => ({ usage: { total_tokens: t, prompt_tokens: t, completion_tokens: 0 } });
+
+test('🏷️ النداءُ يُنسَب إلى نطاقه — ولو بعد await عميق', async () => {
+    resetAIUsage();
+    await withUsageLabel('planner', async () => {
+        await new Promise((r) => setTimeout(r, 5));
+        await (async () => { await Promise.resolve(); noteUsage('groq', U(50)); })();
+    });
+    assert.deepEqual(readAIUsage().byLabel, { planner: { calls: 1, total: 50 } });
+});
+
+test('🏷️ والمسارُ التدفّقيّ كذلك — وهو موضعُ الشكّ الوحيد فقِيس ولم يُفترَض', async () => {
+    // `callGroq` يستهلك التدفّقَ بـ`for await` ثمّ ينادي `noteUsage` عند آخر قطعة. لو لم يعبر
+    // الوسمُ هناك لاحتاج كائنُ التدفّق وسماً مستقلّاً — قِيس أنّه يعبر، فبقيت الشفرةُ أبسط.
+    resetAIUsage();
+    async function* stream() { yield {}; yield {}; yield U(77); }
+    await withUsageLabel('coder', async () => {
+        for await (const chunk of stream()) if (chunk.usage) noteUsage('تدفّق', chunk);
+    });
+    assert.deepEqual(readAIUsage().byLabel, { coder: { calls: 1, total: 77 } });
+});
+
+test('🏷️ نداءان متوازيان بوسمَين لا يتسرّب أحدُهما إلى الآخر', async () => {
+    resetAIUsage();
+    await Promise.all([
+        withUsageLabel('A', async () => { await new Promise((r) => setTimeout(r, 10)); noteUsage('groq', U(1)); }),
+        withUsageLabel('B', async () => { await new Promise((r) => setTimeout(r, 3)); noteUsage('groq', U(2)); }),
+    ]);
+    const { byLabel } = readAIUsage();
+    assert.equal(byLabel.A.total, 1); assert.equal(byLabel.B.total, 2);
+});
+
+test('🏷️ التعشيشُ: الأقربُ يغلب، والخارجُ يستأنف بعده', async () => {
+    resetAIUsage();
+    await withUsageLabel('outer', async () => {
+        noteUsage('groq', U(10));
+        await withUsageLabel('inner', async () => { noteUsage('groq', U(20)); });
+        noteUsage('groq', U(30));
+    });
+    const { byLabel } = readAIUsage();
+    assert.deepEqual(byLabel.outer, { calls: 2, total: 40 });
+    assert.deepEqual(byLabel.inner, { calls: 1, total: 20 });
+});
+
+test('🏷️ وما وقع خارج كلِّ نطاقٍ يُسمّى «بلا وسم» — لا يُبتلَع في المجموع', async () => {
+    resetAIUsage();
+    noteUsage('groq', U(9));
+    assert.deepEqual(readAIUsage().byLabel, { 'بلا وسم': { calls: 1, total: 9 } });
+    // ووسمٌ فارغ = لا نطاق: لا يُخترَع اسمٌ من فراغ
+    assert.equal(currentUsageLabel(), null);
+    for (const empty of ['', '   ', null, undefined]) {
+        assert.equal(await withUsageLabel(empty, async () => currentUsageLabel()), null, `«${empty}» فتح نطاقاً`);
+    }
+});
+
+test('🏷️ الحدُّ: المجموعُ لا يتغيّر بالوسم — أداةُ نسبةٍ لا أداةُ حساب', async () => {
+    resetAIUsage();
+    await withUsageLabel('x', async () => { noteUsage('groq', U(5)); });
+    noteUsage('groq', U(7));
+    const a = readAIUsage();
+    assert.equal(a.total, 12, 'الوسمُ لا يزيد ولا ينقص');
+    assert.equal(a.byLabel.x.total + a.byLabel['بلا وسم'].total, a.total, 'وحصصُ الوسوم تجمع الكلّ');
+    // واللقطةُ منفصلة كما byProvider
+    const snap = readAIUsage();
+    noteUsage('groq', U(3));
+    assert.equal(snap.byLabel['بلا وسم'].total, 7, 'لقطةٌ لا مرجعٌ حيّ');
+});
+
+
+// ═══════════════════════════════════════════════════════
+// 🏷️ سطرُ «أين ذهبت الرموز»
+// ═══════════════════════════════════════════════════════
+
+test('🔴 السطرُ يرتّب تنازليّاً — لأنّ السؤالَ عليه دائماً «مَن الأكثر؟»', () => {
+    resetAIUsage();
+    withUsageLabel('review', () => noteUsage('groq', u(10, 10)));
+    withUsageLabel('coder:generate', () => noteUsage('groq', u(500, 500)));
+    withUsageLabel('router', () => noteUsage('groq', u(50, 50)));
+    const line = usageByLabelLine(readAIUsage());
+    assert.match(line, /coder:generate 1000 \(1\).*router 100 \(1\).*review 20 \(1\)/);
+});
+
+test('🔴 و«بلا وسم» بندٌ مُعلَنٌ في السطر — لا فجوةٌ تُبتلَع في المجموع', () => {
+    resetAIUsage();
+    withUsageLabel('review', () => noteUsage('groq', u(10, 10)));
+    noteUsage('groq', u(30, 30));   // وكيلُ إضافةٍ من اللوحة: شفرةٌ مولَّدة لا موضعُ نداء
+    const line = usageByLabelLine(readAIUsage());
+    assert.match(line, /بلا وسم 60 \(1\)/);
+    // والمجموعُ يبقى المجموع: الوسمُ ينسب ولا يخصم.
+    assert.equal(readAIUsage().total, 80);
+});
+
+test('الحدّ: صفرُ نداءاتٍ لا يُنتج سطراً أعرج هنا أيضاً', () => {
+    resetAIUsage();
+    assert.equal(usageByLabelLine(readAIUsage()), '🏷️ [AI Usage/وكيل]: لا نداءات.');
+});
+
+test('🔴 والفرقُ بين لقطتَين ينسب كلفةَ **مهمّةٍ واحدة** لوكلائها', () => {
+    resetAIUsage();
+    withUsageLabel('review', () => noteUsage('groq', u(100, 100)));   // مهمّةٌ سابقة
+    const before = readAIUsage();
+    withUsageLabel('review', () => noteUsage('groq', u(5, 5)));
+    withUsageLabel('blueprint', () => noteUsage('groq', u(20, 20)));
+    const line = usageByLabelLine(readAIUsage(), before);
+    // لا تظهر الـ٢٠٠ السابقة، ويبقى `review` بنصيبه من هذه المهمّة وحدَها
+    assert.match(line, /blueprint 40 \(1\)/);
+    assert.match(line, /review 10 \(1\)/);
+    assert.ok(!line.includes('210'), 'كلفةُ المهمّة السابقة لا تُحمَّل على هذه');
+});
+
+test('🔴 ووكيلٌ لم يُنادَ في هذه المهمّة لا يظهر بصفرٍ يُشوّش الترتيب', () => {
+    resetAIUsage();
+    withUsageLabel('review', () => noteUsage('groq', u(100, 100)));
+    const before = readAIUsage();
+    withUsageLabel('blueprint', () => noteUsage('groq', u(20, 20)));
+    const line = usageByLabelLine(readAIUsage(), before);
+    assert.ok(!line.includes('review'), 'الساكنُ في هذه المهمّة يُطوى لا يُعرض صفراً');
+});
+
+// ═══════════════════════════════════════════════════════
+// 🔤 اسمان لحقلٍ واحد — ثقبٌ ظهر حين وُسِمت النداءات
+// ═══════════════════════════════════════════════════════
+test('🔴 أرقامُ Gemini تُحسب — حقولُها camelCase وكانت تسقط كلُّها صامتة', () => {
+    resetAIUsage();
+    // شكلُ `usageMetadata` كما تمرّرها السلسلةُ في `tagged('gemini', { …, usage: r?.usageMetadata })`
+    noteUsage('gemini', { usage: { promptTokenCount: 70, candidatesTokenCount: 30, totalTokenCount: 100 } });
+    const u = readAIUsage();
+    assert.equal(u.counted, 1, 'نداءٌ بأرقامٍ كاملة لا يُعدّ صامتاً');
+    assert.equal(u.total, 100);
+    assert.equal(u.prompt, 70);
+    assert.equal(u.completion, 30);
+});
+
+test('والاسمُ الآخرُ لم ينكسر — snake_case يبقى مقروءاً كما كان', () => {
+    resetAIUsage();
+    noteUsage('groq', u(70, 30));
+    assert.equal(readAIUsage().total, 100);
+});
+
+test('الحدّ: نداءٌ بلا أرقامٍ بأيِّ التسميتَين يبقى صامتاً — لا يُخترَع له رقم', () => {
+    resetAIUsage();
+    noteUsage('gemini', { usage: { candidatesTokenCount: 0 } });
+    const r = readAIUsage();
+    assert.equal(r.calls, 1);
+    assert.equal(r.counted, 0);
 });

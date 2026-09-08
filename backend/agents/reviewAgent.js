@@ -11,7 +11,7 @@
  * يُنتج تقرير مختصر ويُصلح المشاكل البسيطة تلقائياً.
  */
 
-import { smartChat } from '../core/providers/llm.js';
+import { smartChat, withUsageLabel } from '../core/providers/llm.js';
 
 // اللغات ذات الاتجاه من اليمين لليسار
 const RTL_LANGS = new Set(['ar', 'ur', 'he', 'fa']);
@@ -118,10 +118,10 @@ export async function runAIReview(files, projectGoal) {
     const snippet = `HTML:\n${htmlFile.content?.slice(0, 1000)}\n\nCSS:\n${cssFile?.content?.slice(0, 800) || ''}`;
 
     try {
-        const _aiRes = await smartChat([
+        const _aiRes = await withUsageLabel('review', () => smartChat([
             { role: 'system', content: 'أنت مراجع كود ويب خبير. أجب بـ JSON فقط.' },
             { role: 'user', content: `راجع هذا الكود للمشروع: "${projectGoal}"\n\n${snippet}\n\nأعطني JSON: { "strengths": ["قوة"], "improvements": ["تحسين"], "overallQuality": "ممتاز" }` }
-        ], { max_tokens: 300, temperature: 0.3, json: true });
+        ], { max_tokens: 300, temperature: 0.3, json: true }));
 
         return JSON.parse(_aiRes);
     } catch (e) {

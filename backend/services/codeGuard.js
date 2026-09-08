@@ -14,7 +14,7 @@
 import vm from 'vm';
 import fsPromises from 'fs/promises';
 import path from 'path';
-import { groq, GROQ_MODEL } from '../core/providers/llm.js';
+import { groq, GROQ_MODEL, withUsageLabel } from '../core/providers/llm.js';
 
 // ═══════════════════════════════════════════════════════
 // 🔍 الفحوص
@@ -136,7 +136,7 @@ async function repairCSS(name, content, check) {
     };
 
     try {
-        const completion = await groq.chat.completions.create({
+        const completion = await withUsageLabel('codeguard', () => groq.chat.completions.create({
             model: GROQ_MODEL,
             temperature: 0.1,
             max_tokens: 8000,
@@ -144,7 +144,7 @@ async function repairCSS(name, content, check) {
                 { role: 'system', content: 'You are a CSS repair tool. The file has unbalanced braces. Return ONLY the complete corrected CSS — no markdown fences, no explanations. Preserve every rule and value; only fix the brace structure by placing the missing/extra brace where it belongs.' },
                 { role: 'user', content: `File: ${name}\nIssue: ${check.warnings[0]}\n\n--- CSS ---\n${content}` },
             ],
-        });
+        }));
         let fixed = (completion.choices[0]?.message?.content || '')
             .replace(/^```(?:css)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
         if (fixed && checkCSS(fixed).valid) return fixed;
@@ -157,7 +157,7 @@ async function repairCSS(name, content, check) {
 // 🔧 الإصلاح الذاتي عبر LLM (جولة واحدة)
 // ═══════════════════════════════════════════════════════
 async function repairJS(name, content, error) {
-    const completion = await groq.chat.completions.create({
+    const completion = await withUsageLabel('codeguard', () => groq.chat.completions.create({
         model: GROQ_MODEL,
         temperature: 0.1,
         max_tokens: 8000,
@@ -171,7 +171,7 @@ async function repairJS(name, content, error) {
                 content: `File: ${name}\nSyntax error: ${error}\n\n--- FILE CONTENT ---\n${content}`,
             },
         ],
-    });
+    }));
     let fixed = completion.choices[0]?.message?.content || '';
     // إزالة أسوار markdown إن وُجدت رغم التعليمات
     fixed = fixed.replace(/^```(?:javascript|js)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();

@@ -17,6 +17,7 @@
  */
 
 import { compileSpecToPrompt } from './AgentSpec.js';
+import { withUsageLabel } from '../providers/llm.js';
 import { safeRelPath } from './workspacePaths.js';
 
 /** يجمع مخرجات الوكلاء الذين يعتمد عليهم هذا الوكيل (التعاون) */
@@ -64,10 +65,12 @@ ${coop ? `## مخرجات الوكلاء السابقين (استخدمها كم
   "selfReviewPassed": true
 }`;
 
-    const raw = await llm(
+    // 🏷️ وسمُ الكلفة: هنا يُنسَب استهلاكُ **كلِّ** وكلاء العقود إلى أسمائهم دفعةً واحدة —
+    //    `agent.id` معروفٌ هنا سلفاً، فلا تُغيَّر توقيعاتُ المنادين لأجل عدّاد.
+    const raw = await withUsageLabel(`agent:${agent.id}`, () => llm(
         [{ role: 'system', content: system }, { role: 'user', content: user }],
         { max_tokens: 2500, temperature: 0.2, json: true }
-    );
+    ));
     let parsed;
     try { parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; }
     catch { parsed = { summary: String(raw).slice(0, 300), files: [], issues: ['رد غير صالح JSON'], selfReviewPassed: false }; }

@@ -1,4 +1,4 @@
-import { deepseek, groq, ai, isPermanentAIError, isProviderEnabled, noteUsage, AI_UNAVAILABLE_MSG, DEEPSEEK_MODEL, GROQ_MODEL, GEMINI_MODEL } from '../core/providers/llm.js';
+import { deepseek, groq, ai, isPermanentAIError, isProviderEnabled, noteUsage, withUsageLabel, AI_UNAVAILABLE_MSG, DEEPSEEK_MODEL, GROQ_MODEL, GEMINI_MODEL } from '../core/providers/llm.js';
 import { buildContextPrompt } from './knowledgeEngine.js';
 import { buildLessonsPromptBlock } from '../services/platformLessons.js';
 import { buildBlueprintPrompt } from './referenceBlueprints.js';
@@ -247,7 +247,9 @@ ${libraryAware ? '- 🔗 مشروع كبير: Tailwind Play CDN في <head> (dat
     const failures = [];
     for (const model of modelPipeline) {
         try {
-            const responseText = await model.call();
+            // 🏷️ الوسمُ حول **النداء كلِّه** لا حول إنشاء الطلب: مسارُ التدفّق يحسب رموزَه
+            //    في `for await` داخل `callGroq/callDeepSeek`، بعد أن يعود `create` بزمن.
+            const responseText = await withUsageLabel('coder:generate', () => model.call());
             if (!responseText || responseText.length < 100) continue;
 
             const files = parseResponseToFiles(responseText);
@@ -310,7 +312,7 @@ ${filesBlock || '(لا ملفات)'}
     const failures = [];
     for (const model of pipeline) {
         try {
-            const responseText = await model.call();
+            const responseText = await withUsageLabel('coder:edit', () => model.call());
             if (!responseText || responseText.length < 30) continue;
             const files = parseResponseToFiles(responseText);
             // احتفظ فقط بالملفات ذات المحتوى الفعلي
@@ -367,6 +369,10 @@ async function callDeepSeek(userMessage, onChunk, systemPrompt = buildCoderSyste
         max_tokens: 8000,
         stream: false,
     });
+    // 💰 عميلٌ **خام**: لا يمرّ بـ`tagged` فلا يُحسب من نفسه. قِيس بالتشغيل: بـ`AI_PROVIDERS=deepseek`
+    //    يخرج مسارُ التوليد كلُّه بنداءٍ واحدٍ للمزوّد و**صفرِ** رموزٍ محسوبة — فيُقرأ «المولّد رخيص»
+    //    وهو لم يُقَس أصلاً. (المسارُ المتدفّق فوقُ كان يحسب؛ هذا وحدَه كان صامتاً.)
+    noteUsage('deepseek', completion);
     return completion.choices[0].message.content;
 }
 

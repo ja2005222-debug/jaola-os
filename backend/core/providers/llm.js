@@ -1,4 +1,5 @@
 import Groq from 'groq-sdk';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
@@ -272,23 +273,55 @@ async function reportAvailableModels(client, name, err) {
  * توليد الكود، وكسرُه بمعامِلٍ قد يرفضه مزوّدٌ ثمنٌ لا يُدفع لأجل عدّاد. يُقرأ ما يتطوّع به
  * المزوّد، ويُقال صراحةً كم نداءً بقي بلا رقم.
  */
-const acc = { calls: 0, counted: 0, prompt: 0, completion: 0, total: 0, byProvider: {} };
+const acc = { calls: 0, counted: 0, prompt: 0, completion: 0, total: 0, byProvider: {}, byLabel: {} };
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+
+/**
+ * 🏷️ وسمُ المنادي — «أيُّ وكيلٍ يحرق الرموز؟» سؤالٌ لم يكن للعدّاد جوابٌ عليه.
+ *
+ * كان يسجّل لكلِّ **مزوّد**، وهو يجيب «كم» ولا يجيب «أين». فأيُّ قرارِ توزيعِ موديلاتٍ على
+ * الوكلاء كان سيُبنى على حدسٍ لا رقم.
+ *
+ * والوسمُ **محيطيٌّ لا معامِل**: قِيس أنّ مواضعَ النداء المباشرة تسعةَ عشرَ في أربعةَ عشرَ ملفّاً،
+ * وأنّ وكلاءَ العقود كلَّهم يمرّون بـ`runAgent` وهو يعرف `agent.id` سلفاً. فتغييرُ التواقيع
+ * كان سيمسّ كلَّ منادٍ ليخدم عدّاداً — و`AsyncLocalStorage` تعبر `await` و`for await` فتنسب
+ * النداءَ العميقَ إلى مرحلته بلا أن يعلم بها أحدٌ في الطريق.
+ */
+const labelScope = new AsyncLocalStorage();
+
+/** يُشغّل `fn` تحت وسمٍ يُنسَب إليه كلُّ نداءِ نموذجٍ يقع داخلَه. وسمٌ فارغ = لا نطاق. */
+export function withUsageLabel(label, fn) {
+    const name = String(label || '').trim();
+    return name ? labelScope.run(name, fn) : fn();
+}
+
+/** الوسمُ النافذُ الآن، أو `null` خارج أيّ نطاق. */
+export const currentUsageLabel = () => labelScope.getStore() || null;
 
 /** يُسجّل نداءً واحداً؛ `carrier` أيُّ كائنٍ قد يحمل `usage` (ردٌّ كامل أو آخرُ قطعةِ تدفّق). */
 export function noteUsage(provider, carrier) {
     acc.calls++;
     const usage = carrier?.usage;
-    const total = num(usage?.total_tokens);
-    const prompt = num(usage?.prompt_tokens);
-    const completion = num(usage?.completion_tokens);
+    // 🔤 اسمان لحقلٍ واحد: OpenAI/Groq/DeepSeek تكتب `prompt_tokens`، وGemini تكتب
+    //    `promptTokenCount` في `usageMetadata` (والسلسلةُ تمرّرها كما هي في `tagged('gemini', …)`).
+    //    **قِيس لا خُمِّن**: نداءُ Gemini بأرقامه الكاملة كان يُعدّ «صامتاً» — `counted: 0`،
+    //    `total: 0` — فكلُّ رموز مزوّدٍ كاملٍ كانت تسقط من الحساب بلا أثرٍ يُنبّه.
+    const total = num(usage?.total_tokens) || num(usage?.totalTokenCount);
+    const prompt = num(usage?.prompt_tokens) || num(usage?.promptTokenCount);
+    const completion = num(usage?.completion_tokens) || num(usage?.candidatesTokenCount);
     if (!total && !prompt && !completion) return;   // نداءٌ صامت: يُعدّ ولا يُحسب
     acc.counted++;
     acc.prompt += prompt; acc.completion += completion;
-    acc.total += total || (prompt + completion);
+    const sum = total || (prompt + completion);
+    acc.total += sum;
     const name = String(provider || 'مجهول');
     const b = (acc.byProvider[name] ||= { calls: 0, total: 0 });
-    b.calls++; b.total += total || (prompt + completion);
+    b.calls++; b.total += sum;
+    // 🏷️ والوسمُ من نطاقه المحيط. وما وقع خارج كلِّ نطاقٍ يُسمّى «بلا وسم» ولا يُخفى:
+    //    نداءٌ لا نعرف صاحبَه حقيقةٌ تُعرَض، لا فجوةٌ تُبتلَع في المجموع.
+    const tag = currentUsageLabel() || 'بلا وسم';
+    const l = (acc.byLabel[tag] ||= { calls: 0, total: 0 });
+    l.calls++; l.total += sum;
 }
 
 /** لقطةٌ منفصلة — لا مرجعٌ حيّ يتبدّل تحت يد قارئه. */
@@ -297,11 +330,12 @@ export function readAIUsage() {
         calls: acc.calls, counted: acc.counted, prompt: acc.prompt,
         completion: acc.completion, total: acc.total,
         byProvider: Object.fromEntries(Object.entries(acc.byProvider).map(([k, v]) => [k, { ...v }])),
+        byLabel: Object.fromEntries(Object.entries(acc.byLabel).map(([k, v]) => [k, { ...v }])),
     };
 }
 
 export function resetAIUsage() {
-    Object.assign(acc, { calls: 0, counted: 0, prompt: 0, completion: 0, total: 0, byProvider: {} });
+    Object.assign(acc, { calls: 0, counted: 0, prompt: 0, completion: 0, total: 0, byProvider: {}, byLabel: {} });
 }
 
 /** سطرُ الكلفة. بلقطةِ بدايةٍ يصير الفرقُ كلفةَ مهمّةٍ واحدة لا كلفةَ العملية كلِّها. */
@@ -316,6 +350,25 @@ export function usageLine(now, before = null) {
     return `💰 [AI Usage]: ${d('total')} رمزاً (دخل ${d('prompt')} / خرج ${d('completion')}) في ${calls} نداء`
         + `${per ? ` — ${per}` : ''}`
         + `${silent ? ` · ${silent} نداءً بلا أرقامٍ من المزوّد (غيرُ محسوبة)` : ''}`;
+}
+
+/**
+ * 🏷️ سطرُ «أين ذهبت الرموز» — الوجهُ الآخر من `usageLine`: ذاك يقول **كم** ومن أيّ مزوّد،
+ * وهذا يقول **أيُّ وكيلٍ** أحرقها. وهو مرتَّبٌ تنازليّاً لأنّ السؤالَ الذي يُطرح عليه دائماً
+ * هو «مَن الأكثر؟» — فأوّلُ سطرٍ يُقرأ هو الجواب.
+ *
+ * و«بلا وسم» **بندٌ مُعلَن لا فجوةٌ مبتلَعة**: يقع فيه ما لم يُوسَم قصداً — أبرزُه نداءاتُ
+ * وكلاء الإضافات التي يُنشئها المستخدم من اللوحة (`services/adminService.js` يكتب شفرتَها
+ * داخل قوالبَ نصّيّة، فهي شفرةٌ مولَّدة لا موضعُ نداءٍ في المنصّة). فإن كبر هذا البند
+ * فالرقمُ نفسُه هو الخبر، لا نقصٌ في الأداة.
+ */
+export function usageByLabelLine(now, before = null) {
+    const rows = Object.entries(now.byLabel)
+        .map(([k, v]) => [k, v.total - (before?.byLabel?.[k]?.total || 0), v.calls - (before?.byLabel?.[k]?.calls || 0)])
+        .filter(([, total, calls]) => total > 0 || calls > 0)
+        .sort((a, b) => b[1] - a[1]);
+    if (!rows.length) return '🏷️ [AI Usage/وكيل]: لا نداءات.';
+    return '🏷️ [AI Usage/وكيل]: ' + rows.map(([k, total, calls]) => `${k} ${total} (${calls})`).join('، ');
 }
 
 /**
