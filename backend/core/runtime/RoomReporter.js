@@ -26,6 +26,10 @@
  * بلا مستهلكٍ يميّزها تجريدٌ بلا حاجة. `send(room, event, payload)` تنقل
  * النداءَ حرفيّاً — فالتغييرُ ميكانيكيٌّ ويُقاس بخطِّ أساسٍ مطابق.
  */
+/** حدّا الشريط: أسطرٌ لكلِّ غرفة، وغرفٌ محفوظة — ذاكرةٌ لا قرص، فالحدُّ لازم. */
+const LOG_TAPE = 200;
+const TAPED_ROOMS = 50;
+
 export class RoomReporter {
     /**
      * @param {{to:(room:string)=>{emit:(event:string, payload?:unknown)=>void}}} io
@@ -37,13 +41,53 @@ export class RoomReporter {
         this.localize = localize;
         /** لغةُ كلِّ غرفة — كانت `this.roomLang` خريطةً كسولةً على وقتِ التشغيل. */
         this.roomLang = new Map();
+        /** شريطُ آخرِ أسطرِ السجلّ لكلِّ غرفة — يُستعاد لمن عاد (انظر `recentLogs`). */
+        this.roomLogs = new Map();
     }
 
     setLang(room, lang) { if (room && lang) this.roomLang.set(room, lang); }
     langOf(room) { return this.roomLang.get(room); }
 
-    /** النقلُ الحرفيّ لـ`io.to(room).emit(event, payload)`. */
-    send(room, event, payload) { this.io.to(room).emit(event, payload); }
+    /**
+     * النقلُ الحرفيّ لـ`io.to(room).emit(event, payload)` — ويُسجَّل السجلُّ في شريطه.
+     *
+     * 🔴 قِيس: `Socket.IO` يبثّ **لحظةً**، فمن أعاد تحميلَ الصفحة أثناء البناء يعود إلى
+     *    سجلٍّ فارغ بينما المهمّةُ ماضيةٌ على الخادم — لا لأنّها سقطت، بل لأنّ ما مضى لم
+     *    يُحفَظ. (وخبرُ المهمّة الختاميُّ صار باقياً في `rememberMissionNote`؛ أمّا مسارُ
+     *    البناء نفسُه فلا.) والتسجيلُ هنا لأنّ هذا **بابُ البثّ الواحد**: `liveLog` تمرّ
+     *    به، وكذلك كلُّ `send(room, 'log', …)`.
+     */
+    send(room, event, payload) {
+        if (event === 'log' && room) this.tapeLog(room, payload);
+        this.io.to(room).emit(event, payload);
+    }
+
+    /**
+     * يُقيّد سطرَ سجلٍّ في شريط غرفته. حدّان مقصودان لأنّ هذا في الذاكرة:
+     * `LOG_TAPE` سطراً لكلِّ غرفة، و`TAPED_ROOMS` غرفةً بإخراج الأقدم — فلا ينمو بلا حدّ
+     * على خادمٍ طويل العمر.
+     */
+    tapeLog(room, payload) {
+        let tape = this.roomLogs.get(room);
+        if (!tape) {
+            if (this.roomLogs.size >= TAPED_ROOMS) this.roomLogs.delete(this.roomLogs.keys().next().value);
+            tape = [];
+            this.roomLogs.set(room, tape);
+        }
+        tape.push(payload);
+        if (tape.length > LOG_TAPE) tape.splice(0, tape.length - LOG_TAPE);
+    }
+
+    /**
+     * آخرُ ما بُثّ في الغرفة — نسخةٌ لا مرجع. يستعملها `server.js` عند الانضمام
+     * فيرى العائدُ ما فاته بدل شاشةٍ فارغة.
+     *
+     * حدٌّ مكتوب: يلتقط ما مرّ **بهذا الباب** وحدَه. و`deployAgent`/`renderAgent`/
+     * `githubSync` تتلقّى `io` قيمةً وتبثّ بنفسها (وهو ما تشرحه ترويسةُ هذا الملفّ)،
+     * فأسطرُها لا تُقيَّد. سجلُّ البناء — وهو ما يُتابَع أثناء المهمّة — يُقيَّد كلُّه.
+     * وشريطٌ في الذاكرة: يبقى لإعادة تحميل الصفحة، ولا يبقى لإعادة تشغيل الخادم.
+     */
+    recentLogs(room) { return [...(this.roomLogs.get(room) || [])]; }
 
     /**
      * سجلُّ البناء الحيّ بلغة المستخدم — الترجمةُ في القمع الواحد (حتميّة،

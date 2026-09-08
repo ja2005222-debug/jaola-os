@@ -28,7 +28,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## A) `backend/server.js` — 3832 سطراً، 158 مساراً، 100 استيراداً محلياً
+## A) `backend/server.js` — 3842 سطراً، 158 مساراً، 100 استيراداً محلياً
 
 لا يُفكَّك دفعة واحدة (البند 19). الخريطة **حسب المجال** لأن الملف واحد؛ كل صف = مرشّح
 ملف `routes/<domain>.js` مستقبلاً على نمط `routes/billing.js` القائم فعلاً («أول
@@ -66,7 +66,7 @@ Policy/Permission، Identity، Plugin.
 | `services/pluginStore.js` | 132 | تخزين الإضافات في Mongo واستعادتها للقرص | KEEP | Plugin | `core/plugins/` (Sprint 7) |
 | ✅ `core/runtime/TaskGraph.js` (جديد، Sprint 2a) | 50 | `orderTasks(items, {key})` — ترتيب طوبولوجي مستقرّ من `dependsOn` + كشف الدورات (خوارزمية `planExecution` حرفياً معمَّمة) | ADDED | Task | مستهلكاه: `runDynamicMultiAgentRuntime` (DELIVERY_STAGES) و`planExecution` (الفرق) |
 | ✅ `core/runtime/ExecutionContext.js` (جديد، Sprint 2b) | 67 | `createExecutionContext`/`contextFromRequest`/`withAgents` — بيئة المهمة في كائن مجمَّد (الحقول الستة المتكرّرة) | ADDED | Mission | 11 توقيعاً في `jcr.js` + المعالجات السبعة |
-| ✅ `core/runtime/RoomReporter.js` (جديد، JCR/2) | 56 | `send(room, event, payload)`/`liveLog`/`setLang` — بابُ البثّ الواحد إلى غرفة المستخدم؛ فصل ٦٥٪ من ترابط `jcr.js` عن `this`؛ المُترجمُ يُحقَن لا يُستورد (حدُّ core→agents) | ADDED | Event | مستهلكُه: `jcr.js` (١١٣ بثّاً مباشراً + `emitLiveLog` + لغةُ الغرفة)؛ `this.io` يبقى قيمةً لتسعِ تمريراتٍ خارجيّة |
+| ✅ `core/runtime/RoomReporter.js` (جديد، JCR/2؛ 📼 شريطُ السجلّ: `recentLogs` يُعيد لمن عاد ما فاته — ٢٠٠ سطراً × ٥٠ غرفةً في الذاكرة) | 100 | `send(room, event, payload)`/`liveLog`/`setLang`/`recentLogs` — بابُ البثّ الواحد إلى غرفة المستخدم؛ فصل ٦٥٪ من ترابط `jcr.js` عن `this`؛ المُترجمُ يُحقَن لا يُستورد (حدُّ core→agents) | ADDED | Event | مستهلكُه: `jcr.js` (١١٣ بثّاً مباشراً + `emitLiveLog` + لغةُ الغرفة)؛ `this.io` يبقى قيمةً لتسعِ تمريراتٍ خارجيّة |
 | ✅ `core/runtime/AgentRuntime.js` (جديد، Sprint 2d) | 89 | `runAgent` + `gatherCooperationInputs` — منفّذ الوكيل الواحد: عقدٌ → نداء نموذج → ملفات مُطهَّرة | MOVED (Sprint 2d ✅، حرفياً عدا إسقاط افتراض `TEAM_BY_ID` الميت) | **Agent** | `runBackendTeam` (فريقا الخلفية **والواجهة** معاً) |
 | ✅ `core/policy/ConfirmationManager.js` (جديد، Sprint 3) | 82 | بوّابةُ تأكيدٍ واحدة تُميّز الموافقة من السؤال | ADDED | Permission | مستهلكها: مسارُ التأكيد في `jcr.js` |
 | ✅ `core/runtime/workspacePaths.js` (جديد، Sprint 2c؛ الكاتبان JCR/7) | 187 | `isInsideRoot`/`resolveInside` + `safeRelPath` + `resolveProjectFile` — نواة احتواء المسار، ومعها الكاتبان المحتويان `writeProjectFile`/`writePlanFiles` (خرجا من jcr كي تستوردهما المراحل بلا دورة) | ADDED | Tool | `jcr` (٢٤ موضعَ نداء)، `writeBackendTeamFiles`، `sanitizePath` |
@@ -204,7 +204,7 @@ Policy/Permission، Identity، Plugin.
 | `indexHealth.js` (1 مستورد) | 81 | فحصُ قيود التفرّد قراءةً (autoIndex=false ولا createIndexes) | KEEP | — | `core/` |
 | `persistence.js` (11 مستورداً) | 114 | طبقة الحفظ (Mongo + احتياط) | KEEP | — | `core/` (Sprint 7) |
 | `workspaceStore.js` | 173 | نسخ ملفات المشاريع إلى Mongo | KEEP | Tool (workspace) | `core/runtime/` |
-| `conversationStore.js`, `conversationManager.js` | 201/80 | ذاكرة الحوار (+`rememberMissionNote`: خبرُ المهمّة يُحفظ في المفتاح الذي يقرأه `chat_history`، فينجو من غرفةٍ فارغة) | KEEP | Memory | `core/memory/` |
+| `conversationStore.js`, `conversationManager.js` | 238/80 | ذاكرة الحوار (+`rememberMissionNote`: خبرُ المهمّة يُحفظ في المفتاح الذي يقرأه `chat_history`؛ +`loadRecent`: الاستعادةُ تقرأ من **حيث هي** — Mongo أو القرص — بعد أن كان `server.js` يسأل Mongo وحدَها فيضيع في العرض ما حُفظ لئلّا يضيع) | KEEP | Memory | `core/memory/` |
 | `metricsStore.js`, `usageMeter.js`, `errorLog.js`, `logger.js`, `adminAudit.js` | 120/78/45/36/41 | قياس واستهلاك وتدقيق | MODIFY | Audit (AuditLog يوحّدها) | `core/audit/` (Sprint 4) |
 | `presence.js` | 12 | حضور | MODIFY | Event (EventBus) | `core/events/` |
 | `httpRetry.js` | 70 | البابُ المشترك للنداء الصادر: مهلةٌ دائماً + إعادةُ محاولةٍ حيث تصحّ | KEEP | Provider (سياسةُ المهلة وإعادة المحاولة) | `core/` |

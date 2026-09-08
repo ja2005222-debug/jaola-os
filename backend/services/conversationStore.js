@@ -161,6 +161,43 @@ export async function recordTurn(username, userMessage, assistantMessage, summar
     return { total: state.messages.length, summarizedCount: state.summarizedCount };
 }
 
+/**
+ * 📜 آخرُ رسائل الحوار للعرض — من **حيث هي**، لا من قاعدةٍ واحدة.
+ *
+ * قِيس: مسارُ الاستعادة في `server.js` كان يسأل `Conversation.findOne` مباشرةً داخل
+ * `if (isDbConnected …)`. وهذا المخزنُ له مصدران: Mongo **وملفٌّ على القرص ينجو من إعادة
+ * التشغيل**. فبلا Mongo كان صاحبُ المشروع يفتح مشروعَه فلا يرى شيئاً — بينما رسائلُه
+ * محفوظةٌ على القرص، ومنها **تقريرُ التسليم** الذي جُعل باقياً في `rememberMissionNote`.
+ * أي أنّ ما حُفظ لأجل ألّا يضيع، كان يضيع في العرض.
+ *
+ * و`$slice` باقٍ على مسار Mongo كما كان: التعليقُ هناك يقول إنّ الوثيقة «قد تضمّ مئات
+ * الرسائل»، فجلبُ المستند كاملاً ارتدادٌ في الأداء لا يُقبَل ثمناً لتوحيد المصدر.
+ *
+ * @param {string} key مفتاحُ الحوار (`username::project`)
+ * @returns {Promise<Array<{role: string, content: string, at: number}>>}
+ */
+/**
+ * قراءةُ Mongo وحدَها. **نتيجةٌ سلبيّةٌ معلَنة**: جسدُ هذه الدالّة غيرُ مغطّى — الاختباراتُ
+ * تعمل بلا قاعدة، فحارسُ `online()` يعود `null` قبل بلوغِ الاستعلام، وطفرةٌ عليه تنجو.
+ * والمُغطّى هو **القرارُ الذي تُغذّيه**: `null` ← يُسأل القرص (مقيسٌ بحقن `fromDb`).
+ * تغطيتُها تحتاج قاعدةً حيّةً في الجناح، وذلك عملٌ آخر لم يُبنَ ولا يُدَّعى.
+ */
+const dbRecent = async (key, n) => {
+    if (!online()) return null;
+    try {
+        const conv = await Conversation.findOne({ username: key }, { messages: { $slice: -n } }).lean();
+        return conv?.messages?.length ? conv.messages : null;   // `null` = «لا شيءَ عندي» → يُسأل القرص
+    } catch (e) { return null; }
+};
+
+export async function loadRecent(key, limit = 50, { fromDb = dbRecent } = {}) {
+    const n = Math.max(1, Number(limit) || 50);
+    // قراءةُ Mongo تُحقَن كي تُقاس: بلا هذا يبقى فرعُ «متّصلةٌ لكنّها فارغة» بلا اختبارٍ
+    //    (الاختباراتُ تعمل بلا قاعدة، فالفرعُ لا يُبلَغ أصلاً — وقد نجت طفرتُه). والسابقةُ
+    //    في هذا الملفّ نفسِه: `recordTurn(..., summarize)`.
+    return (await fromDb(key, n)) || getFallback(key).messages.slice(-n);
+}
+
 /** حذف حوار مستخدم بالكامل (للاختبار/إعادة الضبط). */
 export async function clearConversation(username) {
     fallback.delete(username);
