@@ -96,12 +96,23 @@ export const AI_UNAVAILABLE_MSG = 'خدمة الذكاء الاصطناعي غي
 /** عطلٌ قد يزول: نُبلّغ صاحبَ المشروع أنّ المحاولة مستمرّة — بلا نصِّ المزوّد الخام. */
 export const AI_RETRYABLE_MSG = 'تعذّر نداء خدمة الذكاء الاصطناعي في هذه المحاولة — نعيد المحاولة.';
 
+/** نمطُ «علّةُ الموديل» — **مصدرٌ واحد** يقرؤه حاسمُ ٤٠٣ وحاسمُ `config` معاً. */
+const MODEL_PROBLEM = /model.*(not exist|not found|no longer available|deprecated|supported)|supported api model/;
+
 export function classifyAIError(e) {
     if (e?.aiUnavailable) return 'quota';
     const status = e?.status || e?.response?.status || 0;
     const msg = String(e?.message || '').toLowerCase();
     if (/insufficient_quota|exceeded your current quota|billing|payment required/.test(msg) || status === 402) return 'quota';
-    if (/invalid api key|incorrect api key|api key not valid|no auth credentials|invalid authentication/.test(msg) || status === 401 || status === 403) return 'auth';
+    if (/invalid api key|incorrect api key|api key not valid|no auth credentials|invalid authentication/.test(msg) || status === 401) return 'auth';
+    // 🔀 **٤٠٣ رمزٌ ملتبس، والرسالةُ تحسم.** قِيس: `403` مع نصِّ المزوّد
+    //    «The model `x` does not exist **or you do not have access to it**» كان يُقرأ
+    //    `auth` فيُقال لصاحب المشروع «مفتاحُه غير صالح» — ومفتاحُه سليم، والعلّةُ اسمُ موديل.
+    //    فيُطارد إعداداً صحيحاً ويترك العطبَ الحقيقيّ. والمزوّدُ نفسُه يردّ على العلّة عينِها
+    //    بـ`404` مرّةً و`403` أخرى، فيخرج **تشخيصان متناقضان لمزوّدٍ واحد** — وهو ما ظهر في
+    //    سجلٍّ حيّ لصاحب المنصّة. و`401` تبقى `auth` بلا شرط: «غيرُ موثَّق» لا لبسَ فيه،
+    //    بخلاف «ممنوع» التي تحتمل المفتاحَ والموردَ معاً.
+    if (status === 403 && !MODEL_PROBLEM.test(msg)) return 'auth';
     if (status === 429) return 'ratelimit';
     // موديل غير موجود/غير مدعوم = خطأ إعداد دائم — التكرار عليه هدر محض
     // قِيس من سجلّ إنتاجٍ حقيقيّ: Google تقول «no longer available» و`NOT_FOUND`، وOpenAI تقول
@@ -109,7 +120,7 @@ export function classifyAIError(e) {
     // عابراً، فتُحرق كلُّ دورات النقاش على بابٍ مغلق. اللفظُ لفظُ المزوّد لا لفظُنا: أُسقطت
     // `not_found` و`retired` بعد القياس — لا رسالةَ مزوّدٍ حقيقيّةٍ تحتاجهما (`supported` سابقةٌ لنا،
     // بقيت كما كانت ولم تُقَس).
-    if (/model.*(not exist|not found|no longer available|deprecated|supported)|supported api model/.test(msg)) return 'config';
+    if (MODEL_PROBLEM.test(msg)) return 'config';
     if (/غير مُفعّل|لا يوجد مزود|not configured/.test(msg)) return 'config';
     return 'transient';
 }
