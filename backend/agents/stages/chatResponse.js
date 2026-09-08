@@ -120,6 +120,13 @@ User preferences: ${JSON.stringify(execMemory)}` },
 
     // محاولتان مع مهلة قصيرة — أغلب حالات rate limit تنجح في الثانية
     // 🔴 بثّ حيّ: الرد يظهر حرفاً-بحرف بدل دفعة واحدة (إحساس بالحياة)
+    //
+    // 🚪 **ولا انتظارَ على بابٍ مغلق**: هذه الحلقةُ سبقت `createWithFailover` وإعادتَها، فبقيت
+    //    لا تعرف `aiUnavailable` — العَلَمَ الذي يقول «كلُّ المزوّدين فشلوا فشلاً **دائماً**»
+    //    (رصيدٌ منتهٍ، مفتاحٌ خاطئ، اسمُ موديلٍ غير موجود). فالسلسلةُ تحته تمتنع عن الإعادة
+    //    بحقّ، ثمّ تنتظر هذه ٢٥٠٠ms وتُعيد الكرّة على البابِ نفسِه.
+    //    **قِيس بالتشغيل** (عميلٌ يرمي `aiUnavailable`): نداءان و٢٥٠٥ms من انتظار المستخدم
+    //    بلا أيّ احتمالِ نجاح. وهو عينُ ما أُغلق في #588 و#171 — «سبعُ دوراتٍ تُحرق على بابٍ مغلق».
     let streamed = false;
     for (let attempt = 1; attempt <= 2; attempt++) {
         try {
@@ -141,6 +148,11 @@ User preferences: ${JSON.stringify(execMemory)}` },
             break;
         } catch (e) {
             console.error(`Chat error (attempt ${attempt}):`, e.message || e);
+            // العطبُ الدائمُ يُسمّى دائماً ولا يُعاد عليه: لا «محاولة ١/٢» تُوهم بأنّ ثمّة ثانيةً مجدية.
+            if (e?.aiUnavailable) {
+                reporter.liveLog(roomName, 'CHAT', 'Groq', `🚪 عطبٌ دائم — لا إعادة: ${(e.message || '').slice(0, 120)}`);
+                break;
+            }
             reporter.liveLog(roomName, 'CHAT', 'Groq', `⚠️ محاولة ${attempt}/2 فشلت: ${(e.message || '').slice(0, 120)}`);
             if (attempt < 2) await new Promise(r => setTimeout(r, 2500));
         }

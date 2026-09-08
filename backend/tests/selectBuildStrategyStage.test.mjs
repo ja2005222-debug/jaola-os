@@ -140,7 +140,11 @@ test('الحدود: شريحةُ الجسد — readCodeContext ×١، liveLog �
     assert.deepEqual(
         { registry: count(/ops\.buildFromRegistry\(/g), clone: count(/ops\.buildFromClone\(/g), react: count(/ops\.buildReactProject\(/g), track: count(/ops\.trackOf\(/g), all: count(/\bops\.\w+/g) },
         { registry: 1, clone: 1, react: 1, track: 1, all: 4 }, 'قِيست قبل النقل');
-    assert.equal(count(/\breadCodeContext\(/g), 1, 'القارئُ يُستورد لا يُمرَّر');
+    // 🏗️ سؤالُ الوجود فارقَ قارئَ المحتوى: `readCodeContext` ١ ← ٠ و`hasProjectSource` ٠ ← ١.
+    //    هنا لم يكن للمحتوى مستهلكٌ أصلاً — قيمتُه الوحيدةُ كانت `< 80` باسم `isFreshBuild`،
+    //    وقائمتُه المغلقةُ (ثلاثةُ أسماء) تجعل مستودعاً عامراً بغيرها يُقرأ صفراً فيُدهَس. العتبةُ هي هي.
+    assert.equal(count(/\breadCodeContext\(/g), 0, 'قارئُ المحتوى لم يعد له مستهلكٌ هنا');
+    assert.equal(count(/\bhasProjectSource\(/g), 1, 'سؤالُ الوجود يُستورد لا يُمرَّر');
     // 🚧 حارسُ النطاق أضاف ردّاً ثالثاً (٢ ← ٣) وسطرَ سجلٍّ عاشراً وانتقالَ حالةٍ ثالثاً:
     //    الامتناعُ **يُقال** ثمّ تُغلَق المهمّة — على شكل سابقة «works» نفسِها، لا صمتاً.
     assert.equal(count(/reporter\.send\(/g), 3);

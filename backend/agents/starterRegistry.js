@@ -37,14 +37,51 @@ export const STARTERS = [
       sections: ['app', 'auth', 'i18n'], features: ['ts', 'tailwind', 'testing', 'i18n'], tags: ['قاعدة', 'tailwind', 'typescript'] },
 ];
 
+import { stripNegated } from './textNormalizer.js';
+
 const BIG_TYPES = new Set(['saas', 'ecommerce', 'marketplace', 'dashboard', 'fintech', 'platform']);
 
 /**
+ * ⚛️ **إطارٌ يسمّيه صاحبُ المشروع بنفسِه** — لا تصنيفٌ يُشتقّ له.
+ *
+ * قِيس على سجلٍّ حيّ: طلبٌ يقول حرفيّاً «— واجهة **React** مع لوحة Kanban» و«منتج SaaS
+ * **متكامل**»، وخرج البناءُ على مسار **Vanilla**. وتتبُّعُ السبب:
+ *   • `detectProjectType(الطلب)` = `saas` ← و`saas` في `BIG_TYPES`، فالطلبُ **كان** يكفي.
+ *   • لكنّ `resolveProjectType` تُعطي **فئةَ المخطّط الأولويّةَ المطلقة** على الطلب:
+ *     `blueprint.category && !== 'other' && _source !== 'fallback' ? category : detect(goal)`.
+ *     وحارسُها القائم يحمي من احتياطٍ يكتب `business`، **لا** من نموذجٍ يُصنّف SaaS بأنّه
+ *     `business`. والسجلُّ نفسُه يشهد: «✅ تم تطبيق قالب **business**».
+ *
+ * فالكلمةُ التي كتبها صاحبُ المشروع بيده تخسر أمام تصنيفٍ خمّنه نموذج. وهي عائلةُ
+ * PM/22–PM/25 نفسُها: مدخلٌ مغلقٌ يحلّ محلَّ كلماته.
+ *
+ * ⚖️ **ولمَ الذكرُ الصريح وحدَه، لا الكشفُ كلُّه؟** لأنّ التصنيفَ **تخمينٌ من الطرفَين**:
+ *    قلبُ القرار بمجرّد أنّ الكشفَ قال «كبير» يجعل موقعَ مطعمٍ بسيطاً مشروعَ React —
+ *    خسارةٌ حقيقيّة. أمّا «React» مكتوبةً فليست تخميناً: هي **مطلبٌ منصوص**، ولا يُنقض.
+ *
+ * 🚫 والنفيُ يُطوى أوّلاً (`stripNegated`): «بدون React» ليست طلباً لـReact — وهي علّةُ
+ *    PM/23 نفسُها بمصدرها الواحد. قِيس ٨/٨ حالات: الطلبُ الحقيقيّ، وموقعُ مطعم، وذكرٌ
+ *    صريح، وNext.js، ونفيٌ عربيّ، ونفيٌ إنجليزيّ، و«reaction» المركّبة، و«تفاعليّ».
+ *
+ * ⚠️ **حدٌّ مكتوب**: يقرأ **ذكرَ الإطار** فقط. لا يقرأ سَعةً ولا تعقيداً — تلك يقرؤها
+ *    `projectType` و`scope` كما كانا، ولم يُمَسّا.
+ * @returns {'react-next'|null}
+ */
+const EXPLICIT_REACT = /(?:^|[^\p{L}])(react|next\.?js|nextjs)(?=$|[^\p{L}])/iu;
+
+export function explicitStackRequest(goalText) {
+    return EXPLICIT_REACT.test(stripNegated(String(goalText || ''))) ? 'react-next' : null;
+}
+
+/**
  * يقرّر مسار البناء (المسار الهجين):
+ *  - إطارٌ يسمّيه صاحبُ المشروع صراحةً → هو (لا يُنقَض بتصنيف)
  *  - نوع كبير أو نطاق "full" → react-next
  *  - غير ذلك → vanilla (سريع)
  */
-export function resolveStack({ projectType, scope } = {}) {
+export function resolveStack({ projectType, scope, goal } = {}) {
+    const asked = explicitStackRequest(goal);
+    if (asked) return asked;
     const t = (projectType || '').toLowerCase();
     const wantsFull = /full|كامل|متكامل|كبير|large/i.test(scope || '');
     if (BIG_TYPES.has(t) || wantsFull) return 'react-next';

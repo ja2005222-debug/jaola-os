@@ -83,6 +83,7 @@ import { isStaticAssetPath } from './utils/spaFallback.js';
 import { isCorsRejection } from './utils/corsErrors.js';
 import { listStarters, STARTERS } from './agents/starterRegistry.js';
 import { fetchStarter, fetchRepoFiles, parseRepoUrl } from './agents/starterFetch.js';
+import { hasProjectSource } from './agents/projectReader.js';
 import * as siteCms from './services/siteCms.js';
 import * as siteCreds from './services/siteCreds.js';
 import { recordMessage, recordVisit, readInbox, markSeen, visitSummary, unreadCount } from './services/siteInbox.js';
@@ -129,7 +130,7 @@ import { getUserLanguage } from './agents/languageDetector.js';
 import { setDomainModel, setCloneTrack, getCloneTrack } from './agents/projectMemory.js';
 import { mergeProjectModel } from './agents/projectModel.js';
 import { prepareRenderDeploy, renderServiceName } from './agents/renderAgent.js';
-import { projectPathOf, isInsideRoot, resolveProjectFile } from './core/runtime/workspacePaths.js';
+import { projectPathOf, isInsideRoot, resolveProjectFile, landRepoFiles } from './core/runtime/workspacePaths.js';
 import { WORKSPACE_ROOT } from './core/runtime/workspaceRoots.js';
 import { autoDeployFullStack, fullAutomationReady } from './services/deployAutomation.js';
 import { assetsFor, injectFaviconTag } from './agents/cloneAssets.js';
@@ -2019,6 +2020,64 @@ app.post('/api/file-content/save', verifyToken, validate(schemas.saveFile), vali
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'فشل الحفظ.' });
+    }
+});
+
+// 📦 **جسرُ GitHub** — من رابط مستودعٍ إلى مساحة عمل المشروع.
+//
+// الجلبُ كان مبنيّاً سلفاً (`fetchRepoFiles`) لكنّه يعود بالملفّات في **ردِّ HTTP
+// لمُشرِفٍ** ولا يكتبها إلى مساحة عملٍ قطّ. هذا المسارُ يُنزلها — لصاحب المشروع
+// نفسِه، في مشروعه هو (`validateProjectOwnership` يشتقّ المسارَ من توكنه).
+//
+// 🛡️ **ولا يُدهَس مشروعٌ قائم**: `hasProjectSource` (سؤالُ الوجود للقرص) يُسأل
+//    قبل أيّ كتابة، فإن كان ثمّة مصدرٌ رُدَّ ٤٠٩ ولم يُكتب حرفٌ — إلّا بـ`overwrite`
+//    صريحةٍ من صاحبه. وهذا هو العطبُ الذي سبق إصلاحُه في `isFreshBuild` بعينه:
+//    قارئٌ بقائمةٍ مغلقة كان يقرأ مستودعاً عامراً صفراً فيُجيز الاستبدال.
+//
+// ⚠️ **صدقُ ما يُقال**: المجلوبُ **قصٌّ بحدود** (`starterFetch` يسقّف العددَ
+//    والبايتات ويأخذ النصوصَ وحدَها)، والردُّ يقول `bounded: true` وعددَ المتخطَّى
+//    و`truncated` من GitHub. فلا يُقال «نزل المستودع» وهو بعضُه.
+// 🚫 وما لا يُدَّعى: **لا تُشغَّل شفرةٌ ولا تُثبَّت اعتماديّة** — الإنزالُ إنزال.
+app.post('/api/project/import-repo', verifyToken, aiLimit, validateProjectOwnership, async (req, res) => {
+    const { repo, ref, overwrite } = req.body || {};
+    if (!repo) return res.status(400).json({ error: 'أرسل repo (رابط مستودع أو owner/repo).' });
+
+    const projectPath = req.projectPath;
+    try {
+        if (!overwrite && await hasProjectSource(projectPath)) {
+            return res.status(409).json({
+                error: 'المشروع ليس فارغاً — الإنزالُ يكتب فوقَ ملفّاتٍ تحمل الاسمَ نفسَه.',
+                hint: 'أرسل overwrite: true إن كنت تقصد ذلك، أو اختر مشروعاً آخر.',
+            });
+        }
+
+        const { owner, repo: name } = parseRepoUrl(repo);
+        const rec = await DB.getGithubToken(req.user.username).catch(() => null);
+        const fetched = await fetchRepoFiles(owner, name, { token: rec?.token || undefined, ...(ref ? { ref } : {}) });
+
+        await fsp.mkdir(projectPath, { recursive: true });
+        const landed = await landRepoFiles(projectPath, fetched.files);
+
+        const roomName = `${req.user.username}-${req.activeProject}`;
+        emitWorkspaceFiles(roomName, projectPath);
+        io.to(roomName).emit('log', {
+            message: `📦 [SYSTEM]: نزل ${landed.written} ملفّاً من ${owner}/${name}` +
+                (landed.rejected.length ? ` (ورُدَّ ${landed.rejected.length})` : '') +
+                (fetched.meta.skipped ? ` — وتخطّى الجالبُ ${fetched.meta.skipped} بحدوده` : ''),
+        });
+        snapshotWorkspace(req.user.username, req.activeProject, projectPath).catch(() => {});
+
+        res.json({
+            success: true,
+            source: `${owner}/${name}`,
+            written: landed.written,
+            rejected: landed.rejected,
+            // 🧾 لا يُقال «نزل المستودع»: هذا قصٌّ بحدودٍ معلنة
+            bounded: true,
+            fetched: { count: fetched.meta.count, skipped: fetched.meta.skipped, truncated: fetched.meta.truncated },
+        });
+    } catch (err) {
+        res.status(err.status || 500).json({ error: err.message });
     }
 });
 

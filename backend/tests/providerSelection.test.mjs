@@ -118,3 +118,86 @@ test('الحدّ: الأسماءُ الأربعةُ هي عقدُ المفتاح
     assert.deepEqual([...PROVIDER_NAMES], ['groq', 'deepseek', 'gemini', 'openai'], 'بترتيب السلسلة');
     assert.ok(Object.isFrozen(PROVIDER_NAMES), 'لا تُعدَّل من الخارج');
 });
+
+// ─── ✂️ مسارُ التعديل الجراحيّ: الحلقةُ الثانية كانت بلا حارسٍ ولا إشارة ───────────────
+//
+// قِيس بالتشغيل: `AI_PROVIDERS=groq` — فتُعلن الخدمةُ في سجلّها «🔇 deepseek مُستبعَد» و
+// «🔇 gemini مُستبعَد»، ثمّ **يناديهما مسارُ التعديل خاماً**، فتذهب شفرةُ مشروع المستخدم إلى
+// مزوّدٍ قال صاحبُ المنصّة لا. وسببُه أنّ الحلقةَ الثانية كانت مصفوفةَ دوالٍّ عارية: لا
+// `selectModels`، ولا اسمَ يُقال في السجلّ، ولا `aiUnavailable` على عطبٍ دائم.
+//
+// ⚠️ ويُقاس في **عمليّةٍ ابنة** لا هنا: `AI_PROVIDERS` تُقرأ عند تحميل `llm.js`، وقد حُمِّلت
+//    في هذا الملفّ سلفاً؛ ولو استُبدل العميلُ على نسخةٍ ذاتِ استعلامٍ لاستورد `coderAgent`
+//    نسخةً أخرى غيرَها فلم يقع الاستبدال أصلاً (وقعت هذه الغلطةُ فعلاً قبل أن تُقاس).
+const EDIT_CALL = "coder.coreEditCodePlan('غيّر اللون', [{ name: 'index.html', content: '<h1>x</h1>' }], 'ar')";
+const PLAN_CALL = "coder.coreGenerateCodePlan('اصنع صفحة هبوط', '', '', [], null, [], 'ar')";
+const editRun = (providers, stub, call = EDIT_CALL) => {
+    const r = spawnSync(process.execPath, ['--input-type=module', '-e',
+        // قناةُ التقرير تُخلى قبل أيّ استيراد: `llm.js` يطبع لافتتَه عند الإقلاع حين تُوجد
+        // المفاتيح، فتختلط بالـJSON على stdout (وقعت فعلاً).
+        `for (const k of ['log','warn','error','info','debug']) console[k] = (...a) => process.stderr.write(a.join(' ') + '\\n');\n`
+        + `const llm = await import('${path.join(HERE, '../core/providers/llm.js')}');\n`
+        + `${stub}\n`
+        + `const coder = await import('${path.join(HERE, '../agents/coderAgent.js')}');\n`
+        + `const out = await (${call});\n`
+        + `process.stdout.write(JSON.stringify({ out, raw: globalThis.__raw || [] }));`],
+    { env: { ...process.env, AI_PROVIDERS: providers,
+        GROQ_API_KEY: 'test-only-never-sent', DEEPSEEK_API_KEY: 'test-only-never-sent',
+        GEMINI_API_KEY: 'test-only-never-sent' }, encoding: 'utf8' });
+    assert.equal(r.status, 0, `الابنُ فشل: ${r.stderr}`);
+    return JSON.parse(r.stdout);
+};
+
+const COUNT_RAW = `globalThis.__raw = [];
+llm.deepseek.chat.completions.create = async () => { globalThis.__raw.push('deepseek'); throw new Error('لا ينبغي أن يُنادى'); };
+llm.ai.models.generateContent = async () => { globalThis.__raw.push('gemini'); throw new Error('لا ينبغي أن يُنادى'); };`;
+
+test('🔴 التعديلُ الجراحيّ يحترم الاستبعاد — ولا يُنادي مزوّداً خاماً بعد أن قيل لا', () => {
+    const { out, raw } = editRun('groq', COUNT_RAW);
+    assert.deepEqual(raw, [], `نُودِيَ مستبعَدٌ خاماً: ${raw.join(', ')}`);
+    assert.ok(out.error, 'ولا نجاحَ يُدَّعى بلا مزوّدٍ عامل');
+});
+
+test('🔴 وعطبُه الدائمُ يُسمّى: `aiUnavailable` كما في البناء الكامل — لا «تعذّر» وحدَها', () => {
+    const permanent = `llm.deepseek.chat.completions.create = async () => {
+        const e = new Error('Insufficient Balance'); e.status = 402; throw e; };`;
+    const { out } = editRun('deepseek', permanent);
+    assert.equal(out.aiUnavailable, true, 'بدونها يُعيد المستدعي الكرّةَ على بابٍ مغلق (علّةُ #171 في مسارٍ ثانٍ)');
+    assert.match(out.details, /إعادة المحاولة/, 'والرسالةُ تقول للمستخدم إنّ طلبَه سليم');
+});
+
+test('🔴 ولا مزوّدَ مُفعَّل ← رسالةُ الإعداد لا «فشل التعديل» — الحلقتان تقولان الشيءَ نفسَه', () => {
+    // اسمٌ مكتوبٌ خطأ: لا يُصحَّح صامتاً، والخطُّ يخلو فتُقال رسالةُ الإعداد
+    const { out } = editRun('gorq', '');
+    assert.equal(out.details, NO_PROVIDER, 'تدلُّ على الإعداد لا على عطلٍ في الطلب');
+});
+
+test('🔴 و«كلُّها دائمة» لا «إحداها»: عابرٌ واحدٌ يكفي لألّا يُقال «لا فائدة من الإعادة»', () => {
+    // 🧪 طفرةُ `every → some` نجت حتّى كُتب هذا: كلُّ ما سبق خطٌّ بمزوّدٍ واحد، وعندها
+    //    الدالّتان سواء. وبمزوّدَين يفترقان — والفرقُ ليس تجميليّاً: لو قيل «دائم» ومعنا
+    //    عطبٌ عابر لحُرمَ المستخدمُ إعادةً كانت ستنجح.
+    const mixed = `llm.deepseek.chat.completions.create = async () => {
+        const e = new Error('Insufficient Balance'); e.status = 402; throw e; };
+    llm.ai.models.generateContent = async () => { throw new Error('socket hang up'); };`;
+    const { out } = editRun('deepseek,gemini', mixed);
+    assert.ok(out.error, 'فشلٌ — نعم');
+    assert.notEqual(out.aiUnavailable, true, 'ولكنّه ليس باباً مغلقاً: أحدُ العطبَين عابر');
+    assert.match(out.details, /تعذّر تطبيق التعديل/, 'فتُقال الرسالةُ العامّة لا رسالةُ الانقطاع');
+});
+
+test('🔴 والبناءُ الكامل مثلُه: «كلُّها دائمة» لا «إحداها» — ثغرةٌ قائمةٌ كشفتها الطفرة', () => {
+    // 🧪 قِيس: طفرةُ `every → some` في `coreGenerateCodePlan` نجت من **٢٠٠٦ اختباراً**.
+    //    فالشرطُ في المسار الأهمّ — الذي يكتب موقعَ المستخدم — لم يكن مثبَّتاً قطّ.
+    const mixed = `llm.deepseek.chat.completions.create = async () => {
+        const e = new Error('Insufficient Balance'); e.status = 402; throw e; };
+    llm.ai.models.generateContent = async () => { throw new Error('socket hang up'); };`;
+    const { out } = editRun('deepseek,gemini', mixed, PLAN_CALL);
+    assert.ok(out.error);
+    assert.notEqual(out.aiUnavailable, true, 'عابرٌ واحدٌ يمنع دعوى «لا فائدة من الإعادة»');
+    // وكلُّها دائمة ← تُقال الدعوى
+    const allPermanent = `const perm = () => { const e = new Error('Invalid API Key'); e.status = 401; throw e; };
+    llm.deepseek.chat.completions.create = async () => perm();
+    llm.ai.models.generateContent = async () => perm();`;
+    assert.equal(editRun('deepseek,gemini', allPermanent, PLAN_CALL).out.aiUnavailable, true);
+});
+

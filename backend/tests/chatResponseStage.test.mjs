@@ -75,6 +75,29 @@ test('فشلُ المزوّد: محاولتان بسطرَيهما، ثمّ رس
     assert.deepEqual(calls.filter(c => c[0] === 'sum'), [], 'ولا طيَّ');
 });
 
+test('🚪 العطبُ الدائمُ لا يُنتظَر عليه: نداءٌ واحدٌ بلا تراخٍ — لا «محاولة ١/٢» تُوهم بجدوى', async () => {
+    // هذه الحلقةُ سبقت `createWithFailover` وإعادتَها، فبقيت لا تعرف `aiUnavailable` — العَلَمَ
+    // الذي يقول «كلُّ المزوّدين فشلوا فشلاً **دائماً**» (رصيدٌ منتهٍ، مفتاحٌ خاطئ، موديلٌ غير موجود).
+    // فالسلسلةُ تحته تمتنع عن الإعادة بحقّ، ثمّ كانت هذه تنتظر ٢٥٠٠ms وتُعيد على البابِ نفسِه.
+    // قِيس بالتشغيل قبل الإصلاح: نداءان و**٢٥٠٥ms** من انتظار المستخدم بلا أيّ احتمال نجاح.
+    const s = await fresh(scenario('chatPerm')); const { events, reporter } = collect(); const calls = [];
+    let hits = 0;
+    const permanent = { chat: { completions: { create: async () => {
+        hits += 1; const e = new Error('رصيدٌ منتهٍ'); e.aiUnavailable = true; throw e;
+    } } } };
+    const t0 = Date.now();
+    const reply = await generateChatResponse(`مرحبا ${STAMP}`, s.ctx.username, s.ctx.roomName, 'ar', reporter, opsOf(calls), permanent);
+    const spent = Date.now() - t0;
+
+    assert.equal(hits, 1, 'نداءٌ واحدٌ لا اثنان — لا إعادةَ على عطبٍ دائم');
+    assert.ok(spent < 500, `ولا تراخٍ: ${spent}ms (كان ٢٥٠٥ms)`);
+    const lines = logs(events).filter((m) => m.includes('عطبٌ دائم') || m.includes('محاولة'));
+    assert.equal(lines.length, 1, lines.join('\n'));
+    assert.ok(lines[0].includes('عطبٌ دائم') && lines[0].includes('رصيدٌ منتهٍ'), 'يُسمّى دائماً ويُقال سببُه');
+    assert.ok(!lines[0].includes('1/2'), 'ولا يُعدّ محاولةً من اثنتَين — العدُّ وعدٌ بثانيةٍ لا تأتي');
+    assert.match(reply, /^⚠️ خدمة الذكاء مشغولة مؤقتاً/, 'والردُّ الصادقُ كما هو');
+});
+
 test('الإنجليزيّةُ تُبقي الرسالةَ الصادقة بلغتها، والبثُّ الفارغ يُعامَل فشلاً', async () => {
     const s = await fresh(scenario('chat3')); const { events, reporter } = collect(); const calls = [];
     const en = await generateChatResponse('hi', s.ctx.username, s.ctx.roomName, 'en', reporter, opsOf(calls), failingClient());
@@ -91,7 +114,8 @@ test('الحدود: شريحةُ الجسد — لا this ولا io، البثُ
     const code = mod.replace(/\/\*[^]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     assert.ok(!/\bthis\./.test(code) && !/\breporter\.io\b/.test(code) && !/jcr\.js/.test(code));
     assert.equal((code.match(/reporter\.send\(/g) || []).length, 4, 'بدءٌ + قطعة + نهاية + الردُّ دفعةً');
-    assert.equal((code.match(/reporter\.liveLog\(/g) || []).length, 2, 'تحذيرُ المحاولة + سطرُ الردّ');
+    // 🚪 سطرٌ ثالث: العطبُ الدائمُ يُسمّى دائماً ويُكسَر عليه الحلقة (لا «محاولة ١/٢» كاذبة).
+    assert.equal((code.match(/reporter\.liveLog\(/g) || []).length, 3, 'تحذيرُ المحاولة + سطرُ العطب الدائم + سطرُ الردّ');
     assert.equal((code.match(/\bops\b/g) || []).length, 2, 'المعاملُ وتفكيكُه في الرأس — ولا استعمالَ ثالث');
     assert.equal((code.match(/\bloadExecutiveMemory\(|\bsummarizeConversation\(/g) || []).length, 2, 'نداءٌ لكلٍّ');
     assert.equal((code.match(/\bgroq\b/g) || []).length, 2, 'الاستيرادُ + الافتراضيُّ فقط — لا نداءَ مباشر');

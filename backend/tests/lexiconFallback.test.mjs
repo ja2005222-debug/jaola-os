@@ -48,9 +48,13 @@ test('نموذجُ المعجم: الأدوارُ والكياناتُ مرتّ�
 test('الاحتياطُ بلا مزوّد: المواصفةُ تخرج ٤ أدوار و٦ كيانات وتدفّقاً فاعلُه أهمُّ الأدوار — والقصيرُ بلا مفاهيم يبقى User/Item', async () => {
     const m = await deriveProjectModel(SPEC, BP);
     assert.equal(m._source, 'lexicon');
-    assert.deepEqual(names(m.roles), ['staff', 'customer', 'admin', 'tenant']);
+    // 👥 PM/25: الأدوارُ لم تعد من معجمنا بل من سطر صاحب المواصفة نفسِه («أدوار: مالك النظام،
+    //    مدير الفرع، الكاشير، أمين المخزن، المحاسب») — العددُ أربعةٌ كما كان (سقفُ
+    //    `normalizeProjectModel` قائمٌ لم يُرفع، فـ«المحاسب» يسقط به لا بالقاعدة).
+    assert.deepEqual(names(m.roles), ['مالك النظام', 'مدير الفرع', 'الكاشير', 'أمين المخزن']);
     assert.deepEqual(names(m.entities), ['product', 'invoice', 'currency', 'payment', 'shift', 'account']);
-    assert.deepEqual(m.flows.map((f) => [f.name, f.actor, f.touches]), [['الفعل الأساسي', 'staff', ['product']]], 'التدفّقُ من مكوّنات المخطّط كما كان، وفاعلُه من الفهم لا User المكتوب');
+    assert.deepEqual(m.flows.map((f) => [f.name, f.actor, f.touches]), [['الفعل الأساسي', 'مالك النظام', ['product']]],
+        'التدفّقُ من مكوّنات المخطّط كما كان، وفاعلُه أهمُّ الأدوار — وقد صار أوّلَ ما سمّاه صاحبُه لا أوّلَ ما في معجمنا');
     const plain = await deriveProjectModel('أداة حاسبة زكاة بسيطة', BP);
     assert.deepEqual([plain._source, names(plain.roles), names(plain.entities)], ['fallback', ['User'], ['Item']], 'لا مفاهيمَ → الحدُّ الأدنى القديم بعينه');
     // فئةٌ مجدولة تبقى أولى من المعجم — جدولُ المطعم منسَّقٌ بيد إنسان
@@ -73,7 +77,8 @@ test('المستهلكون: ١٢ متطلّباً مسمّى بدل ٤، وdomai
     const m = await deriveProjectModel(SPEC, BP);
     const reqs = composeRequirements(BP, m);
     assert.equal(reqs.length, 12, reqs.map((r) => r.name).join(' | '));
-    assert.ok(reqs.some((r) => r.name === 'شاشة staff') && reqs.some((r) => r.name === 'بيانات invoice'));
+    // ومتطلَّبُ الشاشة صار بالاسم الذي كتبه صاحبُه — وهو ما يُطلب من البُناة ويُقال له في الحكم
+    assert.ok(reqs.some((r) => r.name === 'شاشة مالك النظام') && reqs.some((r) => r.name === 'بيانات invoice'));
     const fid = domainFidelity(m, SPEC);
     assert.equal(fid.applicable, true); assert.deepEqual(fid.missing, []); assert.equal(fid.contaminated, false);
     assert.ok(fid.expected.length >= 8, `متوقَّع: ${fid.expected.length}`);
@@ -85,13 +90,18 @@ test('المرحلةُ تستهلكه: understandGoal على المواصفة ي
     const logs = []; const reporter = new RoomReporter({ to: () => ({ emit: (ev, p) => { if (ev === 'log') logs.push(p.message); } }) });
     await understandGoal(SPEC, { ...s.ctx, projectPath: emptyProject() }, reporter);
     const stored = getDomainModel(s.ctx.username, s.ctx.activeProject);
-    assert.ok(names(stored.roles).includes('staff') && names(stored.entities).includes('invoice'), JSON.stringify({ r: names(stored.roles), e: names(stored.entities) }));
+    assert.ok(names(stored.roles).includes('مالك النظام') && names(stored.entities).includes('invoice'), JSON.stringify({ r: names(stored.roles), e: names(stored.entities) }));
     assert.ok(!names(stored.roles).includes('User'), 'لا User مكتوب حين يرى المعجمُ المنتج');
     const line = logs.find((l) => l.includes('نموذج المشروع:'));
     assert.match(line, /6 كيان/); assert.match(line, /4 دور/);
     assert.ok(!/1 كيان \(Item\)/.test(line), line);
-    // وما يراه المعجمُ في النصّ يُغطّيه الفهمُ الآن — الفجوةُ التي كشفها القياسُ أُغلقت من طرفها
+    // وما يراه المعجمُ في النصّ يُغطّيه الفهمُ الآن — الفجوةُ التي كشفها القياسُ أُغلقت من طرفها.
+    // 👥 PM/25: وللفهم مصدران لا واحد، فيُقاس كلٌّ بدليله هو:
+    //   • الكياناتُ من المعجم   → تُفحص بعضويّةِ `conceptsInText` كما كانت.
+    //   • الأدوارُ من سطر صاحبه → تُفحص بأنّها **منطوقةٌ حرفيّاً في النصّ**، وهو الدليلُ الأقوى.
+    // (كانت العضويّةُ في المعجم وكيلاً عن «منطوقٌ في النصّ»؛ والوكيلُ لم يعد يصلح للأدوار.)
     const seen = conceptsInText(SPEC);
-    const understood = new Set([...names(stored.roles), ...names(stored.entities)]);
-    assert.ok([...understood].every((c) => seen.has(c)), 'كلُّ ما في الفهم منطوقٌ في النصّ');
+    assert.ok(names(stored.entities).every((c) => seen.has(c)), 'كلُّ كيانٍ من المعجم منطوقٌ في النصّ');
+    assert.ok(names(stored.roles).every((r) => SPEC.includes(r)), 'وكلُّ دورٍ منطوقٌ في النصّ حرفاً بحرف — لا لفظَ معجمٍ مغلق');
+    assert.ok(names(stored.roles).some((r) => !seen.has(r)), 'وهي أسماءُ صاحبِه لا مفاهيمَ معجمِنا — وإلّا لم يتغيّر شيء');
 });

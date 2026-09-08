@@ -296,22 +296,35 @@ ${filesBlock || '(لا ملفات)'}
 
 أعِد الملفات المتغيّرة فقط بصيغة // FILE: name`;
 
-    const pipeline = [
-        () => callGroq(userMessage, onChunk, systemPrompt),
-        () => callDeepSeek(userMessage, onChunk, systemPrompt),
-        () => callGemini(userMessage, systemPrompt),
-    ];
-    for (const call of pipeline) {
+    // 🎚️ المرشِّحُ نفسُه الذي يحمي البناءَ الكامل — قِيس أنّ غيابَه هنا كان يُنادي **خاماً**
+    //    مزوّدَين أعلنت الخدمةُ في سجلّها استبعادَهما («🔇 deepseek مُستبعَد بـAI_PROVIDERS»)،
+    //    فتذهب إليهما شفرةُ مشروع المستخدم بعد أن قال صاحبُ المنصّة لا. الحلقةُ الثانية كانت
+    //    مصفوفةَ دوالٍّ عاريةً: لا مرشِّح، ولا اسمَ يُقال في السجلّ، ولا إشارةَ عطبٍ دائم.
+    const pipeline = selectModels([
+        { name: 'Groq Llama', provider: 'groq', call: () => callGroq(userMessage, onChunk, systemPrompt) },
+        { name: 'DeepSeek Coder', provider: 'deepseek', call: () => callDeepSeek(userMessage, onChunk, systemPrompt) },
+        { name: 'Gemini', provider: 'gemini', call: () => callGemini(userMessage, systemPrompt) },
+    ]);
+    if (!pipeline.length) return { error: true, details: NO_PROVIDER_MSG };
+
+    const failures = [];
+    for (const model of pipeline) {
         try {
-            const responseText = await call();
+            const responseText = await model.call();
             if (!responseText || responseText.length < 30) continue;
             const files = parseResponseToFiles(responseText);
             // احتفظ فقط بالملفات ذات المحتوى الفعلي
             const changed = files.filter(f => f.content && f.content.trim().length > 5);
             if (changed.length > 0) return { files: changed };
         } catch (err) {
-            console.warn(`[CoderAgent:edit] فشل نموذج: ${err.message}`);
+            failures.push(err);
+            console.warn(`[CoderAgent:edit] ${model.name} فشل: ${err.message}`);
         }
+    }
+    // 🚪 والعطبُ الدائمُ يُسمّى هنا كما يُسمّى في البناء الكامل: بدونه كان المستدعي يقرأ
+    //    «تعذّر التعديل» فيُعيد الكرّةَ على بابٍ مغلق — وهي علّةُ #171 بعينها في مسارٍ ثانٍ.
+    if (failures.length && failures.every(isPermanentAIError)) {
+        return { error: true, aiUnavailable: true, details: AI_UNAVAILABLE_MSG };
     }
     return { error: true, details: 'تعذّر تطبيق التعديل الجراحي.' };
 }

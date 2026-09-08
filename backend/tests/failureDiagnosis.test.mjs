@@ -12,7 +12,7 @@
 // ذاك عينُ ما أُغلق في #588 حين وصل رابطُ فوترةِ حسابِ المنصّة إلى سجلّ مشروع مستخدم.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { aggregateFailure, describeAIFailure } from '../core/providers/llm.js';
+import { aggregateFailure, describeAIFailure, classifyAIError } from '../core/providers/llm.js';
 import { buildFailureChatMessage } from '../agents/failureMessages.js';
 import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
 
@@ -113,3 +113,54 @@ test('🔴 وعطبٌ بلا مزوّدٍ لا يُقحَم في التشخيص�
             'سطرُ تشخيصٍ فارغٌ في الشات');
     }
 });
+
+// ─── 🔀 رمزُ ٤٠٣ ملتبس، والرسالةُ تحسم ────────────────────────────────────────────
+//
+// من سجلٍّ حيٍّ لصاحب المنصّة: شُخِّص `groq` مرّتين في نحوِ عشرين ثانية بسببَين **متعارضَين** —
+// «مفتاحُه غير صالح» ثمّ «اسمُ الموديل غير معروف عنده». ولا يصدُقان معاً: مفتاحٌ غيرُ صالحٍ لا
+// يُبلَّغ عنه باسم موديل، واسمُ موديلٍ مجهولٍ يقتضي مفتاحاً صالحاً قُبل به الطلب.
+//
+// والعلّةُ مقيسة: `403` كان يُقرأ `auth` **قبل** أن تُقرأ الرسالة. والمزوّدُ يردّ على علّة
+// الموديل عينِها بـ`404` مرّةً و`403` أخرى («…does not exist **or you do not have access
+// to it**») — فيخرج التشخيصان المتناقضان من عطبٍ واحد. والضررُ أنّ صاحبَ المنصّة يُطارد
+// مفتاحاً سليماً ويترك سطرَ إعدادٍ كان يُصلحه بلا نشر.
+const err = (status, message) => Object.assign(new Error(message), { status });
+const MODEL_403 = 'The model `llama-x` does not exist or you do not have access to it';
+
+test('🔴 ٤٠٣ برسالةِ موديلٍ تُشخَّص إعداداً لا مفتاحاً — وهي حالةُ السجلّ الحيّ', () => {
+    assert.equal(classifyAIError(err(403, MODEL_403)), 'config');
+    assert.match(describeAIFailure([{ provider: 'groq', kind: classifyAIError(err(403, MODEL_403)) }]),
+        /اسمُ الموديل/, 'كان يُقال «مفتاحُه غير صالح» عن مفتاحٍ سليم');
+    // والمزوّدُ نفسُه بـ٤٠٤ على العلّة عينِها ← التشخيصُ **واحد** لا اثنان
+    assert.equal(classifyAIError(err(404, MODEL_403)), classifyAIError(err(403, MODEL_403)),
+        'رمزان مختلفان لعلّةٍ واحدة يجب أن يُعطيا تشخيصاً واحداً');
+});
+
+test('🔴 و٤٠٣ بلا رسالةِ موديلٍ تبقى مفتاحاً — لم يُفتح البابُ على مصراعيه', () => {
+    assert.equal(classifyAIError(err(403, 'Forbidden')), 'auth');
+    assert.equal(classifyAIError(err(403, 'Your account is not authorized')), 'auth');
+});
+
+test('🔴 و٤٠١ لا تحتمل لبساً فتبقى مفتاحاً ولو ذُكر موديل — «غيرُ موثَّق» ≠ «ممنوع»', () => {
+    assert.equal(classifyAIError(err(401, 'Invalid API Key')), 'auth');
+    assert.equal(classifyAIError(err(401, MODEL_403)), 'auth',
+        'الرسالةُ تحسم الملتبسَ وحدَه — و٤٠١ ليست ملتبسة');
+});
+
+test('الحدّ: الأصنافُ الأخرى لم تتزحزح — الرصيدُ والمعدّلُ والعابرُ كما كانت', () => {
+    assert.equal(classifyAIError(err(402, 'Insufficient Balance')), 'quota');
+    assert.equal(classifyAIError(err(429, 'Rate limit reached')), 'ratelimit');
+    assert.equal(classifyAIError(err(0, 'socket hang up')), 'transient');
+    assert.equal(classifyAIError(err(400, 'API key not valid. Please pass a valid API key.')), 'auth');
+});
+
+test('📏 حدٌّ مكتوبٌ مقيس: `aiUnavailable` تُختصَر إلى `quota` — ولا تُعرَض قطّ', () => {
+    // الاختصارُ في أوّل `classifyAIError` يجعل خطأً مجمَّعاً سببُه إعدادٌ يُقرأ «رصيد».
+    assert.equal(classifyAIError(Object.assign(new Error('x'), { aiUnavailable: true })), 'quota');
+    // ولا يبلغ صاحبَ المشروع: العرضُ يقرأ `diagnosis` المبنيَّ من الأخطاء **الخام**، لا يُعيد
+    // التصنيف. قِيس على خطأٍ مجمَّعٍ سببُه إعداد: التشخيصُ المعروض يقول «اسمُ الموديل».
+    const agg = aggregateFailure([Object.assign(new Error(MODEL_403), { status: 403, provider: 'groq' })], null);
+    assert.match(describeAIFailure(agg.diagnosis), /اسمُ الموديل/, 'العرضُ من الخام لا من المجمَّع');
+    assert.equal(agg.aiUnavailable, true, 'ويبقى دائماً فلا تُحرق دورات');
+});
+

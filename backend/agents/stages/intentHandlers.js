@@ -28,7 +28,7 @@ import { isBareYes, isBareExecute } from '../chatCommands.js';
 import { decide, buildContinuationGoal } from '../ceoBrain.js';
 import { normalizeArabic, isQuestionMessage, hasActionIntent, isFullSpecification, numberedSections } from '../textNormalizer.js';
 import { routeMessage } from '../router.js';
-import { readCodeContext } from '../projectReader.js';
+import { hasProjectSource } from '../projectReader.js';
 import { loadForPrompt as loadConversation } from '../../services/conversationStore.js';
 import { setPendingGoal, clearDialog } from '../../services/conversationManager.js';
 import { recordEditAction } from '../../services/metricsStore.js';
@@ -223,12 +223,14 @@ export async function handleUnifiedRoute(req, agents, reporter, gate, ops, route
     // عملت أعلاه. فشل الموجّه → يسقط بصمت للمسار القديم أدناه (احتياط كامل).
     if (!agents.getState?.(username)?.stage) { // ليس داخل حوار clarifier
         try {
-            const existingCode = await readCodeContext(projectPath).catch(() => '');
+            // 🏗️ سؤالُ وجودٍ لا سؤالُ محتوى — يُسأل للقرص (انظر `hasProjectSource`). المحتوى
+            //    لم يكن يُستعمل هنا أصلاً: قيمتاه الوحيدتان `length > 100` مرّتين — والعتبةُ تبقى.
+            const projectExists = await hasProjectSource(projectPath, { minBytes: 100 });
             const { window: hist } = await loadConversation(`${username}::${activeProject}`);
             const lastAssistant = [...hist].reverse().find(m => m.role === 'assistant')?.content || '';
             const route = await router(message, {
                 projectName: activeProject,
-                hasProject: existingCode.trim().length > 100,
+                hasProject: projectExists,
                 lastAssistant,
                 lang: userLang,
             });
@@ -239,7 +241,7 @@ export async function handleUnifiedRoute(req, agents, reporter, gate, ops, route
                     // 🛡️ شبكة أمان: الموجّه قد يصنّف تعديلاً صريحاً كمحادثة (حدث فعلاً مع
                     // "عدّل: ..."). أمرٌ صريح أو تكرار مُصِرّ على مشروع قائم يُنفَّذ تعديلاً
                     // بدل الدخول في حلقة "أعد إرسال نفس الجملة" التي يهلوسها الـ LLM.
-                    const hasProj = existingCode.trim().length > 100;
+                    const hasProj = projectExists;
                     // 🔁 أي رسالة محجوبة سابقاً = إصرار (لا نطابق النصّ حرفياً —
                     // المساعد قد يقترح صياغة مختلفة فلا يتطابق الحرفي أبداً → حلقة).
                     const pendingGate = gate.has(username);
@@ -292,7 +294,7 @@ export async function handleUnifiedRoute(req, agents, reporter, gate, ops, route
 }
 
 // تصنيف النية (مصنّف + معنى) ثم build/modify/stop/محادثة بحُرّاسها (الجملة الوصفية، السؤال، الإصرار).
-// المصنِّفُ `ops.classifyIntent` يُستدعى فقط حين ثقةُ المعنى < 75 (وإلّا تطغى نيّةُ `meaningIntent`)؛ القارئُ `readCodeContext` يُستورد
+// المصنِّفُ `ops.classifyIntent` يُستدعى فقط حين ثقةُ المعنى < 75 (وإلّا تطغى نيّةُ `meaningIntent`)؛ سؤالُ الوجود `hasProjectSource` يُستورد
 // مباشرةً (لا اختبارَ يستبدل مفوِّضَه)؛ الحاجزُ يُقرأ ويُكتب ويُمسح عبر `gate` مرّتين لكلٍّ. تعود `true` دائماً — آخرُ معالجٍ في السلسلة.
 export async function handleClassifiedIntent(req, agents, reporter, gate, ops) {
     const { message, normalizedMessage, meaningIntent, roomName, projectPath, username, activeProject, userLang } = req;
@@ -329,8 +331,8 @@ export async function handleClassifiedIntent(req, agents, reporter, gate, ops) {
         const explicitBuild = /^\s*(?:ابني|ابن|اصنع|أنشئ|انشئ|صمم|طوّر|طور|بني|سوّي|سوي|اعمل\s+لي|ابدأ\s+البناء|build|create|make|design|develop|generate|start\s+building)(?=\s|$|[^\p{L}\p{N}])/iu
             .test((normalizedMessage || message).trim());
         if (!explicitBuild) {
-            const existingCode = await readCodeContext(projectPath).catch(() => '');
-            if (existingCode && existingCode.trim().length > 100) {
+            // 🏗️ سؤالُ وجودٍ لا سؤالُ محتوى — يُسأل للقرص (انظر `hasProjectSource`).
+            if (await hasProjectSource(projectPath, { minBytes: 100 })) {
                 // 🔧 طلب فعل صريح على مشروع قائم («فعّل الأزرار»، «أضف الفوترة») =
                 // تعديل جراحي مباشر — لا حوار تأكيد يُعيد على المستخدم كلماته
                 // (جذر حلقة «اكتب الجملة التالية»). الأسئلة/الجمل الإخبارية تبقى محادثة.
@@ -411,8 +413,8 @@ export async function handleClassifiedIntent(req, agents, reporter, gate, ops) {
         // 🆕 على مشروع قائم: أي طلب غير استفهامي يُعامَل كتعديل تلقائياً
         // (المستخدم لا يجب أن يكتب "عدل على نفس الموقع" في كل مرة —
         //  "قم بربط..."، "استخدم قالب..." كلها تعديلات على الموجود)
-        const existing = await readCodeContext(projectPath).catch(() => '');
-        const hasProject = existing && existing.trim().length > 100;
+        // 🏗️ سؤالُ وجودٍ لا سؤالُ محتوى — يُسأل للقرص (انظر `hasProjectSource`).
+        const hasProject = await hasProjectSource(projectPath, { minBytes: 100 });
         // كاشف أسئلة واعٍ بالعربية — \b القديم لم يكن يطابق "ماذا/هل..." أبداً
         const isQuestion = isQuestionMessage(message);
         const isSmalltalk = message.trim().length < 4;

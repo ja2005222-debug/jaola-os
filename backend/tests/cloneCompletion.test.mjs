@@ -63,16 +63,19 @@ test('القياسُ قبل الكتابة: بوّابةُ الإكمال في �
 
 test('جولةُ إكمالٍ واحدة: ما لا أثرَ له يُطلب بالاسم وبسلوكه المطلوب، على ملفّات القرص كلِّها؛ رقعةٌ سليمة → «أُكمل» في السجلّ والشات، والحكمُ يقول ما بقي', async () => {
     const seen = [];
-    const { r, events, dir } = await buildPos('pm8ok', async (instruction, files, lang) => { seen.push({ instruction, names: files.map(f => f.name).sort(), lang }); return adder(['العميل', 'المستأجر'])(instruction, files); });
+    // 👥 PM/25: الفجوةُ صارت اثنتَين لا ثلاثاً — «شاشة customer» و«شاشة tenant» كانتا بأسماءِ معجمِنا
+    //    والكلونُ يمثّلهما فعلاً؛ والباقيةُ «شاشة أمين المخزن» فجوةٌ **سمّاها صاحبُ الوثيقة** ولم تُبنَ.
+    //    فالرقعةُ تسدُّ واحدةً من اثنتَين بدل اثنتَين من ثلاث.
+    const { r, events, dir } = await buildPos('pm8ok', async (instruction, files, lang) => { seen.push({ instruction, names: files.map(f => f.name).sort(), lang }); return adder(['أمين المخزن'])(instruction, files); });
     assert.equal(seen.length, 1, 'نداءٌ واحد — لا حلقة');
     assert.deepEqual(seen[0].names, ['app.js', 'index.html', 'styles.css']); assert.equal(seen[0].lang, 'ar');
-    assert.match(seen[0].instruction, /1\. شاشة customer: قسمٌ\/صفحةٌ مستقلّة للدور «customer» تعمل فعلاً/);
-    assert.match(seen[0].instruction, /2\. شاشة tenant: /); assert.match(seen[0].instruction, /3\. بيانات account: تمثيلٌ فعليّ للكيان «account»/);
-    assert.match(seen[0].instruction, /نموذج المشروع: الأدوار \[staff، customer، admin، tenant\]/, 'وإرشادُ النموذج المدمَج');
+    assert.match(seen[0].instruction, /1\. شاشة أمين المخزن: قسمٌ\/صفحةٌ مستقلّة للدور «أمين المخزن» تعمل فعلاً/);
+    assert.match(seen[0].instruction, /2\. بيانات account: تمثيلٌ فعليّ للكيان «account»/);
+    assert.match(seen[0].instruction, /نموذج المشروع: الأدوار \[مالك النظام، مدير الفرع، الكاشير، أمين المخزن\]/, 'وإرشادُ النموذج المدمَج — بأسماءِ صاحبِ الوثيقة');
     const L = logs(events).filter(l => l.includes('CloneCompletion'));
     assert.deepEqual(L, [
-        '[5. RUNTIME] ➔ [CloneCompletion]: 🏗️ إكمالُ ما لا أثرَ له (3): شاشة customer، شاشة tenant، بيانات account — رقعةٌ موضعيّة، لا إعادةَ كتابة.',
-        '[5. RUNTIME] ➔ [CloneCompletion]: ✅ أُكمل (2/3): شاشة customer، شاشة tenant — وبقي بلا أثر: بيانات account.',
+        '[5. RUNTIME] ➔ [CloneCompletion]: 🏗️ إكمالُ ما لا أثرَ له (2): شاشة أمين المخزن، بيانات account — رقعةٌ موضعيّة، لا إعادةَ كتابة.',
+        '[5. RUNTIME] ➔ [CloneCompletion]: ✅ أُكمل (1/2): شاشة أمين المخزن — وبقي بلا أثر: بيانات account.',
     ]);
     assert.ok(read(dir, 'index.html').includes('<section id="pm8">'), 'الرقعةُ على القرص');
     // ٤ لا ٥: النداءُ المباشر يمرّ بمخطّطٍ بلا مكوّنات فلا تدفّقَ «الفعل الأساسي» — في المسار الكامل خمسة (اختبارُ المسار أدناه)
@@ -80,7 +83,7 @@ test('جولةُ إكمالٍ واحدة: ما لا أثرَ له يُطلب ب�
     assert.equal(r.verdict.status, 'FAILED');
     const msg = reply(events);
     assert.match(msg, /^⚠️ اكتمل — بدأنا من قالب/);
-    assert.match(msg, /\n🏗️ أُكمل تلقائيّاً على القالب: شاشة customer، شاشة tenant\.\n⚠️ التحقّق وجد ثغرات — requirements-verify: 1 متطلّب بلا أثر: بيانات account/);
+    assert.match(msg, /\n🏗️ أُكمل تلقائيّاً على القالب: شاشة أمين المخزن\.\n⚠️ التحقّق وجد ثغرات — requirements-verify: 1 متطلّب بلا أثر: بيانات account/);
 });
 
 // 🔤 كان هذا الاختبارُ يُثبّت العطبَ نفسَه: «رقعةٌ تسدّ الثلاثةَ → pass». والرقعةُ تُبنى من **نصّ البنود
@@ -91,12 +94,12 @@ test('جولةُ إكمالٍ واحدة: ما لا أثرَ له يُطلب ب�
 // شفرةٍ واحد** — فالثلاثةُ التي «أُكملت» أثرُها نثرٌ لا يشغّله شيء، والسطرُ «✅ أُكمل (3/3)» يبقى
 // كما هو. فالحكمُ يقول ما لا يقوله سطرُ الإكمال، وهذا هو المقصود من البوّابة.
 test('رقعةٌ تسدّ الثلاثةَ → لا بندَ بلا أثر، لكنّ أثرَها نثرٌ لا يشغّله شيء فالحكمُ «لم يكتمل التحقّق»؛ والسلوكُ يحكم من جهته على ما وصل القرص', async () => {
-    const { r, events } = await buildPos('pm8all', adder(['العميل', 'المستأجر', 'الحساب']));
+    const { r, events } = await buildPos('pm8all', adder(['أمين المخزن', 'الحساب']));
     assert.equal(gate(r.verdict, 'requirements-verify').status, 'unverified');
     assert.equal(gate(r.verdict, 'requirements-verify').detail,
-        '10/10 له أثر — أثرٌ لا تنفيذ؛ 4 لا يُتتبَّع بالمفردات؛ 3 أثرُه في نصٍّ لا يشغّله شيء: شاشة customer، شاشة tenant، بيانات account');
-    assert.match(logs(events).find(l => l.includes('✅ أُكمل')), /✅ أُكمل \(3\/3\): شاشة customer، شاشة tenant، بيانات account\.$/);
-    assert.match(reply(events), /\n🏗️ أُكمل تلقائيّاً على القالب: شاشة customer، شاشة tenant، بيانات account\.\n/);
+        '10/10 له أثر — أثرٌ لا تنفيذ؛ 4 لا يُتتبَّع بالمفردات؛ 2 أثرُه في نصٍّ لا يشغّله شيء: شاشة أمين المخزن، بيانات account');
+    assert.match(logs(events).find(l => l.includes('✅ أُكمل')), /✅ أُكمل \(2\/2\): شاشة أمين المخزن، بيانات account\.$/);
+    assert.match(reply(events), /\n🏗️ أُكمل تلقائيّاً على القالب: شاشة أمين المخزن، بيانات account\.\n/);
 });
 
 test('حارسُ الارتداد: رقعةٌ تُفقد دالّةً أو تُدخل عطلاً سلوكيّاً جديداً → استرجاعُ ما كان على القرص حرفاً بحرف، ولا «أُكمل» في الشات، والحكمُ كما كان (٣ بلا أثر)', async () => {
@@ -115,14 +118,14 @@ test('حارسُ الارتداد: رقعةٌ تُفقد دالّةً أو تُ�
         assert.equal(L.length, 2, L.join('\n')); assert.match(L[1], why);
         assert.ok(!read(dir, 'index.html').includes('pm8'), `${prefix}: الرقعةُ استُرجعت`);
         assert.ok(read(dir, 'app.js').includes('function csvDownload('), `${prefix}: app.js كما كان`);
-        assert.equal(gate(r.verdict, 'requirements-verify').detail, '3 متطلّب بلا أثر: شاشة customer، شاشة tenant، بيانات account (7/10 له أثر — أثرٌ لا تنفيذ؛ 4 لا يُتتبَّع بالمفردات)');
+        assert.equal(gate(r.verdict, 'requirements-verify').detail, '2 متطلّب بلا أثر: شاشة أمين المخزن، بيانات account (8/10 له أثر — أثرٌ لا تنفيذ؛ 4 لا يُتتبَّع بالمفردات)');
         assert.ok(!reply(events).includes('أُكمل تلقائيّاً'), `${prefix}: لا ادّعاءَ إكمال`);
     }
 });
 
 test('الحارسُ قبل الكتابة: رقعةٌ أسقطت رابطَ التنسيق وDOCTYPE تُصحَّح (ensureEditIntegrity) فتبقى الصفحةُ بتصميمها — على الكلون الملمَّع أيضاً؛ ورقعةٌ «ناجحة» بلا ملفّات تُعدّ غيرَ مطبَّقة', async () => {
     const dropped = await buildPos('pm8guard', async (i, files) => { const idx = files.find(f => f.name === 'index.html');
-        const content = idx.content.replace(/^\s*<!doctype html>\s*/i, '').replace(/<link[^>]*styles\.css[^>]*>\s*/i, '').replace('</body>', `${SECTION(['العميل', 'المستأجر', 'الحساب'])}</body>`);
+        const content = idx.content.replace(/^\s*<!doctype html>\s*/i, '').replace(/<link[^>]*styles\.css[^>]*>\s*/i, '').replace('</body>', `${SECTION(['أمين المخزن', 'الحساب'])}</body>`);
         assert.ok(!/styles\.css/.test(content) && !/<!doctype/i.test(content));
         return { ok: true, applied: 1, files: [{ name: 'index.html', content }] }; });
     const html = read(dropped.dir, 'index.html');
@@ -133,16 +136,16 @@ test('الحارسُ قبل الكتابة: رقعةٌ أسقطت رابطَ ا�
     assert.equal(gate(dropped.r.verdict, 'requirements-verify').status, 'unverified'); // أثرٌ لفظيّ لا نجاح
     const empty = await buildPos('pm8empty', async () => ({ ok: true, applied: 0, files: [] }));
     const E = logs(empty.events).filter(l => l.includes('CloneCompletion'));
-    assert.equal(E.length, 2, E.join('\n')); assert.match(E[0], /🏗️ إكمالُ ما لا أثرَ له \(3\)/); assert.match(E[1], /ℹ️ لم تُطبَّق رقعةٌ \(لا مزوّد أو لا مطابقة\)/);
+    assert.equal(E.length, 2, E.join('\n')); assert.match(E[0], /🏗️ إكمالُ ما لا أثرَ له \(2\)/); assert.match(E[1], /ℹ️ لم تُطبَّق رقعةٌ \(لا مزوّد أو لا مطابقة\)/);
 });
 
 test('بلا مزوّد (الافتراضُ patchEditPlan): يُطلب الإكمالُ ثمّ يُقال إنّ الرقعةَ لم تُطبَّق — والحكمُ FAILED بالأسماء كما في PM/7؛ وبلا فجوةٍ (متجرٌ) لا نداءَ ولا سطر', async () => {
     const { r, events } = await buildPos('pm8none');
     assert.deepEqual(logs(events).filter(l => l.includes('CloneCompletion')), [
-        '[5. RUNTIME] ➔ [CloneCompletion]: 🏗️ إكمالُ ما لا أثرَ له (3): شاشة customer، شاشة tenant، بيانات account — رقعةٌ موضعيّة، لا إعادةَ كتابة.',
+        '[5. RUNTIME] ➔ [CloneCompletion]: 🏗️ إكمالُ ما لا أثرَ له (2): شاشة أمين المخزن، بيانات account — رقعةٌ موضعيّة، لا إعادةَ كتابة.',
         '[5. RUNTIME] ➔ [CloneCompletion]: ℹ️ لم تُطبَّق رقعةٌ (لا مزوّد أو لا مطابقة) — الحكمُ يقول ما بقي بالاسم.',
     ]);
-    assert.equal(r.verdict.status, 'FAILED'); assert.match(gate(r.verdict, 'requirements-verify').detail, /^3 متطلّب بلا أثر: شاشة customer، شاشة tenant، بيانات account/);
+    assert.equal(r.verdict.status, 'FAILED'); assert.match(gate(r.verdict, 'requirements-verify').detail, /^2 متطلّب بلا أثر: شاشة أمين المخزن، بيانات account/);
     // متجرٌ بلا فجوة: المُكمِلُ لا يُنادى أصلاً
     const s = scenario('pm8store'); setUserLanguage(s.ctx.username, 'ar'); const dir = emptyProject();
     transitionState(s.ctx.username, s.ctx.activeProject, STATES.GENERATING, { agent: 't' });
