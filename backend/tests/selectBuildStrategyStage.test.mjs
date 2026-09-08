@@ -128,7 +128,7 @@ test('الدالّةُ الحرّةُ ≡ المفوِّض: تلميحُ rt.trac
     assert.deepEqual(shape(free.events), shape(sys.events));
 });
 
-test('الحدود: شريحةُ الجسد — readCodeContext ×١، liveLog ٨ (٥ + ثلاثةُ أسطر الفهم)، send ٢، ops أربعةٌ مرّةً لكلٍّ ولا خامس، لا this ولا io، المفوِّضُ بنصّه، اليتائمُ الستّ غائبة، وtrackByRoom في jcr كاتبٌ ومفوِّض فقط', () => {
+test('الحدود: شريحةُ الجسد — readCodeContext ×١، liveLog ١٠، send ٣، transitionState ٣، ops أربعةٌ مرّةً لكلٍّ ولا خامس، لا this ولا io، المفوِّضُ بنصّه، اليتائمُ الستّ غائبة، وtrackByRoom في jcr كاتبٌ ومفوِّض فقط', () => {
     const mod = fs.readFileSync(path.join(HERE, '../agents/stages/selectBuildStrategy.js'), 'utf8');
     const code = mod.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[^]*?\*\//g, '');
     assert.ok(!/\bthis\./.test(code)); assert.ok(!/jcr\.js/.test(code)); assert.ok(!/\bio\b/.test(code));
@@ -141,9 +141,11 @@ test('الحدود: شريحةُ الجسد — readCodeContext ×١، liveLog �
         { registry: count(/ops\.buildFromRegistry\(/g), clone: count(/ops\.buildFromClone\(/g), react: count(/ops\.buildReactProject\(/g), track: count(/ops\.trackOf\(/g), all: count(/\bops\.\w+/g) },
         { registry: 1, clone: 1, react: 1, track: 1, all: 4 }, 'قِيست قبل النقل');
     assert.equal(count(/\breadCodeContext\(/g), 1, 'القارئُ يُستورد لا يُمرَّر');
-    assert.equal(count(/reporter\.send\(/g), 2);
-    assert.equal(count(/reporter\.liveLog\(/g), 9, 'JCR/29: ٥؛ PM/1 أضاف ثلاثةَ أسطر «ProductMind»؛ قياسُ POS أضاف رابعاً: لماذا لم يُطبَّق الاختصارُ التسويقيّ على وثيقة/سيستم');
-    assert.equal(count(/\btransitionState\(/g), 2); assert.equal(count(/\banalyzeProjectStatic\(/g), 2);
+    // 🚧 حارسُ النطاق أضاف ردّاً ثالثاً (٢ ← ٣) وسطرَ سجلٍّ عاشراً وانتقالَ حالةٍ ثالثاً:
+    //    الامتناعُ **يُقال** ثمّ تُغلَق المهمّة — على شكل سابقة «works» نفسِها، لا صمتاً.
+    assert.equal(count(/reporter\.send\(/g), 3);
+    assert.equal(count(/reporter\.liveLog\(/g), 10, 'JCR/29: ٥؛ PM/1 أضاف ثلاثةَ أسطر «ProductMind»؛ قياسُ POS رابعاً؛ وحارسُ النطاق خامساً: كم مُخرَجاً برمجيّاً سُمّي');
+    assert.equal(count(/\btransitionState\(/g), 3); assert.equal(count(/\banalyzeProjectStatic\(/g), 2);
     const jcr = fs.readFileSync(path.join(HERE, '../agents/jcr.js'), 'utf8');
     assert.ok(jcr.includes(`\n    async _selectBuildStrategy(goal, blueprint, ctx) {
         return selectBuildStrategy(goal, blueprint, ctx, this.reporter, {

@@ -20,7 +20,7 @@ import { resolveStack } from '../starterRegistry.js';
 import { isMarketingPageGoal } from '../blockRegistry.js';
 import { analyzeProjectStatic } from '../behaviorVerifier.js';
 import { transitionState, STATES } from '../stateMachine.js';
-import { isExplicitRebuild, isExplicitNewBuild, isContinuationGoal, isFullSpecification } from '../textNormalizer.js';
+import { isExplicitRebuild, isExplicitNewBuild, isContinuationGoal, isFullSpecification, isOutOfScopeRequest, foreignCodeArtifacts } from '../textNormalizer.js';
 import { readCodeContext } from '../projectReader.js';
 import { resolveProjectType } from './enrich.js';
 
@@ -35,6 +35,32 @@ export async function selectBuildStrategy(goal, blueprint, ctx, reporter, ops) {
     // أدناه يكتب على القرص قبل أن يُرجع نتيجته، فالقراءة الثانية كانت تكراراً.
     const existingCtx = await readCodeContext(projectPath).catch(() => '');
     const isFreshBuild = !existingCtx || existingCtx.trim().length < 80;
+
+    // 🚧 **أهذا من جنس ما نصنع؟** — قبل أيِّ بانٍ، لأنّ الثلاثةَ كلَّهم يُخرجون **موقعاً**
+    //    (سطرٌ إلزاميّ في مُوجَّه `coderAgent`: «ثلاثة ملفات: index.html وstyles.css
+    //    وscript.js»)، وبوّاباتِ التحقّق كلَّها تفحص **صفحةً تعمل**.
+    //
+    //    قِيس حيّاً: طلبُ حزمةِ اختباراتٍ لشفرة خادم (٢٣ مُخرَجاً برمجيّاً مسمّى) كان
+    //    سيُبنى **بروشوراً** عن الاختبارات، ثمّ يُحكَم عليه FAILED — بحكمٍ صادقٍ لا يقول
+    //    **لماذا**: أنّ المطلوبَ ليس من جنس ما يُصنَع. فالإخفاقُ يُقرأ عجزاً، وهو حدُّ نطاق.
+    //
+    //    والامتناعُ يأخذ شكلَ السابقة أدناه (`skipped: 'works'`): يُقال نصّاً، ثمّ COMPLETED.
+    //    **لا يُبنى شيء**: عرضُ بديلٍ («أبني لك واجهةً لعرض نتائجها») يُقرأ التفافاً على
+    //    طلبٍ لم يُطلَب. وهو إضافةٌ ممكنةٌ لاحقاً فوق هذا، لا بديلٌ عنه.
+    if (isFreshBuild && isOutOfScopeRequest(goal)) {
+        const named = foreignCodeArtifacts(goal);
+        const shown = named.slice(0, 5).join('، ') + (named.length > 5 ? ` +${named.length - 5}` : '');
+        const lang = getUserLanguage(username);
+        reporter.liveLog(roomName, 'STACK', 'ProductMind',
+            `🚧 خارجَ ما أصنع: الطلبُ يسمّي ${named.length} مُخرَجاً برمجيّاً (${shown}) — وبُناتي الثلاثة يُخرجون موقعاً.`);
+        reporter.send(roomName, 'chat_reply', {
+            message: lang === 'en'
+                ? `🚧 I build websites and browser apps — pages a browser renders. Your request names code artifacts to produce (${shown}), which is a different kind of deliverable, so I won't build a site about it and call that done. Tell me what the product should *look like* to its user, and I'll build that.`
+                : `🚧 أنا أبني مواقعَ وتطبيقاتِ متصفّح — صفحاتٍ يعرضها المتصفّح. وطلبُك يسمّي مُخرَجاتٍ برمجيّة (${shown})، وهي من جنسٍ آخر؛ فلن أبنيَ موقعاً عنها وأسمّي ذلك إنجازاً. صِف لي ما يراه المستخدمُ ويستعمله، وأبنيه لك.`,
+        });
+        transitionState(username, activeProject, STATES.COMPLETED);
+        return { success: true, skipped: 'out-of-scope', named };
+    }
 
     // 🍔 كلون عامل — للتطبيقات المعقّدة المطابقة نبدأ من *تطبيق يعمل فعلاً*
     // (يجتاز التحقّق السلوكي) بدل التوليد من الصفر الذي يفشل (app.js لا يُكتب،

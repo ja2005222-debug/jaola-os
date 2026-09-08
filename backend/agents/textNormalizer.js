@@ -332,6 +332,50 @@ export function clipWords(text, max = 60) {
     return (sp > 0 ? cut.slice(0, sp) : cut).replace(/[\s،,:;—-]+$/u, '') + '…';
 }
 
+/**
+ * 🚧 **أهذا من جنس ما يصنعه جولا أصلاً؟** — لا موضوعُ الطلب، بل **ما سمّاه صاحبُه مُخرَجاً**.
+ *
+ * قِيس (١١ طلباً، فصلٌ تامّ عند ٢): طلباتُ المواقع والتطبيقات تُسمّي **صفرَ** ملفّاتٍ برمجيّة
+ * غريبة — حتّى «غيّر لون الأزرار في styles.css» و«اقرأ المنتجات من data.json»، لأنّ ملفّات
+ * جولا نفسِها تُستثنى. وما هو خارجُ ما يصنع يُسمّي **اثنين فأكثر**: سكربتُ ترحيلٍ (٢)،
+ * خطُّ CI (٢)، مكتبةُ npm (٤)، وحزمةُ اختباراتٍ لشفرة خادم (٢٣).
+ *
+ * 🔤 **ولمَ لا قائمةَ كلماتٍ محظورة؟** لأنّها تُصيب موضوعاً لا شكلاً: «اختبارات» ترد في موقعِ
+ *    مدرسةٍ بريئاً. والمقيسُ هنا **شكلُ المُخرَج**، وهو مفتوحٌ لا يحتاج معرفةَ المجال — وذاك درسُ
+ *    `PM/22` نفسُه: المقارنةُ المفتوحة تُقاس بكلمات صاحب الطلب لا بقائمةٍ مغلقة.
+ *
+ * ⚠️ والغيابُ ليس دليلَ شيء: طلبٌ خارجَ النطاق لا يسمّي ملفّات («اكتب لي خوارزميّة فرز») يمرّ —
+ *    وذلك **حدٌّ مكتوب لا نقصٌ مستور**. المقياسُ يُدين بدليلٍ ولا يُبرّئ بغيابه.
+ */
+// مُخرَجاتُ جولا نفسِه (وما يكتبه في مشاريع المستخدمين) — ذكرُها ليس دليلَ خروج.
+const OWN_ARTIFACTS = /^(?:index\.html|styles?\.css|script\.js|app\.js|main\.js|sw\.js|manifest\.json|content\.js|data\.js(?:on)?|index\.js)$/i;
+// 🔗 الروابطُ تُنزع أوّلاً: «https://example.com/shop/items/» كان يُخرِج «com/shop/items/»
+//    مساراً — فطلبُ موقعٍ يذكر رابطَين يُدان بلا ذنب. (مقيس.)
+const URLS = /https?:\/\/\S+/gu;
+// اسمُ ملفٍّ بامتدادٍ برمجيّ **مع مجلّداته** (`tests/parse.test.js` كاملاً لا «test.js» مبتوراً)،
+// أو مسارُ مجلّدَين فأكثر (`backend/testing/unit/`).
+const CODE_ARTIFACT = /(?:[\w-]+\/)*[\w.-]+\.(?:m?[jt]sx?|py|rb|go|rs|java|php|ya?ml|toml|ini|sh|sql|lock)\b|(?:[.\w-]+\/){2,}/gu;
+
+/**
+ * أسماءُ المُخرَجات البرمجيّة الغريبة التي سمّاها الطلبُ صراحةً (بلا تكرار، وبلا ملفّات جولا).
+ * @returns {string[]}
+ */
+export function foreignCodeArtifacts(text, { limit = 20000 } = {}) {
+    const out = [];
+    const clean = String(text || '').slice(0, limit).replace(URLS, ' ');
+    for (const raw of clean.match(CODE_ARTIFACT) || []) {
+        const name = raw.trim();
+        if (OWN_ARTIFACTS.test(name.replace(/^.*\//, '')) || out.includes(name)) continue;
+        out.push(name);
+    }
+    return out;
+}
+
+/** أخارجَ ما يصنعه جولا؟ (اثنان فأكثر من المُخرَجات الغريبة — العتبةُ مقيسة، انظر أعلاه) */
+export function isOutOfScopeRequest(text) {
+    return foreignCodeArtifacts(text).length >= 2;
+}
+
 /** أهذه وثيقةُ مواصفاتٍ لنظامٍ كامل (لا جملةُ طلب)؟ */
 export function isFullSpecification(text) {
     const t = String(text || '');
