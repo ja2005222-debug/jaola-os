@@ -14,6 +14,7 @@
  */
 
 import { smartChat } from '../core/providers/llm.js';
+import { specSections, stripNegated } from './textNormalizer.js';
 
 const MODEL_SYSTEM = `أنت مهندس برمجيات ومحلل مجال (domain analyst) خبير.
 مهمتك تحويل طلب المستخدم (بأي لغة) إلى *نموذج مجال مُهيكَل* — لا كود، بل فهم البنية.
@@ -118,7 +119,10 @@ function fallbackModel(goal, blueprint) {
     //    قِيس في posSpecMeasure). الأداةُ كانت موجودةً منذ PM/3 والاحتياطُ لا يستعملها. الآن: الأدوارُ
     //    والكياناتُ من المعجم بترتيب التكرار، والتدفّقُ الوحيدُ من مكوّنات المخطّط كما كان — وفاعلُه أهمُّ
     //    الأدوار لا `User` المكتوب. النصُّ الذي لا يسمّي شيئاً يبقى على الحدّ الأدنى القديم.
-    const lex = lexiconModel(goal);
+    // 🚫 والنفيُ يُطوى هنا أيضاً — ثالثُ موضعٍ للعلّة نفسِها (PM/23). قِيس بلا نموذجٍ لغويّ:
+    //    مواصفةُ متتبّعِ حفظٍ كاملةً تُنتج كياناً واحداً اسمُه `account` — مأخوذاً من «بلا **حساب**»؛
+    //    أي أنّ فهمَ جولا الاحتياطيَّ للمنتج كلِّه كان **الشيءَ الذي نفاه صاحبُه**.
+    const lex = lexiconModel(stripNegated(goal));
     if (lex.roles.length || lex.entities.length) {
         const actor = lex.roles[0]?.name || 'User';
         return normalizeProjectModel({
@@ -557,10 +561,50 @@ const GOAL_STOPWORDS = new Set(normalizeConceptText(
 export function goalWords(text, { min = 3, top = 60, limit = 200000 } = {}) {
     const freq = new Map();
     for (const t of normalizeConceptText(String(text || '').slice(0, limit)).split(' ')) {
-        if (t.length < min || GOAL_STOPWORDS.has(t) || /^\d+$/.test(t)) continue;
+        if (t.length < min || GOAL_STOPWORDS.has(t) || /^[\d\u0660-\u0669]+$/.test(t)) continue;
         freq.set(t, (freq.get(t) || 0) + 1);
     }
     return [...freq.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, top).map(([w]) => w);
+}
+
+/**
+ * 🧱 ألفاظُ **إطار الوثيقة** — عناوينُ تصف الوثيقةَ لا المنتج. تُسقَط من التسمية وحدَها.
+ * ليست قائمةَ مجال (تلك مغلقةٌ بطبعها، وهي علّةُ PM/22 نفسُها) بل ألفاظُ كتابةِ المواصفات.
+ */
+const FRAME_HEADINGS = new Set(normalizeConceptText(
+    'الغاية الهدف الاهداف المقدمة النظرة الملخص الخلاصة الخاتمة المتطلبات المواصفات النطاق '
+    + 'الشاشات الصفحات الواجهة الواجهات التصميم الاعدادات الضبط التهيئة الاحصاءات التقرير التقارير '
+    + 'الملاحظات الميزات الوظائف المراحل الخطة التنفيذ التقنيات القيود الامان الاداء '
+    + 'goal goals purpose overview summary scope requirements screens pages ui design settings '
+    + 'stats statistics report reports notes features functions plan phases stack constraints'
+).split(' '));
+
+/**
+ * 🏷️ أسماءُ كياناتٍ من **عناوين صاحب المشروع نفسِه** (PM/23).
+ *
+ * قِيس في PM/22 أنّ كلماتِ الطلب بالتكرار تصلح للمقارنة لا للتسمية: تخلط صدقاً («حفظ، آيات، عادة»)
+ * بضوضاء («تزامه، بكل، ذهب، أتم»). فكُتب ذلك ديْناً وقيل إنّه يحتاج تحليلاً صرفيّاً.
+ *
+ * ثمّ قِيس أنّ **الإشارةَ كانت في مكانٍ آخر**: عناوينُ البنود المرقّمة. صاحبُ المشروع يكتبها **أسماءً**
+ * لا أفعالاً، مجرّدةً من لواصق الضمائر — فهي تسميتُه هو لأجزاء منتجه. المقياسُ على ستِّ مواصفاتٍ
+ * («وِرد»، عادات، بطاقات، مترونوم، ميزانيّة، مواقيت):
+ *   • أوّلُ كلمةٍ من كلِّ عنوان: **١٨/١٩ (٩٥٪)**
+ *   • كلُّ كلمات العنوان:        ٢٣/٢٨ (٨٢٪) — «الورد **اليوميّ**»، «التقرير **الشهريّ**» صفاتٌ لا كيانات
+ *   • التكرارُ في المتن:          نحوُ ٥٠٪
+ * فالأولى هي القاعدة: **رأسُ العنوان**، وما بعده وصفٌ.
+ *
+ * دالّةٌ نقيّة. تعود فارغةً لطلبٍ بلا بنودٍ مرقّمة — وذلك صحيح: لا عناوينَ فلا تسمية.
+ * وحدٌّ مكتوب: هذا يسمّي **كياناتٍ** لا أدواراً؛ العنوانُ لا يقول من يستعمل ماذا.
+ * @param {string} goalText نصُّ الطلب كما كتبه صاحبُه
+ */
+export function headingEntityNames(goalText, { max = 6 } = {}) {
+    const out = [];
+    for (const { title } of specSections(goalText)) {
+        const head = normalizeConceptText(title).split(' ')
+            .find(w => w.length >= 3 && !/^[\d\u0660-\u0669]+$/.test(w));
+        if (head && !FRAME_HEADINGS.has(head) && !out.includes(head)) out.push(head);
+    }
+    return out.slice(0, max);
 }
 
 /**
@@ -597,8 +641,13 @@ export function goalFidelity(understood, goalText) {
     if (!String(goalText || '').trim()) {
         return { applicable: false, names, supported: [], groundless: [], words: [], ungrounded: false };
     }
-    const spoken = conceptsInText(goalText);
-    const words = goalWords(goalText);
+    // 🚫 ما نفاه صاحبُ المشروع ليس دليلاً على أنّ طلبَه ينطق به. قِيس: مواصفةُ «وِرد» كلُّها
+    //    تُنتج مفهوماً واحداً — `account` — من عبارة «بلا **حساب**»، فكان يسنُد فهماً مهلوَساً
+    //    (`Grade/ForumPost/Teacher/Parent`) فينجو من الوصم. وهي علّةُ `needsBackend` نفسُها
+    //    بوجهٍ ثانٍ، ولذلك صار مصدرُ `stripNegated` واحداً.
+    const said = stripNegated(goalText);
+    const spoken = conceptsInText(said);
+    const words = goalWords(said);
     const supported = []; const groundless = [];
     for (const name of names) {
         const concept = conceptOf(name);

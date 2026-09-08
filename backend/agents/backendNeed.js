@@ -1,4 +1,5 @@
 import { matchersFor, matchesAny } from './keywordMatch.js';
+import { stripNegated } from './textNormalizer.js';
 
 /**
  * 🎯 «هل يحتاج هذا المشروع خادماً؟» — مصدر الحقيقة الواحد
@@ -58,27 +59,11 @@ export const RELATIONAL_KEYWORDS_LIST = RELATIONAL_KEYWORDS;
 const BACKEND_MATCHERS = matchersFor(BACKEND_KEYWORDS);
 const RELATIONAL_MATCHERS = matchersFor(RELATIONAL_KEYWORDS);
 
-/**
- * 🚫 النفيُ يُطوى قبل المطابقة — الجملةُ التي تنفي لا تُوجب.
- *
- * قِيس من أوّل بناءٍ حرٍّ حيّ (`from0`): مواصفةٌ تقول «تعمل بالكامل داخل المتصفّح **بلا
- * خادم ولا حساب**» خرجت بـNext.js + API + Prisma. والسببُ أنّ المطابقةَ كلماتٌ مفردةٌ
- * لا ترى سياقاً، فالتقطت «حساب» من «بلا حساب» — أي أنّ **النفيَ نفسَه هو ما أوجب**.
- *
- * القاعدة: أداةُ نفيٍ (`بلا`/`بدون`/`دون`/`no`/`without`) تُلغي ما بعدها إلى أوّل فاصلٍ
- * أو رابطِ استدراك (`لكن`/`إلّا`/`but`) — لا إلى آخر النصّ. فـ«متجرٌ بلا تسجيل دخول،
- * لكنّ فيه دفعاً» يبقى بحاجةِ خادم، وذلك مقيسٌ باختبارٍ مستقلّ.
- *
- * و«ولا» بعد نفيٍ تمتدّ به: «بلا خادم **ولا** حساب» — نفيان لا نفيٌ وإثبات.
- *
- * دالّةٌ نقيّة. حدٌّ مكتوب: هذا نفيٌ **معجميّ** لا نحويّ؛ «لا أريد أن أبني بلا حساب»
- * تُقرأ نفياً وهي إثبات. لم يُقَس مثالٌ حقيقيٌّ كهذا، ولا يُدَّعى تغطيتُه.
- */
-const NEGATION_SCOPE = /(?:^|[\s،,.؛;:()])(?:بلا|بدون|دون|without|no)\s+((?:(?!\s(?:لكن|لكنّ|إلا|إلّا|but|however)\s)[^،,.؛;:()\n])*)/giu;
-
-export function stripNegated(text) {
-    return String(text || '').replace(NEGATION_SCOPE, ' ');
-}
+// 🚫 النفيُ يُطوى قبل المطابقة — والأداةُ نفسُها انتقلت إلى `textNormalizer.js` حين تبيّن أنّ
+// لها مستهلكاً ثانياً: بوّابةُ الفهم (PM/23) كانت تقرأ الطلبَ بلا طيِّ نفيٍ، فأنقذ `account`
+// المأخوذُ من «بلا حساب» فهماً مهلوَساً من الوصم. مصدرٌ واحدٌ لعلّةٍ واحدة، وإعادةُ التصدير
+// تُبقي مستهلكي هذه الوحدة واختباراتِها كما هي.
+export { stripNegated } from './textNormalizer.js';
 
 export function needsBackend(userGoal) {
     return matchesAny(BACKEND_MATCHERS, stripNegated(userGoal));
