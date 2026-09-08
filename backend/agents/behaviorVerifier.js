@@ -250,8 +250,12 @@ export function analyzeStatic({ html = '', js = '', blueprint = null, domainMode
     const fidelity = domainFidelity(domainModel, `${productText(html, 'index.html')}\n${productText(js, 'script.js')}`);
     if (fidelity.applicable) {
         if (fidelity.contaminated) {
+            // 🔤 «المفهوم» لا «المطلوب»: `domainFidelity` لا ترى نصَّ الطلب أصلاً — `expected` مشتقٌّ من
+            //    `domainModel` وحدَه. فقولُها «المطلوب» دعوى فوق دليلها. وقد قِيس حيّاً (jaola.dev، مواصفة
+            //    «وِرد»): فهمٌ مهلوَسٌ بالكامل (Grade/ForumPost/Teacher/Parent) طُبع لصاحب المشروع بوصفه
+            //    «المنتجَ المطلوب»، فيقرأ أنّ البناءَ أخفق في تنفيذ منتجِه — والخللُ فوقُ في الفهم لا تحتُ في البناء.
             checks.push({ name: 'domain-fidelity', status: 'fail',
-                detail: `المبنيُّ يتكلّم لغةَ منتجٍ آخر: ${fidelity.foreign.slice(0, 5).join('، ')} — ولا أثرَ لمفاهيم المنتج المطلوب (${fidelity.expected.join('، ')}).` });
+                detail: `المبنيُّ يتكلّم لغةَ منتجٍ آخر: ${fidelity.foreign.slice(0, 5).join('، ')} — ولا أثرَ لمفاهيم المنتج المفهوم (${fidelity.expected.join('، ')}).` });
         } else if (fidelity.missing.length) {
             checks.push({ name: 'domain-fidelity', status: 'warn',
                 detail: `مفاهيمُ المنتج غير ظاهرة في الواجهة/الكود: ${fidelity.missing.join('، ')}.` });

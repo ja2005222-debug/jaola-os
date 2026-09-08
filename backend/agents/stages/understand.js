@@ -13,7 +13,7 @@
  * (`s.rt._understandGoal = …`) لم تتغيّر.
  */
 import { buildMemoryContext, updateStructure, setDomainModel, getDomainModel } from '../projectMemory.js';
-import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel } from '../projectModel.js';
+import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel, goalFidelity, headingEntityNames, articleEntityNames, normalizeProjectModel } from '../projectModel.js';
 import { getLibraryModel } from '../modelLibrary.js';
 import { buildProfileContext } from '../userProfile.js';
 import { isExplicitNewBuild } from '../textNormalizer.js';
@@ -69,10 +69,51 @@ export async function understandGoal(goal, ctx, reporter) {
         let model = seed ? mergeProjectModel(seed, derived) : derived;
         if (refModel) model = mergeProjectModel(refModel, model); // المرجعُ أوّلاً كي لا تُسقطه سقوفُ التطبيع
         if (prior && !newIdentity) model = mergeProjectModel(model, prior);
+
+        // ⚠️ PM/22 — الفهمُ الذي لا يمسّ الطلبَ لا يُبتلع صامتاً.
+        //
+        //    قِيس في `from0`: طُلب متتبّعُ حفظِ قرآن فخرج `Student/Teacher/Parent/Grade/ForumPost`،
+        //    ولم يرَ صاحبُ المشروع في السجلّ إلّا «🧩 نموذج المشروع: ٥ كيان…» — سطرَ إنجازٍ لا
+        //    سطرَ تحذير. فما أخفاه السطرُ أنّ **لا اسمَ واحداً** من الخمسة له أثرٌ في وصفه.
+        //
+        // 🏷️ PM/23 — وحين تكون للطلب **عناوينُ بنودٍ مرقّمة**، لا نكتفي بالقول: نُسمّي بها.
+        //
+        //    كُتب في PM/22 أنّ الاستبدال يحتاج تحليلاً صرفيّاً، لأنّ كلماتِ المتن بالتكرار تخلط
+        //    صدقاً بضوضاء (نحوُ ٥٠٪ نظيفة). ثمّ قِيس أنّ الإشارةَ في مكانٍ آخر: **رأسُ كلِّ عنوان**
+        //    يكتبه صاحبُ المشروع اسماً لا فعلاً، مجرّداً من لواصق الضمائر — **١٨/١٩ (٩٥٪)** على
+        //    ستِّ مواصفات. فالاستبدالُ هنا مقيسٌ لا مُرتجَل.
+        //
+        //    ولا يقع إلّا حين يكون الفهمُ **بلا أثرٍ في الطلب أصلاً**: بديلٌ ٩٥٪ نظيف خيرٌ من فهمٍ
+        //    قِيس أنّه فهمُ منتجٍ آخر. وما دون ذلك يبقى كما هو — لا نُصلح ما لم يُقَس كسرُه.
+        //    وحدٌّ مكتوب: العناوينُ تسمّي **كياناتٍ** لا أدواراً، فالأدوارُ تسقط ولا تُختلق.
+        //
+        // 🏷️ PM/24 — ومصدرٌ ثانٍ للتسمية حين لا عناوين: **أداةُ التعريف**.
+        //    الطلبُ القصير بلا بنودٍ مرقّمة، وقِيس أنّ كلماتِه بالتكرار ٤٤٪ نظيفة فقط (أفعالٌ
+        //    ولواصقُ ضمائر). و«ال» لا تدخل على فعل — فهي وحدَها، بإسقاط صفةِ النسبة، **٩٦٪**.
+        //    العناوينُ أوّلاً لأنّها أدقُّ وأوسعُ أثراً؛ والأداةُ حين تعوزنا العناوين.
+        const fidelity = goalFidelity(model, goal);
+        let renamed = null;
+        if (fidelity.ungrounded) {
+            const heads = headingEntityNames(goal);
+            const names = heads.length >= 2 ? heads : articleEntityNames(goal);
+            if (names.length >= 2) {
+                renamed = names;
+                model = normalizeProjectModel({
+                    entities: names.map(name => ({ name })), roles: [], flows: [], _source: 'headings',
+                });
+            }
+        }
+
         setDomainModel(username, activeProject, model);
         domainModelContext = buildProjectModelContext(model);
         reporter.liveLog(roomName, 'MODEL', 'DomainAnalyst',
             `🧩 نموذج المشروع: ${summarizeModel(model)}${newIdentity ? ' (هوية جديدة — استُبدل النموذج القديم)' : seed ? ' (مبذور من مكتبة الفئة)' : ''}${refModel ? ` (مرجع: ${reference.label})` : ''}`);
+        if (fidelity.ungrounded) {
+            const gone = `لا أثرَ في وصفِك لـ${fidelity.groundless.slice(0, 5).join('، ')}${fidelity.groundless.length > 5 ? '…' : ''}`;
+            reporter.liveLog(roomName, 'MODEL', 'DomainAnalyst', renamed
+                ? `⚠️ فهمي لم يمسّ طلبَك (${gone}) — فطرحتُه وبنيتُ على عناوينك أنت: ${renamed.join('، ')}.`
+                : `⚠️ فهمي لا يمسّ طلبَك: ${gone} — أبني عليه وأنا غيرُ واثقٍ منه، ولن أُودِعه ذاكرةَ الفئة.`);
+        }
     } catch (e) { console.warn('[ProjectModel]', 'فشل استخلاص نموذج المشروع:', e.message); }
     return { enrichedGoal, blueprint, blueprintContext, domainModelContext };
 }

@@ -14,6 +14,7 @@ import { writePlanFiles } from '../../core/runtime/workspacePaths.js';
 import { recordBehaviorGaps } from '../../services/platformLessons.js';
 import { getUserLanguage } from '../languageDetector.js';
 import { recordModel } from '../modelLibrary.js';
+import { goalFidelity } from '../projectModel.js';
 import { recordGateOutcome, deliveryVerdict } from '../../core/contracts/index.js';
 import { traceRequirements, traceSections, sectionLabel } from '../requirementsVerifier.js';
 
@@ -160,7 +161,17 @@ export async function runBehaviorVerifyStage(context, roomName, agents, reporter
         //    فيُقرأ ما سجّلته: فشلٌ أو «لم يُتحقَّق» يمنع الإيداع؛ والتخطّي لا يمنع.
         const gatesClean = !Object.values(context?.verdicts || {})
             .some(g => g?.status === 'fail' || g?.status === 'unverified');
-        if (verdict?.ok && gatesClean && context.blueprint?.category) {
+        // 🚫 PM/22 — ولا يكفي أن تنظف البوّابات: البوّاباتُ تحكم على **المبنيّ**، وقد يُبنى
+        //    بأمانةٍ تامّة على فهمٍ لا يمسّ الطلبَ أصلاً. قِيس أنّ معجمَ المفاهيم (٧٠ مفهوماً
+        //    تجاريّاً) يرى **صفراً** في ثمانيةٍ من ثمانيةِ منتجاتٍ ليست موقعاً تجاريّاً، فتصمت
+        //    `domainFidelity` هناك (`applicable:false`) ولا يبقى رقيبٌ على تخمين النموذج اللغويّ.
+        //    فالشرطُ الثالث يسأل سؤالاً آخر: هل لأسماء هذا الفهم أثرٌ في **طلب صاحبِه**؟
+        //    وهذه أهمُّ ما تُحمى منه المكتبةُ الدائمة، لأنّ ما يُودَع فيها يُورَّث لكلّ الفئة.
+        const grounded = !goalFidelity(
+            getDomainModel(context.username, context.activeProject),
+            context.originalGoal || context.goal || ''
+        ).ungrounded;
+        if (verdict?.ok && gatesClean && grounded && context.blueprint?.category) {
             const contributed = recordModel(
                 context.blueprint.category,
                 getDomainModel(context.username, context.activeProject),

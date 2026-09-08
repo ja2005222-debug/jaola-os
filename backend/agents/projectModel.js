@@ -14,6 +14,7 @@
  */
 
 import { smartChat } from '../core/providers/llm.js';
+import { specSections, stripNegated } from './textNormalizer.js';
 
 const MODEL_SYSTEM = `أنت مهندس برمجيات ومحلل مجال (domain analyst) خبير.
 مهمتك تحويل طلب المستخدم (بأي لغة) إلى *نموذج مجال مُهيكَل* — لا كود، بل فهم البنية.
@@ -118,7 +119,10 @@ function fallbackModel(goal, blueprint) {
     //    قِيس في posSpecMeasure). الأداةُ كانت موجودةً منذ PM/3 والاحتياطُ لا يستعملها. الآن: الأدوارُ
     //    والكياناتُ من المعجم بترتيب التكرار، والتدفّقُ الوحيدُ من مكوّنات المخطّط كما كان — وفاعلُه أهمُّ
     //    الأدوار لا `User` المكتوب. النصُّ الذي لا يسمّي شيئاً يبقى على الحدّ الأدنى القديم.
-    const lex = lexiconModel(goal);
+    // 🚫 والنفيُ يُطوى هنا أيضاً — ثالثُ موضعٍ للعلّة نفسِها (PM/23). قِيس بلا نموذجٍ لغويّ:
+    //    مواصفةُ متتبّعِ حفظٍ كاملةً تُنتج كياناً واحداً اسمُه `account` — مأخوذاً من «بلا **حساب**»؛
+    //    أي أنّ فهمَ جولا الاحتياطيَّ للمنتج كلِّه كان **الشيءَ الذي نفاه صاحبُه**.
+    const lex = lexiconModel(stripNegated(goal));
     if (lex.roles.length || lex.entities.length) {
         const actor = lex.roles[0]?.name || 'User';
         return normalizeProjectModel({
@@ -409,13 +413,26 @@ const GENERIC_CONCEPTS = new Set(['user', 'item', 'employee']);
 /** هل المفهومُ عامٌّ (PM/7)؟ — عامٌّ لا يُتتبَّع في ملفّات: `conceptsInText` تستبعده أصلاً فغيابُه ليس ثغرة. */
 export function isGenericConcept(concept) { return GENERIC_CONCEPTS.has(String(concept || '')); }
 
-/** تطبيعٌ لغويّ خفيف: حروفٌ صغيرة، بلا تشكيل، همزاتٌ موحَّدة، بلا «ال»، ة → ه. */
-export function normalizeConceptText(s) {
+/**
+ * تطبيعُ الحروف وحدَه: صغيرة، بلا تشكيل، همزاتٌ موحَّدة، ة → ه — **و«ال» باقية**.
+ *
+ * شُقَّ عن `normalizeConceptText` (PM/24) لأنّ لأداة التعريف مستهلكاً يحتاجها لا يُسقطها:
+ * «ال» **علامةُ اسم** لا تدخل على فعل، وهي أوثقُ ما في الطلب القصير. ولمّا كان التطبيعُ
+ * يبتلعها، كان القارئُ الجديد سيكتب نسخةً ثانية — وهي علّةُ النسختين التي تكرّرت في هذه
+ * الشجرة مراراً. فالمصدرُ واحدٌ بخطوتين: هذه، ثمّ نزعُ الأداة فوقها.
+ */
+export function normalizeLetters(s) {
     return String(s || '').toLowerCase()
         .replace(/[ً-ْـ]/g, '')
         .replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه')
         .replace(/[^\p{L}\p{N}\s/]/gu, ' ')
         .split(/[\s/]+/).filter(Boolean)
+        .join(' ').trim();
+}
+
+/** تطبيعٌ لغويّ خفيف: `normalizeLetters` + نزعُ «ال» التعريف وسوابقِها الملتصقة. */
+export function normalizeConceptText(s) {
+    return normalizeLetters(s).split(' ').filter(Boolean)
         // «ال» التعريف وسوابقُ العطف/الجرّ الملتصقة بها (والسائق، بالمركبة، للراكب) تُنزع — بلا هذا
         // تفلت نصفُ مفردات النصّ العربيّ. السابقةُ وحدها (بلا «ال») لا تُنزع: «وقت» ليست «قت».
         .map(t => (t.length > 4 && /^[وفبكل]ال/.test(t)) ? t.slice(3) : t)
@@ -524,6 +541,197 @@ export function lexiconModel(text) {
         .map(([c]) => c);
     const pick = (kind) => ranked.filter(c => conceptKind(c) === kind).map(name => ({ name, description: '' }));
     return { roles: pick('role'), entities: pick('entity'), flows: [], _source: 'lexicon' };
+}
+
+/**
+ * 🗣️ الكلماتُ الدالّة في نصّ طلب (PM/22): ما يقولُه صاحبُ المشروعِ بلفظِه هو، بلا معجم.
+ *
+ * المعجمُ (`CONCEPTS`) قائمةٌ **مغلقة**: ما ليس فيها لا يُرى. وقِيس أنّ ثمانيةَ أهدافٍ
+ * ممّا ليس موقعاً تجاريّاً (متتبّعُ حفظ، متتبّعُ عادات، بطاقاتُ مذاكرة، يوميّات، مترونوم، مواقيتُ
+ * صلاة، ميزانيّةٌ شخصيّة، لعبةُ كلمات) تُنتج **صفرَ مفاهيمَ في ثمانٍ من ثمان**، فيما يُنتج
+ * متجرٌ وعيادةٌ خمسةً لكلٍّ. فكلُّ بوّابات عقل المنتج تصمت هناك (`applicable:false`،
+ * `substantive:false`، `modelProjectType ← null`) ولا يبقى إلّا تخمينُ النموذج اللغويّ بلا رقيب.
+ *
+ * فهذه تقرأ الطلبَ بلا قائمة: الكلماتُ المتكرّرةُ بعد حذفِ أدواتِ الربط وألفاظِ المنصّة
+ * («تطبيق»، «صفحة»، «app»…) مرتّبةً بالتكرار. دالّةٌ نقيّة.
+ *
+ * حدٌّ **مقيسٌ ومقصود**: هذه صالحةٌ لـ**للمقارنة** لا لـ**للتسمية**. قِيس على الأهداف
+ * الثمانية أنّ مخرجاتِها تخلط إشارةً صادقة («حفظ، آيات، عادة، بطاقة، صلاة، قبلة، لاعب») بضوضاء
+ * («تزامه، بكل، ذهب، أتم») — فلا تُشتقَّ منها أسماءُ كيانات. ذلك دَينٌ مفتوح.
+ */
+const GOAL_STOPWORDS = new Set(normalizeConceptText(
+    'تطبيق تطبيقا برنامج موقع نظام صفحة صفحات شاشة شاشات زر أزرار واجهة واجهات بيانات معلومات أداة '
+    + 'كل من في على إلى عن مع أو ثم لا ما هو هي التي الذي بلا بدون دون يكون تكون يمكن بعض جميع هذا هذه ذلك '
+    + 'كما حيث عند أي إذا قد لكن إلا نفس بحسب داخل خارج بين قبل بعد فقط أيضا كذلك حين أثناء عبر خلال حول ضمن '
+    + 'نحو منذ حتى لدى غير سوى الآن اليوم أمس غدا كذا شيء أشياء عدد كم مثل نوع أنواع أريد ابن ابني أجل '
+    + 'app web page pages screen button data user tool system site build make create the a an of in on to for '
+    + 'with and or not is are be this that it as by from at all any each new one two how many what which when where'
+).split(' '));
+
+/**
+ * @param {string} text نصُّ الطلب  @returns {string[]} الكلماتُ الدالّة مرتّبةً بالتكرار ثمّ بالحرف
+ */
+export function goalWords(text, { min = 3, top = 60, limit = 200000 } = {}) {
+    const freq = new Map();
+    for (const t of normalizeConceptText(String(text || '').slice(0, limit)).split(' ')) {
+        if (t.length < min || GOAL_STOPWORDS.has(t) || /^[\d\u0660-\u0669]+$/.test(t)) continue;
+        freq.set(t, (freq.get(t) || 0) + 1);
+    }
+    return [...freq.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, top).map(([w]) => w);
+}
+
+/**
+ * 🧱 ألفاظُ **إطار الوثيقة** — عناوينُ تصف الوثيقةَ لا المنتج. تُسقَط من التسمية وحدَها.
+ * ليست قائمةَ مجال (تلك مغلقةٌ بطبعها، وهي علّةُ PM/22 نفسُها) بل ألفاظُ كتابةِ المواصفات.
+ */
+const FRAME_HEADINGS = new Set(normalizeConceptText(
+    'الغاية الهدف الاهداف المقدمة النظرة الملخص الخلاصة الخاتمة المتطلبات المواصفات النطاق '
+    + 'الشاشات الصفحات الواجهة الواجهات التصميم الاعدادات الضبط التهيئة الاحصاءات التقرير التقارير '
+    + 'الملاحظات الميزات الوظائف المراحل الخطة التنفيذ التقنيات القيود الامان الاداء '
+    + 'goal goals purpose overview summary scope requirements screens pages ui design settings '
+    + 'stats statistics report reports notes features functions plan phases stack constraints'
+).split(' '));
+
+/**
+ * 🏷️ أسماءُ كياناتٍ من **عناوين صاحب المشروع نفسِه** (PM/23).
+ *
+ * قِيس في PM/22 أنّ كلماتِ الطلب بالتكرار تصلح للمقارنة لا للتسمية: تخلط صدقاً («حفظ، آيات، عادة»)
+ * بضوضاء («تزامه، بكل، ذهب، أتم»). فكُتب ذلك ديْناً وقيل إنّه يحتاج تحليلاً صرفيّاً.
+ *
+ * ثمّ قِيس أنّ **الإشارةَ كانت في مكانٍ آخر**: عناوينُ البنود المرقّمة. صاحبُ المشروع يكتبها **أسماءً**
+ * لا أفعالاً، مجرّدةً من لواصق الضمائر — فهي تسميتُه هو لأجزاء منتجه. المقياسُ على ستِّ مواصفاتٍ
+ * («وِرد»، عادات، بطاقات، مترونوم، ميزانيّة، مواقيت):
+ *   • أوّلُ كلمةٍ من كلِّ عنوان: **١٨/١٩ (٩٥٪)**
+ *   • كلُّ كلمات العنوان:        ٢٣/٢٨ (٨٢٪) — «الورد **اليوميّ**»، «التقرير **الشهريّ**» صفاتٌ لا كيانات
+ *   • التكرارُ في المتن:          نحوُ ٥٠٪
+ * فالأولى هي القاعدة: **رأسُ العنوان**، وما بعده وصفٌ.
+ *
+ * دالّةٌ نقيّة. تعود فارغةً لطلبٍ بلا بنودٍ مرقّمة — وذلك صحيح: لا عناوينَ فلا تسمية.
+ * وحدٌّ مكتوب: هذا يسمّي **كياناتٍ** لا أدواراً؛ العنوانُ لا يقول من يستعمل ماذا.
+ * @param {string} goalText نصُّ الطلب كما كتبه صاحبُه
+ */
+export function headingEntityNames(goalText, { max = 6 } = {}) {
+    const out = [];
+    for (const { title } of specSections(goalText)) {
+        const head = normalizeConceptText(title).split(' ')
+            .find(w => w.length >= 3 && !/^[\d\u0660-\u0669]+$/.test(w));
+        if (head && !FRAME_HEADINGS.has(head) && !out.includes(head)) out.push(head);
+    }
+    return out.slice(0, max);
+}
+
+/**
+ * 🏷️ أسماءُ كياناتٍ من **أداة التعريف** في طلبٍ قصير (PM/24).
+ *
+ * PM/23 سمّت من عناوين البنود المرقّمة (٩٥٪). لكنّ الطلبَ القصير بلا عناوين، وقِيس أنّ كلماتِه
+ * بالتكرار أسوأُ من متن الوثيقة: **٢١/٤٨ = ٤٤٪** — أفعالٌ («اصنع»، «أسجّل»، «تضبط») ولواصقُ
+ * ضمائرَ («عاداتي»، «تدويناتي») وحروفٌ («فيه»، «بوسوم»).
+ *
+ * والإشارةُ كانت في اللواصق نفسِها لا في إسقاطها: **«ال» لا تدخل على فعل**. فقِيست وحدَها:
+ *   • «ال» بلا فلتر            ٢٦/٣٤ = ٧٦٪
+ *   • **«ال» بإسقاط صفةِ النسبة  ٢٥/٢٦ = ٩٦٪**
+ *   • الضميرُ المتّصل           ٥/٢٢ = ٢٣٪  ← ساقط: تطبيعُ `ة→ه` يجعل كلَّ مؤنّثٍ يبدو
+ *     منتهياً بهاء الملكيّة («مذاكرة»→«مذاكر»)، والأفعالُ تأخذ ضمائرَ مفعولٍ («ينبّهني»).
+ *
+ * وصفةُ النسبة هي أكثرُ ما يلتبس بالاسم بعد «ال» («اليوميّة»، «أفقيّة»، «النسخيّ»، «إلكترونيّاً»)،
+ * فتُسقَط بلاحقتها. وثمنُها مقيسٌ: تسقط معها أسماءٌ صحيحةٌ قليلة («السقاية») — والدقّةُ أولى هنا،
+ * لأنّ الاسمَ الخطأ يصير كياناً يُبنى له.
+ *
+ * التغطيةُ ٨/١٤ هدفاً — وذلك صريحٌ لا عيب: طلبٌ بلا «ال» يبقى بلا تسمية، فيُقال ولا يُختلق.
+ * وستٌّ من الأهداف الأربعةَ عشرَ أُضيفت **بعد** صوغ القاعدة، ونصيبُها ١٦/١٧ — فلا تفصيلَ على المثال.
+ *
+ * دالّةٌ نقيّة. حدٌّ مكتوب: «ال» التي ليست أداةَ تعريف تمرّ («الالتزام» ← «تزام»)، وهي — كأختِها
+ * في `wordsMeet` — التباسٌ لا يُحسم بلا معجمٍ صرفيّ.
+ */
+const ARTICLE_MARKED = /^(?:[وفبكل])?ال(.{3,})$/u;
+const NISBA_SUFFIX = /(?:يه|يا|ي)$/u;
+
+export function articleEntityNames(goalText, { max = 6 } = {}) {
+    const out = [];
+    for (const w of normalizeLetters(stripNegated(goalText)).split(' ')) {
+        const m = ARTICLE_MARKED.exec(w);
+        if (!m) continue;
+        const stem = m[1];
+        if (NISBA_SUFFIX.test(stem) || FRAME_HEADINGS.has(stem) || GOAL_STOPWORDS.has(stem)) continue;
+        if (!out.includes(stem)) out.push(stem);
+    }
+    return out.slice(0, max);
+}
+
+/**
+ * ⚖️ هل يمسُّ الفهمُ الطلبَ أصلاً؟ (PM/22) — `domainFidelity` تسأل عن **المبنيّ**، وهذه تسأل عن **المطلوب**.
+ *
+ * قِيس في تجربة `from0`: طُلب متتبّعُ حفظِ قرآن، فأعاد النموذجُ اللغويّ
+ * `Student/Teacher/Parent/Grade/ForumPost`، و`normalizeProjectModel` تفحص **شكلَ** النموذج ولا تفحص
+ * **صلتَه بالطلب** أبداً — فلا بوّابةَ بين الفهم والسؤال. وقُِيس أنّ `domainFidelity` لو طُبّقت
+ * على الطلب لما مَيّزت: المهلوَس والصادق كلاهما `covered:0` — لأنّ طرفَي المقارنة لا يتكلّمان
+ * لغةً واحدة: طرفُ الفهم **مفتوح** (`conceptOf` تعود بالاسم نفسِه حين يغيب المعجم)،
+ * وطرفُ النصّ **مغلق** (`conceptsInText` لا ترى إلّا المعجم). فالمقياسُ يقول الشيءَ نفسَه للصادق والكاذب.
+ *
+ * فهنا جسران، والاسمُ مسنودٌ إن عبَر أحدَهما:
+ *  1. **جسرُ المعجم**: الاسمُ مفهومٌ معروف، والطلبُ ينطق به — يجسر اللغتين (`Product` ↔ «منتجات»).
+ *  2. **جسرُ اللفظ**: إحدى كلماتِ الاسم تلتقي كلمةً دالّةً في الطلب — يعمل خارج المعجم كلِّه.
+ *
+ * مقيسٌ على مواصفة «وِرد»: المهلوَس ٠/٦ والصادق ٤/٤ — فصلٌ تامُّ.
+ *
+ * حدٌّ مقيسٌ مكتوب: فهمٌ **صادق** بأسماءٍ إنجليزيّة في مجالٍ **خارج المعجم** على طلبٍ عربيّ
+ * لا يعبر أيَّ جسر (`Wird/Surah/Memorizer` على وصفٍ عربيّ ← ٠/٤) — إنذارٌ كاذب. ولذلك لا يُسقِط
+ * مستهلِكُها بناءً ولا يستبدل فهماً: يقول «لم يُتحقَّق». والمجالُ المعروف لا يقع فيه: جسرُ
+ * المعجم يعبر بـ`Product/Order/Customer` إلى «منتجات/طلبات/عملاء» (مقيس).
+ *
+ * @param {object} understood نموذجُ الفهم  @param {string} goalText نصُّ الطلب كما كتبه صاحبُه
+ */
+export function goalFidelity(understood, goalText) {
+    const m = normalizeProjectModel(understood || {});
+    // الأسماءُ العامّة (`User`/`Item`) لا تُحسَب دليلاً ولا تُهمة — لا تسمّي منتجاً
+    const names = [...m.entities.map(e => e.name), ...m.roles.map(r => r.name)]
+        .filter(n => !isGenericConcept(conceptOf(n)));
+    // 🧭 لا نصَّ طلبٍ = لا حكم. قِيس: مسارٌ يستدعي المرحلةَ بسياقٍ بلا هدف كان يُدان فهمُه
+    //    «لا يمسّ الطلبَ» — وهو عينُ الخطأ الذي تُصلحه هذه الجولة: مقياسٌ بلا مُدخَلٍ يقول
+    //    «لا أستطيع الحكم» لا «مُدان». (`applicable:false` تُسكت الحكمَ كما في `domainFidelity`.)
+    if (!String(goalText || '').trim()) {
+        return { applicable: false, names, supported: [], groundless: [], words: [], ungrounded: false };
+    }
+    // 🚫 ما نفاه صاحبُ المشروع ليس دليلاً على أنّ طلبَه ينطق به. قِيس: مواصفةُ «وِرد» كلُّها
+    //    تُنتج مفهوماً واحداً — `account` — من عبارة «بلا **حساب**»، فكان يسنُد فهماً مهلوَساً
+    //    (`Grade/ForumPost/Teacher/Parent`) فينجو من الوصم. وهي علّةُ `needsBackend` نفسُها
+    //    بوجهٍ ثانٍ، ولذلك صار مصدرُ `stripNegated` واحداً.
+    const said = stripNegated(goalText);
+    const spoken = conceptsInText(said);
+    const words = goalWords(said);
+    const supported = []; const groundless = [];
+    for (const name of names) {
+        const concept = conceptOf(name);
+        const byLexicon = !!concept && spoken.has(concept);
+        const byWord = normalizeConceptText(name).split(' ')
+            .some(t => t.length >= 3 && words.some(w => wordsMeet(t, w)));
+        (byLexicon || byWord ? supported : groundless).push(name);
+    }
+    return {
+        // مفهومان فأكثر — العتبةُ نفسُها في `domainFidelity`: الواحدُ يُصادَف
+        applicable: names.length >= 2,
+        names, supported, groundless, words,
+        // لا أحدَ من أسماء الفهم له أثرٌ في طلب صاحبِه — فهذا فهمُ منتجٍ آخر
+        ungrounded: names.length >= 2 && supported.length === 0,
+    };
+}
+
+/**
+ * هل تلتقي كلمتان؟ جذرٌ خشن: البدايةُ المشتركة تكفي (حفظ/يحفظ/حافظ) — مقياسٌ لا لغويّاتٌ،
+ * والتساهلُ مقصود: الإنذارُ هو الفعلُ الخطِر فيُمال إلى عدمِه.
+ *
+ * والاحتواءُ (لا البدايةُ وحدَها) لأربعةِ أحرفٍ فأكثر: `normalizeConceptText` تنزع «ال» وسوابقَها
+ * الملتصقة (`[وفبكل]ال`) ولا تنزع «لل» — فطلبٌ يقول «تعود **للمراجعة**» كان يُسقط اسماً صادقاً
+ * اسمُه «مراجعة» (مقيس). والحدُّ أربعةٌ لأنّ ما دونها يلتقي مصادفةً داخل كلماتٍ أخرى.
+ * أُصلح هنا لا في `normalizeConceptText`: نزعُ «لل» هناك يمسّ كلَّ المطابقات ويلتبس
+ * («للعبة» = لِـ+لعبة لا لِـ+اللعبة)، وهنا أثرُه في اتّجاه التساهل وحدَه.
+ */
+function wordsMeet(a, b) {
+    if (a === b) return true;
+    const short = a.length <= b.length ? a : b;
+    const long = a.length <= b.length ? b : a;
+    if (short.length < 3) return false;
+    return long.startsWith(short) || (short.length >= 4 && long.includes(short));
 }
 
 /**

@@ -138,7 +138,7 @@ import { polishHtml } from './agents/polishPack.js';
 import { setProjectSecret, deleteProjectSecret, getProjectSecretNames, getProjectSecrets, getUnreadableSecretNames, clearProjectSecrets } from './services/projectSecrets.js';
 import { saveProjectFields, projectLocalPath } from './services/projectRecord.js';
 import { snapshotWorkspace, restoreWorkspaceIfEmpty, clearWorkspaceSnapshot } from './services/workspaceStore.js';
-import { recordTurn } from './services/conversationStore.js';
+import { recordTurn, loadRecent } from './services/conversationStore.js';
 import { buildMetricsPayload, clearMetrics } from './services/metricsStore.js';
 import { queueStatus } from './core/runtime/ExecutionQueue.js';
 import { getCommitHistory, rollbackToCommit } from './agents/gitAgent.js';
@@ -760,19 +760,29 @@ io.on('connection', (socket) => {
         socket.emit('project_metrics', buildMetricsPayload(username, safeProject));
 
         // استعادة تاريخ المحادثة — لكل مشروع (username::project) حتى لا تظهر
-        // «الطبقة القديمة» من مشاريع أخرى مع كل تحديث
-        if (isDbConnected && mongoose.connection.readyState === 1) {
-            try {
-                // $slice يجلب آخر 50 رسالة فقط من MongoDB بدل المستند كاملاً (قد يضم مئات الرسائل)
-                const convo = await Conversation.findOne(
-                    { username: `${username}::${safeProject}` },
-                    { messages: { $slice: -50 } }
-                ).lean();
-                if (convo?.messages?.length > 0) {
-                    socket.emit('chat_history', convo.messages);
-                }
-            } catch (e) {}
-        }
+        // «الطبقة القديمة» من مشاريع أخرى مع كل تحديث.
+        //
+        // 🔴 كان هذا مشروطاً بـ`isDbConnected` ويسأل `Conversation` مباشرةً — وللمخزن
+        //    مصدران: Mongo وملفٌّ على القرص ينجو من إعادة التشغيل. فبلا Mongo كان صاحبُ
+        //    المشروع يفتح مشروعَه فلا يرى شيئاً، ورسائلُه محفوظةٌ على القرص — ومنها **تقريرُ
+        //    التسليم** الذي جُعل باقياً أصلاً لئلّا يضيع. فما حُفظ لأجل ألّا يضيع كان يضيع
+        //    في العرض. والمخزنُ الآن يجيب من حيث هي، و`$slice` باقٍ على مسار Mongo.
+        try {
+            const history = await loadRecent(`${username}::${safeProject}`, 50);
+            if (history.length > 0) socket.emit('chat_history', history);
+        } catch (e) {}
+
+        // 📼 سجلُّ البناء لمن عاد — `Socket.IO` يبثّ لحظةً، فمن أعاد تحميلَ الصفحة
+        //    أثناء البناء كان يعود إلى سجلٍّ فارغ والمهمّةُ ماضيةٌ على الخادم. فما يراه ليس
+        //    مهمّةً متوقّفة بل مهمّةً لم يصله خبرُها. المُبلِّغُ يقيّد ما يبثّ، وهنا يُعاد
+        //    **لهذا المقبس وحدَه** (لا للغرفة) كي لا يتكرّر على من لم يغادر.
+        try {
+            const tape = runtime.reporter?.recentLogs?.(roomName) || [];
+            if (tape.length > 0) {
+                socket.emit('log', { message: `⏮️ [SYSTEM]: ما فاتك من سجلّ البناء (${tape.length} سطراً):` });
+                for (const line of tape) socket.emit('log', line);
+            }
+        } catch (e) {}
     });
 
     // ⏹️ إيقاف المهمة الجارية عبر الـ socket (بديل فوري لمسار /api/ai/abort)
