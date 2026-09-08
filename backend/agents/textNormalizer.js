@@ -255,7 +255,11 @@ export function hasActionIntent(text) {
 const SPEC_MIN_CHARS = 1200;
 const SPEC_MIN_SECTIONS = 6;
 // بندٌ مرقّمٌ في أوّل سطره: «1.» أو «2)» أو «٣-» — عربيّةً كانت أرقامُه أو لاتينيّة.
-const NUMBERED_SECTION = /^[\t ]*[\d\u0660-\u0669]{1,2}\s*[.)\u061B:-]\s*\S/gmu;
+// 📐 رأسُ ماركداون اختياريّ قبل الرقم (`## 1.`): قِيس على مواصفةٍ حقيقيّة أنّ الصيغةَ
+//    الماركداونيّة تُعطي **صفرَ** بنودٍ، فتسقط `isFullSpecification` ومعها كلُّ ما تحرسه —
+//    بوّابةُ المتطلّبات (PM/9، PM/12) وتسميةُ الكيانات (PM/23) و`specHead` (PM/11: تعود
+//    بالوثيقة كلِّها بدل جملة التسمية). والرقمُ يبقى **شرطاً**: `## الغاية` عنوانٌ لا بند.
+const NUMBERED_SECTION = /^[\t ]*(?:#{1,6}[\t ]*)?[\d\u0660-\u0669]{1,2}\s*[.)\u061B:-]\s*\S/gmu;
 
 
 /**
@@ -287,7 +291,9 @@ export function numberedSections(text) {
     return (String(text || '').match(NUMBERED_SECTION) || []).length;
 }
 
-const NUMBERED_LINE = /^[\t ]*([\d\u0660-\u0669]{1,2})\s*[.)\u061B:-]\s*(\S.*)$/u;
+// توأمُ `NUMBERED_SECTION` أعلاه — يبقيان متطابقَين في ما يعدّانه بنداً، وإلّا عدّت
+// البوّابةُ ما لا تقرؤه القائمة.
+const NUMBERED_LINE = /^[\t ]*(?:#{1,6}[\t ]*)?([\d\u0660-\u0669]{1,2})\s*[.)\u061B:-]\s*(\S.*)$/u;
 const AR_DIGITS = '\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669';
 const toLatinDigits = (s) => String(s).replace(/[\u0660-\u0669]/g, (d) => String(AR_DIGITS.indexOf(d)));
 
