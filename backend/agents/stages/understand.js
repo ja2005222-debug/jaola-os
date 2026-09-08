@@ -13,7 +13,7 @@
  * (`s.rt._understandGoal = …`) لم تتغيّر.
  */
 import { buildMemoryContext, updateStructure, setDomainModel, getDomainModel } from '../projectMemory.js';
-import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel, goalFidelity, headingEntityNames, articleEntityNames, normalizeProjectModel } from '../projectModel.js';
+import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel, goalFidelity, headingEntityNames, articleEntityNames, labelledRoleNames, normalizeProjectModel } from '../projectModel.js';
 import { getLibraryModel } from '../modelLibrary.js';
 import { buildProfileContext } from '../userProfile.js';
 import { isExplicitNewBuild } from '../textNormalizer.js';
@@ -85,7 +85,13 @@ export async function understandGoal(goal, ctx, reporter) {
         //
         //    ولا يقع إلّا حين يكون الفهمُ **بلا أثرٍ في الطلب أصلاً**: بديلٌ ٩٥٪ نظيف خيرٌ من فهمٍ
         //    قِيس أنّه فهمُ منتجٍ آخر. وما دون ذلك يبقى كما هو — لا نُصلح ما لم يُقَس كسرُه.
-        //    وحدٌّ مكتوب: العناوينُ تسمّي **كياناتٍ** لا أدواراً، فالأدوارُ تسقط ولا تُختلق.
+        //    وحدُّ PM/23 المكتوب: العناوينُ تسمّي **كياناتٍ** لا أدواراً، فالأدوارُ تسقط ولا تُختلق.
+        //
+        // 👥 PM/25 — والحدُّ يُرفع من جهته الصحيحة: لا باستنباط الأدوار، بل بقراءةِ **حيث يسمّيها
+        //    صاحبُها صراحةً**. قِيس على مواصفة نقاط البيع أنّ فيها سطراً واحداً لا لبسَ فيه
+        //    («أدوار: مالك النظام، مدير الفرع، الكاشير، أمين المخزن، المحاسب») **ولا يصل منه
+        //    ولا واحد**، وأنّ `role-coverage` بصفر أدوارٍ **لا تُبثّ أصلاً** فلا تنجح ولا تفشل.
+        //    فبعد الاستبدال تُقرأ الأدوارُ من سطرها؛ وبلا سطرٍ تبقى فارغةً — يُقال ولا يُختلق.
         //
         // 🏷️ PM/24 — ومصدرٌ ثانٍ للتسمية حين لا عناوين: **أداةُ التعريف**.
         //    الطلبُ القصير بلا بنودٍ مرقّمة، وقِيس أنّ كلماتِه بالتكرار ٤٤٪ نظيفة فقط (أفعالٌ
@@ -99,7 +105,9 @@ export async function understandGoal(goal, ctx, reporter) {
             if (names.length >= 2) {
                 renamed = names;
                 model = normalizeProjectModel({
-                    entities: names.map(name => ({ name })), roles: [], flows: [], _source: 'headings',
+                    entities: names.map(name => ({ name })),
+                    roles: labelledRoleNames(goal).map(name => ({ name })),
+                    flows: [], _source: 'headings',
                 });
             }
         }

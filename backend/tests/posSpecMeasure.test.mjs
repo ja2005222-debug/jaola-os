@@ -63,7 +63,9 @@ test('الحقيقةُ المقيسة ٢ (أُغلقت: PM/6 للفهم، PM/11 
     const model = await deriveProjectModel(SPEC, bp);
     assert.equal(model._source, 'lexicon');
     assert.deepEqual({ roles: model.roles.map(r => r.name), entities: model.entities.map(e => e.name).slice(0, 2) },
-        { roles: ['staff', 'customer', 'admin', 'tenant'], entities: ['product', 'invoice'] });
+        // 👥 PM/25: الأدوارُ من سطر صاحب الوثيقة («أدوار: مالك النظام، مدير الفرع، …») لا من معجمنا.
+        //    الكياناتُ كما هي — مصدرُها المعجمُ ولم يتغيّر.
+        { roles: ['مالك النظام', 'مدير الفرع', 'الكاشير', 'أمين المخزن'], entities: ['product', 'invoice'] });
 });
 
 test('الحقيقةُ المقيسة ٣ (أُغلقت في PM/7): متطلّباتُ الوثيقة على كلون نقاط البيع — ٧ من ١٠ لها أثر، وثلاثةٌ بلا أثر تُقال بأسمائها فالحكمُ FAILED لا PASS', async () => {
@@ -76,7 +78,11 @@ test('الحقيقةُ المقيسة ٣ (أُغلقت في PM/7): متطلّب�
     const v = strategyVerdict({ filesCount: 3, behavior, requirements: composeRequirements(null, model), files: clone.files });
     assert.equal(v.status, 'FAILED');
     assert.equal(v.gates.find(g => g.name === 'requirements-verify').detail,
-        '3 متطلّب بلا أثر: شاشة customer، شاشة tenant، بيانات account (7/10 له أثر — أثرٌ لا تنفيذ؛ 4 لا يُتتبَّع بالمفردات)');
+        // 👥 PM/25 — والحكمُ صار **أصدق** لا مجرّدَ مُعادِ التسمية: ٧/١٠ ← ٨/١٠، و٣ بلا أثر ← ٢.
+        //    «شاشة customer» و«شاشة tenant» كانتا فجوتَين بأسماءِ معجمِنا؛ وكلونُ نقاط البيع
+        //    يمثّل فعلاً «مالك النظام» و«مدير الفرع» و«الكاشير» — فسقطتا بحقّ. والباقيةُ
+        //    «شاشة أمين المخزن» فجوةٌ **حقيقيّة** سمّاها صاحبُ الوثيقة ولم يُبنَ لها شيء.
+        '2 متطلّب بلا أثر: شاشة أمين المخزن، بيانات account (8/10 له أثر — أثرٌ لا تنفيذ؛ 4 لا يُتتبَّع بالمفردات)');
 });
 
 test('التوجيه بعد الإصلاح: الوثيقةُ على مجلّدٍ فارغ تذهب إلى كلون نقاط البيع لا إلى صفحة الهبوط — والاختصارُ التسويقيّ لا يسبق الفهم', async () => {

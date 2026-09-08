@@ -58,9 +58,11 @@ test('المسارُ كاملاً (كلون نقاط البيع بوثيقة، �
         const j = L.findIndex(l => l.includes('[Judge]: ⚖️ الحكم: FAILED'));
         assert.ok(j > 0, s.logs());
         assert.equal(L[j - 1], '[JCOS] ➔ [Kernel]: ⚠️ اكتملت المهمّة — ولم يجتز المنتجُ التحقّق (قالب jaola عامل)');
-        assert.equal(gate(r.verdict, 'behavior-verify').detail, 'ثغراتٌ باقية: أدوار بلا واجهة/تمثيل: staff، tenant');
+        // 👥 PM/25: فجوتان بألفاظِ معجمِنا («staff، tenant») ← فجوةٌ واحدةٌ باسمِ صاحبِ المشروع.
+        //    وهي الصادقة: الكلونُ يمثّل «مالك النظام» و«مدير الفرع» و«الكاشير» ولا يمثّل «أمين المخزن».
+        assert.equal(gate(r.verdict, 'behavior-verify').detail, 'ثغراتٌ باقية: أدوار بلا واجهة/تمثيل: أمين المخزن');
         const msg = s.replies().find(m => m.includes('بدأنا من قالب'));
-        assert.match(msg, / • behavior-verify: ثغراتٌ باقية: أدوار بلا واجهة\/تمثيل: staff، tenant\n⚖️ التحقّق: /);
+        assert.match(msg, / • behavior-verify: ثغراتٌ باقية: أدوار بلا واجهة\/تمثيل: أمين المخزن\n⚖️ التحقّق: /);
         assert.doesNotMatch(msg, /role-coverage/);
     } finally { resetProjectState(s.ctx.username, s.ctx.activeProject); }
 });
