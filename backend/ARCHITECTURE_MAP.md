@@ -151,7 +151,7 @@ Policy/Permission، Identity، Plugin.
 | `databaseAgent.js`, `postgresAgent.js` (PM/5: لا مخطّطَ ⇒ لا تسليم), `authAgent.js`, `generatedAppSecrets.js`, `dependencyAgent.js` | 272/369/345/56/288 | كتلة الخلفية | KEEP | Task | `plugins/coding/stages/` |
 | `renderAgent.js` | 262 | نشر Render | MODIFY | Tool (deploy) | `plugins/coding/tools/` |
 | `requirementsVerifier.js` (PM/4: `composeRequirements`؛ PM/7: `_kind` + `traceRequirements` بمعجم projectModel؛ PM/9: `traceSections` + `buildSectionFixInstruction` بلغة الوثيقة؛ PM/12: `sectionLabel` اسمُ البند لا جملتُه؛ PM/14: `productCorpus` — المتتبِّعان يقرآن نصَّ المنتج لا نصَّ الملفّ؛ PM/18: كلماتُ الإطار مُطبَّعة كالمفردات؛ PM/21: `isPlanRow` — سطرُ الجدول الزمنيّ لا يُتتبَّع؛ 🔤 `scriptCorpus` و`decorative` — أثرٌ يصل شفرةً تعمل ليس كأثرٍ في نثرٍ ميّت) | 256 | هل نُفِّذت المتطلبات؟ | KEEP | Evidence | `core/verification/` (Sprint 4) |
-| `behaviorVerifier.js` (PM/14: بوّابةُ صدق المجال على نصّ المنتج) | 529 | تحقّق ساكن + تشغيل حيّ (وحدة الدليل `check`) | MOVE | Evidence + Verification | `core/verification/VerificationEngine.js` (Sprint 4) |
+| `behaviorVerifier.js` (PM/14: بوّابةُ صدق المجال على نصّ المنتج) | 533 | تحقّق ساكن + تشغيل حيّ (وحدة الدليل `check`) | MOVE | Evidence + Verification | `core/verification/VerificationEngine.js` (Sprint 4) |
 | `modelLibrary.js` | 69 | معرفة تراكمية | KEEP | Memory | `core/memory/` (لاحقاً) |
 | `fileManager.js`, `patchEditor.js` | 319/187 | كتابة/ترقيع ملفات مباشرة | MODIFY | Tool (workspace.writeFiles) | `core/runtime/ToolRuntime.js` |
 | `imageForge.js` | 140 | صور مضمونة | KEEP | Provider | `plugins/coding/` |

@@ -56,7 +56,7 @@ test('domainFidelity: صفحةُ مطعمٍ على فهمِ تاكسي = تلو�
 test('الفحصُ في المحقّق: تلوّثٌ → fail بمفاهيم الطرفين؛ نقصٌ → warn بأسمائه؛ تغطيةٌ → pass؛ فهمٌ عامّ → لا فحصَ أصلاً', () => {
     const fail = check(analyzeStatic({ html: RESTAURANT, js: '', domainModel: TAXI }));
     assert.equal(fail.status, 'fail');
-    assert.match(fail.detail, /^المبنيُّ يتكلّم لغةَ منتجٍ آخر: .+ — ولا أثرَ لمفاهيم المنتج المطلوب \(trip، vehicle، passenger، driver، admin\)\.$/);
+    assert.match(fail.detail, /^المبنيُّ يتكلّم لغةَ منتجٍ آخر: .+ — ولا أثرَ لمفاهيم المنتج المفهوم \(trip، vehicle، passenger، driver، admin\)\.$/);
     const warn = check(analyzeStatic({ html: '<h1>الراكب</h1>', js: '', domainModel: TAXI }));
     assert.equal(warn.status, 'warn'); assert.match(warn.detail, /مفاهيمُ المنتج غير ظاهرة في الواجهة\/الكود: trip، vehicle، driver، admin\./);
     assert.equal(check(analyzeStatic({ html: TAXI_PAGE, js: '', domainModel: TAXI })).status, 'pass');
