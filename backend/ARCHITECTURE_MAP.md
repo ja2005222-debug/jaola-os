@@ -131,7 +131,7 @@ Policy/Permission، Identity، Plugin.
 ### C2. وكلاء الحزمة (AgentBundle — `CONTRACTS.md` §2أ)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `coderAgent.js` | 411 | `coreGenerateCodePlan` / `coreEditCodePlan` (إلزامي) + `selectModels` (يُرشِّح خطَّ النماذج بـ`AI_PROVIDERS` — العملاءُ يُنادَون هنا مباشرةً خارج السلسلة) | MODIFY | Agent (spec تصريحي تحت Agent Runtime) | `plugins/coding/agents/` |
+| `coderAgent.js` | 424 | `coreGenerateCodePlan` / `coreEditCodePlan` (إلزامي) + `selectModels` (يُرشِّح خطَّ النماذج بـ`AI_PROVIDERS` — العملاءُ يُنادَون هنا مباشرةً خارج السلسلة). **والحلقتان متساويتان الآن**: مسارُ التعديل الجراحيّ كان مصفوفةَ دوالٍّ عارية بلا مرشِّح ولا إشارةِ عطبٍ دائم، فقِيس أنّه ينادي **خاماً** مزوّدَين أعلن السجلُّ استبعادَهما | MODIFY | Agent (spec تصريحي تحت Agent Runtime) | `plugins/coding/agents/` |
 | `architectAgent.js` | 43 | `architectReview` حتمي (إلزامي) | MODIFY | Agent + Evidence (`checks[]`) | `plugins/coding/agents/` |
 | `qaAgent.js` | 115 | `qaVerify` حتمي (إلزامي) | MODIFY | Agent + Evidence (`checks[]`) | `plugins/coding/agents/` |
 | `core/evidence/Check.js` | 55 | عقدُ الدليل الذي يتكلّمه الناقدان (Sprint 4) | KEEP | Evidence | `core/evidence/` |
