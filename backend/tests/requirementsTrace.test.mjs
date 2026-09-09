@@ -39,12 +39,15 @@ test('traceRequirements: دورٌ/كيانٌ في المعجم يُتتبَّع 
         untraceable: ['شاشة User', 'الميزة الأساسية التفاعلية', 'تدفّق بيع بالمنتج'],
         // 🔤 ⊆ traced: أثرُهما في نثر index.html وحدَه؛ و`app.js` هنا `const rows = []` لا ينطق بشيء.
         decorative: ['شاشة customer', 'بيانات product'],
+        // 🔓 #١٩٨: قائمةٌ خامسة — «لم أتتبّعه بمفرداته». فارغةٌ هنا: هذه المتطلّباتُ بلا `_term`
+        //    (طُعمٌ مكتوبٌ يدويّاً)، فالمعجمُ وحدَه يحكم عليها كما كان.
+        unmatched: [],
     });
     assert.deepEqual(traceRequirements([{ name: 'تدفّق إغلاق وردية', _kind: 'flow' }], [{ name: 'a.js', content: 'وردية' }]).untraceable, ['تدفّق إغلاق وردية'], 'بلا _kind كانت ستُتتبَّع بمفردة «وردية» — التدفّقُ انتقالُ حالةٍ لا لفظ');
     assert.deepEqual(traceRequirements([{ name: 'بيانات وردية' }], [{ name: 'a.js', content: 'وردية' }]).traced, ['بيانات وردية'], 'بلا _kind: المعجمُ يقرّر');
-    assert.deepEqual(traceRequirements([], files), { traced: [], missing: [], untraceable: [], decorative: [] });
-    assert.deepEqual(traceRequirements([{ name: 'بيانات product', _kind: 'entity' }], []), { traced: [], missing: ['بيانات product'], untraceable: [], decorative: [] }, 'بلا ملفّات: كلُّ شيءٍ بلا أثر — والمستدعي يقرّر skipped قبل النداء');
-    assert.deepEqual(traceRequirements(null, null), { traced: [], missing: [], untraceable: [], decorative: [] });
+    assert.deepEqual(traceRequirements([], files), { traced: [], missing: [], untraceable: [], decorative: [], unmatched: [] });
+    assert.deepEqual(traceRequirements([{ name: 'بيانات product', _kind: 'entity' }], []), { traced: [], missing: ['بيانات product'], untraceable: [], decorative: [], unmatched: [] }, 'بلا ملفّات: كلُّ شيءٍ بلا أثر — والمستدعي يقرّر skipped قبل النداء');
+    assert.deepEqual(traceRequirements(null, null), { traced: [], missing: [], untraceable: [], decorative: [], unmatched: [] });
 });
 
 test('requirementsTraceOutcome: لا متطلّبات/لا ملفّات → skipped بالسبب؛ كلُّها لا يُتتبَّع → skipped بعدده؛ بلا أثر → fail بالأسماء؛ كلُّه له أثر → pass «أثرٌ لا تنفيذ»', () => {
@@ -135,5 +138,61 @@ test('الحدود: البناةُ الثلاثة يمرّرون requirements و
     const rv = src('../agents/requirementsVerifier.js');
     assert.ok(rv.includes("import { conceptOf, conceptKind, conceptsInText, isGenericConcept, normalizeConceptText, productText } from './projectModel.js';"), 'PM/9: التطبيعُ نفسُه لمفردات البنود؛ وPM/14: الإسقاطُ نفسُه للمتتبِّعَين');
     assert.equal((rv.match(/productCorpus\(files\)/g) || []).length, 2, 'PM/14: المتتبِّعان يقرآن نصَّ المنتج لا نصَّ الملفّ');
+    // #١٩٨: الوسمُ يُكتب مرّةً ويُقرأ مرّة — والقراءةُ صارت في متغيّرٍ واحدٍ (`isFlow`) يُستهلك مرّتين.
     assert.equal((rv.match(/_kind/g) || []).length, 2, 'الوسمُ يُكتب مرّةً ويُقرأ مرّة');
+    // #١٩٨: مطابقتان بسؤالَين مختلفَين، لكلٍّ مستهلكٌ واحدٌ ومكتوب:
+    //   `matchTokens` حرفيّةٌ على حدّ كلمة — لبنود الوثيقة، وعناوينُها تُعاد بنصّها (PM/9، مقيسٌ صحيح).
+    //   `matchTerm`   بصرفِ العربيّة — لمصطلح النموذج، وهو يظهر في الصفحة مصرَّفاً.
+    // وقاعدةُ اللواصق نفسُها لها **موضعٌ واحد** في الشجرة: `keywordMatches`.
+    // ولم تُوحَّد الاثنتان: تحويلُ بنود الوثيقة إلى الصرف يُرخي حارساً مقيساً، وذلك قياسٌ مستقلّ.
+    assert.equal((rv.match(/matchTokens\(/g) || []).length, 2, 'تعريفٌ + مستهلكٌ واحد (بنودُ الوثيقة)');
+    assert.equal((rv.match(/matchTerm\(/g) || []).length, 2, 'تعريفٌ + مستهلكٌ واحد (مصطلحُ النموذج)');
+    assert.equal((rv.match(/keywordMatches\(/g) || []).length, 2, 'قاعدةُ اللواصق تُستورَد ولا تُنسَخ');
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// #١٩٨ — نصفُ ما يشتقّه الفهمُ من كلام صاحب المشروع كان يسقط من الحكم صامتاً
+//
+// قِيس على ثمانية مجالاتٍ عربيّة (٤٨ اسمَ كيانٍ ودور): المعجمُ يعرف **٢٢ فقط (٤٦٪)**،
+// والباقي يخرج من البسط والمقام معاً. صيدليّة ٣/٦، ورشةُ سيارات ٢/٦، مزرعة ١/٦.
+// والقاعدةُ السابعة في CLAUDE.md تسمّي هذا: قائمةٌ مغلقة تحكم على نصٍّ كتبه إنسان.
+// ══════════════════════════════════════════════════════════════════════════════
+test('#١٩٨: مصطلحُ صاحب المشروع خارجَ المعجم يُحاكَم بمفرداته — لا يخرج من العدّ صامتاً', () => {
+    const files = [
+        { name: 'index.html', content: '<h1>صيدلية</h1><section>الوصفات</section><section>المخزون</section><script src="s.js"></script>' },
+        { name: 's.js', content: "const وصفات=[{اسم:'x'}]; const مخزون=[]; render(وصفات, مخزون);" },
+    ];
+    const reqs = composeRequirements(null, { entities: [{ name: 'وصفة' }, { name: 'مخزون' }, { name: 'تأمين' }], roles: [], flows: [] });
+    // `_term` يحمل كلمتَه كما اشتُقّت — مجرّدةً من إطارِنا «بيانات»
+    assert.deepEqual(reqs.map(r => r._term), ['وصفة', 'مخزون', 'تأمين']);
+    const t = traceRequirements(reqs, files);
+    // «وصفة» تُطابق «الوصفات» و«مخزون» تُطابق «المخزون» — صرفاً لا حرفاً
+    assert.deepEqual(t.traced, ['بيانات وصفة', 'بيانات مخزون'], JSON.stringify(t));
+    assert.deepEqual(t.unmatched, ['بيانات تأمين'], 'غائبٌ تماماً: يُقال ولا يُتَّهم');
+    assert.deepEqual(t.untraceable, [], 'لا صمت');
+});
+
+test('#١٩٨: العامُّ واحتياطُنا يبقيان خارج الحكم — الانفتاحُ لكلمته لا لكلماتنا', () => {
+    const files = [{ name: 'index.html', content: '<h1>صفحة تسويقية</h1>' }];
+    // `Visitor` يفبركه مسارُ Registry حين لا فهم؛ والمعجمُ يردّه إلى `user` وهو عامّ
+    const t = traceRequirements(composeRequirements(null, { roles: [{ name: 'Visitor' }], entities: [], flows: [] }), files);
+    assert.deepEqual(t.untraceable, ['شاشة Visitor'], JSON.stringify(t));
+    assert.deepEqual([...t.missing, ...t.unmatched], [], 'لا يُحكَم على بناءٍ بمتطلّبٍ اخترعناه');
+});
+
+test('#١٩٨: المعجمُ يبقى صاحبَ الكلمة حيث ينطق — المرادفُ لا يبلغه المقياسُ المفتوح', () => {
+    // «زبون» في النموذج و«عميل» في الصفحة: مفهومٌ واحد. المطابقةُ الحرفيّةُ تعجز، والمعجمُ لا يعجز.
+    const files = [{ name: 'index.html', content: '<h1>العميل</h1><script src="s.js"></script>' }, { name: 's.js', content: 'const عملاء=[];' }];
+    const t = traceRequirements(composeRequirements(null, { roles: [{ name: 'زبون' }], entities: [], flows: [] }), files);
+    assert.deepEqual(t.traced, ['شاشة زبون'], JSON.stringify(t));
+});
+
+test('#١٩٨: حدُّ جمع التكسير مقيسٌ ومكتوب — «كتاب» لا تطابق «الكتب»، ولا يُدَّعى غيابُها', () => {
+    const files = [{ name: 'index.html', content: '<h1>فهرس الكتب</h1>' }];
+    const t = traceRequirements(composeRequirements(null, { entities: [{ name: 'كتاب' }], roles: [], flows: [] }), files);
+    assert.deepEqual(t.unmatched, ['بيانات كتاب'], 'لم أتتبّعه — لا «بلا أثر»');
+    assert.deepEqual(t.missing, [], 'النفيُ يحتاج يقيناً');
+    const o = requirementsTraceOutcome(composeRequirements(null, { entities: [{ name: 'كتاب' }], roles: [], flows: [] }), files, 'n');
+    assert.equal(o.status, 'unverified', o.detail);
+    assert.match(o.detail, /لم أتتبّعه بمفرداته: بيانات كتاب/, o.detail);
 });
