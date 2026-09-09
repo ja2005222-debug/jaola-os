@@ -5,6 +5,12 @@
  * تخرج من `JaolaCognitiveRuntime` في JCR/13 بالمنهج نفسِه: كلُّها بالشكل `(context, roomName)`،
  * `this` فيها = `emitLiveLog` فقط، ولا تستدعي طرائقَ الصنف. تُستدعى بالاسم من `DELIVERY_STAGES`
  * عبر مفوِّضاتٍ باقيةٍ في jcr. نقلٌ حرفيّ.
+ *
+ * 🔎 كلُّ دالّةٍ تعيد الآن `StageResult` (`core/contracts/index.js`) **وتسجّل حكمها بنفسها**
+ * عبر `recordGateOutcome` (نمطُ `requirementsVerify.js`/`verify.js` — الحارسُ يُستدعى من داخل
+ * وحدة المرحلة لا من حلقة `jcr.js`)، بلا تغييرٍ فيما يُكتب لـ`plan.files` أو القرص، وبلا نقضٍ
+ * لفلسفة «تخطّي لا إسقاط»: مراحلُ الجودة كلُّها `gate: 'enhancement'` في `DELIVERY_STAGES`،
+ * فتسجيلُ حكمها لا يُدخل في حساب PASS/FAILED (`deliveryVerdict` يقرأ `gate: 'gate'` فقط).
  */
 import { getUserLanguage } from '../languageDetector.js';
 import { transitionState, STATES } from '../stateMachine.js';
@@ -17,6 +23,17 @@ import { commitBuild } from '../gitAgent.js';
 import { backupProject } from '../fileManager.js';
 import { recordScore } from '../../services/metricsStore.js';
 import { writeProjectFile, writePlanFiles } from '../../core/runtime/workspacePaths.js';
+import { recordGateOutcome } from '../../core/contracts/index.js';
+
+// 🔎 StageResult → حكمُ بوّابة: تسجّل عبر recordGateOutcome ثمّ تعيد النتيجة كما هي
+function finishStage(context, name, result) {
+    const status = !result.attempted ? 'skipped'
+        : result.error ? 'unverified'
+        : result.issues?.length ? 'fail'
+        : 'pass';
+    recordGateOutcome(context, name, status, result.summary || result.error || '');
+    return result;
+}
 
 // 🆕 Review Agent — يراجع ويُصلح تلقائياً قبل العرض النهائي
 export async function runReviewStage(context, roomName, reporter) {
@@ -33,13 +50,14 @@ export async function runReviewStage(context, roomName, reporter) {
         }
 
         const statusEmoji = reviewResult.grade === 'A' ? '✅' : reviewResult.grade === 'B' ? '🟡' : '🟠';
-        reporter.liveLog(roomName, '5. RUNTIME', 'ReviewAgent',
-            `${statusEmoji} الجودة: ${reviewResult.grade} (${reviewResult.score}/100) — ${reviewResult.overallQuality}${reviewResult.fixedCount > 0 ? ` — تم إصلاح ${reviewResult.fixedCount} مشكلة` : ''}`
-        );
+        const summary = `${statusEmoji} الجودة: ${reviewResult.grade} (${reviewResult.score}/100) — ${reviewResult.overallQuality}${reviewResult.fixedCount > 0 ? ` — تم إصلاح ${reviewResult.fixedCount} مشكلة` : ''}`;
+        reporter.liveLog(roomName, '5. RUNTIME', 'ReviewAgent', summary);
         // 📊 تسجيل درجة الجودة الفعلية للوحة الذكاء
         recordScore(context.username, context.activeProject, 'quality', reviewResult);
+        return finishStage(context, 'review', { attempted: true, issues: reviewResult.grade === 'A' ? [] : [reviewResult.overallQuality], summary });
     } catch (e) {
         reporter.liveLog(roomName, '5. RUNTIME', 'ReviewAgent', `⚠️ تخطّي: ${e.message}`);
+        return finishStage(context, 'review', { attempted: true, issues: [], error: e.message, summary: `⚠️ تخطّي: ${e.message}` });
     }
 }
 
@@ -55,8 +73,13 @@ export async function runRefactorStage(context, roomName, reporter) {
                     `✅ ${refactorResult.summary}`
                 );
             }
+            return finishStage(context, 'refactor', { attempted: true, issues: [], summary: refactorResult.summary || '' });
         }
-    } catch (e) { console.warn('[RefactorAgent]', 'فشل التحسين (تخطٍّ):', e.message); }
+        return finishStage(context, 'refactor', { attempted: true, issues: ['لم ينجح التحسين'], summary: 'لم ينجح التحسين' });
+    } catch (e) {
+        console.warn('[RefactorAgent]', 'فشل التحسين (تخطٍّ):', e.message);
+        return finishStage(context, 'refactor', { attempted: true, issues: [], error: e.message, summary: `⚠️ تخطّي: ${e.message}` });
+    }
 }
 
 // 🆕 Testing Agent — اختبار شامل للكود المُنتج
@@ -75,8 +98,10 @@ export async function runTestingStage(context, roomName, reporter) {
                 `⚠️ اختبارات فاشلة: ${testResult.failedTests.join(' | ')}`
             );
         }
+        return finishStage(context, 'testing', { attempted: true, issues: testResult.failedTests, summary: testResult.report || '' });
     } catch (e) {
         reporter.liveLog(roomName, '5. RUNTIME', 'TestingAgent', `⚠️ تخطّي: ${e.message}`);
+        return finishStage(context, 'testing', { attempted: true, issues: [], error: e.message, summary: `⚠️ تخطّي: ${e.message}` });
     }
 }
 
@@ -100,9 +125,12 @@ export async function runSeoStage(context, roomName, reporter) {
             reporter.liveLog(roomName, '5. RUNTIME', 'SEOAgent', `✅ ${seoResult.summary}`);
             // 📊 حزمة SEO كاملة طُبقت (robots + sitemap + meta + schema)
             recordScore(context.username, context.activeProject, 'seo', seoResult);
+            return finishStage(context, 'seo', { attempted: true, issues: [], summary: seoResult.summary || '' });
         }
+        return finishStage(context, 'seo', { attempted: true, issues: ['لم تنجح حزمة SEO'], summary: 'لم تنجح حزمة SEO' });
     } catch (e) {
         reporter.liveLog(roomName, '5. RUNTIME', 'SEOAgent', `⚠️ تخطّي: ${e.message}`);
+        return finishStage(context, 'seo', { attempted: true, issues: [], error: e.message, summary: `⚠️ تخطّي: ${e.message}` });
     }
 }
 
@@ -122,9 +150,12 @@ export async function runSecurityStage(context, roomName, reporter) {
             );
             // 📊 تسجيل درجة الأمان الفعلية
             recordScore(context.username, context.activeProject, 'security', secResult);
+            return finishStage(context, 'security', { attempted: true, issues: secResult.grade === 'A' ? [] : [secResult.summary || ''], summary: secResult.summary || '' });
         }
+        return finishStage(context, 'security', { attempted: true, issues: ['لم تنجح حزمة الأمان'], summary: 'لم تنجح حزمة الأمان' });
     } catch (e) {
         reporter.liveLog(roomName, '5. RUNTIME', 'SecurityAgent', `⚠️ تخطّي: ${e.message}`);
+        return finishStage(context, 'security', { attempted: true, issues: [], error: e.message, summary: `⚠️ تخطّي: ${e.message}` });
     }
 }
 
@@ -141,8 +172,11 @@ export async function runGitBackupStage(context, roomName, reporter) {
             reporter.liveLog(roomName, '5. RUNTIME', 'GitAgent',
                 `✅ تم الحفظ [${commitResult.hash}]`
             );
+            return finishStage(context, 'git-backup', { attempted: true, issues: [], summary: `تم الحفظ [${commitResult.hash}]` });
         }
+        return finishStage(context, 'git-backup', { attempted: true, issues: [], summary: commitResult.skipped ? 'تخطٍّ (لا تغيير)' : 'لم يُحفَظ' });
     } catch (e) {
         // Git اختياري — لا يوقف البناء
+        return finishStage(context, 'git-backup', { attempted: true, issues: [], error: e.message, summary: `⚠️ تخطّي: ${e.message}` });
     }
 }
