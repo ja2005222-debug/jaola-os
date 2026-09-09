@@ -17,6 +17,7 @@ import { smartChat, withUsageLabel } from '../core/providers/llm.js';
 import { conceptOf, conceptKind, conceptsInText, isGenericConcept, normalizeConceptText, productText } from './projectModel.js';
 import { keywordMatches } from './knowledgeEngine.js';
 import { clipWords } from './textNormalizer.js';
+import { brokenPluralsOf } from './arabicBrokenPlurals.js';
 
 const VERIFY_SYSTEM = `أنت مدقق جودة صارم لمواقع الويب. لديك متطلبات وظيفية وكود الموقع الفعلي.
 لكل متطلب، افحص الكود بدقة: هل نُفِّذ **فعلاً بشكل عامل** (عناصر UI موجودة + منطق JavaScript حقيقي يعمل عليها ببيانات) — أم مجرد شكل/زخرفة/غير موجود؟
@@ -186,17 +187,23 @@ export function matchTokens(text, corpus, live) {
  * فالمصطلحُ يُطبَّع كما يُطبَّع النصّ — تُنزع «ال» وتاءُ التأنيث من طرفَيه — ثمّ يُطابَق بـ
  * `keywordMatches`: **الموضعُ الوحيد في الشجرة** لقاعدة «سوابقُ العربيّة اللاصقة ولواحقُها».
  *
- * ⚠️ وحدٌّ مقيسٌ لم يُغلَق: **جمعُ التكسير** («كتاب» ← «الكتب»). لا قانونَ لواصقَ يبلغه، ولا
- *    يُبنى له جذّاعٌ هنا. فالمطابقةُ تُصيب ٦ من ٧ حالاتٍ مقيسة، **والسابعةُ لا تُدَّعى غياباً**:
- *    مصطلحٌ لم يُطابَق يُعاد `unmatched` لا `missing` — والبوّابةُ تقوله بعدده (`unverified`،
- *    وهي تمنع PASS) بدل أن تتّهم بناءً صحيحاً. النفيُ يحتاج يقيناً؛ وهذا ما لا نملكه هنا.
+ * ✅ #١٩٩ — **جمعُ التكسير** («كتاب» ← «الكتب») كان بنداً مقيساً مفتوحاً هنا. جُرِّب حلّان
+ *    خوارزميّان (اختزالُ هيكلٍ صامت، توليدُ مرشّحٍ بنمط) وقِيسا فسقطا كلاهما: يخلطان كلماتٍ
+ *    مختلفةَ المعنى بجذرٍ متقارب («كتاب»≠«كاتب») — خطأٌ في **الاتّجاه المشدِّد** لا يُحتمل في
+ *    حارس (انظر CONTRACTS.md، حادثة «سوقٌ إلكترونيٌّ حُكم عليه ٩/٩»). فالحلُّ **بياناتٌ لا
+ *    اشتقاق**: `brokenPluralsOf` معجمٌ حقيقيّ (Arramooz، GPLv2 — `data/ARRAMOOZ_NOTICE.md`)،
+ *    كلُّ زوجٍ فيه موثَّقٌ في مصدره لا مخموناً، فلا خطرَ تطابقٍ زائفٍ يعيد عطب #١٩٦. قِيس:
+ *    ٣٥/٤٠ (٨٧٪) تغطية. وما بقي خارج المعجم (بعضُ الأسماء الحديثة/الدخيلة) يبقى `unmatched`
+ *    كما كان — لا يُدَّعى غياباً، النفيُ يحتاج يقيناً؛ وهذا ما لا نملكه لِما هو خارج أيّ معجم.
  */
 export function matchTerm(term, corpus, live) {
     const bare = (t) => normalizeConceptText(t).replace(/^ال/, '').replace(/ه$/, '');
     const toks = [...new Set(bare(term || '').split(' ').filter(t => t.length >= 3 && !SECTION_STOPWORDS.has(t)))];
     if (!toks.length) return null;
-    if (!toks.some(t => keywordMatches(corpus, t))) return 'unmatched';
-    return toks.some(t => keywordMatches(live, t)) ? 'traced' : 'decorative';
+    // #١٩٩: كلُّ مفردةٍ تُطابَق بنفسها **وبصيغِ جمعِ تكسيرها الموثَّقة** — لا اختزالَ لأيّ طرف.
+    const withPlurals = [...new Set(toks.flatMap(t => [t, ...brokenPluralsOf(t)]))];
+    if (!withPlurals.some(t => keywordMatches(corpus, t))) return 'unmatched';
+    return withPlurals.some(t => keywordMatches(live, t)) ? 'traced' : 'decorative';
 }
 
 export function traceSections(sections, files) {
