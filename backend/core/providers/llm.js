@@ -96,9 +96,29 @@ if (SELECTION.unknown.length) console.warn(`⚠️ [AI Core]: أسماءٌ لا 
 export const AI_UNAVAILABLE_MSG = 'خدمة الذكاء الاصطناعي غير متاحة حالياً (رصيد المزوّد منتهٍ أو مفاتيح غير صالحة) — طلبك سليم ولا فائدة من إعادة المحاولة الآن.';
 /** عطلٌ قد يزول: نُبلّغ صاحبَ المشروع أنّ المحاولة مستمرّة — بلا نصِّ المزوّد الخام. */
 export const AI_RETRYABLE_MSG = 'تعذّر نداء خدمة الذكاء الاصطناعي في هذه المحاولة — نعيد المحاولة.';
+/** #١٩٣: رفضُ صياغةٍ لا انقطاعُ خدمة — ولا فائدةَ من التكرار بالصياغة نفسِها. */
+export const AI_PROMPT_MSG = 'رفض مزوّدُ الذكاء الاصطناعي صياغةَ هذا الطلب — إعادةُ المحاولة بالصياغة نفسِها لن تُجدي.';
 
 /** نمطُ «علّةُ الموديل» — **مصدرٌ واحد** يقرؤه حاسمُ ٤٠٣ وحاسمُ `config` معاً. */
 const MODEL_PROBLEM = /model.*(not exist|not found|no longer available|deprecated|supported)|supported api model/;
+
+/**
+ * `400` = «طلبُك كما أرسلتَه غيرُ صالح» — المزوّدُ فهم النداءَ ورفضَ **صياغتَه**، لا مفتاحَه ولا رصيدَه.
+ *
+ * قِيس على سجلّ إنتاجٍ حيّ (٢٠٢٦-٠٩-٠٩، بناءُ جمعيّةٍ خيريّة): تسعُ نوباتٍ من
+ * `Groq 400 "Failed to generate JSON. Please adjust your prompt."` و`"Failed to validate JSON"`.
+ * ونصُّ المزوّد نفسُه يقول ما يلزم: **عدِّل مُوجَّهَك**. فالمُوجَّهُ لا يتغيّر بين المحاولات،
+ * وإعادةُ السلسلة كلِّها بحروفها نفسِها فشلٌ مضمون — حُرقت ٢٠ ثانيةً في نوبةٍ واحدة
+ * (٠٩:٣٧:١٠ ← ٠٩:٣٧:٣٠) على بابٍ لن يُفتح.
+ *
+ * وشاهدٌ ثانٍ من صاحب المنصّة نفسِه، بلفظٍ آخرَ تماماً:
+ *   `'messages.1' : for 'role:user' … property 'at' is unsupported`
+ * وهذا ما حسم **شكلَ** القاعدة: لو كُتبت قائمةَ ألفاظٍ («failed to generate json»…) لَما
+ * التقطت الشاهدَ الثاني، ولَعادت تُوسَّع لفظاً بلفظ كما وُسّعت `MODEL_PROBLEM` مرّتين.
+ * فالمقياسُ رمزُ الحالة نفسُه: `400` في هذه الواجهة تعني `invalid_request_error` — وهي
+ * حكمٌ على **الطلب** لا على المزوّد، فتكرارُه بحروفه فشلٌ مضمون. و`429` لها صنفُها،
+ * و`401/402/403` لها أصنافُها، وكلُّها تُحسم قبل هذا السطر.
+ */
 
 export function classifyAIError(e) {
     if (e?.aiUnavailable) return 'quota';
@@ -123,11 +143,18 @@ export function classifyAIError(e) {
     // بقيت كما كانت ولم تُقَس).
     if (MODEL_PROBLEM.test(msg)) return 'config';
     if (/غير مُفعّل|لا يوجد مزود|not configured/.test(msg)) return 'config';
+    // 📝 #١٩٣ — «طلبُك غيرُ صالح» ليس «تعذّر الوصول». صنفٌ ثالثٌ بين الدائم والعابر:
+    //    دائمٌ **لهذا النداء** بحروفه (فلا تُعاد المحاولةُ عليه)، ولا يُدين المزوّدَ
+    //    (فمفتاحُه سليمٌ ورصيدُه قائم، ونداءٌ آخرُ بصياغةٍ أخرى ينجح عنده).
+    if (status === 400) return 'prompt';
     return 'transient';
 }
 
-/** عطل لا يزول بإعادة المحاولة: رصيد منتهٍ، مفتاح غير صالح، أو مزوّد غير مُهيأ. */
-export const isPermanentAIError = (e) => ['quota', 'auth', 'config'].includes(classifyAIError(e));
+/**
+ * عطل لا يزول بإعادة المحاولة: رصيد منتهٍ، مفتاح غير صالح، مزوّد غير مُهيأ،
+ * أو مُوجَّهٌ رفضه المزوّدُ بصياغته (#١٩٣ — لا يتغيّر بين المحاولات فلا تُجدي الإعادة).
+ */
+export const isPermanentAIError = (e) => ['quota', 'auth', 'config', 'prompt'].includes(classifyAIError(e));
 
 /**
  * 🧾 قرارُ الفشل المجمَّع — موضعٌ واحد يقرّر أمرَين معاً:
@@ -152,7 +179,12 @@ export function aggregateFailure(failures, lastError) {
     // التشخيصُ في نصّ الخطأ نفسِه: سطرُ السجلّ الحيّ يعرض `message` مباشرةً، فبدونه يبقى
     // أظهرُ ما يراه صاحبُ المشروع جملةً واحدةً لكلّ الأسباب.
     const detail = describeAIFailure(diagnosis);
-    const err = new Error((permanent ? AI_UNAVAILABLE_MSG : AI_RETRYABLE_MSG) + (detail ? ` [${detail}]` : ''));
+    // 🗣️ #١٩٣ — الرسالةُ تتبع السبب: «رصيدُ المزوّد منتهٍ أو مفاتيحُه غير صالحة» جملةٌ
+    //    **كاذبة** حين يكون كلُّ ما جرى أنّ المزوّدَ رفض صياغةَ الطلب. والمفتاحُ سليم،
+    //    والرصيدُ قائم، وصاحبُ المشروع سيطارد فاتورةً لا شأنَ لها.
+    const promptOnly = permanent && failures.every(f => classifyAIError(f) === 'prompt');
+    const headline = !permanent ? AI_RETRYABLE_MSG : promptOnly ? AI_PROMPT_MSG : AI_UNAVAILABLE_MSG;
+    const err = new Error(headline + (detail ? ` [${detail}]` : ''));
     if (permanent) err.aiUnavailable = true;
     err.diagnosis = diagnosis;
     err.causes = failures.map(f => String(f.message).slice(0, 120));
@@ -169,6 +201,7 @@ const KIND_WORDS = {
         quota: 'رصيدُه منتهٍ',
         auth: 'مفتاحُه غير صالح',
         ratelimit: 'تجاوزَ حدَّ المعدّل مؤقّتاً',
+        prompt: 'رفضَ صياغةَ الطلب كما أُرسلت (يُصلَح في المُوجَّه لا في الإعداد ولا بالدفع)',
         transient: 'تعذّر الوصولُ إليه في هذه المحاولة',
     },
     en: {
@@ -176,6 +209,7 @@ const KIND_WORDS = {
         quota: 'is out of credit',
         auth: 'key is not valid',
         ratelimit: 'hit its rate limit temporarily',
+        prompt: 'rejected the request as phrased (fixable in the prompt, not in settings or billing)',
         transient: 'could not be reached on this attempt',
     },
 };
@@ -497,13 +531,71 @@ async function attemptChain(params, opts) {
 }
 
 /**
+ * 🈯 #١٩٣/العلّة — الواجهةُ المتوافقة مع OpenAI تشترط، في وضع `json_object`، أن تذكر
+ * **الرسائلُ نفسُها** كلمةَ JSON؛ وإلّا ردّ المزوّدُ `400 "Failed to generate JSON.
+ * Please adjust your prompt"`. وهو ما ظهر تسعَ مرّاتٍ في سجلّ إنتاجٍ حيّ.
+ *
+ * فالتصنيفُ وحدَه يوفّر الإعادةَ الضائعة ولا يُنجح النداء؛ وهذا يُنجحه. وشرطُ الحقن
+ * أن تكون الكلمةُ غائبةً فعلاً — فلا يُمسّ مُوجَّهٌ صحيحٌ أصلاً (وأكثرُ مواضعنا كذلك،
+ * كـ`missionMeta` التي تفتتح بـ«أنتج JSON»)، ولا تُضاف الكلمةُ مرّتين.
+ *
+ * الحقنُ **هنا** لا في أربعةَ عشرَ موضعَ نداء: مصدرٌ واحدٌ لقاعدةٍ واحدة، وهي قاعدةُ
+ * الواجهة لا قاعدةُ وكيلٍ بعينه.
+ */
+/**
+ * 🧼 حقولُ الرسالة التي تعرفها الواجهة — وما سواها يُنزَع قبل الإرسال.
+ *
+ * قِيس على خطأٍ حيٍّ من Groq أرسله صاحبُ المنصّة:
+ *   `'messages.1' : for 'role:user' … property 'at' is unsupported`
+ * وأصلُه أنّ `conversationStore` يخزّن كلَّ دورٍ بختمٍ زمنيّ `{ role, content, at }`،
+ * و`chatResponse` ينشر التاريخَ (`...history`) في مصفوفة الرسائل كما هو. فحقلُ **تخزينٍ**
+ * عندنا صار حقلَ **بروتوكولٍ** عندهم. والمزوّدان العاملان اليومَ (Groq وDeepSeek) كلاهما
+ * على واجهة OpenAI فيرفضانه، وGemini كان يستره لأنّه يسطّح الرسائلَ نصّاً — أي أنّ استبعادَه
+ * بـ`AI_PROVIDERS` هو ما كشف عطباً قائماً، لا ما أحدثَه.
+ *
+ * والتطهيرُ **هنا** لا في `chatResponse` وحدَها: شكلُ الرسالة عقدُ الواجهة، فمصدرُه واحدٌ
+ * عند البوّابة — وإلّا عاد العطبُ من أيِّ مُنادٍ جديدٍ ينشر بنيةً مخزّنة.
+ */
+const MESSAGE_FIELDS = ['role', 'content', 'name', 'tool_calls', 'tool_call_id'];
+
+export function sanitizeMessages(params) {
+    const messages = Array.isArray(params?.messages) ? params.messages : null;
+    if (!messages) return params;
+    let dirty = false;
+    const clean = messages.map((m) => {
+        if (!m || typeof m !== 'object') return m;
+        const keys = Object.keys(m);
+        if (keys.every(k => MESSAGE_FIELDS.includes(k))) return m;
+        dirty = true;
+        const out = {};
+        for (const k of MESSAGE_FIELDS) if (k in m) out[k] = m[k];
+        return out;
+    });
+    return dirty ? { ...params, messages: clean } : params;
+}
+
+export function ensureJsonWordInPrompt(params) {
+    if (params?.response_format?.type !== 'json_object') return params;
+    const messages = Array.isArray(params.messages) ? params.messages : [];
+    const mentions = messages.some(m => /json/i.test(String(m?.content || '')));
+    if (mentions || !messages.length) return params;
+    const i = messages.findIndex(m => m?.role === 'system');
+    const note = 'أعِد الإجابةَ بصيغة JSON صالحة (JSON object) لا غير.';
+    const patched = i >= 0
+        ? messages.map((m, k) => (k === i ? { ...m, content: `${m.content}\n\n${note}` } : m))
+        : [{ role: 'system', content: note }, ...messages];
+    return { ...params, messages: patched };
+}
+
+/**
  * جولةٌ كاملةٌ على السلسلة، ثمّ إعادةٌ محدودةٌ إن كان الفشلُ عابراً.
  * `aiUnavailable` تعني «كلُّها دائمة» — فلا إعادة.
  */
 async function createWithFailover(params, opts) {
+    const prepared = ensureJsonWordInPrompt(sanitizeMessages(params));
     for (let attempt = 0; ; attempt++) {
         try {
-            return await attemptChain(params, opts);
+            return await attemptChain(prepared, opts);
         } catch (err) {
             if (err?.aiUnavailable || attempt >= AI_MAX_RETRIES) throw err;
             const wait = retryDelayMs(attempt);

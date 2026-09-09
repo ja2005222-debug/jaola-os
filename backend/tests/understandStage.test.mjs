@@ -78,22 +78,76 @@ test('ذاكرةُ المشروع تُحقن في الهدف المُثرى — 
     assert.match(r.enrichedGoal, /الميزات المطلوبة: بحث/);
 });
 
-test('بذرةُ مكتبة الفئة تُدمج في النموذج — طفرةُ «تجاهل البذرة» نجت قبل هذا', async () => {
+// 🔁 #١٩٤ — كان الطُّعمُ هنا بذرةً **لا تُشتقّ من الهدف** عمداً (`Invoice`/`Accountant`
+//    على «أداة حاسبة بسيطة»)، فكان يثبّت السلوكَ المعطوب نفسَه: أنّ فهمَ منتجٍ آخر يدخل
+//    مشروعاً لم يذكره. صار الطُّعمُ بذرةً **يذكرها الطلب**، فيبقى المقيسُ (البذرةُ تصل
+//    النموذجَ فعلاً، وطفرةُ «تجاهل البذرة» تُمسك) ويزول تثبيتُ العطب. والحالةُ المقابلة
+//    — بذرةٌ لا يذكرها الطلب — تُقاس في الاختبار الذي يليه.
+const SEEDED_GOAL = 'أداة لإصدار الفواتير وحساب الضريبة';
+
+test('بذرةُ مكتبة الفئة تُدمج في النموذج حين يذكرها الطلب — طفرةُ «تجاهل البذرة» نجت قبل هذا', async () => {
     resetLibrary();
     try {
-        // المخطّطُ الاحتياطيّ فئتُه business دائماً؛ نبذر المكتبةَ لها بنموذجٍ لا يُشتقّ من الهدف
-        recordModel('business', { entities: [{ name: 'Invoice' }], roles: [{ name: 'Accountant' }], flows: [] });
+        // المخطّطُ الاحتياطيّ فئتُه business دائماً
+        recordModel('business', { entities: [{ name: 'فاتورة' }, { name: 'ضريبة' }], roles: [], flows: [] });
         const events = []; const reporter = new RoomReporter({ to: () => ({ emit: (ev, p) => events.push(p?.message) }) });
         const s = scenario('undseed');
         // ⚠️ أسماءُ scenario ثابتةٌ عبر التشغيلات وذاكرةُ المشروع تُحفظ على القرص —
-        // فبلا تصفيرٍ صريح يعود Invoice من الجولة السابقة عبر `prior` لا عبر البذرة،
+        // فبلا تصفيرٍ صريح تعود البذرةُ من الجولة السابقة عبر `prior` لا عبر البذرة،
         // ويمرّ الاختبارُ بالسبب الخطأ (نجت طفرةُ تجاهل البذرة هكذا مرّةً).
+        setDomainModel(s.ctx.username, s.ctx.activeProject, { entities: [], roles: [], flows: [] });
+        await understandGoal(SEEDED_GOAL, { ...s.ctx, projectPath: emptyProject() }, reporter);
+        const m = getDomainModel(s.ctx.username, s.ctx.activeProject);
+        const ents = (m?.entities || []).map((e) => e.name);
+        assert.ok(ents.includes('فاتورة') && ents.includes('ضريبة'), `البذرةُ المسنودةُ لم تصل: ${ents}`);
+        assert.ok(events.some((x) => x?.includes('(مبذور من مكتبة الفئة)')), JSON.stringify(events));
+    } finally { resetLibrary(); }
+});
+
+// 🧬 طفرةٌ نجت أوّلَ مرّة: قلبُ الترتيب إلى `mergeProjectModel(seed, derived)` لم يُسقط
+//    اختباراً واحداً — لأنّ كلَّ طُعومي كانت بذرتُها تسقط بالغربلة، فلا يبلغ المجموعُ
+//    السقفَ أصلاً ولا يتبيّن أثرُ الترتيب. والحالةُ التي يقرّرها الترتيبُ حقيقيّةٌ ولم
+//    تُقَس: بذرةٌ **مسنودةٌ كلُّها** (فتنجو من الغربلة) + مشتقٌّ خاصٌّ بالمشروع، ومجموعُهما
+//    يتجاوز سقفَ الكيانات الستّة. حينها يقرّر الترتيبُ **من يُقصّ**: بالبذرةِ أوّلاً يُطرد
+//    `invoice` — وهو من فهمِ المشروع نفسِه — وبالمشتقِّ أوّلاً يبقى. هذا هو عينُ ما جرى
+//    لجمعيّة عطاء على الإنتاج، مصغَّراً في طُعم.
+test('#١٩٤ — الترتيبُ يقرّر عند السقف: فهمُ المشروع يبقى وبذرةُ الفئة تُقصّ، لا العكس', async () => {
+    resetLibrary();
+    try {
+        const goal = 'منصّةُ حجزٍ: العملاءُ والحجوزات والفواتير والمدفوعات والتقييمات والإشعارات والتقارير';
+        // بذرةٌ **مسنودةٌ كلُّها** في الطلب — فلا تُسقطها الغربلةُ، ويبقى الترتيبُ وحدَه فاصلاً
+        recordModel('business', {
+            entities: [{ name: 'مدفوعات' }, { name: 'تقييمات' }, { name: 'إشعارات' }, { name: 'تقارير' }, { name: 'عملاء' }],
+            roles: [], flows: [],
+        });
+        const reporter = new RoomReporter({ to: () => ({ emit: () => {} }) });
+        const s = scenario('undorder');
+        setDomainModel(s.ctx.username, s.ctx.activeProject, { entities: [], roles: [], flows: [] });
+        await understandGoal(goal, { ...s.ctx, projectPath: emptyProject() }, reporter);
+        const ents = (getDomainModel(s.ctx.username, s.ctx.activeProject)?.entities || []).map((e) => e.name);
+        assert.ok(ents.includes('invoice'),
+            `طُرد فهمُ المشروع لتُفسح البذرةُ لنفسها — وهو عطبُ #١٩٤ بعينه: ${ents}`);
+    } finally { resetLibrary(); }
+});
+
+test('#١٩٤ — وبذرةٌ لا يذكرها الطلبُ لا تدخل النموذجَ، وتُسمّى في السجلّ', async () => {
+    resetLibrary();
+    try {
+        recordModel('business', { entities: [{ name: 'Invoice' }], roles: [{ name: 'Accountant' }], flows: [] });
+        const events = []; const reporter = new RoomReporter({ to: () => ({ emit: (ev, p) => events.push(p?.message) }) });
+        const s = scenario('undseed2');
         setDomainModel(s.ctx.username, s.ctx.activeProject, { entities: [], roles: [], flows: [] });
         await understandGoal(GOAL, { ...s.ctx, projectPath: emptyProject() }, reporter);
         const m = getDomainModel(s.ctx.username, s.ctx.activeProject);
-        const ents = (m?.entities || []).map((e) => e.name);
-        assert.ok(ents.includes('Invoice') && ents.includes('Item'), `البذرةُ + المشتقّ معاً: ${ents}`);
-        assert.ok(events.some((x) => x?.includes('(مبذور من مكتبة الفئة)')), JSON.stringify(events));
+        const names = [...(m?.entities || []), ...(m?.roles || [])].map((e) => e.name);
+        assert.ok(!names.includes('Invoice') && !names.includes('Accountant'),
+            `فهمُ فوترةٍ دخل «${GOAL}»: ${names}`);
+        // ولا يُسكَت: يُسمّى المُسقَطُ كي يعرف صاحبُ المشروع أيَّ فئةٍ في المكتبة تلوّثت
+        const line = events.map(String).find((x) => x.includes('🧹'));
+        assert.ok(line, `أُسقطت البذرةُ صامتةً: ${JSON.stringify(events)}`);
+        assert.match(line, /Invoice/); assert.match(line, /Accountant/);
+        assert.ok(!events.some((x) => x?.includes('(مبذور من مكتبة الفئة)')),
+            'أُعلن البذرُ ولا بذرةَ وصلت — سطرٌ يقول غيرَ ما جرى');
     } finally { resetLibrary(); }
 });
 

@@ -13,7 +13,7 @@
  * (`s.rt._understandGoal = …`) لم تتغيّر.
  */
 import { buildMemoryContext, updateStructure, setDomainModel, getDomainModel } from '../projectMemory.js';
-import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel, goalFidelity, headingEntityNames, articleEntityNames, labelledRoleNames, normalizeProjectModel } from '../projectModel.js';
+import { deriveProjectModel, mergeProjectModel, buildProjectModelContext, summarizeModel, goalFidelity, headingEntityNames, articleEntityNames, labelledRoleNames, normalizeProjectModel, groundedSubset } from '../projectModel.js';
 import { getLibraryModel } from '../modelLibrary.js';
 import { buildProfileContext } from '../userProfile.js';
 import { isExplicitNewBuild } from '../textNormalizer.js';
@@ -56,7 +56,21 @@ export async function understandGoal(goal, ctx, reporter) {
         // 📚 بذرة من مكتبة النماذج: فهم فئة المشروع المتراكم عبر كل المشاريع
         // السابقة الناجحة — فلا نبدأ من الصفر. الأولوية: المشروع نفسه > اشتقاق
         // هذه الجولة > مكتبة الفئة العامة.
-        const seed = getLibraryModel(blueprint?.category);
+        //
+        // 🧹 والأولويّةُ أعلاه كانت **مكتوبةً لا منفَّذة**: المكتبةُ معلنةٌ أخيرةً وكانت
+        //    تُمرَّر أوّلاً (`mergeProjectModel(seed, derived)`)، فتملأ سقفَي التطبيع
+        //    (٦ كيانات / ٤ أدوار) قبل أن يصل فهمُ المشروع نفسِه فيُقصّ ذيلاً. وهي
+        //    العلّةُ التي عُولجت في السطر التالي للمرجع («كي لا تُسقطه سقوفُ التطبيع»)
+        //    ولم تُعالَج هنا. قِيس على سجلّ إنتاجٍ حيّ: منصّةُ جمعيّةٍ خيريّة بُذرت من فئة
+        //    `business` فورثت `SalesRep/Customer/Company/Interaction/Workspace/MeetingRoom`
+        //    من نظامِ عملاءَ ومساحةِ عملٍ سابقَين — و**طُردت** `Donor` و`Donation`
+        //    و`Volunteer` و«متطوّع» من فهمِ مشروعها. ثمّ وُصمت جمعيّتُه بأنّ فيها
+        //    «أدواراً بلا واجهة: SalesRep، Customer».
+        //
+        //    فالغربلةُ أوّلاً (`groundedSubset`: المكتبةُ تُثري ما سمّاه صاحبُ الطلب ولا
+        //    تُضيف ما لم يُسمِّه)، ثمّ الترتيبُ كما يقول العقدُ المكتوب: المشتقُّ أوّلاً.
+        const seedRaw = getLibraryModel(blueprint?.category);
+        const seed = groundedSubset(seedRaw, goal);
         // 🧠 المعرفةُ المرجعيّة (PM/1): مجالٌ معروف في الطلب (تاكسي، توصيل طعام…) يبذر
         // أدوارَه أوّلاً — فيوجد فهمٌ حتى بلا نموذجٍ لغويّ، ويُقارَن به الكلونُ لا بالكلمات.
         const reference = matchBlueprint(goal);
@@ -66,7 +80,16 @@ export async function understandGoal(goal, ctx, reporter) {
         // 🆕 بناء بهوية جديدة («ابني متجر عطور») يستبدل النموذج القديم — لا يدمجه،
         // كي لا يرث المتجر أدوار مشروع سابق (TeamMember/Driver) فيبني الشيء الخطأ.
         const newIdentity = isExplicitNewBuild(goal);
-        let model = seed ? mergeProjectModel(seed, derived) : derived;
+        let model = seed ? mergeProjectModel(derived, seed) : derived;
+        // 🔇 وما أسقطته الغربلةُ **يُسمّى**: مكتبةٌ حاولت أن تحقن فهمَ منتجٍ آخر حدثٌ يستحقّ
+        //    سطراً — وهو أوّلُ ما يدلّ على تلوّثِ فئةٍ في المكتبة الدائمة. والعددُ وحدَه لا
+        //    يُفيد قارئَه (حدُّ PM/22 المكتوب في اختباره: «التحذيرُ لا يسمّي… فلا يُفيد»)،
+        //    فيُسمّى المُسقَطُ كي يعرف صاحبُ المشروع أيَّ منتجٍ غريبٍ كاد يرثه.
+        const keptNames = new Set([...(seed?.entities || []), ...(seed?.roles || [])].map(x => x.name));
+        const dropped = [...(seedRaw?.entities || []), ...(seedRaw?.roles || [])]
+            .map(x => x.name).filter(n => !keptNames.has(n));
+        if (dropped.length) reporter.liveLog(roomName, 'BLUEPRINT', 'ModelLibrary',
+            `🧹 أُسقط من فهمِ فئة «${blueprint?.category}» الموروث ما لم يمسّ طلبَك: ${dropped.join('، ')}.`);
         if (refModel) model = mergeProjectModel(refModel, model); // المرجعُ أوّلاً كي لا تُسقطه سقوفُ التطبيع
         if (prior && !newIdentity) model = mergeProjectModel(model, prior);
 
