@@ -86,8 +86,10 @@ export async function understandGoal(goal, ctx, reporter) {
         //    يُفيد قارئَه (حدُّ PM/22 المكتوب في اختباره: «التحذيرُ لا يسمّي… فلا يُفيد»)،
         //    فيُسمّى المُسقَطُ كي يعرف صاحبُ المشروع أيَّ منتجٍ غريبٍ كاد يرثه.
         const keptNames = new Set([...(seed?.entities || []), ...(seed?.roles || [])].map(x => x.name));
-        const dropped = [...(seedRaw?.entities || []), ...(seedRaw?.roles || [])]
-            .map(x => x.name).filter(n => !keptNames.has(n));
+        // 🔁 بلا تكرار: الاسمُ الواحد قد يكون كياناً ودوراً معاً (`User`)، وقد ظهر مرّتين
+        //    في سجلّ إنتاجٍ حيّ — وسطرُ تشخيصٍ يكرّر اسماً يُقرأ عطباً في العدّ.
+        const dropped = [...new Set([...(seedRaw?.entities || []), ...(seedRaw?.roles || [])]
+            .map(x => x.name).filter(n => !keptNames.has(n)))];
         if (dropped.length) reporter.liveLog(roomName, 'BLUEPRINT', 'ModelLibrary',
             `🧹 أُسقط من فهمِ فئة «${blueprint?.category}» الموروث ما لم يمسّ طلبَك: ${dropped.join('، ')}.`);
         if (refModel) model = mergeProjectModel(refModel, model); // المرجعُ أوّلاً كي لا تُسقطه سقوفُ التطبيع
