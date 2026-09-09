@@ -13,6 +13,7 @@ import { RoomReporter } from '../core/runtime/RoomReporter.js';
 import { scenario, emptyProject } from './helpers/jcrScenario.mjs';
 import { setUserLanguage } from '../agents/languageDetector.js';
 import { transitionState, getProjectState, resetProjectState, STATES } from '../agents/stateMachine.js';
+import { setDomainModel, getDomainModel } from '../agents/projectMemory.js';
 import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
 
 divertConsoleToStderr();
@@ -76,3 +77,66 @@ test('الحدود: لا this، لا استيرادَ من jcr، المفوِّ�
     assert.match(jcr, /async _buildFromRegistry\(goal, ctx\) \{\n\s+return buildFromRegistry\(goal, ctx, this\.reporter\);\n\s+\}/);
     for (const n of ['composePage', 'selectBlocks', 'pickPalette']) assert.equal((jcr.match(new RegExp(`\\b${n}\\b`, 'g')) || []).length, 0, `${n} لم يعد لـjcr به شأن`);
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// #196 — «نجاح» يُعلَن وبوّابةُ «هل نُفِّذ ما طلبتَ؟» متخطّاة
+//
+// مقيسٌ على سجلّ صاحب المشروع حرفيّاً: «أبغى منصّة لجمعية خيرية» بأربعة أدوارٍ مسمّاة
+// خرج صفحةَ تسويقٍ من عشرة بلوكات (pricing/testimonials/logos) والحكمُ **PASS**، لأنّ
+// هذا المسارَ وحدَه — من البناة الثلاثة — كان **يفبرك نموذجَه** `{roles: [Visitor]}` ويكتبه
+// فوق ما فهمتْه بوّابةُ الفهم. فلا يصل البوّابةَ من طلبه شيء، ومتطلّبُ «شاشة Visitor»
+// اسمُه لاتينيٌّ لا يُتتبَّع في نصٍّ عربيّ → `skipped` → و`skipped` محايدٌ → PASS.
+// ══════════════════════════════════════════════════════════════════════════════
+test('#196: النموذجُ المفهوم يصل بوّابةَ المتطلّبات — فصفحةُ Registry على طلبِ منصّةٍ تُحكَم FAILED لا PASS', async () => {
+    const s = scenario('reg196'); setUserLanguage(s.ctx.username, 'ar');
+    const goal = 'أبغى منصّة لجمعية خيرية. الأدوار: مدير الجمعية، مسؤول الحملات، محاسب، متطوع';
+    setDomainModel(s.ctx.username, s.ctx.activeProject, {
+        entities: [{ name: 'حملة' }, { name: 'تبرع' }],
+        roles: [{ name: 'مدير الجمعية' }, { name: 'مسؤول الحملات' }, { name: 'محاسب' }, { name: 'متطوع' }],
+        flows: [],
+    });
+    const { reporter } = collect();
+    const r = await buildFromRegistry(goal, { ...s.ctx, projectPath: emptyProject() }, reporter);
+
+    assert.equal(r.verdict.status, 'FAILED', JSON.stringify(r.verdict));
+    const gate = r.verdict.gates.find(g => g.name === 'requirements-verify');
+    assert.equal(gate.status, 'fail', gate.detail);
+    for (const name of ['مدير الجمعية', 'مسؤول الحملات', 'محاسب', 'متطوع', 'حملة', 'تبرع'])
+        assert.match(gate.detail, new RegExp(name), `البوّابةُ تسمّي «${name}» ناقصاً`);
+
+    // والبوّابةُ السلوكيّةُ تقرأ النموذجَ نفسَه — فتسمّي الأدوارَ التي لا واجهةَ لها في الصفحة المركّبة.
+    const beh = r.verdict.gates.find(g => g.name === 'behavior-verify');
+    assert.equal(beh.status, 'fail', beh.detail);
+    assert.match(beh.detail, /محاسب|متطوع/, 'الأدوارُ بلا واجهةٍ تُسمّى: ' + beh.detail);
+
+    // والفهمُ لا يُدهَس: ما فُهم يبقى في الذاكرة بعد البناء — لا يُكتب فوقه نموذجُ زائرٍ عامّ.
+    const kept = getDomainModel(s.ctx.username, s.ctx.activeProject);
+    assert.deepEqual(kept.roles.map(x => x.name),
+        ['مدير الجمعية', 'مسؤول الحملات', 'محاسب', 'متطوع'], 'الأدوارُ المفهومة باقية');
+});
+
+// فهمٌ بكياناتٍ بلا أدوار فهمٌ أيضاً — والطفرةُ التي تقصر الشرطَ على `roles` نجت بلا هذا.
+test('#196: كياناتٌ بلا أدوارٍ فهمٌ يُحاكَم — لا يسقط إلى نموذج الزائر', async () => {
+    const s = scenario('reg196d'); setUserLanguage(s.ctx.username, 'ar');
+    setDomainModel(s.ctx.username, s.ctx.activeProject,
+        { entities: [{ name: 'وصفة' }, { name: 'مريض' }], roles: [], flows: [] });
+    const { reporter } = collect();
+    const r = await buildFromRegistry('منصة للصيدليات', { ...s.ctx, projectPath: emptyProject() }, reporter);
+    const gate = r.verdict.gates.find(g => g.name === 'requirements-verify');
+    assert.equal(gate.status, 'fail', gate.detail);
+    // «مريض» يُتتبَّع بالمفردات، و«وصفة» لا يُغطّيها المعجمُ اليوم (بندٌ مفتوح: تغطيةُ المعجم) —
+    // والبوّابةُ تقول ذلك بعدده لا تصمت عنه. المهمُّ هنا أنّها **حكمت** بدل أن تُتخطّى.
+    assert.match(gate.detail, /مريض/, gate.detail);
+    assert.deepEqual(getDomainModel(s.ctx.username, s.ctx.activeProject).entities.map(x => x.name),
+        ['وصفة', 'مريض'], 'الكياناتُ المفهومة باقية');
+});
+
+test('#196 (الحدُّ المقابل): بلا فهمٍ سابق يبقى نموذجُ الزائر ويُكتب — والصفحةُ التسويقيّة تمرّ كما كانت', async () => {
+    const s = scenario('reg196b'); setUserLanguage(s.ctx.username, 'ar');
+    const { reporter } = collect();
+    const r = await buildFromRegistry(GOAL, { ...s.ctx, projectPath: emptyProject() }, reporter);
+    assert.equal(r.verdict.status, 'PASS', JSON.stringify(r.verdict));
+    assert.equal(r.verdict.gates.find(g => g.name === 'requirements-verify').status, 'skipped');
+    assert.deepEqual(getDomainModel(s.ctx.username, s.ctx.activeProject)?.roles.map(x => x.name), ['Visitor']);
+});
+

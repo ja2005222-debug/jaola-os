@@ -57,7 +57,8 @@ test('مواضعُ الجواب الخمسة كما قِيست — أيُّ تغ
         'agents/renderAgent.js:172 → hasBackend',
         // PM/2b: الرقمان انزاحا بإضافة حكم المسار قبل النهائيّات (لا موضعَ جديد — العددُ خمسةٌ كما هو)
         'agents/stages/buildFromClone.js:180 → false',
-        'agents/stages/buildFromRegistry.js:65 → false',
+        // #196: ٦٥ ← ٩٠ — عشرون سطراً من الشرح المقيس فوقه (النموذجُ المفهوم بدل المفبرك). النداءُ نفسُه لم يتغيّر.
+        'agents/stages/buildFromRegistry.js:90 → false',
         'agents/stages/renderConfig.js:37 → hasBackend',
         // «صمتُ العودة»: إعادةُ بثِّ الشريط في مُعالِج الانضمام أضافت ١٠ أسطرٍ فوقه
         // (٧٦٠ وما بعدها) فانزاح ٢٤٠١ → ٢٤١١. الموضعُ هو هو، والحجّةُ `false`، وداخلَ

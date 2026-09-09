@@ -14,7 +14,7 @@ import { promises as fsPromises } from 'fs';
 import path from 'path';
 import { getUserLanguage, resolveGoalLanguage } from '../languageDetector.js';
 import { transitionState, STATES } from '../stateMachine.js';
-import { addToHistory, setDomainModel, updateStructure } from '../projectMemory.js';
+import { addToHistory, setDomainModel, getDomainModel, updateStructure } from '../projectMemory.js';
 import { assetsFor, injectFaviconTag, pickPalette } from '../cloneAssets.js';
 import { polishHtml } from '../polishPack.js';
 import { brandFromGoal, composePage, selectBlocks } from '../blockRegistry.js';
@@ -53,11 +53,36 @@ export async function buildFromRegistry(goal, ctx, reporter) {
         await fsPromises.writeFile(idxPath, html);
     } catch { /* اختياري */ }
 
-    // 3) نموذج بسيط + نشر ثابت
-    const registryModel = { entities: [], roles: [{ name: 'Visitor', capabilities: ['تصفّح'] }], flows: [], _source: 'registry' };
+    // 3) نموذج + نشر ثابت
+    //
+    // 🔴 #196: **هذا المسارُ كان يفبرك نموذجَه** — `{entities: [], roles: [Visitor]}` ثابتٌ مكتوب،
+    //    يُكتب فوق ما فهمتْه بوّابةُ الفهم قبل قليل (`_understandGoal` تسبق `_selectBuildStrategy`).
+    //    فيُمحى الفهمُ من الذاكرة، ولا يصل البوّابةَ منه شيء. والأثرُ مقيسٌ على سجلّ صاحب المشروع
+    //    حرفيّاً: طلبُ «منصّة لجمعية خيرية» بأربعة أدوارٍ مسمّاة خرج صفحةَ تسويقٍ من عشرة بلوكات
+    //    (pricing/testimonials/logos)، ومع ذلك:
+    //      requirements-verify: skipped — «1 متطلّب بلا مفردةٍ تُتتبَّع» (المتطلّبُ الوحيدُ «شاشة Visitor»،
+    //      واسمُه لاتينيٌّ لا يُتتبَّع في نصٍّ عربيّ) → و`skipped` محايد → **PASS**.
+    //    وبنموذجه المفهوم نفسِه على الملفّات نفسِها: `6 متطلّب بلا أثر` → **FAILED**. هو الفرقُ كلُّه.
+    //
+    //    والعلّةُ عينُها قاعدةُ «مصدرٌ واحدٌ لكلّ قاعدة»: البانيان الآخران يقرآن النموذجَ من الذاكرة
+    //    (`buildFromClone` يدمجه، `buildReact` يقرؤه) وهذا وحدَه كان يستبدله.
+    //
+    // 🔻 ونتيجةٌ سلبيّةٌ تُسجَّل: جُرِّب هنا أيضاً تمريرُ **بنود وثيقة** صاحب المشروع كما يفعل البانيان
+    //    (PM/9، PM/12)، ثمّ قِيس فوُجد ميّتاً: نداءُ هذا الباني الوحيد داخل
+    //    `if (!documentOrSystem && …)` في `selectBuildStrategy` — و`documentOrSystem` يبدأ بـ
+    //    `isFullSpecification(goal)`. فالوثيقةُ **لا تبلغ هذا المسار بنيةً**، وحارسُ
+    //    `specVerdict.test` («البروشورُ ليس وثيقة») أصاب. فحُذف السطرُ وبقي الحارس.
+    const understood = (() => { try { return getDomainModel(username, activeProject); } catch { return null; } })();
+    const hasUnderstanding = !!(understood?.roles?.length || understood?.entities?.length);
+    const registryModel = hasUnderstanding
+        ? understood
+        : { entities: [], roles: [{ name: 'Visitor', capabilities: ['تصفّح'] }], flows: [], _source: 'registry' };
+    // فهمٌ قائمٌ لا يُدهَس بنموذجِ زائرٍ عامّ. وحارسُ `if (!hasUnderstanding)` **قِيس فوجد ميّتاً**
+    // وحُذف: حين يوجد فهمٌ يكون `registryModel` هو `understood` بعينه، فالكتابةُ إعادةُ ما هو مكتوب.
     try { setDomainModel(username, activeProject, registryModel); } catch {}
     // ⚖️ الحكم (PM/2b): الصفحةُ المركّبة تُتحقَّق فعلاً (صفحةُ هبوط — لا شرطَ تفاعل) لا تُعلَن ناجحةً بلا فحص.
-    //    PM/7: المتطلّباتُ تُمرَّر كما على المسارات كلِّها — نموذجُ الزائر عامٌّ فلا يُتتبَّع، والبوّابةُ تقول ذلك بعدده لا تفترضه.
+    //    PM/7: المتطلّباتُ تُمرَّر كما على المسارات كلِّها — وحين لا يكون ثمّ فهمٌ يبقى نموذجُ الزائر عامّاً
+    //    فلا يُتتبَّع، والبوّابةُ تقول ذلك بعدده لا تفترضه.
     const verdict = strategyVerdict({ filesCount: files.length, behavior: await verifyBehavior({ projectPath, blueprint: { kind: 'landing' }, domainModel: registryModel }),
         requirements: composeRequirements(null, registryModel), files,
         requirementsNote: 'صفحةٌ من بلوكات Registry — لا مكوّناتٍ وظيفيّة تُتحقَّق' });
