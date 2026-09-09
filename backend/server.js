@@ -59,7 +59,7 @@ import {
 import { generateSocialPosts, draftInboxReply, extractSiteFacts } from './agents/marketingAgent.js';
 import { signBotToken, verifyBotToken } from './agents/jaolaBotToken.js';
 import { genTenantId, isValidTenantId, sanitizeTenantConfig } from './services/botTenants.js';
-import { smartChat } from './core/providers/llm.js';
+import { smartChat, withUsageLabel } from './core/providers/llm.js';
 import { generateBackend, generateFrontendAPIIntegration } from './agents/backendAgent.js';
 import { needsBackend } from './agents/knowledgeEngine.js';
 import {
@@ -1298,11 +1298,11 @@ app.post('/api/agent-chat', botChatLimit, async (req, res) => {
         // الوكيل — نعامله كردّ فارغ لا كاستثناء يُسقط بقية المسار.
         let reply = null;
         try {
-            reply = await smartChat(
+            reply = await withUsageLabel('bot:agent', () => smartChat(
                 [{ role: 'system', content: buildAgentSystemPrompt(agent) },
                  { role: 'user', content: message.trim().slice(0, 500) }],
                 { max_tokens: 350, temperature: 0.4 }
-            );
+            ));
         } catch { /* يبقى null — يُسجَّل السؤال بلا ردّ أدناه */ }
         const finalReply = (reply || '').toString().trim() || null;
         if (finalReply) { try { bumpUsage(USAGE_DIR, claims.u, 'botAi'); } catch { /* العدّ لا يُسقط الرد */ } }
@@ -1945,10 +1945,10 @@ app.post('/api/jaola-bot/chat', botChatLimit, async (req, res) => {
 
         const msg = message.trim().slice(0, 500);
         const system = `أنت مساعد خدمة عملاء لموقع «${brand}». أجب بإيجاز واحترافية وبنفس لغة الزائر (عربي أو إنجليزي حسب سؤاله). التزم بنطاق الموقع وخدماته، ولا تختلق معلومات أو أسعاراً؛ إن لم تكن متأكّداً، اقترح بلطف التواصل المباشر مع الموقع.`;
-        const reply = await smartChat(
+        const reply = await withUsageLabel('bot:site', () => smartChat(
             [{ role: 'system', content: system }, { role: 'user', content: msg }],
             { max_tokens: 300, temperature: 0.4 }
-        );
+        ));
         const finalReply = (reply || '').toString().trim() || null;
         if (finalReply && ownerUsername) {
             try { bumpUsage(USAGE_DIR, ownerUsername, 'botAi'); } catch { /* العدّ لا يُسقط الرد */ }

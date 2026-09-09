@@ -11,7 +11,7 @@
  * ثم يُحقن هذا في سياق المولّد ليبني ميزات عاملة لا زخارف.
  */
 
-import { smartChat } from '../core/providers/llm.js';
+import { smartChat, withUsageLabel } from '../core/providers/llm.js';
 import { keywordMatches } from './knowledgeEngine.js';
 import { specHead, clipWords } from './textNormalizer.js';
 
@@ -109,10 +109,10 @@ export async function generateBlueprint(goal) {
     const fallbackKind = staticKind(goal);
 
     try {
-        const raw = await smartChat([
+        const raw = await withUsageLabel('blueprint', () => smartChat([
             { role: 'system', content: BLUEPRINT_SYSTEM },
             { role: 'user', content: `الطلب: "${goal}"` },
-        ], { max_tokens: 900, temperature: 0.3, json: true });
+        ], { max_tokens: 900, temperature: 0.3, json: true }));
 
         const bp = hardenBlueprint(JSON.parse(raw), goal);
         bp._source = 'llm';

@@ -13,7 +13,7 @@
  * llm قابل للحقن للاختبار. فشل النداء → null (المهمة لا تتعطل).
  */
 
-import { smartChat } from '../core/providers/llm.js';
+import { smartChat, withUsageLabel } from '../core/providers/llm.js';
 import { conceptOf, conceptKind, conceptsInText, isGenericConcept, normalizeConceptText, productText } from './projectModel.js';
 import { clipWords } from './textNormalizer.js';
 
@@ -201,10 +201,10 @@ export async function verifyRequirements(blueprint, files, llm = smartChat, doma
 
     let parsed;
     try {
-        const raw = await llm([
+        const raw = await withUsageLabel('verify:requirements', () => llm([
             { role: 'system', content: VERIFY_SYSTEM },
             { role: 'user', content: `## المتطلبات الوظيفية:\n${reqList}\n\n## HTML:\n${html}\n\n## JavaScript:\n${js}` },
-        ], { max_tokens: 1200, temperature: 0, json: true });
+        ], { max_tokens: 1200, temperature: 0, json: true }));
         parsed = JSON.parse(raw);
     } catch (e) {
         return null; // فشل التحقق لا يُفشل المهمة

@@ -13,7 +13,7 @@
  *   محفور هنا.
  */
 
-import { smartChat } from '../core/providers/llm.js';
+import { smartChat, withUsageLabel } from '../core/providers/llm.js';
 import { isQuestionMessage } from './textNormalizer.js';
 
 // الأفعال المسموحة من الموجّه — أي شيء خارجها يُرفض (fallback للمسار القديم)
@@ -64,10 +64,10 @@ export async function routeMessage(message, ctx = {}, llm = smartChat) {
 
     let route;
     try {
-        const raw = await llm([
+        const raw = await withUsageLabel('router', () => llm([
             { role: 'system', content: SYSTEM },
             { role: 'user', content: `السياق:\n${context}\n\nرسالة المستخدم: "${message}"` },
-        ], { max_tokens: 250, temperature: 0, json: true });
+        ], { max_tokens: 250, temperature: 0, json: true }));
         route = JSON.parse(raw);
     } catch (e) {
         return null; // فشل النداء/JSON فاسد → المسار الاحتياطي

@@ -3,6 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runAgent, gatherCooperationInputs } from '../core/runtime/AgentRuntime.js';
+import { noteUsage, readAIUsage, resetAIUsage } from '../core/providers/llm.js';
 import { compileSpecToPrompt, defineAgent } from '../core/runtime/AgentSpec.js';
 import { teamPlan } from '../agents/backendTeam/backendTeam.js';
 import { frontendTeamPlan } from '../agents/frontendTeam/index.js';
@@ -99,4 +100,37 @@ test('🐛 عقدٌ ناقص يُقابَل برسالة العقد لا بان�
     );
     // والعقد المُطبَّع يمرّ كما كان — التطبيع مُتساوي القوى
     assert.match(compileSpecToPrompt(SPEC), /أنت \*\*مهندس\*\*/);
+});
+
+// ═══════════════════════════════════════════════════════
+// 🏷️ وسمُ الكلفة: `runAgent` نقطةُ نسبٍ واحدة لوكلاء العقود كلِّهم
+// ═══════════════════════════════════════════════════════
+// وُسِم هنا لا عند المنادين: `agent.id` معروفٌ في هذا الموضع سلفاً، فلا تُغيَّر واحدٌ وعشرون
+// توقيعاً لأجل عدّاد. والطفرةُ التي أفرغت الوسمَ نجت من الحزمة كلِّها قبل هذا الاختبار.
+test('🔴 استهلاكُ وكيلِ العقد يُنسَب إلى `agent:<id>` — لا إلى «بلا وسم»', async () => {
+    resetAIUsage();
+    // عميلٌ يحسب رموزَه من داخل النداء، كما يفعل `tagged` في السلسلة الحقيقيّة
+    const counting = async () => {
+        noteUsage('groq', { usage: { prompt_tokens: 80, completion_tokens: 20, total_tokens: 100 } });
+        return JSON.stringify({ summary: 'تمّ', files: [], issues: [], selfReviewPassed: true });
+    };
+    await runAgent(SPEC, { goal: 'متجر', lang: 'ar', artifacts: {}, fileMap: {}, byId: {}, llm: counting });
+    const usage = readAIUsage();
+    assert.equal(usage.byLabel['agent:a1']?.total, 100, 'الرموزُ تحمل اسمَ الوكيل');
+    assert.equal(usage.byLabel['بلا وسم'], undefined);
+});
+
+test('🔴 ووكيلان مختلفان لا يختلط حسابُهما — وإلّا فالنسبةُ بلا معنى', async () => {
+    resetAIUsage();
+    const cost = (n) => async () => {
+        noteUsage('groq', { usage: { prompt_tokens: n, completion_tokens: 0, total_tokens: n } });
+        return JSON.stringify({ summary: 'تمّ', files: [], issues: [], selfReviewPassed: true });
+    };
+    const base = { goal: 'متجر', lang: 'ar', artifacts: {}, fileMap: {}, byId: {} };
+    await runAgent(SPEC, { ...base, llm: cost(30) });
+    await runAgent({ ...SPEC, id: 'a2' }, { ...base, llm: cost(70) });
+    const { byLabel, total } = readAIUsage();
+    assert.equal(byLabel['agent:a1'].total, 30);
+    assert.equal(byLabel['agent:a2'].total, 70);
+    assert.equal(total, 100, 'والمجموعُ يبقى المجموع');
 });

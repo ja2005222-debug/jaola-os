@@ -10,7 +10,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { smartChat } from '../core/providers/llm.js';
+import { smartChat, withUsageLabel } from '../core/providers/llm.js';
 import { pickPalette } from './cloneAssets.js';
 import { forgeItemSVG, seedOf } from './imageForge.js';
 
@@ -106,7 +106,7 @@ export async function generateSocialPosts(projectPath, { lang = 'ar', goal = '' 
 
     let posts = null, ai = false;
     try {
-        const raw = await chat([
+        const raw = await withUsageLabel('marketing', () => chat([
             {
                 role: 'system',
                 content: lang === 'en'
@@ -114,7 +114,7 @@ export async function generateSocialPosts(projectPath, { lang = 'ar', goal = '' 
                     : 'أنت كاتب منشورات سوشيال ميديا. أعد JSON فقط: {"posts":[{"day","text","hashtags":[]}]} — 7 منشورات بالضبط، جذابة، بلا أسعار أو ادعاءات مختلقة.',
             },
             { role: 'user', content: `العلامة: ${facts.brand}\nالوصف: ${facts.tagline}\nالأقسام: ${facts.sections.join('، ')}\nالمعروض: ${facts.items.map(i => i.name + (i.price ? ` (${i.price})` : '')).join('، ')}\nاللغة المطلوبة: ${lang === 'en' ? 'English' : 'العربية'}` },
-        ], { max_tokens: 1400, temperature: 0.7, json: true });
+        ], { max_tokens: 1400, temperature: 0.7, json: true }));
         posts = sanitizePosts(JSON.parse(raw)?.posts, lang);
         ai = !!posts;
     } catch { /* الارتداد الحتمي أدناه */ }
@@ -140,7 +140,7 @@ export async function draftInboxReply({ brand = '', name = '', message = '', lan
     const b = cap(brand, 60) || (lang === 'en' ? 'our site' : 'موقعنا');
     const who = cap(name, 60);
     try {
-        const raw = await chat([
+        const raw = await withUsageLabel('marketing', () => chat([
             {
                 role: 'system',
                 content: lang === 'en'
@@ -148,7 +148,7 @@ export async function draftInboxReply({ brand = '', name = '', message = '', lan
                     : `اكتب مسودّة ردّ مهذّبة وموجزة (٣-٥ جمل) من فريق «${b}» على رسالة واردة من نموذج تواصل الموقع. بنفس لغة الرسالة. بلا أسعار أو مواعيد أو وعود مختلقة.`,
             },
             { role: 'user', content: `المرسل: ${who || '—'}\nالرسالة: ${cap(message, 1200)}` },
-        ], { max_tokens: 300, temperature: 0.4 });
+        ], { max_tokens: 300, temperature: 0.4 }));
         const draft = cap(raw, 1200);
         if (draft.length > 20) return { draft, ai: true };
     } catch { /* الارتداد أدناه */ }

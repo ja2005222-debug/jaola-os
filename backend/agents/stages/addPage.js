@@ -9,7 +9,7 @@
  */
 import fs, { promises as fsPromises } from 'fs';
 import path from 'path';
-import { smartChat } from '../../core/providers/llm.js';
+import { smartChat, withUsageLabel } from '../../core/providers/llm.js';
 import { generateSectionContent, compName, slugify, componentSource, defaultSection, pageFileSource } from '../reactGenerator.js';
 import { buildStaticSite } from '../../services/reactPreview.js';
 import { addToHistory, getDomainModel } from '../projectMemory.js';
@@ -67,7 +67,7 @@ export async function addPageNow(instruction, projectPath, username, activeProje
         const model = await generateSectionContent(pageLabel, {
             brand: content.brand || activeProject,
             goal: modelCtx || content.hero?.title || content.hero?.subtitle || '',
-            lang, llm: ops.llm || ((m, o) => smartChat(m, o)),
+            lang, llm: ops.llm || ((m, o) => withUsageLabel('page:section', () => smartChat(m, o))),
         });
         if (model) section = {
             heading: model.heading || section.heading,

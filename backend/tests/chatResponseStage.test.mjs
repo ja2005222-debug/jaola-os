@@ -10,6 +10,7 @@ import { RoomReporter } from '../core/runtime/RoomReporter.js';
 import { scenario } from './helpers/jcrScenario.mjs';
 import { loadForPrompt, clearConversation } from '../services/conversationStore.js';
 import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+import { readAIUsage, resetAIUsage } from '../core/providers/llm.js';
 
 divertConsoleToStderr();
 const HERE = import.meta.dirname;
@@ -126,4 +127,30 @@ test('الحدود: شريحةُ الجسد — لا this ولا io، البثُ
     // اليتائمُ التي غادرت مع المرحلة لم يبقَ لها مستهلكٌ في الصنف
     for (const n of ['scanProjectFiles', 'buildProjectBrain', 'summarizeBrain', 'summarizeFacts', 'getPlatformKnowledge', 'loadConversation', 'recordTurn', 'projectPathOf', 'analyzeProjectStatic', 'getLangInfo', 'getProjectMemory'])
         assert.ok(!new RegExp(`\\b${n}\\b`).test(jcr), `${n} ما زال في jcr`);
+});
+
+// ═══════════════════════════════════════════════════════
+// 🏷️ الوسمُ على المسار الحيّ — لا على العدّاد وحدَه
+// ═══════════════════════════════════════════════════════
+// اختباراتُ `aiUsage` تقيس **الأداة**؛ هذا يقيس أنّها **ركِبت الطريق**. والمسارُ التدفّقيّ
+// هو موضعُ الخطر: الرموزُ تُحسب في `for await` بعد أن عاد `create` بزمن، فلفُّ `create`
+// وحدَه كان سيترك النداءَ «بلا وسم» — والاختبارُ يقع لو رجعنا إليه.
+test('🏷️ نداءُ الشات يُنسَب إلى «chat» على المسار الحيّ — والحسابُ في تصريفِ التدفّق', async () => {
+    const s = await fresh(scenario('chatLabel', 'u1'));
+    const { reporter } = collect();
+    // قطعٌ حقيقيّة، وآخرُها يحمل `usage` كما يتطوّع به المزوّد
+    const client = { chat: { completions: { create: async () => (async function* () {
+        yield { choices: [{ delta: { content: 'مرحبا' } }] };
+        yield { choices: [{ delta: { content: ' بك' } }], usage: { prompt_tokens: 40, completion_tokens: 10, total_tokens: 50 } };
+    })() } } };
+    resetAIUsage();
+    await generateChatResponse(`مرحبا ${STAMP}`, s.ctx.username, s.ctx.roomName, 'ar', reporter, opsOf([]), client);
+    const usage = readAIUsage();
+    assert.equal(usage.byLabel['chat']?.total, 50, 'الرموزُ تُنسَب إلى وكيل الشات');
+    assert.equal(usage.byLabel['بلا وسم'], undefined, 'ولا يتسرّب النداءُ خارجَ كلِّ وسم');
+    assert.equal(usage.total, 50, 'والمجموعُ لا يتغيّر بالوسم');
+    // 🌊 والنداءُ **واحد** مهما بلغت قِطَعُه: هذا ما فضحه سجلُّ صاحب المشروع («٧٩٩٥٤ نداء»
+    //    وحقيقتُها عشرات). القطعتان هنا كانتا تُعدّان نداءَين قبل `drainStream`.
+    assert.equal(usage.byLabel['chat'].calls, 1, 'قطعتان ⇒ نداءٌ واحد');
+    assert.equal(usage.calls, 1);
 });

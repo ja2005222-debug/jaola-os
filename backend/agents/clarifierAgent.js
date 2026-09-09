@@ -1,4 +1,4 @@
-import { smartChat } from '../core/providers/llm.js';
+import { smartChat, withUsageLabel } from '../core/providers/llm.js';
 import { detectProjectType } from './knowledgeEngine.js';
 import { detectLanguage, getUserLanguage, setUserLanguage } from './languageDetector.js';
 import { isConfirmed } from '../core/policy/ConfirmationManager.js';
@@ -22,10 +22,10 @@ Do NOT ask about tech/programming — user doesn't know that.
 Good examples: "Do you want a menu with photos and prices?" / "Do you need a booking form?" / "What color theme?"
 Return JSON only: { "questions": ["question 1", "question 2", "question 3"] }`;
 
-        const response = await smartChat([
+        const response = await withUsageLabel('clarifier', () => smartChat([
             { role: 'system', content: systemPrompt },
             { role: 'user', content: `المشروع: "${userGoal}" (النوع: ${projectType})` }
-        ], { max_tokens: 300, temperature: 0.6, json: true });
+        ], { max_tokens: 300, temperature: 0.6, json: true }));
 
         const parsed = JSON.parse(response);
         if (parsed.questions && parsed.questions.length >= 2) {
@@ -327,10 +327,10 @@ async function buildProjectPlan(state) {
 
     let plan;
     try {
-        const _resp = await smartChat([
+        const _resp = await withUsageLabel('clarifier', () => smartChat([
             { role: 'system', content: `أنت مخطط مشاريع ويب. أنشئ خطة موجزة بـ JSON: { "projectName": "اسم", "sections": [], "features": [], "colorMood": "وصف" }` },
             { role: 'user', content: `الطلب: ${originalGoal}\nالنوع: ${projectType}\nالقرارات: ${JSON.stringify(decisions)}\n\n${qaText}` },
-        ], { max_tokens: 500, temperature: 0.3, json: true });
+        ], { max_tokens: 500, temperature: 0.3, json: true }));
         plan = JSON.parse(_resp);
     } catch (e) {
         plan = {

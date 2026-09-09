@@ -8,7 +8,7 @@
  * - Connection setup
  */
 
-import { smartChat } from '../core/providers/llm.js';
+import { smartChat, withUsageLabel } from '../core/providers/llm.js';
 import { needsRelationalDb } from './backendNeed.js';
 
 // ═══════════════════════════════════════════════════════
@@ -259,13 +259,13 @@ export async function connectDB() {
 // توليد Schema ديناميكي للأنواع غير المغطاة
 async function generateDynamicSchema(userGoal, projectType) {
     try {
-        return await smartChat([{
+        return await withUsageLabel('db:schema', () => smartChat([{
             role: 'system',
             content: 'أنت مهندس قواعد بيانات. اكتب MongoDB Schema بـ Mongoose لهذا المشروع. كود فقط بدون شرح.'
         }, {
             role: 'user',
             content: `المشروع: ${userGoal}\nالنوع: ${projectType}\nاكتب Schema مناسباً بـ Mongoose.`
-        }], { max_tokens: 600, temperature: 0.2 });
+        }], { max_tokens: 600, temperature: 0.2 }));
     } catch (e) {
         return null;
     }
