@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { goalFidelity, goalWords } from '../agents/projectModel.js';
+import { goalFidelity, goalWords, labelledRoleNames } from '../agents/projectModel.js';
 import { understandGoal } from '../agents/stages/understand.js';
 import { runBehaviorVerifyStage } from '../agents/stages/verify.js';
 import { recordGateOutcome } from '../core/contracts/index.js';
@@ -197,4 +197,57 @@ test('🔴 والفهمُ الذي يمسُّ الطلبَ يُودَع كما �
     assert.equal(behavior.status, 'pass', `الطُّعمُ لا يجتاز السلوكَ (${behavior.detail})`);
     assert.ok(stored, 'الذاكرةُ تجمّدت: لا فهمَ صادقٌ يُغنيها بعد اليوم');
     assert.match(logs, /أُغني فهم فئة/);
+});
+
+// ─── #١٩٥: ما أسقط بناءَ جمعيّة عطاء على الإنتاج ────────────────────────
+//
+// سجلٌّ حيّ (٢٠٢٦-٠٩-٠٩، ١١:٠٨): طُلبت منصّةُ جمعيّةٍ خيريّة، فاشتُقّ لها
+// `Campaign/Donor/Donation` — وهو الفهمُ **الصحيح** — ثمّ قال الحارسُ لصاحبها:
+//   «⚠️ فهمي لم يمسّ طلبَك (لا أثرَ في وصفِك لـCampaign، Donor، Donation)
+//     — فطرحتُه وبنيتُ على عناوينك أنت: تسجيل، ملف، لوحه.»
+// فبُني على `تسجيل/ملف/لوحه` وانتهى الحكمُ FAILED.
+//
+// والعلّةُ مقيسة: `conceptsInText` لم ترَ في الطلب كلِّه إلّا `accountant` و`admin` —
+// إذ لم يكن في المعجم **مجالُ العمل الخيريّ إطلاقاً**. فلا الجسرُ المعجميّ يعبر
+// (لا «حملة»→campaign) ولا جسرُ اللفظ (`Campaign` لا يلتقي «الحملات» حرفاً).
+//
+// وهذا هو #١٨٦ بعينه مقيساً حيّاً: «العلّةُ تغطيةُ المعجم لا العتبة».
+
+const CHARITY_GOAL = `أبغى منصّة لجمعية خيرية.
+1. تسجيل الحملات مع هدف كل حملة والمبلغ المتحقق
+2. ملف متبرع فيه سجل تبرعاته وإيصالاته
+3. تسجيل المتطوعين وتوزيعهم على الحملات
+الأدوار: (مدير الجمعية، مسؤول الحملات، محاسب، متطوع)`;
+
+test('🔴 #١٩٥ الفهمُ الصحيحُ لجمعيّةٍ خيريّة يمرّ — لا يُطرح ويُستبدَل بعناوين', () => {
+    const honest = { entities: [{ name: 'Campaign' }, { name: 'Donor' }, { name: 'Donation' }], roles: [] };
+    const f = goalFidelity(honest, CHARITY_GOAL);
+    assert.deepEqual(f.groundless, [], `طُرح فهمٌ صحيح: ${f.groundless.join('، ')}`);
+    assert.equal(f.ungrounded, false, 'هذا هو ما أسقط بناءَ جمعيّة عطاء على الإنتاج');
+});
+
+// 🧬 طفرةٌ نجت: حذفُ صيغِ «متطوّع» العربيّة كلِّها من المعجم لم يُسقط اختباراً — لأنّ
+//    الطُّعمَ أعلاه يقيس الكياناتِ الثلاثة ولا يقيس الدور. و«متطوّع» مذكورٌ في طلب صاحب
+//    المشروع مرّتين، والمتحقّقُ السلوكيّ شكا في السجلّ الحيّ من غيابه بعينه.
+test('🔴 #١٩٥ والدورُ «متطوّع» والفئةُ «جمعية خيرية» مسنودان أيضاً — لا الكياناتُ وحدَها', () => {
+    const withRoles = { entities: [{ name: 'Charity' }], roles: [{ name: 'Volunteer' }] };
+    const f = goalFidelity(withRoles, CHARITY_GOAL);
+    assert.deepEqual(f.groundless, [], `لم يُسنَد: ${f.groundless.join('، ')}`);
+    assert.equal(f.supported.length, 2);
+});
+
+test('🔴 #١٩٥ والحارسُ لم يُسكَت: المهلوَسُ ما زال مرفوضاً على الطلب نفسِه', () => {
+    // لو صار كلُّ شيءٍ مسنوداً لضاعت فائدةُ الحارس — والطُّعمُ هنا فهمُ منتجٍ آخرَ تماماً
+    const alien = { entities: [{ name: 'Grade' }, { name: 'ForumPost' }], roles: [{ name: 'Teacher' }] };
+    assert.equal(goalFidelity(alien, CHARITY_GOAL).ungrounded, true, 'أُسكت الحارس');
+    // ولا تُقبل مفاهيمُ الخير على طلبٍ لا يذكرها
+    assert.equal(goalFidelity({ entities: [{ name: 'Campaign' }, { name: 'Donor' }], roles: [] }, WIRD).ungrounded,
+        true, 'صارت مفاهيمُ الخير تُقبل في كلِّ طلب');
+});
+
+test('🔴 #١٩٥ الأدوارُ بين قوسَين تُلتقط **بلا قوس** — وإلّا استحال نجاحُ role-coverage', () => {
+    const roles = labelledRoleNames(CHARITY_GOAL);
+    assert.deepEqual(roles, ['مدير الجمعية', 'مسؤول الحملات', 'محاسب', 'متطوع'],
+        `قوسٌ داخلَ اسمِ دور — والمتحقّقُ يفتّش الشفرةَ عن «${roles[0]}» فلا يجده أبداً`);
+    for (const r of roles) assert.doesNotMatch(r, /[()（）[\]{}]/u, `قوسٌ باقٍ في «${r}»`);
 });
