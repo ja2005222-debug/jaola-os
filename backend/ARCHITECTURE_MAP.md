@@ -88,7 +88,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## C) `backend/agents/*` — 138 وحدة (منها 42 قالب كلون)
+## C) `backend/agents/*` — 139 وحدة (منها 42 قالب كلون)
 
 ### C1. النواة (Kernel candidates)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
@@ -150,7 +150,8 @@ Policy/Permission، Identity، Plugin.
 | `gitAgent.js` | 261 | commit/init/stats (ينفّذ git) | MODIFY | Tool (`git` عبر `execFile` بمصفوفة وسائط — لا صدفة) | `plugins/coding/tools/` |
 | `databaseAgent.js`, `postgresAgent.js` (PM/5: لا مخطّطَ ⇒ لا تسليم), `authAgent.js`, `generatedAppSecrets.js`, `dependencyAgent.js` | 272/369/345/56/288 | كتلة الخلفية | KEEP | Task | `plugins/coding/stages/` |
 | `renderAgent.js` | 262 | نشر Render | MODIFY | Tool (deploy) | `plugins/coding/tools/` |
-| `requirementsVerifier.js` (PM/4: `composeRequirements`؛ PM/7: `_kind` + `traceRequirements` بمعجم projectModel؛ PM/9: `traceSections` + `buildSectionFixInstruction` بلغة الوثيقة؛ PM/12: `sectionLabel` اسمُ البند لا جملتُه؛ PM/14: `productCorpus` — المتتبِّعان يقرآن نصَّ المنتج لا نصَّ الملفّ؛ PM/18: كلماتُ الإطار مُطبَّعة كالمفردات؛ PM/21: `isPlanRow` — سطرُ الجدول الزمنيّ لا يُتتبَّع؛ 🔤 `scriptCorpus` و`decorative` — أثرٌ يصل شفرةً تعمل ليس كأثرٍ في نثرٍ ميّت) | 322 | هل نُفِّذت المتطلبات؟ | KEEP | Evidence | `core/verification/` (Sprint 4) |
+| `requirementsVerifier.js` (PM/4: `composeRequirements`؛ PM/7: `_kind` + `traceRequirements` بمعجم projectModel؛ PM/9: `traceSections` + `buildSectionFixInstruction` بلغة الوثيقة؛ PM/12: `sectionLabel` اسمُ البند لا جملتُه؛ PM/14: `productCorpus` — المتتبِّعان يقرآن نصَّ المنتج لا نصَّ الملفّ؛ PM/18: كلماتُ الإطار مُطبَّعة كالمفردات؛ PM/21: `isPlanRow` — سطرُ الجدول الزمنيّ لا يُتتبَّع؛ 🔤 `scriptCorpus` و`decorative` — أثرٌ يصل شفرةً تعمل ليس كأثرٍ في نثرٍ ميّت؛ **#١٩٩**: `matchTerm` يستهلك `brokenPluralsOf` — جمعُ التكسير بمعجمٍ لا باشتقاق) | 329 | هل نُفِّذت المتطلبات؟ | KEEP | Evidence | `core/verification/` (Sprint 4) |
+| `arabicBrokenPlurals.js` (**#١٩٩**: معجمُ (مفرد ← جمعُ تكسير) من Arramooz GPLv2 — `data/ARRAMOOZ_NOTICE.md` — لا اشتقاقٌ خوارزميّ؛ حلّان خوارزميّان (اختزالُ هيكلٍ صامت، توليدُ مرشّحٍ بنمط) قِيسا فسقطا: يخلطان كلماتٍ مختلفةَ المعنى بجذرٍ متقارب) | 42 | مستهلَكٌ من `requirementsVerifier.js#matchTerm` وحده | KEEP | Evidence | `core/verification/` (Sprint 4) |
 | `behaviorVerifier.js` (PM/14: بوّابةُ صدق المجال على نصّ المنتج) | 533 | تحقّق ساكن + تشغيل حيّ (وحدة الدليل `check`) | MOVE | Evidence + Verification | `core/verification/VerificationEngine.js` (Sprint 4) |
 | `modelLibrary.js` | 69 | معرفة تراكمية | KEEP | Memory | `core/memory/` (لاحقاً) |
 | `fileManager.js`, `patchEditor.js` | 319/187 | كتابة/ترقيع ملفات مباشرة | MODIFY | Tool (workspace.writeFiles) | `core/runtime/ToolRuntime.js` |

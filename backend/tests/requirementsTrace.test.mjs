@@ -187,12 +187,20 @@ test('#١٩٨: المعجمُ يبقى صاحبَ الكلمة حيث ينطق �
     assert.deepEqual(t.traced, ['شاشة زبون'], JSON.stringify(t));
 });
 
-test('#١٩٨: حدُّ جمع التكسير مقيسٌ ومكتوب — «كتاب» لا تطابق «الكتب»، ولا يُدَّعى غيابُها', () => {
+test('#١٩٩: جمعُ التكسير الموثَّق يُطابَق — «كتاب» يتتبّع «الكتب» بمعجم Arramooz لا باشتقاق', () => {
     const files = [{ name: 'index.html', content: '<h1>فهرس الكتب</h1>' }];
     const t = traceRequirements(composeRequirements(null, { entities: [{ name: 'كتاب' }], roles: [], flows: [] }), files);
-    assert.deepEqual(t.unmatched, ['بيانات كتاب'], 'لم أتتبّعه — لا «بلا أثر»');
+    assert.deepEqual(t.unmatched, [], 'صار له أثر — المعجم يعرف الجمعَ المكسَّر');
     assert.deepEqual(t.missing, [], 'النفيُ يحتاج يقيناً');
+    assert.deepEqual(t.traced, ['بيانات كتاب'], JSON.stringify(t));
     const o = requirementsTraceOutcome(composeRequirements(null, { entities: [{ name: 'كتاب' }], roles: [], flows: [] }), files, 'n');
-    assert.equal(o.status, 'unverified', o.detail);
-    assert.match(o.detail, /لم أتتبّعه بمفرداته: بيانات كتاب/, o.detail);
+    assert.equal(o.status, 'unverified', o.detail); // decorative: الأثر في نثرٍ لا يشغّله سطرُ شفرة
+    assert.match(o.detail, /أثرُه في نصٍّ لا يشغّله شيء: بيانات كتاب/, o.detail);
+});
+
+test('#١٩٩: ما بقي خارج معجم جمع التكسير يبقى «لم أتتبّعه» — لا يُدَّعى غيابُه', () => {
+    const files = [{ name: 'index.html', content: '<h1>صفحةٌ عن شيءٍ آخر</h1>' }];
+    const t = traceRequirements(composeRequirements(null, { entities: [{ name: 'زبرجد' }], roles: [], flows: [] }), files);
+    assert.deepEqual(t.unmatched, ['بيانات زبرجد'], 'لم أتتبّعه — لا «بلا أثر»');
+    assert.deepEqual(t.missing, [], 'النفيُ يحتاج يقيناً');
 });
