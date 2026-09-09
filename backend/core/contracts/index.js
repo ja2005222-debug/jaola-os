@@ -65,6 +65,17 @@
  */
 
 /**
+ * @typedef {object} StageResult
+ * ناتجُ مرحلةِ جودةٍ (`stages/quality.js`) — تعميمٌ لنمط `AgentSpec`
+ * (`issues`/`selfReviewPassed`) إلى مستوى المرحلة، لا عقدٌ رابعٌ مختلف: نفسُ
+ * فلسفة «فشلٌ مُمسَك لا يعني إسقاطاً» تبقى — الحقلُ الجديد **إشارةٌ**، لا حارسٌ.
+ * @property {boolean} attempted  نُفّذت المرحلةُ أصلاً (false = تخطٍّ بشرطٍ سابق، لا فشل)
+ * @property {string[]} issues    مشاكلُ غيرُ قاتلة وجدتها المرحلة (فارغة = نظيف)
+ * @property {string} [error]     نصُّ استثناءٍ مُمسَك — وجودُه لا يعني «فشلاً قاطعاً»
+ * @property {string} summary     سطرٌ واحد لما كان يُكتب مباشرةً إلى `emitLiveLog`
+ */
+
+/**
  * @typedef {(req: MissionRequest, agents: AgentBundle) => Promise<boolean>} HandlerFn
  * معالج نية: يعيد `true` إن استهلك الرسالة (ردّ أو أطلق مهمة) فتتوقف السلسلة.
  */

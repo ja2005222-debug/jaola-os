@@ -36,7 +36,9 @@ test('المراجعة: حالةُ REVIEWING، إصلاحٌ واحد يُكتب 
     try {
         const ctx = context(s, dir); const before = ctx.plan.files;
         const { events, reporter } = collect();
-        await runReviewStage(ctx, s.ctx.roomName, reporter);
+        const result = await runReviewStage(ctx, s.ctx.roomName, reporter);
+        assert.deepEqual(result, { attempted: true, issues: ['جيد'], summary: '🟡 الجودة: B (76/100) — جيد — تم إصلاح 1 مشكلة' }, 'StageResult: درجةٌ غيرُ A تُسجَّل كـissue');
+        assert.deepEqual(ctx.verdicts, { review: { status: 'fail', detail: result.summary } }, 'recordGateOutcome يُستدعى من داخل quality.js نفسها (finishStage) — issues غيرُ فارغة ⇒ fail');
         assert.equal(getProjectState(s.ctx.username, s.ctx.activeProject).state, STATES.REVIEWING);
         assert.deepEqual(logs(events), [
             '[5. RUNTIME] ➔ [ReviewAgent]: 🔍 مراجعة جودة الكود...',
@@ -55,9 +57,13 @@ test('المراجعة بلا خطّة: سطرُ «تخطّي» لا انهيا�
     const s = scenario('qrevx'); transitionState(s.ctx.username, s.ctx.activeProject, STATES.GENERATING, { agent: 'test' });
     try {
         const { events, reporter } = collect();
-        await runReviewStage(context(s, emptyProject(), null), s.ctx.roomName, reporter);
+        const ctx = context(s, emptyProject(), null);
+        const result = await runReviewStage(ctx, s.ctx.roomName, reporter);
         assert.equal(logs(events).length, 2);
         assert.ok(logs(events)[1].startsWith('[5. RUNTIME] ➔ [ReviewAgent]: ⚠️ تخطّي: '), logs(events)[1]);
+        assert.equal(result.attempted, true); assert.deepEqual(result.issues, []);
+        assert.ok(result.error, 'StageResult: خطأٌ مُمسَك يظهر في error لا رمياً');
+        assert.equal(ctx.verdicts.review.status, 'unverified', 'error مُمسَك ⇒ unverified لا fail');
         assert.equal(getProjectState(s.ctx.username, s.ctx.activeProject).state, STATES.REVIEWING);
     } finally { resetProjectState(s.ctx.username, s.ctx.activeProject); }
 });
@@ -65,43 +71,55 @@ test('المراجعة بلا خطّة: سطرُ «تخطّي» لا انهيا�
 test('التنظيف: كودٌ نظيف → صمتٌ تامّ (لا سطرَ عند صفر تقليص) وplan.files تُستبدل بالمعالَجة', async () => {
     const s = scenario('qref'); const ctx = context(s, emptyProject()); const before = ctx.plan.files;
     const { events, reporter } = collect();
-    await runRefactorStage(ctx, s.ctx.roomName, reporter);
+    const result = await runRefactorStage(ctx, s.ctx.roomName, reporter);
     assert.deepEqual(events, []);
     assert.notEqual(ctx.plan.files, before); assert.deepEqual(ctx.plan.files.map((f) => f.name), ['index.html', 'styles.css', 'script.js']);
+    assert.equal(result.attempted, true); assert.deepEqual(result.issues, []); assert.equal(result.error, undefined);
+    assert.deepEqual(ctx.verdicts, { refactor: { status: 'pass', detail: result.summary } });
 });
 
 test('الاختبار: التقريرُ بحروفه ثمّ سطرُ الفاشلة؛ وبلا ملفّات → «plan is not defined»', async () => {
     const s = scenario('qtest'); setUserLanguage(s.ctx.username, 'ar');
     const { events, reporter } = collect();
-    await runTestingStage(context(s, emptyProject()), s.ctx.roomName, reporter);
+    const ctx = context(s, emptyProject());
+    const result = await runTestingStage(ctx, s.ctx.roomName, reporter);
     assert.deepEqual(logs(events), [
         '[5. RUNTIME] ➔ [TestingAgent]: 🟡 B (75/100) — 17/19 اختبار نجح | فشل: Media Queries للتجاوب, حجم CSS',
         '[5. RUNTIME] ➔ [TestingAgent]: ⚠️ اختبارات فاشلة: Media Queries للتجاوب | حجم CSS',
     ]);
+    assert.deepEqual(result.issues, ['Media Queries للتجاوب', 'حجم CSS'], 'StageResult: الاختباراتُ الفاشلة تصير issues');
+    assert.equal(ctx.verdicts.testing.status, 'fail', 'اختباراتٌ فاشلة ⇒ fail');
     const x = collect();
-    await runTestingStage(context(s, emptyProject(), {}), s.ctx.roomName, x.reporter);
+    const xctx = context(s, emptyProject(), {});
+    const xResult = await runTestingStage(xctx, s.ctx.roomName, x.reporter);
     assert.deepEqual(logs(x.events), ['[5. RUNTIME] ➔ [TestingAgent]: ⚠️ تخطّي: plan is not defined']);
+    assert.equal(xResult.error, 'plan is not defined');
+    assert.equal(xctx.verdicts.testing.status, 'unverified');
 });
 
 test('SEO: robots.txt وsitemap.xml يُكتبان على القرص بعنوان vercel المشتقّ، plan.files تُستبدل، والدرجةُ تُسجَّل', async () => {
     const s = scenario('qseo'); setUserLanguage(s.ctx.username, 'ar'); const dir = emptyProject();
     const ctx = context(s, dir); const { events, reporter } = collect();
-    await runSeoStage(ctx, s.ctx.roomName, reporter);
+    const result = await runSeoStage(ctx, s.ctx.roomName, reporter);
     assert.deepEqual(logs(events), ['[5. RUNTIME] ➔ [SEOAgent]: ✅ SEO — robots.txt + sitemap.xml + meta tags (OG, Twitter, Schema.org) · 1 صفحة في الخريطة']);
+    assert.deepEqual(result, { attempted: true, issues: [], summary: 'SEO — robots.txt + sitemap.xml + meta tags (OG, Twitter, Schema.org) · 1 صفحة في الخريطة' });
     assert.deepEqual(fs.readdirSync(dir).sort(), ['robots.txt', 'sitemap.xml'], 'الجديدةُ فقط تُكتب هنا — الصفحاتُ المعدَّلة تبقى في plan.files لمرحلة الكتابة');
     assert.ok(fs.readFileSync(path.join(dir, 'sitemap.xml'), 'utf8').includes(`https://${s.ctx.username}-${s.ctx.activeProject}.vercel.app`));
     assert.ok(ctx.plan.files.find((f) => f.name === 'index.html').content.includes('og:title'), 'الميتا حُقنت في الصفحة داخل الخطّة');
     assert.ok(buildMetricsPayload(s.ctx.username, s.ctx.activeProject).seo, 'درجةُ SEO مسجَّلة');
+    assert.deepEqual(ctx.verdicts, { seo: { status: 'pass', detail: result.summary } });
 });
 
 test('الأمان: .gitignore يُكتب، الدرجةُ A تُسجَّل، ولا مساسَ بـplan.files', async () => {
     const s = scenario('qsec'); const dir = emptyProject(); const ctx = context(s, dir); const before = ctx.plan.files;
     const { events, reporter } = collect();
-    await runSecurityStage(ctx, s.ctx.roomName, reporter);
+    const result = await runSecurityStage(ctx, s.ctx.roomName, reporter);
     assert.deepEqual(logs(events), ['[5. RUNTIME] ➔ [SecurityAgent]: ✅ Security A (100/100) — 0 مشكلة، 0 تحذير']);
+    assert.deepEqual(result, { attempted: true, issues: [], summary: 'Security A (100/100) — 0 مشكلة، 0 تحذير' }, 'StageResult: درجة A بلا issues');
     assert.deepEqual(fs.readdirSync(dir), ['.gitignore']);
     assert.equal(ctx.plan.files, before, 'لا مُصلِحَ أمنيّاً — القائمةُ نفسُها');
     assert.equal(buildMetricsPayload(s.ctx.username, s.ctx.activeProject).security.grade, 'A');
+    assert.deepEqual(ctx.verdicts, { security: { status: 'pass', detail: result.summary } });
 });
 
 // 🔎 اكتشافٌ من التوصيف (لا يُغيَّر هنا — نقلٌ حرفيّ): `backupProject` يكتب لقطةً جديدة في `.backups/snapshot_<ts>_build`
@@ -111,8 +129,11 @@ test('النسخُ الاحتياطيّ: commit يُبثّ بهاشه في كل�
     const s = scenario('qgit'); const dir = emptyProject(); fs.writeFileSync(path.join(dir, 'index.html'), HTML);
     const HASH = /^\[5\. RUNTIME\] ➔ \[GitAgent\]: ✅ تم الحفظ \[[0-9a-f]{7,40}\]$/;
     const { events, reporter } = collect();
-    await runGitBackupStage(context(s, dir), s.ctx.roomName, reporter);
+    const ctx = context(s, dir);
+    const result = await runGitBackupStage(ctx, s.ctx.roomName, reporter);
     assert.equal(logs(events).length, 1); assert.match(logs(events)[0], HASH);
+    assert.equal(result.attempted, true); assert.deepEqual(result.issues, []); assert.match(result.summary, /^تم الحفظ \[/);
+    assert.deepEqual(ctx.verdicts, { 'git-backup': { status: 'pass', detail: result.summary } });
     const [last] = await getCommitHistory(dir, 1);
     assert.ok(last.message.startsWith('🏗️ مطعم البحر للمأكولات البحرية ['), `الرسالةُ من هدف المستخدم الحرّ (originalGoal) لا من الهدف المطبَّع: ${last.message}`);
     const again = collect();
