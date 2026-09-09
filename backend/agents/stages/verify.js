@@ -70,12 +70,17 @@ export function requirementsTraceOutcome(requirements, files, note = 'لا مح�
     }
     if (!requirements?.length || !files?.length) return { status: 'skipped', detail: note };
     const t = traceRequirements(requirements, files);
-    const traceable = t.traced.length + t.missing.length;
+    const traceable = t.traced.length + t.missing.length + t.unmatched.length;
     if (!traceable) return { status: 'skipped', detail: `${note} — ${t.untraceable.length} متطلّب بلا مفردةٍ تُتتبَّع` };
-    const tail = `${t.traced.length}/${traceable} له أثر — أثرٌ لا تنفيذ${t.untraceable.length ? `؛ ${t.untraceable.length} لا يُتتبَّع بالمفردات` : ''}`;
+    // #١٩٨: «لم أتتبّعه» يُقال بعدده ولا يُبتلع — وهو غيرُ «بلا أثر»: النفيُ يحتاج يقيناً لا نملكه
+    //       مع جمع التكسير، فلا يُتَّهم بناءٌ صحيح؛ لكنّه يمنع PASS لأنّ الدعوى لم تُتحقَّق.
+    const unmatchedTail = t.unmatched.length
+        ? `؛ ${t.unmatched.length} لم أتتبّعه بمفرداته: ${t.unmatched.slice(0, 4).join('، ')}` : '';
+    const tail = `${t.traced.length}/${traceable} له أثر — أثرٌ لا تنفيذ${t.untraceable.length ? `؛ ${t.untraceable.length} لا يُتتبَّع بالمفردات` : ''}${unmatchedTail}`;
     if (t.missing.length) return { status: 'fail', detail: `${t.missing.length} متطلّب بلا أثر: ${t.missing.join('، ')} (${tail})` };
     // التمييزُ نفسُه على مسار المفردات: مفهومٌ لا تنطق به شفرةٌ تعمل أثرُه زينةٌ لا تنفيذ.
     if (t.decorative.length) return { status: 'unverified', detail: `${tail}؛ ${t.decorative.length} أثرُه في نصٍّ لا يشغّله شيء: ${t.decorative.slice(0, 6).join('، ')}` };
+    if (t.unmatched.length) return { status: 'unverified', detail: tail };
     return { status: 'pass', detail: tail };
 }
 

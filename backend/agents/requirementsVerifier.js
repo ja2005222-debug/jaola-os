@@ -15,6 +15,7 @@
 
 import { smartChat, withUsageLabel } from '../core/providers/llm.js';
 import { conceptOf, conceptKind, conceptsInText, isGenericConcept, normalizeConceptText, productText } from './projectModel.js';
+import { keywordMatches } from './knowledgeEngine.js';
 import { clipWords } from './textNormalizer.js';
 
 const VERIFY_SYSTEM = `أنت مدقق جودة صارم لمواقع الويب. لديك متطلبات وظيفية وكود الموقع الفعلي.
@@ -40,17 +41,19 @@ export function composeRequirements(blueprint, domainModel = null) {
     const comps = (blueprint?.functionalComponents || []).filter(c => c && c.name);
     const seen = new Set(comps.map(c => String(c.name).toLowerCase().trim()));
     // PM/7: `_kind` يقول من أيّ وجهٍ من الفهم جاء المتطلّب — المتتبِّعُ الحتميّ يقرؤه (التدفّقُ لا يُتتبَّع بالمفردات).
-    const add = (name, behavior, kind) => {
+    // `_term` = **كلمةُ صاحب المشروع** كما اشتُقّت من طلبه، مجرّدةً من إطارِنا («شاشة»/«بيانات»).
+    // يقرؤها المتتبِّعُ الحتميّ حين يصمت المعجم — وهو يصمت عن أكثرَ من نصف ما يُشتقّ (#١٩٨).
+    const add = (name, behavior, kind, term = '') => {
         const k = String(name).toLowerCase().trim();
         if (seen.has(k)) return;
         seen.add(k);
-        comps.push({ name, behavior, _source: 'model', _kind: kind });
+        comps.push({ name, behavior, _source: 'model', _kind: kind, ...(term ? { _term: term } : {}) });
     };
     for (const r of (domainModel?.roles || [])) {
-        if (r?.name) add(`شاشة ${r.name}`, `قسمٌ/صفحةٌ مستقلّة للدور «${r.name}» تعمل فعلاً (عناصر + منطق JS)، لا ذكرَ اسمٍ في نصّ`, 'role');
+        if (r?.name) add(`شاشة ${r.name}`, `قسمٌ/صفحةٌ مستقلّة للدور «${r.name}» تعمل فعلاً (عناصر + منطق JS)، لا ذكرَ اسمٍ في نصّ`, 'role', r.name);
     }
     for (const e of (domainModel?.entities || [])) {
-        if (e?.name) add(`بيانات ${e.name}`, `تمثيلٌ فعليّ للكيان «${e.name}»: مصفوفةُ بياناتٍ واقعيّة تُعرض وتُحدَّث، لا عنوانٌ ثابت`, 'entity');
+        if (e?.name) add(`بيانات ${e.name}`, `تمثيلٌ فعليّ للكيان «${e.name}»: مصفوفةُ بياناتٍ واقعيّة تُعرض وتُحدَّث، لا عنوانٌ ثابت`, 'entity', e.name);
     }
     for (const f of (domainModel?.flows || [])) {
         // اسمُ التدفّق قد يبدأ بالكلمة نفسِها («تدفّق حالة الرحلة») فلا نكرّرها
@@ -90,16 +93,37 @@ const scriptCorpus = (files) => (files || []).map((f) => {
 
 export function traceRequirements(requirements, files) {
     // PM/14: نصُّ المنتج لا نصُّ الملفّ — تنسيقُ الصفحة وأسماءُ وسومها ليست مفرداتِ صاحب المشروع
-    const spoken = conceptsInText(productCorpus(files));
-    const running = conceptsInText(scriptCorpus(files));
-    const out = { traced: [], missing: [], untraceable: [], decorative: [] };
+    const productText_ = productCorpus(files);
+    const scriptText_ = scriptCorpus(files);
+    const spoken = conceptsInText(productText_);
+    const running = conceptsInText(scriptText_);
+    const corpus = ' ' + normalizeConceptText(productText_) + ' ';
+    const live = ' ' + normalizeConceptText(scriptText_) + ' ';
+    const out = { traced: [], missing: [], untraceable: [], decorative: [], unmatched: [] };
     for (const r of (requirements || [])) {
         if (!r?.name) continue;
-        const concept = r._kind === 'flow' ? '' : conceptOf(r.name);
-        if (!concept || !conceptKind(concept) || isGenericConcept(concept)) { out.untraceable.push(r.name); continue; }
-        if (!spoken.has(concept)) { out.missing.push(r.name); continue; }
+        const isFlow = r._kind === 'flow';
+        const concept = isFlow ? '' : conceptOf(r.name);
+        const known = concept && conceptKind(concept);
+        // المعجمُ أوّلاً حيث ينطق: هو وحدَه يعرف المرادف («زبون» في النموذج، «عميل» في الصفحة).
+        if (known && !isGenericConcept(concept)) {
+            if (!spoken.has(concept)) { out.missing.push(r.name); continue; }
+            out.traced.push(r.name);
+            if (!running.has(concept)) out.decorative.push(r.name);
+            continue;
+        }
+        // 🔓 #١٩٨ — وحين **يصمت**: بكلمةِ صاحب المشروع نفسِها، بالآلة التي تحكم بها بنودُ وثيقته (PM/9).
+        //
+        // 🛡️ والعامُّ يبقى خارجَ الحكم كما كان (PM/7): `user`/`item` لا يميّزان، ولفظُهما في أيّ صفحةٍ
+        //    لا يُثبت شيئاً. وهذا ليس تدقيقاً نظريّاً — قِيس: مسارُ Registry بلا فهمٍ يفبرك دورَ
+        //    `Visitor`، فلمّا فُتح المقياسُ على العامّ حُكم على صفحةٍ عربيّةٍ بمتطلّبٍ **اخترعناه نحن**
+        //    ولم يطلبه أحد، فانقلبت PASS إلى FAILED بلا ذنبٍ للبناء. الانفتاحُ لكلمةِ صاحب المشروع
+        //    وحدَها، لا لاحتياطاتنا.
+        const open = (isFlow || known) ? null : matchTerm(r._term || '', corpus, live);
+        if (!open) { out.untraceable.push(r.name); continue; }
+        if (open === 'unmatched') { out.unmatched.push(r.name); continue; }
         out.traced.push(r.name);
-        if (!running.has(concept)) out.decorative.push(r.name);
+        if (open === 'decorative') out.decorative.push(r.name);
     }
     return out;
 }
@@ -133,6 +157,48 @@ export const isPlanRow = (title = '') => PLAN_ROW.test(String(title).trim());
  * و`decorative` ⊆ `traced`: بنودٌ أثرُها في النثر وحدَه ولا يمسّها سطرُ شفرة — أضعفُ ما يكون الدليل.
  * @returns {{ traced, missing, untraceable, decorative: Array<{n,title}> }}
  */
+/**
+ * 🔤 قاعدةُ «متى يكون للفظٍ أثر» — **موضعٌ واحدٌ لمستهلكَيها**: بنودُ وثيقة صاحب المشروع (PM/9)
+ * ومتطلّباتُ الفهم حين يصمت المعجم (#١٩٨). كانتا نسختَين، والنسختان تفترقان عند أوّل إضافة.
+ *
+ * تُعيد `null` لِما لا يُتتبَّع (بلا مفردةٍ ذاتِ معنى بعد كلمات الإطار)، وإلّا
+ * `missing` / `decorative` (أثرٌ في نثرٍ لا يشغّله شيء) / `traced`.
+ *
+ * ⚠️ حدٌّ مقيسٌ ومكتوب: المطابقةُ **حرفيّةٌ على حدّ كلمة**، فلا ترى تصريفَ العربيّة ولا جمعَها —
+ * «وصفة» في النموذج و«وصفات» في الشفرة لا تتطابقان، فيُقال «أثرٌ لفظيّ» عن شيءٍ يعمل فعلاً.
+ * والخطأُ في **الاتّجاه المشدِّد** (تقليلُ الدعوى لا تضخيمُها)، وهو الاتّجاه الذي يُحتمل في حارس.
+ */
+export function matchTokens(text, corpus, live) {
+    const toks = [...new Set(normalizeConceptText(text || '').split(' ')
+        .filter(t => t.length >= 3 && !SECTION_STOPWORDS.has(t)))];
+    if (!toks.length) return null;
+    if (!toks.some(t => corpus.includes(' ' + t + ' '))) return 'missing';
+    return toks.some(t => live.includes(' ' + t + ' ')) ? 'traced' : 'decorative';
+}
+
+/**
+ * 🔤 #١٩٨ — مطابقةُ مصطلحِ صاحب المشروع في ما بُني، **بصرفِ العربيّة لا بحرفِها**.
+ *
+ * `matchTokens` تطابق حرفيّاً على حدّ كلمة، وهي كافيةٌ لبنود الوثيقة (عناوينُها تُعاد بنصّها)
+ * وقاصرةٌ عن مصطلحِ نموذجٍ يظهر في الصفحة مصرَّفاً. قِيس على بناءِ مكتبةٍ حقيقيّ: «أمين المكتبة»
+ * لا تطابق «مكتبة»، و«وصفة» لا تطابق «الوصفات» — فيُقال «بلا أثر» عن شيءٍ مبنيٍّ فعلاً.
+ *
+ * فالمصطلحُ يُطبَّع كما يُطبَّع النصّ — تُنزع «ال» وتاءُ التأنيث من طرفَيه — ثمّ يُطابَق بـ
+ * `keywordMatches`: **الموضعُ الوحيد في الشجرة** لقاعدة «سوابقُ العربيّة اللاصقة ولواحقُها».
+ *
+ * ⚠️ وحدٌّ مقيسٌ لم يُغلَق: **جمعُ التكسير** («كتاب» ← «الكتب»). لا قانونَ لواصقَ يبلغه، ولا
+ *    يُبنى له جذّاعٌ هنا. فالمطابقةُ تُصيب ٦ من ٧ حالاتٍ مقيسة، **والسابعةُ لا تُدَّعى غياباً**:
+ *    مصطلحٌ لم يُطابَق يُعاد `unmatched` لا `missing` — والبوّابةُ تقوله بعدده (`unverified`،
+ *    وهي تمنع PASS) بدل أن تتّهم بناءً صحيحاً. النفيُ يحتاج يقيناً؛ وهذا ما لا نملكه هنا.
+ */
+export function matchTerm(term, corpus, live) {
+    const bare = (t) => normalizeConceptText(t).replace(/^ال/, '').replace(/ه$/, '');
+    const toks = [...new Set(bare(term || '').split(' ').filter(t => t.length >= 3 && !SECTION_STOPWORDS.has(t)))];
+    if (!toks.length) return null;
+    if (!toks.some(t => keywordMatches(corpus, t))) return 'unmatched';
+    return toks.some(t => keywordMatches(live, t)) ? 'traced' : 'decorative';
+}
+
 export function traceSections(sections, files) {
     const corpus = ' ' + normalizeConceptText(productCorpus(files)) + ' ';
     // 🔤 وأينَ وُجد الأثر؟ `decorative` = بندٌ أثرُه في النثر وحدَه، لا يمسّه سطرُ شفرةٍ واحد.
@@ -145,11 +211,11 @@ export function traceSections(sections, files) {
         //        هي (٣ من ١٣ في مواصفة نقاط البيع)، أو «بلا أثر» فيُعرض فجوةً على صاحب المشروع — وهو لا يُبنى
         //        أصلاً. فيخرج من البسط والمقام معاً: ما يصف *متى* نبني لا يصف *ماذا* نبني (PM/11، PM/13).
         if (isPlanRow(sec.title)) { out.untraceable.push(item); continue; }
-        const toks = [...new Set(normalizeConceptText(sec.title).split(' ').filter(t => t.length >= 3 && !SECTION_STOPWORDS.has(t)))];
-        if (!toks.length) { out.untraceable.push(item); continue; }
-        if (!toks.some(t => corpus.includes(' ' + t + ' '))) { out.missing.push(item); continue; }
+        const m = matchTokens(sec.title, corpus, live);
+        if (!m) { out.untraceable.push(item); continue; }
+        if (m === 'missing') { out.missing.push(item); continue; }
         out.traced.push(item);
-        if (!toks.some(t => live.includes(' ' + t + ' '))) out.decorative.push(item);
+        if (m === 'decorative') out.decorative.push(item);
     }
     return out;
 }
