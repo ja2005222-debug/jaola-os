@@ -239,3 +239,26 @@ test('🔴 ورموزُ مسار التعديل الجراحيّ تُنسَب إ
     assert.equal(u.byLabel['coder:generate'], undefined, 'مسارٌ لم يُسلَك لا يُحمَّل شيئاً');
     assert.equal(u.byLabel['بلا وسم'], undefined);
 });
+
+// 🔴 #١٩٣/ب — المسارُ الحيّ: `groq` المصدَّرُ هو `createWithFailover` نفسُه، فالتطهيرُ
+//    يقع على كلِّ مُنادٍ بلا استثناء. ويُقاس بابنٍ حقيقيّ لأنّ `AI_PROVIDERS` تُقرأ عند
+//    التحميل — واستبدالُ **عميل المزوّد** لا `groq` كي يجري المسارُ كلُّه كما يجري حيّاً.
+test('🔴 حقلُ `at` من سجلّ المحادثة لا يصل المزوّدَ عبر البوّابة المصدَّرة', () => {
+    const r = spawnSync(process.execPath, ['--input-type=module', '-e',
+        `for (const k of ['log','warn','error','info','debug']) console[k] = (...a) => process.stderr.write(a.join(' ') + '\\n');\n`
+        + `const llm = await import('${path.join(HERE, '../core/providers/llm.js')}');\n`
+        + `let seen = null;\n`
+        + `llm.deepseek.chat.completions.create = async (p) => { seen = p; return { choices: [{ message: { content: 'ok' } }] }; };\n`
+        + `await llm.groq.chat.completions.create({ model: 'm', messages: [\n`
+        + `  { role: 'user', content: 'مرحباً', at: 1757000000000 },\n`
+        + `  { role: 'assistant', content: 'أهلاً', at: 1757000000001 },\n`
+        + `] });\n`
+        + `process.stdout.write(JSON.stringify(seen.messages));`],
+    { env: { ...process.env, AI_PROVIDERS: 'deepseek', DEEPSEEK_API_KEY: 'test-only-never-sent' }, encoding: 'utf8' });
+    assert.equal(r.status, 0, `الابنُ فشل: ${r.stderr}`);
+    const sent = JSON.parse(r.stdout);
+    for (const m of sent) {
+        assert.ok(!('at' in m), `وصل المزوّدَ حقلٌ يرفضه بـ400: ${JSON.stringify(m)}`);
+    }
+    assert.deepEqual(sent.map(m => m.content), ['مرحباً', 'أهلاً'], 'ضاع محتوى المحادثة في التطهير');
+});

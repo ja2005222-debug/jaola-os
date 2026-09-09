@@ -16,7 +16,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    classifyAIError, isPermanentAIError, aggregateFailure,
+    classifyAIError, isPermanentAIError, aggregateFailure, ensureJsonWordInPrompt, sanitizeMessages, AI_PROMPT_MSG,
     AI_UNAVAILABLE_MSG, AI_RETRYABLE_MSG,
 } from '../core/providers/llm.js';
 import { runDebate } from '../agents/stages/debate.js';
@@ -121,4 +121,105 @@ test('🔴 حلقةُ النقاش تقف من الدورة الأولى على 
     const worthRetrying = await run([LOG.groq(), mk('500 Internal Server Error', 500)]);
     assert.equal(worthRetrying.stopped, false, 'عطلٌ قد يزول لا يوقف المحاولة');
     assert.equal(worthRetrying.cycles, 7);
+});
+
+// ─── #١٩٣: «عدِّل مُوجَّهَك» ليس «تعذّر الوصول» ────────────────────────────
+//
+// من سجلّ إنتاجٍ حيّ (٢٠٢٦-٠٩-٠٩، بناءُ جمعيّةٍ خيريّة): تسعُ نوباتٍ من
+//   Groq 400 — Failed to generate JSON. Please adjust your prompt.
+//   Groq 400 — Failed to validate JSON. Please adjust your prompt.
+// ثمّ `DeepSeek 402` ثمّ `[AI Retry] عطبٌ عابر — إعادةُ المحاولة 1/2` — والمُوجَّهُ
+// نفسُه بحروفه. حُرقت ٢٠ ثانيةً في نوبةٍ واحدة (٠٩:٣٧:١٠ ← ٠٩:٣٧:٣٠).
+
+const groq400 = (text) => Object.assign(new Error(text), { status: 400, provider: 'groq' });
+const GEN = 'Failed to generate JSON. Please adjust your prompt. See the Groq docs.';
+const VAL = 'Failed to validate JSON. Please adjust your prompt.';
+
+// شاهدٌ ثانٍ من صاحب المنصّة بلفظٍ مغايرٍ تماماً — وهو ما حسم أنّ القاعدة رمزُ الحالة
+// لا قائمةُ ألفاظ: `'messages.1' : for 'role:user' … property 'at' is unsupported`.
+const AT_FIELD = "'messages.1' : for 'role:user' the following must be satisfied[('messages.1' : property 'at' is unsupported)]";
+
+test('#١٩٣ رفضُ المُوجَّه صنفُه `prompt` — لا `transient` فتُعاد السلسلةُ بلا جدوى', () => {
+    for (const text of [GEN, VAL, AT_FIELD]) {
+        assert.equal(classifyAIError(groq400(text)), 'prompt', text);
+        assert.ok(isPermanentAIError(groq400(text)), 'أُعيدت المحاولةُ على مُوجَّهٍ لا يتغيّر');
+    }
+});
+
+test('#١٩٣ والشرطُ مقرونٌ بـ400 — لا يبتلع عطباً عابراً صادف نصُّه كلمةَ json', () => {
+    const t = Object.assign(new Error('socket hang up while parsing json'), { status: 0 });
+    assert.equal(classifyAIError(t), 'transient');
+    const rl = Object.assign(new Error('Failed to generate JSON'), { status: 429 });
+    assert.equal(classifyAIError(rl), 'ratelimit', '429 له علاجُه: الانتظار، لا تعديلُ المُوجَّه');
+});
+
+test('#١٩٣ ولا يُقال لصاحب المشروع «رصيدُك منتهٍ» ومفتاحُه سليم', () => {
+    const err = aggregateFailure([groq400(GEN)], groq400(GEN));
+    assert.ok(err.aiUnavailable, 'بقيت الإعادةُ على بابٍ لن يُفتح');
+    assert.ok(err.message.startsWith(AI_PROMPT_MSG), err.message);
+    assert.doesNotMatch(err.message, /رصيد المزوّد منتهٍ|مفاتيح غير صالحة/,
+        'تشخيصٌ كاذب: سيطارد فاتورةً لا شأنَ لها بالعطب');
+    assert.match(err.message, /رفضَ صياغةَ الطلب/, 'الصنفُ بلا لفظٍ = سطرٌ لا يدلّ');
+});
+
+test('#١٩٣ وخلطُ رفضِ مُوجَّهٍ بعطبٍ عابرٍ يبقى قابلاً للإعادة — المزوّدُ الآخرُ قد ينجح', () => {
+    const transient = Object.assign(new Error('ECONNRESET'), { status: 0, provider: 'deepseek' });
+    const err = aggregateFailure([groq400(GEN), transient], transient);
+    assert.ok(!err.aiUnavailable, 'أُلغيت إعادةٌ كانت ستنجح على المزوّد العابر');
+});
+
+// ─── #١٩٣/العلّة: الكلمةُ التي يشترطها وضعُ JSON ─────────────────────────
+
+test('#١٩٣ مُوجَّهٌ بوضع JSON لا يذكر الكلمةَ: تُحقن في رسالة النظام — لا يُعاد بناءُ الرسائل', () => {
+    const params = {
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'system', content: 'أنت مهندسٌ معماريّ.' }, { role: 'user', content: 'صمّم لي خلفيّة.' }],
+    };
+    const out = ensureJsonWordInPrompt(params);
+    assert.match(out.messages[0].content, /JSON/, 'الكلمةُ التي يشترطها المزوّد غائبة');
+    assert.match(out.messages[0].content, /أنت مهندسٌ معماريّ\./, 'مُحيت تعليماتُ النظام الأصليّة');
+    assert.deepEqual(out.messages[1], params.messages[1], 'مُسّت رسالةُ المستخدم');
+    assert.equal(params.messages[0].content, 'أنت مهندسٌ معماريّ.', 'عُدِّل المُدخَلُ في مكانه');
+});
+
+test('#١٩٣ ومُوجَّهٌ يذكرها أصلاً لا يُمسّ — ولا تُضاف مرّتين', () => {
+    const params = {
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'system', content: 'أنتج JSON: { a, b }' }],
+    };
+    assert.equal(ensureJsonWordInPrompt(params), params, 'نُسخ بلا داعٍ');
+});
+
+test('#١٩٣ وبلا رسالةِ نظامٍ تُصدَّر واحدة، وبلا وضعِ JSON لا يُمسّ شيء', () => {
+    const noSystem = ensureJsonWordInPrompt({
+        response_format: { type: 'json_object' }, messages: [{ role: 'user', content: 'اكتب لي خطّة' }],
+    });
+    assert.equal(noSystem.messages.length, 2);
+    assert.equal(noSystem.messages[0].role, 'system');
+    const plain = { messages: [{ role: 'user', content: 'مرحباً' }] };
+    assert.equal(ensureJsonWordInPrompt(plain), plain);
+});
+
+// ─── #١٩٣/ب: حقلُ تخزينٍ عندنا صار حقلَ بروتوكولٍ عندهم ──────────────────
+
+test('#١٩٣ رسائلُ التاريخ تُطهَّر من حقولنا قبل الإرسال — `at` هو ما رفضه Groq حيّاً', () => {
+    const params = { messages: [
+        { role: 'system', content: 'تعليمات' },
+        { role: 'user', content: 'مرحباً', at: 1757000000000 },
+        { role: 'assistant', content: 'أهلاً', at: 1757000000001 },
+    ] };
+    const out = sanitizeMessages(params);
+    for (const m of out.messages) {
+        assert.deepEqual(Object.keys(m).filter(k => !['role', 'content'].includes(k)), [],
+            `حقلٌ لا تعرفه الواجهة نجا: ${JSON.stringify(m)}`);
+    }
+    assert.deepEqual(out.messages.map(m => m.content), ['تعليمات', 'مرحباً', 'أهلاً'], 'ضاع المحتوى');
+    assert.ok(params.messages[1].at, 'عُدِّل سجلُّ المحادثة في مكانه — والتخزينُ يحتاج ختمَه');
+});
+
+test('#١٩٣ ورسائلُ نظيفةٌ أصلاً لا تُنسَخ، وحقولُ الأدوات المشروعةُ تبقى', () => {
+    const clean = { messages: [{ role: 'user', content: 'مرحباً' }] };
+    assert.equal(sanitizeMessages(clean), clean, 'نُسخ بلا داعٍ');
+    const tools = { messages: [{ role: 'tool', content: '{}', tool_call_id: 'c1', name: 'f' }] };
+    assert.equal(sanitizeMessages(tools), tools, 'حقلٌ مشروعٌ نُزع — فتنكسر مناداةُ الأدوات');
 });

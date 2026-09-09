@@ -20,7 +20,7 @@ import { understandGoal } from '../agents/stages/understand.js';
 import { runBehaviorVerifyStage } from '../agents/stages/verify.js';
 import { recordGateOutcome } from '../core/contracts/index.js';
 import { RoomReporter } from '../core/runtime/RoomReporter.js';
-import { setDomainModel } from '../agents/projectMemory.js';
+import { setDomainModel, getDomainModel } from '../agents/projectMemory.js';
 import { recordModel, getLibraryModel } from '../agents/modelLibrary.js';
 import { workingProject } from './helpers/jcrScenario.mjs';
 import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
@@ -111,7 +111,17 @@ test('🔴 كلماتُ الطلب تُسقط ألفاظَ المنصّة وأد
 //    التي وُجدت في مكتبة الفئة — مصدرا حالةٍ مشتركةٍ لا يملكهما الطُّعم.
 const freshUser = (tag) => `__${tag}_${process.pid}_${Math.random().toString(36).slice(2, 8)}__`;
 
-test('🔴 مسارُ التوريث: فهمٌ مسمومٌ في المكتبة يُبذَر في مشروعٍ جديد — فيُقال، لا يُبتلع', async () => {
+// 🔁 #١٩٤ — كان هذا الاختبارُ يقيس أنّ التوريثَ **يُقال**؛ وصار يقيس أنّه **يُمنَع**.
+//
+//    السببُ مقيسٌ على سجلّ إنتاجٍ حيّ (٢٠٢٦-٠٩-٠٩): منصّةُ جمعيّةٍ خيريّة بُذرت من فئة
+//    `business` فورثت `SalesRep/Customer/Company/Interaction/Workspace/MeetingRoom`،
+//    و**طُردت** `Donor` و`Donation` و`Volunteer` من فهمِ مشروعها لأنّ سقفَي التطبيع
+//    (٦ كيانات / ٤ أدوار) يقصّان الذيل والبذرةُ تُمرَّر أوّلاً. فالإخبارُ وحدَه لم يكن
+//    كافياً: صاحبُ المشروع أُخبر، وبُني له مع ذلك على فهمِ منتجٍ لم يطلبه.
+//
+//    والشرطُ الذي وضعه هذا الاختبارُ نفسُه — «التحذيرُ لا يسمّي ما لا أثرَ له فلا يُفيد
+//    قارئَه» — باقٍ كما هو ومقيسٌ أدناه على السطر الجديد: يُسمّى المُسقَطُ لا يُعدّ.
+test('🔴 مسارُ التوريث: فهمٌ مسمومٌ في المكتبة لا يُبذَر أصلاً — ويُسمّى ما أُسقط', async () => {
     const goal = 'متتبّعُ حفظِ القرآن: يحدّد الحافظُ سورةً وآياتٍ ويسجّل ما حفظ، وتعود المراجعةُ دورياً.';
     // لا نموذجَ لغويّ في الاختبارات: البذرةُ من المكتبة هي ما يحقن الأسماءَ الغريبة —
     // وهو **عينُ** آليّةِ التراكم التي حمتها PM/22 من الجهة الأخرى.
@@ -119,7 +129,8 @@ test('🔴 مسارُ التوريث: فهمٌ مسمومٌ في المكتبة 
     const events = [];
     const reporter = new RoomReporter({ to: () => ({ emit: (ev, p) => events.push(p?.message ?? p) }) });
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'grounded-'));
-    await understandGoal(goal, { username: freshUser('pm22_u'), activeProject: 'p', roomName: 'r', projectPath: dir }, reporter);
+    const user = freshUser('pm22_u');
+    await understandGoal(goal, { username: user, activeProject: 'p', roomName: 'r', projectPath: dir }, reporter);
     // 🧪 سطرُ «🧩 نموذج المشروع» يطبع الأسماءَ نفسَها — فلو قِسنا على السجلّ كلِّه
     //    لمرّ تحذيرٌ فارغٌ من التسمية. القياسُ على سطر التحذير وحدَه (مقيس: الطفرةُ نجت قبله).
     // 🧪 يُقاس **وقوعُ الإنذار وتسميتُه**, لا لفظُه: PM/24 صارت تُسمّي لهذا الطلب من أداة
@@ -129,6 +140,13 @@ test('🔴 مسارُ التوريث: فهمٌ مسمومٌ في المكتبة 
     assert.ok(warning, 'بُذر فهمُ مدرسةٍ في متتبّعِ حفظٍ وصاحبُ المشروع لم يُخبَر');
     assert.match(warning, /Grade/, 'التحذيرُ لا يسمّي ما لا أثرَ له — فلا يُفيد قارئَه');
     assert.match(warning, /Teacher/);
+    // 🚫 وما لا يكفي فيه القولُ: الأسماءُ الغريبةُ **لا تصل النموذجَ** أصلاً، فلا يُبنى عليها.
+    //    الطفرةُ التي تُسقط الغربلةَ وتُبقي التحذيرَ وحدَه تُمسك هنا.
+    const stored = getDomainModel(user, 'p');
+    const names = [...(stored?.entities || []), ...(stored?.roles || [])].map(e => e.name);
+    for (const alien of ['Grade', 'ForumPost', 'Teacher', 'Parent']) {
+        assert.ok(!names.includes(alien), `${alien} دخل فهمَ متتبّعِ الحفظ رغم الغربلة: ${names}`);
+    }
 });
 
 test('🔴 والفهمُ الذي يمسُّ الطلبَ يمرّ بلا تحذير — لا ضجيجَ في كلّ بناء', async () => {

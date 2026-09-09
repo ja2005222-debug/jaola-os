@@ -795,6 +795,45 @@ export function goalFidelity(understood, goalText) {
 }
 
 /**
+ * 🧹 غربلةُ فهمٍ **موروث** بطلبِ صاحبِه: لا يبقى منه إلّا ما لطلبه أثرٌ فيه.
+ *
+ * قِيس على سجلّ إنتاجٍ حيّ (٢٠٢٦-٠٩-٠٩): طُلبت منصّةُ جمعيّةٍ خيريّة، فبُذر فهمُها من
+ * فئة `business` في `modelLibrary` — وهي **اتحادٌ تراكميّ** لكلِّ مشروعٍ نجح فيها —
+ * فدخلها `SalesRep/Customer/Company/Interaction/Workspace/MeetingRoom` من نظامِ
+ * علاقاتِ عملاءَ ومساحةِ عملٍ سابقَين. ثمّ قال المتحقّقُ السلوكيّ لصاحبها إنّ
+ * «أدوار بلا واجهة: SalesRep، Customer» — يقيس جمعيّتَه بمسطرةِ منتجٍ لم يطلبه.
+ *
+ * والأسوأُ أنّ سقفَي `normalizeProjectModel` (٦ كياناتٍ / ٤ أدوار) يقصّان **الذيل**،
+ * والبذرةُ كانت تُمرَّر أوّلاً — فطُردت `Donor` و`Donation` و`Volunteer` و«متطوّع»
+ * كلُّها لتُفسح مكاناً لمفاهيمِ منتجٍ آخر (مقيسٌ بتشغيل، لا بقراءة).
+ *
+ * والمبدأُ الذي يُصلحه: **المكتبةُ تُثري ما سمّاه صاحبُ الطلب، ولا تُضيف ما لم يُسمِّه.**
+ * فما نجا من الغربلة يحمل معه حقولَه وأوصافَه وصلاحيّاتِه المتراكمةَ عبر المشاريع —
+ * وهذه هي قيمةُ المكتبة الحقيقيّة — وما لا أثرَ له في الطلب لا يدخل أصلاً.
+ *
+ * وليست هذه عتبةً تُضبَط: `goalFidelity` تحسب `groundless` **لكلِّ اسمٍ على حدة**
+ * أصلاً، ثمّ كان المصفوفُ يُهمَل ولا يُقرأ إلّا نعم/لا (`ungrounded`) — أي إشارةٌ
+ * محسوبةٌ تُقرأ بغير دِقّتها. وهذا فرقُها عن #١٨٦ الذي سقطت فيه عتبةُ النسبة.
+ *
+ * تعود `null` حين لا يبقى شيء، أو حين لا يُمكن الحكمُ أصلاً (`applicable:false`:
+ * لا نصَّ طلبٍ، أو اسمٌ واحدٌ يُصادَف) — و«لا بذرةَ» أسلمُ من «بذرةٌ بلا حكم».
+ */
+export function groundedSubset(model, goalText) {
+    const m = normalizeProjectModel(model || {});
+    const fidelity = goalFidelity(m, goalText);
+    if (!fidelity.applicable) return null;
+    const keep = new Set(fidelity.supported.map(n => n.toLowerCase()));
+    const entities = m.entities.filter(e => keep.has(e.name.toLowerCase()));
+    const roles = m.roles.filter(r => keep.has(r.name.toLowerCase()));
+    if (!entities.length && !roles.length) return null;
+    // تدفّقٌ يمسّ كياناً سقط هو تدفّقُ منتجٍ آخر — ولا يُحكَم على تدفّقٍ بلا كيانٍ يمسّه
+    const surviving = new Set(entities.map(e => e.name.toLowerCase()));
+    const flows = m.flows.filter(fl => fl.touches.length
+        && fl.touches.every(t => surviving.has(String(t).toLowerCase())));
+    return { entities, roles, flows, _source: m._source };
+}
+
+/**
  * هل تلتقي كلمتان؟ جذرٌ خشن: البدايةُ المشتركة تكفي (حفظ/يحفظ/حافظ) — مقياسٌ لا لغويّاتٌ،
  * والتساهلُ مقصود: الإنذارُ هو الفعلُ الخطِر فيُمال إلى عدمِه.
  *

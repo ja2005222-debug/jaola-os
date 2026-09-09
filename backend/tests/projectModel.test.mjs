@@ -9,6 +9,7 @@ import {
     buildProjectModelContext,
     summarizeModel,
     buildAppSections,
+    groundedSubset,
 } from '../agents/projectModel.js';
 
 test('normalize: يحصّن الشكل ويحدّ الأحجام ويستبعد الفاسد', () => {
@@ -105,4 +106,75 @@ test('summarize: ملخّص مقروء', () => {
     assert.match(s, /1 كيان/);
     assert.match(s, /Order/);
     assert.match(s, /Customer/);
+});
+
+// ─── #١٩٤: غربلةُ فهمٍ موروثٍ بطلبِ صاحبِه ─────────────────────────────
+//
+// مقيسٌ على سجلّ إنتاجٍ حيّ: منصّةُ جمعيّةٍ خيريّة بُذرت من فئة `business` — وهي اتحادٌ
+// تراكميّ لكلِّ مشروعٍ نجح فيها — فورثت مفاهيمَ نظامِ عملاءَ ومساحةِ عمل، و**طُردت**
+// مفاهيمُها هي بسقفَي التطبيع. المبدأ: المكتبةُ تُثري ما سمّاه صاحبُ الطلب لا تُضيف سواه.
+
+const CHARITY = 'منصّةُ جمعيّةٍ خيريّة: تسجيلُ الحملات، وملفُّ المتبرّع وسجلُّ تبرّعاته، وتوزيعُ المتطوّعين.';
+const CRM_SEED = {
+    entities: [{ name: 'Customer', fields: [{ name: 'email', type: 'string' }] }, { name: 'Company' }, { name: 'MeetingRoom' }],
+    roles: [{ name: 'SalesRep' }],
+};
+
+test('#١٩٤ فهمٌ موروثٌ لا يمسّ الطلبَ يسقط كلُّه — لا بذرةَ خيرٌ من بذرةِ منتجٍ آخر', () => {
+    assert.equal(groundedSubset(CRM_SEED, CHARITY), null);
+});
+
+test('#١٩٤ وما يذكره الطلبُ يبقى **بحقوله المتراكمة** — وهي قيمةُ المكتبة الحقيقيّة', () => {
+    const g = groundedSubset(CRM_SEED, 'نظامُ متابعةِ العملاء: ملفُّ كلِّ عميلٍ وشركتِه.');
+    assert.deepEqual(g.entities.map((e) => e.name), ['Customer'], 'MeetingRoom لم تُذكَر فسقطت');
+    assert.deepEqual(g.entities[0].fields.map((f) => f.name), ['email'], 'الحقلُ المتراكمُ ضاع — فلا فائدةَ من المكتبة');
+    assert.deepEqual(g.roles, [], 'SalesRep لم تُذكَر');
+});
+
+// 📉 قيدٌ مقيسٌ في هذه الغربلة — يُقال ولا يُخفى (وهو #١٨٦ بعينه: تغطيةُ المعجم).
+//
+//    `Company` تسقط رغم أنّ صاحبَ الطلب كتب «شركتِه»: الجسرُ المعجميّ لا يربط اللفظَ
+//    العربيَّ بالاسم الإنجليزيّ هنا، وجسرُ اللفظ لا يلتقي حرفاً. فالغربلةُ **متحفّظة**:
+//    تُسقط أحياناً موروثاً ذكره صاحبُه فعلاً.
+//
+//    ولم يُرفع الحدُّ بعتبةٍ متساهلة عمداً: اتّجاهُ الخطأ مقصود. الإسقاطُ الكاذب يكلّف
+//    **حقولاً متراكمة** يعيد الاشتقاقُ من الطلب أكثرَها؛ والإبقاءُ الكاذب يكلّف كياناتِ
+//    منتجٍ آخر تدخل ثمّ **تطرد** كياناتِ صاحبِ الطلب بسقفَي التطبيع — وهو العطبُ المقيسُ
+//    على الإنتاج. فيُثبَّت القيدُ هنا كي يسقط هذا الاختبارُ يومَ تتّسع تغطيةُ المعجم،
+//    فيُراجَع القرارُ بدليلٍ لا بالنسيان.
+test('#١٩٤/قيد: موروثٌ ذكره صاحبُه بالعربيّة يسقط لأنّ المعجمَ لا يجسر — مقيسٌ لا مقبول', () => {
+    const g = groundedSubset(CRM_SEED, 'نظامُ متابعةِ العملاء: ملفُّ كلِّ عميلٍ وشركتِه.');
+    assert.ok(!g.entities.some((e) => e.name === 'Company'),
+        'اتّسعت تغطيةُ المعجم (شركة→company): أعِد النظرَ في تحفّظ الغربلة وحدِّث #١٨٦');
+});
+
+test('#١٩٤ الغربلةُ لا تحكم بلا مُدخَل — لا نصَّ طلبٍ أو اسمٌ واحدٌ ⇒ لا بذرة', () => {
+    for (const empty of ['', '   ', null, undefined]) {
+        assert.equal(groundedSubset(CRM_SEED, empty), null, `حُكم على نصٍّ فارغ (${JSON.stringify(empty)})`);
+    }
+    // اسمٌ واحدٌ يُصادَف — عتبةُ `goalFidelity` نفسُها، فلا يُبنى عليه بذرٌ
+    assert.equal(groundedSubset({ entities: [{ name: 'Customer' }], roles: [] }, 'نظامُ متابعةِ العملاء'), null);
+});
+
+test('#١٩٤ تدفّقٌ يمسّ كياناً ساقطاً هو تدفّقُ منتجٍ آخر — فلا يُورَّث', () => {
+    const seed = {
+        entities: [{ name: 'Customer' }, { name: 'Company' }, { name: 'MeetingRoom' }],
+        roles: [],
+        flows: [
+            { name: 'تسجيلُ عميل', touches: ['Customer'] },
+            { name: 'حجزُ غرفة', touches: ['Customer', 'MeetingRoom'] },
+            { name: 'بلا مساس', touches: [] },
+        ],
+    };
+    const g = groundedSubset(seed, 'نظامُ متابعةِ العملاء: ملفُّ كلِّ عميلٍ وشركتِه.');
+    assert.deepEqual(g.flows.map((f) => f.name), ['تسجيلُ عميل'],
+        'تدفّقُ حجزِ غرفةٍ ورثه نظامُ عملاء، أو سقط تدفّقٌ مسنودٌ كلُّه');
+});
+
+test('#١٩٤ الأسماءُ العامّةُ لا تُورَّث — `User`/`Item` من مشروعٍ آخر لا تضيف شيئاً', () => {
+    const g = groundedSubset({
+        entities: [{ name: 'Customer' }, { name: 'Company' }, { name: 'Item' }], roles: [{ name: 'User' }],
+    }, 'نظامُ متابعةِ العملاء: ملفُّ كلِّ عميلٍ وشركتِه.');
+    assert.ok(!g.entities.some((e) => e.name === 'Item'));
+    assert.deepEqual(g.roles, []);
 });
