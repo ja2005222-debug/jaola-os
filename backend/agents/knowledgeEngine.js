@@ -131,12 +131,21 @@ function keywordSpread(kw) {
  * (و/ف/ب/ل/ك + ال/لل) ولواحقها الشائعة (ة/ات/ين/ون/ي/ك/كم/نا/ه/ها/هم) حول
  * الكلمة، وبحدود الكلمات في اللاتينية.
  */
+import { stripDiacritics } from './textNormalizer.js';
+
 const AR_PREFIX = '(?:و|ف|ب|ل|ك)?(?:ال|لل)?';
 const AR_SUFFIX = '(?:ة|ات|ين|ون|ي|ك|كم|نا|ه|ها|هم|s|es)?'; // + جمع اللاتينية
 function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 export function keywordMatches(goal, kw) {
-    const re = new RegExp(`(?<![\\p{L}\\p{N}])${AR_PREFIX}${escapeRe(kw)}${AR_SUFFIX}(?![\\p{L}\\p{N}])`, 'iu');
-    return re.test(goal);
+    // 🔻 التشكيلُ يُسقَط من الطرفَين قبل المطابقة (#١٩٧). قِيس حيّاً: «منصّة» بالشدّة
+    //    لا تطابق «منصة» في المعجم، فخلا طلبُ منصّةٍ من كلِّ لفظِ تطبيق وصُنّف بروشوراً.
+    //    والإسقاطُ من الطرفَين معاً كي يبقى المعجمُ حرّاً في كتابة مفاتيحه مشكولةً أو غُفلاً.
+    //    (التنوينُ كان يعمل مصادفةً: يقع **بعد** الكلمة وهو `\p{Mn}` فلا يكسر النظرةَ
+    //     اللاحقة — والشدّةُ **داخلَها** فتكسر الحرفيّة. فالعطبُ لم يظهر إلّا بالشدّة.)
+    const g = stripDiacritics(goal);
+    const k = stripDiacritics(kw);
+    const re = new RegExp(`(?<![\\p{L}\\p{N}])${AR_PREFIX}${escapeRe(k)}${AR_SUFFIX}(?![\\p{L}\\p{N}])`, 'iu');
+    return re.test(g);
 }
 
 function getKeywordsForType(typeName) {
