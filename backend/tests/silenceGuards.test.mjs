@@ -256,6 +256,6 @@ test('حارسُ /api/chat في server.js: الاستجابةُ رُدَّت ق�
     const guard = src.slice(c, src.indexOf('\n    }\n', c));
     assert.ok(guard.includes("emit('log'"), 'سطرُ السجلّ يبقى — لم نستبدل قناةً بأخرى');
     assert.ok(guard.includes("emit('chat_reply'"), 'وقناةُ الشات تُقال أيضاً — هذا هو الإصلاح');
-    assert.ok(/res\.json\(\{ accepted: true \}\)/.test(src.slice(Math.max(0, i - 2000), i)),
+    assert.ok(/res\.status\(202\)\.json\(\{ accepted: true, messageId: command\.messageId, status: command\.status \}\)/.test(src.slice(Math.max(0, i - 2500), i)),
         'الاستجابةُ رُدَّت قبل النداء — فلا يمكن للحارس أن يُبلّغ عبر HTTP');
 });
