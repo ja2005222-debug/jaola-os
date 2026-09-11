@@ -15,13 +15,15 @@ export const socket = io(BACKEND_URL, {
   timeout: 20000,                 // مهلة أطول — Render المجاني قد يستيقظ ببطء
 });
 
-export function useSocket(isAuthenticated, handleAuthError) {
+const projectStorageKey = (username) => `activeProject:${username || 'anonymous'}`;
+
+export function useSocket(isAuthenticated, handleAuthError, authUsername = '', authToken = '') {
   const [files, setFiles]               = useState([]);
   const [logs, setLogs]                 = useState([]);
   const [streamingContent, setStreamingContent] = useState('');
   const [projects, setProjects]         = useState([]);
   const [activeProject, setActiveProject] = useState(
-    () => localStorage.getItem('activeProject') || 'sandbox_app'
+    () => localStorage.getItem(projectStorageKey(localStorage.getItem('currentUser'))) || 'sandbox_app'
   );
   const [currentUser, setCurrentUser]   = useState('guest_user');
   const [vercelUrl, setVercelUrl]       = useState('');
@@ -93,19 +95,20 @@ export function useSocket(isAuthenticated, handleAuthError) {
   // 🛠️ إعادة الانضمام للغرفة عند تبديل المشروع + حفظه للجلسات القادمة
   useEffect(() => {
     if (!isAuthenticated) return;
-    localStorage.setItem('activeProject', activeProject);
+    localStorage.setItem(projectStorageKey(authUsername), activeProject);
     if (socket.connected) {
       socket.emit('join_project', { project: activeProject });
     }
-  }, [activeProject, isAuthenticated]);
+  }, [activeProject, isAuthenticated, authUsername]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    const token = localStorage.getItem('token');
+    const token = authToken || localStorage.getItem('token');
     if (!token) return;
 
-    const savedProject = localStorage.getItem('activeProject') || activeProject;
+    const savedProject = localStorage.getItem(projectStorageKey(authUsername)) || 'sandbox_app';
+    setActiveProject(savedProject);
 
     socket.auth = { token };
 
@@ -126,6 +129,13 @@ export function useSocket(isAuthenticated, handleAuthError) {
           localStorage.setItem('currentUser', data.currentUser);
         }
       }
+    });
+
+    socket.off('project_access_denied').on('project_access_denied', () => {
+      localStorage.setItem(projectStorageKey(authUsername), 'sandbox_app');
+      setActiveProject('sandbox_app');
+      setFiles([]);
+      setChatMessages([]);
     });
 
     const clearCodeBuffer = () => {
@@ -340,6 +350,7 @@ export function useSocket(isAuthenticated, handleAuthError) {
       clearCodeBuffer();
       socket.off('workspace_files');
       socket.off('user_projects');
+      socket.off('project_access_denied');
       socket.off('preview_updated');
       socket.off('stream_done');
       socket.off('code_stream_chunk');
@@ -360,8 +371,9 @@ export function useSocket(isAuthenticated, handleAuthError) {
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('online', onVisibilityChange);
       clearInterval(keepAlive);
+      socket.disconnect();
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, authToken, authUsername]);
 
   // 🆕 تحديث المعاينة يدوياً من شريط الأدوات
   const refreshPreview = () => setPreviewTimestamp(Date.now());

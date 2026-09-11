@@ -370,7 +370,7 @@ export default function Dashboard() {
   }, []);
   useEffect(() => { if (oauthError) setAuthError(oauthError); }, [oauthError]);
 
-  const { files, logs, streamingContent, agentStates, projects, activeProject, currentUser, vercelUrl, chatMessages, setChatMessages, setActiveProject, previewTimestamp, refreshPreview, isConnected, connectionError, metrics, latencyMs, missionPhase, presenceCount } = useSocket(isAuthenticated, handleAuthError);
+  const { files, logs, streamingContent, agentStates, projects, activeProject, currentUser, vercelUrl, chatMessages, setChatMessages, setActiveProject, previewTimestamp, refreshPreview, isConnected, connectionError, metrics, latencyMs, missionPhase, presenceCount } = useSocket(isAuthenticated, handleAuthError, authUser, token);
 
   // بث المهمة داخل الشات: فقاعات بمستوى كلاود — خطوات مطويّة + أدوات hover
   // useMemo: لا يُعاد بناء المجموعات إلا عند تغيّر الرسائل فعلاً (لا مع كل حدث لوحة)
