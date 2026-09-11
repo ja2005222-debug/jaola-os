@@ -39,6 +39,7 @@ export function useSocket(isAuthenticated, handleAuthError, authUsername = '', a
   const [latencyMs, setLatencyMs]       = useState(null);   // زمن الاستجابة المقاس فعلياً
   const [missionPhase, setMissionPhase] = useState(null);   // 🔄 المرحلة الحقيقية من آلة الحالات
   const [presenceCount, setPresenceCount] = useState(1);    // 👥 عدد جلسات نفس المالك المتصلة بهذا المشروع الآن
+  const [commandStatus, setCommandStatus] = useState(null); // 🧾 آخر حالة مؤكدة لأمر الشات
 
   // مرجع لتتبع عدد أخطاء الاتصال لمنع حلقة الـ reload
   const connectErrorCountRef = useRef(0);
@@ -114,6 +115,7 @@ export function useSocket(isAuthenticated, handleAuthError, authUsername = '', a
 
     // ─── أحداث Socket ──────────────────────────────────────────────
     socket.off('workspace_files').on('workspace_files', setFiles);
+    socket.off('chat_command_status').on('chat_command_status', setCommandStatus);
 
     socket.off('user_projects').on('user_projects', (data) => {
       setProjects(data.projects || []);
@@ -349,6 +351,7 @@ export function useSocket(isAuthenticated, handleAuthError, authUsername = '', a
       if (revealRef.current.raf) { cancelAnimationFrame(revealRef.current.raf); revealRef.current.raf = null; }
       clearCodeBuffer();
       socket.off('workspace_files');
+      socket.off('chat_command_status');
       socket.off('user_projects');
       socket.off('project_access_denied');
       socket.off('preview_updated');
@@ -394,6 +397,7 @@ export function useSocket(isAuthenticated, handleAuthError, authUsername = '', a
     latencyMs,
     missionPhase,
     presenceCount,
+    commandStatus,
     previewTimestamp,
     refreshPreview,
     setChatMessages,

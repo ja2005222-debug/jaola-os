@@ -45,6 +45,7 @@ const projectField = z.string().max(100).optional();
 export const schemas = {
     sendMessage: z.object({
         message: z.string().min(1, 'الرسالة فارغة.').max(10000, 'الرسالة أطول من المسموح.'),
+        messageId: z.string().uuid('معرّف الرسالة غير صالح.').optional(),
         project: projectField,
         uiLang: z.string().max(5).optional(),   // لغة الواجهة — بذرة لكشف لغة الرد
         track: z.enum(['site', 'system']).optional(), // 🧭 مسار البناء (موقع/سيستم داخلي)

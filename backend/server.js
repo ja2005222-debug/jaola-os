@@ -14,6 +14,7 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { ChatCommandTracker } from './core/runtime/ChatCommandTracker.js';
 
 import User from './models/User.js';
 import Project from './models/Project.js';
@@ -2080,13 +2081,32 @@ app.post('/api/project/import-repo', verifyToken, aiLimit, validateProjectOwners
     }
 });
 
+const chatCommands = new ChatCommandTracker();
+
 app.post('/api/chat', verifyToken, aiLimit, validate(schemas.sendMessage), validateProjectOwnership, async (req, res) => {
     const { message } = req.body;
 
     const projectPath = req.projectPath;
     const roomName = `${req.user.username}-${req.activeProject}`;
+    const command = chatCommands.begin({
+        username: req.user.username,
+        project: req.activeProject,
+        messageId: req.body.messageId,
+    });
 
-    res.json({ accepted: true });
+    // إعادة إرسال الطلب نفسه (نقرة مزدوجة/إعادة اتصال) لا تنفّذه مرتين.
+    if (command.duplicate) {
+        return res.status(202).json({
+            accepted: true, duplicate: true,
+            messageId: command.messageId, status: command.status,
+        });
+    }
+
+    res.status(202).json({ accepted: true, messageId: command.messageId, status: command.status });
+    chatCommands.transition(command, 'processing');
+    io.to(roomName).emit('chat_command_status', {
+        messageId: command.messageId, status: 'processing', timestamp: Date.now(),
+    });
 
     const agents = {
         coreGenerateCodePlan,
@@ -2120,6 +2140,7 @@ app.post('/api/chat', verifyToken, aiLimit, validate(schemas.sendMessage), valid
     try {
         await runtime.handleUserMessage(null, {
             message: message.trim(),
+            messageId: command.messageId,
             roomName,
             projectPath,
             username: req.user.username,
@@ -2127,7 +2148,16 @@ app.post('/api/chat', verifyToken, aiLimit, validate(schemas.sendMessage), valid
             uiLang: req.body.uiLang,
             track: req.body.track, // 🧭 مسار البناء من زر الواجهة (موقع/سيستم)
         }, agents, dbStatus);
+        chatCommands.transition(command, 'handled');
+        io.to(roomName).emit('chat_command_status', {
+            messageId: command.messageId, status: 'handled', timestamp: Date.now(),
+        });
     } catch (error) {
+        chatCommands.transition(command, 'failed', { error: String(error.message || '').slice(0, 160) });
+        io.to(roomName).emit('chat_command_status', {
+            messageId: command.messageId, status: 'failed',
+            error: String(error.message || '').slice(0, 160), timestamp: Date.now(),
+        });
         io.to(roomName).emit('log', { message: `❌ [ERROR]: ${error.message}` });
         // 🔇 السطرُ أعلاه يذهب إلى لوحة السجلّ لا إلى الشات، والاستجابةُ رُدَّت قبله
         //    (`{ accepted: true }`) — فكان الطلبُ يموت صامتاً في الواجهة: لا ردَّ ولا خطأ.

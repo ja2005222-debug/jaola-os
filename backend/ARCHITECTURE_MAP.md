@@ -28,7 +28,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## A) `backend/server.js` — 3900 سطراً، 159 مساراً، 101 استيراداً محلياً
+## A) `backend/server.js` — 3930 سطراً، 159 مساراً، 102 استيراداً محلياً
 
 لا يُفكَّك دفعة واحدة (البند 19). الخريطة **حسب المجال** لأن الملف واحد؛ كل صف = مرشّح
 ملف `routes/<domain>.js` مستقبلاً على نمط `routes/billing.js` القائم فعلاً («أول
@@ -67,6 +67,7 @@ Policy/Permission، Identity، Plugin.
 | ✅ `core/runtime/TaskGraph.js` (جديد، Sprint 2a) | 50 | `orderTasks(items, {key})` — ترتيب طوبولوجي مستقرّ من `dependsOn` + كشف الدورات (خوارزمية `planExecution` حرفياً معمَّمة) | ADDED | Task | مستهلكاه: `runDynamicMultiAgentRuntime` (DELIVERY_STAGES) و`planExecution` (الفرق) |
 | ✅ `core/runtime/ExecutionContext.js` (جديد، Sprint 2b) | 67 | `createExecutionContext`/`contextFromRequest`/`withAgents` — بيئة المهمة في كائن مجمَّد (الحقول الستة المتكرّرة) | ADDED | Mission | 11 توقيعاً في `jcr.js` + المعالجات السبعة |
 | ✅ `core/runtime/RoomReporter.js` (جديد، JCR/2؛ 📼 شريطُ السجلّ: `recentLogs` يُعيد لمن عاد ما فاته — ٢٠٠ سطراً × ٥٠ غرفةً في الذاكرة) | 100 | `send(room, event, payload)`/`liveLog`/`setLang`/`recentLogs` — بابُ البثّ الواحد إلى غرفة المستخدم؛ فصل ٦٥٪ من ترابط `jcr.js` عن `this`؛ المُترجمُ يُحقَن لا يُستورد (حدُّ core→agents) | ADDED | Event | مستهلكُه: `jcr.js` (١١٣ بثّاً مباشراً + `emitLiveLog` + لغةُ الغرفة)؛ `this.io` يبقى قيمةً لتسعِ تمريراتٍ خارجيّة |
+| ✅ `core/runtime/ChatCommandTracker.js` | 57 | سجلّ محدود لحالات أوامر الشات + منع إعادة التنفيذ بالمعرّف نفسه داخل حساب/مشروع واحد؛ العقد ثابت تمهيداً لنقله إلى Redis/Postgres | ADDED | Mission + Event | `POST /api/chat` → أحداث `chat_command_status` |
 | ✅ `core/runtime/AgentRuntime.js` (جديد، Sprint 2d؛ +٣ #١٩١: `withUsageLabel(\`agent:${agent.id}\`)` — نقطةُ نسبِ الكلفة لوكلاء العقود الواحدة والعشرين، وُسِمت هنا لأنّ `agent.id` معروفٌ سلفاً فلا تُغيَّر تواقيعُ المنادين لأجل عدّاد) | 92 | `runAgent` + `gatherCooperationInputs` — منفّذ الوكيل الواحد: عقدٌ → نداء نموذج → ملفات مُطهَّرة | MOVED (Sprint 2d ✅، حرفياً عدا إسقاط افتراض `TEAM_BY_ID` الميت) | **Agent** | `runBackendTeam` (فريقا الخلفية **والواجهة** معاً) |
 | ✅ `core/policy/ConfirmationManager.js` (جديد، Sprint 3) | 82 | بوّابةُ تأكيدٍ واحدة تُميّز الموافقة من السؤال | ADDED | Permission | مستهلكها: مسارُ التأكيد في `jcr.js` |
 | ✅ `core/runtime/workspacePaths.js` (جديد، Sprint 2c؛ الكاتبان JCR/7؛ + إنزالُ المستودع) | 282 | `isInsideRoot`/`resolveInside` + `safeRelPath` + `resolveProjectFile` — نواة احتواء المسار، ومعها الكاتبان المحتويان `writeProjectFile`/`writePlanFiles` (خرجا من jcr كي تستوردهما المراحل بلا دورة)؛ و**السياسةُ الخامسة**: `resolveRepoFile`/`landRepoFiles(projectPath, files) → {written, rejected}` لملفّاتٍ **جاءت من مستودعٍ حقيقيّ** لا من مولِّدٍ ولا نموذج — تنزل المجلّداتُ المنقوطة (`.github/`، `.husky/`، `.vscode/`) وملفّاتُ الإعداد المنقوطة، ويُمنع `.git/` بمقطعِه أينما وقع و`.env` وأخواتُه (إلّا `.env.example`، قرارُ `PROJECT_DOTFILES` نفسُه). قِيس: `writePlanFiles` تُسقط ٨ من ٢٢ من شجرةٍ واقعيّة ومنها `.github/workflows/ci.yml` — **دليلُ الصيانة** | ADDED | Tool | `jcr` (٢٤ موضعَ نداء)، `writeBackendTeamFiles`، `sanitizePath`، و`landRepoFiles` من مسار `import-repo` |
@@ -263,7 +264,7 @@ Policy/Permission، Identity، Plugin.
 ## E) بقية `backend/`
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `middleware/security.js` | 96 | `sanitizePath` + Zod schemas + `validate` | MODIFY | Tool (workspace guard موحّد — `CONTRACTS.md` §3) + Permission | `core/policy/` |
+| `middleware/security.js` | 97 | `sanitizePath` + Zod schemas + `validate` | MODIFY | Tool (workspace guard موحّد — `CONTRACTS.md` §3) + Permission | `core/policy/` |
 | `utils/secretVault.js` (6 مستوردين) | 85 | تشفير الأسرار | KEEP | Identity | `core/identity/` |
 | `utils/corsErrors.js`, `utils/spaFallback.js` | 15/19 | أدوات صغيرة **حيّة** (٢ و١ مستورداً) | KEEP | — | كما هي |
 | `utils/security.js`, `utils/performance.js`, `utils/aiProvider.js` | 21/60/48 | 🔴 **يتيمة: صفرُ مستوردين** — لا «أدواتٌ حيّة» كما كان هذا الصفُّ يقول. مُقرَّةٌ في §اليتامى أدناه (أسطر ٣٣٥–٣٣٧) منذ 8/11، وهذا الصفُّ كان يناقضها. و`utils/security.js` يشارك اسمَ `middleware/security.js` **الحيّ** ويختلف عنه — وهو مصدرُ اللبس | KEEP (قرارُ إبقاءٍ واعٍ، لا وصفُ استعمال) | — | كما هي |

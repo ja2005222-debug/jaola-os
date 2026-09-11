@@ -75,6 +75,12 @@ const MOBILE_TABS = [
   { id: 'logs', icon: '📋', key: 'logs' },
 ];
 
+const createMessageId = () => globalThis.crypto?.randomUUID?.()
+  || 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+
 // ── Boot Screen ──────────────────────────────────────────────────
 function BootScreen({ onDone, t }) {
   const [step, setStep] = useState(0);
@@ -370,7 +376,7 @@ export default function Dashboard() {
   }, []);
   useEffect(() => { if (oauthError) setAuthError(oauthError); }, [oauthError]);
 
-  const { files, logs, streamingContent, agentStates, projects, activeProject, currentUser, vercelUrl, chatMessages, setChatMessages, setActiveProject, previewTimestamp, refreshPreview, isConnected, connectionError, metrics, latencyMs, missionPhase, presenceCount } = useSocket(isAuthenticated, handleAuthError, authUser, token);
+  const { files, logs, streamingContent, agentStates, projects, activeProject, currentUser, vercelUrl, chatMessages, setChatMessages, setActiveProject, previewTimestamp, refreshPreview, isConnected, connectionError, metrics, latencyMs, missionPhase, presenceCount, commandStatus } = useSocket(isAuthenticated, handleAuthError, authUser, token);
 
   // بث المهمة داخل الشات: فقاعات بمستوى كلاود — خطوات مطويّة + أدوات hover
   // useMemo: لا يُعاد بناء المجموعات إلا عند تغيّر الرسائل فعلاً (لا مع كل حدث لوحة)
@@ -469,12 +475,21 @@ export default function Dashboard() {
     const raw = typeof overrideText === 'string' ? overrideText : prompt;
     const msg = raw.trim();
     if (!msg || isSending) return;
+    const messageId = createMessageId();
     setIsSending(true);
     if (typeof overrideText !== 'string') setPrompt('');
-    setChatMessages(prev => [...prev, { sender: 'user', text: msg, timestamp: Date.now() }]);
+    setChatMessages(prev => [...prev, { id: messageId, sender: 'user', text: msg, status: 'sending', timestamp: Date.now() }]);
     try {
-      await fetch(`${BACKEND_URL}/api/chat`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ message: msg, project: activeProject, uiLang, track: buildTrack }) });
-    } catch { setIsSending(false); return; }
+      const res = await fetch(`${BACKEND_URL}/api/chat`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ message: msg, messageId, project: activeProject, uiLang, track: buildTrack }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.accepted) throw new Error(data.error || `HTTP ${res.status}`);
+      setChatMessages(prev => prev.map(item => item.id === messageId ? { ...item, status: data.duplicate ? 'duplicate' : 'accepted' } : item));
+    } catch (error) {
+      setChatMessages(prev => prev.map(item => item.id === messageId ? { ...item, status: 'failed' } : item));
+      addNotification(error.message || t('connectionError'), 'error');
+      setIsSending(false);
+      return;
+    }
     // فقاعة «يفكّر» تبقى حتى وصول أول رد/حدث فعلي (لا مؤقّت ثانية يتركك في صمت)
     // — تُطفأ في effect أدناه، مع سقف أمان إن انقطع كل شيء
     setTimeout(() => setIsSending(false), 45000);
@@ -486,6 +501,15 @@ export default function Dashboard() {
     const last = chatMessages[chatMessages.length - 1];
     if (last && last.sender !== 'user') setIsSending(false);
   }, [chatMessages, isSending]);
+
+  // حالة الخادم هي المرجع، لا وصول أي سطر سجل غير مرتبط بالرسالة.
+  useEffect(() => {
+    if (!commandStatus?.messageId) return;
+    setChatMessages(prev => prev.map(item => item.id === commandStatus.messageId
+      ? { ...item, status: commandStatus.status }
+      : item));
+    if (commandStatus.status === 'handled' || commandStatus.status === 'failed') setIsSending(false);
+  }, [commandStatus, setChatMessages]);
 
   // 🔟 ضغطة زر اقتراح → تُرسل كرسالة (بعد إزالة الرموز التعبيرية من البداية)
   const handleOptionClick = (opt) => {
