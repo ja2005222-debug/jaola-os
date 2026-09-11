@@ -25,6 +25,12 @@ export function useAuth() {
     const u = params.get('user');
     const err = params.get('authError');
     if (t && u) {
+      const previousUser = localStorage.getItem('currentUser');
+      // OAuth قد يعود بحساب Google آخر داخل المتصفح نفسه. لا تورّث سياق
+      // المشروع أو اتصال الحساب السابق إلى الهوية الجديدة.
+      if (previousUser && previousUser !== u) {
+        localStorage.removeItem('activeProject');
+      }
       localStorage.setItem('token', t);
       localStorage.setItem('currentUser', u);
       localStorage.removeItem('loggedOut');
@@ -42,6 +48,7 @@ export function useAuth() {
       localStorage.removeItem('token');
       localStorage.removeItem('currentUser');
       localStorage.removeItem('activeProject'); // لا يورَّث للحساب التالي
+      if (currentUser) localStorage.removeItem(`activeProject:${currentUser}`);
       setToken(null);
       setCurrentUser('');
       setIsAuthenticated(false);
@@ -57,4 +64,3 @@ export function useAuth() {
     handleAuthError,
   };
 }
-

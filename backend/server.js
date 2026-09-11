@@ -631,11 +631,7 @@ async function validateProjectOwnership(req, res, next) {
         return next();
     }
 
-    let projectRecord = await DB.findProject(safeProject, username);
-    // إذا لم يُسجَّل بعد (أُنشئ لكن فشل الحفظ سابقاً) — سجّله الآن بدل الرفض
-    if (!projectRecord) {
-        projectRecord = await DB.createProject(safeProject, username);
-    }
+    const projectRecord = await DB.findProject(safeProject, username);
     if (!projectRecord) {
         return res.status(403).json({ error: 'غير مصرح: هذا المشروع لا يخص حسابك.' });
     }
@@ -720,13 +716,14 @@ io.on('connection', (socket) => {
         const username = socket.user.username;
         const safeProject = (project || 'sandbox_app').trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '-');
 
-        // التحقق من الملكية (sandbox_app مفتوح للجميع)
-        // وضع offline: المستخدم المصادق يملك مشاريعه (معزولة بمجلده) — لا نرفضه
+        // التحقق من الملكية (sandbox_app افتراضي مستقل لكل مستخدم).
+        // لا تنشئ مشروعاً من حدث انضمام: الإنشاء محصور في POST /api/projects.
         if (safeProject !== 'sandbox_app' && DB._isOnline()) {
-            let projectRecord = await DB.findProject(safeProject, username);
-            if (!projectRecord) projectRecord = await DB.createProject(safeProject, username);
+            const projectRecord = await DB.findProject(safeProject, username);
             if (!projectRecord) {
                 socket.emit('log', { message: `❌ [ERROR]: غير مصرح لك بالانضمام للمشروع (${safeProject}).` });
+                socket.emit('project_access_denied', { project: safeProject });
+                await emitUserProjects(socket.id, username, 'sandbox_app');
                 return;
             }
         }
@@ -1127,10 +1124,12 @@ app.post('/api/project-context/switch', verifyToken, async (req, res) => {
     const username = req.user.username;
     const safeProject = (project || 'sandbox_app').trim().toLowerCase().replace(/[^a-z0-9_\-]/g, '-');
 
-    try {
+    if (safeProject !== 'sandbox_app') {
         const exists = await DB.findProject(safeProject, username);
-        if (!exists) await DB.createProject(safeProject, username);
-    } catch (e) {}
+        if (!exists) {
+            return res.status(403).json({ error: 'غير مصرح: هذا المشروع لا يخص حسابك.' });
+        }
+    }
 
     res.json({ success: true, currentUser: username, activeProject: safeProject });
 });
