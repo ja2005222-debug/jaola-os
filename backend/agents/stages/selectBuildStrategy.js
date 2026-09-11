@@ -14,8 +14,9 @@
  *    من الاختصار، ومطابقةَ الكلون. وسطرُ بثٍّ سادس يقول لماذا لم يُطبَّق الاختصار.
  */
 import { getUserLanguage } from '../languageDetector.js';
-import { getProjectMemory, getDomainModel } from '../projectMemory.js';
+import { getProjectMemory, getDomainModel, getCloneId } from '../projectMemory.js';
 import { matchCloneTemplateDetailed, inferTrack } from '../cloneTemplates/index.js';
+import { getCloneById } from '../cloneTemplates/index.js';
 import { resolveStack, explicitStackRequest } from '../starterRegistry.js';
 import { isMarketingPageGoal } from '../blockRegistry.js';
 import { analyzeProjectStatic } from '../behaviorVerifier.js';
@@ -29,8 +30,9 @@ import { resolveProjectType } from './enrich.js';
 // وإلا null ← النواة. أي قيمة غير null هي نتيجة المهمة النهائية.
 // المُبلِّغُ يُمرَّر؛ البناةُ الثلاثة عبر `ops` (تستبدلها الاختبارات على النسخة)؛ تلميحُ المسار (`site`/`system`) عبر `ops.trackOf`
 // دالّةً مربوطةً بخريطة النسخة؛ سؤالُ الوجود `hasProjectSource` يُستورد (لا اختبارَ يستبدل مفوِّضَه).
-export async function selectBuildStrategy(goal, blueprint, ctx, reporter, ops) {
+export async function selectBuildStrategy(goal, blueprint, ctx, reporter, ops, pluginContext = '') {
     const { projectPath, username, activeProject, roomName } = ctx;
+    const executionGoal = pluginContext ? `${goal}${pluginContext}` : goal;
     // «بناء جديد» = لا مصدرَ يزن شيئاً على القرص. يُسأل مرّةً واحدة: لا مسار أدناه يكتب
     // على القرص قبل أن يُرجع نتيجته، فالسؤالُ الثاني كان تكراراً.
     // 🏗️ يُسأل للقرص لا لقارئ المحتوى: `readCodeContext` يفلتر بثلاثة أسماء، فمستودعٌ
@@ -74,6 +76,10 @@ export async function selectBuildStrategy(goal, blueprint, ctx, reporter, ops) {
         // (عطل إنتاجي: «لا تبدأ من الصفر» طابقت «من الصفر» فدهست المشروع.)
         const continuation = isContinuationGoal(goal);
         const explicitRebuild = !continuation && (isExplicitRebuild(goal) || isExplicitNewBuild(goal));
+        // «أعد البناء» أمرٌ في المشروع الحالي، لا وصفُ منتج جديد. لذلك تحفظ
+        // هويته السابقة ولا تُرسل كلمات الأمر أو نموذجاً قديماً إلى مخمّن القوالب.
+        const bareRebuild = explicitRebuild && /^(?:أعد|اعد)\s+(?:ال)?بناء(?:\s+(?:الموقع|المشروع))?[.!،\s]*$|^rebuild(?:\s+(?:it|the\s+(?:site|project)))?[.!\s]*$/i.test(String(goal || '').trim());
+        const rememberedClone = bareRebuild && !isFreshBuild ? getCloneById(getCloneId(username, activeProject)) : null;
 
         // 🧱 صفحة تسويقيّة/تعريفيّة (هبوط/بروشور/بورتفوليو/شركة) → إعادة تركيب من
         // JAOLA Registry: صفحة *كاملة واحترافية* من بلوكات جاهزة، لا توليد هشّ.
@@ -117,10 +123,12 @@ export async function selectBuildStrategy(goal, blueprint, ctx, reporter, ops) {
                     return { success: true, skipped: 'works' };
                 }
             }
-            return await ops.buildFromRegistry(goal, ctx);
+            return await ops.buildFromRegistry(executionGoal, ctx);
         }
 
-        const pick = (continuation && !isFreshBuild)
+        const pick = rememberedClone
+            ? { clone: rememberedClone, rejected: [] }
+            : (continuation && !isFreshBuild)
             ? { clone: null, rejected: [] } // الاستئناف يكمل الموجود عبر المسار التزايدي — لا استبدال بالقالب
             : matchCloneTemplateDetailed(goal, blueprint, getDomainModel(username, activeProject),
                 { track });  // قُرئ مرّةً أعلاه — يغذّي الإعفاءَ التسويقيَّ ومطابقةَ الكلون معاً
@@ -131,6 +139,8 @@ export async function selectBuildStrategy(goal, blueprint, ctx, reporter, ops) {
                 `🧠 استُبعد بالفهم: ${pick.rejected.slice(0, 4).map(r => `${r.id} (بلا ${r.missingRoles.join('/')})`).join('، ')}${pick.rejected.length > 4 ? ` +${pick.rejected.length - 4}` : ''}`);
         }
         if (clone) {
+            if (rememberedClone) reporter.liveLog(roomName, 'STACK', 'ProductMind',
+                `🧬 إعادة بناء بنفس الهوية المحفوظة: ${rememberedClone.id} — بلا تخمين قالب جديد.`);
             const why = clone.matchReason || {};
             reporter.liveLog(roomName, 'STACK', 'ProductMind',
                 `🧠 اختيارٌ بالفهم: ${clone.id} — ${why.reason === 'model-only' ? 'نموذجُ المنتج مطابق بلا كلمات' : `كلمات: ${(why.hits || []).join('/') || '—'}`}${why.roleCoverage !== null && why.roleCoverage !== undefined ? `، الأدوار ${Math.round(why.roleCoverage * 100)}٪` : ''}`);
@@ -152,7 +162,7 @@ export async function selectBuildStrategy(goal, blueprint, ctx, reporter, ops) {
                 if (worksNow && roleGap) reporter.liveLog(roomName, 'STACK', 'ProductMind', `🧠 يعمل لكنّه لا يغطّي كلَّ الأدوار — ${roleGap.detail}`);
             }
             if (apply) {
-                return await ops.buildFromClone(clone, goal, ctx);
+                return await ops.buildFromClone(clone, executionGoal, ctx);
             }
             // 🛡️ المشروع القائم يعمل وليس طلب إعادة بناء صريح → لا نُعيد البناء
             // الكامل (كان مسار Vanilla يدهس الكلون العامل عند «اكمل»). نُبلغ
@@ -193,7 +203,7 @@ export async function selectBuildStrategy(goal, blueprint, ctx, reporter, ops) {
             reporter.liveLog(roomName, 'STACK', 'HybridRouter', askedStack
                 ? '🧰 طلبتَ الإطارَ باسمه → React/Next (لا يُنقَض بتصنيف)'
                 : '🧰 مشروع كبير → React/Next');
-            return await ops.buildReactProject(goal, ctx, {
+            return await ops.buildReactProject(executionGoal, ctx, {
                 sections: blueprint?.keySections || [],
             });
         }

@@ -25,7 +25,24 @@ export function resolveProjectType(goal, blueprint) {
         : detectProjectType(goal);
 }
 
-export async function enrichBuildContext(goal, blueprint, ctx, reporter) {
+/** يجمع مساهمة Plugins مرةً واحدة قبل اختيار استراتيجية البناء. */
+export async function collectPluginBuildContext(goal, blueprint, ctx, reporter) {
+    const { projectPath, username, activeProject, roomName } = ctx;
+    try {
+        const hookResults = await orchestrator.runHook('beforeBuild', {
+            goal, username, project: activeProject, projectPath, blueprint,
+        });
+        const guidance = hookResults
+            .map(r => (typeof r.result === 'string' ? r.result : r.result?.guidance || r.result?.reply))
+            .filter(Boolean);
+        if (!guidance.length) return '';
+        reporter.liveLog(roomName, 'PLUGINS', 'beforeBuild',
+            `🔌 شارك ${guidance.length} وكيل إضافي في التوجيه`);
+        return `\n## 🔌 توجيهات وكلاء إضافيين (التزم بها):\n${guidance.map(g => `- ${g}`).join('\n')}`;
+    } catch { return ''; }
+}
+
+export async function enrichBuildContext(goal, blueprint, ctx, reporter, preparedPluginContext = undefined) {
     const { projectPath, username, activeProject, roomName } = ctx;
     // 🆕 Smart Requirement Analyzer — يُثري الهدف بمتطلبات ضمنية
     let requirementsContext = '';
@@ -50,19 +67,8 @@ export async function enrichBuildContext(goal, blueprint, ctx, reporter) {
 
     // 🔌 وكلاء الإضافات: hook beforeBuild — يشاركون فعلياً في البناء
     // كل وكيل يُرجع نصاً يُحقن في سياق البناء (توجيهات، متطلبات إضافية...)
-    let pluginContext = '';
-    try {
-        const hookResults = await orchestrator.runHook('beforeBuild', {
-            goal, username, project: activeProject, projectPath, blueprint,
-        });
-        const guidance = hookResults
-            .map(r => (typeof r.result === 'string' ? r.result : r.result?.guidance || r.result?.reply))
-            .filter(Boolean);
-        if (guidance.length) {
-            pluginContext = `\n## 🔌 توجيهات وكلاء إضافيين (التزم بها):\n${guidance.map(g => `- ${g}`).join('\n')}`;
-            reporter.liveLog(roomName, 'PLUGINS', 'beforeBuild',
-                `🔌 شارك ${guidance.length} وكيل إضافي في التوجيه`);
-        }
-    } catch (e) { /* الإضافات اختيارية */ }
+    const pluginContext = preparedPluginContext === undefined
+        ? await collectPluginBuildContext(goal, blueprint, ctx, reporter)
+        : preparedPluginContext;
     return { requirementsContext, imageContext, pluginContext };
 }

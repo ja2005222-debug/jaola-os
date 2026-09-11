@@ -13,7 +13,7 @@ import { JaolaCognitiveRuntime } from '../agents/jcr.js';
 import { RoomReporter } from '../core/runtime/RoomReporter.js';
 import { createExecutionContext } from '../core/runtime/ExecutionContext.js';
 import { setUserLanguage } from '../agents/languageDetector.js';
-import { getProjectMemory } from '../agents/projectMemory.js';
+import { getProjectMemory, setCloneIdentity } from '../agents/projectMemory.js';
 import { tempProject, workingProject, emptyProject } from './helpers/jcrScenario.mjs';
 import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
 
@@ -76,6 +76,18 @@ test('رسالتا «يعمل» بالإنجليزيّة نصّاً: تسويق�
     assert.ok(c.noneBuilt()); assert.match(c.logs().at(-1), /تفادينا إعادة بناء تدهسه/);
 });
 
+test('«أعد البناء» يحفظ هوية القالب المطبَّق ولا يخمّن مجالاً جديداً من كلمات الأمر أو نموذج قديم', async () => {
+    const m = harness({ dir: workingProject() });
+    setCloneIdentity(m.ctx.username, m.ctx.activeProject, { id: 'jaola-helpdesk', track: 'system' });
+    getProjectMemory(m.ctx.username, m.ctx.activeProject).domainModel = {
+        roles: [{ name: 'مقاول' }, { name: 'مالك' }], entities: [{ name: 'مشروع بناء' }], flows: [],
+    };
+    const r = await m.pick('اعد البناء', { kind: 'webapp', category: 'construction' });
+    assert.equal(r?.via, 'clone');
+    assert.equal(m.built.clone[0]?.clone?.id, 'jaola-helpdesk', 'يعيد القالب المحفوظ نفسه');
+    assert.match(m.logs().join('\n'), /إعادة بناء بنفس الهوية المحفوظة: jaola-helpdesk/);
+});
+
 test('وسائطُ البناة: السجلُّ (goal, ctx)، الكلونُ (clone, goal, ctx)، React (goal, ctx, {sections}) — السياقُ المجمَّد نفسُه، وsections الافتراضيّة []', async () => {
     const reg = harness({ dir: emptyProject() });
     await reg.pick('صفحة هبوط لشركة استشارات', { kind: 'landing' });
@@ -87,6 +99,20 @@ test('وسائطُ البناة: السجلُّ (goal, ctx)، الكلونُ (cl
     assert.equal((await re.pick('منصة تجارة إلكترونية', { category: 'ecommerce' })).via, 'react');
     assert.deepEqual(re.built.react[0], { goal: 'منصة تجارة إلكترونية', ctx: re.ctx, opts: { sections: [] } });
     assert.match(re.logs().at(-1), /مشروع كبير → React\/Next/);
+});
+
+test('توجيه Plugin يصل كل مسارات البناء من دون أن يلوّث قرار مطابقة القالب', async () => {
+    const m = harness({ dir: emptyProject() });
+    const guidance = '\n## 🔌 توجيهات وكلاء إضافيين:\n- أضف سجل تدقيق';
+    const r = await selectBuildStrategy('تطبيق توصيل طعام', { kind: 'webapp' }, m.ctx,
+        new RoomReporter({ to: () => ({ emit: () => {} }) }), {
+            buildFromRegistry: async () => null,
+            buildFromClone: async (clone, goal) => ({ via: 'clone', id: clone.id, goal }),
+            buildReactProject: async () => null,
+            trackOf: () => undefined,
+        }, guidance);
+    assert.match(r.id, /food|delivery/i, 'المطابقة من طلب المستخدم وحده');
+    assert.match(r.goal, /أضف سجل تدقيق/, 'التوجيه يصل التنفيذ بعد القرار');
 });
 
 test('حدُّ الجدّة والنطاق: صفحةٌ أقصر من ٨٠ حرفاً بناءٌ جديد → React للكبير؛ ونطاقُ الخطّة «كامل» في ذاكرة المشروع يرفع النوعَ الصغير إلى React', async () => {
@@ -133,7 +159,7 @@ test('الحدود: شريحةُ الجسد — readCodeContext ×١، liveLog �
     const code = mod.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[^]*?\*\//g, '');
     assert.ok(!/\bthis\./.test(code)); assert.ok(!/jcr\.js/.test(code)); assert.ok(!/\bio\b/.test(code));
     assert.ok(mod.includes("import { resolveProjectType } from './enrich.js';"), 'نوعُ المشروع من مصدره لا من واجهة jcr');
-    const fnStart = code.indexOf('export async function selectBuildStrategy(goal, blueprint, ctx, reporter, ops) {');
+    const fnStart = code.indexOf("export async function selectBuildStrategy(goal, blueprint, ctx, reporter, ops, pluginContext = '') {");
     assert.ok(fnStart > 0);
     const body = code.slice(fnStart, code.indexOf('\n}\n', fnStart) + 3);
     const count = (re) => (body.match(re) || []).length;
@@ -148,16 +174,16 @@ test('الحدود: شريحةُ الجسد — readCodeContext ×١، liveLog �
     // 🚧 حارسُ النطاق أضاف ردّاً ثالثاً (٢ ← ٣) وسطرَ سجلٍّ عاشراً وانتقالَ حالةٍ ثالثاً:
     //    الامتناعُ **يُقال** ثمّ تُغلَق المهمّة — على شكل سابقة «works» نفسِها، لا صمتاً.
     assert.equal(count(/reporter\.send\(/g), 3);
-    assert.equal(count(/reporter\.liveLog\(/g), 10, 'JCR/29: ٥؛ PM/1 أضاف ثلاثةَ أسطر «ProductMind»؛ قياسُ POS رابعاً؛ وحارسُ النطاق خامساً: كم مُخرَجاً برمجيّاً سُمّي');
+    assert.equal(count(/reporter\.liveLog\(/g), 11, 'JCR/29: ٥؛ PM/1 أضاف ثلاثةَ أسطر «ProductMind»؛ قياسُ POS رابعاً؛ وحارسُ النطاق خامساً؛ وحفظُ هوية إعادة البناء سادساً');
     assert.equal(count(/\btransitionState\(/g), 3); assert.equal(count(/\banalyzeProjectStatic\(/g), 2);
     const jcr = fs.readFileSync(path.join(HERE, '../agents/jcr.js'), 'utf8');
-    assert.ok(jcr.includes(`\n    async _selectBuildStrategy(goal, blueprint, ctx) {
+    assert.ok(jcr.includes(`\n    async _selectBuildStrategy(goal, blueprint, ctx, pluginContext = '') {
         return selectBuildStrategy(goal, blueprint, ctx, this.reporter, {
             buildFromRegistry: (g, c) => this._buildFromRegistry(g, c),
             buildFromClone: (clone, g, c) => this._buildFromClone(clone, g, c),
             buildReactProject: (g, c, o) => this._buildReactProject(g, c, o),
             trackOf: (room) => this.trackByRoom?.get(room),
-        });
+        }, pluginContext);
     }\n`));
     assert.ok(jcr.includes("import { selectBuildStrategy } from './stages/selectBuildStrategy.js';"));
     const plain = jcr.replace(/^\s*\/\/.*$/gm, '');

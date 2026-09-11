@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const server = fs.readFileSync(new URL('../server.js', import.meta.url), 'utf8');
 const auth = fs.readFileSync(new URL('../../frontend/src/hooks/useAuth.js', import.meta.url), 'utf8');
 const socket = fs.readFileSync(new URL('../../frontend/src/hooks/useSocket.js', import.meta.url), 'utf8');
+const dashboard = fs.readFileSync(new URL('../../frontend/src/pages/Dashboard.jsx', import.meta.url), 'utf8');
 
 test('فحص الملكية لا ينشئ مشروعاً مفقوداً للحساب الطالب', () => {
   const block = server.slice(server.indexOf('async function validateProjectOwnership'), server.indexOf('// إنشاء نسخة احتياطية'));
@@ -28,4 +29,9 @@ test('حالة المشروع في المتصفح معزولة باسم المس
   assert.match(socket, /authToken/);
   assert.match(socket, /socket\.disconnect\(\)/);
   assert.match(auth, /previousUser && previousUser !== u/);
+});
+
+test('اختيار موقع/سيستم محفوظ لكل حساب ومشروع ولا يعود افتراضياً عند تحديث الصفحة', () => {
+  assert.match(dashboard, /jaola:buildTrack:\$\{owner\}:\$\{activeProject\}/);
+  assert.match(dashboard, /saved === 'system' \? 'system' : 'site'/);
 });

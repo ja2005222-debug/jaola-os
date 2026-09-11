@@ -32,9 +32,9 @@ test('عقد Task: DELIVERY_STAGES قائمة مسمّاة مرتّبة، كل �
     const { JaolaCognitiveRuntime } = await import('../agents/jcr.js');
     assert.equal(DELIVERY_STAGES.length, 15);
     assert.deepEqual(DELIVERY_STAGES.map(s => s.run), [
-        '_stageGuardAndWrite', '_stageReview', '_stageRefactor', '_stageTesting', '_stageRequirementsVerify',
+        '_stageGuardAndWrite', '_stageReview', '_stageRefactor', '_stageTesting',
         '_stageExecutiveMemory', '_stageSEO', '_stageSecurity', '_stageGitBackup', '_stageProjectMemory',
-        '_stageBackend', '_stageAdvancedModules', '_stageFullStackScaffold', '_stageRenderConfig', '_stageBehaviorVerify',
+        '_stageBackend', '_stageAdvancedModules', '_stageFullStackScaffold', '_stageRequirementsVerify', '_stageRenderConfig', '_stageBehaviorVerify',
     ]);
     for (const s of DELIVERY_STAGES) {
         assert.equal(typeof JaolaCognitiveRuntime.prototype[s.run], 'function', s.run);

@@ -378,6 +378,20 @@ export default function Dashboard() {
 
   const { files, logs, streamingContent, agentStates, projects, activeProject, currentUser, vercelUrl, chatMessages, setChatMessages, setActiveProject, previewTimestamp, refreshPreview, isConnected, connectionError, metrics, latencyMs, missionPhase, presenceCount, commandStatus } = useSocket(isAuthenticated, handleAuthError, authUser, token);
 
+  // 🧭 اختيار المسار جزءٌ من هوية المشروع، لا حالة عابرة تعود إلى «موقع»
+  // بعد تحديث الصفحة فتوجّه رسالة السيستم إلى المجموعة الخطأ من القوالب.
+  useEffect(() => {
+    if (!activeProject) return;
+    const owner = currentUser || authUser || 'guest_user';
+    const saved = localStorage.getItem(`jaola:buildTrack:${owner}:${activeProject}`);
+    setBuildTrack(saved === 'system' ? 'system' : 'site');
+  }, [activeProject, currentUser, authUser]);
+  useEffect(() => {
+    if (!activeProject) return;
+    const owner = currentUser || authUser || 'guest_user';
+    localStorage.setItem(`jaola:buildTrack:${owner}:${activeProject}`, buildTrack);
+  }, [buildTrack, activeProject, currentUser, authUser]);
+
   // بث المهمة داخل الشات: فقاعات بمستوى كلاود — خطوات مطويّة + أدوات hover
   // useMemo: لا يُعاد بناء المجموعات إلا عند تغيّر الرسائل فعلاً (لا مع كل حدث لوحة)
   // 🔒 يجب أن يُستدعى قبل أي early-return (isLoading/!isAuthenticated/!booted) بالأسفل —

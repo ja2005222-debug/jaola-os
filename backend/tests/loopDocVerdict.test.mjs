@@ -74,11 +74,13 @@ test('حلقةُ التسليم بلا مزوّد على وثيقة: البوّ�
         assert.equal(r.success, true);
         const g = gate(r.verdict, 'requirements-verify');
         assert.equal(g.status, 'fail', JSON.stringify(g));
-        assert.match(g.detail, /^7 بنداً من 12 في وثيقتك بلا أثر: /);
-        assert.match(g.detail, /\(5\/12 له أثر — أثرٌ لا تنفيذ/);
+        // التحقّق صار بعد backend/full-stack: يرى الآن آثار ما أضافته الطبقات
+        // اللاحقة، ولا يصدر حكماً مبكراً على نسخة لم يكتمل بناؤها.
+        assert.match(g.detail, /^2 بنداً من 12 في وثيقتك بلا أثر: /);
+        assert.match(g.detail, /\(10\/12 له أثر — أثرٌ لا تنفيذ/);
         assert.doesNotMatch(g.detail, /المحقّقُ لم يُجب/);
         assert.ok(g.detail.length <= 300, `${g.detail.length}: ${g.detail}`);
-        assert.match(s.replies().join('\n'), /requirements-verify: 7 بنداً من 12 في وثيقتك بلا أثر/);
+        assert.match(s.replies().join('\n'), /requirements-verify: 2 بنداً من 12 في وثيقتك بلا أثر/);
     } finally { resetProjectState(s.ctx.username, s.ctx.activeProject); }
 });
 

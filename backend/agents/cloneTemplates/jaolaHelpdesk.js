@@ -300,7 +300,7 @@ document.addEventListener('DOMContentLoaded', init);
         nameEn: 'Helpdesk Ticketing',
         description: 'سيستم دعم فني داخلي: تذاكر بأولوية وحالة تمرّ بمراحل (مفتوحة/قيد المعالجة/محلولة/مغلقة)، ردود متعددة على التذكرة، ملخّص تذكرة قابل للطباعة، وتقرير أداء بمتوسط زمن الحل — بأدوار (وكيل دعم/مشرف).',
         descriptionEn: 'Internal helpdesk system: prioritized support tickets moving through stages (open/in progress/resolved/closed), multiple replies per ticket, a printable ticket summary, and a performance report with average resolution time — with roles (support agent/supervisor).',
-        keywords: ['تذاكر دعم', 'تذكرة دعم', 'دعم فني', 'خدمة عملاء داخلية', 'تذاكر الدعم الفني', 'وكيل دعم', 'مركز مساعدة', 'helpdesk', 'support ticket', 'ticketing system', 'customer support tickets', 'help center'],
+        keywords: ['تذاكر دعم', 'تذكرة دعم', 'دعم فني', 'خدمة عملاء داخلية', 'تذاكر الدعم الفني', 'وكيل دعم', 'مركز مساعدة', 'مساعدة داخلية', 'طلبات الموظفين', 'مشاكل الموظفين', 'help desk', 'internal help desk', 'helpdesk', 'support ticket', 'ticketing system', 'customer support tickets', 'help center'],
         model: {
             roles: [{ name: 'وكيل دعم' }, { name: 'مشرف' }],
             entities: [{ name: 'تذكرة دعم' }, { name: 'رد' }],

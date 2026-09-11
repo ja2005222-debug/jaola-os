@@ -10,7 +10,8 @@ import { localizeLog } from './logLocalizer.js';
 import { RoomReporter } from '../core/runtime/RoomReporter.js';
 import { runDebate } from './stages/debate.js';
 import { understandGoal } from './stages/understand.js';
-import { enrichBuildContext, resolveProjectType } from './stages/enrich.js';
+import { enrichBuildContext, resolveProjectType, collectPluginBuildContext } from './stages/enrich.js';
+import { orchestrator } from '../core/PluginOrchestrator.js';
 import { runRequirementsVerify } from './stages/requirementsVerify.js';
 import { runRenderConfig } from './stages/renderConfig.js';
 import { buildFromRegistry } from './stages/buildFromRegistry.js';
@@ -498,15 +499,22 @@ export class JaolaCognitiveRuntime {
         //    بطاقةَ الحالة على «خامل». مقيسٌ في JCR/1، ومُثبَتٌ باختبارٍ هنا.
         transitionState(username, activeProject, STATES.ARCHITECTURE, { agent: 'Architect' });
 
-        const strategyResult = await this._selectBuildStrategy(goal, blueprint, ctx);
+        // Plugins تدخل قبل اختيار Registry/Clone/React وتُجمع مرة واحدة؛ قبل ذلك
+        // كانت لا تعمل إطلاقاً حين ينتهي البناء في أحد هذه المسارات السريعة.
+        const preparedPluginContext = await collectPluginBuildContext(goal, blueprint, ctx, this.reporter);
+        const strategyResult = await this._selectBuildStrategy(goal, blueprint, ctx, preparedPluginContext);
         if (strategyResult) {
             // ⚖️ حكمُ مسار الاستراتيجيّة يُقال كما يُقال حكمُ الحلقة (PM/2b) — «يعمل/تخطّي» بلا حكمٍ لأنّ شيئاً لم يُبنَ.
             if (strategyResult.verdict) this.emitLiveLog(roomName, '7. VERDICT', 'Judge', `⚖️ الحكم: ${strategyResult.verdict.status} — ${strategyResult.verdict.summary}`);
+            orchestrator.runHook('afterBuild', {
+                success: strategyResult.success !== false, result: strategyResult, goal,
+                username, project: activeProject, projectPath,
+            }).catch(() => {});
             return strategyResult;
         }
 
         const { requirementsContext, imageContext, pluginContext } =
-            await this._enrichBuildContext(goal, blueprint, ctx);
+            await this._enrichBuildContext(goal, blueprint, ctx, preparedPluginContext);
 
         const finalGoalWithRequirements = `${enrichedGoal}${blueprintContext}${domainModelContext}\n${requirementsContext}${imageContext}${pluginContext}`;
 
@@ -615,19 +623,19 @@ export class JaolaCognitiveRuntime {
 
     // 🧭 اختيارُ الاستراتيجيّة خرج إلى `stages/selectBuildStrategy.js#selectBuildStrategy` (JCR/29) — تفويضٌ يُبقي المستدعيَ كما هو؛
     // المُبلِّغُ يُمرَّر، والبناةُ الثلاثة عبر `ops` (تستبدلها الاختبارات على النسخة)، وتلميحُ المسار `trackByRoom` دالّةً مربوطة.
-    async _selectBuildStrategy(goal, blueprint, ctx) {
+    async _selectBuildStrategy(goal, blueprint, ctx, pluginContext = '') {
         return selectBuildStrategy(goal, blueprint, ctx, this.reporter, {
             buildFromRegistry: (g, c) => this._buildFromRegistry(g, c),
             buildFromClone: (clone, g, c) => this._buildFromClone(clone, g, c),
             buildReactProject: (g, c, o) => this._buildReactProject(g, c, o),
             trackOf: (room) => this.trackByRoom?.get(room),
-        });
+        }, pluginContext);
     }
 
     // 🧩 الإثراءُ خرج إلى `stages/enrich.js` (JCR/6) — تفويضٌ يُبقي المستدعيَ كما هو؛
     // المُبلِّغُ يُمرَّر وسيطاً.
-    async _enrichBuildContext(goal, blueprint, ctx) {
-        return enrichBuildContext(goal, blueprint, ctx, this.reporter);
+    async _enrichBuildContext(goal, blueprint, ctx, pluginContext) {
+        return enrichBuildContext(goal, blueprint, ctx, this.reporter, pluginContext);
     }
 
     // 📣 تقريرُ التسليم خرج إلى `stages/reportMissionSuccess.js` (JCR/11) — تفويضٌ يُبقي
