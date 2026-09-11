@@ -11,6 +11,7 @@ import { scenario, tempProject, workingProject, emptyProject } from './helpers/j
 import { createExecutionContext } from '../core/runtime/ExecutionContext.js';
 import { setUserLanguage } from '../agents/languageDetector.js';
 import { getProjectState, STATES } from '../agents/stateMachine.js';
+import { orchestrator } from '../core/PluginOrchestrator.js';
 import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
 
 divertConsoleToStderr();
@@ -135,4 +136,23 @@ test('عبر _runMissionNow: حارسُ «يعمل» يبلغ COMPLETED فعلا
     const st = getProjectState(s.ctx.username, s.ctx.activeProject);
     assert.equal(st.state, STATES.COMPLETED, 'كان يبقى idle: COMPLETED مرفوضٌ من idle');
     assert.equal(st.previousState, STATES.ARCHITECTURE, 'ARCHITECTURE سبقت اختيارَ الاستراتيجيّة');
+});
+
+test('Plugins: beforeBuild وafterBuild يحيطان بمسار الكلون السريع أيضاً', async () => {
+    const s = strategy('strat_plugin', emptyProject());
+    s.rt._understandGoal = async (goal) => ({ enrichedGoal: goal, blueprint: { kind: 'webapp' }, blueprintContext: '', domainModelContext: '' });
+    const seen = [];
+    const name = '__strategy_lifecycle_plugin__';
+    orchestrator.plugins.set(name, { name, enabled: true, source: 'test', hooks: {
+        beforeBuild: () => ({ guidance: 'أضف سجل تدقيق' }),
+        afterBuild: (ctx) => { seen.push(ctx); },
+    } });
+    try {
+        const ctx = createExecutionContext({ ...s.ctx, projectPath: s.dir, agents: {} });
+        const r = await s.rt._runMissionNow('تطبيق توصيل طعام', ctx);
+        assert.equal(r.via, 'clone');
+        assert.match(s.built.clone[0].goal, /أضف سجل تدقيق/, 'beforeBuild وصل الباني السريع');
+        assert.equal(seen.length, 1, 'afterBuild لم يعد محصوراً في النواة العامة');
+        assert.equal(seen[0].result.via, 'clone');
+    } finally { orchestrator.plugins.delete(name); }
 });

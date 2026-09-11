@@ -175,7 +175,6 @@ export const DELIVERY_STAGES = Object.freeze([
     { name: 'review',              run: '_stageReview',            optional: true, gate: 'enhancement' },
     { name: 'refactor',            run: '_stageRefactor',          optional: true, gate: 'enhancement' },
     { name: 'testing',             run: '_stageTesting',           optional: true, gate: 'enhancement' },
-    { name: 'requirements-verify', run: '_stageRequirementsVerify', optional: true, gate: 'gate' },
     { name: 'executive-memory',    run: '_stageExecutiveMemory',   optional: true, gate: 'advisory' },
     { name: 'seo',                 run: '_stageSEO',               optional: true, gate: 'enhancement' },
     { name: 'security',            run: '_stageSecurity',          optional: true, gate: 'enhancement' },
@@ -184,6 +183,9 @@ export const DELIVERY_STAGES = Object.freeze([
     { name: 'backend',             run: '_stageBackend',           optional: true, gate: 'enhancement' },
     { name: 'advanced-modules',    run: '_stageAdvancedModules',   optional: true, gate: 'enhancement' },
     { name: 'fullstack-scaffold',  run: '_stageFullStackScaffold', optional: true, gate: 'enhancement' },
+    // التحقّق من المتطلبات بعد اكتمال backend/full-stack؛ قبله كان يحكم
+    // UNVERIFIED على قدرات لم تُبنَ بعد ثم لا يعيد فحصها.
+    { name: 'requirements-verify', run: '_stageRequirementsVerify', optional: true, gate: 'gate' },
     { name: 'render-config',       run: '_stageRenderConfig',      optional: true, gate: 'enhancement' },
     { name: 'behavior-verify',     run: '_stageBehaviorVerify',    optional: true, gate: 'gate' },
 ].map(Object.freeze));

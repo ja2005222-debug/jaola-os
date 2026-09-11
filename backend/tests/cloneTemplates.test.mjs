@@ -457,7 +457,7 @@ test('دفعة ٦: مكتب محاماة (سيستم) ومساحة عمل مشت
 
 // ─── 🎫📸 دفعة ٧: دعم فني (سيستم) + استوديو تصوير (موقع) ────────────
 test('دفعة ٧: تذاكر دعم فني (سيستم) واستوديو تصوير (موقع) — عقد سليم وتوجيه صحيح', async () => {
-    const { matchCloneTemplate } = await import('../agents/cloneTemplates/index.js');
+    const { matchCloneTemplate, inferTrack } = await import('../agents/cloneTemplates/index.js');
     const specs = [
         ['../agents/cloneTemplates/jaolaHelpdesk.js', 'jaolaHelpdesk', 'jaola-helpdesk', 'system', 'نظام تذاكر دعم فني لتتبّع حالة تذاكر العملاء ومتابعتها'],
         ['../agents/cloneTemplates/jaolaPhotography.js', 'jaolaPhotography', 'jaola-photography', 'site', 'موقع استوديو تصوير لحجز جلسة تصوير بورتريه'],
@@ -476,6 +476,10 @@ test('دفعة ٧: تذاكر دعم فني (سيستم) واستوديو تصو
         const matched = matchCloneTemplate(goal, { kind: 'webapp' }, null);
         assert.equal(matched?.id, id, goal + ' → ' + id);
     }
+    const productionGoal = 'نظام مساعدة داخلية (Internal Help Desk) لإدارة طلبات ومشاكل الموظفين';
+    assert.equal(inferTrack(productionGoal), 'system', 'Help Desk بمسافة + مساعدة داخلية = سيستم');
+    assert.equal(matchCloneTemplate(productionGoal, { kind: 'webapp' }, null)?.id, 'jaola-helpdesk',
+        'المعنى المركّب يختار Help Desk، لا قالب فعاليات بسبب كلمة تذاكر عامة');
 });
 
 // ─── 🚚📚 دفعة ٨: أسطول مركبات (سيستم) + دروس خصوصية (موقع) ─────────

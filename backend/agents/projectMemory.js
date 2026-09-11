@@ -61,6 +61,9 @@ function createProjectMemory(username, project, goal = '') {
         // 🏷️ track قالب الكلون المطبَّق (site|system) — إن وُجد؛ يحدّد هل
         // يستحق المشروع مزامنة jaola-data (أدوات عمل داخلية فقط، لا مواقع تعريفية)
         cloneTrack: null,
+        // 🧬 هوية القالب المطبَّق. أمرٌ عام مثل «أعد البناء» يعيد القالب نفسه
+        // ولا يعيد تخمين المجال من كلمة عابرة أو من نموذج مجال قديم.
+        cloneId: null,
     };
 }
 
@@ -184,6 +187,30 @@ export function setCloneTrack(username, project, track) {
 /** استرجاع track قالب الكلون المطبَّق (أو null إن لم يُطبَّق كلون قط) */
 export function getCloneTrack(username, project) {
     return getProjectMemory(username, project).cloneTrack || null;
+}
+
+/** تسجيل هوية قالب الكلون المطبَّق ومساره كوحدة واحدة. */
+export function setCloneIdentity(username, project, clone) {
+    const mem = getProjectMemory(username, project);
+    mem.cloneId = clone?.id || null;
+    mem.cloneTrack = clone?.track || null;
+    mem.updatedAt = Date.now();
+    saveToFile();
+    return { id: mem.cloneId, track: mem.cloneTrack };
+}
+
+/**
+ * استرجاع معرّف القالب. يدعم المشاريع القديمة التي سبقت حقل cloneId عبر
+ * آخر سجل «كلون jaola-…»، حتى لا تغيّر أول إعادة بناء بعد النشر هويتها.
+ */
+export function getCloneId(username, project) {
+    const mem = getProjectMemory(username, project);
+    if (mem.cloneId) return mem.cloneId;
+    for (const item of mem.history || []) {
+        const id = String(item?.action || '').match(/(?:^|\s)كلون\s+(jaola-[a-z0-9-]+)/i)?.[1];
+        if (id) return id;
+    }
+    return null;
 }
 
 /** تسجيل تعديل جديد في التاريخ */

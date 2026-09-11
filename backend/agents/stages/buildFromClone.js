@@ -11,7 +11,7 @@ import fs, { promises as fsPromises } from 'fs';
 import path from 'path';
 import { smartChat } from '../../core/providers/llm.js';
 import { getUserLanguage, resolveGoalLanguage } from '../languageDetector.js';
-import { addToHistory, updateStructure, setDomainModel, getDomainModel } from '../projectMemory.js';
+import { addToHistory, updateStructure, setDomainModel, getDomainModel, setCloneIdentity } from '../projectMemory.js';
 import { mergeProjectModel } from '../projectModel.js';
 import { composeRequirements, traceRequirements, buildFixInstruction, traceSections, buildSectionFixInstruction, sectionLabel } from '../requirementsVerifier.js';
 import { readProjectFiles, readBuiltFiles } from '../projectReader.js';
@@ -259,6 +259,7 @@ export async function buildFromClone(clone, goal, ctx, reporter, { complete = pa
         (clone.model.roles || []).map(r => `واجهة ${r.name}`),
         (clone.model.flows || []).map(f => f.name));
     addToHistory(username, activeProject, `كلون ${clone.id}: ${(goal || '').slice(0, 60)}`);
+    setCloneIdentity(username, activeProject, clone);
     reporter.send(roomName, 'preview_updated', { timestamp: Date.now() });
     let builtFiles = [];
     try { builtFiles = fs.readdirSync(projectPath).filter(f => !f.startsWith('.') && f !== 'node_modules'); } catch {}

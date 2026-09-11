@@ -78,7 +78,7 @@ test('الحدود: لا this في الوحدة، لا استيرادَ من jcr
     assert.ok(!/\bthis\./.test(code), 'الدالّةُ الحرّة لا تعرف this');
     assert.ok(!/jcr\.js/.test(code), 'لا دورةَ عودةٍ إلى jcr');
     const jcr = fs.readFileSync(path.join(HERE, '../agents/jcr.js'), 'utf8');
-    assert.match(jcr, /async _enrichBuildContext\(goal, blueprint, ctx\) \{\n\s+return enrichBuildContext\(goal, blueprint, ctx, this\.reporter\);\n\s+\}/);
+    assert.match(jcr, /async _enrichBuildContext\(goal, blueprint, ctx, pluginContext\) \{\n\s+return enrichBuildContext\(goal, blueprint, ctx, this\.reporter, pluginContext\);\n\s+\}/);
     assert.match(jcr, /^export \{ resolveProjectType \};$/m, 'إعادةُ التصدير قائمة');
     assert.ok(!/^export function resolveProjectType/m.test(jcr), 'التعريفُ رحل');
     for (const n of ['detectProjectType', 'analyzeRequirements', 'buildRequirementsContext', 'buildImageContext']) {

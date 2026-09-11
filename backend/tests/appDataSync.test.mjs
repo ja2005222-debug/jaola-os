@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { readStore, writeKey } from '../services/appData.js';
 import { buildDataSyncJS, injectDataSyncTag, installDataSync } from '../services/dataSync.js';
-import { setCloneTrack, getCloneTrack } from '../agents/projectMemory.js';
+import { setCloneTrack, getCloneTrack, setCloneIdentity, getCloneId, getProjectMemory } from '../agents/projectMemory.js';
 import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
 
 divertConsoleToStderr();
@@ -152,4 +152,13 @@ test('projectMemory: يسجّل ويسترجع track الكلون المطبَّ
     assert.equal(getCloneTrack(user, proj), 'system');
     setCloneTrack(user, proj, 'site');
     assert.equal(getCloneTrack(user, proj), 'site', 'يُحدَّث عند إعادة التطبيق');
+});
+
+test('projectMemory: يحفظ هوية الكلون ويسترجعها للمشاريع القديمة من التاريخ', () => {
+    const user = 'cloneid_' + Date.now();
+    setCloneIdentity(user, 'new', { id: 'jaola-helpdesk', track: 'system' });
+    assert.equal(getCloneId(user, 'new'), 'jaola-helpdesk');
+    const old = getProjectMemory(user, 'old');
+    old.history = [{ action: 'كلون jaola-events: طلب قديم' }];
+    assert.equal(getCloneId(user, 'old'), 'jaola-events', 'ترحيل ضمني للمشاريع السابقة للحقل');
 });

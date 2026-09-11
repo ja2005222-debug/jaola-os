@@ -128,7 +128,7 @@ import { listClones, getCloneById } from './agents/cloneTemplates/index.js';
 import { verifyBehavior } from './agents/behaviorVerifier.js';
 import { localizeTemplateFiles } from './agents/templateLocalizer.js';
 import { getUserLanguage } from './agents/languageDetector.js';
-import { setDomainModel, setCloneTrack, getCloneTrack } from './agents/projectMemory.js';
+import { setDomainModel, setCloneIdentity, getCloneTrack } from './agents/projectMemory.js';
 import { mergeProjectModel } from './agents/projectModel.js';
 import { prepareRenderDeploy, renderServiceName } from './agents/renderAgent.js';
 import { projectPathOf, isInsideRoot, resolveProjectFile, landRepoFiles } from './core/runtime/workspacePaths.js';
@@ -2483,7 +2483,7 @@ app.post('/api/template/apply', verifyToken, validateProjectOwnership, async (re
         // عمل داخلية: عيادة/نقطة بيع/مستودع...)، لا قوالب «الموقع» التعريفية
         // — فلا نُعرِّض بيانات زوّار لا حاجة لمزامنتها عبر توكن عام. يعمل فوراً
         // حتى في المعاينة الحيّة، قبل النشر أصلاً (idempotent).
-        try { setCloneTrack(req.user.username, req.activeProject, clone.track); } catch { /* اختياري */ }
+        try { setCloneIdentity(req.user.username, req.activeProject, clone); } catch { /* اختياري */ }
         if (clone.track === 'system') {
             try {
                 const publicBase = (process.env.PUBLIC_BACKEND_URL || process.env.RENDER_EXTERNAL_URL
