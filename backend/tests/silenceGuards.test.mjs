@@ -131,6 +131,8 @@ test('والهدفُ المعلَّقُ يبقى **كاملاً** رغم قِص�
     setUserLanguage(s.ctx.username, 'ar');
     await s.send(spec, {}, { projectPath: tempProject() });
     await s.send('نعم', {}, { projectPath: tempProject() });
+    assert.equal(built.length, 0, 'A generic confirmation does not choose the project type');
+    await s.send('سيستم داخلي', {}, { projectPath: tempProject() });
     await new Promise((r) => setTimeout(r, 20));
     assert.equal(built.length, 1, 'التأكيدُ أطلق البناء');
     assert.equal(built[0], spec, 'بالمواصفة كاملةً — القصُّ كان للعرض لا للتنفيذ');
@@ -215,7 +217,7 @@ test('انهيارُ البناء مسموع كذلك، بالإنجليزية،
     delete s.rt.executeMission;
     s.rt._runMissionNow = async () => { throw new Error('provider refused'); };
     setUserLanguage(s.ctx.username, 'en');
-    s.rt.executeMission('build a landing page', s.ctx);
+    s.rt.executeMission('build a website', s.ctx);
     await new Promise((r) => setTimeout(r, 20));
     const replies = s.replies();
     assert.equal(replies.length, 1, JSON.stringify(replies));

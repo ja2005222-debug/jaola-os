@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { JaolaCognitiveRuntime } from '../agents/jcr.js';
+import { getProjectMemory, updateBuildDecision } from '../agents/projectMemory.js';
+import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
+divertConsoleToStderr();
+
+test('ambiguous mission pauses and an answer resumes the original goal in its project', async () => {
+    const events = [];
+    const runtime = new JaolaCognitiveRuntime({ to: () => ({ emit: (event, payload) => events.push({ event, payload }) }) });
+    const ctx = { username: `gate-${Date.now()}`, activeProject: 'one', roomName: 'test-room', projectPath: '/tmp/jaola-gate-test', agents: {}, dbStatus: false };
+    const goal = 'ابن لي أداة لإدارة عملي';
+    const result = runtime.executeMission(goal, ctx);
+    assert.equal(result.status, 'AWAITING_USER_DECISION');
+    assert.equal(getProjectMemory(ctx.username, 'one').buildDecision.pending.goal, goal);
+    assert.equal(getProjectMemory(ctx.username, 'two').buildDecision, undefined);
+    assert.ok(events.some(e => e.payload.clarification));
+    const calls = [];
+    runtime.executeMission = (...args) => calls.push(args);
+    await runtime.handleUserMessage(null, { ...ctx, message: 'سيستم داخلي' }, {}, false);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][0], goal);
+    assert.equal(calls[0][2].confirmedType, 'system');
+    assert.equal(getProjectMemory(ctx.username, 'one').buildDecision.pending, null);
+    updateBuildDecision(ctx.username, 'one', { pending: { goal } });
+    await runtime.handleUserMessage(null, { ...ctx, message: 'غير متأكد' }, {}, false);
+    assert.equal(calls.length, 1);
+    await runtime.handleUserMessage(null, { ...ctx, message: 'إلغاء' }, {}, false);
+    assert.equal(getProjectMemory(ctx.username, 'one').buildDecision.pending, null);
+    assert.equal(calls.length, 1);
+});

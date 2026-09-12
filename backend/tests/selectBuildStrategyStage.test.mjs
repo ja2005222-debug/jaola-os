@@ -193,5 +193,5 @@ test('الحدود: شريحةُ الجسد — readCodeContext ×١، liveLog �
     assert.ok(!new RegExp(`\\banalyzeProjectStatic\\b`).test(typeof plain !== 'undefined' ? plain : jcr), 'analyzeProjectStatic غادر jcr مع JCR/31');
     assert.ok(!new RegExp(`\\bgetProjectMemory\\b`).test(typeof plain !== 'undefined' ? plain : jcr), 'getProjectMemory غادر jcr مع JCR/31');
     for (const n of ['getDomainModel', 'transitionState', 'STATES', 'resolveProjectType', 'readCodeContext', 'normalizeText', 'detectIntentFromMeaning']) assert.ok(new RegExp(`\\b${n}\\b`).test(plain), `${n} بقي له مستهلكٌ في jcr`);
-    assert.equal((plain.match(/this\.trackByRoom/g) || []).length, 2, 'الكاتبُ في handleUserMessage + الدالّةُ المربوطة في المفوِّض — لا قارئَ ثالث');
+    assert.equal((plain.match(/this\.trackByRoom/g) || []).length, 3, 'UI hint writer, confirmed build decision writer, and strategy reader');
 });
