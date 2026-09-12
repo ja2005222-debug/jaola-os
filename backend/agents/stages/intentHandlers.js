@@ -243,6 +243,10 @@ export async function handleUnifiedRoute(req, agents, reporter, gate, ops, route
                     reporter.send(roomName, 'chat_reply', { message: route.question });
                     return true;
                 }
+                if (route.action === 'diagnose') {
+                    await ops.generateChatResponse(`تشخيص للقراءة فقط: ${message}\nافحص السياق المتاح واشرح الأدلة وما لم يمكن التحقق منه. لا تدّع إصلاحًا أو اختبارًا لم تنفذه.`, username, roomName, userLang);
+                    return true;
+                }
                 if (route.action === 'chat') {
                     // 🛡️ شبكة أمان: الموجّه قد يصنّف تعديلاً صريحاً كمحادثة (حدث فعلاً مع
                     // "عدّل: ..."). أمرٌ صريح أو تكرار مُصِرّ على مشروع قائم يُنفَّذ تعديلاً

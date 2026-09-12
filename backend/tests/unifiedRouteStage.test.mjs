@@ -47,6 +47,16 @@ function harness({ dir = null, lang = 'ar' } = {}) {
     return { events, map, gateCalls, edits, chats, ctx, req, reporter, ops, gate, agents, routerCalls, run, replies, logs };
 }
 
+test('diagnosis bypasses all edit and insistence overrides', async () => {
+    const h = harness();
+    h.map.set(h.ctx.username, 'شكوى سابقة');
+    assert.equal(await h.run('أضغط حفظ وما يصير شيء', { action: 'diagnose', confidence: 100 }), true);
+    assert.equal(h.edits.length, 0);
+    assert.equal(h.chats.length, 1);
+    assert.ok(h.chats[0][0].includes('تشخيص للقراءة فقط'));
+    assert.deepEqual(h.gateCalls, []);
+});
+
 test('clarification blocks imperative and repeated-edit overrides', async () => {
     const h = harness();
     h.map.set(h.ctx.username, 'شيل ده');
@@ -154,7 +164,7 @@ test('الحدود: شريحةُ الجسد — gate has/delete/set/confirmReply
     assert.deepEqual(
         { has: count(/\bgate\.has\(/g), del: count(/\bgate\.delete\(/g), set: count(/\bgate\.set\(/g), confirm: count(/\bgate\.confirmReply\(/g), gateAll: count(/\bgate\.\w+/g) },
         { has: 1, del: 1, set: 1, confirm: 1, gateAll: 4 }, 'قِيست قبل النقل: الحجبُ يُقرأ ويُمسح ويُكتب وردُّه من الصنف');
-    assert.deepEqual({ edit: count(/ops\.surgicalEdit\(/g), chat: count(/ops\.generateChatResponse\(/g), all: count(/\bops\.\w+/g) }, { edit: 2, chat: 1, all: 3 });
+    assert.deepEqual({ edit: count(/ops\.surgicalEdit\(/g), chat: count(/ops\.generateChatResponse\(/g), all: count(/\bops\.\w+/g) }, { edit: 2, chat: 2, all: 4 });
     // 🏗️ سؤالُ الوجود فارقَ قارئَ المحتوى: `readCodeContext` ١ ← ٠ و`hasProjectSource` ٠ ← ١.
     //    نداؤه الواحد كان يُستهلَك بـ`length > 100` مرّتَين ولا شيءَ غيرَهما — سؤالُ وجودٍ بثوبِ قراءةِ محتوى.
     assert.equal(count(/\breadCodeContext\(/g), 0, 'قارئُ المحتوى لم يعد له مستهلكٌ هنا');

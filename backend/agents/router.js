@@ -18,13 +18,13 @@ import { isQuestionMessage } from './textNormalizer.js';
 import { arabicRequestContext, ARABIC_ROUTING_GUIDANCE } from './arabicRequestContext.js';
 
 // الأفعال المسموحة من الموجّه — أي شيء خارجها يُرفض (fallback للمسار القديم)
-const ACTIONS = new Set(['chat', 'edit', 'build', 'delete_project', 'stop']);
+const ACTIONS = new Set(['chat', 'diagnose', 'edit', 'build', 'delete_project', 'stop']);
 
 const SYSTEM = `أنت موجّه رسائل لمنصة بناء مواقع بالذكاء. صنّف رسالة المستخدم إلى فعل واحد. أعد JSON فقط:
-{ "action": "chat|edit|build|delete_project|stop", "instruction": "التعليمة الكاملة للتنفيذ (لـ edit/build فقط، بلغة المستخدم، مكتفية بذاتها)", "confidence": 0-100 }
+{ "action": "chat|diagnose|edit|build|delete_project|stop", "instruction": "التعليمة الكاملة للتنفيذ (لـ edit/build فقط، بلغة المستخدم، مكتفية بذاتها)", "confidence": 0-100 }
 
 الأفعال:
-- chat: سؤال، استفسار، رأي، تصحيح معلومة، حديث عام — أي شيء لا يطلب تغييراً ملموساً.
+- chat: سؤال، استفسار، رأي، تصحيح معلومة، حديث عام — أي شيء لا يطلب تغييراً ملموساً. diagnose: وصف عطل يحتاج تحليلًا للقراءة فقط، دون تنفيذ إصلاح.
 - edit: طلب تغيير/إضافة/حذف محتوى في الموقع القائم. إن كانت الرسالة إحالة مبهمة ("نفذهما"، "طبق ما قلته") فاكتب في instruction التغيير الفعلي مستخرجاً من "آخر رد للمساعد" في السياق.
 - build: طلب بناء موقع جديد من الصفر بأمر صريح (ابني/اصنع/build...) — ليس مجرد ذكر فكرة.
 - delete_project: طلب حذف/مسح المشروع أو الموقع كله (ليس عنصراً داخله).
@@ -58,6 +58,7 @@ const SYSTEM = `أنت موجّه رسائل لمنصة بناء مواقع با
  */
 export async function routeMessage(message, ctx = {}, llm = smartChat) {
     const arabic = arabicRequestContext(message);
+    if (arabic.diagnosisOnly) return { action: 'diagnose', instruction: '', confidence: 100, reason: 'شكوى تحتاج تشخيصًا دون تعديل' };
     const context = [
         `اسم المشروع الحالي: ${ctx.projectName || 'sandbox_app'}`,
         `المشروع فيه ملفات مبنية: ${ctx.hasProject ? 'نعم' : 'لا'}`,
@@ -84,6 +85,9 @@ export async function routeMessage(message, ctx = {}, llm = smartChat) {
     }
     route.confidence = Math.max(0, Math.min(100, Number(route.confidence) || 0));
     route.instruction = typeof route.instruction === 'string' ? route.instruction.trim() : '';
+    if (['edit', 'build'].includes(route.action) && arabic.correction) {
+        route.instruction = `${arabic.original}\n\nالتصحيح الأحدث المعتمد: ${arabic.correction}\nاحفظ بقية المتطلبات ولا تنفذ الاختيار الذي تراجع عنه المستخدم.`;
+    }
     if (['edit', 'build'].includes(route.action) && arabic.constraints.length) {
         route.instruction += `\n\nطلب المستخدم الأصلي وقيوده الملزمة:\n${arabic.original}`;
     }

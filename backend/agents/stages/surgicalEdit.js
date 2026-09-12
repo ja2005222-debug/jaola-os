@@ -26,6 +26,7 @@ import { recordEditAction, buildMetricsPayload } from '../../services/metricsSto
 import { writeProjectFile } from '../../core/runtime/workspacePaths.js';
 import { readProjectFiles, isReactProject, readReactSources } from '../projectReader.js';
 import { cleanPageName, readReactContent, findPage } from './reactPages.js';
+import { protectedEditFiles, assertProtectedEditFiles } from '../protectedEditFiles.js';
 
 /** ⚛️ PM/22 — هل يسمّي هذا النصُّ صفحةً موجودةً في المشروع؟ (لا يرمي أبداً؛ الغيابُ = لا). */
 async function namesAnExistingPage(projectPath, name) {
@@ -39,6 +40,8 @@ export async function runSurgicalEdit(instruction, ctx, reporter, ops) {
     const { projectPath, username, activeProject, roomName, agents } = ctx;
     const lang = getUserLanguage(username);
     const files = await readProjectFiles(projectPath);
+    const protectedNames = protectedEditFiles(instruction);
+    assertProtectedEditFiles(protectedNames, files, []);
 
     // 📸 نسخة احتياطية كاملة قبل كل تعديل — وقود أمر «تراجع» الفوري من
     // الشات (فشلها لا يعطّل التعديل أبداً).
@@ -48,6 +51,7 @@ export async function runSurgicalEdit(instruction, ctx, reporter, ops) {
     // PM/22: يُسأل القرصُ لا قائمةُ `files` — فقارئُ التعديل يعود بالصفحة وما تُحمّله وحدَها (PM/15)،
     //        فلا يرى `lib/content.js` أبداً. الاشتقاقُ منه كان يجعل هذا الشرطَ خطأً على كلِّ مشروع React.
     const isReact = await isReactProject(projectPath);
+    if (isReact && protectedNames.length) throw new Error('حماية الملفات في تعديل React تحتاج خطة محددة؛ لم يبدأ التعديل.');
 
     // 🗂️ عمليات الصفحات لمشروع React (تزايدية، تحفظ باقي المحتوى) — قبل فحص
     // "التغيير الكبير" (الذي يلتقط "صفحة/صفحات" ويعيد البناء بالكامل).
@@ -80,6 +84,7 @@ export async function runSurgicalEdit(instruction, ctx, reporter, ops) {
     // فيدهس الكلون العامل). إضافة الصفحات/الميزات تبقى تعديلاً جراحياً.
     const bigChange = /أعد التصميم|اعد التصميم|أعد البناء|اعد البناء|أعد بناء|اعد بناء|من جديد|من الصفر|ابنِ?\s|ابن\s|أبنِ?\s|تطبيق\s+جديد|موقع\s+جديد|redesign|rebuild|from scratch|start over/i.test(instruction);
     if (files.length === 0 || bigChange || !agents.coreEditCodePlan) {
+        if (protectedNames.length) throw new Error('لا يمكن إعادة بناء المشروع مع ملفات محمية في هذا التعديل.');
         return ops.runMission(instruction, ctx);
     }
 
@@ -144,6 +149,7 @@ export async function runSurgicalEdit(instruction, ctx, reporter, ops) {
         } catch (e) {
             reporter.liveLog(roomName, 'EDIT', 'SurgicalEditor', `⚠️ تعذّر — عودة للبناء الكامل: ${e.message}`);
             reporter.send(roomName, 'stream_done', {});
+            if (protectedNames.length) throw new Error('أُوقف الانتقال إلى إعادة البناء حفاظًا على الملفات المحمية.');
             return ops.runMission(instruction, ctx);
         }
     }
@@ -152,6 +158,7 @@ export async function runSurgicalEdit(instruction, ctx, reporter, ops) {
     // فشل الجراحي → عودة آمنة للبناء الكامل
     if (!plan || plan.error || !plan.files?.length) {
         reporter.liveLog(roomName, 'EDIT', 'SurgicalEditor', '⚠️ بلا نتيجة — عودة للبناء الكامل');
+        if (protectedNames.length) throw new Error('أُوقف الانتقال إلى إعادة البناء حفاظًا على الملفات المحمية.');
         return ops.runMission(instruction, ctx);
     }
 
@@ -163,6 +170,7 @@ export async function runSurgicalEdit(instruction, ctx, reporter, ops) {
     const guarded = await ensureEditIntegrity(
         await guardFiles(scrubPlaceholders(plan.files, activeProject), emitGuard),
         projectPath, emitGuard);
+    assertProtectedEditFiles(protectedNames, files, guarded);
     for (const file of guarded) {
         await writeProjectFile(projectPath, file.name, file.content);
     }
@@ -244,6 +252,15 @@ export async function runSurgicalEdit(instruction, ctx, reporter, ops) {
         }
     } catch (e) { console.warn('[RegressionGuard]', 'تعذّر فحص ما بعد الإصلاح:', e.message); }
 
+    if (protectedNames.length) {
+        const after = await readProjectFiles(projectPath);
+        const changed = protectedNames.filter(name => after.find(file => file.name === name)?.content !== files.find(file => file.name === name).content);
+        if (changed.length) {
+            for (const name of changed) await writeProjectFile(projectPath, name, files.find(file => file.name === name).content);
+            reporter.send(roomName, 'chat_reply', { message: 'غيّر الإصلاح التلقائي ملفًا محميًا؛ استعدت محتواه. التعديل يحتاج مراجعة قبل اعتباره ناجحًا.' });
+            return { success: false, restoredProtectedFiles: changed };
+        }
+    }
     reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
 
     const changedNames = guarded.map(f => f.name).join('، ');

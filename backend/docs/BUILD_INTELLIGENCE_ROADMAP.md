@@ -8,6 +8,10 @@ Scope: Chat, Router, Site/System tracks, Agents, Plugins, Verification, Memory, 
 
 ### Arabic understanding checkpoint — 2026-09-12
 
+Correction/diagnosis checkpoint: latest explicit `أقصد/قصدي` correction is retained with the original request rather than replaced by a model paraphrase. Recognized symptom-only reports use a read-only chat diagnosis route that bypasses edit/insistence overrides; it is analysis of available context, not a claim that a browser test or repair ran. Explicit requests to fix remain eligible for editing.
+
+Protection checkpoint: explicitly named protected files are checked against the entire generic edit proposal before writes. A later autofix that changes a protected file has that file restored and the result marked unsuccessful. Unknown protected filenames, React edits with explicit protection, and fallback rebuilds are blocked. This does not yet enforce semantic invariants such as unchanged accounting calculations, does not roll back all other files atomically, and is not a platform-wide filesystem sandbox. Those guarantees require domain tests and transactional editing.
+
 Implemented: Arabic semantic routing guidance (dialects, mixed Arabic/code, negation, deferred requests, ambiguous references); preservation of the original constrained request in execution instructions; an explicit clarification response that cannot be promoted into an edit by the imperative/repetition fallback; and a narrow dialectal correction for `صلح الطلبات بس ما تغير الأسعار` in question detection. The original text is preserved separately from normalization. Existing Arramooz data remains in use without duplication.
 
 Validation scope: deterministic regression tests with injected model responses verify safety and data preservation. They do not measure the live model's Arabic understanding accuracy.

@@ -103,6 +103,33 @@ test('عودةٌ للبناء: ops.runMission(instruction, ctx) بالسياق �
     } finally { cleanup(dir); cleanup(empty); }
 });
 
+test('protected file changes reject the whole proposal before writing', async () => {
+    const dir = staticProject();
+    try {
+        const before = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
+        const h = harness(dir, { plan: { files: [
+            { name: 'index.html', content: before.replace('مطعم', 'عنوان جديد') },
+            { name: 'app.js', content: jsWith([...FNS, 'newFeature']) },
+        ] } });
+        await assert.rejects(() => h.run('عدّل العنوان، لا تلمس ملف app.js'), /الملف المحمي/);
+        assert.equal(h.appJs(), ORIGINAL_JS);
+        assert.equal(fs.readFileSync(path.join(dir, 'index.html'), 'utf8'), before);
+    } finally { cleanup(dir); }
+});
+
+test('autofix cannot silently replace protected content', async () => {
+    const dir = staticProject();
+    try {
+        const before = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
+        const h = harness(dir, { plan: { files: [{ name: 'index.html', content: before.replace('مطعم', 'عنوان جديد') }] },
+            autofix: async () => fs.writeFileSync(path.join(dir, 'app.js'), ORIGINAL_JS + '\n// changed') });
+        const result = await h.run('عدّل العنوان، لا تلمس ملف app.js');
+        assert.equal(result.success, false);
+        assert.deepEqual(result.restoredProtectedFiles, ['app.js']);
+        assert.equal(h.appJs(), ORIGINAL_JS);
+    } finally { cleanup(dir); }
+});
+
 test('فشلُ المولّد وخطّتُه الفارغة → بناءٌ كامل، stream_done مرّةً واحدة، ولا كتابةَ على القرص', async () => {
     const dir = staticProject();
     try {
@@ -186,8 +213,8 @@ test('الحدود: لا this، لا استيرادَ من jcr، خمسُ دوا
         { runMission: 3, renamePage: 1, deletePage: 1, addPage: 1, verify: 1 }, 'قِيست قبل النقل: ٣ عوداتٍ للبناء + ٣ عمليّاتِ صفحات + تحقّقٌ واحد');
     assert.equal(count(/\bops\.\w+/g), 7, 'لا نداءَ على ops غيرَ الخمس');
     assert.equal(count(/reporter\.io\b/g), 1, 'تسريبُ io واحد — للدفع التلقائيّ');
-    assert.equal(count(/reporter\.liveLog\(/g), 11); assert.equal(count(/reporter\.send\(/g), 11);
-    assert.equal(count(/\breadProjectFiles\(/g), 3); assert.equal(count(/\bcleanPageName\(/g), 3);
+    assert.equal(count(/reporter\.liveLog\(/g), 11); assert.equal(count(/reporter\.send\(/g), 12);
+    assert.equal(count(/\breadProjectFiles\(/g), 4); assert.equal(count(/\bcleanPageName\(/g), 3);
 
     const jcr = fs.readFileSync(path.join(HERE, '../agents/jcr.js'), 'utf8');
     assert.ok(jcr.includes(`\n    async _runSurgicalEditNow(instruction, ctx) {
