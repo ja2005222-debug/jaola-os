@@ -4,7 +4,20 @@ export const FULLSTACK_ADMIN_LIB = `import config from './jaola-auth-config.json
 const cookieName = process.env.NODE_ENV === 'production' ? '__Host-jaola-admin' : 'jaola-admin';
 const cookieOptions = '; HttpOnly; SameSite=Strict; Path=/' + (process.env.NODE_ENV === 'production' ? '; Secure' : '');
 const json = (body, status = 200, headers = {}) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store', ...headers } });
-export const sameOrigin = request => request.headers.get('origin') === new URL(request.url).origin;
+export function sameOrigin(request) {
+  try {
+    const raw = request.headers.get('origin');
+    const origin = new URL(raw);
+    if (raw !== origin.origin || !['https:', 'http:'].includes(origin.protocol)) return false;
+    // Next may expose an internal request URL behind a proxy. Host is the browser's
+    // request authority; do not accept arbitrary forwarded-host headers.
+    const authority = request.headers.get('host') || new URL(request.url).host;
+    const target = new URL(origin.protocol + '//' + authority);
+    if (target.username || target.password || target.pathname !== '/') return false;
+    if (origin.host !== target.host) return false;
+    return origin.protocol === 'https:' || process.env.NODE_ENV !== 'production' || ['localhost', '127.0.0.1'].includes(origin.hostname);
+  } catch { return false; }
+}
 function configuration() {
   const base = new URL(config.api);
   if (base.username || base.password || (base.protocol !== 'https:' && !(base.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(base.hostname)))) throw Error('Invalid authentication service');

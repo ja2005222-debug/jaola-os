@@ -178,3 +178,5 @@ Private data is not embedded in the administrator page shell. Responses and auth
 Validation adds an actual generated Next/SQLite build and HTTP smoke flow in CI (the platform auth HTTP boundary is stubbed there). Separate local tests use the real platform password/session functions to verify correct passwords, project isolation, revocation after owner reset, cookie flags, CSRF rejection, service outages and owner-only setup navigation.
 
 Local verification: 2,246 backend tests discovered, 2,245 passed, zero failures, one real-Mongo test skipped locally. The platform frontend production build passed. Generated Next/SQLite execution is separately gated in CI; no customer production deployment was performed.
+
+The first generated-app HTTP run caught a Next proxy-origin mismatch after a successful production build. Origin checking now compares the browser Origin with the request Host authority, rejects foreign/opaque origins and insecure non-loopback production origins, and does not trust arbitrary forwarded-host values. A regression test covers this deployment case.

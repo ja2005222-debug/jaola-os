@@ -106,3 +106,15 @@ test('owner setup link survives sign-in and opens only the matching owned projec
     vm.runInContext(source, c);
     assert.equal(opened.length, 1); assert.equal(notifications.length, 1);
 });
+
+test('Origin checks use public Host behind Next proxy without trusting forwarded-host or foreign origins', () => {
+    const c = harness(async () => { throw Error('unused'); });
+    const proxy = (origin, host = 'app.test', forwarded = '') => new Request('http://internal:3000/api/admin/login', { method:'POST', headers:{ Origin:origin, Host:host, 'X-Forwarded-Host':forwarded } });
+    assert.equal(c.sameOrigin(proxy('https://app.test')), true);
+    assert.equal(c.sameOrigin(proxy('https://attacker.test', 'app.test', 'attacker.test')), false);
+    assert.equal(c.sameOrigin(proxy('http://app.test')), false);
+    assert.equal(c.sameOrigin(proxy('https://app.test:444')), false);
+    assert.equal(c.sameOrigin(proxy('null')), false);
+    assert.equal(c.sameOrigin(proxy('https://app.test/extra')), false);
+    assert.equal(c.sameOrigin(proxy('http://127.0.0.1:4762', '127.0.0.1:4762')), true);
+});
