@@ -231,7 +231,7 @@ test('public data handlers reject invalid identity before touching storage', asy
     let reads = 0, writes = 0;
     vm.runInNewContext(source.slice(start, end), {
         app: { post: () => {}, get: (p, limit, fn) => { handlers.get = fn; }, put: (p, limit, fn) => { handlers.put = fn; } },
-        appDataLimit: () => {}, APPDATA_DIR: 'unused',
+        appDataLimit: () => {}, requireProjectSession: () => {}, APPDATA_DIR: 'unused',
         verifyBotToken: token => token === 'valid' ? { u: 'alice', p: 'shop' } : null,
         transactionStore: () => ({ snapshot: async () => { reads++; throw new Error('database unavailable'); } }),
         writeAppDataKey: () => { writes++; return { ok: true }; },

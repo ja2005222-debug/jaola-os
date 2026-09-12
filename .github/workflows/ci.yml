@@ -156,3 +156,23 @@ jobs:
       - name: بناء إنتاجي كامل
         working-directory: frontend
         run: npm run build
+
+  generated-admin:
+    name: دخول الأدمن في القالب المولد
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: توليد قالب الاختبار
+        run: node backend/scripts/testGeneratedAdmin.mjs prepare /tmp/jaola-admin-smoke
+      - name: بناء Next وقاعدة SQLite
+        working-directory: /tmp/jaola-admin-smoke
+        run: |
+          npm install --ignore-scripts
+          npx prisma db push
+          npm run build
+      - name: اختبار الدخول والحفظ والخروج
+        run: node backend/scripts/testGeneratedAdmin.mjs test /tmp/jaola-admin-smoke

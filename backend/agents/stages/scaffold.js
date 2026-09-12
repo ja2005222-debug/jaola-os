@@ -7,6 +7,7 @@
  * مفوِّضاتٍ باقيةٍ في jcr. نقلٌ حرفيّ.
  */
 import path from 'path';
+import { signBotToken } from '../jaolaBotToken.js';
 import { updateDesign, updateStructure } from '../projectMemory.js';
 import { generateAdvancedModules } from '../backendAgent.js';
 import { recommendFullStack, buildFullStackProject } from '../fullstackTemplates.js';
@@ -43,7 +44,17 @@ export async function runFullStackScaffold(context, roomName, reporter) {
             context.originalGoal, context.blueprint?.category, context.blueprint?.kind
         );
         if (fsRec.fullstack) {
-            const { category, files } = buildFullStackProject(fsRec.category, context.activeProject);
+            const api = (process.env.PUBLIC_BACKEND_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
+            let ownerUrl = '';
+            if (api) {
+                const url = new URL('/dashboard', process.env.FRONTEND_URL || api);
+                url.searchParams.set('setupProject', context.activeProject);
+                url.searchParams.set('setupOwner', context.username);
+                ownerUrl = url.href;
+            }
+            const { category, files } = buildFullStackProject(fsRec.category, context.activeProject, {
+                api, ownerUrl, token: api ? signBotToken({ u: context.username, p: context.activeProject }) : '',
+            });
             for (const file of files) {
                 await writeProjectFile(path.join(context.projectPath, 'fullstack'), file.name, file.content);
             }
