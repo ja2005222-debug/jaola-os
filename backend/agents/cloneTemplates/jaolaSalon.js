@@ -97,7 +97,7 @@ const SEED_STAFF = [
 function futureDate(days) { var d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); }
 
 function load(k, fb) { try { var v = localStorage.getItem('jsal_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jsal_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jsal_' + k, JSON.stringify(val)); }
 let services = load('services', SEED_SERVICES);
 let staff = load('staff', SEED_STAFF);
 let appts = load('appts', []); // { id, no, svcId, staffId, name, phone, date, time }

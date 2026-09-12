@@ -101,7 +101,7 @@ const ROWS = ['A', 'B', 'C', 'D', 'E'];
 const COLS = 8;
 
 function load(k, fb) { try { var v = localStorage.getItem('jcin_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jcin_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jcin_' + k, JSON.stringify(val)); }
 let movies = load('movies', SEED_MOVIES);
 let showtimes = load('showtimes', SEED_SHOWTIMES);
 let bookings = load('bookings', []); // { id, no, showId, seats:[], total, date }

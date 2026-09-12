@@ -132,7 +132,7 @@ const TYPES = ['الكل', 'شقة', 'فيلا', 'أرض'];
 const STAFF = { admin: { pass: '1234', role: 'admin', name: 'مدير المكتب' } };
 
 function load(key, fb) { try { var v = localStorage.getItem('jre_' + key); return v ? JSON.parse(v) : fb; } catch { return fb; } }
-function save(key, val) { try { localStorage.setItem('jre_' + key, JSON.stringify(val)); } catch {} }
+function save(key, val) { localStorage.setItem('jre_' + key, JSON.stringify(val)); }
 
 let properties = load('properties', PROPERTIES.slice());
 let inquiries = load('inquiries', []);

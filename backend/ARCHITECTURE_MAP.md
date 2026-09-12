@@ -38,7 +38,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## A) `backend/server.js` — 3952 سطراً، 160 مساراً، 103 استيراداً محلياً
+## A) `backend/server.js` — 3970 سطراً، 161 مساراً، 104 استيراداً محلياً
 
 لا يُفكَّك دفعة واحدة (البند 19). الخريطة **حسب المجال** لأن الملف واحد؛ كل صف = مرشّح
 ملف `routes/<domain>.js` مستقبلاً على نمط `routes/billing.js` القائم فعلاً («أول
@@ -203,7 +203,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## D) `backend/services/*` — 75 وحدة
+## D) `backend/services/*` — 77 وحدة
 
 ### D1. وقت التشغيل (مرشّحة لـ`core/`)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
@@ -229,7 +229,7 @@ Policy/Permission، Identity، Plugin.
 | `deployAutomation.js`, `customDomains.js`, `hostNames.js`, `githubSync.js`, `githubFiles.js`, `projectExport.js`, `projectManager.js` | 239/207/37/111/136/37/99 | نشر ونطاقات وGitHub وتصدير | MODIFY | Tool (كل واحدة أداة بـriskLevel) + Transaction (للنشر) | `plugins/coding/tools/` |
 | `projectRecord.js` | 97 | بوّابةُ الكتابة على سجلّ المشروع (upsert + حارسُ اتّصالٍ + ناتجٌ صادق) | KEEP | Repository | `plugins/coding/tools/` |
 | `reactPreview.js`, `twin.js` | 477/69 | معاينة وتعديل | KEEP | Tool | `plugins/coding/` |
-| `siteConnect.js`, `siteCms.js`, `siteInbox.js`, `siteCreds.js`, `newsletterSubscribers.js`, `projectAuth.js`, `projectSecrets.js`, `storeKey.js`, `dataSync.js`, `appData.js`, `appCollections.js`, `appAssets.js` | 128/118/97/65/60/79/138/63/176/58/82/76 | خدمات مواقع العملاء المنشورة | KEEP | — | `plugins/coding/runtime-services/` |
+| `siteConnect.js`, `siteCms.js`, `siteInbox.js`, `siteCreds.js`, `newsletterSubscribers.js`, `projectAuth.js`, `projectSecrets.js`, `storeKey.js`, `dataSync.js`, `appData.js`, `appCollections.js`, `appAssets.js` | 128/118/97/65/60/79/138/63/178/58/83/76 | خدمات مواقع العملاء المنشورة | KEEP | — | `plugins/coding/runtime-services/` |
 | `imageService.js`, `aiImages.js` | 92/433 | صور | KEEP | Provider | `plugins/coding/` |
 | `platformKnowledge.js` | 89 | معرفة للمساعد | KEEP | Memory | كما هي |
 
@@ -246,6 +246,10 @@ Policy/Permission، Identity، Plugin.
 | `adminService.js`, `adminUsers.js` | 234/66 | إدارة الإضافات والملفات والمستخدمين | KEEP | Permission | `routes/admin.js` |
 | `agentMarket.js`, `agentConversations.js` | 90/75 | المستخدم يصنع وكلاءه + محادثاتهم | MODIFY | Plugin + Agent (Registry) | `core/plugins/PluginRegistry.js` |
 | `botTenants.js` | 37 | مستأجرو جولا بوت | MOVE | Plugin (bot) | `plugins/bot/` |
+
+| `projectTransactions.js` | 77 | حفظ ذري لوثيقة المشروع؛ رقم نسخة وإيصالات منع تكرار الطلبات | KEEP | Storage | `services/` |
+
+| `transactionSyncClient.js` | 104 | تجميع تغييرات القوالب وانتظار تأكيد الخادم وإيقاف الكتابة عند التعارض | KEEP | Storage | `services/` |
 
 ### D5. أعمدة منتجات تعيش في `services/` (ليست نواة)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |

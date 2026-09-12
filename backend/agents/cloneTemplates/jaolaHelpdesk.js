@@ -102,7 +102,7 @@ const STAGE_LABEL = { open: 'مفتوحة', in_progress: 'قيد المعالج�
 const PRIORITY_LABEL = { low: 'منخفضة', normal: 'عادية', high: 'عاجلة' };
 
 function load(k, fb) { try { var v = localStorage.getItem('jhelp_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jhelp_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jhelp_' + k, JSON.stringify(val)); }
 let tickets = load('tickets', []); // { id, no, customer, subject, desc, priority, stage, replies:[{who,text,at}], createdAt, resolvedAt }
 let settings = load('settings', { name: 'دعم jaola الفني', pass: 'admin', ticketSeq: 1 });
 let session = load('session', null);

@@ -14,6 +14,7 @@
 import fs from 'fs';
 import path from 'path';
 import { projectSessionClient } from './projectSessionClient.js';
+import { transactionSyncClient } from './transactionSyncClient.js';
 
 const DATA_FILE = 'jaola-data.js';
 // يطابق <script src="app.js"> بأي ترتيب/وجود سمة type (مثل type="text/babel"
@@ -88,6 +89,7 @@ export function buildDataSyncJS({ apiBase, token, appScript = 'app.js', appScrip
   }
 
   if (!API || !TOKEN) { loadApp(); return; }
+  ${requireSession ? `(${transactionSyncClient.toString()})(API, TOKEN, loadApp); return;` : ''}
 
   // Storage methods must be patched on the prototype; assigning an instance
   // property may simply create a storage key in real browsers.
@@ -166,11 +168,11 @@ export function installDataSync(projectPath, { apiBase, token }) {
         const type = previous.match(/var APP_TYPE = ("[^"\n]*");/);
         if (type) appScriptType = JSON.parse(type[1]);
         const updated = buildDataSyncJS({ apiBase, token, appScriptType });
-        if (previous === updated) return { skipped: true };
+        if (previous === updated) return { skipped: true, ready: true };
         fs.writeFileSync(scriptPath, updated);
-        return { ok: true, updated: true };
+        return { ok: true, updated: true, ready: true };
     }
     fs.writeFileSync(scriptPath, buildDataSyncJS({ apiBase, token, appScriptType }));
     fs.writeFileSync(idxPath, next);
-    return { ok: true };
+    return { ok: true, ready: true };
 }

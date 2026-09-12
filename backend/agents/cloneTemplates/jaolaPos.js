@@ -114,7 +114,7 @@ const ROLES = {
 const TAB_LABELS = { pos: 'البيع', products: 'المنتجات', shift: 'الوردية', reports: 'التقارير', settings: 'الإعدادات' };
 
 function load(k, fb) { try { var v = localStorage.getItem('jpos_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jpos_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jpos_' + k, JSON.stringify(val)); }
 let products = load('products', SEED_PRODUCTS);
 let sales = load('sales', []);
 let shifts = load('shifts', []);
@@ -190,6 +190,7 @@ function decCart(i) { state.cart[i].qty--; if (state.cart[i].qty <= 0) state.car
 function clearCart() { state.cart = []; renderCart(); }
 function cartTotal() { var cents = 0; for (var i = 0; i < state.cart.length; i++) cents += state.cart[i].qty * Math.round(state.cart[i].price * 100); return cents / 100; }
 function pay(method) {
+  if (state.paying) { toast('جارٍ تأكيد البيع السابق'); return; }
   if (!state.cart.length) { toast('السلة فارغة'); return; }
   if (!state.user || ['cash', 'card'].indexOf(method) < 0) { toast('تحقق من الدخول وطريقة الدفع'); return; }
   if (!Number.isSafeInteger(settings.receiptSeq) || settings.receiptSeq < 1 || settings.receiptSeq >= Number.MAX_SAFE_INTEGER) { toast('رقم الإيصال غير صالح؛ راجع الإعدادات'); return; }
@@ -203,8 +204,16 @@ function pay(method) {
   var sale = { id: uid('s'), no: settings.receiptSeq++, items: state.cart.map(function (line) { return Object.assign({}, line, { price: Math.round(line.price * 100) / 100 }); }), total: cents / 100, method: method, date: today(), ts: Date.now(), cashier: state.user.role };
   sales.push(sale); save('sales', sales); save('settings', settings);
   state.cart = []; renderCart();
-  try { printReceipt(sale); } catch (e) { toast('سُجل البيع #' + sale.no + '، لكن تعذّرت الطباعة. لا تُعد تسجيل البيع.'); return; }
-  toast('تم البيع #' + sale.no + ' (' + (method === 'cash' ? 'نقدي' : 'شبكة') + ')');
+  function confirmed() {
+    try { printReceipt(sale); } catch (e) { toast('سُجل البيع #' + sale.no + '، لكن تعذّرت الطباعة. لا تُعد تسجيل البيع.'); return; }
+    toast('تم البيع #' + sale.no + ' (' + (method === 'cash' ? 'نقدي' : 'شبكة') + ')');
+  }
+  if (window.JAOLA_SYNC && window.JAOLA_SYNC.flush) {
+    state.paying = true;
+    window.JAOLA_SYNC.flush().then(confirmed).catch(function () {
+      toast('لم يتأكد حفظ البيع. راجع السجل بعد تحميل أحدث نسخة قبل إعادة العملية.');
+    }).finally(function () { state.paying = false; });
+  } else confirmed();
 }
 function printReceipt(sale) {
   var rows = sale.items.map(function (l) {

@@ -174,7 +174,7 @@ const ORDER_FLOW = ['جديد', 'قيد التجهيز', 'تم الشحن', 'م�
 const LOW_STOCK = 5;
 
 function load(key, fb) { try { var v = localStorage.getItem('jstore_' + key); return v ? JSON.parse(v) : fb; } catch { return fb; } }
-function save(key, val) { try { localStorage.setItem('jstore_' + key, JSON.stringify(val)); } catch {} }
+function save(key, val) { localStorage.setItem('jstore_' + key, JSON.stringify(val)); }
 
 let products = load('products', PRODUCTS.slice());
 let orders = load('orders', []);

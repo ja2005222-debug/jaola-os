@@ -90,7 +90,7 @@ function addDaysStr(days) { var d = new Date(); d.setDate(d.getDate() + days); r
 function daysBetween(a, b) { return Math.round((new Date(b) - new Date(a)) / 86400000); }
 
 function load(k, fb) { try { var v = localStorage.getItem('jcar_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jcar_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jcar_' + k, JSON.stringify(val)); }
 let cars = load('cars', SEED_CARS);
 let reservations = load('reservations', []); // { id, no, carId, renter, phone, start, end, days, total, createdAt }
 let settings = load('settings', { name: 'تأجير سيارات jaola', pass: 'admin', currency: 'ر.س', resSeq: 1 });

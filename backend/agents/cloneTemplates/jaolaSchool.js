@@ -155,7 +155,7 @@ const SCHEDULE = [
 const state = { user: null, view: 'home', authMode: 'login' };
 
 function load(key, fb) { try { var v = localStorage.getItem('jsch_' + key); return v ? JSON.parse(v) : fb; } catch { return fb; } }
-function save(key, val) { try { localStorage.setItem('jsch_' + key, JSON.stringify(val)); } catch {} }
+function save(key, val) { localStorage.setItem('jsch_' + key, JSON.stringify(val)); }
 
 let grades = load('grades', [
   { student: 'سالم', subject: 'الرياضيات', score: 92 },

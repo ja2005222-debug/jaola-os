@@ -125,7 +125,7 @@ const STAGES = ['waiting', 'repairing', 'ready', 'delivered'];
 const STAGE_LABELS = { waiting: 'بالانتظار', repairing: 'قيد الإصلاح', ready: 'جاهزة', delivered: 'مُسلّمة' };
 
 function load(k, fb) { try { var v = localStorage.getItem('jwork_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jwork_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jwork_' + k, JSON.stringify(val)); }
 let customers = load('customers', SEED_CUSTOMERS);
 let jobs = load('jobs', []); // { id, no, custId, complaint, items:[], stage, date }
 let settings = load('settings', { name: 'ورشة jaola', currency: 'ر.س', pass: 'admin', jobSeq: 1 });

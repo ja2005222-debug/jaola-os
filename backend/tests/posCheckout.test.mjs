@@ -29,3 +29,23 @@ test('POS printer failure cannot leave a paid cart ready for duplicate checkout'
     assert.equal(r.sales.length,1);assert.equal(r.cart.length,0);assert.equal(r.sequence,2);
     assert.ok(r.messages.some(m=>m.includes('الطباعة')));
 });
+
+test('POS waits for server acknowledgement before printing and prevents overlapping checkout', async () => {
+    let acknowledge;
+    const c = vm.createContext({ localStorage: { getItem: () => null, setItem() {} }, document: { addEventListener() {} }, window: { JAOLA_SYNC: { flush: () => new Promise(resolve => { acknowledge = resolve; }) } } });
+    vm.runInContext(jaolaPos().files.find(f => f.name === 'app.js').content, c);
+    vm.runInContext("globalThis.prints=0;toast=function(){};renderCart=function(){};printReceipt=function(){prints++;};state.user={role:'cashier'};state.cart=[{pid:'a',qty:1,price:2}];pay('cash');state.cart=[{pid:'b',qty:1,price:3}];pay('cash');", c);
+    assert.equal(vm.runInContext('prints', c), 0);
+    assert.equal(vm.runInContext('sales.length', c), 1);
+    acknowledge(); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(vm.runInContext('prints', c), 1);
+    assert.equal(vm.runInContext('state.paying', c), false);
+});
+
+test('POS never prints an unacknowledged transaction', async () => {
+    const c = vm.createContext({ localStorage: { getItem: () => null, setItem() {} }, document: { addEventListener() {} }, window: { JAOLA_SYNC: { flush: () => Promise.reject(Error('conflict')) } } });
+    vm.runInContext(jaolaPos().files.find(f => f.name === 'app.js').content, c);
+    vm.runInContext("globalThis.prints=0;toast=function(){};renderCart=function(){};printReceipt=function(){prints++;};state.user={role:'cashier'};state.cart=[{pid:'a',qty:1,price:2}];pay('cash');", c);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(vm.runInContext('prints', c), 0);
+});

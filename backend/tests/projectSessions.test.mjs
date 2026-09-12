@@ -131,7 +131,7 @@ test('generated sync script waits for login and successful hydration before load
         w.fetch = async (url, options = {}) => {
             calls.push({ url, options });
             if (String(url).endsWith('/auth/login')) return new Response(JSON.stringify({ session: 'session' }));
-            return new Response(JSON.stringify({ orders: 'server-data' }));
+            return new Response(JSON.stringify({ revision: 0, data: { orders: 'server-data' } }));
         };
         w.eval(buildDataSyncJS({ apiBase: 'https://api.example', token: 'public' }));
         assert.equal(calls.length, 0);

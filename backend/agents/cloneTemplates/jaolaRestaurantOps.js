@@ -116,7 +116,7 @@ const TAB_LABELS = { tables: 'الطاولات', kitchen: 'المطبخ', menu: 
 const STAGES = { new: 'جديد', preparing: 'تحضير', ready: 'جاهز' };
 
 function load(k, fb) { try { var v = localStorage.getItem('jrest_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jrest_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jrest_' + k, JSON.stringify(val)); }
 let menu = load('menu', SEED_MENU);
 let orders = load('orders', {}); // tableNo → { lines:[], sentAt }
 let tickets = load('tickets', []); // KDS: { id, table, items, stage }

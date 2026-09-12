@@ -165,9 +165,9 @@ const state = {
 };
 
 function loadOrders() { try { return JSON.parse(localStorage.getItem('fd_orders') || '[]'); } catch { return []; } }
-function saveOrders() { try { localStorage.setItem('fd_orders', JSON.stringify(state.orders)); } catch {} }
+function saveOrders() { localStorage.setItem('fd_orders', JSON.stringify(state.orders)); }
 function loadCustomer() { try { return JSON.parse(localStorage.getItem('fd_customer') || 'null'); } catch { return null; } }
-function saveCustomer() { try { localStorage.setItem('fd_customer', JSON.stringify(state.customer)); } catch {} }
+function saveCustomer() { localStorage.setItem('fd_customer', JSON.stringify(state.customer)); }
 function money(n) { return Number(n || 0).toFixed(0); }
 function findRestaurant(id) { return RESTAURANTS.find(r => r.id === id) || null; }
 function findItem(rid, mid) { const r = findRestaurant(rid); return r ? r.menu.find(m => m.id === mid) : null; }

@@ -111,7 +111,7 @@ const STAGES = ['received', 'washing', 'ready', 'delivered'];
 const STAGE_LABEL = { received: 'تم الاستلام', washing: 'قيد الغسيل', ready: 'جاهز للاستلام', delivered: 'تم التسليم' };
 
 function load(k, fb) { try { var v = localStorage.getItem('jlndry_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jlndry_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jlndry_' + k, JSON.stringify(val)); }
 let catalog = load('catalog', SEED_CATALOG);
 let orders = load('orders', []); // { id, no, customer, phone, lines:[{garmentId,name,price,qty}], total, stage, createdAt }
 let settings = load('settings', { name: 'مغسلة jaola', pass: 'admin', currency: 'ر.س', orderSeq: 1 });

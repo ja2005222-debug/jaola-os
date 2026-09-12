@@ -268,7 +268,7 @@ var I18N = {
 };
 
 function load(k, fb) { try { var v = localStorage.getItem('jcrypto_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jcrypto_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jcrypto_' + k, JSON.stringify(val)); }
 
 var MAX_WATCHLIST = 20; // سقف تقني مطلق (دفعة CoinGecko الواحدة) — الحد الفعلي (watchlistMax) قد يكون أقل حسب الخطة
 var TIMEFRAME_ORDER = ['day', 'week', 'long'];

@@ -91,7 +91,7 @@ function todayStr() { return new Date().toISOString().slice(0, 10); }
 function toMinutes(hhmm) { var p = (hhmm || '00:00').split(':'); return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0); }
 
 function load(k, fb) { try { var v = localStorage.getItem('jcowork_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jcowork_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jcowork_' + k, JSON.stringify(val)); }
 let spaces = load('spaces', SEED_SPACES);
 let reservations = load('reservations', []); // { id, no, spaceId, member, phone, date, start, end, hours, total, createdAt }
 let settings = load('settings', { name: 'مساحة jaola المشتركة', pass: 'admin', currency: 'ر.س', resSeq: 1 });

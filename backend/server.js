@@ -92,12 +92,13 @@ import { subscribe as subscribeNewsletter, listSubscribers as listNewsletterSubs
 import { installSiteConnect } from './services/siteConnect.js';
 import { applySeoPack } from './agents/seoPack.js';
 import { installDataSync } from './services/dataSync.js';
-import { readStore as readAppDataStore, writeKey as writeAppDataKey } from './services/appData.js';
+import { readStore as readAppDataStore } from './services/appData.js';
 import { recordError, recentErrors } from './services/errorLog.js';
 import { recordAdminAction, recentAdminActions } from './services/adminAudit.js';
 import { listUsers as listAdminUsers, setUserPlan } from './services/adminUsers.js';
 import { verifyPassword as verifyProjectPassword, setPassword as setProjectPassword } from './services/projectAuth.js';
 import { credentialVersion, issueProjectSession, projectSessionGuard } from './services/projectSessions.js';
+import { projectTransactions } from './services/projectTransactions.js';
 import { broadcastPresence } from './services/presence.js';
 import { saveAsset, readAsset } from './services/appAssets.js';
 import { listMarkets, getAnalysis, getOpportunities, searchCoins, isValidCoinId, MAX_WATCHLIST, SUPPORTED_COINS, TIMEFRAMES, findCoin } from './services/cryptoMarket.js';
@@ -110,7 +111,7 @@ import { getTokenRegistry as getTradingBotTokenRegistry, upsertToken as upsertTr
 import { listTrades as listTradingBotTrades, readPositions as readTradingBotPositions, readHeartbeat as readTradingBotHeartbeat } from './services/tradingBotLedger.js';
 import { getCircuitBreakerStatus as getTradingBotCircuitBreakerStatus } from './services/tradingBotCircuitBreaker.js';
 import { getPerformanceStats as getTradingBotPerformance, getRecentSkipSummary as getTradingBotSkipSummary } from './services/tradingBotStats.js';
-import { listRecords as listCollectionRecords, upsertRecord as upsertCollectionRecord, deleteRecord as deleteCollectionRecord } from './services/appCollections.js';
+import { listRecords as listCollectionRecords } from './services/appCollections.js';
 import { summarize as summarizeBudget, lastMonths as budgetLastMonths, budgetStatus } from './services/budgetStats.js';
 import { generateBudgetCommentary } from './services/budgetCommentary.js';
 import { registerBudgetProject, listBudgetProjects, markBudgetAlerted, shouldAlertBudget } from './services/budgetAlerts.js';
@@ -129,7 +130,7 @@ import { listClones, getCloneById } from './agents/cloneTemplates/index.js';
 import { verifyBehavior } from './agents/behaviorVerifier.js';
 import { localizeTemplateFiles } from './agents/templateLocalizer.js';
 import { getUserLanguage } from './agents/languageDetector.js';
-import { setDomainModel, setCloneIdentity, getCloneTrack } from './agents/projectMemory.js';
+import { setDomainModel, setCloneIdentity, getCloneTrack, getCloneId } from './agents/projectMemory.js';
 import { mergeProjectModel } from './agents/projectModel.js';
 import { prepareRenderDeploy, renderServiceName } from './agents/renderAgent.js';
 import { projectPathOf, isInsideRoot, resolveProjectFile, landRepoFiles } from './core/runtime/workspacePaths.js';
@@ -244,6 +245,7 @@ app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
 // بترميز base64 أثقل ~33% من حجمها الخام) — يُسجَّل قبل express.json العام
 app.use('/api/public/assets', express.json({ limit: '6mb' }));
 app.use(compression()); // ضغط gzip لكل الاستجابات — واجهة أخف وAPI أسرع
+app.use('/api/public/data/transaction', express.json({ limit: '5mb' }));
 app.use(express.json({ limit: '1mb' })); // حد أقصى لحجم الطلب
 
 // ─── تقديم الواجهة الأمامية الثابتة ────────────────────────────────
@@ -2590,12 +2592,21 @@ app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) 
         // 🔍 حزمة SEO الحتمية مع كل نشر — وصف meta + Open Graph + JSON-LD +
         // robots.txt (نفس ما تسوّقه المنافسات كـ«SEO تلقائي»)، idempotent.
         applySeoPack(req.projectPath, { siteName: req.activeProject });
-        // 🗄️ تخزين حقيقي متزامن — لقوالب السيستم فقط (نفس قيد وقت التطبيق)،
-        // idempotent، وتتجاوز تلقائياً أي مشروع بلا app.js بالشكل المتوقَّع.
-        if (getCloneTrack(req.user.username, req.activeProject) === 'system') {
-            installDataSync(req.projectPath, { apiBase: publicBase, token: botToken });
+    } catch { /* SEO and site analytics are optional. */ }
+
+    // A system must never publish without its authenticated transaction runtime.
+    if (getCloneTrack(req.user.username, req.activeProject) === 'system') {
+        try {
+            const publicBase = (process.env.PUBLIC_BACKEND_URL || process.env.RENDER_EXTERNAL_URL
+                || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+            const token = signBotToken({ u: req.user.username, p: req.activeProject });
+            if (!installDataSync(req.projectPath, { apiBase: publicBase, token }).ready) {
+                return res.status(409).json({ error: 'تعذّر تجهيز حفظ بيانات السيستم؛ راجع ملفات القالب قبل النشر.' });
+            }
+        } catch {
+            return res.status(503).json({ error: 'تعذّر تثبيت حماية البيانات؛ لم يبدأ النشر.' });
         }
-    } catch { /* اختياري — النشر يمضي */ }
+    }
 
     // 🧭 مشاريع full-stack (فيها دوال api/ حقيقية) تُنشر على Render (خادم دائم،
     // بلا حدّ 12 دالة، DB متصلة). نُعيد للواجهة نوع النشر ورابط الزر إن جاهز.
@@ -3216,8 +3227,8 @@ app.post('/api/public/site-subscribe', publicSiteLimit, (req, res) => {
 });
 
 // ─── 🗄️ مزامنة بيانات القوالب (jaola-data) — بديل localStorage الحقيقي ───
-// يقرأ/يكتب موقع منشور مباشرة (توكن المشروع الموقّع، لا جلسة مستخدم) —
-// نفس فلسفة صندوق الموقع أعلاه: ملفّي، صامد بلا Mongo، فشل صامت دائماً.
+// جلسة مشروع إلزامية؛ حفظ ذري في Mongo مع رقم نسخة وإيصال منع التكرار.
+// ملفات التخزين السابقة مصدر ترحيل للقراءة فقط؛ غياب قاعدة البيانات يوقف الحفظ.
 const APPDATA_DIR = path.join(BASE_WORKSPACE, '.appdata');
 const APPAUTH_DIR = path.join(BASE_WORKSPACE, '.appauth');
 const requireProjectSession = projectSessionGuard({ dir: APPAUTH_DIR, secret: JWT_SECRET, verifyProjectToken: verifyBotToken });
@@ -3235,26 +3246,42 @@ app.post('/api/project/access-password', verifyToken, authLimit, validateProject
 });
 
 // سحب كل مفاتيح المشروع دفعة واحدة (عند تحميل الصفحة، قبل تشغيل app.js)
-app.get('/api/public/data', appDataLimit, (req, res) => {
+function transactionStore() {
+    if (mongoose.connection.readyState !== 1) throw Object.assign(new Error('Database unavailable'), { status: 503 });
+    return projectTransactions(mongoose.connection.db.collection('ProjectTransactions'), {
+        importLegacy: (user, project) => {
+            const data = readAppDataStore(APPDATA_DIR, user, project);
+            if (getCloneId(user, project) === 'jaola-budget-advisor') {
+                for (const name of ['transactions', 'budgets']) if (!(('jbudget_' + name) in data)) data['jbudget_' + name] = JSON.stringify(listCollectionRecords(APPCOLLECTIONS_DIR, user, project, name));
+            }
+            return data;
+        },
+    });
+}
+app.get('/api/public/data', appDataLimit, async (req, res) => {
     const v = verifyBotToken(req.query?.token);
     if (!v?.u || !v?.p) return res.status(401).json({ error: 'Invalid project token' });
-    try { res.json(readAppDataStore(APPDATA_DIR, v.u, v.p)); } catch { res.status(500).json({ error: 'Data unavailable' }); }
+    try {
+        const snapshot = await transactionStore().snapshot(v.u, v.p);
+        res.json(req.query.transactional === '1' ? snapshot : snapshot.data);
+    } catch (error) { res.status(error.status || 503).json({ error: 'Data unavailable' }); }
+});
+app.post('/api/public/data/transaction', appDataLimit, async (req, res) => {
+    const { user, project } = req.projectSession;
+    try { res.json(await transactionStore().commit(user, project, req.body)); }
+    catch (error) { res.status(error.status || 503).json({ error: error.code || 'TRANSACTION_UNAVAILABLE' }); }
 });
 
-// كتابة مفتاح واحد (كل نداء localStorage.setItem محليّاً يُرحَّل هنا)
+// العملاء القدامى يجب إعادة نشرهم؛ لا نسمح بتجاوز عقد المعاملات.
 app.put('/api/public/data/:key', appDataLimit, (req, res) => {
     const v = verifyBotToken(req.body?.token);
     if (!v?.u || !v?.p) return res.status(401).json({ error: 'Invalid project token' });
-    try {
-        const r = writeAppDataKey(APPDATA_DIR, v.u, v.p, req.params.key, req.body?.value);
-        if (r.error) return res.status(400).json({ error: r.error });
-        res.json({ success: true });
-    } catch { res.status(500).json({ success: false }); }
+    return res.status(428).json({ error: 'TRANSACTION_REQUIRED' });
 });
 
 // 🔐 مصادقة حقيقية لدخول قوالب السيستم — كلمة مرور مُجزَّأة تُتحقَّق هنا
 // فقط، بدل مقارنة نص صريح محلياً (كانت تُقرَأ من localStorage/jaola-data
-// مباشرة). الافتراضية 'admin' مقبولة حتى يُغيِّرها المالك من الإعدادات.
+// مباشرة). يلزم إعداد كلمة المرور بواسطة المالك قبل أول دخول.
 app.post('/api/public/auth/login', authLimit, async (req, res) => {
     const v = verifyBotToken(req.body?.token);
     if (!v?.u || !v?.p) return res.json({ ok: false });
@@ -3285,29 +3312,20 @@ app.post('/api/public/auth/set-password', authLimit, async (req, res) => {
 // appData.js. قدرة إضافية جاهزة لقوالب السيستم (لا القوالب الحالية بعد —
 // انظر تعليق appCollections.js)، بنفس قيد التتبّع (system فقط) والتوكن.
 const APPCOLLECTIONS_DIR = path.join(BASE_WORKSPACE, '.appcollections');
-app.get('/api/public/collections/:name', appDataLimit, (req, res) => {
-    const v = verifyBotToken(req.query?.token);
-    if (!v?.u || !v?.p || getCloneTrack(v.u, v.p) !== 'system') return res.json({ records: [] });
-    try {
-        const filter = { ...req.query }; delete filter.token;
-        res.json({ records: listCollectionRecords(APPCOLLECTIONS_DIR, v.u, v.p, req.params.name, filter) });
-    } catch { res.json({ records: [] }); }
+async function transactionalCollection(user, project, name) {
+    if (!['transactions', 'budgets'].includes(name)) throw Object.assign(new Error('Collection migration required'), { status: 409 });
+    const snapshot = await transactionStore().snapshot(user, project);
+    const records = JSON.parse(snapshot.data['jbudget_' + name] || '[]');
+    if (!Array.isArray(records)) throw new Error('Invalid collection');
+    return records;
+}
+app.get('/api/public/collections/:name', appDataLimit, async (req, res) => {
+    const { user, project } = req.projectSession;
+    try { res.json({ records: await transactionalCollection(user, project, req.params.name) }); }
+    catch (error) { res.status(error.status || 503).json({ error: 'COLLECTION_UNAVAILABLE' }); }
 });
-app.post('/api/public/collections/:name', appDataLimit, (req, res) => {
-    const v = verifyBotToken(req.body?.token);
-    if (!v?.u || !v?.p || getCloneTrack(v.u, v.p) !== 'system') return res.status(204).end();
-    try {
-        const r = upsertCollectionRecord(APPCOLLECTIONS_DIR, v.u, v.p, req.params.name, req.body?.record);
-        if (r.error) return res.status(400).json({ error: r.error });
-        res.json(r);
-    } catch { res.status(500).json({ success: false }); }
-});
-app.delete('/api/public/collections/:name/:id', appDataLimit, (req, res) => {
-    const v = verifyBotToken(req.query?.token || req.body?.token);
-    if (!v?.u || !v?.p || getCloneTrack(v.u, v.p) !== 'system') return res.status(204).end();
-    try { res.json(deleteCollectionRecord(APPCOLLECTIONS_DIR, v.u, v.p, req.params.name, req.params.id)); }
-    catch { res.status(500).json({ success: false }); }
-});
+app.post('/api/public/collections/:name', appDataLimit, (req, res) => res.status(428).json({ error: 'TRANSACTION_REQUIRED' }));
+app.delete('/api/public/collections/:name/:id', appDataLimit, (req, res) => res.status(428).json({ error: 'TRANSACTION_REQUIRED' }));
 
 // 💰 مستشار الميزانية الشخصية — يبني فوق مجموعات appCollections.js أعلاه
 // (transactions/budgets)؛ لا تخزين جديد هنا، فقط تسجيل للفحص الدوري
@@ -3328,7 +3346,7 @@ app.get('/api/public/budget/commentary', cryptoCommentaryLimit, async (req, res)
             return res.json({ text: null, quota: 'exhausted' });
         }
         const months = req.query?.period === 'last3' ? budgetLastMonths(3) : req.query?.period === 'lastMonth' ? budgetLastMonths(2).slice(0, 1) : budgetLastMonths(1);
-        const records = listCollectionRecords(APPCOLLECTIONS_DIR, v.u, v.p, 'transactions');
+        const records = await transactionalCollection(v.u, v.p, 'transactions');
         const sum = summarizeBudget(records, months);
         const periodLabelAr = { thisMonth: 'هذا الشهر', lastMonth: 'الشهر الماضي', last3: 'آخر 3 أشهر' };
         const periodLabelEn = { thisMonth: 'this month', lastMonth: 'last month', last3: 'the last 3 months' };
@@ -3799,9 +3817,9 @@ setInterval(async () => {
             try {
                 const { user, project } = entry;
                 if (getUsageCount(USAGE_DIR, user, 'notifyMail') >= 300) continue;
-                const budgets = listCollectionRecords(APPCOLLECTIONS_DIR, user, project, 'budgets');
+                const budgets = await transactionalCollection(user, project, 'budgets');
                 if (!budgets.length) continue;
-                const transactions = listCollectionRecords(APPCOLLECTIONS_DIR, user, project, 'transactions');
+                const transactions = await transactionalCollection(user, project, 'transactions');
                 const statuses = budgetStatus(budgets, transactions, month).filter(s => s.over && shouldAlertBudget(entry, s.category, month));
                 if (!statuses.length) continue;
                 const owner = await DB.findUser(user).catch(() => null);

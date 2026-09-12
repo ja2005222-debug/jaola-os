@@ -33,8 +33,9 @@ const validName = (n) => NAME_RE.test(String(n || '')) && !RESERVED.has(n);
 function readCollection(dir, user, project, name) {
     try {
         const s = JSON.parse(fs.readFileSync(storePath(dir, user, project, name), 'utf8'));
-        return Array.isArray(s?.records) ? s.records : [];
-    } catch { return []; }
+        if (!Array.isArray(s?.records)) throw new Error('Invalid collection store');
+        return s.records;
+    } catch (error) { if (error.code === 'ENOENT') return []; throw error; }
 }
 
 function writeCollection(dir, user, project, name, records) {

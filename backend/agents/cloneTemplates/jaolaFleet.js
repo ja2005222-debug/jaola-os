@@ -109,7 +109,7 @@ const SEED_HISTORY = [
   { id: 'mt1', no: 1, vehicleId: 'vh1', type: 'تغيير زيت', odo: 40000, cost: 180, note: 'زيت + فلتر', createdAt: new Date(Date.now() - 5 * 86400000).toISOString() }
 ];
 function load(k, fb) { try { var v = localStorage.getItem('jfleet_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jfleet_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jfleet_' + k, JSON.stringify(val)); }
 let vehicles = load('vehicles', SEED_VEHICLES); // { id, no, plate, model, driver, odo, nextServiceOdo }
 let history = load('history', SEED_HISTORY); // { id, no, vehicleId, type, odo, cost, note, createdAt }
 let settings = load('settings', { name: 'أسطول jaola', pass: 'admin', currency: 'ر.س', interval: 5000, vehicleSeq: 3, maintSeq: 2 });
