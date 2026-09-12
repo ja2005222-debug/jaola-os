@@ -229,7 +229,10 @@ export function isQuestionMessage(text) {
     const t = (text || '').trim();
     if (!t) return false;
     if (t.includes('?') || t.includes('؟')) return true;
-    return QUESTION_STARTERS.test(t);
+    // In an explicit edit command, dialectal «بس ما تغير» is a constraint.
+    const questionText = /^(?:صلح|أصلح|اصلح|عدل|عدّل|غير|غيّر|ضيف|أضف|اضف)\s/u.test(t)
+        ? t.replace(/بس\s+ما\s+(?=تغير|تغيّر|تبدل|تحذف)/gu, 'بس لا ') : t;
+    return QUESTION_STARTERS.test(questionText.replace(/(^|\s)و(?=كيف\s|هل\s|ماذا\s|لماذا\s)/gu, '$1'));
 }
 
 // ═══════════════════════════════════════════════════════

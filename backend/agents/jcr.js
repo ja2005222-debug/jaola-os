@@ -6,6 +6,7 @@ import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO, resolveGoalLanguage } from './languageDetector.js';
 import { addToHistory, getDomainModel, getBuildDecision, updateBuildDecision } from './projectMemory.js';
 import { resolveProjectType as resolveBuildTypeDecision, explicitProjectType } from '../core/contracts/projectTypes.js';
+import { resumeReference } from './arabicReferenceDialog.js';
 import { buildAppSections } from './projectModel.js';
 import { localizeLog } from './logLocalizer.js';
 import { RoomReporter } from '../core/runtime/RoomReporter.js';
@@ -825,6 +826,7 @@ export class JaolaCognitiveRuntime {
         const ctx = createExecutionContext({ username, activeProject, projectPath, roomName, agents, dbStatus });
 
         const pendingType = getBuildDecision(username, activeProject)?.pending;
+        if (await resumeReference(message, ctx, this.reporter, (goal, context) => this.surgicalEdit(goal, context))) return;
         if (pendingType) {
             const answer = message.trim();
             if (/^(إلغاء|الغاء|توقف|cancel|stop)$/iu.test(answer)) {
