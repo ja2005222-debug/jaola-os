@@ -137,6 +137,18 @@ export function getProjectMemory(username, project) {
 }
 
 /** تحديث قرارات التصميم */
+export function getBuildDecision(username, project) {
+    return getProjectMemory(username, project).buildDecision;
+}
+
+export function updateBuildDecision(username, project, updates) {
+    const mem = getProjectMemory(username, project);
+    mem.buildDecision = { ...mem.buildDecision, ...updates };
+    mem.updatedAt = Date.now();
+    saveToFile();
+    return mem.buildDecision;
+}
+
 export function updateDesign(username, project, designUpdates) {
     const mem = getProjectMemory(username, project);
     Object.assign(mem.design, designUpdates);

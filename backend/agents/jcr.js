@@ -4,7 +4,8 @@ import { fileURLToPath } from 'url';
 import { groq, smartChat, GROQ_MODEL, readAIUsage, withUsageLabel } from '../core/providers/llm.js';
 import { promises as fsPromises } from 'fs';
 import { initUserLanguage, getUserLanguage, detectExplicitLanguageSwitch, hasUserLanguage, LANGUAGE_INFO, resolveGoalLanguage } from './languageDetector.js';
-import { addToHistory, getDomainModel } from './projectMemory.js';
+import { addToHistory, getDomainModel, getBuildDecision, updateBuildDecision } from './projectMemory.js';
+import { resolveProjectType as resolveBuildTypeDecision, explicitProjectType } from '../core/contracts/projectTypes.js';
 import { buildAppSections } from './projectModel.js';
 import { localizeLog } from './logLocalizer.js';
 import { RoomReporter } from '../core/runtime/RoomReporter.js';
@@ -461,8 +462,22 @@ export class JaolaCognitiveRuntime {
 
     // 🚦 كل المهام تمر عبر صف التنفيذ: لا توازي لنفس المشروع + حد توازٍ كلي
     // يحمي حصة الـ LLM — كل مواقع الاستدعاء تبقى كما هي
-    executeMission(goal, ctx) {
+    executeMission(goal, ctx, { confirmedType } = {}) {
         const { username, activeProject, roomName } = ctx;
+        const saved = getBuildDecision(username, activeProject);
+        const decision = resolveBuildTypeDecision({
+            explicitType: confirmedType || explicitProjectType(goal), confirmedDecision: saved?.confirmed,
+        });
+        if (decision.needsClarification) {
+            updateBuildDecision(username, activeProject, { pending: { goal, ...decision } });
+            this.reporter.send(roomName, 'chat_reply', {
+                message: decision.question + '\nاكتب «موقع ويب» أو «سيستم داخلي». وللمساعدة اكتب «غير متأكد»، أو «إلغاء».',
+                clarification: decision,
+            });
+            return { accepted: false, status: 'AWAITING_USER_DECISION' };
+        }
+        updateBuildDecision(username, activeProject, { confirmed: decision, pending: null });
+        (this.trackByRoom ||= new Map()).set(roomName, decision.type);
         const lang = resolveGoalLanguage(goal, getUserLanguage(username)); // لا ردّ إنجليزي على طلب عربيّ
         const result = enqueueMission({
             username,
@@ -808,6 +823,29 @@ export class JaolaCognitiveRuntime {
         // في كائن واحد مجمَّد — يُمرَّر لكل إطلاق مهمة/تعديل بدل ستة معاملات موضعية.
         // معالجات النية تبنيه من `req` بـ`contextFromRequest` (نفس الحقول الستة).
         const ctx = createExecutionContext({ username, activeProject, projectPath, roomName, agents, dbStatus });
+
+        const pendingType = getBuildDecision(username, activeProject)?.pending;
+        if (pendingType) {
+            const answer = message.trim();
+            if (/^(إلغاء|الغاء|توقف|cancel|stop)$/iu.test(answer)) {
+                updateBuildDecision(username, activeProject, { pending: null });
+                this.reporter.send(roomName, 'chat_reply', { message: 'تم إلغاء طلب البناء المعلّق.' });
+                return;
+            }
+            const selected = /^(موقع(?: ويب)?|site|website)$/iu.test(answer) ? 'site'
+                : /^(سيستم(?: داخلي)?|نظام داخلي|system|internal system)$/iu.test(answer) ? 'system' : null;
+            if (!selected) {
+                this.reporter.send(roomName, 'chat_reply', { message: 'الموقع لصفحات وخدمات العملاء؛ السيستم الداخلي لإدارة العمل والبيانات والصلاحيات. اكتب «موقع ويب» أو «سيستم داخلي»، أو «إلغاء».' });
+                return;
+            }
+            updateBuildDecision(username, activeProject, {
+                confirmed: { type: selected, source: 'user-confirmed' }, pending: null,
+            });
+            // Reuse the original goal; the answer must never replace the build specification.
+            const resumeGoal = pendingType.goal;
+            this.executeMission(resumeGoal, ctx, { confirmedType: selected });
+            return;
+        }
 
         // 🧭 مسار البناء (موقع/سيستم داخلي) — يصل من زر الواجهة مع كل رسالة
         // ويُحفظ للغرفة كي تلتزم به تأكيدات المتابعة («نعم ابنه الآن»)
