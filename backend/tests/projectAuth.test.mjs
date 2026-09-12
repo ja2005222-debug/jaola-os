@@ -49,7 +49,9 @@ test('projectAuth: لا يخزّن التجزئة كنص صريح، ولا ير�
     assert.ok(!raw.includes('mySecretPass'), 'كلمة المرور الخام غائبة عن الملف المخزَّن');
 
     fs.writeFileSync(path.join(dir, 'u2__p2.json'), '{not json');
-    assert.equal(await verifyPassword(dir, 'u2', 'p2', 'admin'), true, 'ملف تالف → يُعامَل كغير موجود (افتراضية)');
+    assert.equal(await verifyPassword(dir, 'u2', 'p2', 'admin'), false, 'Corrupt credentials must fail closed');
+    await assert.rejects(setPassword(dir, 'u2', 'p2', 'replacement'));
+    assert.equal(fs.readFileSync(path.join(dir, 'u2__p2.json'), 'utf8'), '{not json');
     fs.rmSync(dir, { recursive: true, force: true });
 });
 

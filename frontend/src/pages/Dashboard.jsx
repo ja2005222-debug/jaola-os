@@ -343,6 +343,10 @@ export default function Dashboard() {
   const [galleryFilter, setGalleryFilter] = useState('all');
   const [galleryImgErrors, setGalleryImgErrors] = useState({});
   const [showSecretsModal, setShowSecretsModal] = useState(false);
+  const [accessProject, setAccessProject] = useState(null);
+  const [accessPassword, setAccessPassword] = useState('');
+  const [accessBusy, setAccessBusy] = useState(false);
+  const [accessError, setAccessError] = useState('');
   const [secretKeys, setSecretKeys] = useState([]);
   const [newSecretKey, setNewSecretKey] = useState('');
   const [newSecretVal, setNewSecretVal] = useState('');
@@ -2760,6 +2764,28 @@ export default function Dashboard() {
   );
 
   // 🔑 نافذة أسرار المشروع (متغيّرات البيئة) — MONGODB_URI وغيرها
+  const projectAccessModal = accessProject && (
+    <div style={{ position:'fixed', inset:0, background:'#000b', display:'grid', placeItems:'center', zIndex:110 }}>
+      <form style={{ background:'#0d1117', color:'white', padding:24, borderRadius:12, maxWidth:420 }} onSubmit={async e => {
+        e.preventDefault(); setAccessBusy(true); setAccessError('');
+        try {
+          const response = await fetch(`${BACKEND_URL}/api/project/access-password`, { method:'POST', headers:getHeaders(), body:JSON.stringify({ project:accessProject, password:accessPassword }) });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || 'تعذّر الحفظ');
+          setAccessPassword(''); setAccessProject(null);
+          addNotification('تم تعيين كلمة مرور المشروع وإبطال جلسات الدخول السابقة. أعد نشر المشروع لتحديث شاشة الدخول.', 'success');
+        } catch (error) { setAccessError(error.message); }
+        finally { setAccessBusy(false); }
+      }}>
+        <h3>دخول إدارة المشروع — {accessProject}</h3>
+        <p>هذه الكلمة تمنح صلاحية إدارة بيانات المشروع. تغييرها يُبطل الجلسات السابقة.</p>
+        <label>كلمة مرور جديدة<input type="password" autoComplete="new-password" required minLength={12} maxLength={200} value={accessPassword} onChange={e => setAccessPassword(e.target.value)} style={{ display:'block', padding:10, margin:'12px 0' }} /></label>
+        <p role="alert">{accessError}</p>
+        <button disabled={accessBusy} type="submit">{accessBusy ? 'جارٍ الحفظ…' : 'حفظ'}</button>
+        <button disabled={accessBusy} type="button" onClick={() => { setAccessProject(null); setAccessPassword(''); }}>إلغاء</button>
+      </form>
+    </div>
+  );
   const secretsModal = showSecretsModal && (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, backdropFilter:'blur(4px)', padding:16 }}
       onClick={e => e.target === e.currentTarget && setShowSecretsModal(false)}>
@@ -2770,6 +2796,7 @@ export default function Dashboard() {
           <button onClick={() => setShowSecretsModal(false)} style={{ width:30, height:30, borderRadius:8, background:'rgba(255,255,255,0.04)', border:`1px solid ${S.border}`, color:S.muted, fontSize:14 }}>✕</button>
         </div>
         <p style={{ color:S.muted, fontSize:12, lineHeight:1.7, marginBottom:14 }}>{t('secretsHint')}</p>
+        <button onClick={() => { setAccessPassword(''); setAccessError(''); setAccessProject(activeProject); setShowSecretsModal(false); }} style={{ marginBottom:14 }}>🔒 تعيين كلمة مرور إدارة المشروع</button>
 
         {/* تلميح MONGODB_URI للمشاريع full-stack */}
         <div style={{ background:'rgba(16,185,129,0.06)', border:'1px solid rgba(16,185,129,0.2)', borderRadius:10, padding:'10px 12px', marginBottom:16, fontSize:11.5, color:'#6ee7b7', lineHeight:1.7 }}>
@@ -3091,7 +3118,7 @@ export default function Dashboard() {
         {marketingModal}
         {galleryModal}
         {projectModal}
-        {secretsModal}
+        {secretsModal}{projectAccessModal}
 
         {/* 📊 بطاقة حالة الموقع — مؤشرات الجودة على الجوال (بديل الشريط الجانبي) */}
         {showSiteHealth && (
@@ -3251,6 +3278,7 @@ export default function Dashboard() {
               {[
                 ['🐙', 'GitHub', openGithubModal],
                 ['🔑', t('secretsTitle'), openSecretsModal],
+                ['🔒', 'دخول إدارة المشروع', () => { setAccessPassword(''); setAccessError(''); setAccessProject(activeProject); }],
                 ['📚', t('knTitle'), openKnowledgeModal],
               ].map(([icon, label, fn], i) => (
                 <button key={i} onClick={() => { setOpenMenu(null); fn(); }}
@@ -3580,7 +3608,7 @@ export default function Dashboard() {
       {marketingModal}
       {galleryModal}
       {projectModal}
-      {secretsModal}
+      {secretsModal}{projectAccessModal}
     </div>
   );
 }

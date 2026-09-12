@@ -25,15 +25,18 @@ const storePath = (dir, u, p) => path.join(dir, slug(u, p) + '.json');
 function readHash(dir, user, project) {
     try {
         const s = JSON.parse(fs.readFileSync(storePath(dir, user, project), 'utf8'));
-        return (s && typeof s.hash === 'string') ? s.hash : null;
-    } catch { return null; }
+        if (!s || typeof s.hash !== 'string' || !/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(s.hash)) throw new Error('Invalid credential store');
+        return s.hash;
+    } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
 
 /** يتحقّق من كلمة المرور — تجزئة محفوظة إن وُجدت، وإلا `DEFAULT_PASSWORD`. */
 export async function verifyPassword(dir, user, project, plainPassword) {
-    const hash = readHash(dir, user, project);
-    if (!hash) return String(plainPassword || '') === DEFAULT_PASSWORD;
-    try { return await bcrypt.compare(String(plainPassword || ''), hash); }
+    try {
+        const hash = readHash(dir, user, project);
+        if (!hash) return String(plainPassword || '') === DEFAULT_PASSWORD;
+        return await bcrypt.compare(String(plainPassword || ''), hash);
+    }
     catch { return false; }
 }
 
@@ -62,11 +65,11 @@ export async function verifyPassword(dir, user, project, plainPassword) {
  *
  * @param {string} [currentPassword] إلزاميّ **حين تكون هناك كلمة مرور مضبوطة**.
  */
-export async function setPassword(dir, user, project, plainPassword, currentPassword) {
+export async function setPassword(dir, user, project, plainPassword, currentPassword, { ownerReset = false } = {}) {
     const pw = String(plainPassword || '');
     if (!pw || pw.length < 3 || pw.length > 200) return { error: 'كلمة مرور غير صالحة' };
     // الاعتماد القائم يُثبَت قبل استبداله — وغيابُه (الافتراضية المعلنة) لا شيء فيه يُثبَت.
-    if (readHash(dir, user, project) && !await verifyPassword(dir, user, project, currentPassword)) {
+    if (!ownerReset && readHash(dir, user, project) && !await verifyPassword(dir, user, project, currentPassword)) {
         return { error: 'كلمة المرور الحالية غير صحيحة', status: 403 };
     }
     const hash = await bcrypt.hash(pw, 10);
