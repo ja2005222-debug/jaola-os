@@ -56,7 +56,7 @@ test('مواضعُ الجواب الخمسة كما قِيست — أيُّ تغ
     assert.deepEqual(sites.sort(), [
         'agents/renderAgent.js:172 → hasBackend',
         // PM/2b: الرقمان انزاحا بإضافة حكم المسار قبل النهائيّات (لا موضعَ جديد — العددُ خمسةٌ كما هو)
-        'agents/stages/buildFromClone.js:182 → false',
+        'agents/stages/buildFromClone.js:186 → false',
         // #196: ٦٥ ← ٩٠ — عشرون سطراً من الشرح المقيس فوقه (النموذجُ المفهوم بدل المفبرك). النداءُ نفسُه لم يتغيّر.
         'agents/stages/buildFromRegistry.js:90 → false',
         'agents/stages/renderConfig.js:37 → hasBackend',
@@ -67,7 +67,7 @@ test('مواضعُ الجواب الخمسة كما قِيست — أيُّ تغ
         // بثمانيةٍ وخمسين سطراً + سطرِ استيراد = ٥٩، ثم نقلُ حارس الملكية المشروعَ
         // المفقود من «إنشاء صامت» إلى رفضٍ صريح اختصر سطراً، فانزاح ٢٤٧٠ → ٢٤٦٩.
         // لا خُمِّن. الموضعُ هو هو والحجّةُ `false` وداخلَ الحارس نفسِه، والعددُ خمسةٌ كما هو.
-        'server.js:2508 → false',
+        'server.js:2514 → false',
         'services/deployAutomation.js:211 → true',
     ], 'مواضعُ تقرير شكل `render.yaml` تغيّرت — راجع الحارسَ والوثيقة معاً');
 });

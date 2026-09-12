@@ -307,7 +307,11 @@ async function reportAvailableModels(client, name, err) {
  * توليد الكود، وكسرُه بمعامِلٍ قد يرفضه مزوّدٌ ثمنٌ لا يُدفع لأجل عدّاد. يُقرأ ما يتطوّع به
  * المزوّد، ويُقال صراحةً كم نداءً بقي بلا رقم.
  */
-const acc = { calls: 0, counted: 0, prompt: 0, completion: 0, total: 0, byProvider: {}, byLabel: {} };
+const emptyUsage = () => ({ calls: 0, counted: 0, prompt: 0, completion: 0, total: 0, byProvider: {}, byLabel: {} });
+const acc = emptyUsage();
+const missionUsage = new AsyncLocalStorage();
+export const withMissionUsage = fn => missionUsage.run(emptyUsage(), fn);
+export const missionUsageSnapshot = () => missionUsage.getStore() ? structuredClone(missionUsage.getStore()) : null;
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
 /**
@@ -334,6 +338,12 @@ export const currentUsageLabel = () => labelScope.getStore() || null;
 
 /** يُسجّل نداءً واحداً؛ `carrier` أيُّ كائنٍ قد يحمل `usage` (ردٌّ كامل أو آخرُ قطعةِ تدفّق). */
 export function noteUsage(provider, carrier) {
+    accumulateUsage(acc, provider, carrier);
+    const scoped = missionUsage.getStore();
+    if (scoped) accumulateUsage(scoped, provider, carrier);
+}
+
+function accumulateUsage(acc, provider, carrier) {
     acc.calls++;
     const usage = carrier?.usage;
     // 🔤 اسمان لحقلٍ واحد: OpenAI/Groq/DeepSeek تكتب `prompt_tokens`، وGemini تكتب

@@ -1,3 +1,5 @@
+import { cloneReadiness } from '../cloneTemplates/index.js';
+import { installCommerceClient } from '../../services/commerceClient.js';
 import { installBookingClient } from '../../services/bookingClient.js';
 import { signBotToken } from '../jaolaBotToken.js';
 /**
@@ -42,6 +44,7 @@ export async function buildFromClone(clone, goal, ctx, reporter, { complete = pa
     const lang = resolveGoalLanguage(goal, getUserLanguage(username)); // لا ردّ إنجليزي على طلب عربيّ
     reporter.setLang(roomName, lang);
     const t0 = Date.now();
+    let repairRounds = 0;
     reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'running', qa: 'waiting', deploy: 'waiting' });
     reporter.liveLog(roomName, '5. RUNTIME', 'JaolaTemplate', `🧩 قالب jaola عامل: ${clone.name} (${clone.id})${clone.externalApi ? ` — API خارجي: ${clone.externalApi}` : ''} — نبدأ من تطبيق يعمل فعلاً (لا توليد من الصفر)`);
 
@@ -148,6 +151,7 @@ export async function buildFromClone(clone, goal, ctx, reporter, { complete = pa
             const newFails = stampFails.filter(n => !baseFails.has(n)); // ما أدخلته البصمة فقط
             const broke = newFails.length > 0 || lostFn.length > 0;
             if (broke) {
+                repairRounds++;
                 const why = lostFn.length ? `فقد دوال (${lostFn.slice(0, 3).join('، ')})` : `فشل جديد: ${newFails.join('، ')}`;
                 reporter.liveLog(roomName, '5. RUNTIME', 'CloneTemplate', `↩️ التخصيص أدخل عطلاً (${why}) — استرجاع الكلون العامل النظيف.`);
                 for (const f of baseFiles) await writeProjectFile(projectPath, f.name, f.content);
@@ -201,6 +205,7 @@ export async function buildFromClone(clone, goal, ctx, reporter, { complete = pa
             reporter.liveLog(roomName, '5. RUNTIME', 'CloneCompletion', beforeDoc?.missing.length
                 ? `🏗️ إكمالُ ما لا أثرَ له من وثيقتك (${beforeDoc.missing.length} بنداً؛ تُطلب أوّلُ ${Math.min(CAP, beforeDoc.missing.length)} بنصّها): ${beforeDoc.missing.slice(0, CAP).map(sectionLabel).join('، ')} — رقعةٌ موضعيّة، لا إعادةَ كتابة.`
                 : `🏗️ إكمالُ ما لا أثرَ له (${before.missing.length}): ${before.missing.join('، ')} — رقعةٌ موضعيّة، لا إعادةَ كتابة.`);
+            repairRounds++;
             const appBefore = snapshot.find(f => f.name === 'app.js');
             const fnsBefore = new Set(appBefore ? extractDefinedFunctions(appBefore.content) : []);
             let baseFails = new Set();
@@ -254,10 +259,22 @@ export async function buildFromClone(clone, goal, ctx, reporter, { complete = pa
         requirements, files: await readBuiltFiles(projectPath), sections,
         requirementsNote: 'مسارُ الكلون — لا متطلّباتٍ من الفهم' });
 
+    if (clone.id === 'jaola-store') {
+        const apiBase = (process.env.PUBLIC_BACKEND_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
+        if (apiBase && !installCommerceClient(projectPath, { apiBase, token: signBotToken({ u: username, p: activeProject }) }).ready) throw new Error('Store runtime unavailable');
+    }
     if (clone.id === 'jaola-booking') {
         const apiBase = (process.env.PUBLIC_BACKEND_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
         if (apiBase && !installBookingClient(projectPath, { apiBase, token: signBotToken({ u: username, p: activeProject }) }).ready) throw new Error('Booking runtime unavailable');
     }
+
+    await writeProjectFile(projectPath, 'JAOLA_READINESS.json', JSON.stringify({
+        clone: clone.id, generatedAt: new Date().toISOString(), ...cloneReadiness(clone),
+        behaviorVerdict: verdict,
+    }, null, 2));
+    reporter.liveLog(roomName, '5. RUNTIME', 'Readiness', lang === 'en'
+        ? 'UI checks completed. Server permissions, persistence and the deployed application need their own verification.'
+        : 'اكتمل فحص الواجهة. صلاحيات الخادم وحفظ البيانات والتطبيق المنشور لها فحوص مستقلة؛ تفاصيلها في تقرير الجاهزية.');
 
     // 4) نهائيات كبناءٍ ناجح
     reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });
@@ -274,7 +291,7 @@ export async function buildFromClone(clone, goal, ctx, reporter, { complete = pa
     snapshotWorkspace(username, activeProject, projectPath).catch(() => {});
     autoPushIfEnabled(username, activeProject, projectPath, reporter.io, roomName).catch(() => {});
     const durationSec = Math.round((Date.now() - t0) / 1000);
-    recordBuild(username, activeProject, { success: true, durationSec, filesCount: builtFiles.length, goal: goal || '' });
+    recordBuild(username, activeProject, { success: true, durationSec, filesCount: builtFiles.length, goal: goal || '', repairRounds, firstPass: verdict.status === 'PASS' && repairRounds === 0 });
     reporter.send(roomName, 'project_metrics', buildMetricsPayload(username, activeProject));
     try { recordModel(clone.category, model, { verified: true }); } catch {}
 

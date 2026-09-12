@@ -3159,6 +3159,10 @@ export default function Dashboard() {
                     { label:t('mQuality'), value: fmtScore(metrics?.quality), color: gradeColor(metrics?.quality?.grade) },
                     { label:t('mBuilds'), value: metrics?.totalBuilds ?? 0, color:S.blue },
                     { label:t('mEdits'), value: metrics?.totalEdits ?? 0, color:S.purple },
+                    { label:uiLang === 'en' ? 'Build duration P95 (s)' : 'مدة البناء P95 (s)', value: metrics?.performance?.durationP95Sec ?? '—', color:S.blue },
+                    { label:uiLang === 'en' ? 'Measured tokens (last 15 builds)' : 'رموز مقاسة (آخر 15 بناء)', value: metrics?.performance?.observedTokens ?? '—', color:S.purple },
+                    { label:uiLang === 'en' ? 'First-pass success (measured sample)' : 'نجاح أول محاولة (عينة مقاسة)', value: metrics?.performance?.firstPassRate == null ? '—' : Math.round(metrics.performance.firstPassRate * 100) + '% (' + metrics.performance.firstPassSamples + ')', color:S.blue },
+                    { label:uiLang === 'en' ? 'API latency P95 (ms)' : 'زمن API P95 (ms)', value: metrics?.apiPerformance?.p95Ms == null ? '—' : Math.round(metrics.apiPerformance.p95Ms), color:S.blue },
                   ].map(m => (
                     <div key={m.label} className="stat-tile">
                       <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:5 }}>
@@ -3569,6 +3573,10 @@ export default function Dashboard() {
                 { label:t('mQuality'), value: fmtScore(metrics?.quality), color: gradeColor(metrics?.quality?.grade) },
                 { label:t('mBuilds'), value: metrics?.totalBuilds ?? 0, color:S.blue },
                 { label:t('mEdits'), value: metrics?.totalEdits ?? 0, color:S.purple },
+                    { label:uiLang === 'en' ? 'Build duration P95 (s)' : 'مدة البناء P95 (s)', value: metrics?.performance?.durationP95Sec ?? '—', color:S.blue },
+                    { label:uiLang === 'en' ? 'Measured tokens (last 15 builds)' : 'رموز مقاسة (آخر 15 بناء)', value: metrics?.performance?.observedTokens ?? '—', color:S.purple },
+                    { label:uiLang === 'en' ? 'First-pass success (measured sample)' : 'نجاح أول محاولة (عينة مقاسة)', value: metrics?.performance?.firstPassRate == null ? '—' : Math.round(metrics.performance.firstPassRate * 100) + '% (' + metrics.performance.firstPassSamples + ')', color:S.blue },
+                    { label:uiLang === 'en' ? 'API latency P95 (ms)' : 'زمن API P95 (ms)', value: metrics?.apiPerformance?.p95Ms == null ? '—' : Math.round(metrics.apiPerformance.p95Ms), color:S.blue },
               ].map(m => (
                 <div key={m.label} className="stat-tile">
                   <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:4 }}>

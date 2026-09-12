@@ -1,3 +1,4 @@
+import { STORE_PRODUCTS } from '../../services/storeCatalog.js';
 /**
  * 🛍️ jaola-store — متجر إلكتروني *فاخر ومكتمل* بدورين وصلاحيات.
  *
@@ -22,6 +23,7 @@ const INDEX_HTML = `<!DOCTYPE html>
     <div class="brand"><span class="mk">J</span> <span id="brandName">متجر jaola</span></div>
     <div class="search" id="searchWrap"><input id="searchInput" placeholder="ابحث عن منتج..."></div>
     <div class="top-r">
+      <button class="btn hidden" id="myOrdersBtn" data-action="my-orders">طلباتي</button>
       <button class="cart-btn" data-action="open-cart">🛒 <span id="cartCount" class="cart-count" style="display:none">0</span></button>
       <button class="btn small ghost" id="authBtn" data-action="open-auth">دخول</button>
     </div>
@@ -40,18 +42,24 @@ const INDEX_HTML = `<!DOCTYPE html>
           <a href="#catalog" class="btn primary lg">تسوّق الآن</a>
           <a href="#features" class="btn ghost lg">لماذا نحن؟ ▸</a>
         </div>
-        <div class="rate">★★★★★ <b>4.8</b> · أكثر من 12,000 عميل سعيد</div>
+        <div class="rate">راجع تفاصيل المنتج قبل تأكيد الطلب.</div>
       </div>
     </section>
 
     <!-- شريط الثقة -->
     <section id="features" class="feat-strip">
-      <div class="feat"><span class="fi">🚚</span><div><b>شحن سريع</b><small>خلال 48 ساعة</small></div></div>
-      <div class="feat"><span class="fi">↩️</span><div><b>إرجاع مجّاني</b><small>خلال 14 يوماً</small></div></div>
-      <div class="feat"><span class="fi">🔒</span><div><b>دفع آمن</b><small>حماية كاملة</small></div></div>
-      <div class="feat"><span class="fi">💬</span><div><b>دعم 24/7</b><small>نجيبك دائماً</small></div></div>
+      <div class="feat"><span class="fi">🚚</span><div><b>شحن سريع</b><small>حسب ترتيب التوصيل</small></div></div>
+      <div class="feat"><span class="fi">↩️</span><div><b>خدمة العملاء</b><small>تواصل بشأن طلبك</small></div></div>
+      <div class="feat"><span class="fi">🔒</span><div><b>الدفع عند الاستلام</b><small>لا دفع إلكتروني هنا</small></div></div>
+      <div class="feat"><span class="fi">💬</span><div><b>متابعة الطلب</b><small>اعرض حالة طلبك</small></div></div>
     </section>
 
+    <section id="myOrdersPanel" class="catalog hidden"><h2>طلباتي</h2>
+      <p>احتفظ برمز الاستعادة سراً للوصول إلى طلباتك على جهاز آخر.</p>
+      <input id="orderRecovery" autocomplete="off" placeholder="رمز الاستعادة">
+      <button class="btn" data-action="order-recovery">إظهار الرمز</button><button class="btn" data-action="restore-orders">استعادة الطلبات</button>
+      <div id="myOrdersList"></div>
+    </section>
     <!-- الكتالوج -->
     <section id="catalog" class="catalog">
       <div class="sec-head"><span class="eyebrow">متجرنا</span><h2>تصفّح المنتجات</h2></div>
@@ -91,7 +99,7 @@ const INDEX_HTML = `<!DOCTYPE html>
     <h2 class="sec-title">لوحة المدير</h2>
     <div class="stat-row" id="adminStats"></div>
     <div class="panel">
-      <h3>إضافة منتج</h3>
+      <h3>إضافة أو تعديل منتج</h3>
       <div class="form-row">
         <input id="npName" placeholder="اسم المنتج">
         <input id="npPrice" type="number" min="0" placeholder="السعر">
@@ -158,27 +166,21 @@ const INDEX_HTML = `<!DOCTYPE html>
 const APP_JS = `// 🛍️ منطق المتجر — عميل + مدير بصلاحيات. كل الدوال معرّفة، تفويض أحداث.
 'use strict';
 
-const PRODUCTS = [
-  { id: 'p1', name: 'سماعات لاسلكية', cat: 'إلكترونيات', price: 249, rating: 4.6, emoji: '🎧', stock: 12, img: '1505740420928-5e560c06d30e', desc: 'سماعات بلوتوث بعزل ضوضاء وبطارية 30 ساعة.' },
-  { id: 'p2', name: 'ساعة ذكية', cat: 'إلكترونيات', price: 599, rating: 4.4, emoji: '⌚', stock: 8, img: '1523275335684-37898b6baf30', desc: 'تتبّع اللياقة، إشعارات، وشاشة AMOLED.' },
-  { id: 'p3', name: 'حقيبة ظهر', cat: 'أزياء', price: 149, rating: 4.8, emoji: '🎒', stock: 20, img: '1553062407-98eeb64c6a62', desc: 'حقيبة مقاومة للماء بجيب لابتوب.' },
-  { id: 'p4', name: 'حذاء رياضي', cat: 'أزياء', price: 320, rating: 4.5, emoji: '👟', stock: 15, img: '1542291026-7eec264c27ff', desc: 'خفيف ومريح للجري اليومي.' },
-  { id: 'p5', name: 'ماكينة قهوة', cat: 'منزل', price: 799, rating: 4.7, emoji: '☕', stock: 4, img: '1517668808822-9ebb02f2a0e6', desc: 'إسبريسو احترافي بضغط 20 بار.' },
-  { id: 'p6', name: 'مصباح مكتب', cat: 'منزل', price: 89, rating: 4.2, emoji: '💡', stock: 30, img: '1507003211169-0a1dd7228f2d', desc: 'إضاءة LED قابلة للتعتيم بثلاث درجات.' },
-  { id: 'p7', name: 'لوحة مفاتيح', cat: 'إلكترونيات', price: 199, rating: 4.3, emoji: '⌨️', stock: 18, img: '1587829741301-dc798b83add3', desc: 'ميكانيكية بإضاءة RGB واتصال لاسلكي.' },
-  { id: 'p8', name: 'نظّارة شمسية', cat: 'أزياء', price: 129, rating: 4.1, emoji: '🕶️', stock: 3, img: '1511499767150-a48a237f0083', desc: 'حماية UV400 بإطار خفيف.' },
-];
-const CATEGORIES = ['الكل', 'إلكترونيات', 'أزياء', 'منزل'];
+const PRODUCTS = ${JSON.stringify(STORE_PRODUCTS)};
+let CATEGORIES = ['الكل', 'إلكترونيات', 'أزياء', 'منزل'];
 const STAFF = { admin: { pass: '1234', role: 'admin', name: 'مدير المتجر' } };
 const ORDER_FLOW = ['جديد', 'قيد التجهيز', 'تم الشحن', 'مكتمل'];
 const LOW_STOCK = 5;
 
-function load(key, fb) { try { var v = localStorage.getItem('jstore_' + key); return v ? JSON.parse(v) : fb; } catch { return fb; } }
-function save(key, val) { localStorage.setItem('jstore_' + key, JSON.stringify(val)); }
+function serverStore() { return typeof window !== 'undefined' && window.jaolaStoreAPI; }
+function storeRequired() { return document.documentElement?.dataset.storeServer === 'true'; }
+function html(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
+function load(key, fb) { if (storeRequired()) return [];  try { var v = localStorage.getItem('jstore_' + key); return v ? JSON.parse(v) : fb; } catch { return fb; } }
+function save(key, val) { if (storeRequired()) return; localStorage.setItem('jstore_' + key, JSON.stringify(val)); }
 
 let products = load('products', PRODUCTS.slice());
 let orders = load('orders', []);
-const state = { cat: 'الكل', query: '', sort: 'featured', cart: load('cart', []), step: 'cart', user: null, view: 'shop' };
+const state = { cat: 'الكل', query: '', sort: 'featured', cart: load('cart', []), step: 'cart', user: null, view: 'shop', busy: false, request: null, revision: null, viewVersion: 0 };
 
 function byId(id) { return document.getElementById(id); }
 function show(el, on) { if (el) el.classList.toggle('hidden', !on); }
@@ -189,15 +191,15 @@ function uid(p) { return p + Math.random().toString(36).slice(2, 7); }
 function imgUrl(id) { return 'https://images.unsplash.com/photo-' + id + '?w=600&q=80&auto=format&fit=crop'; }
 // صورة داخل حاوية .ph: بديل تدرّجيّ+رمز خلفها؛ الصورة فوقها وتختفي إن فشلت.
 function photo(p, cls) {
-  var emoji = '<span class="ph-emoji">' + (p.emoji || '🛍️') + '</span>';
-  var img = p.img ? '<img loading="lazy" src="' + imgUrl(p.img) + '" alt="' + p.name + '" onerror="this.style.display=&#39;none&#39;">' : '';
+  var emoji = '<span class="ph-emoji">' + html(p.emoji || '🛍️') + '</span>';
+  var img = p.img ? '<img loading="lazy" src="' + imgUrl(p.img) + '" alt="' + html(p.name) + '" onerror="this.style.display=&#39;none&#39;">' : '';
   return '<div class="ph ' + (cls || '') + '">' + emoji + img + '</div>';
 }
 
 // ── الكتالوج: فئات + بحث + فرز ─────────────────────────────────────────
 function renderCategories() {
   byId('catTabs').innerHTML = CATEGORIES.map(c =>
-    '<button class="cat ' + (c === state.cat ? 'active' : '') + '" data-action="cat" data-cat="' + c + '">' + c + '</button>').join('');
+    '<button class="cat ' + (c === state.cat ? 'active' : '') + '" data-action="cat" data-cat="' + html(c) + '">' + html(c) + '</button>').join('');
 }
 function visibleProducts() {
   let list = products.slice();
@@ -216,7 +218,7 @@ function renderProducts() {
     '<div class="card-media" data-action="open-product" data-id="' + p.id + '">' + photo(p) +
     (p.stock <= 0 ? '<span class="tag out">نفد</span>' : (p.stock <= LOW_STOCK ? '<span class="tag low">آخر ' + p.stock + '</span>' : '')) + '</div>' +
     '<div class="card-b">' +
-    '<div class="p-name">' + p.name + '</div>' +
+    '<div class="p-name">' + html(p.name) + '</div>' +
     '<div class="p-rating">' + stars(p.rating) + ' <span class="muted">(' + p.rating + ')</span></div>' +
     '<div class="p-foot"><span class="p-price">' + money(p.price) + ' ﷼</span>' +
     '<button class="btn small" data-action="add" data-id="' + p.id + '">أضف 🛒</button></div></div></div>').join('');
@@ -229,9 +231,9 @@ function openProduct(id) {
   byId('productDetail').innerHTML =
     '<button class="icon-btn close-x" data-action="close-product">×</button>' +
     photo(p, 'detail-media') +
-    '<h2>' + p.name + '</h2><div class="p-rating">' + stars(p.rating) + ' (' + p.rating + ')</div>' +
-    '<p class="detail-desc">' + p.desc + '</p>' +
-    '<div class="detail-meta">الفئة: ' + p.cat + ' · المتوفّر: ' + p.stock + '</div>' +
+    '<h2>' + html(p.name) + '</h2><div class="p-rating">' + stars(p.rating) + ' (' + p.rating + ')</div>' +
+    '<p class="detail-desc">' + html(p.desc) + '</p>' +
+    '<div class="detail-meta">الفئة: ' + html(p.cat) + ' · المتوفّر: ' + p.stock + '</div>' +
     '<div class="detail-foot"><span class="p-price">' + money(p.price) + ' ﷼</span>' +
     '<button class="btn primary" data-action="add" data-id="' + p.id + '">أضِف إلى السلّة</button></div>';
   show(byId('productModal'), true);
@@ -242,11 +244,13 @@ function closeProduct() { show(byId('productModal'), false); }
 function addToCart(id) {
   const p = findProduct(id); if (!p) return;
   const line = state.cart.find(c => c.id === id);
+  if (p.stock <= (line?.qty || 0)) { toast('الكمية المطلوبة غير متاحة.'); return; }
   if (line) line.qty += 1; else state.cart.push({ id: id, name: p.name, price: p.price, emoji: p.emoji, img: p.img, qty: 1 });
   save('cart', state.cart); updateCartUI(); toast('أُضيف إلى السلّة'); openCart();
 }
 function changeQty(id, delta) {
   const line = state.cart.find(c => c.id === id); if (!line) return;
+  if (delta > 0 && line.qty >= (findProduct(id)?.stock || 0)) { toast('الكمية المطلوبة غير متاحة.'); return; }
   line.qty += delta;
   if (line.qty <= 0) state.cart = state.cart.filter(c => c.id !== id);
   save('cart', state.cart); updateCartUI();
@@ -261,7 +265,7 @@ function updateCartUI() {
   const box = byId('cartItems');
   box.innerHTML = state.cart.length ? state.cart.map(c =>
     '<div class="cart-line">' + photo(c, 'cl-thumb') +
-    '<div class="cl-info"><div>' + c.name + '</div><div class="muted">' + money(c.price) + ' ﷼</div></div>' +
+    '<div class="cl-info"><div>' + html(c.name) + '</div><div class="muted">' + money(c.price) + ' ﷼</div></div>' +
     '<div class="qty"><button data-action="dec" data-id="' + c.id + '">−</button><span>' + c.qty + '</span>' +
     '<button data-action="inc" data-id="' + c.id + '">+</button></div></div>').join('')
     : '<p class="muted center">سلّتك فارغة</p>';
@@ -279,7 +283,7 @@ function openCheckout() {
 function renderCheckout() {
   const body = byId('checkoutBody');
   if (state.step === 'info') {
-    body.innerHTML = '<h2>بيانات التوصيل</h2>' +
+    body.innerHTML = '<h2>بيانات التوصيل</h2><p>الدفع عند الاستلام. تأكيد الطلب لا يعني إتمام دفع إلكتروني.</p>' +
       '<input id="coName" placeholder="الاسم الكامل"><input id="coPhone" placeholder="رقم الجوّال">' +
       '<input id="coAddr" placeholder="العنوان">' +
       '<div class="co-summary">الإجمالي: <b>' + money(cartTotal()) + ' ﷼</b> · ' + cartCount() + ' منتج</div>' +
@@ -290,7 +294,8 @@ function renderCheckout() {
       '<button class="btn primary" data-action="close-checkout">متابعة التسوّق</button></div>';
   }
 }
-function confirmOrder() {
+async function confirmOrder() {
+  if (storeRequired() || serverStore()) return checkoutServer();
   const name = (byId('coName') && byId('coName').value || '').trim();
   if (!name) { if (byId('coName')) byId('coName').classList.add('err'); return; }
   state.lastOrder = 1000 + Math.floor(Math.random() * 9000);
@@ -301,6 +306,52 @@ function confirmOrder() {
   state.step = 'done'; renderCheckout();
 }
 function closeCheckout() { show(byId('checkoutModal'), false); closeCart(); }
+
+function editStoreProduct(id) {
+  const p = findProduct(id); if (!p) return; state.editProduct = id;
+  for (const [field, value] of [['npName', p.name], ['npPrice', p.price], ['npStock', p.stock], ['npEmoji', p.emoji], ['npCat', p.cat]]) byId(field).value = value;
+  byId('npName').focus();
+}
+async function renderMyOrders() {
+  show(byId('myOrdersPanel'), true); byId('myOrdersList').textContent = 'جارٍ تحميل الطلبات…';
+  try {
+    const rows = await serverStore().mine(); state.myOrders = rows;
+    byId('myOrdersList').innerHTML = rows.length ? rows.map(o => '<div class="mini-row">#' + html(o.id) + ' · ' + html(o.status) + ' · ' + money(o.total) +
+      (o.status === 'جديد' ? '<button class="btn" data-action="cancel-my-order" data-id="' + html(o.id) + '">إلغاء</button>' : '') + '</div>').join('') : 'لا توجد طلبات لهذه الجلسة.';
+  } catch { byId('myOrdersList').textContent = 'تعذّر تحميل الطلبات.'; }
+}
+async function restoreStoreOrders() {
+  try { await serverStore().restore(byId('orderRecovery').value.trim()); byId('orderRecovery').value = ''; await renderMyOrders(); }
+  catch { toast('تحقق من رمز الاستعادة والاتصال.'); }
+}
+async function cancelStoreOrder(id, admin) {
+  const order = (admin ? orders : state.myOrders || []).find(o => o.id === id); if (!order) return;
+  try {
+    const body = { id, expectedStatus: order.status, status: 'ملغي' };
+    if (admin) await serverStore().transition(body); else await serverStore().cancel(body);
+    if (admin) await renderAdmin(); else await renderMyOrders(); await refreshStore();
+  } catch { toast('تعذّر الإلغاء. أعد تحميل الطلبات لمعرفة حالتها الحالية.'); }
+}
+async function refreshStore() {
+  try { products = await serverStore().catalog(); CATEGORIES = ['الكل', ...new Set(products.map(p => p.cat))]; renderCategories(); renderProducts(); }
+  catch { byId('productGrid').textContent = 'تعذّر تحميل المنتجات. أعد تحميل الصفحة.'; }
+}
+async function checkoutServer() {
+  if (state.busy || state.step !== 'info') return;
+  if (!serverStore()) { toast('خدمة الطلبات غير متاحة. لم يتم حفظ الطلب.'); return; }
+  const body = { customer: byId('coName').value.trim(), phone: byId('coPhone').value.trim(), address: byId('coAddr').value.trim(), items: state.cart.map(c => ({ id: c.id, qty: c.qty, price: c.price })) };
+  if (!body.customer || !body.phone || !body.address) { toast('أكمل الاسم والهاتف والعنوان.'); return; }
+  const fingerprint = JSON.stringify(body);
+  if (!state.request || state.request.fingerprint !== fingerprint) state.request = { fingerprint, id: crypto.randomUUID() };
+  state.busy = true;
+  try {
+    const order = await serverStore().checkout({ ...body, requestId: state.request.id });
+    state.lastOrder = order.id; state.request = null; state.cart = []; state.step = 'done'; updateCartUI(); renderCheckout(); await refreshStore();
+  } catch (error) {
+    if (error.message === 'PRICE_CHANGED' || error.message === 'OUT_OF_STOCK') { toast('تغير السعر أو المخزون. حدّث السلة قبل التأكيد.'); await refreshStore(); state.cart = state.cart.filter(c => findProduct(c.id)).map(c => ({ ...c, price: findProduct(c.id).price })); updateCartUI(); }
+    else toast('تعذّر تأكيد الطلب. أعد المحاولة؛ سيُستخدم رقم المحاولة نفسه لمنع التكرار.');
+  } finally { state.busy = false; }
+}
 
 // ── الأدوار: دخول المدير + تبديل الواجهة ───────────────────────────────
 function applyAccess() {
@@ -313,64 +364,87 @@ function applyAccess() {
 }
 function openAuth() { show(byId('authErr'), false); byId('auName').value = ''; byId('auPass').value = ''; show(byId('authModal'), true); }
 function closeAuth() { show(byId('authModal'), false); }
-function submitAuth() {
+async function submitAuth() {
+  if (storeRequired() || serverStore()) {
+    try { await serverStore().login(byId('auPass').value); byId('auPass').value = ''; state.user = { name: 'الإدارة', role: 'admin' }; closeAuth(); setView('admin'); }
+    catch { byId('auPass').value = ''; show(byId('authErr'), true); }
+    return;
+  }
   const name = (byId('auName').value || '').trim();
   const pass = (byId('auPass').value || '').trim();
   const acc = STAFF[name];
   if (acc && acc.pass === pass) { state.user = { name: acc.name, role: acc.role }; closeAuth(); setView('admin'); }
   else show(byId('authErr'), true);
 }
-function logout() { state.user = null; setView('shop'); }
+function logout() { if (serverStore()) serverStore().logout(); orders = []; byId('adminOrders').textContent = ''; byId('adminStats').textContent = ''; state.user = null; setView('shop'); }
 function authBtnClick() {
   if (!state.user) { openAuth(); return; }
   setView(state.view === 'admin' ? 'shop' : 'admin');
 }
 function setView(v) {
   if (v === 'admin' && !(state.user && state.user.role === 'admin')) v = 'shop';
-  state.view = v; applyAccess();
+  state.viewVersion++; state.view = v; applyAccess();
   if (v === 'shop') { renderCategories(); renderProducts(); }
   if (v === 'admin') renderAdmin();
 }
 
 // ── لوحة المدير ───────────────────────────────────────────────────────
-function renderAdmin() {
-  byId('npCat').innerHTML = CATEGORIES.filter(c => c !== 'الكل').map(c => '<option value="' + c + '">' + c + '</option>').join('');
-  const revenue = orders.reduce((s, o) => s + o.total, 0);
+async function renderAdmin() {
+  if (storeRequired() || serverStore()) {
+    const version = state.viewVersion; byId('adminOrders').textContent = 'جارٍ التحميل…';
+    try { const data = await serverStore().admin(); if (!state.user || state.view !== 'admin' || version !== state.viewVersion) return; products = data.products; orders = data.orders; state.revision = data.revision; }
+    catch { byId('adminOrders').textContent = 'تعذّر تحميل الإدارة. سجل الدخول مجدداً.'; return; }
+  }
+  byId('npCat').innerHTML = CATEGORIES.filter(c => c !== 'الكل').map(c => '<option value="' + html(c) + '">' + html(c) + '</option>').join('');
+  const revenue = orders.filter(o => o.status !== 'ملغي').reduce((s, o) => s + o.total, 0);
   const avg = orders.length ? Math.round(revenue / orders.length) : 0;
   const low = products.filter(p => p.stock <= LOW_STOCK).length;
   byId('adminStats').innerHTML =
-    stat('الإيراد', money(revenue) + ' ﷼') + stat('الطلبات', orders.length) +
+    stat('قيمة الطلبات', money(revenue) + ' ﷼') + stat('الطلبات', orders.length) +
     stat('متوسط الطلب', money(avg) + ' ﷼') + stat('المنتجات', products.length) +
     stat('مخزون منخفض', low, low ? 'warn' : '');
   byId('adminProducts').innerHTML = products.length ? products.map(p =>
-    '<div class="mini-row"><span>' + p.emoji + ' ' + p.name + '</span>' +
+    '<div class="mini-row"><span>' + html(p.emoji) + ' ' + html(p.name) + '</span>' +
     '<span class="mr-stock ' + (p.stock <= LOW_STOCK ? 'warn' : '') + '">مخزون: ' + p.stock + '</span>' +
     '<span class="mr-price">' + money(p.price) + ' ﷼</span>' +
+    '<button class="btn small" data-action="edit-product" data-id="' + p.id + '">تعديل</button>' +
     '<button class="btn small" data-action="del-product" data-id="' + p.id + '">🗑</button></div>').join('')
     : '<p class="muted">لا منتجات.</p>';
   byId('adminOrders').innerHTML = orders.length ? orders.slice().reverse().map(o =>
-    '<div class="mini-row"><span>#' + o.id + ' · ' + o.customer + '</span>' +
+    '<div class="mini-row"><span>#' + o.id + ' · ' + html(o.customer) + '<br>' + html(o.phone || '') + ' · ' + html(o.address || '') + '</span>' +
     '<span class="mr-price">' + money(o.total) + ' ﷼</span>' +
-    '<button class="pill ' + statusClass(o.status) + '" data-action="advance-order" data-id="' + o.id + '">' + o.status + ' ▸</button></div>').join('')
+    '<button class="pill ' + statusClass(o.status) + '" data-action="advance-order" data-id="' + o.id + '">' + o.status + ' ▸</button>' + ((o.status === 'جديد' || o.status === 'قيد التجهيز') ? '<button class="btn" data-action="cancel-admin-order" data-id="' + o.id + '">إلغاء</button>' : '') + '</div>').join('')
     : '<p class="muted">لا طلبات بعد.</p>';
 }
-function addProduct() {
+async function addProduct() {
   const name = (byId('npName').value || '').trim();
   const price = Number(byId('npPrice').value || 0);
   const stock = Number(byId('npStock').value || 0);
   const emoji = (byId('npEmoji').value || '📦').trim() || '📦';
   const cat = byId('npCat').value || CATEGORIES[1];
   if (!name || !(price > 0)) { byId('npName').classList.add('err'); return; }
+  if (storeRequired() || serverStore()) {
+    try { await serverStore().product({ revision: state.revision, id: state.editProduct || undefined, product: { ...(products.find(p => p.id === state.editProduct) || {}), name, price, stock, emoji, cat } }); state.editProduct = null; await renderAdmin(); toast('تم حفظ المنتج.'); }
+    catch { toast('تعذّر الحفظ. راجع البيانات وأعد فتح الإدارة عند تعارض التحديث.'); }
+    return;
+  }
   products.push({ id: uid('p'), name: name, cat: cat, price: price, rating: 5, emoji: emoji, stock: stock, img: '', desc: 'منتج جديد.' });
   save('products', products);
   byId('npName').value = ''; byId('npPrice').value = ''; byId('npStock').value = ''; byId('npEmoji').value = '';
   renderAdmin();
 }
-function deleteProduct(id) { products = products.filter(p => p.id !== id); save('products', products); renderAdmin(); }
-function advanceOrder(id) {
+async function deleteProduct(id) { if (storeRequired() || serverStore()) { try { await serverStore().product({ revision: state.revision, id, remove: true }); await renderAdmin(); } catch { toast('تعذّر حذف المنتج. أعد تحميل الإدارة.'); } return; } products = products.filter(p => p.id !== id); save('products', products); renderAdmin(); }
+async function advanceOrder(id) {
+  if (storeRequired() || serverStore()) {
+    const order = orders.find(o => o.id === id); if (!order) return;
+    const next = ORDER_FLOW[ORDER_FLOW.indexOf(order.status) + 1]; if (!next || order.status === 'ملغي') return;
+    try { await serverStore().transition({ id, expectedStatus: order.status, status: next }); await renderAdmin(); } catch { toast('تعذّر تحديث الطلب. أعد تحميل الإدارة.'); }
+    return;
+  }
   const o = orders.find(x => String(x.id) === String(id)); if (!o) return;
   const i = ORDER_FLOW.indexOf(o.status);
-  o.status = ORDER_FLOW[(i + 1) % ORDER_FLOW.length];
+  if (i < 0 || i >= ORDER_FLOW.length - 1) return;
+  o.status = ORDER_FLOW[i + 1];
   save('orders', orders); renderAdmin();
 }
 function statusClass(s) { return s === 'مكتمل' ? 'ok' : (s === 'تم الشحن' ? 'ship' : (s === 'قيد التجهيز' ? 'prep' : 'new')); }
@@ -381,6 +455,12 @@ function handleClick(e) {
   const el = e.target.closest('[data-action]'); if (!el) return;
   const id = el.dataset.id;
   switch (el.dataset.action) {
+    case 'edit-product': editStoreProduct(id); break;
+    case 'my-orders': renderMyOrders(); break;
+    case 'cancel-admin-order': cancelStoreOrder(id, true); break;
+    case 'cancel-my-order': cancelStoreOrder(id, false); break;
+    case 'order-recovery': if (serverStore()) byId('orderRecovery').value = serverStore().recoveryCode(); break;
+    case 'restore-orders': restoreStoreOrders(); break;
     case 'cat': setCategory(el.dataset.cat); break;
     case 'open-product': openProduct(id); break;
     case 'close-product': closeProduct(); break;
@@ -418,6 +498,10 @@ var _toastT;
 function toast(m) { const t = byId('toast'); if (!t) return; t.textContent = m; t.classList.add('on'); clearTimeout(_toastT); _toastT = setTimeout(() => t.classList.remove('on'), 2000); }
 
 function init() {
+  if (storeRequired() || serverStore()) {
+    refreshStore(); show(byId('myOrdersBtn'), true); byId('auName').classList.add('hidden'); document.querySelector('#authModal .demo').textContent = 'استخدم كلمة مرور مشروعك في JAOLA.';
+    window.addEventListener('pagehide', logout);
+  }
   document.addEventListener('click', handleClick);
   document.addEventListener('input', handleInput);
   document.addEventListener('change', handleChange);

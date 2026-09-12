@@ -35,7 +35,16 @@ export function bookingClient({ apiBase, token }) {
     return data;
   }
   window.jaolaBookingAPI = {
-    availability: () => request('booking/availability'),
+    availability: (service = '', resource = '') => request('booking/availability?service=' + encodeURIComponent(service) + '&resource=' + encodeURIComponent(resource)),
+    configuration: () => request('booking/admin/configuration', null, true),
+    configure: body => request('booking/admin/configuration', body, true),
+    recoveryCode: () => customerKey(),
+    restore: async value => {
+      if (!/^[a-f0-9]{64}$/.test(value)) throw Error('INVALID_RECOVERY_CODE');
+      const previous = key; key = value;
+      try { const rows = await request('booking/mine'); if (!rows.length) throw Error('NO_BOOKINGS'); sessionStorage.setItem(storageKey, value); return rows; }
+      catch (error) { key = previous; throw error; }
+    },
     mine: () => request('booking/mine'),
     create: body => request('booking', body),
     cancel: (id, staff) => request(staff ? 'booking/admin/cancel' : 'booking/cancel', { id }, staff),
