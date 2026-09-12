@@ -11,6 +11,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'node:crypto';
 import { storeKey } from './storeKey.js';
 
 const MAX_KEYS = 60;                  // عدد مفاتيح كحد أقصى لكل مشروع
@@ -24,12 +25,13 @@ const RESERVED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const slug = (u, p) => storeKey(u, p);
 const storePath = (dir, u, p) => path.join(dir, slug(u, p) + '.json');
 
-/** يقرأ كل مفاتيح مشروع (كائن مسطّح key→value). لا يرمي أبداً. */
+/** Missing stores are empty; unreadable/corrupt stores must never become empty writes. */
 export function readStore(dir, user, project) {
     try {
         const s = JSON.parse(fs.readFileSync(storePath(dir, user, project), 'utf8'));
-        return (s && typeof s === 'object' && !Array.isArray(s)) ? s : {};
-    } catch { return {}; }
+        if (!s || typeof s !== 'object' || Array.isArray(s)) throw new Error('Invalid data store');
+        return s;
+    } catch (error) { if (error.code === 'ENOENT') return {}; throw error; }
 }
 
 /** يكتب مفتاحاً واحداً (يدمج مع الموجود) — يفرض حدود الحجم/العدد. */
@@ -46,6 +48,11 @@ export function writeKey(dir, user, project, dataKey, value) {
         return { error: 'تجاوزت الحد الأقصى لحجم بيانات هذا المشروع' };
     }
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(storePath(dir, user, project), JSON.stringify(next));
+    const destination = storePath(dir, user, project);
+    const temporary = destination + '.' + randomUUID() + '.tmp';
+    try {
+        fs.writeFileSync(temporary, JSON.stringify(next), { flag: 'wx', mode: 0o600 });
+        fs.renameSync(temporary, destination);
+    } finally { fs.rmSync(temporary, { force: true }); }
     return { ok: true };
 }

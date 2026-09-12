@@ -116,6 +116,8 @@ test('الوسيط: توكنٌ صالح يمرّ ويُعلّق الحمولةَ
 
 // 🔑 الضمانُ يسقط بصمتٍ إن تحقّق موضعٌ واحدٌ بسرٍّ مفرد: يقبل طريقٌ ما يرفضه
 // آخر أثناء التدوير. فيُمنع أيُّ تحقّقٍ خارج `utils/auth.js`.
+// Project sessions use a separate derived signing key and audience, tested in projectSessions.test.mjs.
+// Rotating the platform key intentionally invalidates these short-lived administrator sessions.
 test('لا تحقّقَ من توكنٍ يلتفّ على قائمة أسرار التدوير', () => {
     const offenders = [];
     (function walk(dir, rel = '') {
@@ -136,7 +138,7 @@ test('لا تحقّقَ من توكنٍ يلتفّ على قائمة أسرار 
     })(BACKEND);
     // `utils/auth.js` هو التحقّقُ نفسُه. و`agents/authAgent.js` **مولِّدُ كود**:
     // نداؤه داخل نصٍّ يُكتب في تطبيق المستخدم، لا في مصادقة جولا.
-    assert.deepStrictEqual(offenders.sort(), ['agents/authAgent.js', 'utils/auth.js'],
+    assert.deepStrictEqual(offenders.sort(), ['agents/authAgent.js', 'services/projectSessions.js', 'utils/auth.js'],
         'موضعُ تحقّقٍ جديد يلتفّ على verifyJwt — فيَقبل طريقٌ ما يرفضه آخر أثناء التدوير');
     const gen = fs.readFileSync(path.join(BACKEND, 'agents/authAgent.js'), 'utf8');
     assert.ok(/'api\/middleware\/auth\.js':\s*`/.test(gen),

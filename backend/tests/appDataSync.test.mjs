@@ -5,11 +5,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { readStore, writeKey } from '../services/appData.js';
-import { buildDataSyncJS, injectDataSyncTag, installDataSync } from '../services/dataSync.js';
+import { buildDataSyncJS as buildSecureDataSyncJS, injectDataSyncTag, installDataSync } from '../services/dataSync.js';
 import { setCloneTrack, getCloneTrack, setCloneIdentity, getCloneId, getProjectMemory } from '../agents/projectMemory.js';
 import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
 
 divertConsoleToStderr();
+const buildDataSyncJS = options => buildSecureDataSyncJS({ ...options, requireSession: false });
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'appdata-'));
 
@@ -161,4 +162,137 @@ test('projectMemory: يحفظ هوية الكلون ويسترجعها للمش�
     const old = getProjectMemory(user, 'old');
     old.history = [{ action: 'كلون jaola-events: طلب قديم' }];
     assert.equal(getCloneId(user, 'old'), 'jaola-events', 'ترحيل ضمني للمشاريع السابقة للحقل');
+});
+
+test('dataSync: HTTP failures visible, sessionStorage untouched, late hydration preserves edits', async () => {
+    const { JSDOM } = await import('jsdom');
+    const dom = new JSDOM('<body></body>', { runScripts: 'dangerously', url: 'https://x.example' });
+    try {
+        let resolveLoad;
+        const puts = [];
+        dom.window.fetch = (url, options) => {
+            if (!options) return new Promise(resolve => { resolveLoad = resolve; });
+            puts.push(JSON.parse(options.body));
+            return Promise.resolve({ ok: false, status: 403 });
+        };
+        dom.window.eval(buildDataSyncJS({ apiBase: 'https://api.example', token: 't' }));
+        dom.window.sessionStorage.setItem('private', 'session');
+        dom.window.localStorage.setItem('user_session', 'local');
+        dom.window.localStorage.setItem('orders', 'new');
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(puts.length, 1);
+        assert.equal(puts[0].value, 'new');
+        assert.ok(dom.window.document.querySelector('[role="alert"]'));
+        resolveLoad({ ok: true, json: async () => ({ orders: 'old', catalog: 'remote' }) });
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(dom.window.localStorage.getItem('orders'), 'new');
+        assert.equal(dom.window.localStorage.getItem('catalog'), 'remote');
+    } finally { dom.window.close(); }
+});
+
+test('dataSync: same-key writes wait for acknowledgement; other keys remain independent', async () => {
+    const { JSDOM } = await import('jsdom');
+    const dom = new JSDOM('<body></body>', { runScripts: 'dangerously', url: 'https://x.example' });
+    const tick = () => new Promise(resolve => setImmediate(resolve));
+    try {
+        const calls = [];
+        dom.window.fetch = (url, options) => {
+            if (!options) return Promise.resolve({ ok: true, json: async () => ({}) });
+            return new Promise((resolve, reject) => calls.push({ url, ...JSON.parse(options.body), resolve, reject }));
+        };
+        dom.window.eval(buildDataSyncJS({ apiBase: 'https://api.example', token: 't' }));
+        dom.window.localStorage.setItem('orders', 'first');
+        dom.window.localStorage.setItem('orders', 'second');
+        dom.window.localStorage.setItem('catalog', 'independent');
+        await tick();
+        assert.deepEqual(calls.map(c => c.value), ['first', 'independent']);
+        calls[0].resolve({ ok: true });
+        await tick();
+        assert.equal(calls[2].value, 'second');
+        dom.window.localStorage.setItem('orders', 'third');
+        calls[2].reject(new Error('offline'));
+        await tick();
+        assert.equal(calls[3].value, 'third', 'a failed request does not stall subsequent saves');
+        assert.ok(dom.window.document.querySelector('[role="alert"]'));
+        calls[1].resolve({ ok: true });
+        calls[3].resolve({ ok: true });
+        await tick();
+        assert.equal(dom.window.localStorage.getItem('orders'), 'third');
+    } finally { dom.window.close(); }
+});
+
+test('public data handlers reject invalid identity before touching storage', async () => {
+    const vm = await import('node:vm');
+    const source = fs.readFileSync(new URL('../server.js', import.meta.url), 'utf8');
+    const start = source.indexOf("app.get('/api/public/data',");
+    const end = source.indexOf('// 🔐 مصادقة حقيقية', start);
+    assert.ok(start >= 0 && end > start);
+    const handlers = {};
+    let reads = 0, writes = 0;
+    vm.runInNewContext(source.slice(start, end), {
+        app: { get: (p, limit, fn) => { handlers.get = fn; }, put: (p, limit, fn) => { handlers.put = fn; } },
+        appDataLimit: () => {}, APPDATA_DIR: 'unused',
+        verifyBotToken: token => token === 'valid' ? { u: 'alice', p: 'shop' } : null,
+        readAppDataStore: () => { reads++; throw new Error('disk unavailable'); },
+        writeAppDataKey: () => { writes++; return { ok: true }; },
+    });
+    const response = () => ({ code: 200, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } });
+    for (const method of ['get', 'put']) {
+        const res = response();
+        handlers[method]({ query: {}, body: {}, params: { key: 'orders' } }, res);
+        assert.equal(res.code, 401);
+    }
+    assert.equal(reads, 0);
+    assert.equal(writes, 0);
+    const unavailable = response();
+    handlers.get({ query: { token: 'valid' } }, unavailable);
+    assert.equal(unavailable.code, 500);
+    const saved = response();
+    handlers.put({ body: { token: 'valid', value: '[]' }, params: { key: 'orders' } }, saved);
+    assert.equal(saved.code, 200);
+    assert.equal(saved.body.success, true);
+    assert.equal(writes, 1);
+});
+
+test('appData: corrupt stores are preserved instead of silently replaced', () => {
+    const dir = tmp();
+    try {
+        for (const invalid of ['{broken', 'null', '[]']) {
+            const file = path.join(dir, 'u__p.json');
+            fs.writeFileSync(file, invalid);
+            assert.throws(() => readStore(dir, 'u', 'p'));
+            assert.throws(() => writeKey(dir, 'u', 'p', 'orders', 'new'));
+            assert.equal(fs.readFileSync(file, 'utf8'), invalid);
+        }
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('appData: atomic replacement preserves independent keys and leaves no temporary files', () => {
+    const dir = tmp();
+    try {
+        writeKey(dir, 'u', 'p', 'orders', 'old');
+        writeKey(dir, 'u', 'p', 'catalog', 'kept');
+        writeKey(dir, 'u', 'p', 'orders', 'new');
+        assert.deepEqual(readStore(dir, 'u', 'p'), { orders: 'new', catalog: 'kept' });
+        assert.deepEqual(fs.readdirSync(dir), ['u__p.json']);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('installDataSync: upgrades generated scripts and retains React script type', () => {
+    const dir = tmp();
+    try {
+        fs.writeFileSync(path.join(dir, 'index.html'), '<body><script type="text/babel" src="app.js"></script></body>');
+        installDataSync(dir, { apiBase: 'https://old.example', token: 'old' });
+        const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
+        const result = installDataSync(dir, { apiBase: 'https://new.example', token: 'new' });
+        assert.equal(result.updated, true);
+        const script = fs.readFileSync(path.join(dir, 'jaola-data.js'), 'utf8');
+        assert.ok(script.includes('var APP_TYPE = "text/babel";'));
+        assert.ok(script.includes('https://new.example'));
+        assert.equal(fs.readFileSync(path.join(dir, 'index.html'), 'utf8'), html);
+        assert.equal(installDataSync(dir, { apiBase: 'https://new.example', token: 'new' }).skipped, true);
+        fs.writeFileSync(path.join(dir, 'jaola-data.js'), '// custom client');
+        assert.equal(installDataSync(dir, { apiBase: 'https://new.example', token: 'new' }).skipped, true);
+        assert.equal(fs.readFileSync(path.join(dir, 'jaola-data.js'), 'utf8'), '// custom client');
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

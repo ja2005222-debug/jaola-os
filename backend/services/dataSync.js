@@ -1,7 +1,7 @@
 /**
  * 🗄️ مزامنة بيانات القوالب (jaola-data) — تُحقن تلقائياً عند تطبيق قالب أو
- * نشر مشروع: تعترض كل localStorage.setItem محلياً وترسلها للخادم (fire-and-
- * forget)، وعند التحميل تسحب أحدث نسخة من الخادم قبل تشغيل app.js — فتعمل
+ * نشر مشروع: تعترض localStorage.setItem وترسلها للخادم مع إظهار فشل HTTP
+ * أو الشبكة، وعند التحميل تسحب نسخة من الخادم قبل تشغيل app.js — فتعمل
  * قوالب «السيستم» (عيادة/نقطة بيع/مستودع...) كأداة عمل حقيقية تتزامن بين
  * الأجهزة بدل أن تبقى حبيسة متصفح واحد.
  *
@@ -13,14 +13,15 @@
 
 import fs from 'fs';
 import path from 'path';
+import { projectSessionClient } from './projectSessionClient.js';
 
 const DATA_FILE = 'jaola-data.js';
 // يطابق <script src="app.js"> بأي ترتيب/وجود سمة type (مثل type="text/babel"
 // لقوالب React عبر Babel standalone) — يُستخرَج نوعها إن وُجدت.
 const APP_SCRIPT_RE = /<script\b[^>]*\bsrc=["']app\.js["'][^>]*>\s*<\/script>/;
 
-/** يبني كود المزامنة (vanilla، بلا اعتماديات، فشل الشبكة صامت دائماً). */
-export function buildDataSyncJS({ apiBase, token, appScript = 'app.js', appScriptType = '', timeoutMs = 4000 }) {
+/** يبني كود المزامنة مع إظهار فشل الحفظ أو تحميل البيانات. */
+export function buildDataSyncJS({ apiBase, token, appScript = 'app.js', appScriptType = '', timeoutMs = 4000, requireSession = true }) {
     const base = String(apiBase || '').replace(/\/$/, '');
     return `// 🗄️ JAOLA Data Sync — تخزين حقيقي متزامن بين الأجهزة (يُولَّد آلياً)
 (function () {
@@ -30,8 +31,23 @@ export function buildDataSyncJS({ apiBase, token, appScript = 'app.js', appScrip
   var APP = ${JSON.stringify(appScript)};
   var APP_TYPE = ${JSON.stringify(String(appScriptType || ''))};
   var TIMEOUT_MS = ${Number(timeoutMs) || 4000};
+  function startSync() {
   var origSetItem = localStorage.setItem.bind(localStorage);
   var appLoaded = false;
+  var dirtyKeys = new Set();
+  function syncFailure() {
+    var notice = document.getElementById('jaola-sync-warning');
+    if (!notice && document.body) {
+      notice = document.createElement('div');
+      notice.id = 'jaola-sync-warning';
+      notice.setAttribute('role', 'alert');
+      notice.dir = 'rtl';
+      notice.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:2147483647;background:#7f1d1d;color:white;padding:12px;text-align:center';
+      notice.textContent = 'تعذّر تأكيد مزامنة البيانات مع الخادم. قد تكون البيانات المحلية غير محدثة أو لم تُحفظ على الخادم.';
+      document.body.appendChild(notice);
+    }
+    window.dispatchEvent(new CustomEvent('jaola:sync-error'));
+  }
 
   // app.js (مُحمَّل بعده) يقرأ هذا لمصادقة الدخول الحقيقية عبر الخادم —
   // بدل مقارنة كلمة مرور نص صريح محلياً. لا سرّ هنا (نفس فلسفة التوكن).
@@ -73,32 +89,43 @@ export function buildDataSyncJS({ apiBase, token, appScript = 'app.js', appScrip
 
   if (!API || !TOKEN) { loadApp(); return; }
 
-  // كل كتابة محلية تُرحَّل للخادم فوراً (لا تنتظر الاستجابة، فشل صامت)
-  localStorage.setItem = function (k, v) {
+  // Storage methods must be patched on the prototype; assigning an instance
+  // property may simply create a storage key in real browsers.
+  var nativeSetItem = Storage.prototype.setItem;
+  var writes = new Map();
+  Storage.prototype.setItem = function (k, v) {
+    if (this !== localStorage) return nativeSetItem.call(this, k, v);
+    k = String(k); v = String(v);
     origSetItem(k, v);
     if (!isSynced(k)) return;
-    try {
-      fetch(API + '/api/public/data/' + encodeURIComponent(k), {
+    dirtyKeys.add(k);
+    var pending = (writes.get(k) || Promise.resolve()).then(function () {
+      return fetch(API + '/api/public/data/' + encodeURIComponent(k), {
         method: 'PUT', keepalive: true,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: TOKEN, value: v }),
-      }).catch(function () {});
-    } catch (e) { /* الحفظ المحلي تمّ فعلاً — لا تعطّل التطبيق */ }
+      }).then(function (r) { if (!r.ok) syncFailure(); });
+    }).catch(syncFailure);
+    writes.set(k, pending);
+    pending.then(function () { if (writes.get(k) === pending) writes.delete(k); });
   };
 
   // عند التحميل: اسحب أحدث نسخة من الخادم (بمهلة) قبل تشغيل التطبيق —
   // حتى لا يعمل بنسخة محلية قديمة على جهاز لم يُحدَّث منذ فترة.
   var settled = false;
-  var timer = setTimeout(function () { if (!settled) { settled = true; loadApp(); } }, TIMEOUT_MS);
+  var timer = setTimeout(function () { if (!settled) syncFailure(); }, TIMEOUT_MS);
   fetch(API + '/api/public/data?token=' + encodeURIComponent(TOKEN))
-    .then(function (r) { return r.ok ? r.json() : {}; })
+    .then(function (r) { if (!r.ok) throw new Error('Data load failed'); return r.json(); })
     .then(function (data) {
       if (data && typeof data === 'object') {
-        Object.keys(data).forEach(function (k) { if (isSynced(k)) origSetItem(k, data[k]); });
+        Object.keys(data).forEach(function (k) { if (isSynced(k) && !dirtyKeys.has(k)) origSetItem(k, data[k]); });
+        loadApp();
       }
     })
-    .catch(function () {})
-    .then(function () { if (!settled) { settled = true; clearTimeout(timer); loadApp(); } });
+    .catch(syncFailure)
+    .then(function () { settled = true; clearTimeout(timer); });
+  }
+  ${requireSession ? `if (API && TOKEN) (${projectSessionClient.toString()})(API, TOKEN, startSync); else startSync();` : 'startSync();'}
 })();
 `;
 }
@@ -129,10 +156,21 @@ export function installDataSync(projectPath, { apiBase, token }) {
     const idxPath = path.join(projectPath, 'index.html');
     if (!fs.existsSync(idxPath)) return { skipped: true };
     const html = fs.readFileSync(idxPath, 'utf8');
-    const appScriptType = extractAppScriptType(html);
+    let appScriptType = extractAppScriptType(html);
     const next = injectDataSyncTag(html);
-    if (next === html) return { skipped: true }; // مُثبَّت مسبقاً أو app.js غير موجود بالشكل المتوقَّع
-    fs.writeFileSync(path.join(projectPath, DATA_FILE), buildDataSyncJS({ apiBase, token, appScriptType }));
+    const scriptPath = path.join(projectPath, DATA_FILE);
+    if (next === html) {
+        if (!html.includes(DATA_FILE) || !fs.existsSync(scriptPath)) return { skipped: true };
+        const previous = fs.readFileSync(scriptPath, 'utf8');
+        if (!previous.startsWith('// 🗄️ JAOLA Data Sync')) return { skipped: true };
+        const type = previous.match(/var APP_TYPE = ("[^"\n]*");/);
+        if (type) appScriptType = JSON.parse(type[1]);
+        const updated = buildDataSyncJS({ apiBase, token, appScriptType });
+        if (previous === updated) return { skipped: true };
+        fs.writeFileSync(scriptPath, updated);
+        return { ok: true, updated: true };
+    }
+    fs.writeFileSync(scriptPath, buildDataSyncJS({ apiBase, token, appScriptType }));
     fs.writeFileSync(idxPath, next);
     return { ok: true };
 }

@@ -97,6 +97,7 @@ import { recordError, recentErrors } from './services/errorLog.js';
 import { recordAdminAction, recentAdminActions } from './services/adminAudit.js';
 import { listUsers as listAdminUsers, setUserPlan } from './services/adminUsers.js';
 import { verifyPassword as verifyProjectPassword, setPassword as setProjectPassword } from './services/projectAuth.js';
+import { credentialVersion, issueProjectSession, projectSessionGuard } from './services/projectSessions.js';
 import { broadcastPresence } from './services/presence.js';
 import { saveAsset, readAsset } from './services/appAssets.js';
 import { listMarkets, getAnalysis, getOpportunities, searchCoins, isValidCoinId, MAX_WATCHLIST, SUPPORTED_COINS, TIMEFRAMES, findCoin } from './services/cryptoMarket.js';
@@ -231,7 +232,7 @@ const io = new Server(httpServer, {
 const OPEN_CORS_PATHS = new Set(['/api/jaola-bot/chat', '/api/agent-chat', '/api/public/site-hit', '/api/public/site-message', '/api/public/data', '/api/public/auth/login', '/api/public/auth/set-password']);
 // 🗄️ /api/public/data/:key و/api/public/collections/:name[/:id] بمفاتيح
 // ديناميكية في المسار — تطابق بادئة لا مساواة تامّة
-const isOpenCorsPath = (p) => OPEN_CORS_PATHS.has(p) || p.startsWith('/api/public/data/') || p.startsWith('/api/public/collections/') || p.startsWith('/api/public/assets/') || p.startsWith('/api/public/crypto/');
+const isOpenCorsPath = (p) => OPEN_CORS_PATHS.has(p) || p.startsWith('/api/public/data/') || p.startsWith('/api/public/collections/') || p.startsWith('/api/public/assets/') || p.startsWith('/api/public/crypto/') || p.startsWith('/api/public/budget/') || p.startsWith('/api/public/stock/');
 const corsDelegate = (req, callback) => {
     if (isOpenCorsPath(req.path)) return callback(null, { origin: true, credentials: false, methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] });
     callback(null, corsOptions);
@@ -3218,18 +3219,32 @@ app.post('/api/public/site-subscribe', publicSiteLimit, (req, res) => {
 // يقرأ/يكتب موقع منشور مباشرة (توكن المشروع الموقّع، لا جلسة مستخدم) —
 // نفس فلسفة صندوق الموقع أعلاه: ملفّي، صامد بلا Mongo، فشل صامت دائماً.
 const APPDATA_DIR = path.join(BASE_WORKSPACE, '.appdata');
+const APPAUTH_DIR = path.join(BASE_WORKSPACE, '.appauth');
+const requireProjectSession = projectSessionGuard({ dir: APPAUTH_DIR, secret: JWT_SECRET, verifyProjectToken: verifyBotToken });
+app.use(['/api/public/data', '/api/public/collections', '/api/public/assets', '/api/public/budget', '/api/public/crypto', '/api/public/stock'], requireProjectSession);
+
+// Initial provisioning/reset is available only to the authenticated project owner.
+app.post('/api/project/access-password', verifyToken, authLimit, validateProjectOwnership, async (req, res) => {
+    if (!req.user.username || req.user.username === 'guest_user') return res.status(403).json({ error: 'Owner login required' });
+    try {
+        if (typeof req.body.password !== 'string' || req.body.password.length < 12) return res.status(400).json({ error: 'استخدم كلمة مرور من 12 حرفًا على الأقل' });
+        const result = await setProjectPassword(APPAUTH_DIR, req.user.username, req.activeProject, req.body.password, undefined, { ownerReset: true });
+        if (result.error) return res.status(result.status || 400).json(result);
+        res.json({ success: true });
+    } catch { res.status(500).json({ error: 'تعذّر حفظ كلمة المرور' }); }
+});
 
 // سحب كل مفاتيح المشروع دفعة واحدة (عند تحميل الصفحة، قبل تشغيل app.js)
 app.get('/api/public/data', appDataLimit, (req, res) => {
     const v = verifyBotToken(req.query?.token);
-    if (!v?.u || !v?.p) return res.json({});
-    try { res.json(readAppDataStore(APPDATA_DIR, v.u, v.p)); } catch { res.json({}); }
+    if (!v?.u || !v?.p) return res.status(401).json({ error: 'Invalid project token' });
+    try { res.json(readAppDataStore(APPDATA_DIR, v.u, v.p)); } catch { res.status(500).json({ error: 'Data unavailable' }); }
 });
 
 // كتابة مفتاح واحد (كل نداء localStorage.setItem محليّاً يُرحَّل هنا)
 app.put('/api/public/data/:key', appDataLimit, (req, res) => {
     const v = verifyBotToken(req.body?.token);
-    if (!v?.u || !v?.p) return res.status(204).end();
+    if (!v?.u || !v?.p) return res.status(401).json({ error: 'Invalid project token' });
     try {
         const r = writeAppDataKey(APPDATA_DIR, v.u, v.p, req.params.key, req.body?.value);
         if (r.error) return res.status(400).json({ error: r.error });
@@ -3240,16 +3255,23 @@ app.put('/api/public/data/:key', appDataLimit, (req, res) => {
 // 🔐 مصادقة حقيقية لدخول قوالب السيستم — كلمة مرور مُجزَّأة تُتحقَّق هنا
 // فقط، بدل مقارنة نص صريح محلياً (كانت تُقرَأ من localStorage/jaola-data
 // مباشرة). الافتراضية 'admin' مقبولة حتى يُغيِّرها المالك من الإعدادات.
-const APPAUTH_DIR = path.join(BASE_WORKSPACE, '.appauth');
 app.post('/api/public/auth/login', authLimit, async (req, res) => {
     const v = verifyBotToken(req.body?.token);
     if (!v?.u || !v?.p) return res.json({ ok: false });
-    try { res.json({ ok: await verifyProjectPassword(APPAUTH_DIR, v.u, v.p, req.body?.password) }); }
+    try {
+        if (!credentialVersion(APPAUTH_DIR, v.u, v.p)) return res.status(403).json({ ok: false, code: 'OWNER_SETUP_REQUIRED' });
+        if (typeof req.body?.password !== 'string' || req.body.password.length < 12) return res.status(401).json({ ok: false });
+        const ok = await verifyProjectPassword(APPAUTH_DIR, v.u, v.p, req.body?.password);
+        if (!ok) return res.status(401).json({ ok: false });
+        res.json({ ok: true, session: issueProjectSession(APPAUTH_DIR, v.u, v.p, JWT_SECRET) });
+    }
     catch { res.json({ ok: false }); }
 });
 app.post('/api/public/auth/set-password', authLimit, async (req, res) => {
     const v = verifyBotToken(req.body?.token);
     if (!v?.u || !v?.p) return res.status(204).end();
+    if (!credentialVersion(APPAUTH_DIR, v.u, v.p)) return res.status(403).json({ error: 'Owner setup required' });
+    if (typeof req.body?.password !== 'string' || req.body.password.length < 12) return res.status(400).json({ error: 'Use at least 12 characters' });
     try {
         // 🔒 `currentPassword` إلزاميّ متى كانت هناك كلمة مرور مضبوطة: التوكن
         // وحده لا يكفي لأنه منشورٌ في صفحة الموقع نفسها (انظر projectAuth.js).
