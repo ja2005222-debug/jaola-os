@@ -78,10 +78,13 @@ function printVisit(v, pet, owner, clinicName, currency) {
 }
 
 function Login({ onLogin }) {
-  const [role, setRole] = useState('vet');
+  const [role, setRole] = useState(function () { return window.JAOLA_IDENTITY?.uiRole || 'vet'; });
   const [pass, setPass] = useState('');
   const [curPass, setCurPass] = useState(''); // 🔒 إثبات الاعتماد القائم — التوكن منشورٌ في الصفحة
   const [err, setErr] = useState(false);
+  useEffect(function () {
+    if (window.JAOLA_IDENTITY?.account && window.JAOLA_IDENTITY.uiRole) onLogin(window.JAOLA_IDENTITY.uiRole);
+  }, []);
 
   function submit(e) {
     e.preventDefault();
@@ -106,7 +109,7 @@ function Login({ onLogin }) {
         <p className="hint">أصحاب حيوانات وحيواناتهم · زيارات بتشخيص وتطعيم · سجل تطعيمات · فاتورة كشف قابلة للطباعة.</p>
         <form onSubmit={submit}>
           <label>الدور</label>
-          <select value={role} onChange={function (e) { setRole(e.target.value); }}>
+          <select value={role} disabled={!!window.JAOLA_IDENTITY?.account} onChange={function (e) { setRole(e.target.value); }}>
             <option value="vet">طبيب بيطري</option>
             <option value="reception">استقبال</option>
           </select>
@@ -181,7 +184,7 @@ function Owners({ owners, addOwner }) {
   );
 }
 
-function Pets({ pets, owners, addPet, openVisitForm }) {
+function Pets({ pets, owners, addPet, openVisitForm, canTreat }) {
   const [ownerId, setOwnerId] = useState(owners[0] ? owners[0].id : '');
   const [name, setName] = useState('');
   const [species, setSpecies] = useState('');
@@ -217,7 +220,7 @@ function Pets({ pets, owners, addPet, openVisitForm }) {
                 {due ? <span className="badge warn">يحتاج تطعيماً</span> : <span className="badge">محدّث</span>}
               </div>
               <div className="hint" style={{ lineHeight: 1.9 }}>{p.species} · العمر {p.age} · المالك: {o ? o.name : '؟'}</div>
-              <button className="btn tiny primary" onClick={function () { openVisitForm(p.id); }}>🩺 تسجيل زيارة</button>
+              {canTreat && <button className="btn tiny primary" onClick={function () { openVisitForm(p.id); }}>🩺 تسجيل زيارة</button>}
             </div>
           );
         }) : <p className="hint">لا حيوانات بعد — أضف حيواناً من الأعلى.</p>}
@@ -313,7 +316,7 @@ function Shell({ session, view, setView, onLogout, children }) {
       <header className="topbar no-print">
         <div className="brand"><span className="mk">🐾</span> <span id="brandName">عيادة jaola البيطرية</span></div>
         <nav className="tabs">
-          {tabs.map(function (t) {
+          {tabs.filter(function (t) { return session.role === 'vet' || t[0] !== 'settings'; }).map(function (t) {
             const active = view === t[0] || (view === 'visitForm' && t[0] === 'pets');
             return <button className={'tab ' + (active ? 'active' : '')} key={t[0]} onClick={function () { setView(t[0]); }}>{t[1]}</button>;
           })}
@@ -404,10 +407,10 @@ function App() {
     <Shell session={session} view={view} setView={setView} onLogout={handleLogout}>
       {view === 'dashboard' && <Dashboard pets={pets} owners={owners} visits={visits} currency={settings.currency} />}
       {view === 'owners' && <Owners owners={owners} addOwner={addOwner} />}
-      {view === 'pets' && <Pets pets={pets} owners={owners} addPet={addPet} openVisitForm={openVisitForm} />}
-      {view === 'visitForm' && <VisitForm pet={activePet} onBack={function () { setView('pets'); }} saveVisit={saveVisit} />}
+      {view === 'pets' && <Pets pets={pets} owners={owners} addPet={addPet} openVisitForm={openVisitForm} canTreat={session.role === 'vet'} />}
+      {view === 'visitForm' && session.role === 'vet' && <VisitForm pet={activePet} onBack={function () { setView('pets'); }} saveVisit={saveVisit} />}
       {view === 'reports' && <Reports pets={pets} visits={visits} currency={settings.currency} exportCsv={exportCsv} />}
-      {view === 'settings' && <Settings settings={settings} saveSettings={saveSettingsHandler} />}
+      {view === 'settings' && session.role === 'vet' && <Settings settings={settings} saveSettings={saveSettingsHandler} />}
     </Shell>
   );
 }

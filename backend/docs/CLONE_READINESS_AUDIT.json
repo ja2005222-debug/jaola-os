@@ -2259,7 +2259,7 @@
         "app.js",
         "styles.css"
       ],
-      "sourceSha256": "c6e1c6948e89ff252a1874469eace43eb57d837aa7a778a85f03224528fd7638",
+      "sourceSha256": "7ad2b98bd630705767bb2709e3ca1f4de218aeae98cf0bec9c19101a2ef72b79",
       "readiness": {
         "dataMode": "requires-runtime-verification",
         "roleCoverage": "declared-ui-only",

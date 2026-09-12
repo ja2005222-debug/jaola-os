@@ -34,11 +34,11 @@ export function projectTransactions(collection, { importLegacy = async () => ({}
         } catch (failure) { if (failure.code !== 11000) throw failure; }
         return collection.findOne({ _id }, { maxTimeMS: 5000 });
     }
-    async function snapshot(user, project) {
+    async function snapshot(user, project, access) {
         const doc = await document(user, project);
-        return { revision: doc.revision, data: doc.data };
+        return { revision: doc.revision, data: access ? access.snapshot(doc.data) : doc.data };
     }
-    async function commit(user, project, request) {
+    async function commit(user, project, request, access) {
         const { revision, id, changes } = request || {};
         if (!Number.isSafeInteger(revision) || revision < 0 || revision >= Number.MAX_SAFE_INTEGER) throw error(400, 'INVALID_REVISION');
         if (typeof id !== 'string' || !/^[\w-]{16,100}$/.test(id)) throw error(400, 'INVALID_REQUEST_ID');
@@ -47,7 +47,7 @@ export function projectTransactions(collection, { importLegacy = async () => ({}
             validateData({ [key]: value === null ? '' : value });
         }
         if (Object.keys(changes).length > 60 || bytes(changes) > 4 * 1024 * 1024) throw error(413, 'DATA_LIMIT');
-        const hash = createHash('sha256').update(JSON.stringify([revision, Object.entries(changes).sort(([a], [b]) => a.localeCompare(b))])).digest('hex');
+        const hash = createHash('sha256').update(JSON.stringify([revision, Object.entries(changes).sort(([a], [b]) => a.localeCompare(b)), ...(access ? [access.actorId] : [])])).digest('hex');
         const doc = await document(user, project);
         const prior = doc.receipts.find(receipt => receipt.id === id);
         if (prior) {
@@ -56,7 +56,7 @@ export function projectTransactions(collection, { importLegacy = async () => ({}
         }
         if (doc.revision !== revision) throw error(409, 'REVISION_CONFLICT');
         const data = { ...doc.data };
-        for (const [key, value] of Object.entries(changes)) {
+        for (const [key, value] of Object.entries(access ? access.changes(doc.data, changes) : changes)) {
             if (value === null) delete data[key]; else data[key] = value;
         }
         validateData(data);

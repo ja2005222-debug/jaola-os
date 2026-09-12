@@ -38,19 +38,20 @@ test('system deployment stops if runtime installation fails or cannot recognize 
     const start = server.indexOf("app.post('/api/deploy'");
     const end = server.indexOf('// 🧭 مشاريع full-stack', start);
     const source = server.slice(start, end) + 'res.json({ deployed: true }); });';
-    for (const installation of [() => ({ skipped: true }), () => { throw Error('disk full'); }, () => ({ ready: true })]) {
+    for (const [installation, dataReady] of [[() => ({ skipped: true }), true], [() => { throw Error('disk full'); }, true], [() => ({ ready: true }), true], [() => ({ ready: true }), false]]) {
         let handler, status = 200, body;
         vm.runInNewContext(source, {
             app: { post: (...args) => { handler = args.at(-1); } },
             verifyToken() {}, validateProjectOwnership() {},
             getCloneId: () => null, getCloneTrack: () => 'system', installDataSync: installation,
+            transactionStore: () => ({ snapshot: async () => { if (!dataReady) throw Error('database unavailable'); return { revision: 0, data: {} }; } }),
             installSiteConnect() {}, applySeoPack() {}, signBotToken: () => 'token',
             process: { env: { PUBLIC_BACKEND_URL: 'https://api.example.test' } },
         });
         const req = { user: { username: 'owner' }, activeProject: 'project', projectPath: '/project' };
         const res = { status(code) { status = code; return this; }, json(value) { body = value; return this; } };
         await handler(req, res);
-        if (installation.toString().includes('ready: true')) assert.equal(body.deployed, true);
+        if (installation.toString().includes('ready: true') && dataReady) assert.equal(body.deployed, true);
         else { assert.ok([409, 503].includes(status)); assert.equal(body.deployed, undefined); }
     }
 });

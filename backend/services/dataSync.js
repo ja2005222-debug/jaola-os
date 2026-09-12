@@ -15,6 +15,7 @@ import fs from 'fs';
 import path from 'path';
 import { projectSessionClient } from './projectSessionClient.js';
 import { transactionSyncClient } from './transactionSyncClient.js';
+import { projectTeamClient } from './projectTeamClient.js';
 
 const DATA_FILE = 'jaola-data.js';
 // يطابق <script src="app.js"> بأي ترتيب/وجود سمة type (مثل type="text/babel"
@@ -127,7 +128,7 @@ export function buildDataSyncJS({ apiBase, token, appScript = 'app.js', appScrip
     .catch(syncFailure)
     .then(function () { settled = true; clearTimeout(timer); });
   }
-  ${requireSession ? `if (API && TOKEN) (${projectSessionClient.toString()})(API, TOKEN, startSync); else startSync();` : 'startSync();'}
+  ${requireSession ? `if (API && TOKEN) (${projectSessionClient.toString()})(API, TOKEN, startSync, ${projectTeamClient.toString()}); else startSync();` : 'startSync();'}
 })();
 `;
 }

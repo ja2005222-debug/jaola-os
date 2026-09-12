@@ -38,7 +38,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## A) `backend/server.js` — 4015 سطراً، 162 مساراً، 108 استيراداً محلياً
+## A) `backend/server.js` — 4040 سطراً، 162 مساراً، 112 استيراداً محلياً
 
 لا يُفكَّك دفعة واحدة (البند 19). الخريطة **حسب المجال** لأن الملف واحد؛ كل صف = مرشّح
 ملف `routes/<domain>.js` مستقبلاً على نمط `routes/billing.js` القائم فعلاً («أول
@@ -205,7 +205,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## D) `backend/services/*` — 85 وحدة
+## D) `backend/services/*` — 91 وحدة
 
 ### D1. وقت التشغيل (مرشّحة لـ`core/`)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
@@ -233,7 +233,7 @@ Policy/Permission، Identity، Plugin.
 | `deployAutomation.js`, `customDomains.js`, `hostNames.js`, `githubSync.js`, `githubFiles.js`, `projectExport.js`, `projectManager.js` | 285/207/37/111/136/37/99 | نشر ونطاقات وGitHub وتصدير | MODIFY | Tool (كل واحدة أداة بـriskLevel) + Transaction (للنشر) | `plugins/coding/tools/` |
 | `projectRecord.js` | 97 | بوّابةُ الكتابة على سجلّ المشروع (upsert + حارسُ اتّصالٍ + ناتجٌ صادق) | KEEP | Repository | `plugins/coding/tools/` |
 | `reactPreview.js`, `twin.js` | 477/69 | معاينة وتعديل | KEEP | Tool | `plugins/coding/` |
-| `siteConnect.js`, `siteCms.js`, `siteInbox.js`, `siteCreds.js`, `newsletterSubscribers.js`, `projectAuth.js`, `projectSecrets.js`, `storeKey.js`, `dataSync.js`, `appData.js`, `appCollections.js`, `appAssets.js` | 128/118/97/65/60/79/138/63/178/58/83/76 | خدمات مواقع العملاء المنشورة | KEEP | — | `plugins/coding/runtime-services/` |
+| `siteConnect.js`, `siteCms.js`, `siteInbox.js`, `siteCreds.js`, `newsletterSubscribers.js`, `projectAuth.js`, `projectSecrets.js`, `storeKey.js`, `dataSync.js`, `appData.js`, `appCollections.js`, `appAssets.js` | 128/118/97/65/60/79/138/63/179/58/83/76 | خدمات مواقع العملاء المنشورة | KEEP | — | `plugins/coding/runtime-services/` |
 | `imageService.js`, `aiImages.js` | 92/433 | صور | KEEP | Provider | `plugins/coding/` |
 | `platformKnowledge.js` | 89 | معرفة للمساعد | KEEP | Memory | كما هي |
 
@@ -412,9 +412,9 @@ permissions ويستدعي الخدمة عبر HTTP بنفس JWT. لا شيء ه
 أُعطي بالقراءة لا بمشي البيان. حجّةُ الحذف أن الخادم لا يبلغها، وأن جذرها
 لا يُحمَّل أصلاً (`simple-git` غير مثبَّتة)، وأن التاريخ يحفظها.
 
-| `projectSessions.js` | 40 | Project data authentication | KEEP | Security | `services/` |
+| `projectSessions.js` | 63 | Project data authentication | KEEP | Security | `services/` |
 
-| `projectSessionClient.js` | 89 | Project data authentication | KEEP | Security | `services/` |
+| `projectSessionClient.js` | 114 | Project data authentication | KEEP | Security | `services/` |
 
 | `bookingStore.js` | 137 | حجز الخادم وعزل العملاء | KEEP | Booking | `services/` |
 
@@ -427,3 +427,9 @@ permissions ويستدعي الخدمة عبر HTTP بنفس JWT. لا شيء ه
 | `commerceClient.js` | 52 | جودة الحجز والمتجر: إعدادات ومعاملات وعميل الخادم | KEEP | Product runtime | `services/` |
 
 | `storeCatalog.js` | 10 | جودة الحجز والمتجر: إعدادات ومعاملات وعميل الخادم | KEEP | Product runtime | `services/` |
+| `transactionAccess.js` | 102 | صلاحيات مفاتيح وحقول وسجلات المعاملات مع عزل الهوية | KEEP | Security | `services/` |
+| `templateDefaults.js` | 145 | قراءة بيانات القوالب الأولية دون تنفيذ الكود | KEEP | Security | `services/` |
+| `projectMembers.js` | 79 | حسابات فريق MongoDB وجلسات قابلة للإلغاء | KEEP | Security | `services/` |
+| `cloneRoles.js` | 141 | سياسات أدوار 19 قالب سيستم وضوابط واجهاتها | KEEP | Security | `services/` |
+| `projectMemberRoutes.js` | 41 | إدارة الفريق للمسؤول وتسجيل دخول الأعضاء | KEEP | Security | `services/` |
+| `projectTeamClient.js` | 86 | واجهة إنشاء حسابات الفريق وربط الموظف وتعطيل الحساب | KEEP | Security | `services/` |

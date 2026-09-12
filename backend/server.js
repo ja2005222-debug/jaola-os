@@ -103,6 +103,10 @@ import { listUsers as listAdminUsers, setUserPlan } from './services/adminUsers.
 import { verifyPassword as verifyProjectPassword, setPassword as setProjectPassword } from './services/projectAuth.js';
 import { credentialVersion, issueProjectSession, projectSessionGuard } from './services/projectSessions.js';
 import { projectTransactions } from './services/projectTransactions.js';
+import { projectMembers } from './services/projectMembers.js';
+import { resolveCloneRole, cloneRoleOptions, cloneRoleBinding } from './services/cloneRoles.js';
+import { registerProjectMemberRoutes } from './services/projectMemberRoutes.js';
+import { readProjectDefaults } from './services/templateDefaults.js';
 import { broadcastPresence } from './services/presence.js';
 import { saveAsset, readAsset } from './services/appAssets.js';
 import { listMarkets, getAnalysis, getOpportunities, searchCoins, isValidCoinId, MAX_WATCHLIST, SUPPORTED_COINS, TIMEFRAMES, findCoin } from './services/cryptoMarket.js';
@@ -237,7 +241,7 @@ const io = new Server(httpServer, {
 const OPEN_CORS_PATHS = new Set(['/api/jaola-bot/chat', '/api/agent-chat', '/api/public/site-hit', '/api/public/site-message', '/api/public/data', '/api/public/auth/login', '/api/public/auth/set-password']);
 // 🗄️ /api/public/data/:key و/api/public/collections/:name[/:id] بمفاتيح
 // ديناميكية في المسار — تطابق بادئة لا مساواة تامّة
-const isOpenCorsPath = (p) => OPEN_CORS_PATHS.has(p) || p === '/api/public/store' || p.startsWith('/api/public/store/') || p === '/api/public/booking' || p.startsWith('/api/public/booking/') || p.startsWith('/api/public/data/') || p.startsWith('/api/public/collections/') || p.startsWith('/api/public/assets/') || p.startsWith('/api/public/crypto/') || p.startsWith('/api/public/budget/') || p.startsWith('/api/public/stock/');
+const isOpenCorsPath = (p) => OPEN_CORS_PATHS.has(p) || ['/api/public/auth/member-login', '/api/public/auth/session', '/api/public/team'].includes(p) || p.startsWith('/api/public/team/') || p === '/api/public/store' || p.startsWith('/api/public/store/') || p === '/api/public/booking' || p.startsWith('/api/public/booking/') || p.startsWith('/api/public/data/') || p.startsWith('/api/public/collections/') || p.startsWith('/api/public/assets/') || p.startsWith('/api/public/crypto/') || p.startsWith('/api/public/budget/') || p.startsWith('/api/public/stock/');
 const corsDelegate = (req, callback) => {
     if (isOpenCorsPath(req.path)) return callback(null, { origin: true, credentials: false, methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] });
     callback(null, corsOptions);
@@ -2615,6 +2619,7 @@ app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) 
             if (!installDataSync(req.projectPath, { apiBase: publicBase, token }).ready) {
                 return res.status(409).json({ error: 'تعذّر تجهيز حفظ بيانات السيستم؛ راجع ملفات القالب قبل النشر.' });
             }
+            await transactionStore().snapshot(req.user.username, req.activeProject);
         } catch {
             return res.status(503).json({ error: 'تعذّر تثبيت حماية البيانات؛ لم يبدأ النشر.' });
         }
@@ -3256,7 +3261,22 @@ app.post('/api/public/site-subscribe', publicSiteLimit, (req, res) => {
 // ملفات التخزين السابقة مصدر ترحيل للقراءة فقط؛ غياب قاعدة البيانات يوقف الحفظ.
 const APPDATA_DIR = path.join(BASE_WORKSPACE, '.appdata');
 const APPAUTH_DIR = path.join(BASE_WORKSPACE, '.appauth');
-const requireProjectSession = projectSessionGuard({ dir: APPAUTH_DIR, secret: JWT_SECRET, verifyProjectToken: verifyBotToken });
+function memberStore() {
+    if (mongoose.connection.readyState !== 1) throw Object.assign(new Error('Database unavailable'), { status: 503 });
+    return projectMembers(mongoose.connection.db.collection('ProjectMembers'), { secret: JWT_SECRET,
+        projectInstance: async (user, project) => (await Project.findOne({ owner: user, name: project }).select('_id').lean())?._id?.toString(),
+        ownerVersion: (user, project) => credentialVersion(APPAUTH_DIR, user, project), resolvePolicy: resolveCloneRole });
+}
+const requireProjectSession = projectSessionGuard({ dir: APPAUTH_DIR, secret: JWT_SECRET, verifyProjectToken: verifyBotToken,
+    resolveMemberSession: (token, user, project) => memberStore().resolveSession(token, user, project, getCloneId(user, project)) });
+registerProjectMemberRoutes(app, { adminGuard: requireProjectSession, limit: authLimit, verifyProjectToken: verifyBotToken,
+    cloneId: getCloneId, store: memberStore, roles: cloneRoleOptions, bindings: async (user, project) => {
+        const binding = cloneRoleBinding(getCloneId(user, project));
+        if (!binding) return [];
+        const snapshot = await transactionStore().snapshot(user, project);
+        const records = JSON.parse(snapshot.data[binding.key] || '[]');
+        return Array.isArray(records) ? records.map(row => ({ id: row.id, name: row[binding.labelField] })) : [];
+    } });
 registerCommerceRoutes(app, {
     onRequest: (identity, sample) => recordApiSample(identity.u, identity.p, sample),
     verifyProjectToken: verifyBotToken, cloneId: getCloneId, limit: appDataLimit, adminGuard: requireProjectSession,
@@ -3290,12 +3310,17 @@ app.post('/api/project/access-password', verifyToken, authLimit, validateProject
 function transactionStore() {
     if (mongoose.connection.readyState !== 1) throw Object.assign(new Error('Database unavailable'), { status: 503 });
     return projectTransactions(mongoose.connection.db.collection('ProjectTransactions'), {
-        importLegacy: (user, project) => {
+        importLegacy: async (user, project) => {
             const data = readAppDataStore(APPDATA_DIR, user, project);
             if (getCloneId(user, project) === 'jaola-budget-advisor') {
                 for (const name of ['transactions', 'budgets']) if (!(('jbudget_' + name) in data)) data['jbudget_' + name] = JSON.stringify(listCollectionRecords(APPCOLLECTIONS_DIR, user, project, name));
             }
-            return data;
+            if (Object.keys(data).length || getCloneTrack(user, project) !== 'system') return data;
+            let defaults;
+            try { defaults = await readProjectDefaults(getProjectPath(user, project)); }
+            catch (error) { if (error.code === 'ENOENT') return data; throw error; }
+            // Unsupported custom initialization remains owner-managed; never execute it.
+            return defaults.ready ? defaults.data : data;
         },
     });
 }
@@ -3303,13 +3328,13 @@ app.get('/api/public/data', appDataLimit, async (req, res) => {
     const v = verifyBotToken(req.query?.token);
     if (!v?.u || !v?.p) return res.status(401).json({ error: 'Invalid project token' });
     try {
-        const snapshot = await transactionStore().snapshot(v.u, v.p);
+        const snapshot = await transactionStore().snapshot(v.u, v.p, req.projectSession?.access);
         res.json(req.query.transactional === '1' ? snapshot : snapshot.data);
     } catch (error) { res.status(error.status || 503).json({ error: 'Data unavailable' }); }
 });
 app.post('/api/public/data/transaction', appDataLimit, async (req, res) => {
     const { user, project } = req.projectSession;
-    try { res.json(await transactionStore().commit(user, project, req.body)); }
+    try { res.json(await transactionStore().commit(user, project, req.body, req.projectSession.access)); }
     catch (error) { res.status(error.status || 503).json({ error: error.code || 'TRANSACTION_UNAVAILABLE' }); }
 });
 
