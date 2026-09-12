@@ -16,6 +16,18 @@ const constraints = [
     'حدّث الصفحة بدون حذف البيانات',
     'لا تبدل اسم JAOLA، غير الخط',
 ];
+test('latest correction survives a model paraphrase using the old choice', async () => {
+    assert.equal(arabicRequestContext('أزرق، لا أقصد أخضر، لا أقصد أحمر').correction, 'أحمر');
+    const message = 'خليه أزرق… لا، أقصد أخضر';
+    const result = await routeMessage(message, { hasProject: true }, async () => JSON.stringify({ action: 'edit', instruction: 'اجعل اللون أزرق', confidence: 90 }));
+    assert.ok(result.instruction.includes('التصحيح الأحدث المعتمد: أخضر'));
+    assert.ok(result.instruction.includes(message));
+});
+test('symptom report is read-only without invoking a classifier', async () => {
+    const result = await routeMessage('أضغط حفظ وما يصير شيء', { hasProject: true }, () => { throw Error('must not call'); });
+    assert.equal(result.action, 'diagnose');
+    assert.equal(arabicRequestContext('صلح الحفظ لأنه مش شغال').diagnosisOnly, false);
+});
 test('dialectal negative constraint does not disable genuine question protection', () => {
     assert.equal(isQuestionMessage('صلح الطلبات بس ما تغير الأسعار'), false);
     assert.equal(isQuestionMessage('صلح الطلبات بس ما تغير الأسعار؟'), true);
