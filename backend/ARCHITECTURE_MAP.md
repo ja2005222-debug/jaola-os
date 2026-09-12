@@ -416,4 +416,4 @@ permissions ويستدعي الخدمة عبر HTTP بنفس JWT. لا شيء ه
 
 | `bookingStore.js` | 110 | حجز الخادم وعزل العملاء | KEEP | Booking | `services/` |
 
-| `bookingClient.js` | 58 | حجز الخادم وعزل العملاء | KEEP | Booking | `services/` |
+| `bookingClient.js` | 60 | حجز الخادم وعزل العملاء | KEEP | Booking | `services/` |
