@@ -2652,15 +2652,15 @@ app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) 
                     secrets: getProjectSecrets(req.user.username, req.activeProject),
                 });
                 if (auto.success) {
-                    io.to(roomName).emit('log', { message: `✅ [Render]: ${auto.serviceCreated ? 'أُنشئت خدمتك ويجري أول نشر' : 'أُعيد النشر'} — موقعك: ${auto.liveUrl}` });
+                    io.to(roomName).emit('log', { message: `✅ [Render]: ${auto.serviceCreated ? 'أُنشئت خدمتك ويجري أول نشر' : 'قُبل طلب النشر'} — رابط الخدمة: ${auto.liveUrl}` });
                     // 🔴 كان `findOneAndUpdate` بلا `upsert` (واستيراداً ديناميكيّاً
                     //    لنموذجٍ مستوردٍ أعلاه أصلاً): مع `sandbox_app` يطابق صفراً
                     //    فيضيع الرابطُ الحيّ، والفشلُ مبتلَعٌ في `catch` فارغ.
                     if (!await saveProjectFields(req.user.username, req.activeProject, { vercelUrl: auto.liveUrl })) {
-                        console.warn(`🚀 [Render] نُشر ${req.user.username}/${req.activeProject} على ${auto.liveUrl} لكن لم يُحفظ الرابطُ في السجلّ.`);
+                        console.warn(`🚀 [Render] قُبل طلب نشر ${req.user.username}/${req.activeProject} على ${auto.liveUrl} لكن لم يُحفظ الرابطُ في السجلّ.`);
                     }
                     emitUserProjects(roomName, req.user.username, req.activeProject);
-                    return res.json({ accepted: true, target: 'render', liveUrl: auto.liveUrl, repoUrl: auto.repoUrl, serviceCreated: auto.serviceCreated });
+                    return res.json({ accepted: true, target: 'render', deploymentStatus: 'requested', liveUrl: auto.liveUrl, repoUrl: auto.repoUrl, serviceCreated: auto.serviceCreated });
                 }
                 if (!auto.fallback) {
                     io.to(roomName).emit('log', { message: `❌ [Render]: ${auto.error}` });

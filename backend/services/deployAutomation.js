@@ -134,9 +134,19 @@ async function renderFetch(fetchImpl, apiKey, path, options = {}) {
     return { status: res.status, ok: res.ok, body };
 }
 
+// Compare repository identity without accepting credentials, query strings or other hosts.
+function githubRepoIdentity(value) {
+    try {
+        const url = new URL(value);
+        if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.port || url.username || url.password || url.search || url.hash) return null;
+        const repo = url.pathname.replace(/\/$/, '').replace(/\.git$/i, '');
+        return /^\/[\w.-]+\/[\w.-]+$/.test(repo) ? repo.toLowerCase() : null;
+    } catch { return null; }
+}
+
 /**
  * يضمن خدمة Render للمشروع: يبحث بالاسم، يُنشئ عند الغياب (node، خطة free،
- * autoDeploy مع كل دفعة)، يحقن متغيّرات البيئة، ويعيد الرابط الحيّ.
+ * autoDeploy مع كل دفعة)، يحقن متغيّرات البيئة، ويعيد رابط الخدمة وحالة قبول الطلب.
  */
 export async function ensureRenderService({ name, repoUrl, branch = 'main', envVars = {}, deps = {} }) {
     const env = deps.env || process.env;
@@ -145,28 +155,44 @@ export async function ensureRenderService({ name, repoUrl, branch = 'main', envV
     const apiKey = env.RENDER_API_KEY;
 
     const svcName = safeSlug(name);
+    const expectedRepo = githubRepoIdentity(repoUrl);
+    if (!svcName || !expectedRepo || isPlatformRepo(repoUrl)) return { success: false, error: 'اسم الخدمة أو مستودع المشروع غير صالح.' };
     const envVarList = Object.entries(envVars).map(([key, value]) => ({ key, value: String(value) }));
 
     // 1) موجودة مسبقاً؟ (إعادة نشر بدل إنشاء مكرّر)
-    const found = await renderFetch(fetchImpl, apiKey, `/services?name=${encodeURIComponent(svcName)}&limit=5`);
-    const match = Array.isArray(found.body)
-        ? found.body.map(x => x.service || x).find(s => s?.name === svcName)
-        : null;
-
-    if (match?.id) {
-        if (envVarList.length) {
-            await renderFetch(fetchImpl, apiKey, `/services/${match.id}/env-vars`, { method: 'PUT', body: JSON.stringify(envVarList) });
+    const found = await renderFetch(fetchImpl, apiKey, `/services?name=${encodeURIComponent(svcName)}&limit=100`);
+    if (!found.ok || !Array.isArray(found.body) || found.body.some(x => !(x?.service || x)?.id || typeof (x?.service || x)?.name !== 'string')) return { success: false, error: 'تعذّر التحقق من خدمات Render؛ لم تتغير أي خدمة.' };
+    const matches = found.body.map(x => x.service || x).filter(s => s?.name === svcName);
+    if (matches.length > 1 || found.body.length >= 100) return { success: false, error: 'نتيجة البحث غير حاسمة؛ حدّد خدمة المشروع قبل النشر.' };
+    const match = matches[0];
+    if (match) {
+        if (!match.id || githubRepoIdentity(match.repo) !== expectedRepo || match.branch !== branch
+            || match.type !== 'web_service' || match.serviceDetails?.runtime !== 'node' || (match.rootDir || '') !== ''
+            || (env.RENDER_OWNER_ID && match.ownerId !== env.RENDER_OWNER_ID)) {
+            return { success: false, error: 'الخدمة الموجودة لا تطابق مستودع المشروع وفرعه وإعداد تشغيله؛ لم تُرسل إليها أسرار أو طلب نشر.' };
         }
-        await renderFetch(fetchImpl, apiKey, `/services/${match.id}/deploys`, { method: 'POST', body: JSON.stringify({}) });
-        const url = match.serviceDetails?.url || `https://${svcName}.onrender.com`;
-        return { success: true, serviceId: match.id, url, created: false };
+        // Update only supplied keys: the bulk endpoint deletes omitted variables.
+        for (const { key, value } of envVarList) {
+            const updated = await renderFetch(fetchImpl, apiKey, `/services/${match.id}/env-vars/${encodeURIComponent(key)}`, {
+                method: 'PUT', body: JSON.stringify({ value }),
+            });
+            if (!updated.ok) return { success: false, error: 'تعذّر تحديث إعدادات البيئة؛ لم يبدأ طلب النشر. قد تكون بعض القيم السابقة في هذه المحاولة قد حُفظت؛ أعد المحاولة.' };
+        }
+        // Env updates require an explicit deploy; an unchanged auto-deploy service follows the push.
+        if (envVarList.length || match.autoDeploy !== 'yes') {
+            const deployed = await renderFetch(fetchImpl, apiKey, `/services/${match.id}/deploys`, { method: 'POST', body: JSON.stringify({}) });
+            if (!deployed.ok) return { success: false, error: 'رفض Render طلب النشر؛ لم يُؤكّد نشر التطبيق.' };
+        }
+        const url = match.serviceDetails.url || `https://${svcName}.onrender.com`;
+        return { success: true, serviceId: match.id, url, created: false, deploymentStatus: 'requested' };
     }
 
-    // 2) إنشاء جديدة — المالك من البيئة أو أول مالك في الحساب
+    // 2) إنشاء جديدة — المالك الصريح أو مساحة العمل الوحيدة في الحساب
     let ownerId = env.RENDER_OWNER_ID || '';
     if (!ownerId) {
         const owners = await renderFetch(fetchImpl, apiKey, '/owners?limit=20');
-        const first = Array.isArray(owners.body) ? (owners.body[0]?.owner || owners.body[0]) : null;
+        if (!owners.ok || !Array.isArray(owners.body) || owners.body.length !== 1) return { success: false, error: 'حدّد RENDER_OWNER_ID؛ لا يمكن اختيار مساحة عمل تلقائياً من نتيجة مبهمة.' };
+        const first = owners.body[0]?.owner || owners.body[0];
         if (!first?.id) return { success: false, error: 'تعذّر تحديد مالك خدمات Render.' };
         ownerId = first.id;
     }
@@ -177,7 +203,7 @@ export async function ensureRenderService({ name, repoUrl, branch = 'main', envV
             type: 'web_service',
             name: svcName,
             ownerId,
-            repo: repoUrl.replace(/\.git$/i, ''),
+            repo: `https://github.com${expectedRepo}`,
             branch,
             autoDeploy: 'yes',
             envVars: envVarList,
@@ -193,8 +219,9 @@ export async function ensureRenderService({ name, repoUrl, branch = 'main', envV
         return { success: false, error: `تعذّر إنشاء خدمة Render (${created.status}): ${created.body?.message || ''}`.trim() };
     }
     const svc = created.body?.service || created.body;
+    if (!svc?.id) return { success: false, error: 'لم يُرجع Render معرّف الخدمة؛ تحقق من لوحة Render قبل إعادة المحاولة.' };
     const url = svc?.serviceDetails?.url || `https://${svcName}.onrender.com`;
-    return { success: true, serviceId: svc?.id || '', url, created: true };
+    return { success: true, serviceId: svc.id, url, created: true, deploymentStatus: 'requested' };
 }
 
 /**
