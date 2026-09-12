@@ -47,6 +47,16 @@ function harness({ dir = null, lang = 'ar' } = {}) {
     return { events, map, gateCalls, edits, chats, ctx, req, reporter, ops, gate, agents, routerCalls, run, replies, logs };
 }
 
+test('clarification blocks imperative and repeated-edit overrides', async () => {
+    const h = harness();
+    h.map.set(h.ctx.username, 'شيل ده');
+    assert.equal(await h.run('شيل ده', { action: 'chat', requiresClarification: true, question: 'أي عنصر تقصد؟' }), true);
+    assert.deepEqual(h.replies(), ['أي عنصر تقصد؟']);
+    assert.equal(h.edits.length, 0);
+    assert.equal(h.chats.length, 0);
+    assert.deepEqual(h.gateCalls, []);
+});
+
 test('بابُ الدخول: داخلَ حوار المُوضِّح لا يُستشار الموجّهُ أصلاً → false بلا بثّ ولا نداء', async () => {
     const h = harness();
     h.agents.getState = () => ({ stage: 'clarifying' });
@@ -150,7 +160,7 @@ test('الحدود: شريحةُ الجسد — gate has/delete/set/confirmReply
     assert.equal(count(/\breadCodeContext\(/g), 0, 'قارئُ المحتوى لم يعد له مستهلكٌ هنا');
     assert.equal(count(/\bhasProjectSource\(/g), 1, 'سؤالُ الوجود يُستورد لا يُمرَّر — لا اختبارَ يستبدل مفوِّضَه');
     assert.equal(count(/\bawait router\(/g), 1); assert.equal(count(/\brouteMessage\(/g), 0, 'النداءُ عبر الوسيط لا الاستيراد مباشرةً');
-    assert.equal(count(/reporter\.send\(/g), 3); assert.equal(count(/reporter\.liveLog\(/g), 1);
+    assert.equal(count(/reporter\.send\(/g), 4); assert.equal(count(/reporter\.liveLog\(/g), 1);
     const jcr = fs.readFileSync(path.join(HERE, '../agents/jcr.js'), 'utf8');
     assert.ok(jcr.includes(`\n    async _handleUnifiedRoute(req, agents) {
         return handleUnifiedRoute(req, agents, this.reporter, this._gate(), {

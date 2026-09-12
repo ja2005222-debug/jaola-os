@@ -126,6 +126,7 @@ test('صدرُ المصنِّف محدود: الوثيقةُ تُرسَل مقص
 test('والهدفُ المعلَّقُ يبقى **كاملاً** رغم قِصَر السؤال — «نعم» تبني المواصفةَ لا سطرَها الأوّل', async () => {
     const spec = longSpec();
     const s = launcher('sil1b', async () => {});
+    s.ctx.username += `-${process.pid}-${Date.now()}`; // No confirmed choice from a previous test run.
     delete s.rt.executeMission;
     const built = []; s.rt._runMissionNow = async (goal) => { built.push(goal); };
     setUserLanguage(s.ctx.username, 'ar');

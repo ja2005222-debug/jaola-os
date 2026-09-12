@@ -23,6 +23,7 @@
  */
 import { getUserLanguage } from '../languageDetector.js';
 import { initFromClarifier } from '../projectMemory.js';
+import { rememberReference } from '../arabicReferenceDialog.js';
 import { recordProject, recordEdit } from '../userProfile.js';
 import { isBareYes, isBareExecute } from '../chatCommands.js';
 import { decide, buildContinuationGoal } from '../ceoBrain.js';
@@ -237,6 +238,11 @@ export async function handleUnifiedRoute(req, agents, reporter, gate, ops, route
             if (route) {
                 reporter.liveLog(roomName, 'ROUTER', 'Unified',
                     `🧭 ${route.action} (${route.confidence}%)${route.reason ? ` — ${route.reason}` : ''}`);
+                if (route.requiresClarification) {
+                    rememberReference(username, activeProject, message, route.question);
+                    reporter.send(roomName, 'chat_reply', { message: route.question });
+                    return true;
+                }
                 if (route.action === 'chat') {
                     // 🛡️ شبكة أمان: الموجّه قد يصنّف تعديلاً صريحاً كمحادثة (حدث فعلاً مع
                     // "عدّل: ..."). أمرٌ صريح أو تكرار مُصِرّ على مشروع قائم يُنفَّذ تعديلاً

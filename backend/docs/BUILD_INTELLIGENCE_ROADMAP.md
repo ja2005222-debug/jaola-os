@@ -6,6 +6,18 @@ Scope: Chat, Router, Site/System tracks, Agents, Plugins, Verification, Memory, 
 
 ## Product outcome
 
+### Arabic understanding checkpoint — 2026-09-12
+
+Implemented: Arabic semantic routing guidance (dialects, mixed Arabic/code, negation, deferred requests, ambiguous references); preservation of the original constrained request in execution instructions; an explicit clarification response that cannot be promoted into an edit by the imperative/repetition fallback; and a narrow dialectal correction for `صلح الطلبات بس ما تغير الأسعار` in question detection. The original text is preserved separately from normalization. Existing Arramooz data remains in use without duplication.
+
+Validation scope: deterministic regression tests with injected model responses verify safety and data preservation. They do not measure the live model's Arabic understanding accuracy.
+
+Reference-memory checkpoint: pending original request and clarification question now persist in project memory. A typed answer is resolved against that context before generic intent handling. Bare consent repeats the question; cancellation and expiry prevent execution; concurrent answers consume the reference at most once within a server process. Atomic recovery across crashes/multiple server processes remains unimplemented.
+
+Evaluation checkpoint: `tests/fixtures/arabicEvaluation.mjs` contains 60 authored seeds across six categories and five whitespace variants each (300 records, not 300 independent semantic examples). Labels require human Arabic/product review. The offline scorer measures action agreement, missing predictions, unsafe execution, and unnecessary clarification. Seed families must remain together in any train/test split. No external model evaluation has been performed.
+
+Remaining Arabic work: broaden and human-review the evaluation corpus (including richer dialect and multi-turn coverage); versioned domain vocabulary and user-confirmed commercial requirements; actual model accuracy measurement. Evaluation with an external AI provider requires separate authorization; it is not part of automated unit tests.
+
 Implementation checkpoint: the initial gate now intercepts `executeMission` before queueing. It persists a project-scoped pending goal and accepts a typed Site/System answer, guidance, or cancellation through the existing chat. Confirmed choices resume the original goal. The registry contract is extensible; the chat answer adapter currently supports Site/System only. Structured buttons, atomic crash-safe resume, full Build Contracts, and separate track pipelines remain subsequent work. This checkpoint does not claim those later workstreams are complete.
 
 JAOLA must turn a user request into a complete, verifiable product without silently guessing decisions that could materially change the result. The system should understand the project context, select the correct build path, ask the user only when a consequential ambiguity remains, verify the result against explicit acceptance criteria, and deploy only after all required gates pass.
