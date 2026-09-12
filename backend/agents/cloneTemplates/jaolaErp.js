@@ -182,7 +182,7 @@ const TAB_LABELS = {
 
 /* ---------- الحالة ---------- */
 function load(key, fb) { try { var v = localStorage.getItem('jerp_' + key); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(key, val) { try { localStorage.setItem('jerp_' + key, JSON.stringify(val)); } catch (e) {} }
+function save(key, val) { localStorage.setItem('jerp_' + key, JSON.stringify(val)); }
 
 let products = load('products', SEED_PRODUCTS);
 let sales = load('sales', []);

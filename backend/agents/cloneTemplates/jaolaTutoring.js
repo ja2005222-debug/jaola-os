@@ -90,7 +90,7 @@ function toMinutes(hhmm) { var p = (hhmm || '00:00').split(':'); return (parseIn
 const SLOT_MIN = 60;
 
 function load(k, fb) { try { var v = localStorage.getItem('jtutor_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jtutor_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jtutor_' + k, JSON.stringify(val)); }
 let subjects = load('subjects', SEED_SUBJECTS);
 let reservations = load('reservations', []); // { id, no, subjectId, student, phone, date, time, price, createdAt }
 let settings = load('settings', { name: 'دروس jaola الخصوصية', pass: 'admin', currency: 'ر.س', resSeq: 1 });

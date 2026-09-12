@@ -112,7 +112,7 @@ const STAGES = ['open', 'in_progress', 'hearing_set', 'closed'];
 const STAGE_LABEL = { open: 'جديدة', in_progress: 'قيد النظر', hearing_set: 'جلسة محددة', closed: 'منتهية' };
 
 function load(k, fb) { try { var v = localStorage.getItem('jlaw_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jlaw_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jlaw_' + k, JSON.stringify(val)); }
 let clients = load('clients', []); // { id, no, name, phone }
 let cases = load('cases', []); // { id, no, clientId, title, type, stage, openedAt }
 let hearings = load('hearings', []); // { id, caseId, date, court, note }

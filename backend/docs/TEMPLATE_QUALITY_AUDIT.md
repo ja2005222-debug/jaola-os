@@ -117,3 +117,38 @@ Scope: a shared project-administrator credential, NOT distinct employee accounts
 Outbound shipment posting now aggregates repeated item lines and validates every quantity, available balance and combined total before any inventory mutation. This closes a reproducible negative-stock case when a prepared shipment's stock has dropped before posting. Invalid, missing, fractional, non-finite and negative quantities are rejected; exact-stock duplicate lines remain valid. Tests execute the actual generated app.js and check that rejected shipments do not change inventory, sequence, shipment history or persisted values.
 
 This is a same-page business-rule fix. Cross-device transaction enforcement remains necessary on the server. Inbound posting also validates all lines before mutation, rejects missing items and invalid quantities, and checks cumulative integer overflow. Multi-key writes are not atomic transactions. The warehouse template remains under completion, not production-certified.
+
+## POS checkout checkpoint
+
+Checkout validates positive integer quantities, finite nonnegative prices, payment method and safe integer cent totals before changing sale history or receipt sequence. Totals and cart display use rounded two-decimal unit prices, matching the existing money display policy. Sale line objects are copied. The cart is cleared before printing; a printer exception reports that the sale was recorded and cannot leave the paid cart ready for another checkout. Regression tests reproduced invalid sales, floating-point total differences and retained carts after printer errors before the fix.
+
+This does not confirm remote payment settlement or server persistence. Multi-device receipt numbering, durable atomic sale persistence, currency-specific precision and refunds remain POS completion work.
+
+## POS and helpdesk workflow batch
+
+This batch includes checkout validation and printer-failure handling, strict product price entry, receipt-sequence validation, integer-cent shift totals, and receipt-number boundaries for new shift closures. New receipts at the same millisecond as closure are assigned to the following shift once. Existing shift records without a receipt boundary keep their timestamp-based compatibility behavior; ambiguous old timestamps are not retroactively reconstructed.
+
+Helpdesk preserves its open/in-progress/resolved/closed lifecycle, rejects unknown state transitions instead of resetting them to open, and makes closed tickets read-only for replies (no reopen workflow in this batch). Reply controls reflect availability. Regression tests execute generated application code and cover both rejected operations with no writes and valid workflow completion.
+
+Batch scope is these POS/helpdesk workflows. It is not certification that all 41 clones are complete. Shared administrator access remains as implemented in PR #619; individual staff authorization, multi-device transactions, real payment settlement, refunds and domain-specific production acceptance are still outstanding.
+
+## Combined transaction and template batch (PR #621 update)
+
+This checkpoint supersedes earlier descriptions of the single-key PUT synchronization path.
+
+- All 38 clones that write browser storage now propagate storage-write errors instead of swallowing them. The three read-only external-data tools do not need a storage-write helper. This stops subsequent success steps on synchronous storage failure; it does not roll back an already mutated in-memory view.
+- All 19 system clones receive the authenticated, versioned transaction bootstrap when published, including the React/Babel template. Unsupported or failed bootstrap installation now blocks deployment. The 22 website clones remain website flows; this batch does not turn their browser demos into server-backed shops or booking engines.
+- Related storage writes in one synchronous action are sent in one project transaction. Mongo atomically updates project data, revision and an idempotency receipt in one document, using an expected revision filter. Conflicts return 409; retries preserve request identity and payload. No filesystem or memory fallback reports success while Mongo is unavailable. This follows Mongo's [single-document atomicity contract](https://www.mongodb.com/docs/manual/core/write-operations-atomicity/).
+- Acknowledged writes are serialized. The client exposes `JAOLA_SYNC.flush()`, warns before leaving with pending writes, and freezes editing on a conflict or uncertain final result. It does not claim offline durability or automatically merge conflicting changes. The receipt history retains the last 128 commits; stale revisions still reject requests outside that history.
+- POS prints and reports a completed sale only after acknowledgement in a published system. Budget mutations also wait for acknowledgement and reject overlapping submission. Budget refresh waits for pending saves before reloading the current server snapshot.
+- Legacy app-data files are imported once on first access. The budget advisor also imports its existing transactions/budgets collections. Files remain untouched as a migration source; old clients receive 428 on single-key/collection mutations and require republishing. Corrupt legacy collections fail explicitly instead of being treated as empty.
+- Limits are explicit: 60 storage keys, 512 KiB per value, 4 MiB project data. Existing data exceeding these bounds requires an explicit migration, not truncation. Large-collection pagination remains a separate design requirement.
+- GitHub CI now supplies a local Mongo 7 service and runs the same concurrency contract against a real database. Local runs without that service mark this test skipped rather than claiming database verification.
+
+### Rollout and remaining acceptance boundaries
+
+Before deploying these changes, back up Mongo and the legacy app-data/collections directories, ensure Mongo is available, configure each system's owner-managed access password, and republish generated systems. Verify a save/reload and conflicting edits in two sessions on the deployed app. A rollback to the old file-writing server would lose visibility of newer Mongo writes; rollback therefore requires an explicit data reconciliation, not merely reverting JavaScript.
+
+This is a shared persistence and template error-handling completion batch, not certification that every business domain is production-complete. Employee-specific roles, stock/refund/accounting rules enforced on the server, public-store payments and reservation locks, standalone full-stack CRUD authorization, and auxiliary file/alert operations are not supplied by the project snapshot transaction. Uploaded assets and external provider effects are not atomic with this document. Those acceptance gaps remain open and must not be inferred complete from the 41-template behavioral harness.
+
+Local validation for this combined batch: 2,224 backend tests discovered, 2,223 passed, zero failed, one explicitly skipped (real Mongo, to run in CI). This includes the behavioral harness for all 41 clones, bootstrap coverage for all 19 systems, storage-failure tests for the generated save helpers, and acknowledgement/conflict/replay tests. Provider SDK transports were mocked. `git diff --check` passed. These counts are automated code evidence; no live deployment or payment-provider verification was performed.

@@ -159,14 +159,14 @@ var I18N = {
 };
 
 function load(k, fb) { try { var v = localStorage.getItem('jbudget_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jbudget_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jbudget_' + k, JSON.stringify(val)); }
 
 var settings = load('settings', { pass: 'admin' });
 var lang = load('lang', (document.documentElement.getAttribute('lang') === 'en') ? 'en' : 'ar');
 var session = load('session', null);
 var period = load('period', 'thisMonth');
-var transactions = [];
-var budgets = [];
+var transactions = load('transactions', []);
+var budgets = load('budgets', []);
 var state = { view: 'login' };
 
 function byId(id) { return document.getElementById(id); }
@@ -288,21 +288,18 @@ function periodMonths(p) {
 function periodLabel(p) { return p === 'thisMonth' ? t('periodThisMonth') : p === 'lastMonth' ? t('periodLastMonth') : t('periodLast3'); }
 
 function loadAll(cb) {
-  var sync = window.JAOLA_SYNC;
-  var status = byId('dashStatus');
-  if (!sync) { if (status) status.textContent = t('liveAfterPublish'); if (cb) cb(); return; }
-  if (status) status.textContent = t('updating');
-  Promise.all([
-    fetch(sync.api + '/api/public/collections/transactions?' + tq(), { signal: AbortSignal.timeout(15000) }).then(function (r) { return r.json(); }).catch(function () { return { records: [] }; }),
-    fetch(sync.api + '/api/public/collections/budgets?' + tq(), { signal: AbortSignal.timeout(15000) }).then(function (r) { return r.json(); }).catch(function () { return { records: [] }; }),
-  ]).then(function (res) {
-    transactions = (res[0] && Array.isArray(res[0].records)) ? res[0].records : [];
-    budgets = (res[1] && Array.isArray(res[1].records)) ? res[1].records : [];
-    renderCategoryList();
-    if (status) status.textContent = '';
-    if (state.view === 'dashboard') renderDashboard();
-    if (cb) cb();
-  }).catch(function () { if (status) status.textContent = t('failLoad'); if (cb) cb(); });
+  transactions = load('transactions', []); budgets = load('budgets', []);
+  renderCategoryList(); if (state.view === 'dashboard') renderDashboard(); if (cb) cb();
+}
+function persistBudgetData(key, records, done) {
+  if (state.saving) { toast(t('updating')); return; }
+  state.saving = true;
+  try {
+    localStorage.setItem('jbudget_' + key, JSON.stringify(records));
+    var sync = window.JAOLA_SYNC;
+    var saved = sync && sync.flush ? sync.flush() : Promise.resolve();
+    saved.then(done).catch(function () { toast(t('failLoad')); }).finally(function () { state.saving = false; });
+  } catch (e) { state.saving = false; toast(t('failLoad')); }
 }
 
 function summarize(months) {
@@ -358,23 +355,17 @@ function addTransaction() {
   var category = byId('txCategory').value.trim();
   var date = byId('txDate').value || todayStr();
   var note = byId('txNote').value.trim();
-  if (!(amount > 0) || !category) { toast(t('fillAmountCategory')); return; }
+  if (!Number.isFinite(amount) || !(amount > 0) || !category) { toast(t('fillAmountCategory')); return; }
   var record = { id: genId('tx'), type: type, amount: amount, category: category, note: note, date: date, month: monthKeyOf(date), createdAt: Date.now() };
-  if (!sync) { transactions.push(record); renderDashboard(); toast(t('txAdded')); byId('txAmount').value = ''; byId('txCategory').value = ''; byId('txNote').value = ''; return; }
-  fetch(sync.api + '/api/public/collections/transactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, record: record }), signal: AbortSignal.timeout(10000) })
-    .then(function (r) { return r.json(); })
-    .then(function (d) {
-      if (!d || d.error) { toast(d && d.error ? d.error : t('failLoad')); return; }
-      transactions.push(record); renderCategoryList(); renderDashboard(); toast(t('txAdded'));
-      byId('txAmount').value = ''; byId('txCategory').value = ''; byId('txNote').value = '';
-    }).catch(function () { toast(t('failLoad')); });
+  persistBudgetData('transactions', transactions.concat([record]), function () {
+    transactions.push(record); renderDashboard(); toast(t('txAdded'));
+    byId('txAmount').value = ''; byId('txCategory').value = ''; byId('txNote').value = '';
+  });
 }
 function deleteTransaction(id) {
   var sync = window.JAOLA_SYNC;
   function applyLocal() { transactions = transactions.filter(function (r) { return r.id !== id; }); renderDashboard(); toast(t('txDeleted')); }
-  if (!sync) { applyLocal(); return; }
-  fetch(sync.api + '/api/public/collections/transactions/' + encodeURIComponent(id) + '?' + tq(), { method: 'DELETE', signal: AbortSignal.timeout(10000) })
-    .then(applyLocal).catch(function () { toast(t('failLoad')); });
+  persistBudgetData('transactions', transactions.filter(function (r) { return r.id !== id; }), applyLocal);
 }
 
 function renderBudgets() {
@@ -395,7 +386,7 @@ function addBudget() {
   var sync = window.JAOLA_SYNC;
   var category = byId('budCategory').value.trim();
   var monthlyLimit = parseFloat(byId('budLimit').value);
-  if (!category || !(monthlyLimit > 0)) { toast(t('fillCategoryLimit')); return; }
+  if (!category || !Number.isFinite(monthlyLimit) || !(monthlyLimit > 0)) { toast(t('fillCategoryLimit')); return; }
   var existing = budgets.find(function (b) { return b.category === category; });
   var record = { id: existing ? existing.id : genId('bud'), category: category, monthlyLimit: monthlyLimit };
   function applyLocal() {
@@ -403,22 +394,16 @@ function addBudget() {
     renderCategoryList(); renderBudgets(); toast(t('budgetSaved'));
     byId('budCategory').value = ''; byId('budLimit').value = '';
   }
-  if (!sync) { applyLocal(); return; }
-  fetch(sync.api + '/api/public/collections/budgets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token, record: record }), signal: AbortSignal.timeout(10000) })
-    .then(function (r) { return r.json(); })
-    .then(function (d) {
-      if (!d || d.error) { toast(d && d.error ? d.error : t('failLoad')); return; }
-      applyLocal();
-      // يُسجّل المشروع لحلقة تنبيهات تجاوز الميزانية في server.js — بلا حاجة لانتظار الردّ.
-      fetch(sync.api + '/api/public/budget/register', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token }), signal: AbortSignal.timeout(8000) }).catch(function () {});
-    }).catch(function () { toast(t('failLoad')); });
+  var next = existing ? budgets.map(function (b) { return b.id === record.id ? record : b; }) : budgets.concat([record]);
+  persistBudgetData('budgets', next, function () {
+    applyLocal();
+    if (sync) fetch(sync.api + '/api/public/budget/register', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: sync.token }), signal: AbortSignal.timeout(8000) }).catch(function () {});
+  });
 }
 function deleteBudget(id) {
   var sync = window.JAOLA_SYNC;
   function applyLocal() { budgets = budgets.filter(function (b) { return b.id !== id; }); renderBudgets(); toast(t('budgetDeleted')); }
-  if (!sync) { applyLocal(); return; }
-  fetch(sync.api + '/api/public/collections/budgets/' + encodeURIComponent(id) + '?' + tq(), { method: 'DELETE', signal: AbortSignal.timeout(10000) })
-    .then(applyLocal).catch(function () { toast(t('failLoad')); });
+  persistBudgetData('budgets', budgets.filter(function (b) { return b.id !== id; }), applyLocal);
 }
 
 // 🤖 قراءة سريعة من وكيل مخصّص لأنماط الإنفاق هذا الشهر — تجميلية بحتة،
@@ -455,7 +440,10 @@ function handleClick(e) {
     case 'login': login(); break;
     case 'logout': logout(); break;
     case 'tab': setView(a.dataset.view); break;
-    case 'refreshAll': loadAll(); break;
+    case 'refreshAll':
+      if (window.JAOLA_SYNC && window.JAOLA_SYNC.flush) window.JAOLA_SYNC.flush().then(function () { window.location.reload(); }).catch(function () { toast(t('failLoad')); });
+      else loadAll();
+      break;
     case 'setPeriod': setPeriod(a.dataset.period); break;
     case 'addTransaction': addTransaction(); break;
     case 'deleteTx': deleteTransaction(a.dataset.id); break;

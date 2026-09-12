@@ -116,7 +116,7 @@ const state = {
 };
 
 function loadBookings() { try { return JSON.parse(localStorage.getItem('bookings') || '[]'); } catch { return []; } }
-function saveBookings() { try { localStorage.setItem('bookings', JSON.stringify(state.bookings)); } catch {} }
+function saveBookings() { localStorage.setItem('bookings', JSON.stringify(state.bookings)); }
 function byId(id) { return document.getElementById(id); }
 function show(el, on) { if (el) el.classList.toggle('hidden', !on); }
 function findService(id) { return SERVICES.find(s => s.id === id) || null; }

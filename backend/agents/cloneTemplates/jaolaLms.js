@@ -145,7 +145,7 @@ const state = {
 };
 
 function load(key, fb) { try { const v = localStorage.getItem('jlms_' + key); return v ? JSON.parse(v) : fb; } catch { return fb; } }
-function save(key, val) { try { localStorage.setItem('jlms_' + key, JSON.stringify(val)); } catch {} }
+function save(key, val) { localStorage.setItem('jlms_' + key, JSON.stringify(val)); }
 
 let courses = load('courses', SEED_COURSES);
 let enrollments = load('enrollments', []); // { student, courseId, done:[lessonId] }

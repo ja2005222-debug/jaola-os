@@ -101,7 +101,7 @@ const SEED_CLASSES = [
 function futureDate(days) { var d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); }
 
 function load(k, fb) { try { var v = localStorage.getItem('jgym_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jgym_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jgym_' + k, JSON.stringify(val)); }
 let plans = load('plans', SEED_PLANS);
 let classes = load('classes', SEED_CLASSES);
 let members = load('members', []); // { id, no, name, phone, planId, start, end, bookings:[] }

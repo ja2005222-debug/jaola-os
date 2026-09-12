@@ -398,7 +398,7 @@ function load(key, fallback) {
   try { const v = localStorage.getItem('jtr_' + key); return v ? JSON.parse(v) : fallback; }
   catch { return fallback; }
 }
-function save(key, val) { try { localStorage.setItem('jtr_' + key, JSON.stringify(val)); } catch {} }
+function save(key, val) { localStorage.setItem('jtr_' + key, JSON.stringify(val)); }
 
 let brand = Object.assign({}, BRAND, load('brand', {}));
 let offers = load('offers', OFFERS);

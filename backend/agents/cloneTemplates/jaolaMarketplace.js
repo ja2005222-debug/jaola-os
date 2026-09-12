@@ -154,7 +154,7 @@ function load(key, fallback) {
   try { const v = localStorage.getItem('jm_' + key); return v ? JSON.parse(v) : fallback; }
   catch { return fallback; }
 }
-function save(key, val) { try { localStorage.setItem('jm_' + key, JSON.stringify(val)); } catch {} }
+function save(key, val) { localStorage.setItem('jm_' + key, JSON.stringify(val)); }
 
 let stores = load('stores', SEED_STORES);
 let products = load('products', SEED_PRODUCTS);

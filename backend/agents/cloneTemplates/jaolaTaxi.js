@@ -130,7 +130,7 @@ function load(key, fallback) {
   try { const v = localStorage.getItem('jt_' + key); return v ? JSON.parse(v) : fallback; }
   catch { return fallback; }
 }
-function save(key, val) { try { localStorage.setItem('jt_' + key, JSON.stringify(val)); } catch {} }
+function save(key, val) { localStorage.setItem('jt_' + key, JSON.stringify(val)); }
 
 let rides = load('rides', []); // { id, rider, from, to, car, dist, fare, status, driver }
 

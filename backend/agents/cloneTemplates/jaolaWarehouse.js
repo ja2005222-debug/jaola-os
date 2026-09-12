@@ -125,7 +125,7 @@ const ROLES = {
 const TAB_LABELS = { dashboard: 'اللوحة', items: 'الأصناف', inbound: 'وارد', outbound: 'صادر', shipments: 'الشحنات', reports: 'التقارير', settings: 'الإعدادات' };
 
 function load(k, fb) { try { var v = localStorage.getItem('jwh_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jwh_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jwh_' + k, JSON.stringify(val)); }
 let items = load('items', SEED_ITEMS);
 let shipments = load('shipments', []); // { id, no, type:'in'|'out', ref, lines:[{itemId,qty}], date }
 let settings = load('settings', { name: 'مستودع jaola', pass: 'admin', shipSeq: 1 });

@@ -230,28 +230,28 @@ test('public data handlers reject invalid identity before touching storage', asy
     const handlers = {};
     let reads = 0, writes = 0;
     vm.runInNewContext(source.slice(start, end), {
-        app: { get: (p, limit, fn) => { handlers.get = fn; }, put: (p, limit, fn) => { handlers.put = fn; } },
+        app: { post: () => {}, get: (p, limit, fn) => { handlers.get = fn; }, put: (p, limit, fn) => { handlers.put = fn; } },
         appDataLimit: () => {}, APPDATA_DIR: 'unused',
         verifyBotToken: token => token === 'valid' ? { u: 'alice', p: 'shop' } : null,
-        readAppDataStore: () => { reads++; throw new Error('disk unavailable'); },
+        transactionStore: () => ({ snapshot: async () => { reads++; throw new Error('database unavailable'); } }),
         writeAppDataKey: () => { writes++; return { ok: true }; },
     });
     const response = () => ({ code: 200, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } });
     for (const method of ['get', 'put']) {
         const res = response();
-        handlers[method]({ query: {}, body: {}, params: { key: 'orders' } }, res);
+        await handlers[method]({ query: {}, body: {}, params: { key: 'orders' } }, res);
         assert.equal(res.code, 401);
     }
     assert.equal(reads, 0);
     assert.equal(writes, 0);
     const unavailable = response();
-    handlers.get({ query: { token: 'valid' } }, unavailable);
-    assert.equal(unavailable.code, 500);
+    await handlers.get({ query: { token: 'valid' } }, unavailable);
+    assert.equal(unavailable.code, 503);
     const saved = response();
     handlers.put({ body: { token: 'valid', value: '[]' }, params: { key: 'orders' } }, saved);
-    assert.equal(saved.code, 200);
-    assert.equal(saved.body.success, true);
-    assert.equal(writes, 1);
+    assert.equal(saved.code, 428);
+    assert.equal(saved.body.error, 'TRANSACTION_REQUIRED');
+    assert.equal(writes, 0);
 });
 
 test('appData: corrupt stores are preserved instead of silently replaced', () => {

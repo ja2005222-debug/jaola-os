@@ -115,7 +115,7 @@ const ROLES = {
 const TAB_LABELS = { dashboard: 'اللوحة', units: 'الوحدات', tenants: 'المستأجرون', payments: 'التحصيل', reports: 'التقارير', settings: 'الإعدادات' };
 
 function load(k, fb) { try { var v = localStorage.getItem('jprop_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jprop_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jprop_' + k, JSON.stringify(val)); }
 let units = load('units', SEED_UNITS);
 let contracts = load('contracts', []); // { id, tenant, phone, unitId, rent, start, months }
 let payments = load('payments', []);   // { id, no, contractId, amount, forMonth, date }

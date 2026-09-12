@@ -91,7 +91,7 @@ function addDaysStr(days) { var d = new Date(); d.setDate(d.getDate() + days); r
 function daysBetween(a, b) { return Math.round((new Date(b) - new Date(a)) / 86400000); }
 
 function load(k, fb) { try { var v = localStorage.getItem('jhtl_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jhtl_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jhtl_' + k, JSON.stringify(val)); }
 let rooms = load('rooms', SEED_ROOMS);
 let reservations = load('reservations', []); // { id, no, roomId, guest, phone, checkIn, checkOut, nights, total, createdAt }
 let settings = load('settings', { name: 'فندق jaola', pass: 'admin', currency: 'ر.س', resSeq: 1 });

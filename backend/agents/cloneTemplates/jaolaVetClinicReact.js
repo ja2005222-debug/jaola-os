@@ -48,7 +48,7 @@ const SEED_PETS = [
 ];
 
 function load(k, fb) { try { var v = localStorage.getItem('jvetr_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jvetr_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jvetr_' + k, JSON.stringify(val)); }
 
 function money(n, currency) { return (Math.round(n * 100) / 100).toLocaleString('ar-EG') + ' ' + currency; }
 function uid(p) { return p + Date.now().toString(36) + Math.floor(Math.random() * 999); }

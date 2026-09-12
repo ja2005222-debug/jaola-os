@@ -89,7 +89,7 @@ function todayStr() { return new Date().toISOString().slice(0, 10); }
 function toMinutes(hhmm) { var p = (hhmm || '00:00').split(':'); return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0); }
 
 function load(k, fb) { try { var v = localStorage.getItem('jphoto_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jphoto_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jphoto_' + k, JSON.stringify(val)); }
 let packages = load('packages', SEED_PACKAGES);
 let reservations = load('reservations', []); // { id, no, pkgId, customer, phone, date, time, price, createdAt }
 let settings = load('settings', { name: 'استوديو jaola للتصوير', pass: 'admin', currency: 'ر.س', resSeq: 1 });

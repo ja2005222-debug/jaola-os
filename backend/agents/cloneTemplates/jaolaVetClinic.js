@@ -113,7 +113,7 @@ const SEED_PETS = [
   { id: 'pet2', ownerId: 'own2', name: 'ريكس', species: 'كلب', age: 4, lastVaccineAt: null }
 ];
 function load(k, fb) { try { var v = localStorage.getItem('jvet_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jvet_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jvet_' + k, JSON.stringify(val)); }
 let owners = load('owners', SEED_OWNERS); // { id, no, name, phone }
 let pets = load('pets', SEED_PETS); // { id, ownerId, name, species, age, lastVaccineAt }
 let visits = load('visits', []); // { id, no, petId, diagnosis, vaccine, fee, createdAt }

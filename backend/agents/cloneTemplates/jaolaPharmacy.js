@@ -114,7 +114,7 @@ const ROLES = {
 const TAB_LABELS = { dashboard: 'اللوحة', inventory: 'الأدوية', dispense: 'الصرف', reports: 'التقارير', settings: 'الإعدادات' };
 
 function load(k, fb) { try { var v = localStorage.getItem('jphar_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jphar_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jphar_' + k, JSON.stringify(val)); }
 let meds = load('meds', SEED_MEDS);
 let dispenses = load('dispenses', []);
 let settings = load('settings', { name: 'صيدلية jaola', expiryDays: 30, currency: 'ر.س', pass: 'admin', receiptSeq: 1 });

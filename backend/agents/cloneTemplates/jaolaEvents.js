@@ -187,7 +187,7 @@ const state = {
 };
 
 function load(key, fb) { try { var v = localStorage.getItem('jev_' + key); return v ? JSON.parse(v) : fb; } catch { return fb; } }
-function save(key, val) { try { localStorage.setItem('jev_' + key, JSON.stringify(val)); } catch {} }
+function save(key, val) { localStorage.setItem('jev_' + key, JSON.stringify(val)); }
 
 let events = load('events', SEED_EVENTS);
 let orders = load('orders', []); // { id, eventId, eventTitle, tierName, qty, unit, total, code, buyer, status, at }

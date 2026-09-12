@@ -123,7 +123,7 @@ const ROLES = {
 const TAB_LABELS = { dashboard: 'اللوحة', accounts: 'الحسابات', journal: 'القيود', ledger: 'الأستاذ', trial: 'الميزان', settings: 'الإعدادات' };
 
 function load(k, fb) { try { var v = localStorage.getItem('jacc_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jacc_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jacc_' + k, JSON.stringify(val)); }
 let accounts = load('accounts', SEED_ACCOUNTS);
 let entries = load('entries', []); // { id, no, date, desc, lines:[{accId, debit, credit}] }
 let settings = load('settings', { name: 'منشأة jaola', currency: 'ر.س', pass: 'admin', entrySeq: 1 });

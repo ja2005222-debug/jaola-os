@@ -118,7 +118,7 @@ const ROLES = {
 const TAB_LABELS = { dashboard: 'اللوحة', employees: 'الموظفون', attendance: 'الحضور', leaves: 'الإجازات', payroll: 'الرواتب', settings: 'الإعدادات' };
 
 function load(k, fb) { try { var v = localStorage.getItem('jhr_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jhr_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jhr_' + k, JSON.stringify(val)); }
 let employees = load('employees', SEED_EMPLOYEES);
 let attendance = load('attendance', []);
 let leaves = load('leaves', []);

@@ -124,7 +124,7 @@ const ROLES = {
 const TAB_LABELS = { dashboard: 'اللوحة', patients: 'المرضى', appointments: 'المواعيد', visits: 'الزيارات', reports: 'التقارير', settings: 'الإعدادات' };
 
 function load(k, fb) { try { var v = localStorage.getItem('jclin_' + k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function save(k, val) { try { localStorage.setItem('jclin_' + k, JSON.stringify(val)); } catch (e) {} }
+function save(k, val) { localStorage.setItem('jclin_' + k, JSON.stringify(val)); }
 let patients = load('patients', SEED_PATIENTS);
 let appts = load('appts', []);
 let visits = load('visits', []);
