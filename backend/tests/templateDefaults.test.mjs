@@ -3,11 +3,21 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { templateDefaults, readProjectDefaults } from '../services/templateDefaults.js';
 import { listClones, getCloneById } from '../agents/cloneTemplates/index.js';
 import { divertConsoleToStderr } from './helpers/reportChannel.mjs';
 
 divertConsoleToStderr();
+test('relative seed dates do not depend on host timezone or daylight saving', () => {
+    const script = `import { templateDefaults } from ${JSON.stringify(new URL('../services/templateDefaults.js', import.meta.url).href)};
+const source = "function futureDate(days) { var d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); } function load(k, fb) { return localStorage.getItem('demo_' + k); } const rows = load('rows', [{expiry:futureDate(200)}]);";
+console.log(JSON.stringify(await templateDefaults(source, {now:Date.UTC(2030,0,1)})));`;
+    for (const TZ of ['UTC', 'America/Los_Angeles', 'Asia/Riyadh']) {
+        const result = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], { env: { ...process.env, TZ }, encoding: 'utf8', timeout: 15000 }));
+        assert.equal(JSON.parse(result.data.demo_rows)[0].expiry, '2030-07-20', TZ);
+    }
+});
 const systems = listClones().map(meta => getCloneById(meta.id)).filter(clone => clone.track === 'system');
 for (const clone of systems) {
     test(`${clone.id}: server can initialize the actual template defaults without executing its code`, async () => {
@@ -16,7 +26,7 @@ for (const clone of systems) {
         assert.ok(Object.keys(result.data).length >= 2);
         assert.equal(Object.keys(result.data).some(key => key.endsWith('_session')), false);
         for (const value of Object.values(result.data)) assert.doesNotThrow(() => JSON.parse(value));
-        if (clone.id === 'jaola-pharmacy') assert.equal(JSON.parse(result.data.jphar_meds)[0].expiry, '2030-07-19');
+        if (clone.id === 'jaola-pharmacy') assert.equal(JSON.parse(result.data.jphar_meds)[0].expiry, '2030-07-20');
         if (clone.id === 'jaola-crypto-advisor') assert.equal(JSON.parse(result.data.jcrypto_lang), 'en');
     });
 }

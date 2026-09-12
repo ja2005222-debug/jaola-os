@@ -63,7 +63,7 @@ export async function templateDefaults(source, { now = Date.now(), language = 'a
             if (staticFuture && node.callee?.name === 'futureDate' && node.arguments.length === 1) {
                 const days = literal(node.arguments[0], depth + 1);
                 if (!Number.isSafeInteger(days) || Math.abs(days) > 36500) return UNKNOWN;
-                const result = new Date(now); result.setDate(result.getDate() + days);
+                const result = new Date(now); result.setUTCDate(result.getUTCDate() + days);
                 return result.toISOString().slice(0, 10);
             }
             const callee = node.callee;
