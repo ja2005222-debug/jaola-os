@@ -5,6 +5,7 @@ import { saveProjectFields } from '../services/projectRecord.js';
 import { fetchWithTimeout, TIMEOUTS } from '../services/httpRetry.js';
 import { generatePackageJson } from './dependencyAgent.js';
 import { vercelProjectNameOf } from '../services/customDomains.js';
+import { deploymentLayout } from '../services/deploymentLayout.js';
 
 const VERCEL_API = 'https://api.vercel.com';
 const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
@@ -206,7 +207,7 @@ export async function ensurePackageJson(projectPath, projectName) {
  * (ملفات البيانات db.js/schema.js/seed.js وحدها ليست دوالاً — نتجاهلها.)
  */
 export function isFullStackProject(projectPath) {
-    return listApiModules(projectPath).length > 0;
+    return deploymentLayout(projectPath).kind === 'next' || listApiModules(projectPath).length > 0;
 }
 
 // ملفاتُ بياناتٍ لا دوالّ — تُستثنى من عدّ «الدوالّ الحقيقية».

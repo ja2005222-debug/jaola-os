@@ -170,14 +170,34 @@ jobs:
     name: دخول الأدمن في القالب المولد
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      matrix:
+        database: [sqlite, postgresql]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: generatedtest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: توليد قالب الاختبار
+        env:
+          TEST_DATABASE_PROVIDER: ${{ matrix.database }}
+          TEST_DATABASE_URL: ${{ matrix.database == 'postgresql' && 'postgresql://postgres:postgres@localhost:5432/generatedtest' || 'file:./dev.db' }}
         run: node backend/scripts/testGeneratedAdmin.mjs prepare /tmp/jaola-admin-smoke
-      - name: بناء Next وقاعدة SQLite
+      - name: بناء Next وقاعدة البيانات
         working-directory: /tmp/jaola-admin-smoke
         run: |
           npm install --ignore-scripts

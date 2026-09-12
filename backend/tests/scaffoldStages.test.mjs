@@ -72,7 +72,12 @@ test('سكافولد Full-Stack: نيّةُ بياناتٍ + فئةٌ مدعوم
     assert.deepEqual(logs(events), ['[5. RUNTIME] ➔ [FullStackAgent]: 🏗️ نسخة Full-Stack (ecommerce) في مجلد fullstack/ — Next.js + API + Prisma (24 ملف)']);
     const fsDir = path.join(a, 'fullstack');
     for (const f of ['package.json', 'prisma/schema.prisma', 'app/page.js']) assert.ok(fs.existsSync(path.join(fsDir, f)), f);
-    assert.deepEqual(fs.readdirSync(a), ['fullstack'], 'الموقعُ الثابت لا يُمَسّ');
+    assert.deepEqual(fs.readdirSync(a).sort(), ['.jaola-generated.json', 'fullstack'], 'الموقعُ الثابت لا يُمَسّ');
+    assert.match(fs.readFileSync(path.join(fsDir, 'prisma/schema.prisma'), 'utf8'), /provider = "postgresql"/);
+    fs.writeFileSync(path.join(fsDir, 'app/page.js'), '// customer customization');
+    const conflict = await runFullStackScaffold({ ...s.ctx, projectPath: a, originalGoal: 'متجر مع قاعدة بيانات', blueprint: { category: 'ecommerce', kind: 'webapp' } }, s.ctx.roomName, reporter);
+    assert.equal(conflict.code, 'CUSTOM_FILE_CONFLICT');
+    assert.equal(fs.readFileSync(path.join(fsDir, 'app/page.js'), 'utf8'), '// customer customization');
     const q = collect(); const b = emptyProject();
     await runFullStackScaffold({ ...s.ctx, projectPath: b, originalGoal: 'متجر بسيط', blueprint: { category: 'ecommerce', kind: 'brochure' } }, s.ctx.roomName, q.reporter);
     assert.deepEqual(q.events, []); assert.deepEqual(fs.readdirSync(b), []);
