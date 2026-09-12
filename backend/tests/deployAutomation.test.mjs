@@ -119,7 +119,7 @@ test('ensureRenderService: خدمة جديدة → إنشاء بالمالك ا�
 test('ensureRenderService: خدمة موجودة → تحديث الأسرار + إعادة نشر (لا إنشاء)', async () => {
     const log = [];
     const fetchImpl = fakeFetch([
-        ['/services?name=', { status: 200, body: [{ service: { id: 'srv-9', name: 'jamal-shop', serviceDetails: { url: 'https://jamal-shop.onrender.com' } } }] }],
+        ['/services?name=', { status: 200, body: [{ service: { id: 'srv-9', name: 'jamal-shop', repo: 'https://github.com/x/y', branch: 'main', type: 'web_service', serviceDetails: { runtime: 'node', url: 'https://jamal-shop.onrender.com' } } }] }],
         ['/env-vars', { status: 200, method: 'PUT', body: [] }],
         ['/deploys', { status: 201, method: 'POST', body: { id: 'dep-1' } }],
     ], log);
@@ -183,4 +183,73 @@ test('autoDeployFullStack: فشل الدفع → خطأ صريح لا نجاح �
     });
     assert.equal(r.success, false);
     assert.ok(/الدفع/.test(r.error));
+});
+
+const matchingService = () => ({ id: 'srv-target', name: 'u-p', repo: 'https://github.com/owner/project.git', branch: 'main', type: 'web_service', ownerId: 'workspace-1', autoDeploy: 'yes', serviceDetails: { runtime: 'node', url: 'https://u-p.onrender.com' } });
+const deployArgs = (fetchImpl, env = ENV_FULL) => ({ name: 'u-p', repoUrl: 'https://github.com/owner/project', envVars: { PROJECT_KEY: 'test-value' }, deps: { env, fetchImpl } });
+
+test('reuse requires complete matching identity; mismatches never receive secrets or mutations', async () => {
+    for (const changes of [
+        { repo: 'https://github.com/other/project' }, { repo: undefined },
+        { branch: 'other' }, { type: 'static_site' }, { rootDir: 'another-app' },
+        { ownerId: 'other-workspace' }, { serviceDetails: { runtime: 'python' } },
+    ]) {
+        const log = [];
+        const fetchImpl = fakeFetch([['/services?name=', { status: 200, body: [{ service: { ...matchingService(), ...changes } }] }]], log);
+        const result = await ensureRenderService(deployArgs(fetchImpl, { ...ENV_FULL, RENDER_OWNER_ID: 'workspace-1' }));
+        assert.equal(result.success, false);
+        assert.ok(log.every(r => r.method === 'GET'), JSON.stringify(changes));
+    }
+});
+
+test('failed or ambiguous service lookup never creates a replacement service', async () => {
+    for (const response of [{ status: 503, body: [] }, { status: 200, body: {} }, { status: 200, body: [null] }, { status: 200, body: [{}] }, { status: 200, body: [matchingService(), matchingService()] }]) {
+        const log = [];
+        const result = await ensureRenderService(deployArgs(fakeFetch([['/services?name=', response]], log)));
+        assert.equal(result.success, false); assert.equal(log.length, 1); assert.equal(log[0].method, 'GET');
+    }
+});
+
+test('environment updates preserve unrelated keys; failed updates stop deployment', async () => {
+    for (const status of [200, 403]) {
+        const log = [];
+        const result = await ensureRenderService(deployArgs(fakeFetch([
+            ['/services?name=', { status: 200, body: [matchingService()] }],
+            ['/env-vars/PROJECT_KEY', { status, method: 'PUT', body: {} }],
+            ['/deploys', { status: 201, method: 'POST', body: { id: 'dep-request' } }],
+        ], log)));
+        const update = log.find(r => r.method === 'PUT');
+        assert.ok(update.url.endsWith('/env-vars/PROJECT_KEY')); assert.deepEqual(update.body, { value: 'test-value' });
+        assert.equal(log.some(r => r.url.endsWith('/env-vars')), false);
+        assert.equal(log.some(r => r.url.endsWith('/deploys')), status === 200);
+        assert.equal(result.success, status === 200);
+    }
+});
+
+test('Render rejection is not reported as successful deployment', async () => {
+    const result = await ensureRenderService(deployArgs(fakeFetch([
+        ['/services?name=', { status: 200, body: [matchingService()] }],
+        ['/env-vars/PROJECT_KEY', { status: 200, method: 'PUT', body: {} }],
+        ['/deploys', { status: 429, method: 'POST', body: {} }],
+    ])));
+    assert.equal(result.success, false); assert.match(result.error, /رفض Render/);
+});
+
+test('unchanged service with automatic deployment does not receive a duplicate deploy', async () => {
+    const log = [];
+    const args = deployArgs(fakeFetch([['/services?name=', { status: 200, body: [matchingService()] }]], log));
+    args.envVars = {};
+    const result = await ensureRenderService(args);
+    assert.equal(result.success, true); assert.equal(result.deploymentStatus, 'requested');
+    assert.equal(log.length, 1);
+});
+
+test('multiple workspaces require an explicit owner instead of choosing the first', async () => {
+    const log = [];
+    const result = await ensureRenderService(deployArgs(fakeFetch([
+        ['/services?name=', { status: 200, body: [] }],
+        ['/owners', { status: 200, body: [{ owner: { id: 'one' } }, { owner: { id: 'two' } }] }],
+    ], log)));
+    assert.equal(result.success, false); assert.match(result.error, /RENDER_OWNER_ID/);
+    assert.ok(log.every(r => r.method === 'GET'));
 });
