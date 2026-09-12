@@ -486,6 +486,25 @@ export default function Dashboard() {
     setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 4000);
   };
 
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const requested = url.searchParams.get('setupProject');
+    const owner = url.searchParams.get('setupOwner');
+    if (requested && owner) sessionStorage.setItem('jaolaAdminSetup', JSON.stringify({ requested, owner }));
+    if (!isAuthenticated || !currentUser || !projects.length) return;
+    let pending;
+    try { pending = JSON.parse(sessionStorage.getItem('jaolaAdminSetup') || 'null'); } catch { sessionStorage.removeItem('jaolaAdminSetup'); }
+    if (!pending) return;
+    sessionStorage.removeItem('jaolaAdminSetup');
+    url.searchParams.delete('setupProject'); url.searchParams.delete('setupOwner');
+    window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+    if (pending.owner !== currentUser || !projects.includes(pending.requested)) {
+      addNotification('رابط إعداد كلمة المرور يخص مالك مشروع آخر. سجّل الدخول بحساب المالك وافتح الرابط مجددًا.', 'info');
+      return;
+    }
+    setAccessProject(pending.requested); setAccessPassword(''); setAccessError('');
+  }, [isAuthenticated, currentUser, projects]);
+
   const getHeaders = () => ({ 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' });
 
   const handleSend = async (overrideText) => {
@@ -2773,7 +2792,7 @@ export default function Dashboard() {
           const result = await response.json();
           if (!response.ok) throw new Error(result.error || 'تعذّر الحفظ');
           setAccessPassword(''); setAccessProject(null);
-          addNotification('تم تعيين كلمة مرور المشروع وإبطال جلسات الدخول السابقة. أعد نشر المشروع لتحديث شاشة الدخول.', 'success');
+          addNotification('تم حفظ كلمة مرور الأدمن وإبطال الجلسات السابقة. يمكنك العودة إلى التطبيق وتسجيل الدخول.', 'success');
         } catch (error) { setAccessError(error.message); }
         finally { setAccessBusy(false); }
       }}>

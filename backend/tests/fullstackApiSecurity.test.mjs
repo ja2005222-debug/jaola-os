@@ -11,7 +11,7 @@ function harness(files, route, env = { JAOLA_ADMIN_TOKEN: admin, JAOLA_READER_TO
     const calls = [];
     let failure = null;
     const model = new Proxy({}, { get: (_, method) => async args => { calls.push({ method, args }); if (failure) throw failure; return method === 'findMany' ? [] : { id: 1, published: false }; } });
-    const c = vm.createContext({ Response, TextDecoder, createHash, timingSafeEqual, process: { env }, prisma: new Proxy({}, { get: () => model }) });
+    const c = vm.createContext({ adminSession: async () => false, sameOrigin: () => false, Response, TextDecoder, createHash, timingSafeEqual, process: { env }, prisma: new Proxy({}, { get: () => model }) });
     vm.runInContext(strip(files.find(f => f.name === 'lib/api.js').content), c);
     vm.runInContext(strip(files.find(f => f.name === route).content), c);
     return { c, calls, fail: error => { failure = error; } };
@@ -24,7 +24,7 @@ function request(method = 'GET', token, body) {
 for (const category of getFullStackCategories()) {
     test(`${category}: every generated mutation rejects anonymous and read-only access before database calls`, async () => {
         const { files } = buildFullStackProject(category);
-        for (const route of files.filter(f => /^app\/api\//.test(f.name))) {
+        for (const route of files.filter(f => /^app\/api\//.test(f.name) && !f.name.startsWith('app/api/admin/'))) {
             const h = harness(files, route.name);
             for (const method of ['POST', 'PUT', 'DELETE'].filter(m => typeof h.c[m] === 'function')) {
                 for (const [token, status] of [[undefined, 401], [reader, 403], ['wrong', 401]]) {

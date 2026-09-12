@@ -1,5 +1,6 @@
 /** Shared source emitted into standalone Next.js projects; no platform secrets embedded. */
-export const FULLSTACK_API_LIB = `import { createHash, timingSafeEqual } from 'node:crypto';
+export const FULLSTACK_API_LIB = `import { adminSession, sameOrigin } from './admin-auth';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 export const reply = (data, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 const failure = (status, code) => Object.assign(new Error(code), { status });
@@ -7,13 +8,19 @@ const digest = value => createHash('sha256').update(value).digest();
 const matches = (provided, expected) => typeof expected === 'string' && expected.length >= 32 && timingSafeEqual(digest(provided), digest(expected));
 
 // Keys are unique to this deployed project and stay in server environment variables.
-export function authorize(request, { publicRead = false, write = false } = {}) {
+export async function authorize(request, { publicRead = false, write = false } = {}) {
   if (publicRead && !write) return null;
   const header = request.headers.get('authorization') || '';
   const token = header.startsWith('Bearer ') && header.length <= 512 ? header.slice(7) : '';
   const admin = matches(token, process.env.JAOLA_ADMIN_TOKEN);
   const reader = matches(token, process.env.JAOLA_READER_TOKEN);
-  if (!admin && !reader) return reply({ error: 'AUTH_REQUIRED' }, 401);
+  if (!admin && !reader) {
+    try {
+      if (!await adminSession(request)) return reply({ error: 'AUTH_REQUIRED' }, 401);
+      if (write && !sameOrigin(request)) return reply({ error: 'ORIGIN_REJECTED' }, 403);
+      return null;
+    } catch { return reply({ error: 'AUTH_UNAVAILABLE' }, 503); }
+  }
   if (write && !admin) return reply({ error: 'WRITE_FORBIDDEN' }, 403);
   return null;
 }

@@ -1,3 +1,4 @@
+import { fullstackAdminFiles } from './fullstackAdminRuntime.js';
 import { FULLSTACK_API_LIB } from './fullstackApiRuntime.js';
 
 /**
@@ -413,7 +414,7 @@ export const runtime = 'nodejs';
 const fields = ${JSON.stringify(policy.fields)};
 
 export async function GET(request) {
-  const denied = authorize(request, { publicRead: ${policy.publicRead} });
+  const denied = await authorize(request, { publicRead: ${policy.publicRead} });
   if (denied) return denied;
   try {
     const items = await prisma.${accessor}.findMany({ where: ${policy.where}, orderBy: { id: 'desc' }, take: 100 });
@@ -422,7 +423,7 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const denied = authorize(request, { write: true });
+  const denied = await authorize(request, { write: true });
   if (denied) return denied;
   try {
     const data = await readData(request, fields);
@@ -443,7 +444,7 @@ export const runtime = 'nodejs';
 const fields = ${JSON.stringify(policy.fields)};
 
 export async function GET(request, { params }) {
-  const denied = authorize(request, { publicRead: ${policy.publicRead} });
+  const denied = await authorize(request, { publicRead: ${policy.publicRead} });
   if (denied) return denied;
   try {
     const item = await prisma.${accessor}.findUnique({ where: { id: recordId((await params).id) } });
@@ -453,7 +454,7 @@ export async function GET(request, { params }) {
 }
 
 export async function PUT(request, { params }) {
-  const denied = authorize(request, { write: true });
+  const denied = await authorize(request, { write: true });
   if (denied) return denied;
   try {
     const id = recordId((await params).id);
@@ -464,7 +465,7 @@ export async function PUT(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
-  const denied = authorize(request, { write: true });
+  const denied = await authorize(request, { write: true });
   if (denied) return denied;
   try {
     await prisma.${accessor}.delete({ where: { id: recordId((await params).id) } });
@@ -511,7 +512,7 @@ export const metadata = { title: ${JSON.stringify(String(projectName))}, descrip
 export default function RootLayout({ children }) {
   return (
     <html lang="ar" dir="rtl">
-      <body>{children}</body>
+      <body><nav style={{padding:16}}><a href="/login">دخول الإدارة</a></nav>{children}</body>
     </html>
   );
 }
@@ -526,6 +527,10 @@ h1 { font-size: 2rem; margin-bottom: .25rem; }
 .subtitle { color: #9aa0c0; margin-bottom: 2rem; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
 .card { background: var(--card); border: 1px solid #2a2e4a; border-radius: 12px; padding: 1rem; }
+.container button { min-height:44px; padding:10px 18px; margin:6px; border:0; border-radius:8px; background:var(--primary); color:white; cursor:pointer; }
+.container button:disabled { opacity:.6; cursor:wait; }
+.container a { color:#a5b4fc; }
+.card p { overflow-wrap:anywhere; }
 .card h3 { color: var(--primary); margin-bottom: .5rem; }
 .card pre { font-size: .75rem; color: #aeb4d8; overflow-x: auto; white-space: pre-wrap; }
 `;
@@ -577,16 +582,24 @@ npm run db:seed           # بيانات أولية
 npm run dev               # http://localhost:3000
 \`\`\`
 
+## دخول العميل وإعداد كلمة المرور
+افتح /login في التطبيق. عند أول استخدام اضغط «إنشاء كلمة المرور أو استعادتها»؛
+ينقلك الرابط إلى لوحة جولا لتسجيل الدخول بحساب مالك المشروع وتعيين كلمة المرور.
+عُد إلى التطبيق وسجّل الدخول. لا يحتاج العميل إلى مفاتيح خادم أو تدخل مشغّل المنصة.
+تغيير كلمة المرور من لوحة المالك يلغي الجلسات القديمة. انتهاء الجلسة بعد ساعة.
+المتصفح يحتفظ بجلسة HttpOnly؛ لا يحتفظ بكلمة المرور أو مفتاح الإدارة.
+هذا دخول أدمن المشروع، وليس حسابات موظفين متعددة. يلزم اتصال بخدمة جولا للتحقق من الجلسة.
+
 ## صلاحيات الوصول
 الموارد العامة (المنتجات والخدمات والعقارات والدورات والأطباء والقائمة والمقالات المنشورة) متاحة للقراءة فقط.
 الطلبات والحجوزات والحسابات والاشتراكات والاستفسارات والتسجيلات والتعليقات خاصة.
-كل تعديل يتطلب مفتاح الإدارة؛ مفتاح القراءة لا يسمح بالكتابة.
+كل تعديل يتطلب جلسة أدمن أو مفتاح إدارة للتكاملات؛ مفتاح القراءة لا يسمح بالكتابة.
 
 اضبط JAOLA_ADMIN_TOKEN في أسرار الخادم، ويمكن ضبط JAOLA_READER_TOKEN منفصل للقراءة.
 كل مفتاح يجب أن يكون عشوائيًا بطول 32 حرفًا على الأقل وفريدًا لهذا المشروع.
 أرسل المفتاح في Authorization: Bearer من عميل موثوق عبر HTTPS فقط.
 لا تضع المفاتيح في NEXT_PUBLIC أو شيفرة المتصفح أو المستودع؛ تدوير المفتاح يلغي القديم فورًا.
-غياب المفاتيح يمنع الوصول الخاص. هذه مفاتيح خدمة وليست حسابات موظفين أو شاشة تسجيل دخول.
+غياب المفاتيح يمنع الوصول الخاص. هذه مفاتيح خدمة اختيارية للتكاملات الموثوقة؛ العميل يستخدم صفحة /login وكلمة مروره.
 
 ## نقاط الـ API
 ${routes}
@@ -614,7 +627,7 @@ ${routes}
  * يبني مشروع Full-Stack كامل لفئة متقدمة.
  * @returns {{ category, files: Array<{name, content}> }}
  */
-export function buildFullStackProject(category, projectName = 'JAOLA App') {
+export function buildFullStackProject(category, projectName = 'JAOLA App', auth = {}) {
     const cat = resolveFullStackCategory(category);
     if (!cat) throw new Error(`لا يوجد قالب Full-Stack للفئة: ${category}`);
     const spec = CATEGORIES[cat];
@@ -635,6 +648,7 @@ export function buildFullStackProject(category, projectName = 'JAOLA App') {
         { name: 'prisma/seed.js', content: renderSeed(spec) },
     ];
 
+    files.push(...fullstackAdminFiles(spec.resources, auth));
     for (const r of spec.resources) {
         files.push({ name: `app/api/${r.path}/route.js`, content: renderListRoute(r, spec) });
         files.push({ name: `app/api/${r.path}/[id]/route.js`, content: renderItemRoute(r, spec) });

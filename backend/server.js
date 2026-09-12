@@ -3279,6 +3279,10 @@ app.put('/api/public/data/:key', appDataLimit, (req, res) => {
     return res.status(428).json({ error: 'TRANSACTION_REQUIRED' });
 });
 
+app.post('/api/public/auth/session', appDataLimit, requireProjectSession, (req, res) => {
+    res.set('Cache-Control', 'no-store').json({ ok: true, role: req.projectSession.role });
+});
+
 // 🔐 مصادقة حقيقية لدخول قوالب السيستم — كلمة مرور مُجزَّأة تُتحقَّق هنا
 // فقط، بدل مقارنة نص صريح محلياً (كانت تُقرَأ من localStorage/jaola-data
 // مباشرة). يلزم إعداد كلمة المرور بواسطة المالك قبل أول دخول.

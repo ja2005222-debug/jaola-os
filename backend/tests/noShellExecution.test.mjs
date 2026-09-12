@@ -52,6 +52,7 @@ test('مَن يستورد child_process معروفٌ بالاسم — لا يز�
     assert.deepEqual(users, [
         'agents/backendTeam/backendVerify.js',
         'agents/gitAgent.js',
+        'scripts/testGeneratedAdmin.mjs', // CI-only Next smoke server; fixed Node executable, argument array, no shell.
         'services/projectManager.js',
     ], 'وحدةٌ جديدةٌ تستورد `child_process` — قرارٌ يُتّخذ لا ينزلق');
 });
