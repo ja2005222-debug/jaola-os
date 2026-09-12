@@ -68,7 +68,7 @@ export function jaolaHelpdesk() {
       <div class="panel"><h3>الردود</h3><div id="repliesList"></div></div>
       <div class="panel form-row">
         <input id="replyText" placeholder="اكتب ردّاً...">
-        <button class="btn ghost" data-action="addReply">إرسال الرد</button>
+        <button id="replySubmit" class="btn ghost" data-action="addReply">إرسال الرد</button>
       </div>
       <button class="btn primary block" data-action="printTicket">🖨️ طباعة ملخّص التذكرة</button>
     </section>
@@ -187,7 +187,10 @@ function backTickets() { setView('tickets'); }
 function renderTicketDetail() {
   var t = ticketById(state.activeTicket); if (!t) { setView('tickets'); return; }
   byId('ticketDetailTitle').textContent = 'تذكرة #' + t.no + ' — ' + t.subject;
-  var idx = STAGES.indexOf(t.stage); var next = STAGES[idx + 1];
+  var idx = STAGES.indexOf(t.stage); var next = idx >= 0 ? STAGES[idx + 1] : null;
+  var replyBlocked = !session || idx < 0 || t.stage === 'closed';
+  byId('replyText').disabled = replyBlocked; byId('replySubmit').disabled = replyBlocked;
+  byId('replyText').placeholder = replyBlocked ? 'الرد غير متاح لهذه التذكرة' : 'اكتب ردّاً...';
   byId('ticketInfo').innerHTML = '<div class="r-row"><span>العميل</span><span>' + esc(t.customer) + '</span></div>' +
     '<div class="r-row"><span>الأولوية</span><span>' + esc(PRIORITY_LABEL[t.priority]) + '</span></div>' +
     '<div class="r-row"><span>الوصف</span><span>' + esc(t.desc || '—') + '</span></div>' +
@@ -200,6 +203,7 @@ function renderTicketDetail() {
 function advanceTicket(id) {
   var t = ticketById(id); if (!t) return;
   var idx = STAGES.indexOf(t.stage);
+  if (idx < 0) { toast('حالة التذكرة غير معروفة؛ راجع بياناتها'); return; }
   if (idx < STAGES.length - 1) {
     t.stage = STAGES[idx + 1];
     if (t.stage === 'resolved' && !t.resolvedAt) t.resolvedAt = new Date().toISOString();
@@ -209,6 +213,7 @@ function advanceTicket(id) {
 }
 function addReply() {
   var t = ticketById(state.activeTicket); if (!t) return;
+  if (!session || STAGES.indexOf(t.stage) < 0 || t.stage === 'closed') { toast('لا يمكن إضافة رد لهذه التذكرة'); return; }
   var text = byId('replyText').value.trim(); if (!text) { toast('اكتب رداً'); return; }
   t.replies = t.replies || []; t.replies.push({ who: roleLabel(session.role), text: text, at: new Date().toISOString() });
   save('tickets', tickets); byId('replyText').value = ''; toast('أُضيف الرد'); renderTicketDetail();

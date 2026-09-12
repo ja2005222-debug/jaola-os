@@ -117,3 +117,17 @@ Scope: a shared project-administrator credential, NOT distinct employee accounts
 Outbound shipment posting now aggregates repeated item lines and validates every quantity, available balance and combined total before any inventory mutation. This closes a reproducible negative-stock case when a prepared shipment's stock has dropped before posting. Invalid, missing, fractional, non-finite and negative quantities are rejected; exact-stock duplicate lines remain valid. Tests execute the actual generated app.js and check that rejected shipments do not change inventory, sequence, shipment history or persisted values.
 
 This is a same-page business-rule fix. Cross-device transaction enforcement remains necessary on the server. Inbound posting also validates all lines before mutation, rejects missing items and invalid quantities, and checks cumulative integer overflow. Multi-key writes are not atomic transactions. The warehouse template remains under completion, not production-certified.
+
+## POS checkout checkpoint
+
+Checkout validates positive integer quantities, finite nonnegative prices, payment method and safe integer cent totals before changing sale history or receipt sequence. Totals and cart display use rounded two-decimal unit prices, matching the existing money display policy. Sale line objects are copied. The cart is cleared before printing; a printer exception reports that the sale was recorded and cannot leave the paid cart ready for another checkout. Regression tests reproduced invalid sales, floating-point total differences and retained carts after printer errors before the fix.
+
+This does not confirm remote payment settlement or server persistence. Multi-device receipt numbering, durable atomic sale persistence, currency-specific precision and refunds remain POS completion work.
+
+## POS and helpdesk workflow batch
+
+This batch includes checkout validation and printer-failure handling, strict product price entry, receipt-sequence validation, integer-cent shift totals, and receipt-number boundaries for new shift closures. New receipts at the same millisecond as closure are assigned to the following shift once. Existing shift records without a receipt boundary keep their timestamp-based compatibility behavior; ambiguous old timestamps are not retroactively reconstructed.
+
+Helpdesk preserves its open/in-progress/resolved/closed lifecycle, rejects unknown state transitions instead of resetting them to open, and makes closed tickets read-only for replies (no reopen workflow in this batch). Reply controls reflect availability. Regression tests execute generated application code and cover both rejected operations with no writes and valid workflow completion.
+
+Batch scope is these POS/helpdesk workflows. It is not certification that all 41 clones are complete. Shared administrator access remains as implemented in PR #619; individual staff authorization, multi-device transactions, real payment settlement, refunds and domain-specific production acceptance are still outstanding.

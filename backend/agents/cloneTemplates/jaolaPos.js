@@ -170,16 +170,15 @@ function renderPos() {
   renderCart();
 }
 function renderCart() {
-  var total = 0;
   byId('cartLines').innerHTML = state.cart.length ? state.cart.map(function (l, i) {
-    var line = l.qty * l.price; total += line;
+    var line = l.qty * Math.round(l.price * 100) / 100;
     return '<div class="cart-line"><span class="cl-name">' + esc(l.name) + '</span>' +
       '<span class="cl-ctrl"><button class="btn tiny ghost" data-action="decCart" data-idx="' + i + '">−</button>' +
       '<span class="cl-qty">' + l.qty + '</span>' +
       '<button class="btn tiny ghost" data-action="incCart" data-idx="' + i + '">+</button></span>' +
       '<span class="cl-sum">' + money(line) + '</span></div>';
   }).join('') : '<p class="hint" style="padding:16px 4px">اضغط منتجاً لإضافته للسلة.</p>';
-  byId('cartTotal').textContent = money(total);
+  byId('cartTotal').textContent = money(cartTotal());
 }
 function addToCart(id) {
   var p = prodById(id); if (!p) return;
@@ -189,13 +188,22 @@ function addToCart(id) {
 function incCart(i) { state.cart[i].qty++; renderCart(); }
 function decCart(i) { state.cart[i].qty--; if (state.cart[i].qty <= 0) state.cart.splice(i, 1); renderCart(); }
 function clearCart() { state.cart = []; renderCart(); }
-function cartTotal() { var t = 0; for (var i = 0; i < state.cart.length; i++) t += state.cart[i].qty * state.cart[i].price; return t; }
+function cartTotal() { var cents = 0; for (var i = 0; i < state.cart.length; i++) cents += state.cart[i].qty * Math.round(state.cart[i].price * 100); return cents / 100; }
 function pay(method) {
   if (!state.cart.length) { toast('السلة فارغة'); return; }
-  var sale = { id: uid('s'), no: settings.receiptSeq++, items: state.cart.slice(), total: cartTotal(), method: method, date: today(), ts: Date.now(), cashier: state.user.role };
+  if (!state.user || ['cash', 'card'].indexOf(method) < 0) { toast('تحقق من الدخول وطريقة الدفع'); return; }
+  if (!Number.isSafeInteger(settings.receiptSeq) || settings.receiptSeq < 1 || settings.receiptSeq >= Number.MAX_SAFE_INTEGER) { toast('رقم الإيصال غير صالح؛ راجع الإعدادات'); return; }
+  var cents = 0;
+  for (var i = 0; i < state.cart.length; i++) {
+    var line = state.cart[i];
+    if (!Number.isSafeInteger(line.qty) || line.qty < 1 || typeof line.price !== 'number' || !Number.isFinite(line.price) || line.price < 0) { toast('الكمية أو السعر غير صالح'); return; }
+    cents += Math.round(line.price * 100) * line.qty;
+    if (!Number.isSafeInteger(cents)) { toast('قيمة البيع تتجاوز الحد المسموح'); return; }
+  }
+  var sale = { id: uid('s'), no: settings.receiptSeq++, items: state.cart.map(function (line) { return Object.assign({}, line, { price: Math.round(line.price * 100) / 100 }); }), total: cents / 100, method: method, date: today(), ts: Date.now(), cashier: state.user.role };
   sales.push(sale); save('sales', sales); save('settings', settings);
-  printReceipt(sale);
   state.cart = []; renderCart();
+  try { printReceipt(sale); } catch (e) { toast('سُجل البيع #' + sale.no + '، لكن تعذّرت الطباعة. لا تُعد تسجيل البيع.'); return; }
   toast('تم البيع #' + sale.no + ' (' + (method === 'cash' ? 'نقدي' : 'شبكة') + ')');
 }
 function printReceipt(sale) {
@@ -222,7 +230,9 @@ function renderProducts() {
 }
 function addProduct() {
   var name = byId('prName').value.trim(); if (!name) { toast('اكتب اسم المنتج'); return; }
-  products.push({ id: uid('p'), name: name, price: Math.max(0, parseFloat(byId('prPrice').value) || 0), emoji: byId('prEmoji').value.trim() });
+  var rawPrice = byId('prPrice').value.trim(); var price = Number(rawPrice);
+  if (!rawPrice || !Number.isFinite(price) || price < 0 || !Number.isSafeInteger(Math.round(price * 100))) { toast('اكتب سعرًا صحيحًا غير سالب'); return; }
+  products.push({ id: uid('p'), name: name, price: Math.round(price * 100) / 100, emoji: byId('prEmoji').value.trim() });
   save('products', products); byId('prName').value = ''; byId('prPrice').value = ''; byId('prEmoji').value = '';
   toast('أُضيف المنتج'); renderProducts();
 }
@@ -230,7 +240,11 @@ function delProduct(id) { products = products.filter(function (p) { return p.id 
 
 /* ---------- الوردية ---------- */
 function lastShiftTs() { return shifts.length ? shifts[shifts.length - 1].closedAt : 0; }
-function currentShiftSales() { var since = lastShiftTs(); return sales.filter(function (s) { return s.ts > since; }); }
+function currentShiftSales() {
+  var last = shifts.length ? shifts[shifts.length - 1] : null;
+  if (last && Number.isSafeInteger(last.lastReceiptNo)) return sales.filter(function (s) { return s.no > last.lastReceiptNo; });
+  var since = lastShiftTs(); return sales.filter(function (s) { return s.ts > since; });
+}
 function statCard(l, v, tone) { return '<div class="stat ' + (tone || '') + '"><span class="stat-v">' + v + '</span><span class="stat-l">' + l + '</span></div>'; }
 function renderShift() {
   var cur = currentShiftSales();
@@ -250,9 +264,16 @@ function renderShift() {
 function closeShift() {
   var cur = currentShiftSales();
   if (!cur.length) { toast('لا مبيعات في الوردية الحالية'); return; }
-  var cash = 0, card = 0;
-  for (var i = 0; i < cur.length; i++) { if (cur[i].method === 'cash') cash += cur[i].total; else card += cur[i].total; }
-  shifts.push({ id: uid('sh'), closedAt: Date.now(), count: cur.length, cash: cash, card: card, total: cash + card });
+  var cashCents = 0, cardCents = 0, lastReceiptNo = 0;
+  for (var i = 0; i < cur.length; i++) {
+    var sale = cur[i]; var cents = Math.round(sale.total * 100);
+    if (!Number.isSafeInteger(sale.no) || sale.no < 1 || typeof sale.total !== 'number' || !Number.isSafeInteger(cents) || cents < 0 || ['cash', 'card'].indexOf(sale.method) < 0) { toast('توجد فاتورة غير صالحة؛ راجع المبيعات قبل إغلاق الوردية'); return; }
+    if (sale.method === 'cash') cashCents += cents; else cardCents += cents;
+    if (!Number.isSafeInteger(cashCents + cardCents)) { toast('إجمالي الوردية يتجاوز الحد المسموح'); return; }
+    lastReceiptNo = Math.max(lastReceiptNo, sale.no);
+  }
+  var cash = cashCents / 100, card = cardCents / 100;
+  shifts.push({ id: uid('sh'), closedAt: Date.now(), lastReceiptNo: lastReceiptNo, count: cur.length, cash: cash, card: card, total: (cashCents + cardCents) / 100 });
   save('shifts', shifts); toast('أُغلقت الوردية — إجمالي ' + money(cash + card)); renderShift();
 }
 
