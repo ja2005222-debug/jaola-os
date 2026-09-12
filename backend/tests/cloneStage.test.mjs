@@ -40,7 +40,7 @@ test('الدالّةُ الحرّةُ بمُبلِّغٍ مُحقَن ≡ الم
     for (const f of ['index.html', 'app.js', 'styles.css']) assert.equal(fs.readFileSync(path.join(b, f), 'utf8'), fs.readFileSync(path.join(a, f), 'utf8'), `${f} حرفاً بحرف`);
 });
 
-test('البناءُ الحقيقيّ بلا LLM: ٧ ملفّات، أيقونةٌ وتلميع، نشرٌ ثابت، ذاكرةٌ من نموذج الكلون، COMPLETED، وترتيبُ البثّ', async () => {
+test('البناءُ الحقيقيّ بلا LLM: ٨ ملفّات، أيقونةٌ وتلميع، نشرٌ ثابت، ذاكرةٌ من نموذج الكلون، COMPLETED، وترتيبُ البثّ', async () => {
     const s = scenario('clbuild'); setUserLanguage(s.ctx.username, 'ar'); const dir = emptyProject();
     generating(s);
     try {
@@ -50,7 +50,7 @@ test('البناءُ الحقيقيّ بلا LLM: ٧ ملفّات، أيقونة
         assert.deepEqual(rest, { success: true, clone: 'jaola-store' });
         // PM/7: المتطلّباتُ لم تعد «لا ينطبق» على الكلون — تُتتبَّع في الملفّات (متجرٌ: ٤/٤ له أثر) فالبوّابةُ pass لا skipped
         assert.equal(verdict.status, 'PASS'); assert.deepEqual(verdict.gates.map(g => g.status), ['pass', 'pass', 'pass']);
-        assert.deepEqual(fs.readdirSync(dir).sort(), ['JAOLA_READINESS.json', 'RENDER_README.md', 'app.js', 'brand.svg', 'index.html', 'render.yaml', 'styles.css']);
+        assert.deepEqual(fs.readdirSync(dir).sort(), ['.jaola-generated.json', 'JAOLA_READINESS.json', 'RENDER_README.md', 'app.js', 'brand.svg', 'index.html', 'render.yaml', 'styles.css']);
         const readiness = JSON.parse(fs.readFileSync(path.join(dir, 'JAOLA_READINESS.json'), 'utf8'));
         assert.equal(readiness.productionVerified, false);
         assert.equal(readiness.clone, 'jaola-store');

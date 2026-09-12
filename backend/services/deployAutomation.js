@@ -148,11 +148,23 @@ function githubRepoIdentity(value) {
  * يضمن خدمة Render للمشروع: يبحث بالاسم، يُنشئ عند الغياب (node، خطة free،
  * autoDeploy مع كل دفعة)، يحقن متغيّرات البيئة، ويعيد رابط الخدمة وحالة قبول الطلب.
  */
-export async function ensureRenderService({ name, repoUrl, branch = 'main', envVars = {}, deps = {} }) {
+export async function ensureRenderService({ name, repoUrl, branch = 'main', envVars = {}, layout, deps = {} }) {
     const env = deps.env || process.env;
     const fetchImpl = deps.fetchImpl || fetch;
     if (!renderReady(env)) return { success: false, fallback: true, error: 'لا مفتاح Render API.' };
     const apiKey = env.RENDER_API_KEY;
+    const rootDir = layout?.rootDir || '';
+    if (!['', 'fullstack'].includes(rootDir)) return { success: false, error: 'مجلد تشغيل غير صالح.' };
+    if (layout?.kind === 'next' && layout.database) {
+        let protocol;
+        try { protocol = new URL(envVars.DATABASE_URL).protocol; } catch { /* invalid or missing */ }
+        if (layout.database !== 'postgresql' || !['postgres:', 'postgresql:'].includes(protocol)) {
+            return { success: false, error: 'رابط PostgreSQL صالح مطلوب قبل النشر.' };
+        }
+    }
+    const commands = layout?.kind === 'next'
+        ? { buildCommand: 'npm install --include=dev && npm run build', startCommand: layout.database ? 'npm run db:deploy && npm start' : 'npm start' }
+        : { buildCommand: 'npm install', startCommand: 'node server.js' };
 
     const svcName = safeSlug(name);
     const expectedRepo = githubRepoIdentity(repoUrl);
@@ -167,7 +179,9 @@ export async function ensureRenderService({ name, repoUrl, branch = 'main', envV
     const match = matches[0];
     if (match) {
         if (!match.id || githubRepoIdentity(match.repo) !== expectedRepo || match.branch !== branch
-            || match.type !== 'web_service' || match.serviceDetails?.runtime !== 'node' || (match.rootDir || '') !== ''
+            || match.type !== 'web_service' || match.serviceDetails?.runtime !== 'node' || (match.rootDir || '') !== rootDir
+            || (layout?.kind === 'next' && (match.serviceDetails?.envSpecificDetails?.buildCommand !== commands.buildCommand
+                || match.serviceDetails?.envSpecificDetails?.startCommand !== commands.startCommand))
             || (env.RENDER_OWNER_ID && match.ownerId !== env.RENDER_OWNER_ID)) {
             return { success: false, error: 'الخدمة الموجودة لا تطابق مستودع المشروع وفرعه وإعداد تشغيله؛ لم تُرسل إليها أسرار أو طلب نشر.' };
         }
@@ -205,13 +219,14 @@ export async function ensureRenderService({ name, repoUrl, branch = 'main', envV
             ownerId,
             repo: `https://github.com${expectedRepo}`,
             branch,
+            rootDir,
             autoDeploy: 'yes',
             envVars: envVarList,
             serviceDetails: {
                 runtime: 'node',
                 plan: 'free',
                 region: env.RENDER_REGION || 'frankfurt',
-                envSpecificDetails: { buildCommand: 'npm install', startCommand: 'node server.js' },
+                envSpecificDetails: commands,
             },
         }),
     });
@@ -237,6 +252,9 @@ export async function autoDeployFullStack({ username, project, projectPath, proj
     const prepare = deps.prepareRenderDeploy || (await import('../agents/renderAgent.js')).prepareRenderDeploy;
     const prep = await prepare(projectPath, projectSlug, true);
     if (!prep.success) return { success: false, error: `تجهيز Render: ${prep.error}` };
+    if (prep.layout?.database === 'postgresql' && !secrets.DATABASE_URL) {
+        return { success: false, fallback: true, error: 'يلزم إنشاء PostgreSQL عبر Blueprint وربط DATABASE_URL.' };
+    }
 
     // 2) المستودع (إنشاء تلقائي عند الغياب) ثم الدفع
     const repo = await ensureProjectRepo({ username, project, deps });
@@ -251,6 +269,7 @@ export async function autoDeployFullStack({ username, project, projectPath, proj
         name: projectSlug,
         repoUrl: repo.repoUrl,
         branch: repo.branch,
+        layout: prep.layout,
         envVars: { NODE_ENV: 'production', ...secrets },
         deps,
     });

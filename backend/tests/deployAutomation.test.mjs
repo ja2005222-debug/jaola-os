@@ -188,6 +188,43 @@ test('autoDeployFullStack: فشل الدفع → خطأ صريح لا نجاح �
 const matchingService = () => ({ id: 'srv-target', name: 'u-p', repo: 'https://github.com/owner/project.git', branch: 'main', type: 'web_service', ownerId: 'workspace-1', autoDeploy: 'yes', serviceDetails: { runtime: 'node', url: 'https://u-p.onrender.com' } });
 const deployArgs = (fetchImpl, env = ENV_FULL) => ({ name: 'u-p', repoUrl: 'https://github.com/owner/project', envVars: { PROJECT_KEY: 'test-value' }, deps: { env, fetchImpl } });
 
+test('Next service creation uses nested root and database startup; missing database never reaches Render', async () => {
+    const layout = { kind: 'next', rootDir: 'fullstack', database: 'postgresql' };
+    const log = [];
+    const args = deployArgs(fakeFetch([
+        ['/services?name=', { status: 200, body: [] }],
+        ['/services', { status: 201, method: 'POST', body: { id: 'srv-new' } }],
+    ], log), { ...ENV_FULL, RENDER_OWNER_ID: 'workspace-1' });
+    assert.equal((await ensureRenderService({ ...args, layout })).success, false);
+    assert.equal(log.length, 0);
+    const result = await ensureRenderService({ ...args, layout, envVars: { DATABASE_URL: 'postgresql://localhost/fixture' } });
+    assert.equal(result.success, true);
+    const body = log.find(item => item.method === 'POST').body;
+    assert.equal(body.rootDir, 'fullstack');
+    assert.equal(body.serviceDetails.envSpecificDetails.startCommand, 'npm run db:deploy && npm start');
+});
+
+test('Next reuse refuses an Express start command without sending database secrets', async () => {
+    const log = [];
+    const service = { ...matchingService(), rootDir: 'fullstack' };
+    const result = await ensureRenderService({ ...deployArgs(fakeFetch([
+        ['/services?name=', { status: 200, body: [service] }],
+    ], log)), layout: { kind: 'next', rootDir: 'fullstack', database: 'postgresql' }, envVars: { DATABASE_URL: 'postgresql://localhost/fixture' } });
+    assert.equal(result.success, false);
+    assert.ok(log.every(item => item.method === 'GET'));
+});
+
+test('missing PostgreSQL selects Blueprint before repository creation or push', async () => {
+    const result = await autoDeployFullStack({ username: 'u', project: 'p', projectPath: '/tmp/fixture', projectSlug: 'u-p', deps: {
+        env: ENV_FULL,
+        prepareRenderDeploy: async () => ({ success: true, layout: { kind: 'next', database: 'postgresql' } }),
+        getIntegration: async () => assert.fail('must not create repository'),
+        pushProject: async () => assert.fail('must not push'),
+    } });
+    assert.equal(result.success, false);
+    assert.equal(result.fallback, true);
+});
+
 test('reuse requires complete matching identity; mismatches never receive secrets or mutations', async () => {
     for (const changes of [
         { repo: 'https://github.com/other/project' }, { repo: undefined },

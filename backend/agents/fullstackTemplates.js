@@ -358,14 +358,14 @@ function renderPrismaModel(model) {
     return lines.join('\n');
 }
 
-function renderSchema(spec) {
+function renderSchema(spec, provider = 'sqlite') {
     return `// Prisma schema — ${spec.labelAr}
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "${provider}"
   url      = env("DATABASE_URL")
 }
 
@@ -548,17 +548,20 @@ function renderPackageJson(projectName, spec) {
         name: (projectName || 'jaola-fullstack').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '') || 'jaola-app',
         version: '0.1.0',
         private: true,
+        type: 'module',
+        engines: { node: '22.x' },
         scripts: {
             dev: 'next dev',
             build: 'prisma generate && next build',
             start: 'next start',
             'db:push': 'prisma db push',
+            'db:deploy': 'prisma db push --skip-generate',
             'db:seed': 'node prisma/seed.js',
         },
         dependencies: {
-            next: '^14.2.5',
-            react: '^18.3.1',
-            'react-dom': '^18.3.1',
+            next: '15.5.24',
+            react: '19.2.6',
+            'react-dom': '19.2.6',
             '@prisma/client': '^5.18.0',
         },
         devDependencies: {
@@ -628,6 +631,8 @@ ${routes}
  * @returns {{ category, files: Array<{name, content}> }}
  */
 export function buildFullStackProject(category, projectName = 'JAOLA App', auth = {}) {
+    const provider = auth.databaseProvider || 'sqlite';
+    if (!['sqlite', 'postgresql'].includes(provider)) throw new Error('Unsupported database provider');
     const cat = resolveFullStackCategory(category);
     if (!cat) throw new Error(`لا يوجد قالب Full-Stack للفئة: ${category}`);
     const spec = CATEGORIES[cat];
@@ -637,14 +642,14 @@ export function buildFullStackProject(category, projectName = 'JAOLA App', auth 
         { name: 'next.config.mjs', content: `/** @type {import('next').NextConfig} */\nconst nextConfig = { reactStrictMode: true };\nexport default nextConfig;\n` },
         { name: 'jsconfig.json', content: JSON.stringify({ compilerOptions: { paths: { '@/*': ['./*'] } } }, null, 2) + '\n' },
         { name: '.gitignore', content: 'node_modules\n.next\n.env\n*.db\n*.db-journal\n' },
-        { name: '.env.example', content: 'DATABASE_URL="file:./dev.db"\nJAOLA_ADMIN_TOKEN=\nJAOLA_READER_TOKEN=\n' },
+        { name: '.env.example', content: `DATABASE_URL="${provider === 'sqlite' ? 'file:./dev.db' : ''}"\nJAOLA_ADMIN_TOKEN=\nJAOLA_READER_TOKEN=\n` },
         { name: 'README.md', content: renderReadme(projectName, spec) },
         { name: 'lib/prisma.js', content: PRISMA_LIB },
         { name: 'lib/api.js', content: FULLSTACK_API_LIB },
         { name: 'app/globals.css', content: GLOBALS_CSS },
         { name: 'app/layout.js', content: renderLayout(projectName) },
         { name: 'app/page.js', content: renderHomePage(spec, projectName) },
-        { name: 'prisma/schema.prisma', content: renderSchema(spec) },
+        { name: 'prisma/schema.prisma', content: renderSchema(spec, provider) },
         { name: 'prisma/seed.js', content: renderSeed(spec) },
     ];
 

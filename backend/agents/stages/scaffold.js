@@ -6,12 +6,12 @@
  * بلا بثٍّ أصلاً فلا مُبلِّغَ لها — لا وسيطَ بلا مستهلك). تُستدعى بالاسم من `DELIVERY_STAGES` عبر
  * مفوِّضاتٍ باقيةٍ في jcr. نقلٌ حرفيّ.
  */
-import path from 'path';
 import { signBotToken } from '../jaolaBotToken.js';
 import { updateDesign, updateStructure } from '../projectMemory.js';
 import { generateAdvancedModules } from '../backendAgent.js';
 import { recommendFullStack, buildFullStackProject } from '../fullstackTemplates.js';
 import { writeProjectFile } from '../../core/runtime/workspacePaths.js';
+import { upgradeGeneratedFiles } from '../../services/generatedUpgrade.js';
 
 // 🆕 Advanced Modules — Stripe, Upload, OAuth
 export async function runAdvancedModules(context, roomName, reporter) {
@@ -53,10 +53,13 @@ export async function runFullStackScaffold(context, roomName, reporter) {
                 ownerUrl = url.href;
             }
             const { category, files } = buildFullStackProject(fsRec.category, context.activeProject, {
+                databaseProvider: 'postgresql',
                 api, ownerUrl, token: api ? signBotToken({ u: context.username, p: context.activeProject }) : '',
             });
-            for (const file of files) {
-                await writeProjectFile(path.join(context.projectPath, 'fullstack'), file.name, file.content);
+            const upgrade = upgradeGeneratedFiles(context.projectPath, files.map(file => ({ ...file, name: 'fullstack/' + file.name })));
+            if (!upgrade.success) {
+                reporter.liveLog(roomName, '5. RUNTIME', 'FullStackAgent', 'لم تُستبدل ملفات Full-Stack المخصصة؛ يلزم حل تعارضات: ' + upgrade.conflicts.join(', '));
+                return upgrade;
             }
             reporter.liveLog(roomName, '5. RUNTIME', 'FullStackAgent',
                 `🏗️ نسخة Full-Stack (${category}) في مجلد fullstack/ — Next.js + API + Prisma (${files.length} ملف)`

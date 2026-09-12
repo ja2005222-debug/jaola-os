@@ -1,4 +1,4 @@
-// Standalone Next + SQLite smoke test. Only the local auth-service boundary is stubbed.
+// Standalone Next + database smoke test. Only the local auth-service boundary is stubbed.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import http from 'node:http';
@@ -8,9 +8,9 @@ import { buildFullStackProject } from '../agents/fullstackTemplates.js';
 const dir = path.resolve(process.argv[3] || '/tmp/jaola-admin-smoke');
 const appUrl = 'http://127.0.0.1:4762';
 if (process.argv[2] === 'prepare') {
-    const { files } = buildFullStackProject('saas', 'تجربة دخول الأدمن', { api: 'http://127.0.0.1:4761', token: 'fixture-project', ownerUrl: 'https://jaola.test/dashboard?setupProject=fixture&setupOwner=owner' });
+    const { files } = buildFullStackProject('saas', 'تجربة دخول الأدمن', { databaseProvider: process.env.TEST_DATABASE_PROVIDER || 'sqlite', api: 'http://127.0.0.1:4761', token: 'fixture-project', ownerUrl: 'https://jaola.test/dashboard?setupProject=fixture&setupOwner=owner' });
     for (const file of files) { const target = path.join(dir, file.name); await fs.mkdir(path.dirname(target), { recursive: true }); await fs.writeFile(target, file.content); }
-    await fs.writeFile(path.join(dir, '.env'), 'DATABASE_URL="file:./dev.db"\n');
+    await fs.writeFile(path.join(dir, '.env'), 'DATABASE_URL=' + JSON.stringify(process.env.TEST_DATABASE_URL || 'file:./dev.db') + '\n');
     await fs.writeFile(path.join(dir, 'next.config.mjs'), 'export default { experimental: { cpus: 2 } };\n');
 } else {
     let revoked = false;
@@ -23,7 +23,7 @@ if (process.argv[2] === 'prepare') {
         res.end(JSON.stringify(req.url === '/api/public/auth/login' ? { ok, ...(ok ? { session } : {}) } : { ok, role: ok ? 'project-admin' : null }));
     });
     await new Promise(resolve => upstream.listen(4761, '127.0.0.1', resolve));
-    const child = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'start', '-p', '4762'], { cwd: dir, env: { ...process.env, NODE_ENV: 'production' }, stdio: ['ignore', 'ignore', 'inherit'] });
+    const child = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'start', '-p', '4762', '-H', '127.0.0.1'], { cwd: dir, env: { ...process.env, NODE_ENV: 'production' }, stdio: ['ignore', 'ignore', 'inherit'] });
     const call = (url, options = {}) => fetch(appUrl + url, { ...options, signal: AbortSignal.timeout(10000) });
     try {
         let ready = false;
@@ -44,11 +44,16 @@ if (process.argv[2] === 'prepare') {
         const rows = await (await call('/api/accounts', { headers: { Cookie: cookie } })).json();
         assert.equal(rows.length, 1);
         assert.equal(rows[0].email, 'owner@example.test');
+        const update = await call('/api/accounts/' + rows[0].id, { ...write, method: 'PUT', body: JSON.stringify({ name: 'اسم محدث' }) });
+        assert.equal(update.status, 200);
+        assert.equal((await (await call('/api/accounts', { headers: { Cookie: cookie } })).json())[0].name, 'اسم محدث');
+        assert.equal((await call('/api/accounts/' + rows[0].id, { method: 'DELETE', headers: write.headers })).status, 200);
+        assert.deepEqual(await (await call('/api/accounts', { headers: { Cookie: cookie } })).json(), []);
         revoked = true;
         assert.equal((await call('/api/accounts', { headers: { Cookie: cookie } })).status, 401);
         const out = await call('/api/admin/logout', { method: 'POST', headers: { Cookie: cookie, Origin: appUrl } });
         assert.match(out.headers.get('set-cookie'), /Max-Age=0/);
         assert.equal((await call('/api/accounts')).status, 401);
-        console.log('Generated admin flow: login, SQLite write/read, CSRF, revocation and logout passed.');
+        console.log('Generated admin flow: login, database create/read/edit/delete, CSRF, revocation and logout passed.');
     } finally { child.kill('SIGTERM'); await new Promise(resolve => upstream.close(resolve)); }
 }

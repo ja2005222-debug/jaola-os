@@ -33,7 +33,7 @@ test('الدالّةُ الحرّةُ بمُبلِّغٍ مُحقَن ≡ الم
     assert.equal(fs.readFileSync(path.join(b, 'index.html'), 'utf8'), fs.readFileSync(path.join(a, 'index.html'), 'utf8'), 'الصفحةُ حرفاً بحرف');
 });
 
-test('البناءُ الحقيقيّ على مجلّدٍ فارغ: ٨ أقسام، ٥ ملفّات، بصمةٌ وأيقونة، وترتيبُ البثّ بحروفه', async () => {
+test('البناءُ الحقيقيّ على مجلّدٍ فارغ: ٨ أقسام، ٦ ملفّات، بصمةٌ وأيقونة، وترتيبُ البثّ بحروفه', async () => {
     const s = scenario('regbuild'); setUserLanguage(s.ctx.username, 'ar'); const dir = emptyProject();
     transitionState(s.ctx.username, s.ctx.activeProject, STATES.GENERATING, { agent: 'test' });
     try {
@@ -42,7 +42,7 @@ test('البناءُ الحقيقيّ على مجلّدٍ فارغ: ٨ أقسا�
         const { verdict, ...rest } = r; // PM/2b: الصفحةُ المركّبة تُتحقَّق فعلاً وتعود بحكم
         assert.deepEqual(rest, { success: true, registry: true, blocks: ['nav', 'hero', 'logos', 'features', 'stats', 'testimonials', 'cta', 'footer'] });
         assert.equal(verdict.status, 'PASS', JSON.stringify(verdict));
-        assert.deepEqual(fs.readdirSync(dir).sort(), ['RENDER_README.md', 'brand.svg', 'index.html', 'render.yaml', 'styles.css']);
+        assert.deepEqual(fs.readdirSync(dir).sort(), ['.jaola-generated.json', 'RENDER_README.md', 'brand.svg', 'index.html', 'render.yaml', 'styles.css']);
         const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
         assert.match(html, /brand\.svg/, 'وسمُ الأيقونة حُقن'); assert.match(html, /استشارات/, 'العلامةُ من الهدف');
         assert.match(fs.readFileSync(path.join(dir, 'render.yaml'), 'utf8'), /env: static/);
@@ -139,4 +139,3 @@ test('#196 (الحدُّ المقابل): بلا فهمٍ سابق يبقى نم
     assert.equal(r.verdict.gates.find(g => g.name === 'requirements-verify').status, 'skipped');
     assert.deepEqual(getDomainModel(s.ctx.username, s.ctx.activeProject)?.roles.map(x => x.name), ['Visitor']);
 });
-

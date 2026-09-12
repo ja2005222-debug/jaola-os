@@ -8,6 +8,8 @@
  */
 
 import { slugPart, nameFingerprint } from '../services/hostNames.js';
+import { deploymentLayout, nextRenderConfig, validateDeploymentDatabase } from '../services/deploymentLayout.js';
+import { upgradeGeneratedFiles } from '../services/generatedUpgrade.js';
 
 // ═══════════════════════════════════════════════════════
 // 🏷️ اسم خدمة Render — مصدر الاشتقاق الواحد
@@ -201,20 +203,22 @@ export async function deployToRender(
 // 🚀 الدالة الرئيسية
 // ═══════════════════════════════════════════════════════
 export async function prepareRenderDeploy(projectPath, projectName, hasBackend = false) {
-    const fs = await import('fs');
-    const path = await import('path');
-
     const files = [];
+    let layout;
+    try {
+        layout = deploymentLayout(projectPath);
+        validateDeploymentDatabase(layout);
+    } catch (error) { return { success: false, error: error.message }; }
 
     // render.yaml
     files.push({
         name: 'render.yaml',
-        content: generateRenderConfig(projectName, hasBackend)
+        content: layout.kind === 'next' ? nextRenderConfig(projectName, layout) : generateRenderConfig(projectName, hasBackend)
     });
 
     // 🖥️ server.js — نقطة التشغيل (فقط للخادم؛ الموقع الثابت لا يحتاجه)
     // render.yaml يستدعي "node server.js"، فبدونه يفشل التشغيل.
-    if (hasBackend) {
+    if (hasBackend && layout.kind !== 'next') {
         files.push({ name: 'server.js', content: generateServerEntry() });
     }
 
@@ -241,18 +245,17 @@ export async function prepareRenderDeploy(projectPath, projectName, hasBackend =
     });
 
     // حفظ الملفات
+    if (layout.kind === 'next') {
+        files.find(file => file.name === 'RENDER_README.md').content = `# نشر تطبيق Next\n\nافتح رابط Deploy to Render لإنشاء Blueprint. مجلد التشغيل: ${layout.rootDir || '.'}.\n\n${layout.database ? 'يربط Blueprint قاعدة PostgreSQL مستقلة بالتطبيق عبر DATABASE_URL. الخطة المجانية للتجربة؛ راجع مدة صلاحيتها قبل الاستخدام الدائم. يمكن استخدام قاعدة قائمة بوضع رابطها في أسرار المشروع للنشر الآلي.\n\nتبدأ الخدمة بمزامنة المخطط دون السماح بفقد البيانات؛ إذا احتاج التغيير حذف بيانات يتوقف التشغيل ويلزم ترحيل مدروس مع نسخة احتياطية. لا تُزرع بيانات تجريبية تلقائياً.' : 'هذا التطبيق لا يحتوي مخطط Prisma.'}\n\nاضبط دخول الإدارة من إعدادات المشروع في JAOLA. لا تضع أسراراً في المستودع.\n`;
+    }
     try {
-        const { promises: fsp } = fs;
-        const pathMod = path.default || path;
-
-        for (const file of files) {
-            const filePath = pathMod.join(projectPath, file.name);
-            await fsp.mkdir(pathMod.dirname(filePath), { recursive: true });
-            await fsp.writeFile(filePath, file.content);
-        }
+        const upgrade = upgradeGeneratedFiles(projectPath, files);
+        if (!upgrade.success) return { ...upgrade, error: 'ملفات مخصصة تحتاج مراجعة قبل التحديث: ' + upgrade.conflicts.join(', ') };
 
         return {
             success: true,
+            layout,
+            backupId: upgrade.backupId,
             files: files.map(f => f.name),
             summary: `Render config جاهز — ${files.length} ملف`
         };
