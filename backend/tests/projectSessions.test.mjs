@@ -67,7 +67,7 @@ test('generated gate does not start or expose old browser data before login; bea
         assert.equal(starts, 0);
         assert.equal(w.localStorage.getItem('orders'), null);
         const form = w.document.querySelector('form');
-        form.querySelector('input').value = crypto.randomUUID();
+        form.querySelector('input[type="password"]').value = crypto.randomUUID();
         form.dispatchEvent(new w.Event('submit', { cancelable: true })); await tick();
         assert.equal(starts, 0);
         assert.match(form.textContent, /المالك/);
@@ -93,7 +93,7 @@ test('server protects every shared data family and reserves provisioning for aut
     vm.runInNewContext(source.slice(begin, end), {
         path, BASE_WORKSPACE: '/unused', JWT_SECRET: crypto.randomUUID(),
         app: { use: (paths, middleware) => protections.push({ paths, middleware }), get: (p, ...f) => routes.set('GET ' + p, f), post: (p, ...f) => routes.set('POST ' + p, f), put: (p, ...f) => routes.set('PUT ' + p, f) },
-        registerCommerceRoutes: () => {}, registerBookingRoutes: () => {}, getCloneId: () => null,
+        registerCommerceRoutes: () => {}, registerBookingRoutes: () => {}, registerProjectMemberRoutes: () => {}, cloneRoleOptions: () => [], getCloneId: () => null,
         projectSessionGuard: () => guard, verifyBotToken: () => ({ u: 'alice', p: 'shop' }),
         verifyToken: authenticate, validateProjectOwnership: ownership, authLimit: () => {}, appDataLimit: () => {},
         setProjectPassword: async (...args) => { passwordWrite = args; return { ok: true }; },
@@ -138,11 +138,12 @@ test('generated sync script waits for login and successful hydration before load
         assert.equal(calls.length, 0);
         assert.equal(w.document.querySelector('script[src="app.js"]'), null);
         const form = w.document.querySelector('form');
-        form.querySelector('input').value = crypto.randomUUID();
+        form.querySelector('input[type="password"]').value = crypto.randomUUID();
         form.dispatchEvent(new w.Event('submit', { cancelable: true }));
         await tick(); await tick();
-        assert.equal(calls.length, 2);
-        assert.equal(calls[1].options.headers.get('authorization'), 'Bearer session');
+        assert.equal(calls.length, 3);
+        for (const call of calls.slice(1)) assert.equal(call.options.headers.get('authorization'), 'Bearer session');
+        assert.ok(calls.some(call => String(call.url).includes('/api/public/team')));
         assert.equal(w.localStorage.getItem('orders'), 'server-data');
         assert.ok(w.document.querySelector('script[src="app.js"]'));
     } finally { dom.window.dispatchEvent(new dom.window.Event('pagehide')); dom.window.close(); }
