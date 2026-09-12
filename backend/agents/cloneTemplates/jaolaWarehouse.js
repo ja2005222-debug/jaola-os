@@ -220,6 +220,14 @@ function addInboundLine() {
 function delInLine(i) { state.inLines.splice(i, 1); renderInboundLines(); }
 function postInbound() {
   if (!state.inLines.length) { toast('أضف صنفاً واحداً على الأقل'); return; }
+  var incoming = new Map();
+  for (var n = 0; n < state.inLines.length; n++) {
+    var line = state.inLines[n]; var current = itemById(line.itemId);
+    if (!current || !Number.isSafeInteger(line.qty) || line.qty < 1 || !Number.isSafeInteger(current.qty) || current.qty < 0) { toast('الصنف أو الكمية غير صالحين'); return; }
+    var next = (incoming.has(line.itemId) ? incoming.get(line.itemId) : current.qty) + line.qty;
+    if (!Number.isSafeInteger(next)) { toast('الكمية تتجاوز الحد المسموح'); return; }
+    incoming.set(line.itemId, next);
+  }
   for (var i = 0; i < state.inLines.length; i++) { var it = itemById(state.inLines[i].itemId); if (it) it.qty += state.inLines[i].qty; }
   var sh = { id: uid('s'), no: settings.shipSeq++, type: 'in', ref: byId('inRef').value.trim(), lines: state.inLines.slice(), date: today() };
   shipments.push(sh); state.inLines = []; byId('inRef').value = '';
@@ -242,7 +250,14 @@ function addOutboundLine() {
 function delOutLine(i) { state.outLines.splice(i, 1); renderOutboundLines(); }
 function postOutbound() {
   if (!state.outLines.length) { toast('أضف صنفاً واحداً على الأقل'); return; }
-  for (var i = 0; i < state.outLines.length; i++) { var it = itemById(state.outLines[i].itemId); if (!it || state.outLines[i].qty > it.qty) { toast('الكمية لم تعد متاحة: ' + state.outLines[i].name); return; } }
+  var requested = new Map();
+  for (var i = 0; i < state.outLines.length; i++) {
+    var line = state.outLines[i]; var it = itemById(line.itemId);
+    if (!it || !Number.isSafeInteger(line.qty) || line.qty < 1 || !Number.isSafeInteger(it.qty) || it.qty < 0) { toast('الصنف أو الكمية غير صالحين'); return; }
+    var total = (requested.get(line.itemId) || 0) + line.qty;
+    if (!Number.isSafeInteger(total) || total > it.qty) { toast('الكمية لم تعد متاحة: ' + line.name); return; }
+    requested.set(line.itemId, total);
+  }
   for (var j = 0; j < state.outLines.length; j++) itemById(state.outLines[j].itemId).qty -= state.outLines[j].qty;
   var sh = { id: uid('s'), no: settings.shipSeq++, type: 'out', ref: byId('outRef').value.trim(), lines: state.outLines.slice(), date: today() };
   shipments.push(sh); state.outLines = []; byId('outRef').value = '';

@@ -111,3 +111,9 @@ Initial credential setup/reset is only available through the authenticated platf
 Rollout: deploy backend and dashboard together; owner sets a project password; regenerate/re-publish recognized JAOLA sync clients. Old clients intentionally receive 401 rather than retaining insecure compatibility. Existing custom clients require integration with the login/session contract. No automatic production rollout has been performed.
 
 Scope: a shared project-administrator credential, NOT distinct employee accounts or per-role authorization. Template role dropdowns remain workflow presentation and must not be advertised as security roles. Standalone generated Full Stack API authorization, per-user RBAC, conflict-safe database transactions and reliable offline outboxes remain separate template-readiness work. This checkpoint closes anonymous access to the shared data families, not every possible security issue in every generated app.
+
+## Warehouse completion checkpoint
+
+Outbound shipment posting now aggregates repeated item lines and validates every quantity, available balance and combined total before any inventory mutation. This closes a reproducible negative-stock case when a prepared shipment's stock has dropped before posting. Invalid, missing, fractional, non-finite and negative quantities are rejected; exact-stock duplicate lines remain valid. Tests execute the actual generated app.js and check that rejected shipments do not change inventory, sequence, shipment history or persisted values.
+
+This is a same-page business-rule fix. Cross-device transaction enforcement remains necessary on the server. Inbound posting also validates all lines before mutation, rejects missing items and invalid quantities, and checks cumulative integer overflow. Multi-key writes are not atomic transactions. The warehouse template remains under completion, not production-certified.
