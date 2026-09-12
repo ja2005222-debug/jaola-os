@@ -32,18 +32,28 @@ export function gatherCooperationInputs(agent, artifacts, byId) {
     return parts.join('\n\n');
 }
 
-export async function runAgent(agent, { goal, lang, artifacts, fileMap, llm, byId }) {
+export async function runAgent(agent, { goal, lang, artifacts, fileMap, llm, byId, repairPaths, contextBudget = 48000 }) {
     const system = compileSpecToPrompt(agent, { lang });
     const coop = gatherCooperationInputs(agent, artifacts, byId);
 
     // المُعدِّلون يستقبلون الملفات الحالية ليصلحوها/يحصّنوها (عام عبر flag العقد)
     let currentFilesBlock = '';
+    const visiblePaths = new Set();
     if (agent.modifier) {
-        const files = Object.values(fileMap);
+        let remaining = contextBudget;
+        const files = Object.values(fileMap).filter(f => {
+            if (repairPaths && !repairPaths.includes(f.path)) return false;
+            const size = String(f.content || '').length + f.path.length + 30;
+            if (size > remaining) return false;
+            remaining -= size;
+            visiblePaths.add(f.path);
+            return true;
+        });
         if (files.length) {
             currentFilesBlock = `\n## الملفات الحالية (عدّل ما يلزم منها وأعِدها بنفس المسار مع action="modify"):\n` +
-                files.map((f) => `### ${f.path}\n\`\`\`\n${(f.content || '').slice(0, 1200)}\n\`\`\``).join('\n');
+                files.map((f) => `### ${f.path}\n\`\`\`\n${f.content || ''}\n\`\`\``).join('\n');
         }
+        currentFilesBlock += '\nلا تستبدل ملفاً لم يصلك محتواه الكامل. الملفات المستبعدة: ' + Object.keys(fileMap).filter(p => !visiblePaths.has(p)).join(', ');
         // وكيل الـ debug: زوّده بأخطاء وكيل QA المرتبط تحديداً
         if (agent.debugFor) {
             const qa = artifacts[agent.debugFor];
@@ -78,6 +88,9 @@ ${coop ? `## مخرجات الوكلاء السابقين (استخدمها كم
     const files = (Array.isArray(parsed.files) ? parsed.files : [])
         .map((f) => ({ path: safeRelPath(f.path), kind: f.kind || 'code', action: f.action === 'modify' ? 'modify' : 'create', content: typeof f.content === 'string' ? f.content : '' }))
         .filter((f) => f.path && f.content);
+    if (agent.modifier && files.some(f => fileMap[f.path] && !visiblePaths.has(f.path))) {
+        throw new Error('رفض استبدال ملف لم يُرسل محتواه الكامل للوكيل');
+    }
 
     return {
         agent: agent.id,

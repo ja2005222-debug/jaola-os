@@ -8,6 +8,7 @@
  */
 
 import os from 'os';
+import { missionUsageSnapshot } from '../core/providers/llm.js';
 import { persistEntry, removeEntry, hydrateStore, onMongoReady } from './persistence.js';
 
 const metricsCache = new Map(); // `${username}:${project}` → metrics
@@ -48,7 +49,7 @@ export function recordScore(username, project, kind, { grade, score }) {
     save(username, project);
 }
 
-export function recordBuild(username, project, { success, durationSec = 0, filesCount = 0, goal = '' }) {
+export function recordBuild(username, project, { success, durationSec = 0, filesCount = 0, goal = '', repairRounds = null, firstPass = null }) {
     const m = getMetrics(username, project);
     m.totalBuilds += 1;
     m.builds.unshift({
@@ -56,6 +57,9 @@ export function recordBuild(username, project, { success, durationSec = 0, files
         success: !!success,
         durationSec,
         filesCount,
+        usage: missionUsageSnapshot(),
+        repairRounds,
+        firstPass: typeof firstPass === 'boolean' ? firstPass : null,
         goal: goal.slice(0, 80),
     });
     m.builds = m.builds.slice(0, 15);
@@ -103,11 +107,42 @@ export function buildMetricsPayload(username, project) {
         totalEdits: m.totalEdits,
         lastBuild: m.builds[0] || null,
         builds: m.builds,
+        performance: summarizePerformance(m.builds),
+        apiPerformance: apiPerformance(m.apiSamples),
         system: {
             rssMb: Math.round(process.memoryUsage().rss / (1024 * 1024)),
             cpuPct: Math.min(100, Math.round((os.loadavg()[0] / cores) * 100)),
             uptimeSec: Math.floor(process.uptime()),
         },
+    };
+}
+
+export function recordApiSample(username, project, sample) {
+    const m = getMetrics(username, project);
+    m.apiSamples = [...(m.apiSamples || []), { route: sample.route, durationMs: Math.max(0, sample.durationMs), status: sample.status }].slice(-100);
+    // Ephemeral request window; avoid a database write for every request.
+}
+
+export function apiPerformance(samples = []) {
+    const times = samples.map(s => s.durationMs).sort((a, b) => a - b);
+    return { samples: times.length, p95Ms: times.length ? times[Math.ceil(times.length * 0.95) - 1] : null,
+        serverErrors: samples.filter(s => s.status >= 500).length };
+}
+
+/** Observed window only; missing usage and repair evidence are not invented. */
+export function summarizePerformance(builds) {
+    const durations = builds.map(b => b.durationSec).filter(n => Number.isFinite(n) && n > 0).sort((a, b) => a - b);
+    const known = builds.filter(b => typeof b.firstPass === 'boolean');
+    return {
+        windowSize: builds.length,
+        successRate: builds.length ? builds.filter(b => b.success).length / builds.length : null,
+        firstPassSamples: known.length,
+        firstPassRate: known.length ? known.filter(b => b.firstPass).length / known.length : null,
+        durationP50Sec: durations.length ? durations[Math.ceil(durations.length * 0.5) - 1] : null,
+        durationP95Sec: durations.length ? durations[Math.ceil(durations.length * 0.95) - 1] : null,
+        observedTokens: builds.reduce((n, b) => n + (b.usage?.total || 0), 0),
+        uncountedCalls: builds.reduce((n, b) => n + Math.max(0, (b.usage?.calls || 0) - (b.usage?.counted || 0)), 0),
+        costUsd: null,
     };
 }
 

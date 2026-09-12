@@ -13,6 +13,23 @@
 // [عربي, إنجليزي] — التغطية الكاملة لسلاسل القوالب الظاهرة (مرتّبة منطقياً؛
 // الترتيب الفعلي عند التطبيق: بالأطول أولاً لمنع المطابقات الجزئية).
 const DICT = [
+    ['راجع تفاصيل المنتج قبل تأكيد الطلب.', 'Review product details before confirming your order.'],
+    ['حسب ترتيب التوصيل', 'Delivery by arrangement'],
+    ['تواصل بشأن طلبك', 'Contact us about your order'],
+    ['الدفع عند الاستلام', 'Cash on delivery'],
+    ['لا دفع إلكتروني هنا', 'No online payment here'],
+    ['متابعة الطلب', 'Order tracking'],
+    ['اعرض حالة طلبك', 'View your order status'],
+    ['احتفظ برمز الاستعادة سراً للوصول إلى طلباتك على جهاز آخر.', 'Keep your recovery code private to access orders on another device.'],
+    ['رمز الاستعادة', 'Recovery code'],
+    ['إظهار الرمز', 'Show code'],
+    ['استعادة الطلبات', 'Restore orders'],
+    ['إضافة أو تعديل منتج', 'Add or edit product'],
+    ['الموظف أو المورد', 'Staff or resource'],
+    ['لاستعادة حجوزاتك على جهاز آخر، احتفظ برمز الاستعادة سراً؛ من يملكه يستطيع عرض حجوزاتك وإلغاءها.', 'Keep your recovery code private. Anyone with it can view and cancel your bookings on another device.'],
+    ['إظهار رمز الاستعادة', 'Show recovery code'],
+    ['استعادة حجوزاتي', 'Restore my bookings'],
+
     // ── عام/دخول/حسابات ─────────────────────────────────────────────
     ['العميل يتسوّق بلا تسجيل — هذا الدخول للإدارة فقط', 'Customers shop without signing in — this login is for management only'],
     ['الزائر يتصفّح بلا تسجيل — هذا الدخول للإدارة فقط', 'Visitors browse without signing in — this login is for management only'],

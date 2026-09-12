@@ -58,6 +58,14 @@ const SYSTEM = `أنت موجّه رسائل لمنصة بناء مواقع با
  */
 export async function routeMessage(message, ctx = {}, llm = smartChat) {
     const arabic = arabicRequestContext(message);
+    const normalizedCommand = arabic.normalized.trim().replace(/[أإآ]/g, 'ا').replace(/[.!؟،…]+$/u, '').trim();
+    if (/^(?:من فضلك\s+)?(?:اعد البناء|اعيد البناء|ابنيه من جديد|ابنيهو من جديد|عيد بناءه|عيد بناه)$/u.test(normalizedCommand)) {
+        if (!ctx.hasProject) return { action: 'chat', instruction: '', confidence: 100, requiresClarification: true, question: 'ما المشروع المطلوب بناؤه: موقع أم نظام داخلي؟ وما وظيفته؟' };
+        return { action: 'edit', instruction: `${message}\nأعد بناء المشروع الحالي مع الحفاظ على نوعه ووظيفته ومتطلباته. لا تغيّر القالب بناءً على كلمة البناء ولا تحذف بيانات المستخدم.`, confidence: 100, reason: 'إعادة بناء المشروع الحالي دون تغيير هويته' };
+    }
+    if (!ctx.reference && /^(?:احذف|امسح|شيل|غير|غيّر|بدل|بدّل)\s+(?:ده|دا|دي|هذا|هذه|ذاك|التاني|الثاني|القديم)$/u.test(normalizedCommand)) {
+        return { action: 'chat', instruction: '', confidence: 100, requiresClarification: true, question: 'أي عنصر أو صفحة تقصد؟ اذكر اسمه لتجنب تعديل أو حذف شيء آخر.' };
+    }
     if (arabic.diagnosisOnly) return { action: 'diagnose', instruction: '', confidence: 100, reason: 'شكوى تحتاج تشخيصًا دون تعديل' };
     const context = [
         `اسم المشروع الحالي: ${ctx.projectName || 'sandbox_app'}`,

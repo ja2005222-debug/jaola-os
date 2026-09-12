@@ -37,6 +37,15 @@ jobs:
         env:
           TEST_TRANSACTION_MONGO_URI: mongodb://127.0.0.1:27017/jaola_transaction_tests
         run: npm test
+      - name: Audit every generated clone
+        working-directory: backend
+        run: node --import ./tests/helpers/mockProviders.mjs scripts/auditClones.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clone-readiness-audit
+          path: backend/docs/CLONE_READINESS_AUDIT.json
+          if-no-files-found: error
 
   video-service-tests:
     name: اختبارات خدمة الفيديو

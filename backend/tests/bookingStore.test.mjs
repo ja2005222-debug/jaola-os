@@ -67,3 +67,36 @@ test('real Mongo prevents concurrent double booking', { skip: !process.env.TEST_
         assert.equal((await s.availability(project)).taken.length, 0);
     } finally { await collection.drop().catch(() => {}); await client.close(); }
 });
+
+test('business timezone, staff resources, overlapping durations and configuration conflicts', async () => {
+    const s = service();
+    const { config, revision } = await s.configuration(project);
+    config.timezone = 'Europe/Amsterdam';
+    config.resources.push({ id: 'second', name: 'موظف ثان' });
+    config.services[0].dur = 90;
+    await s.configure(project, { config, revision });
+    const booking = await s.create(project, key, input);
+    assert.equal(booking.startsAt, Date.parse('2030-01-02T09:00:00Z'));
+    await assert.rejects(s.create(project, other, { ...input, slot: '11:00' }), { code: 'SLOT_TAKEN' });
+    const second = await s.create(project, other, { ...input, resource: 'second' });
+    assert.notEqual(second.id, booking.id);
+    const slots = await s.availability(project, { service: 's1', resource: 'main' });
+    assert.equal(slots.offers.some(o => o.date === input.date && o.slot === '11:00'), false);
+    await assert.rejects(s.configure(project, { config, revision }), { code: 'CONFIGURATION_CONFLICT' });
+    const latest = await s.configuration(project);
+    latest.config.resources = latest.config.resources.filter(r => r.id !== 'second');
+    await assert.rejects(s.configure(project, latest), { code: 'RESOURCE_HAS_BOOKINGS' });
+});
+
+test('calendar conversion follows local day and rejects a daylight-saving gap', async () => {
+    const { calendarDays, bookingInstant, validateBookingConfiguration, DEFAULT_BOOKING_CONFIG } = await import('../services/bookingConfiguration.js');
+    assert.equal(calendarDays(Date.parse('2030-01-01T23:30:00Z'), 'Asia/Riyadh')[0], '2030-01-02');
+    assert.ok(Number.isNaN(bookingInstant('2030-03-31', '02:30', 'Europe/Amsterdam')));
+    assert.throws(() => validateBookingConfiguration({ ...DEFAULT_BOOKING_CONFIG, timezone: 'Unknown/Zone' }), { code: 'INVALID_TIMEZONE' });
+});
+
+test('booking rejects changed quoted service price before confirming', async () => {
+    const s = service();
+    await assert.rejects(s.create(project, key, { ...input, quotedPrice: 1 }), { code: 'SERVICE_CHANGED' });
+    assert.deepEqual(await s.list(project, key), []);
+});

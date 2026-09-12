@@ -11,6 +11,7 @@
  *   على القرص، فعند إعادة تشغيل العملية لا تختفي بلا أثر — تُقرأ كـ«مهام
  *   ساقطة» ويُخبَر صاحبها في أول رسالة (كانت الحالة كلها في الذاكرة فتضيع صامتة).
  */
+import { withMissionUsage } from '../providers/llm.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -65,7 +66,7 @@ function pump() {
         if (entry) { entry.state = 'running'; entry.startedAt = Date.now(); writeLedger(); }
 
         Promise.resolve()
-            .then(job.run)
+            .then(() => withMissionUsage(job.run))
             .catch(e => console.error(`[MissionQueue] مهمة ${job.key} انتهت بخطأ:`, e.message))
             .finally(() => {
                 runningCount--;

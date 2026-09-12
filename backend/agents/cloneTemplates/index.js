@@ -60,6 +60,20 @@ export function inferTrack(goal = '') {
     return SYSTEM_INTENT_RE.test(String(goal)) ? 'system' : null;
 }
 
+/** Runtime capability is separate from UI role coverage. */
+export function cloneReadiness(clone) {
+    const transactional = ['jaola-booking', 'jaola-store'].includes(clone.id);
+    return {
+        dataMode: transactional ? 'server-transactions-after-installation' : 'requires-runtime-verification',
+        roleCoverage: 'declared-ui-only',
+        productionVerified: false,
+        requiredChecks: ['admin-authentication', 'customer-isolation', 'create-edit-cancel', 'reload-persistence', 'deployment-smoke'],
+        limitations: transactional
+            ? (clone.id === 'jaola-store' ? ['cash-on-delivery-only', 'guest-recovery-code'] : ['guest-recovery-code', 'no-notification-provider'])
+            : ['UI behavior checks do not establish server authorization or durable storage'],
+    };
+}
+
 /** بيانات وصفية للعرض (لوحة «معرفة المنصّة») — بلا محتوى الملفات الثقيل. */
 export function listClones() {
     return BUILDERS.map(b => {
@@ -70,6 +84,7 @@ export function listClones() {
             roles: (c.model?.roles || []).map(r => r.name),
             files: c.files.map(f => f.name),
             externalApi: c.externalApi || null,
+            readiness: cloneReadiness(c),
         };
     });
 }

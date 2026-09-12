@@ -1,0 +1,2478 @@
+{
+  "scope": "Offline UI behavior; server auth and transaction suites run separately in CI",
+  "clones": [
+    {
+      "id": "jaola-delivery",
+      "roles": [
+        "Customer",
+        "Restaurant",
+        "Driver",
+        "Admin"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "fa557e43102a92e8a271e167873fbcfc506c6293949015715aa8a24401245b59",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 90,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (4) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "warn",
+            "detail": "مفاهيمُ المنتج غير ظاهرة في الواجهة/الكود: product."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (34 تغيير، 15 عنصر)."
+          }
+        ],
+        "summary": "4 ✅ / 1 ⚠️ / 0 ❌ (90%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-store",
+      "roles": [
+        "Customer",
+        "Admin"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "6224434eb5680deef92e57cfcebf9b2a5cbef381e420f948bacef6121a99e976",
+      "readiness": {
+        "dataMode": "server-transactions-after-installation",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "cash-on-delivery-only",
+          "guest-recovery-code"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (product، order، customer، admin)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (8 تغيير، 35 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-booking",
+      "roles": [
+        "Customer",
+        "Admin"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "f1e0f6172f418ec0c943d2e8ed30c8a88a32de1a42ade43f76fa6307f49f2e32",
+      "readiness": {
+        "dataMode": "server-transactions-after-installation",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "guest-recovery-code",
+          "no-notification-provider"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (service، booking، customer، admin)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (14 تغيير، 17 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-realestate",
+      "roles": [
+        "User",
+        "Admin"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "116e5ef33000df1f37956db0ce712fcb616493286cea29b7c351041b63dc4dbb",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 90,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "warn",
+            "detail": "مفاهيمُ المنتج غير ظاهرة في الواجهة/الكود: inquiry."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (10 تغيير، 22 عنصر)."
+          }
+        ],
+        "summary": "4 ✅ / 1 ⚠️ / 0 ❌ (90%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-marketplace",
+      "roles": [
+        "Customer",
+        "Seller",
+        "Admin"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "bfee8da96de8525614566380dfb4cd4bc92f65b814569144c6c34f42dad187df",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (3) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (store، product، order، customer، seller، admin)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (17 تغيير، 21 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-taxi",
+      "roles": [
+        "Rider",
+        "Driver",
+        "Admin"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "e814ebb4a7a270da42e78d5e1b91901184681c257ee88be474290a951afc2141",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (3) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (trip، location، passenger، driver، admin)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (18 تغيير، 12 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-travel",
+      "roles": [
+        "Traveler",
+        "Admin"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "d0494574b5183916f8f4c5bae32f1933053f527f340cb00e77743d36cddcf5cc",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 90,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "warn",
+            "detail": "مفاهيمُ المنتج غير ظاهرة في الواجهة/الكود: departure، waitlistentry، quoterequest، flight، hotel."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (5 تغيير، 65 عنصر)."
+          }
+        ],
+        "summary": "4 ✅ / 1 ⚠️ / 0 ❌ (90%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-events",
+      "roles": [
+        "Buyer",
+        "Organizer",
+        "Admin"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "1b1bb826fd6f32885c763980dd4f2f0b19d45a9d29e6f32cd6a852fab4eff441",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 90,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (3) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "warn",
+            "detail": "مفاهيمُ المنتج غير ظاهرة في الواجهة/الكود: tickettier."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (16 تغيير، 32 عنصر)."
+          }
+        ],
+        "summary": "4 ✅ / 1 ⚠️ / 0 ❌ (90%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-lms",
+      "roles": [
+        "Student",
+        "Instructor",
+        "Admin"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "615761eaa4b4c8f8c5a9b97997a047264864ceac83143f1a6bea8dd37a7f4049",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (3) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (course، student، teacher، admin)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (12 تغيير، 22 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-school",
+      "roles": [
+        "Student",
+        "Teacher",
+        "Admin"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "7f5f61ac13fe55157add28c28c23908555da06e98b25d25c9d10d9c7493c55d5",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (3) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (grade، announcement، student، teacher، admin)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (5 تغيير، 19 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-weather",
+      "roles": [
+        "User"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "b8f9f980c8c264df4cff3cd3520eaebfe5c724c2b1c09c6dc395b0bc192c790f",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 88,
+        "checks": [
+          {
+            "name": "domain-fidelity",
+            "status": "warn",
+            "detail": "مفاهيمُ المنتج غير ظاهرة في الواجهة/الكود: location."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (8 تغيير، 7 عنصر)."
+          }
+        ],
+        "summary": "3 ✅ / 1 ⚠️ / 0 ❌ (88%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-crypto",
+      "roles": [
+        "User"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "a0e34c3c181141f0e219394c167743fc2a70f589c57783593cb0d331f3cdd91b",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 83,
+        "checks": [
+          {
+            "name": "data-presence",
+            "status": "warn",
+            "detail": "لا دليل على مصدر بيانات — قد تكون المكوّنات بلا ما تعمل عليه."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (17 تغيير، 5 عنصر)."
+          }
+        ],
+        "summary": "2 ✅ / 1 ⚠️ / 0 ❌ (83%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-currency",
+      "roles": [
+        "User"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "27c7cbf9a62bd3e1bbe33ae9c363fc8de771bbccb15ddec80a13df8faf2556f1",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 88,
+        "checks": [
+          {
+            "name": "domain-fidelity",
+            "status": "warn",
+            "detail": "مفاهيمُ المنتج غير ظاهرة في الواجهة/الكود: rate."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (9 تغيير، 5 عنصر)."
+          }
+        ],
+        "summary": "3 ✅ / 1 ⚠️ / 0 ❌ (88%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-erp",
+      "roles": [
+        "مالك",
+        "محاسب",
+        "أمين المخزن"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "b71ab66f025d985a33604fbf2352857c07bd067e1f059513dfb31322fe2ae4a0",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (3) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (product، expense، production، invoice، admin، accountant، storekeeper)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (5 تغيير، 30 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-clinic",
+      "roles": [
+        "طبيب",
+        "استقبال",
+        "محاسب"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "762fd319637997e08fd62f0f9f70b9d0167ceebd98d625e90709509f648b5eb6",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (3) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (patient، booking، visit، invoice، doctor، staff، accountant)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (5 تغيير، 26 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-hr",
+      "roles": [
+        "مدير",
+        "موظف"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "084f2a7c29e163432c6916d5b84bc611f3f158b91e0b8afa138e1059aa29a486",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (attendance، leave، salary، admin)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (5 تغيير، 25 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-pos",
+      "roles": [
+        "مدير",
+        "كاشير"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "5f4ea7673acae296b6001b02fe15f7ed6b840ae947ebecaea2facf0e093804bd",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (product، invoice، shift، admin، staff)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (6 تغيير، 17 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-restaurant-ops",
+      "roles": [
+        "مدير",
+        "نادل",
+        "مطبخ"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "c1a3d9e45b70b6b2c8790b5751834e42bf44aace474833f119db496771ef9326",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (3) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (table، product، order، invoice، admin، staff)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (7 تغيير، 17 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-pharmacy",
+      "roles": [
+        "مدير",
+        "صيدلي"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "914e0cf786387279766b75078669ae8b92daf5ec188e6ce746af6ecb54329b8f",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (medicine، admin، pharmacist)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (5 تغيير، 21 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-property",
+      "roles": [
+        "مالك",
+        "محاسب"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "7195f254a6d645bc3173c8537a00d8b445cfc202808110ac4f3a7b00d764d832",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (property، lease، payment، admin، accountant)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (5 تغيير، 23 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-cinema",
+      "roles": [
+        "مشاهد",
+        "إدارة"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "a4496dc4a3a44a0e858c5889412291da0a74a72a6f70979013311d6feda51125",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 90,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "warn",
+            "detail": "مفاهيمُ المنتج غير ظاهرة في الواجهة/الكود: عرض."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (9 تغيير، 21 عنصر)."
+          }
+        ],
+        "summary": "4 ✅ / 1 ⚠️ / 0 ❌ (90%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-workshop",
+      "roles": [
+        "مدير",
+        "فنّي",
+        "استقبال"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "8ac9637f4939fa8551c04d9525379232f716e11e7e1d38c1481adbde463ea0c1",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (3) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (customer، vehicle، work_order، service، admin، staff)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (8 تغيير، 24 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-gym",
+      "roles": [
+        "عضو",
+        "إدارة"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "bcd1a5c9a44d6a7c6aea02789b29f0ec56416755d2053ecc93a2418a42868b0f",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (package، course، member، admin)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (9 تغيير، 23 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-accounting",
+      "roles": [
+        "مدير مالي",
+        "محاسب"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "03ae5be9c99871ad7893cd1854a511e595eb327bb0acf383dd3ea8b2817f2ef6",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (account، accountant)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (5 تغيير، 20 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-salon",
+      "roles": [
+        "عميل",
+        "إدارة"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "d83be2f136f5b20f01ea1da33ccd014583289f108dd939be53a4e1ef12d7035b",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 90,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "warn",
+            "detail": "مفاهيمُ المنتج غير ظاهرة في الواجهة/الكود: اخصائي."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (9 تغيير، 24 عنصر)."
+          }
+        ],
+        "summary": "4 ✅ / 1 ⚠️ / 0 ❌ (90%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-warehouse",
+      "roles": [
+        "مدير مستودع",
+        "مشغّل"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "0a3f081c75d8717715de8587608c6b8b922388292aa92204baeb418673254736",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (product، shipment، storekeeper، dispatcher)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (5 تغيير، 23 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-hotel",
+      "roles": [
+        "نزيل",
+        "إدارة"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "1b88fb0157974a4699cd508b316e4a7adab66763cf31a3a5b75d41e379d22176",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (room، booking، guest، admin)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (9 تغيير، 19 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-laundry",
+      "roles": [
+        "موظف استقبال",
+        "مشغّل مغسلة"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "f21d2429d21583b43ffc1fd3ba1c6deb769766764c64b46846d0bb53d4cd7add",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (product، order، staff، storekeeper)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (5 تغيير، 17 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-carrental",
+      "roles": [
+        "مستأجر",
+        "إدارة"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "6b914ff54a39b06f0e348a8dea9e021e388f2ff643b9029e20ff2e3bf31b2dd4",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (vehicle، booking، tenant، admin)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (9 تغيير، 18 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-lawfirm",
+      "roles": [
+        "محامٍ",
+        "سكرتير قانوني"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "95a5655dc43c09a8e510de76ac45ab695310de276bdff9ab6c707ae3782c766e",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (customer، legal_case، lawyer، staff)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (6 تغيير، 24 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-coworking",
+      "roles": [
+        "عضو",
+        "إدارة"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "d10cd60098d82acd340101ba25bebf71db5ad9a6571be29f675a88fa4d5f5f87",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (workspace، booking، member، admin)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (9 تغيير، 19 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-helpdesk",
+      "roles": [
+        "وكيل دعم",
+        "مشرف"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "452699e1dc10aca92e1eaff591654125ded476e5ebc0e964342b107719fb25ed",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (support_ticket، reply، staff، admin)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (5 تغيير، 17 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-photography",
+      "roles": [
+        "عميل",
+        "إدارة"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "b49aa374482e997a619b1172ea07b5f523f4d0da4c887e714c29412c0509fcb1",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (package، booking، customer، admin)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (9 تغيير، 18 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-fleet",
+      "roles": [
+        "مدير أسطول",
+        "سائق"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "183d0d562b3ea6bec4bfe19c4f643022035f042e87f96a323c19b4a9f13699f1",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (vehicle، maintenance، fleet_manager، driver)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (4 تغيير، 20 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-tutoring",
+      "roles": [
+        "طالب",
+        "إدارة"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "db4019bd083137cd44221c51260fca29d4b7a3b03bcaa18748dfb12e88f625a2",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (course، booking، student، admin)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (9 تغيير، 18 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-vetclinic",
+      "roles": [
+        "طبيب بيطري",
+        "استقبال"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "dd8789000301b807cba207d14d73700c844273ec481bcf699342500401400fb8",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (pet، visit، doctor، staff)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (7 تغيير، 22 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-cleaning",
+      "roles": [
+        "عميل",
+        "إدارة"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "3b0c5984aadd9973ebacd33b90bce2d8f212d549caa788e3d6542e5bf71b4573",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (package، booking، customer، admin)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (9 تغيير، 19 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-vetclinic-react",
+      "roles": [
+        "طبيب بيطري",
+        "استقبال"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "c6e1c6948e89ff252a1874469eace43eb57d837aa7a778a85f03224528fd7638",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "role-coverage",
+            "status": "pass",
+            "detail": "كل الأدوار (2) ممثَّلة."
+          },
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (pet، visit، doctor، staff)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (1 تغيير، 4 عنصر)."
+          }
+        ],
+        "summary": "5 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-crypto-advisor",
+      "roles": [
+        "مالك الحساب"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "670cebb7f4c9e93fb1c61a401ed1ecfa964fca71d88a63d6137b9888b3fc3b8c",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (currency، analysis)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (25 تغيير، 11 عنصر)."
+          }
+        ],
+        "summary": "4 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-budget-advisor",
+      "roles": [
+        "صاحب الحساب"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "437833bc78fa414b97807b386c49c106dff3e47a4e442d63d8bae04d23d2a9e2",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (payment، budget)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (29 تغيير، 16 عنصر)."
+          }
+        ],
+        "summary": "4 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    },
+    {
+      "id": "jaola-stock-advisor",
+      "roles": [
+        "مالك الحساب"
+      ],
+      "files": [
+        "index.html",
+        "app.js",
+        "styles.css"
+      ],
+      "sourceSha256": "c42c8c4cc957b562d76a2827a0d035c6256be16428fbc270ec7497f59b43c880",
+      "readiness": {
+        "dataMode": "requires-runtime-verification",
+        "roleCoverage": "declared-ui-only",
+        "productionVerified": false,
+        "requiredChecks": [
+          "admin-authentication",
+          "customer-isolation",
+          "create-edit-cancel",
+          "reload-persistence",
+          "deployment-smoke"
+        ],
+        "limitations": [
+          "UI behavior checks do not establish server authorization or durable storage"
+        ]
+      },
+      "behavior": {
+        "ok": true,
+        "score": 100,
+        "checks": [
+          {
+            "name": "domain-fidelity",
+            "status": "pass",
+            "detail": "مفاهيمُ المنتج كلُّها حاضرة (currency، analysis)."
+          },
+          {
+            "name": "data-presence",
+            "status": "pass",
+            "detail": "يوجد مصدر بيانات (مصفوفة/‏API)."
+          },
+          {
+            "name": "no-js-errors",
+            "status": "pass",
+            "detail": "الصفحة تعمل بلا أخطاء JS."
+          },
+          {
+            "name": "interactive-wired",
+            "status": "pass",
+            "detail": "التفاعل يُحدث تغييراً حيّاً في الصفحة (25 تغيير، 11 عنصر)."
+          }
+        ],
+        "summary": "4 ✅ / 0 ⚠️ / 0 ❌ (100%)",
+        "ran": true
+      }
+    }
+  ]
+}

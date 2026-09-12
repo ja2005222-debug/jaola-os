@@ -47,6 +47,7 @@ const INDEX_HTML = `<!DOCTYPE html>
       </div>
 
       <div id="step-date" class="step">
+        <label for="bookingResource">الموظف أو المورد</label><select id="bookingResource" class="hidden"></select>
         <h2>2) اختر اليوم</h2>
         <div id="dateList" class="days"></div>
         <h2 style="margin-top:16px">3) اختر الوقت</h2>
@@ -72,7 +73,12 @@ const INDEX_HTML = `<!DOCTYPE html>
     <!-- حجوزاتي -->
     <section id="mine-view" class="view">
       <h2>حجوزاتي</h2>
-      <div id="myBookings" class="list"></div>
+      <div class="hidden" id="bookingRecovery">
+        <p>لاستعادة حجوزاتك على جهاز آخر، احتفظ برمز الاستعادة سراً؛ من يملكه يستطيع عرض حجوزاتك وإلغاءها.</p>
+        <button class="btn" data-action="show-recovery">إظهار رمز الاستعادة</button>
+        <label for="recoveryCode">رمز الاستعادة</label><input id="recoveryCode" autocomplete="off" spellcheck="false">
+        <button class="btn" data-action="restore-bookings">استعادة حجوزاتي</button><p id="recoveryMessage" role="status"></p>
+      </div><div id="myBookings" class="list"></div>
     </section>
 
     <!-- الإدارة -->
@@ -80,6 +86,7 @@ const INDEX_HTML = `<!DOCTYPE html>
       <h2>🛠️ لوحة الإدارة — كل الحجوزات</h2>
       <div id="adminStats" class="stats"></div>
       <div id="adminBookings" class="list"></div>
+      <div id="bookingSettings" class="hidden"></div>
     </section>
   </main>
 
@@ -101,7 +108,7 @@ const INDEX_HTML = `<!DOCTYPE html>
 const APP_JS = `// 📅 منطق حجز المواعيد — كل الدوال معرّفة، تفويض أحداث، حالة مشتركة.
 'use strict';
 
-const SERVICES = [
+let SERVICES = [
   { id: 's1', name: 'قصّ وتصفيف', emoji: '💇', dur: 45, price: 80 },
   { id: 's2', name: 'حلاقة ذقن', emoji: '🧔', dur: 30, price: 50 },
   { id: 's3', name: 'استشارة طبية', emoji: '🩺', dur: 30, price: 150 },
@@ -113,12 +120,12 @@ const STEPS = ['service', 'date', 'confirm', 'done'];
 const state = {
   view: 'book', step: 'service', isAdmin: false,
   service: null, date: null, slot: null,
-  bookings: loadBookings(), busy: false, request: null, viewVersion: 0,
+  bookings: loadBookings(), busy: false, request: null, viewVersion: 0, resource: 'main', serverDays: null, timezone: 'UTC', configRevision: null,
 };
 
 const serverBooking = () => typeof window !== 'undefined' && window.jaolaBookingAPI;
 const requiresServer = () => typeof document !== 'undefined' && document.documentElement?.dataset.bookingServer === 'true';
-function bookingMessage(error) { return error?.message === 'SLOT_TAKEN' ? 'هذا الموعد حُجز للتو. اختر وقتاً آخر.' : 'تعذّر إتمام الطلب. أعد المحاولة؛ لا تعتبر الحجز مؤكداً حتى يظهر التأكيد.'; }
+function bookingMessage(error) { if (error?.message === 'SERVICE_CHANGED') return 'تغيرت الخدمة أو السعر. أعد تحميل الصفحة واختر الخدمة من جديد.'; return error?.message === 'SLOT_TAKEN' ? 'هذا الموعد حُجز للتو. اختر وقتاً آخر.' : 'تعذّر إتمام الطلب. أعد المحاولة؛ لا تعتبر الحجز مؤكداً حتى يظهر التأكيد.'; }
 function escapeBooking(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
 function loadBookings() { if (typeof document !== 'undefined' && document.documentElement?.dataset.bookingServer === 'true') return []; try { return JSON.parse(localStorage.getItem('bookings') || '[]'); } catch { return []; } }
 function saveBookings() { localStorage.setItem('bookings', JSON.stringify(state.bookings)); }
@@ -128,6 +135,7 @@ function findService(id) { return SERVICES.find(s => s.id === id) || null; }
 
 // أيام الأسبوع القادمة
 function nextDays(n) {
+  if (state.serverDays) return state.serverDays.slice(0, n).map(key => ({ key, label: new Date(key + 'T12:00:00Z').toLocaleDateString('ar', { weekday: 'long', timeZone: 'UTC' }), num: Number(key.slice(-2)) }));
   const names = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
   const out = [];
   for (let i = 0; i < n; i++) {
@@ -154,7 +162,7 @@ function goStep(step) { state.step = step; renderSteps(); if (step === 'confirm'
 function renderServices() {
   byId('serviceList').innerHTML = SERVICES.map(s =>
     '<div class="card svc ' + (state.service === s.id ? 'sel' : '') + '" data-action="pick-service" data-id="' + s.id + '">' +
-    '<div class="svc-emoji">' + s.emoji + '</div><div class="svc-name">' + s.name + '</div>' +
+    '<div class="svc-emoji">' + escapeBooking(s.emoji) + '</div><div class="svc-name">' + escapeBooking(s.name) + '</div>' +
     '<div class="muted">' + s.dur + ' د · ' + s.price + ' ﷼</div></div>').join('');
 }
 function pickService(id) { state.service = id; renderServices(); goStep('date'); renderDates(); }
@@ -184,7 +192,7 @@ function pickSlot(slot) { state.request = null; state.slot = slot; renderSlots()
 function renderSummary() {
   const s = findService(state.service);
   byId('bookingSummary').innerHTML = s ?
-    '<div class="sum-row"><span>الخدمة</span><b>' + s.emoji + ' ' + s.name + '</b></div>' +
+    '<div class="sum-row"><span>الخدمة</span><b>' + escapeBooking(s.emoji) + ' ' + escapeBooking(s.name) + '</b></div>' +
     '<div class="sum-row"><span>اليوم</span><b>' + (state.date || '') + '</b></div>' +
     '<div class="sum-row"><span>الوقت</span><b>' + (state.slot || '') + '</b></div>' +
     '<div class="sum-row"><span>السعر</span><b>' + s.price + ' ﷼</b></div>' : '';
@@ -230,17 +238,19 @@ async function renderServerSlots() {
   el.textContent = date ? 'جارٍ التحقق من المواعيد…' : 'اختر يوماً أولاً.';
   if (!date) return;
   try {
-    const data = await serverBooking().availability();
+    const data = await serverBooking().availability(state.service, state.resource);
+    state.serverDays = data.days; state.timezone = data.timezone;
     if (state.date !== date) return;
     el.innerHTML = data.slots.map(slot => {
-      const busy = data.taken.some(b => b.date === date && b.slot === slot) || Date.parse(date + 'T' + slot + ':00Z') <= Date.now();
+      const busy = !data.offers.some(o => o.date === date && o.slot === slot && o.service === state.service && o.resource === state.resource);
       return '<button class="slot" ' + (busy ? 'disabled' : 'data-action="pick-slot" data-slot="' + escapeBooking(slot) + '"') + '>' + escapeBooking(slot) + (busy ? ' (غير متاح)' : '') + '</button>';
     }).join('');
   } catch { el.textContent = 'تعذّر التحقق من المواعيد. أعد اختيار اليوم للمحاولة.'; }
 }
 async function confirmServerBooking() {
   if (state.busy || state.step !== 'confirm') return;
-  const payload = { service: state.service, date: state.date, slot: state.slot, customer: byId('custName').value.trim(), phone: byId('custPhone').value.trim() };
+  const selected = SERVICES.find(s => s.id === state.service);
+  const payload = { quotedPrice: selected?.price, quotedDuration: selected?.dur, resource: state.resource, service: state.service, date: state.date, slot: state.slot, customer: byId('custName').value.trim(), phone: byId('custPhone').value.trim() };
   if (!payload.customer || !payload.phone) { byId('bookingError').textContent = 'أدخل الاسم ورقم الهاتف.'; return; }
   const fingerprint = JSON.stringify(payload);
   if (!state.request || state.request.fingerprint !== fingerprint) state.request = { fingerprint, id: crypto.randomUUID() };
@@ -248,7 +258,7 @@ async function confirmServerBooking() {
   byId('bookingError').textContent = 'جارٍ حفظ الحجز…';
   try {
     const saved = await serverBooking().create({ ...payload, requestId: state.request.id });
-    byId('doneMsg').textContent = 'رقم الحجز ' + saved.id + ' — ' + saved.date + ' ' + saved.slot + ' UTC';
+    byId('doneMsg').textContent = 'رقم الحجز ' + saved.id + ' — ' + saved.date + ' ' + saved.slot + ' ' + (saved.timezone || state.timezone) + ' — احفظ رمز الاستعادة من تبويب حجوزاتي.';
     byId('bookingError').textContent = '';
     goStep('done');
   } catch (error) { byId('bookingError').textContent = bookingMessage(error); }
@@ -273,6 +283,7 @@ async function renderAdmin() {
     const version = state.viewVersion;
     try { const rows = await serverBooking().listAdmin(); if (version !== state.viewVersion || !state.isAdmin || state.view !== 'admin') return; state.bookings = rows; } catch { state.bookings = []; byId('adminStats').textContent = ''; byId('adminBookings').textContent = 'يلزم تسجيل دخول الإدارة مجدداً.'; return; }
   }
+  if (serverBooking()) { await renderBookingSettings(); if (!state.isAdmin || state.view !== 'admin') return; }
   const total = state.bookings.length;
   const revenue = state.bookings.filter(b => b.status === 'مؤكّد').reduce((s, b) => s + (b.price || 0), 0);
   byId('adminStats').innerHTML =
@@ -295,7 +306,7 @@ function bookingCard(b, admin) {
   b = Object.fromEntries(Object.entries(b).map(([k, v]) => [k, escapeBooking(v)]));
   return '<div class="booking"><span class="b-emoji">' + b.emoji + '</span>' +
     '<div class="b-info"><b>' + b.service + '</b><div class="muted">' + b.date + ' · ' + b.slot +
-    (admin ? ' · ' + b.customer : '') + '</div></div>' +
+    ' · ' + (b.timezone || 'UTC') + ' · ' + (b.resource || 'main') + (admin ? ' · ' + b.customer + ' · ' + b.phone : '') + '</div></div>' +
     '<span class="badge">' + b.status + '</span>' +
     '<button class="btn small danger" data-action="cancel" data-id="' + b.id + '">إلغاء</button></div>';
 }
@@ -331,6 +342,7 @@ async function doAdminLogin() {
 function adminLogout() {
   if (serverBooking()) serverBooking().logout();
   state.bookings = [];
+  byId('bookingSettings').textContent = '';
   byId('adminBookings').textContent = ''; byId('adminStats').textContent = '';
   state.isAdmin = false;
   document.querySelector('.tab.staff').classList.add('hidden');
@@ -338,10 +350,66 @@ function adminLogout() {
   switchView('book');
 }
 
+async function refreshBookingCatalog() {
+  try {
+    const data = await serverBooking().availability();
+    SERVICES = data.services; state.serverDays = data.days; state.timezone = data.timezone;
+    state.resource = data.resources.some(r => r.id === state.resource) ? state.resource : data.resources[0].id;
+    byId('bookingResource').innerHTML = data.resources.map(r => '<option value="' + escapeBooking(r.id) + '">' + escapeBooking(r.name) + '</option>').join('');
+    byId('bookingResource').value = state.resource; show(byId('bookingResource'), true);
+    document.querySelector('.hero p').textContent = 'حجز محفوظ على الخادم — التوقيت: ' + data.timezone;
+    renderServices();
+  } catch { document.querySelector('.hero p').textContent = 'تعذّر تحميل الخدمات. أعد تحميل الصفحة للمحاولة.'; }
+}
+async function restoreBookings() {
+  try { await serverBooking().restore(byId('recoveryCode').value.trim()); byId('recoveryCode').value = ''; byId('recoveryMessage').textContent = 'تمت الاستعادة.'; await renderMine(); }
+  catch { byId('recoveryMessage').textContent = 'تعذّرت الاستعادة. تحقق من الرمز والاتصال.'; }
+}
+function bookingSettingRow(kind, item) {
+  return '<div data-setting-row="' + kind + '" data-id="' + escapeBooking(item.id) + '">' +
+    '<label>الاسم<input data-field="name" maxlength="80" value="' + escapeBooking(item.name) + '"></label>' +
+    (kind === 'services' ? '<label>المدة بالدقائق<input data-field="dur" type="number" min="5" max="240" value="' + item.dur + '"></label><label>السعر<input data-field="price" type="number" min="0" step="0.01" value="' + item.price + '"></label>' : '') +
+    '<button class="btn" data-action="remove-booking-setting">حذف من القائمة</button></div>';
+}
+function addBookingSetting(kind) {
+  const item = { id: 'b_' + crypto.randomUUID().slice(0, 8), name: '', dur: 30, price: 0 };
+  byId('settings-' + kind).insertAdjacentHTML('beforeend', bookingSettingRow(kind, item));
+}
+async function renderBookingSettings() {
+  const version = state.viewVersion;
+  try {
+    const data = await serverBooking().configuration();
+    if (!state.isAdmin || version !== state.viewVersion || state.view !== 'admin') return;
+    state.configRevision = data.revision;
+    byId('bookingSettings').innerHTML = '<h2>إعدادات الحجز</h2><label>المنطقة الزمنية (مثل Africa/Khartoum أو Europe/Amsterdam)<input id="settings-timezone" value="' + escapeBooking(data.config.timezone) + '"></label>' +
+      '<label>أوقات بدء المواعيد، مفصولة بفاصلة<input id="settings-slots" value="' + escapeBooking(data.config.slots.join(', ')) + '"></label>' +
+      '<h3>الموظفون أو الموارد</h3><div id="settings-resources">' + data.config.resources.map(r => bookingSettingRow('resources', r)).join('') + '</div><button class="btn" data-action="add-booking-resource">إضافة موظف</button>' +
+      '<h3>الخدمات</h3><div id="settings-services">' + data.config.services.map(r => bookingSettingRow('services', r)).join('') + '</div><button class="btn" data-action="add-booking-service">إضافة خدمة</button>' +
+      '<button class="btn primary" data-action="save-booking-settings">حفظ الإعدادات</button><p id="settings-message" role="status"></p>';
+    show(byId('bookingSettings'), true);
+  } catch { byId('bookingSettings').textContent = 'تعذّر تحميل إعدادات الحجز.'; }
+}
+async function saveBookingSettings() {
+  const config = { timezone: byId('settings-timezone').value.trim(), slots: byId('settings-slots').value.split(/[,،]/).map(v => v.trim()).filter(Boolean) };
+  for (const kind of ['services', 'resources']) config[kind] = Array.from(document.querySelectorAll('[data-setting-row="' + kind + '"]')).map(row => {
+    const item = { id: row.dataset.id, name: row.querySelector('[data-field="name"]').value };
+    if (kind === 'services') Object.assign(item, { dur: Number(row.querySelector('[data-field="dur"]').value), price: Number(row.querySelector('[data-field="price"]').value), emoji: '📅' });
+    return item;
+  });
+  try { await serverBooking().configure({ revision: state.configRevision, config }); await refreshBookingCatalog(); await renderAdmin(); byId('settings-message').textContent = 'تم الحفظ. الحجوزات السابقة تحتفظ بوقتها وسعرها.'; }
+  catch { byId('settings-message').textContent = 'تعذّر الحفظ: راجع الحقول. عند تعارض التحديث أعد فتح الإدارة؛ لا يمكن حذف موظف لديه مواعيد قادمة.'; }
+}
+
 // ── تفويض الأحداث ─────────────────────────────────────────────────────
 function handleClick(e) {
   const el = e.target.closest('[data-action]'); if (!el) return;
   switch (el.dataset.action) {
+    case 'show-recovery': byId('recoveryCode').value = serverBooking().recoveryCode(); break;
+    case 'restore-bookings': restoreBookings(); break;
+    case 'save-booking-settings': saveBookingSettings(); break;
+    case 'add-booking-service': addBookingSetting('services'); break;
+    case 'add-booking-resource': addBookingSetting('resources'); break;
+    case 'remove-booking-setting': el.closest('[data-setting-row]').remove(); break;
     case 'tab': switchView(el.dataset.view); break;
     case 'pick-service': pickService(el.dataset.id); break;
     case 'pick-date': pickDate(el.dataset.key); break;
@@ -358,7 +426,10 @@ function handleClick(e) {
 
 function init() {
   if (requiresServer() || serverBooking()) {
-    document.querySelector('.hero p').textContent = 'حجز محفوظ على الخادم. جميع المواعيد بتوقيت UTC. احتفظ بهذه الجلسة للوصول إلى حجوزاتك.';
+    document.querySelector('.hero p').textContent = 'جارٍ تحميل الخدمات والمواعيد…';
+    SERVICES = []; refreshBookingCatalog();
+    show(byId('bookingRecovery'), true);
+    byId('bookingResource').addEventListener('change', () => { state.resource = byId('bookingResource').value; state.slot = null; renderSlots(); });
     document.querySelector('#loginModal .muted').textContent = 'استخدم كلمة المرور التي أعددتها في لوحة مشروعك في JAOLA.';
     byId('admUser').classList.add('hidden');
   }

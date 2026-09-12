@@ -92,11 +92,19 @@ export async function runBackendTeam(goal, opts = {}) {
         return { mode: 'plan', order, plan: teamPlan(team) };
     }
 
+    const startedAt = Date.now();
+    let retryCount = 0;
     const artifacts = {};
     const results = [];
     const fileMap = {}; // path → { path, content, kind, by }  (المُعدِّلون يستبدلون السابق)
     for (const id of order) {
         const agent = byId[id] || team.find((a) => a.id === id);
+        const blocked = (agent.dependsOn || []).filter(dep => byId[dep] && !artifacts[dep] && !results.some(r => r.agent === dep && r.reason === 'no-failures'));
+        if (blocked.length) {
+            results.push({ agent: id, role: agent.role, skipped: true, reason: 'dependency-failed', blocked });
+            onEvent({ type: 'agent_skipped', agent: id, role: agent.role, reason: 'تعذّر إنجاز الاعتمادية: ' + blocked.join(', ') });
+            continue;
+        }
         // وكيل الـ debug يُشغّل فقط عند وجود فشل من وكيل QA المرتبط (عام عبر debugFor)
         if (agent.debugFor) {
             const qa = artifacts[agent.debugFor];
@@ -109,7 +117,22 @@ export async function runBackendTeam(goal, opts = {}) {
         }
         onEvent({ type: 'agent_start', agent: agent.id, role: agent.role, icon: agent.icon });
         try {
-            const res = await runAgent(agent, { goal, lang, artifacts, fileMap, llm: opts.llm, byId });
+            const taskStartedAt = Date.now();
+            let res;
+            const attempts = Math.max(1, Math.min(3, Number(opts.maxAgentAttempts) || 2));
+            for (let attempt = 1; attempt <= attempts; attempt++) {
+                try {
+                    res = await runAgent(agent, { goal, lang, artifacts, fileMap, llm: opts.llm, byId });
+                    if (res.selfReviewPassed === false) throw new Error('لم يجتز الوكيل المراجعة الذاتية');
+                    res.attempts = attempt;
+                    break;
+                } catch (error) {
+                    if (attempt === attempts) throw error;
+                    retryCount++;
+                    onEvent({ type: 'agent_retry', agent: id, attempt: attempt + 1 });
+                }
+            }
+            res.durationMs = Date.now() - taskStartedAt;
             artifacts[agent.id] = res;
             results.push(res);
             // دمج الملفات: create يضيف، modify يستبدل ما سبق بنفس المسار (تعاون فعلي)
@@ -146,7 +169,7 @@ export async function runBackendTeam(goal, opts = {}) {
                 },
             };
             try {
-                const res = await runAgent(debug, { goal, lang, artifacts: dbgArtifacts, fileMap, llm: opts.llm, byId });
+                const res = await runAgent(debug, { goal, lang, artifacts: dbgArtifacts, fileMap, llm: opts.llm, byId, repairPaths: ver.failures.map(f => f.path) });
                 for (const f of res.files) fileMap[f.path] = { path: f.path, content: f.content, kind: f.kind, by: debug.id, action: f.action };
                 results.push({ ...res, phase: 'verify-fix', round: round + 1 });
             } catch (e) {
@@ -164,6 +187,7 @@ export async function runBackendTeam(goal, opts = {}) {
     const openIssues = results.flatMap((r) => (r.issues || []).map((i) => ({ issue: i, by: r.agent })));
     return {
         mode: 'execute',
+        performance: { durationMs: Date.now() - startedAt, retries: retryCount, blocked: results.filter(r => r.reason === 'dependency-failed').length, firstPass: retryCount === 0 && !results.some(r => r.error || r.reason === 'dependency-failed') && (!verification || (verification.ok && verification.rounds === 0)) },
         order,
         results,
         files,

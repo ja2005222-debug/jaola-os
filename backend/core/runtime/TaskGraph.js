@@ -19,6 +19,7 @@ export function orderTasks(items, { key = 'id', label = 'المهام' } = {}) {
     const list = [...items];
     const idOf = (t) => t[key];
     const ids = new Set(list.map(idOf));
+    if (ids.size !== list.length || list.some(t => !idOf(t))) throw new Error(`هوية مهمة مفقودة أو مكررة في ${label}`);
     const indeg = new Map(list.map((t) => [idOf(t), 0]));
     const adj = new Map(list.map((t) => [idOf(t), []]));
     for (const t of list) {

@@ -40,7 +40,7 @@ test('الدالّةُ الحرّةُ بمُبلِّغٍ مُحقَن ≡ الم
     for (const f of ['index.html', 'app.js', 'styles.css']) assert.equal(fs.readFileSync(path.join(b, f), 'utf8'), fs.readFileSync(path.join(a, f), 'utf8'), `${f} حرفاً بحرف`);
 });
 
-test('البناءُ الحقيقيّ بلا LLM: ٦ ملفّات، أيقونةٌ وتلميع، نشرٌ ثابت، ذاكرةٌ من نموذج الكلون، COMPLETED، وترتيبُ البثّ', async () => {
+test('البناءُ الحقيقيّ بلا LLM: ٧ ملفّات، أيقونةٌ وتلميع، نشرٌ ثابت، ذاكرةٌ من نموذج الكلون، COMPLETED، وترتيبُ البثّ', async () => {
     const s = scenario('clbuild'); setUserLanguage(s.ctx.username, 'ar'); const dir = emptyProject();
     generating(s);
     try {
@@ -50,7 +50,10 @@ test('البناءُ الحقيقيّ بلا LLM: ٦ ملفّات، أيقونة
         assert.deepEqual(rest, { success: true, clone: 'jaola-store' });
         // PM/7: المتطلّباتُ لم تعد «لا ينطبق» على الكلون — تُتتبَّع في الملفّات (متجرٌ: ٤/٤ له أثر) فالبوّابةُ pass لا skipped
         assert.equal(verdict.status, 'PASS'); assert.deepEqual(verdict.gates.map(g => g.status), ['pass', 'pass', 'pass']);
-        assert.deepEqual(fs.readdirSync(dir).sort(), ['RENDER_README.md', 'app.js', 'brand.svg', 'index.html', 'render.yaml', 'styles.css']);
+        assert.deepEqual(fs.readdirSync(dir).sort(), ['JAOLA_READINESS.json', 'RENDER_README.md', 'app.js', 'brand.svg', 'index.html', 'render.yaml', 'styles.css']);
+        const readiness = JSON.parse(fs.readFileSync(path.join(dir, 'JAOLA_READINESS.json'), 'utf8'));
+        assert.equal(readiness.productionVerified, false);
+        assert.equal(readiness.clone, 'jaola-store');
         const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
         assert.ok(html.includes('brand.svg'), 'وسمُ الأيقونة محقون');
         assert.match(fs.readFileSync(path.join(dir, 'render.yaml'), 'utf8'), /env:\s*static/, 'الكلونُ التجريبيّ موقعٌ ثابت');
@@ -58,18 +61,19 @@ test('البناءُ الحقيقيّ بلا LLM: ٦ ملفّات، أيقونة
         const mem = getProjectMemory(s.ctx.username, s.ctx.activeProject);
         assert.deepEqual(mem.structure.sections, ['واجهة Customer', 'واجهة Admin'], 'الأقسامُ من أدوار نموذج الكلون');
         assert.ok(mem.history.some((h) => String(h.action || h.message || JSON.stringify(h)).includes('كلون jaola-store')), 'سطرُ التاريخ');
-        assert.deepEqual(events.map(([ev]) => ev), ['agent_states', 'log', 'log', 'log', 'agent_states', 'preview_updated', 'workspace_files', 'project_metrics', 'chat_reply', 'log']);
+        assert.deepEqual(events.map(([ev]) => ev), ['agent_states', 'log', 'log', 'log', 'log', 'agent_states', 'preview_updated', 'workspace_files', 'project_metrics', 'chat_reply', 'log']);
         assert.deepEqual(logs(events), [
             '[5. RUNTIME] ➔ [JaolaTemplate]: 🧩 قالب jaola عامل: متجر إلكتروني (jaola-store) — نبدأ من تطبيق يعمل فعلاً (لا توليد من الصفر)',
             '[5. RUNTIME] ➔ [CloneTemplate]: 🎨 وضع البصمة — تخصيص المحتوى ليطابق طلبك...',
             '[5. RUNTIME] ➔ [CloneTemplate]: 🎨 أُضيفت هوية العلامة ولمسة احترافية (خطّ + حركات ظهور).',
+            '[5. RUNTIME] ➔ [Readiness]: اكتمل فحص الواجهة. صلاحيات الخادم وحفظ البيانات والتطبيق المنشور لها فحوص مستقلة؛ تفاصيلها في تقرير الجاهزية.',
             '[JCOS] ➔ [Kernel]: ✨ نجاح (قالب jaola عامل)',
         ], 'بلا LLM: البصمةُ تُفتَح ولا تُختَم بسطرٍ — لا نجاحَ ولا استرجاع');
-        assert.equal(events[4][1].coder, 'completed'); assert.equal(events[4][1].deploy, 'completed');
-        const reply = events[8][1].message;
+        assert.equal(events[5][1].coder, 'completed'); assert.equal(events[5][1].deploy, 'completed');
+        const reply = events[9][1].message;
         assert.ok(reply.startsWith('✅ اكتمل — بدأنا من قالب **متجر إلكتروني** (jaola) يعمل فعلاً — Customer · Admin ووضعنا بصمتك.'), reply);
-        assert.equal(events[8][1].options, undefined, 'لا أزرارَ في ردّ الكلون');
-        assert.ok('totalBuilds' in events[7][1]);
+        assert.equal(events[9][1].options, undefined, 'لا أزرارَ في ردّ الكلون');
+        assert.ok('totalBuilds' in events[8][1]);
     } finally { resetProjectState(s.ctx.username, s.ctx.activeProject); }
 });
 
