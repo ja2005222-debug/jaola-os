@@ -74,7 +74,7 @@ test('generated client sends separate customer/admin bearers and clears admin on
     const { bookingClient } = await import('../services/bookingClient.js');
     const { webcrypto } = await import('node:crypto');
     const calls = [], storage = new Map();
-    const context = vm.createContext({ window: {}, crypto: webcrypto, Uint8Array, AbortSignal,
+    const context = vm.createContext({ window: {}, crypto: webcrypto, Uint8Array, AbortSignal, URL,
         sessionStorage: { getItem: k => storage.get(k), setItem: (k, v) => storage.set(k, v) },
         fetch: async (url, options) => {
             calls.push({ url, options });

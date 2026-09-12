@@ -19,7 +19,9 @@ export function bookingClient({ apiBase, token }) {
     return key;
   }
   async function request(route, body, staff = false) {
-    const response = await fetch(config.apiBase + '/api/public/' + route + (body ? '' : '?token=' + encodeURIComponent(config.token)), {
+    const url = new URL('/api/public/' + route, config.apiBase);
+    if (!body) url.searchParams.set('token', config.token);
+    const response = await fetch(url.toString(), {
       method: body ? 'POST' : 'GET', cache: 'no-store',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (staff ? admin : customerKey()) },
       ...(body ? { body: JSON.stringify({ ...body, token: config.token }) } : {}),
