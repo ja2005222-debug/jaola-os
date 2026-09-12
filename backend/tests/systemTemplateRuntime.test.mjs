@@ -43,7 +43,7 @@ test('system deployment stops if runtime installation fails or cannot recognize 
         vm.runInNewContext(source, {
             app: { post: (...args) => { handler = args.at(-1); } },
             verifyToken() {}, validateProjectOwnership() {},
-            getCloneTrack: () => 'system', installDataSync: installation,
+            getCloneId: () => null, getCloneTrack: () => 'system', installDataSync: installation,
             installSiteConnect() {}, applySeoPack() {}, signBotToken: () => 'token',
             process: { env: { PUBLIC_BACKEND_URL: 'https://api.example.test' } },
         });

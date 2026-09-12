@@ -38,7 +38,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## A) `backend/server.js` — 3974 سطراً، 162 مساراً، 104 استيراداً محلياً
+## A) `backend/server.js` — 3994 سطراً، 162 مساراً، 106 استيراداً محلياً
 
 لا يُفكَّك دفعة واحدة (البند 19). الخريطة **حسب المجال** لأن الملف واحد؛ كل صف = مرشّح
 ملف `routes/<domain>.js` مستقبلاً على نمط `routes/billing.js` القائم فعلاً («أول
@@ -113,7 +113,7 @@ Policy/Permission، Identity، Plugin.
 | ✅ `stages/undo.js` (جديد، JCR/9) | 64 | `handleUndo(req, reporter)` — «تراجع»: استرجاعٌ حتميّ لآخر نسخة، ما لم يُسترجَع يُقال؛ أوّلُ معالجِ نيّة يخرج؛ نقلٌ حرفيّ | ADDED | Tool + Event | مفوِّض `jcr._handleUndo` من `handleUserMessage` |
 | ✅ `stages/buildFromRegistry.js` (جديد، JCR/10؛ PM/7: يمرّر متطلّباتِ نموذج الزائر؛ PM/19: يسجّل البلوكاتِ التي ركّبها هيكلاً للمشروع؛ **#196: يقرأ النموذجَ المفهوم بدل فبركته — وكان يكتب فوقه نموذجَ زائرٍ ثابتاً فتُتخطّى البوّابة**) | 116 | `buildFromRegistry(goal, ctx, reporter)` — صفحةٌ كاملة من بلوكات Registry + بصمة + تلميع + نشرٌ ثابت؛ أوّلُ بانٍ يخرج؛ `reporter.io` يُمرَّر للدفع التلقائيّ (تسريبٌ معلَن) | ADDED | Mission + Tool | مفوِّض `jcr._buildFromRegistry` من `_selectBuildStrategy` |
 | ✅ `stages/reportMissionSuccess.js` (جديد، JCR/11؛ PM/10: `kernelOutcomeLine`؛ +٣ #١٩١: سطرُ `usageByLabelLine` بجوار `usageLine` — «كم» ثمّ «أين») | 135 | `reportMissionSuccess(goal, ctx, reporter)` — تقريرُ التسليم بلغة المستخدم + الاقتراحات + قائمةُ الملفّات + الدفعُ التلقائيّ (`reporter.io`، موضعٌ واحد معلَن) + اللقطة + المقاييس + hook afterBuild؛ متزامنةٌ كما كانت | ADDED | Mission + Event | مفوِّض `jcr._reportMissionSuccess` من `_runMissionNow` |
-| ✅ `stages/buildFromClone.js` (جديد، JCR/12؛ PM/7: يمرّر متطلّباتِ الفهم المدمَج على ما وصل القرص؛ PM/8: جولةُ إكمالٍ واحدة بـ`complete` محقونٍ افتراضُه `patchEditPlan`؛ PM/9: بنودُ الوثيقة للحكم والإكمال) | 286 | `buildFromClone(clone, goal, ctx, reporter)` — البناءُ من كلونٍ عامل: ملفّاتُ القالب بلغة المستخدم + بصمةٌ موضعيّة (عيّنة/صور/علامة) بتراجعٍ عند الكسر + هويّةٌ ونشرٌ ثابت + نهائيّاتُ النجاح؛ `reporter.io` موضعٌ واحد معلَن | ADDED | Mission + Tool | مفوِّض `jcr._buildFromClone` من `_selectBuildStrategy` |
+| ✅ `stages/buildFromClone.js` (جديد، JCR/12؛ PM/7: يمرّر متطلّباتِ الفهم المدمَج على ما وصل القرص؛ PM/8: جولةُ إكمالٍ واحدة بـ`complete` محقونٍ افتراضُه `patchEditPlan`؛ PM/9: بنودُ الوثيقة للحكم والإكمال) | 293 | `buildFromClone(clone, goal, ctx, reporter)` — البناءُ من كلونٍ عامل: ملفّاتُ القالب بلغة المستخدم + بصمةٌ موضعيّة (عيّنة/صور/علامة) بتراجعٍ عند الكسر + هويّةٌ ونشرٌ ثابت + نهائيّاتُ النجاح؛ `reporter.io` موضعٌ واحد معلَن | ADDED | Mission + Tool | مفوِّض `jcr._buildFromClone` من `_selectBuildStrategy` |
 | ✅ `stages/quality.js` (جديد، JCR/13؛ +٣٤ سطراً النقطة ١) | 182 | مراحلُ الجودة الستّ `runReviewStage/runRefactorStage/runTestingStage/runSeoStage/runSecurityStage/runGitBackupStage(context, roomName, reporter)` — مراجعةٌ بإصلاحٍ تلقائيّ ودرجة، تنظيف، اختبار، SEO وأمان بملفّاتٍ جديدة ودرجات، ونسخٌ احتياطيّ + commit؛ كلُّها تعيد الآن `StageResult` (`core/contracts/index.js`) **وتسجّل حكمَها بنفسها** عبر `finishStage`/`recordGateOutcome` (مستوردةٌ هنا مباشرةً — لا من حلقة `jcr.js`، امتثالاً لحارس `deliveryVerdict.test.mjs`) بلا تغييرٍ فيما يُكتب للقرص | ADDED | Task (مراحل التسليم) + Evidence | ستُّ مفوِّضاتٍ في `jcr` تُستدعى بالاسم من `DELIVERY_STAGES` |
 | ✅ `stages/designer.js` (جديد، JCR/14؛ PM/5: تلميحُ النوع من الفهم) | 44 | `runDesigner(context, roomName, reporter)` — Design Brief: لوحةٌ حتميّة + تخصيصُ AI إن جرى (والسطرُ يقول إن لم يجرِ ولماذا)، يُحفظ `design-brief.json` ويُثبَّت في `context.mentalModel` | ADDED | Mission + Evidence | مفوِّض `jcr._stageDesigner` من `runDynamicMultiAgentRuntime` |
 | ✅ `stages/scaffold.js` (جديد، JCR/14) | 76 | `runAdvancedModules/runFullStackScaffold(context, roomName, reporter)` + `runProjectMemory(context)` — وحداتٌ متقدّمة (Stripe/Upload/OAuth/Travelpayouts بتنبيه env)، سكافولد Next.js+Prisma في `fullstack/`، وذاكرةُ المشروع (بلا بثّ فلا مُبلِّغ) | ADDED | Task (مراحل التسليم) | ثلاثُ مفوِّضاتٍ في `jcr` تُستدعى بالاسم من `DELIVERY_STAGES` |
@@ -180,7 +180,7 @@ Policy/Permission، Identity، Plugin.
 ### C5. مكدّس التوليد والقوالب (منطق مجال Coding)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
 |---|---|---|---|---|---|
-| `templateLibrary.js`, `templateLibraryExtended.js`, `templateLocalizer.js` | 1061/1382/1943 | مكتبة القوالب وترجمتها | KEEP | — | `plugins/coding/templates/` (Sprint 6) |
+| `templateLibrary.js`, `templateLibraryExtended.js`, `templateLocalizer.js` | 1061/1382/1944 | مكتبة القوالب وترجمتها | KEEP | — | `plugins/coding/templates/` (Sprint 6) |
 | `cloneTemplates/*` (42 ملفاً، 17,406 سطر؛ `jaolaClinic.js` يُستورد من 27 قالباً كأساس مشترك) | — | قوالب تطبيقات عاملة | KEEP | — | `plugins/coding/templates/clones/` |
 | `fullstackAdminRuntime.js` | 119 | دخول الأدمن بجلسة Cookie وإعداد المالك في جولا | KEEP | Authorization | `agents/` |
 | `fullstackApiRuntime.js` | 77 | مصدر مولّد لحماية واجهات Full-Stack والتحقق من الطلبات | KEEP | Authorization | `agents/` |
@@ -205,7 +205,7 @@ Policy/Permission، Identity، Plugin.
 
 ---
 
-## D) `backend/services/*` — 77 وحدة
+## D) `backend/services/*` — 79 وحدة
 
 ### D1. وقت التشغيل (مرشّحة لـ`core/`)
 | الملف | سطور | المسؤولية | القرار | العقد الجديد | الموقع النهائي |
@@ -413,3 +413,7 @@ permissions ويستدعي الخدمة عبر HTTP بنفس JWT. لا شيء ه
 | `projectSessions.js` | 40 | Project data authentication | KEEP | Security | `services/` |
 
 | `projectSessionClient.js` | 89 | Project data authentication | KEEP | Security | `services/` |
+
+| `bookingStore.js` | 110 | حجز الخادم وعزل العملاء | KEEP | Booking | `services/` |
+
+| `bookingClient.js` | 58 | حجز الخادم وعزل العملاء | KEEP | Booking | `services/` |

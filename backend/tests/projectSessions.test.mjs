@@ -93,6 +93,7 @@ test('server protects every shared data family and reserves provisioning for aut
     vm.runInNewContext(source.slice(begin, end), {
         path, BASE_WORKSPACE: '/unused', JWT_SECRET: crypto.randomUUID(),
         app: { use: (paths, middleware) => protections.push({ paths, middleware }), get: (p, ...f) => routes.set('GET ' + p, f), post: (p, ...f) => routes.set('POST ' + p, f), put: (p, ...f) => routes.set('PUT ' + p, f) },
+        registerBookingRoutes: () => {}, getCloneId: () => null,
         projectSessionGuard: () => guard, verifyBotToken: () => ({ u: 'alice', p: 'shop' }),
         verifyToken: authenticate, validateProjectOwnership: ownership, authLimit: () => {}, appDataLimit: () => {},
         setProjectPassword: async (...args) => { passwordWrite = args; return { ok: true }; },
