@@ -1,3 +1,5 @@
+import { FULLSTACK_API_LIB } from './fullstackApiRuntime.js';
+
 /**
  * 🏗️ Full-Stack Templates — JAOLA OS
  *
@@ -392,55 +394,89 @@ main().catch(e => { console.error(e); process.exit(1); }).finally(() => prisma.$
 `;
 }
 
-function renderListRoute(resource) {
-    const accessor = camel(resource.model);
-    return `import { prisma } from '@/lib/prisma';
-import { NextResponse } from 'next/server';
-
-// GET /api/${resource.path} — قائمة
-export async function GET() {
-  const items = await prisma.${accessor}.findMany({ orderBy: { id: 'desc' } });
-  return NextResponse.json(items);
+function routePolicy(resource, spec) {
+    const model = spec.models.find(m => m.name === resource.model);
+    return {
+        publicRead: Boolean(resource.primary && ['Product', 'Service', 'Property', 'Course', 'Doctor', 'MenuItem', 'Post'].includes(resource.model)),
+        fields: model.fields.map(f => ({ name: f.name, type: f.type, defaulted: Boolean(f.attr?.includes('@default')) })),
+        where: resource.model === 'Post' ? '{ published: true }' : '{}',
+    };
 }
 
-// POST /api/${resource.path} — إنشاء
+function renderListRoute(resource, spec) {
+    const accessor = camel(resource.model), policy = routePolicy(resource, spec);
+    return `import { prisma } from '@/lib/prisma';
+import { authorize, readData, reply, apiError } from '@/lib/api';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+const fields = ${JSON.stringify(policy.fields)};
+
+export async function GET(request) {
+  const denied = authorize(request, { publicRead: ${policy.publicRead} });
+  if (denied) return denied;
+  try {
+    const items = await prisma.${accessor}.findMany({ where: ${policy.where}, orderBy: { id: 'desc' }, take: 100 });
+    return reply(items);
+  } catch (error) { return apiError(error); }
+}
+
 export async function POST(request) {
-  const data = await request.json();
-  const created = await prisma.${accessor}.create({ data });
-  return NextResponse.json(created, { status: 201 });
+  const denied = authorize(request, { write: true });
+  if (denied) return denied;
+  try {
+    const data = await readData(request, fields);
+    const created = await prisma.${accessor}.create({ data });
+    return reply(created, 201);
+  } catch (error) { return apiError(error); }
 }
 `;
 }
 
-function renderItemRoute(resource) {
-    const accessor = camel(resource.model);
+function renderItemRoute(resource, spec) {
+    const accessor = camel(resource.model), policy = routePolicy(resource, spec);
     return `import { prisma } from '@/lib/prisma';
-import { NextResponse } from 'next/server';
+import { authorize, readData, recordId, reply, apiError } from '@/lib/api';
 
-// GET /api/${resource.path}/[id]
-export async function GET(_request, { params }) {
-  const item = await prisma.${accessor}.findUnique({ where: { id: Number(params.id) } });
-  if (!item) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  return NextResponse.json(item);
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+const fields = ${JSON.stringify(policy.fields)};
+
+export async function GET(request, { params }) {
+  const denied = authorize(request, { publicRead: ${policy.publicRead} });
+  if (denied) return denied;
+  try {
+    const item = await prisma.${accessor}.findUnique({ where: { id: recordId((await params).id) } });
+    if (!item${resource.model === 'Post' ? ' || !item.published' : ''}) return reply({ error: 'NOT_FOUND' }, 404);
+    return reply(item);
+  } catch (error) { return apiError(error); }
 }
 
-// PUT /api/${resource.path}/[id]
 export async function PUT(request, { params }) {
-  const data = await request.json();
-  const updated = await prisma.${accessor}.update({ where: { id: Number(params.id) }, data });
-  return NextResponse.json(updated);
+  const denied = authorize(request, { write: true });
+  if (denied) return denied;
+  try {
+    const id = recordId((await params).id);
+    const data = await readData(request, fields, true);
+    const updated = await prisma.${accessor}.update({ where: { id }, data });
+    return reply(updated);
+  } catch (error) { return apiError(error); }
 }
 
-// DELETE /api/${resource.path}/[id]
-export async function DELETE(_request, { params }) {
-  await prisma.${accessor}.delete({ where: { id: Number(params.id) } });
-  return NextResponse.json({ deleted: true });
+export async function DELETE(request, { params }) {
+  const denied = authorize(request, { write: true });
+  if (denied) return denied;
+  try {
+    await prisma.${accessor}.delete({ where: { id: recordId((await params).id) } });
+    return reply({ deleted: true });
+  } catch (error) { return apiError(error); }
 }
 `;
 }
 
 function renderHomePage(spec, projectName) {
     const primary = spec.resources.find(r => r.primary) || spec.resources[0];
+    if (!routePolicy(primary, spec).publicRead) return `export default function Home() { return <main className="container"><h1>مساحة الحسابات</h1><p>بيانات الحسابات خاصة ومتاحة للمصرّح لهم فقط.</p></main>; }\n`;
     const model = spec.models.find(m => m.name === primary.model);
     const titleField = model.fields.find(f => ['name', 'title'].includes(f.name))?.name || 'id';
     return `import { prisma } from '@/lib/prisma';
@@ -448,11 +484,11 @@ function renderHomePage(spec, projectName) {
 export const dynamic = 'force-dynamic';
 
 export default async function Home() {
-  const items = await prisma.${camel(primary.model)}.findMany({ orderBy: { id: 'desc' } });
+  const items = await prisma.${camel(primary.model)}.findMany({ where: ${routePolicy(primary, spec).where}, orderBy: { id: 'desc' }, take: 100 });
   return (
     <main className="container">
-      <h1>${projectName}</h1>
-      <p className="subtitle">${spec.labelAr} — Next.js + API + Prisma</p>
+      <h1>{${JSON.stringify(String(projectName))}}</h1>
+      <p className="subtitle">${spec.labelAr}</p>
       <div className="grid">
         {items.map((item) => (
           <article key={item.id} className="card">
@@ -470,7 +506,7 @@ export default async function Home() {
 function renderLayout(projectName) {
     return `import './globals.css';
 
-export const metadata = { title: '${projectName}', description: 'مبني بواسطة JAOLA OS' };
+export const metadata = { title: ${JSON.stringify(String(projectName))}, description: 'مبني بواسطة JAOLA OS' };
 
 export default function RootLayout({ children }) {
   return (
@@ -541,8 +577,25 @@ npm run db:seed           # بيانات أولية
 npm run dev               # http://localhost:3000
 \`\`\`
 
+## صلاحيات الوصول
+الموارد العامة (المنتجات والخدمات والعقارات والدورات والأطباء والقائمة والمقالات المنشورة) متاحة للقراءة فقط.
+الطلبات والحجوزات والحسابات والاشتراكات والاستفسارات والتسجيلات والتعليقات خاصة.
+كل تعديل يتطلب مفتاح الإدارة؛ مفتاح القراءة لا يسمح بالكتابة.
+
+اضبط JAOLA_ADMIN_TOKEN في أسرار الخادم، ويمكن ضبط JAOLA_READER_TOKEN منفصل للقراءة.
+كل مفتاح يجب أن يكون عشوائيًا بطول 32 حرفًا على الأقل وفريدًا لهذا المشروع.
+أرسل المفتاح في Authorization: Bearer من عميل موثوق عبر HTTPS فقط.
+لا تضع المفاتيح في NEXT_PUBLIC أو شيفرة المتصفح أو المستودع؛ تدوير المفتاح يلغي القديم فورًا.
+غياب المفاتيح يمنع الوصول الخاص. هذه مفاتيح خدمة وليست حسابات موظفين أو شاشة تسجيل دخول.
+
 ## نقاط الـ API
 ${routes}
+
+طلبات POST وPUT تتطلب application/json؛ الحد 64 KiB. تُرفض الحقول غير المعروفة
+وحقول id وcreatedAt وعمليات Prisma المتداخلة. PUT تحديث جزئي. القوائم محدودة بأحدث 100 سجل.
+هذا CRUD إداري؛ يلزم مسار منفصل محسوب على الخادم للدفع والمخزون والحجوزات العامة.
+الأخطاء: 400 بيانات غير صالحة، 401 دخول مطلوب، 403 كتابة ممنوعة، 404 غير موجود،
+409 تعارض فريد، 413 جسم كبير، 415 نوع غير مدعوم، 503 قاعدة البيانات غير متاحة.
 
 ## البنية
 - \`prisma/schema.prisma\` — نماذج البيانات
@@ -571,9 +624,10 @@ export function buildFullStackProject(category, projectName = 'JAOLA App') {
         { name: 'next.config.mjs', content: `/** @type {import('next').NextConfig} */\nconst nextConfig = { reactStrictMode: true };\nexport default nextConfig;\n` },
         { name: 'jsconfig.json', content: JSON.stringify({ compilerOptions: { paths: { '@/*': ['./*'] } } }, null, 2) + '\n' },
         { name: '.gitignore', content: 'node_modules\n.next\n.env\n*.db\n*.db-journal\n' },
-        { name: '.env.example', content: 'DATABASE_URL="file:./dev.db"\n' },
+        { name: '.env.example', content: 'DATABASE_URL="file:./dev.db"\nJAOLA_ADMIN_TOKEN=\nJAOLA_READER_TOKEN=\n' },
         { name: 'README.md', content: renderReadme(projectName, spec) },
         { name: 'lib/prisma.js', content: PRISMA_LIB },
+        { name: 'lib/api.js', content: FULLSTACK_API_LIB },
         { name: 'app/globals.css', content: GLOBALS_CSS },
         { name: 'app/layout.js', content: renderLayout(projectName) },
         { name: 'app/page.js', content: renderHomePage(spec, projectName) },
@@ -582,8 +636,8 @@ export function buildFullStackProject(category, projectName = 'JAOLA App') {
     ];
 
     for (const r of spec.resources) {
-        files.push({ name: `app/api/${r.path}/route.js`, content: renderListRoute(r) });
-        files.push({ name: `app/api/${r.path}/[id]/route.js`, content: renderItemRoute(r) });
+        files.push({ name: `app/api/${r.path}/route.js`, content: renderListRoute(r, spec) });
+        files.push({ name: `app/api/${r.path}/[id]/route.js`, content: renderItemRoute(r, spec) });
     }
 
     return { category: cat, files };

@@ -65,11 +65,11 @@ test('الوحداتُ المتقدّمة: Stripe + Upload تُكتب بأسما
     assert.deepEqual(n.events, []); assert.deepEqual(fs.readdirSync(c), []);
 });
 
-test('سكافولد Full-Stack: نيّةُ بياناتٍ + فئةٌ مدعومة → ١٦ ملفاً في fullstack/ والسطرُ بحروفه؛ بروشور → صمتٌ ولا مجلّد', async () => {
+test('سكافولد Full-Stack: نيّةُ بياناتٍ + فئةٌ مدعومة → ١٧ ملفاً في fullstack/ والسطرُ بحروفه؛ بروشور → صمتٌ ولا مجلّد', async () => {
     const s = scenario('fst'); const a = emptyProject();
     const { events, reporter } = collect();
     await runFullStackScaffold({ ...s.ctx, projectPath: a, originalGoal: 'متجر مع قاعدة بيانات', blueprint: { category: 'ecommerce', kind: 'webapp' } }, s.ctx.roomName, reporter);
-    assert.deepEqual(logs(events), ['[5. RUNTIME] ➔ [FullStackAgent]: 🏗️ نسخة Full-Stack (ecommerce) في مجلد fullstack/ — Next.js + API + Prisma (16 ملف)']);
+    assert.deepEqual(logs(events), ['[5. RUNTIME] ➔ [FullStackAgent]: 🏗️ نسخة Full-Stack (ecommerce) في مجلد fullstack/ — Next.js + API + Prisma (17 ملف)']);
     const fsDir = path.join(a, 'fullstack');
     for (const f of ['package.json', 'prisma/schema.prisma', 'app/page.js']) assert.ok(fs.existsSync(path.join(fsDir, f)), f);
     assert.deepEqual(fs.readdirSync(a), ['fullstack'], 'الموقعُ الثابت لا يُمَسّ');
