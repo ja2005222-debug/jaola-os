@@ -1,3 +1,5 @@
+import { installBookingClient } from '../../services/bookingClient.js';
+import { signBotToken } from '../jaolaBotToken.js';
 /**
  * 🍔 stages/buildFromClone.js — البناءُ من كلونٍ عامل: كتابةُ ملفّات القالب بلغة المستخدم،
  * البصمةُ (بيانات العيّنة + الصور + العلامة/الألوان) بتعديلٍ موضعيّ وتراجعٍ عند الكسر،
@@ -251,6 +253,11 @@ export async function buildFromClone(clone, goal, ctx, reporter, { complete = pa
     const verdict = strategyVerdict({ filesCount: baseFiles.length, behavior: await verifyBehavior({ projectPath, blueprint: { kind: 'webapp' }, domainModel: model }),
         requirements, files: await readBuiltFiles(projectPath), sections,
         requirementsNote: 'مسارُ الكلون — لا متطلّباتٍ من الفهم' });
+
+    if (clone.id === 'jaola-booking') {
+        const apiBase = (process.env.PUBLIC_BACKEND_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
+        if (apiBase && !installBookingClient(projectPath, { apiBase, token: signBotToken({ u: username, p: activeProject }) }).ready) throw new Error('Booking runtime unavailable');
+    }
 
     // 4) نهائيات كبناءٍ ناجح
     reporter.send(roomName, 'agent_states', { planner: 'completed', architect: 'completed', coder: 'completed', qa: 'completed', deploy: 'completed' });

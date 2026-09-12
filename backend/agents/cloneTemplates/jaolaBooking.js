@@ -36,7 +36,7 @@ const INDEX_HTML = `<!DOCTYPE html>
         <div class="hero-in">
           <span class="eyebrow">احجز في دقيقة</span>
           <h1>موعدك<br><span class="accent">بين يديك</span></h1>
-          <p>اختر خدمتك، ثم اليوم والوقت المناسب — تأكيد فوري بلا انتظار.</p>
+          <p>اختر خدمتك، ثم اليوم والوقت المناسب — نسخة تجريبية: تُحفظ الحجوزات في هذا المتصفح فقط.</p>
         </div>
       </div>
       <div class="steps-bar" id="stepsBar"></div>
@@ -56,7 +56,8 @@ const INDEX_HTML = `<!DOCTYPE html>
       <div id="step-confirm" class="step">
         <h2>4) أكّد الحجز</h2>
         <div id="bookingSummary" class="summary"></div>
-        <input id="custName" placeholder="اسمك">
+        <p id="bookingError" class="err-msg" role="alert"></p>
+        <input id="custName" placeholder="اسمك" maxlength="100">
         <input id="custPhone" placeholder="رقم جوّالك">
         <button class="btn primary" data-action="confirm-booking">تأكيد الحجز</button>
       </div>
@@ -112,10 +113,14 @@ const STEPS = ['service', 'date', 'confirm', 'done'];
 const state = {
   view: 'book', step: 'service', isAdmin: false,
   service: null, date: null, slot: null,
-  bookings: loadBookings(),
+  bookings: loadBookings(), busy: false, request: null, viewVersion: 0,
 };
 
-function loadBookings() { try { return JSON.parse(localStorage.getItem('bookings') || '[]'); } catch { return []; } }
+const serverBooking = () => typeof window !== 'undefined' && window.jaolaBookingAPI;
+const requiresServer = () => typeof document !== 'undefined' && document.documentElement?.dataset.bookingServer === 'true';
+function bookingMessage(error) { return error?.message === 'SLOT_TAKEN' ? 'هذا الموعد حُجز للتو. اختر وقتاً آخر.' : 'تعذّر إتمام الطلب. أعد المحاولة؛ لا تعتبر الحجز مؤكداً حتى يظهر التأكيد.'; }
+function escapeBooking(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
+function loadBookings() { if (typeof document !== 'undefined' && document.documentElement?.dataset.bookingServer === 'true') return []; try { return JSON.parse(localStorage.getItem('bookings') || '[]'); } catch { return []; } }
 function saveBookings() { localStorage.setItem('bookings', JSON.stringify(state.bookings)); }
 function byId(id) { return document.getElementById(id); }
 function show(el, on) { if (el) el.classList.toggle('hidden', !on); }
@@ -127,7 +132,8 @@ function nextDays(n) {
   const out = [];
   for (let i = 0; i < n; i++) {
     const d = new Date(); d.setDate(d.getDate() + i);
-    out.push({ key: d.toISOString().slice(0, 10), label: names[d.getDay()], num: d.getDate() });
+    if (requiresServer() || serverBooking()) { const utc = new Date(Date.now() + i * 86400000); out.push({ key: utc.toISOString().slice(0, 10), label: names[utc.getUTCDay()], num: utc.getUTCDate() }); continue; }
+    out.push({ key: [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-'), label: names[d.getDay()], num: d.getDate() });
   }
   return out;
 }
@@ -160,7 +166,8 @@ function renderDates() {
     '<div class="day-name">' + d.label + '</div><div class="day-num">' + d.num + '</div></button>').join('');
   renderSlots();
 }
-function renderSlots() {
+async function renderSlots() {
+  if (requiresServer() || serverBooking()) return renderServerSlots();
   const el = byId('slotList');
   if (!state.date) { el.innerHTML = '<p class="muted">اختر يوماً أولاً.</p>'; return; }
   const taken = state.bookings.filter(b => b.date === state.date).map(b => b.slot);
@@ -171,7 +178,7 @@ function renderSlots() {
   }).join('');
 }
 function pickDate(key) { state.date = key; state.slot = null; renderDates(); }
-function pickSlot(slot) { state.slot = slot; renderSlots(); goStep('confirm'); }
+function pickSlot(slot) { state.request = null; state.slot = slot; renderSlots(); goStep('confirm'); }
 
 // ── الخطوة 3: التأكيد ─────────────────────────────────────────────────
 function renderSummary() {
@@ -182,44 +189,110 @@ function renderSummary() {
     '<div class="sum-row"><span>الوقت</span><b>' + (state.slot || '') + '</b></div>' +
     '<div class="sum-row"><span>السعر</span><b>' + s.price + ' ﷼</b></div>' : '';
 }
-function confirmBooking() {
+async function confirmBooking() {
+  if (requiresServer() && !serverBooking()) { byId('bookingError').textContent = 'تعذّر الاتصال بخدمة الحجز. أعد تحميل الصفحة.'; return; }
+  if (serverBooking()) return confirmServerBooking();
   const name = (byId('custName') && byId('custName').value || '').trim();
   if (!name) { if (byId('custName')) byId('custName').classList.add('err'); return; }
   const s = findService(state.service);
-  const id = 100 + state.bookings.length;
-  state.bookings.push({
-    id: id, service: s ? s.name : '', emoji: s ? s.emoji : '', price: s ? s.price : 0,
+  const error = byId('bookingError');
+  error.textContent = '';
+  if (state.step !== 'confirm') return;
+  if (!s || name.length > 100 || !nextDays(7).some(d => d.key === state.date) || !SLOTS.includes(state.slot) || new Date(state.date + 'T' + state.slot).getTime() <= Date.now()) {
+    error.textContent = 'اختر خدمة وموعداً متاحاً في المستقبل.'; return;
+  }
+  let latest;
+  try {
+    latest = JSON.parse(localStorage.getItem('bookings') || '[]');
+    if (!Array.isArray(latest) || latest.some(b => !b || !Number.isSafeInteger(b.id) || b.id < 0)) throw new Error('invalid bookings');
+  } catch { error.textContent = 'تعذّر قراءة الحجوزات. لم يتم تأكيد الموعد.'; return; }
+  if (latest.some(b => b.date === state.date && b.slot === state.slot)) {
+    error.textContent = 'هذا الموعد محجوز. اختر وقتاً آخر.'; return;
+  }
+  const id = Math.max(99, ...latest.map(b => b.id)) + 1;
+  if (!Number.isSafeInteger(id)) { error.textContent = 'تعذّر إنشاء رقم الحجز.'; return; }
+  const updated = latest.concat({
+    id: id, service: s.name, emoji: s.emoji, price: s.price,
     date: state.date, slot: state.slot, customer: name, phone: (byId('custPhone') && byId('custPhone').value) || '',
     status: 'مؤكّد',
   });
-  saveBookings();
+  try { localStorage.setItem('bookings', JSON.stringify(updated)); }
+  catch { error.textContent = 'تعذّر حفظ الحجز. حاول مرة أخرى.'; return; }
+  state.bookings = updated;
   byId('doneMsg').textContent = 'رقم الحجز #' + id + ' — ' + (s ? s.name : '') + ' يوم ' + state.date + ' الساعة ' + state.slot;
   goStep('done');
 }
 function newBooking() { state.service = null; state.date = null; state.slot = null; goStep('service'); renderServices(); }
 
+async function renderServerSlots() {
+  const date = state.date;
+  const el = byId('slotList');
+  el.textContent = date ? 'جارٍ التحقق من المواعيد…' : 'اختر يوماً أولاً.';
+  if (!date) return;
+  try {
+    const data = await serverBooking().availability();
+    if (state.date !== date) return;
+    el.innerHTML = data.slots.map(slot => {
+      const busy = data.taken.some(b => b.date === date && b.slot === slot) || Date.parse(date + 'T' + slot + ':00Z') <= Date.now();
+      return '<button class="slot" ' + (busy ? 'disabled' : 'data-action="pick-slot" data-slot="' + escapeBooking(slot) + '"') + '>' + escapeBooking(slot) + (busy ? ' (غير متاح)' : '') + '</button>';
+    }).join('');
+  } catch { el.textContent = 'تعذّر التحقق من المواعيد. أعد اختيار اليوم للمحاولة.'; }
+}
+async function confirmServerBooking() {
+  if (state.busy || state.step !== 'confirm') return;
+  const payload = { service: state.service, date: state.date, slot: state.slot, customer: byId('custName').value.trim(), phone: byId('custPhone').value.trim() };
+  if (!payload.customer || !payload.phone) { byId('bookingError').textContent = 'أدخل الاسم ورقم الهاتف.'; return; }
+  const fingerprint = JSON.stringify(payload);
+  if (!state.request || state.request.fingerprint !== fingerprint) state.request = { fingerprint, id: crypto.randomUUID() };
+  state.busy = true;
+  byId('bookingError').textContent = 'جارٍ حفظ الحجز…';
+  try {
+    const saved = await serverBooking().create({ ...payload, requestId: state.request.id });
+    byId('doneMsg').textContent = 'رقم الحجز ' + saved.id + ' — ' + saved.date + ' ' + saved.slot + ' UTC';
+    byId('bookingError').textContent = '';
+    goStep('done');
+  } catch (error) { byId('bookingError').textContent = bookingMessage(error); }
+  finally { state.busy = false; }
+}
+
 // ── حجوزاتي ───────────────────────────────────────────────────────────
-function renderMine() {
+async function renderMine() {
+  if (requiresServer() || serverBooking()) {
+    byId('myBookings').textContent = 'جارٍ تحميل حجوزاتك…';
+    const version = state.viewVersion;
+    try { const rows = await serverBooking().mine(); if (version !== state.viewVersion || state.view !== 'mine') return; state.bookings = rows; } catch { byId('myBookings').textContent = 'تعذّر تحميل الحجوزات.'; return; }
+  }
   const el = byId('myBookings');
   el.innerHTML = state.bookings.length ? state.bookings.map(bookingCard).join('') : '<p class="muted">لا حجوزات بعد.</p>';
 }
 
 // ── الإدارة ───────────────────────────────────────────────────────────
-function renderAdmin() {
+async function renderAdmin() {
+  if (requiresServer() || serverBooking()) {
+    byId('adminBookings').textContent = 'جارٍ التحميل…';
+    const version = state.viewVersion;
+    try { const rows = await serverBooking().listAdmin(); if (version !== state.viewVersion || !state.isAdmin || state.view !== 'admin') return; state.bookings = rows; } catch { state.bookings = []; byId('adminStats').textContent = ''; byId('adminBookings').textContent = 'يلزم تسجيل دخول الإدارة مجدداً.'; return; }
+  }
   const total = state.bookings.length;
-  const revenue = state.bookings.reduce((s, b) => s + (b.price || 0), 0);
+  const revenue = state.bookings.filter(b => b.status === 'مؤكّد').reduce((s, b) => s + (b.price || 0), 0);
   byId('adminStats').innerHTML =
     '<div class="stat"><div class="stat-val">' + total + '</div><div class="stat-label">الحجوزات</div></div>' +
-    '<div class="stat"><div class="stat-val">' + revenue + ' ﷼</div><div class="stat-label">الإيراد</div></div>' +
+    '<div class="stat"><div class="stat-val">' + revenue + ' ﷼</div><div class="stat-label">قيمة الحجوزات المؤكدة</div></div>' +
     '<div class="stat"><div class="stat-val">' + SERVICES.length + '</div><div class="stat-label">الخدمات</div></div>';
   byId('adminBookings').innerHTML = state.bookings.length ? state.bookings.map(b => bookingCard(b, true)).join('') : '<p class="muted">لا حجوزات.</p>';
 }
-function cancelBooking(id) {
+async function cancelBooking(id) {
+  if (requiresServer() || serverBooking()) {
+    try { await serverBooking().cancel(id, state.view === 'admin'); if (state.view === 'admin') await renderAdmin(); else await renderMine(); }
+    catch { alert('تعذّر إلغاء الحجز. أعد المحاولة.'); }
+    return;
+  }
   state.bookings = state.bookings.filter(b => b.id !== Number(id));
   saveBookings();
   if (state.view === 'admin') renderAdmin(); else renderMine();
 }
 function bookingCard(b, admin) {
+  b = Object.fromEntries(Object.entries(b).map(([k, v]) => [k, escapeBooking(v)]));
   return '<div class="booking"><span class="b-emoji">' + b.emoji + '</span>' +
     '<div class="b-info"><b>' + b.service + '</b><div class="muted">' + b.date + ' · ' + b.slot +
     (admin ? ' · ' + b.customer : '') + '</div></div>' +
@@ -230,6 +303,7 @@ function bookingCard(b, admin) {
 // ── التبويبات والدخول ─────────────────────────────────────────────────
 function switchView(view) {
   if (view === 'admin' && !state.isAdmin) { openLogin(); return; }
+  state.viewVersion++;
   state.view = view;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -239,7 +313,12 @@ function switchView(view) {
 }
 function openLogin() { show(byId('loginModal'), true); byId('loginErr').classList.add('hidden'); }
 function closeLogin() { show(byId('loginModal'), false); }
-function doAdminLogin() {
+async function doAdminLogin() {
+  if (requiresServer() || serverBooking()) {
+    try { await serverBooking().login(byId('admPass').value); byId('admPass').value = ''; state.isAdmin = true; closeLogin(); document.querySelector('.tab.staff').classList.remove('hidden'); show(byId('adminBtn'), false); show(byId('adminOut'), true); switchView('admin'); }
+    catch { byId('admPass').value = ''; byId('loginErr').textContent = 'تعذّر الدخول. تأكد من كلمة المرور التي أعددتها في لوحة مشروعك.'; byId('loginErr').classList.remove('hidden'); }
+    return;
+  }
   const u = (byId('admUser') && byId('admUser').value || '').trim();
   const p = (byId('admPass') && byId('admPass').value || '').trim();
   if (u === 'admin' && p === '1234') {
@@ -250,6 +329,9 @@ function doAdminLogin() {
   } else { byId('loginErr').classList.remove('hidden'); }
 }
 function adminLogout() {
+  if (serverBooking()) serverBooking().logout();
+  state.bookings = [];
+  byId('adminBookings').textContent = ''; byId('adminStats').textContent = '';
   state.isAdmin = false;
   document.querySelector('.tab.staff').classList.add('hidden');
   show(byId('adminBtn'), true); show(byId('adminOut'), false);
@@ -275,6 +357,12 @@ function handleClick(e) {
 }
 
 function init() {
+  if (requiresServer() || serverBooking()) {
+    document.querySelector('.hero p').textContent = 'حجز محفوظ على الخادم. جميع المواعيد بتوقيت UTC. احتفظ بهذه الجلسة للوصول إلى حجوزاتك.';
+    document.querySelector('#loginModal .muted').textContent = 'استخدم كلمة المرور التي أعددتها في لوحة مشروعك في JAOLA.';
+    byId('admUser').classList.add('hidden');
+  }
+  if (typeof window !== 'undefined') window.addEventListener('pagehide', () => { if (serverBooking()) adminLogout(); });
   document.addEventListener('click', handleClick);
   renderSteps();
   renderServices();

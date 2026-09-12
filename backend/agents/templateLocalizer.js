@@ -224,6 +224,7 @@ const DICT = [
     ['طاقم', 'staff'],
 
     // ── حجوزات ─────────────────────────────────────────────────────
+    ['اختر خدمتك، ثم اليوم والوقت المناسب — نسخة تجريبية: تُحفظ الحجوزات في هذا المتصفح فقط.', 'Choose a service, day and time. Demo: bookings are saved in this browser only.'],
     ['اختر خدمتك، ثم اليوم والوقت المناسب — تأكيد فوري بلا انتظار', 'Pick your service, then a day and time — instant confirmation'],
     ['لوحة الإدارة — كل الحجوزات', 'Admin Panel — All Bookings'],
     ['اختر يوماً أولاً', 'Pick a day first'],

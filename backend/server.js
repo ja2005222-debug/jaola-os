@@ -91,6 +91,8 @@ import { recordMessage, recordVisit, readInbox, markSeen, visitSummary, unreadCo
 import { subscribe as subscribeNewsletter, listSubscribers as listNewsletterSubscribers, unsubscribe as unsubscribeNewsletter } from './services/newsletterSubscribers.js';
 import { installSiteConnect } from './services/siteConnect.js';
 import { applySeoPack } from './agents/seoPack.js';
+import { bookingStore, registerBookingRoutes } from './services/bookingStore.js';
+import { installBookingClient } from './services/bookingClient.js';
 import { installDataSync } from './services/dataSync.js';
 import { readStore as readAppDataStore } from './services/appData.js';
 import { recordError, recentErrors } from './services/errorLog.js';
@@ -233,7 +235,7 @@ const io = new Server(httpServer, {
 const OPEN_CORS_PATHS = new Set(['/api/jaola-bot/chat', '/api/agent-chat', '/api/public/site-hit', '/api/public/site-message', '/api/public/data', '/api/public/auth/login', '/api/public/auth/set-password']);
 // 🗄️ /api/public/data/:key و/api/public/collections/:name[/:id] بمفاتيح
 // ديناميكية في المسار — تطابق بادئة لا مساواة تامّة
-const isOpenCorsPath = (p) => OPEN_CORS_PATHS.has(p) || p.startsWith('/api/public/data/') || p.startsWith('/api/public/collections/') || p.startsWith('/api/public/assets/') || p.startsWith('/api/public/crypto/') || p.startsWith('/api/public/budget/') || p.startsWith('/api/public/stock/');
+const isOpenCorsPath = (p) => OPEN_CORS_PATHS.has(p) || p === '/api/public/booking' || p.startsWith('/api/public/booking/') || p.startsWith('/api/public/data/') || p.startsWith('/api/public/collections/') || p.startsWith('/api/public/assets/') || p.startsWith('/api/public/crypto/') || p.startsWith('/api/public/budget/') || p.startsWith('/api/public/stock/');
 const corsDelegate = (req, callback) => {
     if (isOpenCorsPath(req.path)) return callback(null, { origin: true, credentials: false, methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] });
     callback(null, corsOptions);
@@ -2497,6 +2499,10 @@ app.post('/api/template/apply', verifyToken, validateProjectOwnership, async (re
                 });
             } catch { /* اختياري */ }
         }
+        if (clone.id === 'jaola-booking') {
+            const apiBase = (process.env.PUBLIC_BACKEND_URL || process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+            if (!installBookingClient(projectPath, { apiBase, token: signBotToken({ u: req.user.username, p: req.activeProject }) }).ready) throw new Error('Booking runtime unavailable');
+        }
         // 4) تهيئة النشر (موقع ثابت) — أفضل جهد
         try {
             await prepareRenderDeploy(projectPath, renderServiceName(req.user.username, req.activeProject), false);
@@ -2606,6 +2612,13 @@ app.post('/api/deploy', verifyToken, validateProjectOwnership, async (req, res) 
         } catch {
             return res.status(503).json({ error: 'تعذّر تثبيت حماية البيانات؛ لم يبدأ النشر.' });
         }
+    }
+
+    if (getCloneId(req.user.username, req.activeProject) === 'jaola-booking') {
+        try {
+            const apiBase = (process.env.PUBLIC_BACKEND_URL || process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+            if (!installBookingClient(req.projectPath, { apiBase, token: signBotToken({ u: req.user.username, p: req.activeProject }) }).ready) return res.status(409).json({ error: 'حدّث قالب الحجز قبل النشر.' });
+        } catch { return res.status(503).json({ error: 'تعذّر تجهيز الحجز؛ لم يبدأ النشر.' }); }
     }
 
     // 🧭 مشاريع full-stack (فيها دوال api/ حقيقية) تُنشر على Render (خادم دائم،
@@ -3232,6 +3245,13 @@ app.post('/api/public/site-subscribe', publicSiteLimit, (req, res) => {
 const APPDATA_DIR = path.join(BASE_WORKSPACE, '.appdata');
 const APPAUTH_DIR = path.join(BASE_WORKSPACE, '.appauth');
 const requireProjectSession = projectSessionGuard({ dir: APPAUTH_DIR, secret: JWT_SECRET, verifyProjectToken: verifyBotToken });
+registerBookingRoutes(app, {
+    verifyProjectToken: verifyBotToken, cloneId: getCloneId, limit: appDataLimit, adminGuard: requireProjectSession,
+    store: () => {
+        if (mongoose.connection.readyState !== 1) throw new Error('Database unavailable');
+        return bookingStore(mongoose.connection.db.collection('ProjectBookings'));
+    },
+});
 app.use(['/api/public/data', '/api/public/collections', '/api/public/assets', '/api/public/budget', '/api/public/crypto', '/api/public/stock'], requireProjectSession);
 
 // Initial provisioning/reset is available only to the authenticated project owner.
