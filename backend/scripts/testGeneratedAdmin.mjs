@@ -4,21 +4,25 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { buildFullStackProject } from '../agents/fullstackTemplates.js';
 const dir = path.resolve(process.argv[3] || '/tmp/jaola-admin-smoke');
 const appUrl = 'http://127.0.0.1:4762';
 if (process.argv[2] === 'prepare') {
-    const { files } = buildFullStackProject('saas', 'تجربة دخول الأدمن', { databaseProvider: process.env.TEST_DATABASE_PROVIDER || 'sqlite', api: 'http://127.0.0.1:4761', token: 'fixture-project', ownerUrl: 'https://jaola.test/dashboard?setupProject=fixture&setupOwner=owner' });
+    const token = randomUUID();
+    const { files } = buildFullStackProject('saas', 'تجربة دخول الأدمن', { databaseProvider: process.env.TEST_DATABASE_PROVIDER || 'sqlite', api: 'http://127.0.0.1:4761', token, ownerUrl: 'https://jaola.test/dashboard?setupProject=fixture&setupOwner=owner' });
     for (const file of files) { const target = path.join(dir, file.name); await fs.mkdir(path.dirname(target), { recursive: true }); await fs.writeFile(target, file.content); }
+    await fs.writeFile(path.join(dir, '.smoke-fixture.json'), JSON.stringify({ token }), { mode: 0o600 });
     await fs.writeFile(path.join(dir, '.env'), 'DATABASE_URL=' + JSON.stringify(process.env.TEST_DATABASE_URL || 'file:./dev.db') + '\n');
     await fs.writeFile(path.join(dir, 'next.config.mjs'), 'export default { experimental: { cpus: 2 } };\n');
 } else {
+    const { token } = JSON.parse(await fs.readFile(path.join(dir, '.smoke-fixture.json'), 'utf8'));
     let revoked = false;
     const session = 'fixture.session.' + 'x'.repeat(40);
     const upstream = http.createServer(async (req, res) => {
         let raw = ''; for await (const chunk of req) raw += chunk;
         const data = JSON.parse(raw || '{}');
-        const ok = data.token === 'fixture-project' && (req.url === '/api/public/auth/login' ? data.password === 'fixture-admin-password' : !revoked && req.headers.authorization === 'Bearer ' + session);
+        const ok = data.token === token && (req.url === '/api/public/auth/login' ? data.password === 'fixture-admin-password' : !revoked && req.headers.authorization === 'Bearer ' + session);
         res.writeHead(ok ? 200 : 401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(req.url === '/api/public/auth/login' ? { ok, ...(ok ? { session } : {}) } : { ok, role: ok ? 'project-admin' : null }));
     });
